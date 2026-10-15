@@ -84,7 +84,7 @@ fn router_with_backend(config: PckgServerConfig, packages: PackageBackend) -> Ro
             .community_client
             .clone()
             .unwrap_or_else(|| Arc::new(HttpNodebbClient::new(settings)) as Arc<dyn crate::community::NodebbClient>);
-        Arc::new(CommunityService::new(client, &settings.public_url, settings.packages_parent_cid))
+        Arc::new(CommunityService::new(client, &settings.public_url, settings.packages_cid))
     });
     let api_keys = moderation_repository.clone();
     let api_key_auth = config.api_key_repository.clone().or_else(|| {

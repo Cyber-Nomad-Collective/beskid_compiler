@@ -275,7 +275,7 @@ async fn published_summary(state: &AppState, package: &super::Package) -> Result
     Ok(Some(package_summary(package, &metadata, community_response(state, package))))
 }
 
-/// Discussion link plus live NodeBB counters for a visible, linked package.
+/// Discussion thread link plus live NodeBB counters for a visible, linked package.
 /// Counters are `null` when NodeBB cannot be reached so the link still renders.
 pub async fn package_community(
     State(state): State<AppState>,
@@ -296,16 +296,32 @@ pub async fn package_community(
     };
     let stats = service.stats(community).await;
     Json(PackageCommunityStatusResponse {
-        url: service.category_url(community),
-        category_id: community.category_id,
-        category_slug: community.category_slug.clone(),
-        topic_count: stats.map(|stats| stats.topic_count),
-        post_count: stats.map(|stats| stats.post_count),
+        url: service.topic_url(community),
+        topic_id: community.topic_id,
+        topic_slug: community.topic_slug.clone(),
+        reply_count: stats.as_ref().map(|stats| stats.reply_count),
+        view_count: stats.as_ref().map(|stats| stats.view_count),
+        recent_posts: stats
+            .as_ref()
+            .map(|stats| {
+                stats
+                    .recent_posts
+                    .iter()
+                    .map(|post| CommunityPostResponse {
+                        pid: post.pid,
+                        author: post.author.clone(),
+                        posted_at_utc: crate::format_timestamp(post.posted_at_unix_seconds),
+                        excerpt: post.excerpt.clone(),
+                        url: service.post_url(post.pid),
+                    })
+                    .collect()
+            })
+            .unwrap_or_default(),
     })
     .into_response()
 }
 
-/// Creates missing NodeBB categories for every public package. Administrator
+/// Opens missing NodeBB threads for every public package. Administrator
 /// repair path for packages created while NodeBB was unavailable or before
 /// the integration was configured.
 pub async fn reconcile_community(State(state): State<AppState>, headers: HeaderMap) -> Response {
@@ -329,16 +345,25 @@ pub async fn reconcile_community(State(state): State<AppState>, headers: HeaderM
     let mut linked = Vec::new();
     let mut failed = Vec::new();
     for package in packages.into_iter().filter(|package| package.is_public && package.community.is_none()) {
-        match service.ensure_linked(&state.packages, &package, &package_page_url(&package.name)).await {
+        match service
+            .ensure_linked(&state.packages, &package, package_kind_label(&state, &package).await.as_deref())
+            .await
+        {
             Ok(community) => linked.push(CommunityReconcileEntry {
                 package: package.name,
-                url: Some(service.category_url(&community)),
+                url: Some(service.topic_url(&community)),
                 error: None,
             }),
             Err(error) => {
                 let _ = state
                     .operations
-                    .append_activity(sync_failure_activity(now(), Some(principal.subject()), &package.name, &error))
+                    .append_activity(sync_failure_activity(
+                        now(),
+                        Some(principal.subject()),
+                        &package.name,
+                        None,
+                        &error,
+                    ))
                     .await;
                 failed.push(CommunityReconcileEntry {
                     package: package.name,
@@ -360,24 +385,52 @@ async fn link_new_package_community(state: &AppState, subject: &str, package: &s
     if !package.is_public {
         return;
     }
-    if let Err(error) = service.ensure_linked(&state.packages, package, &package_page_url(&package.name)).await {
-        let _ =
-            state.operations.append_activity(sync_failure_activity(now(), Some(subject), &package.name, &error)).await;
+    if let Err(error) =
+        service.ensure_linked(&state.packages, package, package_kind_label(state, package).await.as_deref()).await
+    {
+        let _ = state
+            .operations
+            .append_activity(sync_failure_activity(now(), Some(subject), &package.name, None, &error))
+            .await;
     }
 }
 
-fn package_page_url(name: &str) -> String {
-    format!("https://pckg.beskid-lang.org/packages/{name}")
+/// Kind of the latest release, for the thread's opening post; `None` before
+/// any version is published.
+async fn package_kind_label(state: &AppState, package: &super::Package) -> Option<String> {
+    let versions = state.packages.list_versions(&package.id).await.ok()?;
+    let version = latest_non_yanked(&versions).or_else(|| versions.first())?;
+    let metadata = package_manifest_metadata(package, version).ok()?;
+    Some(
+        match metadata.package_kind {
+            super::PackageKind::Library => "library",
+            super::PackageKind::Template => "template",
+            super::PackageKind::Tool => "tool",
+        }
+        .to_owned(),
+    )
 }
 
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 struct PackageCommunityStatusResponse {
     url: String,
-    category_id: i64,
-    category_slug: String,
-    topic_count: Option<u64>,
-    post_count: Option<u64>,
+    topic_id: i64,
+    topic_slug: String,
+    reply_count: Option<u64>,
+    view_count: Option<u64>,
+    /// Newest posts first; empty when NodeBB cannot be read.
+    recent_posts: Vec<CommunityPostResponse>,
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CommunityPostResponse {
+    pid: i64,
+    author: String,
+    posted_at_utc: String,
+    excerpt: String,
+    url: String,
 }
 
 #[derive(serde::Serialize)]

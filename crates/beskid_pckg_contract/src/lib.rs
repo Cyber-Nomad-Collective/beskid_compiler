@@ -66,19 +66,19 @@ pub struct PackageSummaryResponse {
     pub owner_display_name: String,
     #[serde(rename = "ownerIsPublisherVerified")]
     pub owner_is_publisher_verified: bool,
-    /// Linked NodeBB discussion category; `None` until the registry has
-    /// created it or when the community integration is not configured.
+    /// Linked NodeBB discussion thread; `None` until the registry has
+    /// opened it or when the community integration is not configured.
     pub community: Option<PackageCommunityResponse>,
 }
 
-/// Public identity of a package's NodeBB discussion category.
+/// Public identity of a package's NodeBB discussion thread (topic).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PackageCommunityResponse {
     pub url: String,
-    #[serde(rename = "categoryId")]
-    pub category_id: i64,
-    #[serde(rename = "categorySlug")]
-    pub category_slug: String,
+    #[serde(rename = "topicId")]
+    pub topic_id: i64,
+    #[serde(rename = "topicSlug")]
+    pub topic_slug: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

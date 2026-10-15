@@ -34,8 +34,12 @@ pub const CREATE_PACKAGE_COMMUNITY_REVIEWS: &str =
 /// pre-migration rows as an empty description, General category and no tags.
 pub const ADD_PACKAGE_METADATA: &str = include_str!("../migrations/0011_add_package_metadata.sql");
 
-/// Links packages to their NodeBB discussion category; NodeBB keeps the posts.
+/// Linked packages to a NodeBB discussion category (superseded by 0013).
 pub const ADD_PACKAGE_COMMUNITY: &str = include_str!("../migrations/0012_add_package_community.sql");
+
+/// Replaces the category link with the package's NodeBB discussion thread.
+pub const REPLACE_PACKAGE_COMMUNITY_WITH_TOPIC: &str =
+    include_str!("../migrations/0013_replace_package_community_category_with_topic.sql");
 
 pub const ALL: &[(&str, &str)] = &[
     ("0001_create_package_registry", CREATE_PACKAGE_REGISTRY),
@@ -46,6 +50,7 @@ pub const ALL: &[(&str, &str)] = &[
     ("0010_create_package_community_reviews", CREATE_PACKAGE_COMMUNITY_REVIEWS),
     ("0011_add_package_metadata", ADD_PACKAGE_METADATA),
     ("0012_add_package_community", ADD_PACKAGE_COMMUNITY),
+    ("0013_replace_package_community_category_with_topic", REPLACE_PACKAGE_COMMUNITY_WITH_TOPIC),
 ];
 
 impl SqlxPackageRepository {

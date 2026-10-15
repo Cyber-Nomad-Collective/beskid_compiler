@@ -56,8 +56,8 @@ pub(super) fn community_response(state: &AppState, package: &Package) -> Option<
     let url = state.community_url(package)?;
     package.community.as_ref().map(|community| PackageCommunityResponse {
         url,
-        category_id: community.category_id,
-        category_slug: community.category_slug.clone(),
+        topic_id: community.topic_id,
+        topic_slug: community.topic_slug.clone(),
     })
 }
 

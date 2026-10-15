@@ -24,6 +24,6 @@ impl AppState {
     /// Public discussion URL for a linked package, when the integration is on.
     pub(crate) fn community_url(&self, package: &beskid_pckg_store::Package) -> Option<String> {
         let service = self.community.as_ref()?;
-        package.community.as_ref().map(|community| service.category_url(community))
+        package.community.as_ref().map(|community| service.topic_url(community))
     }
 }

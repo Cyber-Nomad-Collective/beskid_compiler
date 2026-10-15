@@ -14,12 +14,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `.../files/content?path=`; hidden, traversal and unknown paths stay
   not-found and binary or oversized entries are described without bytes.
 - pckg: registry-owned NodeBB community linking. A public package gets one
-  discussion category on creation (`PCKG_NODEBB_API_URL`,
-  `PCKG_NODEBB_ADMIN_TOKEN`, `PCKG_NODEBB_PACKAGES_PARENT_CID`,
-  `PCKG_COMMUNITY_URL`), package summaries carry `community`,
-  `GET /api/packages/{name}/community` serves live counters, and
-  `POST /api/admin/community/reconcile` links packages created while NodeBB
-  was unavailable. Migration `0012_add_package_community`.
+  discussion thread (topic) in the configured "Packages" category on
+  creation (`PCKG_NODEBB_API_URL`, `PCKG_NODEBB_BOT_TOKEN`,
+  `PCKG_NODEBB_PACKAGES_CID`, `PCKG_COMMUNITY_URL`), every published version
+  is announced as a reply in that thread, package summaries carry
+  `community` (`url`, `topicId`, `topicSlug`),
+  `GET /api/packages/{name}/community` serves live reply/view counters plus
+  the newest posts (server-side, cached one minute), queued (202) posts are
+  reported as sync failures instead of being linked, bot writes are
+  serialized, and
+  `POST /api/admin/community/reconcile` opens threads for packages created
+  while NodeBB was unavailable. Migrations `0012_add_package_community` and
+  `0013_replace_package_community_category_with_topic`.
 
 ### Changed
 

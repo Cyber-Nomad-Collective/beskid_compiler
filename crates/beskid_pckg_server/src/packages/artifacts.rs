@@ -60,6 +60,7 @@ pub(super) async fn persist_uploaded_artifact(
     {
         Ok(PublishOutcome::Created(version)) => {
             let _ = record_publish_activity(&state, &subject, &package.name, &version.version).await;
+            announce_release(&state, &subject, &package, &version.version).await;
             (StatusCode::CREATED, Json(version_summary(&package, &version))).into_response()
         }
         Ok(PublishOutcome::AlreadyExists(version)) => {
@@ -71,6 +72,30 @@ pub(super) async fn persist_uploaded_artifact(
         Err(_) => {
             (StatusCode::BAD_REQUEST, Json(ApiErrorResponse::new("invalid package version request"))).into_response()
         }
+    }
+}
+
+/// Posts the release reply to the package's NodeBB thread. Best effort: a
+/// NodeBB failure is logged and never fails the publish. Private packages
+/// have no thread; yanked versions never reach this path.
+async fn announce_release(state: &AppState, subject: &str, package: &beskid_pckg_store::Package, version: &str) {
+    let (Some(service), Some(community)) = (state.community.as_ref(), package.community.as_ref()) else {
+        return;
+    };
+    if !package.is_public {
+        return;
+    }
+    if let Err(error) = service.announce_version(community, &package.name, version).await {
+        let _ = state
+            .operations
+            .append_activity(crate::community::sync_failure_activity(
+                now(),
+                Some(subject),
+                &package.name,
+                Some(version),
+                &error,
+            ))
+            .await;
     }
 }
 
