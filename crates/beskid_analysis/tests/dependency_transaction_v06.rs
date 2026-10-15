@@ -319,3 +319,43 @@ fn dep06_new_lock_uses_ordinary_file_creation_permissions() {
     CommitDependencyPair(&manifest, OLD_MANIFEST, None, NEW_MANIFEST, NEW_LOCK).unwrap();
     assert_eq!(fs::metadata(manifest.with_file_name("Project.lock")).unwrap().permissions().mode() & 0o777, expected);
 }
+
+/// Windows regression (v0.6.0 release DEP06-01..05): the directory sync used a read-only handle,
+/// and FlushFileBuffers requires GENERIC_WRITE, so every commit failed with "Access is denied".
+#[test]
+fn dep06_native_directory_sync_succeeds_for_project_and_private_directories() {
+    let (directory, manifest) = fixture(true);
+    NativeDependencyTransactionIo.SyncDirectory(directory.path()).unwrap();
+    CommitDependencyPair(&manifest, OLD_MANIFEST, Some(OLD_LOCK), NEW_MANIFEST, NEW_LOCK).unwrap();
+    NativeDependencyTransactionIo.SyncDirectory(&directory.path().join(".beskid/dependency-transaction")).unwrap();
+}
+
+/// A rename keeps file attributes, so a stage created as FILE_ATTRIBUTE_TEMPORARY would publish a
+/// manifest and lock still marked temporary, and the next commit would copy the mark again.
+#[cfg(windows)]
+#[test]
+fn dep06_published_pair_is_not_marked_temporary_on_windows() {
+    use std::io::Write;
+    use std::os::windows::fs::{MetadataExt, OpenOptionsExt};
+    const FILE_ATTRIBUTE_TEMPORARY: u32 = 0x100;
+    let temporary = |path: &Path| fs::metadata(path).unwrap().file_attributes() & FILE_ATTRIBUTE_TEMPORARY != 0;
+    // A new lock is published without the mark.
+    let (_directory, manifest) = fixture(false);
+    let lock = manifest.with_file_name("Project.lock");
+    CommitDependencyPair(&manifest, OLD_MANIFEST, None, NEW_MANIFEST, NEW_LOCK).unwrap();
+    assert!(!temporary(&manifest) && !temporary(&lock));
+    // A lock already marked temporary (as the 0.6.0 candidate published it) is not marked again.
+    fs::remove_file(&lock).unwrap();
+    fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .attributes(FILE_ATTRIBUTE_TEMPORARY)
+        .open(&lock)
+        .unwrap()
+        .write_all(NEW_LOCK)
+        .unwrap();
+    assert!(temporary(&lock));
+    CommitDependencyPair(&manifest, NEW_MANIFEST, Some(NEW_LOCK), OLD_MANIFEST, OLD_LOCK).unwrap();
+    assert!(!temporary(&manifest) && !temporary(&lock));
+    assert_pair(&manifest, OLD_MANIFEST, Some(OLD_LOCK));
+}

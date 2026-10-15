@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 
 use fs2::FileExt;
 use serde::{Deserialize, Serialize};
-use tempfile::NamedTempFile;
+use tempfile::TempPath;
 
 use super::ProjectError;
 
@@ -29,10 +29,13 @@ impl DependencyTransactionIo for NativeDependencyTransactionIo {
         file.sync_all()
     }
     fn SyncDirectory(&self, directory: &Path) -> io::Result<()> {
+        // FlushFileBuffers requires a handle with GENERIC_WRITE access; a read-only directory
+        // handle fails with ERROR_ACCESS_DENIED. FILE_FLAG_BACKUP_SEMANTICS opens the directory.
         #[cfg(windows)]
         let file = {
             use std::os::windows::fs::OpenOptionsExt;
-            OpenOptions::new().read(true).custom_flags(0x02000000).open(directory)?
+            const FILE_FLAG_BACKUP_SEMANTICS: u32 = 0x02000000;
+            OpenOptions::new().write(true).custom_flags(FILE_FLAG_BACKUP_SEMANTICS).open(directory)?
         };
         #[cfg(not(windows))]
         let file = File::open(directory)?;
@@ -193,19 +196,19 @@ pub fn CommitDependencyPairWithIo(
         original_lock: original_lock.map(<[u8]>::to_vec),
         replacement_manifest: replacement_manifest.to_vec(),
         replacement_lock: replacement_lock.to_vec(),
-        replacement_manifest_identity: FileIdentity::Read(manifest_stage.path()).map_err(Io)?,
-        replacement_lock_identity: FileIdentity::Read(lock_stage.path()).map_err(Io)?,
+        replacement_manifest_identity: FileIdentity::Read(&manifest_stage).map_err(Io)?,
+        replacement_lock_identity: FileIdentity::Read(&lock_stage).map_err(Io)?,
     };
     // A complete durable original/staged pair precedes any visible replacement.
     SaveJournal(&guard, &journal, io)?;
     let result: Result<(), ProjectError> = (|| {
         Expected(&guard.manifest, Some(original_manifest))?;
         Expected(&guard.lock, original_lock)?;
-        io.Replace(manifest_stage.path(), &guard.manifest).map_err(Io)?;
+        io.Replace(&manifest_stage, &guard.manifest).map_err(Io)?;
         io.SyncDirectory(&guard.directory).map_err(Io)?;
         Expected(&guard.manifest, Some(replacement_manifest))?;
         Expected(&guard.lock, original_lock)?;
-        io.Replace(lock_stage.path(), &guard.lock).map_err(Io)?;
+        io.Replace(&lock_stage, &guard.lock).map_err(Io)?;
         io.SyncDirectory(&guard.directory).map_err(Io)?;
         Expected(&guard.manifest, Some(replacement_manifest))?;
         Expected(&guard.lock, Some(replacement_lock))?;
@@ -323,7 +326,7 @@ fn RestoreOne(
         Some(bytes) => {
             let stage = StagePublished(&guard.private, path, bytes, &NativeDependencyTransactionIo)?;
             Recoverable(path, original, replacement, identity)?;
-            NativeDependencyTransactionIo.Replace(stage.path(), path).map_err(Io)?;
+            NativeDependencyTransactionIo.Replace(&stage, path).map_err(Io)?;
         }
         None => {
             Recoverable(path, original, replacement, identity)?;
@@ -364,39 +367,75 @@ fn ReadOptional(path: &Path) -> Result<Option<Vec<u8>>, ProjectError> {
         Err(error) => Err(Io(error)),
     }
 }
-fn Stage(directory: &Path, bytes: &[u8], io: &dyn DependencyTransactionIo) -> Result<NamedTempFile, ProjectError> {
-    let mut file = tempfile::Builder::new().prefix("stage-").tempfile_in(directory).map_err(Io)?;
-    file.write_all(bytes).map_err(Io)?;
-    io.SyncFile(file.as_file()).map_err(Io)?;
-    Ok(file)
+fn Stage(directory: &Path, bytes: &[u8], io: &dyn DependencyTransactionIo) -> Result<TempPath, ProjectError> {
+    StageFile(directory, bytes, StageAccess::Private, io)
+}
+/// Access of a staged file once it is renamed into place.
+enum StageAccess {
+    /// Private transaction state (owner-only on Unix).
+    Private,
+    /// A public file with no destination yet: ordinary creation (Unix 0666 filtered by the umask).
+    NewPublic,
+    /// A public file that replaces a destination and keeps its Unix permissions.
+    #[cfg(unix)]
+    Existing(fs::Permissions),
 }
 // Public files retain destination permissions. New Unix files use ordinary
 // 0666 creation filtered by the process umask, without changing that umask.
+// On Windows a published file takes the ordinary attributes and inherited ACL of a new project file:
+// `Permissions` there is the whole attribute set, so copying it would also copy attributes such as
+// FILE_ATTRIBUTE_TEMPORARY from the destination.
 fn StagePublished(
     directory: &Path,
     destination: &Path,
     bytes: &[u8],
     io: &dyn DependencyTransactionIo,
-) -> Result<NamedTempFile, ProjectError> {
-    let existing = match fs::metadata(destination) {
-        Ok(metadata) => Some(metadata.permissions()),
-        Err(error) if error.kind() == io::ErrorKind::NotFound => None,
+) -> Result<TempPath, ProjectError> {
+    let access = match fs::metadata(destination) {
+        #[cfg(unix)]
+        Ok(metadata) => StageAccess::Existing(metadata.permissions()),
+        #[cfg(not(unix))]
+        Ok(_) => StageAccess::NewPublic,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => StageAccess::NewPublic,
         Err(error) => return Err(Io(error)),
     };
-    let mut builder = tempfile::Builder::new();
-    builder.prefix("stage-");
+    StageFile(directory, bytes, access, io)
+}
+/// Write and durably sync a staged file, then close its handle.
+///
+/// The stage is created with ordinary open options rather than `tempfile`'s default creator: on
+/// Windows that creator marks files `FILE_ATTRIBUTE_TEMPORARY`, and a rename keeps the attribute, so
+/// the published manifest and lock would stay marked temporary. The returned `TempPath` holds no
+/// open handle, so the rename never runs while this process holds a handle to the staged file (or,
+/// after the rename, to the destination), and an unpublished stage is still removed on drop.
+fn StageFile(
+    directory: &Path,
+    bytes: &[u8],
+    access: StageAccess,
+    io: &dyn DependencyTransactionIo,
+) -> Result<TempPath, ProjectError> {
+    #[cfg(not(unix))]
+    let _ = access;
+    let mut file = tempfile::Builder::new()
+        .prefix("stage-")
+        .make_in(directory, |path| {
+            let mut options = OpenOptions::new();
+            options.read(true).write(true).create_new(true);
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::OpenOptionsExt;
+                options.mode(if matches!(access, StageAccess::NewPublic) { 0o666 } else { 0o600 });
+            }
+            options.open(path)
+        })
+        .map_err(Io)?;
     #[cfg(unix)]
-    if existing.is_none() {
-        use std::os::unix::fs::PermissionsExt;
-        builder.permissions(fs::Permissions::from_mode(0o666));
-    }
-    let mut file = builder.tempfile_in(directory).map_err(Io)?;
-    if let Some(permissions) = existing {
+    if let StageAccess::Existing(permissions) = access {
         file.as_file().set_permissions(permissions).map_err(Io)?;
     }
     file.write_all(bytes).map_err(Io)?;
     io.SyncFile(file.as_file()).map_err(Io)?;
-    Ok(file)
+    Ok(file.into_temp_path())
 }
 fn SaveJournal(guard: &Guard, journal: &Journal, io: &dyn DependencyTransactionIo) -> Result<(), ProjectError> {
     let bytes =
@@ -406,7 +445,7 @@ fn SaveJournal(guard: &Guard, journal: &Journal, io: &dyn DependencyTransactionI
     }
     let stage = Stage(&guard.private, &bytes, io)?;
     CheckFile(&guard.journal, true)?;
-    io.Replace(stage.path(), &guard.journal).map_err(Io)?;
+    io.Replace(&stage, &guard.journal).map_err(Io)?;
     io.SyncDirectory(&guard.private).map_err(Io)?;
     // Ensure discovery of the journal directory is also durable on first use.
     io.SyncDirectory(guard.private.parent().unwrap()).map_err(Io)?;
