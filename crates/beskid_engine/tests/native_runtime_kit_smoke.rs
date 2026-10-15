@@ -1,6 +1,7 @@
 //! Execution proof for a runtime kit published by the production native-host builder.
 
 use std::path::Path;
+use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use beskid_abi::runtime_kit::BuildProfile;
 use beskid_analysis::services::{FrontEndOptions, resolved_input_from_plan, synthetic_compile_plan_for_source};
@@ -8,18 +9,27 @@ use beskid_engine::services::run_entrypoint_from_front_end_with_engine;
 use beskid_engine::{Engine, host_runtime_target};
 use beskid_tools::toolchain::runtime_kit::{RuntimeKitProfile, build_native_host};
 
+/// Serializes every read and write of the process-global runtime-kit environment in this binary.
+static RUNTIME_ENVIRONMENT: Mutex<()> = Mutex::new(());
+
+fn runtime_environment() -> MutexGuard<'static, ()> {
+    RUNTIME_ENVIRONMENT.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
 struct EnvironmentVariableGuard {
     key: &'static str,
     previous: Option<std::ffi::OsString>,
+    _environment: MutexGuard<'static, ()>,
 }
 
 impl EnvironmentVariableGuard {
     fn set(key: &'static str, value: &Path) -> Self {
+        let environment = runtime_environment();
         let previous = std::env::var_os(key);
-        // SAFETY: this integration target is run serially by its focused invocation, and Drop
-        // restores the process environment before the test exits.
+        // SAFETY: every environment access in this binary holds `RUNTIME_ENVIRONMENT`, and Drop
+        // restores the process environment before the lock is released.
         unsafe { std::env::set_var(key, value) };
-        Self { key, previous }
+        Self { key, previous, _environment: environment }
     }
 }
 
@@ -56,7 +66,7 @@ fn fresh_native_runtime_kit_executes_a_canonical_entrypoint() {
         None,
         None,
     );
-    let front = beskid_queries::compile_front_end_from_resolved_input(&resolved, FrontEndOptions::default(), None)
+    let front = beskid_queries::compile_mod_free_front_end(&resolved, FrontEndOptions::default(), None)
         .expect("prepare canonical entrypoint");
 
     let output = run_entrypoint_from_front_end_with_engine(
@@ -100,14 +110,15 @@ fn public_run_entrypoint_uses_the_syntax_isle_path() {
         Path::new("public-syntax-entrypoint.bd"),
         "i64 Main() { return 41 + 1; }",
         "Main",
+        &beskid_engine::ModHost::NoMods,
     )
     .expect("public entrypoint executes through syntax ISLE");
     assert_eq!(output, "42");
 }
 
 #[test]
-#[ignore = "requires the staged native runtime-kit matrix prefix"]
 fn staged_runtime_kit_executes_a_canonical_entrypoint() {
+    let _environment = runtime_environment();
     let prefix = std::env::var_os("BESKID_RUNTIME_PREFIX")
         .map(std::path::PathBuf::from)
         .expect("native runtime-kit evidence must set BESKID_RUNTIME_PREFIX");
@@ -129,7 +140,7 @@ fn staged_runtime_kit_executes_a_canonical_entrypoint() {
         None,
         None,
     );
-    let front = beskid_queries::compile_front_end_from_resolved_input(&resolved, FrontEndOptions::default(), None)
+    let front = beskid_queries::compile_mod_free_front_end(&resolved, FrontEndOptions::default(), None)
         .expect("prepare canonical entrypoint");
     let output = run_entrypoint_from_front_end_with_engine(
         &mut engine,

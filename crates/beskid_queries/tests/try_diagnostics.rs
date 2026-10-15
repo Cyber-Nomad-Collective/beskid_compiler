@@ -68,7 +68,7 @@ fn imported_try_diagnostics_share_exact_result_error_authority() {
         };
         let mut db = BeskidDatabase::default();
         let (_, diagnostics, _) =
-            prepare_compilation_diagnostics_with_db(&mut db, &resolved, PrepareOptions::default(), None)
+            prepare_compilation_diagnostics_with_db(&mut db, &resolved, PrepareOptions::without_mods(), None)
                 .expect("ordinary preparation preserves truthful try diagnostics");
         let errors = diagnostics.iter().filter(|diagnostic| diagnostic.code.as_deref() == Some("E1222")).count();
         assert_eq!(errors, expected_errors, "{diagnostics:?}");
@@ -78,7 +78,7 @@ fn imported_try_diagnostics_share_exact_result_error_authority() {
                 "{diagnostics:?}"
             );
         }
-        let (_, isolated, _) = prepare_compilation_diagnostics_isolated(&resolved, PrepareOptions::default(), None)
+        let (_, isolated, _) = prepare_compilation_diagnostics_isolated(&resolved, PrepareOptions::without_mods(), None)
             .expect("owned editor jobs use the same try authority");
         assert_eq!(
             isolated.iter().filter(|diagnostic| diagnostic.code.as_deref() == Some("E1222")).count(),
@@ -88,10 +88,10 @@ fn imported_try_diagnostics_share_exact_result_error_authority() {
     }
 }
 
-/// Build a single-unit, no-Std assembly for `source` and return the E1222 counts from the
-/// query-backed try authority (shared and isolated) and from the analysis-only path, whose
-/// staged try rule uses the pre-normalize precheck instead of a query authority.
-fn local_try_diagnostic_counts(source: &str) -> (usize, usize, usize) {
+/// Build a single-unit assembly without Core for `source` and return the E1222 counts from the
+/// query-backed try authority, shared and isolated. The query gate is the only try authority:
+/// no structural precheck exists beside it.
+fn local_try_diagnostic_counts(source: &str) -> (usize, usize) {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("Main.bd");
     std::fs::write(&path, source).unwrap();
@@ -130,14 +130,11 @@ fn local_try_diagnostic_counts(source: &str) -> (usize, usize, usize) {
         diagnostics.iter().filter(|diagnostic| diagnostic.code.as_deref() == Some("E1222")).count()
     };
     let mut db = BeskidDatabase::default();
-    let (_, shared, _) = prepare_compilation_diagnostics_with_db(&mut db, &resolved, PrepareOptions::default(), None)
+    let (_, shared, _) = prepare_compilation_diagnostics_with_db(&mut db, &resolved, PrepareOptions::without_mods(), None)
         .expect("shared try authority");
-    let (_, isolated, _) = prepare_compilation_diagnostics_isolated(&resolved, PrepareOptions::default(), None)
+    let (_, isolated, _) = prepare_compilation_diagnostics_isolated(&resolved, PrepareOptions::without_mods(), None)
         .expect("isolated try authority");
-    let (_, precheck, _) =
-        beskid_analysis::services::prepare_compilation_diagnostics(&resolved, PrepareOptions::default(), None)
-            .expect("analysis-only precheck");
-    (count(&shared), count(&isolated), count(&precheck))
+    (count(&shared), count(&isolated))
 }
 
 const LOCAL_GENERIC_RESULT: &str = "enum Error { Failed() }
@@ -154,7 +151,7 @@ fn try_accepts_let_bound_local_generic_result() {
 }}
 "
     );
-    assert_eq!(local_try_diagnostic_counts(&source), (0, 0, 0));
+    assert_eq!(local_try_diagnostic_counts(&source), (0, 0));
 }
 
 #[test]
@@ -171,7 +168,7 @@ fn try_accepts_let_bound_result_after_statement_match() {
 }}
 "
     );
-    assert_eq!(local_try_diagnostic_counts(&source), (0, 0, 0));
+    assert_eq!(local_try_diagnostic_counts(&source), (0, 0));
 }
 
 #[test]
@@ -186,19 +183,17 @@ Result<i32, Error> Propagate() {{
 }}
 "
         );
-        let (shared, isolated, precheck) = local_try_diagnostic_counts(&source);
-        assert!(shared >= 1 && isolated >= 1 && precheck >= 1, "{operand}: {shared} {isolated} {precheck}");
+        let (shared, isolated) = local_try_diagnostic_counts(&source);
+        assert!(shared >= 1 && isolated >= 1, "{operand}: {shared} {isolated}");
     }
 }
 
 /// Item 1 (spec conformance): an enum that declares only `Ok` (no `Error` variant) is not
 /// Result-shaped per OpenSpec `language-meta--contracts-and-effects--error-handling`, "Postfix
-/// try operator". The full type check (the lower-spine `type_try_expression`) must reject it
-/// exactly like the precheck stage does, not just the precheck.
+/// try operator".
 ///
-/// Item 2 (no duplicate diagnostic): the try-authority path and the lower-spine full type check
-/// both judge this operand invalid using the same shared predicate, so without deduping they
-/// would each contribute one E1222 for the same span. Assert exactly one survives.
+/// Item 2 (no duplicate diagnostic): the query gate judges the operand once per authority, so
+/// exactly one E1222 survives for the span.
 #[test]
 fn try_rejects_ok_only_enum_with_exactly_one_diagnostic() {
     let source = format!(
@@ -210,17 +205,15 @@ Result<i32, Error> Propagate() {{
 }}
 "
     );
-    let (shared, isolated, precheck) = local_try_diagnostic_counts(&source);
-    assert_eq!(shared, 1, "try authority + full type check must emit exactly one E1222, got {shared}");
-    assert_eq!(isolated, 1, "isolated authority + full type check must emit exactly one E1222, got {isolated}");
-    assert_eq!(precheck, 1, "analysis-only precheck must emit exactly one E1222, got {precheck}");
+    let (shared, isolated) = local_try_diagnostic_counts(&source);
+    assert_eq!(shared, 1, "the try authority must emit exactly one E1222, got {shared}");
+    assert_eq!(isolated, 1, "the isolated try authority must emit exactly one E1222, got {isolated}");
 }
 
-/// Item 3: the early stage-7 try walker must descend into `if`/`while`/`for` bodies so an
-/// invalid `?` nested inside one is reported by the precheck stage, not only by the later
-/// full type check.
+/// Item 3: the try authority descends into `if`/`while`/`for` bodies so an invalid `?` nested
+/// inside one is reported.
 #[test]
-fn try_precheck_descends_into_nested_control_flow_bodies() {
+fn try_authority_descends_into_nested_control_flow_bodies() {
     for wrapper in [
         "if (true) { i32 value = bound?; }",
         "while (true) { i32 value = bound?; break; }",
@@ -234,8 +227,8 @@ fn try_precheck_descends_into_nested_control_flow_bodies() {
 }}
 "
         );
-        let (_, _, precheck) = local_try_diagnostic_counts(&source);
-        assert!(precheck >= 1, "{wrapper}: precheck did not descend into the nested body ({precheck})");
+        let (shared, isolated) = local_try_diagnostic_counts(&source);
+        assert!(shared >= 1 && isolated >= 1, "{wrapper}: the try authority did not descend into the nested body ({shared} {isolated})");
     }
 }
 
@@ -282,7 +275,7 @@ fn primitive_conversion_rejects_non_numeric_argument() {
     };
     let mut db = BeskidDatabase::default();
     let (_, diagnostics, _) =
-        prepare_compilation_diagnostics_with_db(&mut db, &resolved, PrepareOptions::default(), None)
+        prepare_compilation_diagnostics_with_db(&mut db, &resolved, PrepareOptions::without_mods(), None)
             .expect("diagnostics collection must not hard-fail on a typed conversion error");
     let e1228 = diagnostics.iter().filter(|diagnostic| diagnostic.code.as_deref() == Some("E1228")).count();
     assert_eq!(e1228, 1, "expected exactly one E1228 for a non-numeric conversion argument: {diagnostics:?}");
@@ -335,9 +328,9 @@ fn fact_authority_diagnostics(
         )),
     };
     let mut db = BeskidDatabase::default();
-    let (_, shared, _) = prepare_compilation_diagnostics_with_db(&mut db, &resolved, PrepareOptions::default(), None)
+    let (_, shared, _) = prepare_compilation_diagnostics_with_db(&mut db, &resolved, PrepareOptions::without_mods(), None)
         .expect("shared semantic fact authority");
-    let (_, isolated, _) = prepare_compilation_diagnostics_isolated(&resolved, PrepareOptions::default(), None)
+    let (_, isolated, _) = prepare_compilation_diagnostics_isolated(&resolved, PrepareOptions::without_mods(), None)
         .expect("isolated semantic fact authority");
     (shared, isolated)
 }
@@ -368,14 +361,21 @@ fn dependency_unit_legality_finding_surfaces_in_the_prepare_spine() {
     }
 }
 
-/// A dependency item nothing in the entry reaches is not judged.
+/// An own unit nothing in the entry reaches is still judged: `Lib/Helper.bd` lies under the host
+/// source root, so the prepare spine judges every item it holds (the own-unit ruling of
+/// `docs/reports/2026-10-04-v06-decisions.md`), and its E1201 surfaces in its own source.
 #[test]
-fn unreachable_dependency_item_is_not_judged_by_the_prepare_spine() {
+fn unreachable_own_unit_item_is_judged_by_the_prepare_spine() {
     let (shared, isolated) = fact_authority_diagnostics(
         &[("Main.bd", "use Lib.Helper;\ni64 Main() { return 0_i64; }"), ("Lib/Helper.bd", HELPER_WITH_UNIMPORTED_TYPE)],
         412,
     );
     for diagnostics in [&shared, &isolated] {
-        assert!(!diagnostics.iter().any(|diagnostic| diagnostic.code.as_deref() == Some("E1201")), "{diagnostics:?}");
+        let found = diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.code.as_deref() == Some("E1201"))
+            .collect::<Vec<_>>();
+        assert_eq!(found.len(), 1, "the own unit's E1201 is judged once: {diagnostics:?}");
+        assert_eq!(found[0].src.name(), "Lib/Helper.bd", "{:?}", found[0]);
     }
 }

@@ -1,7 +1,9 @@
 use super::{parse_manifest, parse_workspace_manifest};
 use crate::projects::error::ProjectError;
-use crate::projects::model::{DependencySource, TargetKind, project_root_block_matches_package_name};
-use crate::projects::validator::validate_manifest;
+use crate::projects::model::{
+    DependencySource, ProjectGlueBackend, ProjectGlueOwner, TargetKind, project_root_block_matches_package_name,
+};
+use crate::projects::validator::{GLUE_LIBRARY_LABEL_MAX_LEN, validate_manifest};
 
 fn minimal_project(kind: &str, source_field: &str) -> String {
     format!(
@@ -278,4 +280,141 @@ fn parse_mod_generated_output_blocks() {
     assert_eq!(outputs.len(), 1);
     assert_eq!(outputs[0].layout, "generate.layout.json");
     assert_eq!(outputs[0].resolved_root(), "Generated");
+}
+
+fn glue_project(glue: &str) -> String {
+    format!(
+        r#"p {{
+  name = "p"
+  version = "0.1.0"
+}}
+target "consumer" {{
+  kind = Lib
+}}
+{glue}"#
+    )
+}
+
+#[track_caller]
+fn expect_meta_code(src: &str, expected: &str, needle: &str) {
+    match parse_manifest(src).expect_err("manifest must be rejected") {
+        ProjectError::MetaContractViolation { code, message } => {
+            assert_eq!(code, expected, "{message}");
+            assert!(message.contains(needle), "message `{message}` does not name `{needle}`");
+        }
+        other => panic!("expected MetaContractViolation {expected}, got {other:?}"),
+    }
+}
+
+#[test]
+fn parse_glue_owner_block_lowers_to_typed_owner() {
+    let src = glue_project("glue \"glue_manual\" {\n  backend = rust\n  path = \"rust\"\n}\n");
+    let manifest = parse_manifest(&src).expect("parse");
+    assert_eq!(
+        manifest.glue,
+        vec![ProjectGlueOwner {
+            library: "glue_manual".to_string(),
+            backend: ProjectGlueBackend::Rust,
+            path: "rust".to_string(),
+        }]
+    );
+}
+
+#[test]
+fn parse_multiple_glue_owner_blocks_keep_manifest_order() {
+    let src = glue_project(
+        "glue \"zeta-owner\" { backend = rust path = \"zeta\" }\nglue \"Alpha_1\" { backend = \"rust\" path = \"owners/alpha\" }\n",
+    );
+    let manifest = parse_manifest(&src).expect("parse");
+    let libraries: Vec<&str> = manifest.glue.iter().map(|owner| owner.library.as_str()).collect();
+    assert_eq!(libraries, ["zeta-owner", "Alpha_1"]);
+    assert_eq!(manifest.glue[1].path, "owners/alpha");
+}
+
+#[test]
+fn manifest_without_glue_blocks_has_no_glue_owners() {
+    let manifest = parse_manifest(&glue_project("")).expect("parse");
+    assert!(manifest.glue.is_empty());
+}
+
+#[test]
+fn glue_label_accepts_the_full_charset_and_length_bound() {
+    let label = format!("a-Z_9{}", "x".repeat(GLUE_LIBRARY_LABEL_MAX_LEN - 5));
+    assert_eq!(label.len(), GLUE_LIBRARY_LABEL_MAX_LEN);
+    let src = glue_project(&format!("glue \"{label}\" {{ backend = rust path = \"rust\" }}\n"));
+    assert_eq!(parse_manifest(&src).expect("parse").glue[0].library, label);
+}
+
+#[test]
+fn glue_unknown_and_tool_path_keys_are_rejected() {
+    for key in ["cargo", "rustc", "linker", "rustToolchain", "crate"] {
+        let src = glue_project(&format!("glue \"g\" {{ backend = rust path = \"rust\" {key} = \"/usr/bin/x\" }}\n"));
+        let err = parse_manifest(&src).expect_err("unknown key must be rejected");
+        assert!(err.to_string().contains(key), "{key}: {err}");
+    }
+}
+
+#[test]
+fn glue_missing_label_backend_or_path_is_rejected() {
+    for glue in [
+        "glue { backend = rust path = \"rust\" }\n",
+        "glue \"g\" { path = \"rust\" }\n",
+        "glue \"g\" { backend = rust }\n",
+        "glue \"g\" { backend = python path = \"rust\" }\n",
+    ] {
+        assert!(parse_manifest(&glue_project(glue)).is_err(), "accepted: {glue}");
+    }
+}
+
+#[test]
+fn glue_duplicate_label_is_rejected() {
+    let src = glue_project(
+        "glue \"glue_manual\" { backend = rust path = \"a\" }\nglue \"glue_manual\" { backend = rust path = \"b\" }\n",
+    );
+    expect_meta_code(&src, "E1861", "glue_manual");
+}
+
+#[test]
+fn glue_invalid_label_characters_or_length_are_rejected() {
+    let too_long = "x".repeat(GLUE_LIBRARY_LABEL_MAX_LEN + 1);
+    for label in ["", "glue.manual", "glue manual", "glue/manual", "gl\u{fc}e", too_long.as_str()] {
+        let src = glue_project(&format!("glue \"{label}\" {{ backend = rust path = \"rust\" }}\n"));
+        expect_meta_code(&src, "E1860", "glue label");
+    }
+}
+
+#[test]
+fn glue_dotnet_backend_is_unavailable() {
+    let src = glue_project("glue \"net_owner\" { backend = dotnet path = \"dotnet\" }\n");
+    expect_meta_code(&src, "E1862", "net_owner");
+}
+
+#[test]
+fn glue_escaping_or_absolute_path_is_rejected() {
+    for path in ["../outside", "rust/../../outside", "/abs/rust", ""] {
+        let src = glue_project(&format!("glue \"g\" {{ backend = rust path = \"{path}\" }}\n"));
+        expect_meta_code(&src, "E1863", "glue `g` path");
+    }
+}
+
+#[test]
+fn glue_label_also_in_link_libraries_is_rejected() {
+    let src = glue_project(
+        "link {\n  libraries = [\"libc\", \"glue_manual\"]\n}\nglue \"glue_manual\" { backend = rust path = \"rust\" }\n",
+    );
+    expect_meta_code(&src, "E1864", "glue_manual");
+}
+
+#[test]
+fn validator_rejects_glue_owner_built_without_parser() {
+    let mut manifest = parse_manifest(&glue_project("")).expect("parse");
+    manifest.glue.push(ProjectGlueOwner {
+        library: "owner".to_string(),
+        backend: ProjectGlueBackend::Dotnet,
+        path: "rust".to_string(),
+    });
+    match validate_manifest(&manifest).expect_err("dotnet owner must be rejected") {
+        ProjectError::MetaContractViolation { code, .. } => assert_eq!(code, "E1862"),
+        other => panic!("expected E1862, got {other:?}"),
+    }
 }

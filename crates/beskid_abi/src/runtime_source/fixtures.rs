@@ -36,6 +36,7 @@ pub fn canonical_runtime_fixture_sources() -> Vec<SourceUnit> {
             include_str!("../../../../runtime/beskid/tests/runtime_semantics/src/CompositionTests.bd"),
         ),
         ("GcTests", include_str!("../../../../runtime/beskid/tests/runtime_semantics/src/GcTests.bd")),
+        ("DynamicTests", include_str!("../../../../runtime/beskid/tests/runtime_semantics/src/DynamicTests.bd")),
         ("ProcessIoTests", include_str!("../../../../runtime/beskid/tests/runtime_semantics/src/ProcessIoTests.bd")),
         ("SchedulerTests", include_str!("../../../../runtime/beskid/tests/runtime_semantics/src/SchedulerTests.bd")),
     ]
@@ -109,6 +110,24 @@ impl RuntimeFixtureProof {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn v06_dynamic_fixture_has_exact_canonical_authority() {
+        let manifest = runtime_fixture_project_root().join("runtime_semantics.bproj");
+        let source = include_str!("../../../../runtime/beskid/tests/runtime_semantics/src/DynamicTests.bd");
+        assert!(prove_runtime_fixture(&manifest, "DynamicTests", "DynamicTests.bd", source).unwrap().is_some());
+        assert!(prove_runtime_fixture(&manifest, "DynamicTests", "DynamicTests.bd", "test forged {}").is_err());
+        assert!(
+            prove_runtime_fixture(
+                Path::new("/untrusted/runtime_semantics.bproj"),
+                "DynamicTests",
+                "DynamicTests.bd",
+                source
+            )
+            .unwrap()
+            .is_none()
+        );
+    }
 
     #[test]
     fn copied_project_cannot_claim_fixture_authority() {

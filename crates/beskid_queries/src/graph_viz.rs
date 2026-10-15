@@ -252,7 +252,7 @@ fn minimal_session(db: &mut BeskidDatabase, manifest_path: &Path) -> ProjectSess
             },
             dependency_projects: Vec::new(),
             unresolved_dependencies: Vec::new(),
-            has_std_dependency: false,
+            has_core_dependency: false,
         },
         manifest_path,
         manifest_digest(manifest_path),

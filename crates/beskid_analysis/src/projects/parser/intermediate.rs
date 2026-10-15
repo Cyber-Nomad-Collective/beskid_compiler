@@ -26,6 +26,15 @@ pub(super) struct ParsedBlocks {
     pub(super) targets: Vec<ParsedBlock>,
     pub(super) dependencies: Vec<ParsedBlock>,
     pub(super) link: Option<ParsedLinkBlock>,
+    pub(super) glue: Vec<ParsedGlueBlock>,
+}
+
+#[derive(Debug)]
+pub(super) struct ParsedGlueBlock {
+    pub(super) span: bsol::BsolSpan,
+    pub(super) label: Option<String>,
+    pub(super) fields: HashMap<String, String>,
+    pub(super) extras: HashMap<String, String>,
 }
 
 #[derive(Debug)]

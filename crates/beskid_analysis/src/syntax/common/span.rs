@@ -13,15 +13,20 @@ pub struct SpanInfo {
 
 impl SpanInfo {
     /// Builds span metadata from a pest [`Span`].
+    ///
+    /// Inside [`with_line_index`] for the span's own input the line/column endpoints come from
+    /// the precomputed line table; otherwise from pest, which rescans the input from its start.
     pub fn from_span(span: &Span) -> Self {
         let start_pos = span.start_pos();
         let end_pos = span.end_pos();
-        Self {
-            start: start_pos.pos(),
-            end: end_pos.pos(),
-            line_col_start: start_pos.line_col(),
-            line_col_end: end_pos.line_col(),
-        }
+        let (start, end) = (start_pos.pos(), end_pos.pos());
+        let indexed = LINE_INDEX.with(|index| {
+            let index = index.borrow();
+            let index = index.as_ref().filter(|index| index.covers(span.get_input()))?;
+            Some((index.line_col(span.get_input(), start), index.line_col(span.get_input(), end)))
+        });
+        let (line_col_start, line_col_end) = indexed.unwrap_or_else(|| (start_pos.line_col(), end_pos.line_col()));
+        Self { start, end, line_col_start, line_col_end }
     }
 
     /// Build span from UTF-8 byte offsets into `source` (for non-pest diagnostics).
@@ -57,6 +62,56 @@ impl SpanInfo {
     }
 }
 
+/// Line-start table of one parser input, identified by the address and length of the exact
+/// borrowed `&str` the parser reads. It is installed only for the duration of a parse that
+/// borrows that input, so the address cannot be reused by another string while it is current.
+struct LineIndex {
+    address: usize,
+    len: usize,
+    /// Byte offset of the first byte of every line after the first (one past each `\n`).
+    line_starts: Vec<usize>,
+}
+
+impl LineIndex {
+    fn new(input: &str) -> Self {
+        let line_starts = input.bytes().enumerate().filter(|(_, byte)| *byte == b'\n').map(|(at, _)| at + 1).collect();
+        Self { address: input.as_ptr() as usize, len: input.len(), line_starts }
+    }
+
+    fn covers(&self, input: &str) -> bool {
+        self.address == input.as_ptr() as usize && self.len == input.len()
+    }
+
+    /// The 1-based line/column of byte offset `pos`, equal to `pest::Position::line_col`: `\n`
+    /// (also as the end of `\r\n`) ends a line, and the column counts the characters before
+    /// `pos` on its line, so a `\r` that `pos` directly follows is a column character.
+    fn line_col(&self, input: &str, pos: usize) -> (usize, usize) {
+        let line = self.line_starts.partition_point(|start| *start <= pos);
+        let line_start = if line == 0 { 0 } else { self.line_starts[line - 1] };
+        (line + 1, input[line_start..pos].chars().count() + 1)
+    }
+}
+
+thread_local! {
+    static LINE_INDEX: std::cell::RefCell<Option<LineIndex>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Run `parse` with a line table for `input`, so every [`SpanInfo::from_span`] over `input` costs
+/// a binary search instead of a scan from the start of the input (which makes parsing quadratic
+/// in the source length). Nested calls install their own table and restore the outer one.
+pub fn with_line_index<R>(input: &str, parse: impl FnOnce() -> R) -> R {
+    struct Restore(Option<LineIndex>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            let previous = self.0.take();
+            LINE_INDEX.with(|index| *index.borrow_mut() = previous);
+        }
+    }
+    let previous = LINE_INDEX.with(|index| index.borrow_mut().replace(LineIndex::new(input)));
+    let _restore = Restore(previous);
+    parse()
+}
+
 fn byte_offset_to_line_col(source: &str, offset: usize) -> (usize, usize) {
     let mut line = 1usize;
     let mut col = 1usize;
@@ -72,6 +127,35 @@ fn byte_offset_to_line_col(source: &str, offset: usize) -> (usize, usize) {
         }
     }
     (line, col)
+}
+
+#[cfg(test)]
+mod line_index_tests {
+    use super::{SpanInfo, with_line_index};
+
+    /// The indexed line/column of every position equals pest's own scan, across `\n`, `\r\n`,
+    /// lone `\r`, multi-byte characters and the end of input.
+    #[test]
+    fn indexed_line_col_matches_pest_at_every_position() {
+        let input = "a\nb\u{e9}c\r\nd\re\n\n\u{1f600}x\r\n";
+        let spans: Vec<pest::Span<'_>> = input
+            .char_indices()
+            .map(|(at, _)| at)
+            .chain([input.len()])
+            .flat_map(|start| {
+                input.char_indices().map(|(at, _)| at).chain([input.len()]).filter(move |end| *end >= start).map(
+                    move |end| pest::Span::new(input, start, end).expect("char-boundary span"),
+                )
+            })
+            .collect();
+        let scanned: Vec<SpanInfo> = spans.iter().map(SpanInfo::from_span).collect();
+        let indexed: Vec<SpanInfo> = with_line_index(input, || spans.iter().map(SpanInfo::from_span).collect());
+        assert_eq!(indexed, scanned);
+        // Another input of the same parse falls back to the scan.
+        let other = String::from(input);
+        let span = pest::Span::new(&other, 3, 9).expect("span");
+        assert_eq!(with_line_index(input, || SpanInfo::from_span(&span)), SpanInfo::from_span(&span));
+    }
 }
 
 /// Types that carry a primary [`SpanInfo`] (typically the whole node’s extent).

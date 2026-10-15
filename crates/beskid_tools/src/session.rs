@@ -23,6 +23,7 @@ pub struct ResolveInputArgs<'a> {
     pub workspace_member: Option<&'a str>,
     pub frozen: bool,
     pub locked: bool,
+    pub offline: bool,
 }
 
 /// Options for [`CommandSession::executable_gate_prepared`].
@@ -41,16 +42,29 @@ impl Default for SemanticGateOptions {
 
 /// Shared CLI session: pipeline observer plus resolve and executable prepare gate helpers.
 pub struct CommandSession {
+    mod_host: beskid_analysis::mod_host::ModHost,
     pipeline: Arc<CliPipeline>,
+    /// Diagnostics of the most recent executable gate, kept for machine-readable (`--json`) output.
+    gate_diagnostics: std::sync::Mutex<Vec<SemanticDiagnostic>>,
 }
 
 impl CommandSession {
     /// Create a session with pipeline progress for the given phase budget.
     ///
     /// Use [`PipelineProgressKind::PrepareAndRun`] for run / test / clif paths that call
-    /// [`executable_gate_prepared`] once, then lower or JIT-run.
+    /// [`executable_gate_prepared`] once, then lower or JIT-run. The session starts without a native
+    /// Mod host; a command that prepares plans with Mod dependencies calls [`Self::set_mod_host`].
     pub fn with_progress(plain: bool, kind: PipelineProgressKind) -> Self {
-        Self { pipeline: Arc::new(CliPipeline::new_with_kind(use_cli_spinner(plain), kind)) }
+        Self {
+            mod_host: beskid_analysis::mod_host::ModHost::NoMods,
+            pipeline: Arc::new(CliPipeline::new_with_kind(use_cli_spinner(plain), kind)),
+            gate_diagnostics: std::sync::Mutex::new(Vec::new()),
+        }
+    }
+
+    /// Run the native Mods of this session's preparations in `mod_host`.
+    pub fn set_mod_host(&mut self, mod_host: beskid_analysis::mod_host::ModHost) {
+        self.mod_host = mod_host;
     }
 
     /// Resolve project input while forwarding pipeline events to this session.
@@ -63,6 +77,7 @@ impl CommandSession {
                 workspace_member: args.workspace_member,
                 frozen: args.frozen,
                 locked: args.locked,
+                offline: args.offline,
                 refresh_lock: false,
                 plain: false,
             },
@@ -95,7 +110,7 @@ impl CommandSession {
 
     /// Single prepare through typed executable HIR with semantic diagnostics gate.
     ///
-    /// Primary API for `beskid run`, `beskid build`, `beskid test`, and `beskid clif`. Pass the
+    /// Primary API for `beskid run`, `beskid build`, `beskid test`, and `beskid dev syntax clif`. Pass the
     /// returned [`PreparedCompilation`] to [`PreparedCompilation::into_executable`] and the
     /// syntax-owned lowering boundary — do not run a second prepare.
     pub fn executable_gate_prepared(
@@ -107,7 +122,8 @@ impl CommandSession {
             resolved,
             services::PrepareOptions {
                 front_end: services::FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
-                dependency_typing: services::DependencyTypingPolicy::FullClosure,
+                native_mod_adapter_sources: false,
+                mod_host: self.mod_host.clone(),
             },
             Some(self.pipeline.as_ref()),
         )?;
@@ -134,7 +150,14 @@ impl CommandSession {
         Ok(())
     }
 
+    /// Diagnostics reported by the most recent executable gate, including warnings of a passing gate
+    /// and the errors of a failing one.
+    pub fn gate_diagnostics(&self) -> Vec<SemanticDiagnostic> {
+        self.gate_diagnostics.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).clone()
+    }
+
     fn finish_gate(&self, gate_diagnostics: &[SemanticDiagnostic], options: SemanticGateOptions) -> Result<()> {
+        *self.gate_diagnostics.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = gate_diagnostics.to_vec();
         self.pipeline.report_semantic_diagnostics(gate_diagnostics);
         services::require_no_semantic_errors(gate_diagnostics).map_err(anyhow::Error::from)?;
 

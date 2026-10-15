@@ -1,13 +1,24 @@
 // Sole owner-mutator channel protocol. Stable linked cells never relocate address-rooted
 // BeskidAbiValue slots. Capacity zero grows dynamically, subject to allocation/root limits.
-const CHANNEL_TABLE_MAX = 64;
-const CHANNEL_SLOT_SIZE = 112;
+//
+// Channel slot layout (CHANNEL_SLOT_SIZE bytes, one chunked-table record; never relocates):
+//   offset   0: head cell (pointer)
+//   offset   8: tail cell (pointer)
+//   offset  16: queued count (word)
+//   offset  24: capacity (word; 0 = unbounded)
+//   offset  32: closed (word)
+//   offset  40: lock (word)
+//   offset  48: receipt owner (generation-safe fiber handle)
+//   offset  56: receipt value (BeskidAbiValue, 40 bytes)
+//   offset  96: send waiters (growable vector of fiber indices, Storage.bd)
+//   offset 120: receive waiters (growable vector of fiber indices)
+const CHANNEL_SLOT_SIZE = 144;
 const CHANNEL_CELL_SIZE = 56;
 const CHANNEL_CELL_VALUE = 16;
-const CHANNEL_SEND_WAITERS = 48;
-const CHANNEL_RECEIVE_WAITERS = 56;
-const CHANNEL_RECEIPT_OWNER = 64;
-const CHANNEL_RECEIPT_VALUE = 72;
+const CHANNEL_RECEIPT_OWNER = 48;
+const CHANNEL_RECEIPT_VALUE = 56;
+const CHANNEL_SEND_WAITERS = 96;
+const CHANNEL_RECEIVE_WAITERS = 120;
 const CHANNEL_SENDER_OWNS = 1;
 const CHANNEL_OWNS = 2;
 const CHANNEL_RECEIVER_OWNS = 3;
@@ -21,6 +32,7 @@ const CHANNEL_OPERATION_PHASE_MASK = 3;
 const CHANNEL_OPERATION_RECEIPT_UNIT = 4;
 const CHANNEL_OPERATION_RECEIPT_MASK = 252;
 
+pub word ChannelSlotSize() { return CHANNEL_SLOT_SIZE; }
 pub pointer ChannelTable() { return SchedulerChannelTable(); }
 
 // Beskid `const` items have no `pub` visibility (see the grammar's `ConstantDefinition` rule):
@@ -93,19 +105,18 @@ pub i64 ChannelCreate(i64 capacity, i64 flags) {
     if capacity < 0 { return -1; }
     pointer table = ChannelTable();
     if table == NativePointer(0) { return -1; }
-    word count = raw_word_load(table);
-    if count >= CHANNEL_TABLE_MAX { return -1; }
-    pointer ch = pointer_add(table, 8 + count * CHANNEL_SLOT_SIZE);
-    memory_set(ch, 0, CHANNEL_SLOT_SIZE);
+    // The table grows on demand; the only failure is the system allocator refusing.
+    word index = ChunkTableAppend(table);
+    if index == 0xFFFFFFFFFFFFFFFF || index > 0x7FFFFFFFFFFFFFFF { return -1; }
+    pointer ch = ChunkTableRecord(table, index);
     raw_word_store(pointer_add(ch, 24), word(capacity));
-    raw_word_store(table, count + 1);
-    return i64(count);
+    return i64(index);
 }
 pub pointer ChannelSlot(i64 id) {
-    if id < 0 || word(id) >= CHANNEL_TABLE_MAX { return NativePointer(0); }
+    if id < 0 { return NativePointer(0); }
     pointer table = ChannelTable();
-    if table == NativePointer(0) || word(id) >= raw_word_load(table) { return NativePointer(0); }
-    return pointer_add(table, 8 + word(id) * CHANNEL_SLOT_SIZE);
+    if table == NativePointer(0) || word(id) >= ChunkTableCount(table) { return NativePointer(0); }
+    return ChunkTableRecord(table, word(id));
 }
 
 // Called locked. A failed move leaves the sender and queue untouched.
@@ -248,8 +259,8 @@ pub unit ChannelReleaseReceipts(word receiver) {
     pointer table = ChannelTable();
     if table == NativePointer(0) { return; }
     mut word index = 0;
-    while index < raw_word_load(table) {
-        pointer ch = pointer_add(table, 8 + index * CHANNEL_SLOT_SIZE);
+    while index < ChunkTableCount(table) {
+        pointer ch = ChunkTableRecord(table, index);
         ChannelLock(ch);
         if raw_word_load(pointer_add(ch, CHANNEL_RECEIPT_OWNER)) == receiver {
             pointer cell = SystemAllocate(CHANNEL_CELL_SIZE, 8);
@@ -297,24 +308,19 @@ pub unit ChannelDrain(pointer ch) {
         cell = next;
     }
     if !AbiValueClear(pointer_add(ch, CHANNEL_RECEIPT_VALUE)) { Trap(10, NativePointer(0), 0); }
+    VecFree(pointer_add(ch, CHANNEL_SEND_WAITERS), 8);
+    VecFree(pointer_add(ch, CHANNEL_RECEIVE_WAITERS), 8);
     memory_set(ch, 0, CHANNEL_SLOT_SIZE);
     return;
 }
+// Wakes the oldest registered waiter (FIFO), if any.
 pub unit ChannelWakeOne(pointer ch, word waiterOffset) {
-    word waiters = raw_word_load(pointer_add(ch, waiterOffset));
-    mut word index = 0;
-    while index < FIBER_TABLE_MAX {
-        word bit = word(1) << index;
-        if (waiters & bit) != 0 {
-            raw_word_store(pointer_add(ch, waiterOffset), waiters & (0xFFFFFFFFFFFFFFFF - bit));
-            WakeEnqueue(index); return;
-        }
-        index = index + 1;
-    }
+    word index = VecShiftWord(pointer_add(ch, waiterOffset), FIBER_NONE);
+    if index != FIBER_NONE { WakeEnqueue(index); }
     return;
 }
 pub unit ChannelWakeAll(pointer ch, word waiterOffset) {
-    while raw_word_load(pointer_add(ch, waiterOffset)) != 0 { ChannelWakeOne(ch, waiterOffset); }
+    while VecCount(pointer_add(ch, waiterOffset)) != 0 { ChannelWakeOne(ch, waiterOffset); }
     return;
 }
 // Enter and return locked. Predicate/register/unlock cannot lose a wake.
@@ -323,8 +329,8 @@ pub i64 ChannelPark(pointer ch, word waiterOffset) {
     if index == FIBER_NONE || !FiberExists(index) { return CHANNEL_STATUS_WOULD_BLOCK; }
     if ChannelCancelled() { return CHANNEL_STATUS_CANCELLED; }
     pointer fiber = FiberRecord(index);
-    word bit = word(1) << index;
-    raw_word_store(pointer_add(ch, waiterOffset), raw_word_load(pointer_add(ch, waiterOffset)) | bit);
+    // Registration precedes the unlock, so a wake between unlock and switch is never lost.
+    if !VecPushWordUnique(pointer_add(ch, waiterOffset), index) { Trap(5, NativePointer(0), 0); }
     FiberSetState(index, FIBER_STATE_PARKED);
     if waiterOffset == CHANNEL_SEND_WAITERS { ChannelOperation(1); }
     else { ChannelOperation(3); }
@@ -334,7 +340,7 @@ pub i64 ChannelPark(pointer ch, word waiterOffset) {
     ContextSwitch(NativePointer(raw_word_load(pointer_add(fiber, 104))), SchedulerContext());
     ChannelLock(ch);
     ChannelOperation(0);
-    raw_word_store(pointer_add(ch, waiterOffset), raw_word_load(pointer_add(ch, waiterOffset)) & (0xFFFFFFFFFFFFFFFF - bit));
+    VecRemoveWord(pointer_add(ch, waiterOffset), index);
     if ChannelCancelled() { return CHANNEL_STATUS_CANCELLED; }
     return CHANNEL_STATUS_OK;
 }

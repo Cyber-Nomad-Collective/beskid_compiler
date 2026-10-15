@@ -112,6 +112,14 @@ fn linux_host_platform_pair_exports_canonical_runtime_and_native_boundary() {
         emit_host_platform_library_pair(&authority, temp.path().join("out"), "runtime_platform", BuildProfile::Debug)
             .expect("emit Linux host platform pair");
 
+    let dynamic =
+        Command::new("readelf").args(["-d"]).arg(&pair.shared_library).output().expect("inspect ELF loader identity");
+    assert!(dynamic.status.success());
+    let text = String::from_utf8(dynamic.stdout).expect("ELF dynamic entries UTF-8");
+    let expected = format!("[{}]", pair.shared_library.file_name().unwrap().to_str().unwrap());
+    let soname = text.lines().find(|line| line.contains("(SONAME)")).expect("canonical provider must set SONAME");
+    assert!(soname.ends_with(&expected), "ELF provider must retain basename when copied from staging: {soname}");
+
     let required_exports = [
         "beskid_arch_v5_context_init",
         "beskid_arch_v5_context_switch",
@@ -394,12 +402,25 @@ fn canonical_bootstrap_lowers_through_the_aot_prepared_syntax_boundary() {
     let artifact = lower_canonical_runtime_prepared_syntax(target.clone()).expect("lower Bootstrap");
     assert!(!artifact.functions.is_empty());
     let manifest = AbiManifestV5::canonical_runtime(target);
-    for export in manifest.exports {
+    // Beskid lowering publishes source exports and checked clones as artifact exports and
+    // Dynamic descriptor getters through aggregate static plans. The canonical same-bundle
+    // C Glue provider is the sole producer of the remaining manifest exports.
+    let c_provider = canonical_c_provider_exports();
+    let published = artifact
+        .exports
+        .iter()
+        .map(|entry| entry.exported_symbol.clone())
+        .chain(artifact.aggregate_static_plans.iter().filter_map(|plan| plan.descriptor_getter.clone()))
+        .collect::<BTreeSet<_>>();
+    for symbol in &c_provider {
         assert!(
-            artifact.exports.iter().any(|entry| entry.exported_symbol == export.symbol),
-            "missing manifest runtime export {}",
-            export.symbol
+            manifest.exports.iter().any(|export| &export.symbol == symbol),
+            "C provider export {symbol} lacks manifest provenance"
         );
+        assert!(!published.contains(symbol), "C provider export {symbol} must not also be lowered from Beskid source");
+    }
+    for export in manifest.exports.iter().filter(|export| !c_provider.contains(&export.symbol)) {
+        assert!(published.contains(&export.symbol), "missing manifest runtime export {}", export.symbol);
     }
     let clif = artifact.functions.iter().map(|function| function.function.display().to_string()).collect::<String>();
     for intrinsic in [
@@ -429,6 +450,16 @@ fn canonical_platform_pair_links_the_native_tls_helper() {
     let pair =
         emit_host_platform_library_pair(&authority, temp.path().join("out"), "beskid_runtime", BuildProfile::Debug)
             .expect("link canonical platform pair");
+    let identity =
+        Command::new("otool").arg("-D").arg(&pair.shared_library).output().expect("inspect linked dylib identity");
+    assert!(identity.status.success());
+    let text = String::from_utf8(identity.stdout).expect("loader identity UTF-8");
+    let expected = format!("@rpath/{}", pair.shared_library.file_name().unwrap().to_str().unwrap());
+    assert_eq!(
+        text.lines().nth(1).map(str::trim),
+        Some(expected.as_str()),
+        "linked canonical provider must survive deletion of its build directory"
+    );
     for symbol in ["beskid_rt_v5_intrinsic_tls_get", "beskid_rt_v5_intrinsic_tls_set"] {
         assert!(pair.static_archive_inventory.defined.contains(&symbol.to_owned()));
         assert!(pair.shared_image_inventory.defined.contains(&symbol.to_owned()));
@@ -522,4 +553,28 @@ fn canonical_runtime_static_archive_hides_non_abi_implementation_symbols() {
         .expect("canonical provenance policy")
         .verify_static_archive(&parse_symbol_list(&symbol_list).expect("parse symbol list"))
         .expect("canonical static runtime archive satisfies provenance policy");
+}
+
+/// Manifest exports produced only by the canonical same-bundle C Glue provider
+/// (`runtime/Glue/owner_identity_v1.{h,c}`), never by Beskid lowering.
+#[cfg(any(all(target_os = "linux", target_arch = "x86_64"), all(target_os = "macos", target_arch = "aarch64"),))]
+fn canonical_c_provider_exports() -> BTreeSet<String> {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../runtime/Glue");
+    let mut exports = BTreeSet::new();
+    for file in ["owner_identity_v1.h", "owner_identity_v1.c"] {
+        let source = std::fs::read_to_string(root.join(file)).expect("canonical C provider source");
+        for line in source.lines() {
+            let Some(declaration) = line.strip_prefix("BESKID_GLUE_PROVIDER_EXPORT ") else { continue };
+            let (head, _) = declaration.split_once('(').expect("C provider parameter list");
+            let name = head
+                .trim_end()
+                .rsplit(|ch: char| !(ch.is_ascii_alphanumeric() || ch == '_'))
+                .next()
+                .filter(|name| !name.is_empty())
+                .expect("C provider export name");
+            exports.insert(name.to_owned());
+        }
+    }
+    assert!(!exports.is_empty(), "canonical C provider exports are absent");
+    exports
 }

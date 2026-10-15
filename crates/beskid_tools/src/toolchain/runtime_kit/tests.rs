@@ -37,6 +37,112 @@ fn native_host_builder_publishes_the_canonical_runtime_to_an_empty_prefix() {
     );
 }
 
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+fn tool_output(program: &str, args: &[&str], path: &std::path::Path) -> String {
+    let output = Command::new(program).args(args).arg(path).output().unwrap_or_else(|error| panic!("run {program}: {error}"));
+    // codesign reports on stderr, otool on stdout.
+    format!("{}{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr))
+}
+
+/// File offset of `__TEXT,__text`, read from the Mach-O load commands.
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+fn text_section_offset(path: &std::path::Path) -> usize {
+    let listing = tool_output("otool", &["-l"], path);
+    let mut lines = listing.lines().map(str::trim);
+    while let Some(line) = lines.next() {
+        if line == "sectname __text" {
+            for following in lines.by_ref() {
+                if let Some(offset) = following.strip_prefix("offset ") {
+                    return offset.trim().parse().expect("numeric __text offset");
+                }
+            }
+        }
+    }
+    panic!("no __text section in {}", path.display());
+}
+
+#[test]
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+fn native_host_shared_runtime_is_relocatable_and_raw_byte_bound() {
+    use beskid_abi::runtime_kit::{RuntimeKitResolutionError, host_runtime_target, resolve_installed_runtime_kit};
+
+    for profile in [RuntimeKitProfile::Debug, RuntimeKitProfile::Release] {
+        let prefix = TempDir::new(&format!("relocatable-{}", profile.as_str()));
+        let built = build_native_host(prefix.0.clone(), profile).expect("publish native host runtime kit");
+        let dylib = built.shared_library.clone();
+        let name = dylib.file_name().and_then(|name| name.to_str()).expect("kit dylib name").to_owned();
+        let target = host_runtime_target().expect("native ABI-v5 target");
+        let resolve = || resolve_installed_runtime_kit(&prefix.0, &target, profile.into());
+        let label = profile.as_str();
+
+        // Relocatable identity: `@rpath/<basename>`, no run path, system dependencies only.
+        let id_output = tool_output("otool", &["-D"], &dylib);
+        let id = id_output.lines().map(str::trim).filter(|line| !line.is_empty()).last().expect("otool -D ID").to_owned();
+        assert_eq!(id, format!("@rpath/{name}"), "{label} kit dylib ID");
+        let load_commands = tool_output("otool", &["-l"], &dylib);
+        assert!(!load_commands.contains("LC_RPATH"), "{label} kit dylib must not carry LC_RPATH");
+        let mut dependencies: Vec<String> = tool_output("otool", &["-L"], &dylib)
+            .lines()
+            .skip(1)
+            .filter_map(|line| line.trim().split(" (").next().map(str::to_owned))
+            .filter(|line| !line.is_empty())
+            .collect();
+        let own_id = dependencies.iter().position(|dependency| *dependency == id);
+        if let Some(index) = own_id {
+            dependencies.remove(index);
+        }
+        assert!(!dependencies.is_empty(), "{label} kit dylib lists no dependencies");
+        for dependency in &dependencies {
+            assert!(
+                dependency.starts_with("/usr/lib/") || dependency.starts_with("/System/Library/"),
+                "{label} kit dylib has non-system dependency {dependency}"
+            );
+        }
+
+        // No staging or temp-directory bytes survive in the published artifact.
+        let original = fs::read(&dylib).expect("read published kit dylib");
+        let temp = std::env::temp_dir();
+        let mut forbidden: Vec<Vec<u8>> = vec![b"beskid-native-runtime-".to_vec(), temp.to_string_lossy().as_bytes().to_vec()];
+        if let Ok(canonical) = temp.canonicalize() {
+            forbidden.push(canonical.to_string_lossy().as_bytes().to_vec());
+        }
+        for needle in forbidden.iter().filter(|needle| needle.len() > 1) {
+            assert!(
+                !original.windows(needle.len()).any(|window| window == needle.as_slice()),
+                "{label} kit dylib embeds {}",
+                String::from_utf8_lossy(needle)
+            );
+        }
+
+        let signature = tool_output("codesign", &["-dv"], &dylib);
+        assert!(signature.contains("linker-signed"), "{label} kit dylib is not linker-signed: {signature}");
+        resolve().expect("relocatable kit must resolve");
+
+        // One flipped byte in __text is a hash mismatch for exactly this path; restoring it recovers.
+        let offset = text_section_offset(&dylib) + 16;
+        let mut tampered = original.clone();
+        tampered[offset] ^= 0xFF;
+        fs::write(&dylib, &tampered).expect("write tampered kit dylib");
+        match resolve() {
+            Err(RuntimeKitResolutionError::ArtifactHashMismatch { path, .. }) => assert_eq!(path, dylib),
+            other => panic!("{label} tampered __text must fail with ArtifactHashMismatch, got {other:?}"),
+        }
+        fs::write(&dylib, &original).expect("restore kit dylib");
+        resolve().expect("restored kit must resolve");
+
+        // A Homebrew-style relocation (new ID plus ad-hoc re-sign) changes raw bytes and is rejected.
+        let relocated = format!("/opt/homebrew/opt/beskid/libexec/lib/{name}");
+        let status = Command::new("install_name_tool").args(["-id", &relocated]).arg(&dylib).status().expect("install_name_tool");
+        assert!(status.success(), "install_name_tool failed");
+        let status = Command::new("codesign").args(["--force", "-s", "-"]).arg(&dylib).status().expect("codesign");
+        assert!(status.success(), "codesign failed");
+        match resolve() {
+            Err(RuntimeKitResolutionError::ArtifactHashMismatch { path, .. }) => assert_eq!(path, dylib),
+            other => panic!("{label} relocated kit must fail with ArtifactHashMismatch, got {other:?}"),
+        }
+    }
+}
+
 #[test]
 #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
 fn native_host_builder_publishes_coff_import_library_for_windows_kits() {
@@ -259,6 +365,9 @@ fn linux_matrix_accepts_documented_shared_loader_imports() {
                 "__cxa_finalize",
                 "__gmon_start__",
                 "__tls_get_addr",
+                // GNU ld's weak aliases of glibc's `__environ` data import.
+                "_environ",
+                "environ",
             ] {
                 symbols.push_str(&format!("undefined={import}\n"));
             }

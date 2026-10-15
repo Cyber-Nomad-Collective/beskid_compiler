@@ -84,9 +84,16 @@ pub(in crate::semantic_contract) fn item_abi_signature_tracked(
                 .and_then(|parent| index.node_at(program, parent))
                 .and_then(|node| node.of::<beskid_analysis::syntax::TypeDefinition>())
                 .is_some_and(|definition| !definition.generics.is_empty());
-            if generic_owner {
-                // A method inherits its owning type's substitutions. It can only be emitted after
-                // a direct receiver call proves that concrete owner environment.
+            // `impl<E> Point : Serializable<E>`: the implementation's own parameters make every
+            // method generic even when the receiver declaration is not.
+            let generic_implementation = parent_node(index, key.node)
+                .and_then(|parent| index.node_at(program, parent))
+                .and_then(|node| node.of::<beskid_analysis::syntax::ImplBlock>())
+                .is_some_and(|block| !block.generics.is_empty());
+            if generic_owner || generic_implementation {
+                // A method inherits its owning type's or implementation's substitutions. It can
+                // only be emitted after a direct receiver call or a conformance witness proves
+                // that concrete environment.
                 return None;
             }
             match contract_template_signature(db, key, &method.parameters, return_type) {
@@ -105,6 +112,20 @@ pub(in crate::semantic_contract) fn item_abi_signature_tracked(
             return Some(Ok(signature));
         }
         if let Some(contract) = node.of::<beskid_analysis::syntax::ContractMethodSignature>() {
+            // A parameter typed by one of the contract's own parameters
+            // (`FieldEncoderBridge<T, E>`: `T value`) has no declaration-level ABI; only an applied
+            // contract method instance does.
+            let generics = nearest_ancestor(index, key.node, |kind| kind == IndexedNodeKind::ContractDefinition)
+                .and_then(|parent| index.node_at(program, parent))
+                .and_then(|node| node.of::<beskid_analysis::syntax::ContractDefinition>())
+                .map(|definition| definition.generics.iter().map(|generic| generic.node.name.clone()).collect::<Vec<_>>())
+                .unwrap_or_default();
+            if contract.parameters.iter().any(|parameter| {
+                generic_parameter_reference_name(&parameter.node.ty.node)
+                    .is_some_and(|name| generics.iter().any(|generic| generic == name))
+            }) {
+                return None;
+            }
             let mut signature =
                 match abi_signature_from_syntax(db, key, &contract.parameters, contract.return_type.as_ref()) {
                     Ok(signature) => signature,
@@ -168,6 +189,10 @@ pub(in crate::semantic_contract) fn call_abi_signature_for_call(
     key: AstNodeKey,
 ) -> Result<ItemSignature, SemanticError> {
     match call_lowering(db, key)? {
+        Some(CallLowering::NativeModCallback(callback)) => {
+            return item_abi_signature(db, callback.wrapper())?
+                .ok_or_else(|| SemanticError::unavailable("native_mod_callback_signature"));
+        }
         Some(CallLowering::CorelibService(service)) => {
             return corelib_service_abi_signature(service)
                 .ok_or_else(|| SemanticError::unavailable("call_abi_signature"));

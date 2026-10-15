@@ -6,7 +6,7 @@ use beskid_codegen::{
     lower_prepared_syntax_entrypoint, lower_prepared_syntax_module, lower_syntax_assembly_entrypoint,
     object_link_symbol,
 };
-use beskid_queries::{compile_front_end_from_resolved_input, with_db};
+use beskid_queries::{compile_mod_free_front_end, with_db};
 use cranelift_codegen::{isa, settings};
 use std::process::Command;
 
@@ -19,7 +19,7 @@ fn prepared_syntax_entrypoint_lowers_without_hir_host_authority() {
     std::fs::write(&path, source).expect("write source");
     let plan = synthetic_compile_plan_for_source(&path);
     let resolved: ResolvedInput = resolved_input_from_plan(path, source.into(), plan, None, None);
-    let front = compile_front_end_from_resolved_input(
+    let front = compile_mod_free_front_end(
         &resolved,
         FrontEndOptions { with_semantic_diagnostics: false, ..Default::default() },
         None,
@@ -49,10 +49,10 @@ fn prepared_syntax_entrypoint_lowers_without_hir_host_authority() {
     })
     .expect("syntax assembly lowering");
 
-    assert_eq!(lowered.artifact.functions.len(), 2);
-    assert!(lowered.symbol.starts_with("Main#syntax_"));
-    assert_eq!(lowered_again.symbol, lowered.symbol);
-    assert_eq!(lowered_from_assembly.symbol, lowered.symbol);
+    assert_eq!(lowered.artifact().functions.len(), 2);
+    assert!(lowered.symbol().starts_with("Main#syntax_"));
+    assert_eq!(lowered_again.symbol(), lowered.symbol());
+    assert_eq!(lowered_from_assembly.symbol(), lowered.symbol());
     std::fs::remove_dir_all(directory).expect("remove project");
 }
 
@@ -65,7 +65,7 @@ fn prepared_syntax_entrypoint_rejects_foreign_composition_snapshot_before_loweri
     std::fs::write(&path, source).expect("write source");
     let plan = synthetic_compile_plan_for_source(&path);
     let resolved = resolved_input_from_plan(path, source.into(), plan, None, None);
-    let mut front = compile_front_end_from_resolved_input(
+    let mut front = compile_mod_free_front_end(
         &resolved,
         FrontEndOptions { with_semantic_diagnostics: false, ..Default::default() },
         None,
@@ -134,7 +134,7 @@ fn compiler_trace_child_lowers_a_syntax_entrypoint() {
     std::fs::write(&path, source).expect("write source");
     let plan = synthetic_compile_plan_for_source(&path);
     let resolved: ResolvedInput = resolved_input_from_plan(path, source.into(), plan, None, None);
-    let front = compile_front_end_from_resolved_input(
+    let front = compile_mod_free_front_end(
         &resolved,
         FrontEndOptions { with_semantic_diagnostics: false, ..Default::default() },
         None,
@@ -163,7 +163,7 @@ fn prepared_syntax_module_lowers_functions_and_methods_without_hir() {
     std::fs::write(&path, source).expect("write source");
     let plan = synthetic_compile_plan_for_source(&path);
     let resolved: ResolvedInput = resolved_input_from_plan(path, source.into(), plan, None, None);
-    let front = compile_front_end_from_resolved_input(
+    let front = compile_mod_free_front_end(
         &resolved,
         FrontEndOptions { with_semantic_diagnostics: false, ..Default::default() },
         None,
@@ -198,7 +198,7 @@ pub unit plugin_init() { return; }
     std::fs::write(&path, source).expect("write source");
     let plan = synthetic_compile_plan_for_source(&path);
     let resolved: ResolvedInput = resolved_input_from_plan(path, source.into(), plan, None, None);
-    let front = compile_front_end_from_resolved_input(
+    let front = compile_mod_free_front_end(
         &resolved,
         FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
         None,
@@ -239,7 +239,7 @@ pub i64 Main() { return Helper() + 1; }
     std::fs::write(&path, source).expect("write source");
     let plan = synthetic_compile_plan_for_source(&path);
     let resolved: ResolvedInput = resolved_input_from_plan(path, source.into(), plan, None, None);
-    let front = compile_front_end_from_resolved_input(
+    let front = compile_mod_free_front_end(
         &resolved,
         FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
         None,
@@ -260,14 +260,14 @@ pub i64 Main() { return Helper() + 1; }
     .expect("syntax assembly entrypoint lowering");
 
     assert_eq!(
-        lowered.artifact.exports,
+        lowered.artifact().exports,
         vec![beskid_codegen::ExportEntry {
             beskid_name: "Main".into(),
             exported_symbol: "beskid_entry".into(),
             abi: "C".into(),
         }]
     );
-    assert_eq!(object_link_symbol(&lowered.symbol, &lowered.artifact.exports), "beskid_entry");
+    assert_eq!(object_link_symbol(&lowered.symbol(), &lowered.artifact().exports), "beskid_entry");
     std::fs::remove_dir_all(directory).expect("remove project");
 }
 
@@ -281,7 +281,7 @@ fn prepared_syntax_module_lowers_sample_mod_nominal_contract_methods() {
     std::fs::write(&path, source).expect("write source");
     let plan = synthetic_compile_plan_for_source(&path);
     let resolved: ResolvedInput = resolved_input_from_plan(path, source.into(), plan, None, None);
-    let front = compile_front_end_from_resolved_input(
+    let front = compile_mod_free_front_end(
         &resolved,
         FrontEndOptions { with_semantic_diagnostics: false, ..Default::default() },
         None,
@@ -300,4 +300,191 @@ fn prepared_syntax_module_lowers_sample_mod_nominal_contract_methods() {
 
     assert_eq!(artifact.functions.len(), 5);
     std::fs::remove_dir_all(directory).expect("remove project");
+}
+
+#[test]
+fn selected_entrypoints_share_one_reachable_artifact() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("Main.bd");
+    let source = "i32 Shared() { return 9; } i32 First() { return Shared(); } i32 Second() { return Shared() + 1; } i32 Unselected() { return 77; } i32 WithArg(i32 value) { return value; }";
+    std::fs::write(&path, source).unwrap();
+    let plan = synthetic_compile_plan_for_source(&path);
+    let resolved = resolved_input_from_plan(path, source.into(), plan, None, None);
+    let front = compile_mod_free_front_end(
+        &resolved,
+        FrontEndOptions { with_semantic_diagnostics: false, ..Default::default() },
+        None,
+    )
+    .unwrap();
+    let target = TargetMetadata::for_triple("x86_64-unknown-linux-gnu").unwrap();
+    let isa = isa::lookup_by_name("x86_64").unwrap().finish(settings::Flags::new(settings::builder())).unwrap();
+    let names = vec!["Second".to_owned(), "First".to_owned()];
+    let lowered = with_db(|db| {
+        beskid_codegen::lower_prepared_syntax_entrypoints(db, &front, &names, target.clone(), isa.as_ref())
+    })
+    .unwrap();
+    assert_eq!(lowered.entries().iter().map(|entry| entry.name()).collect::<Vec<_>>(), ["Second", "First"]);
+    assert_eq!(lowered.artifact().functions.len(), 3);
+    assert_eq!(
+        lowered.artifact().functions.iter().filter(|function| function.name.starts_with("Shared#syntax_")).count(),
+        1
+    );
+    assert!(!lowered.artifact().functions.iter().any(|function| function.name.starts_with("Unselected#syntax_")));
+    for entry in lowered.entries() {
+        assert!(lowered.artifact().functions.iter().any(|function| function.name == entry.symbol()));
+        assert_eq!(entry.return_type(), beskid_queries::SemanticTypeId::I32);
+    }
+    for invalid in
+        [vec![], vec!["First".to_owned(), "First".to_owned()], vec!["Missing".to_owned()], vec!["WithArg".to_owned()]]
+    {
+        assert!(
+            with_db(|db| beskid_codegen::lower_prepared_syntax_entrypoints(
+                db,
+                &front,
+                &invalid,
+                target.clone(),
+                isa.as_ref()
+            ))
+            .is_err()
+        );
+    }
+}
+
+/// Prepare `source` as a Mod-free project entry (the query gate judges it) and lower `Main`.
+fn lower_main(label: &str, source: &str) -> beskid_codegen::CodegenArtifact {
+    let directory = std::env::temp_dir().join(format!("beskid_codegen_front_end_{label}_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&directory);
+    std::fs::create_dir_all(&directory).expect("create project");
+    let path = directory.join("Main.bd");
+    std::fs::write(&path, source).expect("write source");
+    let plan = synthetic_compile_plan_for_source(&path);
+    let resolved: ResolvedInput = resolved_input_from_plan(path, source.into(), plan, None, None);
+    let front = compile_mod_free_front_end(
+        &resolved,
+        FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
+        None,
+    )
+    .unwrap_or_else(|error| panic!("{label}: the query gate must accept the program: {error:#}"));
+    let target = TargetMetadata::for_triple("x86_64-unknown-linux-gnu").unwrap();
+    let isa = isa::lookup_by_name("x86_64").unwrap().finish(settings::Flags::new(settings::builder())).unwrap();
+    let lowered = with_db(|db| lower_prepared_syntax_entrypoint(db, &front, "Main", target.clone(), isa.as_ref()))
+        .unwrap_or_else(|error| panic!("{label}: a program the gate accepted must lower: {error:#}"));
+    std::fs::remove_dir_all(directory).expect("remove project");
+    lowered.into_artifact()
+}
+
+/// Constructs the retired legacy checker rejected after the query gate had accepted them
+/// (`docs/design/2026-10-12-query-front-end.md`, section 3): they now build end to end.
+#[test]
+fn named_function_values_build_through_the_prepared_front_end() {
+    let artifact = lower_main(
+        "named_function_value",
+        "i64 Double(i64 value) { return value * 2_i64; } \
+         i64 Apply(i64 value, (i64) => i64 operation) { return operation(value); } \
+         i64 Main() { return Apply(5_i64, Double); }",
+    );
+    assert!(artifact.functions.iter().any(|function| function.name.starts_with("Double#syntax_")), "the named function is emitted as a callee");
+}
+
+#[test]
+fn function_typed_fields_build_through_the_prepared_front_end() {
+    let artifact = lower_main(
+        "function_typed_field",
+        "type Holder { (i64) => i64 op } \
+         i64 Increment(i64 value) { return value + 1_i64; } \
+         i64 Main() { Holder holder = Holder { op: Increment }; return holder.op(41_i64); }",
+    );
+    assert!(artifact.functions.iter().any(|function| function.name.starts_with("Main#syntax_")));
+}
+
+#[test]
+fn calls_on_call_results_build_through_the_prepared_front_end() {
+    let artifact = lower_main(
+        "call_on_call_result",
+        "i64 Increment(i64 value) { return value + 1_i64; } \
+         (i64) => i64 Make() { return Increment; } \
+         i64 Main() { return Make()(41_i64); }",
+    );
+    assert!(artifact.functions.iter().any(|function| function.name.starts_with("Make#syntax_")));
+}
+
+#[test]
+fn for_over_arrays_builds_through_the_prepared_front_end() {
+    let artifact = lower_main(
+        "for_over_array",
+        "i64 Sum(i64[] values) { mut i64 total = 0_i64; for value in values { total = total + value; } return total; } \
+         i64 Main() { i64[] values = [1_i64, 2_i64, 3_i64]; return Sum(values); }",
+    );
+    let sum = artifact.functions.iter().find(|function| function.name.starts_with("Sum#syntax_")).expect("Sum is emitted");
+    assert!(sum.function.display().to_string().contains("icmp ult"), "the array loop compares against the header length");
+}
+
+const ITERATORS: &str = "pub enum Option<T> { Some(T value), None } \
+     pub type Counter { i64 current, i64 limit, \
+         pub Option<i64> Next() { \
+             if this.current >= this.limit { return Option::None; } \
+             this.current = this.current + 1_i64; \
+             return Option::Some(this.current); \
+         } \
+     } \
+     pub type Repeat<T> { T value, i64 left, \
+         pub Option<T> Next() { \
+             if this.left <= 0_i64 { return Option::None; } \
+             this.left = this.left - 1_i64; \
+             return Option::Some(this.value); \
+         } \
+     } ";
+
+#[test]
+fn for_over_a_nominal_iterator_builds_through_the_prepared_front_end() {
+    let source = format!(
+        "{ITERATORS} \
+         i64 Sum(Counter counter) {{ \
+             mut i64 total = 0_i64; \
+             for value in counter {{ \
+                 if value == 2_i64 {{ continue; }} \
+                 if value == 5_i64 {{ break; }} \
+                 total = total + value; \
+             }} \
+             return total; \
+         }} \
+         i64 Main() {{ return Sum(Counter {{ current: 0_i64, limit: 9_i64 }}); }}"
+    );
+    let artifact = lower_main("for_over_nominal_iterator", &source);
+    assert!(
+        artifact.functions.iter().any(|function| function.name.contains("Next#syntax_")),
+        "the iterator's Next() is emitted as the loop's callee"
+    );
+    let sum = artifact.functions.iter().find(|function| function.name.starts_with("Sum#syntax_")).expect("Sum is emitted");
+    let clif = sum.function.display().to_string();
+    assert!(clif.contains("call fn"), "the loop header calls Next():\n{clif}");
+    assert!(clif.contains("brif"), "the loop header branches on the Option tag:\n{clif}");
+}
+
+#[test]
+fn for_over_generic_iterators_builds_specialized_next_callees() {
+    let source = format!(
+        "{ITERATORS} \
+         i64 Count<T>(Repeat<T> source) {{ mut i64 count = 0_i64; for item in source {{ count = count + 1_i64; }} return count; }} \
+         i64 Lengths(Repeat<string> names) {{ mut i64 total = 0_i64; for name in names {{ total = total + 1_i64; }} return total; }} \
+         i64 Main() {{ \
+             Repeat<i64> numbers = Repeat<i64> {{ value: 7_i64, left: 3_i64 }}; \
+             Repeat<string> names = Repeat<string> {{ value: \"x\", left: 2_i64 }}; \
+             return Count(numbers) + Lengths(names); \
+         }}"
+    );
+    let artifact = lower_main("for_over_generic_iterator", &source);
+    let specialized_next = artifact
+        .functions
+        .iter()
+        .filter(|function| function.name.contains("Next#syntax_") && function.name.contains("#generic_"))
+        .count();
+    assert_eq!(specialized_next, 2, "Repeat<i64>.Next and Repeat<string>.Next are distinct specializations");
+    assert!(
+        artifact
+            .functions
+            .iter()
+            .any(|function| function.name.starts_with("Count#syntax_") && function.name.contains("#generic_")),
+        "the generic loop body is emitted through its specialization"
+    );
 }

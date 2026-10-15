@@ -30,42 +30,20 @@ pub struct ContractRegistration {
     pub entry_symbol: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ModArtifactDescriptor {
-    pub schema_version: u32,
-    pub package_id: String,
-    #[serde(default)]
-    pub package_version: Option<String>,
-    pub mod_source_hash: String,
-    pub lock_hash: String,
-    pub target_triple: String,
-    pub compiler_version: String,
-    pub object_file: String,
-    #[serde(default)]
-    pub registrations: Vec<ContractRegistration>,
-    #[serde(skip)]
-    pub artifact_dir: PathBuf,
-}
-
-impl ModArtifactDescriptor {
-    /// Absolute native object path relative to this descriptor's artifact directory.
-    pub fn object_path(&self) -> PathBuf {
-        self.artifact_dir.join(&self.object_file)
-    }
-
-    /// Absolute sidecar JSON path inside this descriptor's artifact directory. Mirrors the
-    /// path that `beskid_aot::mod_artifact` writes when packing a Mod project.
-    pub fn sidecar_path(&self) -> PathBuf {
-        self.artifact_dir.join("mod.descriptor.json")
-    }
-}
+pub use super::descriptor::ModArtifactDescriptor;
 
 #[derive(Debug, Clone)]
 pub(crate) struct LoadedModArtifact {
     pub(crate) discovered: DiscoveredMod,
     pub(crate) descriptor: Option<ModArtifactDescriptor>,
     pub(crate) registrations: Vec<ContractRegistration>,
+}
+
+impl LoadedModArtifact {
+    /// Package id of the Mod project that declared this artifact's registrations.
+    pub(crate) fn package_id(&self) -> &str {
+        &self.discovered.project_name
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -83,8 +61,19 @@ impl ModHostSession {
         self.loaded.is_empty()
     }
 
+    pub(crate) fn loaded_artifacts(&self) -> &[LoadedModArtifact] {
+        &self.loaded
+    }
+
     pub fn registrations(&self) -> impl Iterator<Item = &ContractRegistration> {
         self.loaded.iter().flat_map(|artifact| artifact.registrations.iter())
+    }
+
+    /// Every registration paired with the package id of the Mod that declared it.
+    pub(crate) fn attributed_registrations(&self) -> impl Iterator<Item = (&str, &ContractRegistration)> {
+        self.loaded.iter().flat_map(|artifact| {
+            artifact.registrations.iter().map(move |registration| (artifact.package_id(), registration))
+        })
     }
 
     pub fn loaded_descriptor_count(&self) -> usize {
@@ -104,17 +93,21 @@ impl ModHostSession {
     }
 }
 
-#[derive(Default)]
 pub struct ModHostInput<'a> {
+    /// Query-owned synchronous scope for the exact program of this invocation.
+    pub semantic_scope: Option<&'a dyn super::semantic_scope::ModSemanticScope>,
+    /// Borrowed from the current registered assembly for this synchronous invocation.
+    /// Never stored by an invoker or transferred to another thread.
+    pub semantic_authority: Option<&'a dyn super::semantic::ModSemanticAuthority>,
+    /// Actual assembly/Salsa generation; absent authority is represented explicitly.
+    pub syntax_generation_id: Option<crate::syntax::SyntaxGenerationId>,
     pub compile_plan: Option<&'a CompilePlan>,
     pub source_name: &'a str,
     pub source: &'a str,
     pub pipeline: Option<&'a dyn beskid_pipeline::PipelineObserver>,
-    /// Optional contract invoker. When `None`, the host installs a default
-    /// [`crate::mod_host::StubContractInvoker`] so all four contract phases still
-    /// dispatch deterministically. Tests can pass a recording invoker to assert
-    /// `(contractId, typeId, entrySymbol)` tuples were dispatched.
-    pub invoker: Option<&'a dyn super::invoker::ContractInvoker>,
+    /// The native Mod host that loads and runs the plan's Mods. [`super::ModHost::NoMods`] fails
+    /// before `mod.load` when the plan has a native Mod dependency.
+    pub mod_host: &'a super::host::ModHost,
     /// When set and equal to the freshly observed collector target fingerprint,
     /// `mod.generate` and disk materialization are skipped.
     pub cached_target_fingerprint: Option<&'a str>,
@@ -133,6 +126,17 @@ pub struct ModHostGenerateResult {
     pub target_fingerprint: String,
     /// `true` when generator execution and disk materialization were skipped.
     pub generators_skipped: bool,
+    /// Origin lineage of every generated item the typed merge appended, in merge order.
+    pub generated_lineage: Vec<GeneratedItemLineage>,
+}
+
+/// One generated item appended by the typed merge. `merged_span` is the synthetic span the
+/// merge issued in the merged entry program; `provenance` is the origin lineage the generator
+/// invocation reported. The origin is lineage only, never a key of the merged generation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GeneratedItemLineage {
+    pub merged_span: crate::syntax::SpanInfo,
+    pub provenance: super::StructuralProvenance,
 }
 
 pub struct ModHostAnalyzeResult {
@@ -159,19 +163,15 @@ pub(crate) struct GeneratedSyntax {
     #[allow(dead_code)]
     pub(crate) registrations: Vec<ContractRegistration>,
     pub(crate) typed_items: Vec<Spanned<ProgramItem>>,
+    /// Origin lineage aligned one-to-one with `typed_items`.
+    pub(crate) provenance: Vec<super::StructuralProvenance>,
     pub(crate) pipeline_ops: Vec<PipelineOp>,
-    /// Legacy text fragments retained only for transitional reparse fallback.
-    pub(crate) text_contributions: Vec<String>,
     pub(crate) outcomes: Vec<GeneratorOutcome>,
 }
 
 impl GeneratedSyntax {
     pub(crate) fn has_typed_merge(&self) -> bool {
         !self.typed_items.is_empty() || !self.pipeline_ops.is_empty()
-    }
-
-    pub(crate) fn requires_reparse(&self) -> bool {
-        !self.text_contributions.is_empty() && !self.has_typed_merge()
     }
 }
 

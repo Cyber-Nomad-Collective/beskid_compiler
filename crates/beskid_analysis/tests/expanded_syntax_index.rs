@@ -51,3 +51,18 @@ fn expanded_syntax_index_rejects_stale_generation() {
     assert!(index.metadata_for(SyntaxGenerationId(8), AstNodeId(0)).is_none());
     assert_eq!(index.metadata_for(SyntaxGenerationId(9), AstNodeId(0)).expect("current root").kind, NodeKind::Program);
 }
+
+/// The parser spans the whole unit on the root `Program`; the index must keep that span so a
+/// Mod asking for the span of the entry root (`Query.Span(request.compilation.entryRoot)`)
+/// receives it exactly like the span of any child node.
+#[test]
+fn expanded_syntax_index_root_carries_the_unit_span() {
+    let source = "i32 Main() { return 1; }";
+    let program = parse_program(source).expect("program parses");
+    let index = SyntaxIndex::from_program(&program, SyntaxGenerationId(11));
+    let root = index.metadata_for(SyntaxGenerationId(11), AstNodeId(0)).expect("root metadata");
+    assert_eq!(root.kind, NodeKind::Program);
+    assert_eq!(root.span, Some(program.span), "root metadata carries the parsed unit span");
+    assert_eq!(index.node_at(&program, AstNodeId(0)).expect("root lookup").span(), Some(program.span));
+    assert_eq!(index.node_at(&program, AstNodeId(0)).expect("root lookup").node_kind(), NodeKind::Program);
+}

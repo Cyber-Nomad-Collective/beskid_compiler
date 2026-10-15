@@ -1,0 +1,17 @@
+// No allocation, collection, pointer publication, or process-global ordinal registry.
+// Source lowering admits only currently traced GcManaged references.
+use Runtime.Mem.Gc.State;
+use Runtime.Mem.Gc.Marking;
+use Runtime.Bootstrap.Native;
+
+// 0 distinct; 1 identical; 2 invalid. Null is never a managed identity.
+[Export(Abi:"C", Symbol:"beskid_rt_v5_gc_same_identity")]
+pub word GcSameIdentity(pointer left, pointer right) {
+    pointer heap = Heap();
+    if heap == NativePointer(0) { return 2; }
+    pointer leftObject = ManagedObjectForReference(heap, left);
+    pointer rightObject = ManagedObjectForReference(heap, right);
+    if leftObject == NativePointer(0) || rightObject == NativePointer(0) { return 2; }
+    if leftObject == rightObject { return 1; }
+    return 0;
+}

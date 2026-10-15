@@ -1,0 +1,342 @@
+// Canonical descriptor-bearing Dynamic V1 records. Registration code consumes
+// compiler-issued signature closure and constructors; raw addresses do not
+// acquire managed-reference classification through these declarations.
+use Core.Collections.Array;
+use Core.Hash.Sha256;
+use Core.Results;
+use Core.Dynamic;
+
+pub type DynamicRegistryRecordV1 {
+    pub DynamicShapeRecordV1[] shapes,
+    pub DynamicMappingRecordV1[] mappings,
+    pub u64 processIssuer,
+    pub u64 session,
+    pub u64 generation,
+    pub u64 closed,
+}
+
+pub type DynamicShapeRecordV1 {
+    pub DynamicRegistryRecordV1 registryOwner,
+    pub u8[] signature,
+    pub u8[] stableDigest,
+    pub pointer payloadDescriptor,
+    pub pointer cellDescriptor,
+    pub pointer constructCell,
+    pub pointer readPayload,
+    pub u8[] sourceIdentity,
+    pub u64 generation,
+    pub u64 library,
+    pub u64 tag,
+}
+
+pub type DynamicMappingRecordV1 {
+    pub DynamicShapeRecordV1 source,
+    pub DynamicShapeRecordV1 destination,
+    pub u8[] transformationSignature,
+    pub pointer transformPayload,
+    pub u64 generation,
+    pub u64 library,
+    pub u64 token,
+}
+
+// Pack's source-qualified box is already constructed. This canonical cell
+// stores that sealed managed payload directly; no primitive box relabeling or
+// raw pointer-to-nominal cast is performed by source code.
+pub type DynamicErasedCellV1 {
+    pub DynamicPayloadV1 payload,
+    pub DynamicShapeRecordV1 shapeRecord,
+    pub u64 tag,
+}
+[Export(Abi:"C", Symbol:"beskid_dynamic_v1_erased_construct")]
+pub DynamicErasedCellV1 DynamicErasedConstructV1(DynamicPayloadV1 payload, DynamicShapeRecordV1 shape) {
+    return DynamicErasedCellV1 { payload: payload, shapeRecord: shape, tag: shape.tag };
+}
+[Export(Abi:"C", Symbol:"beskid_dynamic_v1_erased_read")]
+pub DynamicPayloadV1 DynamicErasedReadV1(DynamicErasedCellV1 cell) { return cell.payload; }
+
+pub type DynamicBoxV1<T> { pub T value, }
+pub type DynamicCellV1<T> {
+    pub DynamicBoxV1<T> payload,
+    pub DynamicShapeRecordV1 shapeRecord,
+    pub u64 tag,
+}
+
+// These generic constructors are instantiated only from current-assembly
+// canonical type bindings. The concrete box is always a managed nominal field,
+// so each cell has the same 40-byte shape and traces payload and shapeRecord.
+pub DynamicCellV1<T> DynamicConstructTypedV1<T>(T value, DynamicShapeRecordV1 shape) {
+    DynamicBoxV1<T> payloadBox = DynamicBoxV1<T> { value: value };
+    return DynamicCellV1<T> { payload: payloadBox, shapeRecord: shape, tag: shape.tag };
+}
+
+pub T DynamicReadTypedV1<T>(DynamicCellV1<T> cell) { return cell.payload.value; }
+
+[Export(Abi:"C", Symbol:"beskid_dynamic_v1_registry_construct")]
+pub DynamicRegistryRecordV1 DynamicRegistryConstructV1(u64 issuer, u64 session, u64 generation) {
+    DynamicShapeRecordV1[] shapes = Array.Empty<DynamicShapeRecordV1>();
+    DynamicMappingRecordV1[] mappings = Array.Empty<DynamicMappingRecordV1>();
+    return DynamicRegistryRecordV1 { shapes: shapes, mappings: mappings,
+        processIssuer: issuer, session: session, generation: generation, closed: 0 };
+}
+
+[Export(Abi:"C", Symbol:"beskid_dynamic_v1_shape_construct")]
+pub DynamicShapeRecordV1 DynamicShapeConstructV1(DynamicRegistryRecordV1 owner,
+    u8[] signature, u8[] digest, pointer payloadDescriptor, pointer cellDescriptor,
+    pointer constructor, pointer reader, u8[] sourceIdentity, u64 generation, u64 library, u64 tag) {
+    return DynamicShapeRecordV1 { registryOwner: owner, signature: signature,
+        stableDigest: digest, payloadDescriptor: payloadDescriptor,
+        cellDescriptor: cellDescriptor, constructCell: constructor, readPayload: reader,
+        sourceIdentity: sourceIdentity, generation: generation, library: library, tag: tag };
+}
+
+[Export(Abi:"C", Symbol:"beskid_dynamic_v1_registry_append_shape")]
+pub unit DynamicRegistryAppendShapeV1(mut DynamicRegistryRecordV1 owner, DynamicShapeRecordV1 shape) {
+    Array.Append<DynamicShapeRecordV1>(owner.shapes, shape);
+}
+
+[Export(Abi:"C", Symbol:"beskid_dynamic_v1_registry_shape_count")]
+pub word DynamicRegistryShapeCountV1(DynamicRegistryRecordV1 owner) { return word(Array.Len<DynamicShapeRecordV1>(owner.shapes)); }
+
+[Export(Abi:"C", Symbol:"beskid_dynamic_v1_registry_shape_at")]
+pub DynamicShapeRecordV1 DynamicRegistryShapeAtV1(DynamicRegistryRecordV1 owner, word index) { return owner.shapes[index]; }
+
+[Export(Abi:"C", Symbol:"beskid_dynamic_v1_registry_tag")]
+pub u64 DynamicRegistryTagV1(DynamicRegistryRecordV1 owner, word selector) {
+    if selector == 0 { return owner.processIssuer; }
+    if selector == 1 { return owner.session; }
+    if selector == 2 { return owner.generation; }
+    if selector == 3 { return owner.closed; }
+    return 0;
+}
+
+[Export(Abi:"C", Symbol:"beskid_dynamic_v1_registry_close")]
+pub unit DynamicRegistryCloseV1(mut DynamicRegistryRecordV1 owner) { owner.closed = 1; }
+
+[Export(Abi:"C", Symbol:"beskid_dynamic_v1_shape_pointer")]
+pub pointer DynamicShapePointerV1(DynamicShapeRecordV1 shape, word selector) {
+    if selector == 0 { return shape.payloadDescriptor; }
+    if selector == 1 { return shape.cellDescriptor; }
+    if selector == 2 { return shape.constructCell; }
+    if selector == 3 { return shape.readPayload; }
+    return NativePointer(0);
+}
+
+[Export(Abi:"C", Symbol:"beskid_dynamic_v1_shape_tag")]
+pub u64 DynamicShapeTagV1(DynamicShapeRecordV1 shape, word selector) {
+    if selector == 1 { return shape.generation; }
+    if selector == 2 { return shape.tag; }
+    if selector == 3 { return shape.library; }
+    return 0;
+}
+
+[Export(Abi:"C", Symbol:"beskid_dynamic_v1_shape_signature")]
+pub u8[] DynamicShapeSignatureV1(DynamicShapeRecordV1 shape) { return shape.signature; }
+
+[Export(Abi:"C", Symbol:"beskid_dynamic_v1_shape_digest")]
+pub u8[] DynamicShapeDigestV1(DynamicShapeRecordV1 shape) { return shape.stableDigest; }
+
+[Export(Abi:"C", Symbol:"beskid_dynamic_v1_shape_owner")]
+pub DynamicRegistryRecordV1 DynamicShapeOwnerV1(DynamicShapeRecordV1 shape) { return shape.registryOwner; }
+
+[Export(Abi:"C", Symbol:"beskid_dynamic_v1_shape_source")]
+pub u8[] DynamicShapeSourceV1(DynamicShapeRecordV1 shape) { return shape.sourceIdentity; }
+
+[Export(Abi:"C", Symbol:"beskid_dynamic_v1_descriptor_valid")]
+pub bool DynamicDescriptorValidV1(pointer descriptor, bool cell) {
+    if ValidateTypeDescriptor(descriptor) == false { return false; }
+    if cell == false { return true; }
+    pointer map = TypeDescriptorPointerMap(descriptor);
+    return TypeDescriptorSize(descriptor) == 40 && TypeDescriptorAlignment(descriptor) == 8
+        && TypeDescriptorFlags(descriptor) == 0 && TypeDescriptorPointerCount(descriptor) == 2
+        && map != NativePointer(0) && raw_word_load(map) == 16
+        && raw_word_load(pointer_add(map, 8)) == 24;
+}
+
+[Export(Abi:"C", Symbol:"beskid_dynamic_v1_signature_digest")]
+pub u8[] DynamicSignatureDigestV1(u8[] signature) {
+    return match Sha256.HashBytes(signature, 1048576_i64) {
+        Result::Ok(value) => value,
+        Result::Error(_) => Array.Empty<u8>(),
+    };
+}
+
+pub DynamicBoxV1<T> DynamicBoxTypedV1<T>(T value) { return DynamicBoxV1<T> { value: value }; }
+pub DynamicCellV1<T> DynamicConstructBoxedV1<T>(DynamicBoxV1<T> payload, DynamicShapeRecordV1 shape) {
+    return DynamicCellV1<T> { payload: payload, shapeRecord: shape, tag: shape.tag };
+}
+pub DynamicBoxV1<T> DynamicReadBoxedV1<T>(DynamicCellV1<T> cell) { return cell.payload; }
+
+[Export(Abi:"C", Symbol:"beskid_rt_v5_dynamic_i8_box")]
+pub DynamicBoxV1<i8> DynamicI8BoxV1(i8 value) { return DynamicBoxTypedV1<i8>(value); }
+
+[Export(Abi:"C", Symbol:"beskid_rt_v5_dynamic_i8_construct")]
+pub DynamicCellV1<i8> DynamicI8ConstructV1(DynamicBoxV1<i8> payload, DynamicShapeRecordV1 shape) { return DynamicConstructBoxedV1<i8>(payload, shape); }
+
+[Export(Abi:"C", Symbol:"beskid_rt_v5_dynamic_i8_read")]
+pub DynamicBoxV1<i8> DynamicI8ReadV1(DynamicCellV1<i8> cell) { return DynamicReadBoxedV1<i8>(cell); }
+
+[Export(Abi:"C", Symbol:"beskid_rt_v5_dynamic_i16_box")]
+pub DynamicBoxV1<i16> DynamicI16BoxV1(i16 value) { return DynamicBoxTypedV1<i16>(value); }
+
+[Export(Abi:"C", Symbol:"beskid_rt_v5_dynamic_i16_construct")]
+pub DynamicCellV1<i16> DynamicI16ConstructV1(DynamicBoxV1<i16> payload, DynamicShapeRecordV1 shape) { return DynamicConstructBoxedV1<i16>(payload, shape); }
+
+[Export(Abi:"C", Symbol:"beskid_rt_v5_dynamic_i16_read")]
+pub DynamicBoxV1<i16> DynamicI16ReadV1(DynamicCellV1<i16> cell) { return DynamicReadBoxedV1<i16>(cell); }
+
+[Export(Abi:"C", Symbol:"beskid_rt_v5_dynamic_i32_box")]
+pub DynamicBoxV1<i32> DynamicI32BoxV1(i32 value) { return DynamicBoxTypedV1<i32>(value); }
+
+[Export(Abi:"C", Symbol:"beskid_rt_v5_dynamic_i32_construct")]
+pub DynamicCellV1<i32> DynamicI32ConstructV1(DynamicBoxV1<i32> payload, DynamicShapeRecordV1 shape) { return DynamicConstructBoxedV1<i32>(payload, shape); }
+
+[Export(Abi:"C", Symbol:"beskid_rt_v5_dynamic_i32_read")]
+pub DynamicBoxV1<i32> DynamicI32ReadV1(DynamicCellV1<i32> cell) { return DynamicReadBoxedV1<i32>(cell); }
+
+[Export(Abi:"C", Symbol:"beskid_rt_v5_dynamic_i64_box")]
+pub DynamicBoxV1<i64> DynamicI64BoxV1(i64 value) { return DynamicBoxTypedV1<i64>(value); }
+
+[Export(Abi:"C", Symbol:"beskid_rt_v5_dynamic_i64_construct")]
+pub DynamicCellV1<i64> DynamicI64ConstructV1(DynamicBoxV1<i64> payload, DynamicShapeRecordV1 shape) { return DynamicConstructBoxedV1<i64>(payload, shape); }
+
+[Export(Abi:"C", Symbol:"beskid_rt_v5_dynamic_i64_read")]
+pub DynamicBoxV1<i64> DynamicI64ReadV1(DynamicCellV1<i64> cell) { return DynamicReadBoxedV1<i64>(cell); }
+
+[Export(Abi:"C", Symbol:"beskid_rt_v5_dynamic_u8_box")]
+pub DynamicBoxV1<u8> DynamicU8BoxV1(u8 value) { return DynamicBoxTypedV1<u8>(value); }
+
+[Export(Abi:"C", Symbol:"beskid_rt_v5_dynamic_u8_construct")]
+pub DynamicCellV1<u8> DynamicU8ConstructV1(DynamicBoxV1<u8> payload, DynamicShapeRecordV1 shape) { return DynamicConstructBoxedV1<u8>(payload, shape); }
+
+[Export(Abi:"C", Symbol:"beskid_rt_v5_dynamic_u8_read")]
+pub DynamicBoxV1<u8> DynamicU8ReadV1(DynamicCellV1<u8> cell) { return DynamicReadBoxedV1<u8>(cell); }
+
+[Export(Abi:"C", Symbol:"beskid_rt_v5_dynamic_u16_box")]
+pub DynamicBoxV1<u16> DynamicU16BoxV1(u16 value) { return DynamicBoxTypedV1<u16>(value); }
+
+[Export(Abi:"C", Symbol:"beskid_rt_v5_dynamic_u16_construct")]
+pub DynamicCellV1<u16> DynamicU16ConstructV1(DynamicBoxV1<u16> payload, DynamicShapeRecordV1 shape) { return DynamicConstructBoxedV1<u16>(payload, shape); }
+
+[Export(Abi:"C", Symbol:"beskid_rt_v5_dynamic_u16_read")]
+pub DynamicBoxV1<u16> DynamicU16ReadV1(DynamicCellV1<u16> cell) { return DynamicReadBoxedV1<u16>(cell); }
+
+[Export(Abi:"C", Symbol:"beskid_rt_v5_dynamic_u32_box")]
+pub DynamicBoxV1<u32> DynamicU32BoxV1(u32 value) { return DynamicBoxTypedV1<u32>(value); }
+
+[Export(Abi:"C", Symbol:"beskid_rt_v5_dynamic_u32_construct")]
+pub DynamicCellV1<u32> DynamicU32ConstructV1(DynamicBoxV1<u32> payload, DynamicShapeRecordV1 shape) { return DynamicConstructBoxedV1<u32>(payload, shape); }
+
+[Export(Abi:"C", Symbol:"beskid_rt_v5_dynamic_u32_read")]
+pub DynamicBoxV1<u32> DynamicU32ReadV1(DynamicCellV1<u32> cell) { return DynamicReadBoxedV1<u32>(cell); }
+
+[Export(Abi:"C", Symbol:"beskid_rt_v5_dynamic_u64_box")]
+pub DynamicBoxV1<u64> DynamicU64BoxV1(u64 value) { return DynamicBoxTypedV1<u64>(value); }
+
+[Export(Abi:"C", Symbol:"beskid_rt_v5_dynamic_u64_construct")]
+pub DynamicCellV1<u64> DynamicU64ConstructV1(DynamicBoxV1<u64> payload, DynamicShapeRecordV1 shape) { return DynamicConstructBoxedV1<u64>(payload, shape); }
+
+[Export(Abi:"C", Symbol:"beskid_rt_v5_dynamic_u64_read")]
+pub DynamicBoxV1<u64> DynamicU64ReadV1(DynamicCellV1<u64> cell) { return DynamicReadBoxedV1<u64>(cell); }
+
+[Export(Abi:"C", Symbol:"beskid_rt_v5_dynamic_f32_box")]
+pub DynamicBoxV1<f32> DynamicF32BoxV1(f32 value) { return DynamicBoxTypedV1<f32>(value); }
+
+[Export(Abi:"C", Symbol:"beskid_rt_v5_dynamic_f32_construct")]
+pub DynamicCellV1<f32> DynamicF32ConstructV1(DynamicBoxV1<f32> payload, DynamicShapeRecordV1 shape) { return DynamicConstructBoxedV1<f32>(payload, shape); }
+
+[Export(Abi:"C", Symbol:"beskid_rt_v5_dynamic_f32_read")]
+pub DynamicBoxV1<f32> DynamicF32ReadV1(DynamicCellV1<f32> cell) { return DynamicReadBoxedV1<f32>(cell); }
+
+[Export(Abi:"C", Symbol:"beskid_rt_v5_dynamic_f64_box")]
+pub DynamicBoxV1<f64> DynamicF64BoxV1(f64 value) { return DynamicBoxTypedV1<f64>(value); }
+
+[Export(Abi:"C", Symbol:"beskid_rt_v5_dynamic_f64_construct")]
+pub DynamicCellV1<f64> DynamicF64ConstructV1(DynamicBoxV1<f64> payload, DynamicShapeRecordV1 shape) { return DynamicConstructBoxedV1<f64>(payload, shape); }
+
+[Export(Abi:"C", Symbol:"beskid_rt_v5_dynamic_f64_read")]
+pub DynamicBoxV1<f64> DynamicF64ReadV1(DynamicCellV1<f64> cell) { return DynamicReadBoxedV1<f64>(cell); }
+
+[Export(Abi:"C", Symbol:"beskid_rt_v5_dynamic_bool_box")]
+pub DynamicBoxV1<bool> DynamicBoolBoxV1(bool value) { return DynamicBoxTypedV1<bool>(value); }
+
+[Export(Abi:"C", Symbol:"beskid_rt_v5_dynamic_bool_construct")]
+pub DynamicCellV1<bool> DynamicBoolConstructV1(DynamicBoxV1<bool> payload, DynamicShapeRecordV1 shape) { return DynamicConstructBoxedV1<bool>(payload, shape); }
+
+[Export(Abi:"C", Symbol:"beskid_rt_v5_dynamic_bool_read")]
+pub DynamicBoxV1<bool> DynamicBoolReadV1(DynamicCellV1<bool> cell) { return DynamicReadBoxedV1<bool>(cell); }
+
+[Export(Abi:"C", Symbol:"beskid_rt_v5_dynamic_char_box")]
+pub DynamicBoxV1<char> DynamicCharBoxV1(char value) { return DynamicBoxTypedV1<char>(value); }
+
+[Export(Abi:"C", Symbol:"beskid_rt_v5_dynamic_char_construct")]
+pub DynamicCellV1<char> DynamicCharConstructV1(DynamicBoxV1<char> payload, DynamicShapeRecordV1 shape) { return DynamicConstructBoxedV1<char>(payload, shape); }
+
+[Export(Abi:"C", Symbol:"beskid_rt_v5_dynamic_char_read")]
+pub DynamicBoxV1<char> DynamicCharReadV1(DynamicCellV1<char> cell) { return DynamicReadBoxedV1<char>(cell); }
+
+[Export(Abi:"C", Symbol:"beskid_rt_v5_dynamic_word_box")]
+pub DynamicBoxV1<word> DynamicWordBoxV1(word value) { return DynamicBoxTypedV1<word>(value); }
+
+[Export(Abi:"C", Symbol:"beskid_rt_v5_dynamic_word_construct")]
+pub DynamicCellV1<word> DynamicWordConstructV1(DynamicBoxV1<word> payload, DynamicShapeRecordV1 shape) { return DynamicConstructBoxedV1<word>(payload, shape); }
+
+[Export(Abi:"C", Symbol:"beskid_rt_v5_dynamic_word_read")]
+pub DynamicBoxV1<word> DynamicWordReadV1(DynamicCellV1<word> cell) { return DynamicReadBoxedV1<word>(cell); }
+
+[Export(Abi:"C", Symbol:"beskid_rt_v5_dynamic_string_box")]
+pub DynamicBoxV1<string> DynamicStringBoxV1(string value) { return DynamicBoxTypedV1<string>(value); }
+
+[Export(Abi:"C", Symbol:"beskid_rt_v5_dynamic_string_construct")]
+pub DynamicCellV1<string> DynamicStringConstructV1(DynamicBoxV1<string> payload, DynamicShapeRecordV1 shape) { return DynamicConstructBoxedV1<string>(payload, shape); }
+
+[Export(Abi:"C", Symbol:"beskid_rt_v5_dynamic_string_read")]
+pub DynamicBoxV1<string> DynamicStringReadV1(DynamicCellV1<string> cell) { return DynamicReadBoxedV1<string>(cell); }
+
+[Export(Abi:"C", Symbol:"beskid_rt_v5_dynamic_bytes_box")]
+pub DynamicBoxV1<u8[]> DynamicBytesBoxV1(u8[] value) { return DynamicBoxTypedV1<u8[]>(value); }
+
+[Export(Abi:"C", Symbol:"beskid_rt_v5_dynamic_bytes_construct")]
+pub DynamicCellV1<u8[]> DynamicBytesConstructV1(DynamicBoxV1<u8[]> payload, DynamicShapeRecordV1 shape) { return DynamicConstructBoxedV1<u8[]>(payload, shape); }
+
+[Export(Abi:"C", Symbol:"beskid_rt_v5_dynamic_bytes_read")]
+pub DynamicBoxV1<u8[]> DynamicBytesReadV1(DynamicCellV1<u8[]> cell) { return DynamicReadBoxedV1<u8[]>(cell); }
+
+[Export(Abi:"C", Symbol:"beskid_rt_v5_dynamic_unit_box")]
+pub DynamicBoxV1<unit> DynamicUnitBoxV1() { return DynamicBoxTypedV1<unit>(()); }
+[Export(Abi:"C", Symbol:"beskid_rt_v5_dynamic_unit_construct")]
+pub DynamicCellV1<unit> DynamicUnitConstructV1(DynamicBoxV1<unit> payload, DynamicShapeRecordV1 shape) {
+    return DynamicConstructBoxedV1<unit>(payload, shape);
+}
+[Export(Abi:"C", Symbol:"beskid_rt_v5_dynamic_unit_read")]
+pub DynamicBoxV1<unit> DynamicUnitReadV1(DynamicCellV1<unit> cell) { return DynamicReadBoxedV1<unit>(cell); }
+
+[Export(Abi:"C", Symbol:"beskid_dynamic_v1_mapping_construct")]
+pub DynamicMappingRecordV1 DynamicMappingConstructV1(DynamicShapeRecordV1 source,
+    DynamicShapeRecordV1 destination, u8[] signature, pointer transform, u64 generation, u64 library, u64 token) {
+    return DynamicMappingRecordV1 { source: source, destination: destination,
+        transformationSignature: signature, transformPayload: transform,
+        generation: generation, library: library, token: token };
+}
+[Export(Abi:"C", Symbol:"beskid_dynamic_v1_registry_append_mapping")]
+pub unit DynamicRegistryAppendMappingV1(mut DynamicRegistryRecordV1 owner, DynamicMappingRecordV1 mapping) {
+    Array.Append<DynamicMappingRecordV1>(owner.mappings, mapping);
+}
+[Export(Abi:"C", Symbol:"beskid_dynamic_v1_registry_mapping_count")]
+pub word DynamicRegistryMappingCountV1(DynamicRegistryRecordV1 owner) { return word(Array.Len<DynamicMappingRecordV1>(owner.mappings)); }
+[Export(Abi:"C", Symbol:"beskid_dynamic_v1_registry_mapping_at")]
+pub DynamicMappingRecordV1 DynamicRegistryMappingAtV1(DynamicRegistryRecordV1 owner, word index) { return owner.mappings[index]; }
+[Export(Abi:"C", Symbol:"beskid_dynamic_v1_mapping_source")]
+pub DynamicShapeRecordV1 DynamicMappingSourceV1(DynamicMappingRecordV1 mapping) { return mapping.source; }
+[Export(Abi:"C", Symbol:"beskid_dynamic_v1_mapping_destination")]
+pub DynamicShapeRecordV1 DynamicMappingDestinationV1(DynamicMappingRecordV1 mapping) { return mapping.destination; }
+[Export(Abi:"C", Symbol:"beskid_dynamic_v1_mapping_signature")]
+pub u8[] DynamicMappingSignatureV1(DynamicMappingRecordV1 mapping) { return mapping.transformationSignature; }
+[Export(Abi:"C", Symbol:"beskid_dynamic_v1_mapping_transform")]
+pub pointer DynamicMappingTransformV1(DynamicMappingRecordV1 mapping) { return mapping.transformPayload; }
+[Export(Abi:"C", Symbol:"beskid_dynamic_v1_mapping_tag")]
+pub u64 DynamicMappingTagV1(DynamicMappingRecordV1 mapping, word selector) {
+    if selector == 0 { return mapping.generation; }
+    if selector == 1 { return mapping.token; }
+    if selector == 2 { return mapping.library; }
+    return 0;
+}

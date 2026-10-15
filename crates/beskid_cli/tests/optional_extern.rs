@@ -1,78 +1,73 @@
 //! End-to-end `[Extern(..., Optional:true)]` contracts through the CLI.
 //!
-//! An optional contract that names a library which is not installed loads under the JIT
-//! (`beskid test`) and as an AOT executable; its `Available()` query is false and the pure path
-//! runs. The same contract over libc is available and its calls work. Calling an absent symbol
+//! An optional contract that names a library which is not installed loads under the native
+//! test runner (`beskid test`) and as an AOT executable; its `Available()` query is false and
+//! the pure path runs. The same contract over libc is available and its calls work. Calling an absent symbol
 //! raises the ABI-v5 `extern_unavailable` trap (code 11, exit status 101). A non-optional
 //! contract over a missing library still fails to load.
 //!
-//! The JIT and AOT cases need an installed exact runtime kit with debug and release profiles;
-//! they run when `BESKID_RUNTIME_PREFIX` names one and are skipped otherwise. The fixtures name
+//! The native test-runner and AOT cases need an installed exact runtime kit with debug and
+//! release profiles; they run when `BESKID_RUNTIME_PREFIX` names one and are skipped otherwise. The fixtures name
 //! `libc.so.6`, so the runtime cases are Linux-only.
 
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::{Command, Output};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 const FIXTURE: &str = include_str!("fixtures/optional_extern/Main.bd");
 const TRAP_FIXTURE: &str = include_str!("fixtures/optional_extern/Trap.bd");
 const REQUIRED_FIXTURE: &str = include_str!("fixtures/optional_extern/Required.bd");
 
+/// An isolated host project. The Corelib comes from the implicit Core Corelib closure that the
+/// per-project managed root provides; an explicit `source = path` dependency on the checkout
+/// Corelib would copy `corelib_compiler_sdk` as a path package, which cannot authorize the
+/// Corelib's native Mod adapters.
 struct Project {
-    root: PathBuf,
+    directory: tempfile::TempDir,
 }
 
 impl Project {
-    fn new(label: &str, source: &str, with_corelib: bool) -> Self {
-        let nonce = SystemTime::now().duration_since(UNIX_EPOCH).expect("clock").as_nanos();
-        let root = std::env::temp_dir().join(format!("beskid_optional_{label}_{}_{nonce}", std::process::id()));
-        fs::create_dir_all(root.join("src")).expect("project source directory");
-        let corelib = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corelib/beskid_corelib");
-        let dependency = if with_corelib {
-            format!(
-                "dependency \"corelib\" {{\n  source = \"path\"\n  path = \"{}\"\n}}\n",
-                corelib.canonicalize().expect("in-tree Corelib").display()
-            )
-        } else {
-            String::new()
-        };
+    fn new(source: &str) -> Self {
+        let directory = tempfile::tempdir().expect("project directory");
+        let root = directory.path();
+        fs::create_dir_all(root.join("Src")).expect("project source directory");
         fs::write(
             root.join("OptionalExtern.bproj"),
-            format!(
-                "OptionalExtern {{\n  name = \"OptionalExtern\"\n  version = \"0.1.0\"\n  root = \"src\"\n}}\n\n\
-                 {dependency}\ntarget \"App\" {{\n  kind = App\n  entry = \"Main.bd\"\n}}\n\ntarget \"Tests\" {{\n  \
-                 kind = Lib\n  entry = \"Main.bd\"\n}}\n"
-            ),
+            "OptionalExtern {\n  name = \"OptionalExtern\"\n  version = \"0.1.0\"\n  root = \"Src\"\n}\n\ntarget \"App\" \
+             {\n  kind = App\n  entry = \"Main.bd\"\n}\n\ntarget \"Tests\" {\n  kind = Lib\n  entry = \"Main.bd\"\n}\n",
         )
         .expect("project manifest");
-        fs::write(root.join("src/Main.bd"), source).expect("project source");
-        Self { root }
+        fs::write(root.join("Src/Main.bd"), source).expect("project source");
+        Self { directory }
+    }
+
+    fn root(&self) -> &Path {
+        self.directory.path()
     }
 
     fn beskid(&self, arguments: &[&str]) -> Output {
+        let root = self.root();
         Command::new(env!("CARGO_BIN_EXE_beskid_cli"))
             .args(arguments)
             .arg("--plain")
             .arg("--project")
-            .arg(&self.root)
+            .arg(root.join("OptionalExtern.bproj"))
             .env_remove("RUST_LOG")
-            .env("BESKID_CORELIB_ROOT", self.root.join("installed-corelib"))
-            .current_dir(&self.root)
+            .env("BESKID_HOME", root.join("toolchain-home"))
+            .env("BESKID_CONFIG_DIR", root.join("config"))
+            // A per-project managed Corelib keeps parallel cases from provisioning one shared root.
+            .env("BESKID_CORELIB_ROOT", root.join("installed-corelib"))
+            .env("OTEL_SDK_DISABLED", "true")
+            .current_dir(root)
             .output()
             .expect("run beskid")
     }
 
-    fn build(&self, name: &str) -> (Output, PathBuf) {
-        let executable = self.root.join(format!("{name}{}", std::env::consts::EXE_SUFFIX));
+    #[cfg(target_os = "linux")]
+    fn build(&self, name: &str) -> (Output, std::path::PathBuf) {
+        let executable = self.root().join(format!("{name}{}", std::env::consts::EXE_SUFFIX));
         let output = self.beskid(&["build", "--target", "App", "--output", executable.to_str().expect("UTF-8 path")]);
         (output, executable)
-    }
-}
-
-impl Drop for Project {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.root);
     }
 }
 
@@ -98,7 +93,7 @@ fn optional_extern_loads_and_selects_path_under_jit() {
     if !runtime_kit_available() {
         return;
     }
-    let project = Project::new("jit", FIXTURE, true);
+    let project = Project::new(FIXTURE);
     let output = project.beskid(&["test", "--target", "Tests"]);
     let log = text(&output);
     assert!(output.status.success(), "beskid test failed:\n{log}");
@@ -111,7 +106,7 @@ fn optional_extern_loads_and_selects_path_after_aot_build() {
     if !runtime_kit_available() {
         return;
     }
-    let project = Project::new("aot", FIXTURE, true);
+    let project = Project::new(FIXTURE);
     let (output, executable) = project.build("optional_app");
     assert!(output.status.success(), "beskid build failed:\n{}", text(&output));
     let run = Command::new(&executable).output().expect("run AOT executable");
@@ -129,7 +124,7 @@ fn calling_an_absent_optional_symbol_traps_under_jit_and_aot() {
     if !runtime_kit_available() {
         return;
     }
-    let project = Project::new("trap", TRAP_FIXTURE, true);
+    let project = Project::new(TRAP_FIXTURE);
     let output = project.beskid(&["test", "--target", "Tests"]);
     let log = text(&output);
     assert!(!output.status.success(), "the call must trap:\n{log}");
@@ -149,11 +144,13 @@ fn required_extern_with_missing_library_still_fails_to_load() {
     if !runtime_kit_available() {
         return;
     }
-    let project = Project::new("required", REQUIRED_FIXTURE, true);
+    let project = Project::new(REQUIRED_FIXTURE);
     let output = project.beskid(&["test", "--target", "Tests"]);
     let log = text(&output);
     assert!(!output.status.success(), "a required missing library must fail:\n{log}");
-    assert!(log.contains("extern resolve: dlopen(libbeskid-not-installed.so.1)"), "unexpected load failure:\n{log}");
+    // The native test runner links each test executable against every required `[Extern]` library,
+    // so the missing library fails the link and the linker names it.
+    assert!(log.contains("beskid-not-installed"), "the failure must name the missing library:\n{log}");
 
     let (output, _) = project.build("required_app");
     assert!(!output.status.success(), "a required missing library must not link:\n{}", text(&output));
@@ -162,14 +159,12 @@ fn required_extern_with_missing_library_still_fails_to_load() {
 #[test]
 fn non_boolean_optional_argument_is_rejected() {
     let project = Project::new(
-        "bad_optional",
         "[Extern(Abi:\"C\", Library:\"libc.so.6\", Optional:\"yes\")]\npub contract Native {\n    i64 labs(i64 \
          value);\n}\n\npub i64 Main() {\n    return Native.labs(1);\n}\n",
-        false,
     );
-    let output = project.beskid(&["analyze"]);
+    let output = project.beskid(&["check"]);
     let log = text(&output);
-    assert!(!output.status.success(), "a non-boolean Optional must not analyze:\n{log}");
+    assert!(!output.status.success(), "a non-boolean Optional must not pass `beskid check`:\n{log}");
     assert!(
         log.contains("invalid optional extern contract") && log.contains("Optional takes a boolean literal"),
         "missing T0905:\n{log}"
@@ -179,14 +174,12 @@ fn non_boolean_optional_argument_is_rejected() {
 #[test]
 fn availability_query_must_be_bool_without_parameters() {
     let project = Project::new(
-        "bad_available",
         "[Extern(Abi:\"C\", Library:\"libc.so.6\", Optional:true)]\npub contract Native {\n    i64 \
          Available(i64 value);\n    i64 labs(i64 value);\n}\n\npub i64 Main() {\n    return Native.labs(1);\n}\n",
-        false,
     );
-    let output = project.beskid(&["analyze"]);
+    let output = project.beskid(&["check"]);
     let log = text(&output);
-    assert!(!output.status.success(), "a malformed Available must not analyze:\n{log}");
+    assert!(!output.status.success(), "a malformed Available must not pass `beskid check`:\n{log}");
     assert!(
         log.contains("invalid optional extern contract") && log.contains("bool Available();"),
         "missing T0905:\n{log}"

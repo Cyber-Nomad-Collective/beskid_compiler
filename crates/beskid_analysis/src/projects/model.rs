@@ -7,6 +7,41 @@ pub struct ProjectManifest {
     pub targets: Vec<Target>,
     pub dependencies: Vec<Dependency>,
     pub link: Option<ProjectLinkSection>,
+    /// Top-level `glue "<library>" { backend = rust path = "<dir>" }` owner declarations, in
+    /// manifest order. Empty when the manifest declares no Glue owner.
+    pub glue: Vec<ProjectGlueOwner>,
+}
+
+/// Backend selected by a manifest `glue` owner block.
+///
+/// The manifest schema admits `rust` and `dotnet`; [`super::validator::validate_manifest`] rejects
+/// [`ProjectGlueBackend::Dotnet`] because the .NET backend is unavailable in 0.6.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProjectGlueBackend {
+    Rust,
+    Dotnet,
+}
+
+impl ProjectGlueBackend {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Rust => "rust",
+            Self::Dotnet => "dotnet",
+        }
+    }
+}
+
+/// One top-level `glue "<library>" { ... }` owner declaration.
+///
+/// `library` is the canonical owner native library identity; it equals the `Library` string of the
+/// `Extern` contracts and `GlueHandle` types the owner implements. `path` is the project-relative
+/// owner source directory exactly as written; use
+/// [`super::glue_owner::collect_glue_owner_sources`] to canonicalize, confine and inventory it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectGlueOwner {
+    pub library: String,
+    pub backend: ProjectGlueBackend,
+    pub path: String,
 }
 
 /// Top-level `link { ... }` block populating foreign linker inputs (v0.3).
@@ -175,6 +210,10 @@ pub(crate) fn project_root_block_matches_package_name(block_kind: &str, package_
     block_kind == package_name || block_kind == package_name.replace('-', "_")
 }
 
+/// The function the host invokes to run an `App` or `Test` target: `Main`, the only program entry
+/// point (`beskid run --entrypoint` defaults to it and the native link entry symbol maps to it).
+pub const PROGRAM_ENTRY_FUNCTION: &str = "Main";
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Target {
     pub name: String,
@@ -219,6 +258,8 @@ pub struct UnresolvedDependencyNote {
     pub dependency_name: String,
     pub source: DependencySource,
     pub descriptor: String,
+    /// Project name of the manifest that declares this dependency (named in conflict diagnostics).
+    pub requester: String,
 }
 
 /// Workspace member selection aligned with [`super::manifest_resolve`](crate::projects::manifest_resolve).
@@ -237,7 +278,7 @@ pub struct CompilePlan {
     pub target: Target,
     pub dependency_projects: Vec<ResolvedDependencyProject>,
     pub unresolved_dependencies: Vec<UnresolvedDependencyNote>,
-    pub has_std_dependency: bool,
+    pub has_core_dependency: bool,
 }
 
 /// Lock ownership and dependency materialization, independent of a compile target.
@@ -292,25 +333,53 @@ pub enum AssemblyDiscovery {
     WorkspaceScan,
 }
 
+/// Recovery is an explicit tooling policy; repaired nodes never authorize dependency discovery.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum AssemblyRecoveryPolicy {
+    #[default]
+    Strict,
+    EditorRetainRecovered,
+}
+
 /// Options for [`super::assembly::assemble_program`].
 #[derive(Debug, Clone)]
 pub struct AssemblyOptions {
     pub discovery: AssemblyDiscovery,
+    pub recovery_policy: AssemblyRecoveryPolicy,
     pub max_units: usize,
     /// When true, skip units that fail to parse instead of failing the whole assembly (`beskid doc`).
     pub skip_parse_errors: bool,
+    /// Native Mod builds only: seed discovery with the compiler-owned SDK adapter sources
+    /// (`Beskid.Compiler.NativeRequests`, `Beskid.Syntax.NativeFactories`) from the
+    /// `corelib_compiler_sdk` dependency root, as rustc implicitly provides `proc_macro` to
+    /// proc-macro crates. Seeding grants no authority: codegen still requires exact embedded SDK
+    /// bytes and Corelib package identity. Missing seeds fail the assembly.
+    pub native_mod_adapter_sources: bool,
 }
 
 impl Default for AssemblyOptions {
     fn default() -> Self {
-        Self { discovery: AssemblyDiscovery::ImportClosure, max_units: 4096, skip_parse_errors: false }
+        Self {
+            discovery: AssemblyDiscovery::ImportClosure,
+            recovery_policy: AssemblyRecoveryPolicy::Strict,
+            max_units: 4096,
+            skip_parse_errors: false,
+            native_mod_adapter_sources: false,
+        }
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PreparedProjectWorkspace {
+    pub verified_package_identities: super::VerifiedPackageIdentities,
     pub lockfile_path: PathBuf,
     pub materialized_project_root: PathBuf,
     pub materialized_source_root: PathBuf,
     pub materialized_dependencies: Vec<MaterializedDependencyProject>,
+}
+
+impl PreparedProjectWorkspace {
+    pub fn package_identities(&self) -> &super::VerifiedPackageIdentities {
+        &self.verified_package_identities
+    }
 }

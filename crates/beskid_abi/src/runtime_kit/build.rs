@@ -17,6 +17,23 @@ const RUNTIME_LICENSE: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "
 const RUNTIME_NOTICE: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../NOTICE"));
 
 pub fn build_runtime_kit(request: &RuntimeKitBuildRequest) -> Result<ResolvedRuntimeKit, RuntimeKitBuildError> {
+    build_runtime_kit_profile(request, None)
+}
+
+/// Publish required provider evidence in the same atomic transaction as native kit payloads.
+/// The canonical native-host producer supplies receipts from the tools it actually executed;
+/// metadata publication is not a substitute for independent native release qualification.
+pub fn build_runtime_kit_with_glue_provider(
+    request: &RuntimeKitBuildRequest,
+    tools: Vec<super::GlueProviderToolV1>,
+) -> Result<ResolvedRuntimeKit, RuntimeKitBuildError> {
+    build_runtime_kit_profile(request, Some(tools))
+}
+
+fn build_runtime_kit_profile(
+    request: &RuntimeKitBuildRequest,
+    tools: Option<Vec<super::GlueProviderToolV1>>,
+) -> Result<ResolvedRuntimeKit, RuntimeKitBuildError> {
     request.target.validate().map_err(RuntimeKitBuildError::InvalidTarget)?;
     validate_sha256("runtime_source_hash", &request.runtime_source_hash)
         .map_err(|_| RuntimeKitBuildError::InvalidSourceHash)?;
@@ -54,6 +71,14 @@ pub fn build_runtime_kit(request: &RuntimeKitBuildRequest) -> Result<ResolvedRun
         audit,
     };
     let abi_json = metadata.canonical_abi_json().map_err(RuntimeKitBuildError::Metadata)?;
+    let provider_json = tools
+        .map(|tools| {
+            let manifest = super::GlueProviderManifestV1::from_build(&metadata, tools)
+                .map_err(|error| RuntimeKitBuildError::InvalidGlueProvider(error.to_string()))?;
+            serde_json::to_vec_pretty(&manifest)
+                .map_err(|error| RuntimeKitBuildError::InvalidGlueProvider(error.to_string()))
+        })
+        .transpose()?;
 
     let profile_directory = profile_directory(request.profile);
     let parent = request.prefix.join(INSTALLED_RUNTIME_ROOT).join(request.target.triple.as_str());
@@ -82,6 +107,10 @@ pub fn build_runtime_kit(request: &RuntimeKitBuildRequest) -> Result<ResolvedRun
         for (name, contents) in [("LICENSE", RUNTIME_LICENSE), ("NOTICE", RUNTIME_NOTICE)] {
             let path = staging.join(name);
             fs::write(&path, contents).map_err(|source| RuntimeKitBuildError::DestinationWrite { path, source })?;
+        }
+        if let Some(packet) = &provider_json {
+            let path = staging.join(super::GLUE_PROVIDER_MANIFEST_V1);
+            fs::write(&path, packet).map_err(|source| RuntimeKitBuildError::DestinationWrite { path, source })?;
         }
         let metadata_path = staging.join("abi.json");
         fs::write(&metadata_path, abi_json)

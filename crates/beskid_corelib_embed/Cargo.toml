@@ -1,0 +1,13 @@
+[package]
+name = "beskid_corelib_embed"
+version = "0.1.0"
+edition = "2024"
+license.workspace = true
+build = "build.rs"
+description = "The sealed Corelib bundle embedded in the toolchain binaries (beskid_cli, beskid_lsp)"
+
+[dependencies]
+include_dir = "0.7.4"
+
+[build-dependencies]
+sha2 = "0.10"

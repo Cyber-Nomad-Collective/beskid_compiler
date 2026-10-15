@@ -61,5 +61,7 @@ fn foundation_publishes_the_canonical_disposable_contract() {
     assert!(source.contains("pub contract Disposable"));
     assert!(source.contains("pub enum DisposeError"));
     assert!(source.contains("Failed()"));
-    assert_eq!(program.node.items.len(), 3, "one import and two public declarations");
+    assert_eq!(program.node.items.len(), 2, "two public declarations with a fully qualified Result type");
+    assert!(matches!(program.node.items[0].node, beskid_analysis::syntax::Node::ContractDefinition(_)));
+    assert!(matches!(program.node.items[1].node, beskid_analysis::syntax::Node::EnumDefinition(_)));
 }

@@ -61,6 +61,9 @@ impl SemanticIssueKind {
             Self::ResolveUnknownTypeInModule { .. } => "E1201",
             Self::ResolveInvalidConformanceTarget { .. } => "E1607",
             Self::ResolvePrivateItemInModule { .. } => "E1107",
+            Self::ResolveAmbiguousModulePath { .. } => "E1104",
+            Self::ResolveAmbiguousItemInModule { .. } => "E1104",
+            Self::ResolvePrivateRuntimeBuiltin { .. } => "E1107",
             Self::ResolveShadowedLocal { .. } => "W1103",
             Self::MissingImport { .. } => "E1109",
             Self::MissingImportAmbiguous { .. } => "W1110",
@@ -84,7 +87,7 @@ impl SemanticIssueKind {
             Self::TypeCallArgumentMismatch { .. } => "E1205",
             Self::TypeEnumConstructorMismatch { .. } => "E1302",
             Self::TypeUnknownCallTarget => "E1606",
-            Self::TypeInvalidBinaryOp => "E1209",
+            Self::TypeInvalidBinaryOp | Self::TypeStringConcatOperandNotConvertible { .. } => "E1209",
             Self::TypeInvalidUnaryOp => "E1210",
             Self::TypeNonBoolCondition => "E1208",
             Self::TypeUnsupportedExpression => "E1202",
@@ -162,6 +165,14 @@ impl SemanticIssueKind {
             Self::NamingNotCamelCaseBinding { .. } => "W1636",
             Self::NamingNotSnakeCaseTest { .. } => "W1637",
             Self::NamingNotCamelCaseMacro { .. } => "W1638",
+            Self::NumericLiteralOutOfRange { .. } => "T0905",
+            Self::ExternInvalidAbi { .. } => "T0901",
+            Self::ExternMissingLibrary => "T0902",
+            Self::ExternDisallowedParamType { .. } => "T0903",
+            Self::ExternDisallowedReturnType { .. } => "T0904",
+            Self::GlueBindingRejected { .. } => "T0903",
+            Self::ExternInvalidOptional { .. } => "T0906",
+            Self::InvalidClifBlock { .. } => "E1232",
         }
     }
 }

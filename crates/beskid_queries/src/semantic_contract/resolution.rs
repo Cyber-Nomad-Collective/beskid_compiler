@@ -102,7 +102,7 @@ pub(super) fn resolve_inline_module_item_declaration(
             continue;
         }
         let functions = index
-            .ids_of_kind(beskid_analysis::syntax_query::NodeKind::FunctionDefinition)
+            .ids_named(beskid_analysis::syntax_query::NodeKind::FunctionDefinition, function_name)
             .filter(|candidate| {
                 module_scope(index, *candidate) == Some(current)
                     && index
@@ -144,56 +144,195 @@ pub(super) fn unique_inline_module_in_scope(
     Some(*module)
 }
 
-/// Resolve a qualified module path from an exact current import and, when required, explicit
-/// public child-module edges. Private imports remain available only inside their owner.
-/// A fully qualified module path names its module without an import, as in Java and C#: imports
-/// only introduce shorter names. It resolves only when exactly one visible unit declares the
-/// module, and every declared parent module exposes the next segment with `pub mod`, so private
-/// modules stay private. Absent and ambiguous modules stay unresolved.
-fn fully_qualified_module_unit(db: &dyn Db, key: AstNodeKey, module_path: &[String]) -> Option<SourceUnitId> {
-    let (target, parents) = {
-        let registry = db.syntax_dependency_registry().lock().expect("syntax dependency registry");
-        let target = match registry.visible_module_units(key.unit, key.generation, module_path) {
-            Some([unit]) => *unit,
-            _ => return None,
-        };
-        let parents = (1..module_path.len())
-            .map(|length| match registry.visible_module_units(key.unit, key.generation, &module_path[..length]) {
-                Some([parent]) => Some(*parent),
-                _ => None,
-            })
-            .collect::<Vec<_>>();
-        (target, parents)
-    };
-    for (length, parent) in parents.into_iter().enumerate().map(|(index, parent)| (index + 1, parent)) {
-        let Some(parent) = parent else {
-            continue;
-        };
-        let exposes_next = public_module_routes(db, parent, key.generation)
-            .into_iter()
-            .any(|(binding, _)| binding == module_path[length]);
-        if !exposes_next {
-            return None;
-        }
-    }
-    Some(target)
+/// How a qualified module path resolves for one source unit.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) enum QualifiedModuleResolution {
+    /// Exactly one assembled source unit is the module.
+    Unit(SourceUnitId),
+    /// More than one assembled source unit claims the module path. Resolution fails closed.
+    Ambiguous(Vec<SourceUnitId>),
+    /// No import route and no package-native module path names the module.
+    Missing,
 }
 
+/// Resolve a qualified module path to its one assembled source unit; see
+/// [`qualified_module_resolution`]. Ambiguous and missing paths resolve to nothing.
 pub(super) fn resolve_qualified_module_unit(
     db: &dyn Db,
     key: AstNodeKey,
     module_path: &[String],
 ) -> Option<SourceUnitId> {
-    let initial = db
-        .syntax_dependency_registry()
-        .lock()
-        .expect("syntax dependency registry")
-        .imports
-        .get(&(key.unit, key.generation))?
-        .iter()
-        .filter_map(|import| import_path_prefix_len(import, module_path).map(|consumed| (import.target, consumed)))
-        .collect::<Vec<_>>();
+    match qualified_module_resolution(db, key, module_path) {
+        QualifiedModuleResolution::Unit(unit) => Some(unit),
+        QualifiedModuleResolution::Ambiguous(_) | QualifiedModuleResolution::Missing => None,
+    }
+}
 
+/// Resolve a qualified module path in two ordered steps:
+///
+/// 1. Import routes: a `use` binding of this unit (or an unaliased `use` of the exact path) names
+///    the root, and explicit public child-module edges continue from it. Private imports remain
+///    available only inside their owner.
+/// 2. Package-native namespace: every assembled unit of the project and of its resolved
+///    dependency closure keeps its package-native logical path (`Core.Output`,
+///    `Testing.Assert`). When a `use` binding owns the root, the root stands for that import's
+///    logical path (`use Core.Output as Out; Out.Child.F()` names `Core.Output.Child`).
+///    Otherwise the path is absolute, so `Core.Output.WriteLine(...)` needs no `use`, as a fully
+///    qualified path in Rust or C#. Callers check item visibility against the resolved unit.
+///
+/// Names in scope shadow the absolute namespace: a `use` binding of the root segment, or an
+/// inline module, type, enum or contract of that name in the lexical module scope chain, never
+/// falls through to a different module of the same spelling. More than one unit at either step
+/// is an ambiguity and resolves to no unit.
+pub(super) fn qualified_module_resolution(
+    db: &dyn Db,
+    key: AstNodeKey,
+    module_path: &[String],
+) -> QualifiedModuleResolution {
+    let Some(root) = module_path.first() else {
+        return QualifiedModuleResolution::Missing;
+    };
+    let (initial, use_expansions) = {
+        let registry = db.syntax_dependency_registry().lock().expect("syntax dependency registry");
+        let imports = registry.imports.get(&(key.unit, key.generation)).map(Vec::as_slice).unwrap_or_default();
+        let initial = imports
+            .iter()
+            .filter_map(|import| import_path_prefix_len(import, module_path).map(|consumed| (import.target, consumed)))
+            .collect::<Vec<_>>();
+        // A `use` binding of the root stands for its target module's own logical path.
+        let use_expansions = imports
+            .iter()
+            .filter(|import| import.origin == crate::db::SyntaxImportOrigin::Use && import.binding == *root)
+            .map(|import| import.path.iter().chain(&module_path[1..]).cloned().collect::<Vec<_>>())
+            .collect::<Vec<_>>();
+        (initial, use_expansions)
+    };
+    match import_routed_module_units(db, key, module_path, initial).as_slice() {
+        [unit] => return QualifiedModuleResolution::Unit(*unit),
+        [] => {}
+        units => return QualifiedModuleResolution::Ambiguous(units.to_vec()),
+    }
+    let absolute_paths = if !use_expansions.is_empty() {
+        use_expansions
+    } else if lexical_namespace_declares(db, key, root) {
+        return QualifiedModuleResolution::Missing;
+    } else {
+        vec![module_path.to_vec()]
+    };
+    let registry = db.syntax_dependency_registry().lock().expect("syntax dependency registry");
+    let mut units = Vec::new();
+    for path in &absolute_paths {
+        if absolute_path_crosses_private_module(&registry, key, path) {
+            continue;
+        }
+        for unit in registry.visible_module_units(key.generation, path).into_iter().flatten() {
+            if !units.contains(unit) {
+                units.push(*unit);
+            }
+        }
+    }
+    match units.len() {
+        0 => QualifiedModuleResolution::Missing,
+        1 => QualifiedModuleResolution::Unit(units[0]),
+        _ => QualifiedModuleResolution::Ambiguous(units),
+    }
+}
+
+/// Whether the absolute module path `path` passes through a module that its parent declares
+/// private (`mod A.B;` without `pub`) while the referencing unit of `key` lies outside that
+/// parent. As in Rust (E0603), a private module is reachable by path only from inside its parent
+/// module and the parent's descendants; the absolute namespace never widens that visibility.
+/// A unit without a logical module path is inside no parent other than itself.
+fn absolute_path_crosses_private_module(
+    registry: &crate::db::SyntaxDependencyRegistry,
+    key: AstNodeKey,
+    path: &[String],
+) -> bool {
+    let logical_path = |unit: SourceUnitId| {
+        registry
+            .modules
+            .iter()
+            .find(|((generation, _), units)| *generation == key.generation && units.contains(&unit))
+            .map(|((_, module_path), _)| module_path.as_slice())
+    };
+    let referencing = logical_path(key.unit);
+    (1..=path.len()).any(|length| {
+        let Some(prefix_units) = registry.visible_module_units(key.generation, &path[..length]) else {
+            return false;
+        };
+        registry.imports.iter().filter(|((_, generation), _)| *generation == key.generation).any(
+            |((owner, _), imports)| {
+                imports.iter().any(|import| {
+                    import.origin == crate::db::SyntaxImportOrigin::ModuleDeclaration
+                        && !import.public
+                        && prefix_units.contains(&import.target)
+                        && *owner != key.unit
+                        && !match (referencing, logical_path(*owner)) {
+                            (Some(referencing), Some(parent)) => referencing.starts_with(parent),
+                            _ => false,
+                        }
+                })
+            },
+        )
+    })
+}
+
+/// Whether an inline module, type, enum or contract named `name` is declared in the lexical
+/// module scope chain of `key`. Such a name owns a qualified path rooted at it. A key whose
+/// syntax is not registered for its generation reports `true` so the absolute namespace is
+/// never consulted without lexical evidence.
+fn lexical_namespace_declares(db: &dyn Db, key: AstNodeKey, name: &str) -> bool {
+    use beskid_analysis::syntax_query::NodeKind;
+    let Some(syntax) = db.syntax_unit(key.unit).filter(|syntax| syntax.generation(db) == key.generation) else {
+        return true;
+    };
+    let program = syntax.expanded_program(db);
+    let index = syntax.syntax_index(db);
+    let declares = |scope: beskid_analysis::syntax::AstNodeId| {
+        let inline_module = index.ids_of_kind(NodeKind::InlineModule).any(|candidate| {
+            outer_module_scope(index, candidate) == Some(scope)
+                && index
+                    .node_at(program, candidate)
+                    .and_then(|node| node.of::<beskid_analysis::syntax::InlineModule>())
+                    .is_some_and(|module| module.name.node.name == name)
+        });
+        inline_module
+            || [NodeKind::TypeDefinition, NodeKind::EnumDefinition, NodeKind::ContractDefinition].into_iter().any(
+                |kind| {
+                    index.ids_named(kind, name).any(|candidate| {
+                        module_scope(index, candidate) == Some(scope)
+                            && index.node_at(program, candidate).is_some_and(|node| {
+                                node.of::<beskid_analysis::syntax::TypeDefinition>()
+                                    .is_some_and(|item| item.name.node.name == name)
+                                    || node
+                                        .of::<beskid_analysis::syntax::EnumDefinition>()
+                                        .is_some_and(|item| item.name.node.name == name)
+                                    || node
+                                        .of::<beskid_analysis::syntax::ContractDefinition>()
+                                        .is_some_and(|item| item.name.node.name == name)
+                            })
+                    })
+                },
+            )
+    };
+    let mut scope = module_scope(index, key.node);
+    while let Some(current) = scope {
+        if declares(current) {
+            return true;
+        }
+        scope = outer_module_scope(index, current);
+    }
+    false
+}
+
+/// Units reached from the import routes `initial` of one qualified module path, following
+/// explicit public child-module edges.
+fn import_routed_module_units(
+    db: &dyn Db,
+    key: AstNodeKey,
+    module_path: &[String],
+    initial: Vec<(SourceUnitId, usize)>,
+) -> Vec<SourceUnitId> {
     let mut resolved = Vec::new();
     for (unit, consumed) in initial {
         let mut pending = vec![(unit, consumed)];
@@ -216,13 +355,7 @@ pub(super) fn resolve_qualified_module_unit(
             );
         }
     }
-    if resolved.is_empty() {
-        return fully_qualified_module_unit(db, key, module_path);
-    }
-    let [unit] = resolved.as_slice() else {
-        return None;
-    };
-    Some(*unit)
+    resolved
 }
 
 pub(super) fn import_path_prefix_len(import: &crate::db::SyntaxImport, module_path: &[String]) -> Option<usize> {
@@ -259,6 +392,30 @@ pub(super) fn public_module_routes(
 /// likewise unique. This preserves a direct call edge for the Corelib convention of spelling
 /// static functions through their nominal type without treating arbitrary nested paths as
 /// callable.
+/// Resolve `Type.Function` inside the unit that declares `Type`: the same static spelling an
+/// importer writes as `Module.Type.Function`. The qualifier must name exactly one type or enum of
+/// this unit with the written generic arity and must not be shadowed by a lexical declaration;
+/// the function must be the unique function of that name in this unit. Anything else stays
+/// unresolved rather than guessing a callable.
+fn resolve_type_qualified_local_function(
+    db: &dyn Db,
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    key: AstNodeKey,
+    path: &beskid_analysis::syntax::Path,
+) -> Option<AstNodeKey> {
+    let [type_segment, function] = path.segments.as_slice() else { return None };
+    let type_name = type_segment.node.name.node.name.as_str();
+    if resolve_lexical_declaration(program, index, key.node, type_name).is_some() {
+        return None;
+    }
+    // A bare qualifier names the type whatever its arity (`Crate.Make<T>` on `Crate<T>`); written
+    // type arguments must match the declared arity exactly.
+    let arity = (!type_segment.node.type_args.is_empty()).then_some(type_segment.node.type_args.len());
+    super::layouts::unique_nominal_type_in_unit(db, key.unit, key.generation, type_name, arity)?;
+    unique_function_in_unit(db, key.unit, key.generation, &function.node.name.node.name)
+}
+
 pub(super) fn resolve_type_qualified_imported_function(
     db: &dyn Db,
     key: AstNodeKey,
@@ -276,54 +433,6 @@ pub(super) fn resolve_type_qualified_imported_function(
         type_segment.node.type_args.len(),
     )?;
     unique_exported_function_in_unit(db, target_unit, key.generation, &function.node.name.node.name)
-}
-
-/// Resolve `ModuleType.Function()` inside the unit that declares both, the same static-function
-/// spelling [`resolve_type_qualified_imported_function`] accepts through an import. A unit has no
-/// binding for its own module, so inside `Core.Collections.List` the qualifier `List` names the
-/// unit's nominal type, and `List.FromArray<T>(values)` names the unit's own `FromArray`.
-///
-/// The qualifier must be a single segment that no lexical declaration shadows and that names
-/// exactly one type or enum declared in this unit; written type arguments, if any, must match its
-/// arity. The terminal must name exactly one function of this unit. Anything else stays
-/// unresolved rather than guessing another callable.
-pub(super) fn resolve_type_qualified_local_function(
-    db: &dyn Db,
-    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
-    index: &beskid_analysis::syntax_query::SyntaxIndex,
-    key: AstNodeKey,
-    path: &beskid_analysis::syntax::Path,
-) -> Option<AstNodeKey> {
-    let [type_segment, function] = path.segments.as_slice() else {
-        return None;
-    };
-    let type_name = type_segment.node.name.node.name.as_str();
-    if resolve_lexical_declaration(program, index, key.node, type_name).is_some() {
-        return None;
-    }
-    let written_arity = type_segment.node.type_args.len();
-    let declared = index
-        .ids_of_kind(beskid_analysis::syntax_query::NodeKind::TypeDefinition)
-        .chain(index.ids_of_kind(beskid_analysis::syntax_query::NodeKind::EnumDefinition))
-        .filter_map(|candidate| {
-            let node = index.node_at(program, candidate)?;
-            node.of::<beskid_analysis::syntax::TypeDefinition>()
-                .filter(|definition| definition.name.node.name == type_name)
-                .map(|definition| definition.generics.len())
-                .or_else(|| {
-                    node.of::<beskid_analysis::syntax::EnumDefinition>()
-                        .filter(|definition| definition.name.node.name == type_name)
-                        .map(|definition| definition.generics.len())
-                })
-        })
-        .collect::<Vec<_>>();
-    let [arity] = declared.as_slice() else {
-        return None;
-    };
-    if written_arity != 0 && written_arity != *arity {
-        return None;
-    }
-    unique_function_in_unit(db, key.unit, key.generation, &function.node.name.node.name)
 }
 
 /// Resolve a public module member through its defining syntax unit or an explicit public
@@ -356,6 +465,31 @@ pub(super) fn nearest_reexport_route(
     generation: SyntaxGenerationId,
     candidate_in_unit: impl Fn(&dyn Db, SourceUnitId, SyntaxGenerationId) -> Option<AstNodeKey>,
 ) -> Option<AstNodeKey> {
+    match nearest_reexport_route_outcome(db, unit, generation, candidate_in_unit) {
+        ReexportRoute::Found(candidate) => Some(candidate),
+        ReexportRoute::Ambiguous(_) | ReexportRoute::Missing => None,
+    }
+}
+
+/// Outcome of [`nearest_reexport_route_outcome`]: the one rule for reaching a member through a
+/// module's public re-exports, shared by callees, type paths, and value paths, and mirrored by
+/// `Resolver::reexported_item_route` in `beskid_analysis`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum ReexportRoute {
+    Found(AstNodeKey),
+    /// Distinct candidates at the nearest distance that provides any.
+    Ambiguous(usize),
+    Missing,
+}
+
+/// [`nearest_reexport_route`] with the ambiguity kept apart from absence, so a diagnostic can
+/// name it (E1104) instead of reporting the member as unknown.
+pub(super) fn nearest_reexport_route_outcome(
+    db: &dyn Db,
+    unit: SourceUnitId,
+    generation: SyntaxGenerationId,
+    candidate_in_unit: impl Fn(&dyn Db, SourceUnitId, SyntaxGenerationId) -> Option<AstNodeKey>,
+) -> ReexportRoute {
     let mut frontier = vec![unit];
     let mut visited = std::collections::HashSet::new();
     visited.insert(unit);
@@ -373,12 +507,12 @@ pub(super) fn nearest_reexport_route(
             );
         }
         match candidates.as_slice() {
-            [candidate] => return Some(*candidate),
+            [candidate] => return ReexportRoute::Found(*candidate),
             [] => frontier = next,
-            _ => return None,
+            candidates => return ReexportRoute::Ambiguous(candidates.len()),
         }
     }
-    None
+    ReexportRoute::Missing
 }
 
 pub(super) fn public_reexport_units(
@@ -386,15 +520,14 @@ pub(super) fn public_reexport_units(
     unit: SourceUnitId,
     generation: SyntaxGenerationId,
 ) -> Vec<SourceUnitId> {
-    public_module_routes(db, unit, generation).into_iter().map(|(_, target)| target).fold(
-        Vec::new(),
-        |mut targets, target| {
-            if !targets.contains(&target) {
-                targets.push(target);
-            }
-            targets
-        },
-    )
+    let registry = db.syntax_dependency_registry().lock().expect("syntax dependency registry");
+    let mut targets = Vec::new();
+    for import in registry.imports.get(&(unit, generation)).into_iter().flatten().filter(|import| import.public) {
+        if !targets.contains(&import.target) {
+            targets.push(import.target);
+        }
+    }
+    targets
 }
 
 pub(super) fn unique_public_function_in_unit(
@@ -410,7 +543,7 @@ pub(super) fn unique_public_function_in_unit(
     let program = syntax.expanded_program(db);
     let index = syntax.syntax_index(db);
     let candidates = index
-        .ids_of_kind(beskid_analysis::syntax_query::NodeKind::FunctionDefinition)
+        .ids_named(beskid_analysis::syntax_query::NodeKind::FunctionDefinition, name)
         .filter(|candidate| {
             index
                 .node_at(program, *candidate)
@@ -443,7 +576,7 @@ pub(super) fn unique_function_in_unit(
     let program = syntax.expanded_program(db);
     let index = syntax.syntax_index(db);
     let candidates = index
-        .ids_of_kind(beskid_analysis::syntax_query::NodeKind::FunctionDefinition)
+        .ids_named(beskid_analysis::syntax_query::NodeKind::FunctionDefinition, name)
         .filter(|candidate| {
             index
                 .node_at(program, *candidate)
@@ -460,6 +593,10 @@ pub(super) fn unique_function_in_unit(
 /// Resolve an unqualified imported function only when its assembled import targets provide one
 /// exact declaration. Arbitrary unresolved bare names deliberately remain unavailable.
 pub(super) fn unique_imported_function(db: &dyn Db, key: AstNodeKey, name: &str) -> Option<AstNodeKey> {
+    let owner_is_runtime = db
+        .syntax_unit(key.unit)
+        .filter(|syntax| syntax.accepts_key(db, key))
+        .is_some_and(|syntax| syntax.revision(db).runtime_source_authority.is_some());
     let targets = db
         .syntax_dependency_registry()
         .lock()
@@ -467,16 +604,29 @@ pub(super) fn unique_imported_function(db: &dyn Db, key: AstNodeKey, name: &str)
         .imports
         .get(&(key.unit, key.generation))?
         .iter()
-        .map(|import| import.target)
-        .fold(Vec::new(), |mut targets, target| {
-            if !targets.contains(&target) {
-                targets.push(target);
-            }
-            targets
-        });
+        .map(|import| {
+            (
+                import.target,
+                owner_is_runtime
+                    && import.binding == crate::typed_program::CANONICAL_RUNTIME_CORPUS_BINDING
+                    && import.has_explicit_alias,
+            )
+        })
+        .collect::<Vec<_>>();
     let candidates = targets
         .into_iter()
-        .filter_map(|target| unique_exported_function_in_unit(db, target, key.generation, name))
+        .filter_map(|(target, private_scope)| {
+            let target_is_runtime = private_scope
+                && db
+                    .syntax_unit(target)
+                    .filter(|syntax| syntax.accepts_key(db, AstNodeKey { unit: target, ..key }))
+                    .is_some_and(|syntax| syntax.revision(db).runtime_source_authority.is_some());
+            if target_is_runtime {
+                unique_function_in_unit(db, target, key.generation, name)
+            } else {
+                unique_exported_function_in_unit(db, target, key.generation, name)
+            }
+        })
         .collect::<Vec<_>>();
     // Two distinct import targets can legitimately route to the exact same declaration: a hub
     // unit that `pub mod`-re-exports another unit's function is reachable both directly and
@@ -510,7 +660,7 @@ pub(super) fn resolve_unqualified_item_declaration(
     let mut scope = module_scope(index, key.node)?;
     loop {
         let candidates = index
-            .ids_of_kind(beskid_analysis::syntax_query::NodeKind::FunctionDefinition)
+            .ids_named(beskid_analysis::syntax_query::NodeKind::FunctionDefinition, name)
             .filter(|candidate| {
                 module_scope(index, *candidate) == Some(scope)
                     && index

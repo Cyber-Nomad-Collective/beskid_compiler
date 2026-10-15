@@ -30,7 +30,12 @@ impl SyntaxNodeFacts<'_> {
         if left_type != right_type
             || matches!(
                 left_type,
-                SemanticTypeId::I32
+                SemanticTypeId::I8
+                    | SemanticTypeId::I16
+                    | SemanticTypeId::U16
+                    | SemanticTypeId::U64
+                    | SemanticTypeId::F32
+                    | SemanticTypeId::I32
                     | SemanticTypeId::I64
                     | SemanticTypeId::U32
                     | SemanticTypeId::U8
@@ -62,25 +67,52 @@ impl SyntaxNodeFacts<'_> {
     }
 
     pub(super) fn match_arms_impl(&self, key: AstNodeKey) -> Option<Vec<MatchArmFact>> {
-        let fact = self.enum_match_in_context(key)?;
+        if let Some(fact) = self.enum_match_in_context(key) {
+            return fact
+                .arms
+                .iter()
+                .map(|arm| {
+                    let lowered = match &arm.pattern {
+                        beskid_queries::EnumMatchPatternFact::Enum(pattern)
+                            if pattern.declaration == fact.declaration && pattern.layout == fact.layout =>
+                        {
+                            let payload = MatchPayloadPatternFact::Fields(
+                                pattern
+                                    .items
+                                    .iter()
+                                    .map(|payload| self.match_payload_pattern(payload))
+                                    .collect::<Option<Vec<_>>>()?,
+                            );
+                            MatchArmFact::variant_with_payload(u64::from(pattern.variant_index), arm.body, payload)
+                        }
+                        // A wildcard or a binding of the whole enum value tests no tag.
+                        beskid_queries::EnumMatchPatternFact::Wildcard
+                        | beskid_queries::EnumMatchPatternFact::Binding(_) => {
+                            MatchArmFact::value(arm.body, self.match_payload_pattern(&arm.pattern)?)
+                        }
+                        _ => return None,
+                    };
+                    Some(lowered.with_guard(arm.guard))
+                })
+                .collect();
+        }
+        let fact = self.query(scalar_match(self.db, key))?;
         fact.arms
             .iter()
             .map(|arm| match &arm.pattern {
-                beskid_queries::EnumMatchPatternFact::Wildcard => Some(MatchArmFact::wildcard(arm.body)),
-                beskid_queries::EnumMatchPatternFact::Enum(pattern)
-                    if pattern.declaration == fact.declaration && pattern.layout == fact.layout =>
-                {
-                    let payload = MatchPayloadPatternFact::Fields(
-                        pattern
-                            .items
-                            .iter()
-                            .map(|payload| self.match_payload_pattern(payload))
-                            .collect::<Option<Vec<_>>>()?,
-                    );
-                    Some(MatchArmFact::variant_with_payload(u64::from(pattern.variant_index), arm.body, payload))
+                beskid_queries::EnumMatchPatternFact::Wildcard
+                | beskid_queries::EnumMatchPatternFact::Binding(_)
+                | beskid_queries::EnumMatchPatternFact::ScalarLiteral(_) => {
+                    Some(MatchArmFact::value(arm.body, self.match_payload_pattern(&arm.pattern)?).with_guard(arm.guard))
                 }
                 _ => None,
             })
             .collect()
+    }
+
+    /// The CLIF type of a by-value match's primitive scrutinee.
+    pub(super) fn scalar_match_scrutinee_impl(&self, key: AstNodeKey) -> Option<Type> {
+        let fact = self.query(scalar_match(self.db, key))?;
+        map_signature_type(self.isa?, fact.scrutinee_type)
     }
 }

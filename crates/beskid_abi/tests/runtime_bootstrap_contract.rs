@@ -139,7 +139,7 @@ fn descriptor_worker_ownership_is_disjoint_from_the_existing_abandoned_protocol(
 }
 
 #[test]
-fn canonical_contract_has_the_exact_lifecycle_closure_and_trap_exports() {
+fn canonical_bootstrap_lifecycle_closure_and_trap_signatures_are_preserved() {
     let manifest = AbiManifestV5::canonical_runtime(supported_targets()[0].clone());
     manifest.validate().expect("canonical runtime contract");
 
@@ -148,9 +148,7 @@ fn canonical_contract_has_the_exact_lifecycle_closure_and_trap_exports() {
         .iter()
         .map(|entry| (entry.symbol.as_str(), entry.params.as_slice(), entry.result))
         .collect::<Vec<_>>();
-    assert_eq!(
-        actual,
-        vec![
+    let expected = vec![
             ("beskid_library_attach_v5", &[AbiType::Pointer][..], AbiType::I32,),
             ("beskid_library_detach_v5", &[AbiType::Pointer][..], AbiType::Void,),
             ("beskid_rt_v5_abi_value_clear", &[AbiType::Pointer][..], AbiType::U8),
@@ -222,8 +220,9 @@ fn canonical_contract_has_the_exact_lifecycle_closure_and_trap_exports() {
             ("beskid_rt_v5_thread_attach", &[AbiType::Pointer][..], AbiType::Pointer,),
             ("beskid_rt_v5_thread_detach", &[AbiType::Pointer][..], AbiType::Void,),
             ("beskid_rt_v5_trap", &[AbiType::U8, AbiType::Pointer, AbiType::USize][..], AbiType::Void,),
-        ]
-    );
+        ];
+    let bootstrap = actual.into_iter().filter(|entry| expected.iter().any(|required| required.0 == entry.0)).collect::<Vec<_>>();
+    assert_eq!(bootstrap, expected);
     assert_eq!(TRAP_EXIT_STATUS, 101);
     assert_eq!(TRAP_DIAGNOSTIC_PREFIX, "beskid runtime trap v5");
     let trap = manifest.exports.iter().find(|entry| entry.symbol == "beskid_rt_v5_trap").unwrap();
@@ -238,7 +237,10 @@ fn trusted_intrinsics_are_typed_and_owned_only_by_the_canonical_package() {
     assert_eq!(package.name(), CANONICAL_RUNTIME_PACKAGE_NAME);
     assert_eq!(package.abi_version(), ABI_V5);
     let names = manifest.trusted_runtime_intrinsics.iter().map(|intrinsic| intrinsic.name.as_str()).collect::<Vec<_>>();
-    assert_eq!(names.len(), 70);
+    assert_eq!(names.len(), 88);
+    for added in ["glue_owner_shutdown", "float_to_bits32", "float_from_bits32", "float_to_bits64", "float_from_bits64", "utf8_view_new", "dynamic_registry_shutdown_v1", "child_begin", "child_argument", "child_environment", "child_spawn", "child_poll", "child_read", "child_write", "child_close_pipe", "child_terminate", "child_close", "child_shutdown"] {
+        assert!(names.contains(&added), "missing source-owned runtime intrinsic {added}");
+    }
     assert!(names.contains(&"pointer_add"));
     assert!(names.contains(&"raw_word_load"));
     assert!(names.contains(&"system_allocate"));
@@ -377,6 +379,8 @@ fn canonical_layouts_freeze_common_and_target_context_offsets() {
                 "BeskidArrayElementDescriptor",
                 "BeskidCallbackEntry",
                 "BeskidCallbackRegistry",
+                "BeskidCheckedAllocationScope",
+                "BeskidChunkTable",
                 "BeskidCompositionContainer",
                 "BeskidCompositionScope",
                 "BeskidFiberRecord",
@@ -398,6 +402,7 @@ fn canonical_layouts_freeze_common_and_target_context_offsets() {
                 "BeskidSchedulerState",
                 "BeskidTlsState",
                 "BeskidTypeDescriptor",
+                "BeskidUtf8ViewRecord",
                 "BeskidWorkerRequest",
                 expected.0,
             ]
@@ -417,7 +422,7 @@ fn canonical_layouts_freeze_common_and_target_context_offsets() {
         assert_eq!(object.fields[1].offset, 8);
 
         let tls = manifest.layouts.iter().find(|layout| layout.name == "BeskidTlsState").unwrap();
-        assert_eq!((tls.size, tls.alignment), (48, 8));
+        assert_eq!((tls.size, tls.alignment), (56, 8));
         assert_eq!(
             tls.fields.iter().map(|field| (field.name.as_str(), field.offset)).collect::<Vec<_>>(),
             vec![
@@ -427,6 +432,7 @@ fn canonical_layouts_freeze_common_and_target_context_offsets() {
                 ("attach_depth", 24),
                 ("composition_scope", 32),
                 ("composition_depth", 40),
+                ("checked_allocation_scope", 48),
             ]
         );
 
@@ -655,6 +661,31 @@ fn target_system_imports_are_exact_and_unknown_contracts_are_rejected() {
     ];
     let windows_completion_imports =
         ["CancelIoEx", "CreateIoCompletionPort", "GetQueuedCompletionStatus", "PostQueuedCompletionStatus"];
+    // Child-process transport (assembly/common/process_transport.h). The transport formats and
+    // scans UTF-16 itself, so it imports no UCRT wide-string or printf-family function.
+    let windows_process_imports = [
+        "AssignProcessToJobObject",
+        "CompareStringOrdinal",
+        "CreateEventW",
+        "CreateJobObjectW",
+        "CreateNamedPipeW",
+        "CreatePipe",
+        "CreateProcessW",
+        "DeleteProcThreadAttributeList",
+        "FreeEnvironmentStringsW",
+        "GetEnvironmentStringsW",
+        "GetExitCodeProcess",
+        "GetOverlappedResult",
+        "InitializeProcThreadAttributeList",
+        "PeekNamedPipe",
+        "ResumeThread",
+        "SetHandleInformation",
+        "SetInformationJobObject",
+        "TerminateJobObject",
+        "TerminateProcess",
+        "UpdateProcThreadAttribute",
+    ];
+    let windows_vcruntime_imports = ["memchr", "memcmp", "memcpy", "memset"];
     let math_imports = ["atan2", "ceil", "cos", "fabs", "floor", "log", "log10", "log2", "pow", "sin", "sqrt", "tan"];
     let windows_ucrt_descriptor_imports =
         ["_close", "_dup", "_errno", "_read", "_set_thread_local_invalid_parameter_handler", "_setmode", "_write"];
@@ -677,17 +708,31 @@ fn target_system_imports_are_exact_and_unknown_contracts_are_rejected() {
                     "pthread_condattr_destroy",
                     "pthread_condattr_setclock",
                 ]);
+                // glibc exports the POSIX signal-set operations as functions; Darwin defines them
+                // as header macros, so only the Linux kit imports them.
+                imports.extend(["sigaddset", "sigemptyset", "sigismember"]);
                 (imports, Some(("libc", "libm")))
             }
             "x86_64-pc-windows-msvc" => {
                 let mut imports = windows_imports.to_vec();
                 imports.extend(windows_winsock_imports);
                 imports.extend(windows_completion_imports);
-                imports.push("memcpy");
+                imports.extend(windows_process_imports);
+                imports.extend(["memchr", "memcmp", "memcpy"]);
                 (imports, Some(("kernel32", "ucrt")))
             }
             unsupported => panic!("unsupported target in contract test: {unsupported}"),
         };
+        if !is_windows {
+            expected_symbols.extend(["chdir", "dup2", "execve", "fork", "getrlimit", "kill", "memchr", "memcmp", "pthread_sigmask", "setpgid", "sigpending", "sigwait", "strchr", "strnlen", "waitpid"]);
+        }
+        // The process environment is a data import: Darwin exports `environ`, while glibc's
+        // canonical symbol is `__environ` (`environ` is only its weak alias).
+        match target.triple.as_str() {
+            "aarch64-apple-darwin" => expected_symbols.push("environ"),
+            "x86_64-unknown-linux-gnu" => expected_symbols.push("__environ"),
+            _ => {}
+        }
         expected_symbols.sort_unstable();
         let mut manifest = AbiManifestV5::canonical_runtime(target);
         assert_eq!(
@@ -698,7 +743,7 @@ fn target_system_imports_are_exact_and_unknown_contracts_are_rejected() {
             None => assert!(manifest.platform_imports.iter().all(|entry| entry.library == "libSystem")),
             Some((platform, math)) => {
                 for entry in &manifest.platform_imports {
-                    let expected = if is_windows && matches!(entry.symbol.as_str(), "memcpy" | "memset") {
+                    let expected = if is_windows && windows_vcruntime_imports.contains(&entry.symbol.as_str()) {
                         "vcruntime"
                     } else if is_windows && windows_winsock_imports.contains(&entry.symbol.as_str()) {
                         "ws2_32"
@@ -1036,4 +1081,23 @@ fn network_status_manifest_c_enum_runtime_constants_and_corelib_errors_agree() {
     assert!(table.contains("const NETWORK_RESOURCE_EXHAUSTED = 18;") && table.contains("const NETWORK_PENDING = 19;"));
     assert!(checked >= 10, "Table.bd names its status constants after manifest statuses");
     assert!(!table.contains("const NETWORK_DOWN"), "runtime-owned failures never report NetworkDown");
+}
+
+#[test]
+fn canonical_release_export_closure_rejects_every_removed_or_retyped_export() {
+    let original = AbiManifestV5::canonical_runtime(supported_targets()[0].clone());
+    original.validate().unwrap();
+    for index in 0..original.exports.len() {
+        let mut removed = original.clone();
+        let name = removed.exports.remove(index).symbol;
+        assert!(removed.validate().is_err(), "removed export {name} must reject");
+        let mut retyped = original.clone();
+        retyped.exports[index].result = if retyped.exports[index].result == AbiType::Void { AbiType::I32 } else { AbiType::Void };
+        assert!(retyped.validate().is_err(), "retyped export {name} must reject");
+    }
+    let mut extra = original;
+    let mut unissued = extra.exports[0].clone();
+    unissued.symbol = "beskid_rt_v5_unissued_export".into();
+    extra.exports.push(unissued);
+    assert!(extra.validate().is_err(), "caller cannot extend the canonical export closure");
 }

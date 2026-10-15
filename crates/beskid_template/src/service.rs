@@ -96,6 +96,7 @@ pub struct UninstallTemplateOutput {
 /// Request for `beskid new <shortName>` / instantiate.
 #[derive(Debug, Clone)]
 pub struct InstantiateTemplateRequest {
+    pub offline: bool,
     pub selector: TemplateSelector,
     pub output: PathBuf,
     pub name: Option<String>,
@@ -113,6 +114,18 @@ pub struct InstantiateTemplateRequest {
 /// List installed templates and optionally query the registry.
 pub fn list_templates(request: ListTemplatesRequest) -> Result<ListTemplatesOutput> {
     let mut output = ListTemplatesOutput::default();
+    if request.kind_filter.is_none_or(|kind| kind == TemplateOutputKind::Project) {
+        output.installed.push(InstalledTemplateRow {
+            short_name: "app".into(),
+            name: "Application (bundled, offline)".into(),
+            identity: "beskid.bundled.app".into(),
+            kind: TemplateOutputKind::Project,
+            package_id: None,
+            version: None,
+            source: InstallSource::Bundled,
+            yanked: false,
+        });
+    }
 
     for (snap, path) in list_installed()? {
         let manifest = load_manifest_from_template_root(&path).ok();
@@ -178,8 +191,14 @@ fn instantiate_template_with_confirmation<F>(
 where
     F: FnOnce(&Path) -> Result<bool>,
 {
-    let (template_root, manifest, registry_meta) =
-        resolve_template_for_instantiate(&request.selector, &request.registry)?;
+    let bundled = matches!(&request.selector, TemplateSelector::ShortName(name) if name == "app");
+    let bundled_root = if bundled { Some(crate::bundled::ApplicationTemplate(request.name.as_deref())?) } else { None };
+    let selector = bundled_root.as_ref().map(|root| TemplateSelector::Path(root.path().to_path_buf()));
+    let (template_root, manifest, registry_meta) = resolve_template_for_instantiate(
+        selector.as_ref().unwrap_or(&request.selector),
+        &request.registry,
+        request.offline,
+    )?;
     let output_root =
         crate::instantiate::resolve_output_root(manifest.output_kind(), &request.output).map_err(|e| anyhow!("{e}"))?;
 
@@ -211,6 +230,7 @@ where
     symbol_options.bindings = collect_symbol_values(&manifest, &symbol_options).map_err(|e| anyhow!("{e}"))?;
 
     let options = InstantiateOptions {
+        offline: request.offline,
         template_root: template_root.clone(),
         output: request.output,
         host_project: request.host_project,
@@ -218,7 +238,7 @@ where
         allow_project_manifest: request.allow_project_manifest,
         strict_post_actions: request.strict_post_actions,
         symbol_options,
-        skip_default_lock: false,
+        skip_default_lock: bundled,
         beskid_exe: request.beskid_exe,
     };
 
@@ -289,7 +309,47 @@ type ResolvedTemplateForInstantiate = (PathBuf, TemplateManifest, Option<(String
 fn resolve_template_for_instantiate(
     selector: &TemplateSelector,
     registry: &RegistryConnectConfig,
+    offline: bool,
 ) -> Result<ResolvedTemplateForInstantiate> {
+    if offline && !matches!(selector, TemplateSelector::Path(_)) {
+        let candidates = crate::cache::list_installed()
+            .map_err(|e| anyhow!("{e}"))?
+            .into_iter()
+            .filter(|(snapshot, _)| match selector {
+                TemplateSelector::ShortName(name) => snapshot.short_name == *name,
+                TemplateSelector::Package { id, version } => {
+                    snapshot.package_id.as_ref() == Some(id)
+                        && version.as_ref().is_none_or(|version| snapshot.resolved_version.as_ref() == Some(version))
+                }
+                _ => false,
+            })
+            .collect::<Vec<_>>();
+        if candidates.len() != 1 {
+            anyhow::bail!(
+                "offline template cache requires one verified installed match; install online with `beskid package template install`, then select its short name"
+            );
+        }
+        let (snapshot, path) = candidates.into_iter().next().expect("one candidate");
+        if !snapshot
+            .checksum
+            .as_deref()
+            .is_some_and(|digest| digest.starts_with(crate::cache::TEMPLATE_CHECKSUM_PREFIX))
+        {
+            anyhow::bail!("offline cache digest version is unsupported; reinstall the selected template online");
+        }
+        let manifest = load_manifest_from_template_root(&path).map_err(|e| anyhow!("{e}"))?;
+        if snapshot.identity != manifest.identity
+            || snapshot.short_name != manifest.short_name
+            || snapshot.checksum.as_deref() != Some(crate::checksum_dir(&path).map_err(|e| anyhow!("{e}"))?.as_str())
+        {
+            anyhow::bail!(
+                "offline installed template integrity/checksum mismatch; reinstall the selected template online"
+            );
+        }
+        let meta =
+            snapshot.package_id.zip(snapshot.resolved_version).map(|(id, version)| (id, version, snapshot.yanked));
+        return Ok((path, manifest, meta));
+    }
     match selector {
         TemplateSelector::Path(path) => {
             let path = std::fs::canonicalize(path).with_context(|| format!("path {}", path.display()))?;
@@ -381,11 +441,14 @@ fn check_registry_version(
                     anyhow::bail!("cancelled");
                 }
             } else {
-                eprintln!("use --allow-yanked to proceed without prompting");
+                anyhow::bail!("yanked template requires --allow-yanked without prompting");
             }
         }
     }
 
+    if request.offline {
+        return Ok(());
+    }
     let client = build_pckg_client(&request.registry).ok();
     let Some(client) = client else {
         return Ok(());
@@ -411,7 +474,7 @@ fn check_registry_version(
             && l > c
         {
             println!(
-                "A newer template version is available: {package_id}@{}. Run `beskid new install {package_id}` to update.",
+                "A newer template version is available: {package_id}@{}. Run `beskid package template install {package_id}` to update.",
                 latest_ver.version
             );
         }
@@ -507,6 +570,7 @@ mod tests {
 
         fn request(&self, output: PathBuf, no_interactive: bool) -> InstantiateTemplateRequest {
             InstantiateTemplateRequest {
+                offline: false,
                 selector: TemplateSelector::Path(self.template_root.clone()),
                 output,
                 name: None,
@@ -590,6 +654,14 @@ mod tests {
         let mut confirmed = false;
         let mut request = fixture.request(requested_file, false);
         request.host_project = Some(host_project);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let failing_cli = fixture.root.join("failing-beskid");
+            std::fs::write(&failing_cli, "#!/bin/sh\nexit 17\n").unwrap();
+            std::fs::set_permissions(&failing_cli, std::fs::Permissions::from_mode(0o755)).unwrap();
+            request.beskid_exe = Some(failing_cli);
+        }
         let result = instantiate_template_with_confirmation(request, true, |_| {
             confirmed = true;
             Ok(true)
@@ -597,11 +669,41 @@ mod tests {
 
         assert!(confirmed, "an existing non-empty resolved item output root requires confirmation");
         assert!(
-            result.as_ref().is_err_and(|error| error.to_string().contains("beskid lock failed")),
-            "the test harness is not the CLI executable, so the expected post-action lock invocation fails: {result:?}"
+            result.as_ref().is_err_and(|error| error.to_string().contains("beskid dev project lock failed")),
+            "a failed required post-action must propagate after confirmed generation: {result:?}"
         );
         assert_eq!(std::fs::read(source_root.join("README.md")).unwrap(), b"generated bytes\n");
         assert_eq!(std::fs::read(source_root.join("unplanned.txt")).unwrap(), b"keep me\n");
+    }
+
+    #[test]
+    fn v06_bundled_app_instantiates_without_registry_or_lock_subprocess() {
+        let fixture = Fixture::new();
+        let output = fixture.root.join("hello");
+        let mut request = fixture.request(output.clone(), true);
+        request.selector = TemplateSelector::ShortName("app".into());
+        request.name = Some("hello".into());
+        request.registry = RegistryConnectConfig::new("http://127.0.0.1:1");
+        let result = instantiate_template(request);
+        assert!(result.is_ok(), "bundled app must instantiate offline: {result:?}");
+        assert!(output.join("hello.bproj").is_file());
+        assert!(output.join("Src/Main.bd").is_file());
+        assert!(!output.join("Project.lock").exists(), "offline creation must defer dependency preparation");
+        let source = std::fs::read_to_string(output.join("Src/Main.bd")).unwrap();
+        assert!(source.contains("Main"));
+    }
+
+    #[test]
+    fn v06_bundled_app_preserves_existing_output_without_force() {
+        let fixture = Fixture::new();
+        let output = fixture.output("hello", b"existing");
+        let mut request = fixture.request(output.clone(), true);
+        request.selector = TemplateSelector::ShortName("app".into());
+        request.name = Some("hello".into());
+        request.registry = RegistryConnectConfig::new("http://127.0.0.1:1");
+        assert!(instantiate_template(request).is_err());
+        assert_eq!(std::fs::read(output.join("README.md")).unwrap(), b"existing");
+        assert_eq!(std::fs::read(output.join("unplanned.txt")).unwrap(), b"keep me\n");
     }
 
     #[test]

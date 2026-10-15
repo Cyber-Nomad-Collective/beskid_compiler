@@ -3,7 +3,7 @@
 use crate::naming_case::NamingProfile;
 use crate::syntax::ContractNode;
 use crate::syntax::{
-    Block, ContractDefinition, EnumDefinition, EnumVariant, Expression, ExtendTypeDefinition, Field,
+    Block, ContractDefinition, EnumDefinition, EnumVariant, Expression, ExtendTypeDefinition, Field, FieldKind,
     FunctionDefinition, ImplBlock, InlineModule, MethodDefinition, Node, Parameter, Pattern, Program, Statement,
     TestDefinition, TypeDefinition,
 };
@@ -151,14 +151,24 @@ fn walk_enum_variant_mut(variant: &mut EnumVariant, visit: &mut impl FnMut(Namin
     }
 }
 
+/// An `[Extern]` contract's method identifiers are logical foreign symbols (the method name is
+/// the link-time symbol unless `Symbol` overrides it), so Beskid naming conventions never apply
+/// to them and normalization must never rename them.
+fn is_extern_contract(def: &ContractDefinition) -> bool {
+    def.attributes.iter().any(|attribute| attribute.node.name.node.name == "Extern")
+}
+
 fn walk_contract_definition(def: &ContractDefinition, visit: &mut impl FnMut(NamingRole, &Spanned<Identifier>)) {
     visit(NamingRole::TypeDeclaration, &def.name);
     for generic in &def.generics {
         visit(NamingRole::GenericParameter, generic);
     }
+    let foreign_symbols = is_extern_contract(def);
     for item in &def.items {
         if let ContractNode::MethodSignature(sig) = &item.node {
-            visit(NamingRole::Callable, &sig.node.name);
+            if !foreign_symbols {
+                visit(NamingRole::Callable, &sig.node.name);
+            }
             for param in &sig.node.parameters {
                 walk_parameter(&param.node, visit);
             }
@@ -171,9 +181,12 @@ fn walk_contract_definition_mut(def: &mut ContractDefinition, visit: &mut impl F
     for generic in &mut def.generics {
         visit(NamingRole::GenericParameter, &mut generic.node);
     }
+    let foreign_symbols = is_extern_contract(def);
     for item in &mut def.items {
         if let ContractNode::MethodSignature(sig) = &mut item.node {
-            visit(NamingRole::Callable, &mut sig.node.name.node);
+            if !foreign_symbols {
+                visit(NamingRole::Callable, &mut sig.node.name.node);
+            }
             for param in &mut sig.node.parameters {
                 walk_parameter_mut(&mut param.node, visit);
             }
@@ -283,12 +296,19 @@ fn walk_module_path_mut(path: &mut Spanned<crate::syntax::Path>, visit: &mut imp
     }
 }
 
+/// An `event` member is a callable member (raised and subscribed like a method), so it carries the
+/// PascalCase callable profile (`event OnResize(ConsoleSize size)`); every other field is
+/// lowerCamelCase.
+fn field_role(field: &Field) -> NamingRole {
+    if field.kind == FieldKind::Event { NamingRole::Callable } else { NamingRole::Field }
+}
+
 fn walk_field(field: &Field, visit: &mut impl FnMut(NamingRole, &Spanned<Identifier>)) {
-    visit(NamingRole::Field, &field.name);
+    visit(field_role(field), &field.name);
 }
 
 fn walk_field_mut(field: &mut Field, visit: &mut impl FnMut(NamingRole, &mut Identifier)) {
-    visit(NamingRole::Field, &mut field.name.node);
+    visit(field_role(field), &mut field.name.node);
 }
 
 fn walk_parameter(param: &Parameter, visit: &mut impl FnMut(NamingRole, &Spanned<Identifier>)) {
@@ -566,5 +586,22 @@ fn walk_pattern_mut(pattern: &mut Pattern, visit: &mut impl FnMut(NamingRole, &m
             }
         }
         Pattern::Wildcard | Pattern::Literal(_) => {}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{NamingRole, walk_program};
+    use crate::services::parse_program;
+
+    #[test]
+    fn v06_event_members_carry_the_callable_profile() {
+        let program =
+            parse_program("pub type Hub { i32 lastSize, event{16} OnResize(i32 size), }").expect("event type parses");
+        let mut roles = Vec::new();
+        walk_program(&program.node, |role, name| roles.push((role, name.node.name.clone())));
+        assert!(roles.contains(&(NamingRole::Callable, "OnResize".to_string())), "{roles:?}");
+        assert!(roles.contains(&(NamingRole::Field, "lastSize".to_string())), "{roles:?}");
+        assert!(!roles.contains(&(NamingRole::Field, "OnResize".to_string())), "{roles:?}");
     }
 }

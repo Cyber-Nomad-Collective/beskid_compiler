@@ -2,7 +2,10 @@
 pub(crate) const CONTROL_FLOW_KEYWORDS: &[&str] = &["if", "else", "while", "for", "with", "match"];
 pub(crate) const CONTROL_EXPRESSION_KEYWORDS: &[&str] = &["if", "while", "for", "match"];
 pub(crate) const PRIMITIVE_TYPE_KEYWORDS: &[&str] =
-    &["bool", "i32", "i64", "u8", "u32", "pointer", "word", "f64", "char", "string", "unit", "never"];
+    &[
+    "bool", "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "pointer", "word", "f32", "f64", "char",
+    "string", "unit", "never",
+];
 pub(crate) const TERMINATOR_KEYWORDS: &[&str] = &["let", "const", "return", "break", "continue", "launch"];
 
 pub(crate) const KEYWORDS: &[&str] = &[

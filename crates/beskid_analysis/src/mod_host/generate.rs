@@ -19,9 +19,10 @@ pub(crate) fn resolved_max_generator_rounds(loaded: &[LoadedModArtifact]) -> u32
 }
 
 /// Run every Generator / AttributeGenerator contract registered by `mod.load`.
-/// Generator outcomes (typed AST contributions) are merged into [`GeneratedSyntax`] for
-/// `merge::merge_generated_syntax` and, when only legacy text remains,
-/// `reparse::reparse_if_needed`.
+/// Each invocation's typed AST contributions pass through a fresh structural arena that
+/// bounds them and attaches their origin lineage; the admitted items are merged into
+/// [`GeneratedSyntax`] for `merge::merge_generated_syntax`. Generators contribute typed
+/// syntax only: there is no source-text contribution path.
 pub(crate) fn run_generators(
     loaded: &[LoadedModArtifact],
     collected: &CollectedContracts,
@@ -33,6 +34,7 @@ pub(crate) fn run_generators(
         let mut registrations: Vec<ContractRegistration> = collected.registrations.clone();
         let mut outcomes: Vec<GeneratorOutcome> = Vec::new();
         let mut typed_items: Vec<crate::syntax::Spanned<ProgramItem>> = Vec::new();
+        let mut provenance: Vec<super::StructuralProvenance> = Vec::new();
         let pipeline_ops: Vec<PipelineOp> = Vec::new();
         let mut context = ModInvocationContext::build(input, loaded);
         let target_ids: Vec<String> =
@@ -45,9 +47,12 @@ pub(crate) fn run_generators(
                     continue;
                 }
                 let outcome = invoker
-                    .invoke_generator(registration, &generation_request)
-                    .map_err(|err| anyhow::anyhow!(err.to_string()))?;
+                    .invoke_generator(registration, &generation_request, input.semantic_authority)
+                    .map_err(|err| anyhow::anyhow!(err.attributed_to(artifact.package_id()).to_string()))?;
+                let outcome = admit_outcome(registration, outcome, input)
+                    .map_err(|err| anyhow::anyhow!("{}: {err}", artifact.package_id()))?;
                 typed_items.extend(outcome.typed_items.iter().cloned());
+                provenance.extend(outcome.provenance.iter().cloned());
                 outcomes.push(outcome);
                 registrations.push(registration.clone());
             }
@@ -61,10 +66,50 @@ pub(crate) fn run_generators(
         });
         registrations.dedup();
 
-        Ok(GeneratedSyntax { registrations, typed_items, pipeline_ops, text_contributions: Vec::new(), outcomes })
+        Ok(GeneratedSyntax { registrations, typed_items, provenance, pipeline_ops, outcomes })
     })
 }
 
+/// Admit one invocation's typed items through the structural arena of its registration and
+/// the actual syntax generation the invocation observed. An outcome that names another
+/// registration, carries lineage the arena did not issue, or contributes items without actual
+/// generation authority is rejected before anything is published.
+fn admit_outcome(
+    registration: &ContractRegistration,
+    mut outcome: GeneratorOutcome,
+    input: &ModHostInput<'_>,
+) -> Result<GeneratorOutcome> {
+    if outcome.type_id != registration.type_id {
+        anyhow::bail!(
+            "generator outcome for `{}` was returned by registration `{}`",
+            outcome.type_id,
+            registration.type_id
+        );
+    }
+    if !outcome.provenance.is_empty() {
+        anyhow::bail!("generator `{}` supplied lineage the host arena did not issue", registration.type_id);
+    }
+    if outcome.typed_items.is_empty() {
+        return Ok(outcome);
+    }
+    let generation = input.syntax_generation_id.filter(|generation| generation.0 != 0).ok_or_else(|| {
+        anyhow::anyhow!(
+            "generator `{}` contributed syntax without actual syntax generation authority",
+            registration.type_id
+        )
+    })?;
+    let items = std::mem::take(&mut outcome.typed_items);
+    let admitted = super::structural::admit_generated_items(&registration.type_id, generation.0, input.source_name, items)
+        .map_err(|err| anyhow::anyhow!("generator `{}` contribution rejected: {err}", registration.type_id))?;
+    for item in admitted {
+        outcome.typed_items.push(item.item);
+        outcome.provenance.push(item.provenance);
+    }
+    Ok(outcome)
+}
+
 pub(crate) fn is_generate_registration(registration: &ContractRegistration) -> bool {
-    registration.contract_id.ends_with(".Generator") || registration.contract_id.ends_with(".AttributeGenerator")
+    registration.contract_id.ends_with(".Generator")
+        || registration.contract_id.ends_with(".GrammarGenerator")
+        || registration.contract_id.ends_with(".AttributeGenerator")
 }

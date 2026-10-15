@@ -101,10 +101,24 @@ fn direct_generic_call_match_supports_nested_nominal_payload_pattern() {
 
 #[test]
 fn direct_generic_call_match_distinguishes_scalar_array_and_native_pointer_ownership() {
+    // A managed array payload keeps its source ownership in the shape itself; a native pointer
+    // with the same pointer ABI stays a plain scalar.
     for (ty, expected_shape, ownership) in [
-        ("i64", beskid_queries::SemanticTypeId::I64, beskid_queries::ManagedReferenceKind::NativeOrScalar),
-        ("u8[]", beskid_queries::SemanticTypeId::POINTER, beskid_queries::ManagedReferenceKind::GcManaged),
-        ("pointer", beskid_queries::SemanticTypeId::POINTER, beskid_queries::ManagedReferenceKind::NativeOrScalar),
+        (
+            "i64",
+            beskid_queries::AggregateFieldShape::Scalar(beskid_queries::SemanticTypeId::I64),
+            beskid_queries::ManagedReferenceKind::NativeOrScalar,
+        ),
+        (
+            "u8[]",
+            beskid_queries::AggregateFieldShape::ManagedReference(beskid_queries::SemanticTypeId::POINTER),
+            beskid_queries::ManagedReferenceKind::GcManaged,
+        ),
+        (
+            "pointer",
+            beskid_queries::AggregateFieldShape::Scalar(beskid_queries::SemanticTypeId::POINTER),
+            beskid_queries::ManagedReferenceKind::NativeOrScalar,
+        ),
     ] {
         let (input, isa, root) = item_fixture_with_root(&format!(
             "enum Outcome<T> {{ Ok(T value), None }} Outcome<T> Wrap<T>(T value) {{ return Outcome::Ok(value); }} i64 Main({ty} value) {{ return match Wrap(value) {{ Outcome::Ok(payload) => 21_i64, _ => -1_i64, }}; }}"
@@ -117,7 +131,7 @@ fn direct_generic_call_match_distinguishes_scalar_array_and_native_pointer_owner
         let beskid_queries::EnumMatchPatternFact::Binding(binding) = &pattern.items[0] else {
             panic!("payload binding");
         };
-        assert_eq!(binding.payload, beskid_queries::AggregateFieldShape::Scalar(expected_shape), "{ty}");
+        assert_eq!(binding.payload, expected_shape, "{ty}");
         assert_eq!(binding.managed_reference, ownership, "{ty}");
         let items = find_function_definitions(input.database(), root)
             .into_iter()
@@ -248,7 +262,7 @@ fn imported_generic_result_match_specialization_preserves_payload_provenance() {
         ),
         ("Core/Results.bd", "pub enum Result<TValue, TError> { Ok(TValue value), Error(TError error) }"),
         ("Http/Errors.bd", "pub enum HttpError { InvalidFraming(), Closed() }"),
-        ("Http/Requests.bd", "pub type Request { i64 id, }"),
+        ("Http/Requests.bd", "pub type Request { pub i64 id, }"),
     ]);
 }
 
@@ -261,7 +275,7 @@ fn imported_result_binding_array_field_flows_into_a_call_argument() {
         ),
         ("Core/Results.bd", "pub enum Result<TValue, TError> { Ok(TValue value), Error(TError error) }"),
         ("Http/Errors.bd", "pub enum HttpError { InvalidFraming(), Closed() }"),
-        ("Http/Requests.bd", "pub type Header { string name, } pub type Request { string method, Header[] headers, }"),
+        ("Http/Requests.bd", "pub type Header { pub string name, } pub type Request { pub string method, pub Header[] headers, }"),
     ]);
 }
 

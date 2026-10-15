@@ -21,7 +21,7 @@ pub(super) fn archive_static(req: &LinkRequest) -> AotResult<LinkResult> {
         return archive_static_libtool(req);
     }
 
-    if req.runtime_staticlib.is_none() {
+    if req.runtime.is_none() {
         let output = Command::new("ar")
             .arg("crs")
             .arg(&req.output_path)
@@ -37,6 +37,7 @@ pub(super) fn archive_static(req: &LinkRequest) -> AotResult<LinkResult> {
             });
         }
         return Ok(LinkResult {
+            tool_receipt: None,
             output_path: req.output_path.clone(),
             exported_symbols: req.exported_symbols.clone(),
             command_line: format!("ar crs {} {}", req.output_path.display(), req.object_path.display()),
@@ -44,7 +45,7 @@ pub(super) fn archive_static(req: &LinkRequest) -> AotResult<LinkResult> {
     }
 
     let script_path = req.output_path.with_extension("mri");
-    let runtime_lib = req.runtime_staticlib.as_ref().expect("runtime checked above");
+    let runtime_lib = req.runtime.as_ref().expect("runtime checked above").static_archive()?;
     let mut script = format!(
         "CREATE {}\nADDLIB {}\nADDMOD {}\n",
         req.output_path.display(),
@@ -84,6 +85,7 @@ pub(super) fn archive_static(req: &LinkRequest) -> AotResult<LinkResult> {
     }
 
     Ok(LinkResult {
+        tool_receipt: None,
         output_path: req.output_path.clone(),
         command_line: format!("ar -M < {} && ranlib {}", script_path.display(), req.output_path.display()),
         exported_symbols: req.exported_symbols.clone(),

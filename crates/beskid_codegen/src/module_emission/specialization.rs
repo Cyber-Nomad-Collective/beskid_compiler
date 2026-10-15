@@ -49,30 +49,165 @@ pub(super) fn resolve_module_items(
     // Add those bodies and their ordinary direct dependencies to this same module worklist.
     let mut source_items = source_items.to_vec();
     let mut present = source_items.iter().map(|item| item.key).collect::<std::collections::HashSet<_>>();
-    let mut pending = specializations.keys().copied().collect::<Vec<_>>();
-    while let Some(key) = pending.pop() {
-        if !present.insert(key) {
-            continue;
+    close_source_items(input, &mut source_items, &mut present, &mut specializations)?;
+    // Each canonical `ReadField<T,R>` and `WriteField<T,E>` instance has a compiler-issued body:
+    // its bridge forwards to the exact issued field read or write of T. Issued functions
+    // (generated field codec factories and the canonical scalar and container reads and writes)
+    // call the entry again for their own fields, so the correspondence runs to a fixpoint before
+    // any other bridge authority inspects the worklist.
+    let mut field_codecs = Vec::<beskid_queries::SerializationFieldCodecBinding>::new();
+    let mut resolved_reads = std::collections::HashSet::<GenericSpecializationInstance>::new();
+    loop {
+        let mut issued = Vec::new();
+        for instance in specializations.values().flatten() {
+            if resolved_reads.contains(instance) {
+                continue;
+            }
+            let binding = beskid_queries::serialization_field_codec_binding(db, input.typed_program(), instance)
+                .map_err(|error| {
+                    emission_verification(format!(
+                        "field codec correspondence failed for {}: {error}",
+                        format_declaration_for_trace(db, instance.declaration)
+                    ))
+                })?;
+            if let Some(binding) = binding {
+                issued.push((instance.clone(), binding));
+            }
         }
-        source_items.push(SyntaxModuleItem {
-            key,
-            symbol: syntax_item_symbol(input, key)
-                .ok_or_else(|| emission_verification("specialization declaration symbol is unavailable"))?,
-        });
-        if is_concrete_executable_item(db, key)? {
-            collect_generic_call_specializations(db, key, &mut specializations)?;
+        if issued.is_empty() {
+            break;
         }
-        pending.extend(
-            beskid_queries::direct_callees(db, key)
-                .map_err(|error| emission_verification(error.to_string()))?
-                .into_iter()
-                .flat_map(|callees| callees.iter().copied().collect::<Vec<_>>()),
-        );
-        pending.extend(specializations.keys().filter(|key| !present.contains(key)).copied());
+        for (read, binding) in issued {
+            resolved_reads.insert(read);
+            for instance in [binding.instance(), binding.target()] {
+                let entries = specializations.entry(instance.declaration).or_default();
+                let fresh = !entries.contains(instance);
+                if fresh {
+                    entries.push(instance.clone());
+                }
+                if fresh && instance == binding.target() {
+                    collect_generic_call_specializations_in_environment(
+                        db,
+                        instance.declaration,
+                        Some(instance),
+                        &mut specializations,
+                    )?;
+                }
+            }
+            if !field_codecs.contains(&binding) {
+                field_codecs.push(binding);
+            }
+        }
+        close_source_items(input, &mut source_items, &mut present, &mut specializations)?;
+    }
+    // Canonical Pack's hidden method has no source statement body. Its exact
+    // call-derived instance is emitted by the checked representation bridge;
+    // ordinary user extern methods never enter this synthetic-body authority.
+    let mut dynamic_bridges = Vec::new();
+    let mut shape_bridges = Vec::new();
+    let mut mapping_bridges = Vec::new();
+    let mut unpack_bridges=Vec::new();
+    let mut serialization_bridges=Vec::new();
+    for instance in specializations.values().flatten() {
+        if let Some(binding)=beskid_queries::serialization_shape_binding(db,instance)
+            .map_err(|error|emission_verification(error.to_string()))? {serialization_bridges.push(binding);}
+        if let Some(bridge)=beskid_queries::dynamic_unpacking_bridge(db,instance)
+            .map_err(|error|emission_verification(error.to_string()))? {unpack_bridges.push(bridge);}
+        if let Some(binding)=beskid_queries::dynamic_shape_binding(db,instance)
+            .map_err(|error|emission_verification(error.to_string()))? {shape_bridges.push(binding);}
+        if let Some(binding)=beskid_queries::dynamic_mapping_binding(db,instance)
+            .map_err(|error|emission_verification(error.to_string()))? {mapping_bridges.push(binding);}
+        if let Some(bridge) = beskid_queries::dynamic_packing_bridge(db, instance)
+            .map_err(|error| emission_verification(error.to_string()))?
+        {
+            dynamic_bridges.push(bridge);
+        }
+    }
+    for bridge in &dynamic_bridges {
+        for key in [bridge.instance().declaration, bridge.result_factory(), bridge.invalid_factory()] {
+            if present.insert(key) {
+                source_items.push(SyntaxModuleItem {
+                    key,
+                    symbol: syntax_item_symbol(input, key)
+                        .ok_or_else(|| emission_verification("canonical Pack helper symbol unavailable"))?,
+                });
+            }
+        }
+    }
+    for binding in &shape_bridges {
+        let key=binding.instance().declaration;
+        if present.insert(key) { source_items.push(SyntaxModuleItem {
+            key,symbol:syntax_item_symbol(input,key).ok_or_else(||emission_verification("canonical Shape helper symbol unavailable"))?,
+        }); }
+    }
+    for binding in &mapping_bridges {
+        let key=binding.instance().declaration;
+        if present.insert(key) { source_items.push(SyntaxModuleItem {
+            key,symbol:syntax_item_symbol(input,key).ok_or_else(||emission_verification("canonical Mapping helper symbol unavailable"))?,
+        }); }
+    }
+    for bridge in &unpack_bridges {
+        for instance in [bridge.instance(),bridge.result_factory(),bridge.invalid_factory()] {
+            let key=instance.declaration;
+            let entries=specializations.entry(key).or_default();
+            if !entries.contains(instance){entries.push(instance.clone());}
+            if present.insert(key){source_items.push(SyntaxModuleItem{
+                key,symbol:syntax_item_symbol(input,key).ok_or_else(||emission_verification("canonical Unpack helper symbol unavailable"))?,
+            });}
+        }
+        for factory in [bridge.result_factory(),bridge.invalid_factory()] {
+            collect_generic_call_specializations_in_environment(db,factory.declaration,Some(factory),&mut specializations)?;
+        }
+    }
+    for key in specializations.keys().copied().collect::<Vec<_>>() {
+        if present.insert(key){source_items.push(SyntaxModuleItem{key,
+            symbol:syntax_item_symbol(input,key).ok_or_else(||emission_verification("Unpack constructor dependency symbol unavailable"))?,
+        });}
+    }
+    // The descriptor factory is ordinary registered source. Bring its complete
+    // concrete helper closure into this same worklist/descriptor emission pass.
+    let mut pending=Vec::new();
+    for binding in &serialization_bridges {
+        pending.extend([binding.instance().declaration,binding.factory(),binding.root_factory(),binding.extras_factory()]);
+        let entries=specializations.entry(binding.instance().declaration).or_default();
+        if !entries.contains(binding.instance()){entries.push(binding.instance().clone());}
+    }
+    while let Some(key)=pending.pop() {
+        if !present.insert(key){continue}
+        source_items.push(SyntaxModuleItem{key,symbol:syntax_item_symbol(input,key)
+            .ok_or_else(||emission_verification("compiled descriptor helper symbol unavailable"))?});
+        if is_concrete_executable_item(db,key)? {
+            collect_generic_call_specializations(db,key,&mut specializations)?;
+            pending.extend(beskid_queries::direct_callees(db,key).map_err(|error|emission_verification(error.to_string()))?
+                .into_iter().flat_map(|keys|keys.iter().copied().collect::<Vec<_>>()));
+        }
+        pending.extend(specializations.keys().filter(|key|!present.contains(key)).copied());
+    }
+    // Every emitted specialization of a retained serialization template method rebinds the
+    // template's canonical contract application in that instance's complete environment (the
+    // serde precedent: a generic impl proven at each concrete use). An instance that is not a
+    // template contribution is `None`; a template instance that cannot rebind fails the module.
+    for instance in specializations.values().flatten() {
+        beskid_queries::serialization_template_instance_rebind(db, input.typed_program(), instance).map_err(|error| {
+            emission_verification(format!(
+                "serialization template instance {} cannot rebind its contract: {error}",
+                format_declaration_for_trace(db, instance.declaration)
+            ))
+        })?;
     }
     let mut resolved = Vec::with_capacity(source_items.len());
     for item in &source_items {
-        if item_abi_signature(db, item.key).ok().flatten().is_some() {
+        let kind = node_kind(db, item.key).map_err(|error| emission_verification(error.to_string()))?;
+        let dynamic_bridge = dynamic_bridges.iter().any(|bridge| bridge.instance().declaration == item.key)
+            || shape_bridges.iter().any(|binding|binding.instance().declaration==item.key)
+            || mapping_bridges.iter().any(|binding|binding.instance().declaration==item.key)
+            || unpack_bridges.iter().any(|bridge|bridge.instance().declaration==item.key)
+            || serialization_bridges.iter().any(|binding|binding.instance().declaration==item.key)
+            || field_codecs.iter().any(|binding| binding.instance().declaration == item.key);
+        // A compiler-issued bridge method has no source body; it is emitted only for its exact
+        // call-derived specialization. A bridge whose signature names no generic (Shape, Mapping)
+        // still has a declaration-level ABI, which must not become a bodyless ordinary item.
+        if !dynamic_bridge && item_abi_signature(db, item.key).ok().flatten().is_some() {
             resolved.push(ResolvedSyntaxModuleItem {
                 key: item.key,
                 symbol: item.symbol.clone(),
@@ -80,13 +215,15 @@ pub(super) fn resolve_module_items(
                 specialization: None,
             });
         }
-        let kind = node_kind(db, item.key).map_err(|error| emission_verification(error.to_string()))?;
-        if !matches!(
-            kind,
-            Some(
-                beskid_queries::IndexedNodeKind::FunctionDefinition | beskid_queries::IndexedNodeKind::MethodDefinition
+        if !dynamic_bridge
+            && !matches!(
+                kind,
+                Some(
+                    beskid_queries::IndexedNodeKind::FunctionDefinition
+                        | beskid_queries::IndexedNodeKind::MethodDefinition
+                )
             )
-        ) {
+        {
             // Type and enum declarations carry source layout facts but have no executable
             // syntax body. They deliberately do not require a call-derived function ABI.
             continue;
@@ -115,6 +252,39 @@ pub(super) fn resolve_module_items(
         }
     }
     Ok(resolved)
+}
+
+/// Add every specialization declaration not yet in `source_items`, its ordinary direct callees
+/// and the generic calls of concrete bodies, until the worklist is closed.
+fn close_source_items(
+    input: &CodegenInput<'_>,
+    source_items: &mut Vec<SyntaxModuleItem>,
+    present: &mut std::collections::HashSet<AstNodeKey>,
+    specializations: &mut HashMap<AstNodeKey, Vec<GenericSpecializationInstance>>,
+) -> Result<(), SyntaxModuleEmissionError> {
+    let db = input.database();
+    let mut pending = specializations.keys().filter(|key| !present.contains(key)).copied().collect::<Vec<_>>();
+    while let Some(key) = pending.pop() {
+        if !present.insert(key) {
+            continue;
+        }
+        source_items.push(SyntaxModuleItem {
+            key,
+            symbol: syntax_item_symbol(input, key)
+                .ok_or_else(|| emission_verification("specialization declaration symbol is unavailable"))?,
+        });
+        if is_concrete_executable_item(db, key)? {
+            collect_generic_call_specializations(db, key, specializations)?;
+        }
+        pending.extend(
+            beskid_queries::direct_callees(db, key)
+                .map_err(|error| emission_verification(error.to_string()))?
+                .into_iter()
+                .flat_map(|callees| callees.iter().copied().collect::<Vec<_>>()),
+        );
+        pending.extend(specializations.keys().filter(|key| !present.contains(key)).copied());
+    }
+    Ok(())
 }
 
 /// Return true only for a declaration body with a declaration-level, non-generic ABI.
@@ -261,6 +431,63 @@ fn collect_generic_call_specializations_in_environment(
                 Some(&specialization),
                 specializations,
             )?;
+        }
+    }
+    // A generic function read as a value (`Apply(5, Identity)`) is instantiated where it is read;
+    // its record points at that instance's entry, so the instance joins this worklist exactly
+    // like a direct generic call. A value without an instance is a legality finding (E1203,
+    // E1204, E1229, E1610) judged before lowering, never an emission error here.
+    if node_kind(db, key).map_err(|error| emission_verification(error.to_string()))?
+        == Some(beskid_queries::IndexedNodeKind::PathExpression)
+        && let Ok(Some(value)) = beskid_queries::function_item_value(db, key)
+        && let Some(instance) = value.specialization
+    {
+        let instances = specializations.entry(instance.declaration).or_default();
+        if !instances.contains(&instance) {
+            instances.push(instance.clone());
+            collect_generic_call_specializations_in_environment(
+                db,
+                instance.declaration,
+                Some(&instance),
+                specializations,
+            )?;
+        }
+    }
+    // A `for` over a nominal iterator calls `Next()` without a CallExpression node. Its exact
+    // instance (generic owner bindings, or the iterable's identity proven only in `environment`)
+    // is the callee the loop lowering imports, so it enters this worklist like a direct call.
+    if node_kind(db, key).map_err(|error| emission_verification(error.to_string()))?
+        == Some(beskid_queries::IndexedNodeKind::ForStatement)
+    {
+        let protocol = match beskid_queries::for_iterator_protocol(db, key, environment) {
+            Ok(protocol) => protocol,
+            // Arrays, ranges and iterables without a proven protocol add no callee; their loop
+            // lowering fails closed on its own facts.
+            Err(error) if error.is_unavailable() => None,
+            Err(error) => {
+                return Err(semantic_fact_error(
+                    db,
+                    key,
+                    format_args!("for iterator protocol failed at {}", beskid_queries::format_ast_node_site(db, key)),
+                    error,
+                ));
+            }
+        };
+        if let Some(protocol) = protocol {
+            let instance = protocol.next;
+            let specialized = !instance.substitutions.is_empty() || !instance.contract_witnesses.is_empty();
+            let instances = specializations.entry(instance.declaration).or_default();
+            if !instances.contains(&instance) {
+                instances.push(instance.clone());
+                if specialized {
+                    collect_generic_call_specializations_in_environment(
+                        db,
+                        instance.declaration,
+                        Some(&instance),
+                        specializations,
+                    )?;
+                }
+            }
         }
     }
     if let Some(children) = child_nodes(db, key).map_err(|error| emission_verification(error.to_string()))? {

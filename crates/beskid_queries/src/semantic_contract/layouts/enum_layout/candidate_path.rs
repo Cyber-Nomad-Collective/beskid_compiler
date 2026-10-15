@@ -94,6 +94,16 @@ pub(in crate::semantic_contract) fn contextual_enum_constructor_type_path(
             let assignment = mutable_local_assignment(db, AstNodeKey { node: current, ..key }).ok().flatten()?;
             explicit_local_declaration_type(program, index, assignment.declaration.node)
         }
+        beskid_analysis::syntax_query::NodeKind::EnumConstructorExpression => {
+            let expected = enclosing_enum_constructor_payload_type(db, program, index, key, current, value_child)?;
+            let beskid_analysis::syntax::Type::Complex(path) = expected else { return None };
+            return contextual_enum_candidate_type_path(db, key, constructor_path, &path.node);
+        }
+        beskid_analysis::syntax_query::NodeKind::StructLiteralField => {
+            let expected = struct_literal_field_type(db, program, index, key, current, value_child)?;
+            let beskid_analysis::syntax::Type::Complex(path) = expected else { return None };
+            return contextual_enum_candidate_type_path(db, key, constructor_path, &path.node);
+        }
         beskid_analysis::syntax_query::NodeKind::CallExpression => {
             return expected_explicit_call_argument_type(
                 db,
@@ -113,6 +123,143 @@ pub(in crate::semantic_contract) fn contextual_enum_constructor_type_path(
     };
     let expected_path = &path.node;
     contextual_enum_candidate_type_path(db, key, constructor_path, expected_path)
+}
+
+/// The applied type of the payload position `payload` of the enum constructor `outer`
+/// (`Option::Some(count)` inside `Result::Ok(...)` returned as `Result<Option<i64>, IoError>`).
+///
+/// The outer constructor's own applied type (explicit, or proven by its context) substitutes the
+/// enum's type parameters in the declared field type. Only a field declared as a bare type
+/// parameter or as a concrete type is projected; anything else has no contextual type.
+fn enclosing_enum_constructor_payload_type(
+    db: &dyn Db,
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    key: AstNodeKey,
+    outer: beskid_analysis::syntax::AstNodeId,
+    payload: beskid_analysis::syntax::AstNodeId,
+) -> Option<beskid_analysis::syntax::Type> {
+    let constructor = index.node_at(program, outer)?.of::<beskid_analysis::syntax::EnumConstructorExpression>()?;
+    let position = constructor.args.iter().position(|argument| {
+        index.direct_child_id(program, outer, beskid_analysis::syntax_query::DynNodeRef::from(argument))
+            == Some(payload)
+    })?;
+    let outer_key = AstNodeKey { node: outer, ..key };
+    let written = &constructor.path.node.type_path.node;
+    let applied = if written.segments.last()?.node.type_args.is_empty() {
+        contextual_enum_constructor_type_path(db, program, index, outer_key, constructor)?
+    } else {
+        written.clone()
+    };
+    let declaration = resolve_type_declaration(db, outer_key, &applied)?;
+    let syntax = db.syntax_unit(declaration.unit).filter(|syntax| syntax.accepts_key(db, declaration))?;
+    let definition = syntax
+        .syntax_index(db)
+        .node_at(syntax.expanded_program(db), declaration.node)?
+        .of::<beskid_analysis::syntax::EnumDefinition>()?;
+    let variant_name = constructor.path.node.variant.node.name.as_str();
+    let variant = definition.variants.iter().find(|variant| variant.node.name.node.name == variant_name)?;
+    let field = &variant.node.fields.get(position)?.node.ty.node;
+    let arguments = &applied.segments.last()?.node.type_args;
+    if let Some(parameter) = generic_parameter_reference_name(field) {
+        if let Some(slot) = definition.generics.iter().position(|generic| generic.node.name == parameter) {
+            return arguments.get(slot).map(|argument| argument.node.clone());
+        }
+    }
+    let mentions_parameter = definition.generics.iter().any(|generic| {
+        let beskid_analysis::syntax::Type::Complex(path) = field else { return false };
+        path.node.segments.iter().any(|segment| {
+            segment.node.name.node.name == generic.node.name
+                || segment.node.type_args.iter().any(|argument| {
+                    type_syntax_is_generic_parameter_reference(&argument.node, generic.node.name.as_str())
+                })
+        })
+    });
+    (!mentions_parameter && declaration.unit == key.unit).then(|| field.clone())
+}
+
+/// The applied type of the struct literal field `field` whose value is `value`
+/// (`Holder { window: Option::Some([3_i32]) }` with `Option<i32[]> window`).
+///
+/// The literal's written type arguments substitute the record's type parameters in the declared
+/// field type, exactly as an enclosing constructor's payload is projected
+/// ([`enclosing_enum_constructor_payload_type`]): only a field declared as a bare type parameter,
+/// or as a concrete type of a record declared in this unit, is projected.
+fn struct_literal_field_type(
+    db: &dyn Db,
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    key: AstNodeKey,
+    field: beskid_analysis::syntax::AstNodeId,
+    value: beskid_analysis::syntax::AstNodeId,
+) -> Option<beskid_analysis::syntax::Type> {
+    let written = index.node_at(program, field)?.of::<beskid_analysis::syntax::StructLiteralField>()?;
+    (index.direct_child_id(program, field, beskid_analysis::syntax_query::DynNodeRef::from(&written.value))
+        == Some(value))
+    .then_some(())?;
+    let literal_node = parent_node(index, field)?;
+    let literal = index.node_at(program, literal_node)?.of::<beskid_analysis::syntax::StructLiteralExpression>()?;
+    let literal_key = AstNodeKey { node: literal_node, ..key };
+    let declaration = resolve_type_declaration(db, literal_key, &literal.path.node)?;
+    let syntax = db.syntax_unit(declaration.unit).filter(|syntax| syntax.accepts_key(db, declaration))?;
+    let definition = syntax
+        .syntax_index(db)
+        .node_at(syntax.expanded_program(db), declaration.node)?
+        .of::<beskid_analysis::syntax::TypeDefinition>()?;
+    let declared = definition.fields.iter().find(|candidate| {
+        candidate.node.kind == beskid_analysis::syntax::FieldKind::Value
+            && candidate.node.name.node.name == written.name.node.name
+    })?;
+    let field_type = &declared.node.ty.node;
+    let arguments = &literal.path.node.segments.last()?.node.type_args;
+    let generics = definition.generics.iter().map(|generic| generic.node.name.as_str()).collect::<Vec<_>>();
+    if let Some(parameter) = generic_parameter_reference_name(field_type)
+        && let Some(slot) = generics.iter().position(|generic| *generic == parameter)
+    {
+        return arguments.get(slot).map(|argument| argument.node.clone());
+    }
+    // Any other field type is spelled in the record's unit, so it is projected only there.
+    (declaration.unit == key.unit).then_some(())?;
+    if generics.iter().any(|generic| type_syntax_mentions_generic_parameter(field_type, generic)) {
+        (arguments.len() == generics.len()).then_some(())?;
+        return substitute_type_parameters(field_type, &generics, arguments);
+    }
+    Some(field_type.clone())
+}
+
+/// `ty` with each reference to one of `generics` replaced by the written argument in its slot
+/// (`Option<T>` under `Holder<string>` is `Option<string>`). `None` for a shape that names a
+/// parameter where no written argument can stand (an associated type, `This`, a function type).
+fn substitute_type_parameters(
+    ty: &beskid_analysis::syntax::Type,
+    generics: &[&str],
+    arguments: &[beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Type>],
+) -> Option<beskid_analysis::syntax::Type> {
+    use beskid_analysis::syntax::{Spanned, Type};
+    if let Some(parameter) = generic_parameter_reference_name(ty)
+        && let Some(slot) = generics.iter().position(|generic| *generic == parameter)
+    {
+        return arguments.get(slot).map(|argument| argument.node.clone());
+    }
+    if !generics.iter().any(|generic| type_syntax_mentions_generic_parameter(ty, generic)) {
+        return Some(ty.clone());
+    }
+    match ty {
+        Type::Complex(path) => {
+            let mut applied = path.clone();
+            for segment in &mut applied.node.segments {
+                for argument in &mut segment.node.type_args {
+                    argument.node = substitute_type_parameters(&argument.node, generics, arguments)?;
+                }
+            }
+            Some(Type::Complex(applied))
+        }
+        Type::Array(element) => Some(Type::Array(Box::new(Spanned::new(
+            substitute_type_parameters(&element.node, generics, arguments)?,
+            element.span,
+        )))),
+        _ => None,
+    }
 }
 
 /// Admit a contextual generic enum application only when it resolves to the same nominal
@@ -215,7 +362,7 @@ pub(in crate::semantic_contract) fn aggregate_shape_from_applied_type(
             .ok_or_else(|| SemanticError::unavailable("enum_layout")),
         beskid_analysis::syntax::Type::Associated { .. } => Err(SemanticError::unavailable("enum_layout")),
         beskid_analysis::syntax::Type::This => Err(SemanticError::unavailable("enum_layout")),
-        beskid_analysis::syntax::Type::Array(_) => Ok(AggregateFieldShape::Scalar(SemanticTypeId::POINTER)),
+        beskid_analysis::syntax::Type::Array(_) => Ok(AggregateFieldShape::ManagedReference(SemanticTypeId::POINTER)),
         beskid_analysis::syntax::Type::Function { .. } => Err(SemanticError::unavailable("enum_layout")),
     }
 }

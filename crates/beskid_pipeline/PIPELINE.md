@@ -34,7 +34,7 @@ artifacts only (no host `mod.*` orchestration or `aot.runtime`).
 
 **JIT run** — `JIT_RUN_PHASE_ORDER` uses the same mod + syntax + semantic snapshot + `composition.resolve` + `mod.analyze` /
 `mod.rewrite` + `lower.ready` prefix after `parse`, then `lower`, `codegen_clif`, `jit.emit`,
-`jit.finalize`. Used by interim `beskid test` and `beskid repl` (JIT snippet eval).
+`jit.finalize`. Used by interim `beskid test` and `beskid dev repl` (JIT snippet eval).
 
 **AOT run** — `RUN_AOT_PHASE_ORDER` shares the same mod-enabled front-end prefix as `JIT_RUN_PHASE_ORDER`,
 then `lower`, `codegen_clif`, `aot.emit_object`, `aot.runtime`, and `aot.link`. Target path for

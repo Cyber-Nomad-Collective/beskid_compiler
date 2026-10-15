@@ -106,8 +106,26 @@ impl crate::parsing::parsable::Parsable for Type {
                 let mut inner = pair.into_inner();
                 let type_name =
                     inner.next().ok_or(crate::parsing::error::ParseError::missing(crate::parser::Rule::TypeName))?;
-                let inner_type = Self::parse(type_name)?;
-                Self::Array(Box::new(inner_type))
+                let start = type_name.as_span().start();
+                let mut element = Self::parse(type_name)?;
+                // Each `ArraySuffix` is one inner rank, spanning from the element type to its own
+                // `[]`; the outermost rank is this rule.
+                for suffix in inner {
+                    if suffix.as_rule() != crate::parser::Rule::ArraySuffix {
+                        return Err(crate::parsing::error::ParseError::unexpected_rule(
+                            suffix,
+                            Some(crate::parser::Rule::ArraySuffix),
+                        ));
+                    }
+                    let suffix_span = suffix.as_span();
+                    let rank_span = pest::Span::new(suffix_span.get_input(), start, suffix_span.end())
+                        .ok_or(crate::parsing::error::ParseError::missing(crate::parser::Rule::ArraySuffix))?;
+                    element = crate::syntax::Spanned::new(
+                        Self::Array(Box::new(element)),
+                        crate::syntax::SpanInfo::from_span(&rank_span),
+                    );
+                }
+                Self::Array(Box::new(element))
             }
             crate::parser::Rule::ThisType => Self::This,
             crate::parser::Rule::AssociatedTypeRef => {
@@ -223,6 +241,86 @@ mod tests {
         assert!(formatted.contains("Iterator::Item(i64)"));
         assert!(formatted.contains("Container<Iterator::Item>"));
         parse_program(&formatted).expect("formatted associated types should reparse");
+    }
+
+    /// `i64[][]` is an array of `i64[]`: one array rank per `[]`, innermost first, each rank
+    /// spanning from the element type to its own suffix.
+    #[test]
+    fn nested_array_types_parse_one_rank_per_suffix() {
+        let source = "i64[][]";
+        let outer = parse_type(source);
+        let Type::Array(middle) = &outer.node else {
+            panic!("expected outer array, got {:?}", outer.node);
+        };
+        assert_eq!((outer.span.start, outer.span.end), (0, source.len()));
+        let Type::Array(element) = &middle.node else {
+            panic!("expected `i64[]` elements, got {:?}", middle.node);
+        };
+        assert_eq!((middle.span.start, middle.span.end), (0, 5));
+        assert!(matches!(element.node, Type::Primitive(_)));
+        assert_eq!((element.span.start, element.span.end), (0, 3));
+
+        // A one-rank array keeps its pest tree: only the second and later ranks are pairs.
+        let single = BeskidParser::parse(Rule::BeskidType, "i64[]").expect("one-rank array").flatten();
+        assert!(single.clone().all(|pair| pair.as_rule() != Rule::ArraySuffix), "{single:?}");
+        let double = BeskidParser::parse(Rule::BeskidType, source).expect("two-rank array").flatten();
+        assert_eq!(double.filter(|pair| pair.as_rule() == Rule::ArraySuffix).count(), 1);
+        // The type ends at its last `]`, not at whitespace after it.
+        let program = parse_program("unit F() { mut u8[]   bytes = []; i64[][]  rows = []; }").expect("typed locals");
+        let formatted = format_program(&program).expect("typed locals format");
+        assert!(formatted.contains("u8[] bytes") && formatted.contains("i64[][] rows"), "{formatted}");
+
+        let triple = parse_type("Map<i64>[] [] []");
+        let mut ranks = 0;
+        let mut current = &triple;
+        while let Type::Array(inner) = &current.node {
+            ranks += 1;
+            current = inner;
+        }
+        assert_eq!(ranks, 3);
+        assert!(matches!(current.node, Type::Complex(_)));
+
+        let program = parse_program(
+            "type Grid { i64[][] cells, } i64[][] Rows(string[][] names) { i64[][] local = cells; return local; }",
+        )
+        .expect("nested array types parse in fields, parameters, locals, and return types");
+        let formatted = format_program(&program).expect("nested array types format");
+        assert!(formatted.contains("i64[][] cells"), "{formatted}");
+        assert!(formatted.contains("i64[][] Rows(string[][] names)"), "{formatted}");
+        parse_program(&formatted).expect("formatted nested array types reparse");
+    }
+
+    /// Every nesting level parses its generic argument once. Under the former alternation each
+    /// level re-parsed its argument per alternative, which never finished for this input.
+    #[test]
+    fn deeply_nested_generic_arguments_parse_in_linear_time() {
+        let (sender, receiver) = std::sync::mpsc::channel();
+        std::thread::Builder::new()
+            .stack_size(256 * 1024 * 1024)
+            .spawn(move || {
+                let source = (0..200).fold("i32".to_owned(), |inner, _| format!("Wrap<{inner}>"));
+                let mut ty = parse_type(&source);
+                let mut depth = 0;
+                loop {
+                    let next = match &ty.node {
+                        Type::Complex(path) => {
+                            let [segment] = path.node.segments.as_slice() else { panic!("one segment per level") };
+                            let [argument] = segment.node.type_args.as_slice() else { panic!("one argument per level") };
+                            argument.clone()
+                        }
+                        _ => break,
+                    };
+                    ty = next;
+                    depth += 1;
+                }
+                assert!(matches!(ty.node, Type::Primitive(_)));
+                let _ = sender.send(depth);
+            })
+            .expect("parser thread");
+        let depth = receiver
+            .recv_timeout(std::time::Duration::from_secs(30))
+            .expect("a 200-deep generic type must parse in bounded time");
+        assert_eq!(depth, 200);
     }
 
     fn parse_type(source: &str) -> Spanned<Type> {

@@ -13,8 +13,7 @@ impl SyntaxNodeFacts<'_> {
                 | beskid_queries::OperatorFact::Lte
                 | beskid_queries::OperatorFact::Gt
                 | beskid_queries::OperatorFact::Gte
-        )
-                && self.child(key, 0).and_then(|operand| self.scalar_semantic_type(operand))
+        ) && self.child(key, 0).and_then(|operand| self.scalar_semantic_type(operand))
                     == Some(SemanticTypeId::STRING)
                 && self.child(key, 1).and_then(|operand| self.scalar_semantic_type(operand))
                     == Some(SemanticTypeId::STRING);
@@ -61,12 +60,17 @@ impl SyntaxNodeFacts<'_> {
         self.managed_reference_in_context(key)
     }
 
+    /// The try fact of the body being lowered: a specialized body reads its operand and return
+    /// type in the specialization's environment.
     pub(super) fn try_expression_fact_impl(&self, key: AstNodeKey) -> Option<beskid_queries::TryExpressionFact> {
-        self.query(try_expression_fact(self.db, key))
+        match self.current_item_specialization() {
+            Some(enclosing) => self.query(beskid_queries::specialized_try_expression_fact(self.db, key, enclosing)),
+            None => self.query(try_expression_fact(self.db, key)),
+        }
     }
 
     pub(super) fn try_return_layout_impl(&self, key: AstNodeKey) -> Option<EnumLayout> {
-        self.enum_layout_from_fact(&self.query(try_expression_fact(self.db, key))?.return_layout)
+        self.enum_layout_from_fact(&self.try_expression_fact_impl(key)?.return_layout)
     }
 
     pub(super) fn scalar_type_impl(&self, key: AstNodeKey) -> Option<Type> {
@@ -101,6 +105,9 @@ impl SyntaxNodeFacts<'_> {
         {
             return signature.returns.first().map(|parameter| parameter.value_type);
         }
+        // A bare integer literal takes the width its expected type requires (a callee
+        // parameter, a declared storage boundary, or a binary operand's peer) before any
+        // default literal width is consulted.
         let contextual = self.query(contextual_integer_literal_abi_type(self.db, key));
         let semantic = contextual
             .or_else(|| {
@@ -108,7 +115,6 @@ impl SyntaxNodeFacts<'_> {
                     .then(|| self.scalar_semantic_type(key))
                     .flatten()
             })
-            .or_else(|| self.query(call_argument_abi_type(self.db, key)))
             .or_else(|| self.scalar_semantic_type(key))
             .or_else(|| Some(self.query(call_abi_signature(self.db, key))?.result))?;
         if matches!(semantic, SemanticTypeId::WORD | SemanticTypeId::POINTER | SemanticTypeId::STRING) {

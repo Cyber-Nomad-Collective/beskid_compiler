@@ -1,7 +1,7 @@
 //! Synthetic [`MemberItemSpec`] rows for parameters, fields, and nested contract members (resolution item list).
 
 use crate::syntax::{ContractNode, Node};
-use crate::syntax::{SpanInfo, Spanned};
+use crate::syntax::{SpanInfo, Spanned, Visibility};
 
 use super::items::ItemKind;
 
@@ -11,6 +11,9 @@ pub struct MemberItemSpec {
     pub name: String,
     pub kind: ItemKind,
     pub span: SpanInfo,
+    /// The member's own visibility when it declares one (type fields); otherwise the member
+    /// takes its parent's visibility.
+    pub visibility: Option<Visibility>,
 }
 
 /// Walk one syntax item and append specs for visible members (used when extending [`ItemInfo`] lists).
@@ -23,6 +26,7 @@ pub fn collect_member_items(item: &Spanned<Node>, parent_name: &str) -> Vec<Memb
                     name: format!("{}::{}", parent_name, parameter.node.name.node.name),
                     kind: ItemKind::Parameter,
                     span: parameter.span,
+                    visibility: None,
                 });
             }
         }
@@ -32,6 +36,7 @@ pub fn collect_member_items(item: &Spanned<Node>, parent_name: &str) -> Vec<Memb
                     name: format!("{}::{}", parent_name, parameter.node.name.node.name),
                     kind: ItemKind::Parameter,
                     span: parameter.span,
+                    visibility: None,
                 });
             }
         }
@@ -41,6 +46,7 @@ pub fn collect_member_items(item: &Spanned<Node>, parent_name: &str) -> Vec<Memb
                     name: format!("{}::{}", parent_name, field.node.name.node.name),
                     kind: ItemKind::Field,
                     span: field.span,
+                    visibility: Some(field.node.visibility.node),
                 });
             }
             // Methods (and their own parameters) are NOT registered here: `Collector::collect_item`'s
@@ -63,12 +69,14 @@ pub fn collect_member_items(item: &Spanned<Node>, parent_name: &str) -> Vec<Memb
                     name: variant_name.clone(),
                     kind: ItemKind::EnumVariant,
                     span: variant.span,
+                    visibility: None,
                 });
                 for field in &variant.node.fields {
                     out.push(MemberItemSpec {
                         name: format!("{}::{}", variant_name, field.node.name.node.name),
                         kind: ItemKind::Field,
                         span: field.span,
+                        visibility: None,
                     });
                 }
             }
@@ -82,12 +90,14 @@ pub fn collect_member_items(item: &Spanned<Node>, parent_name: &str) -> Vec<Memb
                             name: method_name.clone(),
                             kind: ItemKind::ContractMethodSignature,
                             span: signature.span,
+                            visibility: None,
                         });
                         for parameter in &signature.node.parameters {
                             out.push(MemberItemSpec {
                                 name: format!("{}::{}", method_name, parameter.node.name.node.name),
                                 kind: ItemKind::Parameter,
                                 span: parameter.span,
+                                visibility: None,
                             });
                         }
                     }
@@ -96,6 +106,7 @@ pub fn collect_member_items(item: &Spanned<Node>, parent_name: &str) -> Vec<Memb
                             name: format!("{}::{}", parent_name, embedding.node.name.node.name),
                             kind: ItemKind::ContractEmbedding,
                             span: embedding.span,
+                            visibility: None,
                         });
                     }
                     // Associated-type declarations resolve as in-scope generic parameters
@@ -111,6 +122,7 @@ pub fn collect_member_items(item: &Spanned<Node>, parent_name: &str) -> Vec<Memb
                     name: format!("{}::statement#{}", parent_name, index + 1),
                     kind: ItemKind::Statement,
                     span: statement.span,
+                    visibility: None,
                 });
             }
         }

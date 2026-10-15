@@ -4,3 +4,5 @@ pub mod Runtime.Bootstrap.Native;
 pub mod Runtime.Bootstrap.Lifecycle;
 pub mod Runtime.Bootstrap.Roots;
 pub mod Runtime.Bootstrap.Objects;
+
+pub mod Runtime.Bootstrap.CheckedObjects;

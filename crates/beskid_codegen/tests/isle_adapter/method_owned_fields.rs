@@ -1,9 +1,9 @@
 use super::support::{
     AbiManifestV5, Arc, AssemblyDiscovery, AstNodeId, AstNodeKey, BeskidDatabase, CodegenInput,
     EffectiveCompilationRoots, ModuleIndex, ProgramAssembly, ProjectSession, RootEntry, SourceUnit, SourceUnitId,
-    SyntaxGenerationId, SyntaxIndex, SyntaxModuleItem, TargetMetadata, build_typed_program, find_function_definition,
-    find_function_definitions, find_node, find_nodes_of_kind, isa, item_fixture_with_root, lower_syntax_program,
-    parse_program_with_source_name, settings,
+    SyntaxGenerationId, SyntaxIndex, SyntaxModuleItem, TargetMetadata, build_typed_program,
+    canonical_corelib_project_fixture, find_function_definition, find_function_definitions, find_node,
+    find_nodes_of_kind, isa, item_fixture_with_root, lower_syntax_program, parse_program_with_source_name, settings,
 };
 
 fn imported_list_fixture(
@@ -212,11 +212,20 @@ pub type List<T> {
 }
 unit Main(List<i64> list) { list.Push(7_i64); return; }
 "#;
-    let array_source = "pub T[] Append<T>(mut T[] values, T value) { return values; }";
-    let (input, isa, root) = imported_list_fixture(list_source, &[("Core/Collections/Array.bd", array_source)]);
+    // Only the compiler-owned Foundation Array source owns the Append collection operation.
+    let (input, isa, root) = canonical_corelib_project_fixture(&[("Main.bd", list_source)], SyntaxGenerationId(177));
     let push =
         find_node(input.database(), root, beskid_queries::IndexedNodeKind::MethodDefinition).expect("List.Push method");
     let main = find_function_definition(input.database(), root).expect("Main function");
+    let append = find_nodes_of_kind(input.database(), push, beskid_queries::IndexedNodeKind::CallExpression)
+        .into_iter()
+        .find(|call| {
+            matches!(
+                beskid_queries::collection_operation(input.database(), *call),
+                Ok(Some(beskid_queries::CollectionOperation::Append { .. }))
+            )
+        });
+    assert!(append.is_some(), "nested Array.Append<T> must resolve to the canonical Append collection operation");
 
     lower_syntax_program(
         &input,
@@ -248,8 +257,8 @@ pub type Map<TKey, TValue> {
 }
 unit Main(Map<i64, string> map) { map.Insert(7_i64, "value"); return; }
 "#;
-    let array_source = "pub T[] Append<T>(mut T[] values, T value) { return values; }";
-    let (input, isa, root) = imported_list_fixture(map_source, &[("Core/Collections/Array.bd", array_source)]);
+    // Only the compiler-owned Foundation Array source owns the Append collection operation.
+    let (input, isa, root) = canonical_corelib_project_fixture(&[("Main.bd", map_source)], SyntaxGenerationId(177));
     let insert = find_node(input.database(), root, beskid_queries::IndexedNodeKind::MethodDefinition)
         .expect("Map.Insert method");
     let main = find_function_definition(input.database(), root).expect("Main function");
@@ -300,8 +309,8 @@ unit Fill(u8[] values, i64 length) {
 }
 unit Main(mut u8[] values) { Fill(values, 2); return; }
 "#;
-    let array_source = "pub T[] Append<T>(mut T[] values, T value) { return values; }";
-    let (input, isa, root) = imported_list_fixture(list_source, &[("Core/Collections/Array.bd", array_source)]);
+    // Only the compiler-owned Foundation Array source owns the Append collection operation.
+    let (input, isa, root) = canonical_corelib_project_fixture(&[("Main.bd", list_source)], SyntaxGenerationId(177));
     let functions = find_function_definitions(input.database(), root);
     let fill = functions[0];
     let main = functions[1];
@@ -435,6 +444,36 @@ unit Main(List<i64> list) { list.Get(0_i64); return; }
         ],
     )
     .expect("Array.Get<T> lowers with the enclosing List<i64> specialization");
+}
+
+#[test]
+fn field_of_an_indexed_method_owned_array_element_lowers() {
+    let (input, isa, root) = item_fixture_with_root(
+        r#"
+type Entry { string route, i64 signature, }
+type Table {
+    Entry[] entries,
+    i64 Find(string route) {
+        mut i64 index = 0_i64;
+        while (index < 2_i64) {
+            if (entries[index].route == route) { return entries[index].signature; }
+            index = index + 1_i64;
+        }
+        return 0_i64;
+    }
+}
+i64 Main(Table table) { return table.Find("a"); }
+"#,
+    );
+    let find = find_node(input.database(), root, beskid_queries::IndexedNodeKind::MethodDefinition).expect("Table.Find");
+    let main = find_function_definition(input.database(), root).expect("Main function");
+
+    lower_syntax_program(
+        &input,
+        isa.as_ref(),
+        &[SyntaxModuleItem { key: find, symbol: "Table_Find".into() }, SyntaxModuleItem { key: main, symbol: "Main".into() }],
+    )
+    .expect("a field read from an indexed element of a method-owned array lowers");
 }
 
 #[test]

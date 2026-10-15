@@ -1,4 +1,5 @@
 use anyhow::Result;
+use beskid_analysis::mod_host::ModHost;
 use beskid_analysis::services::{FrontEndOptions, ResolvedInput};
 use beskid_pipeline::PipelineObserver;
 use beskid_queries::BeskidDatabase;
@@ -8,9 +9,10 @@ use super::jit_preparation::lower_syntax_entrypoint_from_front_end;
 use crate::Engine;
 use crate::jit_callable::{EntryReturnKind, JitCallable};
 
-/// Parse, lower, JIT-compile, and run `entrypoint` (no-arg function or test); returns a string summary of the return value.
-pub fn run_entrypoint(source_path: &std::path::Path, source: &str, entrypoint: &str) -> Result<String> {
-    run_entrypoint_with_pipeline(source_path, source, entrypoint, None)
+/// Parse, lower, JIT-compile, and run `entrypoint` (no-arg function or test); returns a string
+/// summary of the return value. The source's native Mods (if any) run in `mod_host`.
+pub fn run_entrypoint(source_path: &std::path::Path, source: &str, entrypoint: &str, mod_host: &ModHost) -> Result<String> {
+    run_entrypoint_with_pipeline(source_path, source, entrypoint, mod_host, None)
 }
 
 /// Same as [`run_entrypoint`] with optional pipeline observation for codegen and JIT phases.
@@ -18,6 +20,7 @@ pub fn run_entrypoint_with_pipeline(
     source_path: &std::path::Path,
     source: &str,
     entrypoint: &str,
+    mod_host: &ModHost,
     pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<String> {
     let source_path = beskid_codegen::materialize_source_path_for_lowering(source_path, source)?;
@@ -31,7 +34,12 @@ pub fn run_entrypoint_with_pipeline(
         workspace_summary: None,
         assembly: None,
     };
-    let front = beskid_queries::compile_front_end_from_resolved_input(&resolved, FrontEndOptions::default(), pipeline)?;
+    let front = beskid_queries::compile_front_end_with_mod_host(
+        &resolved,
+        FrontEndOptions::default(),
+        mod_host.clone(),
+        pipeline,
+    )?;
     run_entrypoint_from_front_end_with_pipeline(
         &front,
         &resolved.source_path.display().to_string(),
@@ -43,7 +51,7 @@ pub fn run_entrypoint_with_pipeline(
 
 /// JIT-compile and run using a pre-built front-end (avoids re-running semantic analysis).
 pub fn run_entrypoint_from_front_end_with_pipeline(
-    front: &beskid_analysis::services::FrontEndTypedResult,
+    front: &beskid_analysis::services::ExecutableFrontEnd,
     source_name: &str,
     source: &str,
     entrypoint: &str,
@@ -56,7 +64,7 @@ pub fn run_entrypoint_from_front_end_with_pipeline(
 /// Like [`run_entrypoint_from_front_end_with_pipeline`] but reuses an existing [`Engine`].
 pub fn run_entrypoint_from_front_end_with_engine(
     engine: &mut Engine,
-    front: &beskid_analysis::services::FrontEndTypedResult,
+    front: &beskid_analysis::services::ExecutableFrontEnd,
     source_name: &str,
     source: &str,
     entrypoint: &str,
@@ -92,7 +100,8 @@ fn run_syntax_jitted_entrypoint(
         return Err(anyhow::anyhow!("Entrypoint `{entrypoint}` returned null pointer"));
     }
 
-    let return_kind = EntryReturnKind::from_semantic_type(entrypoint_artifact.return_type);
+    let return_kind = EntryReturnKind::from_semantic_type(entrypoint_artifact.return_type)
+        .ok_or_else(|| anyhow::anyhow!("Entrypoint return ABI is unavailable"))?;
     let output = JitCallable::execute_as_i64(ptr, return_kind);
     Ok(JitCallable::format_i64_result(output, return_kind))
 }

@@ -27,6 +27,10 @@ pub(super) fn foundation_root() -> PathBuf {
     corelib_workspace_root().join("packages/foundation")
 }
 
+pub(super) fn serialization_root() -> PathBuf {
+    corelib_workspace_root().join("packages/serialization")
+}
+
 pub(super) fn compiler_sdk_src() -> PathBuf {
     corelib_workspace_root().join("packages/compiler-sdk/src")
 }
@@ -37,7 +41,7 @@ fn corelib_source_candidates(manifest_dir: &Path) -> [PathBuf; 1] {
 
 /// Representative corelib sources for fast parse smoke (full inventory stays in `layout`).
 pub(super) fn stratified_corelib_parse_samples() -> &'static [&'static str] {
-    &["packages/foundation/src/Core/Results/Results.bd", "packages/console/src/Platform/Terminal.bd"]
+    &["packages/foundation/src/Core/Results/Results.bd", "packages/console/src/Platform/Terminal.bd", "packages/glue/src/Core/Glue/Glue.bd", "packages/glue/src/Core/Glue/Pump.bd", "packages/glue/src/Core/Glue/BinaryCodec.bd", "packages/glue/src/Core/Glue/Envelope.bd", "packages/glue/src/Core/Glue/Session.bd"]
 }
 
 /// Workspace-relative `.bd` sources that must exist for the split corelib layout.
@@ -61,6 +65,9 @@ pub(super) fn expected_corelib_workspace_sources() -> &'static [&'static str] {
         "packages/foundation/src/Core/String/Core.bd",
         "packages/foundation/src/Core/String/Chars.bd",
         "packages/foundation/src/Core/String/Utf8.bd",
+        "packages/foundation/src/Core/String/Search.bd",
+        "packages/foundation/src/Core/String/Transform.bd",
+        "packages/foundation/src/Core/String/Builder.bd",
         "packages/foundation/src/Core/Text/Cursor.bd",
         "packages/foundation/src/Core/Text/Parser.bd",
         "packages/foundation/src/Core/Text/Parser/Literals.bd",
@@ -100,7 +107,6 @@ pub(super) fn expected_corelib_workspace_sources() -> &'static [&'static str] {
         "packages/foundation/src/Core/Output/Output.bd",
         "packages/foundation/src/Core/Error/Error.bd",
         "packages/foundation/src/Core/Threading/Thread.bd",
-        "packages/foundation/src/Core/Threading/ThreadError.bd",
         "packages/console/src/Console.bd",
         "packages/console/src/Ansi/Escape.bd",
         "packages/console/src/Ansi/Contracts.bd",
@@ -148,4 +154,6 @@ pub(super) fn expected_corelib_workspace_sources() -> &'static [&'static str] {
 }
 
 mod compile;
+mod dynamic_bridge_items;
+mod serialization_compiler_items;
 mod layout;

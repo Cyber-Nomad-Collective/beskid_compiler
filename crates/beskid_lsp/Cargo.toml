@@ -1,6 +1,6 @@
 [package]
 name = "beskid_lsp"
-version = "0.5.4"
+version = "0.6.0"
 edition = "2024"
 license.workspace = true
 
@@ -13,6 +13,7 @@ beskid_analysis = { path = "../beskid_analysis" }
 beskid_graph = { path = "../beskid_graph" }
 beskid_queries = { path = "../beskid_queries", features = ["persistence"] }
 beskid_tools = { path = "../beskid_tools" }
+beskid_corelib_embed = { path = "../beskid_corelib_embed" }
 bsol = { workspace = true }
 pest = { workspace = true }
 serde = { version = "1", features = ["derive"] }
@@ -28,5 +29,6 @@ reqwest = { version = "0.12", default-features = false, features = ["blocking", 
 salsa = { workspace = true }
 
 [dev-dependencies]
+beskid_tests_mod_host = { path = "../beskid_tests_mod_host" }
 tempfile = "3"
 futures-util = "0.3"

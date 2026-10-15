@@ -57,6 +57,9 @@ pub word TypeDescriptorFlags(pointer descriptor) {
 }
 
 const TYPE_DESCRIPTOR_ARRAY = 1;
+const TYPE_DESCRIPTOR_UTF8_VIEW = 2;
+
+pub word TypeDescriptorUtf8ViewFlag() { return TYPE_DESCRIPTOR_UTF8_VIEW; }
 
 // Beskid `const` items have no `pub` visibility (see the grammar's `ConstantDefinition` rule):
 // they only resolve within their own declaring file. Callers outside this module — including
@@ -196,6 +199,12 @@ pub bool ValidateTypeDescriptor(pointer descriptor) {
                 if TypeDescriptorFlags(descriptor) == TYPE_DESCRIPTOR_ARRAY {
                     return size == 48 && TypeDescriptorPointerCount(descriptor) == 0;
                 }
+                if TypeDescriptorFlags(descriptor) == TYPE_DESCRIPTOR_UTF8_VIEW {
+                    pointer map = TypeDescriptorPointerMap(descriptor);
+                    return size == 40 && alignment == 8 && TypeDescriptorPointerCount(descriptor) == 1
+                        && map != NativePointer(0) && raw_word_load(map) == 16;
+                }
+                if TypeDescriptorFlags(descriptor) != 0 { return false; }
                 return ValidatePointerMap(
                     TypeDescriptorPointerMap(descriptor),
                     TypeDescriptorPointerCount(descriptor),
@@ -216,6 +225,10 @@ pub bool ValidateTypeDescriptor(pointer descriptor) {
 // pointer on an invalid or saturated request leaves trap and rooting policy to generated code.
 [Export(Abi:"C", Symbol:"beskid_rt_v5_managed_object_allocate")]
 pub pointer AllocateObject(pointer request) {
+    return AllocateObjectWithPolicy(request, false);
+}
+
+pub pointer AllocateObjectWithPolicy(pointer request, bool checked) {
     if request == NativePointer(0) {
         return NativePointer(0);
     } else {
@@ -230,7 +243,9 @@ pub pointer AllocateObject(pointer request) {
                 if alignment != TypeDescriptorAlignment(descriptor) {
                     return NativePointer(0);
                 } else {
-                    pointer object = GcAlloc(size, alignment);
+                    mut pointer object = NativePointer(0);
+                    if checked { object = GcTryAlloc(size, alignment); }
+                    else { object = GcAlloc(size, alignment); }
                     if object == NativePointer(0) {
                           return object;
                     } else {

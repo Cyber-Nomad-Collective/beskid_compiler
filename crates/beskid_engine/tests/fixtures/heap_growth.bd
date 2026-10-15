@@ -119,6 +119,18 @@ pub i64 RunLargeObjectOnly() {
     return i64(big[0]) + Array.Len<u8>(big);
 }
 
+// ---- Large object that sizes its own grown region. ----
+// One 8 MiB buffer: larger than the initial region and the next growth step, so `GcGrow` sizes the
+// new region from the request alone. Regression for the region-size estimate that left out the
+// span directory entries of the directory's own pages: the grow succeeded, the region then held
+// one object page too few, and the allocation trapped as `out_of_memory` (R1) far below the cap.
+[Export(Abi:"C", Symbol:"RunLargeObjectBeyondNextRegion")]
+pub i64 RunLargeObjectBeyondNextRegion() {
+    u8[] big = Array.Zeroed<u8>(8388608_i64);
+    Probe.gc_collect();
+    return i64(big[8388607]) + Array.Len<u8>(big);
+}
+
 // ---- Span reuse across size classes after a collection frees a span. ----
 // Regression for the stale `HEAP_CURRENT_SPAN_BY_CLASS` cache bug (gdb-localized by slice
 // deeprec, independently reproduced by slice chanrace): `Sweep`'s empty-span path returned a
@@ -207,10 +219,11 @@ pub i64 RunSpanReuseAcrossClasses() {
     return result;
 }
 
-// ---- Cap hit and `BESKID_HEAP_MAX_BYTES` configuration. ----
-// Keeps 3 MiB of managed data reachable; run under `BESKID_HEAP_MAX_BYTES=2M` (see the `.c`
-// fixture host), this allocation must trap through the diagnosable out-of-memory path rather
-// than crash. Run without a cap, it must simply succeed.
+// ---- Cap hit and `BESKID_HEAP_MAX` configuration. ----
+// Keeps 3 MiB of managed data reachable; run under `BESKID_HEAP_MAX=2M` (read by the runtime at
+// process init) or with the `.c` host's direct `beskid_rt_v5_heap_set_cap` call, this allocation
+// must trap through the diagnosable out-of-memory path rather than crash. Run without a cap, it
+// must simply succeed.
 [Export(Abi:"C", Symbol:"RunCapProbe")]
 pub i64 RunCapProbe() {
     mut Chunk[] kept = Array.Empty<Chunk>();
@@ -221,4 +234,55 @@ pub i64 RunCapProbe() {
         total = total + 4096;
     }
     return Array.Len<Chunk>(kept);
+}
+
+// ---- Beyond the old 1 GiB default cap (opt-in). ----
+// Keeps a little over 1 GiB of managed data reachable in 1 MiB chunks. With no `BESKID_HEAP_MAX`
+// the runtime has no fixed cap, so this must succeed when the machine has the memory; the host
+// test runs it only under `BESKID_TEST_HEAP_BEYOND_1GIB=1`. Returns the chunk count (1088).
+[Export(Abi:"C", Symbol:"RunBeyondOneGiB")]
+pub i64 RunBeyondOneGiB() {
+    mut Chunk[] kept = Array.Empty<Chunk>();
+    mut i64 chunks = 0_i64;
+    while chunks < 1088_i64 {
+        u8[] bytes = Array.Zeroed<u8>(1048576_i64);
+        Array.Append<Chunk>(kept, Chunk { bytes: bytes, marker: chunks });
+        chunks = chunks + 1_i64;
+    }
+    word regions = Probe.gc_heap_region_count();
+    word committed = Probe.gc_heap_committed();
+    mut i64 result = Array.Len<Chunk>(kept);
+    if regions < 2 { result = -1_i64; }
+    if committed <= 1073741824 { result = -2_i64; }
+    if Probe.gc_heap_verify() == 0_u8 { result = -3_i64; }
+    return result;
+}
+
+// ---- Many fibers: the scheduler table grows past every former fixed size. ----
+// A chain of nested spawn+join keeps `depth` fibers parked at once (each parent joins its child),
+// so the chunked fiber table must grow past its first 64-record chunk; fifty chains of 200 spawn
+// 10,000 fibers in total through slot reuse and generation advance. Returns the fiber total.
+i64 SpawnChain(i64 depth) {
+    if depth == 0_i64 { return 0_i64; }
+    Fiber<i64> child = spawn (() => SpawnChain(depth - 1_i64));
+    Result<i64, FiberError> joined = child.Join();
+    return match joined {
+        Result::Ok(below) => below + 1_i64,
+        Result::Error(_) => -100000_i64,
+    };
+}
+
+[Export(Abi:"C", Symbol:"RunManyFibers")]
+pub i64 RunManyFibers() {
+    mut i64 total = 0_i64;
+    mut i64 round = 0_i64;
+    while round < 50_i64 {
+        i64 chain = SpawnChain(200_i64);
+        if chain != 200_i64 { return -1_i64 - round; }
+        total = total + chain;
+        round = round + 1_i64;
+    }
+    Probe.gc_collect();
+    if Probe.gc_heap_verify() == 0_u8 { return -3_i64; }
+    return total;
 }

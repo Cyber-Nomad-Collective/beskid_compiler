@@ -39,7 +39,7 @@ if newer:
     print(f"\nFiles modified AFTER the kit was built ({len(newer)}) -- prime suspects for the mismatch:")
     for f, mtime in sorted(newer, key=lambda x: -x[1]):
         print(f"  {time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(mtime))} UTC  {f}")
-    print(f"\nRebuild: <target-dir>/{slice_name}/debug/beskid_cli runtime-kit build-native-host --prefix {workspace}/verify/network-kit.{slice_name} --profile debug")
+    print(f"\nRebuild: <target-dir>/{slice_name}/debug/beskid_cli dev runtime-kit build-native-host --prefix {workspace}/verify/network-kit.{slice_name} --profile debug")
 else:
     print("\nNo mapped source file is newer than the kit. If SourceHashMismatch still fires, the kit"
           " was built from a different worktree/commit, or the beskid_cli binary itself embeds a"

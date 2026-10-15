@@ -7,10 +7,10 @@ mod test_cwd;
 pub(crate) use test_cwd::{compiler_workspace_root, with_cwd, with_cwd_at_workspace_root};
 
 #[cfg(test)]
-mod std_env_lock;
+mod core_env_lock;
 
 #[cfg(test)]
-pub(crate) use std_env_lock::{scoped_std_dependency_root, std_dependency_env_lock};
+pub(crate) use core_env_lock::{scoped_core_dependency_root, core_dependency_env_lock};
 
 #[cfg(test)]
 pub(crate) mod fixture_harness;

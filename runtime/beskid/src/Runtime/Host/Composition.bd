@@ -1,9 +1,16 @@
 // Canonical compiler-planned dependency composition. The compiler supplies the exact
 // slot count and emits direct slot writes; the runtime owns storage, rooting, activation,
 // scopes, and reverse-order shutdown. Runtime service lookup is intentionally absent.
-const COMPOSITION_CONTAINER_SIZE = 48;
-const COMPOSITION_SCOPE_SIZE = 48;
-const COMPOSITION_PLAN_ENTRY_MAX = 256;
+// Container record: owner_runtime(0), status(8), slot_count(16), slots(24), activated_count(32),
+// open_scope_count(40), slots_bytes(48). The slot array is sized exactly to the compiler-supplied
+// plan; there is no fixed plan-entry cap.
+const COMPOSITION_CONTAINER_SIZE = 56;
+// Scope record: owner_container(0), parent_scope(8), owned_count(16), owned_values(24), scope_id(32),
+// parent_scope_id(40), owned_capacity(48). Owned values grow on demand (`CompositionScopeOwn`).
+const COMPOSITION_SCOPE_SIZE = 56;
+const COMPOSITION_SCOPE_OWNED_COUNT = 16;
+const COMPOSITION_SCOPE_OWNED_VALUES = 24;
+const COMPOSITION_SCOPE_OWNED_CAPACITY = 48;
 const COMPOSITION_CONFIGURING = 1;
 const COMPOSITION_ACTIVATING = 2;
 const COMPOSITION_ACTIVE = 3;
@@ -14,6 +21,7 @@ const COMPOSITION_SLOT_COUNT_OFFSET = 16;
 const COMPOSITION_SLOTS_OFFSET = 24;
 const COMPOSITION_ACTIVATED_COUNT_OFFSET = 32;
 const COMPOSITION_OPEN_SCOPE_COUNT_OFFSET = 40;
+const COMPOSITION_SLOTS_BYTES_OFFSET = 48;
 const TLS_COMPOSITION_SCOPE_OFFSET = 32;
 const TLS_COMPOSITION_DEPTH_OFFSET = 40;
 
@@ -43,20 +51,24 @@ pub word CompositionContainerValid(pointer container) {
 [Export(Abi:"C", Symbol:"composition_container_create")]
 pub pointer CompositionContainerCreate(word slotCount) {
     pointer state = RuntimeState();
-    if state == NativePointer(0) || slotCount > COMPOSITION_PLAN_ENTRY_MAX { return NativePointer(0); }
+    if state == NativePointer(0) || slotCount > 0x0FFFFFFFFFFFFFFF { return NativePointer(0); }
     pointer container = SystemAllocate(COMPOSITION_CONTAINER_SIZE, 8);
     if container == NativePointer(0) { return NativePointer(0); }
-    pointer slots = SystemAllocate(COMPOSITION_PLAN_ENTRY_MAX * 8, 8);
+    // Exactly the compiler's plan; a zero-slot plan still owns one addressable word.
+    mut word slotsBytes = slotCount * 8;
+    if slotsBytes == 0 { slotsBytes = 8; }
+    pointer slots = SystemAllocate(slotsBytes, 8);
     if slots == NativePointer(0) {
         SystemFree(container, COMPOSITION_CONTAINER_SIZE);
         return NativePointer(0);
     }
     memory_set(container, 0, COMPOSITION_CONTAINER_SIZE);
-    memory_set(slots, 0, COMPOSITION_PLAN_ENTRY_MAX * 8);
+    memory_set(slots, 0, slotsBytes);
     raw_word_store(container, NativeWord(state));
     raw_word_store(pointer_add(container, COMPOSITION_STATUS_OFFSET), COMPOSITION_CONFIGURING);
     raw_word_store(pointer_add(container, COMPOSITION_SLOT_COUNT_OFFSET), slotCount);
     raw_word_store(pointer_add(container, COMPOSITION_SLOTS_OFFSET), NativeWord(slots));
+    raw_word_store(pointer_add(container, COMPOSITION_SLOTS_BYTES_OFFSET), slotsBytes);
     return container;
 }
 
@@ -68,8 +80,9 @@ pub unit CompositionContainerDrop(pointer container) {
         Trap(10, NativePointer(0), 0);
     }
     pointer slots = NativePointer(raw_word_load(pointer_add(container, COMPOSITION_SLOTS_OFFSET)));
-    memory_set(slots, 0, COMPOSITION_PLAN_ENTRY_MAX * 8);
-    SystemFree(slots, COMPOSITION_PLAN_ENTRY_MAX * 8);
+    word slotsBytes = raw_word_load(pointer_add(container, COMPOSITION_SLOTS_BYTES_OFFSET));
+    memory_set(slots, 0, slotsBytes);
+    SystemFree(slots, slotsBytes);
     memory_set(container, 0, COMPOSITION_CONTAINER_SIZE);
     SystemFree(container, COMPOSITION_CONTAINER_SIZE);
     return;
@@ -141,21 +154,59 @@ pub bool CompositionScopeTryEnter(pointer container, word scopeId, word parentSc
     }
     pointer scopePtr = SystemAllocate(COMPOSITION_SCOPE_SIZE, 8);
     if scopePtr == NativePointer(0) { Trap(5, NativePointer(0), 0); }
-    pointer ownedValues = SystemAllocate(COMPOSITION_PLAN_ENTRY_MAX * 8, 8);
-    if ownedValues == NativePointer(0) {
-        SystemFree(scopePtr, COMPOSITION_SCOPE_SIZE);
-        Trap(5, NativePointer(0), 0);
-    }
     memory_set(scopePtr, 0, COMPOSITION_SCOPE_SIZE);
-    memory_set(ownedValues, 0, COMPOSITION_PLAN_ENTRY_MAX * 8);
     raw_word_store(scopePtr, NativeWord(container));
     raw_word_store(pointer_add(scopePtr, 8), NativeWord(previous));
-    raw_word_store(pointer_add(scopePtr, 24), NativeWord(ownedValues));
+    // Owned values are allocated on first use (`CompositionScopeOwn`), never pre-sized.
     raw_word_store(pointer_add(scopePtr, 32), scopeId);
     raw_word_store(pointer_add(scopePtr, 40), parentScopeId);
     raw_word_store(pointer_add(owner, scopeOffset), NativeWord(scopePtr));
     raw_word_store(pointer_add(owner, depthOffset), raw_word_load(pointer_add(owner, depthOffset)) + 1);
     raw_word_store(pointer_add(container, COMPOSITION_OPEN_SCOPE_COUNT_OFFSET), raw_word_load(pointer_add(container, COMPOSITION_OPEN_SCOPE_COUNT_OFFSET)) + 1);
+    return true;
+}
+
+// Roots `value` in the active scope's owned-value list, which grows on demand (count at
+// offset 16, data at 24, capacity at 48 of the scope record). Returns false when no scope is
+// open, the root registry refuses, or the system allocator refuses the growth.
+pub bool CompositionScopeOwn(pointer value) {
+    pointer owner = CompositionScopeOwner();
+    if owner == NativePointer(0) || value == NativePointer(0) { return false; }
+    pointer scopePtr = NativePointer(raw_word_load(pointer_add(owner, CompositionScopeOffset())));
+    if scopePtr == NativePointer(0) { return false; }
+    word count = raw_word_load(pointer_add(scopePtr, COMPOSITION_SCOPE_OWNED_COUNT));
+    // The vector header order here (count 16, data 24, capacity 48) is the scope record's own,
+    // so growth is spelled out instead of reusing Storage.bd's contiguous header.
+    word capacity = raw_word_load(pointer_add(scopePtr, COMPOSITION_SCOPE_OWNED_CAPACITY));
+    mut pointer values = NativePointer(raw_word_load(pointer_add(scopePtr, COMPOSITION_SCOPE_OWNED_VALUES)));
+    if count >= capacity {
+        mut word next = capacity * 2;
+        if next < 16 { next = 16; }
+        pointer fresh = SystemAllocate(next * 8, 8);
+        if fresh == NativePointer(0) { return false; }
+        memory_set(fresh, 0, next * 8);
+        if values != NativePointer(0) {
+            if count != 0 { memory_copy(fresh, values, count * 8); }
+            // Roots are address-identity entries; move them to the new storage.
+            mut word moved = 0;
+            while moved < count {
+                GcUnregisterRoot(pointer_add(values, moved * 8));
+                if GcRegisterRoot(pointer_add(fresh, moved * 8)) == false { Trap(5, NativePointer(0), 0); }
+                moved = moved + 1;
+            }
+            SystemFree(values, capacity * 8);
+        }
+        values = fresh;
+        raw_word_store(pointer_add(scopePtr, COMPOSITION_SCOPE_OWNED_VALUES), NativeWord(fresh));
+        raw_word_store(pointer_add(scopePtr, COMPOSITION_SCOPE_OWNED_CAPACITY), next);
+    }
+    pointer destination = pointer_add(values, count * 8);
+    raw_word_store(destination, NativeWord(value));
+    if GcRegisterRoot(destination) == false {
+        raw_word_store(destination, 0);
+        return false;
+    }
+    raw_word_store(pointer_add(scopePtr, COMPOSITION_SCOPE_OWNED_COUNT), count + 1);
     return true;
 }
 
@@ -177,8 +228,8 @@ pub unit CompositionScopeLeave() {
     if scopePtr == NativePointer(0) { Trap(10, NativePointer(0), 0); }
     pointer container = NativePointer(raw_word_load(scopePtr));
     if CompositionContainerValid(container) == 0 { Trap(10, NativePointer(0), 0); }
-    pointer ownedValues = NativePointer(raw_word_load(pointer_add(scopePtr, 24)));
-    mut word ownedCount = raw_word_load(pointer_add(scopePtr, 16));
+    pointer ownedValues = NativePointer(raw_word_load(pointer_add(scopePtr, COMPOSITION_SCOPE_OWNED_VALUES)));
+    mut word ownedCount = raw_word_load(pointer_add(scopePtr, COMPOSITION_SCOPE_OWNED_COUNT));
     while ownedCount > 0 {
         ownedCount = ownedCount - 1;
         GcUnregisterRoot(pointer_add(ownedValues, ownedCount * 8));
@@ -187,7 +238,8 @@ pub unit CompositionScopeLeave() {
     raw_word_store(pointer_add(owner, scopeOffset), raw_word_load(pointer_add(scopePtr, 8)));
     raw_word_store(pointer_add(owner, depthOffset), raw_word_load(pointer_add(owner, depthOffset)) - 1);
     raw_word_store(pointer_add(container, COMPOSITION_OPEN_SCOPE_COUNT_OFFSET), raw_word_load(pointer_add(container, COMPOSITION_OPEN_SCOPE_COUNT_OFFSET)) - 1);
-    SystemFree(ownedValues, COMPOSITION_PLAN_ENTRY_MAX * 8);
+    word ownedCapacity = raw_word_load(pointer_add(scopePtr, COMPOSITION_SCOPE_OWNED_CAPACITY));
+    if ownedValues != NativePointer(0) && ownedCapacity != 0 { SystemFree(ownedValues, ownedCapacity * 8); }
     memory_set(scopePtr, 0, COMPOSITION_SCOPE_SIZE);
     SystemFree(scopePtr, COMPOSITION_SCOPE_SIZE);
     return;

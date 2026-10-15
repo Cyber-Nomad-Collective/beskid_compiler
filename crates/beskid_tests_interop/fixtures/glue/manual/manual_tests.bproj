@@ -1,0 +1,8 @@
+manual_tests {
+    name = "manual_tests"
+    version = "0.1.0"
+    root = "src"
+}
+target "ManualImportTests" { kind = Lib entry = "ManualImportTests.bd" }
+target "ManualExports" { kind = Lib entry = "ManualExport.bd" }
+link { libraries = [glue_manual] }

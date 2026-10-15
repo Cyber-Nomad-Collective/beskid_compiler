@@ -1,0 +1,64 @@
+// `bulk` calls to the generic Corelib `Array.Of<T>(bulk T[] values)`: the call site packs its
+// arguments into one rooted array. Before the fix a generic `bulk T[]` had no element fact, so a
+// one-argument call fell back to an ordinary direct call and passed the scalar as the array handle
+// (a segfault), and a multi-argument call had no lowering rule. Each check returns a distinct
+// failure code; success is 42.
+
+use Core.Collections.Array;
+
+[Extern(Abi:"C")]
+pub contract Probe { unit gc_collect(); }
+
+pub type Cell { i64 value }
+
+i64 Sum(bulk i64[] values) {
+    mut i64 total = 0;
+    for value in values {
+        total = total + value;
+    }
+    return total;
+}
+
+T[] PairOf<T>(T first, T second) {
+    return Array.Of<T>(first, second);
+}
+
+/// The resolver spike shape: breadth-first frontier seeded by a one-element `Array.Of`.
+i64 FrontierRounds() {
+    mut i64[] frontier = Array.Of<i64>(1);
+    mut i64 rounds = 0;
+    while Array.Len<i64>(frontier) > 0 && rounds < 4 {
+        mut i64[] children = Array.Empty<i64>();
+        for node in frontier {
+            Array.Append<i64>(children, node * 2);
+            Array.Append<i64>(children, node * 2 + 1);
+        }
+        frontier = children;
+        rounds = rounds + 1;
+    }
+    return Array.Len<i64>(frontier);
+}
+
+pub i64 RunBulkArrayOf() {
+    mut i64[] one = Array.Of<i64>(7);
+    if Array.Len<i64>(one) != 1 || one[0] != 7 { return 1; }
+    Array.Append<i64>(one, 8);
+    if Array.Len<i64>(one) != 2 || one[0] != 7 || one[1] != 8 { return 2; }
+
+    i64[] three = Array.Of<i64>(1, 2, 3);
+    if Array.Len<i64>(three) != 3 || three[0] + three[1] + three[2] != 6 { return 3; }
+
+    if FrontierRounds() != 16 { return 4; }
+
+    Cell[] cells = Array.Of<Cell>(Cell { value: 20 }, Cell { value: 22 });
+    Probe.gc_collect();
+    if Array.Len<Cell>(cells) != 2 || cells[0].value + cells[1].value != 42 { return 5; }
+
+    i64[] pair = PairOf<i64>(40, 2);
+    Cell[] cellPair = PairOf<Cell>(Cell { value: 1 }, Cell { value: 41 });
+    Probe.gc_collect();
+    if pair[0] + pair[1] != 42 || cellPair[0].value + cellPair[1].value != 42 { return 6; }
+
+    if Sum(10, 12, 20) != 42 { return 7; }
+    return 42;
+}

@@ -2,7 +2,8 @@ use beskid_abi::abi_v5::{AbiManifestV5, SourceUnit, TargetMetadata};
 use beskid_abi::runtime_source::{
     CANONICAL_BOOTSTRAP_LIFECYCLE_SOURCE_PATH, CANONICAL_BOOTSTRAP_NATIVE_SOURCE_PATH,
     CANONICAL_BOOTSTRAP_OBJECTS_SOURCE_PATH, CANONICAL_BOOTSTRAP_ROOTS_SOURCE_PATH, CANONICAL_BOOTSTRAP_SOURCE_PATH,
-    CANONICAL_CLOCKS_SOURCE_PATH, CANONICAL_CORELIB_SYSCALL_SOURCE_PATH, CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH,
+    CANONICAL_CHANNEL_SOURCE_PATH, CANONICAL_CLOCKS_SOURCE_PATH, CANONICAL_CORELIB_SYSCALL_SOURCE_PATH,
+    CANONICAL_FIBER_SOURCE_PATH, CANONICAL_MUTEX_SOURCE_PATH, CANONICAL_SCHEDULER_POLL_SOURCE_PATH, CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH,
     CANONICAL_PROCESS_SOURCE_PATH, CANONICAL_SCHEDULER_CONTEXT_SOURCE_PATH, CANONICAL_SCHEDULER_CORE_SOURCE_PATH,
     CANONICAL_SCHEDULER_EXPORTS_SOURCE_PATH, CANONICAL_SCHEDULER_LOOP_SOURCE_PATH,
     CANONICAL_SCHEDULER_QUEUE_SOURCE_PATH, CANONICAL_SCHEDULER_SOURCE_PATH, CANONICAL_SCHEDULER_STORAGE_SOURCE_PATH,
@@ -47,8 +48,10 @@ fn managed_aggregate_allocator_uses_the_canonical_gc_heap() {
         .expect("managed object allocator body");
 
     assert!(
-        allocator.contains("pointer object = GcAlloc(size, alignment);"),
-        "managed aggregates must enter the traced heap"
+        allocator.contains("return AllocateObjectWithPolicy(request, false);")
+            && allocator.contains("if checked { object = GcTryAlloc(size, alignment); }")
+            && allocator.contains("else { object = GcAlloc(size, alignment); }"),
+        "ordinary and checked managed allocations must enter the traced heap"
     );
     assert!(
         !allocator.contains("SystemAllocate(size, alignment)"),
@@ -67,6 +70,10 @@ fn canonical_scheduler_sources_exist() {
         CANONICAL_SCHEDULER_QUEUE_SOURCE_PATH,
         CANONICAL_SCHEDULER_LOOP_SOURCE_PATH,
         CANONICAL_SCHEDULER_EXPORTS_SOURCE_PATH,
+        CANONICAL_SCHEDULER_POLL_SOURCE_PATH,
+        CANONICAL_CHANNEL_SOURCE_PATH,
+        CANONICAL_MUTEX_SOURCE_PATH,
+        CANONICAL_FIBER_SOURCE_PATH,
     ] {
         assert!(sources.iter().any(|unit| unit.logical_path == path), "canonical runtime source {path} must exist",);
     }

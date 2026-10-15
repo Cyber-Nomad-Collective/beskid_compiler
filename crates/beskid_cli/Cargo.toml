@@ -1,11 +1,12 @@
 [package]
 name = "beskid_cli"
-version = "0.5.4"
+version = "0.6.0"
 edition = "2024"
 license.workspace = true
 
 [dependencies]
 beskid_tools = { path = "../beskid_tools" }
+beskid_corelib_embed = { path = "../beskid_corelib_embed" }
 beskid_aot = { path = "../beskid_aot" }
 beskid_abi = { path = "../beskid_abi" }
 beskid_analysis = { path = "../beskid_analysis" }
@@ -37,3 +38,8 @@ argfile = "0.2"
 semver = "1.0.27"
 walkdir = "2"
 cargo-cross = { workspace = true }
+
+tempfile = "3"
+
+[dev-dependencies]
+beskid_tests_mod_host = { path = "../beskid_tests_mod_host" }

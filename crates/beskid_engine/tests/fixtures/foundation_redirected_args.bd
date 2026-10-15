@@ -11,5 +11,16 @@ pub i64 Main() {
         };
         index = index + 1;
     }
+    // Argument strings live in storage the platform host maps once, outside the managed heap.
+    // Concatenating one must work, also while collections run between the operations.
+    string[] all = Args.All();
+    string last = all[Args.Count() - 1];
+    mut string joined = "";
+    mut i64 round = 0;
+    while round < 20000 {
+        joined = "arg:" + last + ":" + last;
+        round = round + 1;
+    }
+    Output.WriteLine(joined);
     return Args.Count();
 }

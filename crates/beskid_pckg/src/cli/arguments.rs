@@ -1,7 +1,7 @@
 use super::{Args, PackProfileOverride, PathBuf, Subcommand};
 
 const DEFAULT_PCKG_CONFIG_PATH: &str = ".beskid/pckg/repositories.json";
-/// Connection, auth, timeout, and subcommand selection for `beskid pckg`.
+/// Connection, auth, timeout, and subcommand selection for `beskid package`.
 #[derive(Args, Debug, Clone)]
 pub struct PckgArgs {
     /// pckg server base URL.
@@ -121,7 +121,7 @@ pub struct VersionActionArgs {
     pub version: String,
 }
 
-/// `beskid pckg pack --package-kind` override (platform-spec packageKind tool, D-TOOL-PCKG-0004).
+/// `beskid package pack --package-kind` override (platform-spec packageKind tool, D-TOOL-PCKG-0004).
 #[derive(clap::ValueEnum, Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum PackArgsPackageKind {
     /// Detect from the canonical `.bproj` manifest (library or template).

@@ -9,7 +9,7 @@ use beskid_analysis::services::{FrontEndOptions, resolved_input_from_plan, synth
 pub(super) use beskid_aot::{
     AotBuildRequest, AotError, BuildOutputKind, ProjectTargetKind, build, default_output_kind, resolve_entrypoint,
 };
-use beskid_queries::compile_front_end_from_resolved_input;
+use beskid_queries::compile_mod_free_front_end;
 
 mod defaults;
 mod entrypoint;
@@ -70,7 +70,7 @@ fn lower_sample_artifact() -> beskid_codegen::CodegenArtifact {
     std::fs::write(&path, source).expect("write sample source");
     let plan = synthetic_compile_plan_for_source(&path);
     let resolved = resolved_input_from_plan(path, source.to_owned(), plan, None, None);
-    let front = compile_front_end_from_resolved_input(
+    let front = compile_mod_free_front_end(
         &resolved,
         FrontEndOptions { with_semantic_diagnostics: false, ..Default::default() },
         None,

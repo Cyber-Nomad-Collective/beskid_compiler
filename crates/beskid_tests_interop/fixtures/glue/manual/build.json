@@ -1,0 +1,113 @@
+{
+  "schema_version": 1,
+  "scope": "manual-basis-preparation",
+  "abi": "C",
+  "wire_transport": "canonical-stdio-shared-serialization-not-implemented-here",
+  "directions": [
+    "import",
+    "export"
+  ],
+  "implementations": [
+    "manual"
+  ],
+  "targets": [
+    "x86_64-unknown-linux-gnu",
+    "aarch64-apple-darwin",
+    "x86_64-pc-windows-msvc"
+  ],
+  "representations": [
+    "i8",
+    "i16",
+    "i32",
+    "i64",
+    "u8",
+    "u16",
+    "u32",
+    "u64",
+    "f32",
+    "f64",
+    "bool",
+    "char",
+    "utf8_view",
+    "byte_view",
+    "unit",
+    "opaque_handle",
+    "native_width"
+  ],
+  "source_import": "src/ManualImport.bd",
+  "source_export": "src/ManualExport.bd",
+  "primitive_dependency": "PrimitivePrerequisite.bd",
+  "native_shim": "native.rs",
+  "c_header": "boundary.h",
+  "rust_assertions": "selfcheck.rs",
+  "foreign_c_caller": "caller.c",
+  "recipe": [
+    "python3",
+    "build.py",
+    "--output",
+    "<disposable-build-root>",
+    "--candidate",
+    "<exact-candidate-cli>"
+  ],
+  "statuses": {
+    "ok": 0,
+    "invalid": 1,
+    "foreign_error": 2,
+    "foreign_panic": 3
+  },
+  "limits": {
+    "borrowed_bytes": 16777216,
+    "native_width_bits": 64
+  },
+  "ownership": {
+    "borrow": "call scoped, immutable, caller-valid readable allocation",
+    "transfer": "library-owned buffer; opaque token; explicit release exactly once",
+    "release_symbol": "glue_release",
+    "owned_view_symbol": "glue_owned_view",
+    "token": "monotonic nonzero per-library token with checked session 7 and shape 11; no slot recycling or raw address",
+    "view_after_release": "forbidden; validate token first",
+    "concurrency": "owner serializes release against view access"
+  },
+  "required_remaining": [
+    "actual Beskid import execution of all17 representations and boundaries",
+    "actual Beskid export wrapper execution and C caller",
+    "runtime-entry/root ownership and forced GC",
+    "canonical normalized C ABI adapters for bool/char/UTF8/bytes/unit/handle",
+    "overflow/shape/library rejection at typed boundary",
+    "generated equivalent directions",
+    "shared serialization stdio lifecycle",
+    "three-native-target installed qualification"
+  ],
+  "qualification": "blocked, no Rust-only check qualifies R4",
+  "source_consumer": "ManualConsumer.bd",
+  "actual_import_tests": "src/ManualImportTests.bd",
+  "actual_project": "manual_tests.bproj",
+  "actual_foreign_rust_caller": "export_caller.rs",
+  "actual_export_header": "export_boundary.h",
+  "actual_runtime_bootstrap": "export_bootstrap.c",
+  "actual_recipe": [
+    "python3",
+    "native_gate.py",
+    "--candidate",
+    "<exact-candidate-cli>",
+    "--runtime-prefix",
+    "<exact-matching-kit>",
+    "--corelib-root",
+    "<checkout-corelib>",
+    "--output",
+    "<new-disposable-build-root>"
+  ],
+  "physical_managed_return": {
+    "status": "i32",
+    "output": "checked pointer to GlueOwnedView",
+    "layout": {
+      "size": 24,
+      "alignment": 8,
+      "pointer": 0,
+      "length": 8,
+      "token": 16
+    }
+  },
+  "production_owner_authority": "canonical process GC-rooted owner record with library/session/shape/generation checks; missing prerequisite, not foreign shim registry",
+  "native_qualification": false
+}

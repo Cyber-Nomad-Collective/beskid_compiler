@@ -74,3 +74,9 @@ impl From<cranelift_module::ModuleError> for AotError {
         Self::ObjectModule { message: value.to_string() }
     }
 }
+
+impl From<beskid_execution::NativeExecutionError> for AotError {
+    fn from(error: beskid_execution::NativeExecutionError) -> Self {
+        Self::InvalidRequest { message: error.to_string() }
+    }
+}

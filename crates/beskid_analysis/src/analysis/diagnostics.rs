@@ -72,6 +72,17 @@ pub fn span_to_sourcespan(span: SpanInfo) -> SourceSpan {
     SourceSpan::new(span.start.into(), len)
 }
 
+/// The label span for `span` inside `source`. A span that lies past the end of the source
+/// (generated syntax is re-spanned into a synthetic region after the host unit) points at the
+/// source's last byte instead: miette cannot render a label outside the text it was given.
+pub fn span_to_sourcespan_within(span: SpanInfo, source: &str) -> SourceSpan {
+    if source.is_empty() || span.start >= source.len() {
+        return SourceSpan::new(source.len().saturating_sub(1).into(), source.len().min(1));
+    }
+    let len = span.end.saturating_sub(span.start).max(1).min(source.len() - span.start);
+    SourceSpan::new(span.start.into(), len)
+}
+
 pub fn make_diagnostic(
     source_name: &str,
     source: &str,
@@ -84,7 +95,7 @@ pub fn make_diagnostic(
 ) -> SemanticDiagnostic {
     SemanticDiagnostic {
         src: NamedSource::new(source_name, source.to_string()),
-        span: span_to_sourcespan(span),
+        span: span_to_sourcespan_within(span, source),
         message: message.into(),
         label: label.into(),
         help,

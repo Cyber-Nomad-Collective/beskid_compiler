@@ -23,7 +23,7 @@ fn parsed_project_declared_array_index_assignment_reaches_verified_syntax_isle()
 
     let lowered = lower_verified_entrypoint(assembly, target, isa.as_ref());
     let store = lowered
-        .artifact
+        .artifact()
         .functions
         .iter()
         .find(|function| function.name.starts_with("Store#syntax_"))
@@ -36,11 +36,19 @@ fn parsed_project_declared_array_index_assignment_reaches_verified_syntax_isle()
 #[test]
 fn canonical_runtime_production_path_lowers_trusted_intrinsics_to_verified_clif() {
     let (target, isa) = x86_64_target_and_isa();
-    let expected_exports = AbiManifestV5::canonical_runtime(target.clone())
+    // The canonical same-bundle C Glue provider is the sole producer of its manifest exports;
+    // every other manifest export must come from this Beskid lowering.
+    let c_provider_exports = canonical_c_provider_exports();
+    let manifest_exports = AbiManifestV5::canonical_runtime(target.clone())
         .exports
         .into_iter()
         .map(|entry| entry.symbol)
         .collect::<BTreeSet<_>>();
+    assert!(
+        c_provider_exports.is_subset(&manifest_exports),
+        "every canonical C provider export must carry manifest provenance"
+    );
+    let expected_exports = manifest_exports.difference(&c_provider_exports).cloned().collect::<BTreeSet<_>>();
     let artifact = with_db(|db| lower_canonical_runtime_prepared_syntax(db, target, isa.as_ref()))
         .expect("canonical runtime lowers through TypedProgram → CodegenInput → ISLE");
     let module = JITModule::new(JITBuilder::with_isa(isa.clone(), default_libcall_names()));
@@ -52,7 +60,18 @@ fn canonical_runtime_production_path_lowers_trusted_intrinsics_to_verified_clif(
         artifact.exports.iter().any(|export| export.exported_symbol == "fiber_spawn"),
         "canonical runtime lowering must retain the Scheduler-owned fiber spawn ABI export",
     );
-    let actual_exports = artifact.exports.iter().map(|export| export.exported_symbol.clone()).collect::<BTreeSet<_>>();
+    // Source exports and checked clones are artifact exports; Dynamic descriptor getters are
+    // published by the aggregate static plans that module emission defines.
+    let actual_exports = artifact
+        .exports
+        .iter()
+        .map(|export| export.exported_symbol.clone())
+        .chain(artifact.aggregate_static_plans.iter().filter_map(|plan| plan.descriptor_getter.clone()))
+        .collect::<BTreeSet<_>>();
+    assert!(
+        actual_exports.is_disjoint(&c_provider_exports),
+        "C provider exports must not also be lowered from Beskid source"
+    );
     // Keep Network's actual source closure in this production lowering gate. Analyzer-only
     // coverage cannot prove mutable assignment facts or emitted control-flow bodies.
     for service in [
@@ -84,7 +103,8 @@ fn canonical_runtime_production_path_lowers_trusted_intrinsics_to_verified_clif(
     }
     assert!(
         expected_exports.is_subset(&actual_exports),
-        "canonical lowering must publish the complete public ABI manifest surface"
+        "canonical lowering must publish the complete public ABI manifest surface; missing {:?}",
+        expected_exports.difference(&actual_exports).collect::<Vec<_>>()
     );
     for service in ["str_concat", "gc_collect"] {
         assert!(
@@ -237,8 +257,8 @@ fn parsed_string_literals_do_not_assume_jit_code_and_data_are_colocated() {
     let (target, isa) = x86_64_target_and_isa();
     let lowered = lower_verified_entrypoint(assembly, target, isa.as_ref());
     let literal_symbols =
-        lowered.artifact.string_literals.keys().map(|symbol| symbol.as_bytes().to_vec()).collect::<BTreeSet<_>>();
-    let literal_references = lowered.artifact.functions.iter().flat_map(|function| {
+        lowered.artifact().string_literals.keys().map(|symbol| symbol.as_bytes().to_vec()).collect::<BTreeSet<_>>();
+    let literal_references = lowered.artifact().functions.iter().flat_map(|function| {
         function.function.global_values.values().filter_map(|global| match global {
             cranelift_codegen::ir::GlobalValueData::Symbol {
                 name: ExternalName::TestCase(name), colocated, ..
@@ -252,4 +272,27 @@ fn parsed_string_literals_do_not_assume_jit_code_and_data_are_colocated() {
         literal_references.iter().all(|colocated| !colocated),
         "JIT code and literal data allocations must not assume an AArch64 ADRP-range placement"
     );
+}
+
+/// Manifest exports produced only by the canonical same-bundle C Glue provider
+/// (`runtime/Glue/owner_identity_v1.{h,c}`), never by Beskid lowering.
+fn canonical_c_provider_exports() -> BTreeSet<String> {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../runtime/Glue");
+    let mut exports = BTreeSet::new();
+    for file in ["owner_identity_v1.h", "owner_identity_v1.c"] {
+        let source = std::fs::read_to_string(root.join(file)).expect("canonical C provider source");
+        for line in source.lines() {
+            let Some(declaration) = line.strip_prefix("BESKID_GLUE_PROVIDER_EXPORT ") else { continue };
+            let (head, _) = declaration.split_once('(').expect("C provider parameter list");
+            let name = head
+                .trim_end()
+                .rsplit(|ch: char| !(ch.is_ascii_alphanumeric() || ch == '_'))
+                .next()
+                .filter(|name| !name.is_empty())
+                .expect("C provider export name");
+            exports.insert(name.to_owned());
+        }
+    }
+    assert!(!exports.is_empty(), "canonical C provider exports are absent");
+    exports
 }

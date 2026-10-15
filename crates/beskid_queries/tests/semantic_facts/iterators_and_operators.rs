@@ -74,7 +74,7 @@ impl Value { i32 Sum(i32 first) { let local = first; return local; } }"#;
 
 #[test]
 fn for_iterator_fact_proves_range_element_type_and_shadowing() {
-    use beskid_queries::ForIteratorFact;
+    use beskid_queries::{ForIterableSource, ForIteratorFact};
 
     let source = "i32 Main() { let value = 1_i64; for value in range(1, 4) { let copy = value; } return 0; }";
     let (db, _project, unit, generation, index) = setup(source);
@@ -88,7 +88,7 @@ fn for_iterator_fact_proves_range_element_type_and_shadowing() {
     );
     assert_eq!(
         for_iterator_fact(&db, for_stmt).expect("for iterator fact"),
-        Some(ForIteratorFact { declaration, element_type: SemanticTypeId::I32 })
+        Some(ForIteratorFact { declaration, element_type: SemanticTypeId::I32, source: ForIterableSource::Range })
     );
     assert_eq!(node_type(&db, declaration).expect("iterator declaration type"), Some(SemanticTypeId::I32));
     let body_reference = key_at_start(
@@ -143,8 +143,62 @@ fn stale_generation_cannot_reuse_for_iterator_fact() {
 }
 
 #[test]
-fn for_iterator_fact_rejects_non_range_iterables() {
+fn for_iterator_fact_proves_array_iterables_through_their_source_identity() {
+    use beskid_queries::{ForIterableSource, ManagedReferenceKind, managed_reference_kind};
+
+    // A declared `i64[]` parameter: scalar elements, the loop variable is a scalar local.
+    let source = "i64 Sum(i64[] values) { mut i64 total = 0_i64; for value in values { total = total + value; } return total; }";
+    let (db, _project, unit, generation, index) = setup(source);
+    let for_stmt = key(unit, generation, &index, NodeKind::ForStatement, 0);
+    let fact = for_iterator_fact(&db, for_stmt).expect("array for fact").expect("array iterable proves a fact");
+    assert_eq!(fact.element_type, SemanticTypeId::I64);
+    assert_eq!(fact.source, ForIterableSource::Array { element_managed: ManagedReferenceKind::NativeOrScalar });
+    assert_eq!(node_type(&db, fact.declaration).expect("loop variable type"), Some(SemanticTypeId::I64));
+    let body_reference = key_at_start(
+        unit,
+        generation,
+        &index,
+        NodeKind::PathExpression,
+        source.find("+ value").expect("body use") + "+ ".len(),
+    );
+    assert_eq!(node_type(&db, body_reference).expect("loop variable reference type"), Some(SemanticTypeId::I64));
+    assert_eq!(abi_type(&db, body_reference).expect("loop variable reference abi"), Some(SemanticTypeId::I64));
+    assert_eq!(
+        managed_reference_kind(&db, body_reference).expect("loop variable classification"),
+        Some(ManagedReferenceKind::NativeOrScalar)
+    );
+
+    // A `string[]` local: managed elements, the loop variable is a GC-rooted pointer local.
+    let source = "string Last(string[] names) { mut string last = \"\"; for name in names { last = name; } return last; }";
+    let (db, _project, unit, generation, index) = setup(source);
+    let for_stmt = key(unit, generation, &index, NodeKind::ForStatement, 0);
+    let fact = for_iterator_fact(&db, for_stmt).expect("array for fact").expect("string array iterable proves a fact");
+    assert_eq!(fact.element_type, SemanticTypeId::STRING);
+    assert_eq!(fact.source, ForIterableSource::Array { element_managed: ManagedReferenceKind::GcManaged });
+    let body_reference = key_at_start(
+        unit,
+        generation,
+        &index,
+        NodeKind::PathExpression,
+        source.find("= name").expect("body use") + "= ".len(),
+    );
+    assert_eq!(
+        managed_reference_kind(&db, body_reference).expect("loop variable classification"),
+        Some(ManagedReferenceKind::GcManaged)
+    );
+
+    // An array literal iterable proves its element type too.
     let source = "unit Main() { for item in [1] { let copy = item; } }";
+    let (db, _project, unit, generation, index) = setup(source);
+    let for_stmt = key(unit, generation, &index, NodeKind::ForStatement, 0);
+    let fact = for_iterator_fact(&db, for_stmt).expect("array literal for fact").expect("array literal proves a fact");
+    assert_eq!(fact.element_type, SemanticTypeId::I32);
+    assert!(matches!(fact.source, ForIterableSource::Array { .. }));
+}
+
+#[test]
+fn for_iterator_fact_rejects_non_iterable_values() {
+    let source = "unit Main(i64 count) { for item in count { let copy = item; } }";
     let (db, _project, unit, generation, index) = setup(source);
     let for_stmt = key(unit, generation, &index, NodeKind::ForStatement, 0);
     assert_unavailable(for_iterator_fact(&db, for_stmt));
@@ -293,7 +347,7 @@ fn contextual_integer_literal_abi_type_contextualizes_only_bare_integer_literals
 }
 
 #[test]
-fn contextual_integer_literal_abi_type_return_boundary_rejects_literals_nested_in_return_calls() {
+fn contextual_integer_literal_abi_type_binds_nested_return_call_literals_to_the_callee_parameter() {
     let direct_return = "i32 Main() { return 8; }";
     let (db, _project, unit, generation, index) = setup(direct_return);
     let literal = key(unit, generation, &index, NodeKind::LiteralExpression, 0);
@@ -310,15 +364,23 @@ fn contextual_integer_literal_abi_type_return_boundary_rejects_literals_nested_i
         Some(SemanticTypeId::I64)
     );
 
+    // The innermost typed context owns a literal: the runtime intrinsic's `word` parameter,
+    // never the enclosing return type or conversion.
     let nested_in_return_call = "i32 Main(pointer state) { return i32(pointer_add(state, 8)); }";
     let (db, _project, unit, generation, index) = setup(nested_in_return_call);
     let literal = key(unit, generation, &index, NodeKind::LiteralExpression, 0);
-    assert_unavailable(contextual_integer_literal_abi_type(&db, literal));
+    assert_eq!(
+        contextual_integer_literal_abi_type(&db, literal).expect("intrinsic argument literal"),
+        Some(SemanticTypeId::WORD)
+    );
 
     let nested_in_return_call_same_width = "pointer Main(pointer state) { return pointer_add(state, 8); }";
     let (db, _project, unit, generation, index) = setup(nested_in_return_call_same_width);
     let literal = key(unit, generation, &index, NodeKind::LiteralExpression, 0);
-    assert_unavailable(contextual_integer_literal_abi_type(&db, literal));
+    assert_eq!(
+        contextual_integer_literal_abi_type(&db, literal).expect("same-width intrinsic argument literal"),
+        Some(SemanticTypeId::WORD)
+    );
 }
 
 #[test]
@@ -395,5 +457,157 @@ fn item_body_is_the_exact_function_and_method_body_child() {
     assert_eq!(
         item_body(&method_db, method).expect("method body"),
         Some(AstNodeKey { node: beskid_analysis::syntax::AstNodeId(expected_method_body), ..method })
+    );
+}
+
+const OPTION_AND_COUNTER: &str = "pub enum Option<T> { Some(T value), None } \
+     pub type Counter { i64 current, i64 limit, \
+         pub Option<i64> Next() { \
+             if this.current >= this.limit { return Option::None; } \
+             this.current = this.current + 1_i64; \
+             return Option::Some(this.current); \
+         } \
+     } \
+     pub type Repeat<T> { T value, i64 left, \
+         pub Option<T> Next() { \
+             if this.left <= 0_i64 { return Option::None; } \
+             this.left = this.left - 1_i64; \
+             return Option::Some(this.value); \
+         } \
+     } ";
+
+#[test]
+fn for_iterator_fact_proves_nominal_iterators_through_next() {
+    use beskid_queries::{ForIterableSource, ManagedReferenceKind, for_iterator_protocol, managed_reference_kind};
+
+    let source = format!(
+        "{OPTION_AND_COUNTER} i64 Sum(Counter counter) {{ mut i64 total = 0_i64; for value in counter {{ total = total + value; }} return total; }}"
+    );
+    let (db, _project, unit, generation, index) = setup(&source);
+    let for_stmt = key(unit, generation, &index, NodeKind::ForStatement, 0);
+    let counter_next = key(unit, generation, &index, NodeKind::MethodDefinition, 0);
+    let fact = for_iterator_fact(&db, for_stmt).expect("iterator for fact").expect("a nominal iterator proves a fact");
+    assert_eq!(fact.element_type, SemanticTypeId::I64);
+    assert_eq!(fact.source, ForIterableSource::Iterator { element_managed: ManagedReferenceKind::NativeOrScalar });
+    let body_reference = key_at_start(
+        unit,
+        generation,
+        &index,
+        NodeKind::PathExpression,
+        source.find("+ value").expect("body use") + "+ ".len(),
+    );
+    assert_eq!(abi_type(&db, body_reference).expect("loop variable reference abi"), Some(SemanticTypeId::I64));
+    assert_eq!(
+        managed_reference_kind(&db, body_reference).expect("loop variable classification"),
+        Some(ManagedReferenceKind::NativeOrScalar)
+    );
+
+    let protocol = for_iterator_protocol(&db, for_stmt, None).expect("protocol").expect("nominal iterator protocol");
+    assert_eq!(protocol.next.declaration, counter_next, "the loop calls Counter.Next");
+    assert!(protocol.next.substitutions.is_empty(), "a non-generic owner needs no specialization");
+    assert_eq!(protocol.next.signature, ItemSignature {
+        parameters: Arc::from([SemanticTypeId::POINTER]),
+        result: SemanticTypeId::POINTER,
+    });
+    assert_eq!(protocol.some_variant, 0, "`Some` is the first declared variant");
+    assert_eq!(protocol.element_type, SemanticTypeId::I64);
+}
+
+#[test]
+fn for_iterator_fact_binds_a_generic_iterator_owner_from_the_iterable() {
+    use beskid_queries::{ForIterableSource, ManagedReferenceKind, for_iterator_protocol};
+
+    let source = format!(
+        "{OPTION_AND_COUNTER} i64 Count(Repeat<string> source) {{ mut i64 count = 0_i64; for item in source {{ count = count + 1_i64; }} return count; }}"
+    );
+    let (db, _project, unit, generation, index) = setup(&source);
+    let for_stmt = key(unit, generation, &index, NodeKind::ForStatement, 0);
+    let repeat_next = key(unit, generation, &index, NodeKind::MethodDefinition, 1);
+    let fact = for_iterator_fact(&db, for_stmt).expect("iterator for fact").expect("a generic iterator proves a fact");
+    assert_eq!(fact.element_type, SemanticTypeId::STRING);
+    assert_eq!(fact.source, ForIterableSource::Iterator { element_managed: ManagedReferenceKind::GcManaged });
+    let protocol = for_iterator_protocol(&db, for_stmt, None).expect("protocol").expect("generic iterator protocol");
+    assert_eq!(protocol.next.declaration, repeat_next);
+    let [binding] = &*protocol.next.substitutions else { panic!("Repeat<T> binds one parameter: {protocol:?}") };
+    assert_eq!(&*binding.parameter, "T");
+    assert_eq!(binding.argument, SemanticTypeId::STRING);
+    assert_eq!(protocol.next.signature.parameters[..], [SemanticTypeId::POINTER]);
+    assert_eq!(protocol.next.signature.result, SemanticTypeId::POINTER);
+}
+
+#[test]
+fn iterator_loops_in_generic_items_are_proven_per_specialization() {
+    use beskid_queries::{
+        ForIterableSource, ManagedReferenceKind, for_iterator_protocol, for_iterator_specialization,
+        generic_call_specialization, generic_call_specialization_instance,
+    };
+
+    let source = format!(
+        "{OPTION_AND_COUNTER} i64 Count<T>(Repeat<T> source) {{ mut i64 count = 0_i64; for item in source {{ count = count + 1_i64; }} return count; }} \
+         i64 Main() {{ Repeat<i64> values = Repeat<i64> {{ value: 7_i64, left: 3_i64 }}; return Count(values); }}"
+    );
+    let (db, _project, unit, generation, index) = setup(&source);
+    let for_stmt = key(unit, generation, &index, NodeKind::ForStatement, 0);
+    assert_unavailable(for_iterator_fact(&db, for_stmt));
+    assert!(for_iterator_protocol(&db, for_stmt, None).is_err(), "a generic body has no target-neutral protocol");
+
+    // The one generic call in the program is `Count(values)` in `Main`.
+    let specialization = index
+        .ids_of_kind(NodeKind::CallExpression)
+        .find_map(|node| generic_call_specialization(&db, AstNodeKey { unit, generation, node }).ok().flatten())
+        .expect("Count<i64> call specialization");
+    let instance = generic_call_specialization_instance(&db, specialization).expect("instance").expect("Count<i64>");
+    let fact = for_iterator_specialization(&db, for_stmt, &instance)
+        .expect("specialized iterator fact")
+        .expect("the specialization proves the iterator");
+    assert_eq!(fact.element_type, SemanticTypeId::I64);
+    assert_eq!(fact.source, ForIterableSource::Iterator { element_managed: ManagedReferenceKind::NativeOrScalar });
+    let protocol =
+        for_iterator_protocol(&db, for_stmt, Some(&instance)).expect("protocol").expect("specialized protocol");
+    let [binding] = &*protocol.next.substitutions else { panic!("Repeat<T> binds one parameter: {protocol:?}") };
+    assert_eq!(binding.argument, SemanticTypeId::I64);
+}
+
+#[test]
+fn the_check_gate_rejects_nominal_iterables_the_protocol_cannot_lower() {
+    use beskid_queries::{GateObligationKind, gate_obligations, immutable_local_assignment};
+
+    // `Next` has the declared shape, but `Option` is not the `Some`/`None` enum, so no lowering
+    // fact exists: `check` must reject what `build` cannot lower (E1215).
+    let source = "pub enum Option<T> { Present(T value), Absent } \
+                  pub type Odd { i64 n, pub Option<i64> Next() { return Option::Absent; } } \
+                  unit Main(Odd odd) { for x in odd { return; } return; }";
+    let (db, _project, unit, generation, index) = setup(source);
+    let main = key(unit, generation, &index, NodeKind::FunctionDefinition, 0);
+    let obligations = gate_obligations(&db, main).expect("gate query").expect("gate obligations");
+    assert!(
+        obligations.iter().any(|obligation| obligation.kind == GateObligationKind::NonIterableForTarget),
+        "{obligations:?}"
+    );
+
+    // A proven iterator is not a finding, and its loop variable is immutable (E1214).
+    let source = format!(
+        "{OPTION_AND_COUNTER} unit Main(Counter counter) {{ for value in counter {{ value = 1_i64; }} return; }}"
+    );
+    let (db, _project, unit, generation, index) = setup(&source);
+    let main = key(unit, generation, &index, NodeKind::FunctionDefinition, 0);
+    let obligations = gate_obligations(&db, main).expect("gate query").expect("gate obligations");
+    assert!(
+        !obligations.iter().any(|obligation| obligation.kind == GateObligationKind::NonIterableForTarget),
+        "{obligations:?}"
+    );
+    let assignment = immutable_local_assignment(&db, main).expect("immutable assignment query");
+    assert_eq!(assignment.map(|finding| finding.name.to_string()), Some("value".to_string()));
+
+    // Inside a generic item the protocol is proven per specialization; only the shape is judged.
+    let source = format!(
+        "{OPTION_AND_COUNTER} i64 Count<T>(Repeat<T> source) {{ mut i64 count = 0_i64; for item in source {{ count = count + 1_i64; }} return count; }}"
+    );
+    let (db, _project, unit, generation, index) = setup(&source);
+    let count = key(unit, generation, &index, NodeKind::FunctionDefinition, 0);
+    let obligations = gate_obligations(&db, count).expect("gate query").expect("gate obligations");
+    assert!(
+        !obligations.iter().any(|obligation| obligation.kind == GateObligationKind::NonIterableForTarget),
+        "{obligations:?}"
     );
 }

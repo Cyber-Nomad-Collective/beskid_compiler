@@ -14,24 +14,66 @@ pub(in crate::semantic_contract) fn call_lowering_for_node(
     Some(match &call.callee.node {
         expression if expression_is_lambda(expression) => Ok(CallLowering::Dynamic),
         beskid_analysis::syntax::Expression::Path(path) => {
-            path_call_resolution(db, program, index, key, call, &path.node.path.node).into_query_result()
+            path_call_resolution(db, program, index, key, call, &path.node.path.node).into_query_result(
+                db,
+                key,
+                &path.node.path.node,
+            )
         }
         beskid_analysis::syntax::Expression::Member(member) => {
-            // Nominal methods lower Direct when declaration authority exists.
-            // Extern/contract members and other receivers without a syntax method
-            // declaration remain Dynamic rather than unavailable, matching Path
-            // import/builtin fallback so production JIT/AOT can emit the call.
-            // Module-qualified calls like `Core.IsEmpty(text)` parse as Member
+            // The member is classified by what it resolves to on the receiver's type, exactly
+            // as the path callee the same name chain spells: a nominal or impl method of a
+            // source-proven receiver, then a contract member of a contract-typed or
+            // where-bounded receiver (a parameter, or a generic field of a bounded impl) are
+            // method calls. Module-qualified calls like `Core.IsEmpty(text)` parse as Member
             // expressions — flatten the member into a module path for direct resolution.
-            Ok(method_declaration_for_member_receiver(db, program, index, key, call, member)
+            // Only a member whose source type is a function type (`Make().op(1)`) is a
+            // function value call. Extern members and other receivers without a syntax
+            // method declaration remain Dynamic rather than unavailable, matching Path
+            // import/builtin fallback so production JIT/AOT can emit the call.
+            if let Some(method) = method_declaration_for_member_receiver(db, program, index, key, call, member) {
+                return Some(Ok(CallLowering::Direct(method)));
+            }
+            if let Some(receiver) = contract_member_call_receiver(db, program, index, key, call) {
+                return Some(receiver.map(|(method, _)| CallLowering::Direct(method)));
+            }
+            Ok(flatten_member_as_path_declaration(db, program, index, key, member)
                 .map(CallLowering::Direct)
-                .or_else(|| {
-                    flatten_member_as_path_declaration(db, program, index, key, member).map(CallLowering::Direct)
-                })
+                .or_else(|| function_value_callee(db, program, index, key, call).map(CallLowering::FunctionValue))
                 .unwrap_or(CallLowering::Dynamic))
         }
-        _ => Err(SemanticError::unavailable("call_lowering")),
+        // Any other callee (`Make()(1)`, `handlers[0](1)`, `(f)(1)`) is a call through the
+        // function value it evaluates to.
+        other => match function_value_callee(db, program, index, key, call) {
+            Some(callee) => Ok(CallLowering::FunctionValue(callee)),
+            None => Err(SemanticError::unavailable_at_described(
+                "call_lowering",
+                key,
+                &crate::semantic_contract::format_ast_node_site(db, key),
+                &format!("callee expression `{}` has no call-lowering authority", expression_construct_name(other)),
+            )),
+        },
     })
+}
+
+/// Construct name of a callee expression, for gap messages only.
+fn expression_construct_name(expression: &beskid_analysis::syntax::Expression) -> String {
+    let debug = format!("{expression:?}");
+    debug.split(|character: char| !character.is_alphanumeric() && character != '_').next().unwrap_or("expression").to_owned()
+}
+
+/// The single sited `call_lowering`-family gap: every path-callee failure names the call node
+/// (path, construct, range), the callee spelling and the reason.
+fn path_call_unavailable(
+    db: &dyn Db,
+    key: AstNodeKey,
+    path: &beskid_analysis::syntax::Path,
+    query: &'static str,
+    reason: &str,
+) -> SemanticError {
+    let callee = path.segments.iter().map(|segment| segment.node.name.node.name.as_str()).collect::<Vec<_>>().join(".");
+    let rendered_site = crate::semantic_contract::format_ast_node_site(db, key);
+    SemanticError::unavailable_at_described(query, key, &rendered_site, &format!("callee `{callee}`: {reason}"))
 }
 
 /// How one call with a path callee resolves, before it is folded into the public
@@ -50,15 +92,45 @@ pub(in crate::semantic_contract) enum PathCallResolution {
     /// The callee is a generic function called without type arguments and without value
     /// arguments, so nothing can fix its type parameters.
     MissingTypeArguments,
+    /// The callee names a private runtime builtin or Corelib adapter that this unit is not
+    /// admitted to call. The payload is the dotted callee spelling.
+    PrivateBuiltin(String),
 }
 
 impl PathCallResolution {
-    fn into_query_result(self) -> Result<CallLowering, SemanticError> {
+    fn into_query_result(
+        self,
+        db: &dyn Db,
+        key: AstNodeKey,
+        path: &beskid_analysis::syntax::Path,
+    ) -> Result<CallLowering, SemanticError> {
         match self {
             Self::Lowered(lowering) => Ok(lowering),
-            Self::Unavailable(query) | Self::UnresolvedTarget(query) => Err(SemanticError::unavailable(query)),
+            Self::Unavailable(query) => {
+                Err(path_call_unavailable(db, key, path, query, "a resolution authority matched but could not complete"))
+            }
+            Self::UnresolvedTarget(query) => Err(path_call_unavailable(
+                db,
+                key,
+                path,
+                query,
+                "no declaration, import, inline module, builtin, runtime intrinsic or extern contract member names it",
+            )),
             Self::Failed(error) => Err(error),
-            Self::MissingTypeArguments => Err(SemanticError::unavailable("generic_call_instantiation")),
+            Self::MissingTypeArguments => Err(path_call_unavailable(
+                db,
+                key,
+                path,
+                "generic_call_instantiation",
+                "generic callee has neither type arguments nor value arguments",
+            )),
+            Self::PrivateBuiltin(name) => Err(path_call_unavailable(
+                db,
+                key,
+                path,
+                "call_lowering",
+                &format!("private runtime builtin `{name}` is not admitted in this unit"),
+            )),
         }
     }
 }
@@ -73,9 +145,13 @@ pub(in crate::semantic_contract) fn path_call_resolution(
     call: &beskid_analysis::syntax::CallExpression,
     path: &beskid_analysis::syntax::Path,
 ) -> PathCallResolution {
-    if let Some(declaration) = function_value_declaration(program, index, key.node, path) {
+    if path.segments.len() == 1
+        && let Some(callee) = function_value_callee(db, program, index, key, call)
+    {
         // A function-typed local shadows every item, import, and builtin of the same name.
-        PathCallResolution::Lowered(CallLowering::FunctionValue(AstNodeKey { node: declaration, ..key }))
+        PathCallResolution::Lowered(CallLowering::FunctionValue(callee))
+    } else if let Some(callback) = super::super::native_mod_callbacks::native_mod_callback_for(db, index, key, path) {
+        PathCallResolution::Lowered(CallLowering::NativeModCallback(callback))
     } else if imported_generic_nominal_receiver_requires_instantiation(db, key, path) {
         PathCallResolution::Unavailable("generic_receiver_instantiation")
     } else if let Some(service) = corelib_service_for(db, key, path) {
@@ -84,11 +160,18 @@ pub(in crate::semantic_contract) fn path_call_resolution(
         PathCallResolution::Lowered(CallLowering::Direct(declaration))
     } else if let Some((declaration, _)) = nominal_local_member_receiver(db, program, index, key, path) {
         PathCallResolution::Lowered(CallLowering::Direct(declaration))
+    } else if path.segments.len() > 1
+        && let Some(callee) = function_value_callee(db, program, index, key, call)
+    {
+        // `holder.op(1)`: a function-typed field projection rooted in a local is a function value.
+        PathCallResolution::Lowered(CallLowering::FunctionValue(callee))
     } else if let Some(receiver) = contract_member_receiver(db, program, index, key, path) {
         match receiver {
             Ok((method, _)) => PathCallResolution::Lowered(CallLowering::Direct(method)),
             Err(error) => PathCallResolution::Failed(error),
         }
+    } else if let Some(declaration) = resolve_local_extern_contract_method(program, index, key, path) {
+        PathCallResolution::Lowered(CallLowering::Direct(declaration))
     } else if path.segments.iter().any(|segment| !segment.node.type_args.is_empty()) {
         if let Some(instantiation) = generic_call_instantiation_for_node(db, program, index, key, path) {
             PathCallResolution::Lowered(CallLowering::Direct(instantiation.declaration))
@@ -120,22 +203,27 @@ pub(in crate::semantic_contract) fn path_call_resolution(
         && let Some(builtin) = ManifestBuiltin::for_name(path.segments[0].node.name.node.name.as_str())
     {
         PathCallResolution::Lowered(CallLowering::ManifestBuiltin(builtin))
-    } else if imported_call_receiver_exists(db, key, path)
-        || (path.segments.iter().all(|segment| segment.node.type_args.is_empty())
-            && beskid_analysis::builtins::builtin_for_path(
-                &path.segments.iter().map(|segment| segment.node.name.node.name.clone()).collect::<Vec<_>>(),
-            )
-            .is_some())
-    {
+    } else if imported_call_receiver_exists(db, key, path) {
         PathCallResolution::Lowered(CallLowering::Dynamic)
-    } else if let Some(declaration) = resolve_local_extern_contract_method(program, index, key, path) {
-        PathCallResolution::Lowered(CallLowering::Direct(declaration))
+    } else if path.segments.iter().all(|segment| segment.node.type_args.is_empty())
+        && beskid_analysis::builtins::builtin_for_path(
+            &path.segments.iter().map(|segment| segment.node.name.node.name.clone()).collect::<Vec<_>>(),
+        )
+        .is_some()
+    {
+        // A builtin-table name that is neither a public manifest builtin nor admitted as a
+        // Corelib service for this unit is a private runtime adapter: only an exact admitted
+        // corelib unit may call it. Denying it here (reported by the legality gate) replaces the
+        // former Dynamic fallback that let such a call reach codegen.
+        PathCallResolution::PrivateBuiltin(
+            path.segments.iter().map(|segment| segment.node.name.node.name.as_str()).collect::<Vec<_>>().join("."),
+        )
     } else {
         PathCallResolution::UnresolvedTarget("call_lowering")
     }
 }
 
-/// Resolve `Method(args)` or `this.Method(args)` inside another method of the same nominal type.
+/// Resolve `Method(args)` inside another method of the same nominal type.
 ///
 /// Beskid does not spell `self` at these call sites, but the method ABI always carries the
 /// receiver first. This syntax-only authority is deliberately restricted to an unqualified,
@@ -146,13 +234,18 @@ pub(in crate::semantic_contract) fn unqualified_enclosing_method_call(
     key: AstNodeKey,
     path: &beskid_analysis::syntax::Path,
 ) -> Option<(AstNodeKey, AstNodeKey)> {
-    // `Method(args)` and `this.Method(args)` both name a sibling method on the implicit receiver.
+    // `Method()` or `this.Method()` (`self.Method()` is the older spelling): both name a sibling
+    // method on the implicit receiver unless a lexical declaration shadows the qualifier.
     let segment = match path.segments.as_slice() {
         [segment] => segment,
         [receiver, segment]
             if receiver.node.type_args.is_empty()
-                && receiver.node.name.node.name == "this"
-                && resolve_lexical_declaration(program, index, key.node, "this").is_none() =>
+                && super::super::layouts::is_implicit_receiver_name(
+                    program,
+                    index,
+                    key,
+                    receiver.node.name.node.name.as_str(),
+                ) =>
         {
             segment
         }
@@ -205,7 +298,7 @@ pub(in crate::semantic_contract) fn resolve_local_extern_contract_method(
     let [contract_segment, method_segment] = path.segments.as_slice() else {
         return None;
     };
-    if !contract_segment.node.type_args.is_empty() || !method_segment.node.type_args.is_empty() {
+    if !method_segment.node.type_args.is_empty() {
         return None;
     }
     let contract_name = contract_segment.node.name.node.name.as_str();
@@ -218,6 +311,7 @@ pub(in crate::semantic_contract) fn resolve_local_extern_contract_method(
                 .and_then(|node| node.of::<beskid_analysis::syntax::ContractDefinition>())
                 .is_some_and(|contract| {
                     contract.name.node.name == contract_name
+                        && contract.generics.len() == contract_segment.node.type_args.len()
                         && contract.attributes.iter().any(|attribute| attribute.node.name.node.name == "Extern")
                 })
         })
@@ -364,11 +458,10 @@ fn extern_contract_attributes(
         };
         match (argument.node.name.node.name.as_str(), &literal.node.literal.node) {
             ("Abi", beskid_analysis::syntax::Literal::String(raw)) => {
-                attributes.abi = raw.strip_prefix('"').and_then(|value| value.strip_suffix('"')).map(str::to_owned);
+                attributes.abi = beskid_analysis::syntax::decode_string_literal_token(raw).ok();
             }
             ("Library", beskid_analysis::syntax::Literal::String(raw)) => {
-                attributes.library =
-                    raw.strip_prefix('"').and_then(|value| value.strip_suffix('"')).map(str::to_owned);
+                attributes.library = beskid_analysis::syntax::decode_string_literal_token(raw).ok();
             }
             ("Optional", beskid_analysis::syntax::Literal::Bool(value)) => attributes.optional = *value,
             _ => {}
@@ -568,9 +661,12 @@ pub(in crate::semantic_contract) fn unique_nominal_method_declaration(
     let declaration_syntax = db.syntax_unit(declaration.unit)?;
     let declaration_program = declaration_syntax.expanded_program(db);
     let declaration_index = declaration_syntax.syntax_index(db);
-    let type_definition = declaration_index
-        .node_at(declaration_program, declaration.node)?
-        .of::<beskid_analysis::syntax::TypeDefinition>()?;
+    let nominal = declaration_index.node_at(declaration_program, declaration.node)?;
+    if nominal.of::<beskid_analysis::syntax::TypeDefinition>().is_none()
+        && nominal.of::<beskid_analysis::syntax::EnumDefinition>().is_none()
+    {
+        return None;
+    }
     let methods = declaration_index
         .children(declaration.node)?
         .iter()
@@ -593,24 +689,14 @@ pub(in crate::semantic_contract) fn unique_nominal_method_declaration(
     }
     // `impl X : Contract { the conforming method here }` -- same conformance fact as
     // `type X : Contract { }`, so the method may live in either place (Gap 2 #(task 2.5)).
-    unique_impl_block_method_declaration(
-        db,
-        declaration.unit,
-        declaration.generation,
-        &type_definition.name.node.name,
-        method_name,
-    )
+    unique_impl_block_method_declaration(db, declaration, method_name)
 }
 
 /// `impl` blocks in `unit` whose receiver names `type_name`, searched for a uniquely-named
 /// method. Same-unit only, matching `impl T : Contract`'s in-module form.
-fn unique_impl_block_method_declaration(
-    db: &dyn Db,
-    unit: SourceUnitId,
-    generation: SyntaxGenerationId,
-    type_name: &str,
-    method_name: &str,
-) -> Option<AstNodeKey> {
+fn unique_impl_block_method_declaration(db: &dyn Db, declaration: AstNodeKey, method_name: &str) -> Option<AstNodeKey> {
+    let unit = declaration.unit;
+    let generation = declaration.generation;
     let syntax = db.syntax_unit(unit)?;
     let program = syntax.expanded_program(db);
     let index = syntax.syntax_index(db);
@@ -621,10 +707,14 @@ fn unique_impl_block_method_declaration(
                 .node_at(program, *node)
                 .and_then(|node| node.of::<beskid_analysis::syntax::ImplBlock>())
                 .and_then(|impl_block| match &impl_block.receiver_type.node {
-                    beskid_analysis::syntax::Type::Complex(path) => path.node.segments.last(),
+                    beskid_analysis::syntax::Type::Complex(path) => super::super::layouts::resolve_type_declaration(
+                        db,
+                        AstNodeKey { unit, generation, node: *node },
+                        &path.node,
+                    ),
                     _ => None,
                 })
-                .is_some_and(|segment| segment.node.name.node.name == type_name)
+                .is_some_and(|receiver| receiver == declaration)
         })
         .filter_map(|impl_node| index.children(impl_node))
         .flatten()

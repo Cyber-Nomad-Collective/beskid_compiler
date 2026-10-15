@@ -74,11 +74,9 @@ impl Parsable for FunctionDefinition {
                         .into_inner()
                         .map(|bound_pair| {
                             let mut bound_inner = bound_pair.into_inner();
-                            let parameter = Identifier::parse(
-                                bound_inner.next().ok_or(ParseError::missing(Rule::Identifier))?,
-                            )?;
-                            let contract =
-                                Path::parse(bound_inner.next().ok_or(ParseError::missing(Rule::Path))?)?;
+                            let parameter =
+                                Identifier::parse(bound_inner.next().ok_or(ParseError::missing(Rule::Identifier))?)?;
+                            let contract = Path::parse(bound_inner.next().ok_or(ParseError::missing(Rule::Path))?)?;
                             Ok(WhereBound { parameter, contract })
                         })
                         .collect::<Result<Vec<_>, ParseError>>()?;

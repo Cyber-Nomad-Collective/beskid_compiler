@@ -1,6 +1,6 @@
 //! Root Clap model and subcommand dispatch for the `beskid` executable.
 
-mod app;
+pub(crate) mod app;
 mod dev;
 mod docs;
 

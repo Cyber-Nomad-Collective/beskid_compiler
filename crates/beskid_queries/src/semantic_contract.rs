@@ -19,18 +19,63 @@ mod call_abi;
 mod calls;
 mod cleanup;
 mod closures_spawn;
-mod composition;
 mod completion;
+mod composition;
 mod contracts;
+pub use contracts::{AppliedContractIdentity, applied_contract_argument_is_type};
 mod events;
+mod expected_type;
+pub use expected_type::expected_type_in_environment;
+use expected_type::expected_type_tracked;
+mod portable_nominal;
+pub(crate) use portable_nominal::serialization_impl_receiver;
+pub use portable_nominal::{PortableNominalIdentity, portable_nominal_identity};
+mod dynamic_mapping;
+pub use dynamic_mapping::{
+    DynamicMappingBinding, DynamicMappingFieldStep, DynamicMappingOutcome, DynamicMappingPlan, DynamicMappingStep,
+    dynamic_mapping_binding, dynamic_mapping_plan,
+};
+mod dynamic_pack;
+pub(crate) use dynamic_pack::project_serialization_shape;
+pub use dynamic_pack::{
+    CanonicalContainerKind, DynamicPackingBridge, DynamicPackingField, DynamicPackingNode, DynamicPackingShape,
+    DynamicPackingVariant, DynamicShapeBinding, DynamicUnpackingBridge, canonical_container_kind,
+    dynamic_packing_bridge, dynamic_packing_shape, dynamic_shape_binding, dynamic_unpacking_bridge,
+};
+mod glue;
 mod growth;
+pub use glue::{
+    GlueBindingFact, GlueDirection, GlueHandleBrand, GlueLogicalType, GlueOwnerBindingDigest, GlueParameterFact,
+    GlueRustOwnerCallable, RustOwnerCallableRow, RustOwnerDeclaration, RustOwnerPlacement, RustOwnerTables,
+    RustOwnerTypeRow, glue_binding, glue_handle_shape, rust_owner_declarations, rust_owner_tables,
+    validate_rust_owner_path,
+};
 mod layouts;
 mod legality;
 mod local_type_resolution;
 mod locals;
+pub(crate) mod mod_shapes;
 mod model;
+mod native_mod_callbacks;
+mod native_mod_transport;
+pub use native_mod_callbacks::{
+    NativeModCallback, NativeModCallbackOperation, NativeModContractDeclaration, NativeModContractFamily,
+    NativeModRequestConstructor, NativeModRequestFactory, NativeModSyntaxConstructor, native_mod_callback_symbol,
+    native_mod_contract_declaration, native_mod_request_constructor, native_mod_syntax_constructor,
+};
+pub use native_mod_transport::{
+    NativeModTransportBody, NativeModTransportField, NativeModTransportNominal, NativeModTransportSignature,
+    NativeModTransportType, NativeModTransportVariant, native_mod_transport_nominal, native_mod_transport_signature,
+};
+mod checked_provider;
 mod queries;
 mod resolution;
+pub use checked_provider::{CheckedProviderCall, checked_provider_call};
+mod reserved_failure;
+pub use reserved_failure::{
+    CheckedFailureDestination, ReservedFailureConstructor, canonical_serialization_encode, checked_failure_destination,
+    reserved_failure_constructor, serialization_publication_methods,
+};
 mod syntax_facts;
 mod typed_arrays;
 mod typing;
@@ -39,60 +84,65 @@ pub use typing::{pattern_binding_specialization, specialized_call_result_managed
 
 use abi::{
     abi_signature_from_syntax, abi_type_for_binary_expression, abi_type_for_expression, abi_type_from_syntax,
-    abi_type_tracked, binary_operand_abi_type_tracked, block_may_fall_through, builtin_type_to_semantic,
-    call_abi_signature_for_call, call_abi_signature_tracked, call_argument_abi_type_tracked,
-    contextual_constant_integer, contextual_integer_literal_abi_type_tracked, control_flow_for_node,
-    control_flow_tracked, corelib_service_abi_signature, exact_assembled_nominal_envelope, generic_abi_type,
-    generic_parameter_reference_name, generic_specialization_instance_for_call, generic_type_name, if_may_fall_through,
+    abi_type_tracked, builtin_type_to_semantic,
+    call_abi_signature_for_call, call_abi_signature_tracked,
+    contextual_constant_integer, contextual_constant_literal, contextual_integer_literal_abi_type_tracked, contextual_integer_operand_fits_abi,
+    control_flow_for_node,
+    control_flow_tracked, corelib_service_abi_signature, exact_assembled_nominal_envelope, function_value_specialization,
+    generic_abi_type,
+    generic_parameter_reference_name, generic_specialization_instance_for_call, generic_type_name,
     integer_has_explicit_abi_suffix, integer_literal_fits_abi, integer_literal_text, integer_literal_u64,
     item_abi_signature_tracked, item_abi_type_from_syntax, item_signature_for_node, item_signature_tracked,
-    manifest_builtin_abi_signature, signature_from_syntax, statement_may_fall_through, statements_may_fall_through,
+    manifest_builtin_abi_signature, signature_from_syntax,
     type_syntax_mentions_generic_parameter, unsuffixed_integer_literal, value_abi_type_tracked,
 };
 use bulk::{bulk_call_element_abi_type_for_call, bulk_parameter_tracked};
 use calls::{
-    PathCallResolution, abi_semantic_type, call_arguments_tracked, call_lowering_for_node, call_lowering_tracked,
+    PathCallResolution, call_arguments_tracked, call_lowering_for_node, call_lowering_tracked,
     canonical_intrinsic_parameter_type, canonical_result_definition_for_type, canonical_result_variant,
     canonical_runtime_intrinsic_scope, cast_intents_for_node, cast_intents_tracked, corelib_service_for,
     expected_cast_type, expected_explicit_call_argument_type, explicit_generic_type_argument_syntax,
     exported_generic_type_named, expression_fact_target, expression_is_lambda, flatten_member_as_path_declaration,
-    for_iterator_fact_tracked, function_declares_generics, generic_call_instantiation_for_node,
+    for_iterator_fact_tracked, for_statement_in_generic_context, function_declares_generics,
+    generic_call_instantiation_for_node, specialized_for_element_identity,
     generic_call_instantiation_tracked, generic_call_specialization_tracked, generic_call_template_tracked,
     generic_call_uses_parameter_type_arguments, generic_callable_parameters, generic_nominal_method_receiver_tracked,
     generic_source_expression_identity, generic_source_local_identity, generic_source_type_identity,
     generic_source_type_identity_with_substitutions, imported_call_receiver_exists,
-    imported_generic_nominal_receiver_requires_instantiation, is_transparent_binary_operand_path,
+    imported_generic_nominal_receiver_requires_instantiation,
     method_declaration_for_member_receiver, nominal_local_member_receiver, nominal_member_receiver_tracked,
     path_call_resolution, primitive_integer, primitive_numeric, primitive_numeric_conversion_target,
     primitive_numeric_conversion_tracked, range_for_fact_tracked, resolve_local_extern_contract_method,
-    result_type_parts, stable_declaration_identity, substitute_explicit_type, try_expression_fact_for_node,
-    try_expression_fact_tracked, try_operand_declaration, type_syntax_is_enclosing_generic_parameter_reference,
-    type_syntax_is_generic_parameter_reference, unique_nominal_method_declaration, unqualified_enclosing_method_call,
+    result_type_parts, source_expression_unavailable, stable_declaration_identity, substitute_explicit_type,
+    try_expression_fact_for_node, try_expression_fact_tracked, try_expression_legality_for_node, try_operand_declaration,
+    type_syntax_is_enclosing_generic_parameter_reference, type_syntax_is_generic_parameter_reference,
+    unique_nominal_method_declaration, unqualified_enclosing_method_call,
+    for_iterator_element_identity,
 };
 pub use cleanup::{ScopedAcquisition, ScopedCleanup, ScopedCleanupDiagnostic, scoped_cleanup};
+pub use closures_spawn::function_value_call_specialization;
+use closures_spawn::{names_generic_function_item, untyped_lambda_parameter_identity, untyped_lambda_parameter_type};
+use closures_spawn::{
+    callable_fiber_ownership_tracked, callable_signature_for_node, callable_signature_for_path,
+    callable_signature_tracked, capture_storage_class, capture_storage_for_node, capture_storage_tracked,
+    closure_call_target_tracked, closure_captures, closure_environment_for_node, closure_environment_tracked,
+    closure_signature_for_node, closure_signature_tracked, function_item_value_identity, function_item_value_tracked,
+    function_value_call_tracked, function_value_callee, inferred_spawn_handle, lambda_has_statement_body,
+    lambda_source_identity, lambda_value_required_tracked, normalized_expression_node,
+    runtime_intrinsic_name_tracked, runtime_intrinsic_tracked, spawn_entry_operand, spawn_entry_validation_tracked,
+    spawn_handle_type_tracked, spawn_legality_tracked, spawn_stack_capture, spawn_target_tracked,
+};
 pub use composition::{
     CompositionInjectedAccessFact, CompositionInjectionFieldFact, CompositionLaunchFact, CompositionRegistrationFact,
     CompositionScopeFact, composition_injected_field_access, composition_injection_field, composition_launch,
     composition_registration, composition_scope,
 };
-use closures_spawn::{
-    callable_fiber_ownership_tracked, callable_signature_for_node, callable_signature_for_path,
-    callable_signature_tracked, capture_storage_class, capture_storage_for_node, capture_storage_tracked,
-    closure_call_target_tracked, closure_captures, closure_environment_for_node, closure_environment_tracked,
-    closure_signature_for_node, closure_signature_tracked, function_value_call_tracked, function_value_declaration,
-    inferred_spawn_handle, lambda_expected_signature, lambda_has_statement_body, lambda_value_required_tracked,
-    normalized_expression_node,
-    untyped_lambda_parameter_type,
-    runtime_intrinsic_name_tracked, runtime_intrinsic_tracked, spawn_entry_operand, spawn_entry_validation_tracked,
-    spawn_handle_type_tracked, spawn_legality_tracked, spawn_stack_capture, spawn_target_tracked,
-};
 use contracts::{
-    bounded_generic_witnesses_for_call, contract_member_receiver, contract_method_specialization,
-    contract_parameter_declarations, contract_witnesses_for_call, resolve_contract,
-    specialized_source_expression_identity,
+    ContractConformanceFailure, contract_conformance_failure, contract_member_call_receiver, contract_member_receiver,
+    contract_method_specialization, contract_parameter_declarations, contract_witnesses_for_call,
+    render_signature_syntax, render_type_syntax, resolve_contract, specialized_source_expression_identity,
 };
 use events::{event_handler_lambda_for_local_tracked, event_operation_tracked};
-pub use closures_spawn::function_value_call_specialization;
 pub use growth::{DeadCollectionGrowth, dead_collection_growth, is_growth_call_candidate};
 use layouts::{
     FieldAccessReceiver, abi_local_declaration_type, abi_type_for_direct_aggregate_field_projection,
@@ -103,20 +153,26 @@ use layouts::{
     empty_array_literal_element_abi_type_tracked, enum_constructor_template_tracked, enum_constructor_tracked,
     enum_field_layout, enum_layout_from_definition, enum_layout_substitutions, enum_layout_tracked,
     enum_match_scrutinee_layout, enum_match_tracked, enum_pattern_targets_declaration, event_field_layout_tracked,
-    field_access_receiver, instantiated_aggregate_layout_for_path, instantiated_enum_layout_for_path,
-    nominal_aggregate_abi_type, nominal_field_projection, nominal_local_receiver_declaration,
-    private_deadline_literal_field, resolve_nominal_layout_declaration, resolve_type_declaration,
-    semantic_type_from_syntax, unique_exported_type_in_unit, unique_public_type_in_unit, unique_type_in_unit,
+    scalar_match_tracked,
+    field_access_receiver, inaccessible_literal_fields, instantiated_aggregate_layout_for_path,
+    instantiated_enum_layout_for_path, nominal_aggregate_abi_type, nominal_field_projection,
+    nominal_local_receiver_declaration, resolve_nominal_layout_declaration, resolve_type_declaration,
+    integer_primitive_for_semantic, semantic_type_for_primitive, semantic_type_from_syntax, unique_exported_type_in_unit, unique_public_type_in_unit, unique_type_in_unit,
 };
 pub use legality::{
-    CallArityMismatch, GenericParameterConflict, ImmutableLocalAssignment, MemberReferenceFinding, MemberReferenceKind,
-    NonExhaustiveMatch, UnresolvedCallKind, UnresolvedCallTarget, UnresolvedImport, call_arity_mismatch, check_items,
-    generic_parameter_conflict, immutable_local_assignment, match_exhaustiveness, member_reference_legality,
-    unresolved_call_target, unresolved_imports,
+    CallArgumentTypeMismatch, CallArityMismatch, GateObligation, GateObligationKind, GenericParameterConflict,
+    ImmutableLocalAssignment,
+    MemberReferenceFinding, MemberReferenceKind, NonExhaustiveMatch, TypingObligation, TypingObligationKind,
+    UnitObligation, UnitObligationKind, UnresolvedCallKind, UnresolvedCallTarget, UnresolvedImport,
+    UnresolvedValueArgument, ValueObligation, call_argument_type_mismatch, call_arity_mismatch, check_gate_obligations, check_items,
+    check_typing_obligations,
+    check_unit_obligations, extern_profile_findings, gate_obligations, generic_parameter_conflict,
+    immutable_local_assignment, match_exhaustiveness, member_reference_legality, typing_obligations,
+    unit_obligations, unresolved_call_target, unresolved_imports, unresolved_value_argument, value_obligations,
 };
 pub use local_type_resolution::{UnresolvedTypeReference, unresolved_type_reference};
 use locals::{
-    ancestor_distance, constant_integer_tracked, implicit_method_receiver_tracked, is_ancestor,
+    ancestor_distance, constant_integer_literal_tracked, constant_integer_tracked, implicit_method_receiver_tracked, is_ancestor,
     local_declaration_is_mutable, local_declaration_owner, local_declaration_scope, local_slot_for_declaration,
     local_slot_tracked, method_owner_node, method_this_type, mutable_local_assignment_tracked, nearest_ancestor,
     parent_node, resolve_lexical_declaration, resolved_local_tracked,
@@ -125,8 +181,9 @@ use model::ContractParameterWitness;
 use model::GenericSourceTypeIdentity;
 use queries::with_registered_syntax;
 use resolution::{
-    import_path_prefix_len, module_scope, nearest_reexport_route, outer_module_scope, public_module_routes,
-    public_reexport_units, resolve_inline_module_item_declaration, resolve_item_declaration,
+    QualifiedModuleResolution, ReexportRoute, import_path_prefix_len, module_scope, nearest_reexport_route,
+    nearest_reexport_route_outcome, outer_module_scope, public_module_routes, public_reexport_units,
+    qualified_module_resolution, resolve_inline_module_item_declaration, resolve_item_declaration,
     resolve_item_declaration_candidate, resolve_qualified_module_unit, resolve_type_qualified_imported_function,
     resolve_unqualified_item_declaration, resolved_item_tracked, unique_exported_function_in_unit,
     unique_function_in_unit, unique_imported_function, unique_inline_module_in_scope, unique_public_function_in_unit,
@@ -140,9 +197,10 @@ use syntax_facts::{
 };
 use typed_arrays::typed_array_allocation_tracked;
 use typing::{
-    element_type_for_for_iterable, enum_match_result_semantic_type, local_declaration_type,
+    element_type_for_for_iterable, for_iterable_declared_array_element, match_arms_result_semantic_type,
+    local_declaration_type, range_iterable_bounds,
     managed_reference_kind_tracked, node_type_tracked, pattern_binding_fact, pattern_binding_semantic_type,
-    semantic_type_for_binary_operands, semantic_type_for_expression, semantic_type_for_literal,
+    integer_literal_semantic_type, semantic_type_for_binary_operands, semantic_type_for_expression, semantic_type_for_literal,
     semantic_type_for_local_path, semantic_type_for_node,
 };
 
@@ -158,9 +216,11 @@ pub use completion::{
     completion_candidates, completion_dependency_surface, completion_dependency_surface_for_assembly,
     completion_dependency_surface_for_program,
 };
+pub use calls::{for_iterator_protocol, for_iterator_specialization};
 pub use layouts::{
-    aggregate_field_access_specialization, aggregate_literal_specialization, array_index_element_specialization,
-    empty_array_literal_element_specialization, enum_constructor_specialization, enum_match_specialization,
+    aggregate_field_access_specialization, aggregate_literal_specialization, array_index_element_managed_reference_specialization,
+    array_index_element_specialization,
+    enum_constructor_specialization, enum_match_call_specialization, enum_match_specialization,
 };
 pub use model::{
     AggregateFieldAccess, AggregateFieldShape, AggregateLayoutFact, AggregateLiteralFieldValues,
@@ -170,11 +230,11 @@ pub use model::{
     ClosureSignature, ClifParameterShape, CollectionMutationOwner, CollectionOperation, CompletionCandidate, CompletionContext,
     CompletionKind, CompletionMemberSurface, ControlFlow, CorelibService, EnumConstructorFact,
     EnumConstructorSpecialization, EnumConstructorTemplate, EnumLayoutFact, EnumLayoutTemplateArgument,
-    EnumMatchArmFact, EnumMatchBindingFact, EnumMatchFact, EnumMatchPatternFact, EnumMatchScalarLiteralFact,
+    EnumMatchArmFact, EnumMatchBindingFact, EnumMatchFact, EnumMatchPatternFact, EnumMatchScalarLiteralFact, ScalarMatchFact,
     EnumMatchVariantPatternFact, EnumScalarPayloadObjectLayout, EnumScalarPayloadVariantLayout, EnumVariantLayoutFact,
-    EventFieldLayoutFact, EventHandlerLocalFact, EventOperationFact, EventOperationKind, ExportSymbol, FiberOwnership, ForIteratorFact,
-    FunctionValueCall,
-    GenericBindingConflict, GenericCallInstantiation, GenericCallSpecialization, GenericCallTemplate,
+    EventFieldLayoutFact, EventHandlerLocalFact, ExpectedType, ExpectedTypeContext, EventOperationFact, EventOperationKind, ExportSymbol, FiberOwnership,
+    ForIterableSource, ForIteratorFact, ForIteratorProtocol, FunctionItemValue, FunctionValueCall, GenericBindingConflict, GenericBoundViolation, GenericCallInstantiation, GenericCallSpecialization,
+    GenericCallTemplate,
     GenericNominalMethodReceiver, GenericSpecializationInstance, GenericSubstitution, IndexedNodeKind, ItemSignature,
     LiteralFact, LocalSlot, ManagedReferenceKind, ManifestBuiltin, MutableLocalAssignment, OperatorFact,
     PrimitiveNumericConversion, RangeForFact, ResolvedItem, ResolvedLocal, RuntimeIntrinsic, RuntimeIntrinsicName,
@@ -186,19 +246,40 @@ pub use model::{
 };
 pub use queries::{
     abi_type, aggregate_field_access, aggregate_layout, aggregate_literal_declaration, aggregate_literal_field_values,
-    aggregate_literal_layout, array_index_element_abi_type, binary_operand_abi_type, block_statement_nodes,
-    bulk_call_element_abi_type, bulk_parameter, call_abi_signature, call_argument_abi_type, call_arguments, call_lowering,
+    aggregate_literal_layout, array_index_element_abi_type, block_statement_nodes,
+    bulk_call_element_abi_type, bulk_parameter, call_abi_signature, call_arguments, call_lowering,
     callable_fiber_ownership, callable_signature, capture_storage, cast_intents, child_nodes, clif_block_body,
     clif_block_parameters, closure_call_target, closure_environment, closure_signature, collection_operation, constant_integer,
+    constant_integer_literal,
     contextual_integer_literal_abi_type, control_flow, direct_callees, empty_array_literal_element_abi_type,
-    enum_constructor, enum_constructor_template, enum_layout, enum_match, event_field_layout,
-    event_handler_lambda_for_local, event_operation, for_iterator_fact, function_value_call, generic_call_instantiation,
-    lambda_value_required,
+    enum_constructor, enum_constructor_template, enum_layout, enum_match, event_field_layout, scalar_match,
+    event_handler_lambda_for_local, event_operation, expected_type, for_iterator_fact, function_item_value,
+    function_value_call, generic_call_instantiation, lambda_value_required,
     generic_call_specialization, generic_call_template, generic_nominal_method_receiver, implicit_method_receiver,
     item_abi_signature, item_body, item_export_symbol, item_name, item_signature, literal_fact, local_slot,
     managed_reference_kind, mutable_local_assignment, node_kind, node_span, node_type, nominal_member_receiver,
     operator_fact, parameter_generic_reference, primitive_numeric_conversion, range_for_fact, reachable_items,
     resolved_item, resolved_local, runtime_intrinsic, runtime_intrinsic_name, spawn_entry_validation,
-    spawn_handle_type, spawn_legality, spawn_target, test_item, test_statement_nodes, try_expression_fact,
-    typed_array_allocation, value_abi_type,
+    spawn_handle_type, spawn_legality, spawn_target, test_item, test_statement_nodes, specialized_try_expression_fact, try_expression_fact, try_expression_judgement, try_expression_legality,
+    type_applied_contract_implementation, type_contract_applications, type_contract_applications_of,
+    type_contract_declarations, type_contract_implementation, typed_array_allocation, value_abi_type,
+};
+
+pub use native_mod_transport::{native_mod_expression_payload, native_mod_single_array_element};
+
+pub(crate) use contracts::{
+    serialization_target_contract_methods, serialization_target_contract_methods_in_environment,
+};
+
+pub use checked_provider::{CheckedDynamicResultBridge, checked_dynamic_result_bridge};
+
+pub(crate) use contracts::serialization_encoder_methods;
+
+pub(crate) use contracts::{serialization_contribution_receiver_arguments, serialization_contribution_receiver_arguments_in_environment};
+
+mod serialization_shape;
+pub use serialization_shape::{SerializationShapeBinding, serialization_shape_binding};
+mod serialization_field_codec;
+pub use serialization_field_codec::{
+    SerializationFieldCodecBinding, serialization_field_codec_binding, serialization_field_codec_bridge,
 };

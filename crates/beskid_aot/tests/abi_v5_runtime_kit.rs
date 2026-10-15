@@ -6,9 +6,9 @@ use beskid_abi::runtime_source::canonical_runtime_sources;
 use beskid_analysis::services::{FrontEndOptions, resolved_input_from_plan, synthetic_compile_plan_for_source};
 use beskid_aot::api::BuildProfile;
 use beskid_aot::bundled::{installed_runtime_strategy, resolve_installed_runtime_archive};
-use beskid_aot::runtime::{RuntimeBuildRequest, prepare_runtime};
+use beskid_aot::runtime::{RuntimeBuildRequest, RuntimeLinkage, prepare_runtime};
 use beskid_aot::{AotRunRequest, build_and_run, lower_prepared_syntax_entrypoint};
-use beskid_queries::compile_front_end_from_resolved_input;
+use beskid_queries::compile_mod_free_front_end;
 
 fn linux_target() -> TargetMetadata {
     TargetMetadata::supported()
@@ -46,18 +46,18 @@ fn aot_preparation_resolves_only_the_validated_static_artifact_and_allowlist() {
     install_kit(temp.path());
     let strategy = installed_runtime_strategy(temp.path(), BuildProfile::Debug, Some("x86_64-unknown-linux-gnu"))
         .expect("exact kit strategy");
-    let prepared = prepare_runtime(&RuntimeBuildRequest { kit: strategy }).expect("validated kit");
+    let prepared = prepare_runtime(&RuntimeBuildRequest { kit: strategy, linkage: RuntimeLinkage::CanonicalStatic })
+        .expect("validated kit");
     let resolved =
         resolve_installed_runtime_archive(temp.path(), BuildProfile::Debug, Some("x86_64-unknown-linux-gnu"))
             .expect("validated static library");
 
-    assert_eq!(prepared.staticlib_path, resolved);
+    assert_eq!(prepared.link_path, resolved);
     assert!(prepared.exported_symbols.contains(&"beskid_rt_v5_abi_version".to_owned()));
     assert!(prepared.exported_symbols.contains(&"beskid_arch_v5_context_switch".to_owned()));
 }
 
 #[test]
-#[ignore = "requires the staged native runtime-kit matrix prefix"]
 fn staged_runtime_kit_resolves_the_canonical_static_archive() {
     let prefix = std::env::var_os("BESKID_RUNTIME_PREFIX")
         .map(std::path::PathBuf::from)
@@ -69,13 +69,12 @@ fn staged_runtime_kit_resolves_the_canonical_static_archive() {
     };
     let strategy =
         installed_runtime_strategy(&prefix, profile, None).expect("resolve the exact staged ABI-v5 runtime kit");
-    let prepared = prepare_runtime(&RuntimeBuildRequest { kit: strategy })
+    let prepared = prepare_runtime(&RuntimeBuildRequest { kit: strategy, linkage: RuntimeLinkage::CanonicalStatic })
         .expect("validate the exact staged static runtime artifact");
-    assert!(prepared.staticlib_path.is_file());
+    assert!(prepared.link_path.is_file());
 }
 
 #[test]
-#[ignore = "requires the staged native runtime-kit matrix prefix"]
 fn staged_runtime_kit_links_and_executes_with_the_canonical_static_archive() {
     let prefix = std::env::var_os("BESKID_RUNTIME_PREFIX")
         .map(std::path::PathBuf::from)
@@ -97,7 +96,7 @@ fn staged_runtime_kit_links_and_executes_with_the_canonical_static_archive() {
         None,
         None,
     );
-    let front = compile_front_end_from_resolved_input(&resolved, FrontEndOptions::default(), None)
+    let front = compile_mod_free_front_end(&resolved, FrontEndOptions::default(), None)
         .expect("prepare AOT runtime-kit smoke frontend");
     let artifact = lower_prepared_syntax_entrypoint(&front, "Main", target)
         .expect("lower AOT runtime-kit smoke through the production path");
@@ -126,11 +125,11 @@ fn tampered_or_wrong_profile_kits_fail_without_archive_fallback() {
     let static_path =
         temp.path().join("lib/beskid-runtime/abi-5/x86_64-unknown-linux-gnu/debug/static/libbeskid_runtime.a");
     fs::write(&static_path, b"tampered").unwrap();
-    assert!(prepare_runtime(&RuntimeBuildRequest { kit: debug }).is_err());
+    assert!(prepare_runtime(&RuntimeBuildRequest { kit: debug, linkage: RuntimeLinkage::CanonicalStatic }).is_err());
 
     let release =
         installed_runtime_strategy(temp.path(), BuildProfile::Release, Some("x86_64-unknown-linux-gnu")).unwrap();
-    assert!(prepare_runtime(&RuntimeBuildRequest { kit: release }).is_err());
+    assert!(prepare_runtime(&RuntimeBuildRequest { kit: release, linkage: RuntimeLinkage::CanonicalStatic }).is_err());
 }
 
 #[test]
@@ -151,7 +150,7 @@ fn tampered_exact_kit_does_not_fall_back_to_a_legacy_prebuilt_archive() {
     fs::write(&legacy_prebuilt, b"legacy prebuilt runtime").unwrap();
 
     assert!(
-        prepare_runtime(&RuntimeBuildRequest { kit: strategy }).is_err(),
+        prepare_runtime(&RuntimeBuildRequest { kit: strategy, linkage: RuntimeLinkage::CanonicalStatic }).is_err(),
         "AOT must reject a failed exact kit instead of falling back to a prebuilt archive"
     );
 }
@@ -168,5 +167,5 @@ fn internally_valid_kit_for_another_runtime_source_is_rejected() {
     install_kit_with_source_hash(temp.path(), "a".repeat(64));
     let strategy =
         installed_runtime_strategy(temp.path(), BuildProfile::Debug, Some("x86_64-unknown-linux-gnu")).unwrap();
-    assert!(prepare_runtime(&RuntimeBuildRequest { kit: strategy }).is_err());
+    assert!(prepare_runtime(&RuntimeBuildRequest { kit: strategy, linkage: RuntimeLinkage::CanonicalStatic }).is_err());
 }

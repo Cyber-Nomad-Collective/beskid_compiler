@@ -76,25 +76,34 @@ fn json_rpc_completion_and_hover_use_dependency_syntax_facts() {
         "ProtocolSmoke {\n  name = \"ProtocolSmoke\"\n  version = \"0.1.0\"\n}\n\ntarget \"App\" {\n  kind = App\n  entry = \"Main.bd\"\n}\n",
     )
     .expect("project manifest");
-    let source = "use Std.Core.Output;\n\ni32 Main() {\n    Output.WriteLine(\"ok\");\n    return 0;\n}\n";
+    let source = "use Core.Output;\n\ni32 Main() {\n    Output.WriteLine(\"ok\");\n    return 0;\n}\n";
     let source_path = project.path().join("Src/Main.bd");
     std::fs::write(&source_path, source).expect("source file");
     let sibling_source =
-        "use Std.Core.Output;\n\ni32 Sibling() {\n    Output.WriteLine(\"ok\");\n    return \"wrong\";\n}\n";
+        "use Core.Output;\n\ni32 Sibling() {\n    Output.WriteLine(\"ok\");\n    return \"wrong\";\n}\n";
     let sibling_path = project.path().join("Src/Sibling.bd");
     std::fs::write(&sibling_path, sibling_source).expect("sibling source file");
 
     let project_uri = url::Url::from_directory_path(project.path()).expect("project URI").to_string();
     let source_uri = url::Url::from_file_path(&source_path).expect("source URI").to_string();
     let sibling_uri = url::Url::from_file_path(&sibling_path).expect("sibling URI").to_string();
-    // `beskid_lsp` provisions its embedded Corelib into the resolved Corelib root on startup,
-    // replacing whatever is there. Give it a disposable root so an inherited
-    // `BESKID_CORELIB_ROOT` (for example the checked-in `corelib/` source tree) is never
-    // overwritten in place, and so the test uses exactly the bundle this binary embeds.
-    let corelib_root = tempfile::tempdir_in(&project_parent).expect("temporary corelib root");
+    // `beskid_lsp` provisions its embedded Corelib into the resolved Corelib root on startup and
+    // keeps a sealed root whose fingerprint already matches. The target directory's shared sealed
+    // installation of that same embedded bundle is such a root, so an inherited
+    // `BESKID_CORELIB_ROOT` (for example the checked-in `corelib/` source tree) is never touched.
+    // Preparing a Corelib project runs the native Serialization Mod in a Mod host. The server
+    // never builds Mods and this test binary has no installed `beskid` next to it, so the shared
+    // root carries Mods provisioned by the workspace CLI against the shared debug runtime kit, and
+    // that CLI is selected with that kit as the server's Mod host.
+    let mod_host = beskid_tests_mod_host::provisioned_cli().expect("workspace Mod host CLI");
+    let runtime_prefix = beskid_tests_mod_host::shared_runtime_prefix().expect("shared runtime kit");
+    let corelib_root = beskid_tests_mod_host::shared_corelib_root().expect("shared provisioned Corelib");
     let mut child = Command::new(env!("CARGO_BIN_EXE_beskid_lsp"))
         .current_dir(compiler_root)
-        .env("BESKID_CORELIB_ROOT", corelib_root.path())
+        .env("BESKID_CORELIB_ROOT", &corelib_root)
+        // The runtime kit reaches the server only through `modHost.runtimePrefix`.
+        .env_remove("BESKID_RUNTIME_PREFIX")
+        .env_remove("BESKID_RUNTIME_KIT_PROFILE")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -135,7 +144,12 @@ fn json_rpc_completion_and_hover_use_dependency_syntax_facts() {
                 "processId": null,
                 "rootUri": project_uri,
                 "workspaceFolders": [{"uri": project_uri, "name": "ProtocolSmoke"}],
-                "capabilities": {}
+                "capabilities": {},
+                "initializationOptions": {"modHost": {
+                    "path": mod_host,
+                    "runtimePrefix": runtime_prefix,
+                    "runtimeProfile": "debug"
+                }}
             }
         }),
     );
@@ -261,7 +275,7 @@ fn json_rpc_completion_and_hover_use_dependency_syntax_facts() {
         "editing another buffer must not invalidate sibling completion facts: {sibling_completion:#}"
     );
 
-    let unimported_sibling = sibling_source.replacen("use Std.Core.Output;\n\n", "", 1);
+    let unimported_sibling = sibling_source.replacen("use Core.Output;\n\n", "", 1);
     send_message(
         &mut stdin,
         json!({

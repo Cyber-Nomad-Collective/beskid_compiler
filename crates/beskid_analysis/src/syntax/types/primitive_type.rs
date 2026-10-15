@@ -17,6 +17,11 @@ pub enum PrimitiveType {
     String,
     Unit,
     Never,
+    I8,
+    I16,
+    U16,
+    U64,
+    F32,
 }
 
 impl crate::parsing::parsable::Parsable for PrimitiveType {
@@ -33,6 +38,11 @@ impl crate::parsing::parsable::Parsable for PrimitiveType {
         let span = crate::syntax::SpanInfo::from_span(&pair.as_span());
         let node = match pair.as_str() {
             "bool" => Self::Bool,
+            "i8" => Self::I8,
+            "i16" => Self::I16,
+            "u16" => Self::U16,
+            "u64" => Self::U64,
+            "f32" => Self::F32,
             "i32" => Self::I32,
             "i64" => Self::I64,
             "u32" => Self::U32,

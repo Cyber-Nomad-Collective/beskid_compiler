@@ -508,7 +508,10 @@ fn syntax_facts_resolve_core_output_writeline_via_import_alias() {
 }
 
 #[test]
-fn fully_qualified_core_output_writeline_resolves_beside_an_alias() {
+/// `use Core.Output as Output;` binds only `Output`, so the root `Core` is not a lexical name and
+/// the fully qualified path resolves through the package-native module namespace without a `use`
+/// (decision 2026-10-09: qualified dependency module paths; OpenSpec `v06-qualified-dependency-paths`).
+fn syntax_facts_resolve_fully_qualified_core_output_writeline_beside_an_alias() {
     let mut db = BeskidDatabase::default();
     let root = PathBuf::from("/tmp/core-output-writeline-alias/project/src");
     let main_path = root.join("Main.bd");
@@ -536,9 +539,9 @@ fn fully_qualified_core_output_writeline_resolves_beside_an_alias() {
             SourceUnit {
                 logical_name: output_path.display().to_string(),
                 origin_path: output_path.clone(),
-                path: output_path,
+                path: output_path.clone(),
                 source: output_source.to_string(),
-                program: output_program,
+                program: output_program.clone(),
             },
         ]),
         0,
@@ -548,6 +551,7 @@ fn fully_qualified_core_output_writeline_resolves_beside_an_alias() {
         generation,
     ));
     let main_unit = SourceUnitId::new(&db, main_path);
+    let output_unit = SourceUnitId::new(&db, output_path);
     let project = ProjectSession::new(
         &db,
         root.parent().expect("project root").to_path_buf(),
@@ -557,21 +561,18 @@ fn fully_qualified_core_output_writeline_resolves_beside_an_alias() {
     );
     build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
     let main_index = SyntaxIndex::from_program(&main_program, generation);
+    let output_index = SyntaxIndex::from_program(&output_program, generation);
     let call = key(main_unit, generation, &main_index, NodeKind::CallExpression, 0);
     let main = key(main_unit, generation, &main_index, NodeKind::FunctionDefinition, 0);
+    let declaration = key(output_unit, generation, &output_index, NodeKind::FunctionDefinition, 0);
 
-    // A fully qualified path names its module whether or not an alias is in scope, as in Java
-    // and C#; the alias only adds the shorter `Output.WriteLine` spelling.
-    assert!(
-        matches!(
-            call_lowering(&db, call).expect("fully qualified Core.Output.WriteLine syntax lowering"),
-            Some(beskid_queries::CallLowering::Direct(_))
-        ),
-        "the fully qualified call resolves to the declared function"
+    assert_eq!(
+        call_lowering(&db, call).expect("fully qualified Core.Output.WriteLine syntax lowering"),
+        Some(beskid_queries::CallLowering::Direct(declaration))
     );
     assert_eq!(
-        direct_callees(&db, main).expect("fully qualified Core.Output.WriteLine syntax call graph").map(|callees| callees.len()),
-        Some(1)
+        direct_callees(&db, main).expect("fully qualified Core.Output.WriteLine syntax call graph"),
+        Some(Arc::from([declaration]))
     );
 }
 
@@ -791,10 +792,10 @@ fn unresolved_imports_are_judged_only_for_units_of_judged_items() {
 }
 
 #[test]
-fn std_app_rejects_bare_core_import_while_corelib_shard_accepts_it() {
+fn core_app_resolves_native_core_import_and_rejects_an_unknown_prefix() {
     let mut db = BeskidDatabase::default();
-    let host_root = PathBuf::from("/tmp/std-import-scope/app/src");
-    let shard_root = PathBuf::from("/tmp/std-import-scope/corelib/Src");
+    let host_root = PathBuf::from("/tmp/core-import-scope/app/src");
+    let shard_root = PathBuf::from("/tmp/core-import-scope/corelib/Src");
     let main_path = host_root.join("Main.bd");
     let qualified_path = host_root.join("Qualified.bd");
     let results_path = shard_root.join("Core/Results.bd");
@@ -879,38 +880,38 @@ i32 ShardContract(Core.Results.Reader reader) { return 0; }
     let main_imports = beskid_queries::unresolved_imports(&db, main_root).expect("main query").expect("main root");
     assert_eq!(
         main_imports.iter().map(|import| import.path.as_ref()).collect::<Vec<_>>(),
-        vec!["Core.Results", "Core.Results.Result"]
+        vec!["Std.Core.Results"],
+        "App units resolve the package-native `Core.*` path; an unknown `Std` prefix is an ordinary unknown import"
     );
-    let findings = beskid_queries::check_items(&db, &[main]).expect_err("App bare Core imports must fail E1105");
-    assert_eq!(findings.iter().map(|finding| finding.kind.code()).collect::<Vec<_>>(), vec!["E1105", "E1105"]);
+    let findings = beskid_queries::check_items(&db, &[main]).expect_err("a Std-qualified import must fail E1105");
+    assert_eq!(findings.iter().map(|finding| finding.kind.code()).collect::<Vec<_>>(), vec!["E1105"]);
+    assert_eq!(findings[0].kind.message(), "unknown import path `Std.Core.Results`");
     let shard_imports =
         beskid_queries::unresolved_imports(&db, results_root).expect("shard query").expect("shard root");
-    assert!(shard_imports.is_empty(), "corelib shard must resolve its own bare Core import");
+    assert!(shard_imports.is_empty(), "corelib shard must resolve its own Core import");
 
     let unresolved_type = |unit, index: &SyntaxIndex, ordinal| {
         let function = key(unit, generation, index, NodeKind::FunctionDefinition, ordinal);
         beskid_queries::unresolved_type_reference(&db, function).expect("nominal type query")
     };
-    let bare_type = unresolved_type(qualified_unit, &qualified_index, 0).map(|reference| reference.name.to_string());
-    let bare_contract =
-        unresolved_type(qualified_unit, &qualified_index, 1).map(|reference| reference.name.to_string());
-    assert_eq!((bare_type, bare_contract), (Some("Widget".into()), Some("Reader".into())));
-    assert!(unresolved_type(qualified_unit, &qualified_index, 2).is_none(), "Std-qualified type must resolve");
-    assert!(unresolved_type(qualified_unit, &qualified_index, 3).is_none(), "Std-qualified contract must resolve");
+    assert!(unresolved_type(qualified_unit, &qualified_index, 0).is_none(), "Core-qualified type must resolve");
+    assert!(unresolved_type(qualified_unit, &qualified_index, 1).is_none(), "Core-qualified contract must resolve");
+    assert!(unresolved_type(qualified_unit, &qualified_index, 2).is_some(), "Std-qualified type must not resolve");
+    assert!(unresolved_type(qualified_unit, &qualified_index, 3).is_some(), "Std-qualified contract must not resolve");
     assert!(unresolved_type(results_unit, &results_index, 0).is_none(), "shard-local type must resolve");
     assert!(unresolved_type(results_unit, &results_index, 1).is_none(), "shard-local contract must resolve");
 }
 
 #[test]
-fn std_app_spawn_fiber_handle_and_parameter_ownership_use_canonical_module_path() {
+fn core_app_spawn_fiber_handle_and_parameter_ownership_use_native_module_path() {
     let mut db = BeskidDatabase::default();
-    let host_root = PathBuf::from("/tmp/std-fiber-scope/app/src");
-    let shard_root = PathBuf::from("/tmp/std-fiber-scope/corelib/Src");
+    let host_root = PathBuf::from("/tmp/core-fiber-scope/app/src");
+    let shard_root = PathBuf::from("/tmp/core-fiber-scope/corelib/Src");
     let main_path = host_root.join("Main.bd");
     let fiber_path = shard_root.join("Concurrency/Fiber.bd");
     let main_source = r#"
 i64 Compute() { return 42_i64; }
-unit Main(Std.Concurrency.Fiber<i64> parameter) {
+unit Main(Concurrency.Fiber<i64> parameter) {
     let child = spawn Compute();
     parameter.Join();
     parameter.Join();

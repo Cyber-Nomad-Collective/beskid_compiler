@@ -12,6 +12,7 @@ use beskid_analysis::services::{FrontEndOptions, PrepareOptions, ResolvedInput, 
 use beskid_pipeline::{PipelineEvent, PipelineObserver, phases};
 use beskid_queries::{configure_db_for_project, prepare_compilation_diagnostics};
 
+use crate::projects::fixture_harness::{enter_mod_host, mod_host_for};
 use crate::projects::with_cwd;
 use beskid_tests_support::{temp_case_dir, write_project_manifest as write_manifest};
 
@@ -45,7 +46,6 @@ const SEMANTIC_SUB_PHASE_IDS: &[&str] = &[
     phases::SEMANTIC_NAME_RESOLUTION,
     phases::SEMANTIC_VISIBILITY,
     phases::SEMANTIC_CONTRACTS,
-    phases::SEMANTIC_ERROR_HANDLING,
     phases::SEMANTIC_TYPE_CHECK,
     phases::SEMANTIC_NAMING_STYLE,
 ];
@@ -83,11 +83,12 @@ i32 Main() {
 
 /// Mirrors Wave 1 `beskid run`: one executable prepare, then syntax lowering from cached front-end.
 fn run_single_prepare_path(resolved: &ResolvedInput, observer: &PhaseStartRecorder) {
+    let mod_host = enter_mod_host();
     let (prepared, _gate_diagnostics, _fixes) = prepare_compilation_diagnostics(
         resolved,
         PrepareOptions {
             front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
-            ..Default::default()
+            ..PrepareOptions::with_mod_host(mod_host_for(&mod_host, resolved))
         },
         Some(observer),
     )
@@ -108,7 +109,14 @@ fn run_path_single_prepare_after_wave1() {
     let (root, entry) = minimal_run_fixture();
 
     with_cwd(&root, || {
-        let resolved = resolve_input(Some(&entry), Some(&root), None, None, false, false).expect("resolve");
+        let resolved = resolve_input(
+            Some(&entry),
+            Some(&root),
+            None,
+            None,
+            beskid_analysis::projects::WorkspacePrepareOptions::default(),
+        )
+        .expect("resolve");
         configure_db_for_project(&root);
 
         let recorder = PhaseStartRecorder::default();
@@ -144,16 +152,24 @@ i32 Main() {
     (root, entry)
 }
 
-/// Orphan `.bd` without `.bproj` uses a synthetic compile plan on the CLI resolve path.
+/// Orphan `.bd` without `.bproj` resolves through the in-memory `Standalone` host project (default
+/// Corelib closure included); `standalone_compile_plan_for_source` names the plan after that project.
 #[test]
 fn orphan_bd_single_prepare_without_bproj() {
     let (root, entry) = orphan_bd_fixture();
 
     with_cwd(&root, || {
-        let resolved = resolve_input(Some(&entry), None, None, None, false, false).expect("resolve orphan");
+        let resolved = resolve_input(
+            Some(&entry),
+            None,
+            None,
+            None,
+            beskid_analysis::projects::WorkspacePrepareOptions::default(),
+        )
+        .expect("resolve orphan");
 
         let plan = resolved.compile_plan.as_ref().expect("orphan .bd should get synthetic compile plan");
-        assert_eq!(plan.project_name, "__synthetic__");
+        assert_eq!(plan.project_name, "Standalone");
         assert_eq!(plan.target.entry.as_deref(), Some("Orphan.bd"));
 
         let recorder = PhaseStartRecorder::default();

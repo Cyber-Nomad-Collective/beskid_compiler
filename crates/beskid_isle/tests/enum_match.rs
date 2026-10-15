@@ -18,6 +18,8 @@ enum Arms {
     Duplicate,
     NestedExact,
     NestedMissing,
+    Guarded,
+    GuardedCatchAllOnly,
 }
 
 struct EnumFacts {
@@ -58,6 +60,8 @@ impl NodeFacts for EnumFacts {
             Some(200)
         } else if key == self.nodes[5] {
             Some(300)
+        } else if key == self.nodes[6] {
+            Some(1)
         } else {
             None
         }
@@ -84,6 +88,11 @@ impl NodeFacts for EnumFacts {
     fn managed_struct_allocation(&self, key: AstNodeKey) -> Option<ManagedStructAllocation> {
         (key == self.nodes[1])
             .then(|| ManagedStructAllocation { allocation_request_symbol: "__test_enum_allocation_request".into() })
+    }
+
+    // The scrutinee is a new enum object; a guarded match roots it while the guard runs.
+    fn managed_reference(&self, key: AstNodeKey) -> Option<beskid_isle::ManagedReferenceFact> {
+        (key == self.nodes[1]).then_some(beskid_isle::ManagedReferenceFact::GcManaged)
     }
 
     fn enum_payloads(&self, key: AstNodeKey) -> Option<Vec<AstNodeKey>> {
@@ -155,6 +164,19 @@ impl NodeFacts for EnumFacts {
                     }]),
                 ),
                 MatchArmFact::variant(7, self.nodes[5]),
+            ],
+            Arms::Guarded => vec![
+                MatchArmFact::variant(0, self.nodes[3]).with_guard(Some(self.nodes[6])),
+                MatchArmFact::variant(0, self.nodes[4]),
+                MatchArmFact::variant_with_payload(
+                    7,
+                    self.nodes[5],
+                    MatchPayloadPatternFact::Fields(vec![MatchPayloadPatternFact::Ignore]),
+                ),
+            ],
+            Arms::GuardedCatchAllOnly => vec![
+                MatchArmFact::variant(0, self.nodes[3]),
+                MatchArmFact::wildcard(self.nodes[5]).with_guard(Some(self.nodes[6])),
             ],
         })
     }
@@ -431,4 +453,136 @@ fn unknown_enum_variant_is_an_exact_keyed_error() {
     };
     assert_eq!(error.key(), facts.nodes[1]);
     assert_eq!(error.kind(), LoweringErrorKind::InvalidEnumVariant(2));
+}
+
+#[test]
+fn guarded_arm_falls_through_to_the_next_arm_in_source_order() {
+    let clif = emit(Arms::Guarded, 40);
+    let guarded = clif.find("iconst.i32 100").expect("guarded arm body");
+    let fallback = clif.find("iconst.i32 200").expect("same-variant fallback arm body");
+    assert!(guarded < fallback, "a guarded arm keeps its source position: {clif}");
+    assert!(clif.matches("brif").count() >= 4, "the guard adds its own branch after the tag test: {clif}");
+    assert!(
+        clif.contains("%gc_register_root") && clif.contains("%gc_unregister_root"),
+        "the scrutinee stays rooted while the guard runs: {clif}"
+    );
+}
+
+#[test]
+fn guarded_catch_all_does_not_make_a_match_exhaustive() {
+    let isa = cranelift_codegen::isa::lookup(Triple::host())
+        .expect("host ISA")
+        .finish(settings::Flags::new(settings::builder()))
+        .expect("host flags");
+    let facts = facts(isa.pointer_type(), Arms::GuardedCatchAllOnly, 1, valid_layout());
+    let emitter = FunctionEmitter::new(isa.as_ref());
+    let error = emitter
+        .emit_expression(UserFuncName::user(0, 41), emitter.signature([], [types::I32]), &facts, facts.nodes[0])
+        .expect_err("a guarded wildcard may reject, so variant 7 stays uncovered");
+    let FunctionEmissionError::Lowering(error) = error else {
+        panic!("expected lowering error");
+    };
+    assert_eq!(error.kind(), LoweringErrorKind::NonExhaustiveMatch);
+}
+
+/// A by-value match over an `i64` scrutinee: `match 7 { 3 => 100, 7 => 200, _ => 300 }`.
+struct ScalarMatchFacts {
+    nodes: [AstNodeKey; 7],
+    catch_all: bool,
+}
+
+impl NodeFacts for ScalarMatchFacts {
+    fn node_kind(&self, key: AstNodeKey) -> Option<NodeKind> {
+        if key == self.nodes[0] {
+            Some(NodeKind::MatchExpression)
+        } else if self.nodes[1..].contains(&key) {
+            Some(NodeKind::LiteralExpression)
+        } else {
+            None
+        }
+    }
+
+    fn literal_kind(&self, key: AstNodeKey) -> Option<LiteralKind> {
+        self.nodes[1..].contains(&key).then_some(LiteralKind::Integer)
+    }
+
+    fn child(&self, key: AstNodeKey, index: u8) -> Option<AstNodeKey> {
+        (key == self.nodes[0] && index == 0).then_some(self.nodes[1])
+    }
+
+    fn integer_literal(&self, key: AstNodeKey) -> Option<i64> {
+        let index = self.nodes.iter().position(|node| *node == key)?;
+        [None, Some(7), Some(3), Some(7), Some(100), Some(200), Some(300)][index]
+    }
+
+    fn scalar_type(&self, key: AstNodeKey) -> Option<Type> {
+        let index = self.nodes.iter().position(|node| *node == key)?;
+        Some(if (1..=3).contains(&index) { types::I64 } else { types::I32 })
+    }
+
+    fn scalar_match_scrutinee(&self, key: AstNodeKey) -> Option<Type> {
+        (key == self.nodes[0]).then_some(types::I64)
+    }
+
+    fn match_arms(&self, key: AstNodeKey) -> Option<Vec<MatchArmFact>> {
+        (key == self.nodes[0]).then(|| {
+            let mut arms = vec![
+                MatchArmFact::value(
+                    self.nodes[4],
+                    MatchPayloadPatternFact::ScalarLiteral { expression: self.nodes[2], value_type: types::I64 },
+                ),
+                MatchArmFact::value(
+                    self.nodes[5],
+                    MatchPayloadPatternFact::ScalarLiteral { expression: self.nodes[3], value_type: types::I64 },
+                ),
+            ];
+            if self.catch_all {
+                arms.push(MatchArmFact::wildcard(self.nodes[6]));
+            }
+            arms
+        })
+    }
+}
+
+fn scalar_facts(catch_all: bool) -> ScalarMatchFacts {
+    let db = BeskidDatabase::default();
+    let unit = SourceUnitId::new(&db, PathBuf::from("/tmp/ScalarMatch.bd"));
+    ScalarMatchFacts {
+        nodes: std::array::from_fn(|index| AstNodeKey {
+            unit,
+            generation: SyntaxGenerationId(20),
+            node: AstNodeId(index as u32 + 1),
+        }),
+        catch_all,
+    }
+}
+
+#[test]
+fn primitive_scrutinee_match_compares_each_literal_by_value() {
+    let isa = cranelift_codegen::isa::lookup(Triple::host())
+        .expect("host ISA")
+        .finish(settings::Flags::new(settings::builder()))
+        .expect("host flags");
+    let facts = scalar_facts(true);
+    let emitter = FunctionEmitter::new(isa.as_ref());
+    let function = emitter
+        .emit_expression(UserFuncName::user(0, 42), emitter.signature([], [types::I32]), &facts, facts.nodes[0])
+        .expect("a by-value match lowers as ordered literal comparisons");
+    let clif = function.display().to_string();
+    assert!(clif.contains("iconst.i64 3"), "{clif}");
+    assert!(clif.matches("icmp.i64 eq").count() >= 2, "each literal arm compares the scrutinee: {clif}");
+    assert!(!clif.contains("load.i32"), "a primitive scrutinee has no enum tag: {clif}");
+}
+
+#[test]
+fn non_exhaustive_primitive_statement_match_continues_after_the_match() {
+    let isa = cranelift_codegen::isa::lookup(Triple::host())
+        .expect("host ISA")
+        .finish(settings::Flags::new(settings::builder()))
+        .expect("host flags");
+    let facts = scalar_facts(false);
+    let emitter = FunctionEmitter::new(isa.as_ref());
+    emitter
+        .emit_statement(UserFuncName::user(0, 43), emitter.signature([], []), &facts, facts.nodes[0])
+        .expect("a primitive statement match without a catch-all arm is a no-op when nothing applies");
 }

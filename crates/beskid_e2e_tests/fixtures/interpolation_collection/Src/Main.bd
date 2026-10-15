@@ -1,0 +1,80 @@
+// A collection while any part of an interpolation is evaluated keeps the text built so far. The
+// parts lower to a chain of `str_concat` calls; every intermediate result must stay rooted while a
+// later part runs. Before the fix the left text was unrooted, a collection freed it, `str_concat`
+// could not root the freed operand and returned null, and the whole interpolation read as "".
+use Core.Collections.Array;
+use Core.String;
+use Testing.Assert;
+
+// Collects, then returns `value`.
+i64 Collected(i64 value) {
+    Assert.CollectGarbage();
+    return value;
+}
+
+// Collects, then returns a literal: the part itself allocates after the collection.
+string Kind(i64 kind) {
+    Assert.CollectGarbage();
+    if kind == 0 {
+        return "fn";
+    }
+    return "type";
+}
+
+// Collects, then returns `value`, an element of a live array.
+string Symbol(string[] symbols, i64 index) {
+    Assert.CollectGarbage();
+    return symbols[index];
+}
+
+// Collects, then returns a literal.
+string Visibility(bool isPub) {
+    Assert.CollectGarbage();
+    if isPub {
+        return "pub";
+    }
+    return "private";
+}
+
+i32 Main() {
+    mut string[] symbols = Array.Empty<string>();
+    Array.Append<string>(symbols, String.Concat("Read", "Uint"));
+    Array.Append<string>(symbols, String.Concat("En", "code"));
+    // The resolver bench's five-part record, with a collection inside every part.
+    string first = "item ${Collected(0)} ${Collected(142)} ${Kind(0)} ${Symbol(symbols, 0)} ${Visibility(true)}";
+    if first != "item 0 142 fn ReadUint pub" {
+        return 1;
+    }
+    // Many records: garbage from earlier rounds is reclaimed by the collections in later ones.
+    mut i64 round = 0;
+    while round < 200 {
+        string line = "item ${round} ${Collected(round * 7)} ${Kind(round % 2)} ${Symbol(symbols, round % 2)} ${Visibility(round % 3 == 0)}";
+        mut string expected = String.Concat("item ", "${round}");
+        expected = String.Concat(expected, " ");
+        expected = String.Concat(expected, "${round * 7}");
+        expected = String.Concat(expected, " ");
+        if round % 2 == 0 {
+            expected = String.Concat(expected, "fn ReadUint ");
+        } else {
+            expected = String.Concat(expected, "type Encode ");
+        }
+        if round % 3 == 0 {
+            expected = String.Concat(expected, "pub");
+        } else {
+            expected = String.Concat(expected, "private");
+        }
+        if String.Len(line) == 0 {
+            return 2;
+        }
+        if line != expected {
+            return 3;
+        }
+        round = round + 1;
+    }
+    // A `+` chain lowers the same way as an interpolation.
+    string joined = "a" + Kind(1) + "b" + Symbol(symbols, 1) + "c" + Visibility(false);
+    if joined != "atypebEncodecprivate" {
+        return 4;
+    }
+    return 42;
+}

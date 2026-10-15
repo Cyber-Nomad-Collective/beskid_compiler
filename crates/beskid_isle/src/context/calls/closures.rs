@@ -67,12 +67,13 @@ impl IsleContext<'_, '_, '_, '_> {
 }
 
 impl IsleContext<'_, '_, '_, '_> {
-    /// Call through the closure record held by a function-typed local value.
+    /// Call through the closure record a function-typed callee expression evaluates to.
     ///
-    /// Arguments are evaluated first; the callee is a plain local read with no effects, so the
-    /// record is loaded only after every argument has been computed and rooted, and nothing can
-    /// collect between that load and the indirect call. The record itself stays reachable through
-    /// the local's own root for the whole call. A null environment selects the capture-free entry
+    /// The callee is evaluated first, in source order, and its record is rooted for the whole
+    /// call (a local read reuses the local's own root; a field projection or a call result gets
+    /// a temporary root), so argument evaluation may allocate. The code and environment pointers
+    /// are loaded only after every argument has been computed and rooted, so nothing can collect
+    /// between that load and the indirect call. A null environment selects the capture-free entry
     /// convention, otherwise the environment pointer is passed first. A value position requires a
     /// result before anything is emitted.
     pub(in crate::context) fn function_value_call(&mut self, key: AstNodeKey, value: bool) -> Option<Option<Value>> {
@@ -81,6 +82,9 @@ impl IsleContext<'_, '_, '_, '_> {
         let pointer = dispatch::pointer_type(self.frontend_config);
         let argument_keys = self.facts.call_arguments(key)?;
         (argument_keys.len() == plan.parameters.len()).then_some(())?;
+        let record = generated::constructor_lower_expression(self, plan.callee)?;
+        (self.builder.func.dfg.value_type(record) == pointer).then_some(())?;
+        let record_root = self.root_expression_value_if_needed(plan.callee, record)?;
         let mut arguments = Vec::with_capacity(argument_keys.len());
         let mut roots = Vec::with_capacity(argument_keys.len());
         for (argument, parameter) in argument_keys.into_iter().zip(plan.parameters.iter().copied()) {
@@ -93,9 +97,6 @@ impl IsleContext<'_, '_, '_, '_> {
             roots.push(self.root_expression_value_if_needed(argument, value)?);
             arguments.push(value);
         }
-        (self.facts.node_kind(plan.callee) == Some(NodeKind::PathExpression)).then_some(())?;
-        let record = generated::constructor_lower_expression(self, plan.callee)?;
-        (self.builder.func.dfg.value_type(record) == pointer).then_some(())?;
         self.builder.ins().trapz(record, TrapCode::unwrap_user(5));
         let code = self.builder.ins().load(pointer, MemFlagsData::new(), record, plan.code_offset);
         let environment = self.builder.ins().load(pointer, MemFlagsData::new(), record, plan.environment_offset);
@@ -141,6 +142,7 @@ impl IsleContext<'_, '_, '_, '_> {
         for root in roots.into_iter().rev() {
             self.release_expression_root(root)?;
         }
+        self.release_expression_root(record_root)?;
         Some(result)
     }
 }

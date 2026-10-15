@@ -18,7 +18,6 @@ use super::imports::{
 use super::optional_externs::emit_optional_extern_support;
 use super::items::{ResolvedSyntaxModuleItem, SyntaxModuleItem};
 use super::specialization::resolve_module_items;
-use super::trace::{trace_item_facts, trace_key};
 use super::trampolines::{
     SchedulerCompletionTransfer, conservative_fiber_stack_requirement, emit_scheduler_fiber_entry,
     emit_scheduler_return_trampoline, emit_spawn_trampoline, expand_direct_spawn_items, resolve_lambda_trampolines,
@@ -34,11 +33,77 @@ use crate::closure_static::{
 use crate::isle_adapter::emit_isle_lambda_entry;
 use crate::{
     CodegenArtifact, CodegenContext, CodegenInput, ExternImport, emit_isle_closure_lambda_entry,
-    emit_isle_expression_with_call_importer, emit_isle_item_with_services, emit_isle_item_with_services_specialization,
+    emit_isle_expression_with_call_importer,
 };
 
 const ABI_V5_SCHEDULER_STACK_CHECK: &str = "beskid_rt_v5_scheduler_stack_check";
 const ABI_V5_SCHEDULER_STACK_OVERFLOW_OBSERVED: &str = "beskid_rt_v5_scheduler_stack_overflow_observed";
+
+/// Reuse actual source reachability and call-derived specialization resolution
+/// when issuing immutable failure admissions for an emitted native image.
+pub fn checked_failure_plans(
+    input: &CodegenInput<'_>,
+    items: &[SyntaxModuleItem],
+) -> Result<Vec<crate::reserved_failure::ReservedFailureStaticPlan>, SyntaxModuleEmissionError> {
+    Ok(checked_failure_entries(input, items)?.into_iter().map(|entry| entry.plan).collect())
+}
+
+/// A reservation remains associated with its exact call-derived source entry.
+/// Physical Result layout equality does not authorize another callable.
+#[derive(Debug, Clone)]
+pub struct CheckedFailureEntry {
+    key: beskid_queries::AstNodeKey,
+    specialization: Option<beskid_queries::GenericSpecializationInstance>,
+    symbol: String,
+    plan: crate::reserved_failure::ReservedFailureStaticPlan,
+}
+
+impl CheckedFailureEntry {
+    pub fn key(&self) -> beskid_queries::AstNodeKey {
+        self.key
+    }
+    pub fn specialization(&self) -> Option<&beskid_queries::GenericSpecializationInstance> {
+        self.specialization.as_ref()
+    }
+    pub fn symbol(&self) -> &str {
+        &self.symbol
+    }
+    pub fn plan(&self) -> &crate::reserved_failure::ReservedFailureStaticPlan {
+        &self.plan
+    }
+}
+
+/// The exact item keys [`lower_syntax_program`] emits for `items`: the source items plus every
+/// generic specialization, contract witness body and spawn body that module item resolution
+/// discovers. Native Mod callback admission uses this same closure, so a callback reached only
+/// through a witness (`S: ShapeSource` instantiated with `HostShapes`) is admitted exactly when
+/// its body is emitted.
+pub(crate) fn emitted_item_keys(
+    input: &CodegenInput<'_>,
+    items: &[SyntaxModuleItem],
+) -> Result<Vec<beskid_isle::AstNodeKey>, SyntaxModuleEmissionError> {
+    let items = resolve_module_items(input, items).and_then(|items| expand_direct_spawn_items(input, items))?;
+    Ok(items.into_iter().map(|item| item.key).collect())
+}
+
+pub fn checked_failure_entries(
+    input: &CodegenInput<'_>,
+    items: &[SyntaxModuleItem],
+) -> Result<Vec<CheckedFailureEntry>, SyntaxModuleEmissionError> {
+    Ok(resolve_module_items(input, items)?
+        .iter()
+        .filter_map(|item| {
+            input.checked_failure_destination_plan(item.key, item.specialization.as_ref()).map(|plan| {
+                CheckedFailureEntry {
+                    key: item.key,
+                    specialization: item.specialization.clone(),
+                    symbol: item.symbol.clone(),
+                    plan,
+                }
+            })
+        })
+        .collect())
+}
 
 /// State owned by a long-lived Cranelift module while it receives source artifacts.
 ///
@@ -79,6 +144,12 @@ pub fn lower_syntax_program(
         let error = legality_error(db, findings);
         crate::isle_trace::event(|| format!("event=isle.missing rule=legality_gate detail={error}"));
         return Err(error);
+    }
+    // MOD-06-02: every retained `[Serialize]` target's instantiations carry compiler-issued
+    // field codec facts, whether or not the requested items reach them.
+    if let Err(error) = beskid_queries::serialization_field_codec_admission(db, input.typed_program()) {
+        crate::isle_trace::event(|| format!("event=isle.missing rule=serialization_field_codec_admission detail={error}"));
+        return Err(SyntaxModuleEmissionError::SerializationFacts(error));
     }
     let items = match resolve_module_items(input, items).and_then(|items| expand_direct_spawn_items(input, items)) {
         Ok(items) => items,
@@ -287,51 +358,7 @@ fn lower_resolved_syntax_program(
         };
         functions.push(crate::LoweredFunction { name: trampoline.symbol.clone(), function });
     }
-    for item in items {
-        trace_item_facts(input, item.key, &symbols);
-        let started = Instant::now();
-        crate::isle_trace::event(|| {
-            format!(
-                "event=isle.selected rule=emit_item_statement item={} symbol={}",
-                trace_key(input.database(), item.key),
-                item.symbol
-            )
-        });
-        let function = {
-            let mut importer = ArtifactCallImporter { symbols: &symbols };
-            let mut strings = ArtifactStringInterner { context: &mut context, pointer_type: isa.pointer_type() };
-            match &item.specialization {
-                Some(specialization) => emit_isle_item_with_services_specialization(
-                    input,
-                    isa,
-                    item.key,
-                    specialization.clone(),
-                    &mut strings,
-                    &mut importer,
-                ),
-                None => emit_isle_item_with_services(input, isa, item.key, &mut strings, &mut importer),
-            }
-            .map_err(|error| {
-                crate::isle_trace::event(|| {
-                    format!(
-                        "event=isle.missing rule=emit_item_statement item={} elapsed_ms={} detail={}",
-                        beskid_queries::format_ast_node_site(input.database(), item.key),
-                        started.elapsed().as_millis(),
-                        error.display_with_db(input.database()),
-                    )
-                });
-                emission_error(input, error)
-            })?
-        };
-        crate::isle_trace::event(|| {
-            format!(
-                "event=isle.emitted item={} elapsed_ms={}",
-                trace_key(input.database(), item.key),
-                started.elapsed().as_millis(),
-            )
-        });
-        functions.push(crate::LoweredFunction { name: item.symbol.clone(), function });
-    }
+    functions.extend(super::parallel::emit_module_items(input, isa, items, &symbols, &mut context)?);
     let imports_scheduler_stack = !trampolines.is_empty() && scheduler_symbols.and_then(|(_, stack)| stack).is_none();
     if !trampolines.is_empty() {
         let (stack_check, stack_overflow) = scheduler_symbols
@@ -378,6 +405,62 @@ fn lower_resolved_syntax_program(
             extern_imports.push(import);
         }
     }
+    // Checked collection transactions (`Array.Append` under a checked owner) and the compiled
+    // descriptor getters of serialization targets (which keep their managed literals in GC
+    // handles) call runtime kit helpers that are not builtin-table symbols; a module that
+    // references one declares it.
+    for symbol in [
+        "beskid_rt_v5_gc_try_register_root",
+        "beskid_rt_v5_array_try_grow_rooted",
+        "gc_root_handle",
+        "beskid_rt_v5_gc_resolve_handle",
+        "gc_unroot_handle",
+    ] {
+        let referenced = functions.iter().any(|function| {
+            function.function.dfg.ext_funcs.iter().any(|(_, external)| {
+                matches!(&external.name, cranelift_codegen::ir::ExternalName::TestCase(name) if name.raw() == symbol.as_bytes())
+            })
+        });
+        if referenced && !extern_imports.iter().any(|existing| existing.symbol == symbol) {
+            extern_imports.push(ExternImport { symbol: symbol.to_owned(), abi: Some("C".into()), library: None, optional: false });
+        }
+    }
+    if items.iter().any(|item| {
+        item.specialization.as_ref().is_some_and(|instance| {
+            beskid_queries::dynamic_packing_shape(input.database(), instance).ok().flatten().is_some()
+                || beskid_queries::dynamic_unpacking_bridge(input.database(),instance).ok().flatten().is_some()
+        })
+    }) {
+        for symbol in ["gc_root_handle", "beskid_rt_v5_gc_resolve_handle", "gc_unroot_handle"] {
+            if !extern_imports.iter().any(|import| import.symbol == symbol) {
+                extern_imports.push(ExternImport { symbol: symbol.into(), abi: Some("C".into()), library: None, optional: false });
+            }
+        }
+    }
+
+    for instance in items.iter().filter_map(|item|item.specialization.as_ref()) {
+        if let Some(binding)=beskid_queries::dynamic_shape_binding(input.database(),instance)
+            .map_err(|error|emission_verification(error.to_string()))? {
+            let shape=input.compiled_dynamic_packing_shape(binding.packing())
+                .map_err(|error|emission_verification(error))?
+                .ok_or_else(||emission_verification("Shape getter has no compiled signature"))?;
+            let symbol=format!("beskid_dynamic_shape_tag_v1_{}",shape.sha256().iter().map(|byte|format!("{byte:02x}")).collect::<String>());
+            if !extern_imports.iter().any(|import|import.symbol==symbol) {
+                extern_imports.push(ExternImport{symbol,abi:Some("C".into()),library:None,optional:false});
+            }
+        }
+        if let Some(binding)=beskid_queries::dynamic_mapping_binding(input.database(),instance)
+            .map_err(|error|emission_verification(error.to_string()))? {
+            let compiled=input.compiled_dynamic_mapping(&binding).map_err(emission_verification)?;
+            if let Some(approved)=compiled.approved() {
+                let symbol=approved.token_getter();
+                if !extern_imports.iter().any(|import|import.symbol==symbol) {
+                    extern_imports.push(ExternImport{symbol,abi:Some("C".into()),library:None,optional:false});
+                }
+            }
+        }
+    }
+
     for import in clif_declared_extern_imports(input, &functions, &extern_imports) {
         extern_imports.push(import);
     }
@@ -389,9 +472,18 @@ fn lower_resolved_syntax_program(
         &extern_contracts.availability,
         &mut context,
     )?;
-    // A function whose only calls are root registrations cannot reach a collection; drop them.
+    // A function that cannot reach a collection needs no roots; drop them. The whole-module
+    // analysis assumes the collector lies outside the module, which the canonical runtime
+    // corpus violates, so there only leaf functions (no calls but root registration) qualify.
+    let non_collecting = if input.runtime_intrinsic_capability().is_some() {
+        std::collections::HashSet::new()
+    } else {
+        beskid_isle::non_collecting_functions(
+            functions.iter().map(|function| (function.name.as_str(), &function.function)),
+        )
+    };
     for function in &mut functions {
-        beskid_isle::elide_leaf_function_roots(&mut function.function);
+        beskid_isle::elide_non_collecting_function_roots(&mut function.function, &non_collecting);
     }
 
     let closure_static_plans = collect_closure_static_plans(input, items, &trampolines, &lambda_trampolines);
@@ -426,6 +518,36 @@ fn lower_resolved_syntax_program(
         }
     }
     let mut aggregate_static_plans = collect_aggregate_static_plans(input, items);
+    for binding in input.glue_handle_bindings() {
+        for handle in crate::glue::handles::source_handle_box_plans(input,*binding)
+            .map_err(|error|emission_verification(error.to_string()))? {
+            if let Some(existing)=aggregate_static_plans.iter().find(|plan|
+                plan.allocation_request_symbol==handle.plan.allocation_request_symbol) {
+                if existing!=&handle.plan {return Err(emission_verification("opaque nominal allocation conflict"));}
+            } else {aggregate_static_plans.push(handle.plan);}
+        }
+    }
+
+    for instance in items.iter().filter_map(|item|item.specialization.as_ref()) {
+        let shape=beskid_queries::dynamic_shape_binding(input.database(),instance)
+            .map_err(|error|emission_verification(error.to_string()))?;
+        let unpack=beskid_queries::dynamic_unpacking_bridge(input.database(),instance)
+            .map_err(|error|emission_verification(error.to_string()))?;
+        let mapping=beskid_queries::dynamic_mapping_binding(input.database(),instance)
+            .map_err(|error|emission_verification(error.to_string()))?;
+        let mut packings=shape.as_ref().map(|binding|binding.packing()).or_else(||unpack.as_ref().map(|bridge|bridge.packing()))
+            .into_iter().cloned().collect::<Vec<_>>();
+        if let Some(mapping)=&mapping {packings.extend([mapping.source().clone(),mapping.destination().clone()]);}
+        for packing in &packings {
+            let bridge=beskid_queries::dynamic_packing_bridge(input.database(),packing)
+                .map_err(|error|emission_verification(error.to_string()))?
+                .ok_or_else(||emission_verification("Shape lacks canonical Pack box authority"))?;
+            let plan=input.aggregate_static_plan_for_specialization(bridge.box_literal(),Some(packing))
+                .ok_or_else(||emission_verification("Shape lacks concrete source descriptor"))?;
+            if !aggregate_static_plans.iter().any(|existing|existing==&plan){aggregate_static_plans.push(plan);}
+        }
+    }
+
     if extern_imports.iter().any(|import| {
         matches!(
             import.symbol.as_str(),
@@ -503,7 +625,14 @@ fn lower_resolved_syntax_program(
         }
     }
 
-    Ok(CodegenArtifact {
+    let checked_constructor_exports = super::runtime_checked::emit_checked_runtime_constructors(
+        input, isa, items, &symbols, &mut context, &mut functions,
+    )?;
+    let instances = items.iter().filter_map(|item| item.specialization.clone()).collect::<Vec<_>>();
+    // Item discovery order is not stable between runs; the emitted function order (object layout)
+    // must be, so functions are ordered by their unique symbol.
+    functions.sort_by(|left, right| left.name.cmp(&right.name));
+    let mut artifact = CodegenArtifact {
         functions,
         string_literals: context.string_literals,
         extern_imports,
@@ -513,7 +642,18 @@ fn lower_resolved_syntax_program(
         aggregate_static_plans,
         array_static_plans,
         ..CodegenArtifact::default()
-    })
+    };
+    for symbol in checked_constructor_exports {
+        artifact.exports.push(crate::ExportEntry {
+            beskid_name: symbol.clone(),
+            exported_symbol: symbol,
+            abi: "C".into(),
+        });
+    }
+    artifact.dynamic_initialization =
+        crate::dynamic_initialization::issue_dynamic_initialization(input, &instances, &artifact)
+            .map_err(emission_verification)?;
+    Ok(artifact)
 }
 
 /// Declare every syntax item before lowering any body, then import direct callees by exact

@@ -23,5 +23,11 @@ pub mod runtime_kit;
 mod syntax_codegen;
 pub mod test;
 pub mod tree;
-pub mod update;
 pub mod validate_bsol;
+
+pub mod dependency;
+pub mod package;
+pub mod toolchain;
+pub mod doctor;
+
+pub mod toolchain_owner;

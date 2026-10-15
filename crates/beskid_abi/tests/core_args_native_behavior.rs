@@ -40,13 +40,20 @@ fn executable_entry_preserves_argv_zero_order_and_main_return_abi() {
         r#"
 #include <stdint.h>
 #include <stddef.h>
+#include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 struct BeskidStr { const uint8_t *ptr; size_t len; };
 extern int64_t beskid_rt_v5_args_count(void);
 extern struct BeskidStr *beskid_rt_v5_args_get(int64_t);
 _Noreturn void beskid_rt_v5_trap(uint8_t code, void *message, size_t len) { write(2, message, len); _exit(101); }
-void *str_new(void *data, size_t length) { (void)data; (void)length; return 0; }
+/* A managed string stand-in: a fresh copy behind a `BeskidStr` view, like the runtime's `str_new`. */
+void *str_new(void *data, size_t length) {
+  struct BeskidStr *view = malloc(sizeof *view); uint8_t *bytes = malloc(length ? length : 1);
+  if (!view || !bytes) return 0;
+  if (length) memcpy(bytes, data, length);
+  view->ptr = bytes; view->len = length; return view;
+}
 void *beskid_rt_v5_process_init(void *state) { return state; }
 void beskid_rt_v5_process_shutdown(void *state) { (void)state; }
 int64_t beskid_program_main(void) {
@@ -72,6 +79,7 @@ fn copied_arguments_outlive_input_and_bounds_trap_is_stable() {
         r#"
 #include <stdint.h>
 #include <stddef.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -80,12 +88,20 @@ extern void beskid_rt_v5_args_handoff_utf8(int64_t, const char *const *);
 extern int64_t beskid_rt_v5_args_count(void);
 extern struct BeskidStr *beskid_rt_v5_args_get(int64_t);
 _Noreturn void beskid_rt_v5_trap(uint8_t code, void *message, size_t len) { write(2, message, len); _exit(101); }
-void *str_new(void *data, size_t length) { (void)data; (void)length; return 0; }
+/* A managed string stand-in: a fresh copy behind a `BeskidStr` view, like the runtime's `str_new`. */
+void *str_new(void *data, size_t length) {
+  struct BeskidStr *view = malloc(sizeof *view); uint8_t *bytes = malloc(length ? length : 1);
+  if (!view || !bytes) return 0;
+  if (length) memcpy(bytes, data, length);
+  view->ptr = bytes; view->len = length; return view;
+}
 int main(void) {
   char value[] = "alpha"; const char *argv[] = { "argv0", value };
   beskid_rt_v5_args_handoff_utf8(2, argv); value[0] = 'X';
-  struct BeskidStr *saved = beskid_rt_v5_args_get(1);
+  struct BeskidStr *saved = beskid_rt_v5_args_get(1), *again = beskid_rt_v5_args_get(1);
   if (beskid_rt_v5_args_count() != 2 || saved->len != 5 || memcmp(saved->ptr, "alpha", 5)) return 10;
+  /* Each lookup is a new managed copy, never a view of the argument arena. */
+  if (saved == again || saved->ptr == again->ptr) return 13;
   pid_t child = fork(); if (child == 0) { (void)beskid_rt_v5_args_get(2); _exit(0); }
   int status = 0; if (waitpid(child, &status, 0) != child) return 11;
   if (!WIFEXITED(status) || WEXITSTATUS(status) != 101) return 12;

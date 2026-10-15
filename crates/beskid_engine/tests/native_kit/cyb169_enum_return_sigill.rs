@@ -48,7 +48,7 @@ i64 Main() {
     };
 }
 "#;
-    let output = run_entrypoint(Path::new("cyb169-enum-return.bd"), source, "Main")
+    let output = run_entrypoint(Path::new("cyb169-enum-return.bd"), source, "Main", &beskid_engine::ModHost::NoMods)
         .expect("enum return across call boundary must execute without SIGILL");
     assert_eq!(output, "7", "expected Ok payload 7, got {output}");
 }

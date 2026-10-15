@@ -9,14 +9,33 @@ mod tests {
     };
     use crate::services::{
         build_document_analysis_from_resolution, build_document_analysis_with_context, completion_candidates,
-        definition_at_offset, parse_program_with_source_name, references_at_offset_workspace, resolve_entry,
-        resolve_input,
+        definition_at_offset, parse_program_with_source_name, references_at_offset_workspace, resolve_input,
     };
 
     struct CorelibMvpFixture {
+        _directory: tempfile::TempDir,
         main_path: PathBuf,
         project_root: PathBuf,
         source: String,
+    }
+
+    /// Provision the bundled corelib into a process-private toolchain home so these tests never read
+    /// or write the developer's installed `~/.beskid`. Runs once; the directory lives for the process.
+    fn isolated_toolchain_home() -> &'static Path {
+        static HOME: std::sync::OnceLock<tempfile::TempDir> = std::sync::OnceLock::new();
+        HOME.get_or_init(|| {
+            let home = tempfile::tempdir().expect("create isolated BESKID_HOME");
+            // SAFETY: runs exactly once, before any document test resolves a project, so no test
+            // observes the environment mid-update.
+            unsafe {
+                std::env::set_var("BESKID_HOME", home.path().join("home"));
+                std::env::set_var("BESKID_CONFIG_DIR", home.path().join("config"));
+                std::env::set_var("BESKID_CORELIB_ROOT", home.path().join("corelib"));
+            }
+            beskid_tools::ensure_bundled_corelib(&beskid_corelib_embed::CORELIB_BUNDLE).expect("provision corelib_mvp fixture Corelib");
+            home
+        })
+        .path()
     }
 
     fn compiler_workspace_root() -> PathBuf {
@@ -28,11 +47,35 @@ mod tests {
     }
 
     fn corelib_mvp_paths() -> CorelibMvpFixture {
-        let main_path =
-            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../beskid_e2e_tests/fixtures/corelib_mvp/Src/Main.bd");
+        isolated_toolchain_home();
+        let original = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../beskid_e2e_tests/fixtures/corelib_mvp");
+        let directory = tempfile::tempdir().expect("create private document project");
+        let project_root = directory.path().to_path_buf();
+        std::fs::create_dir(project_root.join("Src")).expect("create document source directory");
+        // This is a document-service fixture, not a frozen dependency replay. Resolve the
+        // current bundled Corelib without copying checkout-local locks or materialized state.
+        for relative in ["CorelibMvp.bproj", "Src/Main.bd"] {
+            std::fs::copy(original.join(relative), project_root.join(relative)).expect("copy document fixture input");
+        }
+        let main_path = project_root.join("Src/Main.bd");
         let source = std::fs::read_to_string(&main_path).expect("read Main.bd");
-        let project_root = main_path.parent().and_then(|p| p.parent()).expect("fixture root").to_path_buf();
-        CorelibMvpFixture { main_path, project_root, source }
+        CorelibMvpFixture { _directory: directory, main_path, project_root, source }
+    }
+
+    #[test]
+    fn corelib_mvp_document_fixture_has_private_resolution_state() {
+        let first = corelib_mvp_paths();
+        let second = corelib_mvp_paths();
+        assert_ne!(first.project_root, second.project_root);
+        for fixture in [&first, &second] {
+            assert!(fixture.main_path.is_file());
+            assert!(fixture.project_root.join("CorelibMvp.bproj").is_file());
+            for state in ["Project.lock", "obj", ".beskid"] {
+                assert!(!fixture.project_root.join(state).exists(), "fixture reused {state}");
+            }
+        }
+        std::fs::write(first.project_root.join("Project.lock"), "unrelated private state").unwrap();
+        assert!(!second.project_root.join("Project.lock").exists());
     }
 
     fn with_cwd_at_workspace_root<R>(root: &Path, f: impl FnOnce() -> R) -> R {
@@ -40,13 +83,23 @@ mod tests {
     }
 
     fn assemble_corelib_mvp(path: &Path, source: &str, project_root: &Path) -> ProgramAssembly {
-        let resolved =
-            resolve_input(Some(&path.to_path_buf()), Some(&project_root.to_path_buf()), None, None, false, false)
-                .expect("resolve corelib_mvp");
+        let resolved = resolve_input(
+            Some(&path.to_path_buf()),
+            Some(&project_root.to_path_buf()),
+            None,
+            None,
+            crate::projects::WorkspacePrepareOptions::default(),
+        )
+        .expect("resolve corelib_mvp");
         let plan = resolved.compile_plan.expect("compile plan");
         let prepared = resolved.prepared_workspace.clone().or_else(|| {
             let lockfile = plan.manifest_path.with_file_name("Project.lock");
-            let options = WorkspacePrepareOptions { frozen: false, locked: lockfile.is_file(), refresh_lock: false };
+            let options = WorkspacePrepareOptions {
+                offline: false,
+                frozen: false,
+                locked: lockfile.is_file(),
+                refresh_lock: false,
+            };
             prepare_project_workspace_with_options(&plan, options, None).ok()
         });
         assemble_program(
@@ -68,7 +121,9 @@ mod tests {
     ) -> crate::services::DocumentAnalysisSnapshot {
         let program = parse_program_with_source_name(&fixture.main_path.to_string_lossy(), &fixture.source)
             .expect("parse Main.bd");
-        let resolution = resolve_entry(&assembly.entry_unit().program, assembly, Some(&fixture.main_path))
+        let resolution = assembly
+            .module_index
+            .resolve_entry_program(&assembly.entry_unit().program, Some(&fixture.main_path), assembly)
             .expect("entry resolution");
         let module_paths = assembly.module_index.known_module_path_strings();
         build_document_analysis_from_resolution(
@@ -85,10 +140,6 @@ mod tests {
 
     fn snapshot_with_entry_resolution()
     -> (crate::services::DocumentAnalysisSnapshot, CorelibMvpFixture, ProgramAssembly) {
-        static CORELIB_READY: std::sync::OnceLock<()> = std::sync::OnceLock::new();
-        CORELIB_READY.get_or_init(|| {
-            beskid_tools::ensure_bundled_corelib().expect("provision corelib_mvp fixture Corelib");
-        });
         let root = compiler_workspace_root();
         with_cwd_at_workspace_root(&root, || {
             let fixture = corelib_mvp_paths();
@@ -96,6 +147,64 @@ mod tests {
             let snapshot = snapshot_from_entry_resolution(&assembly, &fixture);
             (snapshot, fixture, assembly)
         })
+    }
+
+    /// Dependency declaration type facts merged into an entry resolution name items of that
+    /// resolution's own item table: every fact names a type-like item whose name the annotated
+    /// source spells. Regression: the merged facts once came from a resolver whose item ids were
+    /// shifted by the entry unit, so a dependency annotation after the entry resolved to an
+    /// unrelated parameter or field (`ArrayIter` -> `FromUtf8CodeUnits::data`).
+    #[test]
+    fn dependency_declaration_type_facts_name_items_of_the_entry_resolution_for_every_entry_position() {
+        use crate::resolve::{ItemKind, ResolvedType};
+        let root = compiler_workspace_root();
+        with_cwd_at_workspace_root(&root, || {
+            let fixture = corelib_mvp_paths();
+            let assembly = assemble_corelib_mvp(&fixture.main_path, &fixture.source, &fixture.project_root);
+            let last = assembly.units.len() - 1;
+            assert!(last >= 2, "corelib_mvp assembles several units");
+            let mut entries = vec![assembly.entry_index, 0, last / 2, last];
+            entries.dedup();
+            assert!(entries.iter().any(|entry| *entry < last), "an entry before later dependency units");
+            let mut checked = 0usize;
+            let mut mismatches = Vec::new();
+            for entry in entries {
+                let entry_assembly = assembly.with_entry_index(entry).expect("entry inside the assembly");
+                let entry_unit = entry_assembly.entry_unit();
+                let resolution = entry_assembly
+                    .module_index
+                    .resolve_entry_program(&entry_unit.program, Some(&entry_unit.path), &entry_assembly)
+                    .expect("entry resolution");
+                for (unit_path, facts) in &resolution.tables.scoped_resolved_types {
+                    let unit = entry_assembly
+                        .units
+                        .iter()
+                        .find(|unit| crate::paths::same_file(&unit.path, unit_path))
+                        .expect("scoped facts belong to an assembled unit");
+                    for (span, ty) in facts {
+                        let ResolvedType::Item(item) = ty else { continue };
+                        let spelled = unit.source.get(span.start..span.end).unwrap_or_default();
+                        let info = resolution.items.get(item.0);
+                        let admitted = info.is_some_and(|info| {
+                            matches!(info.kind, ItemKind::Type | ItemKind::Enum | ItemKind::Contract)
+                                && spelled.contains(info.name.as_str())
+                        });
+                        checked += 1;
+                        if !admitted {
+                            mismatches.push(format!(
+                                "entry {entry}: {}:{}..{} `{spelled}` -> {:?}",
+                                unit.logical_name,
+                                span.start,
+                                span.end,
+                                info.map(|info| (&info.name, info.kind))
+                            ));
+                        }
+                    }
+                }
+            }
+            assert!(checked > 0, "dependency declaration type facts were merged");
+            assert!(mismatches.is_empty(), "misattributed dependency declaration types: {mismatches:#?}");
+        });
     }
 
     #[test]
@@ -143,24 +252,14 @@ mod tests {
     }
 
     #[test]
-    fn corelib_mvp_use_path_completion_offers_std_segments() {
+    fn corelib_mvp_use_path_completion_offers_core_segments() {
         let (snapshot, fixture, _) = snapshot_with_entry_resolution();
-        let offset = fixture.source.find("use Std.").expect("use Std.") + "use Std.".len();
+        let offset = fixture.source.find("use Core.").expect("use Core.") + "use Core.".len();
         let candidates = completion_candidates(&snapshot, &fixture.source, offset);
         let labels: Vec<_> = candidates.iter().map(|c| c.label.as_str()).collect();
+        assert!(labels.contains(&"Output"), "expected the Core.Output segment after use Core., got {labels:?}");
         assert!(
-            labels.iter().any(|label| {
-                *label == "System"
-                    || label.contains("System")
-                    || *label == "Core"
-                    || label.contains("corelib_runtime")
-                    || label.contains("corelib_foundation")
-                    || label.contains("crates")
-            }),
-            "expected Std shard segment after use Std., got {labels:?}"
-        );
-        assert!(
-            !labels.contains(&"Std.Core"),
+            !labels.contains(&"Core.Output"),
             "use-path completion must offer the next segment, not a repeated prefix: {labels:?}"
         );
     }

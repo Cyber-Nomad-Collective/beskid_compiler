@@ -8,19 +8,9 @@ mod spawn;
 
 use super::{AstNodeKey, Db, layouts, unique_type_in_unit};
 
-/// Find the Fiber declaration through the requesting unit's module namespace.
-/// Corelib shards use `Concurrency.Fiber`; implicit-Std Apps use `Std.Concurrency.Fiber`.
+/// Find the Fiber declaration at its package-native module path `Concurrency.Fiber`.
 fn fiber_declaration_in_scope(db: &dyn Db, key: AstNodeKey) -> Option<AstNodeKey> {
     layouts::unique_assembled_type_in_module(db, key, &["Concurrency".into(), "Fiber".into()], "Fiber", 1)
-        .or_else(|| {
-            layouts::unique_assembled_type_in_module(
-                db,
-                key,
-                &["Std".into(), "Concurrency".into(), "Fiber".into()],
-                "Fiber",
-                1,
-            )
-        })
         .or_else(|| unique_type_in_unit(db, key.unit, key.generation, "Fiber", 1))
 }
 
@@ -30,9 +20,9 @@ pub(in crate::semantic_contract) use closures::{
     closure_environment_for_node, closure_environment_tracked, closure_signature_for_node, closure_signature_tracked,
 };
 pub(in crate::semantic_contract) use function_values::{
-    function_value_call_tracked, function_value_declaration, lambda_expected_signature, lambda_has_statement_body,
-    lambda_value_required_tracked,
-    untyped_lambda_parameter_type,
+    function_item_value_identity, function_item_value_tracked, function_value_call_tracked, function_value_callee,
+    lambda_has_statement_body, lambda_source_identity, lambda_value_required_tracked, names_generic_function_item,
+    untyped_lambda_parameter_identity, untyped_lambda_parameter_type,
 };
 pub use function_values::function_value_call_specialization;
 pub(in crate::semantic_contract) use fiber_ownership::{callable_fiber_ownership_tracked, spawn_legality_tracked};

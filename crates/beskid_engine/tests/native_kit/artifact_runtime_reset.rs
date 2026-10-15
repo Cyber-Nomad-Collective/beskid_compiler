@@ -38,7 +38,7 @@ i64 AllocateAfterReplacement() {
         None,
         None,
     );
-    let front = beskid_queries::compile_front_end_from_resolved_input(&resolved, FrontEndOptions::default(), None)
+    let front = beskid_queries::compile_mod_free_front_end(&resolved, FrontEndOptions::default(), None)
         .expect("prepare canonical entrypoints");
 
     for (entrypoint, expected) in

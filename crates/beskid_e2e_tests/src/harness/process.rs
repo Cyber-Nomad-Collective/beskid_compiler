@@ -8,7 +8,20 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 pub fn run_binary(path: &Path, timeout: Duration) -> Output {
+    run_binary_with_args(path, &[], timeout)
+}
+
+pub fn nm_contains_symbol(path: &Path, symbol: &str) -> bool {
+    let output =
+        Command::new("nm").arg(path).output().unwrap_or_else(|error| panic!("run nm on {}: {error}", path.display()));
+    assert!(output.status.success(), "nm failed for {}", path.display());
+    String::from_utf8_lossy(&output.stdout).contains(symbol)
+}
+
+/// Runs `path` with `args` and returns its output; fails the test after `timeout`.
+pub fn run_binary_with_args(path: &Path, args: &[&std::ffi::OsStr], timeout: Duration) -> Output {
     let mut child = Command::new(path)
+        .args(args)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -27,11 +40,4 @@ pub fn run_binary(path: &Path, timeout: Duration) -> Output {
             None => thread::sleep(Duration::from_millis(20)),
         }
     }
-}
-
-pub fn nm_contains_symbol(path: &Path, symbol: &str) -> bool {
-    let output =
-        Command::new("nm").arg(path).output().unwrap_or_else(|error| panic!("run nm on {}: {error}", path.display()));
-    assert!(output.status.success(), "nm failed for {}", path.display());
-    String::from_utf8_lossy(&output.stdout).contains(symbol)
 }

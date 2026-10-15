@@ -223,6 +223,11 @@ fn syntax_type_label(ty: SemanticTypeId) -> Option<&'static str> {
     match ty {
         SemanticTypeId::UNIT => Some("unit"),
         SemanticTypeId::BOOL => Some("bool"),
+        SemanticTypeId::I8 => Some("i8"),
+        SemanticTypeId::I16 => Some("i16"),
+        SemanticTypeId::U16 => Some("u16"),
+        SemanticTypeId::U64 => Some("u64"),
+        SemanticTypeId::F32 => Some("f32"),
         SemanticTypeId::I32 => Some("i32"),
         SemanticTypeId::I64 => Some("i64"),
         SemanticTypeId::U8 => Some("u8"),

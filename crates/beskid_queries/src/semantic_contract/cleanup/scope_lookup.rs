@@ -147,13 +147,21 @@ pub(super) fn cleanup_conversion_candidates(
                 continue;
             }
             let candidate = AstNodeKey { unit, node, ..key };
+            // A conversion applies to this `use` only when it declares the enclosing error as its
+            // target. Visible conversions to other error types (for example `Core.IO`'s
+            // `IoError FromDisposeError` next to `Network.Errors`' `NetworkError FromDisposeError`)
+            // are unrelated to this site and must not reject it, mirroring how an unrelated
+            // `impl From<DisposeError> for IoError` never affects `?` into another error type.
+            let targets_enclosing = function
+                .return_type
+                .as_ref()
+                .is_some_and(|result| same_cleanup_type(db, candidate, &result.node, key, enclosing_error));
+            if !targets_enclosing {
+                continue;
+            }
             let eligible = function.generics.is_empty()
                 && function.parameters.len() == 1
-                && same_cleanup_type(db, candidate, &function.parameters[0].node.ty.node, error_key, dispose_error)
-                && function
-                    .return_type
-                    .as_ref()
-                    .is_some_and(|result| same_cleanup_type(db, candidate, &result.node, key, enclosing_error));
+                && same_cleanup_type(db, candidate, &function.parameters[0].node.ty.node, error_key, dispose_error);
             if eligible {
                 candidates.push(candidate);
             } else {

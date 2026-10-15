@@ -1,4 +1,4 @@
-//! `beskid corelib` — materialize the bundled Beskid standard library workspace template.
+//! `beskid dev corelib` — materialize the bundled Beskid standard library workspace template.
 
 use anyhow::{Context, Result};
 use clap::Args;
@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 #[derive(Args, Debug)]
 pub struct CorelibArgs {
     /// Destination directory for the materialized corelib **workspace** tree
-    /// (`.bws` workspace manifest, `packages/`, `beskid_corelib/`)
+    /// (`.bws` workspace manifest and every workspace member, including `mods/`)
     #[arg(long, default_value = "corelib")]
     pub output: PathBuf,
 }
@@ -19,7 +19,7 @@ pub fn execute(args: CorelibArgs) -> Result<()> {
 }
 
 fn generate_corelib_project(output: &Path) -> Result<()> {
-    let provisioned = beskid_tools::ensure_bundled_corelib()?;
+    let provisioned = beskid_tools::ensure_bundled_corelib(&beskid_corelib_embed::CORELIB_BUNDLE)?;
     let template_root = provisioned.root;
     validate_template_layout(&template_root)?;
 

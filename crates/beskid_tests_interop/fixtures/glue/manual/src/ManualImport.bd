@@ -1,0 +1,47 @@
+// Manual local C ABI calls; bridge wire values never contain these pointers.
+[Extern(Abi:"C", Library:"glue_manual")]
+pub contract Foreign {
+    i8 glue_i8(i8 value);
+    i16 glue_i16(i16 value);
+    i32 glue_i32(i32 value);
+    i64 glue_i64(i64 value);
+    u8 glue_u8(u8 value);
+    u16 glue_u16(u16 value);
+    u32 glue_u32(u32 value);
+    u64 glue_u64(u64 value);
+    f32 glue_f32(f32 value);
+    f64 glue_f64(f64 value);
+    i32 glue_bool(u8 value);
+    i32 glue_char(u32 value);
+    i32 glue_utf8(string value);
+    i32 glue_utf8_exact(string value);
+    i32 glue_bytes(u8[] value);
+    i32 glue_bytes_exact(u8[] value);
+    u32 glue_f32_bits(f32 value);
+    u64 glue_f64_bits(f64 value);
+    f32 glue_f32_from_bits(u32 value);
+    f64 glue_f64_from_bits(u64 value);
+    unit glue_unit();
+    i32 glue_handle(u64 token, u64 session, u64 shape);
+    i32 glue_native_width(word value, u32 bits);
+    u64 glue_allocate(word length);
+    i32 glue_release(u64 token);
+    i32 glue_failure(u32 mode);
+}
+pub i8 ImportI8(i8 value) { return Foreign.glue_i8(value); }
+pub i16 ImportI16(i16 value) { return Foreign.glue_i16(value); }
+pub i32 ImportI32(i32 value) { return Foreign.glue_i32(value); }
+pub i64 ImportI64(i64 value) { return Foreign.glue_i64(value); }
+pub u8 ImportU8(u8 value) { return Foreign.glue_u8(value); }
+pub u16 ImportU16(u16 value) { return Foreign.glue_u16(value); }
+pub u32 ImportU32(u32 value) { return Foreign.glue_u32(value); }
+pub u64 ImportU64(u64 value) { return Foreign.glue_u64(value); }
+pub f32 ImportF32(f32 value) { return Foreign.glue_f32(value); }
+pub f64 ImportF64(f64 value) { return Foreign.glue_f64(value); }
+pub i32 ImportBool(u8 value) { return Foreign.glue_bool(value); }
+pub i32 ImportChar(u32 value) { return Foreign.glue_char(value); }
+pub i32 ImportUtf8(string value) { return Foreign.glue_utf8(value); }
+pub i32 ImportBytes(u8[] value) { return Foreign.glue_bytes(value); }
+pub unit ImportUnit() { Foreign.glue_unit(); return; }
+pub i32 ImportHandle(u64 token, u64 session, u64 shape) { return Foreign.glue_handle(token, session, shape); }
+pub i32 ImportNativeWidth(word value, u32 bits) { return Foreign.glue_native_width(value, bits); }

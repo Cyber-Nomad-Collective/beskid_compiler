@@ -13,6 +13,21 @@ use crate::projects::graph::pathing::{
 use crate::projects::graph::project_graph::{DependencyEdge, ProjectGraphNode};
 use crate::projects::model::{DependencySource, ProjectKind, ProjectManifest, WorkspaceMember};
 
+/// Dependency label of the installed Corelib aggregate. The resolver injects it implicitly, and a
+/// manifest may declare it explicitly as a `path` dependency without `path`. Dependency labels are
+/// not module path segments: Corelib modules keep their package-native paths (`Core.*`,
+/// `Testing.*`, `Concurrency.*`, `Beskid.Compiler.*`).
+pub const CORE_DEPENDENCY_NAME: &str = "Core";
+
+/// Project name of the Corelib aggregate manifest (`beskid_corelib/corelib.bproj`). A dependency
+/// labeled [`CORE_DEPENDENCY_NAME`] must resolve to this project.
+pub const CORELIB_AGGREGATE_PROJECT_NAME: &str = "corelib";
+
+/// Whether a manifest dependency label names the Corelib aggregate dependency.
+pub fn is_core_dependency_name(name: &str) -> bool {
+    name.eq_ignore_ascii_case(CORE_DEPENDENCY_NAME)
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WorkspaceResolutionRules {
     /// Parent directory of `Workspace.proj` when a workspace was discovered.
@@ -42,7 +57,7 @@ impl WorkspaceResolutionRules {
         Self { workspace_root, workspace_members, overrides_by_dependency, registry_aliases, registry_urls }
     }
 
-    fn override_version_for(&self, dependency_name: &str) -> Option<&str> {
+    pub(crate) fn override_version_for(&self, dependency_name: &str) -> Option<&str> {
         self.overrides_by_dependency.get(&dependency_name.to_ascii_lowercase()).map(String::as_str)
     }
 
@@ -71,21 +86,21 @@ pub fn resolve_dependencies(
     workspace_rules: Option<&WorkspaceResolutionRules>,
     node_by_manifest: &mut HashMap<PathBuf, NodeIndex>,
     visiting: &mut Vec<PathBuf>,
-    has_std_dependency: &mut bool,
+    has_core_dependency: &mut bool,
 ) -> Result<(), ProjectError> {
     let consumer_project_root = project_root_from_manifest_path(consumer_manifest_path)?;
-    let has_explicit_std_dependency =
-        consumer_manifest.dependencies.iter().any(|dependency| dependency.name.eq_ignore_ascii_case("Std"));
-    let is_std_project =
-        consumer_manifest.project.name.eq_ignore_ascii_case("Std") || is_std_manifest_path(consumer_manifest_path);
+    let has_explicit_core_dependency =
+        consumer_manifest.dependencies.iter().any(|dependency| is_core_dependency_name(&dependency.name));
+    let is_core_project = is_installed_corelib_manifest_path(consumer_manifest_path)
+        || is_core_labelled_aggregate(dag, consumer_index);
 
     for dependency in &consumer_manifest.dependencies {
         match dependency.source {
             DependencySource::Path => {
-                let fallback_std_path =
-                    if dependency.name.eq_ignore_ascii_case("Std") { default_corelib_dependency_path() } else { None };
+                let installed_core_path =
+                    if is_core_dependency_name(&dependency.name) { default_corelib_dependency_path() } else { None };
 
-                let relative_path = dependency.path.as_deref().or(fallback_std_path.as_deref()).ok_or_else(|| {
+                let relative_path = dependency.path.as_deref().or(installed_core_path.as_deref()).ok_or_else(|| {
                     ProjectError::Validation(format!(
                         "dependency `{}` with source=\"path\" requires `path`",
                         dependency.name
@@ -102,7 +117,7 @@ pub fn resolve_dependencies(
                     workspace_rules,
                     node_by_manifest,
                     visiting,
-                    has_std_dependency,
+                    has_core_dependency,
                 )?;
             }
             DependencySource::Git => {
@@ -189,8 +204,8 @@ pub fn resolve_dependencies(
         }
     }
 
-    if !has_explicit_std_dependency
-        && !is_std_project
+    if !has_explicit_core_dependency
+        && !is_core_project
         // Authoring roots lock their Corelib closure; nested template packages remain
         // excluded from the consuming project's compilation dependency projection.
         && (consumer_manifest.project.kind != ProjectKind::Template
@@ -205,12 +220,12 @@ pub fn resolve_dependencies(
             consumer_index,
             consumer_manifest_path,
             &consumer_project_root,
-            "Std",
+            CORE_DEPENDENCY_NAME,
             &corelib_path,
             workspace_rules,
             node_by_manifest,
             visiting,
-            has_std_dependency,
+            has_core_dependency,
         )?;
     }
 
@@ -228,7 +243,7 @@ fn attach_path_dependency(
     workspace_rules: Option<&WorkspaceResolutionRules>,
     node_by_manifest: &mut HashMap<PathBuf, NodeIndex>,
     visiting: &mut Vec<PathBuf>,
-    has_std_dependency: &mut bool,
+    has_core_dependency: &mut bool,
 ) -> Result<(), ProjectError> {
     let dependency_manifest_path = dependency_manifest_path(consumer_project_root, relative_path)?;
 
@@ -267,7 +282,7 @@ fn attach_path_dependency(
             workspace_rules,
             node_by_manifest,
             visiting,
-            has_std_dependency,
+            has_core_dependency,
         )?;
         visiting.pop();
 
@@ -290,11 +305,32 @@ fn attach_path_dependency(
         )));
     }
 
-    if dependency_name.eq_ignore_ascii_case("Std") {
-        *has_std_dependency = true;
+    if is_core_dependency_name(dependency_name) {
+        let project_name = match dag.graph().node_weight(dependency_index) {
+            Some(ProjectGraphNode::ResolvedPathDependency { project_name, .. }) => project_name.as_str(),
+            _ => "",
+        };
+        if project_name != CORELIB_AGGREGATE_PROJECT_NAME {
+            return Err(ProjectError::Validation(format!(
+                "dependency label `{CORE_DEPENDENCY_NAME}` is reserved for the Corelib aggregate, but `{}` declares project `{project_name}`; rename the dependency label",
+                dependency_manifest_path.display()
+            )));
+        }
+        *has_core_dependency = true;
     }
 
     Ok(())
+}
+
+/// A path dependency attached under the reserved `Core` label is this graph's Corelib aggregate:
+/// `attach_path_dependency` rejects that label for any other project. It is the Corelib, so it
+/// never receives a second, implicit Corelib of its own.
+fn is_core_labelled_aggregate(dag: &Dag<ProjectGraphNode, DependencyEdge>, index: NodeIndex) -> bool {
+    matches!(
+        dag.graph().node_weight(index),
+        Some(ProjectGraphNode::ResolvedPathDependency { dependency_name, project_name, .. })
+            if is_core_dependency_name(dependency_name) && project_name == CORELIB_AGGREGATE_PROJECT_NAME
+    )
 }
 
 fn default_corelib_dependency_path() -> Option<String> {
@@ -315,7 +351,7 @@ fn bundled_corelib_dependency_path(root: &Path) -> Option<PathBuf> {
 
 /// `BESKID_CORELIB_ROOT` / install roots may be either the aggregate `beskid_corelib/` package
 /// (contains `Project.proj`) or the parent **workspace** directory (has `Workspace.proj` and
-/// nests `beskid_corelib/corelib.bproj`). `Std` path resolution must always end at the package.
+/// nests `beskid_corelib/corelib.bproj`). `Core` path resolution must always end at the package.
 fn corelib_aggregate_project_dir(root: &Path) -> PathBuf {
     let nested = root.join("beskid_corelib");
     if discover_project_manifest_in_dir(&nested).ok().flatten().is_some() {
@@ -328,8 +364,8 @@ fn corelib_aggregate_project_dir(root: &Path) -> PathBuf {
 }
 
 /// True when the consumer already path-depends on the aggregate `beskid_corelib` project
-/// (explicit `corelib` / `Std` link). Skip implicit `Std` injection so module paths stay on the
-/// shard layout (`Testing::Assertions`) instead of duplicating the aggregate as `Std::*`.
+/// (explicit `corelib` / `Core` link). Skip implicit `Core` injection so the aggregate is not
+/// attached twice under two dependency labels.
 fn depends_on_corelib_aggregate(consumer_manifest: &ProjectManifest, consumer_project_root: &Path) -> bool {
     let Some(corelib_root) = default_corelib_dependency_path().map(PathBuf::from) else {
         return false;
@@ -344,7 +380,7 @@ fn depends_on_corelib_aggregate(consumer_manifest: &ProjectManifest, consumer_pr
             return false;
         }
         dependency.name.eq_ignore_ascii_case("corelib")
-            || dependency.name.eq_ignore_ascii_case("Std")
+            || is_core_dependency_name(&dependency.name)
             || dependency.path.as_ref().is_some_and(|relative_path| {
                 dependency_manifest_path(consumer_project_root, relative_path)
                     .ok()
@@ -354,7 +390,7 @@ fn depends_on_corelib_aggregate(consumer_manifest: &ProjectManifest, consumer_pr
     })
 }
 
-/// Aggregate and shard manifests are already the implementation of `Std`; they must never acquire
+/// Aggregate and shard manifests are already the implementation of `Core`; they must never acquire
 /// an implicit back-link to whichever installed Corelib happens to be discoverable on the host.
 /// Detect the workspace from the manifest's own path so a checkout and an installed kit cannot be
 /// combined into two divergent declarations of the same package.
@@ -370,15 +406,29 @@ fn is_corelib_workspace_member_manifest(manifest_path: &Path) -> bool {
         return true;
     }
 
-    normalized_manifest.ancestors().any(|ancestor| {
-        ancestor.file_name().and_then(std::ffi::OsStr::to_str) == Some("packages")
-            && ancestor.parent().is_some_and(|workspace| {
-                discover_project_manifest_in_dir(&workspace.join("beskid_corelib")).ok().flatten().is_some()
-            })
-    })
+    // Corelib mods (`<workspace>/mods/<mod>/<manifest>`) lock the same member packages by
+    // explicit path. Only a direct child of the workspace's `mods` directory qualifies.
+    if project_root
+        .parent()
+        .is_some_and(|mods| is_corelib_workspace_child_dir(mods, "mods"))
+    {
+        return true;
+    }
+
+    normalized_manifest.ancestors().any(|ancestor| is_corelib_workspace_child_dir(ancestor, "packages"))
 }
 
-fn is_std_manifest_path(manifest_path: &Path) -> bool {
+/// True when `dir` is the `name` directory directly inside a Corelib workspace, i.e. a sibling of
+/// the aggregate `beskid_corelib` project.
+fn is_corelib_workspace_child_dir(dir: &Path, name: &str) -> bool {
+    dir.file_name().and_then(std::ffi::OsStr::to_str) == Some(name)
+        && dir.parent().is_some_and(|workspace| {
+            discover_project_manifest_in_dir(&workspace.join("beskid_corelib")).ok().flatten().is_some()
+        })
+}
+
+/// Whether `manifest_path` is the installed Corelib aggregate manifest itself.
+fn is_installed_corelib_manifest_path(manifest_path: &Path) -> bool {
     let normalized_manifest = normalize_existing_path(manifest_path);
     let Some(corelib_root) = default_corelib_dependency_path() else {
         return false;
@@ -399,12 +449,56 @@ fn format_cycle_from_visiting(visiting: &[PathBuf], cycle_start: usize, repeated
 
 #[cfg(test)]
 mod tests {
-    use super::bundled_corelib_dependency_path;
-    use std::path::Path;
+    use super::{bundled_corelib_dependency_path, is_corelib_workspace_member_manifest};
+    use std::fs;
+    use std::path::{Path, PathBuf};
+
+    fn write_manifest(dir: &Path, name: &str) -> PathBuf {
+        fs::create_dir_all(dir).unwrap();
+        let manifest = dir.join(format!("{name}.bproj"));
+        fs::write(&manifest, format!("{name} {{\n  name = \"{name}\"\n  version = \"0.1.0\"\n}}\n")).unwrap();
+        manifest
+    }
+
+    #[test]
+    fn corelib_mods_are_workspace_members_without_implicit_core() {
+        let workspace = tempfile::tempdir().unwrap();
+        write_manifest(&workspace.path().join("beskid_corelib"), "corelib");
+        let package = write_manifest(&workspace.path().join("packages/foundation"), "corelib_foundation");
+        let module = write_manifest(&workspace.path().join("mods/serialization_mod"), "serialization_mod");
+
+        assert!(is_corelib_workspace_member_manifest(&package));
+        assert!(
+            is_corelib_workspace_member_manifest(&module),
+            "a Corelib mod path-depends on member packages; injecting Core duplicates them"
+        );
+    }
+
+    #[test]
+    fn mods_membership_is_exact_to_the_corelib_workspace() {
+        let workspace = tempfile::tempdir().unwrap();
+        write_manifest(&workspace.path().join("beskid_corelib"), "corelib");
+        // Nested below a mod, not a direct `mods/<mod>` project.
+        let nested = write_manifest(&workspace.path().join("mods/serialization_mod/fixtures/app"), "app");
+        assert!(!is_corelib_workspace_member_manifest(&nested));
+
+        // A `mods` directory outside a Corelib workspace is an ordinary consumer.
+        let elsewhere = tempfile::tempdir().unwrap();
+        let unrelated = write_manifest(&elsewhere.path().join("mods/my_mod"), "my_mod");
+        assert!(!is_corelib_workspace_member_manifest(&unrelated));
+    }
 
     #[test]
     fn default_corelib_requires_an_installed_bundle() {
         // A random project directory must not inherit Corelib from a compiler checkout.
         assert_eq!(bundled_corelib_dependency_path(Path::new("/definitely-not-an-installed-beskid-corelib")), None);
     }
+}
+
+/// Require the same installed Corelib aggregate used by ordinary manifest resolution.
+/// Standalone source plans cannot silently omit their default standard-library closure.
+pub(crate) fn require_default_corelib_dependency_path() -> Result<PathBuf, ProjectError> {
+    default_corelib_dependency_path().map(PathBuf::from).ok_or_else(|| {
+        ProjectError::Validation("standalone source requires the installed Corelib aggregate; install a complete matching toolchain or set BESKID_CORELIB_ROOT to its explicit Corelib workspace".into())
+    })
 }

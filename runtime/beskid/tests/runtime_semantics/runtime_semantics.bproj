@@ -48,3 +48,13 @@ target "NetworkNativeTests" {
   kind = Lib
   entry = "NetworkNativeTests.bd"
 }
+
+target "DynamicTests" {
+  kind = Lib
+  entry = "DynamicTests.bd"
+}
+
+target "DynamicV1Tests" {
+  kind = Lib
+  entry = "DynamicV1Tests.bd"
+}

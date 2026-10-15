@@ -118,3 +118,19 @@ fn smoke_fixture_build_graph_includes_corelib_dependency() {
     let lock = std::fs::read_to_string(workspace.join("Project.lock")).expect("read built project lockfile");
     assert!(lock.contains("- name=corelib_foundation;"), "build graph must retain the Foundation dependency");
 }
+
+#[test]
+fn wide_integer_constants_and_literals_keep_their_full_value_at_runtime() {
+    let workspace = E2eWorkspace::from_fixture("integer_constant_width");
+    let manifest = workspace.join("IntegerConstantWidth.bproj");
+    let cli = BeskidCliInvoker::new();
+
+    let run = cli.run(["run", "--project", manifest.to_str().expect("manifest path str"), "--target", "App"]);
+    assert_success(&run, "run integer-constant-width fixture");
+    assert_exit_code(&run, 0, "run integer-constant-width fixture");
+    assert_output_contains(
+        &run,
+        "constant widths ok 3000000000 3000000000 8589934591",
+        "run integer-constant-width fixture",
+    );
+}

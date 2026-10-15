@@ -1,0 +1,78 @@
+// Canonical primitive String owner. Its descriptor is generated from this typed
+// declaration; the public data/length view starts at the data field.
+use Core.Collections.Array;
+
+// Service number for the not-live diagnostic; the same numbering as RootsHandles.bd.
+const LIVENESS_UTF8_RECORD_ADOPT = 9;
+
+pub type Utf8ViewRecord {
+    pub u8[] payload,
+    pub pointer data,
+    pub word length,
+}
+
+[Export(Abi:"C", Symbol:"beskid_rt_v5_utf8_record_construct")]
+pub Utf8ViewRecord Utf8RecordConstruct(pointer source, word length) {
+    // One allocation sized to the text, then a plain byte copy. Growing the payload one
+    // `Array.Append` at a time made every string construction cost a rooted growth protocol
+    // per byte (about 300 ns per byte).
+    // A null source leaves the bytes zero: `StrNewZeroed` fills them before publishing the string.
+    mut u8[] payload = Array.Zeroed<u8>(i64(length));
+    if source != NativePointer(0) {
+        i64 count = i64(length);
+        mut i64 index = 0;
+        while index < count {
+            payload[index] = u8(raw_byte_load(pointer_add(source, word(index))));
+            index = index + 1;
+        }
+    }
+    return Utf8ViewRecord { payload: payload, data: NativePointer(0), length: length };
+}
+
+// A typed array crosses this private compiler transport using its canonical
+// representation. The native bridge roots the record before reading its fields.
+[Export(Abi:"C", Symbol:"beskid_rt_v5_utf8_record_payload")]
+pub u8[] Utf8RecordPayload(Utf8ViewRecord record) { return record.payload; }
+
+[Export(Abi:"C", Symbol:"beskid_rt_v5_utf8_record_set_data")]
+pub unit Utf8RecordSetData(mut Utf8ViewRecord record, pointer data) {
+    record.data = data;
+}
+
+// Re-seats the view record behind `target` onto the bytes owned by the record behind `source`.
+// Both are ABI-visible string handles (the `data` word of a canonical view record). After the
+// adoption `target` reads exactly `source`'s bytes and its record owns their payload, so the
+// caller's own reference keeps them alive; `source` keeps its payload and stays independent.
+// Fails closed (no store) when either handle is null or not a canonical string view; a non-null
+// handle that is not a live managed object traps (use after collection, RootsHandles.bd).
+pub bool Utf8RecordAdopt(pointer target, pointer source) {
+    RequireLiveManagedReference(target, LIVENESS_UTF8_RECORD_ADOPT);
+    RequireLiveManagedReference(source, LIVENESS_UTF8_RECORD_ADOPT);
+    pointer heap = Heap();
+    pointer targetRecord = ManagedObjectForReference(heap, target);
+    pointer sourceRecord = ManagedObjectForReference(heap, source);
+    if targetRecord == NativePointer(0) || sourceRecord == NativePointer(0) { return false; }
+    if TypeDescriptorFlags(NativePointer(raw_word_load(targetRecord))) != TypeDescriptorUtf8ViewFlag() { return false; }
+    if TypeDescriptorFlags(NativePointer(raw_word_load(sourceRecord))) != TypeDescriptorUtf8ViewFlag() { return false; }
+    pointer payload = NativePointer(raw_word_load(pointer_add(sourceRecord, 16)));
+    if payload == NativePointer(0) { return false; }
+    GcWriteBarrier(targetRecord, payload);
+    raw_word_store(pointer_add(targetRecord, 16), NativeWord(payload));
+    raw_word_store(pointer_add(targetRecord, 24), raw_word_load(pointer_add(sourceRecord, 24)));
+    raw_word_store(pointer_add(targetRecord, 32), raw_word_load(pointer_add(sourceRecord, 32)));
+    return true;
+}
+
+[Export(Abi:"C", Symbol:"beskid_rt_v5_managed_view_kind")]
+pub u64 ManagedViewKind(pointer value) {
+    pointer object = ManagedObjectForReference(Heap(), value);
+    if object == NativePointer(0) { return 0; }
+    pointer descriptor = NativePointer(raw_word_load(object));
+    if TypeDescriptorFlags(descriptor) == TypeDescriptorUtf8ViewFlag() { return 1; }
+    if TypeDescriptorFlags(descriptor) == TypeDescriptorArrayFlag() {
+        pointer element = NativePointer(raw_word_load(pointer_add(object, 16)));
+        if ValidateArrayElementDescriptor(element) && raw_word_load(element) == 1
+            && raw_word_load(pointer_add(element, 24)) == 0 { return 2; }
+    }
+    return 0;
+}

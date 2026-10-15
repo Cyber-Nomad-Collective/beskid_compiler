@@ -39,7 +39,7 @@ fn direct_executable_acceptance_sources_lower_with_their_selected_entry() {
     ] {
         let lowered = lower_foundation_entry(fixture, entry).expect(fixture);
         let function = lowered
-            .artifact
+            .artifact()
             .functions
             .iter()
             .find(|function| function.name.split('#').next() == Some(entry))
@@ -112,7 +112,6 @@ fn foundation_io_closer_stream_and_scoped_cleanup_are_native_safe() {
 }
 
 #[test]
-#[ignore = "requires the staged native runtime-kit matrix prefix"]
 fn staged_runtime_kit_emitted_binary_round_trips_redirected_standard_streams() {
     run_staged_standard_stream_fixture(
         "foundation_redirected_streams.bd",
@@ -123,7 +122,6 @@ fn staged_runtime_kit_emitted_binary_round_trips_redirected_standard_streams() {
 }
 
 #[test]
-#[ignore = "requires the staged native runtime-kit matrix prefix"]
 fn staged_runtime_kit_emitted_binary_reads_redirected_standard_input() {
     run_staged_standard_stream_fixture(
         "foundation_redirected_input.bd",
@@ -134,19 +132,16 @@ fn staged_runtime_kit_emitted_binary_reads_redirected_standard_input() {
 }
 
 #[test]
-#[ignore = "requires the staged native runtime-kit matrix prefix"]
 fn staged_runtime_kit_emitted_binary_writes_redirected_standard_output() {
     run_staged_standard_stream_fixture("foundation_redirected_output.bd", b"", b"redirected-stdout\n", b"");
 }
 
 #[test]
-#[ignore = "requires the staged native runtime-kit matrix prefix"]
 fn staged_runtime_kit_emitted_binary_writes_redirected_standard_error() {
     run_staged_standard_stream_fixture("foundation_redirected_stderr.bd", b"", b"", b"redirected-stderr\n");
 }
 
 #[test]
-#[ignore = "requires the staged native runtime-kit matrix prefix"]
 fn staged_runtime_kit_emitted_binary_handoffs_core_args_through_the_executable_host() {
     let (output_dir, executable) = build_staged_foundation_executable("foundation_redirected_args.bd", "Main");
     #[cfg(all(target_os = "windows", target_arch = "x86_64", target_env = "msvc"))]
@@ -201,8 +196,8 @@ fn staged_runtime_kit_emitted_binary_handoffs_core_args_through_the_executable_h
     );
     assert_eq!(
         result.stdout,
-        format!("{}\nalpha\nbeta\n", executable.display()).as_bytes(),
-        "argv-zero, order, and values"
+        format!("{}\nalpha\nbeta\narg:beta:beta\n", executable.display()).as_bytes(),
+        "argv-zero, order, values, and an argument concatenated across collections"
     );
     assert!(result.stderr.is_empty(), "Core.Args executable wrote unexpected stderr");
 
@@ -212,13 +207,12 @@ fn staged_runtime_kit_emitted_binary_handoffs_core_args_through_the_executable_h
         command.args(["zażółć-🙂", "", "final"]);
         let result = run_bounded("Core.Args wide executable", &mut command, ROUTE_LIMIT);
         assert_eq!(result.status.code(), Some(4), "UTF-16 argument capture: {result:?}");
-        assert_eq!(result.stdout, format!("{}\nzażółć-🙂\n\nfinal\n", executable.display()).as_bytes());
+        assert_eq!(result.stdout, format!("{}\nzażółć-🙂\n\nfinal\narg:final:final\n", executable.display()).as_bytes());
         assert!(result.stderr.is_empty());
     }
 }
 
 #[test]
-#[ignore = "requires the staged native runtime-kit matrix prefix"]
 fn staged_runtime_kit_emitted_binary_runs_a_custom_unit_entry() {
     let (_output, executable) = build_staged_foundation_executable("foundation_redirected_unit.bd", "Start");
     let result = run_bounded("custom unit executable", &mut Command::new(&executable), ROUTE_LIMIT);
@@ -259,14 +253,14 @@ fn build_staged_foundation_executable(fixture: &str, entry: &str) -> (tempfile::
     let runtime = beskid_aot::installed_runtime_strategy(&prefix, profile, None)
         .expect("resolve the exact staged ABI-v5 static runtime artifact");
     let build = beskid_aot::build(beskid_aot::AotBuildRequest {
-        artifact: lowered.artifact,
+        artifact: lowered.into_artifact(),
         output_kind: beskid_aot::BuildOutputKind::Exe,
         output_path: output.path().join(fixture),
         object_path: None,
         target_triple: Some(target.triple.as_str().to_owned()),
         profile,
         entrypoint: entry.to_owned(),
-        export_policy: beskid_aot::ExportPolicy::PublicOnly,
+        export_policy: beskid_aot::ExportPolicy::Explicit(Vec::new()),
         link_mode: beskid_aot::LinkMode::Auto,
         runtime: Some(runtime),
         verbose_link: false,
@@ -478,6 +472,8 @@ fn lower_foundation_entry(fixture: &str, entry: &str) -> anyhow::Result<beskid_c
         "Core/String/Core.bd",
         "Core/String/Chars.bd",
         "Core/String/Utf8.bd",
+        "Core/String/Search.bd",
+        "Core/String/Transform.bd",
     ] {
         paths.push((foundation.join(relative), relative.to_owned()));
     }
@@ -595,11 +591,11 @@ fn run_foundation_case(fixture: &str, entry: &str, expected: i64, input_mode: i3
     );
     if fixture == "foundation_copy.bd" {
         let object_path = prefix.path().join("copy.o");
-        let symbol = beskid_codegen::object_link_symbol(&lowered.symbol, &lowered.artifact.exports);
+        let symbol = beskid_codegen::object_link_symbol(&lowered.symbol(), &lowered.artifact().exports);
         let mut object =
             beskid_aot::object_module::BeskidObjectModule::new(None, beskid_aot::BuildProfile::Debug).unwrap();
         object
-            .compile_artifact_with_exports(&lowered.artifact, &std::collections::HashSet::from([symbol.clone()]), None)
+            .compile_artifact_with_exports(&lowered.artifact(), &std::collections::HashSet::from([symbol.clone()]), None)
             .unwrap();
         object.finalize_to_path(&object_path).unwrap();
         let observed = prefix.path().join("observed-copy.a");
@@ -652,11 +648,11 @@ fn run_foundation_case(fixture: &str, entry: &str, expected: i64, input_mode: i3
         return;
     }
     let object_path = prefix.path().join(if cfg!(windows) { "foundation.obj" } else { "foundation.o" });
-    let native_symbol = beskid_codegen::object_link_symbol(&lowered.symbol, &lowered.artifact.exports);
+    let native_symbol = beskid_codegen::object_link_symbol(&lowered.symbol(), &lowered.artifact().exports);
     let mut object = beskid_aot::object_module::BeskidObjectModule::new(None, beskid_aot::BuildProfile::Debug).unwrap();
     object
         .compile_artifact_with_exports(
-            &lowered.artifact,
+            &lowered.artifact(),
             &std::collections::HashSet::from([native_symbol.clone()]),
             None,
         )
@@ -665,8 +661,8 @@ fn run_foundation_case(fixture: &str, entry: &str, expected: i64, input_mode: i3
     let run_jit = || {
         let mut engine =
             beskid_engine::Engine::with_runtime_kit(shared.prefix(), target.clone(), BuildProfile::Debug).unwrap();
-        engine.compile_artifact(&lowered.artifact).expect("Foundation JIT");
-        let pointer = unsafe { engine.entrypoint_ptr(&lowered.symbol) }.unwrap();
+        engine.compile_artifact(&lowered.artifact()).expect("Foundation JIT");
+        let pointer = unsafe { engine.entrypoint_ptr(&lowered.symbol()) }.unwrap();
         let run: extern "C" fn() -> i64 = unsafe { std::mem::transmute(pointer) };
         let actual = if input_mode == 0 {
             run()

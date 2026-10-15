@@ -68,9 +68,21 @@ pub fn build_project_graph_with_options(
     manifest_path: &Path,
     _options: ProjectGraphBuildOptions,
 ) -> Result<ProjectGraph, ProjectError> {
+    // An interrupted dependency commit is recovered before the root manifest is read.
+    crate::projects::dependency_transaction::RecoverInterruptedDependencyPair(manifest_path)?;
+    let root_manifest = load_manifest_from_path(manifest_path)?;
+    build_project_graph_from_manifest(manifest_path, root_manifest)
+}
+
+/// Resolve proposed root intent against its original physical directory without
+/// writing the manifest. Child manifests still use the ordinary loader/resolver.
+pub fn build_project_graph_from_manifest(
+    manifest_path: &Path,
+    root_manifest: crate::projects::model::ProjectManifest,
+) -> Result<ProjectGraph, ProjectError> {
+    crate::projects::validator::validate_manifest(&root_manifest)?;
     let root_manifest_path = normalize_existing_path(manifest_path);
     let root_project_root = project_root_from_manifest_path(&root_manifest_path)?;
-    let root_manifest = load_manifest_from_path(&root_manifest_path)?;
 
     let mut dag = daggy::Dag::new();
     let root = dag.add_node(ProjectGraphNode::RootProject {
@@ -85,7 +97,7 @@ pub fn build_project_graph_with_options(
     node_by_manifest.insert(root_manifest_path.clone(), root);
 
     let mut visiting = vec![root_manifest_path.clone()];
-    let mut has_std_dependency = false;
+    let mut has_core_dependency = false;
     let workspace_rules = discover_workspace_resolution_rules(&root_manifest_path)?;
 
     resolve_dependencies(
@@ -96,7 +108,7 @@ pub fn build_project_graph_with_options(
         workspace_rules.as_ref(),
         &mut node_by_manifest,
         &mut visiting,
-        &mut has_std_dependency,
+        &mut has_core_dependency,
     )?;
 
     Ok(ProjectGraph {
@@ -106,6 +118,6 @@ pub fn build_project_graph_with_options(
         root_project_root,
         root_manifest,
         node_by_manifest,
-        has_std_dependency,
+        has_core_dependency,
     })
 }

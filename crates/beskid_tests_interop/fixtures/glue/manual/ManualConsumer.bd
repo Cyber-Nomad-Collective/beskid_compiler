@@ -1,0 +1,31 @@
+use ManualImport;
+
+/// Scalar consumer entry. Actual link/run remains gated by primitive and ABI support.
+pub i32 Main() {
+    if ManualImport.ImportI8(0) != 0 { return 1; }
+    if ManualImport.ImportI16(0) != 0 { return 2; }
+    if ManualImport.ImportI32(0) != 0 { return 3; }
+    if ManualImport.ImportI64(0) != 0 { return 4; }
+    if ManualImport.ImportU8(0) != 0 { return 5; }
+    if ManualImport.ImportU16(0) != 0 { return 6; }
+    if ManualImport.ImportU32(0) != 0 { return 7; }
+    if ManualImport.ImportU64(0) != 0 { return 8; }
+    if ManualImport.ImportF32(0.0) != 0.0 { return 9; }
+    if ManualImport.ImportF64(0.0) != 0.0 { return 10; }
+    if ManualImport.ImportBool(1) != 0 { return 11; }
+    if ManualImport.ImportBool(255) == 0 { return 12; }
+    if ManualImport.ImportChar(128512) != 0 { return 13; }
+    if ManualImport.ImportChar(55296) == 0 { return 14; }
+    if ManualImport.ImportNativeWidth(0, 64) != 0 { return 15; }
+    ManualImport.ImportUnit();
+    return 0;
+}
+
+/// The embedding test harness must supply caller-owned storage and a live checked
+/// token. It retains roots while this call runs and releases its owner afterward.
+pub i32 ValidateBorrowed(pointer utf8Data, word utf8Length, pointer byteData, word byteLength, u64 token) {
+    if ManualImport.ImportUtf8(utf8Data, utf8Length) != 0 { return 16; }
+    if ManualImport.ImportBytes(byteData, byteLength) != 0 { return 17; }
+    if ManualImport.ImportHandle(token, 7, 11) != 0 { return 18; }
+    return 0;
+}

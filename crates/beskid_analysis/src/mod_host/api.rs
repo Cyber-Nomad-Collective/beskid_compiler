@@ -1,7 +1,5 @@
 use anyhow::Result;
 
-use std::path::PathBuf;
-
 use crate::macros::run_macro_expand_with_diagnostics;
 use crate::syntax::{Program, Spanned};
 
@@ -10,16 +8,14 @@ use super::collect::{capture_target_fingerprint, collect_contracts, targets_chan
 use super::diagnostics::{ModHostDiagnostics, ModHostIssue};
 use super::discovery::discover_mod_dependencies;
 use super::generate::{is_generate_registration, resolved_max_generator_rounds, run_generators};
-use super::generate_output::{
-    CodeGenerateOutput, load_generate_output_layout, write_code_generate_output, write_typed_generate_output,
-};
+use super::generate_output::{load_generate_output_layout, write_typed_generate_output};
+use super::invoker::ContractInvoker;
 use super::invoker::GeneratorOutcome;
-use super::invoker::{ContractInvoker, StubContractInvoker};
+use super::host::ModHost;
 use super::load::load_artifacts;
 use super::merge::merge_generated_syntax;
-use super::native::NativeContractInvoker;
-use super::reparse::reparse_if_needed;
 use super::rewrite::run_rewriters;
+use super::semantic_scope::invoke_in_scope;
 use super::types::{
     LoadedModArtifact, ModHostAnalyzeResult, ModHostGenerateResult, ModHostInput, ModHostSession, ProgramItem,
 };
@@ -27,44 +23,23 @@ use super::validate::validate_registrations;
 use crate::projects::CompilePlan;
 use crate::services::{SessionFingerprint, cached_semantic_snapshot};
 
-/// Build a [`NativeContractInvoker`] when mod artifact object files are present on disk.
-pub fn native_invoker_for_plan(
-    plan: &CompilePlan,
-    pipeline: Option<&dyn beskid_pipeline::PipelineObserver>,
-) -> Result<Option<NativeContractInvoker>> {
-    let discovered = discover_mod_dependencies(Some(plan))?;
-    if discovered.is_empty() {
-        return Ok(None);
-    }
-    let loaded = load_artifacts(Some(plan.project_root.as_path()), discovered, pipeline)?;
-    let object_paths: Vec<PathBuf> = loaded
-        .iter()
-        .filter_map(|artifact| artifact.descriptor.as_ref().map(|descriptor| descriptor.object_path()))
-        .collect();
-    if object_paths.is_empty() { Ok(None) } else { Ok(Some(NativeContractInvoker::new(object_paths))) }
-}
-
 /// Run `mod.collect` only and return the observed target fingerprint.
 pub fn collect_mod_target_fingerprint(input: &ModHostInput<'_>) -> Result<String> {
     let discovered = discover_mod_dependencies(input.compile_plan)?;
     if discovered.is_empty() {
         return Ok(String::new());
     }
+    let (invoker, runtime) = input.mod_host.require(&discovered)?;
 
     let workspace_root = input.compile_plan.map(|plan| plan.project_root.as_path());
-    let loaded = load_artifacts(workspace_root, discovered, input.pipeline)?;
+    let loaded = load_artifacts(workspace_root, discovered, runtime, input.pipeline)?;
     enforce_capabilities(&loaded)?;
     if let Err(diagnostics) = validate_registrations(&loaded) {
         return Err(anyhow::Error::new(diagnostics));
     }
 
-    let default_invoker = StubContractInvoker::new();
-    let invoker: &dyn ContractInvoker = match input.invoker {
-        Some(invoker) => invoker,
-        None => &default_invoker,
-    };
-
-    let collected = collect_contracts(&loaded, input, invoker, input.pipeline)?;
+    let collected =
+        invoke_in_scope(input, None, |scoped| collect_contracts(&loaded, scoped, invoker, scoped.pipeline))?.outcome;
     Ok(capture_target_fingerprint(&collected.outcomes))
 }
 
@@ -87,8 +62,8 @@ fn run_through_generate_with_output_policy(
     materialize_outputs: bool,
 ) -> Result<ModHostGenerateResult> {
     let macro_outcome = run_macro_expand_with_diagnostics(program, input.pipeline, input.source_name, input.source)?;
-    let mut macro_diagnostics = macro_outcome.diagnostics;
-    let mut program = macro_outcome.program;
+    let macro_diagnostics = macro_outcome.diagnostics;
+    let program = macro_outcome.program;
     let discovered = discover_mod_dependencies(input.compile_plan)?;
     if discovered.is_empty() {
         return Ok(ModHostGenerateResult {
@@ -99,58 +74,94 @@ fn run_through_generate_with_output_policy(
             generator_outcomes: Vec::new(),
             target_fingerprint: String::new(),
             generators_skipped: false,
+            generated_lineage: Vec::new(),
         });
     }
 
+    let (invoker, runtime) = input.mod_host.require(&discovered)?;
     let workspace_root = input.compile_plan.map(|plan| plan.project_root.as_path());
-    let loaded = load_artifacts(workspace_root, discovered, input.pipeline)?;
+    let loaded = load_artifacts(workspace_root, discovered, runtime, input.pipeline)?;
+    schedule_generate(program, macro_diagnostics, input, invoker, loaded, materialize_outputs)
+}
+
+/// Everything after `mod.load`: static capability and registration validation (which must abort
+/// before any scheduling), then the collect/generate rounds. Registrations come only from
+/// qualified native descriptors, so validation cannot run before loading; it runs before collect.
+fn schedule_generate(
+    mut program: Spanned<Program>,
+    mut macro_diagnostics: Vec<crate::analysis::SemanticDiagnostic>,
+    input: &ModHostInput<'_>,
+    invoker: &dyn ContractInvoker,
+    loaded: Vec<LoadedModArtifact>,
+    materialize_outputs: bool,
+) -> Result<ModHostGenerateResult> {
     enforce_capabilities(&loaded)?;
     if let Err(diagnostics) = validate_registrations(&loaded) {
         return Err(anyhow::Error::new(diagnostics));
     }
-
-    let default_invoker = StubContractInvoker::new();
-    let invoker: &dyn ContractInvoker = match input.invoker {
-        Some(invoker) => invoker,
-        None => &default_invoker,
-    };
 
     let max_rounds = resolved_max_generator_rounds(&loaded);
     let mut collector_outcomes = Vec::new();
     let mut generator_outcomes = Vec::new();
     let mut target_fingerprint = String::new();
     let mut generators_skipped = false;
+    let mut generated_lineage = Vec::new();
     let mut generated;
     let mut round = 0u32;
+    // Generators are incremental: a replay round runs only when the previous round's merged
+    // syntax changed the collected target set. Identical targets mean the merged program already
+    // holds every contribution for them, so the replay loop has reached its fixed point.
+    let mut converged = false;
+    let mut previous_round_fingerprint: Option<String> = None;
     while round < max_rounds {
         round += 1;
-        let collected = collect_contracts(&loaded, input, invoker, input.pipeline)?;
+        let collection = invoke_in_scope(input, Some(&program), |scoped| {
+            collect_contracts(&loaded, scoped, invoker, scoped.pipeline)
+        })?;
+        if let Some(assembly) = collection.assembly {
+            program = assembly.entry_unit().program.clone();
+        }
+        let collected = collection.outcome;
         target_fingerprint = capture_target_fingerprint(&collected.outcomes);
         collector_outcomes = collected.outcomes.clone();
 
         if !targets_changed(input.cached_target_fingerprint, &target_fingerprint) {
             generators_skipped = true;
+            converged = true;
             break;
         }
+        if previous_round_fingerprint.as_deref() == Some(target_fingerprint.as_str()) {
+            converged = true;
+            break;
+        }
+        previous_round_fingerprint = Some(target_fingerprint.clone());
 
-        generated = run_generators(&loaded, &collected, input, invoker, input.pipeline)?;
+        let invocation = invoke_in_scope(input, Some(&program), |scoped| {
+            run_generators(&loaded, &collected, scoped, invoker, scoped.pipeline)
+        })?;
+        let invocation_generation = invocation.issued_generation;
+        if let Some(assembly) = invocation.assembly {
+            program = assembly.entry_unit().program.clone();
+        }
+        generated = invocation.outcome;
         generator_outcomes = generated.outcomes.clone();
         if materialize_outputs {
             materialize_declared_outputs(input.compile_plan, &loaded, &generator_outcomes)?;
         }
         if !generated.has_typed_merge() {
+            converged = true;
             break;
         }
-        program = merge_generated_syntax(program, &generated)?;
-        if generated.requires_reparse() {
-            program = reparse_if_needed(program, &generated, input.source_name, input.source, input.pipeline)?;
-        }
+        let merged = merge_generated_syntax(program, &generated, invocation_generation)?;
+        program = merged.program;
+        generated_lineage.extend(merged.lineage);
         let needs_another_round = collected.outcomes.iter().any(|outcome| !outcome.narrowed_targets.is_empty());
         if !needs_another_round {
+            converged = true;
             break;
         }
     }
-    if round >= max_rounds && collector_outcomes.iter().any(|outcome| !outcome.narrowed_targets.is_empty()) {
+    if !converged {
         return Err(anyhow::Error::new(ModHostDiagnostics::new(vec![ModHostIssue::MaxGeneratorRoundsExceeded {
             limit: max_rounds,
         }])));
@@ -167,6 +178,7 @@ fn run_through_generate_with_output_policy(
         generator_outcomes,
         target_fingerprint,
         generators_skipped,
+        generated_lineage,
     })
 }
 
@@ -187,45 +199,18 @@ fn materialize_declared_outputs(
         };
 
         let typed_items = typed_items_for_artifact(artifact, outcomes);
-        let code_outputs = code_outputs_for_artifact(artifact, outcomes);
-
+        if typed_items.is_empty() {
+            continue;
+        }
         for output in outputs {
             let layout_path = artifact.discovered.project_root.join(&output.layout);
             let layout = load_generate_output_layout(&layout_path).map_err(|err| anyhow::anyhow!("{err}"))?;
-            if layout.schema_version >= 2 {
-                if code_outputs.is_empty() {
-                    continue;
-                }
-                write_code_generate_output(compile_plan, &artifact.discovered.project_root, &layout, &code_outputs)
-                    .map_err(|err| anyhow::anyhow!("{err}"))?;
-                continue;
-            }
             let output_root = artifact.discovered.project_root.join(output.resolved_root());
-            if typed_items.is_empty() {
-                continue;
-            }
-            write_typed_generate_output(&output_root, &typed_items, Some(&layout))
+            write_typed_generate_output(compile_plan, &artifact.discovered.project_root, &output_root, &typed_items, &layout)
                 .map_err(|err| anyhow::anyhow!("{err}"))?;
         }
     }
     Ok(())
-}
-
-fn code_outputs_for_artifact(artifact: &LoadedModArtifact, outcomes: &[GeneratorOutcome]) -> Vec<CodeGenerateOutput> {
-    use std::collections::HashSet;
-
-    let generator_type_ids: HashSet<&str> = artifact
-        .registrations
-        .iter()
-        .filter(|registration| is_generate_registration(registration))
-        .map(|registration| registration.type_id.as_str())
-        .collect();
-
-    outcomes
-        .iter()
-        .filter(|outcome| generator_type_ids.contains(outcome.type_id.as_str()))
-        .flat_map(|outcome| outcome.code_outputs.iter().cloned())
-        .collect()
 }
 
 fn typed_items_for_artifact(artifact: &LoadedModArtifact, outcomes: &[GeneratorOutcome]) -> Vec<Spanned<ProgramItem>> {
@@ -245,38 +230,31 @@ fn typed_items_for_artifact(artifact: &LoadedModArtifact, outcomes: &[GeneratorO
         .collect()
 }
 
-pub fn run_analyze_rewrite(
-    program: Spanned<Program>,
-    session: &ModHostSession,
-    pipeline: Option<&dyn beskid_pipeline::PipelineObserver>,
-) -> Result<Spanned<Program>> {
-    Ok(run_analyze_rewrite_with_invoker(program, session, None, None, None, pipeline)?.program)
-}
-
 /// Run `mod.analyze` then `mod.rewrite` after semantic snapshot and composition (prepare spine).
 pub fn run_analyze_rewrite_after_composition(
     program: Spanned<Program>,
     session: &ModHostSession,
     fingerprint: &SessionFingerprint,
-    invoker: Option<&dyn ContractInvoker>,
+    mod_host: &ModHost,
     pipeline: Option<&dyn beskid_pipeline::PipelineObserver>,
 ) -> Result<ModHostAnalyzeResult> {
-    run_analyze_rewrite_with_invoker(
+    run_analyze_rewrite_with_host(
         program,
         session,
-        invoker,
+        mod_host,
         None,
         cached_semantic_snapshot(fingerprint).as_ref(),
         pipeline,
     )
 }
 
-/// Like [`run_analyze_rewrite`] but exposes per-contract outcomes for engine and tests
-/// that need to assert which Analyzer / Rewriter contracts ran.
-pub fn run_analyze_rewrite_with_invoker(
+/// Run `mod.analyze` then `mod.rewrite` for the Mods loaded into `session`, dispatching through
+/// `mod_host`, and expose per-contract outcomes for the engine and tests that assert which
+/// Analyzer / Rewriter contracts ran.
+pub fn run_analyze_rewrite_with_host(
     program: Spanned<Program>,
     session: &ModHostSession,
-    invoker: Option<&dyn ContractInvoker>,
+    mod_host: &ModHost,
     host_input: Option<&ModHostInput<'_>>,
     snapshot: Option<&crate::services::SemanticSnapshot>,
     pipeline: Option<&dyn beskid_pipeline::PipelineObserver>,
@@ -289,25 +267,52 @@ pub fn run_analyze_rewrite_with_invoker(
             edited_source: None,
         });
     }
+    let (invoker, _) =
+        mod_host.require(session.loaded_artifacts().iter().map(|artifact| &artifact.discovered))?;
+    analyze_rewrite_with_invoker(program, session, invoker, host_input, snapshot, pipeline)
+}
 
-    let default_invoker = StubContractInvoker::new();
-    let invoker: &dyn ContractInvoker = match invoker {
-        Some(invoker) => invoker,
-        None => &default_invoker,
+/// `mod.analyze` and `mod.rewrite` for a non-empty `session` through an already selected invoker.
+pub(super) fn analyze_rewrite_with_invoker(
+    program: Spanned<Program>,
+    session: &ModHostSession,
+    invoker: &dyn ContractInvoker,
+    host_input: Option<&ModHostInput<'_>>,
+    snapshot: Option<&crate::services::SemanticSnapshot>,
+    pipeline: Option<&dyn beskid_pipeline::PipelineObserver>,
+) -> Result<ModHostAnalyzeResult> {
+    let mut program = program;
+    let analyzed = if let Some(input) = host_input {
+        let invocation = invoke_in_scope(input, Some(&program), |scoped| {
+            super::analyze::run_analyzers(session, Some(scoped), invoker, snapshot, pipeline)
+        })?;
+        if let Some(assembly) = invocation.assembly {
+            program = assembly.entry_unit().program.clone();
+        }
+        invocation.outcome
+    } else {
+        super::analyze::run_analyzers(session, None, invoker, snapshot, pipeline)?
     };
-
-    let analyzed = super::analyze::run_analyzers(session, host_input, invoker, snapshot, pipeline)?;
     let analyzer_outcomes = analyzed.outcomes.clone();
     // Source text for rewriter edit application comes from the host input when
     // available. Callers without a `ModHostInput` (e.g. the bare
     // `run_analyze_rewrite` entry point) pass `None`, which skips edit application
     // and preserves the previous record-only behavior.
     let source = host_input.map(|input| input.source);
-    let rewrite = run_rewriters(program, source, session, &analyzed, host_input, invoker, pipeline)?;
-    let program = super::glue::run_glue(rewrite.program, session, pipeline)?;
-
+    let rewrite = if let Some(input) = host_input {
+        let invocation = invoke_in_scope(input, Some(&program), |scoped| {
+            run_rewriters(program.clone(), source, session, &analyzed, Some(scoped), invoker, pipeline)
+        })?;
+        let mut rewrite = invocation.outcome;
+        if let Some(assembly) = invocation.assembly {
+            rewrite.program = assembly.entry_unit().program.clone();
+        }
+        rewrite
+    } else {
+        run_rewriters(program, source, session, &analyzed, None, invoker, pipeline)?
+    };
     Ok(ModHostAnalyzeResult {
-        program,
+        program: rewrite.program,
         analyzer_outcomes,
         rewriter_outcomes: rewrite.outcomes,
         edited_source: rewrite.edited_source,
@@ -332,9 +337,10 @@ mod tests {
     use crate::services::parse_program_with_source_name;
 
     use super::super::invoker::{InvocationKind, StubContractInvoker};
+    use super::super::types::{ContractRegistration, ModArtifactDescriptor};
     use super::*;
 
-    const HOST_MANIFEST: &str = r#"Host {
+    pub(super) const HOST_MANIFEST: &str = r#"Host {
   name = "Host"
   version = "0.1.0"
 }
@@ -350,7 +356,7 @@ dependency "ModA" {
 }
 "#;
 
-    const MODA_MANIFEST: &str = r#"ModA {
+    pub(super) const MODA_MANIFEST: &str = r#"ModA {
   name = "ModA"
   version = "0.1.0"
   type = Mod
@@ -361,8 +367,8 @@ dependency "ModA" {
 "#;
 
     #[derive(Default)]
-    struct CapturePipeline {
-        events: Mutex<Vec<&'static str>>,
+    pub(super) struct CapturePipeline {
+        pub(super) events: Mutex<Vec<&'static str>>,
     }
 
     impl PipelineObserver for CapturePipeline {
@@ -382,12 +388,15 @@ dependency "ModA" {
         let result = run_through_generate(
             program,
             &ModHostInput {
+                semantic_scope: None,
+                semantic_authority: None,
                 compile_plan: None,
                 source_name: "Main.bd",
                 source,
                 pipeline: Some(&pipeline),
-                invoker: None,
+                mod_host: &ModHost::NoMods,
                 cached_target_fingerprint: None,
+                syntax_generation_id: None,
             },
         )
         .expect("mod host");
@@ -402,52 +411,60 @@ dependency "ModA" {
         );
     }
 
-    #[test]
-    fn invokes_each_contract_kind_through_pipeline() {
-        let root = unique_temp_dir("mod_host_pipeline");
+    /// Orchestration tests cannot run native Mod code: native execution requires a qualified
+    /// installed prefix and a built Mod executable, which a unit-test binary under
+    /// `target/*/deps` never has (that stays fail-closed, see `load.rs`). They therefore enter
+    /// the scheduler after `mod.load` with already-loaded registrations and a stub invoker.
+    pub(super) fn loaded_mod(
+        host: &std::path::Path,
+        mod_dir: &std::path::Path,
+        registrations: &[(&str, &str, &str)],
+    ) -> Vec<LoadedModArtifact> {
+        let plan = compile_plan(host, mod_dir);
+        let discovered = discover_mod_dependencies(Some(&plan)).expect("discover");
+        let registrations: Vec<ContractRegistration> = registrations
+            .iter()
+            .map(|(contract, type_id, symbol)| ContractRegistration {
+                contract_id: (*contract).to_owned(),
+                type_id: (*type_id).to_owned(),
+                entry_symbol: (*symbol).to_owned(),
+            })
+            .collect();
+        discovered
+            .into_iter()
+            .map(|discovered| {
+                let mut descriptor = ModArtifactDescriptor::context_fixture();
+                descriptor.package_id = discovered.project_name.clone();
+                descriptor.registrations = registrations.clone();
+                LoadedModArtifact { discovered, descriptor: Some(descriptor), registrations: registrations.clone() }
+            })
+            .collect()
+    }
+
+    pub(super) fn write_mod_projects(root: &std::path::Path, mod_manifest: &str) -> (std::path::PathBuf, std::path::PathBuf) {
         let host = root.join("Host");
         let mod_dir = root.join("ModA");
         fs::create_dir_all(host.join("Src")).expect("host src");
         fs::create_dir_all(mod_dir.join("Src")).expect("mod src");
         fs::write(host.join("Host.bproj"), HOST_MANIFEST).expect("host manifest");
-        fs::write(mod_dir.join("ModA.bproj"), MODA_MANIFEST).expect("mod manifest");
-        let descriptor_dir = host.join(".beskid/obj/mods/ModA/cache-key/test-triple");
-        fs::create_dir_all(&descriptor_dir).expect("descriptor dir");
-        fs::write(
-            descriptor_dir.join("mod.descriptor.json"),
-            r#"{
-  "schemaVersion": 1,
-  "packageId": "ModA",
-  "modSourceHash": "source",
-  "lockHash": "lock",
-  "targetTriple": "test-triple",
-  "compilerVersion": "test",
-  "objectFile": "mod.o",
-  "registrations": [
-    {
-      "contractId": "Beskid.Compiler.Collect.Collector",
-      "typeId": "ModA.Collect",
-      "entrySymbol": "moda_collect"
-    },
-    {
-      "contractId": "Beskid.Compiler.Collect.Generator",
-      "typeId": "ModA.Emit",
-      "entrySymbol": "moda_emit"
-    },
-    {
-      "contractId": "Beskid.Compiler.Collect.Analyzer",
-      "typeId": "ModA.Check",
-      "entrySymbol": "moda_check"
-    },
-    {
-      "contractId": "Beskid.Compiler.Collect.Rewriter",
-      "typeId": "ModA.Rewrite",
-      "entrySymbol": "moda_rewrite"
+        fs::write(mod_dir.join("ModA.bproj"), mod_manifest).expect("mod manifest");
+        (host, mod_dir)
     }
-  ]
-}"#,
-        )
-        .expect("descriptor");
+
+    #[test]
+    fn invokes_each_contract_kind_through_pipeline() {
+        let root = unique_temp_dir("mod_host_pipeline");
+        let (host, mod_dir) = write_mod_projects(&root, MODA_MANIFEST);
+        let loaded = loaded_mod(
+            &host,
+            &mod_dir,
+            &[
+                ("Beskid.Compiler.Collect.Collector", "ModA.Collect", "moda_collect"),
+                ("Beskid.Compiler.Collect.Generator", "ModA.Emit", "moda_emit"),
+                ("Beskid.Compiler.Collect.Analyzer", "ModA.Check", "moda_check"),
+                ("Beskid.Compiler.Collect.Rewriter", "ModA.Rewrite", "moda_rewrite"),
+            ],
+        );
 
         let source = "unit Main() { return; }\n";
         let program = parse_program_with_source_name("Main.bd", source).expect("parse");
@@ -455,16 +472,23 @@ dependency "ModA" {
         let pipeline = Arc::new(CapturePipeline::default());
         let invoker = StubContractInvoker::new();
 
-        let generated = run_through_generate(
+        let generated = schedule_generate(
             program,
+            Vec::new(),
             &ModHostInput {
+                semantic_scope: None,
+                semantic_authority: None,
                 compile_plan: Some(&plan),
                 source_name: "Main.bd",
                 source,
                 pipeline: Some(pipeline.as_ref()),
-                invoker: Some(&invoker),
+                mod_host: &ModHost::NoMods,
                 cached_target_fingerprint: None,
+                syntax_generation_id: None,
             },
+            &invoker,
+            loaded,
+            true,
         )
         .expect("generate");
         assert_eq!(generated.collector_outcomes.len(), 1);
@@ -473,10 +497,10 @@ dependency "ModA" {
         let composition_snapshot = generated.session.composition_snapshot_or_default();
         let semantic_snapshot = crate::services::SemanticSnapshot::from_diagnostics(&[], 1, "semantic")
             .with_composition(&composition_snapshot);
-        let analyze = run_analyze_rewrite_with_invoker(
+        let analyze = analyze_rewrite_with_invoker(
             generated.program,
             &generated.session,
-            Some(&invoker),
+            &invoker,
             None,
             Some(&semantic_snapshot),
             Some(pipeline.as_ref()),
@@ -496,14 +520,11 @@ dependency "ModA" {
         assert_eq!(
             events,
             vec![
-                beskid_pipeline::phases::MACRO_EXPAND,
-                beskid_pipeline::phases::MOD_LOAD,
                 beskid_pipeline::phases::MOD_COLLECT,
                 beskid_pipeline::phases::MOD_GENERATE,
                 beskid_pipeline::phases::MACRO_EXPAND,
                 beskid_pipeline::phases::MOD_ANALYZE,
                 beskid_pipeline::phases::MOD_REWRITE,
-                beskid_pipeline::phases::MOD_GLUE,
             ]
         );
 
@@ -511,15 +532,89 @@ dependency "ModA" {
     }
 
     #[test]
+    fn unqualified_test_binary_fails_closed_before_any_mod_scheduling() {
+        let root = unique_temp_dir("mod_host_unqualified");
+        let (host, mod_dir) = write_mod_projects(&root, MODA_MANIFEST);
+        let descriptor_dir = host.join(".beskid/obj/mods/ModA/cache-key/test-triple");
+        fs::create_dir_all(&descriptor_dir).expect("descriptor dir");
+        fs::write(descriptor_dir.join("mod.descriptor.json"), "{}").expect("descriptor");
+
+        let source = "unit Main() { return; }\n";
+        let program = parse_program_with_source_name("Main.bd", source).expect("parse");
+        let plan = compile_plan(&host, &mod_dir);
+        let pipeline = CapturePipeline::default();
+        let invoker = Arc::new(StubContractInvoker::new());
+        let mod_host = ModHost::native(
+            invoker.clone(),
+            super::super::host::RuntimeKitSelection::fixture(
+                &std::env::temp_dir().join("beskid-test-runtime-prefix"),
+                beskid_abi::runtime_kit::BuildProfile::Debug,
+            ),
+        );
+        let error = match run_through_generate(
+            program,
+            &ModHostInput {
+                semantic_scope: None,
+                semantic_authority: None,
+                compile_plan: Some(&plan),
+                source_name: "Main.bd",
+                source,
+                pipeline: Some(&pipeline),
+                mod_host: &mod_host,
+                cached_target_fingerprint: None,
+                syntax_generation_id: None,
+            },
+        ) {
+            Ok(_) => panic!("an unqualified descriptor must not load"),
+            Err(error) => error,
+        };
+        assert!(error.to_string().contains("no current qualified native Mod artifact"), "{error}");
+        assert!(invoker.invocations().is_empty());
+        let events = pipeline.events.lock().expect("events").clone();
+        assert!(!events.contains(&beskid_pipeline::phases::MOD_COLLECT));
+
+        let _ = fs::remove_dir_all(root); // Discard result: temp dir cleanup
+    }
+
+    #[test]
+    fn no_mod_host_fails_before_mod_load_naming_the_mod() {
+        let root = unique_temp_dir("mod_host_no_mods");
+        let (host, mod_dir) = write_mod_projects(&root, MODA_MANIFEST);
+        let source = "unit Main() { return; }\n";
+        let program = parse_program_with_source_name("Main.bd", source).expect("parse");
+        let plan = compile_plan(&host, &mod_dir);
+        let pipeline = CapturePipeline::default();
+        let error = match run_through_generate(
+            program,
+            &ModHostInput {
+                semantic_scope: None,
+                semantic_authority: None,
+                compile_plan: Some(&plan),
+                source_name: "Main.bd",
+                source,
+                pipeline: Some(&pipeline),
+                mod_host: &ModHost::NoMods,
+                cached_target_fingerprint: None,
+                syntax_generation_id: None,
+            },
+        ) {
+            Ok(_) => panic!("a Mod dependency cannot run without a Mod host"),
+            Err(error) => error,
+        };
+        let message = error.to_string();
+        assert!(message.contains("`ModA`") && message.contains("ModA.bproj"), "{message}");
+        assert!(message.contains("ModHost::native"), "{message}");
+        let events = pipeline.events.lock().expect("events").clone();
+        assert!(!events.contains(&beskid_pipeline::phases::MOD_LOAD), "no artifact is loaded without a host");
+
+        let _ = fs::remove_dir_all(root); // Discard result: temp dir cleanup
+    }
+
+    #[test]
     fn duplicate_registration_aborts_before_collect_with_e1829() {
         let root = unique_temp_dir("mod_host_dup");
-        let host = root.join("Host");
-        let mod_dir = root.join("ModA");
-        fs::create_dir_all(host.join("Src")).expect("host src");
-        fs::create_dir_all(mod_dir.join("Src")).expect("mod src");
-        fs::write(host.join("Host.bproj"), HOST_MANIFEST).expect("host manifest");
-        fs::write(
-            mod_dir.join("ModA.bproj"),
+        let (host, mod_dir) = write_mod_projects(
+            &root,
             r#"ModA {
   name = "ModA"
   version = "0.1.0"
@@ -529,43 +624,39 @@ dependency "ModA" {
   }
 }
 "#,
-        )
-        .expect("mod manifest");
-        let descriptor_dir = host.join(".beskid/obj/mods/ModA/cache-key/test-triple");
-        fs::create_dir_all(&descriptor_dir).expect("descriptor dir");
-        fs::write(
-            descriptor_dir.join("mod.descriptor.json"),
-            r#"{
-  "schemaVersion": 1,
-  "packageId": "ModA",
-  "modSourceHash": "source",
-  "lockHash": "lock",
-  "targetTriple": "test-triple",
-  "compilerVersion": "test",
-  "objectFile": "mod.o",
-  "registrations": [
-    { "contractId": "Beskid.Compiler.Collect.Generator", "typeId": "ModA.Emit", "entrySymbol": "sym1" },
-    { "contractId": "Beskid.Compiler.Collect.Generator", "typeId": "ModA.Emit", "entrySymbol": "sym2" }
-  ]
-}"#,
-        )
-        .expect("descriptor");
+        );
+        let loaded = loaded_mod(
+            &host,
+            &mod_dir,
+            &[
+                ("Beskid.Compiler.Collect.Generator", "ModA.Emit", "sym1"),
+                ("Beskid.Compiler.Collect.Generator", "ModA.Emit", "sym2"),
+            ],
+        );
 
         let source = "unit Main() { return; }\n";
         let program = parse_program_with_source_name("Main.bd", source).expect("parse");
         let plan = compile_plan(&host, &mod_dir);
         let pipeline = CapturePipeline::default();
+        let invoker = StubContractInvoker::new();
 
-        let result = run_through_generate(
+        let result = schedule_generate(
             program,
+            Vec::new(),
             &ModHostInput {
+                semantic_scope: None,
+                semantic_authority: None,
                 compile_plan: Some(&plan),
                 source_name: "Main.bd",
                 source,
                 pipeline: Some(&pipeline),
-                invoker: None,
+                mod_host: &ModHost::NoMods,
                 cached_target_fingerprint: None,
+                syntax_generation_id: None,
             },
+            &invoker,
+            loaded,
+            true,
         );
         let err = match result {
             Ok(_) => panic!("duplicate (contractId, typeId) registration must abort"),
@@ -577,11 +668,12 @@ dependency "ModA" {
 
         let events = pipeline.events.lock().expect("events").clone();
         assert!(!events.contains(&beskid_pipeline::phases::MOD_COLLECT), "scheduling must abort before mod.collect");
+        assert!(invoker.invocations().is_empty());
 
         let _ = fs::remove_dir_all(root); // Discard result: temp dir cleanup
     }
 
-    fn compile_plan(host: &std::path::Path, mod_dir: &std::path::Path) -> CompilePlan {
+    pub(super) fn compile_plan(host: &std::path::Path, mod_dir: &std::path::Path) -> CompilePlan {
         CompilePlan {
             project_root: host.to_path_buf(),
             manifest_path: host.join("Host.bproj"),
@@ -596,12 +688,15 @@ dependency "ModA" {
                 source_root: mod_dir.join("Src"),
             }],
             unresolved_dependencies: Vec::new(),
-            has_std_dependency: false,
+            has_core_dependency: false,
         }
     }
 
-    fn unique_temp_dir(prefix: &str) -> std::path::PathBuf {
+    pub(super) fn unique_temp_dir(prefix: &str) -> std::path::PathBuf {
         let id = SystemTime::now().duration_since(UNIX_EPOCH).expect("time").as_nanos();
         std::env::temp_dir().join(format!("{prefix}_{id}"))
     }
 }
+
+#[cfg(test)]
+mod scheduling_tests;

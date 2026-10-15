@@ -20,11 +20,11 @@ fn typed_let_mutex_name_is_not_split_on_mut_keyword() {
     assert_eq!(let_stmt.node.name.node.name, "mutex");
 
     let root = compiler_workspace_root();
-    let entry = root.join("corelib/beskid_corelib/tests/corelib_tests/src/concurrency/MutexTryLockTests.bd");
+    let entry = root.join("corelib/beskid_corelib/tests/corelib_tests/src/concurrency/ConcurrencySuite.bd");
     if entry.is_file() {
         let source = fs::read_to_string(&entry).expect("read file");
         let program =
-            parse_program_with_source_name(&entry.display().to_string(), &source).expect("parse MutexTryLockTests.bd");
+            parse_program_with_source_name(&entry.display().to_string(), &source).expect("parse ConcurrencySuite.bd");
         let test = program
             .node
             .items
@@ -33,9 +33,9 @@ fn typed_let_mutex_name_is_not_split_on_mut_keyword() {
                 let Node::TestDefinition(test) = &item.node else {
                     return None;
                 };
-                Some(test)
+                (test.node.name.node.name == "mutex_create_returns_handle").then_some(test)
             })
-            .expect("expected test item");
+            .expect("expected the mutex_create_returns_handle test");
         let Statement::Let(let_stmt) = &test.node.statements[0].node else {
             panic!("expected let");
         };

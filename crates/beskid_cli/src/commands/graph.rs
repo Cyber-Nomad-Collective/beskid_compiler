@@ -1,7 +1,7 @@
-//! `beskid graph` — render workspace/project graphs as Mermaid (TUI or raw).
+//! `beskid dev project graph` — render workspace/project graphs as Mermaid.
 
 use std::fs;
-use std::io::{self, IsTerminal, Write, stdout};
+use std::io::{self, Write};
 use std::path::PathBuf;
 
 use anyhow::Result;
@@ -51,7 +51,10 @@ pub fn execute(args: GraphArgs) -> Result<()> {
 
 fn run_graph(args: GraphArgs) -> Result<()> {
     let kind = GraphKind::parse(&args.kind).ok_or_else(|| {
-        anyhow::anyhow!("unknown graph kind `{}` (use project|workspace|module|imports|host)", args.kind)
+        anyhow::anyhow!(
+            "unknown graph kind `{}` (use project|workspace|module|imports|host)",
+            args.kind
+        )
     })?;
 
     let resolved = resolve_input_with_pipeline(
@@ -60,8 +63,7 @@ fn run_graph(args: GraphArgs) -> Result<()> {
             args.project.project.as_ref(),
             args.project.target.as_deref(),
             args.project.workspace_member.as_deref(),
-            args.lockfile.frozen,
-            args.lockfile.locked,
+            args.lockfile.WorkspaceOptions(),
             args.plain,
         ),
         None,
@@ -74,7 +76,10 @@ fn run_graph(args: GraphArgs) -> Result<()> {
         .or_else(|| args.project.project.clone())
         .ok_or_else(|| anyhow::anyhow!("could not resolve project manifest"))?;
 
-    let workspace_manifest = resolved.workspace_summary.as_ref().map(|ws| ws.workspace_manifest_path.clone());
+    let workspace_manifest = resolved
+        .workspace_summary
+        .as_ref()
+        .map(|ws| ws.workspace_manifest_path.clone());
 
     let request = GraphFetchRequest {
         kind,
@@ -85,13 +90,18 @@ fn run_graph(args: GraphArgs) -> Result<()> {
         entry_source: Some(resolved.source.clone()),
     };
 
-    let doc = with_db(|db| get_graph_document(db, &request)).or_else(|_| get_graph_document_simple(&request))?;
+    let doc = with_db(|db| get_graph_document(db, &request))
+        .or_else(|_| get_graph_document_simple(&request))?;
 
     for warning in &doc.spec.warnings {
-        eprintln!("warning [{}]: {}", warning_code(warning.code), warning.message);
+        eprintln!(
+            "warning [{}]: {}",
+            warning_code(warning.code),
+            warning.message
+        );
     }
 
-    let use_tui = (args.tui || stdout().is_terminal()) && !args.mermaid && args.out.is_none();
+    let use_tui = use_terminal_ui(args.tui, false, args.mermaid, args.out.is_some());
 
     if let Some(out_path) = &args.out {
         fs::write(out_path, &doc.mermaid)?;
@@ -125,4 +135,27 @@ fn tui_render_options() -> RenderOptions {
 
 fn warning_code(code: beskid_graph::GraphWarningCode) -> &'static str {
     code.as_str()
+}
+
+// Terminal context cannot opt the caller into a full-screen UI.
+fn use_terminal_ui(explicit: bool, _terminal: bool, mermaid: bool, output_file: bool) -> bool {
+    explicit && !mermaid && !output_file
+}
+
+#[cfg(test)]
+mod tests {
+    use super::use_terminal_ui;
+
+    #[test]
+    fn v06_graph_terminal_context_requires_explicit_tui() {
+        for terminal in [false, true] {
+            assert!(
+                !use_terminal_ui(false, terminal, false, false),
+                "default graph output must be Mermaid in either stdout context"
+            );
+            assert!(use_terminal_ui(true, terminal, false, false));
+            assert!(!use_terminal_ui(true, terminal, true, false));
+            assert!(!use_terminal_ui(true, terminal, false, true));
+        }
+    }
 }

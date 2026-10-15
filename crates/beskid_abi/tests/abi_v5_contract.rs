@@ -59,6 +59,7 @@ fn valid_manifest() -> AbiManifestV5 {
             target_bindings: Vec::new(),
         }],
         platform_imports: vec![PlatformImport {
+            kind: beskid_abi::abi_v5::PlatformImportKind::Function,
             symbol: "clock_gettime".into(),
             library: "libc".into(),
             param_names: vec!["clock".into(), "timespec".into()],

@@ -27,7 +27,7 @@ impl ProjectCase {
             NEXT_CASE.fetch_add(1, Ordering::Relaxed)
         ));
         let app = root.join("App");
-        let core = root.join("Core");
+        let core = root.join("Kernel");
         let other = root.join("Other");
         fs::create_dir_all(app.join("Src")).expect("app source directory");
         for project in [&core, &other] {
@@ -42,7 +42,7 @@ impl ProjectCase {
         }
         fs::write(app.join("Src/Main.bd"), "Fn Main() { }\n").expect("app source");
         let case = Self { lock: app.join("Project.lock"), root, app };
-        case.write_app_manifest("Core");
+        case.write_app_manifest("Kernel");
         case
     }
 
@@ -59,7 +59,7 @@ impl ProjectCase {
     fn write_legacy_lock(&self) -> Vec<u8> {
         // Deliberately stale v1 source paths: migration must resolve the current manifest.
         let content = format!(
-            "# Project.lock v1\nroot_manifest={}\nproject_name=App\ndependencies:\n- name=Core;manifest=/obsolete/Core/Core.bproj;project=/obsolete/Core;source_root=/obsolete/Core/Src;materialized_root=obj/beskid/deps/src/Core-old\n",
+            "# Project.lock v1\nroot_manifest={}\nproject_name=App\ndependencies:\n- name=Kernel;manifest=/obsolete/Kernel/Kernel.bproj;project=/obsolete/Kernel;source_root=/obsolete/Kernel/Src;materialized_root=obj/beskid/deps/src/Kernel-old\n",
             self.app.join("App.bproj").display()
         );
         fs::write(&self.lock, content.as_bytes()).expect("legacy lock");
@@ -68,7 +68,12 @@ impl ProjectCase {
 
     fn invoke(&self, command: &str, policy: Option<&str>) -> Output {
         let mut process = Command::new(env!("CARGO_BIN_EXE_beskid_cli"));
-        process.arg(command).arg("--project").arg(&self.app).arg("--plain");
+        match command {
+            // `beskid lock` moved under `dev project`; `update` has no progress flag and needs an explicit scope.
+            "lock" => process.args(["dev", "project", "lock"]).arg("--project").arg(&self.app).arg("--plain"),
+            "update" => process.args(["update", "--all"]).arg("--project").arg(&self.app),
+            other => process.arg(other).arg("--project").arg(&self.app).arg("--plain"),
+        };
         if let Some(flag) = policy {
             process.arg(flag);
         }
@@ -150,10 +155,27 @@ fn normal_build_run_and_test_reject_v1_with_migration_command() {
         let case = ProjectCase::new();
         let legacy = case.write_legacy_lock();
         let output = case.invoke(command, None);
-        assert_failed_with(&output, "beskid lock");
+        assert_failed_with(&output, "beskid dev project lock");
         assert_eq!(fs::read(&case.lock).expect("legacy lock retained"), legacy);
         case.assert_no_obj();
     }
+}
+
+#[test]
+fn removed_root_lock_command_names_its_dev_project_replacement() {
+    let case = ProjectCase::new();
+    let output = Command::new(env!("CARGO_BIN_EXE_beskid_cli"))
+        .args(["lock", "--project"])
+        .arg(&case.app)
+        .env("BESKID_CORELIB_ROOT", case.root.join("installed-corelib"))
+        .current_dir(&case.root)
+        .output()
+        .expect("run removed lock command");
+    assert_eq!(output.status.code(), Some(2), "usage status expected: {}", output_text(&output));
+    let text = output_text(&output);
+    assert!(text.contains("`beskid lock` was removed") && text.contains("beskid dev project lock"), "{text}");
+    assert!(!case.lock.exists(), "removed command wrote a lock");
+    case.assert_no_obj();
 }
 
 #[test]
@@ -163,7 +185,7 @@ fn locked_and_frozen_reject_v1_without_writing_or_creating_obj() {
             let case = ProjectCase::new();
             let legacy = case.write_legacy_lock();
             let output = case.invoke(command, Some(policy));
-            assert_failed_with(&output, "beskid lock");
+            assert_failed_with(&output, "beskid dev project lock");
             assert_eq!(fs::read(&case.lock).expect("legacy lock retained"), legacy);
             case.assert_no_obj();
         }
@@ -178,8 +200,8 @@ fn lock_and_update_explicitly_migrate_v1_from_current_manifest() {
         let output = case.invoke(command, None);
         assert!(output.status.success(), "{command} failed: {}", output_text(&output));
         let lock = assert_v2_lock(&case.lock);
-        assert!(lock.contains("name=Core"), "current dependency missing: {lock}");
-        assert!(lock.contains("project=../Core"), "current relative project missing: {lock}");
+        assert!(lock.contains("name=Kernel"), "current dependency missing: {lock}");
+        assert!(lock.contains("project=../Kernel"), "current relative project missing: {lock}");
         assert!(!lock.contains("/obsolete/"), "v1 path reused: {lock}");
     }
 }
@@ -208,7 +230,7 @@ fn unknown_lock_header_fails_for_update_without_preparation_writes() {
 
 fn malformed_v2_case(command: &str) {
     let case = ProjectCase::new();
-    let malformed = b"# Project.lock v2\nroot_manifest=App.bproj\nproject_name=App\ndependencies:\n- name=Core;source=path;project=../Core;manifest=Core.bproj;source_root=Src;materialized_root=obj/beskid/deps/src/Core-old;unexpected=1\n";
+    let malformed = b"# Project.lock v2\nroot_manifest=App.bproj\nproject_name=App\ndependencies:\n- name=Kernel;source=path;project=../Kernel;manifest=Kernel.bproj;source_root=Src;materialized_root=obj/beskid/deps/src/Kernel-old;unexpected=1\n";
     fs::write(&case.lock, malformed).expect("write malformed v2 lock");
     assert_invalid_lock_rejected_without_mutation(&case, command, malformed);
 }
@@ -312,12 +334,12 @@ fn copied_source_project_has_identical_lock_and_locked_commands_preserve_it() {
     let original = ProjectCase::new();
     let relocated = ProjectCase::new();
     fs::write(original.app.join("Src/Main.bd"), "unit Main() {}\n").expect("app source");
-    fs::write(original.root.join("Core/Src/Core.bd"), "unit Core() {}\n").expect("dependency source");
+    fs::write(original.root.join("Kernel/Src/Kernel.bd"), "unit Kernel() {}\n").expect("dependency source");
     fs::write(original.app.join("Src/Tests.bd"), "test Smoke {}\n").expect("test source");
     let mut manifest = fs::read_to_string(original.app.join("App.bproj")).expect("app manifest");
     manifest.push_str("\ntarget \"AppTests\" {\n  kind = \"Test\"\n  entry = \"Tests.bd\"\n}\n");
     fs::write(original.app.join("App.bproj"), manifest).expect("test target manifest");
-    for relative in ["App/App.bproj", "App/Src/Main.bd", "App/Src/Tests.bd", "Core/Core.bproj", "Core/Src/Core.bd"] {
+    for relative in ["App/App.bproj", "App/Src/Main.bd", "App/Src/Tests.bd", "Kernel/Kernel.bproj", "Kernel/Src/Kernel.bd"] {
         fs::copy(original.root.join(relative), relocated.root.join(relative)).expect("copy source-bearing fixture");
     }
 

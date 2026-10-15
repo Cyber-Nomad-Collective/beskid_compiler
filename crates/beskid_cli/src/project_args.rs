@@ -3,7 +3,7 @@
 use clap::Args;
 use std::path::PathBuf;
 
-/// Flags shared by subcommands that resolve `<name>.bproj` / workspace / target selection.
+// Shared project, workspace and target selection.
 #[derive(Args, Debug, Clone)]
 pub struct ProjectResolveArgs {
     /// Path to a project directory or `.bproj` manifest file
@@ -19,8 +19,7 @@ pub struct ProjectResolveArgs {
     pub workspace_member: Option<String>,
 }
 
-/// Disable animated progress; also implied when `NO_COLOR` is set to a non-empty value.
-/// Opt out of animated progress (some commands flatten this into their own `Args`).
+// Shared animated-progress preference; nonempty NO_COLOR also disables animation.
 #[derive(Args, Debug, Clone, Copy, Default)]
 pub struct PlainProgressArgs {
     /// Disable animated progress output
@@ -28,14 +27,30 @@ pub struct PlainProgressArgs {
     pub plain: bool,
 }
 
-/// `--frozen` / `--locked` lockfile behavior for resolution commands.
+// Shared lock and network policy for resolution commands.
 #[derive(Args, Debug, Clone)]
 pub struct LockfilePolicyArgs {
-    /// Require lockfile to be up to date and forbid lockfile updates
+    /// Combine locked resolution with offline verified-cache-only resolution
     #[arg(long)]
     pub frozen: bool,
 
     /// Require lockfile to exist and match resolution
     #[arg(long)]
     pub locked: bool,
+
+    /// Forbid network requests and require verified cached dependency artifacts
+    #[arg(long)]
+    pub offline: bool,
+}
+
+impl LockfilePolicyArgs {
+    #[allow(non_snake_case)]
+    pub fn WorkspaceOptions(&self) -> beskid_analysis::projects::WorkspacePrepareOptions {
+        beskid_analysis::projects::WorkspacePrepareOptions {
+            frozen: self.frozen,
+            locked: self.locked,
+            offline: self.offline,
+            refresh_lock: false,
+        }
+    }
 }

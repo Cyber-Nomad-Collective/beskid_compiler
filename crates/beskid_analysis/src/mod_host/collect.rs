@@ -43,8 +43,8 @@ pub(crate) fn collect_contracts(
                     continue;
                 }
                 let outcome = invoker
-                    .invoke_collector(registration, &context.collect_request)
-                    .map_err(|err| anyhow::anyhow!(err.to_string()))?;
+                    .invoke_collector(registration, &context.collect_request, input.semantic_authority)
+                    .map_err(|err| anyhow::anyhow!(err.attributed_to(artifact.package_id()).to_string()))?;
                 registrations.push(registration.clone());
                 outcomes.push(outcome);
             }
@@ -74,6 +74,45 @@ mod tests {
         ]);
         assert_eq!(left, "t1|t2");
         assert_eq!(left, right);
+    }
+
+    #[test]
+    fn collector_invocation_failure_names_the_declaring_mod_package() {
+        let loaded = vec![LoadedModArtifact {
+            discovered: crate::mod_host::types::DiscoveredMod {
+                dependency_name: "serialization".to_owned(),
+                project_name: "serialization_mod".to_owned(),
+                project_root: std::path::PathBuf::from("/ws/serialization_mod"),
+                manifest_path: std::path::PathBuf::from("/ws/serialization_mod/serialization_mod.bproj"),
+                source_root: std::path::PathBuf::from("/ws/serialization_mod/Src"),
+                mod_section: None,
+            },
+            descriptor: None,
+            registrations: vec![ContractRegistration {
+                contract_id: "Beskid.Compiler.Collect.Collector".to_owned(),
+                type_id: "SerializeCollector".to_owned(),
+                entry_symbol: "collect".to_owned(),
+            }],
+        }];
+        let invoker = crate::mod_host::NativeContractInvoker::unavailable();
+        let input = ModHostInput {
+            semantic_scope: None,
+            semantic_authority: None,
+            syntax_generation_id: None,
+            compile_plan: None,
+            source_name: "",
+            source: "",
+            pipeline: None,
+            mod_host: &crate::mod_host::ModHost::NoMods,
+            cached_target_fingerprint: None,
+        };
+        let error = collect_contracts(&loaded, &input, &invoker, None)
+            .expect_err("unavailable native dispatch must fail closed");
+        let message = format!("{error:#}");
+        assert!(
+            message.contains("mod `serialization_mod` contract `Beskid.Compiler.Collect.Collector`"),
+            "{message}"
+        );
     }
 
     #[test]

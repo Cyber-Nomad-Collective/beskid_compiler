@@ -14,7 +14,7 @@ use beskid_queries::{
 };
 use std::{path::PathBuf, sync::Arc};
 
-fn fact_result<T>(
+pub(super) fn fact_result<T>(
     owner_path: PathBuf,
     owner_source: String,
     deadline_path: PathBuf,
@@ -339,22 +339,28 @@ fn deadline_literal_with_private_field_reports_inaccessibility_not_unknown_name(
 
 #[test]
 fn ordinary_literal_missing_accessible_field_remains_e1212() {
-    let source = "pub type Pair { pub i64 left, pub i64 right } i64 Main() { Pair pair = Pair { left: 1_i64 }; return pair.left; }";
-    let program = parse_program(source).expect("parse ordinary struct literal");
-    let errors = match beskid_analysis::services::resolve_and_type_program(&program) {
-        Err(beskid_analysis::services::SemanticFactsError::Type { errors, .. }) => errors,
-        other => panic!("expected type-check rejection for missing field, got {other:?}"),
-    };
+    let temp = tempfile::tempdir().expect("application root");
+    let owner_path = temp.path().join("Main.bd");
+    let owner_source =
+        "pub type Pair { pub i64 left, pub i64 right } i64 Main() { Pair pair = Pair { left: 1_i64 }; return pair.left; }";
+    let (deadline_path, deadline_source) = canonical_deadline();
+    let findings = fact_result(
+        owner_path,
+        owner_source.into(),
+        deadline_path,
+        deadline_source,
+        "i64 Main",
+        NodeKind::FunctionDefinition,
+        |db, key| Ok::<_, beskid_queries::SemanticError>(check_items(db, &[key]).err()),
+    )
+    .expect("legality query")
+    .expect("a missing accessible field must be a legality finding");
     assert!(
-        errors.iter().any(|error| matches!(
-            error,
-            beskid_analysis::types::TypeError::MissingStructField { name, .. } if name == "right"
-        )),
-        "expected missing accessible `right`, got {errors:?}"
+        findings
+            .iter()
+            .any(|finding| finding.kind.code() == "E1212" && finding.kind.message() == "missing struct field `right`"),
+        "expected E1212 for the missing accessible `right`, got {findings:?}"
     );
-    let diagnostic = beskid_analysis::analysis::SemanticIssueKind::TypeMissingStructField { name: "right".into() };
-    assert_eq!(diagnostic.code(), "E1212");
-    assert_eq!(diagnostic.message(), "missing struct field `right`");
 }
 
 #[test]
@@ -363,7 +369,8 @@ fn deadline_literal_does_not_restrict_an_unrelated_lookalike() {
     let owner_path = temp.path().join("Main.bd");
     let deadline_path = temp.path().join("Core/Time/Deadline.bd");
     let owner_source = "use Core.Time.Deadline; Deadline Make() { return Deadline { monotonicNanos: 1_i64 }; }";
-    let deadline_source = "pub type Deadline { i64 monotonicNanos }";
+    // The general field rule still applies: only a `pub` field of the lookalike is constructible.
+    let deadline_source = "pub type Deadline { pub i64 monotonicNanos }";
     assert!(
         fact_result(
             owner_path,

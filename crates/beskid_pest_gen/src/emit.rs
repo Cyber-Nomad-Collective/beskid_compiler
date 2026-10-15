@@ -12,7 +12,6 @@ pub fn emit_combinator_module(module_name: &str, rules: &[GrammarRule]) -> Strin
     writeln!(out, "/// Generated combinator parser module for `{module_name}`.").unwrap();
     writeln!(out, "use Core.Text.Cursor;").unwrap();
     writeln!(out, "use Core.Text.Parser;").unwrap();
-    writeln!(out, "use Core.Text.Parser.Terms;").unwrap();
     writeln!(out).unwrap();
 
     let mut by_name = BTreeMap::new();

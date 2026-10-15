@@ -27,7 +27,11 @@ impl BeskidDatabase {
             registry.get(&key).copied()
         };
         if let Some(existing) = existing {
-            existing.set_lockfile_digest(self).to(lockfile_digest);
+            // An unchanged digest is not a write: setting an input always advances its revision
+            // and re-verifies every memo that read it.
+            if existing.lockfile_digest(self) != &lockfile_digest {
+                existing.set_lockfile_digest(self).to(lockfile_digest);
+            }
             return existing;
         }
         let session = ProjectSession::new(

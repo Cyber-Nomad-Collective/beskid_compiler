@@ -2,13 +2,14 @@
 
 mod build;
 mod discovery;
+mod glue_provider;
 mod hashing;
 mod model;
 mod paths;
 mod resolution;
 mod validation;
 
-pub use build::build_runtime_kit;
+pub use build::{build_runtime_kit, build_runtime_kit_with_glue_provider};
 pub use discovery::{
     HostRuntimeTargetError, InstalledToolchainPrefixError, host_runtime_target, host_runtime_triple,
     installed_corelib_root, installed_corelib_root_for_executable, installed_runtime_prefix,
@@ -23,3 +24,8 @@ pub use paths::{
     profile_directory_name,
 };
 pub use resolution::resolve_installed_runtime_kit;
+
+pub use glue_provider::{
+    GLUE_OWNER_ISSUER_V1_SYMBOL, GLUE_PROVIDER_MANIFEST_V1, GlueProviderError, GlueProviderManifestV1,
+    GlueProviderToolV1, ResolvedGlueSharedProvider, canonical_glue_issuer_source_sha256, resolve_glue_shared_provider,
+};

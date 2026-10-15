@@ -1,0 +1,112 @@
+// `for` over the nominal iterator protocol (`Next()` returning `Option<T>`), lowered through the
+// query layer and ISLE: break/continue, nested loops, a generic iterator, a generic loop body,
+// and forced collections while the iterator and a managed loop variable are live.
+
+pub enum Option<T> { Some(T value), None }
+
+[Extern(Abi:"C")]
+pub contract Probe { unit gc_collect(); }
+
+pub type Cell { i64 value }
+
+pub type Counter {
+    i64 current,
+    i64 limit,
+    pub Option<i64> Next() {
+        if this.current >= this.limit { return Option::None; }
+        this.current = this.current + 1_i64;
+        return Option::Some(this.current);
+    }
+}
+
+pub type Cells {
+    i64 next,
+    i64 limit,
+    pub Option<Cell> Next() {
+        if this.next >= this.limit { return Option::None; }
+        this.next = this.next + 1_i64;
+        return Option::Some(Cell { value: this.next });
+    }
+}
+
+pub type Repeat<T> {
+    T value,
+    i64 left,
+    pub Option<T> Next() {
+        if this.left <= 0_i64 { return Option::None; }
+        this.left = this.left - 1_i64;
+        return Option::Some(this.value);
+    }
+}
+
+Cells MakeCells(i64 limit) { return Cells { next: 0_i64, limit: limit }; }
+
+// 1 + 3 + 4: `continue` skips 2, `break` stops at 5.
+i64 SkipTwoStopAtFive() {
+    Counter counter = Counter { current: 0_i64, limit: 9_i64 };
+    mut i64 total = 0_i64;
+    for value in counter {
+        if value == 2_i64 { continue; }
+        if value == 5_i64 { break; }
+        total = total + value;
+    }
+    return total;
+}
+
+// 1 + (1 + 2) + (1 + 2 + 3)
+i64 Nested() {
+    Counter outer = Counter { current: 0_i64, limit: 3_i64 };
+    mut i64 total = 0_i64;
+    for a in outer {
+        Counter inner = Counter { current: 0_i64, limit: a };
+        for b in inner {
+            total = total + b;
+        }
+    }
+    return total;
+}
+
+// The iterator is a call result reachable only through the loop's root, and every element is a
+// fresh object reachable only through the loop variable; each iteration collects and allocates.
+i64 CollectInBody() {
+    mut i64 total = 0_i64;
+    for cell in MakeCells(5_i64) {
+        Probe.gc_collect();
+        Cell junk = Cell { value: -100_i64 };
+        Probe.gc_collect();
+        total = total + cell.value + junk.value + 100_i64;
+    }
+    return total;
+}
+
+// A generic loop body: the iterator protocol is proven per specialization.
+i64 CountAll<T>(Repeat<T> source) {
+    mut i64 count = 0_i64;
+    for item in source {
+        Probe.gc_collect();
+        count = count + 1_i64;
+    }
+    return count;
+}
+
+// 3 * 7 from Repeat<Cell>, then CountAll over Repeat<i64> (4) and Repeat<Cell> (2).
+i64 GenericIterators() {
+    Repeat<Cell> cells = Repeat<Cell> { value: Cell { value: 7_i64 }, left: 3_i64 };
+    mut i64 sum = 0_i64;
+    for cell in cells {
+        Probe.gc_collect();
+        sum = sum + cell.value;
+    }
+    Repeat<i64> numbers = Repeat<i64> { value: 1_i64, left: 4_i64 };
+    Repeat<Cell> more = Repeat<Cell> { value: Cell { value: 1_i64 }, left: 2_i64 };
+    return sum + CountAll(numbers) + CountAll(more);
+}
+
+[Export(Abi:"C", Symbol:"RunIteratorFor")]
+pub i64 RunIteratorFor() {
+    if SkipTwoStopAtFive() != 8_i64 { return 1_i64; }
+    if Nested() != 10_i64 { return 2_i64; }
+    if CollectInBody() != 15_i64 { return 3_i64; }
+    if GenericIterators() != 27_i64 { return 4_i64; }
+    return 42_i64;
+}

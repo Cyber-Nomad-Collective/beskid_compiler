@@ -313,11 +313,13 @@ fn zero_step_range_is_an_exact_keyed_error() {
     assert_eq!(error.kind(), LoweringErrorKind::InvalidRangeFor);
 }
 
-struct IteratorForFacts {
+/// A `for` whose iterable is neither a range, an array nor a proven nominal iterator has no
+/// iterable class: no rule selects it and emission fails closed at the statement.
+struct UnclassifiedForFacts {
     nodes: [AstNodeKey; 3],
 }
 
-impl NodeFacts for IteratorForFacts {
+impl NodeFacts for UnclassifiedForFacts {
     fn node_kind(&self, key: AstNodeKey) -> Option<NodeKind> {
         if key == self.nodes[0] {
             Some(NodeKind::ForStatement)
@@ -356,19 +358,19 @@ impl NodeFacts for IteratorForFacts {
 }
 
 #[test]
-fn iterator_for_reports_invalid_range_error() {
+fn for_without_an_iterable_fact_is_a_missing_fact() {
     let isa = cranelift_codegen::isa::lookup(Triple::host())
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags");
-    let facts = IteratorForFacts { nodes: keys("/tmp/IteratorFor.bd", 22) };
+    let facts = UnclassifiedForFacts { nodes: keys("/tmp/UnclassifiedFor.bd", 22) };
     let emitter = FunctionEmitter::new(isa.as_ref());
     let error = emitter
         .emit_statement(UserFuncName::user(0, 37), emitter.signature([], [types::I32]), &facts, facts.nodes[0])
-        .expect_err("iterator-for must report InvalidRangeFor");
+        .expect_err("a for without an iterable fact must not lower");
     let FunctionEmissionError::Lowering(error) = error else {
         panic!("expected lowering error");
     };
     assert_eq!(error.key(), facts.nodes[0]);
-    assert_eq!(error.kind(), LoweringErrorKind::InvalidRangeFor);
+    assert_eq!(error.kind(), LoweringErrorKind::MissingRuleOrFact);
 }

@@ -16,17 +16,55 @@ impl SyntaxNodeFacts<'_> {
             .specialized_enum_constructor(key)
             .map(|fact| fact.layout)
             .or_else(|| self.enum_match_in_context(key).map(|fact| fact.layout))
-            .or_else(|| self.query(enum_layout(self.db, key)))?;
+            .or_else(|| self.specialized_try_operand_layout(key))
+            .or_else(|| self.query(enum_layout(self.db, key)))
+            .or_else(|| self.enum_field_read_layout(key))?;
         self.enum_layout_from_fact(&source)
+    }
+
+    /// The operand layout of `operand?` in the body of a specialization, read in its environment
+    /// (`Admit<T>(limit)?` inside `Load<i64>`).
+    fn specialized_try_operand_layout(&self, key: AstNodeKey) -> Option<beskid_queries::EnumLayoutFact> {
+        if self.query(node_kind(self.db, key)) != Some(beskid_queries::IndexedNodeKind::TryExpression) {
+            return None;
+        }
+        let enclosing = self.current_item_specialization()?;
+        self.query(beskid_queries::specialized_try_expression_fact(self.db, key, enclosing)).map(|fact| fact.operand_layout)
+    }
+
+    /// The layout of an enum read from an aggregate field (`node.kind`, `this.state`): the field
+    /// shape names the enum declaration, whose layout is the operand's layout. Without it an
+    /// enum-to-enum comparison of two field reads has no enum layout and would degrade to the
+    /// pointer comparison of two distinct variant objects.
+    fn enum_field_read_layout(&self, key: AstNodeKey) -> Option<beskid_queries::EnumLayoutFact> {
+        let access = self.aggregate_field_access_in_context(key)?;
+        let (_, shape) = access.layout.fields.get(usize::try_from(access.index).ok()?)?;
+        let AggregateFieldShape::Nominal(declaration) = shape else {
+            return None;
+        };
+        self.query(enum_layout(self.db, *declaration))
     }
 
     pub(in crate::isle_adapter) fn enum_match_in_context(
         &self,
         key: AstNodeKey,
     ) -> Option<beskid_queries::EnumMatchFact> {
-        self.current_item_specialization()
-            .and_then(|enclosing| self.query(enum_match_specialization(self.db, key, enclosing.substitutions.clone())))
-            .or_else(|| self.query(enum_match(self.db, key)))
+        if let Some(enclosing) = self.current_item_specialization() {
+            if let Some(fact) = self.query(enum_match_specialization(self.db, key, enclosing.substitutions.clone())) {
+                return Some(fact);
+            }
+            // A scrutinee that is itself a generic call forwarding enclosing parameters
+            // (`match NestedType<S>(...)`) is resolved through the same call specialization the
+            // call lowering uses, so the match sees the exact applied result enum.
+            if let Some(scrutinee) = self.raw_children(key).first().copied().and_then(|child| self.unwrap_transparent(child))
+                && self.query(node_kind(self.db, scrutinee)) == Some(beskid_queries::IndexedNodeKind::CallExpression)
+                && let Some(callee) = self.generic_call_specialization_in_context(scrutinee)
+                && let Some(fact) = self.query(enum_match_call_specialization(self.db, key, &callee))
+            {
+                return Some(fact);
+            }
+        }
+        self.query(enum_match(self.db, key))
     }
 
     pub(in crate::isle_adapter) fn enum_layout_from_fact(
@@ -47,10 +85,18 @@ impl SyntaxNodeFacts<'_> {
         match pattern {
             beskid_queries::EnumMatchPatternFact::Wildcard => Some(MatchPayloadPatternFact::Ignore),
             beskid_queries::EnumMatchPatternFact::UnitLiteral { .. } => Some(MatchPayloadPatternFact::Unit),
+            // A zero-sized `unit` payload binding has no storage to load or bind.
+            beskid_queries::EnumMatchPatternFact::Binding(binding)
+                if binding.payload == AggregateFieldShape::Scalar(SemanticTypeId::UNIT) =>
+            {
+                Some(MatchPayloadPatternFact::Unit)
+            }
             beskid_queries::EnumMatchPatternFact::Binding(binding) => {
                 let slot = self.query(local_slot(self.db, binding.declaration))?;
                 let value_type = match binding.payload {
-                    AggregateFieldShape::Scalar(semantic) => map_signature_type(self.isa?, semantic)?,
+                    AggregateFieldShape::Scalar(semantic) | AggregateFieldShape::ManagedReference(semantic) => {
+                        map_signature_type(self.isa?, semantic)?
+                    }
                     AggregateFieldShape::Nominal(_) => self.isa?.pointer_type(),
                 };
                 let managed_reference = match binding.managed_reference {
@@ -62,6 +108,11 @@ impl SyntaxNodeFacts<'_> {
                     value_type,
                     managed_reference,
                 }))
+            }
+            beskid_queries::EnumMatchPatternFact::ScalarLiteral(literal)
+                if literal.semantic_type == SemanticTypeId::STRING =>
+            {
+                Some(MatchPayloadPatternFact::StringLiteral { expression: literal.literal })
             }
             beskid_queries::EnumMatchPatternFact::ScalarLiteral(literal) => {
                 Some(MatchPayloadPatternFact::ScalarLiteral {

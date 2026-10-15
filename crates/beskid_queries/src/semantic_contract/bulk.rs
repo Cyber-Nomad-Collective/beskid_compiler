@@ -78,10 +78,14 @@ pub(in crate::semantic_contract) fn bulk_parameter_tracked(
 
 /// The element ABI type a call packs its trailing arguments as when its direct callee ends in a
 /// `bulk T[]` parameter. A generic element takes the call's specialization, so `List.Of<i64>(1, 2)`
-/// packs `i64`. Calls to any other callee contain no fact.
+/// packs `i64`; inside a specialized generic item, `enclosing` interprets type arguments that name
+/// the item's own generic parameters (`Array.Of<T>(value)`). Calls to any other callee contain no
+/// fact. A bulk callee whose element ABI cannot be proven is an error, never "no fact", so a
+/// caller cannot mistake an unproven bulk call for an ordinary direct call.
 pub(in crate::semantic_contract) fn bulk_call_element_abi_type_for_call(
     db: &dyn Db,
     key: AstNodeKey,
+    enclosing: Option<&GenericSpecializationInstance>,
 ) -> SemanticQueryResult<SemanticTypeId> {
     let Some(CallLowering::Direct(declaration)) = call_lowering(db, key)? else {
         return Ok(None);
@@ -116,7 +120,11 @@ pub(in crate::semantic_contract) fn bulk_call_element_abi_type_for_call(
         Err(error) if error.is_unavailable() => {}
         Err(error) => return Err(error),
     }
-    let specialization = generic_specialization_instance_for_call(db, key)?;
+    let specialization = match enclosing {
+        Some(enclosing) => generic_call_specialization_in_environment(db, key, enclosing)?
+            .ok_or_else(|| SemanticError::unavailable_at("generic_specialization_instance.bulk_call", key))?,
+        None => generic_specialization_instance_for_call(db, key)?,
+    };
     let substitutions = specialization
         .substitutions
         .iter()

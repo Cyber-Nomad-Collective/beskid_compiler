@@ -1,11 +1,25 @@
 // Owner-only wait state. Adapters publish immutable (owner, token, source)
 // commands; only ExternalTryComplete may claim, unregister, release a wait's
 // liveness obligation and wake its fiber.
-const EXTERNAL_STATE_SIZE = 2624;
-const EXTERNAL_WAIT_COUNT = 32;
+//
+// External state layout (EXTERNAL_STATE_SIZE bytes, separately allocated):
+//   offset  0: owner id (word)
+//   offset  8: active obligation count (word)
+//   offset 16: wait generation counter (word)
+//   offset 24: timer count (word; the timer vector's count)
+//   offset 32: timer vector capacity, 40: timer data (growable vector of 16-byte
+//              {deadline, token} records kept as a binary min-heap on deadline)
+//   offset 48: owner command scratch (3 words: token, source, payload)
+//   offset 72: waits (chunked table of EXTERNAL_WAIT_SIZE records; grows on demand)
+// Neither the wait count nor the timer count has a fixed cap.
+const EXTERNAL_STATE_SIZE = 80;
 const EXTERNAL_WAIT_SIZE = 64;
-const EXTERNAL_WAITS_OFFSET = 64;
-const EXTERNAL_TIMERS_OFFSET = 2112;
+const EXTERNAL_TIMERS_OFFSET = 24;
+const EXTERNAL_TIMER_SIZE = 16;
+const EXTERNAL_COMMAND_OFFSET = 48;
+const EXTERNAL_WAITS_OFFSET = 72;
+// Wait slots are 1-based 32-bit values inside a token; the table never hands out more.
+const EXTERNAL_SLOT_MAX = 0xFFFFFFFE;
 const EXTERNAL_READY = 1;
 const EXTERNAL_CLOSED = 2;
 const EXTERNAL_CANCELLED = 3;
@@ -17,6 +31,9 @@ pub unit ExternalInit(pointer scheduler) {
     pointer state = SystemAllocate(EXTERNAL_STATE_SIZE, 8);
     if state == NativePointer(0) { Trap(5, NativePointer(0), 0); }
     memory_set(state, 0, EXTERNAL_STATE_SIZE);
+    pointer waits = ChunkTableCreate(EXTERNAL_WAIT_SIZE);
+    if waits == NativePointer(0) { Trap(5, NativePointer(0), 0); }
+    raw_word_store(pointer_add(state, EXTERNAL_WAITS_OFFSET), NativeWord(waits));
     word owner = owner_create();
     if owner == 0 { Trap(5, NativePointer(0), 0); }
     raw_word_store(state, owner);
@@ -47,16 +64,23 @@ pub unit ExternalWorkRelease() {
     return;
 }
 
+pub pointer ExternalWaitTable() { return NativePointer(raw_word_load(pointer_add(ExternalState(), EXTERNAL_WAITS_OFFSET))); }
+pub word ExternalWaitCount() { return ChunkTableCount(ExternalWaitTable()); }
+// Record of 0-based wait `slot`, which must be below `ExternalWaitCount()`.
+pub pointer ExternalWaitSlot(word slot) { return ChunkTableRecord(ExternalWaitTable(), slot); }
+
 pub pointer ExternalWaitRecord(word token) {
     word slot = token & 0xFFFFFFFF;
-    if slot == 0 || slot > EXTERNAL_WAIT_COUNT { return NativePointer(0); }
-    pointer record = pointer_add(ExternalState(), EXTERNAL_WAITS_OFFSET + (slot - 1) * EXTERNAL_WAIT_SIZE);
+    if slot == 0 || slot > ExternalWaitCount() { return NativePointer(0); }
+    pointer record = ExternalWaitSlot(slot - 1);
     if raw_word_load(pointer_add(record, 56)) == 0 || raw_word_load(pointer_add(record, 16)) != token >> 32 { return NativePointer(0); }
     if raw_word_load(record) != ExternalOwnerId() { return NativePointer(0); }
     return record;
 }
 
-pub pointer ExternalTimerRecord(word index) { return pointer_add(ExternalState(), EXTERNAL_TIMERS_OFFSET + index * 16); }
+pub pointer ExternalTimerRecord(word index) {
+    return pointer_add(VecData(pointer_add(ExternalState(), EXTERNAL_TIMERS_OFFSET)), index * EXTERNAL_TIMER_SIZE);
+}
 
 pub unit ExternalTimerSwap(word left, word right) {
     pointer a = ExternalTimerRecord(left);
@@ -72,8 +96,10 @@ pub unit ExternalTimerSwap(word left, word right) {
 
 pub unit ExternalTimerPush(word token, word deadline) {
     pointer state = ExternalState();
+    pointer timers = pointer_add(state, EXTERNAL_TIMERS_OFFSET);
     mut word index = raw_word_load(pointer_add(state, 24));
-    if index >= EXTERNAL_WAIT_COUNT { Trap(10, NativePointer(0), 0); }
+    // The timer heap grows on demand; a refused growth is an out-of-memory trap.
+    if !VecReserve(timers, EXTERNAL_TIMER_SIZE, index + 1) { Trap(5, NativePointer(0), 0); }
     raw_word_store(ExternalTimerRecord(index), deadline);
     raw_word_store(pointer_add(ExternalTimerRecord(index), 8), token);
     raw_word_store(pointer_add(state, 24), index + 1);
@@ -118,19 +144,25 @@ pub unit ExternalTimerRemove(word token) {
 pub word ExternalWaitRegister(word fiberHandle, word operation, i64 deadline) {
     if !FiberHandleValid(fiberHandle) || operation == 0 || deadline < -1 { return 0; }
     pointer state = ExternalState();
+    pointer waits = ExternalWaitTable();
+    word count = ChunkTableCount(waits);
     mut word slot = 0;
-    mut word available = EXTERNAL_WAIT_COUNT;
-    while slot < EXTERNAL_WAIT_COUNT {
-        pointer candidate = pointer_add(state, EXTERNAL_WAITS_OFFSET + slot * EXTERNAL_WAIT_SIZE);
+    mut word available = count;
+    while slot < count {
+        pointer candidate = ExternalWaitSlot(slot);
         if raw_word_load(pointer_add(candidate, 56)) == 0 { available = slot; }
         else if raw_word_load(pointer_add(candidate, 8)) == fiberHandle { return 0; }
         slot = slot + 1;
     }
-    if available == EXTERNAL_WAIT_COUNT { return 0; }
+    if available == count {
+        // The wait table grows on demand; 0 reports only an allocator refusal.
+        if count > EXTERNAL_SLOT_MAX { return 0; }
+        if ChunkTableAppend(waits) == 0xFFFFFFFFFFFFFFFF { return 0; }
+    }
     word generation = raw_word_load(pointer_add(state, 16)) + 1;
     if generation > 0xFFFFFFFF || generation == 0 { Trap(10, NativePointer(0), 0); }
     raw_word_store(pointer_add(state, 16), generation);
-    pointer record = pointer_add(state, EXTERNAL_WAITS_OFFSET + available * EXTERNAL_WAIT_SIZE);
+    pointer record = ExternalWaitSlot(available);
     memory_set(record, 0, EXTERNAL_WAIT_SIZE);
     raw_word_store(record, ExternalOwnerId());
     raw_word_store(pointer_add(record, 8), fiberHandle);
@@ -160,7 +192,7 @@ pub bool ExternalWaitSetDeadline(word token, i64 deadline) {
 
 [Export(Abi:"C", Symbol:"beskid_rt_v5_external_try_complete")]
 pub bool ExternalTryComplete(word waitId, word generation, word source) {
-    if waitId == 0 || waitId > EXTERNAL_WAIT_COUNT || generation == 0 || generation > 0xFFFFFFFF || source < EXTERNAL_READY || source > EXTERNAL_TIMEOUT { return false; }
+    if waitId == 0 || waitId > ExternalWaitCount() || generation == 0 || generation > 0xFFFFFFFF || source < EXTERNAL_READY || source > EXTERNAL_TIMEOUT { return false; }
     word token = generation << 32 | waitId;
     pointer record = ExternalWaitRecord(token);
     if record == NativePointer(0) { return false; }
@@ -194,7 +226,7 @@ pub unit ExternalPump(i64 now) {
     // Reap owner host work on both sides of completion arbitration. A resolver
     // can finish after its wait already lost to cancellation or a deadline.
     NetworkPump();
-    pointer command = pointer_add(ExternalState(), 32);
+    pointer command = pointer_add(ExternalState(), EXTERNAL_COMMAND_OFFSET);
     while owner_pop(ExternalOwnerId(), command) != 0 {
         word token = raw_word_load(command);
         word source = raw_word_load(pointer_add(command, 8));
@@ -248,9 +280,10 @@ pub word ExternalWaitPark(word token) {
 }
 
 pub bool ExternalCancelFiber(word handle) {
+    word count = ExternalWaitCount();
     mut word slot = 0;
-    while slot < EXTERNAL_WAIT_COUNT {
-        pointer record = pointer_add(ExternalState(), EXTERNAL_WAITS_OFFSET + slot * EXTERNAL_WAIT_SIZE);
+    while slot < count {
+        pointer record = ExternalWaitSlot(slot);
         if raw_word_load(pointer_add(record, 56)) != 0 && raw_word_load(pointer_add(record, 8)) == handle {
             ExternalTryComplete(slot + 1, raw_word_load(pointer_add(record, 16)), EXTERNAL_CANCELLED);
             return true; // even an already-winning operation must resume its stack
@@ -284,9 +317,10 @@ pub word ExternalSleepUntil(i64 deadline) {
 pub unit ExternalShutdown(pointer scheduler) {
     if scheduler != SchedTable() || SchedulerCurrentFiber() != FIBER_NONE { Trap(10, NativePointer(0), 0); }
     pointer state = ExternalState();
+    word count = ExternalWaitCount();
     mut word slot = 0;
-    while slot < EXTERNAL_WAIT_COUNT {
-        pointer record = pointer_add(state, EXTERNAL_WAITS_OFFSET + slot * EXTERNAL_WAIT_SIZE);
+    while slot < count {
+        pointer record = ExternalWaitSlot(slot);
         if raw_word_load(pointer_add(record, 56)) != 0 {
             word generation = raw_word_load(pointer_add(record, 16));
             ExternalTryComplete(slot + 1, generation, EXTERNAL_CANCELLED);
@@ -298,6 +332,8 @@ pub unit ExternalShutdown(pointer scheduler) {
     // retain belongs to live host work and forbids destroying its owner mailbox.
     if ExternalActiveCount() != 0 { Trap(10, NativePointer(0), 0); }
     owner_destroy(raw_word_load(state));
+    ChunkTableFree(ExternalWaitTable());
+    VecFree(pointer_add(state, EXTERNAL_TIMERS_OFFSET), EXTERNAL_TIMER_SIZE);
     SystemFree(state, EXTERNAL_STATE_SIZE);
     raw_word_store(pointer_add(scheduler, BESKID_SCHEDULER_STATE_EXTERNAL_STATE_OFFSET), 0);
     return;

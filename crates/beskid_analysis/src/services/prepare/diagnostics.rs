@@ -1,26 +1,20 @@
-//! Diagnostic deduplication, analyzer bridging, input resolution, and typed fingerprints.
+//! Diagnostic deduplication, analyzer bridging, and input resolution.
 
-use crate::AnalysisOptions;
 use crate::analysis::SemanticDiagnostic;
-use crate::analysis::rules::{RuleContext, resolve, types};
 use crate::mod_host::SyntaxFix;
 use crate::mod_host::diagnostics::{analyzer_diagnostic_to_semantic, analyzer_fix_to_syntax_fix};
 use crate::projects::{CompilePlan, PreparedProjectWorkspace, ProgramAssembly, SourceUnit};
 
 use super::super::input::ResolvedInput;
-use super::super::semantic_facts::SemanticFactsError;
 
 /// Drop exact-duplicate diagnostics, keeping the first occurrence.
 ///
-/// A genuine invalid `?` target is independently detected twice on the fact-authority path: once
-/// by the authority callback (driven by the typed `try_expression_fact`) and again by
-/// `resolve_and_type_program_with_assembly`'s own full type check, which runs the same
-/// `is_result_shaped_enum` judgment through `type_try_expression` and, on failure, surfaces
-/// `TypeError::InvalidTryTarget` via `semantic_facts_errors_to_diagnostics`. Both sites are
-/// correct in isolation; only the caller-facing duplicate needs suppressing, so this dedups by
-/// exact (source, span, code, message) rather than special-casing E1222 alone. The source name is
-/// part of the identity: a dependency-unit finding at the same offset as an entry diagnostic is a
-/// different diagnostic.
+/// The structural rules of the entry unit and the query gate's findings are merged into one
+/// stream; a shape both report at the same site (a Mod analyzer diagnostic repeated over a
+/// cached generation, a finding of a dependency unit reached from two own items) is reported
+/// once. The dedup key is the exact (source, span, code, message), never a code alone. The source
+/// name is part of the identity: a dependency-unit finding at the same offset as an entry
+/// diagnostic is a different diagnostic.
 pub(super) fn dedupe_diagnostics(diagnostics: Vec<SemanticDiagnostic>) -> Vec<SemanticDiagnostic> {
     let mut seen: std::collections::HashSet<(String, usize, usize, Option<String>, String)> =
         std::collections::HashSet::new();
@@ -147,43 +141,4 @@ pub(super) fn collect_analyzer_fixes(analyzer_outcomes: &[crate::mod_host::Analy
         }
     }
     out
-}
-
-pub(super) fn semantic_facts_errors_to_diagnostics(
-    error: SemanticFactsError,
-    source_name: &str,
-    source: &str,
-) -> Vec<SemanticDiagnostic> {
-    let mut ctx = RuleContext::new(source_name, source, AnalysisOptions::default());
-    match error {
-        SemanticFactsError::Type { errors, typed } => {
-            for error in errors {
-                types::emit_type_error(&mut ctx, error, Some(&typed));
-            }
-        }
-        SemanticFactsError::Resolve(errors) => {
-            for error in errors {
-                resolve::emit_resolve_error(&mut ctx, error);
-            }
-        }
-    }
-    ctx.diagnostics
-}
-
-pub(super) fn typed_fingerprint(resolution: &crate::resolve::Resolution) -> u64 {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
-    let mut hasher = DefaultHasher::new();
-    resolution.items.len().hash(&mut hasher);
-    resolution.tables.resolved_values.len().hash(&mut hasher);
-    hasher.finish()
-}
-
-pub(super) fn typed_fingerprint_types(typed: &crate::types::TypeResult) -> u64 {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
-    let mut hasher = DefaultHasher::new();
-    typed.node_types.len().hash(&mut hasher);
-    typed.lowering.cast_intents.len().hash(&mut hasher);
-    hasher.finish()
 }

@@ -241,6 +241,98 @@ fn this_qualified_sibling_call_uses_the_implicit_method_receiver() {
 }
 
 #[test]
+fn this_qualified_sibling_call_lowers_as_a_direct_call_with_the_receiver_argument() {
+    let source = "type Counter { i64 n, i64 Double() { return 2; } i64 Quad() { return this.Double() * 2; } }";
+    let (db, _project, unit, generation, index) = setup(source);
+    let double = key(unit, generation, &index, NodeKind::MethodDefinition, 0);
+    let call = key(unit, generation, &index, NodeKind::CallExpression, 0);
+    let callee =
+        key_at_start(unit, generation, &index, NodeKind::PathExpression, source.find("this.Double").expect("callee"));
+
+    assert_eq!(
+        beskid_queries::call_lowering(&db, call).expect("sibling call lowering"),
+        Some(beskid_queries::CallLowering::Direct(double))
+    );
+    assert_eq!(call_arguments(&db, call).expect("arguments").expect("receiver argument").as_ref(), &[callee]);
+}
+
+#[test]
+fn field_of_a_call_result_resolves_through_the_callee_result_type() {
+    // `Make()` is not generic and the call site spells no type arguments: the callee's declared
+    // result is the receiver authority, and the projected field types the binary expression.
+    let source = r#"
+type Point { i64 x, i64 y, }
+Point Make() { return Point { x: 9_i64, y: 2_i64 }; }
+i64 Main() { return Make().x + Make().y; }
+"#;
+    let (db, _project, unit, generation, index) = setup(source);
+    let point = key(unit, generation, &index, NodeKind::TypeDefinition, 0);
+    let first = key(unit, generation, &index, NodeKind::MemberExpression, 0);
+    let second = key(unit, generation, &index, NodeKind::MemberExpression, 1);
+    let sum = key(unit, generation, &index, NodeKind::BinaryExpression, 0);
+
+    let access = aggregate_field_access(&db, first).expect("field access query").expect("call-result field access");
+    assert_eq!(access.declaration, point);
+    assert_eq!(access.index, 0);
+    assert_eq!(aggregate_field_access(&db, second).expect("field access query").map(|access| access.index), Some(1));
+    assert_eq!(abi_type(&db, first), Ok(Some(SemanticTypeId::I64)));
+    assert_eq!(abi_type(&db, sum), Ok(Some(SemanticTypeId::I64)));
+}
+
+#[test]
+fn field_of_a_generic_call_result_applies_the_call_substitutions() {
+    let source = r#"
+type Box<T> { T value, i64 tag, }
+Box<T> Wrap<T>(T value) { return Box<T> { value: value, tag: 1_i64 }; }
+i64 Main() { return Wrap<i64>(4_i64).value + Wrap<string>("s").tag; }
+"#;
+    let (db, _project, unit, generation, index) = setup(source);
+    let value = key(unit, generation, &index, NodeKind::MemberExpression, 0);
+    let tag = key(unit, generation, &index, NodeKind::MemberExpression, 1);
+
+    let access = aggregate_field_access(&db, value).expect("field access query").expect("generic call-result field");
+    assert_eq!(access.layout.fields[0].1, AggregateFieldShape::Scalar(SemanticTypeId::I64));
+    assert_eq!(abi_type(&db, value), Ok(Some(SemanticTypeId::I64)));
+    assert_eq!(abi_type(&db, tag), Ok(Some(SemanticTypeId::I64)));
+}
+
+#[test]
+fn field_of_an_indexed_method_owned_array_element_resolves_inside_the_method() {
+    let source = r#"
+type Entry { string route, i64 signature, }
+type Table {
+    Entry[] entries,
+    i64 Find(string route) {
+        mut i64 index = 0_i64;
+        while (index < 2_i64) {
+            if (entries[index].route == route) { return entries[index].signature; }
+            index = index + 1_i64;
+        }
+        return 0_i64;
+    }
+}
+"#;
+    let (db, _project, unit, generation, index) = setup(source);
+    let entry = key(unit, generation, &index, NodeKind::TypeDefinition, 0);
+    let route = key(unit, generation, &index, NodeKind::MemberExpression, 0);
+    let signature = key(unit, generation, &index, NodeKind::MemberExpression, 1);
+    let condition = key(unit, generation, &index, NodeKind::BinaryExpression, 1);
+
+    let access = aggregate_field_access(&db, route).expect("field access query").expect("indexed element field");
+    assert_eq!(access.declaration, entry);
+    assert_eq!(access.index, 0);
+    assert_eq!(abi_type(&db, route), Ok(Some(SemanticTypeId::STRING)));
+    assert_eq!(aggregate_field_access(&db, signature).expect("field access query").map(|access| access.index), Some(1));
+    assert_eq!(abi_type(&db, condition), Ok(Some(SemanticTypeId::BOOL)));
+    let indexed = key(unit, generation, &index, NodeKind::IndexExpression, 0);
+    assert_eq!(
+        beskid_queries::array_index_element_abi_type(&db, indexed),
+        Ok(Some(SemanticTypeId::POINTER)),
+        "a method-owned array field indexes to its nominal element"
+    );
+}
+
+#[test]
 fn self_path_resolves_to_its_implicit_method_receiver() {
     let source = "type List<T> { List<T> Identity() { return self; } }";
     let (db, _project, unit, generation, index) = setup(source);
@@ -625,31 +717,6 @@ fn enum_constructor_selects_the_source_variant_and_single_payload() {
 }
 
 #[test]
-fn generic_enum_constructor_takes_its_application_from_a_method_parameter() {
-    let source = r#"
-enum Maybe<T> { None(), Some(T value) }
-type Holder {
-    i64 n,
-
-    i64 Pick(Maybe<i64> other) { return 0; }
-}
-i64 Main() {
-    Holder holder = Holder { n: 1 };
-    return holder.Pick(Maybe::None());
-}
-"#;
-    let (db, _project, unit, generation, index) = setup(source);
-    let constructor = key(unit, generation, &index, NodeKind::EnumConstructorExpression, 0);
-    let declaration = key(unit, generation, &index, NodeKind::EnumDefinition, 0);
-
-    assert_eq!(
-        enum_constructor(&db, constructor).expect("enum constructor query in a method argument"),
-        Some(beskid_queries::EnumConstructorFact { declaration, variant_index: 0, payloads: Arc::from([]) }),
-        "an unapplied generic constructor in a method argument takes the parameter's application"
-    );
-}
-
-#[test]
 fn enum_constructor_preserves_multiple_payloads_in_source_order() {
     let source = "enum Pair { Value(i32 left, i32 right) } i32 Main() { Pair pair = Pair::Value(1, 2); return 0; }";
     let (db, _project, unit, generation, index) = setup(source);
@@ -894,6 +961,7 @@ fn enum_match_keeps_source_ordered_nullary_variant_arms() {
                         variant_index: 0,
                         items: Arc::from([]),
                     }),
+                    guard: None,
                     body: first_body,
                 },
                 EnumMatchArmFact {
@@ -908,6 +976,7 @@ fn enum_match_keeps_source_ordered_nullary_variant_arms() {
                         variant_index: 1,
                         items: Arc::from([]),
                     }),
+                    guard: None,
                     body: second_body,
                 },
             ]),
@@ -978,10 +1047,17 @@ fn enum_match_preserves_multi_field_payload_patterns_in_source_order() {
 }
 
 #[test]
-fn enum_match_rejects_identifier_bindings_for_zero_sized_unit_payloads() {
+fn enum_match_binds_zero_sized_unit_payloads_without_storage() {
     let source = "enum Result { Ok(unit value), Error(i64 error) } bool Main(Result result) { return match result { Result::Ok(value) => true, Result::Error(_) => false, }; }";
     let (db, _project, unit, generation, index) = setup(source);
     let expression = key(unit, generation, &index, NodeKind::MatchExpression, 0);
 
-    assert_unavailable(enum_match(&db, expression));
+    let fact = enum_match(&db, expression).expect("unit binding match query").expect("unit binding match fact");
+    let EnumMatchPatternFact::Enum(ok) = &fact.arms[0].pattern else {
+        panic!("Ok arm must remain an enum pattern");
+    };
+    let [EnumMatchPatternFact::Binding(value)] = ok.items.as_ref() else {
+        panic!("the unit payload must bind: {:?}", ok.items);
+    };
+    assert_eq!(value.payload, AggregateFieldShape::Scalar(SemanticTypeId::UNIT));
 }

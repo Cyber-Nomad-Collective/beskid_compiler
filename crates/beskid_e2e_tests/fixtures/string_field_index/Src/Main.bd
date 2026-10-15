@@ -1,0 +1,54 @@
+// A string reached through a field is indexed directly: `cursor.text[at]`, `this.text[at]`,
+// and a field of a field. Each read is the byte at that index.
+
+type Cursor {
+    string text,
+    i64 at,
+
+    pub i64 Current() {
+        return i64(this.text[this.at]);
+    }
+}
+
+type Outer {
+    Cursor cursor,
+}
+
+i64 ByteOf(Cursor cursor, i64 at) {
+    return i64(cursor.text[at]);
+}
+
+i64 Sum(Cursor cursor) {
+    mut i64 total = 0;
+    mut i64 index = 0;
+    while index < 3 {
+        total = total + i64(cursor.text[index]);
+        index = index + 1;
+    }
+    return total;
+}
+
+i32 Main() {
+    Cursor cursor = Cursor { text: "beskid", at: 1 };
+    if ByteOf(cursor, 0) != 98 {
+        return 1;
+    }
+    if cursor.Current() != 101 {
+        return 2;
+    }
+    if i64(cursor.text[5]) != 100 {
+        return 3;
+    }
+    Outer outer = Outer { cursor: cursor };
+    if i64(outer.cursor.text[2]) != 115 {
+        return 4;
+    }
+    if Sum(cursor) != 98 + 101 + 115 {
+        return 5;
+    }
+    u8 first = cursor.text[0];
+    if first != 98_u8 {
+        return 6;
+    }
+    return 42;
+}

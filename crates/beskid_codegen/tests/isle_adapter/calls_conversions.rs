@@ -120,47 +120,17 @@ fn parsed_string_interpolation_coerces_i64_operand() {
     assert!(clif.contains("str_concat"), "string concatenation dispatch must be imported: {clif}",);
 }
 
-#[test]
-fn parsed_string_ordering_lowers_through_str_cmp() {
-    for (operator, condition) in [("<", "slt"), ("<=", "sle"), (">", "sgt"), (">=", "sge")] {
-        let source = format!("bool Main(string a, string b) {{ return a {operator} b; }}");
-        let (input, isa, root) = item_fixture_with_root(&source);
-        let item = named_function(&input, root, "Main");
-        let artifact =
-            lower_syntax_program(&input, isa.as_ref(), &[SyntaxModuleItem { key: item, symbol: "Main".into() }])
-                .unwrap_or_else(|error| panic!("{source}: string ordering lowers: {error:?}"));
-        let clif = artifact.functions[0].function.display().to_string();
-        assert!(clif.contains("str_cmp"), "{source}: ordinal comparison service: {clif}");
-        assert!(clif.contains(&format!("icmp_imm {condition}")) || clif.contains(&format!("icmp {condition}")), "{source}: {clif}");
-    }
-}
-
-#[test]
-fn parsed_f64_to_integer_conversions_saturate() {
-    for (source, expected) in [
-        ("i64 Main(f64 v) { return i64(v); }", "fcvt_to_sint_sat.i64"),
-        ("u32 Main(f64 v) { return u32(v); }", "fcvt_to_uint_sat.i32"),
-        ("u8 Main(f64 v) { return u8(v); }", "umin"),
-    ] {
-        let (input, isa, root) = item_fixture_with_root(source);
-        let item = named_function(&input, root, "Main");
-        let artifact =
-            lower_syntax_program(&input, isa.as_ref(), &[SyntaxModuleItem { key: item, symbol: "Main".into() }])
-                .unwrap_or_else(|error| panic!("{source}: f64 conversion lowers: {error:?}"));
-        let clif = artifact.functions[0].function.display().to_string();
-        assert!(clif.contains(expected), "{source}: expected {expected}: {clif}");
-        assert!(!clif.contains("fcvt_to_sint.") && !clif.contains("fcvt_to_uint."), "{source}: never traps: {clif}");
-    }
+fn lower_main_clif(source: &str) -> String {
+    let (input, isa, root) = item_fixture_with_root(source);
+    let item = named_function(&input, root, "Main");
+    let artifact = lower_syntax_program(&input, isa.as_ref(), &[SyntaxModuleItem { key: item, symbol: "Main".into() }])
+        .unwrap_or_else(|error| panic!("{source}: lowers: {error:?}"));
+    artifact.functions[0].function.display().to_string()
 }
 
 #[test]
 fn parsed_string_interpolation_spells_bool_operands() {
-    let (input, isa, root) = item_fixture_with_root(r#"string Main(bool flag) { return "flag=${flag}"; }"#);
-    let item = named_function(&input, root, "Main");
-
-    let artifact = lower_syntax_program(&input, isa.as_ref(), &[SyntaxModuleItem { key: item, symbol: "Main".into() }])
-        .expect("bool interpolation must lower through syntax ISLE string coercion");
-    let clif = artifact.functions[0].function.display().to_string();
+    let clif = lower_main_clif(r#"string Main(bool flag) { return "flag=${flag}"; }"#);
 
     assert!(!clif.contains("str_from_i64"), "bool must not format as an integer: {clif}");
     assert!(clif.contains("brif"), "bool selects between its two spellings: {clif}");
@@ -169,17 +139,152 @@ fn parsed_string_interpolation_spells_bool_operands() {
 
 #[test]
 fn parsed_string_interpolation_formats_f64_operands_from_their_bits() {
-    let (input, isa, root) = item_fixture_with_root(r#"string Main(f64 value) { return "value=${value}"; }"#);
-    let item = named_function(&input, root, "Main");
-
-    let artifact = lower_syntax_program(&input, isa.as_ref(), &[SyntaxModuleItem { key: item, symbol: "Main".into() }])
-        .expect("f64 interpolation must lower through syntax ISLE string coercion");
-    let clif = artifact.functions[0].function.display().to_string();
+    let clif = lower_main_clif(r#"string Main(f64 value) { return "value=${value}"; }"#);
 
     assert!(clif.contains("bitcast.i64"), "the f64 passes to the runtime as its IEEE-754 bits: {clif}");
     assert!(clif.contains("str_from_f64_bits"), "f64 formats through its own runtime service: {clif}");
+    assert!(!clif.contains("fpromote"), "an f64 is formatted without widening: {clif}");
     assert!(!clif.contains("str_from_i64"), "f64 must not format as an integer: {clif}");
     assert!(clif.contains("str_concat"), "string concatenation dispatch must be imported: {clif}");
+}
+
+#[test]
+fn parsed_string_interpolation_formats_f32_operands_through_exact_widening() {
+    let clif = lower_main_clif(r#"string Main(f32 value) { return "value=${value}"; }"#);
+
+    assert!(clif.contains("fpromote.f64"), "the f32 widens exactly to binary64 first: {clif}");
+    assert!(clif.contains("bitcast.i64"), "the widened value passes as its IEEE-754 bits: {clif}");
+    assert!(clif.contains("str_from_f64_bits"), "f32 formats through the binary64 service: {clif}");
+    assert!(!clif.contains("str_from_i64"), "f32 must not format as an integer: {clif}");
+}
+
+#[test]
+fn string_equality_with_a_short_literal_compares_in_place() {
+    for source in [
+        r#"bool Main(string a) { return a == "PrimaryExpression"; }"#,
+        r#"bool Main(string a) { return "PrimaryExpression" != a; }"#,
+    ] {
+        let clif = lower_main_clif(source);
+        assert!(!clif.contains("str_new"), "{source}: the literal is not materialized: {clif}");
+        assert!(!clif.contains("str_eq"), "{source}: no runtime comparison call: {clif}");
+        // 17 bytes: two 8-byte chunks and one 1-byte chunk, after the null and length checks.
+        assert_eq!(clif.matches("bxor").count(), 3, "{source}: {clif}");
+        assert!(clif.contains("iconst.i64 17"), "{source}: length check against 17: {clif}");
+    }
+}
+
+#[test]
+fn string_equality_with_a_long_literal_uses_str_eq() {
+    let literal = "x".repeat(65);
+    let clif = lower_main_clif(&format!("bool Main(string a) {{ return a == \"{literal}\"; }}"));
+    assert!(clif.contains("str_new") && clif.contains("str_eq"), "{clif}");
+}
+
+#[test]
+fn string_concatenation_roots_the_left_operand_while_the_right_one_allocates() {
+    let clif = lower_main_clif(r#"string Main(i64 n) { return "${n}|Name"; }"#);
+    let callee = |line: &str| line.split("call ").nth(1).and_then(|rest| rest.split('(').next()).map(str::to_owned);
+    let calls_to = |symbol: &str| {
+        clif.lines()
+            .enumerate()
+            .filter(|(_, line)| {
+                callee(line).is_some_and(|name| {
+                    clif.lines().any(|decl| decl.trim_start().starts_with(&format!("{name} = %{symbol} ")))
+                })
+            })
+            .map(|(index, _)| index)
+            .collect::<Vec<_>>()
+    };
+    // The `|Name` literal is materialized last; the formatted number is already rooted then.
+    let literal = *calls_to("str_new").last().unwrap_or_else(|| panic!("a literal materialization: {clif}"));
+    assert!(
+        calls_to("gc_register_root").iter().any(|register| *register < literal),
+        "the left operand is rooted before the literal allocates: {clif}"
+    );
+    assert!(calls_to("str_concat").iter().any(|concat| *concat > literal), "{clif}");
+}
+
+/// The resolver bench's five-part record: an interpolation is a left fold of `str_concat` calls,
+/// and every intermediate result is rooted before the next part allocates. A kit built without
+/// that rooting returned "" for one record per run: a collection inside a later part freed the
+/// text so far, and `str_concat` (which roots its operands and fails on a freed one) returned null.
+#[test]
+fn every_intermediate_of_a_five_part_interpolation_is_rooted_while_later_parts_allocate() {
+    let clif = lower_main_clif(r#"string Main(i64 owner, i64 start, string name) { return "item ${owner} ${start} ${name} ${owner}"; }"#);
+    let callee = |line: &str| line.split("call ").nth(1).and_then(|rest| rest.split('(').next()).map(str::to_owned);
+    let calls_to = |symbol: &str| {
+        clif.lines()
+            .enumerate()
+            .filter(|(_, line)| {
+                callee(line).is_some_and(|name| {
+                    clif.lines().any(|decl| decl.trim_start().starts_with(&format!("{name} = %{symbol} ")))
+                })
+            })
+            .map(|(index, _)| index)
+            .collect::<Vec<_>>()
+    };
+    let concats = calls_to("str_concat");
+    assert_eq!(concats.len(), 7, "seven concatenations join eight parts: {clif}");
+    let allocations = [calls_to("str_new"), calls_to("str_from_i64")].concat();
+    let registers = calls_to("gc_register_root");
+    for pair in concats.windows(2) {
+        let (previous, next) = (pair[0], pair[1]);
+        let Some(first_allocation) = allocations.iter().copied().filter(|at| (previous..next).contains(at)).min() else {
+            // `${name}` reads a parameter, which cannot allocate.
+            continue;
+        };
+        assert!(
+            registers.iter().any(|register| (previous..first_allocation).contains(register)),
+            "the result of the concatenation at line {previous} is rooted before the allocation at line {first_allocation}: {clif}"
+        );
+    }
+}
+
+#[test]
+fn parsed_string_ordering_lowers_through_str_cmp() {
+    for (operator, condition) in [("<", "slt"), ("<=", "sle"), (">", "sgt"), (">=", "sge")] {
+        let source = format!("bool Main(string a, string b) {{ return a {operator} b; }}");
+        let clif = lower_main_clif(&source);
+        assert!(clif.contains("str_cmp"), "{source}: ordinal comparison service: {clif}");
+        assert!(!clif.contains("str_eq"), "{source}: ordering is not equality: {clif}");
+        assert!(
+            clif.contains(&format!("icmp_imm {condition}")) || clif.contains(&format!("icmp {condition}")),
+            "{source}: {clif}"
+        );
+    }
+}
+
+/// Integer conversions of `f32` and `f64` truncate toward zero and saturate (NaN gives 0,
+/// out-of-range values clamp) for every 0.6 integer width. Signedness follows the semantic
+/// target, so `u16`, `u64`, and `word` saturate as unsigned values.
+#[test]
+fn parsed_float_to_integer_conversions_saturate() {
+    let cases: &[(&str, &str, &[&str], &str)] = &[
+        ("i64", "fcvt_to_sint_sat.i64", &[], "fcvt_to_uint_sat"),
+        ("i32", "fcvt_to_sint_sat.i32", &[], "fcvt_to_uint_sat"),
+        ("i16", "fcvt_to_sint_sat.i32", &["smin", "smax", "ireduce.i16"], "fcvt_to_uint_sat"),
+        ("i8", "fcvt_to_sint_sat.i32", &["smin", "smax", "ireduce.i8"], "fcvt_to_uint_sat"),
+        ("u64", "fcvt_to_uint_sat.i64", &[], "fcvt_to_sint_sat"),
+        ("word", "fcvt_to_uint_sat.i64", &[], "fcvt_to_sint_sat"),
+        ("u32", "fcvt_to_uint_sat.i32", &[], "fcvt_to_sint_sat"),
+        ("u16", "fcvt_to_uint_sat.i32", &["umin", "ireduce.i16"], "fcvt_to_sint_sat"),
+        ("u8", "fcvt_to_uint_sat.i32", &["umin", "ireduce.i8"], "fcvt_to_sint_sat"),
+    ];
+    for source_type in ["f64", "f32"] {
+        for (target, conversion, clamps, wrong_sign) in cases {
+            let source = format!("{target} Main({source_type} v) {{ return {target}(v); }}");
+            let clif = lower_main_clif(&source);
+            assert!(clif.contains(conversion), "{source}: expected {conversion}: {clif}");
+            for clamp in *clamps {
+                assert!(clif.contains(clamp), "{source}: expected {clamp}: {clif}");
+            }
+            assert!(!clif.contains(wrong_sign), "{source}: signedness follows the target: {clif}");
+            assert!(
+                !clif.contains("fcvt_to_sint.") && !clif.contains("fcvt_to_uint."),
+                "{source}: the conversion never traps: {clif}"
+            );
+        }
+    }
 }
 
 #[test]
@@ -379,7 +484,16 @@ fn canonical_foundation_args_module_emits_only_the_authorized_args_imports() {
     imports.sort_unstable();
     assert_eq!(
         imports,
-        vec!["beskid_rt_v5_args_count", "beskid_rt_v5_args_get", "str_cmp", "str_concat", "str_eq", "str_from_f64_bits", "str_from_i64", "str_new"],
+        vec![
+            "beskid_rt_v5_args_count",
+            "beskid_rt_v5_args_get",
+            "str_cmp",
+            "str_concat",
+            "str_eq",
+            "str_from_f64_bits",
+            "str_from_i64",
+            "str_new"
+        ],
         "canonical Core.Args receives its exact ABI-v5 services plus the always-available string baseline"
     );
 }
@@ -488,7 +602,7 @@ fn canonical_foundation_assert_trigger_failure_imports_only_baseline_strings_and
     let (input, isa, root) = canonical_foundation_assert_fixture();
     let trigger_failure = find_function_definitions(input.database(), root)
         .into_iter()
-        .find(|key| item_name(input.database(), *key).ok().flatten().as_deref() == Some("trigger_failure"))
+        .find(|key| item_name(input.database(), *key).ok().flatten().as_deref() == Some("TriggerFailure"))
         .expect("canonical Assert trigger_failure");
     let call = find_corelib_service_call(input.database(), trigger_failure, "__panic_str")
         .expect("canonical Assert panic call");
@@ -501,20 +615,28 @@ fn canonical_foundation_assert_trigger_failure_imports_only_baseline_strings_and
     let artifact = lower_syntax_program(
         &input,
         isa.as_ref(),
-        &[SyntaxModuleItem { key: trigger_failure, symbol: "trigger_failure".into() }],
+        &[SyntaxModuleItem { key: trigger_failure, symbol: "TriggerFailure".into() }],
     )
     .expect("canonical Assert lowers through syntax ISLE");
     let mut imports = artifact.extern_imports.iter().map(|import| import.symbol.as_str()).collect::<Vec<_>>();
     imports.sort_unstable();
     assert_eq!(
         imports,
-        vec!["beskid_trap_message", "str_cmp", "str_concat", "str_eq", "str_from_f64_bits", "str_from_i64", "str_new"],
+        vec![
+            "beskid_trap_message",
+            "str_cmp",
+            "str_concat",
+            "str_eq",
+            "str_from_f64_bits",
+            "str_from_i64",
+            "str_new"
+        ],
         "canonical Assert may emit the always-admitted string baseline and its reachable panic service, but no other facade service"
     );
     let trigger = artifact
         .functions
         .iter()
-        .find(|function| function.name == "trigger_failure")
+        .find(|function| function.name == "TriggerFailure")
         .expect("trigger_failure artifact");
     let clif = trigger.function.display().to_string();
     assert!(!clif.contains("load.i64"), "the managed panic string must cross the adapter boundary intact: {clif}");

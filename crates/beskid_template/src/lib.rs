@@ -1,5 +1,6 @@
 //! Beskid project template engine (`beskid.template.v1`): manifest, substitution, instantiation.
 
+mod bundled;
 mod cache;
 mod error;
 mod forms;

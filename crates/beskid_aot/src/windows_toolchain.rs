@@ -111,15 +111,35 @@ fn require_one_of(environment: &BTreeMap<String, OsString>, names: &[&str]) -> A
     ))
 }
 
+/// The developer-environment variables the MSVC compiler and linker read: tool and SDK search
+/// paths (`LIB` holds `kernel32.lib`, `msvcrt.lib`, `ucrt.lib`) and the selected SDK.
+#[cfg(any(windows, test))]
+const TOOLCHAIN_VARIABLES: [&str; 6] = ["PATH", "INCLUDE", "LIB", "LIBPATH", "WINDOWSSDKDIR", "WINDOWSSDKVERSION"];
+
+/// The toolchain variables as explicit values: each one `configured` (the discovered developer
+/// environment) carries, else the inherited value. A child whose environment is otherwise cleared
+/// (the hermetic Rust owner build) receives them as overrides, so its nested `link.exe` still
+/// finds the Windows SDK import libraries.
+#[cfg(any(windows, test))]
+fn explicit_toolchain_variables(
+    configured: &BTreeMap<String, OsString>,
+    inherited: &BTreeMap<String, OsString>,
+) -> Vec<(OsString, OsString)> {
+    TOOLCHAIN_VARIABLES
+        .iter()
+        .filter_map(|name| {
+            configured.get(*name).or_else(|| inherited.get(*name)).map(|value| (OsString::from(*name), value.clone()))
+        })
+        .collect()
+}
+
 #[cfg(any(windows, test))]
 fn configure_from_dev_output(command: &mut Command, output: &str, llvm_bin: Option<&Path>) -> AotResult<()> {
     let mut environment = parse_dev_output(output);
     // `set` includes the entire inherited environment, potentially including credentials.
     // Command's Debug output is used in linker diagnostics, so only carry the values the
     // native toolchain needs into explicit child overrides.
-    environment.retain(|name, _| {
-        matches!(name.as_str(), "PATH" | "INCLUDE" | "LIB" | "LIBPATH" | "WINDOWSSDKDIR" | "WINDOWSSDKVERSION")
-    });
+    environment.retain(|name, _| TOOLCHAIN_VARIABLES.contains(&name.as_str()));
     for name in ["PATH", "INCLUDE", "LIB", "WINDOWSSDKDIR", "WINDOWSSDKVERSION"] {
         if environment.get(name).is_none_or(|value| value.is_empty()) {
             return Err(unavailable(
@@ -221,17 +241,18 @@ fn decode_cmd_unicode(output: &[u8]) -> AotResult<String> {
 }
 
 #[cfg(windows)]
-fn run_developer_command(instance: &Path) -> AotResult<String> {
+fn run_developer_command(instance: &Path, control: Option<&crate::api::NativeExecutionControl>) -> AotResult<String> {
     let developer_command = instance.join("Common7").join("Tools").join("VsDevCmd.bat");
     if !developer_command.is_file() {
         return Err(unavailable("VsDevCmd.bat", format!("missing in {}", instance.display())));
     }
     let invocation = format!("call \"{}\" -arch=x64 -host_arch=x64 >nul && set", developer_command.display());
-    let output = Command::new("cmd.exe")
-        .args(["/d", "/u", "/c"])
-        .raw_arg(invocation)
-        .output()
-        .map_err(|error| unavailable("VsDevCmd.bat", error.to_string()))?;
+    let mut command = Command::new("cmd.exe");
+    command.args(["/d", "/u", "/c"]).raw_arg(invocation);
+    let output = match control {
+        Some(control) => control.run_command(&mut command, &std::env::temp_dir(), "windows_developer_environment")?,
+        None => command.output().map_err(|error| unavailable("VsDevCmd.bat", error.to_string()))?,
+    };
     if !output.status.success() {
         return Err(unavailable("VsDevCmd.bat", String::from_utf8_lossy(&output.stderr).into_owned()));
     }
@@ -240,6 +261,17 @@ fn run_developer_command(instance: &Path) -> AotResult<String> {
 
 #[cfg(windows)]
 pub(crate) fn configure_windows_native_command(command: &mut Command) -> AotResult<()> {
+    configure_windows_native_command_with_control(command, None)
+}
+
+#[cfg(windows)]
+pub(crate) fn configure_windows_native_command_with_control(
+    command: &mut Command,
+    control: Option<&crate::api::NativeExecutionControl>,
+) -> AotResult<()> {
+    if let Some(control) = control {
+        control.check("windows_toolchain_discovery")?;
+    }
     let explicit = std::env::vars_os()
         .map(|(name, value)| (name.to_string_lossy().to_ascii_uppercase(), value))
         .collect::<BTreeMap<_, _>>();
@@ -252,30 +284,67 @@ pub(crate) fn configure_windows_native_command(command: &mut Command) -> AotResu
         .join("Microsoft Visual Studio")
         .join("Installer")
         .join("vswhere.exe");
-    let output = Command::new(&installer)
-        .args([
-            "-all",
-            "-version",
-            "[17.0,18.0)",
-            "-products",
-            "*",
-            "-requires",
-            "Microsoft.VisualStudio.Component.VC.Tools.x86.x64",
-            "-format",
-            "json",
-        ])
-        .output()
-        .map_err(|error| unavailable("vswhere.exe", format!("{}: {error}", installer.display())))?;
+    let mut discovery = Command::new(&installer);
+    discovery.args([
+        "-all",
+        "-version",
+        "[17.0,18.0)",
+        "-products",
+        "*",
+        "-requires",
+        "Microsoft.VisualStudio.Component.VC.Tools.x86.x64",
+        "-format",
+        "json",
+    ]);
+    let output = match control {
+        Some(control) => control.run_command(&mut discovery, &std::env::temp_dir(), "windows_toolchain_discovery")?,
+        None => discovery
+            .output()
+            .map_err(|error| unavailable("vswhere.exe", format!("{}: {error}", installer.display())))?,
+    };
     if !output.status.success() {
         return Err(unavailable("vswhere.exe", String::from_utf8_lossy(&output.stderr).into_owned()));
     }
     let instances = parse_instances(&String::from_utf8_lossy(&output.stdout))?;
-    configure_from_instances(command, &instances, installed_llvm_bin().as_deref(), run_developer_command)
+    configure_from_instances(command, &instances, installed_llvm_bin().as_deref(), |instance| {
+        run_developer_command(instance, control)
+    })
 }
 
 #[cfg(not(windows))]
 pub(crate) fn configure_windows_native_command(_command: &mut Command) -> AotResult<()> {
     Ok(())
+}
+
+/// The MSVC developer environment as explicit `(name, value)` pairs, for a child that cannot
+/// inherit it: the process's own complete developer environment, otherwise the one VsDevCmd.bat
+/// produces for the newest complete VS 2022 instance (as [`configure_windows_native_command`]).
+#[cfg(windows)]
+pub(crate) fn windows_native_environment(
+    control: Option<&crate::api::NativeExecutionControl>,
+) -> AotResult<Vec<(OsString, OsString)>> {
+    let mut probe = Command::new("link.exe");
+    configure_windows_native_command_with_control(&mut probe, control)?;
+    let configured = probe
+        .get_envs()
+        .filter_map(|(name, value)| Some((name.to_string_lossy().to_ascii_uppercase(), value?.to_os_string())))
+        .collect::<BTreeMap<_, _>>();
+    let inherited = std::env::vars_os()
+        .map(|(name, value)| (name.to_string_lossy().to_ascii_uppercase(), value))
+        .collect::<BTreeMap<_, _>>();
+    let variables = explicit_toolchain_variables(&configured, &inherited);
+    let lib = variables
+        .iter()
+        .find(|(name, _)| name == "LIB")
+        .map(|(_, value)| value)
+        .ok_or_else(|| unavailable("Windows SDK import libraries", "the MSVC developer environment has no LIB"))?;
+    if !paths(lib).any(|directory| directory.join("kernel32.lib").is_file()) {
+        return Err(unavailable(
+            "Windows SDK import libraries",
+            "kernel32.lib is missing from LIB; install the Windows SDK and MSVC x64 tools",
+        ));
+    }
+    Ok(variables)
 }
 
 #[cfg(test)]
@@ -284,8 +353,38 @@ mod tests {
 
     use super::{
         Instance, complete_explicit_environment, configure_from_dev_output, configure_from_instances,
-        decode_cmd_unicode, parse_instances, select_instance,
+        decode_cmd_unicode, explicit_toolchain_variables, parse_instances, select_instance,
     };
+
+    #[test]
+    fn explicit_toolchain_variables_prefer_discovered_values_and_carry_lib() {
+        let map = |entries: &[(&str, &str)]| {
+            entries
+                .iter()
+                .map(|(name, value)| (name.to_string(), std::ffi::OsString::from(value)))
+                .collect::<std::collections::BTreeMap<_, _>>()
+        };
+        let configured = map(&[("PATH", "C:\\vs\\bin"), ("LIB", "C:\\sdk\\lib")]);
+        let inherited = map(&[
+            ("PATH", "C:\\inherited"),
+            ("INCLUDE", "C:\\sdk\\include"),
+            ("LIBPATH", "C:\\vs\\libpath"),
+            ("SECRET_TOKEN", "do-not-forward"),
+        ]);
+        let variables = explicit_toolchain_variables(&configured, &inherited)
+            .into_iter()
+            .map(|(name, value)| (name.into_string().unwrap(), value.into_string().unwrap()))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            variables,
+            [
+                ("PATH".to_owned(), "C:\\vs\\bin".to_owned()),
+                ("INCLUDE".to_owned(), "C:\\sdk\\include".to_owned()),
+                ("LIB".to_owned(), "C:\\sdk\\lib".to_owned()),
+                ("LIBPATH".to_owned(), "C:\\vs\\libpath".to_owned()),
+            ]
+        );
+    }
 
     #[test]
     fn selects_complete_build_tools_over_incomplete_instance() {
@@ -446,4 +545,15 @@ mod tests {
         .unwrap();
         assert_eq!(command.get_program(), tools.join("cl.exe"));
     }
+}
+
+#[cfg(not(windows))]
+pub(crate) fn configure_windows_native_command_with_control(
+    _command: &mut Command,
+    control: Option<&crate::api::NativeExecutionControl>,
+) -> AotResult<()> {
+    if let Some(control) = control {
+        control.check("windows_toolchain_discovery")?;
+    }
+    Ok(())
 }

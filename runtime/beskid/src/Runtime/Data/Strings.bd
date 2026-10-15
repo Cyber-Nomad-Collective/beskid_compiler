@@ -2,6 +2,18 @@
 //
 // Strings are represented as `BeskidStr` fat pointers stored in a managed object.
 // String data buffers are allocated via the heap and owned by the string object.
+//
+// Every non-null string operand must be a live managed string. A service that receives one that
+// is not (use after collection) traps `invalid_or_stale_handle` through
+// `RequireLiveManagedReference` (RootsHandles.bd) and never substitutes a null or empty string.
+// The check reads span metadata only, so `str_len`, `str_eq` and `str_cmp` stay non-collecting.
+
+// Service numbers for the not-live diagnostic; the same numbering as RootsHandles.bd.
+const LIVENESS_STR_LEN = 4;
+const LIVENESS_STR_EQ = 5;
+const LIVENESS_STR_CMP = 6;
+const LIVENESS_STR_CONCAT = 7;
+const LIVENESS_STR_SLICE = 8;
 
 // Allocates a new `BeskidStr` wrapping the given UTF-8 byte range.
 //
@@ -13,30 +25,20 @@ pub pointer StrNew(pointer data, word length) {
     if data == NativePointer(0) && length != 0 {
         return NativePointer(0);
     }
-    // Allocate the BeskidStr header (16 bytes: ptr + len).
-    pointer strObj = SystemAllocate(16, 8);
-    if strObj == NativePointer(0) {
-        return NativePointer(0);
-    }
-    // Allocate and copy the data buffer. Empty strings keep a storage-only sentinel.
-    mut word allocation = length;
-    if allocation == 0 {
-        allocation = 1;
-    }
-    pointer buffer = SystemAllocate(allocation, 1);
-    if buffer == NativePointer(0) {
-        SystemFree(strObj, 16);
-        return NativePointer(0);
-    }
-    if length != 0 {
-        memory_copy(buffer, data, length);
-    } else {
-        raw_byte_store(buffer, 0);
-    }
-    // Store { ptr, len } in the header.
-    raw_word_store(strObj, NativeWord(buffer));
-    raw_word_store(pointer_add(strObj, 8), length);
-    return strObj;
+    return utf8_view_new(data, length);
+}
+
+// Allocates a string of `length` zero bytes that the runtime fills in place before handing it
+// out (`utf8_view_new` with a null source). Building a result this way copies each byte once and
+// needs no native scratch buffer; the system allocator maps and unmaps whole pages, so a scratch
+// buffer per string cost a pair of system calls.
+pointer StrNewZeroed(word length) {
+    return utf8_view_new(NativePointer(0), length);
+}
+
+// The data address of a string returned by `StrNewZeroed`.
+pointer StrData(pointer value) {
+    return NativePointer(raw_word_load(value));
 }
 
 // Returns the byte length of a string, or 0 for a null handle.
@@ -45,12 +47,15 @@ pub word StrLen(pointer value) {
     if value == NativePointer(0) {
         return 0;
     }
+    RequireLiveManagedReference(value, LIVENESS_STR_LEN);
     return raw_word_load(pointer_add(value, 8));
 }
 
 // Returns 1 when two strings have equal content, 0 otherwise.
 [Export(Abi:"C", Symbol:"str_eq")]
 pub word StrEq(pointer left, pointer right) {
+    RequireLiveManagedReference(left, LIVENESS_STR_EQ);
+    RequireLiveManagedReference(right, LIVENESS_STR_EQ);
     if left == right {
         return 1;
     }
@@ -81,6 +86,8 @@ pub word StrEq(pointer left, pointer right) {
 // proper prefix first. This is ordinal order, not locale collation.
 [Export(Abi:"C", Symbol:"str_cmp")]
 pub i64 StrCmp(pointer left, pointer right) {
+    RequireLiveManagedReference(left, LIVENESS_STR_CMP);
+    RequireLiveManagedReference(right, LIVENESS_STR_CMP);
     if left == right {
         return 0;
     }
@@ -124,57 +131,48 @@ pub pointer StrConcat(pointer left, pointer right) {
     if left == NativePointer(0) || right == NativePointer(0) {
         return NativePointer(0);
     }
+    RequireLiveManagedReference(left, LIVENESS_STR_CONCAT);
+    RequireLiveManagedReference(right, LIVENESS_STR_CONCAT);
     word leftLen = raw_word_load(pointer_add(left, 8));
     word rightLen = raw_word_load(pointer_add(right, 8));
-    pointer leftPtr = NativePointer(raw_word_load(left));
-    pointer rightPtr = NativePointer(raw_word_load(right));
     word totalLen = leftLen + rightLen;
     if totalLen < leftLen {
         return NativePointer(0);
     }
-    // Two empty operands produce the canonical empty string; the allocator rejects size 0.
-    if totalLen == 0 {
-        return StrNew(NativePointer(0), 0);
-    }
-    pointer buffer = SystemAllocate(totalLen, 1);
-    if buffer == NativePointer(0) {
+    // The result is allocated before the operands are copied, so both stay rooted across the
+    // allocation: the caller may pass temporaries that nothing else references. Both operands
+    // are live managed strings (checked above), so a zero handle is only a failed handle
+    // admission inside a checked scope, which records the failure for the caller to observe.
+    word leftRoot = GcRootHandle(left);
+    if leftRoot == 0 {
         return NativePointer(0);
     }
-    if leftLen > 0 && leftPtr != NativePointer(0) {
-        memory_copy(buffer, leftPtr, leftLen);
-    }
-    if rightLen > 0 && rightPtr != NativePointer(0) {
-        memory_copy(pointer_add(buffer, leftLen), rightPtr, rightLen);
-    }
-    pointer strObj = SystemAllocate(16, 8);
-    if strObj == NativePointer(0) {
-        SystemFree(buffer, totalLen);
+    word rightRoot = GcRootHandle(right);
+    if rightRoot == 0 {
+        GcUnrootHandle(leftRoot);
         return NativePointer(0);
     }
-    raw_word_store(strObj, NativeWord(buffer));
-    raw_word_store(pointer_add(strObj, 8), totalLen);
-    return strObj;
+    pointer result = StrNewZeroed(totalLen);
+    if result != NativePointer(0) {
+        pointer buffer = StrData(result);
+        pointer leftPtr = NativePointer(raw_word_load(left));
+        pointer rightPtr = NativePointer(raw_word_load(right));
+        if leftLen > 0 && leftPtr != NativePointer(0) {
+            memory_copy(buffer, leftPtr, leftLen);
+        }
+        if rightLen > 0 && rightPtr != NativePointer(0) {
+            memory_copy(pointer_add(buffer, leftLen), rightPtr, rightLen);
+        }
+    }
+    GcUnrootHandle(rightRoot);
+    GcUnrootHandle(leftRoot);
+    return result;
 }
 
 // Formats a signed integer as a decimal string.
 [Export(Abi:"C", Symbol:"str_from_i64")]
 pub pointer StrFromI64(i64 value) {
-    if value == 0 {
-        pointer buf = SystemAllocate(1, 1);
-        if buf == NativePointer(0) {
-            return NativePointer(0);
-        }
-        raw_byte_store(buf, 48);
-        pointer strObj = SystemAllocate(16, 8);
-        if strObj == NativePointer(0) {
-            SystemFree(buf, 1);
-            return NativePointer(0);
-        }
-        raw_word_store(strObj, NativeWord(buf));
-        raw_word_store(pointer_add(strObj, 8), 1);
-        return strObj;
-    }
-    // Digits are taken from the signed value without negating it, so the minimum i64 (whose
+    // Digits come from the signed value without negating it, so the minimum i64 (whose
     // negation overflows) formats like every other value.
     bool negative = value < 0;
     mut i64 digits = value;
@@ -183,12 +181,20 @@ pub pointer StrFromI64(i64 value) {
         count = count + 1;
         digits = digits / 10;
     }
+    if value == 0 {
+        count = 1;
+    }
     if negative {
         count = count + 1;
     }
-    pointer buf = SystemAllocate(count, 1);
-    if buf == NativePointer(0) {
+    pointer result = StrNewZeroed(count);
+    if result == NativePointer(0) {
         return NativePointer(0);
+    }
+    pointer buf = StrData(result);
+    if value == 0 {
+        raw_byte_store(buf, 48);
+        return result;
     }
     // Fill from the end; `%` truncates toward zero, so a negative value yields negative digits.
     mut word pos = count;
@@ -205,14 +211,7 @@ pub pointer StrFromI64(i64 value) {
     if negative {
         raw_byte_store(buf, 45);
     }
-    pointer strObj = SystemAllocate(16, 8);
-    if strObj == NativePointer(0) {
-        SystemFree(buf, count);
-        return NativePointer(0);
-    }
-    raw_word_store(strObj, NativeWord(buf));
-    raw_word_store(pointer_add(strObj, 8), count);
-    return strObj;
+    return result;
 }
 
 // Extracts a substring by byte range.
@@ -221,6 +220,7 @@ pub pointer StrSlice(pointer value, word start, mut word count) {
     if value == NativePointer(0) {
         return NativePointer(0);
     }
+    RequireLiveManagedReference(value, LIVENESS_STR_SLICE);
     word len = raw_word_load(pointer_add(value, 8));
     if start >= len || count == 0 {
         mut word end = start + count;
@@ -243,7 +243,12 @@ pub pointer StrSlice(pointer value, word start, mut word count) {
     if data == NativePointer(0) {
         return NativePointer(0);
     }
-    return StrNew(pointer_add(data, start), sliceLen);
+    // `value` is live (checked above): a zero handle is a recorded checked-scope failure.
+    word retained = GcRootHandle(value);
+    if retained == 0 { return NativePointer(0); }
+    pointer result = StrNew(pointer_add(data, start), sliceLen);
+    GcUnrootHandle(retained);
+    return result;
 }
 
 // Converts a byte buffer to a string, validating UTF-8.
@@ -279,7 +284,7 @@ pub pointer StrFromF64Bits(i64 bits) {
     i64 fraction = bits & 4503599627370495;
     i64 biased = (bits >> 52) & 2047;
     bool negative = bits < 0;
-    pointer out = SystemAllocate(F64_TEXT_CAPACITY, 1);
+    pointer out = SystemAllocateScratch(F64_TEXT_CAPACITY, 1);
     if out == NativePointer(0) {
         return NativePointer(0);
     }
@@ -306,7 +311,7 @@ pub pointer StrFromF64Bits(i64 bits) {
         raw_byte_store(out, 45);
         length = 1;
     }
-    pointer digits = SystemAllocate(F64_DIGITS_BYTES, 8);
+    pointer digits = SystemAllocateScratch(F64_DIGITS_BYTES, 8);
     if digits == NativePointer(0) {
         SystemFree(out, F64_TEXT_CAPACITY);
         return NativePointer(0);
@@ -418,7 +423,7 @@ word LayOutF64(pointer out, word at, pointer digits, i64 k, i64 n) {
 // With v = f x 2^e, the scaled values keep r / s = v / 10^k and plus / s, minus / s = the
 // distances to the rounding boundaries above and below v, all as exact integers.
 word ShortestDigits(i64 fraction, i64 biased, pointer digits) {
-    pointer big = SystemAllocate(BIG_BYTES * 5, 8);
+    pointer big = SystemAllocateScratch(BIG_BYTES * 5, 8);
     if big == NativePointer(0) {
         return 0;
     }

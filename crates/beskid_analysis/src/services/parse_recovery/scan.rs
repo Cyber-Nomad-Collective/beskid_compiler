@@ -118,7 +118,7 @@ pub(crate) fn has_suffix_ignoring_ws_before(source: &str, before: usize, suffix:
         return false;
     }
     let start = pos - suffix.len();
-    &source[start..pos] == suffix
+    &bytes[start..pos] == suffix.as_bytes()
 }
 
 pub(crate) fn token_ends_like_literal(source: &str, before: usize) -> bool {
@@ -134,7 +134,7 @@ pub(crate) fn token_ends_like_literal(source: &str, before: usize) -> bool {
         return true;
     }
     for kw in ["true", "false"] {
-        if end >= kw.len() && &source[end - kw.len()..end] == kw {
+        if end >= kw.len() && &bytes[end - kw.len()..end] == kw.as_bytes() {
             let before_kw = end - kw.len();
             if before_kw == 0 || !is_ident_continue(bytes[before_kw - 1]) {
                 return true;
@@ -494,6 +494,18 @@ pub(crate) fn unbalanced_delimiters(source: &str, through: usize) -> (i32, i32, 
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn v06_literal_and_suffix_checks_preserve_utf8_boundaries() {
+        for source in ["x😀", "xż", "😀false", "😀true"] {
+            for offset in 0..=source.len() {
+                let _ = super::token_ends_like_literal(source, offset);
+                let _ = super::has_suffix_ignoring_ws_before(source, offset, "false");
+            }
+        }
+        assert!(super::token_ends_like_literal("😀false", "😀false".len()));
+        assert!(!super::token_ends_like_literal("x😀", "x😀".len()));
+    }
+
     use super::*;
 
     #[test]

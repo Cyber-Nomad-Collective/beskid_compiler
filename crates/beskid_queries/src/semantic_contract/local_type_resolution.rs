@@ -20,7 +20,7 @@
 use super::*;
 use beskid_analysis::syntax::{
     AstNodeId, CallExpression, EnumDefinition, Expression, Field, FunctionDefinition, LambdaParameter, LetStatement,
-    MethodDefinition, Parameter, Program, Spanned, Type, TypeDefinition,
+    MethodDefinition, Parameter, Path, Program, Spanned, Type, TypeDefinition,
 };
 use beskid_analysis::syntax_query::{NodeKind, SyntaxIndex};
 
@@ -38,6 +38,37 @@ pub struct UnresolvedTypeReference {
     pub site: AstNodeKey,
     /// The unresolved type name.
     pub name: Arc<str>,
+    /// Why the path names no type, as the legacy resolver classifies it.
+    pub kind: UnresolvedTypeKind,
+}
+
+/// The legacy resolver's classification of an unresolved type path (`Resolver::resolve_type_path`
+/// and `resolve_type_item_in_module_path` in `beskid_analysis::resolve::resolve_refs::types_paths`).
+///
+/// A qualified path (two or more segments) is classified through `qualified_module_resolution`,
+/// the module authority `resolve_type_declaration` itself consults: no module is
+/// `ModulePathLookup::ModuleMissing`, one module that declares the type only without `pub` is
+/// `NotVisible`, and one module that declares no type of the name is `NameMissing`. Every shape
+/// these facts cannot prove (a single segment, a qualifier with type arguments, a qualifier the
+/// unit's own namespace or an import owns, a module that declares the name publicly at another
+/// generic arity, or a module with public re-export routes) stays `UnknownType`, which carries
+/// the same code as `UnknownTypeInModule`.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub enum UnresolvedTypeKind {
+    /// E1201 `ResolveError::UnknownType` / `TypeError::UnknownType`.
+    UnknownType,
+    /// E1108 `ResolveError::UnknownModulePath`: the qualifier names no module. `path` is the
+    /// qualifier as written.
+    UnknownModulePath { path: Arc<str> },
+    /// E1104: the qualifier names more than one assembled module.
+    AmbiguousModulePath { path: Arc<str>, candidates: usize },
+    /// E1107 `ResolveError::PrivateItemInModule`: the module declares the type without `pub`.
+    PrivateItemInModule { module_path: Arc<str>, name: Arc<str> },
+    /// E1201 `ResolveError::UnknownTypeInModule`: the module declares no type of the name.
+    UnknownTypeInModule { module_path: Arc<str>, name: Arc<str> },
+    /// E1104 `ResolveError::AmbiguousItemInModule`: the module declares no type of the name
+    /// itself and reaches `candidates` distinct ones through its public re-exports at one distance.
+    AmbiguousItemInModule { module_path: Arc<str>, name: Arc<str>, candidates: usize },
 }
 
 /// Report the first unresolved nominal type name among every type position reachable from
@@ -65,7 +96,7 @@ fn unresolved_type_reference_tracked(
         positions.into_iter().find_map(|(node, ty)| {
             let site = AstNodeKey { node, ..key };
             first_unresolved_nominal_reference(db, site, &ty)
-                .map(|name| Ok(UnresolvedTypeReference { site, name: Arc::from(name.as_str()) }))
+                .map(|(name, kind)| Ok(UnresolvedTypeReference { site, name: Arc::from(name.as_str()), kind }))
         })
     })?
     .transpose()
@@ -158,7 +189,7 @@ fn collect_type_positions(
 /// pass the exact node whose declared type is `ty`, so an enclosing-generic check made from a
 /// nested position (for example a lambda parameter) still finds the correct enclosing
 /// function/method.
-fn first_unresolved_nominal_reference(db: &dyn Db, key: AstNodeKey, ty: &Type) -> Option<String> {
+fn first_unresolved_nominal_reference(db: &dyn Db, key: AstNodeKey, ty: &Type) -> Option<(String, UnresolvedTypeKind)> {
     match ty {
         // `This` is not a nominal reference: the type checker owns its scope
         // (`ThisUsedOutsideContractOrImpl`), like any enclosing generic parameter.
@@ -174,7 +205,11 @@ fn first_unresolved_nominal_reference(db: &dyn Db, key: AstNodeKey, ty: &Type) -
                 && resolve_type_declaration(db, key, &path.node).is_none()
                 && resolve_contract(db, key, &path.node).is_none()
             {
-                return path.node.segments.last().map(|segment| segment.node.name.node.name.clone());
+                return path
+                    .node
+                    .segments
+                    .last()
+                    .map(|segment| (segment.node.name.node.name.clone(), classify_unresolved_type_path(db, key, &path.node)));
             }
             path.node.segments.iter().find_map(|segment| {
                 segment
@@ -187,8 +222,85 @@ fn first_unresolved_nominal_reference(db: &dyn Db, key: AstNodeKey, ty: &Type) -
     }
 }
 
+/// Classify an unresolved type path at `key` (see [`UnresolvedTypeKind`]).
+fn classify_unresolved_type_path(db: &dyn Db, key: AstNodeKey, path: &Path) -> UnresolvedTypeKind {
+    use super::legality::calls::{assembly_declares_module, import_binds_name, unit_declares_namespace_name};
+
+    let Some((terminal, qualifier)) = path.segments.split_last() else { return UnresolvedTypeKind::UnknownType };
+    if qualifier.is_empty() || qualifier.iter().any(|segment| !segment.node.type_args.is_empty()) {
+        return UnresolvedTypeKind::UnknownType;
+    }
+    let qualifier = qualifier.iter().map(|segment| segment.node.name.node.name.clone()).collect::<Vec<_>>();
+    let module_path = Arc::<str>::from(qualifier.join("."));
+    let name = terminal.node.name.node.name.as_str();
+    match qualified_module_resolution(db, key, &qualifier) {
+        QualifiedModuleResolution::Ambiguous(units) => {
+            UnresolvedTypeKind::AmbiguousModulePath { path: module_path, candidates: units.len() }
+        }
+        QualifiedModuleResolution::Unit(unit) => match module_type_visibility(db, unit, key.generation, name) {
+            Some(false) => UnresolvedTypeKind::PrivateItemInModule { module_path, name: Arc::from(name) },
+            Some(true) => UnresolvedTypeKind::UnknownType,
+            None if db.syntax_unit(unit).is_some_and(|syntax| syntax.generation(db) == key.generation) => {
+                let generic_arity = terminal.node.type_args.len();
+                match nearest_reexport_route_outcome(db, unit, key.generation, |db, current, generation| {
+                    unique_public_type_in_unit(db, current, generation, name, generic_arity)
+                }) {
+                    ReexportRoute::Found(_) => UnresolvedTypeKind::UnknownType,
+                    ReexportRoute::Ambiguous(candidates) => {
+                        UnresolvedTypeKind::AmbiguousItemInModule { module_path, name: Arc::from(name), candidates }
+                    }
+                    ReexportRoute::Missing => {
+                        UnresolvedTypeKind::UnknownTypeInModule { module_path, name: Arc::from(name) }
+                    }
+                }
+            }
+            None => UnresolvedTypeKind::UnknownType,
+        },
+        QualifiedModuleResolution::Missing => {
+            let root = qualifier[0].as_str();
+            let namespace_owned = db.syntax_unit(key.unit).filter(|syntax| syntax.accepts_key(db, key)).is_none_or(|syntax| {
+                unit_declares_namespace_name(syntax.expanded_program(db), syntax.syntax_index(db), root)
+            });
+            if namespace_owned || import_binds_name(db, key, root) || assembly_declares_module(db, key, &qualifier) {
+                UnresolvedTypeKind::UnknownType
+            } else {
+                UnresolvedTypeKind::UnknownModulePath { path: module_path }
+            }
+        }
+    }
+}
+
+/// Whether `unit` declares a type, enum, or contract named `name`: `Some(true)` when any such
+/// declaration is `pub`, `Some(false)` when every one is private, `None` when there is none.
+fn module_type_visibility(db: &dyn Db, unit: SourceUnitId, generation: SyntaxGenerationId, name: &str) -> Option<bool> {
+    use beskid_analysis::syntax::{ContractDefinition, Visibility};
+
+    let syntax = db.syntax_unit(unit).filter(|syntax| syntax.generation(db) == generation)?;
+    let program = syntax.expanded_program(db);
+    let index = syntax.syntax_index(db);
+    let mut declared = None;
+    for kind in [NodeKind::TypeDefinition, NodeKind::EnumDefinition, NodeKind::ContractDefinition] {
+        for candidate in index.ids_of_kind(kind) {
+            let Some(node) = index.node_at(program, candidate) else { continue };
+            let visibility = if let Some(item) = node.of::<TypeDefinition>() {
+                (item.name.node.name == name).then_some(item.visibility.node)
+            } else if let Some(item) = node.of::<EnumDefinition>() {
+                (item.name.node.name == name).then_some(item.visibility.node)
+            } else if let Some(item) = node.of::<ContractDefinition>() {
+                (item.name.node.name == name).then_some(item.visibility.node)
+            } else {
+                None
+            };
+            if let Some(visibility) = visibility {
+                declared = Some(declared.unwrap_or(false) || visibility == Visibility::Public);
+            }
+        }
+    }
+    declared
+}
+
 /// Whether `ty` is a bare reference to a generic parameter declared by the nearest enclosing
-/// `type` or `enum` declaration.
+/// `type`, `enum` or `contract` declaration.
 ///
 /// `type_syntax_is_enclosing_generic_parameter_reference` only recognizes a function's or
 /// method's own generics (walking up to the nearest `FunctionDefinition`/`MethodDefinition`, then
@@ -196,7 +308,8 @@ fn first_unresolved_nominal_reference(db: &dyn Db, key: AstNodeKey, ty: &Type) -
 /// type sits directly under its `type`/`enum` declaration with no enclosing function/method
 /// ancestor at all -- `enum Box<T> { Some(T value) }`'s `T` is exactly this shape, and every
 /// generic declaration's own field positions need it, not only calls that specialize the
-/// declaration.
+/// declaration. A generic contract's method signature parameters bind the contract's own
+/// generics the same way (`contract Bridge<T> { R Pack(Box<T> boxed); }`).
 fn is_enclosing_container_generic_parameter(db: &dyn Db, key: AstNodeKey, ty: &Type) -> bool {
     let Some(parameter_name) = generic_parameter_reference_name(ty) else { return false };
     let Some(syntax) = db.syntax_unit(key.unit) else { return false };
@@ -205,7 +318,9 @@ fn is_enclosing_container_generic_parameter(db: &dyn Db, key: AstNodeKey, ty: &T
     }
     let index = syntax.syntax_index(db);
     let Some(enclosing) =
-        nearest_ancestor(index, key.node, |kind| matches!(kind, NodeKind::TypeDefinition | NodeKind::EnumDefinition))
+        nearest_ancestor(index, key.node, |kind| {
+            matches!(kind, NodeKind::TypeDefinition | NodeKind::EnumDefinition | NodeKind::ContractDefinition)
+        })
     else {
         return false;
     };
@@ -216,6 +331,9 @@ fn is_enclosing_container_generic_parameter(db: &dyn Db, key: AstNodeKey, ty: &T
     }
     if let Some(enum_definition) = node.of::<EnumDefinition>() {
         return enum_definition.generics.iter().any(|generic| generic.node.name == parameter_name);
+    }
+    if let Some(contract_definition) = node.of::<beskid_analysis::syntax::ContractDefinition>() {
+        return contract_definition.generics.iter().any(|generic| generic.node.name == parameter_name);
     }
     false
 }

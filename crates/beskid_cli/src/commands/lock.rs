@@ -1,10 +1,11 @@
-//! `beskid lock` — synchronize `Project.lock` for the selected project/workspace.
+//! `beskid dev project lock` — synchronize `Project.lock` for the selected project/workspace.
 
-use crate::project_args::{PlainProgressArgs, ProjectResolveArgs};
+use crate::project_args::{LockfilePolicyArgs, PlainProgressArgs, ProjectResolveArgs};
 use anyhow::Result;
 use beskid_analysis::projects::UnresolvedDependencyPolicy;
 use beskid_tools::pipeline::{
-    CliProjectPipelineOptions, CliResolveOptions, resolve_project_with_cli_pipeline, tui::CommandSummary,
+    CliProjectPipelineOptions, CliResolveOptions, resolve_project_with_cli_pipeline,
+    tui::CommandSummary,
 };
 use clap::Args;
 
@@ -12,6 +13,9 @@ use clap::Args;
 pub struct LockArgs {
     #[command(flatten)]
     pub project: ProjectResolveArgs,
+
+    #[command(flatten)]
+    pub lockfile: LockfilePolicyArgs,
 
     #[command(flatten)]
     pub progress: PlainProgressArgs,
@@ -27,8 +31,7 @@ pub fn execute(args: LockArgs) -> Result<()> {
                 args.project.project.as_ref(),
                 args.project.target.as_deref(),
                 args.project.workspace_member.as_deref(),
-                false,
-                false,
+                args.lockfile.WorkspaceOptions(),
                 args.progress.plain,
             )
         },

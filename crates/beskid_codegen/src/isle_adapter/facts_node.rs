@@ -3,8 +3,8 @@
 use super::*;
 
 mod calls;
-mod composition;
 mod collections;
+mod composition;
 mod enums;
 mod events;
 mod literals;
@@ -13,6 +13,13 @@ mod structs;
 mod types;
 
 impl NodeFacts for SyntaxNodeFacts<'_> {
+    fn nonallocating_publication_body(&self) -> bool {
+        self.nonallocating_publication
+    }
+    fn checked_allocation_body(&self) -> bool {
+        self.checked_effect
+    }
+
     fn composition_launch(&self, key: AstNodeKey) -> Option<CompositionLaunchPlan> {
         self.composition_launch_impl(key)
     }
@@ -99,6 +106,14 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
 
     fn managed_reference(&self, key: AstNodeKey) -> Option<ManagedReferenceFact> {
         self.managed_reference_impl(key)
+    }
+
+    fn array_for_fact(&self, key: AstNodeKey) -> Option<beskid_isle::ArrayForFact> {
+        self.array_for_fact_impl(key)
+    }
+
+    fn iterator_for_fact(&self, key: AstNodeKey) -> Option<beskid_isle::IteratorForFact> {
+        self.iterator_for_fact_impl(key)
     }
 
     fn try_expression_fact(&self, key: AstNodeKey) -> Option<beskid_queries::TryExpressionFact> {
@@ -257,6 +272,10 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
         self.match_arms_impl(key)
     }
 
+    fn scalar_match_scrutinee(&self, key: AstNodeKey) -> Option<Type> {
+        self.scalar_match_scrutinee_impl(key)
+    }
+
     fn range_fact(&self, key: AstNodeKey) -> Option<beskid_isle::RangeFact> {
         self.range_fact_impl(key)
     }
@@ -283,5 +302,9 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
 
     fn function_value_call(&self, key: AstNodeKey) -> Option<beskid_isle::FunctionValueCall> {
         self.function_value_call_impl(key)
+    }
+
+    fn function_item_value(&self, key: AstNodeKey) -> Option<beskid_isle::FunctionItemValue> {
+        self.function_item_value_impl(key)
     }
 }

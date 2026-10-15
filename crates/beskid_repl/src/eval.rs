@@ -83,8 +83,8 @@ fn is_likely_statement(snippet: &str) -> bool {
     STATEMENT_PREFIXES.iter().any(|prefix| trimmed.starts_with(prefix))
 }
 
-fn prepare_wrapped(source: &str) -> Result<beskid_analysis::services::FrontEndTypedResult, String> {
-    prepare_syntax_front_end(std::path::Path::new(REPL_SOURCE_PATH), source).map_err(format_lower_error)
+fn prepare_wrapped(source: &str) -> Result<beskid_analysis::services::ExecutableFrontEnd, String> {
+    prepare_syntax_front_end(std::path::Path::new(REPL_SOURCE_PATH), source, &beskid_engine::ModHost::NoMods).map_err(format_lower_error)
 }
 
 fn run_wrapped(
@@ -146,7 +146,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires the staged native runtime-kit matrix prefix"]
     fn staged_native_runtime_kit_evaluates_a_snippet() {
         let _serial = serial();
         let prefix = std::env::var_os("BESKID_RUNTIME_PREFIX")

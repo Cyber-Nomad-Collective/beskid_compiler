@@ -49,6 +49,8 @@ mod closures_and_spawn;
 mod runtime_authority;
 #[path = "semantic_facts/deadline_projection.rs"]
 mod deadline_projection;
+#[path = "semantic_facts/field_visibility.rs"]
+mod field_visibility;
 #[rustfmt::skip]
 #[path = "semantic_facts/statement_result_storage.rs"]
 mod statement_result_storage;
@@ -61,3 +63,11 @@ mod dead_growth;
 #[rustfmt::skip]
 #[path = "semantic_facts/local_type_resolution.rs"]
 mod local_type_resolution;
+#[path = "semantic_facts/function_values.rs"]
+mod function_values;
+#[path = "semantic_facts/string_concat_gate.rs"]
+mod string_concat_gate;
+#[path = "semantic_facts/match_coverage.rs"]
+mod match_coverage;
+#[path = "semantic_facts/member_callees.rs"]
+mod member_callees;

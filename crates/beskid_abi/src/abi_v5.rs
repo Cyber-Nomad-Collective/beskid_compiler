@@ -174,9 +174,14 @@ pub struct RuntimeIntrinsic {
     pub target_bindings: Vec<RuntimeTargetBinding>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PlatformImportKind { Function, Data }
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PlatformImport {
+    pub kind: PlatformImportKind,
     pub symbol: String,
     pub library: String,
     pub param_names: Vec<String>,
@@ -277,6 +282,15 @@ impl AbiManifestV5 {
         for function in self.imports.iter().chain(&self.exports) {
             if !function.symbol.starts_with(RUNTIME_SYMBOL_PREFIX)
                 && !LIBRARY_LIFECYCLE_SYMBOLS.contains(&function.symbol.as_str())
+                && !(beskid_manifest::independently_versioned_runtime_contract(&function.symbol).is_some_and(
+                    |(params, result)| {
+                        function.params.iter().copied().map(abi_type_manifest_name).eq(params.iter().copied())
+                            && abi_type_manifest_name(function.result) == result
+                            && function.param_names.len() == params.len()
+                            && !function.noreturn
+                            && self.exports.contains(function)
+                    },
+                ))
             {
                 return Err(ManifestValidationError::UnversionedRuntimeSymbol { symbol: function.symbol.clone() });
             }
@@ -302,6 +316,10 @@ impl AbiManifestV5 {
             }
         }
         validate_named_contracts(self.platform_imports.iter().map(|entry| entry.symbol.as_str()))?;
+        if self.platform_imports.iter().any(|entry| entry.kind == PlatformImportKind::Data &&
+            (!entry.params.is_empty() || !entry.param_names.is_empty() || entry.result == AbiType::Void || entry.noreturn)) {
+            return Err(ManifestValidationError::InvalidPlatformImportSet { actual: self.platform_imports.clone() });
+        }
         validate_layouts(&self.layouts)?;
 
         if let Some(package) = &self.trusted_runtime_package {
@@ -466,4 +484,24 @@ fn hex_digest(bytes: impl AsRef<[u8]>) -> String {
         write!(&mut output, "{byte:02x}").expect("writing to String cannot fail");
     }
     output
+}
+
+fn abi_type_manifest_name(ty: AbiType) -> &'static str {
+    match ty {
+        AbiType::Void => "void",
+        AbiType::Pointer => "pointer",
+        AbiType::USize => "usize",
+        AbiType::ISize => "isize",
+        AbiType::I8 => "i8",
+        AbiType::U8 => "u8",
+        AbiType::I16 => "i16",
+        AbiType::U16 => "u16",
+        AbiType::I32 => "i32",
+        AbiType::U32 => "u32",
+        AbiType::I64 => "i64",
+        AbiType::U64 => "u64",
+        AbiType::V128 => "v128",
+        AbiType::F32 => "f32",
+        AbiType::F64 => "f64",
+    }
 }

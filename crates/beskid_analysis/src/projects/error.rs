@@ -59,6 +59,12 @@ pub enum ProjectError {
         #[source]
         source: std::io::Error,
     },
+    #[error("failed to lock the materialized workspace at {path}: {source}")]
+    MaterializationLock {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
     #[error("failed to read materialization directory at {path}: {source}")]
     MaterializationReadDir {
         path: PathBuf,
@@ -75,6 +81,12 @@ pub enum ProjectError {
     MaterializationCopy {
         from: PathBuf,
         to: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("failed to remove stale materialized entry at {path}: {source}")]
+    MaterializationPrune {
+        path: PathBuf,
         #[source]
         source: std::io::Error,
     },
@@ -132,9 +144,11 @@ impl ProjectError {
             Self::LockfileFrozenMode => "E3023",
             Self::LockfileRequired { .. } => "E3023",
             Self::MaterializationCreateDir { .. } => "E3030",
+            Self::MaterializationLock { .. } => "E3030",
             Self::MaterializationReadDir { .. } => "E3030",
             Self::MaterializationMetadata { .. } => "E3030",
             Self::MaterializationCopy { .. } => "E3031",
+            Self::MaterializationPrune { .. } => "E3031",
         }
     }
 }

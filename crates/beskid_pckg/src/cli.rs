@@ -1,4 +1,4 @@
-//! Clap surface and command execution for `beskid pckg` (pack, upload, registry queries).
+//! Clap surface and command execution for `beskid package` (pack, upload, registry queries).
 
 use std::collections::BTreeMap;
 use std::io::{IsTerminal, Write};

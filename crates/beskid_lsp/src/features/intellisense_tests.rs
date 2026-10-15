@@ -9,8 +9,9 @@ mod tests {
 
     use crate::features::{completion, definition, hover, references, signature_help};
     use crate::position::position_to_offset;
-    use crate::session::lifecycle::build_document;
+    use crate::session::lifecycle::{build_document, set_document};
     use crate::session::store::{Document, State, SyntaxCompletion, SyntaxDefinition, SyntaxHover, SyntaxSymbol};
+    use crate::test_mod_host::ProvisionedModHost;
     use crate::workspace_scan::path_to_uri;
 
     struct CorelibMvpFixture {
@@ -59,8 +60,8 @@ mod tests {
 
         let root = PathBuf::from("/tmp/intellisense-completion/src");
         let main_path = root.join("Main.bd");
-        let output_path = root.join("Std/Core/Output.bd");
-        let main_source = "use Std.Core.Output;\ni32 Main() { return Output.Write; }";
+        let output_path = root.join("Core/Output.bd");
+        let main_source = "use Core.Output;\ni32 Main() { return Output.Write; }";
         let output_source = "pub i32 WriteLine() { return 1; }";
         let main_program = expand_program(
             parse_program_with_source_name(main_path.to_str().unwrap(), main_source).expect("main parses"),
@@ -154,7 +155,8 @@ mod tests {
         std::env::set_current_dir(&root).expect("chdir");
         let fixture = corelib_mvp_paths();
         let uri = fixture.uri.clone();
-        let state = tokio::sync::RwLock::new(State::default());
+        let mod_host = ProvisionedModHost::for_source(&fixture.main_path);
+        let state = tokio::sync::RwLock::new(mod_host.state());
         state.read().await.mark_initial_scan_complete();
         let doc = build_document(&state, &uri, 1, fixture.source.clone()).await;
         std::env::set_current_dir(previous).expect("restore cwd");
@@ -302,7 +304,8 @@ mod tests {
         std::env::set_current_dir(&root).expect("chdir");
         let fixture = corelib_mvp_paths();
         let uri = fixture.uri.clone();
-        let state = tokio::sync::RwLock::new(State::default());
+        let mod_host = ProvisionedModHost::for_source(&fixture.main_path);
+        let state = tokio::sync::RwLock::new(mod_host.state());
         state.read().await.mark_initial_scan_complete();
         let doc = build_document(&state, &uri, 1, fixture.source.clone()).await;
         std::env::set_current_dir(previous).expect("restore cwd");
@@ -314,6 +317,58 @@ mod tests {
                     .any(|definition| { definition.declaration_path.to_string_lossy().contains("Output") }),
             "lifecycle build_document should attach syntax facts for WriteLine"
         );
+    }
+
+    /// One long-lived server database must accept an expanded tree that matches an earlier
+    /// generation: open, comment-only edit (same tree, shifted spans), then undo (earlier
+    /// source text). Every revision must keep project preparation and typed facts, with
+    /// hover spans bound to that revision's text.
+    #[tokio::test]
+    async fn comment_only_edit_and_undo_keep_typed_facts_in_one_database() {
+        let _fixture = crate::SHARED_FIXTURE_LOCK.lock().await;
+        let root = compiler_workspace_root();
+        let previous = std::env::current_dir().expect("cwd");
+        std::env::set_current_dir(&root).expect("chdir");
+        let fixture = corelib_mvp_paths();
+        let uri = fixture.uri.clone();
+        let mod_host = ProvisionedModHost::for_source(&fixture.main_path);
+        let state = tokio::sync::RwLock::new(mod_host.state());
+        state.read().await.mark_initial_scan_complete();
+        let commented = format!("// comment-only edit\n{}", fixture.source);
+        let revisions = [(1, fixture.source.clone()), (2, commented), (3, fixture.source.clone())];
+        let mut checked = Vec::new();
+        for (version, text) in revisions {
+            assert!(set_document(&state, uri.clone(), version, text.clone()).await, "accept version {version}");
+            let entry_only = state.read().await.docs.get(&uri).expect("open document").clone();
+            let full = build_document(&state, &uri, version, text.clone()).await;
+            checked.push((version, text, entry_only, full));
+        }
+        std::env::set_current_dir(previous).expect("restore cwd");
+        for (version, text, entry_only, full) in checked {
+            for (policy, doc) in [("entry-only", &entry_only), ("full-closure", &full)] {
+                let failures = doc
+                    .syntax_diagnostics
+                    .iter()
+                    .filter(|diagnostic| diagnostic.code.as_deref() == Some("project-preparation"))
+                    .map(|diagnostic| diagnostic.message.as_str())
+                    .collect::<Vec<_>>();
+                assert!(failures.is_empty(), "version {version} ({policy}) failed project preparation: {failures:#?}");
+            }
+            // Hover references are path-expression spans, so the call's reference covers the whole
+            // qualified path; a stale span from another revision would cover different text.
+            let offset = text.find("Output.WriteLine").expect("Output.WriteLine");
+            assert!(
+                full.syntax_hovers.iter().any(|hover| {
+                    hover.reference_start == offset
+                        && &text[hover.reference_start..hover.reference_end] == "Output.WriteLine"
+                }),
+                "version {version} must bind a WriteLine hover to its own spans, got {:?}",
+                full.syntax_hovers
+                    .iter()
+                    .map(|hover| (hover.reference_start, hover.reference_end, hover.markdown.as_str()))
+                    .collect::<Vec<_>>()
+            );
+        }
     }
 
     #[tokio::test]
@@ -339,13 +394,18 @@ mod tests {
         let root = compiler_workspace_root();
         with_cwd_at_workspace_root(&root, || {
             let fixture = corelib_mvp_paths();
-            let resolved =
-                resolve_input(Some(&fixture.main_path), Some(&fixture.project_root), None, None, false, false)
-                    .expect("resolve");
+            let resolved = resolve_input(
+                Some(&fixture.main_path),
+                Some(&fixture.project_root),
+                None,
+                None,
+                beskid_analysis::projects::WorkspacePrepareOptions::default(),
+            )
+            .expect("resolve");
             let project_root = fixture.project_root.canonicalize().unwrap_or_else(|_| fixture.project_root.clone());
             configure_db_for_project(&project_root);
             let mut db = BeskidDatabase::with_persistence(&project_root);
-            let mut options = PrepareOptions::default();
+            let mut options = PrepareOptions::without_mods();
             options.front_end.assembly_discovery = AssemblyDiscovery::ImportClosure;
             let shared = entry_resolution_with_db(&mut db, &resolved, &options).expect("entry resolution");
             assert!(
@@ -363,7 +423,8 @@ mod tests {
         std::env::set_current_dir(&root).expect("chdir");
         let fixture = corelib_mvp_paths();
         let uri = fixture.uri.clone();
-        let state = tokio::sync::RwLock::new(State::default());
+        let mod_host = ProvisionedModHost::for_source(&fixture.main_path);
+        let state = tokio::sync::RwLock::new(mod_host.state());
         state.read().await.mark_initial_scan_complete();
         let doc = build_document(&state, &uri, 1, fixture.source.clone()).await;
         std::env::set_current_dir(previous).expect("restore cwd");
@@ -390,7 +451,8 @@ mod tests {
         std::env::set_current_dir(&root).expect("chdir");
         let fixture = corelib_mvp_paths();
         let uri = fixture.uri.clone();
-        let state = tokio::sync::RwLock::new(State::default());
+        let mod_host = ProvisionedModHost::for_source(&fixture.main_path);
+        let state = tokio::sync::RwLock::new(mod_host.state());
         state.read().await.mark_initial_scan_complete();
         let doc = build_document(&state, &uri, 1, fixture.source.clone()).await;
         std::env::set_current_dir(previous).expect("restore cwd");

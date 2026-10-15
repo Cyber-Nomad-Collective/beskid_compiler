@@ -45,7 +45,7 @@ fn parsed_project_reaches_verified_isle_without_a_legacy_codegen_entrypoint() {
 
     // The production entrypoint accepts parsed ProgramAssembly data and derives typed facts.
     let lowered = lower_verified_entrypoint(assembly, target.clone(), isa.as_ref());
-    assert_eq!(lowered.artifact.functions.len(), 2, "reachable direct-call closure");
+    assert_eq!(lowered.artifact().functions.len(), 2, "reachable direct-call closure");
 
     let unsupported_source = "
         i32 Main() {
@@ -85,7 +85,7 @@ fn parsed_direct_pointer_guard_with_unit_early_return_emits_verified_clif() {
 
     let lowered = lower_verified_entrypoint(assembly, target, isa.as_ref());
     let main = lowered
-        .artifact
+        .artifact()
         .functions
         .iter()
         .find(|function| function.name.starts_with("Main#syntax_"))

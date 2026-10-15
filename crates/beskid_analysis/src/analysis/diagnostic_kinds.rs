@@ -134,6 +134,8 @@ pub enum SemanticIssueKind {
     },
     MatchNonExhaustive {
         enum_name: String,
+        /// One value pattern no unguarded arm matches (`Result::Ok(_)`).
+        missing_pattern: String,
     },
     DuplicatePatternBinding {
         name: String,
@@ -187,9 +189,25 @@ pub enum SemanticIssueKind {
     ResolveInvalidConformanceTarget {
         name: String,
     },
+    ResolvePrivateRuntimeBuiltin {
+        name: String,
+    },
     ResolvePrivateItemInModule {
         module_path: String,
         name: String,
+    },
+    /// A qualified path whose module path is claimed by more than one assembled module, such as
+    /// the same package-native path in two packages of the dependency closure.
+    ResolveAmbiguousModulePath {
+        path: String,
+        candidates: usize,
+    },
+    /// A qualified path `Module.Name` that the module serves only through its public re-exports,
+    /// where `candidates` distinct items share the name at the nearest providing distance.
+    ResolveAmbiguousItemInModule {
+        module_path: String,
+        name: String,
+        candidates: usize,
     },
     ResolveShadowedLocal {
         name: String,
@@ -265,6 +283,10 @@ pub enum SemanticIssueKind {
     },
     TypeUnknownCallTarget,
     TypeInvalidBinaryOp,
+    /// E1209: a string concatenation or interpolation operand whose type has no text form.
+    TypeStringConcatOperandNotConvertible {
+        found: String,
+    },
     TypeInvalidUnaryOp,
     TypeNonBoolCondition,
     TypeUnsupportedExpression,
@@ -468,4 +490,75 @@ pub enum SemanticIssueKind {
     CompositionInvalidScopeQualifier {
         qualifier: String,
     },
+
+    // ── Query-gate numeric literal, extern profile, and Glue obligations ──
+    /// T0905: a suffixed integer literal, or a float literal, outside its declared fixed-width
+    /// primitive's range.
+    NumericLiteralOutOfRange {
+        primitive: String,
+    },
+    /// T0901: an `[Extern]` contract whose `Abi` is not `"C"`.
+    ExternInvalidAbi {
+        abi: Option<String>,
+    },
+    /// T0902: an `[Extern]` contract without a `Library`.
+    ExternMissingLibrary,
+    /// T0903: an extern method parameter the C profile (or the Glue profile) rejects.
+    ExternDisallowedParamType {
+        method: String,
+        detail: String,
+    },
+    /// T0904: an extern method return type the C profile rejects.
+    ExternDisallowedReturnType {
+        method: String,
+        detail: String,
+    },
+    /// T0903: an `[Extern]` method of a manifest Glue library whose signature or `RustOwner`
+    /// mapping the Glue binding authority rejects.
+    GlueBindingRejected {
+        method: String,
+        detail: String,
+    },
+    /// T0906: an `[Extern]` contract whose `Optional` argument is not a boolean literal, or an
+    /// `Optional:true` contract whose availability query is not declared `bool Available();`.
+    /// `detail` names the violated rule.
+    ExternInvalidOptional {
+        detail: String,
+    },
+    /// E1232: a `clif { ... }` block without a typed scalar context, with a body the CLIF
+    /// surface rejects, or naming a `%N` parameter it may not use. `detail` names the rule.
+    InvalidClifBlock {
+        detail: String,
+    },
+}
+
+#[cfg(test)]
+mod query_gate_kind_tests {
+    use super::SemanticIssueKind;
+    use crate::analysis::Severity;
+
+    #[test]
+    fn extern_invalid_optional_has_its_own_code_and_carries_the_rule_as_help() {
+        let issue = SemanticIssueKind::ExternInvalidOptional {
+            detail: "Optional takes a boolean literal: Optional:true or Optional:false".to_string(),
+        };
+        assert_eq!(issue.code(), "T0906");
+        assert_ne!(issue.code(), SemanticIssueKind::NumericLiteralOutOfRange { primitive: "i8".to_string() }.code());
+        assert_eq!(issue.message(), "invalid optional extern contract");
+        assert_eq!(issue.label(), "extern attribute");
+        assert_eq!(issue.help().as_deref(), Some("Optional takes a boolean literal: Optional:true or Optional:false"));
+        assert_eq!(issue.severity(), Severity::Error);
+    }
+
+    #[test]
+    fn invalid_clif_block_renders_the_legacy_code_and_carries_the_rule_as_help() {
+        let issue = SemanticIssueKind::InvalidClifBlock {
+            detail: "clif blocks inside lambdas cannot name parameters with `%N`".to_string(),
+        };
+        assert_eq!(issue.code(), "E1232");
+        assert_eq!(issue.message(), "invalid clif block");
+        assert_eq!(issue.label(), "clif block");
+        assert_eq!(issue.help().as_deref(), Some("clif blocks inside lambdas cannot name parameters with `%N`"));
+        assert_eq!(issue.severity(), Severity::Error);
+    }
 }

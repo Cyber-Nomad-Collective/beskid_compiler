@@ -25,7 +25,7 @@ BESKID_STAGE_LOG="${fixture_root}/stage.log" \
 
 test ! -e "${prefix}/lib/beskid-runtime/abi-5/stale"
 grep -Fx "${prefix}" "${fixture_root}/stage.log" >/dev/null
-grep -Fx "runtime-kit build-native-host --prefix ${prefix} --profile release" \
+grep -Fx "dev runtime-kit build-native-host --prefix ${prefix} --profile release" \
   "${fixture_root}/stage.log" >/dev/null
 
 echo "native runtime-kit staging script test passed"

@@ -619,6 +619,526 @@
       ]
     },
     {
+      "name": "__child_argument",
+      "adapter": "beskid_rt_v5_child_argument",
+      "params": [
+        {
+          "name": "token",
+          "type": "u64"
+        },
+        {
+          "name": "value",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_child_argument",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_child_argument",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_child_argument",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__child_begin",
+      "adapter": "beskid_rt_v5_child_begin",
+      "params": [
+        {
+          "name": "executable",
+          "type": "pointer"
+        },
+        {
+          "name": "cwd",
+          "type": "pointer"
+        },
+        {
+          "name": "inherit",
+          "type": "i32"
+        }
+      ],
+      "result": "u64",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_child_begin",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_child_begin",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_child_begin",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__child_close",
+      "adapter": "beskid_rt_v5_child_close",
+      "params": [
+        {
+          "name": "token",
+          "type": "u64"
+        }
+      ],
+      "result": "i32",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_child_close",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_child_close",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_child_close",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__child_close_pipe",
+      "adapter": "beskid_rt_v5_child_close_pipe",
+      "params": [
+        {
+          "name": "token",
+          "type": "u64"
+        },
+        {
+          "name": "stream",
+          "type": "i32"
+        }
+      ],
+      "result": "i32",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_child_close_pipe",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_child_close_pipe",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_child_close_pipe",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__child_close_until",
+      "adapter": "beskid_rt_v5_child_close_until",
+      "params": [
+        {
+          "name": "token",
+          "type": "u64"
+        },
+        {
+          "name": "deadline",
+          "type": "i64"
+        }
+      ],
+      "result": "i32",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_child_close_until",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_child_close_until",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_child_close_until",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__child_environment",
+      "adapter": "beskid_rt_v5_child_environment",
+      "params": [
+        {
+          "name": "token",
+          "type": "u64"
+        },
+        {
+          "name": "key",
+          "type": "pointer"
+        },
+        {
+          "name": "value",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_child_environment",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_child_environment",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_child_environment",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__child_pause",
+      "adapter": "beskid_rt_v5_child_pause",
+      "params": [
+        {
+          "name": "deadline",
+          "type": "i64"
+        }
+      ],
+      "result": "i64",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_child_pause",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_child_pause",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_child_pause",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__child_poll",
+      "adapter": "beskid_rt_v5_child_poll",
+      "params": [
+        {
+          "name": "token",
+          "type": "u64"
+        }
+      ],
+      "result": "i64",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_child_poll",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_child_poll",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_child_poll",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__child_read",
+      "adapter": "beskid_rt_v5_child_read",
+      "params": [
+        {
+          "name": "token",
+          "type": "u64"
+        },
+        {
+          "name": "stream",
+          "type": "i32"
+        },
+        {
+          "name": "buffer",
+          "type": "pointer"
+        },
+        {
+          "name": "offset",
+          "type": "i64"
+        },
+        {
+          "name": "count",
+          "type": "i64"
+        },
+        {
+          "name": "deadline",
+          "type": "i64"
+        }
+      ],
+      "result": "i64",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_child_read",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_child_read",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_child_read",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__child_spawn",
+      "adapter": "beskid_rt_v5_child_spawn",
+      "params": [
+        {
+          "name": "token",
+          "type": "u64"
+        },
+        {
+          "name": "deadline",
+          "type": "i64"
+        }
+      ],
+      "result": "i32",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_child_spawn",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_child_spawn",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_child_spawn",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__child_terminate",
+      "adapter": "beskid_rt_v5_child_terminate",
+      "params": [
+        {
+          "name": "token",
+          "type": "u64"
+        }
+      ],
+      "result": "i32",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_child_terminate",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_child_terminate",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_child_terminate",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__child_try_read",
+      "adapter": "beskid_rt_v5_child_try_read",
+      "params": [
+        {
+          "name": "token",
+          "type": "u64"
+        },
+        {
+          "name": "stream",
+          "type": "i32"
+        },
+        {
+          "name": "buffer",
+          "type": "pointer"
+        },
+        {
+          "name": "offset",
+          "type": "i64"
+        },
+        {
+          "name": "count",
+          "type": "i64"
+        }
+      ],
+      "result": "i64",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_child_try_read",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_child_try_read",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_child_try_read",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__child_try_write",
+      "adapter": "beskid_rt_v5_child_try_write",
+      "params": [
+        {
+          "name": "token",
+          "type": "u64"
+        },
+        {
+          "name": "buffer",
+          "type": "pointer"
+        },
+        {
+          "name": "offset",
+          "type": "i64"
+        },
+        {
+          "name": "count",
+          "type": "i64"
+        }
+      ],
+      "result": "i64",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_child_try_write",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_child_try_write",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_child_try_write",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__child_wait",
+      "adapter": "beskid_rt_v5_child_wait",
+      "params": [
+        {
+          "name": "token",
+          "type": "u64"
+        },
+        {
+          "name": "deadline",
+          "type": "i64"
+        }
+      ],
+      "result": "i64",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_child_wait",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_child_wait",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_child_wait",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__child_write",
+      "adapter": "beskid_rt_v5_child_write",
+      "params": [
+        {
+          "name": "token",
+          "type": "u64"
+        },
+        {
+          "name": "buffer",
+          "type": "pointer"
+        },
+        {
+          "name": "offset",
+          "type": "i64"
+        },
+        {
+          "name": "count",
+          "type": "i64"
+        },
+        {
+          "name": "deadline",
+          "type": "i64"
+        }
+      ],
+      "result": "i64",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_child_write",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_child_write",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_child_write",
+          "osImports": []
+        }
+      ]
+    },
+    {
       "name": "__clock_monotonic_nanos",
       "adapter": "clock_monotonic_nanos",
       "params": [],
@@ -890,194 +1410,6 @@
         {
           "target": "x86_64-unknown-linux-gnu",
           "implementation": "composition_slot_store",
-          "osImports": []
-        }
-      ]
-    },
-    {
-      "name": "__dynamic_cast_checked",
-      "adapter": "dynamic_cast_checked",
-      "params": [
-        {
-          "name": "cell",
-          "type": "pointer"
-        },
-        {
-          "name": "expectedShapeId",
-          "type": "i32"
-        }
-      ],
-      "result": "i32",
-      "targetBindings": [
-        {
-          "target": "aarch64-apple-darwin",
-          "implementation": "dynamic_cast_checked",
-          "osImports": []
-        },
-        {
-          "target": "x86_64-pc-windows-msvc",
-          "implementation": "dynamic_cast_checked",
-          "osImports": []
-        },
-        {
-          "target": "x86_64-unknown-linux-gnu",
-          "implementation": "dynamic_cast_checked",
-          "osImports": []
-        }
-      ]
-    },
-    {
-      "name": "__dynamic_cell_create",
-      "adapter": "dynamic_cell_create",
-      "params": [
-        {
-          "name": "value",
-          "type": "pointer"
-        },
-        {
-          "name": "descriptor",
-          "type": "pointer"
-        }
-      ],
-      "result": "pointer",
-      "targetBindings": [
-        {
-          "target": "aarch64-apple-darwin",
-          "implementation": "dynamic_cell_create",
-          "osImports": []
-        },
-        {
-          "target": "x86_64-pc-windows-msvc",
-          "implementation": "dynamic_cell_create",
-          "osImports": []
-        },
-        {
-          "target": "x86_64-unknown-linux-gnu",
-          "implementation": "dynamic_cell_create",
-          "osImports": []
-        }
-      ]
-    },
-    {
-      "name": "__dynamic_cell_wrap",
-      "adapter": "dynamic_cell_wrap",
-      "params": [
-        {
-          "name": "value",
-          "type": "pointer"
-        },
-        {
-          "name": "descriptor",
-          "type": "pointer"
-        }
-      ],
-      "result": "pointer",
-      "targetBindings": [
-        {
-          "target": "aarch64-apple-darwin",
-          "implementation": "dynamic_cell_wrap",
-          "osImports": []
-        },
-        {
-          "target": "x86_64-pc-windows-msvc",
-          "implementation": "dynamic_cell_wrap",
-          "osImports": []
-        },
-        {
-          "target": "x86_64-unknown-linux-gnu",
-          "implementation": "dynamic_cell_wrap",
-          "osImports": []
-        }
-      ]
-    },
-    {
-      "name": "__dynamic_map_aot",
-      "adapter": "dynamic_map_aot",
-      "params": [
-        {
-          "name": "cell",
-          "type": "pointer"
-        },
-        {
-          "name": "mapping",
-          "type": "pointer"
-        }
-      ],
-      "result": "pointer",
-      "targetBindings": [
-        {
-          "target": "aarch64-apple-darwin",
-          "implementation": "dynamic_map_aot",
-          "osImports": []
-        },
-        {
-          "target": "x86_64-pc-windows-msvc",
-          "implementation": "dynamic_map_aot",
-          "osImports": []
-        },
-        {
-          "target": "x86_64-unknown-linux-gnu",
-          "implementation": "dynamic_map_aot",
-          "osImports": []
-        }
-      ]
-    },
-    {
-      "name": "__dynamic_map_fallback",
-      "adapter": "dynamic_map_fallback",
-      "params": [
-        {
-          "name": "cell",
-          "type": "pointer"
-        },
-        {
-          "name": "mapping",
-          "type": "pointer"
-        }
-      ],
-      "result": "pointer",
-      "targetBindings": [
-        {
-          "target": "aarch64-apple-darwin",
-          "implementation": "dynamic_map_fallback",
-          "osImports": []
-        },
-        {
-          "target": "x86_64-pc-windows-msvc",
-          "implementation": "dynamic_map_fallback",
-          "osImports": []
-        },
-        {
-          "target": "x86_64-unknown-linux-gnu",
-          "implementation": "dynamic_map_fallback",
-          "osImports": []
-        }
-      ]
-    },
-    {
-      "name": "__dynamic_object_alloc",
-      "adapter": "dynamic_object_alloc",
-      "params": [
-        {
-          "name": "descriptor",
-          "type": "pointer"
-        }
-      ],
-      "result": "pointer",
-      "targetBindings": [
-        {
-          "target": "aarch64-apple-darwin",
-          "implementation": "dynamic_object_alloc",
-          "osImports": []
-        },
-        {
-          "target": "x86_64-pc-windows-msvc",
-          "implementation": "dynamic_object_alloc",
-          "osImports": []
-        },
-        {
-          "target": "x86_64-unknown-linux-gnu",
-          "implementation": "dynamic_object_alloc",
           "osImports": []
         }
       ]
@@ -1603,6 +1935,118 @@
       ]
     },
     {
+      "name": "__float_from_bits32",
+      "adapter": "beskid_rt_v5_float_from_bits32",
+      "params": [
+        {
+          "name": "value",
+          "type": "u32"
+        }
+      ],
+      "result": "f32",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_float_from_bits32",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_float_from_bits32",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_float_from_bits32",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__float_from_bits64",
+      "adapter": "beskid_rt_v5_float_from_bits64",
+      "params": [
+        {
+          "name": "value",
+          "type": "u64"
+        }
+      ],
+      "result": "f64",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_float_from_bits64",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_float_from_bits64",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_float_from_bits64",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__float_to_bits32",
+      "adapter": "beskid_rt_v5_float_to_bits32",
+      "params": [
+        {
+          "name": "value",
+          "type": "f32"
+        }
+      ],
+      "result": "u32",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_float_to_bits32",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_float_to_bits32",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_float_to_bits32",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__float_to_bits64",
+      "adapter": "beskid_rt_v5_float_to_bits64",
+      "params": [
+        {
+          "name": "value",
+          "type": "f64"
+        }
+      ],
+      "result": "u64",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_float_to_bits64",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_float_to_bits64",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_float_to_bits64",
+          "osImports": []
+        }
+      ]
+    },
+    {
       "name": "__fs_delete",
       "adapter": "beskid_rt_v5_fs_delete",
       "params": [
@@ -1746,6 +2190,29 @@
         {
           "target": "x86_64-unknown-linux-gnu",
           "implementation": "beskid_rt_v5_fs_write_text",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__gc_allocation_failure_reason",
+      "adapter": "beskid_rt_v5_gc_allocation_failure_reason",
+      "params": [],
+      "result": "usize",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_gc_allocation_failure_reason",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_gc_allocation_failure_reason",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_gc_allocation_failure_reason",
           "osImports": []
         }
       ]
@@ -2111,6 +2578,126 @@
         {
           "target": "x86_64-unknown-linux-gnu",
           "implementation": "gc_root_handle",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__gc_same_identity",
+      "adapter": "beskid_rt_v5_gc_same_identity",
+      "params": [
+        {
+          "name": "left",
+          "type": "pointer"
+        },
+        {
+          "name": "right",
+          "type": "pointer"
+        }
+      ],
+      "result": "usize",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_gc_same_identity",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_gc_same_identity",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_gc_same_identity",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__gc_try_alloc",
+      "adapter": "beskid_rt_v5_gc_try_alloc",
+      "params": [
+        {
+          "name": "size",
+          "type": "usize"
+        },
+        {
+          "name": "alignment",
+          "type": "usize"
+        }
+      ],
+      "result": "pointer",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_gc_try_alloc",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_gc_try_alloc",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_gc_try_alloc",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__gc_try_register_root",
+      "adapter": "beskid_rt_v5_gc_try_register_root",
+      "params": [
+        {
+          "name": "ptrAddr",
+          "type": "pointer"
+        }
+      ],
+      "result": "u8",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_gc_try_register_root",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_gc_try_register_root",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_gc_try_register_root",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__gc_try_root_handle",
+      "adapter": "beskid_rt_v5_gc_try_root_handle",
+      "params": [
+        {
+          "name": "valuePtr",
+          "type": "pointer"
+        }
+      ],
+      "result": "usize",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_gc_try_root_handle",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_gc_try_root_handle",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_gc_try_root_handle",
           "osImports": []
         }
       ]

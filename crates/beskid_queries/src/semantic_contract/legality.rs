@@ -12,26 +12,48 @@
 //! (`unresolved_type_reference` for E1201, `unresolved_call_target` for E1101/E1108/E1203,
 //! `call_arity_mismatch` for E1204, `generic_parameter_conflict` for E1229,
 //! `member_reference_legality` for E1211/E1301/E1302/E1307, `match_exhaustiveness` for E1304;
-//! lambda stack-reference captures for E1233; `unresolved_imports` for E1105, judged once per unit that owns
+//! lambda stack-reference captures for E1233; generic function values without an instance for
+//! E1203/E1204/E1229/E1610; `unresolved_imports` for E1105, judged once per unit that owns
 //! a judged item; `scoped_cleanup` for E1230 and `dead_collection_growth` for E1231, which
 //! `build_typed_program` no longer judges eagerly for every unit): it is never string
 //! classification of an opaque `SemanticError::unavailable`.
+//! The `beskid check` gate (`semantic_diagnostics_for_roots`) additionally evaluates
+//! `check_typing_obligations` (`typing_obligations` and `value_obligations`, E1206-E1208),
+//! `check_gate_obligations`, `check_unit_obligations`, and `extern_profile_findings`: the legacy
+//! `TypeChecker` and resolver classes that have no lowering fact of their own.
 //! `check_items` collects every finding of the pass rather than stopping at the first, so
 //! `beskid test` and `beskid build` report every violation the requested items carry in one run.
 
+use super::local_type_resolution::UnresolvedTypeKind;
 use super::*;
 use beskid_analysis::analysis::SemanticIssueKind;
 use beskid_analysis::syntax::{FunctionDefinition, MethodDefinition};
 use beskid_analysis::syntax_query::{NodeKind, SyntaxIndex};
 
-mod calls;
+pub(super) mod calls;
 mod captures;
 mod cleanup;
+mod externs;
+mod function_values;
+mod gate;
 mod generics;
 mod imports;
 mod members;
+mod typing;
+mod units;
+mod value_paths;
+mod values;
 
-pub use calls::{UnresolvedCallKind, UnresolvedCallTarget, unresolved_call_target};
+pub use externs::extern_profile_findings;
+pub use gate::{GateObligation, GateObligationKind, check_gate_obligations, gate_obligations};
+pub use typing::{TypingObligation, TypingObligationKind, typing_obligations};
+pub use units::{UnitObligation, UnitObligationKind, check_unit_obligations, unit_obligations};
+pub use values::{ValueObligation, value_obligations};
+
+pub use calls::{
+    UnresolvedCallKind, UnresolvedCallTarget, UnresolvedValueArgument, unresolved_call_target,
+    unresolved_value_argument,
+};
 pub use generics::{GenericParameterConflict, generic_parameter_conflict};
 pub use imports::{UnresolvedImport, unresolved_imports};
 pub use members::{
@@ -127,6 +149,167 @@ fn call_arity_mismatch_for_call(db: &dyn Db, call: AstNodeKey) -> SemanticQueryR
     Ok(Some(CallArityMismatch { call, expected, actual }))
 }
 
+/// A direct call argument whose proven source type can never satisfy the callee's declared
+/// parameter type.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct CallArgumentTypeMismatch {
+    /// The call expression.
+    pub call: AstNodeKey,
+    /// The argument expression (the diagnostic site).
+    pub argument: AstNodeKey,
+    /// The parameter's declared type, as the callee spells it.
+    pub expected: Arc<str>,
+    /// The argument's proven source type.
+    pub actual: Arc<str>,
+}
+
+/// Report the first direct call in `key` (an item) that passes an argument of a provably
+/// different nominal type than its parameter declares (E1205).
+///
+/// Only the shapes whose identities the semantic contract proves exactly are judged: a parameter
+/// declared as a concrete record or enum (no type arguments, not a callee type parameter, not a
+/// contract) against an argument whose source identity is a nominal or a proven scalar, and a
+/// primitive parameter against a nominal argument. Scalar-versus-scalar representation
+/// selection, generic and contract-bounded parameters, arrays, functions, and arguments without
+/// a proven identity are not judged here; they keep their own authorities. The legacy checker
+/// never sees this error for a non-entry unit: it discards dependency-body findings, which is
+/// how `Query.Span(Query.At(root))` reached a native worker as a `NodeRef`-typed `SyntaxQuery`.
+pub fn call_argument_type_mismatch(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<CallArgumentTypeMismatch> {
+    with_registered_syntax(db, key, call_argument_type_mismatch_tracked)
+}
+
+#[salsa::tracked(persist)]
+fn call_argument_type_mismatch_tracked(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+) -> SemanticQueryResult<CallArgumentTypeMismatch> {
+    let calls = with_node(db, syntax, key, |_program, index, _node| {
+        let mut calls = Vec::new();
+        collect_call_sites(index, key.node, &mut calls);
+        Some(calls)
+    })?
+    .unwrap_or_default();
+    for call_node in calls {
+        let call_key = AstNodeKey { node: call_node, ..key };
+        let Some(mismatch) = call_argument_type_mismatch_for_call(db, call_key)? else { continue };
+        return Ok(Some(mismatch));
+    }
+    Ok(None)
+}
+
+enum ExpectedArgumentType {
+    Nominal(Arc<str>),
+    Scalar(SemanticTypeId),
+}
+
+fn call_argument_type_mismatch_for_call(
+    db: &dyn Db,
+    call: AstNodeKey,
+) -> SemanticQueryResult<CallArgumentTypeMismatch> {
+    use beskid_analysis::syntax::{EnumDefinition, Type, TypeDefinition};
+
+    let Some(CallLowering::Direct(declaration)) = call_lowering(db, call)? else { return Ok(None) };
+    let Some(declaration_syntax) = db.syntax_unit(declaration.unit) else { return Ok(None) };
+    if !declaration_syntax.accepts_key(db, declaration) {
+        return Ok(None);
+    }
+    let index = declaration_syntax.syntax_index(db);
+    let program = declaration_syntax.expanded_program(db);
+    let Some(declaration_node) = index.node_at(program, declaration.node) else { return Ok(None) };
+    let (parameters, receiver) = if let Some(function) = declaration_node.of::<FunctionDefinition>() {
+        (&function.parameters, 0)
+    } else if let Some(method) = declaration_node.of::<MethodDefinition>() {
+        (&method.parameters, 1)
+    } else {
+        return Ok(None);
+    };
+    if parameters.iter().any(|parameter| parameter.node.bulk) {
+        return Ok(None);
+    }
+    let generic_names = generic_callable_parameters(db, declaration)
+        .map(|(names, _)| names.iter().map(|name| (*name).to_owned()).collect::<Vec<_>>())
+        .unwrap_or_default();
+    let Some(arguments) = call_arguments(db, call)? else { return Ok(None) };
+    if arguments.len() != parameters.len() + receiver {
+        return Ok(None);
+    }
+    for (parameter, argument) in parameters.iter().zip(arguments.iter().skip(receiver)) {
+        let expected = match &parameter.node.ty.node {
+            Type::Complex(path) => {
+                if path.node.segments.iter().any(|segment| !segment.node.type_args.is_empty()) {
+                    continue;
+                }
+                if let [segment] = path.node.segments.as_slice()
+                    && generic_names.contains(&segment.node.name.node.name)
+                {
+                    continue;
+                }
+                let Some(target) = resolve_type_declaration(db, declaration, &path.node) else { continue };
+                let Some(target_syntax) = db.syntax_unit(target.unit).filter(|syntax| syntax.accepts_key(db, target))
+                else {
+                    continue;
+                };
+                let concrete_nominal = target_syntax
+                    .syntax_index(db)
+                    .node_at(target_syntax.expanded_program(db), target.node)
+                    .is_some_and(|node| {
+                        node.of::<TypeDefinition>().is_some_and(|definition| definition.generics.is_empty())
+                            || node.of::<EnumDefinition>().is_some_and(|definition| definition.generics.is_empty())
+                    });
+                if !concrete_nominal {
+                    continue;
+                }
+                let Some(identity) = stable_declaration_identity(db, target) else { continue };
+                ExpectedArgumentType::Nominal(identity)
+            }
+            Type::Primitive(_) => match semantic_type_from_syntax(&parameter.node.ty.node) {
+                Ok(scalar) => ExpectedArgumentType::Scalar(scalar),
+                Err(_) => continue,
+            },
+            _ => continue,
+        };
+        let Ok(actual) = generic_source_expression_identity(db, *argument) else { continue };
+        let mismatch = match (&expected, &actual) {
+            (ExpectedArgumentType::Nominal(expected), GenericSourceTypeIdentity::Nominal { qualified_name, .. }) => {
+                expected != qualified_name
+            }
+            (ExpectedArgumentType::Nominal(_), GenericSourceTypeIdentity::Abi(_))
+            | (ExpectedArgumentType::Scalar(_), GenericSourceTypeIdentity::Nominal { .. }) => true,
+            _ => false,
+        };
+        if !mismatch {
+            continue;
+        }
+        let spelled = |ty: &Type| match ty {
+            Type::Complex(path) => path
+                .node
+                .segments
+                .iter()
+                .map(|segment| segment.node.name.node.name.as_str())
+                .collect::<Vec<_>>()
+                .join("."),
+            other => format!("{other:?}"),
+        };
+        let expected_name: Arc<str> = match &expected {
+            ExpectedArgumentType::Nominal(_) => Arc::from(spelled(&parameter.node.ty.node)),
+            ExpectedArgumentType::Scalar(scalar) => Arc::from(scalar.to_string()),
+        };
+        let actual_name: Arc<str> = match &actual {
+            GenericSourceTypeIdentity::Nominal { qualified_name, .. } => qualified_name.clone(),
+            GenericSourceTypeIdentity::Abi(scalar) => Arc::from(scalar.to_string()),
+            other => Arc::from(format!("{other:?}")),
+        };
+        return Ok(Some(CallArgumentTypeMismatch {
+            call,
+            argument: *argument,
+            expected: expected_name,
+            actual: actual_name,
+        }));
+    }
+    Ok(None)
+}
+
 /// An assignment whose target is a single-segment path that resolves to an immutable local: a
 /// `let` without `mut`, a parameter without `mut`, or a `for` iterator.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
@@ -211,12 +394,43 @@ fn collect_nodes_of_kind(
 pub fn check_items(db: &dyn Db, items: &[AstNodeKey]) -> Result<(), Vec<SemanticFinding>> {
     let mut findings = import_findings(db, items);
     for &item in items {
-        if let Ok(Some(finding)) = unresolved_type_reference(db, item) {
+        if let Ok(Some(finding)) = unresolved_value_argument(db, item) {
             findings.push(SemanticFinding {
-                kind: SemanticIssueKind::TypeUnknownType { name: finding.name.to_string() },
+                kind: SemanticIssueKind::ResolveUnknownValue { name: finding.name.to_string() },
                 site: finding.site,
                 related: Vec::new(),
             });
+        }
+        if let Ok(Some(finding)) = unresolved_type_reference(db, item) {
+            let kind = match finding.kind {
+                UnresolvedTypeKind::UnknownType => SemanticIssueKind::TypeUnknownType { name: finding.name.to_string() },
+                UnresolvedTypeKind::UnknownModulePath { path } => {
+                    SemanticIssueKind::ResolveUnknownModulePath { path: path.to_string() }
+                }
+                UnresolvedTypeKind::AmbiguousModulePath { path, candidates } => {
+                    SemanticIssueKind::ResolveAmbiguousModulePath { path: path.to_string(), candidates }
+                }
+                UnresolvedTypeKind::AmbiguousItemInModule { module_path, name, candidates } => {
+                    SemanticIssueKind::ResolveAmbiguousItemInModule {
+                        module_path: module_path.to_string(),
+                        name: name.to_string(),
+                        candidates,
+                    }
+                }
+                UnresolvedTypeKind::PrivateItemInModule { module_path, name } => {
+                    SemanticIssueKind::ResolvePrivateItemInModule {
+                        module_path: module_path.to_string(),
+                        name: name.to_string(),
+                    }
+                }
+                UnresolvedTypeKind::UnknownTypeInModule { module_path, name } => {
+                    SemanticIssueKind::ResolveUnknownTypeInModule {
+                        module_path: module_path.to_string(),
+                        name: name.to_string(),
+                    }
+                }
+            };
+            findings.push(SemanticFinding { kind, site: finding.site, related: Vec::new() });
         }
         if let Ok(Some(finding)) = immutable_local_assignment(db, item) {
             findings.push(SemanticFinding {
@@ -234,6 +448,31 @@ pub fn check_items(db: &dyn Db, items: &[AstNodeKey]) -> Result<(), Vec<Semantic
                     SemanticIssueKind::ResolveUnknownModulePath { path: path.to_string() }
                 }
                 UnresolvedCallKind::MissingTypeArguments => SemanticIssueKind::TypeMissingTypeArguments,
+                UnresolvedCallKind::PrivateBuiltin { name } => {
+                    SemanticIssueKind::ResolvePrivateRuntimeBuiltin { name: name.to_string() }
+                }
+                UnresolvedCallKind::UnknownValueInModule { module_path, name } => {
+                    SemanticIssueKind::ResolveUnknownValueInModule {
+                        module_path: module_path.to_string(),
+                        name: name.to_string(),
+                    }
+                }
+                UnresolvedCallKind::PrivateItemInModule { module_path, name } => {
+                    SemanticIssueKind::ResolvePrivateItemInModule {
+                        module_path: module_path.to_string(),
+                        name: name.to_string(),
+                    }
+                }
+                UnresolvedCallKind::AmbiguousModulePath { path, candidates } => {
+                    SemanticIssueKind::ResolveAmbiguousModulePath { path: path.to_string(), candidates }
+                }
+                UnresolvedCallKind::AmbiguousItemInModule { module_path, name, candidates } => {
+                    SemanticIssueKind::ResolveAmbiguousItemInModule {
+                        module_path: module_path.to_string(),
+                        name: name.to_string(),
+                        candidates,
+                    }
+                }
             };
             findings.push(SemanticFinding { kind, site: finding.call, related: Vec::new() });
         }
@@ -263,7 +502,10 @@ pub fn check_items(db: &dyn Db, items: &[AstNodeKey]) -> Result<(), Vec<Semantic
         }
         if let Ok(Some(finding)) = match_exhaustiveness(db, item) {
             findings.push(SemanticFinding {
-                kind: SemanticIssueKind::MatchNonExhaustive { enum_name: finding.enum_name.to_string() },
+                kind: SemanticIssueKind::MatchNonExhaustive {
+                    enum_name: finding.enum_name.to_string(),
+                    missing_pattern: finding.missing_pattern.to_string(),
+                },
                 site: finding.site,
                 related: Vec::new(),
             });
@@ -282,6 +524,17 @@ pub fn check_items(db: &dyn Db, items: &[AstNodeKey]) -> Result<(), Vec<Semantic
         findings.extend(cleanup::scoped_cleanup_findings(db, item));
         findings.extend(cleanup::dead_growth_findings(db, item));
         findings.extend(captures::lambda_capture_findings(db, item));
+        findings.extend(function_values::generic_function_value_semantic_findings(db, item));
+        if let Ok(Some(finding)) = call_argument_type_mismatch(db, item) {
+            findings.push(SemanticFinding {
+                kind: SemanticIssueKind::TypeCallArgumentMismatch {
+                    expected_name: finding.expected.to_string(),
+                    actual_name: finding.actual.to_string(),
+                },
+                site: finding.argument,
+                related: vec![(finding.call, "in this call")],
+            });
+        }
         if let Ok(Some(finding)) = call_arity_mismatch(db, item) {
             findings.push(SemanticFinding {
                 kind: SemanticIssueKind::TypeCallArityMismatch { expected: finding.expected, actual: finding.actual },
@@ -291,6 +544,45 @@ pub fn check_items(db: &dyn Db, items: &[AstNodeKey]) -> Result<(), Vec<Semantic
         }
     }
     if findings.is_empty() { Ok(()) } else { Err(findings) }
+}
+
+/// Evaluate the typing obligations (E1206, E1207, E1208) of every item in `items`, collecting
+/// every finding of the pass. This is the `beskid check` complement of [`check_items`]: the
+/// legality gate judges what lowering needs before it can run, the typing obligations judge the
+/// value positions the legacy `TypeChecker` judged: proven primitives (`typing_obligations`) and
+/// source type identities of nominal, array, and contextual positions (`value_obligations`).
+/// Items whose typing facts are unavailable are not findings here (the same fail-closed rule as
+/// the legality gate).
+pub fn check_typing_obligations(db: &dyn Db, items: &[AstNodeKey]) -> Vec<SemanticFinding> {
+    let mut findings = Vec::new();
+    for &item in items {
+        if let Ok(Some(obligations)) = value_obligations(db, item) {
+            findings.extend(obligations.iter().map(|obligation| SemanticFinding {
+                kind: SemanticIssueKind::TypeMismatch {
+                    expected_name: obligation.expected.to_string(),
+                    actual_name: obligation.actual.to_string(),
+                },
+                site: obligation.site,
+                related: Vec::new(),
+            }));
+        }
+        let Ok(Some(obligations)) = typing_obligations(db, item) else { continue };
+        for obligation in obligations.iter() {
+            let kind = match obligation.kind {
+                TypingObligationKind::Mismatch { expected, actual } => SemanticIssueKind::TypeMismatch {
+                    expected_name: expected.display_name(),
+                    actual_name: actual.display_name(),
+                },
+                TypingObligationKind::MissingReturnValue { expected } => SemanticIssueKind::TypeReturnMismatch {
+                    expected_name: expected.display_name(),
+                    actual_name: SemanticTypeId::UNIT.display_name(),
+                },
+                TypingObligationKind::NonBoolCondition { .. } => SemanticIssueKind::TypeNonBoolCondition,
+            };
+            findings.push(SemanticFinding { kind, site: obligation.site, related: Vec::new() });
+        }
+    }
+    findings
 }
 
 /// E1105: every top-level `use` that names no assembled module, in each unit that owns one of
@@ -327,7 +619,7 @@ mod tests {
     use beskid_analysis::services::parse_program_with_source_name;
     use std::sync::Arc;
 
-    fn function_definitions(db: &dyn Db, key: AstNodeKey) -> Vec<AstNodeKey> {
+    pub(super) fn function_definitions(db: &dyn Db, key: AstNodeKey) -> Vec<AstNodeKey> {
         let mut found = Vec::new();
         if node_kind(db, key).expect("node kind") == Some(IndexedNodeKind::FunctionDefinition) {
             found.push(key);
@@ -340,7 +632,7 @@ mod tests {
         found
     }
 
-    fn one_unit_assembly(source: &str, generation: SyntaxGenerationId) -> (BeskidDatabase, AstNodeKey) {
+    pub(super) fn one_unit_assembly(source: &str, generation: SyntaxGenerationId) -> (BeskidDatabase, AstNodeKey) {
         let mut db = BeskidDatabase::default();
         let directory = tempfile::tempdir().expect("project").keep();
         let source_path = directory.join("Main.bd");
@@ -370,6 +662,51 @@ mod tests {
         build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
         let root = AstNodeKey { unit: entry, generation, node: beskid_analysis::syntax::AstNodeId(0) };
         (db, root)
+    }
+
+    const QUERY_SHAPE: &str = "type NodeRef { u64 issuer, u64 node } type NodeSpan { u64 start, u64 end } \
+        mod Query { pub type SyntaxQuery { NodeRef start, u64 bound } \
+        pub SyntaxQuery At(NodeRef root) { return SyntaxQuery { start: root, bound: 1_u64 }; } \
+        pub NodeSpan Span(NodeRef node) { return NodeSpan { start: node.node, end: node.node }; } } ";
+
+    /// `Query.Span(Query.At(root))`: a `SyntaxQuery` record where `Span` declares `NodeRef`.
+    #[test]
+    fn module_qualified_call_with_a_record_of_another_type_is_reported_at_the_argument() {
+        let source = format!(
+            "{QUERY_SHAPE}u64 Main(NodeRef root) {{ NodeSpan span = Query.Span(Query.At(root)); return span.start; }}"
+        );
+        let (db, root) = one_unit_assembly(&source, SyntaxGenerationId(61));
+        let main_item = *function_definitions(&db, root).last().expect("Main");
+        let mismatch = super::call_argument_type_mismatch(&db, main_item)
+            .expect("call_argument_type_mismatch query")
+            .expect("SyntaxQuery passed where NodeRef is declared");
+        assert_eq!(mismatch.expected.as_ref(), "NodeRef");
+        assert!(mismatch.actual.ends_with("SyntaxQuery"), "actual type names the record: {}", mismatch.actual);
+        assert_ne!(mismatch.argument, mismatch.call, "the argument, not the call, is the site");
+    }
+
+    #[test]
+    fn matching_nominal_generic_and_contract_parameters_are_not_reported() {
+        let source = format!(
+            "{QUERY_SHAPE}contract Sized {{ u64 Size(); }} type Box : Sized {{ u64 width, pub u64 Size() {{ return width; }} }} \
+             unit Take<T>(T value) {{ return; }} u64 Measure(Sized value) {{ return value.Size(); }} \
+             u64 Main(NodeRef root) {{ NodeSpan span = Query.Span(root); Take<NodeRef>(root); Take(span); \
+             u64 total = Measure(Box {{ width: 3_u64 }}) + Query.At(root).bound; return span.start + total; }}"
+        );
+        let (db, root) = one_unit_assembly(&source, SyntaxGenerationId(62));
+        let main_item = *function_definitions(&db, root).last().expect("Main");
+        assert_eq!(super::call_argument_type_mismatch(&db, main_item).expect("query"), None);
+    }
+
+    #[test]
+    fn scalar_parameter_rejects_a_record_and_record_parameter_rejects_a_scalar() {
+        let source = "type Point { i64 x } unit Len(string text) { return; } unit Show(Point point) { return; } \
+                      unit Main(Point point, string text) { Len(point); Show(text); return; }";
+        let (db, root) = one_unit_assembly(source, SyntaxGenerationId(63));
+        let main_item = *function_definitions(&db, root).last().expect("Main");
+        let mismatch = super::call_argument_type_mismatch(&db, main_item).expect("query").expect("Len(point)");
+        assert_eq!(mismatch.expected.as_ref(), "string");
+        assert!(mismatch.actual.ends_with("Point"), "{}", mismatch.actual);
     }
 
     #[test]
@@ -520,6 +857,58 @@ mod tests {
         let (db, root) = one_unit_assembly(&wildcard, SyntaxGenerationId(131));
         let key = function_definitions(&db, root)[0];
         assert_eq!(super::match_exhaustiveness(&db, key).expect("query"), None);
+    }
+
+    /// `check` agrees with ISLE: a refutable payload pattern (a literal, or a nested enum pattern
+    /// that does not cover its enum) does not cover its variant, and the finding names one
+    /// uncovered value pattern.
+    #[test]
+    fn refutable_payload_patterns_do_not_cover_their_variant() {
+        let cases = [
+            (
+                "enum Result { Ok(i64 value), Error(i64 error) } \
+                 i64 Main(Result r) { return match r { Result::Ok(7_i64) => 1_i64, Result::Error(_) => 0_i64, }; }",
+                "Result::Ok(_)",
+            ),
+            (
+                "enum Bit { Zero, One } enum Pair { Both(Bit left, Bit right), Empty } \
+                 i64 Main(Pair pair) { return match pair { Pair::Both(Bit::Zero, _) => 0_i64, Pair::Empty => 2_i64, }; }",
+                "Pair::Both(Bit::One, _)",
+            ),
+            (
+                "enum Choice { Value(i64 value), Empty } \
+                 i64 Main(Choice choice) { return match choice { Choice::Value(v) when v > 0_i64 => v, Choice::Empty => 0_i64, }; }",
+                "Choice::Value(_)",
+            ),
+        ];
+        for (offset, (source, missing)) in cases.into_iter().enumerate() {
+            let (db, root) = one_unit_assembly(source, SyntaxGenerationId(140 + offset as u64));
+            let key = function_definitions(&db, root)[0];
+            let finding = super::match_exhaustiveness(&db, key).expect("query").expect(source);
+            assert_eq!(finding.missing_pattern.as_ref(), missing, "{source}");
+            let findings = super::check_items(&db, &[key]).expect_err("the legality gate rejects the match");
+            let rejection = findings.iter().find(|finding| finding.kind.code() == "E1304").expect(source);
+            assert!(rejection.kind.message().contains(missing), "{}", rejection.kind.message());
+        }
+    }
+
+    /// A variant is covered by a catch-all sub-pattern after refutable ones, or by nested enum
+    /// patterns that together cover the nested enum.
+    #[test]
+    fn irrefutable_or_collectively_exhaustive_payload_patterns_cover_their_variant() {
+        let cases = [
+            "enum Result { Ok(i64 value), Error(i64 error) } \
+             i64 Main(Result r) { return match r { Result::Ok(7_i64) => 1_i64, Result::Ok(_) => 2_i64, Result::Error(_) => 0_i64, }; }",
+            "enum Bit { Zero, One } enum Pair { Both(Bit left, Bit right), Empty } \
+             i64 Main(Pair pair) { return match pair { Pair::Both(Bit::Zero, _) => 0_i64, Pair::Both(Bit::One, other) => 1_i64, Pair::Empty => 2_i64, }; }",
+            "enum Choice { Value(i64 value), Empty } \
+             i64 Main(Choice choice) { return match choice { Choice::Value(v) when v > 0_i64 => v, Choice::Value(v) => 0_i64, Choice::Empty => 0_i64, }; }",
+        ];
+        for (offset, source) in cases.into_iter().enumerate() {
+            let (db, root) = one_unit_assembly(source, SyntaxGenerationId(150 + offset as u64));
+            let key = function_definitions(&db, root)[0];
+            assert_eq!(super::match_exhaustiveness(&db, key).expect("query"), None, "{source}");
+        }
     }
 
     #[test]

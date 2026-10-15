@@ -41,12 +41,14 @@ HostBodyItem
 HostDefinition
 Identifier
 IfStatement
+ImplBlock
 IndexExpression
 InjectQualifier
 InlineModule
 LambdaExpression
 LambdaParameter
 LaunchStatement
+LeadingDocComment
 LetStatement
 Literal
 LiteralExpression

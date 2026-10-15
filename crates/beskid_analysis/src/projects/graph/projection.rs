@@ -17,27 +17,39 @@ pub fn collect_dependency_projects(graph: &ProjectGraph) -> Vec<ResolvedDependen
 }
 
 pub fn collect_unresolved_dependencies(graph: &ProjectGraph) -> Vec<UnresolvedDependency> {
-    graph
-        .dag
-        .graph()
-        .node_weights()
-        .filter_map(|node| match node {
-            ProjectGraphNode::UnresolvedGitDependency { dependency_name, url, rev } => Some(UnresolvedDependency {
-                dependency_name: dependency_name.clone(),
-                kind: UnresolvedDependencyKind::Git,
-                descriptor: format!("{url}@{rev}"),
-            }),
-            ProjectGraphNode::UnresolvedRegistryDependency { dependency_name, version, registry } => {
-                Some(UnresolvedDependency {
-                    dependency_name: dependency_name.clone(),
-                    kind: UnresolvedDependencyKind::Registry,
-                    descriptor: registry
-                        .as_ref()
-                        .map(|registry| format!("{registry}@{version}"))
-                        .unwrap_or_else(|| version.clone()),
+    let dag = graph.dag.graph();
+    dag.node_indices()
+        .filter_map(|index| {
+            // Every unresolved node is created for exactly one consumer edge.
+            let requester = dag
+                .edges_directed(index, Direction::Incoming)
+                .next()
+                .and_then(|edge| match dag.node_weight(edge.source()) {
+                    Some(ProjectGraphNode::RootProject { project_name, .. })
+                    | Some(ProjectGraphNode::ResolvedPathDependency { project_name, .. }) => Some(project_name.clone()),
+                    _ => None,
                 })
+                .unwrap_or_default();
+            match dag.node_weight(index)? {
+                ProjectGraphNode::UnresolvedGitDependency { dependency_name, url, rev } => Some(UnresolvedDependency {
+                    dependency_name: dependency_name.clone(),
+                    kind: UnresolvedDependencyKind::Git,
+                    descriptor: format!("{url}@{rev}"),
+                    requester,
+                }),
+                ProjectGraphNode::UnresolvedRegistryDependency { dependency_name, version, registry } => {
+                    Some(UnresolvedDependency {
+                        dependency_name: dependency_name.clone(),
+                        kind: UnresolvedDependencyKind::Registry,
+                        descriptor: registry
+                            .as_ref()
+                            .map(|registry| format!("{registry}@{version}"))
+                            .unwrap_or_else(|| version.clone()),
+                        requester,
+                    })
+                }
+                _ => None,
             }
-            _ => None,
         })
         .collect()
 }

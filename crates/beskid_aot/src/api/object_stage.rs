@@ -93,6 +93,7 @@ pub(super) fn emit_object_stage(req: &AotBuildRequest) -> AotResult<ObjectStageR
             &linkage_symbol_set,
             executable_entry,
             obs,
+            None,
         )
     })?;
 
@@ -111,6 +112,7 @@ pub(super) fn emit_object_stage(req: &AotBuildRequest) -> AotResult<ObjectStageR
             object_path.parent().unwrap_or_else(|| std::path::Path::new(".")),
             "beskid",
             returns_void,
+            req.artifact.dynamic_initialization.as_ref().map(|plan| (plan.initializer_symbol(), plan.generation().0)),
         )?]
     } else {
         Vec::new()

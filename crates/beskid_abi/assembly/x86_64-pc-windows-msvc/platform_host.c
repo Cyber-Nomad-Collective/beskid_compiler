@@ -71,20 +71,30 @@ void beskid_rt_v5_args_handoff_utf16(int64_t argc,
 }
 
 int64_t beskid_rt_v5_args_count(void) { return beskid_args.count; }
+/* Each call returns a new managed string with a copy of the argument: `string` values are
+   canonical heap strings, and the argument arena is not part of the managed heap. */
 struct BeskidStr *beskid_rt_v5_args_get(int64_t index) {
   if (index < 0 || index >= beskid_args.count)
     BESKID_ARGS_TRAP(2, "Core.Args argument index is out of range");
-  return &beskid_args.values[index];
+  const struct BeskidStr *value = &beskid_args.values[index];
+  void *managed = str_new((void *)value->ptr, value->len);
+  if (managed == NULL)
+    BESKID_ARGS_TRAP(5, "Core.Args argument allocation failed");
+  return (struct BeskidStr *)managed;
 }
 
 #define BESKID_GUARDED_STACK_MIN (64u * 1024u)
-#define BESKID_GUARDED_STACK_MAX (8u * 1024u * 1024u)
 #define BESKID_GUARDED_STACK_GUARD (64u * 1024u)
 
 static int beskid_guarded_stack_contract_valid(size_t initial_size,
                                                size_t maximum_size) {
+  /* The maximum is the scheduler's per-process reservation (8 MiB by default,
+   * `BESKID_FIBER_STACK_MAX` otherwise): a whole multiple of the 64 KiB initial
+   * commit, at least that commit, small enough to add the guard without overflow. */
   return initial_size == BESKID_GUARDED_STACK_MIN &&
-         maximum_size == BESKID_GUARDED_STACK_MAX;
+         maximum_size >= BESKID_GUARDED_STACK_MIN &&
+         maximum_size % BESKID_GUARDED_STACK_MIN == 0 &&
+         maximum_size <= SIZE_MAX - BESKID_GUARDED_STACK_GUARD;
 }
 
 void *beskid_rt_v5_intrinsic_guarded_stack_allocate(size_t initial_size,
@@ -110,7 +120,8 @@ uint8_t beskid_rt_v5_intrinsic_guarded_stack_grow(void *usable_base,
                                                   size_t committed_size,
                                                   size_t requested_size,
                                                   size_t maximum_size) {
-  if (usable_base == NULL || maximum_size != BESKID_GUARDED_STACK_MAX ||
+  if (usable_base == NULL || maximum_size < BESKID_GUARDED_STACK_MIN ||
+      maximum_size % BESKID_GUARDED_STACK_MIN != 0 ||
       committed_size < BESKID_GUARDED_STACK_MIN ||
       committed_size > maximum_size || requested_size < committed_size ||
       requested_size > maximum_size ||
@@ -127,7 +138,8 @@ uint8_t beskid_rt_v5_intrinsic_guarded_stack_grow(void *usable_base,
 
 void beskid_rt_v5_intrinsic_guarded_stack_free(void *usable_base,
                                                size_t maximum_size) {
-  if (usable_base == NULL || maximum_size != BESKID_GUARDED_STACK_MAX)
+  if (usable_base == NULL || maximum_size < BESKID_GUARDED_STACK_MIN ||
+      maximum_size % BESKID_GUARDED_STACK_MIN != 0)
     return;
   unsigned char *reservation =
       (unsigned char *)usable_base - BESKID_GUARDED_STACK_GUARD;
@@ -461,3 +473,5 @@ int32_t beskid_rt_v5_windows_fs_delete(const struct BeskidStr *path) {
   VirtualFree(p, 0, MEM_RELEASE);
   return ok ? 0 : beskid_windows_fs_status(e);
 }
+
+#include "../common/process_transport.h"

@@ -1,5 +1,9 @@
 #[path = "isle_adapter/binding_field_receivers.rs"]
 mod binding_field_receivers;
+#[path = "isle_adapter/bounded_impl_generic_calls.rs"]
+mod bounded_impl_generic_calls;
+#[path = "isle_adapter/call_argument_array_literals.rs"]
+mod call_argument_array_literals;
 #[path = "isle_adapter/calls_conversions.rs"]
 mod calls_conversions;
 #[path = "isle_adapter/channel_conditions.rs"]
@@ -14,6 +18,8 @@ mod control_flow_closures_spawn;
 mod control_flow_loop_termination;
 #[path = "isle_adapter/corelib_services.rs"]
 mod corelib_services;
+#[path = "isle_adapter/deep_projection_chain.rs"]
+mod deep_projection_chain;
 #[path = "isle_adapter/diagnostics_fail_closed.rs"]
 mod diagnostics_fail_closed;
 #[path = "isle_adapter/enum_match_result.rs"]
@@ -30,14 +36,20 @@ mod literal_operators;
 mod managed_references;
 #[path = "isle_adapter/memory_aggregate_arrays.rs"]
 mod memory_aggregate_arrays;
+#[path = "isle_adapter/member_callee_methods.rs"]
+mod member_callee_methods;
 #[path = "isle_adapter/method_owned_fields.rs"]
 mod method_owned_fields;
 #[path = "isle_adapter/module_emission_specialization.rs"]
 mod module_emission_specialization;
+#[path = "isle_adapter/projected_path_match.rs"]
+mod projected_path_match;
 #[path = "isle_adapter/runtime_gc_aggregate.rs"]
 mod runtime_gc_aggregate;
 #[path = "isle_adapter/statement_result_storage.rs"]
 mod statement_result_storage;
+#[path = "isle_adapter/string_index_places.rs"]
+mod string_index_places;
 #[path = "isle_adapter/support.rs"]
 mod support;
 #[path = "isle_adapter/waitgroup_conditions.rs"]

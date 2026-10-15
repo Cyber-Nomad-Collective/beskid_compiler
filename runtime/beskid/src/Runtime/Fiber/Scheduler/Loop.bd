@@ -31,7 +31,7 @@ pub bool SchedStep() {
     }
 
     word next = RunQueuePop();
-    if next == 0xFFFF { return false; }
+    if next == FIBER_NONE { return false; }
     if !FiberExists(next) || FiberParked(next) || FiberFinished(next) { return true; }
 
     if !SchedulerAcquireMutatorToken() { return false; }

@@ -144,6 +144,8 @@ impl SyntaxNodeFacts<'_> {
 
     pub(super) fn local_slot_impl(&self, key: AstNodeKey) -> Option<LocalSlotId> {
         match self.query(node_kind(self.db, key))? {
+            // A field access whose receiver is the method itself reads the implicit receiver.
+            beskid_queries::IndexedNodeKind::MethodDefinition => Some(super::super::context::IMPLICIT_METHOD_RECEIVER_SLOT),
             beskid_queries::IndexedNodeKind::PathExpression => {
                 if self.query(implicit_method_receiver(self.db, key)).is_some() {
                     return Some(super::super::context::IMPLICIT_METHOD_RECEIVER_SLOT);
@@ -167,7 +169,7 @@ impl SyntaxNodeFacts<'_> {
                 .query(local_slot(self.db, key))
                 .map(|slot| LocalSlotId { owner_node: slot.owner.node.0, index: slot.index }),
             beskid_queries::IndexedNodeKind::ForStatement => self
-                .query(for_iterator_fact(self.db, key))
+                .for_iterator_in_context(key)
                 .and_then(|fact| self.query(local_slot(self.db, fact.declaration)))
                 .map(|slot| LocalSlotId { owner_node: slot.owner.node.0, index: slot.index }),
             _ => None,

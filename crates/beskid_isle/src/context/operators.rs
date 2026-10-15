@@ -25,20 +25,23 @@ impl IsleContext<'_, '_, '_, '_> {
         self.builder.block_params(merge_block).first().copied()
     }
 
-    /// `i64(x)` and the other integer conversions of an `f64` truncate toward zero and saturate:
-    /// NaN gives 0 and out-of-range values clamp to the target's minimum or maximum, as Rust's
-    /// `as`, Java, and WebAssembly's `trunc_sat` do. Cranelift saturates natively to 32 and 64
-    /// bits; an 8-bit target saturates through 32 bits and clamps before narrowing.
+    /// An integer conversion of an `f32` or `f64` truncates toward zero and saturates: NaN gives 0
+    /// and out-of-range values clamp to the target's minimum or maximum, as Rust's `as`, Java, and
+    /// WebAssembly's `trunc_sat` do. The conversion never traps. Cranelift saturates natively to 32
+    /// and 64 bits; an 8- or 16-bit target saturates through 32 bits and clamps before narrowing.
+    /// Signedness comes from the semantic target type, not from the CLIF type.
     pub(super) fn saturating_float_to_int(
         &mut self,
-        from: beskid_queries::SemanticTypeId,
         to: beskid_queries::SemanticTypeId,
         target: cranelift_codegen::ir::Type,
         value: Value,
     ) -> Value {
+        use beskid_queries::SemanticTypeId;
         use cranelift_codegen::ir::types;
-        debug_assert_eq!(from, beskid_queries::SemanticTypeId::F64);
-        let unsigned = matches!(to, beskid_queries::SemanticTypeId::U8 | beskid_queries::SemanticTypeId::U32);
+        let unsigned = matches!(
+            to,
+            SemanticTypeId::U8 | SemanticTypeId::U16 | SemanticTypeId::U32 | SemanticTypeId::U64 | SemanticTypeId::WORD
+        );
         if target.bits() >= 32 {
             return if unsigned {
                 self.builder.ins().fcvt_to_uint_sat(target, value)
@@ -46,17 +49,18 @@ impl IsleContext<'_, '_, '_, '_> {
                 self.builder.ins().fcvt_to_sint_sat(target, value)
             };
         }
+        let bits = target.bits();
         let wide = if unsigned {
             self.builder.ins().fcvt_to_uint_sat(types::I32, value)
         } else {
             self.builder.ins().fcvt_to_sint_sat(types::I32, value)
         };
-        let max = if unsigned { (1_i64 << target.bits()) - 1 } else { (1_i64 << (target.bits() - 1)) - 1 };
-        let max = self.builder.ins().iconst(types::I32, max);
         let clamped = if unsigned {
+            let max = self.builder.ins().iconst(types::I32, (1_i64 << bits) - 1);
             self.builder.ins().umin(wide, max)
         } else {
-            let min = self.builder.ins().iconst(types::I32, -(1_i64 << (target.bits() - 1)));
+            let max = self.builder.ins().iconst(types::I32, (1_i64 << (bits - 1)) - 1);
+            let min = self.builder.ins().iconst(types::I32, -(1_i64 << (bits - 1)));
             let upper = self.builder.ins().smin(wide, max);
             self.builder.ins().smax(upper, min)
         };
@@ -107,10 +111,15 @@ impl IsleContext<'_, '_, '_, '_> {
         let left = self.facts.child(key, 0)?;
         let right = self.facts.child(key, 1)?;
         let is_unsigned_integer = |semantic_type| match semantic_type {
-            beskid_queries::SemanticTypeId::U8
+            beskid_queries::SemanticTypeId::U16
+            | beskid_queries::SemanticTypeId::U64
+            | beskid_queries::SemanticTypeId::U8
             | beskid_queries::SemanticTypeId::U32
             | beskid_queries::SemanticTypeId::WORD => Some(true),
-            beskid_queries::SemanticTypeId::I32 | beskid_queries::SemanticTypeId::I64 => Some(false),
+            beskid_queries::SemanticTypeId::I8
+            | beskid_queries::SemanticTypeId::I16
+            | beskid_queries::SemanticTypeId::I32
+            | beskid_queries::SemanticTypeId::I64 => Some(false),
             _ => None,
         };
         let left_unsigned = is_unsigned_integer(self.facts.semantic_type(left)?)?;
@@ -421,20 +430,46 @@ macro_rules! generated_operator_methods {
                 });
                 return None;
             }
+            if to == beskid_queries::SemanticTypeId::CHAR {
+                if from != beskid_queries::SemanticTypeId::U32 || actual != types::I32 || target != types::I32 {
+                    return None;
+                }
+                let out_of_range = self.builder.ins().icmp_imm_s(IntCC::UnsignedGreaterThan, value, 0x10ffff);
+                let surrogate_start = self.builder.ins().icmp_imm_s(IntCC::UnsignedGreaterThanOrEqual, value, 0xd800);
+                let surrogate_end = self.builder.ins().icmp_imm_s(IntCC::UnsignedLessThanOrEqual, value, 0xdfff);
+                let surrogate = self.builder.ins().band(surrogate_start, surrogate_end);
+                let invalid = self.builder.ins().bor(out_of_range, surrogate);
+                self.builder.ins().trapnz(invalid, TrapCode::BAD_CONVERSION_TO_INTEGER);
+                return Some(value);
+            }
             if actual == target {
                 return Some(value);
             }
-            if actual.is_int() && target == cranelift_codegen::ir::types::F64 {
+            if actual.is_int() && target.is_float() {
                 return Some(
-                    if matches!(from, beskid_queries::SemanticTypeId::U8 | beskid_queries::SemanticTypeId::U32) {
+                    if matches!(
+                        from,
+                        beskid_queries::SemanticTypeId::U8
+                            | beskid_queries::SemanticTypeId::U16
+                            | beskid_queries::SemanticTypeId::U32
+                            | beskid_queries::SemanticTypeId::U64
+                            | beskid_queries::SemanticTypeId::WORD
+                    ) {
                         self.builder.ins().fcvt_from_uint(target, value)
                     } else {
                         self.builder.ins().fcvt_from_sint(target, value)
                     },
                 );
             }
-            if actual == cranelift_codegen::ir::types::F64 && target.is_int() {
-                return Some(self.saturating_float_to_int(from, to, target, value));
+            if actual.is_float() && target.is_float() {
+                return Some(if actual.bits() < target.bits() {
+                    self.builder.ins().fpromote(target, value)
+                } else {
+                    self.builder.ins().fdemote(target, value)
+                });
+            }
+            if actual.is_float() && target.is_int() {
+                return Some(self.saturating_float_to_int(to, target, value));
             }
             if !actual.is_int() || !target.is_int() {
                 self.pending_error = Some(LoweringError {
@@ -446,7 +481,14 @@ macro_rules! generated_operator_methods {
                 return None;
             }
             if actual.bits() < target.bits() {
-                if matches!(from, beskid_queries::SemanticTypeId::U8 | beskid_queries::SemanticTypeId::U32) {
+                if matches!(
+                    from,
+                    beskid_queries::SemanticTypeId::U8
+                        | beskid_queries::SemanticTypeId::U16
+                        | beskid_queries::SemanticTypeId::U32
+                        | beskid_queries::SemanticTypeId::U64
+                        | beskid_queries::SemanticTypeId::WORD
+                ) {
                     Some(self.builder.ins().uextend(target, value))
                 } else {
                     Some(self.builder.ins().sextend(target, value))

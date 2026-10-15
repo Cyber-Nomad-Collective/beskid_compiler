@@ -2,18 +2,17 @@
 
 use std::collections::HashMap;
 
-use beskid_analysis::types::TypeId;
 use cranelift_codegen::ir::Function;
 
 /// One generated function at the Cranelift artifact boundary.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct LoweredFunction {
     pub name: String,
     pub function: Function,
 }
 
 /// External function import authorized by syntax and semantic facts.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExternImport {
     pub symbol: String,
     pub abi: Option<String>,
@@ -32,19 +31,11 @@ pub struct ExportEntry {
     pub abi: String,
 }
 
-/// Serialized type descriptor payload emitted into object or JIT data.
-#[derive(Debug, Clone)]
-pub struct TypeDescriptorData {
-    pub size: usize,
-    pub align: usize,
-    pub pointer_offsets: Vec<usize>,
-}
-
 /// Complete output of the syntax → ISLE → verified CLIF path.
 #[derive(Debug, Clone, Default)]
 pub struct CodegenArtifact {
     pub functions: Vec<LoweredFunction>,
-    pub type_descriptors: HashMap<TypeId, TypeDescriptorData>,
+    pub dynamic_initialization: Option<crate::dynamic_initialization::DynamicInitializationPlan>,
     pub string_literals: HashMap<String, Vec<u8>>,
     pub closure_static_plans: Vec<crate::closure_static::ClosureStaticPlan>,
     /// Whether this artifact requires the fixed managed wrapper layout used by event handlers.
@@ -69,7 +60,6 @@ pub struct CodegenArtifact {
 pub struct CodegenContext {
     pub string_literals: HashMap<String, Vec<u8>>,
     artifact_namespace: String,
-    next_string_literal_id: usize,
 }
 
 impl CodegenContext {
@@ -82,20 +72,25 @@ impl CodegenContext {
     }
 
     /// Intern bytes in the artifact's addressable literal pool.
+    ///
+    /// The symbol is named by the SHA-256 of the stored bytes, so it does not depend on the order
+    /// in which functions intern their literals: items emitted in parallel name every literal
+    /// exactly as a serial emission would, and equal bytes share one symbol.
     pub fn intern_string_literal(&mut self, bytes: &[u8]) -> String {
+        use sha2::{Digest, Sha256};
         let storage = if bytes.is_empty() { &[0] } else { bytes };
-        for (symbol, data) in &self.string_literals {
-            if data.as_slice() == storage {
-                return symbol.clone();
+        let digest = format!("{:x}", Sha256::digest(storage));
+        let symbol = if self.artifact_namespace.is_empty() {
+            format!("__beskid_str_lit_{digest}")
+        } else {
+            format!("__beskid_{}_str_lit_{digest}", self.artifact_namespace)
+        };
+        match self.string_literals.get(&symbol) {
+            Some(existing) => assert!(existing.as_slice() == storage, "SHA-256 collision in the string literal pool"),
+            None => {
+                self.string_literals.insert(symbol.clone(), storage.to_vec());
             }
         }
-        let symbol = if self.artifact_namespace.is_empty() {
-            format!("__beskid_str_lit_{}", self.next_string_literal_id)
-        } else {
-            format!("__beskid_{}_str_lit_{}", self.artifact_namespace, self.next_string_literal_id)
-        };
-        self.next_string_literal_id += 1;
-        self.string_literals.insert(symbol.clone(), storage.to_vec());
         symbol
     }
 }
@@ -187,12 +182,34 @@ fn mangle_internal_link_name(name: &str) -> String {
 mod tests {
     use std::collections::HashSet;
 
-    use super::{ExportEntry, internal_link_symbol, is_valid_link_name, mangle_internal_link_name, object_link_symbol};
+    use super::{
+        CodegenContext, ExportEntry, internal_link_symbol, is_valid_link_name, mangle_internal_link_name,
+        object_link_symbol,
+    };
+
+    #[test]
+    fn string_literal_symbols_do_not_depend_on_interning_order() {
+        let mut forward = CodegenContext::new_with_artifact_namespace("module");
+        let mut backward = CodegenContext::new_with_artifact_namespace("module");
+        let texts: [&[u8]; 3] = [b"alpha", b"", b"beta"];
+        let forward_symbols = texts.iter().map(|text| forward.intern_string_literal(text)).collect::<Vec<_>>();
+        let mut backward_symbols =
+            texts.iter().rev().map(|text| backward.intern_string_literal(text)).collect::<Vec<_>>();
+        backward_symbols.reverse();
+        assert_eq!(forward_symbols, backward_symbols);
+        assert_eq!(forward.string_literals, backward.string_literals);
+        assert_eq!(forward.intern_string_literal(b"alpha"), forward_symbols[0], "equal bytes share one symbol");
+        assert_eq!(forward.string_literals.len(), 3);
+        assert!(forward_symbols.iter().all(|symbol| is_valid_link_name(symbol)));
+    }
 
     #[test]
     fn rejects_names_carrying_an_internal_trace_fragment() {
         assert!(!is_valid_link_name("Widget#gen1:nod2"), "a bare `#gN:nM` trace id is not a link name");
-        assert!(!is_valid_link_name("Widget#generic_1_2"), "an unresolved `#generic_` bookkeeping key is not a link name");
+        assert!(
+            !is_valid_link_name("Widget#generic_1_2"),
+            "an unresolved `#generic_` bookkeeping key is not a link name"
+        );
         assert!(!is_valid_link_name(""), "an empty name is never a valid link name");
         assert!(!is_valid_link_name("0widget"), "a leading digit is not a valid C identifier");
         assert!(!is_valid_link_name("widget name"), "whitespace is not valid in a C identifier");

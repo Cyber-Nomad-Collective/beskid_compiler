@@ -13,6 +13,8 @@ pub(crate) mod session;
 pub(crate) mod standalone_bsol;
 pub(crate) mod text_sync;
 pub(crate) mod workspace_scan;
+#[cfg(test)]
+pub(crate) mod test_mod_host;
 
 /// Serializes unit tests that share process-global state: the working directory
 /// and the process-wide entry-session / typed-entry registries keyed by the
@@ -143,12 +145,12 @@ where
     }
 }
 
-/// Run the language server on stdio (used by `beskid_lsp` and `beskid lsp`).
+/// Run the language server on stdio (used by `beskid_lsp` and `beskid dev lsp`).
 pub async fn run_stdio_server() -> anyhow::Result<()> {
     // The LSP may be the first Beskid executable a user runs. Provision the
     // Corelib embedded in this binary before workspace resolution begins, so
     // editor diagnostics use the release bundle rather than a source checkout.
-    beskid_tools::ensure_bundled_corelib()?;
+    beskid_tools::ensure_bundled_corelib(&beskid_corelib_embed::CORELIB_BUNDLE)?;
     let stdin = tokio::io::stdin();
     let stdout = tokio::io::stdout();
     let (service, socket) = LspService::new(Backend::new);

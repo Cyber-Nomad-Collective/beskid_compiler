@@ -123,9 +123,10 @@ fn timeout_filter_and_skip_cannot_be_masked_by_passing_targets() {
 }
 
 #[test]
-fn matrix_uses_one_worker_and_never_spawns_per_target_children() {
+fn matrix_uses_shard_workers_and_never_spawns_per_target_children() {
     let source = include_str!("../matrix_test.rs");
     assert!(source.contains("BESKID_PREPARED_MATRIX_WORKER"));
+    assert!(source.contains("BESKID_PREPARED_MATRIX_SHARD"), "each worker prepares once and runs one shard");
     assert!(source.contains("WORKER_EVENT_PREFIX"));
     assert!(source.contains("decode_worker_line"));
     assert_eq!(source.matches("Command::new(executable)").count(), 1);
@@ -134,20 +135,21 @@ fn matrix_uses_one_worker_and_never_spawns_per_target_children() {
 }
 
 #[test]
-fn matrix_worker_stdin_is_closed_so_input_tests_observe_deterministic_eof() {
+fn matrix_worker_cancellation_uses_a_dedicated_lock_not_stdin() {
     let source = include_str!("../matrix_test.rs");
-    assert!(
-        source.contains(".stdin(Stdio::null())"),
-        "the isolated matrix worker must not inherit an open interactive stdin"
-    );
+    assert!(source.contains(".stdin(Stdio::null())"), "the tested program must see deterministic EOF on stdin");
+    assert!(!source.contains(".stdin(Stdio::piped())") && !source.contains(".stdin(Stdio::inherit())"));
+    assert!(source.contains("BESKID_PREPARED_MATRIX_CANCEL_LOCK"));
+    assert!(source.contains("cancel.release()"), "releasing the private lock is the cooperative stop request");
+    assert!(source.contains("worker_cancellation.cancel()"), "lock release cancels the worker");
 }
 
 #[test]
 fn execution_loop_consumes_prepared_targets_without_repreparing() {
     let matrix = include_str!("../matrix_test.rs");
     let test = include_str!("../test.rs");
-    assert!(matrix.contains("workspace.prepare_targets(&selected_targets,"));
-    assert!(matrix.contains("for target in prepared_targets"));
+    assert!(matrix.contains("workspace.prepare_targets(std::slice::from_ref(name),"));
+    assert!(matrix.contains("for prepared in prepared_targets"));
     assert!(!test.contains("executable_gate_prepared"));
     assert!(!test.contains("prepare_target("));
 }

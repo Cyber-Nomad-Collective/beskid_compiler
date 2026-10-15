@@ -1,4 +1,4 @@
-//! `beskid analyze` must use its reported semantic severity as process status.
+//! `beskid check` must use its reported semantic severity as process status.
 
 use std::fs;
 use std::process::Command;
@@ -13,7 +13,7 @@ fn semantic_error_fails_but_clean_source_succeeds() {
     let invalid = root.join("Invalid.bd");
     fs::write(&invalid, "pub i32 Main() { return UnknownValue; }\n").expect("write invalid source");
     let failed = Command::new(env!("CARGO_BIN_EXE_beskid_cli"))
-        .args(["analyze", "--plain"])
+        .args(["check", "--plain"])
         .arg(&invalid)
         .env("BESKID_CORELIB_ROOT", root.join("corelib"))
         .output()
@@ -30,7 +30,7 @@ fn semantic_error_fails_but_clean_source_succeeds() {
     let valid = root.join("Valid.bd");
     fs::write(&valid, "pub i32 Main() { return 0; }\n").expect("write valid source");
     let passed = Command::new(env!("CARGO_BIN_EXE_beskid_cli"))
-        .args(["analyze", "--plain"])
+        .args(["check", "--plain"])
         .arg(&valid)
         .env("BESKID_CORELIB_ROOT", root.join("corelib"))
         .output()

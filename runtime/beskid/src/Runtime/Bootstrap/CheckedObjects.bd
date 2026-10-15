@@ -1,0 +1,5 @@
+// Admission consumes the same canonical descriptor and initialization policy.
+[Export(Abi:"C", Symbol:"beskid_rt_v5_managed_object_try_allocate")]
+pub pointer TryAllocateObject(pointer request) {
+    return AllocateObjectWithPolicy(request, true);
+}

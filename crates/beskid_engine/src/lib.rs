@@ -11,6 +11,10 @@ pub mod link_libraries;
 mod runtime_kit;
 pub mod services;
 
+/// The native Mod host every engine preparation requires: [`ModHost::NoMods`] for Mod-free
+/// snippets, or a qualified host (for example from
+/// `beskid_tools::native_mods::ModHostSelection::mod_host_for_plan`). The engine never builds Mods.
+pub use beskid_analysis::mod_host::ModHost;
 pub use engine::Engine;
 pub use engine::host_runtime_target;
 #[cfg(feature = "extern_dlopen")]

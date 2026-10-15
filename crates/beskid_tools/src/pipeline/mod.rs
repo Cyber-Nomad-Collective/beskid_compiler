@@ -119,8 +119,13 @@ impl CliPipeline {
         *self.prepare_ui_finished.lock().expect("prepare mutex poisoned")
     }
 
+    /// Print one progress or summary line on stderr; `--quiet` suppresses these lines, never
+    /// diagnostics or command results.
     pub fn println_session(&self, line: impl AsRef<str>) {
         self.halt_progress_bars_for_output();
+        if beskid_telemetry::verbosity() == beskid_telemetry::Verbosity::Quiet {
+            return;
+        }
         eprintln!("{}", line.as_ref());
     }
 
@@ -156,7 +161,7 @@ impl CliPipeline {
     }
 
     fn show_progress(&self, done: u64, total: u64, label: &str) {
-        if self.plain {
+        if self.plain || beskid_telemetry::verbosity() == beskid_telemetry::Verbosity::Quiet {
             return;
         }
         let width = crossterm::terminal::size().map(|(width, _)| usize::from(width)).unwrap_or(80).saturating_sub(1);
@@ -250,7 +255,11 @@ impl PipelineObserver for CliPipeline {
                 let emit = {
                     let mut events = self.work_unit_events.lock().expect("work unit mutex poisoned");
                     *events = events.saturating_add(1);
-                    *events == 1 || events.is_multiple_of(32) || done >= total
+                    // `--verbose` reports every work unit; otherwise long phases are sampled.
+                    beskid_telemetry::verbosity() == beskid_telemetry::Verbosity::Verbose
+                        || *events == 1
+                        || events.is_multiple_of(32)
+                        || done >= total
                 };
                 if emit {
                     self.pending_work_unit.lock().expect("work unit mutex poisoned").take();

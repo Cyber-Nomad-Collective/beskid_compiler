@@ -97,3 +97,120 @@ fn console_terminal_detection_uses_the_canonical_runtime_adapter() {
         );
     }
 }
+
+#[test]
+fn platform_environment_data_import_is_distinct_from_callable_imports() {
+    let source = include_str!("../../../runtime_manifest.bsol");
+    let manifest = load_v5_manifest_source(source).unwrap();
+    // Darwin exports `environ`; glibc's canonical data symbol is `__environ` (`environ` is a weak
+    // alias that a linked shared runtime does not reference).
+    for (target, symbol) in [("aarch64-apple-darwin", "environ"), ("x86_64-unknown-linux-gnu", "__environ")] {
+        let data =
+            manifest.platform_imports.iter().find(|entry| entry.target == target && entry.symbol == symbol).unwrap();
+        assert_eq!(data.kind, "data");
+        assert_eq!(data.result, "pointer");
+        assert!(data.params.is_empty());
+        let row = format!(
+            "platform_data_import \"{symbol}\" {{ target = \"{target}\" library = {} type = pointer }}",
+            data.library
+        );
+        assert!(source.contains(&row));
+        for bad in [
+            row.replace("type = pointer", "type = void"),
+            row.replace("type = pointer", "params = [] type = pointer"),
+            row.replace("type = pointer", "returns = pointer"),
+        ] {
+            assert!(load_v5_manifest_source(&source.replace(&row, &bad)).is_err());
+        }
+    }
+    assert!(
+        !manifest
+            .platform_imports
+            .iter()
+            .any(|entry| entry.target == "x86_64-pc-windows-msvc" && entry.symbol.ends_with("environ"))
+    );
+    assert!(!manifest.platform_imports.iter().any(|entry| {
+        (entry.target == "x86_64-unknown-linux-gnu" && entry.symbol == "environ")
+            || (entry.target == "aarch64-apple-darwin" && entry.symbol == "__environ")
+    }));
+    // The runtime source must reference the same symbol the manifest declares per target.
+    let transport = include_str!("../../beskid_abi/assembly/common/process_transport.h");
+    assert!(transport.contains("#if defined(__GLIBC__)\n"));
+    assert!(transport.contains("extern char **__environ;\n#define BESKID_PROCESS_ENVIRON __environ\n#else\nextern char **environ;\n#define BESKID_PROCESS_ENVIRON environ\n#endif"));
+}
+
+#[test]
+fn linux_signal_set_imports_are_exact_glibc_functions_for_linux_only() {
+    let source = include_str!("../../../runtime_manifest.bsol");
+    let manifest = load_v5_manifest_source(source).unwrap();
+    let linux = "x86_64-unknown-linux-gnu";
+    for (symbol, params) in [
+        ("sigaddset", &["pointer", "i32"][..]),
+        ("sigemptyset", &["pointer"][..]),
+        ("sigismember", &["pointer", "i32"][..]),
+    ] {
+        let entries =
+            manifest.platform_imports.iter().filter(|entry| entry.symbol == symbol).collect::<Vec<_>>();
+        assert_eq!(entries.len(), 1, "{symbol} must be declared for exactly one target");
+        let entry = entries[0];
+        assert_eq!(entry.target, linux, "{symbol} is a header macro on Darwin and absent on Windows");
+        assert_eq!(entry.kind, "function");
+        assert_eq!(entry.library, "libc");
+        assert_eq!(entry.result, "i32");
+        assert_eq!(entry.params.iter().map(|param| param.ty.as_str()).collect::<Vec<_>>(), params);
+    }
+}
+
+/// The Windows runtime archive's defined-symbol set is exact. UCRT's `<wchar.h>` and printf
+/// family define inline helpers (`swprintf`, `_vswprintf_c_l`, `__local_stdio_printf_options`)
+/// and the `_Avx2WmemEnabledWeakValue` selectany in every object that includes or calls them,
+/// so the runtime C host must not use them. Every Windows API the child transport calls must be
+/// a declared Windows platform import, or the import audit rejects the archive.
+#[test]
+fn windows_process_transport_avoids_ucrt_inline_helpers_and_declares_its_imports() {
+    let transport = include_str!("../../beskid_abi/assembly/common/process_transport.h");
+    let windows_host = include_str!("../../beskid_abi/assembly/x86_64-pc-windows-msvc/platform_host.c");
+    for (name, source) in [("process_transport.h", transport), ("windows platform_host.c", windows_host)] {
+        for forbidden in
+            ["<wchar.h>", "<stdio.h>", "printf(", "wcslen(", "wcschr(", "wcsncmp(", "_wcsnicmp(", "wmemcpy(", "wmemset("]
+        {
+            assert!(!source.contains(forbidden), "{name} uses UCRT inline-helper surface `{forbidden}`");
+        }
+    }
+    let source = include_str!("../../../runtime_manifest.bsol");
+    let manifest = load_v5_manifest_source(source).unwrap();
+    let windows = "x86_64-pc-windows-msvc";
+    for (symbol, library) in [
+        ("AssignProcessToJobObject", "kernel32"),
+        ("CompareStringOrdinal", "kernel32"),
+        ("CreateEventW", "kernel32"),
+        ("CreateJobObjectW", "kernel32"),
+        ("CreateNamedPipeW", "kernel32"),
+        ("CreatePipe", "kernel32"),
+        ("CreateProcessW", "kernel32"),
+        ("DeleteProcThreadAttributeList", "kernel32"),
+        ("FreeEnvironmentStringsW", "kernel32"),
+        ("GetEnvironmentStringsW", "kernel32"),
+        ("GetExitCodeProcess", "kernel32"),
+        ("GetOverlappedResult", "kernel32"),
+        ("InitializeProcThreadAttributeList", "kernel32"),
+        ("PeekNamedPipe", "kernel32"),
+        ("ResumeThread", "kernel32"),
+        ("SetHandleInformation", "kernel32"),
+        ("SetInformationJobObject", "kernel32"),
+        ("TerminateJobObject", "kernel32"),
+        ("TerminateProcess", "kernel32"),
+        ("UpdateProcThreadAttribute", "kernel32"),
+        ("memchr", "vcruntime"),
+        ("memcmp", "vcruntime"),
+    ] {
+        assert!(transport.contains(&format!("{symbol}(")), "process transport no longer calls {symbol}");
+        let entries = manifest
+            .platform_imports
+            .iter()
+            .filter(|entry| entry.target == windows && entry.symbol == symbol)
+            .collect::<Vec<_>>();
+        assert_eq!(entries.len(), 1, "{symbol} must be declared exactly once for {windows}");
+        assert_eq!(entries[0].library, library, "incorrect provider for {symbol}");
+    }
+}

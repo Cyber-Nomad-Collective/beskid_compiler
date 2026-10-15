@@ -52,12 +52,16 @@ pub(in crate::semantic_contract) fn expected_explicit_call_argument_type(
         if callee.node.path.node.segments.iter().any(|segment| !segment.node.type_args.is_empty()) {
             return None;
         }
-        let (declaration, parameters) =
-            non_generic_callee_parameters(db, program, index, call_key, &callee.node.path.node)?;
-        if parameters.len() != call.args.len() {
+        let declaration = resolve_item_declaration(db, program, index, call_key, &callee.node.path.node)?;
+        let syntax = db.syntax_unit(declaration.unit).filter(|syntax| syntax.accepts_key(db, declaration))?;
+        let function = syntax
+            .syntax_index(db)
+            .node_at(syntax.expanded_program(db), declaration.node)?
+            .of::<beskid_analysis::syntax::FunctionDefinition>()?;
+        if !function.generics.is_empty() || function.parameters.len() != call.args.len() {
             return None;
         }
-        let expected = &parameters.get(argument_index)?.node.ty.node;
+        let expected = &function.parameters.get(argument_index)?.node.ty.node;
         // Syntax returned to the caller must still denote the exact declared concrete type.
         // Reject unresolved parameters and shadowed/import-dependent spellings, never infer
         // their identity from an ABI pointer or from the constructor being contextualized.
@@ -89,43 +93,6 @@ pub(in crate::semantic_contract) fn expected_explicit_call_argument_type(
         .map(|(parameter, argument)| (parameter.node.name.as_str(), argument))
         .collect::<HashMap<_, _>>();
     substitute_explicit_type(&function.parameters.get(argument_index)?.node.ty.node, &substitutions)
-}
-
-/// Declared parameters of a non-generic direct callee: a module function, or a method called on
-/// an explicitly typed lexical local (`holder.Pick(...)`). Both resolve from syntax alone, so
-/// contextual argument typing never consults call lowering.
-fn non_generic_callee_parameters(
-    db: &dyn Db,
-    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
-    index: &beskid_analysis::syntax_query::SyntaxIndex,
-    call_key: AstNodeKey,
-    path: &beskid_analysis::syntax::Path,
-) -> Option<(AstNodeKey, Vec<beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Parameter>>)> {
-    if let Some(declaration) = resolve_item_declaration(db, program, index, call_key, path) {
-        let syntax = db.syntax_unit(declaration.unit).filter(|syntax| syntax.accepts_key(db, declaration))?;
-        let function = syntax
-            .syntax_index(db)
-            .node_at(syntax.expanded_program(db), declaration.node)?
-            .of::<beskid_analysis::syntax::FunctionDefinition>()?;
-        return function.generics.is_empty().then(|| (declaration, function.parameters.clone()));
-    }
-    let [root, _] = path.segments.as_slice() else {
-        return None;
-    };
-    super::super::super::layouts::nominal_local_receiver_declaration(
-        db,
-        program,
-        index,
-        call_key,
-        root.node.name.node.name.as_str(),
-    )?;
-    let (method, _) = super::super::resolution::nominal_local_member_receiver(db, program, index, call_key, path)?;
-    let syntax = db.syntax_unit(method.unit).filter(|syntax| syntax.accepts_key(db, method))?;
-    let definition = syntax
-        .syntax_index(db)
-        .node_at(syntax.expanded_program(db), method.node)?
-        .of::<beskid_analysis::syntax::MethodDefinition>()?;
-    Some((method, definition.parameters.clone()))
 }
 
 pub(in crate::semantic_contract) fn substitute_explicit_type(
@@ -219,6 +186,15 @@ pub(in crate::semantic_contract) fn type_syntax_is_enclosing_generic_parameter_r
     if let Some(function) = enclosing_node.of::<beskid_analysis::syntax::FunctionDefinition>() {
         return function.generics.iter().any(|generic| generic.node.name == parameter_name);
     }
+    // A method of `impl<E> Point : Serializable<E>` sees the impl block's own parameters, which
+    // the receiver declaration does not declare.
+    if parent_node(index, enclosing)
+        .and_then(|parent| index.node_at(program, parent))
+        .and_then(|parent| parent.of::<beskid_analysis::syntax::ImplBlock>())
+        .is_some_and(|block| block.generics.iter().any(|generic| generic.node.name == parameter_name))
+    {
+        return true;
+    }
     let Some(owner) = method_owner_node(program, index, enclosing)
         .and_then(|owner| index.node_at(program, owner))
         .and_then(|owner| owner.of::<beskid_analysis::syntax::TypeDefinition>())
@@ -243,19 +219,15 @@ pub(in crate::semantic_contract) fn generic_call_uses_parameter_type_arguments(
     if !syntax.accepts_key(db, declaration) {
         return false;
     }
-    let Some(function) = syntax
-        .syntax_index(db)
-        .node_at(syntax.expanded_program(db), declaration.node)
-        .and_then(|node| node.of::<beskid_analysis::syntax::FunctionDefinition>())
-    else {
+    let Some((generic_names, _)) = generic_callable_parameters(db, declaration) else {
         return false;
     };
-    if function.generics.len() != type_arguments.len() {
+    if generic_names.len() != type_arguments.len() {
         return false;
     }
-    type_arguments.iter().zip(function.generics.iter()).all(|(argument, generic)| {
+    type_arguments.iter().zip(generic_names.iter()).all(|(argument, generic)| {
         abi_type_from_syntax(db, key, &argument.node).is_ok()
-            || type_syntax_is_generic_parameter_reference(&argument.node, generic.node.name.as_str())
+            || type_syntax_is_generic_parameter_reference(&argument.node, generic)
             || type_syntax_is_enclosing_generic_parameter_reference(db, key, &argument.node)
     })
 }

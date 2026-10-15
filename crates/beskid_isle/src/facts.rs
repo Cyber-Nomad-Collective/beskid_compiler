@@ -8,8 +8,8 @@ mod node_facts;
 mod operations;
 
 pub use call_shapes::{
-    CallImportError, DirectCallee, FunctionValueCall, InlineCaptureField, InlineClosureEnvironment, InlineLambdaCall,
-    LambdaEntry,
+    CallImportError, DirectCallee, FunctionItemValue, FunctionValueCall, InlineCaptureField, InlineClosureEnvironment,
+    InlineLambdaCall, LambdaEntry,
     SpawnArgumentEnvironment, SpawnArgumentField, SpawnEntry, TracedFiberJoinLayout,
 };
 pub use catalogue::{
@@ -23,7 +23,7 @@ pub use kinds::{
 pub use match_range::{MatchArmBindingFact, MatchArmFact, MatchPayloadPatternFact, RangeFact, Unit};
 pub use node_facts::NodeFacts;
 pub use operations::{
-    CollectionMutationOwner, CollectionOperation, CompositionInjectionPlan, CompositionLaunchPlan,
-    CompositionRegistrationPlan, CompositionScopePlan, EventHandlerLocalPlan, EventOperationPlan, LocalSlotId,
-    ManagedReferenceFact, ParameterSlot, ScopedCleanupPlan,
+    ArrayForFact, CollectionMutationOwner, CollectionOperation, CompositionInjectionPlan, CompositionLaunchPlan,
+    CompositionRegistrationPlan, CompositionScopePlan, EventHandlerLocalPlan, EventOperationPlan, IteratorForFact,
+    LocalSlotId, ManagedReferenceFact, ParameterSlot, ScopedCleanupPlan,
 };

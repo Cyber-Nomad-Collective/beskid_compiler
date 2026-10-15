@@ -144,3 +144,44 @@ fn schema_migration_purges_all_legacy_units_before_rewriting_one() {
     assert_eq!(hir_files, 0, "migration must purge every legacy HIR payload");
     assert_eq!(store.manifest().expect("current manifest").schema_version, ARTIFACT_SCHEMA_VERSION);
 }
+
+#[test]
+fn store_written_under_another_grammar_revision_is_invalidated_silently() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let store = ArtifactStore::new(dir.path());
+    let fp = content_fingerprint("unit source");
+    let unit = |grammar_rev: &str| {
+        AstUnitSnapshot::new(
+            UnitArtifactMeta {
+                content_fingerprint: fp.clone(),
+                schema_version: ARTIFACT_SCHEMA_VERSION,
+                grammar_rev: grammar_rev.to_string(),
+                logical_name: "U.bd".into(),
+                source_path: dir.path().join("U.bd"),
+                source_len: 11,
+                imports: vec![],
+            },
+            vec![9, 8, 7],
+        )
+    };
+    let stale_revision = format!("{}-older-grammar", grammar_revision());
+
+    // A unit whose own metadata names another grammar revision is never read back.
+    store.write_unit(&unit(&stale_revision)).expect("write stale unit");
+    assert!(store.read_ast(&fp).is_none(), "a unit tree from another grammar revision must not be adopted");
+
+    // A manifest written by another grammar revision makes the whole store stale: reads miss and
+    // the next write replaces the unit namespace instead of failing.
+    store.write_unit(&unit(grammar_revision())).expect("write current unit");
+    assert!(store.read_ast(&fp).is_some());
+    let manifest_path = store.cache_root().join("manifest.json");
+    let mut manifest: ArtifactManifest =
+        serde_json::from_str(&std::fs::read_to_string(&manifest_path).expect("manifest")).expect("manifest json");
+    manifest.grammar_rev = stale_revision;
+    std::fs::write(&manifest_path, serde_json::to_string(&manifest).expect("encode")).expect("rewrite manifest");
+    assert!(!store.is_manifest_current());
+    assert!(store.read_ast(&fp).is_none(), "a stale manifest invalidates every persisted tree");
+    store.ensure_dirs().expect("stale store is rebuilt, not an error");
+    assert!(store.is_manifest_current());
+    assert!(store.read_ast(&fp).is_none(), "stale units are purged with the old manifest");
+}

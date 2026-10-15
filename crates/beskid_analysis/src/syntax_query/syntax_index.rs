@@ -19,6 +19,12 @@ pub struct SyntaxIndex {
     metadata: Vec<SyntaxNodeMetadata>,
     children: Vec<Vec<AstNodeId>>,
     paths: Vec<Vec<u32>>,
+    /// Node ids per `NodeKind` (indexed by discriminant) in pre-order, so kind lookups visit only
+    /// the matching nodes instead of the whole unit.
+    kinds: Vec<Vec<AstNodeId>>,
+    /// Declaration ids per `NodeKind` and declared name (types, enums, contracts, functions,
+    /// methods), in pre-order: the unit's name table for declaration lookups.
+    names: Vec<std::collections::BTreeMap<String, Vec<AstNodeId>>>,
 }
 
 impl SyntaxIndex {
@@ -28,8 +34,25 @@ impl SyntaxIndex {
         let mut metadata = Vec::new();
         let mut children = Vec::new();
         let mut paths = Vec::new();
-        index_node(DynNodeRef::from(&program.node), None, &[], &mut metadata, &mut children, &mut paths);
-        Self { generation, metadata, children, paths }
+        // The root is indexed as the spanned program so its metadata carries the unit span like
+        // every other node; the bare `Program` has no span and would leave `Query.Span(entryRoot)`
+        // unanswerable while every child answers.
+        index_node(DynNodeRef::from(program), None, &[], &mut metadata, &mut children, &mut paths);
+        let mut kinds = vec![Vec::new(); NodeKind::ALL.len()];
+        for node in &metadata {
+            kinds[node.kind as usize].push(node.id);
+        }
+        let mut index = Self { generation, metadata, children, paths, kinds, names: Vec::new() };
+        let mut names = vec![std::collections::BTreeMap::<String, Vec<AstNodeId>>::new(); NodeKind::ALL.len()];
+        for kind in NAMED_DECLARATION_KINDS {
+            for id in index.ids_of_kind(kind) {
+                if let Some(name) = index.node_at(program, id).and_then(declared_name) {
+                    names[kind as usize].entry(name.to_owned()).or_default().push(id);
+                }
+            }
+        }
+        index.names = names;
+        index
     }
 
     pub fn generation(&self) -> SyntaxGenerationId {
@@ -53,7 +76,13 @@ impl SyntaxIndex {
     }
 
     pub fn ids_of_kind(&self, kind: NodeKind) -> impl Iterator<Item = AstNodeId> + '_ {
-        self.metadata.iter().filter(move |node| node.kind == kind).map(|node| node.id)
+        self.kinds.get(kind as usize).into_iter().flatten().copied()
+    }
+
+    /// Declarations of `kind` named `name`, in pre-order. Answers only for the declaration kinds
+    /// that carry a name (types, enums, contracts, functions, methods); empty for any other kind.
+    pub fn ids_named<'a>(&'a self, kind: NodeKind, name: &str) -> impl Iterator<Item = AstNodeId> + 'a {
+        self.names.get(kind as usize).and_then(|names| names.get(name)).into_iter().flatten().copied()
     }
 
     /// Direct children in deterministic AST order.
@@ -64,7 +93,7 @@ impl SyntaxIndex {
     /// Resolve a node through its indexed child path without rebuilding a whole-tree snapshot.
     pub fn node_at<'a>(&self, program: &'a Spanned<Program>, id: AstNodeId) -> Option<DynNodeRef<'a>> {
         let path = self.paths.get(id.0 as usize)?;
-        let mut node = DynNodeRef::from(&program.node);
+        let mut node = DynNodeRef::from(program);
         for ordinal in path {
             node = direct_child(node, *ordinal)?;
         }
@@ -118,6 +147,25 @@ impl SyntaxIndex {
     ) -> impl Iterator<Item = &'a T> + 'a {
         self.ids_of_kind(kind).filter_map(|id| self.node_at(program, id)?.of::<T>())
     }
+}
+
+/// Declaration kinds indexed by name in [`SyntaxIndex::ids_named`].
+const NAMED_DECLARATION_KINDS: [NodeKind; 5] = [
+    NodeKind::TypeDefinition,
+    NodeKind::EnumDefinition,
+    NodeKind::ContractDefinition,
+    NodeKind::FunctionDefinition,
+    NodeKind::MethodDefinition,
+];
+
+fn declared_name(node: DynNodeRef<'_>) -> Option<&str> {
+    use crate::syntax::{ContractDefinition, EnumDefinition, FunctionDefinition, MethodDefinition, TypeDefinition};
+    node.of::<TypeDefinition>()
+        .map(|definition| definition.name.node.name.as_str())
+        .or_else(|| node.of::<EnumDefinition>().map(|definition| definition.name.node.name.as_str()))
+        .or_else(|| node.of::<ContractDefinition>().map(|definition| definition.name.node.name.as_str()))
+        .or_else(|| node.of::<FunctionDefinition>().map(|definition| definition.name.node.name.as_str()))
+        .or_else(|| node.of::<MethodDefinition>().map(|definition| definition.name.node.name.as_str()))
 }
 
 fn path_segments(path: &crate::syntax::Path) -> Vec<String> {

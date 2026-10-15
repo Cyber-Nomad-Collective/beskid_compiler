@@ -10,15 +10,6 @@ use super::super::support::{
     lower_syntax_program, node_type, parse_program_with_source_name, settings,
 };
 
-fn assert_enum_match_shape_remains_unavailable(source: &str) {
-    let (input, _isa, root) = item_fixture_with_root(source);
-    let expression =
-        find_node(input.database(), root, beskid_queries::IndexedNodeKind::MatchExpression).expect("match expression");
-    let error =
-        enum_match(input.database(), expression).expect_err("unsupported enum-match shape must remain unavailable");
-    assert!(error.is_unavailable(), "{error:?}");
-}
-
 #[test]
 fn nominal_enum_parameter_materializes_as_a_pointer_local_slot() {
     let (input, isa, item) =
@@ -165,7 +156,7 @@ fn cross_unit_generic_receiver_match_preserves_a_concrete_nominal_error() {
     let fiber_status_path = source_root.join("Concurrency/WorkStatus.bd");
     let results_path = source_root.join("Core/Results.bd");
     let main_source = "use Concurrency.Work; unit Main() { Work<i64> fiber = Work<i64> { value: 7_i64, handle: -1_i64 }; Work<i64>.Join(fiber); return; }";
-    let fiber_source = "use Concurrency.WorkError; use Concurrency.WorkStatus; use Core.Results; pub type Work<T> { T value, i64 handle } pub Core.Results.Result<T, WorkError> Join<T>(Work<T> self) { WorkStatus status = WorkStatus::Panicked(self.handle, \"panic\"); return match status { WorkStatus::Ok(_) => Result::Ok(self.value), WorkStatus::Cancelled(reason, cancelerId) => Result::Error(WorkError::Cancelled(reason, cancelerId)), WorkStatus::StackOverflow(limitBytes, requestedBytes) => Result::Error(WorkError::StackOverflow(limitBytes, requestedBytes)), WorkStatus::Panicked(code, message) => Result::Error(WorkError::Panicked(code, message)), WorkStatus::NotDone => Result::Error(WorkError::Panicked(-1_i64, \"not done\")), }; }";
+    let fiber_source = "use Concurrency.WorkError; use Concurrency.WorkStatus; use Core.Results; pub type Work<T> { pub T value, pub i64 handle } pub Core.Results.Result<T, WorkError> Join<T>(Work<T> self) { WorkStatus status = WorkStatus::Panicked(self.handle, \"panic\"); return match status { WorkStatus::Ok(_) => Result::Ok(self.value), WorkStatus::Cancelled(reason, cancelerId) => Result::Error(WorkError::Cancelled(reason, cancelerId)), WorkStatus::StackOverflow(limitBytes, requestedBytes) => Result::Error(WorkError::StackOverflow(limitBytes, requestedBytes)), WorkStatus::Panicked(code, message) => Result::Error(WorkError::Panicked(code, message)), WorkStatus::NotDone => Result::Error(WorkError::Panicked(-1_i64, \"not done\")), }; }";
     let fiber_error_source = "pub enum WorkError { Cancelled(i64 reason, i64 cancelerId), StackOverflow(i64 limitBytes, i64 requestedBytes), Panicked(i64 code, string message) }";
     let fiber_status_source = "pub enum WorkStatus { Ok(i64 value), Cancelled(i64 reason, i64 cancelerId), StackOverflow(i64 limitBytes, i64 requestedBytes), Panicked(i64 code, string message), NotDone }";
     let results_source = "pub enum Result<TValue, TError> { Ok(TValue value), Error(TError error) }";
@@ -360,8 +351,17 @@ fn enum_match_recursively_covers_a_nested_field_in_a_multi_field_payload() {
 }
 
 #[test]
-fn enum_match_guarded_binding_pattern_remains_unavailable() {
-    assert_enum_match_shape_remains_unavailable(
-        "enum Result { Ok(i64 value), Error(i64 error) } i64 Main(Result result) { return match result { Result::Ok(value) when value > 0_i64 => 1_i64, Result::Error(_) => 0_i64, }; }",
+fn enum_match_guarded_binding_pattern_evaluates_its_guard_after_binding() {
+    let (input, isa, item) = item_fixture(
+        "enum Result { Ok(i64 value), Error(i64 error) } i64 Main(Result result) { return match result { Result::Ok(value) when value > 0_i64 => 1_i64, Result::Ok(_) => 2_i64, Result::Error(_) => 0_i64, }; }",
     );
+    let expression = find_node(input.database(), item, beskid_queries::IndexedNodeKind::MatchExpression)
+        .expect("guarded enum match");
+    let fact = enum_match(input.database(), expression).expect("guarded match query").expect("guarded match fact");
+    assert!(fact.arms[0].guard.is_some(), "the guard must reach lowering");
+
+    let function = emit_isle_item(&input, isa.as_ref(), item)
+        .expect("a guarded arm lowers as a pattern test followed by its guard");
+    let clif = function.display().to_string();
+    assert!(clif.contains("sgt"), "the guard comparison must be emitted: {clif}");
 }

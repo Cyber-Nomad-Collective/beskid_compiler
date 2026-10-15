@@ -1,17 +1,11 @@
-//! End-to-end compiler-mod pipeline tests.
+//! Compiler-mod fixture tests that need no native Mod execution.
 //!
-//! Drives the `mod.load` → `mod.collect` → `mod.generate` → `mod.analyze` →
-//! `mod.rewrite` chain against the reference mod fixture under
-//! `crates/beskid_tests_mods/fixtures/mods/sample_mod/`. The tests use
-//! [`beskid_analysis::mod_host::ScriptedContractInvoker`] (or the default stub)
-//! to assert dispatch order, registration counts, and diagnostic codes per the
-//! platform-spec compiler-mods hub.
+//! Scheduling, dispatch order and registration-conflict tests live beside the scheduler in
+//! `beskid_analysis` (`mod_host::api::scheduling_tests`) because a qualified executable Mod
+//! descriptor cannot be forged by fixtures; real executable qualification is covered by the CLI
+//! native Mod tests. This crate keeps lockfile replay, generated-output layout and the rule that
+//! a legacy object descriptor never qualifies dispatch.
 
-mod analyzer_coverage;
-mod conflicts;
-mod contract_dispatch;
 mod fixture;
 mod generate_output;
-mod incremental_replay;
 mod rebuild;
-mod typed_merge;

@@ -13,7 +13,9 @@ pub enum TemplateError {
     #[error("E2003: required symbol `{symbol_id}` not provided")]
     RequiredSymbol { symbol_id: String },
 
-    #[error("E2004: output path conflict: {path}")]
+    #[error(
+        "E2004: output path conflict: {path} already exists and is not empty; existing files were left unchanged. Rerun with --force to replace the conflicting files, or choose another --output"
+    )]
     OutputConflict { path: PathBuf },
 
     #[error("E2005: item template outside project root: {path}")]

@@ -18,7 +18,7 @@ fn emits_literal_parser() {
     assert!(out.contains("ParseHi"));
     assert!(out.contains("Parser.Literal"));
     assert!(out.contains("Parser.Result.TextParseResult"));
-    assert!(out.contains("use Core.Text.Parser.Terms;"));
+    assert!(!out.contains("use Core.Text.Parser.Terms;"));
 }
 
 #[test]

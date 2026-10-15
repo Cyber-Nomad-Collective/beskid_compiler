@@ -5,7 +5,7 @@ use std::sync::Arc;
 use cranelift_codegen::ir::{Signature, Type};
 
 use super::*;
-use crate::layout::ManagedStructAllocation;
+use crate::layout::{ArrayLayout, ManagedStructAllocation};
 
 /// Exact query authority consumed by the event emitters. No receiver/field identity is
 /// reconstructed by generated ISLE or by the backend.
@@ -43,12 +43,13 @@ pub struct EventHandlerLocalPlan {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CollectionMutationOwner {
     Local(LocalSlotId),
-    AggregateField { receiver: LocalSlotId, field_index: u32 },
+    AggregateField { root: LocalSlotId, receiver: AstNodeKey, field_index: u32 },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CollectionOperation {
     Append { owner: CollectionMutationOwner },
+    TryAppend { owner: CollectionMutationOwner },
     UnprovenMutationOwner,
     Capacity,
     Clear,
@@ -64,6 +65,28 @@ pub enum CollectionOperation {
 pub enum ManagedReferenceFact {
     NativeOrScalar,
     GcManaged,
+}
+
+/// The array a `for` statement iterates: the element layout the loop reads with (stride and CLIF
+/// element type; the length is read from the array header at loop entry) and the GC classification
+/// of the elements, which decides whether the loop variable is a rooted managed local.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ArrayForFact {
+    pub layout: ArrayLayout,
+    pub element_managed: ManagedReferenceFact,
+}
+
+/// The nominal iterator a `for` statement iterates through the iterator protocol: the exact
+/// `Next()` callee (receiver pointer to `Option<T>` pointer), the physical `Option<T>` layout and
+/// the index of its `Some` variant (whose single payload field is the element the loop variable
+/// reads), and the GC classification of the elements.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct IteratorForFact {
+    pub next: DirectCallee,
+    pub next_signature: Signature,
+    pub option_layout: crate::EnumLayout,
+    pub some_variant: u32,
+    pub element_managed: ManagedReferenceFact,
 }
 
 #[derive(Clone)]

@@ -82,13 +82,9 @@ fn checked_in_corelib_foundation_package_has_manifest() {
 fn checked_in_corelib_template_has_beskid_tests_project() {
     let root = corelib_root();
     let tests_project = root.join("tests/corelib_tests/corelib_tests.bproj");
-    let write_tests = root.join("tests/corelib_tests/src/system/SyscallWriteTests.bd");
-    let api_tests = root.join("tests/corelib_tests/src/system/SyscallApiTests.bd");
-    let ergonomics_tests = root.join("tests/corelib_tests/src/system/SyscallErgonomicsTests.bd");
+    let system_suite = root.join("tests/corelib_tests/src/system/SystemSuite.bd");
     assert!(tests_project.is_file(), "missing corelib tests project manifest: {}", tests_project.display());
-    assert!(write_tests.is_file(), "missing syscall write tests: {}", write_tests.display());
-    assert!(api_tests.is_file(), "missing syscall api tests: {}", api_tests.display());
-    assert!(ergonomics_tests.is_file(), "missing syscall ergonomics tests: {}", ergonomics_tests.display());
+    assert!(system_suite.is_file(), "missing system (syscall write/api/ergonomics) suite: {}", system_suite.display());
 }
 
 #[test]
@@ -112,60 +108,14 @@ fn checked_in_corelib_tests_project_uses_unique_name_and_declares_targets() {
         "corelib_tests path dependency should reference beskid_corelib root"
     );
     for target in [
-        "SystemSyscallWriteTests",
-        "SystemSyscallApiTests",
-        "SystemSyscallErgonomicsTests",
-        "SystemOutputWriteLineTests",
-        "SystemInputReadTests",
-        "SystemErrorWriteTests",
-        "SystemFsTests",
-        "SystemPathTests",
-        "SystemTimeTests",
-        "ConsoleAnsiEscapeTests",
-        "ConsoleAnsiStyleChainTests",
-        "ConsoleAnsiSgrGoldenTests",
-        "ConsoleAnsiBuildersTests",
-        "ConsoleFormatMarkdownTests",
-        "ConsoleFormatAttributesTests",
-        "ConsoleFormatScanTests",
-        "ConsoleCapabilitiesTests",
-        "ConsoleTerminalPlatformTests",
-        "ConsoleFacadeTests",
-        "ConsoleMessageChannelTests",
-        "ConsoleStyleTests",
-        "ConsoleControlsPanelTests",
-        "ConsoleControlsProgressBarTests",
-        "ConsoleControlsLayoutTests",
-        "ConsoleControlsFrameTests",
-        "ConsoleRenderContextTests",
-        "CoreResultsTests",
-        "CoreOptionalTests",
-        "CoreBytesTests",
-        "CoreEncodingUtf8Tests",
-        "CoreExpressionBodyTests",
-        "CompilerSdkSurfaceTests",
-        "CompilerSdkEmitterTests",
-        "ConcurrencyStatusAbiTests",
-        "CollectionsArrayTests",
-        "CollectionsTier1Tests",
-        "CollectionsTests",
-        "CollectionsListTests",
-        "CollectionsMapTests",
-        "CollectionsSetTests",
-        "CollectionsQueueTests",
-        "CollectionsStackTests",
-        "CollectionsTests",
-        "QueryTests",
-        "ConcurrencyChannelApiTests",
-        "ConcurrencyMutexTryLockTests",
-        "ConcurrencyClockTests",
-        "ConcurrencyHubRegisterTests",
-        "ConcurrencyFiberHandleTests",
-        "TextCasingTests",
-        "TextParserCombinatorTests",
-        "PestGrammarParseTests",
-        "PestEmitGoldenTests",
-        "TextRegexIntegrationTests",
+        "SystemSuite",
+        "ConsoleSuite",
+        "CoreSuite",
+        "CompilerSdkSuite",
+        "ConcurrencySuite",
+        "CollectionsSuite",
+        "QuerySuite",
+        "TextSuite",
     ] {
         assert!(
             manifest.contains(&format!("target \"{target}\"")),

@@ -73,3 +73,135 @@ fn type_qualified_call_to_a_function_of_the_declaring_unit_specializes() {
     );
     assert_eq!(names.iter().filter(|name| name.starts_with("Empty#generic_")).count(), 2, "{names:?}");
 }
+
+/// `?` on a generic call inside a generic specialization: an operand whose payload names the
+/// specialization's own parameters (`ReadOne<T, R>(reader, value)?` as a method argument) and
+/// an operand whose call carries the parameter only as an explicit type argument
+/// (`Admit<T>(limit)?`), and a `T` local initialized by a propagated generic call
+/// (`T loaded = ReadOne<T, R>(reader, value)?`) for a scalar and a managed record `T`. All read
+/// their operand and return type in the specialization. A propagated call whose argument is a
+/// field of a generic record (`CountAll(value.history)?` in `Measure<T>`) infers from the field's
+/// identity in the specialization, in the path and the member (`(value).history`) spelling.
+/// `Assemble<T, R>` mirrors a generated decoder: an explicitly applied `Option<T>::Some(...)` of
+/// a propagated read, and a struct literal field whose value is a `match` over that slot.
+pub(crate) const PROPAGATING_GENERICS: &str = r#"
+enum Error { Failed() }
+enum Result<TValue, TError> { Ok(TValue value), Error(TError error) }
+contract Source { Result<i64, Error> Begin(i64 limit); }
+type Reader : Source {
+    i64 n,
+    pub Result<i64, Error> Begin(i64 limit) { return Result::Ok(limit + n); }
+}
+type Bag<T> { T[] values, i64 count, Bag<T> Put(T next) { return Bag<T> { values: values, count: count + 1 }; } i64 Size() { return count; } }
+T[] NoValues<T>() { return []; }
+Bag<T> Empty<T>() { return Bag<T> { values: NoValues<T>(), count: 0 }; }
+Result<T, Error> ReadOne<T, R>(R reader, T value) where R: Source { i64 begun = reader.Begin(1_i64)?; return Result::Ok(value); }
+Result<Bag<T>, Error> Collect<T, R>(R reader, T value) where R: Source {
+    Bag<T> bag = Empty<T>();
+    return Result::Ok(bag.Put(ReadOne<T, R>(reader, value)?));
+}
+Result<unit, Error> Admit<T>(i64 limit) { if (limit < 0_i64) { return Result::Error(Error::Failed()); } return Result::Ok(()); }
+Result<T, Error> Load<T>(T value, i64 limit) { Admit<T>(limit)?; return Result::Ok(value); }
+type Point { i64 x }
+type Boxed<T> { T item, T[] history }
+enum Option<T> { Some(T value), None() }
+type Holder<T> { T item }
+Result<Holder<T>, Error> Assemble<T, R>(R reader, T value) where R: Source {
+    mut Option<T> slot = Option<T>::None();
+    slot = Option<T>::Some(ReadOne<T, R>(reader, value)?);
+    return Result::Ok(Holder<T> { item: match slot { Option::Some(found) => found, Option::None() => { return Result::Error(Error::Failed()); }, } });
+}
+Result<i64, Error> CountAll<T>(T[] values) { return Result::Ok(1_i64); }
+Result<i64, Error> Measure<T>(Boxed<T> value) {
+    i64 counted = CountAll(value.history)?;
+    i64 again = CountAll<T>((value).history)?;
+    return Result::Ok(counted + again - 1_i64);
+}
+Result<T, Error> Complete<T, R>(R reader, T value) where R: Source {
+    reader.Begin(1_i64)?;
+    T loaded = ReadOne<T, R>(reader, value)?;
+    reader.Begin(2_i64)?;
+    return Result::Ok(loaded);
+}
+i64 Main() {
+    Reader reader = Reader { n: 1_i64 };
+    i64 a = match Collect<i64, Reader>(reader, 5_i64) { Result::Ok(_) => 1_i64, Result::Error(_) => -1_i64, };
+    i64 b = match Load<i64>(40_i64, 1_i64) { Result::Ok(v) => v, Result::Error(_) => -100_i64, };
+    i64 c = match Load<i64>(40_i64, -1_i64) { Result::Ok(_) => -1000_i64, Result::Error(_) => 1_i64, };
+    i64 d = match Complete<i64, Reader>(reader, 2_i64) { Result::Ok(v) => v, Result::Error(_) => -1_i64, };
+    i64 f = match Measure<i64>(Boxed<i64> { item: 1_i64, history: [1_i64] }) { Result::Ok(v) => v, Result::Error(_) => -1_i64, };
+    i64 e = match Complete<Point, Reader>(reader, Point { x: -3_i64 }) { Result::Ok(p) => p.x, Result::Error(_) => -1_i64, };
+    i64 g = match Assemble<i32, Reader>(reader, 5_i32) { Result::Ok(holder) => i64(holder.item), Result::Error(_) => -100_i64, };
+    i64 h = match Assemble<Point, Reader>(reader, Point { x: -5_i64 }) { Result::Ok(holder) => holder.item.x, Result::Error(_) => -100_i64, };
+    return a + b + c + d + e + f + g + h;
+}
+"#;
+
+/// Every node of `kind` under `key`, `key` included.
+fn descendants(
+    db: &dyn beskid_queries::Db,
+    key: beskid_queries::AstNodeKey,
+    kind: beskid_queries::IndexedNodeKind,
+) -> Vec<beskid_queries::AstNodeKey> {
+    let mut found = Vec::new();
+    let mut pending = vec![key];
+    while let Some(next) = pending.pop() {
+        if beskid_queries::node_kind(db, next).ok().flatten() == Some(kind) {
+            found.push(next);
+        }
+        pending.extend(beskid_queries::child_nodes(db, next).ok().flatten().unwrap_or_default().iter().copied());
+    }
+    found
+}
+
+#[test]
+fn generic_calls_propagated_with_try_inside_a_specialization_have_specialized_facts_and_lower() {
+    let (input, _, root) = item_fixture_with_root(PROPAGATING_GENERICS);
+    let db = input.database();
+    let function = |name: &str| {
+        find_function_definitions(db, root)
+            .into_iter()
+            .find(|key| item_name(db, *key).ok().flatten().as_deref() == Some(name))
+            .unwrap_or_else(|| panic!("function {name}"))
+    };
+    // The instance of `name` that Main's call specializes.
+    let instance_of = |name: &str| {
+        let declaration = function(name);
+        descendants(db, function("Main"), beskid_queries::IndexedNodeKind::CallExpression)
+            .into_iter()
+            .filter_map(|call| beskid_queries::generic_call_specialization(db, call).ok().flatten())
+            .filter_map(|specialization| {
+                beskid_queries::generic_call_specialization_instance(db, specialization).ok().flatten()
+            })
+            .find(|instance| instance.declaration == declaration)
+            .unwrap_or_else(|| panic!("Main specializes {name}"))
+    };
+    let tries = |name: &str| descendants(db, function(name), beskid_queries::IndexedNodeKind::TryExpression);
+
+    // `Admit<T>(limit)?` in Load<i64>: the unit payload and the Result<i64, Error> return.
+    let load = instance_of("Load");
+    let [admit] = tries("Load")[..] else { panic!("one try in Load") };
+    let fact = beskid_queries::specialized_try_expression_fact(db, admit, &load)
+        .expect("specialized try fact of Admit<T>(limit)?")
+        .expect("the try fact is proven in Load<i64>");
+    assert_eq!(fact.payload_type, beskid_queries::SemanticTypeId::UNIT);
+
+    // `ReadOne<T, R>(reader, value)?` as the argument of `bag.Put` in Collect<i64, Reader>.
+    let collect = instance_of("Collect");
+    let [read] = tries("Collect")[..] else { panic!("one try in Collect") };
+    let fact = beskid_queries::specialized_try_expression_fact(db, read, &collect)
+        .expect("specialized try fact of ReadOne<T, R>(reader, value)?")
+        .expect("the try fact is proven in Collect<i64, Reader>");
+    assert_eq!(fact.payload_type, beskid_queries::SemanticTypeId::I64);
+    let put = descendants(db, function("Collect"), beskid_queries::IndexedNodeKind::CallExpression)
+        .into_iter()
+        .filter_map(|call| beskid_queries::generic_call_specialization_in_environment(db, call, &collect).ok().flatten())
+        .find(|instance| item_name(db, instance.declaration).ok().flatten().as_deref() == Some("Put"))
+        .expect("bag.Put specializes in Collect<i64, Reader> with the try payload as its argument");
+    assert_eq!(put.signature.parameters.last(), Some(&beskid_queries::SemanticTypeId::I64));
+
+    let names = lower_all(PROPAGATING_GENERICS);
+    for name in ["Collect#generic_", "ReadOne#generic_", "Load#generic_", "Admit#generic_", "Put#generic_", "Complete#generic_", "Measure#generic_", "CountAll#generic_", "Assemble#generic_"] {
+        assert!(names.iter().any(|emitted| emitted.starts_with(name)), "{name}: {names:?}");
+    }
+}

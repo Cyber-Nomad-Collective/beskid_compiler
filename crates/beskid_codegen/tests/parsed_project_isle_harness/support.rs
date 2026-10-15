@@ -53,11 +53,11 @@ pub(super) fn lower_verified_entrypoint(
     let lowered = with_db(|db| lower_syntax_assembly_entrypoint(db, assembly, "Main", target, isa))
         .expect("parsed project lowers through CodegenInput and ISLE");
     assert!(
-        lowered.symbol.starts_with("Main#syntax_"),
+        lowered.symbol().starts_with("Main#syntax_"),
         "production path must mint a syntax-mangled entry symbol, got {}",
-        lowered.symbol
+        lowered.symbol()
     );
-    for function in &lowered.artifact.functions {
+    for function in &lowered.artifact().functions {
         verify_function(&function.function, isa.flags())
             .unwrap_or_else(|error| panic!("stock CLIF verifier rejected {}: {error}", function.name));
     }

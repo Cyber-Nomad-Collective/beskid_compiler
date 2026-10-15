@@ -19,6 +19,10 @@ pub enum SyntaxModuleEmissionError {
     Emission(String),
     #[error("syntax module declares duplicate symbol `{0}`")]
     DuplicateSymbol(String),
+    /// A retained `[Serialize]` target reaches an application without compiler-issued field codec
+    /// facts (`beskid_queries::serialization_field_codec_admission`); rejected before lowering.
+    #[error("serialization field codec facts are missing: {0}")]
+    SerializationFacts(String),
     /// The reachability-scoped semantic legality gate
     /// (`beskid_queries::semantic_contract::legality::check_items`) rejected one or more of the
     /// requested items before specialization or ISLE lowering ran. `rendered` carries the coded
@@ -44,7 +48,7 @@ impl SyntaxModuleEmissionError {
         let findings = match self {
             Self::Legality { findings, .. } => findings,
             Self::Internal { finding, .. } => vec![finding],
-            Self::Module(_) | Self::Emission(_) | Self::DuplicateSymbol(_) => Vec::new(),
+            Self::Module(_) | Self::Emission(_) | Self::DuplicateSymbol(_) | Self::SerializationFacts(_) => Vec::new(),
         };
         let diagnostics = findings.iter().map(|finding| finding_diagnostic(input, finding)).collect::<Option<Vec<_>>>();
         match diagnostics {

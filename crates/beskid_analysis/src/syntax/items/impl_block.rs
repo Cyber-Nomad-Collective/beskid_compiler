@@ -4,9 +4,10 @@ use pest::iterators::Pair;
 use crate::parser::Rule;
 use crate::parsing::error::ParseError;
 use crate::parsing::parsable::Parsable;
+use crate::syntax::items::function_definition::WhereBound;
 use crate::syntax::items::method_definition::parse_receiver_type;
 use crate::syntax::items::parse_helpers::parse_doc_attached_with;
-use crate::syntax::{AssociatedTypeBinding, MethodDefinition, Path, SpanInfo, Spanned, Type};
+use crate::syntax::{AssociatedTypeBinding, Identifier, MethodDefinition, Path, SpanInfo, Spanned, Type};
 
 use beskid_ast_derive::AstNode;
 
@@ -14,6 +15,10 @@ use beskid_ast_derive::AstNode;
 /// optionally naming the contracts it conforms to (`impl T : Contract { ... }`).
 #[derive(AstNode, Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ImplBlock {
+    #[ast(children)]
+    pub generics: Vec<Spanned<Identifier>>,
+    #[ast(skip)]
+    pub where_bounds: Vec<WhereBound>,
     #[ast(child)]
     pub receiver_type: Spanned<Type>,
     #[ast(children)]
@@ -29,7 +34,13 @@ pub struct ImplBlock {
 impl Parsable for ImplBlock {
     fn parse(pair: Pair<Rule>) -> Result<Spanned<Self>, ParseError> {
         let span = SpanInfo::from_span(&pair.as_span());
-        let mut inner = pair.into_inner();
+        let mut inner = pair.into_inner().peekable();
+        let generics = if inner.peek().is_some_and(|item| item.as_rule() == Rule::GenericParameters) {
+            crate::syntax::items::parse_helpers::parse_identifier_list(inner.next().unwrap())?
+        } else {
+            Vec::new()
+        };
+        let mut where_bounds = Vec::new();
 
         let receiver_pair = inner.next().ok_or(ParseError::missing(Rule::ReceiverType))?;
         let receiver_type = parse_receiver_type(receiver_pair)?;
@@ -39,6 +50,18 @@ impl Parsable for ImplBlock {
         let mut method_docs = Vec::new();
         let mut associated_type_bindings = Vec::new();
         for item_pair in inner {
+            if item_pair.as_rule() == Rule::WhereClause {
+                where_bounds = item_pair
+                    .into_inner()
+                    .map(|bound| {
+                        let mut parts = bound.into_inner();
+                        let parameter = Identifier::parse(parts.next().ok_or(ParseError::missing(Rule::Identifier))?)?;
+                        let contract = Path::parse(parts.next().ok_or(ParseError::missing(Rule::Path))?)?;
+                        Ok(WhereBound { parameter, contract })
+                    })
+                    .collect::<Result<Vec<_>, ParseError>>()?;
+                continue;
+            }
             if item_pair.as_rule() == Rule::ImplConformanceList {
                 let path_list = item_pair.into_inner().next().ok_or(ParseError::missing(Rule::PathList))?;
                 conformances = path_list.into_inner().map(Path::parse).collect::<Result<Vec<_>, _>>()?;
@@ -61,7 +84,15 @@ impl Parsable for ImplBlock {
         }
 
         Ok(Spanned::new(
-            Self { receiver_type, conformances, methods, method_docs, associated_type_bindings },
+            Self {
+                generics,
+                where_bounds,
+                receiver_type,
+                conformances,
+                methods,
+                method_docs,
+                associated_type_bindings,
+            },
             span,
         ))
     }

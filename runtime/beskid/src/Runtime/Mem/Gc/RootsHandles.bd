@@ -41,6 +41,12 @@ const PAGE_SIZE = 8192;
 // would overwrite that buffer, and a real report never returns.
 const HEAP_TEST_FORCE_ROOT_STACK_FAILURE = 136;
 
+const HEAP_FAILURE_REASON = 88;
+const HEAP_FAILURE_REQUEST_BYTES = 96;
+const HEAP_FAILURE_NONE = 0;
+const RUNTIME_HEAP_OFFSET = 16;
+const TLS_CHECKED_ALLOCATION_SCOPE_OFFSET = 48;
+
 const ROOT_BLOCK_NEXT = 0;
 const ROOT_BLOCK_COUNT = 8;
 const ROOT_BLOCK_SLOTS = 16;
@@ -62,6 +68,107 @@ pub unit GcHeapForceRootStackFailure(word enabled) {
     return;
 }
 
+// ---- Managed operand liveness (fail fast) ----
+//
+// A runtime service that receives a managed reference which no longer resolves to a live object
+// (a freed or never-allocated address: use after collection) has observed a memory-safety
+// violation. It traps `invalid_or_stale_handle` (6) with a diagnostic naming the service and
+// never substitutes a null, empty, or failure value. A null reference is not a dead object and
+// keeps each service's own null contract.
+//
+// Services named in the diagnostic; from `LIVENESS_STRING_SERVICE_FIRST` on they take string
+// operands. Constants are file-local, so the consumers (`Strings.bd`, `Utf8ViewRecord.bd`,
+// `AbiValue.bd`) repeat the numbers they pass.
+const LIVENESS_GC_ROOT_HANDLE = 1;
+const LIVENESS_GC_TRY_ROOT_HANDLE = 2;
+const LIVENESS_ABI_VALUE_INITIALIZE = 3;
+const LIVENESS_STR_LEN = 4;
+const LIVENESS_STR_EQ = 5;
+const LIVENESS_STR_CMP = 6;
+const LIVENESS_STR_CONCAT = 7;
+const LIVENESS_STR_SLICE = 8;
+const LIVENESS_UTF8_RECORD_ADOPT = 9;
+const LIVENESS_STRING_SERVICE_FIRST = 4;
+const LIVENESS_DIAGNOSTIC_SIZE = 128;
+const LIVENESS_TRAP_CODE = 6;
+
+// Traps when `value` is a non-null managed reference that does not resolve to a live managed
+// object on the current heap. Allocation-free and collection-free: the check only reads span
+// metadata, so non-collecting services (`str_eq`, `str_cmp`, `str_len`) stay non-collecting.
+pub unit RequireLiveManagedReference(pointer value, word service) {
+    if value == NativePointer(0) { return; }
+    pointer heap = Heap();
+    if heap == NativePointer(0) || ManagedObjectForReference(heap, value) == NativePointer(0) {
+        TrapManagedOperandNotLive(service);
+    }
+    return;
+}
+
+// `beskid runtime trap v5: invalid_or_stale_handle (6): <service>: managed [string ]operand is
+// not live (use after collection)`. The text is written from packed little-endian ASCII words
+// into system memory: a managed string cannot be allocated while reporting a heap violation.
+pub never TrapManagedOperandNotLive(word service) {
+    pointer diagnostic = SystemAllocate(LIVENESS_DIAGNOSTIC_SIZE, 8);
+    if diagnostic == NativePointer(0) { Trap(LIVENESS_TRAP_CODE, NativePointer(0), 0); }
+    mut word offset = LivenessServiceName(diagnostic, 0, service);
+    offset = WritePackedAscii(diagnostic, offset, 0x6567616e616d203a, 8); // ": manage"
+    offset = WritePackedAscii(diagnostic, offset, 0x2064, 2); // "d "
+    if service >= LIVENESS_STRING_SERVICE_FIRST {
+        offset = WritePackedAscii(diagnostic, offset, 0x20676e69727473, 7); // "string "
+    }
+    offset = WritePackedAscii(diagnostic, offset, 0x20646e617265706f, 8); // "operand "
+    offset = WritePackedAscii(diagnostic, offset, 0x6c20746f6e207369, 8); // "is not l"
+    offset = WritePackedAscii(diagnostic, offset, 0x6573752820657669, 8); // "ive (use"
+    offset = WritePackedAscii(diagnostic, offset, 0x6320726574666120, 8); // " after c"
+    offset = WritePackedAscii(diagnostic, offset, 0x6f697463656c6c6f, 8); // "ollectio"
+    offset = WritePackedAscii(diagnostic, offset, 0x296e, 2); // "n)"
+    Trap(LIVENESS_TRAP_CODE, diagnostic, offset);
+}
+
+word LivenessServiceName(pointer buffer, word offset, word service) {
+    if service == LIVENESS_GC_ROOT_HANDLE {
+        word next = WritePackedAscii(buffer, offset, 0x5f746f6f725f6367, 8); // "gc_root_"
+        return WritePackedAscii(buffer, next, 0x656c646e6168, 6); // "handle"
+    }
+    if service == LIVENESS_GC_TRY_ROOT_HANDLE {
+        word next = WritePackedAscii(buffer, offset, 0x725f7972745f6367, 8); // "gc_try_r"
+        word rest = WritePackedAscii(buffer, next, 0x646e61685f746f6f, 8); // "oot_hand"
+        return WritePackedAscii(buffer, rest, 0x656c, 2); // "le"
+    }
+    if service == LIVENESS_ABI_VALUE_INITIALIZE {
+        word next = WritePackedAscii(buffer, offset, 0x756c61765f696261, 8); // "abi_valu"
+        word rest = WritePackedAscii(buffer, next, 0x616974696e695f65, 8); // "e_initia"
+        return WritePackedAscii(buffer, rest, 0x657a696c, 4); // "lize"
+    }
+    if service == LIVENESS_STR_LEN { return WritePackedAscii(buffer, offset, 0x6e656c5f727473, 7); } // "str_len"
+    if service == LIVENESS_STR_EQ { return WritePackedAscii(buffer, offset, 0x71655f727473, 6); } // "str_eq"
+    if service == LIVENESS_STR_CMP { return WritePackedAscii(buffer, offset, 0x706d635f727473, 7); } // "str_cmp"
+    if service == LIVENESS_STR_CONCAT {
+        word next = WritePackedAscii(buffer, offset, 0x636e6f635f727473, 8); // "str_conc"
+        return WritePackedAscii(buffer, next, 0x7461, 2); // "at"
+    }
+    if service == LIVENESS_STR_SLICE {
+        word next = WritePackedAscii(buffer, offset, 0x63696c735f727473, 8); // "str_slic"
+        return WritePackedAscii(buffer, next, 0x65, 1); // "e"
+    }
+    if service == LIVENESS_UTF8_RECORD_ADOPT {
+        word next = WritePackedAscii(buffer, offset, 0x6365725f38667475, 8); // "utf8_rec"
+        word rest = WritePackedAscii(buffer, next, 0x706f64615f64726f, 8); // "ord_adop"
+        return WritePackedAscii(buffer, rest, 0x74, 1); // "t"
+    }
+    return offset;
+}
+
+// Writes the low `count` (at most 8) bytes of `packed`, least significant first.
+word WritePackedAscii(pointer buffer, word offset, word packed, word count) {
+    mut word index = 0;
+    while index < count {
+        raw_byte_store(pointer_add(buffer, offset + index), u8((packed >> (index * 8)) & 0xFF));
+        index = index + 1;
+    }
+    return offset + count;
+}
+
 // Root identity is the stable storage address, not a copyable payload or owner-state bit.
 pub bool GcIsRegisteredRoot(pointer ptrAddr) {
     pointer heap = Heap();
@@ -79,8 +186,10 @@ pub bool GcIsRegisteredRoot(pointer ptrAddr) {
     return false;
 }
 
-[Export(Abi:"C", Symbol:"gc_register_root")]
-pub bool GcRegisterRoot(pointer ptrAddr) {
+[Export(Abi:"C", Symbol:"beskid_rt_v5_gc_try_register_root")]
+pub bool GcTryRegisterRoot(pointer ptrAddr) {
+    if CheckedScopeFailureReason() != 0 { return false; }
+    GcClearAllocationFailure();
     pointer heap = Heap();
     if heap == NativePointer(0) || ptrAddr == NativePointer(0) { return false; }
     mut pointer block = NativePointer(raw_word_load(pointer_add(heap, HEAP_ROOT_STACK_CURRENT)));
@@ -91,7 +200,8 @@ pub bool GcRegisterRoot(pointer ptrAddr) {
             next = SystemAllocate(ROOT_BLOCK_SIZE, 8);
         }
         if next == NativePointer(0) {
-            GcReportRootStackExhaustion(heap);
+            GcRecordRootStackFailure();
+            return false;
         }
         raw_word_store(pointer_add(next, ROOT_BLOCK_NEXT), 0);
         raw_word_store(pointer_add(next, ROOT_BLOCK_COUNT), 0);
@@ -105,12 +215,55 @@ pub bool GcRegisterRoot(pointer ptrAddr) {
     return true;
 }
 
+// The heap of an attached thread that is outside every checked allocation scope, or null.
+// Root registration and release run on every managed call boundary; this reads the thread
+// state once instead of going through `CheckedScopeFailureReason`, `GcClearAllocationFailure`
+// and `Heap`, which each read it again.
+pointer UncheckedHeap() {
+    pointer thread = CurrentThreadState();
+    if thread == NativePointer(0) { return thread; }
+    if raw_word_load(pointer_add(thread, TLS_CHECKED_ALLOCATION_SCOPE_OFFSET)) != 0 { return NativePointer(0); }
+    word state = raw_word_load(thread);
+    if state == 0 { return NativePointer(0); }
+    return NativePointer(raw_word_load(pointer_add(NativePointer(state), RUNTIME_HEAP_OFFSET)));
+}
+
+[Export(Abi:"C", Symbol:"gc_register_root")]
+pub bool GcRegisterRoot(pointer ptrAddr) {
+    // Fast path: no checked scope and room in the current block. This does exactly what the
+    // general path below does in that case (reset the allocation failure, push the slot).
+    pointer heap = UncheckedHeap();
+    if heap != NativePointer(0) && ptrAddr != NativePointer(0) {
+        word block = raw_word_load(pointer_add(heap, HEAP_ROOT_STACK_CURRENT));
+        word count = raw_word_load(pointer_add(NativePointer(block), ROOT_BLOCK_COUNT));
+        if count < ROOT_BLOCK_CAPACITY {
+            raw_word_store(pointer_add(heap, HEAP_FAILURE_REASON), HEAP_FAILURE_NONE);
+            raw_word_store(pointer_add(heap, HEAP_FAILURE_REQUEST_BYTES), 0);
+            raw_word_store(pointer_add(NativePointer(block), ROOT_BLOCK_SLOTS + count * 8), NativeWord(ptrAddr));
+            raw_word_store(pointer_add(NativePointer(block), ROOT_BLOCK_COUNT), count + 1);
+            return true;
+        }
+    }
+    if CheckedScopeFailureReason() != 0 { return false; }
+    bool registered = GcTryRegisterRoot(ptrAddr);
+    if !registered && GcAllocationFailureReason() == 4 {
+        if CheckedScopeCurrent() != NativePointer(0) { CheckedScopeRecordFailure(4); }
+        else { GcReportRootStackExhaustion(Heap()); }
+    }
+    return registered;
+}
+
 // Scope exit is almost always LIFO (the last root registered is the first released), so the
 // common case is O(1): check the current block's last slot first. Out-of-order release still
 // works, at the cost of a full scan across blocks.
 [Export(Abi:"C", Symbol:"gc_unregister_root")]
 pub unit GcUnregisterRoot(pointer ptrAddr) {
-    pointer heap = Heap();
+    // Read the heap through the thread state directly; `Heap()` costs three nested calls.
+    pointer thread = CurrentThreadState();
+    if thread == NativePointer(0) { return; }
+    word state = raw_word_load(thread);
+    if state == 0 { return; }
+    pointer heap = NativePointer(raw_word_load(pointer_add(NativePointer(state), RUNTIME_HEAP_OFFSET)));
     if heap == NativePointer(0) || ptrAddr == NativePointer(0) { return; }
     pointer current = NativePointer(raw_word_load(pointer_add(heap, HEAP_ROOT_STACK_CURRENT)));
     word currentCount = raw_word_load(pointer_add(current, ROOT_BLOCK_COUNT));
@@ -138,6 +291,27 @@ pub unit GcUnregisterRoot(pointer ptrAddr) {
     return;
 }
 
+// Provider-private publication gate. Only an existing current-heap stack registration
+// qualifies; this never dereferences the caller's address, allocates or issues a source token.
+[Export(Abi:"C", Symbol:"beskid_rt_v5_gc_root_slot_is_registered")]
+pub bool GcRootSlotIsRegistered(pointer ptrAddr) {
+    pointer heap = Heap();
+    if heap == NativePointer(0) || ptrAddr == NativePointer(0) { return false; }
+    mut pointer block = NativePointer(raw_word_load(pointer_add(heap, HEAP_ROOT_STACK_HEAD)));
+    while block != NativePointer(0) {
+        word count = raw_word_load(pointer_add(block, ROOT_BLOCK_COUNT));
+        mut word index = 0;
+        while index < count {
+            if raw_word_load(pointer_add(block, ROOT_BLOCK_SLOTS + index * 8)) == NativeWord(ptrAddr) {
+                return true;
+            }
+            index = index + 1;
+        }
+        block = NativePointer(raw_word_load(pointer_add(block, ROOT_BLOCK_NEXT)));
+    }
+    return false;
+}
+
 [Export(Abi:"C", Symbol:"gc_external_root_count")]
 pub word GcExternalRootCount() {
     pointer heap = Heap();
@@ -151,8 +325,17 @@ pub word GcExternalRootCount() {
     return total;
 }
 
-[Export(Abi:"C", Symbol:"gc_root_handle")]
-pub word GcRootHandle(pointer valuePtr) {
+[Export(Abi:"C", Symbol:"beskid_rt_v5_gc_try_root_handle")]
+pub word GcTryRootHandle(pointer valuePtr) {
+    return GcTryRootHandleFor(valuePtr, LIVENESS_GC_TRY_ROOT_HANDLE);
+}
+
+// Returns 0 only for a null reference, a missing heap, or a failed handle admission (a recorded
+// checked-scope failure or root-stack growth failure, reason 4). A non-null reference that is not
+// a live managed object traps (use after collection); it is never reported as a failed root.
+word GcTryRootHandleFor(pointer valuePtr, word service) {
+    if CheckedScopeFailureReason() != 0 { return 0; }
+    GcClearAllocationFailure();
     pointer heap = Heap();
     if heap == NativePointer(0) || valuePtr == NativePointer(0) { return 0; }
     // `valuePtr` is the ABI-visible managed reference, which for arrays is the `{ data, len, cap }`
@@ -162,7 +345,7 @@ pub word GcRootHandle(pointer valuePtr) {
     // through it before doing span/header work; calling `IsAllocatedObject` on the raw value here
     // rejected every array root outright.
     if ManagedObjectForReference(heap, valuePtr) == NativePointer(0) {
-        return 0;
+        TrapManagedOperandNotLive(service);
     }
     // Reuse a cleared slot anywhere in the chain before growing, exactly as the fixed-table
     // version did, so churn (root, unroot, root, ...) does not grow the chain unboundedly.
@@ -188,9 +371,13 @@ pub word GcRootHandle(pointer valuePtr) {
     mut pointer current = NativePointer(raw_word_load(pointer_add(heap, HEAP_HANDLE_STACK_CURRENT)));
     mut word currentCount = raw_word_load(pointer_add(current, HANDLE_BLOCK_COUNT));
     if currentCount >= HANDLE_BLOCK_CAPACITY {
-        pointer next = SystemAllocate(HANDLE_BLOCK_SIZE, 8);
+        mut pointer next = NativePointer(0);
+        if raw_word_load(pointer_add(heap, HEAP_TEST_FORCE_ROOT_STACK_FAILURE)) == 0 {
+            next = SystemAllocate(HANDLE_BLOCK_SIZE, 8);
+        }
         if next == NativePointer(0) {
-            GcReportRootStackExhaustion(heap);
+            GcRecordRootStackFailure();
+            return 0;
         }
         raw_word_store(pointer_add(next, HANDLE_BLOCK_NEXT), 0);
         raw_word_store(pointer_add(next, HANDLE_BLOCK_COUNT), 0);
@@ -205,6 +392,17 @@ pub word GcRootHandle(pointer valuePtr) {
     raw_word_store(pointer_add(slot, 8), 1);
     raw_word_store(pointer_add(current, HANDLE_BLOCK_COUNT), currentCount + 1);
     return (word(1) << 32) | globalIndex;
+}
+
+[Export(Abi:"C", Symbol:"gc_root_handle")]
+pub word GcRootHandle(pointer valuePtr) {
+    if CheckedScopeFailureReason() != 0 { return 0; }
+    word handle = GcTryRootHandleFor(valuePtr, LIVENESS_GC_ROOT_HANDLE);
+    if handle == 0 && GcAllocationFailureReason() == 4 {
+        if CheckedScopeCurrent() != NativePointer(0) { CheckedScopeRecordFailure(4); }
+        else { GcReportRootStackExhaustion(Heap()); }
+    }
+    return handle;
 }
 
 // Handles are addressed by `(generation << 32) | globalIndex` where `globalIndex` counts slots
@@ -256,6 +454,7 @@ pub bool GcHandlesClear() {
     return true;
 }
 
+[Export(Abi:"C", Symbol:"beskid_rt_v5_gc_resolve_handle")]
 pub pointer GcResolveHandle(word handle) {
     pointer heap = Heap();
     if heap == NativePointer(0) || handle == 0 { return NativePointer(0); }

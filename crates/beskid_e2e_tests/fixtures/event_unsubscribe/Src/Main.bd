@@ -1,4 +1,4 @@
-use Std.Testing.Assert;
+use Testing.Assert;
 
 type User { event{4} created(string payload) }
 

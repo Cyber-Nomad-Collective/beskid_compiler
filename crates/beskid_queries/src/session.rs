@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use anyhow::Result;
 use beskid_analysis::analysis::SemanticDiagnostic;
 use beskid_analysis::services::{
-    FrontEndOptions, FrontEndTypedResult, PrepareOptions, PreparedCompilation, ResolvedInput,
+    FrontEndOptions, ExecutableFrontEnd, PrepareOptions, PreparedCompilation, ResolvedInput,
 };
 use beskid_pipeline::PipelineObserver;
 
@@ -93,13 +93,25 @@ pub fn prepare_compilation(
     result
 }
 
-/// Build typed HIR from a resolved input using the shared DB + entry session registry (CLI / codegen).
-pub fn compile_front_end_from_resolved_input(
+/// Build the typed front end of a Mod-free resolved input using the shared DB + entry session
+/// registry (CLI / codegen). A plan with a native Mod dependency fails with an error that names
+/// the Mod; use [`compile_front_end_with_mod_host`] for such plans.
+pub fn compile_mod_free_front_end(
     resolved: &ResolvedInput,
     options: FrontEndOptions,
     pipeline: Option<&dyn PipelineObserver>,
-) -> Result<FrontEndTypedResult> {
+) -> Result<ExecutableFrontEnd> {
+    compile_front_end_with_mod_host(resolved, options, beskid_analysis::mod_host::ModHost::NoMods, pipeline)
+}
+
+/// Build the typed front end of a resolved input, running its native Mods in `mod_host`.
+pub fn compile_front_end_with_mod_host(
+    resolved: &ResolvedInput,
+    options: FrontEndOptions,
+    mod_host: beskid_analysis::mod_host::ModHost,
+    pipeline: Option<&dyn PipelineObserver>,
+) -> Result<ExecutableFrontEnd> {
     let prepared =
-        prepare_compilation(resolved, PrepareOptions { front_end: options, ..Default::default() }, pipeline)?;
+        prepare_compilation(resolved, PrepareOptions { front_end: options, ..PrepareOptions::with_mod_host(mod_host) }, pipeline)?;
     prepared.into_executable()
 }

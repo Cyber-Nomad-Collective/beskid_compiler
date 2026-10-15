@@ -83,7 +83,7 @@ fn imported_generic_type_annotation_resolves_without_registry_reentrance() {
     let envelope_path = root.join("Messaging/Envelope.bd");
     let main_source =
         "use Messaging.Envelope;\nunit Main() { Envelope<i64> envelope = Envelope<i64> { value: 1 }; return; }";
-    let envelope_source = "pub type Envelope<T> { i64 value }";
+    let envelope_source = "pub type Envelope<T> { pub i64 value }";
     let main_program =
         expand_program(parse_program(main_source).expect("main parse"), DEFAULT_MAX_MACRO_EXPANSION_DEPTH);
     let envelope_program =
@@ -512,7 +512,7 @@ pub Console.ConsoleSize Winsize() {
     return Console.ConsoleSize { columns: 80, rows: 24 };
 }
 "#;
-    let console_source = "pub type ConsoleSize { i32 columns, i32 rows }";
+    let console_source = "pub type ConsoleSize { pub i32 columns, pub i32 rows }";
     let capabilities_source = "pub type TerminalCapabilities { bool isTty }";
     let sources =
         [(&linux_path, linux_source), (&console_path, console_source), (&capabilities_path, capabilities_source)];
@@ -695,7 +695,7 @@ fn canonical_core_error_qualified_write_has_a_direct_semantic_fact() {
         ),
         (
             write_request_path,
-            "pub type WriteRequest { Core.Syscall.Descriptor descriptor, string data }".into(),
+            "pub type WriteRequest { pub Core.Syscall.Descriptor descriptor, pub string data }".into(),
         ),
     ];
     let units = sources
@@ -762,7 +762,7 @@ unit Main() {
 "#;
     let list_source = r#"
 pub type List<T> {
-    i64 marker,
+    pub i64 marker,
 
     pub T Get(i64 index) {
         return 0_i64;
@@ -849,7 +849,7 @@ unit Main() {
     let list_source = r#"
 use Core.Results;
 pub type List<T> {
-    i64 marker,
+    pub i64 marker,
 
     pub Result<T, string> Get(i64 index) {
         return Result::Error("missing");

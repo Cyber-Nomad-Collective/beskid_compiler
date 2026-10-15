@@ -23,7 +23,7 @@ impl SyntaxNodeFacts<'_> {
         let plan = self
             .input
             .array_static_plan_for_specialization(key, self.current_item_specialization())
-            .or_else(|| self.input.bulk_array_static_plan(key))
+            .or_else(|| self.input.bulk_array_static_plan(key, self.current_item_specialization()))
             .or_else(|| self.typed_array_plan(key))?;
         Some(beskid_isle::ManagedArrayAllocation { allocation_request_symbol: plan.allocation_request_symbol.into() })
     }
@@ -76,10 +76,13 @@ impl SyntaxNodeFacts<'_> {
 
     pub(super) fn field_receiver_slot_impl(&self, key: AstNodeKey) -> Option<LocalSlotId> {
         if let Some((access, _, _, _)) = self.composition_injected_access(key) {
-            if self.query(node_kind(self.db, access.receiver)) == Some(beskid_queries::IndexedNodeKind::MethodDefinition) {
+            if self.query(node_kind(self.db, access.receiver))
+                == Some(beskid_queries::IndexedNodeKind::MethodDefinition)
+            {
                 return Some(super::super::context::IMPLICIT_METHOD_RECEIVER_SLOT);
             }
-            return self.query(local_slot(self.db, access.receiver))
+            return self
+                .query(local_slot(self.db, access.receiver))
                 .map(|slot| LocalSlotId { owner_node: slot.owner.node.0, index: slot.index });
         }
         let access = self.aggregate_field_access_in_context(key)?;

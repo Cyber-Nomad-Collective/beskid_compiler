@@ -12,9 +12,9 @@ use super::items::ResolvedSyntaxModuleItem;
 use crate::{CodegenContext, CodegenInput, ExternImport};
 
 /// Syntax-ISLE adapter over the existing artifact-owned literal pool.
-pub(super) struct ArtifactStringInterner<'a> {
-    pub(super) context: &'a mut CodegenContext,
-    pub(super) pointer_type: Type,
+pub(crate) struct ArtifactStringInterner<'a> {
+    pub(crate) context: &'a mut CodegenContext,
+    pub(crate) pointer_type: Type,
 }
 
 impl StringInterner for ArtifactStringInterner<'_> {
@@ -25,34 +25,45 @@ impl StringInterner for ArtifactStringInterner<'_> {
         text: &str,
     ) -> Result<Value, beskid_isle::StringMaterializationError> {
         let symbol = self.context.intern_string_literal(text.as_bytes());
-        let global = builder.func.create_global_value(GlobalValueData::Symbol {
-            name: ExternalName::testcase(symbol),
-            offset: 0.into(),
-            // JIT code and readonly data use independent allocation arenas. Keep the literal
-            // address range-independent instead of promising an AArch64 ADRP-reachable target.
-            colocated: false,
-            tls: false,
-        });
-        let bytes = builder.ins().symbol_value(self.pointer_type, global);
-        let byte_len = builder.ins().iconst(self.pointer_type, text.len() as i64);
-        let mut signature = Signature::new(builder.func.signature.call_conv);
-        signature.params.push(cranelift_codegen::ir::AbiParam::new(self.pointer_type));
-        signature.params.push(cranelift_codegen::ir::AbiParam::new(self.pointer_type));
-        signature.returns.push(cranelift_codegen::ir::AbiParam::new(self.pointer_type));
-        let signature = builder.import_signature(signature);
-        let function = builder.func.import_function(ExtFuncData {
-            name: ExternalName::testcase("str_new"),
-            signature,
-            colocated: false,
-            patchable: false,
-        });
-        let call = builder.ins().call(function, &[bytes, byte_len]);
-        builder
-            .inst_results(call)
-            .first()
-            .copied()
-            .ok_or(beskid_isle::StringMaterializationError::Artifact("str_new returned no value"))
+        materialize_string_literal(builder, symbol, text, self.pointer_type)
     }
+}
+
+/// Materialize an interned literal as a managed string: its data address and byte length passed
+/// to `str_new`.
+pub(crate) fn materialize_string_literal(
+    builder: &mut FunctionBuilder<'_>,
+    symbol: String,
+    text: &str,
+    pointer_type: Type,
+) -> Result<Value, beskid_isle::StringMaterializationError> {
+    let global = builder.func.create_global_value(GlobalValueData::Symbol {
+        name: ExternalName::testcase(symbol),
+        offset: 0.into(),
+        // JIT code and readonly data use independent allocation arenas. Keep the literal
+        // address range-independent instead of promising an AArch64 ADRP-reachable target.
+        colocated: false,
+        tls: false,
+    });
+    let bytes = builder.ins().symbol_value(pointer_type, global);
+    let byte_len = builder.ins().iconst(pointer_type, text.len() as i64);
+    let mut signature = Signature::new(builder.func.signature.call_conv);
+    signature.params.push(cranelift_codegen::ir::AbiParam::new(pointer_type));
+    signature.params.push(cranelift_codegen::ir::AbiParam::new(pointer_type));
+    signature.returns.push(cranelift_codegen::ir::AbiParam::new(pointer_type));
+    let signature = builder.import_signature(signature);
+    let function = builder.func.import_function(ExtFuncData {
+        name: ExternalName::testcase("str_new"),
+        signature,
+        colocated: false,
+        patchable: false,
+    });
+    let call = builder.ins().call(function, &[bytes, byte_len]);
+    builder
+        .inst_results(call)
+        .first()
+        .copied()
+        .ok_or(beskid_isle::StringMaterializationError::Artifact("str_new returned no value"))
 }
 
 /// Manifest symbols available only to compiler-authorized canonical runtime source. Ordinary
@@ -141,8 +152,14 @@ pub(super) fn extern_contract_callees(
             result.availability.push(AvailabilityQuery { symbol, members });
             continue;
         }
+        let mut import = extern_import(import);
+        // An admitted Rust Glue import replaces the declared C symbol and is linked from the
+        // owner image, not from the contract's `Library`.
+        if let Some(symbol) = input.glue_import_callee_symbol(&callee) {
+            import.symbol = symbol.to_owned();
+            import.library = None;
+        }
         result.symbols.insert(callee, import.symbol.clone());
-        let import = extern_import(import);
         if !result.imports.iter().any(|existing: &ExternImport| existing.symbol == import.symbol) {
             result.imports.push(import);
         }
@@ -200,9 +217,10 @@ pub(super) fn clif_declared_extern_imports(
 }
 
 /// String runtime helpers that ISLE lowering emits directly (string literals, coercion,
-/// comparison, concatenation). These are always required — they are not gated by the
+/// comparison, ordering, concatenation). These are always required — they are not gated by the
 /// Corelib syscall capability because they are fundamental operations, not facade services.
-const ALWAYS_AVAILABLE_STRING_SERVICES: &[&str] = &["str_new", "str_from_i64", "str_from_f64_bits", "str_eq", "str_cmp", "str_concat"];
+const ALWAYS_AVAILABLE_STRING_SERVICES: &[&str] =
+    &["str_new", "str_from_i64", "str_from_f64_bits", "str_eq", "str_cmp", "str_concat"];
 
 /// Compiler-planned composition calls are not source-callable Corelib services. Their
 /// authority comes from the attached, generation-validated composition graph, and the
@@ -223,7 +241,7 @@ const COMPOSITION_SERVICES: &[&str] = &[
 ///
 /// String runtime helpers (`str_new`, `str_from_i64`, `str_from_f64_bits`, `str_eq`, `str_cmp`,
 /// `str_concat`) are always available because ISLE lowering emits them directly for string
-/// literals, coercion, comparison, and concatenation — they are not facade services requiring capability authority.
+/// literals, coercion, comparison, ordering, and concatenation — they are not facade services requiring capability authority.
 pub(super) fn corelib_service_symbols(
     input: &CodegenInput<'_>,
     items: &[ResolvedSyntaxModuleItem],
@@ -236,6 +254,34 @@ pub(super) fn corelib_service_symbols(
         collect_event_service_callees(input.database(), item.key, &mut event_services);
     }
     let mut symbols = HashMap::new();
+    let mut callback_nodes = HashSet::new();
+    let mut pending = items.iter().map(|item| (item.key, 0usize)).collect::<Vec<_>>();
+    while let Some((key, depth)) = pending.pop() {
+        if depth > 1024 {
+            return Err("native callback import traversal exceeds depth budget".into());
+        }
+        if !callback_nodes.insert(key) {
+            continue;
+        }
+        if callback_nodes.len() > 1_000_000 {
+            return Err("native callback import traversal exceeds node budget".into());
+        }
+        if let Ok(Some(CallLowering::NativeModCallback(callback))) = call_lowering(input.database(), key) {
+            if !input.permits_native_mod_callback(callback) {
+                return Err(format!(
+                    "SDK host callback at {} (wrapper {}) requires a prepared native Mod invocation capability",
+                    beskid_queries::format_ast_node_site(input.database(), key),
+                    beskid_queries::format_ast_node_site(input.database(), callback.wrapper()),
+                ));
+            }
+            let symbol = beskid_queries::native_mod_callback_symbol(input.database(), callback)
+                .map_err(|error| error.to_string())?;
+            symbols.insert(DirectCallee::NativeModCallback(callback.wrapper()), symbol);
+        }
+        if let Ok(Some(children)) = child_nodes(input.database(), key) {
+            pending.extend(children.iter().copied().map(|child| (child, depth + 1)));
+        }
+    }
     for symbol in ALWAYS_AVAILABLE_STRING_SERVICES {
         symbols.insert(DirectCallee::corelib_service(symbol), (*symbol).to_owned());
     }
@@ -336,7 +382,8 @@ fn collect_manifest_service_callees(
             CallLowering::CorelibService(service) => {
                 corelib_services.insert(service);
             }
-            CallLowering::Direct(_)
+            CallLowering::NativeModCallback(_)
+            | CallLowering::Direct(_)
             | CallLowering::Dynamic
             | CallLowering::FunctionValue(_)
             | CallLowering::Runtime(_) => {}
@@ -360,7 +407,12 @@ impl beskid_isle::CallImporter for ArtifactCallImporter<'_> {
         callee: DirectCallee,
         signature: &Signature,
     ) -> Result<FuncRef, beskid_isle::CallImportError> {
-        let symbol = self.symbols.get(&callee).ok_or(beskid_isle::CallImportError::UnknownCallee)?;
+        let symbol = self.symbols.get(&callee).ok_or_else(|| {
+            crate::isle_trace::event(|| {
+                format!("event=import.unknown callee={callee:?} known={}", self.symbols.len())
+            });
+            beskid_isle::CallImportError::UnknownCallee
+        })?;
         let signature = builder.import_signature(signature.clone());
         Ok(builder.func.import_function(ExtFuncData {
             name: ExternalName::testcase(symbol.as_bytes()),

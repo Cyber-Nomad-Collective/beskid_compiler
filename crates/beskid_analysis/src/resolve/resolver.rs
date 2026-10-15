@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use crate::syntax::Spanned;
@@ -30,6 +30,13 @@ pub struct Resolver {
     pub(crate) module_imports: HashMap<String, Vec<String>>,
     /// Successful public-item scope imports, keyed by the imported item name.
     pub(crate) imported_scope_origins: HashMap<String, SpanInfo>,
+    /// Names in [`Self::imported_scope_origins`] whose origin `use` names the declaring module.
+    pub(crate) declaring_scope_origins: HashSet<String>,
+    /// Module scope entries that arrived through a `use` import rather than a declaration.
+    pub(crate) imported_scope_entries: HashSet<(ModuleId, String)>,
+    /// Modules the unit being collected used, whose public re-exports (`pub mod` children) are
+    /// bound after all of the unit's direct imports.
+    pub(crate) pending_reexport_imports: Vec<(ModuleId, SpanInfo)>,
     /// Successful module-import aliases, keyed by the usable module alias.
     pub(crate) module_import_origins: HashMap<String, SpanInfo>,
     pub(crate) current_source_path: Option<PathBuf>,
@@ -38,6 +45,17 @@ pub struct Resolver {
     pub(crate) declaring_package: String,
     /// When resolving method bodies, the extended/receiver type for bare field access (`handle` → `this.handle`).
     pub(crate) current_receiver_item_id: Option<super::ids::ItemId>,
+    /// When resolving a method body declared inside a `type X { }` body, how many sibling methods
+    /// of that type carry each name. A bare `Name(...)` call binds to the sibling method when
+    /// exactly one carries the name, mirroring `unqualified_enclosing_method_call` in
+    /// `beskid_queries` (the production authority). `None` outside type-body methods.
+    pub(crate) current_type_sibling_methods: Option<HashMap<String, usize>>,
+    /// Canonical compiler-SDK path the unit being resolved corresponds to byte for byte
+    /// (`sdk_authority::canonical_sdk_source_authority`); `None` for every other unit.
+    pub(crate) sdk_source_authority: Option<&'static str>,
+    /// Name and item span of the function whose body is being resolved; `None` inside methods,
+    /// lambdas, tests, and declarations.
+    pub(crate) current_function: Option<(String, SpanInfo)>,
 }
 
 impl Resolver {
@@ -92,7 +110,8 @@ pub(crate) fn path_segments(path: &Spanned<crate::syntax::Path>) -> Vec<String> 
 /// shape purely from AST text for typing/lowering. The two lists intentionally live in separate
 /// crates (`beskid_queries` depends on `beskid_analysis`, not the reverse) and must be updated
 /// together.
-const PRIMITIVE_NUMERIC_CONVERSION_NAMES: &[&str] = &["i32", "i64", "u32", "u8", "byte", "word", "f64"];
+const PRIMITIVE_NUMERIC_CONVERSION_NAMES: &[&str] =
+    &["i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "byte", "word", "f32", "f64", "char"];
 
 /// True when `call` has the shape of a primitive numeric conversion call: an unqualified,
 /// non-generic single-segment callee naming a conversion target, with exactly one argument.

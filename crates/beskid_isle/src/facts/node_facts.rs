@@ -6,6 +6,16 @@ use cranelift_codegen::ir::{Signature, Type};
 use std::sync::Arc;
 
 pub trait NodeFacts {
+    /// Only the production adapter with a closed executable effect proof enables this mode.
+    /// It does not reserve an outer failure result or authorize invocation publication.
+    fn checked_allocation_body(&self) -> bool {
+        false
+    }
+    /// Issued only for a closed allocation-free body with caller-owned live roots.
+    fn nonallocating_publication_body(&self) -> bool {
+        false
+    }
+
     fn composition_launch(&self, _key: AstNodeKey) -> Option<CompositionLaunchPlan> {
         None
     }
@@ -165,7 +175,22 @@ pub trait NodeFacts {
     fn match_arms(&self, _key: AstNodeKey) -> Option<Vec<MatchArmFact>> {
         None
     }
+    /// The CLIF type of the primitive scrutinee of a `MatchExpression` that matches by value
+    /// (integer, `bool`, `char`, float, or `string`); `None` for an enum match.
+    fn scalar_match_scrutinee(&self, _key: AstNodeKey) -> Option<Type> {
+        None
+    }
     fn range_fact(&self, _key: AstNodeKey) -> Option<RangeFact> {
+        None
+    }
+    /// The array iterated by a `ForStatement` node, when its iterable's source identity is an
+    /// array; `None` for `range` loops and for iterables with no array identity.
+    fn array_for_fact(&self, _key: AstNodeKey) -> Option<ArrayForFact> {
+        None
+    }
+    /// The nominal iterator a `ForStatement` node iterates (`Next()` returning `Option<T>`);
+    /// `None` for `range` and array loops and for iterables without a proven protocol.
+    fn iterator_for_fact(&self, _key: AstNodeKey) -> Option<IteratorForFact> {
         None
     }
     fn spawn_entry(&self, _key: AstNodeKey) -> Option<SpawnEntry> {
@@ -186,6 +211,10 @@ pub trait NodeFacts {
         None
     }
     fn function_value_call(&self, _key: AstNodeKey) -> Option<FunctionValueCall> {
+        None
+    }
+    /// A path expression that reads a named function item as a value.
+    fn function_item_value(&self, _key: AstNodeKey) -> Option<FunctionItemValue> {
         None
     }
     fn local_slot(&self, _key: AstNodeKey) -> Option<LocalSlotId> {

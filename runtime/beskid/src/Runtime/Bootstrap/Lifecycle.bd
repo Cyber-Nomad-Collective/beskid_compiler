@@ -14,7 +14,8 @@ const RUNTIME_ACTIVE = 2;
 const RUNTIME_SHUTTING_DOWN = 3;
 const RUNTIME_SHUT_DOWN = 4;
 
-const TLS_STATE_SIZE = 48;
+const TLS_STATE_SIZE = 56;
+const TLS_CHECKED_ALLOCATION_SCOPE_OFFSET = 48;
 const TLS_RUNTIME_OFFSET = 0;
 const TLS_ROOT_FRAME_OFFSET = 8;
 const TLS_RESERVED_OFFSET = 16;
@@ -33,10 +34,20 @@ const HEAP_INITIAL_REGION_SIZE = 1048576;
 // `GcGrow`) removes that whole class of bug outright rather than requiring every future page-math
 // call site to route through the region-relative form.
 const PAGE_SIZE = 8192;
-const HEAP_DEFAULT_CAP = 1073741824;
+// No fixed cap: the managed heap may grow until the system allocator refuses, which is still the
+// diagnosable out-of-memory trap. `BESKID_HEAP_MAX` installs an explicit cap at process init.
+const HEAP_DEFAULT_CAP = 0xFFFFFFFFFFFFFFFF;
+// Return values of `EnvironmentLimit`: the variable is absent or empty, or its text is not a
+// valid byte count. Both are outside the range a real limit can take.
+const LIMIT_UNSET = 0xFFFFFFFFFFFFFFFF;
+const LIMIT_INVALID = 0xFFFFFFFFFFFFFFFE;
+const LIMIT_KEY_SCRATCH_SIZE = 64;
+const LIMIT_KEY_BYTES_OFFSET = 16;
+const LIMIT_KEY_HEAP_MAX_LENGTH = 15;
+const LIMIT_KEY_FIBER_STACK_MAX_LENGTH = 22;
 const HEAP_FIRST_REGION = 0;
 const REGION_SIZE_FIELD = 8;
-const CALLBACK_REGISTRY_SIZE = 1056;
+const CALLBACK_REGISTRY_SIZE = 1072;
 const CALLBACK_COMPOSITION_OFFSET = 24;
 
 [Export(Abi:"C", Symbol:"beskid_rt_v5_abi_version")]
@@ -126,6 +137,9 @@ pub pointer ProcessInit(pointer config) {
         raw_word_store(pointer_add(config, RUNTIME_LIFECYCLE_STATE_OFFSET), RUNTIME_SHUT_DOWN | (nextGeneration << 32));
         return NativePointer(0);
     }
+    // Process-wide limits come from the environment once the heap, thread, and scheduler exist;
+    // a malformed or rejected value is a fatal configuration error, never a silent default.
+    ApplyEnvironmentLimits();
     if WorkerPoolInit(4) != 0 {
         SchedShutdownForced(true);
         ThreadDetach(thread);
@@ -176,8 +190,12 @@ pub unit ProcessShutdown(pointer runtime) {
         raw_word_store(pointer_add(callbacks, CALLBACK_COMPOSITION_OFFSET), 0);
     }
     if SchedShutdown() == false { WorkerPoolShutdown(); Trap(10, NativePointer(0), 0); }
+    if ChildShutdown() != 0 { WorkerPoolShutdown(); Trap(10, NativePointer(0), 0); }
     WorkerPoolShutdown();
     pointer heap = NativePointer(raw_word_load(pointer_add(runtime, RUNTIME_HEAP_OFFSET)));
+    if dynamic_registry_shutdown_v1() == 0 { Trap(10, NativePointer(0), 0); }
+    if glue_owner_shutdown() == 0 { Trap(10, NativePointer(0), 0); }
+    CallbackRegistryRootsDrop();
     if GcExternalRootCount() != 0 || GcHandlesClear() == false { Trap(10, NativePointer(0), 0); }
     if heap != NativePointer(0) { FreeRootAndHandleStacks(heap); }
     mut pointer region = NativePointer(raw_word_load(pointer_add(heap, HEAP_FIRST_REGION)));
@@ -188,7 +206,8 @@ pub unit ProcessShutdown(pointer runtime) {
            raw_word_load(pointer_add(thread, TLS_RESERVED_OFFSET)) != 0 ||
            raw_word_load(pointer_add(thread, TLS_ATTACH_DEPTH_OFFSET)) != 1 ||
            raw_word_load(pointer_add(thread, TLS_COMPOSITION_SCOPE_OFFSET)) != 0 ||
-           raw_word_load(pointer_add(thread, TLS_COMPOSITION_DEPTH_OFFSET)) != 0 {
+           raw_word_load(pointer_add(thread, TLS_COMPOSITION_DEPTH_OFFSET)) != 0 ||
+           raw_word_load(pointer_add(thread, TLS_CHECKED_ALLOCATION_SCOPE_OFFSET)) != 0 {
             Trap(10, NativePointer(0), 0);
         }
         ThreadDetach(thread);
@@ -261,7 +280,8 @@ pub unit ThreadDetach(pointer thread) {
        raw_word_load(pointer_add(thread, TLS_RESERVED_OFFSET)) != 0 ||
        raw_word_load(pointer_add(thread, TLS_ATTACH_DEPTH_OFFSET)) != 1 ||
        raw_word_load(pointer_add(thread, TLS_COMPOSITION_SCOPE_OFFSET)) != 0 ||
-       raw_word_load(pointer_add(thread, TLS_COMPOSITION_DEPTH_OFFSET)) != 0 {
+       raw_word_load(pointer_add(thread, TLS_COMPOSITION_DEPTH_OFFSET)) != 0 ||
+           raw_word_load(pointer_add(thread, TLS_CHECKED_ALLOCATION_SCOPE_OFFSET)) != 0 {
         Trap(10, NativePointer(0), 0);
     }
     SetCurrentThreadState(NativePointer(0));
@@ -270,5 +290,117 @@ pub unit ThreadDetach(pointer thread) {
     }
     memory_set(thread, 0, TLS_STATE_SIZE);
     SystemFree(thread, TLS_STATE_SIZE);
+    return;
+}
+
+// Private canonical-provider link; no source-facing pointer/token operation.
+pub pointer CheckedAllocationScopeLink() {
+    pointer thread = CurrentThreadState();
+    if thread == NativePointer(0) { return NativePointer(0); }
+    return NativePointer(raw_word_load(pointer_add(thread, TLS_CHECKED_ALLOCATION_SCOPE_OFFSET)));
+}
+pub bool SetCheckedAllocationScopeLink(pointer checkedContext) {
+    pointer thread = CurrentThreadState();
+    if thread == NativePointer(0) { return false; }
+    raw_word_store(pointer_add(thread, TLS_CHECKED_ALLOCATION_SCOPE_OFFSET), NativeWord(checkedContext));
+    return true;
+}
+
+// ── Process-wide limits from the environment ──────────────────────────
+// `BESKID_HEAP_MAX` caps the managed heap and `BESKID_FIBER_STACK_MAX` sets the per-fiber stack
+// reservation. Both take a decimal byte count with an optional `k`, `m`, or `g` suffix (powers of
+// 1024, either case). The canonical corpus has no string literals, so the variable names are spelled
+// as byte codes into one native `BeskidStr { data, length }` scratch record.
+
+// Writes `BESKID_HEAP_MAX` into the scratch record and returns it as a `BeskidStr`.
+pub pointer LimitKeyHeapMax(pointer scratch) {
+    pointer bytes = pointer_add(scratch, LIMIT_KEY_BYTES_OFFSET);
+    raw_byte_store(bytes, 66); raw_byte_store(pointer_add(bytes, 1), 69); raw_byte_store(pointer_add(bytes, 2), 83);
+    raw_byte_store(pointer_add(bytes, 3), 75); raw_byte_store(pointer_add(bytes, 4), 73); raw_byte_store(pointer_add(bytes, 5), 68);
+    raw_byte_store(pointer_add(bytes, 6), 95); raw_byte_store(pointer_add(bytes, 7), 72); raw_byte_store(pointer_add(bytes, 8), 69);
+    raw_byte_store(pointer_add(bytes, 9), 65); raw_byte_store(pointer_add(bytes, 10), 80); raw_byte_store(pointer_add(bytes, 11), 95);
+    raw_byte_store(pointer_add(bytes, 12), 77); raw_byte_store(pointer_add(bytes, 13), 65); raw_byte_store(pointer_add(bytes, 14), 88);
+    raw_word_store(scratch, NativeWord(bytes));
+    raw_word_store(pointer_add(scratch, 8), LIMIT_KEY_HEAP_MAX_LENGTH);
+    return scratch;
+}
+
+// Writes `BESKID_FIBER_STACK_MAX` into the scratch record and returns it as a `BeskidStr`.
+pub pointer LimitKeyFiberStackMax(pointer scratch) {
+    pointer bytes = pointer_add(scratch, LIMIT_KEY_BYTES_OFFSET);
+    raw_byte_store(bytes, 66); raw_byte_store(pointer_add(bytes, 1), 69); raw_byte_store(pointer_add(bytes, 2), 83);
+    raw_byte_store(pointer_add(bytes, 3), 75); raw_byte_store(pointer_add(bytes, 4), 73); raw_byte_store(pointer_add(bytes, 5), 68);
+    raw_byte_store(pointer_add(bytes, 6), 95); raw_byte_store(pointer_add(bytes, 7), 70); raw_byte_store(pointer_add(bytes, 8), 73);
+    raw_byte_store(pointer_add(bytes, 9), 66); raw_byte_store(pointer_add(bytes, 10), 69); raw_byte_store(pointer_add(bytes, 11), 82);
+    raw_byte_store(pointer_add(bytes, 12), 95); raw_byte_store(pointer_add(bytes, 13), 83); raw_byte_store(pointer_add(bytes, 14), 84);
+    raw_byte_store(pointer_add(bytes, 15), 65); raw_byte_store(pointer_add(bytes, 16), 67); raw_byte_store(pointer_add(bytes, 17), 75);
+    raw_byte_store(pointer_add(bytes, 18), 95); raw_byte_store(pointer_add(bytes, 19), 77); raw_byte_store(pointer_add(bytes, 20), 65);
+    raw_byte_store(pointer_add(bytes, 21), 88);
+    raw_word_store(scratch, NativeWord(bytes));
+    raw_word_store(pointer_add(scratch, 8), LIMIT_KEY_FIBER_STACK_MAX_LENGTH);
+    return scratch;
+}
+
+// Parses one byte-count text: digits, then an optional k/m/g suffix, nothing else. Returns the
+// byte count, LIMIT_UNSET for an absent or empty variable, or LIMIT_INVALID for any other text
+// (including overflow). Reads the managed string the environment adapter returns and keeps no
+// reference to it.
+pub word EnvironmentLimit(pointer key) {
+    pointer value = EnvGet(key);
+    if value == NativePointer(0) { return LIMIT_INVALID; }
+    word length = raw_word_load(pointer_add(value, 8));
+    if length == 0 { return LIMIT_UNSET; }
+    pointer data = NativePointer(raw_word_load(value));
+    if data == NativePointer(0) { return LIMIT_INVALID; }
+    mut word index = 0;
+    mut word number = 0;
+    mut bool sawDigit = false;
+    mut bool digits = true;
+    while digits && index < length {
+        word code = word(raw_byte_load(pointer_add(data, index))) & 0xFF;
+        if code >= 48 && code <= 57 {
+            word next = number * 10 + (code - 48);
+            if next / 10 != number { return LIMIT_INVALID; }
+            number = next;
+            sawDigit = true;
+            index = index + 1;
+        } else {
+            digits = false;
+        }
+    }
+    if !sawDigit { return LIMIT_INVALID; }
+    mut word multiplier = 1;
+    if index < length {
+        word code = word(raw_byte_load(pointer_add(data, index))) & 0xFF;
+        if code == 107 || code == 75 { multiplier = 1024; }
+        else if code == 109 || code == 77 { multiplier = 1048576; }
+        else if code == 103 || code == 71 { multiplier = 1073741824; }
+        else { return LIMIT_INVALID; }
+        index = index + 1;
+    }
+    if index != length { return LIMIT_INVALID; }
+    word scaled = number * multiplier;
+    if multiplier != 1 && number != 0 && scaled / multiplier != number { return LIMIT_INVALID; }
+    if scaled == LIMIT_UNSET || scaled == LIMIT_INVALID { return LIMIT_INVALID; }
+    return scaled;
+}
+
+// Reads `BESKID_HEAP_MAX` and `BESKID_FIBER_STACK_MAX` and installs them. An unparsable value, or
+// one the runtime rejects (a heap cap below the committed or initial region size, a stack maximum
+// that is not a whole multiple of the 64 KiB initial commit), traps with the variable name as the
+// diagnostic so the process never runs with a limit nobody asked for.
+pub unit ApplyEnvironmentLimits() {
+    pointer scratch = SystemAllocate(LIMIT_KEY_SCRATCH_SIZE, 8);
+    if scratch == NativePointer(0) { Trap(5, NativePointer(0), 0); }
+    memory_set(scratch, 0, LIMIT_KEY_SCRATCH_SIZE);
+    word heapMax = EnvironmentLimit(LimitKeyHeapMax(scratch));
+    if heapMax == LIMIT_INVALID || (heapMax != LIMIT_UNSET && GcHeapSetCap(heapMax) == 0) {
+        Trap(5, pointer_add(scratch, LIMIT_KEY_BYTES_OFFSET), LIMIT_KEY_HEAP_MAX_LENGTH);
+    }
+    word stackMax = EnvironmentLimit(LimitKeyFiberStackMax(scratch));
+    if stackMax == LIMIT_INVALID || (stackMax != LIMIT_UNSET && !SchedulerSetFiberStackMax(stackMax)) {
+        Trap(5, pointer_add(scratch, LIMIT_KEY_BYTES_OFFSET), LIMIT_KEY_FIBER_STACK_MAX_LENGTH);
+    }
+    SystemFree(scratch, LIMIT_KEY_SCRATCH_SIZE);
     return;
 }

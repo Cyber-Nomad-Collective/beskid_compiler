@@ -5,7 +5,7 @@
 #
 # Usage (pick one input mode):
 #   crashdiag.sh --target <name> --slice <slice> [--project <path>] [--no-rerun] [--json]
-#       e.g. crashdiag.sh --target TextRegexTests --slice cov
+#       e.g. crashdiag.sh --target TextSuite --slice cov
 #   crashdiag.sh --log <path-on-builder-or-local>                    [--json]
 #       Parses a captured log for the "Illegal instruction"/"Segmentation fault"/... bash message
 #       or an EXIT=/EXITCODE= marker.

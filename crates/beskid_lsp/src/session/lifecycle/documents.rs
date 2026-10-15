@@ -2,14 +2,15 @@ use std::sync::Arc;
 
 use beskid_analysis::{
     projects::{CompilePlan, effective_roots_from_lockfile_checked},
-    services::{DependencyTypingPolicy, FrontEndOptions, PrepareOptions},
+    services::{FrontEndOptions, PrepareOptions},
 };
 use tokio::sync::RwLock;
 use tower_lsp_server::ls_types::Uri;
 
 use crate::{
     diagnostics::{
-        collect_syntax_diagnostics, prepare_project_diagnostics_from_assembled, prepare_project_syntax_facts,
+        EditorPreparePass, collect_syntax_diagnostics, prepare_project_diagnostics_from_assembled,
+        prepare_project_syntax_facts, project_preparation_failure,
     },
     manifest_uri::{is_manifest_uri, is_standalone_bsol_uri},
     session::{
@@ -93,9 +94,15 @@ pub(super) async fn build_full_diagnostic_facts(
             .collect::<Vec<_>>()
     };
     let project_root = plan.project_root.clone();
+    let mod_host = state.read().await.mod_host.clone();
     let options = PrepareOptions {
-        front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
-        dependency_typing: DependencyTypingPolicy::FullClosure,
+        mod_host: beskid_analysis::mod_host::ModHost::NoMods,
+        front_end: FrontEndOptions {
+            assembly_recovery: beskid_analysis::projects::AssemblyRecoveryPolicy::EditorRetainRecovered,
+            with_semantic_diagnostics: true,
+            ..Default::default()
+        },
+        native_mod_adapter_sources: false,
     };
     let assembled = with_compilation_db_for_project(state, &project_root, |db| {
         beskid_queries::invalidate_entry_sessions(&project_root);
@@ -103,24 +110,38 @@ pub(super) async fn build_full_diagnostic_facts(
             db.ensure_file_text(buffer_path, buffer_text);
         }
         db.ensure_file_text(path, text.to_string());
-        beskid_queries::assemble_resolved_input_with_db(db, &resolved, &options).ok()
+        beskid_queries::assemble_resolved_input_with_db(db, &resolved, &options)
     })
     .await;
-    let Some(assembled) = assembled else {
-        return collect_syntax_diagnostics_for_state(state, uri, text, None).await;
+    let assembled = match assembled {
+        Ok(assembled) => assembled,
+        Err(error) => return preparation_failure_facts(uri, text, &error),
     };
     let prepared = tokio::task::spawn_blocking(move || {
-        prepare_project_diagnostics_from_assembled(&assembled, DependencyTypingPolicy::FullClosure)
+        prepare_project_diagnostics_from_assembled(&assembled, EditorPreparePass::Complete, &mod_host)
             .map(|prepared| (prepared.diagnostics, prepared.fixes))
-            .ok()
     })
     .await
-    .ok()
-    .flatten();
+    .map_err(|error| anyhow::anyhow!("project diagnostics task failed: {error}"))
+    .and_then(|prepared| prepared);
     match prepared {
-        Some(facts) => facts,
-        None => collect_syntax_diagnostics_for_state(state, uri, text, None).await,
+        Ok(facts) => facts,
+        Err(error) => preparation_failure_facts(uri, text, &error),
     }
+}
+
+/// Structural facts for the current buffer plus a visible error fact naming why project
+/// preparation failed. A failed preparation is never rerun through another path and never
+/// silently degrades to structural-only facts.
+fn preparation_failure_facts(
+    uri: &Uri,
+    text: &str,
+    error: &anyhow::Error,
+) -> (Vec<crate::session::store::SyntaxDiagnostic>, Vec<beskid_analysis::SyntaxFix>) {
+    tracing::warn!(uri = %uri.as_str(), "project preparation failed: {error:#}");
+    let (mut diagnostics, _fixes) = collect_syntax_diagnostics(None, uri, text, None);
+    diagnostics.push(project_preparation_failure(error));
+    (diagnostics, Vec::new())
 }
 
 use super::{
@@ -132,7 +153,7 @@ pub(super) async fn build_syntax_facts_with_policy(
     state: &RwLock<State>,
     uri: &Uri,
     text: &str,
-    dependency_typing: DependencyTypingPolicy,
+    pass: EditorPreparePass,
     current_document_only: bool,
 ) -> SyntaxFacts {
     wait_for_initial_scan(state).await;
@@ -140,7 +161,7 @@ pub(super) async fn build_syntax_facts_with_policy(
         state,
         uri,
         text,
-        dependency_typing,
+        pass,
         current_document_only,
         StartupFallback::WaitForScan,
     )
@@ -151,7 +172,7 @@ async fn build_syntax_facts_with_policy_after_startup(
     state: &RwLock<State>,
     uri: &Uri,
     text: &str,
-    dependency_typing: DependencyTypingPolicy,
+    pass: EditorPreparePass,
     current_document_only: bool,
     fallback: StartupFallback,
 ) -> SyntaxFacts {
@@ -217,6 +238,7 @@ async fn build_syntax_facts_with_policy_after_startup(
             .collect::<Vec<_>>()
     };
     let project_root = plan.project_root.clone();
+    let mod_host = state.read().await.mod_host.clone();
     let resolved_for_prepare = resolved.clone();
     let path_for_prepare = path.clone();
     let text_for_prepare = text.to_string();
@@ -230,13 +252,18 @@ async fn build_syntax_facts_with_policy_after_startup(
             .map(|fingerprint| beskid_queries::fingerprint_key(&fingerprint))
             .unwrap_or_else(|| path_for_prepare.display().to_string());
 
-        let prepared = if dependency_typing == DependencyTypingPolicy::EntryOnly {
+        let prepared = if pass == EditorPreparePass::Immediate {
             beskid_queries::bump_file_revision(db, &entry_key);
             let options = PrepareOptions {
-                front_end: FrontEndOptions { with_semantic_diagnostics: false, ..Default::default() },
-                dependency_typing,
+                mod_host: beskid_analysis::mod_host::ModHost::NoMods,
+                front_end: FrontEndOptions {
+                    assembly_recovery: beskid_analysis::projects::AssemblyRecoveryPolicy::EditorRetainRecovered,
+                    with_semantic_diagnostics: false,
+                    ..Default::default()
+                },
+                native_mod_adapter_sources: false,
             };
-            let prepared = prepare_project_syntax_facts(db, &resolved_for_prepare, dependency_typing).ok()?;
+            let prepared = prepare_project_syntax_facts(db, &resolved_for_prepare, pass, &mod_host)?;
             // Resolve registry-backed identity immediately, without waiting for the
             // full executable dependency closure, against the same post-mod-rewrite
             // assembly that owns the generated syntax facts.
@@ -247,19 +274,20 @@ async fn build_syntax_facts_with_policy_after_startup(
             let _ = beskid_queries::entry_resolution_with_db(db, &resolved_generation, &options);
             prepared
         } else {
-            prepare_project_syntax_facts(db, &resolved_for_prepare, dependency_typing).ok()?
+            prepare_project_syntax_facts(db, &resolved_for_prepare, pass, &mod_host)?
         };
         let mut facts = syntax_facts_for_assembly(db, &resolved_for_prepare, Arc::new(prepared.assembly));
         facts.diagnostics = prepared.diagnostics;
         facts.fixes = prepared.fixes;
-        Some(facts)
+        anyhow::Ok(facts)
     })
     .await;
-    let mut facts = if let Some(facts) = prepared_facts {
-        facts
-    } else {
-        let (diagnostics, fixes) = fallback_diagnostics(state, uri, text, Some(&session), fallback).await;
-        SyntaxFacts { diagnostics, fixes, ..SyntaxFacts::default() }
+    let mut facts = match prepared_facts {
+        Ok(facts) => facts,
+        Err(error) => {
+            let (diagnostics, fixes) = preparation_failure_facts(uri, text, &error);
+            SyntaxFacts { diagnostics, fixes, ..SyntaxFacts::default() }
+        }
     };
     facts.documentation = documentation;
     facts.symbols = current_symbols;
@@ -267,7 +295,7 @@ async fn build_syntax_facts_with_policy_after_startup(
 }
 
 pub(super) async fn build_syntax_facts(state: &RwLock<State>, uri: &Uri, text: &str) -> SyntaxFacts {
-    build_syntax_facts_with_policy(state, uri, text, DependencyTypingPolicy::FullClosure, false).await
+    build_syntax_facts_with_policy(state, uri, text, EditorPreparePass::Complete, false).await
 }
 
 fn document_from_syntax_facts(version: i32, text: String, syntax_facts: SyntaxFacts) -> Document {
@@ -318,7 +346,7 @@ pub(crate) async fn build_initial_workspace_document(
         state,
         uri,
         &text,
-        DependencyTypingPolicy::FullClosure,
+        EditorPreparePass::Complete,
         false,
         StartupFallback::StructuralOnly,
     )
@@ -377,7 +405,7 @@ pub async fn set_document(state: &RwLock<State>, uri: Uri, version: i32, text: S
     // Keep editing responsive: type only the entry unit synchronously. The debounced
     // lifecycle pass upgrades this exact text generation to the full dependency closure.
     let mut syntax_facts =
-        build_syntax_facts_with_policy(state, &uri, &text, DependencyTypingPolicy::EntryOnly, false).await;
+        build_syntax_facts_with_policy(state, &uri, &text, EditorPreparePass::Immediate, false).await;
     if !prior_dependency_surface.is_empty()
         && syntax_facts.completion.as_ref().is_none_or(|completion| completion.dependency_surface.is_empty())
     {
@@ -422,7 +450,7 @@ pub async fn rebuild_open_document_syntax_facts(state: &RwLock<State>) {
 
     for (uri, version, text) in entries {
         let syntax_facts =
-            build_syntax_facts_with_policy(state, &uri, &text, DependencyTypingPolicy::FullClosure, true).await;
+            build_syntax_facts_with_policy(state, &uri, &text, EditorPreparePass::Complete, true).await;
         let update_gate = document_update_gate(state, &uri).await;
         let _update_guard = update_gate.lock().await;
         let mut write = state.write().await;
@@ -474,13 +502,13 @@ target "App" {
             .expect("v1 lock");
         let doc = build_initial_workspace_document(&state, &uri, 1, source.to_string()).await;
         assert!(
-            doc.syntax_diagnostics.iter().any(|d| d.message.contains("v1") && d.message.contains("beskid lock")),
+            doc.syntax_diagnostics.iter().any(|d| d.message.contains("v1") && d.message.contains("beskid dev project lock")),
             "diagnostics: {:?}",
             doc.syntax_diagnostics
         );
         state.read().await.mark_initial_scan_complete();
         let (full_diagnostics, _) = build_full_diagnostic_facts(&state, &uri, source).await;
-        assert!(full_diagnostics.iter().any(|d| d.message.contains("v1") && d.message.contains("beskid lock")));
+        assert!(full_diagnostics.iter().any(|d| d.message.contains("v1") && d.message.contains("beskid dev project lock")));
 
         fs::write(&lock_path, "# Project.lock v2\nnot-a-lock\n").expect("malformed lock");
         let doc = build_initial_workspace_document(&state, &uri, 2, source.to_string()).await;

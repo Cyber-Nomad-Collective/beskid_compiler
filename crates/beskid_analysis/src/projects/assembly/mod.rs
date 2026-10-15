@@ -13,7 +13,10 @@ use std::{
     sync::Arc,
 };
 
-pub use discovery::{module_path_exists_on_disk, module_path_to_relative_path, resolve_module_file};
+pub use discovery::{
+    AmbiguousModulePath, ModulePathProvider, module_path_exists_on_disk, module_path_to_relative_path,
+    resolve_module_file,
+};
 pub(crate) use loader::assemble_program;
 pub use loader::{
     AssemblyError, UnitMaterializer, assemble_program_with_materializer, assembly_options_for_plan,
@@ -55,9 +58,47 @@ impl SourceUnit {
     }
 }
 
+/// Units an assembly judges as roots: type-checked, rule-checked, and reported as the
+/// project's own code. Every other unit is a dependency (signatures plus best-effort bodies whose
+/// errors are not reported against the consumer).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AssemblyRootSet {
+    /// The entry unit (`ProgramAssembly::entry_index`) is the single root.
+    Entry,
+    /// Entry-less workspace scan of a library: every unit under the host project's own source root
+    /// is a root. Holds the canonical unit path keys in assembly order; `entry_index` names the
+    /// first of them and carries no "main entry" meaning.
+    OwnUnits(Arc<[PathBuf]>),
+}
+
+/// Canonical paths of the units that belong to the source root `root`, in assembly order. A unit
+/// under another effective root nested inside `root` belongs to that root, not to `root`.
+pub(crate) fn own_unit_paths_under(
+    units: &[SourceUnit],
+    root: &Path,
+    roots: &EffectiveCompilationRoots,
+) -> Vec<PathBuf> {
+    let root_key = crate::paths::unit_path_key(root);
+    let nested_roots: Vec<PathBuf> = std::iter::once(&roots.host)
+        .chain(roots.dependencies.iter())
+        .map(|entry| crate::paths::unit_path_key(&entry.source_root))
+        .filter(|other| *other != root_key && other.starts_with(&root_key))
+        .collect();
+    units
+        .iter()
+        .filter(|unit| {
+            unit.path.starts_with(&root_key) && !nested_roots.iter().any(|nested| unit.path.starts_with(nested))
+        })
+        .map(|unit| unit.path.clone())
+        .collect()
+}
+
 /// Generation-bound syntax project shared by analysis and IDE query boundaries.
 #[derive(Clone)]
 pub struct ProgramAssembly {
+    /// Opaque source-issued contributions retained after the invocation closes.
+    pub compiled_mod_metadata: Vec<crate::mod_host::ModCompiledMetadata>,
+    pub verified_package_identities: super::VerifiedPackageIdentities,
     pub runtime_fixture: Option<Arc<beskid_abi::runtime_source::RuntimeFixtureProof>>,
     pub roots: EffectiveCompilationRoots,
     pub units: Arc<Vec<SourceUnit>>,
@@ -65,11 +106,18 @@ pub struct ProgramAssembly {
     pub syntax_indexes: Arc<Vec<SyntaxIndex>>,
     pub generation: SyntaxGenerationId,
     pub entry_index: usize,
+    /// Root units judged as the project's own code (see [`AssemblyRootSet`]).
+    pub root_set: AssemblyRootSet,
     pub discovery: AssemblyDiscovery,
+    pub recovery_policy: crate::projects::AssemblyRecoveryPolicy,
     pub module_index: Arc<ModuleIndex>,
-    pub has_std_dependency: bool,
+    pub has_core_dependency: bool,
     /// Physical units copied from compiler-owned Foundation sources by workspace materialization.
     pub trusted_corelib_service_paths: Arc<[PathBuf]>,
+    /// Owner library labels of the host manifest's `glue "<library>"` blocks. An `[Extern]`
+    /// contract whose `Library` is one of them is a Rust Glue import validated by the Glue
+    /// representation profile, not by the user C ABI profile. Empty for synthetic assemblies.
+    pub glue_libraries: Arc<[String]>,
 }
 
 impl std::fmt::Debug for ProgramAssembly {
@@ -79,9 +127,12 @@ impl std::fmt::Debug for ProgramAssembly {
             .field("syntax_indexes", &self.syntax_indexes.len())
             .field("generation", &self.generation)
             .field("entry_index", &self.entry_index)
+            .field("root_set", &self.root_set)
             .field("discovery", &self.discovery)
-            .field("has_std_dependency", &self.has_std_dependency)
+            .field("recovery_policy", &self.recovery_policy)
+            .field("has_core_dependency", &self.has_core_dependency)
             .field("trusted_corelib_service_paths", &self.trusted_corelib_service_paths.len())
+            .field("glue_libraries", &self.glue_libraries)
             .finish()
     }
 }
@@ -93,27 +144,262 @@ impl ProgramAssembly {
         entry_index: usize,
         discovery: AssemblyDiscovery,
         module_index: Arc<ModuleIndex>,
-        has_std_dependency: bool,
+        has_core_dependency: bool,
         generation: SyntaxGenerationId,
     ) -> Self {
         let syntax_indexes =
             Arc::new(units.iter().map(|unit| SyntaxIndex::from_program(&unit.program, generation)).collect::<Vec<_>>());
         Self {
+            compiled_mod_metadata: Vec::new(),
+            verified_package_identities: Default::default(),
             runtime_fixture: None,
             roots,
             units,
             syntax_indexes,
             generation,
             entry_index,
+            root_set: AssemblyRootSet::Entry,
             discovery,
+            recovery_policy: crate::projects::AssemblyRecoveryPolicy::Strict,
             module_index,
-            has_std_dependency,
+            has_core_dependency,
             trusted_corelib_service_paths: Arc::from([]),
+            glue_libraries: Arc::from([]),
         }
+    }
+
+    pub fn with_recovery_policy(mut self, policy: crate::projects::AssemblyRecoveryPolicy) -> Self {
+        self.recovery_policy = policy;
+        self
+    }
+
+    /// The same assembly with `program` as the entry unit's syntax, indexed under `generation`.
+    ///
+    /// Every other property is carried over, including the verified package identities and the
+    /// retained compiled Mod metadata: a typed program built from the result registers the same
+    /// generation-bound facts (contribution attribution among them) as any other build of this
+    /// assembly at `generation`. Every rebuild of an entry program goes through here, so no caller
+    /// can drop a property and register a diverging table for the same generation.
+    pub fn with_entry_program(&self, program: Spanned<Program>, generation: SyntaxGenerationId) -> Self {
+        let mut units = self.units.as_ref().clone();
+        units[self.entry_index].program = program;
+        let mut next = Self::new(
+            self.roots.clone(),
+            Arc::new(units),
+            self.entry_index,
+            self.discovery,
+            Arc::clone(&self.module_index),
+            self.has_core_dependency,
+            generation,
+        )
+        .with_recovery_policy(self.recovery_policy)
+        .with_trusted_corelib_service_paths(Arc::clone(&self.trusted_corelib_service_paths))
+        .with_glue_libraries(Arc::clone(&self.glue_libraries))
+        .with_runtime_fixture(self.runtime_fixture.clone())
+        .with_root_set(self.root_set.clone());
+        next.verified_package_identities = self.verified_package_identities.clone();
+        next.compiled_mod_metadata = self.compiled_mod_metadata.clone();
+        next
+    }
+
+    /// Carry an explicit root set onto a rebuilt assembly; [`ProgramAssembly::new`] starts from
+    /// [`AssemblyRootSet::Entry`].
+    pub fn with_root_set(mut self, root_set: AssemblyRootSet) -> Self {
+        self.root_set = root_set;
+        self
+    }
+
+    /// Indices of every root unit, entry first. Returns `None` when an [`AssemblyRootSet::OwnUnits`]
+    /// path no longer names a unit of this assembly; callers fail closed on that.
+    pub fn root_unit_indices(&self) -> Option<Vec<usize>> {
+        match &self.root_set {
+            AssemblyRootSet::Entry => Some(vec![self.entry_index]),
+            AssemblyRootSet::OwnUnits(paths) => {
+                let mut indices = vec![self.entry_index];
+                for path in paths.iter() {
+                    let index = self.units.iter().position(|unit| unit.path == *path)?;
+                    if !indices.contains(&index) {
+                        indices.push(index);
+                    }
+                }
+                Some(indices)
+            }
+        }
+    }
+
+    /// Units whose code a library output of this assembly owns, entry first, then assembly order.
+    ///
+    /// For [`AssemblyRootSet::OwnUnits`] these are the root units. For [`AssemblyRootSet::Entry`]
+    /// they are the entry plus every other unit of the host project's own source root (the units the
+    /// entry imports from its own package), never a unit under a dependency root. Returns `None`
+    /// when the root set names a unit outside this assembly; callers fail closed on that.
+    pub fn library_unit_indices(&self) -> Option<Vec<usize>> {
+        match &self.root_set {
+            AssemblyRootSet::OwnUnits(_) => self.root_unit_indices(),
+            AssemblyRootSet::Entry => {
+                let mut indices = vec![self.entry_index];
+                for path in own_unit_paths_under(&self.units, &self.roots.host.source_root, &self.roots) {
+                    let index = self.units.iter().position(|unit| unit.path == path)?;
+                    if !indices.contains(&index) {
+                        indices.push(index);
+                    }
+                }
+                Some(indices)
+            }
+        }
+    }
+
+    /// Root units other than the entry unit (empty for [`AssemblyRootSet::Entry`]).
+    pub fn additional_root_indices(&self) -> Option<Vec<usize>> {
+        let entry = self.entry_index;
+        self.root_unit_indices().map(|indices| indices.into_iter().filter(|index| *index != entry).collect())
+    }
+
+    /// Whether `index` names a root unit.
+    pub fn is_root_unit(&self, index: usize) -> bool {
+        match &self.root_set {
+            AssemblyRootSet::Entry => index == self.entry_index,
+            AssemblyRootSet::OwnUnits(paths) => {
+                index == self.entry_index || self.units.get(index).is_some_and(|unit| paths.contains(&unit.path))
+            }
+        }
+    }
+
+    /// The same assembly with `index` as the unit judged as entry (root-by-root checking).
+    pub fn with_entry_index(&self, index: usize) -> Option<Self> {
+        (index < self.units.len()).then(|| Self { entry_index: index, ..self.clone() })
+    }
+
+    pub fn package_identities(&self) -> &super::VerifiedPackageIdentities {
+        &self.verified_package_identities
+    }
+
+    /// Whether `unit` is the canonical public Dynamic source: issued by the verified Corelib
+    /// Foundation package at its canonical package-relative path with byte-exact canonical
+    /// source. Its `[Extern]` bridges are compiler-issued runtime-plane bindings admitted by the
+    /// semantic Dynamic bridge authority, not user C ABI imports.
+    pub fn is_canonical_public_dynamic_unit(&self, unit: &SourceUnit) -> bool {
+        self.package_identities().for_source(&unit.path).is_some_and(|root| {
+            root.identity().package_name() == "corelib_foundation"
+                && matches!(root.identity().source(), super::VerifiedPackageSource::Corelib)
+                && root.relative_source_path(&unit.path).as_deref()
+                    == Some(beskid_abi::runtime_source::CANONICAL_PUBLIC_DYNAMIC_SOURCE_PATH)
+                && unit.source.as_bytes() == beskid_abi::runtime_source::CANONICAL_PUBLIC_DYNAMIC_SOURCE.as_bytes()
+        })
+    }
+
+    /// Whether `[Extern]` contracts in `unit` are compiler-issued runtime-plane bridges instead
+    /// of user C imports: the canonical public Dynamic unit, the canonical serialization
+    /// descriptor unit whose `CompiledShapeBridge` the serialization shape authority admits
+    /// exactly, and the canonical serialization reader and contracts units whose
+    /// `FieldDecoderBridge` and `FieldEncoderBridge` the field codec correspondence admits exactly.
+    /// Each requires Corelib package identity and the compiler-embedded source bytes.
+    pub fn is_runtime_bridge_extern_unit(&self, unit: &SourceUnit) -> bool {
+        self.is_canonical_public_dynamic_unit(unit)
+            || self.is_canonical_serialization_descriptors_unit(unit)
+            || self.is_canonical_serialization_reader_unit(unit)
+            || self.is_canonical_serialization_contracts_unit(unit)
+    }
+
+    /// The canonical serialization contracts unit (`Core/Serialization/Contracts.bd`).
+    pub fn is_canonical_serialization_contracts_unit(&self, unit: &SourceUnit) -> bool {
+        self.is_canonical_corelib_service_unit(
+            unit,
+            "corelib_serialization",
+            beskid_abi::runtime_source::CANONICAL_SERIALIZATION_CONTRACTS_SOURCE_PATH,
+        )
+    }
+
+    /// The canonical serialization reader unit (`Core/Serialization/Reader.bd`).
+    pub fn is_canonical_serialization_reader_unit(&self, unit: &SourceUnit) -> bool {
+        self.is_canonical_corelib_service_unit(
+            unit,
+            "corelib_serialization",
+            beskid_abi::runtime_source::CANONICAL_SERIALIZATION_READER_SOURCE_PATH,
+        )
+    }
+
+    /// The canonical serialization descriptor unit (`Core/Serialization/Descriptors.bd`).
+    pub fn is_canonical_serialization_descriptors_unit(&self, unit: &SourceUnit) -> bool {
+        self.is_canonical_corelib_service_unit(
+            unit,
+            "corelib_serialization",
+            beskid_abi::runtime_source::CANONICAL_SERIALIZATION_DESCRIPTORS_SOURCE_PATH,
+        )
+    }
+
+    /// The canonical compiled serialization recipe unit (`Core/Serialization/Compiled.bd`).
+    pub fn is_canonical_serialization_compiled_unit(&self, unit: &SourceUnit) -> bool {
+        self.is_canonical_corelib_service_unit(
+            unit,
+            "corelib_serialization",
+            beskid_abi::runtime_source::CANONICAL_SERIALIZATION_COMPILED_SOURCE_PATH,
+        )
+    }
+
+    /// `unit` is the compiler-embedded Corelib service source `logical_path` of `package`:
+    /// Corelib package identity, the canonical relative path, and byte-identical source.
+    fn is_canonical_corelib_service_unit(&self, unit: &SourceUnit, package: &str, logical_path: &str) -> bool {
+        self.package_identities().for_source(&unit.path).is_some_and(|root| {
+            root.identity().package_name() == package
+                && matches!(root.identity().source(), super::VerifiedPackageSource::Corelib)
+                && root.relative_source_path(&unit.path).as_deref() == Some(logical_path)
+                && beskid_abi::runtime_source::canonical_corelib_service_sources()
+                    .iter()
+                    .any(|canonical| canonical.logical_path == logical_path && canonical.source == unit.source)
+        })
     }
 
     pub fn entry_unit(&self) -> &SourceUnit {
         &self.units[self.entry_index]
+    }
+
+    /// The source unit each top-level entry item is judged in for field visibility, indexed
+    /// like `entry_unit().program.node.items`. An item of the entry source, or an appended
+    /// item that no retained serialization claim names, is `None` (the entry unit itself). An
+    /// appended item that exactly equals an item of a retained claim's group is attributed to
+    /// that claim's declaring unit, which must be a registered unit of this assembly.
+    ///
+    /// This is the descriptive mirror read by the legacy front-end checker so it reports no
+    /// E1211 where the gate admits the access. The semantic query gate derives the same table
+    /// from the issuer's private payload and stays the authority (`beskid_queries`
+    /// `contribution_attributed_unit`).
+    pub fn entry_item_attributions(&self) -> Vec<Option<PathBuf>> {
+        let entry = self.entry_unit();
+        let items = &entry.program.node.items;
+        let mut result = vec![None; items.len()];
+        for metadata in &self.compiled_mod_metadata {
+            let Some(attribution) = metadata.description().attribution() else { continue };
+            let Some(unit) = self
+                .units
+                .iter()
+                .find(|unit| crate::paths::same_file(&unit.path, &attribution.attributed_unit))
+            else {
+                continue;
+            };
+            // The group is attributed as a whole: every item must occur exactly once, as the
+            // typed binding's exact append correspondence requires. A missing or repeated item
+            // leaves the whole group in the entry unit, where the binding fails on the same
+            // correspondence.
+            let positions = attribution
+                .items
+                .iter()
+                .map(|item| {
+                    let matches = items.iter().enumerate().filter(|(_, candidate)| *candidate == item).collect::<Vec<_>>();
+                    match matches.as_slice() {
+                        [(index, _)] => Some(*index),
+                        _ => None,
+                    }
+                })
+                .collect::<Option<Vec<_>>>();
+            let Some(positions) = positions else { continue };
+            for index in positions {
+                if result[index].is_none() {
+                    result[index] = Some(unit.path.clone());
+                }
+            }
+        }
+        result
     }
 
     pub fn with_runtime_fixture(mut self, proof: Option<Arc<beskid_abi::runtime_source::RuntimeFixtureProof>>) -> Self {
@@ -150,5 +436,16 @@ impl ProgramAssembly {
     pub fn with_trusted_corelib_service_paths(mut self, paths: Arc<[PathBuf]>) -> Self {
         self.trusted_corelib_service_paths = paths;
         self
+    }
+
+    /// Set the host manifest's Glue owner library labels.
+    pub fn with_glue_libraries(mut self, libraries: Arc<[String]>) -> Self {
+        self.glue_libraries = libraries;
+        self
+    }
+
+    /// Whether `library` names a `glue` owner block of the host manifest.
+    pub fn is_glue_library(&self, library: &str) -> bool {
+        self.glue_libraries.iter().any(|candidate| candidate == library)
     }
 }

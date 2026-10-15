@@ -8,7 +8,7 @@ use crate::composition::CompositionSnapshot;
 use crate::projects::ProgramAssembly;
 use crate::syntax::SyntaxGenerationId;
 
-use super::front_end::FrontEndTypedResult;
+use super::front_end::ExecutableFrontEnd;
 use super::session::{CompilationSession, SemanticSnapshot, SessionFingerprint};
 
 static REGISTRY: OnceLock<Mutex<EntrySessionRegistry>> = OnceLock::new();
@@ -16,7 +16,7 @@ static REGISTRY: OnceLock<Mutex<EntrySessionRegistry>> = OnceLock::new();
 struct EntrySessionRegistry {
     sessions: HashMap<SessionFingerprint, Arc<CompilationSession>>,
     syntax_generation: HashMap<SessionFingerprint, u64>,
-    executable_weak: HashMap<SessionFingerprint, Weak<FrontEndTypedResult>>,
+    executable_weak: HashMap<SessionFingerprint, Weak<ExecutableFrontEnd>>,
 }
 
 fn registry() -> &'static Mutex<EntrySessionRegistry> {
@@ -58,7 +58,8 @@ pub fn get_or_insert_assembly(
                 assembly.roots == session.assembly.roots
                     && assembly.entry_index == session.assembly.entry_index
                     && assembly.discovery == session.assembly.discovery
-                    && assembly.has_std_dependency == session.assembly.has_std_dependency
+                    && assembly.recovery_policy == session.assembly.recovery_policy
+                    && assembly.has_core_dependency == session.assembly.has_core_dependency
                     && assembly.trusted_corelib_service_paths == session.assembly.trusted_corelib_service_paths
                     && assembly.module_index.module_graph() == session.assembly.module_index.module_graph()
                     && assembly.module_index.prefetched_paths() == session.assembly.module_index.prefetched_paths()
@@ -112,9 +113,9 @@ pub fn update_semantic_snapshot(fingerprint: &SessionFingerprint, snapshot: Sema
 
 pub fn store_executable_and_snapshot(
     fingerprint: &SessionFingerprint,
-    executable: Option<FrontEndTypedResult>,
+    executable: Option<ExecutableFrontEnd>,
     snapshot: SemanticSnapshot,
-) -> Option<Arc<FrontEndTypedResult>> {
+) -> Option<Arc<ExecutableFrontEnd>> {
     let mut guard = registry().lock().expect("entry session registry");
     let session = guard.sessions.get(fingerprint).cloned()?;
     if snapshot.syntax_generation_id != session.assembly.generation.0
@@ -145,7 +146,7 @@ pub fn cached_semantic_snapshot(fingerprint: &SessionFingerprint) -> Option<Sema
     cached_compilation_session(fingerprint).and_then(|s| s.semantic_snapshot.clone())
 }
 
-pub fn cached_executable(fingerprint: &SessionFingerprint) -> Option<Arc<FrontEndTypedResult>> {
+pub fn cached_executable(fingerprint: &SessionFingerprint) -> Option<Arc<ExecutableFrontEnd>> {
     let guard = registry().lock().expect("entry session registry");
     guard.executable_weak.get(fingerprint)?.upgrade()
 }
@@ -154,7 +155,7 @@ pub fn cached_executable(fingerprint: &SessionFingerprint) -> Option<Arc<FrontEn
 pub fn cached_executable_if_valid(
     fingerprint: &SessionFingerprint,
     generation: SyntaxGenerationId,
-) -> Option<Arc<FrontEndTypedResult>> {
+) -> Option<Arc<ExecutableFrontEnd>> {
     let guard = registry().lock().expect("entry session registry");
     let session = guard.sessions.get(fingerprint)?;
     let snapshot = session.semantic_snapshot.as_ref()?;

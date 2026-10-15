@@ -1,14 +1,15 @@
 use std::fs;
 
 use crate::projects::fixture_harness::{
-    corelib_mvp_fixture, corelib_tests_project_root, resolve_corelib_tests_entry, resolve_fixture_with_assembly,
-    shared_corelib_mvp_assembly, with_large_test_stack, with_project_test_env,
+    analyze_file_with_mods, corelib_mvp_fixture, corelib_tests_project_root, enter_mod_host, mod_host_for,
+    resolve_corelib_tests_entry, resolve_fixture_with_assembly, shared_corelib_mvp_assembly, with_large_test_stack,
+    with_project_test_env,
 };
 use crate::projects::test_cwd::{compiler_workspace_root, with_cwd_at_workspace_root};
 use beskid_analysis::Severity;
 use beskid_analysis::projects::build_compile_plan;
 use beskid_analysis::services::{
-    FrontEndOptions, PrepareOptions, analyze_file_in_project, analyze_source_in_project, parse_program, resolve_input,
+    FrontEndOptions, PrepareOptions, parse_program, resolve_input, resolved_input_from_plan,
 };
 use beskid_queries::{program_assembly, with_db};
 
@@ -33,19 +34,22 @@ fn checked_in_corelib_template_builds_compile_plan() {
 fn checked_in_corelib_sources_parse_as_beskid_programs() {
     let root = corelib_workspace_root();
 
+    let mut failures = Vec::new();
     for relative in stratified_corelib_parse_samples() {
         let path = root.join(relative);
         let source = fs::read_to_string(&path).unwrap_or_else(|_| panic!("read corelib source {}", path.display()));
-        parse_program(&source)
-            .unwrap_or_else(|err| panic!("corelib source should parse {}\nparse error: {err:#}", path.display()));
+        if let Err(error) = parse_program(&source) {
+            failures.push(format!("{}\n{error:#}", path.display()));
+        }
     }
+    assert!(failures.is_empty(), "corelib sources must parse:\n{}", failures.join("\n\n"));
 }
 
 #[test]
 fn checked_in_corelib_syscall_file_does_not_report_module_resolution_false_positives() {
     with_project_test_env(&corelib_mvp_fixture(), || {
         let diagnostics =
-            analyze_file_in_project(&corelib_mvp_fixture().join("Src/Main.bd")).expect("analyze corelib_mvp entry");
+            analyze_file_with_mods(&corelib_mvp_fixture().join("Src/Main.bd")).expect("analyze corelib_mvp entry");
 
         assert!(
             diagnostics.iter().all(|diag| !matches!(diag.code.as_deref(), Some("E1105") | Some("E1108"))),
@@ -62,8 +66,19 @@ fn checked_in_corelib_sources_do_not_emit_error_diagnostics_in_project_context()
         let relative = "packages/foundation/src/Core/Results/Results.bd";
         let path = root.join(relative);
         let source = fs::read_to_string(&path).unwrap_or_else(|_| panic!("read corelib source {}", path.display()));
-        let diagnostics =
-            analyze_source_in_project(&path, &source).unwrap_or_else(|_| panic!("analyze {}", path.display()));
+        let plan = beskid_analysis::CompilationContext::try_for_analysis_path(&path, None)
+            .and_then(|context| context.compile_plan)
+            .unwrap_or_else(|| panic!("compile plan for {}", path.display()));
+        let resolved = resolved_input_from_plan(path.clone(), source, plan, None, None);
+        let (_, diagnostics, _) = beskid_queries::prepare_compilation_diagnostics(
+            &resolved,
+            PrepareOptions {
+                front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
+                ..PrepareOptions::without_mods()
+            },
+            None,
+        )
+        .unwrap_or_else(|error| panic!("analyze {}: {error}", path.display()));
         let errors: Vec<_> = diagnostics.into_iter().filter(|diag| matches!(diag.severity, Severity::Error)).collect();
         assert!(errors.is_empty(), "expected no error diagnostics for {} but got: {errors:#?}", path.display());
     });
@@ -80,11 +95,11 @@ fn corelib_mvp_fixture_resolves_std_modules_via_program_assembly() {
 
         assert!(
             resolution.items.iter().any(|item| item.name == "WriteLine"),
-            "expected WriteLine from Std.Core.Output in merged resolution"
+            "expected WriteLine from Core.Output in merged resolution"
         );
         assert!(
             resolution.items.iter().any(|item| item.name == "Len"),
-            "expected Len from Std.Core.String in merged resolution"
+            "expected Len from Core.String in merged resolution"
         );
     });
 }
@@ -94,11 +109,12 @@ fn corelib_mvp_fixture_lowers_via_program_assembly() {
     with_large_test_stack(|| {
         with_project_test_env(&corelib_mvp_fixture(), || {
             let resolved = resolve_fixture_with_assembly(&corelib_mvp_fixture(), "src/Main.bd", "App");
+            let mod_host = enter_mod_host();
             beskid_queries::prepare_compilation(
                 &resolved,
                 PrepareOptions {
                     front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
-                    ..Default::default()
+                    ..PrepareOptions::with_mod_host(mod_host_for(&mod_host, &resolved))
                 },
                 None,
             )
@@ -112,24 +128,10 @@ fn corelib_assembly_typechecks_nested_qualified_result_arguments_and_predicates(
     with_large_test_stack(|| {
         let project = corelib_tests_project_root();
         with_project_test_env(&project, || {
-            let source = r#"
-use Core.Syscall;
-use Core.Results;
-
-i32 Main() {
-    Core.Results.Result<i64, Core.Syscall.SyscallError> result =
-        Core.Syscall.Write(-1_i64, "x");
-    if Results.IsOk(result) {
-        return 1;
-    }
-    if Results.IsError(result) {
-        return 0;
-    }
-    return 2;
-}
-"#;
-            let mut resolved = resolve_corelib_tests_entry("system/SyscallErgonomicsTests.bd");
-            resolved.source = source.into();
+            // Verified package sources must match their proof snapshot byte for byte, so the checked-in
+            // regression module (nested qualified Result arguments, Results.IsOk/IsError) is assembled as is.
+            let mut resolved = resolve_corelib_tests_entry("system/SystemSuite.bd");
+            let source = resolved.source.clone();
             let plan = resolved.compile_plan.clone().expect("corelib tests compile plan");
             let options = beskid_analysis::projects::assembly_options_for_plan(&plan);
             let assembly = with_db(|db| {
@@ -138,18 +140,19 @@ i32 Main() {
                     &plan,
                     resolved.prepared_workspace.as_ref(),
                     &resolved.source_path,
-                    Some(source),
+                    Some(&source),
                     &options,
                 )
             })
             .expect("nested generic regression assembly");
 
             resolved.assembly = Some(assembly);
+            let mod_host = enter_mod_host();
             beskid_queries::prepare_compilation(
                 &resolved,
                 PrepareOptions {
                     front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
-                    ..Default::default()
+                    ..PrepareOptions::with_mod_host(mod_host_for(&mod_host, &resolved))
                 },
                 None,
             )
@@ -165,7 +168,7 @@ i32 Main() {
 fn corelib_mvp_fixture_entry_does_not_emit_module_resolution_false_positives() {
     with_project_test_env(&corelib_mvp_fixture(), || {
         let fixture_main = corelib_mvp_fixture().join("Src/Main.bd");
-        let diagnostics = analyze_file_in_project(&fixture_main).expect("analyze corelib_mvp fixture");
+        let diagnostics = analyze_file_with_mods(&fixture_main).expect("analyze corelib_mvp fixture");
 
         assert!(
             diagnostics.iter().all(|diag| !matches!(diag.code.as_deref(), Some("E1105") | Some("E1108"))),
@@ -178,8 +181,14 @@ fn corelib_mvp_fixture_entry_does_not_emit_module_resolution_false_positives() {
 fn checked_in_corelib_aggregate_entry_is_workspace_placeholder() {
     with_cwd_at_workspace_root(&compiler_workspace_root(), || {
         let project = corelib_root();
-        let resolved =
-            resolve_input(None, Some(&project), None, None, false, false).expect("resolve corelib aggregate project");
+        let resolved = resolve_input(
+            None,
+            Some(&project),
+            None,
+            None,
+            beskid_analysis::projects::WorkspacePrepareOptions::default(),
+        )
+        .expect("resolve corelib aggregate project");
         let plan = resolved.compile_plan.expect("compile plan");
         assert_eq!(plan.target.name, "__aggregate__");
         assert!(plan.target.entry.is_none());
@@ -212,7 +221,7 @@ fn checked_in_compiler_sdk_collect_parses_with_named_enum_payloads() {
     let collect = compiler_sdk_src().join("Beskid/Compiler/Collect.bd");
     let source = fs::read_to_string(&collect).expect("read Beskid.Compiler.Collect");
     assert!(
-        source.contains("ContractDefinition(ContractDefinition definition)"),
+        source.contains("ContractDefinition(SpannedContractDefinition definition)"),
         "Collect should declare named enum payloads for SyntaxContributionItem"
     );
     parse_program(&source).expect("Beskid.Compiler.Collect should parse");
@@ -239,10 +248,14 @@ fn checked_in_compiler_sdk_emitter_contribution_helpers_exist() {
         .expect("read Emitter.Contribution");
     for needle in [
         "pub GeneratedSyntaxContribution Empty()",
-        "pub GeneratedSyntaxContribution AppendCode(",
-        "pub CodeContribution CodeOutput(",
+        "pub GeneratedSyntaxContribution From(",
+        "pub GeneratedSyntaxContribution AppendItem(",
     ] {
         assert!(contribution.contains(needle), "Emitter.Contribution missing `{needle}`");
+    }
+    // A Generator contributes typed syntax only: no source-text contribution surface remains.
+    for retired in ["CodeContribution", "CodeOutput", "CodeBody", "codeOutputs", "AppendCode"] {
+        assert!(!contribution.contains(retired), "Emitter.Contribution retains text surface `{retired}`");
     }
     parse_program(&contribution).expect("Emitter.Contribution should parse");
 }
@@ -327,8 +340,8 @@ fn checked_in_compiler_sdk_query_facade_contract_first_nodes() {
         .expect("read Beskid.Syntax.Nodes.NodeList");
 
     assert!(
-        query.contains(r#"return "0.4.0";"#),
-        "Query facade version should be 0.4.0 after span + pipeline expansion"
+        query.contains(r#"return "0.6.0";"#),
+        "Query facade version should be 0.6.0 after the v0.6 query surface expansion"
     );
     assert!(syntax.contains(r#"return "0.4.0";"#), "Syntax facade version should be 0.4.0");
     assert!(!query.contains("pub type ReflectStub"), "Query facade must not declare ReflectStub placeholders");
@@ -342,7 +355,7 @@ fn checked_in_compiler_sdk_query_facade_contract_first_nodes() {
         "mirrored item wrapper enum must not be emitted into the Mod SDK"
     );
     assert!(
-        node_list.contains("Beskid.Syntax.Nodes.NodeRef head"),
+        node_list.contains("Beskid.Syntax.Nodes.NodeRef[] items"),
         "NodeList must carry NodeRef handles for program items"
     );
     assert!(
@@ -360,7 +373,7 @@ fn checked_in_compiler_sdk_query_facade_contract_first_nodes() {
         "pub SyntaxPipeline Pipeline(",
         "pub SyntaxPipeline Replace(",
         "pub Beskid.Syntax.Nodes.NodeRef Apply(",
-        "pub Option<FunctionDefinition> AsFunctionDefinition(",
+        "pub Option<Beskid.Syntax.Nodes.FunctionDefinition> AsFunctionDefinition(",
     ] {
         assert!(query.contains(api), "Query facade missing API: {api}");
     }
@@ -368,47 +381,35 @@ fn checked_in_compiler_sdk_query_facade_contract_first_nodes() {
 
 #[test]
 fn checked_in_corelib_beskid_test_sources_parse() {
-    let root = corelib_root();
-    let test_files = [
-        root.join("tests/corelib_tests/src/system/SyscallWriteTests.bd"),
-        root.join("tests/corelib_tests/src/system/SyscallApiTests.bd"),
-        root.join("tests/corelib_tests/src/system/SyscallErgonomicsTests.bd"),
-        root.join("tests/corelib_tests/src/system/OutputWriteLineTests.bd"),
-        root.join("tests/corelib_tests/src/system/InputReadTests.bd"),
-        root.join("tests/corelib_tests/src/system/ErrorWriteTests.bd"),
-        root.join("tests/corelib_tests/src/system/FsTests.bd"),
-        root.join("tests/corelib_tests/src/system/PathTests.bd"),
-        root.join("tests/corelib_tests/src/system/TimeTests.bd"),
-        root.join("tests/corelib_tests/src/core/ResultsTests.bd"),
-        root.join("tests/corelib_tests/src/core/OptionalTests.bd"),
-        root.join("tests/corelib_tests/src/collections/ArrayTests.bd"),
-        root.join("tests/corelib_tests/src/collections/CollectionsTier1Tests.bd"),
-        root.join("tests/corelib_tests/src/collections/CollectionsTests.bd"),
-        root.join("tests/corelib_tests/src/query/QueryTests.bd"),
-        root.join("tests/corelib_tests/src/collections/ListTests.bd"),
-        root.join("tests/corelib_tests/src/collections/PersistenceTests.bd"),
-        root.join("tests/corelib_tests/src/collections/MapTests.bd"),
-        root.join("tests/corelib_tests/src/collections/SetTests.bd"),
-        root.join("tests/corelib_tests/src/collections/QueueTests.bd"),
-        root.join("tests/corelib_tests/src/collections/StackTests.bd"),
-        root.join("tests/corelib_tests/src/console/AnsiEscapeTests.bd"),
-        root.join("tests/corelib_tests/src/console/AnsiStyleChainTests.bd"),
-        root.join("tests/corelib_tests/src/console/AnsiSgrGoldenTests.bd"),
-        root.join("tests/corelib_tests/src/console/AnsiBuildersTests.bd"),
-        root.join("tests/corelib_tests/src/console/FormatMarkdownTests.bd"),
-        root.join("tests/corelib_tests/src/console/FormatAttributesTests.bd"),
-        root.join("tests/corelib_tests/src/console/FormatScanTests.bd"),
-        root.join("tests/corelib_tests/src/console/CapabilitiesTests.bd"),
-        root.join("tests/corelib_tests/src/console/TerminalPlatformTests.bd"),
-        root.join("tests/corelib_tests/src/console/ConsoleFacadeTests.bd"),
-        root.join("tests/corelib_tests/src/console/ConsoleMessageChannelTests.bd"),
-        root.join("tests/corelib_tests/src/console/ConsoleStyleTests.bd"),
-        root.join("tests/corelib_tests/src/console/ControlsPanelTests.bd"),
-        root.join("tests/corelib_tests/src/console/ControlsProgressBarTests.bd"),
-        root.join("tests/corelib_tests/src/console/ControlsLayoutTests.bd"),
-        root.join("tests/corelib_tests/src/console/ControlsFrameTests.bd"),
-        root.join("tests/corelib_tests/src/console/RenderContextTests.bd"),
-    ];
+    // Every checked-in source of the corelib_tests project, discovered from its source root, so
+    // folded or added suites never leave this list stale.
+    let source_root = corelib_root().join("tests/corelib_tests/src");
+    let mut pending = vec![source_root.clone()];
+    let mut test_files = Vec::new();
+    while let Some(directory) = pending.pop() {
+        for entry in fs::read_dir(&directory).unwrap_or_else(|err| panic!("read {}: {err}", directory.display())) {
+            let path = entry.expect("corelib test source entry").path();
+            if path.is_dir() {
+                // Tool state (`.beskid`, `.generated`) is not checked-in source.
+                if !path.file_name().is_some_and(|name| name.to_string_lossy().starts_with('.')) {
+                    pending.push(path);
+                }
+            } else if path.extension().is_some_and(|extension| extension == "bd") {
+                test_files.push(path);
+            }
+        }
+    }
+    test_files.sort();
+    // Every target entry of the manifest is among the discovered sources.
+    let manifest = fs::read_to_string(source_root.with_file_name("corelib_tests.bproj")).expect("read corelib_tests.bproj");
+    let entries = manifest
+        .lines()
+        .filter_map(|line| line.trim().strip_prefix("entry = \"")?.strip_suffix('"'))
+        .collect::<Vec<_>>();
+    assert!(!entries.is_empty(), "corelib_tests.bproj declares target entries");
+    for entry in &entries {
+        assert!(test_files.contains(&source_root.join(entry)), "target entry {entry} is not a checked-in source");
+    }
     for path in test_files {
         let source =
             fs::read_to_string(&path).unwrap_or_else(|_| panic!("read corelib test source {}", path.display()));

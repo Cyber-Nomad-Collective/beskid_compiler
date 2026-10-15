@@ -45,8 +45,6 @@ pub const SEMANTIC_NAME_RESOLUTION: &str = "semantic.name_resolution";
 pub const SEMANTIC_VISIBILITY: &str = "semantic.visibility";
 /// Contract and method signature checks.
 pub const SEMANTIC_CONTRACTS: &str = "semantic.contracts";
-/// Error-handling (`try` / `catch`) rules.
-pub const SEMANTIC_ERROR_HANDLING: &str = "semantic.error_handling";
 /// Expression and declaration type checking.
 pub const SEMANTIC_TYPE_CHECK: &str = "semantic.type_check";
 /// Code style and naming convention checks (W163x).
@@ -59,26 +57,13 @@ pub const COMPOSITION_RESOLVE: &str = "composition.resolve";
 pub const MOD_ANALYZE: &str = "mod.analyze";
 /// Run Rewriter contracts after analysis.
 pub const MOD_REWRITE: &str = "mod.rewrite";
-/// Run Beskid.Glue contracts (TypeMapping, SymbolEmission, LinkArgs,
-/// SignatureReader, SignatureWriter, ToolchainProbe, StdioBridge) after
-/// rewriter contracts and before lowering. Glue mods prepare foreign
-/// bindings from the fully rewritten syntax.
-pub const MOD_GLUE: &str = "mod.glue";
-/// Merged program ready for HIR lowering (instant boundary immediately before [`LOWER`]).
+/// Every own unit passed the structural rules and the query gate (instant boundary immediately
+/// before [`LOWER`]).
 pub const LOWER_READY: &str = "lower.ready";
-/// HIR lowering and middle-end.
+/// The executable front end (rewritten syntax assembly plus composition authority) exists for
+/// this syntax generation. Typing is the query layer's; no second pass runs here.
 pub const LOWER: &str = "lower";
-/// AST → HIR lowering inside the typed-HIR spine.
-pub const LOWER_AST: &str = "lower.ast";
-/// First resolution pass against assembly / module index.
-pub const LOWER_RESOLVE_PASS1: &str = "lower.resolve_pass1";
-/// HIR normalization after initial resolution.
-pub const LOWER_NORMALIZE: &str = "lower.normalize";
-/// Final resolution pass before type checking.
-pub const LOWER_RESOLVE: &str = "lower.resolve";
-/// Type-check the lowered program.
-pub const LOWER_TYPE_CHECK: &str = "lower.type_check";
-/// CLIF generation from typed HIR.
+/// CLIF generation from the executable front end through the generated ISLE rules.
 pub const CODEGEN_CLIF: &str = "codegen_clif";
 /// Cranelift object emission (per-function work units common here).
 pub const AOT_EMIT_OBJECT: &str = "aot.emit_object";
@@ -123,7 +108,6 @@ pub const FULL_BUILD_PHASE_ORDER: &[&str] = &[
     COMPOSITION_RESOLVE,
     MOD_ANALYZE,
     MOD_REWRITE,
-    MOD_GLUE,
     LOWER_READY,
     LOWER,
     CODEGEN_CLIF,
@@ -132,7 +116,7 @@ pub const FULL_BUILD_PHASE_ORDER: &[&str] = &[
     AOT_LINK,
 ];
 
-/// Phases observed for `beskid mod rebuild` / `beskid mod clean` prep (Mod package AOT only).
+/// Phases observed for `beskid dev mod rebuild` / `beskid dev mod clean` prep (Mod package AOT only).
 ///
 /// Resolve and materialize the workspace, compile the Mod project through object emission, then
 /// link the mod artifact. Does not include host mod orchestration (`mod.load` … `mod.rewrite`) or
@@ -170,7 +154,6 @@ pub const JIT_RUN_PHASE_ORDER: &[&str] = &[
     COMPOSITION_RESOLVE,
     MOD_ANALYZE,
     MOD_REWRITE,
-    MOD_GLUE,
     LOWER_READY,
     LOWER,
     CODEGEN_CLIF,
@@ -194,7 +177,6 @@ pub const RUN_AOT_PHASE_ORDER: &[&str] = &[
     COMPOSITION_RESOLVE,
     MOD_ANALYZE,
     MOD_REWRITE,
-    MOD_GLUE,
     LOWER_READY,
     LOWER,
     CODEGEN_CLIF,
@@ -223,8 +205,7 @@ mod tests {
         assert!(pos(o, SEMANTIC).unwrap() < pos(o, SEMANTIC_SNAPSHOT).unwrap());
         assert!(pos(o, SEMANTIC_SNAPSHOT).unwrap() < pos(o, MOD_ANALYZE).unwrap());
         assert!(pos(o, MOD_ANALYZE).unwrap() < pos(o, MOD_REWRITE).unwrap());
-        assert!(pos(o, MOD_REWRITE).unwrap() < pos(o, MOD_GLUE).unwrap());
-        assert!(pos(o, MOD_GLUE).unwrap() < pos(o, LOWER_READY).unwrap());
+        assert!(pos(o, MOD_REWRITE).unwrap() < pos(o, LOWER_READY).unwrap());
         assert!(pos(o, LOWER_READY).unwrap() < pos(o, LOWER).unwrap());
         assert!(pos(o, RESOLVE_GRAPH).unwrap() < pos(o, WORKSPACE_GRAPH_CHANGED).unwrap());
         assert!(pos(o, WORKSPACE_GRAPH_CHANGED).unwrap() < pos(o, WORKSPACE_MATERIALIZE).unwrap());
@@ -251,8 +232,7 @@ mod tests {
         assert!(pos(o, MOD_GENERATE).unwrap() < pos(o, SEMANTIC).unwrap());
         assert!(pos(o, SEMANTIC_SNAPSHOT).unwrap() < pos(o, MOD_ANALYZE).unwrap());
         assert!(pos(o, MOD_ANALYZE).unwrap() < pos(o, MOD_REWRITE).unwrap());
-        assert!(pos(o, MOD_REWRITE).unwrap() < pos(o, MOD_GLUE).unwrap());
-        assert!(pos(o, MOD_GLUE).unwrap() < pos(o, LOWER_READY).unwrap());
+        assert!(pos(o, MOD_REWRITE).unwrap() < pos(o, LOWER_READY).unwrap());
         assert!(pos(o, LOWER_READY).unwrap() < pos(o, LOWER).unwrap());
         assert!(pos(o, LOWER).unwrap() < pos(o, CODEGEN_CLIF).unwrap());
     }
@@ -261,8 +241,7 @@ mod tests {
     fn run_aot_orders_aot_tail_after_codegen_clif() {
         let o = RUN_AOT_PHASE_ORDER;
         assert!(pos(o, PARSE).unwrap() < pos(o, MOD_LOAD).unwrap());
-        assert!(pos(o, MOD_REWRITE).unwrap() < pos(o, MOD_GLUE).unwrap());
-        assert!(pos(o, MOD_GLUE).unwrap() < pos(o, LOWER_READY).unwrap());
+        assert!(pos(o, MOD_REWRITE).unwrap() < pos(o, LOWER_READY).unwrap());
         assert!(pos(o, LOWER).unwrap() < pos(o, CODEGEN_CLIF).unwrap());
         assert!(pos(o, CODEGEN_CLIF).unwrap() < pos(o, AOT_EMIT_OBJECT).unwrap());
         assert!(pos(o, AOT_EMIT_OBJECT).unwrap() < pos(o, AOT_RUNTIME).unwrap());

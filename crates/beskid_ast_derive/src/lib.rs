@@ -48,6 +48,9 @@ fn derive_node_impl(
         #[allow(unused_variables)]
         impl #impl_generics #node_trait for #name #ty_generics #where_clause {
             fn as_any(&self) -> &dyn ::core::any::Any { self }
+            fn owned_projection(&self) -> Result<::serde_json::Value, ::serde_json::Error> {
+                ::serde_json::to_value(self)
+            }
             fn children<'a>(&'a self, push: &mut dyn FnMut(#node_ref<'a>)) {
                 #children_body
             }

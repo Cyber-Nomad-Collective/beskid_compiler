@@ -16,6 +16,8 @@ fn fetch_lock_update_then_build_and_run_project_with_path_dependency() {
     let cli = BeskidCliInvoker::new();
 
     let fetch = cli.run([
+        "dev",
+        "project",
         "fetch",
         "--project",
         workspace_manifest.to_str().expect("workspace path str"),
@@ -27,19 +29,15 @@ fn fetch_lock_update_then_build_and_run_project_with_path_dependency() {
 
     let update = cli.run([
         "update",
+        "--all",
         "--project",
-        workspace_manifest.to_str().expect("workspace path str"),
-        "--workspace-member",
-        "app",
+        app_manifest.to_str().expect("app path str"),
     ]);
     assert_success(&update, "update dependency workflow fixture");
-    assert_output_contains(
-        &update,
-        "Dependency lock and materialized workspace updated",
-        "update dependency workflow fixture",
-    );
 
     let lock = cli.run([
+        "dev",
+        "project",
         "lock",
         "--project",
         workspace_manifest.to_str().expect("workspace path str"),

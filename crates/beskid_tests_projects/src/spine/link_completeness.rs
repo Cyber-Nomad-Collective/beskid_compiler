@@ -16,7 +16,7 @@ use beskid_codegen::CodegenArtifact;
 #[cfg(feature = "slow")]
 #[test]
 fn ansi_cursor_builder_home_syntax_isle_link_plan_validates() {
-    let artifact = lower_corelib_tests_entrypoint("console/AnsiBuildersTests.bd", "ansi_cursor_builder_home");
+    let artifact = lower_corelib_tests_entrypoint("console/ConsoleSuite.bd", "ansi_cursor_builder_home");
     validate_artifact(&artifact).expect("ansi_cursor_builder_home syntax ISLE link plan must validate");
 
     for expected_symbol in ["Home#syntax_", "IntoSequence#syntax_", "WhenEnabled#syntax_", "Esc#syntax_"] {
@@ -36,7 +36,7 @@ fn ansi_cursor_builder_home_syntax_isle_link_plan_validates() {
 #[cfg(feature = "slow")]
 #[test]
 fn ansi_csi_bold_red_syntax_isle_preserves_csi_byte_golden() {
-    let artifact = lower_corelib_tests_entrypoint("console/AnsiEscapeTests.bd", "ansi_csi_bold_red");
+    let artifact = lower_corelib_tests_entrypoint("console/ConsoleSuite.bd", "ansi_csi_bold_red");
     validate_artifact(&artifact).expect("ansi_csi_bold_red syntax ISLE link plan must validate");
 
     assert_literal_byte_goldens(&artifact, &[b"\x1b", b"1;31", b"m", b"[1;31m"]);

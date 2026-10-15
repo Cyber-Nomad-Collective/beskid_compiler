@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 
 use anyhow::{Result, anyhow};
-use clap::{Args, Subcommand};
+use clap::Args;
 
 use beskid_template::{
     InstallTemplateRequest, InstantiateTemplateRequest, ListTemplatesRequest, TemplateSelector,
@@ -14,35 +14,30 @@ use beskid_tools::registry::{RegistryConnectConfig, parse_package_selector};
 
 #[derive(Args, Debug)]
 pub struct NewArgs {
-    #[command(subcommand)]
-    pub command: Option<NewCommand>,
-
-    /// Template short name (e.g. `console`, `lib`) when not using a subcommand.
-    #[arg(value_name = "SHORT_NAME")]
-    pub short_name: Option<String>,
-
+    /// Name and default output directory of the new project.
+    #[arg(required_unless_present = "list", conflicts_with = "list")]
+    pub name: Option<String>,
+    /// Select an installed template instead of bundled app.
+    #[arg(long, conflicts_with_all = ["list", "path", "git", "package"])]
+    pub template: Option<String>,
+    /// List available templates without creating a project.
+    #[arg(long)]
+    pub list: bool,
     #[command(flatten)]
     pub instantiate: InstantiateFlags,
 }
 
-#[derive(Subcommand, Debug)]
-pub enum NewCommand {
-    /// List installed (and optionally online) templates.
-    List(ListArgs),
-    /// Install a template package into the tooling cache.
-    Install(InstallArgs),
-    /// Remove a cached template by short name.
-    Uninstall(UninstallArgs),
-}
-
 #[derive(Args, Debug, Clone)]
 pub struct InstantiateFlags {
+    /// Forbid network requests; use bundled, local or verified installed templates.
+    #[arg(long)]
+    pub offline: bool,
     /// Output directory or file path (item templates).
     #[arg(short = 'o', long = "output")]
     pub output: Option<PathBuf>,
 
     /// Primary name symbol (default symbol id `name`).
-    #[arg(short = 'n', long = "name")]
+    #[arg(short = 'n', long = "name", id = "primary_name")]
     pub name: Option<String>,
 
     /// Symbol binding (`id=value`), repeatable.
@@ -58,11 +53,11 @@ pub struct InstantiateFlags {
     pub force: bool,
 
     /// Load template from a local directory (contains `.beskid/template.json`).
-    #[arg(long = "path")]
+    #[arg(long = "path", conflicts_with_all = ["git", "package"])]
     pub path: Option<PathBuf>,
 
     /// Load template from a git remote.
-    #[arg(long = "git")]
+    #[arg(long = "git", conflicts_with = "package")]
     pub git: Option<String>,
 
     #[arg(long = "git-ref")]
@@ -114,10 +109,10 @@ pub struct InstallArgs {
     /// Package id (`beskid.templates.console`) or first-party short name.
     pub package_or_short: String,
 
-    #[arg(long = "path")]
+    #[arg(long = "path", conflicts_with = "git")]
     pub path: Option<PathBuf>,
 
-    #[arg(long = "git")]
+    #[arg(long = "git", conflicts_with = "path")]
     pub git: Option<String>,
 
     #[arg(long = "git-ref")]
@@ -160,15 +155,64 @@ impl RegistryConnectArgs {
 }
 
 pub fn execute(args: NewArgs) -> Result<()> {
-    match args.command {
-        Some(NewCommand::List(list)) => execute_list(list),
-        Some(NewCommand::Install(install)) => execute_install(install),
-        Some(NewCommand::Uninstall(uninstall)) => execute_uninstall(uninstall),
-        None => execute_instantiate(args.short_name, args.instantiate),
+    if args.list {
+        return execute_list(ListArgs { online: false, kind: None, registry: args.instantiate.registry });
+    }
+    let name = args.name.ok_or_else(|| anyhow!("project name required; run `beskid new --help`"))?;
+    let mut flags = args.instantiate;
+    if flags.output.is_none() {
+        flags.output = Some(PathBuf::from(&name));
+    }
+    if flags.name.is_none() {
+        flags.name = Some(name);
+    }
+    execute_instantiate(default_template_selector(args.template, &flags), flags)
+}
+
+/// The bundled `app` template is the default only when no explicit template source is selected,
+/// so `--path`, `--git` or `--package` never acquire a second selector.
+fn default_template_selector(template: Option<String>, flags: &InstantiateFlags) -> Option<String> {
+    let explicit_source = flags.path.is_some() || flags.git.is_some() || flags.package.is_some();
+    match template {
+        Some(template) => Some(template),
+        None if explicit_source => None,
+        None => Some("app".into()),
     }
 }
 
-fn execute_list(args: ListArgs) -> Result<()> {
+#[cfg(test)]
+mod default_template_tests {
+    use super::*;
+    use clap::Parser;
+
+    #[derive(Parser)]
+    struct Harness {
+        #[command(flatten)]
+        flags: InstantiateFlags,
+    }
+
+    fn flags(args: &[&str]) -> InstantiateFlags {
+        Harness::parse_from(std::iter::once("new").chain(args.iter().copied())).flags
+    }
+
+    #[test]
+    fn bundled_app_is_the_default_without_an_explicit_source() {
+        assert_eq!(default_template_selector(None, &flags(&[])).as_deref(), Some("app"));
+    }
+
+    #[test]
+    fn explicit_source_does_not_add_a_second_selector() {
+        assert_eq!(default_template_selector(None, &flags(&["--path", "./tpl"])), None);
+        assert_eq!(default_template_selector(None, &flags(&["--git", "https://example.invalid/t.git"])), None);
+    }
+
+    #[test]
+    fn explicit_template_name_is_kept() {
+        assert_eq!(default_template_selector(Some("lib".into()), &flags(&[])).as_deref(), Some("lib"));
+    }
+}
+
+pub fn execute_list(args: ListArgs) -> Result<()> {
     let kind_filter = args.kind.as_deref().map(parse_kind_filter).transpose()?;
 
     let output =
@@ -195,7 +239,7 @@ fn execute_list(args: ListArgs) -> Result<()> {
     Ok(())
 }
 
-fn execute_install(args: InstallArgs) -> Result<()> {
+pub fn execute_install(args: InstallArgs) -> Result<()> {
     let result = install_template(InstallTemplateRequest {
         package_or_short: args.package_or_short,
         path: args.path,
@@ -212,7 +256,7 @@ fn execute_install(args: InstallArgs) -> Result<()> {
     Ok(())
 }
 
-fn execute_uninstall(args: UninstallArgs) -> Result<()> {
+pub fn execute_uninstall(args: UninstallArgs) -> Result<()> {
     let result = uninstall_template(UninstallTemplateRequest { short_name: args.short_name.clone() })?;
     if result.removed {
         println!("Uninstalled template `{}`.", args.short_name);
@@ -237,6 +281,7 @@ fn execute_instantiate(short_name: Option<String>, flags: InstantiateFlags) -> R
     }
 
     let result = instantiate_template(InstantiateTemplateRequest {
+        offline: flags.offline,
         selector,
         output,
         name: flags.name,

@@ -3,8 +3,8 @@ use pest::iterators::Pair;
 use crate::parser::Rule;
 use crate::parsing::error::ParseError;
 use crate::parsing::parsable::Parsable;
-use crate::syntax::items::impl_block::ImplBlock;
 use crate::syntax::items::InlineModule;
+use crate::syntax::items::impl_block::ImplBlock;
 use crate::syntax::{
     AttributeDeclaration, ConstantDefinition, ContractDefinition, EnumDefinition, ExtendTypeDefinition,
     FunctionDefinition, HostDefinition, MacroDefinition, MethodDefinition, ModuleDeclaration, SpanInfo, Spanned,
@@ -235,9 +235,10 @@ mod tests {
                 }
             }
         "#;
-        let pair =
-            BeskidParser::parse(Rule::Program, src).expect("impl block with conformance should parse").next()
-                .expect("program pair");
+        let pair = BeskidParser::parse(Rule::Program, src)
+            .expect("impl block with conformance should parse")
+            .next()
+            .expect("program pair");
         let program = Program::parse(pair).expect("impl block with conformance should build AST");
 
         assert_eq!(program.node.items.len(), 3, "impl block stays a single top-level syntax item, not flattened");

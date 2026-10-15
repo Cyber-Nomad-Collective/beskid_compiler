@@ -11,8 +11,10 @@ pub enum CorelibServiceAbiType {
     I64,
     I32,
     U32,
+    U64,
     U8,
     F64,
+    F32,
     Void,
     Never,
 }
@@ -54,7 +56,8 @@ pub fn canonical_corelib_service_abi_for_adapter(symbol: &str) -> Option<Corelib
         .iter()
         .filter(|declaration| declaration.symbol == symbol);
     if let Some(declaration) = declarations.next() {
-        if declarations.any(|candidate| candidate.params != declaration.params || candidate.result != declaration.result)
+        if declarations
+            .any(|candidate| candidate.params != declaration.params || candidate.result != declaration.result)
         {
             return None;
         }
@@ -83,8 +86,10 @@ pub(super) fn corelib_service_abi_type(ty: &str) -> Option<CorelibServiceAbiType
         "i64" => CorelibServiceAbiType::I64,
         "i32" => CorelibServiceAbiType::I32,
         "u32" => CorelibServiceAbiType::U32,
+        "u64" => CorelibServiceAbiType::U64,
         "u8" => CorelibServiceAbiType::U8,
         "f64" => CorelibServiceAbiType::F64,
+        "f32" => CorelibServiceAbiType::F32,
         "void" => CorelibServiceAbiType::Void,
         "never" => CorelibServiceAbiType::Never,
         _ => return None,

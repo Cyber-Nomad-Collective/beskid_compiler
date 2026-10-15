@@ -1,10 +1,15 @@
 use crate::format::emit::{Emit, EmitCtx, EmitError};
-use crate::format::items::helpers::{emit_generics_list, emit_parameter_list};
+use crate::format::items::helpers::{emit_attribute_lines, emit_generics_list, emit_parameter_list};
 use crate::syntax::{FunctionDefinition, MethodDefinition, Spanned};
 use std::fmt::Write;
 
 impl Emit for FunctionDefinition {
     fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
+        if !self.attributes.is_empty() {
+            emit_attribute_lines(&self.attributes, w, cx)?;
+            cx.nl(w)?;
+            cx.write_indent(w)?;
+        }
         self.visibility.emit(w, cx)?;
         if let Some(rt) = &self.return_type {
             rt.emit(w, cx)?;
@@ -41,6 +46,11 @@ impl Emit for Spanned<FunctionDefinition> {
 
 impl Emit for MethodDefinition {
     fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
+        if !self.attributes.is_empty() {
+            emit_attribute_lines(&self.attributes, w, cx)?;
+            cx.nl(w)?;
+            cx.write_indent(w)?;
+        }
         self.visibility.emit(w, cx)?;
         if let Some(rt) = &self.return_type {
             rt.emit(w, cx)?;

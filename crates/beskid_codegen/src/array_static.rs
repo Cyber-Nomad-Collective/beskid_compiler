@@ -8,14 +8,14 @@
 use std::sync::Arc;
 
 use beskid_queries::{
-    AstNodeKey, GenericSpecializationInstance, IndexedNodeKind, SemanticTypeId,
+    AstNodeKey, GenericSpecializationInstance, IndexedNodeKind, ManagedReferenceKind, SemanticTypeId,
     aggregate_literal_declaration, bulk_call_element_abi_type, call_arguments, child_nodes,
-    ManagedReferenceKind, empty_array_literal_element_abi_type, empty_array_literal_element_specialization,
-    generic_specialization_identity, managed_reference_kind, node_kind, node_type, typed_array_allocation, value_abi_type,
+    empty_array_literal_element_abi_type, expected_type_in_environment, generic_specialization_identity,
+    managed_reference_kind, node_kind, node_type, typed_array_allocation, value_abi_type,
 };
 use cranelift_module::{DataDescription, DataId, Linkage, Module, ModuleError, ModuleResult};
 
-use crate::{CodegenInput, aggregate_static::paths_match};
+use crate::CodegenInput;
 
 pub const ABI_V5_ARRAY_ALLOCATE_ROOTED: &str = "beskid_rt_v5_array_allocate_rooted";
 pub const ABI_V5_ARRAY_GROW_ROOTED: &str = "beskid_rt_v5_array_grow_rooted";
@@ -125,13 +125,13 @@ impl CodegenInput<'_> {
             .assembly
             .units
             .iter()
-            .position(|unit| paths_match(&unit.path, key.unit.path(self.database())))?;
+            .position(|unit| beskid_queries::SourceUnitId::new(self.database(), unit.path.clone()) == key.unit)?;
         let namespace = self
             .artifact_namespace()
             .chars()
             .map(|character| if character.is_ascii_alphanumeric() { character } else { '_' })
             .collect::<String>();
-        let mut identity = format!("{namespace}_u{unit}_g{}_n{}", key.generation.0, key.node.0);
+        let mut identity = format!("{namespace}_u{unit}_g{}_n{}", self.generation_tag(key.generation), key.node.0);
         if let Some(specialization_identity) = specialization_identity {
             for component in specialization_identity {
                 identity.push('_');
@@ -172,34 +172,6 @@ impl CodegenInput<'_> {
         }
     }
 
-    /// The ABI of one array-literal element. Literals, locals, and arithmetic keep their inferred
-    /// `node_type`; a nominal struct literal is one managed reference. Every other element (a call,
-    /// a concatenation of calls, a field, a parameter, an enum value) takes its contextual value
-    /// ABI from the expression inside its wrapper, and a pointer-shaped element must be a
-    /// GC-managed reference so the element pointer map stays exact.
-    fn literal_element_abi_type(&self, element: AstNodeKey) -> Option<SemanticTypeId> {
-        if let Some(element_type) = node_type(self.database(), element).ok().flatten() {
-            return Some(element_type);
-        }
-        if self.nominal_literal_declaration(element).is_some() {
-            return Some(SemanticTypeId::POINTER);
-        }
-        let mut value = element;
-        while matches!(
-            node_kind(self.database(), value).ok().flatten()?,
-            IndexedNodeKind::Expression | IndexedNodeKind::GroupedExpression
-        ) {
-            value = *child_nodes(self.database(), value).ok().flatten()?.first()?;
-        }
-        let element_type = value_abi_type(self.database(), value).ok().flatten()?;
-        if element_type == SemanticTypeId::POINTER
-            && managed_reference_kind(self.database(), value).ok().flatten() != Some(ManagedReferenceKind::GcManaged)
-        {
-            return None;
-        }
-        Some(element_type)
-    }
-
     /// Create source-authorized typed-array metadata.
     ///
     /// A non-empty literal proves its element ABI from every element. An empty literal is valid
@@ -211,18 +183,58 @@ impl CodegenInput<'_> {
             .then_some(())?;
         let elements = child_nodes(self.database(), literal).ok().flatten()?;
         let element_type = match elements.first().copied() {
-            Some(first) => {
-                let element_type = self.literal_element_abi_type(first)?;
+            // A nominal struct literal carries no scalar `node_type`; its constructed
+            // declaration is the only authority proving the element is one managed
+            // reference. Every element must construct the same declaration so the
+            // element pointer map stays exact.
+            Some(first) if self.nominal_literal_declaration(first).is_some() => {
+                let declaration = self.nominal_literal_declaration(first)?;
                 elements
                     .iter()
                     .copied()
-                    .all(|element| self.literal_element_abi_type(element) == Some(element_type))
-                    .then_some(element_type)?
+                    .all(|element| self.nominal_literal_declaration(element) == Some(declaration))
+                    .then_some(SemanticTypeId::POINTER)?
+            }
+            // Every other element proves one exact ABI through its current-generation value
+            // ABI: a bare literal at the width the literal's expected element type requires
+            // (`u8[] bytes = [1, 2]`), a conversion, a call result, a projected declared field
+            // (`parameters[index].node.name`), a nominal local, a named or constructed enum
+            // value; an explicitly typed scalar local falls back to `node_type`. The elements
+            // may mix those shapes (`[Let(builder, name), begin]`) but must agree on the
+            // representation; a pointer-shaped element additionally needs its managed
+            // classification below.
+            Some(first) => {
+                let element_abi = |element: AstNodeKey| {
+                    value_abi_type(self.database(), element)
+                        .ok()
+                        .flatten()
+                        .or_else(|| node_type(self.database(), element).ok().flatten())
+                };
+                let element_type = element_abi(first)?;
+                if matches!(element_type, SemanticTypeId::UNIT | SemanticTypeId::NEVER) {
+                    return None;
+                }
+                elements.iter().copied().all(|element| element_abi(element) == Some(element_type)).then_some(element_type)?
             }
             None => empty_array_literal_element_abi_type(self.database(), literal).ok().flatten()?,
         };
         let length = u64::try_from(elements.len()).ok()?;
-        self.build_array_static_plan(literal, element_type, length, None)
+        let mut plan = self.build_array_static_plan(literal, element_type, length, None)?;
+        if element_type == SemanticTypeId::POINTER
+            && let Some(first) = elements.first().copied()
+        {
+            let kind = managed_reference_kind(self.database(), first).ok().flatten()?;
+            elements
+                .iter()
+                .copied()
+                .all(|element| managed_reference_kind(self.database(), element).ok().flatten() == Some(kind))
+                .then_some(())?;
+            if kind == ManagedReferenceKind::NativeOrScalar {
+                // A native pointer array owns its backing allocation, not the pointed-to data.
+                plan.pointer_map_offsets = Arc::from([]);
+            }
+        }
+        Some(plan)
     }
 
     /// Create array metadata using the exact specialization of the item that owns the literal.
@@ -238,9 +250,7 @@ impl CodegenInput<'_> {
         let elements = child_nodes(self.database(), literal).ok().flatten()?;
         elements.is_empty().then_some(())?;
         let element_type =
-            empty_array_literal_element_specialization(self.database(), literal, specialization.substitutions.clone())
-                .ok()
-                .flatten()?;
+            expected_type_in_environment(self.database(), literal, specialization).ok().flatten()?.array_element_abi_type()?;
         let identity = generic_specialization_identity(specialization);
         self.build_array_static_plan(literal, element_type, 0, Some(identity.as_ref()))
     }
@@ -250,15 +260,23 @@ impl CodegenInput<'_> {
     /// A bulk callee declares a `bulk T[]` parameter; the call site packs N scalar arguments into
     /// a fresh rooted array before the direct call. There is no `ArrayLiteralExpression` node to
     /// key a plan on, so this plan is keyed on the `CallExpression` node. The element ABI comes
-    /// from the callee's declared `bulk T[]` parameter, specialized by the call when `T` is
-    /// generic, and the length comes from the call's scalar argument count. Reuses
-    /// `build_array_static_plan` so the static-data emission path is shared with literal plans.
-    pub fn bulk_array_static_plan(&self, call: AstNodeKey) -> Option<ArrayStaticPlan> {
+    /// from [`bulk_call_element_abi_type`]: the callee's declared element type, or for a generic
+    /// `bulk T[]` (`Array.Of<i64>(7)`) the call's specialization, interpreted in `specialization`
+    /// when the call sits in a specialized generic item. The length is the call's scalar argument
+    /// count. The enclosing specialization identity is part of every symbol, so one call node in
+    /// two specializations never shares a pointer map. Reuses `build_array_static_plan` so the
+    /// static-data emission path is shared with literal plans.
+    pub fn bulk_array_static_plan(
+        &self,
+        call: AstNodeKey,
+        specialization: Option<&GenericSpecializationInstance>,
+    ) -> Option<ArrayStaticPlan> {
         (node_kind(self.database(), call).ok().flatten() == Some(IndexedNodeKind::CallExpression)).then_some(())?;
-        let element_type = bulk_call_element_abi_type(self.database(), call).ok().flatten()?;
+        let element_type = bulk_call_element_abi_type(self.database(), call, specialization).ok().flatten()?;
         let arguments = call_arguments(self.database(), call).ok().flatten()?;
         let length = u64::try_from(arguments.len()).ok()?;
-        self.build_array_static_plan(call, element_type, length, None)
+        let identity = specialization.map(generic_specialization_identity);
+        self.build_array_static_plan(call, element_type, length, identity.as_deref())
     }
 
     /// Create descriptor-backed allocation metadata for canonical `Array.Empty<T>`.
@@ -296,9 +314,10 @@ impl CodegenInput<'_> {
 fn scalar_layout(pointer_width: u8, ty: SemanticTypeId) -> Option<(u64, u64, bool)> {
     let pointer = u64::from(pointer_width.checked_div(8)?);
     match ty {
-        SemanticTypeId::BOOL | SemanticTypeId::U8 => Some((1, 1, false)),
-        SemanticTypeId::I32 | SemanticTypeId::U32 | SemanticTypeId::CHAR => Some((4, 4, false)),
-        SemanticTypeId::I64 | SemanticTypeId::F64 => Some((8, 8, false)),
+        SemanticTypeId::BOOL | SemanticTypeId::I8 | SemanticTypeId::U8 => Some((1, 1, false)),
+        SemanticTypeId::I16 | SemanticTypeId::U16 => Some((2, 2, false)),
+        SemanticTypeId::I32 | SemanticTypeId::U32 | SemanticTypeId::F32 | SemanticTypeId::CHAR => Some((4, 4, false)),
+        SemanticTypeId::I64 | SemanticTypeId::U64 | SemanticTypeId::F64 => Some((8, 8, false)),
         SemanticTypeId::WORD => Some((pointer, pointer, false)),
         SemanticTypeId::POINTER | SemanticTypeId::STRING => Some((pointer, pointer, true)),
         _ => None,

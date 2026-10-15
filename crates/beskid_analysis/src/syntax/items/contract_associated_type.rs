@@ -34,8 +34,8 @@ impl Parsable for ContractAssociatedType {
 #[cfg(test)]
 mod tests {
     use crate::services::parse_program;
-    use crate::syntax::items::Node;
     use crate::syntax::ContractNode;
+    use crate::syntax::items::Node;
 
     #[test]
     fn parses_associated_type_without_default() {

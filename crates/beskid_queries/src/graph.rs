@@ -10,6 +10,7 @@ use beskid_analysis::projects::{CompilePlan, PreparedProjectWorkspace};
 
 use crate::db::{BeskidDatabase, Db};
 use crate::inputs::ProjectSession;
+use crate::semantic_contract::SourceUnitId;
 use crate::materializer::unit_materializer_for;
 use crate::stats::{SALSA_TRACE_TARGET, trace_query, trace_query_with_reason};
 use crate::unit::{seed_file_from_disk, unit_imports};
@@ -123,6 +124,7 @@ pub fn program_assembly(
         Some(materializer),
         None,
     )?;
+    let assembly = rebase_onto_registered_generation(db, session, assembly);
 
     let _ = discovered_units(db, session, entry_path.to_path_buf());
     let _ = module_index_fingerprint(db, session, assembly.units.len() as u64);
@@ -136,10 +138,75 @@ pub fn program_assembly(
     Ok(assembly)
 }
 
+/// Reuse the syntax generation this database already holds for exactly these units.
+///
+/// Every generation-bound fact (`AstNodeKey` memos, typed-program facts) is keyed by the syntax
+/// generation, and a fresh process allocates a new one for every assembly, so a restored session
+/// snapshot would otherwise be verified and discarded key by key. When the registered session
+/// owns exactly the assembled units and every unit's source and expanded tree equal its
+/// registered revision, the assembly is the registered one: it takes that generation, and the
+/// registration that follows (`ensure_expanded_syntax_unit`) finds every unit unchanged. Any
+/// difference (a unit added, removed, edited, or rewritten by a Mod before registration) keeps the
+/// freshly allocated generation, so stale handles are retired exactly as before. Content equality
+/// is the trees' structural equality, which identical source produces deterministically; this is
+/// the Salsa model of backdating unchanged values while the revision moves on.
+fn rebase_onto_registered_generation(
+    db: &BeskidDatabase,
+    session: ProjectSession,
+    assembly: ProgramAssembly,
+) -> ProgramAssembly {
+    let registered_units = {
+        let registry = db.syntax_unit_registry().lock().expect("syntax unit registry");
+        registry.values().filter(|input| input.project(db) == session).count()
+    };
+    if registered_units != assembly.units.len() {
+        return assembly;
+    }
+    let mut registered_generation = None;
+    for unit in assembly.units.iter() {
+        let identity = SourceUnitId::new(db, unit.path.clone());
+        let Some(input) = db.syntax_unit(identity) else { return assembly };
+        if input.project(db) != session {
+            return assembly;
+        }
+        let revision = input.revision(db);
+        if registered_generation.is_some_and(|generation| generation != revision.generation) {
+            return assembly;
+        }
+        registered_generation = Some(revision.generation);
+        if *revision.source_fingerprint != *beskid_artifacts::content_fingerprint(&unit.source)
+            || *revision.expanded_program.as_ref() != unit.program
+        {
+            return assembly;
+        }
+    }
+    let Some(generation) = registered_generation else { return assembly };
+    if generation >= assembly.generation {
+        return assembly;
+    }
+    tracing::debug!(
+        target: SALSA_TRACE_TARGET,
+        units = assembly.units.len(),
+        from = %assembly.generation,
+        to = %generation,
+        "assembly rebased onto its registered syntax generation"
+    );
+    let syntax_indexes = assembly
+        .units
+        .iter()
+        .map(|unit| beskid_analysis::syntax_query::SyntaxIndex::from_program(&unit.program, generation))
+        .collect::<Vec<_>>();
+    ProgramAssembly { generation, syntax_indexes: Arc::new(syntax_indexes), ..assembly }
+}
+
 fn assembly_options_fingerprint(options: &AssemblyOptions) -> String {
     format!(
-        "discovery={:?}:skip_parse={}:max_units={:?}",
-        options.discovery, options.skip_parse_errors, options.max_units,
+        "discovery={:?}:recovery={:?}:skip_parse={}:max_units={:?}:native_mod_adapter={}",
+        options.discovery,
+        options.recovery_policy,
+        options.skip_parse_errors,
+        options.max_units,
+        options.native_mod_adapter_sources,
     )
 }
 

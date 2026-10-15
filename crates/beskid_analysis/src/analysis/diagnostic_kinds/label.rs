@@ -57,6 +57,9 @@ impl SemanticIssueKind {
             Self::ResolveUnknownTypeInModule { .. } => "unknown type in module".to_string(),
             Self::ResolveInvalidConformanceTarget { .. } => "invalid conformance target".to_string(),
             Self::ResolvePrivateItemInModule { .. } => "private item access".to_string(),
+            Self::ResolveAmbiguousModulePath { .. } => "ambiguous module path".to_string(),
+            Self::ResolveAmbiguousItemInModule { .. } => "ambiguous re-exported item".to_string(),
+            Self::ResolvePrivateRuntimeBuiltin { .. } => "private runtime builtin".to_string(),
             Self::ResolveShadowedLocal { .. } => "shadowed local".to_string(),
             Self::MissingImport { .. } => "missing import".to_string(),
             Self::MissingImportAmbiguous { .. } => "ambiguous import candidate".to_string(),
@@ -80,6 +83,7 @@ impl SemanticIssueKind {
             Self::TypeEnumConstructorMismatch { .. } => "enum constructor arity mismatch".to_string(),
             Self::TypeUnknownCallTarget => "unknown call target".to_string(),
             Self::TypeInvalidBinaryOp => "invalid binary operation".to_string(),
+            Self::TypeStringConcatOperandNotConvertible { found } => format!("`{found}` has no text form"),
             Self::TypeInvalidUnaryOp => "invalid unary operation".to_string(),
             Self::TypeNonBoolCondition => "condition must be boolean".to_string(),
             Self::TypeUnsupportedExpression => "unsupported expression".to_string(),
@@ -157,6 +161,13 @@ impl SemanticIssueKind {
             Self::NamingNotCamelCaseBinding { .. } => "binding not lowerCamelCase".to_string(),
             Self::NamingNotSnakeCaseTest { .. } => "test name not snake_case".to_string(),
             Self::NamingNotCamelCaseMacro { .. } => "macro name not lowerCamelCase".to_string(),
+            Self::NumericLiteralOutOfRange { .. } => "numeric literal".to_string(),
+            Self::ExternInvalidAbi { .. } | Self::ExternMissingLibrary => "extern attribute".to_string(),
+            Self::ExternDisallowedParamType { .. } => "parameter type".to_string(),
+            Self::ExternDisallowedReturnType { .. } => "return type".to_string(),
+            Self::GlueBindingRejected { .. } => "extern method".to_string(),
+            Self::ExternInvalidOptional { .. } => "extern attribute".to_string(),
+            Self::InvalidClifBlock { .. } => "clif block".to_string(),
         }
     }
 }

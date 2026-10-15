@@ -2,6 +2,58 @@
 
 use super::*;
 
+/// Canonical applied contract identities issued by current source conformances.
+pub fn type_contract_applications(
+    db: &dyn Db,
+    key: AstNodeKey,
+) -> SemanticQueryResult<Arc<[contracts::AppliedContractIdentity]>> {
+    with_registered_syntax(db, key, contracts::type_contract_applications_registered)
+}
+
+/// Applied identities of only those conformances of `key` that name `declaration`. Other
+/// conformances are resolved to their declarations and never have their arguments interpreted,
+/// so selecting one contract cannot fail on an unrelated (for example generic) conformance.
+pub fn type_contract_applications_of(
+    db: &dyn Db,
+    key: AstNodeKey,
+    declaration: AstNodeKey,
+) -> SemanticQueryResult<Arc<[contracts::AppliedContractIdentity]>> {
+    with_registered_syntax(db, key, |db, syntax, key| {
+        contracts::type_contract_applications_in_environment(db, syntax, key, None, &|candidate| {
+            candidate == declaration
+        })
+    })
+}
+
+/// Validate the exact owner, arguments and source method signatures of an issued application.
+pub fn type_applied_contract_implementation(
+    db: &dyn Db,
+    concrete: AstNodeKey,
+    application: &contracts::AppliedContractIdentity,
+) -> SemanticQueryResult<Arc<[(AstNodeKey, AstNodeKey)]>> {
+    with_registered_syntax(db, concrete, |db, syntax, key| {
+        contracts::type_applied_contract_implementation_registered(db, syntax, key, application)
+    })
+}
+
+/// Validate exact source signatures and return contract-method/implementation pairs.
+/// Equal physical ABI representations never substitute for nominal source identity.
+pub fn type_contract_implementation(
+    db: &dyn Db,
+    concrete: AstNodeKey,
+    contract: AstNodeKey,
+) -> SemanticQueryResult<Arc<[(AstNodeKey, AstNodeKey)]>> {
+    with_registered_syntax(db, concrete, |db, syntax, key| {
+        contracts::type_contract_implementation_tracked(db, syntax, key, contract)
+    })
+}
+
+/// Resolve a type's declared conformances to exact current contract declaration keys.
+/// Native adapters must separately validate canonical SDK provenance and method witnesses.
+pub fn type_contract_declarations(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<Arc<[AstNodeKey]>> {
+    with_registered_syntax(db, key, contracts::type_contract_declarations_tracked)
+}
+
 pub(super) fn with_registered_syntax<T>(
     db: &dyn Db,
     key: AstNodeKey,
@@ -38,6 +90,12 @@ pub fn implicit_method_receiver(db: &dyn Db, key: AstNodeKey) -> SemanticQueryRe
 /// Integer immediate for an unshadowed module constant in the current source unit.
 pub fn constant_integer(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<i64> {
     with_registered_syntax(db, key, constant_integer_tracked)
+}
+
+/// The integer literal a module constant path names. A constant use behaves as that literal:
+/// its natural type and its fit in a destination type come from this text.
+pub fn constant_integer_literal(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<Arc<str>> {
+    with_registered_syntax(db, key, constant_integer_literal_tracked)
 }
 
 /// Return the deterministic owner-qualified slot for an exact local declaration identifier.
@@ -122,9 +180,15 @@ pub fn bulk_parameter(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<BulkP
 }
 
 /// Return the element ABI type one call packs its trailing arguments as, when its direct callee
-/// ends in a `bulk T[]` parameter; a generic element is taken from the call's specialization.
-pub fn bulk_call_element_abi_type(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<SemanticTypeId> {
-    bulk_call_element_abi_type_for_call(db, key)
+/// ends in a `bulk T[]` parameter; a generic element is taken from the call's specialization,
+/// interpreted in `enclosing` when the call sits in a specialized generic item. A bulk callee
+/// whose element ABI cannot be proven returns an error, not `Ok(None)`.
+pub fn bulk_call_element_abi_type(
+    db: &dyn Db,
+    key: AstNodeKey,
+    enclosing: Option<&GenericSpecializationInstance>,
+) -> SemanticQueryResult<SemanticTypeId> {
+    bulk_call_element_abi_type_for_call(db, key, enclosing)
 }
 
 /// Return exact current-generation bounds for the syntax-only `range(start, end)` loop form.
@@ -132,10 +196,12 @@ pub fn range_for_fact(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<Range
     with_registered_syntax(db, key, range_for_fact_tracked)
 }
 
-/// Return the iterator declaration identity and element type for one current `ForStatement`.
+/// Return the iterator declaration identity, element type and source for one current
+/// `ForStatement`.
 ///
-/// Only the syntax-only `range(start, end)` iterable proves an element type. Stale generations,
-/// unregistered nodes, and non-for statements contain no fact.
+/// The syntax-only `range(start, end)` iterable and every iterable whose source identity is an
+/// array prove an element type; see [`ForIteratorFact`]. Stale generations, unregistered nodes,
+/// and non-for statements contain no fact.
 pub fn for_iterator_fact(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<ForIteratorFact> {
     with_registered_syntax(db, key, for_iterator_fact_tracked)
 }
@@ -146,6 +212,52 @@ pub fn for_iterator_fact(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<Fo
 /// identity. Success types may differ; unproven operands remain unavailable.
 pub fn try_expression_fact(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<TryExpressionFact> {
     with_registered_syntax(db, key, try_expression_fact_tracked)
+}
+
+/// [`try_expression_fact`] of `operand?` in the body of the specialization `enclosing`: the
+/// operand and the enclosing return type are read with its generic environment bound.
+pub fn specialized_try_expression_fact(
+    db: &dyn Db,
+    key: AstNodeKey,
+    enclosing: &GenericSpecializationInstance,
+) -> SemanticQueryResult<TryExpressionFact> {
+    with_registered_syntax(db, key, |db, syntax, key| {
+        with_node(db, syntax, key, |program, index, node| {
+            Some(try_expression_fact_for_node(db, program, index, key, node, Some(enclosing)))
+        })?
+        .transpose()
+    })
+}
+
+/// Whether `operand?` is legal: a canonical Result operand whose error type is exactly the
+/// enclosing callable's declared canonical Result error type. Unlike [`try_expression_fact`],
+/// this holds in unspecialized generic bodies.
+pub fn try_expression_legality(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<()> {
+    with_registered_syntax(db, key, |db, syntax, key| {
+        with_node(db, syntax, key, |program, index, node| {
+            Some(try_expression_legality_for_node(db, program, index, key, node))
+        })?
+        .transpose()
+    })
+}
+
+/// The `check` judgement of `operand?`. A body in generic scope is judged by the language rule
+/// alone ([`try_expression_legality`]): its payload layouts exist only per specialization. A
+/// concrete body must also prove the lowering fact ([`try_expression_fact`]) it compiles with.
+pub fn try_expression_judgement(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<()> {
+    let generic_scope = with_registered_syntax(db, key, |db, syntax, key| {
+        with_node(db, syntax, key, |_program, index, _node| {
+            let callable = nearest_ancestor(index, key.node, |kind| {
+                matches!(kind, IndexedNodeKind::FunctionDefinition | IndexedNodeKind::MethodDefinition)
+            })?;
+            Some(generic_callable_parameters(db, AstNodeKey { node: callable, ..key }).is_some())
+        })
+    })?;
+    match generic_scope {
+        None => Ok(None),
+        Some(true) => try_expression_legality(db, key),
+        Some(false) => try_expression_fact(db, key).map(|fact| fact.map(|_| ())),
+    }
 }
 
 /// Return the declaration identifier for the receiver of an exact `local.Method()` path.
@@ -172,9 +284,14 @@ pub fn collection_operation(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult
     let Some(CallLowering::Direct(declaration)) = call_lowering(db, key)? else {
         return Ok(None);
     };
-    let path = declaration.unit.path(db);
-    let components = path.iter().rev().take(3).map(|part| part.to_string_lossy()).collect::<Vec<_>>();
-    if components.as_slice() != ["Array.bd", "Collections", "Core"] {
+    let canonical_source = db
+        .syntax_dependency_registry()
+        .lock()
+        .expect("syntax dependency registry")
+        .corelib_source_paths
+        .get(&(declaration.unit, declaration.generation))
+        .is_some_and(|path| path == beskid_abi::runtime_source::CANONICAL_FOUNDATION_ARRAY_SOURCE_PATH);
+    if !canonical_source {
         return Ok(None);
     }
     let Some(syntax) = db.syntax_unit(declaration.unit) else {
@@ -191,7 +308,7 @@ pub fn collection_operation(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult
         return Ok(None);
     };
     Ok(Some(match function.name.node.name.as_str() {
-        "Append" => {
+        "Append" | "TryAppend" => {
             let arguments =
                 call_arguments(db, key)?.ok_or_else(|| SemanticError::unavailable("collection_operation"))?;
             let array = *arguments.first().ok_or_else(|| SemanticError::unavailable("collection_operation"))?;
@@ -221,20 +338,54 @@ pub fn collection_operation(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult
                     .ok_or_else(|| SemanticError::unavailable("collection_operation"))?;
                 // A dotted value path already names its declaration identifier; a member
                 // expression names the receiver expression, which must resolve lexically first.
-                let receiver = match local_slot(db, access.receiver)? {
-                    Some(slot) => slot,
-                    None => resolved_local(db, access.receiver)?
-                        .and_then(|resolved| local_slot(db, resolved.declaration).transpose())
-                        .transpose()?
-                        .ok_or_else(|| SemanticError::unavailable("collection_operation"))?,
-                };
-                CollectionMutationOwner::AggregateField {
-                    receiver,
-                    declaration: access.declaration,
-                    index: access.index,
+                // Keep the terminal receiver identity separate from the lexical root.
+                // Each intermediate projection is already proven by the canonical field query.
+                let mut current = access.receiver;
+                let mut root = None;
+                let mut method_receiver = None;
+                let mut seen = HashSet::new();
+                for _ in 0..128 {
+                    if current.generation != key.generation || !seen.insert(current) {
+                        return Err(SemanticError::unavailable("collection_operation.owner_cycle"));
+                    }
+                    if node_kind(db, current)? == Some(IndexedNodeKind::MethodDefinition) {
+                        method_receiver = Some(current);
+                        break;
+                    }
+                    if let Some(slot) = local_slot(db, current)? {
+                        root = Some(slot);
+                        break;
+                    }
+                    if let Some(resolved) = resolved_local(db, current)? {
+                        root = local_slot(db, resolved.declaration)?;
+                        break;
+                    }
+                    let projection = aggregate_field_access(db, current)?
+                        .ok_or_else(|| SemanticError::unavailable("collection_operation.owner_projection"))?;
+                    current = projection.receiver;
+                }
+                if let Some(method) = method_receiver {
+                    CollectionMutationOwner::ReceiverField {
+                        method,
+                        receiver: access.receiver,
+                        declaration: access.declaration,
+                        index: access.index,
+                    }
+                } else {
+                    let root = root.ok_or_else(|| SemanticError::unavailable("collection_operation.owner_root"))?;
+                    CollectionMutationOwner::AggregateField {
+                        root,
+                        receiver: access.receiver,
+                        declaration: access.declaration,
+                        index: access.index,
+                    }
                 }
             };
-            CollectionOperation::Append { owner }
+            if function.name.node.name == "TryAppend" {
+                CollectionOperation::TryAppend { owner }
+            } else {
+                CollectionOperation::Append { owner }
+            }
         }
         "Capacity" => CollectionOperation::Capacity,
         "Clear" => CollectionOperation::Clear,
@@ -407,6 +558,7 @@ pub fn array_index_element_abi_type(db: &dyn Db, key: AstNodeKey) -> SemanticQue
 /// Return the exact field selected by a direct nominal local receiver member expression.
 pub fn aggregate_field_access(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<AggregateFieldAccess> {
     with_registered_syntax(db, key, aggregate_field_access_tracked)
+        .map_err(|error| site_unsited_gap(db, key, "aggregate_field_access", error))
 }
 
 /// Return target-neutral source variants and field shapes for a non-generic `enum` definition or
@@ -430,33 +582,56 @@ pub fn enum_constructor_template(db: &dyn Db, key: AstNodeKey) -> SemanticQueryR
 
 /// Return the exact source enum declaration and arms selected by one `match` expression.
 ///
-/// Guarded and payload-destructuring arms remain unavailable until generated ISLE owns their
-/// binding and control-flow representation.
+/// Arms carry recursive payload patterns and their optional `when` guard.
 pub fn enum_match(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<EnumMatchFact> {
     with_registered_syntax(db, key, enum_match_tracked)
 }
 
+/// Return the primitive scrutinee type and arms of one `match` over a proven integer, `bool`,
+/// `char`, float, or `string` scrutinee. Enum scrutinees have no scalar match fact.
+pub fn scalar_match(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<ScalarMatchFact> {
+    with_registered_syntax(db, key, scalar_match_tracked)
+}
+
 /// Return the scalar ABI representation for one current syntax node.
 pub fn abi_type(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<SemanticTypeId> {
-    with_registered_syntax(db, key, abi_type_tracked)
+    with_registered_syntax(db, key, abi_type_tracked).map_err(|error| site_unsited_gap(db, key, "abi_type", error))
 }
 
-/// Return the exact call-parameter ABI selected for one bare integer argument.
+/// An unsited gap of `family` (or one of its `family.detail` points) is named at the innermost
+/// node whose fact was asked for. Nested requests go through the public entries, so the deepest
+/// key sites the error first and outer callers keep that site. The query name is unchanged;
+/// every other error passes through as is.
+fn site_unsited_gap(db: &dyn Db, key: AstNodeKey, family: &str, error: SemanticError) -> SemanticError {
+    let Some(query) = error.unavailable_query() else { return error };
+    let in_family = query == family || query.strip_prefix(family).is_some_and(|rest| rest.starts_with('.'));
+    if !in_family || error.unavailable_site().is_some() {
+        return error;
+    }
+    let rendered_site = crate::semantic_contract::format_ast_node_site(db, key);
+    let query = query.to_owned();
+    SemanticError::unavailable_at_described(&query, key, &rendered_site, "the fact is not proven for this node")
+}
+
+/// Return the type an expression is checked against: the requirement of its typed parent
+/// context (an annotated local, an assignment target, a resolved callee parameter, an enum
+/// payload or struct field, a declared return type, an expected array's element, a match arm's
+/// match, a block result, a binary operand's peer, or `unit` for a statement).
 ///
-/// Only a singleton unsuffixed integer argument of a direct call receives this contextual fact;
-/// all other expressions remain unavailable rather than being implicitly coerced.
-pub fn call_argument_abi_type(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<SemanticTypeId> {
-    with_registered_syntax(db, key, call_argument_abi_type_tracked)
+/// This is the checking direction of bidirectional typing. The expected type exists only where a
+/// declaration or sibling proves it; a position with no typed context, an inferred local, a
+/// lambda result, or a declared type that still names an unbound generic stays unavailable.
+pub fn expected_type(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<ExpectedType> {
+    with_registered_syntax(db, key, expected_type_tracked)
 }
 
-pub fn binary_operand_abi_type(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<SemanticTypeId> {
-    with_registered_syntax(db, key, binary_operand_abi_type_tracked)
-}
-
-/// Return the exact ABI selected for a bare integer literal at a declared contextual boundary.
+/// Return the exact ABI selected for a bare integer literal (or integer constant) by its
+/// [`expected_type`].
 ///
-/// This fact never performs a numeric conversion: it is unavailable for inferred locals,
-/// explicit literal suffixes, compound values, immutable destinations, and out-of-range values.
+/// This fact never performs a numeric conversion: the literal is emitted directly at the
+/// expected primitive integer width, and it must fit. Nodes that are not bare integer values
+/// have no fact; a literal whose context proves no primitive integer type, or that does not fit
+/// it, is unavailable.
 pub fn contextual_integer_literal_abi_type(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<SemanticTypeId> {
     with_registered_syntax(db, key, contextual_integer_literal_abi_type_tracked)
 }
@@ -488,14 +663,23 @@ pub fn closure_call_target(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<
     with_registered_syntax(db, key, closure_call_target_tracked)
 }
 
-/// Return the indirect-call fact for a call whose callee names a function-typed local value.
+/// Return the indirect-call fact for a call whose callee is a function value.
 ///
-/// The callee is a single-segment path to a parameter, typed lambda parameter, or local declared
-/// with a function type, or to an unannotated local initialized by a lambda. The signature is the
-/// ABI of the call through the closure record, excluding its environment pointer. Stale,
+/// The callee is a function-typed parameter, lambda parameter or local, an unannotated local
+/// initialized by a lambda, a function-typed field projection, a call that returns a function
+/// value, or any other expression whose source type is a function type. The signature is the ABI
+/// of the call through the closure record, excluding its environment pointer. Stale,
 /// unregistered, non-call, and statically targeted calls contain no fact.
 pub fn function_value_call(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<FunctionValueCall> {
     with_registered_syntax(db, key, function_value_call_tracked)
+}
+
+/// Return the fact for a path expression that reads a named, non-generic function item as a
+/// value rather than calling it. Its closure record holds the item's entry and a null
+/// environment. Stale, unregistered, non-path, called and non-item paths contain no fact; a
+/// generic item is unavailable.
+pub fn function_item_value(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<FunctionItemValue> {
+    with_registered_syntax(db, key, function_item_value_tracked)
 }
 
 /// Return whether a lambda expression lowers to an allocated closure record.

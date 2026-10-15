@@ -40,8 +40,10 @@ pub(super) fn instantiated_enum_layout_for_path_in_environment(
                 enclosing
                     .iter()
                     .find(|binding| binding.parameter.as_ref() == name)
-                    .map(|binding| AggregateFieldShape::Scalar(binding.argument))
                     .ok_or_else(|| SemanticError::unavailable("enum_match_specialization"))
+                    .and_then(|binding| {
+                        crate::semantic_contract::layouts::aggregate_shape_for_binding(db, use_key, binding)
+                    })
             })?;
             Ok((parameter.node.name.clone(), shape))
         })
@@ -49,12 +51,12 @@ pub(super) fn instantiated_enum_layout_for_path_in_environment(
     enum_layout_from_definition(db, program, index, declaration, definition, Some(&substitutions))
 }
 
-/// Preserve nominal enum provenance for a direct call used as a `match` scrutinee.
+/// Preserve nominal enum provenance for a checked expression used as a `match` scrutinee.
 ///
 /// The concrete call specialization remains the authority for generic method-owner bindings;
 /// this only projects those bindings through the declaration's return type into the existing
 /// enum layout representation.
-pub(super) fn enum_layout_for_direct_call_result(
+pub(super) fn enum_layout_for_expression_result(
     db: &dyn Db,
     call: AstNodeKey,
 ) -> Result<(AstNodeKey, EnumLayoutFact), SemanticError> {
@@ -103,7 +105,13 @@ pub(in crate::semantic_contract) fn enum_layout_for_source_identity(
                 GenericSourceTypeIdentity::Nominal { .. } => {
                     AggregateFieldShape::Nominal(enum_match_source_nominal_declaration(db, call, argument)?)
                 }
-                _ => AggregateFieldShape::Scalar(argument.abi_type()),
+                _ => {
+                    if argument.managed_reference_kind() == ManagedReferenceKind::GcManaged {
+                        AggregateFieldShape::ManagedReference(argument.abi_type())
+                    } else {
+                        AggregateFieldShape::Scalar(argument.abi_type())
+                    }
+                }
             };
             Ok((generic.node.name.clone(), shape))
         })

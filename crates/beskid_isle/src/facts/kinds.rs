@@ -17,6 +17,10 @@ pub enum RuntimeIntrinsicKind {
     MemoryCopy,
     MemorySet,
     NativeWordFromPointer,
+    FloatToBits32,
+    FloatFromBits32,
+    FloatToBits64,
+    FloatFromBits64,
     PointerFromNativeWord,
     PointerAdd,
     RawWordLoad,
@@ -70,10 +74,14 @@ pub enum IndexTarget {
     Array,
 }
 
+/// What a `for` statement iterates: the syntax-only `range(start, end)` form, an array value
+/// (`array_for_fact`), or a value of the nominal iterator protocol (`iterator_for_fact`). A `for`
+/// with none of these facts has no class and fails closed as a missing fact.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ForIterableKind {
     Range,
-    Other,
+    Array,
+    Iterator,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

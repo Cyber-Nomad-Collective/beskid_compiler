@@ -7,12 +7,14 @@ use super::super::sources::{
     CANONICAL_CORELIB_SYSCALL_SOURCE_PATH, CANONICAL_CORELIB_WAIT_GROUP_SOURCE_PATH,
     CANONICAL_FOUNDATION_ARRAY_SOURCE_PATH, CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH,
     CANONICAL_FOUNDATION_BYTES_SLICE_SOURCE_PATH, CANONICAL_FOUNDATION_ENVIRONMENT_SOURCE_PATH,
-    CANONICAL_FOUNDATION_ERROR_SOURCE_PATH, CANONICAL_FOUNDATION_OUTPUT_SOURCE_PATH,
+    CANONICAL_FOUNDATION_ERROR_SOURCE_PATH, CANONICAL_FOUNDATION_FLOAT_BITS_SOURCE_PATH,
+    CANONICAL_FOUNDATION_MANAGED_SOURCE_PATH, CANONICAL_FOUNDATION_OUTPUT_SOURCE_PATH,
     CANONICAL_FOUNDATION_PATH_SOURCE_PATH, CANONICAL_FOUNDATION_PROCESS_SOURCE_PATH,
     CANONICAL_FOUNDATION_RANDOM_SOURCE_PATH, CANONICAL_FOUNDATION_STRING_CORE_SOURCE_PATH,
     CANONICAL_FOUNDATION_STRING_UTF8_SOURCE_PATH, CANONICAL_FOUNDATION_TEXT_CURSOR_SOURCE_PATH,
     CANONICAL_FOUNDATION_THREAD_SOURCE_PATH, CANONICAL_FOUNDATION_TIME_SOURCE_PATH,
-    CANONICAL_NETWORK_INTERNAL_SOURCE_PATH,
+    CANONICAL_NETWORK_INTERNAL_SOURCE_PATH, CANONICAL_SERIALIZATION_COMPILED_SOURCE_PATH,
+    CANONICAL_SERIALIZATION_DESCRIPTORS_SOURCE_PATH,
 };
 
 /// One ABI-facing service used by a compiler-owned Corelib source unit.
@@ -25,7 +27,7 @@ use super::super::sources::{
 /// serde error when no entry matches (a tampered or unknown service).
 ///
 /// The recovery here is a composite 3-field match — no single field uniquely
-/// identifies a service (e.g. `__panic_str` / `panic_str` appears under three
+/// identifies a service (e.g. `__panic_str` / `panic_str` appears under several
 /// distinct `source_path` values), so the single-string
 /// [`crate::serde_support::recover_static_str`] helper does not fit. The
 /// fail-closed contract is the same as the helper's.
@@ -73,6 +75,106 @@ impl<'de> serde::Deserialize<'de> for CorelibService {
 }
 
 pub(super) const CORELIB_SERVICES: &[CorelibService] = &[
+    CorelibService {
+        name: "__child_try_write",
+        symbol: "beskid_rt_v5_child_try_write",
+        source_path: CANONICAL_FOUNDATION_PROCESS_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__child_begin",
+        symbol: "beskid_rt_v5_child_begin",
+        source_path: CANONICAL_FOUNDATION_PROCESS_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__child_argument",
+        symbol: "beskid_rt_v5_child_argument",
+        source_path: CANONICAL_FOUNDATION_PROCESS_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__child_environment",
+        symbol: "beskid_rt_v5_child_environment",
+        source_path: CANONICAL_FOUNDATION_PROCESS_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__child_spawn",
+        symbol: "beskid_rt_v5_child_spawn",
+        source_path: CANONICAL_FOUNDATION_PROCESS_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__child_poll",
+        symbol: "beskid_rt_v5_child_poll",
+        source_path: CANONICAL_FOUNDATION_PROCESS_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__child_terminate",
+        symbol: "beskid_rt_v5_child_terminate",
+        source_path: CANONICAL_FOUNDATION_PROCESS_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__child_close",
+        symbol: "beskid_rt_v5_child_close",
+        source_path: CANONICAL_FOUNDATION_PROCESS_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__child_close_until",
+        symbol: "beskid_rt_v5_child_close_until",
+        source_path: CANONICAL_FOUNDATION_PROCESS_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__child_close_pipe",
+        symbol: "beskid_rt_v5_child_close_pipe",
+        source_path: CANONICAL_FOUNDATION_PROCESS_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__child_pause",
+        symbol: "beskid_rt_v5_child_pause",
+        source_path: CANONICAL_FOUNDATION_PROCESS_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__child_wait",
+        symbol: "beskid_rt_v5_child_wait",
+        source_path: CANONICAL_FOUNDATION_PROCESS_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__child_read",
+        symbol: "beskid_rt_v5_child_read",
+        source_path: CANONICAL_FOUNDATION_PROCESS_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__child_write",
+        symbol: "beskid_rt_v5_child_write",
+        source_path: CANONICAL_FOUNDATION_PROCESS_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__child_try_read",
+        symbol: "beskid_rt_v5_child_try_read",
+        source_path: CANONICAL_FOUNDATION_PROCESS_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__gc_same_identity",
+        symbol: "beskid_rt_v5_gc_same_identity",
+        source_path: CANONICAL_FOUNDATION_MANAGED_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__float_to_bits32",
+        symbol: "beskid_rt_v5_float_to_bits32",
+        source_path: CANONICAL_FOUNDATION_FLOAT_BITS_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__float_from_bits32",
+        symbol: "beskid_rt_v5_float_from_bits32",
+        source_path: CANONICAL_FOUNDATION_FLOAT_BITS_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__float_to_bits64",
+        symbol: "beskid_rt_v5_float_to_bits64",
+        source_path: CANONICAL_FOUNDATION_FLOAT_BITS_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__float_from_bits64",
+        symbol: "beskid_rt_v5_float_from_bits64",
+        source_path: CANONICAL_FOUNDATION_FLOAT_BITS_SOURCE_PATH,
+    },
     CorelibService {
         name: "__panic_str",
         symbol: "beskid_trap_message",
@@ -460,6 +562,19 @@ pub(super) const CORELIB_SERVICES: &[CorelibService] = &[
         name: "__panic_str",
         symbol: "beskid_trap_message",
         source_path: CANONICAL_FOUNDATION_ERROR_SOURCE_PATH,
+    },
+    // Compiler-issued serialization metadata (descriptor recipes and extras identities)
+    // that fails to decode is a compiler invariant violation, not a recoverable input
+    // error: only these exact private-constructor units may trap on it.
+    CorelibService {
+        name: "__panic_str",
+        symbol: "beskid_trap_message",
+        source_path: CANONICAL_SERIALIZATION_COMPILED_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__panic_str",
+        symbol: "beskid_trap_message",
+        source_path: CANONICAL_SERIALIZATION_DESCRIPTORS_SOURCE_PATH,
     },
 ];
 

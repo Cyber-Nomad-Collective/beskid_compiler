@@ -1,10 +1,68 @@
 //! Exercise command completion with pipes and a real controlling terminal.
 //! Linux's PTY runner also samples termios: raw input cannot be inferred from output bytes alone.
+//!
+//! Every case shares one provisioned Corelib root. Corelib depends on the native Serialization
+//! Mod, and a freshly materialized Corelib has no executable Mod artifact for this CLI, so the
+//! first command against it would build the Mod before doing its own work. Release bundles ship
+//! that artifact prebuilt (`scripts/ci/build-release-artifact.sh` runs `beskid dev mod rebuild`
+//! for each Corelib Mod). This fixture provisions the shared root once per test process through
+//! the ordinary consumer path (`beskid check`, which builds a missing Mod artifact), so each case
+//! measures only the command under test against a provisioned installed-toolchain layout.
+
+#[cfg(target_os = "linux")]
+fn provisioned_corelib_root() -> &'static std::path::Path {
+    static ROOT: std::sync::OnceLock<Result<std::path::PathBuf, String>> = std::sync::OnceLock::new();
+    let provisioned = ROOT.get_or_init(|| {
+        // `.beskid`, `obj` and `Project.lock` lie outside the Corelib fingerprint, so a matching
+        // bundle keeps its current Mod artifact across runs. A changed bundle is re-materialized
+        // and a changed CLI fails the Mod key check, so the consumer path below rebuilds exactly
+        // when the artifact is not current, as an installed toolchain does on first use.
+        // The consumer project itself is fresh per process: its `Project.lock` pins the Corelib
+        // dependency graph, so a lock kept from an earlier bundle would be stale by design.
+        let root = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("pipeline-output").join("corelib");
+        let workspace = tempfile::tempdir().map_err(|error| format!("create provisioning project: {error}"))?;
+        let project = workspace.path().to_path_buf();
+        std::fs::create_dir_all(project.join("Src")).map_err(|error| format!("create provisioning project: {error}"))?;
+        std::fs::write(project.join("Src/Provision.bd"), "pub i64 Main() { return 0; }\n")
+            .map_err(|error| format!("write provisioning source: {error}"))?;
+        std::fs::write(
+            project.join("Provision.bproj"),
+            "Provision { name = \"Provision\" version = \"0.1.0\" }\n\
+             target \"Provision\" { kind = \"App\" entry = \"Provision.bd\" }\n",
+        )
+        .map_err(|error| format!("write provisioning manifest: {error}"))?;
+        let output = std::process::Command::new(env!("CARGO_BIN_EXE_beskid_cli"))
+            .arg("check")
+            .arg("--project")
+            .arg(&project)
+            .arg("--plain")
+            .env("BESKID_CORELIB_ROOT", &root)
+            .env_remove("RUST_LOG")
+            .stdin(std::process::Stdio::null())
+            .output()
+            .map_err(|error| format!("run provisioning `beskid check`: {error}"))?;
+        if !output.status.success() {
+            return Err(format!(
+                "provision the shared Corelib {} and its Serialization Mod: {}{}",
+                root.display(),
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            ));
+        }
+        Ok(root)
+    });
+    match provisioned {
+        Ok(root) => root,
+        Err(error) => panic!("{error}"),
+    }
+}
 
 #[cfg(target_os = "linux")]
 fn exercise(command: &str, mode: &str) {
+    let corelib = provisioned_corelib_root();
     let output = std::process::Command::new("python3")
         .args(["-c", RUNNER, env!("CARGO_BIN_EXE_beskid_cli"), command, mode])
+        .arg(corelib)
         .output()
         .expect("Python PTY runner");
     assert!(
@@ -18,7 +76,7 @@ fn exercise(command: &str, mode: &str) {
 #[cfg(target_os = "linux")]
 const RUNNER: &str = r#"
 import errno, fcntl, os, pty, re, select, signal, subprocess, sys, tempfile, termios, time
-binary, command, mode = sys.argv[1:]
+binary, command, mode, corelib = sys.argv[1:]
 with tempfile.TemporaryDirectory(prefix='beskid-pipeline-output-') as root:
     os.mkdir(os.path.join(root, 'Src'))
     source = os.path.join(root, 'Src', 'Smoke.bd')
@@ -29,7 +87,7 @@ with tempfile.TemporaryDirectory(prefix='beskid-pipeline-output-') as root:
         kind = 'Test' if command == 'test' else 'App'
         out.write('Smoke { name = "Smoke" version = "0.1.0" }\n'
                   'target "Smoke" { kind = "' + kind + '" entry = "Smoke.bd" }\n')
-    args = [binary, command, '--project', root]
+    args = [binary, 'check' if command == 'analyze' else command, '--project', root]
     if command == 'build':
         args += ['--kind', 'object', '--output', os.path.join(root, 'Smoke.o')]
     if mode.endswith('plain'):
@@ -38,7 +96,7 @@ with tempfile.TemporaryDirectory(prefix='beskid-pipeline-output-') as root:
     env.pop('RUST_LOG', None)
     env.pop('NO_COLOR', None)
     env.pop('CI', None)
-    env['BESKID_CORELIB_ROOT'] = os.path.join(root, 'corelib')
+    env['BESKID_CORELIB_ROOT'] = corelib
     terminal = mode.startswith('pty')
     master = slave = None
     def attach_terminal():

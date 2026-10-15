@@ -1,6 +1,7 @@
 use crate::abi_v5::{AbiManifestV5, RuntimeIntrinsic, SourceUnit, canonical_runtime_package, canonical_source_hash};
 
-use super::sources::{canonical_runtime_source_hash, canonical_runtime_sources};
+use super::corelib_services::{CorelibServiceCapability, canonical_corelib_service_capability};
+use super::sources::{canonical_runtime_source_hash, canonical_runtime_sources, canonical_runtime_support_sources};
 
 /// A compiler-owned proof that a node belongs to the exact canonical runtime corpus.
 ///
@@ -29,9 +30,13 @@ impl CanonicalRuntimeProof {
 pub struct RuntimeIntrinsicCapability {
     proof: CanonicalRuntimeProof,
     intrinsics: Vec<RuntimeIntrinsic>,
+    corelib_services: std::sync::Arc<CorelibServiceCapability>,
 }
 
 impl RuntimeIntrinsicCapability {
+    pub fn corelib_service_capability(&self) -> std::sync::Arc<CorelibServiceCapability> {
+        self.corelib_services.clone()
+    }
     pub(super) fn authorize_fixture(&mut self, logical_path: String) {
         self.proof.source_paths.push(logical_path);
     }
@@ -79,7 +84,13 @@ pub fn prove_canonical_runtime_corpus(
 
     Ok(CanonicalRuntimeProof {
         source_hash: expected_hash,
-        source_paths: expected_sources.into_iter().map(|unit| unit.logical_path).collect(),
+        source_paths: expected_sources
+            .into_iter()
+            .filter(|unit| {
+                !canonical_runtime_support_sources().iter().any(|support| support.logical_path == unit.logical_path)
+            })
+            .map(|unit| unit.logical_path)
+            .collect(),
     })
 }
 
@@ -91,5 +102,9 @@ pub fn canonical_runtime_intrinsic_capability(
     manifest: &AbiManifestV5,
 ) -> Result<RuntimeIntrinsicCapability, RuntimeCapabilityError> {
     let proof = prove_canonical_runtime_corpus(&canonical_runtime_sources(), manifest)?;
-    Ok(RuntimeIntrinsicCapability { proof, intrinsics: manifest.trusted_runtime_intrinsics.clone() })
+    Ok(RuntimeIntrinsicCapability {
+        proof,
+        intrinsics: manifest.trusted_runtime_intrinsics.clone(),
+        corelib_services: std::sync::Arc::new(canonical_corelib_service_capability(manifest)?),
+    })
 }

@@ -1,4 +1,4 @@
-use std::collections::{HashSet, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -8,19 +8,22 @@ use beskid_pipeline::{PipelineObserver, compiler_stack_size, phases::PROGRAM_ASS
 use rayon::prelude::*;
 
 use super::super::discovery::resolve_module_file;
-use super::super::module_index::ModuleIndex;
-use super::super::roots::effective_roots_for_plan;
+use super::super::module_index::{ModuleIndex, package_for_path};
 use super::super::unit_builder::UnitBuilder;
 use super::super::unit_cache::{disk_cache_stats, ensure_manifest};
-use super::super::{ProgramAssembly, SourceUnit};
+use super::super::roots::EffectiveCompilationRoots;
+use super::super::{AssemblyRootSet, ProgramAssembly, SourceUnit, own_unit_paths_under};
 use super::discovery::{collect_bd_files, unit_progress_label};
 use super::options::{AssemblyError, UnitMaterializer};
 use super::scanner::{
-    import_paths_from_source_full, module_declaration_paths_from_source, module_paths_from_qualified_references,
-    parent_module_import_path,
+    import_paths_from_program, module_declaration_paths_from_program, module_paths_from_qualified_references,
+    parent_module_import_path, parse_program_for_discovery,
 };
 use super::trusted_paths::trusted_corelib_service_paths;
-use crate::projects::model::{AssemblyDiscovery, AssemblyOptions};
+use crate::projects::graph::pathing::{dependency_manifest_path, normalize_existing_path};
+use crate::projects::model::{
+    AssemblyDiscovery, AssemblyOptions, AssemblyRecoveryPolicy, DependencySource, ProjectKind,
+};
 use crate::projects::{CompilePlan, PreparedProjectWorkspace};
 use crate::syntax::SyntaxGenerationId;
 use crate::syntax_query::SyntaxIndex;
@@ -49,8 +52,9 @@ pub fn assemble_program_with_materializer(
     materializer: Option<UnitMaterializer>,
     pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<ProgramAssembly, AssemblyError> {
+    let assembly_started = std::time::Instant::now();
     let generation = SyntaxGenerationId::allocate().ok_or(AssemblyError::GenerationExhausted)?;
-    let roots = effective_roots_for_plan(plan, workspace);
+    let roots = super::super::runtime_fixture::assembly_roots(plan, workspace);
     let module_roots: Vec<PathBuf> = super::roots::module_roots_from_effective(&roots);
 
     let entry_canonical = entry_path.canonicalize().unwrap_or_else(|_| entry_path.to_path_buf());
@@ -61,6 +65,12 @@ pub fn assemble_program_with_materializer(
     if !scan_without_entry && !entry_canonical.is_file() {
         return Err(AssemblyError::EntryNotFound { path: entry_path.to_path_buf() });
     }
+
+    let adapter_seeds = if options.native_mod_adapter_sources {
+        super::options::native_mod_adapter_seed_paths(&roots)?
+    } else {
+        Vec::new()
+    };
 
     let mut discovered: Vec<PathBuf> = Vec::new();
     let mut discovered_sources: Vec<(PathBuf, String)> = Vec::new();
@@ -75,14 +85,42 @@ pub fn assemble_program_with_materializer(
 
     match options.discovery {
         AssemblyDiscovery::ImportClosure => {
+            // One assembly sees one filesystem state, so each module path resolves once and each
+            // discovered path is canonicalized once, however many units import it.
+            let mut module_files: HashMap<String, Option<PathBuf>> = HashMap::new();
+            let mut resolve = |module_path: &str| -> Result<Option<PathBuf>, AssemblyError> {
+                if let Some(file) = module_files.get(module_path) {
+                    return Ok(file.clone());
+                }
+                let file = resolve_module_file(module_path, &roots)?;
+                module_files.insert(module_path.to_owned(), file.clone());
+                Ok(file)
+            };
+            let mut canonical_keys: HashMap<PathBuf, PathBuf> = HashMap::new();
             let mut queue = VecDeque::new();
             queue.push_back(entry_path.to_path_buf());
+            queue.extend(adapter_seeds.iter().cloned());
+            let mut seeded_companions: HashSet<String> = HashSet::new();
 
-            while let Some(path) = queue.pop_front() {
+            // The closure of the entry, then of every Mod companion package it reaches, until no
+            // reached package adds a companion (see `mod_host::mod_companion_packages`).
+            loop {
+                let Some(path) = queue.pop_front() else {
+                    let companion_seeds =
+                        mod_companion_seed_paths(plan, &roots, &discovered, &mut seeded_companions)?;
+                    if companion_seeds.is_empty() {
+                        break;
+                    }
+                    queue.extend(companion_seeds);
+                    continue;
+                };
                 if discovered_sources.len() >= options.max_units {
                     return Err(AssemblyError::MaxUnits { max: options.max_units });
                 }
-                let key = path.canonicalize().unwrap_or_else(|_| path.clone());
+                let key = canonical_keys
+                    .entry(path.clone())
+                    .or_insert_with(|| path.canonicalize().unwrap_or_else(|_| path.clone()))
+                    .clone();
                 let is_entry = key == entry_canonical;
                 if !seen.insert(key) {
                     continue;
@@ -96,31 +134,50 @@ pub fn assemble_program_with_materializer(
                             .map_err(|source| AssemblyError::Read { path: path.clone(), source })?
                     }
                 } else {
-                    fs::read_to_string(&path).map_err(|source| AssemblyError::Read { path: path.clone(), source })?
+                    match fs::read_to_string(&path) {
+                        Ok(source) => source,
+                        Err(error) if options.skip_parse_errors => {
+                            tracing::warn!(file = %path.display(), error = %error, "skipping unreadable dependency during discovery");
+                            continue;
+                        }
+                        Err(source) => return Err(AssemblyError::Read { path: path.clone(), source }),
+                    }
                 };
 
+                let discovery_program = match parse_program_for_discovery(&path, &source) {
+                    Ok(program) => Some(program),
+                    Err(error) if options.skip_parse_errors && !is_entry => {
+                        tracing::warn!(file = %path.display(), error = %error, "skipping malformed dependency during discovery");
+                        continue;
+                    }
+                    Err(_) if options.recovery_policy == AssemblyRecoveryPolicy::EditorRetainRecovered => None,
+                    Err(error) => return Err(error),
+                };
                 discovered.push(path.clone());
                 discovered_sources.push((path.clone(), source.clone()));
-
-                for import_path in import_paths_from_source_full(&source) {
-                    if let Some(dep_file) = resolve_module_file(&import_path, &roots) {
+                // Editor materialization may retain repaired syntax, but it cannot add dependency authority.
+                let Some(discovery_program) = discovery_program else {
+                    continue;
+                };
+                for import_path in import_paths_from_program(&discovery_program.node) {
+                    if let Some(dep_file) = resolve(&import_path)? {
                         queue.push_back(dep_file);
                     }
                     if let Some(parent_import) = parent_module_import_path(&import_path)
-                        && let Some(parent_file) = resolve_module_file(&parent_import, &roots)
+                        && let Some(parent_file) = resolve(&parent_import)?
                     {
                         queue.push_back(parent_file);
                     }
                 }
-                let mut qualified_paths = module_paths_from_qualified_references(&source);
+                let mut qualified_paths = module_paths_from_qualified_references(&discovery_program.node);
                 qualified_paths.sort();
                 for module_path in qualified_paths {
-                    if let Some(dep_file) = resolve_module_file(&module_path, &roots) {
+                    if let Some(dep_file) = resolve(&module_path)? {
                         queue.push_back(dep_file);
                     }
                 }
-                for module_path in module_declaration_paths_from_source(&path, &source) {
-                    if let Some(dep_file) = resolve_module_file(&module_path, &roots) {
+                for module_path in module_declaration_paths_from_program(&discovery_program.node) {
+                    if let Some(dep_file) = resolve(&module_path)? {
                         queue.push_back(dep_file);
                     }
                 }
@@ -140,6 +197,7 @@ pub fn assemble_program_with_materializer(
                     collect_bd_files(&generated_root, &mut paths);
                 }
             }
+            paths.extend(adapter_seeds.iter().cloned());
             paths.sort();
             for path in paths {
                 if discovered.len() >= options.max_units {
@@ -172,17 +230,19 @@ pub fn assemble_program_with_materializer(
             .iter()
             .map(|(path, source)| {
                 let path_key = path.canonicalize().unwrap_or_else(|_| path.clone());
-                Ok(UnitBuildInput { path: path.clone(), is_entry: path_key == entry_key, source: source.clone() })
+                UnitBuildInput { path: path.clone(), is_entry: path_key == entry_key, source: source.clone() }
             })
-            .collect::<Result<Vec<_>, _>>()?
+            .collect()
     } else {
         discovered
             .iter()
             .filter_map(|path| {
                 let path_key = path.canonicalize().unwrap_or_else(|_| path.clone());
                 let is_entry = path_key == entry_key;
-                let source = if is_entry {
-                    entry_source.map(str::to_string).unwrap_or_default()
+                // The caller's in-memory entry text wins (editor buffers); without one the entry
+                // is read from disk like every other unit. It is never assumed empty.
+                let source = if let Some(entry_text) = entry_source.filter(|_| is_entry) {
+                    entry_text.to_string()
                 } else {
                     match fs::read_to_string(path) {
                         Ok(text) => text,
@@ -205,8 +265,9 @@ pub fn assemble_program_with_materializer(
             .collect::<Result<Vec<_>, _>>()?
     };
 
-    let default_threads =
-        if materializer.is_some() { 1 } else { std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4) };
+    // A unit materializer only guards its cache behind a lock; parsing and expansion run outside
+    // it, so a materialized assembly builds its units in parallel like a plain one.
+    let default_threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4);
     let thread_cap =
         std::env::var("BESKID_ASSEMBLY_THREADS").ok().and_then(|value| value.parse().ok()).unwrap_or(default_threads);
     let pool = rayon::ThreadPoolBuilder::new()
@@ -219,6 +280,7 @@ pub fn assemble_program_with_materializer(
     let salsa_build = materializer.as_ref().map(|build| build.as_ref() as _);
     let build_total = build_inputs.len() as u64;
     let build_done = AtomicU64::new(0);
+    let discovery_elapsed = assembly_started.elapsed();
     let built_units: Result<Vec<(usize, bool, SourceUnit, SyntaxIndex)>, AssemblyError> = pool.install(|| {
         build_inputs
             .par_iter()
@@ -227,7 +289,7 @@ pub fn assemble_program_with_materializer(
                 let logical_name = input.path.display().to_string();
                 let file = input.path.display().to_string();
                 let started = std::time::Instant::now();
-                let unit_span = tracing::info_span!(
+                let unit_span = tracing::debug_span!(
                     target: "beskid.analysis.assembly",
                     "assembly.unit",
                     unit = %logical_name,
@@ -270,21 +332,61 @@ pub fn assemble_program_with_materializer(
     });
 
     let mut built_units = built_units?;
+    // Phase breakdown of one assembly (enable with `RUST_LOG=beskid.timing=debug`).
+    tracing::debug!(
+        target: "beskid.timing",
+        phase = "program.assemble",
+        units = built_units.len(),
+        discover_ms = discovery_elapsed.as_millis() as u64,
+        build_units_ms = (assembly_started.elapsed() - discovery_elapsed).as_millis() as u64,
+        "assembly timing"
+    );
     built_units.sort_by_key(|(index, _, _, _)| *index);
     let mut units = Vec::with_capacity(built_units.len());
     let mut syntax_indexes = Vec::with_capacity(built_units.len());
-    let mut entry_index = 0usize;
+    let mut entry_position = None;
     for (_, is_entry, unit, syntax_index) in built_units {
         if is_entry {
-            entry_index = units.len();
+            entry_position = Some(units.len());
         }
         units.push(unit);
         syntax_indexes.push(syntax_index);
     }
 
-    if units.is_empty() {
-        return Err(AssemblyError::EntryNotFound { path: entry_path.to_path_buf() });
-    }
+    // An explicit entry is the single root. An entry-less workspace scan has no main entry: every
+    // unit of the host project's own source root is a root, judged as the project's own code.
+    // An `Aggregate` project has no own source; its roots are the own units of its direct path
+    // members (the Cargo virtual-workspace rule: checking the virtual manifest checks every member).
+    // Never fall back to an arbitrary unit (that silently checked one unit and reported nothing
+    // for the rest).
+    let (entry_index, root_set) = match entry_position {
+        Some(index) => (index, AssemblyRootSet::Entry),
+        None if scan_without_entry => {
+            let (own_paths, empty_error) = match aggregate_member_source_roots(plan, &roots)? {
+                Some(member_roots) => {
+                    let mut paths: Vec<PathBuf> = Vec::new();
+                    for member_root in &member_roots {
+                        for path in own_unit_paths_under(&units, member_root, &roots) {
+                            if !paths.contains(&path) {
+                                paths.push(path);
+                            }
+                        }
+                    }
+                    (paths, AssemblyError::NoAggregateMemberUnits { manifest_path: plan.manifest_path.clone() })
+                }
+                None => (
+                    own_unit_paths_under(&units, &roots.host.source_root, &roots),
+                    AssemblyError::NoRootUnits { source_root: roots.host.source_root.clone() },
+                ),
+            };
+            let first = own_paths
+                .first()
+                .and_then(|first| units.iter().position(|unit| unit.path == *first))
+                .ok_or(empty_error)?;
+            (first, AssemblyRootSet::OwnUnits(Arc::from(own_paths)))
+        }
+        None => return Err(AssemblyError::EntryNotFound { path: entry_path.to_path_buf() }),
+    };
 
     let disk_stats = disk_cache_stats();
     tracing::debug!(
@@ -298,20 +400,164 @@ pub fn assemble_program_with_materializer(
     let module_index = Arc::new(ModuleIndex::build(&units, &syntax_indexes, &roots, plan));
 
     let trusted_corelib_service_paths = trusted_corelib_service_paths(plan, &roots, &units);
+    let glue_libraries = manifest_glue_libraries(plan)?;
 
     super::super::runtime_fixture::attach_runtime_fixture(
-        ProgramAssembly {
+        ProgramAssembly { compiled_mod_metadata: Vec::new(),
+            verified_package_identities: workspace
+                .map(|workspace| workspace.package_identities().clone())
+                .unwrap_or_default(),
             runtime_fixture: None,
             roots,
             units: Arc::new(units),
             syntax_indexes: Arc::new(syntax_indexes),
             generation,
             entry_index,
+            root_set,
             discovery: options.discovery,
+            recovery_policy: options.recovery_policy,
             module_index,
-            has_std_dependency: plan.has_std_dependency,
+            has_core_dependency: plan.has_core_dependency,
             trusted_corelib_service_paths,
+            glue_libraries,
         },
         plan,
     )
+}
+
+/// Every source unit of each Mod companion package the discovered units reach that has not been
+/// seeded yet, in stable order.
+///
+/// A Mod's typed contributions route to canonical declarations of the package that declares the
+/// Mod (`mod_host::mod_companion_packages`); an import-closure assembly holds that whole package,
+/// so a program that imports only `Core.Serialization.Contracts` still compiles the
+/// `Core.Serialization.Reader` the Serialization Mod's generated adapters name. A companion is
+/// seeded once; its units' imports are then followed like any other unit's.
+fn mod_companion_seed_paths(
+    plan: &CompilePlan,
+    roots: &EffectiveCompilationRoots,
+    discovered: &[PathBuf],
+    seeded: &mut HashSet<String>,
+) -> Result<Vec<PathBuf>, AssemblyError> {
+    if plan.dependency_projects.is_empty() {
+        return Ok(Vec::new());
+    }
+    let dependency_packages: HashMap<String, String> = plan
+        .dependency_projects
+        .iter()
+        .map(|dependency| (dependency.dependency_name.clone(), dependency.project_name.clone()))
+        .collect();
+    let mut reached: std::collections::BTreeSet<String> = discovered
+        .iter()
+        .map(|path| package_for_path(path, roots, &plan.project_name, &dependency_packages))
+        .collect();
+    reached.insert(plan.project_name.clone());
+    let companions = crate::mod_host::mod_companion_packages(plan, &reached)
+        .map_err(|error| AssemblyError::ModCompanionPackages { message: format!("{error:#}") })?;
+    let mut seeds = Vec::new();
+    for companion in companions {
+        if !seeded.insert(companion.clone()) {
+            continue;
+        }
+        for entry in roots.dependencies.iter().filter(|entry| {
+            entry.dependency_name.as_ref().and_then(|name| dependency_packages.get(name)) == Some(&companion)
+        }) {
+            let mut paths = Vec::new();
+            collect_bd_files(&entry.source_root, &mut paths);
+            if let Some(generated_root) = entry.source_root.parent().map(|parent| parent.join(".generated"))
+                && generated_root.is_dir()
+            {
+                collect_bd_files(&generated_root, &mut paths);
+            }
+            paths.sort();
+            seeds.extend(paths);
+        }
+    }
+    Ok(seeds)
+}
+
+/// Owner library labels of the plan manifest's `glue` blocks, in declaration order. A plan
+/// without a manifest file on disk (synthetic fixture plans) declares none. Fails closed when the
+/// manifest cannot be read.
+fn manifest_glue_libraries(plan: &CompilePlan) -> Result<Arc<[String]>, AssemblyError> {
+    if !plan.manifest_path.is_file() {
+        return Ok(Arc::from([]));
+    }
+    let manifest = crate::projects::load_manifest_from_path(&plan.manifest_path).map_err(|error| {
+        AssemblyError::GlueOwners { manifest_path: plan.manifest_path.clone(), message: error.to_string() }
+    })?;
+    Ok(manifest.glue.into_iter().map(|owner| owner.library).collect())
+}
+
+/// Effective source roots of the direct path members of an `Aggregate` root project, in manifest
+/// declaration order, or `None` when the plan's manifest is not an `Aggregate`.
+///
+/// Members are the aggregate's `source = path` dependencies; registry and git dependencies are
+/// never members. A path member that the compile plan does not carry as a source dependency is a
+/// `Template` or `Bsol` package with no Beskid source, so it contributes no roots. A plan without
+/// a manifest file on disk (synthetic fixture plans) is not an aggregate. Fails closed when the
+/// manifest cannot be read or a member root cannot be identified unambiguously.
+fn aggregate_member_source_roots(
+    plan: &CompilePlan,
+    roots: &EffectiveCompilationRoots,
+) -> Result<Option<Vec<PathBuf>>, AssemblyError> {
+    if !plan.manifest_path.is_file() {
+        return Ok(None);
+    }
+    let manifest_error =
+        |message: String| AssemblyError::AggregateMembers { manifest_path: plan.manifest_path.clone(), message };
+    let manifest = crate::projects::load_manifest_from_path(&plan.manifest_path)
+        .map_err(|error| manifest_error(error.to_string()))?;
+    if manifest.project.kind != ProjectKind::Aggregate {
+        return Ok(None);
+    }
+    let mut member_roots = Vec::new();
+    for dependency in manifest.dependencies.iter().filter(|dependency| dependency.source == DependencySource::Path) {
+        let relative = dependency.path.as_deref().ok_or_else(|| {
+            manifest_error(format!("member `{}` declares source = path without `path`", dependency.name))
+        })?;
+        let member_manifest = normalize_existing_path(
+            &dependency_manifest_path(&plan.project_root, relative).map_err(|error| manifest_error(error.to_string()))?,
+        );
+        let Some(resolved) = plan
+            .dependency_projects
+            .iter()
+            .find(|project| normalize_existing_path(&project.manifest_path) == member_manifest)
+        else {
+            continue;
+        };
+        let resolved_root = crate::paths::unit_path_key(&resolved.source_root);
+        let effective = match roots
+            .dependencies
+            .iter()
+            .find(|entry| crate::paths::unit_path_key(&entry.source_root) == resolved_root)
+        {
+            Some(entry) => entry,
+            None => {
+                let mut named = roots
+                    .dependencies
+                    .iter()
+                    .filter(|entry| entry.dependency_name.as_deref() == Some(resolved.dependency_name.as_str()));
+                match (named.next(), named.next()) {
+                    (Some(entry), None) => entry,
+                    (None, _) => {
+                        return Err(manifest_error(format!(
+                            "member `{}` has no effective source root in the prepared workspace",
+                            dependency.name
+                        )));
+                    }
+                    (Some(_), Some(_)) => {
+                        return Err(manifest_error(format!(
+                            "member `{}` names more than one effective source root",
+                            dependency.name
+                        )));
+                    }
+                }
+            }
+        };
+        if !member_roots.contains(&effective.source_root) {
+            member_roots.push(effective.source_root.clone());
+        }
+    }
+    Ok(Some(member_roots))
 }

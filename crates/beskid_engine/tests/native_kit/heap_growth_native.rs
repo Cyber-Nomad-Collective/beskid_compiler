@@ -113,17 +113,17 @@ fn run_heap_fixture(label: &str, entry: &str, expected: i64) {
     };
     {
         let mut engine = beskid_engine::Engine::with_runtime_kit(shared.prefix(), target, BuildProfile::Debug).unwrap();
-        engine.compile_artifact(&lowered.artifact).expect("JIT heap-growth artifact");
-        let entrypoint = unsafe { engine.entrypoint_ptr(&lowered.symbol) }.unwrap();
+        engine.compile_artifact(&lowered.artifact()).expect("JIT heap-growth artifact");
+        let entrypoint = unsafe { engine.entrypoint_ptr(&lowered.symbol()) }.unwrap();
         let run: extern "C" fn() -> i64 = unsafe { std::mem::transmute(entrypoint) };
         let observed = run();
         assert_eq!(observed, expected, "{label}: JIT result mismatch");
         eprintln!("{label} JIT execution complete result={observed}");
     }
     let object_path = prefix.path().join(if cfg!(windows) { "heap_growth.obj" } else { "heap_growth.o" });
-    let native_symbol = beskid_codegen::object_link_symbol(&lowered.symbol, &lowered.artifact.exports);
+    let native_symbol = beskid_codegen::object_link_symbol(&lowered.symbol(), &lowered.artifact().exports);
     let mut object = beskid_aot::object_module::BeskidObjectModule::new(None, beskid_aot::BuildProfile::Debug).unwrap();
-    object.compile_artifact_with_exports(&lowered.artifact, &HashSet::from([native_symbol.clone()]), None).unwrap();
+    object.compile_artifact_with_exports(&lowered.artifact(), &HashSet::from([native_symbol.clone()]), None).unwrap();
     object.finalize_to_path(&object_path).unwrap();
     for (mode, library) in [("aot", &kit.static_library), ("native-kit", shared_link_library)] {
         let directory = prefix.path().join(mode);
@@ -175,6 +175,11 @@ fn large_object_alone_allocates_and_reads_back_correctly() {
     // Isolates the dedicated-span path from every other allocation in this fixture, to narrow
     // down whether a failure elsewhere is specific to the large-object path.
     run_heap_fixture("large_object_only", "RunLargeObjectOnly", 11 + 5000);
+}
+
+#[test]
+fn large_object_beyond_next_region_grows_a_region_that_fits_it() {
+    run_heap_fixture("large_object_beyond_next_region", "RunLargeObjectBeyondNextRegion", 8_388_608);
 }
 
 fn size_class_sweep_expected() -> i64 {
@@ -287,9 +292,9 @@ fn build_heap_executable(label: &str, entry: &str) -> (tempfile::TempDir, std::p
     let shared = shared_kit::debug();
     let kit = shared.kit();
     let object_path = prefix.path().join(if cfg!(windows) { "fixture.obj" } else { "fixture.o" });
-    let native_symbol = beskid_codegen::object_link_symbol(&lowered.symbol, &lowered.artifact.exports);
+    let native_symbol = beskid_codegen::object_link_symbol(&lowered.symbol(), &lowered.artifact().exports);
     let mut object = beskid_aot::object_module::BeskidObjectModule::new(None, beskid_aot::BuildProfile::Debug).unwrap();
-    object.compile_artifact_with_exports(&lowered.artifact, &HashSet::from([native_symbol.clone()]), None).unwrap();
+    object.compile_artifact_with_exports(&lowered.artifact(), &HashSet::from([native_symbol.clone()]), None).unwrap();
     object.finalize_to_path(&object_path).unwrap();
     let executable = prefix.path().join(executable_name(&format!("heap-{label}")));
     let mut cc = native_c_compiler();
@@ -375,5 +380,79 @@ fn stress_mode_collecting_before_every_allocation_still_roots_size_class_sweep_c
     let mut command = Command::new(&executable);
     command.env("BESKID_TEST_STRESS_INTERVAL", "1");
     let output = run_bounded("stress_size_classes execution", &mut command, ROUTE_LIMIT);
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+}
+
+// ---- Runtime limits (v06-runtime-limits): growable scheduler tables and environment-driven caps. ----
+
+/// Ten thousand fibers through nested spawn/join chains of 200: the chunked fiber table grows well
+/// past the former 16-record fixed array, and finished slots are reused with advanced generations.
+#[test]
+fn ten_thousand_fibers_run_without_a_fixed_scheduler_table() {
+    run_heap_fixture("many_fibers", "RunManyFibers", 10_000);
+}
+
+/// Runs the `entry` executable with one environment variable set and returns its output.
+fn run_with_environment(label: &str, entry: &str, key: &str, value: &str) -> std::process::Output {
+    let (_prefix, executable) = build_heap_executable(label, entry);
+    let mut command = Command::new(&executable);
+    command.env(key, value);
+    run_bounded(&format!("{label} execution"), &mut command, ROUTE_LIMIT)
+}
+
+/// `BESKID_HEAP_MAX` is read by the runtime inside `process_init` (not by the host), so the hand-rolled
+/// `heap_growth.c` host observes it too: a 2 MiB cap makes the 3 MiB probe trap as `out_of_memory`.
+#[test]
+fn heap_max_environment_caps_the_heap_at_process_init() {
+    let output = run_with_environment("env-heap-max", "RunCapProbe", "BESKID_HEAP_MAX", "2m");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(output.status.code(), Some(101), "cap exhaustion must exit through the trap path: {stderr}");
+    assert!(stderr.contains(TRAP_DIAGNOSTIC_PREFIX), "{stderr}");
+    assert!(stderr.contains("out_of_memory (5)"), "{stderr}");
+    assert!(stderr.contains("cap=2097152"), "{stderr}");
+}
+
+#[test]
+fn heap_max_environment_rejects_malformed_text() {
+    let output = run_with_environment("env-heap-max-text", "RunCapProbe", "BESKID_HEAP_MAX", "abc");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(output.status.code(), Some(101), "a malformed cap is a fatal configuration error: {stderr}");
+    assert!(stderr.contains("BESKID_HEAP_MAX"), "the trap names the variable: {stderr}");
+}
+
+#[test]
+fn heap_max_environment_rejects_a_cap_below_the_initial_region() {
+    let output = run_with_environment("env-heap-max-small", "RunCapProbe", "BESKID_HEAP_MAX", "512K");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(output.status.code(), Some(101), "a cap below the committed heap is rejected: {stderr}");
+    assert!(stderr.contains("BESKID_HEAP_MAX"), "the trap names the variable: {stderr}");
+}
+
+#[test]
+fn fiber_stack_max_environment_is_applied_to_new_fibers() {
+    let output = run_with_environment("env-stack-max", "RunFiberHeapInteraction", "BESKID_FIBER_STACK_MAX", "1M");
+    assert!(output.status.success(), "a 1 MiB per-fiber reservation runs the fiber fixture: {}", String::from_utf8_lossy(&output.stderr));
+}
+
+#[test]
+fn fiber_stack_max_environment_rejects_a_value_that_is_not_a_whole_initial_commit() {
+    let output = run_with_environment("env-stack-max-bad", "RunFiberHeapInteraction", "BESKID_FIBER_STACK_MAX", "100000");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(output.status.code(), Some(101), "a misaligned stack maximum is a fatal configuration error: {stderr}");
+    assert!(stderr.contains("BESKID_FIBER_STACK_MAX"), "the trap names the variable: {stderr}");
+}
+
+/// Opt-in (`BESKID_TEST_HEAP_BEYOND_1GIB=1`): with no `BESKID_HEAP_MAX` the heap has no fixed cap, so a
+/// program keeping a little over 1 GiB reachable completes. Skipped by default to protect shared builders.
+#[test]
+fn heap_grows_beyond_one_gib_when_opted_in() {
+    if std::env::var_os("BESKID_TEST_HEAP_BEYOND_1GIB").is_none() {
+        eprintln!("heap_grows_beyond_one_gib_when_opted_in: skipped (set BESKID_TEST_HEAP_BEYOND_1GIB=1)");
+        return;
+    }
+    let (_prefix, executable) = build_heap_executable("beyond-1gib", "RunBeyondOneGiB");
+    let mut command = Command::new(&executable);
+    command.env_remove("BESKID_HEAP_MAX");
+    let output = run_bounded("beyond_1gib execution", &mut command, Duration::from_secs(600));
     assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
 }

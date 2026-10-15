@@ -510,3 +510,99 @@ fn exact_canonical_runtime_corpus_resolves_bootstrap_helpers_but_ordinary_assemb
         "ordinary assemblies retain explicit-import-only cross-unit resolution"
     );
 }
+
+#[test]
+fn canonical_float_bits_roundtrip_preserves_ieee_payloads() {
+    use cranelift_codegen::{isa, settings};
+    use cranelift_jit::{JITBuilder, JITModule};
+    use cranelift_module::{Linkage, Module, default_libcall_names};
+    let mut db = BeskidDatabase::default();
+    let corpus = CanonicalRuntimeCorpus::materialize();
+    let target = beskid_abi::runtime_kit::host_runtime_target().unwrap();
+    let manifest = AbiManifestV5::canonical_runtime(target.clone());
+    let typed = canonical_typed_program(&mut db, &corpus, SyntaxGenerationId(201), &manifest);
+    let native_root = AstNodeKey {
+        unit: SourceUnitId::new(&db, corpus.unit_path(CANONICAL_BOOTSTRAP_NATIVE_SOURCE_PATH)),
+        generation: typed.generation,
+        node: AstNodeId(0),
+    };
+    let roots = canonical_unit_roots(&db, &typed);
+    let input = CodegenInput::new(&db, typed, Arc::from(roots), target, manifest).unwrap();
+    let names = ["FloatToBits32", "FloatFromBits32", "FloatToBits64", "FloatFromBits64"];
+    let items = names
+        .iter()
+        .map(|name| {
+            let key = find_node_matching(&db, native_root, IndexedNodeKind::FunctionDefinition, |key| {
+                item_name(&db, key).ok().flatten().as_deref() == Some(*name)
+            })
+            .unwrap_or_else(|| panic!("missing canonical float bit service {name}"));
+            beskid_codegen::SyntaxModuleItem { key, symbol: name.to_string() }
+        })
+        .collect::<Vec<_>>();
+    let isa =
+        isa::lookup(target_lexicon::Triple::host()).unwrap().finish(settings::Flags::new(settings::builder())).unwrap();
+    let artifact = beskid_codegen::lower_syntax_program(&input, isa.as_ref(), &items).unwrap();
+    let mut module = JITModule::new(JITBuilder::new(default_libcall_names()).unwrap());
+    let mut ids = Vec::new();
+    for function in &artifact.functions {
+        assert!(
+            function.function.display().to_string().contains("bitcast"),
+            "float bit service must reinterpret rather than convert"
+        );
+        let id = module.declare_function(&function.name, Linkage::Export, &function.function.signature).unwrap();
+        let mut context = module.make_context();
+        context.func = function.function.clone();
+        module.define_function(id, &mut context).unwrap();
+        ids.push((function.name.clone(), id));
+    }
+    module.finalize_definitions().unwrap();
+    let address = |name: &str| module.get_finalized_function(ids.iter().find(|(n, _)| n == name).unwrap().1);
+    let from32: unsafe extern "C" fn(u32) -> f32 = unsafe { std::mem::transmute(address("FloatFromBits32")) };
+    let to32: unsafe extern "C" fn(f32) -> u32 = unsafe { std::mem::transmute(address("FloatToBits32")) };
+    let from64: unsafe extern "C" fn(u64) -> f64 = unsafe { std::mem::transmute(address("FloatFromBits64")) };
+    let to64: unsafe extern "C" fn(f64) -> u64 = unsafe { std::mem::transmute(address("FloatToBits64")) };
+    for bits in [0_u32, 0x80000000, 1, 0x007fffff, 0x00800000, 0x3f800000, 0x7f7fffff, 0x7f800000, 0x7fc01234] {
+        assert_eq!(unsafe { to32(from32(bits)) }, bits);
+    }
+    for bits in [
+        0_u64,
+        0x8000000000000000,
+        1,
+        0x000fffffffffffff,
+        0x0010000000000000,
+        0x3ff0000000000000,
+        0x7fefffffffffffff,
+        0x7ff0000000000000,
+        0x7ff8000000001234,
+    ] {
+        assert_eq!(unsafe { to64(from64(bits)) }, bits);
+    }
+}
+
+#[test]
+fn float_bits_services_keep_exact_abi_and_hidden_intrinsics_are_not_ambient() {
+    use beskid_abi::runtime_source::{
+        CorelibServiceAbiType, canonical_corelib_service_abi, canonical_corelib_service_capability,
+    };
+    let manifest = AbiManifestV5::canonical_runtime(linux_target());
+    let capability = canonical_corelib_service_capability(&manifest).unwrap();
+    for (name, input_type, result_type) in [
+        ("float_to_bits32", CorelibServiceAbiType::F32, CorelibServiceAbiType::U32),
+        ("float_from_bits32", CorelibServiceAbiType::U32, CorelibServiceAbiType::F32),
+        ("float_to_bits64", CorelibServiceAbiType::F64, CorelibServiceAbiType::U64),
+        ("float_from_bits64", CorelibServiceAbiType::U64, CorelibServiceAbiType::F64),
+    ] {
+        let service = capability.service_for_source("Core/Numeric/FloatBits.bd", &format!("__{name}")).unwrap();
+        let abi = canonical_corelib_service_abi(service).unwrap();
+        assert_eq!(abi.parameters, vec![input_type]);
+        assert_eq!(abi.result, result_type);
+        assert!(capability.service_for_source("Core/String/Core.bd", &format!("__{name}")).is_none());
+        let (db, typed, root, target) =
+            super::support::input_fixture_with_source(&format!("unit Main() {{ {name}(0); return; }}"));
+        let input =
+            CodegenInput::new(&db, typed, Arc::from([root]), target.clone(), AbiManifestV5::canonical_runtime(target))
+                .unwrap();
+        let call = find_node(&db, root, IndexedNodeKind::CallExpression).unwrap();
+        assert!(input.runtime_intrinsic_for(call, name).is_none());
+    }
+}

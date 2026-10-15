@@ -1,4 +1,4 @@
-use beskid_abi::{ModCollectRequest, ModGenerationRequest};
+use super::super::context::{ModCollectRequest, ModGenerationRequest};
 
 use super::super::types::ContractRegistration;
 use super::outcomes::{AnalyzerOutcome, CollectorOutcome, GeneratorOutcome, RewriterOutcome};
@@ -10,12 +10,14 @@ pub trait ContractInvoker: Send + Sync {
         &self,
         registration: &ContractRegistration,
         request: &ModCollectRequest,
+        _authority: Option<&dyn crate::mod_host::ModSemanticAuthority>,
     ) -> Result<CollectorOutcome, ContractInvocationError>;
 
     fn invoke_generator(
         &self,
         registration: &ContractRegistration,
         request: &ModGenerationRequest,
+        _authority: Option<&dyn crate::mod_host::ModSemanticAuthority>,
     ) -> Result<GeneratorOutcome, ContractInvocationError>;
 
     fn invoke_analyzer(
@@ -23,12 +25,14 @@ pub trait ContractInvoker: Send + Sync {
         registration: &ContractRegistration,
         request: &ModCollectRequest,
         snapshot: Option<&crate::services::SemanticSnapshot>,
+        _authority: Option<&dyn crate::mod_host::ModSemanticAuthority>,
     ) -> Result<AnalyzerOutcome, ContractInvocationError>;
 
     fn invoke_rewriter(
         &self,
         registration: &ContractRegistration,
         request: &ModCollectRequest,
+        _authority: Option<&dyn crate::mod_host::ModSemanticAuthority>,
     ) -> Result<RewriterOutcome, ContractInvocationError>;
 }
 
@@ -39,6 +43,17 @@ pub struct ContractInvocationError {
     pub contract_id: String,
     pub type_id: String,
     pub message: String,
+}
+
+impl ContractInvocationError {
+    /// Attributes the failure to the Mod package that declared the registration.
+    ///
+    /// Invokers dispatch a registration and do not own package identity; the Mod host, which
+    /// scheduled the registration from a loaded artifact, is the authority for it.
+    pub(crate) fn attributed_to(mut self, package_id: &str) -> Self {
+        self.package_id = package_id.to_owned();
+        self
+    }
 }
 
 impl std::fmt::Display for ContractInvocationError {

@@ -25,6 +25,7 @@ use crate::session::lifecycle::{
     apply_persistence_config, persistence_config_from_configuration, persistence_config_from_value,
     publish_diagnostics_for_uri, remove_document, save_snapshot_now, schedule_persistence_snapshot_save, set_document,
 };
+use crate::session::mod_host::mod_host_from_initialization_options;
 use crate::session::store::State;
 use crate::text_sync::apply_document_changes;
 use crate::workspace_scan::{
@@ -123,6 +124,13 @@ impl LanguageServer for Backend {
         *self.workspace_roots.write().await = roots;
 
         if let Some(options) = params.initialization_options {
+            // Validate the Mod host first: an invalid selection fails initialization rather than
+            // silently running Mods in the installed toolchain.
+            if let Some(mod_host) = mod_host_from_initialization_options(&options).map_err(|error| {
+                tower_lsp_server::jsonrpc::Error::invalid_params(format!("invalid `modHost` option: {error:#}"))
+            })? {
+                self.state.write().await.mod_host = mod_host;
+            }
             if let Some(level) = options.get("logLevel").and_then(|v| v.as_str()) {
                 *self.log_filter.write().await = ClientLogFilter::parse(level);
             }

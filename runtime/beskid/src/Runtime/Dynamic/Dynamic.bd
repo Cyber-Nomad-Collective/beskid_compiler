@@ -1,67 +1,67 @@
-// Canonical Beskid dynamic dispatch primitives.
-//
-// DynamicCell wraps a heap-allocated value with a shape ID for checked casts.
-// AOT mappings and fallback dispatch route through registered shape tables.
+// Checked implementation shares the exact public canonical nominal identities.
+use Core.Results;
+use Core.Dynamic;
 
-// Dynamic status discriminants (ABI-stable 0-4).
-const DYNAMIC_STATUS_OK = 0;
-const DYNAMIC_STATUS_ERR_INCOMPATIBLE = 1;
-const DYNAMIC_STATUS_ERR_NULL_PAYLOAD = 2;
-const DYNAMIC_STATUS_ERR_UNKNOWN_SRC_SHAPE = 3;
-const DYNAMIC_STATUS_ERR_UNKNOWN_DST_SHAPE = 4;
-
-// Dynamic dispatch status — enum-with-arguments for the logical type.
-pub enum DynamicStatus {
-    Ok,
-    ErrIncompatible(i64 srcTag, i64 dstTag),
-    ErrNullPayload,
-    ErrUnknownSrcShape(i64 tag),
-    ErrUnknownDstShape(i64 tag),
+[Extern(Abi:"C", Library:"beskid_runtime")]
+contract DynamicBridgeV1 {
+    DynamicValueV1 beskid_dynamic_v1_create_owned(DynamicPayloadV1 payload, u64 tag, pointer status);
+    DynamicPayloadV1 beskid_dynamic_v1_cast_owned(DynamicValueV1 value, u64 tag, pointer status);
+    DynamicValueV1 beskid_dynamic_v1_map_owned(DynamicValueV1 value, u64 mapping, pointer status);
 }
 
-const DynamicCellSize = 32;
+pub bool DynamicStatusBufferValidV1(pointer status) { return status != NativePointer(0); }
 
-[Export(Abi:"C", Symbol:"dynamic_cast_checked")]
-pub i32 DynamicCastChecked(pointer cell, i32 expectedShapeId) {
-    if cell == NativePointer(0) { return DYNAMIC_STATUS_ERR_NULL_PAYLOAD; }
-    i32 actualId = i32(raw_word_load(pointer_add(cell, 16)));
-    if actualId == expectedShapeId { return DYNAMIC_STATUS_OK; }
-    return DYNAMIC_STATUS_ERR_INCOMPATIBLE;
+DynamicErrorV1 DynamicErrorFromStatusV1(word status) {
+    if status == 1 { return DynamicErrorV1::Invalid; }
+    if status == 4 { return DynamicErrorV1::Busy; }
+    return DynamicErrorV1::Foreign;
 }
 
-[Export(Abi:"C", Symbol:"dynamic_cell_create")]
-pub pointer DynamicCellCreate(pointer value, pointer descriptor) {
-    if value == NativePointer(0) { return NativePointer(0); }
-    pointer cell = Alloc(DynamicCellSize, NativePointer(0));
-    if cell == NativePointer(0) { return NativePointer(0); }
-    raw_word_store(cell, NativeWord(value));
-    raw_word_store(pointer_add(cell, 8), NativeWord(descriptor));
-    raw_word_store(pointer_add(cell, 16), 0);
-    raw_word_store(pointer_add(cell, 24), 0);
-    return cell;
+// The checked native dispatcher owns `status` on its native stack. These exact
+// source helpers are cloned with allocation/root guards before every Result store.
+Result<DynamicValueV1, DynamicErrorV1> DynamicCreateResultFactoryV1(DynamicPayloadV1 payload, u64 tag, pointer status) {
+    raw_word_store(status, 1);
+    DynamicValueV1 value = DynamicBridgeV1.beskid_dynamic_v1_create_owned(payload, tag, status);
+    word code = raw_word_load(status);
+    if code != 0 { return Result::Error(DynamicErrorFromStatusV1(code)); }
+    return Result::Ok(value);
+}
+Result<DynamicPayloadV1, DynamicErrorV1> DynamicCastResultFactoryV1(DynamicValueV1 value, u64 tag, pointer status) {
+    raw_word_store(status, 1);
+    DynamicPayloadV1 payload = DynamicBridgeV1.beskid_dynamic_v1_cast_owned(value, tag, status);
+    word code = raw_word_load(status);
+    if code != 0 { return Result::Error(DynamicErrorFromStatusV1(code)); }
+    return Result::Ok(payload);
+}
+Result<DynamicValueV1, DynamicErrorV1> DynamicMapResultFactoryV1(DynamicValueV1 value, u64 mapping, pointer status) {
+    raw_word_store(status, 1);
+    DynamicValueV1 mapped = DynamicBridgeV1.beskid_dynamic_v1_map_owned(value, mapping, status);
+    word code = raw_word_load(status);
+    if code != 0 { return Result::Error(DynamicErrorFromStatusV1(code)); }
+    return Result::Ok(mapped);
 }
 
-[Export(Abi:"C", Symbol:"dynamic_cell_wrap")]
-pub pointer DynamicCellWrap(pointer value, pointer descriptor) {
-    return DynamicCellCreate(value, descriptor);
+[Export(Abi:"C", Symbol:"beskid_dynamic_v1_create_result")]
+pub Result<DynamicValueV1, DynamicErrorV1> DynamicCreateResultV1(DynamicPayloadV1 payload, u64 tag) {
+    pointer status = SystemAllocate(8, 8);
+    if DynamicStatusBufferValidV1(status) == false { return Result::Error(DynamicErrorV1::Allocation); }
+    Result<DynamicValueV1, DynamicErrorV1> result = DynamicCreateResultFactoryV1(payload, tag, status);
+    SystemFree(status, 8);
+    return result;
 }
-
-[Export(Abi:"C", Symbol:"dynamic_map_aot")]
-pub pointer DynamicMapAot(pointer cell, pointer mapping) {
-    if cell == NativePointer(0) { return NativePointer(0); }
-    return NativePointer(raw_word_load(cell));
+[Export(Abi:"C", Symbol:"beskid_dynamic_v1_cast_result")]
+pub Result<DynamicPayloadV1, DynamicErrorV1> DynamicCastResultV1(DynamicValueV1 value, u64 tag) {
+    pointer status = SystemAllocate(8, 8);
+    if DynamicStatusBufferValidV1(status) == false { return Result::Error(DynamicErrorV1::Allocation); }
+    Result<DynamicPayloadV1, DynamicErrorV1> result = DynamicCastResultFactoryV1(value, tag, status);
+    SystemFree(status, 8);
+    return result;
 }
-
-[Export(Abi:"C", Symbol:"dynamic_map_fallback")]
-pub pointer DynamicMapFallback(pointer cell, pointer mapping) {
-    if cell == NativePointer(0) { return NativePointer(0); }
-    return NativePointer(raw_word_load(cell));
-}
-
-[Export(Abi:"C", Symbol:"dynamic_object_alloc")]
-pub pointer DynamicObjectAlloc(pointer descriptor) {
-    if descriptor == NativePointer(0) { return NativePointer(0); }
-    word size = TypeDescriptorSize(descriptor);
-    if size == 0 { return NativePointer(0); }
-    return Alloc(size, descriptor);
+[Export(Abi:"C", Symbol:"beskid_dynamic_v1_map_result")]
+pub Result<DynamicValueV1, DynamicErrorV1> DynamicMapResultV1(DynamicValueV1 value, u64 mapping) {
+    pointer status = SystemAllocate(8, 8);
+    if DynamicStatusBufferValidV1(status) == false { return Result::Error(DynamicErrorV1::Allocation); }
+    Result<DynamicValueV1, DynamicErrorV1> result = DynamicMapResultFactoryV1(value, mapping, status);
+    SystemFree(status, 8);
+    return result;
 }

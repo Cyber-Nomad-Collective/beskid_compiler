@@ -1,17 +1,16 @@
-//! Generic mod.generate output materialization tests.
+//! Generic mod.generate output materialization tests: typed items only.
 
 use std::fs;
 use std::path::PathBuf;
 
 use beskid_analysis::mod_host::{
-    CodeGenerateOutput, GenerateOutputFile, GenerateOutputLayout, materialize_program_items,
-    write_code_generate_output, write_typed_generate_output,
+    GenerateOutputFile, GenerateOutputLayout, materialize_program_items, write_typed_generate_output,
 };
 
 #[test]
-fn write_code_generate_output_honors_layout_manifest() {
-    let package = unique_temp_dir("mod_code_generate_output_layout");
-    fs::create_dir_all(&package).expect("mkdir");
+fn write_typed_generate_output_v2_renders_items_under_package_generated_root() {
+    let package = unique_temp_dir("mod_generate_output_v2");
+    let items = materialize_program_items(["pub i64 Demo() { return 1; }"]).expect("materialize");
     let layout = GenerateOutputLayout {
         schema_version: 2,
         files: vec![GenerateOutputFile {
@@ -23,13 +22,7 @@ fn write_code_generate_output_honors_layout_manifest() {
             package_id: String::new(),
         }],
     };
-    write_code_generate_output(
-        None,
-        &package,
-        &layout,
-        &[CodeGenerateOutput { module_path: String::new(), body: "pub i64 Demo() { return 1; }".into() }],
-    )
-    .expect("write");
+    write_typed_generate_output(None, &package, &package.join("Generated"), &items, &layout).expect("write");
     let written = fs::read_to_string(package.join(".generated/Core/Text/Regex/Generated.g.bd")).expect("read");
     assert!(written.starts_with("// layout test\n"));
     assert!(written.contains("pub i64 Demo()"));
@@ -37,7 +30,7 @@ fn write_code_generate_output_honors_layout_manifest() {
 }
 
 #[test]
-fn write_typed_generate_output_honors_layout_manifest() {
+fn write_typed_generate_output_v1_honors_layout_manifest() {
     let items = materialize_program_items([
         "pub contract DemoStep { DemoStep Run(); }",
         "pub type DemoFluent { i64 inner }",
@@ -56,14 +49,27 @@ fn write_typed_generate_output_honors_layout_manifest() {
         }],
     };
     let output = unique_temp_dir("mod_generate_output_layout");
-    write_typed_generate_output(&output, &items, Some(&layout)).expect("write");
+    write_typed_generate_output(None, &output, &output, &items, &layout).expect("write");
     let written = fs::read_to_string(output.join("Demo.bd")).expect("read");
     assert!(written.starts_with("// layout test\n"));
     assert!(written.contains("pub contract DemoStep"));
     let _ = fs::remove_dir_all(output);
 }
 
+/// The checked-in Pest Mod layout declares one v2 file owned by Foundation; it receives every
+/// typed item and needs no source-text contribution.
+#[test]
+fn corelib_pest_gen_layout_is_a_single_typed_v2_file() {
+    let layout = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../corelib/mods/corelib_pest_gen/generate.layout.json");
+    let layout = beskid_analysis::mod_host::load_generate_output_layout(&layout).expect("Pest Mod layout");
+    assert_eq!(layout.schema_version, 2);
+    assert_eq!(layout.files.len(), 1);
+    assert_eq!(layout.files[0].item_count, 0, "a single v2 file receives every generated item");
+    assert_eq!(layout.files[0].module_path, "Core.Text.Regex.Generated");
+    assert_eq!(layout.files[0].package_id, "corelib_foundation");
+}
+
 fn unique_temp_dir(prefix: &str) -> PathBuf {
     let id = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).expect("time").as_nanos();
-    std::env::temp_dir().join(format!("{prefix}_{id}"))
+    std::env::temp_dir().join(format!("{prefix}_{}_{id}", std::process::id()))
 }

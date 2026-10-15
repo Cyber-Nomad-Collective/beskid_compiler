@@ -20,6 +20,21 @@ pub pointer SystemAllocate(word size, word alignment) {
     return system_allocate(size, alignment);
 }
 
+// Native scratch belongs to a witnessed checked operation, rather than the collector's
+// root-stack growth. Preserve ordinary null returns while retaining checked exhaustion.
+// Keeping this separate avoids relabeling a root-admission failure as native scratch OOM.
+pub pointer SystemAllocateScratch(word size, word alignment) {
+    if CheckedScopeFailureReason() != 0 {
+        return NativePointer(0);
+    }
+    pointer result = SystemAllocate(size, alignment);
+    if result == NativePointer(0) && size != 0 && alignment != 0 &&
+       (alignment & (alignment - 1)) == 0 {
+        CheckedScopeRecordFailure(2);
+    }
+    return result;
+}
+
 // Releases storage previously obtained from [`SystemAllocate`].
 //
 // The manifest owns the size-only release contract.  This wrapper must not infer ownership or
@@ -55,3 +70,15 @@ pub bool WorkerPoll(pointer request) { return worker_poll(request) != 0; }
 pub never Trap(u8 code, pointer message, word messageLength) {
     trap(code, message, messageLength);
 }
+
+[Export(Abi:"C", Symbol:"beskid_rt_v5_float_to_bits32")]
+pub u32 FloatToBits32(f32 value) { return float_to_bits32(value); }
+
+[Export(Abi:"C", Symbol:"beskid_rt_v5_float_from_bits32")]
+pub f32 FloatFromBits32(u32 value) { return float_from_bits32(value); }
+
+[Export(Abi:"C", Symbol:"beskid_rt_v5_float_to_bits64")]
+pub u64 FloatToBits64(f64 value) { return float_to_bits64(value); }
+
+[Export(Abi:"C", Symbol:"beskid_rt_v5_float_from_bits64")]
+pub f64 FloatFromBits64(u64 value) { return float_from_bits64(value); }

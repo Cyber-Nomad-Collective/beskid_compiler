@@ -143,6 +143,7 @@ pub struct RuntimeKitBuildRequest {
 
 #[derive(Debug)]
 pub enum RuntimeKitBuildError {
+    InvalidGlueProvider(String),
     InvalidTarget(TargetValidationError),
     InvalidSourceHash,
     InvalidArtifactSet { target: String },

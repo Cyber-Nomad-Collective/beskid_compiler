@@ -102,8 +102,8 @@ impl SemanticIssueKind {
             }
             Self::MatchGuardMustBeBoolean => "match guard must be boolean".to_string(),
             Self::MatchArmTypeMismatch { .. } => "match arm type mismatch".to_string(),
-            Self::MatchNonExhaustive { enum_name } => {
-                format!("non-exhaustive match on enum `{enum_name}`")
+            Self::MatchNonExhaustive { enum_name, missing_pattern } => {
+                format!("non-exhaustive match on enum `{enum_name}`: `{missing_pattern}` not covered")
             }
             Self::DuplicatePatternBinding { name } => {
                 format!("duplicate pattern binding `{name}`")
@@ -131,9 +131,7 @@ impl SemanticIssueKind {
             Self::ResolveDuplicateLocal { name, .. } => format!("duplicate local `{name}`"),
             Self::ResolveUnknownValue { name } => format!("unknown value `{name}`"),
             Self::ResolveUnknownType { name } => format!("unknown type `{name}`"),
-            Self::ResolveUnknownModulePath { path } => {
-                format!("unknown module path `{path}`")
-            }
+            Self::ResolveUnknownModulePath { path } => format!("unknown module path `{path}`"),
             Self::ResolveUnknownValueInModule { module_path, name } => {
                 format!("unknown value `{name}` in module `{module_path}`")
             }
@@ -143,9 +141,18 @@ impl SemanticIssueKind {
             Self::ResolveInvalidConformanceTarget { name } => {
                 format!("type conformances must target contracts, but `{name}` is not a contract")
             }
+            Self::ResolvePrivateRuntimeBuiltin { name } => {
+                format!("`{name}` is a private runtime builtin and cannot be called from this source unit")
+            }
             Self::ResolvePrivateItemInModule { module_path, name } => {
                 format!("private item `{name}` cannot be accessed from module `{module_path}`")
             }
+            Self::ResolveAmbiguousModulePath { path, candidates } => {
+                format!("ambiguous module path `{path}`: {candidates} assembled modules declare it")
+            }
+            Self::ResolveAmbiguousItemInModule { module_path, name, candidates } => format!(
+                "ambiguous item `{name}` in module `{module_path}`: {candidates} re-exported items share the name"
+            ),
             Self::ResolveShadowedLocal { name, .. } => format!("shadowed local `{name}`"),
             Self::MissingImport { name, module_path } => {
                 format!("unresolved name `{name}` — did you mean to import `{module_path}::{name}`?")
@@ -206,6 +213,9 @@ impl SemanticIssueKind {
             }
             Self::TypeUnknownCallTarget => "unknown call target".to_string(),
             Self::TypeInvalidBinaryOp => "invalid binary operation".to_string(),
+            Self::TypeStringConcatOperandNotConvertible { found } => {
+                format!("a value of type `{found}` cannot be concatenated or interpolated into a string")
+            }
             Self::TypeInvalidUnaryOp => "invalid unary operation".to_string(),
             Self::TypeNonBoolCondition => "non-boolean condition".to_string(),
             Self::TypeUnsupportedExpression => "unsupported expression".to_string(),
@@ -426,6 +436,22 @@ impl SemanticIssueKind {
             Self::NamingNotCamelCaseMacro { name } => {
                 format!("macro `{name}` should use lowerCamelCase")
             }
+            Self::NumericLiteralOutOfRange { primitive } => {
+                format!("numeric literal outside {primitive} range")
+            }
+            Self::ExternInvalidAbi { .. } => "invalid extern ABI; only Abi:\"C\" is supported".to_string(),
+            Self::ExternMissingLibrary => "extern contract missing Library".to_string(),
+            Self::ExternDisallowedParamType { method, .. } => {
+                format!("extern param type not allowed in `{method}`")
+            }
+            Self::ExternDisallowedReturnType { method, .. } => {
+                format!("extern return type not allowed in `{method}`")
+            }
+            Self::GlueBindingRejected { method, .. } => {
+                format!("Glue binding rejected for extern method `{method}`")
+            }
+            Self::ExternInvalidOptional { .. } => "invalid optional extern contract".to_string(),
+            Self::InvalidClifBlock { .. } => "invalid clif block".to_string(),
         }
     }
 }

@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use beskid_abi::runtime_source::{
-    CANONICAL_FOUNDATION_DEADLINE_SOURCE_PATH, CorelibService, CorelibServiceCapability, RuntimeIntrinsicCapability,
-    canonical_corelib_deadline_source, canonical_corelib_service_sources, corelib_service_source_identity,
+    CorelibService, CorelibServiceCapability, RuntimeIntrinsicCapability, canonical_corelib_deadline_source,
+    canonical_corelib_private_field_sources, canonical_corelib_service_sources, corelib_service_source_identity,
     corelib_source_locations_match,
 };
 use beskid_analysis::projects::ProgramAssembly;
@@ -10,7 +10,7 @@ use beskid_analysis::syntax::SyntaxGenerationId;
 
 use crate::{BeskidDatabase, Db, ProjectSession, SemanticError, SourceUnitId, TypedProgram};
 
-const CANONICAL_RUNTIME_CORPUS_BINDING: &str = "__beskid_canonical_runtime";
+pub(crate) const CANONICAL_RUNTIME_CORPUS_BINDING: &str = "__beskid_canonical_runtime";
 
 /// Return the existing owner of a prepared syntax assembly when it has already
 /// been registered in this database, otherwise mint the first owner for it.
@@ -90,6 +90,14 @@ pub fn build_typed_program(
     if generation != assembly.generation {
         return Err(SemanticError::new("typed-program generation does not match ProgramAssembly generation"));
     }
+    let started = std::time::Instant::now();
+    assembly.package_identities().validate().map_err(|error| SemanticError::new(error.to_string()))?;
+    for unit in assembly.units.iter() {
+        assembly
+            .package_identities()
+            .validate_source(&unit.path, &unit.source)
+            .map_err(|error| SemanticError::new(error.to_string()))?;
+    }
     let generation = assembly.generation;
     let entry_unit = assembly
         .units
@@ -98,50 +106,102 @@ pub fn build_typed_program(
 
     for unit in assembly.units.iter() {
         let identity = SourceUnitId::new(db, unit.path.clone());
-        db.ensure_expanded_syntax_unit(
-            project,
-            identity,
-            generation,
-            unit.source.clone(),
-            Arc::new(unit.program.clone()),
-        )?;
+        let input =
+            db.ensure_borrowed_expanded_syntax_unit(project, identity, generation, &unit.source, &unit.program)?;
+        let public_dynamic = assembly.is_canonical_public_dynamic_unit(unit);
+        // A registration this call left current keeps the authority it was granted for the same
+        // source bytes and the same tree; only a new revision re-proves it against a fresh parse.
+        let granted = input.revision(db);
+        let granted_tree =
+            |granted: &crate::semantic_contract::SyntaxUnitRevision| *granted.expanded_program == unit.program;
+        let dynamic_granted = public_dynamic
+            && granted.runtime_source_authority.as_deref()
+                == Some(beskid_abi::runtime_source::CANONICAL_PUBLIC_DYNAMIC_SOURCE_PATH)
+            && granted_tree(granted);
+        let granted_sdk_authority = granted.sdk_source_authority.clone().filter(|_| granted_tree(granted));
+        if public_dynamic && !dynamic_granted {
+            let parsed = beskid_analysis::services::parse_program_with_source_name_and_diagnostics(
+                &unit.logical_name,
+                &unit.source,
+            )
+            .map_err(|error| SemanticError::new(format!("canonical Dynamic source parse: {error}")))?;
+            if parsed.recovered || !parsed.diagnostics.is_empty() || parsed.program != unit.program {
+                return Err(SemanticError::new(
+                    "Dynamic source bytes do not authorize a modified/recovered syntax tree",
+                ));
+            }
+            let input =
+                db.syntax_unit(identity).ok_or_else(|| SemanticError::new("Dynamic source is not registered"))?;
+            let mut revision = input.revision(db).as_ref().clone();
+            revision.runtime_source_authority =
+                Some(Arc::from(beskid_abi::runtime_source::CANONICAL_PUBLIC_DYNAMIC_SOURCE_PATH));
+            use salsa::Setter;
+            input.set_revision(db).to(Arc::new(revision));
+        }
+        // Correspondence is not execution authority. The native adapter separately validates
+        // the complete SDK closure and issues the host-callback capability.
+        let canonical = beskid_abi::sdk_source::canonical_sdk_sources().iter().find(|expected| {
+            expected.path().ends_with(".bd")
+                && expected.bytes() == unit.source.as_bytes()
+                && unit
+                    .path
+                    .ends_with(std::path::Path::new(expected.path().strip_prefix("src/").unwrap_or(expected.path())))
+        });
+        if let Some(expected) = canonical
+            && granted_sdk_authority.as_deref() != Some(expected.path())
+        {
+            let parsed = beskid_analysis::services::parse_program_with_source_name_and_diagnostics(
+                &unit.logical_name,
+                &unit.source,
+            )
+            .map_err(|error| SemanticError::new(format!("canonical SDK source parse: {error}")))?;
+            if parsed.recovered || !parsed.diagnostics.is_empty() || parsed.program != unit.program {
+                return Err(SemanticError::new("SDK source bytes do not authorize a modified/recovered syntax tree"));
+            }
+            let input = db.syntax_unit(identity).ok_or_else(|| SemanticError::new("SDK source is not registered"))?;
+            let mut revision = input.revision(db).as_ref().clone();
+            revision.sdk_source_authority = Some(Arc::from(expected.path()));
+            use salsa::Setter;
+            input.set_revision(db).to(Arc::new(revision));
+        }
+    }
+
+    {
+        let mut registry = db.syntax_dependency_registry().lock().expect("syntax dependency registry");
+        let proof = assembly.package_identities();
+        let key = (project, generation);
+        if let Some(existing) = registry.package_identities.get(&key) {
+            if existing != proof {
+                return Err(SemanticError::new("package proof differs from registered project generation"));
+            }
+        } else {
+            registry.package_identities.insert(key, proof.clone());
+        }
     }
 
     let mut module_units = std::collections::HashMap::<Vec<String>, Vec<SourceUnitId>>::new();
-    let mut corelib_local_modules = std::collections::HashSet::<Vec<String>>::new();
-    let mut corelib_shard_units = std::collections::HashSet::<SourceUnitId>::new();
     for unit in assembly.units.iter() {
-        let Some(module_path) =
-            beskid_analysis::projects::infer_logical_module_path(unit, &assembly.roots, assembly.has_std_dependency)
-        else {
+        let Some(module_path) = beskid_analysis::projects::infer_logical_module_path(unit, &assembly.roots) else {
             continue;
         };
         let unit_id = SourceUnitId::new(db, unit.path.clone());
-        let corelib_shard = assembly.has_std_dependency
-            && assembly.roots.dependencies.iter().any(|root| {
-                root.dependency_name.as_deref().is_some_and(|name| name.starts_with("corelib_"))
-                    && unit.origin_path.starts_with(&root.source_root)
-            });
-        if corelib_shard && module_path.first().is_some_and(|segment| segment == "Std") && module_path.len() > 1 {
-            corelib_shard_units.insert(unit_id);
-            let local_path = module_path[1..].to_vec();
-            corelib_local_modules.insert(local_path.clone());
-            let units = module_units.entry(local_path).or_default();
-            if !units.contains(&unit_id) {
-                units.push(unit_id);
-            }
-        }
         let units = module_units.entry(module_path).or_default();
         if !units.contains(&unit_id) {
             units.push(unit_id);
         }
     }
     let mut registry = db.syntax_dependency_registry().lock().expect("syntax dependency registry");
-    for (path, units) in &module_units {
-        registry.modules.insert((generation, path.clone()), units.clone());
+    registry.publish_modules(generation, module_units);
+    // Attestation is source identity, not a runtime service, so every typed program records it
+    // whatever service capability (if any) the caller later attaches.
+    for (path, logical_path) in canonical_corelib_attested_units(&assembly) {
+        registry.corelib_source_paths.insert((SourceUnitId::new(db, path), generation), logical_path);
     }
-    registry.corelib_local_modules.extend(corelib_local_modules.iter().cloned().map(|path| (generation, path)));
-    registry.corelib_shard_units.extend(corelib_shard_units.iter().copied().map(|unit| (unit, generation)));
+    drop(registry);
+    // Appended serialization groups are judged for field visibility in the unit that declares
+    // their target; the table is derived from the retained issuer payload, never the claim.
+    crate::contribution_attribution::register_contribution_attributions(db, &assembly)?;
+    let mut registry = db.syntax_dependency_registry().lock().expect("syntax dependency registry");
     for unit in assembly.units.iter() {
         let unit_id = SourceUnitId::new(db, unit.path.clone());
         let imports = unit
@@ -170,6 +230,7 @@ pub fn build_typed_program(
                         binding,
                         declaration.node.alias.is_some(),
                         declaration.node.visibility.node == beskid_analysis::syntax::Visibility::Public,
+                        crate::db::SyntaxImportOrigin::Use,
                     ))
                 }
                 // An out-of-line `pub mod A.B;` is an assembled syntax dependency and a
@@ -190,18 +251,26 @@ pub fn build_typed_program(
                         binding,
                         false,
                         declaration.node.visibility.node == beskid_analysis::syntax::Visibility::Public,
+                        crate::db::SyntaxImportOrigin::ModuleDeclaration,
                     ))
                 }
                 _ => None,
             })
-            .filter_map(|(path, binding, has_explicit_alias, public)| {
+            .filter_map(|(path, binding, has_explicit_alias, public, origin)| {
                 registry
-                    .visible_module_units(unit_id, generation, &path)
+                    .visible_module_units(generation, &path)
                     .and_then(|targets| match targets {
                         [target] => Some(*target),
                         _ => None,
                     })
-                    .map(|target| crate::db::SyntaxImport { path, binding, has_explicit_alias, target, public })
+                    .map(|target| crate::db::SyntaxImport {
+                        path,
+                        binding,
+                        has_explicit_alias,
+                        target,
+                        public,
+                        origin,
+                    })
             })
             .collect();
         registry.imports.insert((unit_id, generation), imports);
@@ -210,6 +279,13 @@ pub fn build_typed_program(
     // Scoped-cleanup (E1230) and dead-growth (E1231) legality are judged by the reachability-scoped
     // legality gate (`legality::check_items`) for the items a lowering request actually lowers,
     // never here for every unit: admission must not let an unreachable item poison the assembly.
+    tracing::debug!(
+        target: "beskid.timing",
+        phase = "typed_program.register",
+        units = assembly.units.len(),
+        elapsed_ms = started.elapsed().as_millis() as u64,
+        "typed program timing"
+    );
 
     Ok(TypedProgram {
         project,
@@ -239,15 +315,7 @@ pub fn build_typed_program_with_corelib_services(
         .into_iter()
         .map(|(path, logical_path, services)| (SourceUnitId::new(db, path), logical_path, services))
         .collect::<Vec<_>>();
-    let deadline_unit = canonical_corelib_deadline_unit(&assembly).map(|path| SourceUnitId::new(db, path));
     let mut typed = build_typed_program(db, project, generation, assembly)?;
-    if let Some(deadline_unit) = deadline_unit {
-        db.syntax_dependency_registry()
-            .lock()
-            .expect("syntax dependency registry")
-            .corelib_source_paths
-            .insert((deadline_unit, typed.generation), CANONICAL_FOUNDATION_DEADLINE_SOURCE_PATH.into());
-    }
     if !service_units.is_empty() {
         for (service_unit, logical_path, services) in service_units {
             attach_corelib_services(db, &mut typed, service_unit, logical_path, services);
@@ -299,9 +367,17 @@ fn canonical_corelib_service_units(
         .collect()
 }
 
-fn canonical_corelib_deadline_unit(assembly: &ProgramAssembly) -> Option<std::path::PathBuf> {
-    let expected = canonical_corelib_deadline_source();
-    exact_compiler_owned_corelib_unit(assembly, &expected).map(|unit| unit.path.clone())
+/// Compiler-owned units that carry no runtime service but are source-attested for exact
+/// private-field admissions: the opaque Deadline declaration and the Network resource authority
+/// with the socket declarations it constructs. Each must be the exact canonical source.
+fn canonical_corelib_attested_units(assembly: &ProgramAssembly) -> Vec<(std::path::PathBuf, String)> {
+    std::iter::once(canonical_corelib_deadline_source())
+        .chain(canonical_corelib_private_field_sources())
+        .filter_map(|expected| {
+            let unit = exact_compiler_owned_corelib_unit(assembly, &expected)?;
+            Some((unit.path.clone(), expected.logical_path))
+        })
+        .collect()
 }
 
 fn exact_compiler_owned_corelib_unit<'a>(
@@ -365,14 +441,52 @@ pub fn build_canonical_runtime_typed_program(
         })
         .collect::<Vec<_>>();
     let exact_corpus = actual.len() == expected.len()
-        && actual.iter().all(|source| {
-            capability.authorizes_source(&source.logical_path) && expected.iter().any(|expected| expected == source)
-        });
+        && beskid_abi::abi_v5::canonical_source_hash(&actual).is_ok_and(|hash| hash == capability.source_hash())
+        && actual.iter().all(|source| expected.iter().any(|expected| expected == source));
     if !exact_corpus {
         return Err(SemanticError::new("syntax assembly is not the compiler-embedded canonical runtime corpus"));
     }
+    // Matching source text cannot authorize an independently altered AST. This
+    // constructor admits only the parse of those exact bytes in each supplied unit.
+    for unit in assembly.units.iter() {
+        let parsed = beskid_analysis::services::parse_program_with_source_name(
+            unit.path.to_str().unwrap_or_default(),
+            &unit.source,
+        )
+        .map_err(|_| SemanticError::new("canonical runtime source does not parse"))?;
+        if parsed != unit.program {
+            return Err(SemanticError::new("canonical runtime syntax differs from embedded source"));
+        }
+    }
 
+    let services = capability.corelib_service_capability();
+    let service_sources = canonical_corelib_service_sources();
     let mut typed = build_typed_program(db, project, generation, assembly)?;
+    for unit in typed.assembly.units.clone().iter() {
+        let source = SourceUnitId::new(db, unit.path.clone());
+        let input =
+            db.syntax_unit(source).ok_or_else(|| SemanticError::new("canonical runtime unit is unregistered"))?;
+        if capability.authorizes_source(&unit.logical_name) {
+            let mut revision = input.revision(db).as_ref().clone();
+            revision.runtime_source_authority = Some(Arc::from(unit.logical_name.as_str()));
+            use salsa::Setter;
+            input.set_revision(db).to(Arc::new(revision));
+        } else if service_sources
+            .iter()
+            .any(|expected| expected.logical_path == unit.logical_name && expected.source == unit.source)
+        {
+            // The whole embedded closure was verified above. Ordinary support
+            // units receive only their exact service table, never raw intrinsics.
+            let owned = services
+                .services()
+                .iter()
+                .copied()
+                .filter(|service| service.source_path == unit.logical_name)
+                .collect();
+            attach_corelib_services(db, &mut typed, source, unit.logical_name.clone(), owned);
+        }
+    }
+    typed.corelib_service_capability = Some(services);
     attach_canonical_runtime_cross_unit_scope(db, &typed);
     typed.runtime_intrinsic_capability = Some(Arc::new(capability));
     Ok(typed)
@@ -386,7 +500,16 @@ pub fn build_canonical_runtime_typed_program(
 /// assemblies keep their explicit-import-only resolution contract, and duplicate
 /// public names remain unresolved through `unique_imported_function`.
 fn attach_canonical_runtime_cross_unit_scope(db: &BeskidDatabase, typed: &TypedProgram) {
-    let units = typed.assembly.units.iter().map(|unit| SourceUnitId::new(db, unit.path.clone())).collect::<Vec<_>>();
+    let units = typed
+        .assembly
+        .units
+        .iter()
+        .filter(|unit| {
+            db.syntax_unit(SourceUnitId::new(db, unit.path.clone()))
+                .is_some_and(|input| input.revision(db).runtime_source_authority.is_some())
+        })
+        .map(|unit| SourceUnitId::new(db, unit.path.clone()))
+        .collect::<Vec<_>>();
     attach_private_runtime_scope(db, typed.generation, &units);
 }
 
@@ -408,6 +531,7 @@ fn attach_private_runtime_scope(db: &BeskidDatabase, generation: SyntaxGeneratio
                 has_explicit_alias: true,
                 target,
                 public: false,
+                origin: crate::db::SyntaxImportOrigin::CanonicalRuntimeScope,
             });
         }
     }
@@ -431,9 +555,25 @@ pub fn build_runtime_fixture_typed_program(
     {
         return Err(SemanticError::new("runtime fixture source differs from its proof"));
     }
-    let runtime_units =
-        assembly.units.iter().filter(|unit| unit.logical_name.starts_with("src/Runtime/")).cloned().collect::<Vec<_>>();
-    let runtime = Arc::new(ProgramAssembly::new(
+    let expected_runtime = beskid_abi::runtime_source::canonical_runtime_sources();
+    let canonical_runtime_unit =
+        |logical_name: &str| expected_runtime.iter().any(|expected| expected.logical_path == logical_name);
+    // Private runtime scope is granted by logical path below. An extra source under the runtime
+    // namespace must never reach that grant merely because the exact corpus check ignores it.
+    if assembly
+        .units
+        .iter()
+        .any(|unit| unit.logical_name.starts_with("src/Runtime/") && !canonical_runtime_unit(&unit.logical_name))
+    {
+        return Err(SemanticError::new("runtime fixture assembly carries a non-canonical runtime source"));
+    }
+    let runtime_units = assembly
+        .units
+        .iter()
+        .filter(|unit| expected_runtime.iter().any(|expected| expected.logical_path == unit.logical_name))
+        .cloned()
+        .collect::<Vec<_>>();
+    let mut runtime = ProgramAssembly::new(
         assembly.roots.clone(),
         Arc::new(runtime_units),
         0,
@@ -441,7 +581,12 @@ pub fn build_runtime_fixture_typed_program(
         assembly.module_index.clone(),
         false,
         generation,
-    ));
+    );
+    // Both typed programs below register the same (project, generation). The runtime corpus
+    // sub-assembly is a view of the same verified packages, so it carries the same package
+    // proof; an empty proof here would be registered first and reject the full assembly.
+    runtime.verified_package_identities = assembly.package_identities().clone();
+    let runtime = Arc::new(runtime);
     // Keep the original exact-corpus constructor as the sole production authority check.
     build_canonical_runtime_typed_program(
         db,
@@ -462,7 +607,7 @@ pub fn build_runtime_fixture_typed_program(
     let scope = assembly
         .units
         .iter()
-        .filter(|unit| unit.logical_name.starts_with("src/Runtime/") || unit.logical_name == fixture.logical_path)
+        .filter(|unit| canonical_runtime_unit(&unit.logical_name) || unit.logical_name == fixture.logical_path)
         .map(|unit| SourceUnitId::new(db, unit.path.clone()))
         .collect::<Vec<_>>();
     attach_private_runtime_scope(db, generation, &scope);

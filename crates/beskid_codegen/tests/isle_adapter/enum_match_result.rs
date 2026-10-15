@@ -6,6 +6,8 @@ mod constructors;
 mod generic_matches;
 #[path = "enum_match_result/imported.rs"]
 mod imported;
+#[path = "enum_match_result/match_coverage.rs"]
+mod match_coverage;
 #[path = "enum_match_result/match_shapes.rs"]
 mod match_shapes;
 #[path = "enum_match_result/parsed_programs.rs"]

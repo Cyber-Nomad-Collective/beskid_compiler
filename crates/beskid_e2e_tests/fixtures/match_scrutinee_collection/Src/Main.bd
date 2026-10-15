@@ -1,0 +1,84 @@
+// A `match` scrutinee stays alive while the arm tests and guards run. A guard that collects and
+// then allocates objects of the same size must not free the scrutinee and hand its storage to
+// one of them: the next arm would then test the new object instead of the matched one.
+use Core.Collections.Array;
+use Core.String;
+use Testing.Assert;
+
+enum Slot {
+    Text(string value),
+    Number(i64 value),
+}
+
+// A new `Slot::Text` that only the caller's expression references.
+Slot MakeText(i64 n) {
+    return Slot::Text("text-${n}");
+}
+
+// A new string that only the caller's expression references, five bytes long like `Fill` texts.
+string MakeKey(i64 n) {
+    return String.Concat("key-", "${n % 10}");
+}
+
+// Collects, then allocates enough `Slot::Number` values and five-byte strings to reuse the
+// storage the collection reclaimed. Always rejects the arm.
+bool Churn() {
+    Assert.CollectGarbage();
+    mut Slot[] slots = Array.Empty<Slot>();
+    mut string[] texts = Array.Empty<string>();
+    mut i64 index = 0;
+    while index < 512 {
+        Array.Append<Slot>(slots, Slot::Number(index));
+        Array.Append<string>(texts, String.Concat("xyz", "${index % 10}!"));
+        index = index + 1;
+    }
+    return Array.Len<Slot>(slots) < 0;
+}
+
+// 0 when `value` is the text `MakeText(n)` made.
+i32 CheckText(string value, i64 n) {
+    if value != "text-${n}" {
+        return 3;
+    }
+    return 0;
+}
+
+i32 MatchEnum(i64 n) {
+    return match MakeText(n) {
+        Slot::Text(_) when Churn() => 1,
+        Slot::Number(_) => 2,
+        Slot::Text(value) => CheckText(value, n),
+    };
+}
+
+// 0 when `key` is the text `MakeKey(n)` made.
+i32 CheckKey(string key, i64 n) {
+    if key != "key-${n % 10}" {
+        return 5;
+    }
+    return 0;
+}
+
+i32 MatchString(i64 n) {
+    return match MakeKey(n) {
+        _ when Churn() => 4,
+        "key-0" => CheckKey("key-0", n),
+        other => CheckKey(other, n),
+    };
+}
+
+i32 Main() {
+    mut i64 round = 0;
+    while round < 20 {
+        i32 enumResult = MatchEnum(round);
+        if enumResult != 0 {
+            return enumResult;
+        }
+        i32 stringResult = MatchString(round);
+        if stringResult != 0 {
+            return stringResult;
+        }
+        round = round + 1;
+    }
+    return 42;
+}

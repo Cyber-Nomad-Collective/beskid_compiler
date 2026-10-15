@@ -1,4 +1,10 @@
-//! Public prepare entry points: full, diagnostics-only, isolated, and fact-authority variants.
+//! Public prepare entry point: the spine driven by a generation-bound semantic fact authority.
+//!
+//! Every preparation, executable or diagnostics-only, runs behind
+//! [`prepare_compilation_with_fact_authority`]. The query gate
+//! (`beskid_queries::{prepare_compilation, prepare_compilation_diagnostics}`, `_with_db`,
+//! `_isolated`) is the one semantic authority of `beskid build`, `run`, `test`, `check`,
+//! `analyze`, and the language server, so no authority-less entry point exists here.
 
 use anyhow::Result;
 use beskid_pipeline::PipelineObserver;
@@ -11,99 +17,6 @@ use crate::syntax::Spanned;
 use super::super::input::ResolvedInput;
 use super::super::session::SessionFingerprint;
 use super::*;
-
-/// Single front-end spine: assemble → mod host → rewrite → semantic → composition → (optional) typed syntax.
-pub fn prepare_compilation(
-    resolved: &ResolvedInput,
-    options: PrepareOptions,
-    pipeline: Option<&dyn PipelineObserver>,
-) -> Result<PreparedCompilation> {
-    let plan = resolved
-        .compile_plan
-        .as_ref()
-        .ok_or_else(|| anyhow::anyhow!("prepare_compilation requires a CompilePlan (project context)"))?;
-
-    let spine = run_prepare_spine(
-        &resolved.source_path,
-        &resolved.source,
-        plan,
-        resolved.prepared_workspace.as_ref(),
-        resolved.assembly.as_ref(),
-        &options,
-        pipeline,
-        false,
-        true,
-        None,
-    )?;
-
-    Ok(spine.prepared)
-}
-
-/// Like [`prepare_compilation`], collecting diagnostics from semantic, composition, and lower
-/// instead of failing on errors. Also collects mod-origin quick-fixes from `Analyzer`
-/// outcomes so LSP code actions can surface `QUICKFIX` actions keyed by
-/// `(source = "beskid:mod:<type_id>", code)`.
-pub fn prepare_compilation_diagnostics(
-    resolved: &ResolvedInput,
-    options: PrepareOptions,
-    pipeline: Option<&dyn PipelineObserver>,
-) -> Result<(PreparedCompilation, Vec<SemanticDiagnostic>, Vec<SyntaxFix>)> {
-    let plan = resolved
-        .compile_plan
-        .as_ref()
-        .ok_or_else(|| anyhow::anyhow!("prepare_compilation requires a CompilePlan (project context)"))?;
-
-    let mut diagnostics = Vec::new();
-    let mut fixes = Vec::new();
-    let spine = run_prepare_spine(
-        &resolved.source_path,
-        &resolved.source,
-        plan,
-        resolved.prepared_workspace.as_ref(),
-        resolved.assembly.as_ref(),
-        &options,
-        pipeline,
-        true,
-        true,
-        None,
-    )?;
-    diagnostics.extend(spine.collected_diagnostics);
-    fixes.extend(spine.collected_fixes);
-    Ok((spine.prepared, diagnostics, fixes))
-}
-
-/// Collect diagnostics from an owned assembly without consulting or updating
-/// the process-wide entry-session cache.
-///
-/// This is intended for overlapping editor jobs whose version identity is
-/// enforced by the caller. It requires `resolved.assembly` so no global
-/// assembly/session authority can substitute a different generation.
-pub fn prepare_compilation_diagnostics_isolated(
-    resolved: &ResolvedInput,
-    options: PrepareOptions,
-    pipeline: Option<&dyn PipelineObserver>,
-) -> Result<(PreparedCompilation, Vec<SemanticDiagnostic>, Vec<SyntaxFix>)> {
-    let plan = resolved
-        .compile_plan
-        .as_ref()
-        .ok_or_else(|| anyhow::anyhow!("prepare_compilation requires a CompilePlan (project context)"))?;
-    if resolved.assembly.is_none() {
-        return Err(anyhow::anyhow!("isolated diagnostics require an owned program assembly"));
-    }
-    let spine = run_prepare_spine(
-        &resolved.source_path,
-        &resolved.source,
-        plan,
-        resolved.prepared_workspace.as_ref(),
-        resolved.assembly.as_ref(),
-        &options,
-        pipeline,
-        true,
-        false,
-        None,
-    )?;
-    Ok((spine.prepared, spine.collected_diagnostics, spine.collected_fixes))
-}
 
 /// One positive semantic-fact finding from a generation-bound semantic owner: a registered
 /// diagnostic kind located in one unit of the assembly the spine prepared. `unit` indexes
@@ -118,18 +31,49 @@ pub struct SemanticFactFinding {
 
 /// Inversion seam for a generation-bound semantic owner. The callback consumes the final
 /// rewritten entry and its actual assembly, not a second frontend tree, and returns every
-/// finding its facts produce for the entry's reachable items (invalid `?` targets and the
-/// reachability-scoped legality facts the lowering gate also evaluates).
-pub type SemanticFactAuthority<'a> =
-    dyn FnMut(&ProgramAssembly, &Spanned<crate::syntax::Program>) -> Result<Vec<SemanticFactFinding>> + 'a;
+/// finding its facts produce for every own unit (typing and legality obligations, invalid `?`
+/// targets, and the reachability-scoped legality facts the lowering gate also evaluates).
+pub trait SemanticFactAuthority {
+    /// `pipeline` observes the gate's reported sub-phases (`semantic.contracts` around contract
+    /// conformance); the authority forwards it, never records phases of its own.
+    fn fact_findings(
+        &mut self,
+        assembly: &ProgramAssembly,
+        program: &Spanned<crate::syntax::Program>,
+        pipeline: Option<&dyn beskid_pipeline::PipelineObserver>,
+    ) -> Result<Vec<SemanticFactFinding>>;
+    fn mod_scope(&self) -> Option<&dyn crate::mod_host::ModSemanticScope> {
+        None
+    }
+}
+impl<F> SemanticFactAuthority for F
+where
+    F: FnMut(
+        &ProgramAssembly,
+        &Spanned<crate::syntax::Program>,
+        Option<&dyn beskid_pipeline::PipelineObserver>,
+    ) -> Result<Vec<SemanticFactFinding>>,
+{
+    fn fact_findings(
+        &mut self,
+        assembly: &ProgramAssembly,
+        program: &Spanned<crate::syntax::Program>,
+        pipeline: Option<&dyn beskid_pipeline::PipelineObserver>,
+    ) -> Result<Vec<SemanticFactFinding>> {
+        self(assembly, program, pipeline)
+    }
+}
 
+/// Run the prepare spine: assemble, Mod host, rewrite, structural rules, composition, query gate,
+/// executable front end. With `collect_diagnostics` every diagnostic is returned; otherwise an
+/// error diagnostic fails preparation.
 pub fn prepare_compilation_with_fact_authority(
     resolved: &ResolvedInput,
     options: PrepareOptions,
     pipeline: Option<&dyn PipelineObserver>,
     collect_diagnostics: bool,
     isolated: bool,
-    authority: &mut SemanticFactAuthority<'_>,
+    authority: &mut dyn SemanticFactAuthority,
 ) -> Result<(PreparedCompilation, Vec<SemanticDiagnostic>, Vec<SyntaxFix>)> {
     let plan = resolved
         .compile_plan
@@ -148,7 +92,7 @@ pub fn prepare_compilation_with_fact_authority(
         pipeline,
         collect_diagnostics,
         !isolated,
-        Some(authority),
+        authority,
     )?;
     Ok((output.prepared, output.collected_diagnostics, output.collected_fixes))
 }

@@ -1,22 +1,16 @@
 //! JIT regression for corelib `Console.Controls.Frame.Repeat` via project resolution.
 
 use std::path::PathBuf;
-use std::sync::Mutex;
 
 use beskid_abi::runtime_kit::BuildProfile;
 use beskid_analysis::services::{PrepareOptions, resolve_input};
 use beskid_engine::Engine;
 use beskid_engine::services::run_entrypoint_from_front_end_with_engine;
 use beskid_queries::{configure_db_for_project, prepare_compilation_with_db, with_db};
-use crate::shared_kit;
 
-/// Serializes cases in this binary.
-///
-/// Every case prepares an entry of the same corelib test project, so concurrent cases share
-/// the process-wide query database project and entry-session registry fingerprint, and each
-/// activates an engine against the runtime kit. The production CLI prepares and runs one entry
-/// at a time per process; this lock restores that model under libtest's parallel runner.
-static CORELIB_JIT_LOCK: Mutex<()> = Mutex::new(());
+use beskid_tests_mod_host::ModHostScope;
+
+use crate::shared_kit;
 
 fn corelib_tests_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../corelib/beskid_corelib/tests/corelib_tests")
@@ -30,21 +24,34 @@ fn run_corelib_test(entry: &str, target_name: &str, test_name: &str) -> String {
 }
 
 fn run_corelib_tests(entry: &str, target_name: &str, test_names: &[&str]) -> Vec<String> {
-    let _serial = CORELIB_JIT_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    // The shared-kit lease serializes the cases of this binary: every case prepares an entry of
+    // the same corelib test project (one process-wide query database project and entry-session
+    // fingerprint) and activates an engine over the one kit image this binary loads, which only
+    // one engine may initialize at a time. One exact kit serves the engine and the native Mods
+    // that preparation runs.
     let kit_lease = shared_kit::debug();
-    let runtime_prefix = kit_lease.prefix();
+    let mod_host = ModHostScope::shared().expect("enter the shared native Mod host scope");
+    assert_eq!(mod_host.runtime_prefix(), kit_lease.prefix(), "the Mod host and the engine share one kit");
+    let kit_prefix = kit_lease.prefix();
     let project_root = corelib_tests_root();
     let entry = project_root.join(entry);
     configure_db_for_project(&project_root);
-    let resolved = resolve_input(Some(&entry), Some(&project_root), Some(target_name), None, false, false)
-        .expect("resolve corelib test target");
+    let resolved = resolve_input(
+        Some(&entry),
+        Some(&project_root),
+        Some(target_name),
+        None,
+        beskid_analysis::projects::WorkspacePrepareOptions::default(),
+    )
+    .expect("resolve corelib test target");
+    let plan = resolved.compile_plan.as_ref().expect("corelib test target has a compile plan");
+    let options = PrepareOptions::with_mod_host(mod_host.corelib_mod_host(plan).expect("qualified Corelib native Mods"));
     let prepared =
-        with_db(|db| prepare_compilation_with_db(db, &resolved, PrepareOptions { ..Default::default() }, None))
-            .expect("prepare executable");
+        with_db(|db| prepare_compilation_with_db(db, &resolved, options, None)).expect("prepare executable");
     let front = prepared.into_executable().expect("executable front-end");
 
     let target = beskid_engine::host_runtime_target().expect("supported native host target");
-    let mut engine = Engine::with_runtime_kit(runtime_prefix, target, BuildProfile::Debug)
+    let mut engine = Engine::with_runtime_kit(kit_prefix, target, BuildProfile::Debug)
         .expect("load exact native runtime kit");
     test_names
         .iter()
@@ -64,14 +71,14 @@ fn run_corelib_tests(entry: &str, target_name: &str, test_names: &[&str]) -> Vec
 
 #[test]
 fn jit_corelib_repeat_builds_string_entrypoint() {
-    run_corelib_test("src/console/ControlsFrameTests.bd", "ConsoleControlsFrameTests", "repeat_builds_string");
+    run_corelib_test("src/console/ConsoleSuite.bd", "ConsoleSuite", "repeat_builds_string");
 }
 
 #[test]
 fn jit_progress_bar_mixed_interpolation_preserves_exact_fill() {
     run_corelib_test(
-        "src/console/ControlsProgressBarTests.bd",
-        "ConsoleControlsProgressBarTests",
+        "src/console/ConsoleSuite.bd",
+        "ConsoleSuite",
         "progress_bar_renders_body_with_exact_fill",
     );
 }
@@ -79,16 +86,16 @@ fn jit_progress_bar_mixed_interpolation_preserves_exact_fill() {
 #[test]
 fn jit_numeric_interpolation_preserves_value() {
     run_corelib_test(
-        "src/console/ControlsProgressBarTests.bd",
-        "ConsoleControlsProgressBarTests",
+        "src/console/ConsoleSuite.bd",
+        "ConsoleSuite",
         "progress_bar_formats_numeric_interpolation",
     );
 }
 
 #[test]
 fn jit_numeric_interpolation_has_decimal_bytes() {
-    let entry = "src/console/ControlsProgressBarTests.bd";
-    let target = "ConsoleControlsProgressBarTests";
+    let entry = "src/console/ConsoleSuite.bd";
+    let target = "ConsoleSuite";
     let actual = run_corelib_tests(
         entry,
         target,
@@ -100,8 +107,8 @@ fn jit_numeric_interpolation_has_decimal_bytes() {
 #[test]
 fn jit_adjacent_string_interpolation_preserves_values() {
     run_corelib_test(
-        "src/console/ControlsProgressBarTests.bd",
-        "ConsoleControlsProgressBarTests",
+        "src/console/ConsoleSuite.bd",
+        "ConsoleSuite",
         "progress_bar_concatenates_adjacent_string_interpolations",
     );
 }

@@ -21,8 +21,9 @@ pub fn default_output_kind(target_kind: Option<ProjectTargetKind>) -> BuildOutpu
     }
 }
 
-/// Normalize CLI-style entrypoint: non-empty string or default [`DEFAULT_ENTRYPOINT`].
-pub const DEFAULT_ENTRYPOINT: &str = "Main";
+/// The program entry function (`Main`), shared with the analysis rules that exempt it from the
+/// unused-private-item warning (`beskid_analysis::projects::PROGRAM_ENTRY_FUNCTION`).
+pub const DEFAULT_ENTRYPOINT: &str = beskid_analysis::projects::PROGRAM_ENTRY_FUNCTION;
 
 /// Beskid entrypoint name mapped to the native C link symbol for executable output.
 pub fn native_link_entrypoint(beskid_entrypoint: &str) -> &str {
@@ -145,7 +146,6 @@ pub(super) fn optional_link_libraries(
 pub(super) fn apply_export_policy(symbols: Vec<String>, policy: &ExportPolicy) -> Vec<String> {
     match policy {
         ExportPolicy::AllDefined => symbols,
-        ExportPolicy::PublicOnly => symbols.into_iter().filter(|name| !name.starts_with("__")).collect(),
         ExportPolicy::Explicit(expected) => {
             symbols.into_iter().filter(|name| expected.iter().any(|wanted| wanted == name)).collect()
         }
@@ -168,7 +168,7 @@ mod with_defaults_tests {
         assert_eq!(req.target_triple, None);
         assert_eq!(req.profile, BuildProfile::Debug);
         assert_eq!(req.entrypoint, "Main");
-        assert_eq!(req.export_policy, ExportPolicy::PublicOnly);
+        assert_eq!(req.export_policy, ExportPolicy::Explicit(Vec::new()));
         assert_eq!(req.link_mode, LinkMode::Auto);
         assert!(req.runtime.is_none());
         assert!(!req.verbose_link);
@@ -199,7 +199,7 @@ mod with_defaults_tests {
             target_triple: None,
             profile: BuildProfile::Debug,
             entrypoint: "Main".to_owned(),
-            export_policy: ExportPolicy::PublicOnly,
+            export_policy: ExportPolicy::Explicit(Vec::new()),
             link_mode: LinkMode::Auto,
             runtime: None,
             verbose_link: false,
@@ -230,7 +230,7 @@ mod with_defaults_tests {
                 target_triple: None,
                 profile: BuildProfile::Debug,
                 entrypoint: "Main".into(),
-                export_policy: ExportPolicy::PublicOnly,
+                export_policy: ExportPolicy::Explicit(Vec::new()),
                 link_mode: LinkMode::Auto,
                 runtime: None,
                 verbose_link: false,

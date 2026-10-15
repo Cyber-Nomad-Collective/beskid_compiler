@@ -6,16 +6,17 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Instant;
 
+use beskid_analysis::SemanticDiagnostic;
+use beskid_analysis::mod_host::ModHost;
 use beskid_analysis::projects::ProgramAssembly;
-use beskid_analysis::services::{ResolvedInput, resolve_input};
-use beskid_analysis::syntax::CallExpression;
-use beskid_analysis::syntax_query::{NodeKind, SyntaxIndex};
-use beskid_queries::{
-    AstNodeKey, SourceUnitId, build_typed_program, call_lowering, configure_db_for_project,
-    primitive_numeric_conversion, program_assembly, project_session_for_syntax_assembly, with_db,
+use beskid_analysis::services::{
+    FrontEndOptions, PrepareOptions, ResolvedInput, compile_plan_for_input_path, resolve_input,
+    resolved_input_from_plan,
 };
+use beskid_tests_mod_host::ModHostScope;
+use beskid_queries::{configure_db_for_project, program_assembly, with_db};
 
-use super::std_env_lock::std_dependency_env_lock;
+use super::core_env_lock::core_dependency_env_lock;
 use super::test_cwd::{compiler_workspace_root, with_cwd_at_workspace_root};
 
 /// Linux CI runners use a smaller default thread stack than macOS; corelib lowering needs more headroom.
@@ -26,6 +27,37 @@ pub fn with_large_test_stack(f: impl FnOnce() + Send + 'static) {
         .expect("spawn large-stack test thread")
         .join()
         .expect("join large-stack test thread");
+}
+
+/// The shared native Mod host: the staged debug runtime kit as a value. It holds no lock and
+/// never touches the process environment.
+pub fn enter_mod_host() -> ModHostScope {
+    ModHostScope::shared().expect("enter the shared native Mod host scope")
+}
+
+/// The qualified native Mod host for the compile plan of `resolved`.
+pub fn mod_host_for(scope: &ModHostScope, resolved: &ResolvedInput) -> ModHost {
+    let plan = resolved.compile_plan.as_ref().expect("Core-dependent input has a compile plan");
+    scope.corelib_mod_host(plan).expect("qualify the native Mods of the compile plan")
+}
+
+/// Project-aware analysis of the file at `path` with the qualified native Mods of its compile plan,
+/// through the same query-backed prepare spine `beskid check` runs. Native Mods read syntax
+/// through the registered query authority, which only that spine installs.
+pub fn analyze_file_with_mods(path: &Path) -> Result<Vec<SemanticDiagnostic>, String> {
+    let source = std::fs::read_to_string(path).map_err(|error| format!("read {}: {error}", path.display()))?;
+    let plan = compile_plan_for_input_path(path)
+        .ok_or_else(|| format!("{} has no project compile plan", path.display()))?;
+    let scope = enter_mod_host();
+    let native_mods = scope.corelib_mod_host(&plan).map_err(|error| format!("{error:#}"))?;
+    let resolved = resolved_input_from_plan(path.to_path_buf(), source, plan, None, None);
+    let options = PrepareOptions {
+        front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
+        ..PrepareOptions::with_mod_host(native_mods)
+    };
+    beskid_queries::prepare_compilation_diagnostics(&resolved, options, None)
+        .map(|(_, diagnostics, _fixes)| diagnostics)
+        .map_err(|error| format!("{error:#}"))
 }
 
 pub fn fixture_path(name: &str) -> PathBuf {
@@ -42,7 +74,7 @@ pub fn try_expression_fixture() -> PathBuf {
 
 /// Compose cwd lock, optional std env lock, and Salsa persistence for a project fixture.
 pub fn with_project_test_env<F: FnOnce()>(project_root: &Path, f: F) {
-    let _env = std_dependency_env_lock();
+    let _env = core_dependency_env_lock();
     with_cwd_at_workspace_root(&compiler_workspace_root(), || {
         configure_db_for_project(project_root);
         f();
@@ -53,7 +85,14 @@ pub fn with_project_test_env<F: FnOnce()>(project_root: &Path, f: F) {
 pub fn resolve_fixture(fixture_root: &Path, entry: &str, target: &str) -> ResolvedInput {
     let root = fixture_root.to_path_buf();
     let entry_path = root.join(entry);
-    resolve_input(Some(&entry_path), Some(&root), Some(target), None, false, false).expect("resolve fixture")
+    resolve_input(
+        Some(&entry_path),
+        Some(&root),
+        Some(target),
+        None,
+        beskid_analysis::projects::WorkspacePrepareOptions::default(),
+    )
+    .expect("resolve fixture")
 }
 
 /// Populate `ResolvedInput.assembly` once via Salsa `program_assembly`.
@@ -86,8 +125,14 @@ pub fn corelib_tests_project_root() -> PathBuf {
 pub fn resolve_corelib_tests_entry(entry_relative: &str) -> ResolvedInput {
     let root = corelib_tests_project_root();
     let entry_path = root.join("src").join(entry_relative);
-    resolve_input(Some(&entry_path), Some(&root), None, None, false, false)
-        .unwrap_or_else(|err| panic!("resolve corelib_tests entry {entry_relative}: {err}"))
+    resolve_input(
+        Some(&entry_path),
+        Some(&root),
+        None,
+        None,
+        beskid_analysis::projects::WorkspacePrepareOptions::default(),
+    )
+    .unwrap_or_else(|err| panic!("resolve corelib_tests entry {entry_relative}: {err}"))
 }
 
 /// Resolve and assemble a `corelib_tests` entry via Salsa [`program_assembly`].
@@ -135,54 +180,6 @@ fn cached_corelib_tests_assembly(entry_relative: &str, resolved: &ResolvedInput)
     assembly
 }
 
-/// Syntax-fact gate for a `corelib_tests` entry.
-///
-/// Corelib's migration gate must not route entry calls through the retired HIR semantic resolver:
-/// its public-module re-export rules intentionally lag the generation-safe syntax registry.  This
-/// validates every entry call against the assembled syntax authority instead. Dependency bodies
-/// remain outside this entry gate, just as they did under `EntryOnly` typing.
-pub fn typecheck_corelib_tests_entry(entry_relative: &str) {
-    test_progress(&format!("→ corelib typecheck: {entry_relative}"));
-    let started = Instant::now();
-    let resolved = resolve_corelib_tests_entry_with_assembly(entry_relative);
-    with_db(|db| {
-        let syntax_assembly = std::sync::Arc::new(resolved.assembly.as_ref().expect("corelib entry assembly").clone());
-        let project =
-            project_session_for_syntax_assembly(db, &syntax_assembly, "corelib-syntax-gate", "prepared-corelib-entry")
-                .expect("corelib syntax project session");
-        let generation = syntax_assembly.generation;
-        let typed = build_typed_program(db, project, generation, syntax_assembly).expect("corelib syntax program");
-        let entry = typed.assembly.entry_unit();
-        let index = SyntaxIndex::from_program(&entry.program, generation);
-        let unit = SourceUnitId::new(db, entry.path.clone());
-        for node in index.ids_of_kind(NodeKind::CallExpression) {
-            let key = AstNodeKey { unit, generation, node };
-            // Codegen consumes a proven primitive conversion before ordinary call lowering.
-            if matches!(primitive_numeric_conversion(db, key), Ok(Some(_))) {
-                continue;
-            }
-            call_lowering(db, key)
-                .and_then(|fact| {
-                    fact.ok_or_else(|| {
-                        beskid_queries::SemanticError::unavailable("entry call has no syntax lowering fact")
-                    })
-                })
-                .unwrap_or_else(|error| {
-                    let callee = index
-                        .node_at(&entry.program, node)
-                        .and_then(|syntax| syntax.of::<CallExpression>())
-                        .map(|call| format!("{:?} at {:?}", call.callee.node, call.callee.span))
-                        .unwrap_or_else(|| "<call syntax unavailable>".to_string());
-                    panic!(
-                        "corelib syntax call gate for {entry_relative} failed at node {:?}, callee {callee}: {error}",
-                        node
-                    )
-                });
-        }
-    });
-    test_progress(&format!("✓ corelib typecheck: {entry_relative} ({:.1}s)", started.elapsed().as_secs_f64()));
-}
-
 /// Lower a single test entrypoint from a `corelib_tests` file to CLIF (same path as `beskid test`).
 pub fn lower_corelib_tests_entrypoint(entry_relative: &str, entrypoint: &str) -> beskid_codegen::CodegenArtifact {
     let resolved = resolve_corelib_tests_entry_with_assembly(entry_relative);
@@ -228,18 +225,51 @@ mod tests {
     use super::*;
     use std::time::{Duration, Instant};
 
+    /// Entry resolution of the raw assembly through the module index (the resolver is a syntax
+    /// authority, not a typing one).
+    fn resolve_entry(assembly: &ProgramAssembly) -> beskid_analysis::resolve::Resolution {
+        assembly
+            .module_index
+            .resolve_entry_program(&assembly.entry_unit().program, Some(&assembly.entry_unit().path), assembly)
+            .expect("resolve the suite entry")
+    }
+
+    /// The production semantic gate of `beskid check`: the query-backed prepare spine with the
+    /// qualified Corelib Mods reports no error for the suite entry. The job owns its database, so
+    /// it never registers a generation in the process database other tests lower from.
+    fn assert_production_semantic_gate(resolved: &ResolvedInput, suite: &str) {
+        let scope = enter_mod_host();
+        let options = PrepareOptions {
+            front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
+            ..PrepareOptions::with_mod_host(mod_host_for(&scope, resolved))
+        };
+        let (_, diagnostics, _fixes) = beskid_queries::prepare_compilation_diagnostics_isolated(resolved, options, None)
+            .unwrap_or_else(|error| panic!("{suite}: the production semantic gate must judge the suite: {error:#}"));
+        let errors = diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.severity == beskid_analysis::Severity::Error)
+            .collect::<Vec<_>>();
+        assert!(errors.is_empty(), "{suite} must pass the production semantic gate: {errors:#?}");
+    }
+
+    /// Byte range of one former target's section in a merged `corelib_tests` suite entry.
+    fn suite_section(source: &str, former_file: &str) -> std::ops::Range<usize> {
+        let marker = format!("// ---- {former_file} ");
+        let start = source.find(&marker).unwrap_or_else(|| panic!("suite has no section for {former_file}"));
+        let end = source[start + marker.len()..].find("\n// ---- ").map_or(source.len(), |offset| start + marker.len() + offset);
+        start..end
+    }
+
     #[test]
     fn text_parser_tests_keep_parser_function_identity_and_signature_types() {
         let root = corelib_tests_project_root();
         with_project_test_env(&root, || {
-            let resolved = resolve_corelib_tests_entry_with_assembly("text/TextParserTests.bd");
+            let resolved = resolve_corelib_tests_entry_with_assembly("text/TextSuite.bd");
             let assembly = resolved.assembly.as_ref().expect("TextParser assembly");
             let started = Instant::now();
-            let (_, resolution, _) =
-                beskid_analysis::services::type_entry_gate(assembly.entry_unit().program.clone(), assembly)
-                    .expect("Parser facade signatures should retain TextCursor and TextParseResult types");
+            let resolution = resolve_entry(assembly);
             let elapsed = started.elapsed();
-            assert!(elapsed < Duration::from_secs(5), "TextParser declaration-only semantic gate took {elapsed:?}");
+            assert!(elapsed < Duration::from_secs(5), "TextParser declaration-only resolution took {elapsed:?}");
             assert!(
                 resolution.tables.scoped_resolved_values.is_empty(),
                 "dependency declaration resolution must not retain body value facts"
@@ -259,10 +289,12 @@ mod tests {
                 dependency_locals.is_empty(),
                 "dependency declaration resolution must not retain body locals: {dependency_locals:?}"
             );
+            let section = suite_section(&resolved.source, "TextParserTests.bd");
             let parser_targets = resolution
                 .tables
                 .resolved_values
                 .iter()
+                .filter(|(span, _)| section.contains(&span.start))
                 .filter_map(|(span, value)| {
                     let source = resolved.source.get(span.start..span.end)?;
                     let expected_name = ["Literal", "IsOk", "Choice2"]
@@ -290,14 +322,9 @@ mod tests {
     fn collections_array_tests_keep_array_iterator_signature_types() {
         let root = corelib_tests_project_root();
         with_project_test_env(&root, || {
-            let resolved = resolve_corelib_tests_entry_with_assembly("collections/ArrayTests.bd");
+            let resolved = resolve_corelib_tests_entry_with_assembly("collections/CollectionsSuite.bd");
             let assembly = resolved.assembly.as_ref().expect("ArrayTests assembly");
-            let raw_resolution = beskid_analysis::services::resolve_entry(
-                &assembly.entry_unit().program,
-                assembly,
-                Some(&assembly.entry_unit().path),
-            )
-            .expect("resolve ArrayTests entry");
+            let raw_resolution = resolve_entry(assembly);
             let array_unit = assembly
                 .units
                 .iter()
@@ -329,16 +356,11 @@ mod tests {
                     .all(|target| target.ends_with("::Core::Collections::Array::ArrayIter::ArrayIter")),
                 "Array iterator declarations resolved to {iterator_targets:?}"
             );
-            let started = Instant::now();
-            let (_, resolution, _) =
-                beskid_analysis::services::type_entry_gate(assembly.entry_unit().program.clone(), assembly)
-                    .expect("Array facade signatures should retain ArrayIter<i64> parameters and return types");
-            let elapsed = started.elapsed();
-            assert!(elapsed < Duration::from_secs(5), "ArrayTests declaration-only semantic gate took {elapsed:?}");
             assert!(
-                resolution.tables.scoped_resolved_values.is_empty(),
+                raw_resolution.tables.scoped_resolved_values.is_empty(),
                 "dependency declaration resolution must not retain body value facts"
             );
+            assert_production_semantic_gate(&resolved, "ArrayTests");
         });
     }
 
@@ -346,10 +368,8 @@ mod tests {
     fn fs_tests_nested_enum_pattern_bindings_pass_the_production_semantic_gate() {
         let root = corelib_tests_project_root();
         with_project_test_env(&root, || {
-            let resolved = resolve_corelib_tests_entry_with_assembly("system/FsTests.bd");
-            let assembly = resolved.assembly.as_ref().expect("FS assembly");
-            beskid_analysis::services::type_entry_gate(assembly.entry_unit().program.clone(), assembly)
-                .expect("nested enum payload bindings should retain their declared type");
+            let resolved = resolve_corelib_tests_entry_with_assembly("system/SystemSuite.bd");
+            assert_production_semantic_gate(&resolved, "FS");
         });
     }
 
@@ -358,11 +378,11 @@ mod tests {
         let root = corelib_tests_project_root();
         with_project_test_env(&root, || {
             lower_corelib_tests_entrypoint(
-                "system/EnvironmentTests.bd",
+                "system/SystemSuite.bd",
                 "env_get_empty_name_returns_invalid_name_error",
             );
             lower_corelib_tests_entrypoint(
-                "system/EnvironmentTests.bd",
+                "system/SystemSuite.bd",
                 "env_set_empty_name_returns_invalid_name_error",
             );
         });
@@ -372,18 +392,15 @@ mod tests {
     fn query_tests_pass_the_production_semantic_gate() {
         let root = corelib_tests_project_root();
         with_project_test_env(&root, || {
-            let resolved = resolve_corelib_tests_entry_with_assembly("query/QueryTests.bd");
+            let resolved = resolve_corelib_tests_entry_with_assembly("query/QuerySuite.bd");
             let assembly = resolved.assembly.as_ref().expect("query assembly");
-            let resolution = beskid_analysis::services::resolve_entry(
-                &assembly.entry_unit().program,
-                assembly,
-                Some(&assembly.entry_unit().path),
-            )
-            .expect("resolve QueryTests entry");
+            let resolution = resolve_entry(assembly);
+            let section = suite_section(&resolved.source, "QueryTests.bd");
             let current_targets = resolution
                 .tables
                 .resolved_values
                 .iter()
+                .filter(|(span, _)| section.contains(&span.start))
                 .filter(|(span, _)| {
                     resolved
                         .source
@@ -402,8 +419,7 @@ mod tests {
                 current_targets.iter().all(|target| target.ends_with("::Query::ArrayIterator::Current")),
                 "ArrayIterator.Current calls resolved to {current_targets:?}"
             );
-            beskid_analysis::services::type_entry_gate(assembly.entry_unit().program.clone(), assembly)
-                .expect("QueryTests should pass the production semantic gate");
+            assert_production_semantic_gate(&resolved, "QueryTests");
         });
     }
 
@@ -411,11 +427,11 @@ mod tests {
     fn corelib_entry_assemblies_remain_isolated_by_explicit_source_path() {
         let root = corelib_tests_project_root();
         with_project_test_env(&root, || {
-            let channel = resolve_corelib_tests_entry_with_assembly("concurrency/ChannelApiTests.bd");
-            let messages = resolve_corelib_tests_entry_with_assembly("console/ConsoleMessageChannelTests.bd");
+            let channel = resolve_corelib_tests_entry_with_assembly("concurrency/ConcurrencySuite.bd");
+            let messages = resolve_corelib_tests_entry_with_assembly("console/ConsoleSuite.bd");
 
-            assert!(channel.source_path.ends_with("concurrency/ChannelApiTests.bd"));
-            assert!(messages.source_path.ends_with("console/ConsoleMessageChannelTests.bd"));
+            assert!(channel.source_path.ends_with("concurrency/ConcurrencySuite.bd"));
+            assert!(messages.source_path.ends_with("console/ConsoleSuite.bd"));
             assert!(
                 channel
                     .assembly
@@ -423,7 +439,7 @@ mod tests {
                     .expect("channel assembly")
                     .entry_unit()
                     .path
-                    .ends_with("concurrency/ChannelApiTests.bd")
+                    .ends_with("concurrency/ConcurrencySuite.bd")
             );
             assert!(
                 messages
@@ -432,7 +448,7 @@ mod tests {
                     .expect("messages assembly")
                     .entry_unit()
                     .path
-                    .ends_with("console/ConsoleMessageChannelTests.bd")
+                    .ends_with("console/ConsoleSuite.bd")
             );
         });
     }

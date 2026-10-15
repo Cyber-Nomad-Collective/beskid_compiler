@@ -41,12 +41,17 @@ impl Emit for PrimitiveType {
         w.write_str(match self {
             PrimitiveType::Bool => "bool",
             PrimitiveType::I32 => "i32",
+            PrimitiveType::I8 => "i8",
+            PrimitiveType::I16 => "i16",
+            PrimitiveType::U16 => "u16",
+            PrimitiveType::U64 => "u64",
             PrimitiveType::I64 => "i64",
             PrimitiveType::U32 => "u32",
             PrimitiveType::U8 => "u8",
             PrimitiveType::Pointer => "pointer",
             PrimitiveType::Word => "word",
             PrimitiveType::F64 => "f64",
+            PrimitiveType::F32 => "f32",
             PrimitiveType::Char => "char",
             PrimitiveType::String => "string",
             PrimitiveType::Unit => "unit",
@@ -165,6 +170,11 @@ impl Emit for Spanned<Parameter> {
 
 impl Emit for Field {
     fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
+        for attribute in &self.attributes {
+            attribute.emit(w, cx)?;
+            cx.nl(w)?;
+            cx.write_indent(w)?;
+        }
         self.visibility.emit(w, cx)?;
         match self.kind {
             FieldKind::Value => {

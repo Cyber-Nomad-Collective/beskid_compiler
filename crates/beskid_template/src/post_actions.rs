@@ -8,6 +8,7 @@ use crate::manifest::TemplatePostAction;
 
 #[derive(Debug, Clone)]
 pub struct PostActionContext {
+    pub offline: bool,
     pub output_root: PathBuf,
     pub lock_root: PathBuf,
     pub beskid_exe: Option<PathBuf>,
@@ -50,23 +51,29 @@ fn run_beskid_lock(ctx: &PostActionContext) -> TemplateResult<()> {
             return Ok(());
         }
         let workspace = workspace.expect("checked above");
-        let status = Command::new(&exe)
-            .args(["lock", "--project", workspace.to_str().unwrap_or_default()])
+        let mut command = Command::new(&exe);
+        let status = command
+            .args(["dev", "project", "lock", "--project"])
+            .arg(&workspace)
+            .args(if ctx.offline { vec!["--offline"] } else { vec![] })
             .status()
             .map_err(TemplateError::Io)?;
         if !status.success() {
-            return Err(TemplateError::Internal(format!("beskid lock failed with status {status}")));
+            return Err(TemplateError::Internal(format!("beskid dev project lock failed with status {status}")));
         }
         return Ok(());
     }
 
     let project = project.expect("checked above");
-    let status = Command::new(&exe)
-        .args(["lock", "--project", project.to_str().unwrap_or_default()])
+    let mut command = Command::new(&exe);
+    let status = command
+        .args(["dev", "project", "lock", "--project"])
+        .arg(&project)
+        .args(if ctx.offline { vec!["--offline"] } else { vec![] })
         .status()
         .map_err(TemplateError::Io)?;
     if !status.success() {
-        return Err(TemplateError::Internal(format!("beskid lock failed with status {status}")));
+        return Err(TemplateError::Internal(format!("beskid dev project lock failed with status {status}")));
     }
     Ok(())
 }

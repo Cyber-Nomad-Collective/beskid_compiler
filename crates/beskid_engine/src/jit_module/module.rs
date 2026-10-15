@@ -4,7 +4,7 @@ use crate::runtime_kit::JitRuntimeKit;
 use beskid_abi::abi_v5::TargetMetadata;
 use beskid_abi::runtime_kit::BuildProfile as RuntimeKitProfile;
 use beskid_codegen::cranelift_host::{declare_user_functions, declare_validated_extern_imports, remap_testcase_externals};
-use beskid_codegen::{CodegenArtifact, emit_string_literals, emit_type_descriptors};
+use beskid_codegen::{CodegenArtifact, emit_string_literals};
 use beskid_pipeline::{
     PipelineObserver, emit_work_unit, observe_phase_result,
     phases::{JIT_EMIT, JIT_FINALIZE},
@@ -102,7 +102,6 @@ impl BeskidJitModule {
         declare_import_allowlist_symbols(&mut self.module, artifact, &self.import_allowlist, &mut self.func_ids)?;
 
         emit_string_literals(&mut self.module, artifact)?;
-        emit_type_descriptors(&mut self.module, artifact)?;
         beskid_codegen::emit_closure_static_plans(&mut self.module, artifact)?;
 
         let mut ctx = self.module.make_context();

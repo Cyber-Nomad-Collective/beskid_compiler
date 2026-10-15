@@ -1,6 +1,7 @@
 use crate::syntax::Spanned;
 use crate::syntax::{Type, Visibility};
 
+use super::super::collect::ReexportRoute;
 use super::super::ids::ItemId;
 use super::super::items::ItemKind;
 use super::super::resolver::Resolver;
@@ -11,6 +12,8 @@ pub(super) enum ModulePathLookup {
     ModuleMissing,
     NameMissing { module_path: String, name: String },
     NotVisible { module_path: String, name: String },
+    /// The module reaches `candidates` distinct items of the name at one re-export distance.
+    Ambiguous { module_path: String, name: String, candidates: usize },
 }
 impl Resolver {
     pub(super) fn resolve_item_in_scope(&self, name: &str) -> Option<ItemId> {
@@ -100,7 +103,17 @@ impl Resolver {
                 ModulePathLookup::Found(item)
             }
         } else {
-            ModulePathLookup::NameMissing { module_path: module_path_string, name: name.to_string() }
+            // Not declared or imported by the module itself: reach it through the module's
+            // public re-exports under the same rule `use Hub;` applies (`reexported_item_route`).
+            match self.reexported_item_route(module_id, name) {
+                ReexportRoute::Found(item) => ModulePathLookup::Found(item),
+                ReexportRoute::Ambiguous(candidates) => {
+                    ModulePathLookup::Ambiguous { module_path: module_path_string, name: name.to_string(), candidates }
+                }
+                ReexportRoute::Missing => {
+                    ModulePathLookup::NameMissing { module_path: module_path_string, name: name.to_string() }
+                }
+            }
         }
     }
 
@@ -113,11 +126,26 @@ impl Resolver {
         self.lookup_named_item_in_module(segments, &item_name)
     }
 
+    /// The nominal item a method receiver names. `resolve_type` records a complex type under its
+    /// path span, not the outer type span: a type-body method's receiver is re-spanned to the
+    /// method (see `MethodDefinition::parse_with_receiver`) while its path keeps the definition
+    /// span, so only the path span carries the resolution.
     pub(super) fn receiver_item_id_for_type(&self, receiver_type: &Spanned<Type>) -> Option<ItemId> {
-        match self.tables.resolved_types.get(&receiver_type.span) {
+        let Type::Complex(path) = &receiver_type.node else {
+            return None;
+        };
+        match self.tables.resolved_types.get(&path.span) {
             Some(ResolvedType::Item(item_id)) => Some(*item_id),
             _ => None,
         }
+    }
+
+    /// The enclosing type-body method's unique sibling method named `name`, if any. Mirrors
+    /// `unqualified_enclosing_method_call` in `beskid_queries`: an unqualified call inside a
+    /// method declared in a `type X { }` body binds to the sibling method before any lexical or
+    /// module lookup, and only when exactly one sibling carries the name.
+    pub(super) fn is_unique_sibling_method(&self, name: &str) -> bool {
+        self.current_type_sibling_methods.as_ref().and_then(|methods| methods.get(name)).is_some_and(|count| *count == 1)
     }
 
     pub(super) fn receiver_has_field(&self, field_name: &str) -> bool {

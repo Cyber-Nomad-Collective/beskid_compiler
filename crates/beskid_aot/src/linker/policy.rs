@@ -20,19 +20,27 @@ pub(super) fn append_library_search_paths(req: &LinkRequest, target: &str, cmd: 
     Ok(())
 }
 
+/// The logical `[Extern(Library: "beskid_runtime")]` library is the canonical runtime itself.
+/// When the request links a canonical runtime input (static archive or shared provider), that
+/// input already supplies every runtime export; naming it again as `-lbeskid_runtime` would ask
+/// the linker to search for a library that the validated runtime path replaces.
+fn supplied_by_runtime_input(req: &LinkRequest, library: &str) -> bool {
+    req.runtime.is_some() && canonical_link_library_name(library) == "beskid_runtime"
+}
+
 pub(super) fn append_external_libraries(req: &LinkRequest, target: &str, cmd: &mut Command) -> AotResult<()> {
     if req.external_libraries.is_empty() {
         return Ok(());
     }
     if target.contains("windows") {
-        for library in &req.external_libraries {
+        for library in req.external_libraries.iter().filter(|library| !supplied_by_runtime_input(req, library)) {
             cmd.arg(format!("{}.lib", library.trim()));
         }
         return Ok(());
     }
     for library in &req.external_libraries {
         let name = canonical_link_library_name(library);
-        if name.is_empty() {
+        if name.is_empty() || supplied_by_runtime_input(req, library) {
             continue;
         }
         if name.starts_with("-l") {

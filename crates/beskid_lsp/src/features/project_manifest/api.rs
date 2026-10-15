@@ -86,7 +86,7 @@ fn span_to_range(text: &str, span: BsolSpan) -> Range {
 }
 
 const PROJECT_RESERVED: &[&str] =
-    &["target", "dependency", "link", "workspace", "member", "override", "registry", "project"];
+    &["target", "dependency", "link", "glue", "workspace", "member", "override", "registry", "project"];
 
 fn is_project_root_block(kind: &str) -> bool {
     !PROJECT_RESERVED.contains(&kind)
@@ -185,6 +185,14 @@ fn project_document_symbols_from_ast(text: &str, document: &BsolDocument) -> Vec
                 range,
                 range,
             )),
+            "glue" => symbols.push(build_document_symbol(
+                block_label_name(block),
+                Some("glue".to_string()),
+                SymbolKind::INTERFACE,
+                None,
+                range,
+                range,
+            )),
             _ => {}
         }
     }
@@ -243,6 +251,7 @@ const PROJECT_MANIFEST_KEYWORDS: &[CompletionTriple] = &[
     ("target", CompletionItemKind::MODULE, "Top-level target block"),
     ("dependency", CompletionItemKind::MODULE, "Top-level dependency block"),
     ("link", CompletionItemKind::MODULE, "Top-level link block"),
+    ("glue", CompletionItemKind::MODULE, "Top-level Glue owner block (backend and owner source path)"),
     ("name", CompletionItemKind::FIELD, "Project or dependency name"),
     ("version", CompletionItemKind::FIELD, "Version string"),
     ("root", CompletionItemKind::FIELD, "Source root folder"),
@@ -253,6 +262,7 @@ const PROJECT_MANIFEST_KEYWORDS: &[CompletionTriple] = &[
     ("path", CompletionItemKind::FIELD, "Local dependency path"),
     ("url", CompletionItemKind::FIELD, "Git dependency URL"),
     ("rev", CompletionItemKind::FIELD, "Git dependency revision"),
+    ("backend", CompletionItemKind::FIELD, "Glue owner backend: rust"),
     ("App", CompletionItemKind::ENUM_MEMBER, "Application target kind"),
     ("Lib", CompletionItemKind::ENUM_MEMBER, "Library target kind"),
     ("Test", CompletionItemKind::ENUM_MEMBER, "Test target kind"),
@@ -261,6 +271,7 @@ const PROJECT_MANIFEST_KEYWORDS: &[CompletionTriple] = &[
     ("Template", CompletionItemKind::ENUM_MEMBER, "Template project type"),
     ("Aggregate", CompletionItemKind::ENUM_MEMBER, "Aggregate project type"),
     ("Bsol", CompletionItemKind::ENUM_MEMBER, "Bsol project type"),
+    ("rust", CompletionItemKind::ENUM_MEMBER, "Rust Glue owner backend"),
 ];
 
 const WORKSPACE_MANIFEST_KEYWORDS: &[CompletionTriple] = &[
@@ -285,6 +296,7 @@ enum EnumFieldAtCursor {
     DependencySource,
     WorkspaceResolver,
     ProjectType,
+    GlueBackend,
 }
 
 fn line_key_value_suffix<'a>(line: &'a str, key: &str) -> Option<&'a str> {
@@ -328,6 +340,12 @@ fn manifest_enum_field_at_cursor(text: &str, offset: usize) -> Option<EnumFieldA
             return Some(EnumFieldAtCursor::ProjectType);
         }
     }
+    if let Some(rest) = line_key_value_suffix(line, "backend") {
+        let t = rest.trim_start();
+        if !t.starts_with('"') && (t.is_empty() || token_prefix_chars(t)) {
+            return Some(EnumFieldAtCursor::GlueBackend);
+        }
+    }
     None
 }
 
@@ -354,6 +372,8 @@ pub fn manifest_enum_completion_items(text: &str, offset: usize) -> Option<Vec<C
             ("Aggregate", "Aggregate project"),
             ("Bsol", "BSOL schema project"),
         ],
+        // `dotnet` is admitted by the schema but rejected as unavailable, so it is not offered.
+        EnumFieldAtCursor::GlueBackend => &[("rust", "Rust Glue owner backend")],
     };
 
     let prefix = completion_prefix_at_offset(text, offset).to_lowercase();
@@ -392,7 +412,13 @@ pub fn hover_markdown(token: &str) -> Option<&'static str> {
         "source" => {
             Some("`source` must be `path`, `git`, or `registry` (recommended: unquoted, e.g. `source = path`).")
         }
-        "path" => Some("`path` is required when `source = path`."),
+        "path" => Some(
+            "`path` is required when `source = path`. In a `glue` block it names the project-relative owner directory of `.rs` files with `implementation.rs` as the entry.",
+        ),
+        "glue" => Some(
+            "`glue \"<library>\" { backend = rust path = \"<dir>\" }` declares a Rust Glue owner library. The label is the owner native library identity and must not also appear in `link.libraries`.",
+        ),
+        "backend" => Some("`backend` selects the Glue owner backend. Only `rust` is available; `dotnet` is rejected."),
         "url" => Some("`url` is required when `source = git`."),
         "rev" => Some("`rev` is required when `source = git`."),
         _ => None,
@@ -438,4 +464,44 @@ pub fn dependency_path_location(uri: &Uri, text: &str, offset: usize) -> Option<
         }
     }
     None
+}
+
+#[cfg(test)]
+mod glue_tests {
+    use super::*;
+
+    const GLUE_MANIFEST: &str = "p {\n  name = \"p\"\n  version = \"0.1.0\"\n}\ntarget \"consumer\" {\n  kind = Lib\n}\nglue \"glue_manual\" {\n  backend = rust\n  path = \"rust\"\n}\n";
+
+    #[test]
+    fn glue_block_is_a_reserved_project_block_with_a_symbol() {
+        assert!(!is_project_root_block("glue"));
+        let uri = Uri::from_str("file:///project/p.bproj").expect("uri");
+        let symbols = document_symbols(&uri, GLUE_MANIFEST);
+        let glue = symbols.iter().find(|symbol| symbol.detail.as_deref() == Some("glue")).expect("glue symbol");
+        assert_eq!(glue.name, "glue_manual");
+    }
+
+    #[test]
+    fn glue_keywords_are_offered_in_project_manifests() {
+        let uri = Uri::from_str("file:///project/p.bproj").expect("uri");
+        let labels: Vec<&str> = manifest_keyword_completions(&uri).iter().map(|(label, _, _)| *label).collect();
+        for expected in ["glue", "backend", "rust"] {
+            assert!(labels.contains(&expected), "missing `{expected}` completion");
+        }
+        assert!(!labels.contains(&"dotnet"));
+    }
+
+    #[test]
+    fn glue_backend_value_completion_offers_only_rust() {
+        let text = "glue \"g\" {\n  backend = ";
+        let items = manifest_enum_completion_items(text, text.len()).expect("backend completions");
+        let labels: Vec<&str> = items.iter().map(|item| item.label.as_str()).collect();
+        assert_eq!(labels, ["rust"]);
+    }
+
+    #[test]
+    fn glue_hover_documents_the_block_and_backend() {
+        assert!(hover_markdown("glue").is_some_and(|text| text.contains("link.libraries")));
+        assert!(hover_markdown("backend").is_some_and(|text| text.contains("`rust`")));
+    }
 }

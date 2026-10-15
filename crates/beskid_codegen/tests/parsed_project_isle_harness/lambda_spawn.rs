@@ -20,7 +20,7 @@ fn parsed_direct_spawn_with_arguments_transfers_them_through_a_traced_start_envi
 
     let lowered = lower_verified_entrypoint(assembly, target, isa.as_ref());
     let plan = lowered
-        .artifact
+        .artifact()
         .aggregate_static_plans
         .iter()
         .find(|plan| plan.allocation_request_symbol.starts_with("__beskid_spawn_arguments_request_"))
@@ -30,13 +30,13 @@ fn parsed_direct_spawn_with_arguments_transfers_them_through_a_traced_start_envi
     assert_eq!(plan.pointer_map_offsets[0], plan.fields[1].field_offset);
 
     let main = lowered
-        .artifact
+        .artifact()
         .functions
         .iter()
         .find(|function| function.name.starts_with("Main#syntax_"))
         .expect("Main artifact");
     let trampoline = lowered
-        .artifact
+        .artifact()
         .functions
         .iter()
         .find(|function| function.name.starts_with("__beskid_spawn_entry_syntax_"))
@@ -53,7 +53,7 @@ fn parsed_direct_spawn_with_arguments_transfers_them_through_a_traced_start_envi
     );
     assert!(trampoline_clif.contains("Entry#syntax_"), "{trampoline_clif}");
     let entry = lowered
-        .artifact
+        .artifact()
         .functions
         .iter()
         .find(|function| function.name.starts_with("Entry#syntax_"))
@@ -101,29 +101,29 @@ fn parsed_zero_capture_lambda_spawn_emits_syntax_owned_entry_and_fiber_dispatch(
 
     let lowered = lower_verified_entrypoint(assembly, target, isa.as_ref());
     assert_eq!(
-        lowered.artifact.functions.len(),
+        lowered.artifact().functions.len(),
         4,
         "Main, the lambda body entry, the syntax-owned spawn entry, and its trampoline: {:?}",
-        lowered.artifact.functions.iter().map(|function| function.name.as_str()).collect::<Vec<_>>()
+        lowered.artifact().functions.iter().map(|function| function.name.as_str()).collect::<Vec<_>>()
     );
     assert!(
-        lowered.artifact.functions.iter().any(|function| function.name.starts_with("__beskid_lambda_entry_syntax_")),
+        lowered.artifact().functions.iter().any(|function| function.name.starts_with("__beskid_lambda_entry_syntax_")),
         "lambda body entry must remain part of the reachable closure"
     );
     let main = lowered
-        .artifact
+        .artifact()
         .functions
         .iter()
         .find(|function| function.name.starts_with("Main#syntax_"))
         .expect("Main artifact");
     let lambda = lowered
-        .artifact
+        .artifact()
         .functions
         .iter()
         .find(|function| function.name.starts_with("__beskid_spawn_lambda_syntax_"))
         .expect("syntax-owned lambda entry");
     let trampoline = lowered
-        .artifact
+        .artifact()
         .functions
         .iter()
         .find(|function| function.name.starts_with("__beskid_spawn_entry_syntax_"))
@@ -149,28 +149,28 @@ fn parsed_capturing_lambda_spawn_allocates_roots_and_dispatches_fiber_entry() {
 
     let lowered = lower_verified_entrypoint(assembly, target, isa.as_ref());
     assert!(
-        !lowered.artifact.closure_static_plans.is_empty(),
+        !lowered.artifact().closure_static_plans.is_empty(),
         "capturing spawn must materialize a generation-safe closure static plan"
     );
     assert_eq!(
-        lowered.artifact.closure_static_plans[0].captures.len(),
+        lowered.artifact().closure_static_plans[0].captures.len(),
         1,
         "outer capture must appear in the static plan"
     );
     let main = lowered
-        .artifact
+        .artifact()
         .functions
         .iter()
         .find(|function| function.name.starts_with("Main#syntax_"))
         .expect("Main artifact");
     let lambda = lowered
-        .artifact
+        .artifact()
         .functions
         .iter()
         .find(|function| function.name.starts_with("__beskid_spawn_lambda_syntax_"))
         .expect("syntax-owned capturing lambda entry");
     let trampoline = lowered
-        .artifact
+        .artifact()
         .functions
         .iter()
         .find(|function| function.name.starts_with("__beskid_spawn_entry_syntax_"))
@@ -201,8 +201,8 @@ fn parsed_unit_capturing_lambda_spawn_preserves_zero_return_entry() {
     let assembly = parse_production_units(project.path(), &[("Main.bd", "Main", source)]);
     let (target, isa) = x86_64_target_and_isa();
     let lowered = lower_verified_entrypoint(assembly, target, isa.as_ref());
-    assert_eq!(lowered.artifact.closure_static_plans[0].captures.len(), 1);
-    for lambda in lowered.artifact.functions.iter().filter(|function| {
+    assert_eq!(lowered.artifact().closure_static_plans[0].captures.len(), 1);
+    for lambda in lowered.artifact().functions.iter().filter(|function| {
         function.name.starts_with("__beskid_spawn_lambda_syntax_")
             || function.name.starts_with("__beskid_lambda_entry_syntax_")
     }) {
@@ -213,14 +213,14 @@ fn parsed_unit_capturing_lambda_spawn_preserves_zero_return_entry() {
         assert!(clif.contains("load.i64"), "body reads its capture: {clif}");
     }
     let trampoline = lowered
-        .artifact
+        .artifact()
         .functions
         .iter()
         .find(|function| function.name.starts_with("__beskid_spawn_entry_syntax_"))
         .expect("spawn trampoline");
     assert_eq!(trampoline.function.signature.returns.len(), 1, "transport still returns its owned result box");
     let entry = lowered
-        .artifact
+        .artifact()
         .functions
         .iter()
         .find(|function| function.name.starts_with("__beskid_spawn_lambda_syntax_"))

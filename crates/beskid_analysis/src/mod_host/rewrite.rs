@@ -27,9 +27,11 @@ pub(crate) fn run_rewriters(
     pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<RewriteResult> {
     observe_phase_result(pipeline, MOD_REWRITE, || {
-        let mut registrations: Vec<ContractRegistration> =
-            session.registrations().filter(|registration| is_rewrite_registration(registration)).cloned().collect();
-        registrations.sort_by(|left, right| {
+        let mut registrations: Vec<(&str, &ContractRegistration)> = session
+            .attributed_registrations()
+            .filter(|(_, registration)| is_rewrite_registration(registration))
+            .collect();
+        registrations.sort_by(|(_, left), (_, right)| {
             left.contract_id
                 .cmp(&right.contract_id)
                 .then_with(|| left.type_id.cmp(&right.type_id))
@@ -40,10 +42,14 @@ pub(crate) fn run_rewriters(
             .map(|host_input| ModInvocationContext::build(host_input, &[]))
             .unwrap_or_else(ModInvocationContext::empty);
         let mut outcomes: Vec<RewriterOutcome> = Vec::with_capacity(registrations.len());
-        for registration in &registrations {
+        for (package_id, registration) in registrations {
             let outcome = invoker
-                .invoke_rewriter(registration, &context.collect_request)
-                .map_err(|err| anyhow::anyhow!(err.to_string()))?;
+                .invoke_rewriter(
+                    registration,
+                    &context.collect_request,
+                    input.and_then(|input| input.semantic_authority),
+                )
+                .map_err(|err| anyhow::anyhow!(err.attributed_to(package_id).to_string()))?;
             outcomes.push(outcome);
         }
 

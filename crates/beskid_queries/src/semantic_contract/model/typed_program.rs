@@ -39,13 +39,38 @@ pub struct SyntaxUnitInput {
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct SyntaxUnitRevision {
+    /// Reissued only after canonical corpus proof; persistence never restores authority.
+    #[serde(skip)]
+    pub(crate) runtime_source_authority: Option<Arc<str>>,
+    /// Exact SDK source correspondence is reissued from actual assembly bytes, never restored.
+    #[serde(skip)]
+    pub(crate) sdk_source_authority: Option<Arc<str>>,
     pub(crate) generation: SyntaxGenerationId,
+    /// Rebuilt from the persisted source text when a snapshot is restored
+    /// (`persistence::rehydrate_syntax_units`), never serialized: the tree and its index are the
+    /// bulk of a Corelib-sized session, and both are a function of the source, the grammar and the
+    /// generation, which the snapshot identity and `tree_fingerprint` pin.
+    #[serde(skip, default = "placeholder_program")]
     pub(crate) expanded_program: Arc<beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>>,
+    #[serde(skip, default = "placeholder_index")]
     pub(crate) syntax_index: Arc<beskid_analysis::syntax_query::SyntaxIndex>,
     pub(crate) source_fingerprint: Arc<str>,
+    /// Span-free structural identity of `expanded_program`; equal trees may recur in later
+    /// generations (trivia edits, reverts) and stay distinct through `generation`.
     pub(crate) tree_fingerprint: Arc<str>,
-    pub(crate) source_fingerprint_history: Arc<[Arc<str>]>,
-    pub(crate) tree_fingerprint_history: Arc<[Arc<str>]>,
+}
+
+/// Empty tree standing in for a restored revision until rehydration replaces it. A revision that
+/// still carries it is never published to the syntax unit registry.
+fn placeholder_program() -> Arc<beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>> {
+    Arc::new(beskid_analysis::syntax::Spanned::new(
+        beskid_analysis::syntax::Program { items: Vec::new(), leading_docs: Vec::new() },
+        beskid_analysis::syntax::SpanInfo::default(),
+    ))
+}
+
+fn placeholder_index() -> Arc<beskid_analysis::syntax_query::SyntaxIndex> {
+    Arc::new(beskid_analysis::syntax_query::SyntaxIndex::from_program(&placeholder_program(), SyntaxGenerationId(0)))
 }
 
 impl SyntaxUnitInput {

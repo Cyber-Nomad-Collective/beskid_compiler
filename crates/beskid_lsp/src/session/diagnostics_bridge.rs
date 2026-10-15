@@ -6,7 +6,7 @@
 use tokio::sync::RwLock;
 use tower_lsp_server::ls_types::Uri;
 
-use crate::diagnostics::{collect_syntax_diagnostics, lsp_diagnostics_from_syntax};
+use crate::diagnostics::{ProjectPreparation, collect_syntax_diagnostics, lsp_diagnostics_from_syntax};
 use crate::session::db_access::with_compilation_db_mut_state;
 use crate::session::startup::wait_for_initial_scan;
 use crate::session::store::{State, SyntaxDiagnostic};
@@ -29,7 +29,13 @@ pub async fn collect_syntax_diagnostics_for_state(
         {
             write.configure_db_for_project_with_db(db, &plan.project_root);
         }
-        collect_syntax_diagnostics(Some(db), uri, source, compilation_context)
+        let mod_host = write.mod_host.clone();
+        collect_syntax_diagnostics(
+            Some(ProjectPreparation { db, mod_host: &mod_host }),
+            uri,
+            source,
+            compilation_context,
+        )
     })
     .await
 }

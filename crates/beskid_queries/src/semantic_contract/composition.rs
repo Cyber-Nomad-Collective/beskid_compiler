@@ -63,7 +63,10 @@ pub fn composition_injection_field(db: &dyn Db, key: AstNodeKey) -> SemanticQuer
     with_registered_syntax(db, key, composition_injection_field_tracked)
 }
 
-pub fn composition_injected_field_access(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<CompositionInjectedAccessFact> {
+pub fn composition_injected_field_access(
+    db: &dyn Db,
+    key: AstNodeKey,
+) -> SemanticQueryResult<CompositionInjectedAccessFact> {
     with_registered_syntax(db, key, composition_injected_field_access_tracked)
 }
 
@@ -79,12 +82,16 @@ fn composition_injected_field_access_tracked(
         let target = db.syntax_unit(declaration.unit).filter(|syntax| syntax.accepts_key(db, declaration))?;
         let target_index = target.syntax_index(db);
         let target_program = target.expanded_program(db);
-        let definition = target_index.node_at(target_program, declaration.node)?
-            .of::<beskid_analysis::syntax::TypeDefinition>()?;
-        let matches = definition.fields.iter()
+        let definition =
+            target_index.node_at(target_program, declaration.node)?.of::<beskid_analysis::syntax::TypeDefinition>()?;
+        let matches = definition
+            .fields
+            .iter()
             .filter(|field| field.node.kind == FieldKind::Injected && field.node.name.node.name == resolved.field_name)
             .collect::<Vec<_>>();
-        let [field] = matches.as_slice() else { return None; };
+        let [field] = matches.as_slice() else {
+            return None;
+        };
         if declaration.unit != key.unit && field.node.visibility.node != beskid_analysis::syntax::Visibility::Public {
             return None;
         }

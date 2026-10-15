@@ -99,6 +99,10 @@ impl ProjectLockDependencyEntry {
         self.resolved_version.as_deref()
     }
 
+    pub fn artifact_digest(&self) -> Option<&str> {
+        self.artifact_digest.as_deref()
+    }
+
     pub fn registry(&self) -> Option<&str> {
         self.registry.as_deref()
     }
@@ -209,7 +213,10 @@ pub struct ProjectLockfileV2 {
 }
 
 impl ProjectLockfileV2 {
-    fn from_plan(plan: &ProjectWorkspacePlan, entries: &[ProjectLockDependencyEntry]) -> Result<Self, ProjectError> {
+    pub(super) fn from_plan(
+        plan: &ProjectWorkspacePlan,
+        entries: &[ProjectLockDependencyEntry],
+    ) -> Result<Self, ProjectError> {
         let root_manifest = plan
             .manifest_path
             .strip_prefix(&plan.project_root)
@@ -565,7 +572,7 @@ pub fn load_project_lock_dependencies_from_path(
 fn reject_v1_lock_for_replay(content: &str) -> Result<(), ProjectError> {
     if content.lines().next() == Some(PROJECT_LOCK_HEADER_V1) {
         return Err(ProjectError::Validation(
-            "Project.lock v1 requires explicit migration with `beskid lock` or `beskid update`".into(),
+            "Project.lock v1 requires explicit migration with `beskid dev project lock` or `beskid update --all`".into(),
         ));
     }
     Ok(())
@@ -608,12 +615,14 @@ pub fn load_project_lock_dependencies_for_plan(
         .filter(|dependency| dependency.source == crate::projects::model::DependencySource::Registry)
         .map(|dependency| dependency.dependency_name.as_str())
         .collect::<Vec<_>>();
-    validate_existing_lock_graph(Some(&parsed), &path_entries, &registry_names, false)?;
+    validate_existing_lock_graph(Some(&parsed), &path_entries, false)?;
+    replay_registry_pins_reachable(lock_root, &parsed, &registry_names)?;
     Ok(parsed.dependencies)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct WorkspacePrepareOptions {
+    pub offline: bool,
     pub frozen: bool,
     pub locked: bool,
     pub refresh_lock: bool,
@@ -639,7 +648,7 @@ pub(super) fn preflight_existing_lock_for_plan(
         Some(PROJECT_LOCK_HEADER_V1) => {
             if !options.refresh_lock {
                 return Err(ProjectError::Validation(
-                    "Project.lock v1 requires explicit migration with `beskid lock` or `beskid update`".into(),
+                    "Project.lock v1 requires explicit migration with `beskid dev project lock` or `beskid update --all`".into(),
                 ));
             }
             ProjectLockfileV1::parse_v1(&content)?;
@@ -648,9 +657,7 @@ pub(super) fn preflight_existing_lock_for_plan(
         Some(PROJECT_LOCK_HEADER_V2) => {
             let existing = ProjectLockfileV2::parse_v2(&content)?;
             let current = ProjectLockfileV2::from_plan(plan, &[])?;
-            if !options.refresh_lock
-                && (existing.root_manifest != current.root_manifest || existing.project_name != current.project_name)
-            {
+            if existing.root_manifest != current.root_manifest || existing.project_name != current.project_name {
                 return Err(ProjectError::Validation("lockfile belongs to a different project".into()));
             }
             Ok(Some(existing))
@@ -659,10 +666,13 @@ pub(super) fn preflight_existing_lock_for_plan(
     }
 }
 
+/// The path and Corelib part of an existing lock must describe the current project graph exactly.
+/// Registry pins are checked separately against the resolved registry closure
+/// ([`reject_unreachable_registry_pins`]), because transitive registry packages are only known once
+/// their requesters' manifests are read.
 pub(super) fn validate_existing_lock_graph(
     existing: Option<&ProjectLockfileV2>,
     path_entries: &[ProjectLockDependencyEntry],
-    registry_names: &[&str],
     refresh_lock: bool,
 ) -> Result<(), ProjectError> {
     let Some(existing) = existing else { return Ok(()) };
@@ -676,24 +686,70 @@ pub(super) fn validate_existing_lock_graph(
             "Project.lock is stale: dependency graph changed; run `beskid update`".into(),
         ));
     }
-    let existing_registry_names = existing
+    Ok(())
+}
+
+/// Every registry pin of an existing lock must belong to the reachable registry closure.
+///
+/// A declared registry dependency may still lack a pin while the registry cannot serve it
+/// (warning-only ordinary preparation), so reachable names need not all be pinned.
+pub(super) fn reject_unreachable_registry_pins(
+    existing: &ProjectLockfileV2,
+    reachable: &HashSet<&str>,
+) -> Result<(), ProjectError> {
+    if let Some(entry) = existing
+        .dependencies
+        .iter()
+        .find(|entry| entry.source == ProjectLockSource::Registry && !reachable.contains(entry.name.as_str()))
+    {
+        return Err(ProjectError::Validation(format!(
+            "Project.lock is stale: registry package `{}` is no longer reachable from the declared dependencies; run `beskid update`",
+            entry.name
+        )));
+    }
+    Ok(())
+}
+
+/// Replay check of registry pins without network or archive access.
+///
+/// The walk starts at the declared registry dependencies and follows each pinned package's
+/// materialized manifest. When a reachable pinned package is not materialized, its requirements
+/// cannot be read here, so the walk cannot prove a remaining pin unreachable and accepts the lock;
+/// preparation re-resolves the closure from digest-verified artifacts and rejects it there.
+fn replay_registry_pins_reachable(
+    lock_root: &Path,
+    existing: &ProjectLockfileV2,
+    declared_registry_names: &[&str],
+) -> Result<(), ProjectError> {
+    let pins = existing
         .dependencies
         .iter()
         .filter(|entry| entry.source == ProjectLockSource::Registry)
-        .map(|entry| entry.name.as_str())
-        .collect::<HashSet<_>>();
-    let current_registry_names = registry_names.iter().copied().collect::<HashSet<_>>();
-    // A warning-only registry lookup can leave a declared dependency without a
-    // pin. Keep that absence replayable while it is still unavailable; the
-    // prepare step rejects a newly resolved package before materialization.
-    if !existing_registry_names.is_subset(&current_registry_names)
-        || registry_names.len() != current_registry_names.len()
-    {
-        return Err(ProjectError::Validation(
-            "Project.lock is stale: registry dependency graph changed; run `beskid update`".into(),
-        ));
+        .map(|entry| (entry.name.as_str(), entry))
+        .collect::<std::collections::HashMap<_, _>>();
+    let mut reachable = HashSet::new();
+    let mut pending = declared_registry_names.to_vec();
+    let mut complete = true;
+    while let Some(name) = pending.pop() {
+        if !reachable.insert(name) {
+            continue;
+        }
+        let Some(pin) = pins.get(name) else { continue };
+        let manifest = lock_root.join(&pin.materialized_root).join(&pin.manifest);
+        let Ok(text) = fs::read_to_string(&manifest) else {
+            complete = false;
+            continue;
+        };
+        let parsed = crate::projects::parse_manifest(&text)?;
+        for dependency in parsed.dependencies {
+            if dependency.source == crate::projects::model::DependencySource::Registry
+                && let Some((pinned, _)) = pins.get_key_value(dependency.name.as_str())
+            {
+                pending.push(*pinned);
+            }
+        }
     }
-    Ok(())
+    if complete { reject_unreachable_registry_pins(existing, &reachable) } else { Ok(()) }
 }
 
 pub(super) fn sync_project_lockfile(

@@ -127,7 +127,7 @@ fn imported_result_write_with_lowers_through_an_ordinary_function_block_match() 
     let descriptor_path = project_root.join("Core/Syscall/Descriptor.bd");
     let stream_path = project_root.join("Core/Syscall/StandardStream.bd");
     let main_source = "use Core.Syscall.Descriptor; use Core.Syscall.StandardStream; unit Main(string text) { StandardStream stream = StandardStream::Stdout(); Descriptor descriptor = Descriptor::Standard(stream); Result result = WriteWith(WriteRequest { descriptor: descriptor, data: text }); match result { Result::Ok(_) => {}, Result::Error(_) => {}, }; return; }";
-    let descriptor_source = "pub enum Descriptor { Standard(Core.Syscall.StandardStream stream), Raw(i64 fd), } pub type WriteRequest { Descriptor descriptor, string data } pub enum Result { Ok(i64 value), Error(i64 error), } pub Result WriteWith(WriteRequest request) { return Result::Ok(0_i64); }";
+    let descriptor_source = "pub enum Descriptor { Standard(Core.Syscall.StandardStream stream), Raw(i64 fd), } pub type WriteRequest { pub Descriptor descriptor, pub string data } pub enum Result { Ok(i64 value), Error(i64 error), } pub Result WriteWith(WriteRequest request) { return Result::Ok(0_i64); }";
     let stream_source = "pub enum StandardStream { Stdin, Stdout, Stderr, }";
     std::fs::create_dir_all(descriptor_path.parent().expect("descriptor parent"))
         .expect("create descriptor source directory");
@@ -292,6 +292,6 @@ fn imported_result_binding_array_field_owns_a_canonical_append() {
         ("Core/Results.bd", "pub enum Result<TValue, TError> { Ok(TValue value), Error(TError error) }"),
         ("Core/Collections/Array.bd", "pub T[] Append<T>(mut T[] values, T value) { return values; }"),
         ("Http/Errors.bd", "pub enum HttpError { InvalidFraming(), Closed() }"),
-        ("Http/Requests.bd", "pub type Header { string name, } pub type Request { string method, Header[] headers, }"),
+        ("Http/Requests.bd", "pub type Header { pub string name, } pub type Request { pub string method, pub Header[] headers, }"),
     ]);
 }

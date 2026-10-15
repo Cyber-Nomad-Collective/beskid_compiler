@@ -9,3 +9,7 @@ pub mod Runtime.Mem.Gc.RootsHandles;
 pub mod Runtime.Mem.Gc.Sweep;
 pub mod Runtime.Mem.Gc.Collection;
 pub mod Runtime.Mem.Gc.Allocation;
+
+pub mod Runtime.Mem.Gc.Identity;
+
+pub mod Runtime.Mem.Gc.CheckedScope;

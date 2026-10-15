@@ -357,7 +357,7 @@ pub(super) fn item_export_symbol_tracked(
             let beskid_analysis::syntax::Literal::String(value) = &literal.node.literal.node else {
                 return None;
             };
-            value.strip_prefix('"')?.strip_suffix('"')
+            beskid_analysis::syntax::decode_string_literal_token(value).ok()
         })?;
         Some(Ok(ExportSymbol(Arc::from(raw))))
     })
@@ -522,6 +522,30 @@ pub(super) fn direct_callees_for_item(
             callees.push(declaration);
         }
     }
+    // A `for` over a nominal iterator calls the iterable's `Next()` every iteration, an implicit
+    // direct call with no CallExpression node, exactly like scoped cleanup above.
+    for for_id in index.ids_of_kind(beskid_analysis::syntax_query::NodeKind::ForStatement) {
+        if !is_ancestor(index, item.node, for_id) {
+            continue;
+        }
+        if let Ok(Some(protocol)) = for_iterator_protocol(db, AstNodeKey { node: for_id, ..item }, None)
+            && !callees.contains(&protocol.next.declaration)
+        {
+            callees.push(protocol.next.declaration);
+        }
+    }
+    // A named function read as a value (`Apply(5, Double)`) is reachable through its closure
+    // record exactly as through a direct call: its entry must be emitted and importable.
+    for path_id in index.ids_of_kind(beskid_analysis::syntax_query::NodeKind::PathExpression) {
+        if !is_ancestor(index, item.node, path_id) {
+            continue;
+        }
+        if let Ok(Some(value)) = function_item_value(db, AstNodeKey { node: path_id, ..item })
+            && !callees.contains(&value.declaration)
+        {
+            callees.push(value.declaration);
+        }
+    }
     Ok(callees.into())
 }
 
@@ -548,8 +572,11 @@ pub(super) fn reachable_items_tracked(
     if syntax.syntax_index(db).kind(program.node) != Some(beskid_analysis::syntax_query::NodeKind::Program)
         || !matches!(
             entry_syntax.syntax_index(db).kind(entry.node),
+            // Methods are entries too: native Mod adapters enter through selected contract
+            // methods and factory `Create` methods, and `visit` already follows method callees.
             Some(
                 beskid_analysis::syntax_query::NodeKind::FunctionDefinition
+                    | beskid_analysis::syntax_query::NodeKind::MethodDefinition
                     | beskid_analysis::syntax_query::NodeKind::TestDefinition
             )
         )

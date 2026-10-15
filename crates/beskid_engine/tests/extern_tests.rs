@@ -22,7 +22,7 @@ pub contract C {
 
 pub i64 Main() { return 0; }
 "#;
-    let prepared = prepare_jit_entrypoint(std::path::Path::new("<memory>"), src, "Main")?;
+    let prepared = prepare_jit_entrypoint(std::path::Path::new("<memory>"), src, "Main", &beskid_engine::ModHost::NoMods)?;
     assert!(prepared.artifact.extern_imports.iter().any(|e| e.symbol == "write" && e.library.as_deref() == Some(LIBC)));
 
     let mut engine = Engine::new();
@@ -42,7 +42,7 @@ pub contract C {
 
 pub i64 Main() { return C.getpid(); }
 "#;
-    let prepared = prepare_jit_entrypoint(std::path::Path::new("<memory>"), src, "Main")?;
+    let prepared = prepare_jit_entrypoint(std::path::Path::new("<memory>"), src, "Main", &beskid_engine::ModHost::NoMods)?;
     let mut engine = Engine::new();
     engine.compile_artifact(&prepared.artifact).expect("compile via process-linked libc symbols");
     let main_ptr = unsafe { engine.entrypoint_ptr(&prepared.symbol).unwrap() };
@@ -63,7 +63,7 @@ pub contract C {
 
 pub i64 Main() { return C.no_such_symbol(); }
 "#;
-    let prepared = prepare_jit_entrypoint(std::path::Path::new("<memory>"), src, "Main")?;
+    let prepared = prepare_jit_entrypoint(std::path::Path::new("<memory>"), src, "Main", &beskid_engine::ModHost::NoMods)?;
     let mut engine = Engine::new();
     let err = engine.compile_artifact(&prepared.artifact).expect_err("missing symbol should error");
     let msg = format!("{:?}", err);
@@ -83,7 +83,7 @@ pub contract C {
 
 pub i64 Main() { return C.getpid(); }
 "#;
-    let prepared = prepare_jit_entrypoint(std::path::Path::new("<memory>"), src, "Main")?;
+    let prepared = prepare_jit_entrypoint(std::path::Path::new("<memory>"), src, "Main", &beskid_engine::ModHost::NoMods)?;
     let mut engine = Engine::new();
     engine.compile_artifact(&prepared.artifact).expect("compile extern call");
     let main_ptr = unsafe { engine.entrypoint_ptr(&prepared.symbol).unwrap() };
@@ -105,7 +105,7 @@ pub contract C {
 
 pub i64 Main() { return C.no_such_symbol(); }
 "#;
-    let prepared = prepare_jit_entrypoint(std::path::Path::new("<memory>"), src, "Main")?;
+    let prepared = prepare_jit_entrypoint(std::path::Path::new("<memory>"), src, "Main", &beskid_engine::ModHost::NoMods)?;
     let mut engine = Engine::new();
     let err = engine.compile_artifact(&prepared.artifact).expect_err("missing symbol should error");
     let msg = format!("{:?}", err);
@@ -125,7 +125,7 @@ pub contract C {
 
 pub i64 Main() { return C.getpid(); }
 "#;
-    let prepared = prepare_jit_entrypoint(std::path::Path::new("<memory>"), src, "Main")?;
+    let prepared = prepare_jit_entrypoint(std::path::Path::new("<memory>"), src, "Main", &beskid_engine::ModHost::NoMods)?;
     let mut engine = Engine::new();
     let err = engine.compile_artifact(&prepared.artifact).expect_err("missing library should error");
     let msg = format!("{:?}", err);

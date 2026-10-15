@@ -5,6 +5,10 @@ edition = "2024"
 license.workspace = true
 
 [dependencies]
+anyhow = "1"
+beskid_artifacts = { path = "../beskid_artifacts" }
+beskid_execution = { path = "../beskid_execution" }
+beskid_glue = { path = "../beskid_glue" }
 beskid_abi = { path = "../beskid_abi" }
 beskid_codegen = { path = "../beskid_codegen" }
 beskid_analysis = { path = "../beskid_analysis" }
@@ -27,3 +31,6 @@ cargo-cross = { workspace = true }
 
 [dev-dependencies]
 beskid_codegen = { path = "../beskid_codegen" }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

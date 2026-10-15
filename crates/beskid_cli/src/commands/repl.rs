@@ -1,4 +1,4 @@
-//! `beskid repl` — interactive snippet evaluator (JIT, no project resolve in v1).
+//! `beskid dev repl` — interactive snippet evaluator (JIT, no project resolve in v1).
 
 use anyhow::Result;
 use clap::Args;

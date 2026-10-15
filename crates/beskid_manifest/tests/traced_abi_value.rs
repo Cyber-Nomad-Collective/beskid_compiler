@@ -9,14 +9,22 @@ fn fiber_scheduler_layout_has_disjoint_traced_slots_and_one_runtime_authority() 
     assert_eq!(offset("result"), 160);
     assert_eq!(offset("capture"), offset("result") + 40);
     assert_eq!(record.size, offset("capture") + 40);
-    let fibers = scheduler.fields.iter().find(|field| field.name == "fibers").unwrap();
-    assert_eq!(fibers.offset, 4048);
-    assert_eq!(scheduler.size, fibers.offset + 16 * record.size);
+    // Fiber records are no longer an inline array: the scheduler header holds one pointer to a
+    // chunked, growable table (Storage.bd) so records never relocate and there is no fixed count.
+    assert!(scheduler.fields.iter().all(|field| field.name != "fibers"), "no inline fiber array");
+    let fiber_table = scheduler.fields.iter().find(|field| field.name == "fiber_table").unwrap();
+    assert_eq!((fiber_table.offset, fiber_table.ty.as_str()), (192, "pointer"));
+    let stack_max = scheduler.fields.iter().find(|field| field.name == "fiber_stack_max").unwrap();
+    assert_eq!((stack_max.offset, stack_max.ty.as_str()), (200, "usize"));
+    assert_eq!(scheduler.size, 208);
+    assert!(scheduler.fields.iter().all(|field| !field.ty.contains('[')), "scheduler header has no fixed arrays");
     assert_eq!(record.project_to_runtime.as_deref(), Some("constants"));
     assert_eq!(scheduler.project_to_runtime.as_deref(), Some("constants"));
     let source = include_str!("../../../runtime/beskid/src/Runtime/Fiber/Scheduler/Core.bd");
     assert!(source.contains("SystemAllocate(BESKID_SCHEDULER_STATE_SIZE, 8)"));
-    assert!(source.contains("BESKID_SCHEDULER_STATE_FIBERS_OFFSET + index * BESKID_FIBER_RECORD_SIZE"));
+    assert!(source.contains("ChunkTableCreate(BESKID_FIBER_RECORD_SIZE)"));
+    assert!(source.contains("ChunkTableRecord(fibers, index)"));
+    assert!(!source.contains("FIBER_TABLE_MAX"));
 }
 
 #[test]

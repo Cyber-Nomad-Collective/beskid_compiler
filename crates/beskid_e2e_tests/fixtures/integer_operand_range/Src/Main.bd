@@ -1,0 +1,10 @@
+// Rule T1: a literal or constant operand takes the type of the other operand. Next to an `i32`
+// value, `3000000000` and `BIG` do not fit, so each is a range error, never a promotion to `i64`.
+const BIG = 3000000000;
+
+i32 Main() {
+    i32 x = 5;
+    i32 y = x + 3000000000;
+    if x == BIG { return 1; }
+    return y;
+}

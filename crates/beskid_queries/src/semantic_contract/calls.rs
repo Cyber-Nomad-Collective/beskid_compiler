@@ -11,15 +11,18 @@ pub use resolution::{
 };
 
 pub(in crate::semantic_contract) use casts::{
-    abi_semantic_type, canonical_intrinsic_parameter_type, cast_intents_for_node, cast_intents_tracked,
-    expected_cast_type, expression_fact_target, is_transparent_binary_operand_path, primitive_integer,
+    canonical_intrinsic_parameter_type, cast_intents_for_node, cast_intents_tracked,
+    expected_cast_type, expression_fact_target, primitive_integer,
     primitive_numeric,
 };
 
+pub use facts::{for_iterator_protocol, for_iterator_specialization};
+
 pub(in crate::semantic_contract) use facts::{
     call_arguments_tracked, call_lowering_tracked, canonical_result_definition_for_type, canonical_result_variant,
-    for_iterator_fact_tracked, primitive_numeric_conversion_target, primitive_numeric_conversion_tracked,
-    range_for_fact_tracked, result_type_parts, try_expression_fact_for_node, try_expression_fact_tracked,
+    for_iterator_element_identity, for_iterator_fact_tracked,
+    for_statement_in_generic_context, primitive_numeric_conversion_target, primitive_numeric_conversion_tracked,
+    range_for_fact_tracked, result_type_parts, specialized_for_element_identity, try_expression_fact_for_node, try_expression_fact_tracked, try_expression_legality_for_node,
     try_operand_declaration,
 };
 
@@ -30,8 +33,9 @@ pub(in crate::semantic_contract) use generics::{
     generic_call_uses_parameter_type_arguments, generic_callable_parameters, generic_nominal_method_receiver_tracked,
     generic_source_expression_identity, generic_source_local_identity, generic_source_type_identity,
     generic_source_type_identity_with_substitutions, imported_call_receiver_exists,
-    imported_generic_nominal_receiver_requires_instantiation, stable_declaration_identity, substitute_explicit_type,
-    type_syntax_is_enclosing_generic_parameter_reference, type_syntax_is_generic_parameter_reference,
+    imported_generic_nominal_receiver_requires_instantiation, source_expression_unavailable,
+    stable_declaration_identity, substitute_explicit_type, type_syntax_is_enclosing_generic_parameter_reference,
+    type_syntax_is_generic_parameter_reference,
 };
 
 pub(in crate::semantic_contract) use resolution::{

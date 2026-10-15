@@ -297,49 +297,18 @@ pub(in crate::semantic_contract) fn callable_signature_for_node(
     if let Some(signature) = item_signature_for_node(node) {
         return Some(signature);
     }
-    if let Some(lambda) = node.of::<beskid_analysis::syntax::LambdaExpression>() {
-        let body = index
-            .direct_child_id(program, key.node, beskid_analysis::syntax_query::DynNodeRef::from(lambda.body.as_ref()))
-            .map(|node| normalized_expression_node(index, node));
-        let statement_body = body.is_some_and(|body| {
-            index.kind(body) == Some(beskid_analysis::syntax_query::NodeKind::BlockExpression)
-        });
-        // Untyped parameters and a block body (whose value comes from `return`) take the
-        // function type the lambda's position declares.
-        let expected = (statement_body || lambda.parameters.iter().any(|parameter| parameter.node.ty.is_none()))
-            .then(|| lambda_expected_signature(db, program, index, key))
-            .flatten()
-            .transpose()
-            .map(|expected| expected.filter(|expected| expected.parameters.len() == lambda.parameters.len()));
-        let expected_result =
-            expected.as_ref().ok().and_then(|expected| expected.as_ref().map(|expected| expected.result));
-        let expected = expected.map(|expected| expected.map(|expected| expected.parameters));
-        let parameters = expected.and_then(|expected| {
-            lambda
-                .parameters
-                .iter()
-                .enumerate()
-                .map(|(position, parameter)| match (&parameter.node.ty, &expected) {
-                    (Some(ty), _) => abi_type_from_syntax(db, key, &ty.node),
-                    (None, Some(expected)) => Ok(expected[position]),
-                    (None, None) => Err(SemanticError::unavailable("callable_signature")),
-                })
-                .collect::<Result<Vec<_>, _>>()
-        });
-        let result = if statement_body {
-            // A block body is a statement lambda: without a declared function type its value
-            // is unit, matching the checker.
-            Ok(expected_result.unwrap_or(SemanticTypeId::UNIT))
-        } else {
-            body.ok_or_else(|| SemanticError::unavailable("callable_signature")).and_then(|node| {
-                value_abi_type(db, AstNodeKey { node, ..key })?
-                    .ok_or_else(|| SemanticError::unavailable("callable_signature"))
-            })
-        };
-        return Some(
-            parameters
-                .and_then(|parameters| result.map(|result| ItemSignature { parameters: parameters.into(), result })),
-        );
+    if node.of::<beskid_analysis::syntax::LambdaExpression>().is_some() {
+        // The lambda's function type is its source identity: typed parameters and an expression
+        // body synthesize, untyped parameters and a block body check against the expected type.
+        return Some(lambda_source_identity(db, program, index, key).and_then(|identity| match identity {
+            GenericSourceTypeIdentity::Function { parameters, result } => Ok(ItemSignature {
+                parameters: parameters.iter().map(GenericSourceTypeIdentity::abi_type).collect(),
+                result: result.abi_type(),
+            }),
+            GenericSourceTypeIdentity::Abi(_)
+            | GenericSourceTypeIdentity::Nominal { .. }
+            | GenericSourceTypeIdentity::Array(_) => Err(SemanticError::unavailable("callable_signature")),
+        }));
     }
     if let Some(path) = node.of::<beskid_analysis::syntax::PathExpression>() {
         return callable_signature_for_path(db, program, index, key, &path.path.node);

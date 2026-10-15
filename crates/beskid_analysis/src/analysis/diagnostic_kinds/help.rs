@@ -23,9 +23,9 @@ impl SemanticIssueKind {
             )),
 
             // ── Import / syntax diagnostics ──
-            Self::UnknownImportPath { path } => Some(format!(
-                "check the module path `{path}` — it may not exist or may not be exported"
-            )),
+            Self::UnknownImportPath { path } => {
+                Some(format!("check the module path `{path}` — it may not exist or may not be exported"))
+            }
             Self::UseBeforeDeclaration { name } => Some(format!(
                 "move the `use {name}` declaration before its first reference"
             )),
@@ -108,8 +108,8 @@ impl SemanticIssueKind {
             Self::MatchArmTypeMismatch { expected, actual } => {
                 Some(format!("expected `{expected}`, got `{actual}`"))
             }
-            Self::MatchNonExhaustive { enum_name } => Some(format!(
-                "add a match arm for every variant of `{enum_name}` or a wildcard `_` arm"
+            Self::MatchNonExhaustive { enum_name, missing_pattern } => Some(format!(
+                "add an arm matching `{missing_pattern}`, cover every variant of `{enum_name}`, or add a wildcard `_` arm"
             )),
             Self::DuplicatePatternBinding { name } => Some(format!(
                 "rename one of the bindings named `{name}` in this pattern"
@@ -143,9 +143,9 @@ impl SemanticIssueKind {
             Self::ResolveUnknownType { name } => Some(format!(
                 "check the spelling of `{name}` or add a `use` import if it's defined elsewhere"
             )),
-            Self::ResolveUnknownModulePath { path } => Some(format!(
-                "check the module path `{path}` — it may not exist or may not be in scope"
-            )),
+            Self::ResolveUnknownModulePath { path } => {
+                Some(format!("check the module path `{path}` — it may not exist or may not be in scope"))
+            }
             Self::ResolveUnknownValueInModule { module_path, name } => Some(format!(
                 "check that module `{module_path}` exports a value named `{name}`"
             )),
@@ -155,9 +155,18 @@ impl SemanticIssueKind {
             Self::ResolveInvalidConformanceTarget { .. } => Some(
                 "declare conformance against a `contract`, not a type/enum/function".to_string()
             ),
+            Self::ResolvePrivateRuntimeBuiltin { .. } => Some(
+                "call the public Corelib API instead; only compiler-admitted Corelib sources may call runtime builtins".to_string()
+            ),
             Self::ResolvePrivateItemInModule { .. } => {
                 Some("mark the item `pub` or avoid cross-module access".to_string())
             }
+            Self::ResolveAmbiguousModulePath { path, .. } => Some(format!(
+                "module `{path}` must be declared by exactly one package of the dependency closure"
+            )),
+            Self::ResolveAmbiguousItemInModule { module_path, name, .. } => Some(format!(
+                "qualify `{name}` through the child module that declares it; `{module_path}` re-exports more than one"
+            )),
             Self::MissingImport { name, module_path } => {
                 Some(format!("add `use {module_path}::{name};` at the top of the file"))
             }
@@ -189,9 +198,10 @@ impl SemanticIssueKind {
             Self::TypeUnknownStructField { name } => {
                 Some(format!("check that the struct has a field named `{name}`"))
             }
-            Self::TypeInaccessibleStructField { .. } => {
-                Some("construct this value through its public API".to_string())
-            }
+            Self::TypeInaccessibleStructField { name } => Some(format!(
+                "`{name}` is private to the source unit that declares its type; mark the field `pub` in \
+                 its declaring type, or use that type's public API"
+            )),
             Self::TypeUnknownEnumVariant { name } => {
                 Some(format!("check that the enum has a variant named `{name}`"))
             }
@@ -231,6 +241,11 @@ impl SemanticIssueKind {
             ),
             Self::TypeInvalidBinaryOp => Some(
                 "the binary operator is not valid for these operand types".to_string()
+            ),
+            Self::TypeStringConcatOperandNotConvertible { .. } => Some(
+                "only string, bool, f32, f64, i8, i16, i32, i64, u8, u16 and u32 values convert to text; \
+                 produce a string from the value first"
+                    .to_string(),
             ),
             Self::TypeInvalidUnaryOp => Some(
                 "the unary operator is not valid for this operand type".to_string()
@@ -448,6 +463,18 @@ impl SemanticIssueKind {
                 "try `{}`",
                 crate::naming_case::normalize_to_profile(name, crate::naming_case::NamingProfile::SnakeCase)
             )),
+            Self::NumericLiteralOutOfRange { .. } => {
+                Some("use an in-range literal of the declared fixed-width type".to_string())
+            }
+            Self::ExternInvalidAbi { .. } => {
+                Some("Use [Extern(Abi:\"C\", Library:\"...\")] on the contract".to_string())
+            }
+            Self::ExternMissingLibrary => Some("Provide Library:\"<soname>\"; e.g., libc.so.6 on Linux".to_string()),
+            Self::ExternDisallowedParamType { detail, .. }
+            | Self::ExternDisallowedReturnType { detail, .. }
+            | Self::GlueBindingRejected { detail, .. }
+            | Self::ExternInvalidOptional { detail }
+            | Self::InvalidClifBlock { detail } => Some(detail.clone()),
         }
     }
 }

@@ -1,8 +1,14 @@
 mod archive;
+mod dependency_change;
 mod filesystem;
 mod lockfile;
 mod prepare;
 mod registry;
+mod resolution;
+pub use dependency_change::{
+    CommitDependencyChange, DependencyChangePlan, DependencyChangeReport, PlanDependencyChange,
+};
+pub use resolution::{RefreshScope, ResolutionPolicy};
 
 pub use lockfile::{
     PROJECT_LOCK_FILE_NAME, PortableLockPath, PortableLockPathBaseKind, ProjectLockDependencyEntry, ProjectLockSource,

@@ -1,5 +1,7 @@
+mod compiler_driver_embed;
 #[path = "corelib_workspace_source.rs"]
 mod corelib_workspace_source;
+mod sdk_source_embed;
 
 fn main() {
     let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -7,20 +9,26 @@ fn main() {
     let out_dir = std::path::PathBuf::from(std::env::var_os("OUT_DIR").expect("OUT_DIR"));
 
     println!("cargo:rerun-if-changed={}", manifest_path.display());
+    compiler_driver_embed::emit(manifest_dir, &out_dir);
+    println!("cargo:rerun-if-changed=compiler_driver_embed.rs");
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=corelib_workspace_source.rs");
 
     println!("cargo:rerun-if-env-changed=BESKID_CORELIB_SOURCE");
-    println!("cargo:rerun-if-changed={}", manifest_dir.join("../../corelib").display());
-    let corelib_workspace = corelib_workspace_source::resolve_corelib_workspace(
-        manifest_dir,
-        std::env::var_os("BESKID_CORELIB_SOURCE").as_deref(),
-    )
-    .expect(
-        "compiler/corelib workspace is missing or invalid; initialize the `corelib` submodule or set \
+    let corelib_override = std::env::var_os("BESKID_CORELIB_SOURCE");
+    let corelib_workspace =
+        corelib_workspace_source::resolve_corelib_workspace(manifest_dir, corelib_override.as_deref()).expect(
+            "compiler/corelib workspace is missing or invalid; initialize the `corelib` submodule or set \
              BESKID_CORELIB_SOURCE to a valid workspace with a .bws manifest and beskid_corelib/",
-    );
-    println!("cargo:rerun-if-changed={}", corelib_workspace.display());
+        );
+    for path in corelib_workspace_source::workspace_validation_files(&corelib_workspace, corelib_override.as_deref())
+        .expect("read Corelib workspace validation inputs")
+    {
+        println!("cargo:rerun-if-changed={}", path.display());
+    }
+
+    sdk_source_embed::emit(&corelib_workspace.join("packages/compiler-sdk"), &out_dir);
+    println!("cargo:rerun-if-changed=sdk_source_embed.rs");
 
     let source = std::fs::read_to_string(&manifest_path)
         .unwrap_or_else(|err| panic!("beskid_abi build: read runtime manifest: {err}"));

@@ -6,7 +6,7 @@ use super::common::format_link_detail;
 use super::{LinkRequest, LinkResult};
 
 pub(super) fn archive_static_libtool(req: &LinkRequest) -> AotResult<LinkResult> {
-    if req.runtime_staticlib.is_none() {
+    if req.runtime.is_none() {
         let output = Command::new("libtool")
             .arg("-static")
             .arg("-o")
@@ -23,14 +23,20 @@ pub(super) fn archive_static_libtool(req: &LinkRequest) -> AotResult<LinkResult>
             });
         }
         return Ok(LinkResult {
+            tool_receipt: None,
             output_path: req.output_path.clone(),
             command_line: format!("libtool -static -o {} {}", req.output_path.display(), req.object_path.display()),
             exported_symbols: req.exported_symbols.clone(),
         });
     }
-    let runtime_lib = req.runtime_staticlib.as_ref().ok_or_else(|| AotError::InvalidRequest {
-        message: "static archive output requires runtime archive unless standalone object-only mode is used".to_owned(),
-    })?;
+    let runtime_lib = req
+        .runtime
+        .as_ref()
+        .ok_or_else(|| AotError::InvalidRequest {
+            message: "static archive output requires runtime archive unless standalone object-only mode is used"
+                .to_owned(),
+        })?
+        .static_archive()?;
 
     let mut cmd = Command::new("libtool");
     cmd.arg("-static");
@@ -67,6 +73,7 @@ pub(super) fn archive_static_libtool(req: &LinkRequest) -> AotResult<LinkResult>
     }
 
     Ok(LinkResult {
+        tool_receipt: None,
         output_path: req.output_path.clone(),
         command_line: format!(
             "libtool -static -o {} {} {} && ranlib {}",

@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::syntax::Spanned;
 use crate::syntax::{Block, ContractNode, Node, Statement};
 
@@ -39,7 +41,10 @@ impl Resolver {
                     self.resolve_type(return_type);
                 }
                 if include_bodies {
+                    let previous_function =
+                        self.current_function.replace((def.node.name.node.name.clone(), item.span));
                     self.resolve_block(&def.node.body);
+                    self.current_function = previous_function;
                     self.pop_scope();
                 }
                 self.pop_generic_scope();
@@ -97,6 +102,13 @@ impl Resolver {
             // `type T : Contract { }` does above, so `stage6_contracts_and_methods` needs no
             // new pass to validate impl-block conformance.
             Node::ImplBlock(def) => {
+                self.push_generic_scope();
+                for generic in &def.node.generics {
+                    self.insert_generic(&generic.node.name);
+                }
+                for bound in &def.node.where_bounds {
+                    self.resolve_type_path(&bound.contract);
+                }
                 self.resolve_type(&def.node.receiver_type);
                 let receiver_item_id = self.receiver_item_id_for_type(&def.node.receiver_type);
                 for conformance in &def.node.conformances {
@@ -145,6 +157,7 @@ impl Resolver {
                 for binding in &def.node.associated_type_bindings {
                     self.resolve_type(&binding.node.ty);
                 }
+                self.pop_generic_scope();
             }
             Node::TestDefinition(def) => {
                 if !include_bodies {
@@ -209,6 +222,11 @@ impl Resolver {
                 for field in &def.node.fields {
                     self.resolve_type(&field.node.ty);
                 }
+                let mut sibling_methods = HashMap::new();
+                for method in &def.node.methods {
+                    *sibling_methods.entry(method.node.name.node.name.clone()).or_insert(0_usize) += 1;
+                }
+                let previous_siblings = self.current_type_sibling_methods.replace(sibling_methods);
                 for method in &def.node.methods {
                     self.resolve_type(&method.node.receiver_type);
                     let previous_receiver = self.current_receiver_item_id;
@@ -232,6 +250,7 @@ impl Resolver {
                         self.pop_scope();
                     }
                 }
+                self.current_type_sibling_methods = previous_siblings;
                 for binding in &def.node.associated_type_bindings {
                     self.resolve_type(&binding.node.ty);
                 }

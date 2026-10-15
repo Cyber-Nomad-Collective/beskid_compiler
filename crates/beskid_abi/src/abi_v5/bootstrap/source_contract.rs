@@ -4,7 +4,7 @@ use serde::Deserialize;
 
 use super::super::{
     AbiFieldLayout, AbiFunction, AbiLayout, AbiType, AssemblyExport, AssemblyParameterLocation, AssemblyRegister,
-    AssemblySymbol, PlatformImport, RuntimeIntrinsic, RuntimeTargetBinding,
+    AssemblySymbol, PlatformImport, PlatformImportKind, RuntimeIntrinsic, RuntimeTargetBinding,
 };
 
 #[derive(Deserialize)]
@@ -139,6 +139,7 @@ pub(super) struct SourceLayout {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct SourcePlatformImport {
+    kind: PlatformImportKind,
     symbol: String,
     pub(super) target: String,
     library: String,
@@ -207,6 +208,7 @@ pub(super) fn source_intrinsic(entry: &SourceIntrinsic) -> RuntimeIntrinsic {
 pub(super) fn source_platform_import(entry: &SourcePlatformImport) -> PlatformImport {
     let (param_names, params) = source_params(&entry.params);
     PlatformImport {
+        kind: entry.kind,
         symbol: entry.symbol.clone(),
         library: entry.library.clone(),
         param_names,

@@ -2,7 +2,7 @@ use std::fs;
 
 use beskid_analysis::CompilationContext;
 use beskid_analysis::projects::TargetKind;
-use beskid_analysis::services::analyze_source_in_project;
+use crate::projects::fixture_harness::analyze_file_with_mods;
 
 use crate::projects::with_cwd_at_workspace_root;
 use beskid_tests_support::{temp_case_dir, write_project_manifest as write_manifest};
@@ -45,7 +45,7 @@ i32 Main() {
     with_cwd_at_workspace_root(&root, || {
         let context = CompilationContext::try_for_analysis_path(&entry, None).expect("compilation context for project");
         assert_eq!(context.compile_plan.as_ref().expect("compile plan").target.kind, TargetKind::App);
-        let diagnostics = analyze_source_in_project(&entry, source).expect("analyze project source");
+        let diagnostics = analyze_file_with_mods(&entry).expect("analyze project source");
         let codes: Vec<String> = diagnostics.into_iter().filter_map(|diagnostic| diagnostic.code).collect();
         assert!(
             codes.iter().any(|code| code == "E1701"),
@@ -95,7 +95,7 @@ i32 marker() {
     with_cwd_at_workspace_root(&root, || {
         let context = CompilationContext::try_for_analysis_path(&entry, None).expect("compilation context for project");
         assert_eq!(context.compile_plan.as_ref().expect("compile plan").target.kind, TargetKind::Lib);
-        let diagnostics = analyze_source_in_project(&entry, source).expect("analyze lib project source");
+        let diagnostics = analyze_file_with_mods(&entry).expect("analyze lib project source");
         let codes: Vec<String> = diagnostics.into_iter().filter_map(|diagnostic| diagnostic.code).collect();
         assert!(codes.iter().any(|code| code == "E1711"), "expected E1711 for launch in lib project, got {codes:?}");
     });

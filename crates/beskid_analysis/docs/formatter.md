@@ -10,7 +10,7 @@ This document mirrors the platform-spec **[formatter feature hub](../../../../si
 | `Emit` trait, `EmitCtx`, `Emitter`, `EmitError`, `format_program` | `compiler/crates/beskid_analysis/src/format/emit.rs` |
 | Blank-line / between-member / between-block-item policy | `compiler/crates/beskid_analysis/src/format/policy.rs` |
 | Per-construct `Emit` impls | `compiler/crates/beskid_analysis/src/format/items/`, `expressions_emit.rs`, `statements_emit.rs`, `types_emit.rs` |
-| CLI entry point | `compiler/crates/beskid_cli/src/commands/format.rs` (`beskid format` / alias `beskid fmt`) |
+| CLI entry point | `compiler/crates/beskid_cli/src/commands/format.rs` (`beskid fmt`) |
 
 `mod.rs` is exports-only; do not add business logic or large `impl` blocks there.
 
@@ -43,11 +43,10 @@ A deviation in formatter output from this list is a defect against `beskid_analy
 
 | Invocation | Effect |
 | --- | --- |
-| `beskid format <file.bd>` | Format `<file.bd>` to stdout. |
-| `beskid format -o <out> <file.bd>` | Format `<file.bd>` to `<out>`. Requires exactly one input. |
-| `beskid format --write <path>` | Rewrite each `.bd` under `<path>` in place. Directory inputs require `--write` or `--check`. |
-| `beskid format --check <path>` | Exit non-zero on any drift with `not formatted: <path> (run \`beskid format --write <path>\`)`. CI gate. |
-| `beskid fmt …` | Alias of `beskid format` (declared via clap `visible_alias = "fmt"`). |
+| `beskid fmt` | Rewrite each `.bd` under the current directory in place. |
+| `beskid fmt <path>` | Rewrite a selected file or each `.bd` under a selected directory in place. |
+| `beskid fmt -o <out> <file.bd>` | Format a single input into `<out>`. |
+| `beskid fmt --check <path>` | Exit non-zero on drift without changing source files. |
 
 The CLI ignores the conventional skip set when walking directories: `.git`, `.svn`, `.hg`, `target`, `node_modules`, `dist`, `.venv`, `vendor`, `__pycache__`.
 
@@ -63,7 +62,7 @@ When you change `format/policy.rs` or `format/emit.rs::EmitCtx`:
 
 1. Update the layout policy section above and the matching section in the platform-spec hub.
 2. Regenerate any AST-side fixtures and re-run `cargo test -p beskid_analysis format::`.
-3. Run `beskid format --check` against the workspace source tree (corelib, book samples) to catch unexpected drift; rerun with `--write` and review the diff before merging.
+3. Run `beskid fmt --check` against the workspace source tree (corelib, book samples) to catch unexpected drift; rerun without `--check` and review the diff before merging.
 4. Add or update an ADR under `site/website/src/content/docs/platform-spec/tooling/formatter/adr/` when the change is normative (any user-visible layout change qualifies).
 
 ## Future: external formatter rule packs

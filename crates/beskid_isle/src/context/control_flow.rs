@@ -2,6 +2,20 @@ use super::*;
 use crate::context::generated::Context as _;
 
 impl IsleContext<'_, '_, '_, '_> {
+    /// The zero value a `for` loop variable is bound to before its first element is assigned;
+    /// `None` for a CLIF type no loop variable can have.
+    pub(super) fn loop_variable_initial_value(&mut self, element_type: Type) -> Option<Value> {
+        if element_type == cranelift_codegen::ir::types::F32 {
+            Some(self.builder.ins().f32const(cranelift_codegen::ir::immediates::Ieee32::with_bits(0)))
+        } else if element_type == cranelift_codegen::ir::types::F64 {
+            Some(self.builder.ins().f64const(cranelift_codegen::ir::immediates::Ieee64::with_bits(0)))
+        } else if element_type.is_int() {
+            Some(self.builder.ins().iconst(element_type, 0))
+        } else {
+            None
+        }
+    }
+
     /// Adapt one already-lowered scalar to a declared storage, parameter, or return boundary.
     ///
     /// Source typing has already authorized the assignment. This seam only reconciles the
@@ -17,24 +31,37 @@ impl IsleContext<'_, '_, '_, '_> {
             Some(value)
         } else if actual.is_int() && expected.is_int() && actual.bits() < expected.bits() {
             match self.facts.semantic_type(semantic_source)? {
-                beskid_queries::SemanticTypeId::U32
+                beskid_queries::SemanticTypeId::U16
+                | beskid_queries::SemanticTypeId::U64
+                | beskid_queries::SemanticTypeId::U32
                 | beskid_queries::SemanticTypeId::U8
                 | beskid_queries::SemanticTypeId::BOOL => Some(self.builder.ins().uextend(expected, value)),
-                beskid_queries::SemanticTypeId::I32 | beskid_queries::SemanticTypeId::I64 => {
-                    Some(self.builder.ins().sextend(expected, value))
-                }
+                beskid_queries::SemanticTypeId::I8
+                | beskid_queries::SemanticTypeId::I16
+                | beskid_queries::SemanticTypeId::I32
+                | beskid_queries::SemanticTypeId::I64 => Some(self.builder.ins().sextend(expected, value)),
                 _ => None,
             }
         } else if actual.is_int() && expected.is_int() && actual.bits() > expected.bits() {
             matches!(
                 self.facts.semantic_type(semantic_source)?,
-                beskid_queries::SemanticTypeId::U8
+                beskid_queries::SemanticTypeId::I8
+                    | beskid_queries::SemanticTypeId::I16
+                    | beskid_queries::SemanticTypeId::U16
+                    | beskid_queries::SemanticTypeId::U64
+                    | beskid_queries::SemanticTypeId::U8
                     | beskid_queries::SemanticTypeId::U32
                     | beskid_queries::SemanticTypeId::BOOL
                     | beskid_queries::SemanticTypeId::I32
                     | beskid_queries::SemanticTypeId::I64
             )
             .then(|| self.builder.ins().ireduce(expected, value))
+        } else if actual.is_float() && expected.is_float() {
+            Some(if actual.bits() < expected.bits() {
+                self.builder.ins().fpromote(expected, value)
+            } else {
+                self.builder.ins().fdemote(expected, value)
+            })
         } else {
             None
         }
@@ -85,6 +112,26 @@ impl IsleContext<'_, '_, '_, '_> {
 
         if kind == NodeKind::ClifBlock {
             return clif_block::lower_clif_block_for_effect(self, key);
+        }
+        if self.facts.semantic_type(key) == Some(beskid_queries::SemanticTypeId::UNIT)
+            && matches!(kind, NodeKind::FieldExpression | NodeKind::AssignExpression)
+        {
+            let field = if kind == NodeKind::FieldExpression { key } else { self.facts.child(key, 0)? };
+            let layout = self.facts.struct_layout(field)?;
+            let index = usize::try_from(self.facts.field_index(field)?).ok()?;
+            if !layout.is_valid() || !matches!(layout.fields.get(index), Some(None)) {
+                return None;
+            }
+            // The receiver and RHS may have effects even though unit has no storage.
+            self.field_base_pointer(field)?;
+            if kind == NodeKind::AssignExpression {
+                let rhs = self.facts.child(key, 1)?;
+                if self.facts.semantic_type(rhs) != Some(beskid_queries::SemanticTypeId::UNIT) {
+                    return None;
+                }
+                self.lower_expression_for_effect(rhs)?;
+            }
+            return Some(());
         }
 
         if generated::constructor_lower_statement(self, key).is_some() {
@@ -165,6 +212,18 @@ macro_rules! generated_control_flow_methods {
         }
 
         fn emit_return(&mut self, key: AstNodeKey) -> Option<()> {
+            // A `unit` value (`return value;` of a `unit` binding, `return ();`) has no storage:
+            // it is evaluated for its effects and the function returns nothing.
+            if let Some(value_key) = self.facts.child(key, 0)
+                && self.builder.func.signature.returns.is_empty()
+                && self.facts.semantic_type(value_key) == Some(beskid_queries::SemanticTypeId::UNIT)
+            {
+                self.lower_expression_for_effect(value_key)?;
+                self.emit_composition_cleanup_from(0)?;
+                self.release_managed_local_roots()?;
+                self.builder.ins().return_(&[]);
+                return Some(());
+            }
             if let Some(value_key) = self.facts.child(key, 0) {
                 let value = self.lower_nested_expression(value_key)?;
                 let expected = self.builder.func.signature.returns.first()?.value_type;
@@ -199,10 +258,12 @@ macro_rules! generated_control_flow_methods {
                 let pointer = dispatch::pointer_type(self.frontend_config);
                 return self.bind_local(slot, record, pointer, ManagedReferenceFact::GcManaged);
             }
-            let value = self.lower_nested_expression(initializer)?;
             let value_type = self.facts.scalar_type(key)?;
+            let managed_reference = self.local_managed_reference(key, value_type)?;
+            let admitted = self.prepare_checked_destination(value_type, managed_reference)?;
+            let value = self.lower_nested_expression(initializer)?;
             let value = self.adapt_scalar_boundary(initializer, value, value_type)?;
-            self.bind_local(slot, value, value_type, self.local_managed_reference(key, value_type)?)
+            self.bind_local_in_destination(slot, value, value_type, managed_reference, admitted)
         }
 
         fn emit_scoped_use(&mut self, key: AstNodeKey) -> Option<()> {
@@ -384,9 +445,218 @@ macro_rules! generated_control_flow_methods {
             Some(())
         }
 
+        /// `for id in array { body }`: the array value is evaluated once, checked non-null and
+        /// rooted for the whole loop; its length is read once from the header; every iteration
+        /// reloads the data pointer (the header is the rooted authority), loads the element at the
+        /// layout stride and assigns it to the loop variable, a scalar or a GC-rooted pointer local.
+        /// The loop scope owns the array root and the loop variable; the body runs in a nested
+        /// scope, so `break` and `continue` release only the body's roots, `return` releases all.
+        fn emit_array_for(&mut self, key: AstNodeKey) -> Option<()> {
+            let iterable = self.facts.child(key, 0)?;
+            let body_key = self.facts.child(key, 1)?;
+            let fact = self.facts.array_for_fact(key)?;
+            let element_type = self.facts.scalar_type(key)?;
+            let slot = self.facts.local_slot(key)?;
+            let pointer = dispatch::pointer_type(self.frontend_config);
+            if !fact.layout.is_valid()
+                || fact.layout.element_type != element_type
+                || (fact.element_managed == ManagedReferenceFact::GcManaged && element_type != pointer)
+                || self.locals.contains_key(&slot)
+            {
+                self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidArrayFor });
+                return None;
+            }
+            let array = generated::constructor_lower_expression(self, iterable)?;
+            if self.builder.func.dfg.value_type(array) != pointer {
+                self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidArrayFor });
+                return None;
+            }
+            self.builder.ins().trapz(array, TrapCode::unwrap_user(1));
+
+            self.begin_local_root_scope();
+            let _array_root = self.root_expression_value_if_needed(iterable, array)?;
+            let length = self.builder.ins().load(
+                pointer,
+                MemFlagsData::new(),
+                array,
+                i32::try_from(pointer.bytes()).ok()?,
+            );
+            let index = self.builder.declare_var(pointer);
+            let zero = self.builder.ins().iconst(pointer, 0);
+            self.builder.def_var(index, zero);
+            let Some(initial) = self.loop_variable_initial_value(element_type) else {
+                self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidArrayFor });
+                return None;
+            };
+            self.bind_local(slot, initial, element_type, fact.element_managed)?;
+
+            let header = self.builder.create_block();
+            let body = self.builder.create_block();
+            let latch = self.builder.create_block();
+            let exit = self.builder.create_block();
+            self.builder.ins().jump(header, &[]);
+
+            self.builder.switch_to_block(header);
+            let current = self.builder.use_var(index);
+            let in_bounds = self.builder.ins().icmp(IntCC::UnsignedLessThan, current, length);
+            self.builder.ins().brif(in_bounds, body, &[], exit, &[]);
+
+            self.builder.switch_to_block(body);
+            self.builder.seal_block(body);
+            let data = self.builder.ins().load(pointer, MemFlagsData::new(), array, 0);
+            let offset = if fact.layout.stride == 1 {
+                current
+            } else {
+                self.builder.ins().imul_imm_s(current, i64::from(fact.layout.stride))
+            };
+            let address = self.builder.ins().iadd(data, offset);
+            let element = self.builder.ins().load(element_type, MemFlagsData::new(), address, 0);
+            self.assign_local(slot, element)?;
+            let body_scope_depth = self.local_root_scope_depth();
+            self.begin_local_root_scope();
+            self.loop_stack.push(LoopTargets {
+                continue_block: latch,
+                break_block: exit,
+                root_scope_depth: body_scope_depth,
+                break_reached: false,
+            });
+            let lowered = generated::constructor_lower_statement(self, body_key);
+            self.loop_stack.pop();
+            if lowered.is_none() {
+                let _ = self.end_local_root_scope_for_current_block();
+                let _ = self.end_local_root_scope_for_current_block();
+                return None;
+            }
+            self.end_local_root_scope_for_current_block()?;
+            // Body may nest control flow and leave the builder on a descendant block.
+            let _ = jump_from_current_if_unterminated(self.builder, latch);
+
+            self.builder.switch_to_block(latch);
+            self.builder.seal_block(latch);
+            let current = self.builder.use_var(index);
+            let next = self.builder.ins().iadd_imm_s(current, 1);
+            self.builder.def_var(index, next);
+            self.builder.ins().jump(header, &[]);
+
+            self.builder.seal_block(header);
+            self.builder.switch_to_block(exit);
+            self.builder.seal_block(exit);
+            // Leaving the loop scope releases the array root and the loop variable on the normal
+            // and the `break` edges alike.
+            self.end_local_root_scope_for_current_block()?;
+            Some(())
+        }
+
+        /// `for id in iterator { body }` over the nominal iterator protocol (`Next()` returning
+        /// `Option<T>`): the iterable is evaluated once, checked non-null and rooted for the whole
+        /// loop. The header, which is also the `continue` target, calls `Next()` on the iterator
+        /// and reads the tag of the returned `Option<T>`: `None` leaves the loop, `Some` loads its
+        /// payload into the loop variable, a scalar or a GC-rooted pointer local. As in
+        /// `emit_array_for`, the loop scope owns the iterator root and the loop variable and the
+        /// body runs in a nested scope, so `break` and `continue` release only the body's roots.
         fn emit_iterator_for(&mut self, key: AstNodeKey) -> Option<()> {
-            self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidRangeFor });
-            None
+            let iterable = self.facts.child(key, 0)?;
+            let body_key = self.facts.child(key, 1)?;
+            let fact = self.facts.iterator_for_fact(key)?;
+            let element_type = self.facts.scalar_type(key)?;
+            let slot = self.facts.local_slot(key)?;
+            let pointer = dispatch::pointer_type(self.frontend_config);
+            let some = usize::try_from(fact.some_variant).ok().and_then(|index| fact.option_layout.variants.get(index));
+            let payload = some.and_then(|variant| match variant.payload_fields.as_slice() {
+                [Some(field)] => Some(*field),
+                _ => None,
+            });
+            let signature_is_receiver_to_pointer = matches!(
+                (fact.next_signature.params.as_slice(), fact.next_signature.returns.as_slice()),
+                ([receiver], [result]) if receiver.value_type == pointer && result.value_type == pointer
+            );
+            let (Some(some), Some(payload)) = (some, payload) else {
+                self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidIteratorFor });
+                return None;
+            };
+            let some_discriminant = i64::try_from(some.discriminant).ok();
+            if !fact.option_layout.is_valid()
+                || !signature_is_receiver_to_pointer
+                || payload.value_type != element_type
+                || some_discriminant.is_none()
+                || (fact.element_managed == ManagedReferenceFact::GcManaged && element_type != pointer)
+                || self.locals.contains_key(&slot)
+            {
+                self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidIteratorFor });
+                return None;
+            }
+            let some_discriminant = some_discriminant?;
+            let tag = fact.option_layout.tag;
+            let next = match self.call_importer.as_deref_mut()?.import(self.builder, fact.next.clone(), &fact.next_signature)
+            {
+                Ok(function) => function,
+                Err(CallImportError::UnknownCallee) => {
+                    self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::UnknownCallee(fact.next) });
+                    return None;
+                }
+            };
+            let iterator = generated::constructor_lower_expression(self, iterable)?;
+            if self.builder.func.dfg.value_type(iterator) != pointer {
+                self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidIteratorFor });
+                return None;
+            }
+            self.builder.ins().trapz(iterator, TrapCode::unwrap_user(1));
+
+            self.begin_local_root_scope();
+            let _iterator_root = self.root_expression_value_if_needed(iterable, iterator)?;
+            let Some(initial) = self.loop_variable_initial_value(element_type) else {
+                self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidIteratorFor });
+                return None;
+            };
+            self.bind_local(slot, initial, element_type, fact.element_managed)?;
+
+            let header = self.builder.create_block();
+            let body = self.builder.create_block();
+            let exit = self.builder.create_block();
+            self.builder.ins().jump(header, &[]);
+
+            self.builder.switch_to_block(header);
+            let call = self.builder.ins().call(next, &[iterator]);
+            self.guard_checked_allocation()?;
+            let option = self.builder.inst_results(call).first().copied()?;
+            let tag_value =
+                self.builder.ins().load(tag.value_type, MemFlagsData::new(), option, i32::try_from(tag.offset).ok()?);
+            let is_some = self.builder.ins().icmp_imm_s(IntCC::Equal, tag_value, some_discriminant);
+            self.builder.ins().brif(is_some, body, &[], exit, &[]);
+
+            self.builder.switch_to_block(body);
+            self.builder.seal_block(body);
+            // No call runs between `Next()` returning and this load, so the `Option` object needs
+            // no root of its own; the loaded element is published into the loop variable's root.
+            let element =
+                self.builder.ins().load(element_type, MemFlagsData::new(), option, i32::try_from(payload.offset).ok()?);
+            self.assign_local(slot, element)?;
+            let body_scope_depth = self.local_root_scope_depth();
+            self.begin_local_root_scope();
+            self.loop_stack.push(LoopTargets {
+                continue_block: header,
+                break_block: exit,
+                root_scope_depth: body_scope_depth,
+                break_reached: false,
+            });
+            let lowered = generated::constructor_lower_statement(self, body_key);
+            self.loop_stack.pop();
+            if lowered.is_none() {
+                let _ = self.end_local_root_scope_for_current_block();
+                let _ = self.end_local_root_scope_for_current_block();
+                return None;
+            }
+            self.end_local_root_scope_for_current_block()?;
+            // Body may nest control flow and leave the builder on a descendant block.
+            let _ = jump_from_current_if_unterminated(self.builder, header);
+
+            self.builder.seal_block(header);
+            self.builder.switch_to_block(exit);
+            self.builder.seal_block(exit);
+            // Leaving the loop scope releases the iterator root and the loop variable on the
+            // normal (`None`) and the `break` edges alike.
+            self.end_local_root_scope_for_current_block()?;
+            Some(())
         }
 
         fn emit_break(&mut self, _key: AstNodeKey) -> Option<()> {
@@ -454,6 +724,11 @@ macro_rules! generated_control_flow_methods {
             if let Some(value) = self.facts.constant_integer(key) {
                 let value_type = self.facts.scalar_type(key)?;
                 return Some(self.builder.ins().iconst(value_type, value));
+            }
+            // A named function read as a value is a closure record with the item's own entry
+            // and a null environment, allocated where the path is evaluated.
+            if let Some(value) = self.facts.function_item_value(key) {
+                return self.emit_closure_record(key, &value.callee, None, &value.parameters, value.result);
             }
             let slot = self.facts.local_slot(key)?;
             let binding = self.locals.get(&slot).copied()?;

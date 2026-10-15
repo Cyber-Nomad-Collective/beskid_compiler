@@ -5,6 +5,7 @@ pub use beskid_abi::runtime_source::CorelibService;
 mod closures;
 mod errors;
 mod events;
+mod expected;
 mod facts;
 mod generics;
 mod ids;
@@ -17,16 +18,18 @@ mod types;
 pub use closures::{
     CaptureStorage, CaptureStorageClass, ClosureAllocationStatus, ClosureCallTarget, ClosureCapture,
     ClosureEnvironment, ClosureEnvironmentAbiShape, ClosureEnvironmentField, ClosureLoweringStatus,
-    ClosurePointerMapRequirement, ClosureSignature, FiberOwnership, FunctionValueCall, SpawnDiagnostic,
-    SpawnDiagnosticKind, SpawnEntryValidation, SpawnHandleType, SpawnLegality, SpawnTarget,
+    ClosurePointerMapRequirement, ClosureSignature, FiberOwnership, FunctionItemValue, FunctionValueCall,
+    SpawnDiagnostic, SpawnDiagnosticKind, SpawnEntryValidation, SpawnHandleType, SpawnLegality, SpawnTarget,
 };
-pub use errors::{GenericBindingConflict, SemanticError, SemanticFinding, SemanticQueryResult};
+pub use errors::{GenericBindingConflict, GenericBoundViolation, SemanticError, SemanticFinding, SemanticQueryResult};
 pub use events::{EventHandlerLocalFact, EventOperationFact, EventOperationKind};
+pub use expected::{ExpectedType, ExpectedTypeContext};
 pub use facts::{
-    BulkParameterFact, CastIntent, ControlFlow, ForIteratorFact, ItemSignature, PrimitiveNumericConversion,
+    BulkParameterFact, CastIntent, ControlFlow, ForIterableSource, ForIteratorFact, ForIteratorProtocol, ItemSignature,
+    PrimitiveNumericConversion,
     RangeForFact, TryExpressionFact,
 };
-pub(in crate::semantic_contract) use generics::GenericSourceTypeIdentity;
+pub(crate) use generics::GenericSourceTypeIdentity;
 pub use generics::{
     ArrayIndexElementTemplate, ContractParameterWitness, GenericCallInstantiation, GenericCallSpecialization,
     GenericCallTemplate, GenericNominalMethodReceiver, GenericSpecializationInstance, GenericSubstitution,
@@ -39,7 +42,7 @@ pub use ids::{
 pub use layouts::{
     AggregateFieldAccess, AggregateFieldShape, AggregateLayoutFact, AggregateLiteralFieldValues, EnumConstructorFact,
     EnumConstructorSpecialization, EnumConstructorTemplate, EnumLayoutFact, EnumLayoutTemplateArgument,
-    EnumMatchArmFact, EnumMatchBindingFact, EnumMatchFact, EnumMatchPatternFact, EnumMatchScalarLiteralFact,
+    EnumMatchArmFact, EnumMatchBindingFact, EnumMatchFact, EnumMatchPatternFact, EnumMatchScalarLiteralFact, ScalarMatchFact,
     EnumMatchVariantPatternFact, EnumScalarPayloadObjectLayout, EnumScalarPayloadVariantLayout, EnumVariantLayoutFact,
     EventFieldLayoutFact, ScalarAbiLayout,
 };

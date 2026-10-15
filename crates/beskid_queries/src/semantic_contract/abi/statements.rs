@@ -36,11 +36,9 @@ pub(in crate::semantic_contract) fn statement_abi_type_for_node(
     }
 
     if let Some(assignment) = node.of::<beskid_analysis::syntax::AssignExpression>() {
-        if event_operation_tracked(db, syntax, key)
-            .ok()
-            .flatten()
-            .is_some_and(|fact| matches!(fact.operation, EventOperationKind::Subscribe | EventOperationKind::UnsubscribeFirst))
-        {
+        if event_operation_tracked(db, syntax, key).ok().flatten().is_some_and(|fact| {
+            matches!(fact.operation, EventOperationKind::Subscribe | EventOperationKind::UnsubscribeFirst)
+        }) {
             return Some(Ok(SemanticTypeId::POINTER));
         }
         return Some(assignment_abi_type(db, program, index, key, assignment));
@@ -124,7 +122,7 @@ pub(super) fn assignment_storage_abi_type(
             .fields
             .get(usize::try_from(access.index).map_err(|_| SemanticError::unavailable("value_abi_type"))?)
             .map(|(_, shape)| match shape {
-                AggregateFieldShape::Scalar(semantic) => *semantic,
+                AggregateFieldShape::Scalar(semantic) | AggregateFieldShape::ManagedReference(semantic) => *semantic,
                 AggregateFieldShape::Nominal(_) => SemanticTypeId::POINTER,
             })
             .ok_or_else(|| SemanticError::unavailable("value_abi_type"));

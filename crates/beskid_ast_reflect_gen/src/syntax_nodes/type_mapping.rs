@@ -1,6 +1,6 @@
 use super::{
     BTreeSet, GenericArgument, HelperPaths, PathArguments, SYNTAX_NODES_MODULE_PREFIX, Type, list_element_rust_name,
-    option_payload_rust_name, peel_type, vec_element_type,
+    option_payload_rust_name,
 };
 
 #[derive(Debug, Clone)]
@@ -59,54 +59,27 @@ fn map_path_type(
 
     if let ("Option", PathArguments::AngleBracketed(ab)) = (ident.as_str(), args) {
         if let Some(GenericArgument::Type(inner)) = ab.args.first() {
-            let p = peel_type(inner);
-            if is_primitive_option_inner(p) {
-                return map_rust_type(p, stub_path, helpers, type_params);
-            }
             if let Some(h) = helpers {
-                if let Some(vel) = vec_element_type(p) {
-                    let vp = peel_type(vel);
-                    if matches!(vp, Type::Path(pp) if pp.path.is_ident("u8")) {
-                        return TypeMirror { beskid_ty: "string".into(), stub_note: None };
+                if let Some(name) = option_payload_rust_name(inner) {
+                    if let Some(path) = h.optional_by_inner.get(&name) {
+                        return TypeMirror { beskid_ty: path.clone(), stub_note: None };
                     }
-                    if let Some(el) = list_element_rust_name(vel)
-                        && let Some(list_path) = h.list_by_element.get(&el)
-                    {
-                        let list_base = list_path.rsplit('.').next().unwrap();
-                        if let Some(opt_path) = h.optional_by_inner.get(list_base) {
-                            return TypeMirror { beskid_ty: opt_path.clone(), stub_note: None };
-                        }
-                    }
-                }
-                if let Some(nm) = option_payload_rust_name(p)
-                    && let Some(opt_path) = h.optional_by_inner.get(&nm)
-                {
-                    return TypeMirror { beskid_ty: opt_path.clone(), stub_note: None };
                 }
             }
         }
-        return TypeMirror {
-            beskid_ty: stub_path.into(),
-            stub_note: Some("Option with non-primitive inner type is collapsed to ReflectStub in Mod SDK".into()),
-        };
+        return TypeMirror { beskid_ty: stub_path.into(), stub_note: Some("missing canonical optional schema".into()) };
     }
     if let ("Vec", PathArguments::AngleBracketed(ab)) = (ident.as_str(), args) {
         if let Some(GenericArgument::Type(inner)) = ab.args.first() {
-            let pi = peel_type(inner);
-            if matches!(pi, Type::Path(p) if p.path.is_ident("u8")) {
-                return TypeMirror { beskid_ty: "string".into(), stub_note: None };
-            }
-            if let Some(h) = helpers
-                && let Some(el) = list_element_rust_name(pi)
-                && let Some(p) = h.list_by_element.get(&el)
-            {
-                return TypeMirror { beskid_ty: p.clone(), stub_note: None };
+            if let Some(h) = helpers {
+                if let Some(name) = list_element_rust_name(inner) {
+                    if let Some(path) = h.list_by_element.get(&name) {
+                        return TypeMirror { beskid_ty: path.clone(), stub_note: None };
+                    }
+                }
             }
         }
-        return TypeMirror {
-            beskid_ty: stub_path.into(),
-            stub_note: Some("Vec subtrees are not expanded field-for-field in Mod SDK (ReflectStub)".into()),
-        };
+        return TypeMirror { beskid_ty: stub_path.into(), stub_note: Some("missing canonical list schema".into()) };
     }
     if let ("Box", PathArguments::AngleBracketed(ab)) = (ident.as_str(), args) {
         if let Some(GenericArgument::Type(inner)) = ab.args.first() {
@@ -116,7 +89,12 @@ fn map_path_type(
     }
     if let ("Spanned", PathArguments::AngleBracketed(ab)) = (ident.as_str(), args) {
         if let Some(GenericArgument::Type(inner)) = ab.args.first() {
-            return map_rust_type(inner, stub_path, helpers, type_params);
+            if let Some(name) = list_element_rust_name(inner) {
+                return TypeMirror {
+                    beskid_ty: format!("{SYNTAX_NODES_MODULE_PREFIX}.Spanned{name}"),
+                    stub_note: None,
+                };
+            }
         }
         return TypeMirror { beskid_ty: stub_path.into(), stub_note: Some("Spanned without inner type".into()) };
     }
@@ -125,39 +103,17 @@ fn map_path_type(
         "bool" => TypeMirror { beskid_ty: "bool".into(), stub_note: None },
         "char" => TypeMirror { beskid_ty: "string".into(), stub_note: None },
         "String" => TypeMirror { beskid_ty: "string".into(), stub_note: None },
-        "usize" | "isize" | "u8" | "u16" | "u32" | "u64" | "i8" | "i16" | "i32" | "i64" => {
-            TypeMirror { beskid_ty: "i64".into(), stub_note: None }
+        "usize" => TypeMirror { beskid_ty: "u64".into(), stub_note: None },
+        "isize" => TypeMirror { beskid_ty: "i64".into(), stub_note: None },
+        "u8" | "u16" | "u32" | "u64" | "i8" | "i16" | "i32" | "i64" | "f32" | "f64" => {
+            TypeMirror { beskid_ty: ident, stub_note: None }
         }
-        "f32" | "f64" => TypeMirror { beskid_ty: "f64".into(), stub_note: None },
         _ => {
             let fq = path.segments.iter().map(|s| s.ident.to_string()).collect::<Vec<_>>().join("::");
-            if fq.contains("LeadingDocComment") {
-                return TypeMirror {
-                    beskid_ty: stub_path.into(),
-                    stub_note: Some("LeadingDocComment is host-only and not modeled as a syntax node".into()),
-                };
-            }
             if fq.contains("SpanInfo") {
                 return TypeMirror { beskid_ty: format!("{}.NodeSpan", SYNTAX_NODES_MODULE_PREFIX), stub_note: None };
             }
             TypeMirror { beskid_ty: format!("{}.{}", SYNTAX_NODES_MODULE_PREFIX, ident), stub_note: None }
         }
-    }
-}
-
-fn is_primitive_option_inner(ty: &Type) -> bool {
-    match ty {
-        Type::Path(tp) => {
-            tp.path.is_ident("bool")
-                || tp.path.is_ident("char")
-                || tp.path.is_ident("String")
-                || matches!(
-                    tp.path.get_ident().map(|i| i.to_string()).as_deref(),
-                    Some(
-                        "usize" | "isize" | "u8" | "u16" | "u32" | "u64" | "i8" | "i16" | "i32" | "i64" | "f32" | "f64"
-                    )
-                )
-        }
-        _ => false,
     }
 }

@@ -9,7 +9,7 @@ fn bound_spawn_returns_runtime_handle_without_invoking_child_in_parent() {
     let assembly = parse_production_units(project.path(), &[("Main.bd", "Main", source)]);
     let (target, isa) = x86_64_target_and_isa();
     let lowered = lower_verified_entrypoint(assembly, target, isa.as_ref());
-    let main = lowered.artifact.functions.iter().find(|function| function.name.starts_with("Main#syntax_")).unwrap();
+    let main = lowered.artifact().functions.iter().find(|function| function.name.starts_with("Main#syntax_")).unwrap();
     let calls = main
         .function
         .layout
@@ -73,8 +73,8 @@ fn canonical_fiber_join_lowers_the_typed_traced_result_move() {
     let mut db = beskid_queries::BeskidDatabase::default();
     let lowered = lower_syntax_assembly_entrypoint(&mut db, assembly, "Main", target, isa.as_ref())
         .expect("canonical Fiber<T> source lowers");
-    assert!(lowered.artifact.extern_imports.iter().any(|import| import.symbol == "fiber_join_value"));
-    assert!(lowered.artifact.extern_imports.iter().any(|import| import.symbol == "beskid_rt_v5_abi_value_clear"));
+    assert!(lowered.artifact().extern_imports.iter().any(|import| import.symbol == "fiber_join_value"));
+    assert!(lowered.artifact().extern_imports.iter().any(|import| import.symbol == "beskid_rt_v5_abi_value_clear"));
 }
 
 #[test]
@@ -123,7 +123,7 @@ fn one_shot_spawn_capture_entry_spellings_reach_production_lowering() {
         let (target, isa) = x86_64_target_and_isa();
         let lowered = with_db(|db| lower_syntax_assembly_entrypoint(db, assembly, "Main", target, isa.as_ref()))
             .unwrap_or_else(|error| panic!("one-shot spawn suffix {suffix:?}: {error}"));
-        assert!(lowered.artifact.extern_imports.iter().any(|import| import.symbol == "fiber_spawn"));
+        assert!(lowered.artifact().extern_imports.iter().any(|import| import.symbol == "fiber_spawn"));
     }
 }
 
@@ -139,15 +139,15 @@ fn parsed_direct_zero_argument_spawn_emits_syntax_owned_trampoline_and_fiber_dis
     let (target, isa) = x86_64_target_and_isa();
 
     let lowered = lower_verified_entrypoint(assembly, target, isa.as_ref());
-    assert_eq!(lowered.artifact.functions.len(), 3, "Entry, Main, and the syntax-owned spawn trampoline");
+    assert_eq!(lowered.artifact().functions.len(), 3, "Entry, Main, and the syntax-owned spawn trampoline");
     let main = lowered
-        .artifact
+        .artifact()
         .functions
         .iter()
         .find(|function| function.name.starts_with("Main#syntax_"))
         .expect("Main artifact");
     let trampoline = lowered
-        .artifact
+        .artifact()
         .functions
         .iter()
         .find(|function| function.name.starts_with("__beskid_spawn_entry_syntax_"))

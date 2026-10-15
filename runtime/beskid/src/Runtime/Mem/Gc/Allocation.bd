@@ -125,10 +125,28 @@ pub pointer GcAllocSmall(pointer heap, word class) {
 
 // ---- Large-object path (size class 0: a dedicated span, one object) ----
 
-pub pointer GcAllocLargeOnce(pointer heap, word size, word alignment) {
+// Pages of the dedicated span that serves one large request. `GcAllocLargeOnce`, `GcGrow` and
+// `SlotBytesForRequest` all size that span through this one function. Returns 0 when the request
+// overflows the word range; no region can serve it.
+pub word LargeSpanPages(word size, word alignment) {
     word bytesNeeded = size + alignment;
-    mut word pages = AlignUp(bytesNeeded, PAGE_SIZE) / PAGE_SIZE;
+    if bytesNeeded < size {
+        return 0;
+    }
+    word aligned = AlignUp(bytesNeeded, PAGE_SIZE);
+    if aligned == 0 {
+        return 0;
+    }
+    mut word pages = aligned / PAGE_SIZE;
     if pages == 0 { pages = 1; }
+    return pages;
+}
+
+pub pointer GcAllocLargeOnce(pointer heap, word size, word alignment) {
+    word pages = LargeSpanPages(size, alignment);
+    if pages == 0 {
+        return NativePointer(0);
+    }
     pointer entry = CarveSpanInAnyRegion(heap, pages, SIZE_CLASS_LARGE);
     if entry == NativePointer(0) {
         return NativePointer(0);
@@ -142,18 +160,42 @@ pub pointer GcAllocLargeOnce(pointer heap, word size, word alignment) {
 
 // ---- Growth (unchanged region-growth policy from the growable-heap design, page-granular) ----
 
-pub word GcGrow(pointer heap, word size, word alignment) {
+// Pages in front of the object pages of a region of `totalPages` pages: `RegionInit` (State.bd)
+// places the region header and one span directory entry per region page there, then aligns the
+// first object page up to `PAGE_SIZE`.
+pub word RegionOverheadPages(word totalPages) {
+    return AlignUp(REGION_HEADER_SIZE_ALLOC + totalPages * SPAN_HEADER_SIZE, PAGE_SIZE) / PAGE_SIZE;
+}
+
+// Smallest region size (whole pages) whose untouched object pages hold `objectPages` contiguous
+// pages. The directory grows with the region, so the overhead is solved as a fixed point; sizing it
+// from the object pages alone leaves the region short by the directory entries of the overhead
+// pages themselves, and a large request that sizes the new region on its own then fails right
+// after a successful grow. The caller bounds `objectPages` by the heap cap, so no product here
+// overflows.
+pub word RegionSizeForObjectPages(word objectPages) {
+    mut word totalPages = objectPages;
+    mut word neededPages = objectPages + RegionOverheadPages(totalPages);
+    while neededPages > totalPages {
+        totalPages = neededPages;
+        neededPages = objectPages + RegionOverheadPages(totalPages);
+    }
+    return totalPages * PAGE_SIZE;
+}
+
+// Adds one region that holds at least `objectPages` contiguous untouched pages.
+pub word GcGrow(pointer heap, word objectPages) {
     word nextRegionSize = raw_word_load(pointer_add(heap, HEAP_NEXT_REGION_SIZE));
-    word firstPass = AlignUp(size + REGION_HEADER_SIZE_ALLOC + alignment, PAGE_SIZE);
-    word firstPassPages = firstPass / PAGE_SIZE;
-    word directoryEstimate = firstPassPages * SPAN_HEADER_SIZE;
-    word requiredForRequest = AlignUp(firstPass + directoryEstimate, PAGE_SIZE);
+    word cap = raw_word_load(pointer_add(heap, HEAP_CAP_BYTES));
+    if objectPages == 0 || objectPages > cap / PAGE_SIZE {
+        return HEAP_FAILURE_REQUEST_LARGER_THAN_CAP;
+    }
+    word requiredForRequest = RegionSizeForObjectPages(objectPages);
     mut word newSize = nextRegionSize;
     if requiredForRequest > newSize {
         newSize = requiredForRequest;
     }
     word committed = raw_word_load(pointer_add(heap, HEAP_COMMITTED_BYTES));
-    word cap = raw_word_load(pointer_add(heap, HEAP_CAP_BYTES));
     word total = committed + newSize;
     if total < committed || total > cap {
         if requiredForRequest > cap {
@@ -199,7 +241,7 @@ pub word GcGrow(pointer heap, word size, word alignment) {
 }
 
 pub word GcGrowForClass(pointer heap, word class) {
-    return GcGrow(heap, PAGE_SIZE, 8);
+    return GcGrow(heap, 1);
 }
 
 // ---- Exhaustion diagnostic (Decision 3) ----
@@ -251,6 +293,7 @@ pub never GcReportExhaustion(pointer heap, word reason, word requestBytes) {
 // exhaustion (reason 4 instead of 1-3) so the diagnostic names the starved subsystem.
 pub never GcReportRootStackExhaustion(pointer heap) {
     raw_word_store(pointer_add(heap, HEAP_FAILURE_REASON), HEAP_FAILURE_ROOT_STACK_FAILED_ALLOC);
+        CheckedScopeRecordFailure(HEAP_FAILURE_ROOT_STACK_FAILED_ALLOC);
     raw_word_store(pointer_add(heap, HEAP_FAILURE_REQUEST_BYTES), 0);
     pointer diagnostic = pointer_add(heap, HEAP_DIAGNOSTIC);
     memory_set(diagnostic, 0, HEAP_DIAGNOSTIC_SIZE);
@@ -273,13 +316,13 @@ pub word GrowForRequest(pointer heap, word size, word alignment, word class) {
     if class != 0 {
         return GcGrowForClass(heap, class);
     }
-    return GcGrow(heap, size, alignment);
+    return GcGrow(heap, LargeSpanPages(size, alignment));
 }
 
 // Bytes actually occupied on the heap for this request: the size-class slot for a small object
 // (every slot in that span's page is exactly this size, whatever the request rounded up from),
 // or the whole dedicated span for a large object (`GcAllocLargeOnce`'s own page-count formula,
-// duplicated here rather than threaded back from it). `Sweep` (Sweep.bd) recomputes live bytes
+// shared through `LargeSpanPages`). `Sweep` (Sweep.bd) recomputes live bytes
 // the same way on every collection; `GcAlloc` below must track the identical quantity between
 // collections; using the raw requested size instead made the two accountings diverge, most
 // visibly right after a collection when only the slot-rounded amount is provably still live.
@@ -287,17 +330,19 @@ pub word SlotBytesForRequest(word size, word alignment, word class) {
     if class != 0 {
         return SizeClassBytes(class);
     }
-    word bytesNeeded = size + alignment;
-    mut word pages = AlignUp(bytesNeeded, PAGE_SIZE) / PAGE_SIZE;
-    if pages == 0 { pages = 1; }
-    return pages * PAGE_SIZE;
+    return LargeSpanPages(size, alignment) * PAGE_SIZE;
 }
 
-pub pointer GcAlloc(word size, word alignment) {
+// Checked construction entry: null is observable only to compiler-issued fallible paths.
+// Ordinary GcAlloc retains its exhaustion trap contract below.
+[Export(Abi:"C", Symbol:"beskid_rt_v5_gc_try_alloc")]
+pub pointer GcTryAlloc(word size, word alignment) {
+    if CheckedScopeFailureReason() != 0 { return NativePointer(0); }
     pointer heap = Heap();
-    if heap == NativePointer(0) || size < 16 || size % 8 != 0 || IsValidObjectAlignment(alignment) == false {
-        return NativePointer(0);
-    }
+    if heap == NativePointer(0) { return NativePointer(0); }
+    raw_word_store(pointer_add(heap, HEAP_FAILURE_REASON), HEAP_FAILURE_NONE);
+    raw_word_store(pointer_add(heap, HEAP_FAILURE_REQUEST_BYTES), 0);
+    if size < 16 || size % 8 != 0 || IsValidObjectAlignment(alignment) == false { return NativePointer(0); }
     // Stress mode (test-only, Verify.bd): collect BEFORE this allocation's object exists, not
     // after. At this point every live object is already reachable from the root stack, the
     // handle stack (construction temporaries hold a `gc_root_handle` slot before any nested
@@ -340,13 +385,56 @@ pub pointer GcAlloc(word size, word alignment) {
             if reason == HEAP_FAILURE_NONE {
                 reason = HEAP_FAILURE_CAP_REACHED;
             }
-            GcReportExhaustion(heap, reason, size);
+            raw_word_store(pointer_add(heap, HEAP_FAILURE_REASON), reason);
+            raw_word_store(pointer_add(heap, HEAP_FAILURE_REQUEST_BYTES), size);
+            CheckedScopeRecordFailure(reason);
+            return NativePointer(0);
         }
     }
     word slotBytes = SlotBytesForRequest(size, alignment, class);
     raw_word_store(pointer_add(heap, HEAP_LIVE_BYTES), raw_word_load(pointer_add(heap, HEAP_LIVE_BYTES)) + slotBytes);
     raw_word_store(pointer_add(heap, HEAP_LIVE_COUNT), raw_word_load(pointer_add(heap, HEAP_LIVE_COUNT)) + 1);
     return result;
+}
+
+pub unit GcClearAllocationFailure() {
+    pointer heap = Heap();
+    if heap != NativePointer(0) {
+        raw_word_store(pointer_add(heap, HEAP_FAILURE_REASON), HEAP_FAILURE_NONE);
+        raw_word_store(pointer_add(heap, HEAP_FAILURE_REQUEST_BYTES), 0);
+    }
+}
+
+pub unit GcRecordRootStackFailure() {
+    pointer heap = Heap();
+    if heap != NativePointer(0) {
+        raw_word_store(pointer_add(heap, HEAP_FAILURE_REASON), HEAP_FAILURE_ROOT_STACK_FAILED_ALLOC);
+        CheckedScopeRecordFailure(HEAP_FAILURE_ROOT_STACK_FAILED_ALLOC);
+        raw_word_store(pointer_add(heap, HEAP_FAILURE_REQUEST_BYTES), 0);
+    }
+}
+
+[Export(Abi:"C", Symbol:"beskid_rt_v5_gc_allocation_failure_reason")]
+pub word GcAllocationFailureReason() {
+    pointer heap = Heap();
+    if heap == NativePointer(0) { return 5; }
+    return raw_word_load(pointer_add(heap, HEAP_FAILURE_REASON));
+}
+
+pub pointer GcAlloc(word size, word alignment) {
+    if CheckedScopeFailureReason() != 0 { return NativePointer(0); }
+    pointer value = GcTryAlloc(size, alignment);
+    if value == NativePointer(0) {
+        pointer heap = Heap();
+        if heap != NativePointer(0) {
+            word reason = GcAllocationFailureReason();
+            if reason != HEAP_FAILURE_NONE {
+                if CheckedScopeCurrent() != NativePointer(0) { CheckedScopeRecordFailure(reason); }
+                else { GcReportExhaustion(heap, reason, size); }
+            }
+        }
+    }
+    return value;
 }
 
 [Export(Abi:"C", Symbol:"alloc")]

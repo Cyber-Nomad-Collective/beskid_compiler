@@ -88,7 +88,7 @@ pub(crate) fn parse_expression(pair: Pair<Rule>) -> Result<Spanned<Expression>, 
     let span = SpanInfo::from_span(&pair.as_span());
 
     match pair.as_rule() {
-        Rule::Expression => {
+        Rule::Expression | Rule::MatchGuardExpression => {
             let inner = pair.into_inner().next().ok_or(ParseError::missing(Rule::AssignmentExpression))?;
             let inner_expr = parse_expression(inner)?;
             Ok(Spanned::new(inner_expr.node, span))

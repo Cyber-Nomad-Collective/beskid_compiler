@@ -1,4 +1,8 @@
-//! Generic disk materialization for `mod.generate` typed and code outcomes.
+//! Generic disk materialization for `mod.generate` typed outcomes.
+//!
+//! Generators contribute typed syntax only. A layout splits a generator's admitted items into
+//! files and the canonical formatter renders them; no generator-supplied source text is
+//! written or reparsed.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -10,8 +14,6 @@ use crate::projects::CompilePlan;
 use crate::syntax::{Program, SpanInfo, Spanned};
 
 use super::types::ProgramItem;
-
-const DEFAULT_SINGLE_FILE: &str = "generated.g.bd";
 
 /// Layout manifest authored by a mod package (for example `generate.layout.json`).
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
@@ -25,12 +27,13 @@ pub struct GenerateOutputLayout {
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct GenerateOutputFile {
-    /// v1: relative path under output root (deprecated).
+    /// v1: relative path under the declared output root.
     #[serde(default)]
     pub path: String,
     #[serde(default)]
     pub header: String,
-    /// v1: number of typed AST items for this file.
+    /// Number of typed items for this file. Required for every v1 file and for every file of a
+    /// multi-file v2 layout; a single-file v2 layout may omit it and receives every item.
     #[serde(default)]
     pub item_count: usize,
     /// v2: generated module file stem (writes `{fileName}.g.bd`).
@@ -49,11 +52,28 @@ impl GenerateOutputLayout {
         serde_json::from_str(json)
     }
 
-    pub fn expected_item_count(&self) -> usize {
-        if self.schema_version >= 2 {
-            return 0;
+    /// Item count of each declared file, in layout order, for `total` admitted items.
+    fn item_counts(&self, total: usize) -> Result<Vec<usize>, String> {
+        if self.schema_version != 1 && self.schema_version != 2 {
+            return Err(format!("unsupported generate layout schemaVersion {} (expected 1 or 2)", self.schema_version));
         }
-        self.files.iter().map(|file| file.item_count).sum()
+        if self.files.is_empty() {
+            return Err("generate layout declares no files".into());
+        }
+        if self.schema_version == 2 && self.files.len() == 1 && self.files[0].item_count == 0 {
+            return Ok(vec![total]);
+        }
+        if let Some(file) = self.files.iter().find(|file| file.item_count == 0) {
+            return Err(format!(
+                "generate layout file `{}{}` must declare a nonzero itemCount",
+                file.path, file.file_name
+            ));
+        }
+        let declared: usize = self.files.iter().map(|file| file.item_count).sum();
+        if declared != total {
+            return Err(format!("generate layout expects {declared} typed items, got {total}"));
+        }
+        Ok(self.files.iter().map(|file| file.item_count).collect())
     }
 }
 
@@ -88,51 +108,46 @@ pub fn resolve_package_root(plan: &CompilePlan, package_id: &str) -> Option<Path
     plan.dependency_projects.iter().find(|dep| dep.project_name == package_id).map(|dep| dep.project_root.clone())
 }
 
-/// Write mod generator typed items to disk using an optional layout manifest.
+/// Write a generator's admitted typed items to the files its layout declares.
+///
+/// v1 files are written under `output_root` at their relative `path`; v2 files are written to
+/// `.generated/{modulePath}/{fileName}.g.bd` under the root of the package named by
+/// `packageId` (the Mod project itself when absent). Every file is rendered from typed items
+/// by the canonical formatter, prefixed by its declared header.
 pub fn write_typed_generate_output(
-    output_root: &Path,
-    items: &[Spanned<ProgramItem>],
-    layout: Option<&GenerateOutputLayout>,
-) -> Result<(), String> {
-    match layout {
-        Some(layout) if layout.schema_version >= 2 => write_code_outputs_v2(output_root, layout, items),
-        Some(layout) => write_with_layout_v1(output_root, items, layout),
-        None => write_single_file(output_root, DEFAULT_SINGLE_FILE, "", items),
-    }
-}
-
-/// Write evaluated Beskid source text to `.generated/` paths declared in a v2 layout.
-pub fn write_code_generate_output(
     plan: Option<&CompilePlan>,
     mod_project_root: &Path,
+    output_root: &Path,
+    items: &[Spanned<ProgramItem>],
     layout: &GenerateOutputLayout,
-    outputs: &[CodeGenerateOutput],
 ) -> Result<(), String> {
-    if layout.schema_version < 2 {
-        return Err("write_code_generate_output requires layout schemaVersion >= 2".into());
-    }
-    if layout.files.len() != outputs.len() {
-        return Err(format!(
-            "generate layout declares {} files but {} code outputs were provided",
-            layout.files.len(),
-            outputs.len()
-        ));
-    }
-    for (file, output) in layout.files.iter().zip(outputs.iter()) {
-        let file_name = required_file_name(file)?;
-        let module_path = required_module_path(file, output)?;
-        let package_root = resolve_output_package_root(plan, mod_project_root, file)?;
-        let out_path = resolve_generated_path(&package_root, &module_path, &file_name);
-        write_text_file(&out_path, &file.header, &output.body)?;
+    let counts = layout.item_counts(items.len())?;
+    let mut offset = 0usize;
+    for (file, count) in layout.files.iter().zip(counts) {
+        let slice = &items[offset..offset + count];
+        offset += count;
+        let out_path = if layout.schema_version == 1 {
+            if file.path.is_empty() {
+                return Err("generate layout v1 entry missing path".into());
+            }
+            output_root.join(&file.path)
+        } else {
+            let file_name = required(&file.file_name, "fileName")?;
+            let module_path = required(&file.module_path, "modulePath")?;
+            let package_root = resolve_output_package_root(plan, mod_project_root, file)?;
+            resolve_generated_path(&package_root, module_path, file_name)
+        };
+        let body = format_items(slice).map_err(|err| err.to_string())?;
+        write_text_file(&out_path, &file.header, &body)?;
     }
     Ok(())
 }
 
-/// One evaluated code body destined for disk materialization.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CodeGenerateOutput {
-    pub module_path: String,
-    pub body: String,
+fn required<'a>(value: &'a str, field: &str) -> Result<&'a str, String> {
+    if value.is_empty() {
+        return Err(format!("generate layout entry missing {field}"));
+    }
+    Ok(value)
 }
 
 fn resolve_output_package_root(
@@ -149,69 +164,6 @@ fn resolve_output_package_root(
         return Ok(root);
     }
     Err(format!("unable to resolve package root for packageId `{}`", file.package_id))
-}
-
-fn required_file_name(file: &GenerateOutputFile) -> Result<String, String> {
-    if file.file_name.is_empty() {
-        return Err("generate layout entry missing fileName".into());
-    }
-    Ok(file.file_name.clone())
-}
-
-fn required_module_path(file: &GenerateOutputFile, output: &CodeGenerateOutput) -> Result<String, String> {
-    if !file.module_path.is_empty() {
-        return Ok(file.module_path.clone());
-    }
-    if output.module_path.is_empty() {
-        return Err("generate layout entry missing modulePath".into());
-    }
-    Ok(output.module_path.clone())
-}
-
-fn write_code_outputs_v2(
-    output_root: &Path,
-    layout: &GenerateOutputLayout,
-    items: &[Spanned<ProgramItem>],
-) -> Result<(), String> {
-    let _ = output_root;
-    let _ = layout;
-    if !items.is_empty() {
-        return Err("schemaVersion 2 layouts require code outputs; typed item materialization is unsupported".into());
-    }
-    Ok(())
-}
-
-fn write_with_layout_v1(
-    output_root: &Path,
-    items: &[Spanned<ProgramItem>],
-    layout: &GenerateOutputLayout,
-) -> Result<(), String> {
-    if layout.schema_version != 1 {
-        return Err(format!("unsupported generate layout schemaVersion {} (expected 1 or 2)", layout.schema_version));
-    }
-    let expected = layout.expected_item_count();
-    if items.len() != expected {
-        return Err(format!("generate layout expects {expected} typed items, got {}", items.len()));
-    }
-
-    let mut offset = 0usize;
-    for file in &layout.files {
-        let slice = &items[offset..offset + file.item_count];
-        offset += file.item_count;
-        write_single_file(output_root, &file.path, &file.header, slice)?;
-    }
-    Ok(())
-}
-
-fn write_single_file(
-    output_root: &Path,
-    relative_path: &str,
-    header: &str,
-    items: &[Spanned<ProgramItem>],
-) -> Result<(), String> {
-    let out_path = output_root.join(relative_path);
-    let body = format_items(items).map_err(|err| err.to_string())?;
-    write_text_file(&out_path, header, &body)
 }
 
 fn write_text_file(out_path: &Path, header: &str, body: &str) -> Result<(), String> {
@@ -233,6 +185,25 @@ fn format_items(items: &[Spanned<ProgramItem>]) -> Result<String, EmitError> {
 mod tests {
     use super::*;
     use crate::mod_host::emit_bridge::materialize_program_items;
+
+    fn unique_dir(prefix: &str) -> PathBuf {
+        std::env::temp_dir().join(format!(
+            "{prefix}_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).expect("time").as_nanos()
+        ))
+    }
+
+    fn file_v2(item_count: usize, file_name: &str) -> GenerateOutputFile {
+        GenerateOutputFile {
+            path: String::new(),
+            header: "// generated\n".into(),
+            item_count,
+            file_name: file_name.into(),
+            module_path: "Core.Text.Regex.Generated".into(),
+            package_id: String::new(),
+        }
+    }
 
     #[test]
     fn resolve_generated_path_maps_module_path_to_dot_generated() {
@@ -260,11 +231,8 @@ mod tests {
                 package_id: String::new(),
             }],
         };
-        let output = std::env::temp_dir().join(format!(
-            "generate_output_test_{}",
-            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).expect("time").as_nanos()
-        ));
-        write_with_layout_v1(&output, &items, &layout).expect("write");
+        let output = unique_dir("generate_output_v1");
+        write_typed_generate_output(None, &output, &output, &items, &layout).expect("write");
         let written = fs::read_to_string(output.join("Demo.bd")).expect("read");
         assert!(written.starts_with("// test header\n"));
         assert!(written.contains("pub contract DemoStep"));
@@ -272,33 +240,32 @@ mod tests {
     }
 
     #[test]
-    fn write_code_generate_output_writes_g_bd_under_package_root() {
-        let package = std::env::temp_dir().join(format!(
-            "code_generate_output_test_{}",
-            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).expect("time").as_nanos()
-        ));
-        fs::create_dir_all(&package).expect("mkdir");
-        let layout = GenerateOutputLayout {
-            schema_version: 2,
-            files: vec![GenerateOutputFile {
-                path: String::new(),
-                header: "// generated\n".into(),
-                item_count: 0,
-                file_name: "Generated".into(),
-                module_path: "Core.Text.Regex.Generated".into(),
-                package_id: String::new(),
-            }],
-        };
-        write_code_generate_output(
-            None,
-            &package,
-            &layout,
-            &[CodeGenerateOutput { module_path: String::new(), body: "pub i64 Demo() { return 1; }".into() }],
-        )
-        .expect("write");
+    fn layout_v2_renders_typed_items_under_package_generated_root() {
+        let package = unique_dir("generate_output_v2");
+        let items = materialize_program_items(["pub i64 Demo() { return 1; }"]).expect("materialize");
+        let layout = GenerateOutputLayout { schema_version: 2, files: vec![file_v2(0, "Generated")] };
+        write_typed_generate_output(None, &package, &package.join("Generated"), &items, &layout).expect("write");
         let written = fs::read_to_string(package.join(".generated/Core/Text/Regex/Generated.g.bd")).expect("read");
         assert!(written.starts_with("// generated\n"));
         assert!(written.contains("pub i64 Demo()"));
+        let _ = fs::remove_dir_all(package);
+    }
+
+    #[test]
+    fn layout_v2_multi_file_requires_exact_item_counts() {
+        let package = unique_dir("generate_output_v2_counts");
+        let items =
+            materialize_program_items(["pub i64 First() { return 1; }", "pub i64 Second() { return 2; }"]).expect("items");
+        let missing = GenerateOutputLayout { schema_version: 2, files: vec![file_v2(1, "One"), file_v2(0, "Two")] };
+        assert!(write_typed_generate_output(None, &package, &package, &items, &missing).is_err());
+        let short = GenerateOutputLayout { schema_version: 2, files: vec![file_v2(1, "One"), file_v2(2, "Two")] };
+        assert!(write_typed_generate_output(None, &package, &package, &items, &short).is_err());
+        let exact = GenerateOutputLayout { schema_version: 2, files: vec![file_v2(1, "One"), file_v2(1, "Two")] };
+        write_typed_generate_output(None, &package, &package, &items, &exact).expect("exact split");
+        let second = fs::read_to_string(package.join(".generated/Core/Text/Regex/Generated/Two.g.bd")).expect("read");
+        assert!(second.contains("Second") && !second.contains("First"));
+        let unknown = GenerateOutputLayout { schema_version: 3, files: vec![file_v2(0, "Generated")] };
+        assert!(write_typed_generate_output(None, &package, &package, &items, &unknown).is_err());
         let _ = fs::remove_dir_all(package);
     }
 }

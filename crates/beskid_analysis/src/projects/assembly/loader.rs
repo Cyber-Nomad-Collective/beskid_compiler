@@ -15,4 +15,4 @@ pub(crate) use self::options::expand_syntax_for_assembly;
 pub use self::options::{AssemblyError, UnitMaterializer, assembly_options_for_plan, assembly_options_for_prepare};
 pub(crate) use self::orchestration::assemble_program;
 pub use self::orchestration::assemble_program_with_materializer;
-pub(crate) use self::scanner::import_paths_from_source_full;
+pub(crate) use self::scanner::import_paths_from_program;

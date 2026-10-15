@@ -24,7 +24,7 @@ impl ModuleIndex {
         let mut known_paths = HashSet::new();
 
         for (unit, syntax_index) in units.iter().zip(syntax_indexes) {
-            let Some(path) = infer_logical_module_path(unit, roots, plan.has_std_dependency) else {
+            let Some(path) = infer_logical_module_path(unit, roots) else {
                 continue;
             };
             known_paths.insert(path.clone());

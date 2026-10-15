@@ -24,8 +24,64 @@ pub enum AssemblyError {
     Parse { path: PathBuf, message: String },
     #[error("entry file not found under effective roots: {path}")]
     EntryNotFound { path: PathBuf },
+    #[error(
+        "target declares no entry and the project source root {source_root} contains no source units; an entry-less \
+         target type-checks every unit of its own source root and has nothing to check"
+    )]
+    NoRootUnits { source_root: PathBuf },
+    #[error(
+        "aggregate project {manifest_path} has no source units in its path members; an `Aggregate` checks the own \
+         units of every direct path member and has nothing to check"
+    )]
+    NoAggregateMemberUnits { manifest_path: PathBuf },
+    #[error("cannot determine the members of aggregate project {manifest_path}: {message}")]
+    AggregateMembers { manifest_path: PathBuf, message: String },
+    #[error("cannot read the glue owner blocks of project {manifest_path}: {message}")]
+    GlueOwners { manifest_path: PathBuf, message: String },
     #[error("assembly exceeded max_units ({max})")]
     MaxUnits { max: usize },
+    /// A module path the import closure needs is provided by more than one package (E1104).
+    #[error("{0}")]
+    AmbiguousModulePath(#[from] super::super::discovery::AmbiguousModulePath),
+    #[error("cannot determine the Mod companion packages of the assembly: {message}")]
+    ModCompanionPackages { message: String },
+    #[error("native Mod build requires the compiler SDK adapter source {path}: {message}")]
+    NativeModAdapterSource { path: PathBuf, message: String },
+}
+
+/// SDK-root-relative compiler-owned adapter sources a native Mod build always compiles.
+pub(crate) const NATIVE_MOD_ADAPTER_SOURCES: [&str; 2] = ["Beskid/Compiler/NativeRequests.bd", "Beskid/Syntax/NativeFactories.bd"];
+
+/// Exact adapter source files inside the single `corelib_compiler_sdk` dependency root.
+pub(crate) fn native_mod_adapter_seed_paths(
+    roots: &super::super::roots::EffectiveCompilationRoots,
+) -> Result<Vec<PathBuf>, AssemblyError> {
+    let sdk_roots = roots
+        .dependencies
+        .iter()
+        .filter(|root| root.dependency_name.as_deref() == Some("corelib_compiler_sdk"))
+        .collect::<Vec<_>>();
+    let [sdk] = sdk_roots.as_slice() else {
+        return Err(AssemblyError::NativeModAdapterSource {
+            path: PathBuf::from("corelib_compiler_sdk"),
+            message: format!("expected exactly one `corelib_compiler_sdk` dependency root, found {}", sdk_roots.len()),
+        });
+    };
+    NATIVE_MOD_ADAPTER_SOURCES
+        .iter()
+        .map(|relative| {
+            let path = sdk.source_root.join(relative);
+            let metadata = std::fs::symlink_metadata(&path)
+                .map_err(|error| AssemblyError::NativeModAdapterSource { path: path.clone(), message: error.to_string() })?;
+            if !metadata.is_file() {
+                return Err(AssemblyError::NativeModAdapterSource {
+                    path,
+                    message: "not a regular file".to_owned(),
+                });
+            }
+            Ok(path)
+        })
+        .collect()
 }
 
 pub(crate) fn expand_syntax_for_assembly(program: Spanned<Program>) -> Spanned<Program> {

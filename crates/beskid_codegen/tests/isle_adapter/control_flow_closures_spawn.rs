@@ -91,9 +91,14 @@ fn closure_static_plan_is_generation_bound_and_never_claims_tls_or_root_frame_au
 
     let scalar =
         input.closure_static_plan(lambdas[0]).expect("current scalar capture receives a static descriptor plan");
-    assert_eq!(scalar.descriptor_symbol, "__beskid_closure_descriptor_module_u0_g21_n20");
-    assert_eq!(scalar.pointer_map_symbol, "__beskid_closure_pointer_map_module_u0_g21_n20");
-    assert_eq!(scalar.allocation_request_symbol, "__beskid_closure_allocation_request_module_u0_g21_n20");
+    // Static symbols are bound to the lambda's syntax generation, named relative to the typed
+    // program's own generation (`g0` for the current one), so otherwise identical compilations
+    // whose absolute generation numbers differ (a resumed session snapshot) emit the same names.
+    assert_eq!(lambdas[0].generation, input.typed_program().generation);
+    assert_eq!(input.generation_tag(lambdas[0].generation), "0");
+    assert_eq!(scalar.descriptor_symbol, "__beskid_closure_descriptor_module_u0_g0_n20");
+    assert_eq!(scalar.pointer_map_symbol, "__beskid_closure_pointer_map_module_u0_g0_n20");
+    assert_eq!(scalar.allocation_request_symbol, "__beskid_closure_allocation_request_module_u0_g0_n20");
     assert_eq!(scalar.object_size, 24, "16-byte header plus aligned i32 field");
     assert_eq!(scalar.object_alignment, 8);
     assert!(scalar.pointer_map_offsets.is_empty());
@@ -585,7 +590,19 @@ fn canonical_runtime_closure_descriptor_validation_and_rooting_execute_fail_clos
     heap[10] = PAGE_SIZE; // next_region_size (irrelevant: no growth expected in this fixture)
     let mut runtime_state = [0usize; 8];
     runtime_state[2] = heap.as_mut_ptr() as usize;
-    let mut tls = [runtime_state.as_mut_ptr() as usize, 0, 0, 1];
+    let tls_layout = input.abi_manifest().layouts.iter().find(|layout| layout.name == "BeskidTlsState")
+        .expect("canonical TLS layout");
+    assert_eq!(tls_layout.size % std::mem::size_of::<usize>() as u64, 0);
+    let tls_word = |name: &str| {
+        let field = tls_layout.fields.iter().find(|field| field.name == name).expect("canonical TLS field");
+        assert_eq!(field.offset % std::mem::size_of::<usize>() as u64, 0);
+        usize::try_from(field.offset).unwrap() / std::mem::size_of::<usize>()
+    };
+    // Include composition and checked-allocation scope slots, zero-initialized.
+    // An obsolete short TLS fixture lets the runtime read unrelated stack bytes.
+    let mut tls = vec![0usize; usize::try_from(tls_layout.size).unwrap() / std::mem::size_of::<usize>()];
+    tls[tls_word("runtime")] = runtime_state.as_mut_ptr() as usize;
+    tls[tls_word("attach_depth")] = 1;
     TEST_CURRENT_TLS.store(tls.as_mut_ptr() as usize, Ordering::SeqCst);
 
     let mut pointer_map = [16usize];
@@ -652,7 +669,7 @@ fn canonical_runtime_closure_descriptor_validation_and_rooting_execute_fail_clos
 
     let mut slots = [0usize];
     let mut frame = [0usize, slots.as_mut_ptr() as usize, 1];
-    tls[1] = frame.as_mut_ptr() as usize;
+    tls[tls_word("root_frame")] = frame.as_mut_ptr() as usize;
     assert_eq!(root_environment(tls.as_mut_ptr(), 0, environment), 1);
     assert_eq!(slots[0], environment as usize, "valid environment is rooted in its slot");
     slots[0] = 0;

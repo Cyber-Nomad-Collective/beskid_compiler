@@ -8,8 +8,6 @@ use super::support::{
     find_corelib_service_call, find_definition_of_kind, find_function_definitions, include_imported_corelib_modules,
     isa, item_fixture_with_root, item_name, lower_syntax_program, parse_program_with_source_name, settings,
 };
-#[cfg(unix)]
-use super::support::{NodeKind, SyntaxIndex};
 
 fn network_internal_panic_fixture(
     copied: bool,
@@ -118,6 +116,8 @@ fn canonical_network_receive_owns_its_length_invariant_and_lowers() {
     find_corelib_service_call(input.database(), receive, "__network_receive").expect("same source owns receive ABI");
     let deadline = super::support::named_function(&input, root, "DeadlineNanos");
     let optional_deadline = super::support::named_function(&input, root, "OptionalDeadlineNanos");
+    // The runtime service ABI carries `connected` as a `u8` 0/1 flag produced by Internal's `Flag`.
+    let flag = super::support::named_function(&input, root, "Flag");
     let length = super::support::named_function(&input, input.roots()[2], "Len");
     lower_syntax_program(
         &input,
@@ -126,6 +126,7 @@ fn canonical_network_receive_owns_its_length_invariant_and_lowers() {
             SyntaxModuleItem { key: receive, symbol: "Receive".into() },
             SyntaxModuleItem { key: deadline, symbol: "DeadlineNanos".into() },
             SyntaxModuleItem { key: optional_deadline, symbol: "OptionalDeadlineNanos".into() },
+            SyntaxModuleItem { key: flag, symbol: "Flag".into() },
             SyntaxModuleItem { key: length, symbol: "Len".into() },
         ],
     )
@@ -140,7 +141,11 @@ fn copied_network_internal_panic_remains_unauthorized() {
     let error =
         lower_syntax_program(&input, isa.as_ref(), &[SyntaxModuleItem { key: error_mapper, symbol: "Error".into() }])
             .expect_err("identical untrusted Network source must not gain panic authority");
-    assert!(error.to_string().contains("MissingRuleOrFact"), "{error}");
+    let rendered = error.to_string();
+    assert!(
+        rendered.contains("E1107 `__panic_str` is a private runtime builtin and cannot be called from this source unit"),
+        "untrusted Network source must be denied by the legality gate before lowering: {error}"
+    );
 }
 
 #[test]
@@ -225,7 +230,7 @@ fn canonical_foundation_assert_public_helpers_lower_through_syntax_isle() {
     let (input, isa, root) = canonical_foundation_assert_fixture();
     // Non-generic helpers and their direct callees. Contains stays out: it pulls Core.String.
     // Equal is exercised below with an explicit call-derived i64 specialization.
-    let items = ["trigger_failure", "Fail", "fail_with_because", "True", "False"];
+    let items = ["TriggerFailure", "Fail", "FailWithBecause", "True", "False"];
     let mut module_items = Vec::new();
     for name in items {
         let key = find_function_definitions(input.database(), root)
@@ -358,9 +363,9 @@ fn canonical_foundation_assert_equal_specialization_lowers_through_syntax_isle()
 
     let mut module_items = Vec::new();
     for (root, name) in [
-        (assert_root, "trigger_failure"),
+        (assert_root, "TriggerFailure"),
         (assert_root, "Fail"),
-        (assert_root, "fail_with_because"),
+        (assert_root, "FailWithBecause"),
         (assert_root, "Equal"),
         (main_root, "Main"),
     ] {
@@ -578,7 +583,7 @@ fn copied_and_altered_foundation_assert_source_cannot_receive_runtime_service_au
     let trigger_failure = definitions
         .iter()
         .copied()
-        .find(|key| item_name(&db, *key).ok().flatten().as_deref() == Some("trigger_failure"))
+        .find(|key| item_name(&db, *key).ok().flatten().as_deref() == Some("TriggerFailure"))
         .expect("copied Assert trigger_failure");
     assert!(
         find_corelib_service_call(&db, trigger_failure, "__panic_str").is_none(),
@@ -626,7 +631,7 @@ fn symlinked_foundation_assert_source_cannot_receive_panic_authority() {
             origin_path: source_path.clone(),
             path: source_path.clone(),
             source: source.source,
-            program: program.clone(),
+            program,
         }]),
         0,
         AssemblyDiscovery::ImportClosure,
@@ -656,18 +661,22 @@ fn symlinked_foundation_assert_source_cannot_receive_panic_authority() {
     .expect("symlinked source remains an ordinary syntax program");
     assert!(typed.corelib_service_capability.is_none());
 
-    let trigger_failure = SyntaxIndex::from_program(&program, generation)
-        .ids_of_kind(NodeKind::CallExpression)
-        .map(|node| AstNodeKey { unit: SourceUnitId::new(&db, source_path.clone()), generation, node })
-        .find(|key| {
-            call_lowering(&db, *key)
-                .ok()
-                .flatten()
-                .is_some_and(|lowering| matches!(lowering, beskid_queries::CallLowering::Dynamic))
-        })
-        .expect("symlinked panic spelling remains dynamic");
-    assert!(matches!(
-        call_lowering(&db, trigger_failure).expect("symlinked call lowering"),
-        Some(beskid_queries::CallLowering::Dynamic)
-    ));
+    let root = AstNodeKey { unit: SourceUnitId::new(&db, source_path.clone()), generation, node: AstNodeId(0) };
+    let trigger_failure = find_function_definitions(&db, root)
+        .into_iter()
+        .find(|key| item_name(&db, *key).ok().flatten().as_deref() == Some("TriggerFailure"))
+        .expect("symlinked Assert trigger_failure");
+    assert!(
+        find_corelib_service_call(&db, trigger_failure, "__panic_str").is_none(),
+        "a symlinked Assert source must not receive panic authority"
+    );
+    let panic_call = find_call_expression(&db, trigger_failure).expect("symlinked __panic_str call");
+    let error = call_lowering(&db, panic_call)
+        .expect_err("an unauthorized panic spelling must not lower as a call (no Dynamic fallback)");
+    assert!(error.is_unavailable(), "unauthorized panic call must fail closed: {error:?}");
+    let denial = beskid_queries::unresolved_call_target(&db, trigger_failure)
+        .expect("unresolved_call_target query")
+        .expect("the symlinked panic spelling is a private builtin denial");
+    assert_eq!(denial.call, panic_call);
+    assert_eq!(denial.kind, beskid_queries::UnresolvedCallKind::PrivateBuiltin { name: Arc::from("__panic_str") });
 }

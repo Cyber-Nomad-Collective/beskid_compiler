@@ -43,7 +43,6 @@ pub use mod_host::{SyntaxFix, SyntaxTextEdit, SyntaxTextEditKind};
 pub mod resolve;
 pub mod services;
 pub mod syntax;
-pub mod types;
 
 pub use analysis::{
     AnalysisOptions, AnalysisResult, MietteReportError, Rule as AnalysisRule, RuleContext, SemanticDiagnostic,
@@ -53,11 +52,7 @@ pub use compilation_context::{CompilationContext, ProjectSessionHandle, module_r
 pub use parser::{BeskidParser, Rule};
 pub use projects::{AssemblyDiscovery, AssemblyOptions, ProgramAssembly, effective_roots_for_plan};
 pub use projects::{ProjectGraphBuildOptions, WorkspaceResolutionSummary, resolve_project_manifest_for_source_path};
-#[allow(deprecated)]
-pub use services::{
-    AnalyzeInProjectOptions, analyze_program_with_options, analyze_source_with_compilation_context,
-    compile_plan_for_input_path, compile_plan_for_input_path_with_member, resolve_input_with_pipeline,
-};
+pub use services::{compile_plan_for_input_path, compile_plan_for_input_path_with_member, resolve_input_with_pipeline};
 pub use syntax::{AstNodeId, AstNodeKey, SyntaxGenerationId};
 pub use syntax_query::{
     Ancestors, AstNode, Descendants, DynNodeRef, NodeKind, NodeRef, Query, SyntaxIndex, SyntaxNodeId, SyntaxSnapshot,

@@ -10,7 +10,7 @@ use beskid_pipeline::{PipelineObserver, observe_phase_result, phases::CODEGEN_CL
 /// snapshot intact preserves post-`mod` syntax rewrites and the generation-safe identities used
 /// by `TypedProgram`, `CodegenInput`, and ISLE emission.
 pub(super) fn lower_prepared_entrypoint(
-    front: &beskid_analysis::services::FrontEndTypedResult,
+    front: &beskid_analysis::services::ExecutableFrontEnd,
     entrypoint: &str,
     target_triple: Option<&str>,
     pipeline: Option<&dyn PipelineObserver>,
@@ -21,15 +21,16 @@ pub(super) fn lower_prepared_entrypoint(
     })
 }
 
-/// Lower every executable item in a prepared frontend snapshot through the AOT target ISA.
+/// Lower the library output (shared, static, object) of a prepared frontend snapshot through the
+/// AOT target ISA: every item of the units the library owns plus the dependency items they reach.
 pub(super) fn lower_prepared_module(
-    front: &beskid_analysis::services::FrontEndTypedResult,
+    front: &beskid_analysis::services::ExecutableFrontEnd,
     target_triple: Option<&str>,
     pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<beskid_codegen::CodegenArtifact> {
     let target = resolve_abi_target(target_triple)?;
     observe_phase_result(pipeline, CODEGEN_CLIF, || {
-        beskid_aot::lower_prepared_syntax_module(front, target).map_err(anyhow::Error::from)
+        beskid_aot::lower_prepared_syntax_library(front, target).map_err(anyhow::Error::from)
     })
 }
 
@@ -50,7 +51,7 @@ mod tests {
     use beskid_analysis::services::{
         FrontEndOptions, ResolvedInput, resolved_input_from_plan, synthetic_compile_plan_for_source,
     };
-    use beskid_queries::compile_front_end_from_resolved_input;
+    use beskid_queries::compile_mod_free_front_end;
 
     #[test]
     fn emits_reachable_syntax_items_without_hir_lowering() {
@@ -65,7 +66,7 @@ mod tests {
         std::fs::write(&path, source).expect("write source");
         let plan = synthetic_compile_plan_for_source(&path);
         let resolved: ResolvedInput = resolved_input_from_plan(path.clone(), source.into(), plan, None, None);
-        let front = compile_front_end_from_resolved_input(
+        let front = compile_mod_free_front_end(
             &resolved,
             FrontEndOptions { with_semantic_diagnostics: false, ..Default::default() },
             None,

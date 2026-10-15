@@ -1,0 +1,62 @@
+// Integer constants and unsuffixed literals wider than `i32` keep their full value in every
+// context: typed storage, inferred `let`, arguments, returns, comparisons, and arithmetic. The
+// `LIMIT_*` pair repeats the runtime's `EnvironmentLimit` sentinels and the way it compares them.
+use Core.Syscall;
+
+const BIG32 = 3000000000;
+const BIG_U32 = 5000000000;
+const HEX33 = 0x1FFFFFFFF;
+const LIMIT_UNSET = 0xFFFFFFFFFFFFFFFF;
+const LIMIT_INVALID = 0xFFFFFFFFFFFFFFFE;
+const SMALL = 7;
+
+i64 ReturnBig32() { return BIG32; }
+u64 ReturnBigU32() { return BIG_U32; }
+word ReturnHex33() { return HEX33; }
+i64 Echo(i64 value) { return value; }
+
+// Returns LIMIT_UNSET for mode 0, LIMIT_INVALID for mode 1, else `value` KiB, rejecting a result
+// that collides with either sentinel.
+word Limit(word mode, word value) {
+    if mode == 0 { return LIMIT_UNSET; }
+    if mode == 1 { return LIMIT_INVALID; }
+    word scaled = value * 1024;
+    if scaled == LIMIT_UNSET || scaled == LIMIT_INVALID { return LIMIT_INVALID; }
+    return scaled;
+}
+
+i32 Main() {
+    i64 a = BIG32;
+    u64 b = BIG_U32;
+    word h33 = HEX33;
+    if a != 3000000000_i64 { return 1; }
+    if b != 5000000000_u64 { return 2; }
+    i64 sum = BIG32 + 1;
+    i64 product = BIG32 * 2;
+    if sum != 3000000001_i64 { return 3; }
+    if product != 6000000000_i64 { return 4; }
+    if ReturnBig32() != 3000000000_i64 { return 5; }
+    if Echo(BIG32) != 3000000000_i64 { return 6; }
+    if Echo(SMALL) != 7_i64 { return 7; }
+    if ReturnBigU32() != BIG_U32 { return 8; }
+    if ReturnHex33() != HEX33 || h33 != 0x1FFFFFFFF { return 9; }
+    if a < BIG32 || a > BIG32 { return 10; }
+    let inferredConstant = BIG32;
+    i64 fromConstant = inferredConstant;
+    if fromConstant != 3000000000_i64 { return 11; }
+    let inferredLiteral = 3000000000;
+    i64 fromLiteral = inferredLiteral;
+    if fromLiteral != 3000000000_i64 { return 12; }
+    let inferredHex = 0x1FFFFFFFF;
+    i64 fromHex = inferredHex;
+    if fromHex != 8589934591_i64 { return 13; }
+    word unset = Limit(0, 0);
+    word invalid = Limit(1, 0);
+    word valid = Limit(2, 3);
+    if unset != LIMIT_UNSET || unset == LIMIT_INVALID { return 14; }
+    if invalid != LIMIT_INVALID || invalid == LIMIT_UNSET { return 15; }
+    word gap = LIMIT_UNSET - LIMIT_INVALID;
+    if valid != 3072 || gap != 1 { return 16; }
+    Syscall.Write(1_i64, "constant widths ok ${a} ${fromLiteral} ${fromHex}");
+    return 0;
+}

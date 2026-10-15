@@ -10,15 +10,22 @@ use crate::projects::{compiler_workspace_root, with_cwd_at_workspace_root};
 #[test]
 fn ansi_escape_resolves_under_corelib_test_assembly() {
     let root = compiler_workspace_root();
-    let entry = root.join("corelib/beskid_corelib/tests/corelib_tests/src/console/AnsiEscapeTests.bd");
+    let entry = root.join("corelib/beskid_corelib/tests/corelib_tests/src/console/ConsoleSuite.bd");
     if !entry.is_file() {
         return;
     }
     let project_root = entry.parent().unwrap().parent().unwrap().parent().unwrap().to_path_buf();
-    let source = fs::read_to_string(&entry).expect("read AnsiEscapeTests.bd");
+    let source = fs::read_to_string(&entry).expect("read ConsoleSuite.bd");
 
     let resolved = with_cwd_at_workspace_root(&root, || {
-        resolve_input(Some(&entry), Some(&project_root), None, None, false, false).expect("resolve")
+        resolve_input(
+            Some(&entry),
+            Some(&project_root),
+            None,
+            None,
+            beskid_analysis::projects::WorkspacePrepareOptions::default(),
+        )
+        .expect("resolve")
     });
 
     let plan = resolved.compile_plan.expect("compile plan");

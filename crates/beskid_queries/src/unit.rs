@@ -34,7 +34,7 @@ pub fn unit_imports(db: &dyn Db, project: ProjectSession, grammar: GrammarRevisi
     let text = resolve_unit_text(db, &path);
     trace_query("unit_imports", true);
     let imports = import_paths_from_source(&text);
-    log::info!(
+    log::debug!(
         target: "beskid_queries::unit",
         "unit_imports path={} imports=[{}]",
         display_path,
@@ -142,17 +142,14 @@ fn import_paths_from_source(source: &str) -> Vec<String> {
     paths
 }
 
-/// Seed a file input from disk or persistence before querying.
+/// Seed a file input from disk before querying. The disk is the only text authority: a restored
+/// snapshot carries file inputs too, and the prepare spine replaces any that differ from disk.
 pub fn seed_file_from_disk(db: &mut BeskidDatabase, path: PathBuf) {
     let canonical = path.canonicalize().unwrap_or(path.clone());
     if db.file_text(&canonical).is_some() {
         return;
     }
-    let text = db
-        .persistence_root()
-        .and_then(|root| crate::persistence::load_persisted_file_text(root, &canonical))
-        .or_else(|| std::fs::read_to_string(&canonical).ok())
-        .unwrap_or_default();
+    let text = std::fs::read_to_string(&canonical).unwrap_or_default();
     db.ensure_file_text(canonical, text);
 }
 

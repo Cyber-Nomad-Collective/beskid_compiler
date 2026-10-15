@@ -3,10 +3,27 @@ use crate::analysis::diagnostic_kinds::SemanticIssueKind;
 use crate::analysis::rules::RuleContext;
 use crate::resolve::Resolution;
 use crate::syntax::Spanned;
-use crate::syntax::{Block, Expression, Node, Path, Program, Statement, Type, Visibility};
+use crate::clif_surface::{ClifBlockMode, ClifStatement, parse_clif_surface_in};
+use crate::syntax::{Block, ContractNode, Expression, Node, Path, Program, Statement, Type, Visibility};
 use crate::syntax_query::Query;
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
+use crate::projects::{module_path_to_relative_path, resolve_module_file};
+
+/// Private items of the canonical public Dynamic unit that only the compiler references, by
+/// name, when it issues specialized Dynamic bridges: `ReserveAllocationFailureV1`
+/// (`beskid_queries::semantic_contract::reserved_failure`) and the pack/unpack result factories
+/// (`beskid_queries::semantic_contract::dynamic_pack`). Source never calls them, so the unused
+/// private item rule exempts exactly these names in exactly that unit.
+const COMPILER_ISSUED_DYNAMIC_BRIDGE_ITEMS: &[&str] =
+    &["ReserveAllocationFailureV1", "PackedResultV1", "PackedInvalidV1", "UnpackedResultV1", "UnpackedInvalidV1"];
+
+/// Private factories of the canonical serialization descriptor unit that only the compiled
+/// serialization shape authority (`beskid_queries::serialization_shape_binding`) references.
+const COMPILER_ISSUED_SERIALIZATION_DESCRIPTOR_ITEMS: &[&str] = &["CompiledRoot", "AttachCompiledExtras"];
+
+/// The private constructor of the canonical compiled serialization recipe unit that only the
+/// compiled serialization shape authority references.
+const COMPILER_ISSUED_SERIALIZATION_COMPILED_ITEMS: &[&str] = &["ConstructCompiledGraph"];
 
 impl SemanticPipelineRule {
     pub(super) fn stage5_modules_and_visibility(
@@ -22,31 +39,37 @@ impl SemanticPipelineRule {
         self.check_unused_private_items(ctx, program);
     }
 
+    /// `pub mod A.B;` names the full logical module path `A.B`, resolved against the effective
+    /// module roots exactly as program assembly resolves it ([`resolve_module_file`]). Without an
+    /// assembly there are no module roots to judge against, so the check does not run.
     fn check_module_not_found(&self, ctx: &mut RuleContext, program: &Spanned<Program>) {
         if self.file_scoped_module_index(program).is_some() {
             return;
         }
-
-        let source = PathBuf::from(ctx.source_name());
-        let Some(parent) = source.parent() else {
+        let Some(assembly) = ctx.options.program_assembly.as_ref() else {
             return;
         };
+        let roots = assembly.roots.clone();
 
         for item in &program.node.items {
             let Node::ModuleDeclaration(module) = &item.node else {
                 continue;
             };
-            let module_path = self.path_to_string_stage5(&module.node.path).replace('.', "/");
-            let file_candidate = parent.join(format!("{module_path}.bd"));
-            let mod_candidate = parent.join(module_path).join("mod.bd");
-            if file_candidate.exists() || mod_candidate.exists() {
+            let module_path = self.path_to_string_stage5(&module.node.path);
+            // A path provided by several packages exists; program assembly already failed closed
+            // on it with E1104, so it is not reported again as a missing module.
+            if !matches!(resolve_module_file(&module_path, &roots), Ok(None)) {
                 continue;
             }
+            let relative = module_path_to_relative_path(&module_path);
+            let source_root = &roots.host.source_root;
+            let file_candidate = source_root.join(relative.with_extension("bd"));
+            let mod_candidate = source_root.join(&relative).join("mod.bd");
 
             ctx.emit_issue(
                 module.node.path.span,
                 SemanticIssueKind::VisibilityModuleNotFound {
-                    module_path: self.path_to_string_stage5(&module.node.path),
+                    module_path,
                     file_candidate: file_candidate.display().to_string(),
                     mod_candidate: mod_candidate.display().to_string(),
                 },
@@ -183,6 +206,8 @@ impl SemanticPipelineRule {
 
     fn check_unused_private_items(&self, ctx: &mut RuleContext, program: &Spanned<Program>) {
         let used_names = self.collect_used_value_names(program);
+        let clif_symbols = Self::collect_clif_call_symbols(program);
+        let compiler_issued = Self::compiler_issued_items(ctx);
 
         for item in &program.node.items {
             // Tests are invoked by the `beskid test` harness, not by name references in source.
@@ -211,11 +236,40 @@ impl SemanticPipelineRule {
                 _ => continue,
             };
 
-            if visibility == Visibility::Public || name == "main" || used_names.contains(&name) {
+            if visibility == Visibility::Public
+                || ctx.options.program_entry_function.as_deref() == Some(name.as_str())
+                || used_names.contains(&name)
+                || compiler_issued.contains(&name.as_str())
+                || Self::extern_contract_called_from_clif(&item.node, &clif_symbols)
+            {
                 continue;
             }
 
             ctx.emit_issue(span, SemanticIssueKind::UnusedPrivateItem { name });
+        }
+    }
+
+    /// Private items of the unit under analysis that the compiler references by name: those of
+    /// an exact canonical Corelib unit (Corelib package identity, the canonical relative path,
+    /// and byte-identical source) that carries compiler-issued bridges or factories. Any other
+    /// unit, or an analysis without an assembly, gets no exemption.
+    fn compiler_issued_items(ctx: &RuleContext) -> &'static [&'static str] {
+        let (Some(assembly), Some(entry_path)) =
+            (ctx.options.program_assembly.as_ref(), ctx.options.entry_source_path.as_ref())
+        else {
+            return &[];
+        };
+        let Some(unit) = assembly.units.iter().find(|unit| crate::paths::same_file(&unit.path, entry_path)) else {
+            return &[];
+        };
+        if assembly.is_canonical_public_dynamic_unit(unit) {
+            COMPILER_ISSUED_DYNAMIC_BRIDGE_ITEMS
+        } else if assembly.is_canonical_serialization_descriptors_unit(unit) {
+            COMPILER_ISSUED_SERIALIZATION_DESCRIPTOR_ITEMS
+        } else if assembly.is_canonical_serialization_compiled_unit(unit) {
+            COMPILER_ISSUED_SERIALIZATION_COMPILED_ITEMS
+        } else {
+            &[]
         }
     }
 
@@ -242,6 +296,34 @@ impl SemanticPipelineRule {
             }
         }
         items
+    }
+
+    /// Symbols named by `call @symbol(...)` in the unit's `clif { ... }` blocks. A block whose
+    /// surface does not parse names nothing here; the type checker reports it.
+    fn collect_clif_call_symbols(program: &Spanned<Program>) -> HashSet<String> {
+        let mut symbols = HashSet::new();
+        for expression in Query::from(&program.node).of::<Expression>() {
+            let Expression::ClifBlock(clif) = expression else { continue };
+            // Statement mode accepts every surface a value block accepts, so it sees every call.
+            let Ok(surface) = parse_clif_surface_in(&clif.node.body, ClifBlockMode::Statement) else { continue };
+            for statement in surface.statements {
+                if let ClifStatement::Call { symbol, .. } = statement {
+                    symbols.insert(symbol);
+                }
+            }
+        }
+        symbols
+    }
+
+    /// An `[Extern]` contract's members are link symbols (the method name is the symbol), so a
+    /// CLIF `call @symbol(...)` of one of them uses the contract.
+    fn extern_contract_called_from_clif(item: &Node, clif_symbols: &HashSet<String>) -> bool {
+        let Node::ContractDefinition(definition) = item else { return false };
+        definition.node.attributes.iter().any(|attribute| attribute.node.name.node.name == "Extern")
+            && definition.node.items.iter().any(|member| {
+                matches!(&member.node, ContractNode::MethodSignature(signature)
+                    if clif_symbols.contains(&signature.node.name.node.name))
+            })
     }
 
     fn collect_used_value_names(&self, program: &Spanned<Program>) -> HashSet<String> {
@@ -571,5 +653,104 @@ mod tests {
             "the nested generic parameter owns `Payload`; the shadowed import must remain unused: {:?}",
             context.diagnostics
         );
+    }
+
+    fn unused_private_items(source: &str) -> Vec<String> {
+        analyze(source)
+            .diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.code.as_deref() == Some("W1504"))
+            .map(|diagnostic| diagnostic.message.clone())
+            .collect()
+    }
+
+    fn unused_private_items_with_entry(source: &str, entry: Option<&str>) -> Vec<String> {
+        let pair =
+            BeskidParser::parse(Rule::Program, source).expect("source should parse").next().expect("program pair");
+        let program = Program::parse(pair).expect("source should build AST");
+        let options = AnalysisOptions { program_entry_function: entry.map(str::to_owned), ..AnalysisOptions::default() };
+        run_rules(&program.node, "test.bd", source, &builtin_rules(), options)
+            .diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.code.as_deref() == Some("W1504"))
+            .map(|diagnostic| diagnostic.message.clone())
+            .collect()
+    }
+
+    #[test]
+    fn the_program_entry_function_is_not_an_unused_private_item() {
+        let source = "i32 Main() { return 0; }";
+        let unused = unused_private_items_with_entry(source, Some(crate::projects::PROGRAM_ENTRY_FUNCTION));
+        assert!(unused.is_empty(), "the host invokes `Main`: {unused:?}");
+    }
+
+    #[test]
+    fn a_private_main_outside_the_entry_unit_is_an_unused_private_item() {
+        let source = "i32 Main() { return 0; }";
+        let unused = unused_private_items_with_entry(source, None);
+        assert!(unused.iter().any(|message| message.contains("Main")), "no entry function here: {unused:?}");
+    }
+
+    #[test]
+    fn a_lowercase_main_is_not_the_entry_function() {
+        let source = "i32 main() { return 0; }";
+        let unused = unused_private_items_with_entry(source, Some(crate::projects::PROGRAM_ENTRY_FUNCTION));
+        assert!(unused.iter().any(|message| message.contains("main")), "`main` is an ordinary private item: {unused:?}");
+    }
+
+    #[test]
+    fn private_extern_contract_called_only_from_clif_is_used() {
+        let source = r#"
+            [Extern(Abi:"C", Library:"libc.so.6")]
+            contract MemLibc {
+                i64 memset(i64 pointer, i32 value, i64 count);
+            }
+            pub unit Zero(u8[] buffer, i64 count) {
+                clif {
+                    %b = payload %0
+                    %r = call @memset(%b, %1, %1) -> i64
+                };
+                return;
+            }
+        "#;
+        let unused = unused_private_items(source);
+        assert!(!unused.iter().any(|message| message.contains("MemLibc")), "clif call uses the extern contract: {unused:?}");
+    }
+
+    #[test]
+    fn private_extern_contract_without_clif_call_is_unused() {
+        let source = r#"
+            [Extern(Abi:"C", Library:"libc.so.6")]
+            contract MemLibc {
+                i64 memset(i64 pointer, i32 value, i64 count);
+            }
+            pub unit Zero(u8[] buffer, i64 count) {
+                clif {
+                    %b = payload %0
+                    %r = call @memmove(%b, %b, %1) -> i64
+                };
+                return;
+            }
+        "#;
+        let unused = unused_private_items(source);
+        assert!(unused.iter().any(|message| message.contains("MemLibc")), "an uncalled extern contract stays unused: {unused:?}");
+    }
+
+    #[test]
+    fn clif_call_does_not_use_a_non_extern_contract_with_that_member() {
+        let source = r#"
+            contract Plain {
+                i64 memset(i64 pointer, i32 value, i64 count);
+            }
+            pub unit Zero(u8[] buffer, i64 count) {
+                clif {
+                    %b = payload %0
+                    %r = call @memset(%b, %1, %1) -> i64
+                };
+                return;
+            }
+        "#;
+        let unused = unused_private_items(source);
+        assert!(unused.iter().any(|message| message.contains("Plain")), "only [Extern] members are link symbols: {unused:?}");
     }
 }

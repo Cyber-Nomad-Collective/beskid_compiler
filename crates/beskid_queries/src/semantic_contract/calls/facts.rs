@@ -34,14 +34,22 @@ pub(in crate::semantic_contract) fn primitive_numeric_conversion_tracked(
             Ok(None) => return Some(Err(SemanticError::unavailable("primitive_numeric_conversion"))),
             Err(error) => return Some(Err(error)),
         };
-        // Integer sources convert to every primitive target. An `f64` source converts to an
-        // integer target with saturating semantics (NaN gives 0, out-of-range values clamp), or
-        // to `f64` itself.
-        let float_source = from == SemanticTypeId::F64 && (primitive_integer(to) || to == SemanticTypeId::F64);
         Some(
-            (primitive_integer(from) || float_source)
-                .then_some(PrimitiveNumericConversion { from, to })
-                .ok_or_else(|| SemanticError::unavailable("primitive_numeric_conversion")),
+            (if from == SemanticTypeId::CHAR || to == SemanticTypeId::CHAR {
+                matches!(
+                    (from, to),
+                    (SemanticTypeId::U32, SemanticTypeId::CHAR) | (SemanticTypeId::CHAR, SemanticTypeId::U32)
+                )
+            } else {
+                // Integer sources convert to every numeric target. A float source converts to the
+                // other float width, or to an integer target with saturating semantics (NaN gives 0,
+                // out-of-range values clamp to the target's minimum or maximum).
+                primitive_integer(from)
+                    || (matches!(from, SemanticTypeId::F32 | SemanticTypeId::F64)
+                        && (primitive_integer(to) || matches!(to, SemanticTypeId::F32 | SemanticTypeId::F64)))
+            })
+            .then_some(PrimitiveNumericConversion { from, to })
+            .ok_or_else(|| SemanticError::unavailable("primitive_numeric_conversion")),
         )
     })?
     .transpose()
@@ -57,12 +65,18 @@ pub(in crate::semantic_contract) fn primitive_numeric_conversion_target(
         return None;
     };
     Some(match segment.node.name.node.name.as_str() {
+        "i8" => SemanticTypeId::I8,
+        "i16" => SemanticTypeId::I16,
+        "u16" => SemanticTypeId::U16,
+        "u64" => SemanticTypeId::U64,
+        "f32" => SemanticTypeId::F32,
         "i32" => SemanticTypeId::I32,
         "i64" => SemanticTypeId::I64,
         "u32" => SemanticTypeId::U32,
         "u8" | "byte" => SemanticTypeId::U8,
         "word" => SemanticTypeId::WORD,
         "f64" => SemanticTypeId::F64,
+        "char" => SemanticTypeId::CHAR,
         _ => return None,
     })
 }
@@ -116,19 +130,32 @@ pub(in crate::semantic_contract) fn call_arguments_tracked(
                 return Some(Err(SemanticError::unavailable("call_arguments")));
             };
             // A field-chain receiver is denoted by its own path segment; only an unqualified
-            // local receiver is carried by the callee path expression itself.
+            // local receiver is carried by the callee path expression itself. A field typed by
+            // a bounded impl parameter is projected exactly like a nominal field.
+            let field_receiver = || {
+                nominal_local_member_receiver(db, program, index, key, &path.node.path.node)
+                    .map(|(_, receiver)| receiver)
+                    .or_else(|| {
+                        super::super::contracts::bounded_field_member_receiver(
+                            db,
+                            program,
+                            index,
+                            key,
+                            &path.node.path.node,
+                        )
+                        .and_then(Result::ok)
+                        .map(|(_, receiver)| receiver)
+                    })
+            };
             let receiver = if path.node.path.node.segments.len() > 2 {
-                nominal_local_member_receiver(db, program, index, key, &path.node.path.node)?.1
+                field_receiver()?
             } else {
                 let implicit_field_root = path.node.path.node.segments.first().is_some_and(|segment| {
                     nominal_local_receiver_declaration(db, program, index, key, segment.node.name.node.name.as_str())
                         .is_none()
                 });
-                match implicit_field_root
-                    .then(|| nominal_local_member_receiver(db, program, index, key, &path.node.path.node))
-                    .flatten()
-                {
-                    Some((_, receiver)) => receiver,
+                match implicit_field_root.then(field_receiver).flatten() {
+                    Some(receiver) => receiver,
                     None => AstNodeKey { node: normalized_expression_node(index, callee), ..key },
                 }
             };
@@ -197,14 +224,322 @@ pub(in crate::semantic_contract) fn for_iterator_fact_tracked(
             key.node,
             beskid_analysis::syntax_query::DynNodeRef::from(&statement.iterator),
         )?;
-        match element_type_for_for_iterable(program, index, key.node, &statement.iterable.node) {
-            Ok(element_type) => {
-                Some(Ok(ForIteratorFact { declaration: AstNodeKey { node: declaration, ..key }, element_type }))
+        Some(for_iterator_element_identity(db, program, index, key, statement).map(|(identity, source)| {
+            ForIteratorFact {
+                declaration: AstNodeKey { node: declaration, ..key },
+                element_type: identity.abi_type(),
+                source,
             }
-            Err(error) => Some(Err(error)),
-        }
+        }))
     })?
     .transpose()
+}
+
+/// The source identity of the values a `for` statement binds its variable to, and where they
+/// come from: the start operand's type of a `range(start, end)` iterable, the element identity
+/// of an iterable whose source identity is an array (`T[]` parameters and locals, field
+/// projections, call results, array literals; `GenericSourceTypeIdentity::Array`), or the `Some`
+/// payload identity of a nominal iterable that implements the iterator protocol
+/// ([`for_iterator_protocol`]). An iterable of any other identity, or of no proven identity (an
+/// element that names an enclosing generic parameter, or any nominal iterable inside a generic or
+/// contract-parameterized item, see [`for_iterator_specialization`]), is unavailable; the check
+/// gate judges unproven iterables outside such items as E1215.
+pub(in crate::semantic_contract) fn for_iterator_element_identity(
+    db: &dyn Db,
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    key: AstNodeKey,
+    statement: &beskid_analysis::syntax::ForStatement,
+) -> Result<(GenericSourceTypeIdentity, ForIterableSource), SemanticError> {
+    if range_iterable_bounds(&statement.iterable.node).is_some() {
+        let element = element_type_for_for_iterable(program, index, key.node, &statement.iterable.node)?;
+        return Ok((GenericSourceTypeIdentity::Abi(element), ForIterableSource::Range));
+    }
+    let iterable = index
+        .direct_child_id(program, key.node, beskid_analysis::syntax_query::DynNodeRef::from(&statement.iterable))
+        .ok_or_else(|| SemanticError::unavailable("for_iterator_element_type"))?;
+    match generic_source_expression_identity(db, AstNodeKey { node: iterable, ..key }) {
+        Ok(GenericSourceTypeIdentity::Array(element)) => {
+            let element_managed = element.managed_reference_kind();
+            Ok((*element, ForIterableSource::Array { element_managed }))
+        }
+        // An array literal iterable with elements has no declared identity; its element type is
+        // the syntactic type of its elements, which is also what the loop variable reads.
+        Ok(_) | Err(_) if matches!(&statement.iterable.node, beskid_analysis::syntax::Expression::ArrayLiteral(_)) => {
+            let element = element_type_for_for_iterable(program, index, key.node, &statement.iterable.node)?;
+            let identity = GenericSourceTypeIdentity::Abi(element);
+            let element_managed = identity.managed_reference_kind();
+            Ok((identity, ForIterableSource::Array { element_managed }))
+        }
+        Ok(identity @ GenericSourceTypeIdentity::Nominal { .. }) if !for_statement_in_generic_context(db, key) => {
+            let iterable = AstNodeKey { node: iterable, ..key };
+            let (element, _) = for_iterator_protocol_for_identity(db, key, iterable, &identity, None)?;
+            let element_managed = element.managed_reference_kind();
+            Ok((element, ForIterableSource::Iterator { element_managed }))
+        }
+        Ok(_) | Err(_) => Err(SemanticError::unavailable("for_iterator_element_type")),
+    }
+}
+
+/// Whether the item enclosing a `for` statement is only ever lowered through a specialization:
+/// it declares generics (its own, its owner type's or its `impl` block's) or contract-typed
+/// parameters. Inside such an item an iterable's identity may name a generic parameter or a
+/// contract, so its iterator facts are proven per specialization ([`for_iterator_specialization`])
+/// and the target-neutral facts stay unavailable.
+pub(in crate::semantic_contract) fn for_statement_in_generic_context(db: &dyn Db, key: AstNodeKey) -> bool {
+    let Some(syntax) = db.syntax_unit(key.unit).filter(|syntax| syntax.accepts_key(db, key)) else { return false };
+    let Some(item) = nearest_ancestor(syntax.syntax_index(db), key.node, |kind| {
+        matches!(
+            kind,
+            beskid_analysis::syntax_query::NodeKind::FunctionDefinition
+                | beskid_analysis::syntax_query::NodeKind::MethodDefinition
+                | beskid_analysis::syntax_query::NodeKind::TestDefinition
+        )
+    }) else {
+        return false;
+    };
+    let item = AstNodeKey { node: item, ..key };
+    generic_callable_parameters(db, item).is_some_and(|(names, _)| !names.is_empty())
+        || !contract_parameter_declarations(db, item).is_empty()
+}
+
+/// The nominal iterator protocol of one `for` statement: the iterable's nominal type declares a
+/// unique `Next()` method with no parameters that returns `Option<T>` (an enum named `Option`
+/// with exactly a single-payload `Some` and a payload-free `None` variant), and the loop binds
+/// each `Some` payload.
+///
+/// With `enclosing`, the iterable's identity is interpreted in that specialization (generic
+/// parameters and contract-typed parameters take their concrete identities); without it, a
+/// statement inside a generic or contract-parameterized item is unavailable. `Ok(None)` for a
+/// statement that is not a `for`, a `range(..)` loop, or an iterable whose identity is not
+/// nominal (arrays); unavailable for a nominal iterable that does not implement the protocol.
+pub fn for_iterator_protocol(
+    db: &dyn Db,
+    key: AstNodeKey,
+    enclosing: Option<&GenericSpecializationInstance>,
+) -> SemanticQueryResult<ForIteratorProtocol> {
+    let unavailable = || SemanticError::unavailable_at("for_iterator_protocol", key);
+    let Some(syntax) = db.syntax_unit(key.unit).filter(|syntax| syntax.accepts_key(db, key)) else { return Ok(None) };
+    let program = syntax.expanded_program(db);
+    let index = syntax.syntax_index(db);
+    let Some(statement) =
+        index.node_at(program, key.node).and_then(|node| node.of::<beskid_analysis::syntax::ForStatement>())
+    else {
+        return Ok(None);
+    };
+    if range_iterable_bounds(&statement.iterable.node).is_some() {
+        return Ok(None);
+    }
+    let iterable = index
+        .direct_child_id(program, key.node, beskid_analysis::syntax_query::DynNodeRef::from(&statement.iterable))
+        .map(|node| AstNodeKey { node, ..key })
+        .ok_or_else(unavailable)?;
+    if enclosing.is_none() && for_statement_in_generic_context(db, key) {
+        return Err(unavailable());
+    }
+    let identity = super::super::contracts::specialized_source_expression_identity(db, iterable, enclosing)?;
+    if !matches!(identity, GenericSourceTypeIdentity::Nominal { .. }) {
+        return Ok(None);
+    }
+    for_iterator_protocol_for_identity(db, key, iterable, &identity, enclosing).map(|(_, protocol)| Some(protocol))
+}
+
+/// [`for_iterator_protocol`] for an iterable whose nominal source identity is already proven;
+/// also returns the source identity of the element (the `Some` payload).
+pub(in crate::semantic_contract) fn for_iterator_protocol_for_identity(
+    db: &dyn Db,
+    key: AstNodeKey,
+    iterable: AstNodeKey,
+    identity: &GenericSourceTypeIdentity,
+    enclosing: Option<&GenericSpecializationInstance>,
+) -> Result<(GenericSourceTypeIdentity, ForIteratorProtocol), SemanticError> {
+    let unavailable = || SemanticError::unavailable_at("for_iterator_protocol", key);
+    let GenericSourceTypeIdentity::Nominal { arguments, .. } = identity else { return Err(unavailable()) };
+    let owner = super::super::contracts::concrete_declaration(db, iterable, identity).ok_or_else(unavailable)?;
+    let next = unique_nominal_method_declaration(db, owner, "Next").ok_or_else(unavailable)?;
+    let next_syntax = db.syntax_unit(next.unit).filter(|syntax| syntax.accepts_key(db, next)).ok_or_else(unavailable)?;
+    let method = next_syntax
+        .syntax_index(db)
+        .node_at(next_syntax.expanded_program(db), next.node)
+        .and_then(|node| node.of::<beskid_analysis::syntax::MethodDefinition>())
+        .ok_or_else(unavailable)?;
+    if !method.parameters.is_empty() {
+        return Err(unavailable());
+    }
+    let return_type = method.return_type.as_ref().ok_or_else(unavailable)?;
+    // A method inherits the generics of its owner type (or `impl` block) positionally; the
+    // iterable's applied arguments bind them.
+    let generics = generic_callable_parameters(db, next).map(|(names, _)| names).unwrap_or_default();
+    if generics.len() != arguments.len() {
+        return Err(unavailable());
+    }
+    let substitutions = generics
+        .iter()
+        .zip(arguments.iter())
+        .map(|(name, argument)| GenericSubstitution::from_source(*name, argument.abi_type(), argument.clone()))
+        .collect::<Vec<_>>();
+    let source_environment: HashMap<&str, &GenericSourceTypeIdentity> =
+        substitutions.iter().map(|binding| (binding.parameter.as_ref(), binding.source_identity())).collect();
+    let option_identity =
+        generic_source_type_identity_with_substitutions(db, next, &return_type.node, &source_environment)?;
+    let GenericSourceTypeIdentity::Nominal { arguments: option_arguments, .. } = &option_identity else {
+        return Err(unavailable());
+    };
+    let [element] = &**option_arguments else { return Err(unavailable()) };
+    let (option, option_layout) =
+        super::super::layouts::enum_layout_for_source_identity(db, next, &option_identity)?;
+    let option_name = db
+        .syntax_unit(option.unit)
+        .filter(|syntax| syntax.accepts_key(db, option))
+        .and_then(|syntax| {
+            syntax
+                .syntax_index(db)
+                .node_at(syntax.expanded_program(db), option.node)
+                .and_then(|node| node.of::<beskid_analysis::syntax::EnumDefinition>())
+                .map(|definition| definition.name.node.name.clone())
+        })
+        .ok_or_else(unavailable)?;
+    let [first, second] = &*option_layout.variants else { return Err(unavailable()) };
+    let some_variant = match (&*first.name, &*second.name) {
+        ("Some", "None") => 0_u32,
+        ("None", "Some") => 1_u32,
+        _ => return Err(unavailable()),
+    };
+    let (some, none) = if some_variant == 0 { (first, second) } else { (second, first) };
+    if option_name != "Option" || some.fields.len() != 1 || !none.fields.is_empty() {
+        return Err(unavailable());
+    }
+    let element_type = element.abi_type();
+    if element_type == SemanticTypeId::UNIT || element_type == SemanticTypeId::NEVER {
+        return Err(unavailable());
+    }
+    let signature = if substitutions.is_empty() {
+        item_abi_signature(db, next)?.ok_or_else(unavailable)?
+    } else {
+        let abi_environment: HashMap<String, SemanticTypeId> =
+            substitutions.iter().map(|binding| (binding.parameter.to_string(), binding.argument)).collect();
+        ItemSignature {
+            parameters: Arc::from([SemanticTypeId::POINTER]),
+            result: generic_abi_type(db, next, &return_type.node, &abi_environment)?,
+        }
+    };
+    if signature.parameters[..] != [SemanticTypeId::POINTER] || signature.result != SemanticTypeId::POINTER {
+        return Err(unavailable());
+    }
+    let contract_witnesses = super::super::contracts::contract_witnesses_for_call(
+        db,
+        next,
+        &[iterable],
+        true,
+        enclosing,
+        &substitutions,
+    )?;
+    let next = GenericSpecializationInstance {
+        declaration: next,
+        declaration_identity: stable_declaration_identity(db, next).ok_or_else(unavailable)?,
+        signature,
+        substitutions: substitutions.into(),
+        contract_witnesses,
+    };
+    let protocol = ForIteratorProtocol {
+        next,
+        option,
+        option_layout,
+        some_variant,
+        element_type,
+        element_managed: element.managed_reference_kind(),
+    };
+    Ok((element.clone(), protocol))
+}
+
+/// The element identity the loop variable of a `for` statement has inside one specialization:
+/// the element of an array iterable, the `Some` payload of a nominal iterator, or the
+/// target-neutral identity of any other (range) iterable.
+pub(in crate::semantic_contract) fn specialized_for_element_identity(
+    db: &dyn Db,
+    key: AstNodeKey,
+    enclosing: &GenericSpecializationInstance,
+) -> Result<GenericSourceTypeIdentity, SemanticError> {
+    let unavailable = || SemanticError::unavailable_at("for_iterator_element_type", key);
+    let syntax = db.syntax_unit(key.unit).filter(|syntax| syntax.accepts_key(db, key)).ok_or_else(unavailable)?;
+    let program = syntax.expanded_program(db);
+    let index = syntax.syntax_index(db);
+    let statement = index
+        .node_at(program, key.node)
+        .and_then(|node| node.of::<beskid_analysis::syntax::ForStatement>())
+        .ok_or_else(unavailable)?;
+    if range_iterable_bounds(&statement.iterable.node).is_none()
+        && let Some(iterable) =
+            index.direct_child_id(program, key.node, beskid_analysis::syntax_query::DynNodeRef::from(&statement.iterable))
+    {
+        let iterable = AstNodeKey { node: iterable, ..key };
+        match super::super::contracts::specialized_source_expression_identity(db, iterable, Some(enclosing)) {
+            Ok(GenericSourceTypeIdentity::Array(element)) => return Ok(*element),
+            Ok(identity @ GenericSourceTypeIdentity::Nominal { .. }) => {
+                return for_iterator_protocol_for_identity(db, key, iterable, &identity, Some(enclosing))
+                    .map(|(element, _)| element);
+            }
+            Ok(_) | Err(_) => {}
+        }
+    }
+    for_iterator_element_identity(db, program, index, key, statement).map(|(identity, _)| identity)
+}
+
+/// [`for_iterator_fact`](super::super::for_iterator_fact) through one exact enclosing generic
+/// specialization. A `for` over a local or parameter declared `T[]`, where `T` is a generic
+/// parameter of the enclosing item, takes its element type and GC classification from the
+/// specialization's source binding (the same authority `array_index_element_specialization`
+/// uses for `values[index]`). A `for` over a nominal iterator takes them from the
+/// [`for_iterator_protocol`] of the iterable's identity in the specialization (generic and
+/// contract-typed iterables). A statement whose fact is available without the specialization
+/// returns that fact.
+pub fn for_iterator_specialization(
+    db: &dyn Db,
+    key: AstNodeKey,
+    enclosing: &GenericSpecializationInstance,
+) -> SemanticQueryResult<ForIteratorFact> {
+    let Some(syntax) = db.syntax_unit(key.unit) else { return Ok(None) };
+    if !syntax.accepts_key(db, key) {
+        return Ok(None);
+    }
+    match for_iterator_fact_tracked(db, syntax, key) {
+        Ok(Some(fact)) => return Ok(Some(fact)),
+        Ok(None) => return Ok(None),
+        Err(error) if error.is_unavailable() => {}
+        Err(error) => return Err(error),
+    }
+    let Some((declaration, array)) = with_node(db, syntax, key, |program, index, node| {
+        let statement = node.of::<beskid_analysis::syntax::ForStatement>()?;
+        let declaration = index.direct_child_id(
+            program,
+            key.node,
+            beskid_analysis::syntax_query::DynNodeRef::from(&statement.iterator),
+        )?;
+        let declaration = AstNodeKey { node: declaration, ..key };
+        let array = for_iterable_declared_array_element(program, index, key.node, &statement.iterable.node)
+            .and_then(|element| {
+                let parameter = generic_parameter_reference_name(element)?;
+                type_syntax_is_enclosing_generic_parameter_reference(db, key, element).then_some(())?;
+                enclosing.substitutions.iter().find(|binding| binding.parameter.as_ref() == parameter)
+            })
+            .map(|binding| ForIteratorFact {
+                declaration,
+                element_type: binding.argument,
+                source: ForIterableSource::Array { element_managed: binding.managed_reference_kind() },
+            });
+        Some((declaration, array))
+    })?
+    else {
+        return Ok(None);
+    };
+    if array.is_some() {
+        return Ok(array);
+    }
+    Ok(for_iterator_protocol(db, key, Some(enclosing))?.map(|protocol| ForIteratorFact {
+        declaration,
+        element_type: protocol.element_type,
+        source: ForIterableSource::Iterator { element_managed: protocol.element_managed },
+    }))
 }
 
 #[salsa::tracked(persist)]
@@ -214,18 +549,119 @@ pub(in crate::semantic_contract) fn try_expression_fact_tracked(
     key: AstNodeKey,
 ) -> SemanticQueryResult<TryExpressionFact> {
     with_node(db, syntax, key, |program, index, node| {
-        Some(try_expression_fact_for_node(db, program, index, key, node))
+        Some(try_expression_fact_for_node(db, program, index, key, node, None))
     })?
     .transpose()
 }
 
+/// Legality of `operand?`: the operand is a value of the canonical Result whose error type is
+/// exactly the error type of the enclosing callable's declared canonical Result.
+///
+/// This is the language rule, judged on declared types alone, so it holds in an unspecialized
+/// generic body where the payloads name generic parameters (`Result<T[], E>`). The lowering
+/// fact ([`try_expression_fact_for_node`]) requires this legality and adds the concrete payload
+/// and layout facts that only a concrete (or specialized) body has.
+pub(in crate::semantic_contract) fn try_expression_legality_for_node(
+    db: &dyn Db,
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    key: AstNodeKey,
+    node: beskid_analysis::syntax_query::DynNodeRef<'_>,
+) -> Result<(), SemanticError> {
+    let unavailable = || SemanticError::unavailable("try_expression");
+    let expression = node.of::<beskid_analysis::syntax::TryExpression>().ok_or_else(unavailable)?;
+    let operand = index
+        .direct_child_id(program, key.node, beskid_analysis::syntax_query::DynNodeRef::from(expression.expr.as_ref()))
+        .map(|node| AstNodeKey { node: normalized_expression_node(index, node), ..key })
+        .ok_or_else(unavailable)?;
+    let callable = super::super::locals::enclosing_executable_callable(index, key.node)
+        .and_then(|callable| index.node_at(program, callable))
+        .ok_or_else(unavailable)?;
+    let return_type = super::super::abi::declared_callable_return_type(callable).ok_or_else(unavailable)?;
+    let result_definition = canonical_result_definition_for_type(db, key, &return_type.node).ok_or_else(unavailable)?;
+    let (_, return_error) = result_type_parts(&return_type.node).ok_or_else(unavailable)?;
+    let return_error = generic_source_type_identity(db, key, &return_error.node)?;
+    let (operand_definition, operand_error) = try_operand_result(db, program, index, key, operand, node)?;
+    if operand_definition != result_definition || operand_error != return_error {
+        return Err(unavailable());
+    }
+    Ok(())
+}
+
+/// The canonical Result declaration and error identity of a try operand.
+fn try_operand_result(
+    db: &dyn Db,
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    key: AstNodeKey,
+    operand: AstNodeKey,
+    node: beskid_analysis::syntax_query::DynNodeRef<'_>,
+) -> Result<(AstNodeKey, GenericSourceTypeIdentity), SemanticError> {
+    let unavailable = || SemanticError::unavailable("try_expression");
+    if index.kind(operand.node) == Some(beskid_analysis::syntax_query::NodeKind::CallExpression) {
+        let Some(CallLowering::Direct(declaration)) = call_lowering(db, operand)? else {
+            return Err(unavailable());
+        };
+        let syntax = db.syntax_unit(declaration.unit).filter(|syntax| syntax.accepts_key(db, declaration)).ok_or_else(unavailable)?;
+        let declaration_node =
+            syntax.syntax_index(db).node_at(syntax.expanded_program(db), declaration.node).ok_or_else(unavailable)?;
+        // A member of a bound contract (`reader.Next()?` with `where R: Source`) is as exact a
+        // callee as a function: its declared result is the contract signature's result.
+        let (result, contract_member) =
+            if let Some(function) = declaration_node.of::<beskid_analysis::syntax::FunctionDefinition>() {
+                (function.return_type.as_ref(), false)
+            } else if let Some(method) = declaration_node.of::<beskid_analysis::syntax::MethodDefinition>() {
+                (method.return_type.as_ref(), false)
+            } else if let Some(signature) = declaration_node.of::<beskid_analysis::syntax::ContractMethodSignature>() {
+                (signature.return_type.as_ref(), true)
+            } else {
+                return Err(unavailable());
+            };
+        let result = result.ok_or_else(unavailable)?;
+        let definition = canonical_result_definition_for_type(db, declaration, &result.node).ok_or_else(unavailable)?;
+        let (_, error) = result_type_parts(&result.node).ok_or_else(unavailable)?;
+        let error = if super::generics::result_mentions_callable_generics(db, declaration, &error.node, contract_member) {
+            // The error type depends on this call's substitutions.
+            match generic_source_expression_identity(db, operand)? {
+                GenericSourceTypeIdentity::Nominal { arguments, .. } => match arguments.as_ref() {
+                    [_, error] => error.clone(),
+                    _ => return Err(unavailable()),
+                },
+                _ => return Err(unavailable()),
+            }
+        } else {
+            generic_source_type_identity(db, declaration, &error.node)?
+        };
+        return Ok((definition, error));
+    }
+    // A spelling or pointer ABI does not prove an arbitrary member or computed value: the
+    // operand must name one lexical declaration (parameter or `let`) whose declared or
+    // initialized identity the generic source identity can prove.
+    try_operand_declaration(program, index, key, node)?;
+    let identity = generic_source_expression_identity(db, operand)?;
+    let (definition, _) = super::super::layouts::enum_layout_for_source_identity(db, operand, &identity)?;
+    let GenericSourceTypeIdentity::Nominal { arguments, .. } = &identity else {
+        return Err(unavailable());
+    };
+    let [_, error] = arguments.as_ref() else {
+        return Err(unavailable());
+    };
+    Ok((definition, error.clone()))
+}
+
+/// The lowering fact of `operand?`. With `enclosing`, the operand and the enclosing callable's
+/// return type are read in that specialization's environment: inside `Result<T, E> Load<T>()`,
+/// `Admit<T>(limit)?` and `ReadField<T, R>(reader, limits)?` have exact payloads and layouts only
+/// once `T` and `R` are bound, so a specialized body is lowered with this fact.
 pub(in crate::semantic_contract) fn try_expression_fact_for_node(
     db: &dyn Db,
     program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
     index: &beskid_analysis::syntax_query::SyntaxIndex,
     key: AstNodeKey,
     node: beskid_analysis::syntax_query::DynNodeRef<'_>,
+    enclosing: Option<&GenericSpecializationInstance>,
 ) -> Result<TryExpressionFact, SemanticError> {
+    try_expression_legality_for_node(db, program, index, key, node)?;
     let expression = node
         .of::<beskid_analysis::syntax::TryExpression>()
         .ok_or_else(|| SemanticError::unavailable("try_expression"))?;
@@ -238,9 +674,15 @@ pub(in crate::semantic_contract) fn try_expression_fact_for_node(
         let Some(CallLowering::Direct(declaration)) = call_lowering(db, operand)? else {
             return Err(SemanticError::unavailable("try_expression"));
         };
+        // A member of a bound contract (`reader.Next()?` with `where R: Source`) is as exact a
+        // callee as a function: its declared result is the contract signature's result.
         if !matches!(
             node_kind(db, declaration)?,
-            Some(IndexedNodeKind::FunctionDefinition | IndexedNodeKind::MethodDefinition)
+            Some(
+                IndexedNodeKind::FunctionDefinition
+                    | IndexedNodeKind::MethodDefinition
+                    | IndexedNodeKind::ContractMethodSignature
+            )
         ) {
             return Err(SemanticError::unavailable("try_expression"));
         }
@@ -250,7 +692,7 @@ pub(in crate::semantic_contract) fn try_expression_fact_for_node(
         // initialized identity the generic source identity can prove.
         try_operand_declaration(program, index, key, node)?;
     }
-    let operand_identity = generic_source_expression_identity(db, operand)?;
+    let operand_identity = super::super::contracts::specialized_source_expression_identity(db, operand, enclosing)?;
     let callable = super::super::locals::enclosing_executable_callable(index, key.node)
         .and_then(|callable| index.node_at(program, callable))
         .ok_or_else(|| SemanticError::unavailable("try_expression"))?;
@@ -258,7 +700,17 @@ pub(in crate::semantic_contract) fn try_expression_fact_for_node(
         .ok_or_else(|| SemanticError::unavailable("try_expression"))?;
     let result_definition = canonical_result_definition_for_type(db, key, &return_type.node)
         .ok_or_else(|| SemanticError::unavailable("try_expression"))?;
-    let return_identity = generic_source_type_identity(db, key, &return_type.node)?;
+    let return_identity = match enclosing {
+        Some(enclosing) => {
+            let environment = enclosing
+                .substitutions
+                .iter()
+                .map(|binding| (binding.parameter.as_ref(), binding.source_identity()))
+                .collect();
+            generic_source_type_identity_with_substitutions(db, key, &return_type.node, &environment)?
+        }
+        None => generic_source_type_identity(db, key, &return_type.node)?,
+    };
     let (
         GenericSourceTypeIdentity::Nominal { qualified_name: operand_name, arguments: operand_arguments },
         GenericSourceTypeIdentity::Nominal { qualified_name: return_name, arguments: return_arguments },

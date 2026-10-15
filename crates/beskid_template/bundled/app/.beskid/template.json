@@ -1,0 +1,9 @@
+{
+  "schema": "beskid.template.v1",
+  "identity": "beskid.bundled.app",
+  "name": "Application",
+  "shortName": "app",
+  "tags": { "type": "project" },
+  "symbols": { "name": { "type": "string", "isRequired": true } },
+  "sources": [{ "source": "./", "target": "./", "include": ["**/*"], "exclude": [".beskid/**"] }]
+}

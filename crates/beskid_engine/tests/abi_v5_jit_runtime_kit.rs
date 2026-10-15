@@ -321,7 +321,7 @@ fn engine_uses_only_the_configured_exact_runtime_kit() {
 
 #[test]
 fn engine_try_new_fails_closed_when_exact_debug_manifest_is_missing() {
-    let _environment = RUNTIME_PREFIX_ENV.lock().expect("runtime prefix environment lock");
+    let _environment = RUNTIME_PREFIX_ENV.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     let Some(target) = host_target() else {
         return;
     };
@@ -343,14 +343,14 @@ fn engine_try_new_fails_closed_when_exact_debug_manifest_is_missing() {
 
 #[test]
 fn codegen_input_route_fails_closed_when_exact_kit_manifest_is_missing() {
-    let _environment = RUNTIME_PREFIX_ENV.lock().expect("runtime prefix environment lock");
+    let _environment = RUNTIME_PREFIX_ENV.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     let Some(target) = host_target() else {
         return;
     };
     let empty = TestDir::new();
     let _runtime_prefix = RuntimePrefixContext::install(empty.path());
     let error =
-        beskid_engine::services::run_entrypoint(Path::new("missing-kit.bd"), "i64 Main() { return 1; }", "Main")
+        beskid_engine::services::run_entrypoint(Path::new("missing-kit.bd"), "i64 Main() { return 1; }", "Main", &beskid_engine::ModHost::NoMods)
             .expect_err("CodegenInput JIT route must fail closed without an exact kit");
     let message = error.to_string();
     let expected =
@@ -366,7 +366,7 @@ fn codegen_input_route_fails_closed_when_exact_kit_manifest_is_missing() {
 
 #[test]
 fn codegen_input_route_fails_closed_when_exact_kit_is_tampered() {
-    let _environment = RUNTIME_PREFIX_ENV.lock().expect("runtime prefix environment lock");
+    let _environment = RUNTIME_PREFIX_ENV.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     let Some(target) = host_target() else {
         return;
     };
@@ -376,7 +376,7 @@ fn codegen_input_route_fails_closed_when_exact_kit_is_tampered() {
 
     let _runtime_prefix = RuntimePrefixContext::install(tampered.path());
     let error =
-        beskid_engine::services::run_entrypoint(Path::new("tampered-kit.bd"), "i64 Main() { return 1; }", "Main")
+        beskid_engine::services::run_entrypoint(Path::new("tampered-kit.bd"), "i64 Main() { return 1; }", "Main", &beskid_engine::ModHost::NoMods)
             .expect_err("CodegenInput JIT route must reject a tampered exact kit");
     let message = error.to_string();
     assert!(
@@ -397,6 +397,7 @@ fn prepare_jit_entrypoint_uses_codegen_input_symbols_only() {
         Path::new("codegen-input-route.bd"),
         "i64 Echo(i64 value) { return value; } i64 Main() { return Echo(41); }",
         "Main",
+        &beskid_engine::ModHost::NoMods,
     )
     .expect("CodegenInput preparation");
     assert!(prepared.symbol.starts_with("Main#syntax_"));

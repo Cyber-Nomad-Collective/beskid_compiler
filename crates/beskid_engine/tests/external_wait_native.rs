@@ -12,7 +12,6 @@ use beskid_engine::JitRuntimeKit;
 #[cfg(windows)]
 use beskid_tests_support::native_harness::place_shared_runtime;
 use beskid_tests_support::native_harness::{executable_name, native_c_compiler, run_bounded, shared_library_name};
-use beskid_tools::toolchain::runtime_kit::{RuntimeKitProfile, build_native_host};
 use cranelift_codegen::ir::{AbiParam, InstBuilder, types};
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
 use cranelift_jit::{JITBuilder, JITModule};
@@ -85,9 +84,12 @@ fn owner_routed_waits_and_deadlines_have_one_winner() {
             .contains("unsupported external-wait child mode: unsupported-probe"),
         "{unsupported:?}",
     );
+    // The fixture library is placed beside the kit library, so work on a private copy of the
+    // target directory's shared kit instead of publishing a kit for this one test.
     let prefix = tempfile::tempdir().unwrap();
     let prefix_path = prefix.path().canonicalize().unwrap();
-    let kit = build_native_host(prefix_path.clone(), RuntimeKitProfile::Debug).unwrap();
+    copy_tree(&beskid_tests_mod_host::shared_runtime_prefix().unwrap(), &prefix_path);
+    let kit = resolve_installed_runtime_kit(&prefix_path, &host_runtime_target().unwrap(), BuildProfile::Debug).unwrap();
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     #[cfg(unix)]
     let shared_link_library = &kit.shared_library;
@@ -146,6 +148,19 @@ fn owner_routed_waits_and_deadlines_have_one_winner() {
         "jit callback fixture did not run the ordered triple matrix: {output:?}",
     );
     eprintln!("jit callback: {}", String::from_utf8_lossy(&output.stderr));
+}
+
+fn copy_tree(source: &Path, destination: &Path) {
+    std::fs::create_dir_all(destination).unwrap();
+    for entry in std::fs::read_dir(source).unwrap() {
+        let entry = entry.unwrap();
+        let target = destination.join(entry.file_name());
+        if entry.path().is_dir() {
+            copy_tree(&entry.path(), &target);
+        } else {
+            std::fs::copy(entry.path(), &target).unwrap();
+        }
+    }
 }
 
 fn run_jit_fixture() {

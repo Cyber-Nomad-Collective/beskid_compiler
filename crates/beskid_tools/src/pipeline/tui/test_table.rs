@@ -55,7 +55,9 @@ impl TestRunUi {
         self.rows[index].state = TestRowState::Running;
         self.rows[index].duration = None;
         beskid_telemetry::clear_stderr_progress()?;
-        eprintln!("{}", self.rows[index].qualified_name);
+        if !quiet() {
+            eprintln!("{}", self.rows[index].qualified_name);
+        }
         Ok(())
     }
 
@@ -75,6 +77,10 @@ impl TestRunUi {
             self.rows[index].failure_detail = detail.map(str::to_owned);
         }
         beskid_telemetry::clear_stderr_progress()?;
+        // `--quiet` keeps only failed and timed-out rows.
+        if quiet() && !matches!(state, TestRowState::Failed | TestRowState::TimedOut) {
+            return Ok(());
+        }
         {
             let row = &self.rows[index];
             let name = maybe_link_label(row.link.as_ref(), &row.qualified_name, true);
@@ -123,4 +129,8 @@ impl Default for TestRunUi {
     fn default() -> Self {
         Self::new()
     }
+}
+
+fn quiet() -> bool {
+    beskid_telemetry::verbosity() == beskid_telemetry::Verbosity::Quiet
 }

@@ -82,6 +82,7 @@ fn instantiates_inline_project_template() {
     let manifest = beskid_template::load_manifest_from_template_root(&template_root).expect("manifest");
     let output = temp.path().join("out");
     let options = InstantiateOptions {
+        offline: false,
         template_root,
         output: output.clone(),
         host_project: None,
@@ -127,6 +128,7 @@ fn instantiates_packaged_template_when_present() {
         let temp = tempfile::tempdir().expect("tempdir");
         let output = temp.path().join("out");
         let options = InstantiateOptions {
+            offline: false,
             template_root: template_root.clone(),
             output: output.clone(),
             host_project: None,

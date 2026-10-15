@@ -1,6 +1,6 @@
 use std::sync::Mutex;
 
-use beskid_abi::{ModCollectRequest, ModGenerationRequest};
+use super::super::context::{ModCollectRequest, ModGenerationRequest};
 
 use super::super::types::ContractRegistration;
 use super::contract::{ContractInvocationError, ContractInvoker};
@@ -80,6 +80,7 @@ impl ContractInvoker for StubContractInvoker {
         &self,
         registration: &ContractRegistration,
         _request: &ModCollectRequest,
+        _authority: Option<&dyn crate::mod_host::ModSemanticAuthority>,
     ) -> Result<CollectorOutcome, ContractInvocationError> {
         self.record(InvocationKind::Collector {
             contract_id: registration.contract_id.clone(),
@@ -93,13 +94,18 @@ impl ContractInvoker for StubContractInvoker {
         &self,
         registration: &ContractRegistration,
         _request: &ModGenerationRequest,
+        _authority: Option<&dyn crate::mod_host::ModSemanticAuthority>,
     ) -> Result<GeneratorOutcome, ContractInvocationError> {
         self.record(InvocationKind::Generator {
             contract_id: registration.contract_id.clone(),
             type_id: registration.type_id.clone(),
             entry_symbol: registration.entry_symbol.clone(),
         });
-        Ok(GeneratorOutcome { type_id: registration.type_id.clone(), ..Default::default() })
+        Ok(GeneratorOutcome {
+            compiled_metadata: Vec::new(),
+            type_id: registration.type_id.clone(),
+            ..Default::default()
+        })
     }
 
     fn invoke_analyzer(
@@ -107,6 +113,7 @@ impl ContractInvoker for StubContractInvoker {
         registration: &ContractRegistration,
         _request: &ModCollectRequest,
         snapshot: Option<&crate::services::SemanticSnapshot>,
+        _authority: Option<&dyn crate::mod_host::ModSemanticAuthority>,
     ) -> Result<AnalyzerOutcome, ContractInvocationError> {
         self.record(InvocationKind::Analyzer {
             contract_id: registration.contract_id.clone(),
@@ -122,6 +129,7 @@ impl ContractInvoker for StubContractInvoker {
         &self,
         registration: &ContractRegistration,
         _request: &ModCollectRequest,
+        _authority: Option<&dyn crate::mod_host::ModSemanticAuthority>,
     ) -> Result<RewriterOutcome, ContractInvocationError> {
         self.record(InvocationKind::Rewriter {
             contract_id: registration.contract_id.clone(),

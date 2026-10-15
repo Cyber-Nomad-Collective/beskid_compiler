@@ -1,4 +1,4 @@
-//! `beskid tree` — print a textual AST tree for a Beskid source file.
+//! `beskid dev syntax tree` — print a textual AST tree for a Beskid source file.
 
 use anyhow::{Context, Result};
 use beskid_analysis::services;

@@ -1,12 +1,12 @@
 //! Shared Cranelift module helpers for JIT and AOT backends (builtin imports, extern FFI checks,
 //! TestCase name remapping). Object builds use the same extern FFI rules as JIT.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fmt;
 
 use beskid_abi::abi_v5::AbiType;
 use beskid_abi::interop::c_profile::C_PROFILE_PERMITTED_SCALARS;
-use beskid_abi::{AbiParamKind, AbiReturnKind, all_builtin_specs};
+use beskid_abi::runtime_source::{CorelibServiceAbi, CorelibServiceAbiType};
 use cranelift_codegen::ir::{AbiParam, ExternalName, Signature, UserExternalName, types};
 use cranelift_codegen::isa::CallConv;
 use cranelift_codegen::settings::{self, Configurable};
@@ -107,60 +107,55 @@ impl fmt::Display for ExternDeclarationError {
 
 impl std::error::Error for ExternDeclarationError {}
 
-/// Build a Cranelift [`Signature`] for a Beskid builtin from ABI param/return kinds and the module pointer type.
-pub fn builtin_signature(
+/// Cranelift [`Signature`] of one canonical ABI-v5 runtime service shape. `None` when a slot has
+/// no scalar register class.
+pub fn corelib_service_signature(
     pointer: cranelift_codegen::ir::Type,
     call_conv: CallConv,
-    params: &[AbiParamKind],
-    returns: AbiReturnKind,
-) -> Signature {
-    let mut sig = Signature::new(call_conv);
-    for param in params {
-        let ty = match param {
-            AbiParamKind::Ptr => pointer,
-            AbiParamKind::I64 => types::I64,
-            AbiParamKind::F64 => types::F64,
-        };
-        sig.params.push(AbiParam::new(ty));
+    abi: &CorelibServiceAbi,
+) -> Option<Signature> {
+    let scalar = |ty: CorelibServiceAbiType| match ty {
+        CorelibServiceAbiType::Pointer | CorelibServiceAbiType::String | CorelibServiceAbiType::Usize => Some(pointer),
+        CorelibServiceAbiType::U8 => Some(types::I8),
+        CorelibServiceAbiType::I32 | CorelibServiceAbiType::U32 => Some(types::I32),
+        CorelibServiceAbiType::I64 | CorelibServiceAbiType::U64 => Some(types::I64),
+        CorelibServiceAbiType::F32 => Some(types::F32),
+        CorelibServiceAbiType::F64 => Some(types::F64),
+        CorelibServiceAbiType::Void | CorelibServiceAbiType::Never => None,
+    };
+    let mut signature = Signature::new(call_conv);
+    for ty in &abi.parameters {
+        signature.params.push(AbiParam::new(scalar(*ty)?));
     }
-    match returns {
-        AbiReturnKind::Void | AbiReturnKind::Never => {}
-        AbiReturnKind::Ptr => sig.returns.push(AbiParam::new(pointer)),
-        AbiReturnKind::I64 => sig.returns.push(AbiParam::new(types::I64)),
-        AbiReturnKind::I32 => sig.returns.push(AbiParam::new(types::I32)),
-        AbiReturnKind::F64 => sig.returns.push(AbiParam::new(types::F64)),
+    if !matches!(abi.result, CorelibServiceAbiType::Void | CorelibServiceAbiType::Never) {
+        signature.returns.push(AbiParam::new(scalar(abi.result)?));
     }
-    sig
+    Some(signature)
 }
 
-/// Declare every entry in [`beskid_abi::BUILTIN_SPECS`] as import functions on `module`.
-pub fn declare_builtin_imports<M: Module>(
-    module: &mut M,
-    func_ids: &mut HashMap<String, FuncId>,
-) -> Result<(), ModuleError> {
-    let pointer = module.isa().pointer_type();
-    let call_conv = module.isa().default_call_conv();
-
-    for spec in all_builtin_specs() {
-        let signature = builtin_signature(pointer, call_conv, spec.params, spec.returns);
-        let id = module.declare_function(spec.symbol, Linkage::Import, &signature)?;
-        func_ids.insert(spec.symbol.to_owned(), id);
+/// Canonical import signature of a process-linked runtime symbol ([`beskid_abi::is_runtime_import_symbol`]).
+/// The shape comes only from the generated ABI-v5 tables
+/// (`canonical_corelib_service_abi_for_adapter`); `None` for any other symbol or an ambiguous shape.
+pub fn runtime_import_signature(pointer: cranelift_codegen::ir::Type, call_conv: CallConv, symbol: &str) -> Option<Signature> {
+    if !beskid_abi::is_runtime_import_symbol(symbol) {
+        return None;
     }
-
-    Ok(())
+    let abi = beskid_abi::runtime_source::canonical_corelib_service_abi_for_adapter(symbol)?;
+    corelib_service_signature(pointer, call_conv, &abi)
 }
 
-/// Declare only builtin imports referenced by the artifact's lowered CLIF.
+/// Declare only runtime imports referenced by the artifact's lowered CLIF, in symbol order, each
+/// with its canonical ABI-v5 signature ([`runtime_import_signature`]).
 ///
 /// AOT archives retain every declared import, even when no emitted function calls it. Restrict
 /// the object boundary to actual `TestCase` callees so a canonical runtime archive cannot leak
-/// unrelated legacy runtime symbols.
+/// unrelated runtime symbols.
 pub fn declare_referenced_builtin_imports<M: Module>(
     module: &mut M,
     artifact: &CodegenArtifact,
     func_ids: &mut HashMap<String, FuncId>,
 ) -> Result<(), ModuleError> {
-    let referenced = artifact
+    let mut referenced = artifact
         .functions
         .iter()
         .flat_map(|function| function.function.dfg.ext_funcs.iter())
@@ -168,17 +163,21 @@ pub fn declare_referenced_builtin_imports<M: Module>(
             ExternalName::TestCase(name) => Some(String::from_utf8_lossy(name.raw()).to_string()),
             _ => None,
         })
-        .collect::<HashSet<_>>();
+        .collect::<Vec<_>>();
+    referenced.sort_unstable();
+    referenced.dedup();
     let pointer = module.isa().pointer_type();
     let call_conv = module.isa().default_call_conv();
 
-    for spec in all_builtin_specs() {
-        if !referenced.contains(spec.symbol) || func_ids.contains_key(spec.symbol) {
+    for symbol in referenced {
+        if func_ids.contains_key(&symbol) {
             continue;
         }
-        let signature = builtin_signature(pointer, call_conv, spec.params, spec.returns);
-        let id = module.declare_function(spec.symbol, Linkage::Import, &signature)?;
-        func_ids.insert(spec.symbol.to_owned(), id);
+        let Some(signature) = runtime_import_signature(pointer, call_conv, &symbol) else {
+            continue;
+        };
+        let id = module.declare_function(&symbol, Linkage::Import, &signature)?;
+        func_ids.insert(symbol, id);
     }
 
     Ok(())
@@ -241,15 +240,17 @@ pub fn collect_validated_extern_signatures<M: Module>(
 ) -> Result<HashMap<String, Signature>, String> {
     let pointer = module.isa().pointer_type();
     let mut extern_sigs: HashMap<String, Signature> = HashMap::new();
-    let mut ctx_probe = module.make_context();
     for function in &artifact.functions {
-        ctx_probe.func = function.function.clone();
-        for (_func_ref, ext_func) in ctx_probe.func.dfg.ext_funcs.iter() {
+        for (_func_ref, ext_func) in function.function.dfg.ext_funcs.iter() {
             if let ExternalName::TestCase(name) = &ext_func.name {
                 let symbol = String::from_utf8_lossy(name.raw()).to_string();
-                if artifact.extern_imports.iter().chain(artifact.trusted_extern_imports.iter()).any(|e| e.symbol == symbol)
+                if artifact
+                    .extern_imports
+                    .iter()
+                    .chain(artifact.trusted_extern_imports.iter())
+                    .any(|e| e.symbol == symbol)
                 {
-                    let sig = ctx_probe.func.dfg.signatures[ext_func.signature].clone();
+                    let sig = function.function.dfg.signatures[ext_func.signature].clone();
                     validate_ffi_signature(&sig, pointer)
                         .map_err(|msg| format!("extern signature not allowed for {symbol}: {msg}"))?;
                     if let Some(prev) = extern_sigs.get(&symbol) {
@@ -262,7 +263,6 @@ pub fn collect_validated_extern_signatures<M: Module>(
                 }
             }
         }
-        module.clear_context(&mut ctx_probe);
     }
     Ok(extern_sigs)
 }
@@ -339,7 +339,10 @@ pub fn declare_validated_extern_imports<M: Module>(
 ) -> Result<(), ExternDeclarationError> {
     let extern_sigs =
         collect_validated_extern_signatures(module, artifact).map_err(ExternDeclarationError::InvalidSignature)?;
-    for (symbol, sig) in &extern_sigs {
+    // Declare in symbol order: declaration order is the object's symbol-table order.
+    let mut extern_sigs = extern_sigs.iter().collect::<Vec<_>>();
+    extern_sigs.sort_unstable_by(|left, right| left.0.cmp(right.0));
+    for (symbol, sig) in extern_sigs {
         if func_ids.contains_key(symbol) {
             continue;
         }

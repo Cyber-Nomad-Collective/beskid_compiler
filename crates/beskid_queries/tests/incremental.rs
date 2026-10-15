@@ -3,11 +3,45 @@
 use std::path::PathBuf;
 
 use beskid_analysis::services::{SemanticSnapshot, SessionFingerprint, cached_semantic_snapshot};
-use beskid_analysis::services::{get_or_insert_assembly, invalidate_entry_sessions, update_semantic_snapshot};
+use beskid_analysis::services::{get_or_insert_assembly, invalidate_entry_sessions_for_project, update_semantic_snapshot};
 use beskid_queries::{
     BeskidDatabase, Db, ProjectSession, fingerprint_key, parse_and_expand_unit, record_query_hit, reset,
     semantic_snapshot, snapshot, unit_content_fingerprint, unit_imports,
 };
+
+/// Point every Corelib-resolving test at the Corelib under test and a process-private toolchain
+/// home, so these tests never read the developer's `~/.beskid` (or a shared install that an older
+/// toolchain left behind).
+///
+/// The Corelib is the target directory's shared sealed installation of the bundle this compiler
+/// embeds (`beskid_tests_mod_host::shared_corelib_root`), with its native Mods provisioned against
+/// the shared test runtime kit. It is a verified installed Corelib (lock replay and service-source
+/// admission both require one), reused by every test process until its sources or the CLI change,
+/// so no test run rebuilds the Serialization Mod for a fresh copy. Runs once per process.
+fn isolated_corelib_toolchain() -> &'static std::path::Path {
+    static HOME: std::sync::OnceLock<tempfile::TempDir> = std::sync::OnceLock::new();
+    HOME.get_or_init(|| {
+        let home = tempfile::tempdir().expect("create isolated BESKID_HOME");
+        let corelib = beskid_tests_mod_host::shared_corelib_root().expect("provision the shared Corelib under test");
+        // SAFETY: runs exactly once, before any test in this binary resolves a Corelib project, so
+        // no test observes the environment mid-update.
+        unsafe {
+            std::env::set_var("BESKID_HOME", home.path().join("home"));
+            std::env::set_var("BESKID_CONFIG_DIR", home.path().join("config"));
+            std::env::set_var("BESKID_CORELIB_ROOT", &corelib);
+        }
+        home
+    })
+    .path()
+}
+
+/// The Salsa hit/miss counters are process-global production statistics, so every test in this
+/// binary that runs a query holds this lock; counter-reading tests then observe only their own
+/// work. Poisoning from a failed test is ignored so one failure cannot cascade.
+fn counters_guard() -> std::sync::MutexGuard<'static, ()> {
+    static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+}
 
 fn fixture_source() -> String {
     "use std.io;\ni32 Main() { return 0; }".to_string()
@@ -19,7 +53,8 @@ fn fixture_path() -> PathBuf {
 
 #[test]
 fn semantic_snapshot_query_hits_registry() {
-    invalidate_entry_sessions();
+    let _counters = counters_guard();
+    invalidate_entry_sessions_for_project(std::path::Path::new("/tmp/project"));
     let fp = SessionFingerprint {
         project_root: PathBuf::from("/tmp/project"),
         entry_canonical: PathBuf::from("/tmp/project/Main.bd"),
@@ -28,6 +63,8 @@ fn semantic_snapshot_query_hits_registry() {
     get_or_insert_assembly(
         fp.clone(),
         beskid_analysis::projects::ProgramAssembly {
+            compiled_mod_metadata: Vec::new(),
+            verified_package_identities: Default::default(),
             runtime_fixture: None,
             roots: beskid_analysis::projects::EffectiveCompilationRoots {
                 host: beskid_analysis::projects::RootEntry {
@@ -40,10 +77,13 @@ fn semantic_snapshot_query_hits_registry() {
             syntax_indexes: std::sync::Arc::new(Vec::new()),
             generation: beskid_analysis::syntax::SyntaxGenerationId(1),
             entry_index: 0,
+            root_set: beskid_analysis::projects::AssemblyRootSet::Entry,
             discovery: beskid_analysis::projects::AssemblyDiscovery::ImportClosure,
+            recovery_policy: beskid_analysis::projects::AssemblyRecoveryPolicy::Strict,
             module_index: std::sync::Arc::new(beskid_analysis::projects::ModuleIndex::empty()),
-            has_std_dependency: false,
+            has_core_dependency: false,
             trusted_corelib_service_paths: std::sync::Arc::from([]),
+            glue_libraries: std::sync::Arc::from([]),
         },
     )
     .unwrap();
@@ -66,6 +106,7 @@ fn unit_fingerprint_changes_when_source_changes() {
 
 #[test]
 fn second_parse_hits_unit_cache() {
+    let _counters = counters_guard();
     reset();
     let mut db = BeskidDatabase::default();
     let path = fixture_path();
@@ -86,6 +127,7 @@ fn second_parse_hits_unit_cache() {
 
 #[test]
 fn file_edit_invalidates_unit_cache() {
+    let _counters = counters_guard();
     reset();
     let mut db = BeskidDatabase::default();
     let path = fixture_path();
@@ -104,6 +146,7 @@ fn file_edit_invalidates_unit_cache() {
 
 #[test]
 fn unit_imports_tracks_use_paths() {
+    let _counters = counters_guard();
     let mut db = BeskidDatabase::default();
     let path = fixture_path();
     db.ensure_file_text(path.clone(), fixture_source());
@@ -116,6 +159,7 @@ fn unit_imports_tracks_use_paths() {
 
 #[test]
 fn warm_second_parse_reuses_unit_cache() {
+    let _counters = counters_guard();
     reset();
     let mut db = BeskidDatabase::default();
     let path = fixture_path();
@@ -141,6 +185,8 @@ fn warm_second_parse_reuses_unit_cache() {
 
 #[test]
 fn entry_resolution_with_db_populates_symbol_registry() {
+    let _counters = counters_guard();
+    isolated_corelib_toolchain();
     use std::path::PathBuf;
 
     use beskid_analysis::projects::AssemblyDiscovery;
@@ -160,10 +206,16 @@ fn entry_resolution_with_db_populates_symbol_registry() {
     std::env::set_current_dir(&compiler_root).expect("chdir");
     let result = {
         configure_db_for_project(&project_root);
-        let resolved = resolve_input(Some(&main_path), Some(&project_root), Some("App"), None, false, false)
-            .expect("resolve fixture");
+        let resolved = resolve_input(
+            Some(&main_path),
+            Some(&project_root),
+            Some("App"),
+            None,
+            beskid_analysis::projects::WorkspacePrepareOptions::default(),
+        )
+        .expect("resolve fixture");
         let mut db = BeskidDatabase::with_persistence(&project_root);
-        let mut options = PrepareOptions::default();
+        let mut options = PrepareOptions::without_mods();
         options.front_end.assembly_discovery = AssemblyDiscovery::ImportClosure;
         entry_resolution_with_db(&mut db, &resolved, &options)
     };
@@ -180,6 +232,8 @@ fn entry_resolution_with_db_populates_symbol_registry() {
 
 #[test]
 fn typed_entry_state_uses_fast_resolution_when_stale() {
+    let _counters = counters_guard();
+    isolated_corelib_toolchain();
     use beskid_analysis::projects::AssemblyDiscovery;
     use beskid_analysis::services::{PrepareOptions, resolve_input};
     use beskid_queries::{
@@ -199,10 +253,19 @@ fn typed_entry_state_uses_fast_resolution_when_stale() {
     std::env::set_current_dir(&compiler_root).expect("chdir");
     let result = {
         configure_db_for_project(&project_root);
-        let resolved = resolve_input(Some(&main_path), Some(&project_root), Some("App"), None, false, false)
-            .expect("resolve fixture");
+        let resolved = resolve_input(
+            Some(&main_path),
+            Some(&project_root),
+            Some("App"),
+            None,
+            beskid_analysis::projects::WorkspacePrepareOptions::default(),
+        )
+        .expect("resolve fixture");
         let mut db = BeskidDatabase::with_persistence(&project_root);
-        let mut options = PrepareOptions::default();
+        let mod_host = beskid_tests_mod_host::ModHostScope::shared().expect("enter the shared native Mod host scope");
+        let plan = resolved.compile_plan.as_ref().expect("fixture compile plan");
+        let mut options = PrepareOptions::without_mods();
+        options.mod_host = mod_host.corelib_mod_host(plan).expect("qualified Corelib native Mods");
         options.front_end.assembly_discovery = AssemblyDiscovery::ImportClosure;
         let entry_key = resolved
             .compile_plan
@@ -215,10 +278,10 @@ fn typed_entry_state_uses_fast_resolution_when_stale() {
         assert!(is_typed_bundle_stale(&db, &entry_key));
 
         let state = typed_entry_state_with_db(&mut db, &resolved, &options, None).expect("typed entry state");
-        assert!(state.typed.is_some(), "stale typed bundle should run EntryOnly gate prepare");
+        assert!(state.executable.is_some(), "stale typed bundle should run the gate prepare");
         assert_eq!(
             state.generation,
-            state.typed.as_ref().expect("typed bundle").assembly.generation.0,
+            state.executable.as_ref().expect("executable bundle").assembly.generation.0,
             "typed entry state must expose the prepared syntax generation, not its cache revision"
         );
         assert!(!state.resolution.by_symbol().is_empty(), "fast resolution path should still populate registry");
@@ -234,12 +297,13 @@ fn typed_entry_state_uses_fast_resolution_when_stale() {
     std::env::set_current_dir(previous).expect("restore cwd");
 
     let state = result;
-    assert!(state.typed.is_some(), "caught-up typed prepare revision should produce executable bundle");
+    assert!(state.executable.is_some(), "caught-up typed prepare revision should produce executable bundle");
     assert!(!state.resolution.by_symbol().is_empty(), "typed state should retain resolution");
 }
 
 #[test]
 fn manifest_digest_changes_when_manifest_or_lock_changes() {
+    let _counters = counters_guard();
     use beskid_queries::manifest_digest;
 
     let dir = tempfile::tempdir().expect("tempdir");
@@ -268,6 +332,8 @@ fn manifest_digest_changes_when_manifest_or_lock_changes() {
 /// process-global entry-session state.
 #[test]
 fn diagnostics_prepare_and_facts_share_one_session_for_noncanonical_root() {
+    let _counters = counters_guard();
+    isolated_corelib_toolchain();
     use std::sync::Arc;
 
     use beskid_analysis::projects::AssemblyDiscovery;
@@ -288,7 +354,7 @@ fn diagnostics_prepare_and_facts_share_one_session_for_noncanonical_root() {
     .expect("project manifest");
     std::fs::write(
         app.join("Src/Main.bd"),
-        "use Std.Core.Output;\n\ni32 Main() {\n    Output.WriteLine(\"ok\");\n    return 0;\n}\n",
+        "use Core.Output;\n\ni32 Main() {\n    Output.WriteLine(\"ok\");\n    return 0;\n}\n",
     )
     .expect("entry source");
 
@@ -299,13 +365,21 @@ fn diagnostics_prepare_and_facts_share_one_session_for_noncanonical_root() {
     assert_ne!(project_root, canonical_root, "project root must be spelled non-canonically");
 
     configure_db_for_project(&project_root);
-    let resolved = resolve_input(Some(&main_path), Some(&project_root), Some("App"), None, false, false)
-        .expect("resolve project");
+    let resolved = resolve_input(
+        Some(&main_path),
+        Some(&project_root),
+        Some("App"),
+        None,
+        beskid_analysis::projects::WorkspacePrepareOptions::default(),
+    )
+    .expect("resolve project");
     let plan = resolved.compile_plan.clone().expect("compile plan");
     let mut db = BeskidDatabase::default();
+    let mod_host = beskid_tests_mod_host::ModHostScope::shared().expect("enter the shared native Mod host scope");
+    let native_mods = mod_host.corelib_mod_host(&plan).expect("qualified Corelib native Mods");
     let options = PrepareOptions {
         front_end: FrontEndOptions { assembly_discovery: AssemblyDiscovery::ImportClosure, ..Default::default() },
-        ..Default::default()
+        ..PrepareOptions::with_mod_host(native_mods)
     };
     let (prepared, _, _) =
         prepare_compilation_diagnostics_with_db(&mut db, &resolved, options, None).expect("diagnostics prepare");

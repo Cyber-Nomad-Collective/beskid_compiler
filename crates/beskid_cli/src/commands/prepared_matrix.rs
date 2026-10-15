@@ -2,8 +2,9 @@
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{Arc, Condvar, Mutex, PoisonError};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Result, anyhow};
@@ -11,8 +12,6 @@ use beskid_analysis::projects::{
     CompilePlan, ProjectManifest, Target, TargetKind, load_manifest_from_path, plan_entry_path,
 };
 use beskid_analysis::services::ResolvedInput;
-use beskid_engine::Engine;
-use beskid_engine::services::run_entrypoint_from_front_end_with_engine;
 use beskid_tools::PipelineProgressKind;
 use beskid_tools::session::{CommandSession, ResolveInputArgs};
 use serde::{Deserialize, Serialize};
@@ -151,17 +150,18 @@ pub struct PreparedWorkspace {
     base: ResolvedInput,
     manifest: Option<ProjectManifest>,
     manifest_path: PathBuf,
-    engine: Engine,
     budgets: ExecutionBudgets,
     cancellation: Cancellation,
     started: Instant,
     revisions: RevisionSnapshot,
+    /// Targets whose Mods the session's Mod host serves; only these may be prepared.
+    mod_targets: Vec<String>,
 }
 
 pub struct PreparedTarget {
     pub name: String,
     pub resolved: ResolvedInput,
-    pub front: beskid_analysis::services::FrontEndTypedResult,
+    pub front: beskid_analysis::services::ExecutableFrontEnd,
     pub tests: Vec<beskid_engine::services::SyntaxTestItem>,
 }
 
@@ -174,34 +174,46 @@ impl PreparedWorkspace {
             workspace_member: args.project.workspace_member.as_deref(),
             frozen: args.lockfile.frozen,
             locked: args.lockfile.locked,
+            offline: args.lockfile.offline,
         };
-        let (session, base) =
+        let (mut session, base) =
             CommandSession::open_and_resolve(args.plain, PipelineProgressKind::PrepareAndRun, &resolve_args)?;
-        let (manifest_path, manifest) = if let Some(plan) = base.compile_plan.as_ref() {
-            let manifest_path = plan.manifest_path.clone();
-            let manifest = load_manifest_from_path(&manifest_path)
-                .map_err(|error| anyhow!("failed to load {}: {error}", manifest_path.display()))?;
-            (manifest_path, Some(manifest))
-        } else {
-            (base.source_path.clone(), None)
-        };
+        let (manifest_path, manifest) =
+            if let Some(plan) = base.compile_plan.as_ref().filter(|_| base.prepared_workspace.is_some()) {
+                let manifest_path = plan.manifest_path.clone();
+                let manifest = load_manifest_from_path(&manifest_path)
+                    .map_err(|error| anyhow!("failed to load {}: {error}", manifest_path.display()))?;
+                (manifest_path, Some(manifest))
+            } else {
+                (base.source_path.clone(), None)
+            };
         let revisions = revision_snapshot(&manifest_path);
-        let mut engine = Engine::try_new()
-            .map_err(|error| anyhow!("failed to initialize exact ABI-v5 runtime kit: {error}"))?;
-        engine
-            .initialize_arguments(&[manifest_path.display().to_string()])
-            .map_err(|error| anyhow!("failed to initialize explicit JIT arguments: {error}"))?;
         Ok(Self {
             session,
             base,
             manifest,
             manifest_path,
-            engine,
             budgets,
             cancellation,
             started: Instant::now(),
             revisions,
+            mod_targets: Vec::new(),
         })
+    }
+
+    /// Activate the Mods of exactly the targets this process will prepare. Each target is its own
+    /// assembly and activates its own Mods; activation assembles every target it is given, so a
+    /// worker or a single-target run must not pay for targets it never prepares.
+    pub fn activate_mods(&mut self, targets: &[String], args: &TestArgs) -> Result<()> {
+        let inputs = targets.iter().map(|name| self.target_input(name)).collect::<Result<Vec<_>>>()?;
+        let mod_host = super::compiler_mod::prepare_native_mod_executor_for_inputs(
+            &inputs,
+            args.lockfile.WorkspaceOptions(),
+            Some(self.session.observer()),
+        )?;
+        self.session.set_mod_host(mod_host);
+        self.mod_targets = targets.to_vec();
+        Ok(())
     }
 
     pub fn test_targets(&self) -> Vec<String> {
@@ -233,11 +245,21 @@ impl PreparedWorkspace {
 
     fn prepare_target(&self, name: &str) -> Result<PreparedTarget> {
         self.check_budget(name, "prepare_target", None)?;
+        if !self.mod_targets.iter().any(|target| target == name) {
+            return Err(anyhow!("target `{name}` was not activated for Mods before preparation"));
+        }
+        let resolved = self.target_input(name)?;
+        self.prepare_resolved_target(name.to_string(), resolved)
+    }
+
+    /// The resolved input of one matrix target: the base input for a direct file, otherwise the
+    /// frozen manifest target's plan and entry over the base workspace.
+    fn target_input(&self, name: &str) -> Result<ResolvedInput> {
         let Some(manifest) = &self.manifest else {
             if name != "direct-file" {
                 return Err(anyhow!("direct-file input has no manifest target `{name}`"));
             }
-            return self.prepare_resolved_target(name.to_string(), self.base.clone());
+            return Ok(self.base.clone());
         };
         let target = manifest.targets.iter().find(|target| target.name == name).cloned().ok_or_else(|| {
             anyhow!("target `{name}` is not present in frozen manifest {}", self.manifest_path.display())
@@ -259,17 +281,14 @@ impl PreparedWorkspace {
         } else {
             return Err(anyhow!("target `{name}` entry does not exist: {}", source_path.display()));
         };
-        self.prepare_resolved_target(
-            name.to_string(),
-            ResolvedInput {
-                source_path,
-                source,
-                compile_plan: Some(plan),
-                prepared_workspace: self.base.prepared_workspace.clone(),
-                workspace_summary: self.base.workspace_summary.clone(),
-                assembly: None,
-            },
-        )
+        Ok(ResolvedInput {
+            source_path,
+            source,
+            compile_plan: Some(plan),
+            prepared_workspace: self.base.prepared_workspace.clone(),
+            workspace_summary: self.base.workspace_summary.clone(),
+            assembly: None,
+        })
     }
 
     fn prepare_resolved_target(&self, name: String, resolved: ResolvedInput) -> Result<PreparedTarget> {
@@ -280,7 +299,7 @@ impl PreparedWorkspace {
                 prepare_message: "Analysis complete",
             },
         )?;
-        let tests = beskid_engine::services::syntax_test_items_from_front_end(prepared.executable()?)?;
+        let tests = beskid_engine::services::syntax_test_items_from_front_end(prepared.executable())?;
         let front = prepared.into_executable()?;
         Ok(PreparedTarget { name, resolved, front, tests })
     }
@@ -288,7 +307,10 @@ impl PreparedWorkspace {
     pub fn reject_mutation(&self, phase: &str) -> Result<()> {
         let current = revision_snapshot(&self.manifest_path);
         if current != self.revisions {
-            return Err(anyhow!("prepared workspace content mutated during phase `{phase}`"));
+            return Err(anyhow!(
+                "prepared workspace content mutated during phase `{phase}`: {}",
+                describe_mutation(&self.manifest_path, &self.revisions, &current)
+            ));
         }
         Ok(())
     }
@@ -296,25 +318,112 @@ impl PreparedWorkspace {
     pub fn session(&self) -> &CommandSession {
         &self.session
     }
-    pub fn run_entrypoint(
-        &mut self,
-        front: &beskid_analysis::services::FrontEndTypedResult,
-        source_name: &str,
-        source: &str,
-        qualified_name: &str,
-    ) -> Result<String> {
-        run_entrypoint_from_front_end_with_engine(
-            &mut self.engine,
-            front,
-            source_name,
-            source,
-            qualified_name,
+    pub fn prepare_native_tests(
+        &self,
+        front: &beskid_analysis::services::ExecutableFrontEnd,
+        resolved: &ResolvedInput,
+        names: &[String],
+        target_started: Instant,
+    ) -> Result<NativeTests> {
+        let directory = tempfile::tempdir()?;
+        let target = beskid_engine::host_runtime_target().map_err(|error| anyhow!("{error}"))?;
+        let cancellation = self.cancellation.clone();
+        let control = beskid_aot::api::NativeExecutionControl::new(
+            (target_started + self.budgets.target).min(self.started + self.budgets.matrix),
+            Arc::new(move || cancellation.is_cancelled()),
+        );
+        control.check("lower_selected_tests")?;
+        let prepared = beskid_pipeline::observe_phase_result(
             Some(self.session.observer()),
-        )
+            beskid_pipeline::phases::CODEGEN_CLIF,
+            || beskid_aot::prepared_syntax::lower_frozen_syntax_entrypoints(front, names, target),
+        )?;
+        control.check("lower_selected_tests")?;
+        let libraries = beskid_engine::link_libraries::link_libraries_for_artifact(
+            prepared.artifact(),
+            resolved.compile_plan.as_ref(),
+        );
+        let profile = match std::env::var("BESKID_RUNTIME_KIT_PROFILE") {
+            Ok(value) => match beskid_abi::runtime_kit::BuildProfile::parse(&value)? {
+                beskid_abi::runtime_kit::BuildProfile::Debug => beskid_aot::BuildProfile::Debug,
+                beskid_abi::runtime_kit::BuildProfile::Release => beskid_aot::BuildProfile::Release,
+            },
+            Err(std::env::VarError::NotPresent) => beskid_aot::BuildProfile::Debug,
+            Err(error) => return Err(error.into()),
+        };
+        let kit = beskid_aot::default_runtime_strategy(profile, None)?;
+        let object = beskid_aot::api::emit_native_test_object(
+            prepared,
+            directory.path(),
+            profile,
+            kit,
+            libraries.external_libraries,
+            libraries.library_search_paths,
+            Some(self.session.observer()),
+            control,
+        )?;
+        Ok(NativeTests { directory, object })
     }
 
-    pub fn begin_target_execution(&mut self) {
-        beskid_queries::reset_process_compilation_database();
+    /// Links and executes `entries` (row index, qualified test name) on a bounded pool while
+    /// `body` consumes their results in its own order through [`NativeTestRuns::take`]. Every test
+    /// is still its own linked executable and process; the pool stops claiming new tests once
+    /// `body` returns or the workspace is cancelled, and the shared deadline of the native object
+    /// bounds the tests already running.
+    pub fn with_native_test_runs<R>(
+        &self,
+        native: Option<&NativeTests>,
+        entries: &[(usize, String)],
+        body: impl FnOnce(&NativeTestRuns) -> R,
+    ) -> R {
+        let runs = NativeTestRuns {
+            results: Mutex::new(HashMap::new()),
+            ready: Condvar::new(),
+            stop: AtomicBool::new(false),
+            workers: AtomicUsize::new(0),
+        };
+        let Some(native) = native else {
+            let mut results = runs.results.lock().unwrap_or_else(PoisonError::into_inner);
+            for (row, name) in entries {
+                results.insert(*row, (Err(anyhow!("native test `{name}` has no prepared native object")), Duration::ZERO));
+            }
+            drop(results);
+            return body(&runs);
+        };
+        let observer = self.session.observer();
+        let cancellation = &self.cancellation;
+        let next = AtomicUsize::new(0);
+        std::thread::scope(|scope| {
+            let jobs = native_test_jobs().min(entries.len());
+            runs.workers.store(jobs, Ordering::Release);
+            for _ in 0..jobs {
+                scope.spawn(|| {
+                    while !runs.stop.load(Ordering::Acquire) && !cancellation.is_cancelled() {
+                        let Some((row, name)) = entries.get(next.fetch_add(1, Ordering::AcqRel)) else { break };
+                        let started = Instant::now();
+                        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                            native.run_entry(name, *row, observer)
+                        }))
+                        .unwrap_or_else(|_| Err(anyhow!("native test `{name}` runner panicked")));
+                        runs.results.lock().unwrap_or_else(PoisonError::into_inner).insert(*row, (result, started.elapsed()));
+                        runs.ready.notify_all();
+                    }
+                    // Wake a consumer waiting on a test no worker will claim any more.
+                    let results = runs.results.lock().unwrap_or_else(PoisonError::into_inner);
+                    runs.workers.fetch_sub(1, Ordering::AcqRel);
+                    drop(results);
+                    runs.ready.notify_all();
+                });
+            }
+            struct StopOnExit<'a>(&'a NativeTestRuns);
+            impl Drop for StopOnExit<'_> {
+                fn drop(&mut self) {
+                    self.0.stop.store(true, Ordering::Release);
+                }
+            }
+            let _stop = StopOnExit(&runs);
+            body(&runs)
+        })
     }
 
     pub fn target_timeout(&self) -> Duration {
@@ -343,7 +452,10 @@ impl PreparedWorkspace {
         }
         if target_started.is_some_and(|started| started.elapsed() >= self.budgets.target) {
             self.cancellation.cancel();
-            return Err(anyhow!("120-second target budget expired for `{target}` in phase `{phase}`"));
+            return Err(anyhow!(
+                "{}-second target budget expired for `{target}` in phase `{phase}`",
+                self.budgets.target.as_secs()
+            ));
         }
         Ok(())
     }
@@ -362,13 +474,52 @@ pub fn duration_ms(duration: Duration) -> u64 {
 }
 
 pub fn revision_snapshot(manifest_path: &Path) -> RevisionSnapshot {
+    let [root, compiler, corelib] = snapshot_repositories(manifest_path);
+    RevisionSnapshot {
+        root: root.1.as_deref().and_then(git_revision),
+        compiler: compiler.1.as_deref().and_then(git_revision),
+        corelib: corelib.1.as_deref().and_then(git_revision),
+    }
+}
+
+/// The repositories a [`RevisionSnapshot`] covers, in field order: the superproject, the compiler
+/// checkout this CLI was built from, and the repository holding the tested manifest.
+fn snapshot_repositories(manifest_path: &Path) -> [(&'static str, Option<PathBuf>); 3] {
     let compiler = Path::new(env!("CARGO_MANIFEST_DIR")).ancestors().nth(2).map(Path::to_path_buf);
     let root = compiler.as_deref().and_then(git_superproject_root);
-    RevisionSnapshot {
-        root: root.as_deref().and_then(git_revision),
-        compiler: compiler.as_deref().and_then(git_revision),
-        corelib: manifest_path.parent().and_then(git_revision),
+    [("root", root), ("compiler", compiler), ("corelib", manifest_path.parent().map(Path::to_path_buf))]
+}
+
+/// Names each repository whose snapshot changed and its current non-ignored status entries, so a
+/// mutation failure identifies the writer's output instead of only the phase.
+fn describe_mutation(manifest_path: &Path, before: &RevisionSnapshot, after: &RevisionSnapshot) -> String {
+    let pairs = [(&before.root, &after.root), (&before.compiler, &after.compiler), (&before.corelib, &after.corelib)];
+    let mut changed = Vec::new();
+    for ((name, path), (before, after)) in snapshot_repositories(manifest_path).into_iter().zip(pairs) {
+        if before == after {
+            continue;
+        }
+        let status = path
+            .as_deref()
+            .and_then(|path| {
+                Command::new("git")
+                    .arg("-C")
+                    .arg(path)
+                    .args(["status", "--porcelain=v1", "--untracked-files=all", "--ignore-submodules=none"])
+                    .output()
+                    .ok()
+            })
+            .filter(|output| output.status.success())
+            .map(|output| String::from_utf8_lossy(&output.stdout).lines().map(str::trim).collect::<Vec<_>>().join(", "))
+            .unwrap_or_default();
+        let location = path.as_deref().map(|path| path.display().to_string()).unwrap_or_default();
+        changed.push(if status.is_empty() {
+            format!("{name} repository at {location} changed content (status now clean)")
+        } else {
+            format!("{name} repository at {location} now reports [{status}]")
+        });
     }
+    changed.join("; ")
 }
 
 fn git_superproject_root(compiler: &Path) -> Option<PathBuf> {
@@ -429,3 +580,59 @@ fn git_revision(path: &Path) -> Option<RepositorySnapshot> {
 
 #[cfg(test)]
 mod tests;
+
+pub struct NativeTests {
+    directory: tempfile::TempDir,
+    object: beskid_aot::api::NativeTestObject,
+}
+
+impl NativeTests {
+    /// Link one selected test into its own executable and run it in a fresh process.
+    fn run_entry(&self, name: &str, index: usize, observer: &dyn beskid_pipeline::PipelineObserver) -> Result<String> {
+        let directory = self.directory.path().join(format!("entry-{index}"));
+        let executable =
+            beskid_pipeline::observe_phase_result(Some(observer), beskid_pipeline::phases::AOT_LINK, || {
+                self.object.link_entry(name, &directory)
+            })?;
+        let output = self.object.execute_linked_entry(&executable, &directory)?;
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        if !output.status.success() {
+            return Err(anyhow!("native test `{name}` exited {}: {stdout}{stderr}", output.status));
+        }
+        Ok(format!("{stdout}{stderr}"))
+    }
+}
+
+/// Results of [`PreparedWorkspace::with_native_test_runs`], keyed by row index.
+pub struct NativeTestRuns {
+    results: Mutex<HashMap<usize, (Result<String>, Duration)>>,
+    ready: Condvar,
+    stop: AtomicBool,
+    workers: AtomicUsize,
+}
+
+impl NativeTestRuns {
+    /// Block until the test of `row` has finished; returns its output and its link+run time.
+    pub fn take(&self, row: usize) -> (Result<String>, Duration) {
+        let mut results = self.results.lock().unwrap_or_else(PoisonError::into_inner);
+        loop {
+            if let Some(result) = results.remove(&row) {
+                return result;
+            }
+            if self.stop.load(Ordering::Acquire) || self.workers.load(Ordering::Acquire) == 0 {
+                return (Err(anyhow!("native test runs stopped before row {row} ran")), Duration::ZERO);
+            }
+            results = self.ready.wait(results).unwrap_or_else(PoisonError::into_inner);
+        }
+    }
+}
+
+/// `BESKID_NATIVE_TEST_JOBS` when set to a positive integer, otherwise up to four concurrent tests.
+fn native_test_jobs() -> usize {
+    std::env::var("BESKID_NATIVE_TEST_JOBS")
+        .ok()
+        .and_then(|raw| raw.trim().parse::<usize>().ok())
+        .filter(|jobs| *jobs > 0)
+        .unwrap_or_else(|| std::thread::available_parallelism().map_or(1, |cores| cores.get().min(4)))
+}

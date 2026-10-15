@@ -30,6 +30,12 @@ pub enum LoweringErrorKind {
     NonExhaustiveMatch,
     InvalidBlockExpression,
     InvalidRangeFor,
+    /// A `for` over an array whose element layout, loop variable or array value does not match
+    /// the facts the loop was selected on.
+    InvalidArrayFor,
+    /// A `for` over the nominal iterator protocol whose `Next()` signature, `Option` layout, loop
+    /// variable or iterable value does not match the facts the loop was selected on.
+    InvalidIteratorFor,
     /// A `clif { ... }` block failed surface, CLIF parsing, verification, or safety checks.
     InvalidClifBlock(String),
 }
@@ -85,6 +91,8 @@ impl LoweringError {
             LoweringErrorKind::NonExhaustiveMatch => "NonExhaustiveMatch".to_owned(),
             LoweringErrorKind::InvalidBlockExpression => "InvalidBlockExpression".to_owned(),
             LoweringErrorKind::InvalidRangeFor => "InvalidRangeFor".to_owned(),
+            LoweringErrorKind::InvalidArrayFor => "InvalidArrayFor".to_owned(),
+            LoweringErrorKind::InvalidIteratorFor => "InvalidIteratorFor".to_owned(),
             LoweringErrorKind::InvalidClifBlock(detail) => format!("InvalidClifBlock({detail})"),
         }
     }

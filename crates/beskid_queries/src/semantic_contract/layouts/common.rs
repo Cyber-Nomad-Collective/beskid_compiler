@@ -20,8 +20,11 @@ pub(in crate::semantic_contract) fn aggregate_field_layout(
             resolve_nominal_layout_declaration(db, program, index, key, &path.node)
                 .ok_or_else(|| SemanticError::unavailable("aggregate_layout"))?,
         ),
-        // Arrays are heap-backed reference values in ABI v5, including empty literal payloads.
-        beskid_analysis::syntax::Type::Array(_) => AggregateFieldShape::Scalar(SemanticTypeId::POINTER),
+        // Arrays are heap-backed reference values in ABI v5, including empty literal payloads, and
+        // a function value is its GC-managed closure record.
+        beskid_analysis::syntax::Type::Array(_) | beskid_analysis::syntax::Type::Function { .. } => {
+            AggregateFieldShape::ManagedReference(SemanticTypeId::POINTER)
+        }
         _ => return Err(SemanticError::unavailable("aggregate_layout")),
     };
     Ok((Arc::from(field.node.name.node.name.as_str()), shape))
@@ -45,7 +48,7 @@ pub(in crate::semantic_contract) fn resolve_nominal_layout_declaration(
     module_path.push(name.node.name.node.name.clone());
     let target = {
         let registry = db.syntax_dependency_registry().lock().expect("syntax dependency registry");
-        let [target] = registry.visible_module_units(key.unit, key.generation, &module_path)? else {
+        let [target] = registry.visible_module_units(key.generation, &module_path)? else {
             return None;
         };
         *target
@@ -112,7 +115,9 @@ pub(in crate::semantic_contract) fn abi_type_for_local_path(
                 .fields
                 .get(usize::try_from(access.index).map_err(|_| SemanticError::unavailable("abi_type"))?)
             {
-                Some((_, AggregateFieldShape::Scalar(semantic))) => Ok(*semantic),
+                Some((_, AggregateFieldShape::Scalar(semantic) | AggregateFieldShape::ManagedReference(semantic))) => {
+                    Ok(*semantic)
+                }
                 Some((_, AggregateFieldShape::Nominal(_))) => Ok(SemanticTypeId::POINTER),
                 None => Err(SemanticError::unavailable("abi_type")),
             }
@@ -134,7 +139,9 @@ pub(in crate::semantic_contract) fn abi_type_for_local_path(
                 .fields
                 .get(usize::try_from(access.index).map_err(|_| SemanticError::unavailable("abi_type"))?)
             {
-                Some((_, AggregateFieldShape::Scalar(semantic))) => Ok(*semantic),
+                Some((_, AggregateFieldShape::Scalar(semantic) | AggregateFieldShape::ManagedReference(semantic))) => {
+                    Ok(*semantic)
+                }
                 Some((_, AggregateFieldShape::Nominal(_))) => Ok(SemanticTypeId::POINTER),
                 None => Err(SemanticError::unavailable("abi_type")),
             }
@@ -268,6 +275,11 @@ pub(in crate::semantic_contract) fn abi_local_declaration_type(
                 )
             })
         }
+        // A `for` variable has the element ABI of its iterable (`for_iterator_fact`).
+        beskid_analysis::syntax_query::NodeKind::ForStatement => Some(
+            for_iterator_fact(db, AstNodeKey { node: parent, ..key })
+                .and_then(|fact| fact.map(|fact| fact.element_type).ok_or_else(|| SemanticError::unavailable("abi_type"))),
+        ),
         _ => None,
     }
 }
@@ -298,10 +310,19 @@ pub(in crate::semantic_contract) fn resolve_type_declaration(
     let generic_arity = name.node.type_args.len();
     let name = name.node.name.node.name.as_str();
     if module_path.is_empty() {
-        let mut candidates = Vec::new();
-        if let Some(local) = unique_type_in_unit(db, key.unit, key.generation, name, generic_arity) {
-            candidates.push(local);
+        // A declaration owned by this unit is the lexical authority for a bare type
+        // name. Imported exports participate only when no local declaration matches;
+        // qualified paths below still retain their explicitly selected module identity.
+        // Inline modules are lexical scopes: the nearest enclosing module that declares the
+        // name decides it, so a same-named declaration in a sibling `mod` never makes a local
+        // name ambiguous. An ambiguous nearest scope stays unresolved.
+        if let Some(lexical) = lexical_type_in_unit(db, key, name, generic_arity) {
+            return lexical;
         }
+        if let Some(local) = unique_type_in_unit(db, key.unit, key.generation, name, generic_arity) {
+            return Some(local);
+        }
+        let mut candidates = Vec::new();
         let import_targets = {
             let registry = db.syntax_dependency_registry().lock().expect("syntax dependency registry");
             registry
@@ -342,7 +363,7 @@ pub(in crate::semantic_contract) fn resolve_type_declaration(
     type_module.push(name.to_owned());
     let target = {
         let registry = db.syntax_dependency_registry().lock().expect("syntax dependency registry");
-        let [target] = registry.visible_module_units(key.unit, key.generation, &type_module)? else {
+        let [target] = registry.visible_module_units(key.generation, &type_module)? else {
             return None;
         };
         *target
@@ -364,7 +385,7 @@ pub(in crate::semantic_contract) fn unique_assembled_type_in_module(
 ) -> Option<AstNodeKey> {
     let target = {
         let registry = db.syntax_dependency_registry().lock().expect("syntax dependency registry");
-        let [target] = registry.visible_module_units(key.unit, key.generation, module_path)? else {
+        let [target] = registry.visible_module_units(key.generation, module_path)? else {
             return None;
         };
         *target
@@ -372,7 +393,10 @@ pub(in crate::semantic_contract) fn unique_assembled_type_in_module(
     unique_exported_type_in_unit(db, target, key.generation, name, generic_arity)
 }
 
-/// Resolve a public type member through its defining syntax unit or explicit public re-exports.
+/// Resolve a public type member through its defining syntax unit or explicit public re-exports,
+/// under the same nearest-distance rule as functions (`unique_exported_function_in_unit`): the
+/// unit's own declaration shadows a re-exported one, and two distinct types at one distance are
+/// ambiguous and resolve to nothing.
 pub(in crate::semantic_contract) fn unique_exported_type_in_unit(
     db: &dyn Db,
     unit: SourceUnitId,
@@ -380,22 +404,50 @@ pub(in crate::semantic_contract) fn unique_exported_type_in_unit(
     name: &str,
     generic_arity: usize,
 ) -> Option<AstNodeKey> {
-    let mut pending = vec![unit];
-    let mut visited = std::collections::HashSet::new();
-    let mut candidates = Vec::new();
-    while let Some(current) = pending.pop() {
-        if !visited.insert(current) {
-            continue;
-        }
-        if let Some(candidate) = unique_public_type_in_unit(db, current, generation, name, generic_arity) {
-            candidates.push(candidate);
-        }
-        pending.extend(public_reexport_units(db, current, generation));
-    }
-    let [candidate] = candidates.as_slice() else {
+    nearest_reexport_route(db, unit, generation, |db, current, generation| {
+        unique_public_type_in_unit(db, current, generation, name, generic_arity)
+    })
+}
+
+/// The type or enum named `name` declared in the nearest module scope (inline module or program)
+/// enclosing `key` that declares that name at all. `None` when no enclosing scope declares it;
+/// `Some(None)` when the nearest declaring scope is ambiguous.
+fn lexical_type_in_unit(
+    db: &dyn Db,
+    key: AstNodeKey,
+    name: &str,
+    generic_arity: usize,
+) -> Option<Option<AstNodeKey>> {
+    use crate::semantic_contract::resolution::{module_scope, outer_module_scope};
+    let syntax = db.syntax_unit(key.unit)?;
+    if syntax.generation(db) != key.generation {
         return None;
-    };
-    Some(*candidate)
+    }
+    let program = syntax.expanded_program(db);
+    let index = syntax.syntax_index(db);
+    let mut scope = module_scope(index, key.node);
+    while let Some(current) = scope {
+        let matches = index
+            .ids_named(beskid_analysis::syntax_query::NodeKind::TypeDefinition, name)
+            .chain(index.ids_named(beskid_analysis::syntax_query::NodeKind::EnumDefinition, name))
+            .filter(|candidate| {
+                module_scope(index, *candidate) == Some(current)
+                    && index.node_at(program, *candidate).is_some_and(|node| {
+                        node.of::<beskid_analysis::syntax::TypeDefinition>().is_some_and(|definition| {
+                            definition.name.node.name == name && definition.generics.len() == generic_arity
+                        }) || node.of::<beskid_analysis::syntax::EnumDefinition>().is_some_and(|definition| {
+                            definition.name.node.name == name && definition.generics.len() == generic_arity
+                        })
+                    })
+            })
+            .collect::<Vec<_>>();
+        match matches.as_slice() {
+            [] => scope = outer_module_scope(index, current),
+            [node] => return Some(Some(AstNodeKey { unit: key.unit, generation: key.generation, node: *node })),
+            _ => return Some(None),
+        }
+    }
+    None
 }
 
 pub(in crate::semantic_contract) fn unique_type_in_unit(
@@ -405,6 +457,19 @@ pub(in crate::semantic_contract) fn unique_type_in_unit(
     name: &str,
     generic_arity: usize,
 ) -> Option<AstNodeKey> {
+    unique_nominal_type_in_unit(db, unit, generation, name, Some(generic_arity))
+}
+
+/// The one `type` or `enum` of this unit with `name`; `generic_arity` restricts the match to that
+/// declared arity, `None` accepts any arity (an unparameterized qualifier such as `Crate.Make<T>`).
+pub(in crate::semantic_contract) fn unique_nominal_type_in_unit(
+    db: &dyn Db,
+    unit: SourceUnitId,
+    generation: SyntaxGenerationId,
+    name: &str,
+    generic_arity: Option<usize>,
+) -> Option<AstNodeKey> {
+    let arity_matches = |declared: usize| generic_arity.is_none_or(|arity| arity == declared);
     let syntax = db.syntax_unit(unit)?;
     if syntax.generation(db) != generation {
         return None;
@@ -412,15 +477,14 @@ pub(in crate::semantic_contract) fn unique_type_in_unit(
     let program = syntax.expanded_program(db);
     let index = syntax.syntax_index(db);
     let matches = index
-        .metadata()
-        .iter()
-        .map(|metadata| metadata.id)
+        .ids_named(beskid_analysis::syntax_query::NodeKind::TypeDefinition, name)
+        .chain(index.ids_named(beskid_analysis::syntax_query::NodeKind::EnumDefinition, name))
         .filter(|candidate| {
             index.node_at(program, *candidate).is_some_and(|node| {
                 node.of::<beskid_analysis::syntax::TypeDefinition>().is_some_and(|definition| {
-                    definition.name.node.name == name && definition.generics.len() == generic_arity
+                    definition.name.node.name == name && arity_matches(definition.generics.len())
                 }) || node.of::<beskid_analysis::syntax::EnumDefinition>().is_some_and(|definition| {
-                    definition.name.node.name == name && definition.generics.len() == generic_arity
+                    definition.name.node.name == name && arity_matches(definition.generics.len())
                 })
             })
         })
@@ -445,9 +509,8 @@ pub(in crate::semantic_contract) fn unique_public_type_in_unit(
     let program = syntax.expanded_program(db);
     let index = syntax.syntax_index(db);
     let matches = index
-        .metadata()
-        .iter()
-        .map(|metadata| metadata.id)
+        .ids_named(beskid_analysis::syntax_query::NodeKind::TypeDefinition, name)
+        .chain(index.ids_named(beskid_analysis::syntax_query::NodeKind::EnumDefinition, name))
         .filter(|candidate| {
             index.node_at(program, *candidate).is_some_and(|node| {
                 node.of::<beskid_analysis::syntax::TypeDefinition>().is_some_and(|definition| {
@@ -468,31 +531,87 @@ pub(in crate::semantic_contract) fn unique_public_type_in_unit(
     Some(AstNodeKey { unit, generation, node: *node })
 }
 
+/// The semantic primitive identity of a source primitive type.
+pub(in crate::semantic_contract) fn semantic_type_for_primitive(
+    primitive: beskid_analysis::syntax::PrimitiveType,
+) -> SemanticTypeId {
+    use beskid_analysis::syntax::PrimitiveType;
+
+    match primitive {
+        PrimitiveType::Bool => SemanticTypeId::BOOL,
+        PrimitiveType::I32 => SemanticTypeId::I32,
+        PrimitiveType::I8 => SemanticTypeId::I8,
+        PrimitiveType::I16 => SemanticTypeId::I16,
+        PrimitiveType::U16 => SemanticTypeId::U16,
+        PrimitiveType::U64 => SemanticTypeId::U64,
+        PrimitiveType::I64 => SemanticTypeId::I64,
+        PrimitiveType::U32 => SemanticTypeId::U32,
+        PrimitiveType::U8 => SemanticTypeId::U8,
+        PrimitiveType::Pointer => SemanticTypeId::POINTER,
+        PrimitiveType::Word => SemanticTypeId::WORD,
+        PrimitiveType::F64 => SemanticTypeId::F64,
+        PrimitiveType::F32 => SemanticTypeId::F32,
+        PrimitiveType::Char => SemanticTypeId::CHAR,
+        PrimitiveType::String => SemanticTypeId::STRING,
+        PrimitiveType::Unit => SemanticTypeId::UNIT,
+        PrimitiveType::Never => SemanticTypeId::NEVER,
+    }
+}
+
+/// The source primitive integer type of a semantic integer identity; none for any other type.
+pub(in crate::semantic_contract) fn integer_primitive_for_semantic(
+    semantic: SemanticTypeId,
+) -> Option<beskid_analysis::syntax::PrimitiveType> {
+    use beskid_analysis::syntax::PrimitiveType;
+
+    Some(match semantic {
+        SemanticTypeId::I8 => PrimitiveType::I8,
+        SemanticTypeId::I16 => PrimitiveType::I16,
+        SemanticTypeId::I32 => PrimitiveType::I32,
+        SemanticTypeId::I64 => PrimitiveType::I64,
+        SemanticTypeId::U8 => PrimitiveType::U8,
+        SemanticTypeId::U16 => PrimitiveType::U16,
+        SemanticTypeId::U32 => PrimitiveType::U32,
+        SemanticTypeId::U64 => PrimitiveType::U64,
+        SemanticTypeId::WORD => PrimitiveType::Word,
+        _ => return None,
+    })
+}
+
 pub(in crate::semantic_contract) fn semantic_type_from_syntax(
     syntax_type: &beskid_analysis::syntax::Type,
 ) -> Result<SemanticTypeId, SemanticError> {
-    use beskid_analysis::syntax::{PrimitiveType, Type};
+    use beskid_analysis::syntax::Type;
 
     match syntax_type {
-        Type::Primitive(primitive) => Ok(match primitive.node {
-            PrimitiveType::Bool => SemanticTypeId::BOOL,
-            PrimitiveType::I32 => SemanticTypeId::I32,
-            PrimitiveType::I64 => SemanticTypeId::I64,
-            PrimitiveType::U32 => SemanticTypeId::U32,
-            PrimitiveType::U8 => SemanticTypeId::U8,
-            PrimitiveType::Pointer => SemanticTypeId::POINTER,
-            PrimitiveType::Word => SemanticTypeId::WORD,
-            PrimitiveType::F64 => SemanticTypeId::F64,
-            PrimitiveType::Char => SemanticTypeId::CHAR,
-            PrimitiveType::String => SemanticTypeId::STRING,
-            PrimitiveType::Unit => SemanticTypeId::UNIT,
-            PrimitiveType::Never => SemanticTypeId::NEVER,
-        }),
+        Type::Primitive(primitive) => Ok(semantic_type_for_primitive(primitive.node)),
         // SemanticTypeId cannot encode nominal identity. ABI-only callers must use
         // `abi_type_from_syntax`, which proves the managed-reference representation separately.
         Type::Complex(_) | Type::Associated { .. } | Type::Array(_) | Type::This => {
             Err(SemanticError::unavailable("item_signature"))
         }
         Type::Function { .. } => Err(SemanticError::unavailable("item_signature")),
+    }
+}
+
+/// Preserve source ownership through specialization; erased pointer ABI is not authority.
+pub(in crate::semantic_contract) fn aggregate_shape_for_binding(
+    db: &dyn Db,
+    key: AstNodeKey,
+    binding: &GenericSubstitution,
+) -> Result<AggregateFieldShape, SemanticError> {
+    match binding.source_identity() {
+        GenericSourceTypeIdentity::Abi(SemanticTypeId::POINTER) => {
+            Err(SemanticError::unavailable("aggregate_reference_classification"))
+        }
+        GenericSourceTypeIdentity::Abi(semantic) => Ok(AggregateFieldShape::Scalar(*semantic)),
+        GenericSourceTypeIdentity::Nominal { .. } => {
+            super::super::contracts::concrete_type_or_enum_declaration(db, key, binding.source_identity())
+                .map(AggregateFieldShape::Nominal)
+                .ok_or_else(|| SemanticError::unavailable("aggregate_reference_classification"))
+        }
+        GenericSourceTypeIdentity::Array(_) | GenericSourceTypeIdentity::Function { .. } => {
+            Ok(AggregateFieldShape::ManagedReference(SemanticTypeId::POINTER))
+        }
     }
 }

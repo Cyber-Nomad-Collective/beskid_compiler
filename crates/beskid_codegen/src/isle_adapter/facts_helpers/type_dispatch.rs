@@ -41,6 +41,28 @@ impl SyntaxNodeFacts<'_> {
                     ManagedReferenceKind::NativeOrScalar => ManagedReferenceFact::NativeOrScalar,
                 });
         }
+        // `operand?` in a specialized body is classified by its payload in the instance: a `T`
+        // payload bound to a record is managed, bound to `i64` is not.
+        if self.query(node_kind(self.db, key)) == Some(beskid_queries::IndexedNodeKind::TryExpression)
+            && let Some(enclosing) = self.current_item_specialization()
+            && let Some(fact) = self.query(beskid_queries::specialized_try_expression_fact(self.db, key, enclosing))
+        {
+            return Some(match fact.payload_managed_reference_kind() {
+                ManagedReferenceKind::GcManaged => ManagedReferenceFact::GcManaged,
+                ManagedReferenceKind::NativeOrScalar => ManagedReferenceFact::NativeOrScalar,
+            });
+        }
+        // A call through a function value in a specialized body is classified by its result in
+        // the instance: a `T` result bound to `string` is managed, bound to `i64` is not.
+        if self.current_item_specialization().is_some()
+            && self.query(node_kind(self.db, key)) == Some(beskid_queries::IndexedNodeKind::CallExpression)
+            && let Some(call) = self.function_value_call_in_context(key)
+        {
+            return Some(match call.result_managed_reference {
+                ManagedReferenceKind::GcManaged => ManagedReferenceFact::GcManaged,
+                ManagedReferenceKind::NativeOrScalar => ManagedReferenceFact::NativeOrScalar,
+            });
+        }
         // These compiler-authorized intrinsics produce native addresses. Their
         // pointer-shaped ABI alone cannot prove that category to the source query.
         if matches!(
@@ -67,10 +89,43 @@ impl SyntaxNodeFacts<'_> {
                 ManagedReferenceKind::NativeOrScalar => ManagedReferenceFact::NativeOrScalar,
             });
         }
+        // An indexed element typed by an enclosing generic parameter (`values[index]` in
+        // `Copy<T>`) is classified by the specialization's source binding, never by its
+        // pointer-shaped element ABI.
+        if self.query(node_kind(self.db, key)) == Some(beskid_queries::IndexedNodeKind::IndexExpression)
+            && let Some(enclosing) = self.current_item_specialization()
+            && let Some(kind) = self.query(array_index_element_managed_reference_specialization(
+                self.db,
+                key,
+                enclosing.substitutions.clone(),
+            ))
+        {
+            return Some(match kind {
+                ManagedReferenceKind::GcManaged => ManagedReferenceFact::GcManaged,
+                ManagedReferenceKind::NativeOrScalar => ManagedReferenceFact::NativeOrScalar,
+            });
+        }
         if let Some(kind) = self.query(managed_reference_kind(self.db, key)) {
             return Some(match kind {
                 ManagedReferenceKind::GcManaged => ManagedReferenceFact::GcManaged,
                 ManagedReferenceKind::NativeOrScalar => ManagedReferenceFact::NativeOrScalar,
+            });
+        }
+        // A field typed by an enclosing generic parameter (`this.binding` with `B binding` in
+        // `impl<T, B>`, `decoder.binding` on a `Dec<T, B>` parameter) has no source-level managed
+        // category of its own; the specialization's applied field layout carries it.
+        if let Some(enclosing) = self.current_item_specialization()
+            && let Some(access) = self.query(aggregate_field_access_specialization(self.db, key, enclosing))
+            && let Some((_, shape)) = access.layout.fields.get(usize::try_from(access.index).ok()?)
+        {
+            return Some(match shape {
+                AggregateFieldShape::Scalar(semantic) if *semantic == SemanticTypeId::STRING => {
+                    ManagedReferenceFact::GcManaged
+                }
+                AggregateFieldShape::Scalar(_) => ManagedReferenceFact::NativeOrScalar,
+                AggregateFieldShape::ManagedReference(_) | AggregateFieldShape::Nominal(_) => {
+                    ManagedReferenceFact::GcManaged
+                }
             });
         }
         if let Some(operator) = self.operator_fact(key) {
@@ -81,10 +136,12 @@ impl SyntaxNodeFacts<'_> {
             });
         }
         // Contextual scalar ABI facts also cover expressions such as native-word
-        // arithmetic that have no independently inferred node_type. Only a distinct
-        // scalar/string identity is sufficient here; POINTER remains ambiguous.
-        if let Some(semantic) =
-            self.scalar_semantic_type(key).or_else(|| self.query(call_argument_abi_type(self.db, key)))
+        // arithmetic that have no independently inferred node_type, and bare integer
+        // literals typed by their expected type. Only a distinct scalar/string identity is
+        // sufficient here; POINTER remains ambiguous.
+        if let Some(semantic) = self
+            .scalar_semantic_type(key)
+            .or_else(|| self.query(contextual_integer_literal_abi_type(self.db, key)))
             && semantic != SemanticTypeId::POINTER
         {
             return Some(if semantic == SemanticTypeId::STRING {
@@ -92,6 +149,36 @@ impl SyntaxNodeFacts<'_> {
             } else {
                 ManagedReferenceFact::NativeOrScalar
             });
+        }
+        // A match or block value (`field: match slot { Some(value) => value, None() => ... }`) is
+        // classified by the type its position expects, read in the specialization's environment.
+        if matches!(
+            self.query(node_kind(self.db, key)),
+            Some(beskid_queries::IndexedNodeKind::MatchExpression | beskid_queries::IndexedNodeKind::BlockExpression)
+        ) && let Some(expected) = match self.current_item_specialization() {
+            Some(enclosing) => self.query(beskid_queries::expected_type_in_environment(self.db, key, enclosing)),
+            None => self.query(beskid_queries::expected_type(self.db, key)),
+        } {
+            return Some(match expected.managed_reference_kind() {
+                ManagedReferenceKind::GcManaged => ManagedReferenceFact::GcManaged,
+                ManagedReferenceKind::NativeOrScalar => ManagedReferenceFact::NativeOrScalar,
+            });
+        }
+        // A match value without an expected type (`let x = match h.slot { ... }` in a
+        // specialization) is classified like the arms that produce its value; they must agree.
+        if let Some(bodies) = self.specialized_match_arm_bodies(key) {
+            let mut result = None;
+            for body in bodies {
+                if self.scalar_semantic_type(body) == Some(SemanticTypeId::NEVER) {
+                    continue;
+                }
+                let managed = self.managed_reference_in_context(body)?;
+                if result.is_some_and(|previous| previous != managed) {
+                    return None;
+                }
+                result = Some(managed);
+            }
+            return result;
         }
         (self.query(node_kind(self.db, key)) == Some(beskid_queries::IndexedNodeKind::LetStatement))
             .then(|| self.let_initializer(key))?

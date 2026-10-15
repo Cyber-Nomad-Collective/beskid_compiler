@@ -26,8 +26,8 @@ impl SyntaxNodeFacts<'_> {
         if self.inline_lambda_call(key).is_some() {
             return Some(CallKind::InlineLambda);
         }
-        // A function-typed local shadows every other callee of its name; its call never reaches
-        // collection dispatch, which would misread the local path as a receiver.
+        // A function value callee (a function-typed local, field or call result) never reaches
+        // collection dispatch, which would misread a local path as a receiver.
         if matches!(self.query(call_lowering(self.db, key)), Some(CallLowering::FunctionValue(_))) {
             return self.function_value_call_impl(key).map(|_| CallKind::FunctionValue);
         }
@@ -44,7 +44,12 @@ impl SyntaxNodeFacts<'_> {
         }
         matches!(
             self.query(call_lowering(self.db, key)),
-            Some(CallLowering::Direct(_) | CallLowering::ManifestBuiltin(_) | CallLowering::CorelibService(_))
+            Some(
+                CallLowering::Direct(_)
+                    | CallLowering::ManifestBuiltin(_)
+                    | CallLowering::CorelibService(_)
+                    | CallLowering::NativeModCallback(_)
+            )
         )
         .then_some(CallKind::Direct)
     }
@@ -79,6 +84,9 @@ impl SyntaxNodeFacts<'_> {
             return Some(DirectCallee::runtime_intrinsic(index));
         }
         let lowering = self.query(call_lowering(self.db, key))?;
+        if let CallLowering::NativeModCallback(callback) = lowering {
+            return Some(DirectCallee::NativeModCallback(callback.wrapper()));
+        }
         if let CallLowering::ManifestBuiltin(builtin) = lowering {
             return Some(DirectCallee::corelib_service(builtin.symbol));
         }
@@ -132,6 +140,14 @@ impl SyntaxNodeFacts<'_> {
         }
         if let Some(specialization) = self.generic_call_specialization_in_context(key) {
             return signature_for_item(self.isa?, specialization.signature);
+        }
+        // A call through a function value inside a specialized body: its result type is the
+        // callee's function type in the instance (`T` of `(T) => T f` bound), which the
+        // target-neutral `call_abi_signature` cannot prove.
+        if self.current_item_specialization().is_some()
+            && let Some(call) = self.function_value_call_in_context(key)
+        {
+            return signature_for_item(self.isa?, call.signature);
         }
         signature_for_item(self.isa?, self.query(call_abi_signature(self.db, key))?)
     }
@@ -266,16 +282,9 @@ impl SyntaxNodeFacts<'_> {
     }
 
     pub(super) fn function_value_call_impl(&self, key: AstNodeKey) -> Option<beskid_isle::FunctionValueCall> {
-        // Inside a generic specialization the declared function type may name the enclosing
-        // declaration's parameters; its exact environment binds them.
-        let call = match self.current_item_specialization() {
-            Some(specialization) => self.query(beskid_queries::function_value_call_specialization(
-                self.db,
-                key,
-                &specialization.substitutions,
-            ))?,
-            None => self.query(beskid_queries::function_value_call(self.db, key))?,
-        };
+        // Inside a generic specialization the callee's function type may name the enclosing
+        // declaration's parameters; its exact instance binds them.
+        let call = self.function_value_call_in_context(key)?;
         let (parameters, result) = self.callable_abi(&call.signature)?;
         Some(beskid_isle::FunctionValueCall {
             callee: call.callee,
@@ -284,6 +293,22 @@ impl SyntaxNodeFacts<'_> {
             code_offset: crate::EVENT_HANDLER_CODE_OFFSET,
             environment_offset: crate::EVENT_HANDLER_ENVIRONMENT_OFFSET,
         })
+    }
+
+    /// A named function read as a value: its closure record carries the item's own entry, or the
+    /// entry of the specialization a generic item is instantiated with where it is read.
+    pub(super) fn function_item_value_impl(&self, key: AstNodeKey) -> Option<beskid_isle::FunctionItemValue> {
+        let value = self.query(beskid_queries::function_item_value(self.db, key))?;
+        let (parameters, result) = self.callable_abi(&value.signature)?;
+        let callee = match value.specialization.as_ref() {
+            Some(specialization)
+                if !specialization.substitutions.is_empty() || !specialization.contract_witnesses.is_empty() =>
+            {
+                DirectCallee::specialized_item(value.declaration, specialization_identity(specialization))
+            }
+            _ => DirectCallee::item(value.declaration),
+        };
+        Some(beskid_isle::FunctionItemValue { callee, parameters, result })
     }
 
     /// Map a callable's semantic signature to entry parameter and result ABI types.

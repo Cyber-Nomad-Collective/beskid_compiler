@@ -29,11 +29,19 @@ impl TemplateCase {
     }
 
     fn invoke(&self, operation: &str, flags: &[&str]) -> Output {
-        self.cli()
-            .arg(operation)
-            .arg("--project")
-            .arg(&self.project)
-            .arg("--plain")
+        let mut command = self.cli();
+        // Fetch and lock live under `dev project` in the v0.6 surface.
+        match operation {
+            "fetch" | "lock" => command.args(["dev", "project", operation]),
+            // `update` takes an explicit scope and no progress flag.
+            "update" => command.args(["update", "--all"]),
+            other => command.arg(other),
+        };
+        command.arg("--project").arg(&self.project);
+        if operation != "update" {
+            command.arg("--plain");
+        }
+        command
             .args(flags)
             .output()
             .expect("invoke CLI")
@@ -67,7 +75,7 @@ impl TemplateCase {
         .expect("authoring manifest");
         fs::write(template.join("content/content/README.md"), "Template payload\n").expect("payload");
         self.cli()
-            .args(["new", "--path"])
+            .args(["new", "AuthorPackage", "--path"])
             .arg(template)
             .args(["--name", "AuthorPackage", "--symbol", "shortName=author-package", "--no-interactive", "-o"])
             .arg(&self.project)
@@ -109,10 +117,11 @@ fn new_template_authoring_project_locks_corelib_and_replays_after_relocation() {
     names.sort_unstable();
     assert_eq!(
         names,
-        // The 0.5.3 Corelib aggregate also ships the networking stack packages
+        // The Corelib aggregate also ships the networking stack packages
         // (codec, connect, crypto, http2, http3, quic, tls, uri, web, websocket, x509).
         [
-            "Std",
+            "Core",
+            "corelib_bsol",
             "corelib_codec",
             "corelib_compiler_sdk",
             "corelib_concurrency",
@@ -128,11 +137,13 @@ fn new_template_authoring_project_locks_corelib_and_replays_after_relocation() {
             "corelib_network",
             "corelib_quic",
             "corelib_runtime",
+            "corelib_serialization",
             "corelib_tls",
             "corelib_uri",
             "corelib_web",
             "corelib_websocket",
             "corelib_x509",
+            "serialization_mod",
         ],
         "authoring lock must contain the complete installed Corelib closure"
     );

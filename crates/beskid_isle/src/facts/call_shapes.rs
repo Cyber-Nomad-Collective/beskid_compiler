@@ -12,6 +12,8 @@ use cranelift_codegen::ir::Type;
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum DirectCallee {
     Item(AstNodeKey),
+    /// Host-only callback issued from an exact current SDK wrapper.
+    NativeModCallback(AstNodeKey),
     /// One generic source declaration paired with its exact call-derived ABI identity.
     ///
     /// The vector stores parameter ABI type identities followed by the result identity.  It is
@@ -150,7 +152,7 @@ pub struct LambdaEntry {
     pub result: Option<Type>,
 }
 
-/// A call through the closure record held by a function-typed local value.
+/// A call through the closure record a function-typed callee expression evaluates to.
 ///
 /// The record is `{ header, code pointer, environment pointer }`. A capture-free entry has a null
 /// environment and takes exactly `parameters`; a capturing entry takes the environment pointer
@@ -162,6 +164,17 @@ pub struct FunctionValueCall {
     pub result: Option<Type>,
     pub code_offset: i32,
     pub environment_offset: i32,
+}
+
+/// A named function item read as a value: a closure record whose code pointer is the item's own
+/// entry and whose environment is null.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FunctionItemValue {
+    pub callee: DirectCallee,
+    /// Parameter ABI of the item's entry.
+    pub parameters: Vec<Type>,
+    /// Result ABI of the item's entry; `None` for unit and never.
+    pub result: Option<Type>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

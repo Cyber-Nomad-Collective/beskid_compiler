@@ -34,16 +34,14 @@ pub fn resolve_project(
     project: Option<&PathBuf>,
     target: Option<&str>,
     workspace_member: Option<&str>,
-    frozen: bool,
-    locked: bool,
+    options: WorkspacePrepareOptions,
 ) -> Result<ResolvedProject> {
     resolve_project_with_policy(
         input,
         project,
         target,
         workspace_member,
-        frozen,
-        locked,
+        options,
         UnresolvedDependencyPolicy::Error,
         None,
     )
@@ -54,32 +52,7 @@ pub fn resolve_project_with_policy(
     project: Option<&PathBuf>,
     target: Option<&str>,
     workspace_member: Option<&str>,
-    frozen: bool,
-    locked: bool,
-    unresolved_dependency_policy: UnresolvedDependencyPolicy,
-    pipeline: Option<&dyn PipelineObserver>,
-) -> Result<ResolvedProject> {
-    resolve_project_with_policy_and_lock_refresh(
-        input,
-        project,
-        target,
-        workspace_member,
-        frozen,
-        locked,
-        false,
-        unresolved_dependency_policy,
-        pipeline,
-    )
-}
-
-pub fn resolve_project_with_policy_and_lock_refresh(
-    input: Option<&PathBuf>,
-    project: Option<&PathBuf>,
-    target: Option<&str>,
-    workspace_member: Option<&str>,
-    frozen: bool,
-    locked: bool,
-    refresh_lock: bool,
+    options: WorkspacePrepareOptions,
     unresolved_dependency_policy: UnresolvedDependencyPolicy,
     pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<ResolvedProject> {
@@ -88,9 +61,7 @@ pub fn resolve_project_with_policy_and_lock_refresh(
         project,
         target,
         workspace_member,
-        frozen,
-        locked,
-        refresh_lock,
+        options,
         unresolved_dependency_policy,
         pipeline,
         false,
@@ -99,14 +70,12 @@ pub fn resolve_project_with_policy_and_lock_refresh(
 
 /// Resolve dependency operations for Template authoring roots without fabricating a compile plan.
 /// Compilation callers retain target selection and the E1877 authoring-root prohibition.
-pub fn resolve_project_dependencies_with_policy_and_lock_refresh(
+pub fn resolve_project_dependencies_with_policy(
     input: Option<&PathBuf>,
     project: Option<&PathBuf>,
     target: Option<&str>,
     workspace_member: Option<&str>,
-    frozen: bool,
-    locked: bool,
-    refresh_lock: bool,
+    options: WorkspacePrepareOptions,
     unresolved_dependency_policy: UnresolvedDependencyPolicy,
     pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<ResolvedProject> {
@@ -115,9 +84,7 @@ pub fn resolve_project_dependencies_with_policy_and_lock_refresh(
         project,
         target,
         workspace_member,
-        frozen,
-        locked,
-        refresh_lock,
+        options,
         unresolved_dependency_policy,
         pipeline,
         true,
@@ -129,9 +96,7 @@ fn resolve_project_with_mode(
     project: Option<&PathBuf>,
     target: Option<&str>,
     workspace_member: Option<&str>,
-    frozen: bool,
-    locked: bool,
-    refresh_lock: bool,
+    options: WorkspacePrepareOptions,
     unresolved_dependency_policy: UnresolvedDependencyPolicy,
     pipeline: Option<&dyn PipelineObserver>,
     dependencies_only: bool,
@@ -195,12 +160,7 @@ fn resolve_project_with_mode(
 
             let workspace = observe_phase_result(pipeline, WORKSPACE_MATERIALIZE, || {
                 let manifest_src = fs::read_to_string(&plan.manifest_path).unwrap_or_default();
-                prepare_project_workspace_plan_with_options(
-                    &plan,
-                    WorkspacePrepareOptions { frozen, locked, refresh_lock },
-                    pipeline,
-                )
-                .map_err(|err| {
+                prepare_project_workspace_plan_with_options(&plan, options, pipeline).map_err(|err| {
                     anyhow::Error::new(MietteReportError::new(project_error_diagnostic(
                         &plan.manifest_path.display().to_string(),
                         &manifest_src,

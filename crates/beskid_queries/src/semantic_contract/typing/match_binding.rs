@@ -47,7 +47,7 @@ pub(crate) fn pattern_binding_abi_type(
         Err(error) => return Some(Err(error)),
     };
     Some(Ok(match binding.payload {
-        AggregateFieldShape::Scalar(semantic) => semantic,
+        AggregateFieldShape::Scalar(semantic) | AggregateFieldShape::ManagedReference(semantic) => semantic,
         AggregateFieldShape::Nominal(_) => SemanticTypeId::POINTER,
     }))
 }
@@ -84,19 +84,51 @@ pub(in crate::semantic_contract) fn pattern_binding_fact_in_environment(
     }
     let outer_match = AstNodeKey { node: outer_match, ..key };
     let query = match enclosing {
-        Some(enclosing) => enum_match_specialization(db, outer_match, enclosing.clone()),
+        // The specialization materializes only the scrutinee shapes that can name an enclosing
+        // generic (an explicitly typed local or a nested pattern binding). Any other shape (a
+        // call or projected path) proves its applied enum through its own source identity, so
+        // the target-neutral fact is the exact authority for it, as `enum_match_in_context` in
+        // codegen already orders them.
+        Some(enclosing) => match enum_match_specialization(db, outer_match, enclosing.clone()) {
+            Ok(None) => enum_match(db, outer_match),
+            specialized => specialized,
+        },
         None => enum_match(db, outer_match),
     };
-    let fact = match query {
-        Ok(Some(fact)) => fact,
-        Ok(None) | Err(_) => return Some(Err(SemanticError::unavailable("pattern_binding"))),
+    // A match over a primitive scrutinee binds the scrutinee value itself through its scalar
+    // match fact; an enum match is the authority for every other binding.
+    let query = match query {
+        Ok(Some(fact)) => Ok(Some(fact.arms)),
+        enum_result => match scalar_match(db, outer_match) {
+            Ok(Some(fact)) => Ok(Some(fact.arms)),
+            _ => enum_result.map(|fact| fact.map(|fact| fact.arms)),
+        },
     };
-    fact.arms
+    let arms = match query {
+        Ok(Some(arms)) => arms,
+        Ok(None) => {
+            return Some(Err(pattern_binding_unavailable(db, outer_match, "the enclosing match has no enum match fact")));
+        }
+        Err(error) => {
+            return Some(Err(pattern_binding_unavailable(
+                db,
+                outer_match,
+                &format!("the enclosing enum match fact is unavailable: {error}"),
+            )));
+        }
+    };
+    arms
         .iter()
         .filter_map(|arm| enum_match_pattern_binding(&arm.pattern, declaration))
         .find(|binding| binding.declaration.node == declaration)
         .map(Ok)
-        .or_else(|| Some(Err(SemanticError::unavailable("pattern_binding"))))
+        .or_else(|| Some(Err(pattern_binding_unavailable(db, outer_match, "no match arm binds this declaration"))))
+}
+
+/// The sited `pattern_binding` gap: names the enclosing match and why its binding is unproven.
+fn pattern_binding_unavailable(db: &dyn Db, outer_match: AstNodeKey, reason: &str) -> SemanticError {
+    let rendered_site = crate::semantic_contract::format_ast_node_site(db, outer_match);
+    SemanticError::unavailable_at_described("pattern_binding", outer_match, &rendered_site, reason)
 }
 
 /// Return the exact specialized fact for a path which resolves to an enum-pattern binding.

@@ -1,63 +1,45 @@
-//! Shared front-end spine: assembly, parse, mods, semantic gate, syntax with module index.
+//! The executable front end: the syntax and composition products codegen lowers.
 
-use std::path::Path;
-
-use anyhow::Result;
-use beskid_pipeline::PipelineObserver;
-
-use crate::projects::{CompilePlan, PreparedProjectWorkspace};
-
-use super::prepare::{PrepareOptions, prepare_compilation};
-
-/// Result of the shared front-end through typed syntax (codegen consumes this).
-pub struct FrontEndTypedResult {
+/// Result of the shared front-end spine for one entry: the expanded syntax assembly after Mod
+/// rewriting and the composition authority of that exact syntax generation.
+///
+/// It carries no types. Typing is the query layer's (`beskid_queries`): codegen builds its
+/// `TypedProgram` from [`Self::syntax_assembly`] and reads every semantic fact from the
+/// generation-bound queries, the same facts the `beskid check` gate judged before this value
+/// existed. The legality gate (`check_items`) runs again at emission over the reachable items.
+pub struct ExecutableFrontEnd {
     pub assembly: crate::projects::ProgramAssembly,
     pub program: crate::syntax::Spanned<crate::syntax::Program>,
-    pub resolution: crate::resolve::Resolution,
-    pub typed: crate::types::TypeResult,
     pub binding_plan: crate::composition::BindingPlan,
     pub composition_snapshot: crate::composition::CompositionSnapshot,
 }
 
-impl std::fmt::Debug for FrontEndTypedResult {
+impl std::fmt::Debug for ExecutableFrontEnd {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("FrontEndTypedResult")
+        f.debug_struct("ExecutableFrontEnd")
             .field("assembly", &self.assembly)
-            .field("resolution", &self.resolution)
-            .field("typed", &self.typed)
+            .field("binding_plan", &self.binding_plan)
             .finish_non_exhaustive()
     }
 }
 
-impl FrontEndTypedResult {
+impl ExecutableFrontEnd {
     /// Return the syntax-only authority for the post-mod-rewrite frontend snapshot.
     ///
-    /// `ProgramAssembly` retains parsed source units for syntax compatibility, while `program`
-    /// is the expanded/re-written entry consumed by generation-safe semantic facts. Replacing
-    /// exactly that unit keeps syntax item keys aligned without carrying legacy syntax units.
+    /// `ProgramAssembly` retains parsed source units, while `program` is the expanded/re-written
+    /// entry consumed by generation-safe semantic facts. Replacing exactly that unit keeps syntax
+    /// item keys aligned.
     pub fn syntax_assembly(&self) -> crate::projects::ProgramAssembly {
-        let assembly = &self.assembly;
-        let mut units = assembly.units.as_ref().clone();
-        units[assembly.entry_index].program = self.program.clone();
-        crate::projects::ProgramAssembly::new(
-            assembly.roots.clone(),
-            std::sync::Arc::new(units),
-            assembly.entry_index,
-            assembly.discovery,
-            std::sync::Arc::clone(&assembly.module_index),
-            assembly.has_std_dependency,
-            assembly.generation,
-        )
-        .with_trusted_corelib_service_paths(std::sync::Arc::clone(&assembly.trusted_corelib_service_paths))
-        .with_runtime_fixture(assembly.runtime_fixture.clone())
+        self.assembly.with_entry_program(self.program.clone(), self.assembly.generation)
     }
 }
 
-/// Options for [`compile_front_end_with_pipeline`].
+/// Options for the front end of a prepare.
 #[derive(Debug, Clone)]
 pub struct FrontEndOptions {
     pub with_semantic_diagnostics: bool,
     pub assembly_discovery: crate::projects::AssemblyDiscovery,
+    pub assembly_recovery: crate::projects::AssemblyRecoveryPolicy,
     pub module_level_meta_items_allowed: Option<bool>,
 }
 
@@ -66,71 +48,8 @@ impl Default for FrontEndOptions {
         Self {
             with_semantic_diagnostics: true,
             assembly_discovery: crate::projects::AssemblyDiscovery::ImportClosure,
+            assembly_recovery: crate::projects::AssemblyRecoveryPolicy::Strict,
             module_level_meta_items_allowed: None,
         }
-    }
-}
-
-/// Assemble, run the mod host and semantic gate, then resolve and type the expanded entry syntax.
-pub fn compile_front_end_with_pipeline(
-    entry_path: &Path,
-    entry_source: &str,
-    compile_plan: Option<&CompilePlan>,
-    prepared_workspace: Option<&PreparedProjectWorkspace>,
-    options: FrontEndOptions,
-    pipeline: Option<&dyn PipelineObserver>,
-) -> Result<FrontEndTypedResult> {
-    let plan =
-        compile_plan.ok_or_else(|| anyhow::anyhow!("compile_front_end requires a CompilePlan (project context)"))?;
-
-    let resolved = super::prepare::resolved_input_from_plan(
-        entry_path.to_path_buf(),
-        entry_source.to_string(),
-        plan.clone(),
-        prepared_workspace.cloned(),
-        None,
-    );
-
-    let prepared =
-        prepare_compilation(&resolved, PrepareOptions { front_end: options, ..Default::default() }, pipeline)?;
-
-    prepared.into_executable()
-}
-
-#[cfg(test)]
-mod tests {
-    use std::sync::atomic::{AtomicU64, Ordering};
-
-    use super::{FrontEndOptions, compile_front_end_with_pipeline};
-    use crate::services::{parse_program_with_source_name, synthetic_compile_plan_for_source};
-
-    static TEST_ID: AtomicU64 = AtomicU64::new(0);
-
-    #[test]
-    fn syntax_assembly_replaces_only_the_entry_program_after_mod_rewrite() {
-        let test_id = TEST_ID.fetch_add(1, Ordering::Relaxed);
-        let root = std::env::temp_dir().join(format!("beskid_front_end_syntax_assembly_{test_id}"));
-        std::fs::create_dir_all(&root).expect("test source root");
-        let entry_path = root.join("Main.bd");
-        let source = "i32 Main() { return 0; }";
-        std::fs::write(&entry_path, source).expect("entry source");
-
-        let plan = synthetic_compile_plan_for_source(&entry_path);
-        let mut front =
-            compile_front_end_with_pipeline(&entry_path, source, Some(&plan), None, FrontEndOptions::default(), None)
-                .expect("front end");
-        let rewritten = parse_program_with_source_name("Main.bd", "i32 Rewritten() { return 0; }")
-            .expect("rewritten entry program");
-        front.program = rewritten.clone();
-
-        let syntax_assembly = front.syntax_assembly();
-
-        assert_eq!(syntax_assembly.entry_unit().program, rewritten);
-        assert_eq!(syntax_assembly.roots, front.assembly.roots);
-        assert_eq!(syntax_assembly.entry_index, front.assembly.entry_index);
-        assert_eq!(syntax_assembly.discovery, front.assembly.discovery);
-        assert!(std::sync::Arc::ptr_eq(&syntax_assembly.module_index, &front.assembly.module_index,));
-        assert_eq!(syntax_assembly.has_std_dependency, front.assembly.has_std_dependency,);
-        let _ = std::fs::remove_dir_all(root);
     }
 }

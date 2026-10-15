@@ -4,12 +4,12 @@
 
 /*
  * Self-contained C host, following `fiber_value_transfer.c`'s pattern (a hand-rolled `main`,
- * not the standard `executable_bootstrap.c` path, so `BESKID_HEAP_MAX_BYTES`'s decimal/K/M/G
- * string parsing is NOT exercised here — that parser lives in
- * `crates/beskid_abi/assembly/common/executable_bootstrap.c` and is unchanged by this design;
- * this host tests the cap-enforcement CONTRACT (a request over the cap traps diagnosably,
- * never crashes) by calling `beskid_rt_v5_heap_set_cap` directly with a pre-parsed decimal byte
- * count from `BESKID_TEST_HEAP_CAP_BYTES`, when present.
+ * not the standard `executable_bootstrap.c` path). `BESKID_HEAP_MAX` / `BESKID_FIBER_STACK_MAX`
+ * are read by the runtime itself inside `beskid_rt_v5_process_init`, so setting them in this
+ * process's environment exercises the runtime's own decimal/k/m/g parsing. In addition the host
+ * tests the cap-enforcement CONTRACT (a request over the cap traps diagnosably, never crashes)
+ * by calling `beskid_rt_v5_heap_set_cap` directly with a pre-parsed decimal byte count from
+ * `BESKID_TEST_HEAP_CAP_BYTES`, when present.
  */
 extern int64_t HEAP_GROWTH_FIXTURE_ENTRY(void) __asm__(HEAP_GROWTH_FIXTURE_SYMBOL);
 extern uint8_t gc_heap_verify(void);

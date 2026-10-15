@@ -5,14 +5,15 @@ use bsol::{BsolSpan, ValidatedBlock};
 use super::super::{
     error::ProjectError,
     model::{
-        Dependency, DependencySource, GrammarOutputEntry, ModGeneratedOutput, ProjectGrammarSection, ProjectKind,
-        ProjectLinkSection, ProjectManifest, ProjectModSection, ProjectSchemasSection, ProjectSection,
-        ProjectTemplateSection, SchemaExport, Target, TargetKind, project_root_block_matches_package_name,
+        Dependency, DependencySource, GrammarOutputEntry, ModGeneratedOutput, ProjectGlueBackend, ProjectGlueOwner,
+        ProjectGrammarSection, ProjectKind, ProjectLinkSection, ProjectManifest, ProjectModSection,
+        ProjectSchemasSection, ProjectSection, ProjectTemplateSection, SchemaExport, Target, TargetKind,
+        project_root_block_matches_package_name,
     },
 };
 use super::{
     fields_errors::{parse_at, reject_corelib_opt_out_keys, required_field},
-    intermediate::{ModFieldValue, ParsedBlock, ParsedBlocks, ParsedLinkBlock, ParsedProjectBlock},
+    intermediate::{ModFieldValue, ParsedBlock, ParsedBlocks, ParsedGlueBlock, ParsedLinkBlock, ParsedProjectBlock},
 };
 
 pub(super) fn lower_grammar_block(block: &ValidatedBlock) -> Result<ProjectGrammarSection, ProjectError> {
@@ -69,6 +70,50 @@ pub(super) fn lower_flat_block(block: ValidatedBlock) -> ParsedBlock {
     let mut fields = block.fields;
     fields.extend(block.extras);
     ParsedBlock { label: block.label, fields }
+}
+
+pub(super) fn lower_glue_block(block: ValidatedBlock) -> ParsedGlueBlock {
+    ParsedGlueBlock { span: block.span, label: block.label, fields: block.fields, extras: block.extras }
+}
+
+/// Lowers one `glue "<library>" { backend = ... path = "..." }` block.
+///
+/// The schema already closes the key set; this re-checks it so a schema drift cannot silently
+/// admit an unknown key (for example a tool path) into the typed model.
+fn build_glue_owner(block: ParsedGlueBlock) -> Result<ProjectGlueOwner, ProjectError> {
+    let library = block.label.ok_or_else(|| parse_at(block.span, "`glue` block requires a library label"))?;
+    let mut unknown: Vec<&String> = block
+        .fields
+        .keys()
+        .chain(block.extras.keys())
+        .filter(|key| !matches!(key.as_str(), "backend" | "path"))
+        .collect();
+    unknown.sort();
+    if let Some(key) = unknown.first() {
+        return Err(ProjectError::meta_contract(
+            "E1867",
+            format!("glue `{library}` has unknown key `{key}` (expected only `backend` and `path`)"),
+        ));
+    }
+    let backend = match block.fields.get("backend").map(String::as_str) {
+        Some("rust") => ProjectGlueBackend::Rust,
+        Some("dotnet") => ProjectGlueBackend::Dotnet,
+        Some(other) => {
+            return Err(ProjectError::meta_contract(
+                "E1862",
+                format!("glue `{library}` has unsupported backend `{other}` (expected `rust`)"),
+            ));
+        }
+        None => {
+            return Err(parse_at(block.span, format!("glue `{library}` requires `backend`")));
+        }
+    };
+    let path = block
+        .fields
+        .get("path")
+        .cloned()
+        .ok_or_else(|| parse_at(block.span, format!("glue `{library}` requires `path`")))?;
+    Ok(ProjectGlueOwner { library, backend, path })
 }
 
 pub(super) fn lower_link_block(block: ValidatedBlock) -> Result<ParsedLinkBlock, ProjectError> {
@@ -323,5 +368,7 @@ pub(super) fn build_manifest(parsed: ParsedBlocks) -> Result<ProjectManifest, Pr
         extra_args: l.extra_args,
     });
 
-    Ok(ProjectManifest { project: project_section, targets, dependencies, link })
+    let glue = parsed.glue.into_iter().map(build_glue_owner).collect::<Result<Vec<_>, _>>()?;
+
+    Ok(ProjectManifest { project: project_section, targets, dependencies, link, glue })
 }

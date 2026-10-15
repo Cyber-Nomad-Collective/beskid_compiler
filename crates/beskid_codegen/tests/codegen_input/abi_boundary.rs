@@ -35,6 +35,21 @@ fn sole_codegen_boundary_rejects_stale_roots_and_manifest_drift() {
 }
 
 #[test]
+fn v06_codegen_membership_rejects_registered_foreign_source_root() {
+    use beskid_queries::{AstNodeId, SourceUnitId, node_kind};
+    let (mut db, typed, _, target) = input_fixture();
+    let foreign_path = typed.assembly.entry_unit().path.with_file_name("Foreign.bd");
+    let source = "pub i32 Foreign() { return 2; }";
+    std::fs::write(&foreign_path, source).unwrap();
+    let unit = SourceUnitId::new(&db, foreign_path);
+    db.update_syntax_source(typed.project, unit, typed.generation, source.into()).unwrap();
+    let root = AstNodeKey { unit, generation: typed.generation, node: AstNodeId(0) };
+    assert!(node_kind(&db, root).unwrap().is_some(), "control must be currently registered");
+    assert!(matches!(CodegenInput::new(&db, typed, Arc::from([root]), target.clone(),
+        AbiManifestV5::canonical_runtime(target)), Err(CodegenInputError::InvalidRoot(key)) if key == root));
+}
+
+#[test]
 fn composition_plan_is_generation_bound_and_has_no_dynamic_fallback() {
     use beskid_analysis::composition::{CompositionInput, resolve_composition};
 
