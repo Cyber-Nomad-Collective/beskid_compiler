@@ -1445,6 +1445,8 @@ mod tests {
                 &[],
             ),
             ("unit Main() { mut u8[] data = Make(); Store(move data); data = Make(); i64 n = Len(data); return; }", &[]),
+            // A `return` in a branch leaves the callable: the binding stays live after the branch.
+            ("u8[] Main(move u8[] data, bool fail) { if fail { return data; } i64 n = Len(data); return data; }", &[]),
             // `x = f(move x)` nested in a branch of the loop body rebinds in the same expression.
             (
                 "u8[] Grow(move u8[] block) { return block; } \

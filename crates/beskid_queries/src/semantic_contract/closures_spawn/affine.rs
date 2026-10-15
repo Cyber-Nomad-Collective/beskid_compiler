@@ -782,6 +782,10 @@ impl<'a> Analysis<'a> {
                 self.push(AffineFindingKind::MoveOfNonOwningName, site, &name, None, None, false);
                 return;
             }
+            if role == Role::Return && crossing == LambdaCrossing::None {
+                // `return move x` leaves the callable: no later use is reachable on this path.
+                return;
+            }
             self.consume(declaration, site, &name, branches, &loops);
             return;
         }
@@ -796,6 +800,9 @@ impl<'a> Analysis<'a> {
             Role::Return | Role::OwningReceiver => {
                 if borrowed_here {
                     self.push(AffineFindingKind::BorrowEscapes, site, &name, None, Some(declaration), false);
+                } else if role == Role::Return && crossing == LambdaCrossing::None {
+                    // `return x` leaves the callable (`if failed { return x; }` keeps `x` live
+                    // after the branch).
                 } else {
                     self.consume(declaration, site, &name, branches, &loops);
                 }
