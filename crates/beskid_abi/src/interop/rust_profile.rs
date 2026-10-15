@@ -54,6 +54,14 @@ impl RustAbiProfile {
                 RustProfileBinding { permitted: true, view: RustProfileView::ManagedView }
             }
             TypeShape::Never => RustProfileBinding { permitted: true, view: RustProfileView::Trap },
+            // Glue boundary shapes are bound by the C profile only; runtime symbols never take them.
+            TypeShape::BrandedHandle(_)
+            | TypeShape::Record(_)
+            | TypeShape::Enumeration(_)
+            | TypeShape::Callback(_)
+            | TypeShape::Unit => {
+                RustProfileBinding { permitted: false, view: RustProfileView::Rejected }
+            }
         }
     }
 

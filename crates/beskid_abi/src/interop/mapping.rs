@@ -7,8 +7,8 @@
 //! consulting [`surface_primitive_to_type_shape`].
 //!
 //! Mapping rules (per the Interop.Contracts core-primitives article):
-//! - `Bool`, `U8`, `I32`, `I64`, `F64` → `TypeShape::Scalar` bound to the
-//!   matching `AbiType`.
+//! - `U8`, `I32`, `I64`, `F64` and the other fixed-width primitives → `TypeShape::Scalar`
+//!   bound to the matching `AbiType` in the raw domain. `Bool` → `uint8_t` in the Bool domain.
 //! - `Pointer` → `TypeShape::OpaqueHandle` (address-sized token).
 //! - `Word` → `TypeShape::Scalar` bound to `AbiType::USize` (pointer-width
 //!   unsigned).
@@ -22,7 +22,7 @@
 //!   caller treats a `Unit` return as a void return slot (no validation).
 
 use crate::abi_v5::AbiType;
-use crate::interop::{ScalarShape, TypeShape};
+use crate::interop::{ScalarDomain, ScalarShape, TypeShape};
 
 /// Local mirror of `beskid_analysis::syntax::PrimitiveType` that
 /// `beskid_abi` can consume without a dependency on `beskid_analysis`.
@@ -82,19 +82,19 @@ impl SurfacePrimitive {
 /// returns `Some(TypeShape::Never)` and is valid as a return only.
 pub fn surface_primitive_to_type_shape(primitive: SurfacePrimitive) -> Option<TypeShape> {
     match primitive {
-        SurfacePrimitive::Bool => Some(TypeShape::Scalar(ScalarShape { abi_type: AbiType::I8 })),
-        SurfacePrimitive::U8 => Some(TypeShape::Scalar(ScalarShape { abi_type: AbiType::U8 })),
-        SurfacePrimitive::I32 => Some(TypeShape::Scalar(ScalarShape { abi_type: AbiType::I32 })),
-        SurfacePrimitive::I8 => Some(TypeShape::Scalar(ScalarShape { abi_type: AbiType::I8 })),
-        SurfacePrimitive::I16 => Some(TypeShape::Scalar(ScalarShape { abi_type: AbiType::I16 })),
-        SurfacePrimitive::U16 => Some(TypeShape::Scalar(ScalarShape { abi_type: AbiType::U16 })),
-        SurfacePrimitive::U64 => Some(TypeShape::Scalar(ScalarShape { abi_type: AbiType::U64 })),
-        SurfacePrimitive::U32 => Some(TypeShape::Scalar(ScalarShape { abi_type: AbiType::U32 })),
-        SurfacePrimitive::I64 => Some(TypeShape::Scalar(ScalarShape { abi_type: AbiType::I64 })),
-        SurfacePrimitive::F64 => Some(TypeShape::Scalar(ScalarShape { abi_type: AbiType::F64 })),
-        SurfacePrimitive::F32 => Some(TypeShape::Scalar(ScalarShape { abi_type: AbiType::F32 })),
+        SurfacePrimitive::Bool => Some(TypeShape::Scalar(ScalarShape::new(AbiType::U8, ScalarDomain::Bool))),
+        SurfacePrimitive::U8 => Some(TypeShape::Scalar(ScalarShape::raw(AbiType::U8))),
+        SurfacePrimitive::I32 => Some(TypeShape::Scalar(ScalarShape::raw(AbiType::I32))),
+        SurfacePrimitive::I8 => Some(TypeShape::Scalar(ScalarShape::raw(AbiType::I8))),
+        SurfacePrimitive::I16 => Some(TypeShape::Scalar(ScalarShape::raw(AbiType::I16))),
+        SurfacePrimitive::U16 => Some(TypeShape::Scalar(ScalarShape::raw(AbiType::U16))),
+        SurfacePrimitive::U64 => Some(TypeShape::Scalar(ScalarShape::raw(AbiType::U64))),
+        SurfacePrimitive::U32 => Some(TypeShape::Scalar(ScalarShape::raw(AbiType::U32))),
+        SurfacePrimitive::I64 => Some(TypeShape::Scalar(ScalarShape::raw(AbiType::I64))),
+        SurfacePrimitive::F64 => Some(TypeShape::Scalar(ScalarShape::raw(AbiType::F64))),
+        SurfacePrimitive::F32 => Some(TypeShape::Scalar(ScalarShape::raw(AbiType::F32))),
         SurfacePrimitive::Pointer => Some(TypeShape::OpaqueHandle),
-        SurfacePrimitive::Word => Some(TypeShape::Scalar(ScalarShape { abi_type: AbiType::USize })),
+        SurfacePrimitive::Word => Some(TypeShape::Scalar(ScalarShape::raw(AbiType::USize))),
         SurfacePrimitive::Never => Some(TypeShape::Never),
         SurfacePrimitive::Char | SurfacePrimitive::String | SurfacePrimitive::Unit => None,
     }
@@ -108,19 +108,19 @@ mod tests {
     fn scalars_map_to_scalar_shapes() {
         assert_eq!(
             surface_primitive_to_type_shape(SurfacePrimitive::Bool),
-            Some(TypeShape::Scalar(ScalarShape { abi_type: AbiType::I8 }))
+            Some(TypeShape::Scalar(ScalarShape::new(AbiType::U8, ScalarDomain::Bool)))
         );
         assert_eq!(
             surface_primitive_to_type_shape(SurfacePrimitive::I64),
-            Some(TypeShape::Scalar(ScalarShape { abi_type: AbiType::I64 }))
+            Some(TypeShape::Scalar(ScalarShape::raw(AbiType::I64)))
         );
         assert_eq!(
             surface_primitive_to_type_shape(SurfacePrimitive::U32),
-            Some(TypeShape::Scalar(ScalarShape { abi_type: AbiType::U32 }))
+            Some(TypeShape::Scalar(ScalarShape::raw(AbiType::U32)))
         );
         assert_eq!(
             surface_primitive_to_type_shape(SurfacePrimitive::F64),
-            Some(TypeShape::Scalar(ScalarShape { abi_type: AbiType::F64 }))
+            Some(TypeShape::Scalar(ScalarShape::raw(AbiType::F64)))
         );
     }
 
@@ -133,7 +133,7 @@ mod tests {
     fn word_maps_to_usize_scalar() {
         assert_eq!(
             surface_primitive_to_type_shape(SurfacePrimitive::Word),
-            Some(TypeShape::Scalar(ScalarShape { abi_type: AbiType::USize }))
+            Some(TypeShape::Scalar(ScalarShape::raw(AbiType::USize)))
         );
     }
 
@@ -171,7 +171,7 @@ mod v06_fixed_profile_tests {
         ] {
             assert_eq!(SurfacePrimitive::from_keyword(keyword), Some(surface));
             let shape = surface_primitive_to_type_shape(surface).unwrap();
-            assert_eq!(shape, TypeShape::Scalar(ScalarShape { abi_type: abi }));
+            assert_eq!(shape, TypeShape::Scalar(ScalarShape::raw(abi)));
             assert!(crate::interop::c_profile::CAbiProfile.bind(&shape).permitted);
             assert!(crate::interop::rust_profile::RustAbiProfile.bind(&shape).permitted);
         }
