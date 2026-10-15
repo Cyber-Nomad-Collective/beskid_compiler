@@ -57,8 +57,10 @@ fn blocks(clif: &str) -> Vec<(String, Vec<String>)> {
         if line.starts_with("block") {
             blocks.push((line.to_owned(), Vec::new()));
         } else if let Some((_, body)) = blocks.last_mut() {
-            if !line.trim().is_empty() && line.trim() != "}" {
-                body.push(line.trim().to_owned());
+            // Drop the `; v5 = 9` constant annotations the display appends.
+            let line = line.split(';').next().unwrap_or(line).trim();
+            if !line.is_empty() && line != "}" {
+                body.push(line.to_owned());
             }
         }
     }
@@ -99,7 +101,11 @@ fn assert_guarded_stores(clif: &str) -> usize {
             .iter()
             .find(|(candidate, _)| candidate.starts_with(&format!("{successor}:")) || candidate.starts_with(&format!("{successor}(")))
             .unwrap_or_else(|| panic!("successor {successor}: {clif}"));
-        assert_eq!(store_body.first(), Some(&format!("store {value}, {slot}")), "the store follows the barrier: {clif}");
+        let store = store_body.first().unwrap_or_else(|| panic!("the successor stores: {clif}"));
+        assert!(
+            (store.starts_with("store ") || store.starts_with("store.")) && store.ends_with(&format!(" {value}, {slot}")),
+            "the store of the barrier's value to its slot follows the barrier: {store}\n{clif}"
+        );
         let (_, guard_body) = blocks
             .iter()
             .find(|(_, candidate)| {
