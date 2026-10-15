@@ -102,7 +102,8 @@ pub(in crate::semantic_contract) fn function_declares_generics(db: &dyn Db, decl
 }
 
 /// Return declaration-ordered generic names and whether the callable has an implicit receiver.
-/// Generic methods inherit their parameters from exactly one owning generic type definition.
+/// A method's type parameters are its owner's (the generic type definition or `impl` block that
+/// owns it) followed by its own (`U Apply<U>(...)`); see [`generic_callable_owner_count`].
 pub(in crate::semantic_contract) fn generic_callable_parameters(
     db: &dyn Db,
     declaration: AstNodeKey,
@@ -127,7 +128,40 @@ pub(in crate::semantic_contract) fn generic_callable_parameters(
         return (!owner.generics.is_empty())
             .then(|| (owner.generics.iter().map(|generic| generic.node.name.as_str()).collect(), false));
     }
-    node.of::<beskid_analysis::syntax::MethodDefinition>()?;
+    let method = node.of::<beskid_analysis::syntax::MethodDefinition>()?;
+    let mut names = method_owner_generic_names(db, syntax, declaration);
+    names.extend(method.generics.iter().map(|generic| generic.node.name.as_str()));
+    (!names.is_empty()).then_some((names, true))
+}
+
+/// The number of leading entries of [`generic_callable_parameters`] that belong to the
+/// callable's owner. Explicit type arguments at a call bind only the entries after them.
+pub(in crate::semantic_contract) fn generic_callable_owner_count(db: &dyn Db, declaration: AstNodeKey) -> usize {
+    let Some(syntax) = db.syntax_unit(declaration.unit).filter(|syntax| syntax.accepts_key(db, declaration)) else {
+        return 0;
+    };
+    let is_method = syntax
+        .syntax_index(db)
+        .node_at(syntax.expanded_program(db), declaration.node)
+        .and_then(|node| node.of::<beskid_analysis::syntax::MethodDefinition>())
+        .is_some();
+    if is_method { method_owner_generic_names(db, syntax, declaration).len() } else { 0 }
+}
+
+/// The method's own declared type parameter names (empty for every other callable).
+pub(in crate::semantic_contract) fn method_own_generic_names(db: &dyn Db, declaration: AstNodeKey) -> Vec<&str> {
+    let Some(syntax) = db.syntax_unit(declaration.unit).filter(|syntax| syntax.accepts_key(db, declaration)) else {
+        return Vec::new();
+    };
+    syntax
+        .syntax_index(db)
+        .node_at(syntax.expanded_program(db), declaration.node)
+        .and_then(|node| node.of::<beskid_analysis::syntax::MethodDefinition>())
+        .map(|method| method.generics.iter().map(|generic| generic.node.name.as_str()).collect())
+        .unwrap_or_default()
+}
+
+fn method_owner_generic_names(db: &dyn Db, syntax: SyntaxUnitInput, declaration: AstNodeKey) -> Vec<&str> {
     if let Some(parent) = nearest_ancestor(syntax.syntax_index(db), declaration.node, |kind| {
         kind == beskid_analysis::syntax_query::NodeKind::ImplBlock
     })
@@ -135,13 +169,13 @@ pub(in crate::semantic_contract) fn generic_callable_parameters(
     .and_then(|node| node.of::<beskid_analysis::syntax::ImplBlock>())
         && !parent.generics.is_empty()
     {
-        return Some((parent.generics.iter().map(|generic| generic.node.name.as_str()).collect(), true));
+        return parent.generics.iter().map(|generic| generic.node.name.as_str()).collect();
     }
-    let owner = method_owner_node(syntax.expanded_program(db), syntax.syntax_index(db), declaration.node)
+    method_owner_node(syntax.expanded_program(db), syntax.syntax_index(db), declaration.node)
         .and_then(|parent| syntax.syntax_index(db).node_at(syntax.expanded_program(db), parent))
-        .and_then(|node| node.of::<beskid_analysis::syntax::TypeDefinition>())?;
-    (!owner.generics.is_empty())
-        .then(|| (owner.generics.iter().map(|generic| generic.node.name.as_str()).collect(), true))
+        .and_then(|node| node.of::<beskid_analysis::syntax::TypeDefinition>())
+        .map(|owner| owner.generics.iter().map(|generic| generic.node.name.as_str()).collect())
+        .unwrap_or_default()
 }
 
 /// Whether a qualified call's receiver is an exact current import target.

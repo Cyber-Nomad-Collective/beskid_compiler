@@ -151,6 +151,8 @@ pub const fn classify_syntax_node_kind(kind: beskid_queries::IndexedNodeKind) ->
         | Syntax::EnumPath
         | Syntax::Field
         | Syntax::Parameter
+        | Syntax::ReceiverParameter
+        | Syntax::TypeParameter
         | Syntax::PrimitiveType
         | Syntax::StructLiteralField
         | Syntax::StringLiteralPart

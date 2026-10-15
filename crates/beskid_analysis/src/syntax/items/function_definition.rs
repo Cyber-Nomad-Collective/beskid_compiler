@@ -5,7 +5,7 @@ use crate::parser::Rule;
 use crate::parsing::error::ParseError;
 use crate::parsing::parsable::Parsable;
 use crate::syntax::items::parse_helpers::{
-    parse_attributes, parse_identifier_list, parse_parameter_list_with_docs, parse_visibility_or_default,
+    parse_attributes, parse_type_parameter_list, parse_parameter_list_with_docs, parse_visibility_or_default,
 };
 use crate::syntax::{Attribute, Block, Identifier, Parameter, Path, SpanInfo, Spanned, Type, Visibility};
 
@@ -29,7 +29,7 @@ pub struct FunctionDefinition {
     #[ast(child)]
     pub name: Spanned<Identifier>,
     #[ast(children)]
-    pub generics: Vec<Spanned<Identifier>>,
+    pub generics: Vec<Spanned<crate::syntax::TypeParameter>>,
     /// `where T: Contract` bounds on this function's own generic parameters. Not yet supported
     /// on `type`/`enum`/`impl` generics or on generic contracts (design.md task 2.3/2.7).
     #[ast(skip)]
@@ -62,7 +62,7 @@ impl Parsable for FunctionDefinition {
         for item in inner {
             match item.as_rule() {
                 Rule::GenericParameters => {
-                    generics = parse_identifier_list(item)?;
+                    generics = parse_type_parameter_list(item)?;
                 }
                 Rule::ParameterList => {
                     let (parsed_parameters, parsed_docs) = parse_parameter_list_with_docs(item)?;
@@ -70,16 +70,7 @@ impl Parsable for FunctionDefinition {
                     parameter_docs = parsed_docs;
                 }
                 Rule::WhereClause => {
-                    where_bounds = item
-                        .into_inner()
-                        .map(|bound_pair| {
-                            let mut bound_inner = bound_pair.into_inner();
-                            let parameter =
-                                Identifier::parse(bound_inner.next().ok_or(ParseError::missing(Rule::Identifier))?)?;
-                            let contract = Path::parse(bound_inner.next().ok_or(ParseError::missing(Rule::Path))?)?;
-                            Ok(WhereBound { parameter, contract })
-                        })
-                        .collect::<Result<Vec<_>, ParseError>>()?;
+                    where_bounds = crate::syntax::items::parse_helpers::parse_where_clause(item)?;
                 }
                 Rule::Block => {
                     body = Some(Block::parse(item)?);

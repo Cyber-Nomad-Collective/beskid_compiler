@@ -72,6 +72,8 @@ pub enum ReflectSdkNodeKind {
     TryExpression,
     LambdaExpression,
     LambdaParameter,
+    ReceiverParameter,
+    TypeParameter,
     MatchExpression,
     MatchArm,
     Pattern,

@@ -43,10 +43,11 @@ impl SemanticIssueKind {
             Self::UnknownAttributeDeclarationTarget { target, .. } => {
                 format!("unknown attribute declaration target kind `{target}`")
             }
-            Self::AttributeTargetNotAllowed {
-                attribute, target, ..
-            } => {
+            Self::AttributeTargetNotAllowed { attribute, target, declared: true, .. } => {
                 format!("attribute `{attribute}` cannot be applied to `{target}`")
+            }
+            Self::AttributeTargetNotAllowed { attribute, target, declared: false, .. } => {
+                format!("attribute `{attribute}` on `{target}` has no declaration in scope")
             }
             Self::VisibilityModuleNotFound { module_path, .. } => {
                 format!("module `{module_path}` not found")
@@ -94,7 +95,7 @@ impl SemanticIssueKind {
             }
             Self::ThisUsedOutsideContractOrImpl => "`This` used outside a contract or impl-block scope".to_string(),
             Self::UnresolvedAssociatedType { name } => format!("unresolved associated type `{name}`"),
-            Self::GenericBoundNotSatisfied { type_name, contract_name } => {
+            Self::GenericBoundNotSatisfied { type_name, contract_name, .. } => {
                 format!("generic bound not satisfied: `{type_name}` does not conform to `{contract_name}`")
             }
             Self::ImmutableAssignment { name } => {
@@ -182,7 +183,10 @@ impl SemanticIssueKind {
             Self::TypeMissingTypeAnnotation { name } => {
                 format!("missing type annotation for `{name}`")
             }
-            Self::TypeMissingTypeArguments => "missing type arguments for generic type".to_string(),
+            Self::TypeMissingTypeArguments { parameter: None } => "missing type arguments for generic type".to_string(),
+            Self::TypeMissingTypeArguments { parameter: Some(parameter) } => {
+                format!("cannot infer type parameter `{parameter}` of this call")
+            }
             Self::TypeGenericArgumentMismatch { expected, actual } => {
                 format!("generic argument mismatch: expected {expected}, got {actual}")
             }
@@ -237,6 +241,70 @@ impl SemanticIssueKind {
                 .to_string(),
             Self::LambdaCapturesStackReference { name } => {
                 format!("lambda cannot capture `{name}`: it is a mutable binding or a native pointer")
+            }
+            Self::UseAfterMove { name } => format!("`{name}` is used after it was moved"),
+            Self::CapturedLocalAssignedInBoundLambda { name } => {
+                format!("a lambda passed to a `[Captures]` parameter cannot assign the captured local `{name}`")
+            }
+            Self::CaptureNotTransferable { name, type_name, class } => format!(
+                "`{name}` of type `{type_name}` cannot be captured by this lambda: its transfer class {class} is not \
+                 admitted by the `[Captures]` bound"
+            ),
+            Self::MovedCaptureWithoutMove { name } => {
+                format!("`{name}` is a Moved value and must be captured with `move`")
+            }
+            Self::CapturesArgumentNotLiteral => {
+                "the argument to a `[Captures]` parameter must be a lambda literal or a function item".to_string()
+            }
+            Self::MoveOfNonOwningName { name, class } => match class {
+                Some(class) => format!("`move` needs a Moved-class owning name, but `{name}` has class {class}"),
+                None => format!("`move` needs an owning name, but `{name}` is borrowed"),
+            },
+            Self::MoveInLoopWithoutReassignment { name } => format!(
+                "`{name}` is moved inside a loop body and not reassigned before the next iteration"
+            ),
+            Self::BorrowEscapes { name } => {
+                format!("the borrowed Moved value `{name}` cannot be stored, returned, captured or moved")
+            }
+            Self::ImplicitAliasOfMovedValue { name } => {
+                format!("`{name}` is still owned by a live name; this use would alias a Moved value")
+            }
+            Self::DestructiveReadWithoutEmpty { field, type_name } => format!(
+                "`move` cannot read field `{field}`: its type `{type_name}` has no canonical empty value"
+            ),
+            Self::ImmutableFieldNotShared { type_name, field, class } => format!(
+                "field `{field}` of `[Immutable]` type `{type_name}` must be Shared, but its class is {class}"
+            ),
+            Self::ImmutableFieldAssignment { type_name, field } => format!(
+                "field `{field}` of `[Immutable]` type `{type_name}` cannot be assigned or escape outside construction"
+            ),
+            Self::MarkerOnNeverTransferable { marker, type_name, cause } => {
+                format!("`[{marker}]` cannot mark `{type_name}`: {cause} is never transferable")
+            }
+            Self::MarkerFieldClassMismatch { marker, type_name, field, class } => format!(
+                "field `{field}` of `[{marker}]` type `{type_name}` has class {class}, which `[{marker}]` does not admit"
+            ),
+            Self::CapturesBoundNotMarker { bound } => match bound {
+                Some(bound) => format!("`[Captures]` bound `{bound}` is not a marker contract"),
+                None => "`[Captures]` applies only to a parameter of function type".to_string(),
+            },
+            Self::InjectInsideIsolateBody { .. } => "composition is not available inside an isolate".to_string(),
+            Self::CompilerDerivedConformance { contract } => format!(
+                "`{contract}` is compiler-derived and cannot be listed as a conformance; the compiler proves it from the \
+                 transfer class"
+            ),
+            Self::CompilerDerivedNotMarker { contract } => format!(
+                "`[CompilerDerived]` applies only to the marker contracts `Transferable`, `Shared`, `Moved` and \
+                 `Copied`, not to `{contract}`"
+            ),
+            Self::DerivedContractMember { contract, member } => {
+                format!("compiler-derived contract `{contract}` cannot declare the member `{member}`")
+            }
+            Self::ExclusiveMarkerAttribute { marker, previous } => {
+                format!("`[{marker}]` cannot be combined with `[{previous}]`: the markers are exclusive")
+            }
+            Self::CorelibOnlyAttribute { attribute } => {
+                format!("`[{attribute}]` is available only inside corelib (`Core.*` modules)")
             }
             Self::TypeInvalidEventInvocationScope => {
                 "events can only be invoked from methods on their declaring type".to_string()

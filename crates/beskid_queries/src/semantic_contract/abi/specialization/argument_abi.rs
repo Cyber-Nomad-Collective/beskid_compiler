@@ -90,6 +90,10 @@ pub(in crate::semantic_contract) fn integer_literal_text(
         let [child] = children.as_ref() else {
             return Ok(None);
         };
+        // A nullary lambda (`() => 20`) has one child, its body; the lambda is not a literal.
+        if node_kind(db, key)? == Some(IndexedNodeKind::LambdaExpression) {
+            return Ok(None);
+        }
         return integer_literal_text(db, *child);
     };
     match literal {

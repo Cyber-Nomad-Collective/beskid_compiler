@@ -43,6 +43,9 @@ pub struct SemanticError {
 pub struct GenericBoundViolation {
     pub type_name: Arc<str>,
     pub contract_name: Arc<str>,
+    /// Why a compiler-derived marker bound fails: the first offending field or the class
+    /// reason of the transfer class query. `None` for declared contracts.
+    pub reason: Option<Arc<str>>,
 }
 
 /// One generic parameter that a single call binds to two different types.
@@ -159,6 +162,7 @@ impl SemanticError {
         message: impl Into<Arc<str>>,
         type_name: impl Into<Arc<str>>,
         contract_name: impl Into<Arc<str>>,
+        reason: Option<Arc<str>>,
     ) -> Self {
         let message = message.into();
         Self {
@@ -170,6 +174,7 @@ impl SemanticError {
             bound_violation: Some(GenericBoundViolation {
                 type_name: type_name.into(),
                 contract_name: contract_name.into(),
+                reason,
             }),
         }
     }

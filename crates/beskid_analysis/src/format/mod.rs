@@ -1,5 +1,6 @@
 //! Opinionated pretty-printer (`Emit` trait), mirroring bsharp layout rules.
 
+mod attribute_lists;
 mod emit;
 mod expressions_emit;
 mod items;

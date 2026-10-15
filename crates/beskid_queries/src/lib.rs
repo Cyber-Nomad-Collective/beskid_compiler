@@ -155,6 +155,8 @@ pub use semantic_contract::{
     UnresolvedCallKind, UnresolvedCallTarget, UnresolvedImport, UnresolvedValueArgument, ValueObligation,
     call_argument_type_mismatch, call_arity_mismatch,
     check_gate_obligations, check_items, check_typing_obligations, check_unit_obligations, extern_profile_findings,
+    AttributeResolution, UnitAttributeSurface, attribute_findings, check_attribute_obligations, resolve_attribute_use,
+    unit_attribute_surface,
     gate_obligations, generic_parameter_conflict, immutable_local_assignment, match_exhaustiveness,
     member_reference_legality, typing_obligations, unit_obligations, unresolved_call_target, unresolved_imports,
     unresolved_value_argument, value_obligations,
@@ -166,6 +168,10 @@ pub use semantic_contract::{
 };
 pub use semantic_contract::{DeadCollectionGrowth, dead_collection_growth, is_growth_call_candidate};
 pub use semantic_contract::{UnresolvedTypeReference, unresolved_type_reference};
+pub use semantic_contract::{
+    TransferClass, TransferMarker, TransferMarkerAttribute, TransferNeverReason, nominal_transfer_class,
+    transfer_class_of_type, transfer_marker_contract,
+};
 pub use session::{
     compile_front_end_with_mod_host, compile_mod_free_front_end, configure_db_for_project, prepare_compilation,
     prepare_compilation_diagnostics, reset_process_compilation_database, with_db,

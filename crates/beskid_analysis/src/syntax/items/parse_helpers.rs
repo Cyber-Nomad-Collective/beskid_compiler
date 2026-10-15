@@ -5,7 +5,7 @@ use crate::doc::{LeadingDocComment, leading_doc_from_doc_run};
 use crate::parser::Rule;
 use crate::parsing::error::ParseError;
 use crate::parsing::parsable::Parsable;
-use crate::syntax::{Attribute, Identifier, Parameter, SpanInfo, Spanned, Visibility};
+use crate::syntax::{Attribute, Identifier, Parameter, Path, SpanInfo, Spanned, TypeParameter, Visibility, WhereBound};
 
 pub(crate) fn parse_attributes(inner: &mut Peekable<Pairs<Rule>>) -> Result<Vec<Spanned<Attribute>>, ParseError> {
     if let Some(next) = inner.peek()
@@ -29,8 +29,20 @@ pub(crate) fn parse_visibility_or_default(
     Ok(Spanned::new(Visibility::Private, SpanInfo::from_span(&pair.as_span())))
 }
 
-pub(crate) fn parse_identifier_list(pair: Pair<Rule>) -> Result<Vec<Spanned<Identifier>>, ParseError> {
-    pair.into_inner().map(Identifier::parse).collect()
+pub(crate) fn parse_type_parameter_list(pair: Pair<Rule>) -> Result<Vec<Spanned<TypeParameter>>, ParseError> {
+    crate::syntax::common::type_parameter::parse_type_parameters(pair)
+}
+
+/// Parses a `WhereClause` pair into its bounds.
+pub(crate) fn parse_where_clause(pair: Pair<Rule>) -> Result<Vec<WhereBound>, ParseError> {
+    pair.into_inner()
+        .map(|bound| {
+            let mut parts = bound.into_inner();
+            let parameter = Identifier::parse(parts.next().ok_or(ParseError::missing(Rule::Identifier))?)?;
+            let contract = Path::parse(parts.next().ok_or(ParseError::missing(Rule::Path))?)?;
+            Ok(WhereBound { parameter, contract })
+        })
+        .collect()
 }
 
 pub(crate) fn parse_parameter_list_with_docs(
