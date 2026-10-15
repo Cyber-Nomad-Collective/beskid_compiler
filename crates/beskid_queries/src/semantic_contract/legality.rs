@@ -1464,6 +1464,76 @@ mod tests {
         }
     }
 
+    /// A consumed state flows only along edges that do not diverge: a `return`, `break` or
+    /// `continue` after the consumption on its own path cuts off the code after it.
+    #[test]
+    fn consumption_does_not_flow_past_a_diverging_statement() {
+        let identity = "u8[] Id(move u8[] block) { return block; } ";
+        let cases: &[(&str, &[&str])] = &[
+            ("u8[] Main(move u8[] data, bool fail) { if fail { return Id(move data); } return Id(move data); }", &[]),
+            (
+                "pub type Node { u8[] bytes } i64 Main(move u8[] data, bool fail) { if fail { Node n = Node { bytes: move data }; return 1; } \
+                 Node m = Node { bytes: move data }; return 2; }",
+                &[],
+            ),
+            (
+                "u8[] Main(move u8[] data, bool fail) { if fail { Store(move data); if fail { return Make(); } else { return Make(); } } return data; }",
+                &[],
+            ),
+            ("u8[] Pair(move u8[] block, i64 n) { return block; } u8[] Main(move u8[] data) { return Pair(move data, Len(data)); }", &["E1234"]),
+            (
+                "u8[] Main(move u8[] data, i64 rounds) { mut i64 i = 0; while i < rounds { if i == 3 { return data; } i = i + 1; } return Make(); }",
+                &[],
+            ),
+            (
+                "unit Main(move u8[] data, i64 rounds) { mut i64 i = 0; while i < rounds { if i == 2 { Store(move data); break; } i = i + 1; } return; }",
+                &[],
+            ),
+            (
+                "unit Main(move u8[] data, i64 rounds) { mut i64 i = 0; while i < rounds { if i == 2 { Store(move data); break; } i = i + 1; } \
+                 i64 n = Len(data); return; }",
+                &["E1234"],
+            ),
+            (
+                "unit Main(move u8[] data, i64 rounds) { mut i64 i = 0; while i < rounds { i = i + 1; if i == 2 { Store(move data); continue; } \
+                 i64 n = Len(data); } return; }",
+                &["E1240"],
+            ),
+            (
+                "unit Main(move u8[] data, i64 rounds) { mut i64 i = 0; while i < rounds { mut i64 j = 0; while j < rounds { Store(move data); j = j + 1; } \
+                 return; } return; }",
+                &["E1240"],
+            ),
+        ];
+        for (offset, (body, expected)) in cases.iter().enumerate() {
+            assert_affine(&format!("{identity}{body}"), 6800 + offset as u64, expected);
+        }
+    }
+
+    /// Ruling B5: an assignment decides whether a local is owning from that point on its path
+    /// (an owned value makes it owning, a place read borrowed); an assignment inside one arm
+    /// does not reach a use after the branch.
+    #[test]
+    fn reassignment_decides_whether_a_local_is_owning() {
+        let holder = "pub type Holder { u8[] bytes } u8[] Join(u8[] left, u8[] right) { return Make(); } ";
+        let cases: &[(&str, &[&str])] = &[
+            ("unit Main(Holder s) { mut u8[] buf = s.bytes; buf = Join(buf, buf); s.bytes = move buf; return; }", &[]),
+            ("unit Main(Holder s) { mut u8[] buf = s.bytes; s.bytes = move buf; return; }", &["E1241"]),
+            ("unit Main(Holder s) { mut u8[] buf = Make(); buf = s.bytes; s.bytes = move buf; return; }", &["E1241"]),
+            (
+                "unit Main(Holder s, bool fresh) { mut u8[] buf = s.bytes; if fresh { buf = Make(); } s.bytes = move buf; return; }",
+                &["E1241"],
+            ),
+            (
+                "unit Main(Holder s, bool fresh) { mut u8[] buf = s.bytes; if fresh { buf = Make(); s.bytes = move buf; } return; }",
+                &[],
+            ),
+        ];
+        for (offset, (body, expected)) in cases.iter().enumerate() {
+            assert_affine(&format!("{holder}{body}"), 6820 + offset as u64, expected);
+        }
+    }
+
     #[test]
     fn destructive_reads_and_exchange_need_a_moved_place() {
         let holder = "[Isolated] pub type Index { u8[] offsets } ";
