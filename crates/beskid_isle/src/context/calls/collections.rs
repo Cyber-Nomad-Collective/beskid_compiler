@@ -7,7 +7,7 @@ impl IsleContext<'_, '_, '_, '_> {
     ///
     /// The callee declares one `bulk T[]` parameter, so its signature has a single array parameter
     /// while the call site passes N scalar arguments. This packs the N scalars into a fresh rooted
-    /// array — reusing the exact `emit_array_literal` allocation/store/barrier/finish sequence —
+    /// array — reusing the exact `emit_array_literal` allocation/store/finish sequence —
     /// then direct-calls the callee with that array as its sole argument. It bypasses
     /// [`import_direct_call`], whose scalar-arity check cannot hold for a bulk call.
     pub(in crate::context) fn emit_bulk_call(&mut self, key: AstNodeKey) -> Option<Value> {
@@ -46,17 +46,8 @@ impl IsleContext<'_, '_, '_, '_> {
             let offset =
                 u32::try_from(index).ok()?.checked_mul(layout.stride).and_then(|offset| i32::try_from(offset).ok())?;
             let address = self.builder.ins().iadd_imm_s(data, i64::from(offset));
+            // Initialization store into the argument array allocated above: no barrier.
             self.builder.ins().store(MemFlagsData::new(), value, address, 0);
-            if layout.needs_write_barrier(pointer) {
-                let barrier = self.import_runtime_helper(
-                    "beskid_rt_v5_array_write_barrier",
-                    &[pointer, pointer],
-                    Some(types::I8),
-                )?;
-                let barrier_call = self.builder.ins().call(barrier, &[array, value]);
-                let published = self.builder.inst_results(barrier_call).first().copied()?;
-                self.builder.ins().trapz(published, TrapCode::unwrap_user(8));
-            }
         }
         // Direct-call the callee with the packed array as its sole argument. The callee signature
         // has one array parameter, so this import bypasses `import_direct_call`'s scalar-arity
@@ -248,17 +239,9 @@ impl IsleContext<'_, '_, '_, '_> {
                 let offset =
                     if stride == 1 { length } else { self.builder.ins().imul_imm_s(length, i64::from(stride)) };
                 let address = self.builder.ins().iadd(data, offset);
+                // The slot at the old length is past the live elements and holds null, so the
+                // store deletes no reference and needs no barrier.
                 self.builder.ins().store(MemFlagsData::new(), value, address, 0);
-                if element_type == pointer {
-                    let barrier = self.import_runtime_helper(
-                        "beskid_rt_v5_array_write_barrier",
-                        &[pointer, pointer],
-                        Some(types::I8),
-                    )?;
-                    let call = self.builder.ins().call(barrier, &[array, value]);
-                    let published = self.builder.inst_results(call).first().copied()?;
-                    self.builder.ins().trapz(published, TrapCode::unwrap_user(8));
-                }
                 self.builder.ins().store(MemFlagsData::new(), next_length, array, length_offset);
                 match mutation_owner {
                     CollectionMutationOwner::Local(slot) => {
@@ -282,11 +265,10 @@ impl IsleContext<'_, '_, '_, '_> {
                                 Some(LoweringError { key, kind: LoweringErrorKind::UnprovenCollectionOwner });
                             return None;
                         }
-                        self.builder.ins().store(MemFlagsData::new(), array, base, i32::try_from(field.offset).ok()?);
-                        // No write-barrier call: collection is stop-the-world, so a managed store can
-                        // never race a concurrent marker. `gc_write_barrier` stays exported for a future
-                        // incremental collector (see docs/superpowers/specs/2026-09-22-gc-span-heap-design.md
-                        // section 6.3), but generated code no longer calls it.
+                        // The owner field of an existing object is overwritten (the grown array
+                        // may replace the old one), so the store is barriered while a heap marks.
+                        let slot = self.builder.ins().iadd_imm_s(base, i64::from(field.offset));
+                        self.emit_barriered_store(slot, array)?;
                     }
                 }
                 let root_handle = self.builder.ins().stack_load(pointer, pointer, root_slot, 0);
@@ -315,14 +297,7 @@ impl IsleContext<'_, '_, '_, '_> {
                 let data = self.builder.ins().load(pointer, MemFlagsData::new(), array, 0);
                 let offset = if stride == 1 { index } else { self.builder.ins().imul_imm_s(index, i64::from(stride)) };
                 let address = self.builder.ins().iadd(data, offset);
-                let zero = if element_type == types::F32 {
-                    self.builder.ins().f32const(cranelift_codegen::ir::immediates::Ieee32::with_float(0.0))
-                } else if element_type == types::F64 {
-                    self.builder.ins().f64const(Ieee64::with_float(0.0))
-                } else {
-                    self.builder.ins().iconst(element_type, 0)
-                };
-                self.builder.ins().store(MemFlagsData::new(), zero, address, 0);
+                self.emit_element_clear(key, element_type, address)?;
                 Some(array)
             }
             CollectionOperation::RemoveLast => {
@@ -342,17 +317,39 @@ impl IsleContext<'_, '_, '_, '_> {
                     self.builder.ins().imul_imm_s(next_length, i64::from(stride))
                 };
                 let address = self.builder.ins().iadd(data, offset);
-                let zero = if element_type == types::F32 {
-                    self.builder.ins().f32const(cranelift_codegen::ir::immediates::Ieee32::with_float(0.0))
-                } else if element_type == types::F64 {
-                    self.builder.ins().f64const(Ieee64::with_float(0.0))
-                } else {
-                    self.builder.ins().iconst(element_type, 0)
-                };
-                self.builder.ins().store(MemFlagsData::new(), zero, address, 0);
+                self.emit_element_clear(key, element_type, address)?;
                 self.builder.ins().store(MemFlagsData::new(), next_length, array, length_offset);
                 Some(array)
             }
         }
+    }
+}
+
+impl IsleContext<'_, '_, '_, '_> {
+    /// Clear the element at `address` of an existing array. Clearing a managed element deletes a
+    /// reference, so it is barriered like an element assignment of null.
+    fn emit_element_clear(&mut self, key: AstNodeKey, element_type: Type, address: Value) -> Option<()> {
+        let Some(managed) = self.facts.collection_element_managed(key) else {
+            self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::MissingManagedReferenceFact });
+            return None;
+        };
+        if managed == ManagedReferenceFact::GcManaged {
+            let pointer = dispatch::pointer_type(self.frontend_config);
+            if element_type != pointer {
+                self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidArrayLayout });
+                return None;
+            }
+            let null = self.builder.ins().iconst(pointer, 0);
+            return self.emit_barriered_store(address, null);
+        }
+        let zero = if element_type == types::F32 {
+            self.builder.ins().f32const(Ieee32::with_float(0.0))
+        } else if element_type == types::F64 {
+            self.builder.ins().f64const(Ieee64::with_float(0.0))
+        } else {
+            self.builder.ins().iconst(element_type, 0)
+        };
+        self.builder.ins().store(MemFlagsData::new(), zero, address, 0);
+        Some(())
     }
 }

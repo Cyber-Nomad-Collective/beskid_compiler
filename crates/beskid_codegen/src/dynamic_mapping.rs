@@ -191,8 +191,13 @@ fn semantic_scalar(name: &str) -> Option<SemanticTypeId> {
 
 /// Where a mapped value is stored: a rooted record or box (`target`, reloaded from its
 /// root after every allocation) or an element of a rooted array under construction.
-/// Collection is stop-the-world, so record stores need no barrier, as in generated
-/// code; array element stores use the canonical array construction barrier.
+/// Every target is allocated by the mapping itself and published only when it returns, so
+/// each store is an initialization store: the old value is null and an object allocated
+/// while its heap marks is black, so record stores need no barrier, as for aggregate
+/// literals in generated code. Array element stores keep the 0.6.0 construction call
+/// `beskid_rt_v5_array_write_barrier`, which native adapters use for initialization stores
+/// only; no mapping store overwrites a slot of an existing object, so none needs the hybrid
+/// barrier `beskid_rt_v5_gc_write_barrier`.
 struct Slot {
     reload: String,
     address: String,

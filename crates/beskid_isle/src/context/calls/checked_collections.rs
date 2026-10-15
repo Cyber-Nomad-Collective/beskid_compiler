@@ -114,14 +114,8 @@ impl IsleContext<'_, '_, '_, '_> {
         let stride = element_type.bytes();
         let offset = if stride == 1 { length } else { self.builder.ins().imul_imm_s(length, i64::from(stride)) };
         let address = self.builder.ins().iadd(data, offset);
+        // The slot at the old length holds null: the store deletes no reference, no barrier.
         self.builder.ins().store(MemFlagsData::new(), value, address, 0);
-        if element_type == pointer {
-            let barrier =
-                self.import_runtime_helper("beskid_rt_v5_array_write_barrier", &[pointer, pointer], Some(types::I8))?;
-            let call = self.builder.ins().call(barrier, &[array, value]);
-            let accepted = self.builder.inst_results(call).first().copied()?;
-            self.builder.ins().trapz(accepted, TrapCode::unwrap_user(8));
-        }
         self.builder.ins().store(MemFlagsData::new(), next_length, array, length_offset);
         match mutation_owner {
             CollectionMutationOwner::Local(slot) => {
@@ -133,12 +127,9 @@ impl IsleContext<'_, '_, '_, '_> {
                 if self.locals.get(&root)?.value_type != pointer || field.value_type != pointer {
                     return None;
                 }
-                self.builder.ins().store(
-                    MemFlagsData::new(),
-                    array,
-                    aggregate_base?,
-                    i32::try_from(field.offset).ok()?,
-                );
+                // The owner field of an existing object is overwritten: barriered store.
+                let slot = self.builder.ins().iadd_imm_s(aggregate_base?, i64::from(field.offset));
+                self.emit_barriered_store(slot, array)?;
             }
         }
         let handle = self.builder.ins().stack_load(pointer, pointer, root_slot, 0);

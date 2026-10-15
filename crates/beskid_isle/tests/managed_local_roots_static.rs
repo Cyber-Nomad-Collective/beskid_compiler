@@ -33,11 +33,11 @@ fn append_roots_managed_values_and_uses_owner_specific_publication() {
     assert!(grow < local_publication);
     assert!(local_publication < finish);
 
-    // The span-heap design (docs/superpowers/specs/2026-09-22-gc-span-heap-design.md, section
-    // 6.3) removes the `gc_write_barrier` call generated code used to emit for an aggregate-field
-    // mutation owner: collection is stop-the-world, so a managed store can never race a
-    // concurrent marker, and a barrier that never fires is pure call overhead. The runtime export
-    // stays (for a future incremental collector) but no call site remains in generated code.
-    let call_site = append.find("self.builder.ins().call(barrier, &[base, array])");
-    assert!(call_site.is_none(), "no gc_write_barrier call should be emitted for the aggregate-field owner");
+    // From 0.6.2 marking is incremental: the aggregate-field owner of an existing object is
+    // overwritten while a heap may be marking, so the owner store goes through the one guarded
+    // barrier seam with the grown array, never through a direct barrier call.
+    let owner_store = append.find("self.emit_barriered_store(slot, array)").expect("barriered owner-field store");
+    assert!(local_publication < owner_store && owner_store < finish);
+    assert!(!append.contains("beskid_rt_v5_array_write_barrier"), "no 0.6.1 array barrier in generated code");
+    assert!(!append.contains("gc_write_barrier\""), "no direct barrier import in append lowering");
 }

@@ -601,8 +601,11 @@ i32 Main() { launch AppHost(); return 0; }
             .map(|callee| format!("call {callee}("))
             .collect::<Vec<_>>();
         let calls = callees.iter().map(|call| clif.matches(call).count()).sum::<usize>();
-        assert!(calls >= 8,
-            "both object and slot failures, plural allocation and barrier failures, launch failure, and normal exit need {symbol}:\n{clif}");
+        // Plural injection arrays are initialized without a barrier (0.6.2), so no barrier
+        // failure path remains.
+        assert!(calls >= 7,
+            "both object and slot failures, plural allocation failure, launch failure, and normal exit need {symbol}:\n{clif}");
+        assert!(!clif.contains("beskid_rt_v5_array_write_barrier"), "no array barrier for injection arrays:\n{clif}");
     }
 }
 

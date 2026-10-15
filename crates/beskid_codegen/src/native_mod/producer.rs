@@ -593,6 +593,10 @@ pub(super) fn canonical_runtime_hooks() -> super::adapter_plan::NativeRuntimeHoo
         array_allocate_rooted: "beskid_rt_v5_array_allocate_rooted".into(),
         construction_finish: "beskid_rt_v5_array_construction_finish".into(),
         record_allocate: "beskid_rt_v5_managed_object_allocate".into(),
+        // Adapters store only into objects they allocated (array decode elements; records are
+        // built by source constructors), so they keep the 0.6.0 construction barriers. An adapter
+        // store that overwrites a pointer slot of an existing object would need the hybrid
+        // barrier `beskid_rt_v5_gc_write_barrier` instead (v0.6.2 design, open issue 10).
         array_write_barrier: "beskid_rt_v5_array_write_barrier".into(),
         write_barrier: "gc_write_barrier".into(),
     }

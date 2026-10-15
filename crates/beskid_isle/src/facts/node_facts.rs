@@ -80,6 +80,12 @@ pub trait NodeFacts {
     fn collection_element_type(&self, _key: AstNodeKey) -> Option<Type> {
         None
     }
+    /// GC classification of the elements of the collection operation `key` (its source element
+    /// type, not the pointer-shaped ABI). It decides whether an operation that clears an element
+    /// of an existing array runs the write barrier.
+    fn collection_element_managed(&self, _key: AstNodeKey) -> Option<ManagedReferenceFact> {
+        None
+    }
     fn child(&self, _key: AstNodeKey, _index: u8) -> Option<AstNodeKey> {
         None
     }

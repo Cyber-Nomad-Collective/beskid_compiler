@@ -195,20 +195,12 @@ macro_rules! generated_aggregate_methods {
                     .checked_mul(layout.stride)
                     .and_then(|offset| i32::try_from(offset).ok())?;
                 let address = self.builder.ins().iadd_imm_s(data, i64::from(offset));
+                // An initialization store into the array this literal allocated: the old value is
+                // null and an array allocated while marking is black, so no barrier is needed.
                 self.builder.ins().store(MemFlagsData::new(), value, address, 0);
-                if layout.needs_write_barrier(pointer) {
-                    let barrier = self.import_runtime_helper(
-                        "beskid_rt_v5_array_write_barrier",
-                        &[pointer, pointer],
-                        Some(types::I8),
-                    )?;
-                    let barrier_call = self.builder.ins().call(barrier, &[array, value]);
-                    let published = self.builder.inst_results(barrier_call).first().copied()?;
-                    self.builder.ins().trapz(published, TrapCode::unwrap_user(8));
-                }
             }
             // The allocation was rooted before the first nested element was lowered. Release only
-            // after every store and pointer-publication barrier has completed.
+            // after every element store has completed.
             self.release_expression_root(Some(root))?;
             Some(array)
         }
@@ -240,19 +232,13 @@ macro_rules! generated_aggregate_methods {
                 self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidArrayLayout });
                 return None;
             }
+            let managed = self.store_overwrites_managed_reference(key, target)?;
             let array = self.read_indexed_base(base)?;
             let address = self.checked_element_address(array, index, layout)?;
-            self.builder.ins().store(MemFlagsData::new(), value, address, 0);
-            let pointer_type = self.builder.func.dfg.value_type(array);
-            if layout.needs_write_barrier(pointer_type) {
-                let barrier = self.import_runtime_helper(
-                    "beskid_rt_v5_array_write_barrier",
-                    &[pointer_type, pointer_type],
-                    Some(types::I8),
-                )?;
-                let barrier_call = self.builder.ins().call(barrier, &[array, value]);
-                let published = self.builder.inst_results(barrier_call).first().copied()?;
-                self.builder.ins().trapz(published, TrapCode::unwrap_user(8));
+            if managed {
+                self.emit_barriered_store(address, value)?;
+            } else {
+                self.builder.ins().store(MemFlagsData::new(), value, address, 0);
             }
             Some(value)
         }
@@ -338,7 +324,8 @@ macro_rules! generated_aggregate_methods {
                 self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidStructLayout });
                 return None;
             }
-            self.builder.ins().store(MemFlagsData::new(), value, base, i32::try_from(field.offset).ok()?);
+            let managed = self.store_overwrites_managed_reference(key, target)?;
+            self.emit_slot_store(base, i32::try_from(field.offset).ok()?, value, managed)?;
             Some(value)
         }
     };
