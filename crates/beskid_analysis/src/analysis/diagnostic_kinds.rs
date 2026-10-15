@@ -313,7 +313,7 @@ pub enum SemanticIssueKind {
     LambdaCapturesStackReference {
         name: String,
     },
-    // ── Transfer, capture and move band E1234–E1255 (E1250–E1255 reserved, unassigned) ──
+    // ── Transfer, capture and move band E1234–E1255 (E1251–E1255 reserved, unassigned) ──
     /// E1234: a Moved-class or `Fiber` value used after it was consumed. Related label
     /// "moved here" points at the consuming use.
     UseAfterMove {
@@ -393,6 +393,12 @@ pub enum SemanticIssueKind {
     /// E1249: an `inject` field read inside a task body.
     InjectInsideIsolateBody {
         field: String,
+    },
+    /// E1250: a method call on a value of a type parameter whose `where` bounds declare no
+    /// method of that name (`parameter` names the type parameter, `method` the called name).
+    GenericReceiverMethodUndeclared {
+        method: String,
+        parameter: String,
     },
     /// E1607: a `[CompilerDerived]` contract listed in a conformance list (`type X : C`,
     /// `impl X : C`); conformance to it is proven only by the transfer class query.

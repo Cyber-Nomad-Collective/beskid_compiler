@@ -289,6 +289,9 @@ impl SemanticIssueKind {
                 None => "`[Captures]` applies only to a parameter of function type".to_string(),
             },
             Self::InjectInsideIsolateBody { .. } => "composition is not available inside an isolate".to_string(),
+            Self::GenericReceiverMethodUndeclared { method, parameter } => {
+                format!("no `where` bound of type parameter `{parameter}` declares a method `{method}`")
+            }
             Self::CompilerDerivedConformance { contract } => format!(
                 "`{contract}` is compiler-derived and cannot be listed as a conformance; the compiler proves it from the \
                  transfer class"

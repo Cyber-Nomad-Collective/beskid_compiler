@@ -1,5 +1,5 @@
 //! Expression-shape, member, call, and local-declaration obligations (E1102, E1201, E1202,
-//! E1204, E1211, E1213, E1228, E1606, E1610).
+//! E1204, E1211, E1213, E1228, E1250, E1606, E1610).
 //!
 //! Legacy sites mirrored here: `type_index_expression` and `type_array_literal_expression`
 //! (E1202 at the expression), `type_lambda_expression_with_expected` without an expected
@@ -405,6 +405,12 @@ pub(super) fn collect_call_obligations(
             Expression::Path(path) => {
                 let path = &path.node.path.node;
                 let lowering = call_lowering(db, call_key);
+                if lowering.is_err()
+                    && let Some(obligation) = generic_receiver_method_obligation(db, program, index, key, node, call)
+                {
+                    findings.push(obligation);
+                    continue;
+                }
                 if lowering.is_err() && judge_path_method_call(db, program, index, key, node, call, findings) {
                     continue;
                 }
@@ -551,6 +557,58 @@ fn judge_path_method_call(
     });
     findings.push(GateObligation { kind: GateObligationKind::UnknownCallTarget, site: call_key });
     true
+}
+
+/// E1250: `value.Method(..)` that `call_lowering` cannot resolve, where `value` is a parameter or
+/// annotated `let` typed by a type parameter of the enclosing callable. Its members are exactly
+/// the methods of its `where` bound contracts; a method no bound declares is a check error, never
+/// a call left for lowering to reject.
+fn generic_receiver_method_obligation(
+    db: &dyn Db,
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &SyntaxIndex,
+    key: AstNodeKey,
+    call_node: beskid_analysis::syntax::AstNodeId,
+    call: &CallExpression,
+) -> Option<GateObligation> {
+    let Expression::Path(path_expression) = &call.callee.node else { return None };
+    let path = &path_expression.node.path.node;
+    let [receiver, method] = path.segments.as_slice() else { return None };
+    if !receiver.node.type_args.is_empty() {
+        return None;
+    }
+    let local = resolve_lexical_declaration(program, index, call_node, receiver.node.name.node.name.as_str())?;
+    let declaration = parent_node(index, local)?;
+    let declared = match index.kind(declaration)? {
+        NodeKind::Parameter => &index.node_at(program, declaration)?.of::<Parameter>()?.ty.node,
+        NodeKind::LetStatement => &index.node_at(program, declaration)?.of::<LetStatement>()?.type_annotation.as_ref()?.node,
+        _ => return None,
+    };
+    let parameter = crate::semantic_contract::generic_parameter_reference_name(declared)?;
+    if !crate::semantic_contract::type_syntax_is_enclosing_generic_parameter_reference(
+        db,
+        AstNodeKey { node: declaration, ..key },
+        declared,
+    ) {
+        return None;
+    }
+    let call_key = AstNodeKey { node: call_node, ..key };
+    if matches!(crate::semantic_contract::contract_member_receiver(db, program, index, call_key, path), Some(Ok(_))) {
+        return None;
+    }
+    let callee = index.direct_child_id(program, call_node, DynNodeRef::from(call.callee.as_ref()))?;
+    let callee = normalized_expression_node(index, callee);
+    let site = index
+        .direct_child_id(program, callee, DynNodeRef::from(&path_expression.node.path))
+        .and_then(|path_node| index.direct_child_id(program, path_node, DynNodeRef::from(method)))
+        .unwrap_or(callee);
+    Some(GateObligation {
+        kind: GateObligationKind::GenericReceiverMethodUndeclared {
+            method: Arc::from(method.node.name.node.name.as_str()),
+            parameter: Arc::from(parameter),
+        },
+        site: AstNodeKey { node: site, ..key },
+    })
 }
 
 /// The declared generic parameter count of a resolved function declaration; methods declare no
