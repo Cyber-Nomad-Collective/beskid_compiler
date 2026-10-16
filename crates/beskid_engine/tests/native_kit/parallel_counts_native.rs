@@ -182,3 +182,39 @@ fn counted_heaps_are_retained_and_undelivered_stakes_released() {
     assert_passes_everywhere("RunFailedOwnerRetained");
     assert_passes_everywhere("RunUndeliveredReleased");
 }
+
+/// v0.6.3: one `Spawn` on a real isolate returns its value through Join (and through serial
+/// elision at a bound of 1).
+#[test]
+fn spawned_value_returns_through_join() {
+    for bound in ["2", "8", "1"] {
+        let output = run("RunSpawnValue", &[("BESKID_ISOLATES_MAX", bound)]);
+        assert!(
+            output.status.success(),
+            "RunSpawnValue bound {bound}: exit {:?}\nstdout:\n{}\nstderr:\n{}",
+            output.status.code(),
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+}
+
+/// v0.6.3: a body that returns `Result::Error` through `Spawn` is a task value, also when every
+/// allocation collects.
+#[test]
+fn tolerated_error_is_a_task_value() {
+    for environment in [
+        &[("BESKID_ISOLATES_MAX", "1"), ("BESKID_GC_STRESS", "alloc:1,verify")][..],
+        &[("BESKID_ISOLATES_MAX", "2"), ("BESKID_GC_STRESS", "alloc:1,verify")][..],
+        &[("BESKID_ISOLATES_MAX", "2")][..],
+    ] {
+        let output = run("RunToleratedValue", environment);
+        assert!(
+            output.status.success(),
+            "RunToleratedValue {environment:?}: exit {:?}\nstdout:\n{}\nstderr:\n{}",
+            output.status.code(),
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+}

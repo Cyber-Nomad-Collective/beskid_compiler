@@ -31,7 +31,9 @@
 // from offset 16 to its size, pointer fields encoded.
 // Encoded reference: 0 for null; an internal reference is `index << 6 | delta | 1` with `delta`
 // the reference's offset from its object (0, or 24 for an array or view public reference); any
-// other value is an external reference copied unchanged (always 8-aligned).
+// other value is an external reference copied unchanged (always 8-aligned). The walk reports a
+// refusal as `TRANSIT_REFUSED` (3), which is no encoding: an internal reference has low bits 1 or
+// 25, so object 0 at delta 0 encodes as 1 and must not be mistaken for a refusal.
 
 const TYPE_DESCRIPTOR_ARRAY = 1;
 const TYPE_DESCRIPTOR_UTF8_VIEW = 2;
@@ -43,6 +45,7 @@ const TRANSIT_ROOT = 16;
 const TRANSIT_USED = 24;
 const TRANSIT_HEADER = 32;
 const TRANSIT_INITIAL_SIZE = 256;
+const TRANSIT_REFUSED = 3;
 
 const IMAGE_DESCRIPTOR = 0;
 const IMAGE_SIZE = 8;
@@ -87,7 +90,7 @@ pub pointer TransitCapture(pointer value, bool shareImmutable, pointer refusedOu
     raw_word_store(pointer_add(scratch, CAPTURE_VISITED), NativeWord(visited));
     word root = TransitEncode(scratch, value);
     mut word next = 0;
-    mut bool refused = root == 1;
+    mut bool refused = root == TRANSIT_REFUSED;
     while !refused && next < raw_word_load(pointer_add(scratch, CAPTURE_OBJECT_COUNT)) {
         if TransitWriteImage(scratch, next) == false { refused = true; }
         next = next + 1;
@@ -182,7 +185,7 @@ pub word TransitIntern(pointer scratch, word object) {
     return count;
 }
 
-// Encodes one reference of the source graph. Returns 1 (never a valid encoding) for a refused
+// Encodes one reference of the source graph. Returns `TRANSIT_REFUSED` for a refused
 // object, after recording its descriptor.
 pub word TransitEncode(pointer scratch, pointer value) {
     if value == NativePointer(0) { return 0; }
@@ -191,14 +194,14 @@ pub word TransitEncode(pointer scratch, pointer value) {
     if object == NativePointer(0) {
         if NativeWord(value) % 8 != 0 {
             raw_word_store(pointer_add(scratch, CAPTURE_REFUSED), 0);
-            return 1;
+            return TRANSIT_REFUSED;
         }
         return NativeWord(value);
     }
     pointer descriptor = NativePointer(raw_word_load(object));
     if ValidateTypeDescriptor(descriptor) == false {
         raw_word_store(pointer_add(scratch, CAPTURE_REFUSED), NativeWord(descriptor));
-        return 1;
+        return TRANSIT_REFUSED;
     }
     if raw_word_load(pointer_add(scratch, CAPTURE_SHARE_IMMUTABLE)) != 0 && TypeDescriptorIsImmutable(descriptor) {
         return NativeWord(value);
@@ -206,7 +209,7 @@ pub word TransitEncode(pointer scratch, pointer value) {
     word delta = NativeWord(value) - NativeWord(object);
     if delta != 0 && delta != 24 {
         raw_word_store(pointer_add(scratch, CAPTURE_REFUSED), NativeWord(descriptor));
-        return 1;
+        return TRANSIT_REFUSED;
     }
     word index = TransitIntern(scratch, NativeWord(object));
     return (index << 6) | delta | 1;
@@ -284,7 +287,7 @@ pub bool TransitWriteImage(pointer scratch, word index) {
             while mapIndex < elementPointers {
                 word field = 48 + element * stride + raw_word_load(pointer_add(elementMap, mapIndex * 8));
                 word encoded = TransitEncode(scratch, NativePointer(raw_word_load(pointer_add(object, field))));
-                if encoded == 1 { return false; }
+                if encoded == TRANSIT_REFUSED { return false; }
                 record = NativePointer(raw_word_load(pointer_add(scratch, CAPTURE_RECORD)));
                 raw_word_store(pointer_add(record, imageOffset + IMAGE_HEADER + field - 16), encoded);
                 mapIndex = mapIndex + 1;
@@ -302,7 +305,7 @@ pub bool TransitWriteImage(pointer scratch, word index) {
     while mapIndex < pointerCount {
         word field = raw_word_load(pointer_add(pointerMap, mapIndex * 8));
         word encoded = TransitEncode(scratch, NativePointer(raw_word_load(pointer_add(object, field))));
-        if encoded == 1 { return false; }
+        if encoded == TRANSIT_REFUSED { return false; }
         record = NativePointer(raw_word_load(pointer_add(scratch, CAPTURE_RECORD)));
         raw_word_store(pointer_add(record, imageOffset + IMAGE_HEADER + field - 16), encoded);
         mapIndex = mapIndex + 1;

@@ -266,10 +266,15 @@ pub pointer CountObjectStart(pointer reference) {
     return ManagedObjectForReference(heap, reference);
 }
 
+// Whether a counted object is traced from its entry (`markimmut`) rather than shallow-marked. A
+// UTF-8 view (a `string`) is immutable: neither the view nor its backing byte array is written
+// after construction, and shallow-marking the view would leave the backing array unmarked, so a
+// string held only by its count (a message in a port) would lose its bytes.
 pub word ObjectImmutableFlag(pointer object) {
     if object == NativePointer(0) { return 1; }
     pointer descriptor = NativePointer(raw_word_load(object));
     if (TypeDescriptorFlags(descriptor) & TYPE_DESCRIPTOR_IMMUTABLE) != 0 { return 1; }
+    if TypeDescriptorKind(descriptor) == TypeDescriptorUtf8ViewFlag() { return 1; }
     return 0;
 }
 
@@ -683,7 +688,7 @@ pub bool HandOverWalkWith(pointer value, word mode) {
                 } else {
                     CountStakeRelease(NativePointer(reference), mode == 3);
                 }
-                if (TypeDescriptorFlags(descriptor) & TYPE_DESCRIPTOR_IMMUTABLE) == 0 {
+                if ObjectImmutableFlag(object) == 0 {
                     ok = WalkPushFields(walk, object, descriptor);
                 }
             }

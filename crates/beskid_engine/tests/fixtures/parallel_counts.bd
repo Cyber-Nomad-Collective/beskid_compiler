@@ -14,7 +14,7 @@ use Core.Parallel.Port;
 [Extern(Abi:"C")]
 pub contract Probe {
     unit gc_collect();
-    word gc_heap_verify();
+    u8 gc_heap_verify();
 }
 
 [Immutable]
@@ -31,7 +31,7 @@ pub type Node {
 
 i64 Collected() {
     Probe.gc_collect();
-    if Probe.gc_heap_verify() != 0 { return -100_i64; }
+    if Probe.gc_heap_verify() == 0_u8 { return -100_i64; }
     return 0_i64;
 }
 
@@ -265,6 +265,77 @@ pub i64 RunUndeliveredReleased() {
         });
         sender.Join();
         return Result::Ok(0_i64);
+    });
+    if ScopeValue(result) != 0_i64 { return -1_i64; }
+    return Collected();
+}
+
+// ---- One spawned value at a real isolate (v0.6.3 regression) ----
+string DiagDigit(i64 d) {
+    if d == 0_i64 { return "0"; }
+    if d == 1_i64 { return "1"; }
+    if d == 2_i64 { return "2"; }
+    if d == 3_i64 { return "3"; }
+    if d == 4_i64 { return "4"; }
+    if d == 5_i64 { return "5"; }
+    if d == 6_i64 { return "6"; }
+    if d == 7_i64 { return "7"; }
+    if d == 8_i64 { return "8"; }
+    return "9";
+}
+
+string DiagDecimal(i64 v) {
+    if v < 0_i64 { return "-" + DiagDecimal(0_i64 - v); }
+    if v < 10_i64 { return DiagDigit(v); }
+    return DiagDecimal(v / 10_i64) + DiagDigit(v % 10_i64);
+}
+
+[Export(Abi:"C", Symbol:"RunSpawnValue")]
+pub i64 RunSpawnValue() {
+    Result<i64, ParallelError> result = Parallel.Scope<i64>((Scope s) => {
+        Task<i64> t = s.Spawn(() => 20_i64);
+        mut i64 value = -3_i64;
+        match t.Join() {
+            Result::Ok(v) => {
+                Core.Output.WriteLine("spawn-value ok " + DiagDecimal(v));
+                value = v;
+            },
+            Result::Error(TaskError::Failed(failure)) => {
+                Core.Output.WriteLine("spawn-value failed index " + DiagDecimal(failure.index) + " message <" + failure.message + ">");
+            },
+            Result::Error(TaskError::Cancelled) => { Core.Output.WriteLine("spawn-value cancelled"); },
+            Result::Error(TaskError::Joined) => { Core.Output.WriteLine("spawn-value joined"); },
+        };
+        return Result::Ok(value);
+    });
+    match result {
+        Result::Ok(v) => { Core.Output.WriteLine("scope ok " + DiagDecimal(v)); },
+        Result::Error(ParallelError::Cancelled) => { Core.Output.WriteLine("scope cancelled"); },
+        Result::Error(ParallelError::Failed(_)) => { Core.Output.WriteLine("scope failed"); },
+    };
+    if ScopeValue(result) != 20_i64 { return -1_i64; }
+    return Collected();
+}
+
+// ---- A tolerated Error value is a task value, not a failure (v0.6.3) ----
+[Export(Abi:"C", Symbol:"RunToleratedValue")]
+pub i64 RunToleratedValue() {
+    Result<i64, ParallelError> result = Parallel.Scope<i64>((Scope s) => {
+        Task<Result<i64, string>> t = s.Spawn<Result<i64, string>>(() => Result::Error("skip"));
+        mut i64 code = -3_i64;
+        match t.Join() {
+            Result::Ok(Result::Error(reason)) => {
+                Core.Output.WriteLine("tolerated value <" + reason + ">");
+                if reason == "skip" { code = 0_i64; }
+            },
+            Result::Ok(Result::Ok(v)) => { Core.Output.WriteLine("tolerated ok " + DiagDecimal(v)); },
+            Result::Error(TaskError::Failed(failure)) => {
+                Core.Output.WriteLine("tolerated failed <" + failure.message + ">");
+            },
+            Result::Error(TaskError::Cancelled) => { Core.Output.WriteLine("tolerated cancelled"); },
+            Result::Error(TaskError::Joined) => { Core.Output.WriteLine("tolerated joined"); },
+        };
+        return Result::Ok(code);
     });
     if ScopeValue(result) != 0_i64 { return -1_i64; }
     return Collected();
