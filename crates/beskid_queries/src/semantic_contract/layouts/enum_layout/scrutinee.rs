@@ -212,7 +212,7 @@ pub(super) fn enum_match_source_environment(
     key: AstNodeKey,
     expression: &beskid_analysis::syntax::MatchExpression,
     declaration: AstNodeKey,
-    enclosing: Option<&[GenericSubstitution]>,
+    enclosing: Option<&GenericSpecializationInstance>,
 ) -> Result<HashMap<String, GenericSourceTypeIdentity>, SemanticError> {
     let syntax = db
         .syntax_unit(declaration.unit)
@@ -234,7 +234,8 @@ pub(super) fn enum_match_source_environment(
         return enum_match_environment_for_applied_identity(definition, &identity?);
     }
     // A projected field path (`shape.packageDeclaration`) carries its applied type the same way a
-    // call result does: through the projection's exact source identity.
+    // call result does: through the projection's exact source identity, read in the enclosing
+    // environment when there is one.
     let projected_path = matches!(
         ungrouped_scrutinee(expression),
         beskid_analysis::syntax::Expression::Path(path) if path.node.path.node.segments.len() >= 2
@@ -255,7 +256,8 @@ pub(super) fn enum_match_source_environment(
             )
             .ok_or_else(|| SemanticError::unavailable("enum_match"))?;
         let call = AstNodeKey { node: normalized_expression_node(index, scrutinee), ..key };
-        return enum_match_environment_for_applied_identity(definition, &generic_source_expression_identity(db, call)?);
+        let identity = specialized_source_expression_identity(db, call, enclosing)?;
+        return enum_match_environment_for_applied_identity(definition, &identity);
     }
     // A scrutinee bound by an enclosing match pattern carries the applied identity that match
     // proved for it; that identity alone binds this generic enum's parameters.
@@ -263,8 +265,7 @@ pub(super) fn enum_match_source_environment(
         && parent_node(index, local).and_then(|parent| index.kind(parent))
             == Some(beskid_analysis::syntax_query::NodeKind::Pattern)
     {
-        let enclosing = enclosing.map(Arc::<[GenericSubstitution]>::from);
-        let binding = pattern_binding_fact_in_environment(db, index, key, local, enclosing.as_ref())
+        let binding = pattern_binding_fact_in_environment(db, index, key, local, enclosing)
             .transpose()?
             .ok_or_else(|| SemanticError::unavailable("enum_match"))?;
         let identity = binding.source_identity.as_ref().ok_or_else(|| SemanticError::unavailable("enum_match"))?;
@@ -285,6 +286,7 @@ pub(super) fn enum_match_source_environment(
         .zip(terminal.node.type_args.iter())
         .map(|(parameter, argument)| {
             let substitutions = enclosing
+                .map(|enclosing| enclosing.substitutions.as_ref())
                 .unwrap_or_default()
                 .iter()
                 .map(|binding| (binding.parameter.as_ref(), binding.source_identity()))
@@ -301,7 +303,7 @@ pub(super) fn enum_match_scrutinee_layout_in_environment(
     index: &beskid_analysis::syntax_query::SyntaxIndex,
     key: AstNodeKey,
     expression: &beskid_analysis::syntax::MatchExpression,
-    enclosing: &[GenericSubstitution],
+    enclosing: &GenericSpecializationInstance,
 ) -> Result<Option<(AstNodeKey, EnumLayoutFact)>, SemanticError> {
     if let Some(identity) = specialized_field_read_scrutinee_identity(program, index, key, expression, enclosing, db) {
         return enum_layout_for_source_identity(db, key, &identity?).map(Some);
@@ -309,8 +311,32 @@ pub(super) fn enum_match_scrutinee_layout_in_environment(
     if let Some(path) = enum_match_scrutinee_explicit_type_path(program, index, key, expression) {
         let declaration = resolve_type_declaration(db, key, &path)
             .ok_or_else(|| SemanticError::unavailable("enum_match_specialization"))?;
-        let layout = instantiated_enum_layout_for_path_in_environment(db, key, &path, enclosing)?;
+        let layout = instantiated_enum_layout_for_path_in_environment(db, key, &path, &enclosing.substitutions)?;
         return Ok(Some((declaration, layout)));
+    }
+    // A call, member, index, projected path or constructor scrutinee (`match upper.Join()` with
+    // `Task<R> upper` in a lambda of `Split<T, L, R>`) has the applied enum of its specialized
+    // source identity.
+    if matches!(
+        ungrouped_scrutinee(expression),
+        beskid_analysis::syntax::Expression::Call(_)
+            | beskid_analysis::syntax::Expression::Member(_)
+            | beskid_analysis::syntax::Expression::Index(_)
+            | beskid_analysis::syntax::Expression::EnumConstructor(_)
+    ) || matches!(
+        ungrouped_scrutinee(expression),
+        beskid_analysis::syntax::Expression::Path(path) if path.node.path.node.segments.len() >= 2
+    ) {
+        let scrutinee = index
+            .direct_child_id(
+                program,
+                key.node,
+                beskid_analysis::syntax_query::DynNodeRef::from(expression.scrutinee.as_ref()),
+            )
+            .ok_or_else(|| SemanticError::unavailable("enum_match_specialization"))?;
+        let scrutinee = AstNodeKey { node: normalized_expression_node(index, scrutinee), ..key };
+        let identity = specialized_source_expression_identity(db, scrutinee, Some(enclosing))?;
+        return enum_layout_for_source_identity(db, key, &identity).map(Some);
     }
 
     let local = enum_match_scrutinee_local_declaration(program, index, key, expression)
@@ -320,8 +346,7 @@ pub(super) fn enum_match_scrutinee_layout_in_environment(
     {
         return Ok(None);
     }
-    let enclosing = Arc::<[GenericSubstitution]>::from(enclosing);
-    let binding = pattern_binding_fact_in_environment(db, index, key, local, Some(&enclosing))
+    let binding = pattern_binding_fact_in_environment(db, index, key, local, Some(enclosing))
         .transpose()?
         .ok_or_else(|| SemanticError::unavailable("enum_match_specialization"))?;
     let identity =
@@ -337,7 +362,7 @@ fn specialized_field_read_scrutinee_identity(
     index: &beskid_analysis::syntax_query::SyntaxIndex,
     key: AstNodeKey,
     expression: &beskid_analysis::syntax::MatchExpression,
-    enclosing: &[GenericSubstitution],
+    enclosing: &GenericSpecializationInstance,
     db: &dyn Db,
 ) -> Option<Result<GenericSourceTypeIdentity, SemanticError>> {
     let field_read = match ungrouped_scrutinee(expression) {
@@ -359,7 +384,7 @@ fn specialized_field_read_scrutinee_identity(
         beskid_analysis::syntax_query::DynNodeRef::from(expression.scrutinee.as_ref()),
     )?;
     let scrutinee = AstNodeKey { node: normalized_expression_node(index, scrutinee), ..key };
-    super::super::field_read_identity_in_environment(db, scrutinee, &Arc::<[GenericSubstitution]>::from(enclosing))
+    super::super::field_read_identity_in_environment(db, scrutinee, enclosing)
 }
 
 /// Bind a generic enum's parameters to the applied arguments of one proven source identity

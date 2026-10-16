@@ -496,7 +496,7 @@ pub(in crate::semantic_contract) fn array_index_element_template_tracked(
 pub fn array_index_element_specialization(
     db: &dyn Db,
     key: AstNodeKey,
-    enclosing: Arc<[GenericSubstitution]>,
+    enclosing: &GenericSpecializationInstance,
 ) -> SemanticQueryResult<SemanticTypeId> {
     let Some(syntax) = db.syntax_unit(key.unit) else { return Ok(None) };
     if !syntax.accepts_key(db, key) {
@@ -505,7 +505,7 @@ pub fn array_index_element_specialization(
     let template = match array_index_element_template_tracked(db, syntax, key) {
         Ok(Some(template)) => template,
         unproven => {
-            return match specialized_index_element_identity(db, key, &enclosing) {
+            return match specialized_index_element_identity(db, key, enclosing) {
                 Some(element) => element.map(|element| Some(element.abi_type())),
                 None => unproven.map(|_| None),
             };
@@ -514,6 +514,7 @@ pub fn array_index_element_specialization(
     match template {
         ArrayIndexElementTemplate::Concrete(element) => Ok(Some(element)),
         ArrayIndexElementTemplate::EnclosingParameter(parameter) => Ok(enclosing
+            .substitutions
             .iter()
             .find(|binding| binding.parameter.as_ref() == parameter.as_ref())
             .map(|binding| binding.argument)),
@@ -528,7 +529,7 @@ pub fn array_index_element_specialization(
 fn specialized_index_element_identity(
     db: &dyn Db,
     key: AstNodeKey,
-    enclosing: &Arc<[GenericSubstitution]>,
+    enclosing: &GenericSpecializationInstance,
 ) -> Option<Result<GenericSourceTypeIdentity, SemanticError>> {
     let syntax = db.syntax_unit(key.unit).filter(|syntax| syntax.accepts_key(db, key))?;
     let program = syntax.expanded_program(db);
@@ -577,7 +578,7 @@ fn specialized_index_element_identity(
 pub fn array_index_element_managed_reference_specialization(
     db: &dyn Db,
     key: AstNodeKey,
-    enclosing: Arc<[GenericSubstitution]>,
+    enclosing: &GenericSpecializationInstance,
 ) -> SemanticQueryResult<ManagedReferenceKind> {
     let Some(syntax) = db.syntax_unit(key.unit) else { return Ok(None) };
     if !syntax.accepts_key(db, key) {
@@ -585,13 +586,14 @@ pub fn array_index_element_managed_reference_specialization(
     }
     match array_index_element_template_tracked(db, syntax, key) {
         Ok(Some(ArrayIndexElementTemplate::EnclosingParameter(parameter))) => Ok(enclosing
+            .substitutions
             .iter()
             .find(|binding| binding.parameter.as_ref() == parameter.as_ref())
             .map(|binding| binding.managed_reference_kind())),
         Ok(Some(ArrayIndexElementTemplate::Concrete(_))) => Ok(None),
         // An element typed only in this specialization (`values[0]` with `values : T[]` bound by
         // a match over `Option<T[]>`) is classified by its applied identity.
-        unproven => match specialized_index_element_identity(db, key, &enclosing) {
+        unproven => match specialized_index_element_identity(db, key, enclosing) {
             Some(element) => element.map(|element| Some(element.managed_reference_kind())),
             None => unproven.map(|_| None),
         },

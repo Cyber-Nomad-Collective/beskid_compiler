@@ -564,9 +564,7 @@ impl CodegenInput<'_> {
         specialization: Option<&GenericSpecializationInstance>,
     ) -> Option<AggregateStaticPlan> {
         let specialized = specialization.and_then(|specialization| {
-            enum_constructor_specialization(self.database(), literal, specialization.substitutions.clone())
-                .ok()
-                .flatten()
+            enum_constructor_specialization(self.database(), literal, specialization).ok().flatten()
         });
         // `operand?` allocates its propagated error in the enclosing return layout, which a
         // specialized body reads in its own environment.

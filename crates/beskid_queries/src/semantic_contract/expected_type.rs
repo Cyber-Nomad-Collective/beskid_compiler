@@ -22,8 +22,9 @@
 //! - the declared payload or field type of an enum constructor or struct literal, with the
 //!   declaration's generic parameters bound by the written type arguments;
 //! - the element type of an array literal or the match expression of an arm, each forwarding
-//!   its own expected type (a block expression forwards nothing: a value written inside a block
-//!   has no direct typed context and stays unavailable);
+//!   its own expected type; the final expression statement of a block expression that is a value
+//!   (an arm body, a call argument) forwards the block's expected type, every other statement is
+//!   `unit`, and a lambda's block body forwards nothing (its `return`s carry the expectation);
 //! - the proven representation of the peer operand of a binary expression, or, when the peer
 //!   is itself an unsuffixed numeric literal, the binary expression's own expected type for the
 //!   arithmetic and bitwise operators;
@@ -56,6 +57,20 @@ pub(in crate::semantic_contract) fn expected_type_tracked(
 ) -> SemanticQueryResult<ExpectedType> {
     with_node(db, syntax, key, |program, index, _node| Some(expected_type_for(db, program, index, key, None)))?
         .transpose()
+}
+
+/// The one checking-direction entry for every synthesis query that reads an expected type:
+/// [`expected_type`] without an enclosing specialization, [`expected_type_in_environment`] with
+/// one. `Ok(None)` when the node has no registered syntax.
+pub(in crate::semantic_contract) fn expected_type_in(
+    db: &dyn Db,
+    key: AstNodeKey,
+    enclosing: Option<&GenericSpecializationInstance>,
+) -> SemanticQueryResult<ExpectedType> {
+    match enclosing {
+        None => expected_type(db, key),
+        Some(enclosing) => expected_type_in_environment(db, key, enclosing),
+    }
 }
 
 /// [`expected_type`] inside the immutable specialization of the enclosing generic item.
@@ -164,7 +179,7 @@ fn expected_type_for(
     if let Some(constructor) = node.of::<syntax::EnumConstructorExpression>() {
         let position =
             constructor.args.iter().position(|argument| is_child(DynNodeRef::from(argument))).ok_or_else(unavailable)?;
-        let identity = enum_payload_identity(db, program, index, parent_key, constructor, position, &environment)?;
+        let identity = enum_payload_identity(db, parent_key, constructor, position, enclosing)?;
         let position = u32::try_from(position).map_err(|_| unavailable())?;
         return Ok(ExpectedType::new(ExpectedTypeContext::EnumPayload { constructor: parent_key, position }, identity));
     }
@@ -265,6 +280,20 @@ fn expected_type_for(
             .find(|candidate| index.kind(*candidate) != Some(NodeKind::BinaryOp))
             .ok_or_else(unavailable)?;
         let peer_key = AstNodeKey { node: normalized_expression_node(index, peer), ..key };
+        // A binary operand's expectation is its peer's scalar representation; a pointer-shaped
+        // peer (a constructor, a struct or array literal, a lambda) proves no scalar, and typing
+        // it would read this operand back through its own expectation.
+        if matches!(
+            index.kind(peer_key.node),
+            Some(
+                NodeKind::EnumConstructorExpression
+                    | NodeKind::StructLiteralExpression
+                    | NodeKind::ArrayLiteralExpression
+                    | NodeKind::LambdaExpression
+            )
+        ) {
+            return Err(unavailable());
+        }
         let identity = if contextual_numeric_operand(db, peer_key)? {
             // Two bare literals share the representation their binary expression is checked
             // against; a comparison of two bare literals has no such requirement.
@@ -302,6 +331,13 @@ fn expected_type_for(
         if !is_child(DynNodeRef::from(&statement.expression)) {
             return Err(unavailable());
         }
+        // The final statement of a block expression that is itself a value (`=> { Ok(v); }`)
+        // yields the block's value, so it forwards the block's expected type. A lambda's block
+        // body is not a value (its `return`s are), and every other statement discards its value.
+        if let Some(block) = value_block_of_final_statement(db, index, parent_key)? {
+            let outer = forwarded(db, program, index, block, enclosing)?;
+            return Ok(ExpectedType::new(ExpectedTypeContext::BlockResult { block }, outer.identity));
+        }
         return Ok(ExpectedType::new(
             ExpectedTypeContext::ExpressionStatement { statement: parent_key },
             GenericSourceTypeIdentity::Abi(SemanticTypeId::UNIT),
@@ -309,6 +345,33 @@ fn expected_type_for(
     }
 
     Err(unavailable())
+}
+
+/// The block expression whose value the expression statement `statement` yields: the statement
+/// is the last of the block's statements, the block is a `BlockExpression`, and that expression
+/// is not the body of a lambda. `None` for every other statement.
+fn value_block_of_final_statement(
+    db: &dyn Db,
+    index: &SyntaxIndex,
+    statement: AstNodeKey,
+) -> Result<Option<AstNodeKey>, SemanticError> {
+    let Some(wrapper) = parent_node(index, statement.node).filter(|node| index.kind(*node) == Some(NodeKind::Statement))
+    else {
+        return Ok(None);
+    };
+    let Some(block) = parent_node(index, wrapper).filter(|node| index.kind(*node) == Some(NodeKind::Block)) else {
+        return Ok(None);
+    };
+    let Some(expression) =
+        parent_node(index, block).filter(|node| index.kind(*node) == Some(NodeKind::BlockExpression))
+    else {
+        return Ok(None);
+    };
+    if parent_node(index, expression).and_then(|parent| index.kind(parent)) == Some(NodeKind::LambdaExpression) {
+        return Ok(None);
+    }
+    let statements = block_statement_nodes(db, AstNodeKey { node: block, ..statement })?.ok_or_else(unavailable)?;
+    Ok(statements.last().filter(|last| last.node == statement.node).map(|_| AstNodeKey { node: expression, ..statement }))
 }
 
 /// Whether a binary operand is a bare numeric literal (or integer constant) that takes its
@@ -374,7 +437,7 @@ fn call_argument_identity(
     };
     match lowering {
         CallLowering::Direct(declaration) => {
-            direct_parameter_identity(db, call_key, call, declaration, position, environment)
+            direct_parameter_identity(db, call_key, call, declaration, position, environment, enclosing)
         }
         CallLowering::FunctionValue(callee) => {
             let identity = specialized_source_expression_identity(db, callee, enclosing)?;
@@ -463,6 +526,7 @@ fn direct_parameter_identity(
     declaration: AstNodeKey,
     position: usize,
     environment: &Environment<'_>,
+    enclosing: Option<&GenericSpecializationInstance>,
 ) -> Result<GenericSourceTypeIdentity, SemanticError> {
     let callee_syntax =
         db.syntax_unit(declaration.unit).filter(|syntax| syntax.accepts_key(db, declaration)).ok_or_else(unavailable)?;
@@ -480,7 +544,7 @@ fn direct_parameter_identity(
     let bindings = if mentioned.is_empty() {
         Vec::new()
     } else {
-        let bindings = callee_generic_bindings(db, call_key, call, declaration, &generic_names, environment)?;
+        let bindings = callee_generic_bindings(db, call_key, call, declaration, &generic_names, environment, enclosing)?;
         if mentioned.iter().any(|name| !bindings.iter().any(|(bound, _)| bound == name)) {
             return Err(unavailable());
         }
@@ -534,8 +598,11 @@ fn declared_parameter_type<'a>(
 }
 
 /// The callee's type parameters this call binds without inference: a method's owner parameters
-/// from its instantiated nominal receiver and its own from the type arguments written on the
+/// from its receiver (inside a specialization, the receiver's identity in that environment: the
+/// enclosing method's own receiver, a local or parameter typed by the enclosing generics; outside
+/// one, its instantiated nominal receiver) and its own from the type arguments written on the
 /// member name; a function's from the type arguments on its path.
+#[expect(clippy::too_many_arguments, reason = "one call walk with its callee and both environments")]
 fn callee_generic_bindings(
     db: &dyn Db,
     call_key: AstNodeKey,
@@ -543,11 +610,17 @@ fn callee_generic_bindings(
     declaration: AstNodeKey,
     generic_names: &[&str],
     environment: &Environment<'_>,
+    enclosing: Option<&GenericSpecializationInstance>,
 ) -> Result<Vec<(String, GenericSourceTypeIdentity)>, SemanticError> {
     let mut bindings = Vec::<(String, GenericSourceTypeIdentity)>::new();
     let is_method = matches!(generic_callable_parameters(db, declaration), Some((_, true)));
     if is_method {
-        if let Some(receiver) = generic_nominal_method_receiver(db, call_key)? {
+        let owner_bindings = specialized_owner_bindings(db, call_key, declaration, enclosing)?;
+        if let Some(owner_bindings) = owner_bindings {
+            bindings.extend(
+                owner_bindings.iter().map(|binding| (binding.parameter.to_string(), binding.source_identity().clone())),
+            );
+        } else if let Some(receiver) = generic_nominal_method_receiver(db, call_key)? {
             bindings.extend(
                 receiver
                     .substitutions
@@ -585,6 +658,32 @@ fn callee_generic_bindings(
     Ok(bindings)
 }
 
+/// The owner bindings of a method call's receiver inside the specialization `enclosing`: the
+/// enclosing method's implicit receiver carries the instance's own substitutions; any other
+/// receiver (`output.Send(..)` with `Port<Item<T>> output`, `b.Take()` with `Box<R> b` in a
+/// lambda) is read through its identity in the environment. `None` outside a specialization or
+/// when the receiver has no owner identity there.
+fn specialized_owner_bindings(
+    db: &dyn Db,
+    call_key: AstNodeKey,
+    declaration: AstNodeKey,
+    enclosing: Option<&GenericSpecializationInstance>,
+) -> Result<Option<Arc<[GenericSubstitution]>>, SemanticError> {
+    let Some(enclosing) = enclosing else { return Ok(None) };
+    if generic_callable_owner_count(db, declaration) == 0 {
+        return Ok(None);
+    }
+    let Some(owner) = method_owner_declaration(db, declaration) else { return Ok(None) };
+    let Some(arguments) = call_arguments(db, call_key)? else { return Ok(None) };
+    let Some(receiver) = arguments.first().copied() else { return Ok(None) };
+    if implicit_method_receiver(db, receiver)? == Some(enclosing.declaration)
+        && method_owner_declaration(db, enclosing.declaration) == Some(owner)
+    {
+        return Ok(Some(enclosing.substitutions.clone()));
+    }
+    Ok(specialized_method_receiver_bindings(db, call_key, receiver, owner, enclosing))
+}
+
 /// The parameter types a lambda literal argument takes from its callee when the function-typed
 /// callee parameter still names an unbound type parameter in its result only
 /// (`U Apply<U>((T) => U f)` with `T` bound by the receiver). This is the 2026-10-13 refinement of
@@ -593,6 +692,7 @@ fn callee_generic_bindings(
 pub(in crate::semantic_contract) fn lambda_argument_parameter_identities(
     db: &dyn Db,
     lambda: AstNodeKey,
+    enclosing: Option<&GenericSpecializationInstance>,
 ) -> Result<Option<Vec<GenericSourceTypeIdentity>>, SemanticError> {
     let Some(syntax) = db.syntax_unit(lambda.unit).filter(|syntax| syntax.accepts_key(db, lambda)) else {
         return Ok(None);
@@ -628,7 +728,15 @@ pub(in crate::semantic_contract) fn lambda_argument_parameter_identities(
         return Ok(None);
     };
     let generic_names = generic_callable_parameters(db, declaration).map(|(names, _)| names).unwrap_or_default();
-    let bindings = callee_generic_bindings(db, call_key, call, declaration, &generic_names, &Environment::new())?;
+    let bindings = callee_generic_bindings(
+        db,
+        call_key,
+        call,
+        declaration,
+        &generic_names,
+        &enclosing_environment(enclosing),
+        enclosing,
+    )?;
     let bindings = sibling_argument_bindings(
         db,
         program,
@@ -732,16 +840,15 @@ fn sibling_argument_bindings(
 
 fn enum_payload_identity(
     db: &dyn Db,
-    program: &Program,
-    index: &SyntaxIndex,
     constructor_key: AstNodeKey,
     constructor: &syntax::EnumConstructorExpression,
     position: usize,
-    environment: &Environment<'_>,
+    enclosing: Option<&GenericSpecializationInstance>,
 ) -> Result<GenericSourceTypeIdentity, SemanticError> {
-    let path = contextual_enum_constructor_type_path(db, program, index, constructor_key, constructor)
-        .unwrap_or_else(|| constructor.path.node.type_path.node.clone());
-    let declaration = resolve_type_declaration(db, constructor_key, &path).ok_or_else(unavailable)?;
+    // The outer constructor's own applied enum: written, or expected by its own position.
+    let applied = applied_enum_constructor_identity(db, constructor_key, constructor, enclosing)?;
+    let declaration = crate::semantic_contract::contracts::concrete_type_or_enum_declaration(db, constructor_key, &applied)
+        .ok_or_else(unavailable)?;
     let enum_syntax =
         db.syntax_unit(declaration.unit).filter(|syntax| syntax.accepts_key(db, declaration)).ok_or_else(unavailable)?;
     let definition = enum_syntax
@@ -758,9 +865,17 @@ fn enum_payload_identity(
         return Err(unavailable());
     }
     let payload_type = &variant.node.fields.get(position).ok_or_else(unavailable)?.node.ty.node;
-    let generics = definition.generics.iter().map(|generic| generic.node.name.as_str()).collect::<Vec<_>>();
-    let type_arguments = path.segments.iter().flat_map(|segment| segment.node.type_args.iter()).collect::<Vec<_>>();
-    applied_member_identity(db, constructor_key, declaration, payload_type, &generics, &type_arguments, environment)
+    let GenericSourceTypeIdentity::Nominal { arguments, .. } = &applied else { return Err(unavailable()) };
+    if arguments.len() != definition.generics.len() {
+        return Err(unavailable());
+    }
+    let applied = definition
+        .generics
+        .iter()
+        .map(|generic| generic.node.name.as_str())
+        .zip(arguments.iter())
+        .collect::<Environment<'_>>();
+    generic_source_type_identity_with_substitutions(db, declaration, payload_type, &applied)
 }
 
 fn struct_field_identity(

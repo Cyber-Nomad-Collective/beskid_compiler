@@ -12,8 +12,8 @@ pub(in crate::semantic_contract) use callables::{
     imported_generic_nominal_receiver_requires_instantiation,
 };
 pub(in crate::semantic_contract) use explicit_arguments::{
-    call_explicit_member_type_arguments, expected_explicit_call_argument_type, explicit_generic_type_argument_syntax,
-    generic_call_uses_parameter_type_arguments, substitute_explicit_type,
+    call_explicit_member_type_arguments, explicit_generic_type_argument_syntax,
+    generic_call_uses_parameter_type_arguments,
     type_syntax_is_enclosing_generic_parameter_reference, type_syntax_is_generic_parameter_reference,
 };
 pub(in crate::semantic_contract) use expression_identity::{

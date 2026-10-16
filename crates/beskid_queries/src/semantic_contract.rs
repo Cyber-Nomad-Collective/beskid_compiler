@@ -26,6 +26,7 @@ pub use contracts::{AppliedContractIdentity, applied_contract_argument_is_type};
 mod events;
 mod expected_type;
 pub use expected_type::expected_type_in_environment;
+pub(in crate::semantic_contract) use expected_type::expected_type_in;
 use expected_type::{expected_type_tracked, lambda_argument_parameter_identities};
 mod portable_nominal;
 pub(crate) use portable_nominal::serialization_impl_receiver;
@@ -104,6 +105,7 @@ use abi::{
     control_flow_tracked, corelib_service_abi_signature, exact_assembled_nominal_envelope, function_value_specialization,
     generic_abi_type,
     generic_parameter_reference_name, generic_specialization_instance_for_call, generic_type_name, infer_source_substitutions,
+    specialized_method_receiver_bindings,
     integer_has_explicit_abi_suffix, integer_literal_fits_abi, integer_literal_text, integer_literal_u64,
     item_abi_signature_tracked, item_abi_type_from_syntax, item_signature_for_node, item_signature_tracked,
     manifest_builtin_abi_signature, signature_from_syntax,
@@ -114,7 +116,7 @@ use calls::{
     exchange_call_for_node, is_transfer_class_intrinsic, PathCallResolution, call_arguments_tracked, call_lowering_for_node, call_lowering_tracked,
     canonical_intrinsic_parameter_type, canonical_result_definition_for_type, canonical_result_variant,
     canonical_runtime_intrinsic_scope, cast_intents_for_node, cast_intents_tracked, corelib_service_for,
-    expected_cast_type, call_explicit_member_type_arguments, expected_explicit_call_argument_type, explicit_generic_type_argument_syntax,
+    expected_cast_type, call_explicit_member_type_arguments, explicit_generic_type_argument_syntax,
     exported_generic_type_named, expression_fact_target, expression_is_lambda, flatten_member_as_path_declaration,
     for_iterator_fact_tracked, for_statement_in_generic_context, function_declares_generics,
     generic_call_instantiation_for_node, specialized_for_element_identity,
@@ -126,7 +128,7 @@ use calls::{
     method_declaration_for_member_receiver, nominal_local_member_receiver, nominal_member_receiver_tracked,
     path_call_resolution, primitive_integer, primitive_numeric, primitive_numeric_conversion_target,
     primitive_numeric_conversion_tracked, range_for_fact_tracked, resolve_local_extern_contract_method,
-    result_type_parts, source_expression_unavailable, stable_declaration_identity, substitute_explicit_type,
+    result_type_parts, source_expression_unavailable, stable_declaration_identity,
     try_expression_fact_for_node, try_expression_fact_tracked, try_expression_legality_for_node, try_operand_declaration,
     type_syntax_is_enclosing_generic_parameter_reference, type_syntax_is_generic_parameter_reference,
     unique_nominal_method_declaration, unqualified_enclosing_method_call,
@@ -144,7 +146,7 @@ use closures_spawn::{
     closure_call_target_tracked, closure_captures, closure_environment_for_node, closure_environment_tracked,
     closure_signature_for_node, closure_signature_tracked, function_item_value_identity, function_item_value_tracked,
     function_value_call_tracked, function_value_callee, inferred_spawn_handle, lambda_has_statement_body,
-    lambda_source_identity, lambda_value_required_tracked, normalized_expression_node,
+    lambda_identity, lambda_source_identity, lambda_value_required_tracked, normalized_expression_node,
     runtime_intrinsic_name_tracked, runtime_intrinsic_tracked, spawn_entry_operand, spawn_entry_validation_tracked,
     spawn_handle_type_tracked, spawn_legality_tracked, spawn_stack_capture, spawn_target_tracked,
 };
@@ -165,8 +167,8 @@ use layouts::{
     abi_type_for_local_path, aggregate_field_access_tracked, aggregate_field_layout, aggregate_layout_from_definition,
     aggregate_layout_tracked, aggregate_literal_declaration_tracked, aggregate_literal_layout_tracked,
     aggregate_shape_from_applied_type, applied_aggregate_shape, array_index_element_abi_type_tracked,
-    array_index_element_template_tracked, contextual_enum_constructor_type_path,
-    empty_array_literal_element_abi_type_tracked, enum_constructor_template_tracked, enum_constructor_tracked,
+    array_index_element_template_tracked, applied_enum_constructor_identity, expected_enum_constructor_identity,
+    empty_array_literal_element_abi_type_tracked, enum_constructor_tracked,
     enum_field_layout, enum_layout_from_definition, enum_layout_substitutions, enum_layout_tracked,
     enum_match_scrutinee_layout, enum_match_tracked, enum_pattern_targets_declaration, event_field_layout_tracked,
     scalar_match_tracked,
@@ -243,7 +245,7 @@ pub use layouts::{
     CanonicalEmptyValue, canonical_empty_value,
     aggregate_field_access_specialization, aggregate_literal_specialization, array_index_element_managed_reference_specialization,
     array_index_element_specialization,
-    enum_constructor_specialization, enum_match_call_specialization, enum_match_specialization,
+    enum_constructor_specialization, enum_match_specialization,
 };
 pub use model::{
     AggregateFieldAccess, AggregateFieldShape, AggregateLayoutFact, AggregateLiteralFieldValues,
@@ -253,7 +255,7 @@ pub use model::{
     ClosureEnvironmentAbiShape, ClosureEnvironmentField, ClosureLoweringStatus, ClosurePointerMapRequirement,
     ClosureSignature, ClifParameterShape, CollectionMutationOwner, CollectionOperation, CompletionCandidate, CompletionContext,
     CompletionKind, CompletionMemberSurface, ControlFlow, CorelibService, EnumConstructorFact,
-    EnumConstructorSpecialization, EnumConstructorTemplate, EnumLayoutFact, EnumLayoutTemplateArgument,
+    EnumConstructorSpecialization, EnumLayoutFact,
     EnumMatchArmFact, EnumMatchBindingFact, EnumMatchFact, EnumMatchPatternFact, EnumMatchScalarLiteralFact, ScalarMatchFact,
     EnumMatchVariantPatternFact, EnumScalarPayloadObjectLayout, EnumScalarPayloadVariantLayout, EnumVariantLayoutFact,
     EventFieldLayoutFact, EventHandlerLocalFact, ExpectedType, ExpectedTypeContext, EventOperationFact, EventOperationKind, ExportSymbol, FiberOwnership,
@@ -277,7 +279,7 @@ pub use queries::{
     clif_block_parameters, closure_call_target, closure_environment, closure_signature, collection_operation, constant_integer,
     constant_integer_literal,
     contextual_integer_literal_abi_type, control_flow, direct_callees, empty_array_literal_element_abi_type,
-    enum_constructor, enum_constructor_template, enum_layout, enum_match, event_field_layout, scalar_match,
+    enum_constructor, enum_layout, enum_match, event_field_layout, scalar_match,
     event_handler_lambda_for_local, event_operation, expected_type, for_iterator_fact, function_item_value,
     function_value_call, generic_call_instantiation, lambda_value_required,
     generic_call_specialization, generic_call_template, generic_nominal_method_receiver, implicit_method_receiver,

@@ -15,7 +15,9 @@ pub use entry_points::{
     generic_call_specialization_in_environment, generic_call_specialization_instance,
     specialized_builtin_type_argument, specialized_corelib_value_service_result,
 };
-pub(in crate::semantic_contract) use inference::{function_value_specialization, infer_source_substitutions};
+pub(in crate::semantic_contract) use inference::{
+    function_value_specialization, infer_source_substitutions, specialized_method_receiver_bindings,
+};
 use inference::specialization_for_call_in_environment;
 pub use instance::generic_specialization_instance;
 pub(in crate::semantic_contract) use instance::{

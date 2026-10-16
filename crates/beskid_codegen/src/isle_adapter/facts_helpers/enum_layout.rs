@@ -8,7 +8,7 @@ impl SyntaxNodeFacts<'_> {
         key: AstNodeKey,
     ) -> Option<beskid_queries::EnumConstructorSpecialization> {
         let enclosing = self.current_item_specialization()?;
-        self.query(enum_constructor_specialization(self.db, key, enclosing.substitutions.clone()))
+        self.query(enum_constructor_specialization(self.db, key, enclosing))
     }
 
     pub(in crate::isle_adapter) fn enum_layout_for(&self, key: AstNodeKey) -> Option<EnumLayout> {
@@ -49,20 +49,13 @@ impl SyntaxNodeFacts<'_> {
         &self,
         key: AstNodeKey,
     ) -> Option<beskid_queries::EnumMatchFact> {
-        if let Some(enclosing) = self.current_item_specialization() {
-            if let Some(fact) = self.query(enum_match_specialization(self.db, key, enclosing.substitutions.clone())) {
-                return Some(fact);
-            }
-            // A scrutinee that is itself a generic call forwarding enclosing parameters
-            // (`match NestedType<S>(...)`) is resolved through the same call specialization the
-            // call lowering uses, so the match sees the exact applied result enum.
-            if let Some(scrutinee) = self.raw_children(key).first().copied().and_then(|child| self.unwrap_transparent(child))
-                && self.query(node_kind(self.db, scrutinee)) == Some(beskid_queries::IndexedNodeKind::CallExpression)
-                && let Some(callee) = self.generic_call_specialization_in_context(scrutinee)
-                && let Some(fact) = self.query(enum_match_call_specialization(self.db, key, &callee))
-            {
-                return Some(fact);
-            }
+        // The specialization reads every scrutinee shape in its environment (a call forwarding
+        // enclosing parameters, a typed local, a pattern binding, a field read); a match it
+        // declines keeps the target-neutral fact.
+        if let Some(enclosing) = self.current_item_specialization()
+            && let Some(fact) = self.query(enum_match_specialization(self.db, key, enclosing))
+        {
+            return Some(fact);
         }
         self.query(enum_match(self.db, key))
     }

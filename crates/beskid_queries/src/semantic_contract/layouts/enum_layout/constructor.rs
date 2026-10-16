@@ -1,9 +1,7 @@
-//! Enum constructor facts, templates, and specializations.
+//! Enum constructor facts and specializations.
 
 use super::super::super::*;
-use super::super::explicit_local_declaration_type;
 use super::*;
-use crate::semantic_contract::typing::{managed_reference_kind_for_syntax_type, pattern_binding_fact_in_environment};
 
 #[salsa::tracked(persist)]
 pub(in crate::semantic_contract) fn enum_constructor_tracked(
@@ -13,17 +11,10 @@ pub(in crate::semantic_contract) fn enum_constructor_tracked(
 ) -> SemanticQueryResult<EnumConstructorFact> {
     with_node(db, syntax, key, |program, index, node| {
         let constructor = node.of::<beskid_analysis::syntax::EnumConstructorExpression>()?;
-        let contextual = contextual_enum_constructor_type_path(db, program, index, key, constructor);
-        let expected = contextual
-            .is_none()
-            .then(|| expected_enum_constructor_identity(db, key, constructor))
-            .flatten()
-            .and_then(|identity| enum_layout_for_source_identity(db, key, &identity).ok())
-            .map(|(declaration, _)| declaration);
-        let type_path = contextual.unwrap_or_else(|| constructor.path.node.type_path.node.clone());
-        let declaration = expected
-            .or_else(|| resolve_type_declaration(db, key, &type_path))
-            .ok_or_else(|| SemanticError::unavailable("enum_constructor"));
+        let declaration = applied_enum_constructor_identity(db, key, constructor, None).and_then(|identity| {
+            crate::semantic_contract::contracts::concrete_type_or_enum_declaration(db, key, &identity)
+                .ok_or_else(|| SemanticError::unavailable("enum_constructor"))
+        });
         let declaration = match declaration {
             Ok(declaration) => declaration,
             Err(error) => return Some(Err(error)),
@@ -32,187 +23,76 @@ pub(in crate::semantic_contract) fn enum_constructor_tracked(
             Ok(Some(layout)) => layout,
             Ok(None) | Err(_) => return Some(Err(SemanticError::unavailable("enum_constructor"))),
         };
-        let variant_name = constructor.path.node.variant.node.name.as_str();
-        let Some(variant_index) = layout.variants.iter().position(|variant| variant.name.as_ref() == variant_name)
-        else {
-            return Some(Err(SemanticError::unavailable("enum_constructor")));
-        };
-        let variant = &layout.variants[variant_index];
-        if variant.fields.len() != constructor.args.len() {
-            return Some(Err(SemanticError::unavailable("enum_constructor")));
-        }
-        let payloads = constructor
-            .args
-            .iter()
-            .map(|argument| {
-                index
-                    .direct_child_id(program, key.node, beskid_analysis::syntax_query::DynNodeRef::from(argument))
-                    .map(|node| AstNodeKey { node: normalized_expression_node(index, node), ..key })
-                    .ok_or_else(|| SemanticError::unavailable("enum_constructor"))
-            })
-            .collect::<Result<Vec<_>, _>>();
-        let variant_index = match u32::try_from(variant_index) {
-            Ok(variant_index) => variant_index,
-            Err(_) => return Some(Err(SemanticError::unavailable("enum_constructor"))),
-        };
-        Some(payloads.map(|payloads| EnumConstructorFact { declaration, variant_index, payloads: payloads.into() }))
-    })?
-    .transpose()
-}
-
-#[salsa::tracked(persist)]
-pub(in crate::semantic_contract) fn enum_constructor_template_tracked(
-    db: &dyn Db,
-    syntax: SyntaxUnitInput,
-    key: AstNodeKey,
-) -> SemanticQueryResult<EnumConstructorTemplate> {
-    with_node(db, syntax, key, |program, index, node| {
-        let constructor = node.of::<beskid_analysis::syntax::EnumConstructorExpression>()?;
-        // An explicitly applied constructor (`Option<T>::Some(value)`) names its own application;
-        // an unapplied one takes it from its context.
-        let written = &constructor.path.node.type_path.node;
-        let contextual = if written.segments.last()?.node.type_args.is_empty() {
-            contextual_enum_constructor_type_path(db, program, index, key, constructor)?
-        } else {
-            written.clone()
-        };
-        let declaration = resolve_type_declaration(db, key, &contextual)?;
-        let declaration_syntax = db.syntax_unit(declaration.unit)?;
-        let definition = declaration_syntax
-            .syntax_index(db)
-            .node_at(declaration_syntax.expanded_program(db), declaration.node)?
-            .of::<beskid_analysis::syntax::EnumDefinition>()?;
-        let terminal = contextual.segments.last()?;
-        if definition.generics.is_empty() || terminal.node.type_args.len() != definition.generics.len() {
-            return Some(Err(SemanticError::unavailable("enum_constructor_template")));
-        }
-
-        let owner = nearest_ancestor(index, key.node, |kind| {
-            matches!(
-                kind,
-                beskid_analysis::syntax_query::NodeKind::FunctionDefinition
-                    | beskid_analysis::syntax_query::NodeKind::MethodDefinition
-            )
-        })?;
-        let owner_node = index.node_at(program, owner)?;
-        let generic_names = if let Some(function) = owner_node.of::<beskid_analysis::syntax::FunctionDefinition>() {
-            function.generics.iter().map(|generic| generic.node.name.as_str()).collect::<Vec<_>>()
-        } else {
-            let type_owner = parent_node(index, owner)?;
-            index
-                .node_at(program, type_owner)?
-                .of::<beskid_analysis::syntax::TypeDefinition>()?
-                .generics
-                .iter()
-                .map(|generic| generic.node.name.as_str())
-                .collect::<Vec<_>>()
-        };
-        let arguments = terminal
-            .node
-            .type_args
-            .iter()
-            .map(|argument| {
-                aggregate_shape_from_applied_type(db, key, &argument.node)
-                    .map(EnumLayoutTemplateArgument::Concrete)
-                    .or_else(|error| {
-                        let parameter = generic_parameter_reference_name(&argument.node)
-                            .filter(|parameter| generic_names.contains(parameter))
-                            .ok_or(error)?;
-                        Ok(EnumLayoutTemplateArgument::EnclosingParameter(Arc::from(parameter)))
-                    })
-            })
-            .collect::<Result<Vec<_>, SemanticError>>();
-        let arguments = match arguments {
-            Ok(arguments)
-                if arguments
-                    .iter()
-                    .any(|argument| matches!(argument, EnumLayoutTemplateArgument::EnclosingParameter(_))) =>
-            {
-                arguments
-            }
-            Ok(_) => return None,
-            Err(error) => return Some(Err(error)),
-        };
-        let variant_name = constructor.path.node.variant.node.name.as_str();
-        let Some(variant_index) = definition
-            .variants
-            .iter()
-            .position(|variant| variant.node.name.node.name == variant_name)
-            .and_then(|index| u32::try_from(index).ok())
-        else {
-            return Some(Err(SemanticError::unavailable("enum_constructor_template")));
-        };
-        let variant = &definition.variants[usize::try_from(variant_index).ok()?];
-        if variant.node.fields.len() != constructor.args.len() {
-            return Some(Err(SemanticError::unavailable("enum_constructor_template")));
-        }
-        let payloads = constructor
-            .args
-            .iter()
-            .map(|argument| {
-                index
-                    .direct_child_id(program, key.node, beskid_analysis::syntax_query::DynNodeRef::from(argument))
-                    .map(|node| AstNodeKey { node: normalized_expression_node(index, node), ..key })
-                    .ok_or_else(|| SemanticError::unavailable("enum_constructor_template"))
-            })
-            .collect::<Result<Vec<_>, _>>();
-        let payloads = match payloads {
-            Ok(payloads) => payloads,
-            Err(error) => return Some(Err(error)),
-        };
-        let parameters =
-            definition.generics.iter().map(|generic| Arc::<str>::from(generic.node.name.as_str())).collect::<Vec<_>>();
-        Some(Ok(EnumConstructorTemplate {
-            constructor: EnumConstructorFact { declaration, variant_index, payloads: payloads.into() },
-            parameters: parameters.into(),
-            arguments: arguments.into(),
+        Some(constructor_fact(program, index, key, constructor, declaration, &layout, || {
+            SemanticError::unavailable("enum_constructor")
         }))
     })?
     .transpose()
 }
 
+/// The constructor's declaration, variant and payload keys against a proven layout.
+fn constructor_fact(
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    key: AstNodeKey,
+    constructor: &beskid_analysis::syntax::EnumConstructorExpression,
+    declaration: AstNodeKey,
+    layout: &EnumLayoutFact,
+    unavailable: impl Fn() -> SemanticError,
+) -> Result<EnumConstructorFact, SemanticError> {
+    let variant_name = constructor.path.node.variant.node.name.as_str();
+    let variant_index = layout
+        .variants
+        .iter()
+        .position(|variant| variant.name.as_ref() == variant_name)
+        .ok_or_else(&unavailable)?;
+    if layout.variants[variant_index].fields.len() != constructor.args.len() {
+        return Err(unavailable());
+    }
+    let payloads = constructor
+        .args
+        .iter()
+        .map(|argument| {
+            index
+                .direct_child_id(program, key.node, beskid_analysis::syntax_query::DynNodeRef::from(argument))
+                .map(|node| AstNodeKey { node: normalized_expression_node(index, node), ..key })
+                .ok_or_else(&unavailable)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let variant_index = u32::try_from(variant_index).map_err(|_| unavailable())?;
+    Ok(EnumConstructorFact { declaration, variant_index, payloads: payloads.into() })
+}
+
+/// The constructor and applied layout of an enum constructor inside one immutable specialization
+/// of its enclosing generic item.
+///
+/// The constructor's applied enum is read in the instance's environment: its own written type
+/// arguments (`Option<T>::Some(value)`) through the enclosing substitutions, or, written without
+/// arguments, the applied enum its position expects there (`return Result::Ok(merge(lower,
+/// value))` from a lambda whose expected result is `Result<R, ParallelError>` with `R` bound).
+/// `Ok(None)` for a node that is not an enum constructor.
 pub fn enum_constructor_specialization(
     db: &dyn Db,
     key: AstNodeKey,
-    enclosing: Arc<[GenericSubstitution]>,
+    enclosing: &GenericSpecializationInstance,
 ) -> SemanticQueryResult<EnumConstructorSpecialization> {
-    let Some(template) = enum_constructor_template(db, key)? else {
+    let Some(syntax) = db.syntax_unit(key.unit).filter(|syntax| syntax.accepts_key(db, key)) else {
         return Ok(None);
     };
-    let substitutions = template
-        .parameters
-        .iter()
-        .zip(template.arguments.iter())
-        .map(|(parameter, argument)| {
-            let shape = match argument {
-                EnumLayoutTemplateArgument::Concrete(shape) => *shape,
-                EnumLayoutTemplateArgument::EnclosingParameter(name) => {
-                    let binding = enclosing
-                        .iter()
-                        .find(|binding| binding.parameter == *name)
-                        .ok_or_else(|| SemanticError::unavailable("enum_constructor_specialization"))?;
-                    crate::semantic_contract::layouts::aggregate_shape_for_binding(db, key, binding)?
-                }
-            };
-            Ok((parameter.to_string(), shape))
-        })
-        .collect::<Result<HashMap<_, _>, SemanticError>>()?;
-    let syntax = db
-        .syntax_unit(template.constructor.declaration.unit)
-        .filter(|syntax| syntax.accepts_key(db, template.constructor.declaration))
-        .ok_or_else(|| SemanticError::unavailable("enum_constructor_specialization"))?;
-    let definition = syntax
-        .syntax_index(db)
-        .node_at(syntax.expanded_program(db), template.constructor.declaration.node)
-        .and_then(|node| node.of::<beskid_analysis::syntax::EnumDefinition>())
-        .ok_or_else(|| SemanticError::unavailable("enum_constructor_specialization"))?;
-    let layout = enum_layout_from_definition(
-        db,
-        syntax.expanded_program(db),
-        syntax.syntax_index(db),
-        template.constructor.declaration,
-        definition,
-        Some(&substitutions),
-    )?;
-    Ok(Some(EnumConstructorSpecialization { constructor: template.constructor, layout }))
+    let program = syntax.expanded_program(db);
+    let index = syntax.syntax_index(db);
+    let Some(constructor) =
+        index.node_at(program, key.node).and_then(|node| node.of::<beskid_analysis::syntax::EnumConstructorExpression>())
+    else {
+        return Ok(None);
+    };
+    let identity = applied_enum_constructor_identity(db, key, constructor, Some(enclosing))
+        .map_err(|_| SemanticError::unavailable("enum_constructor_specialization"))?;
+    let (declaration, layout) = enum_layout_for_source_identity(db, key, &identity)
+        .map_err(|_| SemanticError::unavailable("enum_constructor_specialization"))?;
+    let constructor =
+        constructor_fact(program, index, key, constructor, declaration, &layout, || {
+            SemanticError::unavailable("enum_constructor_specialization")
+        })?;
+    Ok(Some(EnumConstructorSpecialization { constructor, layout }))
 }

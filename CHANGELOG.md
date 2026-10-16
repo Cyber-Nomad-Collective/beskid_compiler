@@ -360,6 +360,24 @@ feature area.
   from the lambda's expected function result, in an expression body and in a
   `return` of a block body. Before, code generation stopped with "semantic
   query `value_abi_type` is unavailable".
+- One expected-type authority. Constructor typing, lambda typing and the
+  match scrutinee of a specialized body read the type their position requires
+  from `expected_type` (target-neutral) or `expected_type_in_environment` (in
+  the enclosing specialization: generic substitutions, lambda expected
+  signatures, method owner parameters from the receiver's identity), instead
+  of each re-deriving it from the surrounding syntax. A constructor without
+  type arguments returned from a lambda in a generic body
+  (`Scopes.Run<R>((Scope s) => { .. return match upper.Join() { Result::Ok(v)
+  => Result::Ok(merge(lower, v)), .. }; })` in `ParallelSeq.Split<T, L, R>`),
+  a `match` on a call through a typed local of such a lambda, a receiver-bound
+  constructor argument inside such a lambda, and the final statement of a
+  value block (`=> { Result::Ok(v); }`) are typed through it. Before, code
+  generation stopped with E2102 at the `match`. The syntax-walk
+  `enum_constructor_template` query and its template arguments are removed;
+  `enum_constructor_specialization`, `enum_match_specialization`,
+  `pattern_binding_specialization` and the array index specializations take
+  the enclosing `GenericSpecializationInstance`, and
+  `enum_match_call_specialization` is folded into `enum_match_specialization`.
 - A lambda that calls a contract method on a captured bounded parameter
   (`(T acc, T value) => combiner.Combine(acc, value)` with
   `where C: Associative<T>`) captures that parameter and dispatches through the

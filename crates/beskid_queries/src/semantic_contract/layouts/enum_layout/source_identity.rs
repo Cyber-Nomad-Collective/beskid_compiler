@@ -105,12 +105,12 @@ pub(in crate::semantic_contract) fn enum_layout_for_source_identity(
                 GenericSourceTypeIdentity::Nominal { .. } => {
                     AggregateFieldShape::Nominal(enum_match_source_nominal_declaration(db, call, argument)?)
                 }
-                _ => {
-                    if argument.managed_reference_kind() == ManagedReferenceKind::GcManaged {
-                        AggregateFieldShape::ManagedReference(argument.abi_type())
-                    } else {
-                        AggregateFieldShape::Scalar(argument.abi_type())
-                    }
+                // The same shapes a written application or a substitution binding yields: a
+                // primitive (string included) is a scalar payload, an array or function a
+                // managed pointer.
+                GenericSourceTypeIdentity::Abi(semantic) => AggregateFieldShape::Scalar(*semantic),
+                GenericSourceTypeIdentity::Array(_) | GenericSourceTypeIdentity::Function { .. } => {
+                    AggregateFieldShape::ManagedReference(SemanticTypeId::POINTER)
                 }
             };
             Ok((generic.node.name.clone(), shape))

@@ -281,8 +281,8 @@ pub(super) fn enum_definition(db: &dyn Db, declaration: AstNodeKey) -> Option<En
     syntax.syntax_index(db).node_at(syntax.expanded_program(db), declaration.node)?.of::<EnumDefinition>().cloned()
 }
 
-/// The declaration `enum_constructor` resolves: the contextual applied type path when the value
-/// context proves one, otherwise the constructor's own type path.
+/// The declaration `enum_constructor` resolves: the applied enum the constructor names through
+/// its written arguments or its expected type, otherwise its own non-generic declaration.
 fn enum_constructor_legality(
     db: &dyn Db,
     program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
@@ -290,9 +290,9 @@ fn enum_constructor_legality(
     site: AstNodeKey,
     constructor: &EnumConstructorExpression,
 ) -> Option<MemberReferenceFinding> {
-    let type_path = contextual_enum_constructor_type_path(db, program, index, site, constructor)
-        .unwrap_or_else(|| constructor.path.node.type_path.node.clone());
-    let declaration = resolve_type_declaration(db, site, &type_path)?;
+    let _ = (program, index);
+    let applied = applied_enum_constructor_identity(db, site, constructor, None).ok()?;
+    let declaration = crate::semantic_contract::contracts::concrete_type_or_enum_declaration(db, site, &applied)?;
     let definition = enum_definition(db, declaration)?;
     let variant_name = constructor.path.node.variant.node.name.as_str();
     let Some(variant) = definition.variants.iter().find(|variant| variant.node.name.node.name == variant_name) else {

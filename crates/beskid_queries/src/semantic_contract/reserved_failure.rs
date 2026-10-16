@@ -70,7 +70,7 @@ fn canonical_source(db: &dyn Db, key: AstNodeKey, path: &str) -> bool {
 pub fn reserved_failure_constructor(
     db: &dyn Db,
     key: AstNodeKey,
-    substitutions: Arc<[GenericSubstitution]>,
+    enclosing: Option<&GenericSpecializationInstance>,
 ) -> SemanticQueryResult<ReservedFailureConstructor> {
     use beskid_abi::runtime_source::CANONICAL_FOUNDATION_RESULTS_SOURCE_PATH;
     let Some(syntax) = db.syntax_unit(key.unit) else {
@@ -95,7 +95,7 @@ pub fn reserved_failure_constructor(
     let Some(factory) = factory else {
         return Ok(None);
     };
-    let specialized = enum_constructor_specialization(db, key, substitutions)?;
+    let specialized = enclosing.map(|enclosing| enum_constructor_specialization(db, key, enclosing)).transpose()?.flatten();
     let result = if let Some(fact) = &specialized {
         fact.constructor.clone()
     } else if let Some(fact) = enum_constructor(db, key)? {
@@ -287,7 +287,7 @@ pub fn checked_failure_destination(
     let mut constructors = Vec::new();
     for id in owner.syntax_index(db).ids_of_kind(NodeKind::EnumConstructorExpression) {
         let key = AstNodeKey { node: id, ..*factory };
-        if let Some(constructor) = reserved_failure_constructor(db, key, factory_instance.substitutions.clone())? {
+        if let Some(constructor) = reserved_failure_constructor(db, key, Some(&factory_instance))? {
             if constructor.factory() == *factory {
                 constructors.push(constructor)
             }

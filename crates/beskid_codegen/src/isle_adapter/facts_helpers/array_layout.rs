@@ -11,7 +11,7 @@ impl SyntaxNodeFacts<'_> {
             return Some(element);
         }
         let enclosing = self.current_item_specialization()?;
-        self.query(array_index_element_specialization(self.db, key, enclosing.substitutions.clone()))
+        self.query(array_index_element_specialization(self.db, key, enclosing))
     }
 
     pub(in crate::isle_adapter) fn array_elements_for_literal(&self, key: AstNodeKey) -> Option<Vec<AstNodeKey>> {

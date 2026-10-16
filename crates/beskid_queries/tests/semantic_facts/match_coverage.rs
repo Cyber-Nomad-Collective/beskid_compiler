@@ -195,7 +195,7 @@ fn matches_on_generic_record_fields_are_proven_in_their_specializations() {
                     && span_of(instance.declaration.node).is_some_and(|span| span.start <= start && start < span.end)
             })
             .unwrap_or_else(|| panic!("{scrutinee}: no specialization encloses the match"));
-        let fact = enum_match_specialization(&db, matched, instance.substitutions.clone())
+        let fact = enum_match_specialization(&db, matched, instance)
             .unwrap_or_else(|error| panic!("{scrutinee}: specialized match query: {error:?}"))
             .unwrap_or_else(|| panic!("{scrutinee}: specialized match fact"));
         let EnumMatchPatternFact::Enum(some) = &fact.arms[0].pattern else {

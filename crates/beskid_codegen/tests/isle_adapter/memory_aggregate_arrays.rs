@@ -274,12 +274,16 @@ fn parsed_empty_array_local_uses_its_direct_declared_element_abi_without_hir() {
 
 #[test]
 fn empty_array_context_rejects_inferred_and_nested_literals_and_admits_assignments() {
-    for source in ["unit Main() { let values = []; }", "u8[] Main() { u8[] values = { [] }; return values; }"] {
+    for source in ["unit Main() { let values = []; }"] {
         let (input, _isa, root) = item_fixture_with_root(source);
         let arrays = find_nodes_of_kind(input.database(), root, beskid_queries::IndexedNodeKind::ArrayLiteralExpression);
         assert_eq!(arrays.len(), 1, "fixture has one empty literal: {source}");
         assert!(input.array_static_plan(arrays[0]).is_none(), "unproven empty literal context must stay unavailable: {source}");
     }
+    // The final statement of a value block is checked against the block's declared destination.
+    let (input, _isa, root) = item_fixture_with_root("u8[] Main() { u8[] values = { [] }; return values; }");
+    let arrays = find_nodes_of_kind(input.database(), root, beskid_queries::IndexedNodeKind::ArrayLiteralExpression);
+    assert!(input.array_static_plan(arrays[0]).is_some(), "a value block forwards its declared destination");
 
     let (input, _isa, root) = item_fixture_with_root("unit Main() { mut u8[] values = []; values = []; }");
     let arrays = find_nodes_of_kind(input.database(), root, beskid_queries::IndexedNodeKind::ArrayLiteralExpression);

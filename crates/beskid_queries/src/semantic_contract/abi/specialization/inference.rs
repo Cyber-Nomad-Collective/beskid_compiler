@@ -389,7 +389,7 @@ pub(super) fn specialization_for_call_in_environment(
 /// environment can bind the owner's generics; no target-neutral annotation fact can. `None` when
 /// the receiver has no nominal identity of exactly the owner type in that environment, so the
 /// target-neutral receiver authority still decides.
-fn specialized_method_receiver_bindings(
+pub(in crate::semantic_contract) fn specialized_method_receiver_bindings(
     db: &dyn Db,
     key: AstNodeKey,
     receiver: AstNodeKey,

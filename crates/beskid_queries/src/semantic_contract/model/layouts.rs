@@ -106,21 +106,6 @@ pub struct EnumConstructorFact {
     pub payloads: Arc<[AstNodeKey]>,
 }
 
-/// One contextual generic enum argument retained until its enclosing item is specialized.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
-pub enum EnumLayoutTemplateArgument {
-    Concrete(AggregateFieldShape),
-    EnclosingParameter(Arc<str>),
-}
-
-/// Source-owned generic enum constructor whose concrete layout depends on an enclosing item.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
-pub struct EnumConstructorTemplate {
-    pub constructor: EnumConstructorFact,
-    pub parameters: Arc<[Arc<str>]>,
-    pub arguments: Arc<[EnumLayoutTemplateArgument]>,
-}
-
 /// Concrete constructor and enum layout derived from one immutable item specialization.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct EnumConstructorSpecialization {

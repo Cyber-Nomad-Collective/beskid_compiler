@@ -347,14 +347,16 @@ fn generic_array_index_element_resolves_through_the_enclosing_specialization() {
     let source = "T Get<T>(T[] values, i64 index) { return values[index]; }";
     let (db, _project, unit, generation, index) = setup(source);
     let indexed = key(unit, generation, &index, NodeKind::IndexExpression, 0);
+    let instance = beskid_queries::generic_specialization_instance(
+        &db,
+        key(unit, generation, &index, NodeKind::FunctionDefinition, 0),
+        Arc::from([beskid_queries::GenericSubstitution::inferred("T", SemanticTypeId::I64)]),
+    )
+    .expect("specialization query")
+    .expect("specialization instance");
 
     assert_eq!(
-        array_index_element_specialization(
-            &db,
-            indexed,
-            Arc::from([beskid_queries::GenericSubstitution::inferred("T", SemanticTypeId::I64)]),
-        )
-        .expect("contextual array-index element query"),
+        array_index_element_specialization(&db, indexed, &instance).expect("contextual array-index element query"),
         Some(SemanticTypeId::I64),
     );
 }

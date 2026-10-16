@@ -65,7 +65,6 @@ const KNOWN_GAPS: &[&str] = &[
     "contract_witness",
     "empty_array_literal_element_abi_type",
     "enum_constructor_specialization",
-    "enum_constructor_template",
     "enum_match_specialization",
     "expected_type",
     "for_iterator_element_type",

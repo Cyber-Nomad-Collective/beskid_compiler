@@ -797,86 +797,34 @@ fn collect_event_raise_values(
     }
 }
 
-/// The declared type of the position a literal at `node` is written into: a typed `let`, the
-/// `return` of a non-generic function or method, or a call parameter whose declared type the
-/// call fixes. Transparent expression wrappers are climbed; any other context has no
+/// The identity of the position a literal at `node` is written into, read from the one
+/// expected-type authority ([`expected_type`]): a typed `let`, a declared `return`, a call
+/// parameter the call fixes, an enum payload, a struct field, a forwarded arm or block value. A
+/// position with no expected type, or one that still names an enclosing generic, has no
 /// destination.
-fn contextual_destination_type(
-    db: &dyn Db,
-    program: &Program,
-    index: &SyntaxIndex,
-    key: AstNodeKey,
-    node: AstNodeId,
-) -> Option<(AstNodeKey, Type)> {
-    let mut position = node;
-    let context = loop {
-        let parent = parent_node(index, position)?;
-        match index.kind(parent)? {
-            NodeKind::Expression | NodeKind::GroupedExpression => position = parent,
-            _ => break parent,
-        }
-    };
-    let context_key = AstNodeKey { node: context, ..key };
-    let context_node = index.node_at(program, context)?;
-    if let Some(statement) = context_node.of::<LetStatement>() {
-        return statement.type_annotation.as_ref().map(|annotation| (context_key, annotation.node.clone()));
-    }
-    if context_node.of::<ReturnStatement>().is_some() {
-        let callable = enclosing_callable(index, context)?;
-        let callable_key = AstNodeKey { node: callable, ..key };
-        let callable_node = index.node_at(program, callable)?;
-        let declared = if let Some(function) = callable_node.of::<FunctionDefinition>() {
-            if !function.generics.is_empty() {
-                return None;
-            }
-            function.return_type.as_ref()?
-        } else if let Some(method) = callable_node.of::<MethodDefinition>() {
-            if generic_callable_parameters(db, callable_key).is_some() {
-                return None;
-            }
-            method.return_type.as_ref()?
-        } else {
-            return None;
-        };
-        return Some((callable_key, declared.node.clone()));
-    }
-    if context_node.of::<CallExpression>().is_some() {
-        let expected = expected_explicit_call_argument_type(db, program, index, AstNodeKey { node: position, ..key })?;
-        return Some((context_key, expected));
-    }
-    None
+fn contextual_destination_identity(db: &dyn Db, key: AstNodeKey, node: AstNodeId) -> Option<Identity> {
+    expected_type(db, AstNodeKey { node, ..key }).ok()?.map(|expected| expected.identity().clone())
 }
 
 /// The declaration of a generic nominal literal spelled without arguments (`Box { .. }` into a
 /// `Box<i64>` destination): `resolve_type_declaration` requires the declared arity, so the
 /// declaration is taken from the contextual destination's identity when its name is the
 /// literal's own type name.
-fn contextual_literal_declaration(
-    db: &dyn Db,
-    program: &Program,
-    index: &SyntaxIndex,
-    key: AstNodeKey,
-    node: AstNodeId,
-    spelled: &Path,
-) -> Option<AstNodeKey> {
+fn contextual_literal_declaration(db: &dyn Db, key: AstNodeKey, node: AstNodeId, spelled: &Path) -> Option<AstNodeKey> {
     let spelled_name = spelled.segments.last()?.node.name.node.name.as_str();
-    let (scope, ty) = contextual_destination_type(db, program, index, key, node)?;
-    let Type::Complex(path) = &ty else { return None };
-    if path.node.segments.last()?.node.name.node.name != spelled_name {
+    let identity = contextual_destination_identity(db, key, node)?;
+    let Identity::Nominal { qualified_name, .. } = &identity else { return None };
+    if qualified_name.rsplit("::").next() != Some(spelled_name) {
         return None;
     }
-    let identity = generic_source_type_identity(db, scope, &ty).ok()?;
-    crate::semantic_contract::contracts::concrete_declaration(db, AstNodeKey { node, ..key }, &identity)
+    concrete_declaration(db, AstNodeKey { node, ..key }, &identity)
 }
 
 /// The generic arguments a nominal literal of `declaration` (a generic `type` or `enum` with
 /// `generics`) takes: from `spelled` (its own type path with explicit arguments) when it names
 /// them, otherwise from the contextual destination resolving to the same declaration.
-#[expect(clippy::too_many_arguments, reason = "one literal argument authority with its declaration facts")]
 fn literal_generic_arguments(
     db: &dyn Db,
-    program: &Program,
-    index: &SyntaxIndex,
     key: AstNodeKey,
     node: AstNodeId,
     declaration: AstNodeKey,
@@ -885,7 +833,7 @@ fn literal_generic_arguments(
 ) -> Option<Vec<Identity>> {
     let qualified_name = stable_declaration_identity(db, declaration)?;
     let literal_key = AstNodeKey { node, ..key };
-    let applied = |scope: AstNodeKey, ty: &Type| match generic_source_type_identity(db, scope, ty).ok()? {
+    let applied = |identity: Identity| match identity {
         Identity::Nominal { qualified_name: name, arguments } if name == qualified_name && arguments.len() == generics.len() => {
             Some(arguments.to_vec())
         }
@@ -894,13 +842,9 @@ fn literal_generic_arguments(
     if let Type::Complex(path) = spelled
         && path.node.segments.iter().any(|segment| !segment.node.type_args.is_empty())
     {
-        return applied(literal_key, spelled);
+        return applied(generic_source_type_identity(db, literal_key, spelled).ok()?);
     }
-    let (scope, ty) = contextual_destination_type(db, program, index, key, node)?;
-    if type_syntax_is_enclosing_generic_parameter_reference(db, scope, &ty) {
-        return None;
-    }
-    applied(scope, &ty)
+    applied(contextual_destination_identity(db, key, node)?)
 }
 
 fn collect_struct_literal_values(
@@ -919,7 +863,7 @@ fn collect_struct_literal_values(
         // its context (`Box<i64> b = Box { .. }`) resolves its declaration through the type path.
         let Some(declaration) = resolve_nominal_layout_declaration(db, program, index, literal_key, &literal.path.node)
             .or_else(|| resolve_type_declaration(db, literal_key, &literal.path.node))
-            .or_else(|| contextual_literal_declaration(db, program, index, key, node, &literal.path.node))
+            .or_else(|| contextual_literal_declaration(db, key, node, &literal.path.node))
         else {
             continue;
         };
@@ -927,16 +871,7 @@ fn collect_struct_literal_values(
         let generics = definition.generics.iter().map(|generic| generic.node.name.as_str()).collect::<Vec<_>>();
         let arguments = (!generics.is_empty())
             .then(|| {
-                literal_generic_arguments(
-                    db,
-                    program,
-                    index,
-                    key,
-                    node,
-                    declaration,
-                    &generics,
-                    &Type::Complex(literal.path.clone()),
-                )
+                literal_generic_arguments(db, key, node, declaration, &generics, &Type::Complex(literal.path.clone()))
             })
             .flatten();
         let substitutions = arguments
@@ -976,16 +911,19 @@ fn collect_enum_constructor_values(
             continue;
         };
         let site = AstNodeKey { node, ..key };
-        let own_path = &constructor.path.node.type_path;
-        let type_path = contextual_enum_constructor_type_path(db, program, index, site, constructor)
-            .map(|path| Spanned::new(path, own_path.span))
-            .unwrap_or_else(|| own_path.clone());
-        let Some(declaration) = resolve_type_declaration(db, site, &type_path.node) else { continue };
+        let Ok(applied) = applied_enum_constructor_identity(db, site, constructor, None) else { continue };
+        let Some(declaration) = crate::semantic_contract::contracts::concrete_type_or_enum_declaration(db, site, &applied)
+        else {
+            continue;
+        };
         let Some(definition) = enum_definition(db, declaration) else { continue };
         let generics = definition.generics.iter().map(|generic| generic.node.name.as_str()).collect::<Vec<_>>();
-        let arguments = (!generics.is_empty())
-            .then(|| literal_generic_arguments(db, program, index, key, node, declaration, &generics, &Type::Complex(type_path)))
-            .flatten();
+        let arguments = match &applied {
+            Identity::Nominal { arguments, .. } if !generics.is_empty() && arguments.len() == generics.len() => {
+                Some(arguments.to_vec())
+            }
+            _ => None,
+        };
         let substitutions = arguments
             .as_ref()
             .map(|arguments| generics.iter().copied().zip(arguments.iter()).collect::<HashMap<_, _>>());

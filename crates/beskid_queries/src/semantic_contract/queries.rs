@@ -575,11 +575,6 @@ pub fn enum_constructor(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<Enu
     with_registered_syntax(db, key, enum_constructor_tracked)
 }
 
-/// Preserve a contextual generic enum constructor until its enclosing item has a concrete ABI.
-pub fn enum_constructor_template(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<EnumConstructorTemplate> {
-    with_registered_syntax(db, key, enum_constructor_template_tracked)
-}
-
 /// Return the exact source enum declaration and arms selected by one `match` expression.
 ///
 /// Arms carry recursive payload patterns and their optional `when` guard.

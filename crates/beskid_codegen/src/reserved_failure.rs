@@ -337,13 +337,12 @@ impl CodegenInput<'_> {
         key: AstNodeKey,
         specialization: Option<&GenericSpecializationInstance>,
     ) -> Option<ReservedFailureStaticPlan> {
-        let substitutions = specialization.map(|value| value.substitutions.clone()).unwrap_or_default();
-        let authority = reserved_failure_constructor(self.database(), key, substitutions.clone()).ok().flatten()?;
+        let authority = reserved_failure_constructor(self.database(), key, specialization).ok().flatten()?;
         if specialization.is_some_and(|value| value.declaration != authority.factory()) {
             return None;
         }
-        let specialized =
-            enum_constructor_specialization(self.database(), authority.result(), substitutions).ok().flatten();
+        let specialized = specialization
+            .and_then(|enclosing| enum_constructor_specialization(self.database(), authority.result(), enclosing).ok().flatten());
         let (constructor, result_layout) = if let Some(fact) = specialized {
             (fact.constructor, fact.layout)
         } else {

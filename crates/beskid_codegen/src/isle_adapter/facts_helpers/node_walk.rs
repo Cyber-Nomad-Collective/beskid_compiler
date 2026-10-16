@@ -171,7 +171,7 @@ impl SyntaxNodeFacts<'_> {
     pub(super) fn specialized_pattern_binding(&self, key: AstNodeKey) -> Option<beskid_queries::EnumMatchBindingFact> {
         (self.query(node_kind(self.db, key)) == Some(beskid_queries::IndexedNodeKind::PathExpression)).then_some(())?;
         let enclosing = self.current_item_specialization()?;
-        self.query(beskid_queries::pattern_binding_specialization(self.db, key, enclosing.substitutions.clone()))
+        self.query(beskid_queries::pattern_binding_specialization(self.db, key, enclosing))
     }
 
     pub(in crate::isle_adapter) fn literal(&self, key: AstNodeKey) -> Option<LiteralFact> {

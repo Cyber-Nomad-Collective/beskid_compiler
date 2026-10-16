@@ -97,7 +97,7 @@ impl SyntaxNodeFacts<'_> {
             && let Some(kind) = self.query(array_index_element_managed_reference_specialization(
                 self.db,
                 key,
-                enclosing.substitutions.clone(),
+                enclosing,
             ))
         {
             return Some(match kind {

@@ -41,7 +41,7 @@ pub fn canonical_empty_value(
     let Some(MoveExpressionForm::DestructiveRead { place, empty, .. }) = crate::move_expression_form(db, key)? else {
         return Ok(None);
     };
-    let identity = match enclosing.and_then(|enclosing| field_read_identity_in_environment(db, place, &enclosing.substitutions)) {
+    let identity = match enclosing.and_then(|enclosing| field_read_identity_in_environment(db, place, enclosing)) {
         Some(identity) => identity?,
         None => generic_source_expression_identity(db, place)?,
     };

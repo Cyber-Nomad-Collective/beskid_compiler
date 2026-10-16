@@ -31,12 +31,15 @@ pub(in crate::semantic_contract) fn enum_match_tracked(
 /// Materialize a generic match through the immutable specialization of its enclosing item.
 ///
 /// The ordinary `enum_match` fact remains target-neutral and unavailable when a generic payload's
-/// ownership cannot be proven. This explicit path applies the call-derived substitutions before
-/// constructing layouts or bindings, so pointer-shaped nominal/native identities are never guessed.
+/// ownership cannot be proven. This path reads the scrutinee in the instance's environment (a
+/// typed local through the substitutions, a pattern binding through its specialized match, a
+/// field read, a call, member, index or projected path through its specialized source identity)
+/// before constructing layouts or bindings, so pointer-shaped nominal/native identities are
+/// never guessed. `Ok(None)` for a scrutinee shape the environment does not type.
 pub fn enum_match_specialization(
     db: &dyn Db,
     key: AstNodeKey,
-    enclosing: Arc<[GenericSubstitution]>,
+    enclosing: &GenericSpecializationInstance,
 ) -> SemanticQueryResult<EnumMatchFact> {
     let syntax = db
         .syntax_unit(key.unit)
@@ -48,72 +51,12 @@ pub fn enum_match_specialization(
         .node_at(program, key.node)
         .and_then(|node| node.of::<beskid_analysis::syntax::MatchExpression>())
         .ok_or_else(|| SemanticError::unavailable("enum_match_specialization"))?;
-    let (declaration, layout) =
-        enum_match_scrutinee_layout_in_environment(db, program, index, key, expression, &enclosing)?
-            .ok_or_else(|| SemanticError::unavailable("enum_match_specialization"))?;
-    let environment =
-        enum_match_source_environment(db, program, index, key, expression, declaration, Some(&enclosing))?;
-    let context = EnumMatchMaterializer { db, program, index, key, environment: &environment };
-    materialize_enum_match(&context, expression, declaration, layout).map(Some)
-}
-
-/// Materialize a match whose scrutinee is a direct call that the enclosing specialization has
-/// already resolved (`match NestedType<S>(...)` inside the `NestedType<Shape>` instance).
-///
-/// The callee's own instance substitutes its declared return type into an exact applied source
-/// identity, which alone binds the match's pattern bindings. The scrutinee must be that exact
-/// call: any other shape, or a non-enum result, stays unavailable.
-pub fn enum_match_call_specialization(
-    db: &dyn Db,
-    key: AstNodeKey,
-    callee: &GenericSpecializationInstance,
-) -> SemanticQueryResult<EnumMatchFact> {
-    let unavailable = || SemanticError::unavailable("enum_match_specialization");
-    let syntax = db.syntax_unit(key.unit).filter(|syntax| syntax.accepts_key(db, key)).ok_or_else(unavailable)?;
-    let program = syntax.expanded_program(db);
-    let index = syntax.syntax_index(db);
-    let expression = index
-        .node_at(program, key.node)
-        .and_then(|node| node.of::<beskid_analysis::syntax::MatchExpression>())
-        .ok_or_else(unavailable)?;
-    if !matches!(super::scrutinee::ungrouped_scrutinee(expression), beskid_analysis::syntax::Expression::Call(_)) {
+    let Some((declaration, layout)) =
+        enum_match_scrutinee_layout_in_environment(db, program, index, key, expression, enclosing)?
+    else {
         return Ok(None);
-    }
-    let scrutinee = index
-        .direct_child_id(program, key.node, beskid_analysis::syntax_query::DynNodeRef::from(expression.scrutinee.as_ref()))
-        .map(|node| AstNodeKey { node: normalized_expression_node(index, node), ..key })
-        .ok_or_else(unavailable)?;
-    match call_lowering(db, scrutinee)? {
-        Some(CallLowering::Direct(declaration)) if declaration == callee.declaration => {}
-        _ => return Ok(None),
-    }
-    let callee_syntax =
-        db.syntax_unit(callee.declaration.unit).filter(|syntax| syntax.accepts_key(db, callee.declaration)).ok_or_else(unavailable)?;
-    let callee_node = callee_syntax
-        .syntax_index(db)
-        .node_at(callee_syntax.expanded_program(db), callee.declaration.node)
-        .ok_or_else(unavailable)?;
-    let return_type = callee_node
-        .of::<beskid_analysis::syntax::FunctionDefinition>()
-        .and_then(|function| function.return_type.as_ref())
-        .or_else(|| callee_node.of::<beskid_analysis::syntax::MethodDefinition>().and_then(|method| method.return_type.as_ref()))
-        .ok_or_else(unavailable)?;
-    let substitutions = callee
-        .substitutions
-        .iter()
-        .map(|binding| (binding.parameter.as_ref(), binding.source_identity()))
-        .collect::<HashMap<_, _>>();
-    let identity =
-        generic_source_type_identity_with_substitutions(db, callee.declaration, &return_type.node, &substitutions)?;
-    let (declaration, layout) = enum_layout_for_source_identity(db, key, &identity)?;
-    let enum_syntax =
-        db.syntax_unit(declaration.unit).filter(|syntax| syntax.accepts_key(db, declaration)).ok_or_else(unavailable)?;
-    let definition = enum_syntax
-        .syntax_index(db)
-        .node_at(enum_syntax.expanded_program(db), declaration.node)
-        .and_then(|node| node.of::<beskid_analysis::syntax::EnumDefinition>())
-        .ok_or_else(unavailable)?;
-    let environment = enum_match_environment_for_applied_identity(definition, &identity)?;
+    };
+    let environment = enum_match_source_environment(db, program, index, key, expression, declaration, Some(enclosing))?;
     let context = EnumMatchMaterializer { db, program, index, key, environment: &environment };
     materialize_enum_match(&context, expression, declaration, layout).map(Some)
 }

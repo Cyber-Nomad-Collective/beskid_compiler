@@ -35,7 +35,7 @@ pub(in crate::semantic_contract) use facts::{
 };
 
 pub(in crate::semantic_contract) use generics::{
-    call_explicit_member_type_arguments, expected_explicit_call_argument_type, explicit_generic_type_argument_syntax, exported_generic_type_named,
+    call_explicit_member_type_arguments, explicit_generic_type_argument_syntax, exported_generic_type_named,
     expression_is_lambda, function_declares_generics, generic_call_instantiation_for_node,
     generic_call_instantiation_tracked, generic_call_specialization_tracked, generic_call_template_tracked,
     generic_call_uses_parameter_type_arguments, generic_callable_owner_count, generic_callable_parameters, method_own_generic_names, generic_nominal_method_receiver_tracked,
@@ -43,7 +43,7 @@ pub(in crate::semantic_contract) use generics::{
     generic_source_type_identity,
     generic_source_type_identity_with_substitutions, imported_call_receiver_exists,
     imported_generic_nominal_receiver_requires_instantiation, source_expression_unavailable,
-    stable_declaration_identity, substitute_explicit_type, type_syntax_is_enclosing_generic_parameter_reference,
+    stable_declaration_identity, type_syntax_is_enclosing_generic_parameter_reference,
     type_syntax_is_generic_parameter_reference,
 };
 

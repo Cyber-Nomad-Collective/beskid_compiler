@@ -53,9 +53,7 @@ pub(in crate::semantic_contract) fn generic_source_expression_identity(
         return generic_source_path_identity(db, normalized_key, &literal.path.node);
     }
     if let Some(constructor) = node.of::<beskid_analysis::syntax::EnumConstructorExpression>() {
-        let path = contextual_enum_constructor_type_path(db, program, index, normalized_key, constructor)
-            .unwrap_or_else(|| constructor.path.node.type_path.node.clone());
-        return generic_source_path_identity(db, normalized_key, &path);
+        return applied_enum_constructor_identity(db, normalized_key, constructor, None);
     }
     if node.of::<beskid_analysis::syntax::LambdaExpression>().is_some() {
         return lambda_source_identity(db, program, index, normalized_key);
