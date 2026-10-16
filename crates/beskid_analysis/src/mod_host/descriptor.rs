@@ -392,13 +392,20 @@ pub fn native_mod_runtime_binding(
         shared_library_sha256: native_mod_file_sha256(&provider.shared_library)?,
     })
 }
-/// Content-addressed artifact key: SHA-256 of the serialized descriptor identity. The cache
-/// directory `<root>/.beskid/obj/mods/<package>/<key>/<target>/` is named by this key, so a cache
-/// entry whose directory name differs from its recomputed key is never reused.
+/// Content-addressed artifact key: the first 32 lowercase hex digits (128 bits) of the SHA-256 of
+/// the serialized descriptor identity. The cache directory
+/// `<root>/.beskid/obj/mods/<package>/<key>/<target>/` is named by this key, so a cache entry whose
+/// directory name differs from its recomputed key is never reused. 128 bits keep second-preimage
+/// resistance far beyond reach (NIST SP 800-107 Rev. 1, section 5.1) and keep the sealed Corelib
+/// Mod entries of an installed toolchain well inside the Windows MAX_PATH limit.
 pub fn native_mod_artifact_key(descriptor: &ModArtifactDescriptor) -> Result<String> {
     // `artifact_key` and `artifact_dir` are `serde(skip)`, so the key covers identity only.
-    Ok(format!("{:x}", Sha256::digest(serde_json::to_vec(descriptor)?)))
+    let digest = format!("{:x}", Sha256::digest(serde_json::to_vec(descriptor)?));
+    Ok(digest[..NATIVE_MOD_ARTIFACT_KEY_HEX_LEN].to_owned())
 }
+
+/// Length in hex digits of a native Mod cache key and of its cache directory name.
+pub const NATIVE_MOD_ARTIFACT_KEY_HEX_LEN: usize = 32;
 
 /// Runtime-kit profile that native Mods are built, cached and loaded for: `BESKID_RUNTIME_KIT_PROFILE`
 /// when set, otherwise debug (the profile installed `beskid build` and `beskid run` select).

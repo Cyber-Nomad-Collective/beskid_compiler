@@ -160,6 +160,12 @@ feature area.
 
 ### Changed
 
+- A native Mod cache entry is named by a 32-digit key, the first 128 bits of
+  the SHA-256 of its descriptor identity (before: all 64 digits). The deepest
+  file of a sealed Corelib Mod entry is 32 characters shorter below an
+  installed toolchain, so a Windows install directory longer than
+  `C:\Program Files\Beskid\` still stays inside MAX_PATH (OpenSpec
+  `v06-release-gate-calibration` task 6.6).
 - `beskid_cli`, `beskid_lsp` and `beskid_up` carry version 0.6.6 in their
   manifests and `Cargo.lock`.
 - The runtime provenance audit accepts a manifest-declared `beskid_rt_v5_*`
