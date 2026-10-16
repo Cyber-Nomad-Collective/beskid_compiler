@@ -213,7 +213,7 @@ fn fixed_corelib_shapes_and_published_handles_are_not_dead() {
         // The parameter is handed to another callee after growth.
         "unit Consume(u8[] bytes) { return; } unit Push(mut u8[] buffer, u8 value) { Array.Append<u8>(buffer, value); Consume(buffer); }",
         // The parameter is published through a struct field.
-        "type Box { u8[] items, } Box Push(mut u8[] buffer, u8 value) { Array.Append<u8>(buffer, value); return Box { items: buffer }; }",
+        "type Box { u8[] items, } Box Push(move u8[] buffer, u8 value) { Array.Append<u8>(buffer, value); return Box { items: buffer }; }",
         // The parameter is published before growth: a binding copy can outlive the call.
         "i64 Push(mut u8[] buffer, u8 value) { u8[] before = buffer; Array.Append<u8>(buffer, value); return Array.Len<u8>(before); }",
         // The parameter is captured by a nested lambda.

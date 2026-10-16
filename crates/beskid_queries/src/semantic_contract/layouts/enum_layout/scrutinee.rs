@@ -117,9 +117,34 @@ pub(in crate::semantic_contract) fn enum_match_scrutinee_layout(
         };
         return Some(pattern_binding_scrutinee_layout(db, key, &binding));
     }
+    if let Some(scrutinee) = lambda_parameter_scrutinee(program, index, key, expression) {
+        return Some(enum_layout_for_expression_result(db, scrutinee));
+    }
     let path = enum_match_scrutinee_explicit_type_path(program, index, key, expression)?;
     let declaration = resolve_type_declaration(db, key, &path)?;
     Some(instantiated_enum_layout_for_path(db, key, &path).map(|layout| (declaration, layout)))
+}
+
+/// The scrutinee expression of `match p` where `p` is a lambda parameter, typed or not. Its
+/// identity comes from the binding-identity authority (`generic_source_local_identity`: the written
+/// type, or the lambda's expected function type for an untyped parameter), applied in the
+/// enclosing specialization when there is one.
+fn lambda_parameter_scrutinee(
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    key: AstNodeKey,
+    expression: &beskid_analysis::syntax::MatchExpression,
+) -> Option<AstNodeKey> {
+    let local = enum_match_scrutinee_local_declaration(program, index, key, expression)?;
+    if index.kind(parent_node(index, local)?)? != beskid_analysis::syntax_query::NodeKind::LambdaParameter {
+        return None;
+    }
+    let scrutinee = index.direct_child_id(
+        program,
+        key.node,
+        beskid_analysis::syntax_query::DynNodeRef::from(expression.scrutinee.as_ref()),
+    )?;
+    Some(AstNodeKey { node: normalized_expression_node(index, scrutinee), ..key })
 }
 
 /// The applied enum layout of a scrutinee that is itself an enclosing match's pattern binding
@@ -271,6 +296,10 @@ pub(super) fn enum_match_source_environment(
         let identity = binding.source_identity.as_ref().ok_or_else(|| SemanticError::unavailable("enum_match"))?;
         return enum_match_environment_for_applied_identity(definition, identity);
     }
+    if let Some(scrutinee) = lambda_parameter_scrutinee(program, index, key, expression) {
+        let identity = specialized_source_expression_identity(db, scrutinee, enclosing)?;
+        return enum_match_environment_for_applied_identity(definition, &identity);
+    }
     let Some(path) = enum_match_scrutinee_explicit_type_path(program, index, key, expression) else {
         // Other supported scrutinee shapes retain their existing conservative field inference.
         // In particular, pointer-shaped generic fields remain unavailable rather than guessed.
@@ -339,6 +368,10 @@ pub(super) fn enum_match_scrutinee_layout_in_environment(
         return enum_layout_for_source_identity(db, key, &identity).map(Some);
     }
 
+    if let Some(scrutinee) = lambda_parameter_scrutinee(program, index, key, expression) {
+        let identity = specialized_source_expression_identity(db, scrutinee, Some(enclosing))?;
+        return enum_layout_for_source_identity(db, key, &identity).map(Some);
+    }
     let local = enum_match_scrutinee_local_declaration(program, index, key, expression)
         .ok_or_else(|| SemanticError::unavailable("enum_match_specialization"))?;
     if index.kind(parent_node(index, local).ok_or_else(|| SemanticError::unavailable("enum_match_specialization"))?)

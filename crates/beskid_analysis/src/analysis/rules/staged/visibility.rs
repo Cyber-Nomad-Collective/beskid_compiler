@@ -581,6 +581,49 @@ mod tests {
     }
 
     #[test]
+    fn qualified_private_where_bound_contract_is_visible_inside_its_module() {
+        let source = r#"
+            mod A {
+                contract Reader { i64 Read(); }
+                i64 Consume<T>(T value) where T: A.Reader { return 0; }
+                mod Inner {
+                    i64 Nested<T>(T value) where T: A.Reader { return 0; }
+                }
+            }
+            unit Main() { return; }
+        "#;
+
+        let result = analyze(source);
+
+        assert!(
+            result.diagnostics.iter().all(|diag| diag.code.as_deref() != Some("E1107")),
+            "the declaring module and its children reach a private contract by a qualified path: {:?}",
+            result.diagnostics
+        );
+    }
+
+    #[test]
+    fn qualified_private_where_bound_contract_stays_private_to_a_sibling_module() {
+        let source = r#"
+            mod A {
+                contract Reader { i64 Read(); }
+            }
+            mod B {
+                i64 Consume<T>(T value) where T: A.Reader { return 0; }
+            }
+            unit Main() { return; }
+        "#;
+
+        let result = analyze(source);
+
+        assert!(
+            result.diagnostics.iter().any(|diag| diag.code.as_deref() == Some("E1107")),
+            "a sibling module cannot reach a private contract: {:?}",
+            result.diagnostics
+        );
+    }
+
+    #[test]
     fn resolved_public_items_mark_their_module_imports_used() {
         let results =
             parse_program("pub enum Result<T, E> { Ok(T value), Error(E error) }").expect("parse Core.Results");

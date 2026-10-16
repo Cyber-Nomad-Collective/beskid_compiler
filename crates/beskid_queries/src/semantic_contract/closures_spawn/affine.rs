@@ -117,8 +117,11 @@ enum UseContext {
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Role {
     Read,
-    /// `let y = x`, `y = x` or a literal initializer: consumes silently.
+    /// `let y = x` or `y = x`: consumes silently; a borrowed source makes the new name borrowed.
     Alias,
+    /// A struct, array or enum literal initializer: consumes an owning name silently (P4-1);
+    /// a borrowed name is stored into the new object and escapes (E1241).
+    Construct,
     /// `return x`: consumes silently.
     Return,
     /// A `move` parameter or the value of `exchange`: needs `move`.
@@ -583,7 +586,11 @@ impl<'a> Analysis<'a> {
                         UseContext::AssignValue { target_is_local }
                     }
                 }
-                Some(NodeKind::StructLiteralField | NodeKind::ArrayLiteralExpression) => UseContext::Construction,
+                Some(
+                    NodeKind::StructLiteralField
+                    | NodeKind::ArrayLiteralExpression
+                    | NodeKind::EnumConstructorExpression,
+                ) => UseContext::Construction,
                 _ => UseContext::Other,
             };
         }
@@ -921,7 +928,8 @@ impl<'a> Analysis<'a> {
         } else {
             match destination {
                 UseContext::Argument(call, position) if self.parameter_movable(call, position) => Role::MoveParameter,
-                UseContext::LetValue(_) | UseContext::Construction => Role::Alias,
+                UseContext::LetValue(_) => Role::Alias,
+                UseContext::Construction => Role::Construct,
                 UseContext::AssignValue { target_is_local: true } => Role::Alias,
                 UseContext::AssignValue { target_is_local: false } => Role::Store,
                 UseContext::ReturnValue => Role::Return,
@@ -954,7 +962,7 @@ impl<'a> Analysis<'a> {
                     self.consume(declaration, site, &name, branches, &loops);
                 }
             }
-            Role::Return | Role::OwningReceiver => {
+            Role::Return | Role::OwningReceiver | Role::Construct => {
                 if borrowed_here {
                     self.push(AffineFindingKind::BorrowEscapes, site, &name, None, Some(declaration), false);
                 } else {

@@ -333,6 +333,38 @@ feature area.
 
 ### Fixed
 
+- A struct, array or enum literal that stores a borrowed name (`TestStream {
+  state: state }` with a borrowed `u8[] state`) is E1241: a borrowed value
+  cannot be stored. An owning name is consumed silently, so enum constructor
+  arguments now consume too. Corelib readers over caller bytes (codec
+  `Cursor`, x509 `Der`, `QuicWire.NewReader`, `BufferReader`, TLS and QUIC
+  secrets and IDs) store their own copy; writers (`QuicWire.NewWriter`,
+  `BufferWriter`) take the buffer by `move` and return it with `TakeBuffer`;
+  hand-offs take their arrays by `move`. New `Array.Copy<T>`. Generated SDK
+  factories declare `move` on Moved parameters.
+- A `match` on a lambda parameter (`(i64 index, Color color) => match color
+  { ... }`) is typed by the parameter's binding identity, also inside a
+  generic body; it no longer ends in an internal compiler error.
+- A `unit` local (`T value = __isolate_join_value<T>(id)` at `T = unit`, so
+  `Task<unit>.Join()`) has no storage: its initializer is evaluated for its
+  effects and its reads are `unit` values. It no longer fails with E2102.
+- The type descriptor of a record or enum carries `TYPE_DESCRIPTOR_IMMUTABLE` exactly when its transfer class is Shared in that
+  specialization, including a type that is Shared only through a type argument (`Sequenced<string>`; `Sequenced<string[]>` stays
+  unflagged).
+- A qualified path into the current module or one of its ancestors reaches
+  that module's private items, as the unqualified lookup does: `mod A {
+  contract Reader {} ... where T: A.Reader }` is no longer reported as a
+  private cross-module access (E1107). A sibling module still cannot reach
+  them.
+- `NativeImageSet::verify_image_address` and `verify_provider_address` take
+  the address as an identity (`usize`). The loader lookup (`dladdr`,
+  `GetModuleHandleExW`) never dereferences it, so the functions are safe and
+  clippy's `not_unsafe_ptr_arg_deref` no longer fails the build.
+- Test fixtures follow the v0.6.2 move rules: the engine Foundation I/O
+  fixture reads its counters through the record that owns them, the Fiber
+  transfer fixture moves its byte buffer into the spawned closure, and the
+  serialization test encoder copies a borrowed `u8[]` instead of storing it
+  (E1241).
 - Every Core.Parallel task that ran on a real isolate failed with
   `transit refused 0x0000000000000000`. The transit walk reported a refusal
   as the encoded value 1, which is also the encoding of the first object of

@@ -51,7 +51,7 @@ impl IsleContext<'_, '_, '_, '_> {
         let mut parameters = source_signature.params.iter();
         let trivial = argument_keys.iter().map(|argument| self.is_trivial_call_argument(*argument)).collect::<Vec<_>>();
         for (position, argument) in argument_keys.into_iter().enumerate() {
-            if self.facts.semantic_type(argument) == Some(beskid_queries::SemanticTypeId::UNIT) {
+            if self.is_unit_value(argument) {
                 self.lower_expression_for_effect(argument)?;
                 continue;
             }
