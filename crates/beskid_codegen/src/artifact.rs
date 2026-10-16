@@ -53,6 +53,12 @@ pub struct CodegenArtifact {
     /// authorization path, which rejects a name collision with a runtime-owned symbol.
     pub trusted_extern_imports: Vec<ExternImport>,
     pub exports: Vec<ExportEntry>,
+    /// Exact lowered name (`LoweredFunction::name`) of the single program entry this artifact was
+    /// lowered for, issued by the entrypoint lowering from the resolved entry item. Executable
+    /// emission identifies the program entry by this identity and never by a function's
+    /// unqualified source name, so another callable named like the entry (for example a method
+    /// `Main` on a library type) is an ordinary function. `None` for library and multi-entry artifacts.
+    pub executable_entry: Option<String>,
 }
 
 /// Artifact-owned state shared by generated function emitters.

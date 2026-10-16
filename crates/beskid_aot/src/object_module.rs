@@ -24,10 +24,11 @@ use crate::error::{AotError, AotResult};
 /// Fixed C boundary called by the portable executable bootstrap.
 pub(crate) const EXECUTABLE_PROGRAM_ENTRY: &str = "beskid_program_main";
 
-/// One logical Beskid function remapped to the executable-host program boundary.
+/// One exact lowered Beskid function remapped to the executable-host program boundary.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct ExecutableEntrySymbol<'a> {
-    pub(crate) logical: &'a str,
+    /// Exact `LoweredFunction::name` of the selected entry; never an unqualified source name.
+    pub(crate) function: &'a str,
     pub(crate) symbol: &'a str,
 }
 
@@ -36,7 +37,7 @@ pub(crate) fn emitted_object_symbol(
     exports: &[beskid_codegen::ExportEntry],
     executable_entry: Option<ExecutableEntrySymbol<'_>>,
 ) -> String {
-    if let Some(entry) = executable_entry.filter(|entry| name.split('#').next() == Some(entry.logical)) {
+    if let Some(entry) = executable_entry.filter(|entry| name == entry.function) {
         entry.symbol.to_owned()
     } else if executable_entry.is_some()
         && name.split('#').next() == Some("Main")
@@ -485,7 +486,7 @@ mod tests {
 
     #[test]
     fn executable_entry_remapping_only_changes_the_selected_logical_entry() {
-        let entry = ExecutableEntrySymbol { logical: "Start", symbol: EXECUTABLE_PROGRAM_ENTRY };
+        let entry = ExecutableEntrySymbol { function: "Start#0", symbol: EXECUTABLE_PROGRAM_ENTRY };
 
         assert_eq!(emitted_object_symbol("Start#0", &[], Some(entry)), EXECUTABLE_PROGRAM_ENTRY);
         // Non-entry functions keep their own identity, in the mangled link-safe form that
@@ -499,6 +500,16 @@ mod tests {
             abi: "C".into(),
         }];
         assert_eq!(emitted_object_symbol("Main#0", &exports, Some(entry)), "PublicHelper");
+    }
+
+    #[test]
+    fn program_entry_is_identified_by_exact_function_not_by_unqualified_name() {
+        // Two callables named `Main`: the program's free function and another type's method.
+        let entry = ExecutableEntrySymbol { function: "Main#syntax_a_7", symbol: EXECUTABLE_PROGRAM_ENTRY };
+        assert_eq!(emitted_object_symbol("Main#syntax_a_7", &[], Some(entry)), EXECUTABLE_PROGRAM_ENTRY);
+        let other = emitted_object_symbol("Main#syntax_b_3", &[], Some(entry));
+        assert_ne!(other, EXECUTABLE_PROGRAM_ENTRY);
+        assert_ne!(other, "main");
     }
 }
 

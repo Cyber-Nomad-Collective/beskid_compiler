@@ -214,6 +214,13 @@ feature area.
 
 ### Fixed
 
+- An application that calls another callable named `Main` (for example
+  `Core.Parallel.Isolate.Main()`) no longer fails with `E4002` (signature
+  incompatible with `beskid_program_main`). The executable program entry is
+  now identified by the exact function the entry lowering resolved, issued on
+  the artifact as `executable_entry`, instead of by the unqualified name
+  `Main`; entry lookup considers only free functions and tests, never methods,
+  and searches the entry unit first.
 - `beskid check --project` on a manifest with several targets analyzes every
   target (App, Lib and Test), not only the default one, so sources reachable
   only from a per-suite test entry can no longer pass the check while failing

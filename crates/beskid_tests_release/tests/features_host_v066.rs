@@ -89,7 +89,7 @@ i64 ScopeValue(Result<i64, ParallelError> result) {
 }
 
 i32 Main() {
-    Isolate caller = Isolate.Current();
+    Isolate caller = Isolate.Main();
     Result<i64, ParallelError> result = Parallel.Scope<i64>((Core.Parallel.Scopes.Scope s) => {
         Task<bool> placement = s.Spawn(() => Isolate.Current().Equals(caller));
         Task<i64> left = s.Spawn(() => 20_i64);

@@ -368,7 +368,9 @@ fn lower_syntax_assembly_entrypoint_with_composition(
     let lowered =
         lower_syntax_assembly_entrypoints_with_composition(db, assembly, &[entrypoint.to_owned()], target, isa, front)?;
     let entry = lowered.entries.into_iter().next().expect("one checked selection");
-    Ok(PreparedSyntaxEntrypoint { artifact: lowered.artifact, symbol: entry.symbol, return_type: entry.return_type })
+    let mut artifact = lowered.artifact;
+    artifact.executable_entry = Some(entry.symbol.clone());
+    Ok(PreparedSyntaxEntrypoint { artifact, symbol: entry.symbol, return_type: entry.return_type })
 }
 
 fn lower_syntax_assembly_entrypoints_with_composition(
@@ -429,7 +431,7 @@ fn lower_syntax_assembly_entrypoints_with_composition(
     let mut items = Vec::new();
     let mut entries = Vec::with_capacity(entrypoints.len());
     for entrypoint in entrypoints {
-        let entry = find_entrypoint(db, &input, entrypoint)
+        let entry = find_entrypoint(db, &input, entry_root, entrypoint)
             .ok_or_else(|| anyhow::anyhow!("Missing entrypoint `{entrypoint}`"))?;
         let entry_label = assembly
             .units
@@ -791,12 +793,26 @@ fn contains_spawn(db: &dyn beskid_queries::Db, key: AstNodeKey) -> bool {
     child_nodes(db, key).ok().flatten().is_some_and(|children| children.iter().any(|child| contains_spawn(db, *child)))
 }
 
-fn find_entrypoint(db: &BeskidDatabase, input: &CodegenInput<'_>, entrypoint: &str) -> Option<AstNodeKey> {
-    input.roots().iter().copied().find_map(|root| find_item(db, root, entrypoint))
+/// Resolve an entry name to its item: only free functions and tests can be program entries
+/// (never a method or contract signature of the same name), and the entry unit is searched first.
+fn find_entrypoint(
+    db: &BeskidDatabase,
+    input: &CodegenInput<'_>,
+    entry_root: AstNodeKey,
+    entrypoint: &str,
+) -> Option<AstNodeKey> {
+    std::iter::once(entry_root)
+        .chain(input.roots().iter().copied().filter(|root| *root != entry_root))
+        .find_map(|root| find_item(db, root, entrypoint))
 }
 
 fn find_item(db: &BeskidDatabase, key: AstNodeKey, entrypoint: &str) -> Option<AstNodeKey> {
-    if item_name(db, key).ok().flatten().as_deref() == Some(entrypoint) {
+    if item_name(db, key).ok().flatten().as_deref() == Some(entrypoint)
+        && matches!(
+            node_kind(db, key).ok().flatten(),
+            Some(beskid_queries::IndexedNodeKind::FunctionDefinition | beskid_queries::IndexedNodeKind::TestDefinition)
+        )
+    {
         return Some(key);
     }
     child_nodes(db, key).ok().flatten()?.iter().copied().find_map(|child| find_item(db, child, entrypoint))

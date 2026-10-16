@@ -28,16 +28,14 @@ pub(super) fn emit_object_stage(req: &AotBuildRequest) -> AotResult<ObjectStageR
 
     let entry_adapter = core_args_entry_adapter(&req.artifact, &target.triple)?;
     let exports = req.artifact.exports.clone();
+    // The program entry is the exact function the entrypoint lowering resolved, never a function
+    // that merely shares its unqualified name (`req.entrypoint` only names it for diagnostics).
     let executable_entry = if req.output_kind == BuildOutputKind::Exe {
-        if req
-            .artifact
-            .functions
-            .iter()
-            .any(|function| function.name.split('#').next() == Some(req.entrypoint.as_str()))
-        {
-            Some(ExecutableEntrySymbol { logical: &req.entrypoint, symbol: EXECUTABLE_PROGRAM_ENTRY })
-        } else {
-            return Err(crate::error::AotError::MissingEntrypoint { symbol: req.entrypoint.clone() });
+        match req.artifact.executable_entry.as_deref() {
+            Some(function) if req.artifact.functions.iter().any(|candidate| candidate.name == function) => {
+                Some(ExecutableEntrySymbol { function, symbol: EXECUTABLE_PROGRAM_ENTRY })
+            }
+            _ => return Err(crate::error::AotError::MissingEntrypoint { symbol: req.entrypoint.clone() }),
         }
     } else {
         None
@@ -46,19 +44,20 @@ pub(super) fn emit_object_stage(req: &AotBuildRequest) -> AotResult<ObjectStageR
         if let Some(export) = exports.iter().find(|export| {
             matches!(export.exported_symbol.as_str(), "main" | "wmain")
                 || (export.exported_symbol == entry.symbol
-                    && export.beskid_name.split('#').next() != Some(entry.logical))
+                    && export.beskid_name.split('#').next() != entry.function.split('#').next())
         }) {
             return Err(crate::error::AotError::InvalidRequest {
                 message: format!("explicit export `{}` collides with the executable bootstrap", export.exported_symbol),
             });
         }
         if let Some(export) = exports.iter().find(|export| {
-            export.beskid_name.split('#').next() == Some(entry.logical) && export.exported_symbol != entry.symbol
+            export.beskid_name.split('#').next() == entry.function.split('#').next()
+                && export.exported_symbol != entry.symbol
         }) {
             return Err(crate::error::AotError::InvalidRequest {
                 message: format!(
                     "selected executable entry `{}` cannot export alias `{}`; its host boundary is `{}`",
-                    entry.logical, export.exported_symbol, entry.symbol,
+                    entry.function.split('#').next().unwrap_or(entry.function), export.exported_symbol, entry.symbol,
                 ),
             });
         }
@@ -104,7 +103,7 @@ pub(super) fn emit_object_stage(req: &AotBuildRequest) -> AotResult<ObjectStageR
             .artifact
             .functions
             .iter()
-            .find(|function| function.name.split('#').next() == Some(req.entrypoint.as_str()))
+            .find(|function| executable_entry.is_some_and(|entry| function.name == entry.function))
             .is_some_and(|function| function.function.signature.returns.is_empty());
         vec![compile_executable_bootstrap(
             &target.triple,
@@ -142,6 +141,7 @@ mod tests {
         FuncCursor::new(&mut function).at_bottom(block).ins().return_(&[]);
         let artifact = CodegenArtifact {
             functions: vec![LoweredFunction { name: "Start#0".into(), function }],
+            executable_entry: Some("Start#0".into()),
             ..Default::default()
         };
         let temp = tempfile::tempdir().unwrap();
@@ -166,6 +166,43 @@ mod tests {
             }),
             "the host still needs a defined external linkage symbol"
         );
+    }
+
+    /// A second callable that shares only the entry's unqualified name (here the `Start` of another
+    /// type, returning `i64`) is an ordinary function: it must not take the program-entry symbol.
+    #[test]
+    fn same_named_non_entry_function_is_not_emitted_as_the_program_entry() {
+        let (_temp, mut request) = custom_entry_request();
+        let mut other = cranelift_codegen::ir::Function::new();
+        other.signature.returns.push(cranelift_codegen::ir::AbiParam::new(cranelift_codegen::ir::types::I64));
+        let block = other.dfg.make_block();
+        other.layout.append_block(block);
+        let mut cursor = FuncCursor::new(&mut other).at_bottom(block);
+        let value = cursor.ins().iconst(cranelift_codegen::ir::types::I64, 7);
+        cursor.ins().return_(&[value]);
+        // Listed before the entry and sharing its source name.
+        request.artifact.functions.insert(0, LoweredFunction { name: "Start#1".into(), function: other });
+        let result = emit_object_stage(&request).expect("only the resolved entry takes the host boundary");
+        let bytes = std::fs::read(&result.object_path).unwrap();
+        let object = object::File::parse(bytes.as_slice()).unwrap();
+        let entries = object
+            .symbols()
+            .filter(|symbol| symbol.name().is_ok_and(|name| name.trim_start_matches('_') == "beskid_program_main"))
+            .count();
+        assert_eq!(entries, 1, "exactly one program entry");
+        assert!(
+            object.symbols().any(|symbol| symbol.name().is_ok_and(|name| name.contains("Start_H23_1"))),
+            "the same-named function keeps its own internal identity"
+        );
+    }
+
+    #[test]
+    fn executable_without_an_issued_entry_identity_fails_closed() {
+        let (_temp, mut request) = custom_entry_request();
+        request.artifact.executable_entry = None;
+        assert!(matches!(emit_object_stage(&request), Err(crate::error::AotError::MissingEntrypoint { .. })));
+        request.artifact.executable_entry = Some("Start#9".into());
+        assert!(matches!(emit_object_stage(&request), Err(crate::error::AotError::MissingEntrypoint { .. })));
     }
 
     #[test]
