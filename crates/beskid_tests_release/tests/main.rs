@@ -8,4 +8,5 @@
 mod bsol_host_v06;
 mod cli_journeys_v06;
 mod dependency_journeys_v06;
+mod features_host_v066;
 mod serialization_host_v06;

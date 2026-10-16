@@ -1395,7 +1395,7 @@ impl CliProject {
         tool_arguments: &[OsString],
         environment: &[(&str, OsString)],
     ) -> std::process::Output {
-        run_glue_build(cli, &self.manifest, &self.consumer(), tool_arguments, environment)
+        run_glue_build(cli, &self.manifest, CONSUMER_LIBRARY, &self.consumer(), tool_arguments, environment)
     }
 
     fn export_source(&self) -> PathBuf {
@@ -1430,8 +1430,18 @@ impl CliProject {
 /// `<qualified prefix>/bin/beskid build --backend glue-rust` of `manifest` into `output`, with the
 /// explicit Rust tools and the codegen worker bound. `environment` adds or overrides variables.
 fn run_installed_build(manifest: &Path, output: &Path, environment: &[(&str, OsString)]) -> std::process::Output {
+    run_installed_target_build(manifest, CONSUMER_LIBRARY, output, environment)
+}
+
+/// [`run_installed_build`] of the consumer `target` of `manifest`.
+fn run_installed_target_build(
+    manifest: &Path,
+    target: &str,
+    output: &Path,
+    environment: &[(&str, OsString)],
+) -> std::process::Output {
     let cli = installed_cli(&require_qualified_prefix());
-    run_glue_build(&cli, manifest, output, &explicit_tool_arguments(&require_tools()), environment)
+    run_glue_build(&cli, manifest, target, output, &explicit_tool_arguments(&require_tools()), environment)
 }
 
 /// `--cargo <cargo> --rustc <rustc> --linker <linker>` of the explicit Rust tools.
@@ -1446,12 +1456,13 @@ fn explicit_tool_arguments(tools: &Tools) -> Vec<OsString> {
     ]
 }
 
-/// `<cli> build --plain --project <manifest> --target ManualOwned --backend glue-rust <tool
+/// `<cli> build --plain --project <manifest> --target <target> --backend glue-rust <tool
 /// arguments> --output <output>` with the codegen worker bound. `cli` is the installed CLI or a
 /// byte-identical link of it in a private prefix. `environment` adds or overrides variables.
 fn run_glue_build(
     cli: &Path,
     manifest: &Path,
+    target: &str,
     output: &Path,
     tool_arguments: &[OsString],
     environment: &[(&str, OsString)],
@@ -1460,7 +1471,7 @@ fn run_glue_build(
     command
         .args(["build", "--plain", "--project"])
         .arg(manifest)
-        .args(["--target", "ManualOwned", "--backend", "glue-rust"])
+        .args(["--target", target, "--backend", "glue-rust"])
         .args(tool_arguments)
         .arg("--output")
         .arg(output)
@@ -2588,5 +2599,4 @@ fn v06_native_test_object_compiles_shared_helper_once_and_links_distinct_entries
     );
 }
 
-#[path = "glue_extensions.rs"]
 mod extensions;

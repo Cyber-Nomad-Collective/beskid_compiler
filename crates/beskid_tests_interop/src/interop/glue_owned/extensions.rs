@@ -8,16 +8,16 @@
 //! `GlueProcess` (`fixtures/glue/extensions/owned`).
 use super::*;
 
-const MANUAL_HEADER: &str = include_str!("../../fixtures/glue/manual/extensions/extensions.h");
-const MANUAL_LIBRARY: &str = include_str!("../../fixtures/glue/manual/extensions/extensions.rs");
-const MANUAL_CALLER: &str = include_str!("../../fixtures/glue/manual/extensions/extensions_caller.rs");
+const MANUAL_HEADER: &str = include_str!("../../../fixtures/glue/manual/extensions/extensions.h");
+const MANUAL_LIBRARY: &str = include_str!("../../../fixtures/glue/manual/extensions/extensions.rs");
+const MANUAL_CALLER: &str = include_str!("../../../fixtures/glue/manual/extensions/extensions_caller.rs");
 
 const EXTENSION_FIXTURE_FILES: [(&str, &str); 3] = [
-    ("ExtensionTypes.bd", include_str!("../../fixtures/glue/extensions/owned/ExtensionTypes.bd")),
-    ("ExtensionImport.bd", include_str!("../../fixtures/glue/extensions/owned/ExtensionImport.bd")),
-    ("rust/implementation.rs", include_str!("../../fixtures/glue/extensions/owned/rust/implementation.rs")),
+    ("ExtensionTypes.bd", include_str!("../../../fixtures/glue/extensions/owned/ExtensionTypes.bd")),
+    ("ExtensionImport.bd", include_str!("../../../fixtures/glue/extensions/owned/ExtensionImport.bd")),
+    ("rust/implementation.rs", include_str!("../../../fixtures/glue/extensions/owned/rust/implementation.rs")),
 ];
-const EXTENSION_FIXTURE_MANIFEST: &str = include_str!("../../fixtures/glue/extensions/owned/glue_extensions.bproj");
+const EXTENSION_FIXTURE_MANIFEST: &str = include_str!("../../../fixtures/glue/extensions/owned/glue_extensions.bproj");
 const EXTENSION_PROJECT: &str = "glue_extensions";
 const EXTENSION_CONSUMER: &str = "GlueExtensions";
 
@@ -227,4 +227,28 @@ fn v061_glue_extensions_owned_roundtrip() {
         assert_extensions(&process, &packet);
         drop(process);
     });
+}
+
+/// Release case GLUE066-01: the installed CLI builds the extension fixture's Rust owner and
+/// consumer (`build --backend glue-rust`), and the published images alone, admitted by the
+/// consumer digest the CLI printed, carry records by value, fieldless enums, call-scoped
+/// callbacks and owner re-entry exactly as the in-process route does.
+#[test]
+fn v066_glue_cli_extensions_records_enums_callbacks_roundtrip() {
+    let work = harness_tempdir("beskid-v066-glue-extensions-cli-");
+    let manifest = with_template_project(template_project(), || materialize_extension_project(work.path()));
+    let out = work.path().join("out");
+    let consumer = out.join(native_name(EXTENSION_CONSUMER));
+    let owner = out.join(native_name(OWNER_LIBRARY));
+    let output = run_installed_target_build(&manifest, EXTENSION_CONSUMER, &consumer, &[]);
+    assert_cli_success(&output);
+    assert!(native_magic(&fs::read(&consumer).unwrap()), "consumer is not a native image");
+    assert!(native_magic(&fs::read(&owner).unwrap()), "owner is not a native image");
+    let consumer_sha256 = reported_sha256(&output, &consumer);
+    assert_eq!(consumer_sha256, sha256_file(&consumer), "reported consumer digest");
+    assert_eq!(reported_sha256(&output, &owner), sha256_file(&owner), "reported owner digest");
+    let published = admit_published(&consumer, &consumer_sha256, &[owner])
+        .unwrap_or_else(|error| panic!("admit published extension images: {error}"));
+    assert_extensions(published.process(), published.packet());
+    drop(published);
 }

@@ -171,6 +171,14 @@ feature area.
 - The runtime provenance audit accepts a manifest-declared `beskid_rt_v5_*`
   export whose name contains a forbidden family word.
 - The Corelib service source corpus embeds the `Core.Parallel` units.
+- Release harness: `beskid_tests_release` gains `features_host_v066` (fork-join,
+  ports, parallel sequences at `BESKID_ISOLATES_MAX=1` and the default bound,
+  `move`/`exchange` with E1234 through `check --json`, and a
+  `BESKID_GC_STRESS=alloc:64,verify` smoke), and `beskid_tests_interop` gains
+  `v066_glue_cli_extensions_records_enums_callbacks_roundtrip`, which builds the
+  Glue extension fixture with the installed CLI. The extension tests move to
+  `interop/glue_owned/extensions.rs` so their libtest path matches the release
+  case binding.
 
 ### pckg registry
 
