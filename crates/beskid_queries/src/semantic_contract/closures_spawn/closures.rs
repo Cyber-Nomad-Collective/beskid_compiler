@@ -185,7 +185,14 @@ fn closure_capture_declaration(
         return resolve_lexical_declaration(program, index, key.node, &segment.node.name.node.name)
             .map(|node| AstNodeKey { node, ..key });
     }
-    nominal_local_member_receiver(db, program, index, key, path).map(|(_, receiver)| receiver)
+    nominal_local_member_receiver(db, program, index, key, path).map(|(_, receiver)| receiver).or_else(|| {
+        // A resolved contract member receiver is captured like a nominal one: a contract-bounded
+        // generic parameter (`combiner.Combine(acc, value)` with `where C: Associative<T>`) or a
+        // contract-typed one. An unresolved member still captures nothing.
+        crate::semantic_contract::contracts::contract_member_receiver(db, program, index, key, path)?
+            .ok()
+            .map(|(_, receiver)| receiver)
+    })
 }
 
 pub(in crate::semantic_contract) fn closure_captures(

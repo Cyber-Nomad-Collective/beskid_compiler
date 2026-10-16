@@ -489,3 +489,25 @@ fn genericless_constructor_lambda_body_takes_the_expected_result() {
     let names = artifact.functions.iter().map(|function| function.name.as_str()).collect::<Vec<_>>();
     assert!(names.iter().any(|name| name.starts_with("__beskid_lambda_entry_syntax_")), "{names:?}");
 }
+
+#[test]
+fn contract_call_on_a_captured_bounded_parameter_in_a_lambda_uses_the_instance_witness() {
+    // `ParallelSeq.Reduce<C>` shape: `(T acc, T value) => combiner.Combine(acc, value)` captures a
+    // contract-bounded parameter; the lambda body dispatches through the enclosing instance's witness.
+    let (input, isa, root) = item_fixture_with_root(
+        "contract Joins<T> { T Combine(T left, T right); } type Plus : Joins<i64> { i64 id, pub i64 Combine(i64 left, i64 right) { return left + right; } } L Fold<T, L>(L seed, T value, (L, T) => L step) { return step(seed, value); } T Merge<T, C>(T seed, T value, C combiner) where C: Joins<T> { return Fold<T, T>(seed, value, (T acc, T item) => combiner.Combine(acc, item)); } i64 Main(Plus plus) { return Merge<i64, Plus>(1_i64, 2_i64, plus); }",
+    );
+    let items = find_function_definitions(input.database(), root);
+    let main = items
+        .iter()
+        .copied()
+        .find(|item| item_name(input.database(), *item).ok().flatten().as_deref() == Some("Main"))
+        .expect("Main");
+    let artifact = lower_syntax_program(&input, isa.as_ref(), &[SyntaxModuleItem { key: main, symbol: "Main".into() }])
+        .expect("a contract call on a captured bounded parameter lowers in the instance");
+    let names = artifact.functions.iter().map(|function| function.name.as_str()).collect::<Vec<_>>();
+    assert!(
+        names.iter().any(|name| name.starts_with("Merge#") && name.contains("#generic_") && name.contains("#lambda_")),
+        "{names:?}"
+    );
+}

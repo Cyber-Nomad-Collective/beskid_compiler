@@ -360,6 +360,11 @@ feature area.
   from the lambda's expected function result, in an expression body and in a
   `return` of a block body. Before, code generation stopped with "semantic
   query `value_abi_type` is unavailable".
+- A lambda that calls a contract method on a captured bounded parameter
+  (`(T acc, T value) => combiner.Combine(acc, value)` with
+  `where C: Associative<T>`) captures that parameter and dispatches through the
+  enclosing instance's witness. Before, the parameter was not captured and code
+  generation stopped with E2102.
 - `beskid check` reports transfer and capture-bound findings on attributes,
   fields, conformances and contract members (E1248, E1510, E1244, E1246,
   E1247, E1607, E1003) at the span of that syntax. Before, a `[Captures]`
