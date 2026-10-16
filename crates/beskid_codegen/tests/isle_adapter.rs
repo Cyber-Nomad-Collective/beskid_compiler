@@ -58,6 +58,8 @@ mod statement_result_storage;
 mod string_index_places;
 #[path = "isle_adapter/support.rs"]
 mod support;
+#[path = "isle_adapter/unit_let.rs"]
+mod unit_let;
 #[path = "isle_adapter/waitgroup_conditions.rs"]
 mod waitgroup_conditions;
 #[path = "isle_adapter/write_barrier_emission.rs"]

@@ -676,7 +676,7 @@ impl IsleContext<'_, '_, '_, '_> {
                     return None;
                 }
                 self.builder.ins().store(MemFlagsData::new(), payload, object, i32::try_from(field.offset).ok()?);
-            } else if self.facts.semantic_type(payload_key) == Some(beskid_queries::SemanticTypeId::UNIT) {
+            } else if self.is_unit_value(payload_key) {
                 self.lower_expression_for_effect(payload_key)?;
             } else {
                 self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidEnumLayout });

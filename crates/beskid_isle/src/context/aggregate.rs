@@ -254,7 +254,7 @@ macro_rules! generated_aggregate_methods {
             let mut values = Vec::with_capacity(fields.len());
             for (field_key, field_layout) in fields.into_iter().zip(&layout.fields) {
                 let Some(field_layout) = field_layout else {
-                    if self.facts.semantic_type(field_key) != Some(beskid_queries::SemanticTypeId::UNIT) {
+                    if !self.is_unit_value(field_key) {
                         self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidStructLayout });
                         return None;
                     }
