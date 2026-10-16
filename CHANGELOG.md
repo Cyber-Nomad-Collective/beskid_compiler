@@ -383,6 +383,18 @@ feature area.
 - The `parallel_counts` native fixture sends a call result without `move` (a
   call result is already owned; `move` on it is E1239) and reads an array
   length with `Array.Len`.
+- doc: `api.json` relativizes and attributes units compiled from a package's
+  `.generated` sibling of its source root (for example Foundation's
+  `Core/Text/Regex/Generated.g.bd` reached through a dependency), instead of
+  failing with "could not relativize". http2, http3, quic and network now
+  generate API docs.
+- doc: module containers take their `declaringPackage` and location from the
+  items they hold. A module with an item of the publishing package is its own;
+  a module that holds only one dependency's items belongs to that dependency.
+- Tests: every corelib package source must parse; a materialized dependency
+  unit of an entry-less library is never one of its roots; console and connect
+  never check the materialized `Concurrency/Channel.bd` as their own code; and
+  network and concurrency check clean with their own service files as roots.
 - A local Core.Parallel task whose fiber is cancelled before it runs (a task
   started in a scope that has already failed, under serial elision) becomes
   terminal. The scheduler ended such a fiber without a context switch and

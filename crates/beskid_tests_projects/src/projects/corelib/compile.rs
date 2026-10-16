@@ -379,6 +379,43 @@ fn checked_in_compiler_sdk_query_facade_contract_first_nodes() {
     }
 }
 
+/// Every published library source must parse: `beskid doc` and workspace-scan discovery read all
+/// of them, not only the modules a build reaches through imports.
+#[test]
+fn checked_in_corelib_package_sources_all_parse() {
+    fn collect(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+        let Ok(entries) = fs::read_dir(dir) else { return };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                if path.file_name().is_some_and(|name| name != "obj") {
+                    collect(&path, out);
+                }
+            } else if path.extension().is_some_and(|ext| ext == "bd") {
+                out.push(path);
+            }
+        }
+    }
+
+    let packages = corelib_workspace_root().join("packages");
+    let mut sources = Vec::new();
+    for package in fs::read_dir(&packages).expect("read corelib packages").flatten() {
+        collect(&package.path().join("src"), &mut sources);
+        collect(&package.path().join(".generated"), &mut sources);
+    }
+    sources.sort();
+    assert!(sources.len() > 100, "expected the corelib package sources, found {}", sources.len());
+
+    let failures: Vec<String> = sources
+        .iter()
+        .filter_map(|path| {
+            let source = fs::read_to_string(path).unwrap_or_else(|_| panic!("read corelib source {}", path.display()));
+            parse_program(&source).err().map(|err| format!("{}: {err:#}", path.display()))
+        })
+        .collect();
+    assert!(failures.is_empty(), "corelib package sources must parse:\n{}", failures.join("\n"));
+}
+
 #[test]
 fn checked_in_corelib_beskid_test_sources_parse() {
     // Every checked-in source of the corelib_tests project, discovered from its source root, so

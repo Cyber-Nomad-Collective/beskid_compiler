@@ -28,7 +28,8 @@ pub use api_tier::{
 pub use callable::callable_signatures_for_span;
 pub use edit::{DocCommentEdit, doc_comment_edit_for_offset};
 pub use graph_link::{
-    ApiDocLinkContext, ApiDocPackageRoots, assign_declaring_packages, fill_member_ids_from_parents,
+    ApiDocLinkContext, ApiDocPackageRoots, assign_declaring_packages, attribute_modules_to_members,
+    fill_member_ids_from_parents,
     link_api_doc_library_tree,
 };
 pub use item_shape::{enum_variant_names_for_span, generic_param_names_for_span};
