@@ -128,10 +128,11 @@ impl<'isa> FunctionEmitter<'isa> {
             builder.switch_to_block(entry);
             builder.seal_block(entry);
             let incoming = builder.block_params(entry).to_vec();
-            // A block body with a result is a statement lambda: every path ends in `return`.
-            let statement_body = result.is_some()
-                && facts.node_kind(body) == Some(NodeKind::BlockExpression)
-                && facts.block_result(body).is_none();
+            // A block body with a result is a statement lambda: every path ends in `return`. Its
+            // final expression statement is a statement too (`() => { match port.Receive() { ..
+            // => { return ..; }, }; }`), never the lambda's value: the same rule as
+            // `lambda_has_statement_body` and the expected type of that statement (`unit`).
+            let statement_body = result.is_some() && facts.node_kind(body) == Some(NodeKind::BlockExpression);
             let value = {
                 let mut context = IsleContext::new_with_services(
                     &mut builder,

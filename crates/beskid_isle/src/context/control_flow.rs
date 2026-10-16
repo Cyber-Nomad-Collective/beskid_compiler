@@ -702,7 +702,12 @@ macro_rules! generated_control_flow_methods {
             if block_is_terminated(self.builder, current) {
                 return Some(CursorKind::End);
             }
-            let count = self.facts.statement_count(cursor.block)?;
+            // A block lowered as a statement runs its final expression statement too: that
+            // statement is the block's result only when the block is used as a value.
+            let count = self
+                .facts
+                .statement_count(cursor.block)?
+                .checked_add(u8::from(self.facts.block_result(cursor.block).is_some()))?;
             Some(if cursor.index < count { CursorKind::More } else { CursorKind::End })
         }
 
