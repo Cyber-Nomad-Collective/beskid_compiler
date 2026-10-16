@@ -333,6 +333,21 @@ feature area.
 
 ### Fixed
 
+- A struct, array or enum literal that stores a borrowed name (`TestStream {
+  state: state }` with a borrowed `u8[] state`) is E1241: a borrowed value
+  cannot be stored. An owning name is consumed silently, so enum constructor
+  arguments now consume too. Corelib readers over caller bytes (codec
+  `Cursor`, x509 `Der`, `QuicWire.NewReader`, `BufferReader`, TLS and QUIC
+  secrets and IDs) store their own copy; writers (`QuicWire.NewWriter`,
+  `BufferWriter`) take the buffer by `move` and return it with `TakeBuffer`;
+  hand-offs take their arrays by `move`. New `Array.Copy<T>`. Generated SDK
+  factories declare `move` on Moved parameters.
+- A `match` on a lambda parameter (`(i64 index, Color color) => match color
+  { ... }`) is typed by the parameter's binding identity, also inside a
+  generic body; it no longer ends in an internal compiler error.
+- A `unit` local (`T value = __isolate_join_value<T>(id)` at `T = unit`, so
+  `Task<unit>.Join()`) has no storage: its initializer is evaluated for its
+  effects and its reads are `unit` values. It no longer fails with E2102.
 - The type descriptor of a record or enum carries `TYPE_DESCRIPTOR_IMMUTABLE` exactly when its transfer class is Shared in that
   specialization, including a type that is Shared only through a type argument (`Sequenced<string>`; `Sequenced<string[]>` stays
   unflagged).
