@@ -269,6 +269,7 @@ pub word GcGrow(pointer heap, word objectPages) {
     pointer current = NativePointer(raw_word_load(pointer_add(heap, HEAP_CURRENT_REGION)));
     raw_word_store(pointer_add(current, REGION_NEXT), NativeWord(region));
     raw_word_store(pointer_add(heap, HEAP_CURRENT_REGION), NativeWord(region));
+    RegionIndexInsert(heap, region);
     raw_word_store(pointer_add(heap, HEAP_COMMITTED_BYTES), committed + newSize);
     raw_word_store(pointer_add(heap, HEAP_REGION_COUNT), raw_word_load(pointer_add(heap, HEAP_REGION_COUNT)) + 1);
     mut word doubled = nextRegionSize * 2;

@@ -160,8 +160,21 @@ pub pointer RegionInit(pointer region, word size) {
 // Finds the region whose `[objects_start, bump)` range contains `address`, or null. Any address
 // ever handed out by the allocator satisfies this (the region's page cursor only moves forward
 // past a page once a span is carved from it).
+//
+// The owner thread looks the address up in the heap's sorted region index (Counts.bd), so the cost
+// does not grow with the number of regions (a joiner adopts one region per completed task). Another
+// thread reading a foreign heap (liveness of a foreign reference) walks the chain: the owner may be
+// growing the index concurrently.
 pub pointer FindHeapRegionContaining(pointer heap, word address) {
     if heap == NativePointer(0) {
+        return NativePointer(0);
+    }
+    if heap == Heap() {
+        pointer floor = RegionIndexFloor(heap, address);
+        if floor != NativePointer(0) && address >= raw_word_load(pointer_add(floor, REGION_OBJECTS_START)) &&
+           address < raw_word_load(pointer_add(floor, REGION_BUMP)) {
+            return floor;
+        }
         return NativePointer(0);
     }
     mut pointer region = NativePointer(raw_word_load(pointer_add(heap, HEAP_FIRST_REGION)));
@@ -191,7 +204,7 @@ pub bool HeapContains(pointer heap, pointer object) {
 // allocated per the span's `alloc_bits`; large span: the span's sole slot, whose descriptor word
 // is nonzero and whose mark state is not the sentinel used for a freed large span).
 pub bool IsAllocatedObject(pointer heap, pointer object) {
-    if HeapContains(heap, object) == false {
+    if heap == NativePointer(0) || object == NativePointer(0) || NativeWord(object) % 8 != 0 {
         return false;
     }
     pointer region = FindHeapRegionContaining(heap, NativeWord(object));

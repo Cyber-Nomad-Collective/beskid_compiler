@@ -58,6 +58,7 @@ pub unit AdoptHeap(pointer parent, pointer child, pointer childRuntime) {
             }
             page = page + 1;
         }
+        RegionIndexInsert(parent, region);
         last = region;
         region = NativePointer(raw_word_load(pointer_add(region, REGION_NEXT)));
     }

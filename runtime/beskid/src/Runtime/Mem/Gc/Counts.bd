@@ -31,7 +31,9 @@
 //
 // The count record (native, created with the heap, pointer at heap word `HEAP_COUNTS`):
 //   0 foreign table, 8 local table, 16 queue commands, 24 queue head, 32 queue count,
-//   40 queue capacity, 48 foreign mark worklist, 56 worklist count, 64 worklist capacity.
+//   40 queue capacity, 48 foreign mark worklist, 56 worklist count, 64 worklist capacity,
+//   72 region index (the heap's regions sorted by address, State.bd), 80 its count, 88 capacity.
+// The record is the heap's native side record: created in `HeapInit`, freed with the heap.
 // A command is { reference, delta } (16 bytes; delta is a two's-complement word).
 // Tables share the entry format of Foreign.bd: reference, owner, count, epoch, immutable.
 
@@ -39,7 +41,7 @@ const HEAP_COUNTS = 512;
 const HEAP_LIVE_BYTES = 32;
 const RUNTIME_HEAP_OFFSET = 16;
 
-const COUNTS_SIZE = 72;
+const COUNTS_SIZE = 96;
 const COUNTS_FOREIGN = 0;
 const COUNTS_LOCAL = 8;
 const COUNTS_QUEUE = 16;
@@ -49,6 +51,9 @@ const COUNTS_QUEUE_CAPACITY = 40;
 const COUNTS_WORK = 48;
 const COUNTS_WORK_COUNT = 56;
 const COUNTS_WORK_CAPACITY = 64;
+const COUNTS_REGIONS = 72;
+const COUNTS_REGION_COUNT = 80;
+const COUNTS_REGION_CAPACITY = 88;
 
 const COUNT_COMMAND_SIZE = 16;
 // Low bit of a count command's reference (references are 8-aligned): a `Shared` stake.
@@ -115,6 +120,10 @@ pub unit CountRecordFree(pointer heap) {
     word workCapacity = raw_word_load(pointer_add(record, COUNTS_WORK_CAPACITY));
     if workCapacity != 0 {
         SystemFree(NativePointer(raw_word_load(pointer_add(record, COUNTS_WORK))), workCapacity * 8);
+    }
+    word regionCapacity = raw_word_load(pointer_add(record, COUNTS_REGION_CAPACITY));
+    if regionCapacity != 0 {
+        SystemFree(NativePointer(raw_word_load(pointer_add(record, COUNTS_REGIONS))), regionCapacity * 8);
     }
     memory_set(record, 0, COUNTS_SIZE);
     SystemFree(record, COUNTS_SIZE);
@@ -718,4 +727,52 @@ pub bool HandOverWalkWith(pointer value, word mode) {
     }
     WalkFree(walk);
     return ok;
+}
+
+// ── Region index (heap side record) ───────────────────────────────────
+
+// Adds `region` to `heap`'s region index, kept sorted by region address. Runs on the heap's
+// owner thread whenever a region joins the chain (`HeapInit`, growth, adoption).
+pub unit RegionIndexInsert(pointer heap, pointer region) {
+    pointer record = CountRecord(heap);
+    if record == NativePointer(0) { Trap(5, NativePointer(0), 0); }
+    word count = raw_word_load(pointer_add(record, COUNTS_REGION_COUNT));
+    word capacity = raw_word_load(pointer_add(record, COUNTS_REGION_CAPACITY));
+    if count == capacity {
+        mut word grown = capacity * 2;
+        if grown == 0 { grown = 8; }
+        pointer data = SystemAllocate(grown * 8, 8);
+        if data == NativePointer(0) { Trap(5, NativePointer(0), 0); }
+        if capacity != 0 {
+            pointer old = NativePointer(raw_word_load(pointer_add(record, COUNTS_REGIONS)));
+            memory_copy(data, old, count * 8);
+            SystemFree(old, capacity * 8);
+        }
+        raw_word_store(pointer_add(record, COUNTS_REGIONS), NativeWord(data));
+        raw_word_store(pointer_add(record, COUNTS_REGION_CAPACITY), grown);
+    }
+    pointer data = NativePointer(raw_word_load(pointer_add(record, COUNTS_REGIONS)));
+    mut word index = count;
+    while index > 0 && raw_word_load(pointer_add(data, (index - 1) * 8)) > NativeWord(region) {
+        raw_word_store(pointer_add(data, index * 8), raw_word_load(pointer_add(data, (index - 1) * 8)));
+        index = index - 1;
+    }
+    raw_word_store(pointer_add(data, index * 8), NativeWord(region));
+    raw_word_store(pointer_add(record, COUNTS_REGION_COUNT), count + 1);
+    return;
+}
+
+// The region of `heap` with the greatest address not above `address`, or null (binary search).
+pub pointer RegionIndexFloor(pointer heap, word address) {
+    pointer record = CountRecord(heap);
+    if record == NativePointer(0) { return NativePointer(0); }
+    pointer data = NativePointer(raw_word_load(pointer_add(record, COUNTS_REGIONS)));
+    mut word low = 0;
+    mut word high = raw_word_load(pointer_add(record, COUNTS_REGION_COUNT));
+    while low < high {
+        word middle = low + (high - low) / 2;
+        if raw_word_load(pointer_add(data, middle * 8)) <= address { low = middle + 1; } else { high = middle; }
+    }
+    if low == 0 { return NativePointer(0); }
+    return NativePointer(raw_word_load(pointer_add(data, (low - 1) * 8)));
 }

@@ -389,9 +389,11 @@ pub unit PortReceiptStore(i64 id, pointer record) {
 }
 
 // Keeps a fresh box of this heap around the value of a Shared or Moved message in a receipt of the
-// calling fiber, then takes the message's stakes. The box is allocated (which may collect) while
-// the sender's stake still holds the value: a receive of an own object posts its DEC to this
-// heap's queue, and a collection that applied it before the receipt roots the box would free it.
+// calling fiber and takes the message's stakes. Order: the box is allocated first (which may
+// collect) while the sender's stake still holds the value; then the stakes are taken (a foreign
+// object gets its table entry before the barrier below can observe it, and the DEC of an own
+// object is only applied at a later cycle start); then the value is stored and the receipt roots
+// the box, with no allocation in between.
 pub unit PortReceiptStoreMessage(i64 id, pointer record, word tag) {
     pointer value = NativePointer(raw_word_load(pointer_add(record, MESSAGE_VALUE)));
     pointer descriptor = NativePointer(raw_word_load(pointer_add(record, MESSAGE_DESCRIPTOR)));
@@ -403,11 +405,6 @@ pub unit PortReceiptStoreMessage(i64 id, pointer record, word tag) {
     pointer box = AllocateObject(request);
     SystemFree(request, 24);
     if box == NativePointer(0) { Trap(5, NativePointer(0), 0); }
-    // No safepoint until the receipt slot roots the box. The barrier stamps a foreign value in the
-    // foreign table while this heap is marking.
-    GcHybridWriteBarrier(pointer_add(box, BOX_VALUE), value);
-    raw_word_store(pointer_add(box, BOX_VALUE), NativeWord(value));
-    PortReceiptKeep(id, box, NativeWord(descriptor));
     if TypeDescriptorPointerCount(descriptor) != 0 {
         if tag == CLASS_SHARED {
             CountStakeReceive(value);
@@ -415,6 +412,11 @@ pub unit PortReceiptStoreMessage(i64 id, pointer record, word tag) {
             Trap(10, NativePointer(0), 0);
         }
     }
+    // No safepoint until the receipt slot roots the box. The barrier stamps a foreign value in the
+    // foreign table while this heap is marking.
+    GcHybridWriteBarrier(pointer_add(box, BOX_VALUE), value);
+    raw_word_store(pointer_add(box, BOX_VALUE), NativeWord(value));
+    PortReceiptKeep(id, box, NativeWord(descriptor));
     return;
 }
 
