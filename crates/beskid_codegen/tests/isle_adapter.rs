@@ -66,3 +66,5 @@ mod waitgroup_conditions;
 mod write_barrier_emission;
 #[path = "isle_adapter/move_exchange.rs"]
 mod move_exchange;
+#[path = "isle_adapter/move_generic_arguments.rs"]
+mod move_generic_arguments;

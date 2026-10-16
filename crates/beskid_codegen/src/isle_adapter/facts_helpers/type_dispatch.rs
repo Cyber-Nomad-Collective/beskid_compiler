@@ -27,6 +27,11 @@ impl SyntaxNodeFacts<'_> {
         &self,
         key: AstNodeKey,
     ) -> Option<ManagedReferenceFact> {
+        // `move x` hands its operand over unchanged, so it has the operand's category in this
+        // specialization (`Keep<T>(move values)` with `T[] values` inside `Forward<T>`).
+        if let Some(operand) = self.consumed_move_operand(key) {
+            return self.managed_reference_in_context(operand);
+        }
         if let Some(receiver) = self.query(nominal_member_receiver(self.db, key)) {
             return self.managed_reference_in_context(receiver);
         }
@@ -199,6 +204,25 @@ impl SyntaxNodeFacts<'_> {
         (self.query(node_kind(self.db, key)) == Some(beskid_queries::IndexedNodeKind::LetStatement))
             .then(|| self.let_initializer(key))?
             .and_then(|initializer| self.managed_reference_in_context(initializer))
+    }
+
+    /// The operand a consuming `move` expression at `key` (through `Expression` and grouping
+    /// wrappers) hands over. A destructive field read has no operand value of its own.
+    fn consumed_move_operand(&self, key: AstNodeKey) -> Option<AstNodeKey> {
+        let mut node = key;
+        loop {
+            match self.query(node_kind(self.db, node))? {
+                beskid_queries::IndexedNodeKind::Expression | beskid_queries::IndexedNodeKind::GroupedExpression => {
+                    node = *self.raw_children(node).first()?;
+                }
+                beskid_queries::IndexedNodeKind::MoveExpression => break,
+                _ => return None,
+            }
+        }
+        match self.query(beskid_queries::move_expression_form(self.db, node))? {
+            beskid_queries::MoveExpressionForm::Consume { operand } => Some(operand),
+            beskid_queries::MoveExpressionForm::DestructiveRead { .. } => None,
+        }
     }
 
     fn specialized_local_managed_reference(&self, key: AstNodeKey) -> Option<ManagedReferenceFact> {
