@@ -33,6 +33,22 @@ impl SyntaxNodeFacts<'_> {
         if self.typed_array_plan(key).is_some() || self.query(implicit_method_receiver(self.db, key)).is_some() {
             return Some(ManagedReferenceFact::GcManaged);
         }
+        // A typed Corelib value service (`__isolate_join_value<T>`, `__port_receive_value<T>`, ...)
+        // returns its `T` through a pointer-shaped transport whose source declaration carries no
+        // category; the specialization's binding of `T` classifies the value, so a local it
+        // initializes is rooted when `T` is managed.
+        if let Some(enclosing) = self.current_item_specialization()
+            && let Some(beskid_queries::CallLowering::CorelibService(service)) =
+                self.query(beskid_queries::call_lowering(self.db, key))
+            && beskid_abi::runtime_source::canonical_corelib_service_value_dispatch(service).is_some()
+            && let Some(binding) =
+                self.query(beskid_queries::specialized_corelib_value_service_result(self.db, key, enclosing))
+        {
+            return Some(match binding.managed_reference_kind() {
+                ManagedReferenceKind::GcManaged => ManagedReferenceFact::GcManaged,
+                ManagedReferenceKind::NativeOrScalar => ManagedReferenceFact::NativeOrScalar,
+            });
+        }
         if let Some(instance) = self.generic_call_specialization_in_context(key) {
             return self
                 .query(beskid_queries::specialized_call_result_managed_reference_kind(self.db, key, &instance))
