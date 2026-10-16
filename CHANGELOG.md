@@ -185,13 +185,11 @@ feature area.
   `POST /api/admin/community/reconcile` opens threads for packages created
   while NodeBB was unavailable. Migrations `0012_add_package_community` and
   `0013_replace_package_community_category_with_topic`.
-
 - pckg: `docs/structured` returns the packed `.beskid/docs/api.json` as
   `api`; the `metadata` field that never matched the packer is removed. The
   artifact browser indexes every validated entry for the file browser while
   still refusing artifacts with hidden segments inside `docs/`, `src/` or
   `.beskid/docs/`.
-
 - pckg: accept NodeBB topic slugs with dots (`4/beskid.templates.console`)
   when persisting a package's community link; the previous charset rejected
   them after the thread had already been opened. Thread creation is now
