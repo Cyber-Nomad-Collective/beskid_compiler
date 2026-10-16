@@ -726,6 +726,10 @@ mod query_gate_kind_tests {
             Some("declare the parameter `move T buffer`")
         );
         assert_eq!(
+            SemanticIssueKind::BorrowEscapes { name: "holder.bytes".into() }.help().as_deref(),
+            Some("store a copy of `holder.bytes`, or reach it through an owning name and write `move holder.bytes`")
+        );
+        assert_eq!(
             SemanticIssueKind::DestructiveReadWithoutEmpty { field: "f".into(), type_name: "i64".into() }.help().as_deref(),
             Some("use `exchange(<place>, move <value>)`")
         );

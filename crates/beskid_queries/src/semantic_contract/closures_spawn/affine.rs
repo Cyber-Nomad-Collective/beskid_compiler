@@ -923,6 +923,14 @@ impl<'a> Analysis<'a> {
                     }
                     return;
                 }
+                UseContext::Construction | UseContext::AssignValue { target_is_local: false } => {
+                    self.visit_stored_field_read(node, declaration, segments, owning, crossing);
+                    return;
+                }
+                UseContext::Argument(call, position) if self.parameter_movable(call, position) => {
+                    self.visit_stored_field_read(node, declaration, segments, owning, crossing);
+                    return;
+                }
                 _ => Role::Read,
             }
         } else {
@@ -979,6 +987,34 @@ impl<'a> Analysis<'a> {
                 }
                 self.consume(declaration, site, &name, branches, &loops);
             }
+        }
+    }
+
+    /// A field read stored as it is (`Node { bytes: x.bytes }`, `this.cache = x.bytes`, or `x.bytes`
+    /// passed to a `move` parameter) would leave the Moved value reachable from both the field
+    /// and its new owner. Through a borrowed root the read is borrowed (E1241); through an owning
+    /// root it needs the destructive read `move x.f` or `exchange` (E1242). A field of any other
+    /// class is a plain read.
+    fn visit_stored_field_read(
+        &mut self,
+        node: AstNodeId,
+        declaration: AstNodeId,
+        segments: &[String],
+        owning: bool,
+        crossing: LambdaCrossing,
+    ) {
+        let moved_field = generic_source_expression_identity(self.db, self.at(node))
+            .ok()
+            .and_then(|identity| transfer_class(self.db, self.at(node), &identity).ok())
+            == Some(TransferClass::Moved);
+        if !moved_field {
+            return;
+        }
+        let place = segments.join(".");
+        if !owning || matches!(crossing, LambdaCrossing::Ordinary | LambdaCrossing::Bounded) {
+            self.push(AffineFindingKind::BorrowEscapes, node, &place, None, Some(declaration), false);
+        } else {
+            self.push(AffineFindingKind::ImplicitAliasOfMovedValue, node, &place, None, None, false);
         }
     }
 

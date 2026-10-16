@@ -294,6 +294,10 @@ impl SemanticIssueKind {
                 Some(format!("write `move {name}`"))
             }
             Self::CapturesArgumentNotLiteral => Some("pass the lambda literal".to_string()),
+            // A field read through a borrowed name: the name cannot give the field away.
+            Self::BorrowEscapes { name } if name.contains('.') => Some(format!(
+                "store a copy of `{name}`, or reach it through an owning name and write `move {name}`"
+            )),
             Self::MoveOfNonOwningName { name, class: None } | Self::BorrowEscapes { name } => {
                 Some(format!("declare the parameter `move T {name}`"))
             }

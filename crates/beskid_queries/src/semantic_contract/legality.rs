@@ -1588,6 +1588,40 @@ mod tests {
     }
 
     #[test]
+    fn stored_field_reads_follow_the_owning_and_borrowed_rules() {
+        let types = "[Isolated] pub type Node { u8[] bytes } [Isolated] pub type Holder { u8[] bytes, Node node } \
+            [Isolated] pub type Tagged { string label, u8 level } ";
+        let cases: &[(&str, &[&str])] = &[
+            // Through a borrowed root the field read is borrowed: storing it is E1241.
+            ("Node Wrap(Holder h) { return Node { bytes: h.bytes }; }", &["E1241"]),
+            ("Node Wrap(Holder h) { return Node { bytes: h.node.bytes }; }", &["E1241"]),
+            ("unit Keep(Holder h) { Store(h.bytes); return; }", &["E1241"]),
+            ("unit Fill(Node n, Holder h) { n.bytes = h.bytes; return; }", &["E1241"]),
+            ("u8[][] Wrap(Holder h) { return [h.bytes]; }", &["E1241"]),
+            (
+                "[Isolated] pub type Link { u8[] bytes, pub Node Wrap() { return Node { bytes: this.bytes }; } }",
+                &["E1241"],
+            ),
+            ("unit Main(move Holder h) { let wrap = () => Node { bytes: h.bytes }; return; }", &["E1241"]),
+            // Through an owning root it needs the destructive read.
+            ("Node Wrap(move Holder h) { return Node { bytes: h.bytes }; }", &["E1242"]),
+            ("unit Keep(move Holder h) { Store(h.bytes); return; }", &["E1242"]),
+            ("Node Wrap(move Holder h) { return Node { bytes: move h.bytes }; }", &[]),
+            ("unit Keep(move Holder h) { Store(move h.bytes); return; }", &[]),
+            (
+                "[Isolated] pub type Link { u8[] bytes, pub Node Wrap(move this) { return Node { bytes: move this.bytes }; } }",
+                &[],
+            ),
+            // Reads, and fields of a class other than Moved, are not judged.
+            ("i64 Size(Holder h) { return Len(h.bytes); }", &[]),
+            ("Tagged Copy(Tagged t) { return Tagged { label: t.label, level: t.level }; }", &[]),
+        ];
+        for (offset, (body, expected)) in cases.iter().enumerate() {
+            assert_affine(&format!("{types}{body}"), 6900 + offset as u64, expected);
+        }
+    }
+
+    #[test]
     fn destructive_reads_and_exchange_need_a_moved_place() {
         let holder = "[Isolated] pub type Index { u8[] offsets } ";
         let cases: &[(&str, &[&str])] = &[
