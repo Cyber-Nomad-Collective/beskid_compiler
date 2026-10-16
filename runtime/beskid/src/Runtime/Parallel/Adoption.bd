@@ -122,7 +122,10 @@ pub unit LocalCountMergeInto(pointer parent, pointer child) {
         pointer entry = CountTableEntry(table, index);
         word key = raw_word_load(entry);
         word count = raw_word_load(pointer_add(entry, 16));
-        if key != 0 && count != 0 { LocalCountAdd(parent, key, count); }
+        // An immutable child entry (a `Shared` stake) stays immutable in the parent's table.
+        mut word shared = 0;
+        if raw_word_load(pointer_add(entry, 32)) != 0 { shared = 1; }
+        if key != 0 && count != 0 { LocalCountAdd(parent, key | shared, count); }
         index = index + 1;
     }
     return;

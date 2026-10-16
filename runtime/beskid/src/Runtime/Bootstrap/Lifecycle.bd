@@ -471,7 +471,9 @@ pub pointer IsolateReleaseKeepRegions(pointer runtime) {
     pointer thread = CurrentThreadState();
     if thread != NativePointer(0) { ThreadDetach(thread); }
     raw_word_store(pointer_add(runtime, RUNTIME_CURRENT_THREAD_OFFSET), 0);
-    raw_word_store(pointer_add(runtime, RUNTIME_HEAP_OFFSET), 0);
+    // The heap word keeps naming the retained heap: the record stays the owner of its regions in
+    // the region map until the joiner adopts or discards the heap, and holders of its objects
+    // resolve the owner's heap through it (count posts, liveness of foreign references).
     raw_word_store(pointer_add(runtime, RUNTIME_CALLBACK_REGISTRY_OFFSET), 0);
     raw_word_store(pointer_add(runtime, RUNTIME_SCHEDULER_OFFSET), 0);
     if callbacks != NativePointer(0) { memory_set(callbacks, 0, CALLBACK_REGISTRY_SIZE); SystemFree(callbacks, CALLBACK_REGISTRY_SIZE); }

@@ -101,12 +101,14 @@ const LIVENESS_DIAGNOSTIC_SIZE = 128;
 const LIVENESS_TRAP_CODE = 6;
 
 // Traps when `value` is a non-null managed reference that does not resolve to a live managed
-// object on the current heap. Allocation-free and collection-free: the check only reads span
-// metadata, so non-collecting services (`str_eq`, `str_cmp`, `str_len`) stay non-collecting.
+// object on the current heap or, for a foreign reference (a `Shared` capture or port message held
+// by pointer, v0.6.3-v0.6.5), on the heap of the isolate that owns its region. Allocation-free and
+// collection-free: the check only reads span metadata, so non-collecting services (`str_eq`,
+// `str_cmp`, `str_len`) stay non-collecting. A foreign object is held by the scope root or by a
+// count stake, so its owner keeps its allocation bit set while this isolate can reach it.
 pub unit RequireLiveManagedReference(pointer value, word service) {
     if value == NativePointer(0) { return; }
-    pointer heap = Heap();
-    if heap == NativePointer(0) || ManagedObjectForReference(heap, value) == NativePointer(0) {
+    if Heap() == NativePointer(0) || CountObjectStart(value) == NativePointer(0) {
         TrapManagedOperandNotLive(service);
     }
     return;
@@ -364,8 +366,10 @@ word GcTryRootHandleFor(pointer valuePtr, word service) {
     // `ManagedObjectForReference` is the one shared resolver `GcMarkGray` also goes through for the
     // same reason (see Marking.bd) — every consumer of an ABI-visible reference must normalize
     // through it before doing span/header work; calling `IsAllocatedObject` on the raw value here
-    // rejected every array root outright.
-    if ManagedObjectForReference(heap, valuePtr) == NativePointer(0) {
+    // rejected every array root outright. A live foreign reference (another isolate's object
+    // held by a scope root or a count stake) is a valid root: marking records it in the foreign
+    // table (`GcMarkGray` -> `ForeignObserve`) and never enters it.
+    if CountObjectStart(valuePtr) == NativePointer(0) {
         TrapManagedOperandNotLive(service);
     }
     // Reuse a cleared slot anywhere in the chain before growing, exactly as the fixed-table
@@ -495,7 +499,7 @@ pub pointer GcResolveHandle(word handle) {
             // Same ABI-reference normalization as `GcRootHandle` above: `value` may be an array's
             // `{ data, len, cap }` triple, not its object header, so validate through the shared
             // resolver rather than `IsAllocatedObject` directly.
-            if value == NativePointer(0) || ManagedObjectForReference(heap, value) == NativePointer(0) {
+            if value == NativePointer(0) || CountObjectStart(value) == NativePointer(0) {
                 TrapManagedOperandNotLive(LIVENESS_GC_RESOLVE_HANDLE);
             }
             return value;

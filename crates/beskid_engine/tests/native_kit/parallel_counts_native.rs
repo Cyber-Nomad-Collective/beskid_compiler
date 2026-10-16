@@ -128,7 +128,16 @@ fn run(entry: &str, environment: &[(&str, &str)]) -> std::process::Output {
     for (key, value) in environment {
         command.env(key, value);
     }
-    run_bounded(&format!("{entry} execution"), &mut command, ROUTE_LIMIT)
+    let output = run_bounded(&format!("{entry} execution"), &mut command, ROUTE_LIMIT);
+    // A failed run keeps its executable for a post-mortem (core dump or a rerun under a debugger).
+    if !output.status.success()
+        && let Some(directory) = std::env::var_os("BESKID_TEST_KEEP_CRASHED")
+    {
+        let kept = Path::new(&directory).join(executable.file_name().unwrap());
+        let _ = std::fs::copy(&executable, &kept);
+        eprintln!("{entry}: crashed executable kept at {}", kept.display());
+    }
+    output
 }
 
 fn assert_passes(entry: &str, environment: &[(&str, &str)]) {
@@ -232,6 +241,46 @@ fn strings_cross_a_port_and_stay_readable() {
         assert!(
             output.status.success(),
             "RunStringPort {environment:?}: exit {:?}\nstdout:\n{}\nstderr:\n{}",
+            output.status.code(),
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+}
+
+/// v0.6.5: `Collect` over many chunk tasks keeps every element in input order, on real isolates
+/// (results adopted at join) and under serial elision.
+#[test]
+fn collect_keeps_every_element_in_order() {
+    for environment in [
+        &[("BESKID_ISOLATES_MAX", "2")][..],
+        &[("BESKID_ISOLATES_MAX", "8")][..],
+        &[("BESKID_ISOLATES_MAX", "1")][..],
+    ] {
+        let output = run("RunCollect", environment);
+        assert!(
+            output.status.success(),
+            "RunCollect {environment:?}: exit {:?}\nstdout:\n{}\nstderr:\n{}",
+            output.status.code(),
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+}
+
+/// v0.6.4: a `Port` handle (a Shared record) sent through a port works in the receiver, also
+/// when every allocation collects.
+#[test]
+fn port_handle_crosses_a_port() {
+    for environment in [
+        &[("BESKID_ISOLATES_MAX", "2")][..],
+        &[("BESKID_ISOLATES_MAX", "2"), ("BESKID_GC_STRESS", "alloc:1,verify")][..],
+        &[("BESKID_ISOLATES_MAX", "1"), ("BESKID_GC_STRESS", "alloc:1,verify")][..],
+    ] {
+        let output = run("RunPortHandle", environment);
+        assert!(
+            output.status.success(),
+            "RunPortHandle {environment:?}: exit {:?}\nstdout:\n{}\nstderr:\n{}",
             output.status.code(),
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)

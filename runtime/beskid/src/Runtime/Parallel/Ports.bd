@@ -284,7 +284,7 @@ pub pointer PortMessageCapture(pointer box, word tag) {
     pointer value = NativePointer(raw_word_load(pointer_add(box, BOX_VALUE)));
     if TypeDescriptorPointerCount(descriptor) != 0 {
         if tag == CLASS_SHARED {
-            CountStakeSend(value);
+            CountStakeSendShared(value);
         } else if HandOverSend(value) == false {
             PanicTransitRefused(NativeWord(descriptor));
         }
@@ -388,18 +388,13 @@ pub unit PortReceiptStore(i64 id, pointer record) {
     return;
 }
 
-// Takes the stakes of a Shared or Moved message and keeps a fresh box of this heap around its
-// value in a receipt of the calling fiber.
+// Keeps a fresh box of this heap around the value of a Shared or Moved message in a receipt of the
+// calling fiber, then takes the message's stakes. The box is allocated (which may collect) while
+// the sender's stake still holds the value: a receive of an own object posts its DEC to this
+// heap's queue, and a collection that applied it before the receipt roots the box would free it.
 pub unit PortReceiptStoreMessage(i64 id, pointer record, word tag) {
     pointer value = NativePointer(raw_word_load(pointer_add(record, MESSAGE_VALUE)));
     pointer descriptor = NativePointer(raw_word_load(pointer_add(record, MESSAGE_DESCRIPTOR)));
-    if TypeDescriptorPointerCount(descriptor) != 0 {
-        if tag == CLASS_SHARED {
-            CountStakeReceive(value);
-        } else if HandOverReceive(value) == false {
-            Trap(10, NativePointer(0), 0);
-        }
-    }
     pointer request = SystemAllocate(24, 8);
     if request == NativePointer(0) { Trap(5, NativePointer(0), 0); }
     raw_word_store(request, TypeDescriptorSize(descriptor));
@@ -413,6 +408,13 @@ pub unit PortReceiptStoreMessage(i64 id, pointer record, word tag) {
     GcHybridWriteBarrier(pointer_add(box, BOX_VALUE), value);
     raw_word_store(pointer_add(box, BOX_VALUE), NativeWord(value));
     PortReceiptKeep(id, box, NativeWord(descriptor));
+    if TypeDescriptorPointerCount(descriptor) != 0 {
+        if tag == CLASS_SHARED {
+            CountStakeReceive(value);
+        } else if HandOverReceive(value) == false {
+            Trap(10, NativePointer(0), 0);
+        }
+    }
     return;
 }
 

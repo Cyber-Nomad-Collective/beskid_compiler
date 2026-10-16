@@ -4,6 +4,9 @@ use Core.Memory.Managed;
 use Core.Parallel;
 use Core.Parallel.Scopes;
 use Core.Parallel.Port;
+use Core.Parallel.ParallelSeq;
+use Core.Collections.List;
+use Core.Optional.Option;
 
 // Isolate, port and ORCA count evidence (v063-isolates-and-scope, v064-ports-and-pipelines 2.x
 // and 3.x, v065-parallel-sequences 2.x and 3.x). Every entry returns a non-negative value on
@@ -373,5 +376,58 @@ pub i64 RunStringPort() {
         return Result::Ok(expected);
     });
     if ScopeValue(result) != 50_i64 { return -1_i64; }
+    return Collected();
+}
+
+// ---- Collect keeps every element across real isolates (v0.6.5) ----
+[Export(Abi:"C", Symbol:"RunCollect")]
+pub i64 RunCollect() {
+    mut List<i64> values = List.New<i64>();
+    mut i64 i = 0_i64;
+    while i < 10000_i64 {
+        values = values.Push(i);
+        i = i + 1_i64;
+    }
+    List<i64> doubled = values.Parallel().Chunk(7_i64).Map((x) => x * 2_i64).Collect();
+    if doubled.Count() != 10000_i64 {
+        Core.Output.WriteLine("collect count " + DiagDecimal(doubled.Count()));
+        return -1_i64;
+    }
+    mut i64 k = 0_i64;
+    while k < 10000_i64 {
+        match doubled.TryGet(k) {
+            Option::Some(v) => {
+                if v != 2_i64 * k {
+                    Core.Output.WriteLine("collect at " + DiagDecimal(k) + " got " + DiagDecimal(v));
+                    return -2_i64;
+                }
+            },
+            Option::None => { return -3_i64; },
+        };
+        k = k + 1_i64;
+    }
+    return Collected();
+}
+
+// ---- A port handle crosses a port (v0.6.4) ----
+[Export(Abi:"C", Symbol:"RunPortHandle")]
+pub i64 RunPortHandle() {
+    Result<i64, ParallelError> result = Parallel.Scope<i64>((Scope s) => {
+        Port<Port<i64>> replyTo = s.Port<Port<i64>>();
+        Task<unit> server = s.Spawn(() => {
+            match replyTo.Receive() {
+                Result::Ok(reply) => { reply.Send(42_i64); },
+                Result::Error(_) => { },
+            };
+            return;
+        });
+        Port<i64> fresh = s.Port<i64>();
+        replyTo.Send(fresh);
+        return match fresh.Receive() {
+            Result::Ok(v) => Result::Ok(v),
+            Result::Error(_) => Result::Ok(-1_i64),
+        };
+    });
+    if ScopeValue(result) != 42_i64 { return -1_i64; }
     return Collected();
 }

@@ -51,6 +51,8 @@ const COUNTS_WORK_COUNT = 56;
 const COUNTS_WORK_CAPACITY = 64;
 
 const COUNT_COMMAND_SIZE = 16;
+// Low bit of a count command's reference (references are 8-aligned): a `Shared` stake.
+const COUNT_SHARED_BIT = 1;
 const COUNT_QUEUE_INITIAL = 64;
 const COUNT_WORK_INITIAL = 64;
 
@@ -282,16 +284,24 @@ pub word ObjectImmutableFlag(pointer object) {
 
 // Adds `delta` to the local count of `reference`, an object of `heap`. Runs on the owner thread
 // (or on the adopting thread once the owner has ended). Never allocates managed memory.
+// `reference` may carry `COUNT_SHARED_BIT`: the stake comes from a `Shared` send, so the object
+// graph is immutable whatever its descriptor says (an enum or record whose transfer class follows
+// a `Shared` type argument), and the entry is traced from (`markimmut`) instead of shallow-marked;
+// a shallow mark would leave the graph below the object unmarked while a port holds it.
 pub unit LocalCountAdd(pointer heap, word reference, word delta) {
     pointer cell = CountTableCell(heap, COUNTS_LOCAL);
     if cell == NativePointer(0) { Trap(5, NativePointer(0), 0); }
-    pointer existing = CountTableFind(cell, reference);
+    word shared = reference & COUNT_SHARED_BIT;
+    word key = reference - shared;
+    pointer existing = CountTableFind(cell, key);
     if existing != NativePointer(0) {
         raw_word_store(pointer_add(existing, ENTRY_COUNT), raw_word_load(pointer_add(existing, ENTRY_COUNT)) + delta);
+        if shared != 0 { raw_word_store(pointer_add(existing, ENTRY_IMMUTABLE), 1); }
         return;
     }
-    word immutable = ObjectImmutableFlag(ManagedObjectForReference(heap, NativePointer(reference)));
-    CountTableAdd(cell, reference, NativePointer(0), delta, immutable, 0);
+    mut word immutable = ObjectImmutableFlag(ManagedObjectForReference(heap, NativePointer(key)));
+    if shared != 0 { immutable = 1; }
+    CountTableAdd(cell, key, NativePointer(0), delta, immutable, 0);
     return;
 }
 
@@ -479,6 +489,18 @@ pub unit CountStakeSend(pointer reference) {
         return;
     }
     CountPost(NativeWord(reference), 1);
+    return;
+}
+
+// The stake of a `Shared` port message: like `CountStakeSend`, and the owner's entry is immutable.
+pub unit CountStakeSendShared(pointer reference) {
+    if reference == NativePointer(0) { return; }
+    pointer heap = Heap();
+    if ManagedObjectForReference(heap, reference) != NativePointer(0) {
+        LocalCountAdd(heap, NativeWord(reference) | COUNT_SHARED_BIT, 1);
+        return;
+    }
+    CountPost(NativeWord(reference) | COUNT_SHARED_BIT, 1);
     return;
 }
 
