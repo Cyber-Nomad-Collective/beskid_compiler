@@ -1,0 +1,137 @@
+// Heap adoption and discard at task join (v0.6.3, D7 of the Pony-derived decision).
+//
+// A completed task's heap is adopted by the joiner: every region of the child heap is relinked into
+// the joiner's region chain and the process-wide region-to-owner map is updated, so the result and
+// everything it references are read in place. The collector is non-moving, so no pointer is
+// rewritten (MaPLe hierarchical heaps: Raghunathan et al., ICFP 2016,
+// https://doi.org/10.1145/2951913.2951935; ORCA relies on the same property). A failed or
+// cancelled task's heap is discarded whole (Erlang-style fault containment).
+//
+// The child heap is idle when it is handed over (the isolate thread completed any collection in
+// progress and drained its quarantine, Isolates.bd and Lifecycle.bd). The joiner first completes
+// its own cycle in progress, so it is idle too; adopted spans are then stamped with the joiner's
+// sweep generation and carry clean mark bitmaps. Adopted garbage is reclaimed by the joiner's next
+// cycle, and adopted regions count against its `BESKID_HEAP_MAX`.
+//
+// ORCA counts (v0.6.4, v0.6.5 "adoption in every case"; Counts.bd): under the parallel lock, after
+// the region map names the joiner as the owner, the child's local table is merged into the
+// joiner's, the child's count queue is drained into the joiner's local table (holders that posted
+// before the map update reached the child's queue, later ones reach the joiner's), and foreign
+// entries are merged or cancelled against the joiner's local counts. A failed or cancelled task
+// whose heap still has local counts is adopted too (TaskFinalize): another isolate holds a stake
+// in one of its objects, so the heap cannot be discarded.
+
+const HEAP_FIRST_REGION = 0;
+const HEAP_REGION_COUNT = 16;
+const HEAP_COMMITTED_BYTES = 24;
+const HEAP_LIVE_BYTES = 32;
+const HEAP_LIVE_COUNT = 40;
+const HEAP_SWEEP_GENERATION = 432;
+const HEAP_STATE_SIZE = 528;
+
+const REGION_NEXT = 0;
+const REGION_SIZE = 8;
+const REGION_HEADER_SIZE = 64;
+const PAGE_SIZE = 8192;
+const SPAN_BASE = 8;
+const SPAN_SIZE_CLASS = 24;
+const SPAN_SWEEP_GENERATION = 248;
+const SPAN_HEADER_SIZE = 256;
+
+// Relinks `child`'s regions at the head of `parent`'s chain (the chain tail, where new spans are
+// carved, is unchanged), transfers the live and committed totals, moves the regions to the calling
+// instance in the region map and merges the foreign tables. Frees the child heap record.
+pub unit AdoptHeap(pointer parent, pointer child, pointer childRuntime) {
+    GcCompleteCycle(parent, false);
+    pointer parentRuntime = RuntimeState();
+    word generation = raw_word_load(pointer_add(parent, HEAP_SWEEP_GENERATION));
+    pointer first = NativePointer(raw_word_load(pointer_add(child, HEAP_FIRST_REGION)));
+    mut pointer last = NativePointer(0);
+    mut pointer region = first;
+    while region != NativePointer(0) {
+        word totalPages = raw_word_load(pointer_add(region, REGION_SIZE)) / PAGE_SIZE;
+        mut word page = 0;
+        while page < totalPages {
+            pointer entry = pointer_add(region, REGION_HEADER_SIZE + page * SPAN_HEADER_SIZE);
+            if raw_word_load(pointer_add(entry, SPAN_BASE)) != 0 && raw_word_load(pointer_add(entry, SPAN_SIZE_CLASS)) != 0 {
+                raw_word_store(pointer_add(entry, SPAN_SWEEP_GENERATION), generation);
+            }
+            page = page + 1;
+        }
+        RegionIndexInsert(parent, region);
+        last = region;
+        region = NativePointer(raw_word_load(pointer_add(region, REGION_NEXT)));
+    }
+    if first != NativePointer(0) {
+        raw_word_store(pointer_add(last, REGION_NEXT), raw_word_load(pointer_add(parent, HEAP_FIRST_REGION)));
+        raw_word_store(pointer_add(parent, HEAP_FIRST_REGION), NativeWord(first));
+    }
+    raw_word_store(pointer_add(parent, HEAP_REGION_COUNT),
+        raw_word_load(pointer_add(parent, HEAP_REGION_COUNT)) + raw_word_load(pointer_add(child, HEAP_REGION_COUNT)));
+    raw_word_store(pointer_add(parent, HEAP_COMMITTED_BYTES),
+        raw_word_load(pointer_add(parent, HEAP_COMMITTED_BYTES)) + raw_word_load(pointer_add(child, HEAP_COMMITTED_BYTES)));
+    raw_word_store(pointer_add(parent, HEAP_LIVE_BYTES),
+        raw_word_load(pointer_add(parent, HEAP_LIVE_BYTES)) + raw_word_load(pointer_add(child, HEAP_LIVE_BYTES)));
+    raw_word_store(pointer_add(parent, HEAP_LIVE_COUNT),
+        raw_word_load(pointer_add(parent, HEAP_LIVE_COUNT)) + raw_word_load(pointer_add(child, HEAP_LIVE_COUNT)));
+    ParallelLock();
+    RegionMapReassignOwner(childRuntime, parentRuntime);
+    LocalCountMergeInto(parent, child);
+    CountQueueDrainLocked(child, parent);
+    ForeignMergeInto(parent, child, parentRuntime);
+    ParallelUnlock();
+    CountRecordFree(child);
+    memory_set(child, 0, HEAP_STATE_SIZE);
+    SystemFree(child, HEAP_STATE_SIZE);
+    return;
+}
+
+// Releases a child heap whole: withdraws its ranges from the region map before unmapping them.
+pub unit DiscardHeap(pointer child, pointer childRuntime) {
+    // The discarded heap no longer reaches its foreign objects: give their stakes back.
+    ParallelLock();
+    ForeignReleaseAllLocked(child);
+    ParallelUnlock();
+    RegionMapUnregisterOwner(childRuntime);
+    mut pointer region = NativePointer(raw_word_load(pointer_add(child, HEAP_FIRST_REGION)));
+    while region != NativePointer(0) {
+        pointer next = NativePointer(raw_word_load(pointer_add(region, REGION_NEXT)));
+        SystemFree(region, raw_word_load(pointer_add(region, REGION_SIZE)));
+        region = next;
+    }
+    CountRecordFree(child);
+    memory_set(child, 0, HEAP_STATE_SIZE);
+    SystemFree(child, HEAP_STATE_SIZE);
+    return;
+}
+
+// Whether a finished child heap still has local counts after its queue is applied: then some other
+// isolate holds a stake in one of its objects and the heap must be adopted, not discarded. Runs on
+// the joiner's thread; the child's thread has ended.
+pub bool ChildHeapHeldByCounts(pointer child) {
+    ParallelLock();
+    CountQueueDrainLocked(child, child);
+    ParallelUnlock();
+    return LocalCountsHeld(child);
+}
+
+// Adds every local entry of `child` to `parent`'s local table. Caller holds the parallel lock.
+pub unit LocalCountMergeInto(pointer parent, pointer child) {
+    pointer cell = CountTableCell(child, 8);
+    if cell == NativePointer(0) { return; }
+    pointer table = NativePointer(raw_word_load(cell));
+    if table == NativePointer(0) { return; }
+    word capacity = raw_word_load(pointer_add(table, 8));
+    mut word index = 0;
+    while index < capacity {
+        pointer entry = CountTableEntry(table, index);
+        word key = raw_word_load(entry);
+        word count = raw_word_load(pointer_add(entry, 16));
+        // An immutable child entry (a `Shared` stake) stays immutable in the parent's table.
+        mut word shared = 0;
+        if raw_word_load(pointer_add(entry, 32)) != 0 { shared = 1; }
+        if key != 0 && count != 0 { LocalCountAdd(parent, key | shared, count); }
+        index = index + 1;
+    }
+    return;
+}

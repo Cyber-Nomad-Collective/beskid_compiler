@@ -39,6 +39,9 @@ pub enum ExpectedTypeContext {
     ArrayElement { array: AstNodeKey },
     /// The body of a match arm; the match expression's expected type is forwarded.
     MatchArm { expression: AstNodeKey },
+    /// The final expression statement of a block expression that is a value (an arm body, an
+    /// argument); the block expression's expected type is forwarded.
+    BlockResult { block: AstNodeKey },
     /// One operand of a binary expression whose peer operand proves the representation.
     BinaryOperand { expression: AstNodeKey, peer: AstNodeKey },
     /// An expression statement discards its value: the expectation is `unit`.

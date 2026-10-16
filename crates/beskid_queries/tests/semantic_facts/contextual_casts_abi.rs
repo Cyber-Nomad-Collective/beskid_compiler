@@ -2,7 +2,7 @@ use super::support::{assert_unavailable, key, key_at_start, setup};
 use beskid_analysis::syntax_query::NodeKind;
 use beskid_queries::{
     ExpectedTypeContext, SemanticTypeId, SyntaxGenerationId, abi_type, cast_intents, contextual_integer_literal_abi_type,
-    expected_type, primitive_numeric_conversion, value_abi_type,
+    enum_match, expected_type, primitive_numeric_conversion, value_abi_type,
 };
 use std::sync::Arc;
 
@@ -152,4 +152,21 @@ fn value_abi_type_preserves_a_direct_call_result_at_a_declared_storage_boundary(
 
     assert_eq!(value_abi_type(&db, call).expect("direct call value ABI"), Some(SemanticTypeId::I64));
     assert_eq!(value_abi_type(&db, local).expect("declared storage ABI"), Some(SemanticTypeId::I64));
+}
+
+#[test]
+fn final_match_statement_of_a_lambda_block_body_is_a_statement_not_the_lambda_value() {
+    // `parallel_counts.bd` shape: `s.Spawn(() => { match outbound.Receive() { .. => { return ..; } }; })`.
+    // The lambda's block body is not a value (its `return`s are), so its final expression
+    // statement expects `unit` and the match keeps its ordinary enum match fact.
+    let source = "enum Outcome<T, E> { Ok(T value), Error(E error) } \
+                  type Box<T> { T item, Outcome<T, string> Take() { return Outcome::Ok(this.item); } } \
+                  i64 Call<T>(() => T body) { return 1_i64; } \
+                  i64 Main(Box<i64> b) { return Call<i64>(() => { match b.Take() { Outcome::Ok(c) => { return c; }, Outcome::Error(_) => { return -1_i64; }, }; }); }";
+    let (db, _project, unit, generation, index) = setup(source);
+    let matched = key(unit, generation, &index, NodeKind::MatchExpression, 0);
+    let expected = expected_type(&db, matched).expect("final statement expected type").expect("statement context");
+    assert!(matches!(expected.context, ExpectedTypeContext::ExpressionStatement { .. }), "{:?}", expected.context);
+    assert_eq!(expected.abi_type(), SemanticTypeId::UNIT);
+    assert!(enum_match(&db, matched).expect("match over a captured generic owner's method").is_some());
 }

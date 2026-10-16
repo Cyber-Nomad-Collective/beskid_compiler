@@ -518,6 +518,42 @@ unit Main(List<i64> list) { list.Echo(1_i64); }
 }
 
 #[test]
+fn generic_nominal_method_receiver_is_applied_by_a_nested_enum_pattern_binding() {
+    let source = r#"
+type List<T> {
+    T value,
+    T Echo(T input) { return input; }
+}
+enum Problem { Failed(List<i64> failures), Empty }
+enum Outcome<TValue, TError> { Ok(TValue value), Error(TError error) }
+unit Main(Outcome<i64, Problem> result) {
+    match result {
+        Outcome::Error(Problem::Failed(failures)) => { failures.Echo(1_i64); },
+        _ => {},
+    };
+}
+"#;
+    let (db, _project, unit, generation, index) = setup(source);
+    let method = key(unit, generation, &index, NodeKind::MethodDefinition, 0);
+    let call = key(unit, generation, &index, NodeKind::CallExpression, 0);
+
+    assert_eq!(call_lowering(&db, call).expect("pattern receiver lowering"), Some(CallLowering::Direct(method)));
+    let receiver = generic_nominal_method_receiver(&db, call)
+        .expect("generic nominal receiver")
+        .expect("the nested pattern payload List<i64> must prove the owner environment");
+    assert_eq!(receiver.owner, key(unit, generation, &index, NodeKind::TypeDefinition, 0));
+    assert_eq!(receiver.substitutions.len(), 1);
+    assert_eq!(receiver.substitutions[0].argument, SemanticTypeId::I64);
+    assert_eq!(
+        generic_call_specialization(&db, call).expect("pattern receiver specialization").map(|fact| fact.signature),
+        Some(ItemSignature {
+            parameters: Arc::from([SemanticTypeId::POINTER, SemanticTypeId::I64]),
+            result: SemanticTypeId::I64,
+        })
+    );
+}
+
+#[test]
 fn generic_nominal_method_owner_binds_nested_generic_templates() {
     let source = r#"
 T Id<T>(T value) { return value; }
@@ -720,4 +756,64 @@ unit Main() {
     let specialization =
         beskid_queries::generic_call_specialization(&db, equal_call).expect("call result as generic argument");
     assert!(specialization.is_some(), "First() as a generic argument must infer T = i64 from its declared return type");
+}
+
+#[test]
+fn pipeline_chain_specializes_typed_and_untyped_lambda_parameter_receivers() {
+    // Core.Parallel pipeline shape (ParallelSuite): a typed lambda parameter receiver (`out.Send`),
+    // untyped stage lambdas whose parameter types flow through a chained generic receiver, and a
+    // sink lambda parameter passed to a generic method, with and without bounds and an enclosing lambda.
+    let base = r#"
+[CompilerDerived] pub contract Transferable { }
+type Port<T> {
+    i64 id,
+    unit Send(SENDPARAM) BOUND { return; }
+}
+type Stage<T> {
+    i64 id,
+    Stage<U> Map<U>(i64 workers, CAPS (T) => U step) BOUND2 { return Stage<U> { id: id }; }
+    Stage<T> Ordered() BOUND { return Stage<T> { id: id }; }
+    i64 Sink(CAPS (T) => unit sink) BOUND { return id; }
+}
+type Scope {
+    i64 id,
+    Stage<T> Source<T>(CAPS (Port<T>) => unit source) BOUND { return Stage<T> { id: id }; }
+    Port<T> PortWith<T>(i64 capacity) { return Port<T> { id: capacity }; }
+}
+T Run<T>(Scope root, (Scope) => T body) { return body(root); }
+i64 Main(Scope root) {
+    WRAP
+}
+"#;
+    let chain = r#"Port<string> lines = s.PortWith<string>(5_i64);
+    return s.Source((Port<i64> out) => { out.Send(1_i64); return; }).Map(4_i64, (n) => n * n).Ordered().Map(2_i64, (sq) => "${sq}").Ordered().Sink((line) => { lines.Send(line); return; });"#;
+    let variants = [
+        ("plain", "T value", "", "", "", false),
+        ("plain-lambda", "T value", "", "", "", true),
+        ("captures-lambda", "move T value", "where T: Transferable", "where T: Transferable, U: Transferable", "[Captures(Bound: Transferable)]", true),
+        ("bounds", "T value", "where T: Transferable", "where T: Transferable, U: Transferable", "", false),
+        ("captures", "move T value", "where T: Transferable", "where T: Transferable, U: Transferable", "[Captures(Bound: Transferable)]", false),
+    ];
+    let mut report = String::new();
+    for (name, send, bound, bound2, caps, wrapped) in variants {
+        let wrap = if wrapped {
+            format!("return Run<i64>(root, (Scope s) => {{ {chain} }});")
+        } else {
+            format!("Scope s = root; {chain}")
+        };
+        let source = base.replace("WRAP", &wrap).replace("SENDPARAM", send).replace("BOUND2", bound2).replace("BOUND", bound).replace("CAPS", caps);
+        let (db, _project, unit, generation, index) = setup(&source);
+        for (position, node) in index.ids_of_kind(NodeKind::CallExpression).enumerate() {
+            let call = AstNodeKey { unit, generation, node };
+            let specialization = generic_call_specialization(&db, call);
+            if specialization.is_err() || call_lowering(&db, call).is_err() {
+                report.push_str(&format!(
+                    "{name} call {position}: lowering={:?}\n  specialization={:?}\n",
+                    call_lowering(&db, call).map(|lowering| lowering.is_some()),
+                    specialization.map(|fact| fact.map(|fact| fact.signature)),
+                ));
+            }
+        }
+    }
+    assert!(report.is_empty(), "{report}");
 }

@@ -48,4 +48,12 @@ impl SyntaxNodeFacts<'_> {
         let element = self.generic_call_specialization_in_context(key)?.substitutions.first()?.argument;
         map_signature_type(self.isa?, element)
     }
+
+    pub(super) fn collection_element_managed_impl(&self, key: AstNodeKey) -> Option<ManagedReferenceFact> {
+        let element = self.generic_call_specialization_in_context(key)?.substitutions.first()?.managed_reference_kind();
+        Some(match element {
+            ManagedReferenceKind::GcManaged => ManagedReferenceFact::GcManaged,
+            ManagedReferenceKind::NativeOrScalar => ManagedReferenceFact::NativeOrScalar,
+        })
+    }
 }

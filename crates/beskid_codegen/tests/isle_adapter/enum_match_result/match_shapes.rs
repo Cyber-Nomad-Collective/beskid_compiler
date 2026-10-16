@@ -225,10 +225,13 @@ fn cross_unit_generic_receiver_match_preserves_a_concrete_nominal_error() {
     let specialization = beskid_queries::generic_call_specialization(input.database(), call)
         .expect("Join specialization query")
         .expect("the applied Work receiver must specialize Join<T>");
+    let specialization = beskid_queries::generic_call_specialization_instance(input.database(), specialization)
+        .expect("Join specialization instance query")
+        .expect("Join specialization instance");
     let matched =
         find_node(input.database(), join, beskid_queries::IndexedNodeKind::MatchExpression).expect("Join status match");
     assert!(
-        beskid_queries::enum_match_specialization(input.database(), matched, specialization.substitutions.clone(),)
+        beskid_queries::enum_match_specialization(input.database(), matched, &specialization)
             .expect("specialized Join match query")
             .is_some(),
         "the imported concrete WorkError must survive beside the owner-propagated T"
@@ -237,11 +240,7 @@ fn cross_unit_generic_receiver_match_preserves_a_concrete_nominal_error() {
         find_nodes_of_kind(input.database(), join, beskid_queries::IndexedNodeKind::EnumConstructorExpression)
     {
         let ordinary = enum_constructor(input.database(), constructor).ok().flatten();
-        let specialized = beskid_queries::enum_constructor_specialization(
-            input.database(),
-            constructor,
-            specialization.substitutions.clone(),
-        )
+        let specialized = beskid_queries::enum_constructor_specialization(input.database(), constructor, &specialization)
         .expect("specialized Join constructor query");
         assert!(ordinary.is_some() || specialized.is_some(), "every Join enum constructor must retain a layout");
     }

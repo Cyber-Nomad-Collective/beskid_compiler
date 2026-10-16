@@ -34,15 +34,15 @@ pub(super) fn specialization_for_call_in_environment(
         let generic_names = generic_callable_parameters(db, declaration).map(|(names, _)| names).unwrap_or_default();
         (method.parameters.iter().collect::<Vec<_>>(), method.return_type.as_ref(), generic_names, false, None)
     } else if let Some(method) = declaration_node.of::<beskid_analysis::syntax::MethodDefinition>() {
-        let owner_node = method_owner_node(
-            declaration_syntax.expanded_program(db),
-            declaration_syntax.syntax_index(db),
-            declaration.node,
-        )
-        .ok_or_else(|| SemanticError::unavailable_at("call_abi_signature", key))?;
-        let parent = declaration_syntax
+        // The owner may live in another unit (`impl<T> List<T>` extending a Foundation type).
+        let owner = method_owner_declaration(db, declaration)
+            .ok_or_else(|| SemanticError::unavailable_at("call_abi_signature", key))?;
+        let owner_syntax = db
+            .syntax_unit(owner.unit)
+            .ok_or_else(|| SemanticError::unavailable_at("call_abi_signature", key))?;
+        let parent = owner_syntax
             .syntax_index(db)
-            .node_at(declaration_syntax.expanded_program(db), owner_node)
+            .node_at(owner_syntax.expanded_program(db), owner.node)
             .and_then(|node| node.of::<beskid_analysis::syntax::TypeDefinition>())
             .ok_or_else(|| SemanticError::unavailable_at("call_abi_signature", key))?;
         (
@@ -52,7 +52,7 @@ pub(super) fn specialization_for_call_in_environment(
                 .map(|(names, _)| names)
                 .unwrap_or_else(|| parent.generics.iter().map(|generic| generic.node.name.as_str()).collect()),
             true,
-            Some(AstNodeKey { node: owner_node, ..declaration }),
+            Some(owner),
         )
     } else {
         let signature = item_abi_signature(db, declaration)?
@@ -91,7 +91,9 @@ pub(super) fn specialization_for_call_in_environment(
         .map(|(_, position, _)| position)
         .collect::<Vec<_>>();
     let mut source_substitutions = HashMap::<String, GenericSubstitution>::new();
-    let mut substitutions = if let Some(owner) = method_owner.filter(|_| !generic_names.is_empty()) {
+    let mut substitutions = if let Some(owner) =
+        method_owner.filter(|_| generic_callable_owner_count(db, declaration) > 0)
+    {
         // An unqualified sibling call uses the same implicit receiver, not an independently
         // annotated local receiver. Reuse bindings only when that source fact proves the exact
         // enclosing method and owner; equal generic parameter names alone are not authority.
@@ -117,7 +119,31 @@ pub(super) fn specialization_for_call_in_environment(
         HashMap::new()
     };
     let mut explicit_substitutions_complete = false;
-    if let Some(enclosing) = enclosing {
+    // Explicit type arguments on a method call bind the method's own type parameters only, all
+    // of them and in declaration order; the owner's come from the receiver above.
+    if is_method && let Some(arguments) = call_explicit_member_type_arguments(db, key) {
+        let own = &generic_names[generic_callable_owner_count(db, declaration).min(generic_names.len())..];
+        if own.len() != arguments.len() {
+            return Err(SemanticError::unavailable_at("call_abi_signature", key));
+        }
+        let environment = enclosing
+            .map(|enclosing| {
+                enclosing
+                    .substitutions
+                    .iter()
+                    .map(|binding| (binding.parameter.as_ref(), binding.source_identity()))
+                    .collect::<HashMap<_, _>>()
+            })
+            .unwrap_or_default();
+        for (generic, argument) in own.iter().zip(arguments.iter()) {
+            let source = generic_source_type_identity_with_substitutions(db, key, &argument.node, &environment)?;
+            substitutions.insert((*generic).to_owned(), source.abi_type());
+            source_substitutions
+                .insert((*generic).to_owned(), GenericSubstitution::from_source(*generic, source.abi_type(), source));
+        }
+        explicit_substitutions_complete = true;
+    }
+    if !is_method && let Some(enclosing) = enclosing {
         let syntax =
             db.syntax_unit(key.unit).ok_or_else(|| SemanticError::unavailable_at("call_abi_signature", key))?;
         let call = syntax
@@ -148,6 +174,7 @@ pub(super) fn specialization_for_call_in_environment(
         }
     }
     if !explicit_substitutions_complete
+        && !is_method
         && let Some(instantiation) = generic_call_instantiation(db, key)?
         && !instantiation.arguments.is_empty()
     {
@@ -195,9 +222,25 @@ pub(super) fn specialization_for_call_in_environment(
         let bare_integer = generic.is_some() && unsuffixed_integer_literal(db, argument)?;
         let parameter_mentions_generic =
             generic_names.iter().any(|name| type_syntax_mentions_generic_parameter(parameter_type, name));
-        let infer_from_actual = parameter_mentions_generic && !bare_integer && !explicit_substitutions_complete;
-        let proven_source_identity =
-            infer_from_actual.then(|| specialized_source_expression_identity(db, argument, enclosing)).transpose()?;
+        // A parameter whose every generic is already bound (by the receiver, as in
+        // `output.Send(Sequenced::Item(next, item))` on a `Port<Sequenced<T>>`) has a known expected
+        // type. A proven argument identity is still checked against it; an argument whose identity
+        // only that expected type proves (a contextual generic enum constructor) takes it instead.
+        let parameter_already_bound = generic_names
+            .iter()
+            .filter(|name| type_syntax_mentions_generic_parameter(parameter_type, name))
+            .all(|name| source_substitutions.contains_key(*name));
+        let proven_source_identity = if parameter_mentions_generic && !bare_integer && !explicit_substitutions_complete
+        {
+            match specialized_source_expression_identity(db, argument, enclosing) {
+                Ok(identity) => Some(identity),
+                Err(error) if parameter_already_bound && error.is_unavailable() => None,
+                Err(error) => return Err(error),
+            }
+        } else {
+            None
+        };
+        let infer_from_actual = proven_source_identity.is_some();
         let contextual_integer = if bare_integer {
             match generic.and_then(|name| substitutions.get(name)).copied() {
                 Some(expected) if integer_literal_fits_abi(db, argument, expected)? => Some(expected),
@@ -211,7 +254,9 @@ pub(super) fn specialization_for_call_in_environment(
         } else {
             None
         };
-        let explicit_expected = explicit_substitutions_complete
+        let known_expected =
+            explicit_substitutions_complete || (parameter_mentions_generic && parameter_already_bound);
+        let explicit_expected = known_expected
             .then(|| generic_abi_type(db, declaration, parameter_type, &substitutions))
             .transpose()?;
         let actual = if let Some(source) = proven_source_identity.as_ref() {
@@ -344,7 +389,7 @@ pub(super) fn specialization_for_call_in_environment(
 /// environment can bind the owner's generics; no target-neutral annotation fact can. `None` when
 /// the receiver has no nominal identity of exactly the owner type in that environment, so the
 /// target-neutral receiver authority still decides.
-fn specialized_method_receiver_bindings(
+pub(in crate::semantic_contract) fn specialized_method_receiver_bindings(
     db: &dyn Db,
     key: AstNodeKey,
     receiver: AstNodeKey,
@@ -393,7 +438,7 @@ fn specialized_method_receiver_bindings(
     )
 }
 
-fn infer_source_substitutions(
+pub(in crate::semantic_contract) fn infer_source_substitutions(
     db: &dyn Db,
     declaration: AstNodeKey,
     parameter: &beskid_analysis::syntax::Type,

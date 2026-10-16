@@ -54,8 +54,10 @@ test dynamic_cell_rejects_unregistered_payload {
 }
 test dynamic_box_preserves_canonical_descriptor_across_collection {
     pointer payload = DynamicTransportV1.beskid_rt_v5_dynamic_i64_box(101_i64);
-    Assert.True(payload != NativePointer(0), "canonical typed factory allocates box");
+    // Root the box before anything else allocates (an assertion message is a managed string):
+    // under `BESKID_GC_STRESS=alloc` that allocation collects first.
     word root = GcRootHandle(payload);
+    Assert.True(payload != NativePointer(0), "canonical typed factory allocates box");
     Assert.True(root != 0, "real box factory returns managed allocation");
     word descriptor = raw_word_load(payload);
     GcCollect();

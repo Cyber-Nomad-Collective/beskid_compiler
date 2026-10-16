@@ -30,7 +30,8 @@ pub(super) fn collect_array_static_plans(
             let plan = input
                 .array_static_plan_for_specialization(key, item.specialization.as_ref())
                 .or_else(|| input.bulk_array_static_plan(key, item.specialization.as_ref()))
-                .or_else(|| input.typed_array_static_plan(key, item.specialization.as_ref()));
+                .or_else(|| input.typed_array_static_plan(key, item.specialization.as_ref()))
+                .or_else(|| input.canonical_empty_statics(key, item.specialization.as_ref())?.array);
             if let Some(plan) = plan
                 && symbols.insert(plan.allocation_request_symbol.clone())
             {
@@ -68,7 +69,8 @@ pub(super) fn collect_aggregate_static_plans(
         for key in nodes {
             let plan = input
                 .aggregate_static_plan_for_specialization(key, item.specialization.as_ref())
-                .or_else(|| input.enum_static_plan_for_specialization(key, item.specialization.as_ref()));
+                .or_else(|| input.enum_static_plan_for_specialization(key, item.specialization.as_ref()))
+                .or_else(|| input.canonical_empty_statics(key, item.specialization.as_ref())?.object);
             if let Some(plan) = plan
                 && symbols.insert(plan.allocation_request_symbol.clone())
             {
@@ -101,8 +103,9 @@ pub(super) fn collect_closure_static_plans(
     let db = input.database();
     let mut plans = Vec::new();
     let mut seen = HashSet::new();
+    // One lambda of a generic body has one plan per enclosing instance, told apart by symbol.
     let mut push_plan = |plan: ClosureStaticPlan| {
-        if seen.insert(plan.lambda) {
+        if seen.insert(plan.descriptor_symbol.clone()) {
             plans.push(plan);
         }
     };
@@ -115,6 +118,16 @@ pub(super) fn collect_closure_static_plans(
         }
     }
     for trampoline in lambda_trampolines {
+        if trampoline.closure_captures.is_some()
+            && let Some(instance) = trampoline.specialization.as_ref()
+        {
+            if let Some(authority) =
+                input.specialized_closure_lowering_authority(trampoline.lambda, trampoline.lambda, instance)
+            {
+                push_plan(authority.plan);
+            }
+            continue;
+        }
         if trampoline.closure_captures.is_some() {
             let event_handler = event_handler_lambda_for_local(db, trampoline.lambda).ok().flatten().is_some();
             let authority = if event_handler {
@@ -176,8 +189,43 @@ fn collect_ast_nodes(
     }
 }
 
-/// Emit artifact-owned closure descriptor/pointer-map/allocation-request data.
+/// Declare the runtime kit data symbols that lowered functions read through a symbol global as
+/// imports: today the write-barrier process word `beskid_rt_v5_gc_barrier_active`, which the
+/// guarded barrier of a managed field or element store loads. The kit defines it; a module that
+/// does not read it declares nothing.
+pub(crate) fn declare_runtime_data_imports<M: Module>(module: &mut M, artifact: &CodegenArtifact) -> ModuleResult<()> {
+    for function in &artifact.functions {
+        declare_function_runtime_data_imports(module, &function.function)?;
+    }
+    Ok(())
+}
+
+/// Declare the runtime kit data imports one lowered function reads ([`declare_runtime_data_imports`]),
+/// for bodies that are defined outside the artifact (checked-effect closures) before their symbol
+/// globals are remapped. Declaring the same import twice yields the same data id.
+pub(crate) fn declare_function_runtime_data_imports<M: Module>(
+    module: &mut M,
+    function: &cranelift_codegen::ir::Function,
+) -> ModuleResult<()> {
+    let referenced = function.global_values.values().any(|global| {
+        matches!(
+            global,
+            cranelift_codegen::ir::GlobalValueData::Symbol {
+                name: cranelift_codegen::ir::ExternalName::TestCase(name),
+                ..
+            } if name.raw() == beskid_isle::GC_BARRIER_ACTIVE_SYMBOL.as_bytes()
+        )
+    });
+    if referenced {
+        module.declare_data(beskid_isle::GC_BARRIER_ACTIVE_SYMBOL, Linkage::Import, false, false)?;
+    }
+    Ok(())
+}
+
+/// Emit artifact-owned closure descriptor/pointer-map/allocation-request data, after declaring the
+/// runtime data symbols the artifact's functions import ([`declare_runtime_data_imports`]).
 pub fn emit_closure_static_plans<M: Module>(module: &mut M, artifact: &CodegenArtifact) -> ModuleResult<()> {
+    declare_runtime_data_imports(module, artifact)?;
     if artifact.event_handler_wrapper_required {
         crate::emit_event_handler_static_data(module)?;
     }

@@ -5,6 +5,7 @@ use super::*;
 mod calls;
 mod collections;
 mod composition;
+mod destructive_read;
 mod enums;
 mod events;
 mod literals;
@@ -30,6 +31,14 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
 
     fn scoped_cleanup(&self, key: AstNodeKey) -> Option<beskid_isle::ScopedCleanupPlan> {
         self.scoped_cleanup_impl(key)
+    }
+
+    fn move_expression(&self, key: AstNodeKey) -> Option<beskid_isle::MoveExpressionPlan> {
+        self.move_expression_impl(key)
+    }
+
+    fn exchange(&self, key: AstNodeKey) -> Option<beskid_isle::ExchangePlan> {
+        self.exchange_impl(key)
     }
 
     fn node_kind(&self, key: AstNodeKey) -> Option<NodeKind> {
@@ -138,6 +147,10 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
 
     fn collection_element_type(&self, key: AstNodeKey) -> Option<Type> {
         self.collection_element_type_impl(key)
+    }
+
+    fn collection_element_managed(&self, key: AstNodeKey) -> Option<ManagedReferenceFact> {
+        self.collection_element_managed_impl(key)
     }
 
     fn direct_callee(&self, key: AstNodeKey) -> Option<DirectCallee> {
@@ -290,6 +303,14 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
 
     fn traced_channel_send_layout(&self, key: AstNodeKey) -> Option<beskid_isle::TracedFiberJoinLayout> {
         self.traced_channel_send_layout_impl(key)
+    }
+
+    fn isolate_spawn_call(&self, key: AstNodeKey) -> Option<beskid_isle::IsolateSpawnCall> {
+        self.isolate_spawn_call_impl(key)
+    }
+
+    fn transfer_class_constant(&self, key: AstNodeKey) -> Option<i64> {
+        self.transfer_class_constant_impl(key)
     }
 
     fn lambda_entry(&self, key: AstNodeKey) -> Option<beskid_isle::LambdaEntry> {

@@ -846,6 +846,26 @@ pub(super) fn specialized_local_declaration_identity(
     if let Some(parameter) = index.node_at(program, parent).and_then(|node| node.of::<Parameter>()) {
         return Some(generic_source_type_identity_with_substitutions(db, declaration, &parameter.ty.node, &environment));
     }
+    // A typed lambda parameter (`(List<T> leaf, T value) => leaf.Push(value)` in a generic body)
+    // has its written type through the enclosing substitutions; an untyped one takes the
+    // parameter of the function type its lambda's position expects in this environment.
+    if let Some(parameter) =
+        index.node_at(program, parent).and_then(|node| node.of::<beskid_analysis::syntax::LambdaParameter>())
+    {
+        return Some(match parameter.ty.as_ref() {
+            Some(written) => generic_source_type_identity_with_substitutions(db, declaration, &written.node, &environment),
+            None => untyped_lambda_parameter_identity(db, program, index, identifier, parent, Some(enclosing)),
+        });
+    }
+    // An enum-pattern binding has the payload identity its match proves in this environment. A
+    // match this environment does not specialize leaves the binding to the other authorities.
+    if index.kind(parent) == Some(NodeKind::Pattern) {
+        let binding = pattern_binding_fact_in_environment(db, index, identifier, identifier.node, Some(enclosing))?.ok()?;
+        return match binding.source_identity {
+            Some(identity) => Some(Ok(identity)),
+            None => generic_source_field_shape_identity(db, identifier, binding.payload).ok().map(Ok),
+        };
+    }
     // A `for` variable has the identity of the elements its iterable yields in this environment.
     if index.node_at(program, parent).and_then(|node| node.of::<beskid_analysis::syntax::ForStatement>()).is_some() {
         return Some(specialized_for_element_identity(db, declaration, enclosing));
@@ -956,6 +976,13 @@ pub(super) fn specialized_source_expression_identity(
             &environment,
         );
     }
+    // A constructor and a lambda are typed by their position's expectation in this environment.
+    if let Some(constructor) = node.of::<beskid_analysis::syntax::EnumConstructorExpression>() {
+        return applied_enum_constructor_identity(db, key, constructor, Some(enclosing));
+    }
+    if node.of::<beskid_analysis::syntax::LambdaExpression>().is_some() {
+        return lambda_identity(db, program, index, key, Some(enclosing));
+    }
     // A field read (`value.history`, `this.reader`) has the declared field type applied to its
     // receiver's identity in this environment (`List<T>` of a `Boxed<i32>` value is `List<i32>`).
     if (node.of::<beskid_analysis::syntax::PathExpression>().is_some()
@@ -969,6 +996,13 @@ pub(super) fn specialized_source_expression_identity(
     if node.of::<beskid_analysis::syntax::TryExpression>().is_some() {
         return super::calls::try_expression_fact_for_node(db, program, index, key, node, Some(enclosing))
             .map(|fact| fact.payload_identity);
+    }
+    // A call through a function value (`element(index)` with `(i64) => Option<T> element`) has
+    // the result of its callee's function type in this environment.
+    if node.of::<beskid_analysis::syntax::CallExpression>().is_some()
+        && let Some(call) = function_value_call_specialization(db, key, enclosing)?
+    {
+        return Ok(call.result_identity);
     }
     if node.of::<beskid_analysis::syntax::CallExpression>().is_some()
         && let Some(result) = specialized_corelib_value_service_result(db, key, enclosing)?
@@ -1448,16 +1482,59 @@ fn bound_contract_name(path: &Path) -> String {
 }
 
 fn generic_bound_not_satisfied(type_name: String, contract: &Path) -> SemanticError {
+    generic_bound_not_satisfied_because(type_name, contract, None)
+}
+
+fn generic_bound_not_satisfied_because(type_name: String, contract: &Path, reason: Option<String>) -> SemanticError {
     let contract_name = bound_contract_name(contract);
     let issue = beskid_analysis::analysis::SemanticIssueKind::GenericBoundNotSatisfied {
         type_name: type_name.clone(),
         contract_name: contract_name.clone(),
+        reason: reason.clone(),
     };
     SemanticError::generic_bound_not_satisfied(
         format!("{}: {}", issue.code(), issue.message()),
         type_name,
         contract_name,
+        reason.map(Arc::from),
     )
+}
+
+/// The spelling of a source identity in a marker-bound diagnostic: a nominal by its own name.
+fn bound_type_display(identity: &GenericSourceTypeIdentity) -> String {
+    match identity {
+        GenericSourceTypeIdentity::Nominal { qualified_name, arguments } => {
+            let name = qualified_name.rsplit("::").next().unwrap_or(qualified_name).to_owned();
+            if arguments.is_empty() {
+                name
+            } else {
+                let arguments = arguments.iter().map(bound_type_display).collect::<Vec<_>>().join(", ");
+                format!("{name}<{arguments}>")
+            }
+        }
+        GenericSourceTypeIdentity::Array(element) => format!("{}[]", bound_type_display(element)),
+        other => other.display_name(),
+    }
+}
+
+/// Prove a `where T: M` bound on a compiler-derived marker contract from the transfer class of
+/// the substituted type (requirement "Compiler-derived marker contracts").
+fn prove_marker_bound(
+    db: &dyn Db,
+    context: AstNodeKey,
+    source_identity: &GenericSourceTypeIdentity,
+    marker: TransferMarker,
+    path: &Path,
+) -> Result<(), SemanticError> {
+    let class = transfer_class(db, context, source_identity)?;
+    if class.satisfies(marker) {
+        return Ok(());
+    }
+    Err(generic_bound_not_satisfied_because(
+        bound_type_display(source_identity),
+        path,
+        Some(marker_bound_reason(&class, marker)),
+    ))
 }
 
 /// Resolve the contract declaration named by an applied bound path (`Serializable<E>` names
@@ -1526,20 +1603,23 @@ pub(super) fn declared_where_bounds(
     let (parameters, bounds, scope) = if let Some(function) = node.of::<FunctionDefinition>() {
         (
             function.parameters.as_slice(),
-            function.where_bounds.as_slice(),
+            function.where_bounds.iter().collect::<Vec<_>>(),
             function.generics.iter().map(|generic| generic.node.name.as_str()).collect::<Vec<_>>(),
         )
     } else if let Some(method) = node.of::<MethodDefinition>() {
-        let Some(block) = nearest_ancestor(index, declaration.node, |kind| kind == NodeKind::ImplBlock)
+        // An `impl` block's bounds and the method's own bounds, which may name the owner's
+        // type parameters and the method's own.
+        let block_bounds = nearest_ancestor(index, declaration.node, |kind| kind == NodeKind::ImplBlock)
             .and_then(|parent| index.node_at(program, parent))
             .and_then(|node| node.of::<ImplBlock>())
-        else {
-            return Ok(Vec::new());
-        };
+            .map(|block| block.where_bounds.iter().collect::<Vec<_>>())
+            .unwrap_or_default();
+        let mut bounds = block_bounds;
+        bounds.extend(method.where_bounds.iter());
         (
             method.parameters.as_slice(),
-            block.where_bounds.as_slice(),
-            block.generics.iter().map(|generic| generic.node.name.as_str()).collect::<Vec<_>>(),
+            bounds,
+            generic_callable_parameters(db, declaration).map(|(names, _)| names).unwrap_or_default(),
         )
     } else {
         return Ok(Vec::new());
@@ -1659,7 +1739,7 @@ fn environment_substitutions(bindings: Vec<(String, GenericSourceTypeIdentity)>)
 /// (which may also declare `type X : Contract`) or an `enum` (which conforms only through `impl`).
 struct NominalHead {
     name: String,
-    generics: Vec<Spanned<beskid_analysis::syntax::Identifier>>,
+    generics: Vec<Spanned<beskid_analysis::syntax::TypeParameter>>,
     conformances: Vec<Spanned<Path>>,
 }
 
@@ -1793,6 +1873,12 @@ fn implementation_bounds_hold(
             return Ok(false);
         };
         let contract = bound_contract_declaration(db, implementation, &bound.contract.node)?;
+        if let Some(marker) = transfer_marker_contract(db, contract) {
+            if transfer_class(db, implementation, source)?.satisfies(marker) {
+                continue;
+            }
+            return Ok(false);
+        }
         let Ok(arguments) = applied_contract_arguments(db, implementation, &bound.contract.node, environment) else {
             return Ok(false);
         };
@@ -1921,6 +2007,11 @@ pub(super) fn contract_witnesses_for_call(
             }
             return Err(SemanticError::unavailable("where_bound.substitution"));
         };
+        if let Some(marker) = transfer_marker_contract(db, bound.contract) {
+            // A marker has no members, so the bound issues no witness.
+            prove_marker_bound(db, declaration, &source_identity, marker, &bound.path)?;
+            continue;
+        }
         let applied_arguments = applied_contract_arguments(db, declaration, &bound.path, &environment)?;
         let proven = prove_applied_conformance(
             db,
@@ -2042,6 +2133,9 @@ fn bounded_field_member_implementation(
         else {
             continue;
         };
+        if transfer_marker_contract(db, bound.contract).is_some() {
+            continue;
+        }
         let applied_arguments = applied_contract_arguments(db, key, &bound.path, &environment)?;
         let proven = prove_applied_conformance(
             db,

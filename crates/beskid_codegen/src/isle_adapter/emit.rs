@@ -28,7 +28,8 @@ pub fn emit_isle_closure_lambda_entry<'db>(
 #[expect(clippy::too_many_arguments, reason = "a lambda entry needs parameters, captures, and both services")]
 pub fn emit_isle_lambda_entry<'db>(
     input: &'db CodegenInput<'db>,
-    isa: &dyn TargetIsa,
+    isa: &'db dyn TargetIsa,
+    specialization: Option<&beskid_queries::GenericSpecializationInstance>,
     body: AstNodeKey,
     result: Option<Type>,
     parameters: &[ParameterSlot],
@@ -37,7 +38,13 @@ pub fn emit_isle_lambda_entry<'db>(
     importer: &mut dyn CallImporter,
 ) -> Result<cranelift_codegen::ir::Function, FunctionEmissionError> {
     let emitter = FunctionEmitter::new(isa);
-    let facts = SyntaxNodeFacts::new_with_isa(input, isa);
+    // A lambda of a generic body is lowered in its enclosing instance's environment.
+    let facts = match specialization {
+        Some(instance) => {
+            SyntaxNodeFacts::new_with_item_specialization(input, isa, instance.declaration, instance.clone())
+        }
+        None => SyntaxNodeFacts::new_with_isa(input, isa),
+    };
     emitter.emit_closure_lambda_entry_with_call_importer(
         UserFuncName::user(0, 0),
         result,

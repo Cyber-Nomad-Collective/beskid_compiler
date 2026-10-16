@@ -369,7 +369,7 @@ pub(in super::super) fn canonical_foundation_service_fixture(
 /// Complete a partial Corelib fixture assembly with the modules its units import.
 ///
 /// Every module a top-level `use` of `units` names and that no unit already provides is read from
-/// the canonical Corelib package sources (Foundation, Network) and appended to `units`; the package
+/// the canonical Corelib package sources (Foundation, Network, Concurrency) and appended to `units`; the package
 /// source root it lives under becomes a dependency root when it is not already a compilation root.
 /// The legality gate rejects a `use` that names no assembled module (E1105), so a fixture that
 /// lowers an item must carry the modules that item's unit imports. The appended units' own imports
@@ -379,7 +379,7 @@ pub(in super::super) fn include_imported_corelib_modules(
     roots: &mut EffectiveCompilationRoots,
 ) {
     let packages = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corelib/packages");
-    let package_roots = ["foundation", "network"]
+    let package_roots = ["foundation", "network", "concurrency"]
         .map(|package| std::fs::canonicalize(packages.join(package).join("src")).expect("Corelib package source root"));
     let module_of = |unit: &SourceUnit, roots: &EffectiveCompilationRoots| {
         beskid_analysis::projects::infer_logical_module_path(unit, roots)

@@ -94,7 +94,7 @@ u64 GlueShapeIdentity(u8[] bytes, word index) {
 }
 
 [Export(Abi:"C", Symbol:"beskid_glue_v1_record_bind_shapes")]
-pub word GlueRecordBindShapes(GlueOwnerRecord record, u8[] bytes) {
+pub word GlueRecordBindShapes(GlueOwnerRecord record, move u8[] bytes) {
     if record.kind != 2_u64 || record.released != 0_u64 { return 0; }
     if Array.Len<u8>(record.payload) != 0 { return 0; }
     word length = word(Array.Len<u8>(bytes));
@@ -109,7 +109,7 @@ pub word GlueRecordBindShapes(GlueOwnerRecord record, u8[] bytes) {
     }
     // Both source parameters are managed roots; canonical assignment emits the
     // descriptor-aware publication barrier before the library is usable.
-    record.payload = bytes;
+    record.payload = move bytes;
     return 1;
 }
 
@@ -131,14 +131,14 @@ pub word GlueRecordHasShape(GlueOwnerRecord record, u64 shape) {
 }
 
 [Export(Abi:"C", Symbol:"beskid_glue_v1_record_release")]
-pub word GlueRecordRelease(GlueOwnerRecord record, u8[] empty) {
+pub word GlueRecordRelease(GlueOwnerRecord record, move u8[] empty) {
     if Array.Len<u8>(empty) != 0 { return 0; }
     if record.released == 1 { return 1; }
     // The process session owns this preadmitted empty array. Release allocates
     // no replacement; both parameters are typed roots through the barrier.
     pointer buffer = record.foreignBuffer;
     word allocation = record.allocationSize;
-    record.payload = empty;
+    record.payload = move empty;
     record.released = 1;
     record.foreignBuffer = NativePointer(0);
     record.length = 0;

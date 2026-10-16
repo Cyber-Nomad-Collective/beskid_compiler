@@ -1,0 +1,336 @@
+// Foreign reference table (v0.6.3): the references this heap holds into other runtime instances'
+// heaps, the foreign reference count table of ORCA (Clebsch et al., OOPSLA 2017,
+// https://doi.org/10.1145/3133896, sec. 4).
+//
+// Marking never enters a foreign immutable object. When `GcMarkGray` meets a managed reference that is not
+// inside one of the current heap's regions, it resolves the owning runtime instance through the
+// process-wide region-to-owner map (`RegionOwner`) and stamps this table's entry for the
+// reference with the current collection epoch; it writes nothing into the owner's heap or span
+// directory. Mark termination drops every entry that the cycle did not stamp.
+//
+// Counted entries (v0.6.4, Counts.bd). An entry created by a receive carries the stakes the
+// messages gave this heap (`count > 0`); when the cycle no longer reaches it, mark termination
+// posts one DEC of `count` to the owner resolved through the region map at posting time.
+//
+// An immutable entry that marking discovers on its own is counted too (ORCA's acquire, sec. 4.3):
+// the heap reached the object through another foreign object or a scope-rooted Shared capture,
+// and nothing else guarantees that path outlives this heap's own reference. A received
+// `Sequenced::Item(n, text)` is the typical case: its stake covers the wrapper, the receiver keeps
+// `text` and drops the wrapper, and once the wrapper's DEC reaches the owner nothing would keep
+// `text` alive. Marking takes the lock-free half: the entry gets one stake and the pending-INC
+// bit. The INC itself is posted under the parallel lock before any DEC of the same cycle
+// (`ForeignPostPendingLocked` from mark termination, adoption and discard), so the owner always
+// sees the INC before the DEC that released the path the object was discovered through.
+// Every counted entry inflates the heap's live bytes by FOREIGN_INFLATION_BYTES (ORCA sec. 4.5.2),
+// so an isolate that allocates little still collects and sends its DECs.
+//
+// Mutable foreign objects (v0.6.5 hand-over) are traced through: the receiver may store its own
+// objects inside them, and the owner only shallow-marks them. Marking pushes a mutable entry on
+// the foreign worklist the first time a cycle stamps it, and the mark drain traces its fields
+// (never its header or span bits; all state stays in this table). Immutable foreign objects are
+// never entered: the owner traces them from its local entry.
+//
+// The table lives in the heap's count record (Counts.bd) and shares its entry format: reference
+// (the ABI-visible reference), owner instance at insertion (informational: owners are always
+// resolved through the region map), count, epoch, immutable.
+
+const HEAP_FOREIGN_EPOCH = 520;
+const HEAP_LIVE_BYTES = 32;
+
+const COUNTS_FOREIGN = 0;
+const COUNTS_WORK = 48;
+const COUNTS_WORK_COUNT = 56;
+const COUNTS_WORK_CAPACITY = 64;
+
+const TABLE_COUNT = 0;
+const TABLE_CAPACITY = 8;
+const FOREIGN_ENTRY_REFERENCE = 0;
+const FOREIGN_ENTRY_OWNER = 8;
+const FOREIGN_ENTRY_COUNT = 16;
+const FOREIGN_ENTRY_EPOCH = 24;
+const FOREIGN_ENTRY_IMMUTABLE = 32;
+const FOREIGN_WORK_INITIAL = 64;
+const FOREIGN_INFLATION_BYTES = 64;
+const FOREIGN_TRACE_BYTES = 64;
+// Bit 1 of an entry's immutable word: marking created the entry with one stake whose INC is not
+// posted yet. Bit 0 stays the immutable flag.
+const FOREIGN_PENDING_INC = 2;
+// Low bit of a count command's reference: a `Shared` stake (Counts.bd).
+const COUNT_SHARED_BIT = 1;
+
+const REBUILD_KEEP_ALL = 0;
+const REBUILD_KEEP_STAMPED = 1;
+
+pub pointer ForeignTableCell(pointer heap) {
+    return CountTableCell(heap, COUNTS_FOREIGN);
+}
+
+pub pointer ForeignTable(pointer heap) {
+    pointer cell = ForeignTableCell(heap);
+    if cell == NativePointer(0) { return NativePointer(0); }
+    return NativePointer(raw_word_load(cell));
+}
+
+pub word ForeignEpoch(pointer heap) {
+    return raw_word_load(pointer_add(heap, HEAP_FOREIGN_EPOCH));
+}
+
+// Number of live entries (diagnostic and test view).
+pub word ForeignEntryCount(pointer heap) {
+    pointer table = ForeignTable(heap);
+    if table == NativePointer(0) { return 0; }
+    return raw_word_load(pointer_add(table, TABLE_COUNT));
+}
+
+pub unit ForeignInflate(pointer heap, bool add) {
+    word live = raw_word_load(pointer_add(heap, HEAP_LIVE_BYTES));
+    if add {
+        raw_word_store(pointer_add(heap, HEAP_LIVE_BYTES), live + FOREIGN_INFLATION_BYTES);
+    } else if live >= FOREIGN_INFLATION_BYTES {
+        raw_word_store(pointer_add(heap, HEAP_LIVE_BYTES), live - FOREIGN_INFLATION_BYTES);
+    } else {
+        raw_word_store(pointer_add(heap, HEAP_LIVE_BYTES), 0);
+    }
+    return;
+}
+
+// Creates or finds the entry of `reference` owned by `owner`, stamps it with the heap's epoch and
+// adds `count` stakes to it. Returns the entry.
+pub pointer ForeignInsert(pointer heap, word reference, pointer owner, word count, word immutable) {
+    pointer cell = ForeignTableCell(heap);
+    pointer existing = CountTableFind(cell, reference);
+    mut word before = 0;
+    if existing != NativePointer(0) { before = raw_word_load(pointer_add(existing, FOREIGN_ENTRY_COUNT)); }
+    pointer entry = CountTableAdd(cell, reference, owner, count, immutable, ForeignEpoch(heap));
+    raw_word_store(pointer_add(entry, FOREIGN_ENTRY_EPOCH), ForeignEpoch(heap));
+    if before == 0 && raw_word_load(pointer_add(entry, FOREIGN_ENTRY_COUNT)) != 0 { ForeignInflate(heap, true); }
+    return entry;
+}
+
+// Marking met `reference`, which is not an object of `heap`. Records it when another live runtime
+// instance owns the address; ignores it otherwise. Never writes the owner's heap.
+pub unit ForeignObserve(pointer heap, pointer reference) {
+    word address = NativeWord(reference);
+    if address == 0 || address % 8 != 0 { return; }
+    // With one instance there is no foreign heap, and the map walk is skipped.
+    if ProcessLiveInstances() < 2 && ForeignEntryCount(heap) == 0 { return; }
+    pointer existing = CountTableFind(ForeignTableCell(heap), address);
+    if existing != NativePointer(0) {
+        if raw_word_load(pointer_add(existing, FOREIGN_ENTRY_EPOCH)) != ForeignEpoch(heap) {
+            raw_word_store(pointer_add(existing, FOREIGN_ENTRY_EPOCH), ForeignEpoch(heap));
+            if raw_word_load(pointer_add(existing, FOREIGN_ENTRY_IMMUTABLE)) == 0 { ForeignWorkPush(heap, address); }
+        }
+        return;
+    }
+    pointer owner = RegionOwner(reference);
+    if owner == NativePointer(0) || owner == RuntimeState() { return; }
+    word immutable = ObjectImmutableFlag(CountObjectStart(reference));
+    if immutable == 0 {
+        // Receiver-first discovery of a mutable foreign object (v0.6.5 design, open issue 2):
+        // the receive walk gives every mutable object of a handed-over graph an entry, and I1
+        // forbids another isolate from extending it, so this must not happen. The debug kit traps;
+        // a release kit records an uncounted entry and traces through it.
+        if KitDebugProfile() { Trap(10, NativePointer(0), 0); }
+        ForeignInsert(heap, address, owner, 0, 0);
+        ForeignWorkPush(heap, address);
+        return;
+    }
+    ForeignInsert(heap, address, owner, 1, 1 | FOREIGN_PENDING_INC);
+    return;
+}
+
+// Posts the INC of every entry marking created (`FOREIGN_PENDING_INC`) and clears the bit. The
+// INC carries the Shared bit, so the owner traces the object from its entry. Caller holds the
+// parallel lock.
+pub unit ForeignPostPendingLocked(pointer heap) {
+    pointer table = ForeignTable(heap);
+    if table == NativePointer(0) || raw_word_load(pointer_add(table, TABLE_COUNT)) == 0 { return; }
+    word capacity = raw_word_load(pointer_add(table, TABLE_CAPACITY));
+    mut word index = 0;
+    while index < capacity {
+        pointer entry = CountTableEntry(table, index);
+        word key = raw_word_load(pointer_add(entry, FOREIGN_ENTRY_REFERENCE));
+        word flags = raw_word_load(pointer_add(entry, FOREIGN_ENTRY_IMMUTABLE));
+        if key != 0 && (flags & FOREIGN_PENDING_INC) != 0 {
+            CountPostLocked(key | COUNT_SHARED_BIT, 1);
+            raw_word_store(pointer_add(entry, FOREIGN_ENTRY_IMMUTABLE), flags - FOREIGN_PENDING_INC);
+        }
+        index = index + 1;
+    }
+    return;
+}
+
+// A discarded heap reaches nothing any more: every counted entry posts its DEC (after the pending
+// INCs, so each owner sees a balanced pair). Caller holds the parallel lock.
+pub unit ForeignReleaseAllLocked(pointer heap) {
+    ForeignPostPendingLocked(heap);
+    pointer table = ForeignTable(heap);
+    if table == NativePointer(0) || raw_word_load(pointer_add(table, TABLE_COUNT)) == 0 { return; }
+    word capacity = raw_word_load(pointer_add(table, TABLE_CAPACITY));
+    mut word index = 0;
+    while index < capacity {
+        pointer entry = CountTableEntry(table, index);
+        word key = raw_word_load(pointer_add(entry, FOREIGN_ENTRY_REFERENCE));
+        word count = raw_word_load(pointer_add(entry, FOREIGN_ENTRY_COUNT));
+        if key != 0 && count != 0 {
+            CountPostLocked(key, 0 - count);
+            raw_word_store(pointer_add(entry, FOREIGN_ENTRY_COUNT), 0);
+        }
+        index = index + 1;
+    }
+    return;
+}
+
+// ── Foreign mark worklist ─────────────────────────────────────────────
+
+pub unit ForeignWorkPush(pointer heap, word reference) {
+    pointer record = CountRecord(heap);
+    if record == NativePointer(0) { Trap(5, NativePointer(0), 0); }
+    word count = raw_word_load(pointer_add(record, COUNTS_WORK_COUNT));
+    word capacity = raw_word_load(pointer_add(record, COUNTS_WORK_CAPACITY));
+    if count == capacity {
+        mut word grown = capacity * 2;
+        if grown == 0 { grown = FOREIGN_WORK_INITIAL; }
+        pointer work = SystemAllocate(grown * 8, 8);
+        if work == NativePointer(0) { Trap(5, NativePointer(0), 0); }
+        if capacity != 0 {
+            pointer old = NativePointer(raw_word_load(pointer_add(record, COUNTS_WORK)));
+            memory_copy(work, old, count * 8);
+            SystemFree(old, capacity * 8);
+        }
+        raw_word_store(pointer_add(record, COUNTS_WORK), NativeWord(work));
+        raw_word_store(pointer_add(record, COUNTS_WORK_CAPACITY), grown);
+    }
+    raw_word_store(pointer_add(NativePointer(raw_word_load(pointer_add(record, COUNTS_WORK))), count * 8), reference);
+    raw_word_store(pointer_add(record, COUNTS_WORK_COUNT), count + 1);
+    return;
+}
+
+pub bool ForeignWorkPending(pointer heap) {
+    pointer record = CountRecord(heap);
+    if record == NativePointer(0) { return false; }
+    return raw_word_load(pointer_add(record, COUNTS_WORK_COUNT)) != 0;
+}
+
+// Traces the fields of one queued mutable foreign object, shading what it reaches. Returns the
+// bytes accounted to the step, 0 when the worklist is empty, or `0xFFFFFFFFFFFFFFFF` when the
+// object has no valid descriptor.
+pub word ForeignDrainOne(pointer heap) {
+    pointer record = CountRecord(heap);
+    if record == NativePointer(0) { return 0; }
+    word count = raw_word_load(pointer_add(record, COUNTS_WORK_COUNT));
+    if count == 0 { return 0; }
+    word reference = raw_word_load(pointer_add(NativePointer(raw_word_load(pointer_add(record, COUNTS_WORK))), (count - 1) * 8));
+    raw_word_store(pointer_add(record, COUNTS_WORK_COUNT), count - 1);
+    pointer object = CountObjectStart(NativePointer(reference));
+    if object == NativePointer(0) { return FOREIGN_TRACE_BYTES; }
+    pointer descriptor = TraceableDescriptor(object);
+    if descriptor == NativePointer(0) { return 0xFFFFFFFFFFFFFFFF; }
+    if TraceObjectFields(object, descriptor) == false { return 0xFFFFFFFFFFFFFFFF; }
+    return FOREIGN_TRACE_BYTES;
+}
+
+// Mark start: a new epoch, so that this cycle's stamps are distinguishable from older ones.
+pub unit ForeignBeginEpoch(pointer heap) {
+    word next = ForeignEpoch(heap) + 1;
+    raw_word_store(pointer_add(heap, HEAP_FOREIGN_EPOCH), next);
+    pointer record = CountRecord(heap);
+    if record != NativePointer(0) { raw_word_store(pointer_add(record, COUNTS_WORK_COUNT), 0); }
+    return;
+}
+
+// Mark termination: entries the cycle did not stamp are no longer reachable from this heap. Each
+// counted one posts a DEC of its count to its current owner. When the parallel lock is busy the
+// entries are kept and the next cycle posts them (a late DEC only delays reclamation).
+pub unit ForeignDropUnstamped(pointer heap) {
+    pointer table = ForeignTable(heap);
+    if table == NativePointer(0) || raw_word_load(pointer_add(table, TABLE_COUNT)) == 0 { return; }
+    if ParallelTryLock() == false { return; }
+    // INCs first: an entry this cycle discovered may hang off one that it drops below.
+    ForeignPostPendingLocked(heap);
+    word epoch = ForeignEpoch(heap);
+    word capacity = raw_word_load(pointer_add(table, TABLE_CAPACITY));
+    mut word index = 0;
+    while index < capacity {
+        pointer entry = CountTableEntry(table, index);
+        word key = raw_word_load(pointer_add(entry, FOREIGN_ENTRY_REFERENCE));
+        word count = raw_word_load(pointer_add(entry, FOREIGN_ENTRY_COUNT));
+        if key != 0 && raw_word_load(pointer_add(entry, FOREIGN_ENTRY_EPOCH)) != epoch && count != 0 {
+            CountPostLocked(key, 0 - count);
+            ForeignInflate(heap, false);
+        }
+        index = index + 1;
+    }
+    ParallelUnlock();
+    CountTableRebuild(table, capacity, REBUILD_KEEP_STAMPED, epoch);
+    return;
+}
+
+// Adoption (Runtime/Parallel/Adoption.bd), after the region map names `parentRuntime` as the owner
+// of the child's regions. Caller holds the parallel lock. Pending INCs of both tables are posted
+// first (an INC for an object the parent now owns reaches the parent's own queue and cancels
+// against the subtraction below once the parent applies its queue). A child entry whose object the parent
+// now owns cancels against the parent's local count; every other child entry is added to the
+// parent's table. Then the parent's own entries for objects it now owns are cancelled the same way
+// and removed.
+pub unit ForeignMergeInto(pointer parent, pointer child, pointer parentRuntime) {
+    // Pending stakes become real first, so the counts merged or cancelled below are all posted.
+    ForeignPostPendingLocked(child);
+    ForeignPostPendingLocked(parent);
+    pointer table = ForeignTable(child);
+    if table != NativePointer(0) {
+        word capacity = raw_word_load(pointer_add(table, TABLE_CAPACITY));
+        mut word index = 0;
+        while index < capacity {
+            pointer entry = CountTableEntry(table, index);
+            word key = raw_word_load(pointer_add(entry, FOREIGN_ENTRY_REFERENCE));
+            word count = raw_word_load(pointer_add(entry, FOREIGN_ENTRY_COUNT));
+            if key != 0 {
+                pointer owner = RegionOwner(NativePointer(key));
+                if owner == parentRuntime {
+                    if count != 0 { LocalCountAdd(parent, key, 0 - count); }
+                } else {
+                    ForeignInsert(parent, key, owner, count, raw_word_load(pointer_add(entry, FOREIGN_ENTRY_IMMUTABLE)));
+                }
+            }
+            index = index + 1;
+        }
+    }
+    ForeignCancelOwned(parent, parentRuntime);
+    return;
+}
+
+// Removes the entries of `heap`'s table whose objects `runtime` owns now, cancelling their counts
+// against its local table.
+pub unit ForeignCancelOwned(pointer heap, pointer runtime) {
+    pointer table = ForeignTable(heap);
+    if table == NativePointer(0) { return; }
+    word capacity = raw_word_load(pointer_add(table, TABLE_CAPACITY));
+    mut bool removed = false;
+    mut word index = 0;
+    while index < capacity {
+        pointer entry = CountTableEntry(table, index);
+        word key = raw_word_load(pointer_add(entry, FOREIGN_ENTRY_REFERENCE));
+        if key != 0 && RegionOwner(NativePointer(key)) == runtime {
+            word count = raw_word_load(pointer_add(entry, FOREIGN_ENTRY_COUNT));
+            if count != 0 {
+                LocalCountAdd(heap, key, 0 - count);
+                ForeignInflate(heap, false);
+            }
+            // The rebuild below copies entries linearly, so clearing a key never loses another.
+            raw_word_store(pointer_add(entry, FOREIGN_ENTRY_REFERENCE), 0);
+            raw_word_store(pointer_add(table, TABLE_COUNT), raw_word_load(pointer_add(table, TABLE_COUNT)) - 1);
+            removed = true;
+        }
+        index = index + 1;
+    }
+    if removed { CountTableRebuild(table, capacity, REBUILD_KEEP_ALL, 0); }
+    return;
+}
+
+// The count recorded for `reference` in `heap`'s table, 0 when absent (test view).
+pub word ForeignReferenceCount(pointer heap, pointer reference) {
+    pointer entry = CountTableFind(ForeignTableCell(heap), NativeWord(reference));
+    if entry == NativePointer(0) { return 0; }
+    return raw_word_load(pointer_add(entry, FOREIGN_ENTRY_COUNT));
+}

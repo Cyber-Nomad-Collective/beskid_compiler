@@ -21,6 +21,7 @@ mod errors;
 mod facts;
 mod layout;
 mod root_elision;
+mod write_barrier;
 
 pub use clif_primitives::ClifPrimitives;
 pub use context::{CallImporter, IsleContext, StringInterner, lower_expression, lower_statement};
@@ -30,6 +31,7 @@ pub use errors::{FunctionEmissionError, LoweringError, LoweringErrorKind, String
 pub use facts::*;
 pub use layout::*;
 pub use root_elision::{NON_COLLECTING_IMPORTS, elide_non_collecting_function_roots, non_collecting_functions};
+pub use write_barrier::{GC_BARRIER_ACTIVE_SYMBOL, GC_WRITE_BARRIER_SYMBOL};
 
 include!(concat!(env!("OUT_DIR"), "/beskid_isle_metadata.rs"));
 

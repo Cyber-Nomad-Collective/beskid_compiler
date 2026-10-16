@@ -16,6 +16,7 @@ mod typed_program;
 mod types;
 
 pub use closures::{
+    AffineBinding, AffineFinding, AffineFindingKind, AffineOwnership, CanonicalEmpty, MoveExpressionForm,
     CaptureStorage, CaptureStorageClass, ClosureAllocationStatus, ClosureCallTarget, ClosureCapture,
     ClosureEnvironment, ClosureEnvironmentAbiShape, ClosureEnvironmentField, ClosureLoweringStatus,
     ClosurePointerMapRequirement, ClosureSignature, FiberOwnership, FunctionItemValue, FunctionValueCall,
@@ -41,7 +42,7 @@ pub use ids::{
 };
 pub use layouts::{
     AggregateFieldAccess, AggregateFieldShape, AggregateLayoutFact, AggregateLiteralFieldValues, EnumConstructorFact,
-    EnumConstructorSpecialization, EnumConstructorTemplate, EnumLayoutFact, EnumLayoutTemplateArgument,
+    EnumConstructorSpecialization, EnumLayoutFact,
     EnumMatchArmFact, EnumMatchBindingFact, EnumMatchFact, EnumMatchPatternFact, EnumMatchScalarLiteralFact, ScalarMatchFact,
     EnumMatchVariantPatternFact, EnumScalarPayloadObjectLayout, EnumScalarPayloadVariantLayout, EnumVariantLayoutFact,
     EventFieldLayoutFact, ScalarAbiLayout,

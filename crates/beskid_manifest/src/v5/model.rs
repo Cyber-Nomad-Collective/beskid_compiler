@@ -167,12 +167,22 @@ pub struct AuditV5 {
     pub forbidden_symbol_families: Vec<String>,
 }
 
+/// A process-wide data word the runtime kit defines and generated code reads by symbol
+/// (`export_data` blocks). It is never callable; the C header declares it `extern`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct DataExportV5 {
+    pub symbol: String,
+    #[serde(rename = "type")]
+    pub ty: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RuntimeManifestV5 {
     pub meta: RuntimeMetaV5,
     pub targets: Vec<TargetV5>,
     pub exports: Vec<FunctionV5>,
+    pub data_exports: Vec<DataExportV5>,
     pub intrinsics: Vec<IntrinsicV5>,
     pub soft_builtins: Vec<SoftBuiltinV5>,
     pub layouts: Vec<LayoutV5>,

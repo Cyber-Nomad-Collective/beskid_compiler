@@ -310,6 +310,13 @@ pub fn semantic_diagnostics_for_roots(
     });
     semantic_findings.extend(unit_findings);
     semantic_findings.extend(extern_findings);
+    // Attribute legality is judged per unit: `check_items` covered the units owning a judged
+    // item; root units without items (declarations only) are judged here, once.
+    for finding in crate::check_attribute_obligations(db, &root_units) {
+        if !semantic_findings.iter().any(|existing| existing.site == finding.site && existing.kind.code() == finding.kind.code()) {
+            semantic_findings.push(finding);
+        }
+    }
     if !semantic_findings.is_empty() {
         let units = syntax
             .units
@@ -324,7 +331,13 @@ pub fn semantic_diagnostics_for_roots(
             let span = crate::node_span(db, finding.site)
                 .ok()
                 .flatten()
-                .ok_or_else(|| anyhow::anyhow!("semantic finding requires its exact source span"))?;
+                .ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "semantic finding {} at {} requires its exact source span",
+                        finding.kind.code(),
+                        crate::format_ast_node_key(db, finding.site)
+                    )
+                })?;
             findings.push(SemanticFactFinding { kind: finding.kind, unit, span });
         }
     }

@@ -1,0 +1,778 @@
+// ORCA reference counts between isolate heaps (v0.6.4 2.6 and 3.x, v0.6.5 2.x and 3.x).
+//
+// ORCA (Clebsch, Franco, Drossopoulou, Yang, Wrigstad, Vitek, OOPSLA 2017,
+// https://doi.org/10.1145/3133896; invariants in Franco et al., ESOP 2018,
+// https://doi.org/10.1007/978-3-319-89884-1_31): the owner of an object that another isolate can
+// reach keeps a local reference count (LRC) entry for it; every holder keeps a foreign reference
+// count (FRC) entry (Foreign.bd). Counts are stakes, not paths. A send gives each object of the
+// message one stake: an object of the sender's own heap is counted in the sender's local table
+// directly, any other object gets an INC posted to its owner. A receive takes the stakes: an
+// object of the receiver's own heap is decremented (a DEC posted to itself, so that it is ordered
+// after the INCs already queued), any other object is added to the receiver's foreign table. A
+// receiver's collection that no longer reaches a counted foreign object posts one DEC per entry.
+//
+// Causality (D10): every INC and DEC for an owner goes into that owner's count queue, a FIFO
+// with synchronous enqueue under the parallel lock (the same lock under which the owner is
+// resolved through the region-to-owner map), and an INC is posted before the dependent message
+// is published. Applying any prefix of the queue is therefore safe; an owner that cannot take the
+// lock simply applies its queue later. The queue grows without trapping (only an allocator
+// refusal traps).
+//
+// The owner's collector (before its mark work drains, from `MarkRoots`): every immutable entry
+// with a positive count is a traced root (`markimmut`); every mutable entry is shallow-marked
+// (mark and scanned bit, or the black state of a large object), so the owner never reads a field
+// that the isolate holding the object may be writing (I1). Zero entries are pruned.
+//
+// Hand-over (v0.6.5): a `Moved` graph crosses a port by pointer. The send walk gives every object
+// of the graph a stake and enters only mutable objects (own or foreign); the receive walk takes
+// every stake and enters only mutable objects. Immutable objects are not entered: the owner
+// traces them from its entry. Both walks read descriptors and pointer maps only; the receive walk
+// reads the owner's span directory to find the start of a foreign object.
+//
+// The count record (native, created with the heap, pointer at heap word `HEAP_COUNTS`):
+//   0 foreign table, 8 local table, 16 queue commands, 24 queue head, 32 queue count,
+//   40 queue capacity, 48 foreign mark worklist, 56 worklist count, 64 worklist capacity,
+//   72 region index (the heap's regions sorted by address, State.bd), 80 its count, 88 capacity.
+// The record is the heap's native side record: created in `HeapInit`, freed with the heap.
+// A command is { reference, delta } (16 bytes; delta is a two's-complement word).
+// Tables share the entry format of Foreign.bd: reference, owner, count, epoch, immutable.
+
+const HEAP_COUNTS = 512;
+const HEAP_LIVE_BYTES = 32;
+const RUNTIME_HEAP_OFFSET = 16;
+
+const COUNTS_SIZE = 96;
+const COUNTS_FOREIGN = 0;
+const COUNTS_LOCAL = 8;
+const COUNTS_QUEUE = 16;
+const COUNTS_QUEUE_HEAD = 24;
+const COUNTS_QUEUE_COUNT = 32;
+const COUNTS_QUEUE_CAPACITY = 40;
+const COUNTS_WORK = 48;
+const COUNTS_WORK_COUNT = 56;
+const COUNTS_WORK_CAPACITY = 64;
+const COUNTS_REGIONS = 72;
+const COUNTS_REGION_COUNT = 80;
+const COUNTS_REGION_CAPACITY = 88;
+
+const COUNT_COMMAND_SIZE = 16;
+// Low bit of a count command's reference (references are 8-aligned): a `Shared` stake.
+const COUNT_SHARED_BIT = 1;
+const COUNT_QUEUE_INITIAL = 64;
+const COUNT_WORK_INITIAL = 64;
+
+const TABLE_SIZE = 24;
+const TABLE_COUNT = 0;
+const TABLE_CAPACITY = 8;
+const TABLE_ENTRIES = 16;
+const ENTRY_SIZE = 40;
+const ENTRY_REFERENCE = 0;
+const ENTRY_OWNER = 8;
+const ENTRY_COUNT = 16;
+const ENTRY_EPOCH = 24;
+const ENTRY_IMMUTABLE = 32;
+const TABLE_INITIAL_CAPACITY = 16;
+
+// Rebuild modes.
+const REBUILD_KEEP_ALL = 0;
+const REBUILD_KEEP_STAMPED = 1;
+const REBUILD_KEEP_COUNTED = 2;
+
+const TYPE_DESCRIPTOR_ARRAY = 1;
+const TYPE_DESCRIPTOR_KIND_MASK = 3;
+const TYPE_DESCRIPTOR_IMMUTABLE = 4;
+
+const SPAN_BASE = 8;
+const SPAN_SIZE_CLASS = 24;
+const SPAN_MARK_BITS = 120;
+const SPAN_SCANNED_BITS = 184;
+const SIZE_CLASS_LARGE = 14;
+
+const WALK_INITIAL = 64;
+const SIGN_BIT = 0x8000000000000000;
+
+// ── Count record ──────────────────────────────────────────────────────
+
+pub pointer CountRecord(pointer heap) {
+    if heap == NativePointer(0) { return NativePointer(0); }
+    return NativePointer(raw_word_load(pointer_add(heap, HEAP_COUNTS)));
+}
+
+// Creates the empty count record of a heap that no other thread can see yet (`HeapInit`).
+pub bool CountRecordCreate(pointer heap) {
+    pointer record = SystemAllocate(COUNTS_SIZE, 8);
+    if record == NativePointer(0) { return false; }
+    memory_set(record, 0, COUNTS_SIZE);
+    raw_word_store(pointer_add(heap, HEAP_COUNTS), NativeWord(record));
+    return true;
+}
+
+// Frees the count record of a heap that is released or adopted, with its tables and queues.
+pub unit CountRecordFree(pointer heap) {
+    pointer record = CountRecord(heap);
+    if record == NativePointer(0) { return; }
+    CountTableFree(pointer_add(record, COUNTS_FOREIGN));
+    CountTableFree(pointer_add(record, COUNTS_LOCAL));
+    word queueCapacity = raw_word_load(pointer_add(record, COUNTS_QUEUE_CAPACITY));
+    if queueCapacity != 0 {
+        SystemFree(NativePointer(raw_word_load(pointer_add(record, COUNTS_QUEUE))), queueCapacity * COUNT_COMMAND_SIZE);
+    }
+    word workCapacity = raw_word_load(pointer_add(record, COUNTS_WORK_CAPACITY));
+    if workCapacity != 0 {
+        SystemFree(NativePointer(raw_word_load(pointer_add(record, COUNTS_WORK))), workCapacity * 8);
+    }
+    word regionCapacity = raw_word_load(pointer_add(record, COUNTS_REGION_CAPACITY));
+    if regionCapacity != 0 {
+        SystemFree(NativePointer(raw_word_load(pointer_add(record, COUNTS_REGIONS))), regionCapacity * 8);
+    }
+    memory_set(record, 0, COUNTS_SIZE);
+    SystemFree(record, COUNTS_SIZE);
+    raw_word_store(pointer_add(heap, HEAP_COUNTS), 0);
+    return;
+}
+
+// The cell holding `heap`'s table at `slot` (COUNTS_FOREIGN or COUNTS_LOCAL), or null.
+pub pointer CountTableCell(pointer heap, word slot) {
+    pointer record = CountRecord(heap);
+    if record == NativePointer(0) { return NativePointer(0); }
+    return pointer_add(record, slot);
+}
+
+// ── Tables (open addressing, keyed by the ABI-visible reference) ──────
+
+pub pointer CountTableEntry(pointer table, word index) {
+    return pointer_add(NativePointer(raw_word_load(pointer_add(table, TABLE_ENTRIES))), index * ENTRY_SIZE);
+}
+
+pub pointer CountEntriesAllocate(word capacity) {
+    pointer entries = SystemAllocate(capacity * ENTRY_SIZE, 8);
+    if entries == NativePointer(0) { return entries; }
+    memory_set(entries, 0, capacity * ENTRY_SIZE);
+    return entries;
+}
+
+// The table in `cell`, created on first use. An allocator refusal is the out-of-memory trap.
+pub pointer CountTableEnsure(pointer cell) {
+    if cell == NativePointer(0) { Trap(5, NativePointer(0), 0); }
+    mut pointer table = NativePointer(raw_word_load(cell));
+    if table != NativePointer(0) { return table; }
+    table = SystemAllocate(TABLE_SIZE, 8);
+    if table == NativePointer(0) { Trap(5, NativePointer(0), 0); }
+    pointer entries = CountEntriesAllocate(TABLE_INITIAL_CAPACITY);
+    if entries == NativePointer(0) { Trap(5, NativePointer(0), 0); }
+    raw_word_store(pointer_add(table, TABLE_COUNT), 0);
+    raw_word_store(pointer_add(table, TABLE_CAPACITY), TABLE_INITIAL_CAPACITY);
+    raw_word_store(pointer_add(table, TABLE_ENTRIES), NativeWord(entries));
+    raw_word_store(cell, NativeWord(table));
+    return table;
+}
+
+pub unit CountTableFree(pointer cell) {
+    pointer table = NativePointer(raw_word_load(cell));
+    if table == NativePointer(0) { return; }
+    SystemFree(NativePointer(raw_word_load(pointer_add(table, TABLE_ENTRIES))),
+        raw_word_load(pointer_add(table, TABLE_CAPACITY)) * ENTRY_SIZE);
+    SystemFree(table, TABLE_SIZE);
+    raw_word_store(cell, 0);
+    return;
+}
+
+pub word CountHash(word reference, word capacity) {
+    word mixed = (reference >> 3) * 0x9E3779B97F4A7C15;
+    return (mixed >> 17) & (capacity - 1);
+}
+
+// The entry for `reference`, or the empty slot where it belongs.
+pub pointer CountTableProbe(pointer table, word reference) {
+    word capacity = raw_word_load(pointer_add(table, TABLE_CAPACITY));
+    mut word index = CountHash(reference, capacity);
+    while true {
+        pointer entry = CountTableEntry(table, index);
+        word key = raw_word_load(pointer_add(entry, ENTRY_REFERENCE));
+        if key == 0 || key == reference { return entry; }
+        index = (index + 1) & (capacity - 1);
+    }
+    return NativePointer(0);
+}
+
+// The entry for `reference` in the table of `cell`, or null when absent.
+pub pointer CountTableFind(pointer cell, word reference) {
+    if cell == NativePointer(0) { return NativePointer(0); }
+    pointer table = NativePointer(raw_word_load(cell));
+    if table == NativePointer(0) { return NativePointer(0); }
+    pointer entry = CountTableProbe(table, reference);
+    if raw_word_load(pointer_add(entry, ENTRY_REFERENCE)) != reference { return NativePointer(0); }
+    return entry;
+}
+
+pub bool CountIsPositive(word count) {
+    return count != 0 && (count & SIGN_BIT) == 0;
+}
+
+// Rehashes into `capacity` slots. `mode` keeps every entry, only entries stamped with `epoch`, or
+// only entries with a non-zero count.
+pub unit CountTableRebuild(pointer table, word capacity, word mode, word epoch) {
+    pointer oldEntries = NativePointer(raw_word_load(pointer_add(table, TABLE_ENTRIES)));
+    word oldCapacity = raw_word_load(pointer_add(table, TABLE_CAPACITY));
+    pointer entries = CountEntriesAllocate(capacity);
+    if entries == NativePointer(0) { Trap(5, NativePointer(0), 0); }
+    raw_word_store(pointer_add(table, TABLE_ENTRIES), NativeWord(entries));
+    raw_word_store(pointer_add(table, TABLE_CAPACITY), capacity);
+    raw_word_store(pointer_add(table, TABLE_COUNT), 0);
+    mut word index = 0;
+    while index < oldCapacity {
+        pointer old = pointer_add(oldEntries, index * ENTRY_SIZE);
+        word key = raw_word_load(pointer_add(old, ENTRY_REFERENCE));
+        mut bool keep = key != 0;
+        if keep && mode == REBUILD_KEEP_STAMPED { keep = raw_word_load(pointer_add(old, ENTRY_EPOCH)) == epoch; }
+        if keep && mode == REBUILD_KEEP_COUNTED { keep = raw_word_load(pointer_add(old, ENTRY_COUNT)) != 0; }
+        if keep {
+            pointer slot = CountTableProbe(table, key);
+            memory_copy(slot, old, ENTRY_SIZE);
+            raw_word_store(pointer_add(table, TABLE_COUNT), raw_word_load(pointer_add(table, TABLE_COUNT)) + 1);
+        }
+        index = index + 1;
+    }
+    SystemFree(oldEntries, oldCapacity * ENTRY_SIZE);
+    return;
+}
+
+// Creates or finds the entry of `reference` in the table of `cell` and adds `delta` (a two's
+// complement word) to its count. A new entry records `owner`, `immutable` and `epoch`.
+pub pointer CountTableAdd(pointer cell, word reference, pointer owner, word delta, word immutable, word epoch) {
+    pointer table = CountTableEnsure(cell);
+    word capacity = raw_word_load(pointer_add(table, TABLE_CAPACITY));
+    if (raw_word_load(pointer_add(table, TABLE_COUNT)) + 1) * 2 > capacity {
+        CountTableRebuild(table, capacity * 2, REBUILD_KEEP_ALL, 0);
+    }
+    pointer entry = CountTableProbe(table, reference);
+    if raw_word_load(pointer_add(entry, ENTRY_REFERENCE)) == 0 {
+        raw_word_store(pointer_add(entry, ENTRY_REFERENCE), reference);
+        raw_word_store(pointer_add(entry, ENTRY_OWNER), NativeWord(owner));
+        raw_word_store(pointer_add(entry, ENTRY_COUNT), 0);
+        raw_word_store(pointer_add(entry, ENTRY_IMMUTABLE), immutable);
+        raw_word_store(pointer_add(entry, ENTRY_EPOCH), epoch);
+        raw_word_store(pointer_add(table, TABLE_COUNT), raw_word_load(pointer_add(table, TABLE_COUNT)) + 1);
+    }
+    raw_word_store(pointer_add(entry, ENTRY_COUNT), raw_word_load(pointer_add(entry, ENTRY_COUNT)) + delta);
+    return entry;
+}
+
+// ── Object facts ──────────────────────────────────────────────────────
+
+// The heap of the runtime instance that owns `reference`, or null when no live instance does
+// (static data, or no heap at all).
+pub pointer OwnerHeapOf(pointer owner) {
+    if owner == NativePointer(0) { return NativePointer(0); }
+    return NativePointer(raw_word_load(pointer_add(owner, RUNTIME_HEAP_OFFSET)));
+}
+
+// The object start of `reference` in whichever heap owns it, or null.
+pub pointer CountObjectStart(pointer reference) {
+    pointer own = ManagedObjectForReference(Heap(), reference);
+    if own != NativePointer(0) { return own; }
+    pointer owner = RegionOwner(reference);
+    pointer heap = OwnerHeapOf(owner);
+    if heap == NativePointer(0) { return NativePointer(0); }
+    return ManagedObjectForReference(heap, reference);
+}
+
+// Whether a counted object is traced from its entry (`markimmut`) rather than shallow-marked. A
+// UTF-8 view (a `string`) is immutable: neither the view nor its backing byte array is written
+// after construction, and shallow-marking the view would leave the backing array unmarked, so a
+// string held only by its count (a message in a port) would lose its bytes.
+pub word ObjectImmutableFlag(pointer object) {
+    if object == NativePointer(0) { return 1; }
+    pointer descriptor = NativePointer(raw_word_load(object));
+    if (TypeDescriptorFlags(descriptor) & TYPE_DESCRIPTOR_IMMUTABLE) != 0 { return 1; }
+    if TypeDescriptorKind(descriptor) == TypeDescriptorUtf8ViewFlag() { return 1; }
+    return 0;
+}
+
+// ── Local table (owner side) ──────────────────────────────────────────
+
+// Adds `delta` to the local count of `reference`, an object of `heap`. Runs on the owner thread
+// (or on the adopting thread once the owner has ended). Never allocates managed memory.
+// `reference` may carry `COUNT_SHARED_BIT`: the stake comes from a `Shared` send, so the object
+// graph is immutable whatever its descriptor says (an enum or record whose transfer class follows
+// a `Shared` type argument), and the entry is traced from (`markimmut`) instead of shallow-marked;
+// a shallow mark would leave the graph below the object unmarked while a port holds it.
+pub unit LocalCountAdd(pointer heap, word reference, word delta) {
+    pointer cell = CountTableCell(heap, COUNTS_LOCAL);
+    if cell == NativePointer(0) { Trap(5, NativePointer(0), 0); }
+    word shared = reference & COUNT_SHARED_BIT;
+    word key = reference - shared;
+    pointer existing = CountTableFind(cell, key);
+    if existing != NativePointer(0) {
+        raw_word_store(pointer_add(existing, ENTRY_COUNT), raw_word_load(pointer_add(existing, ENTRY_COUNT)) + delta);
+        if shared != 0 { raw_word_store(pointer_add(existing, ENTRY_IMMUTABLE), 1); }
+        return;
+    }
+    mut word immutable = ObjectImmutableFlag(ManagedObjectForReference(heap, NativePointer(key)));
+    if shared != 0 { immutable = 1; }
+    CountTableAdd(cell, key, NativePointer(0), delta, immutable, 0);
+    return;
+}
+
+// The local count of `reference` in `heap`, 0 when absent (test view).
+pub word LocalReferenceCount(pointer heap, pointer reference) {
+    pointer entry = CountTableFind(CountTableCell(heap, COUNTS_LOCAL), NativeWord(reference));
+    if entry == NativePointer(0) { return 0; }
+    return raw_word_load(pointer_add(entry, ENTRY_COUNT));
+}
+
+// Whether `heap` still has a local entry with a non-zero count (some other isolate holds a stake).
+pub bool LocalCountsHeld(pointer heap) {
+    pointer cell = CountTableCell(heap, COUNTS_LOCAL);
+    if cell == NativePointer(0) { return false; }
+    pointer table = NativePointer(raw_word_load(cell));
+    if table == NativePointer(0) { return false; }
+    word capacity = raw_word_load(pointer_add(table, TABLE_CAPACITY));
+    mut word index = 0;
+    while index < capacity {
+        pointer entry = CountTableEntry(table, index);
+        if raw_word_load(pointer_add(entry, ENTRY_REFERENCE)) != 0 && raw_word_load(pointer_add(entry, ENTRY_COUNT)) != 0 {
+            return true;
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
+// Drops zero entries (cycle start).
+pub unit LocalCountPrune(pointer heap) {
+    pointer cell = CountTableCell(heap, COUNTS_LOCAL);
+    if cell == NativePointer(0) { return; }
+    pointer table = NativePointer(raw_word_load(cell));
+    if table == NativePointer(0) { return; }
+    CountTableRebuild(table, raw_word_load(pointer_add(table, TABLE_CAPACITY)), REBUILD_KEEP_COUNTED, 0);
+    return;
+}
+
+// The owner pass of a collection (`MarkRoots`): traced roots for immutable entries, shallow marks
+// for mutable entries. Idempotent, so every root rescan of mark termination repeats it.
+pub unit LocalCountMarkRoots(pointer heap) {
+    pointer cell = CountTableCell(heap, COUNTS_LOCAL);
+    if cell == NativePointer(0) { return; }
+    pointer table = NativePointer(raw_word_load(cell));
+    if table == NativePointer(0) { return; }
+    word capacity = raw_word_load(pointer_add(table, TABLE_CAPACITY));
+    mut word index = 0;
+    while index < capacity {
+        pointer entry = CountTableEntry(table, index);
+        word key = raw_word_load(pointer_add(entry, ENTRY_REFERENCE));
+        if key != 0 && CountIsPositive(raw_word_load(pointer_add(entry, ENTRY_COUNT))) {
+            if raw_word_load(pointer_add(entry, ENTRY_IMMUTABLE)) != 0 {
+                GcMarkGray(NativePointer(key));
+            } else {
+                GcMarkShallow(heap, NativePointer(key));
+            }
+        }
+        index = index + 1;
+    }
+    return;
+}
+
+// Marks `reference` reachable without tracing it: the slot's mark and scanned bits on a small
+// span, the black state on a large object. The drain never scans such an object.
+pub unit GcMarkShallow(pointer heap, pointer reference) {
+    pointer object = ManagedObjectForReference(heap, reference);
+    if object == NativePointer(0) { return; }
+    pointer region = FindHeapRegionContaining(heap, NativeWord(object));
+    if region == NativePointer(0) { return; }
+    pointer span = SpanEntryInRegion(region, NativeWord(object));
+    word sizeClass = raw_word_load(pointer_add(span, SPAN_SIZE_CLASS));
+    if sizeClass == 0 { return; }
+    if sizeClass == SIZE_CLASS_LARGE {
+        if raw_word_load(pointer_add(object, 8)) == GcMarkWhite() {
+            raw_word_store(pointer_add(object, 8), GcMarkBlack());
+            CountShade(heap);
+        }
+        return;
+    }
+    word base = raw_word_load(pointer_add(span, SPAN_BASE));
+    word slot = (NativeWord(object) - base) / SizeClassBytes(sizeClass);
+    if BitmapTestBit(pointer_add(span, SPAN_MARK_BITS), slot) == false {
+        BitmapSetBit(pointer_add(span, SPAN_MARK_BITS), slot);
+        CountShade(heap);
+    }
+    BitmapSetBit(pointer_add(span, SPAN_SCANNED_BITS), slot);
+    return;
+}
+
+// ── Count queue (INC and DEC delivery) ────────────────────────────────
+
+// Queues `delta` for `reference` to the instance that owns it now, resolved through the
+// region-to-owner map. Caller holds the parallel lock. A reference no live instance owns needs no
+// count (static data) and is ignored.
+pub unit CountPostLocked(word reference, word delta) {
+    pointer record = CountRecord(OwnerHeapOf(RegionOwner(NativePointer(reference))));
+    if record == NativePointer(0) { return; }
+    CountQueuePushLocked(record, reference, delta);
+    return;
+}
+
+pub unit CountPost(word reference, word delta) {
+    ParallelLock();
+    CountPostLocked(reference, delta);
+    ParallelUnlock();
+    return;
+}
+
+pub unit CountQueuePushLocked(pointer record, word reference, word delta) {
+    word count = raw_word_load(pointer_add(record, COUNTS_QUEUE_COUNT));
+    word capacity = raw_word_load(pointer_add(record, COUNTS_QUEUE_CAPACITY));
+    word head = raw_word_load(pointer_add(record, COUNTS_QUEUE_HEAD));
+    if count == capacity {
+        mut word grown = capacity * 2;
+        if grown == 0 { grown = COUNT_QUEUE_INITIAL; }
+        pointer commands = SystemAllocate(grown * COUNT_COMMAND_SIZE, 8);
+        if commands == NativePointer(0) { ParallelUnlock(); Trap(5, NativePointer(0), 0); }
+        pointer old = NativePointer(raw_word_load(pointer_add(record, COUNTS_QUEUE)));
+        mut word index = 0;
+        while index < count {
+            memory_copy(pointer_add(commands, index * COUNT_COMMAND_SIZE),
+                pointer_add(old, ((head + index) % capacity) * COUNT_COMMAND_SIZE), COUNT_COMMAND_SIZE);
+            index = index + 1;
+        }
+        if capacity != 0 { SystemFree(old, capacity * COUNT_COMMAND_SIZE); }
+        raw_word_store(pointer_add(record, COUNTS_QUEUE), NativeWord(commands));
+        raw_word_store(pointer_add(record, COUNTS_QUEUE_CAPACITY), grown);
+        raw_word_store(pointer_add(record, COUNTS_QUEUE_HEAD), 0);
+        CountQueuePushLocked(record, reference, delta);
+        return;
+    }
+    pointer command = pointer_add(NativePointer(raw_word_load(pointer_add(record, COUNTS_QUEUE))),
+        ((head + count) % capacity) * COUNT_COMMAND_SIZE);
+    raw_word_store(command, reference);
+    raw_word_store(pointer_add(command, 8), delta);
+    raw_word_store(pointer_add(record, COUNTS_QUEUE_COUNT), count + 1);
+    return;
+}
+
+// Applies every queued command of `source` to the local table of `target`, in FIFO order. Caller
+// holds the parallel lock and runs on `target`'s owner thread.
+pub unit CountQueueDrainLocked(pointer source, pointer target) {
+    pointer record = CountRecord(source);
+    if record == NativePointer(0) { return; }
+    mut word count = raw_word_load(pointer_add(record, COUNTS_QUEUE_COUNT));
+    word capacity = raw_word_load(pointer_add(record, COUNTS_QUEUE_CAPACITY));
+    mut word head = raw_word_load(pointer_add(record, COUNTS_QUEUE_HEAD));
+    pointer commands = NativePointer(raw_word_load(pointer_add(record, COUNTS_QUEUE)));
+    while count > 0 {
+        pointer command = pointer_add(commands, head * COUNT_COMMAND_SIZE);
+        LocalCountAdd(target, raw_word_load(command), raw_word_load(pointer_add(command, 8)));
+        head = (head + 1) % capacity;
+        count = count - 1;
+    }
+    raw_word_store(pointer_add(record, COUNTS_QUEUE_HEAD), 0);
+    raw_word_store(pointer_add(record, COUNTS_QUEUE_COUNT), 0);
+    return;
+}
+
+// The owner applies its queue when it can take the lock without waiting; otherwise later.
+pub unit CountQueueDrainOwn(pointer heap) {
+    pointer record = CountRecord(heap);
+    if record == NativePointer(0) || raw_word_load(pointer_add(record, COUNTS_QUEUE_COUNT)) == 0 { return; }
+    if ParallelTryLock() == false { return; }
+    CountQueueDrainLocked(heap, heap);
+    ParallelUnlock();
+    return;
+}
+
+// Cycle start: apply the queue, then drop zero entries.
+pub unit CountsBeforeMark(pointer heap) {
+    CountQueueDrainOwn(heap);
+    LocalCountPrune(heap);
+    return;
+}
+
+// ── Stakes for one message ────────────────────────────────────────────
+
+// Sender side of one stake on `reference`: own objects are counted locally, others get an INC.
+pub unit CountStakeSend(pointer reference) {
+    if reference == NativePointer(0) { return; }
+    pointer heap = Heap();
+    if ManagedObjectForReference(heap, reference) != NativePointer(0) {
+        LocalCountAdd(heap, NativeWord(reference), 1);
+        return;
+    }
+    CountPost(NativeWord(reference), 1);
+    return;
+}
+
+// The stake of a `Shared` port message: like `CountStakeSend`, and the owner's entry is immutable.
+pub unit CountStakeSendShared(pointer reference) {
+    if reference == NativePointer(0) { return; }
+    pointer heap = Heap();
+    if ManagedObjectForReference(heap, reference) != NativePointer(0) {
+        LocalCountAdd(heap, NativeWord(reference) | COUNT_SHARED_BIT, 1);
+        return;
+    }
+    CountPost(NativeWord(reference) | COUNT_SHARED_BIT, 1);
+    return;
+}
+
+// Releases a stake of a message that was never delivered; `locked` when the caller holds the
+// parallel lock.
+pub unit CountStakeRelease(pointer reference, bool locked) {
+    if reference == NativePointer(0) { return; }
+    pointer heap = Heap();
+    if ManagedObjectForReference(heap, reference) != NativePointer(0) {
+        LocalCountAdd(heap, NativeWord(reference), 0 - 1);
+        return;
+    }
+    if locked {
+        CountPostLocked(NativeWord(reference), 0 - 1);
+    } else {
+        CountPost(NativeWord(reference), 0 - 1);
+    }
+    return;
+}
+
+// Receiver side of one stake on `reference`: an own object is decremented through the own queue
+// (after the INCs queued before it), any other object is counted in the foreign table.
+pub unit CountStakeReceive(pointer reference) {
+    if reference == NativePointer(0) { return; }
+    pointer heap = Heap();
+    if ManagedObjectForReference(heap, reference) != NativePointer(0) {
+        CountPost(NativeWord(reference), 0 - 1);
+        return;
+    }
+    pointer owner = RegionOwner(reference);
+    if owner == NativePointer(0) { return; }
+    ForeignInsert(heap, NativeWord(reference), owner, 1, ObjectImmutableFlag(CountObjectStart(reference)));
+    return;
+}
+
+// ── Graph walks (hand-over of Moved values) ───────────────────────────
+
+// Walk scratch (native): stack data, count, capacity; visited table data, capacity, count.
+const WALK_SIZE = 48;
+const WALK_STACK = 0;
+const WALK_STACK_COUNT = 8;
+const WALK_STACK_CAPACITY = 16;
+const WALK_VISITED = 24;
+const WALK_VISITED_CAPACITY = 32;
+const WALK_VISITED_COUNT = 40;
+
+pub pointer WalkCreate() {
+    pointer walk = SystemAllocate(WALK_SIZE, 8);
+    if walk == NativePointer(0) { Trap(5, NativePointer(0), 0); }
+    memory_set(walk, 0, WALK_SIZE);
+    pointer stack = SystemAllocate(WALK_INITIAL * 8, 8);
+    pointer visited = SystemAllocate(WALK_INITIAL * 8, 8);
+    if stack == NativePointer(0) || visited == NativePointer(0) { Trap(5, NativePointer(0), 0); }
+    memory_set(visited, 0, WALK_INITIAL * 8);
+    raw_word_store(pointer_add(walk, WALK_STACK), NativeWord(stack));
+    raw_word_store(pointer_add(walk, WALK_STACK_CAPACITY), WALK_INITIAL);
+    raw_word_store(pointer_add(walk, WALK_VISITED), NativeWord(visited));
+    raw_word_store(pointer_add(walk, WALK_VISITED_CAPACITY), WALK_INITIAL);
+    return walk;
+}
+
+pub unit WalkFree(pointer walk) {
+    SystemFree(NativePointer(raw_word_load(pointer_add(walk, WALK_STACK))), raw_word_load(pointer_add(walk, WALK_STACK_CAPACITY)) * 8);
+    SystemFree(NativePointer(raw_word_load(pointer_add(walk, WALK_VISITED))), raw_word_load(pointer_add(walk, WALK_VISITED_CAPACITY)) * 8);
+    SystemFree(walk, WALK_SIZE);
+    return;
+}
+
+pub unit WalkPush(pointer walk, word reference) {
+    if reference == 0 { return; }
+    word count = raw_word_load(pointer_add(walk, WALK_STACK_COUNT));
+    word capacity = raw_word_load(pointer_add(walk, WALK_STACK_CAPACITY));
+    if count == capacity {
+        pointer grown = SystemAllocate(capacity * 16, 8);
+        if grown == NativePointer(0) { Trap(5, NativePointer(0), 0); }
+        pointer old = NativePointer(raw_word_load(pointer_add(walk, WALK_STACK)));
+        memory_copy(grown, old, count * 8);
+        SystemFree(old, capacity * 8);
+        raw_word_store(pointer_add(walk, WALK_STACK), NativeWord(grown));
+        raw_word_store(pointer_add(walk, WALK_STACK_CAPACITY), capacity * 2);
+    }
+    raw_word_store(pointer_add(NativePointer(raw_word_load(pointer_add(walk, WALK_STACK))), count * 8), reference);
+    raw_word_store(pointer_add(walk, WALK_STACK_COUNT), count + 1);
+    return;
+}
+
+pub word WalkPop(pointer walk) {
+    word count = raw_word_load(pointer_add(walk, WALK_STACK_COUNT));
+    if count == 0 { return 0; }
+    raw_word_store(pointer_add(walk, WALK_STACK_COUNT), count - 1);
+    return raw_word_load(pointer_add(NativePointer(raw_word_load(pointer_add(walk, WALK_STACK))), (count - 1) * 8));
+}
+
+// Records `object` as visited; false when it already was.
+pub bool WalkVisit(pointer walk, word object) {
+    word capacity = raw_word_load(pointer_add(walk, WALK_VISITED_CAPACITY));
+    if (raw_word_load(pointer_add(walk, WALK_VISITED_COUNT)) + 1) * 2 > capacity {
+        pointer old = NativePointer(raw_word_load(pointer_add(walk, WALK_VISITED)));
+        word grownCapacity = capacity * 2;
+        pointer grown = SystemAllocate(grownCapacity * 8, 8);
+        if grown == NativePointer(0) { Trap(5, NativePointer(0), 0); }
+        memory_set(grown, 0, grownCapacity * 8);
+        raw_word_store(pointer_add(walk, WALK_VISITED), NativeWord(grown));
+        raw_word_store(pointer_add(walk, WALK_VISITED_CAPACITY), grownCapacity);
+        raw_word_store(pointer_add(walk, WALK_VISITED_COUNT), 0);
+        mut word index = 0;
+        while index < capacity {
+            word key = raw_word_load(pointer_add(old, index * 8));
+            if key != 0 { WalkVisit(walk, key); }
+            index = index + 1;
+        }
+        SystemFree(old, capacity * 8);
+        return WalkVisit(walk, object);
+    }
+    pointer visited = NativePointer(raw_word_load(pointer_add(walk, WALK_VISITED)));
+    mut word index = CountHash(object, capacity);
+    while true {
+        pointer slot = pointer_add(visited, index * 8);
+        word key = raw_word_load(slot);
+        if key == object { return false; }
+        if key == 0 {
+            raw_word_store(slot, object);
+            raw_word_store(pointer_add(walk, WALK_VISITED_COUNT), raw_word_load(pointer_add(walk, WALK_VISITED_COUNT)) + 1);
+            return true;
+        }
+        index = (index + 1) & (capacity - 1);
+    }
+    return false;
+}
+
+// Pushes every non-null pointer field of `object` (array elements through the element pointer
+// map, aggregate and view fields through the descriptor pointer map). False on a malformed array.
+pub bool WalkPushFields(pointer walk, pointer object, pointer descriptor) {
+    if (TypeDescriptorFlags(descriptor) & TYPE_DESCRIPTOR_KIND_MASK) == TYPE_DESCRIPTOR_ARRAY {
+        pointer element = NativePointer(raw_word_load(pointer_add(object, 16)));
+        word stride = raw_word_load(element);
+        pointer elementMap = NativePointer(raw_word_load(pointer_add(element, 16)));
+        word elementPointers = raw_word_load(pointer_add(element, 24));
+        word length = raw_word_load(pointer_add(object, 32));
+        if length > raw_word_load(pointer_add(object, 40)) { return false; }
+        mut word index = 0;
+        while index < length {
+            mut word mapIndex = 0;
+            while mapIndex < elementPointers {
+                word offset = raw_word_load(pointer_add(elementMap, mapIndex * 8));
+                if offset + 8 > stride { return false; }
+                WalkPush(walk, raw_word_load(pointer_add(object, 48 + index * stride + offset)));
+                mapIndex = mapIndex + 1;
+            }
+            index = index + 1;
+        }
+        return true;
+    }
+    pointer pointerMap = TypeDescriptorPointerMap(descriptor);
+    word pointerCount = TypeDescriptorPointerCount(descriptor);
+    mut word mapIndex = 0;
+    while mapIndex < pointerCount {
+        WalkPush(walk, raw_word_load(pointer_add(object, raw_word_load(pointer_add(pointerMap, mapIndex * 8)))));
+        mapIndex = mapIndex + 1;
+    }
+    return true;
+}
+
+// The send walk of a hand-over: one stake per object of the graph of `value`; only mutable
+// objects are entered. Runs on the sender thread before the message is published. False (no
+// stake taken is released here) when an object has no valid descriptor.
+pub bool HandOverSend(pointer value) {
+    return HandOverWalk(value, true);
+}
+
+// The receive walk: takes one stake per object of the graph.
+pub bool HandOverReceive(pointer value) {
+    return HandOverWalk(value, false);
+}
+
+// Releases the stakes of a hand-over message that was never delivered; `locked` when the caller
+// holds the parallel lock.
+pub bool HandOverAbandon(pointer value, bool locked) {
+    if locked { return HandOverWalkWith(value, 3); }
+    return HandOverWalkWith(value, 2);
+}
+
+pub bool HandOverWalk(pointer value, bool send) {
+    if send { return HandOverWalkWith(value, 0); }
+    return HandOverWalkWith(value, 1);
+}
+
+// mode 0 send, 1 receive, 2 abandon, 3 abandon with the parallel lock held.
+pub bool HandOverWalkWith(pointer value, word mode) {
+    if value == NativePointer(0) { return true; }
+    pointer walk = WalkCreate();
+    WalkPush(walk, NativeWord(value));
+    mut bool ok = true;
+    while ok {
+        word reference = WalkPop(walk);
+        if reference == 0 { break; }
+        pointer object = CountObjectStart(NativePointer(reference));
+        if object != NativePointer(0) && WalkVisit(walk, NativeWord(object)) {
+            pointer descriptor = TraceableDescriptor(object);
+            if descriptor == NativePointer(0) {
+                ok = false;
+            } else {
+                if mode == 0 {
+                    CountStakeSend(NativePointer(reference));
+                } else if mode == 1 {
+                    CountStakeReceive(NativePointer(reference));
+                } else {
+                    CountStakeRelease(NativePointer(reference), mode == 3);
+                }
+                if ObjectImmutableFlag(object) == 0 {
+                    ok = WalkPushFields(walk, object, descriptor);
+                }
+            }
+        }
+    }
+    WalkFree(walk);
+    return ok;
+}
+
+// ── Region index (heap side record) ───────────────────────────────────
+
+// Adds `region` to `heap`'s region index, kept sorted by region address. Runs on the heap's
+// owner thread whenever a region joins the chain (`HeapInit`, growth, adoption).
+pub unit RegionIndexInsert(pointer heap, pointer region) {
+    pointer record = CountRecord(heap);
+    if record == NativePointer(0) { Trap(5, NativePointer(0), 0); }
+    word count = raw_word_load(pointer_add(record, COUNTS_REGION_COUNT));
+    word capacity = raw_word_load(pointer_add(record, COUNTS_REGION_CAPACITY));
+    if count == capacity {
+        mut word grown = capacity * 2;
+        if grown == 0 { grown = 8; }
+        pointer data = SystemAllocate(grown * 8, 8);
+        if data == NativePointer(0) { Trap(5, NativePointer(0), 0); }
+        if capacity != 0 {
+            pointer old = NativePointer(raw_word_load(pointer_add(record, COUNTS_REGIONS)));
+            memory_copy(data, old, count * 8);
+            SystemFree(old, capacity * 8);
+        }
+        raw_word_store(pointer_add(record, COUNTS_REGIONS), NativeWord(data));
+        raw_word_store(pointer_add(record, COUNTS_REGION_CAPACITY), grown);
+    }
+    pointer data = NativePointer(raw_word_load(pointer_add(record, COUNTS_REGIONS)));
+    mut word index = count;
+    while index > 0 && raw_word_load(pointer_add(data, (index - 1) * 8)) > NativeWord(region) {
+        raw_word_store(pointer_add(data, index * 8), raw_word_load(pointer_add(data, (index - 1) * 8)));
+        index = index - 1;
+    }
+    raw_word_store(pointer_add(data, index * 8), NativeWord(region));
+    raw_word_store(pointer_add(record, COUNTS_REGION_COUNT), count + 1);
+    return;
+}
+
+// The region of `heap` with the greatest address not above `address`, or null (binary search).
+pub pointer RegionIndexFloor(pointer heap, word address) {
+    pointer record = CountRecord(heap);
+    if record == NativePointer(0) { return NativePointer(0); }
+    pointer data = NativePointer(raw_word_load(pointer_add(record, COUNTS_REGIONS)));
+    mut word low = 0;
+    mut word high = raw_word_load(pointer_add(record, COUNTS_REGION_COUNT));
+    while low < high {
+        word middle = low + (high - low) / 2;
+        if raw_word_load(pointer_add(data, middle * 8)) <= address { low = middle + 1; } else { high = middle; }
+    }
+    if low == 0 { return NativePointer(0); }
+    return NativePointer(raw_word_load(pointer_add(data, (low - 1) * 8)));
+}

@@ -17,6 +17,7 @@ pub const CANONICAL_GC_CHECKED_SCOPE_SOURCE_PATH: &str = "src/Runtime/Mem/Gc/Che
 pub const CANONICAL_BOOTSTRAP_CHECKED_OBJECTS_SOURCE_PATH: &str = "src/Runtime/Bootstrap/CheckedObjects.bd";
 pub const CANONICAL_GC_IDENTITY_SOURCE_PATH: &str = "src/Runtime/Mem/Gc/Identity.bd";
 pub const CANONICAL_GC_ALLOCATION_SOURCE_PATH: &str = "src/Runtime/Mem/Gc/Allocation.bd";
+pub const CANONICAL_GC_REGION_MAP_SOURCE_PATH: &str = "src/Runtime/Mem/Gc/RegionMap.bd";
 pub const CANONICAL_STRINGS_SOURCE_PATH: &str = "src/Runtime/Data/Strings.bd";
 pub const CANONICAL_COLLECTIONS_SOURCE_PATH: &str = "src/Runtime/Data/Collections.bd";
 pub const CANONICAL_FIBER_SOURCE_PATH: &str = "src/Runtime/Fiber/Fiber.bd";
@@ -56,6 +57,14 @@ pub const CANONICAL_CORELIB_ARGS_SOURCE_PATH: &str = "Core/Args/Args.bd";
 pub const CANONICAL_CORELIB_CONCURRENCY_SOURCE_PATH: &str = "Concurrency.bd";
 /// Canonical Foundation OS-thread facade eligible for its private yield service.
 pub const CANONICAL_FOUNDATION_THREAD_SOURCE_PATH: &str = "Core/Threading/Thread.bd";
+/// Canonical `Core.Parallel` units (corelib concurrency package) eligible for the isolate, scope
+/// and port services (v0.6.3-v0.6.5).
+pub const CANONICAL_CORELIB_PARALLEL_SOURCE_PATH: &str = "Core/Parallel/Parallel.bd";
+pub const CANONICAL_CORELIB_PARALLEL_SCOPES_SOURCE_PATH: &str = "Core/Parallel/Scopes.bd";
+pub const CANONICAL_CORELIB_PARALLEL_ISOLATE_SOURCE_PATH: &str = "Core/Parallel/Isolate.bd";
+pub const CANONICAL_CORELIB_PARALLEL_PORT_SOURCE_PATH: &str = "Core/Parallel/Port.bd";
+pub const CANONICAL_CORELIB_PARALLEL_SEQ_SOURCE_PATH: &str = "Core/Parallel/ParallelSeq.bd";
+pub const CANONICAL_CORELIB_PARALLEL_READ_ONLY_ARRAY_SOURCE_PATH: &str = "Core/Parallel/ReadOnlyArray.bd";
 /// Canonical concurrency Fiber facade eligible for lifecycle service authority.
 pub const CANONICAL_CORELIB_FIBER_SOURCE_PATH: &str = "Concurrency/Fiber.bd";
 /// Canonical Console Linux platform facade eligible for terminal service authority.
@@ -163,6 +172,8 @@ const CANONICAL_GC_IDENTITY_SOURCE: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../runtime/beskid/src/Runtime/Mem/Gc/Identity.bd"));
 const CANONICAL_GC_ALLOCATION_SOURCE: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../runtime/beskid/src/Runtime/Mem/Gc/Allocation.bd"));
+const CANONICAL_GC_REGION_MAP_SOURCE: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../runtime/beskid/src/Runtime/Mem/Gc/RegionMap.bd"));
 const CANONICAL_STRINGS_SOURCE: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../runtime/beskid/src/Runtime/Data/Strings.bd"));
 const CANONICAL_COLLECTIONS_SOURCE: &str =
@@ -230,6 +241,30 @@ const CANONICAL_FOUNDATION_THREAD_SOURCE: &str = include_str!(concat!(
 ));
 const CANONICAL_CORELIB_FIBER_SOURCE: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../corelib/packages/concurrency/src/Concurrency/Fiber.bd"));
+const CANONICAL_CORELIB_PARALLEL_SOURCE: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../corelib/packages/concurrency/src/Core/Parallel/Parallel.bd"
+));
+const CANONICAL_CORELIB_PARALLEL_SCOPES_SOURCE: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../corelib/packages/concurrency/src/Core/Parallel/Scopes.bd"
+));
+const CANONICAL_CORELIB_PARALLEL_ISOLATE_SOURCE: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../corelib/packages/concurrency/src/Core/Parallel/Isolate.bd"
+));
+const CANONICAL_CORELIB_PARALLEL_PORT_SOURCE: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../corelib/packages/concurrency/src/Core/Parallel/Port.bd"
+));
+const CANONICAL_CORELIB_PARALLEL_SEQ_SOURCE: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../corelib/packages/concurrency/src/Core/Parallel/ParallelSeq.bd"
+));
+const CANONICAL_CORELIB_PARALLEL_READ_ONLY_ARRAY_SOURCE: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../corelib/packages/concurrency/src/Core/Parallel/ReadOnlyArray.bd"
+));
 const CANONICAL_CORELIB_CONSOLE_LINUX_SOURCE: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../corelib/packages/console/src/Platform/Linux.bd"));
 const CANONICAL_CORELIB_CONSOLE_MACOS_SOURCE: &str =
@@ -371,6 +406,34 @@ pub fn canonical_runtime_sources() -> Vec<SourceUnit> {
             source: include_str!("../../../../runtime/beskid/src/Runtime/Network/Dns.bd").into(),
         },
         SourceUnit {
+            logical_path: "src/Runtime/Mem/Gc/Foreign.bd".into(),
+            source: include_str!("../../../../runtime/beskid/src/Runtime/Mem/Gc/Foreign.bd").into(),
+        },
+        SourceUnit {
+            logical_path: "src/Runtime/Mem/Gc/Counts.bd".into(),
+            source: include_str!("../../../../runtime/beskid/src/Runtime/Mem/Gc/Counts.bd").into(),
+        },
+        SourceUnit {
+            logical_path: "src/Runtime/Mem/Transit.bd".into(),
+            source: include_str!("../../../../runtime/beskid/src/Runtime/Mem/Transit.bd").into(),
+        },
+        SourceUnit {
+            logical_path: "src/Runtime/Parallel/Registry.bd".into(),
+            source: include_str!("../../../../runtime/beskid/src/Runtime/Parallel/Registry.bd").into(),
+        },
+        SourceUnit {
+            logical_path: "src/Runtime/Parallel/Isolates.bd".into(),
+            source: include_str!("../../../../runtime/beskid/src/Runtime/Parallel/Isolates.bd").into(),
+        },
+        SourceUnit {
+            logical_path: "src/Runtime/Parallel/Adoption.bd".into(),
+            source: include_str!("../../../../runtime/beskid/src/Runtime/Parallel/Adoption.bd").into(),
+        },
+        SourceUnit {
+            logical_path: "src/Runtime/Parallel/Ports.bd".into(),
+            source: include_str!("../../../../runtime/beskid/src/Runtime/Parallel/Ports.bd").into(),
+        },
+        SourceUnit {
             // The generated ABI-v5 layout prelude (offsets/sizes/alignment consts) is checked in
             // as the leading block of this file on disk, not injected here, so every compilation
             // path that reads this file -- CLI-embedded, fixture-substituted, or an ordinary
@@ -425,6 +488,10 @@ pub fn canonical_runtime_sources() -> Vec<SourceUnit> {
         SourceUnit {
             logical_path: CANONICAL_GC_ALLOCATION_SOURCE_PATH.into(),
             source: CANONICAL_GC_ALLOCATION_SOURCE.into(),
+        },
+        SourceUnit {
+            logical_path: CANONICAL_GC_REGION_MAP_SOURCE_PATH.into(),
+            source: CANONICAL_GC_REGION_MAP_SOURCE.into(),
         },
         SourceUnit { logical_path: CANONICAL_STRINGS_SOURCE_PATH.into(), source: CANONICAL_STRINGS_SOURCE.into() },
         SourceUnit {
@@ -626,6 +693,30 @@ pub fn canonical_corelib_service_sources() -> Vec<SourceUnit> {
     sources.push(SourceUnit {
         logical_path: CANONICAL_CORELIB_FIBER_SOURCE_PATH.into(),
         source: CANONICAL_CORELIB_FIBER_SOURCE.into(),
+    });
+    sources.push(SourceUnit {
+        logical_path: CANONICAL_CORELIB_PARALLEL_SOURCE_PATH.into(),
+        source: CANONICAL_CORELIB_PARALLEL_SOURCE.into(),
+    });
+    sources.push(SourceUnit {
+        logical_path: CANONICAL_CORELIB_PARALLEL_SCOPES_SOURCE_PATH.into(),
+        source: CANONICAL_CORELIB_PARALLEL_SCOPES_SOURCE.into(),
+    });
+    sources.push(SourceUnit {
+        logical_path: CANONICAL_CORELIB_PARALLEL_ISOLATE_SOURCE_PATH.into(),
+        source: CANONICAL_CORELIB_PARALLEL_ISOLATE_SOURCE.into(),
+    });
+    sources.push(SourceUnit {
+        logical_path: CANONICAL_CORELIB_PARALLEL_PORT_SOURCE_PATH.into(),
+        source: CANONICAL_CORELIB_PARALLEL_PORT_SOURCE.into(),
+    });
+    sources.push(SourceUnit {
+        logical_path: CANONICAL_CORELIB_PARALLEL_SEQ_SOURCE_PATH.into(),
+        source: CANONICAL_CORELIB_PARALLEL_SEQ_SOURCE.into(),
+    });
+    sources.push(SourceUnit {
+        logical_path: CANONICAL_CORELIB_PARALLEL_READ_ONLY_ARRAY_SOURCE_PATH.into(),
+        source: CANONICAL_CORELIB_PARALLEL_READ_ONLY_ARRAY_SOURCE.into(),
     });
     sources.push(SourceUnit {
         logical_path: CANONICAL_CORELIB_CONSOLE_LINUX_SOURCE_PATH.into(),

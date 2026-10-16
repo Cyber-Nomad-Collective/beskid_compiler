@@ -38,6 +38,29 @@ pub enum TypeShapeClass {
     StringLike,
     /// Divergence. Lowers to a trap or unwind; never returned as a value.
     Never,
+    /// A C struct of scalar fields passed by value. The C ABI profile owns its layout.
+    Record,
+    /// A foreign-callable function pointer with a context token, valid for one call.
+    Callback,
+    /// No value: the `void` return of a unit result. Never a parameter.
+    Unit,
+}
+
+/// The value domain of a scalar shape. Two scalars with the same `AbiType` and different
+/// domains are different shapes: Bool and `u8` share `uint8_t`, `char` and `u32` share
+/// `uint32_t`, but the boundary checks their values differently.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ScalarDomain {
+    /// Every bit pattern is a value (two's complement integers, IEEE floats).
+    #[default]
+    Raw,
+    /// `uint8_t` restricted to 0 and 1.
+    Bool,
+    /// `uint32_t` restricted to Unicode scalar values.
+    UnicodeScalar,
+    /// Target pointer-width unsigned integer (`uintptr_t`).
+    NativeWord,
 }
 
 /// A scalar type-shape, binding a `TypeShapeClass::Scalar` to a concrete
@@ -46,6 +69,66 @@ pub enum TypeShapeClass {
 #[serde(deny_unknown_fields)]
 pub struct ScalarShape {
     pub abi_type: AbiType,
+    #[serde(default)]
+    pub domain: ScalarDomain,
+}
+
+impl ScalarShape {
+    /// A scalar whose every bit pattern is a value.
+    pub const fn raw(abi_type: AbiType) -> Self {
+        Self { abi_type, domain: ScalarDomain::Raw }
+    }
+    pub const fn new(abi_type: AbiType, domain: ScalarDomain) -> Self {
+        Self { abi_type, domain }
+    }
+}
+
+/// A branded opaque handle: a checked `u64` token whose brand is the stable qualified identity
+/// of its declaration and its applied type arguments.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BrandedHandleShape {
+    pub identity: String,
+    pub nullable: bool,
+    pub arguments: Vec<TypeShape>,
+}
+
+/// One field of a record shape at its C ABI profile offset.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RecordFieldShape {
+    pub name: String,
+    pub scalar: ScalarShape,
+    pub offset: u64,
+}
+
+/// A C struct passed by value. `size`, `alignment` and every field `offset` are the values the
+/// C ABI profile computes ([`c_profile::CAbiProfile::record_layout`]); a shape that states other
+/// values is rejected by the profile.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RecordShape {
+    pub identity: String,
+    pub fields: Vec<RecordFieldShape>,
+    pub size: u64,
+    pub alignment: u64,
+}
+
+/// A fieldless enumeration carried as its `u32` source-order variant index.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EnumerationShape {
+    pub identity: String,
+    pub variants: Vec<String>,
+}
+
+/// A callback: `int32_t (*)(uint64_t context, parameters..., result *out)` plus the `uint64_t`
+/// context token. `result` is `None` for a unit callback, which has no `out` parameter.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CallbackShape {
+    pub parameters: Vec<TypeShape>,
+    pub result: Option<Box<TypeShape>>,
 }
 
 /// A buffer or string-like type-shape. `element_type` is `AbiType::U8` for
@@ -68,16 +151,24 @@ pub enum TypeShape {
     Buffer(BufferShape),
     StringLike,
     Never,
+    BrandedHandle(BrandedHandleShape),
+    Record(RecordShape),
+    Enumeration(EnumerationShape),
+    Callback(CallbackShape),
+    Unit,
 }
 
 impl TypeShape {
     pub fn class(&self) -> TypeShapeClass {
         match self {
-            Self::Scalar(_) => TypeShapeClass::Scalar,
-            Self::OpaqueHandle => TypeShapeClass::OpaqueHandle,
+            Self::Scalar(_) | Self::Enumeration(_) => TypeShapeClass::Scalar,
+            Self::OpaqueHandle | Self::BrandedHandle(_) => TypeShapeClass::OpaqueHandle,
             Self::Buffer(_) => TypeShapeClass::Buffer,
             Self::StringLike => TypeShapeClass::StringLike,
             Self::Never => TypeShapeClass::Never,
+            Self::Record(_) => TypeShapeClass::Record,
+            Self::Callback(_) => TypeShapeClass::Callback,
+            Self::Unit => TypeShapeClass::Unit,
         }
     }
 }
@@ -221,6 +312,9 @@ impl InteropSignature {
             if !names.insert(parameter.name.clone()) {
                 return Err(InteropSignatureError::DuplicateParameter(parameter.name.clone()));
             }
+            if matches!(parameter.ty, TypeShape::Unit) {
+                return Err(InteropSignatureError::UnitParameter(parameter.name.clone()));
+            }
             validate_type_shape(&parameter.ty)?;
         }
         validate_type_shape(&self.returns.ty)?;
@@ -246,7 +340,52 @@ fn validate_type_shape(shape: &TypeShape) -> Result<(), InteropSignatureError> {
                 return Err(InteropSignatureError::VoidBufferElement);
             }
         }
-        TypeShape::OpaqueHandle | TypeShape::StringLike | TypeShape::Never => {}
+        TypeShape::OpaqueHandle | TypeShape::StringLike | TypeShape::Never | TypeShape::Unit => {}
+        TypeShape::BrandedHandle(handle) => {
+            if handle.identity.is_empty() {
+                return Err(InteropSignatureError::EmptyIdentity);
+            }
+            for argument in &handle.arguments {
+                validate_type_shape(argument)?;
+            }
+        }
+        TypeShape::Record(record) => {
+            if record.identity.is_empty() {
+                return Err(InteropSignatureError::EmptyIdentity);
+            }
+            if record.fields.is_empty() {
+                return Err(InteropSignatureError::EmptyRecord);
+            }
+            let mut names = HashSet::new();
+            for field in &record.fields {
+                if field.name.is_empty() || !names.insert(field.name.as_str()) {
+                    return Err(InteropSignatureError::DuplicateParameter(field.name.clone()));
+                }
+                validate_type_shape(&TypeShape::Scalar(field.scalar))?;
+            }
+        }
+        TypeShape::Enumeration(enumeration) => {
+            if enumeration.identity.is_empty() {
+                return Err(InteropSignatureError::EmptyIdentity);
+            }
+            if enumeration.variants.is_empty() {
+                return Err(InteropSignatureError::EmptyEnumeration);
+            }
+        }
+        TypeShape::Callback(callback) => {
+            for parameter in &callback.parameters {
+                if matches!(parameter, TypeShape::Callback(_) | TypeShape::Never | TypeShape::Unit) {
+                    return Err(InteropSignatureError::NestedCallback);
+                }
+                validate_type_shape(parameter)?;
+            }
+            if let Some(result) = &callback.result {
+                if matches!(result.as_ref(), TypeShape::Callback(_) | TypeShape::Never | TypeShape::Unit) {
+                    return Err(InteropSignatureError::NestedCallback);
+                }
+                validate_type_shape(result)?;
+            }
+        }
     }
     Ok(())
 }
@@ -259,6 +398,11 @@ pub enum InteropSignatureError {
     VoidScalar,
     VoidBufferElement,
     UnsupportedScalarWidth(AbiType),
+    EmptyIdentity,
+    EmptyRecord,
+    EmptyEnumeration,
+    NestedCallback,
+    UnitParameter(String),
 }
 
 impl std::fmt::Display for InteropSignatureError {
@@ -276,6 +420,11 @@ impl std::fmt::Display for InteropSignatureError {
             Self::UnsupportedScalarWidth(ty) => {
                 write!(f, "scalar type-shape binds an unsupported width `{ty:?}`")
             }
+            Self::EmptyIdentity => write!(f, "nominal type-shape has an empty identity"),
+            Self::EmptyRecord => write!(f, "record type-shape has no fields"),
+            Self::EmptyEnumeration => write!(f, "enumeration type-shape has no variants"),
+            Self::NestedCallback => write!(f, "callback type-shape nests a callback, `Never` or `Unit`"),
+            Self::UnitParameter(name) => write!(f, "interop parameter `{name}` has the return-only `Unit` shape"),
         }
     }
 }

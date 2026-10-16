@@ -55,6 +55,14 @@ const FILES: &[EmbeddedFile] = &[
         contents: include_str!("../assembly/common/external_wait.h"),
     },
     EmbeddedFile {
+        relative_path: "assembly/common/host_threads.h",
+        contents: include_str!("../assembly/common/host_threads.h"),
+    },
+    EmbeddedFile {
+        relative_path: "assembly/common/port_ring.h",
+        contents: include_str!("../assembly/common/port_ring.h"),
+    },
+    EmbeddedFile {
         relative_path: "assembly/common/executable_bootstrap.c",
         contents: include_str!("../assembly/common/executable_bootstrap.c"),
     },

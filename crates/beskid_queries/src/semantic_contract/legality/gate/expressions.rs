@@ -1,5 +1,5 @@
 //! Expression-shape, member, call, and local-declaration obligations (E1102, E1201, E1202,
-//! E1204, E1211, E1213, E1228, E1606, E1610).
+//! E1204, E1211, E1213, E1228, E1250, E1606, E1610).
 //!
 //! Legacy sites mirrored here: `type_index_expression` and `type_array_literal_expression`
 //! (E1202 at the expression), `type_lambda_expression_with_expected` without an expected
@@ -332,7 +332,43 @@ pub(super) fn collect_call_obligations(
         let Some(call) = index.node_at(program, node).and_then(|node| node.of::<CallExpression>()) else { continue };
         let call_key = AstNodeKey { node, ..key };
         match &call.callee.node {
-            Expression::Member(_) => {
+            Expression::Member(member) => {
+                if let Ok(Some(CallLowering::Direct(declaration))) = call_lowering(db, call_key) {
+                    let explicit = member.node.type_args.len();
+                    if explicit != 0
+                        && let Some(expected) = declared_generic_count(db, declaration)
+                        && expected != explicit
+                    {
+                        findings.push(GateObligation {
+                            kind: GateObligationKind::GenericArgumentMismatch { expected, actual: explicit },
+                            site: call_key,
+                        });
+                        continue;
+                    }
+                    match call_abi_signature(db, call_key) {
+                        Err(error) if error.bound_violation().is_some() => {
+                            let violation = error.bound_violation().expect("checked");
+                            findings.push(GateObligation {
+                                kind: GateObligationKind::GenericBoundNotSatisfied {
+                                    type_name: Arc::clone(&violation.type_name),
+                                    contract_name: Arc::clone(&violation.contract_name),
+                                    reason: violation.reason.clone(),
+                                },
+                                site: call_key,
+                            });
+                        }
+                        Err(error) if error.is_unavailable() => {
+                            if let Some(parameter) = uninferred_type_parameter(db, key, call_key, call, declaration) {
+                                findings.push(GateObligation {
+                                    kind: GateObligationKind::UninferredTypeParameter { parameter },
+                                    site: call_key,
+                                });
+                            }
+                        }
+                        _ => {}
+                    }
+                    continue;
+                }
                 if call_lowering(db, call_key).is_ok() {
                     continue;
                 }
@@ -369,6 +405,12 @@ pub(super) fn collect_call_obligations(
             Expression::Path(path) => {
                 let path = &path.node.path.node;
                 let lowering = call_lowering(db, call_key);
+                if lowering.is_err()
+                    && let Some(obligation) = generic_receiver_method_obligation(db, program, index, key, node, call)
+                {
+                    findings.push(obligation);
+                    continue;
+                }
                 if lowering.is_err() && judge_path_method_call(db, program, index, key, node, call, findings) {
                     continue;
                 }
@@ -398,7 +440,18 @@ pub(super) fn collect_call_obligations(
                                 kind: GateObligationKind::GenericBoundNotSatisfied {
                                     type_name: Arc::clone(&violation.type_name),
                                     contract_name: Arc::clone(&violation.contract_name),
+                                    reason: violation.reason.clone(),
                                 },
+                                site: call_key,
+                            });
+                        }
+                        Err(error)
+                            if error.is_unavailable()
+                                && let Some(parameter) =
+                                    uninferred_type_parameter(db, key, call_key, call, declaration) =>
+                        {
+                            findings.push(GateObligation {
+                                kind: GateObligationKind::UninferredTypeParameter { parameter },
                                 site: call_key,
                             });
                         }
@@ -481,6 +534,15 @@ fn judge_path_method_call(
         findings.push(GateObligation { kind: GateObligationKind::UnknownCallTarget, site: call_key });
         return true;
     }
+    // An array or function value has no members: `rest.Length()` on a `T[]` is a check error
+    // here, never a call left for lowering to reject (E2102).
+    if let Some(local) = local
+        && local_declares_array_or_function_value(program, index, local)
+    {
+        findings.push(GateObligation { kind: GateObligationKind::InvalidMemberTarget, site: segment_site });
+        findings.push(GateObligation { kind: GateObligationKind::UnknownCallTarget, site: call_key });
+        return true;
+    }
     let Some(reference) = index.node_at(program, callee) else { return true };
     let callee_key = AstNodeKey { node: callee, ..key };
     let Some(Ok(receiver)) = field_access_receiver(db, program, index, callee_key, reference, None, None) else {
@@ -506,6 +568,83 @@ fn judge_path_method_call(
     true
 }
 
+/// Whether the local declared at `declaration` is written or initialised as an array (`T[]`,
+/// `[a, b]`) or a function value (`R(A)`): a non-nominal receiver kind that has no methods.
+fn local_declares_array_or_function_value(
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &SyntaxIndex,
+    declaration: beskid_analysis::syntax::AstNodeId,
+) -> bool {
+    let non_nominal = |ty: &Type| matches!(ty, Type::Array(_) | Type::Function { .. });
+    let Some(parent) = parent_node(index, declaration) else { return false };
+    let Some(node) = index.node_at(program, parent) else { return false };
+    if let Some(parameter) = node.of::<Parameter>() {
+        return non_nominal(&parameter.ty.node);
+    }
+    if let Some(parameter) = node.of::<LambdaParameter>() {
+        return parameter.ty.as_ref().is_some_and(|ty| non_nominal(&ty.node));
+    }
+    if let Some(statement) = node.of::<LetStatement>() {
+        return match &statement.type_annotation {
+            Some(ty) => non_nominal(&ty.node),
+            None => matches!(statement.value.node, Expression::ArrayLiteral(_)),
+        };
+    }
+    false
+}
+
+/// E1250: `value.Method(..)` that `call_lowering` cannot resolve, where `value` is a parameter or
+/// annotated `let` typed by a type parameter of the enclosing callable. Its members are exactly
+/// the methods of its `where` bound contracts; a method no bound declares is a check error, never
+/// a call left for lowering to reject.
+fn generic_receiver_method_obligation(
+    db: &dyn Db,
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &SyntaxIndex,
+    key: AstNodeKey,
+    call_node: beskid_analysis::syntax::AstNodeId,
+    call: &CallExpression,
+) -> Option<GateObligation> {
+    let Expression::Path(path_expression) = &call.callee.node else { return None };
+    let path = &path_expression.node.path.node;
+    let [receiver, method] = path.segments.as_slice() else { return None };
+    if !receiver.node.type_args.is_empty() {
+        return None;
+    }
+    let local = resolve_lexical_declaration(program, index, call_node, receiver.node.name.node.name.as_str())?;
+    let declaration = parent_node(index, local)?;
+    let declared = match index.kind(declaration)? {
+        NodeKind::Parameter => &index.node_at(program, declaration)?.of::<Parameter>()?.ty.node,
+        NodeKind::LetStatement => &index.node_at(program, declaration)?.of::<LetStatement>()?.type_annotation.as_ref()?.node,
+        _ => return None,
+    };
+    let parameter = crate::semantic_contract::generic_parameter_reference_name(declared)?;
+    if !crate::semantic_contract::type_syntax_is_enclosing_generic_parameter_reference(
+        db,
+        AstNodeKey { node: declaration, ..key },
+        declared,
+    ) {
+        return None;
+    }
+    let call_key = AstNodeKey { node: call_node, ..key };
+    if matches!(crate::semantic_contract::contract_member_receiver(db, program, index, call_key, path), Some(Ok(_))) {
+        return None;
+    }
+    let callee = index.direct_child_id(program, call_node, DynNodeRef::from(call.callee.as_ref()))?;
+    let callee = normalized_expression_node(index, callee);
+    let site = index
+        .direct_child_id(program, callee, DynNodeRef::from(&path_expression.node.path))
+        .and_then(|path_node| index.direct_child_id(program, path_node, DynNodeRef::from(method)))
+        .unwrap_or(callee);
+    Some(GateObligation {
+        kind: GateObligationKind::GenericReceiverMethodUndeclared {
+            method: Arc::from(method.node.name.node.name.as_str()),
+            parameter: Arc::from(parameter),
+        },
+        site: AstNodeKey { node: site, ..key },
+    })
+}
+
 /// The declared generic parameter count of a resolved function declaration; methods declare no
 /// generics of their own and are not judged.
 fn declared_generic_count(db: &dyn Db, declaration: AstNodeKey) -> Option<usize> {
@@ -515,6 +654,14 @@ fn declared_generic_count(db: &dyn Db, declaration: AstNodeKey) -> Option<usize>
         .node_at(syntax.expanded_program(db), declaration.node)?
         .of::<FunctionDefinition>()
         .map(|function| function.generics.len())
+        .or_else(|| {
+            // Explicit arguments on a method call bind the method's own type parameters.
+            syntax
+                .syntax_index(db)
+                .node_at(syntax.expanded_program(db), declaration.node)?
+                .of::<beskid_analysis::syntax::MethodDefinition>()
+                .map(|method| method.generics.len())
+        })
 }
 
 fn declared_field_type(db: &dyn Db, declaration: AstNodeKey, name: &str) -> Option<Type> {
@@ -653,6 +800,36 @@ fn judge_unconstrained_forwarding(
             if !function.generics.iter().any(|candidate| candidate.node.name == generic) {
                 continue;
             }
+            if let Some(marker) = transfer_marker_contract(db, bound.contract) {
+                // A marker bound is covered when the caller's own marker bounds give the generic
+                // a class that satisfies it (`T: Moved` covers `Transferable`).
+                let markers = function
+                    .where_bounds
+                    .iter()
+                    .filter(|caller_bound| caller_bound.parameter.node.name == generic)
+                    .filter_map(|caller_bound| {
+                        let mut contract_path = caller_bound.contract.node.clone();
+                        if let Some(last) = contract_path.segments.last_mut() {
+                            last.node.type_args.clear();
+                        }
+                        resolve_contract(db, enclosing_key, &contract_path)
+                    })
+                    .filter_map(|contract| transfer_marker_contract(db, contract))
+                    .collect::<Vec<_>>();
+                let class = crate::semantic_contract::transfer::bound_class(generic, &markers);
+                if !class.satisfies(marker) {
+                    findings.push(GateObligation {
+                        kind: GateObligationKind::GenericBoundNotSatisfied {
+                            type_name: Arc::from(generic),
+                            contract_name: Arc::from(marker.name()),
+                            reason: Some(Arc::from(crate::semantic_contract::transfer::marker_bound_reason(&class, marker))),
+                        },
+                        site: call_key,
+                    });
+                    return;
+                }
+                continue;
+            }
             let covered = function.where_bounds.iter().any(|caller_bound| {
                 if caller_bound.parameter.node.name != generic {
                     return false;
@@ -674,6 +851,7 @@ fn judge_unconstrained_forwarding(
                     kind: GateObligationKind::GenericBoundNotSatisfied {
                         type_name: Arc::from(generic),
                         contract_name: Arc::from(contract_name.as_str()),
+                        reason: None,
                     },
                     site: call_key,
                 });
@@ -681,4 +859,52 @@ fn judge_unconstrained_forwarding(
             }
         }
     }
+}
+
+/// The first own type parameter of a generic call's callee that inference cannot bind: a call
+/// with no explicit type arguments in a non-generic item whose own type parameter is named only
+/// by the result of function-typed parameters that receive lambda literals (or by no parameter
+/// at all), and whose specialization is unavailable. Reported as E1203 naming the parameter.
+fn uninferred_type_parameter(
+    db: &dyn Db,
+    item: AstNodeKey,
+    call_key: AstNodeKey,
+    call: &CallExpression,
+    declaration: AstNodeKey,
+) -> Option<Arc<str>> {
+    if call_explicit_member_type_arguments(db, call_key).is_some() {
+        return None;
+    }
+    if let Expression::Path(path) = &call.callee.node
+        && explicit_generic_type_argument_syntax(&path.node.path.node).is_some()
+    {
+        return None;
+    }
+    if generic_callable_parameters(db, item).is_some() {
+        return None;
+    }
+    let syntax = db.syntax_unit(declaration.unit).filter(|syntax| syntax.accepts_key(db, declaration))?;
+    let node = syntax.syntax_index(db).node_at(syntax.expanded_program(db), declaration.node)?;
+    let (own, parameters) = if let Some(method) = node.of::<beskid_analysis::syntax::MethodDefinition>() {
+        (method.generics.iter().map(|generic| generic.node.name.as_str()).collect::<Vec<_>>(), &method.parameters)
+    } else {
+        let function = node.of::<FunctionDefinition>()?;
+        (function.generics.iter().map(|generic| generic.node.name.as_str()).collect::<Vec<_>>(), &function.parameters)
+    };
+    if parameters.len() != call.args.len() {
+        return None;
+    }
+    own.into_iter()
+        .find(|name| {
+            !parameters.iter().zip(call.args.iter()).any(|(parameter, argument)| {
+                let lambda = expression_is_lambda(&argument.node);
+                match &parameter.node.ty.node {
+                    Type::Function { parameters, .. } if lambda => parameters
+                        .iter()
+                        .any(|parameter| type_syntax_mentions_generic_parameter(&parameter.node, name)),
+                    other => !lambda && type_syntax_mentions_generic_parameter(other, name),
+                }
+            })
+        })
+        .map(Arc::from)
 }

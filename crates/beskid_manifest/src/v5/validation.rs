@@ -109,7 +109,17 @@ pub(super) fn validate(manifest: &RuntimeManifestV5) -> Result<(), String> {
     if manifest.traps.iter().any(|trap| trap.name.is_empty()) {
         return Err("trap names must not be empty".into());
     }
-    unique(manifest.exports.iter().map(|entry| entry.symbol.as_str()), "export")?;
+    unique(
+        manifest.exports.iter().map(|entry| entry.symbol.as_str()).chain(manifest.data_exports.iter().map(|entry| entry.symbol.as_str())),
+        "export",
+    )?;
+    for entry in &manifest.data_exports {
+        // A data export is one naturally aligned process-wide word that generated code loads by
+        // symbol; it carries the ABI-v5 runtime prefix like every manifest-owned export.
+        if !entry.symbol.starts_with("beskid_rt_v5_") || !matches!(entry.ty.as_str(), "usize" | "u64" | "isize" | "i64") {
+            return Err(format!("data export {} must be a beskid_rt_v5_ word", entry.symbol));
+        }
+    }
     unique(manifest.intrinsics.iter().map(|entry| entry.name.as_str()), "intrinsic")?;
     unique(manifest.intrinsics.iter().map(|entry| entry.symbol.as_str()), "intrinsic linker symbol")?;
     unique(manifest.soft_builtins.iter().map(|entry| entry.name.as_str()), "soft builtin")?;
@@ -221,6 +231,12 @@ pub(super) fn validate(manifest: &RuntimeManifestV5) -> Result<(), String> {
         "__gc_heap_verify",
         "__gc_heap_set_stress_interval",
         "__gc_heap_force_root_stack_failure",
+        "__gc_cycle_start",
+        "__gc_mark_step",
+        "__gc_last_cycle_max_step_bytes",
+        "__gc_heap_set_incremental_stress",
+        "__gc_object_mark_state",
+        "__gc_heap_force_barrier_skip",
         "__gc_root_handle",
         "__gc_unroot_handle",
         "__gc_same_identity",
@@ -261,6 +277,33 @@ pub(super) fn validate(manifest: &RuntimeManifestV5) -> Result<(), String> {
         "__args_count",
         "__args_get",
         "__thread_yield",
+        "__host_processor_count",
+        "__isolate_current",
+        "__isolate_main",
+        "__isolate_scope_open",
+        "__isolate_spawn",
+        "__isolate_spawn_local",
+        "__isolate_join",
+        "__isolate_join_value",
+        "__isolate_join_message",
+        "__isolate_join_finish",
+        "__isolate_task_status",
+        "__isolate_task_index",
+        "__isolate_task_isolate",
+        "__isolate_cancel",
+        "__isolate_cancel_requested",
+        "__isolate_scope_cancel",
+        "__isolate_scope_close_ports",
+        "__isolate_scope_close",
+        "__isolate_scope_port",
+        "__isolate_pool_size",
+        "__isolate_idle_count",
+        "__port_create",
+        "__port_send",
+        "__port_receive",
+        "__port_receive_value",
+        "__port_try_receive",
+        "__port_close",
     ]
     .into_iter()
     .collect::<BTreeSet<_>>();
@@ -308,6 +351,7 @@ pub(super) fn validate(manifest: &RuntimeManifestV5) -> Result<(), String> {
                     | "__panic"
                     | "__panic_str"
                     | "__thread_yield"
+                    | "__host_processor_count"
             )
         {
             return Err(format!("corelib service `{}` must use canonical adapter `{expected_adapter}`", service.name));
@@ -331,6 +375,7 @@ pub(super) fn validate(manifest: &RuntimeManifestV5) -> Result<(), String> {
         ("__panic", "beskid_trap_code", &["i64"][..], "never"),
         ("__panic_str", "beskid_trap_message", &["pointer"][..], "never"),
         ("__thread_yield", "beskid_rt_v5_thread_yield", &[][..], "void"),
+        ("__host_processor_count", "beskid_rt_v5_host_processor_count", &[][..], "usize"),
     ] {
         let service = manifest
             .corelib_services

@@ -176,7 +176,162 @@ development log stays under [Unreleased] below.
 
 ## [Unreleased]
 
-### Added
+The work below ships as one release, 0.6.6 (OpenSpec changes
+`v061-attributes-and-isolate-prerequisites`, `v061-gc-stress-and-poison`,
+`v061-glue-extensions`, `v062-captures-and-move`, `v063-isolates-and-scope`,
+`v064-ports-and-pipelines`, `v065-parallel-sequences`). It is grouped by
+feature area.
+
+### Language: transfer classes and markers
+
+- Every type has a transfer class: Shared, Moved, Copied or Never. Primitives
+  and `string` are Shared, `T[]` is Moved when `T` is transferable, and a
+  nominal type takes its class from `[Immutable]`, `[Isolated]` or
+  `[Copyable]` and the classes of its fields. A type without a marker, a
+  function value and `pointer` are Never. A generic type is classified per
+  instantiation.
+- Marker attributes `Immutable`, `Isolated`, `Copyable`, `NeverTransferable`,
+  `ImmutableStorage`, `Captures`, `ScopeBorrowed` and `CompilerDerived`,
+  declared once in `Core.Attributes`. The compiler-derived marker contracts
+  `Transferable`, `Shared`, `Moved` and `Copied` live in `Core.Parallel`; a
+  bound `where T: Transferable` is proven from the class and issues no witness.
+  `ImmutableStorage` and `ScopeBorrowed` are allowed only inside corelib.
+- Diagnostics E1234-E1249 for transfer, capture and ownership errors; E1610
+  names the reason a marker bound fails; E1607 rejects a declared conformance
+  to a compiler-derived contract; E1003 rejects members on a marker contract.
+- Corelib collections are `[Isolated]`; `Fiber`, `Channel`, `Hub`, `Mutex`,
+  `MutexGuard`, `WaitGroup` and the socket types are `[NeverTransferable]`.
+  A `[GlueHandle]` owner type is never transferable, and a marker on it is
+  E1246.
+- Hover shows the transfer class of a type declaration ("decided per
+  instantiation" for a generic type).
+
+### Language: captures and `move`
+
+- `move` is a keyword. `move x` consumes an owning name; `move x.f` is a
+  destructive read that leaves the canonical empty value (`None`, an empty
+  array or an empty `List`) in the field; `exchange(place, move value)` swaps a
+  field or element and returns the old value. `move` on a parameter or receiver
+  (`move this`) makes it owning.
+- Affine ownership of Moved values (E1234 use after move, E1239-E1243):
+  reading after a consuming use, storing a borrowed parameter, consuming in a
+  loop without rebinding, and destructive reads without a canonical empty are
+  errors. `x = f(move x)` rebinds `x`, also inside a branch of a loop body.
+  Struct and array literals consume an owning name without `move`. A consumed
+  state flows only along edges that do not diverge: a `return` after a
+  consumption (`if failed { return F(move x); }`) keeps `x` live after the
+  branch, `break` and `continue` cut off the rest of the loop body, and a
+  `return` or `break` exempts the loops it leaves from E1240. An assignment
+  decides whether a local is owning: `buf = Join(buf, data)` makes a local read
+  from a field owning. A `move` parameter is a mutable owner: it can be grown
+  and rebound, also under the staged mutability check (E1214).
+- `beskid check` knows the `exchange(place, move value)` builtin and the
+  `__transfer_class<T>()` intrinsic, sees a method's own generic parameters in
+  its signature (E1005), and counts an import reached only by a function
+  `where` bound as used (W1503).
+- `[Captures(Bound: C)]` on a function-typed parameter or field judges the
+  captures of every lambda passed or assigned to it (E1235-E1238, E1241). A
+  value read from a bounded parameter or field satisfies the same bound.
+- A `move T` parameter over `T: Transferable` is owning inside the generic
+  definition; at a call a Moved argument needs `move` (E1242), and `move` on a
+  Shared or Copied argument is E1239.
+- A borrowed parameter that a `[Captures]`-bounded lambda of its callable
+  captures while its class is decided per instantiation (the
+  `ParallelSeq.Reduce` and `ReduceUnordered` seed) admits only Shared and
+  Copied arguments: a Moved argument is E1236 at the argument, naming the
+  class `Moved`. Build a Moved accumulator inside the combiner instead.
+- Corelib collection mutators take `move this` (`list = list.Push(v)`). The
+  Http, Http2, Http3 and Codec byte builders and Pest `AppendExpr` take their
+  buffer as a `move` parameter (`out = EncodeInteger(move out, ..)`).
+- `__transfer_class<T>()` folds to a per-instantiation constant (0 Shared,
+  1 Moved, 2 Copied).
+- LSP quick fixes insert `move`, mark a parameter `move`, or rewrite a store as
+  `exchange`; hover shows owning and borrowed bindings and capture lists.
+
+### Memory management
+
+- Incremental marking with a hybrid write barrier and lazy sweeping. Generated
+  code loads `beskid_rt_v5_gc_barrier_active` before a store that overwrites a
+  GC-managed field or element of an existing object and, only when it is
+  non-zero, calls `beskid_rt_v5_gc_write_barrier(slot, value)` in a cold block.
+  Initialization stores carry no barrier. Destructive reads and `exchange` use
+  the barriered store. `beskid_rt_v5_array_write_barrier` and
+  `ArrayLayout::needs_write_barrier` are removed; native Mod adapters and
+  dynamic mapping use the construction barrier for objects they allocate.
+- GC stress mode (`BESKID_GC_STRESS=alloc|alloc:<n>|verify`), heap
+  verification, and debug-kit poisoning with a byte-budgeted quarantine
+  (`BESKID_GC_QUARANTINE`). A malformed value traps with the variable name.
+  The debug kit compiles its platform objects with
+  `BESKID_RUNTIME_KIT_DEBUG=1`.
+- `BeskidHeapState` is 528 bytes; word 512 is the count record of the heap.
+
+### Runtime: isolates, ports and transfer
+
+- Thread, atomic and processor-count intrinsics (`thread_create`,
+  `thread_join`, `atomic_word_*`, `atomic_fence`, `host_processor_count`) for
+  Linux, macOS and Windows; `Concurrency.HostProcessorCount()`.
+- Runtime instances: `beskid_rt_v5_isolate_create`/`_destroy`/
+  `_panic_message`, a process-wide region-to-owner map, and a process-wide,
+  reference-counted syscall worker pool. A main-fiber panic message stays
+  readable after the heap is released.
+- The `__isolate_*` services run a task on a new thread with its own runtime
+  instance and heap, or as a local fiber at the `BESKID_ISOLATES_MAX` bound
+  (default: host processor count). A failed task cancels its siblings and the
+  ports of its scope. A completed task's heap is adopted by the joiner. Reading
+  composition inside an isolate panics.
+- The `__port_*` services over bounded native rings
+  (`assembly/common/port_ring.h`), with close, cancel and cooperative parking.
+  Shared and Moved values cross by pointer, Copied values through a transit
+  copy (`Runtime/Mem/Transit.bd`).
+- Cross-heap reference counts (`Runtime/Mem/Gc/Counts.bd`,
+  `Runtime/Mem/Gc/Foreign.bd`): causal INC/DEC through a FIFO per owner,
+  foreign references stamped by marking, and stakes given back when a send
+  fails or a scope releases its ports.
+- `__isolate_spawn<T>` lowers to a per-result-shape entry trampoline; the
+  owner mailbox grows when full (before, it trapped at 256 commands).
+
+### Core.Parallel
+
+- Package `corelib_concurrency`, modules `Core.Parallel.*`: fork-join scopes
+  (`Parallel.Scope`, `Scope.Spawn`/`SpawnTry`/`Cancel`, `Task<T>.Join`,
+  failures in spawn order, serial elision), `Isolate` handles,
+  `ReadOnlyArray.Freeze`, bounded `Port<T>` with long-lived `Scope.Isolate`
+  workers, pipelines (`Source`/`Stage`/`Ordered`/`Sink`), and `ParallelSeq<T>`
+  (`List<T>.Parallel()`, fused `Where`/`Map`, `Chunk`/`MinChunk`, adaptive
+  heartbeat splitting, `Collect`/`ForEach`/`Count`/`Reduce`/`ReduceUnordered`
+  with the `Associative`/`Commutative` combiner contracts). `Associative<T>`
+  declares `Combine`; `Commutative<T>` is a method-less marker, because a
+  member that two `where` bounds declare is ambiguous (E1250). A `Reduce` seed
+  must be Shared or Copied.
+- Tests: `ParallelSuite` and the `compile-fail/parallel` corpus. Guide and
+  cost table: `corelib/beskid_corelib/docs/Core/Parallel.md`.
+
+### Glue
+
+- Rust Glue records by value: a `[GlueRecord]` type with 1 to 64 scalar fields
+  crosses the C ABI as a C struct; an out-of-domain Bool or `char` field from
+  the foreign side is a checked failure.
+- Rust Glue fieldless enums: a `[GlueEnum]` crosses as its `u32` source-order
+  variant index; an unknown discriminant is a checked failure.
+- Rust Glue callbacks: a function type is a Glue import parameter with scalar
+  or enum members, valid only during the import call and on the calling
+  thread (otherwise status 2).
+- `RustOwner(Path:..)` on a `GlueRecord` or `GlueEnum` type names the owner's
+  Rust type, checked at compile time. `GlueRecord` and `GlueEnum` are declared
+  in `Core.Attributes`.
+- The Rust owner crate has a generated `beskid` module with one function per
+  consumer export; calls from another thread get `GlueError::ForeignThread`.
+- Glue lowers to the Interop.Contracts vocabulary (`glue_type_shape`,
+  `glue_interop_signature`); Bool maps to `u8` in the Bool domain in every C
+  profile. Owners without opaque handle types are admitted.
+
+### Changed
+
+- The runtime provenance audit accepts a manifest-declared `beskid_rt_v5_*`
+  export whose name contains a forbidden family word.
+- The Corelib service source corpus embeds the `Core.Parallel` units.
+
+### pckg registry
 
 - pckg: browse every file of a verified package artifact through
   `GET /api/packages/{name}/versions/{version}/files` and
@@ -196,15 +351,11 @@ development log stays under [Unreleased] below.
   while NodeBB was unavailable. Migrations `0012_add_package_community` and
   `0013_replace_package_community_category_with_topic`.
 
-### Changed
-
 - pckg: `docs/structured` returns the packed `.beskid/docs/api.json` as
   `api`; the `metadata` field that never matched the packer is removed. The
   artifact browser indexes every validated entry for the file browser while
   still refusing artifacts with hidden segments inside `docs/`, `src/` or
   `.beskid/docs/`.
-
-### Fixed
 
 - pckg: accept NodeBB topic slugs with dots (`4/beskid.templates.console`)
   when persisting a package's community link; the previous charset rejected
@@ -216,6 +367,282 @@ development log stays under [Unreleased] below.
 
 ### Fixed
 
+- `beskid check --project` on a manifest with several targets analyzes every
+  target (App, Lib and Test), not only the default one, so sources reachable
+  only from a per-suite test entry can no longer pass the check while failing
+  at `beskid test`. Failures of all targets are collected and reported
+  together; `--target` still selects a single target.
+- The `parallel_counts` moved-graph fixture and the `ProcessSuite` and
+  `BsolSerializationWireTests` Corelib test sources hand ownership over with
+  `move` (E1241/E1242) instead of storing borrowed Moved values.
+- A field read stored as it is follows the owning and borrowed rules: a
+  Moved field read through a borrowed name (`Node { bytes: h.bytes }`,
+  `Store(h.bytes)` into a `move` parameter, `n.bytes = h.bytes`) is E1241,
+  and through an owning name it is E1242 (write `move h.bytes` or use
+  `exchange`). Fields of other classes, and roots of Never class, are not
+  judged.
+- A borrowed value stored into a field of a corelib `[ScopeBorrowed]` view is
+  no longer E1241: the scope bounds the borrow. Every other type still
+  reports E1241, and `[ScopeBorrowed]` outside the corelib stays E1510.
+  `Parallel.OfArray` now borrows its source array and copies no element.
+- A stored element read follows the owning and borrowed rules: storing a
+  Moved `xs[i]` (or `xs[i].f`) in a literal, a field or element, or a
+  `move` parameter is E1241 through a borrowed name and E1242 through an
+  owning name (take the element with `exchange`). A field or element of a
+  call result (`Make().f`, `Make()[0]`) is an owned temporary: storing it is
+  allowed and a local initialized from it is owning.
+- A `move` argument to a generic call inside a generic body
+  (`Keep<T>(move values)` in `Forward<T>`) lowers; it no longer ends in
+  E2102. The argument is rooted like a read of its operand.
+- The Rust Glue extension fixture matches on the callback's lambda parameter
+  again (`(i64 index, Color color) => match color { ... }`).
+- A struct, array or enum literal that stores a borrowed name (`TestStream {
+  state: state }` with a borrowed `u8[] state`) is E1241: a borrowed value
+  cannot be stored. An owning name is consumed silently, so enum constructor
+  arguments now consume too. Corelib readers over caller bytes (codec
+  `Cursor`, x509 `Der`, `QuicWire.NewReader`, `BufferReader`, TLS and QUIC
+  secrets and IDs) store their own copy; writers (`QuicWire.NewWriter`,
+  `BufferWriter`) take the buffer by `move` and return it with `TakeBuffer`;
+  hand-offs take their arrays by `move`. New `Array.Copy<T>`. Generated SDK
+  factories declare `move` on Moved parameters.
+- A `match` on a lambda parameter (`(i64 index, Color color) => match color
+  { ... }`) is typed by the parameter's binding identity, also inside a
+  generic body; it no longer ends in an internal compiler error.
+- A `unit` local (`T value = __isolate_join_value<T>(id)` at `T = unit`, so
+  `Task<unit>.Join()`) has no storage: its initializer is evaluated for its
+  effects and its reads are `unit` values. It no longer fails with E2102.
+- The type descriptor of a record or enum carries `TYPE_DESCRIPTOR_IMMUTABLE` exactly when its transfer class is Shared in that
+  specialization, including a type that is Shared only through a type argument (`Sequenced<string>`; `Sequenced<string[]>` stays
+  unflagged).
+- A qualified path into the current module or one of its ancestors reaches
+  that module's private items, as the unqualified lookup does: `mod A {
+  contract Reader {} ... where T: A.Reader }` is no longer reported as a
+  private cross-module access (E1107). A sibling module still cannot reach
+  them.
+- `NativeImageSet::verify_image_address` and `verify_provider_address` take
+  the address as an identity (`usize`). The loader lookup (`dladdr`,
+  `GetModuleHandleExW`) never dereferences it, so the functions are safe and
+  clippy's `not_unsafe_ptr_arg_deref` no longer fails the build.
+- Test fixtures follow the v0.6.2 move rules: the engine Foundation I/O
+  fixture reads its counters through the record that owns them, the Fiber
+  transfer fixture moves its byte buffer into the spawned closure, and the
+  serialization test encoder copies a borrowed `u8[]` instead of storing it
+  (E1241).
+- A string kept from a received pipeline record could be collected while
+  still in use (`str_eq: managed string operand is not live` in
+  `three_stage_pipeline_keeps_input_order` under
+  `BESKID_GC_STRESS=alloc:1,verify`). A Shared message stakes only its root
+  object; marking recorded an object reached through it as an uncounted
+  foreign reference, so the owner swept it once the wrapper's DEC arrived.
+  Marking now takes a stake on every foreign immutable object it discovers
+  (ORCA acquire) and posts the INC before any DEC of the same cycle; a
+  discarded task heap gives back the stakes of its foreign references.
+- `beskid test` no longer runs compile-time native Mod workers under the test
+  GC settings: the worker clears `BESKID_GC_STRESS` and
+  `BESKID_GC_QUARANTINE` before its runtime starts. Before, a Mod under
+  `alloc:1,verify` exceeded its invocation deadline.
+- Every Core.Parallel task that ran on a real isolate failed with
+  `transit refused 0x0000000000000000`. The transit walk reported a refusal
+  as the encoded value 1, which is also the encoding of the first object of
+  the record, so the spawned closure record itself was refused. A refusal is
+  now a value that no reference encodes.
+- An elided `Scope.Spawn` (no free pool isolate, `BESKID_ISOLATES_MAX=1`, or a
+  `serial` scope) starts its body as a local task fiber, scheduled in spawn
+  order, and returns at once. Before, `Spawn` ran the body to completion, so a
+  producer that filled a bounded port before its consumer ran deadlocked. The
+  `__isolate_wait` service has no caller left and is removed.
+- A Rust Glue owner without opaque handle types (records, enums, callbacks
+  and scalars only) failed to build with "Rust owner lacks exact sole
+  canonical provider dependency": `--no-as-needed` came after the runtime
+  provider on the link line, so the linker dropped the provider that no owner
+  code called. The flag now precedes the provider. Loading such an owner then
+  failed with "actual image closure rejected", because the loader bound an
+  empty destructor closure; it now binds the closure only when the owner has
+  opaque destructors.
+- A task observes a cancellation request only from its first run on (the
+  start of a task is not a safepoint), so a task created before its scope
+  failed still reports its own failure and the scope's failure report is the
+  same at every isolate bound.
+- `T value = __isolate_join_value<T>(..)` and the other typed Corelib value
+  services (fiber join, channel and port receive) root the local when `T` is
+  managed. The local was not rooted, so the allocation of `Result::Ok(value)`
+  in `Task.Join` could free the joined value.
+- String services, handle roots and handle resolution accept a live reference
+  into another isolate's heap (a `Shared` capture or a port message held by
+  pointer). A finished task keeps its retained heap resolvable until the
+  joiner adopts or discards it.
+- A `Shared` port message keeps its whole graph alive while a port holds it:
+  the count entry of a `Shared` stake, and of a string, is traced instead of
+  shallow-marked. A receive allocates the receiver's box first, then takes the
+  message's stakes, then stores the value, so neither a collection nor the
+  write barrier sees the value without its stake.
+- Heap address lookup on the owner thread is a binary search in a sorted
+  per-heap region index instead of a walk of the region chain. A joiner adopts
+  one region per completed task, so the walk grew with the number of joined
+  tasks (`Collect` over many chunks, and every collection under GC stress).
+- A method call on an array or function value (`rest.Length()` on a `T[]`
+  parameter or local) is a check-time E1213 error with E1606 at the call.
+  It used to pass `beskid check` and fail in lowering with E2102.
+
+- A block-bodied lambda's final expression statement is a statement, not the
+  lambda's value. `s.Spawn(() => { match port.Receive() { ... => { return x; }, ... }; })`
+  failed with E2102 at the `match`, because lowering read the last statement
+  as the lambda result. The statement cursor of a block lowered as a statement
+  now also runs that final statement, and the expected type of the statement
+  is `unit` also when the lambda body sits behind an expression wrapper.
+- E1236 is reported at the call site of a generic wrapper that passes its own
+  borrowed parameter on to a repeatedly captured parameter (a `Reduce` seed),
+  for each instantiation. Recursive forwarding terminates.
+- The `parallel_counts` native fixture sends a call result without `move` (a
+  call result is already owned; `move` on it is E1239) and reads an array
+  length with `Array.Len`.
+- doc: `api.json` relativizes and attributes units compiled from a package's
+  `.generated` sibling of its source root (for example Foundation's
+  `Core/Text/Regex/Generated.g.bd` reached through a dependency), instead of
+  failing with "could not relativize". http2, http3, quic and network now
+  generate API docs.
+- doc: module containers take their `declaringPackage` and location from the
+  items they hold. A module with an item of the publishing package is its own;
+  a module that holds only one dependency's items belongs to that dependency.
+- Tests: every corelib package source must parse; a materialized dependency
+  unit of an entry-less library is never one of its roots; console and connect
+  never check the materialized `Concurrency/Channel.bd` as their own code; and
+  network and concurrency check clean with their own service files as roots.
+- A local Core.Parallel task whose fiber is cancelled before it runs (a task
+  started in a scope that has already failed, under serial elision) becomes
+  terminal. The scheduler ended such a fiber without a context switch and
+  never handed the cancellation to its task, so `__isolate_wait` and the
+  scope's join parked forever.
+- A method called on an enum-pattern binding inside a generic function
+  (`chunk.Count()` for `Option::Some(chunk)` of `parts.TryGet(part)` with
+  `List<List<T>> parts` in `ParallelSeq.Flatten<T>`) resolves on the binding's
+  nominal head, read in a probe instance of the function; a binding typed by
+  a type parameter itself still resolves nothing. Before, the call had no
+  declaration and code generation stopped with E2102 at the enclosing loop.
+- A method called on a generic call result whose declared return is the
+  callee's own type parameter (`Array.Get<Task<R>>(tasks, k).Join()` in
+  `ParallelSeq.JoinInOrder<R>`) resolves on the nominal its explicit type
+  argument names. Before, the call was lowered as dynamic, the `match` over it
+  had no enum layout, and code generation stopped with E2102.
+- `this.Method<T>(..)` calls a sibling method with its own type parameters
+  (`this.Spawn<T>(() => Unwrap<T>(body()))` in `Scope.SpawnTry<T>`); before,
+  explicit type arguments on the implicit-receiver spelling found no
+  declaration and code generation stopped with E2102. The bare `Method<T>(..)`
+  spelling stays unresolved.
+- A `match` over a call through a function value inside a generic body
+  (`match element(index)` with `(i64) => Option<T> element` in
+  `ParallelSeq.Evaluate<T, L, R>`) takes the scrutinee enum from the callee's
+  function type in the specialization; before, the scrutinee had no source
+  identity and code generation stopped with E2102.
+- A typed Corelib value service instantiated at `string`
+  (`__isolate_join_value<T>` in `Task<string>.Join`, `__fiber_join_value<T>`,
+  `__channel_receive_value<T>`, `__port_receive_value<T>`) selects the managed
+  slot adapter. Before, only nominal, array and function values were admitted
+  as managed results, the call had no signature, and code generation stopped
+  with E2102.
+- A Corelib service that returns a managed `string` through the pointer
+  register (`__isolate_join_message`, `__fiber_join_message`, `__str_slice`,
+  `__env_get`) is a managed value in every expression position. Its category
+  now comes from the source declaration, not from the transport; before, a
+  call used as a struct literal field (`TaskFailure { message:
+  __isolate_join_message(handle) }` in `Core.Parallel.Scopes.FailureOf`) or as
+  a rooted call argument had no managed category, and code generation stopped
+  with E2102.
+- Generic specialization covers the Core.Parallel shapes: a method call on a
+  value bound by a nested enum pattern (`Result::Error(ParallelError::Failed(failures))`
+  then `failures.Count()`), a typed lambda parameter used as a receiver
+  (`(Port<i64> out) => out.Send(..)`), an `impl<T> List<T>` method declared in
+  another package than `List<T>`, a binding of a `match` over a call inside a
+  generic body, and a method with its own type parameters on a non-generic
+  owner (`Scope.SpawnTry<T>`), which is now emitted only as call-derived
+  specializations. Each stopped code generation with E2101.
+- A generic enum constructor without type arguments passed to a method of a
+  generic owner (`output.Send(Sequenced::Item(next, item))` on a
+  `Port<Sequenced<T>>`) takes its type from the receiver's written type
+  arguments, and the call specializes from the receiver's bindings. Before,
+  code generation stopped with E2101 or E2102.
+- A lambda inside a generic body (`(List<T> leaf, T value) => leaf.Push(value)`
+  in `ParallelSeq<T>.Collect`) is emitted once per specialization of the
+  enclosing item, with its parameter types, result and captured values taken
+  from that instance; each instance has its own closure layout. A captured
+  value whose type names a type parameter is captured by value, and an
+  instance that makes it a native pointer is rejected. A typed lambda
+  parameter (`(Core.Parallel.Scopes.Scope s) => ...`) is classified by its
+  written type. Before, code generation stopped with "lambda parameter slot or
+  type is unavailable" or an E2101 internal error.
+- A lambda body that is a constructor without type arguments
+  (`s.SpawnTry<i64>(() => Result::Error("no input"))`) takes its enum type
+  from the lambda's expected function result, in an expression body and in a
+  `return` of a block body. Before, code generation stopped with "semantic
+  query `value_abi_type` is unavailable".
+- One expected-type authority. Constructor typing, lambda typing and the
+  match scrutinee of a specialized body read the type their position requires
+  from `expected_type` (target-neutral) or `expected_type_in_environment` (in
+  the enclosing specialization: generic substitutions, lambda expected
+  signatures, method owner parameters from the receiver's identity), instead
+  of each re-deriving it from the surrounding syntax. A constructor without
+  type arguments returned from a lambda in a generic body
+  (`Scopes.Run<R>((Scope s) => { .. return match upper.Join() { Result::Ok(v)
+  => Result::Ok(merge(lower, v)), .. }; })` in `ParallelSeq.Split<T, L, R>`),
+  a `match` on a call through a typed local of such a lambda, a receiver-bound
+  constructor argument inside such a lambda, and the final statement of a
+  value block (`=> { Result::Ok(v); }`) are typed through it. Before, code
+  generation stopped with E2102 at the `match`. The syntax-walk
+  `enum_constructor_template` query and its template arguments are removed;
+  `enum_constructor_specialization`, `enum_match_specialization`,
+  `pattern_binding_specialization` and the array index specializations take
+  the enclosing `GenericSpecializationInstance`, and
+  `enum_match_call_specialization` is folded into `enum_match_specialization`.
+- A method called on a generic call result whose type arguments name an
+  enclosing generic (`List.New<List<T>>().Push(leaf)` in a lambda of
+  `ParallelSeq.Collect`) resolves its declaration from the callee's declared
+  return type; before, the call had no lowering and code generation stopped
+  with E2102.
+- A lambda that reads a field of an outer local through a dotted path
+  (`() => config.width + knobs.depth` in `ParallelSuite.Measure`, through two
+  lambda levels) captures that local. Before, the projection was not a
+  capture and code generation stopped with E2102 at the expression.
+- A lambda that calls a contract method on a captured bounded parameter
+  (`(T acc, T value) => combiner.Combine(acc, value)` with
+  `where C: Associative<T>`) captures that parameter and dispatches through the
+  enclosing instance's witness. Before, the parameter was not captured and code
+  generation stopped with E2102.
+- `beskid check` reports transfer and capture-bound findings on attributes,
+  fields, conformances and contract members (E1248, E1510, E1244, E1246,
+  E1247, E1607, E1003) at the span of that syntax. Before, a `[Captures]`
+  attribute on a parameter stopped the check with "semantic finding requires
+  its exact source span" and hid the other diagnostics.
+- Affine and staged-check rule fixes found by the Corelib audit: a `move`
+  parameter can be rebound (E1214); a consumption does not flow past a
+  `return`, `break` or `continue` on its path (E1234, E1240); an assignment
+  decides whether a local is owning (E1241); `exchange`, `__transfer_class<T>()`,
+  method-level generic parameters and imports used only by a `where` bound
+  resolve under `beskid check`.
+- Corelib packages follow the affine rules: byte builders, JSON, regex,
+  crypto, Bsol, TLS, HTTP/2, HTTP/3, QUIC, WebSocket and Glue store and hand
+  over owned buffers by `move`; `Slice.Set` stores in place and returns `unit`;
+  `Slice.Fill`, `Json.With` and `Json.Push` take their target by `move`.
+- `Core.Parallel` parses and resolves: no `scope` identifiers (a reserved
+  keyword), `[Captures]` bounds resolve through `use Core.Parallel`, and
+  `ParallelSeq` reads its source through `SeqSource<T>.At` instead of a
+  captured field (E1245).
+- Tests: the GC stress verify and skipped-barrier native-kit fixtures poison
+  the record header and allocate before the cycle starts; pacing tests run
+  without the debug quarantine; `DynamicTests`, `SchedulerTests` and
+  `GcTests` root their payloads and pass under
+  `BESKID_GC_STRESS=alloc:1,verify`. Collection tests are rewritten for
+  consuming `List` methods.
+- An unapplied generic enum constructor passed as a method argument
+  (`holder.Pick(Maybe::None)`) takes its type application from the method
+  parameter, as a module-function argument already did; it no longer stops
+  lowering with a missing `CallExpression` rule.
+- A method call on a value of a type parameter that no `where` bound declares
+  (with or without bounds) is the check error E1250 instead of a lowering
+  internal error.
+- `fiber_spawn` (dead capture environment), `beskid_rt_v5_gc_same_identity`
+  (dead operand) and `beskid_rt_v5_gc_resolve_handle` (released or never-issued
+  handle) trap `invalid_or_stale_handle` with a diagnostic naming the service
+  instead of returning a substitute value.
 - A `match` scrutinee stays rooted while a `when` guard or a materialized string
   pattern (longer than 64 bytes) can collect. Before, a scrutinee that only the
   match referenced (`match Make() { ... }`) could be freed by a collection in a

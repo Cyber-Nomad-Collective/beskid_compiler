@@ -25,6 +25,15 @@ pub struct MethodDefinition {
     pub receiver_type: Spanned<Type>,
     #[ast(child)]
     pub name: Spanned<Identifier>,
+    /// The method's own type parameters; the owner's type parameters precede them.
+    #[ast(children)]
+    pub generics: Vec<Spanned<crate::syntax::TypeParameter>>,
+    /// `where` bounds on the method's own and its owner's type parameters.
+    #[ast(skip)]
+    pub where_bounds: Vec<crate::syntax::WhereBound>,
+    /// The explicit receiver, when written as the first parameter-list entry.
+    #[ast(child)]
+    pub receiver: Option<Spanned<crate::syntax::ReceiverParameter>>,
     #[ast(children)]
     pub parameters: Vec<Spanned<Parameter>>,
     #[ast(skip)]
@@ -83,12 +92,25 @@ impl MethodDefinition {
         let return_type = Some(Type::parse(inner.next().ok_or(ParseError::missing(Rule::BeskidType))?)?);
         let name = Identifier::parse(inner.next().ok_or(ParseError::missing(Rule::Identifier))?)?;
 
+        let mut generics = Vec::new();
+        let mut where_bounds = Vec::new();
+        let mut receiver = None;
         let mut parameters = Vec::new();
         let mut parameter_docs = Vec::new();
         let mut body = None;
 
         for item in inner {
             match item.as_rule() {
+                Rule::GenericParameters => {
+                    generics = crate::syntax::items::parse_helpers::parse_type_parameter_list(item)?;
+                }
+                Rule::WhereClause => {
+                    where_bounds = crate::syntax::items::parse_helpers::parse_where_clause(item)?;
+                }
+                Rule::ReceiverParameter => {
+                    receiver = Some(crate::syntax::ReceiverParameter::parse(item)?);
+                }
+                Rule::DocGap => {}
                 Rule::ParameterList => {
                     let (parsed_parameters, parsed_docs) = parse_parameter_list_with_docs(item)?;
                     parameters = parsed_parameters;
@@ -117,6 +139,9 @@ impl MethodDefinition {
                 visibility,
                 receiver_type,
                 name,
+                generics,
+                where_bounds,
+                receiver,
                 parameters,
                 parameter_docs,
                 return_type,

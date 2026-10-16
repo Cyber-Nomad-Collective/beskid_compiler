@@ -65,12 +65,15 @@ static void BeskidConditionWait(BeskidCondition *c, int64_t deadline) {
 #endif
 
 struct BeskidCommand { uint64_t wait, source; int64_t deadline; };
+/* The mailbox is a ring that doubles when full (cross-isolate cancellation and
+ * port wake-ups can post bursts); an allocator refusal is the only trap. */
+#define BESKID_OWNER_INITIAL_COMMANDS 256
 struct BeskidOwner {
   struct BeskidOwner *next;
   uint64_t id;
-  size_t head, count;
+  size_t head, count, capacity;
   BeskidCondition wake;
-  struct BeskidCommand commands[256];
+  struct BeskidCommand *commands;
 };
 static struct BeskidOwner *beskid_owners;
 static uint64_t beskid_next_owner;
@@ -83,7 +86,11 @@ uint64_t beskid_rt_v5_intrinsic_owner_create(void) {
   struct BeskidOwner *owner = beskid_rt_v5_intrinsic_system_allocate(sizeof(*owner), 8);
   if (!owner) return 0;
   __builtin_memset(owner, 0, sizeof(*owner));
+  owner->commands = beskid_rt_v5_intrinsic_system_allocate(BESKID_OWNER_INITIAL_COMMANDS * sizeof(struct BeskidCommand), 8);
+  if (!owner->commands) { beskid_rt_v5_intrinsic_system_free(owner, sizeof(*owner)); return 0; }
+  owner->capacity = BESKID_OWNER_INITIAL_COMMANDS;
   if (BeskidConditionInit(&owner->wake)) {
+    beskid_rt_v5_intrinsic_system_free(owner->commands, owner->capacity * sizeof(struct BeskidCommand));
     beskid_rt_v5_intrinsic_system_free(owner, sizeof(*owner)); return 0;
   }
   BeskidLock();
@@ -103,14 +110,25 @@ void beskid_rt_v5_intrinsic_owner_destroy(uint64_t id) {
   BeskidUnlock();
   if (owner) {
     BeskidConditionDestroy(&owner->wake);
+    beskid_rt_v5_intrinsic_system_free(owner->commands, owner->capacity * sizeof(struct BeskidCommand));
     beskid_rt_v5_intrinsic_system_free(owner, sizeof(*owner));
   }
 }
 static int32_t BeskidOwnerPostCommandLocked(uint64_t id, uint64_t wait, uint64_t source, int64_t deadline) {
   struct BeskidOwner *owner = BeskidOwnerFind(id);
   if (!owner || !wait || source < 1 || source > 5 || (source == 5 && deadline < -1)) return 0;
-  if (owner->count == 256) beskid_rt_v5_trap(10, NULL, 0);
-  owner->commands[(owner->head + owner->count++) % 256] = (struct BeskidCommand){wait, source, deadline};
+  if (owner->count == owner->capacity) {
+    size_t grown = owner->capacity * 2;
+    struct BeskidCommand *commands = beskid_rt_v5_intrinsic_system_allocate(grown * sizeof(struct BeskidCommand), 8);
+    if (!commands) beskid_rt_v5_trap(5, NULL, 0);
+    for (size_t index = 0; index < owner->count; ++index)
+      commands[index] = owner->commands[(owner->head + index) % owner->capacity];
+    beskid_rt_v5_intrinsic_system_free(owner->commands, owner->capacity * sizeof(struct BeskidCommand));
+    owner->commands = commands;
+    owner->capacity = grown;
+    owner->head = 0;
+  }
+  owner->commands[(owner->head + owner->count++) % owner->capacity] = (struct BeskidCommand){wait, source, deadline};
   BeskidConditionSignal(&owner->wake);
   return 1;
 }
@@ -136,7 +154,7 @@ int32_t beskid_rt_v5_intrinsic_owner_pop(uint64_t id, struct BeskidCommand *comm
   int32_t found = owner && owner->count && command;
   if (found) {
     *command = owner->commands[owner->head];
-    owner->head = (owner->head + 1) % 256;
+    owner->head = (owner->head + 1) % owner->capacity;
     --owner->count;
   }
   BeskidUnlock();
@@ -317,8 +335,39 @@ static void *beskid_worker_main(void *unused) {
   BeskidUnlock();
   return 0;
 }
+/* The pool is process-wide and reference counted: the first holder creates
+ * the threads, later holders share them, and the last release stops and joins
+ * them. The holder lock is separate from the transport lock because shutdown
+ * joins workers that take the transport lock. */
+#ifdef _WIN32
+static SRWLOCK beskid_pool_lock = SRWLOCK_INIT;
+static void BeskidPoolLock(void) { AcquireSRWLockExclusive(&beskid_pool_lock); }
+static void BeskidPoolUnlock(void) { ReleaseSRWLockExclusive(&beskid_pool_lock); }
+#else
+static pthread_mutex_t beskid_pool_lock = PTHREAD_MUTEX_INITIALIZER;
+static void BeskidPoolLock(void) { pthread_mutex_lock(&beskid_pool_lock); }
+static void BeskidPoolUnlock(void) { pthread_mutex_unlock(&beskid_pool_lock); }
+#endif
+static size_t beskid_worker_holders;
+static void BeskidWorkerPoolStopLocked(void) {
+  BeskidLock(); beskid_workers_stop = 1; BeskidConditionSignal(&beskid_work_ready); BeskidUnlock();
+  for (size_t i = 0; i < beskid_worker_count; ++i) {
+#ifdef _WIN32
+    WaitForSingleObject(beskid_workers[i], INFINITE); CloseHandle(beskid_workers[i]);
+#else
+    pthread_join(beskid_workers[i], NULL);
+#endif
+  }
+  beskid_worker_count = 0;
+}
 int32_t beskid_rt_v5_intrinsic_worker_pool_init(size_t count) {
-  if (beskid_worker_count || !count || count > BESKID_WORKER_MAX) return -1;
+  BeskidPoolLock();
+  if (beskid_worker_holders) {
+    ++beskid_worker_holders;
+    BeskidPoolUnlock();
+    return 0;
+  }
+  if (!count || count > BESKID_WORKER_MAX) { BeskidPoolUnlock(); return -1; }
   BeskidLock(); beskid_workers_stop = 0; BeskidUnlock();
   size_t created = 0;
   for (; created < count; ++created) {
@@ -330,20 +379,27 @@ int32_t beskid_rt_v5_intrinsic_worker_pool_init(size_t count) {
 #endif
   }
   beskid_worker_count = created;
-  if (created == count) return 0;
-  beskid_rt_v5_intrinsic_worker_pool_shutdown();
+  if (created == count) {
+    beskid_worker_holders = 1;
+    BeskidPoolUnlock();
+    return 0;
+  }
+  BeskidWorkerPoolStopLocked();
+  BeskidPoolUnlock();
   return -1;
 }
 void beskid_rt_v5_intrinsic_worker_pool_shutdown(void) {
-  BeskidLock(); beskid_workers_stop = 1; BeskidConditionSignal(&beskid_work_ready); BeskidUnlock();
-  for (size_t i = 0; i < beskid_worker_count; ++i) {
-#ifdef _WIN32
-    WaitForSingleObject(beskid_workers[i], INFINITE); CloseHandle(beskid_workers[i]);
-#else
-    pthread_join(beskid_workers[i], NULL);
-#endif
-  }
-  beskid_worker_count = 0;
+  BeskidPoolLock();
+  if (beskid_worker_holders && --beskid_worker_holders == 0) BeskidWorkerPoolStopLocked();
+  BeskidPoolUnlock();
+}
+/* Test and diagnostic view of the holder count; the runtime corpus never
+ * branches on it. */
+static inline size_t BeskidWorkerPoolHolders(void) {
+  BeskidPoolLock();
+  size_t holders = beskid_worker_holders;
+  BeskidPoolUnlock();
+  return holders;
 }
 int32_t beskid_rt_v5_intrinsic_worker_submit(struct BeskidWorkerRequest *r) {
   if (!r || !beskid_worker_count) return -1;

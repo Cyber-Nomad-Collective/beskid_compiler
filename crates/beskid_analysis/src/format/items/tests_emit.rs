@@ -1,5 +1,4 @@
 use crate::format::emit::{Emit, EmitCtx, EmitError};
-use crate::format::items::helpers::emit_attribute_lines;
 use crate::syntax::{Spanned, TestDefinition, TestMetaSection, TestMetadataEntry, TestSkipEntry, TestSkipSection};
 use std::fmt::Write;
 
@@ -101,11 +100,7 @@ impl Emit for Spanned<TestSkipSection> {
 
 impl Emit for TestDefinition {
     fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
-        if !self.attributes.is_empty() {
-            emit_attribute_lines(&self.attributes, w, cx)?;
-            cx.nl(w)?;
-            cx.write_indent(w)?;
-        }
+        crate::format::attribute_lists::emit_attribute_block(&self.attributes, w, cx)?;
         self.visibility.emit(w, cx)?;
         cx.token(w, "test")?;
         cx.space(w)?;

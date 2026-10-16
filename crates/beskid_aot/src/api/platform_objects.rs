@@ -106,11 +106,23 @@ pub(super) struct PlatformObjects {
     pub issuer_compiler_receipt: crate::linker::LinkToolReceipt,
 }
 
+/// Preprocessor definitions of the platform C objects for one kit profile. The debug kit defines
+/// `BESKID_RUNTIME_KIT_DEBUG=1`, which `beskid_rt_v5_intrinsic_kit_debug_profile` reports to the
+/// runtime (poisoning and quarantine); a release kit defines nothing and reports release.
+fn platform_profile_defines(profile: super::BuildProfile) -> &'static [&'static str] {
+    match profile {
+        super::BuildProfile::Debug => &["-DBESKID_RUNTIME_KIT_DEBUG=1"],
+        super::BuildProfile::Release => &[],
+    }
+}
+
 pub(super) fn compile_platform_objects(
     target: &TargetMetadata,
     output_dir: &std::path::Path,
     name: &str,
+    profile: super::BuildProfile,
 ) -> AotResult<PlatformObjects> {
+    let profile_defines = platform_profile_defines(profile);
     let plan = platform_object_plan(target.triple.as_str())?;
     let assembly_root = beskid_abi::assembly_sources::stage_into(output_dir)
         .map_err(|err| AotError::Io { path: output_dir.to_path_buf(), message: err.to_string() })?
@@ -146,7 +158,7 @@ pub(super) fn compile_platform_objects(
         });
     }
     let mut tls_command = Command::new(plan.tls_program);
-    tls_command.args(&plan.tls_args).arg(&tls_source).arg("-o").arg(&tls_object);
+    tls_command.args(&plan.tls_args).args(profile_defines).arg(&tls_source).arg("-o").arg(&tls_object);
     if target.triple.as_str().contains("windows") {
         configure_windows_native_command(&mut tls_command)?;
     }
@@ -165,7 +177,7 @@ pub(super) fn compile_platform_objects(
         });
     }
     let mut adapter_command = Command::new(plan.tls_program);
-    adapter_command.args(&plan.tls_args).arg(&adapter_source).arg("-o").arg(&adapter_object);
+    adapter_command.args(&plan.tls_args).args(profile_defines).arg(&adapter_source).arg("-o").arg(&adapter_object);
     if target.triple.as_str().contains("windows") {
         configure_windows_native_command(&mut adapter_command)?;
     }

@@ -238,18 +238,24 @@ fn match_arms_forward_the_match_expectation() {
 }
 
 #[test]
-fn block_expressions_and_discarded_statements_forward_nothing() {
+fn value_blocks_forward_to_their_final_statement_and_discard_the_others() {
     let fixture = Fixture::new(
         "enum Flag { On, Off } u8 Main(Flag flag) { u8 value = match flag { Flag::On => { 1; }, Flag::Off => { 2; 3; }, }; 4; return value; }",
     );
-    // A value written inside a block has no direct typed context: `{ 1; }` is not `1`.
-    for occurrence in 0..3 {
+    // The final statement of a value block is the block's value (`{ 1; }` yields `1`); a
+    // non-final statement, and a statement of a body that is not a value, discard theirs.
+    for occurrence in [0, 2] {
+        let result = fixture.expected(fixture.literal(occurrence));
+        assert!(matches!(result.context, ExpectedTypeContext::BlockResult { .. }), "{result:?}");
+        assert_eq!(result.abi_type(), SemanticTypeId::U8);
+        assert_eq!(fixture.integer_abi(fixture.literal(occurrence)), Some(SemanticTypeId::U8));
+    }
+    for occurrence in [1, 3] {
         let discarded = fixture.expected(fixture.literal(occurrence));
-        assert!(matches!(discarded.context, ExpectedTypeContext::ExpressionStatement { .. }));
+        assert!(matches!(discarded.context, ExpectedTypeContext::ExpressionStatement { .. }), "{discarded:?}");
         assert_eq!(discarded.abi_type(), SemanticTypeId::UNIT);
         assert_unavailable(contextual_integer_literal_abi_type(&fixture.db, fixture.literal(occurrence)));
     }
-    assert_eq!(fixture.expected(fixture.literal(3)).abi_type(), SemanticTypeId::UNIT);
 }
 
 #[test]
@@ -350,3 +356,44 @@ fn an_untyped_lambda_parameter_takes_the_expected_parameter_type_and_nothing_wit
     assert_unavailable(beskid_queries::closure_signature(&orphan.db, orphan.key(NodeKind::LambdaExpression, 0)));
 }
 
+
+#[test]
+fn the_final_statement_of_a_value_block_forwards_and_other_statements_are_unit() {
+    let fixture = Fixture::new(
+        "enum R<T, E> { Ok(T v), Error(E e) } R<i64, string> F(R<i64, string> r) { return match r { R::Error(e) => { R::Error(e); }, R::Ok(v) => { 0_i64; R::Ok(v); } }; }",
+    );
+    let error = fixture.expected(fixture.key(NodeKind::EnumConstructorExpression, 0));
+    assert!(matches!(error.context, ExpectedTypeContext::BlockResult { .. }), "{error:?}");
+    assert!(error.display_name().ends_with("R<i64, string>"), "{error:?}");
+    let ok = fixture.expected(fixture.key(NodeKind::EnumConstructorExpression, 1));
+    assert!(matches!(ok.context, ExpectedTypeContext::BlockResult { .. }), "{ok:?}");
+    let discarded = fixture.expected(fixture.literal(0));
+    assert!(matches!(discarded.context, ExpectedTypeContext::ExpressionStatement { .. }), "{discarded:?}");
+    assert_eq!(discarded.abi_type(), SemanticTypeId::UNIT);
+}
+
+#[test]
+fn a_lambda_return_in_a_generic_body_expects_the_instance_result() {
+    let fixture = Fixture::new(
+        "enum Outcome<T, E> { Ok(T value), Error(E error) } i64 Run<T>(() => Outcome<T, string> body) { return 1_i64; } i64 Wrap<R>(R value) { return Run<R>(() => { return Outcome::Ok(value); }); }",
+    );
+    let constructor = fixture.key(NodeKind::EnumConstructorExpression, 0);
+    // Target-neutral, `R` is unbound: no expectation.
+    assert_unavailable(expected_type(&fixture.db, constructor));
+    let wrap = fixture.key(NodeKind::FunctionDefinition, 1);
+    let instance = generic_specialization_instance(
+        &fixture.db,
+        wrap,
+        Arc::from([GenericSubstitution::inferred("R", SemanticTypeId::U8)]),
+    )
+    .expect("specialization query")
+    .expect("specialization instance");
+    let specialized = expected_type_in_environment(&fixture.db, constructor, &instance)
+        .expect("specialized expected type query")
+        .expect("specialized expected type");
+    assert!(
+        matches!(specialized.context, ExpectedTypeContext::Return { item } if item == fixture.key(NodeKind::LambdaExpression, 0)),
+        "{specialized:?}"
+    );
+    assert!(specialized.display_name().ends_with("Outcome<u8, string>"), "{specialized:?}");
+}

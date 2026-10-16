@@ -25,6 +25,10 @@ pub(in crate::module_emission) enum SchedulerCompletionTransfer<'a> {
 #[derive(Debug, Clone)]
 pub(in crate::module_emission) struct LambdaTrampoline {
     pub(in crate::module_emission) lambda: AstNodeKey,
+    /// The module-import identity: the plain lambda, or the lambda in one enclosing instance.
+    pub(in crate::module_emission) callee: beskid_isle::DirectCallee,
+    /// The enclosing generic instance whose environment the body is lowered in.
+    pub(in crate::module_emission) specialization: Option<beskid_queries::GenericSpecializationInstance>,
     pub(in crate::module_emission) lambda_body: AstNodeKey,
     pub(in crate::module_emission) target_signature: Signature,
     pub(in crate::module_emission) parameters: Vec<beskid_isle::ParameterSlot>,

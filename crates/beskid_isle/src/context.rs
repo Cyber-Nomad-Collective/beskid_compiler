@@ -16,7 +16,8 @@ use crate::dispatch;
 use crate::errors::{FunctionEmissionError, LoweringError, LoweringErrorKind, StringMaterializationError};
 use crate::facts::{
     AssignmentKind, AstNodeKey, CallImportError, CallKind, CollectionMutationOwner, CollectionOperation, DirectCallee,
-    EventHandlerLocalPlan, EventOperation, ForIterableKind, IndexTarget, InlineClosureEnvironment, LiteralKind,
+    EventHandlerLocalPlan, EventOperation, ForIterableKind, IndexTarget, InlineClosureEnvironment, IsolateSpawnCall,
+    LiteralKind,
     LocalSlotId, ManagedReferenceFact, MatchArmBindingFact, MatchArmFact, MatchPayloadPatternFact, NodeFacts, NodeKind,
     OperatorFact, RuntimeIntrinsicKind, Unit,
 };
@@ -28,6 +29,7 @@ mod cleanup;
 mod clif_block;
 mod composition;
 mod control_flow;
+mod destructive_read;
 mod enums;
 mod events;
 mod intrinsics;
@@ -36,6 +38,7 @@ mod roots;
 mod checked_allocation;
 mod spawn_arguments;
 mod strings;
+mod write_barrier;
 
 use operators::CompareOp;
 
@@ -139,6 +142,8 @@ pub struct IsleContext<'builder, 'function, 'facts, 'interner> {
     call_importer: Option<&'interner mut dyn CallImporter>,
     loop_stack: Vec<LoopTargets>,
     pub(crate) locals: HashMap<LocalSlotId, ManagedLocalBinding>,
+    /// `unit` locals: they have no storage, and each read is a `unit` value.
+    pub(crate) unit_locals: HashSet<LocalSlotId>,
     local_root_scopes: Vec<LocalRootScope>,
     pub function_param_values: Vec<Value>,
     pending_error: Option<LoweringError>,
@@ -158,6 +163,7 @@ impl<'builder, 'function, 'facts, 'interner> IsleContext<'builder, 'function, 'f
             call_importer: None,
             loop_stack: Vec::new(),
             locals: HashMap::new(),
+            unit_locals: HashSet::new(),
             local_root_scopes: vec![LocalRootScope::default()],
             function_param_values: Vec::new(),
             pending_error: None,
@@ -178,6 +184,7 @@ impl<'builder, 'function, 'facts, 'interner> IsleContext<'builder, 'function, 'f
             call_importer: None,
             loop_stack: Vec::new(),
             locals: HashMap::new(),
+            unit_locals: HashSet::new(),
             local_root_scopes: vec![LocalRootScope::default()],
             function_param_values: Vec::new(),
             pending_error: None,
@@ -198,6 +205,7 @@ impl<'builder, 'function, 'facts, 'interner> IsleContext<'builder, 'function, 'f
             call_importer: Some(call_importer),
             loop_stack: Vec::new(),
             locals: HashMap::new(),
+            unit_locals: HashSet::new(),
             local_root_scopes: vec![LocalRootScope::default()],
             function_param_values: Vec::new(),
             pending_error: None,
@@ -219,6 +227,7 @@ impl<'builder, 'function, 'facts, 'interner> IsleContext<'builder, 'function, 'f
             call_importer,
             loop_stack: Vec::new(),
             locals: HashMap::new(),
+            unit_locals: HashSet::new(),
             local_root_scopes: vec![LocalRootScope::default()],
             function_param_values: Vec::new(),
             pending_error: None,
@@ -367,6 +376,7 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
     aggregate::generated_aggregate_methods!();
     enums::generated_enum_methods!();
     events::generated_event_methods!();
+    destructive_read::generated_destructive_read_methods!();
 }
 
 pub fn lower_expression(context: &mut IsleContext<'_, '_, '_, '_>, key: AstNodeKey) -> Result<Value, LoweringError> {

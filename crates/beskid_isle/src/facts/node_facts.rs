@@ -80,6 +80,21 @@ pub trait NodeFacts {
     fn collection_element_type(&self, _key: AstNodeKey) -> Option<Type> {
         None
     }
+    /// GC classification of the elements of the collection operation `key` (its source element
+    /// type, not the pointer-shaped ABI). It decides whether an operation that clears an element
+    /// of an existing array runs the write barrier.
+    fn collection_element_managed(&self, _key: AstNodeKey) -> Option<ManagedReferenceFact> {
+        None
+    }
+    /// How the `move` expression `key` evaluates: a transfer of its operand or a destructive
+    /// read of a field with the construction of its canonical empty value.
+    fn move_expression(&self, _key: AstNodeKey) -> Option<MoveExpressionPlan> {
+        None
+    }
+    /// The place and value operands of the `exchange(place, move value)` call `key`.
+    fn exchange(&self, _key: AstNodeKey) -> Option<ExchangePlan> {
+        None
+    }
     fn child(&self, _key: AstNodeKey, _index: u8) -> Option<AstNodeKey> {
         None
     }
@@ -201,6 +216,14 @@ pub trait NodeFacts {
     }
 
     fn traced_channel_send_layout(&self, _key: AstNodeKey) -> Option<TracedFiberJoinLayout> {
+        None
+    }
+    /// A `__isolate_spawn<T>` / `__isolate_spawn_local<T>` call and its per-`T` entry trampoline.
+    fn isolate_spawn_call(&self, _key: AstNodeKey) -> Option<IsolateSpawnCall> {
+        None
+    }
+    /// The compile-time value of a `__transfer_class<T>()` call (0 Shared, 1 Moved, 2 Copied).
+    fn transfer_class_constant(&self, _key: AstNodeKey) -> Option<i64> {
         None
     }
     fn lambda_entry(&self, _key: AstNodeKey) -> Option<LambdaEntry> {

@@ -187,7 +187,18 @@ impl Emit for MemberExpression {
     fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
         self.target.emit(w, cx)?;
         w.write_char('.')?;
-        self.member.emit(w, cx)
+        self.member.emit(w, cx)?;
+        if !self.type_args.is_empty() {
+            w.write_char('<')?;
+            for (i, argument) in self.type_args.iter().enumerate() {
+                if i > 0 {
+                    cx.token(w, ", ")?;
+                }
+                argument.emit(w, cx)?;
+            }
+            w.write_char('>')?;
+        }
+        Ok(())
     }
 }
 
@@ -240,6 +251,7 @@ impl Emit for Spanned<BlockExpression> {
 
 impl Emit for LambdaParameter {
     fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
+        crate::format::attribute_lists::emit_inline_attributes(&self.attributes, w, cx)?;
         if let Some(ty) = &self.ty {
             ty.emit(w, cx)?;
             cx.space(w)?;
@@ -256,7 +268,11 @@ impl Emit for Spanned<LambdaParameter> {
 
 impl Emit for LambdaExpression {
     fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
-        if self.parameters.len() == 1 && self.parameters[0].node.ty.is_none() {
+        crate::format::attribute_lists::emit_inline_attributes(&self.attributes, w, cx)?;
+        if self.parameters.len() == 1
+            && self.parameters[0].node.ty.is_none()
+            && self.parameters[0].node.attributes.is_empty()
+        {
             self.parameters[0].emit(w, cx)?;
         } else {
             w.write_char('(')?;
@@ -514,6 +530,7 @@ impl Emit for Expression {
             Expression::Grouped(g) => g.emit(w, cx),
             Expression::Try(t) => t.emit(w, cx),
             Expression::Spawn(s) => s.emit(w, cx),
+            Expression::Move(m) => m.emit(w, cx),
             Expression::MacroInvocation(m) => m.emit(w, cx),
             Expression::MacroMetavariable(m) => m.emit(w, cx),
             Expression::Index(i) => i.emit(w, cx),
@@ -528,6 +545,13 @@ impl Emit for Spanned<crate::syntax::ClifBlockExpression> {
     fn emit<W: Write>(&self, w: &mut W, _cx: &mut EmitCtx) -> Result<(), EmitError> {
         write!(w, "clif {{ {} }}", self.node.body)?;
         Ok(())
+    }
+}
+
+impl Emit for Spanned<crate::syntax::MoveExpression> {
+    fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
+        write!(w, "move ")?;
+        self.node.operand.emit(w, cx)
     }
 }
 

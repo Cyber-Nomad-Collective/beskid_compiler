@@ -347,6 +347,7 @@ pub(super) fn run(args: BuildArgs, tools: RustGlueTools, records: Option<&Record
                 selected: &owner_selected,
                 native_library: &owner.library,
                 expected: &packet,
+                consumer: &consumer_packet,
                 sources: &sources,
                 types: &types,
                 callables: &callables,

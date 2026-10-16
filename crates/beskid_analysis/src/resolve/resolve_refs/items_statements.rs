@@ -13,6 +13,41 @@ impl Resolver {
         self.resolve_item_with_bodies(item, true);
     }
 
+    /// Resolves one method in any body (`type`, `impl`, `extend type`, top-level method item).
+    /// The method's own type parameters are in scope inside it after its owner's; the receiver
+    /// `this` is a local whether or not it is written explicitly.
+    fn resolve_method_definition(&mut self, method: &crate::syntax::MethodDefinition, include_bodies: bool) {
+        self.push_generic_scope();
+        for generic in &method.generics {
+            self.insert_generic(&generic.node.name);
+        }
+        for bound in &method.where_bounds {
+            self.resolve_type_path(&bound.contract);
+        }
+        self.resolve_type(&method.receiver_type);
+        let previous_receiver = self.current_receiver_item_id;
+        if include_bodies {
+            self.push_scope();
+            self.current_receiver_item_id = self.receiver_item_id_for_type(&method.receiver_type);
+            self.insert_local("this", method.receiver_type.span);
+        }
+        for param in &method.parameters {
+            self.resolve_type(&param.node.ty);
+            if include_bodies {
+                self.insert_local(&param.node.name.node.name, param.node.name.span);
+            }
+        }
+        if let Some(return_type) = &method.return_type {
+            self.resolve_type(return_type);
+        }
+        if include_bodies {
+            self.resolve_block(&method.body);
+            self.current_receiver_item_id = previous_receiver;
+            self.pop_scope();
+        }
+        self.pop_generic_scope();
+    }
+
     pub(super) fn resolve_item_declaration(&mut self, item: &Spanned<Node>) {
         self.resolve_item_with_bodies(item, false);
     }
@@ -27,6 +62,11 @@ impl Resolver {
                 self.push_generic_scope();
                 for generic in &def.node.generics {
                     self.insert_generic(&generic.node.name);
+                }
+                // A `where` bound names its contract like any type position, so an import it
+                // reaches (`use M as A; ... where R: A.Reader`) is used.
+                for bound in &def.node.where_bounds {
+                    self.resolve_type_path(&bound.contract);
                 }
                 if include_bodies {
                     self.push_scope();
@@ -50,52 +90,12 @@ impl Resolver {
                 self.pop_generic_scope();
             }
             Node::Method(def) => {
-                self.resolve_type(&def.node.receiver_type);
-                let previous_receiver = self.current_receiver_item_id;
-                if include_bodies {
-                    self.push_scope();
-                    self.current_receiver_item_id = self.receiver_item_id_for_type(&def.node.receiver_type);
-                    self.insert_local("this", def.node.receiver_type.span);
-                }
-                for param in &def.node.parameters {
-                    self.resolve_type(&param.node.ty);
-                    if include_bodies {
-                        self.insert_local(&param.node.name.node.name, param.node.name.span);
-                    }
-                }
-                if let Some(return_type) = &def.node.return_type {
-                    self.resolve_type(return_type);
-                }
-                if include_bodies {
-                    self.resolve_block(&def.node.body);
-                    self.current_receiver_item_id = previous_receiver;
-                    self.pop_scope();
-                }
+                self.resolve_method_definition(&def.node, include_bodies);
             }
             Node::ExtendTypeDefinition(def) => {
                 self.resolve_type(&def.node.target_type);
                 for method in &def.node.methods {
-                    self.resolve_type(&method.node.receiver_type);
-                    let previous_receiver = self.current_receiver_item_id;
-                    if include_bodies {
-                        self.push_scope();
-                        self.current_receiver_item_id = self.receiver_item_id_for_type(&method.node.receiver_type);
-                        self.insert_local("this", method.node.receiver_type.span);
-                    }
-                    for param in &method.node.parameters {
-                        self.resolve_type(&param.node.ty);
-                        if include_bodies {
-                            self.insert_local(&param.node.name.node.name, param.node.name.span);
-                        }
-                    }
-                    if let Some(return_type) = &method.node.return_type {
-                        self.resolve_type(return_type);
-                    }
-                    if include_bodies {
-                        self.resolve_block(&method.node.body);
-                        self.current_receiver_item_id = previous_receiver;
-                        self.pop_scope();
-                    }
+                    self.resolve_method_definition(&method.node, include_bodies);
                 }
             }
             // `impl T : Contract` populates `tables.type_conformances` the same way
@@ -132,27 +132,7 @@ impl Resolver {
                     }
                 }
                 for method in &def.node.methods {
-                    self.resolve_type(&method.node.receiver_type);
-                    let previous_receiver = self.current_receiver_item_id;
-                    if include_bodies {
-                        self.push_scope();
-                        self.current_receiver_item_id = self.receiver_item_id_for_type(&method.node.receiver_type);
-                        self.insert_local("this", method.node.receiver_type.span);
-                    }
-                    for param in &method.node.parameters {
-                        self.resolve_type(&param.node.ty);
-                        if include_bodies {
-                            self.insert_local(&param.node.name.node.name, param.node.name.span);
-                        }
-                    }
-                    if let Some(return_type) = &method.node.return_type {
-                        self.resolve_type(return_type);
-                    }
-                    if include_bodies {
-                        self.resolve_block(&method.node.body);
-                        self.current_receiver_item_id = previous_receiver;
-                        self.pop_scope();
-                    }
+                    self.resolve_method_definition(&method.node, include_bodies);
                 }
                 for binding in &def.node.associated_type_bindings {
                     self.resolve_type(&binding.node.ty);
@@ -228,27 +208,7 @@ impl Resolver {
                 }
                 let previous_siblings = self.current_type_sibling_methods.replace(sibling_methods);
                 for method in &def.node.methods {
-                    self.resolve_type(&method.node.receiver_type);
-                    let previous_receiver = self.current_receiver_item_id;
-                    if include_bodies {
-                        self.push_scope();
-                        self.current_receiver_item_id = self.receiver_item_id_for_type(&method.node.receiver_type);
-                        self.insert_local("this", method.node.receiver_type.span);
-                    }
-                    for param in &method.node.parameters {
-                        self.resolve_type(&param.node.ty);
-                        if include_bodies {
-                            self.insert_local(&param.node.name.node.name, param.node.name.span);
-                        }
-                    }
-                    if let Some(return_type) = &method.node.return_type {
-                        self.resolve_type(return_type);
-                    }
-                    if include_bodies {
-                        self.resolve_block(&method.node.body);
-                        self.current_receiver_item_id = previous_receiver;
-                        self.pop_scope();
-                    }
+                    self.resolve_method_definition(&method.node, include_bodies);
                 }
                 self.current_type_sibling_methods = previous_siblings;
                 for binding in &def.node.associated_type_bindings {

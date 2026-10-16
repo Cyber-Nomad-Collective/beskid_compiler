@@ -118,6 +118,24 @@ const COVERED_KINDS: &[(&str, &str, &str, &str)] = &[
         "i64 Main(i64 n) { return n.Double(); }",
     ),
     (
+        "TypeError::InvalidMemberTarget (method call on an array parameter)",
+        "TypeInvalidMemberTarget",
+        "E1213",
+        "i64 Main(i64[] rest) { return rest.Length(); }",
+    ),
+    (
+        "TypeError::InvalidMemberTarget (method call on an array literal local)",
+        "TypeInvalidMemberTarget",
+        "E1213",
+        "i64 Main() { let rest = [1_i64, 2_i64]; return rest.Length(); }",
+    ),
+    (
+        "TypeError::InvalidMemberTarget (method call on a function-typed parameter)",
+        "TypeInvalidMemberTarget",
+        "E1213",
+        "i64 Main(i64(i64) f) { return f.Apply(1_i64); }",
+    ),
+    (
         "TypeError::UnknownCallTarget (non-callable field)",
         "TypeUnknownCallTarget",
         "E1606",
@@ -515,4 +533,45 @@ fn local_function_named_like_an_enum_variant_is_not_a_finding() {
     let source = "enum Mode { Fast, Slow } i64 Fast() { return 1_i64; } i64 Main() { return Fast(); }";
     let findings = root_findings(source, 605);
     assert!(findings.is_empty(), "{findings:?}");
+}
+
+/// Transfer and capture-bound legality findings sited on attributes, fields, conformances and
+/// contract members (E1248, E1510, E1246, E1607, E1003) reach the gate with the exact span of
+/// that syntax: expanded syntax values carry no node identity of their own, so the site is the
+/// indexed node, never the unset `Spanned::id` ("semantic finding requires its exact source span").
+#[test]
+fn transfer_legality_findings_carry_their_attribute_and_member_spans() {
+    let markers = "[CompilerDerived] pub contract Transferable { } [CompilerDerived] pub contract Shared { } \
+                   [CompilerDerived] pub contract Moved { } [CompilerDerived] pub contract Copied { } ";
+    let cases: &[(&str, &str, &str)] = &[
+        (
+            "pub contract Disposable { } pub unit Bad([Captures(Bound: Disposable)] () => i64 body) { return; }",
+            "E1248",
+            "Captures(Bound: Disposable)",
+        ),
+        ("pub unit Bad([Captures(Bound: Transferable)] i64 count) { return; }", "E1248", "Captures(Bound: Transferable)"),
+        ("pub type Job { [Captures(Bound: Transferable)] i64 count }", "E1248", "Captures(Bound: Transferable)"),
+        ("[Immutable] [Isolated] pub type Both { i64 id }", "E1510", "Isolated"),
+        ("[NeverTransferable] [Copyable] pub type Channel { i64 id }", "E1246", "Copyable"),
+        ("pub type Token : Shared { i64 id }", "E1607", "Shared"),
+        ("[CompilerDerived] pub contract Sized { i64 Size(); }", "E1003", "i64 Size()"),
+    ];
+    let mut failures = Vec::new();
+    for (offset, (body, code, spelling)) in cases.iter().enumerate() {
+        // Declarations are judged per unit that owns a callable item.
+        let source = format!("{markers}{body} unit Touch() {{ return; }}");
+        let findings = root_findings(&source, 6990 + offset as u64);
+        let sited = findings
+            .iter()
+            .filter(|finding| finding.kind.code() == *code)
+            .any(|finding| source.get(finding.span.start..finding.span.end).is_some_and(|text| text.contains(spelling)));
+        if !sited {
+            let spans = findings
+                .iter()
+                .map(|finding| (finding.kind.code(), source.get(finding.span.start..finding.span.end).unwrap_or("?").to_owned()))
+                .collect::<Vec<_>>();
+            failures.push(format!("{code} at `{spelling}` missing in {spans:?}\n  {body}"));
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
 }

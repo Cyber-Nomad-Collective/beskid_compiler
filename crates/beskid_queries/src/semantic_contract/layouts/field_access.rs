@@ -59,7 +59,7 @@ fn aggregate_field_access_for_environment(
     // `Rest<T>`) is proven only through the enclosing specialization's match fact; the
     // target-neutral projection cannot name `T` and must not pre-empt the specialized answer.
     if let Some(projection) =
-        nominal_field_projection_in_environment(db, key, enclosing.map(|enclosing| &enclosing.substitutions))
+        nominal_field_projection_in_environment(db, key, enclosing)
     {
         return Some(projection.map(|(access, _)| access));
     }
@@ -246,7 +246,7 @@ pub(in crate::semantic_contract) fn nominal_field_projection(
 pub(in crate::semantic_contract) fn nominal_field_projection_in_environment(
     db: &dyn Db,
     key: AstNodeKey,
-    enclosing: Option<&Arc<[GenericSubstitution]>>,
+    enclosing: Option<&GenericSpecializationInstance>,
 ) -> Option<Result<(AggregateFieldAccess, GenericSourceTypeIdentity), SemanticError>> {
     nominal_field_projection_at(db, key, enclosing).map(|result| {
         result.map_err(|error| {
@@ -271,7 +271,7 @@ pub(in crate::semantic_contract) fn nominal_field_projection_in_environment(
 fn nominal_field_projection_at(
     db: &dyn Db,
     key: AstNodeKey,
-    enclosing: Option<&Arc<[GenericSubstitution]>>,
+    enclosing: Option<&GenericSpecializationInstance>,
 ) -> Option<Result<(AggregateFieldAccess, GenericSourceTypeIdentity), SemanticError>> {
     let syntax = db.syntax_unit(key.unit).filter(|syntax| syntax.accepts_key(db, key))?;
     let program = syntax.expanded_program(db);
@@ -287,7 +287,7 @@ fn nominal_field_projection_at(
         // `this.field` as a member access (`(this).field`, or the `Member(Local("this"), field)`
         // a Mod spells) is the same projection from the implicit receiver as the path spelling.
         if is_implicit_receiver_expression(program, index, receiver) {
-            return implicit_receiver_field_projection(db, program, index, key, &member.member.node.name, enclosing);
+            return implicit_receiver_field_projection(db, program, index, key, &member.member.node.name, enclosing.map(|enclosing| &enclosing.substitutions));
         }
         let identity = generic_source_expression_identity(db, receiver);
         // A named local or parameter whose type names the enclosing generic parameters
@@ -359,7 +359,7 @@ fn nominal_field_projection_at(
                         index,
                         expression,
                         field.node.name.node.name.as_str(),
-                        enclosing,
+                        enclosing.map(|enclosing| &enclosing.substitutions),
                     );
                 }
                 _ => {}
@@ -377,7 +377,7 @@ fn nominal_field_projection_at(
                 return None;
             }
             let field_name = segment.node.name.node.name.as_str();
-            return implicit_receiver_field_projection(db, program, index, expression, field_name, enclosing);
+            return implicit_receiver_field_projection(db, program, index, expression, field_name, enclosing.map(|enclosing| &enclosing.substitutions));
         }
         (expression, position)
     } else {
@@ -391,7 +391,7 @@ fn nominal_field_projection_at(
         // `this.a.b`: project `a` from the implicit receiver, then each later field from the
         // previous segment, exactly like a lexical root's chain.
         let first =
-            implicit_receiver_field_projection(db, program, index, path_key, &path.segments[1].node.name.node.name, enclosing)?;
+            implicit_receiver_field_projection(db, program, index, path_key, &path.segments[1].node.name.node.name, enclosing.map(|enclosing| &enclosing.substitutions))?;
         return Some((|| {
             let (mut result, mut identity) = first?;
             let mut receiver = path_projection_segment(db, path_key, 1)
@@ -411,7 +411,7 @@ fn nominal_field_projection_at(
     else {
         // `field.a...` inside a method: the root names a field of the implicit receiver.
         let first =
-            implicit_receiver_field_projection(db, program, index, path_key, &path.segments[0].node.name.node.name, enclosing)?;
+            implicit_receiver_field_projection(db, program, index, path_key, &path.segments[0].node.name.node.name, enclosing.map(|enclosing| &enclosing.substitutions))?;
         return Some((|| {
             let (mut result, mut identity) = first?;
             let mut receiver = path_projection_segment(db, path_key, 0)
@@ -459,6 +459,7 @@ fn nominal_field_projection_at(
                         path_key,
                         &written,
                         &enclosing
+                            .substitutions
                             .iter()
                             .map(|binding| (binding.parameter.as_ref(), binding.source_identity()))
                             .collect(),
@@ -575,7 +576,7 @@ pub(in crate::semantic_contract) fn implicit_receiver_field_projection(
 pub(in crate::semantic_contract) fn field_read_identity_in_environment(
     db: &dyn Db,
     key: AstNodeKey,
-    enclosing: &Arc<[GenericSubstitution]>,
+    enclosing: &GenericSpecializationInstance,
 ) -> Option<Result<GenericSourceTypeIdentity, SemanticError>> {
     let syntax = db.syntax_unit(key.unit).filter(|syntax| syntax.accepts_key(db, key))?;
     let program = syntax.expanded_program(db);
@@ -587,7 +588,7 @@ pub(in crate::semantic_contract) fn field_read_identity_in_environment(
         let receiver = AstNodeKey { node: normalized_expression_node(index, receiver), ..key };
         let field = member.member.node.name.as_str();
         if is_implicit_receiver_expression(program, index, receiver) {
-            return implicit_receiver_field_projection(db, program, index, key, field, Some(enclosing))
+            return implicit_receiver_field_projection(db, program, index, key, field, Some(&enclosing.substitutions))
                 .map(|projection| projection.map(|(_, identity)| identity));
         }
         let identity = field_read_identity_in_environment(db, receiver, enclosing)
@@ -605,15 +606,15 @@ pub(in crate::semantic_contract) fn field_read_identity_in_environment(
     // The root identity and the first field still to project from it.
     let (root, first) = match names.as_slice() {
         [field] if !lexical_root => {
-            return implicit_receiver_field_projection(db, program, index, key, field, Some(enclosing))
+            return implicit_receiver_field_projection(db, program, index, key, field, Some(&enclosing.substitutions))
                 .map(|projection| projection.map(|(_, identity)| identity));
         }
         [_] => return None,
         [receiver, field, ..] if is_implicit_receiver_name(program, index, key, receiver) => {
-            (implicit_receiver_field_projection(db, program, index, key, field, Some(enclosing))?.map(|(_, identity)| identity), 2)
+            (implicit_receiver_field_projection(db, program, index, key, field, Some(&enclosing.substitutions))?.map(|(_, identity)| identity), 2)
         }
         [field, ..] if !lexical_root => {
-            (implicit_receiver_field_projection(db, program, index, key, field, Some(enclosing))?.map(|(_, identity)| identity), 1)
+            (implicit_receiver_field_projection(db, program, index, key, field, Some(&enclosing.substitutions))?.map(|(_, identity)| identity), 1)
         }
         [root, ..] => {
             let declaration = resolve_lexical_declaration(program, index, key.node, root)?;
@@ -635,7 +636,7 @@ fn local_root_identity_in_environment(
     program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
     index: &beskid_analysis::syntax_query::SyntaxIndex,
     key: AstNodeKey,
-    enclosing: &Arc<[GenericSubstitution]>,
+    enclosing: &GenericSpecializationInstance,
 ) -> Option<Result<GenericSourceTypeIdentity, SemanticError>> {
     let path = index.node_at(program, key.node)?.of::<beskid_analysis::syntax::PathExpression>()?;
     let [segment] = path.path.node.segments.as_slice() else {
@@ -658,10 +659,11 @@ fn local_declaration_identity_in_environment(
     index: &beskid_analysis::syntax_query::SyntaxIndex,
     key: AstNodeKey,
     declaration: beskid_analysis::syntax::AstNodeId,
-    enclosing: &Arc<[GenericSubstitution]>,
+    enclosing: &GenericSpecializationInstance,
 ) -> Option<Result<GenericSourceTypeIdentity, SemanticError>> {
     let parent = parent_node(index, declaration)?;
     let environment = enclosing
+        .substitutions
         .iter()
         .map(|binding| (binding.parameter.as_ref(), binding.source_identity()))
         .collect::<HashMap<_, _>>();
@@ -1132,7 +1134,7 @@ fn applied_pattern_binding_layout(
     instantiated_aggregate_layout_for_path(db, enum_declaration, &payload.node, Some(&enum_substitutions))
 }
 
-fn explicit_local_complex_type_path<'a>(
+pub(in crate::semantic_contract) fn explicit_local_complex_type_path<'a>(
     program: &'a beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
     index: &beskid_analysis::syntax_query::SyntaxIndex,
     declaration: beskid_analysis::syntax::AstNodeId,
@@ -1148,6 +1150,12 @@ fn explicit_local_complex_type_path<'a>(
             .of::<beskid_analysis::syntax::LetStatement>()
             .and_then(|statement| statement.type_annotation.as_ref())
             .map(|annotation| &annotation.node),
+        // A typed lambda parameter (`(Port<i64> out) => out.Send(..)`) is annotated like a parameter.
+        beskid_analysis::syntax_query::NodeKind::LambdaParameter => index
+            .node_at(program, parent)?
+            .of::<beskid_analysis::syntax::LambdaParameter>()
+            .and_then(|parameter| parameter.ty.as_ref())
+            .map(|ty| &ty.node),
         _ => None,
     }?;
     let beskid_analysis::syntax::Type::Complex(path) = annotation else {
@@ -1170,7 +1178,10 @@ pub(in crate::semantic_contract) fn nominal_local_receiver_declaration(
     let receiver = AstNodeKey { node: local, ..key };
     let parent = parent_node(index, local)?;
     if index.kind(parent) == Some(beskid_analysis::syntax_query::NodeKind::Pattern) {
-        let binding = pattern_binding_fact(db, index, key, local).and_then(Result::ok)?;
+        let binding = match pattern_binding_fact(db, index, key, local)? {
+            Ok(binding) => binding,
+            Err(_) => template_pattern_binding_fact(db, index, key, local)?,
+        };
         let AggregateFieldShape::Nominal(declaration) = binding.payload else {
             return None;
         };
@@ -1181,4 +1192,32 @@ pub(in crate::semantic_contract) fn nominal_local_receiver_declaration(
     }
     let path = explicit_local_complex_type_path(program, index, local)?;
     resolve_type_declaration(db, key, path).map(|declaration| (declaration, receiver))
+}
+
+/// The binding of an enum pattern inside a generic function, read for its nominal head only.
+///
+/// Inside `Flatten<T>`, `match parts.TryGet(part) { Option::Some(chunk) => chunk.Count() }` binds
+/// `chunk: List<T>`: its target-neutral identity names `T`, so the ordinary fact is unavailable,
+/// yet the method `chunk.Count` names `List` whatever `T` is. The binding is read in a probe
+/// instance that binds every type parameter of the function to `i64`; only a nominal payload is
+/// accepted, so a payload that is a type parameter itself (a scalar in the probe) resolves
+/// nothing. The call's specialization binds the real arguments when the body is lowered.
+fn template_pattern_binding_fact(
+    db: &dyn Db,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    key: AstNodeKey,
+    local: beskid_analysis::syntax::AstNodeId,
+) -> Option<EnumMatchBindingFact> {
+    let item = nearest_ancestor(index, local, |kind| kind == beskid_analysis::syntax_query::NodeKind::FunctionDefinition)?;
+    let item = AstNodeKey { node: item, ..key };
+    let (generics, _) = generic_callable_parameters(db, item)?;
+    let probe = generics
+        .iter()
+        .map(|name| {
+            GenericSubstitution::from_source(*name, SemanticTypeId::I64, GenericSourceTypeIdentity::Abi(SemanticTypeId::I64))
+        })
+        .collect::<Vec<_>>();
+    let instance = generic_specialization_instance(db, item, probe.into()).ok()??;
+    let binding = pattern_binding_fact_in_environment(db, index, key, local, Some(&instance))?.ok()?;
+    matches!(binding.payload, AggregateFieldShape::Nominal(_)).then_some(binding)
 }

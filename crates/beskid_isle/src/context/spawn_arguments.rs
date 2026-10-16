@@ -30,8 +30,10 @@ impl IsleContext<'_, '_, '_, '_> {
         let object = self.builder.inst_results(allocation).first().copied()?;
         self.builder.ins().trapz(object, TrapCode::unwrap_user(5));
         let root = self.root_temporary(object)?;
-        // Collection is stop-the-world and the environment is rooted, so plain field stores
-        // publish managed arguments exactly like aggregate field initialization.
+        // Initialization stores into the environment allocated above, which stays rooted: the
+        // old values are null and an environment allocated while marking is black, so plain
+        // field stores publish managed arguments exactly like aggregate field initialization and
+        // carry no write barrier.
         for (value, offset, _) in &values {
             self.builder.ins().store(MemFlagsData::new(), *value, object, *offset);
         }

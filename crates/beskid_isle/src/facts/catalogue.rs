@@ -45,6 +45,7 @@ node_kinds!(
     BlockExpression,
     ForStatement,
     SpawnExpression,
+    MoveExpression,
     LambdaExpression,
     TryExpression,
     ClifBlock,
@@ -97,6 +98,8 @@ pub const fn classify_syntax_node_kind(kind: beskid_queries::IndexedNodeKind) ->
         Syntax::Block | Syntax::BlockExpression => IsleLowered(NodeKind::BlockExpression),
         Syntax::ForStatement => IsleLowered(NodeKind::ForStatement),
         Syntax::SpawnExpression => IsleLowered(NodeKind::SpawnExpression),
+        // `move x` transfers its operand; `move x.f` is a destructive read of the field.
+        Syntax::MoveExpression => IsleLowered(NodeKind::MoveExpression),
         Syntax::LambdaExpression => IsleLowered(NodeKind::LambdaExpression),
         Syntax::TryExpression => IsleLowered(NodeKind::TryExpression),
         Syntax::ClifBlockExpression => IsleLowered(NodeKind::ClifBlock),
@@ -151,6 +154,8 @@ pub const fn classify_syntax_node_kind(kind: beskid_queries::IndexedNodeKind) ->
         | Syntax::EnumPath
         | Syntax::Field
         | Syntax::Parameter
+        | Syntax::ReceiverParameter
+        | Syntax::TypeParameter
         | Syntax::PrimitiveType
         | Syntax::StructLiteralField
         | Syntax::StringLiteralPart

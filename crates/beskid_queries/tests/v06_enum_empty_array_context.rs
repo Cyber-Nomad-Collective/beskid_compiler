@@ -87,11 +87,10 @@ fn explicit_and_contextual_generic_enum_payloads_substitute_element_type() {
 }
 
 #[test]
-fn absent_declaration_nonarray_slot_and_nested_expression_have_no_array_authority() {
+fn absent_declaration_and_nonarray_slot_have_no_array_authority() {
     for source in [
         "unit Main() { Missing::Items([]); }",
         "enum Scalar { Value(i64 value), } unit Main() { Scalar::Value([]); }",
-        "enum Bytes { Value(u8[] value), } unit Main() { Bytes::Value({ []; }); }",
     ] {
         let (_temporary, db, _assembly, arrays) = fixture(source, false);
         assert_eq!(arrays.len(), 1);
@@ -100,4 +99,20 @@ fn absent_declaration_nonarray_slot_and_nested_expression_have_no_array_authorit
             "empty literal must never gain guessed element type: {source}"
         );
     }
+}
+
+#[test]
+fn value_block_final_statement_takes_the_slot_and_a_discarded_statement_does_not() {
+    // The final statement of a value block is the block's value (`{ []; }` yields `[]`), so it
+    // takes the declared payload slot; a non-final statement is discarded and has no slot.
+    let (_temporary, db, _assembly, arrays) = fixture(
+        "enum Bytes { Value(u8[] value), } unit Main() { Bytes::Value({ []; [7_u8]; }); Bytes::Value({ []; }); }",
+        false,
+    );
+    assert_eq!(arrays.len(), 3);
+    assert!(
+        !matches!(empty_array_literal_element_abi_type(&db, arrays[0]), Ok(Some(_))),
+        "a discarded empty literal must never gain the slot's element type"
+    );
+    assert_eq!(empty_array_literal_element_abi_type(&db, arrays[2]), Ok(Some(SemanticTypeId::U8)));
 }

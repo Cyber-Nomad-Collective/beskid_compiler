@@ -305,8 +305,9 @@ impl PinnedNativeImages {
             .ok_or_else(|| invalid(&self.image_pin.path, "unknown attached image index"))
     }
     /// Checks the OS owner of a descriptor returned by an already admitted getter.
-    /// Address ownership alone grants no layout, signature or dereference authority.
-    pub fn verify_image_address(&self, index: usize, address: *mut std::ffi::c_void) -> Result<()> {
+    /// Address ownership alone grants no layout, signature or dereference authority: the address
+    /// is an identity (`pointer as usize`) and is never dereferenced.
+    pub fn verify_image_address(&self, index: usize, address: usize) -> Result<()> {
         self.verify_integrity()?;
         let expected = if index == 0 {
             &self.loaded_image
@@ -317,12 +318,12 @@ impl PinnedNativeImages {
                 .ok_or_else(|| invalid(&self.image_pin.path, "unknown attached image index"))?
                 .loaded
         };
-        unsafe { verify_address_owner(address, expected) }
+        verify_address_owner(address, expected)
     }
     /// Provider descriptor address identity, without granting a managed shape.
-    pub fn verify_provider_address(&self, address: *mut std::ffi::c_void) -> Result<()> {
+    pub fn verify_provider_address(&self, address: usize) -> Result<()> {
         self.verify_integrity()?;
-        unsafe { verify_address_owner(address, &self.loaded_provider) }
+        verify_address_owner(address, &self.loaded_provider)
     }
     pub fn provider_sha256(&self) -> &str {
         &self.provider_pin.sha256
@@ -445,10 +446,12 @@ unsafe fn open_image(path: &Path, provider: bool) -> Result<Library> {
 unsafe fn verify_symbol_owner(library: &Library, name: &CStr, expected: &Path) -> Result<()> {
     let address = unsafe { library.get::<*mut std::ffi::c_void>(name.to_bytes_with_nul()) }
         .map_err(|error| NativeImageError::Load { path: expected.to_owned(), message: error.to_string() })?;
-    unsafe { verify_address_owner(*address, expected) }
+    verify_address_owner(*address as usize, expected)
 }
-unsafe fn verify_address_owner(address: *mut std::ffi::c_void, expected: &Path) -> Result<()> {
-    let actual = unsafe { symbol_image_path(address) }.map_err(|error| invalid(expected, error))?;
+/// The loaded image that maps `address`. The address is only looked up in the loader's tables
+/// (`dladdr`, `GetModuleHandleExW(FROM_ADDRESS)`), never dereferenced, so any value is sound.
+fn verify_address_owner(address: usize, expected: &Path) -> Result<()> {
+    let actual = symbol_image_path(address).map_err(|error| invalid(expected, error))?;
     let canonical = fs::canonicalize(actual).map_err(|error| invalid(expected, error))?;
     if canonical != expected {
         return Err(invalid(expected, "native symbol resolved to a foreign image"));
@@ -456,10 +459,11 @@ unsafe fn verify_address_owner(address: *mut std::ffi::c_void, expected: &Path) 
     Ok(())
 }
 #[cfg(unix)]
-unsafe fn symbol_image_path(address: *mut std::ffi::c_void) -> std::io::Result<PathBuf> {
+fn symbol_image_path(address: usize) -> std::io::Result<PathBuf> {
     use std::os::unix::ffi::OsStrExt;
     let mut info = std::mem::MaybeUninit::<libc::Dl_info>::zeroed();
-    if address.is_null() || unsafe { libc::dladdr(address.cast_const(), info.as_mut_ptr()) } == 0 {
+    // SAFETY: `dladdr` reads only the loader's mapping tables for `address` and writes `info`.
+    if address == 0 || unsafe { libc::dladdr(address as *const std::ffi::c_void, info.as_mut_ptr()) } == 0 {
         return Err(std::io::Error::other("native symbol has no loaded-image identity"));
     }
     let info = unsafe { info.assume_init() };
@@ -470,7 +474,7 @@ unsafe fn symbol_image_path(address: *mut std::ffi::c_void) -> std::io::Result<P
     Ok(PathBuf::from(std::ffi::OsStr::from_bytes(name.to_bytes())))
 }
 #[cfg(windows)]
-unsafe fn symbol_image_path(address: *mut std::ffi::c_void) -> std::io::Result<PathBuf> {
+fn symbol_image_path(address: usize) -> std::io::Result<PathBuf> {
     use std::os::windows::ffi::OsStringExt;
     #[link(name = "kernel32")]
     unsafe extern "system" {
@@ -478,7 +482,8 @@ unsafe fn symbol_image_path(address: *mut std::ffi::c_void) -> std::io::Result<P
         fn GetModuleFileNameW(module: *mut std::ffi::c_void, buffer: *mut u16, length: u32) -> u32;
     }
     let mut module = std::ptr::null_mut();
-    if address.is_null() || unsafe { GetModuleHandleExW(0x00000004 | 0x00000002, address.cast(), &mut module) } == 0 {
+    // SAFETY: FROM_ADDRESS | UNCHANGED_REFCOUNT looks `address` up in the loader's module list only.
+    if address == 0 || unsafe { GetModuleHandleExW(0x00000004 | 0x00000002, address as *const u16, &mut module) } == 0 {
         return Err(std::io::Error::last_os_error());
     }
     let mut buffer = vec![0u16; 32768];
@@ -493,7 +498,7 @@ unsafe fn symbol_image_path(address: *mut std::ffi::c_void) -> std::io::Result<P
     Ok(PathBuf::from(std::ffi::OsString::from_wide(&buffer)))
 }
 #[cfg(not(any(unix, windows)))]
-unsafe fn symbol_image_path(_address: *mut std::ffi::c_void) -> std::io::Result<PathBuf> {
+fn symbol_image_path(_address: usize) -> std::io::Result<PathBuf> {
     Err(std::io::Error::new(std::io::ErrorKind::Unsupported, "symbol image identity unavailable"))
 }
 

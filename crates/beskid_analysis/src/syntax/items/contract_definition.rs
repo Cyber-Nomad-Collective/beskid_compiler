@@ -5,7 +5,7 @@ use crate::parser::Rule;
 use crate::parsing::error::ParseError;
 use crate::parsing::parsable::Parsable;
 use crate::syntax::items::parse_helpers::{
-    parse_attributes, parse_doc_attached_with, parse_identifier_list, parse_visibility_or_default,
+    parse_attributes, parse_doc_attached_with, parse_type_parameter_list, parse_visibility_or_default,
 };
 use crate::syntax::{Attribute, ContractNode, Identifier, SpanInfo, Spanned, Visibility};
 
@@ -22,7 +22,7 @@ pub struct ContractDefinition {
     #[ast(child)]
     pub name: Spanned<Identifier>,
     #[ast(children)]
-    pub generics: Vec<Spanned<Identifier>>,
+    pub generics: Vec<Spanned<crate::syntax::TypeParameter>>,
     #[ast(children)]
     pub items: Vec<Spanned<ContractNode>>,
     #[ast(skip)]
@@ -38,7 +38,7 @@ impl Parsable for ContractDefinition {
         let name = Identifier::parse(inner.next().ok_or(ParseError::missing(Rule::Identifier))?)?;
         let mut generics = Vec::new();
         if inner.peek().is_some_and(|next| next.as_rule() == Rule::GenericParameters) {
-            generics = parse_identifier_list(inner.next().expect("peeked GenericParameters"))?;
+            generics = parse_type_parameter_list(inner.next().expect("peeked GenericParameters"))?;
         }
         let mut items = Vec::new();
         let mut item_docs = Vec::new();

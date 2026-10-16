@@ -1,296 +1,119 @@
-//! Contextual enum constructor type paths, instantiated layouts, and field layouts.
+//! The applied type of an enum constructor, instantiated layouts, and field layouts.
+//!
+//! A constructor written without type arguments (`Result::Ok(value)`) names its application
+//! only through the type its position is checked against. That requirement is read from the one
+//! checking-direction authority, [`expected_type`] (target-neutral) or
+//! [`expected_type_in_environment`] (inside the specialization of the enclosing generic item);
+//! no constructor context is re-derived from the surrounding syntax here.
 
 use super::super::super::*;
-use super::super::explicit_local_declaration_type;
 use super::*;
-use crate::semantic_contract::typing::{managed_reference_kind_for_syntax_type, pattern_binding_fact_in_environment};
 
-/// Return an explicitly applied enum type from a genericless constructor's proven value context.
-///
-/// The walk follows only transparent expression/match wrappers plus the final expression statement
-/// of a block expression. It intentionally declines inferred values, non-final block statements,
-/// local initializers, lambdas, and other nested control-flow contexts.
-pub(in crate::semantic_contract) fn contextual_enum_constructor_type_path(
+/// The applied enum a constructor names: its own written type arguments (interpreted through the
+/// enclosing substitutions when there is a specialization), or, for a constructor written
+/// without arguments, the applied enum its checking context expects
+/// ([`expected_enum_constructor_identity`]). A non-generic enum has the identity of its
+/// declaration. Unproven stays an error.
+pub(in crate::semantic_contract) fn applied_enum_constructor_identity(
     db: &dyn Db,
-    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
-    index: &beskid_analysis::syntax_query::SyntaxIndex,
     key: AstNodeKey,
     constructor: &beskid_analysis::syntax::EnumConstructorExpression,
-) -> Option<beskid_analysis::syntax::Path> {
+    enclosing: Option<&GenericSpecializationInstance>,
+) -> Result<GenericSourceTypeIdentity, SemanticError> {
+    let written = &constructor.path.node.type_path;
+    let (terminal, module_path) =
+        written.node.segments.split_last().ok_or_else(|| SemanticError::unavailable("enum_constructor"))?;
+    if !terminal.node.type_args.is_empty() {
+        let environment = enclosing
+            .map(|enclosing| {
+                enclosing
+                    .substitutions
+                    .iter()
+                    .map(|binding| (binding.parameter.as_ref(), binding.source_identity()))
+                    .collect::<HashMap<_, _>>()
+            })
+            .unwrap_or_default();
+        // An application is exact: no arguments on module segments, and every argument is a
+        // layout-able type (a primitive, a nominal, an array) or an enclosing parameter the
+        // specialization binds.
+        if module_path.iter().any(|segment| !segment.node.type_args.is_empty())
+            || terminal.node.type_args.iter().any(|argument| {
+                aggregate_shape_from_applied_type(db, key, &argument.node).is_err()
+                    && !generic_parameter_reference_name(&argument.node)
+                        .is_some_and(|parameter| environment.contains_key(parameter))
+            })
+        {
+            return Err(SemanticError::unavailable("enum_constructor"));
+        }
+        return generic_source_type_identity_with_substitutions(
+            db,
+            key,
+            &beskid_analysis::syntax::Type::Complex(written.clone()),
+            &environment,
+        );
+    }
+    // A non-generic enum (`Color::Red`) is named by its own path alone; only a path that resolves
+    // no declaration at arity zero (a generic enum) consults the expectation.
+    if let Some(declaration) = resolve_type_declaration(db, key, &written.node) {
+        let qualified_name = stable_declaration_identity(db, declaration)
+            .ok_or_else(|| SemanticError::unavailable("enum_constructor"))?;
+        return Ok(GenericSourceTypeIdentity::Nominal { qualified_name, arguments: Arc::from([]) });
+    }
+    expected_enum_constructor_identity(db, key, constructor, enclosing)
+        .ok_or_else(|| SemanticError::unavailable("enum_constructor"))
+}
+
+/// The applied generic enum a constructor written without type arguments is checked against:
+/// the identity of its expected type, when that identity is an applied enum whose declaration
+/// the constructor's own path names.
+///
+/// Matching the terminal spelling alone would let `A.Result::Ok` inherit `B.Result<T, E>`
+/// arguments, so the constructor path, resolved at the candidate's arity, must denote the
+/// candidate's declaration. One unqualified constructor whose name resolves to no declaration
+/// in this unit is the single exception: there is no other declaration it could name, so the
+/// expected application is its only possible one; the spelling must still match. `None` when the
+/// position has no such expectation.
+pub(in crate::semantic_contract) fn expected_enum_constructor_identity(
+    db: &dyn Db,
+    key: AstNodeKey,
+    constructor: &beskid_analysis::syntax::EnumConstructorExpression,
+    enclosing: Option<&GenericSpecializationInstance>,
+) -> Option<GenericSourceTypeIdentity> {
     let constructor_path = &constructor.path.node.type_path.node;
     let terminal = constructor_path.segments.last()?;
     if !terminal.node.type_args.is_empty() {
         return None;
     }
-    let mut current = parent_node(index, key.node)?;
-    let mut value_child = key.node;
-    let mut call_argument_root = key.node;
-    loop {
-        use beskid_analysis::syntax_query::NodeKind;
-
-        match index.kind(current)? {
-            NodeKind::Expression | NodeKind::Statement => {
-                value_child = current;
-                current = parent_node(index, current)?;
-            }
-            NodeKind::MatchArm => {
-                let arm = index.node_at(program, current)?.of::<beskid_analysis::syntax::MatchArm>()?;
-                let body = index.direct_child_id(
-                    program,
-                    current,
-                    beskid_analysis::syntax_query::DynNodeRef::from(&arm.value),
-                )?;
-                (body == value_child).then_some(())?;
-                value_child = current;
-                current = parent_node(index, current)?;
-            }
-            NodeKind::MatchExpression => {
-                (index.kind(value_child)? == NodeKind::MatchArm).then_some(())?;
-                value_child = current;
-                current = parent_node(index, current)?;
-            }
-            NodeKind::ExpressionStatement => {
-                let statement_wrapper = parent_node(index, current)?;
-                (index.kind(statement_wrapper)? == NodeKind::Statement).then_some(())?;
-                let block = parent_node(index, statement_wrapper)?;
-                (index.kind(block)? == NodeKind::Block).then_some(())?;
-                let statements = block_statement_nodes(db, AstNodeKey { node: block, ..key }).ok()??;
-                (statements.last().is_some_and(|statement| statement.node == current)).then_some(())?;
-                let block_expression = parent_node(index, block)?;
-                (index.kind(block_expression)? == NodeKind::BlockExpression).then_some(())?;
-                call_argument_root = block_expression;
-                value_child = block_expression;
-                current = parent_node(index, block_expression)?;
-            }
-            _ => break,
-        }
-    }
-
-    let expected = match index.kind(current)? {
-        beskid_analysis::syntax_query::NodeKind::LetStatement => index
-            .node_at(program, current)?
-            .of::<beskid_analysis::syntax::LetStatement>()?
-            .type_annotation
-            .as_ref()
-            .map(|annotation| &annotation.node),
-        beskid_analysis::syntax_query::NodeKind::ReturnStatement => {
-            let mut item = parent_node(index, current)?;
-            while !matches!(
-                index.kind(item)?,
-                beskid_analysis::syntax_query::NodeKind::FunctionDefinition
-                    | beskid_analysis::syntax_query::NodeKind::MethodDefinition
-            ) {
-                item = parent_node(index, item)?;
-            }
-            let item = index.node_at(program, item)?;
-            item.of::<beskid_analysis::syntax::FunctionDefinition>()
-                .and_then(|function| function.return_type.as_ref().map(|annotation| &annotation.node))
-                .or_else(|| {
-                    item.of::<beskid_analysis::syntax::MethodDefinition>()
-                        .and_then(|method| method.return_type.as_ref().map(|annotation| &annotation.node))
-                })
-        }
-        beskid_analysis::syntax_query::NodeKind::AssignExpression => {
-            let assignment = mutable_local_assignment(db, AstNodeKey { node: current, ..key }).ok().flatten()?;
-            explicit_local_declaration_type(program, index, assignment.declaration.node)
-        }
-        beskid_analysis::syntax_query::NodeKind::EnumConstructorExpression => {
-            let expected = enclosing_enum_constructor_payload_type(db, program, index, key, current, value_child)?;
-            let beskid_analysis::syntax::Type::Complex(path) = expected else { return None };
-            return contextual_enum_candidate_type_path(db, key, constructor_path, &path.node);
-        }
-        beskid_analysis::syntax_query::NodeKind::StructLiteralField => {
-            let expected = struct_literal_field_type(db, program, index, key, current, value_child)?;
-            let beskid_analysis::syntax::Type::Complex(path) = expected else { return None };
-            return contextual_enum_candidate_type_path(db, key, constructor_path, &path.node);
-        }
-        beskid_analysis::syntax_query::NodeKind::CallExpression => {
-            return expected_explicit_call_argument_type(
-                db,
-                program,
-                index,
-                AstNodeKey { node: call_argument_root, ..key },
-            )
-            .and_then(|expected| {
-                let beskid_analysis::syntax::Type::Complex(path) = expected else { return None };
-                contextual_enum_candidate_type_path(db, key, constructor_path, &path.node)
-            });
-        }
-        _ => None,
-    }?;
-    let beskid_analysis::syntax::Type::Complex(path) = expected else {
+    let expected = match enclosing {
+        None => expected_type(db, key).ok()??,
+        Some(enclosing) => expected_type_in_environment(db, key, enclosing).ok()??,
+    };
+    let identity = expected.identity();
+    let GenericSourceTypeIdentity::Nominal { qualified_name, arguments } = identity else {
         return None;
     };
-    let expected_path = &path.node;
-    contextual_enum_candidate_type_path(db, key, constructor_path, expected_path)
-}
-
-/// The applied type of the payload position `payload` of the enum constructor `outer`
-/// (`Option::Some(count)` inside `Result::Ok(...)` returned as `Result<Option<i64>, IoError>`).
-///
-/// The outer constructor's own applied type (explicit, or proven by its context) substitutes the
-/// enum's type parameters in the declared field type. Only a field declared as a bare type
-/// parameter or as a concrete type is projected; anything else has no contextual type.
-fn enclosing_enum_constructor_payload_type(
-    db: &dyn Db,
-    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
-    index: &beskid_analysis::syntax_query::SyntaxIndex,
-    key: AstNodeKey,
-    outer: beskid_analysis::syntax::AstNodeId,
-    payload: beskid_analysis::syntax::AstNodeId,
-) -> Option<beskid_analysis::syntax::Type> {
-    let constructor = index.node_at(program, outer)?.of::<beskid_analysis::syntax::EnumConstructorExpression>()?;
-    let position = constructor.args.iter().position(|argument| {
-        index.direct_child_id(program, outer, beskid_analysis::syntax_query::DynNodeRef::from(argument))
-            == Some(payload)
-    })?;
-    let outer_key = AstNodeKey { node: outer, ..key };
-    let written = &constructor.path.node.type_path.node;
-    let applied = if written.segments.last()?.node.type_args.is_empty() {
-        contextual_enum_constructor_type_path(db, program, index, outer_key, constructor)?
-    } else {
-        written.clone()
-    };
-    let declaration = resolve_type_declaration(db, outer_key, &applied)?;
-    let syntax = db.syntax_unit(declaration.unit).filter(|syntax| syntax.accepts_key(db, declaration))?;
-    let definition = syntax
-        .syntax_index(db)
-        .node_at(syntax.expanded_program(db), declaration.node)?
-        .of::<beskid_analysis::syntax::EnumDefinition>()?;
-    let variant_name = constructor.path.node.variant.node.name.as_str();
-    let variant = definition.variants.iter().find(|variant| variant.node.name.node.name == variant_name)?;
-    let field = &variant.node.fields.get(position)?.node.ty.node;
-    let arguments = &applied.segments.last()?.node.type_args;
-    if let Some(parameter) = generic_parameter_reference_name(field) {
-        if let Some(slot) = definition.generics.iter().position(|generic| generic.node.name == parameter) {
-            return arguments.get(slot).map(|argument| argument.node.clone());
+    if arguments.is_empty() || qualified_name.rsplit("::").next() != Some(terminal.node.name.node.name.as_str()) {
+        return None;
+    }
+    let candidate = crate::semantic_contract::contracts::concrete_type_or_enum_declaration(db, key, identity)?;
+    // Constructors written without type arguments cannot resolve a generic declaration by arity;
+    // the candidate's arity resolves the constructor's own path, then the declarations compare.
+    let mut application = constructor_path.clone();
+    let placeholder = beskid_analysis::syntax::Spanned::new(
+        beskid_analysis::syntax::Type::Primitive(beskid_analysis::syntax::Spanned::new(
+            beskid_analysis::syntax::PrimitiveType::Unit,
+            terminal.span,
+        )),
+        terminal.span,
+    );
+    application.segments.last_mut()?.node.type_args = vec![placeholder; arguments.len()];
+    match resolve_type_declaration(db, key, &application) {
+        Some(resolved) => (resolved == candidate).then(|| identity.clone()),
+        None => {
+            let [_] = constructor_path.segments.as_slice() else { return None };
+            Some(identity.clone())
         }
     }
-    let mentions_parameter = definition.generics.iter().any(|generic| {
-        let beskid_analysis::syntax::Type::Complex(path) = field else { return false };
-        path.node.segments.iter().any(|segment| {
-            segment.node.name.node.name == generic.node.name
-                || segment.node.type_args.iter().any(|argument| {
-                    type_syntax_is_generic_parameter_reference(&argument.node, generic.node.name.as_str())
-                })
-        })
-    });
-    (!mentions_parameter && declaration.unit == key.unit).then(|| field.clone())
-}
-
-/// The applied type of the struct literal field `field` whose value is `value`
-/// (`Holder { window: Option::Some([3_i32]) }` with `Option<i32[]> window`).
-///
-/// The literal's written type arguments substitute the record's type parameters in the declared
-/// field type, exactly as an enclosing constructor's payload is projected
-/// ([`enclosing_enum_constructor_payload_type`]): only a field declared as a bare type parameter,
-/// or as a concrete type of a record declared in this unit, is projected.
-fn struct_literal_field_type(
-    db: &dyn Db,
-    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
-    index: &beskid_analysis::syntax_query::SyntaxIndex,
-    key: AstNodeKey,
-    field: beskid_analysis::syntax::AstNodeId,
-    value: beskid_analysis::syntax::AstNodeId,
-) -> Option<beskid_analysis::syntax::Type> {
-    let written = index.node_at(program, field)?.of::<beskid_analysis::syntax::StructLiteralField>()?;
-    (index.direct_child_id(program, field, beskid_analysis::syntax_query::DynNodeRef::from(&written.value))
-        == Some(value))
-    .then_some(())?;
-    let literal_node = parent_node(index, field)?;
-    let literal = index.node_at(program, literal_node)?.of::<beskid_analysis::syntax::StructLiteralExpression>()?;
-    let literal_key = AstNodeKey { node: literal_node, ..key };
-    let declaration = resolve_type_declaration(db, literal_key, &literal.path.node)?;
-    let syntax = db.syntax_unit(declaration.unit).filter(|syntax| syntax.accepts_key(db, declaration))?;
-    let definition = syntax
-        .syntax_index(db)
-        .node_at(syntax.expanded_program(db), declaration.node)?
-        .of::<beskid_analysis::syntax::TypeDefinition>()?;
-    let declared = definition.fields.iter().find(|candidate| {
-        candidate.node.kind == beskid_analysis::syntax::FieldKind::Value
-            && candidate.node.name.node.name == written.name.node.name
-    })?;
-    let field_type = &declared.node.ty.node;
-    let arguments = &literal.path.node.segments.last()?.node.type_args;
-    let generics = definition.generics.iter().map(|generic| generic.node.name.as_str()).collect::<Vec<_>>();
-    if let Some(parameter) = generic_parameter_reference_name(field_type)
-        && let Some(slot) = generics.iter().position(|generic| *generic == parameter)
-    {
-        return arguments.get(slot).map(|argument| argument.node.clone());
-    }
-    // Any other field type is spelled in the record's unit, so it is projected only there.
-    (declaration.unit == key.unit).then_some(())?;
-    if generics.iter().any(|generic| type_syntax_mentions_generic_parameter(field_type, generic)) {
-        (arguments.len() == generics.len()).then_some(())?;
-        return substitute_type_parameters(field_type, &generics, arguments);
-    }
-    Some(field_type.clone())
-}
-
-/// `ty` with each reference to one of `generics` replaced by the written argument in its slot
-/// (`Option<T>` under `Holder<string>` is `Option<string>`). `None` for a shape that names a
-/// parameter where no written argument can stand (an associated type, `This`, a function type).
-fn substitute_type_parameters(
-    ty: &beskid_analysis::syntax::Type,
-    generics: &[&str],
-    arguments: &[beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Type>],
-) -> Option<beskid_analysis::syntax::Type> {
-    use beskid_analysis::syntax::{Spanned, Type};
-    if let Some(parameter) = generic_parameter_reference_name(ty)
-        && let Some(slot) = generics.iter().position(|generic| *generic == parameter)
-    {
-        return arguments.get(slot).map(|argument| argument.node.clone());
-    }
-    if !generics.iter().any(|generic| type_syntax_mentions_generic_parameter(ty, generic)) {
-        return Some(ty.clone());
-    }
-    match ty {
-        Type::Complex(path) => {
-            let mut applied = path.clone();
-            for segment in &mut applied.node.segments {
-                for argument in &mut segment.node.type_args {
-                    argument.node = substitute_type_parameters(&argument.node, generics, arguments)?;
-                }
-            }
-            Some(Type::Complex(applied))
-        }
-        Type::Array(element) => Some(Type::Array(Box::new(Spanned::new(
-            substitute_type_parameters(&element.node, generics, arguments)?,
-            element.span,
-        )))),
-        _ => None,
-    }
-}
-
-/// Admit a contextual generic enum application only when it resolves to the same nominal
-/// declaration as the constructor. Matching the terminal spelling alone would let
-/// `A.Result::Ok` inherit `B.Result<T, E>` arguments.
-///
-/// One unqualified constructor whose own name resolves to no declaration in this unit is the
-/// single exception: there is no other declaration it could name, so the proven value context
-/// is its only possible application. The spelling must still match the candidate's terminal
-/// name, and any constructor that does resolve keeps the exact declaration comparison.
-fn contextual_enum_candidate_type_path(
-    db: &dyn Db,
-    key: AstNodeKey,
-    constructor_path: &beskid_analysis::syntax::Path,
-    candidate_path: &beskid_analysis::syntax::Path,
-) -> Option<beskid_analysis::syntax::Path> {
-    let candidate_terminal = candidate_path.segments.last()?;
-    (!candidate_terminal.node.type_args.is_empty()).then_some(())?;
-    // Constructors written without type arguments cannot resolve a generic declaration by arity.
-    // Apply the candidate's explicit arguments only to resolve the constructor's own qualified
-    // path, then compare declarations before retaining the candidate application.
-    let mut constructor_application = constructor_path.clone();
-    constructor_application.segments.last_mut()?.node.type_args = candidate_terminal.node.type_args.clone();
-    let candidate = resolve_type_declaration(db, key, candidate_path)?;
-    let Some(constructor) = resolve_type_declaration(db, key, &constructor_application) else {
-        let [segment] = constructor_path.segments.as_slice() else {
-            return None;
-        };
-        return (segment.node.name.node.name == candidate_terminal.node.name.node.name).then(|| candidate_path.clone());
-    };
-    (constructor == candidate).then_some(candidate_path.clone())
 }
 
 pub(in crate::semantic_contract) fn instantiated_enum_layout_for_path(

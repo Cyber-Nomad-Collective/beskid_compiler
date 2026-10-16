@@ -101,7 +101,6 @@ fn emit_runtime_support(plan: &NativeAdapterPlan, output: &mut String) -> Result
         &runtime.array_allocate_rooted,
         &runtime.construction_finish,
         &runtime.write_barrier,
-        &runtime.array_write_barrier,
     ] {
         symbol(name)?;
     }
@@ -116,7 +115,6 @@ fn emit_runtime_support(plan: &NativeAdapterPlan, output: &mut String) -> Result
     writeln!(output, "extern void *{}(void*,void*);", runtime.array_allocate_rooted)?;
     writeln!(output, "extern uint8_t {}(void*);", runtime.construction_finish)?;
     writeln!(output, "extern void {}(void*,void*);", runtime.write_barrier)?;
-    writeln!(output, "extern uint8_t {}(void*,void*);", runtime.array_write_barrier)?;
     writeln!(
         output,
         "static int mod_keep(ModScope*s,void*p){{if(!p || s->root_count>=65536)return 0;size_t h={}(p);if(!h)return 0;s->roots[s->root_count++]=h;return 1;}}",
@@ -518,7 +516,7 @@ fn emit_aggregate_codec(
                     plan.runtime.array_allocate_rooted
                 )?;
                 if slot == "pointer" {
-                    writeln!(output, "if(!{}(out->pointer,value.pointer))return 0;", plan.runtime.array_write_barrier)?;
+                    writeln!(output, "{}(out->pointer,value.pointer);", plan.runtime.write_barrier)?;
                 }
                 writeln!(
                     output,
@@ -943,7 +941,6 @@ mod tests {
                 construction_finish: "array_finish".into(),
                 record_allocate: "record_allocate".into(),
                 write_barrier: "gc_write_barrier".into(),
-                array_write_barrier: "array_write_barrier".into(),
             },
         }
     }

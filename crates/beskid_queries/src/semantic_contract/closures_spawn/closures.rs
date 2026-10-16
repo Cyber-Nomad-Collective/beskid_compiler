@@ -185,7 +185,51 @@ fn closure_capture_declaration(
         return resolve_lexical_declaration(program, index, key.node, &segment.node.name.node.name)
             .map(|node| AstNodeKey { node, ..key });
     }
-    nominal_local_member_receiver(db, program, index, key, path).map(|(_, receiver)| receiver)
+    // A projection from a local (`config.width`, `knobs.depth.inner`) captures the local that
+    // roots it, exactly as the field projection resolves its receiver; a root that is a module
+    // or type name resolves no lexical declaration and is not a capture. A call callee
+    // (`child.Join()`) is captured only through its resolved member receiver below.
+    if !path_is_call_callee(program, index, key.node)
+        && let Some(root) = path.segments.first()
+        && root.node.type_args.is_empty()
+        && let Some(declaration) = resolve_lexical_declaration(program, index, key.node, &root.node.name.node.name)
+    {
+        return Some(AstNodeKey { node: declaration, ..key });
+    }
+    nominal_local_member_receiver(db, program, index, key, path).map(|(_, receiver)| receiver).or_else(|| {
+        // A resolved contract member receiver is captured like a nominal one: a contract-bounded
+        // generic parameter (`combiner.Combine(acc, value)` with `where C: Associative<T>`) or a
+        // contract-typed one. An unresolved member still captures nothing.
+        crate::semantic_contract::contracts::contract_member_receiver(db, program, index, key, path)?
+            .ok()
+            .map(|(_, receiver)| receiver)
+    })
+}
+
+/// Whether the path expression `path` is the callee of the call expression above it.
+fn path_is_call_callee(
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    path: beskid_analysis::syntax::AstNodeId,
+) -> bool {
+    let Some(mut parent) = parent_node(index, path) else { return false };
+    while matches!(
+        index.kind(parent),
+        Some(
+            beskid_analysis::syntax_query::NodeKind::Expression
+                | beskid_analysis::syntax_query::NodeKind::GroupedExpression
+        )
+    ) {
+        let Some(next) = parent_node(index, parent) else { return false };
+        parent = next;
+    }
+    index
+        .node_at(program, parent)
+        .and_then(|node| node.of::<beskid_analysis::syntax::CallExpression>())
+        .and_then(|call| {
+            index.direct_child_id(program, parent, beskid_analysis::syntax_query::DynNodeRef::from(call.callee.as_ref()))
+        })
+        .is_some_and(|callee| normalized_expression_node(index, callee) == path)
 }
 
 pub(in crate::semantic_contract) fn closure_captures(
@@ -266,7 +310,21 @@ pub(in crate::semantic_contract) fn capture_storage_class(
         .node_at(program, parent)
         .and_then(|node| node.of::<beskid_analysis::syntax::LetStatement>())
         .is_some_and(|binding| binding.mutable);
-    let semantic_type = abi_type(db, declaration)?.ok_or_else(|| SemanticError::unavailable("capture_storage"))?;
+    let semantic_type = match abi_type(db, declaration) {
+        Ok(Some(semantic_type)) => semantic_type,
+        // An immutable value of a generic body whose type names the body's type parameters has
+        // no context-free ABI. It is captured by value; each specialization re-checks the
+        // instance type (`specialized_closure_signature` rejects a native pointer).
+        result @ (Ok(None) | Err(_)) => {
+            let generic_value = !mutable
+                && result.as_ref().err().is_none_or(SemanticError::is_unavailable)
+                && declared_in_generic_callable(db, program, index, declaration);
+            if generic_value {
+                return Ok(CaptureStorageClass::TransferableValue);
+            }
+            return Err(result.err().unwrap_or_else(|| SemanticError::unavailable("capture_storage")));
+        }
+    };
     // ABI pointers alone carry no ownership provenance. The existing source-type
     // query distinguishes native pointers from managed arrays and nominal values.
     let managed = managed_reference_kind(db, declaration).ok().flatten() == Some(ManagedReferenceKind::GcManaged);
@@ -275,6 +333,42 @@ pub(in crate::semantic_contract) fn capture_storage_class(
     } else {
         CaptureStorageClass::TransferableValue
     })
+}
+
+/// Whether `declaration` belongs to a callable with type parameters of its own or of its owner.
+fn declared_in_generic_callable(
+    db: &dyn Db,
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    declaration: AstNodeKey,
+) -> bool {
+    let Some(callable) = nearest_ancestor(index, declaration.node, |kind| {
+        matches!(
+            kind,
+            beskid_analysis::syntax_query::NodeKind::FunctionDefinition
+                | beskid_analysis::syntax_query::NodeKind::MethodDefinition
+        )
+    }) else {
+        return false;
+    };
+    let Some(node) = index.node_at(program, callable) else { return false };
+    if let Some(function) = node.of::<beskid_analysis::syntax::FunctionDefinition>() {
+        return !function.generics.is_empty();
+    }
+    let Some(method) = node.of::<beskid_analysis::syntax::MethodDefinition>() else { return false };
+    if !method.generics.is_empty() {
+        return true;
+    }
+    crate::semantic_contract::locals::method_owner_declaration(db, AstNodeKey { node: callable, ..declaration })
+        .and_then(|owner| {
+            let syntax = db.syntax_unit(owner.unit).filter(|syntax| syntax.accepts_key(db, owner))?;
+            syntax
+                .syntax_index(db)
+                .node_at(syntax.expanded_program(db), owner.node)?
+                .of::<beskid_analysis::syntax::TypeDefinition>()
+                .map(|definition| !definition.generics.is_empty())
+        })
+        .unwrap_or(false)
 }
 
 #[salsa::tracked(persist)]

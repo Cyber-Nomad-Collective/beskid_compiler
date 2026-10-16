@@ -347,14 +347,16 @@ fn generic_array_index_element_resolves_through_the_enclosing_specialization() {
     let source = "T Get<T>(T[] values, i64 index) { return values[index]; }";
     let (db, _project, unit, generation, index) = setup(source);
     let indexed = key(unit, generation, &index, NodeKind::IndexExpression, 0);
+    let instance = beskid_queries::generic_specialization_instance(
+        &db,
+        key(unit, generation, &index, NodeKind::FunctionDefinition, 0),
+        Arc::from([beskid_queries::GenericSubstitution::inferred("T", SemanticTypeId::I64)]),
+    )
+    .expect("specialization query")
+    .expect("specialization instance");
 
     assert_eq!(
-        array_index_element_specialization(
-            &db,
-            indexed,
-            Arc::from([beskid_queries::GenericSubstitution::inferred("T", SemanticTypeId::I64)]),
-        )
-        .expect("contextual array-index element query"),
+        array_index_element_specialization(&db, indexed, &instance).expect("contextual array-index element query"),
         Some(SemanticTypeId::I64),
     );
 }
@@ -713,6 +715,31 @@ fn enum_constructor_selects_the_source_variant_and_single_payload() {
     assert_eq!(
         enum_constructor(&db, constructor).expect("enum constructor query"),
         Some(beskid_queries::EnumConstructorFact { declaration, variant_index: 1, payloads: Arc::from([payload]) })
+    );
+}
+
+#[test]
+fn generic_enum_constructor_takes_its_application_from_a_method_parameter() {
+    let source = r#"
+enum Maybe<T> { None(), Some(T value) }
+type Holder {
+    i64 n,
+
+    i64 Pick(Maybe<i64> other) { return 0; }
+}
+i64 Main() {
+    Holder holder = Holder { n: 1 };
+    return holder.Pick(Maybe::None());
+}
+"#;
+    let (db, _project, unit, generation, index) = setup(source);
+    let constructor = key(unit, generation, &index, NodeKind::EnumConstructorExpression, 0);
+    let declaration = key(unit, generation, &index, NodeKind::EnumDefinition, 0);
+
+    assert_eq!(
+        enum_constructor(&db, constructor).expect("enum constructor query in a method argument"),
+        Some(beskid_queries::EnumConstructorFact { declaration, variant_index: 0, payloads: Arc::from([]) }),
+        "an unapplied generic constructor in a method argument takes the parameter's application"
     );
 }
 

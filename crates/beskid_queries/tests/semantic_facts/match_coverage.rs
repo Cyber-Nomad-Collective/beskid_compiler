@@ -195,7 +195,7 @@ fn matches_on_generic_record_fields_are_proven_in_their_specializations() {
                     && span_of(instance.declaration.node).is_some_and(|span| span.start <= start && start < span.end)
             })
             .unwrap_or_else(|| panic!("{scrutinee}: no specialization encloses the match"));
-        let fact = enum_match_specialization(&db, matched, instance.substitutions.clone())
+        let fact = enum_match_specialization(&db, matched, instance)
             .unwrap_or_else(|error| panic!("{scrutinee}: specialized match query: {error:?}"))
             .unwrap_or_else(|| panic!("{scrutinee}: specialized match fact"));
         let EnumMatchPatternFact::Enum(some) = &fact.arms[0].pattern else {
@@ -210,4 +210,59 @@ fn matches_on_generic_record_fields_are_proven_in_their_specializations() {
             assert_eq!(values.managed_reference, ManagedReferenceKind::GcManaged, "{scrutinee}: i64[] is managed");
         }
     }
+}
+
+/// `(i64 index, Color color) => match color { ... }`: a lambda parameter scrutinee is typed by the
+/// binding-identity authority (its written type, or the expected callback type when untyped), in
+/// a non-generic body and, through the enclosing specialization, in a generic one.
+#[test]
+fn matches_on_lambda_parameters_use_the_binding_identity() {
+    use beskid_analysis::syntax::AstNodeId;
+    use beskid_queries::{
+        AstNodeKey, enum_match_specialization, generic_call_specialization, generic_call_specialization_instance,
+    };
+
+    let source = "enum Color { Red, Green } \
+         i64 Visit((i64, Color) => i64 f) { return f(1_i64, Color::Red); } \
+         i64 Typed() { return Visit((i64 index, Color color) => match color { Color::Red => index, Color::Green => 0_i64, }); } \
+         i64 Untyped() { return Visit((index, color) => match color { Color::Red => index, Color::Green => 0_i64, }); }";
+    let (db, _project, unit, generation, index) = setup(source);
+    for ordinal in 0..2 {
+        let matched = key(unit, generation, &index, NodeKind::MatchExpression, ordinal);
+        let fact = enum_match(&db, matched)
+            .unwrap_or_else(|error| panic!("match {ordinal}: enum match query: {error:?}"))
+            .unwrap_or_else(|| panic!("match {ordinal}: enum match fact"));
+        assert_eq!(fact.declaration, key(unit, generation, &index, NodeKind::EnumDefinition, 0), "match {ordinal}");
+        assert_eq!(fact.arms.len(), 2, "match {ordinal}");
+    }
+
+    let generic = format!(
+        "{OPTION_RESULT}i64 Each<T>((i64, Option<T[]>) => i64 f, Option<T[]> slot) {{ return f(0_i64, slot); }} \
+         i64 Count<T>(Option<T[]> slot) {{ return Each<T>((i64 index, Option<T[]> item) => match item {{ \
+         Option::Some(values) => index + 1_i64, Option::None => index, }}, slot); }} \
+         i64 Main() {{ i64[] values = [3_i64]; return Count<i64>(Option::Some(values)); }}"
+    );
+    let (db, _project, unit, generation, index) = setup(&generic);
+    let start = generic.find("match item").unwrap();
+    let matched = key_at_start(unit, generation, &index, NodeKind::MatchExpression, start);
+    let span_of = |node: AstNodeId| index.metadata().iter().find(|metadata| metadata.id == node).and_then(|m| m.span);
+    let instance = index
+        .ids_of_kind(NodeKind::CallExpression)
+        .filter_map(|node| generic_call_specialization(&db, AstNodeKey { unit, generation, node }).ok().flatten())
+        .filter_map(|specialization| generic_call_specialization_instance(&db, specialization).ok().flatten())
+        .find(|instance| {
+            instance.declaration.unit == unit
+                && span_of(instance.declaration.node).is_some_and(|span| span.start <= start && start < span.end)
+        })
+        .expect("the Count<i64> specialization encloses the match");
+    let fact = enum_match_specialization(&db, matched, &instance)
+        .unwrap_or_else(|error| panic!("specialized lambda parameter match: {error:?}"))
+        .expect("specialized lambda parameter match fact");
+    let EnumMatchPatternFact::Enum(some) = &fact.arms[0].pattern else {
+        panic!("the Some arm remains an enum pattern");
+    };
+    let EnumMatchPatternFact::Binding(values) = &some.items[0] else {
+        panic!("the Some payload binds");
+    };
+    assert_eq!(values.managed_reference, ManagedReferenceKind::GcManaged, "i64[] is managed");
 }

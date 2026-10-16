@@ -27,11 +27,32 @@ impl SyntaxNodeFacts<'_> {
         &self,
         key: AstNodeKey,
     ) -> Option<ManagedReferenceFact> {
+        // `move x` hands its operand over unchanged, so it has the operand's category in this
+        // specialization (`Keep<T>(move values)` with `T[] values` inside `Forward<T>`).
+        if let Some(operand) = self.consumed_move_operand(key) {
+            return self.managed_reference_in_context(operand);
+        }
         if let Some(receiver) = self.query(nominal_member_receiver(self.db, key)) {
             return self.managed_reference_in_context(receiver);
         }
         if self.typed_array_plan(key).is_some() || self.query(implicit_method_receiver(self.db, key)).is_some() {
             return Some(ManagedReferenceFact::GcManaged);
+        }
+        // A typed Corelib value service (`__isolate_join_value<T>`, `__port_receive_value<T>`, ...)
+        // returns its `T` through a pointer-shaped transport whose source declaration carries no
+        // category; the specialization's binding of `T` classifies the value, so a local it
+        // initializes is rooted when `T` is managed.
+        if let Some(enclosing) = self.current_item_specialization()
+            && let Some(beskid_queries::CallLowering::CorelibService(service)) =
+                self.query(beskid_queries::call_lowering(self.db, key))
+            && beskid_abi::runtime_source::canonical_corelib_service_value_dispatch(service).is_some()
+            && let Some(binding) =
+                self.query(beskid_queries::specialized_corelib_value_service_result(self.db, key, enclosing))
+        {
+            return Some(match binding.managed_reference_kind() {
+                ManagedReferenceKind::GcManaged => ManagedReferenceFact::GcManaged,
+                ManagedReferenceKind::NativeOrScalar => ManagedReferenceFact::NativeOrScalar,
+            });
         }
         if let Some(instance) = self.generic_call_specialization_in_context(key) {
             return self
@@ -97,7 +118,7 @@ impl SyntaxNodeFacts<'_> {
             && let Some(kind) = self.query(array_index_element_managed_reference_specialization(
                 self.db,
                 key,
-                enclosing.substitutions.clone(),
+                enclosing,
             ))
         {
             return Some(match kind {
@@ -185,6 +206,25 @@ impl SyntaxNodeFacts<'_> {
             .and_then(|initializer| self.managed_reference_in_context(initializer))
     }
 
+    /// The operand a consuming `move` expression at `key` (through `Expression` and grouping
+    /// wrappers) hands over. A destructive field read has no operand value of its own.
+    fn consumed_move_operand(&self, key: AstNodeKey) -> Option<AstNodeKey> {
+        let mut node = key;
+        loop {
+            match self.query(node_kind(self.db, node))? {
+                beskid_queries::IndexedNodeKind::Expression | beskid_queries::IndexedNodeKind::GroupedExpression => {
+                    node = *self.raw_children(node).first()?;
+                }
+                beskid_queries::IndexedNodeKind::MoveExpression => break,
+                _ => return None,
+            }
+        }
+        match self.query(beskid_queries::move_expression_form(self.db, node))? {
+            beskid_queries::MoveExpressionForm::Consume { operand } => Some(operand),
+            beskid_queries::MoveExpressionForm::DestructiveRead { .. } => None,
+        }
+    }
+
     fn specialized_local_managed_reference(&self, key: AstNodeKey) -> Option<ManagedReferenceFact> {
         let declaration = self.query(resolved_local(self.db, key))?.declaration;
         let slot = self.query(local_slot(self.db, declaration))?;
@@ -222,7 +262,11 @@ fn select_typed_corelib_value_service(
     semantic: SemanticTypeId,
 ) -> Option<(&'static str, SemanticTypeId)> {
     match (managed, semantic) {
-        (ManagedReferenceKind::GcManaged, SemanticTypeId::POINTER) => Some((dispatch.symbol, SemanticTypeId::POINTER)),
+        // A managed value crosses as its reference: a nominal, array or function value
+        // (`POINTER`) and a `string` (`STRING`) alike.
+        (ManagedReferenceKind::GcManaged, SemanticTypeId::POINTER | SemanticTypeId::STRING) => {
+            Some((dispatch.symbol, semantic))
+        }
         (ManagedReferenceKind::NativeOrScalar, semantic) if semantic != SemanticTypeId::POINTER => {
             Some((dispatch.symbol, semantic))
         }
@@ -246,6 +290,10 @@ mod typed_corelib_value_service_tests {
         assert_eq!(
             select_typed_corelib_value_service(DISPATCH, ManagedReferenceKind::GcManaged, SemanticTypeId::POINTER),
             Some(("channel_receive_value", SemanticTypeId::POINTER))
+        );
+        assert_eq!(
+            select_typed_corelib_value_service(DISPATCH, ManagedReferenceKind::GcManaged, SemanticTypeId::STRING),
+            Some(("channel_receive_value", SemanticTypeId::STRING))
         );
     }
 

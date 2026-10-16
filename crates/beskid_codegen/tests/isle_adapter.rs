@@ -20,6 +20,8 @@ mod control_flow_loop_termination;
 mod corelib_services;
 #[path = "isle_adapter/deep_projection_chain.rs"]
 mod deep_projection_chain;
+#[path = "isle_adapter/descriptor_immutable.rs"]
+mod descriptor_immutable;
 #[path = "isle_adapter/diagnostics_fail_closed.rs"]
 mod diagnostics_fail_closed;
 #[path = "isle_adapter/enum_match_result.rs"]
@@ -30,6 +32,8 @@ mod events;
 mod function_values;
 #[path = "isle_adapter/importer_relocations.rs"]
 mod importer_relocations;
+#[path = "isle_adapter/lambda_parameter_match.rs"]
+mod lambda_parameter_match;
 #[path = "isle_adapter/literal_operators.rs"]
 mod literal_operators;
 #[path = "isle_adapter/managed_references.rs"]
@@ -42,6 +46,8 @@ mod member_callee_methods;
 mod method_owned_fields;
 #[path = "isle_adapter/module_emission_specialization.rs"]
 mod module_emission_specialization;
+#[path = "isle_adapter/parallel_runtime_builtins.rs"]
+mod parallel_runtime_builtins;
 #[path = "isle_adapter/projected_path_match.rs"]
 mod projected_path_match;
 #[path = "isle_adapter/runtime_gc_aggregate.rs"]
@@ -52,5 +58,13 @@ mod statement_result_storage;
 mod string_index_places;
 #[path = "isle_adapter/support.rs"]
 mod support;
+#[path = "isle_adapter/unit_let.rs"]
+mod unit_let;
 #[path = "isle_adapter/waitgroup_conditions.rs"]
 mod waitgroup_conditions;
+#[path = "isle_adapter/write_barrier_emission.rs"]
+mod write_barrier_emission;
+#[path = "isle_adapter/move_exchange.rs"]
+mod move_exchange;
+#[path = "isle_adapter/move_generic_arguments.rs"]
+mod move_generic_arguments;

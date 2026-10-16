@@ -37,6 +37,7 @@ ContinueKeyword = @{ "continue" ~ !IdentTail }
 LetKeyword = @{ "let" ~ !IdentTail }
 ConstKeyword = @{ "const" ~ !IdentTail }
 MutKeyword = @{ "mut" ~ !IdentTail }
+MoveKeyword = @{ "move" ~ !IdentTail }
 BulkKeyword = @{ "bulk" ~ !IdentTail }
 ModKeyword = @{ "mod" ~ !IdentTail }
 UseKeyword = @{ "use" ~ !IdentTail }
@@ -88,6 +89,7 @@ Keyword = {
       | LetKeyword
       | ConstKeyword
       | MutKeyword
+      | MoveKeyword
       | BulkKeyword
       | ModKeyword
       | UseKeyword
@@ -270,7 +272,7 @@ AttributeList = { Attribute+ }
 Attribute = { "[" ~ Identifier ~ ("(" ~ AttributeArgumentList? ~ ")")? ~ "]" }
 AttributeArgumentList = { AttributeArgument ~ ("," ~ AttributeArgument)* }
 AttributeArgument = { Identifier ~ ":" ~ Expression }
-AttributeDeclaration = { Visibility? ~ KwAttribute ~ Identifier ~ AttributeTargetList? ~ "{" ~ AttributeParameterList? ~ "}" }
+AttributeDeclaration = { AttributeList? ~ Visibility? ~ KwAttribute ~ Identifier ~ AttributeTargetList? ~ "{" ~ AttributeParameterList? ~ "}" }
 AttributeTargetList = { "(" ~ AttributeTarget ~ ("," ~ AttributeTarget)* ~ ","? ~ ")" }
 AttributeTarget = { Identifier }
 AttributeParameterList = { AttributeParameter ~ ("," ~ AttributeParameter)* ~ ","? }
@@ -292,7 +294,10 @@ EnumPath = { Path ~ "::" ~ Identifier }
 ////////////////////////////////////////////////////////////
 PrimitiveType = @{ ("i8" | "i16" | "u16" | "u64" | "f32" | "bool" | "i32" | "i64" | "u32" | "u8" | "pointer" | "word" | "f64" | "char" | "string" | "unit" | "never") ~ !IdentTail }
 
-GenericParameters = { "<" ~ Identifier ~ ("," ~ Identifier)* ~ ">" }
+// A type parameter is silent so that a parameter without attributes keeps the exact pair tree it
+// had before attributes were accepted here (`AttributeList` pairs appear only when written).
+GenericParameters = { "<" ~ TypeParameter ~ ("," ~ TypeParameter)* ~ ">" }
+TypeParameter = _{ AttributeList? ~ Identifier }
 GenericArguments = { "<" ~ BeskidType ~ ("," ~ BeskidType)* ~ ">" }
 
 TypeName = { PrimitiveType | Path }
@@ -330,10 +335,10 @@ BeskidType = { ArrowFunctionType | FunctionType | ArrayType | TypeAtom }
 TypeBound = { Identifier ~ ":" ~ Path }
 WhereClause = { KwWhere ~ TypeBound ~ ("," ~ TypeBound)* }
 FunctionDefinition = { AttributeList? ~ Visibility? ~ BeskidType ~ Identifier ~ GenericParameters? ~ "(" ~ ParameterList? ~ ")" ~ WhereClause? ~ Block }
-ConstantDefinition = { KwConst ~ Identifier ~ "=" ~ IntegerLiteral ~ ";" }
+ConstantDefinition = { AttributeList? ~ KwConst ~ Identifier ~ "=" ~ IntegerLiteral ~ ";" }
 ReceiverType = { PrimitiveType | Path }
 ImplConformanceList = { ":" ~ PathList }
-ImplBlock = { KwImpl ~ GenericParameters? ~ ReceiverType ~ ImplConformanceList? ~ WhereClause? ~ "{" ~ (AssociatedTypeBindingWithDocs | ImplMethodWithDocs)* ~ "}" }
+ImplBlock = { AttributeList? ~ KwImpl ~ GenericParameters? ~ ReceiverType ~ ImplConformanceList? ~ WhereClause? ~ "{" ~ (AssociatedTypeBindingWithDocs | ImplMethodWithDocs)* ~ "}" }
 ExtendTypeDefinition = { KwExtend ~ KwType ~ ReceiverType ~ "{" ~ ImplMethodWithDocs* ~ "}" }
 
 MacroFragmentKind = { KwBlock | KwExpression | KwStatement | KwType | KwIdentifier | KwLiteral | KwPattern | KwPath | KwItem | KwNode }
@@ -343,14 +348,20 @@ MacroDefinition = { Visibility? ~ KwMacro ~ Identifier ~ "(" ~ MacroParameterLis
 ImplMethodWithDocs = { ((DocRun ~ ImplMethodDefinition) | ImplMethodDefinition) ~ DocGap* }
 MethodBody = { Block | ExpressionBody }
 ExpressionBody = { "=>" ~ Expression }
-ImplMethodDefinition = { AttributeList? ~ Visibility? ~ BeskidType ~ Identifier ~ "(" ~ ParameterList? ~ ")" ~ MethodBody ~ ";"? }
+// An explicit receiver (`[A] this`, `mut this`) is the optional first entry of a method's
+// parameter list; without one the receiver stays implicit.
+ImplMethodDefinition = { AttributeList? ~ Visibility? ~ BeskidType ~ Identifier ~ GenericParameters? ~ "(" ~ MethodParameters? ~ ")" ~ WhereClause? ~ MethodBody ~ ";"? }
+MethodParameters = _{ ReceiverParameter ~ ("," ~ DocGap* ~ ParameterList)? | ParameterList }
+ReceiverParameter = { AttributeList? ~ (MutKeyword | MoveKeyword)? ~ ThisReceiverWord }
+KwThisReceiverWord = @{ "this" ~ !IdentTail }
+ThisReceiverWord = _{ !(!KwThisReceiverWord) ~ "this" }
 ParameterList = { ParameterWithDocs ~ ("," ~ DocGap* ~ ParameterWithDocs)* }
 ParameterWithDocs = { (DocRun ~ Parameter) | Parameter }
-Parameter = { BulkKeyword? ~ MutKeyword? ~ BeskidType ~ Identifier }
+Parameter = { AttributeList? ~ BulkKeyword? ~ (MutKeyword | MoveKeyword)? ~ BeskidType ~ Identifier }
 
 FieldList = { FieldWithDocs ~ ("," ~ DocGap* ~ FieldWithDocs)* ~ ","? }
 FieldWithDocs = { (DocRun ~ Field) | Field }
-ValueField = { BeskidType ~ Identifier ~ !"(" }
+ValueField = { BeskidType ~ Identifier ~ !("(" | "<") }
 EventCapacity = { "{" ~ IntegerLiteral ~ "}" }
 EventField = { KwEvent ~ EventCapacity? ~ Identifier ~ "(" ~ ParameterList? ~ ")" }
 InjectQualifier = { (KwGlobal | KwParent) ~ "::" }
@@ -366,14 +377,14 @@ TypeDefinition = { AttributeList? ~ Visibility? ~ KwType ~ Identifier ~ GenericP
 EnumDefinition = { AttributeList? ~ Visibility? ~ KwEnum ~ Identifier ~ GenericParameters? ~ "{" ~ EnumVariantList? ~ "}" }
 EnumVariantList = { EnumVariantWithDocs ~ ("," ~ DocGap* ~ EnumVariantWithDocs)* ~ ","? }
 EnumVariantWithDocs = { (DocRun ~ EnumVariant) | EnumVariant }
-EnumVariant = { Identifier ~ ("(" ~ FieldList? ~ ")")? }
+EnumVariant = { AttributeList? ~ Identifier ~ ("(" ~ FieldList? ~ ")")? }
 
 ContractDefinition = { AttributeList? ~ Visibility? ~ KwContract ~ Identifier ~ GenericParameters? ~ "{" ~ ContractItemWithDocs* ~ "}" }
 ContractItemWithDocs = { ((DocRun ~ ContractItem) | ContractItem) ~ DocGap* }
 ContractItem = _{ ContractAssociatedType | ContractMethodSignature | ContractEmbedding }
 ContractMethodSignature = { AttributeList? ~ BeskidType ~ Identifier ~ "(" ~ ParameterList? ~ ")" ~ ";" }
-ContractEmbedding = { Identifier ~ GenericArguments? ~ ";"? }
-ContractAssociatedType = { KwType ~ Identifier ~ ("=" ~ BeskidType)? ~ ";" }
+ContractEmbedding = { AttributeList? ~ Identifier ~ GenericArguments? ~ ";"? }
+ContractAssociatedType = { AttributeList? ~ KwType ~ Identifier ~ ("=" ~ BeskidType)? ~ ";" }
 
 // An associated-type binding at an implementor site (`type Item = T;` inside a `type X : C { }`
 // or `impl X : C { }` body), parallel to `ImplMethodWithDocs`.
@@ -414,8 +425,8 @@ ScopedUseStatement = { KwUse ~ ("(" ~ ScopedUseBinding ~ ")" ~ Block | ScopedUse
 ScopedUseBinding = { BeskidType ~ Identifier ~ "=" ~ Expression }
 
 LetStatement = { TypedLetStatement | InferredLetStatement }
-TypedLetStatement = { MutKeyword? ~ BeskidType ~ Identifier ~ ("=" ~ Expression)? ~ ";" }
-InferredLetStatement = { LetKeyword ~ MutKeyword? ~ Identifier ~ "=" ~ Expression ~ ";" }
+TypedLetStatement = { AttributeList? ~ MutKeyword? ~ BeskidType ~ Identifier ~ ("=" ~ Expression)? ~ ";" }
+InferredLetStatement = { AttributeList? ~ LetKeyword ~ MutKeyword? ~ Identifier ~ "=" ~ Expression ~ ";" }
 TypeAnnotation = { ":" ~ BeskidType }
 
 ReturnStatement = { KwReturn ~ Expression? ~ ";" }
@@ -444,10 +455,10 @@ ExpressionStatement = { Expression ~ ";" }
 ////////////////////////////////////////////////////////////
 Expression = { LambdaExpression | MatchExpression | AssignmentExpression }
 
-LambdaExpression = { LambdaParameters ~ "=>" ~ LambdaBody }
+LambdaExpression = { AttributeList? ~ LambdaParameters ~ "=>" ~ LambdaBody }
 LambdaParameters = { Identifier | "(" ~ LambdaParameterList? ~ ")" }
 LambdaParameterList = { LambdaParameter ~ ("," ~ LambdaParameter)* }
-LambdaParameter = { BeskidType ~ Identifier | Identifier }
+LambdaParameter = { AttributeList? ~ (BeskidType ~ Identifier | Identifier) }
 LambdaBody = { BlockExpression | Expression }
 
 AssignmentOperator = { "=" | "+=" | "-=" }
@@ -463,14 +474,18 @@ ShiftExpression = { AdditionExpression ~ (("<<" | ">>") ~ AdditionExpression)* }
 AdditionExpression = { MultiplicationExpression ~ (("+" | "-") ~ MultiplicationExpression)* }
 MultiplicationExpression = { UnaryExpression ~ (("*" | "/" | "%") ~ UnaryExpression)* }
 
-UnaryExpression = _{ SpawnUnary | PrefixUnary }
+UnaryExpression = _{ SpawnUnary | MoveExpression | PrefixUnary }
 SpawnUnary = { SpawnKeyword ~ PostfixExpression }
+// `move x` consumes an owning name; `move x.f` is a destructive field read.
+MoveExpression = { MoveKeyword ~ PostfixExpression }
 PrefixUnary = { ("-" | "!")* ~ PostfixExpression }
 PostfixExpression = { PrimaryExpression ~ PostfixOperator* }
 PostfixOperator = { CallOperator | MemberAccess | SubscriptOperator | TryOperator }
 
 CallOperator = { PUSH("(") ~ ArgumentList? ~ DROP ~ ")" }
-MemberAccess = { "." ~ Identifier }
+// Type arguments are an alternative, not an optional suffix: an optional element would let the
+// implicit whitespace before it extend every member access span over trailing whitespace.
+MemberAccess = { "." ~ (Identifier ~ GenericArguments | Identifier) }
 SubscriptOperator = { PUSH("[") ~ Expression ~ DROP ~ "]" }
 TryOperator = { "?" }
 TryBlockExpression = { TryKeyword ~ Block ~ CatchKeyword ~ "(" ~ Identifier ~ ")" ~ Block }

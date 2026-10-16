@@ -144,7 +144,7 @@ fn checked_exports_validate_scalars_and_resolve_managed_inputs_before_effects() 
         assert!(native.contains(&format!("int32_t {symbol}(")));
         assert!(header.contains(&format!("int32_t {symbol}(")));
     }
-    assert!(native.contains("if(arg_0_0>1) return 1;"));
+    assert!(native.contains("if(arg_0_0>1) {return 1;}"));
     assert!(native.contains("UINT32_C(0xd800)"));
     assert!(!native.contains("int64_t count_views("), "managed-input scalar return must have only checked transport");
     let binding = artifact.manifest.bindings.iter().find(|binding| binding.symbol == "count_views").unwrap();

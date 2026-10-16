@@ -76,6 +76,7 @@ impl Emit for Spanned<AttributeParameter> {
 
 impl Emit for AttributeDeclaration {
     fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
+        crate::format::attribute_lists::emit_attribute_block(&self.attributes, w, cx)?;
         self.visibility.emit(w, cx)?;
         cx.token(w, "attribute")?;
         cx.space(w)?;

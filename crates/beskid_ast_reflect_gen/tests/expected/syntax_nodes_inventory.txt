@@ -62,6 +62,7 @@ MatchExpression
 MemberExpression
 MethodDefinition
 ModuleDeclaration
+MoveExpression
 Parameter
 Path
 PathExpression
@@ -70,6 +71,7 @@ Pattern
 PrimitiveType
 Program
 RangeExpression
+ReceiverParameter
 RegistrationLifetime
 RegistryBlock
 RegistryEntry
@@ -91,6 +93,7 @@ TestSkipSection
 TryExpression
 Type
 TypeDefinition
+TypeParameter
 UnaryExpression
 UnaryOp
 UseDeclaration

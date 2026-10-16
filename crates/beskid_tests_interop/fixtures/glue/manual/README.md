@@ -29,3 +29,16 @@ python3 native_gate.py --candidate /absolute/candidate/beskid_cli --runtime-pref
 ```
 
 The retained receipt must show all 20 exact import case names passing with zero failures, skips, or timeouts, and a successful Rust caller built against the actual Beskid library. `export_boundary.h` freezes the normalized managed ABI: signed status, checked out parameter, and owned token. A missing managed adapter, owned release symbol, canonical token authority, or logical checked opaque-handle contract is a real prerequisite failure. The current `u64` export identity proves width only, not checked opaque ownership. The existing foreign Rust fixture registry is confined to foreign shim tests and does not authorize Beskid-owned transfers. Invalid scalar values require a checked failure wrapper; direct scalar exports alone do not cover that obligation. This fixture receipt cannot qualify generated parity, stdio/process obligations, or a three-target release.
+
+## v0.6.1 Glue extensions (manual first)
+
+`extensions/` is the hand-written C ABI basis for records by value, fieldless enum discriminants
+and call-scoped callbacks. `extensions.h` fixes the record layout of the C ABI profile with static
+assertions. `extensions.rs` is the hand-written Rust library and `extensions_caller.rs` is the
+hand-written consumer: it checks received discriminants and Bool/`char` fields and links one
+callback frame per call on the calling thread, so a retained token or another thread gets status
+2. The interop test `v061_glue_extensions_manual_c_abi` builds both with the explicit `rustc`
+(`BESKID_V06_GLUE_RUSTC`) and checks the header with the explicit C driver
+(`BESKID_V06_GLUE_LINKER`, not on Windows). The generated path
+(`../extensions/owned`, test `v061_glue_extensions_owned_roundtrip`) must reproduce the same
+behaviour.

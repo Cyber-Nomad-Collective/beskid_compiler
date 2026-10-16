@@ -80,6 +80,14 @@ impl IsleContext<'_, '_, '_, '_> {
         })
     }
 
+    /// A `unit` value: an expression of type `unit`, or a read of a `unit` local (whose declared
+    /// type may name a type parameter bound to `unit` in the specialization being lowered).
+    pub(crate) fn is_unit_value(&self, key: AstNodeKey) -> bool {
+        self.facts.semantic_type(key) == Some(beskid_queries::SemanticTypeId::UNIT)
+            || (self.facts.node_kind(key) == Some(NodeKind::PathExpression)
+                && self.facts.local_slot(key).is_some_and(|slot| self.unit_locals.contains(&slot)))
+    }
+
     /// Lower an expression whose value is intentionally discarded while preserving its effects.
     ///
     /// This is the single effect-only expression path used by both ordinary expression statements
@@ -141,7 +149,7 @@ impl IsleContext<'_, '_, '_, '_> {
             return None;
         }
 
-        if self.facts.semantic_type(key) == Some(beskid_queries::SemanticTypeId::UNIT) {
+        if self.is_unit_value(key) {
             match kind {
                 NodeKind::LiteralExpression | NodeKind::PathExpression => return Some(()),
                 NodeKind::GroupedExpression => {
@@ -216,7 +224,7 @@ macro_rules! generated_control_flow_methods {
             // it is evaluated for its effects and the function returns nothing.
             if let Some(value_key) = self.facts.child(key, 0)
                 && self.builder.func.signature.returns.is_empty()
-                && self.facts.semantic_type(value_key) == Some(beskid_queries::SemanticTypeId::UNIT)
+                && self.is_unit_value(value_key)
             {
                 self.lower_expression_for_effect(value_key)?;
                 self.emit_composition_cleanup_from(0)?;
@@ -243,6 +251,14 @@ macro_rules! generated_control_flow_methods {
                 return None;
             }
             let initializer = self.facts.let_initializer(key)?;
+            // A `unit` local has no storage (`T value = __isolate_join_value<T>(id)` at `T = unit`,
+            // `unit done = Effect();`): its initializer is evaluated for its effects, and every
+            // read of the local is a `unit` value that needs no load.
+            if self.is_unit_value(initializer) || self.facts.semantic_type(key) == Some(beskid_queries::SemanticTypeId::UNIT) {
+                self.lower_expression_for_effect(initializer)?;
+                self.unit_locals.insert(slot);
+                return Some(());
+            }
             if self.facts.node_kind(initializer) == Some(NodeKind::LambdaExpression) {
                 if let Some(plan) = self.facts.event_handler_local(key) {
                     self.emit_event_handler_local(key, plan)?;
@@ -702,7 +718,12 @@ macro_rules! generated_control_flow_methods {
             if block_is_terminated(self.builder, current) {
                 return Some(CursorKind::End);
             }
-            let count = self.facts.statement_count(cursor.block)?;
+            // A block lowered as a statement runs its final expression statement too: that
+            // statement is the block's result only when the block is used as a value.
+            let count = self
+                .facts
+                .statement_count(cursor.block)?
+                .checked_add(u8::from(self.facts.block_result(cursor.block).is_some()))?;
             Some(if cursor.index < count { CursorKind::More } else { CursorKind::End })
         }
 

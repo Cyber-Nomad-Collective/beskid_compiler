@@ -280,7 +280,7 @@ fn bulk_call_packs_scalars_into_a_rooted_array_and_direct_calls_the_callee() {
     assert!(clif.contains("beskid_rt_v5_array_construction_finish"), "{clif}");
     assert!(clif.contains("store"), "{clif}");
     assert!(clif.contains("call"), "{clif}");
-    // I32 elements are not pointer-typed, so no write barrier is emitted.
+    // Element stores initialize the packed array allocated here, so no write barrier is emitted.
     assert!(!clif.contains("beskid_rt_v5_array_write_barrier"), "{clif}");
 
     assert_eq!(execute_bulk_call(&mut importer, "bulk_call", function), 60);

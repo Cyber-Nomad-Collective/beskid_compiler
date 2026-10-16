@@ -157,7 +157,7 @@ pub(in crate::semantic_contract) fn generic_source_local_identity(
             match parameter.ty.as_ref() {
                 Some(ty) => generic_source_type_identity(db, key, &ty.node),
                 // An untyped lambda parameter is checked against the lambda's expected function type.
-                None => untyped_lambda_parameter_identity(db, program, index, key, parent),
+                None => untyped_lambda_parameter_identity(db, program, index, key, parent, None),
             }
         }
         Some(beskid_analysis::syntax_query::NodeKind::ForStatement) => {
@@ -169,7 +169,17 @@ pub(in crate::semantic_contract) fn generic_source_local_identity(
             for_iterator_element_identity(db, program, index, AstNodeKey { node: parent, ..key }, statement)
                 .map(|(identity, _)| identity)
         }
-        _ => Err(source_expression_unavailable(db, key, "binding is neither a parameter, a let local nor a for variable")),
+        // An enum-pattern binding has the payload identity its enclosing match proves.
+        Some(beskid_analysis::syntax_query::NodeKind::Pattern) => {
+            let binding = pattern_binding_fact(db, index, key, declaration)
+                .ok_or_else(|| source_expression_unavailable(db, key, "pattern binding has no match"))??;
+            binding.source_identity.map(Ok).unwrap_or_else(|| generic_source_field_shape_identity(db, key, binding.payload))
+        }
+        _ => Err(source_expression_unavailable(
+            db,
+            key,
+            "binding is neither a parameter, a let local, a pattern binding nor a for variable",
+        )),
     }
 }
 

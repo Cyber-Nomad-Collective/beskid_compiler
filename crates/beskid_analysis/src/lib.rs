@@ -22,6 +22,7 @@ pub mod compiler_sdk_reflect;
 pub mod composition;
 pub mod doc;
 pub mod doc_comment_parser;
+pub mod attribute_targets;
 pub mod external_library;
 pub mod format;
 

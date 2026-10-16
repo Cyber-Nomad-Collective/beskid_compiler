@@ -107,7 +107,9 @@ pub pointer BoxedWordDescriptor() {
 // slot). `FiberDone`'s `value` argument is this raw managed payload directly.
 pub pointer BoxedWord(word value) {
     pointer payload = Alloc(24, BoxedWordDescriptor());
-    Assert.True(payload != NativePointer(0), "boxed word allocation succeeds");
+    // The payload is not rooted until the caller boxes it: allocate nothing (an assertion message
+    // is a managed string) while it is held here, or `BESKID_GC_STRESS=alloc` collects it.
+    if payload == NativePointer(0) { Assert.True(false, "boxed word allocation succeeds"); }
     raw_word_store(pointer_add(payload, 16), value);
     return payload;
 }

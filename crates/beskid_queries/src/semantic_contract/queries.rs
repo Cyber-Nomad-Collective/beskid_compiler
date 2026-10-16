@@ -575,11 +575,6 @@ pub fn enum_constructor(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<Enu
     with_registered_syntax(db, key, enum_constructor_tracked)
 }
 
-/// Preserve a contextual generic enum constructor until its enclosing item has a concrete ABI.
-pub fn enum_constructor_template(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<EnumConstructorTemplate> {
-    with_registered_syntax(db, key, enum_constructor_template_tracked)
-}
-
 /// Return the exact source enum declaration and arms selected by one `match` expression.
 ///
 /// Arms carry recursive payload patterns and their optional `when` guard.
@@ -727,6 +722,21 @@ pub fn spawn_legality(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<Spawn
 
 pub fn callable_fiber_ownership(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<FiberOwnership> {
     with_registered_syntax(db, key, callable_fiber_ownership_tracked)
+}
+
+/// Affine ownership of one callable (function, method, test or lambda): owning and borrowed names
+/// of Moved class and `Fiber` handles, and every finding of the alias discipline (E1234,
+/// E1239-E1243). Non-callable and stale keys contain no fact.
+pub fn affine_ownership(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<AffineOwnership> {
+    with_registered_syntax(db, key, callable_affine_ownership_tracked)
+}
+
+/// The evaluation form of the `MoveExpression` at `key`: a consumption of its operand or a
+/// destructive field read with the canonical empty value. Integration hook for ISLE lowering.
+pub fn move_expression_form(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<MoveExpressionForm> {
+    let Some(syntax) = db.syntax_unit(key.unit) else { return Ok(None) };
+    with_node(db, syntax, key, |program, index, _node| move_expression_form_for_node(db, program, index, key))?
+        .transpose()
 }
 
 pub fn spawn_handle_type(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<SpawnHandleType> {

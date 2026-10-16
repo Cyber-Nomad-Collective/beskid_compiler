@@ -1,6 +1,8 @@
 //! Canonical call-semantics implementation clusters.
 
 mod casts;
+mod exchange;
+mod transfer_intrinsic;
 mod facts;
 mod generics;
 mod resolution;
@@ -16,7 +18,13 @@ pub(in crate::semantic_contract) use casts::{
     primitive_numeric,
 };
 
+pub use exchange::{ExchangeCall, exchange_call};
+pub use transfer_intrinsic::{
+    TransferClassIntrinsic, transfer_class_code, transfer_class_code_for_substitution, transfer_class_intrinsic,
+};
+pub(in crate::semantic_contract) use transfer_intrinsic::is_transfer_class_intrinsic;
 pub use facts::{for_iterator_protocol, for_iterator_specialization};
+pub(in crate::semantic_contract) use exchange::exchange_call_for_node;
 
 pub(in crate::semantic_contract) use facts::{
     call_arguments_tracked, call_lowering_tracked, canonical_result_definition_for_type, canonical_result_variant,
@@ -27,14 +35,15 @@ pub(in crate::semantic_contract) use facts::{
 };
 
 pub(in crate::semantic_contract) use generics::{
-    expected_explicit_call_argument_type, explicit_generic_type_argument_syntax, exported_generic_type_named,
+    call_explicit_member_type_arguments, explicit_generic_type_argument_syntax, exported_generic_type_named,
     expression_is_lambda, function_declares_generics, generic_call_instantiation_for_node,
     generic_call_instantiation_tracked, generic_call_specialization_tracked, generic_call_template_tracked,
-    generic_call_uses_parameter_type_arguments, generic_callable_parameters, generic_nominal_method_receiver_tracked,
-    generic_source_expression_identity, generic_source_local_identity, generic_source_type_identity,
+    generic_call_uses_parameter_type_arguments, generic_callable_owner_count, generic_callable_parameters, method_own_generic_names, generic_nominal_method_receiver_tracked,
+    generic_source_expression_identity, generic_source_field_shape_identity, generic_source_local_identity,
+    generic_source_type_identity,
     generic_source_type_identity_with_substitutions, imported_call_receiver_exists,
     imported_generic_nominal_receiver_requires_instantiation, source_expression_unavailable,
-    stable_declaration_identity, substitute_explicit_type, type_syntax_is_enclosing_generic_parameter_reference,
+    stable_declaration_identity, type_syntax_is_enclosing_generic_parameter_reference,
     type_syntax_is_generic_parameter_reference,
 };
 

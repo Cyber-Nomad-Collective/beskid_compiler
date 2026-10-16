@@ -201,6 +201,13 @@ impl IsleContext<'_, '_, '_, '_> {
         if let Some(result) = self.facts.block_result(key) {
             return self.root_expression_value_if_needed(result, value);
         }
+        // `move x` evaluates to the operand's value: it is rooted like a read of the operand
+        // (a `T[]` parameter consumed by `Keep<T>(move values)` in a specialized body).
+        if self.facts.node_kind(key) == Some(NodeKind::MoveExpression)
+            && let Some(crate::facts::MoveExpressionPlan::Transfer { operand }) = self.facts.move_expression(key)
+        {
+            return self.root_expression_value_if_needed(operand, value);
+        }
         // A field path can reuse its receiver's slot for address lowering; that
         // receiver's category is not the category of the projected field value.
         if self.facts.field_index(key).is_none()

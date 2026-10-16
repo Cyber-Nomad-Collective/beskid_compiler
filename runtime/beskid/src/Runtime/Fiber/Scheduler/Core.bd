@@ -453,6 +453,9 @@ pub bool MarkSuspendedFiberRoots() {
 // Yields the current fiber.
 [Export(Abi:"C", Symbol:"beskid_rt_v5_fiber_yield")]
 pub unit FiberYield() {
+    // Incremental collection: a marking or sweeping heap performs one step here, before any
+    // scheduler state changes, so fibers that yield without allocating still finish a cycle.
+    GcYieldStep();
     mut word index = SchedulerCurrentFiber();
     if index == FIBER_NONE || !FiberExists(index) {
         return;
@@ -576,6 +579,7 @@ pub unit FiberReleaseStackRoots(word index) {
 pub unit FiberCleanup(word index) {
     if !FiberExists(index) { return; }
     ChannelReleaseReceipts(FiberHandle(index));
+    PortReleaseReceipts(FiberHandle(index));
     FiberReleaseStackRoots(index);
     pointer fib = FiberRecord(index);
     pointer message = NativePointer(raw_word_load(pointer_add(fib, 56)));
@@ -725,6 +729,9 @@ pub bool SchedShutdownForced(bool forced) {
     // alive. Close this owner's sockets before dropping stacks or owner state;
     // the network audit reports opaque handle details before failing on leaks.
     if NetworkShutdown(ExternalOwnerId()) != 0 { Trap(10, NativePointer(0), 0); }
+    // Every fiber has finished and the heap is alive: copy a main-fiber panic message into
+    // native storage before fiber records (and later the heap) are released.
+    IsolateCapturePanicMessage(RuntimeState());
     index = 0;
     while index < count {
         if FiberExists(index) { FiberCleanup(index); }

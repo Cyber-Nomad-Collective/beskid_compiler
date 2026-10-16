@@ -21,6 +21,8 @@ pub struct Attribute {
 /// Declaration of a reusable attribute kind (targets and parameters).
 #[derive(AstNode, Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct AttributeDeclaration {
+    #[ast(children)]
+    pub attributes: Vec<Spanned<Attribute>>,
     #[ast(child)]
     pub visibility: Spanned<Visibility>,
     #[ast(child)]
@@ -65,6 +67,7 @@ impl Parsable for AttributeDeclaration {
         }
         let span = SpanInfo::from_span(&pair.as_span());
         let mut inner = pair.clone().into_inner().peekable();
+        let attributes = super::parse_helpers::parse_attributes(&mut inner)?;
         let visibility = parse_visibility_or_default(&pair, &mut inner)?;
         let name = Identifier::parse(inner.next().ok_or(ParseError::missing(Rule::Identifier))?)?;
         let mut targets = Vec::new();
@@ -82,7 +85,7 @@ impl Parsable for AttributeDeclaration {
             }
         }
 
-        Ok(Spanned::new(Self { visibility, name, targets, parameters }, span))
+        Ok(Spanned::new(Self { attributes, visibility, name, targets, parameters }, span))
     }
 }
 

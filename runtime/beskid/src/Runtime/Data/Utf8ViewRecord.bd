@@ -52,11 +52,13 @@ pub bool Utf8RecordAdopt(pointer target, pointer source) {
     pointer targetRecord = ManagedObjectForReference(heap, target);
     pointer sourceRecord = ManagedObjectForReference(heap, source);
     if targetRecord == NativePointer(0) || sourceRecord == NativePointer(0) { return false; }
-    if TypeDescriptorFlags(NativePointer(raw_word_load(targetRecord))) != TypeDescriptorUtf8ViewFlag() { return false; }
-    if TypeDescriptorFlags(NativePointer(raw_word_load(sourceRecord))) != TypeDescriptorUtf8ViewFlag() { return false; }
+    if TypeDescriptorKind(NativePointer(raw_word_load(targetRecord))) != TypeDescriptorUtf8ViewFlag() { return false; }
+    if TypeDescriptorKind(NativePointer(raw_word_load(sourceRecord))) != TypeDescriptorUtf8ViewFlag() { return false; }
     pointer payload = NativePointer(raw_word_load(pointer_add(sourceRecord, 16)));
     if payload == NativePointer(0) { return false; }
-    GcWriteBarrier(targetRecord, payload);
+    // The payload slot of an existing record is overwritten: the hybrid barrier shades the old
+    // and the new payload while the heap is marking. `data` and `length` are not traced.
+    GcHybridWriteBarrier(pointer_add(targetRecord, 16), payload);
     raw_word_store(pointer_add(targetRecord, 16), NativeWord(payload));
     raw_word_store(pointer_add(targetRecord, 24), raw_word_load(pointer_add(sourceRecord, 24)));
     raw_word_store(pointer_add(targetRecord, 32), raw_word_load(pointer_add(sourceRecord, 32)));
@@ -68,8 +70,8 @@ pub u64 ManagedViewKind(pointer value) {
     pointer object = ManagedObjectForReference(Heap(), value);
     if object == NativePointer(0) { return 0; }
     pointer descriptor = NativePointer(raw_word_load(object));
-    if TypeDescriptorFlags(descriptor) == TypeDescriptorUtf8ViewFlag() { return 1; }
-    if TypeDescriptorFlags(descriptor) == TypeDescriptorArrayFlag() {
+    if TypeDescriptorKind(descriptor) == TypeDescriptorUtf8ViewFlag() { return 1; }
+    if TypeDescriptorKind(descriptor) == TypeDescriptorArrayFlag() {
         pointer element = NativePointer(raw_word_load(pointer_add(object, 16)));
         if ValidateArrayElementDescriptor(element) && raw_word_load(element) == 1
             && raw_word_load(pointer_add(element, 24)) == 0 { return 2; }

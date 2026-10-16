@@ -237,7 +237,8 @@ pub(in crate::semantic_contract) fn unqualified_enclosing_method_call(
     // `Method()` or `this.Method()` (`self.Method()` is the older spelling): both name a sibling
     // method on the implicit receiver unless a lexical declaration shadows the qualifier.
     let segment = match path.segments.as_slice() {
-        [segment] => segment,
+        // Type arguments are admitted only on the explicit `this.Method<T>(..)` spelling.
+        [segment] if segment.node.type_args.is_empty() => segment,
         [receiver, segment]
             if receiver.node.type_args.is_empty()
                 && super::super::layouts::is_implicit_receiver_name(
@@ -251,9 +252,6 @@ pub(in crate::semantic_contract) fn unqualified_enclosing_method_call(
         }
         _ => return None,
     };
-    if !segment.node.type_args.is_empty() {
-        return None;
-    }
     let enclosing =
         nearest_ancestor(index, key.node, |kind| kind == beskid_analysis::syntax_query::NodeKind::MethodDefinition)?;
     let owner = parent_node(index, enclosing)?;
@@ -270,6 +268,17 @@ pub(in crate::semantic_contract) fn unqualified_enclosing_method_call(
         })
         .collect::<Vec<_>>();
     let [target] = matches.as_slice() else { return None };
+    // Type arguments on `this.Method<T>` bind a generic sibling's own type parameters
+    // (`this.Spawn<T>(..)` inside `Scope.SpawnTry<T>`); a non-generic sibling takes none.
+    if !segment.node.type_args.is_empty()
+        && index
+            .node_at(program, *target)?
+            .of::<beskid_analysis::syntax::MethodDefinition>()?
+            .generics
+            .is_empty()
+    {
+        return None;
+    }
     Some((AstNodeKey { node: *target, ..key }, AstNodeKey { node: enclosing, ..key }))
 }
 
@@ -537,6 +546,7 @@ pub(in crate::semantic_contract) fn method_declaration_for_member_receiver(
         .ok()
         .and_then(|identity| super::super::contracts::concrete_declaration(db, key, &identity))
         .or_else(|| aggregate_literal_declaration(db, receiver).ok().flatten())
+        .or_else(|| call_result_nominal_declaration(db, receiver))
         .or_else(|| {
             let receiver_node = index.node_at(program, receiver.node)?;
             let path = receiver_node.of::<beskid_analysis::syntax::PathExpression>()?;
@@ -557,6 +567,46 @@ pub(in crate::semantic_contract) fn method_declaration_for_member_receiver(
         .of::<beskid_analysis::syntax::MethodDefinition>()?;
     (method.unit == key.unit || definition.visibility.node == beskid_analysis::syntax::Visibility::Public)
         .then_some(method)
+}
+
+/// The nominal declaration a direct call's declared return type names (`Bag` for
+/// `NewBag<Bag<T>>()` returning `Bag<V>`), resolved in the callee's unit by arity alone. A method
+/// of that declaration is selected without instantiating the result, so a call result whose
+/// arguments name an enclosing generic (`List.New<List<T>>().Push(leaf)` in a generic body) still
+/// resolves its member; the call's specialization binds the arguments later.
+/// A result typed by one of the callee's own type parameters takes the nominal named by the
+/// call's explicit type argument for it.
+fn call_result_nominal_declaration(db: &dyn Db, receiver: AstNodeKey) -> Option<AstNodeKey> {
+    let syntax = db.syntax_unit(receiver.unit).filter(|syntax| syntax.accepts_key(db, receiver))?;
+    syntax
+        .syntax_index(db)
+        .node_at(syntax.expanded_program(db), receiver.node)?
+        .of::<beskid_analysis::syntax::CallExpression>()?;
+    let Ok(Some(CallLowering::Direct(declaration))) = call_lowering(db, receiver) else { return None };
+    let callee_syntax = db.syntax_unit(declaration.unit).filter(|syntax| syntax.accepts_key(db, declaration))?;
+    let callee = callee_syntax.syntax_index(db).node_at(callee_syntax.expanded_program(db), declaration.node)?;
+    let result = callee
+        .of::<beskid_analysis::syntax::FunctionDefinition>()
+        .and_then(|function| function.return_type.as_ref())
+        .or_else(|| callee.of::<beskid_analysis::syntax::MethodDefinition>().and_then(|method| method.return_type.as_ref()))
+        .or_else(|| {
+            callee
+                .of::<beskid_analysis::syntax::ContractMethodSignature>()
+                .and_then(|signature| signature.return_type.as_ref())
+        })?;
+    // A result typed by the callee's own type parameter (`T Get<T>(T[] values, i64 index)`) names
+    // the nominal its explicit type argument spells at the call (`Array.Get<Task<R>>(..)`).
+    if let Some(name) = generic_parameter_reference_name(&result.node) {
+        let (names, _) = generic_callable_parameters(db, declaration)?;
+        let own = &names[generic_callable_owner_count(db, declaration).min(names.len())..];
+        let position = own.iter().position(|candidate| *candidate == name)?;
+        let arguments = call_explicit_member_type_arguments(db, receiver)?;
+        (arguments.len() == own.len()).then_some(())?;
+        let beskid_analysis::syntax::Type::Complex(path) = &arguments.get(position)?.node else { return None };
+        return resolve_type_declaration(db, receiver, &path.node);
+    }
+    let beskid_analysis::syntax::Type::Complex(path) = &result.node else { return None };
+    resolve_type_declaration(db, declaration, &path.node)
 }
 
 /// Module-qualified calls like `Core.IsEmpty(text)` parse as `MemberExpression` where the
@@ -611,10 +661,11 @@ pub(in crate::semantic_contract) fn nominal_local_member_receiver(
         let (_, identity) = super::super::layouts::nominal_field_projection(db, receiver)?.ok()?;
         let declaration = super::super::contracts::concrete_declaration(db, key, &identity)?;
         let member = path.segments.last()?;
-        if !member.node.type_args.is_empty() {
+        let method = unique_nominal_method_declaration(db, declaration, &member.node.name.node.name)?;
+        // Type arguments on the member name bind a generic method's own type parameters.
+        if !member.node.type_args.is_empty() && method_own_generic_names(db, method).is_empty() {
             return None;
         }
-        let method = unique_nominal_method_declaration(db, declaration, &member.node.name.node.name)?;
         let target = db.syntax_unit(method.unit).filter(|syntax| syntax.accepts_key(db, method))?;
         let definition = target
             .syntax_index(db)
@@ -628,12 +679,14 @@ pub(in crate::semantic_contract) fn nominal_local_member_receiver(
     let [receiver, member] = path.segments.as_slice() else {
         return None;
     };
-    if !receiver.node.type_args.is_empty() || !member.node.type_args.is_empty() {
+    if !receiver.node.type_args.is_empty() {
         return None;
     }
     let (declaration, receiver) =
         nominal_local_receiver_declaration(db, program, index, key, receiver.node.name.node.name.as_str())?;
-    unique_nominal_method_declaration(db, declaration, &member.node.name.node.name).map(|method| (method, receiver))
+    let method = unique_nominal_method_declaration(db, declaration, &member.node.name.node.name)?;
+    // Type arguments on the member name bind a generic method's own type parameters.
+    (member.node.type_args.is_empty() || !method_own_generic_names(db, method).is_empty()).then_some((method, receiver))
 }
 #[salsa::tracked(persist)]
 pub(in crate::semantic_contract) fn nominal_member_receiver_tracked(
@@ -692,15 +745,42 @@ pub(in crate::semantic_contract) fn unique_nominal_method_declaration(
     unique_impl_block_method_declaration(db, declaration, method_name)
 }
 
-/// `impl` blocks in `unit` whose receiver names `type_name`, searched for a uniquely-named
-/// method. Same-unit only, matching `impl T : Contract`'s in-module form.
+/// `impl` blocks whose receiver names `declaration`, searched for a uniquely-named method: first
+/// the declaring unit (`impl T : Contract`'s in-module form), then every other unit of the same
+/// generation, so a package can add an inherent method to a type of a package below it
+/// (`impl<T> List<T> { Parallel() }` in the concurrency package, `par` R-lang-6). Two candidates
+/// at the same stage are ambiguous and resolve to nothing.
 fn unique_impl_block_method_declaration(db: &dyn Db, declaration: AstNodeKey, method_name: &str) -> Option<AstNodeKey> {
-    let unit = declaration.unit;
+    let local = impl_block_methods_in_unit(db, declaration.unit, declaration, method_name);
+    if !local.is_empty() {
+        return (local.len() == 1).then(|| local[0]);
+    }
+    let units = {
+        let registry = db.syntax_dependency_registry().lock().expect("syntax dependency registry");
+        registry.generation_units(declaration.generation).to_vec()
+    };
+    let methods = units
+        .into_iter()
+        .filter(|unit| *unit != declaration.unit)
+        .flat_map(|unit| impl_block_methods_in_unit(db, unit, declaration, method_name))
+        .collect::<Vec<_>>();
+    (methods.len() == 1).then(|| methods[0])
+}
+
+fn impl_block_methods_in_unit(
+    db: &dyn Db,
+    unit: SourceUnitId,
+    declaration: AstNodeKey,
+    method_name: &str,
+) -> Vec<AstNodeKey> {
     let generation = declaration.generation;
-    let syntax = db.syntax_unit(unit)?;
+    let Some(syntax) = db.syntax_unit(unit) else { return Vec::new() };
     let program = syntax.expanded_program(db);
     let index = syntax.syntax_index(db);
-    let methods = index
+    if index.generation() != generation {
+        return Vec::new();
+    }
+    index
         .ids_of_kind(beskid_analysis::syntax_query::NodeKind::ImplBlock)
         .filter(|node| {
             index
@@ -726,8 +806,7 @@ fn unique_impl_block_method_declaration(db: &dyn Db, declaration: AstNodeKey, me
                 .is_some_and(|method| method.name.node.name == method_name)
         })
         .map(|node| AstNodeKey { unit, generation, node })
-        .collect::<Vec<_>>();
-    (methods.len() == 1).then(|| methods[0])
+        .collect()
 }
 
 /// Resolve a legacy syscall spelling only when its current source unit was admitted by the

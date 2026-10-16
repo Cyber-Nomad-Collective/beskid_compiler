@@ -6,6 +6,8 @@ use Runtime.Mem.Gc.Identity;
 use Runtime.Mem.Gc.CheckedScope;
 use Runtime.Mem.Gc.Collection;
 use Runtime.Mem.Gc.RootsHandles;
+use Runtime.Mem.Gc.Sweep;
+use Runtime.Mem.Gc.Verify;
 use Runtime.Data.Collections;
 use Testing.Assert;
 use HostRuntimeSupport;
@@ -23,6 +25,12 @@ pub pointer InstallTestHeap(pointer runtime, pointer heap, pointer region, word 
     Assert.True(ProcessInit(runtime) == runtime, "runtime initialized before installing heap");
     pointer thread = CurrentThreadState();
     Assert.True(thread != NativePointer(0), "process initialization attached the mutator and installed its heap");
+    // The tests on an installed test heap examine the collector itself: they build raw object
+    // graphs by hand, root them afterwards and assert exact object, byte and collection counts.
+    // `BESKID_GC_STRESS=alloc` (which finds missing roots in runtime and generated code) would
+    // collect those graphs while they are built, so this heap turns the allocation interval off.
+    // `verify` stays on: every collection on the heap is still verified before and after.
+    GcHeapSetStressInterval(0);
     return thread;
 }
 
@@ -58,6 +66,11 @@ test gc_reclaims_reuses_and_invalidates_stale_handles {
     pointer region = SystemAllocate(128, 8);
     pointer thread = InstallTestHeap(runtime, heap, region, 128);
     pointer descriptor = TestDescriptor(24, 8);
+    // The debug kit holds freed slots in quarantine (v0.6.1 `v061-gc-stress-and-poison`), which
+    // delays their reuse on purpose. A zero budget (the `BESKID_GC_QUARANTINE=0` setting) keeps the
+    // poisoning and returns each freed slot to its span at once, so the reuse below holds for both
+    // kit profiles; the release kit ignores the call.
+    GcHeapSetQuarantineBudget(0);
 
     GcCollect();
     word baseBytes = GcBytesAllocated();
@@ -90,10 +103,11 @@ test gc_reclaims_reuses_and_invalidates_stale_handles {
     Assert.Equal(phase, 0, "successful collection returns to idle");
     Assert.True(reused == reclaimable, "allocation reuses the reclaimed non-moving block");
     GcUnrootHandle(handle);
-    Assert.True(GcResolveHandle(handle) == NativePointer(0), "released handle is stale immediately");
+    // Resolving the released `handle` traps invalid_or_stale_handle; the native kit test
+    // `use_after_collection_native` asserts that trap out of process.
     word replacement = GcRootHandle(rooted);
     Assert.True(replacement != 0 && replacement != handle, "reused handle slot advances its generation");
-    Assert.True(GcResolveHandle(handle) == NativePointer(0), "old generation remains stale after slot reuse");
+    Assert.True(GcResolveHandle(replacement) == rooted, "the current generation resolves to its object");
 
     // Process shutdown requires every handle to be released.
     GcUnrootHandle(replacement);
@@ -417,9 +431,11 @@ test gc_handle_stack_grows_across_block_boundaries {
 // Checked operations leave no half-published allocation or root on failure.
 test gc_checked_identity_and_allocation_failure_preserve_heap {
     pointer descriptor = TestDescriptor(24, 8);
+    // Each object is rooted before the next allocation, which collects first under
+    // `BESKID_GC_STRESS=alloc`.
     pointer first = Alloc(24, descriptor);
-    pointer second = Alloc(24, descriptor);
     word firstHandle = GcRootHandle(first);
+    pointer second = Alloc(24, descriptor);
     word secondHandle = GcRootHandle(second);
     Assert.Equal(GcSameIdentity(first, first), 1, "same live allocation");
     Assert.Equal(GcSameIdentity(first, second), 0, "equal layout is distinct identity");
@@ -430,6 +446,9 @@ test gc_checked_identity_and_allocation_failure_preserve_heap {
     // No assertion message is evaluated inside the measured section (see the note above).
     word previousCap = GcHeapCap();
     bool capped = GcHeapSetCap(1073741824) == u8(1);
+    // Collect the garbage first: under `BESKID_GC_STRESS=alloc` the request below collects before
+    // it fails, and the count must change only through the failed request itself.
+    GcCollect();
     word before = GcObjectCount();
     pointer overCap = GcTryAlloc(2147483648, 8);
     word reason = GcAllocationFailureReason();

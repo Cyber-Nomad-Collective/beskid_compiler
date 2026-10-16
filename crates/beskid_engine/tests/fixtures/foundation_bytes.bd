@@ -39,6 +39,13 @@ i64 CheckReader(BufferReader reader) {
     if ReadPosition(reader) != 1_i64 { return 14_i64; }
     return 42_i64;
 }
+i64 CheckWritten(BufferWriter writer) {
+    i64 code = CheckWriter(writer);
+    if code != 42_i64 { return code; }
+    u8[] written = writer.TakeBuffer();
+    if written[1] != 9_u8 || written[0] != 1_u8 || written[2] != 3_u8 { return 24_i64; }
+    return 42_i64;
+}
 i64 CheckWriter(BufferWriter writer) {
     Result<unit, BytesError> first = writer.Write([8_u8, 9_u8], 1_i64, 1_i64);
     if WritePosition(writer) != 1_i64 { return 20_i64; }
@@ -69,9 +76,9 @@ pub i64 RunFoundationFixture() {
     Result<BufferReader, BytesError> openedReader = BufferReader.Create(buffer, 1_i64, 2_i64);
     i64 read = match openedReader { Result::Ok(reader) => { BufferReader typedReader = reader; CheckReader(typedReader); }, Result::Error(_) => 8_i64 };
     if read != 42_i64 { return read; }
-    Result<BufferWriter, BytesError> openedWriter = BufferWriter.Create(buffer, 1_i64, 2_i64);
-    i64 write = match openedWriter { Result::Ok(writer) => { BufferWriter typedWriter = writer; CheckWriter(typedWriter); }, Result::Error(_) => 9_i64 };
+    // The writer owns the buffer; the written bytes come back through TakeBuffer.
+    Result<BufferWriter, BytesError> openedWriter = BufferWriter.Create(move buffer, 1_i64, 2_i64);
+    i64 write = match openedWriter { Result::Ok(writer) => { BufferWriter typedWriter = writer; CheckWritten(typedWriter); }, Result::Error(_) => 9_i64 };
     if write != 42_i64 { return write; }
-    if buffer[1] != 9_u8 || buffer[0] != 1_u8 || buffer[2] != 3_u8 { return 24_i64; }
     return 42_i64;
 }

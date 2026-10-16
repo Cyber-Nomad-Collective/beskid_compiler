@@ -4,6 +4,15 @@ use super::super::*;
 
 impl SyntaxNodeFacts<'_> {
     pub(super) fn call_kind_impl(&self, key: AstNodeKey) -> Option<CallKind> {
+        // The `exchange` builtin is a place read and store, never a call: it outranks every call
+        // probe, which would otherwise look for a callee named `exchange`.
+        if self.query(beskid_queries::exchange_call(self.db, key)).is_some() {
+            return Some(CallKind::Exchange);
+        }
+        // `__transfer_class<T>()` is a compile-time constant of the instance, never a runtime call.
+        if self.transfer_class_constant_impl(key).is_some() {
+            return Some(CallKind::Direct);
+        }
         if self.event_operation_impl(key).is_some_and(|plan| plan.operation == beskid_isle::EventOperation::Raise) {
             return Some(CallKind::EventRaise);
         }
@@ -230,7 +239,11 @@ impl SyntaxNodeFacts<'_> {
 
     pub(super) fn traced_fiber_join_layout_impl(&self, key: AstNodeKey) -> Option<beskid_isle::TracedFiberJoinLayout> {
         let DirectCallee::CorelibService(
-            symbol @ ("fiber_join_value" | "channel_receive_value" | "hub_wait_receive_value"),
+            symbol @ ("fiber_join_value"
+            | "channel_receive_value"
+            | "hub_wait_receive_value"
+            | "isolate_join_value"
+            | "port_receive_value"),
         ) = self.direct_callee(key)?
         else {
             return None;
@@ -246,19 +259,55 @@ impl SyntaxNodeFacts<'_> {
         })
     }
 
+    /// `__isolate_spawn<T>` / `__isolate_spawn_local<T>`: the entry trampoline is chosen by the ABI
+    /// shape of `T` in the item being lowered (see `module_emission::trampolines::isolate`).
+    pub(super) fn isolate_spawn_call_impl(&self, key: AstNodeKey) -> Option<beskid_isle::IsolateSpawnCall> {
+        let DirectCallee::CorelibService(symbol @ ("isolate_spawn" | "isolate_spawn_local")) =
+            self.direct_callee(key)?
+        else {
+            return None;
+        };
+        let (result, managed) = crate::module_emission::isolate_entry_shape(self.db, key, self.current_item_specialization())?;
+        Some(beskid_isle::IsolateSpawnCall {
+            symbol,
+            trampoline: DirectCallee::isolate_entry_trampoline(result, managed),
+        })
+    }
+
+    /// `__transfer_class<T>()` in the item being lowered: 0 Shared, 1 Moved, 2 Copied.
+    pub(super) fn transfer_class_constant_impl(&self, key: AstNodeKey) -> Option<i64> {
+        match self.query(beskid_queries::transfer_class_intrinsic(self.db, key))? {
+            beskid_queries::TransferClassIntrinsic::Constant(code) => Some(code),
+            beskid_queries::TransferClassIntrinsic::PerInstantiation { name } => {
+                let substitution = self
+                    .current_item_specialization()?
+                    .substitutions
+                    .iter()
+                    .find(|binding| binding.parameter.as_ref() == name.as_str())?;
+                self.query(
+                    beskid_queries::transfer_class_code_for_substitution(self.db, key, substitution).map(Some),
+                )
+            }
+        }
+    }
+
     pub(super) fn traced_channel_send_layout_impl(
         &self,
         key: AstNodeKey,
     ) -> Option<beskid_isle::TracedFiberJoinLayout> {
-        let DirectCallee::CorelibService(symbol @ ("channel_send" | "channel_try_send")) = self.direct_callee(key)?
+        let DirectCallee::CorelibService(symbol @ ("channel_send" | "channel_try_send" | "port_send")) =
+            self.direct_callee(key)?
         else {
             return None;
         };
         let arguments = self.call_arguments(key)?;
-        let [_, value] = arguments.as_slice() else {
-            return None;
+        // `port_send` carries the value's transfer class as a third, scalar argument.
+        let value = match (symbol, arguments.as_slice()) {
+            ("port_send", [_, value, _]) => *value,
+            ("channel_send" | "channel_try_send", [_, value]) => *value,
+            _ => return None,
         };
-        (self.managed_reference_in_context(*value)? == beskid_isle::ManagedReferenceFact::GcManaged).then_some(())?;
+        (self.managed_reference_in_context(value)? == beskid_isle::ManagedReferenceFact::GcManaged).then_some(())?;
         let slot = self.input.abi_manifest().layouts.iter().find(|layout| layout.name == "BeskidAbiValue")?;
         Some(beskid_isle::TracedFiberJoinLayout {
             symbol,
@@ -270,9 +319,58 @@ impl SyntaxNodeFacts<'_> {
     }
 
     pub(super) fn lambda_entry_impl(&self, key: AstNodeKey) -> Option<beskid_isle::LambdaEntry> {
+        // A lambda of a generic body takes its callable ABI and capture layout from the instance
+        // being lowered, and enters through that instance's own closure entry.
+        if let Some(instance) = self.current_item_specialization() {
+            return self.specialized_lambda_entry(key, instance);
+        }
         let environment = self.query(closure_environment(self.db, key))?;
         let lambda = self.query(closure_signature(self.db, key))?;
         self.lambda_entry_from_environment(key, environment, &lambda.callable, false)
+    }
+
+    fn specialized_lambda_entry(
+        &self,
+        key: AstNodeKey,
+        instance: &beskid_queries::GenericSpecializationInstance,
+    ) -> Option<beskid_isle::LambdaEntry> {
+        let fact = self.query(beskid_queries::specialized_closure_signature(self.db, key, instance))?;
+        let (parameters, result) = self.callable_abi(&fact.callable)?;
+        let closure_environment = if fact.fields.is_empty() {
+            None
+        } else {
+            let authority = self.input.specialized_closure_lowering_authority(key, key, instance)?;
+            let captures = authority
+                .plan
+                .captures
+                .iter()
+                .map(|field| {
+                    Some(beskid_isle::InlineCaptureField {
+                        local_slot: beskid_isle::LocalSlotId {
+                            owner_node: field.capture.slot.owner.node.0,
+                            index: field.capture.slot.index,
+                        },
+                        field_offset: u32::try_from(field.field_offset).ok()?,
+                        pointer_map_index: field.pointer_map_index,
+                        value_type: map_signature_type(self.isa?, field.abi_type)?,
+                    })
+                })
+                .collect::<Option<Vec<_>>>()?;
+            Some(beskid_isle::InlineClosureEnvironment {
+                allocation_request_symbol: authority.plan.allocation_request_symbol.clone().into(),
+                descriptor_symbol: authority.plan.descriptor_symbol.clone().into(),
+                captures,
+            })
+        };
+        Some(beskid_isle::LambdaEntry {
+            trampoline: DirectCallee::specialized_lambda_trampoline(
+                key,
+                beskid_queries::generic_specialization_identity(instance),
+            ),
+            closure_environment,
+            parameters,
+            result,
+        })
     }
 
     pub(super) fn event_lambda_entry_impl(&self, key: AstNodeKey) -> Option<beskid_isle::LambdaEntry> {

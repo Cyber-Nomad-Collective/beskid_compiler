@@ -143,6 +143,88 @@ fn function_value_call_in_environment(
     .transpose()
 }
 
+/// A lambda's closure facts inside one concrete specialization of its enclosing generic item.
+///
+/// A lambda in a generic body (`(List<T> leaf, T value) => leaf.Push(value)` in `Collect`) has no
+/// context-free callable ABI: written parameter types, the position's expected function type and
+/// the captured locals all name the item's generic parameters, which `enclosing` binds. One
+/// closure entry is emitted per enclosing instance from these facts.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SpecializedClosureSignature {
+    pub lambda: AstNodeKey,
+    pub body: AstNodeKey,
+    pub callable: ItemSignature,
+    /// Managed-reference class of each lambda parameter, in parameter order.
+    pub parameter_managed: Arc<[ManagedReferenceKind]>,
+    /// Capture fields with their ABI type in this instance, in the canonical capture order.
+    pub fields: Arc<[ClosureEnvironmentField]>,
+}
+
+pub fn specialized_closure_signature(
+    db: &dyn Db,
+    lambda: AstNodeKey,
+    enclosing: &GenericSpecializationInstance,
+) -> SemanticQueryResult<SpecializedClosureSignature> {
+    let Some(syntax) = db.syntax_unit(lambda.unit).filter(|syntax| syntax.accepts_key(db, lambda)) else {
+        return Ok(None);
+    };
+    let program = syntax.expanded_program(db);
+    let index = syntax.syntax_index(db);
+    let Some(expression) =
+        index.node_at(program, lambda.node).and_then(|node| node.of::<beskid_analysis::syntax::LambdaExpression>())
+    else {
+        return Ok(None);
+    };
+    let body = index
+        .direct_child_id(program, lambda.node, beskid_analysis::syntax_query::DynNodeRef::from(expression.body.as_ref()))
+        .map(|node| AstNodeKey { node: normalized_expression_node(index, node), ..lambda })
+        .ok_or_else(|| source_expression_unavailable(db, lambda, "lambda body node is absent"))?;
+    let GenericSourceTypeIdentity::Function { parameters, result } =
+        lambda_identity(db, program, index, lambda, Some(enclosing))?
+    else {
+        return Err(source_expression_unavailable(db, lambda, "lambda has no function identity in this specialization"));
+    };
+    let Some(closure) = closure_environment(db, lambda)? else {
+        return Ok(None);
+    };
+    let mut fields = closure
+        .captures
+        .iter()
+        .map(|capture| {
+            let abi_type = match crate::semantic_contract::contracts::specialized_local_declaration_identity(db, capture.declaration, enclosing) {
+                // A value capture of a native pointer has no owner to keep it alive.
+                Some(Ok(identity))
+                    if capture.class == CaptureStorageClass::TransferableValue
+                        && identity.abi_type() == SemanticTypeId::POINTER
+                        && identity.managed_reference_kind() == ManagedReferenceKind::NativeOrScalar =>
+                {
+                    return Err(source_expression_unavailable(
+                        db,
+                        capture.declaration,
+                        "a native pointer is captured by value in this specialization",
+                    ));
+                }
+                Some(Ok(identity)) => identity.abi_type(),
+                Some(Err(error)) if !error.is_unavailable() => return Err(error),
+                Some(Err(_)) | None => abi_type(db, capture.declaration)?
+                    .ok_or_else(|| source_expression_unavailable(db, capture.declaration, "capture has no ABI type"))?,
+            };
+            Ok(ClosureEnvironmentField { capture: *capture, abi_type })
+        })
+        .collect::<Result<Vec<_>, SemanticError>>()?;
+    fields.sort_by_key(|field| (field.capture.slot.owner.node.0, field.capture.slot.index, field.capture.declaration.node.0));
+    Ok(Some(SpecializedClosureSignature {
+        lambda,
+        body,
+        callable: ItemSignature {
+            parameters: parameters.iter().map(GenericSourceTypeIdentity::abi_type).collect(),
+            result: result.abi_type(),
+        },
+        parameter_managed: parameters.iter().map(GenericSourceTypeIdentity::managed_reference_kind).collect(),
+        fields: fields.into(),
+    }))
+}
+
 /// Decide whether a lambda expression must materialize its closure record.
 ///
 /// Immediate calls, spawn operands, and event-handler locals have their own lowering. A local
@@ -327,16 +409,18 @@ pub(in crate::semantic_contract) fn function_item_value_identity(
 
 /// The source identity of a lambda expression: its function type.
 ///
-/// A typed parameter contributes its declared type. An untyped parameter and a block body (whose
-/// value comes from `return`) take the function type the lambda's position declares through
-/// [`expected_type`]; a block body without one is `unit`. An expression body synthesizes its own
-/// identity (its bare literals are checked against the expected result through their own
-/// [`expected_type`], so no result is guessed here).
-pub(in crate::semantic_contract) fn lambda_source_identity(
+/// A typed parameter contributes its declared type (through the enclosing substitutions inside a
+/// specialization). An untyped parameter and a block body (whose value comes from `return`) take
+/// the function type the lambda's position declares through the one expected-type authority
+/// ([`expected_type_in`]); a block body without one is the common type of its `return`s. An
+/// expression body synthesizes its own identity, and a body that synthesizes none (a genericless
+/// constructor, `() => Result::Error("no input")`) is checked against the expected result.
+pub(in crate::semantic_contract) fn lambda_identity(
     db: &dyn Db,
     program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
     index: &beskid_analysis::syntax_query::SyntaxIndex,
     key: AstNodeKey,
+    enclosing: Option<&GenericSpecializationInstance>,
 ) -> Result<GenericSourceTypeIdentity, SemanticError> {
     let lambda = index
         .node_at(program, key.node)
@@ -348,15 +432,34 @@ pub(in crate::semantic_contract) fn lambda_source_identity(
         .ok_or_else(|| source_expression_unavailable(db, key, "lambda body node is absent"))?;
     let statement_body = index.kind(body.node) == Some(beskid_analysis::syntax_query::NodeKind::BlockExpression);
     let untyped = lambda.parameters.iter().any(|parameter| parameter.node.ty.is_none());
-    let expected = if statement_body || untyped { lambda_expected_function(db, key, lambda.parameters.len())? } else { None };
+    let environment: HashMap<&str, &GenericSourceTypeIdentity> = enclosing
+        .map(|enclosing| {
+            enclosing.substitutions.iter().map(|binding| (binding.parameter.as_ref(), binding.source_identity())).collect()
+        })
+        .unwrap_or_default();
+    let expected = if statement_body || untyped {
+        lambda_expected_function(db, key, lambda.parameters.len(), enclosing)?
+    } else {
+        None
+    };
+    // Without a complete expected function type, a lambda argument whose callee parameter names an
+    // unbound type parameter only in its result still takes its parameter types from that callee
+    // parameter; its result is synthesized from the body (method type argument inference).
+    let supplied = if expected.is_none() && untyped {
+        lambda_argument_parameter_identities(db, key, enclosing)?
+            .filter(|parameters| parameters.len() == lambda.parameters.len())
+    } else {
+        None
+    };
     let parameters = lambda
         .parameters
         .iter()
         .enumerate()
-        .map(|(position, parameter)| match (&parameter.node.ty, &expected) {
-            (Some(ty), _) => generic_source_type_identity(db, key, &ty.node),
-            (None, Some((parameters, _))) => Ok(parameters[position].clone()),
-            (None, None) => Err(source_expression_unavailable(
+        .map(|(position, parameter)| match (&parameter.node.ty, &expected, &supplied) {
+            (Some(ty), _, _) => generic_source_type_identity_with_substitutions(db, key, &ty.node, &environment),
+            (None, Some((parameters, _)), _) => Ok(parameters[position].clone()),
+            (None, None, Some(parameters)) => Ok(parameters[position].clone()),
+            (None, None, None) => Err(source_expression_unavailable(
                 db,
                 key,
                 "untyped lambda parameter has no expected function type",
@@ -364,32 +467,108 @@ pub(in crate::semantic_contract) fn lambda_source_identity(
         })
         .collect::<Result<Vec<_>, _>>()?;
     let result = if statement_body {
-        expected.map_or(GenericSourceTypeIdentity::Abi(SemanticTypeId::UNIT), |(_, result)| result)
+        match expected {
+            Some((_, result)) => result,
+            None => block_lambda_result_identity(db, index, body, enclosing)?,
+        }
     } else {
         // A pointer-shaped body keeps its source identity; a scalar body takes its value ABI,
         // which checks a bare literal against the expected result through the body's own
-        // `expected_type`.
-        match generic_source_expression_identity(db, body) {
+        // expected type; a body that synthesizes neither is checked against the expected result.
+        match specialized_source_expression_identity(db, body, enclosing) {
             Ok(identity @ (GenericSourceTypeIdentity::Nominal { .. }
             | GenericSourceTypeIdentity::Array(_)
             | GenericSourceTypeIdentity::Function { .. })) => identity,
-            Ok(GenericSourceTypeIdentity::Abi(_)) | Err(_) => GenericSourceTypeIdentity::Abi(
-                value_abi_type(db, body)?
-                    .ok_or_else(|| source_expression_unavailable(db, body, "lambda body has no value type"))?,
-            ),
+            synthesized => match value_abi_type(db, body) {
+                Ok(Some(abi)) if abi != SemanticTypeId::POINTER => GenericSourceTypeIdentity::Abi(abi),
+                value => {
+                    let expected = match expected {
+                        Some(expected) => Some(expected),
+                        None => lambda_expected_function(db, key, lambda.parameters.len(), enclosing)?,
+                    };
+                    match (expected, synthesized, value) {
+                        (Some((_, result)), _, _) => result,
+                        (None, Ok(identity), _) => identity,
+                        (None, Err(_), Ok(Some(abi))) => GenericSourceTypeIdentity::Abi(abi),
+                        (None, Err(_), Ok(None)) => {
+                            return Err(source_expression_unavailable(db, body, "lambda body has no value type"));
+                        }
+                        (None, Err(_), Err(error)) => return Err(error),
+                    }
+                }
+            },
         }
     };
     Ok(GenericSourceTypeIdentity::Function { parameters: parameters.into(), result: Box::new(result) })
 }
 
-/// The parameter and result identities of the function type a lambda's position declares, when
-/// its arity matches the lambda. A position without a function-typed expectation yields `None`.
+/// [`lambda_identity`] outside any specialization: the target-neutral function type.
+pub(in crate::semantic_contract) fn lambda_source_identity(
+    db: &dyn Db,
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    key: AstNodeKey,
+) -> Result<GenericSourceTypeIdentity, SemanticError> {
+    lambda_identity(db, program, index, key, None)
+}
+
+/// The result of a block-bodied lambda with no expected result: the common proven type of its
+/// `return` values (not those of nested lambdas), or `unit` when no `return` carries a value.
+fn block_lambda_result_identity(
+    db: &dyn Db,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    body: AstNodeKey,
+    enclosing: Option<&GenericSpecializationInstance>,
+) -> Result<GenericSourceTypeIdentity, SemanticError> {
+    use beskid_analysis::syntax_query::NodeKind;
+    let mut pending = vec![body.node];
+    let mut values = Vec::new();
+    while let Some(node) = pending.pop() {
+        for child in index.children(node).unwrap_or_default().iter().copied() {
+            match index.kind(child) {
+                Some(NodeKind::LambdaExpression) => {}
+                Some(NodeKind::ReturnStatement) => {
+                    if let Some(value) = index.children(child).and_then(|children| children.first().copied()) {
+                        values.push(AstNodeKey { node: normalized_expression_node(index, value), ..body });
+                    }
+                }
+                _ => pending.push(child),
+            }
+        }
+    }
+    let mut result: Option<GenericSourceTypeIdentity> = None;
+    for value in values {
+        let identity = match specialized_source_expression_identity(db, value, enclosing) {
+            Ok(identity @ (GenericSourceTypeIdentity::Nominal { .. }
+            | GenericSourceTypeIdentity::Array(_)
+            | GenericSourceTypeIdentity::Function { .. })) => identity,
+            Ok(GenericSourceTypeIdentity::Abi(abi)) if enclosing.is_some() => GenericSourceTypeIdentity::Abi(abi),
+            Ok(GenericSourceTypeIdentity::Abi(_)) | Err(_) => GenericSourceTypeIdentity::Abi(
+                value_abi_type(db, value)?
+                    .ok_or_else(|| source_expression_unavailable(db, value, "lambda return has no value type"))?,
+            ),
+        };
+        match &result {
+            None => result = Some(identity),
+            Some(previous) if *previous == identity => {}
+            Some(_) => {
+                return Err(source_expression_unavailable(db, value, "lambda returns values of different types"));
+            }
+        }
+    }
+    Ok(result.unwrap_or(GenericSourceTypeIdentity::Abi(SemanticTypeId::UNIT)))
+}
+
+/// The parameter and result identities of the function type a lambda's position declares (read
+/// through the one expected-type authority), when its arity matches the lambda. A position
+/// without a function-typed expectation yields `None`.
 fn lambda_expected_function(
     db: &dyn Db,
     lambda: AstNodeKey,
     arity: usize,
+    enclosing: Option<&GenericSpecializationInstance>,
 ) -> Result<Option<(Vec<GenericSourceTypeIdentity>, GenericSourceTypeIdentity)>, SemanticError> {
-    let expected = match expected_type(db, lambda) {
+    let expected = match expected_type_in(db, lambda, enclosing) {
         Ok(Some(expected)) => expected,
         Ok(None) => return Ok(None),
         Err(error) if error.is_unavailable() => return Ok(None),
@@ -401,13 +580,15 @@ fn lambda_expected_function(
         .map(|(parameters, result)| (parameters.to_vec(), result.clone())))
 }
 
-/// The contextual source identity of one untyped lambda parameter, by its position in the lambda.
+/// The contextual source identity of one untyped lambda parameter, by its position in the
+/// lambda, read through the one expected-type authority in `enclosing`.
 pub(in crate::semantic_contract) fn untyped_lambda_parameter_identity(
     db: &dyn Db,
     program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
     index: &beskid_analysis::syntax_query::SyntaxIndex,
     key: AstNodeKey,
     parameter: beskid_analysis::syntax::AstNodeId,
+    enclosing: Option<&GenericSpecializationInstance>,
 ) -> Result<GenericSourceTypeIdentity, SemanticError> {
     let unavailable = || SemanticError::unavailable("abi_type");
     let lambda = parent_node(index, parameter).ok_or_else(unavailable)?;
@@ -423,8 +604,15 @@ pub(in crate::semantic_contract) fn untyped_lambda_parameter_identity(
                 == Some(parameter)
         })
         .ok_or_else(unavailable)?;
-    let (parameters, _) = lambda_expected_function(db, AstNodeKey { node: lambda, ..key }, lambda_syntax.parameters.len())?
-        .ok_or_else(unavailable)?;
+    let lambda_key = AstNodeKey { node: lambda, ..key };
+    let parameters = match lambda_expected_function(db, lambda_key, lambda_syntax.parameters.len(), enclosing)? {
+        Some((parameters, _)) => parameters,
+        // The callee parameter names an unbound type parameter only in its result: its
+        // parameter types are still supplied (method type argument inference).
+        None => lambda_argument_parameter_identities(db, lambda_key, enclosing)?
+            .filter(|parameters| parameters.len() == lambda_syntax.parameters.len())
+            .ok_or_else(unavailable)?,
+    };
     parameters.into_iter().nth(position).ok_or_else(unavailable)
 }
 
@@ -436,7 +624,7 @@ pub(in crate::semantic_contract) fn untyped_lambda_parameter_type(
     key: AstNodeKey,
     parameter: beskid_analysis::syntax::AstNodeId,
 ) -> Result<SemanticTypeId, SemanticError> {
-    untyped_lambda_parameter_identity(db, program, index, key, parameter).map(|identity| identity.abi_type())
+    untyped_lambda_parameter_identity(db, program, index, key, parameter, None).map(|identity| identity.abi_type())
 }
 
 /// Whether a lambda's body is a block, whose value (if any) comes from `return` statements.

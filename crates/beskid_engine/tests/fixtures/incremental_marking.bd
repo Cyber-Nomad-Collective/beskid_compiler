@@ -1,0 +1,379 @@
+use Concurrency;
+use Concurrency.Fiber;
+use Concurrency.FiberError;
+use Core.Collections.Array;
+use Core.Results;
+
+// Incremental marking evidence (v062-captures-and-move, tasks 9.1-9.5). Every entry returns a
+// non-negative value on success and a distinct negative code on the first failed check. Cycles are
+// driven explicitly through `gc_cycle_start` / `gc_mark_step` so each case controls when stores
+// happen relative to mark start, the mark steps and termination.
+
+[Extern(Abi:"C")]
+pub contract Probe {
+    unit gc_collect();
+    u8 gc_cycle_start();
+    word gc_mark_step(word budget);
+    word gc_phase();
+    word gc_object_mark_state(Leaf leaf);
+    word gc_heap_verify();
+    word gc_last_cycle_max_step_bytes();
+    unit gc_heap_set_incremental_stress(word n);
+    unit gc_heap_force_barrier_skip(word enabled);
+    word gc_heap_region_count();
+    word gc_heap_committed();
+}
+
+[Extern(Abi:"C")]
+pub contract ArrayProbe {
+    word gc_object_mark_state(u8[] bytes);
+}
+
+pub type Leaf { i64 value, }
+pub type Holder { Leaf f, i64 tag, }
+pub type Box { Holder inner, }
+
+const STEP = 32768;
+
+// Drives the cycle that is in progress to idle with explicit steps and returns the number of
+// steps (at most `limit`), or -1 when the phase sequence is not marking*, sweeping*, idle.
+i64 FinishCycle(i64 limit) {
+    mut i64 steps = 0_i64;
+    mut word last = Probe.gc_phase();
+    while Probe.gc_phase() != 0 {
+        word phase = Probe.gc_mark_step(STEP);
+        if phase < last && phase != 0 { return -1_i64; }
+        last = phase;
+        steps = steps + 1_i64;
+        if steps > limit { return -2_i64; }
+    }
+    return steps;
+}
+
+Leaf NewLeaf(i64 value) { return Leaf { value: value }; }
+
+// ---- Hybrid barrier, deletion half: `b.f = x.f; x.f = <other>` hides `w` behind a black `b`. ----
+[Export(Abi:"C", Symbol:"RunFieldOverwrite")]
+pub i64 RunFieldOverwrite() {
+    mut Holder x = Holder { f: NewLeaf(41_i64), tag: 1_i64 };
+    if Probe.gc_cycle_start() != 1_u8 { return -1_i64; }
+    // `b` is allocated during marking: black, never traced.
+    mut Holder b = Holder { f: NewLeaf(0_i64), tag: 2_i64 };
+    b.f = x.f;
+    x.f = NewLeaf(7_i64);
+    if FinishCycle(100000_i64) < 0_i64 { return -2_i64; }
+    Probe.gc_collect();
+    if b.f.value != 41_i64 { return -3_i64; }
+    return b.f.value;
+}
+
+// ---- Array element overwrite during marking. ----
+[Export(Abi:"C", Symbol:"RunArrayElementOverwrite")]
+pub i64 RunArrayElementOverwrite() {
+    mut Leaf[] items = Array.Empty<Leaf>();
+    mut i64 i = 0_i64;
+    while i < 16_i64 {
+        Array.Append<Leaf>(items, NewLeaf(100_i64 + i));
+        i = i + 1_i64;
+    }
+    if Probe.gc_cycle_start() != 1_u8 { return -1_i64; }
+    mut Holder b = Holder { f: NewLeaf(0_i64), tag: 3_i64 };
+    b.f = items[7];
+    items[7] = NewLeaf(9_i64);
+    if FinishCycle(100000_i64) < 0_i64 { return -2_i64; }
+    if b.f.value != 107_i64 { return -3_i64; }
+    if items[7].value != 9_i64 { return -4_i64; }
+    return b.f.value;
+}
+
+// ---- Insertion half: the stored value is shaded at once. ----
+[Export(Abi:"C", Symbol:"RunInsertionHalf")]
+pub i64 RunInsertionHalf() {
+    // Enough leaves before `s` that its span is not drained by the start of marking.
+    Leaf s = NewLeaf(5_i64);
+    mut Holder r = Holder { f: NewLeaf(1_i64), tag: 4_i64 };
+    if Probe.gc_cycle_start() != 1_u8 { return -1_i64; }
+    r.f = s;
+    if Probe.gc_object_mark_state(s) == 0 { return -2_i64; }
+    if FinishCycle(100000_i64) < 0_i64 { return -3_i64; }
+    return r.f.value;
+}
+
+// ---- Allocation in black: small and 64 KiB large through `Alloc`. ----
+[Export(Abi:"C", Symbol:"RunAllocationInBlack")]
+pub i64 RunAllocationInBlack() {
+    mut Box x = Box { inner: Holder { f: NewLeaf(1_i64), tag: 5_i64 } };
+    if Probe.gc_cycle_start() != 1_u8 { return -1_i64; }
+    Leaf fresh = NewLeaf(77_i64);
+    if Probe.gc_object_mark_state(fresh) != 2 { return -2_i64; }
+    x.inner.f = fresh;
+    u8[] big = Array.Zeroed<u8>(65536_i64);
+    if ArrayProbe.gc_object_mark_state(big) != 2 { return -3_i64; }
+    if FinishCycle(100000_i64) < 0_i64 { return -4_i64; }
+    if x.inner.f.value != 77_i64 { return -5_i64; }
+    return i64(Array.Len<u8>(big)) + x.inner.f.value;
+}
+
+// ---- Phases are observed in order and the flag follows the phase. ----
+[Export(Abi:"C", Symbol:"RunPhaseOrder")]
+pub i64 RunPhaseOrder() {
+    mut Leaf[] keep = Array.Empty<Leaf>();
+    mut i64 i = 0_i64;
+    while i < 4096_i64 {
+        Array.Append<Leaf>(keep, NewLeaf(i));
+        i = i + 1_i64;
+    }
+    if Probe.gc_phase() != 0 { return -1_i64; }
+    if Probe.gc_cycle_start() != 1_u8 { return -2_i64; }
+    if Probe.gc_cycle_start() != 0_u8 { return -3_i64; }
+    i64 steps = FinishCycle(1000000_i64);
+    if steps < 0_i64 { return -4_i64; }
+    if Probe.gc_heap_verify() == 0 { return -5_i64; }
+    return steps;
+}
+
+// ---- A large pointer array is traced in chunks, with overwrites before and after the cursor. ----
+[Export(Abi:"C", Symbol:"RunChunkedLargeArray")]
+pub i64 RunChunkedLargeArray() {
+    mut Leaf[] items = Array.Empty<Leaf>();
+    mut i64 i = 0_i64;
+    while i < 131072_i64 {
+        Array.Append<Leaf>(items, NewLeaf(i));
+        i = i + 1_i64;
+    }
+    if Probe.gc_cycle_start() != 1_u8 { return -1_i64; }
+    // A few chunks in: element 10 is behind the cursor, element 120000 ahead of it.
+    Probe.gc_mark_step(STEP);
+    Probe.gc_mark_step(STEP);
+    mut Holder early = Holder { f: NewLeaf(0_i64), tag: 6_i64 };
+    mut Holder late = Holder { f: NewLeaf(0_i64), tag: 7_i64 };
+    early.f = items[10];
+    items[10] = NewLeaf(-10_i64);
+    late.f = items[120000];
+    items[120000] = NewLeaf(-120000_i64);
+    if FinishCycle(10000000_i64) < 0_i64 { return -2_i64; }
+    if early.f.value != 10_i64 || late.f.value != 120000_i64 { return -3_i64; }
+    mut i64 sum = 0_i64;
+    i = 0_i64;
+    while i < 131072_i64 {
+        sum = sum + items[i].value;
+        i = i + 1_i64;
+    }
+    if Probe.gc_last_cycle_max_step_bytes() > 270336 { return -4_i64; }
+    return sum;
+}
+
+// ---- A suspended fiber holds the only reference. ----
+i64 HoldAndYield(i64 count) {
+    mut Leaf[] held = Array.Empty<Leaf>();
+    mut i64 i = 0_i64;
+    while i < count {
+        Array.Append<Leaf>(held, NewLeaf(i));
+        i = i + 1_i64;
+    }
+    mut i64 rounds = 0_i64;
+    while rounds < 64_i64 {
+        Concurrency.Yield();
+        rounds = rounds + 1_i64;
+    }
+    mut i64 sum = 0_i64;
+    i = 0_i64;
+    while i < count {
+        sum = sum + held[i].value;
+        i = i + 1_i64;
+    }
+    return sum;
+}
+
+[Export(Abi:"C", Symbol:"RunSuspendedFiberRoot")]
+pub i64 RunSuspendedFiberRoot() {
+    Fiber<i64> child = spawn (() => HoldAndYield(10000_i64));
+    Concurrency.Yield();
+    if Probe.gc_cycle_start() != 1_u8 { return -1_i64; }
+    mut i64 churn = 0_i64;
+    while Probe.gc_phase() != 0 && churn < 1000000_i64 {
+        Leaf garbage = NewLeaf(churn);
+        Probe.gc_mark_step(STEP);
+        churn = churn + 1_i64;
+    }
+    Result<i64, FiberError> joined = child.Join();
+    return match joined {
+        Result::Ok(sum) => sum,
+        Result::Error(_) => -2_i64,
+    };
+}
+
+// ---- Fibers that yield without allocating finish a cycle. ----
+i64 YieldOnly(i64 count) {
+    mut i64 i = 0_i64;
+    while i < count {
+        Concurrency.Yield();
+        i = i + 1_i64;
+    }
+    return count;
+}
+
+[Export(Abi:"C", Symbol:"RunYieldingFibersFinishCycle")]
+pub i64 RunYieldingFibersFinishCycle() {
+    mut Leaf[] keep = Array.Empty<Leaf>();
+    mut i64 i = 0_i64;
+    while i < 65536_i64 {
+        Array.Append<Leaf>(keep, NewLeaf(i));
+        i = i + 1_i64;
+    }
+    if Probe.gc_cycle_start() != 1_u8 { return -1_i64; }
+    Fiber<i64> first = spawn (() => YieldOnly(500_i64));
+    Fiber<i64> second = spawn (() => YieldOnly(500_i64));
+    Result<i64, FiberError> a = first.Join();
+    Result<i64, FiberError> b = second.Join();
+    if Probe.gc_phase() != 0 { return -2_i64; }
+    return i64(Array.Len<Leaf>(keep));
+}
+
+// ---- Stress workload: 100,000 operations under incremental stress equal the unstressed run. ----
+i64 Workload() {
+    mut Holder[] table = Array.Empty<Holder>();
+    mut i64 checksum = 0_i64;
+    mut i64 i = 0_i64;
+    while i < 100000_i64 {
+        if Array.Len<Holder>(table) < 512_i64 {
+            Array.Append<Holder>(table, Holder { f: NewLeaf(i), tag: i });
+        } else {
+            i64 slot = i % 512_i64;
+            table[slot] = Holder { f: NewLeaf(i * 3_i64), tag: i };
+        }
+        checksum = (checksum + table[i % Array.Len<Holder>(table)].f.value) % 1000000007_i64;
+        i = i + 1_i64;
+    }
+    return checksum;
+}
+
+[Export(Abi:"C", Symbol:"RunStressWorkload")]
+pub i64 RunStressWorkload() {
+    i64 plain = Workload();
+    Probe.gc_heap_set_incremental_stress(1);
+    i64 stressed = Workload();
+    Probe.gc_heap_set_incremental_stress(0);
+    Probe.gc_collect();
+    if plain != stressed { return -1_i64; }
+    return stressed;
+}
+
+// ---- Negative control: the deletion case with the barrier skipped traps in stress mode. ----
+// The stores run before any mark step: stress mode performs a mark step at every allocation while
+// marking, and a step that traced `x` before `x.f` is overwritten would shade `w` itself and hide
+// the skipped barrier. So every object is allocated before the stores except the black `b`, and
+// stress mode (with its termination checks) is switched on only after them. The closure check at
+// termination then finds the black `b` pointing at the white `w`.
+[Export(Abi:"C", Symbol:"RunBarrierSkipDetected")]
+pub i64 RunBarrierSkipDetected() {
+    mut Holder x = Holder { f: NewLeaf(41_i64), tag: 1_i64 };
+    Leaf replacement = NewLeaf(7_i64);
+    Leaf placeholder = NewLeaf(0_i64);
+    Probe.gc_heap_force_barrier_skip(1);
+    if Probe.gc_cycle_start() != 1_u8 { return -1_i64; }
+    mut Holder b = Holder { f: placeholder, tag: 2_i64 };
+    b.f = x.f;
+    x.f = replacement;
+    Probe.gc_heap_set_incremental_stress(1000000);
+    if FinishCycle(100000_i64) < 0_i64 { return -2_i64; }
+    Probe.gc_heap_force_barrier_skip(0);
+    Probe.gc_heap_set_incremental_stress(0);
+    return b.f.value;
+}
+
+// ---- Explicit collection frees objects dropped during a cycle. ----
+[Export(Abi:"C", Symbol:"RunCollectDuringCycle")]
+pub i64 RunCollectDuringCycle() {
+    mut Holder x = Holder { f: NewLeaf(1_i64), tag: 8_i64 };
+    if Probe.gc_cycle_start() != 1_u8 { return -1_i64; }
+    x.f = NewLeaf(2_i64);
+    Probe.gc_collect();
+    if Probe.gc_phase() != 0 { return -2_i64; }
+    if Probe.gc_heap_verify() == 0 { return -3_i64; }
+    return x.f.value;
+}
+
+// ---- Pause bound: 64 MiB live graph, 128 MiB churn, paced steps only. ----
+[Export(Abi:"C", Symbol:"RunPauseBound")]
+pub i64 RunPauseBound() {
+    mut Leaf[] live = Array.Empty<Leaf>();
+    mut i64 i = 0_i64;
+    while i < 2097152_i64 {
+        Array.Append<Leaf>(live, NewLeaf(i));
+        i = i + 1_i64;
+    }
+    i = 0_i64;
+    while i < 4194304_i64 {
+        Leaf garbage = NewLeaf(i);
+        i = i + 1_i64;
+    }
+    Probe.gc_collect();
+    word maxStep = Probe.gc_last_cycle_max_step_bytes();
+    if maxStep > 270336 { return -1_i64; }
+    return i64(maxStep);
+}
+
+// ---- Cap pressure reclaims garbage dropped during a cycle (run with BESKID_HEAP_MAX=8m). ----
+Leaf[] BuildLeaves(i64 count) {
+    mut Leaf[] leaves = Array.Empty<Leaf>();
+    mut i64 i = 0_i64;
+    while i < count {
+        Array.Append<Leaf>(leaves, NewLeaf(i));
+        i = i + 1_i64;
+    }
+    return leaves;
+}
+
+[Export(Abi:"C", Symbol:"RunCapPressure")]
+pub i64 RunCapPressure() {
+    Leaf[] kept = BuildLeaves(32768_i64);
+    mut Leaf[] dropped = BuildLeaves(131072_i64);
+    if Probe.gc_cycle_start() != 1_u8 { return -1_i64; }
+    dropped = Array.Empty<Leaf>();
+    Leaf[] fresh = BuildLeaves(131072_i64);
+    return i64(Array.Len<Leaf>(kept)) + i64(Array.Len<Leaf>(fresh));
+}
+
+// ---- Pacing: the mark trigger starts a cycle without blocking heap growth (9.4). ----
+// Retained leaves pass the mark trigger (three quarters of the 512 KiB threshold): a cycle starts
+// at a pacing point while allocation goes on, and the heap still grows to hold every leaf.
+[Export(Abi:"C", Symbol:"RunTriggerWithoutBlockingGrowth")]
+pub i64 RunTriggerWithoutBlockingGrowth() {
+    word regionsBefore = Probe.gc_heap_region_count();
+    mut Leaf[] keep = Array.Empty<Leaf>();
+    mut bool started = false;
+    mut i64 i = 0_i64;
+    while i < 262144_i64 {
+        Array.Append<Leaf>(keep, NewLeaf(i));
+        if Probe.gc_phase() != 0 { started = true; }
+        i = i + 1_i64;
+    }
+    if started == false { return -1_i64; }
+    if Probe.gc_heap_region_count() <= regionsBefore { return -2_i64; }
+    mut i64 sum = 0_i64;
+    for leaf in keep { sum = sum + leaf.value; }
+    if sum != 34359607296_i64 { return -3_i64; }
+    return 0_i64;
+}
+
+// ---- Pacing: a cycle completes at the threshold before the heap grows (9.4). ----
+// Only short-lived garbage is allocated: every cycle that the trigger starts completes by the
+// collection threshold and frees the garbage, so the heap never commits a second region.
+[Export(Abi:"C", Symbol:"RunCompletionBeforeGrowth")]
+pub i64 RunCompletionBeforeGrowth() {
+    Probe.gc_collect();
+    word regionsBefore = Probe.gc_heap_region_count();
+    mut i64 round = 0_i64;
+    while round < 64_i64 {
+        mut Leaf[] garbage = Array.Empty<Leaf>();
+        mut i64 i = 0_i64;
+        while i < 4096_i64 {
+            Array.Append<Leaf>(garbage, NewLeaf(i));
+            i = i + 1_i64;
+        }
+        round = round + 1_i64;
+    }
+    if Probe.gc_heap_region_count() != regionsBefore { return -1_i64; }
+    return 0_i64;
+}

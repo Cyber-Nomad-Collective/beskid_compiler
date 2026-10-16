@@ -6,7 +6,7 @@ use crate::parsing::error::ParseError;
 use crate::parsing::parsable::Parsable;
 use crate::syntax::items::method_definition::MethodDefinition;
 use crate::syntax::items::parse_helpers::{
-    parse_attributes, parse_doc_attached_list, parse_doc_attached_with, parse_identifier_list,
+    parse_attributes, parse_doc_attached_list, parse_doc_attached_with, parse_type_parameter_list,
     parse_visibility_or_default,
 };
 use crate::syntax::{
@@ -25,7 +25,7 @@ pub struct TypeDefinition {
     #[ast(child)]
     pub name: Spanned<Identifier>,
     #[ast(children)]
-    pub generics: Vec<Spanned<Identifier>>,
+    pub generics: Vec<Spanned<crate::syntax::TypeParameter>>,
     #[ast(children)]
     pub conformances: Vec<Spanned<Path>>,
     #[ast(children)]
@@ -42,7 +42,7 @@ pub struct TypeDefinition {
 
 fn receiver_type_for_definition(
     name: &Spanned<Identifier>,
-    generics: &[Spanned<Identifier>],
+    generics: &[Spanned<crate::syntax::TypeParameter>],
     span: SpanInfo,
 ) -> Spanned<Type> {
     let type_args = generics
@@ -52,7 +52,7 @@ fn receiver_type_for_definition(
                 Type::Complex(Spanned::new(
                     Path {
                         segments: vec![Spanned::new(
-                            PathSegment { name: generic.clone(), type_args: Vec::new() },
+                            PathSegment { name: crate::syntax::TypeParameter::identifier(generic), type_args: Vec::new() },
                             generic.span,
                         )],
                     },
@@ -89,7 +89,7 @@ impl Parsable for TypeDefinition {
 
         for item in inner {
             match item.as_rule() {
-                Rule::GenericParameters => generics = parse_identifier_list(item)?,
+                Rule::GenericParameters => generics = parse_type_parameter_list(item)?,
                 Rule::TypeConformanceList => {
                     let path_list = item.into_inner().next().ok_or(ParseError::missing(Rule::PathList))?;
                     conformances = path_list.into_inner().map(Path::parse).collect::<Result<Vec<_>, _>>()?

@@ -142,6 +142,8 @@ struct AdmittedImage {
 
 struct AdmittedRustOwner {
     image:usize, library:u64, generation:u64,
+    /// The owner's generated `beskid` module holds the checked export addresses of its consumer.
+    exports_bound:bool,
     producer:IssuedRustOwner,
 }
 
@@ -413,7 +415,7 @@ impl GlueProcess {
             opaque_domains_admitted:false,
             imports_admitted:false,
         });
-        self.bind_opaque_domains()?;self.bind_imports()?;
+        self.bind_opaque_domains()?;self.bind_imports()?;self.bind_owner_exports()?;
         Ok(())
     }
 
@@ -463,11 +465,17 @@ impl GlueProcess {
             let ids=ids.into_iter().collect::<Vec<_>>();
             if ids.is_empty()||ids.len()>1024{return Err(invalid("Rust owner brand closure bounds"));}
             if unsafe{bind(library,owner.generation,ids.as_ptr(),ids.len())}!=0{return Err(invalid("Rust owner shape binding failed"));}
-            rows.sort_by_key(ImageClosureRow::bytes);
-            type BindImage=unsafe extern "C" fn(u64,u64,*const ImageClosureRow,usize)->i32;
-            let bind_image=*unsafe{lease.images().provider_symbol::<BindImage>(c"beskid_glue_v1_owner_bind_image_closure")}
-                .map_err(|error|invalid(error.to_string()))?;
-            if unsafe{bind_image(library,owner.generation,rows.as_ptr(),rows.len())}!=0{return Err(invalid("Rust owner actual image closure rejected"));}
+            // The owner image closure holds only opaque destructor rows (role 6). An owner without
+            // opaque handle types (records, enums, callbacks, scalars) has none, and the provider
+            // admits no empty closure; without a bound closure every image-address admission for
+            // this library stays refused.
+            if !rows.is_empty() {
+                rows.sort_by_key(ImageClosureRow::bytes);
+                type BindImage=unsafe extern "C" fn(u64,u64,*const ImageClosureRow,usize)->i32;
+                let bind_image=*unsafe{lease.images().provider_symbol::<BindImage>(c"beskid_glue_v1_owner_bind_image_closure")}
+                    .map_err(|error|invalid(error.to_string()))?;
+                if unsafe{bind_image(library,owner.generation,rows.as_ptr(),rows.len())}!=0{return Err(invalid("Rust owner actual image closure rejected"));}
+            }
             type OwnerInitialize=unsafe extern "C" fn(u64,u64)->i32;
             let initialize=*unsafe{lease.images().image_symbol::<OwnerInitialize>(image,c"beskid_glue_rust_owner_v1_initialize")}
                 .map_err(|error|invalid(error.to_string()))?;
@@ -478,8 +486,8 @@ impl GlueProcess {
             let status=unsafe{(self.close)(library,owner.generation)};
             return Err(invalid(format!("Rust owner admission failed: {error}; rollback status {status}")));
         }
-        self.rust_owners.push(AdmittedRustOwner{image,library,generation:owner.generation,producer:owner});
-        self.bind_opaque_domains()?;self.bind_imports()?;Ok(image)
+        self.rust_owners.push(AdmittedRustOwner{image,library,generation:owner.generation,exports_bound:false,producer:owner});
+        self.bind_opaque_domains()?;self.bind_imports()?;self.bind_owner_exports()?;Ok(image)
     }
     /// # Safety
     /// T must be the exact status/out-parameter signature produced for this
@@ -527,6 +535,44 @@ impl GlueProcess {
             if unsafe{bind(&table)}!=0{return Err(invalid("actual source import table admission rejected"));}
             lease.images().verify_integrity().map_err(|error|invalid(error.to_string()))?;
             image.imports_admitted=true;
+        }
+        Ok(())
+    }
+
+    /// Binds the checked export invocations of a consumer image into each Rust owner whose
+    /// library that consumer imports, so owner code calls Beskid exports through its generated
+    /// `beskid` module. The owner compares every row identity with the ones compiled into it and
+    /// rejects a table of another consumer; a rejection by every candidate fails admission.
+    fn bind_owner_exports(&mut self)->AotResult<()> {
+        #[repr(C)] struct ExportRowV1{identity:[u8;32],address:u64}
+        #[repr(C)] struct ExportTableV1{version:u32,size:u32,count:usize,rows:*const ExportRowV1}
+        type BindExports=unsafe extern "C" fn(*const ExportTableV1)->i32;
+        let lease=self.lease.as_ref().ok_or_else(||invalid("closed Glue process"))?;
+        for owner in &mut self.rust_owners {
+            if owner.exports_bound {continue;}
+            let candidates=self.images.iter().filter(|image|image.imports_admitted && image._producer.packet.manifest.bindings.iter()
+                .any(|binding|binding.direction=="import"&&binding.library==owner.producer.library)).collect::<Vec<_>>();
+            if candidates.is_empty() {continue;}
+            owner.producer.verify()?;
+            let bind=*unsafe{lease.images().image_symbol::<BindExports>(owner.image,c"beskid_glue_rust_owner_v1_bind_exports")}
+                .map_err(|error|invalid(error.to_string()))?;
+            for image in candidates {
+                let mut rows=Vec::new();
+                for (identity,symbol) in super::owner_values::export_rows(&image._producer.packet.manifest)? {
+                    type Address=unsafe extern "C" fn();
+                    let name=std::ffi::CString::new(symbol).map_err(|_|invalid("consumer export symbol"))?;
+                    let address=*unsafe{lease.images().image_symbol::<Address>(image.image,&name)}.map_err(|error|invalid(error.to_string()))?;
+                    rows.push(ExportRowV1{identity,address:address as usize as u64});
+                }
+                let table=ExportTableV1{version:1,size:size_of::<ExportTableV1>() as u32,count:rows.len(),rows:rows.as_ptr()};
+                match unsafe{bind(&table)} {
+                    0=>{owner.exports_bound=true;break;}
+                    1=>continue,
+                    status=>return Err(invalid(format!("Rust owner export table admission failed with status {status}"))),
+                }
+            }
+            if !owner.exports_bound {return Err(invalid("every consumer export table was rejected by its Rust owner"));}
+            lease.images().verify_integrity().map_err(|error|invalid(error.to_string()))?;
         }
         Ok(())
     }
@@ -587,7 +633,7 @@ impl GlueProcess {
             *unsafe { lease.images().provider_symbol::<DescriptorGetter>(c"beskid_dynamic_v1_erased_cell_descriptor") }
                 .map_err(|error| invalid(error.to_string()))?;
         let cell = unsafe { cell_getter() };
-        lease.images().verify_provider_address(cell).map_err(|error| invalid(error.to_string()))?;
+        lease.images().verify_provider_address(cell as usize).map_err(|error| invalid(error.to_string()))?;
         let construct =
             *unsafe { lease.images().provider_symbol::<DynamicConstruct>(c"beskid_dynamic_v1_erased_construct") }
                 .map_err(|error| invalid(error.to_string()))?;
@@ -605,7 +651,7 @@ impl GlueProcess {
             let getter = *unsafe { lease.images().image_symbol::<DescriptorGetter>(image, &symbol) }
                 .map_err(|error| invalid(error.to_string()))?;
             let payload = unsafe { getter() };
-            lease.images().verify_image_address(image, payload).map_err(|error| invalid(error.to_string()))?;
+            lease.images().verify_image_address(image, payload as usize).map_err(|error| invalid(error.to_string()))?;
             for (address, role) in
                 [(payload as usize, 1), (cell as usize, 2), (construct as usize, 3), (read as usize, 4),
                  (checked_construct as usize, 13), (checked_read as usize, 14)]
@@ -630,7 +676,7 @@ impl GlueProcess {
             let getter=*unsafe {lease.images().image_symbol::<DescriptorGetter>(image,&symbol)}
                 .map_err(|error|invalid(error.to_string()))?;
             let descriptor=unsafe {getter()};
-            lease.images().verify_image_address(image,descriptor).map_err(|error|invalid(error.to_string()))?;
+            lease.images().verify_image_address(image,descriptor as usize).map_err(|error|invalid(error.to_string()))?;
             rows.push(ImageClosureRow{source,signature:brand,address:descriptor as usize as u64,role:1});
         }
         if rows.len()>4096 {return Err(invalid("combined source image closure exceeds4096 rows"));}

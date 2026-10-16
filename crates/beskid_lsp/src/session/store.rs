@@ -39,6 +39,8 @@ pub struct Document {
     pub syntax_symbols: Vec<SyntaxSymbol>,
     /// Structural BSOL token candidates parsed once for this exact buffer revision.
     pub bsol_semantic_token_candidates: Vec<BsolSemanticTokenCandidate>,
+    /// Attribute names of the current buffer's recoverable syntax (semantic tokens).
+    pub syntax_attribute_names: Vec<SyntaxAttributeName>,
     /// Generation-bound root key used by syntax-only completion queries.
     pub syntax_completion: Option<SyntaxCompletion>,
     /// Generation-safe type facts for source nodes in this exact buffer revision.
@@ -149,6 +151,27 @@ pub struct SyntaxCompletion {
     /// assembly. A newer partial snapshot may retain only bindings still present
     /// in its recoverable imports; the surface is never broader semantic authority.
     pub dependency_surface: Arc<[beskid_queries::CompletionMemberSurface]>,
+    /// Owned attribute catalogue resolved from the entry unit of the prepared assembly
+    /// (`resolve_attribute_use`). Declarations in the current buffer take precedence at
+    /// request time, matching resolution step 1.
+    pub attributes: Arc<[AttributeCompletionEntry]>,
+}
+
+/// One attribute visible from the entry unit with the target list E1510 checks against.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AttributeCompletionEntry {
+    pub name: Arc<str>,
+    pub targets: Arc<[Arc<str>]>,
+    pub recognized: bool,
+}
+
+/// One attribute name in the current buffer (a use at any declaration site, or the declared
+/// name of an attribute declaration when `declaration` is set).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SyntaxAttributeName {
+    pub start: usize,
+    pub end: usize,
+    pub declaration: bool,
 }
 
 /// In-memory LSP workspace: open docs, closed-but-indexed files, and compilation context cache.

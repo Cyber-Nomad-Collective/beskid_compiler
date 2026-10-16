@@ -788,7 +788,7 @@ pub(in crate::semantic_contract) fn canonical_result_variant(
     variant: &beskid_analysis::syntax::EnumVariant,
     name: &str,
     field_name: &str,
-    generic_parameter: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Identifier>,
+    generic_parameter: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::TypeParameter>,
 ) -> bool {
     let [field] = variant.fields.as_slice() else {
         return false;

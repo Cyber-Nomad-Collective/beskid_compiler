@@ -109,6 +109,15 @@ pub(super) fn emission_verification(message: impl Into<String>) -> SyntaxModuleE
     SyntaxModuleEmissionError::Emission(format!("Verification({})", message.into()))
 }
 
+/// [`emission_verification`] for a failed fact of the construct `key`, naming its site.
+pub(super) fn emission_verification_at(
+    db: &dyn beskid_queries::Db,
+    key: AstNodeKey,
+    error: impl std::fmt::Display,
+) -> SyntaxModuleEmissionError {
+    emission_verification(format!("{error} (at {})", beskid_queries::format_ast_node_site(db, key)))
+}
+
 /// Classify a semantic query error met while resolving module items for `site`. An unavailable
 /// fact is a compiler gap after the legality gate has passed, reported as internal error E2101 at
 /// the site the query named (or `site`); any other error keeps its verification message.

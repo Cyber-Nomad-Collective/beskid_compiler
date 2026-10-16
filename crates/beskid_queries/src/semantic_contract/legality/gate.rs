@@ -80,10 +80,17 @@ pub enum GateObligationKind {
     UnknownCallTarget,
     /// E1204: an explicit type-argument list whose count differs from the callee's generics.
     GenericArgumentMismatch { expected: usize, actual: usize },
+    /// E1229: a method type parameter repeats a type parameter name of its owner.
+    MethodTypeParameterShadowsOwner { parameter: Arc<str>, owner: Arc<str>, method: Arc<str> },
+    /// E1203: method type argument inference left this type parameter unbound.
+    UninferredTypeParameter { parameter: Arc<str> },
     /// E1102: a second `let` of the same name in one block, or a repeated parameter name.
     DuplicateLocal { name: Arc<str>, previous: SourceSpan },
+    /// E1250: a method call on a value of a type parameter whose `where` bounds declare no
+    /// method of that name.
+    GenericReceiverMethodUndeclared { method: Arc<str>, parameter: Arc<str> },
     /// E1610: a call whose concrete type does not satisfy a `where` bound of the callee.
-    GenericBoundNotSatisfied { type_name: Arc<str>, contract_name: Arc<str> },
+    GenericBoundNotSatisfied { type_name: Arc<str>, contract_name: Arc<str>, reason: Option<Arc<str>> },
     /// E1232: a `clif { ... }` block the legacy `type_clif_block`, `type_clif_block_statement`,
     /// `check_clif_block_body`, or `check_clif_parameters` rejects, with the legacy detail text.
     InvalidClifBlock { detail: Arc<str> },
@@ -125,6 +132,7 @@ fn gate_obligations_tracked(
         expressions::collect_expression_obligations(db, program, index, key, &mut findings);
         expressions::collect_member_obligations(db, program, index, key, &mut findings);
         expressions::collect_call_obligations(db, program, index, key, &mut findings);
+        collect_method_type_parameter_obligations(db, program, index, key, &mut findings);
         expressions::collect_duplicate_local_obligations(program, index, key, &mut findings);
         clif::collect_clif_obligations(db, program, index, key, &mut findings);
         findings.sort_by_key(|finding| finding.site.node.0);
@@ -182,16 +190,33 @@ pub fn check_gate_obligations(db: &dyn Db, items: &[AstNodeKey]) -> Vec<Semantic
                     SemanticIssueKind::TypeUnknownStructField { name: name.to_string() }
                 }
                 GateObligationKind::UnknownCallTarget => SemanticIssueKind::TypeUnknownCallTarget,
+                GateObligationKind::MethodTypeParameterShadowsOwner { parameter, owner, method } => {
+                    SemanticIssueKind::TypeGenericParameterConflict {
+                        parameter: parameter.to_string(),
+                        first_name: owner.to_string(),
+                        second_name: method.to_string(),
+                    }
+                }
+                GateObligationKind::UninferredTypeParameter { parameter } => {
+                    SemanticIssueKind::TypeMissingTypeArguments { parameter: Some(parameter.to_string()) }
+                }
                 GateObligationKind::GenericArgumentMismatch { expected, actual } => {
                     SemanticIssueKind::TypeGenericArgumentMismatch { expected: *expected, actual: *actual }
                 }
                 GateObligationKind::DuplicateLocal { name, previous } => {
                     SemanticIssueKind::ResolveDuplicateLocal { name: name.to_string(), previous: *previous }
                 }
-                GateObligationKind::GenericBoundNotSatisfied { type_name, contract_name } => {
+                GateObligationKind::GenericBoundNotSatisfied { type_name, contract_name, reason } => {
                     SemanticIssueKind::GenericBoundNotSatisfied {
                         type_name: type_name.to_string(),
                         contract_name: contract_name.to_string(),
+                        reason: reason.as_deref().map(str::to_owned),
+                    }
+                }
+                GateObligationKind::GenericReceiverMethodUndeclared { method, parameter } => {
+                    SemanticIssueKind::GenericReceiverMethodUndeclared {
+                        method: method.to_string(),
+                        parameter: parameter.to_string(),
                     }
                 }
                 GateObligationKind::InvalidClifBlock { detail } => {
@@ -224,4 +249,37 @@ pub(super) fn proven_operand(
     let (site, subject) = super::typing::expression_nodes(program, index, parent, expression)?;
     let ty = super::typing::proven_type(db, AstNodeKey { node: subject, ..key })?;
     Some((site, subject, ty))
+}
+
+/// E1229 for each own type parameter of a method that repeats a type parameter name of the
+/// method's owner (type definition or `impl` block), reported at the method's parameter.
+fn collect_method_type_parameter_obligations(
+    db: &dyn Db,
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    key: AstNodeKey,
+    findings: &mut Vec<GateObligation>,
+) {
+    let Some(method) = index.node_at(program, key.node).and_then(|node| node.of::<beskid_analysis::syntax::MethodDefinition>())
+    else {
+        return;
+    };
+    let Some((names, _)) = generic_callable_parameters(db, key) else { return };
+    let owner_names = &names[..generic_callable_owner_count(db, key).min(names.len())];
+    for generic in &method.generics {
+        if !owner_names.contains(&generic.node.name.as_str()) {
+            continue;
+        }
+        let site = index
+            .direct_child_id(program, key.node, beskid_analysis::syntax_query::DynNodeRef::from(generic))
+            .unwrap_or(key.node);
+        findings.push(GateObligation {
+            kind: GateObligationKind::MethodTypeParameterShadowsOwner {
+                parameter: Arc::from(generic.node.name.as_str()),
+                owner: Arc::from(format!("{} (owner)", generic.node.name)),
+                method: Arc::from(format!("{} (method {})", generic.node.name, method.name.node.name)),
+            },
+            site: AstNodeKey { node: site, ..key },
+        });
+    }
 }

@@ -7,7 +7,7 @@ use crate::syntax::{
     FunctionDefinition, ImplBlock, InlineModule, MethodDefinition, Node, Parameter, Pattern, Program, Statement,
     TestDefinition, TypeDefinition,
 };
-use crate::syntax::{Identifier, Spanned};
+use crate::syntax::{Identifier, Spanned, TypeParameter};
 
 /// Syntactic role that carries a case profile from code-style-and-naming.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -94,7 +94,7 @@ fn walk_node_mut(node: &mut Node, visit: &mut impl FnMut(NamingRole, &mut Identi
 fn walk_type_definition(def: &TypeDefinition, visit: &mut impl FnMut(NamingRole, &Spanned<Identifier>)) {
     visit(NamingRole::TypeDeclaration, &def.name);
     for generic in &def.generics {
-        visit(NamingRole::GenericParameter, generic);
+        visit(NamingRole::GenericParameter, &TypeParameter::identifier(generic));
     }
     for field in &def.fields {
         walk_field(&field.node, visit);
@@ -107,7 +107,7 @@ fn walk_type_definition(def: &TypeDefinition, visit: &mut impl FnMut(NamingRole,
 fn walk_type_definition_mut(def: &mut TypeDefinition, visit: &mut impl FnMut(NamingRole, &mut Identifier)) {
     visit(NamingRole::TypeDeclaration, &mut def.name.node);
     for generic in &mut def.generics {
-        visit(NamingRole::GenericParameter, &mut generic.node);
+        visit_type_parameter_mut(&mut generic.node, visit);
     }
     for field in &mut def.fields {
         walk_field_mut(&mut field.node, visit);
@@ -120,7 +120,7 @@ fn walk_type_definition_mut(def: &mut TypeDefinition, visit: &mut impl FnMut(Nam
 fn walk_enum_definition(def: &EnumDefinition, visit: &mut impl FnMut(NamingRole, &Spanned<Identifier>)) {
     visit(NamingRole::TypeDeclaration, &def.name);
     for generic in &def.generics {
-        visit(NamingRole::GenericParameter, generic);
+        visit(NamingRole::GenericParameter, &TypeParameter::identifier(generic));
     }
     for variant in &def.variants {
         walk_enum_variant(&variant.node, visit);
@@ -130,7 +130,7 @@ fn walk_enum_definition(def: &EnumDefinition, visit: &mut impl FnMut(NamingRole,
 fn walk_enum_definition_mut(def: &mut EnumDefinition, visit: &mut impl FnMut(NamingRole, &mut Identifier)) {
     visit(NamingRole::TypeDeclaration, &mut def.name.node);
     for generic in &mut def.generics {
-        visit(NamingRole::GenericParameter, &mut generic.node);
+        visit_type_parameter_mut(&mut generic.node, visit);
     }
     for variant in &mut def.variants {
         walk_enum_variant_mut(&mut variant.node, visit);
@@ -161,7 +161,7 @@ fn is_extern_contract(def: &ContractDefinition) -> bool {
 fn walk_contract_definition(def: &ContractDefinition, visit: &mut impl FnMut(NamingRole, &Spanned<Identifier>)) {
     visit(NamingRole::TypeDeclaration, &def.name);
     for generic in &def.generics {
-        visit(NamingRole::GenericParameter, generic);
+        visit(NamingRole::GenericParameter, &TypeParameter::identifier(generic));
     }
     let foreign_symbols = is_extern_contract(def);
     for item in &def.items {
@@ -179,7 +179,7 @@ fn walk_contract_definition(def: &ContractDefinition, visit: &mut impl FnMut(Nam
 fn walk_contract_definition_mut(def: &mut ContractDefinition, visit: &mut impl FnMut(NamingRole, &mut Identifier)) {
     visit(NamingRole::TypeDeclaration, &mut def.name.node);
     for generic in &mut def.generics {
-        visit(NamingRole::GenericParameter, &mut generic.node);
+        visit_type_parameter_mut(&mut generic.node, visit);
     }
     let foreign_symbols = is_extern_contract(def);
     for item in &mut def.items {
@@ -197,7 +197,7 @@ fn walk_contract_definition_mut(def: &mut ContractDefinition, visit: &mut impl F
 fn walk_function_definition(def: &FunctionDefinition, visit: &mut impl FnMut(NamingRole, &Spanned<Identifier>)) {
     visit(NamingRole::Callable, &def.name);
     for generic in &def.generics {
-        visit(NamingRole::GenericParameter, generic);
+        visit(NamingRole::GenericParameter, &TypeParameter::identifier(generic));
     }
     for param in &def.parameters {
         walk_parameter(&param.node, visit);
@@ -208,7 +208,7 @@ fn walk_function_definition(def: &FunctionDefinition, visit: &mut impl FnMut(Nam
 fn walk_function_definition_mut(def: &mut FunctionDefinition, visit: &mut impl FnMut(NamingRole, &mut Identifier)) {
     visit(NamingRole::Callable, &mut def.name.node);
     for generic in &mut def.generics {
-        visit(NamingRole::GenericParameter, &mut generic.node);
+        visit_type_parameter_mut(&mut generic.node, visit);
     }
     for param in &mut def.parameters {
         walk_parameter_mut(&mut param.node, visit);
@@ -218,6 +218,9 @@ fn walk_function_definition_mut(def: &mut FunctionDefinition, visit: &mut impl F
 
 fn walk_method_definition(def: &MethodDefinition, visit: &mut impl FnMut(NamingRole, &Spanned<Identifier>)) {
     visit(NamingRole::Callable, &def.name);
+    for generic in &def.generics {
+        visit(NamingRole::GenericParameter, &TypeParameter::identifier(generic));
+    }
     for param in &def.parameters {
         walk_parameter(&param.node, visit);
     }
@@ -226,6 +229,9 @@ fn walk_method_definition(def: &MethodDefinition, visit: &mut impl FnMut(NamingR
 
 fn walk_method_definition_mut(def: &mut MethodDefinition, visit: &mut impl FnMut(NamingRole, &mut Identifier)) {
     visit(NamingRole::Callable, &mut def.name.node);
+    for generic in &mut def.generics {
+        visit_type_parameter_mut(&mut generic.node, visit);
+    }
     for param in &mut def.parameters {
         walk_parameter_mut(&mut param.node, visit);
     }
@@ -460,6 +466,7 @@ fn walk_expression(expr: &Expression, visit: &mut impl FnMut(NamingRole, &Spanne
             }
         }
         Expression::Spawn(s) => walk_expression(&s.node.callee.node, visit),
+        Expression::Move(m) => walk_expression(&m.node.operand.node, visit),
         Expression::Try(t) => walk_expression(&t.node.expr.node, visit),
         Expression::ArrayLiteral(a) => {
             for elem in &a.node.elements {
@@ -524,6 +531,7 @@ fn walk_expression_mut(expr: &mut Expression, visit: &mut impl FnMut(NamingRole,
             }
         }
         Expression::Spawn(s) => walk_expression_mut(&mut s.node.callee.node, visit),
+        Expression::Move(m) => walk_expression_mut(&mut m.node.operand.node, visit),
         Expression::Try(t) => walk_expression_mut(&mut t.node.expr.node, visit),
         Expression::ArrayLiteral(a) => {
             for elem in &mut a.node.elements {
@@ -604,4 +612,10 @@ mod tests {
         assert!(roles.contains(&(NamingRole::Field, "lastSize".to_string())), "{roles:?}");
         assert!(!roles.contains(&(NamingRole::Field, "OnResize".to_string())), "{roles:?}");
     }
+}
+
+fn visit_type_parameter_mut(parameter: &mut TypeParameter, visit: &mut impl FnMut(NamingRole, &mut Identifier)) {
+    let mut identifier = Identifier { name: std::mem::take(&mut parameter.name) };
+    visit(NamingRole::GenericParameter, &mut identifier);
+    parameter.name = identifier.name;
 }

@@ -23,7 +23,9 @@ fn runtime_sources(root: &Path) -> Vec<PathBuf> {
 }
 
 fn source_type(ty: &str, nominals: &BTreeSet<String>) -> String {
+    // The `move` parameter mode transfers ownership; it does not change the ABI type.
     let ty = ty.trim();
+    let ty = ty.strip_prefix("move ").map_or(ty, str::trim_start);
     match ty {
         "word" => "usize".into(),
         "unit" => "void".into(),
@@ -289,7 +291,7 @@ fn canonical_runtime_source_exports_exactly_match_manifest_provenance() {
         );
     }
     for service in &manifest.corelib_services {
-        if matches!(service.name.as_str(), "__args_count" | "__args_get" | "__thread_yield") {
+        if matches!(service.name.as_str(), "__args_count" | "__args_get" | "__thread_yield" | "__host_processor_count") {
             continue;
         }
         let signature =
@@ -336,7 +338,7 @@ fn canonical_runtime_source_exports_exactly_match_manifest_provenance() {
         manifest
             .corelib_services
             .iter()
-            .filter(|service| matches!(service.name.as_str(), "__args_count" | "__args_get" | "__thread_yield"))
+            .filter(|service| matches!(service.name.as_str(), "__args_count" | "__args_get" | "__thread_yield" | "__host_processor_count"))
             .map(|service| service.adapter.clone()),
     );
     for assembly in &manifest.assembly {
@@ -347,8 +349,8 @@ fn canonical_runtime_source_exports_exactly_match_manifest_provenance() {
     }
     assert_eq!(
         provenance.len(),
-        declared.len() + 3 + manifest.assembly.len(),
-        "runtime provenance is source exports plus generated Core.Args and host-thread adapters plus assembly"
+        declared.len() + 4 + manifest.assembly.len(),
+        "runtime provenance is source exports plus generated Core.Args, thread-yield and host-processor adapters plus assembly"
     );
 }
 

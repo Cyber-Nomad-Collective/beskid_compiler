@@ -15,6 +15,20 @@ pub struct ApiDocPackageRoots {
     pub match_root: PathBuf,
     /// Path from package root (`project_root`) to `source_root` in `.bpk` entries (e.g. `src`).
     pub artifact_source_prefix: String,
+    /// Absolute `.generated` sibling of `match_root`; discovery compiles `*.g.bd` units from it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub generated_match_root: Option<PathBuf>,
+    /// Path from package root to the generated root in `.bpk` entries (e.g. `.generated`).
+    #[serde(default)]
+    pub artifact_generated_prefix: String,
+}
+
+impl ApiDocPackageRoots {
+    /// Source root plus its `.generated` sibling, each with the `.bpk` prefix it maps to.
+    pub fn match_roots(&self) -> impl Iterator<Item = (&Path, &str)> {
+        std::iter::once((self.match_root.as_path(), self.artifact_source_prefix.as_str()))
+            .chain(self.generated_match_root.as_deref().map(|root| (root, self.artifact_generated_prefix.as_str())))
+    }
 }
 
 /// Package roots for `declaringPackage` assignment and artifact-relative path emission.
@@ -29,10 +43,12 @@ impl ApiDocLinkContext {
         let path = Path::new(file);
         let mut best: Option<(usize, String)> = None;
         for entry in &self.packages {
-            if path.starts_with(&entry.match_root) {
-                let len = entry.match_root.as_os_str().len();
-                if best.as_ref().is_none_or(|(l, _)| len > *l) {
-                    best = Some((len, entry.package.clone()));
+            for (root, _) in entry.match_roots() {
+                if path.starts_with(root) {
+                    let len = root.as_os_str().len();
+                    if best.as_ref().is_none_or(|(l, _)| len > *l) {
+                        best = Some((len, entry.package.clone()));
+                    }
                 }
             }
         }
@@ -96,6 +112,48 @@ pub fn assign_declaring_packages(items: &mut [ApiDocItem], ctx: &ApiDocLinkConte
     }
 }
 
+/// Attribute every module to the package whose items it holds.
+///
+/// A module path such as `Core` or `Http` can be opened by several packages, and modules the
+/// library tree synthesizes carry a placeholder location, so the file-based attribution of
+/// [`assign_declaring_packages`] does not hold for modules. A module that holds an item of the
+/// publishing package is its own (no `declaringPackage`) and points at the first such item; a
+/// module that holds only items of one dependency belongs to that dependency. Run after
+/// [`link_api_doc_library_tree`] and [`assign_declaring_packages`].
+pub fn attribute_modules_to_members(items: &mut [ApiDocItem]) {
+    let mut children: HashMap<usize, Vec<usize>> = HashMap::new();
+    for (index, item) in items.iter().enumerate() {
+        if let (Some(_), Some(parent)) = (item.id, item.parent_id) {
+            children.entry(parent).or_default().push(index);
+        }
+    }
+    let mut modules: Vec<usize> = (0..items.len()).filter(|&index| items[index].kind == KIND_MODULE).collect();
+    // Deepest first, so nested modules are attributed before the modules that contain them.
+    modules.sort_by_key(|&index| std::cmp::Reverse(module_path_for_row(&items[index]).len()));
+
+    for index in modules {
+        let Some(id) = items[index].id else { continue };
+        let Some(members) = children.get(&id) else { continue };
+        if let Some(&own) = members.iter().find(|&&member| items[member].declaring_package.is_none()) {
+            if items[index].declaring_package.is_some() {
+                items[index].location = items[own].location.clone();
+                items[index].declaring_package = None;
+            }
+            continue;
+        }
+        let first = &items[members[0]];
+        let package = first.declaring_package.clone();
+        if members.iter().all(|&member| items[member].declaring_package == package) {
+            let location = first.location.clone();
+            let module = &mut items[index];
+            if module.declaring_package != package {
+                module.location = location;
+                module.declaring_package = package;
+            }
+        }
+    }
+}
+
 /// Rebuild `memberIds` from `parentId` edges (emission order preserved per parent).
 pub fn fill_member_ids_from_parents(items: &mut [ApiDocItem]) {
     let mut by_parent: HashMap<usize, Vec<usize>> = HashMap::new();
@@ -118,7 +176,7 @@ pub fn fill_member_ids_from_parents(items: &mut [ApiDocItem]) {
 
 /// Ensure module hierarchy and attach module-level symbols to owning modules.
 pub fn link_api_doc_library_tree(items: &mut Vec<ApiDocItem>, _resolution: &Resolution) {
-    let loc_template = stub_location_from(items);
+    let fallback_location = stub_location_from(items);
     let mut module_by_path: HashMap<String, usize> = HashMap::new();
 
     for item in items.iter() {
@@ -133,13 +191,16 @@ pub fn link_api_doc_library_tree(items: &mut Vec<ApiDocItem>, _resolution: &Reso
         module_by_path.insert(path_key(&path), id);
     }
 
+    // A synthesized module points at its first contained item, never at an unrelated one.
     let mut needed_paths: Vec<Vec<String>> = Vec::new();
+    let mut first_location: HashMap<String, ApiLocation> = HashMap::new();
     for item in items.iter() {
         let path = module_path_for_row(item);
         if path.is_empty() {
             continue;
         }
         for len in 1..=path.len() {
+            first_location.entry(path_key(&path[..len])).or_insert_with(|| item.location.clone());
             needed_paths.push(path[..len].to_vec());
         }
     }
@@ -157,6 +218,7 @@ pub fn link_api_doc_library_tree(items: &mut Vec<ApiDocItem>, _resolution: &Reso
         let name = path.last().cloned().unwrap_or_default();
         let id = next_id;
         next_id += 1;
+        let location = first_location.get(&key).cloned().unwrap_or_else(|| fallback_location.clone());
         module_by_path.insert(key, id);
         items.push(ApiDocItem {
             id: Some(id),
@@ -165,7 +227,7 @@ pub fn link_api_doc_library_tree(items: &mut Vec<ApiDocItem>, _resolution: &Reso
             name,
             kind: KIND_MODULE.to_string(),
             visibility: Some("public".to_string()),
-            location: loc_template.clone(),
+            location,
             parent_id: None,
             member_ids: Vec::new(),
             module_path: path,
@@ -326,5 +388,83 @@ mod tests {
         let roots: Vec<_> = items.iter().filter(|i| i.parent_id.is_none() && i.kind == KIND_MODULE).collect();
         assert_eq!(roots.len(), 1);
         assert_eq!(roots[0].id, Some(1));
+    }
+
+    fn row(id: usize, qualified_name: &str, kind: &str, file: &str) -> ApiDocItem {
+        let name = qualified_name.rsplit("::").next().unwrap_or(qualified_name).to_string();
+        ApiDocItem {
+            id: Some(id),
+            qualified_name: qualified_name.into(),
+            symbol_key: None,
+            name: name.clone(),
+            kind: kind.into(),
+            visibility: Some("public".into()),
+            location: ApiLocation { file: file.into(), start_line: id, start_column: 1, end_line: id, end_column: 1 },
+            parent_id: None,
+            member_ids: vec![],
+            module_path: vec![],
+            display_name: Some(name),
+            signature: None,
+            field_type: None,
+            return_type: None,
+            parameters: vec![],
+            generic_parameters: vec![],
+            doc_markdown: None,
+            doc: None,
+            declaring_package: None,
+            controls: vec![],
+            tier: None,
+        }
+    }
+
+    #[test]
+    fn own_modules_are_not_attributed_to_the_dependency_of_the_first_item() {
+        let foundation = "/w/obj/beskid/deps/src/corelib_foundation-1a2b/src";
+        let ctx = ApiDocLinkContext {
+            publishing_package: "corelib_http".into(),
+            packages: vec![
+                ApiDocPackageRoots {
+                    package: "corelib_http".into(),
+                    match_root: "/w/http/src".into(),
+                    artifact_source_prefix: "src".into(),
+                    generated_match_root: Some("/w/http/.generated".into()),
+                    artifact_generated_prefix: ".generated".into(),
+                },
+                ApiDocPackageRoots {
+                    package: "corelib_foundation".into(),
+                    match_root: foundation.into(),
+                    artifact_source_prefix: "src".into(),
+                    generated_match_root: None,
+                    artifact_generated_prefix: ".generated".into(),
+                },
+            ],
+        };
+        let array_iterator = format!("{foundation}/Query/ArrayIterator.bd");
+        // Sorted by qualified name, a dependency item comes first and seeds the stub location.
+        let mut items = vec![
+            row(1, "ArrayIterator", "type", &array_iterator),
+            row(2, "Http::Client::Send", "function", "/w/http/src/Http/Client.bd"),
+            row(3, "Core::Option", "type", &format!("{foundation}/Core/Option.bd")),
+            row(4, "Core::Http", "function", "/w/http/src/Core/Http.bd"),
+            row(5, "Query::Range", "function", &format!("{foundation}/Query/Range.bd")),
+        ];
+
+        link_api_doc_library_tree(&mut items, &empty_resolution());
+        assign_declaring_packages(&mut items, &ctx);
+        attribute_modules_to_members(&mut items);
+
+        let module = |name: &str| items.iter().find(|i| i.kind == KIND_MODULE && i.qualified_name == name).unwrap();
+        for own in ["Http", "Http::Client", "Core"] {
+            let module = module(own);
+            assert_eq!(module.declaring_package, None, "{own} holds corelib_http items");
+            assert!(module.location.file.starts_with("/w/http/src/"), "{own} location: {}", module.location.file);
+        }
+        let query = module("Query");
+        assert_eq!(query.declaring_package.as_deref(), Some("corelib_foundation"));
+        assert_eq!(
+            query.location.file,
+            format!("{foundation}/Query/Range.bd"),
+            "a module points at its own first item"
+        );
     }
 }

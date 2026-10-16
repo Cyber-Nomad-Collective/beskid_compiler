@@ -4,6 +4,9 @@ pub bool SchedStep() {
     pointer table = SchedTable();
     if table == NativePointer(0) { return false; }
     ApplyPendingSpawns();
+    // Cancellation words set by other isolates (Runtime/Parallel/Registry.bd) become fiber
+    // cancellations before the pending ones are applied.
+    IsolateApplyCancelRequests();
     ApplyPendingCancels();
     ExternalPump(clock_monotonic_nanos());
     ApplyPendingWakes();
@@ -36,12 +39,16 @@ pub bool SchedStep() {
 
     if !SchedulerAcquireMutatorToken() { return false; }
     FiberSetState(next, FIBER_STATE_RUNNING);
+    // A watched Core.Parallel task fiber can observe cancellation from its first run on.
+    IsolateObserveFiberStarting(next);
     SchedulerSetCurrentFiber(next);
     RestoreFiberLocalState(next);
     ContextSwitch(SchedulerContext(), NativePointer(raw_word_load(pointer_add(FiberRecord(next), 104))));
     SchedulerReleaseMutatorToken();
     SchedulerSetCurrentFiber(FIBER_NONE);
-    if FiberFinished(next) && raw_byte_load(pointer_add(FiberRecord(next), 40)) != 0 {
+    // A local Core.Parallel task's fiber hands its outcome to its task (Runtime/Parallel/Isolates.bd).
+    if FiberFinished(next) { IsolateObserveFiberFinished(next); }
+    if FiberExists(next) && FiberFinished(next) && raw_byte_load(pointer_add(FiberRecord(next), 40)) != 0 {
         FiberCleanup(next);
     }
     return true;

@@ -3,6 +3,9 @@ use super::super::sources::{
     CANONICAL_CORELIB_CONCURRENCY_SOURCE_PATH, CANONICAL_CORELIB_CONSOLE_LINUX_SOURCE_PATH,
     CANONICAL_CORELIB_CONSOLE_MACOS_SOURCE_PATH, CANONICAL_CORELIB_CONSOLE_TERMINAL_SOURCE_PATH,
     CANONICAL_CORELIB_CONSOLE_WINDOWS_SOURCE_PATH, CANONICAL_CORELIB_FIBER_SOURCE_PATH,
+    CANONICAL_CORELIB_PARALLEL_ISOLATE_SOURCE_PATH, CANONICAL_CORELIB_PARALLEL_PORT_SOURCE_PATH,
+    CANONICAL_CORELIB_PARALLEL_READ_ONLY_ARRAY_SOURCE_PATH, CANONICAL_CORELIB_PARALLEL_SCOPES_SOURCE_PATH,
+    CANONICAL_CORELIB_PARALLEL_SEQ_SOURCE_PATH, CANONICAL_CORELIB_PARALLEL_SOURCE_PATH,
     CANONICAL_CORELIB_FS_SOURCE_PATH, CANONICAL_CORELIB_HUB_SOURCE_PATH, CANONICAL_CORELIB_MUTEX_SOURCE_PATH,
     CANONICAL_CORELIB_SYSCALL_SOURCE_PATH, CANONICAL_CORELIB_WAIT_GROUP_SOURCE_PATH,
     CANONICAL_FOUNDATION_ARRAY_SOURCE_PATH, CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH,
@@ -315,6 +318,11 @@ pub(super) const CORELIB_SERVICES: &[CorelibService] = &[
         symbol: "fiber_processor_count",
         source_path: CANONICAL_CORELIB_CONCURRENCY_SOURCE_PATH,
     },
+    CorelibService {
+        name: "__host_processor_count",
+        symbol: "beskid_rt_v5_host_processor_count",
+        source_path: CANONICAL_CORELIB_CONCURRENCY_SOURCE_PATH,
+    },
     CorelibService { name: "__fiber_cancel", symbol: "fiber_cancel", source_path: CANONICAL_CORELIB_FIBER_SOURCE_PATH },
     CorelibService { name: "__fiber_detach", symbol: "fiber_detach", source_path: CANONICAL_CORELIB_FIBER_SOURCE_PATH },
     CorelibService {
@@ -575,6 +583,156 @@ pub(super) const CORELIB_SERVICES: &[CorelibService] = &[
         name: "__panic_str",
         symbol: "beskid_trap_message",
         source_path: CANONICAL_SERIALIZATION_DESCRIPTORS_SOURCE_PATH,
+    },    // Core.Parallel (v0.6.3-v0.6.5): isolates, scopes, ports and parallel sequences.
+    CorelibService {
+        name: "__isolate_scope_open",
+        symbol: "isolate_scope_open",
+        source_path: CANONICAL_CORELIB_PARALLEL_SCOPES_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__isolate_spawn",
+        symbol: "isolate_spawn",
+        source_path: CANONICAL_CORELIB_PARALLEL_SCOPES_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__isolate_spawn_local",
+        symbol: "isolate_spawn_local",
+        source_path: CANONICAL_CORELIB_PARALLEL_SCOPES_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__isolate_join",
+        symbol: "isolate_join",
+        source_path: CANONICAL_CORELIB_PARALLEL_SCOPES_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__isolate_join_value",
+        symbol: "isolate_join_value",
+        source_path: CANONICAL_CORELIB_PARALLEL_SCOPES_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__isolate_join_message",
+        symbol: "isolate_join_message",
+        source_path: CANONICAL_CORELIB_PARALLEL_SCOPES_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__isolate_join_finish",
+        symbol: "isolate_join_finish",
+        source_path: CANONICAL_CORELIB_PARALLEL_SCOPES_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__isolate_task_status",
+        symbol: "isolate_task_status",
+        source_path: CANONICAL_CORELIB_PARALLEL_SCOPES_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__isolate_task_index",
+        symbol: "isolate_task_index",
+        source_path: CANONICAL_CORELIB_PARALLEL_SCOPES_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__isolate_scope_cancel",
+        symbol: "isolate_scope_cancel",
+        source_path: CANONICAL_CORELIB_PARALLEL_SCOPES_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__isolate_scope_close_ports",
+        symbol: "isolate_scope_close_ports",
+        source_path: CANONICAL_CORELIB_PARALLEL_SCOPES_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__isolate_scope_close",
+        symbol: "isolate_scope_close",
+        source_path: CANONICAL_CORELIB_PARALLEL_SCOPES_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__panic_str",
+        symbol: "beskid_trap_message",
+        source_path: CANONICAL_CORELIB_PARALLEL_SCOPES_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__isolate_current",
+        symbol: "isolate_current",
+        source_path: CANONICAL_CORELIB_PARALLEL_ISOLATE_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__isolate_main",
+        symbol: "isolate_main",
+        source_path: CANONICAL_CORELIB_PARALLEL_ISOLATE_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__isolate_task_isolate",
+        symbol: "isolate_task_isolate",
+        source_path: CANONICAL_CORELIB_PARALLEL_ISOLATE_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__isolate_cancel",
+        symbol: "isolate_cancel",
+        source_path: CANONICAL_CORELIB_PARALLEL_ISOLATE_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__isolate_cancel_requested",
+        symbol: "isolate_cancel_requested",
+        source_path: CANONICAL_CORELIB_PARALLEL_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__port_create",
+        symbol: "port_create",
+        source_path: CANONICAL_CORELIB_PARALLEL_PORT_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__port_send",
+        symbol: "port_send",
+        source_path: CANONICAL_CORELIB_PARALLEL_PORT_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__port_receive",
+        symbol: "port_receive",
+        source_path: CANONICAL_CORELIB_PARALLEL_PORT_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__port_receive_value",
+        symbol: "port_receive_value",
+        source_path: CANONICAL_CORELIB_PARALLEL_PORT_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__port_try_receive",
+        symbol: "port_try_receive",
+        source_path: CANONICAL_CORELIB_PARALLEL_PORT_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__port_close",
+        symbol: "port_close",
+        source_path: CANONICAL_CORELIB_PARALLEL_PORT_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__isolate_scope_port",
+        symbol: "isolate_scope_port",
+        source_path: CANONICAL_CORELIB_PARALLEL_PORT_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__panic_str",
+        symbol: "beskid_trap_message",
+        source_path: CANONICAL_CORELIB_PARALLEL_PORT_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__isolate_pool_size",
+        symbol: "isolate_pool_size",
+        source_path: CANONICAL_CORELIB_PARALLEL_SEQ_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__isolate_idle_count",
+        symbol: "isolate_idle_count",
+        source_path: CANONICAL_CORELIB_PARALLEL_SEQ_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__panic_str",
+        symbol: "beskid_trap_message",
+        source_path: CANONICAL_CORELIB_PARALLEL_SEQ_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__panic_str",
+        symbol: "beskid_trap_message",
+        source_path: CANONICAL_CORELIB_PARALLEL_READ_ONLY_ARRAY_SOURCE_PATH,
     },
 ];
 
@@ -597,6 +755,12 @@ pub fn canonical_corelib_service_value_dispatch(service: CorelibService) -> Opti
         && service.source_path == CANONICAL_CORELIB_CHANNEL_SOURCE_PATH)
         || (service.name == "__hub_wait_receive_value"
             && service.symbol == "hub_wait_receive_value"
-            && service.source_path == CANONICAL_CORELIB_HUB_SOURCE_PATH))
+            && service.source_path == CANONICAL_CORELIB_HUB_SOURCE_PATH)
+        || (service.name == "__isolate_join_value"
+            && service.symbol == "isolate_join_value"
+            && service.source_path == CANONICAL_CORELIB_PARALLEL_SCOPES_SOURCE_PATH)
+        || (service.name == "__port_receive_value"
+            && service.symbol == "port_receive_value"
+            && service.source_path == CANONICAL_CORELIB_PARALLEL_PORT_SOURCE_PATH))
         .then_some(CorelibServiceValueDispatch { symbol: service.symbol })
 }

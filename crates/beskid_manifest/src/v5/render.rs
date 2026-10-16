@@ -94,6 +94,11 @@ pub(super) fn render_rust(
         let os_imports = adapter.os_imports.iter().map(|import| format!("{import:?}")).collect::<Vec<_>>().join(", ");
         format!("    GeneratedCoreArgsEntryAdapter {{ target: {:?}, executable_entry: {:?}, program_entry: {:?}, capture: {:?}, handoff: {:?}, ownership: {:?}, entry_source: {:?}, os_imports: &[{}] }},\n", adapter.target, adapter.executable_entry, adapter.program_entry, adapter.capture, adapter.handoff, adapter.ownership, adapter.entry_source, os_imports)
     }).collect::<String>();
+    let data_export_rows = manifest
+        .data_exports
+        .iter()
+        .map(|data| format!("    ({:?}, {:?}),\n", data.symbol, data.ty))
+        .collect::<String>();
     format!(
         "// @generated from runtime_manifest.bsol; do not edit.\n\
 pub const ABI_V5_SOURCE_JSON: &str = r#\"{json}\"#;\n\
@@ -136,6 +141,8 @@ pub struct GeneratedCorelibServiceBinding {{\n\
     pub os_imports: &'static [&'static str],\n\
 }}\n\
 pub const ABI_V5_CORELIB_SERVICE_BINDINGS: &[GeneratedCorelibServiceBinding] = &[\n{corelib_service_binding_rows}];\n\
+/// Process-wide data words the runtime kit defines and exports (symbol, value type).\n\
+pub const ABI_V5_DATA_EXPORTS: &[(&str, &str)] = &[\n{data_export_rows}];\n\
 #[derive(Debug, Clone, Copy)]\n\
 pub struct GeneratedCoreArgsEntryAdapter {{\n\
     pub target: &'static str,\n\
@@ -259,6 +266,9 @@ pub(super) fn render_c_header(manifest: &RuntimeManifestV5) -> String {
                 .join(", ")
         };
         writeln!(out, "{noreturn}{} {}({});", c_type(&function.result), function.symbol, params).unwrap();
+    }
+    for data in &manifest.data_exports {
+        writeln!(out, "extern {} {};", c_type(&data.ty), data.symbol).unwrap();
     }
     for function in &manifest.assembly {
         writeln!(

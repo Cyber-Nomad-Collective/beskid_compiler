@@ -2287,6 +2287,29 @@
       ]
     },
     {
+      "name": "__gc_cycle_start",
+      "adapter": "gc_cycle_start",
+      "params": [],
+      "result": "u8",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "gc_cycle_start",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "gc_cycle_start",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "gc_cycle_start",
+          "osImports": []
+        }
+      ]
+    },
+    {
       "name": "__gc_external_root_count",
       "adapter": "gc_external_root_count",
       "params": [],
@@ -2379,6 +2402,34 @@
       ]
     },
     {
+      "name": "__gc_heap_force_barrier_skip",
+      "adapter": "gc_heap_force_barrier_skip",
+      "params": [
+        {
+          "name": "enabled",
+          "type": "usize"
+        }
+      ],
+      "result": "void",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "gc_heap_force_barrier_skip",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "gc_heap_force_barrier_skip",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "gc_heap_force_barrier_skip",
+          "osImports": []
+        }
+      ]
+    },
+    {
       "name": "__gc_heap_force_root_stack_failure",
       "adapter": "gc_heap_force_root_stack_failure",
       "params": [
@@ -2425,6 +2476,34 @@
         {
           "target": "x86_64-unknown-linux-gnu",
           "implementation": "gc_heap_region_count",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__gc_heap_set_incremental_stress",
+      "adapter": "gc_heap_set_incremental_stress",
+      "params": [
+        {
+          "name": "n",
+          "type": "usize"
+        }
+      ],
+      "result": "void",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "gc_heap_set_incremental_stress",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "gc_heap_set_incremental_stress",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "gc_heap_set_incremental_stress",
           "osImports": []
         }
       ]
@@ -2481,6 +2560,57 @@
       ]
     },
     {
+      "name": "__gc_last_cycle_max_step_bytes",
+      "adapter": "gc_last_cycle_max_step_bytes",
+      "params": [],
+      "result": "usize",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "gc_last_cycle_max_step_bytes",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "gc_last_cycle_max_step_bytes",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "gc_last_cycle_max_step_bytes",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__gc_mark_step",
+      "adapter": "gc_mark_step",
+      "params": [
+        {
+          "name": "budget",
+          "type": "usize"
+        }
+      ],
+      "result": "usize",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "gc_mark_step",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "gc_mark_step",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "gc_mark_step",
+          "osImports": []
+        }
+      ]
+    },
+    {
       "name": "__gc_object_count",
       "adapter": "gc_object_count",
       "params": [],
@@ -2499,6 +2629,34 @@
         {
           "target": "x86_64-unknown-linux-gnu",
           "implementation": "gc_object_count",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__gc_object_mark_state",
+      "adapter": "gc_object_mark_state",
+      "params": [
+        {
+          "name": "object",
+          "type": "pointer"
+        }
+      ],
+      "result": "usize",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "gc_object_mark_state",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "gc_object_mark_state",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "gc_object_mark_state",
           "osImports": []
         }
       ]
@@ -2791,6 +2949,35 @@
       ]
     },
     {
+      "name": "__host_processor_count",
+      "adapter": "beskid_rt_v5_host_processor_count",
+      "params": [],
+      "result": "usize",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_host_processor_count",
+          "osImports": [
+            "sysconf"
+          ]
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_host_processor_count",
+          "osImports": [
+            "GetActiveProcessorCount"
+          ]
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_host_processor_count",
+          "osImports": [
+            "sysconf"
+          ]
+        }
+      ]
+    },
+    {
       "name": "__hub_create",
       "adapter": "hub_create",
       "params": [],
@@ -2965,6 +3152,565 @@
         {
           "target": "x86_64-unknown-linux-gnu",
           "implementation": "hub_wait_receive_value",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__isolate_cancel",
+      "adapter": "isolate_cancel",
+      "params": [
+        {
+          "name": "isolate",
+          "type": "i64"
+        }
+      ],
+      "result": "void",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "isolate_cancel",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "isolate_cancel",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "isolate_cancel",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__isolate_cancel_requested",
+      "adapter": "isolate_cancel_requested",
+      "params": [],
+      "result": "u8",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "isolate_cancel_requested",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "isolate_cancel_requested",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "isolate_cancel_requested",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__isolate_current",
+      "adapter": "isolate_current",
+      "params": [],
+      "result": "i64",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "isolate_current",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "isolate_current",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "isolate_current",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__isolate_idle_count",
+      "adapter": "isolate_idle_count",
+      "params": [],
+      "result": "i64",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "isolate_idle_count",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "isolate_idle_count",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "isolate_idle_count",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__isolate_join",
+      "adapter": "isolate_join",
+      "params": [
+        {
+          "name": "handle",
+          "type": "i64"
+        }
+      ],
+      "result": "i64",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "isolate_join",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "isolate_join",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "isolate_join",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__isolate_join_finish",
+      "adapter": "isolate_join_finish",
+      "params": [
+        {
+          "name": "handle",
+          "type": "i64"
+        }
+      ],
+      "result": "void",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "isolate_join_finish",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "isolate_join_finish",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "isolate_join_finish",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__isolate_join_message",
+      "adapter": "isolate_join_message",
+      "params": [
+        {
+          "name": "handle",
+          "type": "i64"
+        }
+      ],
+      "result": "pointer",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "isolate_join_message",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "isolate_join_message",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "isolate_join_message",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__isolate_join_value",
+      "adapter": "isolate_join_value",
+      "params": [
+        {
+          "name": "handle",
+          "type": "i64"
+        },
+        {
+          "name": "destination",
+          "type": "pointer"
+        }
+      ],
+      "result": "u8",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "isolate_join_value",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "isolate_join_value",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "isolate_join_value",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__isolate_main",
+      "adapter": "isolate_main",
+      "params": [],
+      "result": "i64",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "isolate_main",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "isolate_main",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "isolate_main",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__isolate_pool_size",
+      "adapter": "isolate_pool_size",
+      "params": [],
+      "result": "i64",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "isolate_pool_size",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "isolate_pool_size",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "isolate_pool_size",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__isolate_scope_cancel",
+      "adapter": "isolate_scope_cancel",
+      "params": [
+        {
+          "name": "scope",
+          "type": "i64"
+        }
+      ],
+      "result": "void",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "isolate_scope_cancel",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "isolate_scope_cancel",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "isolate_scope_cancel",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__isolate_scope_close",
+      "adapter": "isolate_scope_close",
+      "params": [
+        {
+          "name": "scope",
+          "type": "i64"
+        }
+      ],
+      "result": "void",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "isolate_scope_close",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "isolate_scope_close",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "isolate_scope_close",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__isolate_scope_close_ports",
+      "adapter": "isolate_scope_close_ports",
+      "params": [
+        {
+          "name": "scope",
+          "type": "i64"
+        }
+      ],
+      "result": "void",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "isolate_scope_close_ports",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "isolate_scope_close_ports",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "isolate_scope_close_ports",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__isolate_scope_open",
+      "adapter": "isolate_scope_open",
+      "params": [
+        {
+          "name": "workers",
+          "type": "i64"
+        }
+      ],
+      "result": "i64",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "isolate_scope_open",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "isolate_scope_open",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "isolate_scope_open",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__isolate_scope_port",
+      "adapter": "isolate_scope_port",
+      "params": [
+        {
+          "name": "scope",
+          "type": "i64"
+        },
+        {
+          "name": "port",
+          "type": "i64"
+        }
+      ],
+      "result": "void",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "isolate_scope_port",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "isolate_scope_port",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "isolate_scope_port",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__isolate_spawn",
+      "adapter": "isolate_spawn",
+      "params": [
+        {
+          "name": "entry",
+          "type": "pointer"
+        },
+        {
+          "name": "argument",
+          "type": "pointer"
+        },
+        {
+          "name": "scope",
+          "type": "i64"
+        }
+      ],
+      "result": "i64",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "isolate_spawn",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "isolate_spawn",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "isolate_spawn",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__isolate_spawn_local",
+      "adapter": "isolate_spawn_local",
+      "params": [
+        {
+          "name": "entry",
+          "type": "pointer"
+        },
+        {
+          "name": "argument",
+          "type": "pointer"
+        },
+        {
+          "name": "scope",
+          "type": "i64"
+        }
+      ],
+      "result": "i64",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "isolate_spawn_local",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "isolate_spawn_local",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "isolate_spawn_local",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__isolate_task_index",
+      "adapter": "isolate_task_index",
+      "params": [
+        {
+          "name": "handle",
+          "type": "i64"
+        }
+      ],
+      "result": "i64",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "isolate_task_index",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "isolate_task_index",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "isolate_task_index",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__isolate_task_isolate",
+      "adapter": "isolate_task_isolate",
+      "params": [
+        {
+          "name": "handle",
+          "type": "i64"
+        }
+      ],
+      "result": "i64",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "isolate_task_isolate",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "isolate_task_isolate",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "isolate_task_isolate",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__isolate_task_status",
+      "adapter": "isolate_task_status",
+      "params": [
+        {
+          "name": "handle",
+          "type": "i64"
+        }
+      ],
+      "result": "i64",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "isolate_task_status",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "isolate_task_status",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "isolate_task_status",
           "osImports": []
         }
       ]
@@ -3740,6 +4486,186 @@
         {
           "target": "x86_64-unknown-linux-gnu",
           "implementation": "beskid_trap_message",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__port_close",
+      "adapter": "port_close",
+      "params": [
+        {
+          "name": "port",
+          "type": "i64"
+        }
+      ],
+      "result": "void",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "port_close",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "port_close",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "port_close",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__port_create",
+      "adapter": "port_create",
+      "params": [
+        {
+          "name": "capacity",
+          "type": "i64"
+        }
+      ],
+      "result": "i64",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "port_create",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "port_create",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "port_create",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__port_receive",
+      "adapter": "port_receive",
+      "params": [
+        {
+          "name": "port",
+          "type": "i64"
+        }
+      ],
+      "result": "i64",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "port_receive",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "port_receive",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "port_receive",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__port_receive_value",
+      "adapter": "port_receive_value",
+      "params": [
+        {
+          "name": "port",
+          "type": "i64"
+        },
+        {
+          "name": "destination",
+          "type": "pointer"
+        }
+      ],
+      "result": "u8",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "port_receive_value",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "port_receive_value",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "port_receive_value",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__port_send",
+      "adapter": "port_send",
+      "params": [
+        {
+          "name": "port",
+          "type": "i64"
+        },
+        {
+          "name": "sender",
+          "type": "pointer"
+        },
+        {
+          "name": "transfer_class",
+          "type": "i64"
+        }
+      ],
+      "result": "i64",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "port_send",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "port_send",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "port_send",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__port_try_receive",
+      "adapter": "port_try_receive",
+      "params": [
+        {
+          "name": "port",
+          "type": "i64"
+        }
+      ],
+      "result": "i64",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "port_try_receive",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "port_try_receive",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "port_try_receive",
           "osImports": []
         }
       ]

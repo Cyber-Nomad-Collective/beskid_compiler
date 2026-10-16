@@ -235,6 +235,17 @@ fn ordinary_call_contextualizes_inline_generic_enum_arguments() {
 }
 
 #[test]
+fn ordinary_call_enum_context_is_the_callee_parameter_identity_whatever_the_caller_spells() {
+    // The caller declares its own `AddressFamily`; the parameter's identity is read at the
+    // callee, so the constructor is `Option<Network.Types.AddressFamily>` exactly.
+    assert_ordinary_enum_argument_context(
+        "use Core.Optional.Option; use Network.Types; pub i64 Resolve(Option<AddressFamily> family) { return 0_i64; }",
+        "use Core.Optional.Option; use Network.Dns; enum AddressFamily { Other } i64 Main() { return Dns.Resolve(Option::None); }",
+        true,
+    );
+}
+
+#[test]
 fn ordinary_call_enum_context_rejects_unproven_parameter_identity() {
     let ordinary =
         "use Core.Optional.Option; use Network.Types; pub i64 Resolve(Option<AddressFamily> family) { return 0_i64; }";
@@ -254,10 +265,6 @@ fn ordinary_call_enum_context_rejects_unproven_parameter_identity() {
         (
             "use Core.Optional.Option; pub i64 Resolve(Option<Unknown> family) { return 0_i64; }",
             "use Core.Optional.Option; use Network.Dns; i64 Main() { return Dns.Resolve(Option::None); }",
-        ),
-        (
-            ordinary,
-            "use Core.Optional.Option; use Network.Dns; enum AddressFamily { Other } i64 Main() { return Dns.Resolve(Option::None); }",
         ),
         (
             "use Core.Optional.Option; use Network.Types; pub i64 Resolve(Option<AddressFamily> family) { return 0_i64; } pub i64 Resolve(Option<AddressFamily> family) { return 1_i64; }",
@@ -397,12 +404,11 @@ fn generic_enum_constructor_uses_its_explicit_generic_call_parameter_context() {
     let specialization = beskid_queries::generic_call_specialization(input.database(), call)
         .expect("Map specialization query")
         .expect("explicit Map specialization");
+    let specialization = beskid_queries::generic_call_specialization_instance(input.database(), specialization)
+        .expect("Map specialization instance query")
+        .expect("Map specialization instance");
     assert!(
-        beskid_queries::enum_match_specialization(
-            input.database(),
-            match_expression,
-            specialization.substitutions.clone(),
-        )
+        beskid_queries::enum_match_specialization(input.database(), match_expression, &specialization)
         .expect("generic Map match specialization")
         .is_some(),
         "the call-derived environment must materialize exact match layout and ownership facts"
@@ -411,11 +417,7 @@ fn generic_enum_constructor_uses_its_explicit_generic_call_parameter_context() {
         find_nodes_of_kind(input.database(), map, beskid_queries::IndexedNodeKind::EnumConstructorExpression)
     {
         assert!(
-            beskid_queries::enum_constructor_specialization(
-                input.database(),
-                body_constructor,
-                specialization.substitutions.clone(),
-            )
+            beskid_queries::enum_constructor_specialization(input.database(), body_constructor, &specialization)
             .expect("Map body constructor specialization query")
             .is_some(),
             "each Map body constructor must consume the same generic environment"

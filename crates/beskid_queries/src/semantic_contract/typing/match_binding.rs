@@ -71,7 +71,7 @@ pub(in crate::semantic_contract) fn pattern_binding_fact_in_environment(
     index: &beskid_analysis::syntax_query::SyntaxIndex,
     key: AstNodeKey,
     declaration: beskid_analysis::syntax::AstNodeId,
-    enclosing: Option<&Arc<[GenericSubstitution]>>,
+    enclosing: Option<&GenericSpecializationInstance>,
 ) -> Option<Result<EnumMatchBindingFact, SemanticError>> {
     if index.kind(parent_node(index, declaration)?)? != beskid_analysis::syntax_query::NodeKind::Pattern {
         return None;
@@ -84,12 +84,10 @@ pub(in crate::semantic_contract) fn pattern_binding_fact_in_environment(
     }
     let outer_match = AstNodeKey { node: outer_match, ..key };
     let query = match enclosing {
-        // The specialization materializes only the scrutinee shapes that can name an enclosing
-        // generic (an explicitly typed local or a nested pattern binding). Any other shape (a
-        // call or projected path) proves its applied enum through its own source identity, so
-        // the target-neutral fact is the exact authority for it, as `enum_match_in_context` in
-        // codegen already orders them.
-        Some(enclosing) => match enum_match_specialization(db, outer_match, enclosing.clone()) {
+        // The specialization materializes every scrutinee shape in its environment; a match it
+        // declines (`Ok(None)`) keeps the target-neutral fact as its authority, exactly as
+        // `enum_match_in_context` in codegen orders them.
+        Some(enclosing) => match enum_match_specialization(db, outer_match, enclosing) {
             Ok(None) => enum_match(db, outer_match),
             specialized => specialized,
         },
@@ -138,7 +136,7 @@ fn pattern_binding_unavailable(db: &dyn Db, outer_match: AstNodeKey, reason: &st
 pub fn pattern_binding_specialization(
     db: &dyn Db,
     key: AstNodeKey,
-    enclosing: Arc<[GenericSubstitution]>,
+    enclosing: &GenericSpecializationInstance,
 ) -> SemanticQueryResult<EnumMatchBindingFact> {
     let syntax = db
         .syntax_unit(key.unit)
@@ -158,10 +156,10 @@ pub fn pattern_binding_specialization(
     }
     let declaration = resolve_lexical_declaration(program, index, key.node, segment.node.name.node.name.as_str())
         .ok_or_else(|| SemanticError::unavailable("pattern_binding_specialization"))?;
-    pattern_binding_fact_in_environment(db, index, key, declaration, Some(&enclosing)).transpose()
+    pattern_binding_fact_in_environment(db, index, key, declaration, Some(enclosing)).transpose()
 }
 
-fn enum_match_pattern_binding(
+pub(in crate::semantic_contract) fn enum_match_pattern_binding(
     pattern: &EnumMatchPatternFact,
     declaration: beskid_analysis::syntax::AstNodeId,
 ) -> Option<EnumMatchBindingFact> {

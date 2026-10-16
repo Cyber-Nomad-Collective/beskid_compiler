@@ -22,6 +22,7 @@ pub mod member_expression;
 pub mod path_expression;
 pub mod pattern;
 pub mod span;
+pub mod move_expression;
 pub mod spawn_expression;
 pub mod string_decode;
 pub mod struct_literal_expression;
@@ -54,6 +55,7 @@ pub use match_expression::MatchExpression;
 pub use member_expression::MemberExpression;
 pub use path_expression::PathExpression;
 pub use pattern::{EnumPattern, Pattern};
+pub use move_expression::MoveExpression;
 pub use spawn_expression::SpawnExpression;
 pub use string_decode::{
     StringLiteralPart, decode_string_literal_token, split_string_literal_parts, split_string_literal_token,

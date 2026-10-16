@@ -97,8 +97,8 @@ pub use semantic_contract::{
     ClosureAllocationStatus, ClosureCallTarget, ClosureCapture, ClosureEnvironment, ClosureEnvironmentField,
     ClosureLoweringStatus, ClosurePointerMapRequirement, ClifParameterShape, CollectionMutationOwner, CollectionOperation,
     CompletionCandidate, CompletionContext, CompletionKind, CompletionMemberSurface, ControlFlow, CorelibService,
-    EnumConstructorFact, EnumConstructorSpecialization, EnumConstructorTemplate, EnumLayoutFact,
-    EnumLayoutTemplateArgument, EnumMatchArmFact, EnumMatchBindingFact, EnumMatchFact, EnumMatchPatternFact,
+    EnumConstructorFact, EnumConstructorSpecialization, EnumLayoutFact,
+    EnumMatchArmFact, EnumMatchBindingFact, EnumMatchFact, EnumMatchPatternFact,
     EnumMatchScalarLiteralFact, ScalarMatchFact, EnumMatchVariantPatternFact, EnumScalarPayloadObjectLayout,
     EnumScalarPayloadVariantLayout, EnumVariantLayoutFact, EventFieldLayoutFact, EventHandlerLocalFact,
     EventOperationFact, EventOperationKind, ExportSymbol, FiberOwnership, ForIterableSource, ForIteratorFact,
@@ -119,16 +119,21 @@ pub use semantic_contract::{
     aggregate_literal_specialization, array_index_element_abi_type, array_index_element_managed_reference_specialization,
     array_index_element_specialization, for_iterator_protocol, for_iterator_specialization,
     block_statement_nodes, bulk_call_element_abi_type, bulk_parameter, call_abi_signature,
+    AffineBinding, AffineFinding, AffineFindingKind, AffineOwnership, CanonicalEmpty, ExchangeCall,
+    MoveExpressionForm, affine_ownership, exchange_call, move_expression_form, CanonicalEmptyValue,
+    canonical_empty_value, TransferClassIntrinsic,
+    transfer_class_code, transfer_class_code_for_substitution, transfer_class_intrinsic,
     call_arguments, call_lowering, callable_fiber_ownership, callable_signature, capture_storage, cast_intents,
     child_nodes, clif_block_body, clif_block_parameters, closure_call_target, closure_environment, closure_signature, collection_operation,
     completion_candidates, completion_dependency_surface, completion_dependency_surface_for_assembly,
     completion_dependency_surface_for_program, constant_integer, contextual_integer_literal_abi_type, control_flow,
     direct_callees, empty_array_literal_element_abi_type, enum_constructor,
-    enum_constructor_specialization, enum_constructor_template, enum_layout, enum_match, enum_match_call_specialization, scalar_match, enum_match_specialization,
+    enum_constructor_specialization, enum_layout, enum_match, scalar_match, enum_match_specialization,
     event_field_layout, event_handler_lambda_for_local, event_operation, expected_type, expected_type_in_environment, extern_contract_declarations_in_unit, extern_contract_import_for_declaration,
     optional_extern_contract_members, ExternContractImport,
     for_iterator_fact, format_ast_node_key, format_ast_node_site, format_ast_node_trace, format_source_span_range,
     function_item_value, function_value_call, function_value_call_specialization, lambda_value_required,
+    specialized_closure_signature, SpecializedClosureSignature,
     generic_call_instantiation, generic_call_specialization, generic_call_specialization_in_environment,
     generic_call_specialization_instance, generic_call_template, generic_nominal_method_receiver,
     generic_specialization_identity, generic_specialization_instance, implicit_method_receiver, item_abi_signature,
@@ -139,7 +144,7 @@ pub use semantic_contract::{
     parameter_generic_reference, pattern_binding_specialization, primitive_numeric_conversion, range_for_fact,
     reachable_items, resolved_item, resolved_local, runtime_intrinsic, runtime_intrinsic_name, scoped_cleanup,
     spawn_entry_validation, spawn_handle_type, spawn_legality, spawn_target,
-    specialized_call_result_managed_reference_kind, specialized_corelib_value_service_result, test_item,
+    specialized_call_result_managed_reference_kind, specialized_builtin_type_argument, specialized_corelib_value_service_result, test_item,
     test_statement_nodes, specialized_try_expression_fact, try_expression_fact, try_expression_judgement, try_expression_legality, typed_array_allocation, value_abi_type,
 };
 pub use semantic_contract::{
@@ -154,7 +159,10 @@ pub use semantic_contract::{
     NonExhaustiveMatch, SemanticFinding, TypingObligation, TypingObligationKind, UnitObligation, UnitObligationKind,
     UnresolvedCallKind, UnresolvedCallTarget, UnresolvedImport, UnresolvedValueArgument, ValueObligation,
     call_argument_type_mismatch, call_arity_mismatch,
+    BoundedLambdaCaptures, bounded_lambda_captures, declared_captures_bound,
     check_gate_obligations, check_items, check_typing_obligations, check_unit_obligations, extern_profile_findings,
+    AttributeResolution, UnitAttributeSurface, attribute_findings, check_attribute_obligations, resolve_attribute_use,
+    unit_attribute_surface,
     gate_obligations, generic_parameter_conflict, immutable_local_assignment, match_exhaustiveness,
     member_reference_legality, typing_obligations, unit_obligations, unresolved_call_target, unresolved_imports,
     unresolved_value_argument, value_obligations,
@@ -166,6 +174,11 @@ pub use semantic_contract::{
 };
 pub use semantic_contract::{DeadCollectionGrowth, dead_collection_growth, is_growth_call_candidate};
 pub use semantic_contract::{UnresolvedTypeReference, unresolved_type_reference};
+pub use semantic_contract::{
+    TransferClass, TransferMarker, TransferMarkerAttribute, TransferNeverReason, aggregate_literal_transfer_class,
+    enum_constructor_transfer_class, nominal_transfer_class,
+    transfer_class_of_type, transfer_marker_contract,
+};
 pub use session::{
     compile_front_end_with_mod_host, compile_mod_free_front_end, configure_db_for_project, prepare_compilation,
     prepare_compilation_diagnostics, reset_process_compilation_database, with_db,
@@ -195,6 +208,10 @@ pub use semantic_contract::{
     GlueRustOwnerCallable, RustOwnerCallableRow, RustOwnerDeclaration, RustOwnerPlacement, RustOwnerTables,
     RustOwnerTypeRow, glue_binding, glue_handle_shape, rust_owner_declarations, rust_owner_tables,
     validate_rust_owner_path,
+};
+pub use semantic_contract::{
+    GlueCallbackSignature, GlueEnumBrand, GlueLogicalForm, GlueRecordBrand, GlueRecordField, glue_interop_signature,
+    glue_logical_form, glue_type_shape,
 };
 
 mod corelib_source_authority;

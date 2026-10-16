@@ -16,6 +16,15 @@ use crate::CodegenInput;
 /// Canonical ABI-v5 allocation entrypoint for managed aggregate values.
 pub const ABI_V5_MANAGED_OBJECT_ALLOCATE: &str = "beskid_rt_v5_managed_object_allocate";
 
+/// `BeskidTypeDescriptor.flags` bits (`Runtime/Bootstrap/Objects.bd`). The low two bits are the
+/// representation kind; `TYPE_DESCRIPTOR_IMMUTABLE` is a property bit that marks a descriptor
+/// whose objects nothing writes after construction. It is set on the canonical string record and,
+/// once the transfer-class query proves a nominal type Shared, on that type's descriptor. Array
+/// descriptors never carry it.
+pub const TYPE_DESCRIPTOR_ARRAY: u64 = 1;
+pub const TYPE_DESCRIPTOR_UTF8_VIEW: u64 = 2;
+pub const TYPE_DESCRIPTOR_IMMUTABLE: u64 = 4;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AggregateStaticField {
     pub abi_type: SemanticTypeId,
@@ -523,9 +532,15 @@ impl CodegenInput<'_> {
             {
                 return None;
             }
-            2
+            TYPE_DESCRIPTOR_UTF8_VIEW | TYPE_DESCRIPTOR_IMMUTABLE
         } else {
-            0
+            // A record whose transfer class is Shared in this specialization (`[Immutable]`, or
+            // Shared through a type argument such as `Sequenced<string>`) is immutable.
+            shared_descriptor_flags(beskid_queries::aggregate_literal_transfer_class(
+                self.database(),
+                literal,
+                specialization,
+            ))
         };
         Some(AggregateStaticPlan {
             descriptor_flags,
@@ -553,9 +568,7 @@ impl CodegenInput<'_> {
         specialization: Option<&GenericSpecializationInstance>,
     ) -> Option<AggregateStaticPlan> {
         let specialized = specialization.and_then(|specialization| {
-            enum_constructor_specialization(self.database(), literal, specialization.substitutions.clone())
-                .ok()
-                .flatten()
+            enum_constructor_specialization(self.database(), literal, specialization).ok().flatten()
         });
         // `operand?` allocates its propagated error in the enclosing return layout, which a
         // specialized body reads in its own environment.
@@ -597,7 +610,11 @@ impl CodegenInput<'_> {
             specialization_identity.as_deref().map(|identity| format!("_s{identity}")).unwrap_or_default()
         );
         Some(AggregateStaticPlan {
-            descriptor_flags: 0,
+            descriptor_flags: shared_descriptor_flags(beskid_queries::enum_constructor_transfer_class(
+                self.database(),
+                literal,
+                specialization,
+            )),
             descriptor_getter: None,
             literal,
             descriptor_symbol: format!("__beskid_aggregate_descriptor_{identity}"),
@@ -625,4 +642,9 @@ fn valid_alignment(value: u64) -> bool {
 fn align_to(value: u64, alignment: u64) -> Option<u64> {
     valid_alignment(alignment).then_some(())?;
     value.checked_add(alignment - 1).map(|value| value & !(alignment - 1))
+}
+
+/// `TYPE_DESCRIPTOR_IMMUTABLE` exactly when the proven transfer class is Shared.
+fn shared_descriptor_flags(class: Option<beskid_queries::TransferClass>) -> u64 {
+    if matches!(class, Some(beskid_queries::TransferClass::Shared)) { TYPE_DESCRIPTOR_IMMUTABLE } else { 0 }
 }

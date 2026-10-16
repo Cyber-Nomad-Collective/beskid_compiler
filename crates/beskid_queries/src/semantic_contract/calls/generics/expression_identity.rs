@@ -53,9 +53,7 @@ pub(in crate::semantic_contract) fn generic_source_expression_identity(
         return generic_source_path_identity(db, normalized_key, &literal.path.node);
     }
     if let Some(constructor) = node.of::<beskid_analysis::syntax::EnumConstructorExpression>() {
-        let path = contextual_enum_constructor_type_path(db, program, index, normalized_key, constructor)
-            .unwrap_or_else(|| constructor.path.node.type_path.node.clone());
-        return generic_source_path_identity(db, normalized_key, &path);
+        return applied_enum_constructor_identity(db, normalized_key, constructor, None);
     }
     if node.of::<beskid_analysis::syntax::LambdaExpression>().is_some() {
         return lambda_source_identity(db, program, index, normalized_key);
@@ -82,13 +80,6 @@ pub(in crate::semantic_contract) fn generic_source_expression_identity(
         {
             if let Ok(identity) = generic_source_local_identity(db, program, index, normalized_key, declaration) {
                 return Ok(identity);
-            }
-            if let Some(binding) = pattern_binding_fact(db, index, normalized_key, declaration) {
-                let binding = binding?;
-                return binding
-                    .source_identity
-                    .map(Ok)
-                    .unwrap_or_else(|| generic_source_field_shape_identity(db, normalized_key, binding.payload));
             }
         }
     }
@@ -142,6 +133,12 @@ pub(in crate::semantic_contract) fn generic_source_expression_identity(
         };
     }
     if node.of::<beskid_analysis::syntax::CallExpression>().is_some() {
+        if is_transfer_class_intrinsic(program, index, normalized_key).is_some() {
+            return Ok(GenericSourceTypeIdentity::Abi(SemanticTypeId::I64));
+        }
+        if let Some(exchange) = exchange_call_for_node(program, index, normalized_key) {
+            return generic_source_expression_identity(db, exchange.place);
+        }
         // A primitive numeric conversion (`u8(value % 256_u64)`) is a call ISLE lowers through
         // its own authority, ahead of `call_lowering`, which knows no declaration for `u8`.
         if let Some(conversion) = primitive_numeric_conversion(db, normalized_key)? {
@@ -197,7 +194,7 @@ fn generic_source_aggregate_field_identity(
     generic_source_field_shape_identity(db, access.receiver, *shape)
 }
 
-fn generic_source_field_shape_identity(
+pub(in crate::semantic_contract) fn generic_source_field_shape_identity(
     db: &dyn Db,
     site: AstNodeKey,
     shape: AggregateFieldShape,

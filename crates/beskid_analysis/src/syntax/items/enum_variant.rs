@@ -12,6 +12,8 @@ use beskid_ast_derive::AstNode;
 /// Single enum variant and its field list.
 #[derive(AstNode, Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct EnumVariant {
+    #[ast(children)]
+    pub attributes: Vec<Spanned<crate::syntax::Attribute>>,
     #[ast(child)]
     pub name: Spanned<Identifier>,
     #[ast(children)]
@@ -23,7 +25,8 @@ pub struct EnumVariant {
 impl Parsable for EnumVariant {
     fn parse(pair: Pair<Rule>) -> Result<Spanned<Self>, ParseError> {
         let span = SpanInfo::from_span(&pair.as_span());
-        let mut inner = pair.into_inner();
+        let mut inner = pair.into_inner().peekable();
+        let attributes = crate::syntax::items::parse_helpers::parse_attributes(&mut inner)?;
         let name = Identifier::parse(inner.next().ok_or(ParseError::missing(Rule::Identifier))?)?;
         let (fields, field_docs) = if let Some(field_list) = inner.next() {
             parse_doc_attached_list(field_list, Rule::FieldWithDocs, Rule::Field)?
@@ -32,6 +35,6 @@ impl Parsable for EnumVariant {
         };
         debug_assert_eq!(fields.len(), field_docs.len());
 
-        Ok(Spanned::new(Self { name, fields, field_docs }, span))
+        Ok(Spanned::new(Self { attributes, name, fields, field_docs }, span))
     }
 }

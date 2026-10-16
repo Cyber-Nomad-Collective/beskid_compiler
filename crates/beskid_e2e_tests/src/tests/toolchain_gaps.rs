@@ -70,6 +70,40 @@ fn nested_array_types_compile_and_run() {
     assert_runs("nested_array_types", "NestedArrayTypes.bproj");
 }
 
+/// An unapplied generic enum constructor in a method argument takes the parameter's application
+/// (0.5.4 regression 8e230afe).
+#[test]
+fn generic_enum_constructor_in_a_method_argument_runs() {
+    assert_runs("generic_enum_method_argument", "GenericEnumMethodArgument.bproj");
+}
+
+/// `T held = value;` lowers for a scalar and a string specialization (0.5.4 regression b2ea9586).
+#[test]
+fn generic_local_annotated_with_a_type_parameter_runs() {
+    assert_runs("generic_annotated_local", "GenericAnnotatedLocal.bproj");
+}
+
+/// Generic `bulk T[]` calls pack their arguments as the specialized element type (0.5.4
+/// regression e9664e4e).
+#[test]
+fn generic_bulk_calls_run() {
+    assert_runs("generic_bulk_call", "GenericBulkCall.bproj");
+}
+
+/// Where-bounded generic receivers call the bound contract methods in every instantiation (0.5.4
+/// regression 570fdd56).
+#[test]
+fn bounded_generic_receivers_dispatch_and_run() {
+    assert_runs("bounded_generic_dispatch", "BoundedGenericDispatch.bproj");
+}
+
+/// Methods on locals typed by the function's own type parameter and type-qualified calls to
+/// functions of the declaring unit run in specialized bodies (0.5.4 regression 708bbe72).
+#[test]
+fn generic_receiver_bindings_run() {
+    assert_runs("generic_receiver_bindings", "GenericReceiverBindings.bproj");
+}
+
 /// Strings from `Core.Args` are written to stdout and used as a file path and as file contents.
 #[test]
 fn argument_strings_are_written_and_used_as_paths() {

@@ -219,7 +219,9 @@ unit Main() { Build(); return; }
         .expect("lowered Build function");
     let clif = build.function.display().to_string();
     assert!(clif.contains("beskid_rt_v5_array_allocate_rooted"), "{clif}");
-    assert!(clif.contains("beskid_rt_v5_array_write_barrier"), "{clif}");
+    // Element stores initialize the array the literal allocated: no barrier of either kind.
+    assert!(!clif.contains("beskid_rt_v5_array_write_barrier"), "{clif}");
+    assert!(!clif.contains("beskid_rt_v5_gc_write_barrier"), "{clif}");
 }
 
 #[test]
@@ -396,4 +398,49 @@ i64 Main() { return Make().x + Make().y; }
     ];
 
     lower_syntax_program(&input, isa.as_ref(), &items).expect("a field read directly from a call result lowers");
+}
+
+#[test]
+fn generic_impl_method_extending_an_imported_generic_type_is_specialized() {
+    // Core.Parallel's `impl<T> List<T> { Parallel() }` shape: the impl block lives in another unit
+    // than the generic owner it extends, so the owner is resolved across units and the receiver's
+    // applied arguments bind the impl's own type parameter.
+    let list_source = "pub type List<T> { pub T[] storage, pub i64 count }";
+    let seq_source = r#"
+use Core.Collections.List;
+pub type Seq<T> { pub i64 count }
+pub Seq<T> OfList<T>(List<T> values) { return Seq<T> { count: values.count }; }
+impl<T> List<T> {
+    pub Seq<T> Par() { return OfList<T>(this); }
+}
+"#;
+    let entry_source = r#"
+use Core.Collections.List;
+use Par.Seq;
+i64 Main(List<i64> values) {
+    Seq<i64> seq = values.Par();
+    return seq.count;
+}
+"#;
+    let (input, isa, root) = imported_fixture(
+        "App/Main.bd",
+        entry_source,
+        &[("Core/Collections/List.bd", list_source), ("Par/Seq.bd", seq_source)],
+    );
+    let main = find_function_definition(input.database(), root).expect("Main function");
+    let seq_root = imported_unit_root(&input, "Par/Seq.bd");
+    let method = find_node(input.database(), seq_root, beskid_queries::IndexedNodeKind::MethodDefinition)
+        .expect("List.Par impl method");
+
+    let artifact = lower_syntax_program(
+        &input,
+        isa.as_ref(),
+        &[
+            SyntaxModuleItem { key: method, symbol: "List_Par".into() },
+            SyntaxModuleItem { key: main, symbol: "Main".into() },
+        ],
+    )
+    .expect("a cross-unit generic impl method specializes from its receiver");
+    let names = artifact.functions.iter().map(|function| function.name.as_str()).collect::<Vec<_>>();
+    assert!(names.iter().any(|name| name.starts_with("List_Par#generic_")), "{names:?}");
 }

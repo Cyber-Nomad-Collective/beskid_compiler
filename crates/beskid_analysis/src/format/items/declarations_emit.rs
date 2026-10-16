@@ -1,5 +1,5 @@
 use crate::format::emit::{Emit, EmitCtx, EmitError};
-use crate::format::items::helpers::{emit_attribute_lines, emit_generics_list, emit_parameter_list};
+use crate::format::items::helpers::{emit_generics_list, emit_parameter_list};
 use crate::syntax::items::impl_block::ImplBlock;
 use crate::syntax::{
     ContractAssociatedType, ContractDefinition, ContractEmbedding, ContractMethodSignature, ContractNode,
@@ -32,11 +32,7 @@ impl Emit for Spanned<UseDeclaration> {
 
 impl Emit for ModuleDeclaration {
     fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
-        if !self.attributes.is_empty() {
-            emit_attribute_lines(&self.attributes, w, cx)?;
-            cx.nl(w)?;
-            cx.write_indent(w)?;
-        }
+        crate::format::attribute_lists::emit_attribute_block(&self.attributes, w, cx)?;
         self.visibility.emit(w, cx)?;
         cx.token(w, "mod")?;
         cx.space(w)?;
@@ -54,11 +50,7 @@ impl Emit for Spanned<ModuleDeclaration> {
 
 impl Emit for TypeDefinition {
     fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
-        if !self.attributes.is_empty() {
-            emit_attribute_lines(&self.attributes, w, cx)?;
-            cx.nl(w)?;
-            cx.write_indent(w)?;
-        }
+        crate::format::attribute_lists::emit_attribute_block(&self.attributes, w, cx)?;
         self.visibility.emit(w, cx)?;
         cx.token(w, "type")?;
         cx.space(w)?;
@@ -127,6 +119,7 @@ impl Emit for Spanned<TypeDefinition> {
 
 impl Emit for EnumVariant {
     fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
+        crate::format::attribute_lists::emit_attribute_block(&self.attributes, w, cx)?;
         self.name.emit(w, cx)?;
         if self.fields.is_empty() {
             return Ok(());
@@ -151,11 +144,7 @@ impl Emit for Spanned<EnumVariant> {
 
 impl Emit for EnumDefinition {
     fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
-        if !self.attributes.is_empty() {
-            emit_attribute_lines(&self.attributes, w, cx)?;
-            cx.nl(w)?;
-            cx.write_indent(w)?;
-        }
+        crate::format::attribute_lists::emit_attribute_block(&self.attributes, w, cx)?;
         self.visibility.emit(w, cx)?;
         cx.token(w, "enum")?;
         cx.space(w)?;
@@ -191,11 +180,7 @@ impl Emit for Spanned<EnumDefinition> {
 
 impl Emit for ContractMethodSignature {
     fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
-        if !self.attributes.is_empty() {
-            emit_attribute_lines(&self.attributes, w, cx)?;
-            cx.nl(w)?;
-            cx.write_indent(w)?;
-        }
+        crate::format::attribute_lists::emit_attribute_block(&self.attributes, w, cx)?;
         if let Some(rt) = &self.return_type {
             rt.emit(w, cx)?;
             cx.space(w)?;
@@ -215,6 +200,7 @@ impl Emit for Spanned<ContractMethodSignature> {
 
 impl Emit for ContractEmbedding {
     fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
+        crate::format::attribute_lists::emit_attribute_block(&self.attributes, w, cx)?;
         self.name.emit(w, cx)?;
         if !self.type_args.is_empty() {
             w.write_char('<')?;
@@ -239,6 +225,7 @@ impl Emit for Spanned<ContractEmbedding> {
 
 impl Emit for ContractAssociatedType {
     fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
+        crate::format::attribute_lists::emit_attribute_block(&self.attributes, w, cx)?;
         cx.token(w, "type")?;
         cx.space(w)?;
         self.name.emit(w, cx)?;
@@ -277,11 +264,7 @@ impl Emit for Spanned<ContractNode> {
 
 impl Emit for ContractDefinition {
     fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
-        if !self.attributes.is_empty() {
-            emit_attribute_lines(&self.attributes, w, cx)?;
-            cx.nl(w)?;
-            cx.write_indent(w)?;
-        }
+        crate::format::attribute_lists::emit_attribute_block(&self.attributes, w, cx)?;
         self.visibility.emit(w, cx)?;
         cx.token(w, "contract")?;
         cx.space(w)?;
@@ -316,6 +299,7 @@ impl Emit for Spanned<ContractDefinition> {
 
 impl Emit for ImplBlock {
     fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
+        crate::format::attribute_lists::emit_attribute_block(&self.attributes, w, cx)?;
         cx.token(w, "impl")?;
         emit_generics_list(&self.generics, w, cx)?;
         cx.space(w)?;

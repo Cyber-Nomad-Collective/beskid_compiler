@@ -193,7 +193,10 @@ fn execute_dev(args: DevArgs) -> anyhow::Result<()> {
             super::dev::DevBsolCommand::Validate(args) => validate_bsol::execute(args),
             super::dev::DevBsolCommand::Migrate(args) => migrate_bsol::execute(args),
         },
-        DevCommand::NativeModWorker(args) => beskid_analysis::mod_host::run_native_mod_worker(&args.endpoint),
+        DevCommand::NativeModWorker(args) => {
+            StripTestOnlyRuntimeEnvironment();
+            beskid_analysis::mod_host::run_native_mod_worker(&args.endpoint)
+        }
         DevCommand::ToolchainOwner(args) => crate::commands::toolchain_owner::execute(args),
         DevCommand::Capabilities(_) => {
             println!("{}", CapabilityDocument());
@@ -201,6 +204,23 @@ fn execute_dev(args: DevArgs) -> anyhow::Result<()> {
         }
     }
 }
+/// Runtime settings that apply to test processes only. A native Mod worker is a compile-time
+/// step: under `BESKID_GC_STRESS=alloc:1,verify` (inherited from `beskid test`) the Mod runs on a
+/// stressed heap and exceeds its invocation deadline, so the worker clears them before its
+/// runtime instance starts and reads them.
+pub(crate) const TEST_ONLY_RUNTIME_ENVIRONMENT: [&str; 2] = ["BESKID_GC_STRESS", "BESKID_GC_QUARANTINE"];
+
+/// Removes [`TEST_ONLY_RUNTIME_ENVIRONMENT`] from this process before the Mod runtime starts.
+pub(crate) fn StripTestOnlyRuntimeEnvironment() {
+    for name in TEST_ONLY_RUNTIME_ENVIRONMENT {
+        // SAFETY: called once at the start of `dev native-mod-worker`, on the dispatch thread,
+        // before the worker starts its runtime or any thread of its own; the only other thread
+        // (the process main thread) is blocked joining the dispatch thread and reads no
+        // environment.
+        unsafe { env::remove_var(name) };
+    }
+}
+
 /// Schema-1 capability document: running CLI version, visible root commands, visible `dev` routes
 /// and the `--json` output schemas. Every list derives from the parsed command model.
 pub(crate) fn CapabilityDocument() -> serde_json::Value {

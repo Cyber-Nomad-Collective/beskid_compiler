@@ -1,0 +1,32 @@
+// A specialized generic body calls a method on a local typed by its own type parameter, and a
+// type-qualified call names a function of the declaring unit (0.5.4 regression 708bbe72).
+use Bag;
+
+Bag<T> Single<T>(T value) {
+    Bag<T> bag = Bag.Empty<T>();
+    return bag.Put(value);
+}
+
+Bag<T> Twice<T>(T value) {
+    mut Bag<T> result = Bag.Empty<T>();
+    result = result.Put(value);
+    result = result.Put(value);
+    return result;
+}
+
+i32 Main() {
+    Bag<i64> bag = Single<i64>(7_i64);
+    Bag<string> text = Single<string>("s");
+    if bag.Size() + text.Size() != 2 {
+        return 1;
+    }
+    if Twice<i64>(3_i64).Size() != 2 {
+        return 2;
+    }
+    Bag<i64> wrapped = Bag.Wrap<i64>(4_i64);
+    Bag<string> wrappedText = Bag.Wrap<string>("s");
+    if wrapped.Size() + wrappedText.Size() != 2 {
+        return 3;
+    }
+    return 42;
+}

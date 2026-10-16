@@ -1,5 +1,6 @@
+pub(crate) mod canonical_empty;
 mod contracts;
-mod data;
+pub(crate) mod data;
 pub(crate) mod dynamic;
 pub(crate) mod imports;
 mod items;
@@ -36,5 +37,6 @@ pub use orchestration::{
 };
 
 pub(crate) use orchestration::emitted_item_keys;
+pub(crate) use trampolines::isolate_entry_shape;
 
 mod serialization;

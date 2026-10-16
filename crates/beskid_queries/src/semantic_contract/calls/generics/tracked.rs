@@ -143,10 +143,8 @@ pub(in crate::semantic_contract) fn generic_nominal_method_receiver_tracked(
             }
             _ => return None,
         };
-        let method_syntax = db.syntax_unit(method.unit)?;
-        let owner_node =
-            method_owner_node(method_syntax.expanded_program(db), method_syntax.syntax_index(db), method.node)?;
-        let owner = AstNodeKey { node: owner_node, ..method };
+        // The owner may live in another unit (`impl<T> List<T>` extending a Foundation type).
+        let owner = method_owner_declaration(db, method)?;
         if let Some(handle) = inferred_spawn_handle(db, receiver) {
             return Some(Ok(GenericNominalMethodReceiver {
                 method,
@@ -155,33 +153,31 @@ pub(in crate::semantic_contract) fn generic_nominal_method_receiver_tracked(
                 substitutions: Arc::from([handle.payload]),
             }));
         }
-        let owner_definition = method_syntax
+        let owner_syntax = db.syntax_unit(owner.unit)?;
+        let owner_definition = owner_syntax
             .syntax_index(db)
-            .node_at(method_syntax.expanded_program(db), owner_node)?
+            .node_at(owner_syntax.expanded_program(db), owner.node)?
             .of::<beskid_analysis::syntax::TypeDefinition>()?;
         (!owner_definition.generics.is_empty()).then_some(())?;
+        let applied_owner = |identity: GenericSourceTypeIdentity| {
+            let GenericSourceTypeIdentity::Nominal { arguments, .. } = identity else {
+                return Err(SemanticError::unavailable("generic_nominal_method_receiver"));
+            };
+            if arguments.len() != owner_definition.generics.len() {
+                return Err(SemanticError::unavailable("generic_nominal_method_receiver"));
+            }
+            let substitutions = owner_definition
+                .generics
+                .iter()
+                .zip(arguments.iter())
+                .map(|(generic, argument)| {
+                    GenericSubstitution::from_source(generic.node.name.as_str(), argument.abi_type(), argument.clone())
+                })
+                .collect::<Vec<_>>();
+            Ok(GenericNominalMethodReceiver { method, receiver, owner, substitutions: substitutions.into() })
+        };
         if index.kind(receiver.node) != Some(beskid_analysis::syntax_query::NodeKind::Identifier) {
-            return Some(generic_source_expression_identity(db, receiver).and_then(|identity| {
-                let GenericSourceTypeIdentity::Nominal { arguments, .. } = identity else {
-                    return Err(SemanticError::unavailable("generic_nominal_method_receiver"));
-                };
-                if arguments.len() != owner_definition.generics.len() {
-                    return Err(SemanticError::unavailable("generic_nominal_method_receiver"));
-                }
-                let substitutions = owner_definition
-                    .generics
-                    .iter()
-                    .zip(arguments.iter())
-                    .map(|(generic, argument)| {
-                        GenericSubstitution::from_source(
-                            generic.node.name.as_str(),
-                            argument.abi_type(),
-                            argument.clone(),
-                        )
-                    })
-                    .collect::<Vec<_>>();
-                Ok(GenericNominalMethodReceiver { method, receiver, owner, substitutions: substitutions.into() })
-            }));
+            return Some(generic_source_expression_identity(db, receiver).and_then(applied_owner));
         }
         let receiver_parent = parent_node(index, receiver.node)?;
         let annotation = match index.kind(receiver_parent)? {
@@ -195,7 +191,14 @@ pub(in crate::semantic_contract) fn generic_nominal_method_receiver_tracked(
                 .and_then(|statement| statement.type_annotation.as_ref())
                 .map(|annotation| &annotation.node),
             _ => None,
-        }?;
+        };
+        let Some(annotation) = annotation else {
+            // A binding without a written type (an enum-pattern payload, an inferred `let`, a
+            // lambda parameter or a `for` variable) is applied by its proven source identity.
+            // An unproven identity leaves the receiver unproven, exactly like a missing annotation.
+            let identity = generic_source_local_identity(db, program, index, receiver, receiver.node).ok()?;
+            return applied_owner(identity).ok().map(Ok);
+        };
         let beskid_analysis::syntax::Type::Complex(applied) = annotation else {
             return None;
         };

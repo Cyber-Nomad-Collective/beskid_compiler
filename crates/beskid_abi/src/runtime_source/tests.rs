@@ -39,6 +39,7 @@ fn canonical_concurrency_facade_exposes_its_exact_scheduler_services() {
     assert!(source.source.contains("__fiber_yield()"));
     assert!(source.source.contains("__fiber_now_millis()"));
     assert!(source.source.contains("__fiber_processor_count()"));
+    assert!(source.source.contains("__host_processor_count()"));
 
     let target = crate::abi_v5::TargetMetadata::supported()
         .into_iter()
@@ -59,6 +60,7 @@ fn canonical_concurrency_facade_exposes_its_exact_scheduler_services() {
             ("__fiber_yield", "beskid_rt_v5_fiber_yield"),
             ("__fiber_now_millis", "fiber_now_millis"),
             ("__fiber_processor_count", "fiber_processor_count"),
+            ("__host_processor_count", "beskid_rt_v5_host_processor_count"),
         ]
     );
 }
@@ -354,8 +356,11 @@ fn canonical_foundation_service_table_covers_every_implemented_raw_call_and_noth
             .collect::<std::collections::BTreeSet<_>>();
 
         for name in &raw_names {
-            let deliberately_compiler_lowered =
-                source.logical_path == CANONICAL_FOUNDATION_ARRAY_SOURCE_PATH && *name == "__array_new";
+            // `__array_new` is a compiler-owned typed allocation; `__transfer_class<T>()` folds to
+            // an i64 constant per instantiation in the query layer. Neither reaches the runtime.
+            let deliberately_compiler_lowered = (source.logical_path == CANONICAL_FOUNDATION_ARRAY_SOURCE_PATH
+                && *name == "__array_new")
+                || (source.logical_path == CANONICAL_CORELIB_PARALLEL_PORT_SOURCE_PATH && *name == "__transfer_class");
             if deliberately_compiler_lowered {
                 assert!(
                     capability.service_for_source(&source.logical_path, name).is_none(),

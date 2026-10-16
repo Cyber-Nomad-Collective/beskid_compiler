@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use beskid_isle::syntax_types::LiteralKind;
 use beskid_isle::{
     AssignmentKind, AstNodeKey, FieldLayout, FunctionEmissionError, FunctionEmitter, LoweringErrorKind,
-    ManagedStructAllocation, NodeFacts, NodeKind, StructLayout,
+    ManagedReferenceFact, ManagedStructAllocation, NodeFacts, NodeKind, StructLayout,
 };
 use beskid_queries::{AstNodeId, BeskidDatabase, SourceUnitId, SyntaxGenerationId};
 use cranelift_codegen::ir::{Type, UserFuncName, types};
@@ -24,6 +24,8 @@ struct StructFacts {
     field_index: u32,
     unit_middle: bool,
     unit_effect: Option<cranelift_codegen::ir::Signature>,
+    /// The managed-reference fact of the assigned field expression.
+    target_managed: Option<ManagedReferenceFact>,
 }
 
 impl NodeFacts for StructFacts {
@@ -132,6 +134,10 @@ impl NodeFacts for StructFacts {
     fn field_index(&self, key: AstNodeKey) -> Option<u32> {
         (key == self.nodes[0] || key == self.nodes[1]).then_some(self.field_index)
     }
+
+    fn managed_reference(&self, key: AstNodeKey) -> Option<ManagedReferenceFact> {
+        (key == self.nodes[1]).then_some(self.target_managed).flatten()
+    }
 }
 
 fn facts(pointer_type: Type, root: Root, field_index: u32, layout: StructLayout) -> StructFacts {
@@ -146,6 +152,7 @@ fn facts(pointer_type: Type, root: Root, field_index: u32, layout: StructLayout)
         field_index,
         unit_middle: false,
         unit_effect: None,
+        target_managed: Some(ManagedReferenceFact::NativeOrScalar),
     }
 }
 
@@ -194,6 +201,27 @@ fn struct_literal_and_field_read_emit_managed_clif() {
 fn field_assignment_emits_managed_clif_store() {
     let clif = emit(Root::Write, 1, 23).display().to_string();
     assert!(clif.lines().any(|line| line.trim_start().starts_with("store ")), "{clif}");
+    // A scalar field store carries no write barrier.
+    assert!(!clif.contains("beskid_rt_v5_gc_barrier_active") && !clif.contains("beskid_rt_v5_gc_write_barrier"), "{clif}");
+}
+
+#[test]
+fn field_assignment_without_a_managed_reference_fact_is_an_exact_keyed_error() {
+    let isa = cranelift_codegen::isa::lookup(Triple::host())
+        .expect("host ISA")
+        .finish(settings::Flags::new(settings::builder()))
+        .expect("host flags");
+    let mut facts = facts(isa.pointer_type(), Root::Write, 1, valid_layout());
+    facts.target_managed = None;
+    let emitter = FunctionEmitter::new(isa.as_ref());
+    let error = emitter
+        .emit_expression(UserFuncName::user(0, 31), emitter.signature([], [types::I32]), &facts, facts.nodes[0])
+        .expect_err("a field store without a managed-reference fact must not lower");
+    let FunctionEmissionError::Lowering(error) = error else {
+        panic!("expected lowering error");
+    };
+    assert_eq!(error.key(), facts.nodes[0]);
+    assert_eq!(error.kind(), LoweringErrorKind::MissingManagedReferenceFact);
 }
 
 #[test]

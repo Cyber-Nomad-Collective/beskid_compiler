@@ -1,5 +1,6 @@
 //! Compiler-issued native Glue admission. Generated JSON is a packet, not authority.
 mod rust_owner;
+mod owner_values;
 pub use rust_owner::{
     PreparedRustOwner, RustOwnerBuildRequest, RustOwnerCallable, RustOwnerSource, RustOwnerType, build_rust_owner,
 };
@@ -120,6 +121,7 @@ pub fn build_glue_artifact(req: &GlueArtifactBuildRequest<'_>) -> AotResult<Prep
         linker::{LinkRequest, RuntimeLinkInput, link_with_control},
         object_module::{BeskidObjectModule, ObjectTargetIsa},
     };
+    use beskid_codegen::glue::GlueTransportKind;
     let packet = beskid_codegen::glue::emit(req.input, req.selected, req.native_library)
         .map_err(|error| invalid(error.to_string()))?;
     if &packet != req.expected {
@@ -233,6 +235,38 @@ pub fn build_glue_artifact(req: &GlueArtifactBuildRequest<'_>) -> AotResult<Prep
     module.compile_artifact_with_control(&bodies, &exports, None, req.control)?;
     let emitted_transports =
         module.emit_glue_handle_transports(req.input, &req.selected.iter().map(|item| item.key).collect::<Vec<_>>())?;
+    // Record and enum value transports: exactly one emitted constructor/reader pair per packet
+    // identity, with the packet's names. They are linked into the image and never exported.
+    let mut packet_values = std::collections::BTreeMap::new();
+    for binding in &packet.manifest.bindings {
+        for physical in beskid_codegen::glue::artifact::nominal_values(binding) {
+            if let Some(record) = &physical.record {
+                packet_values.insert(record.record_sha256.clone(), (record.constructor.clone(), record.reader.clone()));
+            }
+            if let Some(enumeration) = &physical.enumeration {
+                packet_values
+                    .insert(enumeration.enum_sha256.clone(), (enumeration.constructor.clone(), enumeration.reader.clone()));
+            }
+        }
+    }
+    let mut emitted_values = std::collections::BTreeSet::new();
+    for transport in emitted_transports.iter().filter(|transport| transport.kind() != GlueTransportKind::Handle) {
+        let expected = packet_values
+            .get(transport.brand_sha256())
+            .ok_or_else(|| invalid("value transport has no packet record or enum"))?;
+        if (expected.0.as_str(), expected.1.as_str()) != (transport.constructor(), transport.reader())
+            || !emitted_values.insert(transport.brand_sha256().to_owned())
+        {
+            return Err(invalid("value packet differs from actual source object transport"));
+        }
+    }
+    if emitted_values.len() != packet_values.len() {
+        return Err(invalid("record/enum packet/object transport coverage differs"));
+    }
+    let emitted_transports = emitted_transports
+        .into_iter()
+        .filter(|transport| transport.kind() == GlueTransportKind::Handle)
+        .collect::<Vec<_>>();
     // Actual emitted positions carry private source-object provenance. Bind
     // metadata to those positions; public packet names cannot issue a transport.
     for transport in &emitted_transports {

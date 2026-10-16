@@ -15,13 +15,14 @@ mod scrutinee;
 mod source_identity;
 
 pub(in crate::semantic_contract) use candidate_path::{
-    aggregate_shape_from_applied_type, contextual_enum_constructor_type_path, enum_field_layout,
-    enum_layout_from_definition, enum_layout_substitutions, instantiated_enum_layout_for_path,
+    aggregate_shape_from_applied_type, applied_enum_constructor_identity, enum_field_layout,
+    enum_layout_from_definition, enum_layout_substitutions, expected_enum_constructor_identity,
+    instantiated_enum_layout_for_path,
 };
 pub use constructor::enum_constructor_specialization;
-pub(in crate::semantic_contract) use constructor::{enum_constructor_template_tracked, enum_constructor_tracked};
+pub(in crate::semantic_contract) use constructor::enum_constructor_tracked;
 pub(in crate::semantic_contract) use layout::enum_layout_tracked;
-pub use match_materialize::{enum_match_call_specialization, enum_match_specialization};
+pub use match_materialize::enum_match_specialization;
 pub(in crate::semantic_contract) use match_materialize::{enum_match_tracked, scalar_match_tracked};
 pub(in crate::semantic_contract) use scrutinee::{
     enum_match_scrutinee_layout, enum_pattern_targets_declaration, ungrouped_scrutinee,

@@ -1,7 +1,7 @@
 //! Call-derived generic specializations, rejections, and specialized layouts.
 
 use super::super::support::{
-    SyntaxModuleItem, find_function_definitions, item_fixture_with_root, item_name, lower_syntax_program,
+    SyntaxModuleItem, find_function_definitions, find_node, item_fixture_with_root, item_name, lower_syntax_program,
 };
 use super::{StringComparison, assert_string_content_comparison};
 
@@ -253,4 +253,498 @@ fn parsed_program_specializes_generic_pattern_payload_field_layout_without_hir()
     beskid_codegen::validate_artifact(&artifact)
         .expect("the specialized generic match helper must resolve its call imports");
     assert!(artifact.functions.iter().any(|function| function.name.starts_with("Rest#generic_")));
+}
+
+#[test]
+fn generic_local_annotated_with_a_type_parameter_lowers_for_scalar_and_string() {
+    let (input, isa, root) = item_fixture_with_root(
+        "T Same<T>(T value) { T held = value; return held; } i64 Main() { string text = Same(\"s\"); return Same(7_i64); }",
+    );
+    let items = find_function_definitions(input.database(), root);
+    let artifact = lower_syntax_program(
+        &input,
+        isa.as_ref(),
+        &[
+            SyntaxModuleItem { key: items[0], symbol: "Same".into() },
+            SyntaxModuleItem { key: items[1], symbol: "Main".into() },
+        ],
+    )
+    .expect("a local whose annotation is a type parameter takes its type from the specialization");
+
+    beskid_codegen::validate_artifact(&artifact).expect("generic local artifact");
+    let specializations = artifact.functions.iter().filter(|function| function.name.starts_with("Same#generic_")).count();
+    assert_eq!(specializations, 2, "one specialization each for i64 and string");
+}
+
+#[test]
+fn parsed_program_packs_generic_bulk_arguments_with_the_call_specialization() {
+    let (input, isa, root) = item_fixture_with_root(
+        "T First<T>(bulk T[] values) { return values[0]; } i64 Main() { return First<i64>(4, 5, 6) + First(7_i64); }",
+    );
+    let items = find_function_definitions(input.database(), root);
+    let artifact = lower_syntax_program(
+        &input,
+        isa.as_ref(),
+        &[
+            SyntaxModuleItem { key: items[0], symbol: "First".into() },
+            SyntaxModuleItem { key: items[1], symbol: "Main".into() },
+        ],
+    )
+    .expect("a generic bulk call packs its arguments as the specialized element type");
+
+    beskid_codegen::validate_artifact(&artifact).expect("generic bulk artifact");
+    assert!(artifact.functions.iter().any(|function| function.name.starts_with("First#generic_")));
+    let main = artifact.functions.iter().find(|function| function.name == "Main").expect("Main lowers");
+    let clif = main.function.display().to_string();
+    assert_eq!(clif.matches("store").count(), 4, "four i64 elements are stored: {clif}");
+}
+
+#[test]
+fn generic_method_on_a_nested_enum_pattern_binding_is_specialized() {
+    // `failures.Count()` where `failures` is the `List<i64>` payload bound by the nested pattern
+    // `Outcome::Error(Problem::Failed(failures))` (Core.Parallel ParallelSuite shape): the receiver
+    // has no written type, so its applied owner comes from the binding's proven source identity.
+    let (input, isa, root) = item_fixture_with_root(
+        "type List<T> { T[] values, i64 count, i64 Count() { return count; } } enum Problem { Failed(List<i64> failures), Empty } enum Outcome<TValue, TError> { Ok(TValue value), Error(TError error) } i64 Main(Outcome<i64, Problem> result) { match result { Outcome::Error(Problem::Failed(failures)) => { return failures.Count(); }, _ => { return 0_i64; }, }; return 0_i64; }",
+    );
+    let method = find_node(input.database(), root, beskid_queries::IndexedNodeKind::MethodDefinition)
+        .expect("List.Count method");
+    let main = find_function_definitions(input.database(), root)[0];
+    let artifact = lower_syntax_program(
+        &input,
+        isa.as_ref(),
+        &[
+            SyntaxModuleItem { key: method, symbol: "List_Count".into() },
+            SyntaxModuleItem { key: main, symbol: "Main".into() },
+        ],
+    )
+    .expect("a generic method on a nested enum-pattern binding must have a call-derived specialization");
+
+    beskid_codegen::validate_artifact(&artifact).expect("nested pattern receiver artifact");
+    let names = artifact.functions.iter().map(|function| function.name.as_str()).collect::<Vec<_>>();
+    assert!(names.iter().any(|name| name.starts_with("List_Count#generic_")), "{names:?}");
+}
+
+#[test]
+fn method_with_its_own_type_parameters_on_a_plain_owner_is_only_emitted_specialized() {
+    // `Scope.SpawnTry<T>` shape: a method's own type parameters make it generic, so its body
+    // (here a nested explicit `Id<T>(..)` over a function-typed parameter) is walked only in the
+    // environment of a concrete call, never as a declaration-level item.
+    let (input, isa, root) = item_fixture_with_root(
+        "T Id<T>(T value) { return value; } type Runner { i64 id, T Apply<T>(() => T body) { return Id<T>(body()); } } i64 Main(Runner runner) { return runner.Apply<i64>(() => 7_i64); }",
+    );
+    let method = find_node(input.database(), root, beskid_queries::IndexedNodeKind::MethodDefinition)
+        .expect("Runner.Apply method");
+    let main = find_function_definitions(input.database(), root)
+        .into_iter()
+        .find(|item| item_name(input.database(), *item).ok().flatten().as_deref() == Some("Main"))
+        .expect("Main item");
+    let artifact = lower_syntax_program(
+        &input,
+        isa.as_ref(),
+        &[
+            SyntaxModuleItem { key: method, symbol: "Runner_Apply".into() },
+            SyntaxModuleItem { key: main, symbol: "Main".into() },
+        ],
+    )
+    .expect("a method-generic body is lowered only through its call-derived specialization");
+
+    beskid_codegen::validate_artifact(&artifact).expect("method-generic artifact");
+    let names = artifact.functions.iter().map(|function| function.name.as_str()).collect::<Vec<_>>();
+    assert!(names.iter().any(|name| name.starts_with("Runner_Apply#generic_")), "{names:?}");
+    assert!(!names.contains(&"Runner_Apply"), "no declaration-level instance of a generic method: {names:?}");
+}
+
+#[test]
+fn nested_pattern_bindings_of_a_call_match_in_a_generic_body_are_specialized() {
+    // Core.Parallel `Reorder<T>` shape: `match input.Receive()` inside a generic body binds
+    // `Result::Ok(Sequenced::Item(sequence, value))`, and both bindings feed a generic-owner method
+    // call. The callee's instance in the enclosing environment applies the scrutinee's result.
+    let (input, isa, root) = item_fixture_with_root(
+        "enum Result<TValue, TError> { Ok(TValue value), Error(TError error) } enum Item<T> { Entry(i64 sequence, T value), Done } type Bag<V> { V[] values, i64 count, Bag<V> Put(i64 key, V value) { return Bag<V> { values: values, count: count + key }; } } type Source<T> { T value, Result<Item<T>, string> Next() { return Result::Ok(Item::Entry(1_i64, value)); } } i64 Drain<T>(Source<T> source, Bag<T> bag) { match source.Next() { Result::Ok(Item::Entry(sequence, value)) => { Bag<T> next = bag.Put(sequence, value); return next.count; }, _ => { return 0_i64; }, }; return 0_i64; } i64 Main(Source<i64> source, Bag<i64> bag) { return Drain<i64>(source, bag); }",
+    );
+    let items = find_function_definitions(input.database(), root);
+    let named = |name: &str| {
+        items
+            .iter()
+            .copied()
+            .find(|item| item_name(input.database(), *item).ok().flatten().as_deref() == Some(name))
+            .expect("named item")
+    };
+    let artifact = lower_syntax_program(
+        &input,
+        isa.as_ref(),
+        &[
+            SyntaxModuleItem { key: named("Drain"), symbol: "Drain".into() },
+            SyntaxModuleItem { key: named("Main"), symbol: "Main".into() },
+        ],
+    )
+    .expect("call-match bindings in a generic body take the callee instance's applied result");
+    let names = artifact.functions.iter().map(|function| function.name.as_str()).collect::<Vec<_>>();
+    assert!(names.iter().any(|name| name.starts_with("Drain#generic_")), "{names:?}");
+}
+
+#[test]
+fn contextual_generic_enum_constructor_argument_of_a_receiver_bound_parameter_is_specialized() {
+    // Core.Parallel `output.Send(Sequenced::Item(next, item))` shape: the receiver binds the
+    // parameter's generic, so the constructor is checked against that type instead of inferring.
+    let (input, isa, root) = item_fixture_with_root(
+        "type Port<T> { i64 id, unit Send(T value) { return; } } enum Item<T> { Entry(i64 sequence, T value), Done } unit Forward<T>(Port<Item<T>> output, T value) { output.Send(Item::Entry(1_i64, value)); return; } unit Main(Port<Item<i64>> output) { Forward<i64>(output, 7_i64); output.Send(Item::Entry(2_i64, 8_i64)); return; }",
+    );
+    let items = find_function_definitions(input.database(), root);
+    let named = |name: &str| {
+        items
+            .iter()
+            .copied()
+            .find(|item| item_name(input.database(), *item).ok().flatten().as_deref() == Some(name))
+            .expect("named item")
+    };
+    let artifact = lower_syntax_program(
+        &input,
+        isa.as_ref(),
+        &[
+            SyntaxModuleItem { key: named("Forward"), symbol: "Forward".into() },
+            SyntaxModuleItem { key: named("Main"), symbol: "Main".into() },
+        ],
+    )
+    .expect("a constructor argument of an already-bound generic parameter specializes the call");
+    let names = artifact.functions.iter().map(|function| function.name.as_str()).collect::<Vec<_>>();
+    assert!(names.iter().any(|name| name.starts_with("Forward#generic_")), "{names:?}");
+}
+
+#[test]
+fn typed_lambda_parameter_receiver_in_a_generic_body_is_specialized() {
+    // Core.Parallel `Collect` shape: `(List<T> leaf, T value) => leaf.Push(value)` inside a generic
+    // body; the lambda parameter's written type is applied through the enclosing environment.
+    let (input, isa, root) = item_fixture_with_root(
+        "type Bag<V> { V[] values, i64 count, Bag<V> Put(V value) { return Bag<V> { values: values, count: count + 1_i64 }; } } L Fold<T, L>(L seed, T value, (L, T) => L step) { return step(seed, value); } Bag<T> Gather<T>(Bag<T> seed, T value) { return Fold<T, Bag<T>>(seed, value, (Bag<T> bag, T item) => bag.Put(item)); } i64 Main(Bag<i64> bag) { Bag<i64> next = Gather<i64>(bag, 7_i64); return next.count; }",
+    );
+    let items = find_function_definitions(input.database(), root);
+    let named = |name: &str| {
+        items
+            .iter()
+            .copied()
+            .find(|item| item_name(input.database(), *item).ok().flatten().as_deref() == Some(name))
+            .expect("named item")
+    };
+    let artifact = lower_syntax_program(
+        &input,
+        isa.as_ref(),
+        &[
+            SyntaxModuleItem { key: named("Gather"), symbol: "Gather".into() },
+            SyntaxModuleItem { key: named("Main"), symbol: "Main".into() },
+        ],
+    )
+    .expect("a typed lambda parameter receiver in a generic body specializes the method call");
+    let names = artifact.functions.iter().map(|function| function.name.as_str()).collect::<Vec<_>>();
+    assert!(names.iter().any(|name| name.starts_with("Gather#generic_") && !name.contains("#lambda_")), "{names:?}");
+    // The lambda is emitted once for the `Gather<i64>` instance, in that environment.
+    assert!(names.iter().any(|name| name.starts_with("Gather#generic_") && name.contains("#lambda_")), "{names:?}");
+}
+
+#[test]
+fn capturing_lambda_in_a_generic_body_has_an_instance_closure_layout() {
+    // `Drive<T, L, R>` shape: a lambda captures a value of the enclosing generic type, so its
+    // closure layout (scalar `i64` here, a managed reference for `Bag<i64>`) depends on the instance.
+    let (input, isa, root) = item_fixture_with_root(
+        "type Bag<V> { V[] values, i64 count, Bag<V> Put(V value) { return Bag<V> { values: values, count: count + 1_i64 }; } } L Fold<T, L>(L seed, T value, (L, T) => L step) { return step(seed, value); } Bag<T> Keep<T>(Bag<T> seed, T value, T extra) { return Fold<T, Bag<T>>(seed, value, (Bag<T> bag, T item) => bag.Put(extra)); } i64 Main(Bag<i64> bag, Bag<Bag<i64>> nested) { Bag<i64> next = Keep<i64>(bag, 7_i64, 8_i64); Bag<Bag<i64>> outer = Keep<Bag<i64>>(nested, bag, next); return next.count + outer.count; }",
+    );
+    let items = find_function_definitions(input.database(), root);
+    let named = |name: &str| {
+        items
+            .iter()
+            .copied()
+            .find(|item| item_name(input.database(), *item).ok().flatten().as_deref() == Some(name))
+            .expect("named item")
+    };
+    let artifact = lower_syntax_program(
+        &input,
+        isa.as_ref(),
+        &[
+            SyntaxModuleItem { key: named("Keep"), symbol: "Keep".into() },
+            SyntaxModuleItem { key: named("Main"), symbol: "Main".into() },
+        ],
+    )
+    .expect("a capturing lambda in a generic body is emitted per instance");
+    let names = artifact.functions.iter().map(|function| function.name.as_str()).collect::<Vec<_>>();
+    let entries = names.iter().filter(|name| name.starts_with("Keep#generic_") && name.contains("#lambda_")).count();
+    assert_eq!(entries, 2, "one closure entry per instance: {names:?}");
+}
+
+#[test]
+fn genericless_constructor_lambda_body_takes_the_expected_result() {
+    // ParallelSuite `s.SpawnTry<i64>(() => Result::Error("no input"))`: the lambda body is a
+    // constructor whose type only the expected function result (`Outcome<i64, string>`) proves.
+    let (input, isa, root) = item_fixture_with_root(
+        "enum Outcome<T, E> { Ok(T value), Error(E error) } type Runner { i64 id, i64 Try<T>(() => Outcome<T, string> body) { return 1_i64; } } i64 Main(Runner runner) { return runner.Try<i64>(() => Outcome::Error(\"no input\")); }",
+    );
+    let items = find_function_definitions(input.database(), root);
+    let main = items
+        .iter()
+        .copied()
+        .find(|item| item_name(input.database(), *item).ok().flatten().as_deref() == Some("Main"))
+        .expect("Main");
+    let artifact = lower_syntax_program(&input, isa.as_ref(), &[SyntaxModuleItem { key: main, symbol: "Main".into() }])
+        .expect("a constructor lambda body is typed by the expected function result");
+    let names = artifact.functions.iter().map(|function| function.name.as_str()).collect::<Vec<_>>();
+    assert!(names.iter().any(|name| name.starts_with("__beskid_lambda_entry_syntax_")), "{names:?}");
+}
+
+#[test]
+fn contract_call_on_a_captured_bounded_parameter_in_a_lambda_uses_the_instance_witness() {
+    // `ParallelSeq.Reduce<C>` shape: `(T acc, T value) => combiner.Combine(acc, value)` captures a
+    // contract-bounded parameter; the lambda body dispatches through the enclosing instance's witness.
+    let (input, isa, root) = item_fixture_with_root(
+        "contract Joins<T> { T Combine(T left, T right); } type Plus : Joins<i64> { i64 id, pub i64 Combine(i64 left, i64 right) { return left + right; } } L Fold<T, L>(L seed, T value, (L, T) => L step) { return step(seed, value); } T Merge<T, C>(T seed, T value, C combiner) where C: Joins<T> { return Fold<T, T>(seed, value, (T acc, T item) => combiner.Combine(acc, item)); } i64 Main(Plus plus) { return Merge<i64, Plus>(1_i64, 2_i64, plus); }",
+    );
+    let items = find_function_definitions(input.database(), root);
+    let main = items
+        .iter()
+        .copied()
+        .find(|item| item_name(input.database(), *item).ok().flatten().as_deref() == Some("Main"))
+        .expect("Main");
+    let artifact = lower_syntax_program(&input, isa.as_ref(), &[SyntaxModuleItem { key: main, symbol: "Main".into() }])
+        .expect("a contract call on a captured bounded parameter lowers in the instance");
+    let names = artifact.functions.iter().map(|function| function.name.as_str()).collect::<Vec<_>>();
+    assert!(
+        names.iter().any(|name| name.starts_with("Merge#") && name.contains("#generic_") && name.contains("#lambda_")),
+        "{names:?}"
+    );
+}
+
+#[test]
+fn constructor_returned_by_a_lambda_in_a_generic_body_takes_the_callee_result_type() {
+    // `ParallelSeq.Split` shape: `Scopes.Run<R>((Scope s) => { return Result::Ok(..); })` inside a
+    // generic body; the constructor's type is the callee parameter's function result with the
+    // explicit type argument applied, interpreted in the enclosing instance.
+    let (input, isa, root) = item_fixture_with_root(
+        "enum Outcome<T, E> { Ok(T value), Error(E error) } i64 Run<T>(() => Outcome<T, string> body) { return 1_i64; } i64 Wrap<R>(R value) { return Run<R>(() => { return Outcome::Ok(value); }); } i64 Main() { return Wrap<i64>(5_i64); }",
+    );
+    let items = find_function_definitions(input.database(), root);
+    let main = items
+        .iter()
+        .copied()
+        .find(|item| item_name(input.database(), *item).ok().flatten().as_deref() == Some("Main"))
+        .expect("Main");
+    let artifact = lower_syntax_program(&input, isa.as_ref(), &[SyntaxModuleItem { key: main, symbol: "Main".into() }])
+        .expect("a constructor returned by a lambda in a generic body lowers in the instance");
+    let names = artifact.functions.iter().map(|function| function.name.as_str()).collect::<Vec<_>>();
+    assert!(
+        names.iter().any(|name| name.starts_with("Wrap#") && name.contains("#generic_") && name.contains("#lambda_")),
+        "{names:?}"
+    );
+}
+
+#[test]
+fn match_on_a_call_through_a_typed_local_of_a_lambda_in_a_generic_body_is_specialized() {
+    // `ParallelSeq.Split` shape: `Task<R> upper = s.Spawn<R>(..); return match upper.Join() { .. }`
+    // inside a lambda of a generic body; the scrutinee's applied enum is read through the typed
+    // local's identity in the enclosing instance.
+    let (input, isa, root) = item_fixture_with_root(
+        "enum Outcome<T, E> { Ok(T value), Error(E error) } type Box<T> { T item, Outcome<T, string> Take() { return Outcome::Ok(this.item); } } Box<T> Make<T>(T item) { return Box<T> { item: item }; } i64 Run<T>(() => Outcome<T, string> body) { return 1_i64; } i64 Wrap<R>(R value) { return Run<R>(() => { Box<R> b = Make<R>(value); return match b.Take() { Outcome::Ok(v) => Outcome::Ok(v), Outcome::Error(e) => Outcome::Error(e) }; }); } i64 Main() { return Wrap<i64>(5_i64); }",
+    );
+    let items = find_function_definitions(input.database(), root);
+    let main = items
+        .iter()
+        .copied()
+        .find(|item| item_name(input.database(), *item).ok().flatten().as_deref() == Some("Main"))
+        .expect("Main");
+    let artifact = lower_syntax_program(&input, isa.as_ref(), &[SyntaxModuleItem { key: main, symbol: "Main".into() }])
+        .expect("a match on a call through a typed local of a lambda in a generic body lowers in the instance");
+    let names = artifact.functions.iter().map(|function| function.name.as_str()).collect::<Vec<_>>();
+    assert!(names.iter().any(|name| name.starts_with("Wrap#") && name.contains("#lambda_")), "{names:?}");
+    assert!(names.iter().any(|name| name.starts_with("Take#") && name.contains("#generic_")), "{names:?}");
+}
+
+#[test]
+fn receiver_bound_constructor_argument_inside_a_lambda_of_a_generic_body_is_specialized() {
+    // Core.Parallel shape inside a lambda: `(T v) => output.Send(Item::Entry(1_i64, v))` with
+    // `Port<Item<T>> output` captured by a lambda of `Forward<T>`; the receiver's identity in the
+    // instance binds the parameter's generic, so the constructor is checked against it.
+    let (input, isa, root) = item_fixture_with_root(
+        "type Port<T> { i64 id, unit Send(T value) { return; } } enum Item<T> { Entry(i64 sequence, T value), Done } unit Each<T>(T value, (T) => unit f) { f(value); return; } unit Forward<T>(Port<Item<T>> output, T value) { Each<T>(value, (T v) => output.Send(Item::Entry(1_i64, v))); return; } unit Main(Port<Item<i64>> output) { Forward<i64>(output, 7_i64); return; }",
+    );
+    let items = find_function_definitions(input.database(), root);
+    let named = |name: &str| {
+        items
+            .iter()
+            .copied()
+            .find(|item| item_name(input.database(), *item).ok().flatten().as_deref() == Some(name))
+            .expect("named item")
+    };
+    let artifact = lower_syntax_program(
+        &input,
+        isa.as_ref(),
+        &[
+            SyntaxModuleItem { key: named("Forward"), symbol: "Forward".into() },
+            SyntaxModuleItem { key: named("Main"), symbol: "Main".into() },
+        ],
+    )
+    .expect("a receiver-bound constructor argument inside a lambda of a generic body specializes the call");
+    let names = artifact.functions.iter().map(|function| function.name.as_str()).collect::<Vec<_>>();
+    assert!(names.iter().any(|name| name.starts_with("Forward#") && name.contains("#lambda_")), "{names:?}");
+}
+
+#[test]
+fn chained_generic_call_receiver_in_a_lambda_of_a_generic_body_is_specialized() {
+    // `ParallelSeq.Collect` shape: `(List<T> leaf) => List.New<List<T>>().Push(leaf)` where
+    // `Push` is a method of a generic owner and the receiver is itself a
+    // generic call with explicit arguments naming the enclosing parameter.
+    let (input, isa, root) = item_fixture_with_root(
+        "type Bag<V> { i64 count, Bag<V> Put(V value) { return Bag<V> { count: this.count + 1_i64 }; } } Bag<V> NewBag<V>() { return Bag<V> { count: 0_i64 }; } R Fold<T, L, R>(T value, () => L start, (L, T) => L step, (L) => R finish) { return finish(step(start(), value)); } Bag<Bag<T>> Collect<T>(T value) { return Fold<T, Bag<T>, Bag<Bag<T>>>(value, () => NewBag<T>(), (Bag<T> leaf, T v) => leaf.Put(v), (Bag<T> leaf) => NewBag<Bag<T>>().Put(leaf)); } i64 Main() { return Collect<i64>(5_i64).count; }",
+    );
+    let items = find_function_definitions(input.database(), root);
+    let main = items
+        .iter()
+        .copied()
+        .find(|item| item_name(input.database(), *item).ok().flatten().as_deref() == Some("Main"))
+        .expect("Main");
+    let artifact = lower_syntax_program(&input, isa.as_ref(), &[SyntaxModuleItem { key: main, symbol: "Main".into() }])
+        .expect("a chained generic call receiver in a lambda of a generic body lowers in the instance");
+    let names = artifact.functions.iter().map(|function| function.name.as_str()).collect::<Vec<_>>();
+    assert!(names.iter().filter(|name| name.starts_with("Collect#") && name.contains("#lambda_")).count() == 3, "{names:?}");
+}
+
+fn nested_capture_fixture(config: &str, knobs: &str) -> String {
+    // ParallelSuite `Measure` shape: a parameter captured through two lambda levels is read in
+    // a binary expression that infers the inner generic method's `T`.
+    format!(
+        "{config} type Config {{ string path, i64 width }} {knobs} type Knobs {{ i64 depth }} type Box<T> {{ T item, T Get() {{ return this.item; }} }} type Scope {{ i64 id, Box<T> Spawn<T>(() => T body) {{ return Box<T> {{ item: body() }}; }} }} T Run<T>((Scope) => T body) {{ return body(Scope {{ id: 1_i64 }}); }} i64 Measure(Config config, Knobs knobs) {{ return Run<i64>((Scope s) => {{ Box<i64> t = s.Spawn(() => config.width + knobs.depth); return t.Get(); }}); }} i64 Main() {{ return Measure(Config {{ path: \"a\", width: 40_i64 }}, Knobs {{ depth: 2_i64 }}); }}"
+    )
+}
+
+#[test]
+fn nested_lambda_reads_fields_of_doubly_captured_parameters() {
+    let (input, isa, root) = item_fixture_with_root(&nested_capture_fixture("", ""));
+    let items = find_function_definitions(input.database(), root);
+    let named = |name: &str| {
+        items
+            .iter()
+            .copied()
+            .find(|item| item_name(input.database(), *item).ok().flatten().as_deref() == Some(name))
+            .expect("named item")
+    };
+    lower_syntax_program(
+        &input,
+        isa.as_ref(),
+        &[
+            SyntaxModuleItem { key: named("Measure"), symbol: "Measure".into() },
+            SyntaxModuleItem { key: named("Main"), symbol: "Main".into() },
+        ],
+    )
+    .expect("a field of a parameter captured through two lambdas lowers");
+}
+
+#[test]
+fn nested_lambda_reads_fields_of_doubly_captured_marked_parameters() {
+    let (input, isa, root) = item_fixture_with_root(&nested_capture_fixture("[Immutable]", "[Copyable]"));
+    let items = find_function_definitions(input.database(), root);
+    let named = |name: &str| {
+        items
+            .iter()
+            .copied()
+            .find(|item| item_name(input.database(), *item).ok().flatten().as_deref() == Some(name))
+            .expect("named item")
+    };
+    lower_syntax_program(
+        &input,
+        isa.as_ref(),
+        &[
+            SyntaxModuleItem { key: named("Measure"), symbol: "Measure".into() },
+            SyntaxModuleItem { key: named("Main"), symbol: "Main".into() },
+        ],
+    )
+    .expect("a field of a marked parameter captured through two lambdas lowers");
+}
+
+#[test]
+fn sibling_generic_method_called_on_the_implicit_receiver_with_type_arguments_is_specialized() {
+    // `Scope.SpawnTry<T>` shape: `this.Spawn<T>(() => Unwrap<T>(body()))` calls a sibling method
+    // with its own type parameters through the implicit receiver.
+    for call in ["this.Apply<T>"] {
+        let source = format!(
+            "T Id<T>(T value) {{ return value; }} type Runner {{ i64 id, T Apply<T>(() => T body) {{ return body(); }} T Wrap<T>(() => T body) {{ return {call}(() => Id<T>(body())); }} }} i64 Main(Runner runner) {{ return runner.Wrap<i64>(() => 7_i64); }}"
+        );
+        let (input, isa, root) = item_fixture_with_root(&source);
+        let methods = super::super::support::find_nodes_of_kind(
+            input.database(),
+            root,
+            beskid_queries::IndexedNodeKind::MethodDefinition,
+        );
+        let mut items = methods
+            .iter()
+            .map(|key| SyntaxModuleItem {
+                key: *key,
+                symbol: format!("Runner_{}", item_name(input.database(), *key).ok().flatten().expect("method name")),
+            })
+            .collect::<Vec<_>>();
+        items.extend(find_function_definitions(input.database(), root).into_iter().map(|key| SyntaxModuleItem {
+            key,
+            symbol: item_name(input.database(), key).ok().flatten().expect("function name").to_string(),
+        }));
+        let artifact = lower_syntax_program(&input, isa.as_ref(), &items)
+            .unwrap_or_else(|error| panic!("{call}: sibling generic method lowers specialized: {error:?}"));
+        let names = artifact.functions.iter().map(|function| function.name.as_str()).collect::<Vec<_>>();
+        assert!(names.iter().any(|name| name.starts_with("Runner_Apply#generic_")), "{call}: {names:?}");
+        assert!(names.iter().any(|name| name.starts_with("Runner_Wrap#generic_")), "{call}: {names:?}");
+    }
+}
+
+#[test]
+fn match_on_a_function_value_call_in_a_generic_body_is_specialized() {
+    // Core.Parallel `Evaluate<T, L, R>` shape: `match element(index)` where `element` is a
+    // `(i64) => Option<T>` parameter; the scrutinee's enum is the callee's result in the instance.
+    let (input, isa, root) = item_fixture_with_root(
+        "enum Option<T> { Some(T value), None } i64 Count<T>(i64 n, (i64) => Option<T> element) { mut i64 found = 0_i64; mut i64 i = 0_i64; while i < n { match element(i) { Option::Some(value) => { found = found + 1_i64; }, Option::None => { }, }; i = i + 1_i64; } return found; } i64 Main() { return Count<i64>(3_i64, (i64 x) => Option::Some(x)) + Count<string>(2_i64, (i64 x) => Option::Some(\"v\")); }",
+    );
+    let items = find_function_definitions(input.database(), root)
+        .into_iter()
+        .map(|key| SyntaxModuleItem {
+            key,
+            symbol: item_name(input.database(), key).ok().flatten().expect("function name").to_string(),
+        })
+        .collect::<Vec<_>>();
+    let artifact = lower_syntax_program(&input, isa.as_ref(), &items)
+        .expect("a match over a function value call lowers in each specialization");
+    let names = artifact.functions.iter().map(|function| function.name.as_str()).collect::<Vec<_>>();
+    assert_eq!(names.iter().filter(|name| name.starts_with("Count#generic_")).count(), 2, "{names:?}");
+}
+
+#[test]
+fn match_on_a_method_of_a_captured_generic_owner_in_a_lambda_of_a_non_generic_body() {
+    // `parallel_counts.bd` shape: `s.Spawn(() => { match outbound.Receive() { .. }; })` with a
+    // captured `Port<Config> outbound` in a non-generic body. Every payload/position/inference
+    // combination is lowered so one run names each failing shape.
+    let mut failures = Vec::new();
+    for payload in ["i64", "Config"] {
+        for (position, body) in [
+            (
+                "final",
+                "match b.Take() { Outcome::Ok(c) => { return VALUE; }, Outcome::Error(_) => { return -1_i64; }, };",
+            ),
+            (
+                "inner",
+                "mut i64 r = 0_i64; match b.Take() { Outcome::Ok(c) => { r = VALUE; }, Outcome::Error(_) => { }, }; return r;",
+            ),
+        ] {
+            for call in ["Call<i64>", "Call"] {
+                let value = if payload == "i64" { "c" } else { "c.width" };
+                let source = format!(
+                    "enum Outcome<T, E> {{ Ok(T value), Error(E error) }} type Box<T> {{ T item, Outcome<T, string> Take() {{ return Outcome::Ok(this.item); }} }} type Config {{ string name, i64 width, }} i64 Call<T>(() => T body) {{ return 1_i64; }} i64 Main(Box<{payload}> b) {{ return {call}(() => {{ {} }}); }}",
+                    body.replace("VALUE", value)
+                );
+                let (input, isa, root) = item_fixture_with_root(&source);
+                let main = find_function_definitions(input.database(), root)
+                    .into_iter()
+                    .find(|item| item_name(input.database(), *item).ok().flatten().as_deref() == Some("Main"))
+                    .expect("Main");
+                if let Err(error) =
+                    lower_syntax_program(&input, isa.as_ref(), &[SyntaxModuleItem { key: main, symbol: "Main".into() }])
+                {
+                    failures.push(format!("{payload}/{position}/{call}: {error:?}"));
+                }
+            }
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
 }

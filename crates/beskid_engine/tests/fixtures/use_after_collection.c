@@ -14,7 +14,13 @@
  * the rule forbids, so the fixture then prints what the service substituted and exits 0 (the test
  * requires exit status 101 and the trap diagnostic). `main live` drives the same services with
  * rooted operands across a collection and must succeed.
+ *
+ * `gc_resolve_handle` takes a handle, not a reference: its dead operand is a released handle whose
+ * object the collection freed, which resolves to nothing live and must trap the same way.
  */
+
+/* Never runs: `fiber_spawn` must trap on the dead capture environment before it schedules. */
+static void *unreached_entry(void *argument) { return argument; }
 
 typedef struct { _Alignas(8) unsigned char bytes[BESKID_ABI_VALUE_SIZE]; } ValueSlot;
 
@@ -47,6 +53,9 @@ static int run_live(void) {
     void *slice = str_slice(joined, 0, 4);
     assert(slice && str_eq(slice, left) == 1 && str_cmp(slice, left) == 0);
     assert(str_cmp(left, joined) < 0 && str_eq(left, joined) == 0);
+    assert(beskid_rt_v5_gc_same_identity(left, left) == 1 && beskid_rt_v5_gc_same_identity(left, right) == 0);
+    assert(beskid_rt_v5_gc_same_identity(NULL, left) == 2);
+    assert(beskid_rt_v5_gc_resolve_handle(joined_root) == joined && beskid_rt_v5_gc_resolve_handle(0) == NULL);
     gc_unroot_handle(joined_root);
     gc_unroot_handle(right_root);
     gc_unroot_handle(left_root);
@@ -81,6 +90,16 @@ static int run_dead(const char *service, const char *self_path) {
         printf("substituted %zu\n", gc_root_handle(dead));
     } else if (strcmp(service, "gc_try_root_handle") == 0) {
         printf("substituted %zu\n", beskid_rt_v5_gc_try_root_handle(dead));
+    } else if (strcmp(service, "fiber_spawn") == 0) {
+        printf("substituted %lld\n", (long long)fiber_spawn((void *)unreached_entry, dead));
+    } else if (strcmp(service, "gc_same_identity") == 0) {
+        printf("substituted %zu\n", beskid_rt_v5_gc_same_identity(live, dead));
+    } else if (strcmp(service, "gc_resolve_handle") == 0) {
+        size_t released = gc_root_handle(str_new((void *)"released", 8));
+        assert(released);
+        gc_unroot_handle(released);
+        gc_collect();
+        printf("substituted %p\n", beskid_rt_v5_gc_resolve_handle(released));
     } else if (strcmp(service, "utf8_record_adopt") == 0) {
         /* `fs_read_text` adopts the text it read into the caller's string record. */
         size_t path_root = 0;

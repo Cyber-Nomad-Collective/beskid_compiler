@@ -6,9 +6,9 @@ use beskid_analysis::projects::{
 use beskid_analysis::services::parse_program;
 use beskid_analysis::syntax_query::{NodeKind, SyntaxIndex};
 use beskid_queries::{
-    AggregateFieldShape, AstNodeKey, BeskidDatabase, EnumLayoutTemplateArgument, GenericSubstitution, ItemSignature,
+    AggregateFieldShape, AstNodeKey, BeskidDatabase, GenericSpecializationInstance, GenericSubstitution, ItemSignature,
     ProjectSession, SemanticTypeId, SourceUnitId, SyntaxGenerationId, abi_type, build_typed_program,
-    call_abi_signature, call_arguments, call_lowering, enum_constructor_specialization, enum_constructor_template,
+    call_abi_signature, call_arguments, call_lowering, enum_constructor_specialization,
     enum_match, generic_call_instantiation, generic_call_specialization, item_abi_signature, node_type, value_abi_type,
 };
 use std::path::PathBuf;
@@ -926,24 +926,22 @@ pub type List<T> {
     assert!(enum_match(&db, matched).expect("imported Result match").is_some());
     assert_eq!(node_type(&db, matched).expect("imported Result match type"), Some(SemanticTypeId::I64));
     assert_eq!(value_abi_type(&db, negative_arm).expect("contextual match arm ABI"), Some(SemanticTypeId::I64));
-    let template = enum_constructor_template(&db, constructor)
-        .expect("generic Result constructor template query")
-        .expect("generic Result constructor template");
-    assert_eq!(template.parameters.as_ref(), [Arc::<str>::from("TValue"), Arc::<str>::from("TError")]);
-    assert_eq!(
-        template.arguments.as_ref(),
-        [
-            EnumLayoutTemplateArgument::EnclosingParameter(Arc::from("T")),
-            EnumLayoutTemplateArgument::Concrete(AggregateFieldShape::Scalar(SemanticTypeId::STRING)),
-        ]
-    );
-    let specialized = enum_constructor_specialization(
-        &db,
-        constructor,
-        Arc::from([GenericSubstitution::inferred("T", SemanticTypeId::I64)]),
-    )
-    .expect("generic Result constructor specialization query")
-    .expect("generic Result constructor specialization");
+    // The genericless constructor in `Get`'s body is typed by the method's declared return in
+    // the instance's environment (`Result<T, string>` with `T = i64`).
+    let method = key(list_unit, generation, &list_index, NodeKind::MethodDefinition, 0);
+    let instance = GenericSpecializationInstance {
+        declaration: method,
+        declaration_identity: Arc::from("Core::Collections::List::Get"),
+        signature: ItemSignature {
+            parameters: Arc::from([SemanticTypeId::POINTER, SemanticTypeId::I64]),
+            result: SemanticTypeId::POINTER,
+        },
+        substitutions: Arc::from([GenericSubstitution::inferred("T", SemanticTypeId::I64)]),
+        contract_witnesses: Arc::from([]),
+    };
+    let specialized = enum_constructor_specialization(&db, constructor, &instance)
+        .expect("generic Result constructor specialization query")
+        .expect("generic Result constructor specialization");
     assert_eq!(specialized.layout.variants[0].fields[0].1, AggregateFieldShape::Scalar(SemanticTypeId::I64));
     assert_eq!(specialized.layout.variants[1].fields[0].1, AggregateFieldShape::Scalar(SemanticTypeId::STRING));
     assert_eq!(value_abi_type(&db, stored).expect("match storage ABI"), Some(SemanticTypeId::I64));

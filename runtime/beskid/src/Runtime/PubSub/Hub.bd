@@ -123,13 +123,13 @@ pub i64 HubUnregister(i64 hubId, i64 index) {
         if entryIndex == index {
             // Shift entries left to retain registration order.  Swap-removal
             // would make round-robin delivery depend on the removed position.
-            mut word move = i;
-            while move + 1 < entryCount {
-                pointer nextEntry = HubEntry(hub, move + 1);
-                pointer currentEntry = HubEntry(hub, move);
+            mut word shift = i;
+            while shift + 1 < entryCount {
+                pointer nextEntry = HubEntry(hub, shift + 1);
+                pointer currentEntry = HubEntry(hub, shift);
                 raw_word_store(currentEntry, raw_word_load(nextEntry));
                 raw_word_store(pointer_add(currentEntry, 8), raw_word_load(pointer_add(nextEntry, 8)));
-                move = move + 1;
+                shift = shift + 1;
             }
             pointer lastEntry = HubEntry(hub, entryCount - 1);
             raw_word_store(lastEntry, 0);

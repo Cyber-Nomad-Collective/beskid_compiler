@@ -215,3 +215,16 @@ fn lambda_value_requirement_follows_the_use_of_the_lambda() {
     assert_eq!(required(1), Some(true), "a lambda local passed as a value materializes its record");
     assert_eq!(required(2), Some(true), "a lambda argument is a function value");
 }
+
+#[test]
+fn a_typed_lambda_parameter_is_classified_by_its_written_type() {
+    // ParallelSuite `Parallel.Scope<bool>((Core.Parallel.Scopes.Scope s) => { .. })`: the lambda
+    // trampoline needs each parameter's managed-reference class from its annotation.
+    let source = "type Box { i64 v } i64 Run((Box, i64) => i64 f, Box b) { return f(b, 1); } \
+                  i64 Main(Box b) { return Run((Box s, i64 n) => s.v + n, b); }";
+    let (db, _project, unit, generation, index) = setup(source);
+    let boxed = key_at_start(unit, generation, &index, NodeKind::Identifier, source.find("s, i64 n").expect("s"));
+    let scalar = key_at_start(unit, generation, &index, NodeKind::Identifier, source.find("n) =>").expect("n"));
+    assert_eq!(managed_reference_kind(&db, boxed).expect("managed query"), Some(ManagedReferenceKind::GcManaged));
+    assert_eq!(managed_reference_kind(&db, scalar).expect("managed query"), Some(ManagedReferenceKind::NativeOrScalar));
+}

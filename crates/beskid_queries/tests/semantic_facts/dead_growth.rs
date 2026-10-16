@@ -198,26 +198,26 @@ fn index_reads_and_self_assignment_do_not_publish_the_parameter() {
 #[test]
 fn fixed_corelib_shapes_and_published_handles_are_not_dead() {
     for body in [
-        // corelib Http/Codec.bd AppendCrlf: the parameter is returned after growth.
-        "u8[] AppendCrlf(mut u8[] destination) { Array.Append<u8>(destination, u8(13)); Array.Append<u8>(destination, u8(10)); return destination; }",
+        // corelib Http/Codec.bd AppendCrlf: the owning parameter is returned after growth.
+        "u8[] AppendCrlf(move u8[] destination) { Array.Append<u8>(destination, u8(13)); Array.Append<u8>(destination, u8(10)); return destination; }",
         // corelib Http/Codec.bd AppendText: growth inside a loop, then the parameter is returned.
-        "u8[] AppendText(mut u8[] destination, u8[] source) { mut i64 index = 0_i64; while index < Array.Len<u8>(source) { Array.Append<u8>(destination, source[index]); index = index + 1_i64; } return destination; }",
+        "u8[] AppendText(move u8[] destination, u8[] source) { mut i64 index = 0_i64; while index < Array.Len<u8>(source) { Array.Append<u8>(destination, source[index]); index = index + 1_i64; } return destination; }",
         // corelib Set.bd/List.bd/Args.bd/Slice.bd: the owner is a mutable local, not a parameter.
-        "u8[] Build(u8[] seed, u8 value) { mut u8[] output = seed; Array.Append<u8>(output, value); return output; }",
+        "u8[] Build(move u8[] seed, u8 value) { mut u8[] output = seed; Array.Append<u8>(output, value); return output; }",
         // The grown handle is bound.
         "u8[] Push(mut u8[] buffer, u8 value) { u8[] grown = Array.Append<u8>(buffer, value); return grown; }",
         // The grown handle is returned directly.
         "u8[] Push(mut u8[] buffer, u8 value) { return Array.Append<u8>(buffer, value); }",
         // The grown handle is rebound onto the parameter and the parameter is returned.
-        "u8[] Push(mut u8[] buffer, u8 value) { buffer = Array.Append<u8>(buffer, value); return buffer; }",
+        "u8[] Push(move u8[] buffer, u8 value) { buffer = Array.Append<u8>(buffer, value); return buffer; }",
         // The parameter is handed to another callee after growth.
         "unit Consume(u8[] bytes) { return; } unit Push(mut u8[] buffer, u8 value) { Array.Append<u8>(buffer, value); Consume(buffer); }",
         // The parameter is published through a struct field.
-        "type Box { u8[] items, } Box Push(mut u8[] buffer, u8 value) { Array.Append<u8>(buffer, value); return Box { items: buffer }; }",
+        "type Box { u8[] items, } Box Push(move u8[] buffer, u8 value) { Array.Append<u8>(buffer, value); return Box { items: buffer }; }",
         // The parameter is published before growth: a binding copy can outlive the call.
-        "u8[] Push(mut u8[] buffer, u8 value) { u8[] before = buffer; Array.Append<u8>(buffer, value); return before; }",
+        "i64 Push(mut u8[] buffer, u8 value) { u8[] before = buffer; Array.Append<u8>(buffer, value); return Array.Len<u8>(before); }",
         // The parameter is captured by a nested lambda.
-        "unit Push(mut u8[] buffer, u8 value) { Array.Append<u8>(buffer, value); let capture = () => buffer; return; }",
+        "unit Push(mut u8[] buffer, u8 value) { Array.Append<u8>(buffer, value); let capture = () => Array.Len<u8>(buffer); return; }",
         // Length is read through a call argument.
         "unit Push(mut u8[] buffer, u8 value) { if Array.Len<u8>(buffer) > 4_i64 { return; } Array.Append<u8>(buffer, value); }",
         // A user-declared Append lookalike is not a canonical growth operation.

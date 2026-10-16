@@ -23,6 +23,8 @@
 #define BESKID_NETWORK_TRANSPORT 1
 #include "../common/environment_lock.h"
 #include "../common/external_wait.h"
+#include "../common/host_threads.h"
+#include "../common/port_ring.h"
 #include "../common/network_posix.h"
 
 struct BeskidStr {

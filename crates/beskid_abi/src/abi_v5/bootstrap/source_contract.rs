@@ -12,6 +12,8 @@ use super::super::{
 pub(super) struct SourceContract {
     pub(super) targets: Vec<SourceTarget>,
     pub(super) exports: Vec<SourceFunction>,
+    #[serde(rename = "dataExports")]
+    _data_exports: serde_json::Value,
     pub(super) intrinsics: Vec<SourceIntrinsic>,
     #[serde(rename = "softBuiltins")]
     _soft_builtins: Vec<SourceSoftBuiltin>,
