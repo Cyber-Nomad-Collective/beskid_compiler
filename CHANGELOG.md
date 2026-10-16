@@ -333,6 +333,17 @@ feature area.
 
 ### Fixed
 
+- A field read stored as it is follows the owning and borrowed rules: a
+  Moved field read through a borrowed name (`Node { bytes: h.bytes }`,
+  `Store(h.bytes)` into a `move` parameter, `n.bytes = h.bytes`) is E1241,
+  and through an owning name it is E1242 (write `move h.bytes` or use
+  `exchange`). Fields of other classes, and roots of Never class, are not
+  judged.
+- A `move` argument to a generic call inside a generic body
+  (`Keep<T>(move values)` in `Forward<T>`) lowers; it no longer ends in
+  E2102. The argument is rooted like a read of its operand.
+- The Rust Glue extension fixture matches on the callback's lambda parameter
+  again (`(i64 index, Color color) => match color { ... }`).
 - A struct, array or enum literal that stores a borrowed name (`TestStream {
   state: state }` with a borrowed `u8[] state`) is E1241: a borrowed value
   cannot be stored. An owning name is consumed silently, so enum constructor
