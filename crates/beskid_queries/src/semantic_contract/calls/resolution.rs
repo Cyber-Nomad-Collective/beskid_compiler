@@ -237,7 +237,8 @@ pub(in crate::semantic_contract) fn unqualified_enclosing_method_call(
     // `Method()` or `this.Method()` (`self.Method()` is the older spelling): both name a sibling
     // method on the implicit receiver unless a lexical declaration shadows the qualifier.
     let segment = match path.segments.as_slice() {
-        [segment] => segment,
+        // Type arguments are admitted only on the explicit `this.Method<T>(..)` spelling.
+        [segment] if segment.node.type_args.is_empty() => segment,
         [receiver, segment]
             if receiver.node.type_args.is_empty()
                 && super::super::layouts::is_implicit_receiver_name(
@@ -251,9 +252,6 @@ pub(in crate::semantic_contract) fn unqualified_enclosing_method_call(
         }
         _ => return None,
     };
-    if !segment.node.type_args.is_empty() {
-        return None;
-    }
     let enclosing =
         nearest_ancestor(index, key.node, |kind| kind == beskid_analysis::syntax_query::NodeKind::MethodDefinition)?;
     let owner = parent_node(index, enclosing)?;
@@ -270,6 +268,17 @@ pub(in crate::semantic_contract) fn unqualified_enclosing_method_call(
         })
         .collect::<Vec<_>>();
     let [target] = matches.as_slice() else { return None };
+    // Type arguments on `this.Method<T>` bind a generic sibling's own type parameters
+    // (`this.Spawn<T>(..)` inside `Scope.SpawnTry<T>`); a non-generic sibling takes none.
+    if !segment.node.type_args.is_empty()
+        && index
+            .node_at(program, *target)?
+            .of::<beskid_analysis::syntax::MethodDefinition>()?
+            .generics
+            .is_empty()
+    {
+        return None;
+    }
     Some((AstNodeKey { node: *target, ..key }, AstNodeKey { node: enclosing, ..key }))
 }
 

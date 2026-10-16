@@ -997,6 +997,13 @@ pub(super) fn specialized_source_expression_identity(
         return super::calls::try_expression_fact_for_node(db, program, index, key, node, Some(enclosing))
             .map(|fact| fact.payload_identity);
     }
+    // A call through a function value (`element(index)` with `(i64) => Option<T> element`) has
+    // the result of its callee's function type in this environment.
+    if node.of::<beskid_analysis::syntax::CallExpression>().is_some()
+        && let Some(call) = function_value_call_specialization(db, key, enclosing)?
+    {
+        return Ok(call.result_identity);
+    }
     if node.of::<beskid_analysis::syntax::CallExpression>().is_some()
         && let Some(result) = specialized_corelib_value_service_result(db, key, enclosing)?
     {

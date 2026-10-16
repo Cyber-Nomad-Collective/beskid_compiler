@@ -333,6 +333,16 @@ feature area.
 
 ### Fixed
 
+- `this.Method<T>(..)` calls a sibling method with its own type parameters
+  (`this.Spawn<T>(() => Unwrap<T>(body()))` in `Scope.SpawnTry<T>`); before,
+  explicit type arguments on the implicit-receiver spelling found no
+  declaration and code generation stopped with E2102. The bare `Method<T>(..)`
+  spelling stays unresolved.
+- A `match` over a call through a function value inside a generic body
+  (`match element(index)` with `(i64) => Option<T> element` in
+  `ParallelSeq.Evaluate<T, L, R>`) takes the scrutinee enum from the callee's
+  function type in the specialization; before, the scrutinee had no source
+  identity and code generation stopped with E2102.
 - A typed Corelib value service instantiated at `string`
   (`__isolate_join_value<T>` in `Task<string>.Join`, `__fiber_join_value<T>`,
   `__channel_receive_value<T>`, `__port_receive_value<T>`) selects the managed

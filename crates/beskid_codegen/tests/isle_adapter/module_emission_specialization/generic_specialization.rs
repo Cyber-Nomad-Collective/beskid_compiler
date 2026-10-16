@@ -656,3 +656,56 @@ fn nested_lambda_reads_fields_of_doubly_captured_marked_parameters() {
     )
     .expect("a field of a marked parameter captured through two lambdas lowers");
 }
+
+#[test]
+fn sibling_generic_method_called_on_the_implicit_receiver_with_type_arguments_is_specialized() {
+    // `Scope.SpawnTry<T>` shape: `this.Spawn<T>(() => Unwrap<T>(body()))` calls a sibling method
+    // with its own type parameters through the implicit receiver.
+    for call in ["this.Apply<T>"] {
+        let source = format!(
+            "T Id<T>(T value) {{ return value; }} type Runner {{ i64 id, T Apply<T>(() => T body) {{ return body(); }} T Wrap<T>(() => T body) {{ return {call}(() => Id<T>(body())); }} }} i64 Main(Runner runner) {{ return runner.Wrap<i64>(() => 7_i64); }}"
+        );
+        let (input, isa, root) = item_fixture_with_root(&source);
+        let methods = super::super::support::find_nodes_of_kind(
+            input.database(),
+            root,
+            beskid_queries::IndexedNodeKind::MethodDefinition,
+        );
+        let mut items = methods
+            .iter()
+            .map(|key| SyntaxModuleItem {
+                key: *key,
+                symbol: format!("Runner_{}", item_name(input.database(), *key).ok().flatten().expect("method name")),
+            })
+            .collect::<Vec<_>>();
+        items.extend(find_function_definitions(input.database(), root).into_iter().map(|key| SyntaxModuleItem {
+            key,
+            symbol: item_name(input.database(), key).ok().flatten().expect("function name").to_string(),
+        }));
+        let artifact = lower_syntax_program(&input, isa.as_ref(), &items)
+            .unwrap_or_else(|error| panic!("{call}: sibling generic method lowers specialized: {error:?}"));
+        let names = artifact.functions.iter().map(|function| function.name.as_str()).collect::<Vec<_>>();
+        assert!(names.iter().any(|name| name.starts_with("Runner_Apply#generic_")), "{call}: {names:?}");
+        assert!(names.iter().any(|name| name.starts_with("Runner_Wrap#generic_")), "{call}: {names:?}");
+    }
+}
+
+#[test]
+fn match_on_a_function_value_call_in_a_generic_body_is_specialized() {
+    // Core.Parallel `Evaluate<T, L, R>` shape: `match element(index)` where `element` is a
+    // `(i64) => Option<T>` parameter; the scrutinee's enum is the callee's result in the instance.
+    let (input, isa, root) = item_fixture_with_root(
+        "enum Option<T> { Some(T value), None } i64 Count<T>(i64 n, (i64) => Option<T> element) { mut i64 found = 0_i64; mut i64 i = 0_i64; while i < n { match element(i) { Option::Some(value) => { found = found + 1_i64; }, Option::None => { }, }; i = i + 1_i64; } return found; } i64 Main() { return Count<i64>(3_i64, (i64 x) => Option::Some(x)) + Count<string>(2_i64, (i64 x) => Option::Some(\"v\")); }",
+    );
+    let items = find_function_definitions(input.database(), root)
+        .into_iter()
+        .map(|key| SyntaxModuleItem {
+            key,
+            symbol: item_name(input.database(), key).ok().flatten().expect("function name").to_string(),
+        })
+        .collect::<Vec<_>>();
+    let artifact = lower_syntax_program(&input, isa.as_ref(), &items)
+        .expect("a match over a function value call lowers in each specialization");
+    let names = artifact.functions.iter().map(|function| function.name.as_str()).collect::<Vec<_>>();
+    assert_eq!(names.iter().filter(|name| name.starts_with("Count#generic_")).count(), 2, "{names:?}");
+}
