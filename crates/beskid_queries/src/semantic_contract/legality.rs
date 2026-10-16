@@ -1627,6 +1627,32 @@ mod tests {
     }
 
     #[test]
+    fn moved_argument_for_a_parameter_forwarded_to_a_repeated_capture_is_e1236_at_the_wrapper_call() {
+        // A generic wrapper forwarding its own `T seed` to `Fold` (like a helper over
+        // `ParallelSeq.Reduce`) inherits the obligation: its call site is judged per
+        // instantiation. Recursive and mutually recursive forwarding terminates.
+        let prelude = "pub i64 Probe<T>(T value) { return 0; } \
+                       pub unit Fold<T>(T seed) where T: Transferable { Run(() => Probe<T>(seed)); return; } \
+                       pub unit Wrap<T>(T seed) where T: Transferable { Fold<T>(seed); return; } \
+                       pub unit Twice<T>(i64 depth, T seed) where T: Transferable { if depth > 0 { Twice<T>(depth - 1, seed); } Wrap<T>(seed); return; } \
+                       pub unit Ping<T>(T seed, i64 n) where T: Transferable { if n > 0 { Pong<T>(seed, n - 1); } return; } \
+                       pub unit Pong<T>(T seed, i64 n) where T: Transferable { if n > 0 { Ping<T>(seed, n - 1); } return; } \
+                       pub unit Keep<T>(T seed) where T: Transferable { Probe<T>(seed); return; } ";
+        let cases: &[(&str, &[&str])] = &[
+            ("unit Main(move u8[] data) { Wrap<u8[]>(data); return; }", &["E1236"]),
+            ("unit Main(move u8[] data) { Twice<u8[]>(2, data); return; }", &["E1236"]),
+            ("[Immutable] pub type Config { i64 retries } unit Main(Config config) { Wrap<Config>(config); return; }", &[]),
+            ("unit Main() { Twice<i64>(2, 1_i64); return; }", &[]),
+            ("unit Main(move u8[] data) { Ping<u8[]>(data, 2); return; }", &[]),
+            ("unit Main(move u8[] data) { Keep<u8[]>(data); return; }", &[]),
+        ];
+        for (offset, (body, expected)) in cases.iter().enumerate() {
+            let codes = captures_codes(&format!("{prelude}{body}"), 6780 + offset as u64);
+            assert_eq!(codes, *expected, "{body}");
+        }
+    }
+
+    #[test]
     fn move_parameters_over_transferable_type_parameters_are_judged_per_instantiation() {
         let source = format!(
             "{MARKERS}{AFFINE_PRELUDE}unit Send<T>(move T value) where T: Transferable {{ return; }} \
