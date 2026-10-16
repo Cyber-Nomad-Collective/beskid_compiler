@@ -20,6 +20,8 @@ mod control_flow_loop_termination;
 mod corelib_services;
 #[path = "isle_adapter/deep_projection_chain.rs"]
 mod deep_projection_chain;
+#[path = "isle_adapter/descriptor_immutable.rs"]
+mod descriptor_immutable;
 #[path = "isle_adapter/diagnostics_fail_closed.rs"]
 mod diagnostics_fail_closed;
 #[path = "isle_adapter/enum_match_result.rs"]

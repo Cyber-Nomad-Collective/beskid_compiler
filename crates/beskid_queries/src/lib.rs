@@ -175,7 +175,8 @@ pub use semantic_contract::{
 pub use semantic_contract::{DeadCollectionGrowth, dead_collection_growth, is_growth_call_candidate};
 pub use semantic_contract::{UnresolvedTypeReference, unresolved_type_reference};
 pub use semantic_contract::{
-    TransferClass, TransferMarker, TransferMarkerAttribute, TransferNeverReason, nominal_transfer_class,
+    TransferClass, TransferMarker, TransferMarkerAttribute, TransferNeverReason, aggregate_literal_transfer_class,
+    enum_constructor_transfer_class, nominal_transfer_class,
     transfer_class_of_type, transfer_marker_contract,
 };
 pub use session::{
