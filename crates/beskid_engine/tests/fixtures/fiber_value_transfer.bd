@@ -9,7 +9,7 @@ pub type Aggregate { u8[] bytes, i64 marker, }
 // Foundation-local opaque token: transport does not dispose the resource.
 pub type OwnedResource { i64 token, }
 
-u8[] KeepBytes(u8[] value) { Probe.gc_collect(); return value; }
+u8[] KeepBytes(move u8[] value) { Probe.gc_collect(); return value; }
 Aggregate KeepAggregate(Aggregate value) { Probe.gc_collect(); return value; }
 OwnedResource KeepResource(OwnedResource value) { Probe.gc_collect(); return value; }
 unit CompleteUnit() { return; }
@@ -27,7 +27,7 @@ i64 ReadPanic(FiberError error) {
 
 Fiber<u8[]> StartBytes() {
     u8[] value = [42_u8];
-    return spawn (() => KeepBytes(value));
+    return spawn (() => KeepBytes(move value));
 }
 Fiber<Aggregate> StartAggregate() {
     Aggregate value = Aggregate { bytes: [42_u8], marker: 7_i64 };
