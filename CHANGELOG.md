@@ -333,6 +333,37 @@ feature area.
 
 ### Fixed
 
+- Every Core.Parallel task that ran on a real isolate failed with
+  `transit refused 0x0000000000000000`. The transit walk reported a refusal
+  as the encoded value 1, which is also the encoding of the first object of
+  the record, so the spawned closure record itself was refused. A refusal is
+  now a value that no reference encodes.
+- An elided `Scope.Spawn` (no free pool isolate, `BESKID_ISOLATES_MAX=1`, or a
+  `serial` scope) starts its body as a local task fiber, scheduled in spawn
+  order, and returns at once. Before, `Spawn` ran the body to completion, so a
+  producer that filled a bounded port before its consumer ran deadlocked. The
+  `__isolate_wait` service has no caller left and is removed.
+- A task observes a cancellation request only from its first run on (the
+  start of a task is not a safepoint), so a task created before its scope
+  failed still reports its own failure and the scope's failure report is the
+  same at every isolate bound.
+- `T value = __isolate_join_value<T>(..)` and the other typed Corelib value
+  services (fiber join, channel and port receive) root the local when `T` is
+  managed. The local was not rooted, so the allocation of `Result::Ok(value)`
+  in `Task.Join` could free the joined value.
+- String services, handle roots and handle resolution accept a live reference
+  into another isolate's heap (a `Shared` capture or a port message held by
+  pointer). A finished task keeps its retained heap resolvable until the
+  joiner adopts or discards it.
+- A `Shared` port message keeps its whole graph alive while a port holds it:
+  the count entry of a `Shared` stake, and of a string, is traced instead of
+  shallow-marked. A receive allocates the receiver's box first, then takes the
+  message's stakes, then stores the value, so neither a collection nor the
+  write barrier sees the value without its stake.
+- Heap address lookup on the owner thread is a binary search in a sorted
+  per-heap region index instead of a walk of the region chain. A joiner adopts
+  one region per completed task, so the walk grew with the number of joined
+  tasks (`Collect` over many chunks, and every collection under GC stress).
 - A block-bodied lambda's final expression statement is a statement, not the
   lambda's value. `s.Spawn(() => { match port.Receive() { ... => { return x; }, ... }; })`
   failed with E2102 at the `match`, because lowering read the last statement
