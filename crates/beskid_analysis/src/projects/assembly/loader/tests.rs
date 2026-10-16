@@ -900,6 +900,56 @@ fn workspace_scan_assembles_without_placeholder_entry_file() {
 }
 
 #[test]
+fn materialized_entry_less_library_roots_only_its_obj_root_units() {
+    // `obj/beskid/deps` sorts before `obj/beskid/root`; a materialized dependency unit such as
+    // `Concurrency/Channel.bd` must never become a root of the consuming library.
+    let workspace_root = temp_project_root("entryless_materialized_layout");
+    let host_source_root = workspace_root.join("obj/beskid/root/src");
+    let dependency_source_root = workspace_root.join("obj/beskid/deps/src/corelib_concurrency-0/src");
+    write_bd(&host_source_root, "Host.bd", "pub i64 Value() { return 1; }");
+    write_bd(&host_source_root, "Host/Child.bd", "pub i64 Child() { return 2; }");
+    write_bd(&dependency_source_root, "Concurrency/Channel.bd", "pub i64 Send() { return __channel_send(0, 0); }");
+    let plan = CompilePlan {
+        source_root: workspace_root.join("src"),
+        project_root: workspace_root.clone(),
+        manifest_path: workspace_root.join("Host.bproj"),
+        project_name: "Host".into(),
+        target: Target { name: "HostLib".into(), kind: TargetKind::Lib, entry: None },
+        dependency_projects: Vec::new(),
+        unresolved_dependencies: Vec::new(),
+        has_core_dependency: false,
+    };
+    let workspace = PreparedProjectWorkspace {
+        lockfile_path: workspace_root.join("Project.lock"),
+        materialized_project_root: workspace_root.join("obj/beskid/root"),
+        materialized_source_root: host_source_root.clone(),
+        materialized_dependencies: vec![MaterializedDependencyProject {
+            dependency_name: "corelib_concurrency".into(),
+            manifest_path: workspace_root.join("concurrency/corelib_concurrency.bproj"),
+            project_name: "corelib_concurrency".into(),
+            materialized_project_root: dependency_source_root.parent().expect("dependency project").to_path_buf(),
+            materialized_source_root: dependency_source_root.clone(),
+        }],
+    };
+    let entry_path = plan_entry_path(&plan, &host_source_root);
+    let assembly =
+        assemble_program(&plan, Some(&workspace), &entry_path, Some(""), &assembly_options_for_plan(&plan), None)
+            .expect("entry-less materialized workspace scan");
+
+    assert_eq!(assembly.units.len(), 3, "host and dependency units are all assembled");
+    let crate::projects::AssemblyRootSet::OwnUnits(paths) = &assembly.root_set else {
+        panic!("entry-less library must record its own units as roots, got {:?}", assembly.root_set);
+    };
+    let host_root = fs::canonicalize(&host_source_root).expect("canonical host root");
+    assert_eq!(paths.len(), 2, "both own units are roots: {paths:?}");
+    assert!(paths.iter().all(|path| path.starts_with(&host_root)), "only obj/beskid/root units are roots: {paths:?}");
+    assert!(assembly.entry_unit().path.starts_with(&host_root), "entry is an own root unit");
+    let channel = assembly.units.iter().position(|unit| unit.path.ends_with("Channel.bd")).expect("dependency unit");
+    assert!(!assembly.is_root_unit(channel), "a materialized dependency unit is never a root");
+    let _ = fs::remove_dir_all(workspace_root);
+}
+
+#[test]
 fn import_closure_still_requires_entry_file() {
     let (plan, entry_path) = no_entry_plan_with_source("pub fn Main() { }");
     let mut options = assembly_options_for_plan(&plan);
