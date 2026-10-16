@@ -333,6 +333,12 @@ feature area.
 
 ### Fixed
 
+- A typed Corelib value service instantiated at `string`
+  (`__isolate_join_value<T>` in `Task<string>.Join`, `__fiber_join_value<T>`,
+  `__channel_receive_value<T>`, `__port_receive_value<T>`) selects the managed
+  slot adapter. Before, only nominal, array and function values were admitted
+  as managed results, the call had no signature, and code generation stopped
+  with E2102.
 - A Corelib service that returns a managed `string` through the pointer
   register (`__isolate_join_message`, `__fiber_join_message`, `__str_slice`,
   `__env_get`) is a managed value in every expression position. Its category

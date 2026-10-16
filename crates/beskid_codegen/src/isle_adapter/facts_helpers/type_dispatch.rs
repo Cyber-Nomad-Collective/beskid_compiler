@@ -222,7 +222,11 @@ fn select_typed_corelib_value_service(
     semantic: SemanticTypeId,
 ) -> Option<(&'static str, SemanticTypeId)> {
     match (managed, semantic) {
-        (ManagedReferenceKind::GcManaged, SemanticTypeId::POINTER) => Some((dispatch.symbol, SemanticTypeId::POINTER)),
+        // A managed value crosses as its reference: a nominal, array or function value
+        // (`POINTER`) and a `string` (`STRING`) alike.
+        (ManagedReferenceKind::GcManaged, SemanticTypeId::POINTER | SemanticTypeId::STRING) => {
+            Some((dispatch.symbol, semantic))
+        }
         (ManagedReferenceKind::NativeOrScalar, semantic) if semantic != SemanticTypeId::POINTER => {
             Some((dispatch.symbol, semantic))
         }
@@ -246,6 +250,10 @@ mod typed_corelib_value_service_tests {
         assert_eq!(
             select_typed_corelib_value_service(DISPATCH, ManagedReferenceKind::GcManaged, SemanticTypeId::POINTER),
             Some(("channel_receive_value", SemanticTypeId::POINTER))
+        );
+        assert_eq!(
+            select_typed_corelib_value_service(DISPATCH, ManagedReferenceKind::GcManaged, SemanticTypeId::STRING),
+            Some(("channel_receive_value", SemanticTypeId::STRING))
         );
     }
 

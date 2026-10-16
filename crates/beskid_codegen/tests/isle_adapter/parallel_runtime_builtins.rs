@@ -2,12 +2,13 @@
 //!
 //! Corelib service authority is bound to the exact compiler-owned source bytes, so these tests
 //! lower the canonical Core.Parallel items themselves: struct literal fields (`FailureOf`,
-//! `Current`, `OfTask`), a return through a comparison (`IsCancelled`), and conditions and
-//! call arguments (`Scope.Finish`).
+//! `Current`, `OfTask`), a return through a comparison (`IsCancelled`), and a typed value
+//! service feeding a local of each `Task<T>.Join` specialization.
 
 use super::support::{
     AstNodeId, AstNodeKey, CodegenInput, SourceUnitId, SyntaxGenerationId, SyntaxModuleItem,
-    canonical_corelib_project_fixture, find_corelib_service_call, lower_syntax_program, named_function,
+    canonical_corelib_project_fixture, find_corelib_service_call, find_function_definitions, find_nodes_of_kind,
+    item_name, lower_syntax_program, named_function,
 };
 
 fn parallel_unit(input: &CodegenInput<'_>, entry: AstNodeKey, relative: &str) -> AstNodeKey {
@@ -62,4 +63,41 @@ fn isolate_builtins_lower_as_struct_literal_fields_and_returns() {
             artifact.extern_imports.iter().map(|import| import.symbol.as_str()).collect::<Vec<_>>()
         );
     }
+}
+
+#[test]
+fn isolate_join_value_lowers_into_a_typed_local_of_each_task_specialization() {
+    // `T value = __isolate_join_value<T>(this.id);` in `Task<T>.Join`: the typed value service
+    // feeds a local whose declared type is the enclosing generic, per call-derived instance.
+    let (input, isa, entry) = canonical_corelib_project_fixture(
+        &[(
+            "Main.bd",
+            "use Core.Parallel.Scopes; use Core.Results; \
+             i64 TakeNumber(Task<i64> task) { return match task.Join() { Result::Ok(value) => value, Result::Error(_) => 0_i64, }; } \
+             string TakeText(Task<string> task) { return match task.Join() { Result::Ok(value) => value, Result::Error(_) => \"\", }; } \
+             bool TakeFlag(Task<bool> task) { return match task.Join() { Result::Ok(value) => value, Result::Error(_) => false, }; }",
+        )],
+        SyntaxGenerationId(142),
+    );
+    let scopes = parallel_unit(&input, entry, "Core/Parallel/Scopes.bd");
+    let join = find_nodes_of_kind(input.database(), scopes, beskid_queries::IndexedNodeKind::MethodDefinition)
+        .into_iter()
+        .find(|key| item_name(input.database(), *key).ok().flatten().as_deref() == Some("Join"))
+        .expect("Task.Join");
+    let mut items = vec![
+        SyntaxModuleItem { key: join, symbol: "Task_Join".into() },
+        SyntaxModuleItem { key: named_function(&input, scopes, "FailureOf"), symbol: "FailureOf".into() },
+        SyntaxModuleItem { key: named_function(&input, scopes, "StatusCompleted"), symbol: "StatusCompleted".into() },
+        SyntaxModuleItem { key: named_function(&input, scopes, "StatusCancelled"), symbol: "StatusCancelled".into() },
+        SyntaxModuleItem { key: named_function(&input, scopes, "StatusPanicked"), symbol: "StatusPanicked".into() },
+    ];
+    items.extend(find_function_definitions(input.database(), entry).into_iter().map(|key| SyntaxModuleItem {
+        key,
+        symbol: item_name(input.database(), key).ok().flatten().expect("named entry item").to_string(),
+    }));
+    let artifact = lower_syntax_program(&input, isa.as_ref(), &items)
+        .expect("Task<T>.Join lowers its typed join value for scalar, bool and managed T");
+    let names = artifact.functions.iter().map(|function| function.name.as_str()).collect::<Vec<_>>();
+    assert_eq!(names.iter().filter(|name| name.starts_with("Task_Join#generic_")).count(), 3, "{names:?}");
+    assert!(artifact.extern_imports.iter().any(|import| import.symbol == "isolate_join_value"));
 }
