@@ -287,3 +287,21 @@ fn port_handle_crosses_a_port() {
         );
     }
 }
+
+/// v0.6.4: a three-stage pipeline of string records keeps input order at every bound.
+#[test]
+fn pipeline_keeps_input_order() {
+    for environment in [
+        &[("BESKID_ISOLATES_MAX", "8")][..],
+        &[("BESKID_ISOLATES_MAX", "2")][..],
+    ] {
+        let output = run("RunPipeline", environment);
+        assert!(
+            output.status.success(),
+            "RunPipeline {environment:?}: exit {:?}\nstdout:\n{}\nstderr:\n{}",
+            output.status.code(),
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+}
