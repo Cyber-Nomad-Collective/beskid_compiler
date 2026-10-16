@@ -1535,6 +1535,58 @@ mod tests {
         }
     }
 
+    /// A struct, array or enum literal stores its field values into a new object: an owning name
+    /// is consumed silently (P4-1), a borrowed name escapes (E1241, "Owning and borrowed names").
+    /// Shared and Copied values have no owning or borrowed classification.
+    #[test]
+    fn literal_initializers_consume_owning_names_and_reject_borrowed_ones() {
+        let types = "[Isolated] pub type Node { u8[] bytes } [Isolated] pub type Outer { Node inner } \
+            [Copyable] pub type Pixel { u8 r } [Immutable] pub type Tag { string name } \
+            [Isolated] pub type Bag { u8 level, Pixel pixel, Tag tag, string label } \
+            pub enum Slot { Empty, Full(u8[] bytes) } ";
+        let cases: &[(&str, &[&str])] = &[
+            // Borrowed parameters stored into a literal.
+            ("Node Wrap(u8[] state) { return Node { bytes: state }; }", &["E1241"]),
+            ("unit Main(u8[] state) { Node n = Node { bytes: state }; return; }", &["E1241"]),
+            ("u8[][] Wrap(u8[] state) { return [state]; }", &["E1241"]),
+            ("Slot Wrap(u8[] state) { return Slot::Full(state); }", &["E1241"]),
+            ("Outer Wrap(u8[] state) { return Outer { inner: Node { bytes: state } }; }", &["E1241"]),
+            ("Outer Wrap(Node node) { return Outer { inner: node }; }", &["E1241"]),
+            // Borrowed locals: a place read and an alias of a borrowed name.
+            ("Node Wrap(Node source) { u8[] view = source.bytes; return Node { bytes: view }; }", &["E1241"]),
+            ("Node Wrap(u8[] state) { let alias = state; return Node { bytes: alias }; }", &["E1241"]),
+            // `this` without `move this` is borrowed.
+            (
+                "[Isolated] pub type Pair { Link left } [Isolated] pub type Link { u8[] bytes, pub Pair Wrap() { return Pair { left: this }; } }",
+                &["E1241"],
+            ),
+            (
+                "[Isolated] pub type Pair { Link left } [Isolated] pub type Link { u8[] bytes, pub Pair Wrap(move this) { return Pair { left: this }; } }",
+                &[],
+            ),
+            // `move` parameters, owned locals and explicit `move` are consumed.
+            ("Node Wrap(move u8[] state) { return Node { bytes: state }; }", &[]),
+            ("Node Wrap(move u8[] state) { return Node { bytes: move state }; }", &[]),
+            ("Outer Wrap(move u8[] state) { return Outer { inner: Node { bytes: state } }; }", &[]),
+            ("Slot Wrap(move u8[] state) { return Slot::Full(state); }", &[]),
+            ("u8[][] Wrap() { u8[] data = Make(); return [data]; }", &[]),
+            ("Node Wrap() { u8[] data = Make(); Node n = Node { bytes: data }; return n; }", &[]),
+            ("unit Main() { u8[] data = Make(); Node n = Node { bytes: data }; i64 k = Len(data); return; }", &["E1234"]),
+            ("Node Wrap(u8[] state) { return Node { bytes: move state }; }", &["E1241"]),
+            // A repeatable lambda borrows its captures.
+            ("unit Main(move u8[] data) { let wrap = () => Node { bytes: data }; return; }", &["E1241"]),
+            // Shared, Copied and scalar values are not classified.
+            (
+                "Bag Wrap(u8 level, Pixel pixel, Tag tag, string label) { return Bag { level: level, pixel: pixel, tag: tag, label: label }; }",
+                &[],
+            ),
+            ("u8[] Bytes(u8 level) { return [level, level]; }", &[]),
+        ];
+        for (offset, (body, expected)) in cases.iter().enumerate() {
+            assert_affine(&format!("{types}{body}"), 6840 + offset as u64, expected);
+        }
+    }
+
     #[test]
     fn destructive_reads_and_exchange_need_a_moved_place() {
         let holder = "[Isolated] pub type Index { u8[] offsets } ";
