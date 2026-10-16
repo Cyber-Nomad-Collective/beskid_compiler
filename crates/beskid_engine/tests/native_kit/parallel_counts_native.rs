@@ -305,3 +305,24 @@ fn pipeline_keeps_input_order() {
         );
     }
 }
+
+/// 0.6.6 (gate-2 F6): a text extracted from a Shared wrapper stays alive after the wrapper's
+/// stake is returned, because the receiver's marking takes its own stake on it. Two real isolates
+/// hand off through ports, so the entry needs a bound above 2 (serial elision would park the
+/// producer before the keeper starts).
+#[test]
+fn payload_kept_after_its_wrapper_is_dropped() {
+    for environment in [
+        &[("BESKID_ISOLATES_MAX", "8")][..],
+        &[("BESKID_ISOLATES_MAX", "8"), ("BESKID_GC_STRESS", "alloc:1,verify")][..],
+    ] {
+        let output = run("RunWrappedPayloadKept", environment);
+        assert!(
+            output.status.success(),
+            "RunWrappedPayloadKept {environment:?}: exit {:?}\nstdout:\n{}\nstderr:\n{}",
+            output.status.code(),
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+}
