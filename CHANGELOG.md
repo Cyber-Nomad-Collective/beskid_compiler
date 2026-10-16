@@ -336,6 +336,20 @@ feature area.
 - The type descriptor of a record or enum carries `TYPE_DESCRIPTOR_IMMUTABLE` exactly when its transfer class is Shared in that
   specialization, including a type that is Shared only through a type argument (`Sequenced<string>`; `Sequenced<string[]>` stays
   unflagged).
+- A qualified path into the current module or one of its ancestors reaches
+  that module's private items, as the unqualified lookup does: `mod A {
+  contract Reader {} ... where T: A.Reader }` is no longer reported as a
+  private cross-module access (E1107). A sibling module still cannot reach
+  them.
+- `NativeImageSet::verify_image_address` and `verify_provider_address` take
+  the address as an identity (`usize`). The loader lookup (`dladdr`,
+  `GetModuleHandleExW`) never dereferences it, so the functions are safe and
+  clippy's `not_unsafe_ptr_arg_deref` no longer fails the build.
+- Test fixtures follow the v0.6.2 move rules: the engine Foundation I/O
+  fixture reads its counters through the record that owns them, the Fiber
+  transfer fixture moves its byte buffer into the spawned closure, and the
+  serialization test encoder copies a borrowed `u8[]` instead of storing it
+  (E1241).
 - Every Core.Parallel task that ran on a real isolate failed with
   `transit refused 0x0000000000000000`. The transit walk reported a refusal
   as the encoded value 1, which is also the encoding of the first object of
