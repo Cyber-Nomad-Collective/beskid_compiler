@@ -280,7 +280,8 @@ mod tests {
         let host_match = "/work/pkg/src";
         let dep_match = "/work/pkg/obj/beskid/deps/src/corelib_foundation-1a2b/src";
         let link = ctx(host_match, "src", Some((dep_match, "src", "corelib_foundation")));
-        let dep_generated = "/work/pkg/obj/beskid/deps/src/corelib_foundation-1a2b/.generated/Core/Text/Regex/Generated.g.bd";
+        let dep_generated =
+            "/work/pkg/obj/beskid/deps/src/corelib_foundation-1a2b/.generated/Core/Text/Regex/Generated.g.bd";
         let host_generated = "/work/pkg/.generated/Own/Gen.g.bd";
 
         let mut items = vec![item_at(dep_generated.into(), None), item_at(host_generated.into(), None)];

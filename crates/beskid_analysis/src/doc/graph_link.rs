@@ -26,9 +26,8 @@ pub struct ApiDocPackageRoots {
 impl ApiDocPackageRoots {
     /// Source root plus its `.generated` sibling, each with the `.bpk` prefix it maps to.
     pub fn match_roots(&self) -> impl Iterator<Item = (&Path, &str)> {
-        std::iter::once((self.match_root.as_path(), self.artifact_source_prefix.as_str())).chain(
-            self.generated_match_root.as_deref().map(|root| (root, self.artifact_generated_prefix.as_str())),
-        )
+        std::iter::once((self.match_root.as_path(), self.artifact_source_prefix.as_str()))
+            .chain(self.generated_match_root.as_deref().map(|root| (root, self.artifact_generated_prefix.as_str())))
     }
 }
 
@@ -462,6 +461,10 @@ mod tests {
         }
         let query = module("Query");
         assert_eq!(query.declaring_package.as_deref(), Some("corelib_foundation"));
-        assert_eq!(query.location.file, format!("{foundation}/Query/Range.bd"), "a module points at its own first item");
+        assert_eq!(
+            query.location.file,
+            format!("{foundation}/Query/Range.bd"),
+            "a module points at its own first item"
+        );
     }
 }
