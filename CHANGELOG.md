@@ -339,6 +339,16 @@ feature area.
   and through an owning name it is E1242 (write `move h.bytes` or use
   `exchange`). Fields of other classes, and roots of Never class, are not
   judged.
+- A borrowed value stored into a field of a corelib `[ScopeBorrowed]` view is
+  no longer E1241: the scope bounds the borrow. Every other type still
+  reports E1241, and `[ScopeBorrowed]` outside the corelib stays E1510.
+  `Parallel.OfArray` now borrows its source array and copies no element.
+- A stored element read follows the owning and borrowed rules: storing a
+  Moved `xs[i]` (or `xs[i].f`) in a literal, a field or element, or a
+  `move` parameter is E1241 through a borrowed name and E1242 through an
+  owning name (take the element with `exchange`). A field or element of a
+  call result (`Make().f`, `Make()[0]`) is an owned temporary: storing it is
+  allowed and a local initialized from it is owning.
 - A `move` argument to a generic call inside a generic body
   (`Keep<T>(move values)` in `Forward<T>`) lowers; it no longer ends in
   E2102. The argument is rooted like a read of its operand.
