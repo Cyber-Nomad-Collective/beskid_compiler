@@ -4,7 +4,8 @@ use anyhow::{Context, Result};
 use beskid_analysis::doc::{
     API_JSON_NAVIGATION_MODEL_GRAPH_V1, API_JSON_SCHEMA_VERSION,
     API_JSON_SCHEMA_VERSION_BEFORE_GRAPH, ApiDocItem, ApiDocRoot, ApiLocation,
-    apply_signature_to_item, assign_declaring_packages, build_item_signature,
+    apply_signature_to_item, assign_declaring_packages, attribute_modules_to_members,
+    build_item_signature,
     display_name_for_item, fill_member_ids_from_parents, link_api_doc_library_tree,
     qualified_names_for_items, relativize_api_doc_paths, resolve_item_tiers,
     validate_prelude_standard_tiers,
@@ -169,6 +170,7 @@ pub fn execute(args: DocArgs) -> Result<()> {
         {
             link_api_doc_library_tree(&mut api_items, res);
             assign_declaring_packages(&mut api_items, &ctx);
+            attribute_modules_to_members(&mut api_items);
         } else if let Some(res) = snap.resolution.as_ref() {
             link_api_doc_library_tree(&mut api_items, res);
         }

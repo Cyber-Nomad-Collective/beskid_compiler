@@ -37,11 +37,7 @@ pub fn build_api_doc_link_context(
 }
 
 fn host_package_roots(plan: &CompilePlan, match_root: &Path, package: String) -> ApiDocPackageRoots {
-    ApiDocPackageRoots {
-        package,
-        match_root: match_root.to_path_buf(),
-        artifact_source_prefix: artifact_source_prefix(&plan.project_root, &plan.source_root),
-    }
+    package_roots(package, match_root, &plan.project_root, &plan.source_root)
 }
 
 fn dependency_package_roots(dep: &ResolvedDependencyProject, match_root: &Path) -> ApiDocPackageRoots {
@@ -50,12 +46,27 @@ fn dependency_package_roots(dep: &ResolvedDependencyProject, match_root: &Path) 
         .map(|manifest| manifest.project.name.trim().to_string())
         .filter(|name| !name.is_empty())
         .unwrap_or_else(|| dep.dependency_name.clone());
+    package_roots(package, match_root, &dep.project_root, &dep.source_root)
+}
+
+/// Roots for one package. Assembly discovery also compiles `*.g.bd` units from the `.generated`
+/// sibling of each source root, so that sibling is matched too.
+fn package_roots(package: String, match_root: &Path, project_root: &Path, source_root: &Path) -> ApiDocPackageRoots {
+    let artifact_source_prefix = artifact_source_prefix(project_root, source_root);
+    let artifact_generated_prefix = match Path::new(&artifact_source_prefix).parent() {
+        Some(parent) if !parent.as_os_str().is_empty() => format!("{}/{GENERATED_DIR}", forward_slashes_path(parent)),
+        _ => GENERATED_DIR.to_string(),
+    };
     ApiDocPackageRoots {
         package,
         match_root: match_root.to_path_buf(),
-        artifact_source_prefix: artifact_source_prefix(&dep.project_root, &dep.source_root),
+        artifact_source_prefix,
+        generated_match_root: match_root.parent().map(|parent| parent.join(GENERATED_DIR)),
+        artifact_generated_prefix,
     }
 }
+
+const GENERATED_DIR: &str = ".generated";
 
 fn artifact_source_prefix(project_root: &Path, source_root: &Path) -> String {
     source_root.strip_prefix(project_root).map(forward_slashes_path).unwrap_or_default()
@@ -107,15 +118,17 @@ fn to_artifact_path(package: &ApiDocPackageRoots, path: &str) -> Result<String, 
         return Ok(forward_slashes(trimmed));
     }
 
-    let rel = strip_match_root(trimmed, &package.match_root).ok_or_else(|| {
-        format!(
-            "could not relativize {:?} against package {} (expected under {})",
-            trimmed,
-            package.package,
-            package.match_root.display()
-        )
-    })?;
-    Ok(join_artifact_prefix(&package.artifact_source_prefix, &rel))
+    package
+        .match_roots()
+        .find_map(|(root, prefix)| strip_match_root(trimmed, root).map(|rel| join_artifact_prefix(prefix, &rel)))
+        .ok_or_else(|| {
+            format!(
+                "could not relativize {:?} against package {} (expected under {})",
+                trimmed,
+                package.package,
+                package.match_root.display()
+            )
+        })
 }
 
 fn strip_match_root(path: &str, match_root: &Path) -> Option<String> {
@@ -206,19 +219,86 @@ mod tests {
     use crate::doc::graph_link::{ApiDocLinkContext, ApiDocPackageRoots};
 
     fn ctx(host_match: &str, host_prefix: &str, dep: Option<(&str, &str, &str)>) -> ApiDocLinkContext {
-        let mut packages = vec![ApiDocPackageRoots {
-            package: "host_pkg".into(),
-            match_root: PathBuf::from(host_match),
-            artifact_source_prefix: host_prefix.into(),
-        }];
+        let mut packages = vec![roots("host_pkg", host_match, host_prefix)];
         if let Some((match_root, prefix, name)) = dep {
-            packages.push(ApiDocPackageRoots {
-                package: name.into(),
-                match_root: PathBuf::from(match_root),
-                artifact_source_prefix: prefix.into(),
-            });
+            packages.push(roots(name, match_root, prefix));
         }
         ApiDocLinkContext { publishing_package: "host_pkg".into(), packages }
+    }
+
+    fn roots(package: &str, match_root: &str, prefix: &str) -> ApiDocPackageRoots {
+        let match_root = PathBuf::from(match_root);
+        ApiDocPackageRoots {
+            package: package.into(),
+            generated_match_root: match_root.parent().map(|parent| parent.join(".generated")),
+            match_root,
+            artifact_source_prefix: prefix.into(),
+            artifact_generated_prefix: ".generated".into(),
+        }
+    }
+
+    fn item_at(file: String, declaring_package: Option<String>) -> ApiDocItem {
+        ApiDocItem {
+            id: Some(1),
+            qualified_name: "T".into(),
+            symbol_key: None,
+            name: "T".into(),
+            kind: "function".into(),
+            visibility: None,
+            location: ApiLocation { file, start_line: 1, start_column: 1, end_line: 1, end_column: 1 },
+            parent_id: None,
+            member_ids: vec![],
+            display_name: None,
+            module_path: vec![],
+            signature: None,
+            field_type: None,
+            return_type: None,
+            parameters: vec![],
+            generic_parameters: vec![],
+            doc_markdown: None,
+            doc: None,
+            declaring_package,
+            controls: vec![],
+            tier: None,
+        }
+    }
+
+    #[test]
+    fn package_roots_cover_the_generated_sibling_of_the_source_root() {
+        let pkg = package_roots(
+            "dep".into(),
+            Path::new("/w/obj/beskid/deps/src/dep-1a2b/src"),
+            Path::new("/w/deps/dep"),
+            Path::new("/w/deps/dep/src"),
+        );
+        assert_eq!(pkg.generated_match_root.as_deref(), Some(Path::new("/w/obj/beskid/deps/src/dep-1a2b/.generated")));
+        assert_eq!(pkg.artifact_generated_prefix, ".generated");
+    }
+
+    #[test]
+    fn relativizes_generated_units_of_dependencies_and_host() {
+        let host_match = "/work/pkg/src";
+        let dep_match = "/work/pkg/obj/beskid/deps/src/corelib_foundation-1a2b/src";
+        let link = ctx(host_match, "src", Some((dep_match, "src", "corelib_foundation")));
+        let dep_generated = "/work/pkg/obj/beskid/deps/src/corelib_foundation-1a2b/.generated/Core/Text/Regex/Generated.g.bd";
+        let host_generated = "/work/pkg/.generated/Own/Gen.g.bd";
+
+        let mut items = vec![item_at(dep_generated.into(), None), item_at(host_generated.into(), None)];
+        crate::doc::assign_declaring_packages(&mut items, &link);
+        assert_eq!(items[0].declaring_package.as_deref(), Some("corelib_foundation"));
+        assert_eq!(items[1].declaring_package, None);
+
+        let mut root = ApiDocRoot {
+            schema_version: 4,
+            navigation_model: Some("graph-v1".into()),
+            generator: "test".into(),
+            source: format!("{host_match}/Main.bd"),
+            items,
+        };
+        relativize_api_doc_paths(&mut root, Some(&link)).expect("relativize generated units");
+
+        assert_eq!(root.items[0].location.file, ".generated/Core/Text/Regex/Generated.g.bd");
+        assert_eq!(root.items[1].location.file, ".generated/Own/Gen.g.bd");
     }
 
     #[test]
