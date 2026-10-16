@@ -18,17 +18,11 @@ pub Color ImportNextColor(Color value) { return Foreign.glue_next_color(value); 
 pub i64 ImportSumEach(i64 count, i64 scale) { return Foreign.glue_sum_each(count, (i64 index) => index * scale); }
 [Export(Abi:"C", Symbol:"ext_count_red")]
 pub i64 ImportCountRed(i64 count) {
-    return Foreign.glue_count_keep(count, (i64 index, Color color) => IsRed(color));
-}
-// The callback's enum member arrives as a Beskid `Color`; matching it on a lambda parameter has no
-// enum_match fact yet (scrutinee.rs reads Parameter/LetStatement annotations only), so a function
-// parameter carries the match.
-bool IsRed(Color color) {
-    return match color {
+    return Foreign.glue_count_keep(count, (i64 index, Color color) => match color {
         Color::Red => true,
         Color::Green => false,
         Color::Blue => false,
-    };
+    });
 }
 // Rust owner code calls this export through its generated `beskid` module.
 [Export(Abi:"C", Symbol:"ext_double")]
