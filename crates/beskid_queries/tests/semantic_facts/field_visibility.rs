@@ -208,3 +208,26 @@ fn projection_of_a_cross_unit_call_result_through_pub_fields_is_accessible() {
     let finding = call_result_finding("use Shapes.Request; i64 Reveal() { return Request.Make().inner.shared; }");
     assert!(finding.is_none(), "pub fields of a call result are accessible: {finding:?}");
 }
+
+#[test]
+fn method_call_on_an_array_value_is_an_invalid_member_target_error_before_lowering() {
+    for (receiver, source) in [
+        ("array parameter", "i64 Count(i64[] rest) { return rest.Length(); }"),
+        ("annotated array local", "i64 Count() { i64[] rest = [1_i64, 2_i64]; return rest.Length(); }"),
+    ] {
+        let (_temp, owner_path, model_path, owner_source) = model(source);
+        let findings = fact_result(
+            owner_path,
+            owner_source,
+            model_path,
+            MODEL_SOURCE.into(),
+            "i64 Count",
+            NodeKind::FunctionDefinition,
+            |db, key| Ok::<_, beskid_queries::SemanticError>(Some(beskid_queries::check_gate_obligations(db, &[key]))),
+        )
+        .expect("legality query")
+        .unwrap_or_else(|| panic!("{receiver}: an array method call must have a legality finding"));
+        let codes = findings.iter().map(|finding| finding.kind.code()).collect::<Vec<_>>();
+        assert!(codes.contains(&"E1213"), "{receiver}: expected E1213, got {codes:?}");
+    }
+}

@@ -118,6 +118,24 @@ const COVERED_KINDS: &[(&str, &str, &str, &str)] = &[
         "i64 Main(i64 n) { return n.Double(); }",
     ),
     (
+        "TypeError::InvalidMemberTarget (method call on an array parameter)",
+        "TypeInvalidMemberTarget",
+        "E1213",
+        "i64 Main(i64[] rest) { return rest.Length(); }",
+    ),
+    (
+        "TypeError::InvalidMemberTarget (method call on an array literal local)",
+        "TypeInvalidMemberTarget",
+        "E1213",
+        "i64 Main() { let rest = [1_i64, 2_i64]; return rest.Length(); }",
+    ),
+    (
+        "TypeError::InvalidMemberTarget (method call on a function-typed parameter)",
+        "TypeInvalidMemberTarget",
+        "E1213",
+        "i64 Main(i64(i64) f) { return f.Apply(1_i64); }",
+    ),
+    (
         "TypeError::UnknownCallTarget (non-callable field)",
         "TypeUnknownCallTarget",
         "E1606",

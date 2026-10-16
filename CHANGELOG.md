@@ -333,6 +333,10 @@ feature area.
 
 ### Fixed
 
+- A method call on an array or function value (`rest.Length()` on a `T[]`
+  parameter or local) is a check-time E1213 error with E1606 at the call.
+  It used to pass `beskid check` and fail in lowering with E2102.
+
 - A block-bodied lambda's final expression statement is a statement, not the
   lambda's value. `s.Spawn(() => { match port.Receive() { ... => { return x; }, ... }; })`
   failed with E2102 at the `match`, because lowering read the last statement

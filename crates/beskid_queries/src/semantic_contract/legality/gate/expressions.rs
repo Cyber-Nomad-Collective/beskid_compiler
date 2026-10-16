@@ -534,6 +534,15 @@ fn judge_path_method_call(
         findings.push(GateObligation { kind: GateObligationKind::UnknownCallTarget, site: call_key });
         return true;
     }
+    // An array or function value has no members: `rest.Length()` on a `T[]` is a check error
+    // here, never a call left for lowering to reject (E2102).
+    if let Some(local) = local
+        && local_declares_array_or_function_value(program, index, local)
+    {
+        findings.push(GateObligation { kind: GateObligationKind::InvalidMemberTarget, site: segment_site });
+        findings.push(GateObligation { kind: GateObligationKind::UnknownCallTarget, site: call_key });
+        return true;
+    }
     let Some(reference) = index.node_at(program, callee) else { return true };
     let callee_key = AstNodeKey { node: callee, ..key };
     let Some(Ok(receiver)) = field_access_receiver(db, program, index, callee_key, reference, None, None) else {
@@ -557,6 +566,31 @@ fn judge_path_method_call(
     });
     findings.push(GateObligation { kind: GateObligationKind::UnknownCallTarget, site: call_key });
     true
+}
+
+/// Whether the local declared at `declaration` is written or initialised as an array (`T[]`,
+/// `[a, b]`) or a function value (`R(A)`): a non-nominal receiver kind that has no methods.
+fn local_declares_array_or_function_value(
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &SyntaxIndex,
+    declaration: beskid_analysis::syntax::AstNodeId,
+) -> bool {
+    let non_nominal = |ty: &Type| matches!(ty, Type::Array(_) | Type::Function { .. });
+    let Some(parent) = parent_node(index, declaration) else { return false };
+    let Some(node) = index.node_at(program, parent) else { return false };
+    if let Some(parameter) = node.of::<Parameter>() {
+        return non_nominal(&parameter.ty.node);
+    }
+    if let Some(parameter) = node.of::<LambdaParameter>() {
+        return parameter.ty.as_ref().is_some_and(|ty| non_nominal(&ty.node));
+    }
+    if let Some(statement) = node.of::<LetStatement>() {
+        return match &statement.type_annotation {
+            Some(ty) => non_nominal(&ty.node),
+            None => matches!(statement.value.node, Expression::ArrayLiteral(_)),
+        };
+    }
+    false
 }
 
 /// E1250: `value.Method(..)` that `call_lowering` cannot resolve, where `value` is a parameter or
