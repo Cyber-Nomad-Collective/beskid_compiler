@@ -34,3 +34,16 @@ fn entryless_libraries_depending_on_concurrency_do_not_check_channel_as_their_en
     let (output, text) = check_package(&corelib, "connect");
     assert!(output.status.success(), "connect must check cleanly: {text}");
 }
+
+/// A Corelib package checked directly roots its own service files (`Concurrency/Channel.bd`,
+/// network's DNS facade): the trust gate admits the package's own `obj/beskid/root` copy and the
+/// resolver knows their `__*` service names.
+#[test]
+fn corelib_service_packages_check_their_own_service_files() {
+    let corelib = corelib_root();
+    for package in ["concurrency", "network"] {
+        let (output, text) = check_package(&corelib, package);
+        assert!(!text.contains("unknown value `__"), "{package}: service names unresolved in its own sources: {text}");
+        assert!(output.status.success(), "{package} must check cleanly: {text}");
+    }
+}

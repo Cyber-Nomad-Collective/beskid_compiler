@@ -930,6 +930,7 @@ fn materialized_entry_less_library_roots_only_its_obj_root_units() {
             materialized_project_root: dependency_source_root.parent().expect("dependency project").to_path_buf(),
             materialized_source_root: dependency_source_root.clone(),
         }],
+        verified_package_identities: Default::default(),
     };
     let entry_path = plan_entry_path(&plan, &host_source_root);
     let assembly =
