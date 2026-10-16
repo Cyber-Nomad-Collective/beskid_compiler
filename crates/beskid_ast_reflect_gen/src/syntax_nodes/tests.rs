@@ -217,6 +217,9 @@ fn v06_native_syntax_factories_preserve_concrete_fields_variants_and_wrappers() 
     assert!(source.contains("SpannedIdentifierValue("));
     assert!(source.contains("NodeSpan span, u32 id"));
     assert!(source.contains("SpannedTypeParameterListValue(Beskid.Syntax.Nodes.SpannedTypeParameter[] items)"));
+    // A Moved parameter (an array of a Shared enum) is stored into the node, so it is owned
+    // (`move`); an array of unmarked node records is Never and stays a plain parameter.
+    assert!(source.contains("CodeStringSegmentListValue(move Beskid.Syntax.Nodes.CodeStringSegment[] items)"));
     assert!(!source.contains("SpannedTypeParameterListConsValue("));
     assert!(source.contains("OptionalSpannedTypeSomeValue("));
     assert!(!source.contains("ReflectStub"));
