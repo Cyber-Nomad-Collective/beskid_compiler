@@ -610,6 +610,52 @@ pub fn nominal_transfer_class(
     walker.nominal_class(declaration, arguments)
 }
 
+/// The transfer class of the record built by the struct literal `literal`, instantiated in the
+/// generic specialization `enclosing` (type arguments written on the literal path may name the
+/// enclosing parameters). `None` when the application is not exactly provable; callers then
+/// attach no property bit.
+pub fn aggregate_literal_transfer_class(
+    db: &dyn Db,
+    literal: AstNodeKey,
+    enclosing: Option<&GenericSpecializationInstance>,
+) -> Option<TransferClass> {
+    let syntax = db.syntax_unit(literal.unit).filter(|syntax| syntax.accepts_key(db, literal))?;
+    let node = syntax.syntax_index(db).node_at(syntax.expanded_program(db), literal.node)?;
+    let expression = node.of::<beskid_analysis::syntax::StructLiteralExpression>()?;
+    let environment = enclosing
+        .map(|enclosing| {
+            enclosing
+                .substitutions
+                .iter()
+                .map(|binding| (binding.parameter.as_ref(), binding.source_identity()))
+                .collect::<HashMap<_, _>>()
+        })
+        .unwrap_or_default();
+    let identity = generic_source_type_identity_with_substitutions(
+        db,
+        literal,
+        &beskid_analysis::syntax::Type::Complex(expression.path.clone()),
+        &environment,
+    )
+    .ok()?;
+    transfer_class(db, literal, &identity).ok()
+}
+
+/// The transfer class of the enum value built by the constructor `constructor`, instantiated in
+/// the generic specialization `enclosing`. `None` when the application is not exactly provable.
+pub fn enum_constructor_transfer_class(
+    db: &dyn Db,
+    constructor: AstNodeKey,
+    enclosing: Option<&GenericSpecializationInstance>,
+) -> Option<TransferClass> {
+    let syntax = db.syntax_unit(constructor.unit).filter(|syntax| syntax.accepts_key(db, constructor))?;
+    let node = syntax.syntax_index(db).node_at(syntax.expanded_program(db), constructor.node)?;
+    let expression = node.of::<beskid_analysis::syntax::EnumConstructorExpression>()?;
+    let identity =
+        applied_enum_constructor_identity(db, constructor, expression, enclosing).ok()?;
+    transfer_class(db, constructor, &identity).ok()
+}
+
 /// The transfer class of a source type written at `site`. Type parameters in scope at `site`
 /// take the class of their marker bound.
 pub fn transfer_class_of_type(

@@ -333,6 +333,9 @@ feature area.
 
 ### Fixed
 
+- The type descriptor of a record or enum carries `TYPE_DESCRIPTOR_IMMUTABLE` exactly when its transfer class is Shared in that
+  specialization, including a type that is Shared only through a type argument (`Sequenced<string>`; `Sequenced<string[]>` stays
+  unflagged).
 - Every Core.Parallel task that ran on a real isolate failed with
   `transit refused 0x0000000000000000`. The transit walk reported a refusal
   as the encoded value 1, which is also the encoding of the first object of

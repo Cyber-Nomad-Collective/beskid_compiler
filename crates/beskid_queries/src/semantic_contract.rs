@@ -84,7 +84,8 @@ pub use reserved_failure::{
 mod syntax_facts;
 mod transfer;
 pub use transfer::{
-    TransferClass, TransferMarker, TransferMarkerAttribute, TransferNeverReason, nominal_transfer_class,
+    TransferClass, TransferMarker, TransferMarkerAttribute, TransferNeverReason, aggregate_literal_transfer_class,
+    enum_constructor_transfer_class, nominal_transfer_class,
     transfer_class_of_type, transfer_marker_contract,
 };
 use transfer::{

@@ -36,6 +36,7 @@ pub mod services;
 
 pub use aggregate_static::{
     ABI_V5_MANAGED_OBJECT_ALLOCATE, AggregateObjectLayout, AggregateStaticField, AggregateStaticPlan,
+    TYPE_DESCRIPTOR_IMMUTABLE,
     emit_aggregate_static_data,
 };
 pub use array_static::{
