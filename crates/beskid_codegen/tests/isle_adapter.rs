@@ -32,6 +32,8 @@ mod events;
 mod function_values;
 #[path = "isle_adapter/importer_relocations.rs"]
 mod importer_relocations;
+#[path = "isle_adapter/lambda_parameter_match.rs"]
+mod lambda_parameter_match;
 #[path = "isle_adapter/literal_operators.rs"]
 mod literal_operators;
 #[path = "isle_adapter/managed_references.rs"]
