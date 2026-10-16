@@ -333,6 +333,11 @@ feature area.
 
 ### Fixed
 
+- A local Core.Parallel task whose fiber is cancelled before it runs (a task
+  started in a scope that has already failed, under serial elision) becomes
+  terminal. The scheduler ended such a fiber without a context switch and
+  never handed the cancellation to its task, so `__isolate_wait` and the
+  scope's join parked forever.
 - A method called on an enum-pattern binding inside a generic function
   (`chunk.Count()` for `Option::Some(chunk)` of `parts.TryGet(part)` with
   `List<List<T>> parts` in `ParallelSeq.Flatten<T>`) resolves on the binding's

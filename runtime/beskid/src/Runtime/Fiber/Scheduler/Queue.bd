@@ -87,7 +87,11 @@ pub unit ApplyPendingCancels() {
                 raw_word_store(fib, FIBER_STATE_CANCELLED);
                 raw_word_store(pointer_add(fib, 48), FIBER_JOIN_CANCELLED);
                 raw_word_store(pointer_add(fib, 56), 0);
-                if raw_byte_load(pointer_add(fib, 40)) != 0 { FiberCleanup(idx); }
+                // The fiber ends here without a context switch, so SchedStep never observes it:
+                // a local Core.Parallel task's fiber hands its cancellation to its task now
+                // (Runtime/Parallel/Isolates.bd), or the task would never become terminal.
+                IsolateObserveFiberFinished(idx);
+                if FiberExists(idx) && raw_byte_load(pointer_add(FiberRecord(idx), 40)) != 0 { FiberCleanup(idx); }
             }
         }
         i = i + 1;
