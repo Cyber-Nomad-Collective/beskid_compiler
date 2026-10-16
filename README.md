@@ -35,8 +35,8 @@ IoC is a good direction, but it belongs in the **compiler**, not in a forest of 
 
 Opinionated compiler project. Not finished. Not apologizing.
 
-The latest announced release is 0.5.3. 0.6.0 is in qualification and not released; see the 0.6.0
-section of [CHANGELOG.md](CHANGELOG.md).
+The latest announced release is 0.5.3. 0.6.0 and 0.6.6 are in qualification and not released; see the 0.6.6
+and 0.6.0 sections of [CHANGELOG.md](CHANGELOG.md).
 
 ### How the compiler is built (0.6)
 
