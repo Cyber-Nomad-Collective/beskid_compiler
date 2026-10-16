@@ -1175,12 +1175,8 @@ pub fn build_rust_owner(req: &RustOwnerBuildRequest<'_>) -> AotResult<PreparedRu
         "panic=unwind".to_owned(),
         "-C".to_owned(),
         format!("linker={}", driver.path().display()),
-        "-C".to_owned(),
-        format!("link-arg={}", runtime.link_path.display()),
     ];
-    if target.contains("linux") {
-        flags.extend(["-C".into(), "link-arg=-Wl,--no-as-needed".into()]);
-    }
+    flags.extend(provider_link_flags(target, &runtime.link_path));
     if !target.contains("windows") {
         flags.extend([
             "-C".into(),
@@ -1375,9 +1371,44 @@ pub fn build_rust_owner(req: &RustOwnerBuildRequest<'_>) -> AotResult<PreparedRu
     Ok(result)
 }
 
+/// Link arguments that make the owner image record the canonical provider as a loader dependency.
+///
+/// rustc links ELF targets with `--as-needed` in effect, so a provider no owner code references (an owner
+/// with only records, enums, callbacks and scalars calls no provider entry point) would lose its DT_NEEDED
+/// entry. `--no-as-needed` therefore precedes the provider, and `--as-needed` is restored after it so the
+/// libraries rustc appends later keep the default.
+fn provider_link_flags(target: &str, link_path: &Path) -> Vec<String> {
+    let provider = link_path.display().to_string();
+    let arguments = if target.contains("linux") {
+        vec!["-Wl,--no-as-needed".to_owned(), provider, "-Wl,--as-needed".to_owned()]
+    } else {
+        vec![provider]
+    };
+    arguments.into_iter().flat_map(|argument| ["-C".to_owned(), format!("link-arg={argument}")]).collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn v061_owner_provider_link_is_not_dropped_as_unneeded() {
+        let provider = Path::new("/prefix/shared/libbeskid_runtime.so");
+        assert_eq!(
+            provider_link_flags("x86_64-unknown-linux-gnu", provider),
+            [
+                "-C",
+                "link-arg=-Wl,--no-as-needed",
+                "-C",
+                "link-arg=/prefix/shared/libbeskid_runtime.so",
+                "-C",
+                "link-arg=-Wl,--as-needed"
+            ]
+        );
+        assert_eq!(
+            provider_link_flags("aarch64-apple-darwin", Path::new("/p/libbeskid_runtime.dylib")),
+            ["-C", "link-arg=/p/libbeskid_runtime.dylib"]
+        );
+    }
     /// R4 Windows regression: the owner build failed with only Cargo's "could not compile ... due
     /// to 1 previous error" because rustc's message (LNK1181, `kernel32.lib`) was on stdout.
     #[test]

@@ -343,6 +343,14 @@ feature area.
   order, and returns at once. Before, `Spawn` ran the body to completion, so a
   producer that filled a bounded port before its consumer ran deadlocked. The
   `__isolate_wait` service has no caller left and is removed.
+- A Rust Glue owner without opaque handle types (records, enums, callbacks
+  and scalars only) failed to build with "Rust owner lacks exact sole
+  canonical provider dependency": `--no-as-needed` came after the runtime
+  provider on the link line, so the linker dropped the provider that no owner
+  code called. The flag now precedes the provider. Loading such an owner then
+  failed with "actual image closure rejected", because the loader bound an
+  empty destructor closure; it now binds the closure only when the owner has
+  opaque destructors.
 - A task observes a cancellation request only from its first run on (the
   start of a task is not a safepoint), so a task created before its scope
   failed still reports its own failure and the scope's failure report is the
