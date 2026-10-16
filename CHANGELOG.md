@@ -333,6 +333,14 @@ feature area.
 
 ### Fixed
 
+- `beskid check --project` on a manifest with several targets analyzes every
+  target (App, Lib and Test), not only the default one, so sources reachable
+  only from a per-suite test entry can no longer pass the check while failing
+  at `beskid test`. Failures of all targets are collected and reported
+  together; `--target` still selects a single target.
+- The `parallel_counts` moved-graph fixture and the `ProcessSuite` and
+  `BsolSerializationWireTests` Corelib test sources hand ownership over with
+  `move` (E1241/E1242) instead of storing borrowed Moved values.
 - A field read stored as it is follows the owning and borrowed rules: a
   Moved field read through a borrowed name (`Node { bytes: h.bytes }`,
   `Store(h.bytes)` into a `move` parameter, `n.bytes = h.bytes`) is E1241,
