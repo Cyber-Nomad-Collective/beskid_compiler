@@ -378,6 +378,15 @@ feature area.
   `pattern_binding_specialization` and the array index specializations take
   the enclosing `GenericSpecializationInstance`, and
   `enum_match_call_specialization` is folded into `enum_match_specialization`.
+- A method called on a generic call result whose type arguments name an
+  enclosing generic (`List.New<List<T>>().Push(leaf)` in a lambda of
+  `ParallelSeq.Collect`) resolves its declaration from the callee's declared
+  return type; before, the call had no lowering and code generation stopped
+  with E2102.
+- A lambda that reads a field of an outer local through a dotted path
+  (`() => config.width + knobs.depth` in `ParallelSuite.Measure`, through two
+  lambda levels) captures that local. Before, the projection was not a
+  capture and code generation stopped with E2102 at the expression.
 - A lambda that calls a contract method on a captured bounded parameter
   (`(T acc, T value) => combiner.Combine(acc, value)` with
   `where C: Associative<T>`) captures that parameter and dispatches through the

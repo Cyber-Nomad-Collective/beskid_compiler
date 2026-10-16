@@ -185,6 +185,17 @@ fn closure_capture_declaration(
         return resolve_lexical_declaration(program, index, key.node, &segment.node.name.node.name)
             .map(|node| AstNodeKey { node, ..key });
     }
+    // A projection from a local (`config.width`, `knobs.depth.inner`) captures the local that
+    // roots it, exactly as the field projection resolves its receiver; a root that is a module
+    // or type name resolves no lexical declaration and is not a capture. A call callee
+    // (`child.Join()`) is captured only through its resolved member receiver below.
+    if !path_is_call_callee(program, index, key.node)
+        && let Some(root) = path.segments.first()
+        && root.node.type_args.is_empty()
+        && let Some(declaration) = resolve_lexical_declaration(program, index, key.node, &root.node.name.node.name)
+    {
+        return Some(AstNodeKey { node: declaration, ..key });
+    }
     nominal_local_member_receiver(db, program, index, key, path).map(|(_, receiver)| receiver).or_else(|| {
         // A resolved contract member receiver is captured like a nominal one: a contract-bounded
         // generic parameter (`combiner.Combine(acc, value)` with `where C: Associative<T>`) or a
@@ -193,6 +204,32 @@ fn closure_capture_declaration(
             .ok()
             .map(|(_, receiver)| receiver)
     })
+}
+
+/// Whether the path expression `path` is the callee of the call expression above it.
+fn path_is_call_callee(
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    path: beskid_analysis::syntax::AstNodeId,
+) -> bool {
+    let Some(mut parent) = parent_node(index, path) else { return false };
+    while matches!(
+        index.kind(parent),
+        Some(
+            beskid_analysis::syntax_query::NodeKind::Expression
+                | beskid_analysis::syntax_query::NodeKind::GroupedExpression
+        )
+    ) {
+        let Some(next) = parent_node(index, parent) else { return false };
+        parent = next;
+    }
+    index
+        .node_at(program, parent)
+        .and_then(|node| node.of::<beskid_analysis::syntax::CallExpression>())
+        .and_then(|call| {
+            index.direct_child_id(program, parent, beskid_analysis::syntax_query::DynNodeRef::from(call.callee.as_ref()))
+        })
+        .is_some_and(|callee| normalized_expression_node(index, callee) == path)
 }
 
 pub(in crate::semantic_contract) fn closure_captures(

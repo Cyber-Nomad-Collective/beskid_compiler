@@ -604,3 +604,55 @@ fn chained_generic_call_receiver_in_a_lambda_of_a_generic_body_is_specialized() 
     let names = artifact.functions.iter().map(|function| function.name.as_str()).collect::<Vec<_>>();
     assert!(names.iter().filter(|name| name.starts_with("Collect#") && name.contains("#lambda_")).count() == 3, "{names:?}");
 }
+
+fn nested_capture_fixture(config: &str, knobs: &str) -> String {
+    // ParallelSuite `Measure` shape: a parameter captured through two lambda levels is read in
+    // a binary expression that infers the inner generic method's `T`.
+    format!(
+        "{config} type Config {{ string path, i64 width }} {knobs} type Knobs {{ i64 depth }} type Box<T> {{ T item, T Get() {{ return this.item; }} }} type Scope {{ i64 id, Box<T> Spawn<T>(() => T body) {{ return Box<T> {{ item: body() }}; }} }} T Run<T>((Scope) => T body) {{ return body(Scope {{ id: 1_i64 }}); }} i64 Measure(Config config, Knobs knobs) {{ return Run<i64>((Scope s) => {{ Box<i64> t = s.Spawn(() => config.width + knobs.depth); return t.Get(); }}); }} i64 Main() {{ return Measure(Config {{ path: \"a\", width: 40_i64 }}, Knobs {{ depth: 2_i64 }}); }}"
+    )
+}
+
+#[test]
+fn nested_lambda_reads_fields_of_doubly_captured_parameters() {
+    let (input, isa, root) = item_fixture_with_root(&nested_capture_fixture("", ""));
+    let items = find_function_definitions(input.database(), root);
+    let named = |name: &str| {
+        items
+            .iter()
+            .copied()
+            .find(|item| item_name(input.database(), *item).ok().flatten().as_deref() == Some(name))
+            .expect("named item")
+    };
+    lower_syntax_program(
+        &input,
+        isa.as_ref(),
+        &[
+            SyntaxModuleItem { key: named("Measure"), symbol: "Measure".into() },
+            SyntaxModuleItem { key: named("Main"), symbol: "Main".into() },
+        ],
+    )
+    .expect("a field of a parameter captured through two lambdas lowers");
+}
+
+#[test]
+fn nested_lambda_reads_fields_of_doubly_captured_marked_parameters() {
+    let (input, isa, root) = item_fixture_with_root(&nested_capture_fixture("[Immutable]", "[Copyable]"));
+    let items = find_function_definitions(input.database(), root);
+    let named = |name: &str| {
+        items
+            .iter()
+            .copied()
+            .find(|item| item_name(input.database(), *item).ok().flatten().as_deref() == Some(name))
+            .expect("named item")
+    };
+    lower_syntax_program(
+        &input,
+        isa.as_ref(),
+        &[
+            SyntaxModuleItem { key: named("Measure"), symbol: "Measure".into() },
+            SyntaxModuleItem { key: named("Main"), symbol: "Main".into() },
+        ],
+    )
+    .expect("a field of a marked parameter captured through two lambdas lowers");
+}
