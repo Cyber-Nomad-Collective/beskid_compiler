@@ -1178,7 +1178,10 @@ pub(in crate::semantic_contract) fn nominal_local_receiver_declaration(
     let receiver = AstNodeKey { node: local, ..key };
     let parent = parent_node(index, local)?;
     if index.kind(parent) == Some(beskid_analysis::syntax_query::NodeKind::Pattern) {
-        let binding = pattern_binding_fact(db, index, key, local).and_then(Result::ok)?;
+        let binding = match pattern_binding_fact(db, index, key, local)? {
+            Ok(binding) => binding,
+            Err(_) => template_pattern_binding_fact(db, index, key, local)?,
+        };
         let AggregateFieldShape::Nominal(declaration) = binding.payload else {
             return None;
         };
@@ -1189,4 +1192,32 @@ pub(in crate::semantic_contract) fn nominal_local_receiver_declaration(
     }
     let path = explicit_local_complex_type_path(program, index, local)?;
     resolve_type_declaration(db, key, path).map(|declaration| (declaration, receiver))
+}
+
+/// The binding of an enum pattern inside a generic function, read for its nominal head only.
+///
+/// Inside `Flatten<T>`, `match parts.TryGet(part) { Option::Some(chunk) => chunk.Count() }` binds
+/// `chunk: List<T>`: its target-neutral identity names `T`, so the ordinary fact is unavailable,
+/// yet the method `chunk.Count` names `List` whatever `T` is. The binding is read in a probe
+/// instance that binds every type parameter of the function to `i64`; only a nominal payload is
+/// accepted, so a payload that is a type parameter itself (a scalar in the probe) resolves
+/// nothing. The call's specialization binds the real arguments when the body is lowered.
+fn template_pattern_binding_fact(
+    db: &dyn Db,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    key: AstNodeKey,
+    local: beskid_analysis::syntax::AstNodeId,
+) -> Option<EnumMatchBindingFact> {
+    let item = nearest_ancestor(index, local, |kind| kind == beskid_analysis::syntax_query::NodeKind::FunctionDefinition)?;
+    let item = AstNodeKey { node: item, ..key };
+    let (generics, _) = generic_callable_parameters(db, item)?;
+    let probe = generics
+        .iter()
+        .map(|name| {
+            GenericSubstitution::from_source(*name, SemanticTypeId::I64, GenericSourceTypeIdentity::Abi(SemanticTypeId::I64))
+        })
+        .collect::<Vec<_>>();
+    let instance = generic_specialization_instance(db, item, probe.into()).ok()??;
+    let binding = pattern_binding_fact_in_environment(db, index, key, local, Some(&instance))?.ok()?;
+    matches!(binding.payload, AggregateFieldShape::Nominal(_)).then_some(binding)
 }

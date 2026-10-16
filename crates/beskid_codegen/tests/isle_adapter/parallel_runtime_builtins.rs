@@ -139,3 +139,44 @@ fn match_on_a_method_of_an_array_element_call_in_a_generic_body_is_specialized()
     let names = artifact.functions.iter().map(|function| function.name.as_str()).collect::<Vec<_>>();
     assert_eq!(names.iter().filter(|name| name.starts_with("Count#generic_")).count(), 2, "{names:?}");
 }
+
+fn foundation_unit(input: &CodegenInput<'_>, entry: AstNodeKey, relative: &str) -> AstNodeKey {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corelib/packages/foundation/src");
+    let path = std::fs::canonicalize(root).expect("Foundation source root").join(relative);
+    AstNodeKey { unit: SourceUnitId::new(input.database(), path), generation: entry.generation, node: AstNodeId(0) }
+}
+
+#[test]
+fn nested_loop_over_a_matched_list_payload_in_a_generic_body_is_specialized() {
+    // `ParallelSeq.Flatten<T>` shape: `match parts.TryGet(part) { Option::Some(chunk) => { while
+    // index < chunk.Count() { .. } } }` over `List<List<T>> parts` in a generic body.
+    let (input, isa, entry) = canonical_corelib_project_fixture(
+        &[(
+            "Main.bd",
+            "use Core.Collections.List; use Core.Optional.Option; \
+             List<T> Flatten<T>(List<List<T>> parts) { mut List<T> result = List.New<T>(); mut i64 part = 0_i64; while part < parts.Count() { match parts.TryGet(part) { Option::Some(chunk) => { mut i64 index = 0_i64; while index < chunk.Count() { match chunk.TryGet(index) { Option::Some(value) => { result = result.Push(value); }, Option::None => { }, }; index = index + 1_i64; } }, Option::None => { }, }; part = part + 1_i64; } return result; } \
+             i64 Main(List<List<i64>> numbers, List<List<string>> texts) { return Flatten<i64>(numbers).Count() + Flatten<string>(texts).Count(); }",
+        )],
+        SyntaxGenerationId(145),
+    );
+    let list = foundation_unit(&input, entry, "Core/Collections/List.bd");
+    let mut items = find_nodes_of_kind(input.database(), list, beskid_queries::IndexedNodeKind::MethodDefinition)
+        .into_iter()
+        .map(|key| SyntaxModuleItem {
+            key,
+            symbol: format!("List_{}", item_name(input.database(), key).ok().flatten().expect("List method name")),
+        })
+        .collect::<Vec<_>>();
+    items.extend(find_function_definitions(input.database(), list).into_iter().map(|key| SyntaxModuleItem {
+        key,
+        symbol: format!("ListFn_{}", item_name(input.database(), key).ok().flatten().expect("List function name")),
+    }));
+    items.extend(find_function_definitions(input.database(), entry).into_iter().map(|key| SyntaxModuleItem {
+        key,
+        symbol: item_name(input.database(), key).ok().flatten().expect("named entry item").to_string(),
+    }));
+    let artifact = lower_syntax_program(&input, isa.as_ref(), &items)
+        .expect("a nested loop over a matched List payload lowers in each specialization");
+    let names = artifact.functions.iter().map(|function| function.name.as_str()).collect::<Vec<_>>();
+    assert_eq!(names.iter().filter(|name| name.starts_with("Flatten#generic_")).count(), 2, "{names:?}");
+}

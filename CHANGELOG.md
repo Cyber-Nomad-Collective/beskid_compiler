@@ -333,6 +333,12 @@ feature area.
 
 ### Fixed
 
+- A method called on an enum-pattern binding inside a generic function
+  (`chunk.Count()` for `Option::Some(chunk)` of `parts.TryGet(part)` with
+  `List<List<T>> parts` in `ParallelSeq.Flatten<T>`) resolves on the binding's
+  nominal head, read in a probe instance of the function; a binding typed by
+  a type parameter itself still resolves nothing. Before, the call had no
+  declaration and code generation stopped with E2102 at the enclosing loop.
 - A method called on a generic call result whose declared return is the
   callee's own type parameter (`Array.Get<Task<R>>(tasks, k).Join()` in
   `ParallelSeq.JoinInOrder<R>`) resolves on the nominal its explicit type
