@@ -215,7 +215,7 @@ pub i64 RunMovedHandOver() {
                 Probe.gc_collect();
                 // A store of a receiver object into the foreign mutable graph: the receiver's
                 // collector traces through the foreign node to keep it alive.
-                head.next = Array.Of<Node>(Node { value: 0_i64, next: head.next });
+                head.next = Array.Of<Node>(Node { value: 0_i64, next: move head.next });
                 Probe.gc_collect();
                 sum = ChainSum(head);
             },
