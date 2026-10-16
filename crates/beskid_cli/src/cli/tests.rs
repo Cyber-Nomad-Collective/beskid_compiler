@@ -679,3 +679,16 @@ fn v06_capability_document_lists_version_commands_dev_routes_and_schemas() {
     let line = document.to_string();
     assert!(!line.contains('\n'), "the document is one line");
 }
+
+#[test]
+fn native_mod_worker_strips_test_only_runtime_environment() {
+    // SAFETY: no other test of this crate reads or writes these keys.
+    unsafe {
+        std::env::set_var("BESKID_GC_STRESS", "alloc:1,verify");
+        std::env::set_var("BESKID_GC_QUARANTINE", "0");
+    }
+    super::app::StripTestOnlyRuntimeEnvironment();
+    for name in super::app::TEST_ONLY_RUNTIME_ENVIRONMENT {
+        assert_eq!(std::env::var_os(name), None, "{name} reaches the Mod runtime");
+    }
+}
