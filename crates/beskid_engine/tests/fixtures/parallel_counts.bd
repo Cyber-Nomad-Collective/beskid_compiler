@@ -340,3 +340,38 @@ pub i64 RunToleratedValue() {
     if ScopeValue(result) != 0_i64 { return -1_i64; }
     return Collected();
 }
+
+// ---- Strings cross a port by pointer and stay readable in the receiver (v0.6.4) ----
+[Export(Abi:"C", Symbol:"RunStringPort")]
+pub i64 RunStringPort() {
+    Result<i64, ParallelError> result = Parallel.Scope<i64>((Scope s) => {
+        Port<string> lines = s.PortWith<string>(4_i64);
+        Task<i64> producer = s.Spawn(() => {
+            mut i64 i = 0_i64;
+            while i < 50_i64 {
+                lines.Send("line " + DiagDecimal(i));
+                i = i + 1_i64;
+            }
+            lines.Close();
+            return i;
+        });
+        mut i64 expected = 0_i64;
+        mut bool open = true;
+        while open {
+            match lines.Receive() {
+                Result::Ok(line) => {
+                    if line != "line " + DiagDecimal(expected) {
+                        Core.Output.WriteLine("string-port mismatch <" + line + ">");
+                        return Result::Ok(-2_i64);
+                    }
+                    expected = expected + 1_i64;
+                },
+                Result::Error(_) => { open = false; },
+            };
+        }
+        producer.Join();
+        return Result::Ok(expected);
+    });
+    if ScopeValue(result) != 50_i64 { return -1_i64; }
+    return Collected();
+}

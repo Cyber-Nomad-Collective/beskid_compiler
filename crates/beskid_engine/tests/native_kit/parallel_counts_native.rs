@@ -218,3 +218,23 @@ fn tolerated_error_is_a_task_value() {
         );
     }
 }
+
+/// v0.6.4: a string sent through a port is received by pointer and stays readable (string
+/// services accept a live foreign reference), at every bound and when every allocation collects.
+#[test]
+fn strings_cross_a_port_and_stay_readable() {
+    for environment in [
+        &[("BESKID_ISOLATES_MAX", "2")][..],
+        &[("BESKID_ISOLATES_MAX", "1"), ("BESKID_GC_STRESS", "alloc:1,verify")][..],
+        &[("BESKID_ISOLATES_MAX", "2"), ("BESKID_GC_STRESS", "alloc:1,verify")][..],
+    ] {
+        let output = run("RunStringPort", environment);
+        assert!(
+            output.status.success(),
+            "RunStringPort {environment:?}: exit {:?}\nstdout:\n{}\nstderr:\n{}",
+            output.status.code(),
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+}
