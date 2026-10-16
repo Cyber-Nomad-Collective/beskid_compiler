@@ -96,6 +96,7 @@ impl Resolver {
         let module_path_string = module_path.join("::");
         if let Some(item) = module.scope.get(name).copied() {
             if !module_path.is_empty()
+                && !self.module_encloses_current(module_id)
                 && self.items.get(item.0).is_some_and(|info| info.visibility == Visibility::Private)
             {
                 ModulePathLookup::NotVisible { module_path: module_path_string, name: name.to_string() }
@@ -115,6 +116,20 @@ impl Resolver {
                 }
             }
         }
+    }
+
+    /// A qualified path into the current module or one of its ancestors reaches the same private
+    /// items the unqualified lookup (`resolve_item_in_scope`) reaches, so `mod A { contract R {}
+    /// ... where T: A.R }` is not a cross-module access.
+    fn module_encloses_current(&self, module_id: super::super::ids::ModuleId) -> bool {
+        let mut current = Some(self.current_module);
+        while let Some(candidate) = current {
+            if candidate == module_id {
+                return true;
+            }
+            current = self.module_graph.module(candidate).and_then(|module| module.parent);
+        }
+        false
     }
 
     /// When `Foo.Bar` names module `Foo.Bar` and public item `Bar` inside it.
