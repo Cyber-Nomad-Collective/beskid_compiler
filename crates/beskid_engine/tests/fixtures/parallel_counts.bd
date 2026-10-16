@@ -478,3 +478,81 @@ pub i64 RunPipeline() {
     if ScopeValue(result) != 1000_i64 { return -1_i64; }
     return Collected();
 }
+
+// ---- A payload kept after its Shared wrapper is dropped (0.6.6, gate-2 F6) ----
+// A `Shared` send stakes only the message's root object. The keeper extracts the text of each
+// wrapper (a pipeline's `Sequenced::Item`), drops the wrappers and collects, so their DECs reach
+// the producer; the producer then collects twice before the keeper forwards the texts. Only the
+// stake the keeper's own marking takes on each text keeps it alive in the producer's heap.
+enum Wrapped<T> {
+    Item(i64 sequence, T value),
+}
+
+[Export(Abi:"C", Symbol:"RunWrappedPayloadKept")]
+pub i64 RunWrappedPayloadKept() {
+    Result<i64, ParallelError> result = Parallel.Scope<i64>((Scope s) => {
+        Port<Wrapped<string>> wrapped = s.PortWith<Wrapped<string>>(64_i64);
+        Port<string> kept = s.PortWith<string>(64_i64);
+        Port<i64> dropped = s.Port<i64>();
+        Port<i64> swept = s.Port<i64>();
+        Task<i64> producer = s.Spawn(() => {
+            mut i64 i = 0_i64;
+            while i < 32_i64 {
+                wrapped.Send(Wrapped::Item(i, "item " + DiagDecimal(i)));
+                i = i + 1_i64;
+            }
+            wrapped.Close();
+            match dropped.Receive() {
+                _ => { },
+            };
+            Probe.gc_collect();
+            Probe.gc_collect();
+            swept.Send(1_i64);
+            return i;
+        });
+        Task<i64> keeper = s.Spawn(() => {
+            mut List<string> texts = List.New<string>();
+            mut bool open = true;
+            while open {
+                match wrapped.Receive() {
+                    Result::Ok(Wrapped::Item(_, text)) => { texts = texts.Push(text); },
+                    Result::Error(_) => { open = false; },
+                };
+            }
+            Probe.gc_collect();
+            dropped.Send(1_i64);
+            match swept.Receive() {
+                _ => { },
+            };
+            mut i64 k = 0_i64;
+            while k < texts.Count() {
+                match texts.TryGet(k) {
+                    Option::Some(text) => { kept.Send(text); },
+                    Option::None => { },
+                };
+                k = k + 1_i64;
+            }
+            kept.Close();
+            return k;
+        });
+        mut i64 expected = 0_i64;
+        mut bool open = true;
+        while open {
+            match kept.Receive() {
+                Result::Ok(text) => {
+                    if text != "item " + DiagDecimal(expected) {
+                        Core.Output.WriteLine("wrapped payload mismatch <" + text + ">");
+                        return Result::Ok(-2_i64);
+                    }
+                    expected = expected + 1_i64;
+                },
+                Result::Error(_) => { open = false; },
+            };
+        }
+        producer.Join();
+        keeper.Join();
+        return Result::Ok(expected);
+    });
+    if ScopeValue(result) != 32_i64 { return -1_i64; }
+    return Collected();
+}

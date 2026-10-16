@@ -365,6 +365,19 @@ feature area.
   transfer fixture moves its byte buffer into the spawned closure, and the
   serialization test encoder copies a borrowed `u8[]` instead of storing it
   (E1241).
+- A string kept from a received pipeline record could be collected while
+  still in use (`str_eq: managed string operand is not live` in
+  `three_stage_pipeline_keeps_input_order` under
+  `BESKID_GC_STRESS=alloc:1,verify`). A Shared message stakes only its root
+  object; marking recorded an object reached through it as an uncounted
+  foreign reference, so the owner swept it once the wrapper's DEC arrived.
+  Marking now takes a stake on every foreign immutable object it discovers
+  (ORCA acquire) and posts the INC before any DEC of the same cycle; a
+  discarded task heap gives back the stakes of its foreign references.
+- `beskid test` no longer runs compile-time native Mod workers under the test
+  GC settings: the worker clears `BESKID_GC_STRESS` and
+  `BESKID_GC_QUARANTINE` before its runtime starts. Before, a Mod under
+  `alloc:1,verify` exceeded its invocation deadline.
 - Every Core.Parallel task that ran on a real isolate failed with
   `transit refused 0x0000000000000000`. The transit walk reported a refusal
   as the encoded value 1, which is also the encoding of the first object of

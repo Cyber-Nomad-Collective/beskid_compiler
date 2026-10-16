@@ -88,6 +88,10 @@ pub unit AdoptHeap(pointer parent, pointer child, pointer childRuntime) {
 
 // Releases a child heap whole: withdraws its ranges from the region map before unmapping them.
 pub unit DiscardHeap(pointer child, pointer childRuntime) {
+    // The discarded heap no longer reaches its foreign objects: give their stakes back.
+    ParallelLock();
+    ForeignReleaseAllLocked(child);
+    ParallelUnlock();
     RegionMapUnregisterOwner(childRuntime);
     mut pointer region = NativePointer(raw_word_load(pointer_add(child, HEAP_FIRST_REGION)));
     while region != NativePointer(0) {
