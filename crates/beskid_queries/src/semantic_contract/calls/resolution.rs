@@ -537,6 +537,7 @@ pub(in crate::semantic_contract) fn method_declaration_for_member_receiver(
         .ok()
         .and_then(|identity| super::super::contracts::concrete_declaration(db, key, &identity))
         .or_else(|| aggregate_literal_declaration(db, receiver).ok().flatten())
+        .or_else(|| call_result_nominal_declaration(db, receiver))
         .or_else(|| {
             let receiver_node = index.node_at(program, receiver.node)?;
             let path = receiver_node.of::<beskid_analysis::syntax::PathExpression>()?;
@@ -557,6 +558,33 @@ pub(in crate::semantic_contract) fn method_declaration_for_member_receiver(
         .of::<beskid_analysis::syntax::MethodDefinition>()?;
     (method.unit == key.unit || definition.visibility.node == beskid_analysis::syntax::Visibility::Public)
         .then_some(method)
+}
+
+/// The nominal declaration a direct call's declared return type names (`Bag` for
+/// `NewBag<Bag<T>>()` returning `Bag<V>`), resolved in the callee's unit by arity alone. A method
+/// of that declaration is selected without instantiating the result, so a call result whose
+/// arguments name an enclosing generic (`List.New<List<T>>().Push(leaf)` in a generic body) still
+/// resolves its member; the call's specialization binds the arguments later.
+fn call_result_nominal_declaration(db: &dyn Db, receiver: AstNodeKey) -> Option<AstNodeKey> {
+    let syntax = db.syntax_unit(receiver.unit).filter(|syntax| syntax.accepts_key(db, receiver))?;
+    syntax
+        .syntax_index(db)
+        .node_at(syntax.expanded_program(db), receiver.node)?
+        .of::<beskid_analysis::syntax::CallExpression>()?;
+    let Ok(Some(CallLowering::Direct(declaration))) = call_lowering(db, receiver) else { return None };
+    let callee_syntax = db.syntax_unit(declaration.unit).filter(|syntax| syntax.accepts_key(db, declaration))?;
+    let callee = callee_syntax.syntax_index(db).node_at(callee_syntax.expanded_program(db), declaration.node)?;
+    let result = callee
+        .of::<beskid_analysis::syntax::FunctionDefinition>()
+        .and_then(|function| function.return_type.as_ref())
+        .or_else(|| callee.of::<beskid_analysis::syntax::MethodDefinition>().and_then(|method| method.return_type.as_ref()))
+        .or_else(|| {
+            callee
+                .of::<beskid_analysis::syntax::ContractMethodSignature>()
+                .and_then(|signature| signature.return_type.as_ref())
+        })?;
+    let beskid_analysis::syntax::Type::Complex(path) = &result.node else { return None };
+    resolve_type_declaration(db, declaration, &path.node)
 }
 
 /// Module-qualified calls like `Core.IsEmpty(text)` parse as `MemberExpression` where the
