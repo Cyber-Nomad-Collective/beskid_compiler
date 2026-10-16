@@ -42,6 +42,8 @@ mod member_callee_methods;
 mod method_owned_fields;
 #[path = "isle_adapter/module_emission_specialization.rs"]
 mod module_emission_specialization;
+#[path = "isle_adapter/parallel_runtime_builtins.rs"]
+mod parallel_runtime_builtins;
 #[path = "isle_adapter/projected_path_match.rs"]
 mod projected_path_match;
 #[path = "isle_adapter/runtime_gc_aggregate.rs"]

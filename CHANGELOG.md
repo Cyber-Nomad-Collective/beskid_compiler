@@ -333,6 +333,14 @@ feature area.
 
 ### Fixed
 
+- A Corelib service that returns a managed `string` through the pointer
+  register (`__isolate_join_message`, `__fiber_join_message`, `__str_slice`,
+  `__env_get`) is a managed value in every expression position. Its category
+  now comes from the source declaration, not from the transport; before, a
+  call used as a struct literal field (`TaskFailure { message:
+  __isolate_join_message(handle) }` in `Core.Parallel.Scopes.FailureOf`) or as
+  a rooted call argument had no managed category, and code generation stopped
+  with E2102.
 - Generic specialization covers the Core.Parallel shapes: a method call on a
   value bound by a nested enum pattern (`Result::Error(ParallelError::Failed(failures))`
   then `failures.Count()`), a typed lambda parameter used as a receiver

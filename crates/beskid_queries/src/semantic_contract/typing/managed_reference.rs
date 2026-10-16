@@ -160,6 +160,12 @@ pub(in crate::semantic_contract) fn managed_reference_kind_tracked(
         if node.of::<beskid_analysis::syntax::CallExpression>().is_some()
             && let Ok(Some(CallLowering::CorelibService(service))) = call_lowering(db, key)
         {
+            // The source callable's declared result classifies the value, not its transport: a
+            // managed-string service (`string __isolate_join_message(i64)`) answers through the
+            // pointer register, so its ABI result alone is the ambiguous `pointer`.
+            if let Some(kind) = corelib_service_source_result_managed_reference(service) {
+                return Some(Ok(kind));
+            }
             return Some(match corelib_service_abi_signature(service).map(|signature| signature.result) {
                 Some(SemanticTypeId::STRING) => Ok(ManagedReferenceKind::GcManaged),
                 Some(SemanticTypeId::POINTER) | None => Err(SemanticError::unavailable("managed_reference_kind")),
@@ -187,6 +193,20 @@ pub(in crate::semantic_contract) fn managed_reference_kind_tracked(
         Some(Err(SemanticError::unavailable("managed_reference_kind")))
     })?
     .transpose()
+}
+
+/// Managed category of an authorized Corelib service result from its source declaration.
+/// `pointer` and type-parameter results carry no category of their own (`None`).
+fn corelib_service_source_result_managed_reference(service: CorelibService) -> Option<ManagedReferenceKind> {
+    use beskid_analysis::builtins::BuiltinType;
+    let (_, spec) = beskid_analysis::builtins::builtin_for_path(&[service.name.to_owned()])?;
+    match spec.returns {
+        BuiltinType::String | BuiltinType::Bytes | BuiltinType::TypeParameterArray => {
+            Some(ManagedReferenceKind::GcManaged)
+        }
+        BuiltinType::Ptr | BuiltinType::TypeParameter | BuiltinType::TypeParameterThunk => None,
+        _ => Some(ManagedReferenceKind::NativeOrScalar),
+    }
 }
 
 fn managed_reference_kind_for_aggregate_field(
