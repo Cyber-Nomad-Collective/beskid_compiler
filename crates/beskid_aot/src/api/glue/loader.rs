@@ -465,11 +465,17 @@ impl GlueProcess {
             let ids=ids.into_iter().collect::<Vec<_>>();
             if ids.is_empty()||ids.len()>1024{return Err(invalid("Rust owner brand closure bounds"));}
             if unsafe{bind(library,owner.generation,ids.as_ptr(),ids.len())}!=0{return Err(invalid("Rust owner shape binding failed"));}
-            rows.sort_by_key(ImageClosureRow::bytes);
-            type BindImage=unsafe extern "C" fn(u64,u64,*const ImageClosureRow,usize)->i32;
-            let bind_image=*unsafe{lease.images().provider_symbol::<BindImage>(c"beskid_glue_v1_owner_bind_image_closure")}
-                .map_err(|error|invalid(error.to_string()))?;
-            if unsafe{bind_image(library,owner.generation,rows.as_ptr(),rows.len())}!=0{return Err(invalid("Rust owner actual image closure rejected"));}
+            // The owner image closure holds only opaque destructor rows (role 6). An owner without
+            // opaque handle types (records, enums, callbacks, scalars) has none, and the provider
+            // admits no empty closure; without a bound closure every image-address admission for
+            // this library stays refused.
+            if !rows.is_empty() {
+                rows.sort_by_key(ImageClosureRow::bytes);
+                type BindImage=unsafe extern "C" fn(u64,u64,*const ImageClosureRow,usize)->i32;
+                let bind_image=*unsafe{lease.images().provider_symbol::<BindImage>(c"beskid_glue_v1_owner_bind_image_closure")}
+                    .map_err(|error|invalid(error.to_string()))?;
+                if unsafe{bind_image(library,owner.generation,rows.as_ptr(),rows.len())}!=0{return Err(invalid("Rust owner actual image closure rejected"));}
+            }
             type OwnerInitialize=unsafe extern "C" fn(u64,u64)->i32;
             let initialize=*unsafe{lease.images().image_symbol::<OwnerInitialize>(image,c"beskid_glue_rust_owner_v1_initialize")}
                 .map_err(|error|invalid(error.to_string()))?;
