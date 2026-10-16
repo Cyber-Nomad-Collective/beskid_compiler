@@ -559,24 +559,81 @@ pub struct RepeatedCaptureParameter {
     pub name: Arc<str>,
 }
 
-/// The parameters of the function or method `declaration` that a bounded lambda of its body
-/// captures without `move` while their class is `SomeTransferable`. A bounded lambda is
-/// repeatable and the parameter is borrowed, so every instantiation must be Shared or Copied:
-/// a Moved value would be used once per call of the lambda after one consumption (lang ruling on
-/// the `Reduce` seed, v0.6.5 "Moved seed is rejected").
+/// One borrowed parameter that the callable's body forwards unchanged, as a bare name, to
+/// parameter `callee_position` of the direct callee `callee` (`Reduce<T>(seed, ..)` inside a
+/// generic wrapper with its own `T seed`). Positions exclude the method receiver.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct ForwardedParameter {
+    pub position: u32,
+    pub name: Arc<str>,
+    pub callee: AstNodeKey,
+    pub callee_position: u32,
+}
+
+/// The direct and forwarded parameter facts of one callable: the borrowed parameters whose class
+/// is decided per instantiation that a bounded lambda of its body captures without `move`, and
+/// every such parameter it passes on to a callee.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct RepeatedCaptureFacts {
+    pub captured: Arc<[RepeatedCaptureParameter]>,
+    pub forwarded: Arc<[ForwardedParameter]>,
+}
+
+/// The parameters of the function or method `declaration` that are captured repeatedly, either
+/// directly or through a callee they are forwarded to. A bounded lambda is repeatable and the
+/// parameter is borrowed, so every instantiation must be Shared or Copied: a Moved value would be
+/// used once per call of the lambda after one consumption (lang ruling on the `Reduce` seed,
+/// v0.6.5 "Moved seed is rejected"). A generic wrapper that forwards its own `T seed` to such a
+/// parameter inherits the obligation, so the wrapper's call site is judged per instantiation.
+///
+/// The forwarding graph is walked over `(callable, position)` pairs with a visited set, so
+/// recursive and mutually recursive forwarding terminates.
 fn repeated_capture_parameters(db: &dyn Db, declaration: AstNodeKey) -> Arc<[RepeatedCaptureParameter]> {
-    match with_registered_syntax(db, declaration, repeated_capture_parameters_tracked) {
-        Ok(Some(parameters)) => parameters,
-        Ok(None) | Err(_) => Arc::from([]),
+    let Some(facts) = repeated_capture_facts(db, declaration) else { return Arc::from([]) };
+    let mut repeated = facts.captured.to_vec();
+    for forwarded in facts.forwarded.iter() {
+        if repeated.iter().any(|known| known.position == forwarded.position) {
+            continue;
+        }
+        let mut visited = std::collections::HashSet::from([(declaration, forwarded.position)]);
+        if forwarded_parameter_is_repeated(db, forwarded.callee, forwarded.callee_position, &mut visited) {
+            repeated.push(RepeatedCaptureParameter { position: forwarded.position, name: forwarded.name.clone() });
+        }
     }
+    repeated.sort_by_key(|parameter| parameter.position);
+    Arc::from(repeated)
+}
+
+fn forwarded_parameter_is_repeated(
+    db: &dyn Db,
+    declaration: AstNodeKey,
+    position: u32,
+    visited: &mut std::collections::HashSet<(AstNodeKey, u32)>,
+) -> bool {
+    if !visited.insert((declaration, position)) {
+        return false;
+    }
+    let Some(facts) = repeated_capture_facts(db, declaration) else { return false };
+    if facts.captured.iter().any(|parameter| parameter.position == position) {
+        return true;
+    }
+    facts
+        .forwarded
+        .iter()
+        .filter(|forwarded| forwarded.position == position)
+        .any(|forwarded| forwarded_parameter_is_repeated(db, forwarded.callee, forwarded.callee_position, visited))
+}
+
+fn repeated_capture_facts(db: &dyn Db, declaration: AstNodeKey) -> Option<RepeatedCaptureFacts> {
+    with_registered_syntax(db, declaration, repeated_capture_facts_tracked).ok().flatten()
 }
 
 #[salsa::tracked(persist)]
-fn repeated_capture_parameters_tracked(
+fn repeated_capture_facts_tracked(
     db: &dyn Db,
     syntax: SyntaxUnitInput,
     key: AstNodeKey,
-) -> SemanticQueryResult<Arc<[RepeatedCaptureParameter]>> {
+) -> SemanticQueryResult<RepeatedCaptureFacts> {
     with_node(db, syntax, key, |program, index, node| {
         let parameters = node
             .of::<beskid_analysis::syntax::FunctionDefinition>()
@@ -596,11 +653,11 @@ fn repeated_capture_parameters_tracked(
             })
             .collect::<Vec<_>>();
         if candidates.is_empty() {
-            return Some(Ok(Arc::from([])));
+            return Some(Ok(RepeatedCaptureFacts { captured: Arc::from([]), forwarded: Arc::from([]) }));
         }
         let mut lambdas = Vec::new();
         collect_nodes_of_kind(index, key.node, NodeKind::LambdaExpression, &mut lambdas);
-        let mut repeated = Vec::<RepeatedCaptureParameter>::new();
+        let mut captured = Vec::<RepeatedCaptureParameter>::new();
         for lambda in lambdas.into_iter().map(|node| AstNodeKey { node, ..key }) {
             if !matches!(bound_of_position(db, lambda), Some(CapturesBound::Marker(_))) {
                 continue;
@@ -612,13 +669,50 @@ fn repeated_capture_parameters_tracked(
                 // `move seed` hands the value over once; it is judged by the affine rules instead.
                 let (_, moved, _) = capture_uses(program, index, lambda.node, declaration.node, &name);
                 let position = u32::try_from(*position).ok()?;
-                if !moved && !repeated.iter().any(|known| known.position == position) {
-                    repeated.push(RepeatedCaptureParameter { position, name: Arc::from(name.as_str()) });
+                if !moved && !captured.iter().any(|known| known.position == position) {
+                    captured.push(RepeatedCaptureParameter { position, name: Arc::from(name.as_str()) });
                 }
             }
         }
-        repeated.sort_by_key(|parameter| parameter.position);
-        Some(Ok(Arc::from(repeated)))
+        captured.sort_by_key(|parameter| parameter.position);
+        // A candidate passed on unchanged as a bare name (`Reduce<T>(seed, ..)`).
+        let mut calls = Vec::new();
+        collect_nodes_of_kind(index, key.node, NodeKind::CallExpression, &mut calls);
+        let mut forwarded = Vec::<ForwardedParameter>::new();
+        for call in calls.into_iter().map(|node| AstNodeKey { node, ..key }) {
+            let Ok(Some(CallLowering::Direct(callee))) = call_lowering(db, call) else { continue };
+            let Ok(Some(arguments)) = call_arguments(db, call) else { continue };
+            let receiver_offset = usize::from(matches!(node_kind(db, callee), Ok(Some(IndexedNodeKind::MethodDefinition))));
+            for (argument_index, argument) in arguments.iter().enumerate() {
+                let Some(callee_position) = argument_index.checked_sub(receiver_offset) else { continue };
+                let argument_node = normalized_expression_node(index, argument.node);
+                let Some(path) = index
+                    .node_at(program, argument_node)
+                    .and_then(|syntax| syntax.of::<beskid_analysis::syntax::PathExpression>())
+                else {
+                    continue;
+                };
+                let [segment] = path.path.node.segments.as_slice() else { continue };
+                let Some(declaration) =
+                    resolve_lexical_declaration(program, index, argument_node, &segment.node.name.node.name)
+                else {
+                    continue;
+                };
+                let Some((_, position, name)) = candidates.iter().find(|(node, _, _)| *node == declaration) else {
+                    continue;
+                };
+                let edge = ForwardedParameter {
+                    position: u32::try_from(*position).ok()?,
+                    name: Arc::from(name.as_str()),
+                    callee,
+                    callee_position: u32::try_from(callee_position).ok()?,
+                };
+                if !forwarded.contains(&edge) {
+                    forwarded.push(edge);
+                }
+            }
+        }
+        Some(Ok(RepeatedCaptureFacts { captured: Arc::from(captured), forwarded: Arc::from(forwarded) }))
     })?
     .transpose()
 }

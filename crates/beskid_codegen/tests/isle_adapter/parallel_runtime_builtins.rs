@@ -180,3 +180,31 @@ fn nested_loop_over_a_matched_list_payload_in_a_generic_body_is_specialized() {
     let names = artifact.functions.iter().map(|function| function.name.as_str()).collect::<Vec<_>>();
     assert_eq!(names.iter().filter(|name| name.starts_with("Flatten#generic_")).count(), 2, "{names:?}");
 }
+
+#[test]
+fn loop_over_an_isolated_linked_array_lowers() {
+    // `parallel_counts.bd` ChainSum: `while Array.Len<Node>(rest) > 0_i64 { Node node =
+    // rest[0_i64]; .. rest = node.next; }` over an `[Isolated]` (Moved) node graph and over the
+    // same unmarked type.
+    let mut failures = Vec::new();
+    for (generation, marker) in [(146_u32, "[Isolated] "), (148, "")] {
+        let source = format!(
+            "use Core.Collections.Array; use Core.Parallel; \
+             {marker}pub type Node {{ pub i64 value, pub Node[] next, }} \
+             i64 ChainSum(Node head) {{ mut i64 sum = head.value; mut Node[] rest = head.next; while Array.Len<Node>(rest) > 0_i64 {{ Node node = rest[0_i64]; sum = sum + node.value; rest = node.next; }} return sum; }}"
+        );
+        let (input, isa, entry) =
+            canonical_corelib_project_fixture(&[("Main.bd", source.as_str())], SyntaxGenerationId(generation.into()));
+        let items = find_function_definitions(input.database(), entry)
+            .into_iter()
+            .map(|key| SyntaxModuleItem {
+                key,
+                symbol: item_name(input.database(), key).ok().flatten().expect("named entry item").to_string(),
+            })
+            .collect::<Vec<_>>();
+        if let Err(error) = lower_syntax_program(&input, isa.as_ref(), &items) {
+            failures.push(format!("{marker:?}: {error:?}"));
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}

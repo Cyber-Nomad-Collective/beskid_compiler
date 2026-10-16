@@ -709,3 +709,42 @@ fn match_on_a_function_value_call_in_a_generic_body_is_specialized() {
     let names = artifact.functions.iter().map(|function| function.name.as_str()).collect::<Vec<_>>();
     assert_eq!(names.iter().filter(|name| name.starts_with("Count#generic_")).count(), 2, "{names:?}");
 }
+
+#[test]
+fn match_on_a_method_of_a_captured_generic_owner_in_a_lambda_of_a_non_generic_body() {
+    // `parallel_counts.bd` shape: `s.Spawn(() => { match outbound.Receive() { .. }; })` with a
+    // captured `Port<Config> outbound` in a non-generic body. Every payload/position/inference
+    // combination is lowered so one run names each failing shape.
+    let mut failures = Vec::new();
+    for payload in ["i64", "Config"] {
+        for (position, body) in [
+            (
+                "final",
+                "match b.Take() { Outcome::Ok(c) => { return VALUE; }, Outcome::Error(_) => { return -1_i64; }, };",
+            ),
+            (
+                "inner",
+                "mut i64 r = 0_i64; match b.Take() { Outcome::Ok(c) => { r = VALUE; }, Outcome::Error(_) => { }, }; return r;",
+            ),
+        ] {
+            for call in ["Call<i64>", "Call"] {
+                let value = if payload == "i64" { "c" } else { "c.width" };
+                let source = format!(
+                    "enum Outcome<T, E> {{ Ok(T value), Error(E error) }} type Box<T> {{ T item, Outcome<T, string> Take() {{ return Outcome::Ok(this.item); }} }} type Config {{ string name, i64 width, }} i64 Call<T>(() => T body) {{ return 1_i64; }} i64 Main(Box<{payload}> b) {{ return {call}(() => {{ {} }}); }}",
+                    body.replace("VALUE", value)
+                );
+                let (input, isa, root) = item_fixture_with_root(&source);
+                let main = find_function_definitions(input.database(), root)
+                    .into_iter()
+                    .find(|item| item_name(input.database(), *item).ok().flatten().as_deref() == Some("Main"))
+                    .expect("Main");
+                if let Err(error) =
+                    lower_syntax_program(&input, isa.as_ref(), &[SyntaxModuleItem { key: main, symbol: "Main".into() }])
+                {
+                    failures.push(format!("{payload}/{position}/{call}: {error:?}"));
+                }
+            }
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}

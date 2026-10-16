@@ -367,7 +367,12 @@ fn value_block_of_final_statement(
     else {
         return Ok(None);
     };
-    if parent_node(index, expression).and_then(|parent| index.kind(parent)) == Some(NodeKind::LambdaExpression) {
+    // The lambda's body is the block expression behind its transparent `Expression` wrapper.
+    let mut owner = parent_node(index, expression);
+    while let Some(node) = owner.filter(|node| matches!(index.kind(*node), Some(NodeKind::Expression | NodeKind::GroupedExpression))) {
+        owner = parent_node(index, node);
+    }
+    if owner.and_then(|parent| index.kind(parent)) == Some(NodeKind::LambdaExpression) {
         return Ok(None);
     }
     let statements = block_statement_nodes(db, AstNodeKey { node: block, ..statement })?.ok_or_else(unavailable)?;

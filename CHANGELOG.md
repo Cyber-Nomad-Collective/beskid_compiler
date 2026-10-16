@@ -333,6 +333,18 @@ feature area.
 
 ### Fixed
 
+- A block-bodied lambda's final expression statement is a statement, not the
+  lambda's value. `s.Spawn(() => { match port.Receive() { ... => { return x; }, ... }; })`
+  failed with E2102 at the `match`, because lowering read the last statement
+  as the lambda result. The statement cursor of a block lowered as a statement
+  now also runs that final statement, and the expected type of the statement
+  is `unit` also when the lambda body sits behind an expression wrapper.
+- E1236 is reported at the call site of a generic wrapper that passes its own
+  borrowed parameter on to a repeatedly captured parameter (a `Reduce` seed),
+  for each instantiation. Recursive forwarding terminates.
+- The `parallel_counts` native fixture sends a call result without `move` (a
+  call result is already owned; `move` on it is E1239) and reads an array
+  length with `Array.Len`.
 - A local Core.Parallel task whose fiber is cancelled before it runs (a task
   started in a scope that has already failed, under serial elision) becomes
   terminal. The scheduler ended such a fiber without a context switch and
