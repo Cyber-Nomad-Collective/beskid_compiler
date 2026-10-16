@@ -650,9 +650,16 @@ mod tests {
     }
 
     pub(super) fn one_unit_assembly(source: &str, generation: SyntaxGenerationId) -> (BeskidDatabase, AstNodeKey) {
+        unit_assembly_at(source, generation, "Main.bd")
+    }
+
+    /// One unit at `relative` under the source root, so its logical module follows the path
+    /// (`Core/Parallel/Seq.bd` is module `Core.Parallel.Seq`).
+    fn unit_assembly_at(source: &str, generation: SyntaxGenerationId, relative: &str) -> (BeskidDatabase, AstNodeKey) {
         let mut db = BeskidDatabase::default();
         let directory = tempfile::tempdir().expect("project").keep();
-        let source_path = directory.join("Main.bd");
+        let source_path = directory.join(relative);
+        std::fs::create_dir_all(source_path.parent().expect("parent")).expect("module directory");
         std::fs::write(&source_path, source).expect("source");
         let program =
             parse_program_with_source_name(source_path.to_str().expect("path"), source).expect("parse source");
@@ -664,7 +671,7 @@ mod tests {
                 dependencies: Vec::new(),
             },
             Arc::new(vec![SourceUnit {
-                logical_name: "Main".into(),
+                logical_name: relative.trim_end_matches(".bd").replace('/', ".").into(),
                 origin_path: source_path.clone(),
                 path: source_path,
                 source: source.into(),
@@ -1228,7 +1235,11 @@ mod tests {
 
     /// `(code, message, help)` of every declaration, legality-gate and gate-obligation finding.
     fn transfer_report(source: &str, generation: u64) -> Vec<(String, String, String)> {
-        let (db, root) = one_unit_assembly(source, SyntaxGenerationId(generation));
+        transfer_report_at(source, generation, "Main.bd")
+    }
+
+    fn transfer_report_at(source: &str, generation: u64, relative: &str) -> Vec<(String, String, String)> {
+        let (db, root) = unit_assembly_at(source, SyntaxGenerationId(generation), relative);
         let mut items = Vec::new();
         nodes_of_kind(&db, root, IndexedNodeKind::FunctionDefinition, &mut items);
         nodes_of_kind(&db, root, IndexedNodeKind::MethodDefinition, &mut items);
@@ -1619,6 +1630,71 @@ mod tests {
         for (offset, (body, expected)) in cases.iter().enumerate() {
             assert_affine(&format!("{types}{body}"), 6900 + offset as u64, expected);
         }
+    }
+
+    #[test]
+    fn stored_element_reads_follow_the_owning_and_borrowed_rules() {
+        let types = "[Isolated] pub type Node { u8[] bytes } [Isolated] pub type Holder { u8[] bytes, Node node } \
+            [Isolated] pub type Tagged { string label, u8 level } \
+            Holder MakeHolder() { return Holder { bytes: Make(), node: Node { bytes: Make() } }; } \
+            u8[][] MakeAll() { return [Make()]; } ";
+        let cases: &[(&str, &[&str])] = &[
+            // Through a borrowed root the element read is borrowed: storing it is E1241.
+            ("Node Wrap(u8[][] xs) { return Node { bytes: xs[0] }; }", &["E1241"]),
+            ("unit Keep(u8[][] xs, i64 i) { Store(xs[i]); return; }", &["E1241"]),
+            ("unit Fill(Node n, u8[][] xs) { n.bytes = xs[0]; return; }", &["E1241"]),
+            ("u8[][] Wrap(u8[][] xs) { return [xs[0]]; }", &["E1241"]),
+            ("Node Wrap(Holder[] hs) { return Node { bytes: hs[0].bytes }; }", &["E1241"]),
+            // Through an owning root the element needs `exchange`.
+            ("Node Wrap(move u8[][] xs) { return Node { bytes: xs[0] }; }", &["E1242"]),
+            ("unit Keep(move u8[][] xs) { Store(xs[0]); return; }", &["E1242"]),
+            ("unit Keep(move u8[][] xs) { Store(exchange(xs[0], Make())); return; }", &[]),
+            // Reads, and elements of a class other than Moved, are not judged.
+            ("i64 Size(u8[][] xs) { return Len(xs[0]); }", &[]),
+            ("Tagged Copy(Tagged[] ts) { return Tagged { label: ts[0].label, level: ts[0].level }; }", &[]),
+            // A member or element of an owned temporary is owned.
+            ("Node Wrap() { return Node { bytes: MakeHolder().bytes }; }", &[]),
+            ("unit Keep() { Store(MakeHolder().bytes); return; }", &[]),
+            ("unit Keep() { u8[] bytes = MakeHolder().bytes; Store(move bytes); return; }", &[]),
+            ("unit Keep() { u8[] first = MakeAll()[0]; Store(move first); return; }", &[]),
+            // A local initialized from an element of a name stays borrowed.
+            ("unit Keep(move u8[][] xs) { u8[] first = xs[0]; Store(first); return; }", &["E1241"]),
+        ];
+        for (offset, (body, expected)) in cases.iter().enumerate() {
+            assert_affine(&format!("{types}{body}"), 6920 + offset as u64, expected);
+        }
+    }
+
+    #[test]
+    fn a_corelib_scope_borrowed_view_stores_a_borrowed_value() {
+        let view = "[Immutable] [ScopeBorrowed] pub type View<T> { [ImmutableStorage] T[] items } \
+            [Immutable] [ScopeBorrowed] pub type Bytes { [ImmutableStorage] u8[] items } \
+            pub type Plain { u8[] bytes } ";
+        let bodies = "pub View<T> Over<T>(T[] values) where T: Transferable { return View<T> { items: values }; } \
+            Bytes OverBytes(u8[] values) { return Bytes { items: values }; } \
+            Bytes Owned(move u8[] values) { Bytes view = Bytes { items: values }; Store(move values); return view; } \
+            Plain Wrap(u8[] bytes) { return Plain { bytes: bytes }; } ";
+        let affine = |relative: &str, generation: u64| {
+            transfer_report_at(&format!("{MARKERS}{AFFINE_PRELUDE}{view}{bodies}"), generation, relative)
+                .into_iter()
+                .map(|(code, ..)| code)
+                .filter(|code| ("E1234"..="E1243").contains(&code.as_str()) || code == "E1510")
+                .collect::<Vec<_>>()
+        };
+        // In a `Core.*` module the view stores a borrowed value (no E1241); an owning name is
+        // still consumed by the construction (E1234 at the later `move`).
+        let core = affine("Core/Parallel/Seq.bd", 6940);
+        assert_eq!(core.iter().filter(|code| *code == "E1241").count(), 1, "only the ordinary type escapes: {core:?}");
+        assert_eq!(core.iter().filter(|code| *code == "E1234").count(), 1, "{core:?}");
+        assert!(!core.iter().any(|code| code == "E1510"), "{core:?}");
+        // Outside the corelib `[ScopeBorrowed]` (and `[ImmutableStorage]`) is E1510 and grants nothing.
+        let outside = affine("Main.bd", 6941);
+        let scope_borrowed = transfer_report_at(&format!("{MARKERS}{AFFINE_PRELUDE}{view}{bodies}"), 6942, "Main.bd")
+            .into_iter()
+            .filter(|(code, message, _)| code == "E1510" && message.contains("ScopeBorrowed"))
+            .count();
+        assert_eq!(scope_borrowed, 2, "{outside:?}");
+        assert_eq!(outside.iter().filter(|code| *code == "E1241").count(), 3, "{outside:?}");
     }
 
     #[test]

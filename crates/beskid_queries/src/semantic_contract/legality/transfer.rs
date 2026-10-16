@@ -8,19 +8,9 @@
 //! by the transfer class query, never here.
 use super::typing::nodes_of_kind;
 use super::*;
-use crate::semantic_contract::transfer::{declared_field_class, indexed_site};
+use crate::semantic_contract::transfer::{declared_field_class, indexed_site, unit_in_core_module};
 use beskid_analysis::syntax_query::DynNodeRef;
 use beskid_analysis::syntax::{ContractDefinition, ContractNode, ImplBlock, Path, Spanned, TypeDefinition};
-
-/// Whether the unit at `key` belongs to a `Core.*` module (corelib).
-fn unit_in_core_module(db: &dyn Db, key: AstNodeKey) -> bool {
-    let registry = db.syntax_dependency_registry().lock().expect("syntax dependency registry");
-    registry.modules.iter().any(|((generation, path), units)| {
-        *generation == key.generation
-            && path.first().is_some_and(|segment| segment == "Core")
-            && units.contains(&key.unit)
-    })
-}
 
 /// Whether the contract named by `path` at `key` carries the recognized `[CompilerDerived]`.
 fn compiler_derived_contract(db: &dyn Db, key: AstNodeKey, path: &Path) -> Option<String> {

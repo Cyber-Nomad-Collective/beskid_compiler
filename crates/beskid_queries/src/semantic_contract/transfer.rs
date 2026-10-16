@@ -500,6 +500,23 @@ impl<'db> ClassWalker<'db> {
     }
 }
 
+/// Whether the unit at `key` belongs to a `Core.*` module (corelib).
+pub(in crate::semantic_contract) fn unit_in_core_module(db: &dyn Db, key: AstNodeKey) -> bool {
+    let registry = db.syntax_dependency_registry().lock().expect("syntax dependency registry");
+    registry.modules.iter().any(|((generation, path), units)| {
+        *generation == key.generation
+            && path.first().is_some_and(|segment| segment == "Core")
+            && units.contains(&key.unit)
+    })
+}
+
+/// A `[ScopeBorrowed]` type declared in a `Core.*` module: a field of it may store a borrowed
+/// value, because the scope bounds the borrow (v065 ruling "Borrowed storage in a scope-borrowed
+/// view"). Outside the corelib the attribute is E1510 and grants nothing.
+pub(in crate::semantic_contract) fn corelib_scope_borrowed(db: &dyn Db, declaration: AstNodeKey) -> bool {
+    scope_borrowed_declaration(db, declaration) && unit_in_core_module(db, declaration)
+}
+
 /// Whether the type declaration carries the corelib-only `[ScopeBorrowed]`.
 fn scope_borrowed_declaration(db: &dyn Db, declaration: AstNodeKey) -> bool {
     let Some(syntax) = db.syntax_unit(declaration.unit).filter(|syntax| syntax.accepts_key(db, declaration)) else {

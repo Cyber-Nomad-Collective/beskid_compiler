@@ -15,7 +15,8 @@ use beskid_analysis::syntax::AstNodeId;
 use beskid_analysis::syntax_query::{DynNodeRef, NodeKind, SyntaxIndex};
 
 use super::super::transfer::{
-    TransferClass, TransferNeverReason, marker_attributes, transfer_class, transfer_class_of_type,
+    TransferClass, TransferNeverReason, corelib_scope_borrowed, marker_attributes, transfer_class,
+    transfer_class_of_type,
 };
 use super::super::*;
 use super::affine_ownership::{containing_fiber_callable, fiber_owner_seed};
@@ -245,6 +246,23 @@ pub(in crate::semantic_contract) fn identity_spelling(identity: &GenericSourceTy
     }
 }
 
+/// A short spelling of an index expression for a diagnostic (`xs[i]`, `xs[0]`); anything but a
+/// path or a literal is `..`.
+fn expression_spelling(expression: &beskid_analysis::syntax::Expression) -> String {
+    use beskid_analysis::syntax::{Expression, Literal};
+    match expression {
+        Expression::Path(path) => {
+            path.node.path.node.segments.iter().map(|segment| segment.node.name.node.name.as_str()).collect::<Vec<_>>().join(".")
+        }
+        Expression::Literal(literal) => match &literal.node.literal.node {
+            Literal::Integer(text) | Literal::Float(text) => text.clone(),
+            _ => "..".to_owned(),
+        },
+        Expression::Grouped(grouped) => expression_spelling(&grouped.node.expr.node),
+        _ => "..".to_owned(),
+    }
+}
+
 impl<'a> Analysis<'a> {
     fn at(&self, node: AstNodeId) -> AstNodeKey {
         AstNodeKey { node, ..self.key }
@@ -442,7 +460,9 @@ impl<'a> Analysis<'a> {
             node = child;
         }
         match self.index.kind(node) {
-            Some(NodeKind::IndexExpression | NodeKind::MemberExpression) => false,
+            // A member or element read on an owned temporary (`Make().f`, `Make()[0]`) is owned;
+            // any other place read is borrowed.
+            Some(NodeKind::IndexExpression | NodeKind::MemberExpression) => self.projection_of_temporary(node),
             Some(NodeKind::PathExpression) => {
                 let Some(path) =
                     self.index.node_at(self.program, node).and_then(|node| node.of::<beskid_analysis::syntax::PathExpression>())
@@ -457,6 +477,97 @@ impl<'a> Analysis<'a> {
             }
             _ => true,
         }
+    }
+
+    /// Whether the member/index chain at `node` is rooted in an owned temporary: a call result
+    /// or a literal (v065 ruling "Stored projections").
+    fn projection_of_temporary(&self, node: AstNodeId) -> bool {
+        let mut current = node;
+        loop {
+            let Some(syntax) = self.index.node_at(self.program, current) else { return false };
+            let target = match self.index.kind(current) {
+                Some(NodeKind::Expression | NodeKind::GroupedExpression) => {
+                    let Some(child) = self.index.children(current).and_then(|children| children.first()).copied() else {
+                        return false;
+                    };
+                    current = child;
+                    continue;
+                }
+                Some(NodeKind::IndexExpression) => {
+                    syntax.of::<beskid_analysis::syntax::IndexExpression>().map(|index| DynNodeRef::from(index.target.as_ref()))
+                }
+                Some(NodeKind::MemberExpression) => {
+                    syntax.of::<beskid_analysis::syntax::MemberExpression>().map(|member| DynNodeRef::from(member.target.as_ref()))
+                }
+                Some(
+                    NodeKind::CallExpression
+                    | NodeKind::StructLiteralExpression
+                    | NodeKind::ArrayLiteralExpression
+                    | NodeKind::EnumConstructorExpression,
+                ) => return true,
+                _ => return false,
+            };
+            let Some(next) = target.and_then(|target| self.child(current, target)) else { return false };
+            current = next;
+        }
+    }
+
+    /// The outermost place `node[..]`, `node[..].f`, ... that projects the use `node` through
+    /// element and member reads, with its spelling; `None` when the use is not projected.
+    fn projected_place(&self, node: AstNodeId, root: &str) -> Option<(AstNodeId, String)> {
+        let mut spelling = root.to_owned();
+        let mut top = None;
+        let mut child = node;
+        while let Some(parent) = parent_node(self.index, child) {
+            let syntax = self.index.node_at(self.program, parent)?;
+            match self.index.kind(parent) {
+                Some(NodeKind::Expression | NodeKind::GroupedExpression) => {}
+                Some(NodeKind::IndexExpression) => {
+                    let index = syntax.of::<beskid_analysis::syntax::IndexExpression>()?;
+                    if self.child(parent, DynNodeRef::from(index.target.as_ref())) != Some(child) {
+                        break;
+                    }
+                    spelling = format!("{spelling}[{}]", expression_spelling(&index.index.node));
+                    top = Some(parent);
+                }
+                Some(NodeKind::MemberExpression) => {
+                    let member = syntax.of::<beskid_analysis::syntax::MemberExpression>()?;
+                    if self.child(parent, DynNodeRef::from(member.target.as_ref())) != Some(child) {
+                        break;
+                    }
+                    spelling = format!("{spelling}.{}", member.member.node.name);
+                    top = Some(parent);
+                }
+                _ => break,
+            }
+            child = parent;
+        }
+        top.map(|top| (top, spelling))
+    }
+
+    /// Whether `value` initializes a field of a struct literal whose type is a corelib
+    /// `[ScopeBorrowed]` view: the store borrows for the scope (v065 ruling "Borrowed storage in a
+    /// scope-borrowed view").
+    fn scope_borrowed_field_value(&self, value: AstNodeId) -> bool {
+        let mut child = value;
+        let field = loop {
+            let Some(parent) = parent_node(self.index, child) else { return false };
+            match self.index.kind(parent) {
+                Some(NodeKind::Expression | NodeKind::GroupedExpression) => child = parent,
+                Some(NodeKind::StructLiteralField) => break parent,
+                _ => return false,
+            }
+        };
+        let Some(literal) = parent_node(self.index, field) else { return false };
+        let Some(literal_node) = self
+            .index
+            .node_at(self.program, literal)
+            .and_then(|node| node.of::<beskid_analysis::syntax::StructLiteralExpression>())
+        else {
+            return false;
+        };
+        resolve_type_declaration(self.db, self.at(literal), &literal_node.path.node)
+            .is_some_and(|declaration| corelib_scope_borrowed(self.db, declaration))
     }
 
     /// The binding the first segment of `path` names: a lexical local or the method receiver.
@@ -909,6 +1020,26 @@ impl<'a> Analysis<'a> {
             }
             return;
         }
+        let place = segments.join(".");
+        // A corelib `[ScopeBorrowed]` view stores a borrowed value for the scope: no escape. An
+        // owning name or a read through one keeps the ordinary rules.
+        let borrowed = !owning || matches!(crossing, LambdaCrossing::Ordinary | LambdaCrossing::Bounded);
+        if let Some((top, spelling)) = self.projected_place(node, &place) {
+            // `xs[i]`, `xs[i].f`, `x.f[i]`: the place, not the root, is stored or read.
+            let stored = match self.context(top) {
+                UseContext::Construction => !(borrowed && self.scope_borrowed_field_value(top)),
+                UseContext::AssignValue { target_is_local: false } => true,
+                UseContext::Argument(call, position) => self.parameter_movable(call, position),
+                _ => false,
+            };
+            if stored {
+                self.visit_stored_place(top, declaration, spelling, owning, crossing);
+            }
+            return;
+        }
+        if borrowed && !explicit && destination == UseContext::Construction && self.scope_borrowed_field_value(node) {
+            return;
+        }
         let role = if segments.len() > 1 {
             match destination {
                 UseContext::Callee(call) if segments.len() == 2 && self.receiver_owning(call) => Role::OwningReceiver,
@@ -924,11 +1055,11 @@ impl<'a> Analysis<'a> {
                     return;
                 }
                 UseContext::Construction | UseContext::AssignValue { target_is_local: false } => {
-                    self.visit_stored_field_read(node, declaration, segments, owning, crossing);
+                    self.visit_stored_place(node, declaration, place, owning, crossing);
                     return;
                 }
                 UseContext::Argument(call, position) if self.parameter_movable(call, position) => {
-                    self.visit_stored_field_read(node, declaration, segments, owning, crossing);
+                    self.visit_stored_place(node, declaration, place, owning, crossing);
                     return;
                 }
                 _ => Role::Read,
@@ -990,27 +1121,26 @@ impl<'a> Analysis<'a> {
         }
     }
 
-    /// A field read stored as it is (`Node { bytes: x.bytes }`, `this.cache = x.bytes`, or `x.bytes`
-    /// passed to a `move` parameter) would leave the Moved value reachable from both the field
-    /// and its new owner. Through a borrowed root the read is borrowed (E1241); through an owning
-    /// root it needs the destructive read `move x.f` or `exchange` (E1242). A field of any other
-    /// class is a plain read.
-    fn visit_stored_field_read(
+    /// A field or element read stored as it is (`Node { bytes: x.bytes }`, `this.cache = xs[i]`,
+    /// or `x.bytes` passed to a `move` parameter) would leave the Moved value reachable from both
+    /// the place and its new owner. Through a borrowed root the read is borrowed (E1241); through
+    /// an owning root it needs the destructive read `move x.f` or `exchange` (E1242). A place of
+    /// any other class is a plain read.
+    fn visit_stored_place(
         &mut self,
         node: AstNodeId,
         declaration: AstNodeId,
-        segments: &[String],
+        place: String,
         owning: bool,
         crossing: LambdaCrossing,
     ) {
-        let moved_field = generic_source_expression_identity(self.db, self.at(node))
+        let moved_place = generic_source_expression_identity(self.db, self.at(node))
             .ok()
             .and_then(|identity| transfer_class(self.db, self.at(node), &identity).ok())
             == Some(TransferClass::Moved);
-        if !moved_field {
+        if !moved_place {
             return;
         }
-        let place = segments.join(".");
         if !owning || matches!(crossing, LambdaCrossing::Ordinary | LambdaCrossing::Bounded) {
             self.push(AffineFindingKind::BorrowEscapes, node, &place, None, Some(declaration), false);
         } else {

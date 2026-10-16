@@ -290,10 +290,18 @@ impl SemanticIssueKind {
                 "capture a Shared or Copied value, or `move` a Moved one, as the `[Captures]` bound requires"
                     .to_string(),
             ),
+            // An element of an owning array: take it out with `exchange`.
+            Self::ImplicitAliasOfMovedValue { name } if name.contains('[') => {
+                Some(format!("take the element with `exchange({name}, move <value>)`"))
+            }
             Self::MovedCaptureWithoutMove { name } | Self::ImplicitAliasOfMovedValue { name } => {
                 Some(format!("write `move {name}`"))
             }
             Self::CapturesArgumentNotLiteral => Some("pass the lambda literal".to_string()),
+            // An element read through a borrowed name: the name cannot give the element away.
+            Self::BorrowEscapes { name } if name.contains('[') => Some(format!(
+                "store a copy of `{name}`, or reach it through an owning name and take it with `exchange({name}, move <value>)`"
+            )),
             // A field read through a borrowed name: the name cannot give the field away.
             Self::BorrowEscapes { name } if name.contains('.') => Some(format!(
                 "store a copy of `{name}`, or reach it through an owning name and write `move {name}`"

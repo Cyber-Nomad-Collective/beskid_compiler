@@ -730,6 +730,14 @@ mod query_gate_kind_tests {
             Some("store a copy of `holder.bytes`, or reach it through an owning name and write `move holder.bytes`")
         );
         assert_eq!(
+            SemanticIssueKind::BorrowEscapes { name: "chunks[i]".into() }.help().as_deref(),
+            Some("store a copy of `chunks[i]`, or reach it through an owning name and take it with `exchange(chunks[i], move <value>)`")
+        );
+        assert_eq!(
+            SemanticIssueKind::ImplicitAliasOfMovedValue { name: "chunks[0]".into() }.help().as_deref(),
+            Some("take the element with `exchange(chunks[0], move <value>)`")
+        );
+        assert_eq!(
             SemanticIssueKind::DestructiveReadWithoutEmpty { field: "f".into(), type_name: "i64".into() }.help().as_deref(),
             Some("use `exchange(<place>, move <value>)`")
         );
