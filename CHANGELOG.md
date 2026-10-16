@@ -355,6 +355,11 @@ feature area.
   parameter (`(Core.Parallel.Scopes.Scope s) => ...`) is classified by its
   written type. Before, code generation stopped with "lambda parameter slot or
   type is unavailable" or an E2101 internal error.
+- A lambda body that is a constructor without type arguments
+  (`s.SpawnTry<i64>(() => Result::Error("no input"))`) takes its enum type
+  from the lambda's expected function result, in an expression body and in a
+  `return` of a block body. Before, code generation stopped with "semantic
+  query `value_abi_type` is unavailable".
 - `beskid check` reports transfer and capture-bound findings on attributes,
   fields, conformances and contract members (E1248, E1510, E1244, E1246,
   E1247, E1607, E1003) at the span of that syntax. Before, a `[Captures]`

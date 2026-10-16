@@ -16,6 +16,7 @@ mod source_identity;
 
 pub(in crate::semantic_contract) use candidate_path::{
     aggregate_shape_from_applied_type, contextual_enum_constructor_type_path, enum_field_layout,
+    expected_enum_constructor_identity,
     enum_layout_from_definition, enum_layout_substitutions, instantiated_enum_layout_for_path,
 };
 pub use constructor::enum_constructor_specialization;

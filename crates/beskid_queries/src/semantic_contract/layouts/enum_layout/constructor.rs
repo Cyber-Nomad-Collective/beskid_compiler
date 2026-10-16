@@ -13,10 +13,17 @@ pub(in crate::semantic_contract) fn enum_constructor_tracked(
 ) -> SemanticQueryResult<EnumConstructorFact> {
     with_node(db, syntax, key, |program, index, node| {
         let constructor = node.of::<beskid_analysis::syntax::EnumConstructorExpression>()?;
-        let type_path = contextual_enum_constructor_type_path(db, program, index, key, constructor)
-            .unwrap_or_else(|| constructor.path.node.type_path.node.clone());
-        let declaration =
-            resolve_type_declaration(db, key, &type_path).ok_or_else(|| SemanticError::unavailable("enum_constructor"));
+        let contextual = contextual_enum_constructor_type_path(db, program, index, key, constructor);
+        let expected = contextual
+            .is_none()
+            .then(|| expected_enum_constructor_identity(db, key, constructor))
+            .flatten()
+            .and_then(|identity| enum_layout_for_source_identity(db, key, &identity).ok())
+            .map(|(declaration, _)| declaration);
+        let type_path = contextual.unwrap_or_else(|| constructor.path.node.type_path.node.clone());
+        let declaration = expected
+            .or_else(|| resolve_type_declaration(db, key, &type_path))
+            .ok_or_else(|| SemanticError::unavailable("enum_constructor"));
         let declaration = match declaration {
             Ok(declaration) => declaration,
             Err(error) => return Some(Err(error)),

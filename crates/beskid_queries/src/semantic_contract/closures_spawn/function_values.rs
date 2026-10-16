@@ -499,10 +499,23 @@ pub(in crate::semantic_contract) fn lambda_source_identity(
             Ok(identity @ (GenericSourceTypeIdentity::Nominal { .. }
             | GenericSourceTypeIdentity::Array(_)
             | GenericSourceTypeIdentity::Function { .. })) => identity,
-            Ok(GenericSourceTypeIdentity::Abi(_)) | Err(_) => GenericSourceTypeIdentity::Abi(
-                value_abi_type(db, body)?
-                    .ok_or_else(|| source_expression_unavailable(db, body, "lambda body has no value type"))?,
-            ),
+            Ok(GenericSourceTypeIdentity::Abi(_)) | Err(_) => match value_abi_type(db, body) {
+                Ok(Some(abi)) if abi != SemanticTypeId::POINTER => GenericSourceTypeIdentity::Abi(abi),
+                // A body that does not synthesize a source type (a genericless constructor,
+                // `() => Result::Error("no input")`) is checked against the expected result.
+                value => match expected.clone().map(Ok).unwrap_or_else(|| {
+                    lambda_expected_function(db, key, lambda.parameters.len()).map(|expected| {
+                        expected.ok_or_else(|| source_expression_unavailable(db, body, "lambda body has no value type"))
+                    })?
+                }) {
+                    Ok((_, result)) => result,
+                    Err(error) => match value {
+                        Ok(Some(abi)) => GenericSourceTypeIdentity::Abi(abi),
+                        Ok(None) => return Err(error),
+                        Err(value_error) => return Err(value_error),
+                    },
+                },
+            },
         }
     };
     Ok(GenericSourceTypeIdentity::Function { parameters: parameters.into(), result: Box::new(result) })

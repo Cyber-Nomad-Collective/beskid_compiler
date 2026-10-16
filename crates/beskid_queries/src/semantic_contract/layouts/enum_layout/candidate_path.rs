@@ -125,6 +125,43 @@ pub(in crate::semantic_contract) fn contextual_enum_constructor_type_path(
     contextual_enum_candidate_type_path(db, key, constructor_path, expected_path)
 }
 
+/// The applied generic enum a genericless constructor's checking context expects, when the
+/// syntax walk of [`contextual_enum_constructor_type_path`] proves none: the expected type's
+/// identity (`() => Result::Error("no input")` as the body of a `() => Result<T, string>`
+/// argument with `T` applied). Only a lambda body or a lambda `return` takes this route, and the
+/// identity must name an applied enum of the written name.
+pub(in crate::semantic_contract) fn expected_enum_constructor_identity(
+    db: &dyn Db,
+    key: AstNodeKey,
+    constructor: &beskid_analysis::syntax::EnumConstructorExpression,
+) -> Option<GenericSourceTypeIdentity> {
+    let terminal = constructor.path.node.type_path.node.segments.last()?;
+    if !terminal.node.type_args.is_empty() {
+        return None;
+    }
+    let expected = expected_type(db, key).ok()??;
+    // Only a lambda's expected function result supplies a context the syntax walk declines;
+    // every other context keeps the walk's own (spelling-checked) decision.
+    let lambda_result = match expected.context {
+        ExpectedTypeContext::LambdaBody { .. } => true,
+        ExpectedTypeContext::Return { item } => {
+            db.syntax_unit(item.unit).filter(|syntax| syntax.accepts_key(db, item)).is_some_and(|syntax| {
+                syntax.syntax_index(db).kind(item.node) == Some(beskid_analysis::syntax_query::NodeKind::LambdaExpression)
+            })
+        }
+        _ => false,
+    };
+    if !lambda_result {
+        return None;
+    }
+    let identity = expected.identity();
+    let GenericSourceTypeIdentity::Nominal { qualified_name, arguments } = identity else {
+        return None;
+    };
+    (!arguments.is_empty() && qualified_name.rsplit("::").next() == Some(terminal.node.name.node.name.as_str()))
+        .then(|| identity.clone())
+}
+
 /// The applied type of the payload position `payload` of the enum constructor `outer`
 /// (`Option::Some(count)` inside `Result::Ok(...)` returned as `Result<Option<i64>, IoError>`).
 ///

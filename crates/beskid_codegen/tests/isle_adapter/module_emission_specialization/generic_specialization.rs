@@ -470,3 +470,22 @@ fn capturing_lambda_in_a_generic_body_has_an_instance_closure_layout() {
     let entries = names.iter().filter(|name| name.starts_with("Keep#generic_") && name.contains("#lambda_")).count();
     assert_eq!(entries, 2, "one closure entry per instance: {names:?}");
 }
+
+#[test]
+fn genericless_constructor_lambda_body_takes_the_expected_result() {
+    // ParallelSuite `s.SpawnTry<i64>(() => Result::Error("no input"))`: the lambda body is a
+    // constructor whose type only the expected function result (`Outcome<i64, string>`) proves.
+    let (input, isa, root) = item_fixture_with_root(
+        "enum Outcome<T, E> { Ok(T value), Error(E error) } type Runner { i64 id, i64 Try<T>(() => Outcome<T, string> body) { return 1_i64; } } i64 Main(Runner runner) { return runner.Try<i64>(() => Outcome::Error(\"no input\")); }",
+    );
+    let items = find_function_definitions(input.database(), root);
+    let main = items
+        .iter()
+        .copied()
+        .find(|item| item_name(input.database(), *item).ok().flatten().as_deref() == Some("Main"))
+        .expect("Main");
+    let artifact = lower_syntax_program(&input, isa.as_ref(), &[SyntaxModuleItem { key: main, symbol: "Main".into() }])
+        .expect("a constructor lambda body is typed by the expected function result");
+    let names = artifact.functions.iter().map(|function| function.name.as_str()).collect::<Vec<_>>();
+    assert!(names.iter().any(|name| name.starts_with("__beskid_lambda_entry_syntax_")), "{names:?}");
+}

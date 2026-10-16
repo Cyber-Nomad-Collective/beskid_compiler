@@ -158,8 +158,13 @@ pub(in crate::semantic_contract) fn enum_layout_tracked(
         }
         node.of::<beskid_analysis::syntax::EnumConstructorExpression>()
             .map(|constructor| {
-                let type_path = contextual_enum_constructor_type_path(db, program, index, key, constructor)
-                    .unwrap_or_else(|| constructor.path.node.type_path.node.clone());
+                let contextual = contextual_enum_constructor_type_path(db, program, index, key, constructor);
+                if contextual.is_none()
+                    && let Some(identity) = expected_enum_constructor_identity(db, key, constructor)
+                {
+                    return enum_layout_for_source_identity(db, key, &identity).map(|(_, layout)| layout);
+                }
+                let type_path = contextual.unwrap_or_else(|| constructor.path.node.type_path.node.clone());
                 instantiated_enum_layout_for_path(db, key, &type_path)
             })
             .or_else(|| {
