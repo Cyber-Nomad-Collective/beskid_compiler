@@ -180,7 +180,7 @@ Node Chain(i64 length) {
 i64 ChainSum(Node head) {
     mut i64 sum = head.value;
     mut Node[] rest = head.next;
-    while rest.Length() > 0_i64 {
+    while Array.Len<Node>(rest) > 0_i64 {
         Node node = rest[0_i64];
         sum = sum + node.value;
         rest = node.next;
