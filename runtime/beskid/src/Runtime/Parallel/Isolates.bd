@@ -676,14 +676,6 @@ pub pointer TaskOwned(i64 handle) {
     return result;
 }
 
-[Export(Abi:"C", Symbol:"isolate_wait")]
-pub unit IsolateWait(i64 handle) {
-    pointer task = TaskOwned(handle);
-    if task == NativePointer(0) { return; }
-    TaskAwait(task);
-    return;
-}
-
 [Export(Abi:"C", Symbol:"isolate_join")]
 pub i64 IsolateJoin(i64 handle) {
     pointer task = TaskOwned(handle);

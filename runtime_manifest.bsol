@@ -995,17 +995,6 @@ corelib_service "__isolate_spawn_local" {
   ]
 }
 
-corelib_service "__isolate_wait" {
-  adapter = "isolate_wait"
-  params = [{ name = handle, type = i64 }]
-  returns = void
-  target_bindings = [
-    { target = "x86_64-unknown-linux-gnu", implementation = "isolate_wait", os_imports = [] },
-    { target = "aarch64-apple-darwin", implementation = "isolate_wait", os_imports = [] },
-    { target = "x86_64-pc-windows-msvc", implementation = "isolate_wait", os_imports = [] }
-  ]
-}
-
 corelib_service "__isolate_join" {
   adapter = "isolate_join"
   params = [{ name = handle, type = i64 }]

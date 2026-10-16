@@ -39,6 +39,8 @@ pub bool SchedStep() {
 
     if !SchedulerAcquireMutatorToken() { return false; }
     FiberSetState(next, FIBER_STATE_RUNNING);
+    // A watched Core.Parallel task fiber can observe cancellation from its first run on.
+    IsolateObserveFiberStarting(next);
     SchedulerSetCurrentFiber(next);
     RestoreFiberLocalState(next);
     ContextSwitch(SchedulerContext(), NativePointer(raw_word_load(pointer_add(FiberRecord(next), 104))));

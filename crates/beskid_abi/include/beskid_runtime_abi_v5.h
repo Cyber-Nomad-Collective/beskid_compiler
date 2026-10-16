@@ -802,7 +802,6 @@ int64_t isolate_spawn_local(void * entry, void * argument, int64_t scope);
 int64_t isolate_task_index(int64_t handle);
 int64_t isolate_task_isolate(int64_t handle);
 int64_t isolate_task_status(int64_t handle);
-void isolate_wait(int64_t handle);
 void * mutex_create(void);
 int32_t mutex_lock(void * id);
 int32_t mutex_try_lock(void * id);

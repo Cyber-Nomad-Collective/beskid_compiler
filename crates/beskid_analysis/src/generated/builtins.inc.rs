@@ -412,12 +412,6 @@ define_builtins! {
         returns: I64,
         injected: true,
     },
-    &["__isolate_wait"] => {
-        symbol: "isolate_wait",
-        params: [I64],
-        returns: Unit,
-        injected: true,
-    },
     &["__isolate_join"] => {
         symbol: "isolate_join",
         params: [I64],

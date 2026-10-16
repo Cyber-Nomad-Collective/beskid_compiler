@@ -600,11 +600,6 @@ pub(super) const CORELIB_SERVICES: &[CorelibService] = &[
         source_path: CANONICAL_CORELIB_PARALLEL_SCOPES_SOURCE_PATH,
     },
     CorelibService {
-        name: "__isolate_wait",
-        symbol: "isolate_wait",
-        source_path: CANONICAL_CORELIB_PARALLEL_SCOPES_SOURCE_PATH,
-    },
-    CorelibService {
         name: "__isolate_join",
         symbol: "isolate_join",
         source_path: CANONICAL_CORELIB_PARALLEL_SCOPES_SOURCE_PATH,

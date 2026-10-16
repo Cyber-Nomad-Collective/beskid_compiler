@@ -3716,34 +3716,6 @@
       ]
     },
     {
-      "name": "__isolate_wait",
-      "adapter": "isolate_wait",
-      "params": [
-        {
-          "name": "handle",
-          "type": "i64"
-        }
-      ],
-      "result": "void",
-      "targetBindings": [
-        {
-          "target": "aarch64-apple-darwin",
-          "implementation": "isolate_wait",
-          "osImports": []
-        },
-        {
-          "target": "x86_64-pc-windows-msvc",
-          "implementation": "isolate_wait",
-          "osImports": []
-        },
-        {
-          "target": "x86_64-unknown-linux-gnu",
-          "implementation": "isolate_wait",
-          "osImports": []
-        }
-      ]
-    },
-    {
       "name": "__mutex_create",
       "adapter": "mutex_create",
       "params": [],

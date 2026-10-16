@@ -283,7 +283,6 @@ pub(super) fn validate(manifest: &RuntimeManifestV5) -> Result<(), String> {
         "__isolate_scope_open",
         "__isolate_spawn",
         "__isolate_spawn_local",
-        "__isolate_wait",
         "__isolate_join",
         "__isolate_join_value",
         "__isolate_join_message",
