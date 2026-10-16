@@ -194,7 +194,7 @@ pub i64 RunMovedHandOver() {
         Port<Node> chains = s.Port<Node>();
         Port<i64> done = s.Port<i64>();
         Task<i64> producer = s.Spawn(() => {
-            chains.Send(move Chain(1000_i64));
+            chains.Send(Chain(1000_i64));
             // Churn on the owner while the receiver holds the graph.
             mut i64 round = 0_i64;
             while round < 50_i64 {
