@@ -333,6 +333,11 @@ feature area.
 
 ### Fixed
 
+- A method called on a generic call result whose declared return is the
+  callee's own type parameter (`Array.Get<Task<R>>(tasks, k).Join()` in
+  `ParallelSeq.JoinInOrder<R>`) resolves on the nominal its explicit type
+  argument names. Before, the call was lowered as dynamic, the `match` over it
+  had no enum layout, and code generation stopped with E2102.
 - `this.Method<T>(..)` calls a sibling method with its own type parameters
   (`this.Spawn<T>(() => Unwrap<T>(body()))` in `Scope.SpawnTry<T>`); before,
   explicit type arguments on the implicit-receiver spelling found no

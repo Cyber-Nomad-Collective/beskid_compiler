@@ -574,6 +574,8 @@ pub(in crate::semantic_contract) fn method_declaration_for_member_receiver(
 /// of that declaration is selected without instantiating the result, so a call result whose
 /// arguments name an enclosing generic (`List.New<List<T>>().Push(leaf)` in a generic body) still
 /// resolves its member; the call's specialization binds the arguments later.
+/// A result typed by one of the callee's own type parameters takes the nominal named by the
+/// call's explicit type argument for it.
 fn call_result_nominal_declaration(db: &dyn Db, receiver: AstNodeKey) -> Option<AstNodeKey> {
     let syntax = db.syntax_unit(receiver.unit).filter(|syntax| syntax.accepts_key(db, receiver))?;
     syntax
@@ -592,6 +594,17 @@ fn call_result_nominal_declaration(db: &dyn Db, receiver: AstNodeKey) -> Option<
                 .of::<beskid_analysis::syntax::ContractMethodSignature>()
                 .and_then(|signature| signature.return_type.as_ref())
         })?;
+    // A result typed by the callee's own type parameter (`T Get<T>(T[] values, i64 index)`) names
+    // the nominal its explicit type argument spells at the call (`Array.Get<Task<R>>(..)`).
+    if let Some(name) = generic_parameter_reference_name(&result.node) {
+        let (names, _) = generic_callable_parameters(db, declaration)?;
+        let own = &names[generic_callable_owner_count(db, declaration).min(names.len())..];
+        let position = own.iter().position(|candidate| *candidate == name)?;
+        let arguments = call_explicit_member_type_arguments(db, receiver)?;
+        (arguments.len() == own.len()).then_some(())?;
+        let beskid_analysis::syntax::Type::Complex(path) = &arguments.get(position)?.node else { return None };
+        return resolve_type_declaration(db, receiver, &path.node);
+    }
     let beskid_analysis::syntax::Type::Complex(path) = &result.node else { return None };
     resolve_type_declaration(db, declaration, &path.node)
 }

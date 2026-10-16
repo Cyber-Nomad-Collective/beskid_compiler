@@ -101,3 +101,41 @@ fn isolate_join_value_lowers_into_a_typed_local_of_each_task_specialization() {
     assert_eq!(names.iter().filter(|name| name.starts_with("Task_Join#generic_")).count(), 3, "{names:?}");
     assert!(artifact.extern_imports.iter().any(|import| import.symbol == "isolate_join_value"));
 }
+
+#[test]
+fn match_on_a_method_of_an_array_element_call_in_a_generic_body_is_specialized() {
+    // `ParallelSeq.JoinInOrder<R>` shape: `match Array.Get<Task<R>>(tasks, k).Join()` reads the
+    // scrutinee through a method of a generic call result inside a generic body.
+    let (input, isa, entry) = canonical_corelib_project_fixture(
+        &[(
+            "Main.bd",
+            "use Core.Collections.Array; use Core.Results; \
+             pub type Cell<T> { T value, pub Result<T, i64> Take() { return Result::Ok(value); } } \
+             i64 Count<R>(Cell<R>[] cells) { mut i64 n = 0_i64; mut i64 k = 0_i64; while k < Array.Len<Cell<R>>(cells) { match Array.Get<Cell<R>>(cells, k).Take() { Result::Ok(part) => { n = n + 1_i64; }, Result::Error(_) => { }, }; k = k + 1_i64; } return n; } \
+             i64 Main(Cell<i64>[] numbers, Cell<string>[] texts) { return Count<i64>(numbers) + Count<string>(texts); }",
+        )],
+        SyntaxGenerationId(143),
+    );
+    let array = {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corelib/packages/foundation/src");
+        let path = std::fs::canonicalize(root).expect("Foundation source root").join("Core/Collections/Array.bd");
+        AstNodeKey { unit: SourceUnitId::new(input.database(), path), generation: entry.generation, node: AstNodeId(0) }
+    };
+    let take = find_nodes_of_kind(input.database(), entry, beskid_queries::IndexedNodeKind::MethodDefinition)
+        .into_iter()
+        .next()
+        .expect("Cell.Take");
+    let mut items = vec![
+        SyntaxModuleItem { key: take, symbol: "Cell_Take".into() },
+        SyntaxModuleItem { key: named_function(&input, array, "Get"), symbol: "Array_Get".into() },
+        SyntaxModuleItem { key: named_function(&input, array, "Len"), symbol: "Array_Len".into() },
+    ];
+    items.extend(find_function_definitions(input.database(), entry).into_iter().map(|key| SyntaxModuleItem {
+        key,
+        symbol: item_name(input.database(), key).ok().flatten().expect("named entry item").to_string(),
+    }));
+    let artifact = lower_syntax_program(&input, isa.as_ref(), &items)
+        .expect("a match over a method of a generic call result lowers in each specialization");
+    let names = artifact.functions.iter().map(|function| function.name.as_str()).collect::<Vec<_>>();
+    assert_eq!(names.iter().filter(|name| name.starts_with("Count#generic_")).count(), 2, "{names:?}");
+}
