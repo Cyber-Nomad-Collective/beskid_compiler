@@ -627,7 +627,7 @@ impl GlueProcess {
             *unsafe { lease.images().provider_symbol::<DescriptorGetter>(c"beskid_dynamic_v1_erased_cell_descriptor") }
                 .map_err(|error| invalid(error.to_string()))?;
         let cell = unsafe { cell_getter() };
-        lease.images().verify_provider_address(cell).map_err(|error| invalid(error.to_string()))?;
+        lease.images().verify_provider_address(cell as usize).map_err(|error| invalid(error.to_string()))?;
         let construct =
             *unsafe { lease.images().provider_symbol::<DynamicConstruct>(c"beskid_dynamic_v1_erased_construct") }
                 .map_err(|error| invalid(error.to_string()))?;
@@ -645,7 +645,7 @@ impl GlueProcess {
             let getter = *unsafe { lease.images().image_symbol::<DescriptorGetter>(image, &symbol) }
                 .map_err(|error| invalid(error.to_string()))?;
             let payload = unsafe { getter() };
-            lease.images().verify_image_address(image, payload).map_err(|error| invalid(error.to_string()))?;
+            lease.images().verify_image_address(image, payload as usize).map_err(|error| invalid(error.to_string()))?;
             for (address, role) in
                 [(payload as usize, 1), (cell as usize, 2), (construct as usize, 3), (read as usize, 4),
                  (checked_construct as usize, 13), (checked_read as usize, 14)]
@@ -670,7 +670,7 @@ impl GlueProcess {
             let getter=*unsafe {lease.images().image_symbol::<DescriptorGetter>(image,&symbol)}
                 .map_err(|error|invalid(error.to_string()))?;
             let descriptor=unsafe {getter()};
-            lease.images().verify_image_address(image,descriptor).map_err(|error|invalid(error.to_string()))?;
+            lease.images().verify_image_address(image,descriptor as usize).map_err(|error|invalid(error.to_string()))?;
             rows.push(ImageClosureRow{source,signature:brand,address:descriptor as usize as u64,role:1});
         }
         if rows.len()>4096 {return Err(invalid("combined source image closure exceeds4096 rows"));}
