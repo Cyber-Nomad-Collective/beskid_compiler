@@ -81,8 +81,8 @@ pub DynamicRegistryRecordV1 DynamicRegistryConstructV1(u64 issuer, u64 session, 
 
 [Export(Abi:"C", Symbol:"beskid_dynamic_v1_shape_construct")]
 pub DynamicShapeRecordV1 DynamicShapeConstructV1(DynamicRegistryRecordV1 owner,
-    u8[] signature, u8[] digest, pointer payloadDescriptor, pointer cellDescriptor,
-    pointer constructor, pointer reader, u8[] sourceIdentity, u64 generation, u64 library, u64 tag) {
+    move u8[] signature, move u8[] digest, pointer payloadDescriptor, pointer cellDescriptor,
+    pointer constructor, pointer reader, move u8[] sourceIdentity, u64 generation, u64 library, u64 tag) {
     return DynamicShapeRecordV1 { registryOwner: owner, signature: signature,
         stableDigest: digest, payloadDescriptor: payloadDescriptor,
         cellDescriptor: cellDescriptor, constructCell: constructor, readPayload: reader,
@@ -312,7 +312,7 @@ pub DynamicBoxV1<unit> DynamicUnitReadV1(DynamicCellV1<unit> cell) { return Dyna
 
 [Export(Abi:"C", Symbol:"beskid_dynamic_v1_mapping_construct")]
 pub DynamicMappingRecordV1 DynamicMappingConstructV1(DynamicShapeRecordV1 source,
-    DynamicShapeRecordV1 destination, u8[] signature, pointer transform, u64 generation, u64 library, u64 token) {
+    DynamicShapeRecordV1 destination, move u8[] signature, pointer transform, u64 generation, u64 library, u64 token) {
     return DynamicMappingRecordV1 { source: source, destination: destination,
         transformationSignature: signature, transformPayload: transform,
         generation: generation, library: library, token: token };
