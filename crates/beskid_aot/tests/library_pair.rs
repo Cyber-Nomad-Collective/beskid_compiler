@@ -501,6 +501,9 @@ int main(void) {
     let status = Command::new("clang")
         .arg(&source)
         .arg(&pair.shared_library)
+        // The dylib's loader identity is `@rpath/<basename>` (asserted above), so the smoke
+        // executable names the directory that holds it.
+        .arg(format!("-Wl,-rpath,{}", pair.shared_library.parent().expect("dylib directory").display()))
         .arg("-o")
         .arg(&executable)
         .status()

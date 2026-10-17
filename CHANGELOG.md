@@ -214,6 +214,18 @@ feature area.
 
 ### Fixed
 
+- The native ABI-v5 runtime kit builds on macOS again (Woodpecker #373 failed
+  with `E4002 runtime provenance mismatch ... defined symbol table is
+  missing=["beskid_rt_v5_gc_barrier_active"]`). The `export_data` word was a
+  bare tentative definition in `platform_tls.c`; Apple clang emits it as a
+  Mach-O common symbol (`N_UNDF | N_EXT`, size in `n_value`), which the object
+  reader reports as undefined. The word now has an explicit `= 0` initializer
+  on all three platforms (a real zero-fill definition), and
+  `extract_symbol_inventory` classifies a common symbol as a definition on
+  Mach-O, as on ELF (`SHN_COMMON`) and COFF; a Mach-O import (zero `n_value`)
+  stays an import. A unit test parses in-memory ELF, COFF and Mach-O objects
+  with common, zero-initialized and imported data symbols on every host. The
+  macOS TLS smoke in `library_pair` now passes an rpath for the `@rpath` dylib.
 - An application that calls another callable named `Main` (for example
   `Core.Parallel.Isolate.Main()`) no longer fails with `E4002` (signature
   incompatible with `beskid_program_main`). The executable program entry is

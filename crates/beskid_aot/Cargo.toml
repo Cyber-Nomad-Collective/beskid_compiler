@@ -31,6 +31,7 @@ cargo-cross = { workspace = true }
 
 [dev-dependencies]
 beskid_codegen = { path = "../beskid_codegen" }
+object = { version = "0.37.3", features = ["write"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
