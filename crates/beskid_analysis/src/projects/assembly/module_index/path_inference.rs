@@ -102,10 +102,15 @@ pub(super) fn module_path_from_generated_suffix(path: &Path) -> Option<Vec<Strin
     Some(segments)
 }
 
+/// Module path of a unit outside every effective root, taken below its package's `src` directory.
+///
+/// The package source directory is the innermost `src` component: an absolute checkout location
+/// such as `/woodpecker/src/github.com/...` or `~/src/app/...` may itself contain `src` components
+/// above the package, and they never become module path segments.
 pub(super) fn module_path_from_src_suffix(path: &std::path::Path) -> Option<Vec<String>> {
     let path_str = path.to_string_lossy().replace('\\', "/");
     let marker = "/src/";
-    let idx = path_str.find(marker)?;
+    let idx = path_str.rfind(marker)?;
     let rel = std::path::Path::new(&path_str[idx + marker.len()..]).with_extension("");
     let segments: Vec<String> = rel
         .components()

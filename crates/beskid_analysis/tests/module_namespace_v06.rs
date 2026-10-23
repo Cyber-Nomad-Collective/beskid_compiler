@@ -56,3 +56,36 @@ fn core_graph_keeps_host_unprefixed_and_corelib_package_native() {
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
+
+/// A checkout under a directory named `src` (CI clones to `/woodpecker/src/github.com/...`, users
+/// keep projects in `~/src/...`) never leaks the checkout location into module paths, for units
+/// under the project root and for units outside every effective root.
+#[test]
+fn project_below_a_src_directory_keeps_package_native_module_paths() {
+    let directory = tempfile::tempdir().unwrap();
+    let checkout = directory.path().join("src/github.com/Org/beskid");
+    let host = checkout.join("app");
+    std::fs::create_dir_all(host.join("src/Nested")).unwrap();
+    std::fs::write(host.join("src/Main.bd"), "i32 Main() { return 0; }").unwrap();
+    std::fs::write(host.join("src/Nested/Helpers.bd"), "i32 Value() { return 1; }").unwrap();
+    let outside = checkout.join("corelib/packages/foundation/src/Core/Results/Result.bd");
+    std::fs::create_dir_all(outside.parent().unwrap()).unwrap();
+    std::fs::write(&outside, "i32 Value() { return 1; }").unwrap();
+    let manifest = host.join("App.bproj");
+    std::fs::write(&manifest, r#"App { name = "App" version = "0.6.0" root = "src" }
+ target "main" { kind = App entry = "Main.bd" }
+"#).unwrap();
+    let plan = build_compile_plan(&manifest, None).expect("project under a src directory");
+    let roots = effective_roots_from_plan_and_workspace(&plan, None);
+    let cases = [
+        (host.join("src/Nested/Helpers.bd"), vec!["Nested", "Helpers"]),
+        (outside, vec!["Core", "Results", "Result"]),
+    ];
+    let mut failures = Vec::new();
+    for (path, expected) in cases {
+        let actual = infer_logical_module_path(&source_unit(path.clone()), &roots);
+        let expected = Some(expected.into_iter().map(str::to_owned).collect::<Vec<_>>());
+        if actual != expected { failures.push(format!("{}: expected {expected:?}, got {actual:?}", path.display())); }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
