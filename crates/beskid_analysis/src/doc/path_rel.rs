@@ -122,12 +122,9 @@ fn to_artifact_path(package: &ApiDocPackageRoots, path: &str) -> Result<String, 
         .match_roots()
         .find_map(|(root, prefix)| strip_match_root(trimmed, root).map(|rel| join_artifact_prefix(prefix, &rel)))
         .ok_or_else(|| {
-            format!(
-                "could not relativize {:?} against package {} (expected under {})",
-                trimmed,
-                package.package,
-                package.match_root.display()
-            )
+            let roots =
+                package.match_roots().map(|(root, _)| root.display().to_string()).collect::<Vec<_>>().join(" or ");
+            format!("could not relativize {:?} against package {} (expected under {roots})", trimmed, package.package)
         })
 }
 
@@ -300,6 +297,96 @@ mod tests {
 
         assert_eq!(root.items[0].location.file, ".generated/Core/Text/Regex/Generated.g.bd");
         assert_eq!(root.items[1].location.file, ".generated/Own/Gen.g.bd");
+    }
+
+    /// Regression (0.6.0 Corelib publication): a package documented directly compiles its Mod-generated
+    /// units from the materialized `obj/beskid/root/.generated` sibling of `obj/beskid/root/src`. Those
+    /// units map to `.generated/<rel>` in the artifact; regular units keep `src/<rel>`; anything else
+    /// under `obj/beskid/root` still fails closed.
+    #[test]
+    fn relativizes_materialized_generated_units_of_the_documented_package() {
+        let package_root = "/w/corelib/packages/foundation";
+        let host_match = format!("{package_root}/obj/beskid/root/src");
+        let host = package_roots(
+            "corelib_foundation".into(),
+            Path::new(&host_match),
+            Path::new(package_root),
+            Path::new(&format!("{package_root}/src")),
+        );
+        let link = ApiDocLinkContext { publishing_package: "corelib_foundation".into(), packages: vec![host] };
+        let generated = format!("{package_root}/obj/beskid/root/.generated/Core/Text/Regex/Generated.g.bd");
+        let regular = format!("{host_match}/Core/Text/Regex.bd");
+
+        let mut items = vec![item_at(generated, None), item_at(regular, None)];
+        crate::doc::assign_declaring_packages(&mut items, &link);
+        assert_eq!(items[0].declaring_package, None, "own generated unit belongs to the publishing package");
+
+        let mut root = ApiDocRoot {
+            schema_version: 4,
+            navigation_model: Some("graph-v1".into()),
+            generator: "test".into(),
+            source: format!("{host_match}/Core/Text/Regex.bd"),
+            items,
+        };
+        relativize_api_doc_paths(&mut root, Some(&link)).expect("relativize own generated units");
+        assert_eq!(root.source, "src/Core/Text/Regex.bd");
+        assert_eq!(root.items[0].location.file, ".generated/Core/Text/Regex/Generated.g.bd");
+        assert_eq!(root.items[1].location.file, "src/Core/Text/Regex.bd");
+
+        let mut outside = ApiDocRoot {
+            schema_version: 4,
+            navigation_model: Some("graph-v1".into()),
+            generator: "test".into(),
+            source: format!("{host_match}/Main.bd"),
+            items: vec![item_at(format!("{package_root}/obj/beskid/root/other/X.bd"), None)],
+        };
+        let err = relativize_api_doc_paths(&mut outside, Some(&link)).expect_err("outside both roots fails closed");
+        assert!(err.contains("could not relativize") && err.contains("/obj/beskid/root/.generated"), "{err}");
+    }
+
+    /// Regression (0.6.0 Corelib publication of corelib_runtime): a dependency is materialized under
+    /// `obj/beskid/deps/src/<pkg>-<hash>/`. Its regular and generated units keep their
+    /// `declaringPackage` and map to that package's own artifact layout; a path under the
+    /// materialized dependency tree but outside both of its roots fails closed.
+    #[test]
+    fn relativizes_materialized_dependency_units_to_the_declaring_package_layout() {
+        let package_root = "/tmp/publish/corelib/packages/runtime";
+        let host_match = format!("{package_root}/obj/beskid/root/src");
+        let dep_base = format!("{package_root}/obj/beskid/deps/src/corelib_foundation-9f3c");
+        let dep_match = format!("{dep_base}/src");
+        let link = ctx(&host_match, "src", Some((dep_match.as_str(), "src", "corelib_foundation")));
+
+        let mut items = vec![
+            item_at(format!("{dep_base}/src/Core/Option.bd"), None),
+            item_at(format!("{dep_base}/.generated/Core/Text/Regex/Generated.g.bd"), None),
+            item_at(format!("{host_match}/Runtime/Gc.bd"), None),
+        ];
+        crate::doc::assign_declaring_packages(&mut items, &link);
+        assert_eq!(items[0].declaring_package.as_deref(), Some("corelib_foundation"));
+        assert_eq!(items[1].declaring_package.as_deref(), Some("corelib_foundation"));
+        assert_eq!(items[2].declaring_package, None);
+
+        let mut root = ApiDocRoot {
+            schema_version: 4,
+            navigation_model: Some("graph-v1".into()),
+            generator: "test".into(),
+            source: format!("{host_match}/Runtime/Gc.bd"),
+            items,
+        };
+        relativize_api_doc_paths(&mut root, Some(&link)).expect("relativize materialized dependency units");
+        assert_eq!(root.items[0].location.file, "src/Core/Option.bd");
+        assert_eq!(root.items[1].location.file, ".generated/Core/Text/Regex/Generated.g.bd");
+        assert_eq!(root.items[2].location.file, "src/Runtime/Gc.bd");
+
+        let mut stray = ApiDocRoot {
+            schema_version: 4,
+            navigation_model: Some("graph-v1".into()),
+            generator: "test".into(),
+            source: format!("{host_match}/Runtime/Gc.bd"),
+            items: vec![item_at(format!("{dep_base}/other/X.bd"), Some("corelib_foundation".into()))],
+        };
+        let err = relativize_api_doc_paths(&mut stray, Some(&link)).expect_err("outside dependency roots fails closed");
+        assert!(err.contains("corelib_foundation") && err.contains("/obj/beskid/deps/src"), "{err}");
     }
 
     #[test]

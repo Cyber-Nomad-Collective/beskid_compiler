@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- doc: `@ref` links to items in a dependency's `.generated` units point at that dependency
+  package instead of the published one, and a path outside a package's source and generated
+  roots fails with an error that names both roots. Regression tests cover the 0.6.0 Corelib
+  publication failures (fixed by the 0.6.6 generated-root mapping): corelib_foundation's own
+  `obj/beskid/root/.generated` unit maps to `.generated/<rel>`, and corelib_foundation units
+  materialized under `obj/beskid/deps/src/<pkg>-<hash>/` for corelib_runtime keep their
+  `declaringPackage` and map to `src/<rel>` or `.generated/<rel>`.
+
 ## [0.6.6] - 2026-10-16
 
 This release carries the v0.6.1-v0.6.5 program as one release (OpenSpec changes

@@ -25,7 +25,7 @@ pub(super) fn docs_ref_link_context(resolved: &beskid_analysis::services::Resolv
             .packages
             .iter()
             .filter(|pkg| pkg.package != link_ctx.publishing_package)
-            .map(|pkg| (pkg.match_root.clone(), pkg.package.clone()))
+            .flat_map(|pkg| pkg.match_roots().map(|(root, _)| (root.to_path_buf(), pkg.package.clone())))
             .collect();
     }
     Some(ctx)
