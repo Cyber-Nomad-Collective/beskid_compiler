@@ -259,13 +259,21 @@ fn scalar(ty: &GluePhysicalType) -> AotResult<(&'static str, &'static str)> {
     };
     Ok(result)
 }
+/// Shared prelude of every generated Rust owner bridge.
+///
+/// The exported initializer takes the address of a canonical provider export. An owner with only
+/// records, enums, callbacks and scalars otherwise calls no provider entry point, and the linker
+/// then drops the provider as unneeded: MSVC `link.exe` omits the DLL import, ELF `--as-needed`
+/// omits DT_NEEDED and ld64 `-dead_strip_dylibs` omits LC_LOAD_DYLIB. The reference lives in
+/// generated source, so every target records the provider without per-linker flags, and the
+/// sole-provider admission check stays fail-closed.
+const BRIDGE_PRELUDE: &str = "#![deny(unsafe_op_in_unsafe_fn)]\nmod implementation;\nuse std::{ffi::c_void,panic::{catch_unwind,AssertUnwindSafe},sync::atomic::{AtomicU8,AtomicU64,Ordering}};\nstatic INIT:AtomicU8=AtomicU8::new(0);static LIB:AtomicU64=AtomicU64::new(0);static GEN:AtomicU64=AtomicU64::new(0);\nunsafe extern \"C\" { fn beskid_glue_v1_owner_opaque_create(library:u64,brand:*const u8,pointer:*mut c_void,destructor:unsafe extern \"C\" fn(*mut c_void)->i32,out:*mut u64)->i32; }\n#[unsafe(no_mangle)] pub extern \"C\" fn beskid_glue_rust_owner_v1_initialize(library:u64,generation:u64)->i32 { let _=std::hint::black_box(beskid_glue_v1_owner_opaque_create as *const ()); if library==0||generation==0{return 1;} if INIT.compare_exchange(0,1,Ordering::AcqRel,Ordering::Acquire).is_err(){return 2;} LIB.store(library,Ordering::Relaxed);GEN.store(generation,Ordering::Relaxed);INIT.store(2,Ordering::Release);0 }\n";
+
 fn bridge_source(
     req: &RustOwnerBuildRequest<'_>,
     current: &GlueArtifact,
 ) -> AotResult<(String, Vec<([u8; 32], String)>, Vec<String>)> {
-    let mut source = String::from(
-        "#![deny(unsafe_op_in_unsafe_fn)]\nmod implementation;\nuse std::{ffi::c_void,panic::{catch_unwind,AssertUnwindSafe},sync::atomic::{AtomicU8,AtomicU64,Ordering}};\nstatic INIT:AtomicU8=AtomicU8::new(0);static LIB:AtomicU64=AtomicU64::new(0);static GEN:AtomicU64=AtomicU64::new(0);\nunsafe extern \"C\" { fn beskid_glue_v1_owner_opaque_create(library:u64,brand:*const u8,pointer:*mut c_void,destructor:unsafe extern \"C\" fn(*mut c_void)->i32,out:*mut u64)->i32; }\n#[unsafe(no_mangle)] pub extern \"C\" fn beskid_glue_rust_owner_v1_initialize(library:u64,generation:u64)->i32 { if library==0||generation==0{return 1;} if INIT.compare_exchange(0,1,Ordering::AcqRel,Ordering::Acquire).is_err(){return 2;} LIB.store(library,Ordering::Relaxed);GEN.store(generation,Ordering::Relaxed);INIT.store(2,Ordering::Release);0 }\n",
-    );
+    let mut source = String::from(BRIDGE_PRELUDE);
     source.push_str("unsafe extern \"C\" {fn beskid_glue_v1_owner_opaque_borrow_begin(library:u64,brand:*const u8,token:u64,payload:*mut *mut c_void,lease:*mut u64)->i32;fn beskid_glue_v1_owner_opaque_borrow_end(library:u64,brand:*const u8,lease:u64)->i32;fn beskid_glue_v1_owner_opaque_release(library:u64,brand:*const u8,token:u64)->i32;} struct BorrowGuard<'a>{library:u64,brand:[u8;32],lease:u64,cleanup:&'a std::cell::Cell<i32>}impl Drop for BorrowGuard<'_>{fn drop(&mut self){let deadline=std::time::Instant::now()+std::time::Duration::from_secs(5);loop{let status=unsafe{beskid_glue_v1_owner_opaque_borrow_end(self.library,self.brand.as_ptr(),self.lease)};if status==0{break;}if status!=4||std::time::Instant::now()>=deadline{self.cleanup.set(status);break;}std::thread::yield_now();}}}\n");
     source.push_str("#[repr(C)]struct OwnedView{pointer:*const u8,length:usize,token:u64}unsafe extern \"C\" {fn beskid_glue_v1_owner_copy(library:u64,shape:u64,generation:u64,kind:u64,bytes:*const u8,length:usize,out:*mut OwnedView)->i32;fn beskid_glue_v1_owner_release_token(library:u64,token:u64)->i32;}\n");
     source.push_str(super::owner_values::OWNER_PRELUDE);
@@ -1176,7 +1184,7 @@ pub fn build_rust_owner(req: &RustOwnerBuildRequest<'_>) -> AotResult<PreparedRu
         "-C".to_owned(),
         format!("linker={}", driver.path().display()),
     ];
-    flags.extend(provider_link_flags(target, &runtime.link_path));
+    flags.extend(provider_link_flags(&runtime.link_path));
     if !target.contains("windows") {
         flags.extend([
             "-C".into(),
@@ -1371,20 +1379,11 @@ pub fn build_rust_owner(req: &RustOwnerBuildRequest<'_>) -> AotResult<PreparedRu
     Ok(result)
 }
 
-/// Link arguments that make the owner image record the canonical provider as a loader dependency.
-///
-/// rustc links ELF targets with `--as-needed` in effect, so a provider no owner code references (an owner
-/// with only records, enums, callbacks and scalars calls no provider entry point) would lose its DT_NEEDED
-/// entry. `--no-as-needed` therefore precedes the provider, and `--as-needed` is restored after it so the
-/// libraries rustc appends later keep the default.
-fn provider_link_flags(target: &str, link_path: &Path) -> Vec<String> {
-    let provider = link_path.display().to_string();
-    let arguments = if target.contains("linux") {
-        vec!["-Wl,--no-as-needed".to_owned(), provider, "-Wl,--as-needed".to_owned()]
-    } else {
-        vec![provider]
-    };
-    arguments.into_iter().flat_map(|argument| ["-C".to_owned(), format!("link-arg={argument}")]).collect()
+/// Link arguments that give the owner link the canonical provider (shared object, dylib or MSVC
+/// import library). The provider stays a loader dependency on every target because
+/// [`BRIDGE_PRELUDE`] references a provider export, so no linker-specific retention flag exists.
+fn provider_link_flags(link_path: &Path) -> Vec<String> {
+    vec!["-C".to_owned(), format!("link-arg={}", link_path.display())]
 }
 
 #[cfg(test)]
@@ -1392,22 +1391,24 @@ mod tests {
     use super::*;
     #[test]
     fn v061_owner_provider_link_is_not_dropped_as_unneeded() {
-        let provider = Path::new("/prefix/shared/libbeskid_runtime.so");
-        assert_eq!(
-            provider_link_flags("x86_64-unknown-linux-gnu", provider),
-            [
-                "-C",
-                "link-arg=-Wl,--no-as-needed",
-                "-C",
-                "link-arg=/prefix/shared/libbeskid_runtime.so",
-                "-C",
-                "link-arg=-Wl,--as-needed"
-            ]
-        );
-        assert_eq!(
-            provider_link_flags("aarch64-apple-darwin", Path::new("/p/libbeskid_runtime.dylib")),
-            ["-C", "link-arg=/p/libbeskid_runtime.dylib"]
-        );
+        // The exported initializer references a provider export, so no linker (MSVC link.exe,
+        // ELF --as-needed, ld64 -dead_strip_dylibs) can drop the provider of an owner whose
+        // functions call no provider entry point.
+        let initializer = BRIDGE_PRELUDE
+            .split("fn beskid_glue_rust_owner_v1_initialize(")
+            .nth(1)
+            .and_then(|rest| rest.split("\n").next())
+            .expect("initializer is generated");
+        assert!(initializer.starts_with("library:u64,generation:u64)->i32 { let _=std::hint::black_box(beskid_glue_v1_owner_opaque_create as *const ());"));
+        assert!(BRIDGE_PRELUDE.contains("unsafe extern \"C\" { fn beskid_glue_v1_owner_opaque_create("));
+        assert!(BRIDGE_PRELUDE.contains("#[unsafe(no_mangle)] pub extern \"C\" fn beskid_glue_rust_owner_v1_initialize("));
+        for (provider, flag) in [
+            ("/prefix/shared/libbeskid_runtime.so", "link-arg=/prefix/shared/libbeskid_runtime.so"),
+            ("/p/libbeskid_runtime.dylib", "link-arg=/p/libbeskid_runtime.dylib"),
+            ("C:/p/beskid_runtime.dll.lib", "link-arg=C:/p/beskid_runtime.dll.lib"),
+        ] {
+            assert_eq!(provider_link_flags(Path::new(provider)), ["-C", flag]);
+        }
     }
     /// R4 Windows regression: the owner build failed with only Cargo's "could not compile ... due
     /// to 1 previous error" because rustc's message (LNK1181, `kernel32.lib`) was on stdout.

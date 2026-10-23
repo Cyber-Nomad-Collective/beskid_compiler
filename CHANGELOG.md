@@ -319,9 +319,11 @@ feature area.
   `__isolate_wait` service has no caller left and is removed.
 - A Rust Glue owner without opaque handle types (records, enums, callbacks
   and scalars only) failed to build with "Rust owner lacks exact sole
-  canonical provider dependency": `--no-as-needed` came after the runtime
-  provider on the link line, so the linker dropped the provider that no owner
-  code called. The flag now precedes the provider. Loading such an owner then
+  canonical provider dependency": no owner code called the runtime provider,
+  so the linker dropped it (ELF `--as-needed`, and on Windows MSVC `link.exe`
+  omitted the DLL import, Woodpecker #399 GLUE066-01). The generated owner
+  initializer now takes the address of a provider export, which keeps the
+  provider dependency on every target without linker-specific flags. Loading such an owner then
   failed with "actual image closure rejected", because the loader bound an
   empty destructor closure; it now binds the closure only when the owner has
   opaque destructors.
