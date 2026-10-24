@@ -98,6 +98,9 @@ impl SemanticIssueKind {
             Self::GenericBoundNotSatisfied { type_name, contract_name, .. } => {
                 format!("generic bound not satisfied: `{type_name}` does not conform to `{contract_name}`")
             }
+            Self::InvalidPrimitiveImplementation { type_name, .. } => {
+                format!("invalid implementation for primitive type `{type_name}`")
+            }
             Self::ImmutableAssignment { name } => {
                 format!("cannot assign to immutable binding `{name}`")
             }

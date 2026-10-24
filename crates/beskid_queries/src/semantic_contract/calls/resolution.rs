@@ -715,8 +715,14 @@ pub(in crate::semantic_contract) fn unique_nominal_method_declaration(
     let declaration_program = declaration_syntax.expanded_program(db);
     let declaration_index = declaration_syntax.syntax_index(db);
     let nominal = declaration_index.node_at(declaration_program, declaration.node)?;
+    // A primitive conformance (`impl i64 : Formatting`) has no nominal declaration: its `impl`
+    // block is the implementor, and only that block's own methods implement the contract.
+    let primitive_implementation = nominal
+        .of::<beskid_analysis::syntax::ImplBlock>()
+        .is_some_and(|block| matches!(block.receiver_type.node, beskid_analysis::syntax::Type::Primitive(_)));
     if nominal.of::<beskid_analysis::syntax::TypeDefinition>().is_none()
         && nominal.of::<beskid_analysis::syntax::EnumDefinition>().is_none()
+        && !primitive_implementation
     {
         return None;
     }
@@ -735,9 +741,9 @@ pub(in crate::semantic_contract) fn unique_nominal_method_declaration(
     if let Some(unique) = (methods.len() == 1).then(|| methods[0]) {
         return Some(unique);
     }
-    if !methods.is_empty() {
+    if !methods.is_empty() || primitive_implementation {
         // Ambiguous among the type's own inline methods: fail closed, do not also widen the
-        // search into `impl` blocks.
+        // search into `impl` blocks. A primitive implementation has no other source of methods.
         return None;
     }
     // `impl X : Contract { the conforming method here }` -- same conformance fact as

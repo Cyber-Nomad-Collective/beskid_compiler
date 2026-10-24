@@ -7,8 +7,8 @@ impl SyntaxNodeFacts<'_> {
         if self.composition_injected_access(key).is_some() {
             return Some(SemanticTypeId::POINTER);
         }
-        if self.query(implicit_method_receiver(self.db, key)).is_some() {
-            return Some(SemanticTypeId::POINTER);
+        if let Some(method) = self.query(implicit_method_receiver(self.db, key)) {
+            return Some(beskid_queries::method_receiver_abi_type(self.db, method));
         }
         if self.query(node_kind(self.db, key)) == Some(beskid_queries::IndexedNodeKind::CallExpression)
             && let Some(instance) = self.generic_call_specialization_in_context(key)

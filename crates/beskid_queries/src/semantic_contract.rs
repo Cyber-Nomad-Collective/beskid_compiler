@@ -22,7 +22,7 @@ mod closures_spawn;
 mod completion;
 mod composition;
 mod contracts;
-pub use contracts::{AppliedContractIdentity, applied_contract_argument_is_type};
+pub use contracts::{AppliedContractIdentity, applied_contract_argument_is_type, method_receiver_abi_type};
 mod events;
 mod expected_type;
 pub use expected_type::expected_type_in_environment;

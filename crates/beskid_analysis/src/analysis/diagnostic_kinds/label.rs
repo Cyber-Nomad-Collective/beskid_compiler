@@ -36,6 +36,7 @@ impl SemanticIssueKind {
             Self::ThisUsedOutsideContractOrImpl => "`This` used outside a contract or impl".to_string(),
             Self::UnresolvedAssociatedType { .. } => "unresolved associated type".to_string(),
             Self::GenericBoundNotSatisfied { .. } => "generic bound not satisfied".to_string(),
+            Self::InvalidPrimitiveImplementation { .. } => "invalid primitive implementation".to_string(),
             Self::ImmutableAssignment { .. } => "immutable assignment".to_string(),
             Self::MatchGuardMustBeBoolean => "guard type mismatch".to_string(),
             Self::MatchArmTypeMismatch { .. } => "match arm type mismatch".to_string(),

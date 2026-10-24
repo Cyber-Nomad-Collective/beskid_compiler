@@ -82,6 +82,19 @@ pub(in crate::semantic_contract) fn generic_source_expression_identity(
                 return Ok(identity);
             }
         }
+        // `this` in a method of a primitive implementation is a value of that primitive.
+        if let [segment] = path.path.node.segments.as_slice()
+            && segment.node.type_args.is_empty()
+            && super::super::super::layouts::is_implicit_receiver_name(
+                program,
+                index,
+                normalized_key,
+                segment.node.name.node.name.as_str(),
+            )
+            && let Some(receiver @ beskid_analysis::syntax::Type::Primitive(_)) = method_this_type(db, normalized_key)
+        {
+            return generic_source_type_identity(db, normalized_key, &receiver);
+        }
     }
     if let Some(array) = node.of::<beskid_analysis::syntax::ArrayLiteralExpression>() {
         return generic_source_array_literal_identity(db, program, index, normalized_key, array);

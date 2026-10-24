@@ -126,6 +126,13 @@ pub enum SemanticIssueKind {
         /// For a compiler-derived marker bound: the first offending field or the class reason.
         reason: Option<String>,
     },
+    /// An `impl` block for a primitive type that cannot issue a conformance: the primitive cannot
+    /// conform, the block is generic or bounded, names no contract, is outside the unit that
+    /// declares its contract, or repeats a conformance of the same unit.
+    InvalidPrimitiveImplementation {
+        type_name: String,
+        reason: String,
+    },
 
     ImmutableAssignment {
         name: String,

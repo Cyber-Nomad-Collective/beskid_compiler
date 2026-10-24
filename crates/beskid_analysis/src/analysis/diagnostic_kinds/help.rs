@@ -101,6 +101,7 @@ impl SemanticIssueKind {
             Self::GenericBoundNotSatisfied { type_name, contract_name, reason: None } => {
                 Some(format!("make `{type_name}` conform to `{contract_name}` or pass a conforming type"))
             }
+            Self::InvalidPrimitiveImplementation { reason, .. } => Some(reason.clone()),
             Self::ImmutableAssignment { .. } => {
                 Some("declare it as `let mut` to allow assignment".to_string())
             }

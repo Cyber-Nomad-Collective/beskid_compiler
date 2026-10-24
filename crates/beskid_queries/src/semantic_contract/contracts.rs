@@ -1882,6 +1882,13 @@ fn implementation_bounds_hold(
         let Ok(arguments) = applied_contract_arguments(db, implementation, &bound.contract.node, environment) else {
             return Ok(false);
         };
+        if let Some(primitive) = conformable_primitive_identity(source) {
+            // `impl<T> Option<T> : Formatting where T: Formatting` at `T = i64`.
+            if prove_primitive_conformance(db, implementation, primitive, contract, &arguments)?.is_none() {
+                return Ok(false);
+            }
+            continue;
+        }
         let Some(concrete) = concrete_type_or_enum_declaration(db, implementation, source) else {
             return Ok(false);
         };
@@ -1929,6 +1936,147 @@ fn applied_contract_methods(
     validated_contract_methods_with_expected(db, concrete, contract, &substitutions, &expected)
 }
 
+/// Whether values of the primitive `ty` may conform to contracts: every integer width (`word`
+/// included), both floats, `bool`, `char` and `string`. `unit`, `never` and the native `pointer`
+/// never conform.
+pub(in crate::semantic_contract) fn is_conformable_primitive(ty: SemanticTypeId) -> bool {
+    matches!(
+        ty,
+        SemanticTypeId::BOOL
+            | SemanticTypeId::I8
+            | SemanticTypeId::I16
+            | SemanticTypeId::I32
+            | SemanticTypeId::I64
+            | SemanticTypeId::U8
+            | SemanticTypeId::U16
+            | SemanticTypeId::U32
+            | SemanticTypeId::U64
+            | SemanticTypeId::WORD
+            | SemanticTypeId::F32
+            | SemanticTypeId::F64
+            | SemanticTypeId::CHAR
+            | SemanticTypeId::STRING
+    )
+}
+
+/// The primitive a source identity names, when that primitive may conform to contracts.
+pub(in crate::semantic_contract) fn conformable_primitive_identity(
+    identity: &GenericSourceTypeIdentity,
+) -> Option<SemanticTypeId> {
+    match identity {
+        GenericSourceTypeIdentity::Abi(ty) if is_conformable_primitive(*ty) => Some(*ty),
+        _ => None,
+    }
+}
+
+/// The primitive an `impl` block names as its receiver (`impl i64 : Formatting`), if any.
+pub(in crate::semantic_contract) fn primitive_implementation_receiver(
+    db: &dyn Db,
+    implementation: AstNodeKey,
+    block: &ImplBlock,
+) -> Option<SemanticTypeId> {
+    matches!(block.receiver_type.node, Type::Primitive(_))
+        .then(|| abi_type_from_syntax(db, implementation, &block.receiver_type.node).ok())
+        .flatten()
+}
+
+/// The ABI of the receiver a method takes first: the primitive value for a method of a primitive
+/// implementation, otherwise the managed reference of its nominal owner.
+pub fn method_receiver_abi_type(db: &dyn Db, method: AstNodeKey) -> SemanticTypeId {
+    match super::locals::method_this_type(db, method) {
+        Some(receiver @ Type::Primitive(_)) => {
+            abi_type_from_syntax(db, method, &receiver).unwrap_or(SemanticTypeId::POINTER)
+        }
+        _ => SemanticTypeId::POINTER,
+    }
+}
+
+/// Whether a primitive `impl` block may issue conformances at all: it is not generic, has no
+/// where-bounds, and each contract it names is declared in the block's own unit. A block that
+/// breaks a rule issues nothing; the unit obligation reports E1611 at the block.
+pub(in crate::semantic_contract) fn primitive_implementation_is_admissible(
+    db: &dyn Db,
+    implementation: AstNodeKey,
+    block: &ImplBlock,
+) -> bool {
+    block.generics.is_empty()
+        && block.where_bounds.is_empty()
+        && !block.conformances.is_empty()
+        && block.conformances.iter().all(|path| {
+            let mut declaration_path = path.node.clone();
+            if let Some(segment) = declaration_path.segments.last_mut() {
+                segment.node.type_args.clear();
+            }
+            resolve_contract(db, implementation, &declaration_path).is_some_and(|contract| contract.unit == implementation.unit)
+        })
+}
+
+/// Every `impl` block of the generation whose receiver is the primitive `primitive`.
+fn primitive_implementation_blocks(db: &dyn Db, context: AstNodeKey, primitive: SemanticTypeId) -> Vec<(AstNodeKey, ImplBlock)> {
+    let mut units = HashSet::from([context.unit]);
+    units.extend(
+        db.syntax_dependency_registry()
+            .lock()
+            .expect("syntax dependency registry")
+            .generation_units(context.generation)
+            .iter()
+            .copied(),
+    );
+    let mut blocks = Vec::new();
+    for unit in units {
+        let Some(syntax) = db.syntax_unit(unit) else { continue };
+        if syntax.generation(db) != context.generation {
+            continue;
+        }
+        let index = syntax.syntax_index(db);
+        let program = syntax.expanded_program(db);
+        for node in index.ids_of_kind(NodeKind::ImplBlock) {
+            let Some(block) = index.node_at(program, node).and_then(|node| node.of::<ImplBlock>()) else { continue };
+            let implementation = AstNodeKey { unit, node, ..context };
+            if primitive_implementation_receiver(db, implementation, block) == Some(primitive) {
+                blocks.push((implementation, block.clone()));
+            }
+        }
+    }
+    blocks
+}
+
+/// Prove `primitive : contract<applied_arguments>` from the one admissible primitive `impl`
+/// block that names the contract (directly or through an embedding contract). The block is the
+/// conformance's implementor: its methods are the witness methods, and it has no generic
+/// environment. `Ok(None)` means no block conforms; two conforming blocks are an error.
+fn prove_primitive_conformance(
+    db: &dyn Db,
+    context: AstNodeKey,
+    primitive: SemanticTypeId,
+    contract: AstNodeKey,
+    applied_arguments: &[GenericSourceTypeIdentity],
+) -> Result<Option<ProvenConformance>, SemanticError> {
+    let environment = HashMap::new();
+    let conforming = primitive_implementation_blocks(db, context, primitive)
+        .into_iter()
+        .filter(|(implementation, block)| {
+            primitive_implementation_is_admissible(db, *implementation, block)
+                && block.conformances.iter().any(|path| {
+                    conformance_path_matches(db, *implementation, &path.node, &environment, contract, applied_arguments)
+                })
+        })
+        .map(|(implementation, _)| implementation)
+        .collect::<Vec<_>>();
+    let implementation = match conforming.as_slice() {
+        [] => return Ok(None),
+        [implementation] => *implementation,
+        _ => {
+            return Err(SemanticError::new(format!(
+                "`{}` has more than one implementation of one contract",
+                primitive.as_str()
+            )));
+        }
+    };
+    let methods = applied_contract_methods(db, implementation, contract, applied_arguments, &[])?;
+    Ok(Some(ProvenConformance { concrete: implementation, environment: Arc::from([]), methods }))
+}
+
 /// A proven applied conformance, before it is attached to one callable parameter.
 struct ProvenConformance {
     concrete: AstNodeKey,
@@ -1946,6 +2094,10 @@ fn prove_applied_conformance(
     applied_arguments: &[GenericSourceTypeIdentity],
     unsatisfied: &dyn Fn(Option<&str>) -> SemanticError,
 ) -> Result<ProvenConformance, SemanticError> {
+    if let Some(primitive) = conformable_primitive_identity(source_identity) {
+        return prove_primitive_conformance(db, context, primitive, contract, applied_arguments)?
+            .ok_or_else(|| unsatisfied(Some(primitive.as_str())));
+    }
     let concrete = concrete_type_or_enum_declaration(db, context, source_identity).ok_or_else(|| unsatisfied(None))?;
     let GenericSourceTypeIdentity::Nominal { arguments: source_arguments, .. } = source_identity else {
         return Err(unsatisfied(None));
@@ -2079,7 +2231,8 @@ pub(super) fn contract_method_specialization(
         .node_at(target.expanded_program(db), declaration.node)
         .and_then(|node| node.of::<MethodDefinition>())
         .ok_or_else(|| SemanticError::unavailable("contract_method"))?;
-    let mut parameters = vec![SemanticTypeId::POINTER];
+    // A nominal receiver passes its managed reference; a primitive receiver passes its value.
+    let mut parameters = vec![method_receiver_abi_type(db, declaration)];
     parameters.extend(
         implementation
             .parameters
@@ -2187,6 +2340,16 @@ pub(super) fn validate_current_parameter_witness(
         if !bounded {
             return Ok(false);
         }
+    }
+    if let Some(primitive) = conformable_primitive_identity(&witness.source_identity) {
+        let Some(proven) =
+            prove_primitive_conformance(db, declaration, primitive, witness.contract, &witness.applied_arguments)?
+        else {
+            return Ok(false);
+        };
+        return Ok(proven.concrete == witness.concrete
+            && proven.environment.as_ref() == witness.environment.as_ref()
+            && proven.methods.as_ref() == witness.methods.as_ref());
     }
     let definition = nominal_head(db, witness.concrete)
         .ok_or_else(|| SemanticError::unavailable("publication.concrete"))?;

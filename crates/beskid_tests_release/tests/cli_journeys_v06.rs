@@ -376,7 +376,7 @@ fn v067_failed_assertion_is_a_test_failure_with_values_and_call_site() {
     std::fs::write(project.join("Src/Main.bd"), "i32 Main() { return 0; }\n").unwrap();
     std::fs::write(
         project.join("Src/Fails.bd"),
-        "use Testing.Assert;\nuse Testing.Expect;\ni64 Add(i64 a, i64 b) { return a + b; }\n\ntest AddsNumbers {\n    Expect.EqualI64(Add(1, 3), 3, \"adds\");\n}\n\ntest KeepsGoing {\n    Assert.True(true, \"fine\");\n}\n",
+        "use Testing.Assert;\nuse Testing.Expect;\ni64 Add(i64 a, i64 b) { return a + b; }\n\ntest AddsNumbers {\n    Expect.Equal<i64>(Add(1, 3), 3, \"adds\");\n}\n\ntest KeepsGoing {\n    Assert.True(true, \"fine\");\n}\n",
     )
     .unwrap();
     let manifest = project.join("Failing.bproj");
@@ -409,6 +409,36 @@ fn v067_failed_assertion_is_a_test_failure_with_values_and_call_site() {
         failed["failure"]["location"]["file"].as_str().is_some_and(|file| file.ends_with("Src/Fails.bd") && !file.contains("obj/beskid")),
         "the location names the authored file, not the materialized copy: {failed}"
     );
+}
+
+#[test]
+fn generic_assert_equal_failure_records_both_formatted_values() {
+    let cli = Cli::qualified();
+    let home = Home::new();
+    let project = home.work().join("Formatted");
+    std::fs::create_dir_all(project.join("Src")).unwrap();
+    std::fs::write(project.join("Src/Main.bd"), "i32 Main() { return 0; }\n").unwrap();
+    std::fs::write(
+        project.join("Src/Fails.bd"),
+        "use Testing.Assert;\n\ntest ComparesText\n{\n    Assert.Equal(\"abd\", \"abc\", \"joined\");\n}\n",
+    )
+    .unwrap();
+    let manifest = project.join("Formatted.bproj");
+    std::fs::write(&manifest, "Formatted { name = \"Formatted\" version = \"0.1.0\" }\ntarget \"App\" { kind = \"App\" entry = \"Main.bd\" }\ntarget \"Fails\" { kind = \"Test\" entry = \"Fails.bd\" }\n").unwrap();
+    let text = run(cli, &home, &["test", "--project", manifest.to_str().unwrap(), "--target", "Fails", "--plain"]);
+    assert_eq!(text.status.code(), Some(1), "a failed Assert.Equal fails the run:\n{}", transcript(&text));
+    let report = stderr(&text);
+    assert!(report.contains("assertion failed: expected abc, found abd"), "the failure names both string values:\n{report}");
+    let json = run(cli, &home, &["test", "--project", manifest.to_str().unwrap(), "--target", "Fails", "--json"]);
+    let record: serde_json::Value = stdout(&json)
+        .lines()
+        .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+        .find(|record| record["command"] == "test" && record["event"] == "result")
+        .unwrap_or_else(|| panic!("a result record on stdout:\n{}", transcript(&json)));
+    let failed = record["tests"].as_array().expect("tests array").iter().find(|test| test["outcome"] == "failed").cloned().expect("one failed test");
+    assert_eq!(failed["failure"]["expected"], "abc");
+    assert_eq!(failed["failure"]["actual"], "abd");
+    assert_eq!(failed["failure"]["location"]["line"], 5);
 }
 
 // ---------------------------------------------------------------------------------------------

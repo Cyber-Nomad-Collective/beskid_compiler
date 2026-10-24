@@ -109,6 +109,13 @@ pub(in crate::semantic_contract) fn abi_type_for_local_path(
             if constant_integer(db, key)?.is_some() {
                 return Ok(SemanticTypeId::WORD);
             }
+            // `this` inside a method of a primitive implementation (`impl i64 : Formatting`) is
+            // the receiver value itself.
+            if super::field_access::is_implicit_receiver_name(program, index, key, segment.node.name.node.name.as_str())
+                && let Some(beskid_analysis::syntax::Type::Primitive(_)) = method_this_type(db, key)
+            {
+                return Ok(super::super::contracts::method_receiver_abi_type(db, key));
+            }
             let access = aggregate_field_access(db, key)?.ok_or_else(|| SemanticError::unavailable("abi_type"))?;
             match access
                 .layout
