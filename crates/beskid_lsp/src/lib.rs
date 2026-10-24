@@ -5,6 +5,7 @@ pub(crate) mod commands;
 pub mod crash;
 pub(crate) mod diagnostics;
 pub(crate) mod features;
+pub(crate) mod hook_items;
 pub(crate) mod logging;
 pub(crate) mod manifest_uri;
 pub(crate) mod position;

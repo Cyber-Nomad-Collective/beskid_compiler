@@ -164,5 +164,39 @@ fn member_completion_answers_within_a_second_while_a_multi_project_scan_runs() {
     assert!(got.contains(&"Search"), "`String.` members must complete after `use Core.String;`: {got:?}");
     assert!(latency < Duration::from_secs(1), "completion took {latency:?}");
     assert!(scan_was_running, "scan finished before the request; the gate was not exercised");
+
+    // `use` paths: child modules after `Core.`, and the first segment, in other projects.
+    for (index, (project, text, character, expected, id)) in [
+        ("P01", "use Core.\n\ni32 Main() {\n    return 0;\n}\n", 9, "String", 3),
+        ("P02", "use C\n\ni32 Main() {\n    return 0;\n}\n", 5, "Core", 4),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let path = folder.path().join(format!("{project}/Src/Main.bd"));
+        let uri = url::Url::from_file_path(&path).expect("use-path URI").to_string();
+        send_message(
+            &mut stdin,
+            json!({"jsonrpc": "2.0", "method": "textDocument/didOpen", "params": {"textDocument": {
+                "uri": uri, "languageId": "beskid", "version": 1, "text": text}}}),
+        );
+        wait_for_document_diagnostics(&messages, &uri, &mut idle);
+        let running = !idle;
+        let asked = Instant::now();
+        send_message(
+            &mut stdin,
+            json!({"jsonrpc": "2.0", "id": id, "method": "textDocument/completion", "params": {
+                "textDocument": {"uri": uri}, "position": {"line": 0, "character": character}}}),
+        );
+        let response = response_with_id(&messages, id, &mut idle);
+        let latency = asked.elapsed();
+        let got = labels(&response);
+        eprintln!("use-path completion {index}: {latency:?}, scan running: {running}, {} items", got.len());
+        assert!(got.contains(&expected), "`{text}` must offer {expected}: {got:?}");
+        if index == 0 {
+            assert!(got.contains(&"Results"), "`use Core.` must offer its child modules: {got:?}");
+        }
+        assert!(latency < Duration::from_secs(1), "use-path completion took {latency:?}");
+    }
     let _ = child.kill();
 }

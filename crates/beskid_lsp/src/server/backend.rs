@@ -283,6 +283,19 @@ impl LanguageServer for Backend {
         let Some(snapshot) = snapshot_lsp_request(&self.state, params).await else {
             return Ok(Some(CompletionResponse::Array(Vec::new())));
         };
+        // `use` paths complete from the module layout of the effective roots, with no analysis
+        // facts and no database access, so they answer while a scan or a prepare is running.
+        if completion::use_path::use_path_context(&snapshot.document.text, snapshot.offset).is_some() {
+            drop(update_guard);
+            let roots = match uri_to_path(&snapshot.uri) {
+                Some(path) => crate::session::project_context::effective_roots_for_path(&self.state, &path).await,
+                None => None,
+            };
+            let items = roots
+                .and_then(|roots| completion::use_path::use_path_items(&snapshot.document.text, snapshot.offset, &roots))
+                .unwrap_or_default();
+            return Ok(Some(CompletionResponse::Array(items)));
+        }
         let db = parallel_compilation_db(&self.state).await;
         drop(update_guard);
         let response = tokio::task::spawn_blocking(move || {

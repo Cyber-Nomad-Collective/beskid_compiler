@@ -90,6 +90,7 @@ pub fn handle_completion(
         .map(|candidates| {
             candidates
                 .iter()
+                .filter(|candidate| !crate::hook_items::is_hook_item_name(&candidate.label))
                 .filter(|candidate| prefix.is_empty() || candidate.label.to_lowercase().starts_with(prefix.as_str()))
                 .map(|candidate| CompletionItem {
                     label: candidate.label.to_string(),

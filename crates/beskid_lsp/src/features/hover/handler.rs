@@ -30,6 +30,7 @@ pub fn handle_hover(uri: &Uri, doc: &Document, offset: usize) -> Option<Hover> {
         .syntax_hovers
         .iter()
         .filter(|hover| hover.reference_start <= offset && offset <= hover.reference_end)
+        .filter(|hover| !crate::hook_items::mentions_hook_item(&hover.markdown))
         .min_by_key(|hover| hover.reference_end.saturating_sub(hover.reference_start))?;
     let entry_path = uri_to_path(uri);
     Some(Hover {
