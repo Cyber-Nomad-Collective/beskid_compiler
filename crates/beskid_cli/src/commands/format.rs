@@ -231,7 +231,7 @@ mod v06_tests {
         let path = root.join("Broken.bd");
         let source = "i32 Main()\n{\n    let x: i32 = 5\n    return x;\n}\n";
         std::fs::write(&path, source).unwrap();
-        let result = execute(FormatArgs { input: path.clone(), output: None, check: false });
+        let result = execute(FormatArgs { diagnostics: Default::default(), input: path.clone(), output: None, check: false });
         let actual = std::fs::read_to_string(&path).unwrap();
         std::fs::remove_dir_all(root).unwrap();
         assert!(result.is_err(), "a parse error must fail `beskid fmt`");
@@ -244,9 +244,9 @@ mod v06_tests {
         let path = root.join("Main.bd");
         let source = "// Header comment.\n// TODO: keep me.\n\ni32 Answer() { return 0; } // trailing\n";
         std::fs::write(&path, source).unwrap();
-        execute(FormatArgs { input: path.clone(), output: None, check: false }).unwrap();
+        execute(FormatArgs { diagnostics: Default::default(), input: path.clone(), output: None, check: false }).unwrap();
         let formatted = std::fs::read_to_string(&path).unwrap();
-        let check = execute(FormatArgs { input: path.clone(), output: None, check: true });
+        let check = execute(FormatArgs { diagnostics: Default::default(), input: path.clone(), output: None, check: true });
         std::fs::remove_dir_all(root).unwrap();
         assert!(formatted.starts_with("// Header comment.\n// TODO: keep me.\n\n"), "{formatted}");
         assert!(formatted.contains("} // trailing"), "{formatted}");
