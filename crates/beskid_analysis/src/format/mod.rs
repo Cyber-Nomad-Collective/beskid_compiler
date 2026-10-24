@@ -11,6 +11,7 @@ mod naming_normalize;
 mod policy;
 mod source;
 mod statements_emit;
+mod tokens;
 mod trivia;
 mod types_emit;
 

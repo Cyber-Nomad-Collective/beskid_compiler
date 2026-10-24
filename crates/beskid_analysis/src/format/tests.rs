@@ -310,3 +310,52 @@ fn already_formatted_text_is_unchanged() {
     let once = fmt(COMMENT_CORPUS);
     assert_eq!(format_source("<memory>", &once).unwrap(), once, "`--check` and the editor must see 0 changes");
 }
+
+#[test]
+fn interpolated_strings_are_printed_as_written() {
+    let cases = [
+        r#""Hello, ${name}!""#,
+        r#""${String.Len(s)}""#,
+        r#""Hello, ${name}! You have ${n} new.""#,
+        r#""<${s}>""#,
+        r#""quote \" and ${F("inner \"quoted\" text")} and \\ and \${not a hole}""#,
+        r#""tab\tnew line\n and ${a + b} end""#,
+    ];
+    for literal in cases {
+        let source = format!("string F(string name, string s, i32 n, i32 a, i32 b) {{ return {literal}; }}\n");
+        let formatted = fmt(&source);
+        assert!(formatted.contains(&format!("    return {literal};\n")), "literal {literal} changed:\n{formatted}");
+        assert!(!formatted.contains("\" + "), "interpolation lowered to concatenation:\n{formatted}");
+        assert_eq!(fmt(&formatted), formatted);
+    }
+}
+
+#[test]
+fn literals_and_operators_keep_their_source_form() {
+    let source = "unit F() { mut i32 x = 1; x += 2; x -= 1; x *= 3; x /= 2; x %= 5; char c = '\\n'; char q = '\\''; string s = \"a\\tb\"; return; }\n";
+    let formatted = fmt(source);
+    for fragment in ["x += 2;", "x -= 1;", "x *= 3;", "x /= 2;", "x %= 5;", "'\\n'", "'\\''", "\"a\\tb\""] {
+        assert!(formatted.contains(fragment), "`{fragment}` changed:\n{formatted}");
+    }
+}
+
+#[test]
+fn expression_bodied_methods_stay_expression_bodied() {
+    let source = "type C { i32 count; pub i32 Get() => this.count; pub i32 Twice() => this.count * 2; }\n";
+    let formatted = fmt(source);
+    assert!(formatted.contains("    pub i32 Get() => this.count;\n"), "{formatted}");
+    assert!(formatted.contains("    pub i32 Twice() => this.count * 2;\n"), "{formatted}");
+    assert!(!formatted.contains("return"), "expression body lowered to a block:\n{formatted}");
+}
+
+#[test]
+fn token_check_rejects_code_changes() {
+    use crate::format::tokens::{code_tokens, first_difference};
+    let before = code_tokens("a + b", &[], &[]);
+    let after = code_tokens("a - b", &[], &[]);
+    assert!(first_difference(&before, &after).is_some());
+    let renamed = code_tokens("if (bad_name) { F(x,); }", &[], &[]);
+    let original = code_tokens("if BadName { F(x) }", &[], &[]);
+    assert_eq!(first_difference(&renamed, &code_tokens("if (BadName) { F(x); }", &[], &[])), None);
+    assert!(first_difference(&renamed, &original).is_some(), "a dropped `;` is a code change");
+}
