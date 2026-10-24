@@ -92,21 +92,49 @@ pub async fn scan_workspace(client: &Client, state: &RwLock<State>, root: &Path,
         }
     }
 
-    let focus_root = focused_project.and_then(|manifest| manifest.parent());
-    paths.sort_by(|a, b| {
-        let a_focus = focus_root.is_some_and(|focus| a.starts_with(focus));
-        let b_focus = focus_root.is_some_and(|focus| b.starts_with(focus));
-        b_focus
-            .cmp(&a_focus)
-            .then_with(|| {
-                let a_manifest = a.extension().and_then(|e| e.to_str()).is_some_and(is_manifest_extension);
-                let b_manifest = b.extension().and_then(|e| e.to_str()).is_some_and(is_manifest_extension);
-                b_manifest.cmp(&a_manifest)
+    let first_scan = !state.read().await.initial_scan_complete.load(std::sync::atomic::Ordering::Acquire);
+    // Projects of open documents are analyzed first; every other project follows in the background.
+    let open_roots: Vec<PathBuf> = {
+        let open_paths: Vec<PathBuf> = state.read().await.docs.keys().filter_map(uri_to_path).collect();
+        open_paths
+            .iter()
+            .filter_map(|path| {
+                beskid_analysis::resolve_project_manifest_for_source_path(path, None)
+                    .ok()
+                    .flatten()
+                    .and_then(|(manifest, _)| manifest.parent().map(Path::to_path_buf))
             })
-            .then_with(|| a.as_path().cmp(b.as_path()))
+            .collect()
+    };
+    let focus_root = focused_project.and_then(|manifest| manifest.parent());
+    let is_manifest = |p: &Path| p.extension().and_then(|e| e.to_str()).is_some_and(is_manifest_extension);
+    paths.sort_by(|a, b| {
+        let rank = |p: &Path| {
+            (
+                !is_manifest(p),
+                !open_roots.iter().any(|root| p.starts_with(root)),
+                !focus_root.is_some_and(|focus| p.starts_with(focus)),
+            )
+        };
+        rank(a).cmp(&rank(b)).then_with(|| a.as_path().cmp(b.as_path()))
     });
 
-    invalidate_compilation_cache(state).await;
+    // A rescan keeps the current compilation context and facts, so requests are served from the
+    // existing snapshot. Only the first scan, or a change in manifest/lock bytes since the last
+    // look, invalidates and republishes.
+    let authority_files: Vec<PathBuf> = paths
+        .iter()
+        .filter(|p| is_manifest(p))
+        .flat_map(|manifest| {
+            let lock = manifest.parent().map(|dir| dir.join(PROJECT_LOCK_FILE_NAME));
+            std::iter::once(manifest.clone()).chain(lock.filter(|lock| lock.is_file()))
+        })
+        .collect();
+    let authority_changed = !actionable_changes(state, &authority_files).await.is_empty();
+    let refresh = first_scan || authority_changed;
+    if refresh {
+        invalidate_compilation_cache(state).await;
+    }
 
     let total = paths.len() as u32;
     let mut last_emit = None;
@@ -115,8 +143,19 @@ pub async fn scan_workspace(client: &Client, state: &RwLock<State>, root: &Path,
     }
 
     let sem = Semaphore::new(MAX_CONCURRENT_READS);
+    let interactive = state.read().await.interactive_inflight.clone();
     let mut processed: u32 = 0;
+    let mut startup_signalled = false;
     for path in paths {
+        // Manifests are structural and cheap. Once they are indexed, document requests no
+        // longer wait for the closed-source analysis that follows.
+        if !startup_signalled && !is_manifest(&path) {
+            startup_signalled = true;
+            signal_initial_scan_complete(state).await;
+        }
+        if !is_manifest(&path) {
+            crate::scan_schedule::yield_to_interactive(&interactive).await;
+        }
         let _permit = match sem.acquire().await {
             Ok(p) => p,
             Err(_) => continue,
@@ -141,6 +180,12 @@ pub async fn scan_workspace(client: &Client, state: &RwLock<State>, root: &Path,
         let Ok(text) = tokio::fs::read_to_string(&path).await else {
             continue;
         };
+        if !refresh {
+            let unchanged = state.read().await.workspace_index.get(&uri).is_some_and(|known| known.text == text);
+            if unchanged {
+                continue;
+            }
+        }
         let doc =
             if is_manifest_extension(path.extension().and_then(|extension| extension.to_str()).unwrap_or_default())
                 || path.extension().and_then(|extension| extension.to_str()) == Some("bsol")
@@ -175,18 +220,20 @@ pub async fn scan_workspace(client: &Client, state: &RwLock<State>, root: &Path,
 
     signal_initial_scan_complete(state).await;
 
-    rebuild_open_document_syntax_facts(state).await;
+    if refresh {
+        rebuild_open_document_syntax_facts(state).await;
 
-    let open_uris = {
-        let s = state.read().await;
-        s.docs
-            .keys()
-            .filter(|uri| uri_to_path(uri).is_some_and(|path| path.starts_with(root)))
-            .cloned()
-            .collect::<Vec<_>>()
-    };
-    for uri in open_uris {
-        publish_diagnostics_for_uri(client, state, &uri).await;
+        let open_uris = {
+            let s = state.read().await;
+            s.docs
+                .keys()
+                .filter(|uri| uri_to_path(uri).is_some_and(|path| path.starts_with(root)))
+                .cloned()
+                .collect::<Vec<_>>()
+        };
+        for uri in open_uris {
+            publish_diagnostics_for_uri(client, state, &uri).await;
+        }
     }
 
     let mut stale: Vec<Uri> = Vec::new();
@@ -290,11 +337,55 @@ pub async fn clear_closed_workspace_under_root(client: &Client, state: &RwLock<S
     }
 }
 
+fn content_fingerprint(path: &Path) -> Option<u64> {
+    use std::hash::{Hash, Hasher};
+    let bytes = std::fs::read(path).ok()?;
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    bytes.hash(&mut hasher);
+    Some(hasher.finish())
+}
+
+/// Drop watched-file events that cannot change analysis: anything under `obj/`, `.beskid/`,
+/// `target/` (the server's own cache and materialization output) and manifest or lock rewrites
+/// whose bytes equal what was last acted on (the server's own `Project.lock` sync).
+pub(crate) async fn actionable_changes(state: &RwLock<State>, changed: &[PathBuf]) -> Vec<PathBuf> {
+    let mut actionable = Vec::new();
+    for path in changed {
+        if crate::scan_schedule::is_ignored_watch_path(path) {
+            continue;
+        }
+        let authority =
+            path.extension().and_then(|e| e.to_str()).is_some_and(is_manifest_extension) || is_lockfile_path(path);
+        if authority {
+            let fingerprint = content_fingerprint(path);
+            let mut write = state.write().await;
+            match fingerprint {
+                Some(value) => {
+                    if write.watched_fingerprints.insert(path.clone(), value) == Some(value) {
+                        continue;
+                    }
+                }
+                None => {
+                    if write.watched_fingerprints.remove(path).is_none() {
+                        continue;
+                    }
+                }
+            }
+        }
+        actionable.push(path.clone());
+    }
+    actionable
+}
+
 /// Re-read changed paths on disk when buffers are closed; may invalidate compilation cache on manifest edits.
 pub async fn refresh_after_disk_change(client: &Client, state: &RwLock<State>, changed_paths: &[PathBuf]) {
+    let changed_paths = &actionable_changes(state, changed_paths).await;
     let project_authority_changed = changed_paths
         .iter()
         .any(|p| p.extension().and_then(|e| e.to_str()).is_some_and(is_manifest_extension) || is_lockfile_path(p));
+    if changed_paths.is_empty() {
+        return;
+    }
     if project_authority_changed {
         invalidate_compilation_cache(state).await;
         rebuild_open_document_syntax_facts(state).await;
@@ -368,6 +459,30 @@ mod tests {
 
     use super::*;
     use crate::{server::backend::Backend, session::lifecycle::set_document};
+
+    #[tokio::test]
+    async fn own_cache_writes_and_unchanged_lock_rewrites_cause_no_reaction() {
+        let temp = TempDir::new().expect("project");
+        let cache = temp.path().join("obj/beskid/cache/salsa");
+        fs::create_dir_all(&cache).expect("cache dir");
+        let salsa = cache.join("db.bin");
+        fs::write(&salsa, b"x").expect("cache write");
+        let materialized = temp.path().join("obj/beskid/materialized/Main.bd");
+        let lock = temp.path().join("Project.lock");
+        fs::write(&lock, "a").expect("lock");
+        let state = RwLock::new(State::default());
+
+        let first = actionable_changes(&state, &[salsa.clone(), materialized, lock.clone()]).await;
+        assert_eq!(first, vec![lock.clone()], "only the first sighting of the lock is actionable");
+
+        // The server rewrites Project.lock with identical bytes: no reaction, no rescan.
+        fs::write(&lock, "a").expect("same-content rewrite");
+        assert!(actionable_changes(&state, std::slice::from_ref(&lock)).await.is_empty());
+        assert!(actionable_changes(&state, &[salsa]).await.is_empty());
+
+        fs::write(&lock, "b").expect("real edit");
+        assert_eq!(actionable_changes(&state, std::slice::from_ref(&lock)).await, vec![lock]);
+    }
 
     #[test]
     fn workspace_scan_includes_generic_bsol_without_regressing_existing_extensions() {

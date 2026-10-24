@@ -3,7 +3,7 @@ use std::{
     path::PathBuf,
     sync::{
         Arc, Mutex,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
     },
     time::Duration,
 };
@@ -223,6 +223,11 @@ pub struct State {
     /// kit). The `modHost` initialization option selects another one, in the manner of
     /// rust-analyzer's `procMacro.server`; artifact qualification applies to either.
     pub mod_host: ModHostSelection,
+    /// Interactive requests currently running; background scans yield while this is non-zero.
+    pub(crate) interactive_inflight: Arc<AtomicUsize>,
+    /// Content fingerprints of manifests and lockfiles already acted on, so a rewrite with
+    /// identical bytes (the server's own `Project.lock` sync) causes no invalidation.
+    pub(crate) watched_fingerprints: HashMap<PathBuf, u64>,
 }
 
 impl Default for State {
@@ -243,6 +248,8 @@ impl Default for State {
             persistence_save_debounce: super::lifecycle::DEFAULT_PERSISTENCE_DEBOUNCE,
             persistence_save_revision: 0,
             mod_host: ModHostSelection::installed(),
+            interactive_inflight: Arc::new(AtomicUsize::new(0)),
+            watched_fingerprints: HashMap::new(),
         }
     }
 }
