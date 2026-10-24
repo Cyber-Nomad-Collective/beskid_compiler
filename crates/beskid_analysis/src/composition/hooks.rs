@@ -356,6 +356,7 @@ fn object_parameter(name: &str, type_name: &str, span: SpanInfo) -> Spanned<Para
             movable: false,
             name: identifier(name, span),
             ty: Spanned::new(Type::Complex(single_path(type_name, span)), span),
+            default: None,
         },
         span,
     )
