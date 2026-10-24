@@ -9,7 +9,8 @@ methods and associated-type bindings are never touched. Beskid code fenced as
 `beskid` or `bd` inside Markdown/MDX files is rewritten with the same logic, and
 so is Beskid text inside Rust (`.rs`) string literals (plain and raw strings
 that contain a `type Name` declaration; `\\n`, `\\t` and `\\"` escapes are read
-as the characters they stand for). A `type` may start anywhere, also after `;`
+as the characters they stand for; in a format string `{{`, `}}` and `{name}` are
+read as braces and a name). A `type` may start anywhere, also after `;`
 or `}` on the same line. A Rust file that contains the marker
 `v067_field_semicolons: keep` is skipped (tests of the comma parse error).
 
@@ -153,7 +154,7 @@ def type_header_end(toks, i):
             j += 1
             while j < len(toks):
                 t = toks[j]
-                if t.kind == "id" or t.text in ("::", ","):
+                if t.kind == "id" or t.text in ("::", ".", ","):
                     j += 1
                 elif t.text == "<":
                     j = skip_angles(toks, j)
@@ -436,6 +437,24 @@ def _unescape_same_length(body):
     return "".join(out)
 
 
+def _format_string_same_length(text):
+    """Read a Rust format string as Beskid: `{{`/`}}` are braces, `{name}` placeholders are names."""
+    out, j = [], 0
+    while j < len(text):
+        if text.startswith("{{", j) or text.startswith("}}", j):
+            out.append(text[j] + " ")
+            j += 2
+            continue
+        m = re.match(r"\{[A-Za-z0-9_:.?#]*\}", text[j:])
+        if m:
+            out.append("_" * len(m.group(0)))
+            j += len(m.group(0))
+            continue
+        out.append(text[j])
+        j += 1
+    return "".join(out)
+
+
 def rewrite_rust(src, report=None, label=""):
     """Rewrite Beskid `type` bodies inside the string literals of a Rust source."""
     if RUST_KEEP_MARKER in src:
@@ -446,6 +465,8 @@ def rewrite_rust(src, report=None, label=""):
         if not RUST_TYPE.search(body):
             continue
         text = body if kind == "raw" else _unescape_same_length(body)
+        if "{{" in text or "}}" in text:
+            text = _format_string_same_length(text)
         new, count = rewrite_source(text, report, "%s:%d" % (label, src.count("\n", 0, a) + 1))
         if count == 0 and new == text:
             continue

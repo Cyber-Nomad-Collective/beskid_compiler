@@ -115,6 +115,14 @@ class Markdown(unittest.TestCase):
         self.assertEqual(m.rewrite_markdown(src)[0], "````beskid\n```\ntype P { i32 x; i32 y; }\n````\n")
 
 
+class QualifiedConformance(unittest.TestCase):
+    def test_dotted_contract_path(self):
+        self.assertEqual(
+            rw("pub type W : Contracts.Encoder, Core.Text.Show<T> {\n    StreamState state,\n\n    pub i32 F() { return 1; }\n}"),
+            "pub type W : Contracts.Encoder, Core.Text.Show<T> {\n    StreamState state;\n\n    pub i32 F() { return 1; }\n}",
+        )
+
+
 class SameLine(unittest.TestCase):
     def test_type_after_semicolon_and_brace(self):
         self.assertEqual(
@@ -147,6 +155,12 @@ class Rust(unittest.TestCase):
     def test_rust_code_and_other_strings_untouched(self):
         src = 'type Alias = Vec<u8>;\nlet s = "enum E { A, B }";\n// type X { a, b }\n'
         self.assertEqual(self.rr(src), src)
+
+    def test_format_string(self):
+        src = 'format!("pub type Item{index} {{\\n    pub {ty} value,\\n    pub i32 n,\\n}}\\n", index = 1)'
+        self.assertEqual(
+            self.rr(src), 'format!("pub type Item{index} {{\\n    pub {ty} value;\\n    pub i32 n;\\n}}\\n", index = 1)'
+        )
 
     def test_keep_marker(self):
         src = '// v067_field_semicolons: keep\nlet s = "type P { i32 x, i32 y }";'
