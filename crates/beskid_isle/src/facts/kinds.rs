@@ -74,6 +74,9 @@ pub enum OperatorFact {
     StringGte,
     EnumEq,
     EnumNotEq,
+    /// `==` on two contract values: the same implementing value (runtime contract dispatch).
+    ContractEq,
+    ContractNotEq,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -118,6 +121,8 @@ pub enum CallKind {
     /// The `exchange(place, move value)` builtin: read the place, store the value, yield the
     /// old value.
     Exchange,
+    /// A contract method call through a contract box's witness table (runtime dispatch).
+    ContractDispatch,
     Dynamic,
 }
 

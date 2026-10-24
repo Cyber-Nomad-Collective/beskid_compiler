@@ -317,6 +317,10 @@ impl BeskidObjectModule {
 
         self.data_ids = emit_string_literals(module, artifact)?;
         beskid_codegen::emit_closure_static_plans(module, artifact).map_err(AotError::from)?;
+        beskid_codegen::contract_static::emit_witness_tables(module, &artifact.witness_tables, &|symbol| {
+            self.func_ids.get(symbol).copied()
+        })
+        .map_err(AotError::from)?;
 
         // Bind every function to its declared id and final external names first (cheap, needs
         // the module), then compile the independent bodies to machine code in parallel, then

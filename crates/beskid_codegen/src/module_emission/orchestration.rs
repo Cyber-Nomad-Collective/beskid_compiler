@@ -648,6 +648,24 @@ fn lower_resolved_syntax_program(
         input, isa, items, &symbols, &mut context, &mut functions,
     )?;
     let instances = items.iter().filter_map(|item| item.specialization.clone()).collect::<Vec<_>>();
+    // Contract boxes (runtime contract dispatch): the witness tables of every boxing site and
+    // the unboxing thunks of primitive receivers.
+    let witnesses = super::contract_witnesses::collect_contract_witnesses(input, items, Some(isa))?;
+    for thunk in &witnesses.thunks {
+        let function = crate::contract_static::emit_witness_thunk(thunk, isa)
+            .ok_or_else(|| emission_verification(format!("witness thunk `{}` has no ABI", thunk.symbol)))?;
+        functions.push(crate::LoweredFunction { name: thunk.symbol.clone(), function });
+    }
+    if witnesses.boxes_required
+        && !extern_imports.iter().any(|existing| existing.symbol == ABI_V5_MANAGED_OBJECT_ALLOCATE)
+    {
+        extern_imports.push(ExternImport {
+            symbol: ABI_V5_MANAGED_OBJECT_ALLOCATE.to_owned(),
+            abi: Some("C".into()),
+            library: None,
+            optional: false,
+        });
+    }
     // Item discovery order is not stable between runs; the emitted function order (object layout)
     // must be, so functions are ordered by their unique symbol.
     functions.sort_by(|left, right| left.name.cmp(&right.name));
@@ -660,6 +678,8 @@ fn lower_resolved_syntax_program(
         event_handler_wrapper_required,
         aggregate_static_plans,
         array_static_plans,
+        contract_boxes_required: witnesses.boxes_required,
+        witness_tables: witnesses.tables,
         ..CodegenArtifact::default()
     };
     for symbol in checked_constructor_exports {
@@ -718,6 +738,12 @@ pub fn emit_syntax_program<M: Module>(
         let id = by_symbol[&item.symbol];
         by_callee.insert(item.callee.clone(), id);
     }
+    if artifact.contract_boxes_required {
+        crate::contract_static::emit_contract_box_static_data(module)?;
+    }
+    crate::contract_static::emit_witness_tables(module, &artifact.witness_tables, &|symbol| {
+        by_symbol.get(symbol).copied()
+    })?;
     crate::cranelift_host::declare_validated_extern_imports(module, &artifact, &mut by_symbol)
         .map_err(|error| SyntaxModuleEmissionError::Module(ModuleError::Backend(error.into())))?;
     for lowered in artifact.functions {

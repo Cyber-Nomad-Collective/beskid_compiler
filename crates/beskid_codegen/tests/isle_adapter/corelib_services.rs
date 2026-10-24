@@ -241,6 +241,13 @@ fn with_direct_callees(db: &dyn beskid_queries::Db, seeds: Vec<SyntaxModuleItem>
             if seen.contains(&declaration) {
                 continue;
             }
+            // A contract method has no body: a call through a contract value or a `T: C` bound
+            // dispatches through a witness table, whose entries the module emits on its own.
+            if beskid_queries::node_kind(db, declaration).ok().flatten()
+                == Some(beskid_queries::IndexedNodeKind::ContractMethodSignature)
+            {
+                continue;
+            }
             if beskid_queries::generic_call_specialization(db, call).ok().flatten().is_some() {
                 continue;
             }
@@ -257,7 +264,7 @@ fn canonical_foundation_assert_public_helpers_lower_through_syntax_isle() {
     let (input, isa, root) = canonical_foundation_assert_fixture();
     // Non-generic helpers; `with_direct_callees` adds what they call. Contains stays out.
     // Equal is exercised below with an explicit call-derived i64 specialization.
-    let items = ["TriggerFailure", "Fail", "FailWithBecause", "True", "False"];
+    let items = ["TriggerFailure", "Fail", "FailWithValues", "True", "False"];
     let mut module_items = Vec::new();
     for name in items {
         let key = find_function_definitions(input.database(), root)
@@ -321,7 +328,9 @@ fn canonical_foundation_assert_equal_specialization_lowers_through_syntax_isle()
         .source;
     let directory = tempfile::tempdir().expect("project").keep();
     let main_path = directory.join("Main.bd");
-    let main_source = "use Testing.Assert; unit Main() { Assert.Equal(1_i64, 1_i64, \"\"); }";
+    // `Equal<T>` is bounded by `Formatting`: each primitive argument proves its conformance and the
+    // failure path dispatches to that primitive's `Format` with the receiver passed by value.
+    let main_source = "use Testing.Assert; unit Main() { Assert.Equal(1_i64, 1_i64, \"\"); Assert.Equal(\"a\", \"a\", \"\"); Assert.Equal(true, true, \"\"); Assert.Equal(2_u8, 2_u8, \"\"); Assert.Equal(1.5_f64, 1.5_f64, \"\"); Assert.Equal(7_i32, 7_i32, \"\"); }";
     std::fs::write(&main_path, main_source).expect("main source");
     // Prefer the compiler-owned Assert identity so panic_str authority remains available.
     let assert_program =
@@ -393,7 +402,7 @@ fn canonical_foundation_assert_equal_specialization_lowers_through_syntax_isle()
     for (root, name) in [
         (assert_root, "TriggerFailure"),
         (assert_root, "Fail"),
-        (assert_root, "FailWithBecause"),
+        (assert_root, "FailWithValues"),
         (assert_root, "Equal"),
         (main_root, "Main"),
     ] {
@@ -406,9 +415,10 @@ fn canonical_foundation_assert_equal_specialization_lowers_through_syntax_isle()
     let module_items = with_direct_callees(input.database(), module_items);
     let artifact = lower_syntax_program(&input, isa.as_ref(), &module_items)
         .expect("Assert.Equal specialization lowers through syntax ISLE");
-    assert!(
-        artifact.functions.iter().any(|function| function.name.starts_with("Equal#generic_")),
-        "expected specialized Equal CLIF, got {:?}",
+    assert_eq!(
+        artifact.functions.iter().filter(|function| function.name.starts_with("Equal#generic_")).count(),
+        6,
+        "expected one specialized Equal per primitive, got {:?}",
         artifact.functions.iter().map(|function| function.name.as_str()).collect::<Vec<_>>()
     );
 }

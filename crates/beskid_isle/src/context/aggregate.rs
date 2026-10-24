@@ -185,7 +185,7 @@ macro_rules! generated_aggregate_methods {
             // descriptor-backed GC allocation; they are never a stack temporary.
             let data = self.builder.ins().load(pointer, MemFlagsData::new(), array, 0);
             for (index, element) in elements.into_iter().enumerate() {
-                let value = generated::constructor_lower_expression(self, element)?;
+                let value = self.lower_coerced_expression(element)?;
                 if self.builder.func.dfg.value_type(value) != layout.element_type {
                     self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidArrayLayout });
                     return None;
@@ -233,7 +233,7 @@ macro_rules! generated_aggregate_methods {
             }
             let (value, address) = match self.facts.compound_assignment_operator(key) {
                 None => {
-                    let value = generated::constructor_lower_expression(self, value_key)?;
+                    let value = self.lower_coerced_expression(value_key)?;
                     let array = self.read_indexed_base(base)?;
                     (value, self.checked_element_address(array, index, layout)?)
                 }
@@ -279,7 +279,7 @@ macro_rules! generated_aggregate_methods {
                     self.lower_expression_for_effect(field_key)?;
                     continue;
                 };
-                let value = generated::constructor_lower_expression(self, field_key)?;
+                let value = self.lower_coerced_expression(field_key)?;
                 if self.builder.func.dfg.value_type(value) != field_layout.value_type {
                     self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidStructLayout });
                     return None;
@@ -340,7 +340,7 @@ macro_rules! generated_aggregate_methods {
                 return None;
             }
             let value = match self.facts.compound_assignment_operator(key) {
-                None => generated::constructor_lower_expression(self, value_key)?,
+                None => self.lower_coerced_expression(value_key)?,
                 // `p.x op= v`: the receiver is evaluated once; the field is read through it,
                 // combined with `v`, and stored back through the same base.
                 Some((operator, storage)) => {

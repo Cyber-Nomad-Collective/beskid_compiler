@@ -60,6 +60,13 @@ pub use semantic_contract::{
     pattern_binding_copy_specialization, value_copy_position, value_copy_specialization,
 };
 pub use semantic_contract::{
+    CONTRACT_BOX_RECEIVER_OFFSET, CONTRACT_BOX_SIZE, CONTRACT_BOX_WITNESS_OFFSET, ContractBoxCoercion, ContractBoxReceiver,
+    ContractDispatch, ContractUpcast, ContractWitnessTable, WITNESS_HEADER_WORDS, WITNESS_RECEIVER_BITS, WITNESS_RECEIVER_F32,
+    WITNESS_RECEIVER_F64, WITNESS_RECEIVER_REFERENCE, contract_box_coercion, contract_dispatch, contract_upcast,
+    contract_value_equality, contract_value_receiver, contract_witness_method_instances, contract_witness_table_for_declaration,
+    array_literal_has_contract_elements, injected_field_contract,
+};
+pub use semantic_contract::{
     CheckedFailureDestination, ReservedFailureConstructor, canonical_serialization_encode, checked_failure_destination,
     reserved_failure_constructor, serialization_publication_methods,
 };
@@ -153,9 +160,9 @@ pub use semantic_contract::{
     test_statement_nodes, specialized_try_expression_fact, try_expression_fact, try_expression_judgement, try_expression_legality, typed_array_allocation, value_abi_type,
 };
 pub use semantic_contract::{
-    AppliedContractIdentity, applied_contract_argument_is_type, type_applied_contract_implementation,
+    AppliedContractIdentity, applied_contract_argument_is_type, method_receiver_abi_type, type_applied_contract_implementation,
     type_contract_applications, type_contract_applications_of, type_contract_declarations,
-    type_contract_implementation,
+    type_contract_implementation, contract_of_method_signature,
 };
 pub use semantic_contract::{
     CallArgumentTypeMismatch, CallArityMismatch, GateObligation, GateObligationKind, GenericBindingConflict,

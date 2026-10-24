@@ -2049,4 +2049,93 @@ mod tests {
         assert_eq!(&source[span.start..span.end], "n");
         assert!(super::check_typing_obligations(&db, &[key]).is_empty());
     }
+
+    /// `(code, message)` of every finding of `check_items` and the gate over every function.
+    fn contract_value_report(source: &str, generation: u64) -> Vec<(String, String)> {
+        let (db, root) = one_unit_assembly(source, SyntaxGenerationId(generation));
+        let mut items = Vec::new();
+        nodes_of_kind(&db, root, IndexedNodeKind::FunctionDefinition, &mut items);
+        nodes_of_kind(&db, root, IndexedNodeKind::MethodDefinition, &mut items);
+        let mut findings = super::check_items(&db, &items)
+            .err()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|finding| (finding.kind.code().to_string(), finding.kind.message()))
+            .collect::<Vec<_>>();
+        findings.extend(
+            super::check_gate_obligations(&db, &items)
+                .into_iter()
+                .chain(super::check_typing_obligations(&db, &items))
+                .map(|finding| (finding.kind.code().to_string(), finding.kind.message())),
+        );
+        findings.sort();
+        findings.dedup();
+        findings
+    }
+
+    const CONTRACT_GREETERS: &str = "pub contract Greeter { i64 Rank(); } \
+        pub type Hello : Greeter { pub i64 Rank() { return 1_i64; } } \
+        pub type Bye : Greeter { pub i64 Rank() { return 2_i64; } } \
+        pub type Plain { i64 v; } ";
+
+    #[test]
+    fn equality_of_two_contract_values_is_valid_and_other_operators_are_not() {
+        let valid = format!(
+            "{CONTRACT_GREETERS} bool Same(Greeter a, Greeter b) {{ return a == b; }} \
+             bool Other(Greeter a, Greeter b) {{ return a != b; }}"
+        );
+        assert_eq!(contract_value_report(&valid, 7201), Vec::<(String, String)>::new());
+        for (body, generation) in [
+            ("bool F(Greeter a, Greeter b) { return a < b; }", 7202u64),
+            ("bool F(Greeter a, Hello b) { return a == b; }", 7203),
+            ("i64 F(Greeter a, Greeter b) { return a + b; }", 7204),
+        ] {
+            let report = contract_value_report(&format!("{CONTRACT_GREETERS} {body}"), generation);
+            assert!(!report.is_empty(), "`{body}` must be rejected");
+        }
+    }
+
+    #[test]
+    fn a_contract_value_converts_to_a_contract_its_contract_embeds_and_not_back() {
+        let contracts = "pub contract Reader { i64 Read(); } pub contract Channel { Reader; i64 Flush(); } \
+            pub type File : Channel { pub i64 Read() { return 1_i64; } pub i64 Flush() { return 2_i64; } } ";
+        let valid = format!(
+            "{contracts} i64 Use(Reader r) {{ return r.Read(); }} \
+             i64 F(Channel c) {{ Reader r = c; mut Reader s = c; s = c; return r.Read() + Use(c); }}"
+        );
+        assert_eq!(contract_value_report(&valid, 7205), Vec::<(String, String)>::new());
+        let invalid = format!("{contracts} i64 F(Reader r) {{ Channel c = r; return c.Flush(); }}");
+        let report = contract_value_report(&invalid, 7206);
+        assert!(report.iter().any(|(code, _)| code == "E1206"), "{report:?}");
+    }
+
+    #[test]
+    fn conditional_branches_of_different_implementations_convert_to_a_contract_expectation() {
+        let valid = format!(
+            "{CONTRACT_GREETERS} Greeter F(bool c) {{ return c ? Hello {{}} : Bye {{}}; }} \
+             i64 G(bool c) {{ Greeter g = c ? Hello {{}} : Bye {{}}; return g.Rank(); }} \
+             i64 H(bool c) {{ Greeter() make = () => c ? Hello {{}} : Bye {{}}; return make().Rank(); }}"
+        );
+        assert_eq!(contract_value_report(&valid, 7207), Vec::<(String, String)>::new());
+        let invalid = format!("{CONTRACT_GREETERS} Greeter F(bool c) {{ return c ? Hello {{}} : Plain {{ v: 1 }}; }}");
+        let report = contract_value_report(&invalid, 7208);
+        assert_eq!(report.iter().filter(|(code, _)| code == "E1206").count(), 1, "{report:?}");
+        assert!(report.iter().any(|(_, message)| message.contains("Plain")), "{report:?}");
+        // Without a contract expectation the branches must still have one type.
+        let report = contract_value_report(&format!("{CONTRACT_GREETERS} i64 F(bool c) {{ let g = c ? Hello {{}} : Bye {{}}; return 0_i64; }}"), 7209);
+        assert!(report.iter().any(|(code, _)| code == "E1206"), "{report:?}");
+    }
+
+    #[test]
+    fn match_arms_and_lambda_bodies_convert_to_their_contract_result() {
+        let valid = format!(
+            "{CONTRACT_GREETERS} enum Pick {{ First, Second }} \
+             Greeter F(Pick p) {{ return match p {{ Pick::First => Hello {{}}, Pick::Second => Bye {{}}, }}; }} \
+             i64 G() {{ Greeter() make = () => Hello {{}}; return make().Rank(); }}"
+        );
+        assert_eq!(contract_value_report(&valid, 7210), Vec::<(String, String)>::new());
+        let invalid = format!("{CONTRACT_GREETERS} i64 G() {{ Greeter() make = () => Plain {{ v: 1 }}; return 0_i64; }}");
+        let report = contract_value_report(&invalid, 7211);
+        assert!(report.iter().any(|(code, _)| code == "E1206"), "{report:?}");
+    }
 }

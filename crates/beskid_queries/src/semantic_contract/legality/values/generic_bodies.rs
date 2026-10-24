@@ -57,6 +57,7 @@ fn mentions_rigid(identity: &Identity, names: &[String]) -> bool {
         Identity::Function { parameters, result } => {
             parameters.iter().any(|parameter| mentions_rigid(parameter, names)) || mentions_rigid(result, names)
         }
+        Identity::Contract { arguments, .. } => arguments.iter().any(|argument| mentions_rigid(argument, names)),
     }
 }
 

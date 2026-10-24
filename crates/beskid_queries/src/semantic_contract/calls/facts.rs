@@ -146,6 +146,25 @@ pub(in crate::semantic_contract) fn call_arguments_tracked(
                         .and_then(Result::ok)
                         .map(|(_, receiver)| receiver)
                     })
+                    .or_else(|| {
+                        // An injected contract-typed field (`this.greeter.Greet()`) is read by its
+                        // field segment, like a nominal field chain.
+                        super::super::contracts::injected_contract_field_receiver(
+                            db,
+                            program,
+                            index,
+                            key,
+                            &path.node.path.node,
+                        )
+                        .and_then(Result::ok)
+                        .map(|(_, receiver)| receiver)
+                    })
+                    .or_else(|| {
+                        // A contract-typed field or local read as a contract value.
+                        super::super::contract_values::contract_value_member_receiver(db, program, index, key)
+                            .and_then(Result::ok)
+                            .map(|(_, receiver)| receiver)
+                    })
             };
             let receiver = if path.node.path.node.segments.len() > 2 {
                 field_receiver()?
@@ -153,7 +172,8 @@ pub(in crate::semantic_contract) fn call_arguments_tracked(
                 let implicit_field_root = path.node.path.node.segments.first().is_some_and(|segment| {
                     nominal_local_receiver_declaration(db, program, index, key, segment.node.name.node.name.as_str())
                         .is_none()
-                });
+                }) && super::resolution::primitive_local_member_receiver(db, program, index, key, &path.node.path.node)
+                    .is_none();
                 match implicit_field_root.then(field_receiver).flatten() {
                     Some(receiver) => receiver,
                     None => AstNodeKey { node: normalized_expression_node(index, callee), ..key },

@@ -103,6 +103,9 @@ impl BeskidJitModule {
 
         emit_string_literals(&mut self.module, artifact)?;
         beskid_codegen::emit_closure_static_plans(&mut self.module, artifact)?;
+        beskid_codegen::contract_static::emit_witness_tables(&mut self.module, &artifact.witness_tables, &|symbol| {
+            self.func_ids.get(symbol).copied()
+        })?;
 
         let mut ctx = self.module.make_context();
         let total = artifact.functions.len() as u64;

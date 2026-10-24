@@ -4,7 +4,7 @@ use cranelift_codegen::verify_function;
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
 
 use crate::context::{
-    CallImporter, IsleContext, StringInterner, block_is_terminated, lower_expression, lower_statement,
+    CallImporter, IsleContext, StringInterner, block_is_terminated, lower_converted_expression, lower_expression, lower_statement,
     materialize_parameters,
 };
 use crate::errors::FunctionEmissionError;
@@ -166,7 +166,7 @@ impl<'isa> FunctionEmitter<'isa> {
                         })?;
                 }
                 let value = if result.is_some() && !statement_body {
-                    Some(lower_expression(&mut context, body).map_err(FunctionEmissionError::Lowering)?)
+                    Some(lower_converted_expression(&mut context, body).map_err(FunctionEmissionError::Lowering)?)
                 } else {
                     lower_statement(&mut context, body).map_err(FunctionEmissionError::Lowering)?;
                     None

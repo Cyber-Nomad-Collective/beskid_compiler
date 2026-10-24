@@ -35,7 +35,14 @@ impl SyntaxNodeFacts<'_> {
         if let Some(receiver) = self.query(nominal_member_receiver(self.db, key)) {
             return self.managed_reference_in_context(receiver);
         }
-        if self.typed_array_plan(key).is_some() || self.query(implicit_method_receiver(self.db, key)).is_some() {
+        if let Some(method) = self.query(implicit_method_receiver(self.db, key)) {
+            // A primitive implementation's receiver is a plain value; `string` stays managed.
+            return Some(match beskid_queries::method_receiver_abi_type(self.db, method) {
+                SemanticTypeId::POINTER | SemanticTypeId::STRING => ManagedReferenceFact::GcManaged,
+                _ => ManagedReferenceFact::NativeOrScalar,
+            });
+        }
+        if self.typed_array_plan(key).is_some() {
             return Some(ManagedReferenceFact::GcManaged);
         }
         // A typed Corelib value service (`__isolate_join_value<T>`, `__port_receive_value<T>`, ...)

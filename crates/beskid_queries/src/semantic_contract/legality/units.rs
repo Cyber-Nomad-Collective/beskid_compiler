@@ -73,6 +73,8 @@ pub enum UnitObligationKind {
     /// E1201: a `where` bound whose parameter is not a generic of its declaration, or whose
     /// contract path names no contract (rendered as `TypeUnknownType`, the legacy class).
     UnresolvedWhereBound { name: Arc<str> },
+    /// E1611: an `impl` block for a primitive type that cannot issue a conformance.
+    InvalidPrimitiveImplementation { type_name: Arc<str>, reason: Arc<str> },
 }
 
 /// A failed unit-level obligation and the exact node that carries the diagnostic.
@@ -167,6 +169,12 @@ pub fn check_unit_obligations(db: &dyn Db, roots: &[AstNodeKey]) -> Vec<Semantic
                 }
                 UnitObligationKind::UnresolvedWhereBound { name } => {
                     SemanticIssueKind::TypeUnknownType { name: name.to_string() }
+                }
+                UnitObligationKind::InvalidPrimitiveImplementation { type_name, reason } => {
+                    SemanticIssueKind::InvalidPrimitiveImplementation {
+                        type_name: type_name.to_string(),
+                        reason: reason.to_string(),
+                    }
                 }
                 UnitObligationKind::ValuePath(kind) => match kind {
                     ValuePathKind::UnknownValueType => SemanticIssueKind::TypeUnknownValueType,
@@ -403,8 +411,21 @@ fn collect_conformance_obligations(
             judge_conformance(db, program, index, concrete, concrete, conformance, &definition.associated_type_bindings, findings);
         }
     }
+    let mut primitive_conformances = Vec::new();
     for node in index.ids_of_kind(NodeKind::ImplBlock) {
         let Some(block) = index.node_at(program, node).and_then(|node| node.of::<ImplBlock>()) else { continue };
+        if matches!(block.receiver_type.node, Type::Primitive(_)) {
+            collect_primitive_implementation_obligations(
+                db,
+                program,
+                index,
+                AstNodeKey { node, ..key },
+                block,
+                &mut primitive_conformances,
+                findings,
+            );
+            continue;
+        }
         let Type::Complex(receiver) = &block.receiver_type.node else { continue };
         let owner = AstNodeKey { node, ..key };
         let Some(concrete) = resolve_type_declaration(db, owner, &receiver.node) else { continue };
@@ -423,6 +444,86 @@ fn collect_conformance_obligations(
         for conformance in &block.conformances {
             judge_conformance(db, program, index, owner, concrete, conformance, &bindings, findings);
         }
+    }
+}
+
+/// The rules an `impl` block for a primitive type follows (E1611), then the ordinary contract
+/// satisfaction checks (E1601, E1602) with the block itself as the implementor. `seen` holds the
+/// primitive conformances of earlier blocks of this unit, so a repeated one is reported once.
+fn collect_primitive_implementation_obligations(
+    db: &dyn Db,
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &SyntaxIndex,
+    owner: AstNodeKey,
+    block: &ImplBlock,
+    seen: &mut Vec<(SemanticTypeId, AstNodeKey, Vec<GenericSourceTypeIdentity>)>,
+    findings: &mut Vec<UnitObligation>,
+) {
+    use crate::semantic_contract::contracts::{is_conformable_primitive, primitive_implementation_receiver};
+    let receiver = primitive_implementation_receiver(db, owner, block);
+    let type_name: Arc<str> = Arc::from(receiver.map_or("primitive", SemanticTypeId::as_str));
+    let invalid = |reason: String, findings: &mut Vec<UnitObligation>| {
+        findings.push(UnitObligation {
+            kind: UnitObligationKind::InvalidPrimitiveImplementation {
+                type_name: Arc::clone(&type_name),
+                reason: Arc::from(reason),
+            },
+            site: owner,
+        });
+    };
+    let Some(primitive) = receiver.filter(|ty| is_conformable_primitive(*ty)) else {
+        invalid(format!("`{type_name}` cannot implement contracts; only integer, float, `bool`, `char` and `string` types can"), findings);
+        return;
+    };
+    if !block.generics.is_empty() || !block.where_bounds.is_empty() {
+        invalid(format!("an implementation for `{type_name}` takes no type parameters and no `where` bounds"), findings);
+        return;
+    }
+    if block.conformances.is_empty() {
+        invalid(format!("an implementation for `{type_name}` must name a contract (`impl {type_name} : Contract {{ }}`)"), findings);
+        return;
+    }
+    for conformance in &block.conformances {
+        let mut contract_path = conformance.node.clone();
+        if let Some(last) = contract_path.segments.last_mut() {
+            last.node.type_args.clear();
+        }
+        let Some(contract) = resolve_contract(db, owner, &contract_path) else {
+            // An unresolved or non-contract path is reported by `judge_conformance`.
+            judge_conformance(db, program, index, owner, owner, conformance, &block.associated_type_bindings, findings);
+            continue;
+        };
+        let contract_name = conformance.node.segments.last().map_or_else(String::new, |segment| segment.node.name.node.name.clone());
+        if contract.unit != owner.unit {
+            invalid(
+                format!("an implementation of `{contract_name}` for `{type_name}` must be in the source file that declares `{contract_name}`"),
+                findings,
+            );
+            continue;
+        }
+        let arguments = conformance
+            .node
+            .segments
+            .last()
+            .map(|segment| {
+                segment
+                    .node
+                    .type_args
+                    .iter()
+                    .map(|argument| generic_source_type_identity(db, owner, &argument.node).ok())
+                    .collect::<Option<Vec<_>>>()
+            })
+            .unwrap_or_default();
+        if let Some(arguments) = arguments {
+            if seen.iter().any(|(ty, previous, previous_arguments)| {
+                *ty == primitive && *previous == contract && *previous_arguments == arguments
+            }) {
+                invalid(format!("`{type_name}` already implements `{contract_name}` in this source file"), findings);
+                continue;
+            }
+            seen.push((primitive, contract, arguments));
+        }
+        judge_conformance(db, program, index, owner, owner, conformance, &block.associated_type_bindings, findings);
     }
 }
 

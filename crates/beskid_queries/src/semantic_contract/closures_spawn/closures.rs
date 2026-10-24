@@ -401,7 +401,8 @@ pub(in crate::semantic_contract) fn callable_signature_for_node(
             }),
             GenericSourceTypeIdentity::Abi(_)
             | GenericSourceTypeIdentity::Nominal { .. }
-            | GenericSourceTypeIdentity::Array(_) => Err(SemanticError::unavailable("callable_signature")),
+            | GenericSourceTypeIdentity::Array(_)
+            | GenericSourceTypeIdentity::Contract { .. } => Err(SemanticError::unavailable("callable_signature")),
         }));
     }
     if let Some(path) = node.of::<beskid_analysis::syntax::PathExpression>() {

@@ -142,6 +142,7 @@ impl ModSemanticQueryAuthority<'_> {
             }
             ShapeIdentity::Abi(_) => Ok(()),
             ShapeIdentity::Function { .. } => Err(Self::error("catchall value contains executable function identity")),
+            ShapeIdentity::Contract { .. } => Err(Self::error("catchall value contains a contract value")),
             ShapeIdentity::Array(element) => self.eligible_catchall_value(element, depth + 1, remaining, seen),
             ShapeIdentity::Nominal { qualified_name, arguments } => {
                 if !seen.insert(identity.clone()) {

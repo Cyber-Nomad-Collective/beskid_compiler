@@ -203,7 +203,7 @@ fn first_unresolved_nominal_reference(db: &dyn Db, key: AstNodeKey, ty: &Type) -
             if !type_syntax_is_enclosing_generic_parameter_reference(db, key, ty)
                 && !is_enclosing_container_generic_parameter(db, key, ty)
                 && resolve_type_declaration(db, key, &path.node).is_none()
-                && resolve_contract(db, key, &path.node).is_none()
+                && resolve_contract_head(db, key, &path.node).is_none()
             {
                 return path
                     .node

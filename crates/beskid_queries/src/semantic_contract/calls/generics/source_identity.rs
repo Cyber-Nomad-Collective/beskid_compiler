@@ -45,17 +45,23 @@ pub(super) fn generic_source_path_identity(
     key: AstNodeKey,
     path: &beskid_analysis::syntax::Path,
 ) -> Result<GenericSourceTypeIdentity, SemanticError> {
-    let declaration = resolve_type_declaration(db, key, path)
-        .ok_or_else(|| SemanticError::unavailable("generic_source_type_identity"))?;
-    let qualified_name = stable_declaration_identity(db, declaration)
-        .ok_or_else(|| SemanticError::unavailable("generic_source_type_identity"))?;
     let arguments = path
         .segments
         .iter()
         .flat_map(|segment| segment.node.type_args.iter())
         .map(|argument| generic_source_type_identity(db, key, &argument.node))
         .collect::<Result<Vec<_>, _>>()?;
-    Ok(GenericSourceTypeIdentity::Nominal { qualified_name, arguments: arguments.into() })
+    if let Some(declaration) = resolve_type_declaration(db, key, path) {
+        let qualified_name = stable_declaration_identity(db, declaration)
+            .ok_or_else(|| SemanticError::unavailable("generic_source_type_identity"))?;
+        return Ok(GenericSourceTypeIdentity::Nominal { qualified_name, arguments: arguments.into() });
+    }
+    // A contract path is the identity of a contract value (a box dispatched at run time).
+    let contract = crate::semantic_contract::contracts::resolve_contract_head(db, key, path)
+        .ok_or_else(|| SemanticError::unavailable("generic_source_type_identity"))?;
+    let qualified_name = stable_declaration_identity(db, contract)
+        .ok_or_else(|| SemanticError::unavailable("generic_source_type_identity"))?;
+    Ok(GenericSourceTypeIdentity::Contract { qualified_name, arguments: arguments.into() })
 }
 
 pub(in crate::semantic_contract) fn generic_source_type_identity_with_substitutions(
@@ -74,19 +80,37 @@ pub(in crate::semantic_contract) fn generic_source_type_identity_with_substituti
     Ok(match syntax_type {
         Type::Primitive(_) => GenericSourceTypeIdentity::Abi(abi_type_from_syntax(db, key, syntax_type)?),
         Type::Complex(path) => {
-            let declaration = resolve_type_declaration(db, key, &path.node).ok_or_else(|| {
-                source_expression_unavailable(db, key, &format!("unresolved type `{}`", path_spelling(&path.node)))
-            })?;
-            let qualified_name = stable_declaration_identity(db, declaration)
-                .ok_or_else(|| source_expression_unavailable(db, key, "type declaration has no stable identity"))?;
             let arguments = path
                 .node
                 .segments
                 .iter()
                 .flat_map(|segment| segment.node.type_args.iter())
                 .map(|argument| generic_source_type_identity_with_substitutions(db, key, &argument.node, substitutions))
-                .collect::<Result<Vec<_>, _>>()?;
-            GenericSourceTypeIdentity::Nominal { qualified_name, arguments: arguments.into() }
+                .collect::<Result<Vec<_>, _>>()?
+                .into();
+            match resolve_type_declaration(db, key, &path.node) {
+                Some(declaration) => {
+                    let qualified_name = stable_declaration_identity(db, declaration).ok_or_else(|| {
+                        source_expression_unavailable(db, key, "type declaration has no stable identity")
+                    })?;
+                    GenericSourceTypeIdentity::Nominal { qualified_name, arguments }
+                }
+                // A contract path is the identity of a contract value (a box dispatched at run time).
+                None => {
+                    let contract = crate::semantic_contract::contracts::resolve_contract_head(db, key, &path.node)
+                        .ok_or_else(|| {
+                            source_expression_unavailable(
+                                db,
+                                key,
+                                &format!("unresolved type `{}`", path_spelling(&path.node)),
+                            )
+                        })?;
+                    let qualified_name = stable_declaration_identity(db, contract).ok_or_else(|| {
+                        source_expression_unavailable(db, key, "contract declaration has no stable identity")
+                    })?;
+                    GenericSourceTypeIdentity::Contract { qualified_name, arguments }
+                }
+            }
         }
         Type::Array(element) => GenericSourceTypeIdentity::Array(Box::new(
             generic_source_type_identity_with_substitutions(db, key, &element.node, substitutions)?,
@@ -236,6 +260,11 @@ pub(in crate::semantic_contract) fn stable_declaration_identity(
         .or_else(|| {
             declaration_node
                 .of::<beskid_analysis::syntax::ContractMethodSignature>()
+                .map(|definition| definition.name.node.name.as_str())
+        })
+        .or_else(|| {
+            declaration_node
+                .of::<beskid_analysis::syntax::ContractDefinition>()
                 .map(|definition| definition.name.node.name.as_str())
         })?;
     let mut path = db

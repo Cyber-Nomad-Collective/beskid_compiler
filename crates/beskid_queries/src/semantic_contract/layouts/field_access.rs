@@ -1234,3 +1234,44 @@ fn template_pattern_binding_fact(
     let binding = pattern_binding_fact_in_environment(db, index, key, local, Some(&instance))?.ok()?;
     matches!(binding.payload, AggregateFieldShape::Nominal(_)).then_some(binding)
 }
+
+/// The single-step field read a path segment denotes inside a longer path (`this.greeter` in
+/// `this.greeter.Greet`, `host.greeter` in `host.greeter.Greet`, or the bare `greeter` of
+/// `greeter.Greet` inside a method): the receiver's declaration, the receiver key and the field
+/// name. `None` for any other segment shape.
+pub(in crate::semantic_contract) fn path_segment_field_receiver(
+    db: &dyn Db,
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    key: AstNodeKey,
+) -> Option<Result<(AstNodeKey, AstNodeKey, String), SemanticError>> {
+    index.node_at(program, key.node)?.of::<beskid_analysis::syntax::PathSegment>()?;
+    let path_node = parent_node(index, key.node)?;
+    let expression_node = parent_node(index, path_node)?;
+    let expression = index.node_at(program, expression_node)?.of::<beskid_analysis::syntax::PathExpression>()?;
+    let segments = expression.path.node.segments.as_slice();
+    let position = segments.iter().position(|segment| {
+        index.direct_child_id(program, path_node, beskid_analysis::syntax_query::DynNodeRef::from(segment)) == Some(key.node)
+    })?;
+    if segments[..=position].iter().any(|segment| !segment.node.type_args.is_empty()) {
+        return None;
+    }
+    let resolved = match &segments[..=position] {
+        [receiver, field] if is_implicit_receiver_name(program, index, key, receiver.node.name.node.name.as_str()) => {
+            applied_method_receiver_layout(db, program, index, key, None)
+                .map(|(declaration, receiver, _)| (declaration, receiver, field.node.name.node.name.clone()))
+        }
+        [receiver, field]
+            if resolve_lexical_declaration(program, index, key.node, receiver.node.name.node.name.as_str()).is_some() =>
+        {
+            applied_local_receiver_layout(db, program, index, key, receiver.node.name.node.name.as_str(), None)
+                .map(|(declaration, receiver, _)| (declaration, receiver, field.node.name.node.name.clone()))
+        }
+        [field] if resolve_lexical_declaration(program, index, key.node, field.node.name.node.name.as_str()).is_none() => {
+            applied_method_receiver_layout(db, program, index, key, None)
+                .map(|(declaration, receiver, _)| (declaration, receiver, field.node.name.node.name.clone()))
+        }
+        _ => return None,
+    };
+    Some(resolved)
+}

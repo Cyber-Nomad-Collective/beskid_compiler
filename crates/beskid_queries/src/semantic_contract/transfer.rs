@@ -351,8 +351,13 @@ impl<'db> ClassWalker<'db> {
             }
             Type::Associated { .. } => Err(SemanticError::unavailable_at("transfer_class", context)),
             Type::Complex(path) => {
-                let declaration = resolve_type_declaration(self.db, context, &path.node)
-                    .ok_or_else(|| SemanticError::unavailable_at("transfer_class", context))?;
+                let Some(declaration) = resolve_type_declaration(self.db, context, &path.node) else {
+                    // A contract box crosses an isolate boundary as the graph it holds.
+                    return match super::contracts::resolve_contract(self.db, context, &path.node) {
+                        Some(_) => Ok(TransferClass::Moved),
+                        None => Err(SemanticError::unavailable_at("transfer_class", context)),
+                    };
+                };
                 let arguments = path
                     .node
                     .segments
@@ -375,6 +380,8 @@ impl<'db> ClassWalker<'db> {
             GenericSourceTypeIdentity::Abi(ty) => Ok(abi_class(*ty)),
             GenericSourceTypeIdentity::Array(element) => Ok(array_class(self.identity_class(context, element)?)),
             GenericSourceTypeIdentity::Function { .. } => Ok(TransferClass::Never(TransferNeverReason::FunctionType)),
+            // A contract box crosses an isolate boundary as the graph it holds.
+            GenericSourceTypeIdentity::Contract { .. } => Ok(TransferClass::Moved),
             GenericSourceTypeIdentity::Nominal { arguments, .. } => {
                 let declaration = concrete_type_or_enum_declaration(self.db, context, identity)
                     .ok_or_else(|| SemanticError::unavailable_at("transfer_class", context))?;

@@ -26,7 +26,7 @@ impl IsleContext<'_, '_, '_, '_> {
             let (_, root) = self.emit_inline_closure_environment(environment)?;
             self.release_temporary_root(Some(root))?;
         }
-        let value = generated::constructor_lower_expression(self, lambda.body)?;
+        let value = self.lower_coerced_expression(lambda.body)?;
         (self.builder.func.dfg.value_type(value) == lambda.result_type).then_some(value)
     }
 
@@ -93,7 +93,7 @@ impl IsleContext<'_, '_, '_, '_> {
         let mut arguments = Vec::with_capacity(argument_keys.len());
         let mut roots = Vec::with_capacity(argument_keys.len());
         for (argument, parameter) in argument_keys.into_iter().zip(plan.parameters.iter().copied()) {
-            let value = generated::constructor_lower_expression(self, argument)?;
+            let value = self.lower_coerced_expression(argument)?;
             let value = if self.builder.func.dfg.value_type(value) == parameter {
                 value
             } else {

@@ -37,6 +37,12 @@ pub(in crate::semantic_contract) fn call_lowering_for_node(
             if let Some(receiver) = contract_member_call_receiver(db, program, index, key, call) {
                 return Some(receiver.map(|(method, _)| CallLowering::Direct(method)));
             }
+            // A member call on any expression of a contract type (`all[0].Greet()`,
+            // `Make().Greet()`) is a contract method call dispatched through the value.
+            if let Some(receiver) = super::super::contract_values::contract_value_member_receiver(db, program, index, key)
+            {
+                return Some(receiver.map(|(method, _)| CallLowering::Direct(method)));
+            }
             Ok(flatten_member_as_path_declaration(db, program, index, key, member)
                 .map(CallLowering::Direct)
                 .or_else(|| function_value_callee(db, program, index, key, call).map(CallLowering::FunctionValue))
@@ -542,7 +548,20 @@ pub(in crate::semantic_contract) fn method_declaration_for_member_receiver(
         beskid_analysis::syntax_query::DynNodeRef::from(member.node.target.as_ref()),
     )?;
     let receiver = AstNodeKey { node: normalized_expression_node(index, receiver), ..key };
-    let declaration = generic_source_expression_identity(db, receiver)
+    // `3.Format()`, `(n).Format()`: a value of a primitive type calls its primitive implementation.
+    if let Some(primitive) = generic_source_expression_identity(db, receiver)
+        .ok()
+        .as_ref()
+        .and_then(super::super::contracts::conformable_primitive_identity)
+    {
+        return super::super::contracts::primitive_method_declaration(
+            db,
+            key,
+            primitive,
+            &member.node.member.node.name,
+        );
+    }
+    let nominal = (|| generic_source_expression_identity(db, receiver)
         .ok()
         .and_then(|identity| super::super::contracts::concrete_declaration(db, key, &identity))
         .or_else(|| aggregate_literal_declaration(db, receiver).ok().flatten())
@@ -558,7 +577,16 @@ pub(in crate::semantic_contract) fn method_declaration_for_member_receiver(
             }
             nominal_local_receiver_declaration(db, program, index, key, segment.node.name.node.name.as_str())
                 .map(|(declaration, _)| declaration)
-        })?;
+        }))();
+    let Some(declaration) = nominal else {
+        // Any other receiver whose proven value type is a primitive (`(x).Format()` for a `for`
+        // variable or a `match` binding).
+        let primitive = value_abi_type(db, receiver)
+            .ok()
+            .flatten()
+            .filter(|ty| super::super::contracts::is_conformable_primitive(*ty))?;
+        return super::super::contracts::primitive_method_declaration(db, key, primitive, &member.node.member.node.name);
+    };
     let method = unique_nominal_method_declaration(db, declaration, &member.node.member.node.name)?;
     let target = db.syntax_unit(method.unit).filter(|syntax| syntax.accepts_key(db, method))?;
     let definition = target
@@ -642,6 +670,17 @@ pub(in crate::semantic_contract) fn nominal_local_member_receiver(
     key: AstNodeKey,
     path: &beskid_analysis::syntax::Path,
 ) -> Option<(AstNodeKey, AstNodeKey)> {
+    nominal_typed_local_member_receiver(db, program, index, key, path)
+        .or_else(|| primitive_local_member_receiver(db, program, index, key, path))
+}
+
+fn nominal_typed_local_member_receiver(
+    db: &dyn Db,
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    key: AstNodeKey,
+    path: &beskid_analysis::syntax::Path,
+) -> Option<(AstNodeKey, AstNodeKey)> {
     // A two-segment spelling is a field chain when its root is not a lexical local: inside a
     // method `field.Method()` projects the implicit receiver before the call.
     let chained = path.segments.len() > 2
@@ -715,8 +754,14 @@ pub(in crate::semantic_contract) fn unique_nominal_method_declaration(
     let declaration_program = declaration_syntax.expanded_program(db);
     let declaration_index = declaration_syntax.syntax_index(db);
     let nominal = declaration_index.node_at(declaration_program, declaration.node)?;
+    // A primitive conformance (`impl i64 : Formatting`) has no nominal declaration: its `impl`
+    // block is the implementor, and only that block's own methods implement the contract.
+    let primitive_implementation = nominal
+        .of::<beskid_analysis::syntax::ImplBlock>()
+        .is_some_and(|block| matches!(block.receiver_type.node, beskid_analysis::syntax::Type::Primitive(_)));
     if nominal.of::<beskid_analysis::syntax::TypeDefinition>().is_none()
         && nominal.of::<beskid_analysis::syntax::EnumDefinition>().is_none()
+        && !primitive_implementation
     {
         return None;
     }
@@ -735,9 +780,9 @@ pub(in crate::semantic_contract) fn unique_nominal_method_declaration(
     if let Some(unique) = (methods.len() == 1).then(|| methods[0]) {
         return Some(unique);
     }
-    if !methods.is_empty() {
+    if !methods.is_empty() || primitive_implementation {
         // Ambiguous among the type's own inline methods: fail closed, do not also widen the
-        // search into `impl` blocks.
+        // search into `impl` blocks. A primitive implementation has no other source of methods.
         return None;
     }
     // `impl X : Contract { the conforming method here }` -- same conformance fact as
@@ -828,4 +873,30 @@ pub(in crate::semantic_contract) fn corelib_service_for(
         .iter()
         .copied()
         .find(|service| service.name == name)
+}
+
+/// `n.Format()` where `n` is a local (parameter, `let`, `for` variable or `match` binding) of a primitive type: the method of the
+/// primitive's implementation and the local that is its receiver. A local typed by a generic
+/// parameter has no primitive identity and keeps the bound-member rules.
+pub(in crate::semantic_contract) fn primitive_local_member_receiver(
+    db: &dyn Db,
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    key: AstNodeKey,
+    path: &beskid_analysis::syntax::Path,
+) -> Option<(AstNodeKey, AstNodeKey)> {
+    let [receiver, member] = path.segments.as_slice() else {
+        return None;
+    };
+    if !receiver.node.type_args.is_empty() || !member.node.type_args.is_empty() {
+        return None;
+    }
+    let local = resolve_lexical_declaration(program, index, key.node, receiver.node.name.node.name.as_str())?;
+    // The proven type of the local, whatever declares it: a parameter, a `let`, a `for` variable
+    // (its iterable's element) or a `match` binding (its payload).
+    let primitive = abi_local_declaration_type(db, program, index, key, local)?
+        .ok()
+        .filter(|ty| super::super::contracts::is_conformable_primitive(*ty))?;
+    let method = super::super::contracts::primitive_method_declaration(db, key, primitive, &member.node.name.node.name)?;
+    Some((method, AstNodeKey { node: local, ..key }))
 }

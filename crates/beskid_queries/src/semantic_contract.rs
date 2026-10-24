@@ -22,7 +22,15 @@ mod closures_spawn;
 mod completion;
 mod composition;
 mod contracts;
-pub use contracts::{AppliedContractIdentity, applied_contract_argument_is_type};
+pub use contracts::{AppliedContractIdentity, applied_contract_argument_is_type, method_receiver_abi_type};
+mod contract_values;
+pub use contract_values::{
+    CONTRACT_BOX_RECEIVER_OFFSET, CONTRACT_BOX_SIZE, CONTRACT_BOX_WITNESS_OFFSET, ContractBoxCoercion, ContractBoxReceiver,
+    ContractDispatch, ContractUpcast, ContractWitnessTable, WITNESS_HEADER_WORDS, WITNESS_RECEIVER_BITS, WITNESS_RECEIVER_F32,
+    WITNESS_RECEIVER_F64, WITNESS_RECEIVER_REFERENCE, contract_box_coercion, contract_dispatch, contract_upcast,
+    contract_value_equality, contract_value_receiver, contract_witness_method_instances, contract_witness_table_for_declaration,
+    array_literal_has_contract_elements, injected_field_contract,
+};
 mod events;
 mod expected_type;
 pub use expected_type::expected_type_in_environment;
@@ -166,7 +174,7 @@ pub use composition::{
 use contracts::{
     ContractConformanceFailure, contract_conformance_failure, contract_member_call_receiver, contract_member_receiver,
     contract_method_specialization, contract_parameter_declarations, contract_witnesses_for_call,
-    render_signature_syntax, render_type_syntax, resolve_contract, specialized_source_expression_identity,
+    render_signature_syntax, render_type_syntax, resolve_contract, resolve_contract_head, specialized_source_expression_identity,
 };
 use events::{event_handler_lambda_for_local_tracked, event_operation_tracked};
 pub use growth::{DeadCollectionGrowth, dead_collection_growth, is_growth_call_candidate};
@@ -301,7 +309,7 @@ pub use queries::{
     resolved_item, resolved_local, runtime_intrinsic, runtime_intrinsic_name, spawn_entry_validation,
     spawn_handle_type, spawn_legality, spawn_target, test_item, test_statement_nodes, specialized_try_expression_fact, try_expression_fact, try_expression_judgement, try_expression_legality,
     type_applied_contract_implementation, type_contract_applications, type_contract_applications_of,
-    type_contract_declarations, type_contract_implementation, typed_array_allocation, value_abi_type,
+    type_contract_declarations, type_contract_implementation, contract_of_method_signature, typed_array_allocation, value_abi_type,
 };
 
 pub use native_mod_transport::{native_mod_expression_payload, native_mod_single_array_element};

@@ -600,7 +600,7 @@ impl IsleContext<'_, '_, '_, '_> {
                     self.end_local_root_scope_for_current_block()?;
                     continue;
                 }
-                let value = generated::constructor_lower_expression(self, arm.body)?;
+                let value = self.lower_coerced_expression(arm.body)?;
                 if self.builder.func.dfg.value_type(value) != result_type {
                     self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidMatchArms });
                     return None;
@@ -675,7 +675,7 @@ impl IsleContext<'_, '_, '_, '_> {
         }
         for (field, payload_key) in fields.iter().zip(payloads.iter().copied()) {
             if let Some(field) = field {
-                let payload = self.lower_nested_expression(payload_key)?;
+                let payload = self.lower_coerced_expression(payload_key)?;
                 if self.builder.func.dfg.value_type(payload) != field.value_type {
                     self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidEnumLayout });
                     return None;
@@ -731,8 +731,12 @@ macro_rules! generated_enum_methods {
 
         fn emit_match(&mut self, key: AstNodeKey) -> Option<Value> {
             let arms = self.facts.match_arms(key)?;
-            let result_type =
-                self.facts.scalar_type(key).or_else(|| arms.iter().find_map(|arm| self.facts.scalar_type(arm.body)))?;
+            // Target typing: arms that convert to a contract merge as contract boxes.
+            let result_type = if arms.iter().any(|arm| self.converts_to_contract_box(arm.body)) {
+                dispatch::pointer_type(self.frontend_config)
+            } else {
+                self.facts.scalar_type(key).or_else(|| arms.iter().find_map(|arm| self.facts.scalar_type(arm.body)))?
+            };
             self.emit_match_dispatch(key, Some(result_type))?
         }
 

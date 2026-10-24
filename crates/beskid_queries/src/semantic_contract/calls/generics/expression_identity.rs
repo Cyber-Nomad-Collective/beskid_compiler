@@ -75,6 +75,10 @@ pub(in crate::semantic_contract) fn generic_source_expression_identity(
         if let Ok(Some(access)) = aggregate_field_access(db, normalized_key) {
             return generic_source_aggregate_field_identity(db, &access);
         }
+        // An injected field (`all` for `inject Greeter[] all`) holds its declared type.
+        if let Some(identity) = super::super::super::contract_values::injected_field_identity(db, normalized_key) {
+            return Ok(identity);
+        }
         // A named function item read as a value has the function type of its declaration.
         if let Ok(Some(value)) = function_item_value(db, normalized_key) {
             return function_item_value_identity(db, &value);
@@ -87,6 +91,19 @@ pub(in crate::semantic_contract) fn generic_source_expression_identity(
             if let Ok(identity) = generic_source_local_identity(db, program, index, normalized_key, declaration) {
                 return Ok(identity);
             }
+        }
+        // `this` in a method of a primitive implementation is a value of that primitive.
+        if let [segment] = path.path.node.segments.as_slice()
+            && segment.node.type_args.is_empty()
+            && super::super::super::layouts::is_implicit_receiver_name(
+                program,
+                index,
+                normalized_key,
+                segment.node.name.node.name.as_str(),
+            )
+            && let Some(receiver @ beskid_analysis::syntax::Type::Primitive(_)) = method_this_type(db, normalized_key)
+        {
+            return generic_source_type_identity(db, normalized_key, &receiver);
         }
     }
     if let Some(array) = node.of::<beskid_analysis::syntax::ArrayLiteralExpression>() {

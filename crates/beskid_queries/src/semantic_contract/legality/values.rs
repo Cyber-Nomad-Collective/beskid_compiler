@@ -59,7 +59,11 @@
 use super::members::enum_definition;
 use super::typing::{compatible, enclosing_callable, expression_nodes, nodes_of_kind, proven_type};
 use super::*;
-use crate::semantic_contract::contracts::{concrete_declaration, type_declaration_conforms_to_contract};
+use crate::semantic_contract::contract_values::upcast_targets;
+use crate::semantic_contract::contracts::{
+    concrete_declaration, contract_declaration_for_identity, is_conformable_primitive, primitive_conforms,
+    type_declaration_conforms_to_contract,
+};
 use beskid_analysis::syntax::{
     AssignExpression, AssignOp, AstNodeId, CallExpression, ContractMethodSignature, EnumConstructorExpression,
     Expression, FieldKind, FunctionDefinition, LambdaExpression, LetStatement, MatchExpression, PathExpression,
@@ -111,6 +115,7 @@ fn value_obligations_tracked(
         collect_struct_literal_values(db, program, index, key, &mut findings);
         collect_enum_constructor_values(db, program, index, key, &mut findings);
         collect_pattern_values(db, program, index, key, &mut findings);
+        collect_contract_branch_values(db, program, index, key, &mut findings);
         generic_bodies::collect_generic_member_values(db, program, index, key, node, &mut findings);
         findings.sort_by_key(|finding| finding.site.node.0);
         findings.dedup();
@@ -118,9 +123,49 @@ fn value_obligations_tracked(
     })
 }
 
+/// Both branches of a conditional whose expected type is a contract (`Greeter g = c ? Hello {} :
+/// Bye {};`) are judged against that contract: each converts on its own (target typing), so the
+/// branches need not have one type. A numeric literal branch is judged as a value of its own
+/// default type.
+fn collect_contract_branch_values(
+    db: &dyn Db,
+    program: &Program,
+    index: &SyntaxIndex,
+    key: AstNodeKey,
+    findings: &mut Vec<ValueObligation>,
+) {
+    for node in nodes_of_kind(index, key.node, NodeKind::ConditionalExpression) {
+        let Some(conditional) =
+            index.node_at(program, node).and_then(|node| node.of::<beskid_analysis::syntax::ConditionalExpression>())
+        else {
+            continue;
+        };
+        let Some(expected) = contract_expectation(db, AstNodeKey { node, ..key }) else { continue };
+        for branch in [conditional.then_branch.as_ref(), conditional.else_branch.as_ref()] {
+            let Some((site, subject)) = expression_nodes(program, index, node, branch) else { continue };
+            // A branch that forwards the expectation further is judged at its own leaves.
+            if matches!(
+                index.kind(subject),
+                Some(NodeKind::ConditionalExpression | NodeKind::MatchExpression | NodeKind::BlockExpression)
+            ) {
+                continue;
+            }
+            judge_value(db, program, index, key, &expected, site, subject, false, findings);
+        }
+    }
+}
+
+/// The contract destination the expression at `key` is expected to convert to, if any.
+pub(super) fn contract_expectation(db: &dyn Db, key: AstNodeKey) -> Option<Destination> {
+    let expected = crate::semantic_contract::expected_type_in(db, key, None).ok()??;
+    let Identity::Contract { qualified_name, .. } = &expected.identity else { return None };
+    let contract = contract_declaration_for_identity(db, key, qualified_name)?;
+    Some(Destination::Contract { contract, name: Arc::from(identity_name(&expected.identity).as_str()) })
+}
+
 /// A judged destination: a source type identity, or a contract the value must conform to.
 #[derive(Debug, Clone, PartialEq, Eq)]
-enum Destination {
+pub(super) enum Destination {
     Identity(Identity),
     /// A contract-typed destination (legacy `is_contract_compatible`), with its source spelling.
     Contract { contract: AstNodeKey, name: Arc<str> },
@@ -240,6 +285,9 @@ fn identities_compatible(expected: &Identity, actual: &Identity) -> bool {
         (Identity::Nominal { qualified_name: expected, .. }, Identity::Nominal { qualified_name: actual, .. }) => {
             expected == actual
         }
+        (Identity::Contract { qualified_name: expected, .. }, Identity::Contract { qualified_name: actual, .. }) => {
+            expected == actual
+        }
         (Identity::Array(expected), Identity::Array(actual)) => match (expected.as_ref(), actual.as_ref()) {
             (Identity::Abi(expected), Identity::Abi(actual)) => {
                 expected == actual || *expected == SemanticTypeId::POINTER || *actual == SemanticTypeId::POINTER
@@ -258,6 +306,19 @@ fn identities_compatible(expected: &Identity, actual: &Identity) -> bool {
 fn contract_accepts(db: &dyn Db, scope: AstNodeKey, contract: AstNodeKey, actual: &Identity) -> Option<bool> {
     match actual {
         Identity::Abi(SemanticTypeId::POINTER | SemanticTypeId::NEVER) | Identity::Function { .. } => None,
+        // A contract value is accepted by its own contract and by every non-generic contract its
+        // contract embeds: the conversion rebuilds the box with the embedded contract's table.
+        Identity::Contract { qualified_name, .. } => {
+            if stable_declaration_identity(db, contract).as_ref() == Some(qualified_name) {
+                return Some(true);
+            }
+            let source = contract_declaration_for_identity(db, scope, qualified_name)?;
+            Some(upcast_targets(db, source)?.contains(&contract))
+        }
+        // A primitive conforms through its `impl P : C` block; it is boxed into the destination.
+        Identity::Abi(primitive) if is_conformable_primitive(*primitive) => {
+            Some(primitive_conforms(db, scope, *primitive, contract))
+        }
         Identity::Abi(_) | Identity::Array(_) => Some(false),
         Identity::Nominal { .. } => {
             let concrete = concrete_declaration(db, scope, actual)?;
@@ -285,6 +346,10 @@ fn identity_name(identity: &Identity) -> String {
             identity_name(result),
             parameters.iter().map(identity_name).collect::<Vec<_>>().join(", ")
         ),
+        Identity::Contract { qualified_name, arguments } if arguments.is_empty() => qualified_name.to_string(),
+        Identity::Contract { qualified_name, arguments } => {
+            format!("{qualified_name}<{}>", arguments.iter().map(identity_name).collect::<Vec<_>>().join(", "))
+        }
     }
 }
 
@@ -296,6 +361,13 @@ fn judge(
     site: AstNodeKey,
 ) {
     let (accepted, expected_name) = match expected {
+        // A contract reached through a forwarded or function-typed destination (a lambda body's
+        // result) is judged by conformance like a declared contract destination.
+        Destination::Identity(expected @ Identity::Contract { qualified_name, .. }) => {
+            let Some(contract) = contract_declaration_for_identity(db, site, qualified_name) else { return };
+            let Some(accepted) = contract_accepts(db, site, contract, actual) else { return };
+            (accepted, identity_name(expected))
+        }
         Destination::Identity(expected) => (identities_compatible(expected, actual), identity_name(expected)),
         Destination::Contract { contract, name } => {
             let Some(accepted) = contract_accepts(db, site, *contract, actual) else { return };

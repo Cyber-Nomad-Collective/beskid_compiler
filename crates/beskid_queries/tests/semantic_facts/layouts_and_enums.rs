@@ -180,7 +180,7 @@ type List<T> {
     let declaration = key(unit, generation, &index, NodeKind::TypeDefinition, 0);
     let method = key(unit, generation, &index, NodeKind::MethodDefinition, 0);
     let storage =
-        key_at_start(unit, generation, &index, NodeKind::PathExpression, source.find("storage;").expect("storage use"));
+        key_at_start(unit, generation, &index, NodeKind::PathExpression, source.find("= storage;").map(|at| at + 2).expect("storage use"));
     let count =
         key_at_start(unit, generation, &index, NodeKind::PathExpression, source.rfind("count").expect("count use"));
 
@@ -216,7 +216,7 @@ type Holder {
 "#;
     let (db, _project, unit, generation, index) = setup(source);
     let parameter_use =
-        key_at_start(unit, generation, &index, NodeKind::PathExpression, source.find("text;").expect("parameter use"));
+        key_at_start(unit, generation, &index, NodeKind::PathExpression, source.find("return text;").map(|at| at + 7).expect("parameter use"));
     let local_use =
         key_at_start(unit, generation, &index, NodeKind::PathExpression, source.rfind("count;").expect("local use"));
 

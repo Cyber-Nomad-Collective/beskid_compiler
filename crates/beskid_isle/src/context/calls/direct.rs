@@ -56,7 +56,14 @@ impl IsleContext<'_, '_, '_, '_> {
                 continue;
             }
             let parameter = parameters.next()?;
-            let value = generated::constructor_lower_expression(self, argument)?;
+            let value = self.lower_coerced_expression(argument)?;
+            // conf2's static selection on a contract value: the implementation is called directly
+            // with the receiver word read out of the box.
+            let value = if position == 0 && self.facts.contract_value_receiver(key) {
+                self.unbox_contract_receiver(value)
+            } else {
+                value
+            };
             let value = if self.builder.func.dfg.value_type(value) == parameter.value_type {
                 value
             } else {

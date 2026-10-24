@@ -45,6 +45,15 @@ pub(super) fn resolve_module_items(
     // see (owner decision, `docs/superpowers/specs/2026-09-23-production-semantic-diagnostics-design.md`
     // section 2.4 / section 6 item 2).
 
+    // A composition activation boxes registered implementations into contract-typed injected
+    // fields (runtime contract dispatch): their methods are reachable only through the witness
+    // tables, so they join the worklist here.
+    for instance in super::contract_witnesses::composition_witness_instances(input)? {
+        let instances = specializations.entry(instance.declaration).or_default();
+        if !instances.contains(&instance) {
+            instances.push(instance);
+        }
+    }
     // Witness resolution discovers concrete implementation bodies after source reachability.
     // Add those bodies and their ordinary direct dependencies to this same module worklist.
     let mut source_items = source_items.to_vec();
@@ -518,7 +527,35 @@ fn collect_generic_call_specializations_in_environment(
         },
         _ => Vec::new(),
     };
-    for copy in copies {
+    // A concrete value boxed into a contract-typed destination (runtime contract dispatch,
+    // v0.6.7) reaches its implementation's methods only through the witness table, so each of
+    // them joins this worklist like a direct call.
+    let mut witness_instances = Vec::new();
+    if !matches!(
+        kind,
+        None | Some(
+            beskid_queries::IndexedNodeKind::FunctionDefinition
+                | beskid_queries::IndexedNodeKind::MethodDefinition
+                | beskid_queries::IndexedNodeKind::Parameter
+                | beskid_queries::IndexedNodeKind::Field
+                | beskid_queries::IndexedNodeKind::Identifier
+                | beskid_queries::IndexedNodeKind::LetStatement
+                | beskid_queries::IndexedNodeKind::ReturnStatement
+        )
+    ) && let Some(coercion) = beskid_queries::contract_box_coercion(db, key, environment).map_err(|error| {
+        semantic_fact_error(
+            db,
+            key,
+            format_args!("contract boxing failed at {}", beskid_queries::format_ast_node_site(db, key)),
+            error,
+        )
+    })? {
+        let instances = beskid_queries::contract_witness_method_instances(db, &coercion.witness)
+            .map_err(|error| emission_verification(error.to_string()))?
+            .unwrap_or_default();
+        witness_instances.extend(instances.iter().cloned().map(Ok));
+    }
+    for copy in copies.into_iter().chain(witness_instances.into_iter().map(|instance| instance.map(Some))) {
         let copy = copy.map_err(|error| {
             semantic_fact_error(
                 db,
@@ -583,7 +620,13 @@ fn direct_generic_call_declaration(
         return Ok(None);
     }
     match item_abi_signature(db, declaration) {
-        Ok(Some(_)) => Ok(None),
+        // A function with contract-typed parameters has a plain body (its parameters are contract
+        // boxes) and one witness specialization per concrete argument type; a call that proves
+        // witnesses uses the specialization, which joins this worklist like a generic call.
+        Ok(Some(_)) => match generic_call_specialization(db, key) {
+            Ok(Some(specialization)) if !specialization.contract_witnesses.is_empty() => Ok(Some(declaration)),
+            _ => Ok(None),
+        },
         // Positively classified generic/contract templates are ABI-less. The call fact must
         // prove one exact specialization, otherwise the caller is rejected fail-closed.
         Ok(None) => Ok(Some(declaration)),

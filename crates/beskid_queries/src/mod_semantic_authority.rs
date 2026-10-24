@@ -307,6 +307,9 @@ impl<'db> ModSemanticQueryAuthority<'db> {
             ShapeIdentity::Function { .. } => {
                 Err(Self::error("function shape unavailable for structural serialization"))
             }
+            ShapeIdentity::Contract { .. } => {
+                Err(Self::error("contract value shape unavailable for structural serialization"))
+            }
         }
     }
     fn declaration(&self, key: AstNodeKey) -> Result<ModSemanticDeclaration, ModSemanticError> {

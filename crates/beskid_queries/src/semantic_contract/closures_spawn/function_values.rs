@@ -478,7 +478,8 @@ pub(in crate::semantic_contract) fn lambda_identity(
         match specialized_source_expression_identity(db, body, enclosing) {
             Ok(identity @ (GenericSourceTypeIdentity::Nominal { .. }
             | GenericSourceTypeIdentity::Array(_)
-            | GenericSourceTypeIdentity::Function { .. })) => identity,
+            | GenericSourceTypeIdentity::Function { .. }
+            | GenericSourceTypeIdentity::Contract { .. })) => identity,
             synthesized => match value_abi_type(db, body) {
                 Ok(Some(abi)) if abi != SemanticTypeId::POINTER => GenericSourceTypeIdentity::Abi(abi),
                 value => {
@@ -541,7 +542,8 @@ fn block_lambda_result_identity(
         let identity = match specialized_source_expression_identity(db, value, enclosing) {
             Ok(identity @ (GenericSourceTypeIdentity::Nominal { .. }
             | GenericSourceTypeIdentity::Array(_)
-            | GenericSourceTypeIdentity::Function { .. })) => identity,
+            | GenericSourceTypeIdentity::Function { .. }
+            | GenericSourceTypeIdentity::Contract { .. })) => identity,
             Ok(GenericSourceTypeIdentity::Abi(abi)) if enclosing.is_some() => GenericSourceTypeIdentity::Abi(abi),
             Ok(GenericSourceTypeIdentity::Abi(_)) | Err(_) => GenericSourceTypeIdentity::Abi(
                 value_abi_type(db, value)?

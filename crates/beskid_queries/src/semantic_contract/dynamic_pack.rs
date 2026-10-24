@@ -596,6 +596,9 @@ impl Projection<'_> {
             ShapeIdentity::Function { .. } => {
                 return Err(error("function/callback payload needs an explicit admitted transport profile"));
             }
+            ShapeIdentity::Contract { .. } => {
+                return Err(error("a contract value has no dynamic packing"));
+            }
             ShapeIdentity::Nominal { qualified_name, arguments } => {
                 self.reserve_edges(arguments.len())?;
                 let declaration = self.nominal(identity)?;

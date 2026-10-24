@@ -109,7 +109,9 @@ pub(in crate::semantic_contract) fn enum_layout_for_source_identity(
                 // primitive (string included) is a scalar payload, an array or function a
                 // managed pointer.
                 GenericSourceTypeIdentity::Abi(semantic) => AggregateFieldShape::Scalar(*semantic),
-                GenericSourceTypeIdentity::Array(_) | GenericSourceTypeIdentity::Function { .. } => {
+                GenericSourceTypeIdentity::Array(_)
+                | GenericSourceTypeIdentity::Function { .. }
+                | GenericSourceTypeIdentity::Contract { .. } => {
                     AggregateFieldShape::ManagedReference(SemanticTypeId::POINTER)
                 }
             };

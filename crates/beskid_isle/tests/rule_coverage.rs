@@ -339,6 +339,8 @@ fn binary_and_unary_operator_facts_have_isle_rules() {
         "StringNotEq",
         "EnumEq",
         "EnumNotEq",
+        "ContractEq",
+        "ContractNotEq",
     ] {
         assert!(source.contains(&format!("OperatorFact.{operator}")), "missing ISLE rule for {operator}");
     }

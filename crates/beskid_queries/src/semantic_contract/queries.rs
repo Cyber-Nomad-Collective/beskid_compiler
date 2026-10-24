@@ -48,6 +48,19 @@ pub fn type_contract_implementation(
     })
 }
 
+/// The contract declaration that declares one contract method signature.
+pub fn contract_of_method_signature(db: &dyn Db, signature: AstNodeKey) -> SemanticQueryResult<AstNodeKey> {
+    let Some(syntax) = db.syntax_unit(signature.unit).filter(|syntax| syntax.accepts_key(db, signature)) else {
+        return Ok(None);
+    };
+    let index = syntax.syntax_index(db);
+    if index.kind(signature.node) != Some(IndexedNodeKind::ContractMethodSignature) {
+        return Ok(None);
+    }
+    Ok(nearest_ancestor(index, signature.node, |kind| kind == IndexedNodeKind::ContractDefinition)
+        .map(|node| AstNodeKey { node, ..signature }))
+}
+
 /// Resolve a type's declared conformances to exact current contract declaration keys.
 /// Native adapters must separately validate canonical SDK provenance and method witnesses.
 pub fn type_contract_declarations(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<Arc<[AstNodeKey]>> {

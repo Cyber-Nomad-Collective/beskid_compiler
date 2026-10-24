@@ -525,6 +525,7 @@ impl ModSemanticQueryAuthority<'_> {
         walk.remaining -= 1;
         match identity {
             ShapeIdentity::Abi(_) | ShapeIdentity::Function { .. } => Ok(()),
+            ShapeIdentity::Contract { .. } => Err(Self::error("a contract value has no serialization template")),
             ShapeIdentity::Array(element) => self.template_nested(element, &[], walk, depth + 1),
             ShapeIdentity::Nominal { qualified_name, arguments } => {
                 if direct.contains(identity) {

@@ -235,6 +235,9 @@ pub(in crate::semantic_contract) fn identity_spelling(identity: &GenericSourceTy
             }
         }
         GenericSourceTypeIdentity::Function { .. } => "function".to_owned(),
+        GenericSourceTypeIdentity::Contract { qualified_name, .. } => {
+            qualified_name.rsplit('.').next().unwrap_or(qualified_name).to_owned()
+        }
     }
 }
 

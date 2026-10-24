@@ -90,6 +90,9 @@ pub(crate) enum GenericSourceTypeIdentity {
     Nominal { qualified_name: Arc<str>, arguments: Arc<[GenericSourceTypeIdentity]> },
     Array(Box<GenericSourceTypeIdentity>),
     Function { parameters: Arc<[GenericSourceTypeIdentity]>, result: Box<GenericSourceTypeIdentity> },
+    /// A contract-typed value: a contract box holding an implementing value and its witness table
+    /// (runtime dispatch, v0.6.7). `arguments` are the applied contract arguments.
+    Contract { qualified_name: Arc<str>, arguments: Arc<[GenericSourceTypeIdentity]> },
 }
 
 impl GenericSubstitution {
@@ -149,21 +152,27 @@ impl GenericSourceTypeIdentity {
             Self::Nominal { qualified_name, arguments } => format!("{qualified_name}<{}>", list(arguments)),
             Self::Array(element) => format!("{}[]", element.display_name()),
             Self::Function { parameters, result } => format!("({}) => {}", list(parameters), result.display_name()),
+            Self::Contract { qualified_name, arguments } if arguments.is_empty() => qualified_name.to_string(),
+            Self::Contract { qualified_name, arguments } => format!("{qualified_name}<{}>", list(arguments)),
         }
     }
 
     pub(in crate::semantic_contract) fn abi_type(&self) -> SemanticTypeId {
         match self {
             Self::Abi(argument) => *argument,
-            Self::Nominal { .. } | Self::Array(_) | Self::Function { .. } => SemanticTypeId::POINTER,
+            Self::Nominal { .. } | Self::Array(_) | Self::Function { .. } | Self::Contract { .. } => {
+                SemanticTypeId::POINTER
+            }
         }
     }
 
     pub(in crate::semantic_contract) fn managed_reference_kind(&self) -> ManagedReferenceKind {
         match self {
-            Self::Abi(SemanticTypeId::STRING) | Self::Nominal { .. } | Self::Array(_) | Self::Function { .. } => {
-                ManagedReferenceKind::GcManaged
-            }
+            Self::Abi(SemanticTypeId::STRING)
+            | Self::Nominal { .. }
+            | Self::Array(_)
+            | Self::Function { .. }
+            | Self::Contract { .. } => ManagedReferenceKind::GcManaged,
             Self::Abi(_) => ManagedReferenceKind::NativeOrScalar,
         }
     }
@@ -250,6 +259,14 @@ fn append_generic_source_type_identity(identity: &mut Vec<u32>, source: &Generic
                 append_generic_source_type_identity(identity, parameter);
             }
             append_generic_source_type_identity(identity, result);
+        }
+        GenericSourceTypeIdentity::Contract { qualified_name, arguments } => {
+            identity.extend([4, u32::try_from(qualified_name.len()).unwrap_or(u32::MAX)]);
+            identity.extend(qualified_name.bytes().map(u32::from));
+            identity.push(u32::try_from(arguments.len()).unwrap_or(u32::MAX));
+            for argument in arguments.iter() {
+                append_generic_source_type_identity(identity, argument);
+            }
         }
     }
 }

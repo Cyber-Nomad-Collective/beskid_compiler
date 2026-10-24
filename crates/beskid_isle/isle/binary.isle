@@ -35,6 +35,20 @@
 (decl partial clif_short_circuit_and (AstNodeKey) Value)
 (extern constructor clif_short_circuit_and clif_short_circuit_and)
 
+;; Contract value equality: the same implementing value (type tag, then receiver word or float value).
+(decl partial clif_contract_eq (AstNodeKey) Value)
+(extern constructor clif_contract_eq clif_contract_eq)
+(decl partial clif_contract_ne (AstNodeKey) Value)
+(extern constructor clif_contract_ne clif_contract_ne)
+(rule (lower_expression key @ (and
+        (node_kind (NodeKind.BinaryExpression))
+        (operator_fact (OperatorFact.ContractEq))))
+      (clif_contract_eq key))
+(rule (lower_expression key @ (and
+        (node_kind (NodeKind.BinaryExpression))
+        (operator_fact (OperatorFact.ContractNotEq))))
+      (clif_contract_ne key))
+
 ;; Enum discriminant comparison for value equality on enum types.
 (decl partial clif_enum_eq (AstNodeKey) Value)
 (extern constructor clif_enum_eq clif_enum_eq)

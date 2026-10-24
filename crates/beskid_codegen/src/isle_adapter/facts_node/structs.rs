@@ -31,12 +31,21 @@ impl SyntaxNodeFacts<'_> {
     pub(super) fn function_parameters_impl(&self, key: AstNodeKey) -> Option<Vec<ParameterSlot>> {
         let mut parameters = Vec::new();
         if self.query(node_kind(self.db, key)) == Some(beskid_queries::IndexedNodeKind::MethodDefinition) {
+            // Methods cannot spell `self` in Beskid source. The ABI receiver still needs a
+            // materialized local so its declared position is consumed by ISLE: the managed
+            // reference of a nominal owner, or the value of a primitive implementation's receiver.
+            let receiver = beskid_queries::method_receiver_abi_type(self.db, key);
+            let (value_type, managed_reference) = match receiver {
+                SemanticTypeId::POINTER | SemanticTypeId::STRING => {
+                    (self.isa?.pointer_type(), ManagedReferenceFact::GcManaged)
+                }
+                SemanticTypeId::WORD => (self.isa?.pointer_type(), ManagedReferenceFact::NativeOrScalar),
+                scalar => (map_scalar_type(scalar)?, ManagedReferenceFact::NativeOrScalar),
+            };
             parameters.push(ParameterSlot {
-                // Methods cannot spell `self` in Beskid source. The ABI receiver still needs a
-                // materialized local so its declared pointer position is consumed by ISLE.
                 slot: super::super::context::IMPLICIT_METHOD_RECEIVER_SLOT,
-                value_type: self.isa?.pointer_type(),
-                managed_reference: ManagedReferenceFact::GcManaged,
+                value_type,
+                managed_reference,
             });
         }
         self.collect_function_parameters(key, &mut parameters)?;

@@ -1,4 +1,5 @@
 pub(crate) mod canonical_empty;
+mod contract_witnesses;
 mod contracts;
 pub(crate) mod data;
 pub(crate) mod dynamic;

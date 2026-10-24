@@ -16,10 +16,16 @@ pub(in crate::semantic_contract) fn aggregate_field_layout(
         beskid_analysis::syntax::Type::Primitive(_) => {
             AggregateFieldShape::Scalar(semantic_type_from_syntax(&field.node.ty.node)?)
         }
-        beskid_analysis::syntax::Type::Complex(path) => AggregateFieldShape::Nominal(
-            resolve_nominal_layout_declaration(db, program, index, key, &path.node)
-                .ok_or_else(|| SemanticError::unavailable("aggregate_layout"))?,
-        ),
+        beskid_analysis::syntax::Type::Complex(path) => {
+            match resolve_nominal_layout_declaration(db, program, index, key, &path.node) {
+                Some(declaration) => AggregateFieldShape::Nominal(declaration),
+                // A contract-typed field holds a contract box: one managed reference.
+                None if crate::semantic_contract::contracts::resolve_contract_head(db, key, &path.node).is_some() => {
+                    AggregateFieldShape::ManagedReference(SemanticTypeId::POINTER)
+                }
+                None => return Err(SemanticError::unavailable("aggregate_layout")),
+            }
+        }
         // Arrays are heap-backed reference values in ABI v5, including empty literal payloads, and
         // a function value is its GC-managed closure record.
         beskid_analysis::syntax::Type::Array(_) | beskid_analysis::syntax::Type::Function { .. } => {
@@ -87,7 +93,11 @@ pub(in crate::semantic_contract) fn nominal_aggregate_abi_type(
     key: AstNodeKey,
     path: &beskid_analysis::syntax::Path,
 ) -> Result<SemanticTypeId, SemanticError> {
-    resolve_type_declaration(db, key, path).ok_or_else(|| SemanticError::unavailable("abi_type"))?;
+    // A contract-typed value (an injected service, a `Greeter g = Hello {}` local) is the managed
+    // reference of its implementation, like any nominal value.
+    resolve_type_declaration(db, key, path)
+        .or_else(|| crate::semantic_contract::contracts::resolve_contract_head(db, key, path))
+        .ok_or_else(|| SemanticError::unavailable("abi_type"))?;
     Ok(SemanticTypeId::POINTER)
 }
 
@@ -108,6 +118,13 @@ pub(in crate::semantic_contract) fn abi_type_for_local_path(
             }
             if constant_integer(db, key)?.is_some() {
                 return Ok(SemanticTypeId::WORD);
+            }
+            // `this` inside a method of a primitive implementation (`impl i64 : Formatting`) is
+            // the receiver value itself.
+            if super::field_access::is_implicit_receiver_name(program, index, key, segment.node.name.node.name.as_str())
+                && let Some(beskid_analysis::syntax::Type::Primitive(_)) = method_this_type(db, key)
+            {
+                return Ok(super::super::contracts::method_receiver_abi_type(db, key));
             }
             let access = aggregate_field_access(db, key)?.ok_or_else(|| SemanticError::unavailable("abi_type"))?;
             match access
@@ -147,6 +164,13 @@ pub(in crate::semantic_contract) fn abi_type_for_local_path(
             }
         }
         [receiver, field] if receiver.node.type_args.is_empty() && field.node.type_args.is_empty() => {
+            // `n.Format` as the callee of a direct primitive method call denotes its receiver `n`.
+            if let Some((_, local)) =
+                crate::semantic_contract::calls::primitive_local_member_receiver(db, program, index, key, path)
+            {
+                return abi_local_declaration_type(db, program, index, key, local.node)
+                    .unwrap_or_else(|| Err(SemanticError::unavailable("abi_type")));
+            }
             abi_type_for_direct_aggregate_field_projection(
                 db,
                 program,
@@ -696,9 +720,9 @@ pub(in crate::semantic_contract) fn aggregate_shape_for_binding(
                 .map(AggregateFieldShape::Nominal)
                 .ok_or_else(|| SemanticError::unavailable("aggregate_reference_classification"))
         }
-        GenericSourceTypeIdentity::Array(_) | GenericSourceTypeIdentity::Function { .. } => {
-            Ok(AggregateFieldShape::ManagedReference(SemanticTypeId::POINTER))
-        }
+        GenericSourceTypeIdentity::Array(_)
+        | GenericSourceTypeIdentity::Function { .. }
+        | GenericSourceTypeIdentity::Contract { .. } => Ok(AggregateFieldShape::ManagedReference(SemanticTypeId::POINTER)),
     }
 }
 

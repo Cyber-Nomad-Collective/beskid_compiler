@@ -82,8 +82,15 @@ fn composition_injected_field_access_tracked(
     key: AstNodeKey,
 ) -> SemanticQueryResult<CompositionInjectedAccessFact> {
     with_node(db, syntax, key, |program, index, node| {
-        let resolved = field_access_receiver(db, program, index, key, node, None, None)?.ok()?;
-        let declaration = resolved.declaration;
+        // A whole field read (`this.greeter`), or the segment that ends one inside a longer path
+        // (`this.greeter` in the call path `this.greeter.Greet`).
+        let (declaration, receiver, field_name) = match field_access_receiver(db, program, index, key, node, None, None) {
+            Some(resolved) => {
+                let resolved = resolved.ok()?;
+                (resolved.declaration, resolved.receiver, resolved.field_name.to_owned())
+            }
+            None => super::layouts::path_segment_field_receiver(db, program, index, key)?.ok()?,
+        };
         let target = db.syntax_unit(declaration.unit).filter(|syntax| syntax.accepts_key(db, declaration))?;
         let target_index = target.syntax_index(db);
         let target_program = target.expanded_program(db);
@@ -92,7 +99,7 @@ fn composition_injected_field_access_tracked(
         let matches = definition
             .fields
             .iter()
-            .filter(|field| field.node.kind == FieldKind::Injected && field.node.name.node.name == resolved.field_name)
+            .filter(|field| field.node.kind == FieldKind::Injected && field.node.name.node.name == field_name)
             .collect::<Vec<_>>();
         let [field] = matches.as_slice() else {
             return None;
@@ -104,7 +111,7 @@ fn composition_injected_field_access_tracked(
         let field = AstNodeKey { unit: declaration.unit, generation: declaration.generation, node: field_id };
         let injection = composition_injection_field(db, field).ok().flatten()?;
         (injection.owner_type == declaration).then_some(())?;
-        Some(CompositionInjectedAccessFact { site: key, receiver: resolved.receiver, owner_type: declaration, field })
+        Some(CompositionInjectedAccessFact { site: key, receiver, owner_type: declaration, field })
     })
 }
 

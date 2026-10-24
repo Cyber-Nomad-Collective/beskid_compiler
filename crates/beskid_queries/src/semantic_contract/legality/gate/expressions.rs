@@ -54,6 +54,11 @@ fn collect_conditional_obligations(
         if is_numeric_literal_branch(&conditional.then_branch.node) || is_numeric_literal_branch(&conditional.else_branch.node) {
             continue;
         }
+        // Target typing: under a contract expectation each branch converts to the contract on
+        // its own, and value legality judges each against it.
+        if super::super::values::contract_expectation(db, AstNodeKey { node, ..key }).is_some() {
+            continue;
+        }
         let Some((then_site, then_subject)) = super::super::typing::expression_nodes(program, index, node, &conditional.then_branch)
         else {
             continue;
