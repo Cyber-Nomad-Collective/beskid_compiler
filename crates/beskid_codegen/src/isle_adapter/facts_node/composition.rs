@@ -1,6 +1,7 @@
 //! Exact composition facts: syntax query and frozen frontend authority must agree.
 
-use beskid_isle::{CompositionInjectionPlan, CompositionRegistrationPlan};
+use beskid_analysis::composition::{BindingPlan, CompositionHookPlan, CompositionSnapshot, ScopeId};
+use beskid_isle::{CompositionHookCall, CompositionInjectionPlan, CompositionRegistrationPlan};
 
 use super::super::*;
 
@@ -53,7 +54,8 @@ impl SyntaxNodeFacts<'_> {
         if key.unit != self.input.typed_program().entry
             || key.generation != self.input.typed_program().generation
             || fact.site != key
-            || fact.host.as_ref() != snapshot.launched_host
+            // `launch Module.AppHost()` names the host by a path; the snapshot keys it by name.
+            || fact.host.rsplit('.').next() != Some(snapshot.launched_host.as_str())
             || plan.launched_host != snapshot.launched_host
             || self.query(beskid_queries::node_span(self.db, key)) != snapshot.launch_span
         {
@@ -105,7 +107,29 @@ impl SyntaxNodeFacts<'_> {
                 injections,
             });
         }
-        Some(CompositionLaunchPlan { site: key, slot_count: u32::try_from(plan.activation.len()).ok()?, registrations })
+        let global = |hook: &&CompositionHookPlan| hook.scope_id == ScopeId::GLOBAL;
+        let startup = plan
+            .init_hooks
+            .iter()
+            .filter(global)
+            .chain(plan.startup_hooks.iter().filter(global))
+            .map(|hook| self.composition_hook_call(key, hook, plan, snapshot))
+            .collect::<Option<Vec<_>>>()?;
+        // A `startup` outside global scope is rejected by composition (E1717); never drop one.
+        (plan.startup_hooks.iter().all(|hook| hook.scope_id == ScopeId::GLOBAL)).then_some(())?;
+        let shutdown = plan
+            .disposal_hooks
+            .iter()
+            .filter(global)
+            .map(|hook| self.composition_hook_call(key, hook, plan, snapshot))
+            .collect::<Option<Vec<_>>>()?;
+        Some(CompositionLaunchPlan {
+            site: key,
+            slot_count: u32::try_from(plan.activation.len()).ok()?,
+            registrations,
+            startup,
+            shutdown,
+        })
     }
 
     pub(super) fn composition_scope_impl(&self, key: AstNodeKey) -> Option<CompositionScopePlan> {
@@ -120,6 +144,58 @@ impl SyntaxNodeFacts<'_> {
             return None;
         }
         let parent_scope_id = plan.scope_parents.get(scope_id)?.map_or(0, |parent| parent.0);
-        Some(CompositionScopePlan { site: key, scope_id: scope_id.0, parent_scope_id, body: fact.body })
+        let calls = |hooks: &[CompositionHookPlan]| {
+            hooks
+                .iter()
+                .filter(|hook| hook.scope_id == *scope_id)
+                .map(|hook| self.composition_hook_call(key, hook, plan, snapshot))
+                .collect::<Option<Vec<_>>>()
+        };
+        let init = calls(&plan.init_hooks)?;
+        let dispose = calls(&plan.disposal_hooks)?;
+        Some(CompositionScopePlan { site: key, scope_id: scope_id.0, parent_scope_id, body: fact.body, init, dispose })
+    }
+
+    /// One planned hook call: the generated hook function and, for a hook with parameters, the
+    /// slot and injected-field offsets of its argument object in parameter order.
+    fn composition_hook_call(
+        &self,
+        key: AstNodeKey,
+        hook: &CompositionHookPlan,
+        plan: &BindingPlan,
+        snapshot: &CompositionSnapshot,
+    ) -> Option<CompositionHookCall> {
+        let function = AstNodeKey { node: hook.function_node_id, ..key };
+        (self.query(node_kind(self.db, function)) == Some(beskid_queries::IndexedNodeKind::FunctionDefinition))
+            .then_some(())?;
+        let signature = signature_for_item(self.isa?, self.query(item_abi_signature(self.db, function))?)?;
+        let (arguments_slot, argument_offsets) = match hook.arguments_registration_id {
+            None => (None, Vec::new()),
+            Some(id) => {
+                let slot = plan.slot_for_registration(id)?;
+                let registration = snapshot.registrations.iter().find(|entry| entry.id == id)?;
+                let source = AstNodeKey { node: registration.source_node_id, ..key };
+                let fact = self.query(beskid_queries::composition_registration(self.db, source))?;
+                (fact.site == source && fact.implementation.as_ref() == registration.implementation).then_some(())?;
+                let layout = self.input.aggregate_object_layout(fact.declaration)?;
+                let mut fields = layout
+                    .injected_fields
+                    .iter()
+                    .map(|(field, offset)| {
+                        let field = self.query(beskid_queries::composition_injection_field(self.db, *field))?;
+                        (field.owner_type == fact.declaration).then_some(())?;
+                        Some((field.ordinal, u32::try_from(*offset).ok()?))
+                    })
+                    .collect::<Option<Vec<_>>>()?;
+                fields.sort_by_key(|(ordinal, _)| *ordinal);
+                (Some(slot.0), fields.into_iter().map(|(_, offset)| offset).collect::<Vec<_>>())
+            }
+        };
+        // Every argument is one service reference loaded from its injected field.
+        let pointer = self.isa?.pointer_type();
+        (signature.params.len() == argument_offsets.len()
+            && signature.params.iter().all(|parameter| parameter.value_type == pointer))
+        .then_some(())?;
+        Some(CompositionHookCall { function: DirectCallee::item(function), signature, arguments_slot, argument_offsets })
     }
 }

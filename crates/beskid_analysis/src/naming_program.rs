@@ -51,6 +51,9 @@ pub fn walk_program_mut(program: &mut Program, mut visit: impl FnMut(NamingRole,
 
 fn walk_node(node: &Node, visit: &mut impl FnMut(NamingRole, &Spanned<Identifier>)) {
     match node {
+        // A generated host-hook argument type mirrors the hook parameters, which the generated
+        // function already carries; walking both would report each parameter twice.
+        Node::TypeDefinition(def) if crate::composition::is_hook_item_name(&def.node.name.node.name) => {}
         Node::TypeDefinition(def) => walk_type_definition(&def.node, visit),
         Node::EnumDefinition(def) => walk_enum_definition(&def.node, visit),
         Node::ContractDefinition(def) => walk_contract_definition(&def.node, visit),

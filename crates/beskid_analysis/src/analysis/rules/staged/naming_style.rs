@@ -25,7 +25,7 @@ fn check_naming_role(ctx: &mut RuleContext, role: NamingRole, ident: &Spanned<Id
 }
 
 fn should_skip_ident(name: &str) -> bool {
-    name == "self" || is_keyword_escape(name)
+    name == "self" || is_keyword_escape(name) || crate::composition::is_hook_item_name(name)
 }
 
 trait NamingIssue {

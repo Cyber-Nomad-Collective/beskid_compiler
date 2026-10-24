@@ -73,10 +73,11 @@ struct LocalRootScope {
     temporaries: Vec<ScopedTemporaryRoot>,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 enum CompositionCleanup {
     ScopeLeave { site: AstNodeKey },
-    Container { site: AstNodeKey, value: Value },
+    /// The launched container and the object installed in each of its slots, in slot order.
+    Container { site: AstNodeKey, value: Value, slots: std::rc::Rc<[Value]> },
 }
 
 /// Roots owned by an expression until its value has been published or consumed. They

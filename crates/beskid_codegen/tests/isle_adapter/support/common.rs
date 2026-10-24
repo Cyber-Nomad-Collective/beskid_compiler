@@ -46,7 +46,10 @@ pub(in super::super) fn item_fixture_with_root(
     let directory = tempfile::tempdir().expect("project").keep();
     let source_path = directory.join("Main.bd");
     std::fs::write(&source_path, source).expect("source");
-    let program = parse_program_with_source_name(source_path.to_str().unwrap(), source).expect("parse source");
+    // Expansion moves host-hook bodies into generated items; the fixture mirrors that step.
+    let program = beskid_analysis::composition::lower_host_hooks(
+        parse_program_with_source_name(source_path.to_str().unwrap(), source).expect("parse source"),
+    );
     let entry = SourceUnitId::new(&*db, source_path.clone());
     let project = ProjectSession::new(&*db, directory.clone(), source_path.clone(), "App".into(), "lock".into());
     let generation = SyntaxGenerationId(21);

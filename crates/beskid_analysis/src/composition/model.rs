@@ -15,11 +15,31 @@ pub enum RegistrationKey {
     SelfType(String),
 }
 
+impl RegistrationKey {
+    /// The source name of the contract or self-bound type, as written in the registry.
+    pub fn name(&self) -> &str {
+        match self {
+            Self::Contract(name) | Self::SelfType(name) => name,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RegistrationLifetime {
     Scoped,
     Single,
     Transient,
+}
+
+impl RegistrationLifetime {
+    /// The lifetime as source spells it; a scoped registration has no keyword.
+    pub fn keyword(self) -> &'static str {
+        match self {
+            Self::Scoped => "scoped",
+            Self::Single => "single",
+            Self::Transient => "transient",
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -32,6 +52,8 @@ pub struct Registration {
     pub implementation: String,
     pub lifetime: RegistrationLifetime,
     pub span: SpanInfo,
+    /// The implementation path of the registry line (`Impl` in `single Impl for Contract;`).
+    pub implementation_span: SpanInfo,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -42,6 +64,9 @@ pub struct InjectDependency {
     pub requested_type: String,
     pub is_plural: bool,
     pub qualifier: Option<InjectQualifier>,
+    pub field_name: String,
+    pub name_span: SpanInfo,
+    pub type_span: SpanInfo,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -90,6 +115,11 @@ pub struct CompositionHookPlan {
     pub kind: ScopeHookKind,
     pub source_node_id: AstNodeId,
     pub span: SpanInfo,
+    /// The generated function that holds the hook body (see [`super::hooks`]).
+    pub function_node_id: AstNodeId,
+    /// The registration of the generated argument type whose injected fields are the hook
+    /// parameters in order; `None` for a hook without parameters.
+    pub arguments_registration_id: Option<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -103,8 +133,13 @@ pub struct BindingPlan {
     /// Compiler-materialized plural injection targets. Runtime lookup is never required.
     pub plurals: Vec<PluralPlan>,
     pub scope_parents: HashMap<ScopeId, Option<ScopeId>>,
+    /// `init` hooks in host-chain order (base host first), each run when its scope is entered;
+    /// a global `init` runs once at launch, before `startup`.
     pub init_hooks: Vec<CompositionHookPlan>,
+    /// Global `startup` hooks in host-chain order, run once after the container is active.
     pub startup_hooks: Vec<CompositionHookPlan>,
+    /// `dispose` hooks in reverse host-chain order (launched host first), each run when its
+    /// scope is left; a global `dispose` runs once before the container shuts down.
     pub disposal_hooks: Vec<CompositionHookPlan>,
 }
 

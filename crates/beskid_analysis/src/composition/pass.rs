@@ -73,6 +73,12 @@ pub fn resolve_composition(input: CompositionInput<'_>) -> CompositionResult {
     let merged_scopes = merge_host_scopes(&host_chain, &collected.host_scopes);
     issues.extend(validate_scope_tree(&merged_scopes));
     for with_site in &collected.with_sites {
+        if !with_site.after_launch {
+            issues.push(CompositionIssue::WithWithoutLaunch {
+                scope_name: with_site.scope_name.clone(),
+                span: with_site.span,
+            });
+        }
         if !merged_scopes.iter().any(|scope| scope.name == with_site.scope_name) {
             issues.push(CompositionIssue::WithArgsMismatch {
                 scope_name: with_site.scope_name.clone(),
@@ -84,6 +90,7 @@ pub fn resolve_composition(input: CompositionInput<'_>) -> CompositionResult {
     let (mut merged_registrations, merge_issues) =
         merge_host_registries(&host_chain, &collected.host_registries, &collected.host_scopes, &merged_scopes);
     issues.extend(merge_issues);
+    issues.extend(super::shapes::validate_registrations(&merged_registrations, input.program));
     // Parser `Spanned.id` is deliberately unset. Freeze identities from the same deterministic
     // expanded-tree pre-order that the generation-bound query index uses; a non-unique source
     // span remains invalid and is rejected at the codegen boundary.
@@ -203,11 +210,21 @@ pub fn resolve_composition(input: CompositionInput<'_>) -> CompositionResult {
                     });
                     continue;
                 };
+                if hook.kind == crate::syntax::ScopeHookKind::Startup && scope_id != ScopeId::GLOBAL {
+                    issues.push(CompositionIssue::StartupInNamedScope { span: hook.span });
+                    continue;
+                }
+                let arguments = super::hooks::hook_arguments_name(&host.name, hook.kind, hook.span);
                 hooks.push(CompositionHookPlan {
                     scope_id,
                     kind: hook.kind,
                     source_node_id: unique_source_node(&source_index, NodeKind::ScopeHook, hook.span),
                     span: hook.span,
+                    function_node_id: unique_source_node(&source_index, NodeKind::FunctionDefinition, hook.span),
+                    arguments_registration_id: merged_registrations
+                        .iter()
+                        .find(|registration| registration.implementation == arguments)
+                        .map(|registration| registration.id),
                 });
             }
         }

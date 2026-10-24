@@ -16,6 +16,9 @@ pub struct TypeInjectField {
     pub is_plural: bool,
     pub span: crate::syntax::SpanInfo,
     pub field_node_id: crate::syntax::AstNodeId,
+    pub field_name: String,
+    pub name_span: crate::syntax::SpanInfo,
+    pub type_span: crate::syntax::SpanInfo,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -47,6 +50,9 @@ pub struct LaunchSite {
 pub struct WithSite {
     pub scope_name: String,
     pub span: crate::syntax::SpanInfo,
+    /// Whether a `launch` precedes this `with` in its own block or an enclosing block of the
+    /// same function body. Lowering reaches the launched container only that way.
+    pub after_launch: bool,
 }
 
 /// Collect composition declarations directly from the expanded syntax authority.
@@ -76,6 +82,9 @@ pub fn collect(program: &Spanned<Program>) -> CollectedComposition {
                         is_plural: type_is_plural(&field.node.ty),
                         span: field.span,
                         field_node_id: field.id,
+                        field_name: field.node.name.node.name.clone(),
+                        name_span: field.node.name.span,
+                        type_span: field.node.ty.span,
                     })
                     .collect::<Vec<_>>();
                 if !injects.is_empty() {
@@ -83,13 +92,13 @@ pub fn collect(program: &Spanned<Program>) -> CollectedComposition {
                 }
             }
             Node::Function(def) => {
-                collect_launch_and_with_statements(&def.node.body.node.statements, &mut collected);
+                collect_launch_and_with_statements(&def.node.body.node.statements, &mut collected, false);
             }
             Node::Method(def) => {
-                collect_launch_and_with_statements(&def.node.body.node.statements, &mut collected);
+                collect_launch_and_with_statements(&def.node.body.node.statements, &mut collected, false);
             }
             Node::TestDefinition(def) => {
-                collect_launch_and_with_statements(&def.node.statements, &mut collected);
+                collect_launch_and_with_statements(&def.node.statements, &mut collected, false);
             }
             Node::InlineModule(module) => {
                 collect_launch_and_with_statements_in_items(&module.node.items, &mut collected);
@@ -97,14 +106,47 @@ pub fn collect(program: &Spanned<Program>) -> CollectedComposition {
             _ => {}
         }
     }
+    collect_statements_outside_ordered_positions(&program.node.items, &mut collected);
 
     collected
+}
+
+/// `launch` and `with` are lowered only at statement level of a function body or inside its
+/// nested `if`/`while`/`for`/`with` blocks. Any other position (a method body, a `match` arm, a
+/// lambda) is still recorded, so analysis rejects it instead of lowering failing later: such a
+/// `with` never counts as following a `launch`.
+fn collect_statements_outside_ordered_positions(items: &[Spanned<Node>], collected: &mut CollectedComposition) {
+    use crate::syntax_query::Query;
+    for item in items {
+        if matches!(item.node, Node::HostDefinition(_)) {
+            continue;
+        }
+        for statement in Query::from(&item.node).of::<crate::syntax::Statement>() {
+            match statement {
+                crate::syntax::Statement::With(with_stmt)
+                    if !collected.with_sites.iter().any(|site| site.span == with_stmt.span) =>
+                {
+                    collected.with_sites.push(WithSite {
+                        scope_name: with_stmt.node.scope_name.node.name.clone(),
+                        span: with_stmt.span,
+                        after_launch: false,
+                    });
+                }
+                crate::syntax::Statement::Launch(launch_stmt)
+                    if !collected.launches.iter().any(|site| site.span == launch_stmt.span) =>
+                {
+                    record_launch_site(collected, &launch_stmt.node.host_path, launch_stmt.span);
+                }
+                _ => {}
+            }
+        }
+    }
 }
 
 fn collect_launch_and_with_statements_in_items(items: &[Spanned<Node>], collected: &mut CollectedComposition) {
     for item in items {
         if let Some(statements) = item_statement_list(item) {
-            collect_launch_and_with_statements(statements, collected);
+            collect_launch_and_with_statements(statements, collected, false);
             continue;
         }
         if let Node::InlineModule(module) = &item.node {
@@ -122,52 +164,59 @@ fn item_statement_list(item: &Spanned<Node>) -> Option<&[Spanned<crate::syntax::
     }
 }
 
-fn collect_syntax_else_branch(else_branch: &Spanned<crate::syntax::ElseBranch>, collected: &mut CollectedComposition) {
+fn collect_syntax_else_branch(
+    else_branch: &Spanned<crate::syntax::ElseBranch>,
+    collected: &mut CollectedComposition,
+    launched: bool,
+) {
     match &else_branch.node {
         crate::syntax::ElseBranch::Block(block) => {
-            collect_launch_and_with_statements(&block.node.statements, collected);
+            collect_launch_and_with_statements(&block.node.statements, collected, launched);
         }
         crate::syntax::ElseBranch::If(nested) => {
-            collect_launch_and_with_statements(&nested.node.then_block.node.statements, collected);
+            collect_launch_and_with_statements(&nested.node.then_block.node.statements, collected, launched);
             if let Some(nested_else) = &nested.node.else_branch {
-                collect_syntax_else_branch(nested_else, collected);
+                collect_syntax_else_branch(nested_else, collected, launched);
             }
         }
     }
 }
 
+/// `launched` says whether a `launch` precedes these statements in an enclosing block.
 fn collect_launch_and_with_statements(
     statements: &[Spanned<crate::syntax::Statement>],
     collected: &mut CollectedComposition,
+    mut launched: bool,
 ) {
     for statement in statements {
         match &statement.node {
             crate::syntax::Statement::With(with_stmt) => {
-                record_with_site(collected, &with_stmt.node.scope_name.node.name, with_stmt.span);
-                collect_launch_and_with_statements(&with_stmt.node.body.node.statements, collected);
+                collected.with_sites.push(WithSite {
+                    scope_name: with_stmt.node.scope_name.node.name.clone(),
+                    span: with_stmt.span,
+                    after_launch: launched,
+                });
+                collect_launch_and_with_statements(&with_stmt.node.body.node.statements, collected, launched);
             }
             crate::syntax::Statement::Launch(launch_stmt) => {
                 record_launch_site(collected, &launch_stmt.node.host_path, launch_stmt.span);
+                launched = true;
             }
             crate::syntax::Statement::If(if_stmt) => {
-                collect_launch_and_with_statements(&if_stmt.node.then_block.node.statements, collected);
+                collect_launch_and_with_statements(&if_stmt.node.then_block.node.statements, collected, launched);
                 if let Some(else_branch) = &if_stmt.node.else_branch {
-                    collect_syntax_else_branch(else_branch, collected);
+                    collect_syntax_else_branch(else_branch, collected, launched);
                 }
             }
             crate::syntax::Statement::While(while_stmt) => {
-                collect_launch_and_with_statements(&while_stmt.node.body.node.statements, collected);
+                collect_launch_and_with_statements(&while_stmt.node.body.node.statements, collected, launched);
             }
             crate::syntax::Statement::For(for_stmt) => {
-                collect_launch_and_with_statements(&for_stmt.node.body.node.statements, collected);
+                collect_launch_and_with_statements(&for_stmt.node.body.node.statements, collected, launched);
             }
             _ => {}
         }
     }
-}
-
-fn record_with_site(collected: &mut CollectedComposition, scope_name: &str, span: crate::syntax::SpanInfo) {
-    collected.with_sites.push(WithSite { scope_name: scope_name.to_string(), span });
 }
 
 fn record_launch_site(
@@ -291,7 +340,16 @@ fn registration_from_entry(
         (false, Some(RegistrationLifetime::Transient)) => Lifetime::Transient,
         (false, None) => Lifetime::Scoped,
     };
-    Registration { id, source_node_id: entry.id, scope_id, key, implementation, lifetime, span: entry.span }
+    Registration {
+        id,
+        source_node_id: entry.id,
+        scope_id,
+        key,
+        implementation,
+        lifetime,
+        span: entry.span,
+        implementation_span: entry.node.implementation.span,
+    }
 }
 
 fn registrations_from_block(
@@ -317,6 +375,9 @@ pub fn dependency_requests(
                     requested_type: field.requested_type.clone(),
                     is_plural: field.is_plural,
                     qualifier: field.qualifier,
+                    field_name: field.field_name.clone(),
+                    name_span: field.name_span,
+                    type_span: field.type_span,
                 });
             }
         }

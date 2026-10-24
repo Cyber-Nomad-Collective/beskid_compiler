@@ -36,19 +36,80 @@ impl IsleContext<'_, '_, '_, '_> {
             .get(depth..)?
             .iter()
             .rev()
-            .flat_map(|scope| scope.composition_cleanups.iter().rev().copied())
+            .flat_map(|scope| scope.composition_cleanups.iter().rev().cloned())
             .collect::<Vec<_>>();
         let pointer = dispatch::pointer_type(self.frontend_config);
         for action in actions {
             match action {
                 CompositionCleanup::ScopeLeave { site } => {
+                    // `dispose` runs on every exit of the `with` body, before the frame is left.
+                    let plan = self.facts.composition_scope(site)?;
+                    let (_, slots) = self.active_composition_container()?;
+                    self.emit_composition_hook_calls(site, &plan.dispose, &slots)?;
                     self.composition_call(site, "composition_scope_leave", &[], &[], None)?;
                 }
-                CompositionCleanup::Container { site, value } => {
+                CompositionCleanup::Container { site, value, slots } => {
+                    let plan = self.facts.composition_launch(site)?;
+                    self.emit_composition_hook_calls(site, &plan.shutdown, &slots)?;
                     self.composition_call(site, "composition_shutdown", &[value], &[pointer], None)?;
                     self.composition_call(site, "composition_container_drop", &[value], &[pointer], None)?;
                 }
             }
+        }
+        Some(())
+    }
+
+    /// The innermost launched container of this function and its installed slot objects.
+    pub(super) fn active_composition_container(&self) -> Option<(Value, std::rc::Rc<[Value]>)> {
+        self.local_root_scopes.iter().rev().find_map(|scope| {
+            scope.composition_cleanups.iter().rev().find_map(|cleanup| match cleanup {
+                CompositionCleanup::Container { value, slots, .. } => Some((*value, std::rc::Rc::clone(slots))),
+                CompositionCleanup::ScopeLeave { .. } => None,
+            })
+        })
+    }
+
+    /// Call each generated hook function with the injected fields of its argument object.
+    /// The argument objects are container slots, rooted for the whole launch.
+    pub(super) fn emit_composition_hook_calls(
+        &mut self,
+        site: AstNodeKey,
+        calls: &[crate::CompositionHookCall],
+        slots: &[Value],
+    ) -> Option<()> {
+        let pointer = dispatch::pointer_type(self.frontend_config);
+        for call in calls {
+            (call.signature.params.len() == call.argument_offsets.len()).then_some(())?;
+            let mut arguments = Vec::with_capacity(call.argument_offsets.len());
+            match call.arguments_slot {
+                Some(slot) => {
+                    let object = *slots.get(usize::try_from(slot).ok()?)?;
+                    for offset in &call.argument_offsets {
+                        arguments.push(self.builder.ins().load(
+                            pointer,
+                            MemFlagsData::new(),
+                            object,
+                            i32::try_from(*offset).ok()?,
+                        ));
+                    }
+                }
+                None => call.argument_offsets.is_empty().then_some(())?,
+            }
+            let function = match self.call_importer.as_deref_mut()?.import(
+                self.builder,
+                call.function.clone(),
+                &call.signature,
+            ) {
+                Ok(function) => function,
+                Err(CallImportError::UnknownCallee) => {
+                    self.pending_error = Some(LoweringError {
+                        key: site,
+                        kind: LoweringErrorKind::UnknownCallee(call.function.clone()),
+                    });
+                    return None;
+                }
+            };
+            self.builder.ins().call(function, &arguments);
         }
         Some(())
     }
@@ -156,22 +217,22 @@ macro_rules! generated_composition_methods {
             let launched =
                 self.composition_call(site, "composition_launch", &[container], &[pointer], Some(types::I8))??;
             self.composition_failure_guard(site, container, launched, 9)?;
-            self.local_root_scopes
-                .last_mut()?
-                .composition_cleanups
-                .push(CompositionCleanup::Container { site, value: container });
+            let slots = std::rc::Rc::<[Value]>::from(installed);
+            // The container is registered for teardown first, so an early exit from a
+            // `startup` caller path still runs the global `dispose` hooks and shuts down.
+            self.local_root_scopes.last_mut()?.composition_cleanups.push(CompositionCleanup::Container {
+                site,
+                value: container,
+                slots: std::rc::Rc::clone(&slots),
+            });
+            self.emit_composition_hook_calls(site, &plan.startup, &slots)?;
             Some(())
         }
 
         fn emit_composition_scope(&mut self, site: AstNodeKey) -> Option<()> {
             let plan = self.facts.composition_scope(site)?;
             (plan.site == site && plan.scope_id != 0).then_some(())?;
-            let container = self.local_root_scopes.iter().rev().find_map(|scope| {
-                scope.composition_cleanups.iter().rev().find_map(|cleanup| match cleanup {
-                    CompositionCleanup::Container { value, .. } => Some(*value),
-                    CompositionCleanup::ScopeLeave { .. } => None,
-                })
-            })?;
+            let (container, slots) = self.active_composition_container()?;
             let pointer = dispatch::pointer_type(self.frontend_config);
             let scope_id = self.builder.ins().iconst(pointer, i64::from(plan.scope_id));
             let parent_scope_id = self.builder.ins().iconst(pointer, i64::from(plan.parent_scope_id));
@@ -184,6 +245,9 @@ macro_rules! generated_composition_methods {
             )?;
             self.begin_local_root_scope();
             self.local_root_scopes.last_mut()?.composition_cleanups.push(CompositionCleanup::ScopeLeave { site });
+            // `init` runs after the frame is entered and before the body. The leave cleanup is
+            // already registered, so every exit of the body runs `dispose`.
+            self.emit_composition_hook_calls(site, &plan.init, &slots)?;
             self.lower_nested_statement(plan.body)?;
             self.end_local_root_scope_for_current_block()
         }

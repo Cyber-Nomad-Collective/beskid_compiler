@@ -335,6 +335,9 @@ impl<'db> CodegenInput<'db> {
                     ),
                     Ok(Some(IndexedNodeKind::ScopeHook))
                 )
+                && hook.function_node_id.is_valid()
+                && matches!(node_kind(self.db, source_key(hook.function_node_id)), Ok(Some(IndexedNodeKind::FunctionDefinition)))
+                && hook.arguments_registration_id.is_none_or(|id| registrations.contains(&id))
         });
         if plan.launched_host != snapshot.launched_host
             || !valid_activation

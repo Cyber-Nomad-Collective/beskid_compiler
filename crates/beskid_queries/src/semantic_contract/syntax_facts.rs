@@ -480,6 +480,28 @@ pub(super) fn direct_callees_for_item(
     item: AstNodeKey,
 ) -> Result<Arc<[AstNodeKey]>, SemanticError> {
     let mut callees = Vec::new();
+    // `launch` (and the `with` blocks of its function) call the generated host-hook functions
+    // (`beskid_analysis::composition::hooks`) without a CallExpression node. Which hooks run is
+    // decided by the frozen composition plan at lowering; every generated hook of the unit is
+    // reachable so each planned call has an emitted target.
+    let launches = index
+        .ids_of_kind(beskid_analysis::syntax_query::NodeKind::LaunchStatement)
+        .into_iter()
+        .any(|node| is_ancestor(index, item.node, node));
+    if launches {
+        for node in index.ids_of_kind(beskid_analysis::syntax_query::NodeKind::FunctionDefinition) {
+            let Some(function) = index
+                .node_at(program, node)
+                .and_then(|node| node.of::<beskid_analysis::syntax::FunctionDefinition>())
+            else {
+                continue;
+            };
+            let key = AstNodeKey { node, ..item };
+            if beskid_analysis::composition::is_hook_item_name(&function.name.node.name) && !callees.contains(&key) {
+                callees.push(key);
+            }
+        }
+    }
     // Scoped cleanup is an implicit direct call, but has no CallExpression node.
     // Preserve the same exact semantic targets used by lowering in ordinary reachability.
     for node in index.ids_of_kind(beskid_analysis::syntax_query::NodeKind::ScopedUseStatement) {
