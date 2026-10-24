@@ -190,6 +190,19 @@ pub fn lower_syntax_assembly_entrypoint(
     })
 }
 
+/// [`lower_syntax_assembly_entrypoint`] for a `test` definition (tests have their own namespace).
+pub fn lower_syntax_assembly_test_entrypoint(
+    assembly: Arc<beskid_analysis::projects::ProgramAssembly>,
+    test: &str,
+    target: beskid_abi::abi_v5::TargetMetadata,
+) -> Result<beskid_codegen::CodegenArtifact> {
+    with_db(|db| {
+        let isa = native_isa()?;
+        beskid_codegen::lower_syntax_assembly_test_entrypoint(db, assembly, test, target, isa.as_ref())
+            .map(|entrypoint| entrypoint.into_artifact())
+    })
+}
+
 fn native_isa() -> Result<Arc<dyn TargetIsa>> {
     crate::jit_module::native_jit_isa().map_err(|error| anyhow::anyhow!("native JIT ISA construction failed: {error}"))
 }

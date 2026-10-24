@@ -10,7 +10,7 @@ pub use entrypoint_execution::{
     run_entrypoint_with_pipeline,
 };
 pub use jit_preparation::{
-    PreparedJitEntrypoint, lower_prepared_syntax_entrypoint, lower_syntax_assembly_entrypoint, prepare_jit_entrypoint,
+    PreparedJitEntrypoint, lower_prepared_syntax_entrypoint, lower_syntax_assembly_entrypoint, lower_syntax_assembly_test_entrypoint, prepare_jit_entrypoint,
     prepare_jit_module, prepare_syntax_front_end,
 };
 pub use syntax_queries::{

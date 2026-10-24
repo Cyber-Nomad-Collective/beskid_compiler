@@ -367,7 +367,7 @@ pub fn lower_prepared_syntax_entrypoint(
     isa: &dyn TargetIsa,
 ) -> Result<PreparedSyntaxEntrypoint> {
     let assembly = Arc::new(front.syntax_assembly());
-    lower_syntax_assembly_entrypoint_with_composition(db, assembly, entrypoint, target, isa, Some(front))
+    lower_syntax_assembly_entrypoint_with_composition(db, assembly, entrypoint, EntrypointKind::Function, target, isa, Some(front))
 }
 
 /// Lower one entrypoint from an assembled syntax program through ISLE.
@@ -382,13 +382,26 @@ pub fn lower_syntax_assembly_entrypoint(
     target: TargetMetadata,
     isa: &dyn TargetIsa,
 ) -> Result<PreparedSyntaxEntrypoint> {
-    lower_syntax_assembly_entrypoint_with_composition(db, assembly, entrypoint, target, isa, None)
+    lower_syntax_assembly_entrypoint_with_composition(db, assembly, entrypoint, EntrypointKind::Function, target, isa, None)
+}
+
+/// [`lower_syntax_assembly_entrypoint`] for the `test` definition named `test` (tests have their
+/// own namespace, so a function of the same name is not selected).
+pub fn lower_syntax_assembly_test_entrypoint(
+    db: &mut BeskidDatabase,
+    assembly: Arc<ProgramAssembly>,
+    test: &str,
+    target: TargetMetadata,
+    isa: &dyn TargetIsa,
+) -> Result<PreparedSyntaxEntrypoint> {
+    lower_syntax_assembly_entrypoint_with_composition(db, assembly, test, EntrypointKind::Test, target, isa, None)
 }
 
 fn lower_syntax_assembly_entrypoint_with_composition(
     db: &mut BeskidDatabase,
     assembly: Arc<ProgramAssembly>,
     entrypoint: &str,
+    kind: EntrypointKind,
     target: TargetMetadata,
     isa: &dyn TargetIsa,
     front: Option<&ExecutableFrontEnd>,
@@ -398,7 +411,7 @@ fn lower_syntax_assembly_entrypoint_with_composition(
             db,
             assembly,
             &[entrypoint.to_owned()],
-            EntrypointKind::Function,
+            kind,
             target,
             isa,
             front,

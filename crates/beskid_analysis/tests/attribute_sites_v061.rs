@@ -186,7 +186,7 @@ fn formatter_round_trips_every_site() {
         "mut i64 total = 0;",
         "let square = [Pure] ([Hot] i64 x) => x * x;",
         " = [Pure] ([Hot] y) => y;",
-        "[Check]\ntest adds",
+        "[Check]\ntest Adds",
     ] {
         assert!(once.contains(expected), "formatted output lacks {expected:?}:\n{once}");
     }

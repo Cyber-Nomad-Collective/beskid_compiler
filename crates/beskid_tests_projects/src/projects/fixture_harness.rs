@@ -184,7 +184,7 @@ fn cached_corelib_tests_assembly(entry_relative: &str, resolved: &ResolvedInput)
 pub fn lower_corelib_tests_entrypoint(entry_relative: &str, entrypoint: &str) -> beskid_codegen::CodegenArtifact {
     let resolved = resolve_corelib_tests_entry_with_assembly(entry_relative);
     let assembly = Arc::new(resolved.assembly.as_ref().expect("corelib entry assembly").clone());
-    beskid_engine::services::lower_syntax_assembly_entrypoint(
+    beskid_engine::services::lower_syntax_assembly_test_entrypoint(
         assembly,
         entrypoint,
         beskid_engine::host_runtime_target().unwrap_or_else(|error| panic!("host ABI-v5 target: {error}")),
