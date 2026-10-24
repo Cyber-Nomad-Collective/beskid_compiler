@@ -405,6 +405,10 @@ fn v067_failed_assertion_is_a_test_failure_with_values_and_call_site() {
     assert_eq!(failed["failure"]["actual"], "4");
     assert_eq!(failed["failure"]["location"]["line"], 6);
     assert_eq!(failed["failure"]["location"]["column"], 5);
+    assert!(
+        failed["failure"]["location"]["file"].as_str().is_some_and(|file| file.ends_with("Src/Fails.bd") && !file.contains("obj/beskid")),
+        "the location names the authored file, not the materialized copy: {failed}"
+    );
 }
 
 // ---------------------------------------------------------------------------------------------

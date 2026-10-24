@@ -4,16 +4,15 @@ use anyhow::{Result, anyhow};
 use beskid_engine::services::SyntaxTestItem;
 use clap::Args;
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use crate::project_args::{LockfilePolicyArgs, ProjectResolveArgs};
 use beskid_tools::diagnostics;
 use beskid_tools::pipeline::{tui::FileLineLink, tui::TestRowState, tui::TestRunUi};
 
-use super::test_failure::{
-    AssertionFailure, SourceFile, SourceLocation, TestCrash, TestRunFailure, locate_assertion, read_project_sources,
-};
+use super::test_failure::{AssertionFailure, SourceLocation, TestCrash, TestRunFailure};
+use beskid_analysis::analysis::diagnostics::source_map::SourceMapper;
 
 use super::prepared_matrix::{
     Cancellation, ExecutionBudgets, PhaseRecord, PreparedTarget, PreparedWorkspace, TargetReport, TargetResult,
@@ -224,7 +223,7 @@ pub(crate) fn execute_prepared_target(
     let mut budget_expired = false;
     let mut first_failure = None;
     let mut last_started_test = None;
-    let mut project_sources: Option<Vec<SourceFile>> = None;
+    let mut source_mapper = SourceMapper::new();
     // Pending tests link and run ahead of this loop on a bounded pool; the loop still reports,
     // budgets and records them one by one in manifest order.
     let pending = planned
@@ -324,25 +323,22 @@ pub(crate) fn execute_prepared_target(
                     }
                     let (reason, detail) = match error.downcast_ref::<TestRunFailure>() {
                         Some(TestRunFailure::Assertion(assertion)) => {
-                            let sources = project_sources.get_or_insert_with(|| {
-                                workspace.manifest_path().parent().map(read_project_sources).unwrap_or_default()
-                            });
                             let mut assertion = assertion.clone();
-                            let test_file = target.resolved.source_path.clone();
-                            let test_line = test.selection_span.line_col_start.0 as u32;
-                            assertion.location = locate_assertion(sources, &assertion, &test_file, test_line);
-                            assertion.location_is_call_site = assertion.location.is_some();
+                            // The call site is the file the compiler saw; report the authored file.
+                            if let Some(location) = assertion.location.as_mut()
+                                && let Some(authored) = source_mapper.authored_name(&location.file.display().to_string())
+                            {
+                                location.file = PathBuf::from(authored);
+                            }
                             if assertion.location.is_none() {
-                                assertion.location = Some(SourceLocation {
-                                    file: test_file,
-                                    line: test_line,
-                                    column: test.selection_span.line_col_start.1 as u32,
-                                });
+                                assertion.location = Some(declaration_location(&mut source_mapper, &target.resolved.source_path, test));
                             }
                             (assertion.render(), Some(FailureDetail::Assertion(assertion)))
                         }
                         Some(TestRunFailure::Crashed(crash)) => {
-                            (format!("test crashed: {}", crash.reason), Some(FailureDetail::Crash(crash.clone())))
+                            let mut crash = crash.clone();
+                            crash.location = Some(declaration_location(&mut source_mapper, &target.resolved.source_path, test));
+                            (format!("test crashed: {}", crash.reason), Some(FailureDetail::Crash(crash)))
                         }
                         None => {
                             let reason = if args.json {
@@ -471,6 +467,16 @@ pub(crate) fn execute_prepared_target(
     })
 }
 
+/// The declaration of `test`, in the authored file.
+fn declaration_location(mapper: &mut SourceMapper, source_path: &Path, test: &SyntaxTestItem) -> SourceLocation {
+    let file = mapper.authored_name(&source_path.display().to_string()).map_or_else(|| source_path.to_path_buf(), PathBuf::from);
+    SourceLocation {
+        file,
+        line: test.selection_span.line_col_start.0 as u32,
+        column: test.selection_span.line_col_start.1 as u32,
+    }
+}
+
 /// Records a test that never ran because the target's execution budget expired first.
 /// Distinct from a `skip.condition`-driven skip: this test would otherwise have executed,
 /// so folding it into "skipped" would silently understate lost coverage.
@@ -587,7 +593,6 @@ mod tests {
                 expected: Some("3".into()),
                 actual: Some("4".into()),
                 location: Some(SourceLocation { file: PathBuf::from("Src/Main.bd"), line: 17, column: 5 }),
-                location_is_call_site: true,
             })),
         };
         let json = serde_json::to_value(&execution).unwrap();
@@ -598,7 +603,6 @@ mod tests {
         assert_eq!(json["failure"]["location"]["file"], "Src/Main.bd");
         assert_eq!(json["failure"]["location"]["line"], 17);
         assert_eq!(json["failure"]["location"]["column"], 5);
-        assert_eq!(json["failure"]["location_is_call_site"], true);
     }
 
     #[test]
@@ -612,12 +616,16 @@ mod tests {
             failure: Some(FailureDetail::Crash(TestCrash {
                 trap: Some("unreachable_or_isle_invariant".into()),
                 reason: "division by zero".into(),
+                location: Some(SourceLocation { file: PathBuf::from("Src/Main.bd"), line: 12, column: 1 }),
             })),
         };
         let json = serde_json::to_value(&execution).unwrap();
         assert_eq!(json["failure"]["kind"], "crash");
         assert_eq!(json["failure"]["reason"], "division by zero");
         assert!(json["failure"].get("expected").is_none());
+        assert_eq!(json["failure"]["location"]["file"], "Src/Main.bd");
+        assert_eq!(json["failure"]["location"]["line"], 12);
+        assert_eq!(json["failure"]["location"]["column"], 1);
     }
 
     fn sample_project_resolve_args() -> ProjectResolveArgs {

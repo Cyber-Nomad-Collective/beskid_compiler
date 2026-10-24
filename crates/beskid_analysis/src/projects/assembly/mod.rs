@@ -1,5 +1,6 @@
 //! Syntax-only multi-module project assembly from [`CompilePlan`] and materialized source roots.
 
+mod caller_info;
 mod discovery;
 mod loader;
 mod module_index;
@@ -147,6 +148,12 @@ impl ProgramAssembly {
         has_core_dependency: bool,
         generation: SyntaxGenerationId,
     ) -> Self {
+        let units = match caller_info::fill_caller_information(&units, &|path| {
+            module_index.resolve_module(path).map(crate::paths::unit_path_key)
+        }) {
+            Some(rewritten) => Arc::new(rewritten),
+            None => units,
+        };
         let syntax_indexes =
             Arc::new(units.iter().map(|unit| SyntaxIndex::from_program(&unit.program, generation)).collect::<Vec<_>>());
         Self {
