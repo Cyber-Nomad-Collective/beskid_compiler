@@ -523,7 +523,7 @@ fn legality_rejection_converts_into_source_excerpt_diagnostics() {
 /// mutable local lowers as `total = total op 2`, reading the local once.
 #[test]
 fn compound_assignment_to_a_mutable_local_lowers_for_every_operator() {
-    for (operator, instruction) in [("+=", "iadd"), ("-=", "isub")] {
+    for (operator, instruction) in [("+=", "iadd"), ("-=", "isub"), ("*=", "imul"), ("/=", "sdiv"), ("%=", "srem")] {
         let source = format!("i32 F() {{ mut i32 total = 1; total {operator} 2; return total; }}");
         let (input, isa, root) = item_fixture_with_root(&source);
         let function = find_function_definitions(input.database(), root)[0];
@@ -539,7 +539,7 @@ fn compound_assignment_to_a_mutable_local_lowers_for_every_operator() {
 /// A compound assignment to an immutable local is the user error E1214, never an internal error.
 #[test]
 fn compound_assignment_to_an_immutable_local_is_e1214() {
-    for operator in ["+=", "-="] {
+    for operator in ["+=", "-=", "*=", "/=", "%="] {
         let source = format!("i32 F() {{ i32 total = 1; total {operator} 2; return total; }}");
         let (input, isa, root) = item_fixture_with_root(&source);
         let function = find_function_definitions(input.database(), root)[0];

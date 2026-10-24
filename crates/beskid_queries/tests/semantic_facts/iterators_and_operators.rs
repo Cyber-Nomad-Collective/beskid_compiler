@@ -231,6 +231,9 @@ fn compound_assignment_to_a_mutable_local_is_a_write_with_its_operator() {
     for (operator, expected) in [
         ("+=", beskid_queries::CompoundAssignmentOperator::Add),
         ("-=", beskid_queries::CompoundAssignmentOperator::Sub),
+        ("*=", beskid_queries::CompoundAssignmentOperator::Mul),
+        ("/=", beskid_queries::CompoundAssignmentOperator::Div),
+        ("%=", beskid_queries::CompoundAssignmentOperator::Rem),
     ] {
         let source = format!("i32 F() {{ mut i32 total = 1; total {operator} 2; return total; }}");
         let (db, _project, unit, generation, index) = setup(&source);
