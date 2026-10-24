@@ -210,10 +210,26 @@ fn unresolved_callee_kind(
         }
         return None;
     }
-    if import_binds_name(db, call, root) || unit_declares_namespace_name(program, index, root) {
+    if unit_declares_namespace_name(program, index, root) {
         return None;
     }
-    if assembly_declares_module(db, call, &qualifier) {
+    if let Some((module_len, units)) = longest_declared_module_prefix(db, call, &qualifier) {
+        if module_len == qualifier.len() {
+            return None;
+        }
+        // `Console.Out.WriteLine()` where `Console` is a module and `Out` names nothing in it: the
+        // path stops at `Out`. A type, contract, enum, inline module or function named `Out` in
+        // the module makes the rest a member path, which its own authorities judge.
+        let next = qualifier[module_len].as_str();
+        if units.iter().any(|unit| unit_declares_function_name(db, *unit, call.generation, next)) {
+            return None;
+        }
+        return Some(UnresolvedCallKind::UnknownValueInModule {
+            module_path: Arc::from(qualifier[..module_len].join(".")),
+            name: Arc::from(next),
+        });
+    }
+    if import_binds_name(db, call, root) {
         return None;
     }
     Some(UnresolvedCallKind::UnknownModulePath { path: Arc::from(qualifier.join(".")) })
@@ -248,6 +264,19 @@ pub(in crate::semantic_contract) fn import_binds_name(db: &dyn Db, key: AstNodeK
         .is_some_and(|imports| {
             imports.iter().any(|import| import.binding == name || import.path.iter().any(|segment| segment == name))
         })
+}
+
+/// The longest prefix of `module_path` that names an assembled module visible to `key`, with
+/// that module's units.
+fn longest_declared_module_prefix(
+    db: &dyn Db,
+    key: AstNodeKey,
+    module_path: &[String],
+) -> Option<(usize, Vec<SourceUnitId>)> {
+    let registry = db.syntax_dependency_registry().lock().expect("syntax dependency registry");
+    (1..=module_path.len()).rev().find_map(|length| {
+        registry.visible_module_units(key.generation, &module_path[..length]).map(|units| (length, units.to_vec()))
+    })
 }
 
 pub(in crate::semantic_contract) fn assembly_declares_module(db: &dyn Db, key: AstNodeKey, module_path: &[String]) -> bool {
