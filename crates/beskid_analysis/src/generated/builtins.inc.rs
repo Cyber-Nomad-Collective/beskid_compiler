@@ -624,6 +624,18 @@ define_builtins! {
         returns: Unit,
         injected: true,
     },
+    &["__composition_exit_register"] => {
+        symbol: "composition_exit_register",
+        params: [Ptr, Ptr, Ptr, Usize],
+        returns: Unit,
+        injected: true,
+    },
+    &["__composition_exit"] => {
+        symbol: "composition_exit",
+        params: [I32],
+        returns: Never,
+        injected: true,
+    },
     &["__process_exit"] => {
         symbol: "process_exit",
         params: [I32],
