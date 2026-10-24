@@ -75,17 +75,23 @@ impl fmt::Display for TestRunFailure {
 impl std::error::Error for TestRunFailure {}
 
 impl AssertionFailure {
-    /// The text printed under the test name.
+    /// The text printed under the test name: the headline, the because text, the expected and
+    /// actual values when known, and the exact call site. Every line after the first is indented.
     pub(crate) fn render(&self) -> String {
-        let mut text = format!("assertion failed: {}", self.headline);
+        let mut lines = vec![format!("assertion failed: {}", self.headline)];
         if let Some(because) = &self.because {
-            text.push_str("\n  ");
-            text.push_str(because);
+            lines.extend(because.lines().map(|line| format!("  {line}")));
+        }
+        if let Some(expected) = &self.expected {
+            lines.push(format!("  expected: {expected}"));
+        }
+        if let Some(actual) = &self.actual {
+            lines.push(format!("  actual:   {actual}"));
         }
         if let Some(location) = &self.location {
-            text.push_str(&format!("\n  at {}:{}:{}", location.file.display(), location.line, location.column));
+            lines.push(format!("  at {}:{}:{}", location.file.display(), location.line, location.column));
         }
-        text
+        lines.join("\n")
     }
 }
 
@@ -183,7 +189,10 @@ mod tests {
             failure.location,
             Some(SourceLocation { file: PathBuf::from("/app/Src/Main.bd"), line: 17, column: 5 })
         );
-        assert_eq!(failure.render(), "assertion failed: expected 3, found 4\n  adds\n  at /app/Src/Main.bd:17:5");
+        assert_eq!(
+            failure.render(),
+            "assertion failed: expected 3, found 4\n  adds\n  expected: 3\n  actual:   4\n  at /app/Src/Main.bd:17:5"
+        );
     }
 
     #[test]
@@ -246,4 +255,42 @@ mod tests {
         assert_eq!(crash.reason, "exited signal: 11 (SIGSEGV): partial output");
     }
 
+    fn rendered(fields: [&str; 7]) -> String {
+        let content = file(fields);
+        let TestRunFailure::Assertion(failure) = classify_failed_run("101", "", "", Some(&content)) else { panic!() };
+        failure.render()
+    }
+
+    #[test]
+    fn an_equal_failure_prints_the_because_line_and_the_location() {
+        assert_eq!(
+            rendered(["the values are not equal", "Answer() should return 42", "", "", "/app/Src/Main.bd", "17", "5"]),
+            "assertion failed: the values are not equal\n  Answer() should return 42\n  at /app/Src/Main.bd:17:5"
+        );
+    }
+
+    #[test]
+    fn a_true_failure_prints_the_because_line_the_values_and_the_location() {
+        assert_eq!(
+            rendered(["expected true, found false", "must hold", "true", "false", "/app/Src/Main.bd", "9", "5"]),
+            "assertion failed: expected true, found false\n  must hold\n  expected: true\n  actual:   false\n  at /app/Src/Main.bd:9:5"
+        );
+    }
+
+    #[test]
+    fn a_false_failure_prints_the_because_line_the_values_and_the_location() {
+        assert_eq!(
+            rendered(["expected false, found true", "must not hold", "false", "true", "/app/Src/Main.bd", "11", "5"]),
+            "assertion failed: expected false, found true\n  must not hold\n  expected: false\n  actual:   true\n  at /app/Src/Main.bd:11:5"
+        );
+    }
+
+    #[test]
+    fn a_multiline_because_is_indented_and_an_empty_one_is_omitted() {
+        assert_eq!(
+            rendered(["h", "one\ntwo", "", "", "/f.bd", "1", "1"]),
+            "assertion failed: h\n  one\n  two\n  at /f.bd:1:1"
+        );
+        assert_eq!(rendered(["h", "", "", "", "/f.bd", "1", "1"]), "assertion failed: h\n  at /f.bd:1:1");
+    }
 }
