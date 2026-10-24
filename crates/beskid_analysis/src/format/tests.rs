@@ -363,3 +363,16 @@ fn token_check_rejects_code_changes() {
     let written = code_tokens("\"a ${b}\"", &[], &[]);
     assert!(first_difference(&written, &lowered).is_some(), "lowered interpolation is a code change");
 }
+
+#[test]
+fn trailing_commas_may_be_dropped_or_added_by_the_printer() {
+    let source = "pub attribute Mark(Field, Parameter,) { }\nenum E { A(i32 a, i32 b,), B }\nunit F() { i32[] xs = [1, 2, 3,]; Point p = Point { x: 1, y: 2, }; Point q = Point { x: 3, y: 4 }; return; }\n";
+    let formatted = fmt(source);
+    assert!(formatted.contains("Mark(Field, Parameter)"), "{formatted}");
+    assert!(formatted.contains("A(i32 a, i32 b),\n"), "{formatted}");
+    assert!(formatted.contains("    B,\n"), "{formatted}");
+    assert!(formatted.contains("[1, 2, 3]"), "{formatted}");
+    assert!(formatted.contains("        y: 2,\n"), "{formatted}");
+    assert!(formatted.contains("        y: 4,\n"), "{formatted}");
+    assert_eq!(fmt(&formatted), formatted);
+}

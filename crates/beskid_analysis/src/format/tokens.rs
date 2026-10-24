@@ -5,7 +5,9 @@
 //! rewrites the house style rules allow:
 //! - identifier case and underscores (naming normalization: `bad_name` to `BadName`);
 //! - parentheses around `if`, `while` and `match` conditions;
-//! - trailing commas before `}` or `)`, and an optional `;` before `}` (a contract embedding);
+//! - trailing commas before `}`, `)` or `]` (the printer writes none in argument, parameter and
+//!   array lists, and one after every member of a braced list), and an optional `;` before `}`
+//!   (a contract embedding);
 //! - empty `()` (a nullary enum constructor loses its call parentheses);
 //! - parentheses around a single lambda parameter.
 //!
@@ -137,7 +139,7 @@ fn normalize(mut tokens: Vec<String>) -> Vec<String> {
     for token in tokens {
         match token.as_str() {
             // Trailing comma before a closer.
-            "}" | ")" if out.last().is_some_and(|t| t == ",") => {
+            "}" | ")" | "]" if out.last().is_some_and(|t| t == ",") => {
                 out.pop();
                 if token == ")" && out.last().is_some_and(|t| t == "(") {
                     out.pop();
