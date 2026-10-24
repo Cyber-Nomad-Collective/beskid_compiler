@@ -258,9 +258,7 @@ pub fn contract_dispatch(
     };
     // The receiver must be a contract value; a bounded generic receiver with a witness and an
     // injected field with one implementation never reach this point with a box.
-    let Ok(GenericSourceTypeIdentity::Contract { arguments, .. }) =
-        specialized_source_expression_identity(db, receiver, enclosing)
-    else {
+    let Some(GenericSourceTypeIdentity::Contract { arguments, .. }) = receiver_identity(db, receiver, enclosing) else {
         return Ok(None);
     };
     let Some(contract) = contract_of_method_signature(db, signature_node)? else {
@@ -320,10 +318,30 @@ pub fn contract_value_receiver(
     let Some(receiver) = call_arguments(db, key)?.and_then(|arguments| arguments.first().copied()) else {
         return Ok(None);
     };
-    Ok(Some(matches!(
-        specialized_source_expression_identity(db, receiver, enclosing),
-        Ok(GenericSourceTypeIdentity::Contract { .. })
-    )))
+    Ok(Some(matches!(receiver_identity(db, receiver, enclosing), Some(GenericSourceTypeIdentity::Contract { .. }))))
+}
+
+/// The identity of a call receiver: an expression, or the declaring identifier of a local that
+/// the receiver collection denotes a local by (`g` in `g.Greet()`).
+fn receiver_identity(
+    db: &dyn Db,
+    receiver: AstNodeKey,
+    enclosing: Option<&GenericSpecializationInstance>,
+) -> Option<GenericSourceTypeIdentity> {
+    if let Ok(identity) = specialized_source_expression_identity(db, receiver, enclosing) {
+        return Some(identity);
+    }
+    let syntax = db.syntax_unit(receiver.unit).filter(|syntax| syntax.accepts_key(db, receiver))?;
+    let index = syntax.syntax_index(db);
+    if index.kind(receiver.node) != Some(NodeKind::Identifier) {
+        return None;
+    }
+    if let Some(enclosing) = enclosing
+        && let Some(Ok(identity)) = super::contracts::specialized_local_declaration_identity(db, receiver, enclosing)
+    {
+        return Some(identity);
+    }
+    super::calls::generic_source_local_identity(db, syntax.expanded_program(db), index, receiver, receiver.node).ok()
 }
 
 /// A member call on any expression whose identity is a contract (`all[0].Greet()`,

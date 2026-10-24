@@ -620,7 +620,13 @@ fn direct_generic_call_declaration(
         return Ok(None);
     }
     match item_abi_signature(db, declaration) {
-        Ok(Some(_)) => Ok(None),
+        // A function with contract-typed parameters has a plain body (its parameters are contract
+        // boxes) and one witness specialization per concrete argument type; a call that proves
+        // witnesses uses the specialization, which joins this worklist like a generic call.
+        Ok(Some(_)) => match generic_call_specialization(db, key) {
+            Ok(Some(specialization)) if !specialization.contract_witnesses.is_empty() => Ok(Some(declaration)),
+            _ => Ok(None),
+        },
         // Positively classified generic/contract templates are ABI-less. The call fact must
         // prove one exact specialization, otherwise the caller is rejected fail-closed.
         Ok(None) => Ok(Some(declaration)),
