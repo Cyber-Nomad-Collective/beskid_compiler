@@ -347,6 +347,11 @@ pub(in crate::semantic_contract) fn resolve_type_declaration(
     }
     let module_path =
         module_path.iter().map(|segment| segment.node.name.node.name.as_str()).map(str::to_owned).collect::<Vec<_>>();
+    // `A.Clock` for a type declared in an inline `mod A { ... }` of this unit: the nearest
+    // enclosing module scope that declares the module chain decides it, as for bare names.
+    if let Some(lexical) = lexical_inline_module_type(db, key, &module_path, name, generic_arity) {
+        return Some(lexical);
+    }
     if let Some(unit) = resolve_qualified_module_unit(db, key, &module_path)
         && let Some(declaration) = unique_exported_type_in_unit(db, unit, key.generation, name, generic_arity)
     {
@@ -407,6 +412,87 @@ pub(in crate::semantic_contract) fn unique_exported_type_in_unit(
     nearest_reexport_route(db, unit, generation, |db, current, generation| {
         unique_public_type_in_unit(db, current, generation, name, generic_arity)
     })
+}
+
+/// The type or enum `name` declared directly in the inline module reached by `module_path` from
+/// the nearest module scope enclosing `key` that declares that module chain (`A.Clock` for
+/// `mod A { pub type Clock { .. } }`, `A.B.Clock` for nested modules). The type must be public
+/// unless `key` lies inside that module. `None` when no enclosing scope declares the chain, or the
+/// chain's module has no single such type; the module registry then decides the path.
+fn lexical_inline_module_type(
+    db: &dyn Db,
+    key: AstNodeKey,
+    module_path: &[String],
+    name: &str,
+    generic_arity: usize,
+) -> Option<AstNodeKey> {
+    use crate::semantic_contract::resolution::{module_scope, outer_module_scope};
+    use beskid_analysis::syntax_query::NodeKind;
+    let syntax = db.syntax_unit(key.unit)?;
+    if syntax.generation(db) != key.generation {
+        return None;
+    }
+    let program = syntax.expanded_program(db);
+    let index = syntax.syntax_index(db);
+    let child_module = |parent: beskid_analysis::syntax::AstNodeId, segment: &str| {
+        let children = index
+            .ids_of_kind(NodeKind::InlineModule)
+            .filter(|candidate| {
+                outer_module_scope(index, *candidate) == Some(parent)
+                    && index
+                        .node_at(program, *candidate)
+                        .and_then(|node| node.of::<beskid_analysis::syntax::InlineModule>())
+                        .is_some_and(|module| module.name.node.name == segment)
+            })
+            .collect::<Vec<_>>();
+        match children.as_slice() {
+            [child] => Some(*child),
+            _ => None,
+        }
+    };
+    let mut scope = module_scope(index, key.node);
+    while let Some(current) = scope {
+        let target = module_path.iter().try_fold(current, |parent, segment| child_module(parent, segment));
+        if let Some(target) = target {
+            let inside = {
+                let mut enclosing = module_scope(index, key.node);
+                loop {
+                    match enclosing {
+                        Some(module) if module == target => break true,
+                        Some(module) => enclosing = outer_module_scope(index, module),
+                        None => break false,
+                    }
+                }
+            };
+            let visible = |visibility: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Visibility>| {
+                inside || visibility.node == beskid_analysis::syntax::Visibility::Public
+            };
+            let matches = index
+                .ids_named(NodeKind::TypeDefinition, name)
+                .chain(index.ids_named(NodeKind::EnumDefinition, name))
+                .filter(|candidate| {
+                    module_scope(index, *candidate) == Some(target)
+                        && index.node_at(program, *candidate).is_some_and(|node| {
+                            node.of::<beskid_analysis::syntax::TypeDefinition>().is_some_and(|definition| {
+                                definition.name.node.name == name
+                                    && definition.generics.len() == generic_arity
+                                    && visible(&definition.visibility)
+                            }) || node.of::<beskid_analysis::syntax::EnumDefinition>().is_some_and(|definition| {
+                                definition.name.node.name == name
+                                    && definition.generics.len() == generic_arity
+                                    && visible(&definition.visibility)
+                            })
+                        })
+                })
+                .collect::<Vec<_>>();
+            return match matches.as_slice() {
+                [node] => Some(AstNodeKey { unit: key.unit, generation: key.generation, node: *node }),
+                _ => None,
+            };
+        }
+        scope = outer_module_scope(index, current);
+    }
+    None
 }
 
 /// The type or enum named `name` declared in the nearest module scope (inline module or program)
@@ -615,3 +701,6 @@ pub(in crate::semantic_contract) fn aggregate_shape_for_binding(
         }
     }
 }
+
+#[cfg(test)]
+mod inline_module_type_tests;

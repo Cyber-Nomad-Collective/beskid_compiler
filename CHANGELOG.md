@@ -23,6 +23,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   in `Pair<A, B>`, `Pair<B, A> { first: this.first, ... }`, or
   `B Pick<A, B>(A first, B second) { return first; }` is E1206 at the body
   instead of a conflicting generic binding at a use site.
+- A qualified type path into an inline module resolves: `A.Clock` for a type
+  declared in `mod A { ... }`, and `A.Inner.Clock` through nested inline
+  modules. Two same-named types in two inline modules resolve to two distinct
+  declarations; a private type stays invisible outside its module.
 - A user type `Stack` with a `Push` method no longer collides with Corelib's
   `Core.Collections.Stack.Push` as `duplicate item ::Stack::Push`: method
   symbols include their declaring module.
