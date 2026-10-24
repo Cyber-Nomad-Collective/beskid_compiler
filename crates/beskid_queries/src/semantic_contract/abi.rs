@@ -27,6 +27,7 @@ pub(in crate::semantic_contract) use specialization::{
     specialized_method_receiver_bindings,
     integer_literal_fits_abi, integer_literal_text, integer_literal_u64, item_abi_type_from_syntax,
     manifest_builtin_abi_signature, type_syntax_mentions_generic_parameter, unsuffixed_integer_literal,
+    integer_literals_fit_abi, unsuffixed_integer_array_elements,
 };
 
 pub(in crate::semantic_contract) use statements::statement_abi_type_for_node;

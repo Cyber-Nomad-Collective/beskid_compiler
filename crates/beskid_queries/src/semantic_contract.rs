@@ -111,6 +111,7 @@ use abi::{
     item_abi_signature_tracked, item_abi_type_from_syntax, item_signature_for_node, item_signature_tracked,
     manifest_builtin_abi_signature, signature_from_syntax,
     type_syntax_mentions_generic_parameter, unsuffixed_integer_literal, value_abi_type_tracked,
+    integer_literals_fit_abi, unsuffixed_integer_array_elements,
 };
 use bulk::{bulk_call_element_abi_type_for_call, bulk_parameter_tracked};
 use calls::{
@@ -243,7 +244,7 @@ pub use completion::{
 };
 pub use calls::{
     TransferClassIntrinsic, transfer_class_code, transfer_class_code_for_substitution, transfer_class_intrinsic,
-    ExchangeCall, exchange_call, for_iterator_protocol, for_iterator_specialization};
+    ExchangeCall, exchange_call, for_iterator_protocol, for_iterator_specialization, for_variable_specialization};
 pub use layouts::{
     CanonicalEmptyValue, canonical_empty_value,
     aggregate_field_access_specialization, aggregate_literal_specialization, array_index_element_managed_reference_specialization,

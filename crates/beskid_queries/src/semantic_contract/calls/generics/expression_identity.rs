@@ -382,10 +382,11 @@ fn contextual_numeric_literal(literal: &beskid_analysis::syntax::Literal) -> boo
 }
 
 /// The declared array type of an array literal's position, from its [`expected_type`], for the
-/// direct declaration contexts only: an annotated local, a struct field and a declared return.
-/// A call argument's identity feeds that call's own argument typing, so it is never taken from
-/// the parameter it is checked against; it and every other position yield `None`, and a non-empty
-/// literal then proves its identity from its elements.
+/// direct declaration contexts: an annotated local, a struct field and a declared return. A call
+/// argument's identity feeds that call's own argument typing, so it is taken from the parameter
+/// only for a literal of bare integers, which generic inference never asks for an identity; every
+/// other position yields `None`, and a non-empty literal then proves its identity from its
+/// elements.
 fn array_literal_declared_identity(
     db: &dyn Db,
     key: AstNodeKey,
@@ -395,6 +396,12 @@ fn array_literal_declared_identity(
             ExpectedTypeContext::DeclaredLocal { .. }
             | ExpectedTypeContext::StructField { .. }
             | ExpectedTypeContext::Return { .. } => Some(expected.identity().clone()),
+            // A literal of bare integers is the one call argument whose identity never feeds its
+            // call's typing: generic inference binds `T` from its literals instead. Its elements
+            // take their width from the parameter, so the parameter is its identity.
+            ExpectedTypeContext::CallArgument { .. } if unsuffixed_integer_array_elements(db, key)?.is_some() => {
+                Some(expected.identity().clone())
+            }
             _ => None,
         }),
         Ok(None) => Ok(None),

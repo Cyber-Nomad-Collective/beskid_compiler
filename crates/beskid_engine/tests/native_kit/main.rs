@@ -21,6 +21,7 @@ mod cyb169_enum_return_sigill;
 mod descriptor_smoke;
 mod gc_stress_native;
 mod generic_field_match_native;
+mod generic_for_values_native;
 mod generic_function_values_native;
 mod generic_try_specialization_native;
 mod heap_growth_native;

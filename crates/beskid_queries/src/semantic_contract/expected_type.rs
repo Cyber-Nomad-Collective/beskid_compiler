@@ -167,7 +167,9 @@ fn expected_type_for(
         let identity = match call_argument_identity(db, program, index, parent_key, call, position, &environment, enclosing)
         {
             Err(error) if error.is_unavailable() && enclosing.is_none() => {
-                inferred_integer_argument_identity(db, parent_key, call, AstNodeKey { node: child, ..key }, position)
+                let argument = AstNodeKey { node: child, ..key };
+                inferred_integer_argument_identity(db, parent_key, call, argument, position)
+                    .or_else(|_| inferred_integer_array_argument_identity(db, parent_key, call, argument, position))
                     .map_err(|_| error)?
             }
             result => result?,
@@ -501,6 +503,50 @@ fn inferred_integer_argument_identity(
         return Err(unavailable());
     }
     Ok(GenericSourceTypeIdentity::Abi(parameter))
+}
+
+/// The identity of an array literal of bare integers (`[7, 8]`) written into a `T[]` parameter of
+/// a generic call that fixes `T` only by inference: the parameter applied to the call's inferred
+/// specialization, which bound `T` from these very literals or from a later exact argument they
+/// fit ([`generic_call_specialization`] never asks this literal for an identity, so reading the
+/// specialization here is not circular). Every element must fit the bound element type.
+fn inferred_integer_array_argument_identity(
+    db: &dyn Db,
+    call_key: AstNodeKey,
+    call: &syntax::CallExpression,
+    argument: AstNodeKey,
+    position: usize,
+) -> Result<GenericSourceTypeIdentity, SemanticError> {
+    let elements = unsuffixed_integer_array_elements(db, argument)?.ok_or_else(unavailable)?;
+    let specialization = generic_call_specialization(db, call_key)?.ok_or_else(unavailable)?;
+    if specialization.substitutions.is_empty() {
+        return Err(unavailable());
+    }
+    let callee_syntax = db
+        .syntax_unit(specialization.declaration.unit)
+        .filter(|syntax| syntax.accepts_key(db, specialization.declaration))
+        .ok_or_else(unavailable)?;
+    let callee = callee_syntax
+        .syntax_index(db)
+        .node_at(callee_syntax.expanded_program(db), specialization.declaration.node)
+        .ok_or_else(unavailable)?;
+    let parameter_type = declared_parameter_type(callee, call, position)?;
+    if !matches!(parameter_type, syntax::Type::Array(_)) {
+        return Err(unavailable());
+    }
+    let environment = specialization
+        .substitutions
+        .iter()
+        .map(|binding| (binding.parameter.as_ref(), binding.source_identity()))
+        .collect::<Environment<'_>>();
+    let identity =
+        generic_source_type_identity_with_substitutions(db, specialization.declaration, parameter_type, &environment)?;
+    let GenericSourceTypeIdentity::Array(element) = &identity else { return Err(unavailable()) };
+    let GenericSourceTypeIdentity::Abi(element) = element.as_ref() else { return Err(unavailable()) };
+    if !integer_literals_fit_abi(db, &elements, *element)? {
+        return Err(unavailable());
+    }
+    Ok(identity)
 }
 
 /// The canonical manifest parameter of an unshadowed single-segment runtime intrinsic callee.

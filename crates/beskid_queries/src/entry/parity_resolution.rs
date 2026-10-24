@@ -8,6 +8,13 @@ use super::parity_harness::{assert_covered_kinds, assert_silent, codes, reports_
 
 /// Single-unit classes: (legacy class, variant, code, source).
 const COVERED_KINDS: &[(&str, &str, &str, &str)] = &[
+    // Tests have their own namespace; two tests of one name in one module still collide.
+    (
+        "ResolveError::DuplicateItem (two tests of one name)",
+        "ResolveDuplicateItem",
+        "E1102",
+        "test SumOfSquares { return; } test SumOfSquares { return; }",
+    ),
     // A named function read as a value is a closure record (`function_item_value`); a generic one
     // is instantiated where it is read. Without explicit type arguments or an expected function
     // type, `let f = Helper;` has no type arguments to instantiate `Helper` with.
@@ -88,6 +95,10 @@ fn single_unit_resolution_and_member_path_classes_are_reported() {
 const SILENT: &[(&str, &str)] = &[
     ("constant read", "const N = 1; i64 Main() { return N; }"),
     ("function call", "i64 Helper() { return 1_i64; } i64 Main() { return Helper(); }"),
+    (
+        "test sharing the name of the function it calls",
+        "i32 SumOfSquares(i32 n) { return n * n; } test SumOfSquares { i32 value = SumOfSquares(2); return; }",
+    ),
     ("local read", "i64 Main(i64 n) { i64 m = n; return m; }"),
     (
         "three-segment field path",

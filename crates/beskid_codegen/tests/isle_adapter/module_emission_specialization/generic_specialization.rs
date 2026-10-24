@@ -122,6 +122,109 @@ fn parsed_program_specializes_generic_string_not_equal_as_content_comparison() {
     assert_string_content_comparison(&clif, StringComparison::NotEqual, "NotEqual<string>");
 }
 
+/// beskid-lings milestone 3: `for value in values { if value == target ... }` inside a generic
+/// function never matched with `T = string`, because the loop variable had no type in the
+/// specialization and `==` compared the two string pointers. The read of a `for` variable is
+/// typed by the element its statement binds in the specialization being lowered.
+#[test]
+fn parsed_program_compares_a_generic_for_variable_by_string_content() {
+    let (input, isa, root) = item_fixture_with_root(
+        "i64 CountEqual<T>(T[] values, T target) { mut i64 count = 0_i64; for value in values { if value == target { count = count + 1_i64; } } return count; } i64 Main() { return CountEqual<string>([\"a\", \"b\", \"a\"], \"a\"); }",
+    );
+    let items = find_function_definitions(input.database(), root);
+    let artifact = lower_syntax_program(
+        &input,
+        isa.as_ref(),
+        &[
+            SyntaxModuleItem { key: items[0], symbol: "CountEqual".into() },
+            SyntaxModuleItem { key: items[1], symbol: "Main".into() },
+        ],
+    )
+    .expect("generic string equality on a for variable lowers through its exact specialization");
+
+    let count_equal = artifact
+        .functions
+        .iter()
+        .find(|function| function.name.starts_with("CountEqual#generic_"))
+        .expect("specialized CountEqual<string> function");
+    let clif = count_equal.function.display().to_string();
+    // `assert_string_content_comparison` reads the first `iconst.i64 0`, which here is the
+    // counter's initial value, so the str_eq result test is matched directly.
+    let service_ref = clif
+        .lines()
+        .find(|line| line.contains(" = %str_eq "))
+        .and_then(|line| line.split_whitespace().next())
+        .unwrap_or_else(|| panic!("CountEqual<string> must import str_eq:\n{clif}"));
+    let result = clif
+        .lines()
+        .find(|line| line.contains(&format!("= call {service_ref}(")))
+        .and_then(|line| line.split_whitespace().next())
+        .unwrap_or_else(|| panic!("CountEqual<string> must call str_eq for `value == target`:\n{clif}"));
+    assert!(
+        clif.lines().any(|line| line.contains(&format!("icmp ne {result}, "))),
+        "CountEqual<string> must branch on the str_eq result:\n{clif}"
+    );
+}
+
+/// beskid-lings milestone 3: `FirstOr([7, 8], 0)` failed with an internal `source_expression_type`
+/// gap. `T` is inferred from the bare integers of the array literal (`i32`) and the call lowers
+/// through its specialization.
+#[test]
+fn parsed_program_infers_t_from_an_array_literal_of_bare_integers() {
+    let (input, isa, root) = item_fixture_with_root(
+        "T FirstOr<T>(T[] values, T fallback) { for value in values { return value; } return fallback; } i32 Main() { return FirstOr([7, 8], 0); }",
+    );
+    let items = find_function_definitions(input.database(), root);
+    let artifact = lower_syntax_program(
+        &input,
+        isa.as_ref(),
+        &[
+            SyntaxModuleItem { key: items[0], symbol: "FirstOr".into() },
+            SyntaxModuleItem { key: items[1], symbol: "Main".into() },
+        ],
+    )
+    .expect("an array literal of bare integers fixes T of a generic call");
+
+    beskid_codegen::validate_artifact(&artifact).expect("FirstOr artifact");
+    assert!(artifact.functions.iter().any(|function| function.name.starts_with("FirstOr#generic_")));
+}
+
+const BAG_FOR_SOURCE: &str = "type Bag<T> { T last, i64 count, pub unit Put(mut this, T value) { this.last = value; this.count = this.count + 1_i64; return; } } \
+    unit FillAll(Bag<i32>[] bags) { for bag in bags { bag.Put(2); } return; } \
+    unit Fill<T>(Bag<T>[] bags, T value) { for bag in bags { bag.Put(value); } return; } \
+    i64 Main() { Bag<i32>[] bags = [Bag<i32> { last: 0, count: 0_i64 }]; FillAll(bags); Fill<i32>(bags, 3); return bags[0].count; }";
+
+fn lower_bag_for(symbols: &[&str]) -> Result<beskid_codegen::CodegenArtifact, String> {
+    let (input, isa, root) = item_fixture_with_root(BAG_FOR_SOURCE);
+    let db = input.database();
+    let items = find_function_definitions(db, root)
+        .into_iter()
+        .filter_map(|key| {
+            let name = item_name(db, key).ok().flatten()?.to_string();
+            symbols.contains(&name.as_str()).then(|| SyntaxModuleItem { key, symbol: name.clone().into() })
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(items.len(), symbols.len(), "fixture functions {symbols:?}");
+    lower_syntax_program(&input, isa.as_ref(), &items).map_err(|error| format!("{error:#}"))
+}
+
+/// Slice coll: a method call on the `for` variable of an array of an instantiated generic type
+/// (`for bag in bags { bag.Put(2); }` with `Bag<i32>[] bags`) lowered with MissingRuleOrFact.
+#[test]
+fn parsed_program_calls_a_method_on_a_for_variable_of_an_instantiated_generic_type() {
+    let artifact = lower_bag_for(&["FillAll", "Main"]).expect("method call on a Bag<i32> for variable lowers");
+    beskid_codegen::validate_artifact(&artifact).expect("FillAll artifact");
+}
+
+/// Slice coll: the same call inside a generic function (`Bag<T>[] bags`), lowered through the
+/// enclosing specialization.
+#[test]
+fn parsed_program_calls_a_method_on_a_for_variable_of_a_generic_type_in_a_specialized_body() {
+    let artifact = lower_bag_for(&["FillAll", "Fill", "Main"]).expect("method call on a Bag<T> for variable lowers");
+    beskid_codegen::validate_artifact(&artifact).expect("Fill artifact");
+    assert!(artifact.functions.iter().any(|function| function.name.starts_with("Fill#generic_")));
+}
+
 #[test]
 fn parsed_program_keeps_generic_nominal_pointer_equal_as_identity_comparison() {
     let (input, isa, root) = item_fixture_with_root(

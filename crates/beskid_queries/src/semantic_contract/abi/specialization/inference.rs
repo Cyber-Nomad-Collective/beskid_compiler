@@ -210,16 +210,38 @@ pub(super) fn specialization_for_call_in_environment(
     }
     // A bare integer starts at the language default `i32`, but carries no explicit ABI suffix.
     // Keep that distinction while inferring a generic call: a later exact argument can select
-    // the binding and the bare literal can inherit it if its magnitude fits.
-    let mut provisional_integer_substitutions = HashSet::new();
+    // the binding and the bare literals that set it inherit it if their magnitudes fit.
+    let mut provisional_integer_substitutions = HashMap::<String, Vec<AstNodeKey>>::new();
     for (position, (parameter_type, argument)) in
         argument_parameter_types.iter().copied().zip(arguments.iter().copied().skip(usize::from(is_method))).enumerate()
     {
         if contract_positions.iter().any(|candidate| *candidate as usize == position) {
             continue;
         }
-        let generic = generic_type_name(parameter_type, &generic_names);
-        let bare_integer = generic.is_some() && unsuffixed_integer_literal(db, argument)?;
+        // A bare integer into a `T` parameter, or an array literal of bare integers into a `T[]`
+        // parameter, binds `T` from its literals rather than from a source identity, which those
+        // literals do not have (`FirstOr([7, 8], 0)` with `T FirstOr<T>(T[] values, T fallback)`).
+        let (generic, bare_literals) = match generic_type_name(parameter_type, &generic_names) {
+            Some(generic) if unsuffixed_integer_literal(db, argument)? => (Some(generic), Some(vec![argument])),
+            Some(generic) => (Some(generic), None),
+            None => match parameter_type {
+                beskid_analysis::syntax::Type::Array(element) if !explicit_substitutions_complete => {
+                    match generic_type_name(&element.node, &generic_names) {
+                        Some(generic) => match unsuffixed_integer_array_elements(db, argument)? {
+                            Some(elements) => (Some(generic), Some(elements)),
+                            None => (None, None),
+                        },
+                        None => (None, None),
+                    }
+                }
+                _ => (None, None),
+            },
+        };
+        let bare_integer = bare_literals.is_some();
+        let literals_fit = |expected: SemanticTypeId| match bare_literals.as_deref() {
+            Some(literals) => integer_literals_fit_abi(db, literals, expected),
+            None => Ok(false),
+        };
         let parameter_mentions_generic =
             generic_names.iter().any(|name| type_syntax_mentions_generic_parameter(parameter_type, name));
         // A parameter whose every generic is already bound (by the receiver, as in
@@ -243,9 +265,9 @@ pub(super) fn specialization_for_call_in_environment(
         let infer_from_actual = proven_source_identity.is_some();
         let contextual_integer = if bare_integer {
             match generic.and_then(|name| substitutions.get(name)).copied() {
-                Some(expected) if integer_literal_fits_abi(db, argument, expected)? => Some(expected),
+                Some(expected) if literals_fit(expected)? => Some(expected),
                 Some(_) => None,
-                None if integer_literal_fits_abi(db, argument, SemanticTypeId::I32)? => Some(SemanticTypeId::I32),
+                None if literals_fit(SemanticTypeId::I32)? => Some(SemanticTypeId::I32),
                 None => None,
             }
         } else if unsuffixed_integer_literal(db, argument)? {
@@ -288,6 +310,25 @@ pub(super) fn specialization_for_call_in_environment(
             let source_identity = proven_source_identity
                 .as_ref()
                 .ok_or_else(|| SemanticError::unavailable_at("call_abi_signature", key))?;
+            // An exact argument (`5_i64`, `[7_i64]`) replaces a binding only bare literals set,
+            // when every one of those literals fits the exact type.
+            if let Some((abi, source, rebound)) = rebind_provisional_integers(
+                db,
+                declaration,
+                parameter_type,
+                source_identity,
+                &generic_names,
+                &substitutions,
+                &source_substitutions,
+                &provisional_integer_substitutions,
+            )? {
+                substitutions = abi;
+                source_substitutions = source;
+                for generic in rebound {
+                    provisional_integer_substitutions.remove(&generic);
+                }
+                continue;
+            }
             infer_source_substitutions(
                 db,
                 declaration,
@@ -304,15 +345,33 @@ pub(super) fn specialization_for_call_in_environment(
                 None => {
                     substitutions.insert(generic.to_owned(), actual);
                     source_substitutions.insert(generic.to_owned(), GenericSubstitution::inferred(generic, actual));
-                    if bare_integer {
-                        provisional_integer_substitutions.insert(generic.to_owned());
+                    if let Some(literals) = bare_literals.as_ref() {
+                        provisional_integer_substitutions.insert(generic.to_owned(), literals.clone());
+                    }
+                }
+                Some(existing) if bare_integer && literals_fit(existing)? => {
+                    if let Some(literals) = bare_literals.as_ref()
+                        && let Some(provisional) = provisional_integer_substitutions.get_mut(generic)
+                    {
+                        provisional.extend(literals.iter().copied());
                     }
                 }
                 Some(existing) if existing == actual => {}
-                Some(existing) if bare_integer && integer_literal_fits_abi(db, argument, existing)? => {}
-                Some(_) if provisional_integer_substitutions.remove(generic) => {
+                Some(_)
+                    if provisional_integer_substitutions
+                        .get(generic)
+                        .map(|literals| integer_literals_fit_abi(db, literals, actual))
+                        .transpose()?
+                        == Some(true) =>
+                {
+                    let mut literals = provisional_integer_substitutions.remove(generic).unwrap_or_default();
                     substitutions.insert(generic.to_owned(), actual);
                     source_substitutions.insert(generic.to_owned(), GenericSubstitution::inferred(generic, actual));
+                    // A bare literal too wide for the default keeps the binding provisional.
+                    if let Some(bare) = bare_literals.as_ref() {
+                        literals.extend(bare.iter().copied());
+                        provisional_integer_substitutions.insert(generic.to_owned(), literals);
+                    }
                 }
                 Some(existing) => {
                     return Err(SemanticError::generic_binding_conflict(
@@ -382,6 +441,56 @@ pub(super) fn specialization_for_call_in_environment(
         substitutions: substitutions.into(),
         contract_witnesses,
     })
+}
+
+/// ABI bindings, source bindings, and the generics an exact argument rebound.
+type ReboundBindings = (HashMap<String, SemanticTypeId>, HashMap<String, GenericSubstitution>, Vec<String>);
+
+/// The bindings after inferring one exactly typed argument with every binding that only bare
+/// integer literals set left open, when that argument rebinds at least one of them to a type all
+/// of its literals fit (`FirstOr([7, 8], 5_i64)` binds `T = i64`). Bindings the argument does not
+/// mention are kept. `None` when the argument rebinds nothing or a literal does not fit, so the
+/// ordinary inference reports the conflict.
+#[expect(clippy::too_many_arguments, reason = "one inference step over the call's binding state")]
+fn rebind_provisional_integers(
+    db: &dyn Db,
+    declaration: AstNodeKey,
+    parameter_type: &beskid_analysis::syntax::Type,
+    actual: &GenericSourceTypeIdentity,
+    generic_names: &[&str],
+    substitutions: &HashMap<String, SemanticTypeId>,
+    source_substitutions: &HashMap<String, GenericSubstitution>,
+    provisional: &HashMap<String, Vec<AstNodeKey>>,
+) -> Result<Option<ReboundBindings>, SemanticError> {
+    if provisional.is_empty() {
+        return Ok(None);
+    }
+    let mut abi = substitutions.clone();
+    let mut source = source_substitutions.clone();
+    for generic in provisional.keys() {
+        abi.remove(generic);
+        source.remove(generic);
+    }
+    if infer_source_substitutions(db, declaration, parameter_type, actual, generic_names, &mut abi, &mut source).is_err() {
+        return Ok(None);
+    }
+    let mut rebound = Vec::new();
+    for (generic, literals) in provisional {
+        match abi.get(generic).copied() {
+            None => {
+                if let Some(previous) = substitutions.get(generic) {
+                    abi.insert(generic.clone(), *previous);
+                }
+                if let Some(previous) = source_substitutions.get(generic) {
+                    source.insert(generic.clone(), previous.clone());
+                }
+            }
+            Some(bound) if substitutions.get(generic) == Some(&bound) => rebound.push(generic.clone()),
+            Some(bound) if integer_literals_fit_abi(db, literals, bound)? => rebound.push(generic.clone()),
+            Some(_) => return Ok(None),
+        }
+    }
+    Ok((!rebound.is_empty()).then_some((abi, source, rebound)))
 }
 
 /// Owner generic bindings of a method receiver inside a specialized body. `Bag<T> bag` in

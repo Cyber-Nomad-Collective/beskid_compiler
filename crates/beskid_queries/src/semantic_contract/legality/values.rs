@@ -68,6 +68,8 @@ use beskid_analysis::syntax::{
 };
 use beskid_analysis::syntax_query::{DynNodeRef, NodeKind, SyntaxIndex};
 
+mod generic_bodies;
+
 type Identity = GenericSourceTypeIdentity;
 type Program = Spanned<beskid_analysis::syntax::Program>;
 
@@ -109,6 +111,7 @@ fn value_obligations_tracked(
         collect_struct_literal_values(db, program, index, key, &mut findings);
         collect_enum_constructor_values(db, program, index, key, &mut findings);
         collect_pattern_values(db, program, index, key, &mut findings);
+        generic_bodies::collect_generic_member_values(db, program, index, key, node, &mut findings);
         findings.sort_by_key(|finding| finding.site.node.0);
         findings.dedup();
         Some(Arc::from(findings))

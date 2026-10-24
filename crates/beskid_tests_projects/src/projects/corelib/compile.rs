@@ -84,6 +84,72 @@ fn checked_in_corelib_sources_do_not_emit_error_diagnostics_in_project_context()
     });
 }
 
+/// Generic functions and members of generic types are judged against their own type parameters
+/// (E1206 in a generic body, beskid-lings milestone 3); a correct Corelib reports none of them.
+/// The files are every foundation unit that declares a generic type or function.
+#[test]
+fn checked_in_corelib_generic_declarations_have_no_generic_body_type_mismatches() {
+    with_cwd_at_workspace_root(&compiler_workspace_root(), || {
+        let core = corelib_workspace_root().join("packages/foundation/src/Core");
+        let paths = [
+            "Collections/Array.bd",
+            "Collections/Array/ArrayIter.bd",
+            "Collections/HashTable.bd",
+            "Collections/I64Map.bd",
+            "Collections/List.bd",
+            "Collections/Map.bd",
+            "Collections/Map/MapEntry.bd",
+            "Collections/PriorityQueue.bd",
+            "Collections/Queue.bd",
+            "Collections/Set.bd",
+            "Collections/Sort.bd",
+            "Collections/Stack.bd",
+            "Collections/Storage.bd",
+            "Collections/StringMap.bd",
+            "Bytes/BufferReader.bd",
+            "Bytes/BufferWriter.bd",
+            "Dynamic/Dynamic.bd",
+            "Json/Json.bd",
+            "Memory/Managed.bd",
+            "Optional/Option.bd",
+            "Process/Process.bd",
+            "Results/Results.bd",
+            "Text/Parser/Result.bd",
+            "Text/Pest/Emit.bd",
+            "Text/Pest/Expr.bd",
+            "Text/Pest/Grammar.bd",
+            "Text/Regex.bd",
+            "Time/Calendar.bd",
+            "Time/Deadline.bd",
+        ]
+        .map(|relative| core.join(relative));
+        let mut mismatches = Vec::new();
+        for path in paths {
+            let source = fs::read_to_string(&path).unwrap_or_else(|_| panic!("read corelib source {}", path.display()));
+            let plan = beskid_analysis::CompilationContext::try_for_analysis_path(&path, None)
+                .and_then(|context| context.compile_plan)
+                .unwrap_or_else(|| panic!("compile plan for {}", path.display()));
+            let resolved = resolved_input_from_plan(path.clone(), source, plan, None, None);
+            let (_, diagnostics, _) = beskid_queries::prepare_compilation_diagnostics(
+                &resolved,
+                PrepareOptions {
+                    front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
+                    ..PrepareOptions::without_mods()
+                },
+                None,
+            )
+            .unwrap_or_else(|error| panic!("analyze {}: {error}", path.display()));
+            mismatches.extend(
+                diagnostics
+                    .into_iter()
+                    .filter(|diagnostic| diagnostic.code.as_deref() == Some("E1206"))
+                    .map(|diagnostic| format!("{}: {}", path.display(), diagnostic.message)),
+            );
+        }
+        assert!(mismatches.is_empty(), "generic Corelib bodies report E1206:\n{}", mismatches.join("\n"));
+    });
+}
+
 #[test]
 fn corelib_mvp_fixture_resolves_std_modules_via_program_assembly() {
     with_project_test_env(&corelib_mvp_fixture(), || {

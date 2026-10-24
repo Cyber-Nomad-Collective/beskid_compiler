@@ -245,6 +245,8 @@ fn collect_duplicate_item_obligations(
 ) {
     let mut items = Vec::new();
     let mut constants = Vec::new();
+    // Tests have their own namespace: only two tests of one name in one module collide.
+    let mut tests = Vec::new();
     for kind in [
         NodeKind::FunctionDefinition,
         NodeKind::TypeDefinition,
@@ -266,7 +268,8 @@ fn collect_duplicate_item_obligations(
             } else if let Some(item) = reference.of::<ContractDefinition>() {
                 item.name.node.name.clone()
             } else if let Some(item) = reference.of::<TestDefinition>() {
-                item.name.node.name.clone()
+                tests.push((scope, item.name.node.name.clone(), node));
+                continue;
             } else if let Some(item) = reference.of::<InlineModule>() {
                 item.name.node.name.clone()
             } else if let Some(item) = reference.of::<ConstantDefinition>() {
@@ -280,6 +283,7 @@ fn collect_duplicate_item_obligations(
     }
     report_duplicate_items(index, key, items, findings);
     report_duplicate_items(index, key, constants, findings);
+    report_duplicate_items(index, key, tests, findings);
 
     let mut aliases = Vec::new();
     for node in index.ids_of_kind(NodeKind::UseDeclaration) {
@@ -565,11 +569,13 @@ fn collect_module_declaration_obligations(
 }
 
 /// The resolver namespace a module-scope declaration is collected into: items share the module
-/// scope (`ModuleGraph::insert_item`), constants their own table (`Resolver::constants`).
-#[derive(Clone, Copy, PartialEq, Eq)]
+/// scope (`ModuleGraph::insert_item`), constants their own table (`Resolver::constants`), tests
+/// their own namespace (`Resolver::test_names`).
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 enum ModuleNamespace {
     Item,
     Constant,
+    Test,
 }
 
 /// Every top-level declaration of a unit that the resolver collects into the unit's own module
@@ -603,7 +609,7 @@ fn top_level_declarations(
             } else if let Some(item) = reference.of::<ContractDefinition>() {
                 (ModuleNamespace::Item, item.name.node.name.clone())
             } else if let Some(item) = reference.of::<TestDefinition>() {
-                (ModuleNamespace::Item, item.name.node.name.clone())
+                (ModuleNamespace::Test, item.name.node.name.clone())
             } else if let Some(item) = reference.of::<InlineModule>() {
                 (ModuleNamespace::Item, item.name.node.name.clone())
             } else if let Some(item) = reference.of::<ConstantDefinition>() {
@@ -677,7 +683,7 @@ fn collect_cross_unit_duplicate_obligations(
     }
     let mut own_names = HashSet::new();
     for (namespace, name, node) in top_level_declarations(program, index) {
-        let first_in_unit = own_names.insert((namespace == ModuleNamespace::Constant, name.clone()));
+        let first_in_unit = own_names.insert((namespace, name.clone()));
         if !first_in_unit {
             continue;
         }

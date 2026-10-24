@@ -14,6 +14,55 @@ pub(in crate::semantic_contract) fn unsuffixed_integer_literal(
     Ok(integer_literal_text(db, key)?.is_some())
 }
 
+/// The elements of an array literal whose every element is a bare integer literal (`[7, 8]`),
+/// through singleton syntax wrappers; `None` for any other expression and for `[]`.
+///
+/// Such a literal has no source identity of its own: its elements take their width from the
+/// position they are written into. A generic call therefore binds `T` of a `T[]` parameter from
+/// it exactly as it binds `T` of a `T` parameter from a bare integer: provisionally at the
+/// language default `i32`, replaceable by a later exact argument that every element fits.
+pub(in crate::semantic_contract) fn unsuffixed_integer_array_elements(
+    db: &dyn Db,
+    key: AstNodeKey,
+) -> Result<Option<Vec<AstNodeKey>>, SemanticError> {
+    let mut key = key;
+    loop {
+        match node_kind(db, key)? {
+            Some(IndexedNodeKind::ArrayLiteralExpression) => break,
+            Some(IndexedNodeKind::Expression | IndexedNodeKind::GroupedExpression) => {
+                let Some(children) = child_nodes(db, key)? else { return Ok(None) };
+                let [child] = children.as_ref() else { return Ok(None) };
+                key = *child;
+            }
+            _ => return Ok(None),
+        }
+    }
+    let Some(elements) = child_nodes(db, key)? else { return Ok(None) };
+    if elements.is_empty() {
+        return Ok(None);
+    }
+    for element in elements.iter() {
+        if !unsuffixed_integer_literal(db, *element)? {
+            return Ok(None);
+        }
+    }
+    Ok(Some(elements.to_vec()))
+}
+
+/// Whether every bare integer literal of `literals` fits `expected`.
+pub(in crate::semantic_contract) fn integer_literals_fit_abi(
+    db: &dyn Db,
+    literals: &[AstNodeKey],
+    expected: SemanticTypeId,
+) -> Result<bool, SemanticError> {
+    for literal in literals {
+        if !integer_literal_fits_abi(db, *literal, expected)? {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
 /// Prove that one bare integer literal fits the ABI representation selected elsewhere in its
 /// generic call. Explicitly suffixed literals never reach this helper.
 pub(in crate::semantic_contract) fn integer_literal_fits_abi(

@@ -164,6 +164,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   formatter prints a conditional on one line. Expressions without `? :` keep
   their parse tree. Typing and lowering are not in place yet: the legality gate
   rejects a conditional as an unsupported expression.
+### Changed
+
+- Tests have their own namespace. A test cannot be called or named as a value,
+  so `test SumOfSquares` may share its name with a function, type or other
+  item, and a call to the name resolves to that item. Two tests of one name in
+  one module are still E1102.
+
+### Fixed
+
+- A generic call infers `T` from an array literal of bare integers:
+  `FirstOr([7, 8], 0)` with `T FirstOr<T>(T[] values, T fallback)` binds
+  `T = i32` instead of failing with an internal `source_expression_type`
+  error. A later exact argument that every literal fits selects `T`
+  (`FirstOr([9, 8], 5_i64)` binds `T = i64`).
+- Inside a generic function, `value == target` on the loop variable of
+  `for value in values` compares string contents when `T = string`. The
+  variable is typed by the element its statement binds in the specialization;
+  before, the two string pointers were compared.
+- Bodies of generic functions and of members of generic types are checked
+  against their own type parameters. `pub A Second() { return this.second; }`
+  in `Pair<A, B>`, `Pair<B, A> { first: this.first, ... }`, or
+  `B Pick<A, B>(A first, B second) { return first; }` is E1206 at the body
+  instead of a conflicting generic binding at a use site.
+- A method call on the `for` variable of an array of a generic type lowers:
+  `for bag in bags { bag.Put(2); }` with `Bag<i32>[] bags`, and the same loop
+  over `Bag<T>[]` inside a generic function, failed with an internal
+  MissingRuleOrFact error after a clean check.
+- A qualified type path into an inline module resolves: `A.Clock` for a type
+  declared in `mod A { ... }`, and `A.Inner.Clock` through nested inline
+  modules. Two same-named types in two inline modules resolve to two distinct
+  declarations; a private type stays invisible outside its module.
+- A user type `Stack` with a `Push` method no longer collides with Corelib's
+  `Core.Collections.Stack.Push` as `duplicate item ::Stack::Push`: method
+  symbols include their declaring module.
 
 ## [0.6.6] - 2026-10-16
 

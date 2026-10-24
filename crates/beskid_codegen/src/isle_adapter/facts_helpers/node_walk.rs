@@ -69,6 +69,12 @@ impl SyntaxNodeFacts<'_> {
                 AggregateFieldShape::Nominal(_) => SemanticTypeId::POINTER,
             });
         }
+        // A read of a `for` variable in a specialized body (`value` in `for value in values`
+        // with `T[] values`) has the element type its statement binds in this specialization.
+        // Without it `value == target` with `T = string` compared the two string pointers.
+        if let Some(fact) = self.specialized_for_variable(key) {
+            return Some(fact.element_type);
+        }
         self.specialized_direct_parameter_type(key)
             .or_else(|| {
                 self.query(beskid_queries::value_abi_type(self.db, key))
@@ -168,6 +174,14 @@ impl SyntaxNodeFacts<'_> {
 
     /// Project one pattern binding from the same immutable item specialization used for the
     /// enclosing match. This retains source ownership after pointer ABI erasure without HIR.
+    /// The iterator fact of the `for` statement whose loop variable `key` reads, in the item
+    /// specialization being lowered.
+    fn specialized_for_variable(&self, key: AstNodeKey) -> Option<beskid_queries::ForIteratorFact> {
+        (self.query(node_kind(self.db, key)) == Some(beskid_queries::IndexedNodeKind::PathExpression)).then_some(())?;
+        let enclosing = self.current_item_specialization()?;
+        self.query(beskid_queries::for_variable_specialization(self.db, key, enclosing))
+    }
+
     pub(super) fn specialized_pattern_binding(&self, key: AstNodeKey) -> Option<beskid_queries::EnumMatchBindingFact> {
         (self.query(node_kind(self.db, key)) == Some(beskid_queries::IndexedNodeKind::PathExpression)).then_some(())?;
         let enclosing = self.current_item_specialization()?;

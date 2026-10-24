@@ -1,0 +1,29 @@
+// Generic functions over array parameters, lowered through the query layer and ISLE and run on
+// the canonical runtime kit (beskid-lings milestone 3): `value == target` on the loop variable of
+// `for value in values` compares string contents when `T = string`, and a generic call infers `T`
+// from an array literal of bare integers.
+
+i64 CountEqual<T>(T[] values, T target) {
+    mut i64 count = 0_i64;
+    for value in values {
+        if value == target { count = count + 1_i64; }
+    }
+    return count;
+}
+
+T FirstOr<T>(T[] values, T fallback) {
+    for value in values { return value; }
+    return fallback;
+}
+
+[Export(Abi:"C", Symbol:"RunGenericForValues")]
+pub i64 RunGenericForValues() {
+    if CountEqual<string>(["a", "b", "a"], "a") != 2_i64 { return 1_i64; }
+    string joined = "b" + "";
+    if CountEqual<string>(["a", "b", "a"], joined) != 1_i64 { return 2_i64; }
+    if CountEqual(["x", "y"], "z") != 0_i64 { return 3_i64; }
+    if CountEqual<i64>([3_i64, 4_i64, 3_i64], 3_i64) != 2_i64 { return 4_i64; }
+    if FirstOr([7, 8], 0) != 7 { return 5_i64; }
+    if FirstOr([9, 8], 5_i64) != 9_i64 { return 6_i64; }
+    return 42_i64;
+}

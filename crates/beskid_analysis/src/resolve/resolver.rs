@@ -56,6 +56,10 @@ pub struct Resolver {
     /// Name and item span of the function whose body is being resolved; `None` inside methods,
     /// lambdas, tests, and declarations.
     pub(crate) current_function: Option<(String, SpanInfo)>,
+    /// Tests live in their own namespace: a test cannot be called or named as a value, so
+    /// `test SumOfSquares` may share its name with a function, type or other item. Test names
+    /// are unique per module only among tests.
+    pub(crate) test_names: HashMap<(ModuleId, String), ItemId>,
 }
 
 impl Resolver {

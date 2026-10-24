@@ -485,6 +485,32 @@ pub(in crate::semantic_contract) fn specialized_for_element_identity(
     for_iterator_element_identity(db, program, index, key, statement).map(|(identity, _)| identity)
 }
 
+/// The element identity of a `for` statement's array iterable read in `enclosing`; `None` for a
+/// `range(..)` loop, a nominal iterable, or an iterable without a proven identity there.
+fn specialized_array_iterable_element(
+    db: &dyn Db,
+    key: AstNodeKey,
+    enclosing: &GenericSpecializationInstance,
+) -> Option<GenericSourceTypeIdentity> {
+    let syntax = db.syntax_unit(key.unit).filter(|syntax| syntax.accepts_key(db, key))?;
+    let program = syntax.expanded_program(db);
+    let index = syntax.syntax_index(db);
+    let statement = index.node_at(program, key.node)?.of::<beskid_analysis::syntax::ForStatement>()?;
+    if range_iterable_bounds(&statement.iterable.node).is_some() {
+        return None;
+    }
+    let iterable =
+        index.direct_child_id(program, key.node, beskid_analysis::syntax_query::DynNodeRef::from(&statement.iterable))?;
+    match super::super::contracts::specialized_source_expression_identity(
+        db,
+        AstNodeKey { node: iterable, ..key },
+        Some(enclosing),
+    ) {
+        Ok(GenericSourceTypeIdentity::Array(element)) => Some(*element),
+        _ => None,
+    }
+}
+
 /// [`for_iterator_fact`](super::super::for_iterator_fact) through one exact enclosing generic
 /// specialization. A `for` over a local or parameter declared `T[]`, where `T` is a generic
 /// parameter of the enclosing item, takes its element type and GC classification from the
@@ -535,11 +561,57 @@ pub fn for_iterator_specialization(
     if array.is_some() {
         return Ok(array);
     }
+    // An array iterable whose element names the enclosing generics without being one of them
+    // (`for bag in bags` with `Bag<T>[] bags`) takes its element from the iterable's identity in
+    // the specialization.
+    if let Some(element) = specialized_array_iterable_element(db, key, enclosing) {
+        let element_managed = element.managed_reference_kind();
+        return Ok(Some(ForIteratorFact {
+            declaration,
+            element_type: element.abi_type(),
+            source: ForIterableSource::Array { element_managed },
+        }));
+    }
     Ok(for_iterator_protocol(db, key, Some(enclosing))?.map(|protocol| ForIteratorFact {
         declaration,
         element_type: protocol.element_type,
         source: ForIterableSource::Iterator { element_managed: protocol.element_managed },
     }))
+}
+
+/// The iterator fact of the `for` statement whose loop variable the single-segment path
+/// expression `key` reads, in the specialization `enclosing`. Inside a generic item the loop
+/// variable of `for value in values` (`T[] values`) has no target-neutral type; a read of it is
+/// typed by the element its statement binds in the specialization being lowered, exactly as the
+/// statement itself is (`for_iterator_specialization`). `Ok(None)` for any other expression.
+pub fn for_variable_specialization(
+    db: &dyn Db,
+    key: AstNodeKey,
+    enclosing: &GenericSpecializationInstance,
+) -> SemanticQueryResult<ForIteratorFact> {
+    let Some(syntax) = db.syntax_unit(key.unit).filter(|syntax| syntax.accepts_key(db, key)) else { return Ok(None) };
+    let program = syntax.expanded_program(db);
+    let index = syntax.syntax_index(db);
+    let node = normalized_expression_node(index, key.node);
+    let Some(path) = index.node_at(program, node).and_then(|node| node.of::<beskid_analysis::syntax::PathExpression>())
+    else {
+        return Ok(None);
+    };
+    let [segment] = path.path.node.segments.as_slice() else { return Ok(None) };
+    if !segment.node.type_args.is_empty() {
+        return Ok(None);
+    }
+    let Some(declaration) = resolve_lexical_declaration(program, index, node, segment.node.name.node.name.as_str())
+    else {
+        return Ok(None);
+    };
+    let Some(statement) = parent_node(index, declaration)
+        .filter(|parent| index.kind(*parent) == Some(beskid_analysis::syntax_query::NodeKind::ForStatement))
+    else {
+        return Ok(None);
+    };
+    Ok(for_iterator_specialization(db, AstNodeKey { node: statement, ..key }, enclosing)?
+        .filter(|fact| fact.declaration.node == declaration))
 }
 
 #[salsa::tracked(persist)]
