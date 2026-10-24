@@ -224,7 +224,7 @@ fn first_unresolved_nominal_reference(db: &dyn Db, key: AstNodeKey, ty: &Type) -
 
 /// Classify an unresolved type path at `key` (see [`UnresolvedTypeKind`]).
 fn classify_unresolved_type_path(db: &dyn Db, key: AstNodeKey, path: &Path) -> UnresolvedTypeKind {
-    use super::legality::calls::{assembly_declares_module, import_binds_name, unit_declares_namespace_name};
+    use super::legality::calls::{ModulePrefix, import_binds_name, missing_module_member, unit_declares_namespace_name};
 
     let Some((terminal, qualifier)) = path.segments.split_last() else { return UnresolvedTypeKind::UnknownType };
     if qualifier.is_empty() || qualifier.iter().any(|segment| !segment.node.type_args.is_empty()) {
@@ -261,10 +261,16 @@ fn classify_unresolved_type_path(db: &dyn Db, key: AstNodeKey, path: &Path) -> U
             let namespace_owned = db.syntax_unit(key.unit).filter(|syntax| syntax.accepts_key(db, key)).is_none_or(|syntax| {
                 unit_declares_namespace_name(syntax.expanded_program(db), syntax.syntax_index(db), root)
             });
-            if namespace_owned || import_binds_name(db, key, root) || assembly_declares_module(db, key, &qualifier) {
-                UnresolvedTypeKind::UnknownType
-            } else {
-                UnresolvedTypeKind::UnknownModulePath { path: module_path }
+            if namespace_owned {
+                return UnresolvedTypeKind::UnknownType;
+            }
+            match missing_module_member(db, key, &qualifier) {
+                ModulePrefix::MissingMember { module_path, name } => {
+                    UnresolvedTypeKind::UnknownTypeInModule { module_path, name }
+                }
+                ModulePrefix::Declared => UnresolvedTypeKind::UnknownType,
+                ModulePrefix::None if import_binds_name(db, key, root) => UnresolvedTypeKind::UnknownType,
+                ModulePrefix::None => UnresolvedTypeKind::UnknownModulePath { path: module_path },
             }
         }
     }

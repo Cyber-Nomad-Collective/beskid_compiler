@@ -33,7 +33,7 @@
 //! through public re-export routes are not judged.
 
 use super::calls::{
-    assembly_declares_module, import_binds_name, is_spawn_target, unit_declares_function_name,
+    ModulePrefix, import_binds_name, is_spawn_target, missing_module_member, unit_declares_function_name,
     unit_declares_namespace_name,
 };
 use super::members::is_call_callee;
@@ -281,10 +281,17 @@ fn qualified_value_path(
             MemberVisibility::Unknown => None,
         },
         QualifiedModuleResolution::Missing => {
-            if import_binds_name(db, site, root)
-                || unit_declares_namespace_name(program, index, root)
-                || assembly_declares_module(db, site, &qualifier)
-            {
+            if unit_declares_namespace_name(program, index, root) {
+                return None;
+            }
+            match missing_module_member(db, site, &qualifier) {
+                ModulePrefix::MissingMember { module_path, name } => {
+                    return Some(ValuePathKind::UnknownValueInModule { module_path, name });
+                }
+                ModulePrefix::Declared => return None,
+                ModulePrefix::None => {}
+            }
+            if import_binds_name(db, site, root) {
                 return None;
             }
             Some(ValuePathKind::UnknownModulePath { path: module_path })
