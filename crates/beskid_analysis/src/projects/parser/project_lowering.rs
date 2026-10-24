@@ -45,6 +45,8 @@ pub(super) fn lower_project_document(validated: ValidatedDocument) -> Result<Par
 
 pub(super) fn lower_project_root_block(block: ValidatedBlock) -> Result<ParsedProjectBlock, ProjectError> {
     reject_corelib_opt_out_keys(&block.fields, &block.extras, block.span)?;
+    let block_span = block.span;
+    let name_span = block.field_spans.get("name").copied();
     let (fields, extras) = split_known_fields(block.fields, PROJECT_ROOT_FIELDS);
     let mod_block = block.nested.iter().find(|n| n.rule_id == "mod");
     let mod_section = mod_block.map(lower_mod_block).transpose()?;
@@ -55,6 +57,8 @@ pub(super) fn lower_project_root_block(block: ValidatedBlock) -> Result<ParsedPr
     let schemas_section = block.nested.iter().find(|n| n.rule_id == "schemas").map(lower_schemas_block).transpose()?;
     Ok(ParsedProjectBlock {
         block_kind: block.kind,
+        block_span,
+        name_span,
         fields,
         extras,
         mod_section,

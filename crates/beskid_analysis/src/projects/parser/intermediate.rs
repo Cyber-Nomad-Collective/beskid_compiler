@@ -11,6 +11,10 @@ pub(super) struct ParsedBlock {
 #[derive(Debug)]
 pub(super) struct ParsedProjectBlock {
     pub(super) block_kind: String,
+    /// Source span of the whole root block; its first token is the block name.
+    pub(super) block_span: bsol::BsolSpan,
+    /// Source span of the `name = ...` assignment.
+    pub(super) name_span: Option<bsol::BsolSpan>,
     pub(super) fields: HashMap<String, String>,
     pub(super) extras: HashMap<String, String>,
     pub(super) mod_section: Option<HashMap<String, ModFieldValue>>,

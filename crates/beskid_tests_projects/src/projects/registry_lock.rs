@@ -1578,6 +1578,7 @@ fn refresh_rejects_a_stale_lock_project_identity_without_rewriting_it() {
 
     let error = fixture.prepare(false).expect_err("normal replay must reject stale lock identity");
     assert!(error.to_string().contains("different project"), "unexpected error: {error}");
+    assert!(error.to_string().contains("PkgCore@"), "the wrong pin must be named: {error}");
     // v0.6: a lock owned by another project is never rewritten, not even by an explicit refresh.
     let error = fixture.prepare(true).expect_err("refresh must also reject a lock owned by another project");
     assert!(error.to_string().contains("different project"), "unexpected error: {error}");

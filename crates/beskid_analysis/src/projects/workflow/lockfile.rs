@@ -213,6 +213,39 @@ pub struct ProjectLockfileV2 {
 }
 
 impl ProjectLockfileV2 {
+    /// A lock without registry pins records only facts the project graph re-derives (the
+    /// toolchain's Corelib and path dependencies), so it may be regenerated when it no longer
+    /// matches, for example after the project folder was copied. A registry pin is a choice the
+    /// user made, and a mismatch there fails.
+    pub(super) fn is_pin_free(&self) -> bool {
+        self.dependencies.iter().all(|entry| entry.source != ProjectLockSource::Registry)
+    }
+
+    /// Whether this lock was issued for the project the plan describes.
+    pub(super) fn belongs_to(&self, current: &ProjectLockfileV2) -> bool {
+        self.root_manifest == current.root_manifest && self.project_name == current.project_name
+    }
+
+    /// The error for a lock made for another project; names the pin that cannot be trusted.
+    pub(super) fn foreign_lock_error(&self, expected_project: &str) -> ProjectError {
+        let base = format!(
+            "lockfile belongs to a different project (made for `{}`, this is `{}`)",
+            self.project_name, expected_project
+        );
+        match self.dependencies.iter().find(|entry| entry.source == ProjectLockSource::Registry) {
+            Some(pin) => {
+                let version = pin.resolved_version.as_deref().unwrap_or("unversioned");
+                ProjectError::Validation(format!(
+                    "{base}; its registry pin `{}@{version}` is not trusted here, run `beskid update --all` to resolve it again",
+                    pin.name
+                ))
+            }
+            None => ProjectError::Validation(format!(
+                "{base}; it pins nothing beyond Corelib, so `beskid dev project lock` regenerates it"
+            )),
+        }
+    }
+
     pub(super) fn from_plan(
         plan: &ProjectWorkspacePlan,
         entries: &[ProjectLockDependencyEntry],
@@ -571,9 +604,7 @@ pub fn load_project_lock_dependencies_from_path(
 
 fn reject_v1_lock_for_replay(content: &str) -> Result<(), ProjectError> {
     if content.lines().next() == Some(PROJECT_LOCK_HEADER_V1) {
-        return Err(ProjectError::Validation(
-            "Project.lock v1 requires explicit migration with `beskid dev project lock` or `beskid update --all`".into(),
-        ));
+        return Err(ProjectError::LockfileV1);
     }
     Ok(())
 }
@@ -599,7 +630,7 @@ pub fn load_project_lock_dependencies_for_plan(
         _ => false,
     };
     if !same_manifest || parsed.project_name != plan.project_name {
-        return Err(ProjectError::Validation("lockfile belongs to a different project".into()));
+        return Err(parsed.foreign_lock_error(&plan.project_name));
     }
     let corelib_lock_root = super::prepare::installed_corelib_lock_root();
     let path_entries = plan
@@ -647,9 +678,7 @@ pub(super) fn preflight_existing_lock_for_plan(
     match content.lines().next() {
         Some(PROJECT_LOCK_HEADER_V1) => {
             if !options.refresh_lock {
-                return Err(ProjectError::Validation(
-                    "Project.lock v1 requires explicit migration with `beskid dev project lock` or `beskid update --all`".into(),
-                ));
+                return Err(ProjectError::LockfileV1);
             }
             ProjectLockfileV1::parse_v1(&content)?;
             Ok(None)
@@ -657,13 +686,25 @@ pub(super) fn preflight_existing_lock_for_plan(
         Some(PROJECT_LOCK_HEADER_V2) => {
             let existing = ProjectLockfileV2::parse_v2(&content)?;
             let current = ProjectLockfileV2::from_plan(plan, &[])?;
-            if existing.root_manifest != current.root_manifest || existing.project_name != current.project_name {
-                return Err(ProjectError::Validation("lockfile belongs to a different project".into()));
+            if !existing.belongs_to(&current) {
+                // A pin-free lock from another project (a copied folder) is regenerated unless the
+                // run must not write the lock; pins are never replaced silently.
+                if existing.is_pin_free() && !options.locked && !options.frozen {
+                    return Ok(None);
+                }
+                return Err(existing.foreign_lock_error(&plan.project_name));
             }
             Ok(Some(existing))
         }
         _ => Err(ProjectError::Validation("unknown Project.lock format".into())),
     }
+}
+
+/// Whether the path and Corelib entries of `existing` differ from the current project graph.
+pub(super) fn lock_graph_differs(existing: &ProjectLockfileV2, path_entries: &[ProjectLockDependencyEntry]) -> bool {
+    let existing_paths =
+        existing.dependencies.iter().filter(|entry| entry.source != ProjectLockSource::Registry).collect::<Vec<_>>();
+    existing_paths.len() != path_entries.len() || path_entries.iter().any(|entry| !existing_paths.contains(&entry))
 }
 
 /// The path and Corelib part of an existing lock must describe the current project graph exactly.
@@ -679,9 +720,7 @@ pub(super) fn validate_existing_lock_graph(
     if refresh_lock {
         return Ok(());
     }
-    let existing_paths =
-        existing.dependencies.iter().filter(|entry| entry.source != ProjectLockSource::Registry).collect::<Vec<_>>();
-    if existing_paths.len() != path_entries.len() || path_entries.iter().any(|entry| !existing_paths.contains(&entry)) {
+    if lock_graph_differs(existing, path_entries) {
         return Err(ProjectError::Validation(
             "Project.lock is stale: dependency graph changed; run `beskid update`".into(),
         ));
@@ -786,7 +825,8 @@ pub(super) fn sync_project_lockfile(
         if options.locked {
             return Err(ProjectError::LockfileOutOfDate { project: plan.project_name.clone() });
         }
-        if !options.refresh_lock && existing.starts_with(PROJECT_LOCK_HEADER_V2) {
+        let pin_free = ProjectLockfileV2::parse_v2(&existing).is_ok_and(|parsed| parsed.is_pin_free());
+        if !options.refresh_lock && !pin_free && existing.starts_with(PROJECT_LOCK_HEADER_V2) {
             return Err(ProjectError::Validation(
                 "Project.lock is stale: dependency graph changed; run `beskid update`".into(),
             ));
