@@ -115,6 +115,44 @@ class Markdown(unittest.TestCase):
         self.assertEqual(m.rewrite_markdown(src)[0], "````beskid\n```\ntype P { i32 x; i32 y; }\n````\n")
 
 
+class SameLine(unittest.TestCase):
+    def test_type_after_semicolon_and_brace(self):
+        self.assertEqual(
+            rw("use Lib.A; use Lib.B; pub type Record { i32 value }"),
+            "use Lib.A; use Lib.B; pub type Record { i32 value; }",
+        )
+        self.assertEqual(
+            rw("enum E { A } type T { i32 a, i32 b } type U { T t, }"),
+            "enum E { A } type T { i32 a; i32 b; } type U { T t; }",
+        )
+
+
+class Rust(unittest.TestCase):
+    def rr(self, src):
+        new, _ = m.rewrite_rust(src)
+        return new
+
+    def test_plain_string_with_escapes(self):
+        src = 'let s = "type P {\\n    i32 x,\\n    string s,\\n}\\n";'
+        self.assertEqual(self.rr(src), 'let s = "type P {\\n    i32 x;\\n    string s;\\n}\\n";')
+
+    def test_raw_string_and_same_line(self):
+        src = 'let s = r#"use A; type P { i32 x, i32 y } i32 F() { return 1; }"#;'
+        self.assertEqual(self.rr(src), 'let s = r#"use A; type P { i32 x; i32 y; } i32 F() { return 1; }"#;')
+
+    def test_escaped_quote_inside_beskid_string(self):
+        src = 'let s = "type P { string s, } string G() { return \\"a, b\\"; }";'
+        self.assertEqual(self.rr(src), 'let s = "type P { string s; } string G() { return \\"a, b\\"; }";')
+
+    def test_rust_code_and_other_strings_untouched(self):
+        src = 'type Alias = Vec<u8>;\nlet s = "enum E { A, B }";\n// type X { a, b }\n'
+        self.assertEqual(self.rr(src), src)
+
+    def test_keep_marker(self):
+        src = '// v067_field_semicolons: keep\nlet s = "type P { i32 x, i32 y }";'
+        self.assertEqual(self.rr(src), src)
+
+
 class Cli(unittest.TestCase):
     def setUp(self):
         self._out = sys.stdout, sys.stderr

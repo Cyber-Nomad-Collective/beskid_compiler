@@ -1,5 +1,6 @@
 //! Parse diagnostics: one test per known mistake (message, code, span, fix), escapes, and a corpus
 //! check that no message leaks a grammar rule name or recovery wording.
+// v067_field_semicolons: keep (these sources test the comma and missing `;` field errors)
 
 use crate::analysis::diagnostics::{MietteReportError, SemanticDiagnostic};
 use crate::analysis::{Applicability, Severity};

@@ -6,7 +6,12 @@
 Only fields (value, `inject` and `event` fields) of `type` declarations are
 rewritten. Enum bodies, struct literals, call arguments, parameter lists,
 methods and associated-type bindings are never touched. Beskid code fenced as
-`beskid` or `bd` inside Markdown/MDX files is rewritten with the same logic.
+`beskid` or `bd` inside Markdown/MDX files is rewritten with the same logic, and
+so is Beskid text inside Rust (`.rs`) string literals (plain and raw strings
+that contain a `type Name` declaration; `\\n`, `\\t` and `\\"` escapes are read
+as the characters they stand for). A `type` may start anywhere, also after `;`
+or `}` on the same line. A Rust file that contains the marker
+`v067_field_semicolons: keep` is skipped (tests of the comma parse error).
 
 Usage: python3 -I v067_field_semicolons.py [--check] [--dry-run] PATH...
 """
@@ -374,6 +379,92 @@ def rewrite_markdown(src, report=None, label=""):
 
 
 # --------------------------------------------------------------------------
+# Rust string literals
+
+RUST_KEEP_MARKER = "v067_field_semicolons: keep"
+RUST_TYPE = re.compile(r"\btype\s+[A-Z]")
+
+
+def _rust_literals(src):
+    """Yield (kind, start, end) of each string literal's contents; comments and chars skipped."""
+    i, n = 0, len(src)
+    while i < n:
+        if src.startswith("//", i):
+            j = src.find("\n", i)
+            i = n if j < 0 else j
+            continue
+        if src.startswith("/*", i):
+            j = src.find("*/", i + 2)
+            i = n if j < 0 else j + 2
+            continue
+        m = re.match(r'b?r(#*)"', src[i:i + 40])
+        if m and (i == 0 or not (src[i - 1].isalnum() or src[i - 1] == "_")):
+            hashes = m.group(1)
+            start = i + m.end()
+            end = src.find('"' + hashes, start)
+            if end < 0:
+                return
+            yield "raw", start, end
+            i = end + 1 + len(hashes)
+            continue
+        c = src[i]
+        if c == "'":
+            m = re.match(r"'(\\.[^']{0,9}|[^\\'])'", src[i:i + 14])
+            i += len(m.group(0)) if m else 1
+            continue
+        if c == '"':
+            j = i + 1
+            while j < n and src[j] != '"':
+                j += 2 if src[j] == "\\" else 1
+            yield "str", i + 1, j
+            i = j + 1
+            continue
+        i += 1
+
+
+def _unescape_same_length(body):
+    """Replace Rust escapes by same-length Beskid text so offsets map one to one."""
+    out, j = [], 0
+    while j < len(body):
+        if body[j] == "\\" and j + 1 < len(body):
+            d = body[j + 1]
+            out.append({"n": " \n", "t": "  ", "r": "  ", '"': ' "', "\n": " \n"}.get(d, body[j:j + 2]))
+            j += 2
+        else:
+            out.append(body[j])
+            j += 1
+    return "".join(out)
+
+
+def rewrite_rust(src, report=None, label=""):
+    """Rewrite Beskid `type` bodies inside the string literals of a Rust source."""
+    if RUST_KEEP_MARKER in src:
+        return src, 0
+    edits, total = [], 0
+    for kind, a, b in _rust_literals(src):
+        body = src[a:b]
+        if not RUST_TYPE.search(body):
+            continue
+        text = body if kind == "raw" else _unescape_same_length(body)
+        new, count = rewrite_source(text, report, "%s:%d" % (label, src.count("\n", 0, a) + 1))
+        if count == 0 and new == text:
+            continue
+        # rewrite_source only replaces `,` by `;` or inserts `;`; replay its edits on the original.
+        sm = difflib.SequenceMatcher(None, text, new, autojunk=False)
+        for op, i1, i2, j1, j2 in sm.get_opcodes():
+            if op != "equal":
+                edits.append((a + i1, i2 - i1, new[j1:j2]))
+        total += count
+    out, last = [], 0
+    for pos, ln, rep in sorted(edits, key=lambda e: e[0]):
+        out.append(src[last:pos])
+        out.append(rep)
+        last = pos + ln
+    out.append(src[last:])
+    return "".join(out), total
+
+
+# --------------------------------------------------------------------------
 # Driver
 
 
@@ -394,6 +485,8 @@ def process(path, report):
         fn = rewrite_source
     elif ext in (".md", ".mdx"):
         fn = rewrite_markdown
+    elif ext == ".rs":
+        fn = rewrite_rust
     else:
         return None
     with open(path, encoding="utf-8", newline="") as fh:
