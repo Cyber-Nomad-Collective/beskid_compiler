@@ -3,6 +3,7 @@ use Runtime.Bootstrap.Lifecycle;
 use Runtime.Bootstrap.Native;
 use Runtime.Fiber.Scheduler.Context;
 use Runtime.Fiber.Scheduler.Core;
+use Runtime.Fiber.Scheduler.External;
 use Runtime.Fiber.Scheduler.Loop;
 use Runtime.Fiber.Scheduler.Poll;
 use Runtime.Host.Callbacks;
@@ -496,6 +497,21 @@ test RootWaitGroupWaitParksUntilAFiberCallsDone {
     raw_word_store(argument, NativeWord(group));
     SpawnWaitGroupDone(argument);
     Assert.Equal(WaitGroupWait(group), 0, "the root wait parks until Done, not cancelled");
+    SystemFree(argument, 8);
+    ShutdownSchedulerRuntime(runtime);
+}
+
+test RootSleepRunsOtherFibersUntilItsDeadline {
+    pointer runtime = InstallSchedulerRuntime();
+    pointer argument = SystemAllocate(8, 8);
+    raw_word_store(argument, 0);
+    i64 handle = SpawnYieldingEntry(argument);
+    Assert.True(handle >= 0, "the yielding fiber is spawned");
+    i64 deadline = clock_monotonic_nanos() + 20000000;
+    // 4 is EXTERNAL_TIMEOUT: the wait's own timer is the winner.
+    Assert.Equal(ExternalSleepUntil(deadline), 4, "the root sleep parks until its timer, not 0 (unsupported)");
+    Assert.True(clock_monotonic_nanos() >= deadline, "the root sleep lasts until its deadline");
+    Assert.Equal(raw_word_load(argument), 3, "the spawned fiber ran to completion while the root slept");
     SystemFree(argument, 8);
     ShutdownSchedulerRuntime(runtime);
 }
