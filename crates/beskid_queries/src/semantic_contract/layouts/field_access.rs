@@ -1190,6 +1190,19 @@ pub(in crate::semantic_contract) fn nominal_local_receiver_declaration(
     if let Some(handle) = inferred_spawn_handle(db, receiver) {
         return Some((handle.declaration, receiver));
     }
+    // A `for` variable has no written type: it is an element of its iterable. Its nominal head
+    // comes from the iterable's declared element type when one is written (`Bag<T>[] bags`, also
+    // inside a generic item, where `T` stays open), else from its proven element identity
+    // (`List<i32>[]` returned by a call).
+    if let Some(statement) = index.node_at(program, parent).and_then(|node| node.of::<beskid_analysis::syntax::ForStatement>()) {
+        if let Some(beskid_analysis::syntax::Type::Complex(path)) =
+            for_iterable_declared_array_element(program, index, parent, &statement.iterable.node)
+        {
+            return resolve_type_declaration(db, key, &path.node).map(|declaration| (declaration, receiver));
+        }
+        let identity = generic_source_local_identity(db, program, index, receiver, local).ok()?;
+        return super::super::contracts::concrete_declaration(db, key, &identity).map(|declaration| (declaration, receiver));
+    }
     let path = explicit_local_complex_type_path(program, index, local)?;
     resolve_type_declaration(db, key, path).map(|declaration| (declaration, receiver))
 }

@@ -485,6 +485,32 @@ pub(in crate::semantic_contract) fn specialized_for_element_identity(
     for_iterator_element_identity(db, program, index, key, statement).map(|(identity, _)| identity)
 }
 
+/// The element identity of a `for` statement's array iterable read in `enclosing`; `None` for a
+/// `range(..)` loop, a nominal iterable, or an iterable without a proven identity there.
+fn specialized_array_iterable_element(
+    db: &dyn Db,
+    key: AstNodeKey,
+    enclosing: &GenericSpecializationInstance,
+) -> Option<GenericSourceTypeIdentity> {
+    let syntax = db.syntax_unit(key.unit).filter(|syntax| syntax.accepts_key(db, key))?;
+    let program = syntax.expanded_program(db);
+    let index = syntax.syntax_index(db);
+    let statement = index.node_at(program, key.node)?.of::<beskid_analysis::syntax::ForStatement>()?;
+    if range_iterable_bounds(&statement.iterable.node).is_some() {
+        return None;
+    }
+    let iterable =
+        index.direct_child_id(program, key.node, beskid_analysis::syntax_query::DynNodeRef::from(&statement.iterable))?;
+    match super::super::contracts::specialized_source_expression_identity(
+        db,
+        AstNodeKey { node: iterable, ..key },
+        Some(enclosing),
+    ) {
+        Ok(GenericSourceTypeIdentity::Array(element)) => Some(*element),
+        _ => None,
+    }
+}
+
 /// [`for_iterator_fact`](super::super::for_iterator_fact) through one exact enclosing generic
 /// specialization. A `for` over a local or parameter declared `T[]`, where `T` is a generic
 /// parameter of the enclosing item, takes its element type and GC classification from the
@@ -534,6 +560,17 @@ pub fn for_iterator_specialization(
     };
     if array.is_some() {
         return Ok(array);
+    }
+    // An array iterable whose element names the enclosing generics without being one of them
+    // (`for bag in bags` with `Bag<T>[] bags`) takes its element from the iterable's identity in
+    // the specialization.
+    if let Some(element) = specialized_array_iterable_element(db, key, enclosing) {
+        let element_managed = element.managed_reference_kind();
+        return Ok(Some(ForIteratorFact {
+            declaration,
+            element_type: element.abi_type(),
+            source: ForIterableSource::Array { element_managed },
+        }));
     }
     Ok(for_iterator_protocol(db, key, Some(enclosing))?.map(|protocol| ForIteratorFact {
         declaration,

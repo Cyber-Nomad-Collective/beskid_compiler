@@ -189,6 +189,42 @@ fn parsed_program_infers_t_from_an_array_literal_of_bare_integers() {
     assert!(artifact.functions.iter().any(|function| function.name.starts_with("FirstOr#generic_")));
 }
 
+const BAG_FOR_SOURCE: &str = "type Bag<T> { T last, i64 count, pub unit Put(mut this, T value) { this.last = value; this.count = this.count + 1_i64; return; } } \
+    unit FillAll(Bag<i32>[] bags) { for bag in bags { bag.Put(2); } return; } \
+    unit Fill<T>(Bag<T>[] bags, T value) { for bag in bags { bag.Put(value); } return; } \
+    i64 Main() { Bag<i32>[] bags = [Bag<i32> { last: 0, count: 0_i64 }]; FillAll(bags); Fill<i32>(bags, 3); return bags[0].count; }";
+
+fn lower_bag_for(symbols: &[&str]) -> Result<beskid_codegen::CodegenArtifact, String> {
+    let (input, isa, root) = item_fixture_with_root(BAG_FOR_SOURCE);
+    let db = input.database();
+    let items = find_function_definitions(db, root)
+        .into_iter()
+        .filter_map(|key| {
+            let name = item_name(db, key).ok().flatten()?.to_string();
+            symbols.contains(&name.as_str()).then(|| SyntaxModuleItem { key, symbol: name.clone().into() })
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(items.len(), symbols.len(), "fixture functions {symbols:?}");
+    lower_syntax_program(&input, isa.as_ref(), &items).map_err(|error| format!("{error:#}"))
+}
+
+/// Slice coll: a method call on the `for` variable of an array of an instantiated generic type
+/// (`for bag in bags { bag.Put(2); }` with `Bag<i32>[] bags`) lowered with MissingRuleOrFact.
+#[test]
+fn parsed_program_calls_a_method_on_a_for_variable_of_an_instantiated_generic_type() {
+    let artifact = lower_bag_for(&["FillAll", "Main"]).expect("method call on a Bag<i32> for variable lowers");
+    beskid_codegen::validate_artifact(&artifact).expect("FillAll artifact");
+}
+
+/// Slice coll: the same call inside a generic function (`Bag<T>[] bags`), lowered through the
+/// enclosing specialization.
+#[test]
+fn parsed_program_calls_a_method_on_a_for_variable_of_a_generic_type_in_a_specialized_body() {
+    let artifact = lower_bag_for(&["FillAll", "Fill", "Main"]).expect("method call on a Bag<T> for variable lowers");
+    beskid_codegen::validate_artifact(&artifact).expect("Fill artifact");
+    assert!(artifact.functions.iter().any(|function| function.name.starts_with("Fill#generic_")));
+}
+
 #[test]
 fn parsed_program_keeps_generic_nominal_pointer_equal_as_identity_comparison() {
     let (input, isa, root) = item_fixture_with_root(
