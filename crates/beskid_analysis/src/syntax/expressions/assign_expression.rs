@@ -32,9 +32,14 @@ pub struct AssignExpression {
 pub(crate) fn parse_assignment_expression(pair: Pair<Rule>) -> Result<Spanned<Expression>, ParseError> {
     let span = SpanInfo::from_span(&pair.as_span());
     let mut inner = pair.into_inner();
-    let target = Expression::parse(inner.next().ok_or(ParseError::missing(Rule::LogicalOrExpression))?)?;
+    let mut target = Expression::parse(inner.next().ok_or(ParseError::missing(Rule::LogicalOrExpression))?)?;
+    let mut next = inner.next();
+    if let Some(tail) = next.take_if(|pair| pair.as_rule() == Rule::ConditionalTail) {
+        target = super::conditional_expression::parse_conditional_tail(target, tail)?;
+        next = inner.next();
+    }
 
-    if let Some(operator_pair) = inner.next() {
+    if let Some(operator_pair) = next {
         let operator = parse_assign_op(operator_pair)?;
         let value_pair = inner.next().ok_or(ParseError::missing(Rule::AssignmentExpression))?;
         let value = Expression::parse(value_pair)?;

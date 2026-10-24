@@ -468,7 +468,14 @@ LambdaBody = { BlockExpression | Expression }
 
 // Every arithmetic operator has a compound assignment.
 AssignmentOperator = { "=" | "+=" | "-=" | "*=" | "/=" | "%=" }
-AssignmentExpression = { LogicalOrExpression ~ (AssignmentOperator ~ AssignmentExpression)? }
+AssignmentExpression = { LogicalOrExpression ~ ConditionalTail? ~ (AssignmentOperator ~ AssignmentExpression)? }
+// `condition ? then : else`: looser than `||`, tighter than assignment, right-associative through
+// the else branch. A `?` is error propagation (`TryOperator`) only when no `:` completes a
+// conditional after it: `c ? -1 : 2` is a conditional, `x? - 1` propagates, `F()? ? x : y`
+// propagates and then branches. The conditional is a tail of its condition, so an expression
+// without `? :` keeps its pair tree.
+ConditionalTail = { "?" ~ Expression ~ ":" ~ ConditionalElse }
+ConditionalElse = { LogicalOrExpression ~ ConditionalTail? }
 LogicalOrExpression = { LogicalAndExpression ~ ("||" ~ LogicalAndExpression)* }
 LogicalAndExpression = { BitwiseOrExpression ~ ("&&" ~ BitwiseOrExpression)* }
 BitwiseOrExpression = { BitwiseAndExpression ~ ("|" ~ BitwiseAndExpression)* }
@@ -493,7 +500,7 @@ CallOperator = { PUSH("(") ~ ArgumentList? ~ DROP ~ ")" }
 // implicit whitespace before it extend every member access span over trailing whitespace.
 MemberAccess = { "." ~ (Identifier ~ GenericArguments | Identifier) }
 SubscriptOperator = { PUSH("[") ~ Expression ~ DROP ~ "]" }
-TryOperator = { "?" }
+TryOperator = { "?" ~ !(Expression ~ ":") }
 TryBlockExpression = { TryKeyword ~ Block ~ CatchKeyword ~ "(" ~ Identifier ~ ")" ~ Block }
 
 MacroInvocation = { Identifier ~ "!" ~ PUSH("(") ~ MacroArgumentList? ~ DROP ~ ")"? ~ MacroInvocationBlock? }

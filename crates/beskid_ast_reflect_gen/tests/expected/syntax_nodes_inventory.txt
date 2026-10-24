@@ -16,6 +16,7 @@ CallExpression
 ClifBlockExpression
 CodeStringLiteral
 CodeStringSegment
+ConditionalExpression
 ConstantDefinition
 ContinueStatement
 ContractAssociatedType

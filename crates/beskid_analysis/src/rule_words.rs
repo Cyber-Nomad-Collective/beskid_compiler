@@ -300,6 +300,8 @@ pub const RULE_WORDS: &[(Rule, Words)] = &[
     (Rule::LambdaBody, Thing("a lambda body")),
     (Rule::AssignmentOperator, Thing("an assignment operator")),
     (Rule::AssignmentExpression, Thing("an expression")),
+    (Rule::ConditionalTail, Token("?")),
+    (Rule::ConditionalElse, Thing("an expression")),
     (Rule::LogicalOrExpression, Thing("an expression")),
     (Rule::LogicalAndExpression, Thing("an expression")),
     (Rule::BitwiseOrExpression, Thing("an expression")),

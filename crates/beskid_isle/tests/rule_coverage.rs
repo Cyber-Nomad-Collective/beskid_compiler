@@ -90,6 +90,7 @@ fn unsupported_kinds_are_intentionally_release_rejected_for_0_4() {
         (Syntax::ScopeDefinition, "composition declaration; not an executable ISLE item"),
         (Syntax::ScopeHook, "composition declaration; not an executable ISLE item"),
         (Syntax::CodeStringLiteral, "fenced code strings are not supported by generated ISLE"),
+        (Syntax::ConditionalExpression, "conditional expressions are not typed or lowered yet"),
     ];
 
     assert_eq!(
@@ -197,6 +198,7 @@ fn every_unsupported_kind_has_rejection_evidence_or_codex_blocker() {
         (Syntax::ScopeDefinition, Present("isle_adapter.rs")),
         (Syntax::ScopeHook, Present("isle_adapter.rs")),
         (Syntax::CodeStringLiteral, Present("isle_adapter.rs")),
+        (Syntax::ConditionalExpression, Present("isle_adapter.rs")),
     ];
 
     assert_eq!(

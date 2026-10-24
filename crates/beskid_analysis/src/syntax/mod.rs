@@ -13,7 +13,7 @@ pub mod types;
 pub use common::{HasSpan, Identifier, SpanInfo, Spanned, TypeParameter, Visibility};
 pub use expressions::{
     ArrayLiteralExpression, AssignExpression, AssignOp, BinaryExpression, BinaryOp, BlockExpression, CallExpression,
-    ClifBlockExpression, CodeStringLiteral, CodeStringSegment, EnumConstructorExpression, EnumPattern, Expression,
+    ClifBlockExpression, CodeStringLiteral, CodeStringSegment, ConditionalExpression, EnumConstructorExpression, EnumPattern, Expression,
     GroupedExpression, IndexExpression, LambdaExpression, LambdaParameter, Literal, LiteralExpression, MacroInvocation,
     MacroMetavariable, MatchArm, MatchExpression, MemberExpression, MoveExpression, PathExpression, Pattern, SpawnExpression,
     StringLiteralPart, StructLiteralExpression, StructLiteralField, TryExpression, UnaryExpression, UnaryOp,

@@ -86,6 +86,13 @@ pub fn map_expression(
             n.node.expr = Box::new(map_expression(*g.node.expr, f));
             Expression::Grouped(n)
         }
+        Expression::Conditional(c) => {
+            let mut n = c.clone();
+            n.node.condition = Box::new(map_expression(*c.node.condition, f));
+            n.node.then_branch = Box::new(map_expression(*c.node.then_branch, f));
+            n.node.else_branch = Box::new(map_expression(*c.node.else_branch, f));
+            Expression::Conditional(n)
+        }
         Expression::Try(t) => {
             let mut n = t.clone();
             n.node.expr = Box::new(map_expression(*t.node.expr, f));

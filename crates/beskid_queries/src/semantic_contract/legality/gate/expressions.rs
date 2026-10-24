@@ -32,6 +32,10 @@ pub(super) fn collect_expression_obligations(
     key: AstNodeKey,
     findings: &mut Vec<GateObligation>,
 ) {
+    // `cond ? a : b` parses but is not typed or lowered yet (slice sem replaces this obligation).
+    for node in nodes_of_kind(index, key.node, NodeKind::ConditionalExpression) {
+        findings.push(GateObligation { kind: GateObligationKind::UnsupportedExpression, site: AstNodeKey { node, ..key } });
+    }
     for node in nodes_of_kind(index, key.node, NodeKind::IndexExpression) {
         let Some(expression) = index.node_at(program, node).and_then(|node| node.of::<IndexExpression>()) else {
             continue;

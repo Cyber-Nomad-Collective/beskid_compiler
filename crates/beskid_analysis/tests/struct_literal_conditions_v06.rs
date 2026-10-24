@@ -8,7 +8,7 @@ use beskid_analysis::services::parse_program;
 use beskid_analysis::syntax::{Expression, Node, Spanned, Statement};
 
 fn parse_statements(body: &str) -> (String, Vec<Spanned<Statement>>) {
-    let source = format!("type P {{ i64 x }} unit Run(i64 a, i64 b, P p, i64[] xs) {{ {body} }}");
+    let source = format!("type P {{ i64 x; }} unit Run(i64 a, i64 b, P p, i64[] xs) {{ {body} }}");
     let program = parse_program(&source).unwrap_or_else(|error| panic!("failed to parse {source:?}: {error:?}"));
     let Node::Function(function) = &program.node.items.last().expect("function").node else {
         panic!("expected a function in {source:?}");

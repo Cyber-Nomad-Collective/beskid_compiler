@@ -239,7 +239,7 @@ fn corpus_messages_never_name_grammar_rules() {
         "unit Main() {\n    switch (x) { case 1: return; }\n}\n",
         "host App {\n    registry { }\n}\n",
         "const Max: i32 = 10;\n",
-        "i32 Main(i32 x) {\n    return x > 0 ? 1 : 2;\n}\n",
+        "i32 Main(i32 x) {\n    return x > 0 ? 1 2;\n}\n",
         "bool Main() {\n    return true and false;\n}\n",
         "i32 Main(i32 x) {\n    return match x { 1 -> 2, _ -> 3 };\n}\n",
         "unit Main() {\n    i32[] xs = {1, 2, 3};\n}\n",
@@ -345,11 +345,57 @@ fn several_characters_in_single_quotes_suggest_a_string() {
 }
 
 #[test]
-fn conditional_operator_gets_a_match_or_if_help() {
-    let source = "i32 Main(i32 x) {\n    return x > 0 ? 1 : 2;\n}\n";
+fn conditional_expressions_parse() {
+    for body in [
+        "return x > 0 ? 1 : 2;",
+        "return x > 0 ? -1 : 2;",
+        "return x > 0 ? 1 : x < 0 ? -1 : 0;",
+        "i32 y = x > 0 ? x : -x;",
+    ] {
+        let source = format!("i32 Main(i32 x) {{\n    {body}\n}}\n");
+        let parsed = parse_program_with_source_name_and_diagnostics("t.bd", &source).expect("parses");
+        assert!(!parsed.recovered && parsed.diagnostics.is_empty(), "{body}: {:?}", parsed.diagnostics);
+    }
+}
+
+#[test]
+fn conditional_without_colon_inserts_it() {
+    let source = "i32 Main(i32 x) {\n    return x > 0 ? 1 2;\n}\n";
     let (diagnostic, _) = diagnose(source);
-    assert_shape(&diagnostic, "E0101");
-    assert!(diagnostic.help.as_deref().unwrap().contains("no `? :` operator"), "{:?}", diagnostic.help);
+    assert_shape(&diagnostic, "E0116");
+    assert_eq!(diagnostic.message, "expected `:` while parsing conditional expression, found `2`");
+    assert_eq!(spanned(source, &diagnostic), "2");
+    assert!(diagnostic.help.as_deref().unwrap().contains("condition ? value : otherwise"), "{:?}", diagnostic.help);
+    assert!(diagnostic.related.iter().any(|related| related.label == "this `?` starts a conditional expression"));
+    assert_eq!(apply_fix(source, &diagnostic), "i32 Main(i32 x) {\n    return x > 0 ? 1 : 2;\n}\n");
+}
+
+#[test]
+fn conditional_without_colon_after_propagation() {
+    let source = "i32 Main() {\n    return F()? ? x y;\n}\n";
+    let (diagnostic, _) = diagnose(source);
+    assert_shape(&diagnostic, "E0116");
+    assert_eq!(spanned(source, &diagnostic), "y");
+    assert_eq!(apply_fix(source, &diagnostic), "i32 Main() {\n    return F()? ? x : y;\n}\n");
+}
+
+#[test]
+fn conditional_without_else_branch_offers_no_fix() {
+    // Inserting `:` before `;` would still leave the else branch missing.
+    let source = "i32 Main(i32 x) {\n    return x > 0 ? 1;\n}\n";
+    let (diagnostic, _) = diagnose(source);
+    assert_shape(&diagnostic, "E0116");
+    assert_eq!(spanned(source, &diagnostic), ";");
+    assert!(diagnostic.fixes.is_empty(), "{:?}", diagnostic.fixes);
+}
+
+#[test]
+fn propagation_explains_a_question_mark_without_colon() {
+    // `x? - 1 2`: `?` propagates and `-` continues the expression, so this is not E0116.
+    let source = "i32 Main() {\n    return x? - 1 2;\n}\n";
+    let (diagnostic, _) = diagnose(source);
+    assert_ne!(diagnostic.code.as_deref(), Some("E0116"), "{}", diagnostic.message);
+    assert_eq!(spanned(source, &diagnostic), "2");
 }
 
 #[test]

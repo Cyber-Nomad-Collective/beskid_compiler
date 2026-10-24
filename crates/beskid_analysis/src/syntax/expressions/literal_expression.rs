@@ -149,6 +149,12 @@ fn remap_expression_spans(expression: &mut Spanned<Expression>, offset: usize, s
             binary.node.op.span = remap_span(binary.node.op.span, offset, source);
             remap_expression_spans(&mut binary.node.right, offset, source);
         }
+        Expression::Conditional(conditional) => {
+            conditional.span = remap_span(conditional.span, offset, source);
+            remap_expression_spans(&mut conditional.node.condition, offset, source);
+            remap_expression_spans(&mut conditional.node.then_branch, offset, source);
+            remap_expression_spans(&mut conditional.node.else_branch, offset, source);
+        }
         Expression::Unary(unary) => {
             unary.span = remap_span(unary.span, offset, source);
             unary.node.op.span = remap_span(unary.node.op.span, offset, source);
