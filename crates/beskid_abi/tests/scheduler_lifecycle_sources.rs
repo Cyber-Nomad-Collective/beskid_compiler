@@ -1,7 +1,7 @@
 use beskid_abi::runtime_source::{
     CANONICAL_CHANNEL_SOURCE_PATH, CANONICAL_FIBER_SOURCE_PATH, CANONICAL_HUB_SOURCE_PATH, CANONICAL_MUTEX_SOURCE_PATH,
     CANONICAL_SCHEDULER_CORE_SOURCE_PATH, CANONICAL_SCHEDULER_EXTERNAL_SOURCE_PATH, CANONICAL_SCHEDULER_LOOP_SOURCE_PATH,
-    CANONICAL_SYSCALLS_SOURCE_PATH, CANONICAL_WAITGROUP_SOURCE_PATH, canonical_runtime_sources,
+    CANONICAL_PROCESS_SOURCE_PATH, CANONICAL_SYSCALLS_SOURCE_PATH, CANONICAL_WAITGROUP_SOURCE_PATH, canonical_runtime_sources,
 };
 
 #[test]
@@ -75,4 +75,18 @@ fn external_waits_register_the_root_caller_as_a_waiter() {
             unit.logical_path
         );
     }
+}
+
+/// A child pause in Main is a root sleep (other fibers run while Main waits for its child),
+/// not a bare OS thread yield that starves every fiber during `Process.Run`.
+#[test]
+fn child_pause_in_main_is_a_root_sleep() {
+    let sources = canonical_runtime_sources();
+    let process = &sources
+        .iter()
+        .find(|unit| unit.logical_path == CANONICAL_PROCESS_SOURCE_PATH)
+        .expect("canonical process source")
+        .source;
+    assert!(!process.contains("if SchedulerCurrentFiber() == FIBER_NONE { thread_yield(); return 0; }"));
+    assert!(process.contains("word winner = ExternalSleepUntil(next);"));
 }
