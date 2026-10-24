@@ -383,7 +383,7 @@ def rewrite_markdown(src, report=None, label=""):
 # Rust string literals
 
 RUST_KEEP_MARKER = "v067_field_semicolons: keep"
-RUST_TYPE = re.compile(r"\btype\s+[A-Z]")
+RUST_TYPE = re.compile(r"\btype\s+([A-Z]|\{[A-Za-z_])")
 
 
 def _rust_literals(src):
