@@ -1,5 +1,8 @@
 // An application host extends Corelib's ConsoleHost: it inherits the `CommandLine`
-// registration and adds its own services. `startup` ends the program with exit status 7.
+// registration and adds its own services. A host parameter reaches `startup`, a scope parameter
+// reaches that scope's hooks. `CommandLine.Exit(7)` in the inner scope's `init` ends the program
+// through the host: the open outer scope runs its `dispose`, then the global `dispose` runs. The
+// inner scope's `dispose` does not run, because its `init` did not complete.
 use Console.Hosting;
 use Core.Output;
 
@@ -11,7 +14,7 @@ type Greeter
     }
 }
 
-host AppHost() : ConsoleHost
+host AppHost(string name) : ConsoleHost
 {
     registry
     {
@@ -20,14 +23,52 @@ host AppHost() : ConsoleHost
 
     startup(Hosting.CommandLine commandLine, Greeter greeter)
     {
-        Output.WriteLine("${greeter.Greet()} ${commandLine.Count()}");
-        commandLine.Exit(7);
+        Output.WriteLine("${greeter.Greet()} ${name} ${commandLine.Count()}");
+    }
+
+    dispose()
+    {
+        Output.WriteLine("shutdown");
+    }
+
+    scope Visit(i64 id)
+    {
+        init()
+        {
+            Output.WriteLine("enter ${id}");
+        }
+
+        dispose()
+        {
+            Output.WriteLine("leave ${id}");
+        }
+
+        scope Request()
+        {
+            init(Hosting.CommandLine commandLine)
+            {
+                Output.WriteLine("exit");
+                commandLine.Exit(7);
+            }
+
+            dispose()
+            {
+                Output.WriteLine("not reached");
+            }
+        }
     }
 }
 
 i32 Main()
 {
-    launch AppHost();
+    launch AppHost("Ada");
+    with Visit(3)
+    {
+        with Request()
+        {
+            Output.WriteLine("not reached");
+        }
+    }
     Output.WriteLine("not reached");
     return 0;
 }

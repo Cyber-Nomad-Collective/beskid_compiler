@@ -442,7 +442,8 @@ impl CodegenInput<'_> {
                             Some(
                                 RuntimeIntrinsicKind::SchedulerFiberEntryAddress
                                 | RuntimeIntrinsicKind::SchedulerReturnTrampolineAddress
-                                | RuntimeIntrinsicKind::SchedulerPollEntryInvoke,
+                                | RuntimeIntrinsicKind::SchedulerPollEntryInvoke
+                                | RuntimeIntrinsicKind::CompositionHookInvoke(_),
                             )
                             | None => return Err(reject(site, "scheduler or unknown intrinsic effect")),
                             Some(_) => {}

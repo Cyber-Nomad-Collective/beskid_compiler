@@ -69,54 +69,93 @@ impl IsleContext<'_, '_, '_, '_> {
         })
     }
 
-    /// Call each generated hook function with the injected fields of its argument object.
-    /// The argument objects are container slots, rooted for the whole launch.
+    /// The arguments of one hook call: the site's record, when the hook takes one, then the
+    /// injected fields of its argument object. The argument objects are container slots, rooted
+    /// for the whole launch.
+    fn composition_hook_arguments(&mut self, call: &crate::CompositionHookCall, slots: &[Value]) -> Option<Vec<Value>> {
+        let pointer = dispatch::pointer_type(self.frontend_config);
+        let leading = usize::from(call.record.is_some());
+        (call.signature.params.len() == leading + call.argument_offsets.len()).then_some(())?;
+        let mut arguments = Vec::with_capacity(call.signature.params.len());
+        if let Some(record) = call.record {
+            // The record local is declared just before the `launch`/`with` statement, in the
+            // same block, so it is live at every hook call of that site.
+            let slot = self.facts.local_slot(record)?;
+            arguments.push(self.builder.use_var(self.locals.get(&slot)?.variable));
+        }
+        match call.arguments_slot {
+            Some(slot) => {
+                let object = *slots.get(usize::try_from(slot).ok()?)?;
+                for offset in &call.argument_offsets {
+                    arguments.push(self.builder.ins().load(pointer, MemFlagsData::new(), object, i32::try_from(*offset).ok()?));
+                }
+            }
+            None => call.argument_offsets.is_empty().then_some(())?,
+        }
+        Some(arguments)
+    }
+
+    fn import_composition_hook(&mut self, site: AstNodeKey, call: &crate::CompositionHookCall) -> Option<FuncRef> {
+        match self.call_importer.as_deref_mut()?.import(self.builder, call.function.clone(), &call.signature) {
+            Ok(function) => Some(function),
+            Err(CallImportError::UnknownCallee) => {
+                self.pending_error =
+                    Some(LoweringError { key: site, kind: LoweringErrorKind::UnknownCallee(call.function.clone()) });
+                None
+            }
+        }
+    }
+
+    /// Call each generated hook function with its arguments.
     pub(super) fn emit_composition_hook_calls(
         &mut self,
         site: AstNodeKey,
         calls: &[crate::CompositionHookCall],
         slots: &[Value],
     ) -> Option<()> {
-        let pointer = dispatch::pointer_type(self.frontend_config);
         for call in calls {
-            let leading = usize::from(call.record.is_some());
-            (call.signature.params.len() == leading + call.argument_offsets.len()).then_some(())?;
-            let mut arguments = Vec::with_capacity(call.signature.params.len());
-            if let Some(record) = call.record {
-                // The record local is declared just before the `launch`/`with` statement, in
-                // the same block, so it is live at every hook call of that site.
-                let slot = self.facts.local_slot(record)?;
-                arguments.push(self.builder.use_var(self.locals.get(&slot)?.variable));
-            }
-            match call.arguments_slot {
-                Some(slot) => {
-                    let object = *slots.get(usize::try_from(slot).ok()?)?;
-                    for offset in &call.argument_offsets {
-                        arguments.push(self.builder.ins().load(
-                            pointer,
-                            MemFlagsData::new(),
-                            object,
-                            i32::try_from(*offset).ok()?,
-                        ));
-                    }
-                }
-                None => call.argument_offsets.is_empty().then_some(())?,
-            }
-            let function = match self.call_importer.as_deref_mut()?.import(
-                self.builder,
-                call.function.clone(),
-                &call.signature,
-            ) {
-                Ok(function) => function,
-                Err(CallImportError::UnknownCallee) => {
-                    self.pending_error = Some(LoweringError {
-                        key: site,
-                        kind: LoweringErrorKind::UnknownCallee(call.function.clone()),
-                    });
-                    return None;
-                }
-            };
+            let arguments = self.composition_hook_arguments(call, slots)?;
+            let function = self.import_composition_hook(site, call)?;
             self.builder.ins().call(function, &arguments);
+        }
+        Some(())
+    }
+
+    /// Register the `dispose` hook calls of the level just entered (the launched container, or
+    /// the scope just entered) with the runtime, so `composition_exit` (`CommandLine.Exit`) can
+    /// run them. They are registered in reverse order: the runtime runs its list from the head.
+    /// Ordinary exits run the hooks directly; leaving the level releases the registrations.
+    pub(super) fn emit_composition_exit_registrations(
+        &mut self,
+        site: AstNodeKey,
+        container: Value,
+        calls: &[crate::CompositionHookCall],
+        slots: &[Value],
+    ) -> Option<()> {
+        let pointer = dispatch::pointer_type(self.frontend_config);
+        for call in calls.iter().rev() {
+            let arguments = self.composition_hook_arguments(call, slots)?;
+            (arguments.len() <= crate::COMPOSITION_HOOK_ARGUMENTS_MAX).then_some(())?;
+            let function = self.import_composition_hook(site, call)?;
+            let address = self.builder.ins().func_addr(pointer, function);
+            let array = self.builder.create_sized_stack_slot(StackSlotData::new(
+                StackSlotKind::ExplicitSlot,
+                pointer.bytes() * u32::try_from(arguments.len().max(1)).ok()?,
+                pointer.bytes().ilog2() as u8,
+            ));
+            for (index, argument) in arguments.iter().enumerate() {
+                let offset = i32::try_from(index * pointer.bytes() as usize).ok()?;
+                self.builder.ins().stack_store(pointer, *argument, array, offset);
+            }
+            let array_address = self.builder.ins().stack_addr(pointer, array, 0);
+            let count = self.builder.ins().iconst(pointer, i64::try_from(arguments.len()).ok()?);
+            self.composition_call(
+                site,
+                "composition_exit_register",
+                &[container, address, array_address, count],
+                &[pointer, pointer, pointer, pointer],
+                None,
+            )?;
         }
         Some(())
     }
@@ -232,6 +271,8 @@ macro_rules! generated_composition_methods {
                 value: container,
                 slots: std::rc::Rc::clone(&slots),
             });
+            // `CommandLine.Exit` from here on runs the global `dispose` hooks.
+            self.emit_composition_exit_registrations(site, container, &plan.shutdown, &slots)?;
             self.emit_composition_hook_calls(site, &plan.startup, &slots)?;
             Some(())
         }
@@ -255,6 +296,8 @@ macro_rules! generated_composition_methods {
             // `init` runs after the frame is entered and before the body. The leave cleanup is
             // already registered, so every exit of the body runs `dispose`.
             self.emit_composition_hook_calls(site, &plan.init, &slots)?;
+            // Registered once `init` completed: an exit runs `dispose` only for such an activation.
+            self.emit_composition_exit_registrations(site, container, &plan.dispose, &slots)?;
             self.lower_nested_statement(plan.body)?;
             self.end_local_root_scope_for_current_block()
         }

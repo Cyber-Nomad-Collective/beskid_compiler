@@ -95,7 +95,7 @@ impl SyntaxNodeFacts<'_> {
             let signature = signature_for_runtime_intrinsic(self.isa?, intrinsic)?;
             return signature.returns.first().map(|param| param.value_type);
         }
-        if self.scheduler_compiler_operation(key).is_some() {
+        if self.runtime_compiler_operation(key).is_some() {
             return self
                 .call_signature(key)
                 .and_then(|signature| signature.returns.first().map(|param| param.value_type));

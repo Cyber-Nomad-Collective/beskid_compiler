@@ -6,10 +6,14 @@ use beskid_abi::abi_v5::{AbiManifestV5, TargetMetadata};
 use beskid_queries::{AstNodeKey, Db, IndexedNodeKind, SourceUnitId, TypedProgram, node_kind, node_span};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SchedulerCompilerOperation {
+pub enum RuntimeCompilerOperation {
     FiberEntryAddress,
     ReturnTrampolineAddress,
     PollEntryInvoke,
+    /// `composition_hook_invoke(function, arguments, count)` in the canonical composition
+    /// runtime: an indirect call of a compiled host-hook function with `count` (at most
+    /// [`beskid_isle::COMPOSITION_HOOK_ARGUMENTS_MAX`]) pointer arguments read from `arguments`.
+    CompositionHookInvoke,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -418,7 +422,7 @@ impl<'db> CodegenInput<'db> {
     ///
     /// These operations are local lowering artifacts, not manifest imports. The source unit,
     /// corpus capability, syntax generation, and operation spelling must all match exactly.
-    pub fn scheduler_compiler_operation_for(&self, key: AstNodeKey, name: &str) -> Option<SchedulerCompilerOperation> {
+    pub fn runtime_compiler_operation_for(&self, key: AstNodeKey, name: &str) -> Option<RuntimeCompilerOperation> {
         if !matches!(node_kind(self.db, key), Ok(Some(_))) || key.generation != self.typed_program.generation {
             return None;
         }
@@ -434,14 +438,17 @@ impl<'db> CodegenInput<'db> {
         capability.authorizes_source(logical_path).then_some(())?;
         match (logical_path, name) {
             (beskid_abi::runtime_source::CANONICAL_SCHEDULER_CONTEXT_SOURCE_PATH, "scheduler_fiber_entry_address") => {
-                Some(SchedulerCompilerOperation::FiberEntryAddress)
+                Some(RuntimeCompilerOperation::FiberEntryAddress)
             }
             (
                 beskid_abi::runtime_source::CANONICAL_SCHEDULER_CONTEXT_SOURCE_PATH,
                 "scheduler_return_trampoline_address",
-            ) => Some(SchedulerCompilerOperation::ReturnTrampolineAddress),
+            ) => Some(RuntimeCompilerOperation::ReturnTrampolineAddress),
             (beskid_abi::runtime_source::CANONICAL_SCHEDULER_POLL_SOURCE_PATH, "scheduler_poll_entry_invoke") => {
-                Some(SchedulerCompilerOperation::PollEntryInvoke)
+                Some(RuntimeCompilerOperation::PollEntryInvoke)
+            }
+            (beskid_abi::runtime_source::CANONICAL_COMPOSITION_SOURCE_PATH, "composition_hook_invoke") => {
+                Some(RuntimeCompilerOperation::CompositionHookInvoke)
             }
             _ => None,
         }

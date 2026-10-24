@@ -328,7 +328,7 @@ fn canonical_trap_intrinsic_uses_the_source_owned_bridge_and_rejects_user_packag
 }
 
 #[test]
-fn scheduler_compiler_operations_require_exact_embedded_source_and_generation() {
+fn runtime_compiler_operations_require_exact_embedded_source_and_generation() {
     let mut db = BeskidDatabase::default();
     let corpus = CanonicalRuntimeCorpus::materialize();
     let target = linux_target();
@@ -342,17 +342,22 @@ fn scheduler_compiler_operations_require_exact_embedded_source_and_generation() 
         (
             CANONICAL_SCHEDULER_CONTEXT_SOURCE_PATH,
             "scheduler_fiber_entry_address",
-            beskid_codegen::SchedulerCompilerOperation::FiberEntryAddress,
+            beskid_codegen::RuntimeCompilerOperation::FiberEntryAddress,
         ),
         (
             CANONICAL_SCHEDULER_CONTEXT_SOURCE_PATH,
             "scheduler_return_trampoline_address",
-            beskid_codegen::SchedulerCompilerOperation::ReturnTrampolineAddress,
+            beskid_codegen::RuntimeCompilerOperation::ReturnTrampolineAddress,
         ),
         (
             CANONICAL_SCHEDULER_POLL_SOURCE_PATH,
             "scheduler_poll_entry_invoke",
-            beskid_codegen::SchedulerCompilerOperation::PollEntryInvoke,
+            beskid_codegen::RuntimeCompilerOperation::PollEntryInvoke,
+        ),
+        (
+            beskid_abi::runtime_source::CANONICAL_COMPOSITION_SOURCE_PATH,
+            "composition_hook_invoke",
+            beskid_codegen::RuntimeCompilerOperation::CompositionHookInvoke,
         ),
     ] {
         let root = AstNodeKey { unit: SourceUnitId::new(&db, corpus.unit_path(path)), generation, node: AstNodeId(0) };
@@ -363,10 +368,10 @@ fn scheduler_compiler_operations_require_exact_embedded_source_and_generation() 
             )
         })
         .unwrap_or_else(|| panic!("canonical Scheduler invokes {name}"));
-        assert_eq!(input.scheduler_compiler_operation_for(call, name), Some(expected));
+        assert_eq!(input.runtime_compiler_operation_for(call, name), Some(expected));
         assert_eq!(SyntaxNodeFacts::new(&input).call_kind(call), Some(CallKind::RuntimeIntrinsic));
         let stale = AstNodeKey { generation: SyntaxGenerationId(generation.0 + 1), ..call };
-        assert_eq!(input.scheduler_compiler_operation_for(stale, name), None);
+        assert_eq!(input.runtime_compiler_operation_for(stale, name), None);
     }
 
     let (ordinary_db, ordinary_typed, ordinary_root, ordinary_target) = input_fixture();
@@ -378,9 +383,13 @@ fn scheduler_compiler_operations_require_exact_embedded_source_and_generation() 
         AbiManifestV5::canonical_runtime(ordinary_target),
     )
     .expect("ordinary input");
-    for name in ["scheduler_fiber_entry_address", "scheduler_return_trampoline_address", "scheduler_poll_entry_invoke"]
-    {
-        assert_eq!(ordinary.scheduler_compiler_operation_for(ordinary_root, name), None);
+    for name in [
+        "scheduler_fiber_entry_address",
+        "scheduler_return_trampoline_address",
+        "scheduler_poll_entry_invoke",
+        "composition_hook_invoke",
+    ] {
+        assert_eq!(ordinary.runtime_compiler_operation_for(ordinary_root, name), None);
     }
 }
 

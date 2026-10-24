@@ -2,12 +2,23 @@
 // slot count and emits direct slot writes; the runtime owns storage, rooting, activation,
 // scopes, and reverse-order shutdown. Runtime service lookup is intentionally absent.
 // Container record: owner_runtime(0), status(8), slot_count(16), slots(24), activated_count(32),
-// open_scope_count(40), slots_bytes(48). The slot array is sized exactly to the compiler-supplied
-// plan; there is no fixed plan-entry cap.
-const COMPOSITION_CONTAINER_SIZE = 56;
+// open_scope_count(40), slots_bytes(48), exit_entries(56). The slot array is sized exactly to the
+// compiler-supplied plan; there is no fixed plan-entry cap.
+const COMPOSITION_CONTAINER_SIZE = 64;
 // Scope record: owner_container(0), parent_scope(8), owned_count(16), owned_values(24), scope_id(32),
-// parent_scope_id(40), owned_capacity(48). Owned values grow on demand (`CompositionScopeOwn`).
-const COMPOSITION_SCOPE_SIZE = 56;
+// parent_scope_id(40), owned_capacity(48), exit_entries(56). Owned values grow on demand
+// (`CompositionScopeOwn`).
+const COMPOSITION_SCOPE_SIZE = 64;
+// `exit_entries` of a container (global `dispose` hooks) and of a scope (its `dispose` hooks): a
+// list of exit entries that `composition_exit` runs. Exit entry: next(0), function(8),
+// argument_count(16), arguments(24, rooted, at most COMPOSITION_EXIT_ARGUMENTS_MAX words).
+const COMPOSITION_CONTAINER_EXIT_OFFSET = 56;
+const COMPOSITION_SCOPE_EXIT_OFFSET = 56;
+const COMPOSITION_EXIT_ENTRY_FUNCTION = 8;
+const COMPOSITION_EXIT_ENTRY_COUNT = 16;
+const COMPOSITION_EXIT_ENTRY_ARGUMENTS = 24;
+const COMPOSITION_EXIT_ARGUMENTS_MAX = 8;
+const COMPOSITION_EXIT_ENTRY_SIZE = 88;
 const COMPOSITION_SCOPE_OWNED_COUNT = 16;
 const COMPOSITION_SCOPE_OWNED_VALUES = 24;
 const COMPOSITION_SCOPE_OWNED_CAPACITY = 48;
@@ -24,6 +35,8 @@ const COMPOSITION_OPEN_SCOPE_COUNT_OFFSET = 40;
 const COMPOSITION_SLOTS_BYTES_OFFSET = 48;
 const TLS_COMPOSITION_SCOPE_OFFSET = 32;
 const TLS_COMPOSITION_DEPTH_OFFSET = 40;
+// The launched container whose global `dispose` hooks `composition_exit` runs.
+const TLS_COMPOSITION_EXIT_OFFSET = 56;
 
 pub pointer CompositionScopeOwner() {
     // The scheduler projects each running fiber's scope and depth into TLS and
@@ -233,6 +246,9 @@ pub unit CompositionScopeLeave() {
     if scopePtr == NativePointer(0) { Trap(10, NativePointer(0), 0); }
     pointer container = NativePointer(raw_word_load(scopePtr));
     if CompositionContainerValid(container) == 0 { Trap(10, NativePointer(0), 0); }
+    // Compiled code has already run the `dispose` hooks on this exit path; the registered exit
+    // entries are released without running.
+    CompositionExitEntriesDrop(pointer_add(scopePtr, COMPOSITION_SCOPE_EXIT_OFFSET));
     pointer ownedValues = NativePointer(raw_word_load(pointer_add(scopePtr, COMPOSITION_SCOPE_OWNED_VALUES)));
     mut word ownedCount = raw_word_load(pointer_add(scopePtr, COMPOSITION_SCOPE_OWNED_COUNT));
     while ownedCount > 0 {
@@ -265,6 +281,11 @@ pub bool CompositionTryShutdown(pointer container) {
         return false;
     }
     raw_word_store(pointer_add(container, COMPOSITION_STATUS_OFFSET), COMPOSITION_SHUTTING_DOWN);
+    CompositionExitEntriesDrop(pointer_add(container, COMPOSITION_CONTAINER_EXIT_OFFSET));
+    pointer owner = CompositionScopeOwner();
+    if owner != NativePointer(0) && NativePointer(raw_word_load(pointer_add(owner, TLS_COMPOSITION_EXIT_OFFSET))) == container {
+        raw_word_store(pointer_add(owner, TLS_COMPOSITION_EXIT_OFFSET), 0);
+    }
     pointer slots = NativePointer(raw_word_load(pointer_add(container, COMPOSITION_SLOTS_OFFSET)));
     mut word slot = raw_word_load(pointer_add(container, COMPOSITION_SLOT_COUNT_OFFSET));
     while slot > 0 {
@@ -285,4 +306,109 @@ pub bool CompositionTryShutdown(pointer container) {
 pub unit CompositionShutdown(pointer container) {
     if !CompositionTryShutdown(container) { Trap(10, NativePointer(0), 0); }
     return;
+}
+
+// Releases one exit entry: its arguments are unrooted and its storage freed; the hook does not run.
+pub unit CompositionExitEntryRelease(pointer entry) {
+    word count = raw_word_load(pointer_add(entry, COMPOSITION_EXIT_ENTRY_COUNT));
+    mut word index = 0;
+    while index < count {
+        GcUnregisterRoot(pointer_add(entry, COMPOSITION_EXIT_ENTRY_ARGUMENTS + index * 8));
+        index = index + 1;
+    }
+    memory_set(entry, 0, COMPOSITION_EXIT_ENTRY_SIZE);
+    SystemFree(entry, COMPOSITION_EXIT_ENTRY_SIZE);
+    return;
+}
+
+// Releases every entry of the exit list at `list` without running them.
+pub unit CompositionExitEntriesDrop(pointer list) {
+    mut pointer entry = NativePointer(raw_word_load(list));
+    raw_word_store(list, 0);
+    while entry != NativePointer(0) {
+        pointer next = NativePointer(raw_word_load(entry));
+        CompositionExitEntryRelease(entry);
+        entry = next;
+    }
+    return;
+}
+
+// Registers one `dispose` hook call for `composition_exit`: `function` with the `count` argument
+// words at `arguments` (the host or scope record and the injected services, all rooted here).
+// With a scope open the call belongs to that scope, else to the launched container (a global
+// `dispose`). Compiled code registers a level's hooks in reverse run order: the list runs from
+// its head.
+[Export(Abi:"C", Symbol:"composition_exit_register")]
+pub unit CompositionExitRegister(pointer container, pointer function, pointer arguments, word count) {
+    if CompositionContainerValid(container) == 0 || function == NativePointer(0) ||
+       count > COMPOSITION_EXIT_ARGUMENTS_MAX ||
+       raw_word_load(pointer_add(container, COMPOSITION_STATUS_OFFSET)) != COMPOSITION_ACTIVE {
+        Trap(10, NativePointer(0), 0);
+    }
+    pointer owner = CompositionScopeOwner();
+    if owner == NativePointer(0) { Trap(10, NativePointer(0), 0); }
+    pointer scopePtr = NativePointer(raw_word_load(pointer_add(owner, CompositionScopeOffset())));
+    mut pointer list = pointer_add(container, COMPOSITION_CONTAINER_EXIT_OFFSET);
+    if scopePtr != NativePointer(0) {
+        if NativePointer(raw_word_load(scopePtr)) != container { Trap(10, NativePointer(0), 0); }
+        list = pointer_add(scopePtr, COMPOSITION_SCOPE_EXIT_OFFSET);
+    } else {
+        raw_word_store(pointer_add(owner, TLS_COMPOSITION_EXIT_OFFSET), NativeWord(container));
+    }
+    pointer entry = SystemAllocate(COMPOSITION_EXIT_ENTRY_SIZE, 8);
+    if entry == NativePointer(0) { Trap(5, NativePointer(0), 0); }
+    memory_set(entry, 0, COMPOSITION_EXIT_ENTRY_SIZE);
+    raw_word_store(pointer_add(entry, COMPOSITION_EXIT_ENTRY_FUNCTION), NativeWord(function));
+    mut word index = 0;
+    while index < count {
+        pointer slot = pointer_add(entry, COMPOSITION_EXIT_ENTRY_ARGUMENTS + index * 8);
+        raw_word_store(slot, raw_word_load(pointer_add(arguments, index * 8)));
+        if GcRegisterRoot(slot) == false {
+            CompositionExitEntryRelease(entry);
+            Trap(5, NativePointer(0), 0);
+        }
+        index = index + 1;
+        raw_word_store(pointer_add(entry, COMPOSITION_EXIT_ENTRY_COUNT), index);
+    }
+    raw_word_store(entry, raw_word_load(list));
+    raw_word_store(list, NativeWord(entry));
+    return;
+}
+
+// Runs the exit list at `list` from its head. Each entry is unlinked before its hook runs, so an
+// exit started inside a `dispose` hook never runs that hook again.
+pub unit CompositionExitRun(pointer list) {
+    mut pointer entry = NativePointer(raw_word_load(list));
+    while entry != NativePointer(0) {
+        raw_word_store(list, raw_word_load(entry));
+        composition_hook_invoke(
+            NativePointer(raw_word_load(pointer_add(entry, COMPOSITION_EXIT_ENTRY_FUNCTION))),
+            pointer_add(entry, COMPOSITION_EXIT_ENTRY_ARGUMENTS),
+            raw_word_load(pointer_add(entry, COMPOSITION_EXIT_ENTRY_COUNT))
+        );
+        CompositionExitEntryRelease(entry);
+        entry = NativePointer(raw_word_load(list));
+    }
+    return;
+}
+
+// Ends the program through the host (`CommandLine.Exit`): leaves every open scope innermost
+// first, running its `dispose` hooks, runs the global `dispose` hooks of the launched container,
+// then exits with `code`. `process_exit` is the immediate exit that runs no hooks.
+[Export(Abi:"C", Symbol:"composition_exit")]
+pub never CompositionExit(i32 code) {
+    pointer owner = CompositionScopeOwner();
+    if owner != NativePointer(0) {
+        mut pointer scopePtr = NativePointer(raw_word_load(pointer_add(owner, CompositionScopeOffset())));
+        while scopePtr != NativePointer(0) {
+            CompositionExitRun(pointer_add(scopePtr, COMPOSITION_SCOPE_EXIT_OFFSET));
+            CompositionScopeLeave();
+            scopePtr = NativePointer(raw_word_load(pointer_add(owner, CompositionScopeOffset())));
+        }
+        pointer container = NativePointer(raw_word_load(pointer_add(owner, TLS_COMPOSITION_EXIT_OFFSET)));
+        if CompositionContainerValid(container) != 0 {
+            CompositionExitRun(pointer_add(container, COMPOSITION_CONTAINER_EXIT_OFFSET));
+        }
+    }
+    ProcessExit(code);
 }

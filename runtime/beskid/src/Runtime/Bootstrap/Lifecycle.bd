@@ -14,7 +14,7 @@ const RUNTIME_ACTIVE = 2;
 const RUNTIME_SHUTTING_DOWN = 3;
 const RUNTIME_SHUT_DOWN = 4;
 
-const TLS_STATE_SIZE = 56;
+const TLS_STATE_SIZE = 64;
 const TLS_CHECKED_ALLOCATION_SCOPE_OFFSET = 48;
 const TLS_RUNTIME_OFFSET = 0;
 const TLS_ROOT_FRAME_OFFSET = 8;
@@ -22,6 +22,7 @@ const TLS_RESERVED_OFFSET = 16;
 const TLS_ATTACH_DEPTH_OFFSET = 24;
 const TLS_COMPOSITION_SCOPE_OFFSET = 32;
 const TLS_COMPOSITION_DEPTH_OFFSET = 40;
+const TLS_COMPOSITION_EXIT_OFFSET = 56;
 const HEAP_STATE_SIZE = 528;
 const HEAP_INITIAL_REGION_SIZE = 1048576;
 // Every region must be page-aligned: `SpanEntryInRegion` derives a page index as
@@ -426,6 +427,7 @@ pub unit IsolateReleaseHeap(pointer runtime) {
            raw_word_load(pointer_add(thread, TLS_ATTACH_DEPTH_OFFSET)) != 1 ||
            raw_word_load(pointer_add(thread, TLS_COMPOSITION_SCOPE_OFFSET)) != 0 ||
            raw_word_load(pointer_add(thread, TLS_COMPOSITION_DEPTH_OFFSET)) != 0 ||
+           raw_word_load(pointer_add(thread, TLS_COMPOSITION_EXIT_OFFSET)) != 0 ||
            raw_word_load(pointer_add(thread, TLS_CHECKED_ALLOCATION_SCOPE_OFFSET)) != 0 {
             Trap(10, NativePointer(0), 0);
         }
@@ -584,6 +586,7 @@ pub unit ThreadDetach(pointer thread) {
        raw_word_load(pointer_add(thread, TLS_ATTACH_DEPTH_OFFSET)) != 1 ||
        raw_word_load(pointer_add(thread, TLS_COMPOSITION_SCOPE_OFFSET)) != 0 ||
        raw_word_load(pointer_add(thread, TLS_COMPOSITION_DEPTH_OFFSET)) != 0 ||
+       raw_word_load(pointer_add(thread, TLS_COMPOSITION_EXIT_OFFSET)) != 0 ||
            raw_word_load(pointer_add(thread, TLS_CHECKED_ALLOCATION_SCOPE_OFFSET)) != 0 {
         Trap(10, NativePointer(0), 0);
     }

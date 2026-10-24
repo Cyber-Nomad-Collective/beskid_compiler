@@ -817,3 +817,53 @@ i32 Main(bool early)
     let dispose = hooks.iter().find(|name| name.contains("_dispose_")).expect("scope dispose");
     assert_eq!(calls_of(&clif, dispose), 2, "scope dispose runs on both exits:\n{clif}");
 }
+
+#[test]
+fn dispose_hooks_are_registered_for_the_host_exit() {
+    use std::sync::Arc;
+
+    use beskid_analysis::composition::{CompositionInput, resolve_composition};
+
+    let source = r#"
+type Greeter {}
+host AppHost()
+{
+    registry { single Greeter; }
+    dispose(Greeter greeter) { }
+    scope Visit()
+    {
+        init() { }
+        dispose() { }
+    }
+}
+i32 Main()
+{
+    launch AppHost();
+    with Visit() { }
+    return 0;
+}
+"#;
+    let (input, isa, root) = item_fixture_with_root(source);
+    let result = resolve_composition(CompositionInput {
+        program: &input.typed_program().assembly.entry_unit().program,
+        is_mod_project: false,
+    });
+    assert!(result.issues.is_empty(), "composition must validate: {:?}", result.issues);
+    let mut snapshot = result.snapshot;
+    snapshot.source_unit_path = Some(root.unit.path(input.database()).to_path_buf());
+    let generation = input.typed_program().generation;
+    let input = input
+        .with_composition_authority(generation, Arc::new(result.plan), Arc::new(snapshot))
+        .expect("composition authority");
+    let items = find_function_definitions(input.database(), root)
+        .into_iter()
+        .map(|key| SyntaxModuleItem {
+            symbol: item_name(input.database(), key).expect("item query").expect("item name").to_string(),
+            key,
+        })
+        .collect::<Vec<_>>();
+    let artifact = lower_syntax_program(&input, isa.as_ref(), &items).expect("exit registrations lower to verified CLIF");
+    let clif = artifact.functions.iter().find(|function| function.name == "Main").expect("lowered Main").function.display().to_string();
+    // One registration for the global dispose after launch, one for the scope dispose after init.
+    assert_eq!(calls_of(&clif, "composition_exit_register"), 2, "{clif}");
+}

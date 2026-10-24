@@ -77,8 +77,56 @@ impl IsleContext<'_, '_, '_, '_> {
                 };
                 self.emit_memory_copy(*destination, *source, *length)
             }
+            RuntimeIntrinsicKind::CompositionHookInvoke(maximum) => {
+                let [function, arguments, count] = arguments.as_slice() else {
+                    return None;
+                };
+                self.emit_composition_hook_invoke(*function, *arguments, *count, maximum)
+            }
             _ => self.direct_call_statement(key),
         }
+    }
+
+    /// One `call_indirect` per argument count `0..=maximum`, selected by `count`; each reads its
+    /// pointer arguments from the array at `arguments`. Any other count traps.
+    pub(super) fn emit_composition_hook_invoke(
+        &mut self,
+        function: Value,
+        arguments: Value,
+        count: Value,
+        maximum: usize,
+    ) -> Option<()> {
+        let pointer = self.builder.func.dfg.value_type(function);
+        (pointer.is_int()
+            && self.builder.func.dfg.value_type(arguments) == pointer
+            && self.builder.func.dfg.value_type(count) == pointer)
+            .then_some(())?;
+        let done = self.builder.create_block();
+        for arity in 0..=maximum {
+            let call = self.builder.create_block();
+            let next = self.builder.create_block();
+            let matches = self.builder.ins().icmp_imm_s(IntCC::Equal, count, i64::try_from(arity).ok()?);
+            self.builder.ins().brif(matches, call, &[], next, &[]);
+            self.builder.switch_to_block(call);
+            self.builder.seal_block(call);
+            let values = (0..arity)
+                .map(|index| {
+                    let offset = i32::try_from(index * pointer.bytes() as usize).ok()?;
+                    Some(self.builder.ins().load(pointer, MemFlagsData::new(), arguments, offset))
+                })
+                .collect::<Option<Vec<_>>>()?;
+            let mut signature = Signature::new(self.builder.func.signature.call_conv);
+            signature.params.extend(std::iter::repeat_n(AbiParam::new(pointer), arity));
+            let signature = self.builder.func.import_signature(signature);
+            self.builder.ins().call_indirect(signature, function, &values);
+            self.builder.ins().jump(done, &[]);
+            self.builder.switch_to_block(next);
+            self.builder.seal_block(next);
+        }
+        self.builder.ins().trap(TrapCode::unwrap_user(10));
+        self.builder.switch_to_block(done);
+        self.builder.seal_block(done);
+        Some(())
     }
 
     pub(super) fn emit_raw_store(&mut self, kind: RuntimeIntrinsicKind, address: Value, value: Value) -> Option<()> {
@@ -295,6 +343,7 @@ macro_rules! generated_intrinsic_methods {
                     self.builder.inst_results(call).first().copied()
                 }
                 RuntimeIntrinsicKind::MemoryCopy
+                | RuntimeIntrinsicKind::CompositionHookInvoke(_)
                 | RuntimeIntrinsicKind::MemorySet
                 | RuntimeIntrinsicKind::RawWordStore
                 | RuntimeIntrinsicKind::RawByteStore => None,
