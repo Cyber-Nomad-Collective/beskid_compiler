@@ -280,7 +280,7 @@ mod v06_tests {
             std::fs::write(root.join(other), broken).unwrap();
         }
         let paths = collect_bd_files(&root, true).unwrap();
-        let result = execute(FormatArgs { input: root.clone(), output: None, check: false });
+        let result = execute(FormatArgs { diagnostics: Default::default(), input: root.clone(), output: None, check: false });
         let formatted = std::fs::read_to_string(root.join("Src/Main.bd")).unwrap();
         std::fs::remove_dir_all(&root).unwrap();
         assert_eq!(paths, vec![root.join("Src/Main.bd")], "only the source root is formatted");
