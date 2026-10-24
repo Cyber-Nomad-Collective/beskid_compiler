@@ -154,7 +154,7 @@ fn nested_loop_over_a_matched_list_payload_in_a_generic_body_is_specialized() {
         &[(
             "Main.bd",
             "use Core.Collections.List; use Core.Optional.Option; \
-             List<T> Flatten<T>(List<List<T>> parts) { mut List<T> result = List.New<T>(); mut i64 part = 0_i64; while part < parts.Count() { match parts.TryGet(part) { Option::Some(chunk) => { mut i64 index = 0_i64; while index < chunk.Count() { match chunk.TryGet(index) { Option::Some(value) => { result = result.Push(value); }, Option::None => { }, }; index = index + 1_i64; } }, Option::None => { }, }; part = part + 1_i64; } return result; } \
+             List<T> Flatten<T>(List<List<T>> parts) { List<T> result = List.New<T>(); mut i64 part = 0_i64; while part < parts.Count() { match parts.TryGet(part) { Option::Some(chunk) => { mut i64 index = 0_i64; while index < chunk.Count() { match chunk.TryGet(index) { Option::Some(value) => { result.Push(value); }, Option::None => { }, }; index = index + 1_i64; } }, Option::None => { }, }; part = part + 1_i64; } return result; } \
              i64 Main(List<List<i64>> numbers, List<List<string>> texts) { return Flatten<i64>(numbers).Count() + Flatten<string>(texts).Count(); }",
         )],
         SyntaxGenerationId(145),

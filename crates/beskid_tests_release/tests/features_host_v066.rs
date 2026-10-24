@@ -251,10 +251,10 @@ use Core.Parallel.Combiners;
 use Core.Parallel.ParallelSeq;
 
 List<i64> Numbers(i64 count) {
-    mut List<i64> values = List.New<i64>();
+    List<i64> values = List.New<i64>();
     mut i64 i = 0_i64;
     while i < count {
-        values = values.Push(i);
+        values.Push(i);
         i = i + 1_i64;
     }
     return values;
@@ -431,10 +431,10 @@ const GC_PROGRAM: &str = r#"use Core.Optional.Option;
 use Core.Collections.List;
 
 List<string> Words(i64 count) {
-    mut List<string> values = List.New<string>();
+    List<string> values = List.New<string>();
     mut i64 i = 0_i64;
     while i < count {
-        values = values.Push("word-${i}");
+        values.Push("word-${i}");
         i = i + 1_i64;
     }
     return values;
