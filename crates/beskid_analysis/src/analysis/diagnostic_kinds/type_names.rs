@@ -7,6 +7,11 @@ pub fn display_type(name: &str) -> String {
     shorten_paths(&dotted(name))
 }
 
+/// A function type written as Beskid writes it: `(i32, i64) => bool`, never `->`.
+fn arrows(name: &str) -> String {
+    name.replace("->", "=>")
+}
+
 /// The two types of a mismatch, shortened unless shortening makes them read the same; then both
 /// keep their full `.` paths.
 pub fn display_type_pair(expected: &str, actual: &str) -> (String, String) {
@@ -19,7 +24,7 @@ pub fn display_type_pair(expected: &str, actual: &str) -> (String, String) {
 }
 
 fn dotted(name: &str) -> String {
-    name.replace("::", ".")
+    arrows(&name.replace("::", "."))
 }
 
 /// Drop the module qualifier of every path in a type expression: each run of identifier
@@ -65,6 +70,7 @@ mod tests {
         assert_eq!(display_type("Core::Results::Result<i32, string>"), "Result<i32, string>");
         assert_eq!(display_type("Core.Collections.List<App.Model.Item>[]"), "List<Item>[]");
         assert_eq!(display_type("i32"), "i32");
+        assert_eq!(display_type("(i64, Main::Order) -> bool"), "(i64, Order) => bool");
     }
 
     #[test]

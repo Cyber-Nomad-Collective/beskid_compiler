@@ -121,9 +121,11 @@ impl SemanticIssueKind {
             }
             Self::ThisUsedOutsideContractOrImpl => "`This` used outside a contract or impl-block scope".to_string(),
             Self::UnresolvedAssociatedType { name } => format!("unresolved associated type `{name}`"),
-            Self::GenericBoundNotSatisfied { type_name, contract_name, .. } => {
-                format!("generic bound not satisfied: `{type_name}` does not conform to `{contract_name}`")
-            }
+            Self::GenericBoundNotSatisfied { type_name, contract_name, .. } => format!(
+                "generic bound not satisfied: `{}` does not conform to `{}`",
+                super::display_type(type_name),
+                super::display_type(contract_name)
+            ),
             Self::ImmutableAssignment { name, .. } => {
                 format!("`{name}` is assigned again but is not mutable")
             }
@@ -287,10 +289,16 @@ impl SemanticIssueKind {
             Self::CapturedLocalAssignedInBoundLambda { name } => {
                 format!("a lambda passed to a `[Captures]` parameter cannot assign the captured local `{name}`")
             }
-            Self::CaptureNotTransferable { name, type_name, class } => format!(
-                "`{name}` of type `{type_name}` cannot be captured by this lambda: its transfer class {class} is not \
-                 admitted by the `[Captures]` bound"
-            ),
+            Self::CaptureNotTransferable { name, type_name, class } => {
+                let type_name = super::display_type(type_name);
+                let reason = match class.as_str() {
+                    "Never" => format!("a `{type_name}` value never leaves the task that created it"),
+                    "Moved" => format!("this lambda's bound does not accept `{type_name}` values that are handed over"),
+                    "Copied" => format!("this lambda's bound does not accept `{type_name}` values that are copied across"),
+                    _ => format!("this lambda's bound does not accept `{type_name}` values"),
+                };
+                format!("`{name}` cannot be captured here because {reason}")
+            }
             Self::MovedCaptureWithoutMove { name } => {
                 format!("`{name}` is a Moved value and must be captured with `move`")
             }
@@ -311,19 +319,23 @@ impl SemanticIssueKind {
                 format!("`{name}` is still owned by a live name; this use would alias a Moved value")
             }
             Self::DestructiveReadWithoutEmpty { field, type_name } => format!(
-                "`move` cannot read field `{field}`: its type `{type_name}` has no canonical empty value"
+                "`move` cannot read field `{field}`: its type `{}` has no canonical empty value",
+                super::display_type(type_name)
             ),
             Self::ImmutableFieldNotShared { type_name, field, class } => format!(
-                "field `{field}` of `[Immutable]` type `{type_name}` must be Shared, but its class is {class}"
+                "field `{field}` of `[Immutable]` type `{}` must be Shared, but it is {class}",
+                super::display_type(type_name)
             ),
             Self::ImmutableFieldAssignment { type_name, field } => format!(
-                "field `{field}` of `[Immutable]` type `{type_name}` cannot be assigned or escape outside construction"
+                "field `{field}` of `[Immutable]` type `{}` cannot be assigned or escape outside construction",
+                super::display_type(type_name)
             ),
             Self::MarkerOnNeverTransferable { marker, type_name, cause } => {
-                format!("`[{marker}]` cannot mark `{type_name}`: {cause} is never transferable")
+                format!("`[{marker}]` cannot mark `{}`: {cause} is never transferable", super::display_type(type_name))
             }
             Self::MarkerFieldClassMismatch { marker, type_name, field, class } => format!(
-                "field `{field}` of `[{marker}]` type `{type_name}` has class {class}, which `[{marker}]` does not admit"
+                "field `{field}` of `[{marker}]` type `{}` is {class}, which `[{marker}]` does not admit",
+                super::display_type(type_name)
             ),
             Self::CapturesBoundNotMarker { bound } => match bound {
                 Some(bound) => format!("`[Captures]` bound `{bound}` is not a marker contract"),
@@ -335,7 +347,7 @@ impl SemanticIssueKind {
             }
             Self::CompilerDerivedConformance { contract } => format!(
                 "`{contract}` is compiler-derived and cannot be listed as a conformance; the compiler proves it from the \
-                 transfer class"
+                 type's fields and markers"
             ),
             Self::CompilerDerivedNotMarker { contract } => format!(
                 "`[CompilerDerived]` applies only to the marker contracts `Transferable`, `Shared`, `Moved` and \

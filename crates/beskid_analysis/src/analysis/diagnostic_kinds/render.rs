@@ -276,6 +276,23 @@ mod tests {
     }
 
     #[test]
+    fn capture_and_function_type_wording_uses_beskid_terms() {
+        let kind = SemanticIssueKind::CaptureNotTransferable {
+            name: "order".into(),
+            type_name: "Main::Order".into(),
+            class: "Never".into(),
+        };
+        let message = kind.message();
+        assert_eq!(message, "`order` cannot be captured here because a `Order` value never leaves the task that created it");
+        assert!(!message.contains("::") && !message.contains("transfer class"));
+        let mismatch = SemanticIssueKind::TypeMismatch {
+            expected_name: "() -> i32".into(),
+            actual_name: "(i64) -> i32".into(),
+        };
+        assert_eq!(mismatch.message(), "type mismatch: expected `() => i32`, got `(i64) => i32`");
+    }
+
+    #[test]
     fn module_paths_render_with_dots() {
         let kind = SemanticIssueKind::ResolveUnknownModulePath { path: "Core::Text".into() };
         assert_eq!(kind.message(), "unknown module path `Core.Text`");
