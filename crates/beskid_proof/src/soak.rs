@@ -169,8 +169,8 @@ pub fn memory_growth(samples: &[RssSample], total: Duration, window: Duration) -
         let chosen: Vec<u64> = samples.iter().filter(|s| select(s)).map(|s| s.kib).collect();
         (!chosen.is_empty()).then(|| chosen.iter().sum::<u64>() / chosen.len() as u64)
     };
-    let first = mean(&|s| s.at <= window)?;
-    let last = mean(&|s| s.at + window >= total)?;
+    let first = mean(&|s: &RssSample| s.at <= window)?;
+    let last = mean(&|s: &RssSample| s.at + window >= total)?;
     if first == 0 {
         return None;
     }
@@ -710,7 +710,7 @@ pub fn run(config: &SoakConfig, smoke: bool) -> Result<SoakReport, String> {
     let started = Instant::now();
     let mut open: Vec<Document> = Vec::new();
     let mut cursor = 0;
-    while open.len() < config.max_open.min(sources.len()) {
+    while open.len() < config.max_open && cursor < sources.len() {
         let path = sources[cursor].clone();
         cursor += 1;
         if let Ok(text) = fs::read_to_string(&path) {
@@ -739,7 +739,7 @@ pub fn run(config: &SoakConfig, smoke: bool) -> Result<SoakReport, String> {
             next_migration = elapsed + migration_interval;
             migrate_lock(&mut client, config, &lock, &mut open);
         } else {
-            step(&mut client, &mut rng, &mut open, &sources, &folders, &mut cursor);
+            step(&mut client, &mut rng, &mut open, &sources, &folders);
         }
         client.pump(config.tick, config.request_timeout);
     }
@@ -824,7 +824,6 @@ fn step(
     open: &mut Vec<Document>,
     sources: &[PathBuf],
     folders: &[PathBuf],
-    cursor: &mut usize,
 ) {
     if open.is_empty() {
         return;
@@ -887,7 +886,6 @@ fn step(
                 let doc = Document::new(path, text);
                 client.notify("textDocument/didOpen", did_open(&doc));
                 open.push(doc);
-                *cursor += 1;
                 client.report.counters.rotations += 1;
             }
         }

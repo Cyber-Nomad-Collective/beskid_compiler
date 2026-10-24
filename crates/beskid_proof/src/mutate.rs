@@ -61,7 +61,9 @@ pub fn tokenize(source: &str) -> Vec<Token> {
                 }
                 index += 1;
             }
-            index = (index + 1).min(bytes.len());
+            if index < bytes.len() && bytes[index] == b'"' {
+                index += 1;
+            }
         } else if byte == b'_' || byte.is_ascii_alphanumeric() {
             while index < bytes.len() && (bytes[index] == b'_' || bytes[index].is_ascii_alphanumeric()) {
                 index += 1;
