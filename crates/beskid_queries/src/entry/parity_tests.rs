@@ -480,6 +480,21 @@ fn direct_primitive_method_calls_produce_no_finding() {
     assert!(findings.is_empty(), "{findings:?}");
 }
 
+/// `for` variables and `match` bindings of primitive types call their implementation methods.
+#[test]
+fn loop_variable_and_match_binding_primitive_calls_produce_no_finding() {
+    let source = "pub contract Shown { string Show(); } \
+                  impl i64 : Shown { pub string Show() { return \"${this}\"; } } \
+                  impl bool : Shown { pub string Show() { return \"${this}\"; } } \
+                  enum Reading { Count(i64 value), Flag(bool value), Empty } \
+                  string Main(i64[] nums, Reading reading) { mut string out = \"\"; \
+                  for x in nums { out = out + x.Show(); } \
+                  string described = match reading { Reading::Count(v) => v.Show(), Reading::Flag(v) => (v).Show(), \
+                  Reading::Empty => \"none\", }; return out + described; }";
+    let findings = root_findings(source, 692);
+    assert!(findings.is_empty(), "{findings:?}");
+}
+
 #[test]
 fn clean_root_items_produce_no_finding() {
     let source = format!(

@@ -349,3 +349,26 @@ fn primitive_values_call_their_implementation_methods_directly() {
         .expect("direct calls on primitive values lower to their implementation methods");
     beskid_codegen::validate_artifact(&artifact).expect("direct primitive call artifact");
 }
+
+/// `for` variables over primitive arrays and `match` bindings of primitive payloads call their
+/// primitive implementation directly.
+#[test]
+fn loop_variables_and_match_bindings_call_their_primitive_implementation_directly() {
+    let (input, isa, root) = item_fixture_with_root(
+        "contract Shown { string Show(); } \
+         impl i64 : Shown { pub string Show() { return \"${this}\"; } } \
+         impl f64 : Shown { pub string Show() { return \"${this}\"; } } \
+         impl bool : Shown { pub string Show() { if this { return \"yes\"; } return \"no\"; } } \
+         enum Reading { Count(i64 value), Ratio(f64 value), Flag(bool value), Empty } \
+         string Main(i64[] nums, f64[] ratios, Reading reading) { mut string out = \"\"; \
+         for x in nums { out = out + x.Show(); } \
+         for r in ratios { out = out + (r).Show(); } \
+         string described = match reading { Reading::Count(v) => v.Show(), Reading::Ratio(v) => v.Show(), \
+         Reading::Flag(v) => (v).Show(), Reading::Empty => \"none\", }; \
+         return out + described; }",
+    );
+    let items = module_items(&input, &[root]);
+    let artifact = lower_syntax_program(&input, isa.as_ref(), &items)
+        .expect("loop variables and match bindings call their primitive implementations");
+    beskid_codegen::validate_artifact(&artifact).expect("loop and binding receiver artifact");
+}

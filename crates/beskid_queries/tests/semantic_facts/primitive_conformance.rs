@@ -178,3 +178,37 @@ fn a_primitive_without_the_method_has_no_direct_call_target() {
         "u16 has no Shown implementation, so `n.Show()` resolves nothing"
     );
 }
+
+/// A `for` variable takes its iterable's element type and a `match` binding its payload type; both
+/// call their primitive implementation directly, spelled as a path or as a member receiver.
+#[test]
+fn loop_variables_and_match_bindings_call_their_primitive_implementation_directly() {
+    let source = format!(
+        "{SHOWN}enum Reading {{ Count(i64 value), Ratio(f64 value), Flag(bool value), Empty }} \
+         string Main(i64[] nums, f64[] ratios, Reading reading) {{ mut string out = \"\"; \
+         for x in nums {{ out = out + x.Show(); }} \
+         for r in ratios {{ out = out + (r).Show(); }} \
+         string described = match reading {{ Reading::Count(v) => v.Show(), Reading::Ratio(v) => v.Show(), \
+         Reading::Flag(v) => (v).Show(), Reading::Empty => \"none\", }}; \
+         return out + described; }}"
+    );
+    let (db, _, unit, generation, index) = setup(&source);
+    let expected = [
+        ("x.Show() over i64[]", SemanticTypeId::I64),
+        ("(r).Show() over f64[]", SemanticTypeId::F64),
+        ("v.Show() on an i64 payload", SemanticTypeId::I64),
+        ("v.Show() on an f64 payload", SemanticTypeId::F64),
+        ("(v).Show() on a bool payload", SemanticTypeId::BOOL),
+    ];
+    for (occurrence, (spelling, abi)) in expected.into_iter().enumerate() {
+        let call = key(unit, generation, &index, NodeKind::CallExpression, occurrence);
+        let Ok(Some(beskid_queries::CallLowering::Direct(method))) = beskid_queries::call_lowering(&db, call) else {
+            panic!("`{spelling}` is a direct call: {:?}", beskid_queries::call_lowering(&db, call));
+        };
+        assert_eq!(method_receiver_abi_type(&db, method), abi, "`{spelling}`");
+        let arguments = beskid_queries::call_arguments(&db, call).expect("call arguments").expect("arguments");
+        assert_eq!(arguments.len(), 1, "`{spelling}` passes its receiver as the only argument");
+        let signature = beskid_queries::call_abi_signature(&db, call).expect("call signature").expect("signature");
+        assert_eq!(signature.parameters.as_ref(), &[abi], "`{spelling}` receiver ABI");
+    }
+}
