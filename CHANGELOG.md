@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- A generic call infers `T` from an array literal of bare integers:
+  `FirstOr([7, 8], 0)` with `T FirstOr<T>(T[] values, T fallback)` binds
+  `T = i32` instead of failing with an internal `source_expression_type`
+  error. A later exact argument that every literal fits selects `T`
+  (`FirstOr([9, 8], 5_i64)` binds `T = i64`).
+- Inside a generic function, `value == target` on the loop variable of
+  `for value in values` compares string contents when `T = string`. The
+  variable is typed by the element its statement binds in the specialization;
+  before, the two string pointers were compared.
+- Member bodies of generic types are checked against the type's own
+  parameters. `pub A Second() { return this.second; }` in `Pair<A, B>`, or
+  `Pair<B, A> { first: this.first, ... }`, is E1206 at the body instead of a
+  conflicting generic binding at a use site.
+- A user type `Stack` with a `Push` method no longer collides with Corelib's
+  `Core.Collections.Stack.Push` as `duplicate item ::Stack::Push`: method
+  symbols include their declaring module.
+
 ## [0.6.6] - 2026-10-16
 
 This release carries the v0.6.1-v0.6.5 program as one release (OpenSpec changes
