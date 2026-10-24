@@ -215,7 +215,7 @@ pub i64 RunMovedHandOver() {
                 Probe.gc_collect();
                 // A store of a receiver object into the foreign mutable graph: the receiver's
                 // collector traces through the foreign node to keep it alive.
-                head.next = Array.Of<Node>(Node { value: 0_i64, next: move head.next });
+                head.next = Array.Of<Node>(Node { value: 0_i64, next: head.next });
                 Probe.gc_collect();
                 sum = ChainSum(head);
             },
@@ -383,10 +383,10 @@ pub i64 RunStringPort() {
 // ---- Collect keeps every element across real isolates (v0.6.5) ----
 [Export(Abi:"C", Symbol:"RunCollect")]
 pub i64 RunCollect() {
-    mut List<i64> values = List.New<i64>();
+    List<i64> values = List.New<i64>();
     mut i64 i = 0_i64;
     while i < 10000_i64 {
-        values = values.Push(i);
+        values.Push(i);
         i = i + 1_i64;
     }
     List<i64> doubled = values.Parallel().Chunk(7_i64).Map((x) => x * 2_i64).Collect();
@@ -511,11 +511,11 @@ pub i64 RunWrappedPayloadKept() {
             return i;
         });
         Task<i64> keeper = s.Spawn(() => {
-            mut List<string> texts = List.New<string>();
+            List<string> texts = List.New<string>();
             mut bool open = true;
             while open {
                 match wrapped.Receive() {
-                    Result::Ok(Wrapped::Item(_, text)) => { texts = texts.Push(text); },
+                    Result::Ok(Wrapped::Item(_, text)) => { texts.Push(text); },
                     Result::Error(_) => { open = false; },
                 };
             }

@@ -1,11 +1,12 @@
-//! 0.6.2 `move` and `exchange` lowering (language-meta/memory-model/memory-and-references,
+//! `move` and `exchange` lowering (language-meta/memory-model/memory-and-references,
 //! "Destructive read of a field"; execution/runtime/memory-and-gc-runtime-contract, "Hybrid
-//! write barrier"): `move x` transfers its operand without a store; `move x.f` reads the field
-//! and stores the canonical empty value (`Option::None`, the empty array, the empty list) into
-//! it behind the guarded barrier; `exchange(place, move v)` reads the place and stores `v`
-//! behind the guarded barrier. Each yields the value it read.
+//! write barrier"): `move x.f` reads the field and stores the canonical empty value
+//! (`Option::None`, the empty array, the empty list) into it behind the guarded barrier;
+//! `exchange(place, v)` reads the place and stores `v` behind the guarded barrier. Each yields the
+//! value it read. Since 0.6.7 `move x` of a name is written only at an isolate crossing (E1239
+//! elsewhere), so its transfer lowering is covered by the crossing tests, not here.
 
-use super::write_barrier_emission::{ACTIVE, BARRIER, assert_guarded_stores, calls_to, lower_module};
+use super::write_barrier_emission::{assert_guarded_stores, calls_to, lower_module};
 
 const ARRAY_ALLOCATE: &str = "beskid_rt_v5_array_allocate_rooted";
 const OBJECT_ALLOCATE: &str = "beskid_rt_v5_managed_object_allocate";
@@ -30,21 +31,6 @@ fn returned_definition(clif: &str) -> String {
 fn assert_yields_loaded_value(clif: &str) {
     let definition = returned_definition(clif);
     assert!(definition.contains(" = load.i64 "), "the result is the value read from the place: {definition}\n{clif}");
-}
-
-#[test]
-fn move_of_a_name_is_a_transfer_without_a_store() {
-    let take = &lower_module("u8[] Take(move u8[] a) { return move a; }", &["Take"])[0];
-    assert!(!take.contains(ACTIVE) && !take.contains(BARRIER), "{take}");
-    // The result is the parameter itself: no load and no store into an object.
-    let parameter = take
-        .lines()
-        .find_map(|line| line.strip_prefix("block0("))
-        .and_then(|parameters| parameters.split(':').next())
-        .unwrap_or_else(|| panic!("entry block parameter: {take}"))
-        .to_owned();
-    assert!(take.lines().any(|line| line.trim() == format!("return {parameter}")), "a transfer yields its operand: {take}");
-    assert!(!take.contains(" = load."), "a transfer reads nothing: {take}");
 }
 
 #[test]
@@ -91,7 +77,7 @@ List<string> Take(mut Bag b) { return move b.items; }
 #[test]
 fn exchange_of_a_field_stores_the_value_behind_the_barrier_and_yields_the_old_value() {
     let swap = &lower_module(
-        "type Stage { u8[] buffer; } u8[] Swap(mut Stage s, move u8[] next) { return exchange(s.buffer, move next); }",
+        "type Stage { u8[] buffer } u8[] Swap(mut Stage s, u8[] next) { return exchange(s.buffer, next); }",
         &["Swap"],
     )[0];
     assert_eq!(assert_guarded_stores(swap), 1, "{swap}");
@@ -102,7 +88,7 @@ fn exchange_of_a_field_stores_the_value_behind_the_barrier_and_yields_the_old_va
 #[test]
 fn exchange_of_an_element_stores_the_value_behind_the_barrier_and_yields_the_old_value() {
     let swap = &lower_module(
-        "u8[] Swap(u8[][] xs, i64 i, move u8[] s) { return exchange(xs[i], move s); }",
+        "u8[] Swap(u8[][] xs, i64 i, u8[] s) { return exchange(xs[i], s); }",
         &["Swap"],
     )[0];
     assert_eq!(assert_guarded_stores(swap), 1, "{swap}");

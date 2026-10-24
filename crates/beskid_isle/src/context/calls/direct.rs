@@ -98,7 +98,9 @@ impl IsleContext<'_, '_, '_, '_> {
 
     /// A local read whose binding owns a registered GC root slot.
     pub(in crate::context) fn is_rooted_local_read(&self, key: AstNodeKey) -> bool {
-        self.facts.node_kind(key) == Some(NodeKind::PathExpression)
+        // A copied read yields a fresh object, not the value the local's root slot holds.
+        !self.reads_with_copy(key)
+            && self.facts.node_kind(key) == Some(NodeKind::PathExpression)
             && self.facts.field_index(key).is_none()
             && self.facts.block_result(key).is_none()
             && self.facts.local_slot(key).and_then(|slot| self.locals.get(&slot)).is_some_and(|binding| {
@@ -109,6 +111,10 @@ impl IsleContext<'_, '_, '_, '_> {
     /// An argument whose lowering emits no call and assigns no local: a plain local read or a
     /// scalar literal.
     pub(in crate::context) fn is_trivial_call_argument(&self, key: AstNodeKey) -> bool {
+        // A copied read calls the type's `Copy` hook, which allocates.
+        if self.reads_with_copy(key) {
+            return false;
+        }
         match self.facts.node_kind(key) {
             Some(NodeKind::PathExpression) => {
                 self.facts.field_index(key).is_none()

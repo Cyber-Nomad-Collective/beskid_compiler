@@ -343,7 +343,9 @@ pub(super) fn item_export_symbol_tracked(
 ) -> SemanticQueryResult<ExportSymbol> {
     with_node(db, syntax, key, |_program, _index, node| {
         let definition = node.of::<beskid_analysis::syntax::FunctionDefinition>()?;
-        let export = definition.attributes.iter().find(|attribute| attribute.node.name.node.name == "Export")?;
+        // The use must resolve to the compiler-recognized `Core.Attributes.Export` declaration; a
+        // user declaration named `Export` is an ordinary attribute and exports nothing.
+        let export = super::transfer::recognized_attribute_use(db, key, &definition.attributes, "Export")?;
         if definition.visibility.node != beskid_analysis::syntax::Visibility::Public {
             return Some(Err(SemanticError::new("`[Export]` applies to `pub` functions only")));
         }

@@ -213,6 +213,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A user type `Stack` with a `Push` method no longer collides with Corelib's
   `Core.Collections.Stack.Push` as `duplicate item ::Stack::Push`: method
   symbols include their declaring module.
+### Changed
+
+- Move semantics apply only where a value crosses to another isolate: a port
+  send (`Port.Send`, `__port_send`) and a `move` capture in a
+  `[Captures]`-bounded or isolate task body. Ordinary code never consumes a
+  value and never needs `move`; `move` written elsewhere is E1239 with the
+  help to remove it. At a crossing the operand needs `move` (E1242), must be
+  the only name for its value in the callable (E1241, copy it first), and a
+  later read is E1234 (E1240 in a loop). `exchange` takes its value without
+  `move`. The 0.6.7 borrowed-element-return check is withdrawn.
+- `[Export]` resolves by declaration identity: only a use of
+  `Core.Attributes.Export` exports, and export entries name the exact
+  lowered function instead of its simple name. An entry that resolves to no
+  function or to several fails the object build.
+- Corelib collections change in place: `items.Push("milk");` needs no rebinding.
+  Every former `move this` mutator of `List`, `Stack`, `Queue`, `Set`, `Map`,
+  `PriorityQueue`, `I64Map`, `StringMap` and `HashTable` is a `mut this` method
+  (or takes a `mut` table) and returns `unit`, `bool`, `Option<T>` or a
+  `Result` that is not the collection. Engine and release fixtures are migrated.
+- `move` is written only at isolate crossings: the native SDK factory generator
+  no longer emits `move` parameters, and the compiler's Beskid fixtures use
+  plain or `mut` parameters.
+
+### Added
+
+- The checker enforces `[ScopeBorrowed]`: a scope-borrowed value that is
+  returned, stored, passed to `spawn` or captured by an escaping closure is
+  E1241.
+- Copy on assignment, copy-on-write. A type marked `[CopyOnAssign]` declares
+  `This Copy()`; wherever a value of that type gets a new name (a `let`
+  value, an assignment, an argument of a parameter that is not `mut`, a
+  construction, a return of a place the callable does not own, an array `for`
+  element, a closure capture, a `?` payload) the compiler calls `Copy`. A `mut`
+  parameter shares the caller's value. Corelib `List<T>` is the only
+  `[CopyOnAssign]` type; its `Copy` shares the backing array and marks it
+  shared, and the first write through any name copies it. This fixes two live
+  lists sharing one backing array (0.6.0) at no cost for read-only use.
 
 ## [0.6.6] - 2026-10-16
 

@@ -207,6 +207,10 @@ pub enum AffineFindingKind {
     /// E1243: `move x.f` on a field without a canonical empty value; `name` is the field and
     /// `detail` the field type.
     DestructiveReadWithoutEmpty,
+    /// E1241: a value of a corelib `[ScopeBorrowed]` type leaves its scope (returned, stored, a
+    /// `spawn` argument, or captured by an escaping lambda); `detail` is the type name and
+    /// `related` the binding it reads.
+    ScopeBorrowedEscapes,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]

@@ -1,13 +1,18 @@
-//! Affine ownership analysis (`language-meta--memory-model--memory-and-references`, "Owning and
-//! borrowed names", "Consuming uses and use after move", "Branch and loop rules for consumption",
-//! "Destructive read of a field"; `language-meta--evaluation--fibers-and-spawn`, "Fiber handles use
-//! the general affine analysis").
+//! Affine ownership analysis at isolate crossings (`language-meta--memory-model--memory-and-references`,
+//! 0.6.7 owner ruling amending the 0.6.2 decisions D1-D4; `language-meta--evaluation--fibers-and-spawn`,
+//! "Fiber handles use the general affine analysis").
 //!
-//! One pass per callable over its uses in source order. A binding of Moved class is owning or
-//! borrowed; a `Fiber` handle is always owning and keeps the 0.6.0 handle rules (every use but
-//! `Cancel` consumes). Branch arms (`if`/`else`, `match`) are alternatives, a consumption inside a
-//! loop of a binding declared before the loop needs a revival in the same loop body, and an
-//! assignment to a Moved place makes the name owning again.
+//! Move semantics apply only where a value crosses to another isolate: a port send (the payload of
+//! `__port_send` or the `move` parameter of the corelib `Port.Send`) and a `move` capture inside a
+//! `[Captures]`-bounded lambda (`Scope.Spawn` tasks, `.Parallel()` steps; the captures themselves
+//! are judged in `legality/captures.rs`). Ordinary local code never needs `move`: reads, aliases,
+//! stores, returns and a local `move` neither consume nor report. At a crossing the analysis
+//! still tells owning from borrowed names, so a borrowed value cannot be handed over (E1239,
+//! E1241), an owning Moved name needs `move` (E1242), and a use after the crossing consumed the
+//! name is E1234 (E1240 in a loop without reassignment). `move x.f` needs a canonical empty
+//! value (E1243). A `Fiber` handle keeps the 0.6.0 handle rules (every use but `Cancel`
+//! consumes). Branch arms (`if`/`else`, `match`) are alternatives, and an assignment to a Moved
+//! place makes the name owning again.
 
 use std::collections::HashMap;
 
@@ -15,7 +20,7 @@ use beskid_analysis::syntax::AstNodeId;
 use beskid_analysis::syntax_query::{DynNodeRef, NodeKind, SyntaxIndex};
 
 use super::super::transfer::{
-    TransferClass, TransferNeverReason, corelib_scope_borrowed, marker_attributes, transfer_class,
+    TransferClass, TransferNeverReason, marker_attributes, transfer_class,
     transfer_class_of_type,
 };
 use super::super::*;
@@ -28,8 +33,12 @@ type BranchPath = Vec<(AstNodeId, AstNodeId)>;
 struct Owner {
     name: String,
     fiber: bool,
-    /// Owning at the declaration.
+    /// Owning at the declaration: at a crossing, the only name for its value in the callable
+    /// (a `move` parameter, or a local initialized from an owned expression).
     owning: bool,
+    /// Another name in this callable takes the value (`let y = x`, `y = x`, `h.f = x`, a literal
+    /// element, a lambda capture): the name is never the only name, so it cannot cross.
+    aliased: bool,
     /// Assignments in source order: their branch path and whether the assigned value is owned.
     /// The latest one on the path of a use decides whether the name is owning there.
     assignments: Vec<(BranchPath, bool)>,
@@ -114,25 +123,6 @@ enum UseContext {
     Other,
 }
 
-/// How a use treats an owning name.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Role {
-    Read,
-    /// `let y = x` or `y = x`: consumes silently; a borrowed source makes the new name borrowed.
-    Alias,
-    /// A struct, array or enum literal initializer: consumes an owning name silently (P4-1);
-    /// a borrowed name is stored into the new object and escapes (E1241).
-    Construct,
-    /// `return x`: consumes silently.
-    Return,
-    /// A `move` parameter or the value of `exchange`: needs `move`.
-    MoveParameter,
-    /// A store into a field or element: needs `move`.
-    Store,
-    /// The receiver of a `move this` method: consumes silently.
-    OwningReceiver,
-}
-
 /// The lambdas a use crosses between itself and its binding.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum LambdaCrossing {
@@ -182,9 +172,11 @@ pub(super) fn analyze(db: &dyn Db, program: &Program, index: &SyntaxIndex, key: 
     };
     analysis.check_modifiers();
     analysis.seed();
+    analysis.mark_aliases();
     analysis.walk();
     analysis.check_move_operands();
     analysis.check_exchange_places();
+    analysis.findings.extend(super::affine_scope::scope_borrowed_findings(db, program, index, key));
     let bindings = analysis
         .order
         .iter()
@@ -193,7 +185,7 @@ pub(super) fn analyze(db: &dyn Db, program: &Program, index: &SyntaxIndex, key: 
             Some(AffineBinding {
                 declaration: analysis.at(*declaration),
                 name: owner.name.clone(),
-                owning: owner.owning,
+                owning: owner.owning && !owner.aliased,
                 fiber: owner.fiber,
             })
         })
@@ -248,7 +240,7 @@ pub(in crate::semantic_contract) fn identity_spelling(identity: &GenericSourceTy
 
 /// A short spelling of an index expression for a diagnostic (`xs[i]`, `xs[0]`); anything but a
 /// path or a literal is `..`.
-fn expression_spelling(expression: &beskid_analysis::syntax::Expression) -> String {
+pub(super) fn expression_spelling(expression: &beskid_analysis::syntax::Expression) -> String {
     use beskid_analysis::syntax::{Expression, Literal};
     match expression {
         Expression::Path(path) => {
@@ -366,7 +358,11 @@ impl<'a> Analysis<'a> {
     }
 
     fn insert(&mut self, declaration: AstNodeId, name: String, fiber: bool, owning: bool) {
-        if self.owners.insert(declaration, Owner { name, fiber, owning, assignments: Vec::new(), consumed: Vec::new() }).is_none() {
+        if self
+            .owners
+            .insert(declaration, Owner { name, fiber, owning, aliased: false, assignments: Vec::new(), consumed: Vec::new() })
+            .is_none()
+        {
             self.order.push(declaration);
         }
     }
@@ -438,6 +434,44 @@ impl<'a> Analysis<'a> {
         }
     }
 
+    /// Marks every owner whose value another name of this callable takes: the value of a `let`,
+    /// of an assignment or of a literal element, or a capture by a lambda without `move`.
+    fn mark_aliases(&mut self) {
+        let mut aliased = Vec::new();
+        for node in self.index.ids_of_kind(NodeKind::PathExpression) {
+            if !is_ancestor(self.index, self.key.node, node) {
+                continue;
+            }
+            let Some(path) =
+                self.index.node_at(self.program, node).and_then(|node| node.of::<beskid_analysis::syntax::PathExpression>())
+            else {
+                continue;
+            };
+            if path.path.node.segments.len() != 1 {
+                continue;
+            }
+            let Some(declaration) = self.declaration_of(node, &path.path.node) else { continue };
+            if self.owners.get(&declaration).is_none_or(|owner| owner.fiber) {
+                continue;
+            }
+            let takes = match self.context(node) {
+                UseContext::LetValue(_) | UseContext::AssignValue { .. } | UseContext::Construction => true,
+                UseContext::Move(_) => false,
+                // A capture by a `[Captures]`-bounded lambda is itself a crossing operand
+                // (judged in `legality/captures.rs`); any other closure keeps a name.
+                _ => matches!(self.lambda_crossing(node, declaration), LambdaCrossing::OneShot | LambdaCrossing::Ordinary),
+            };
+            if takes {
+                aliased.push(declaration);
+            }
+        }
+        for declaration in aliased {
+            if let Some(owner) = self.owners.get_mut(&declaration) {
+                owner.aliased = true;
+            }
+        }
+    }
+
     fn identifier_name(&self, node: AstNodeId) -> String {
         self.index
             .node_at(self.program, node)
@@ -445,14 +479,15 @@ impl<'a> Analysis<'a> {
             .unwrap_or_default()
     }
 
-    /// An owned expression (call result, literal, `move x`) or an owning name makes the new local
-    /// owning; a place read (`x.f`, `xs[i]`) or a borrowed name makes it borrowed.
+    /// An owned expression makes the new local the only name for its value: a call result, a
+    /// literal or an element or member of one (`Make()[0]`). Any read of a name or a place, and
+    /// any other expression, is conservatively not owned (the crossing fails closed).
     fn initializer_is_owned(
         &self,
         statement: AstNodeId,
         value: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Expression>,
     ) -> bool {
-        let Some(mut node) = self.child(statement, DynNodeRef::from(value)) else { return true };
+        let Some(mut node) = self.child(statement, DynNodeRef::from(value)) else { return false };
         while matches!(self.index.kind(node), Some(NodeKind::Expression | NodeKind::GroupedExpression)) {
             let Some(child) = self.index.children(node).and_then(|children| children.first()).copied() else {
                 break;
@@ -460,22 +495,15 @@ impl<'a> Analysis<'a> {
             node = child;
         }
         match self.index.kind(node) {
-            // A member or element read on an owned temporary (`Make().f`, `Make()[0]`) is owned;
-            // any other place read is borrowed.
             Some(NodeKind::IndexExpression | NodeKind::MemberExpression) => self.projection_of_temporary(node),
-            Some(NodeKind::PathExpression) => {
-                let Some(path) =
-                    self.index.node_at(self.program, node).and_then(|node| node.of::<beskid_analysis::syntax::PathExpression>())
-                else {
-                    return true;
-                };
-                let Some(declaration) = self.declaration_of(node, &path.path.node) else { return true };
-                if path.path.node.segments.len() > 1 {
-                    return false;
-                }
-                self.owners.get(&declaration).is_none_or(|owner| owner.owning)
-            }
-            _ => true,
+            Some(
+                NodeKind::CallExpression
+                | NodeKind::LiteralExpression
+                | NodeKind::StructLiteralExpression
+                | NodeKind::ArrayLiteralExpression
+                | NodeKind::EnumConstructorExpression,
+            ) => true,
+            _ => false,
         }
     }
 
@@ -543,31 +571,6 @@ impl<'a> Analysis<'a> {
             child = parent;
         }
         top.map(|top| (top, spelling))
-    }
-
-    /// Whether `value` initializes a field of a struct literal whose type is a corelib
-    /// `[ScopeBorrowed]` view: the store borrows for the scope (v065 ruling "Borrowed storage in a
-    /// scope-borrowed view").
-    fn scope_borrowed_field_value(&self, value: AstNodeId) -> bool {
-        let mut child = value;
-        let field = loop {
-            let Some(parent) = parent_node(self.index, child) else { return false };
-            match self.index.kind(parent) {
-                Some(NodeKind::Expression | NodeKind::GroupedExpression) => child = parent,
-                Some(NodeKind::StructLiteralField) => break parent,
-                _ => return false,
-            }
-        };
-        let Some(literal) = parent_node(self.index, field) else { return false };
-        let Some(literal_node) = self
-            .index
-            .node_at(self.program, literal)
-            .and_then(|node| node.of::<beskid_analysis::syntax::StructLiteralExpression>())
-        else {
-            return false;
-        };
-        resolve_type_declaration(self.db, self.at(literal), &literal_node.path.node)
-            .is_some_and(|declaration| corelib_scope_borrowed(self.db, declaration))
     }
 
     /// The binding the first segment of `path` names: a lexical local or the method receiver.
@@ -640,7 +643,8 @@ impl<'a> Analysis<'a> {
     /// all enclose the use decides; an assignment in an arm the use is not inside does not
     /// reach it on every path, so the earlier state stays.
     fn owning_at(&self, owner: &Owner, branches: &BranchPath) -> bool {
-        owner
+        !owner.aliased
+            && owner
             .assignments
             .iter()
             .rev()
@@ -768,8 +772,10 @@ impl<'a> Analysis<'a> {
     /// A lambda literal passed to a `[Captures]` parameter or initializing a `[Captures]` field.
     fn lambda_is_bounded(&self, lambda: AstNodeId) -> bool {
         match self.context(lambda) {
+            // The body of `__isolate_spawn` runs on another isolate, like a bounded task body.
             UseContext::Argument(call, position) => {
                 call_argument_captures_bound(self.db, self.at(call), position).is_some()
+                    || self.callee_spelling(call).as_deref() == Some("__isolate_spawn")
             }
             UseContext::Construction => self.literal_field_bound(lambda),
             _ => false,
@@ -883,20 +889,6 @@ impl<'a> Analysis<'a> {
             && direct_callee(self.db, self.at(call)).is_none()
     }
 
-    fn parameter_movable(&self, call: AstNodeId, position: usize) -> bool {
-        if self.exchange_call(call) {
-            return position == 1;
-        }
-        // The port send builtin consumes its payload like a `move` parameter (v064).
-        if self.callee_spelling(call).as_deref() == Some("__port_send") {
-            return position == 1;
-        }
-        direct_callee(self.db, self.at(call))
-            .and_then(|declaration| declared_parameters(self.db, declaration))
-            .and_then(|(parameters, _)| parameters.get(position).map(|parameter| parameter.node.movable))
-            .unwrap_or(false)
-    }
-
     fn callee_spelling(&self, call: AstNodeId) -> Option<String> {
         let call_node =
             self.index.node_at(self.program, call).and_then(|node| node.of::<beskid_analysis::syntax::CallExpression>())?;
@@ -969,12 +961,6 @@ impl<'a> Analysis<'a> {
         self.local_class(declaration)
     }
 
-    fn receiver_owning(&self, call: AstNodeId) -> bool {
-        direct_callee(self.db, self.at(call))
-            .and_then(|declaration| declared_parameters(self.db, declaration))
-            .is_some_and(|(_, owning)| owning)
-    }
-
     fn visit_use(&mut self, node: AstNodeId, declaration: AstNodeId, segments: &[String]) {
         if !self.owners.contains_key(&declaration) {
             return;
@@ -992,17 +978,23 @@ impl<'a> Analysis<'a> {
             self.visit_fiber_use(node, declaration, segments, destination, explicit.then_some(move_node).flatten(), branches, &loops, crossing, &name);
             return;
         }
+        // Only an isolate crossing consumes (0.6.7 owner ruling), so every consumption on record
+        // is a crossing and a later use of the name is a use after move.
         let position = self.span(node).map_or(0, |span| span.start);
-        let prior = self.prior_consumption(declaration, &branches, position);
-        if let Some(prior) = prior {
+        if let Some(prior) = self.prior_consumption(declaration, &branches, position) {
             self.push(AffineFindingKind::UseAfterMove, node, &name, None, Some(prior), false);
             return;
         }
-        // Destructive read of a field: `move x.f` keeps `x` and empties the field.
+        let site = move_node.unwrap_or(node);
+        let sent = self.crossing_argument(destination);
+        // A `move` of an outer binding inside a `[Captures]`-bounded lambda hands it to the task.
+        let captured = explicit && crossing == LambdaCrossing::Bounded;
+        // `move x.f` takes the field out at a crossing and leaves its canonical empty value
+        // (E1243 without one); anywhere else `move` has no meaning (E1239).
         if explicit && segments.len() > 1 {
-            let site = move_node.unwrap_or(node);
-            if !owning && name != "this" {
-                self.push(AffineFindingKind::MoveOfNonOwningName, site, &name, None, None, false);
+            if !sent {
+                let place = segments.join(".");
+                self.push(AffineFindingKind::MoveOfNonOwningName, site, &place, None, None, false);
                 return;
             }
             if let Ok(identity) = generic_source_expression_identity(self.db, self.at(node))
@@ -1021,130 +1013,86 @@ impl<'a> Analysis<'a> {
             return;
         }
         let place = segments.join(".");
-        // A corelib `[ScopeBorrowed]` view stores a borrowed value for the scope: no escape. An
-        // owning name or a read through one keeps the ordinary rules.
-        let borrowed = !owning || matches!(crossing, LambdaCrossing::Ordinary | LambdaCrossing::Bounded);
+        // `xs[i]`, `xs[i].f`, `x.f[i]` and `x.f` handed to a crossing: the place stays reachable
+        // from its root, so it is not the only name for the value (E1241, copy it first).
         if let Some((top, spelling)) = self.projected_place(node, &place) {
-            // `xs[i]`, `xs[i].f`, `x.f[i]`: the place, not the root, is stored or read.
-            let stored = match self.context(top) {
-                UseContext::Construction => !(borrowed && self.scope_borrowed_field_value(top)),
-                UseContext::AssignValue { target_is_local: false } => true,
-                UseContext::Argument(call, position) => self.parameter_movable(call, position),
-                _ => false,
-            };
-            if stored {
-                self.visit_stored_place(top, declaration, spelling, owning, crossing);
+            if self.crossing_argument(self.context(top)) {
+                self.visit_crossing_place(top, declaration, spelling);
             }
             return;
         }
-        if borrowed && !explicit && destination == UseContext::Construction && self.scope_borrowed_field_value(node) {
+        if segments.len() > 1 {
+            if sent {
+                self.visit_crossing_place(node, declaration, place);
+            }
             return;
         }
-        let role = if segments.len() > 1 {
-            match destination {
-                UseContext::Callee(call) if segments.len() == 2 && self.receiver_owning(call) => Role::OwningReceiver,
-                UseContext::ReturnValue if !owning => {
-                    // A Moved field returned through a borrowed receiver or parameter escapes.
-                    let moved_field = generic_source_expression_identity(self.db, self.at(node))
-                        .ok()
-                        .and_then(|identity| transfer_class(self.db, self.at(node), &identity).ok())
-                        == Some(TransferClass::Moved);
-                    if moved_field {
-                        self.push(AffineFindingKind::BorrowEscapes, node, &name, None, Some(declaration), false);
-                    }
-                    return;
-                }
-                UseContext::Construction | UseContext::AssignValue { target_is_local: false } => {
-                    self.visit_stored_place(node, declaration, place, owning, crossing);
-                    return;
-                }
-                UseContext::Argument(call, position) if self.parameter_movable(call, position) => {
-                    self.visit_stored_place(node, declaration, place, owning, crossing);
-                    return;
-                }
-                _ => Role::Read,
-            }
-        } else {
-            match destination {
-                UseContext::Argument(call, position) if self.parameter_movable(call, position) => Role::MoveParameter,
-                UseContext::LetValue(_) => Role::Alias,
-                UseContext::Construction => Role::Construct,
-                UseContext::AssignValue { target_is_local: true } => Role::Alias,
-                UseContext::AssignValue { target_is_local: false } => Role::Store,
-                UseContext::ReturnValue => Role::Return,
-                _ => Role::Read,
-            }
-        };
-        let site = move_node.unwrap_or(node);
-        if explicit {
-            if !owning {
-                if role == Role::MoveParameter {
-                    self.push(AffineFindingKind::MoveOfNonOwningName, site, &name, None, None, false);
-                } else {
-                    self.push(AffineFindingKind::BorrowEscapes, site, &name, None, Some(declaration), false);
-                }
-                return;
-            }
-            if crossing == LambdaCrossing::Ordinary {
-                // An ordinary closure is repeatable: its captures are borrows.
-                self.push(AffineFindingKind::MoveOfNonOwningName, site, &name, None, None, false);
-                return;
-            }
-            self.consume(declaration, site, &name, branches, &loops);
+        if explicit && !sent && !captured {
+            // `move` outside a crossing (0.6.7 owner ruling).
+            self.push(AffineFindingKind::MoveOfNonOwningName, site, &name, None, None, false);
             return;
         }
-        let borrowed_here = !owning || matches!(crossing, LambdaCrossing::Ordinary | LambdaCrossing::Bounded);
-        match role {
-            Role::Read => {}
-            Role::Alias => {
-                if !borrowed_here {
-                    self.consume(declaration, site, &name, branches, &loops);
-                }
-            }
-            Role::Return | Role::OwningReceiver | Role::Construct => {
-                if borrowed_here {
-                    self.push(AffineFindingKind::BorrowEscapes, site, &name, None, Some(declaration), false);
-                } else {
-                    self.consume(declaration, site, &name, branches, &loops);
-                }
-            }
-            Role::MoveParameter | Role::Store => {
-                if borrowed_here {
-                    self.push(AffineFindingKind::BorrowEscapes, site, &name, None, Some(declaration), false);
-                    return;
-                }
-                if crossing != LambdaCrossing::OneShot {
-                    self.push(AffineFindingKind::ImplicitAliasOfMovedValue, site, &name, None, None, false);
-                }
-                self.consume(declaration, site, &name, branches, &loops);
-            }
+        if !sent && !captured {
+            // Ordinary local code: reads, aliases, stores, returns and calls never consume.
+            return;
         }
+        if !explicit {
+            // A crossing operand of Moved class is written with `move`.
+            self.push(AffineFindingKind::ImplicitAliasOfMovedValue, site, &name, None, None, false);
+            return;
+        }
+        // External uniqueness: the operand is the only name for its value in this callable. A
+        // borrowed parameter, an aliased local or a capture of a repeatable closure is not.
+        if !owning || crossing == LambdaCrossing::Ordinary || crossing == LambdaCrossing::OneShot {
+            self.push(AffineFindingKind::BorrowEscapes, site, &name, None, Some(declaration), false);
+            return;
+        }
+        self.consume(declaration, site, &name, branches, &loops);
     }
 
-    /// A field or element read stored as it is (`Node { bytes: x.bytes }`, `this.cache = xs[i]`,
-    /// or `x.bytes` passed to a `move` parameter) would leave the Moved value reachable from both
-    /// the place and its new owner. Through a borrowed root the read is borrowed (E1241); through
-    /// an owning root it needs the destructive read `move x.f` or `exchange` (E1242). A place of
-    /// any other class is a plain read.
-    fn visit_stored_place(
-        &mut self,
-        node: AstNodeId,
-        declaration: AstNodeId,
-        place: String,
-        owning: bool,
-        crossing: LambdaCrossing,
-    ) {
+    /// Whether a use in `context` is the value handed to another isolate by a port send: the
+    /// payload of `__port_send`, or the `move` parameter of the corelib `Port.Send`.
+    fn crossing_argument(&self, context: UseContext) -> bool {
+        let UseContext::Argument(call, position) = context else { return false };
+        if self.callee_spelling(call).as_deref() == Some("__port_send") {
+            return position == 1;
+        }
+        let Some(declaration) = direct_callee(self.db, self.at(call)) else { return false };
+        if !super::super::transfer::unit_in_core_module(self.db, declaration) {
+            return false;
+        }
+        let port_send = super::capture_bounds::with_declaration(self.db, declaration, |node| {
+            node.of::<beskid_analysis::syntax::MethodDefinition>().map(|method| method.name.node.name == "Send")
+        })
+        .unwrap_or(false)
+            && self.owner_type_name(declaration).as_deref() == Some("Port");
+        port_send
+            && declared_parameters(self.db, declaration)
+                .and_then(|(parameters, _)| parameters.get(position).map(|parameter| parameter.node.movable))
+                .unwrap_or(false)
+    }
+
+    /// The name of the type declaration that holds the method `declaration`.
+    fn owner_type_name(&self, declaration: AstNodeKey) -> Option<String> {
+        let syntax = self.db.syntax_unit(declaration.unit).filter(|syntax| syntax.accepts_key(self.db, declaration))?;
+        let index = syntax.syntax_index(self.db);
+        let owner = nearest_ancestor(index, declaration.node, |kind| kind == NodeKind::TypeDefinition)?;
+        index
+            .node_at(syntax.expanded_program(self.db), owner)?
+            .of::<beskid_analysis::syntax::TypeDefinition>()
+            .map(|definition| definition.name.node.name.clone())
+    }
+
+    /// A field or element read handed to a crossing (`out.Send(x.bytes)`, `out.Send(xs[i])`)
+    /// would leave the Moved value reachable from its root: E1241, with the help to copy it first
+    /// or take it out (`move x.f`, `exchange`). A place of any other class crosses as a value.
+    fn visit_crossing_place(&mut self, node: AstNodeId, declaration: AstNodeId, place: String) {
         let moved_place = generic_source_expression_identity(self.db, self.at(node))
             .ok()
             .and_then(|identity| transfer_class(self.db, self.at(node), &identity).ok())
             == Some(TransferClass::Moved);
-        if !moved_place {
-            return;
-        }
-        if !owning || matches!(crossing, LambdaCrossing::Ordinary | LambdaCrossing::Bounded) {
+        if moved_place {
             self.push(AffineFindingKind::BorrowEscapes, node, &place, None, Some(declaration), false);
-        } else {
-            self.push(AffineFindingKind::ImplicitAliasOfMovedValue, node, &place, None, None, false);
         }
     }
 

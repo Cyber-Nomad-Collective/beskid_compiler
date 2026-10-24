@@ -37,7 +37,7 @@ pub(super) fn append_request_getter(
     cranelift_codegen::verify_function(&function, isa).map_err(|error| anyhow::anyhow!(error.to_string()))?;
     artifact.functions.push(LoweredFunction { name: symbol.to_owned(), function });
     artifact.exports.push(ExportEntry {
-        beskid_name: symbol.to_owned(),
+        function: symbol.to_owned(),
         exported_symbol: symbol.to_owned(),
         abi: "C".to_owned(),
     });

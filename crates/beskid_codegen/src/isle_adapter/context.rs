@@ -116,6 +116,7 @@ impl<'db> SyntaxNodeFacts<'db> {
                     field_offset: u32::try_from(field.field_offset).ok()?,
                     pointer_map_index: field.pointer_map_index,
                     value_type: map_signature_type(isa, field.abi_type)?,
+                    copy: self.capture_copy(field.capture.declaration, self.current_item_specialization()),
                 })
             })
             .collect::<Option<Vec<_>>>()?;

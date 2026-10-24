@@ -713,11 +713,9 @@ fn syntax_export_entries_matching(
         if !allowed_exports.is_empty() && !allowed_exports.contains(&*export.0) {
             continue;
         }
-        let beskid_name = item_name(db, item.key)
-            .map_err(|error| anyhow::anyhow!("syntax export name lookup failed: {error}"))?
-            .ok_or_else(|| anyhow::anyhow!("syntax export has no declared function name"))?;
+        // The entry names the declaration by its exact lowered symbol, never by its simple name.
         exports.push(ExportEntry {
-            beskid_name: beskid_name.to_string(),
+            function: item.symbol.clone(),
             exported_symbol: export.0.to_string(),
             abi: "C".to_owned(),
         });

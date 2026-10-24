@@ -47,6 +47,11 @@ impl IsleContext<'_, '_, '_, '_> {
             let binding = self.locals.get(&capture.local_slot).copied()?;
             (binding.value_type == capture.value_type).then_some(())?;
             let value = self.builder.use_var(binding.variable);
+            // A captured `[CopyOnAssign]` value is a new name: the closure holds its own copy.
+            let value = match &capture.copy {
+                Some(plan) => self.call_copy_hook(plan.site()?, plan, value)?,
+                None => value,
+            };
             if let Some(map_index) = capture.pointer_map_index {
                 let index = self.builder.ins().iconst(pointer, map_index as i64);
                 let store = self.import_runtime_helper(

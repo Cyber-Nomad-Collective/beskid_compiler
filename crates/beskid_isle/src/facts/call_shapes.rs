@@ -143,6 +143,8 @@ pub struct InlineCaptureField {
     pub field_offset: u32,
     pub pointer_map_index: Option<u64>,
     pub value_type: Type,
+    /// The `Copy` hook the capture calls when the captured value is `[CopyOnAssign]`.
+    pub copy: Option<crate::ValueCopyPlan>,
 }
 
 /// Artifact-owned allocate/store/root facts for a capturing immediate call or spawn.

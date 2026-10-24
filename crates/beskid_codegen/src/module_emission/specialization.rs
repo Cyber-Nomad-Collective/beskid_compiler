@@ -490,6 +490,59 @@ fn collect_generic_call_specializations_in_environment(
             }
         }
     }
+    // A new name of a `[CopyOnAssign]` value (a place read in a copy position, an array `for`
+    // element, a closure capture) calls the type's `Copy` hook without a CallExpression node
+    // (v0.6.7 copy on assignment). Its exact instance in this environment is the callee ISLE
+    // imports there, so it joins this worklist like a direct call.
+    let kind = node_kind(db, key).map_err(|error| emission_verification(error.to_string()))?;
+    let copies = match kind {
+        Some(
+            beskid_queries::IndexedNodeKind::PathExpression
+            | beskid_queries::IndexedNodeKind::MemberExpression
+            | beskid_queries::IndexedNodeKind::IndexExpression
+            | beskid_queries::IndexedNodeKind::TryExpression,
+        ) => vec![beskid_queries::value_copy_specialization(db, key, environment)],
+        Some(beskid_queries::IndexedNodeKind::Identifier) => {
+            vec![beskid_queries::pattern_binding_copy_specialization(db, key, environment)]
+        }
+        Some(beskid_queries::IndexedNodeKind::ForStatement) => {
+            vec![beskid_queries::for_element_copy_specialization(db, key, environment)]
+        }
+        Some(beskid_queries::IndexedNodeKind::LambdaExpression) => match beskid_queries::closure_environment(db, key) {
+            Ok(Some(closure)) => closure
+                .captures
+                .iter()
+                .map(|capture| beskid_queries::capture_copy_specialization(db, capture.declaration, environment))
+                .collect(),
+            _ => Vec::new(),
+        },
+        _ => Vec::new(),
+    };
+    for copy in copies {
+        let copy = copy.map_err(|error| {
+            semantic_fact_error(
+                db,
+                key,
+                format_args!("copy on assignment failed at {}", beskid_queries::format_ast_node_site(db, key)),
+                error,
+            )
+        })?;
+        if let Some(instance) = copy {
+            let specialized = !instance.substitutions.is_empty() || !instance.contract_witnesses.is_empty();
+            let instances = specializations.entry(instance.declaration).or_default();
+            if !instances.contains(&instance) {
+                instances.push(instance.clone());
+                if specialized {
+                    collect_generic_call_specializations_in_environment(
+                        db,
+                        instance.declaration,
+                        Some(&instance),
+                        specializations,
+                    )?;
+                }
+            }
+        }
+    }
     if let Some(children) = child_nodes(db, key).map_err(|error| emission_verification(error.to_string()))? {
         for child in children.iter().copied() {
             collect_generic_call_specializations_in_environment(db, child, environment, specializations)?;

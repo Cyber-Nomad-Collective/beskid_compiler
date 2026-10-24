@@ -25,6 +25,15 @@ pub trait NodeFacts {
     fn scoped_cleanup(&self, _key: AstNodeKey) -> Option<ScopedCleanupPlan> {
         None
     }
+    /// The `Copy` hook a place read at `key` calls because it sits in a copy position and its
+    /// type is `[CopyOnAssign]`; `None` when the read stores no copy.
+    fn value_copy(&self, _key: AstNodeKey) -> Option<ValueCopyPlan> {
+        None
+    }
+    /// The `Copy` hook an array `for` loop calls on each element before binding its variable.
+    fn for_element_copy(&self, _key: AstNodeKey) -> Option<ValueCopyPlan> {
+        None
+    }
     fn node_kind(&self, key: AstNodeKey) -> Option<NodeKind>;
     fn literal_kind(&self, _key: AstNodeKey) -> Option<LiteralKind> {
         None

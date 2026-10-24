@@ -368,8 +368,8 @@ pub enum SemanticIssueKind {
     },
     /// E1238: the argument to a `[Captures]` parameter is not a lambda literal or function item.
     CapturesArgumentNotLiteral,
-    /// E1239: `move` on a name that is not an owning Moved-class name. `class` names the
-    /// non-Moved transfer class; `None` means the name is a borrowed (non-`move`) parameter.
+    /// E1239: `move` on a value of a class other than Moved (`class`), or, with `class: None`,
+    /// `move` written outside an isolate crossing.
     MoveOfNonOwningName {
         name: String,
         class: Option<String>,
@@ -378,13 +378,18 @@ pub enum SemanticIssueKind {
     MoveInLoopWithoutReassignment {
         name: String,
     },
-    /// E1241: a borrowed Moved value stored, returned, captured or passed to a `move` parameter.
-    /// Related label "borrowed here" points at the borrowed declaration.
+    /// E1241: a crossing operand of Moved class that is not the only name for its value (a
+    /// borrowed parameter, an aliased local or a place read). Related label "borrowed here".
     BorrowEscapes {
         name: String,
     },
-    /// E1242: a Moved value stored, passed to a `move` parameter or returned while a live name
-    /// still owns it.
+    /// E1241: a value of a corelib `[ScopeBorrowed]` type returned, stored, passed to `spawn` or
+    /// captured by an escaping closure. Related label "borrowed here" points at the binding.
+    ScopeBorrowedEscapes {
+        name: String,
+        type_name: String,
+    },
+    /// E1242: a crossing operand of Moved class written without `move`.
     ImplicitAliasOfMovedValue {
         name: String,
     },
@@ -818,23 +823,23 @@ mod query_gate_kind_tests {
         assert_eq!(SemanticIssueKind::CapturesArgumentNotLiteral.help().as_deref(), Some("pass the lambda literal"));
         assert_eq!(
             SemanticIssueKind::BorrowEscapes { name: "buffer".into() }.help().as_deref(),
-            Some("declare the parameter `move T buffer`")
+            Some("copy `buffer` first: another name in this callable can still reach its value")
         );
         assert_eq!(
             SemanticIssueKind::BorrowEscapes { name: "holder.bytes".into() }.help().as_deref(),
-            Some("store a copy of `holder.bytes`, or reach it through an owning name and write `move holder.bytes`")
+            Some("copy `holder.bytes` first, or take it out with `move holder.bytes`")
         );
         assert_eq!(
             SemanticIssueKind::BorrowEscapes { name: "chunks[i]".into() }.help().as_deref(),
-            Some("store a copy of `chunks[i]`, or reach it through an owning name and take it with `exchange(chunks[i], move <value>)`")
+            Some("copy `chunks[i]` first, or take it out with `exchange(chunks[i], <value>)`")
         );
         assert_eq!(
-            SemanticIssueKind::ImplicitAliasOfMovedValue { name: "chunks[0]".into() }.help().as_deref(),
-            Some("take the element with `exchange(chunks[0], move <value>)`")
+            SemanticIssueKind::ImplicitAliasOfMovedValue { name: "block".into() }.help().as_deref(),
+            Some("write `move block`")
         );
         assert_eq!(
             SemanticIssueKind::DestructiveReadWithoutEmpty { field: "f".into(), type_name: "i64".into() }.help().as_deref(),
-            Some("use `exchange(<place>, move <value>)`")
+            Some("use `exchange(<place>, <value>)`")
         );
         assert_eq!(
             SemanticIssueKind::InjectInsideIsolateBody { field: "clock".into() }.message(),

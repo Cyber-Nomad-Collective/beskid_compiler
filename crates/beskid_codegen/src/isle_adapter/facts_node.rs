@@ -169,6 +169,14 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
         self.direct_callee_impl(key)
     }
 
+    fn value_copy(&self, key: AstNodeKey) -> Option<beskid_isle::ValueCopyPlan> {
+        self.value_copy_impl(key)
+    }
+
+    fn for_element_copy(&self, key: AstNodeKey) -> Option<beskid_isle::ValueCopyPlan> {
+        self.for_element_copy_impl(key)
+    }
+
     fn call_signature(&self, key: AstNodeKey) -> Option<Signature> {
         self.call_signature_impl(key)
     }

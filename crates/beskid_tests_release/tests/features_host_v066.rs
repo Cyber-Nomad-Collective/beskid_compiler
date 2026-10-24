@@ -251,10 +251,10 @@ use Core.Parallel.Combiners;
 use Core.Parallel.ParallelSeq;
 
 List<i64> Numbers(i64 count) {
-    mut List<i64> values = List.New<i64>();
+    List<i64> values = List.New<i64>();
     mut i64 i = 0_i64;
     while i < count {
-        values = values.Push(i);
+        values.Push(i);
         i = i + 1_i64;
     }
     return values;
@@ -318,10 +318,10 @@ fn pseq066_02_parallel_map_reduce_equals_serial_at_one_isolate_and_default() {
 }
 
 // ---------------------------------------------------------------------------------------------
-// MOVE066-01 move and exchange, and use after move (E1234)
+// MOVE066-01 exchange, and use after move at a port send (E1234)
 
-/// Exit 1: `exchange` did not yield the old buffer. Exit 2: it did not store the new one. Exit 3:
-/// `move stage.buffer` did not leave the empty array. Exit 4: the moved buffer lost elements.
+/// Exit 1: `exchange` did not yield the old buffer. Exit 2: it did not store the new one. Local
+/// code needs no `move` (0.6.7 owner ruling): `exchange` takes its value as written.
 const MOVE_PROGRAM: &str = r#"use Core.Collections.Array;
 
 type Stage {
@@ -338,42 +338,32 @@ i64[] Fill(i64 count) {
     return values;
 }
 
-i64 Consume(move i64[] values) {
-    return Array.Len<i64>(values);
-}
-
 i32 Main() {
     mut Stage stage = Stage { buffer: Fill(3_i64) };
     i64[] next = Fill(5_i64);
-    i64[] old = exchange(stage.buffer, move next);
+    i64[] old = exchange(stage.buffer, next);
     if Array.Len<i64>(old) != 3_i64 {
         return 1;
     }
     if Array.Len<i64>(stage.buffer) != 5_i64 {
         return 2;
     }
-    i64[] taken = move stage.buffer;
-    if Array.Len<i64>(stage.buffer) != 0_i64 {
-        return 3;
-    }
-    if Consume(move taken) != 5_i64 {
-        return 4;
-    }
     return 0;
 }
 "#;
 
-/// `data` is read after `move data` consumed it.
+/// `data` is read after the port send `move data` consumed it.
 const USE_AFTER_MOVE_PROGRAM: &str = r#"use Core.Collections.Array;
+use Core.Parallel.Port;
 
-i64 Consume(move i64[] values) {
-    return Array.Len<i64>(values);
+unit Ship(Port<i64[]> out) {
+    i64[] data = Array.Empty<i64>();
+    out.Send(move data);
+    i64 second = Array.Len<i64>(data);
+    return;
 }
 
 i32 Main() {
-    i64[] data = Array.Empty<i64>();
-    i64 first = Consume(move data);
-    i64 second = Array.Len<i64>(data);
     return 0;
 }
 "#;
@@ -384,12 +374,12 @@ fn move066_01_move_and_exchange_run_and_use_after_move_is_e1234() {
     let home = Home::new();
     let manifest = write_app(&home.work(), "MoveExchange", MOVE_PROGRAM);
     let ran = run_app(cli, &home, &manifest, &[]);
-    assert_eq!(ran.status.code(), Some(0), "move and exchange transfer and swap the buffers:\n{}", transcript(&ran));
+    assert_eq!(ran.status.code(), Some(0), "exchange swaps the buffers:\n{}", transcript(&ran));
 
     let manifest = write_app(&home.work(), "UseAfterMove", USE_AFTER_MOVE_PROGRAM);
     let checked =
         cli.run(cli.command(&home).args(["check", "--json", "--plain", "--offline", "--project", path_text(&manifest)]));
-    assert!(!checked.status.success(), "a read after `move data` fails check:\n{}", transcript(&checked));
+    assert!(!checked.status.success(), "a read after the send `move data` fails check:\n{}", transcript(&checked));
     let diagnostics = text(&checked.stdout)
         .lines()
         .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
@@ -441,10 +431,10 @@ const GC_PROGRAM: &str = r#"use Core.Optional.Option;
 use Core.Collections.List;
 
 List<string> Words(i64 count) {
-    mut List<string> values = List.New<string>();
+    List<string> values = List.New<string>();
     mut i64 i = 0_i64;
     while i < count {
-        values = values.Push("word-${i}");
+        values.Push("word-${i}");
         i = i + 1_i64;
     }
     return values;

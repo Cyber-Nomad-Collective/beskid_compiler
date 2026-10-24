@@ -47,6 +47,8 @@ pub enum LoweringErrorKind {
     InvalidIteratorFor,
     /// A `clif { ... }` block failed surface, CLIF parsing, verification, or safety checks.
     InvalidClifBlock(String),
+    /// A place read that copies a `[CopyOnAssign]` value in a body that must not allocate.
+    ValueCopyInAllocationFreeBody,
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -106,6 +108,7 @@ impl LoweringError {
             LoweringErrorKind::InvalidArrayFor => "InvalidArrayFor".to_owned(),
             LoweringErrorKind::InvalidIteratorFor => "InvalidIteratorFor".to_owned(),
             LoweringErrorKind::InvalidClifBlock(detail) => format!("InvalidClifBlock({detail})"),
+            LoweringErrorKind::ValueCopyInAllocationFreeBody => "ValueCopyInAllocationFreeBody".to_owned(),
         }
     }
 }

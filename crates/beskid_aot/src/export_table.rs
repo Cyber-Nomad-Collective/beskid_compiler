@@ -9,7 +9,8 @@ use crate::api::ExportPolicy;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExportTableEntry {
     pub symbol_id: u32,
-    pub beskid_name: String,
+    /// Exact lowered function of the exported declaration (see [`ExportEntry::function`]).
+    pub function: String,
     pub exported_symbol: String,
     pub abi: String,
 }
@@ -71,7 +72,7 @@ impl ExportTableEntry {
     fn from_codegen(symbol_id: u32, entry: &ExportEntry) -> Self {
         Self {
             symbol_id,
-            beskid_name: entry.beskid_name.clone(),
+            function: entry.function.clone(),
             exported_symbol: entry.exported_symbol.clone(),
             abi: entry.abi.clone(),
         }

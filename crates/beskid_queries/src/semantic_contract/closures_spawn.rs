@@ -2,6 +2,7 @@
 
 mod affine;
 mod affine_ownership;
+mod affine_scope;
 mod capture_bounds;
 mod closures;
 mod function_values;

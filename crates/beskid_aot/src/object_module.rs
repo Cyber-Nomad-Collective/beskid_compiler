@@ -41,7 +41,7 @@ pub(crate) fn emitted_object_symbol(
         entry.symbol.to_owned()
     } else if executable_entry.is_some()
         && name.split('#').next() == Some("Main")
-        && !exports.iter().any(|export| export.beskid_name == "Main" || export.beskid_name == name)
+        && !exports.iter().any(|export| export.exports(name))
     {
         // In an executable, the portable host owns C `main`. An unselected
         // Beskid Main is an ordinary callable function, not a second startup.
@@ -495,7 +495,7 @@ mod tests {
         assert_eq!(emitted_object_symbol("Main#0", &[], Some(entry)), "Main_H23_0");
         assert_eq!(emitted_object_symbol("Main#0", &[], None), "main");
         let exports = [beskid_codegen::ExportEntry {
-            beskid_name: "Main".into(),
+            function: "Main#0".into(),
             exported_symbol: "PublicHelper".into(),
             abi: "C".into(),
         }];

@@ -209,7 +209,7 @@ pub fn lower_prepared_native_mod(
         for item in items {
             if artifact.functions.iter().any(|function| function.name == item.symbol) {
                 artifact.exports.push(crate::ExportEntry {
-                    beskid_name: item.symbol.clone(),
+                    function: item.symbol.clone(),
                     exported_symbol: crate::internal_link_symbol(&item.symbol),
                     abi: "C".to_owned(),
                 });

@@ -608,7 +608,7 @@ fn signature(
 fn glue_binding_tracked(db: &dyn Db, syntax: SyntaxUnitInput, key: AstNodeKey) -> SemanticQueryResult<GlueBindingFact> {
     syntax_facts::with_node(db, syntax, key, |_program, _index, node| {
         if let Some(function) = node.of::<FunctionDefinition>() {
-            let marker = function.attributes.iter().find(|a| a.node.name.node.name == "Export")?;
+            let marker = super::transfer::recognized_attribute_use(db, key, &function.attributes, "Export")?;
             let markers = function.attributes.iter().filter(|a| a.node.name.node.name == "Export").count();
             return Some((|| {
                 if markers != 1 || function.attributes.len() > 256 {

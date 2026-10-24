@@ -4,11 +4,13 @@ use super::*;
 use crate::layout::EnumLayout;
 use cranelift_codegen::ir::Type;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MatchArmBindingFact {
     pub slot: LocalSlotId,
     pub value_type: Type,
     pub managed_reference: ManagedReferenceFact,
+    /// The `Copy` hook the arm calls before binding a `[CopyOnAssign]` payload.
+    pub copy: Option<crate::ValueCopyPlan>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

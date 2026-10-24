@@ -211,7 +211,8 @@ macro_rules! generated_aggregate_methods {
             let index = generated::constructor_lower_expression(self, self.facts.child(key, 1)?)?;
             let array = self.read_indexed_base(base)?;
             let address = self.checked_element_address(array, index, layout)?;
-            Some(self.builder.ins().load(layout.element_type, MemFlagsData::new(), address, 0))
+            let value = self.builder.ins().load(layout.element_type, MemFlagsData::new(), address, 0);
+            self.copy_on_assign(key, value)
         }
 
         fn emit_index_assign(&mut self, key: AstNodeKey) -> Option<Value> {
@@ -314,7 +315,8 @@ macro_rules! generated_aggregate_methods {
         fn emit_field_read(&mut self, key: AstNodeKey) -> Option<Value> {
             let (value_type, offset) = self.field_slot(key)?;
             let base = self.field_base_pointer(key)?;
-            Some(self.builder.ins().load(value_type, MemFlagsData::new(), base, offset))
+            let value = self.builder.ins().load(value_type, MemFlagsData::new(), base, offset);
+            self.copy_on_assign(key, value)
         }
 
         fn emit_field_assign(&mut self, key: AstNodeKey) -> Option<Value> {

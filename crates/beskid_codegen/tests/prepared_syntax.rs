@@ -218,7 +218,9 @@ pub unit plugin_init() { return; }
 
     assert!(
         artifact.exports.iter().any(|entry| {
-            entry.beskid_name == "plugin_init" && entry.exported_symbol == "beskid_plugin_init" && entry.abi == "C"
+            entry.function.starts_with("plugin_init#syntax_")
+                && entry.exported_symbol == "beskid_plugin_init"
+                && entry.abi == "C"
         }),
         "syntax lowering must retain [Export] metadata for AOT/JIT interop"
     );
@@ -262,7 +264,7 @@ pub i64 Main() { return Helper() + 1; }
     assert_eq!(
         lowered.artifact().exports,
         vec![beskid_codegen::ExportEntry {
-            beskid_name: "Main".into(),
+            function: lowered.symbol().to_owned(),
             exported_symbol: "beskid_entry".into(),
             abi: "C".into(),
         }]

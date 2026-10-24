@@ -89,6 +89,25 @@ pub struct IteratorForFact {
     pub element_managed: ManagedReferenceFact,
 }
 
+/// The `Copy` hook of a `[CopyOnAssign]` type that a new name of a value calls (v0.6.7 copy on
+/// assignment, copy-on-write). The hook takes the value as its receiver and returns the copy
+/// that the new name holds.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ValueCopyPlan {
+    pub callee: DirectCallee,
+    pub signature: Signature,
+}
+
+impl ValueCopyPlan {
+    /// The hook declaration, the site a lowering error names when no source node does (a capture).
+    pub fn site(&self) -> Option<AstNodeKey> {
+        match &self.callee {
+            DirectCallee::Item(key) | DirectCallee::SpecializedItem { declaration: key, .. } => Some(*key),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct ScopedCleanupPlan {
     pub binding: AstNodeKey,

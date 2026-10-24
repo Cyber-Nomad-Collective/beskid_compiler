@@ -446,7 +446,12 @@ impl IsleContext<'_, '_, '_, '_> {
                 self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidMatchArms });
                 return None;
             }
-            self.bind_local(binding.slot, *value, binding.value_type, binding.managed_reference)?;
+            // A bound `[CopyOnAssign]` payload is a new name: the arm writes its own copy.
+            let value = match &binding.copy {
+                Some(plan) => self.call_copy_hook(key, plan, *value)?,
+                None => *value,
+            };
+            self.bind_local(binding.slot, value, binding.value_type, binding.managed_reference)?;
             installed.push(binding.slot);
         }
         Some(installed)
@@ -716,7 +721,8 @@ macro_rules! generated_enum_methods {
         }
 
         fn emit_try_expression(&mut self, key: AstNodeKey) -> Option<Value> {
-            self.emit_try_dispatch(key)?
+            let value = self.emit_try_dispatch(key)??;
+            self.copy_on_assign(key, value)
         }
 
         fn emit_try_statement(&mut self, key: AstNodeKey) -> Option<()> {

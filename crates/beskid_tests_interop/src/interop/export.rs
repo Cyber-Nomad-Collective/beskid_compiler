@@ -12,7 +12,7 @@ pub unit plugin_init() { return; }
     assert_eq!(artifact.exports.len(), 1);
     let entry = &artifact.exports[0];
     assert_eq!(entry.exported_symbol, "beskid_plugin_init");
-    assert_eq!(entry.beskid_name, "plugin_init");
+    assert!(entry.function.starts_with("plugin_init#syntax_"), "the entry names its declaration: {}", entry.function);
     assert_eq!(entry.abi, "C");
 }
 
