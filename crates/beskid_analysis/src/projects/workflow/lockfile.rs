@@ -213,12 +213,12 @@ pub struct ProjectLockfileV2 {
 }
 
 impl ProjectLockfileV2 {
-    /// A lock without registry pins records only facts the project graph re-derives (the
-    /// toolchain's Corelib and path dependencies), so it may be regenerated when it no longer
-    /// matches, for example after the project folder was copied. A registry pin is a choice the
-    /// user made, and a mismatch there fails.
+    /// A lock that pins nothing beyond the toolchain's Corelib records only what the installed
+    /// toolchain re-derives, so it may be regenerated when it no longer matches, for example
+    /// after the project folder was copied. Any other entry (a registry pin or a path
+    /// dependency) is a choice the user made, and a mismatch there fails.
     pub(super) fn is_pin_free(&self) -> bool {
-        self.dependencies.iter().all(|entry| entry.source != ProjectLockSource::Registry)
+        self.dependencies.iter().all(|entry| entry.source == ProjectLockSource::Corelib)
     }
 
     /// Whether this lock was issued for the project the plan describes.
@@ -232,14 +232,18 @@ impl ProjectLockfileV2 {
             "lockfile belongs to a different project (made for `{}`, this is `{}`)",
             self.project_name, expected_project
         );
-        match self.dependencies.iter().find(|entry| entry.source == ProjectLockSource::Registry) {
-            Some(pin) => {
+        match self.dependencies.iter().find(|entry| entry.source != ProjectLockSource::Corelib) {
+            Some(pin) if pin.source == ProjectLockSource::Registry => {
                 let version = pin.resolved_version.as_deref().unwrap_or("unversioned");
                 ProjectError::Validation(format!(
                     "{base}; its registry pin `{}@{version}` is not trusted here, run `beskid update --all` to resolve it again",
                     pin.name
                 ))
             }
+            Some(pin) => ProjectError::Validation(format!(
+                "{base}; its path dependency `{}` is not trusted here, run `beskid update --all` to resolve it again",
+                pin.name
+            )),
             None => ProjectError::Validation(format!(
                 "{base}; it pins nothing beyond Corelib, so `beskid dev project lock` regenerates it"
             )),
