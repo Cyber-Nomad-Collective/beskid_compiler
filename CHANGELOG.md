@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Stability-proof gate for 0.6.7 (`scripts/v067-proof.sh`): a language-server soak
+  client (`beskid-soak`, crate `beskid_proof`), an internal-error sweep over Corelib,
+  Mods, fixtures, templates and the beskid-lings exercises with a deterministic
+  mutation corpus (`beskid-mutate`, `scripts/proof/ice_sweep.py`), and a clean-machine
+  onboarding check (`scripts/proof/onboarding_check.py`).
+
 ## [0.6.6] - 2026-10-16
 
 This release carries the v0.6.1-v0.6.5 program as one release (OpenSpec changes
