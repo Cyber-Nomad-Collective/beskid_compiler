@@ -14,7 +14,8 @@ pub enum ResolveError {
     DuplicateItem { name: String, span: SpanInfo, previous: SpanInfo },
     DuplicateSymbol { symbol: String, span: SpanInfo, previous: SpanInfo },
     DuplicateLocal { name: String, span: SpanInfo, previous: SpanInfo },
-    UnknownValue { name: String, span: SpanInfo },
+    /// `suggestion` is the closest name in scope ("did you mean").
+    UnknownValue { name: String, span: SpanInfo, suggestion: Option<String> },
     UnknownType { name: String, span: SpanInfo },
     UnknownModulePath { path: String, span: SpanInfo },
     UnknownValueInModule { module_path: String, name: String, span: SpanInfo },
@@ -38,7 +39,7 @@ impl fmt::Display for ResolveError {
             ResolveError::DuplicateSymbol { symbol, span, previous } => {
                 write!(f, "duplicate symbol `{symbol}` at {} (previous at {})", span_loc(*span), span_loc(*previous))
             }
-            ResolveError::UnknownValue { name, span } => {
+            ResolveError::UnknownValue { name, span, .. } => {
                 write!(f, "unknown value `{name}` at {}", span_loc(*span))
             }
             ResolveError::UnknownType { name, span } => {

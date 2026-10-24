@@ -13,8 +13,8 @@ pub(crate) fn emit_resolve_error(ctx: &mut RuleContext, error: ResolveError) {
         ResolveError::DuplicateLocal { name, span, previous } => {
             ctx.emit_issue(span, SemanticIssueKind::ResolveDuplicateLocal { name, previous });
         }
-        ResolveError::UnknownValue { name, span } => {
-            ctx.emit_issue(span, SemanticIssueKind::ResolveUnknownValue { name });
+        ResolveError::UnknownValue { name, span, suggestion } => {
+            ctx.emit_issue(span, SemanticIssueKind::ResolveUnknownValue { name, suggestion });
         }
         ResolveError::UnknownType { name, span } => {
             ctx.emit_issue(span, SemanticIssueKind::ResolveUnknownType { name });

@@ -764,7 +764,28 @@ macro_rules! generated_control_flow_methods {
                 return None;
             }
             let binding = self.locals.get(&slot).copied()?;
-            let value = self.lower_nested_expression(value_key)?;
+            // A compound assignment `a op= b` is `a = a op b` with the place read once: the local
+            // is read, the operator applied with the binary-expression rules (float or integer
+            // forms, the zero-divisor trap, unsigned division by the operand types, string
+            // concatenation for `string +=`), and the result written back.
+            let value = match self.facts.compound_assignment_operator(key) {
+                None => self.lower_nested_expression(value_key)?,
+                Some((beskid_queries::CompoundAssignmentOperator::Add, beskid_queries::SemanticTypeId::STRING)) => {
+                    self.emit_string_concat(key)?
+                }
+                Some((_, beskid_queries::SemanticTypeId::STRING)) => return None,
+                Some((operator, _)) => {
+                    let current = self.lower_nested_expression(target)?;
+                    let operand = self.lower_nested_expression(value_key)?;
+                    match operator {
+                        beskid_queries::CompoundAssignmentOperator::Add => self.clif_iadd(current, operand),
+                        beskid_queries::CompoundAssignmentOperator::Sub => self.clif_isub(current, operand),
+                        beskid_queries::CompoundAssignmentOperator::Mul => self.clif_imul(current, operand),
+                        beskid_queries::CompoundAssignmentOperator::Div => self.clif_div_trapz(key, current, operand)?,
+                        beskid_queries::CompoundAssignmentOperator::Rem => self.clif_srem(key, current, operand)?,
+                    }
+                }
+            };
             let actual_type = self.builder.func.dfg.value_type(value);
             if actual_type != binding.value_type {
                 return None;

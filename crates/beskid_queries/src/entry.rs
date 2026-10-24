@@ -270,6 +270,7 @@ pub fn semantic_diagnostics_for_roots(
                     kind: SemanticIssueKind::TypeInvalidTryTarget,
                     unit: root_index,
                     span,
+                    related: Vec::new(),
                 });
             }
         }
@@ -338,7 +339,20 @@ pub fn semantic_diagnostics_for_roots(
                         crate::format_ast_node_key(db, finding.site)
                     )
                 })?;
-            findings.push(SemanticFactFinding { kind: finding.kind, unit, span });
+            // A related site whose unit or span cannot be located is dropped; the finding itself
+            // still renders at its exact site.
+            let related = finding
+                .related
+                .iter()
+                .filter_map(|(site, label)| {
+                    Some(beskid_analysis::services::SemanticFactRelated {
+                        unit: *units.get(&site.unit)?,
+                        span: crate::node_span(db, *site).ok().flatten()?,
+                        label: (*label).to_string(),
+                    })
+                })
+                .collect();
+            findings.push(SemanticFactFinding { kind: finding.kind, unit, span, related });
         }
     }
     Ok(findings)
@@ -494,7 +508,7 @@ mod tests {
             .expect("canonical Corelib semantic fact findings");
         assert!(
             !findings.iter().any(|finding| {
-                matches!(&finding.kind, beskid_analysis::analysis::SemanticIssueKind::ResolveUnknownValue { name }
+                matches!(&finding.kind, beskid_analysis::analysis::SemanticIssueKind::ResolveUnknownValue { name, .. }
                     if name == "__panic")
             }),
             "canonical Corelib service rejected by legality gate: {findings:?}"
@@ -530,7 +544,7 @@ mod tests {
             .expect("runtime fixture semantic fact findings");
         assert!(
             !findings.iter().any(|finding| {
-                matches!(&finding.kind, beskid_analysis::analysis::SemanticIssueKind::ResolveUnknownValue { name }
+                matches!(&finding.kind, beskid_analysis::analysis::SemanticIssueKind::ResolveUnknownValue { name, .. }
                     if name == "NativePointer" || name == "CurrentThreadState")
             }),
             "canonical runtime intrinsic rejected by legality gate: {findings:?}"

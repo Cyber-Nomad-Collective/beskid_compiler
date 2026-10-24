@@ -247,6 +247,14 @@ pub trait NodeFacts {
     fn mutable_local_assignment_slot(&self, _key: AstNodeKey) -> Option<LocalSlotId> {
         None
     }
+    /// The operator of a compound local assignment (`total += 2`), proven with its slot, and the
+    /// local's declared semantic type (numeric, or `string` for `+=`).
+    fn compound_assignment_operator(
+        &self,
+        _key: AstNodeKey,
+    ) -> Option<(beskid_queries::CompoundAssignmentOperator, beskid_queries::SemanticTypeId)> {
+        None
+    }
     fn dispatch_builtin_symbol(&self, _key: AstNodeKey) -> Option<&'static str> {
         None
     }

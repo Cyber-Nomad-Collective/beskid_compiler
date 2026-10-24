@@ -19,6 +19,19 @@ impl Resolver {
         self.generic_scopes.iter().rev().any(|scope| scope.contains_key(name))
     }
 
+    /// The closest local or item name visible here to the unknown `name` ("did you mean").
+    pub(super) fn closest_value_name(&self, name: &str) -> Option<String> {
+        let locals = self.local_scopes.iter().flat_map(|scope| scope.keys().map(String::as_str));
+        let mut items = Vec::new();
+        let mut current = Some(self.current_module);
+        while let Some(module_id) = current {
+            let Some(module) = self.module_graph.module(module_id) else { break };
+            items.extend(module.scope.keys().map(String::as_str));
+            current = module.parent;
+        }
+        crate::analysis::suggest::closest_name(name, locals.chain(items).filter(|candidate| *candidate != "this"))
+    }
+
     pub(super) fn resolve_local(&self, name: &str) -> Option<LocalId> {
         for scope in self.local_scopes.iter().rev() {
             if let Some(local) = scope.get(name).copied() {

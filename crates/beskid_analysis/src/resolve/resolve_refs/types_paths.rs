@@ -43,7 +43,11 @@ impl Resolver {
     pub(super) fn resolve_value_path(&mut self, path: &Spanned<Path>) {
         let segments = resolver::path_segments(path);
         if segments.is_empty() {
-            self.errors.push(ResolveError::UnknownValue { name: "<unnamed>".to_string(), span: path.span });
+            self.errors.push(ResolveError::UnknownValue {
+                name: "<unnamed>".to_string(),
+                span: path.span,
+                suggestion: None,
+            });
             return;
         }
         if segments.len() == 1 {
@@ -71,7 +75,8 @@ impl Resolver {
                 self.mark_imported_scope_name_used(name);
                 return;
             }
-            self.errors.push(ResolveError::UnknownValue { name: (*name).clone(), span: path.span });
+            let suggestion = self.closest_value_name(name);
+            self.errors.push(ResolveError::UnknownValue { name: (*name).clone(), span: path.span, suggestion });
             return;
         }
         if segments.len() >= 2 {
@@ -83,7 +88,8 @@ impl Resolver {
                 && self.module_graph.module_id(std::slice::from_ref(&segments[0])).is_none()
                 && !self.module_imports.contains_key(&segments[0])
             {
-                self.errors.push(ResolveError::UnknownValue { name: segments[0].clone(), span: path.span });
+                let suggestion = self.closest_value_name(&segments[0]);
+                self.errors.push(ResolveError::UnknownValue { name: segments[0].clone(), span: path.span, suggestion });
                 return;
             }
         }

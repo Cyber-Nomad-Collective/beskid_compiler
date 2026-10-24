@@ -73,7 +73,7 @@ impl SemanticIssueKind {
                 format!("extend type `{type_name}` cannot access private member `{member_name}`")
             }
             Self::UnusedImport { path } => format!("unused import `{path}`"),
-            Self::UnusedPrivateItem { name } => format!("unused private item `{name}`"),
+            Self::UnusedPrivateItem { name, .. } => format!("`{name}` is never used"),
             Self::ContractMethodNotFound {
                 method_name,
                 receiver_name,
@@ -98,8 +98,8 @@ impl SemanticIssueKind {
             Self::GenericBoundNotSatisfied { type_name, contract_name, .. } => {
                 format!("generic bound not satisfied: `{type_name}` does not conform to `{contract_name}`")
             }
-            Self::ImmutableAssignment { name } => {
-                format!("cannot assign to immutable binding `{name}`")
+            Self::ImmutableAssignment { name, .. } => {
+                format!("`{name}` is assigned again but is not mutable")
             }
             Self::MatchGuardMustBeBoolean => "match guard must be boolean".to_string(),
             Self::MatchArmTypeMismatch { .. } => "match arm type mismatch".to_string(),
@@ -130,7 +130,7 @@ impl SemanticIssueKind {
             Self::UnreachableCode => "unreachable code".to_string(),
             Self::ResolveDuplicateItem { name, .. } => format!("duplicate item `{name}`"),
             Self::ResolveDuplicateLocal { name, .. } => format!("duplicate local `{name}`"),
-            Self::ResolveUnknownValue { name } => format!("unknown value `{name}`"),
+            Self::ResolveUnknownValue { name, .. } => format!("unknown value `{name}`"),
             Self::ResolveUnknownType { name } => format!("unknown type `{name}`"),
             Self::ResolveUnknownModulePath { path } => format!("unknown module path `{path}`"),
             Self::ResolveUnknownValueInModule { module_path, name } => {
@@ -156,29 +156,30 @@ impl SemanticIssueKind {
             ),
             Self::ResolveShadowedLocal { name, .. } => format!("shadowed local `{name}`"),
             Self::MissingImport { name, module_path } => {
-                format!("unresolved name `{name}` — did you mean to import `{module_path}::{name}`?")
+                format!("unresolved name `{name}` — did you mean to import `{module_path}.{name}`?")
             }
             Self::MissingImportAmbiguous { name, candidates } => {
                 format!("unresolved name `{name}` — candidates: {}", candidates.join(", "))
             }
             Self::TypeUnknownType { name } => format!("unknown type `{name}`"),
             Self::TypeUnknownValueType => "unknown value type".to_string(),
-            Self::TypeUnknownStructType => "unknown struct type".to_string(),
+            Self::TypeUnknownStructType => "unknown type in a type literal".to_string(),
             Self::TypeInvalidMemberTarget => {
-                "member access target is not a struct-like type".to_string()
+                "member access target is not a type with fields".to_string()
             }
             Self::TypeUnknownEnumType => "unknown enum type".to_string(),
-            Self::TypeUnknownStructField { name } => {
-                format!("unknown struct field `{name}`")
+            Self::TypeUnknownStructField { name, type_name: Some(type_name), .. } => {
+                format!("type `{}` has no field `{name}`", super::display_type(type_name))
             }
+            Self::TypeUnknownStructField { name, type_name: None, .. } => format!("unknown field `{name}`"),
             Self::TypeInaccessibleStructField { name } => {
-                format!("inaccessible struct field `{name}`")
+                format!("field `{name}` is private")
             }
             Self::TypeUnknownEnumVariant { name } => {
                 format!("unknown enum variant `{name}`")
             }
             Self::TypeMissingStructField { name } => {
-                format!("missing struct field `{name}`")
+                format!("missing field `{name}` in the type literal")
             }
             Self::TypeMissingTypeAnnotation { name } => {
                 format!("missing type annotation for `{name}`")
@@ -200,18 +201,27 @@ impl SemanticIssueKind {
             Self::TypeMismatch {
                 expected_name,
                 actual_name,
-            } => format!("type mismatch: expected {expected_name}, got {actual_name}"),
+            } => {
+                let (expected, actual) = super::display_type_pair(expected_name, actual_name);
+                format!("type mismatch: expected `{expected}`, got `{actual}`")
+            }
             Self::TypeMatchArmMismatch {
                 expected_name,
                 actual_name,
-            } => format!("match arm type mismatch: expected {expected_name}, got {actual_name}"),
+            } => {
+                let (expected, actual) = super::display_type_pair(expected_name, actual_name);
+                format!("match arm type mismatch: expected `{expected}`, got `{actual}`")
+            }
             Self::TypeCallArityMismatch { expected, actual } => {
                 format!("call arity mismatch: expected {expected}, got {actual}")
             }
             Self::TypeCallArgumentMismatch {
                 expected_name,
                 actual_name,
-            } => format!("call argument mismatch: expected {expected_name}, got {actual_name}"),
+            } => {
+                let (expected, actual) = super::display_type_pair(expected_name, actual_name);
+                format!("call argument mismatch: expected `{expected}`, got `{actual}`")
+            }
             Self::TypeEnumConstructorMismatch { expected, actual } => {
                 format!("enum constructor arity mismatch: expected {expected}, got {actual}")
             }
@@ -230,12 +240,11 @@ impl SemanticIssueKind {
                 "primitive numeric conversion requires exactly one primitive numeric argument".to_string()
             }
             Self::ScopedCleanupRejected { reason } => format!("scoped use rejected: {reason}"),
-            Self::InternalSemanticFactUnavailable { query } => {
-                format!("internal compiler error: semantic fact `{query}` is unavailable")
-            }
-            Self::InternalLoweringRuleMissing { construct } => format!(
-                "internal compiler error: no ISLE lowering rule or fact for `{construct}` (MissingRuleOrFact)"
-            ),
+            Self::InternalSemanticFactUnavailable { .. }
+            | Self::InternalLoweringRuleMissing { .. }
+            | Self::InternalLoweringInvariant { .. }
+            | Self::InternalModSemanticFailure { .. }
+            | Self::InternalBuildFailure { .. } => self.internal_message().unwrap_or_default(),
             Self::DeadCollectionGrowth => "the grown handle of a `mut T[]` parameter is discarded and the body never \
                                            publishes the parameter, so the caller keeps the ungrown array"
                 .to_string(),
@@ -336,7 +345,10 @@ impl SemanticIssueKind {
             Self::TypeReturnMismatch {
                 expected_name,
                 actual_name,
-            } => format!("return type mismatch: expected {expected_name}, got {actual_name}"),
+            } => {
+                let (expected, actual) = super::display_type_pair(expected_name, actual_name);
+                format!("return type mismatch: expected `{expected}`, got `{actual}`")
+            }
             Self::TypeNonIterableForTarget => {
                 "for-in target does not satisfy iterable contract (missing Next())".to_string()
             }

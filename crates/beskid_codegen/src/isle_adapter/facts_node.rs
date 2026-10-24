@@ -85,6 +85,16 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
         self.mutable_local_assignment_slot_impl(key)
     }
 
+    fn compound_assignment_operator(
+        &self,
+        key: AstNodeKey,
+    ) -> Option<(beskid_queries::CompoundAssignmentOperator, SemanticTypeId)> {
+        let assignment = self.query(beskid_queries::mutable_local_assignment(self.db, key))?;
+        let operator = assignment.compound?;
+        let storage = self.query(beskid_queries::abi_type(self.db, assignment.declaration))?;
+        Some((operator, storage))
+    }
+
     fn call_kind(&self, key: AstNodeKey) -> Option<CallKind> {
         self.call_kind_impl(key)
     }

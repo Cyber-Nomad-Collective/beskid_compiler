@@ -51,7 +51,7 @@ pub use parse::{
     parse_program_with_source_name_and_diagnostics,
 };
 pub use prepare::{
-    PrepareOptions, PreparedCompilation, SemanticFactAuthority, SemanticFactFinding,
+    PrepareOptions, PreparedCompilation, SemanticFactAuthority, SemanticFactFinding, SemanticFactRelated,
     prepare_compilation_with_fact_authority, resolved_input_from_plan,
 };
 pub use project::{

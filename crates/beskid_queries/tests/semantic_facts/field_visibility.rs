@@ -170,7 +170,7 @@ fn inaccessible_field_diagnostic_is_e1211_with_pub_help() {
         .iter()
         .find(|finding| finding.kind.code() == "E1211")
         .unwrap_or_else(|| panic!("expected E1211, got {findings:?}"));
-    assert!(finding.kind.message().contains("inaccessible struct field `token`"), "{:?}", finding.kind.message());
+    assert!(finding.kind.message().contains("field `token` is private"), "{:?}", finding.kind.message());
     let help = finding.kind.help().expect("inaccessible field help");
     assert!(help.contains("mark the field `pub` in its declaring type"), "{help}");
 }

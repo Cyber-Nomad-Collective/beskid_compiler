@@ -27,6 +27,16 @@ pub struct SemanticFactFinding {
     pub kind: crate::analysis::diagnostic_kinds::SemanticIssueKind,
     pub unit: usize,
     pub span: crate::syntax::SpanInfo,
+    /// Other places involved in the finding ("assigned again", "moved here").
+    pub related: Vec<SemanticFactRelated>,
+}
+
+/// One labelled secondary site of a [`SemanticFactFinding`], in any unit of the assembly.
+#[derive(Debug, Clone)]
+pub struct SemanticFactRelated {
+    pub unit: usize,
+    pub span: crate::syntax::SpanInfo,
+    pub label: String,
 }
 
 /// Inversion seam for a generation-bound semantic owner. The callback consumes the final

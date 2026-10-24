@@ -96,7 +96,11 @@ fn assignment_abi_type(
     key: AstNodeKey,
     assignment: &beskid_analysis::syntax::AssignExpression,
 ) -> Result<SemanticTypeId, SemanticError> {
-    if !matches!(assignment.op.node, beskid_analysis::syntax::AssignOp::Assign) {
+    if !matches!(assignment.op.node, beskid_analysis::syntax::AssignOp::Assign)
+        && mutable_local_assignment(db, key)?.and_then(|write| write.compound).is_none()
+    {
+        // Compound assignment lowers only to a mutable local (`a = a op b`); a compound write
+        // through a field or index stays unavailable.
         return Err(SemanticError::unavailable("value_abi_type"));
     }
     let storage = assignment_storage_abi_type(db, program, index, key, assignment)?;
