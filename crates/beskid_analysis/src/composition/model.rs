@@ -2,6 +2,10 @@ use std::collections::HashMap;
 
 use crate::syntax::{AstNodeId, InjectQualifier, ScopeHookKind, SpanInfo};
 
+/// The source unit a composition declaration lives in: `None` is the unit under analysis (the
+/// entry), `Some(path)` an imported unit of the same assembly, such as a library's base host.
+pub type UnitPath = Option<std::sync::Arc<std::path::Path>>;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ScopeId(pub u32);
 
@@ -47,6 +51,8 @@ pub struct Registration {
     pub id: u32,
     /// Exact registry-entry syntax identity; the backend never rediscovers it by name.
     pub source_node_id: AstNodeId,
+    /// The unit that declares the registry line.
+    pub unit: UnitPath,
     pub scope_id: ScopeId,
     pub key: RegistrationKey,
     pub implementation: String,
@@ -60,6 +66,7 @@ pub struct Registration {
 pub struct InjectDependency {
     pub span: SpanInfo,
     pub field_node_id: AstNodeId,
+    pub field_unit: UnitPath,
     pub owner_registration_id: u32,
     pub requested_type: String,
     pub is_plural: bool,
@@ -80,6 +87,7 @@ pub struct CompositionScope {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompositionHost {
     pub name: String,
+    pub unit: UnitPath,
     pub base_host: Option<String>,
     pub span: SpanInfo,
 }
@@ -98,6 +106,7 @@ pub struct PluralPlan {
     pub owner_registration_id: u32,
     pub field_span: SpanInfo,
     pub field_node_id: AstNodeId,
+    pub field_unit: UnitPath,
     pub target_slots: Vec<ServiceSlot>,
 }
 
@@ -106,6 +115,7 @@ pub struct SingularPlan {
     pub owner_registration_id: u32,
     pub field_span: SpanInfo,
     pub field_node_id: AstNodeId,
+    pub field_unit: UnitPath,
     pub target_slot: ServiceSlot,
 }
 
@@ -115,6 +125,8 @@ pub struct CompositionHookPlan {
     pub kind: ScopeHookKind,
     pub source_node_id: AstNodeId,
     pub span: SpanInfo,
+    /// The unit of the host that declares the hook (its generated items live there too).
+    pub unit: UnitPath,
     /// The generated function that holds the hook body (see [`super::hooks`]).
     pub function_node_id: AstNodeId,
     /// The registration of the generated argument type whose injected fields are the hook

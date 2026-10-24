@@ -88,7 +88,7 @@ pub fn merge_host_registries(
                 .iter()
                 .enumerate()
                 .filter(|(index, existing)| {
-                    owners[*index] < host_index && existing.scope_id == reg.scope_id && existing.key == reg.key
+                    owners[*index] < host_index && existing.scope_id == reg.scope_id && same_key(&existing.key, &reg.key)
                 })
                 .map(|(index, _)| index)
                 .collect::<Vec<_>>();
@@ -99,7 +99,8 @@ pub fn merge_host_registries(
                         binding: reg.key.name().to_string(),
                         span: reg.span,
                         lifetime: reg.lifetime.keyword(),
-                        overridden_span: existing.span,
+                        // A base registration in another unit has no place in this file.
+                        overridden_span: existing.unit.is_none().then_some(existing.span),
                         overridden_lifetime: existing.lifetime.keyword(),
                     });
                 }
@@ -117,4 +118,14 @@ pub fn merge_host_registries(
         }
     }
     (merged, issues)
+}
+
+/// Keys compare by kind and last path segment (`Hosting.Clock` and `Clock` are one key).
+fn same_key(left: &super::model::RegistrationKey, right: &super::model::RegistrationKey) -> bool {
+    use super::model::RegistrationKey::{Contract, SelfType};
+    let tail = |name: &str| name.rsplit('.').next().unwrap_or(name).to_string();
+    match (left, right) {
+        (Contract(a), Contract(b)) | (SelfType(a), SelfType(b)) => tail(a) == tail(b),
+        _ => false,
+    }
 }

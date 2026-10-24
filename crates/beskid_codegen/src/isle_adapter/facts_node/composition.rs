@@ -19,22 +19,20 @@ impl SyntaxNodeFacts<'_> {
         let access = self.query(beskid_queries::composition_injected_field_access(self.db, key))?;
         let field = self.query(beskid_queries::composition_injection_field(self.db, access.field))?;
         (access.site == key && field.field == access.field && field.owner_type == access.owner_type).then_some(())?;
-        (access.field.unit == self.input.typed_program().entry
-            && access.field.generation == self.input.typed_program().generation)
-            .then_some(())?;
+        (access.field.generation == self.input.typed_program().generation).then_some(())?;
         let owner_id = plan
             .singulars
             .iter()
-            .find(|entry| entry.field_node_id == access.field.node)
+            .find(|entry| self.input.composition_unit_key(&entry.field_unit, entry.field_node_id) == access.field)
             .map(|entry| entry.owner_registration_id)
             .or_else(|| {
                 plan.plurals
                     .iter()
-                    .find(|entry| entry.field_node_id == access.field.node)
+                    .find(|entry| self.input.composition_unit_key(&entry.field_unit, entry.field_node_id) == access.field)
                     .map(|entry| entry.owner_registration_id)
             })?;
         let owner = snapshot.registrations.iter().find(|entry| entry.id == owner_id)?;
-        let registration = AstNodeKey { node: owner.source_node_id, ..key };
+        let registration = self.input.composition_unit_key(&owner.unit, owner.source_node_id);
         let declared = self.query(beskid_queries::composition_registration(self.db, registration))?;
         (declared.declaration == access.owner_type && declared.implementation.as_ref() == owner.implementation)
             .then_some(())?;
@@ -64,14 +62,14 @@ impl SyntaxNodeFacts<'_> {
         let mut registrations = Vec::with_capacity(plan.activation.len());
         for activation in &plan.activation {
             let registration = snapshot.registrations.iter().find(|entry| entry.id == activation.registration_id)?;
-            let source = AstNodeKey { node: registration.source_node_id, ..key };
+            let source = self.input.composition_unit_key(&registration.unit, registration.source_node_id);
             let fact = self.query(beskid_queries::composition_registration(self.db, source))?;
             (fact.site == source && fact.implementation.as_ref() == registration.implementation).then_some(())?;
             let allocation = self.input.composition_registration_static_plan(registration.id)?;
             let layout = self.input.aggregate_object_layout(fact.declaration)?;
             let mut injections = Vec::new();
             for singular in plan.singulars.iter().filter(|entry| entry.owner_registration_id == registration.id) {
-                let field = AstNodeKey { node: singular.field_node_id, ..key };
+                let field = self.input.composition_unit_key(&singular.field_unit, singular.field_node_id);
                 let field_fact = self.query(beskid_queries::composition_injection_field(self.db, field))?;
                 (field_fact.owner_type == fact.declaration && !field_fact.is_plural).then_some(())?;
                 let (_, offset) = layout.injected_fields.iter().find(|(source, _)| *source == field)?;
@@ -84,7 +82,7 @@ impl SyntaxNodeFacts<'_> {
                 });
             }
             for plural in plan.plurals.iter().filter(|entry| entry.owner_registration_id == registration.id) {
-                let field = AstNodeKey { node: plural.field_node_id, ..key };
+                let field = self.input.composition_unit_key(&plural.field_unit, plural.field_node_id);
                 let field_fact = self.query(beskid_queries::composition_injection_field(self.db, field))?;
                 (field_fact.owner_type == fact.declaration && field_fact.is_plural).then_some(())?;
                 let (_, offset) = layout.injected_fields.iter().find(|(source, _)| *source == field)?;
@@ -160,12 +158,12 @@ impl SyntaxNodeFacts<'_> {
     /// slot and injected-field offsets of its argument object in parameter order.
     fn composition_hook_call(
         &self,
-        key: AstNodeKey,
+        _site: AstNodeKey,
         hook: &CompositionHookPlan,
         plan: &BindingPlan,
         snapshot: &CompositionSnapshot,
     ) -> Option<CompositionHookCall> {
-        let function = AstNodeKey { node: hook.function_node_id, ..key };
+        let function = self.input.composition_unit_key(&hook.unit, hook.function_node_id);
         (self.query(node_kind(self.db, function)) == Some(beskid_queries::IndexedNodeKind::FunctionDefinition))
             .then_some(())?;
         let signature = signature_for_item(self.isa?, self.query(item_abi_signature(self.db, function))?)?;
@@ -174,7 +172,7 @@ impl SyntaxNodeFacts<'_> {
             Some(id) => {
                 let slot = plan.slot_for_registration(id)?;
                 let registration = snapshot.registrations.iter().find(|entry| entry.id == id)?;
-                let source = AstNodeKey { node: registration.source_node_id, ..key };
+                let source = self.input.composition_unit_key(&registration.unit, registration.source_node_id);
                 let fact = self.query(beskid_queries::composition_registration(self.db, source))?;
                 (fact.site == source && fact.implementation.as_ref() == registration.implementation).then_some(())?;
                 let layout = self.input.aggregate_object_layout(fact.declaration)?;

@@ -21,7 +21,7 @@ use crate::projects::{
     assembly_options_for_prepare,
 };
 
-use super::super::composition::{composition_result_to_diagnostics, resolve_program_composition};
+use super::super::composition::{composition_result_to_diagnostics, resolve_program_composition_with_imports};
 use super::super::entry_session::{
     cached_executable_if_valid, store_executable_and_snapshot, update_semantic_snapshot,
 };
@@ -232,7 +232,8 @@ pub(super) fn run_prepare_spine(
     }
 
     let mut composition_result = observe_phase_result(pipeline, COMPOSITION_RESOLVE, || {
-        Ok::<_, anyhow::Error>(resolve_program_composition(&program, Some(plan)))
+        let imported = super::super::composition::composition_imports(&assembly, &entry_unit.path);
+        Ok::<_, anyhow::Error>(resolve_program_composition_with_imports(&program, &imported, Some(plan)))
     })?;
     composition_result.snapshot.source_unit_path = Some(entry_unit.path.clone());
 

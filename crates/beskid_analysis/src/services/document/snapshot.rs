@@ -82,9 +82,15 @@ fn build_document_snapshot(
         .as_ref()
         .map(|r| crate::doc::collect_doc_diagnostics(&program.node, r, source_name, source_text))
         .unwrap_or_default();
-    let composition_diagnostics =
-        composition::composition_diagnostics_for_program(program, compile_plan, source_name, source_text)
-            .unwrap_or_default();
+    let imported = assembly.map(|assembly| composition::composition_imports(assembly, path)).unwrap_or_default();
+    let composition_diagnostics = composition::composition_diagnostics_for_program_with_imports(
+        program,
+        &imported,
+        compile_plan,
+        source_name,
+        source_text,
+    )
+    .unwrap_or_default();
 
     DocumentAnalysisSnapshot {
         program: program.clone(),

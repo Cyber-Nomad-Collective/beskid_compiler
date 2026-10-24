@@ -27,8 +27,9 @@ pub use analyze::{
     compile_plan_for_input_path, compile_plan_for_input_path_with_member, reserved_keyword_diagnostic,
 };
 pub use composition::{
-    composition_diagnostics_for_program, composition_result_to_diagnostics, is_mod_compile_plan,
-    prepare_program_for_composition, resolve_program_composition,
+    composition_diagnostics_for_program, composition_diagnostics_for_program_with_imports, composition_imports,
+    composition_result_to_diagnostics, is_mod_compile_plan,
+    prepare_program_for_composition, resolve_program_composition, resolve_program_composition_with_imports,
 };
 pub use diagnostics_emit::{parse_error_diagnostic, pest_error_diagnostic, project_error_diagnostic};
 pub use document::{

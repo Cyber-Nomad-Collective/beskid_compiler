@@ -18,7 +18,7 @@ pub use diagnostics::{CompositionIssue, UnconstructibleReason, composition_issue
 pub use hooks::{is_hook_item_name, lower_host_hooks};
 pub use model::{
     ActivationPlanEntry, BindingPlan, CompositionHookPlan, CompositionHost, CompositionScope, PluralPlan, Registration,
-    RegistrationKey, RegistrationLifetime, ScopeId, ServiceSlot, SingularPlan,
+    RegistrationKey, RegistrationLifetime, ScopeId, ServiceSlot, SingularPlan, UnitPath,
 };
-pub use pass::{CompositionInput, CompositionResult, resolve_composition};
+pub use pass::{CompositionInput, CompositionResult, resolve_composition, resolve_composition_with_imports};
 pub use snapshot::CompositionSnapshot;

@@ -143,11 +143,7 @@ impl CodegenInput<'_> {
     pub fn composition_registration_static_plan(&self, registration_id: u32) -> Option<AggregateStaticPlan> {
         let (_, snapshot) = self.composition_authority()?;
         let registration = snapshot.registrations.iter().find(|registration| registration.id == registration_id)?;
-        let site = AstNodeKey {
-            unit: self.typed_program().entry,
-            generation: self.typed_program().generation,
-            node: registration.source_node_id,
-        };
+        let site = self.composition_unit_key(&registration.unit, registration.source_node_id);
         let fact = composition_registration(self.database(), site).ok().flatten()?;
         (fact.site == site && fact.implementation.as_ref() == registration.implementation).then_some(())?;
         let layout = self.aggregate_object_layout(fact.declaration)?;

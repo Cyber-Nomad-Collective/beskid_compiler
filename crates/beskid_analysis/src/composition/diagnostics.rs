@@ -33,7 +33,8 @@ pub enum CompositionIssue {
         binding: String,
         span: SpanInfo,
         lifetime: &'static str,
-        overridden_span: SpanInfo,
+        /// The overridden base registration, when it is in the unit under analysis.
+        overridden_span: Option<SpanInfo>,
         overridden_lifetime: &'static str,
     },
     /// `startup` runs once per launch at global scope; it cannot be declared inside a scope.

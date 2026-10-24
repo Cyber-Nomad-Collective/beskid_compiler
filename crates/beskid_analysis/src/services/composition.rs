@@ -38,10 +38,33 @@ pub fn resolve_program_composition(
     program: &Spanned<Program>,
     compile_plan: Option<&CompilePlan>,
 ) -> CompositionResult {
-    crate::composition::resolve_composition(CompositionInput {
-        program,
-        is_mod_project: is_mod_compile_plan(compile_plan),
-    })
+    resolve_program_composition_with_imports(program, &[], compile_plan)
+}
+
+/// Resolve the entry composition with the other units of its assembly available as base hosts
+/// (a library's or Corelib's `host`, such as `ConsoleHost`).
+pub fn resolve_program_composition_with_imports(
+    program: &Spanned<Program>,
+    imported: &[(std::sync::Arc<std::path::Path>, &Spanned<Program>)],
+    compile_plan: Option<&CompilePlan>,
+) -> CompositionResult {
+    crate::composition::resolve_composition_with_imports(
+        CompositionInput { program, is_mod_project: is_mod_compile_plan(compile_plan) },
+        imported,
+    )
+}
+
+/// The units of `assembly` other than `entry`, as composition imports.
+pub fn composition_imports<'a>(
+    assembly: &'a crate::projects::ProgramAssembly,
+    entry: &std::path::Path,
+) -> Vec<(std::sync::Arc<std::path::Path>, &'a Spanned<Program>)> {
+    assembly
+        .units
+        .iter()
+        .filter(|unit| unit.path != entry)
+        .map(|unit| (std::sync::Arc::from(unit.path.as_path()), &unit.program))
+        .collect()
 }
 
 pub fn composition_diagnostics_for_program(
@@ -50,8 +73,18 @@ pub fn composition_diagnostics_for_program(
     source_name: &str,
     source: &str,
 ) -> anyhow::Result<Vec<SemanticDiagnostic>> {
+    composition_diagnostics_for_program_with_imports(program, &[], compile_plan, source_name, source)
+}
+
+pub fn composition_diagnostics_for_program_with_imports(
+    program: &Spanned<Program>,
+    imported: &[(std::sync::Arc<std::path::Path>, &Spanned<Program>)],
+    compile_plan: Option<&CompilePlan>,
+    source_name: &str,
+    source: &str,
+) -> anyhow::Result<Vec<SemanticDiagnostic>> {
     let generated = prepare_program_for_composition(program.clone(), compile_plan, source_name, source)?;
-    let composition_result = resolve_program_composition(&generated.program, compile_plan);
+    let composition_result = resolve_program_composition_with_imports(&generated.program, imported, compile_plan);
     Ok(composition_result_to_diagnostics(
         &composition_result,
         generated.program.span,
@@ -223,7 +256,13 @@ fn with_composition_context(diagnostic: SemanticDiagnostic, issue: &CompositionI
             diagnostic.with_fix(fix)
         }
         CompositionIssue::OverrideLifetimeMismatch { binding, lifetime, overridden_span, overridden_lifetime, .. } => {
-            diagnostic.with_related(*overridden_span, format!("base host registers `{binding}` as `{overridden_lifetime}`")).with_help(
+            let diagnostic = match overridden_span {
+                Some(span) => {
+                    diagnostic.with_related(*span, format!("base host registers `{binding}` as `{overridden_lifetime}`"))
+                }
+                None => diagnostic,
+            };
+            diagnostic.with_help(
                 format!(
                     "an override keeps the lifetime of the registration it replaces: register `{binding}` as `{overridden_lifetime}`, not `{lifetime}`"
                 ),

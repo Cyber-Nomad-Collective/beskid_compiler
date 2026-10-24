@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use super::{
-    collect::{collect, dependency_requests},
+    collect::{collect_with_imports, dependency_requests},
     container::ServiceContainer,
     diagnostics::CompositionIssue,
     graph::{build_graph, topo_registration_order},
@@ -32,7 +32,16 @@ pub struct CompositionResult {
 }
 
 pub fn resolve_composition(input: CompositionInput<'_>) -> CompositionResult {
-    let collected = collect(input.program);
+    resolve_composition_with_imports(input, &[])
+}
+
+/// Resolve the composition of the unit under analysis, with the composition declarations of the
+/// other units of its assembly (`imported`: unit path and expanded program) available as bases.
+pub fn resolve_composition_with_imports(
+    input: CompositionInput<'_>,
+    imported: &[(std::sync::Arc<std::path::Path>, &Spanned<Program>)],
+) -> CompositionResult {
+    let collected = collect_with_imports(input.program, imported);
     let mut issues = Vec::new();
 
     if input.is_mod_project {
@@ -90,13 +99,24 @@ pub fn resolve_composition(input: CompositionInput<'_>) -> CompositionResult {
     let (mut merged_registrations, merge_issues) =
         merge_host_registries(&host_chain, &collected.host_registries, &collected.host_scopes, &merged_scopes);
     issues.extend(merge_issues);
-    issues.extend(super::shapes::validate_registrations(&merged_registrations, input.program));
+    issues.extend(super::shapes::validate_registrations(
+        &merged_registrations,
+        input.program,
+        &imported.iter().map(|(_, program)| *program).collect::<Vec<_>>(),
+    ));
     // Parser `Spanned.id` is deliberately unset. Freeze identities from the same deterministic
     // expanded-tree pre-order that the generation-bound query index uses; a non-unique source
     // span remains invalid and is rejected at the codegen boundary.
-    let source_index = SyntaxSnapshot::from_program(input.program, 0);
+    let mut indexes = HashMap::new();
+    indexes.insert(None, SyntaxSnapshot::from_program(input.program, 0));
+    for (path, program) in imported {
+        indexes.insert(Some(std::sync::Arc::clone(path)), SyntaxSnapshot::from_program(program, 0));
+    }
+    let source_node = |unit: &super::model::UnitPath, kind: NodeKind, span: SpanInfo| {
+        indexes.get(unit).map_or(AstNodeId::INVALID, |index| unique_source_node(index, kind, span))
+    };
     for registration in &mut merged_registrations {
-        registration.source_node_id = unique_source_node(&source_index, NodeKind::RegistryEntry, registration.span);
+        registration.source_node_id = source_node(&registration.unit, NodeKind::RegistryEntry, registration.span);
     }
 
     let scope_parents = scope_parent_map(&merged_scopes);
@@ -124,14 +144,14 @@ pub fn resolve_composition(input: CompositionInput<'_>) -> CompositionResult {
                     plural_registration_ids.push((
                         request.owner_registration_id,
                         request.span,
-                        request.field_node_id,
+                        (request.field_node_id, request.field_unit.clone()),
                         targets.iter().map(|target| target.id).collect::<Vec<_>>(),
                     ));
                 } else if let [target] = targets.as_slice() {
                     singular_registration_ids.push((
                         request.owner_registration_id,
                         request.span,
-                        request.field_node_id,
+                        (request.field_node_id, request.field_unit.clone()),
                         target.id,
                     ));
                 }
@@ -164,29 +184,31 @@ pub fn resolve_composition(input: CompositionInput<'_>) -> CompositionResult {
     let slots = activation.iter().map(|entry| (entry.registration_id, entry.slot)).collect::<HashMap<_, _>>();
     let mut singulars = singular_registration_ids
         .into_iter()
-        .map(|(owner_registration_id, field_span, field_node_id, target_id)| SingularPlan {
+        .map(|(owner_registration_id, field_span, (field_node_id, field_unit), target_id)| SingularPlan {
             owner_registration_id,
             field_span,
             field_node_id,
+            field_unit,
             target_slot: slots[&target_id],
         })
         .collect::<Vec<_>>();
     singulars.sort_by_key(|singular| (singular.owner_registration_id, singular.field_span.start));
     for singular in &mut singulars {
-        singular.field_node_id = unique_source_node(&source_index, NodeKind::Field, singular.field_span);
+        singular.field_node_id = source_node(&singular.field_unit, NodeKind::Field, singular.field_span);
     }
     let mut plurals = plural_registration_ids
         .into_iter()
-        .map(|(owner_registration_id, field_span, field_node_id, targets)| PluralPlan {
+        .map(|(owner_registration_id, field_span, (field_node_id, field_unit), targets)| PluralPlan {
             owner_registration_id,
             field_span,
             field_node_id,
+            field_unit,
             target_slots: targets.into_iter().map(|target| slots[&target]).collect(),
         })
         .collect::<Vec<_>>();
     plurals.sort_by_key(|plural| (plural.owner_registration_id, plural.field_span.start));
     for plural in &mut plurals {
-        plural.field_node_id = unique_source_node(&source_index, NodeKind::Field, plural.field_span);
+        plural.field_node_id = source_node(&plural.field_unit, NodeKind::Field, plural.field_span);
     }
 
     let mut hooks = Vec::new();
@@ -218,12 +240,13 @@ pub fn resolve_composition(input: CompositionInput<'_>) -> CompositionResult {
                 hooks.push(CompositionHookPlan {
                     scope_id,
                     kind: hook.kind,
-                    source_node_id: unique_source_node(&source_index, NodeKind::ScopeHook, hook.span),
+                    source_node_id: source_node(&hook.unit, NodeKind::ScopeHook, hook.span),
                     span: hook.span,
-                    function_node_id: unique_source_node(&source_index, NodeKind::FunctionDefinition, hook.span),
+                    unit: hook.unit.clone(),
+                    function_node_id: source_node(&hook.unit, NodeKind::FunctionDefinition, hook.span),
                     arguments_registration_id: merged_registrations
                         .iter()
-                        .find(|registration| registration.implementation == arguments)
+                        .find(|registration| registration.implementation == arguments && registration.unit == hook.unit)
                         .map(|registration| registration.id),
                 });
             }
@@ -271,7 +294,7 @@ fn unique_source_node(index: &SyntaxSnapshot<'_>, kind: NodeKind, span: SpanInfo
 
 #[cfg(test)]
 mod tests {
-    use super::{CompositionInput, resolve_composition};
+    use super::{CompositionInput, resolve_composition, resolve_composition_with_imports};
     use crate::services::parse_program;
 
     #[test]
@@ -347,5 +370,47 @@ i32 Main() { launch AppHost(); return 0; }
         assert_ne!(result.plan.plurals[0].field_span, result.plan.plurals[1].field_span);
         assert_eq!(result.plan.plurals[0].target_slots, vec![super::ServiceSlot(0)]);
         assert_eq!(result.plan.plurals[1].target_slots, vec![super::ServiceSlot(0)]);
+    }
+
+    #[test]
+    fn a_base_host_from_another_unit_contributes_its_registrations() {
+        let library = parse_program(
+            r#"
+pub type CommandLine { }
+host ConsoleHost() { registry { single CommandLine; } }
+"#,
+        )
+        .expect("library parses");
+        let program = crate::composition::lower_host_hooks(
+            parse_program(
+                r#"
+type Greeter { }
+host AppHost() : ConsoleHost
+{
+    registry { single Greeter; }
+    startup(Hosting.CommandLine commandLine, Greeter greeter) { }
+}
+i32 Main() { launch AppHost(); return 0; }
+"#,
+            )
+            .expect("application parses"),
+        );
+        let path: std::sync::Arc<std::path::Path> = std::sync::Arc::from(std::path::Path::new("/corelib/Hosting.bd"));
+        let result = resolve_composition_with_imports(
+            CompositionInput { program: &program, is_mod_project: false },
+            &[(std::sync::Arc::clone(&path), &library)],
+        );
+        assert!(result.issues.is_empty(), "issues: {:?}", result.issues);
+        let imported = result
+            .snapshot
+            .registrations
+            .iter()
+            .find(|registration| registration.implementation == "CommandLine")
+            .expect("base registration merged");
+        assert_eq!(imported.unit.as_deref(), Some(path.as_ref()));
+        assert!(imported.source_node_id.is_valid(), "the base registration keeps its own unit's identity");
+        assert_eq!(result.plan.startup_hooks.len(), 1);
+        let ids = result.snapshot.registrations.iter().map(|registration| registration.id).collect::<std::collections::HashSet<_>>();
+        assert_eq!(ids.len(), result.snapshot.registrations.len(), "registration ids stay unique across units");
     }
 }

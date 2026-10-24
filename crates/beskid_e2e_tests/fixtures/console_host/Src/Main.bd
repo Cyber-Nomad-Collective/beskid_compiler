@@ -1,0 +1,33 @@
+// An application host extends Corelib's ConsoleHost: it inherits the `CommandLine`
+// registration and adds its own services. `startup` ends the program with exit status 7.
+use Console.Hosting;
+use Core.Output;
+
+type Greeter
+{
+    pub string Greet()
+    {
+        return "hello";
+    }
+}
+
+host AppHost() : ConsoleHost
+{
+    registry
+    {
+        single Greeter;
+    }
+
+    startup(Hosting.CommandLine commandLine, Greeter greeter)
+    {
+        Output.WriteLine("${greeter.Greet()} ${commandLine.Count()}");
+        commandLine.Exit(7);
+    }
+}
+
+i32 Main()
+{
+    launch AppHost();
+    Output.WriteLine("not reached");
+    return 0;
+}

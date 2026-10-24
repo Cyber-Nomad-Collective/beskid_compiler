@@ -23,9 +23,13 @@ fn tail(path: &Spanned<crate::syntax::Path>) -> String {
     path.node.segments.last().map(|segment| segment.node.name.node.name.clone()).unwrap_or_default()
 }
 
-fn declarations(program: &Spanned<Program>) -> HashMap<String, Declaration> {
+fn declarations(program: &Spanned<Program>, imported: &[&Spanned<Program>]) -> HashMap<String, Declaration> {
     let mut found = HashMap::new();
     let mut extra_conformances: HashMap<String, Vec<String>> = HashMap::new();
+    // Imported declarations first, so a name the unit itself declares wins.
+    for unit in imported {
+        collect_items(&unit.node.items, &mut found, &mut extra_conformances);
+    }
     collect_items(&program.node.items, &mut found, &mut extra_conformances);
     for (name, conformances) in extra_conformances {
         if let Some(Declaration::Type { conformances: existing, .. }) = found.get_mut(&name) {
@@ -113,11 +117,17 @@ fn last_segment(name: &str) -> &str {
 }
 
 /// Check every merged registration against the unit's declarations.
-pub fn validate_registrations(registrations: &[Registration], program: &Spanned<Program>) -> Vec<CompositionIssue> {
-    let declarations = declarations(program);
+pub fn validate_registrations(
+    registrations: &[Registration],
+    program: &Spanned<Program>,
+    imported: &[&Spanned<Program>],
+) -> Vec<CompositionIssue> {
+    let declarations = declarations(program, imported);
     let mut issues = Vec::new();
     for registration in registrations {
-        if super::hooks::is_hook_item_name(&registration.implementation) {
+        // Generated hook arguments are always constructible; an imported unit's registry lines
+        // are diagnosed when that unit is analysed.
+        if super::hooks::is_hook_item_name(&registration.implementation) || registration.unit.is_some() {
             continue;
         }
         let implementation = last_segment(&registration.implementation);

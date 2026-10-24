@@ -109,3 +109,15 @@ fn composition_hooks_run_in_order_on_every_exit() {
     let native_run = run_binary(&output_binary, Duration::from_secs(10));
     check(&native_run, "AOT");
 }
+
+/// `host AppHost() : ConsoleHost` inherits Corelib's console base host and its `CommandLine`.
+#[test]
+fn console_host_base_registers_the_command_line() {
+    let cli = BeskidCliInvoker::new();
+    let workspace = E2eWorkspace::from_fixture("console_host");
+    let manifest = workspace.join("ConsoleHost.bproj");
+    let run = cli.run(["run", "--project", manifest.to_str().expect("manifest path str"), "--target", "App"]);
+    assert_exit_code(&run, 7, "console host startup ends the program through CommandLine.Exit");
+    let stdout = String::from_utf8_lossy(&run.stdout);
+    assert_eq!(stdout.lines().map(str::trim_end).filter(|line| !line.is_empty()).collect::<Vec<_>>(), ["hello 0"]);
+}
