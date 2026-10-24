@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Diagnostics
+
+- One structured diagnostic for every source of errors: a one-sentence
+  message, the primary span where the fix goes, labelled related locations,
+  help, fixes with applicability (`MachineApplicable`, `MaybeIncorrect`,
+  `HasPlaceholders`) and tags (`Unnecessary`, `Deprecated`). The CLI draws it
+  with labels and a help block; the code registry is split into one file per
+  family (parse `E0101`-`E0199`, unused, deprecated), and `W2101` (unused item)
+  is reserved with the `Unnecessary` tag.
+- Editor diagnostics: the exact span, the code with a link to the
+  diagnostic-code registry page, source `beskid`, the cause message with one
+  `Help:` line, related locations as `relatedInformation`, a Hint marker at
+  each related place in the buffer, tags, and the fixes in `data`, offered as
+  quick fixes (preferred only when machine-applicable; other titles say to
+  check the result). Project manifests get their fixes as quick fixes too. A
+  failed parse is reported at the parse error, not at the start of the file,
+  and a failed project preparation does not repeat a cause the file already
+  reports.
+- Materialization records the origin of each mirrored root in
+  `obj/beskid/origins.json`, and diagnostics name the authored file instead of
+  the copy under `obj/beskid/`. Duplicates are dropped on code, file and span;
+  the first report wins.
+- `--error-format=json` on `check`, `build`, `run`, `test`, `fmt` and
+  `dev build` writes one rustc-style JSON object per diagnostic to stderr
+  (schema in `docs/diagnostics-json.md`).
+
 ## [0.6.6] - 2026-10-16
 
 This release carries the v0.6.1-v0.6.5 program as one release (OpenSpec changes
