@@ -54,6 +54,19 @@ pub bool SchedStep() {
     return true;
 }
 
+// Main runs as the root fiber: it has no fiber record or stack of its own, so a root caller
+// that must wait (Receive, Send, Wait, Lock, WaitReceive, Join) drives the scheduler in place
+// instead of switching away. One call is one wait round: a scheduling step, or a sleep on the
+// owner mailbox while external work (I/O, timers) is pending. When nothing can make progress
+// the root waits forever, which is a deadlock and traps.
+pub unit SchedulerRootWait() {
+    if SchedulerCurrentFiber() != FIBER_NONE { Trap(10, NativePointer(0), 0); }
+    if SchedStep() { return; }
+    if ExternalActiveCount() == 0 { Trap(7, NativePointer(0), 0); }
+    owner_wait(ExternalOwnerId(), ExternalNextDeadline());
+    return;
+}
+
 // Run the scheduler until quiescence. Typed results remain owned by their handles.
 pub i64 SchedRun() {
     SchedInit();

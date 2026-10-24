@@ -103,7 +103,12 @@ pub i32 WaitGroupWait(pointer id) {
     if slot == NativePointer(0) { return 1; }
     if i64(raw_word_load(slot)) <= 0 { return 0; }
     word currentFiber = SchedulerCurrentFiber();
-    if currentFiber == FIBER_NONE || !FiberExists(currentFiber) { return 1; }
+    if currentFiber == FIBER_NONE {
+        // Main parks as the root fiber: it drives the scheduler until the count reaches zero.
+        while i64(raw_word_load(slot)) > 0 { SchedulerRootWait(); }
+        return 0;
+    }
+    if !FiberExists(currentFiber) { return 1; }
     word waiterHandle = FiberHandle(currentFiber);
     pointer waiters = pointer_add(slot, WG_WAITERS);
     if VecContainsWord(waiters, waiterHandle) { return 1; }
