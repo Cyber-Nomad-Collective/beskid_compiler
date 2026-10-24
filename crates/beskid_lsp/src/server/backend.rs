@@ -44,12 +44,12 @@ pub struct Backend {
     diagnostics_revision: Arc<Mutex<HashMap<Uri, u64>>>,
     reporter: Arc<CrashReporter>,
     scan: Arc<ScanCoordinator>,
-    interactive: Arc<std::sync::atomic::AtomicUsize>,
+    interactive: Arc<crate::scan_schedule::InteractiveGate>,
 }
 
 impl Backend {
     /// Construct server state wired to the LSP [`Client`] (empty workspace until `initialize`).
-    pub fn new(client: Client) -> Self {
+    pub fn new(client: Client, reporter: Arc<CrashReporter>) -> Self {
         let state = State::default();
         let interactive = Arc::clone(&state.interactive_inflight);
         Self {
@@ -59,16 +59,10 @@ impl Backend {
             pckg_registry: Arc::new(RwLock::new(PckgRegistryState::default())),
             log_filter: Arc::new(RwLock::new(ClientLogFilter::Info)),
             diagnostics_revision: Arc::new(Mutex::new(HashMap::new())),
-            reporter: Arc::new(CrashReporter::for_home()),
+            reporter,
             scan: Arc::new(ScanCoordinator::default()),
             interactive,
         }
-    }
-
-    /// Share the session crash reporter so background tasks report and de-duplicate with request handlers.
-    pub fn with_crash_reporter(mut self, reporter: Arc<CrashReporter>) -> Self {
-        self.reporter = reporter;
-        self
     }
 
     /// Unblock analysis paths that wait on the initial workspace scan (integration tests only).
@@ -299,19 +293,19 @@ impl LanguageServer for Backend {
         let db = parallel_compilation_db(&self.state).await;
         drop(update_guard);
         let response = tokio::task::spawn_blocking(move || {
-            salsa::Cancelled::catch(AssertUnwindSafe(|| {
-                completion::handler::handle_completion(&db, &snapshot.uri, &snapshot.document, snapshot.offset)
-            }))
+            crate::crash::run_blocking_recorded(|| {
+                salsa::Cancelled::catch(AssertUnwindSafe(|| {
+                    completion::handler::handle_completion(&db, &snapshot.uri, &snapshot.document, snapshot.offset)
+                }))
+            })
         })
         .await
-        .map_err(|error| match error.try_into_panic() {
-            // Re-raise on the request task so the service-level guard reports it.
-            Ok(payload) => std::panic::resume_unwind(payload),
-            Err(error) => {
-                tracing::error!(%error, "parallel Salsa completion task failed");
-                tower_lsp_server::jsonrpc::Error::internal_error()
-            }
+        .map_err(|error| {
+            tracing::error!(%error, "parallel Salsa completion task failed");
+            tower_lsp_server::jsonrpc::Error::internal_error()
         })?
+        // Re-raise a worker panic on the request task so the service-level guard reports it.
+        .unwrap_or_else(|panic| panic.resume())
         .map_err(|cancelled| {
             tracing::debug!(%cancelled, "parallel Salsa completion invalidated by a newer input revision");
             tower_lsp_server::jsonrpc::Error::content_modified()
@@ -505,7 +499,7 @@ mod scan_tests {
 
     #[tokio::test]
     async fn completion_answers_while_a_scan_is_in_progress() {
-        let (service, _socket) = LspService::new(Backend::new);
+        let (service, _socket) = LspService::new(|client| Backend::new(client, Arc::new(CrashReporter::new(None))));
         let backend = service.inner();
         backend.signal_workspace_ready_for_tests().await;
         // A scan is running and a background scan task is yielding to interactive work.
@@ -516,12 +510,12 @@ mod scan_tests {
                 .expect("completion must not wait for the scan")
                 .expect("completion result");
         assert!(answer.is_some());
-        assert_eq!(backend.interactive.load(std::sync::atomic::Ordering::Acquire), 0, "guard released");
+        assert_eq!(backend.interactive.active(), 0, "guard released");
     }
 
     #[tokio::test]
     async fn scan_triggers_during_a_scan_do_not_wait_and_coalesce() {
-        let (service, _socket) = LspService::new(Backend::new);
+        let (service, _socket) = LspService::new(|client| Backend::new(client, Arc::new(CrashReporter::new(None))));
         let backend = service.inner();
         assert!(backend.scan.request(), "a scan is running");
         for _ in 0..3 {

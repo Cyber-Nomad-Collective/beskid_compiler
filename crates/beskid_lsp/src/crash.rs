@@ -70,7 +70,6 @@ struct PanicRecord {
 }
 
 static RECORDS: Mutex<Option<HashMap<ThreadId, PanicRecord>>> = Mutex::new(None);
-static LAST_RECORD: Mutex<Option<PanicRecord>> = Mutex::new(None);
 static HOOK: Once = Once::new();
 
 /// Install the process panic hook that records the panic location and a backtrace.
@@ -87,17 +86,42 @@ pub fn install_panic_hook() {
             if let Ok(mut guard) = RECORDS.lock() {
                 guard.get_or_insert_with(HashMap::new).insert(std::thread::current().id(), record.clone());
             }
-            if let Ok(mut guard) = LAST_RECORD.lock() {
-                *guard = Some(record);
-            }
             previous(info);
         }));
     });
 }
 
+/// The record of the panic that unwound on this thread. There is deliberately no global
+/// fallback: a panic with no record of its own reports as `unknown` rather than borrowing
+/// another request's location.
 fn take_record() -> Option<PanicRecord> {
-    let own = RECORDS.lock().ok().and_then(|mut g| g.as_mut().and_then(|m| m.remove(&std::thread::current().id())));
-    own.or_else(|| LAST_RECORD.lock().ok().and_then(|mut g| g.take()))
+    RECORDS.lock().ok().and_then(|mut g| g.as_mut().and_then(|m| m.remove(&std::thread::current().id())))
+}
+
+/// A panic caught on a blocking worker thread, still carrying the identity of that thread.
+pub struct BlockingPanic {
+    thread: ThreadId,
+    payload: Box<dyn Any + Send>,
+}
+
+impl BlockingPanic {
+    /// Re-raise on the current (request) thread, handing over the worker thread's record so the
+    /// guard attributes the crash to the panic's own location.
+    pub fn resume(self) -> ! {
+        let record = RECORDS.lock().ok().and_then(|mut g| g.as_mut().and_then(|m| m.remove(&self.thread)));
+        if let Some(record) = record
+            && let Ok(mut guard) = RECORDS.lock()
+        {
+            guard.get_or_insert_with(HashMap::new).insert(std::thread::current().id(), record);
+        }
+        std::panic::resume_unwind(self.payload)
+    }
+}
+
+/// Run blocking work on a worker thread; a panic comes back as a [`BlockingPanic`].
+pub fn run_blocking_recorded<T>(work: impl FnOnce() -> T) -> Result<T, BlockingPanic> {
+    let thread = std::thread::current().id();
+    std::panic::catch_unwind(AssertUnwindSafe(work)).map_err(|payload| BlockingPanic { thread, payload })
 }
 
 /// Boxed future returned by a crash notifier.
@@ -319,6 +343,47 @@ pub(crate) mod tests {
         assert_eq!(sent.lock().unwrap().len(), 1);
         // The runtime and reporter keep working afterwards.
         assert_eq!(reporter.guard("x", None, async { 1 }).await, Ok(1));
+    }
+
+    #[tokio::test]
+    async fn panic_without_its_own_record_is_not_attributed_to_an_earlier_one() {
+        let dir = tempfile::tempdir().unwrap();
+        let (reporter, sent) = test_reporter(dir.path());
+        // A real panic on another thread leaves a record there, never on this one.
+        let _ = std::thread::spawn(|| {
+            let _ = std::panic::catch_unwind(|| panic!("elsewhere"));
+        })
+        .join();
+        // A foreign unwind on this thread runs no panic hook, so there is nothing to attribute.
+        let outcome = reporter
+            .guard("x", None, async {
+                if true {
+                    std::panic::resume_unwind(Box::new("no hook"));
+                }
+            })
+            .await;
+        let Err(Caught::Crashed { location, .. }) = outcome else { panic!("crash expected") };
+        assert_eq!(location, "unknown");
+        assert_eq!(sent.lock().unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn blocking_worker_panic_keeps_its_own_location() {
+        let dir = tempfile::tempdir().unwrap();
+        let (reporter, _) = test_reporter(dir.path());
+        let worker = tokio::task::spawn_blocking(|| run_blocking_recorded(|| -> u32 { panic!("worker bug") }))
+            .await
+            .expect("join");
+        let outcome = reporter
+            .guard("textDocument/completion", None, async move {
+                match worker {
+                    Ok(value) => value,
+                    Err(panic) => panic.resume(),
+                }
+            })
+            .await;
+        let Err(Caught::Crashed { location, .. }) = outcome else { panic!("crash expected") };
+        assert!(location.contains("crash.rs"), "attributed to the worker panic site: {location}");
     }
 
     #[tokio::test]

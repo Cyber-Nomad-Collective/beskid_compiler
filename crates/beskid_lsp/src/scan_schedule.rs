@@ -5,6 +5,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use tokio::sync::Notify;
+
 /// Single-flight gate for workspace scans.
 ///
 /// A trigger that arrives while a scan runs sets one `pending` flag instead of starting a
@@ -82,27 +84,61 @@ impl Drop for ScanRunGuard {
     }
 }
 
+/// Count of interactive requests in flight, with a wake-up for waiters when it reaches zero.
+#[derive(Default)]
+pub struct InteractiveGate {
+    active: AtomicUsize,
+    idle: Notify,
+}
+
+impl InteractiveGate {
+    /// Interactive requests currently running.
+    pub fn active(&self) -> usize {
+        self.active.load(Ordering::Acquire)
+    }
+}
+
 /// Marks an interactive request (completion, edits) in flight so background scans yield to it.
-pub struct InteractiveGuard(Arc<AtomicUsize>);
+pub struct InteractiveGuard(Arc<InteractiveGate>);
 
 impl InteractiveGuard {
-    pub fn new(counter: &Arc<AtomicUsize>) -> Self {
-        counter.fetch_add(1, Ordering::AcqRel);
-        Self(Arc::clone(counter))
+    pub fn new(gate: &Arc<InteractiveGate>) -> Self {
+        gate.active.fetch_add(1, Ordering::AcqRel);
+        Self(Arc::clone(gate))
     }
 }
 
 impl Drop for InteractiveGuard {
     fn drop(&mut self) {
-        self.0.fetch_sub(1, Ordering::AcqRel);
+        if self.0.active.fetch_sub(1, Ordering::AcqRel) == 1 {
+            self.0.idle.notify_waiters();
+        }
     }
 }
 
-/// Background scan work waits here between files while an interactive request is running.
-pub async fn yield_to_interactive(counter: &AtomicUsize) {
-    while counter.load(Ordering::Acquire) > 0 {
-        tokio::time::sleep(Duration::from_millis(10)).await;
-    }
+/// Longest a scan yields to interactive work before it takes one step anyway, so a steady
+/// stream of requests cannot starve the scan.
+pub const MAX_YIELD: Duration = Duration::from_millis(500);
+
+/// Background scan work waits here between files while an interactive request is running. It
+/// wakes the moment the last request ends, and gives up waiting after `max`.
+pub async fn yield_to_interactive_for(gate: &InteractiveGate, max: Duration) {
+    let wait = async {
+        loop {
+            let idle = gate.idle.notified();
+            tokio::pin!(idle);
+            idle.as_mut().enable();
+            if gate.active() == 0 {
+                return;
+            }
+            idle.await;
+        }
+    };
+    let _ = tokio::time::timeout(max, wait).await;
+}
+
+pub async fn yield_to_interactive(gate: &InteractiveGate) {
+    yield_to_interactive_for(gate, MAX_YIELD).await;
 }
 
 /// Paths the server writes itself or must never analyze: build output, caches, VCS, dependencies.
@@ -154,16 +190,38 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn scan_yields_while_an_interactive_request_runs() {
-        let counter = Arc::new(AtomicUsize::new(0));
-        let guard = InteractiveGuard::new(&counter);
+    async fn scan_wakes_the_moment_the_last_interactive_request_ends() {
+        let gate = Arc::new(InteractiveGate::default());
+        let first = InteractiveGuard::new(&gate);
+        let second = InteractiveGuard::new(&gate);
         let waiting = tokio::spawn({
-            let counter = Arc::clone(&counter);
-            async move { yield_to_interactive(&counter).await }
+            let gate = Arc::clone(&gate);
+            async move { yield_to_interactive_for(&gate, Duration::from_secs(30)).await }
         });
         tokio::time::sleep(Duration::from_millis(50)).await;
-        assert!(!waiting.is_finished(), "scan work must wait for the interactive request");
-        drop(guard);
-        tokio::time::timeout(Duration::from_secs(1), waiting).await.expect("resumes").expect("task");
+        assert!(!waiting.is_finished(), "scan work must wait while requests run");
+        drop(first);
+        tokio::time::sleep(Duration::from_millis(30)).await;
+        assert!(!waiting.is_finished(), "one request is still running");
+        let released = std::time::Instant::now();
+        drop(second);
+        tokio::time::timeout(Duration::from_secs(1), waiting).await.expect("woken").expect("task");
+        assert!(released.elapsed() < Duration::from_millis(100), "woken by notification, not by a poll interval");
+    }
+
+    #[tokio::test]
+    async fn a_steady_stream_of_requests_cannot_starve_the_scan() {
+        let gate = Arc::new(InteractiveGate::default());
+        let _held = InteractiveGuard::new(&gate);
+        let started = std::time::Instant::now();
+        yield_to_interactive_for(&gate, Duration::from_millis(80)).await;
+        assert!(started.elapsed() >= Duration::from_millis(70) && started.elapsed() < Duration::from_secs(1));
+        assert_eq!(gate.active(), 1, "the request is still running; the scan proceeded after the bound");
+    }
+
+    #[tokio::test]
+    async fn an_idle_gate_does_not_wait() {
+        let gate = InteractiveGate::default();
+        tokio::time::timeout(Duration::from_millis(20), yield_to_interactive(&gate)).await.expect("no wait");
     }
 }
