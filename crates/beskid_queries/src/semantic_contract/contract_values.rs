@@ -479,3 +479,21 @@ pub fn injected_field_contract(db: &dyn Db, field: AstNodeKey) -> SemanticQueryR
     };
     Ok(super::contracts::resolve_contract_head(db, field, &path.node))
 }
+
+/// Whether the array literal at `key` is written into a destination whose element type is a
+/// contract (`Greeter[] all = [Hello {}, Bye {}]`, `Formatting[] mixed = [1_i64, true]`): every
+/// element is then boxed, so the array holds managed references whatever the elements' own
+/// types are.
+pub fn array_literal_has_contract_elements(
+    db: &dyn Db,
+    key: AstNodeKey,
+    enclosing: Option<&GenericSpecializationInstance>,
+) -> SemanticQueryResult<bool> {
+    let expected = match expected_type_in(db, key, enclosing) {
+        Ok(Some(expected)) => expected,
+        Ok(None) => return Ok(None),
+        Err(error) if error.is_unavailable() => return Ok(Some(false)),
+        Err(error) => return Err(error),
+    };
+    Ok(Some(matches!(expected.array_element_identity(), Some(GenericSourceTypeIdentity::Contract { .. }))))
+}
