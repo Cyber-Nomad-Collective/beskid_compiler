@@ -21,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   literal in every context, including a negative value for an unsigned type,
   never a wrapped value or an internal error. The message names the value and
   the type ("`300` does not fit in `u8`") and the help gives the type's range.
+- In a generic call an exactly typed argument decides `T` over bare literals in
+  either order; `Same(1_u8, 300)` is T0905 at `300`, not a binding conflict.
 - A suffix fixes the literal's type and wins over the context. A suffix that
   differs from a numeric context, and a float literal where an integer is
   required, are E1206 type mismatches at the literal instead of silent
