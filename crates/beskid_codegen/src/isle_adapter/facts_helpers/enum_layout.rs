@@ -96,10 +96,18 @@ impl SyntaxNodeFacts<'_> {
                     ManagedReferenceKind::GcManaged => ManagedReferenceFact::GcManaged,
                     ManagedReferenceKind::NativeOrScalar => ManagedReferenceFact::NativeOrScalar,
                 };
+                let copy = self
+                    .query(beskid_queries::pattern_binding_copy_specialization(
+                        self.db,
+                        binding.declaration,
+                        self.current_item_specialization(),
+                    ))
+                    .and_then(|instance| value_copy_plan(self.isa?, &instance));
                 Some(MatchPayloadPatternFact::Binding(MatchArmBindingFact {
                     slot: LocalSlotId { owner_node: slot.owner.node.0, index: slot.index },
                     value_type,
                     managed_reference,
+                    copy,
                 }))
             }
             beskid_queries::EnumMatchPatternFact::ScalarLiteral(literal)

@@ -93,3 +93,18 @@ fn a_for_element_and_a_closure_capture_call_the_copy_hook() {
     );
     assert!(calls_in(&functions, "Loop") >= 1, "{:?}", functions.iter().find(|(name, _)| name == "Loop"));
 }
+
+#[test]
+fn a_match_pattern_binding_calls_the_copy_hook() {
+    let functions = lower(&format!(
+        "{BAG} enum Slot {{ Full(Bag<i64> bag), Empty }} \
+         i64 Held(Slot slot) {{ return match slot {{ Slot::Full(held) => held.count, Slot::Empty => 0, }}; }}"
+    ));
+    let names = functions.iter().map(|(name, _)| name.as_str()).collect::<Vec<_>>();
+    assert_eq!(
+        names.iter().filter(|name| name.starts_with("Copy#generic_")).count(),
+        1,
+        "the pattern binding calls the Bag<i64> Copy instance: {names:?}"
+    );
+    assert!(calls_in(&functions, "Held") >= 1, "{:?}", functions.iter().find(|(name, _)| name == "Held"));
+}

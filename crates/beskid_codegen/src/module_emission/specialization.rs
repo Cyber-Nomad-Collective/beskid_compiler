@@ -502,6 +502,9 @@ fn collect_generic_call_specializations_in_environment(
             | beskid_queries::IndexedNodeKind::IndexExpression
             | beskid_queries::IndexedNodeKind::TryExpression,
         ) => vec![beskid_queries::value_copy_specialization(db, key, environment)],
+        Some(beskid_queries::IndexedNodeKind::Identifier) => {
+            vec![beskid_queries::pattern_binding_copy_specialization(db, key, environment)]
+        }
         Some(beskid_queries::IndexedNodeKind::ForStatement) => {
             vec![beskid_queries::for_element_copy_specialization(db, key, environment)]
         }

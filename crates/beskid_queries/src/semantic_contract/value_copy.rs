@@ -13,7 +13,8 @@
 //! assignment value, an argument of a parameter that is not `mut`, a struct field, array
 //! element or enum payload of a construction, and a returned place that the callable does not
 //! own (a field, an element, `this`, a `mut` parameter or a pattern binding). The element an
-//! array `for` loop binds and every closure capture are new names too. A method receiver, a
+//! array `for` loop binds, every `match` pattern binding and every closure capture are new names
+//! too. A method receiver, a
 //! `mut` parameter argument, a `move` operand, an operator operand and a match scrutinee read
 //! the place without a copy. Values of a type parameter are decided per specialization: inside
 //! `Get<T>` instantiated with `List<i64>`, `return values[index]` copies.
@@ -141,6 +142,26 @@ pub fn capture_copy_specialization(
         }
     };
     hook_instance(db, declaration, &identity)
+}
+
+/// The `Copy` instance a `match` arm calls when it binds the pattern variable `declaration` (its
+/// declaring identifier), so a write through the binding never reaches the matched value.
+/// `Ok(None)` for an identifier that is not a pattern binding.
+pub fn pattern_binding_copy_specialization(
+    db: &dyn Db,
+    declaration: AstNodeKey,
+    enclosing: Option<&GenericSpecializationInstance>,
+) -> SemanticQueryResult<GenericSpecializationInstance> {
+    let Some(syntax) = db.syntax_unit(declaration.unit).filter(|syntax| syntax.accepts_key(db, declaration)) else {
+        return Ok(None);
+    };
+    let index = syntax.syntax_index(db);
+    if index.kind(declaration.node) != Some(NodeKind::Identifier)
+        || parent_node(index, declaration.node).and_then(|parent| index.kind(parent)) != Some(NodeKind::Pattern)
+    {
+        return Ok(None);
+    }
+    capture_copy_specialization(db, declaration, enclosing)
 }
 
 /// The exact `Copy` instance of a value of `identity`, or `None` when its type is not
@@ -540,5 +561,36 @@ mod tests {
         let (db, root) = assembly(&source, 6705);
         let try_expression = first_of_kind(&db, root, IndexedNodeKind::TryExpression).expect("try expression");
         assert_eq!(value_copy_position(&db, try_expression).expect("position"), Some(ValueCopyPosition::Binding));
+    }
+
+    #[test]
+    fn a_match_pattern_binding_is_a_new_name() {
+        let source = format!(
+            "{BAG}pub enum Slot {{ Full(Bag<i64> bag), Empty }} \
+             i64 Main(Slot slot) {{ return match slot {{ Slot::Full(held) => held.count, Slot::Empty => 0_i64, }}; }}"
+        );
+        let (db, root) = assembly(&source, 6706);
+        fn identifiers(db: &dyn Db, key: AstNodeKey, found: &mut Vec<AstNodeKey>) {
+            if node_kind(db, key).expect("node kind") == Some(IndexedNodeKind::Identifier) {
+                found.push(key);
+            }
+            for child in child_nodes(db, key).expect("child nodes").iter().flat_map(|children| children.iter()) {
+                identifiers(db, *child, found);
+            }
+        }
+        let matched = first_of_kind(&db, root, IndexedNodeKind::MatchExpression).expect("match");
+        let mut names = Vec::new();
+        identifiers(&db, matched, &mut names);
+        let copies = names
+            .iter()
+            .filter_map(|name| pattern_binding_copy_specialization(&db, *name, None).expect("pattern binding copy"))
+            .collect::<Vec<_>>();
+        assert_eq!(copies.len(), 1, "only the binding `held` is a new name");
+        let copied = &copies[0];
+        assert_eq!(item_name(&db, copied.declaration).expect("hook name").as_deref(), Some("Copy"));
+        let not_a_binding = first_of_kind(&db, root, IndexedNodeKind::LetStatement)
+            .or_else(|| first_of_kind(&db, root, IndexedNodeKind::FunctionDefinition))
+            .expect("other node");
+        assert_eq!(pattern_binding_copy_specialization(&db, not_a_binding, None).expect("not a binding"), None);
     }
 }
