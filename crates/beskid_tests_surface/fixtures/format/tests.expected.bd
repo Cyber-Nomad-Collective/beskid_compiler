@@ -3,14 +3,12 @@ test api_smoke
     meta
     {
         tags = "fast,unit";
-
         group = "parser";
     }
 
     skip
     {
         condition = false;
-
         reason = "none";
     }
 

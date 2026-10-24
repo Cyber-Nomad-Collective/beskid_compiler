@@ -6,7 +6,6 @@ pub type User
 pub enum Opt
 {
     Some(i32 v),
-
     None,
 }
 

@@ -3,14 +3,12 @@ use Core.Io;
 pub type Pair
 {
     i32 left,
-
     i32 right,
 }
 
 pub enum Result<T>
 {
     Ok(T value),
-
     Err(string message),
 }
 

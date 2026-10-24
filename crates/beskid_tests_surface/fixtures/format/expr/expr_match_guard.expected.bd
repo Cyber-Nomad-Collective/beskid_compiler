@@ -6,10 +6,9 @@ pub enum Foo
 pub unit Mg()
 {
     let x = Foo::Bar;
-    let v = match x
+    let v = match (x)
     {
         Foo::Bar when 1 == 1 => 1,
-
         _ => 0,
     };
     return;

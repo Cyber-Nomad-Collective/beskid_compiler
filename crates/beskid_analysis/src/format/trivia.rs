@@ -1,9 +1,9 @@
 //! Source comments for the formatter.
 //!
 //! The grammar treats `//`, `////` and `/* */` comments as implicit whitespace, so the AST does
-//! not hold them. The formatter collects them from the parse tree instead: every byte that a leaf
-//! token (or an opaque token such as a string literal) does not cover is trivia, and the comments
-//! are found only in that trivia. `///` documentation is not trivia here; it is parsed into
+//! not hold them. The formatter collects them from the source text instead, skipping the opaque
+//! tokens of the parse tree (string, character, documentation, code and CLIF literals) whose
+//! text can look like a comment. `///` documentation is not trivia here; it is parsed into
 //! `LeadingDocComment` values and emitted by the item emitters.
 
 use crate::parser::Rule;
@@ -31,19 +31,18 @@ fn is_opaque(rule: Rule) -> bool {
     )
 }
 
-/// Byte ranges covered by tokens: leaf pairs and opaque pairs.
-fn covered_ranges_iter<'i>(pairs: impl Iterator<Item = pest::iterators::Pair<'i, Rule>>, out: &mut Vec<(usize, usize)>) {
+/// Byte ranges of opaque tokens (strings, characters, documentation, code and CLIF literals).
+///
+/// Only these can hold `//` or `/*` that are not comments. Every other byte is scanned: a pair
+/// without children is not proof of a token, because rules match silent punctuation and the
+/// implicit whitespace (comments included) between it, as an empty `{ // note }` block does.
+fn opaque_ranges<'i>(pairs: impl Iterator<Item = pest::iterators::Pair<'i, Rule>>, out: &mut Vec<(usize, usize)>) {
     for pair in pairs {
-        let span = pair.as_span();
         if is_opaque(pair.as_rule()) {
-            out.push((span.start(), span.end()));
-            continue;
-        }
-        let mut inner = pair.clone().into_inner().peekable();
-        if inner.peek().is_none() {
+            let span = pair.as_span();
             out.push((span.start(), span.end()));
         } else {
-            covered_ranges_iter(inner, out);
+            opaque_ranges(pair.into_inner(), out);
         }
     }
 }
@@ -51,7 +50,7 @@ fn covered_ranges_iter<'i>(pairs: impl Iterator<Item = pest::iterators::Pair<'i,
 /// Collect every `//`, `////` and `/* */` comment of a successfully parsed source, in source order.
 pub(crate) fn collect_comments(source: &str, pairs: Pairs<'_, Rule>) -> Vec<Comment> {
     let mut covered = Vec::new();
-    covered_ranges_iter(pairs, &mut covered);
+    opaque_ranges(pairs, &mut covered);
     covered.sort_unstable();
 
     let mut comments = Vec::new();
@@ -68,7 +67,7 @@ pub(crate) fn collect_comments(source: &str, pairs: Pairs<'_, Rule>) -> Vec<Comm
     comments
 }
 
-/// Find comments in `source[from..to]`, which holds only whitespace, punctuation and comments.
+/// Find comments in `source[from..to]`, which holds no string, character or documentation token.
 fn scan_gap(source: &str, from: usize, to: usize, out: &mut Vec<Comment>) {
     let bytes = source.as_bytes();
     let mut i = from;

@@ -6,14 +6,12 @@ pub type Number
 pub contract Widget
 {
     Loggable;
-
     i32 Paint();
 }
 
 pub enum Flag
 {
     On,
-
     Off,
 }
 

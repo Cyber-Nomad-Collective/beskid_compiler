@@ -1,5 +1,5 @@
 pub unit M()
 {
-    let u = match 0 { };
+    let u = match (0) { };
     return;
 }
