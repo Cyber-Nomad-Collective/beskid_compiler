@@ -241,7 +241,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - A contract method called on an injected contract-typed field (`this.greeter.Greet()`, `greeter.Greet()`, `(this).greeter.Greet()`, `host.greeter.Greet()`) calls the implementation the composition plan binds that field to, and on an immutable contract-typed local (`Greeter g = Hello {}; g.Greet()`) the implementation of its initializer's type; both used to pass `check` and fail at build with E2102. A call on a `mut` contract-typed local is rejected, because it has no single implementation.
-
 - A test that shares its name with a function builds and runs: the native
   test build selected entries by name alone, picked the function, and failed
   with E4041 (`native test must take no arguments and return void`).
