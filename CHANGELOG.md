@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- pckg server: `GET /api/auth/session` identifies a bearer publisher key (`bpk_` key) by returning the owner subject, key name and scopes; unknown, revoked or malformed keys get 401, and the key and its hash are never returned.
+
 ## [0.6.6] - 2026-10-16
 
 This release carries the v0.6.1-v0.6.5 program as one release (OpenSpec changes
