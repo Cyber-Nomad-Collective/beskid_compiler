@@ -94,6 +94,7 @@ pub const CODES: &[CodeInfo] = &[
     CodeInfo { code: "E1509", summary: "unknown attribute declaration target", tags: &[] },
     CodeInfo { code: "E1510", summary: "attribute target not allowed", tags: &[] },
     CodeInfo { code: "E1511", summary: "extend type private member access", tags: &[] },
+    CodeInfo { code: "E1512", summary: "copy-on-assign type without a valid Copy method", tags: &[] },
     CodeInfo { code: "E1601", summary: "contract method missing implementation", tags: &[] },
     CodeInfo { code: "E1602", summary: "contract implementation signature mismatch", tags: &[] },
     CodeInfo { code: "E1606", summary: "method not found", tags: &[] },
@@ -122,4 +123,6 @@ pub const CODES: &[CodeInfo] = &[
     CodeInfo { code: "E1719", summary: "unconstructible registration", tags: &[] },
     CodeInfo { code: "E1720", summary: "non conforming registration", tags: &[] },
     CodeInfo { code: "E1721", summary: "with without launch", tags: &[] },
+    CodeInfo { code: "E1722", summary: "launch argument count", tags: &[] },
+    CodeInfo { code: "E1723", summary: "base host with parameters", tags: &[] },
 ];
