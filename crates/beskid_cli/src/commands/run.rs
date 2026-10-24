@@ -20,6 +20,9 @@ use clap::Args;
 
 #[derive(Args, Debug, Clone)]
 pub struct RunArgs {
+    #[command(flatten)]
+    pub diagnostics: crate::cli::error_format::ErrorFormatArgs,
+
     /// The input Beskid file to AOT-compile and execute
     pub input: Option<PathBuf>,
 

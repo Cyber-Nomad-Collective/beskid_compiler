@@ -122,7 +122,7 @@ pub(super) fn run_prepare_spine(
         if collect_diagnostics {
             diagnostics = roots;
             merge_fact_diagnostics(&mut diagnostics, fact_diagnostics);
-            diagnostics = dedupe_diagnostics(diagnostics);
+            diagnostics = crate::analysis::diagnostics::dedupe_diagnostics(diagnostics);
         } else {
             require_no_semantic_errors(&roots)?;
         }
@@ -370,7 +370,7 @@ pub(super) fn run_prepare_spine(
     merge_fact_diagnostics(&mut collected_diagnostics, fact_diagnostics);
     Ok(PrepareSpineOutput {
         prepared: PreparedCompilation { assembly, program, binding_plan, composition_snapshot, executable },
-        collected_diagnostics: dedupe_diagnostics(collected_diagnostics),
+        collected_diagnostics: crate::analysis::diagnostics::dedupe_diagnostics(collected_diagnostics),
         collected_fixes: analyzer_fixes,
     })
 }

@@ -46,8 +46,8 @@ pub mod services;
 pub mod syntax;
 
 pub use analysis::{
-    AnalysisOptions, AnalysisResult, MietteReportError, Rule as AnalysisRule, RuleContext, SemanticDiagnostic,
-    Severity, builtin_rules, run_rules,
+    AnalysisOptions, AnalysisResult, Applicability, DiagnosticTag, Fix, FixEdit, MietteReportError, RelatedLocation,
+    Rule as AnalysisRule, RuleContext, SemanticDiagnostic, Severity, builtin_rules, run_rules,
 };
 pub use compilation_context::{CompilationContext, ProjectSessionHandle, module_roots_for_plan};
 pub use parser::{BeskidParser, Rule};

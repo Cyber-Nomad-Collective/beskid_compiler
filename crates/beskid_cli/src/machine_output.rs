@@ -181,6 +181,9 @@ mod tests {
             code: Some("E1001".into()),
             origin: None,
             severity: Severity::Error,
+            related: Vec::new(),
+            fixes: Vec::new(),
+            tags: Vec::new(),
         }
     }
 

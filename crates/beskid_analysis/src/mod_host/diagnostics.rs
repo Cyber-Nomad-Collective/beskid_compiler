@@ -209,6 +209,9 @@ pub fn analyzer_diagnostic_to_semantic(
         code: Some(diagnostic.code.clone()),
         origin: Some(format!("beskid:mod:{type_id}")),
         severity,
+        related: Vec::new(),
+        fixes: Vec::new(),
+        tags: Vec::new(),
     }
 }
 

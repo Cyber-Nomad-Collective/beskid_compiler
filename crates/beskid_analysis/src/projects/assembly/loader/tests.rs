@@ -710,6 +710,16 @@ fn lock_replayed_foundation_syscall_fixture(label: &str) -> (CompilePlan, PathBu
     let materialized_source_root = &workspace.materialized_dependencies[0].materialized_source_root;
     let destination = materialized_source_root.join("Core/Syscall/Syscall.bd");
     assert!(destination.is_file(), "the writer must materialize the canonical Foundation source");
+    let obj_beskid = project_root.join("obj/beskid");
+    let authored = crate::analysis::diagnostics::source_map::SourceOrigins::load(&obj_beskid)
+        .map(&obj_beskid, &destination)
+        .expect("materialization records the origin of the mirrored dependency");
+    assert!(
+        authored.starts_with(canonical_project_root.canonicalize().expect("Foundation root"))
+            && authored.ends_with("Core/Syscall/Syscall.bd"),
+        "the mirrored unit maps back to its authored file: {}",
+        authored.display()
+    );
     let unit = SourceUnit::bind_request(
         destination.clone(),
         source.logical_path,

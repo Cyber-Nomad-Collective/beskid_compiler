@@ -7,32 +7,6 @@ use crate::projects::{CompilePlan, PreparedProjectWorkspace, ProgramAssembly, So
 
 use super::super::input::ResolvedInput;
 
-/// Drop exact-duplicate diagnostics, keeping the first occurrence.
-///
-/// The structural rules of the entry unit and the query gate's findings are merged into one
-/// stream; a shape both report at the same site (a Mod analyzer diagnostic repeated over a
-/// cached generation, a finding of a dependency unit reached from two own items) is reported
-/// once. The dedup key is the exact (source, span, code, message), never a code alone. The source
-/// name is part of the identity: a dependency-unit finding at the same offset as an entry
-/// diagnostic is a different diagnostic.
-pub(super) fn dedupe_diagnostics(diagnostics: Vec<SemanticDiagnostic>) -> Vec<SemanticDiagnostic> {
-    let mut seen: std::collections::HashSet<(String, usize, usize, Option<String>, String)> =
-        std::collections::HashSet::new();
-    diagnostics
-        .into_iter()
-        .filter(|diagnostic| {
-            let key = (
-                diagnostic.src.name().to_string(),
-                diagnostic.span.offset(),
-                diagnostic.span.len(),
-                diagnostic.code.clone(),
-                diagnostic.message.clone(),
-            );
-            seen.insert(key)
-        })
-        .collect()
-}
-
 /// Render semantic-fact findings against the unit that owns each one: the entry unit renders
 /// against the spine's entry source, every other unit against its own assembled source. A
 /// finding naming a unit outside the assembly fails closed.
