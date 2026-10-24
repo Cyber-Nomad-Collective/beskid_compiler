@@ -75,6 +75,10 @@ pub(in crate::semantic_contract) fn generic_source_expression_identity(
         if let Ok(Some(access)) = aggregate_field_access(db, normalized_key) {
             return generic_source_aggregate_field_identity(db, &access);
         }
+        // An injected field (`all` for `inject Greeter[] all`) holds its declared type.
+        if let Some(identity) = super::super::super::contract_values::injected_field_identity(db, normalized_key) {
+            return Ok(identity);
+        }
         // A named function item read as a value has the function type of its declaration.
         if let Ok(Some(value)) = function_item_value(db, normalized_key) {
             return function_item_value_identity(db, &value);

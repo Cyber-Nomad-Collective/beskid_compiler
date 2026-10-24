@@ -28,25 +28,32 @@ pub(super) fn collect_operator_obligations(
         let Some(binary) = index.node_at(program, node).and_then(|node| node.of::<BinaryExpression>()) else {
             continue;
         };
-        let Some((_, left_subject, left)) = proven_operand(db, program, index, key, node, binary.left.as_ref()) else {
-            continue;
-        };
-        let Some((_, right_subject, right)) = proven_operand(db, program, index, key, node, binary.right.as_ref())
-        else {
-            continue;
-        };
         let site = AstNodeKey { node, ..key };
-        // A contract value (a box, v0.6.7) has no operators: its identity is the implementing
-        // value's, which no operator reads in this release.
-        if [left_subject, right_subject].into_iter().any(|subject| {
-            matches!(
-                generic_source_expression_identity(db, AstNodeKey { node: subject, ..key }),
-                Ok(GenericSourceTypeIdentity::Contract { .. })
-            )
-        }) {
-            findings.push(GateObligation { kind: GateObligationKind::InvalidBinaryOp, site });
+        // Contract values (boxes, v0.6.7) have `==` and `!=` between each other, comparing the
+        // implementing values they hold; no other operator, and no operator against a value of
+        // another kind. Judged before the proven-primitive operands, which a box never has.
+        let contract = |expression: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Expression>| {
+            super::super::typing::expression_nodes(program, index, node, expression).is_some_and(|(_, subject)| {
+                matches!(
+                    generic_source_expression_identity(db, AstNodeKey { node: subject, ..key }),
+                    Ok(GenericSourceTypeIdentity::Contract { .. })
+                )
+            })
+        };
+        let (left_contract, right_contract) = (contract(binary.left.as_ref()), contract(binary.right.as_ref()));
+        if left_contract || right_contract {
+            let equality = matches!(binary.op.node, BinaryOp::Eq | BinaryOp::NotEq);
+            if !(equality && left_contract && right_contract) {
+                findings.push(GateObligation { kind: GateObligationKind::InvalidBinaryOp, site });
+            }
             continue;
         }
+        let Some((_, _, left)) = proven_operand(db, program, index, key, node, binary.left.as_ref()) else {
+            continue;
+        };
+        let Some((_, _, right)) = proven_operand(db, program, index, key, node, binary.right.as_ref()) else {
+            continue;
+        };
         if !judgeable_primitive(left) || !judgeable_primitive(right) {
             continue;
         }

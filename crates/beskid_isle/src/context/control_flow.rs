@@ -220,13 +220,18 @@ macro_rules! generated_control_flow_methods {
                     }
                 }
                 let result_key = self.facts.block_result(key)?;
-                let value = self.lower_nested_expression(result_key)?;
-                let expected = self.facts.scalar_type(key).or_else(|| self.facts.scalar_type(result_key))?;
+                let value = self.lower_coerced_expression(result_key)?;
+                let converted = self.converts_to_contract_box(result_key);
+                let expected = if converted {
+                    dispatch::pointer_type(self.frontend_config)
+                } else {
+                    self.facts.scalar_type(key).or_else(|| self.facts.scalar_type(result_key))?
+                };
                 let Some(value) = self.adapt_scalar_boundary(result_key, value, expected) else {
                     self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidBlockExpression });
                     return None;
                 };
-                let root = if self.facts.managed_reference(result_key)? == ManagedReferenceFact::GcManaged {
+                let root = if converted || self.facts.managed_reference(result_key)? == ManagedReferenceFact::GcManaged {
                     Some(self.root_temporary(value)?)
                 } else {
                     None
@@ -251,7 +256,12 @@ macro_rules! generated_control_flow_methods {
             let condition_key = self.facts.child(key, 0)?;
             let then_key = self.facts.child(key, 1)?;
             let else_key = self.facts.child(key, 2)?;
-            let result_type = self.facts.scalar_type(key)?;
+            // Target typing: branches that convert to a contract merge as contract boxes.
+            let result_type = if self.converts_to_contract_box(then_key) || self.converts_to_contract_box(else_key) {
+                dispatch::pointer_type(self.frontend_config)
+            } else {
+                self.facts.scalar_type(key)?
+            };
             let condition = self.lower_nested_expression(condition_key)?;
             let then_block = self.builder.create_block();
             let else_block = self.builder.create_block();
@@ -261,13 +271,13 @@ macro_rules! generated_control_flow_methods {
 
             self.builder.switch_to_block(then_block);
             self.builder.seal_block(then_block);
-            let then_value = self.lower_nested_expression(then_key)?;
+            let then_value = self.lower_coerced_expression(then_key)?;
             let then_value = self.adapt_scalar_boundary(then_key, then_value, result_type)?;
             self.builder.ins().jump(merge_block, &[then_value.into()]);
 
             self.builder.switch_to_block(else_block);
             self.builder.seal_block(else_block);
-            let else_value = self.lower_nested_expression(else_key)?;
+            let else_value = self.lower_coerced_expression(else_key)?;
             let else_value = self.adapt_scalar_boundary(else_key, else_value, result_type)?;
             self.builder.ins().jump(merge_block, &[else_value.into()]);
 

@@ -20,7 +20,7 @@ pub(in crate::semantic_contract) fn aggregate_field_layout(
             match resolve_nominal_layout_declaration(db, program, index, key, &path.node) {
                 Some(declaration) => AggregateFieldShape::Nominal(declaration),
                 // A contract-typed field holds a contract box: one managed reference.
-                None if crate::semantic_contract::contracts::resolve_contract(db, key, &path.node).is_some() => {
+                None if crate::semantic_contract::contracts::resolve_contract_head(db, key, &path.node).is_some() => {
                     AggregateFieldShape::ManagedReference(SemanticTypeId::POINTER)
                 }
                 None => return Err(SemanticError::unavailable("aggregate_layout")),
@@ -96,7 +96,7 @@ pub(in crate::semantic_contract) fn nominal_aggregate_abi_type(
     // A contract-typed value (an injected service, a `Greeter g = Hello {}` local) is the managed
     // reference of its implementation, like any nominal value.
     resolve_type_declaration(db, key, path)
-        .or_else(|| crate::semantic_contract::contracts::resolve_contract(db, key, path))
+        .or_else(|| crate::semantic_contract::contracts::resolve_contract_head(db, key, path))
         .ok_or_else(|| SemanticError::unavailable("abi_type"))?;
     Ok(SemanticTypeId::POINTER)
 }

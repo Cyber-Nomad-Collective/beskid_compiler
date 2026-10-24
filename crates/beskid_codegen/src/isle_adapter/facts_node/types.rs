@@ -5,6 +5,15 @@ use super::super::*;
 impl SyntaxNodeFacts<'_> {
     pub(super) fn operator_fact_impl(&self, key: AstNodeKey) -> Option<OperatorFact> {
         let operator = self.query(operator_fact(self.db, key))?;
+        if matches!(operator, beskid_queries::OperatorFact::Eq | beskid_queries::OperatorFact::NotEq)
+            && self.contract_value_equality_impl(key)
+        {
+            return Some(if operator == beskid_queries::OperatorFact::Eq {
+                OperatorFact::ContractEq
+            } else {
+                OperatorFact::ContractNotEq
+            });
+        }
         let specialized_string_operands = matches!(
             operator,
             beskid_queries::OperatorFact::Eq

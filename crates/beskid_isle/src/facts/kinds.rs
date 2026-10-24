@@ -74,6 +74,9 @@ pub enum OperatorFact {
     StringGte,
     EnumEq,
     EnumNotEq,
+    /// `==` on two contract values: the same implementing value (runtime contract dispatch).
+    ContractEq,
+    ContractNotEq,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

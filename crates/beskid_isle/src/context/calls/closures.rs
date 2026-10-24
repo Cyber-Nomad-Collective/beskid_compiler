@@ -26,7 +26,7 @@ impl IsleContext<'_, '_, '_, '_> {
             let (_, root) = self.emit_inline_closure_environment(environment)?;
             self.release_temporary_root(Some(root))?;
         }
-        let value = generated::constructor_lower_expression(self, lambda.body)?;
+        let value = self.lower_coerced_expression(lambda.body)?;
         (self.builder.func.dfg.value_type(value) == lambda.result_type).then_some(value)
     }
 

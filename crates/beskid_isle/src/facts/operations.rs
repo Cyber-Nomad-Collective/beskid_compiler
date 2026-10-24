@@ -182,6 +182,16 @@ pub struct ContractBoxPlan {
     pub receiver: ContractBoxReceiverFact,
 }
 
+/// Conversion of a contract value to a contract its own contract embeds: the receiver word is
+/// copied into a new box whose witness table is word `table_word` of the source box's table;
+/// the new box takes the reference or scalar allocation request by the table's receiver kind.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ContractUpcastPlan {
+    pub table_word: u32,
+    pub reference_request_symbol: std::sync::Arc<str>,
+    pub scalar_request_symbol: std::sync::Arc<str>,
+}
+
 /// A contract method call through a contract box: the receiver word and witness table are loaded
 /// from the box, the entry at `slot` is called indirectly with `signature` (receiver word first).
 #[derive(Clone, Debug, PartialEq, Eq)]

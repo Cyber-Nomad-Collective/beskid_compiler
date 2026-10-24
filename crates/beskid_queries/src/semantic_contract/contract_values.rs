@@ -7,13 +7,23 @@
 //! the contract's method order (`contract_method_slot`). A call through a contract value loads the
 //! receiver word and the table entry of the method's slot and calls it indirectly.
 //!
-//! This module answers three questions for code generation:
+//! A witness table is `WITNESS_HEADER_WORDS` header words (the implementing type's tag and the
+//! receiver kind, read by `==` on contract values), then the method entries in slot order, then
+//! the addresses of the implementing type's tables for every contract the contract embeds
+//! ([`contract_embedded_contracts`] order), read when a contract value converts to an embedded
+//! contract.
+//!
+//! This module answers these questions for code generation:
 //! - [`contract_box_coercion`]: is the expression at `key` a concrete value written into a
 //!   contract-typed destination, and with which witness table is it boxed?
 //! - [`contract_dispatch`]: is the call at `key` a contract method call without a static target,
 //!   and which slot and signature does it dispatch with?
 //! - [`contract_value_receiver`]: is the receiver of the direct method call at `key` a contract
 //!   box whose receiver word the call reads out (conf2's static selection)?
+//! - [`contract_upcast`]: is the expression at `key` a contract value converted to a contract its
+//!   own contract embeds, and which table word holds the embedded table?
+//! - [`contract_value_equality`]: is the binary expression at `key` `==`/`!=` on two contract
+//!   values?
 
 use std::collections::HashMap;
 
@@ -22,7 +32,7 @@ use beskid_analysis::syntax_query::{DynNodeRef, NodeKind, SyntaxIndex};
 
 use super::abi::generic_abi_type;
 use super::contracts::{
-    contract_declaration_for_identity, contract_method_slot, contract_method_slots, contract_parameter_declarations,
+    contract_declaration_for_identity, contract_embedded_contracts, contract_method_slot, contract_method_slots, contract_parameter_declarations,
     is_conformable_primitive, prove_box_conformance, specialized_source_expression_identity,
 };
 use super::expected_type::expected_type_in;
@@ -36,6 +46,16 @@ pub const CONTRACT_BOX_RECEIVER_OFFSET: u32 = 16;
 pub const CONTRACT_BOX_WITNESS_OFFSET: u32 = 24;
 /// Size of a contract box in bytes, header included.
 pub const CONTRACT_BOX_SIZE: u64 = 32;
+/// Words of a witness table before its method entries: the type tag, then the receiver kind.
+pub const WITNESS_HEADER_WORDS: u32 = 2;
+/// Receiver kind word of a table whose receiver word is a managed reference.
+pub const WITNESS_RECEIVER_REFERENCE: u64 = 0;
+/// Receiver kind word of a table whose receiver word holds integer, `bool` or `char` bits.
+pub const WITNESS_RECEIVER_BITS: u64 = 1;
+/// Receiver kind word of a table whose receiver word holds an `f32` bit pattern.
+pub const WITNESS_RECEIVER_F32: u64 = 2;
+/// Receiver kind word of a table whose receiver word holds an `f64` bit pattern.
+pub const WITNESS_RECEIVER_F64: u64 = 3;
 
 /// What the receiver word of a contract box holds.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
@@ -44,6 +64,18 @@ pub enum ContractBoxReceiver {
     Reference,
     /// The bits of a primitive of this type, widened to one word; outside the pointer map.
     Scalar(SemanticTypeId),
+}
+
+impl ContractBoxReceiver {
+    /// The receiver kind word of a witness table (`WITNESS_RECEIVER_*`).
+    pub fn witness_kind(self) -> u64 {
+        match self {
+            Self::Reference | Self::Scalar(SemanticTypeId::STRING) => WITNESS_RECEIVER_REFERENCE,
+            Self::Scalar(SemanticTypeId::F32) => WITNESS_RECEIVER_F32,
+            Self::Scalar(SemanticTypeId::F64) => WITNESS_RECEIVER_F64,
+            Self::Scalar(_) => WITNESS_RECEIVER_BITS,
+        }
+    }
 }
 
 /// One witness table: the methods an implementing type instance supplies for an applied
@@ -61,6 +93,20 @@ pub struct ContractWitnessTable {
     pub methods: Arc<[(AstNodeKey, AstNodeKey)]>,
     /// Generic environment of a generic implementation (`impl<T> Box<T> : C` for `Box<i64>`).
     pub environment: Arc<[GenericSubstitution]>,
+    /// The implementing type's identity tag: equal for every table of one implementing type
+    /// (whatever the contract and the module), different for different types.
+    pub type_tag: u64,
+    /// The implementing type's tables for the contracts the contract embeds, in
+    /// [`contract_embedded_contracts`] order (non-generic embedded contracts only).
+    pub embedded: Arc<[ContractWitnessTable]>,
+}
+
+/// A contract value converted to a contract its own contract embeds (`Reader r = channel;`): the
+/// box is rebuilt with the same receiver word and the table at word `table_word` of the source
+/// box's witness table.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct ContractUpcast {
+    pub table_word: u32,
 }
 
 /// A concrete value boxed into a contract-typed destination.
@@ -89,6 +135,85 @@ pub fn contract_box_coercion(
     key: AstNodeKey,
     enclosing: Option<&GenericSpecializationInstance>,
 ) -> SemanticQueryResult<ContractBoxCoercion> {
+    let Some((qualified_name, arguments, source)) = conversion_site(db, key, enclosing)? else {
+        return Ok(None);
+    };
+    if matches!(source, GenericSourceTypeIdentity::Contract { .. }) {
+        return Ok(None);
+    }
+    let Some(contract) = contract_declaration_for_identity(db, key, &qualified_name) else {
+        return Err(SemanticError::unavailable_at("contract_box", key));
+    };
+    let witness = witness_table(db, key, &source, contract, &arguments)?;
+    Ok(Some(ContractBoxCoercion { witness }))
+}
+
+/// The conversion a contract value at `key` performs when it is written into a destination of a
+/// contract its own contract embeds (`Reader r = channel;` with `contract Channel { Reader; ... }`):
+/// `Ok(None)` for a value of the destination's own contract, which passes through, and for every
+/// position that is no conversion site.
+pub fn contract_upcast(
+    db: &dyn Db,
+    key: AstNodeKey,
+    enclosing: Option<&GenericSpecializationInstance>,
+) -> SemanticQueryResult<ContractUpcast> {
+    let Some((target_name, _, source)) = conversion_site(db, key, enclosing)? else {
+        return Ok(None);
+    };
+    let GenericSourceTypeIdentity::Contract { qualified_name: source_name, .. } = &source else {
+        return Ok(None);
+    };
+    if source_name.as_ref() == target_name.as_ref() {
+        return Ok(None);
+    }
+    let (Some(target), Some(source)) = (
+        contract_declaration_for_identity(db, key, &target_name),
+        contract_declaration_for_identity(db, key, source_name),
+    ) else {
+        return Err(SemanticError::unavailable_at("contract_upcast", key));
+    };
+    let Some(position) = upcast_targets(db, source).and_then(|targets| targets.iter().position(|item| *item == target))
+    else {
+        // Not an embedded contract: the value legality reports it (E1206).
+        return Ok(None);
+    };
+    let methods = contract_method_slots(db, source).ok_or_else(|| SemanticError::unavailable("contract_methods"))?;
+    let word = usize::try_from(WITNESS_HEADER_WORDS).unwrap_or(usize::MAX)
+        .checked_add(methods.len())
+        .and_then(|word| word.checked_add(position))
+        .and_then(|word| u32::try_from(word).ok())
+        .ok_or_else(|| SemanticError::new("witness table exceeds the ABI word"))?;
+    Ok(Some(ContractUpcast { table_word: word }))
+}
+
+/// The contracts a value of `contract` converts to: the non-generic contracts it embeds, in the
+/// order their tables follow the method entries of every witness table of `contract`.
+pub(in crate::semantic_contract) fn upcast_targets(db: &dyn Db, contract: AstNodeKey) -> Option<Vec<AstNodeKey>> {
+    let embedded = contract_embedded_contracts(db, contract)?;
+    Some(embedded.into_iter().filter(|embedded| contract_generic_count(db, *embedded) == Some(0)).collect())
+}
+
+/// The number of generic parameters a contract declares.
+fn contract_generic_count(db: &dyn Db, contract: AstNodeKey) -> Option<usize> {
+    let syntax = db.syntax_unit(contract.unit).filter(|syntax| syntax.accepts_key(db, contract))?;
+    let definition = syntax
+        .syntax_index(db)
+        .node_at(syntax.expanded_program(db), contract.node)
+        .and_then(|node| node.of::<ContractDefinition>())?;
+    Some(definition.generics.len())
+}
+
+/// A position where a value converts to a contract type, with the destination contract's name and
+/// applied arguments and the value's own identity: a typed `let`, an assignment, an enum payload,
+/// a struct field, a `return`, an array element, a call argument that selects no static
+/// specialization, and the target-typed positions a contract expectation reaches through a
+/// conditional branch, a `match` arm, a block result or a lambda body. A conditional, `match` or
+/// block expression itself never converts: its branches, arms or result do.
+fn conversion_site(
+    db: &dyn Db,
+    key: AstNodeKey,
+    enclosing: Option<&GenericSpecializationInstance>,
+) -> Result<Option<(Arc<str>, Arc<[GenericSourceTypeIdentity]>, GenericSourceTypeIdentity)>, SemanticError> {
     let Some(syntax) = db.syntax_unit(key.unit).filter(|syntax| syntax.accepts_key(db, key)) else {
         return Ok(None);
     };
@@ -97,8 +222,14 @@ pub fn contract_box_coercion(
     if index.node_at(program, key.node).is_none() || !node_is_value_expression(index, key.node) {
         return Ok(None);
     }
-    // Only the normalized expression node of a destination boxes; its wrappers do not.
+    // Only the normalized expression node of a destination converts; its wrappers do not.
     if normalized_expression_node(index, key.node) != key.node {
+        return Ok(None);
+    }
+    if matches!(
+        index.kind(key.node),
+        Some(NodeKind::ConditionalExpression | NodeKind::MatchExpression | NodeKind::BlockExpression)
+    ) {
         return Ok(None);
     }
     let expected = match expected_type_in(db, key, enclosing) {
@@ -116,29 +247,62 @@ pub fn contract_box_coercion(
         | ExpectedTypeContext::EnumPayload { .. }
         | ExpectedTypeContext::StructField { .. }
         | ExpectedTypeContext::Return { .. }
-        | ExpectedTypeContext::ArrayElement { .. } => (),
+        | ExpectedTypeContext::ArrayElement { .. }
+        | ExpectedTypeContext::ConditionalBranch { .. }
+        | ExpectedTypeContext::MatchArm { .. }
+        | ExpectedTypeContext::BlockResult { .. }
+        | ExpectedTypeContext::LambdaBody { .. } => (),
         ExpectedTypeContext::CallArgument { call, position } => {
             if static_contract_argument(db, *call, *position, key, enclosing)? {
                 return Ok(None);
             }
         }
-        // Forwarded positions (a branch, an arm, a block result, a lambda body) box through
-        // the expression that forwards them, or not at all.
-        _ => return Ok(None),
+        ExpectedTypeContext::BinaryOperand { .. } | ExpectedTypeContext::ExpressionStatement { .. } => {
+            return Ok(None);
+        }
     }
     let source = match specialized_source_expression_identity(db, key, enclosing) {
         Ok(source) => source,
         Err(error) if error.is_unavailable() => return Ok(None),
         Err(error) => return Err(error),
     };
-    if matches!(source, GenericSourceTypeIdentity::Contract { .. }) {
+    Ok(Some((qualified_name.clone(), arguments.clone(), source)))
+}
+
+/// Whether the binary expression at `key` is `==` or `!=` on two contract values: equal exactly
+/// when both hold the same implementing value (the same object for a nominal type or `string`,
+/// equal values of the same primitive type for a boxed primitive).
+pub fn contract_value_equality(
+    db: &dyn Db,
+    key: AstNodeKey,
+    enclosing: Option<&GenericSpecializationInstance>,
+) -> SemanticQueryResult<bool> {
+    let Some(syntax) = db.syntax_unit(key.unit).filter(|syntax| syntax.accepts_key(db, key)) else {
         return Ok(None);
-    }
-    let Some(contract) = contract_declaration_for_identity(db, key, qualified_name) else {
-        return Err(SemanticError::unavailable_at("contract_box", key));
     };
-    let witness = witness_table(db, key, &source, contract, arguments)?;
-    Ok(Some(ContractBoxCoercion { witness }))
+    let index = syntax.syntax_index(db);
+    let program = syntax.expanded_program(db);
+    let Some(binary) = index.node_at(program, key.node).and_then(|node| node.of::<beskid_analysis::syntax::BinaryExpression>())
+    else {
+        return Ok(None);
+    };
+    if !matches!(binary.op.node, beskid_analysis::syntax::BinaryOp::Eq | beskid_analysis::syntax::BinaryOp::NotEq) {
+        return Ok(Some(false));
+    }
+    let operand = |expression: &Spanned<beskid_analysis::syntax::Expression>| {
+        index
+            .direct_child_id(program, key.node, DynNodeRef::from(expression))
+            .map(|node| AstNodeKey { node: normalized_expression_node(index, node), ..key })
+    };
+    let is_contract = |operand: Option<AstNodeKey>| {
+        operand.is_some_and(|operand| {
+            matches!(
+                specialized_source_expression_identity(db, operand, enclosing),
+                Ok(GenericSourceTypeIdentity::Contract { .. })
+            )
+        })
+    };
+    Ok(Some(is_contract(operand(binary.left.as_ref())) && is_contract(operand(binary.right.as_ref()))))
 }
 
 /// The witness table that boxes a value of `source` into `contract<applied_arguments>`.
@@ -180,7 +344,30 @@ pub(super) fn witness_table(
     }
     .display_name();
     let symbol = Arc::from(witness_symbol(&source.display_name(), &contract_display).as_str());
-    Ok(ContractWitnessTable { concrete, contract, symbol, receiver, methods: ordered.into(), environment })
+    let mut embedded = Vec::new();
+    for target in upcast_targets(db, contract).ok_or_else(|| SemanticError::unavailable("contract_embeddings"))? {
+        embedded.push(witness_table(db, context, source, target, &[])?);
+    }
+    Ok(ContractWitnessTable {
+        concrete,
+        contract,
+        symbol,
+        receiver,
+        methods: ordered.into(),
+        environment,
+        type_tag: type_tag(&source.display_name()),
+        embedded: embedded.into(),
+    })
+}
+
+/// The identity tag of an implementing type: a 64-bit FNV-1a hash of its exact source identity.
+fn type_tag(source: &str) -> u64 {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for byte in source.bytes() {
+        hash ^= u64::from(byte);
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    hash
 }
 
 /// The symbol of one witness table: readable prefix plus a collision-free hash of the exact
@@ -213,10 +400,27 @@ fn static_contract_argument(
     if !contract_parameter_declarations(db, declaration).iter().any(|(_, candidate, _)| *candidate == position) {
         return Ok(false);
     }
+    if forwards_expected_type(db, argument) {
+        return Ok(false);
+    }
     Ok(matches!(
         specialized_source_expression_identity(db, argument, enclosing),
         Ok(GenericSourceTypeIdentity::Nominal { .. })
     ))
+}
+
+/// Whether the expression at `key` forwards its expected type to its branches, arms or result (a
+/// conditional, a `match` or a block expression): as a contract-typed argument it converts at
+/// those positions, so the call takes the unspecialized body that receives a contract value.
+pub(super) fn forwards_expected_type(db: &dyn Db, key: AstNodeKey) -> bool {
+    let Some(syntax) = db.syntax_unit(key.unit).filter(|syntax| syntax.accepts_key(db, key)) else {
+        return false;
+    };
+    let index = syntax.syntax_index(db);
+    matches!(
+        index.kind(normalized_expression_node(index, key.node)),
+        Some(NodeKind::ConditionalExpression | NodeKind::MatchExpression | NodeKind::BlockExpression)
+    )
 }
 
 fn node_is_value_expression(index: &SyntaxIndex, node: beskid_analysis::syntax::AstNodeId) -> bool {
@@ -337,27 +541,48 @@ fn receiver_identity(
     let program = syntax.expanded_program(db);
     match index.kind(receiver.node) {
         Some(NodeKind::Identifier) => local_identity(db, program, index, receiver, enclosing),
-        Some(NodeKind::PathSegment) => {
-            super::layouts::nominal_field_projection_in_environment(db, receiver, enclosing)?.ok().map(|(_, identity)| identity)
-        }
+        Some(NodeKind::PathSegment) => segment_identity(db, receiver, enclosing),
         Some(NodeKind::PathExpression) if is_callee_of(index, program, call, receiver.node) => {
             let path = &index.node_at(program, receiver.node)?.of::<beskid_analysis::syntax::PathExpression>()?.path.node;
             let (_, prefix) = path.segments.split_last()?;
-            match prefix {
-                [single] if single.node.type_args.is_empty() => {
-                    let identifier = resolve_lexical_declaration(program, index, call.node, &single.node.name.node.name)?;
-                    local_identity(db, program, index, AstNodeKey { node: identifier, ..receiver }, enclosing)
-                }
-                _ => {
-                    let segment = super::layouts::path_projection_segment(db, receiver, prefix.len() - 1)?;
-                    super::layouts::nominal_field_projection_in_environment(db, segment, enclosing)?
-                        .ok()
-                        .map(|(_, identity)| identity)
-                }
+            if let [single] = prefix
+                && single.node.type_args.is_empty()
+                && let Some(identifier) = resolve_lexical_declaration(program, index, call.node, &single.node.name.node.name)
+            {
+                return local_identity(db, program, index, AstNodeKey { node: identifier, ..receiver }, enclosing);
             }
+            // A field chain, or a field of the implicit receiver (`greeter.Rank()` in a method).
+            // An unqualified sibling call (`Probe()` inside a method) has no receiver segment.
+            let segment = super::layouts::path_projection_segment(db, receiver, prefix.len().checked_sub(1)?)?;
+            segment_identity(db, segment, enclosing)
         }
         _ => specialized_source_expression_identity(db, receiver, enclosing).ok(),
     }
+}
+
+/// The identity of the field a path segment reads: a projected field, or an injected field of the
+/// implicit receiver (whose declared type is the contract or contract array it holds).
+fn segment_identity(
+    db: &dyn Db,
+    segment: AstNodeKey,
+    enclosing: Option<&GenericSpecializationInstance>,
+) -> Option<GenericSourceTypeIdentity> {
+    match super::layouts::nominal_field_projection_in_environment(db, segment, enclosing) {
+        Some(Ok((_, identity))) => Some(identity),
+        _ => injected_field_identity(db, segment),
+    }
+}
+
+/// The declared identity of the injected field read at `key` (a field path or path segment):
+/// `Greeter` for `inject Greeter greeter`, `Greeter[]` for `inject Greeter[] all`.
+pub(in crate::semantic_contract) fn injected_field_identity(db: &dyn Db, key: AstNodeKey) -> Option<GenericSourceTypeIdentity> {
+    let access = super::composition::composition_injected_field_access(db, key).ok().flatten()?;
+    let syntax = db.syntax_unit(access.field.unit).filter(|syntax| syntax.accepts_key(db, access.field))?;
+    let field = syntax
+        .syntax_index(db)
+        .node_at(syntax.expanded_program(db), access.field.node)?
+        .of::<beskid_analysis::syntax::Field>()?;
+    super::generic_source_type_identity(db, access.field, &field.ty.node).ok()
 }
 
 /// Whether `node` is the (normalized) callee of `call`.

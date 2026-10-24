@@ -61,7 +61,9 @@ pub use semantic_contract::{
 };
 pub use semantic_contract::{
     CONTRACT_BOX_RECEIVER_OFFSET, CONTRACT_BOX_SIZE, CONTRACT_BOX_WITNESS_OFFSET, ContractBoxCoercion, ContractBoxReceiver,
-    ContractDispatch, ContractWitnessTable, contract_box_coercion, contract_dispatch, contract_value_receiver, contract_witness_method_instances, contract_witness_table_for_declaration,
+    ContractDispatch, ContractUpcast, ContractWitnessTable, WITNESS_HEADER_WORDS, WITNESS_RECEIVER_BITS, WITNESS_RECEIVER_F32,
+    WITNESS_RECEIVER_F64, WITNESS_RECEIVER_REFERENCE, contract_box_coercion, contract_dispatch, contract_upcast,
+    contract_value_equality, contract_value_receiver, contract_witness_method_instances, contract_witness_table_for_declaration,
     array_literal_has_contract_elements, injected_field_contract,
 };
 pub use semantic_contract::{

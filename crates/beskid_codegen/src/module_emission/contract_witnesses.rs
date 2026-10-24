@@ -30,6 +30,7 @@ pub(super) fn collect_contract_witnesses(
 ) -> Result<ContractWitnesses, SyntaxModuleEmissionError> {
     let db = input.database();
     let mut tables = BTreeMap::<String, ContractWitnessTable>::new();
+    let mut upcasts = false;
     for item in items {
         let mut visited = HashSet::new();
         let mut nodes = Vec::new();
@@ -40,6 +41,10 @@ pub(super) fn collect_contract_witnesses(
             {
                 tables.entry(coercion.witness.symbol.to_string()).or_insert(coercion.witness);
             }
+            // A conversion to an embedded contract allocates a box without naming a table.
+            upcasts |= beskid_queries::contract_upcast(db, key, item.specialization.as_ref())
+                .map_err(|error| emission_verification(error.to_string()))?
+                .is_some();
         }
     }
     for (field, declaration, contract) in composition_contract_injections(input) {
@@ -49,7 +54,16 @@ pub(super) fn collect_contract_witnesses(
             tables.entry(table.symbol.to_string()).or_insert(table);
         }
     }
-    let mut witnesses = ContractWitnesses { boxes_required: !tables.is_empty(), ..Default::default() };
+    // Every table names its embedded contracts' tables (contract value conversion), so they are
+    // defined in the same module.
+    let mut pending = tables.values().flat_map(|table| table.embedded.iter().cloned()).collect::<Vec<_>>();
+    while let Some(table) = pending.pop() {
+        if !tables.contains_key(table.symbol.as_ref()) {
+            pending.extend(table.embedded.iter().cloned());
+            tables.insert(table.symbol.to_string(), table);
+        }
+    }
+    let mut witnesses = ContractWitnesses { boxes_required: upcasts || !tables.is_empty(), ..Default::default() };
     for (symbol, table) in tables {
         let instances = beskid_queries::contract_witness_method_instances(db, &table)
             .map_err(|error| emission_verification(error.to_string()))?
@@ -79,7 +93,13 @@ pub(super) fn collect_contract_witnesses(
                 }
             }
         }
-        witnesses.tables.push(WitnessTablePlan { symbol, entries });
+        witnesses.tables.push(WitnessTablePlan {
+            symbol,
+            type_tag: table.type_tag,
+            receiver_kind: table.receiver.witness_kind(),
+            entries,
+            embedded: table.embedded.iter().map(|embedded| embedded.symbol.to_string()).collect(),
+        });
     }
     Ok(witnesses)
 }

@@ -892,6 +892,42 @@ pub(in crate::semantic_contract) fn contract_method_slots(db: &dyn Db, contract:
     contract_methods(db, contract, &mut HashSet::new()).ok()
 }
 
+/// The contracts `contract` embeds, directly or through other embeddings, in the depth-first
+/// order of its declaration (each once). A witness table of `contract` stores the address of the
+/// implementing type's table for each of them after its method entries, in this order, so a
+/// contract value converts to any embedded contract without knowing its implementing type.
+pub(in crate::semantic_contract) fn contract_embedded_contracts(db: &dyn Db, contract: AstNodeKey) -> Option<Vec<AstNodeKey>> {
+    fn walk(db: &dyn Db, contract: AstNodeKey, active: &mut HashSet<AstNodeKey>, out: &mut Vec<AstNodeKey>) -> Option<()> {
+        if !active.insert(contract) {
+            return None;
+        }
+        let syntax = db.syntax_unit(contract.unit).filter(|syntax| syntax.accepts_key(db, contract))?;
+        let definition = syntax
+            .syntax_index(db)
+            .node_at(syntax.expanded_program(db), contract.node)
+            .and_then(|node| node.of::<ContractDefinition>())?;
+        for item in &definition.items {
+            let ContractNode::Embedding(embedding) = &item.node else { continue };
+            let path = Path {
+                segments: vec![Spanned::new(
+                    PathSegment { name: embedding.node.name.clone(), type_args: Vec::new() },
+                    embedding.span,
+                )],
+            };
+            let embedded = resolve_contract(db, contract, &path)?;
+            if !out.contains(&embedded) {
+                out.push(embedded);
+            }
+            walk(db, embedded, active, out)?;
+        }
+        active.remove(&contract);
+        Some(())
+    }
+    let mut out = Vec::new();
+    walk(db, contract, &mut HashSet::new(), &mut out)?;
+    Some(out)
+}
+
 /// The contract declaration a contract identity names, resolved in the generation of `key`.
 pub(in crate::semantic_contract) fn contract_declaration_for_identity(
     db: &dyn Db,
@@ -2411,6 +2447,7 @@ pub(super) fn contract_witnesses_for_call(
         // a specialization with a witness.
         if matches!(source_identity, GenericSourceTypeIdentity::Contract { .. })
             || conformable_primitive_identity(&source_identity).is_some()
+            || super::contract_values::forwards_expected_type(db, argument)
         {
             continue;
         }

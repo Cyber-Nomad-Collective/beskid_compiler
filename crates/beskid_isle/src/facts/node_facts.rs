@@ -34,6 +34,10 @@ pub trait NodeFacts {
     }
     /// The witness-table dispatch of the contract method call at `key`, when no static target is
     /// known.
+    /// The conversion of the contract value at `key` to an embedded contract of its contract.
+    fn contract_upcast(&self, _key: AstNodeKey) -> Option<ContractUpcastPlan> {
+        None
+    }
     fn contract_dispatch(&self, _key: AstNodeKey) -> Option<ContractDispatchCall> {
         None
     }

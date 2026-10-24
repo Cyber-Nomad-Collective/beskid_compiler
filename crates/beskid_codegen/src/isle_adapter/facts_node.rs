@@ -178,6 +178,10 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
         self.contract_box_impl(key)
     }
 
+    fn contract_upcast(&self, key: AstNodeKey) -> Option<beskid_isle::ContractUpcastPlan> {
+        self.contract_upcast_impl(key)
+    }
+
     fn contract_dispatch(&self, key: AstNodeKey) -> Option<beskid_isle::ContractDispatchCall> {
         self.contract_dispatch_impl(key)
     }

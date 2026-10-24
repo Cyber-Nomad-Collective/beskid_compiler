@@ -389,6 +389,16 @@ pub fn lower_expression(context: &mut IsleContext<'_, '_, '_, '_>, key: AstNodeK
     })
 }
 
+/// Lower an expression written into a destination: a lambda's expression body converts to the
+/// lambda's contract result type like every other conversion site.
+pub fn lower_converted_expression(context: &mut IsleContext<'_, '_, '_, '_>, key: AstNodeKey) -> Result<Value, LoweringError> {
+    generated::constructor_lower_expression(context, key)
+        .and_then(|value| context.coerce_to_destination(key, value))
+        .ok_or_else(|| {
+            context.pending_error.take().unwrap_or(LoweringError { key, kind: LoweringErrorKind::MissingRuleOrFact })
+        })
+}
+
 pub fn lower_statement(context: &mut IsleContext<'_, '_, '_, '_>, key: AstNodeKey) -> Result<(), LoweringError> {
     generated::constructor_lower_statement(context, key).ok_or_else(|| {
         context.pending_error.take().unwrap_or(LoweringError { key, kind: LoweringErrorKind::MissingRuleOrFact })

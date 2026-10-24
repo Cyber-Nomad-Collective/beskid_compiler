@@ -379,6 +379,14 @@ macro_rules! generated_operator_methods {
             self.lower_enum_discriminant_compare(key, true)
         }
 
+        fn clif_contract_eq(&mut self, key: AstNodeKey) -> Option<Value> {
+            self.lower_contract_value_equality(key, false)
+        }
+
+        fn clif_contract_ne(&mut self, key: AstNodeKey) -> Option<Value> {
+            self.lower_contract_value_equality(key, true)
+        }
+
         fn clif_short_circuit_or(&mut self, key: AstNodeKey) -> Option<Value> {
             self.short_circuit(key, true)
         }

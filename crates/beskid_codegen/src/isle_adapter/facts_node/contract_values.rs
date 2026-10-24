@@ -1,7 +1,7 @@
 //! Contract values (runtime contract dispatch, v0.6.7): box coercions, witness dispatch and
 //! unboxed receivers, answered from the semantic queries in the specialization being lowered.
 
-use beskid_isle::{ContractBoxPlan, ContractBoxReceiverFact, ContractDispatchCall};
+use beskid_isle::{ContractBoxPlan, ContractBoxReceiverFact, ContractDispatchCall, ContractUpcastPlan};
 use beskid_queries::{AstNodeKey, ContractBoxReceiver, ContractWitnessTable, SemanticTypeId};
 
 use super::SyntaxNodeFacts;
@@ -14,6 +14,22 @@ impl SyntaxNodeFacts<'_> {
         let coercion =
             self.query(beskid_queries::contract_box_coercion(self.db, key, self.current_item_specialization()))?;
         self.contract_box_plan(&coercion.witness)
+    }
+
+    /// The conversion of the contract value at `key` to an embedded contract of its contract.
+    pub(super) fn contract_upcast_impl(&self, key: AstNodeKey) -> Option<ContractUpcastPlan> {
+        let upcast = self.query(beskid_queries::contract_upcast(self.db, key, self.current_item_specialization()))?;
+        Some(ContractUpcastPlan {
+            table_word: upcast.table_word,
+            reference_request_symbol: CONTRACT_BOX_REFERENCE_REQUEST_SYMBOL.into(),
+            scalar_request_symbol: CONTRACT_BOX_SCALAR_REQUEST_SYMBOL.into(),
+        })
+    }
+
+    /// Whether the binary expression at `key` is `==`/`!=` on two contract values.
+    pub(in crate::isle_adapter) fn contract_value_equality_impl(&self, key: AstNodeKey) -> bool {
+        self.query(beskid_queries::contract_value_equality(self.db, key, self.current_item_specialization()))
+            .unwrap_or(false)
     }
 
     /// The box plan of one witness table.

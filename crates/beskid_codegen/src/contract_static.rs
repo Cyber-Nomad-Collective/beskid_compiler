@@ -3,8 +3,10 @@
 //! A contract box is a 32-byte managed record: `{ header, receiver word, witness table address }`.
 //! Two descriptors serve every box of a module: the reference box traces its receiver word, the
 //! scalar box (a boxed primitive) traces nothing. A witness table is a module-local array of
-//! function addresses, one per contract method in slot order; a scalar receiver's entries are
-//! thunks that narrow the receiver word to the primitive and call the implementation.
+//! words: the implementing type's tag and the receiver kind, then one function address per
+//! contract method in slot order (a scalar receiver's entries are thunks that narrow the receiver
+//! word to the primitive and call the implementation), then the addresses of the implementing
+//! type's tables for the contracts the contract embeds.
 
 use beskid_queries::{ItemSignature, SemanticTypeId};
 use cranelift_codegen::ir::{ExtFuncData, ExternalName, Function, InstBuilder, MemFlagsData, Signature, Type, types};
@@ -27,7 +29,13 @@ pub const CONTRACT_BOX_RECEIVER_OFFSET: u64 = beskid_queries::CONTRACT_BOX_RECEI
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WitnessTablePlan {
     pub symbol: String,
+    /// The implementing type's identity tag (header word 0).
+    pub type_tag: u64,
+    /// The receiver kind (header word 1, `beskid_queries::WITNESS_RECEIVER_*`).
+    pub receiver_kind: u64,
     pub entries: Vec<String>,
+    /// Symbols of the implementing type's tables for the embedded contracts, after the entries.
+    pub embedded: Vec<String>,
 }
 
 /// An unboxing thunk: `(word receiver, params...) -> result` narrows the receiver word to the
@@ -102,18 +110,35 @@ pub fn emit_witness_tables<M: Module>(
     plans: &[WitnessTablePlan],
     function_id: &dyn Fn(&str) -> Option<FuncId>,
 ) -> ModuleResult<()> {
+    let header = beskid_queries::WITNESS_HEADER_WORDS as usize;
+    let mut tables = std::collections::HashMap::new();
     for plan in plans {
-        let table = module.declare_data(&plan.symbol, Linkage::Local, false, false)?;
+        tables.insert(plan.symbol.as_str(), module.declare_data(&plan.symbol, Linkage::Local, false, false)?);
+    }
+    let overflow = |symbol: &str| ModuleError::Backend(anyhow::anyhow!("witness table `{symbol}` exceeds the ABI word"));
+    for plan in plans {
+        let table = tables[plan.symbol.as_str()];
+        let mut bytes = vec![0u8; (header + plan.entries.len() + plan.embedded.len()) * 8];
+        write_word(&mut bytes, 0, plan.type_tag)?;
+        write_word(&mut bytes, 8, plan.receiver_kind)?;
         let mut data = DataDescription::new();
-        data.define(vec![0u8; plan.entries.len().max(1) * 8].into_boxed_slice());
+        data.define(bytes.into_boxed_slice());
         for (slot, entry) in plan.entries.iter().enumerate() {
             let id = function_id(entry).ok_or_else(|| {
                 ModuleError::Backend(anyhow::anyhow!("witness table `{}` names an undeclared function `{entry}`", plan.symbol))
             })?;
             let reference = module.declare_func_in_data(id, &mut data);
-            let offset = u32::try_from(slot * 8)
-                .map_err(|_| ModuleError::Backend(anyhow::anyhow!("witness table `{}` exceeds the ABI word", plan.symbol)))?;
+            let offset = u32::try_from((header + slot) * 8).map_err(|_| overflow(&plan.symbol))?;
             data.write_function_addr(offset, reference);
+        }
+        for (position, embedded) in plan.embedded.iter().enumerate() {
+            let id = *tables.get(embedded.as_str()).ok_or_else(|| {
+                ModuleError::Backend(anyhow::anyhow!("witness table `{}` names an undefined table `{embedded}`", plan.symbol))
+            })?;
+            let reference = module.declare_data_in_data(id, &mut data);
+            let offset =
+                u32::try_from((header + plan.entries.len() + position) * 8).map_err(|_| overflow(&plan.symbol))?;
+            data.write_data_addr(offset, reference, 0);
         }
         module.define_data(table, &data)?;
     }
