@@ -609,7 +609,7 @@ fn nested_capture_fixture(config: &str, knobs: &str) -> String {
     // ParallelSuite `Measure` shape: a parameter captured through two lambda levels is read in
     // a binary expression that infers the inner generic method's `T`.
     format!(
-        "{config} type Config {{ string path, i64 width }} {knobs} type Knobs {{ i64 depth }} type Box<T> {{ T item, T Get() {{ return this.item; }} }} type Scope {{ i64 id, Box<T> Spawn<T>(() => T body) {{ return Box<T> {{ item: body() }}; }} }} T Run<T>((Scope) => T body) {{ return body(Scope {{ id: 1_i64 }}); }} i64 Measure(Config config, Knobs knobs) {{ return Run<i64>((Scope s) => {{ Box<i64> t = s.Spawn(() => config.width + knobs.depth); return t.Get(); }}); }} i64 Main() {{ return Measure(Config {{ path: \"a\", width: 40_i64 }}, Knobs {{ depth: 2_i64 }}); }}"
+        "{config} type Config {{ string path; i64 width; }} {knobs} type Knobs {{ i64 depth; }} type Box<T> {{ T item; T Get() {{ return this.item; }} }} type Scope {{ i64 id; Box<T> Spawn<T>(() => T body) {{ return Box<T> {{ item: body() }}; }} }} T Run<T>((Scope) => T body) {{ return body(Scope {{ id: 1_i64 }}); }} i64 Measure(Config config, Knobs knobs) {{ return Run<i64>((Scope s) => {{ Box<i64> t = s.Spawn(() => config.width + knobs.depth); return t.Get(); }}); }} i64 Main() {{ return Measure(Config {{ path: \"a\", width: 40_i64 }}, Knobs {{ depth: 2_i64 }}); }}"
     )
 }
 
@@ -663,7 +663,7 @@ fn sibling_generic_method_called_on_the_implicit_receiver_with_type_arguments_is
     // with its own type parameters through the implicit receiver.
     for call in ["this.Apply<T>"] {
         let source = format!(
-            "T Id<T>(T value) {{ return value; }} type Runner {{ i64 id, T Apply<T>(() => T body) {{ return body(); }} T Wrap<T>(() => T body) {{ return {call}(() => Id<T>(body())); }} }} i64 Main(Runner runner) {{ return runner.Wrap<i64>(() => 7_i64); }}"
+            "T Id<T>(T value) {{ return value; }} type Runner {{ i64 id; T Apply<T>(() => T body) {{ return body(); }} T Wrap<T>(() => T body) {{ return {call}(() => Id<T>(body())); }} }} i64 Main(Runner runner) {{ return runner.Wrap<i64>(() => 7_i64); }}"
         );
         let (input, isa, root) = item_fixture_with_root(&source);
         let methods = super::super::support::find_nodes_of_kind(
@@ -730,7 +730,7 @@ fn match_on_a_method_of_a_captured_generic_owner_in_a_lambda_of_a_non_generic_bo
             for call in ["Call<i64>", "Call"] {
                 let value = if payload == "i64" { "c" } else { "c.width" };
                 let source = format!(
-                    "enum Outcome<T, E> {{ Ok(T value), Error(E error) }} type Box<T> {{ T item, Outcome<T, string> Take() {{ return Outcome::Ok(this.item); }} }} type Config {{ string name, i64 width, }} i64 Call<T>(() => T body) {{ return 1_i64; }} i64 Main(Box<{payload}> b) {{ return {call}(() => {{ {} }}); }}",
+                    "enum Outcome<T, E> {{ Ok(T value), Error(E error) }} type Box<T> {{ T item; Outcome<T, string> Take() {{ return Outcome::Ok(this.item); }} }} type Config {{ string name; i64 width; }} i64 Call<T>(() => T body) {{ return 1_i64; }} i64 Main(Box<{payload}> b) {{ return {call}(() => {{ {} }}); }}",
                     body.replace("VALUE", value)
                 );
                 let (input, isa, root) = item_fixture_with_root(&source);

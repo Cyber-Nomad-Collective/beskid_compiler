@@ -81,7 +81,7 @@ fn canonical_fiber_join_lowers_the_typed_traced_result_move() {
 fn reachable_callable_rejects_moved_fiber_parameters_without_local_spawn() {
     for body in ["child.Join(); child.Join();", "child.Detach(); child.Cancel();"] {
         let source = format!(
-            "pub type Fiber<T> {{ i64 handle, pub unit Join() {{ return; }} pub unit Detach() {{ return; }} pub unit Cancel() {{ return; }} }} unit Consume(Fiber<i64> child) {{ {body} return; }} unit Main() {{ Fiber<i64> child = Fiber<i64> {{ handle: 1_i64 }}; Consume(child); return; }}"
+            "pub type Fiber<T> {{ i64 handle; pub unit Join() {{ return; }} pub unit Detach() {{ return; }} pub unit Cancel() {{ return; }} }} unit Consume(Fiber<i64> child) {{ {body} return; }} unit Main() {{ Fiber<i64> child = Fiber<i64> {{ handle: 1_i64 }}; Consume(child); return; }}"
         );
         let temporary = tempfile::tempdir().unwrap();
         let assembly = parse_production_units(temporary.path(), &[("Main.bd", "Main", &source)]);
@@ -100,7 +100,7 @@ fn reachable_callable_rejects_repeatable_fiber_capture_and_inferred_method_doubl
         "let child = factory.Start(); child.Join(); child.Join();",
     ] {
         let source = format!(
-            "pub type Fiber<T> {{ i64 handle, pub unit Join() {{ return; }} }} pub type Factory<T> {{ T value, pub Fiber<T> Start() {{ return Fiber<T> {{ handle: 1_i64 }}; }} }} unit Consume(Factory<i64> factory) {{ {body} return; }} unit Main() {{ Factory<i64> factory = Factory<i64> {{ value: 1_i64 }}; Consume(factory); return; }}"
+            "pub type Fiber<T> {{ i64 handle; pub unit Join() {{ return; }} }} pub type Factory<T> {{ T value; pub Fiber<T> Start() {{ return Fiber<T> {{ handle: 1_i64 }}; }} }} unit Consume(Factory<i64> factory) {{ {body} return; }} unit Main() {{ Factory<i64> factory = Factory<i64> {{ value: 1_i64 }}; Consume(factory); return; }}"
         );
         let temporary = tempfile::tempdir().unwrap();
         let assembly = parse_production_units(temporary.path(), &[("Main.bd", "Main", &source)]);
@@ -116,7 +116,7 @@ fn reachable_callable_rejects_repeatable_fiber_capture_and_inferred_method_doubl
 fn one_shot_spawn_capture_entry_spellings_reach_production_lowering() {
     for suffix in ["", "()"] {
         let source = format!(
-            "pub type Fiber<T> {{ i64 handle, pub i64 Join() {{ return 1_i64; }} }} i64 Compute() {{ return 42_i64; }} i64 Main() {{ let child = spawn Compute(); let next = spawn (() => child.Join()){suffix}; return 0_i64; }}"
+            "pub type Fiber<T> {{ i64 handle; pub i64 Join() {{ return 1_i64; }} }} i64 Compute() {{ return 42_i64; }} i64 Main() {{ let child = spawn Compute(); let next = spawn (() => child.Join()){suffix}; return 0_i64; }}"
         );
         let project = tempfile::tempdir().unwrap();
         let assembly = parse_production_units(project.path(), &[("Main.bd", "Main", &source)]);

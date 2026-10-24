@@ -252,7 +252,7 @@ fn parsed_result_try_accepts_a_declared_local_operand() {
 fn parsed_result_try_rejects_unproven_operands_and_mismatched_error_identity() {
     for body in ["i64 output = Missing()?;", "i64 output = other.value?;", "i64 output = Wrong()?;"] {
         let source = format!(
-            "enum Error {{ Failed() }} enum OtherError {{ Failed() }} enum Result<TValue, TError> {{ Ok(TValue value), Error(TError error) }} type Holder {{ Result<i64, Error> value, }} Result<i64, Error> Make() {{ return Result::Ok(1_i64); }} Result<i64, OtherError> Wrong() {{ return Result::Error(OtherError::Failed); }} Result<unit, Error> Main(Holder other) {{ {body} return Result::Ok(()); }}"
+            "enum Error {{ Failed() }} enum OtherError {{ Failed() }} enum Result<TValue, TError> {{ Ok(TValue value), Error(TError error) }} type Holder {{ Result<i64, Error> value; }} Result<i64, Error> Make() {{ return Result::Ok(1_i64); }} Result<i64, OtherError> Wrong() {{ return Result::Error(OtherError::Failed); }} Result<unit, Error> Main(Holder other) {{ {body} return Result::Ok(()); }}"
         );
         let (input, isa, root) = item_fixture_with_root(&source);
         let main = super::super::support::named_function(&input, root, "Main");

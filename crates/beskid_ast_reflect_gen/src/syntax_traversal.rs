@@ -196,10 +196,10 @@ pub fn emit_node_ref_bd() -> String {
         r#"{BANNER}
 /// Opaque stable handle for a syntax node within one `syntaxGenerationId` window.
 pub type NodeRef {{
-    pub string sourceUnit,
-    pub u64 invocationIssuer,
-    pub u64 syntaxGenerationId,
-    pub u32 nodeId,
+    pub string sourceUnit;
+    pub u64 invocationIssuer;
+    pub u64 syntaxGenerationId;
+    pub u32 nodeId;
 }}
 "#
     )
@@ -210,12 +210,12 @@ pub fn emit_node_span_bd() -> String {
         r#"{BANNER}
 /// Source span for one syntax node in one generation.
 pub type NodeSpan {{
-    pub u64 start,
-    pub u64 end,
-    pub u64 lineStart,
-    pub u64 columnStart,
-    pub u64 lineEnd,
-    pub u64 columnEnd,
+    pub u64 start;
+    pub u64 end;
+    pub u64 lineStart;
+    pub u64 columnStart;
+    pub u64 lineEnd;
+    pub u64 columnEnd;
 }}
 "#
     )
@@ -245,7 +245,7 @@ pub fn emit_node_list_bd() -> String {
         r#"{BANNER}
 /// Ordered managed array of issued module-item node references.
 pub type NodeList {{
-    pub {SYNTAX_NODES_MODULE_PREFIX}.NodeRef[] items,
+    pub {SYNTAX_NODES_MODULE_PREFIX}.NodeRef[] items;
 }}
 "#
     )
@@ -256,12 +256,12 @@ pub fn emit_traversal_manifest_bd(entries: &[TraversalTypeEntry]) -> String {
         BANNER.to_string(),
         "/// Machine-readable child-slot table from Rust `#[ast(child|children|skip)]` (host + verification).".into(),
         "pub type TraversalManifestEntry {".into(),
-        "    pub string typeName,".into(),
-        "    pub string sourceRelPath,".into(),
-        "    pub string rustField,".into(),
-        "    pub string beskidField,".into(),
-        "    pub string beskidType,".into(),
-        "    pub string role,".into(),
+        "    pub string typeName;".into(),
+        "    pub string sourceRelPath;".into(),
+        "    pub string rustField;".into(),
+        "    pub string beskidField;".into(),
+        "    pub string beskidType;".into(),
+        "    pub string role;".into(),
         "}".into(),
         "".into(),
         "pub TraversalManifestEntry[] TraversalManifestRows() {".into(),

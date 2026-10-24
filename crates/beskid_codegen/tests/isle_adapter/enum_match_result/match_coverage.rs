@@ -224,7 +224,7 @@ fn value_match_rewrapping_an_error_and_binding_a_unit_payload_lowers() {
         "Capture re-wrap with unit binding",
         &format!(
             "{OPTION_RESULT}enum ProcessError {{ Closed, ExitCode(i64 code, string stderr) }} \
-             type ProcessOutput {{ i64 exitCode }} \
+             type ProcessOutput {{ i64 exitCode; }} \
              Result<unit, ProcessError> Close(i64 token) {{ if token > 0_i64 {{ return Result::Error(ProcessError::Closed); }} return Result::Ok(()); }} \
              Result<ProcessOutput, ProcessError> CapturedOutput(i64 exit) {{ return Result::Ok(ProcessOutput {{ exitCode: exit }}); }} \
              Result<ProcessOutput, ProcessError> Capture(i64 token) {{ \
@@ -338,7 +338,7 @@ fn lower_generic_field_form(label: &str, methods: &str, functions: &str, main: &
         &if methods.is_empty() {
             "type Holder<T> { Option<T[]> slot; Option<T> one; }".to_string()
         } else {
-            format!("type Holder<T> {{ Option<T[]> slot, Option<T> one, {methods} }}")
+            format!("type Holder<T> {{ Option<T[]> slot; Option<T> one; {methods} }}")
         },
     );
     lower_generic_program(label, &format!("{source}{GENERIC_FIELD_MAIN}{functions} i64 Main() {{ {main} }}"));

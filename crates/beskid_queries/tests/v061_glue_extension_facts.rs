@@ -247,7 +247,7 @@ fn record_and_enum_owner_types_are_closed_placements() {
 #[test]
 fn owner_tables_require_owner_types_for_records_and_enums() {
     let fixture = Fixture::new(&format!(
-        "[GlueRecord(Library:\"glue_manual\")]\npub type Point {{ i64 x, }}\n{}",
+        "[GlueRecord(Library:\"glue_manual\")]\npub type Point {{ i64 x; }}\n{}",
         "[Extern(Abi:\"C\", Library:\"glue_manual\")]\npub contract Foreign {\n    Point glue_point(Point value);\n}\n"
     ));
     let digest = GlueOwnerBindingDigest {

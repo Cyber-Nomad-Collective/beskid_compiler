@@ -722,7 +722,7 @@ fn field_decoder_fixture(factory_output: &str) -> Result<String, String> {
     };
     let group = format!(
         "impl<R> Adapter<R> : Decoder<Counter> where R: Reader {{ pub Result<Counter, SerializationError> ReadTyped(SerializationLimits limits) {{ return Result::Error(Errors.NumericError(\"fixture\")); }} }} \
-         pub type Adapter<R> {{ R reader, }} \
+         pub type Adapter<R> {{ R reader; }} \
          pub Result<{factory_output}, SerializationError> ReadCounter<R>(R reader, SerializationLimits limits) where R: Reader {{ return Result::Error(Errors.NumericError(\"fixture\")); }} \
          pub Result<Counter, SerializationError> ReadWithoutLimits<R>(R reader) where R: Reader {{ return Result::Error(Errors.NumericError(\"fixture\")); }}"
     );

@@ -887,7 +887,7 @@ fn mod_shape_explicit_nesting_past_the_identity_depth_is_unavailable() {
     bounded(120, || {
         let nest = |depth: usize| (0..depth).fold("i32".to_owned(), |inner, _| format!("Wrap<{inner} >"));
         let source = format!(
-            "pub type Wrap<T> {{ pub T Value, }}\npub type Deep {{ pub {} Item, }}\npub type Shallow {{ pub {} Item, }}\npub unit Main() {{ return; }}\n",
+            "pub type Wrap<T> {{ pub T Value; }}\npub type Deep {{ pub {} Item; }}\npub type Shallow {{ pub {} Item; }}\npub unit Main() {{ return; }}\n",
             nest(140),
             nest(8)
         );

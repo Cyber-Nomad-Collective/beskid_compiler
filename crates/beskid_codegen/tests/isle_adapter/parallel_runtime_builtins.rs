@@ -190,7 +190,7 @@ fn loop_over_an_isolated_linked_array_lowers() {
     for (generation, marker) in [(146_u32, "[Isolated] "), (148, "")] {
         let source = format!(
             "use Core.Collections.Array; use Core.Parallel; \
-             {marker}pub type Node {{ pub i64 value, pub Node[] next, }} \
+             {marker}pub type Node {{ pub i64 value; pub Node[] next; }} \
              i64 ChainSum(Node head) {{ mut i64 sum = head.value; mut Node[] rest = head.next; while Array.Len<Node>(rest) > 0_i64 {{ Node node = rest[0_i64]; sum = sum + node.value; rest = node.next; }} return sum; }}"
         );
         let (input, isa, entry) =

@@ -45,7 +45,7 @@ fn moved_and_returned_fiber_bindings_preserve_the_nominal_receiver() {
         "let next = parameter; next.Cancel();",
     ] {
         let source = format!(
-            "pub type Fiber<T> {{ i64 handle, pub unit Cancel() {{ return; }} }} i64 Compute() {{ return 42_i64; }} Fiber<i64> Start() {{ return spawn Compute(); }} unit Main(Fiber<i64> parameter) {{ {body} return; }}"
+            "pub type Fiber<T> {{ i64 handle; pub unit Cancel() {{ return; }} }} i64 Compute() {{ return 42_i64; }} Fiber<i64> Start() {{ return spawn Compute(); }} unit Main(Fiber<i64> parameter) {{ {body} return; }}"
         );
         let (db, _project, unit, generation, index) = setup(&source);
         let call = beskid_queries::AstNodeKey {
@@ -90,7 +90,7 @@ fn spawn_handle_terminal_ownership_is_checked_from_current_syntax() {
 fn closure_environment_retains_only_resolved_nominal_method_receivers() {
     for (method, expected) in [("Join", 1), ("Missing", 0)] {
         let source = format!(
-            "pub type Fiber<T> {{ i64 handle, pub i64 Join() {{ return 1_i64; }} }} unit Main(Fiber<i64> child) {{ let next = spawn (() => child.{method}()); return; }}"
+            "pub type Fiber<T> {{ i64 handle; pub i64 Join() {{ return 1_i64; }} }} unit Main(Fiber<i64> child) {{ let next = spawn (() => child.{method}()); return; }}"
         );
         let (db, _project, unit, generation, index) = setup(&source);
         let lambda = key(unit, generation, &index, NodeKind::LambdaExpression, 0);
@@ -118,7 +118,7 @@ fn inferred_capture_provenance_uses_source_identity_not_pointer_abi() {
         ("native", CaptureStorageClass::StackReference),
     ] {
         let source = format!(
-            "pub type Fiber<T> {{ i64 handle, }} i64 Compute() {{ return 42_i64; }} unit Main(u8[] buffer, pointer native) {{ let value = {initializer}; let next = spawn (() => value); return; }}"
+            "pub type Fiber<T> {{ i64 handle; }} i64 Compute() {{ return 42_i64; }} unit Main(u8[] buffer, pointer native) {{ let value = {initializer}; let next = spawn (() => value); return; }}"
         );
         let (db, _project, unit, generation, index) = setup(&source);
         let lambda = key(unit, generation, &index, NodeKind::LambdaExpression, 0);
@@ -166,7 +166,7 @@ fn closure_environment_reports_only_outer_lexical_captures() {
 fn spawn_legality_projects_ownership_of_returned_and_parameter_handles() {
     for body in ["let child = Start(); child.Join(); child.Join();", "parameter.Detach(); parameter.Join();"] {
         let source = format!(
-            "pub type Fiber<T> {{ i64 handle, }} i64 Compute() {{ return 42_i64; }} Fiber<i64> Start() {{ return spawn Compute(); }} unit Main(Fiber<i64> parameter) {{ let marker = spawn Compute(); {body} return; }}"
+            "pub type Fiber<T> {{ i64 handle; }} i64 Compute() {{ return 42_i64; }} Fiber<i64> Start() {{ return spawn Compute(); }} unit Main(Fiber<i64> parameter) {{ let marker = spawn Compute(); {body} return; }}"
         );
         let (db, _project, unit, generation, index) = setup(&source);
         let spawn = key(unit, generation, &index, NodeKind::SpawnExpression, 1);
@@ -193,7 +193,7 @@ fn callable_fiber_ownership_covers_handles_without_local_spawn() {
         ("parameter.Cancel(); parameter.Cancel(); parameter.Join();", false),
     ] {
         let source = format!(
-            "pub type Fiber<T> {{ i64 handle, }} Fiber<i64> Start() {{ return Fiber<i64> {{ handle: 1_i64 }}; }} unit Main(Fiber<i64> parameter) {{ {body} return; }}"
+            "pub type Fiber<T> {{ i64 handle; }} Fiber<i64> Start() {{ return Fiber<i64> {{ handle: 1_i64 }}; }} unit Main(Fiber<i64> parameter) {{ {body} return; }}"
         );
         let (db, _project, unit, generation, index) = setup(&source);
         assert_eq!(index.ids_of_kind(NodeKind::SpawnExpression).count(), 0);
@@ -230,7 +230,7 @@ fn fiber_ownership_rejects_repeatable_closures_consuming_captures() {
         ("let run = () => child.Join(); let next = spawn run();", true),
     ] {
         let source = format!(
-            "pub type Fiber<T> {{ i64 handle, pub i64 Join() {{ return 1_i64; }} pub unit Cancel() {{ return; }} }} i64 Compute() {{ return 42_i64; }} unit Main() {{ let child = spawn Compute(); {body} return; }}"
+            "pub type Fiber<T> {{ i64 handle; pub i64 Join() {{ return 1_i64; }} pub unit Cancel() {{ return; }} }} i64 Compute() {{ return 42_i64; }} unit Main() {{ let child = spawn Compute(); {body} return; }}"
         );
         let (db, _project, unit, generation, index) = setup(&source);
         let callable = key(unit, generation, &index, NodeKind::FunctionDefinition, 1);
@@ -263,7 +263,7 @@ fn fiber_ownership_tracks_inferred_factory_method_results() {
             ("if true { child.Join(); } else { child.Detach(); }", false),
         ] {
             let source = format!(
-                "pub type Fiber<T> {{ i64 handle, }} {factory} unit Main({parameter}) {{ let child = factory.Start(); {body} return; }}"
+                "pub type Fiber<T> {{ i64 handle; }} {factory} unit Main({parameter}) {{ let child = factory.Start(); {body} return; }}"
             );
             let (db, _project, unit, generation, index) = setup(&source);
             let callable = key(unit, generation, &index, NodeKind::FunctionDefinition, 0);

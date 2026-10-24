@@ -57,7 +57,7 @@ fn canonical_glue_type_closure_bounds_wide_signatures() {
     let parameters =
         (0..200).map(|i| format!("Token<Token<Token<Token<Token<u8>>>>> arg{i}")).collect::<Vec<_>>().join(",");
     let source = format!(
-        "[GlueHandle(Library:\"manual\")] pub type Token<T> {{ u64 token, }} [Export(Abi:\"C\",Symbol:\"wide\")] pub unit ExportWide({parameters}) {{return;}}"
+        "[GlueHandle(Library:\"manual\")] pub type Token<T> {{ u64 token; }} [Export(Abi:\"C\",Symbol:\"wide\")] pub unit ExportWide({parameters}) {{return;}}"
     );
     assert!(fact(&source, "ExportWide").unwrap_err().contains("closure"));
 }

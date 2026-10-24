@@ -758,7 +758,7 @@ mod tests {
     #[test]
     fn matching_nominal_generic_and_contract_parameters_are_not_reported() {
         let source = format!(
-            "{QUERY_SHAPE}contract Sized {{ u64 Size(); }} type Box : Sized {{ u64 width, pub u64 Size() {{ return width; }} }} \
+            "{QUERY_SHAPE}contract Sized {{ u64 Size(); }} type Box : Sized {{ u64 width; pub u64 Size() {{ return width; }} }} \
              unit Take<T>(T value) {{ return; }} u64 Measure(Sized value) {{ return value.Size(); }} \
              u64 Main(NodeRef root) {{ NodeSpan span = Query.Span(root); Take<NodeRef>(root); Take(span); \
              u64 total = Measure(Box {{ width: 3_u64 }}) + Query.At(root).bound; return span.start + total; }}"
@@ -1399,8 +1399,8 @@ mod tests {
     #[test]
     fn marker_bounds_are_proven_from_the_transfer_class() {
         let source = format!(
-            "{MARKERS}pub type Cache {{ i64[] entries }} [Isolated] pub type Box<T> {{ T item }} \
-             [NeverTransferable] pub type Mutex {{ i64 id }} \
+            "{MARKERS}pub type Cache {{ i64[] entries; }} [Isolated] pub type Box<T> {{ T item; }} \
+             [NeverTransferable] pub type Mutex {{ i64 id; }} \
              unit Own<T>(T value) where T: Moved {{ }} unit View<T>(T value) where T: Shared {{ }} \
              unit Keep<T>(T value) where T: Transferable {{ }} \
              unit Main(u8[] bytes, Cache cache, Box<string> named, Box<Mutex> locked) {{ \
@@ -1421,17 +1421,17 @@ mod tests {
     #[test]
     fn marker_attributes_are_judged_at_the_declaration() {
         let source = format!(
-            "{MARKERS}[Copyable] pub type Pixel {{ u8 r, u8 g, u8 b }} \
-             [Isolated] pub type Image {{ Pixel[] rows, Pixel background }} \
-             [Copyable] pub type Frame {{ i64 width, u8[] pixels }} \
-             [Isolated] pub type Snapshot {{ i64 taken }} \
-             [Immutable] pub type Names {{ i64 taken, i64[] values }} \
-             [Immutable] pub type Raw {{ pointer data, i64 length }} \
-             [NeverTransferable] [Copyable] pub type Channel {{ i64 id }} \
-             [Immutable] [Isolated] pub type Both {{ i64 id }} \
-             pub type Token : Shared {{ i64 id }} \
+            "{MARKERS}[Copyable] pub type Pixel {{ u8 r; u8 g; u8 b; }} \
+             [Isolated] pub type Image {{ Pixel[] rows; Pixel background; }} \
+             [Copyable] pub type Frame {{ i64 width; u8[] pixels; }} \
+             [Isolated] pub type Snapshot {{ i64 taken; }} \
+             [Immutable] pub type Names {{ i64 taken; i64[] values; }} \
+             [Immutable] pub type Raw {{ pointer data; i64 length; }} \
+             [NeverTransferable] [Copyable] pub type Channel {{ i64 id; }} \
+             [Immutable] [Isolated] pub type Both {{ i64 id; }} \
+             pub type Token : Shared {{ i64 id; }} \
              [CompilerDerived] pub contract Sized {{ i64 Size(); }} \
-             pub type Store {{ [ImmutableStorage] i64[] items }}"
+             pub type Store {{ [ImmutableStorage] i64[] items; }}"
         );
         let report = transfer_report(&source, 6430);
         let codes = report.iter().map(|(code, _, _)| code.as_str()).collect::<Vec<_>>();
@@ -1806,7 +1806,7 @@ mod tests {
             assert_affine(&format!("{holder}{body}"), 6680 + offset as u64, expected);
         }
         let source = format!(
-            "{AFFINE_PRELUDE}[Isolated] pub type Pair {{ u8[] left, pub u8[] TakeLeft(move this) {{ return move this.left; }} }}"
+            "{AFFINE_PRELUDE}[Isolated] pub type Pair {{ u8[] left; pub u8[] TakeLeft(move this) {{ return move this.left; }} }}"
         );
         let (db, root) = one_unit_assembly(&source, SyntaxGenerationId(6690));
         let mut moves = Vec::new();
