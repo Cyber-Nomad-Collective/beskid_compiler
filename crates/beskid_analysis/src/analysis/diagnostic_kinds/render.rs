@@ -2,7 +2,7 @@
 //! the fixes and source-tailored help that need the source text (E1214's declaration form, "did
 //! you mean" replacements, unused-item removal).
 
-use super::{BindingForm, ImmutableBinding, SemanticIssueKind};
+use super::{BindingForm, DiscardedGrowthRepair, ImmutableBinding, SemanticIssueKind};
 use crate::analysis::diagnostics::{Applicability, Fix, FixEdit, SemanticDiagnostic, make_diagnostic};
 use crate::syntax::SpanInfo;
 
@@ -58,6 +58,24 @@ pub fn issue_diagnostic(source_name: &str, source: &str, span: SpanInfo, kind: &
                 diagnostic
             }
         }
+        SemanticIssueKind::DiscardedArrayGrowth { repair, .. } => match repair {
+            DiscardedGrowthRepair::MutParameter { name, insert_at } => diagnostic.with_fix(Fix::new(
+                format!("Declare `{name}` `mut`"),
+                Applicability::MachineApplicable,
+                vec![FixEdit::insert(*insert_at, "mut ")],
+            )),
+            DiscardedGrowthRepair::Assign { name, insert_at } => diagnostic.with_fix(Fix::new(
+                format!("Assign the result to `{name}`"),
+                Applicability::MachineApplicable,
+                vec![FixEdit::insert(*insert_at, format!("{name} = "))],
+            )),
+            DiscardedGrowthRepair::Bind { declaration: Some(declaration), insert_at } => diagnostic.with_fix(Fix::new(
+                "Bind the result to a new local",
+                Applicability::MaybeIncorrect,
+                vec![FixEdit::insert(*insert_at, format!("{declaration} grown = "))],
+            )),
+            DiscardedGrowthRepair::Bind { declaration: None, .. } => diagnostic,
+        },
         SemanticIssueKind::UnusedPrivateItem { name, item, .. } => diagnostic.with_fix(Fix::replace(
             format!("Remove `{name}`"),
             whole_lines(source, *item),

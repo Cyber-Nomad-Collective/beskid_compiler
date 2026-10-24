@@ -92,6 +92,7 @@ impl SemanticIssueKind {
             Self::TypeInvalidPrimitiveConversionArgument => "invalid conversion argument".to_string(),
             Self::ScopedCleanupRejected { reason } => format!("scoped use rejected: {reason}"),
             Self::DeadCollectionGrowth => "grown handle discarded".to_string(),
+            Self::DiscardedArrayGrowth { .. } => "result discarded".to_string(),
             Self::LambdaCapturesStackReference { name } => format!("`{name}` captured here"),
             Self::UseAfterMove { name } => format!("`{name}` used after move"),
             Self::CapturedLocalAssignedInBoundLambda { name } => format!("`{name}` assigned here"),

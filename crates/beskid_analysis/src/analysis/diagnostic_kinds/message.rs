@@ -279,6 +279,9 @@ impl SemanticIssueKind {
             Self::CopyOnAssignWithoutCopy { type_name, problem } => {
                 format!("`[CopyOnAssign]` type `{type_name}` has no valid `Copy` method: {problem}")
             }
+            Self::DiscardedArrayGrowth { owner, .. } => {
+                format!("the result of `Array.Append` is discarded; `{owner}` is not changed")
+            }
             Self::DeadCollectionGrowth => "the grown handle of a `mut T[]` parameter is discarded and the body never \
                                            publishes the parameter, so the caller keeps the ungrown array"
                 .to_string(),
