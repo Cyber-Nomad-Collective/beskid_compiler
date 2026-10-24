@@ -10,6 +10,7 @@ mod calls_conversions;
 mod channel_conditions;
 #[path = "isle_adapter/composition_conditions.rs"]
 mod composition_conditions;
+mod contract_dispatch;
 #[path = "isle_adapter/contract_method_bodies.rs"]
 mod contract_method_bodies;
 #[path = "isle_adapter/contextual_literals.rs"]

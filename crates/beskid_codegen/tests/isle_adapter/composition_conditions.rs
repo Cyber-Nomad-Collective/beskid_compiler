@@ -1000,10 +1000,11 @@ i32 Main() { launch AppHost(); return 0; }
     }
 }
 
-/// A `mut` contract-typed local may hold any implementation, so a contract call on it fails
-/// closed before lowering instead of reaching code generation.
+/// A `mut` contract-typed local may hold any implementation, so a contract call on it resolves
+/// to the contract method and dispatches through the box's witness table (runtime contract
+/// dispatch, v0.6.7).
 #[test]
-fn contract_call_on_a_mutable_contract_local_fails_closed() {
+fn contract_call_on_a_mutable_contract_local_dispatches_through_the_witness_table() {
     let (input, _, root) = item_fixture_with_root(
         "contract Greeter { string Greet(); } \
          type Hello : Greeter { pub string Greet() { return \"hi\"; } } \
@@ -1013,6 +1014,16 @@ fn contract_call_on_a_mutable_contract_local_fails_closed() {
         .into_iter()
         .next()
         .expect("the call");
-    let error = beskid_queries::call_lowering(input.database(), call).expect_err("a mut contract local has no implementation");
-    assert!(format!("{error:?}").contains("mut g"), "{error:?}");
+    let lowering = beskid_queries::call_lowering(input.database(), call).expect("a mut contract local resolves");
+    let Some(beskid_queries::CallLowering::Direct(declaration)) = lowering else {
+        panic!("the call names the contract method: {lowering:?}");
+    };
+    assert_eq!(
+        beskid_queries::node_kind(input.database(), declaration).expect("kind"),
+        Some(beskid_queries::IndexedNodeKind::ContractMethodSignature)
+    );
+    let dispatch = beskid_queries::contract_dispatch(input.database(), call, None)
+        .expect("dispatch query")
+        .expect("a mut contract local dispatches at run time");
+    assert_eq!(dispatch.slot, 0);
 }

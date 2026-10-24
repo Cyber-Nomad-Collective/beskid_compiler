@@ -7,7 +7,7 @@
 //! thunks that narrow the receiver word to the primitive and call the implementation.
 
 use beskid_queries::{ItemSignature, SemanticTypeId};
-use cranelift_codegen::ir::{ExtFuncData, ExternalName, Function, InstBuilder, MemFlags, Signature, Type, types};
+use cranelift_codegen::ir::{ExtFuncData, ExternalName, Function, InstBuilder, MemFlagsData, Signature, Type, types};
 use cranelift_codegen::isa::TargetIsa;
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
 use cranelift_module::{DataDescription, FuncId, Linkage, Module, ModuleError, ModuleResult};
@@ -159,7 +159,7 @@ pub fn emit_witness_thunk(plan: &WitnessThunkPlan, isa: &dyn TargetIsa) -> Optio
         let call = builder.ins().call(target, &arguments);
         let results = builder.inst_results(call).to_vec();
         builder.ins().return_(&results);
-        builder.finalize();
+        builder.finalize(isa.frontend_config());
     }
     Some(function)
 }
@@ -172,7 +172,7 @@ fn narrow_receiver(builder: &mut FunctionBuilder<'_>, word: cranelift_codegen::i
     if receiver.is_float() {
         let int = Type::int(u16::try_from(receiver.bits()).ok()?)?;
         let bits = if int == pointer { word } else { builder.ins().ireduce(int, word) };
-        return Some(builder.ins().bitcast(receiver, MemFlags::new(), bits));
+        return Some(builder.ins().bitcast(receiver, MemFlagsData::new(), bits));
     }
     if receiver.is_int() && receiver.bits() < pointer.bits() {
         return Some(builder.ins().ireduce(receiver, word));
