@@ -594,7 +594,14 @@ impl NativeTests {
             beskid_pipeline::observe_phase_result(Some(observer), beskid_pipeline::phases::AOT_LINK, || {
                 self.object.link_entry(name, &directory)
             })?;
-        let output = self.object.execute_linked_entry(&executable, &directory)?;
+        // `Testing.Assert` writes a failed assertion here; no output stream carries it.
+        let failure_file = directory.join(super::test_failure::FAILURE_FILE_NAME);
+        let _ = std::fs::remove_file(&failure_file);
+        let output = self.object.execute_linked_entry(
+            &executable,
+            &directory,
+            &[(super::test_failure::FAILURE_FILE_VARIABLE, failure_file.as_path())],
+        )?;
         let stdout = String::from_utf8_lossy(&output.stdout);
         let stderr = String::from_utf8_lossy(&output.stderr);
         if !output.status.success() {
@@ -602,6 +609,7 @@ impl NativeTests {
                 &output.status.to_string(),
                 &stdout,
                 &stderr,
+                std::fs::read(&failure_file).ok().as_deref(),
             )));
         }
         Ok(format!("{stdout}{stderr}"))
