@@ -39,7 +39,7 @@ fn method_attributes_round_trip_in_type_and_impl_bodies() {
 fn field_attributes_round_trip() {
     assert_round_trip(
         "pub attribute Slot(Field) { }\npub type Point { [Slot] i64 x; i64 y; }",
-        &["[Slot]\n    i64 x,"],
+        &["[Slot]\n    i64 x;"],
     );
 }
 
