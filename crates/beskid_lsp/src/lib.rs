@@ -5,6 +5,7 @@ pub(crate) mod commands;
 pub mod crash;
 pub(crate) mod diagnostics;
 pub(crate) mod features;
+pub(crate) mod hook_items;
 pub(crate) mod logging;
 pub(crate) mod manifest_uri;
 pub(crate) mod position;
@@ -206,7 +207,7 @@ pub async fn run_stdio_server() -> anyhow::Result<()> {
             let client = notify_client.clone();
             Box::pin(async move { client.send_notification::<crash::CrashReport>(params).await })
         });
-        Backend::new(client).with_crash_reporter(Arc::clone(&notifier_reporter))
+        Backend::new(client, Arc::clone(&notifier_reporter))
     });
     Server::new(stdin, stdout, socket).serve(TextSyncOrderedService::new(service, reporter)).await;
     Ok(())

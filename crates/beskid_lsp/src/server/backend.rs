@@ -31,7 +31,7 @@ use crate::session::mod_host::mod_host_from_initialization_options;
 use crate::session::store::State;
 use crate::text_sync::apply_document_changes;
 use crate::workspace_scan::{
-    clear_closed_workspace_under_root, hydrate_disk_after_close, refresh_after_disk_change, scan_workspace, uri_to_path,
+    clear_closed_workspace_under_root, hydrate_disk_after_close, refresh_after_disk_change, scan_workspace_roots, uri_to_path,
 };
 
 /// Tower-LSP [`LanguageServer`] implementation for Beskid (sync, diagnostics, IDE features).
@@ -44,12 +44,12 @@ pub struct Backend {
     diagnostics_revision: Arc<Mutex<HashMap<Uri, u64>>>,
     reporter: Arc<CrashReporter>,
     scan: Arc<ScanCoordinator>,
-    interactive: Arc<std::sync::atomic::AtomicUsize>,
+    interactive: Arc<crate::scan_schedule::InteractiveGate>,
 }
 
 impl Backend {
     /// Construct server state wired to the LSP [`Client`] (empty workspace until `initialize`).
-    pub fn new(client: Client) -> Self {
+    pub fn new(client: Client, reporter: Arc<CrashReporter>) -> Self {
         let state = State::default();
         let interactive = Arc::clone(&state.interactive_inflight);
         Self {
@@ -59,16 +59,10 @@ impl Backend {
             pckg_registry: Arc::new(RwLock::new(PckgRegistryState::default())),
             log_filter: Arc::new(RwLock::new(ClientLogFilter::Info)),
             diagnostics_revision: Arc::new(Mutex::new(HashMap::new())),
-            reporter: Arc::new(CrashReporter::for_home()),
+            reporter,
             scan: Arc::new(ScanCoordinator::default()),
             interactive,
         }
-    }
-
-    /// Share the session crash reporter so background tasks report and de-duplicate with request handlers.
-    pub fn with_crash_reporter(mut self, reporter: Arc<CrashReporter>) -> Self {
-        self.reporter = reporter;
-        self
     }
 
     /// Unblock analysis paths that wait on the initial workspace scan (integration tests only).
@@ -120,18 +114,19 @@ impl Backend {
                 let current_roots = roots.read().await.clone();
                 let focused = state.read().await.focused_project.clone();
                 let filter = *log_filter.read().await;
-                for root in current_roots {
-                    client_log(&client, filter, MessageType::INFO, format!("workspace scan started: {}", root.display()))
-                        .await;
-                    scan_workspace(&client, &state, &root, focused.as_deref()).await;
-                    client_log(
-                        &client,
-                        filter,
-                        MessageType::INFO,
-                        format!("workspace scan completed: {}", root.display()),
-                    )
-                    .await;
-                }
+                let hook_client = client.clone();
+                let hook: crate::workspace_scan::RootHook = Arc::new(move |root, phase| {
+                    let client = hook_client.clone();
+                    Box::pin(async move {
+                        let what = match phase {
+                            crate::workspace_scan::RootPhase::Started => "started",
+                            crate::workspace_scan::RootPhase::Completed => "completed",
+                        };
+                        client_log(&client, filter, MessageType::INFO, format!("workspace scan {what}: {}", root.display()))
+                            .await;
+                    })
+                });
+                scan_workspace_roots(&client, &state, &current_roots, focused.as_deref(), Some(hook)).await;
                 if !scan.finish_round() {
                     run.disarm();
                     break;
@@ -285,22 +280,35 @@ impl LanguageServer for Backend {
         let Some(snapshot) = snapshot_lsp_request(&self.state, params).await else {
             return Ok(Some(CompletionResponse::Array(Vec::new())));
         };
+        // `use` paths complete from the module layout of the effective roots, with no analysis
+        // facts and no database access, so they answer while a scan or a prepare is running.
+        if completion::use_path::use_path_context(&snapshot.document.text, snapshot.offset).is_some() {
+            drop(update_guard);
+            let roots = match uri_to_path(&snapshot.uri) {
+                Some(path) => crate::session::project_context::effective_roots_for_path(&self.state, &path).await,
+                None => None,
+            };
+            let items = roots
+                .and_then(|roots| completion::use_path::use_path_items(&snapshot.document.text, snapshot.offset, &roots))
+                .unwrap_or_default();
+            return Ok(Some(CompletionResponse::Array(items)));
+        }
         let db = parallel_compilation_db(&self.state).await;
         drop(update_guard);
         let response = tokio::task::spawn_blocking(move || {
-            salsa::Cancelled::catch(AssertUnwindSafe(|| {
-                completion::handler::handle_completion(&db, &snapshot.uri, &snapshot.document, snapshot.offset)
-            }))
+            crate::crash::run_blocking_recorded(|| {
+                salsa::Cancelled::catch(AssertUnwindSafe(|| {
+                    completion::handler::handle_completion(&db, &snapshot.uri, &snapshot.document, snapshot.offset)
+                }))
+            })
         })
         .await
-        .map_err(|error| match error.try_into_panic() {
-            // Re-raise on the request task so the service-level guard reports it.
-            Ok(payload) => std::panic::resume_unwind(payload),
-            Err(error) => {
-                tracing::error!(%error, "parallel Salsa completion task failed");
-                tower_lsp_server::jsonrpc::Error::internal_error()
-            }
+        .map_err(|error| {
+            tracing::error!(%error, "parallel Salsa completion task failed");
+            tower_lsp_server::jsonrpc::Error::internal_error()
         })?
+        // Re-raise a worker panic on the request task so the service-level guard reports it.
+        .unwrap_or_else(|panic| panic.resume())
         .map_err(|cancelled| {
             tracing::debug!(%cancelled, "parallel Salsa completion invalidated by a newer input revision");
             tower_lsp_server::jsonrpc::Error::content_modified()
@@ -494,7 +502,7 @@ mod scan_tests {
 
     #[tokio::test]
     async fn completion_answers_while_a_scan_is_in_progress() {
-        let (service, _socket) = LspService::new(Backend::new);
+        let (service, _socket) = LspService::new(|client| Backend::new(client, Arc::new(CrashReporter::new(None))));
         let backend = service.inner();
         backend.signal_workspace_ready_for_tests().await;
         // A scan is running and a background scan task is yielding to interactive work.
@@ -505,12 +513,12 @@ mod scan_tests {
                 .expect("completion must not wait for the scan")
                 .expect("completion result");
         assert!(answer.is_some());
-        assert_eq!(backend.interactive.load(std::sync::atomic::Ordering::Acquire), 0, "guard released");
+        assert_eq!(backend.interactive.active(), 0, "guard released");
     }
 
     #[tokio::test]
     async fn scan_triggers_during_a_scan_do_not_wait_and_coalesce() {
-        let (service, _socket) = LspService::new(Backend::new);
+        let (service, _socket) = LspService::new(|client| Backend::new(client, Arc::new(CrashReporter::new(None))));
         let backend = service.inner();
         assert!(backend.scan.request(), "a scan is running");
         for _ in 0..3 {

@@ -35,6 +35,7 @@ pub fn handle_document_symbols(uri: &Uri, doc: &Document) -> DocumentSymbolRespo
     let mapped = doc
         .syntax_symbols
         .iter()
+        .filter(|symbol| !crate::hook_items::is_hook_item_name(&symbol.name))
         .map(|symbol| {
             let range = offset_range_to_lsp(&doc.text, symbol.start, symbol.end);
             build_document_symbol(

@@ -73,7 +73,7 @@ async fn emit_scan_idle(client: &Client) {
 }
 
 /// Recursively index `root` for Beskid sources, publish diagnostics for closed files, then emit idle status.
-pub async fn scan_workspace(client: &Client, state: &RwLock<State>, root: &Path, focused_project: Option<&Path>) {
+pub async fn scan_workspace_root(client: &Client, state: &RwLock<State>, root: &Path, focused_project: Option<&Path>) {
     let mut paths: Vec<PathBuf> = Vec::new();
     for entry in WalkDir::new(root)
         .into_iter()
@@ -130,10 +130,12 @@ pub async fn scan_workspace(client: &Client, state: &RwLock<State>, root: &Path,
             std::iter::once(manifest.clone()).chain(lock.filter(|lock| lock.is_file()))
         })
         .collect();
-    let authority_changed = !actionable_changes(state, &authority_files).await.is_empty();
+    let observed_authority = observe_changes(state, &authority_files).await;
+    let authority_changed = !observed_authority.paths.is_empty();
     let refresh = first_scan || authority_changed;
     if refresh {
         invalidate_compilation_cache(state).await;
+        commit_observed(state, &observed_authority).await;
     }
 
     let total = paths.len() as u32;
@@ -259,6 +261,44 @@ pub async fn scan_workspace(client: &Client, state: &RwLock<State>, root: &Path,
     emit_scan_idle(client).await;
 }
 
+/// Boundary of one root inside a multi-root scan.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RootPhase {
+    Started,
+    Completed,
+}
+
+/// Called at each root boundary (logging, tests).
+pub type RootHook = std::sync::Arc<
+    dyn Fn(PathBuf, RootPhase) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> + Send + Sync,
+>;
+
+/// Scan every workspace root in order. `workspace_index_complete` is set only after the last
+/// root's closed sources have been analyzed, never between roots.
+pub async fn scan_workspace_roots(
+    client: &Client,
+    state: &RwLock<State>,
+    roots: &[PathBuf],
+    focused_project: Option<&Path>,
+    hook: Option<RootHook>,
+) {
+    for root in roots {
+        if let Some(hook) = &hook {
+            hook(root.clone(), RootPhase::Started).await;
+        }
+        scan_workspace_root(client, state, root, focused_project).await;
+        if let Some(hook) = &hook {
+            hook(root.clone(), RootPhase::Completed).await;
+        }
+    }
+    state.read().await.mark_workspace_index_complete();
+}
+
+/// Scan a single root as a complete workspace.
+pub async fn scan_workspace(client: &Client, state: &RwLock<State>, root: &Path, focused_project: Option<&Path>) {
+    scan_workspace_roots(client, state, std::slice::from_ref(&root.to_path_buf()), focused_project, None).await;
+}
+
 /// Remove a workspace-indexed document and clear its diagnostics.
 pub async fn clear_disk_snapshot(client: &Client, state: &RwLock<State>, uri: &Uri) {
     state.write().await.workspace_index.remove(uri);
@@ -337,19 +377,38 @@ pub async fn clear_closed_workspace_under_root(client: &Client, state: &RwLock<S
     }
 }
 
-fn content_fingerprint(path: &Path) -> Option<u64> {
+async fn content_fingerprint(path: &Path) -> Option<u64> {
     use std::hash::{Hash, Hasher};
-    let bytes = std::fs::read(path).ok()?;
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    bytes.hash(&mut hasher);
-    Some(hasher.finish())
+    let path = path.to_path_buf();
+    tokio::task::spawn_blocking(move || {
+        let bytes = std::fs::read(path).ok()?;
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        bytes.hash(&mut hasher);
+        Some(hasher.finish())
+    })
+    .await
+    .ok()
+    .flatten()
 }
 
-/// Drop watched-file events that cannot change analysis: anything under `obj/`, `.beskid/`,
-/// `target/` (the server's own cache and materialization output) and manifest or lock rewrites
-/// whose bytes equal what was last acted on (the server's own `Project.lock` sync).
-pub(crate) async fn actionable_changes(state: &RwLock<State>, changed: &[PathBuf]) -> Vec<PathBuf> {
-    let mut actionable = Vec::new();
+/// Watched-file events that can change analysis, plus the fingerprints that must be recorded
+/// once they have been acted on.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub(crate) struct ObservedChanges {
+    pub paths: Vec<PathBuf>,
+    /// `(path, fingerprint)`; `None` records that the file is gone.
+    fingerprints: Vec<(PathBuf, Option<u64>)>,
+}
+
+/// Decide which events matter, without recording anything.
+///
+/// Events under `obj/`, `.beskid/` and `target/` (the server's own cache and materialization
+/// output) are dropped. A manifest or lock whose bytes equal the last *committed* fingerprint
+/// is dropped too (the server's own `Project.lock` sync). Observing never changes state, so the
+/// outcome cannot depend on how many times or in what order callers look; the caller commits
+/// with [`commit_observed`] after it has acted.
+pub(crate) async fn observe_changes(state: &RwLock<State>, changed: &[PathBuf]) -> ObservedChanges {
+    let mut observed = ObservedChanges::default();
     for path in changed {
         if crate::scan_schedule::is_ignored_watch_path(path) {
             continue;
@@ -357,29 +416,38 @@ pub(crate) async fn actionable_changes(state: &RwLock<State>, changed: &[PathBuf
         let authority =
             path.extension().and_then(|e| e.to_str()).is_some_and(is_manifest_extension) || is_lockfile_path(path);
         if authority {
-            let fingerprint = content_fingerprint(path);
-            let mut write = state.write().await;
-            match fingerprint {
-                Some(value) => {
-                    if write.watched_fingerprints.insert(path.clone(), value) == Some(value) {
-                        continue;
-                    }
-                }
-                None => {
-                    if write.watched_fingerprints.remove(path).is_none() {
-                        continue;
-                    }
-                }
+            let fingerprint = content_fingerprint(path).await;
+            let known = state.read().await.watched_fingerprints.get(path).copied();
+            if known == fingerprint {
+                // Equal bytes, or a file that was never seen and is still absent.
+                continue;
+            }
+            observed.fingerprints.push((path.clone(), fingerprint));
+        }
+        observed.paths.push(path.clone());
+    }
+    observed
+}
+
+/// Record the fingerprints of changes that have been acted on.
+pub(crate) async fn commit_observed(state: &RwLock<State>, observed: &ObservedChanges) {
+    let mut write = state.write().await;
+    for (path, fingerprint) in &observed.fingerprints {
+        match fingerprint {
+            Some(value) => {
+                write.watched_fingerprints.insert(path.clone(), *value);
+            }
+            None => {
+                write.watched_fingerprints.remove(path);
             }
         }
-        actionable.push(path.clone());
     }
-    actionable
 }
 
 /// Re-read changed paths on disk when buffers are closed; may invalidate compilation cache on manifest edits.
 pub async fn refresh_after_disk_change(client: &Client, state: &RwLock<State>, changed_paths: &[PathBuf]) {
-    let changed_paths = &actionable_changes(state, changed_paths).await;
+    let observed = observe_changes(state, changed_paths).await;
+    let changed_paths = &observed.paths;
     let project_authority_changed = changed_paths
         .iter()
         .any(|p| p.extension().and_then(|e| e.to_str()).is_some_and(is_manifest_extension) || is_lockfile_path(p));
@@ -422,6 +490,7 @@ pub async fn refresh_after_disk_change(client: &Client, state: &RwLock<State>, c
             publish_diagnostics_for_uri(client, state, &uri).await;
         }
     }
+    commit_observed(state, &observed).await;
 }
 
 /// After `didClose`, reload disk contents into the workspace index when the file still exists.
@@ -472,16 +541,151 @@ mod tests {
         fs::write(&lock, "a").expect("lock");
         let state = RwLock::new(State::default());
 
-        let first = actionable_changes(&state, &[salsa.clone(), materialized, lock.clone()]).await;
-        assert_eq!(first, vec![lock.clone()], "only the first sighting of the lock is actionable");
+        let first = observe_changes(&state, &[salsa.clone(), materialized, lock.clone()]).await;
+        assert_eq!(first.paths, vec![lock.clone()], "the unseen lock is actionable, the obj/ events are not");
+        commit_observed(&state, &first).await;
 
         // The server rewrites Project.lock with identical bytes: no reaction, no rescan.
         fs::write(&lock, "a").expect("same-content rewrite");
-        assert!(actionable_changes(&state, std::slice::from_ref(&lock)).await.is_empty());
-        assert!(actionable_changes(&state, &[salsa]).await.is_empty());
+        assert!(observe_changes(&state, std::slice::from_ref(&lock)).await.paths.is_empty());
+        assert!(observe_changes(&state, &[salsa]).await.paths.is_empty());
 
         fs::write(&lock, "b").expect("real edit");
-        assert_eq!(actionable_changes(&state, std::slice::from_ref(&lock)).await, vec![lock]);
+        assert_eq!(observe_changes(&state, std::slice::from_ref(&lock)).await.paths, vec![lock]);
+    }
+
+    #[tokio::test]
+    async fn observing_does_not_consume_the_change() {
+        let temp = TempDir::new().expect("project");
+        let lock = temp.path().join("Project.lock");
+        fs::write(&lock, "a").expect("lock");
+        let state = RwLock::new(State::default());
+        // Two observers (for example a scan and a watched-file event) see the same change; neither
+        // hides it from the other, so the outcome does not depend on who looked first.
+        let scan_view = observe_changes(&state, std::slice::from_ref(&lock)).await;
+        let event_view = observe_changes(&state, std::slice::from_ref(&lock)).await;
+        assert_eq!(scan_view, event_view);
+        assert_eq!(scan_view.paths, vec![lock.clone()]);
+        // Only after the change was acted on and committed does it stop being news.
+        commit_observed(&state, &scan_view).await;
+        assert!(observe_changes(&state, std::slice::from_ref(&lock)).await.paths.is_empty());
+        // A deleted lock is news once, then quiet.
+        fs::remove_file(&lock).expect("remove");
+        let gone = observe_changes(&state, std::slice::from_ref(&lock)).await;
+        assert_eq!(gone.paths, vec![lock.clone()]);
+        commit_observed(&state, &gone).await;
+        assert!(observe_changes(&state, &[lock]).await.paths.is_empty());
+    }
+
+    #[tokio::test]
+    async fn fingerprinting_does_not_block_the_async_runtime() {
+        let temp = TempDir::new().expect("project");
+        let lock = temp.path().join("Project.lock");
+        fs::write(&lock, vec![b'x'; 8 * 1024 * 1024]).expect("large lock");
+        let ticks = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let ticker = tokio::spawn({
+            let ticks = Arc::clone(&ticks);
+            async move {
+                loop {
+                    ticks.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    tokio::task::yield_now().await;
+                }
+            }
+        });
+        for _ in 0..20 {
+            assert!(content_fingerprint(&lock).await.is_some());
+        }
+        ticker.abort();
+        assert!(ticks.load(std::sync::atomic::Ordering::Relaxed) > 0, "other tasks ran while files were read");
+    }
+
+    fn write_project(root: &Path, name: &str) {
+        fs::create_dir_all(root.join("Src")).expect("src");
+        fs::write(
+            root.join(format!("{name}.bproj")),
+            format!("{name} {{\n  name = \"{name}\"\n  version = \"0.1.0\"\n}}\n\ntarget \"App\" {{\n  kind = App\n  entry = \"Main.bd\"\n}}\n"),
+        )
+        .expect("manifest");
+        fs::write(root.join("Src/Main.bd"), "i32 Main() { return 0; }\n").expect("source");
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn index_completes_only_after_every_root_is_analyzed() {
+        let (client, _notifications) = initialized_client().await;
+        let first = TempDir::new().expect("first root");
+        let second = TempDir::new().expect("second root");
+        write_project(first.path(), "First");
+        write_project(second.path(), "Second");
+        let state = Arc::new(RwLock::new(State::default()));
+        let complete = Arc::clone(&state.read().await.workspace_index_complete);
+        let seen: Arc<Mutex<Vec<(String, bool)>>> = Arc::new(Mutex::new(Vec::new()));
+        let hook: RootHook = {
+            let seen = Arc::clone(&seen);
+            let complete = Arc::clone(&complete);
+            Arc::new(move |root, phase| {
+                let seen = Arc::clone(&seen);
+                let flag = complete.load(std::sync::atomic::Ordering::Acquire);
+                Box::pin(async move {
+                    seen.lock().expect("seen").push((format!("{:?}:{}", phase, root.file_name().unwrap().to_string_lossy()), flag));
+                })
+            })
+        };
+        let roots = vec![first.path().to_path_buf(), second.path().to_path_buf()];
+        scan_workspace_roots(&client, &state, &roots, None, Some(hook)).await;
+
+        let seen = seen.lock().expect("seen").clone();
+        assert_eq!(seen.len(), 4, "two boundaries per root: {seen:?}");
+        assert!(seen.iter().all(|(_, flag)| !flag), "the index is partial at every root boundary: {seen:?}");
+        let read = state.read().await;
+        assert!(read.workspace_index_complete.load(std::sync::atomic::Ordering::Acquire));
+        let indexed = |name: &str| read.workspace_index.keys().any(|uri| uri.as_str().contains(name));
+        assert!(indexed("First") && indexed("Second"), "both roots' closed sources are indexed");
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn startup_barrier_opens_before_closed_sources_and_the_index_completes_after() {
+        let (client, _notifications) = initialized_client().await;
+        let temp = TempDir::new().expect("project");
+        fs::create_dir_all(temp.path().join("Src")).expect("src");
+        fs::write(
+            temp.path().join("App.bproj"),
+            "App {\n  name = \"App\"\n  version = \"0.1.0\"\n}\n\ntarget \"App\" {\n  kind = App\n  entry = \"Main.bd\"\n}\n",
+        )
+        .expect("manifest");
+        fs::write(temp.path().join("Src/Main.bd"), "i32 Main() { return 0; }\n").expect("source");
+        let state = Arc::new(RwLock::new(State::default()));
+        // An interactive request holds the scan back at the first closed source.
+        let gate = Arc::clone(&state.read().await.interactive_inflight);
+        let request = crate::scan_schedule::InteractiveGuard::new(&gate);
+        let scan = tokio::spawn({
+            let state = Arc::clone(&state);
+            let client = client.clone();
+            let root = temp.path().to_path_buf();
+            async move { scan_workspace(&client, &state, &root, None).await }
+        });
+        tokio::time::timeout(Duration::from_secs(5), crate::session::startup::wait_for_initial_scan(&state))
+            .await
+            .expect("requests are released once manifests are indexed");
+        {
+            let read = state.read().await;
+            assert!(
+                !read.workspace_index_complete.load(std::sync::atomic::Ordering::Acquire),
+                "closed sources are not analyzed yet: the index is partial"
+            );
+            assert!(
+                read.workspace_index.keys().all(|uri| !uri.as_str().ends_with(".bd")),
+                "no closed source indexed while the scan yields"
+            );
+            assert!(
+                read.workspace_index.keys().any(|uri| uri.as_str().ends_with("App.bproj")),
+                "the manifest is already indexed"
+            );
+        }
+        drop(request);
+        tokio::time::timeout(Duration::from_secs(60), scan).await.expect("scan ends").expect("scan task");
+        let read = state.read().await;
+        assert!(read.workspace_index_complete.load(std::sync::atomic::Ordering::Acquire));
+        assert!(read.workspace_index.values().any(|doc| doc.text.contains("Main")), "closed source indexed");
     }
 
     #[test]
@@ -497,7 +701,7 @@ mod tests {
         let slot = Arc::clone(&captured);
         let (mut service, mut socket) = LspService::new(move |client| {
             *slot.lock().expect("client slot") = Some(client.clone());
-            Backend::new(client)
+            Backend::new(client, Arc::new(crate::crash::CrashReporter::new(None)))
         });
         let client = captured.lock().expect("client slot").take().expect("captured client");
         let (tx, rx) = mpsc::unbounded_channel();

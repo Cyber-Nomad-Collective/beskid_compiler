@@ -3,7 +3,7 @@ use std::{
     path::PathBuf,
     sync::{
         Arc, Mutex,
-        atomic::{AtomicBool, AtomicUsize, Ordering},
+        atomic::{AtomicBool, Ordering},
     },
     time::Duration,
 };
@@ -198,7 +198,13 @@ pub struct State {
     /// Preserves notification order per URI without blocking unrelated buffers.
     pub(crate) document_update_gates: HashMap<Uri, Arc<AsyncMutex<()>>>,
     /// Set after the first workspace scan finishes (gates Salsa work during startup).
+    ///
+    /// This releases the startup barrier once manifests are indexed; closed sources are still
+    /// being analyzed then. [`State::workspace_index_complete`] says when that finished.
     pub(crate) initial_scan_complete: Arc<AtomicBool>,
+    /// Set when the first scan has analyzed every closed source. Before that, `workspace_index`
+    /// is a partial index: features must treat a missing entry as "not indexed yet".
+    pub(crate) workspace_index_complete: Arc<AtomicBool>,
     /// Wakes tasks waiting on [`initial_scan_complete`].
     pub(crate) scan_barrier: Arc<Notify>,
     /// Whether the LSP persists the Salsa DB snapshot to disk on idle/shutdown.
@@ -224,7 +230,7 @@ pub struct State {
     /// rust-analyzer's `procMacro.server`; artifact qualification applies to either.
     pub mod_host: ModHostSelection,
     /// Interactive requests currently running; background scans yield while this is non-zero.
-    pub(crate) interactive_inflight: Arc<AtomicUsize>,
+    pub(crate) interactive_inflight: Arc<crate::scan_schedule::InteractiveGate>,
     /// Content fingerprints of manifests and lockfiles already acted on, so a rewrite with
     /// identical bytes (the server's own `Project.lock` sync) causes no invalidation.
     pub(crate) watched_fingerprints: HashMap<PathBuf, u64>,
@@ -243,12 +249,13 @@ impl Default for State {
             db_gate: db_access::new_db_gate(),
             document_update_gates: HashMap::new(),
             initial_scan_complete: Arc::new(AtomicBool::new(false)),
+            workspace_index_complete: Arc::new(AtomicBool::new(false)),
             scan_barrier: Arc::new(Notify::new()),
             persistence_save_enabled: true,
             persistence_save_debounce: super::lifecycle::DEFAULT_PERSISTENCE_DEBOUNCE,
             persistence_save_revision: 0,
             mod_host: ModHostSelection::installed(),
-            interactive_inflight: Arc::new(AtomicUsize::new(0)),
+            interactive_inflight: Arc::new(crate::scan_schedule::InteractiveGate::default()),
             watched_fingerprints: HashMap::new(),
         }
     }
@@ -271,6 +278,10 @@ impl State {
     pub fn reset_compilation_db_with_db(&mut self, db: &mut BeskidDatabase) {
         reset_compilation_database(db);
         self.configured_project_root = None;
+    }
+
+    pub(crate) fn mark_workspace_index_complete(&self) {
+        self.workspace_index_complete.store(true, Ordering::Release);
     }
 
     pub(crate) fn mark_initial_scan_complete(&self) {

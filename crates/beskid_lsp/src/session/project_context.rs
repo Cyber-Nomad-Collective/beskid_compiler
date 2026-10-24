@@ -89,3 +89,17 @@ pub async fn invalidate_compilation_cache(state: &RwLock<State>) {
     })
     .await;
 }
+
+/// Effective source roots (host first, then dependency packages) of the project that owns `path`.
+pub async fn effective_roots_for_path(
+    state: &RwLock<State>,
+    path: &std::path::Path,
+) -> Option<beskid_analysis::projects::EffectiveCompilationRoots> {
+    let context = cached_compilation_context(state, path).await?;
+    let plan = context.compile_plan.as_ref()?;
+    let lock = plan.project_root.join("Project.lock");
+    Some(
+        beskid_analysis::projects::effective_roots_from_lockfile_checked(plan, &lock)
+            .unwrap_or_else(|_| beskid_analysis::projects::effective_roots_from_plan_and_workspace(plan, None)),
+    )
+}

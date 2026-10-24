@@ -14,7 +14,7 @@ pub fn handle_workspace_symbols(state: &State, params: WorkspaceSymbolParams) ->
         if project_manifest::is_manifest_uri(uri) {
             continue;
         }
-        for sym in &doc.syntax_symbols {
+        for sym in doc.syntax_symbols.iter().filter(|sym| !crate::hook_items::is_hook_item_name(&sym.name)) {
             if !query.is_empty() && !sym.name.to_lowercase().contains(&query) {
                 continue;
             }
