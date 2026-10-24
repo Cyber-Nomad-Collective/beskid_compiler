@@ -17,6 +17,7 @@ use crate::features::{
     code_actions, completion, definition, document_symbols, formatting, hover, inlay_hints, references, rename,
     semantic_tokens, signature_help, workspace_symbols,
 };
+use crate::crash::CrashReporter;
 use crate::logging::{ClientLogFilter, client_log};
 use crate::protocol::request::{snapshot_document, snapshot_lsp_request, snapshot_request};
 use crate::server::init::initialize_result;
@@ -40,6 +41,7 @@ pub struct Backend {
     pckg_registry: Arc<RwLock<PckgRegistryState>>,
     log_filter: Arc<RwLock<ClientLogFilter>>,
     diagnostics_revision: Arc<Mutex<HashMap<Uri, u64>>>,
+    reporter: Arc<CrashReporter>,
 }
 
 impl Backend {
@@ -52,7 +54,14 @@ impl Backend {
             pckg_registry: Arc::new(RwLock::new(PckgRegistryState::default())),
             log_filter: Arc::new(RwLock::new(ClientLogFilter::Info)),
             diagnostics_revision: Arc::new(Mutex::new(HashMap::new())),
+            reporter: Arc::new(CrashReporter::for_home()),
         }
+    }
+
+    /// Share the session crash reporter so background tasks report and de-duplicate with request handlers.
+    pub fn with_crash_reporter(mut self, reporter: Arc<CrashReporter>) -> Self {
+        self.reporter = reporter;
+        self
     }
 
     /// Unblock analysis paths that wait on the initial workspace scan (integration tests only).
@@ -72,6 +81,7 @@ impl Backend {
         let state = self.state.clone();
         let revisions = self.diagnostics_revision.clone();
         let filter = *self.log_filter.read().await;
+        let reporter = self.reporter.clone();
         tokio::spawn(async move {
             tokio::time::sleep(Duration::from_millis(120)).await;
             let should_run = {
@@ -81,7 +91,14 @@ impl Backend {
             if should_run {
                 client_log(&client, filter, MessageType::LOG, format!("publishing diagnostics for {}", uri.as_str()))
                     .await;
-                publish_diagnostics_for_uri(&client, &state, &uri).await;
+                // A panic while analysing must not silently kill diagnostics for the session.
+                let _ = reporter
+                    .guard(
+                        "textDocument/publishDiagnostics",
+                        Some(uri.as_str()),
+                        publish_diagnostics_for_uri(&client, &state, &uri),
+                    )
+                    .await;
             }
         });
     }
@@ -252,9 +269,13 @@ impl LanguageServer for Backend {
             }))
         })
         .await
-        .map_err(|error| {
-            tracing::error!(%error, "parallel Salsa completion task failed");
-            tower_lsp_server::jsonrpc::Error::internal_error()
+        .map_err(|error| match error.try_into_panic() {
+            // Re-raise on the request task so the service-level guard reports it.
+            Ok(payload) => std::panic::resume_unwind(payload),
+            Err(error) => {
+                tracing::error!(%error, "parallel Salsa completion task failed");
+                tower_lsp_server::jsonrpc::Error::internal_error()
+            }
         })?
         .map_err(|cancelled| {
             tracing::debug!(%cancelled, "parallel Salsa completion invalidated by a newer input revision");

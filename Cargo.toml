@@ -93,3 +93,10 @@ codegen-units = 16
 debug = "line-tables-only"
 strip = "symbols"
 panic = "abort"
+
+# The language server catches handler panics (crash reports, per-request
+# isolation), which needs unwinding. Build it with `--profile release-lsp`;
+# the CLI and every other binary keep `panic = "abort"` in `release`.
+[profile.release-lsp]
+inherits = "release"
+panic = "unwind"
