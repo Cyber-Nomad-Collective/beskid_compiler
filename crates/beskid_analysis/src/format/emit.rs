@@ -30,6 +30,8 @@ struct Trivia {
     source: String,
     comments: Vec<Comment>,
     next: usize,
+    /// Byte ranges of string literal tokens, sorted.
+    strings: Vec<(usize, usize)>,
 }
 
 /// Formatting state: indentation, the source comments still to emit, and blank-line tracking.
@@ -54,10 +56,10 @@ impl EmitCtx {
     }
 
     /// A context that re-emits the comments of `source` (the text the AST was parsed from).
-    pub(crate) fn with_source(source: &str, comments: Vec<Comment>) -> Self {
+    pub(crate) fn with_source(source: &str, comments: Vec<Comment>, strings: Vec<(usize, usize)>) -> Self {
         Self {
             indent: 0,
-            trivia: Some(Trivia { source: source.to_string(), comments, next: 0 }),
+            trivia: Some(Trivia { source: source.to_string(), comments, next: 0, strings }),
             last_end: 0,
             fresh: true,
         }
@@ -124,6 +126,22 @@ impl EmitCtx {
         w.write_char('}')?;
         self.fresh = false;
         Ok(())
+    }
+
+    /// The source text of the string literal that contains `start..end`, if any.
+    ///
+    /// The parser lowers an interpolated string (`"a ${b} c"`) to `+` concatenation; the
+    /// formatter prints the literal as written instead.
+    pub(crate) fn string_literal_containing(&self, start: usize, end: usize) -> Option<String> {
+        let t = self.trivia.as_ref()?;
+        let index = t.strings.partition_point(|(s, _)| *s <= start);
+        let (s, e) = *t.strings.get(index.checked_sub(1)?)?;
+        (s <= start && end <= e && end > s).then(|| t.source[s..e].to_string())
+    }
+
+    /// The source text of `start..end`, when formatting a source.
+    pub(crate) fn source_text(&self, start: usize, end: usize) -> Option<String> {
+        self.trivia.as_ref().and_then(|t| t.source.get(start..end)).map(str::to_string)
     }
 
     /// True when a source comment lies before `offset` and has not been emitted yet.

@@ -110,7 +110,7 @@ fn formatter_round_trips_every_move_form() {
         "return move this.pending;",
         "pub u8[] Swap(mut this, move u8[] next)",
         "return exchange(this.buffer, move next);",
-        "[Captures(Bound: Transferable)] i64() body",
+        "[Captures(Bound: Transferable)] () => i64 body",
         "u8[] kept = move data;",
         "archive.Add(move kept)",
         "u8[] Make(move u8[] data)",

@@ -19,7 +19,7 @@ pub(crate) struct Comment {
 }
 
 /// Rules whose text is never scanned for comments (their bytes can look like comments).
-fn is_opaque(rule: Rule) -> bool {
+pub(crate) fn is_opaque(rule: Rule) -> bool {
     matches!(
         rule,
         Rule::StringLiteral
