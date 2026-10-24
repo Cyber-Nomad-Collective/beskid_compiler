@@ -76,9 +76,11 @@ pub i64 RunTimerFixture() {
     Result<unit, TimerError> overflow = Time.Sleep(Duration { nanos: 9223372036854775807_i64 });
     bool overflowed = match overflow { Result::Error(TimerError::DeadlineOverflow()) => true, _ => false, };
     RequireTimer(overflowed);
-    Result<unit, TimerError> hostResult = Time.Sleep(Duration { nanos: 0_i64 });
-    bool unavailable = match hostResult { Result::Error(TimerError::Unavailable()) => true, _ => false, };
-    RequireTimer(unavailable);
+    // Main is the root fiber: a sleep there parks and ends at its deadline (it once failed as
+    // Unavailable outside a spawned fiber).
+    Result<unit, TimerError> rootResult = Time.Sleep(Duration { nanos: 0_i64 });
+    bool rootSlept = match rootResult { Result::Ok(_) => true, _ => false, };
+    RequireTimer(rootSlept);
     RequireTimer(TimerProbe.beskid_rt_v5_external_active_count() == 0);
     Fiber<i64> repeated = spawn RepeatedTimer();
     i64 score = match repeated.Join() { Result::Ok(value) => value, _ => -1000_i64, };
