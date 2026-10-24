@@ -292,9 +292,16 @@ impl<'db> CodegenInput<'db> {
             return Err(CodegenInputError::ForeignCompositionUnit);
         }
         let registrations = snapshot.registrations.iter().map(|registration| registration.id).collect::<HashSet<_>>();
-        let source_key = |node| AstNodeKey { unit: self.typed_program.entry, generation, node };
+        let unit_key = |unit: &beskid_analysis::composition::UnitPath, node| AstNodeKey {
+            unit: match unit {
+                None => self.typed_program.entry,
+                Some(path) => SourceUnitId::new(self.db, path.to_path_buf()),
+            },
+            generation,
+            node,
+        };
         let valid_registration_sources = snapshot.registrations.iter().all(|registration| {
-            let key = source_key(registration.source_node_id);
+            let key = unit_key(&registration.unit, registration.source_node_id);
             registration.source_node_id.is_valid()
                 && matches!(node_kind(self.db, key), Ok(Some(IndexedNodeKind::RegistryEntry)))
                 && matches!(node_span(self.db, key), Ok(Some(span)) if span == registration.span)
@@ -313,28 +320,25 @@ impl<'db> CodegenInput<'db> {
             registrations.contains(&plural.owner_registration_id)
                 && plural.target_slots.iter().all(|slot| assigned_slots.contains(&slot.0))
                 && plural.field_node_id.is_valid()
-                && matches!(node_kind(self.db, source_key(plural.field_node_id)), Ok(Some(IndexedNodeKind::Field)))
-                && matches!(node_span(self.db, source_key(plural.field_node_id)), Ok(Some(span)) if span == plural.field_span)
+                && matches!(node_kind(self.db, unit_key(&plural.field_unit, plural.field_node_id)), Ok(Some(IndexedNodeKind::Field)))
+                && matches!(node_span(self.db, unit_key(&plural.field_unit, plural.field_node_id)), Ok(Some(span)) if span == plural.field_span)
         });
         let valid_singulars = plan.singulars.iter().all(|singular| {
             registrations.contains(&singular.owner_registration_id)
                 && assigned_slots.contains(&singular.target_slot.0)
                 && singular.field_node_id.is_valid()
-                && matches!(node_kind(self.db, source_key(singular.field_node_id)), Ok(Some(IndexedNodeKind::Field)))
-                && matches!(node_span(self.db, source_key(singular.field_node_id)), Ok(Some(span)) if span == singular.field_span)
+                && matches!(node_kind(self.db, unit_key(&singular.field_unit, singular.field_node_id)), Ok(Some(IndexedNodeKind::Field)))
+                && matches!(node_span(self.db, unit_key(&singular.field_unit, singular.field_node_id)), Ok(Some(span)) if span == singular.field_span)
         });
         let valid_scopes = snapshot.scope_names.keys().all(|scope_id| plan.scope_parents.contains_key(scope_id));
         let valid_hooks = plan.init_hooks.iter().chain(&plan.startup_hooks).chain(&plan.disposal_hooks).all(|hook| {
             (hook.scope_id == beskid_analysis::composition::ScopeId::GLOBAL
                 || plan.scope_parents.contains_key(&hook.scope_id))
                 && hook.source_node_id.is_valid()
-                && matches!(
-                    node_kind(
-                        self.db,
-                        AstNodeKey { unit: self.typed_program.entry, generation, node: hook.source_node_id }
-                    ),
-                    Ok(Some(IndexedNodeKind::ScopeHook))
-                )
+                && matches!(node_kind(self.db, unit_key(&hook.unit, hook.source_node_id)), Ok(Some(IndexedNodeKind::ScopeHook)))
+                && hook.function_node_id.is_valid()
+                && matches!(node_kind(self.db, unit_key(&hook.unit, hook.function_node_id)), Ok(Some(IndexedNodeKind::FunctionDefinition)))
+                && hook.arguments_registration_id.is_none_or(|id| registrations.contains(&id))
         });
         if plan.launched_host != snapshot.launched_host
             || !valid_activation
@@ -349,6 +353,22 @@ impl<'db> CodegenInput<'db> {
         self.composition_plan = Some(plan);
         self.composition_snapshot = Some(snapshot);
         Ok(self)
+    }
+
+    /// The exact source key of a composition declaration in `unit` (`None`: the entry unit).
+    pub fn composition_unit_key(
+        &self,
+        unit: &beskid_analysis::composition::UnitPath,
+        node: beskid_queries::AstNodeId,
+    ) -> AstNodeKey {
+        AstNodeKey {
+            unit: match unit {
+                None => self.typed_program.entry,
+                Some(path) => SourceUnitId::new(self.db, path.to_path_buf()),
+            },
+            generation: self.typed_program.generation,
+            node,
+        }
     }
 
     pub fn composition_authority(

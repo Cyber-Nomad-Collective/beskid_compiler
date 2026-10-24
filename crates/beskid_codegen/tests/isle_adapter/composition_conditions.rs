@@ -669,3 +669,90 @@ fn compound_integer_argument_retains_its_resolved_word_type_at_a_call_boundary()
     assert!(clif.contains("imul"), "the compound size expression must lower:\n{clif}");
     assert!(clif.contains("call"), "the direct call must lower:\n{clif}");
 }
+
+/// Count the calls of the imported function whose declaration names `symbol`.
+fn calls_of(clif: &str, symbol: &str) -> usize {
+    clif.lines()
+        .filter(|line| line.contains(&format!("%{symbol}")))
+        .filter_map(|line| line.split_whitespace().next())
+        .map(|callee| clif.matches(&format!("call {callee}(")).count())
+        .sum()
+}
+
+#[test]
+fn launch_runs_startup_and_with_runs_init_and_dispose_on_every_exit() {
+    use std::sync::Arc;
+
+    use beskid_analysis::composition::{CompositionInput, is_hook_item_name, resolve_composition};
+
+    let source = r#"
+type Greeter {}
+host AppHost()
+{
+    registry { single Greeter; }
+    startup(Greeter greeter) { }
+    dispose() { }
+    scope Visit()
+    {
+        init(Greeter greeter) { }
+        dispose() { }
+    }
+}
+i32 Main(bool early)
+{
+    launch AppHost();
+    with Visit()
+    {
+        if early { return 1; }
+    }
+    return 0;
+}
+"#;
+    let (input, isa, root) = item_fixture_with_root(source);
+    let result = resolve_composition(CompositionInput {
+        program: &input.typed_program().assembly.entry_unit().program,
+        is_mod_project: false,
+    });
+    assert!(result.issues.is_empty(), "composition must validate: {:?}", result.issues);
+    assert_eq!(result.plan.startup_hooks.len(), 1);
+    assert_eq!(result.plan.init_hooks.len(), 1);
+    assert_eq!(result.plan.disposal_hooks.len(), 2);
+    assert!(result.plan.startup_hooks[0].arguments_registration_id.is_some(), "startup takes an injected argument");
+    let mut snapshot = result.snapshot;
+    snapshot.source_unit_path = Some(root.unit.path(input.database()).to_path_buf());
+    let generation = input.typed_program().generation;
+    let input = input
+        .with_composition_authority(generation, Arc::new(result.plan), Arc::new(snapshot))
+        .expect("hook functions and argument registrations are exact authority");
+    let items = find_function_definitions(input.database(), root)
+        .into_iter()
+        .map(|key| SyntaxModuleItem {
+            symbol: item_name(input.database(), key).expect("item query").expect("item name").to_string(),
+            key,
+        })
+        .collect::<Vec<_>>();
+    let hooks = items.iter().map(|item| item.symbol.clone()).filter(|name| is_hook_item_name(name)).collect::<Vec<_>>();
+    assert_eq!(hooks.len(), 4, "one generated function per hook: {hooks:?}");
+    let artifact = lower_syntax_program(&input, isa.as_ref(), &items).expect("hook calls lower to verified CLIF");
+    let clif = artifact.functions.iter().find(|function| function.name == "Main").expect("lowered Main").function.display().to_string();
+    let named = |kind: &str| {
+        hooks
+            .iter()
+            .filter(|name| name.contains(&format!("_{kind}_")))
+            .map(|name| (name.clone(), calls_of(&clif, name)))
+            .collect::<Vec<_>>()
+    };
+    let startup = named("startup");
+    assert_eq!(startup.len(), 1);
+    assert_eq!(startup[0].1, 1, "startup runs once at launch:\n{clif}");
+    let init = named("init");
+    assert_eq!(init[0].1, 1, "init runs once per with entry:\n{clif}");
+    let dispose = named("dispose");
+    assert_eq!(dispose.len(), 2);
+    // The scope dispose runs on the early return and on the normal end of the body; the global
+    // dispose runs on both function exits before the container shuts down.
+    for (name, calls) in &dispose {
+        assert_eq!(*calls, 2, "{name} must run on both exits:\n{clif}");
+    }
+    assert_eq!(calls_of(&clif, "composition_launch"), 1);
+}

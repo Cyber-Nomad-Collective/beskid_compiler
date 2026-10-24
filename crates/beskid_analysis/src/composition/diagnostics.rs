@@ -13,16 +13,58 @@ pub enum CompositionIssue {
     UnknownParentScope { scope_name: String, parent_scope: ScopeId, span: SpanInfo },
     UnknownRegistrationId { registration_id: u32, span: Option<SpanInfo> },
     DependencyCycle { from_id: u32, to_id: u32, span: Option<SpanInfo> },
-    AmbiguousInject { requested_type: String, span: SpanInfo },
+    /// A singular inject matched several registrations at one container level.
+    AmbiguousInject {
+        requested_type: String,
+        span: SpanInfo,
+        field_name: String,
+        name_span: SpanInfo,
+        type_span: SpanInfo,
+        candidates: Vec<SpanInfo>,
+    },
     UnresolvedInject { requested_type: String, span: SpanInfo },
     EmptyPluralInject { requested_type: String, span: SpanInfo },
     WithArgsMismatch { scope_name: String, span: SpanInfo },
     ScopedOutsideWith { span: SpanInfo },
     ChildScopeWithoutParent { scope_name: String, span: SpanInfo },
     InvalidScopeQualifier { qualifier: String, span: SpanInfo },
-    OverrideLifetimeMismatch { binding: String, span: SpanInfo },
+    /// A derived host re-registers `binding` with another lifetime than its base host.
+    OverrideLifetimeMismatch {
+        binding: String,
+        span: SpanInfo,
+        lifetime: &'static str,
+        /// The overridden base registration, when it is in the unit under analysis.
+        overridden_span: Option<SpanInfo>,
+        overridden_lifetime: &'static str,
+    },
+    /// `startup` runs once per launch at global scope; it cannot be declared inside a scope.
+    StartupInNamedScope { span: SpanInfo },
+    /// A registry line names a contract as the implementation: a contract cannot be created.
+    RegisteredContract {
+        contract: String,
+        /// The contract key of a `for Target` line; `None` for a self-registration.
+        target: Option<String>,
+        span: SpanInfo,
+        implementation_span: SpanInfo,
+        /// Types of the unit that conform to the contract and can be registered.
+        candidates: Vec<String>,
+    },
+    /// The registered implementation is a type the container cannot create.
+    UnconstructibleRegistration { implementation: String, reason: UnconstructibleReason, span: SpanInfo },
+    /// `single Impl for Contract;` where `Impl` does not conform to `Contract`.
+    NonConformingRegistration { implementation: String, contract: String, span: SpanInfo },
+    /// A `with` that no earlier `launch` of the same function body encloses.
+    WithWithoutLaunch { scope_name: String, span: SpanInfo },
     InjectOnConstructor { span: SpanInfo },
     HostInModProject { span: SpanInfo },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum UnconstructibleReason {
+    /// The type has this value field, which the container cannot initialize.
+    ValueField(String),
+    Generic,
+    Enum,
 }
 
 /// Map a composition issue to semantic diagnostic kind and span when possible.
@@ -52,7 +94,7 @@ pub fn to_semantic_issue(issue: &CompositionIssue) -> Option<(SpanInfo, Semantic
             span.unwrap_or_default(),
             SemanticIssueKind::CompositionDependencyCycle { from_id: *from_id, to_id: *to_id },
         )),
-        CompositionIssue::AmbiguousInject { requested_type, span } => {
+        CompositionIssue::AmbiguousInject { requested_type, span, .. } => {
             Some((*span, SemanticIssueKind::CompositionAmbiguousInject { requested_type: requested_type.clone() }))
         }
         CompositionIssue::UnresolvedInject { requested_type, span } => {
@@ -71,13 +113,18 @@ pub fn to_semantic_issue(issue: &CompositionIssue) -> Option<(SpanInfo, Semantic
         CompositionIssue::InvalidScopeQualifier { qualifier, span } => {
             Some((*span, SemanticIssueKind::CompositionInvalidScopeQualifier { qualifier: qualifier.clone() }))
         }
-        CompositionIssue::OverrideLifetimeMismatch { binding, span } => {
+        CompositionIssue::OverrideLifetimeMismatch { binding, span, .. } => {
             Some((*span, SemanticIssueKind::CompositionOverrideLifetimeMismatch { binding: binding.clone() }))
         }
         CompositionIssue::InjectOnConstructor { span } => {
             Some((*span, SemanticIssueKind::CompositionInjectOnConstructor))
         }
         CompositionIssue::HostInModProject { span } => Some((*span, SemanticIssueKind::CompositionHostInModProject)),
+        CompositionIssue::StartupInNamedScope { .. }
+        | CompositionIssue::RegisteredContract { .. }
+        | CompositionIssue::UnconstructibleRegistration { .. }
+        | CompositionIssue::NonConformingRegistration { .. }
+        | CompositionIssue::WithWithoutLaunch { .. } => None,
     }
 }
 
@@ -101,5 +148,10 @@ pub fn composition_issue_code(issue: &CompositionIssue) -> &'static str {
         CompositionIssue::UnknownParentScope { .. } => "E1707",
         CompositionIssue::UnknownRegistrationId { .. } => "E1704",
         CompositionIssue::EmptyPluralInject { .. } => "E1704",
+        CompositionIssue::StartupInNamedScope { .. } => "E1717",
+        CompositionIssue::RegisteredContract { .. } => "E1718",
+        CompositionIssue::UnconstructibleRegistration { .. } => "E1719",
+        CompositionIssue::NonConformingRegistration { .. } => "E1720",
+        CompositionIssue::WithWithoutLaunch { .. } => "E1721",
     }
 }

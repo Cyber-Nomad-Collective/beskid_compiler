@@ -91,6 +91,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `\${`. An unknown escape (`E0109`) or a `\u{...}` value that is not a Unicode
   scalar value (`E0110`) is an error at the escape.
 - Compound assignments `*=`, `/=` and `%=` beside `+=` and `-=`.
+### Host composition
+
+- Host hooks run. `startup` runs once after `launch` builds the container; a
+  scope's `init` runs after `with` enters it and before the body; its `dispose`
+  runs on every exit of the body (end, `return`, `break`, `continue`). A global
+  `init` runs before `startup`, a global `dispose` before the container shuts
+  down. Across a host chain `init` and `startup` run base host first, `dispose`
+  launched host first. Hook parameters are resolved like `inject` fields.
+- A host may extend a base host declared in a library or in Corelib, such as
+  Corelib's new `ConsoleHost`.
+- Several registrations of one key inside one host are all kept; only a derived
+  host overrides a base registration. A singular `inject` of such a key is
+  E1705 with a fix to `inject T[] ts;`.
+- E1713 names the binding (`Clock`) and shows the base registration.
+- New diagnostics: E1717 `startup` inside a named scope, E1718 a contract
+  registered as itself (fix: the conforming type), E1719 a type the container
+  cannot create (value field, generic, enum), E1720 a registration for a
+  contract the type does not conform to, E1721 `with` outside the function
+  that launches the host.
+- Registry lines resolve their types (an unknown name is reported at the line),
+  and a contract named only by a registry line, a `where` bound or an `inject`
+  field is no longer an unused private item.
 
 ## [0.6.6] - 2026-10-16
 

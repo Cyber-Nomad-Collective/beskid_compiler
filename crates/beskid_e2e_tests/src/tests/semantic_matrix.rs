@@ -68,3 +68,56 @@ fn run_case(cli: &BeskidCliInvoker, case: &SemanticCase) {
         assert_exit_code(&native_run, case.expected, &format!("execute semantic case {} binary", case.fixture));
     }
 }
+
+/// Host hooks run at run time, in the order the composition Standard gives, on both JIT and AOT.
+#[test]
+fn composition_hooks_run_in_order_on_every_exit() {
+    let cli = BeskidCliInvoker::new();
+    let workspace = E2eWorkspace::from_fixture("composition_hooks");
+    let manifest = workspace.join("CompositionHooks.bproj");
+    let expected = [
+        "before launch",
+        "startup hello",
+        "init hello",
+        "inside with",
+        "dispose",
+        "init hello",
+        "early exit",
+        "dispose",
+        "shutdown",
+    ];
+    let check = |output: &std::process::Output, route: &str| {
+        assert_exit_code(output, 3, &format!("composition hooks through {route}"));
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let lines = stdout.lines().map(str::trim_end).filter(|line| !line.is_empty()).collect::<Vec<_>>();
+        assert_eq!(lines, expected, "{route}: hook order");
+    };
+    let jit_run = cli.run(["run", "--project", manifest.to_str().expect("manifest path str"), "--target", "App"]);
+    check(&jit_run, "JIT");
+
+    let output_binary = workspace.join("out/composition_hooks");
+    let build = cli.run([
+        "build",
+        "--project",
+        manifest.to_str().expect("manifest path str"),
+        "--target",
+        "App",
+        "--output",
+        output_binary.to_str().expect("output path str"),
+    ]);
+    assert_success(&build, "build composition hooks");
+    let native_run = run_binary(&output_binary, Duration::from_secs(10));
+    check(&native_run, "AOT");
+}
+
+/// `host AppHost() : ConsoleHost` inherits Corelib's console base host and its `CommandLine`.
+#[test]
+fn console_host_base_registers_the_command_line() {
+    let cli = BeskidCliInvoker::new();
+    let workspace = E2eWorkspace::from_fixture("console_host");
+    let manifest = workspace.join("ConsoleHost.bproj");
+    let run = cli.run(["run", "--project", manifest.to_str().expect("manifest path str"), "--target", "App"]);
+    assert_exit_code(&run, 7, "console host startup ends the program through CommandLine.Exit");
+    let stdout = String::from_utf8_lossy(&run.stdout);
+    assert_eq!(stdout.lines().map(str::trim_end).filter(|line| !line.is_empty()).collect::<Vec<_>>(), ["hello 0"]);
+}

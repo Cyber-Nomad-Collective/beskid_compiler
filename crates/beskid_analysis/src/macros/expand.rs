@@ -205,7 +205,7 @@ pub(crate) fn expand_program_with_diagnostics_impl(
         current = next;
         if !changed {
             diagnostics.extend(collect_residual_macro_diagnostics(source_name, source, &current));
-            return (current, diagnostics);
+            return (crate::composition::hooks::lower_host_hooks(current), diagnostics);
         }
     }
 
@@ -222,5 +222,5 @@ pub(crate) fn expand_program_with_diagnostics_impl(
         ));
     }
     diagnostics.extend(collect_residual_macro_diagnostics(source_name, source, &current));
-    (current, diagnostics)
+    (crate::composition::hooks::lower_host_hooks(current), diagnostics)
 }

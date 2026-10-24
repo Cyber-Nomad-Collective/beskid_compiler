@@ -52,9 +52,36 @@ impl Resolver {
         self.resolve_item_with_bodies(item, false);
     }
 
+    fn resolve_host_body(&mut self, body: &[Spanned<crate::syntax::HostBodyItem>]) {
+        for item in body {
+            match &item.node {
+                crate::syntax::HostBodyItem::Registry(registry) => {
+                    for entry in &registry.node.entries {
+                        self.resolve_registry_entry(entry);
+                    }
+                }
+                crate::syntax::HostBodyItem::Registration(entry) => self.resolve_registry_entry(entry),
+                crate::syntax::HostBodyItem::Scope(scope) => self.resolve_host_body(&scope.node.body),
+                crate::syntax::HostBodyItem::Hook(_) => {}
+            }
+        }
+    }
+
+    fn resolve_registry_entry(&mut self, entry: &Spanned<crate::syntax::RegistryEntry>) {
+        self.resolve_type_path(&entry.node.implementation);
+        if let Some(target) = &entry.node.target {
+            self.resolve_type_path(target);
+        }
+    }
+
     fn resolve_item_with_bodies(&mut self, item: &Spanned<Node>, include_bodies: bool) {
         match &item.node {
-            Node::HostDefinition(_) => {}
+            // Registry lines name types: resolve them so an unknown implementation or contract
+            // is reported here (and the imports they use count as used). Hook bodies are
+            // generated functions after expansion and resolve as functions.
+            Node::HostDefinition(host) => {
+                self.resolve_host_body(&host.node.body);
+            }
             // syntax-free constant facts are consumed before executable lowering; there are no
             // types, locals, or references for the retired syntax resolver to traverse.
             Node::ConstantDefinition(_) => {}

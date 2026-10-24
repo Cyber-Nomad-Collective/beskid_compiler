@@ -108,6 +108,21 @@ pub struct CompositionLaunchPlan {
     pub site: AstNodeKey,
     pub slot_count: u32,
     pub registrations: Vec<CompositionRegistrationPlan>,
+    /// Global `init` then `startup` hooks, run once the container is active.
+    pub startup: Vec<CompositionHookCall>,
+    /// Global `dispose` hooks, run before the container shuts down.
+    pub shutdown: Vec<CompositionHookCall>,
+}
+
+/// One call of a generated host-hook function. Its arguments are the injected fields of the
+/// hook's argument object, which the launch installed in `arguments_slot`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CompositionHookCall {
+    pub function: DirectCallee,
+    pub signature: Signature,
+    pub arguments_slot: Option<u32>,
+    /// Byte offsets of the argument object's injected fields, in parameter order.
+    pub argument_offsets: Vec<u32>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -132,6 +147,10 @@ pub struct CompositionScopePlan {
     pub scope_id: u32,
     pub parent_scope_id: u32,
     pub body: AstNodeKey,
+    /// The scope's `init` hooks, run after the scope is entered and before the body.
+    pub init: Vec<CompositionHookCall>,
+    /// The scope's `dispose` hooks, run on every exit from the body before the scope is left.
+    pub dispose: Vec<CompositionHookCall>,
 }
 
 /// Generation-safe local slot and scalar type for one emitted function parameter.

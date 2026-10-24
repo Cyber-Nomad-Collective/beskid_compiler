@@ -1,0 +1,83 @@
+// Host hooks run at run time: `startup` once after launch, scope `init` before each `with`
+// body, scope `dispose` after it (also on an early return), and the global `dispose` last.
+use Core.Output;
+
+contract Greeter
+{
+    string Greet();
+}
+
+type PoliteGreeter : Greeter
+{
+    pub string Greet()
+    {
+        return "hello";
+    }
+}
+
+type Reception
+{
+    inject Greeter greeter;
+
+    pub string Welcome()
+    {
+        return this.greeter.Greet();
+    }
+}
+
+host AppHost()
+{
+    registry
+    {
+        single PoliteGreeter for Greeter;
+        single Reception;
+    }
+
+    startup(Reception reception)
+    {
+        Output.WriteLine("startup ${reception.Welcome()}");
+    }
+
+    dispose()
+    {
+        Output.WriteLine("shutdown");
+    }
+
+    scope Visit()
+    {
+        init(Greeter greeter)
+        {
+            Output.WriteLine("init ${greeter.Greet()}");
+        }
+
+        dispose()
+        {
+            Output.WriteLine("dispose");
+        }
+    }
+}
+
+bool Early()
+{
+    return true;
+}
+
+i32 Main()
+{
+    Output.WriteLine("before launch");
+    launch AppHost();
+    with Visit()
+    {
+        Output.WriteLine("inside with");
+    }
+    with Visit()
+    {
+        Output.WriteLine("early exit");
+        if Early()
+        {
+            return 3;
+        }
+        Output.WriteLine("not reached");
+    }
+    return 0;
+}
