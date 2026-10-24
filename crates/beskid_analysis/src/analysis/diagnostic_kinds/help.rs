@@ -123,6 +123,7 @@ impl SemanticIssueKind {
             Self::GenericBoundNotSatisfied { type_name, contract_name, reason: None, .. } => {
                 Some(format!("make `{type_name}` conform to `{contract_name}` or pass a conforming type"))
             }
+            Self::InvalidPrimitiveImplementation { reason, .. } => Some(reason.clone()),
             // The declaration text is needed for the tailored help; `issue_diagnostic` writes it.
             Self::ImmutableAssignment { name, binding } => Some(match binding.form {
                 super::BindingForm::ForIterator => {

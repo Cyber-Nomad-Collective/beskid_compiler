@@ -255,3 +255,120 @@ fn bounded_generic_receivers_dispatch_to_each_instantiation() {
         artifact.functions.iter().filter(|function| function.name.starts_with("SizeOf#generic_")).count();
     assert_eq!(specializations, 2, "one specialization per receiver type");
 }
+
+/// One contract, implemented by every primitive the bound dispatch test covers. Each `Size`
+/// reads its receiver by value, so a wrong receiver ABI fails CLIF verification.
+const PRIMITIVE_SIZED: &str = "contract Sized { i64 Size(); } \
+     impl i32 : Sized { pub i64 Size() { return i64(this) + 1; } } \
+     impl i64 : Sized { pub i64 Size() { return this * 2; } } \
+     impl u8 : Sized { pub i64 Size() { return i64(this); } } \
+     impl f64 : Sized { pub i64 Size() { return 8; } } \
+     impl bool : Sized { pub i64 Size() { if this { return 1; } return 0; } } \
+     impl string : Sized { pub i64 Size() { return 3; } } \
+     i64 SizeOf<T>(T value) where T: Sized { return value.Size(); } ";
+
+#[test]
+fn bounded_generic_receivers_dispatch_to_primitive_implementations() {
+    let (input, isa, root) = item_fixture_with_root(&format!(
+        "{PRIMITIVE_SIZED}i64 Main() {{ return SizeOf<i32>(3_i32) + SizeOf<i64>(4_i64) + SizeOf<u8>(5_u8) \
+         + SizeOf<f64>(1.5_f64) + SizeOf(true) + SizeOf(\"abc\"); }}"
+    ));
+    let items = module_items(&input, &[root]);
+    let artifact = lower_syntax_program(&input, isa.as_ref(), &items)
+        .expect("a where-bounded receiver dispatches to a primitive implementation in every specialization");
+    beskid_codegen::validate_artifact(&artifact).expect("primitive bounded dispatch artifact");
+    let specializations =
+        artifact.functions.iter().filter(|function| function.name.starts_with("SizeOf#generic_")).count();
+    assert_eq!(specializations, 6, "one specialization per primitive receiver");
+}
+
+#[test]
+fn primitive_implementation_methods_take_their_receiver_by_value() {
+    let (input, _, root) = item_fixture_with_root(&format!("{PRIMITIVE_SIZED}unit Main() {{ return; }}"));
+    for (receiver, abi) in [
+        ("i32", beskid_queries::SemanticTypeId::I32),
+        ("i64", beskid_queries::SemanticTypeId::I64),
+        ("u8", beskid_queries::SemanticTypeId::U8),
+        ("f64", beskid_queries::SemanticTypeId::F64),
+        ("bool", beskid_queries::SemanticTypeId::BOOL),
+        ("string", beskid_queries::SemanticTypeId::STRING),
+    ] {
+        let method = find_nodes_of_kind(input.database(), root, beskid_queries::IndexedNodeKind::MethodDefinition)
+            .into_iter()
+            .find(|key| beskid_queries::method_receiver_abi_type(input.database(), *key) == abi)
+            .unwrap_or_else(|| panic!("the `{receiver}` implementation method takes a `{receiver}` receiver"));
+        let signature = beskid_queries::item_abi_signature(input.database(), method)
+            .expect("item signature query")
+            .expect("a non-generic primitive implementation method has an item signature");
+        assert_eq!(signature.parameters.as_ref(), &[abi], "`{receiver}` receiver is the first parameter");
+        assert_eq!(signature.result, beskid_queries::SemanticTypeId::I64);
+    }
+}
+
+/// The Corelib `Formatting` implementations themselves (digit loop for `u64`, `word` conversion,
+/// UTF-8 array literals for `char`, interpolation of `this`) lower for every primitive through a
+/// `where T: Formatting` bound.
+#[test]
+fn corelib_formatting_implementations_lower_for_every_primitive() {
+    // The single-unit fixture has no `Core.String`; only the final UTF-8 materialization is stubbed.
+    let formatting =
+        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../corelib/packages/foundation/src/Core/Text/Formatting.bd"))
+            .replace("use Core.String;\n", "")
+            .replace("return String.FromUtf8CodeUnits(bytes);", "return \"?\";");
+    assert!(!formatting.contains("String."), "the stub replaced every Core.String use");
+    let (input, isa, root) = item_fixture_with_root(&format!(
+        "{formatting}\nstring Show<T>(T value) where T: Formatting {{ return value.Format(); }}\n\
+         string Main() {{ return Show<i8>(-1_i8) + Show<i16>(2_i16) + Show<i32>(3_i32) + Show<i64>(4_i64) \
+         + Show<u8>(5_u8) + Show<u16>(6_u16) + Show<u32>(7_u32) + Show<u64>(8_u64) + Show<word>(word(9_i64)) \
+         + Show<f32>(1.5_f32) + Show<f64>(2.5_f64) + Show<bool>(true) + Show<char>('x') + Show<string>(\"s\"); }}\n"
+    ));
+    let items = module_items(&input, &[root]);
+    let artifact = lower_syntax_program(&input, isa.as_ref(), &items)
+        .expect("every Corelib Formatting implementation lowers through a bound");
+    beskid_codegen::validate_artifact(&artifact).expect("Formatting artifact");
+    let specializations = artifact.functions.iter().filter(|function| function.name.starts_with("Show#generic_")).count();
+    assert_eq!(specializations, 14, "one specialization per primitive");
+}
+
+/// Direct calls on primitive values (`n.Format()`, `3.Format()`, a literal string receiver) call
+/// the primitive's implementation statically, the receiver passed by value.
+#[test]
+fn primitive_values_call_their_implementation_methods_directly() {
+    let (input, isa, root) = item_fixture_with_root(
+        "contract Shown { string Show(); } \
+         impl i32 : Shown { pub string Show() { return \"${this}\"; } } \
+         impl i64 : Shown { pub string Show() { return \"${this}\"; } } \
+         impl f64 : Shown { pub string Show() { return \"${this}\"; } } \
+         impl bool : Shown { pub string Show() { if this { return \"yes\"; } return \"no\"; } } \
+         impl string : Shown { pub string Show() { return this; } } \
+         string Main(f64 x) { i64 n = 3; bool flag = true; string s = \"t\"; \
+         return n.Show() + x.Show() + flag.Show() + s.Show() + 3.Show() + (n).Show() + \"lit\".Show(); }",
+    );
+    let items = module_items(&input, &[root]);
+    let artifact = lower_syntax_program(&input, isa.as_ref(), &items)
+        .expect("direct calls on primitive values lower to their implementation methods");
+    beskid_codegen::validate_artifact(&artifact).expect("direct primitive call artifact");
+}
+
+/// `for` variables over primitive arrays and `match` bindings of primitive payloads call their
+/// primitive implementation directly.
+#[test]
+fn loop_variables_and_match_bindings_call_their_primitive_implementation_directly() {
+    let (input, isa, root) = item_fixture_with_root(
+        "contract Shown { string Show(); } \
+         impl i64 : Shown { pub string Show() { return \"${this}\"; } } \
+         impl f64 : Shown { pub string Show() { return \"${this}\"; } } \
+         impl bool : Shown { pub string Show() { if this { return \"yes\"; } return \"no\"; } } \
+         enum Reading { Count(i64 value), Ratio(f64 value), Flag(bool value), Empty } \
+         string Main(i64[] nums, f64[] ratios, Reading reading) { mut string out = \"\"; \
+         for x in nums { out = out + x.Show(); } \
+         for r in ratios { out = out + (r).Show(); } \
+         string described = match reading { Reading::Count(v) => v.Show(), Reading::Ratio(v) => v.Show(), \
+         Reading::Flag(v) => (v).Show(), Reading::Empty => \"none\", }; \
+         return out + described; }",
+    );
+    let items = module_items(&input, &[root]);
+    let artifact = lower_syntax_program(&input, isa.as_ref(), &items)
+        .expect("loop variables and match bindings call their primitive implementations");
+    beskid_codegen::validate_artifact(&artifact).expect("loop and binding receiver artifact");
+}

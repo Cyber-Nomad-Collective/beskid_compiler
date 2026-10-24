@@ -126,6 +126,9 @@ impl SemanticIssueKind {
                 super::display_type(type_name),
                 super::display_type(contract_name)
             ),
+            Self::InvalidPrimitiveImplementation { type_name, .. } => {
+                format!("invalid implementation for primitive type `{type_name}`")
+            }
             Self::ImmutableAssignment { name, .. } => {
                 format!("`{name}` is assigned again but is not mutable")
             }

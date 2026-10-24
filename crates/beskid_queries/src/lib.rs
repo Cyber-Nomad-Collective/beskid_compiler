@@ -153,7 +153,7 @@ pub use semantic_contract::{
     test_statement_nodes, specialized_try_expression_fact, try_expression_fact, try_expression_judgement, try_expression_legality, typed_array_allocation, value_abi_type,
 };
 pub use semantic_contract::{
-    AppliedContractIdentity, applied_contract_argument_is_type, type_applied_contract_implementation,
+    AppliedContractIdentity, applied_contract_argument_is_type, method_receiver_abi_type, type_applied_contract_implementation,
     type_contract_applications, type_contract_applications_of, type_contract_declarations,
     type_contract_implementation, contract_of_method_signature,
 };

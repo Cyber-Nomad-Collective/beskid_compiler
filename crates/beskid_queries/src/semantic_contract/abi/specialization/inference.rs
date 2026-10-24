@@ -33,6 +33,20 @@ pub(super) fn specialization_for_call_in_environment(
     } else if let Some(method) = declaration_node.of::<beskid_analysis::syntax::ContractMethodSignature>() {
         let generic_names = generic_callable_parameters(db, declaration).map(|(names, _)| names).unwrap_or_default();
         (method.parameters.iter().collect::<Vec<_>>(), method.return_type.as_ref(), generic_names, false, None)
+    } else if declaration_node.of::<beskid_analysis::syntax::MethodDefinition>().is_some()
+        && matches!(method_this_type(db, declaration), Some(beskid_analysis::syntax::Type::Primitive(_)))
+    {
+        // A method of a primitive implementation is never generic: it has one item signature,
+        // its receiver passed by value.
+        let signature = item_abi_signature(db, declaration)?
+            .ok_or_else(|| SemanticError::unavailable_at("call_abi_signature", key))?;
+        return Ok(GenericSpecializationInstance {
+            declaration,
+            declaration_identity,
+            signature,
+            substitutions: Arc::from([]),
+            contract_witnesses: Arc::from([]),
+        });
     } else if let Some(method) = declaration_node.of::<beskid_analysis::syntax::MethodDefinition>() {
         // The owner may live in another unit (`impl<T> List<T>` extending a Foundation type).
         let owner = method_owner_declaration(db, declaration)

@@ -108,7 +108,8 @@ pub(in crate::semantic_contract) fn item_abi_signature_tracked(
                 Err(error) => return Some(Err(error)),
             };
             let mut parameters = Vec::with_capacity(signature.parameters.len() + 1);
-            parameters.push(SemanticTypeId::POINTER);
+            // A primitive implementation's method takes its receiver by value (`impl i64`).
+            parameters.push(super::super::contracts::method_receiver_abi_type(db, key));
             parameters.extend(signature.parameters.iter().copied());
             signature.parameters = parameters.into();
             return Some(Ok(signature));

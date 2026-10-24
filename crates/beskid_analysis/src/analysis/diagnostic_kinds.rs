@@ -144,6 +144,13 @@ pub enum SemanticIssueKind {
         /// `[Serialize]` fix inserts the attribute.
         declaration_at: Option<usize>,
     },
+    /// An `impl` block for a primitive type that cannot issue a conformance: the primitive cannot
+    /// conform, the block is generic or bounded, names no contract, is outside the unit that
+    /// declares its contract, or repeats a conformance of the same unit.
+    InvalidPrimitiveImplementation {
+        type_name: String,
+        reason: String,
+    },
 
     /// E1214, reported once per binding at its declaration; every assignment is a related
     /// location "assigned again".
