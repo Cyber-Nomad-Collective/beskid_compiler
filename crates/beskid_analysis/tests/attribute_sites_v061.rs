@@ -66,7 +66,7 @@ i64 Add([Trace] i64 left, i64 right) {
     mut i64 total = 0;
     [Pinned]
     let square = [Pure] ([Hot] i64 x) => x * x;
-    let single = [Pure] ([Hot] y) => y;
+    let solo = [Pure] ([Hot] y) => y;
     return total + left + right;
 }
 
