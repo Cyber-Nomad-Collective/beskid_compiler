@@ -253,7 +253,7 @@ pub fn contract_dispatch(
     {
         return Ok(None);
     }
-    let Some(receiver) = call_arguments(db, key)?.first().copied() else {
+    let Some(receiver) = call_arguments(db, key)?.and_then(|arguments| arguments.first().copied()) else {
         return Ok(None);
     };
     // The receiver must be a contract value; a bounded generic receiver with a witness and an
@@ -317,7 +317,7 @@ pub fn contract_value_receiver(
     key: AstNodeKey,
     enclosing: Option<&GenericSpecializationInstance>,
 ) -> SemanticQueryResult<bool> {
-    let Some(receiver) = call_arguments(db, key)?.first().copied() else {
+    let Some(receiver) = call_arguments(db, key)?.and_then(|arguments| arguments.first().copied()) else {
         return Ok(None);
     };
     Ok(Some(matches!(
@@ -384,4 +384,39 @@ pub fn contract_witness_table_for_declaration(
     };
     let source = GenericSourceTypeIdentity::Nominal { qualified_name, arguments: Arc::from([]) };
     witness_table(db, context, &source, contract, &[]).map(Some)
+}
+
+/// The exact instances of a witness table's implementation methods, in slot order: the items
+/// module emission must lower so the table can name them.
+pub fn contract_witness_method_instances(
+    db: &dyn Db,
+    table: &ContractWitnessTable,
+) -> SemanticQueryResult<Arc<[GenericSpecializationInstance]>> {
+    let mut instances = Vec::with_capacity(table.methods.len());
+    for (_, implementation) in table.methods.iter() {
+        instances.push(super::contracts::implementation_method_instance(db, *implementation, table.environment.clone())?);
+    }
+    Ok(Some(instances.into()))
+}
+
+/// The contract an injected field is typed by (`inject Greeter g`, `inject Greeter[] all`), or
+/// `Ok(None)` for a field of a nominal type.
+pub fn injected_field_contract(db: &dyn Db, field: AstNodeKey) -> SemanticQueryResult<AstNodeKey> {
+    let Some(syntax) = db.syntax_unit(field.unit).filter(|syntax| syntax.accepts_key(db, field)) else {
+        return Ok(None);
+    };
+    let index = syntax.syntax_index(db);
+    let program = syntax.expanded_program(db);
+    let Some(node) = index.node_at(program, field.node).and_then(|node| node.of::<beskid_analysis::syntax::Field>())
+    else {
+        return Ok(None);
+    };
+    let annotation = match &node.ty.node {
+        beskid_analysis::syntax::Type::Array(element) => &element.node,
+        other => other,
+    };
+    let beskid_analysis::syntax::Type::Complex(path) = annotation else {
+        return Ok(None);
+    };
+    Ok(super::contracts::resolve_contract_head(db, field, &path.node))
 }

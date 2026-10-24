@@ -191,6 +191,7 @@ macro_rules! generated_composition_methods {
                 (usize::try_from(registration.slot).ok()? == installed.len()).then_some(())?;
                 let mut field_values = Vec::with_capacity(registration.injections.len());
                 let mut array_roots = Vec::new();
+                let mut box_roots = Vec::new();
                 for injection in &registration.injections {
                     let value = if let Some(symbol) = &injection.plural_allocation_request_symbol {
                         let request = self.symbol_global(symbol.as_ref(), pointer)?;
@@ -214,6 +215,12 @@ macro_rules! generated_composition_methods {
                         let data = self.builder.ins().load(pointer, MemFlagsData::new(), array, 0);
                         for (index, slot) in injection.target_slots.iter().enumerate() {
                             let target = *installed.get(usize::try_from(*slot).ok()?)?;
+                            // A contract-typed plural injection holds contract boxes; the array is
+                            // rooted above, so each box is stored as soon as it is made.
+                            let target = match injection.boxes.get(index) {
+                                Some(Some(plan)) => self.emit_contract_box(target, plan)?,
+                                _ => target,
+                            };
                             let byte_offset = i64::try_from(index.checked_mul(pointer.bytes() as usize)?).ok()?;
                             let address = self.builder.ins().iadd_imm_s(data, byte_offset);
                             // Initialization store into the array allocated above: no barrier.
@@ -224,7 +231,17 @@ macro_rules! generated_composition_methods {
                         let [slot] = injection.target_slots.as_slice() else {
                             return None;
                         };
-                        *installed.get(usize::try_from(*slot).ok()?)?
+                        let target = *installed.get(usize::try_from(*slot).ok()?)?;
+                        match injection.boxes.first() {
+                            // A contract-typed singular injection holds a contract box of the
+                            // registered implementation; it stays rooted until it is stored.
+                            Some(Some(plan)) => {
+                                let boxed = self.emit_contract_box(target, plan)?;
+                                box_roots.push(Some(self.root_temporary(boxed)?));
+                                boxed
+                            }
+                            _ => target,
+                        }
                     };
                     field_values.push((injection.field_offset, value));
                 }
@@ -237,6 +254,9 @@ macro_rules! generated_composition_methods {
                 for (offset, value) in field_values {
                     let address = self.builder.ins().iadd_imm_s(object, i64::from(offset));
                     self.builder.ins().store(MemFlagsData::new(), value, address, 0);
+                }
+                for root in box_roots.into_iter().rev() {
+                    self.release_temporary_root(root)?;
                 }
                 let slot = self.builder.ins().iconst(pointer, i64::from(registration.slot));
                 let stored = self.composition_call(

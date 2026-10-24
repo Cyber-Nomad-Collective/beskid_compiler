@@ -675,7 +675,7 @@ impl IsleContext<'_, '_, '_, '_> {
         }
         for (field, payload_key) in fields.iter().zip(payloads.iter().copied()) {
             if let Some(field) = field {
-                let payload = self.lower_nested_expression(payload_key)?;
+                let payload = self.lower_coerced_expression(payload_key)?;
                 if self.builder.func.dfg.value_type(payload) != field.value_type {
                     self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidEnumLayout });
                     return None;

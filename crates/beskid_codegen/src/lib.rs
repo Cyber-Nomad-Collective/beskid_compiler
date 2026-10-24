@@ -18,6 +18,7 @@ mod artifact_validation;
 pub mod backend;
 pub mod glue;
 pub mod closure_static;
+pub mod contract_static;
 pub mod codegen_input;
 pub mod dynamic_shape;
 pub mod dynamic_initialization;

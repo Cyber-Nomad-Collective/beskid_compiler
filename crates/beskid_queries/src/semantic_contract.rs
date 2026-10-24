@@ -26,7 +26,8 @@ pub use contracts::{AppliedContractIdentity, applied_contract_argument_is_type, 
 mod contract_values;
 pub use contract_values::{
     CONTRACT_BOX_RECEIVER_OFFSET, CONTRACT_BOX_SIZE, CONTRACT_BOX_WITNESS_OFFSET, ContractBoxCoercion, ContractBoxReceiver,
-    ContractDispatch, ContractWitnessTable, contract_box_coercion, contract_dispatch, contract_value_receiver, contract_witness_table_for_declaration,
+    ContractDispatch, ContractWitnessTable, contract_box_coercion, contract_dispatch, contract_value_receiver, contract_witness_method_instances, contract_witness_table_for_declaration,
+    injected_field_contract,
 };
 mod events;
 mod expected_type;

@@ -260,5 +260,13 @@ fn append_generic_source_type_identity(identity: &mut Vec<u32>, source: &Generic
             }
             append_generic_source_type_identity(identity, result);
         }
+        GenericSourceTypeIdentity::Contract { qualified_name, arguments } => {
+            identity.extend([4, u32::try_from(qualified_name.len()).unwrap_or(u32::MAX)]);
+            identity.extend(qualified_name.bytes().map(u32::from));
+            identity.push(u32::try_from(arguments.len()).unwrap_or(u32::MAX));
+            for argument in arguments.iter() {
+                append_generic_source_type_identity(identity, argument);
+            }
+        }
     }
 }

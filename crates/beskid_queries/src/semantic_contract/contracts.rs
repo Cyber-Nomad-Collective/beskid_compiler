@@ -2520,6 +2520,16 @@ pub(super) fn contract_method_specialization(
             Err(error) => return Err(error),
         },
     };
+    implementation_method_instance(db, declaration, substitutions).map(Some)
+}
+
+/// The exact instance of the implementation method `declaration` in the generic environment
+/// `substitutions` (empty for a non-generic implementation): the item a witness names.
+pub(in crate::semantic_contract) fn implementation_method_instance(
+    db: &dyn Db,
+    declaration: AstNodeKey,
+    substitutions: Arc<[GenericSubstitution]>,
+) -> Result<GenericSpecializationInstance, SemanticError> {
     let target = db.syntax_unit(declaration.unit).ok_or_else(|| SemanticError::unavailable("contract_method"))?;
     let environment = substitutions.iter().map(|binding| (binding.parameter.to_string(), binding.argument)).collect();
     let implementation = target
@@ -2540,14 +2550,14 @@ pub(super) fn contract_method_specialization(
         .return_type
         .as_ref()
         .map_or(Ok(SemanticTypeId::UNIT), |ty| generic_abi_type(db, declaration, &ty.node, &environment))?;
-    Ok(Some(GenericSpecializationInstance {
+    Ok(GenericSpecializationInstance {
         declaration,
         declaration_identity: stable_declaration_identity(db, declaration)
             .ok_or_else(|| SemanticError::unavailable("contract_method"))?,
         signature: ItemSignature { parameters: parameters.into(), result },
         substitutions,
         contract_witnesses: Arc::from([]),
-    }))
+    })
 }
 
 /// The implementation a where-bounded generic field of the implicit receiver dispatches to

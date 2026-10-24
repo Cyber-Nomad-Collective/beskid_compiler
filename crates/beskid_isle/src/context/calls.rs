@@ -100,6 +100,15 @@ macro_rules! generated_call_methods {
             self.function_value_call(key, true)?
         }
 
+        fn emit_contract_dispatch_call(&mut self, key: AstNodeKey) -> Option<Value> {
+            self.contract_dispatch_call(key, true)?
+        }
+
+        /// A dispatched call in statement position discards any result.
+        fn emit_contract_dispatch_call_statement(&mut self, key: AstNodeKey) -> Option<()> {
+            self.contract_dispatch_call(key, false).map(|_| ())
+        }
+
         /// A call in statement position discards any result.
         fn emit_function_value_call_statement(&mut self, key: AstNodeKey) -> Option<()> {
             self.function_value_call(key, false).map(|_| ())

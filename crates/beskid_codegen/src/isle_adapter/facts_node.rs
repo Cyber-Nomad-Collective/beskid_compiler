@@ -5,6 +5,7 @@ use super::*;
 mod calls;
 mod collections;
 mod composition;
+mod contract_values;
 mod destructive_read;
 mod enums;
 mod events;
@@ -171,6 +172,18 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
 
     fn value_copy(&self, key: AstNodeKey) -> Option<beskid_isle::ValueCopyPlan> {
         self.value_copy_impl(key)
+    }
+
+    fn contract_box(&self, key: AstNodeKey) -> Option<beskid_isle::ContractBoxPlan> {
+        self.contract_box_impl(key)
+    }
+
+    fn contract_dispatch(&self, key: AstNodeKey) -> Option<beskid_isle::ContractDispatchCall> {
+        self.contract_dispatch_impl(key)
+    }
+
+    fn contract_value_receiver(&self, key: AstNodeKey) -> bool {
+        self.contract_value_receiver_impl(key)
     }
 
     fn for_element_copy(&self, key: AstNodeKey) -> Option<beskid_isle::ValueCopyPlan> {

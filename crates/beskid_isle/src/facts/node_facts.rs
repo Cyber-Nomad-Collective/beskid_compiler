@@ -27,6 +27,20 @@ pub trait NodeFacts {
     }
     /// The `Copy` hook a place read at `key` calls because it sits in a copy position and its
     /// type is `[CopyOnAssign]`; `None` when the read stores no copy.
+    /// The contract box the concrete value at `key` is wrapped in when it is written into a
+    /// contract-typed destination (runtime contract dispatch, v0.6.7).
+    fn contract_box(&self, _key: AstNodeKey) -> Option<ContractBoxPlan> {
+        None
+    }
+    /// The witness-table dispatch of the contract method call at `key`, when no static target is
+    /// known.
+    fn contract_dispatch(&self, _key: AstNodeKey) -> Option<ContractDispatchCall> {
+        None
+    }
+    /// Whether the direct method call at `key` reads its receiver out of a contract box.
+    fn contract_value_receiver(&self, _key: AstNodeKey) -> bool {
+        false
+    }
     fn value_copy(&self, _key: AstNodeKey) -> Option<ValueCopyPlan> {
         None
     }

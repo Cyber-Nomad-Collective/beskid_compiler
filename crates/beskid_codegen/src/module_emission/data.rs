@@ -172,7 +172,7 @@ pub(super) fn event_handler_wrapper_required(input: &CodegenInput<'_>, items: &[
     })
 }
 
-fn collect_ast_nodes(
+pub(super) fn collect_ast_nodes(
     db: &dyn beskid_queries::Db,
     key: AstNodeKey,
     visited: &mut HashSet<AstNodeKey>,
@@ -237,6 +237,9 @@ pub fn emit_closure_static_plans<M: Module>(module: &mut M, artifact: &CodegenAr
     }
     for plan in &artifact.array_static_plans {
         emit_array_static_data(module, plan)?;
+    }
+    if artifact.contract_boxes_required {
+        crate::contract_static::emit_contract_box_static_data(module)?;
     }
     Ok(())
 }

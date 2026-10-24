@@ -42,6 +42,12 @@
         (node_kind (NodeKind.CallExpression))
         (call_kind (CallKind.FunctionValue))))
       (emit_function_value_call_statement key))
+(decl partial emit_contract_dispatch_call_statement (AstNodeKey) Unit)
+(extern constructor emit_contract_dispatch_call_statement emit_contract_dispatch_call_statement)
+(rule (lower_statement key @ (and
+        (node_kind (NodeKind.CallExpression))
+        (call_kind (CallKind.ContractDispatch))))
+      (emit_contract_dispatch_call_statement key))
 (rule (lower_statement key @ (and
         (node_kind (NodeKind.CallExpression))
         (call_kind (CallKind.RuntimeIntrinsic))))

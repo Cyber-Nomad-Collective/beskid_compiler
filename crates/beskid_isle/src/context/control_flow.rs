@@ -290,7 +290,7 @@ macro_rules! generated_control_flow_methods {
                 return Some(());
             }
             if let Some(value_key) = self.facts.child(key, 0) {
-                let value = self.lower_nested_expression(value_key)?;
+                let value = self.lower_coerced_expression(value_key)?;
                 let expected = self.builder.func.signature.returns.first()?.value_type;
                 let value = self.adapt_scalar_boundary(value_key, value, expected)?;
                 self.return_with_cleanup(value)?;
@@ -334,7 +334,7 @@ macro_rules! generated_control_flow_methods {
             let value_type = self.facts.scalar_type(key)?;
             let managed_reference = self.local_managed_reference(key, value_type)?;
             let admitted = self.prepare_checked_destination(value_type, managed_reference)?;
-            let value = self.lower_nested_expression(initializer)?;
+            let value = self.lower_coerced_expression(initializer)?;
             let value = self.adapt_scalar_boundary(initializer, value, value_type)?;
             self.bind_local_in_destination(slot, value, value_type, managed_reference, admitted)
         }
@@ -828,7 +828,7 @@ macro_rules! generated_control_flow_methods {
             let binding = self.locals.get(&slot).copied()?;
             // A compound assignment `a op= b` is `a = a op b` with the local read once.
             let value = match self.facts.compound_assignment_operator(key) {
-                None => self.lower_nested_expression(value_key)?,
+                None => self.lower_coerced_expression(value_key)?,
                 Some((operator, storage)) => {
                     let current = self.builder.use_var(binding.variable);
                     self.compound_assignment_value(key, operator, storage, current, value_key, binding.value_type)?

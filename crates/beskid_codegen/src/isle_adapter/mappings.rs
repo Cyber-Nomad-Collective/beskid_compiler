@@ -20,7 +20,7 @@ pub(crate) fn signature_for_item(isa: &dyn TargetIsa, item: ItemSignature) -> Op
     Some(emitter.signature(parameters, returns))
 }
 
-pub(super) fn specialization_identity(
+pub(crate) fn specialization_identity(
     specialization: &beskid_queries::GenericSpecializationInstance,
 ) -> std::sync::Arc<[u32]> {
     beskid_queries::generic_specialization_identity(specialization)
@@ -103,7 +103,7 @@ pub(super) fn map_operator_fact(operator: beskid_queries::OperatorFact) -> Opera
     }
 }
 
-pub(super) fn map_scalar_type(semantic: SemanticTypeId) -> Option<Type> {
+pub(crate) fn map_scalar_type(semantic: SemanticTypeId) -> Option<Type> {
     Some(match semantic {
         SemanticTypeId::BOOL | SemanticTypeId::I8 | SemanticTypeId::U8 => types::I8,
         SemanticTypeId::I32 | SemanticTypeId::U32 => types::I32,

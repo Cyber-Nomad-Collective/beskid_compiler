@@ -70,6 +70,11 @@ pub struct CodegenArtifact {
     pub event_handler_wrapper_required: bool,
     pub aggregate_static_plans: Vec<crate::aggregate_static::AggregateStaticPlan>,
     pub array_static_plans: Vec<crate::array_static::ArrayStaticPlan>,
+    /// Whether this artifact allocates contract boxes (runtime contract dispatch, v0.6.7): the
+    /// two box descriptors are then emitted.
+    pub contract_boxes_required: bool,
+    /// Witness tables of this artifact, emitted after its functions are declared.
+    pub witness_tables: Vec<crate::contract_static::WitnessTablePlan>,
     pub extern_imports: Vec<ExternImport>,
     /// Runtime-intrinsic imports resolved only because this artifact's compilation held the
     /// canonical runtime intrinsic capability (see `runtime_intrinsic_symbols` in

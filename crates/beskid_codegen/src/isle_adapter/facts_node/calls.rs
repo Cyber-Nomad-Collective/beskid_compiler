@@ -40,6 +40,10 @@ impl SyntaxNodeFacts<'_> {
         if matches!(self.query(call_lowering(self.db, key)), Some(CallLowering::FunctionValue(_))) {
             return self.function_value_call_impl(key).map(|_| CallKind::FunctionValue);
         }
+        // A contract method call without a static target dispatches through the contract box.
+        if self.contract_dispatch_impl(key).is_some() {
+            return Some(CallKind::ContractDispatch);
+        }
         match beskid_queries::collection_operation(self.db, key) {
             Ok(Some(_)) | Err(_) => return Some(CallKind::CollectionOperation),
             Ok(None) => {}

@@ -61,7 +61,8 @@ pub use semantic_contract::{
 };
 pub use semantic_contract::{
     CONTRACT_BOX_RECEIVER_OFFSET, CONTRACT_BOX_SIZE, CONTRACT_BOX_WITNESS_OFFSET, ContractBoxCoercion, ContractBoxReceiver,
-    ContractDispatch, ContractWitnessTable, contract_box_coercion, contract_dispatch, contract_value_receiver, contract_witness_table_for_declaration,
+    ContractDispatch, ContractWitnessTable, contract_box_coercion, contract_dispatch, contract_value_receiver, contract_witness_method_instances, contract_witness_table_for_declaration,
+    injected_field_contract,
 };
 pub use semantic_contract::{
     CheckedFailureDestination, ReservedFailureConstructor, canonical_serialization_encode, checked_failure_destination,
