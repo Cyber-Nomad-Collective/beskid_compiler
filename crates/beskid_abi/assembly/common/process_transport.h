@@ -666,7 +666,10 @@ static void ChildExecute(const char *file, char **args, char **env) {
     }
   size_t file_length = strlen(file);
   int denied = 0;
-  char candidate[4096];
+  /* PATH_MAX, not a page-sized buffer: on Darwin (PATH_MAX 1024) a frame of a page
+   * or more makes clang call ___chkstk_darwin, an import the runtime provenance audit
+   * rejects. execve fails on a longer path anyway. */
+  char candidate[PATH_MAX];
   for (const char *at = search;;) {
     const char *end = at;
     while (*end && *end != ':')
