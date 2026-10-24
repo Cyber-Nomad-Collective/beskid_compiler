@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Parse diagnostics
 
-- Parse errors are structured diagnostics with codes `E0101`-`E0113`. The
+- Parse errors are structured diagnostics with codes `E0101`-`E0116`. The
   message says what was expected, what was being parsed and what was found
   ("expected `(` while parsing host `App`, found `{`"); it points at the token
   found, marks where the construct starts and carries one help line. No grammar
@@ -30,6 +30,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `\${`. An unknown escape (`E0109`) or a `\u{...}` value that is not a Unicode
   scalar value (`E0110`) is an error at the escape.
 - Compound assignments `*=`, `/=` and `%=` beside `+=` and `-=`.
+- Character literal escapes (`'\n'`, `'\t'`, `'\r'`, `'\0'`, `'\''`,
+  `'\u{...}'`). Several characters in single quotes are `E0114` with a fix that
+  writes a string.
+- Fields of a `type` body end with `;` (`type Point { i32 X; i32 Y; }`); a comma
+  between fields is `E0115` with a fix. The Mod SDK generator writes `;` too.
+- Conditional expression `condition ? value : otherwise`: looser than `||`,
+  tighter than assignment, right-associative. A `?` is error propagation only
+  when no `:` completes a conditional after it, so `c ? -1 : 2` branches,
+  `x? - 1` propagates and `F()? ? x : y` propagates and then branches. A
+  conditional without its `:` is `E0116` with a fix that inserts it. The
+  formatter prints a conditional on one line. Expressions without `? :` keep
+  their parse tree. Typing and lowering are not in place yet: the legality gate
+  rejects a conditional as an unsupported expression.
 
 ## [0.6.6] - 2026-10-16
 
