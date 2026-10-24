@@ -518,7 +518,7 @@ i32 Main() { launch AppHost(); return 0; }
                 r#"
 mod A {{ pub type Clock {{ }} }}
 mod B {{ pub type Clock {{ }} }}
-type Report {{ inject {requested} clock }}
+type Report {{ inject {requested} clock; }}
 host AppHost() {{ registry {{ single A.Clock; single Report; }} }}
 i32 Main() {{ launch AppHost(); return 0; }}
 "#

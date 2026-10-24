@@ -509,7 +509,7 @@ i32 Main() { launch AppHost(); return 0; }
     #[test]
     fn an_imported_registration_is_checked_and_reported_in_its_own_unit() {
         let library_source = r#"
-pub type Prefixed { string prefix }
+pub type Prefixed { string prefix; }
 host BaseHost() { registry { single Prefixed; } }
 "#;
         let library = parse_program(library_source).expect("library parses");

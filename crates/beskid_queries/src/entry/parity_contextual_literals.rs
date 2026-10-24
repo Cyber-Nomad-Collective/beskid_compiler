@@ -6,8 +6,8 @@
 use super::parity_harness::{assert_covered_kinds, assert_silent, root_findings};
 use beskid_analysis::analysis::SemanticIssueKind;
 
-const NARROW_TYPES: &str = "pub enum Ip { V4(u8 a, u8 b), } pub type Port { u8 high, u8 low, } \
-                            pub type Sink { i64 marker, pub unit Put(u8 b) { return; } } \
+const NARROW_TYPES: &str = "pub enum Ip { V4(u8 a, u8 b), } pub type Port { u8 high; u8 low; } \
+                            pub type Sink { i64 marker; pub unit Put(u8 b) { return; } } \
                             unit Take(u8 v) { return; } ";
 
 fn source(body: &str) -> String {
@@ -82,7 +82,7 @@ fn unsuffixed_literals_that_fit_their_context_need_no_suffix() {
         (
             "the networking example without suffixes",
             source(
-                "type Address { Ip ip, Port port, } i64 Bind(Address address, i64 backlog) { return backlog; } \
+                "type Address { Ip ip; Port port; } i64 Bind(Address address, i64 backlog) { return backlog; } \
                  i64 Main() { Address any = Address { ip: Ip::V4(127, 1), port: Port { high: 0, low: 0 } }; return Bind(any, 8); }",
             ),
         ),

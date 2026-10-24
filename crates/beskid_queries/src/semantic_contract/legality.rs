@@ -1579,11 +1579,11 @@ mod tests {
     const AFFINE_PRELUDE: &str = "u8[] Make() { return [1_u8]; } i64 Len(u8[] data) { return 0; } \
         unit Store(move u8[] block) { return; } ";
 
-    const CROSSING_TYPES: &str = "[Immutable] pub type Port<T> { i64 id, \
+    const CROSSING_TYPES: &str = "[Immutable] pub type Port<T> { i64 id; \
         pub i64 Send(move T value) where T: Transferable { return 0; } } \
-        [Isolated] pub type Node { u8[] bytes } [Isolated] pub type Holder { u8[] bytes, u8[] cache, \
+        [Isolated] pub type Node { u8[] bytes; } [Isolated] pub type Holder { u8[] bytes; u8[] cache; \
         pub unit Put(mut this, u8[] data) { this.cache = data; return; } } \
-        [Isolated] pub type Block { u8[] bytes } ";
+        [Isolated] pub type Block { u8[] bytes; } ";
 
     /// Affine findings of `body` in a `Core.Parallel` unit, so `Port.Send` is the corelib crossing.
     fn assert_crossing(body: &str, generation: u64, expected: &[&str]) {
@@ -1631,7 +1631,7 @@ mod tests {
             ("u8[] Swap(Holder h, move u8[] next) { return exchange(h.bytes, move next); }", &["E1239"]),
             ("unit Main() { string name = \"a\"; string other = move name; return; }", &["E1239"]),
             ("i64 Size(move string name) { return 0; }", &["E1239"]),
-            ("pub type Plain { i64 x, pub unit Take(move this) { return; } }", &["E1239"]),
+            ("pub type Plain { i64 x; pub unit Take(move this) { return; } }", &["E1239"]),
         ];
         for (offset, (body, expected)) in cases.iter().enumerate() {
             assert_crossing(body, 6640 + offset as u64, expected);
@@ -1707,9 +1707,9 @@ mod tests {
 
     #[test]
     fn a_corelib_scope_borrowed_view_stores_a_borrowed_value() {
-        let view = "[Immutable] [ScopeBorrowed] pub type View<T> { [ImmutableStorage] T[] items } \
-            [Immutable] [ScopeBorrowed] pub type Bytes { [ImmutableStorage] u8[] items } \
-            pub type Plain { u8[] bytes } ";
+        let view = "[Immutable] [ScopeBorrowed] pub type View<T> { [ImmutableStorage] T[] items; } \
+            [Immutable] [ScopeBorrowed] pub type Bytes { [ImmutableStorage] u8[] items; } \
+            pub type Plain { u8[] bytes; } ";
         let bodies = "pub i64 Over<T>(T[] values) where T: Transferable { View<T> view = View<T> { items: values }; return 0; } \
             i64 OverBytes(u8[] values) { Bytes view = Bytes { items: values }; return 0; } \
             i64 Owned(move u8[] values) { Bytes view = Bytes { items: values }; Store(values); return 0; } \
@@ -1739,11 +1739,11 @@ mod tests {
     /// type is not returned, stored, passed to `spawn` or captured by an escaping lambda (E1241).
     #[test]
     fn a_corelib_scope_borrowed_view_does_not_escape_its_scope() {
-        let types = "[Immutable] [ScopeBorrowed] pub type Bytes { [ImmutableStorage] u8[] items } \
-            pub type Holder { Bytes view } \
-            pub type Loose { (i64) => u8 element } \
-            pub type Plan { [Captures(Bound: Transferable)] (i64) => u8 element } \
-            pub type Fiber<T> { i64 handle, pub unit Cancel() { return; } } \
+        let types = "[Immutable] [ScopeBorrowed] pub type Bytes { [ImmutableStorage] u8[] items; } \
+            pub type Holder { Bytes view; } \
+            pub type Loose { (i64) => u8 element; } \
+            pub type Plan { [Captures(Bound: Transferable)] (i64) => u8 element; } \
+            pub type Fiber<T> { i64 handle; pub unit Cancel() { return; } } \
             pub enum Slot { Full(Bytes view), Empty } \
             i64 Use(Bytes b) { return 0; } \
             u8 At(Bytes b, i64 i) { return 0_u8; } \
@@ -1802,7 +1802,7 @@ mod tests {
 
     #[test]
     fn destructive_reads_and_exchange_need_a_moved_place() {
-        let holder = "[Isolated] pub type Index { u8[] offsets } [Isolated] pub type Pair { u8[] left, Index right } ";
+        let holder = "[Isolated] pub type Index { u8[] offsets; } [Isolated] pub type Pair { u8[] left; Index right; } ";
         let cases: &[(&str, &[&str])] = &[
             ("unit Flush(Port<u8[]> p, Pair s) { p.Send(move s.left); return; }", &[]),
             ("unit Flush(Port<Index> p, Pair s) { p.Send(move s.right); return; }", &["E1243"]),

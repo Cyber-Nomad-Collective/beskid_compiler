@@ -377,7 +377,7 @@ mod tests {
     #[test]
     fn a_generic_function_building_a_generic_type_with_swapped_arguments_is_reported() {
         let found = function_findings(
-            "pub type Pair<A, B> { A first, B second, }\n\
+            "pub type Pair<A, B> { A first; B second; }\n\
              Pair<A, B> Make<A, B>(A first, B second) { return Pair<A, B> { first: second, second: first }; }",
             9_677,
         );
@@ -402,7 +402,7 @@ mod tests {
     #[test]
     fn a_generic_function_consistent_with_its_parameters_has_no_findings() {
         let found = function_findings(
-            "pub type Pair<A, B> { A first, B second, }\n\
+            "pub type Pair<A, B> { A first; B second; }\n\
              T Same<T>(T value) { T copy = value; let other = copy; return other; }\n\
              Pair<B, A> Swap<A, B>(A first, B second) { return Pair<B, A> { first: second, second: first }; }\n\
              T First<T>(T[] values, T fallback) { for value in values { return value; } return fallback; }\n\
@@ -415,14 +415,14 @@ mod tests {
     /// beskid-lings milestone 3: the body is judged against the type's own parameters.
     #[test]
     fn returning_one_parameter_where_another_is_declared_is_reported_in_the_body() {
-        let found = findings("pub type Pair<A, B> { A first, B second, pub A Second() { return this.second; } }", 9_671);
+        let found = findings("pub type Pair<A, B> { A first; B second; pub A Second() { return this.second; } }", 9_671);
         assert_eq!(found, vec![("A".to_owned(), "B".to_owned())]);
     }
 
     #[test]
     fn swapped_struct_literal_fields_are_reported_in_the_body() {
         let found = findings(
-            "pub type Pair<A, B> { A first, B second, \
+            "pub type Pair<A, B> { A first; B second; \
              pub Pair<B, A> Swap() { return Pair<B, A> { first: this.first, second: this.second }; } }",
             9_672,
         );
@@ -431,14 +431,14 @@ mod tests {
 
     #[test]
     fn a_parameter_into_a_concrete_declared_type_is_reported_in_the_body() {
-        let found = findings("pub type Box<T> { T value, pub i64 Read() { i64 copy = this.value; return copy; } }", 9_673);
+        let found = findings("pub type Box<T> { T value; pub i64 Read() { i64 copy = this.value; return copy; } }", 9_673);
         assert_eq!(found, vec![("i64".to_owned(), "T".to_owned())]);
     }
 
     #[test]
     fn a_body_consistent_with_its_parameters_has_no_findings() {
         let found = findings(
-            "pub type Pair<A, B> { A first, B second, \
+            "pub type Pair<A, B> { A first; B second; \
              pub A First() { return this.first; } \
              pub B Second() { B copy = this.second; return copy; } \
              pub Pair<B, A> Swap() { return Pair<B, A> { first: this.second, second: this.first }; } \

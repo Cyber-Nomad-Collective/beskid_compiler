@@ -46,8 +46,8 @@ fn networking_example_without_suffixes_types_every_literal_from_its_context() {
 
 const LOCAL_NETWORK_SOURCE: &str = r#"
 pub enum IpAddress { V4(u8 a, u8 b, u8 c, u8 d), V6(u32 a, u32 b, u32 c, u32 d), }
-pub type Port { u8 high, u8 low, }
-pub type SocketAddress { IpAddress address, Port port, }
+pub type Port { u8 high; u8 low; }
+pub type SocketAddress { IpAddress address; Port port; }
 pub Port PortBytes(u8 high, u8 low) { return Port { high: high, low: low }; }
 pub i64 Bind(SocketAddress address, i64 backlog) { return backlog; }
 SocketAddress Loopback4() { return SocketAddress { address: IpAddress::V4(127, 0, 0, 1), port: PortBytes(0, 80) }; }

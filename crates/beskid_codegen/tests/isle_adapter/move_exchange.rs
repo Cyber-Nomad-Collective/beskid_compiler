@@ -77,7 +77,7 @@ List<string> Take(mut Bag b) { return move b.items; }
 #[test]
 fn exchange_of_a_field_stores_the_value_behind_the_barrier_and_yields_the_old_value() {
     let swap = &lower_module(
-        "type Stage { u8[] buffer } u8[] Swap(mut Stage s, u8[] next) { return exchange(s.buffer, next); }",
+        "type Stage { u8[] buffer; } u8[] Swap(mut Stage s, u8[] next) { return exchange(s.buffer, next); }",
         &["Swap"],
     )[0];
     assert_eq!(assert_guarded_stores(swap), 1, "{swap}");

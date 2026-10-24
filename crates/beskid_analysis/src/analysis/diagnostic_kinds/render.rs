@@ -261,7 +261,7 @@ mod tests {
 
     #[test]
     fn a_missing_serialize_attribute_gets_a_preferred_insert_fix() {
-        let source = "mod App;\n\n    pub type Point { i64 x }\n\nunit Main() { Send(Point { x: 1 }); }\n";
+        let source = "mod App;\n\n    pub type Point { i64 x; }\n\nunit Main() { Send(Point { x: 1 }); }\n";
         let at = source.find("pub type Point").unwrap();
         let kind = SemanticIssueKind::GenericBoundNotSatisfied {
             type_name: "App::Point".into(),
@@ -272,7 +272,7 @@ mod tests {
         let diagnostic = issue_diagnostic("Main.bd", source, span(source, "Point { x: 1 }"), &kind);
         assert!(diagnostic.fixes[0].is_preferred());
         assert_eq!(diagnostic.fixes[0].title, "Add `[Serialize]` to `Point`");
-        assert!(apply(source, &diagnostic).contains("\n    [Serialize]\n    pub type Point { i64 x }"));
+        assert!(apply(source, &diagnostic).contains("\n    [Serialize]\n    pub type Point { i64 x; }"));
     }
 
     #[test]

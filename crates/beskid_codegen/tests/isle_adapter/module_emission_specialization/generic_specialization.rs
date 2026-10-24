@@ -189,7 +189,7 @@ fn parsed_program_infers_t_from_an_array_literal_of_bare_integers() {
     assert!(artifact.functions.iter().any(|function| function.name.starts_with("FirstOr#generic_")));
 }
 
-const BAG_FOR_SOURCE: &str = "type Bag<T> { T last, i64 count, pub unit Put(mut this, T value) { this.last = value; this.count = this.count + 1_i64; return; } } \
+const BAG_FOR_SOURCE: &str = "type Bag<T> { T last; i64 count; pub unit Put(mut this, T value) { this.last = value; this.count = this.count + 1_i64; return; } } \
     unit FillAll(Bag<i32>[] bags) { for bag in bags { bag.Put(2); } return; } \
     unit Fill<T>(Bag<T>[] bags, T value) { for bag in bags { bag.Put(value); } return; } \
     i64 Main() { Bag<i32>[] bags = [Bag<i32> { last: 0, count: 0_i64 }]; FillAll(bags); Fill<i32>(bags, 3); return bags[0].count; }";

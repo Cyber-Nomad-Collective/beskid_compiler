@@ -436,10 +436,10 @@ mod tests {
         Some(path.path.node.segments.iter().map(|segment| segment.node.name.node.name.as_str()).collect::<Vec<_>>().join("."))
     }
 
-    const BAG: &str = "[CopyOnAssign] pub type Bag<T> { T[] items, i64 count, \
+    const BAG: &str = "[CopyOnAssign] pub type Bag<T> { T[] items; i64 count; \
         pub Bag<T> Copy() { return Bag<T> { items: this.items, count: this.count }; } \
         pub unit Put(mut this, T value) { this.count = this.count + 1_i64; return; } } \
-        pub type Holder { Bag<i64> bag } \
+        pub type Holder { Bag<i64> bag; } \
         unit Keep(Bag<i64> kept) { return; } \
         unit Share(mut Bag<i64> shared) { return; } \
         Bag<i64> Own(Bag<i64> owned) { return owned; } \
@@ -505,7 +505,7 @@ mod tests {
 
     #[test]
     fn a_copy_on_assign_type_without_a_copy_method_is_rejected() {
-        let source = "[CopyOnAssign] pub type Raw { i64 x } i64 Main(Raw r) { Raw s = r; return s.x; }";
+        let source = "[CopyOnAssign] pub type Raw { i64 x; } i64 Main(Raw r) { Raw s = r; return s.x; }";
         let (db, root) = assembly(source, 6702);
         let key = place(&db, source, root, "r").expect("place");
         let error = value_copy_specialization(&db, key, None).expect_err("missing hook");
@@ -515,7 +515,7 @@ mod tests {
 
     #[test]
     fn a_type_without_the_attribute_is_shared() {
-        let source = "pub type Plain { i64 x, pub Plain Copy() { return Plain { x: this.x }; } } \
+        let source = "pub type Plain { i64 x; pub Plain Copy() { return Plain { x: this.x }; } } \
             i64 Main(Plain p) { Plain q = p; return q.x; }";
         let (db, root) = assembly(source, 6703);
         let key = place(&db, source, root, "p").expect("place");

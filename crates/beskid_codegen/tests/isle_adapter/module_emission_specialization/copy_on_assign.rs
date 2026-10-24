@@ -6,7 +6,7 @@ use super::super::support::{
     lower_syntax_program,
 };
 
-const BAG: &str = "[CopyOnAssign] type Bag<T> { T[] values, i64 count, \
+const BAG: &str = "[CopyOnAssign] type Bag<T> { T[] values; i64 count; \
     Bag<T> Copy() { return Bag<T> { values: this.values, count: this.count }; } \
     unit Put(mut this, T next) { this.count = this.count + 1; return; } } \
     T[] NoValues<T>() { return []; } \
@@ -39,7 +39,7 @@ fn calls_in(functions: &[(String, String)], name: &str) -> usize {
 #[test]
 fn binding_assignment_argument_and_construction_reads_call_the_copy_hook() {
     let functions = lower(&format!(
-        "{BAG} type Holder {{ Bag<i64> bag }} unit Keep(Bag<i64> kept) {{ return; }} \
+        "{BAG} type Holder {{ Bag<i64> bag; }} unit Keep(Bag<i64> kept) {{ return; }} \
          i64 Copied(Bag<i64> a) {{ Bag<i64> b = a; mut Bag<i64> c = Empty<i64>(); c = a; Keep(a); Holder h = Holder {{ bag: a }}; return b.count + c.count + h.bag.count; }} \
          i64 Shared(Bag<i64> a) {{ a.Put(1); return a.count; }}"
     ));

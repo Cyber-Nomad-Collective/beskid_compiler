@@ -35,8 +35,8 @@ fn fixture(source: &str) -> (tempfile::TempDir, BeskidDatabase, Arc<ProgramAssem
     (root, db, assembly)
 }
 
-const SOURCE: &str = "mod A { pub type Clock { i64 now, } mod Inner { pub type Clock { i64 deep, } } }\n\
-    mod B { pub type Clock { i64 tick, } type Hidden { i64 secret, } }\n\
+const SOURCE: &str = "mod A { pub type Clock { i64 now; } mod Inner { pub type Clock { i64 deep; } } }\n\
+    mod B { pub type Clock { i64 tick; } type Hidden { i64 secret; } }\n\
     pub i64 Read(A.Clock first, B.Clock second, A.Inner.Clock nested) { return 0_i64; }\n\
     pub i64 Leak(B.Hidden hidden) { return 0_i64; }";
 
