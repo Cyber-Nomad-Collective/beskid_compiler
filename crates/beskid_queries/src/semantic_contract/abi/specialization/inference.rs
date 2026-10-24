@@ -288,6 +288,14 @@ pub(super) fn specialization_for_call_in_environment(
             let source_identity = proven_source_identity
                 .as_ref()
                 .ok_or_else(|| SemanticError::unavailable_at("call_abi_signature", key))?;
+            // An exactly typed argument decides a binding only bare literals set (`Same(300,
+            // 1_u8)` binds `T = u8`); a literal that does not fit it is T0905 at the literal.
+            if let Some(generic) = generic
+                && provisional_integer_substitutions.remove(generic)
+            {
+                substitutions.remove(generic);
+                source_substitutions.remove(generic);
+            }
             infer_source_substitutions(
                 db,
                 declaration,
@@ -314,6 +322,9 @@ pub(super) fn specialization_for_call_in_environment(
                     substitutions.insert(generic.to_owned(), actual);
                     source_substitutions.insert(generic.to_owned(), GenericSubstitution::inferred(generic, actual));
                 }
+                // A bare literal never decides against an exact binding: `Same(1_u8, 300)` keeps
+                // `T = u8`, and the literal that does not fit it is T0905 at the literal.
+                Some(_) if bare_integer => {}
                 Some(existing) => {
                     return Err(SemanticError::generic_binding_conflict(
                         generic,

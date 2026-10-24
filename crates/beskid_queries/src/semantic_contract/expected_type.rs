@@ -472,9 +472,10 @@ fn call_argument_identity(
 /// literal.
 ///
 /// Generic inference ([`generic_call_specialization`]) binds `T` from the exactly typed sibling
-/// arguments and admits the bare literal only when it fits that binding, so `Equal(x, 2147483649)`
+/// arguments (an exactly typed argument always wins over bare literals), so `Equal(x, 2147483649)`
 /// with an `i64` `x` passes the literal as `i64`. The literal must take that width here too;
-/// otherwise it would fall back to the default `i32` and be silently truncated at the call. Only
+/// otherwise it would fall back to the default `i32` and be silently truncated at the call. A
+/// literal that does not fit the binding still expects it, so the check reports T0905. Only
 /// a bare integer argument consults the specialization: inference never asks for the expected
 /// type of such an argument, so the query cannot cycle.
 fn inferred_integer_argument_identity(
@@ -496,11 +497,9 @@ fn inferred_integer_argument_identity(
     if specialization.substitutions.is_empty() || specialization.signature.parameters.len() != arguments.len() {
         return Err(unavailable());
     }
-    let parameter = specialization.signature.parameters[receiver + position];
-    if !integer_literal_fits_abi(db, argument, parameter)? {
-        return Err(unavailable());
-    }
-    Ok(GenericSourceTypeIdentity::Abi(parameter))
+    // The literal expects the inferred parameter whether or not it fits: a misfit is T0905 at the
+    // literal (`Same(1_u8, 300)`), and lowering never sees it.
+    Ok(GenericSourceTypeIdentity::Abi(specialization.signature.parameters[receiver + position]))
 }
 
 /// The canonical manifest parameter of an unshadowed single-segment runtime intrinsic callee.

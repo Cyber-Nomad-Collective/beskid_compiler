@@ -44,6 +44,10 @@ pub enum ExpectedTypeContext {
     BlockResult { block: AstNodeKey },
     /// One operand of a binary expression whose peer operand proves the representation.
     BinaryOperand { expression: AstNodeKey, peer: AstNodeKey },
+    /// One branch of `condition ? then : else`: the conditional's own expected type, or, for a
+    /// bare numeric literal branch of a conditional without one, the other branch's type.
+    /// Produced once the conditional expression node lands (integration of slices lit and parse).
+    ConditionalBranch { expression: AstNodeKey },
     /// An expression statement discards its value: the expectation is `unit`.
     ExpressionStatement { statement: AstNodeKey },
 }

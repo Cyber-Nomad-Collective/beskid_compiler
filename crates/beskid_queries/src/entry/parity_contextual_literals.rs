@@ -132,3 +132,41 @@ fn a_suffix_conflicting_with_the_context_is_a_type_mismatch() {
     );
     assert_eq!(&source[finding.span.start..finding.span.end], "5_i64");
 }
+
+const SAME: &str = "bool Same<T>(T left, T right) { return true; } ";
+
+/// A bare literal never decides a generic binding against an exactly typed argument: `T` is the
+/// exact type, in either argument order, and a literal that does not fit it is T0905 at the
+/// literal instead of a binding conflict or a truncation.
+#[test]
+fn a_bare_literal_that_does_not_fit_an_inferred_generic_is_t0905_at_the_literal() {
+    for (generation, body, value, primitive) in [
+        (9520, "bool Main() { return Same(1_u8, 300); }", "300", "u8"),
+        (9521, "bool Main() { return Same(300, 1_u8); }", "300", "u8"),
+        (9522, "bool Main(u8 b) { return Same(b, -1); }", "-1", "u8"),
+    ] {
+        let source = format!("{SAME}{body}");
+        let findings = root_findings(&source, generation);
+        let finding = findings
+            .iter()
+            .find(|finding| {
+                matches!(&finding.kind, SemanticIssueKind::NumericLiteralOutOfRange { value: v, primitive: p }
+                    if v == value && p == primitive)
+            })
+            .unwrap_or_else(|| panic!("expected `{value}` does not fit in `{primitive}` for {body}, got {findings:?}"));
+        assert_eq!(&source[finding.span.start..finding.span.end], value);
+        assert_eq!(findings.len(), 1, "{body}: {findings:?}");
+    }
+}
+
+#[test]
+fn bare_literals_take_an_inferred_generic_from_an_exact_argument_in_either_order() {
+    let fixtures = [
+        ("literal after the exact argument", format!("{SAME}bool Main() {{ return Same(1_u8, 200); }}")),
+        ("literal before the exact argument", format!("{SAME}bool Main() {{ return Same(200, 1_u8); }}")),
+        ("wide literal before an i64 argument", format!("{SAME}bool Main() {{ return Same(3000000000, 5_i64); }}")),
+        ("two bare literals keep the default", format!("{SAME}bool Main() {{ return Same(1, 2); }}")),
+    ];
+    let table = fixtures.iter().map(|(class, source)| (*class, source.as_str())).collect::<Vec<_>>();
+    assert_silent(&table, 9530);
+}
