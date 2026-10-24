@@ -276,10 +276,38 @@ impl SemanticIssueKind {
                 let (expected, actual) = super::display_type_pair(expected_name, actual_name);
                 Some(format!("make every arm produce `{expected}`; this arm produces `{actual}`"))
             }
-            Self::TypeCallArityMismatch { expected, actual } => Some(format!(
-                "the callable expects {expected} argument(s) but got {actual}"
+            Self::TypeCallArityMismatch { required, total, actual } => Some(if required == total {
+                format!("pass exactly {total} argument(s); this call passes {actual}")
+            } else {
+                format!(
+                    "pass the {required} required argument(s) and up to {} optional one(s); this call passes {actual}",
+                    total - required
+                )
+            }),
+            Self::RequiredParameterAfterOptional { name } => Some(format!(
+                "optional parameters (`= value`) come after every required parameter; move `{name}` before them or give it a default value"
             )),
-
+            Self::DefaultValueNotConstant { .. } => Some(
+                "a default value is a literal (`0`, `1.5`, `true`, `'c'`, `\"text\"`), a negated number, or the name of a `const` declared in this file"
+                    .to_string(),
+            ),
+            Self::DefaultValueTypeMismatch { name, expected, .. } => {
+                Some(format!("give `{name}` a constant of type `{expected}`, or change the parameter type"))
+            }
+            Self::OptionalParameterNotAllowed { .. } => Some(
+                "no call passes this argument, so neither a default value nor a caller-information attribute can apply; remove it"
+                    .to_string(),
+            ),
+            Self::CallerInformationWithoutDefault { name, expected, .. } => Some(format!(
+                "write `{expected} {name} = {}`; a call that omits the argument gets the call site's value",
+                if expected == "string" { "\"\"" } else { "0" }
+            )),
+            Self::ContractDefaultValueMismatch { parameter, .. } => Some(format!(
+                "a contract method's default values belong to the contract; remove the default of `{parameter}` from the implementation (it inherits the contract's) or make it equal"
+            )),
+            Self::CallerInformationParameterType { attribute, expected, .. } => {
+                Some(format!("`[{attribute}]` fills a `{expected}`; declare the parameter as `{expected}`"))
+            }
             Self::TypeEnumConstructorMismatch { expected, actual } => Some(format!(
                 "the enum constructor expects {expected} argument(s) but got {actual}"
             )),

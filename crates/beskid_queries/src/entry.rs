@@ -234,6 +234,9 @@ pub fn semantic_diagnostics_for_roots(
             capability,
         )?
     };
+    // The typed program's assembly is the registered one: calls that omit optional arguments are
+    // filled there (`build_typed_program`), so its programs and indexes match the database.
+    let syntax = Arc::clone(&typed.assembly);
     // Every own unit is judged: the entry plus every other unit of the host project's own source
     // root (`library_unit_indices`), whether the target has an entry or not. Dependency units are
     // judged by their own project.

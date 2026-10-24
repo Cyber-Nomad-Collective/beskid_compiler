@@ -59,6 +59,9 @@ pub struct ApiParameterDoc {
     pub ty: ApiTypeAnnotation,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub modifier: Option<String>,
+    /// Source spelling of the default value of an optional parameter (`""`, `0`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_value: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub doc_markdown: Option<String>,
 }

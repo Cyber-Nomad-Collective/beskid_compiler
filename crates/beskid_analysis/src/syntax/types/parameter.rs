@@ -1,4 +1,4 @@
-use crate::syntax::{Attribute, Identifier, Spanned, Type};
+use crate::syntax::{Attribute, Expression, Identifier, Spanned, Type};
 
 use beskid_ast_derive::AstNode;
 
@@ -6,6 +6,8 @@ use beskid_ast_derive::AstNode;
 /// optional `mut` or `move`, type, and name. `bulk` is the outermost modifier (a bulk parameter
 /// may also be mutable or owning); the flags are parser-derived and retained in the SDK
 /// constructor schema. `move` declares an owning parameter: the caller's value is consumed.
+/// `default` is the value after `=`: the parameter is optional and a call may omit it; the
+/// compiler then passes the default (see `crate::parameter_defaults`).
 #[derive(AstNode, Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Parameter {
     #[ast(children)]
@@ -20,6 +22,8 @@ pub struct Parameter {
     pub name: Spanned<Identifier>,
     #[ast(child)]
     pub ty: Spanned<Type>,
+    #[ast(child)]
+    pub default: Option<Spanned<Expression>>,
 }
 
 impl crate::parsing::parsable::Parsable for Parameter {
@@ -60,7 +64,8 @@ impl crate::parsing::parsable::Parsable for Parameter {
         let name_pair =
             inner.next().ok_or(crate::parsing::error::ParseError::missing(crate::parser::Rule::Identifier))?;
         let name = crate::syntax::Identifier::parse(name_pair)?;
+        let default = inner.next().map(<Expression as crate::parsing::parsable::Parsable>::parse).transpose()?;
 
-        Ok(crate::syntax::Spanned::new(Self { attributes, bulk, mutable, movable, name, ty }, span))
+        Ok(crate::syntax::Spanned::new(Self { attributes, bulk, mutable, movable, name, ty, default }, span))
     }
 }

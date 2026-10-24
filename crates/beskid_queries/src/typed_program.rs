@@ -81,7 +81,49 @@ fn registered_syntax_owner(
 }
 
 /// Register an expanded syntax assembly as one generation-safe typed-program identity.
+///
+/// Calls that omit trailing optional arguments are filled once their callees are known
+/// (`semantic_contract::optional_arguments`). A node handle names its generation and one
+/// generation describes one tree, so the callees are found in a scratch database that registers
+/// the parsed assembly, and only the filled assembly is registered here under `generation`. The
+/// returned typed program carries the filled assembly; later queries and lowering see ordinary
+/// explicit arguments. The scratch pass runs only when some call may omit an argument.
 pub fn build_typed_program(
+    db: &mut BeskidDatabase,
+    project: ProjectSession,
+    generation: SyntaxGenerationId,
+    assembly: Arc<ProgramAssembly>,
+) -> Result<TypedProgram, SemanticError> {
+    let assembly = match filled_assembly(db, project, generation, &assembly)? {
+        Some(filled) => Arc::new(filled),
+        None => assembly,
+    };
+    register_typed_program(db, project, generation, assembly)
+}
+
+fn filled_assembly(
+    db: &BeskidDatabase,
+    project: ProjectSession,
+    generation: SyntaxGenerationId,
+    assembly: &Arc<ProgramAssembly>,
+) -> Result<Option<ProgramAssembly>, SemanticError> {
+    use crate::semantic_contract::optional_arguments::{may_omit_arguments, omitted_argument_programs};
+    if !may_omit_arguments(assembly) {
+        return Ok(None);
+    }
+    let mut scratch = BeskidDatabase::default();
+    let scratch_project = ProjectSession::new(
+        &scratch,
+        project.project_root(db),
+        project.entry_path(db),
+        project.target_name(db),
+        project.lockfile_digest(db).clone(),
+    );
+    register_typed_program(&mut scratch, scratch_project, generation, Arc::clone(assembly))?;
+    Ok(omitted_argument_programs(&scratch, assembly)?.map(|programs| assembly.with_programs(programs)))
+}
+
+fn register_typed_program(
     db: &mut BeskidDatabase,
     project: ProjectSession,
     generation: SyntaxGenerationId,

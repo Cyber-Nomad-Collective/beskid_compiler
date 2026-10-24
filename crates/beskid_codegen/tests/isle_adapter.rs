@@ -70,3 +70,5 @@ mod write_barrier_emission;
 mod move_exchange;
 #[path = "isle_adapter/move_generic_arguments.rs"]
 mod move_generic_arguments;
+#[path = "isle_adapter/optional_arguments.rs"]
+mod optional_arguments;

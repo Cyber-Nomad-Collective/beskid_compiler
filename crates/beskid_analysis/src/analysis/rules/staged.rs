@@ -8,6 +8,7 @@ mod definitions;
 mod missing_imports;
 mod name_resolution;
 mod naming_style;
+mod optional_parameters;
 mod type_checking;
 mod visibility;
 
@@ -35,6 +36,7 @@ impl SemanticPipelineRule {
 
         observe_stage(pipeline, phases::SEMANTIC_DEFINITIONS, || {
             self.stage0_collect_definitions(ctx, &program);
+            self.stage_optional_parameters(ctx, &program.node);
         });
         let mut unqualified_variant_calls = Vec::new();
         observe_stage(pipeline, phases::SEMANTIC_CONTROL_FLOW, || {

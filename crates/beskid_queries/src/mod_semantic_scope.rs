@@ -98,7 +98,9 @@ impl ModSemanticScope for QueryModSemanticScope<'_> {
         let registered = Arc::new(assembly.clone());
         let mut db = self.db.try_borrow_mut().map_err(|_| anyhow::anyhow!("reentrant Mod query authority access"))?;
         let project = self.registered_project(&mut db, &registered)?;
-        build_mod_authority_typed_program(&mut db, project, Arc::clone(&registered))?;
+        // The registered assembly is the typed program's: omitted optional arguments are filled
+        // there (`build_typed_program`).
+        let registered = build_mod_authority_typed_program(&mut db, project, Arc::clone(&registered))?.assembly;
         let authority = ModSemanticQueryAuthority::for_registered_assembly(&**db, project, &registered)?;
         invoke(&authority)?;
         let applied = authority.take_all_applied_syntax();

@@ -125,11 +125,18 @@ pub(super) fn syntax_facts_for_assembly(
             continue;
         };
         let target_index = beskid_analysis::syntax_query::SyntaxIndex::from_program(&target_unit.program, generation);
+        // A function shows its signature (with default values), which signature help reuses as
+        // its label.
         let (location_start, location_end, name, kind) = target_index
             .node_at(&target_unit.program, declaration.node)
             .and_then(|node| {
                 node.of::<beskid_analysis::syntax::FunctionDefinition>().map(|function| {
-                    (function.name.span.start, function.name.span.end, function.name.node.name.clone(), "function")
+                    (
+                        function.name.span.start,
+                        function.name.span.end,
+                        beskid_analysis::doc::function_signature_label(function),
+                        "function",
+                    )
                 })
             })
             .unwrap_or_else(|| {

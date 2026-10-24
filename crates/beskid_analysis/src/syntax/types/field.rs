@@ -119,6 +119,15 @@ impl crate::parsing::parsable::Parsable for Field {
                     Vec::new()
                 };
 
+                // An event keeps only its parameter types, so a default value has nowhere to go:
+                // reject it here instead of dropping it.
+                if let Some(default) = params.iter().find_map(|param| param.node.default.as_ref()) {
+                    return Err(crate::parsing::error::ParseError::UnexpectedRule {
+                        expected: None,
+                        found: crate::parser::Rule::Expression,
+                        span: default.span,
+                    });
+                }
                 let return_type = Spanned::new(Type::Primitive(Spanned::new(PrimitiveType::Unit, span)), span);
                 let parameter_types = params.into_iter().map(|param| param.node.ty).collect::<Vec<_>>();
                 let ty = Spanned::new(

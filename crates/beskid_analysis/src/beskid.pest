@@ -362,7 +362,9 @@ KwThisReceiverWord = @{ "this" ~ !IdentTail }
 ThisReceiverWord = _{ !(!KwThisReceiverWord) ~ "this" }
 ParameterList = { ParameterWithDocs ~ ("," ~ DocGap* ~ ParameterWithDocs)* }
 ParameterWithDocs = { (DocRun ~ Parameter) | Parameter }
-Parameter = { AttributeList? ~ BulkKeyword? ~ (MutKeyword | MoveKeyword)? ~ BeskidType ~ Identifier }
+// A parameter may end with `= <constant>`: an optional parameter with a default value. Which
+// expressions count as constants, and that optional parameters come last, is checked after parsing.
+Parameter = { AttributeList? ~ BulkKeyword? ~ (MutKeyword | MoveKeyword)? ~ BeskidType ~ Identifier ~ ("=" ~ Expression)? }
 
 FieldList = { FieldWithDocs ~ ("," ~ DocGap* ~ FieldWithDocs)* ~ ","? }
 FieldWithDocs = { (DocRun ~ Field) | Field }

@@ -240,8 +240,32 @@ impl SemanticIssueKind {
                 let (expected, actual) = super::display_type_pair(expected_name, actual_name);
                 format!("match arm type mismatch: expected `{expected}`, got `{actual}`")
             }
-            Self::TypeCallArityMismatch { expected, actual } => {
+            Self::TypeCallArityMismatch { required, total, actual } => {
+                let expected = if required == total {
+                    format!("{total} argument{}", if *total == 1 { "" } else { "s" })
+                } else {
+                    format!("{required}\u{2013}{total} arguments")
+                };
                 format!("call arity mismatch: expected {expected}, got {actual}")
+            }
+            Self::RequiredParameterAfterOptional { name } => {
+                format!("required parameter `{name}` follows an optional parameter")
+            }
+            Self::DefaultValueNotConstant { name } => {
+                format!("default value of `{name}` is not a compile-time constant")
+            }
+            Self::DefaultValueTypeMismatch { name, value, expected } => {
+                format!("default value `{value}` does not fit parameter `{name}` of type `{expected}`")
+            }
+            Self::OptionalParameterNotAllowed { place } => format!("{place} cannot be optional"),
+            Self::CallerInformationWithoutDefault { name, attribute, .. } => {
+                format!("`[{attribute}]` parameter `{name}` needs a default value")
+            }
+            Self::ContractDefaultValueMismatch { method_name, parameter, expected, actual } => format!(
+                "`{method_name}` gives parameter `{parameter}` the default `{actual}`, but the contract declares {expected}"
+            ),
+            Self::CallerInformationParameterType { name, attribute, expected } => {
+                format!("`[{attribute}]` parameter `{name}` must have type `{expected}`")
             }
             Self::TypeCallArgumentMismatch {
                 expected_name,
