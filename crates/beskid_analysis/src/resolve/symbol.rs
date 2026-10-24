@@ -26,8 +26,10 @@ pub enum SymbolShape {
     ModuleItem { module_path: Vec<String>, name: String, kind: ExportKind },
     /// `package::parent_qn::member`
     Member { parent: SymbolId, name: String, kind: MemberKind },
-    /// `package::ReceiverType::method`
-    Method { receiver: String, name: String },
+    /// `package::module::path::ReceiverType::method`. The declaring module is part of the
+    /// identity: two modules of one package may each declare a type of one name with a method of
+    /// one name (a user `Stack.Push` next to Corelib's `Core.Collections.Stack.Push`).
+    Method { module_path: Vec<String>, receiver: String, name: String },
     /// `beskid::path::segments`
     Builtin { path: Vec<String> },
 }
@@ -131,8 +133,12 @@ pub fn symbol_to_string(registry: &SymbolRegistry, qualifier: &SymbolQualifier) 
                 format!("{}::{}::{}", qualifier.package, module_path.join("::"), name)
             }
         }
-        SymbolShape::Method { receiver, name } => {
-            format!("{}::{}::{}", qualifier.package, receiver, name)
+        SymbolShape::Method { module_path, receiver, name } => {
+            if module_path.is_empty() {
+                format!("{}::{}::{}", qualifier.package, receiver, name)
+            } else {
+                format!("{}::{}::{}::{}", qualifier.package, module_path.join("::"), receiver, name)
+            }
         }
         SymbolShape::Builtin { path } => {
             if path.is_empty() {
@@ -169,6 +175,7 @@ pub fn symbol_shape_for_item(
         && kind == ItemKind::Method
     {
         return Some(SymbolShape::Method {
+            module_path: module_path.to_vec(),
             receiver: receiver.to_string(),
             name: name.rsplit("::").next().unwrap_or(name).to_string(),
         });

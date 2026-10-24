@@ -972,4 +972,52 @@ mod tests {
             .expect("Semantic.Field");
         assert_eq!(*item, semantic_field, "the directly imported Semantic.Field wins over the re-exported one");
     }
+
+    /// A method's symbol carries its declaring module: a user `Stack.Push` next to Corelib's
+    /// `Core.Collections.Stack.Push` (same package, same receiver name, same method name) is not a
+    /// duplicate, while a second `Stack` in one module still is.
+    #[test]
+    fn same_named_methods_of_same_named_types_in_different_modules_are_distinct_symbols() {
+        let corelib = parse_program("pub type Stack<T> { T[] storage,\n pub Stack<T> Push(move this, T value) { return this; } }")
+            .expect("parse corelib stack");
+        let entry = parse_program(
+            "pub type Stack<T> { T[] items,\n pub unit Push(mut this, T value) { return; } }\nunit Main() { return; }",
+        )
+        .expect("parse entry");
+        let mut resolver = Resolver::new();
+        resolver.collect_program_in_module(
+            &corelib,
+            &["Core".to_owned(), "Collections".to_owned(), "Stack".to_owned()],
+            None,
+        );
+        let result = resolver.resolve_program(&entry);
+        if let Err(errors) = &result {
+            assert!(
+                !errors.iter().any(|error| matches!(
+                    error,
+                    super::ResolveError::DuplicateSymbol { .. } | super::ResolveError::DuplicateItem { .. }
+                )),
+                "a user Stack.Push must not collide with Core.Collections.Stack.Push: {errors:?}"
+            );
+        }
+
+        let first = parse_program("pub type Stack<T> { T[] items,\n pub unit Push(mut this, T value) { return; } }")
+            .expect("parse first");
+        let second = parse_program("pub type Stack<T> { T[] items,\n pub unit Push(mut this, T value) { return; } }")
+            .expect("parse second");
+        let mut resolver = Resolver::new();
+        let module = ["Lib".to_owned()];
+        resolver.collect_program_in_module(&first, &module, None);
+        resolver.collect_program_in_module(&second, &module, None);
+        let errors = resolver
+            .resolve_program(&parse_program("unit Main() { return; }").expect("parse main"))
+            .expect_err("one module declaring Stack twice is a duplicate");
+        assert!(
+            errors.iter().any(|error| matches!(
+                error,
+                super::ResolveError::DuplicateItem { name, .. } if name == "Stack"
+            )),
+            "{errors:?}"
+        );
+    }
 }
