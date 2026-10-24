@@ -216,6 +216,15 @@ impl SemanticPipelineRule {
             }
 
             let (name, visibility, span) = match &item.node {
+                // Generated host-hook items are called by `launch` / `with` lowering.
+                Node::Function(definition) if crate::composition::is_hook_item_name(&definition.node.name.node.name) => {
+                    continue;
+                }
+                Node::TypeDefinition(definition)
+                    if crate::composition::is_hook_item_name(&definition.node.name.node.name) =>
+                {
+                    continue;
+                }
                 Node::Function(definition) => {
                     (definition.node.name.node.name.clone(), definition.node.visibility.node, definition.node.name.span)
                 }
@@ -352,6 +361,27 @@ impl SemanticPipelineRule {
             }
             for ty in Query::from(&item.node).of::<Type>() {
                 self.collect_used_from_type(ty, &shadowed, used);
+            }
+            // Composition and generic bounds name types outside `Type` positions: a registry
+            // line (`single Impl for Contract;`) and a `where T: Contract` bound are uses.
+            for entry in Query::from(&item.node).of::<crate::syntax::RegistryEntry>() {
+                self.collect_used_from_path(&entry.implementation, &shadowed, used);
+                if let Some(target) = &entry.target {
+                    self.collect_used_from_path(target, &shadowed, used);
+                }
+            }
+            let mut bounds = Vec::new();
+            for function in Query::from(&item.node).of::<crate::syntax::FunctionDefinition>() {
+                bounds.extend(function.where_bounds.iter());
+            }
+            for method in Query::from(&item.node).of::<crate::syntax::MethodDefinition>() {
+                bounds.extend(method.where_bounds.iter());
+            }
+            for implementation in Query::from(&item.node).of::<crate::syntax::ImplBlock>() {
+                bounds.extend(implementation.where_bounds.iter());
+            }
+            for bound in bounds {
+                self.collect_used_from_path(&bound.contract, &HashSet::new(), used);
             }
         }
     }
@@ -841,5 +871,47 @@ mod tests {
         let unknown = "unit Run() { Swap(1); return; }";
         let entry = parse_program(unknown).expect("parse entry");
         assert!(Resolver::new().resolve_program(&entry).is_err(), "an undeclared callee is still unknown");
+    }
+
+    fn unused_items(source: &str) -> Vec<String> {
+        analyze(source)
+            .diagnostics
+            .into_iter()
+            .filter(|diagnostic| diagnostic.message.starts_with("unused private item"))
+            .map(|diagnostic| diagnostic.message)
+            .collect()
+    }
+
+    #[test]
+    fn contract_named_only_by_a_registry_line_is_used() {
+        let source = r#"
+            contract Clock { i64 Now(); }
+            type SystemClock : Clock { pub i64 Now() { return 0; } }
+            host AppHost() { registry { single SystemClock for Clock; } }
+            pub i32 Main() { launch AppHost(); return 0; }
+        "#;
+        let unused = unused_items(source);
+        assert!(unused.iter().all(|message| !message.contains("`Clock`")), "{unused:?}");
+        assert!(unused.iter().all(|message| !message.contains("`SystemClock`")), "{unused:?}");
+    }
+
+    #[test]
+    fn contract_named_only_by_a_where_bound_is_used() {
+        let source = r#"
+            contract Clock { i64 Now(); }
+            pub i64 Read<T>(T clock) where T: Clock { return clock.Now(); }
+        "#;
+        let unused = unused_items(source);
+        assert!(unused.iter().all(|message| !message.contains("`Clock`")), "{unused:?}");
+    }
+
+    #[test]
+    fn contract_named_only_by_an_inject_field_is_used() {
+        let source = r#"
+            contract Clock { i64 Now(); }
+            pub type Report { inject Clock clock }
+        "#;
+        let unused = unused_items(source);
+        assert!(unused.iter().all(|message| !message.contains("`Clock`")), "{unused:?}");
     }
 }
