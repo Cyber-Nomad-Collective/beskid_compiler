@@ -323,19 +323,27 @@ pub fn collection_operation(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult
                     .syntax_unit(resolved.declaration.unit)
                     .filter(|syntax| syntax.generation(db) == resolved.declaration.generation)
                     .ok_or_else(|| SemanticError::unavailable("collection_operation"))?;
-                let mutable = with_node(db, syntax, resolved.declaration, |program, index, _| {
-                    Some(local_declaration_is_mutable(program, index, resolved.declaration.node))
+                // A `let` local, mutable or not, owns the array it names: growth replaces the handle
+                // in its own slot. A `mut` parameter owns the caller's array (it shares it). Any
+                // other name (a parameter that is not `mut`, a loop or pattern variable) does not
+                // own the array: the call is an ordinary call of the Corelib `Append`, which copies
+                // into a fresh array (v0.6.7, no `move` outside isolate crossings).
+                let owns = with_node(db, syntax, resolved.declaration, |program, index, _| {
+                    Some(local_owns_its_array(program, index, resolved.declaration.node))
                 })?
                 .unwrap_or(false);
-                if !mutable {
-                    return Err(SemanticError::unavailable("collection_operation"));
+                if !owns {
+                    return Ok(None);
                 }
                 let slot = local_slot(db, resolved.declaration)?
                     .ok_or_else(|| SemanticError::unavailable("collection_operation"))?;
                 CollectionMutationOwner::Local(slot)
             } else {
-                let access = aggregate_field_access(db, array)?
-                    .ok_or_else(|| SemanticError::unavailable("collection_operation"))?;
+                // Neither a local nor a field (a call result, an element): no owner to update, so
+                // the ordinary Corelib `Append` copies into a fresh array.
+                let Some(access) = aggregate_field_access(db, array)? else {
+                    return Ok(None);
+                };
                 // A dotted value path already names its declaration identifier; a member
                 // expression names the receiver expression, which must resolve lexically first.
                 // Keep the terminal receiver identity separate from the lexical root.
@@ -392,6 +400,22 @@ pub fn collection_operation(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult
         "RemoveLast" => CollectionOperation::RemoveLast,
         _ => return Ok(None),
     }))
+}
+
+/// Whether the local `declaration` owns the array it names for in-place growth: a `let` local
+/// (mutable or not) or a `mut` parameter.
+fn local_owns_its_array(
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    declaration: beskid_analysis::syntax::AstNodeId,
+) -> bool {
+    match parent_node(index, declaration).and_then(|parent| index.kind(parent)) {
+        Some(beskid_analysis::syntax_query::NodeKind::LetStatement) => true,
+        Some(beskid_analysis::syntax_query::NodeKind::Parameter) => {
+            local_declaration_is_mutable(program, index, declaration)
+        }
+        _ => false,
+    }
 }
 
 /// Return the generic element and length form encoded by a compiler-owned
