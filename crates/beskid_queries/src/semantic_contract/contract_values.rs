@@ -258,7 +258,8 @@ pub fn contract_dispatch(
     };
     // The receiver must be a contract value; a bounded generic receiver with a witness and an
     // injected field with one implementation never reach this point with a box.
-    let Some(GenericSourceTypeIdentity::Contract { arguments, .. }) = receiver_identity(db, receiver, enclosing) else {
+    let Some(GenericSourceTypeIdentity::Contract { arguments, .. }) = receiver_identity(db, key, receiver, enclosing)
+    else {
         return Ok(None);
     };
     let Some(contract) = contract_of_method_signature(db, signature_node)? else {
@@ -318,30 +319,70 @@ pub fn contract_value_receiver(
     let Some(receiver) = call_arguments(db, key)?.and_then(|arguments| arguments.first().copied()) else {
         return Ok(None);
     };
-    Ok(Some(matches!(receiver_identity(db, receiver, enclosing), Some(GenericSourceTypeIdentity::Contract { .. }))))
+    Ok(Some(matches!(receiver_identity(db, key, receiver, enclosing), Some(GenericSourceTypeIdentity::Contract { .. }))))
 }
 
-/// The identity of a call receiver: an expression, or the declaring identifier of a local that
-/// the receiver collection denotes a local by (`g` in `g.Greet()`).
+/// The identity of a call receiver as call-argument collection denotes it: an expression, the
+/// declaring identifier of a local (`g` in `g.Greet()`), a field segment of a path
+/// (`holder.greeter` in `holder.greeter.Rank()`), or the callee path itself when the receiver is
+/// an unqualified local the collection could not classify.
 fn receiver_identity(
     db: &dyn Db,
+    call: AstNodeKey,
     receiver: AstNodeKey,
     enclosing: Option<&GenericSpecializationInstance>,
 ) -> Option<GenericSourceTypeIdentity> {
-    if let Ok(identity) = specialized_source_expression_identity(db, receiver, enclosing) {
-        return Some(identity);
-    }
     let syntax = db.syntax_unit(receiver.unit).filter(|syntax| syntax.accepts_key(db, receiver))?;
     let index = syntax.syntax_index(db);
-    if index.kind(receiver.node) != Some(NodeKind::Identifier) {
-        return None;
+    let program = syntax.expanded_program(db);
+    match index.kind(receiver.node) {
+        Some(NodeKind::Identifier) => local_identity(db, program, index, receiver, enclosing),
+        Some(NodeKind::PathSegment) => {
+            super::layouts::nominal_field_projection_in_environment(db, receiver, enclosing)?.ok().map(|(_, identity)| identity)
+        }
+        Some(NodeKind::PathExpression) if is_callee_of(index, program, call, receiver.node) => {
+            let path = &index.node_at(program, receiver.node)?.of::<beskid_analysis::syntax::PathExpression>()?.path.node;
+            let (_, prefix) = path.segments.split_last()?;
+            match prefix {
+                [single] if single.node.type_args.is_empty() => {
+                    let identifier = resolve_lexical_declaration(program, index, call.node, &single.node.name.node.name)?;
+                    local_identity(db, program, index, AstNodeKey { node: identifier, ..receiver }, enclosing)
+                }
+                _ => {
+                    let segment = super::layouts::path_projection_segment(db, receiver, prefix.len() - 1)?;
+                    super::layouts::nominal_field_projection_in_environment(db, segment, enclosing)?
+                        .ok()
+                        .map(|(_, identity)| identity)
+                }
+            }
+        }
+        _ => specialized_source_expression_identity(db, receiver, enclosing).ok(),
     }
+}
+
+/// Whether `node` is the (normalized) callee of `call`.
+fn is_callee_of(index: &SyntaxIndex, program: &Program, call: AstNodeKey, node: beskid_analysis::syntax::AstNodeId) -> bool {
+    index
+        .node_at(program, call.node)
+        .and_then(|node| node.of::<CallExpression>())
+        .and_then(|expression| index.direct_child_id(program, call.node, DynNodeRef::from(expression.callee.as_ref())))
+        .is_some_and(|callee| normalized_expression_node(index, callee) == node)
+}
+
+/// The identity of the local declared by `identifier`, in `enclosing` when given.
+fn local_identity(
+    db: &dyn Db,
+    program: &Program,
+    index: &SyntaxIndex,
+    identifier: AstNodeKey,
+    enclosing: Option<&GenericSpecializationInstance>,
+) -> Option<GenericSourceTypeIdentity> {
     if let Some(enclosing) = enclosing
-        && let Some(Ok(identity)) = super::contracts::specialized_local_declaration_identity(db, receiver, enclosing)
+        && let Some(Ok(identity)) = super::contracts::specialized_local_declaration_identity(db, identifier, enclosing)
     {
         return Some(identity);
     }
-    super::calls::generic_source_local_identity(db, syntax.expanded_program(db), index, receiver, receiver.node).ok()
+    super::calls::generic_source_local_identity(db, program, index, identifier, identifier.node).ok()
 }
 
 /// A member call on any expression whose identity is a contract (`all[0].Greet()`,
@@ -379,9 +420,14 @@ pub(super) fn contract_value_member_receiver(
             (receiver, member.node.name.node.name.clone())
         }
     };
-    let GenericSourceTypeIdentity::Contract { qualified_name, .. } =
-        super::calls::generic_source_expression_identity(db, receiver).ok()?
-    else {
+    let identity = match index.kind(receiver.node) {
+        Some(NodeKind::Identifier) => local_identity(db, program, index, receiver, None)?,
+        Some(NodeKind::PathSegment) => {
+            super::layouts::nominal_field_projection_in_environment(db, receiver, None)?.ok()?.1
+        }
+        _ => super::calls::generic_source_expression_identity(db, receiver).ok()?,
+    };
+    let GenericSourceTypeIdentity::Contract { qualified_name, .. } = identity else {
         return None;
     };
     let contract = contract_declaration_for_identity(db, key, &qualified_name)?;
