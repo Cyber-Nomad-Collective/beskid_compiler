@@ -143,11 +143,38 @@ impl PreparedSyntaxModule {
     }
 }
 
-/// Lower selected entries once through their shared generation-bound authority.
+/// What an entrypoint selection names. Tests have their own namespace (a test cannot be called),
+/// so a test and a function may share a name: the caller says which one it selects.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EntrypointKind {
+    /// A function (`Main`, an exported entry).
+    Function,
+    /// A `test` definition (the native test runner).
+    Test,
+}
+
+impl EntrypointKind {
+    fn matches(self, kind: Option<beskid_queries::IndexedNodeKind>) -> bool {
+        match self {
+            Self::Function => kind == Some(beskid_queries::IndexedNodeKind::FunctionDefinition),
+            Self::Test => kind == Some(beskid_queries::IndexedNodeKind::TestDefinition),
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Function => "entrypoint",
+            Self::Test => "test",
+        }
+    }
+}
+
+/// Lower selected entries of one kind once through their shared generation-bound authority.
 pub fn lower_prepared_syntax_entrypoints(
     db: &mut BeskidDatabase,
     front: &ExecutableFrontEnd,
     entrypoints: &[String],
+    kind: EntrypointKind,
     target: TargetMetadata,
     isa: &dyn TargetIsa,
 ) -> Result<PreparedSyntaxEntrypoints> {
@@ -155,6 +182,7 @@ pub fn lower_prepared_syntax_entrypoints(
         db,
         Arc::new(front.syntax_assembly()),
         entrypoints,
+        kind,
         target,
         isa,
         Some(front),
@@ -366,7 +394,15 @@ fn lower_syntax_assembly_entrypoint_with_composition(
     front: Option<&ExecutableFrontEnd>,
 ) -> Result<PreparedSyntaxEntrypoint> {
     let lowered =
-        lower_syntax_assembly_entrypoints_with_composition(db, assembly, &[entrypoint.to_owned()], target, isa, front)?;
+        lower_syntax_assembly_entrypoints_with_composition(
+            db,
+            assembly,
+            &[entrypoint.to_owned()],
+            EntrypointKind::Function,
+            target,
+            isa,
+            front,
+        )?;
     let entry = lowered.entries.into_iter().next().expect("one checked selection");
     let mut artifact = lowered.artifact;
     artifact.executable_entry = Some(entry.symbol.clone());
@@ -377,6 +413,7 @@ fn lower_syntax_assembly_entrypoints_with_composition(
     db: &mut BeskidDatabase,
     assembly: Arc<ProgramAssembly>,
     entrypoints: &[String],
+    kind: EntrypointKind,
     target: TargetMetadata,
     isa: &dyn TargetIsa,
     front: Option<&ExecutableFrontEnd>,
@@ -431,8 +468,8 @@ fn lower_syntax_assembly_entrypoints_with_composition(
     let mut items = Vec::new();
     let mut entries = Vec::with_capacity(entrypoints.len());
     for entrypoint in entrypoints {
-        let entry = find_entrypoint(db, &input, entry_root, entrypoint)
-            .ok_or_else(|| anyhow::anyhow!("Missing entrypoint `{entrypoint}`"))?;
+        let entry = find_entrypoint(db, &input, entry_root, entrypoint, kind)
+            .ok_or_else(|| anyhow::anyhow!("Missing {} `{entrypoint}`", kind.label()))?;
         let entry_label = assembly
             .units
             .iter()
@@ -834,22 +871,21 @@ fn find_entrypoint(
     input: &CodegenInput<'_>,
     entry_root: AstNodeKey,
     entrypoint: &str,
+    kind: EntrypointKind,
 ) -> Option<AstNodeKey> {
     std::iter::once(entry_root)
         .chain(input.roots().iter().copied().filter(|root| *root != entry_root))
-        .find_map(|root| find_item(db, root, entrypoint))
+        .find_map(|root| find_item(db, root, entrypoint, kind))
 }
 
-fn find_item(db: &BeskidDatabase, key: AstNodeKey, entrypoint: &str) -> Option<AstNodeKey> {
-    if item_name(db, key).ok().flatten().as_deref() == Some(entrypoint)
-        && matches!(
-            node_kind(db, key).ok().flatten(),
-            Some(beskid_queries::IndexedNodeKind::FunctionDefinition | beskid_queries::IndexedNodeKind::TestDefinition)
-        )
+/// The first item of `kind` named `entrypoint`: a function and a test of one name are distinct
+/// selections, so the name alone never picks between them.
+fn find_item(db: &BeskidDatabase, key: AstNodeKey, entrypoint: &str, kind: EntrypointKind) -> Option<AstNodeKey> {
+    if kind.matches(node_kind(db, key).ok().flatten()) && item_name(db, key).ok().flatten().as_deref() == Some(entrypoint)
     {
         return Some(key);
     }
-    child_nodes(db, key).ok().flatten()?.iter().copied().find_map(|child| find_item(db, child, entrypoint))
+    child_nodes(db, key).ok().flatten()?.iter().copied().find_map(|child| find_item(db, child, entrypoint, kind))
 }
 
 fn syntax_item_symbol(db: &dyn beskid_queries::Db, input: &CodegenInput<'_>, key: AstNodeKey) -> Option<String> {

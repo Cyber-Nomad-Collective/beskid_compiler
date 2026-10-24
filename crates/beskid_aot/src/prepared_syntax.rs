@@ -80,7 +80,14 @@ pub fn lower_prepared_syntax_entrypoints(
 ) -> AotResult<beskid_codegen::PreparedSyntaxEntrypoints> {
     let isa = crate::object_module::ObjectTargetIsa(target.triple.as_str())?;
     beskid_queries::with_db(|db| {
-        beskid_codegen::lower_prepared_syntax_entrypoints(db, front, entrypoints, target, isa.as_ref())
+        beskid_codegen::lower_prepared_syntax_entrypoints(
+            db,
+            front,
+            entrypoints,
+            beskid_codegen::EntrypointKind::Test,
+            target,
+            isa.as_ref(),
+        )
             .map_err(crate::error::AotError::from_lowering)
     })
 }
@@ -98,7 +105,14 @@ pub fn lower_frozen_syntax_entrypoints(
 ) -> AotResult<beskid_codegen::PreparedSyntaxEntrypoints> {
     let isa = crate::object_module::ObjectTargetIsa(target.triple.as_str())?;
     let mut db = beskid_queries::BeskidDatabase::default();
-    beskid_codegen::lower_prepared_syntax_entrypoints(&mut db, front, entrypoints, target, isa.as_ref())
+    beskid_codegen::lower_prepared_syntax_entrypoints(
+        &mut db,
+        front,
+        entrypoints,
+        beskid_codegen::EntrypointKind::Test,
+        target,
+        isa.as_ref(),
+    )
         .map_err(crate::error::AotError::from_lowering)
 }
 

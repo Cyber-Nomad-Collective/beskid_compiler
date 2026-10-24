@@ -223,6 +223,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A test that shares its name with a function builds and runs: the native
+  test build selected entries by name alone, picked the function, and failed
+  with E4041 (`native test must take no arguments and return void`).
+  Entrypoint selection now names its kind (function or test).
 - A generic call infers `T` from an array literal of bare integers:
   `FirstOr([7, 8], 0)` with `T FirstOr<T>(T[] values, T fallback)` binds
   `T = i32` instead of failing with an internal `source_expression_type`

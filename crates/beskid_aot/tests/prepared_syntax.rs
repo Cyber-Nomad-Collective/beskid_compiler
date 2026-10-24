@@ -70,3 +70,68 @@ fn entry_identity_is_the_free_function_even_when_a_type_method_shares_its_name()
     );
     std::fs::remove_dir_all(directory).expect("remove project");
 }
+
+fn host_target() -> TargetMetadata {
+    let triple = if cfg!(all(target_arch = "aarch64", target_os = "macos")) {
+        "aarch64-apple-darwin"
+    } else if cfg!(all(target_arch = "x86_64", target_os = "linux")) {
+        "x86_64-unknown-linux-gnu"
+    } else if cfg!(all(target_arch = "aarch64", target_os = "linux")) {
+        "aarch64-unknown-linux-gnu"
+    } else if cfg!(all(target_arch = "x86_64", target_os = "windows")) {
+        "x86_64-pc-windows-msvc"
+    } else {
+        panic!("unsupported test host");
+    }
+    .to_owned();
+    TargetMetadata::supported().into_iter().find(|target| target.triple.as_str() == triple).expect("host ABI target")
+}
+
+/// Tests have their own namespace (owner ruling, 0.6.7): `test SumOfSquares` next to
+/// `i32 SumOfSquares(i32 n)` passes `beskid check`, and its native test build must select the test,
+/// not the function. Selecting by name alone picked the function and the build failed with E4041
+/// (`native test must take no arguments and return void`), seen in the 0.6.7-preview.2 smoke.
+#[test]
+fn a_test_sharing_its_name_with_a_function_builds_as_a_native_test_object() {
+    let directory = tempfile::tempdir().expect("project");
+    let path = directory.path().join("Main.bd");
+    let source = "i32 SumOfSquares(i32 n) { return n * n; }\n\
+                  test SumOfSquares { i32 value = SumOfSquares(2); }\n\
+                  i32 Main() { return SumOfSquares(3); }";
+    std::fs::write(&path, source).expect("write source");
+    let plan = synthetic_compile_plan_for_source(&path);
+    let resolved: ResolvedInput = resolved_input_from_plan(path, source.into(), plan, None, None);
+    let front = compile_mod_free_front_end(
+        &resolved,
+        FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
+        None,
+    )
+    .expect("prepare frontend");
+
+    let tests = beskid_aot::prepared_syntax::lower_frozen_syntax_entrypoints(
+        &front,
+        &["SumOfSquares".to_owned()],
+        host_target(),
+    )
+    .expect("the test, not the same-named function, is the selected native test");
+    let [entry] = tests.entries() else { panic!("one selected test") };
+    assert_eq!(entry.return_type(), beskid_queries::SemanticTypeId::UNIT, "the selected entry is the test");
+    let named = tests
+        .artifact()
+        .functions
+        .iter()
+        .filter(|function| function.name.starts_with("SumOfSquares#syntax_"))
+        .collect::<Vec<_>>();
+    assert_eq!(named.len(), 2, "the test and the function it calls are two emitted functions: {named:?}");
+    let test = named.iter().find(|function| function.name == entry.symbol()).expect("the test is emitted");
+    assert!(test.function.signature.params.is_empty(), "the test entry takes no arguments");
+
+    let mut object =
+        beskid_aot::object_module::BeskidObjectModule::new(None, beskid_aot::BuildProfile::Debug).expect("object module");
+    object.compile_artifact(tests.artifact(), None).expect("test and function get distinct object symbols");
+    object.finalize_to_path(&directory.path().join("tests.o")).expect("write test object");
+
+    // The program entry still selects the function of that name.
+    let program = lower_prepared_syntax_entrypoint(&front, "Main", host_target()).expect("program lowering");
+    assert!(program.functions.iter().any(|function| function.name.starts_with("SumOfSquares#syntax_")));
+}

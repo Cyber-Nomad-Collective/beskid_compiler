@@ -322,7 +322,14 @@ fn selected_entrypoints_share_one_reachable_artifact() {
     let isa = isa::lookup_by_name("x86_64").unwrap().finish(settings::Flags::new(settings::builder())).unwrap();
     let names = vec!["Second".to_owned(), "First".to_owned()];
     let lowered = with_db(|db| {
-        beskid_codegen::lower_prepared_syntax_entrypoints(db, &front, &names, target.clone(), isa.as_ref())
+        beskid_codegen::lower_prepared_syntax_entrypoints(
+            db,
+            &front,
+            &names,
+            beskid_codegen::EntrypointKind::Function,
+            target.clone(),
+            isa.as_ref(),
+        )
     })
     .unwrap();
     assert_eq!(lowered.entries().iter().map(|entry| entry.name()).collect::<Vec<_>>(), ["Second", "First"]);
@@ -344,6 +351,7 @@ fn selected_entrypoints_share_one_reachable_artifact() {
                 db,
                 &front,
                 &invalid,
+                beskid_codegen::EntrypointKind::Function,
                 target.clone(),
                 isa.as_ref()
             ))
@@ -489,4 +497,37 @@ fn for_over_generic_iterators_builds_specialized_next_callees() {
             .any(|function| function.name.starts_with("Count#syntax_") && function.name.contains("#generic_")),
         "the generic loop body is emitted through its specialization"
     );
+}
+
+/// Tests have their own namespace: a function and a test of one name are distinct entrypoint
+/// selections, and the name alone never picks between them.
+#[test]
+fn a_function_and_a_test_of_one_name_are_distinct_entrypoint_selections() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("Main.bd");
+    // An entrypoint takes no parameters, so the function here takes none either.
+    let source = "i32 SumOfSquares() { return 4; }\ntest SumOfSquares { i32 value = SumOfSquares(); }";
+    std::fs::write(&path, source).unwrap();
+    let plan = synthetic_compile_plan_for_source(&path);
+    let resolved = resolved_input_from_plan(path, source.into(), plan, None, None);
+    let front = compile_mod_free_front_end(
+        &resolved,
+        FrontEndOptions { with_semantic_diagnostics: false, ..Default::default() },
+        None,
+    )
+    .unwrap();
+    let target = TargetMetadata::for_triple("x86_64-unknown-linux-gnu").unwrap();
+    let isa = isa::lookup_by_name("x86_64").unwrap().finish(settings::Flags::new(settings::builder())).unwrap();
+    let names = vec!["SumOfSquares".to_owned()];
+    let select = |kind| {
+        with_db(|db| {
+            beskid_codegen::lower_prepared_syntax_entrypoints(db, &front, &names, kind, target.clone(), isa.as_ref())
+        })
+        .unwrap()
+    };
+    let test = select(beskid_codegen::EntrypointKind::Test);
+    let function = select(beskid_codegen::EntrypointKind::Function);
+    assert_eq!(test.entries()[0].return_type(), beskid_queries::SemanticTypeId::UNIT);
+    assert_eq!(function.entries()[0].return_type(), beskid_queries::SemanticTypeId::I32);
+    assert_ne!(test.entries()[0].symbol(), function.entries()[0].symbol());
 }
