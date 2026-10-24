@@ -21,19 +21,33 @@ pub(super) fn fact_findings_to_diagnostics(
             let unit = assembly.units.get(finding.unit).ok_or_else(|| {
                 anyhow::anyhow!("semantic fact finding names unit {} outside the prepared assembly", finding.unit)
             })?;
-            let source = if finding.unit == assembly.entry_index { entry_source } else { unit.source.as_str() };
-            Ok(crate::analysis::diagnostics::make_diagnostic(
+            let source = unit_source(assembly, entry_source, finding.unit, unit);
+            let mut diagnostic = crate::analysis::diagnostic_kinds::issue_diagnostic(
                 &unit.logical_name,
                 source,
                 finding.span,
-                finding.kind.message(),
-                finding.kind.label(),
-                finding.kind.help(),
-                Some(finding.kind.code().to_string()),
-                finding.kind.severity(),
-            ))
+                &finding.kind,
+            );
+            for related in finding.related {
+                let related_unit = assembly.units.get(related.unit).ok_or_else(|| {
+                    anyhow::anyhow!("semantic fact related site names unit {} outside the prepared assembly", related.unit)
+                })?;
+                diagnostic = diagnostic.with_related_in(
+                    related_unit.logical_name.clone(),
+                    unit_source(assembly, entry_source, related.unit, related_unit),
+                    related.span,
+                    related.label,
+                );
+            }
+            Ok(diagnostic)
         })
         .collect()
+}
+
+/// The text a finding in unit `index` renders against: the spine's entry source for the entry
+/// unit, the assembled source for every other unit.
+fn unit_source<'a>(assembly: &ProgramAssembly, entry_source: &'a str, index: usize, unit: &'a SourceUnit) -> &'a str {
+    if index == assembly.entry_index { entry_source } else { unit.source.as_str() }
 }
 
 /// Append semantic-fact diagnostics to the spine's collected diagnostics, dropping a fact

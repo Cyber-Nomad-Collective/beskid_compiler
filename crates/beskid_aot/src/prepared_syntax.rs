@@ -17,7 +17,7 @@ pub fn lower_prepared_syntax_entrypoint(
     beskid_queries::with_db(|db| {
         beskid_codegen::lower_prepared_syntax_entrypoint(db, front, entrypoint, target, isa.as_ref())
             .map(|lowered| lowered.into_artifact())
-            .map_err(|error| crate::error::AotError::InvalidRequest { message: error.to_string() })
+            .map_err(crate::error::AotError::from_lowering)
     })
 }
 
@@ -30,7 +30,7 @@ pub fn lower_prepared_syntax_module(
     let isa = crate::object_module::ObjectTargetIsa(target.triple.as_str())?;
     beskid_queries::with_db(|db| {
         beskid_codegen::lower_prepared_syntax_module(db, front, target, isa.as_ref())
-            .map_err(|error| crate::error::AotError::InvalidRequest { message: error.to_string() })
+            .map_err(crate::error::AotError::from_lowering)
     })
 }
 
@@ -44,7 +44,7 @@ pub fn lower_prepared_syntax_library(
     let isa = crate::object_module::ObjectTargetIsa(target.triple.as_str())?;
     beskid_queries::with_db(|db| {
         beskid_codegen::lower_prepared_syntax_library(db, front, target, isa.as_ref())
-            .map_err(|error| crate::error::AotError::InvalidRequest { message: error.to_string() })
+            .map_err(crate::error::AotError::from_lowering)
     })
 }
 
@@ -66,7 +66,7 @@ pub fn lower_canonical_runtime_prepared_syntax(target: TargetMetadata) -> AotRes
     let isa = crate::object_module::ObjectTargetIsa(target.triple.as_str())?;
     let artifact = beskid_queries::with_db(|db| {
         beskid_codegen::lower_canonical_runtime_prepared_syntax(db, target.clone(), isa.as_ref())
-            .map_err(|error| crate::error::AotError::InvalidRequest { message: error.to_string() })
+            .map_err(crate::error::AotError::from_lowering)
     })?;
     lowered.push((target, artifact.clone()));
     Ok(artifact)
@@ -81,7 +81,7 @@ pub fn lower_prepared_syntax_entrypoints(
     let isa = crate::object_module::ObjectTargetIsa(target.triple.as_str())?;
     beskid_queries::with_db(|db| {
         beskid_codegen::lower_prepared_syntax_entrypoints(db, front, entrypoints, target, isa.as_ref())
-            .map_err(|error| crate::error::AotError::InvalidRequest { message: error.to_string() })
+            .map_err(crate::error::AotError::from_lowering)
     })
 }
 
@@ -99,7 +99,7 @@ pub fn lower_frozen_syntax_entrypoints(
     let isa = crate::object_module::ObjectTargetIsa(target.triple.as_str())?;
     let mut db = beskid_queries::BeskidDatabase::default();
     beskid_codegen::lower_prepared_syntax_entrypoints(&mut db, front, entrypoints, target, isa.as_ref())
-        .map_err(|error| crate::error::AotError::InvalidRequest { message: error.to_string() })
+        .map_err(crate::error::AotError::from_lowering)
 }
 
 /// Produce frozen C ABI Mod adapters from their canonical prepared source SDK authority.
@@ -112,7 +112,7 @@ pub fn lower_prepared_native_mod(
         beskid_codegen::lower_prepared_native_mod(db, front, target, isa.as_ref())
             // Alternate formatting keeps the whole anyhow context chain (phase, site, original
             // semantic error text) instead of only the outermost context.
-            .map_err(|error| crate::error::AotError::InvalidRequest { message: format!("{error:#}") })
+            .map_err(crate::error::AotError::from_lowering)
     })
 }
 
@@ -142,7 +142,7 @@ pub fn with_prepared_glue_input<T, E: From<crate::error::AotError>>(
             produced = Some(produce(input, items));
             Ok(())
         })
-        .map_err(|error| E::from(crate::error::AotError::InvalidRequest { message: error.to_string() }))?;
+        .map_err(|error| E::from(crate::error::AotError::from_lowering(error)))?;
         produced.unwrap_or_else(|| {
             Err(E::from(crate::error::AotError::InvalidRequest {
                 message: "registered Glue input completed without running its producer".to_owned(),

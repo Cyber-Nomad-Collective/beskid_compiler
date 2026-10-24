@@ -358,7 +358,7 @@ fn ordinary_literal_missing_accessible_field_remains_e1212() {
     assert!(
         findings
             .iter()
-            .any(|finding| finding.kind.code() == "E1212" && finding.kind.message() == "missing struct field `right`"),
+            .any(|finding| finding.kind.code() == "E1212" && finding.kind.message() == "missing field `right` in the type literal"),
         "expected E1212 for the missing accessible `right`, got {findings:?}"
     );
 }

@@ -271,7 +271,7 @@ fn field_path_failure(
         }
         let definition = nominal.of::<TypeDefinition>()?;
         let Some(field) = definition.fields.iter().find(|field| field.node.name.node.name == name) else {
-            return Some((GateObligationKind::UnknownStructField { name: Arc::from(name) }, position));
+            return Some((GateObligationKind::UnknownStructField(UnknownMember::of(db, declaration, name)), position));
         };
         if field.node.visibility.node != Visibility::Public && declaration.unit != site.unit {
             return None;
@@ -398,7 +398,7 @@ pub(super) fn collect_call_obligations(
                 }
                 let site = index.direct_child_id(program, callee, DynNodeRef::from(&member.member)).unwrap_or(callee);
                 findings.push(GateObligation {
-                    kind: GateObligationKind::UnknownStructField { name: Arc::from(name) },
+                    kind: GateObligationKind::UnknownStructField(UnknownMember::of(db, receiver.declaration, name)),
                     site: AstNodeKey { node: site, ..key },
                 });
             }
@@ -561,7 +561,7 @@ fn judge_path_method_call(
         return true;
     }
     findings.push(GateObligation {
-        kind: GateObligationKind::UnknownStructField { name: Arc::from(method_name) },
+        kind: GateObligationKind::UnknownStructField(UnknownMember::of(db, receiver.declaration, method_name)),
         site: segment_site,
     });
     findings.push(GateObligation { kind: GateObligationKind::UnknownCallTarget, site: call_key });

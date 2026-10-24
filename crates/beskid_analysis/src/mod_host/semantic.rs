@@ -67,11 +67,22 @@ pub struct ModSemanticVariant {
     pub declaration: ModSemanticDeclaration,
     pub fields: Vec<ModSemanticField>,
 }
+/// A semantic request of a Mod the compiler's authority could not answer. The payload is the
+/// authority's reason; every such failure is a compiler inconsistency, so it displays as the
+/// coded internal compiler error E2104 wherever it surfaces (the Mod's error reply, a failed Mod
+/// invocation, the CLI).
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct ModSemanticError(pub String);
+impl ModSemanticError {
+    /// The coded internal diagnostic kind of this failure.
+    pub fn issue(&self) -> crate::analysis::SemanticIssueKind {
+        crate::analysis::SemanticIssueKind::InternalModSemanticFailure { reason: self.0.clone() }
+    }
+}
 impl std::fmt::Display for ModSemanticError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.0)
+        let issue = self.issue();
+        write!(f, "[{}] {} ({})", issue.code(), issue.message(), self.0)
     }
 }
 impl std::error::Error for ModSemanticError {}
@@ -283,3 +294,18 @@ impl PartialEq for ModCompiledMetadata {
     }
 }
 impl Eq for ModCompiledMetadata {}
+
+#[cfg(test)]
+mod mod_semantic_error_tests {
+    use super::ModSemanticError;
+
+    #[test]
+    fn a_mod_semantic_failure_displays_as_internal_error_e2104() {
+        let error = ModSemanticError("verified package source root unavailable".into());
+        let text = error.to_string();
+        assert!(text.starts_with("[E2104] internal compiler error: "), "{text}");
+        assert!(text.contains("please report this"), "{text}");
+        assert!(text.ends_with("(verified package source root unavailable)"), "{text}");
+        assert_eq!(error.issue().code(), "E2104");
+    }
+}

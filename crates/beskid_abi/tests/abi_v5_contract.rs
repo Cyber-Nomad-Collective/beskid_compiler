@@ -168,7 +168,7 @@ fn manifest_rejects_wrong_assembly_symbol_set_and_invalid_traps() {
             ("invalid_or_stale_handle", 6),
             ("scheduler_deadlock", 7),
             ("abi_or_layout_mismatch", 8),
-            ("unreachable_or_isle_invariant", 9),
+            ("panic", 9),
             ("runtime_internal_corruption", 10),
             ("extern_unavailable", 11),
         ]

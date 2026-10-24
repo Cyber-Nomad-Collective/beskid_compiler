@@ -178,6 +178,12 @@ impl SyntaxNodeFacts<'_> {
 
     pub(super) fn mutable_local_assignment_slot_impl(&self, key: AstNodeKey) -> Option<LocalSlotId> {
         self.query(mutable_local_assignment(self.db, key))
+            // A compound write needs its operand type too; without it the slot is withheld, so the
+            // write can never lower as a plain `=`.
+            .filter(|assignment| {
+                assignment.compound.is_none()
+                    || self.query(beskid_queries::abi_type(self.db, assignment.declaration)).is_some()
+            })
             .map(|assignment| LocalSlotId { owner_node: assignment.slot.owner.node.0, index: assignment.slot.index })
     }
 

@@ -28,7 +28,7 @@ impl SemanticIssueKind {
             Self::ModuleDeclarationForbiddenInFileScopedModule => "E1507",
             Self::ExtendTypePrivateMemberAccess { .. } => "E1511",
             Self::UnusedImport { .. } => "W1503",
-            Self::UnusedPrivateItem { .. } => "W1504",
+            Self::UnusedPrivateItem { .. } => "W2101",
 
             Self::ContractMethodMissingImplementation { .. } => "E1601",
             Self::ContractImplementationSignatureMismatch { .. } => "E1602",
@@ -118,6 +118,9 @@ impl SemanticIssueKind {
             Self::ExclusiveMarkerAttribute { .. } | Self::CorelibOnlyAttribute { .. } => "E1510",
             Self::InternalSemanticFactUnavailable { .. } => "E2101",
             Self::InternalLoweringRuleMissing { .. } => "E2102",
+            Self::InternalLoweringInvariant { .. } => "E2103",
+            Self::InternalModSemanticFailure { .. } => "E2104",
+            Self::InternalBuildFailure { .. } => "E2105",
             Self::TypeInvalidEventInvocationScope => "E1219",
             Self::TypeInvalidEventCapacity => "E1220",
             Self::TypeInvalidEventSubscriptionTarget => "E1221",

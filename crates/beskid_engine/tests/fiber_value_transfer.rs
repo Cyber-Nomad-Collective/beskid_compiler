@@ -85,7 +85,7 @@ fn require_timer_fatal_output(route: &str, case: &str, output: &std::process::Ou
     // The host trap print now names the trap between the prefix and the message
     // (`beskid runtime trap v5: <name> (<code>): <message>`); see the growable-heap design's
     // trap-name rendering (`crates/beskid_manifest/src/v5/render.rs::render_c_header`).
-    let diagnostic = format!("{TRAP_DIAGNOSTIC_PREFIX}: unreachable_or_isle_invariant (9): {TIMER_FATAL_DIAGNOSTIC}");
+    let diagnostic = format!("{TRAP_DIAGNOSTIC_PREFIX}: panic (9): {TIMER_FATAL_DIAGNOSTIC}");
     anyhow::ensure!(
         stderr.lines().any(|line| line == diagnostic),
         "{route}/{case}: unrelated failure {:?}, missing invariant diagnostic: {stderr}",

@@ -215,23 +215,36 @@ impl SemanticPipelineRule {
                 continue;
             }
 
-            let (name, visibility, span) = match &item.node {
-                Node::Function(definition) => {
-                    (definition.node.name.node.name.clone(), definition.node.visibility.node, definition.node.name.span)
-                }
-                Node::TypeDefinition(definition) => {
-                    (definition.node.name.node.name.clone(), definition.node.visibility.node, definition.node.name.span)
-                }
-                Node::EnumDefinition(definition) => {
-                    (definition.node.name.node.name.clone(), definition.node.visibility.node, definition.node.name.span)
-                }
-                Node::ContractDefinition(definition) => {
-                    (definition.node.name.node.name.clone(), definition.node.visibility.node, definition.node.name.span)
-                }
+            let (name, visibility, span, kind) = match &item.node {
+                Node::Function(definition) => (
+                    definition.node.name.node.name.clone(),
+                    definition.node.visibility.node,
+                    definition.node.name.span,
+                    "function",
+                ),
+                Node::TypeDefinition(definition) => (
+                    definition.node.name.node.name.clone(),
+                    definition.node.visibility.node,
+                    definition.node.name.span,
+                    "type",
+                ),
+                Node::EnumDefinition(definition) => (
+                    definition.node.name.node.name.clone(),
+                    definition.node.visibility.node,
+                    definition.node.name.span,
+                    "enum",
+                ),
+                Node::ContractDefinition(definition) => (
+                    definition.node.name.node.name.clone(),
+                    definition.node.visibility.node,
+                    definition.node.name.span,
+                    "contract",
+                ),
                 Node::ModuleDeclaration(definition) => (
                     self.path_tail_stage5(&definition.node.path),
                     definition.node.visibility.node,
                     definition.node.path.span,
+                    "module",
                 ),
                 _ => continue,
             };
@@ -245,7 +258,7 @@ impl SemanticPipelineRule {
                 continue;
             }
 
-            ctx.emit_issue(span, SemanticIssueKind::UnusedPrivateItem { name });
+            ctx.emit_issue(span, SemanticIssueKind::UnusedPrivateItem { name, kind: kind.to_string(), item: item.span });
         }
     }
 
@@ -702,7 +715,7 @@ mod tests {
         analyze(source)
             .diagnostics
             .iter()
-            .filter(|diagnostic| diagnostic.code.as_deref() == Some("W1504"))
+            .filter(|diagnostic| diagnostic.code.as_deref() == Some("W2101"))
             .map(|diagnostic| diagnostic.message.clone())
             .collect()
     }
@@ -715,9 +728,30 @@ mod tests {
         run_rules(&program.node, "test.bd", source, &builtin_rules(), options)
             .diagnostics
             .iter()
-            .filter(|diagnostic| diagnostic.code.as_deref() == Some("W1504"))
+            .filter(|diagnostic| diagnostic.code.as_deref() == Some("W2101"))
             .map(|diagnostic| diagnostic.message.clone())
             .collect()
+    }
+
+    #[test]
+    fn an_unused_private_function_is_w2101_unnecessary_with_a_removal_fix() {
+        let source = "pub unit Main() { return; }\n\nunit Helper() {\n    return;\n}\n";
+        let pair =
+            BeskidParser::parse(Rule::Program, source).expect("source should parse").next().expect("program pair");
+        let program = Program::parse(pair).expect("source should build AST");
+        let result = run_rules(&program.node, "test.bd", source, &builtin_rules(), AnalysisOptions::default());
+        let unused = result
+            .diagnostics
+            .iter()
+            .find(|diagnostic| diagnostic.code.as_deref() == Some("W2101"))
+            .expect("Helper is unused");
+        assert_eq!(unused.message, "`Helper` is never used");
+        assert_eq!(unused.label, "unused function");
+        assert_eq!(unused.tags, [crate::analysis::DiagnosticTag::Unnecessary]);
+        let fix = &unused.fixes[0];
+        assert!(!fix.is_preferred(), "removing code may be wrong");
+        let (start, end) = fix.edits[0].range();
+        assert_eq!(&source[start..end], "unit Helper() {\n    return;\n}\n");
     }
 
     #[test]

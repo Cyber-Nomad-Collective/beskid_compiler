@@ -17,8 +17,8 @@ use beskid_analysis::syntax::{
 /// Why one member reference contradicts its resolved declaration.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum MemberReferenceKind {
-    /// A struct literal field or a field read that the resolved type does not declare (E1211).
-    UnknownStructField { name: Arc<str> },
+    /// A type literal field or a field read that the resolved type does not declare (E1211).
+    UnknownStructField(UnknownMember),
     /// A struct literal or field read reaches a private field of another source unit (E1211).
     InaccessibleStructField { name: Arc<str> },
     /// A struct literal omits a required, accessible field (E1212).
@@ -30,6 +30,61 @@ pub enum MemberReferenceKind {
     EnumConstructorArity { expected: usize, actual: usize },
     /// A match pattern with a payload count other than its variant's field count (E1307).
     PatternArity { expected: usize, actual: usize },
+}
+
+/// A member name a `type` does not declare, with what the diagnostic needs to help: the type's
+/// name, its value fields, and the closest declared field or method ("did you mean").
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct UnknownMember {
+    pub name: Arc<str>,
+    pub type_name: Option<Arc<str>>,
+    pub fields: Vec<Arc<str>>,
+    pub suggestion: Option<Arc<str>>,
+}
+
+impl UnknownMember {
+    /// `name` judged against the `type` declared at `declaration`; a declaration that is not a
+    /// readable `type` gives the bare name.
+    pub(crate) fn of(db: &dyn Db, declaration: AstNodeKey, name: &str) -> Self {
+        let definition = db
+            .syntax_unit(declaration.unit)
+            .filter(|syntax| syntax.accepts_key(db, declaration))
+            .and_then(|syntax| {
+                syntax.syntax_index(db).node_at(syntax.expanded_program(db), declaration.node)?.of::<TypeDefinition>().cloned()
+            });
+        let Some(definition) = definition else { return Self::bare(name) };
+        let fields: Vec<Arc<str>> = definition
+            .fields
+            .iter()
+            .filter(|field| field.node.kind == beskid_analysis::syntax::FieldKind::Value)
+            .map(|field| Arc::from(field.node.name.node.name.as_str()))
+            .collect();
+        let members = definition
+            .fields
+            .iter()
+            .map(|field| field.node.name.node.name.as_str())
+            .chain(definition.methods.iter().map(|method| method.node.name.node.name.as_str()));
+        Self {
+            name: Arc::from(name),
+            type_name: Some(Arc::from(definition.name.node.name.as_str())),
+            fields,
+            suggestion: beskid_analysis::analysis::suggest::closest_name(name, members).map(Arc::from),
+        }
+    }
+
+    pub(crate) fn bare(name: &str) -> Self {
+        Self { name: Arc::from(name), type_name: None, fields: Vec::new(), suggestion: None }
+    }
+
+    /// The E1211 issue kind of this member.
+    pub fn issue(&self) -> SemanticIssueKind {
+        SemanticIssueKind::TypeUnknownStructField {
+            name: self.name.to_string(),
+            type_name: self.type_name.as_deref().map(str::to_string),
+            fields: self.fields.iter().map(|field| field.to_string()).collect(),
+            suggestion: self.suggestion.as_deref().map(str::to_string),
+        }
+    }
 }
 
 /// One member reference that contradicts its resolved declaration.
@@ -111,7 +166,7 @@ fn unknown_struct_literal_field(
             .map_or(literal_key, |node| AstNodeKey { node, ..literal_key });
         return Some(MemberReferenceFinding {
             site,
-            kind: MemberReferenceKind::UnknownStructField { name: Arc::from(field.node.name.node.name.as_str()) },
+            kind: MemberReferenceKind::UnknownStructField(UnknownMember::of(db, declaration, &field.node.name.node.name)),
         });
     }
     // E1212: every declared value field must be supplied (event fields are never written by a
@@ -189,7 +244,10 @@ fn unknown_field_read(
     {
         return None;
     }
-    Some(MemberReferenceFinding { site, kind: MemberReferenceKind::UnknownStructField { name: Arc::from(field_name) } })
+    Some(MemberReferenceFinding {
+        site,
+        kind: MemberReferenceKind::UnknownStructField(UnknownMember::of(db, declaration, field_name)),
+    })
 }
 
 /// A projection chain (`request.targets.targetIds`, `this.a.b`, `call.member`) that crosses a

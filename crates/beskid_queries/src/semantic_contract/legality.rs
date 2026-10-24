@@ -66,7 +66,8 @@ pub use calls::{
 pub use generics::{GenericParameterConflict, generic_parameter_conflict};
 pub use imports::{UnresolvedImport, unresolved_imports};
 pub use members::{
-    MemberReferenceFinding, MemberReferenceKind, NonExhaustiveMatch, match_exhaustiveness, member_reference_legality,
+    MemberReferenceFinding, MemberReferenceKind, NonExhaustiveMatch, UnknownMember, match_exhaustiveness,
+    member_reference_legality,
 };
 
 /// A direct call whose supplied argument count does not match its resolved declaration's
@@ -319,23 +320,31 @@ fn call_argument_type_mismatch_for_call(
     Ok(None)
 }
 
-/// An assignment whose target is a single-segment path that resolves to an immutable local: a
-/// `let` without `mut`, a parameter without `mut`, or a `for` iterator.
+/// An immutable local -- a `let` without `mut`, a parameter without `mut` or `move`, or a `for`
+/// iterator -- and every assignment in the item that writes it.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct ImmutableLocalAssignment {
-    /// The assignment expression (the diagnostic site).
-    pub assignment: AstNodeKey,
+    /// The binding's name in its declaration (the diagnostic site, where the `mut` fix goes).
+    pub declaration: AstNodeKey,
     /// The immutable local's name.
     pub name: Arc<str>,
+    /// The declaration form, span, and `mut` insertion point.
+    pub binding: beskid_analysis::analysis::diagnostic_kinds::ImmutableBinding,
+    /// Every assignment expression that writes the binding, in source order.
+    pub assignments: Vec<AstNodeKey>,
 }
 
-/// Report the first assignment in `key` (an item) that writes an immutable local (E1214).
+/// Report every immutable local the item `key` assigns (E1214), one entry per binding in
+/// declaration-site order of first assignment.
 ///
 /// The target resolves through `resolve_lexical_declaration`, the same lexical authority
 /// `mutable_local_assignment` uses when ISLE selects `emit_local_assign`. That query fails closed
 /// on an immutable target, so without this fact such a write reaches lowering and surfaces as
 /// `MissingRuleOrFact AssignExpression` instead of a user diagnostic.
-pub fn immutable_local_assignment(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<ImmutableLocalAssignment> {
+pub fn immutable_local_assignment(
+    db: &dyn Db,
+    key: AstNodeKey,
+) -> SemanticQueryResult<Vec<ImmutableLocalAssignment>> {
     with_registered_syntax(db, key, immutable_local_assignment_tracked)
 }
 
@@ -344,21 +353,39 @@ fn immutable_local_assignment_tracked(
     db: &dyn Db,
     syntax: SyntaxUnitInput,
     key: AstNodeKey,
-) -> SemanticQueryResult<ImmutableLocalAssignment> {
-    let finding = with_node(db, syntax, key, |program, index, _node| {
+) -> SemanticQueryResult<Vec<ImmutableLocalAssignment>> {
+    let findings = with_node(db, syntax, key, |program, index, _node| {
         let mut assignments = Vec::new();
         collect_nodes_of_kind(index, key.node, NodeKind::AssignExpression, &mut assignments);
-        assignments.into_iter().find_map(|assignment| immutable_assignment_target(program, index, key, assignment))
+        assignments.sort_unstable();
+        let mut grouped: Vec<ImmutableLocalAssignment> = Vec::new();
+        for assignment in assignments {
+            let Some((declaration, name, binding)) = immutable_assignment_target(program, index, assignment) else {
+                continue;
+            };
+            let site = AstNodeKey { node: assignment, ..key };
+            let declaration = AstNodeKey { node: declaration, ..key };
+            match grouped.iter_mut().find(|group| group.declaration == declaration) {
+                Some(group) => group.assignments.push(site),
+                None => grouped.push(ImmutableLocalAssignment {
+                    declaration,
+                    name: Arc::from(name),
+                    binding,
+                    assignments: vec![site],
+                }),
+            }
+        }
+        (!grouped.is_empty()).then_some(grouped)
     })?;
-    Ok(finding)
+    Ok(findings)
 }
 
-fn immutable_assignment_target(
-    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+fn immutable_assignment_target<'p>(
+    program: &'p beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
     index: &SyntaxIndex,
-    key: AstNodeKey,
     assignment: beskid_analysis::syntax::AstNodeId,
-) -> Option<ImmutableLocalAssignment> {
+) -> Option<(beskid_analysis::syntax::AstNodeId, &'p str, beskid_analysis::analysis::diagnostic_kinds::ImmutableBinding)> {
+    use beskid_analysis::analysis::diagnostic_kinds::ImmutableBinding;
     let node = index.node_at(program, assignment)?;
     let assign = node.of::<beskid_analysis::syntax::AssignExpression>()?;
     let beskid_analysis::syntax::Expression::Path(path) = &assign.target.node else { return None };
@@ -366,13 +393,30 @@ fn immutable_assignment_target(
     let name = segment.node.name.node.name.as_str();
     let declaration = resolve_lexical_declaration(program, index, assignment, name)?;
     let declaring = parent_node(index, declaration)?;
-    let immutable = match index.kind(declaring)? {
-        NodeKind::LetStatement | NodeKind::Parameter => !local_declaration_is_mutable(program, index, declaration),
-        NodeKind::ForStatement => true,
-        _ => false,
+    let declaring_node = index.node_at(program, declaring)?;
+    let binding = match index.kind(declaring)? {
+        NodeKind::LetStatement | NodeKind::Parameter if local_declaration_is_mutable(program, index, declaration) => {
+            return None;
+        }
+        NodeKind::LetStatement => {
+            ImmutableBinding::of_let(declaring_node.of::<beskid_analysis::syntax::LetStatement>()?, declaring_node.span()?)
+        }
+        NodeKind::Parameter => {
+            let parameter = declaring_node.of::<beskid_analysis::syntax::Parameter>()?;
+            let span = declaring_node.span()?;
+            ImmutableBinding {
+                form: beskid_analysis::analysis::diagnostic_kinds::BindingForm::Parameter,
+                declaration: span,
+                mut_at: parameter.ty.span.start,
+            }
+        }
+        NodeKind::ForStatement => {
+            let iterator = index.node_at(program, declaration)?.span()?;
+            ImmutableBinding::of_for_iterator(iterator)
+        }
+        _ => return None,
     };
-    immutable
-        .then(|| ImmutableLocalAssignment { assignment: AstNodeKey { node: assignment, ..key }, name: Arc::from(name) })
+    Some((declaration, name, binding))
 }
 
 fn collect_nodes_of_kind(
@@ -406,7 +450,10 @@ pub fn check_items(db: &dyn Db, items: &[AstNodeKey]) -> Result<(), Vec<Semantic
         findings.extend(transfer::immutable_field_findings(db, item));
         if let Ok(Some(finding)) = unresolved_value_argument(db, item) {
             findings.push(SemanticFinding {
-                kind: SemanticIssueKind::ResolveUnknownValue { name: finding.name.to_string() },
+                kind: SemanticIssueKind::ResolveUnknownValue {
+                    name: finding.name.to_string(),
+                    suggestion: finding.suggestion.as_deref().map(str::to_string),
+                },
                 site: finding.site,
                 related: Vec::new(),
             });
@@ -442,18 +489,19 @@ pub fn check_items(db: &dyn Db, items: &[AstNodeKey]) -> Result<(), Vec<Semantic
             };
             findings.push(SemanticFinding { kind, site: finding.site, related: Vec::new() });
         }
-        if let Ok(Some(finding)) = immutable_local_assignment(db, item) {
-            findings.push(SemanticFinding {
-                kind: SemanticIssueKind::ImmutableAssignment { name: finding.name.to_string() },
-                site: finding.assignment,
-                related: Vec::new(),
-            });
+        if let Ok(Some(bindings)) = immutable_local_assignment(db, item) {
+            findings.extend(bindings.into_iter().map(|binding| SemanticFinding {
+                kind: SemanticIssueKind::ImmutableAssignment { name: binding.name.to_string(), binding: binding.binding },
+                site: binding.declaration,
+                related: binding.assignments.into_iter().map(|assignment| (assignment, "assigned again")).collect(),
+            }));
         }
         if let Ok(Some(finding)) = unresolved_call_target(db, item) {
             let kind = match finding.kind {
-                UnresolvedCallKind::UnknownValue { name } => {
-                    SemanticIssueKind::ResolveUnknownValue { name: name.to_string() }
-                }
+                UnresolvedCallKind::UnknownValue { name, suggestion } => SemanticIssueKind::ResolveUnknownValue {
+                    name: name.to_string(),
+                    suggestion: suggestion.as_deref().map(str::to_string),
+                },
                 UnresolvedCallKind::UnknownModulePath { path } => {
                     SemanticIssueKind::ResolveUnknownModulePath { path: path.to_string() }
                 }
@@ -488,9 +536,7 @@ pub fn check_items(db: &dyn Db, items: &[AstNodeKey]) -> Result<(), Vec<Semantic
         }
         if let Ok(Some(finding)) = member_reference_legality(db, item) {
             let kind = match finding.kind {
-                MemberReferenceKind::UnknownStructField { name } => {
-                    SemanticIssueKind::TypeUnknownStructField { name: name.to_string() }
-                }
+                MemberReferenceKind::UnknownStructField(member) => member.issue(),
                 MemberReferenceKind::InaccessibleStructField { name } => {
                     SemanticIssueKind::TypeInaccessibleStructField { name: name.to_string() }
                 }
@@ -617,7 +663,7 @@ fn import_findings(db: &dyn Db, items: &[AstNodeKey]) -> Vec<SemanticFinding> {
         findings.extend(captures::captures_declaration_findings(db, unit_root));
         if let Ok(Some(imports)) = unresolved_imports(db, unit_root) {
             findings.extend(imports.iter().map(|import| SemanticFinding {
-                kind: SemanticIssueKind::UnknownImportPath { path: import.path.to_string() },
+                kind: SemanticIssueKind::UnknownImportPath { path: import.path.to_string(), module: None },
                 site: import.site,
                 related: Vec::new(),
             }));
@@ -999,10 +1045,13 @@ mod tests {
     fn assert_immutable_assignment(source: &str, generation: u64, item: usize, name: &str) {
         let (db, root) = one_unit_assembly(source, SyntaxGenerationId(generation));
         let key = function_definitions(&db, root)[item];
-        let finding = super::immutable_local_assignment(&db, key)
+        let bindings = super::immutable_local_assignment(&db, key)
             .expect("immutable_local_assignment query")
             .unwrap_or_else(|| panic!("`{name}` reassignment must be reported: {source}"));
+        assert_eq!(bindings.len(), 1, "{bindings:?}");
+        let finding = &bindings[0];
         assert_eq!(finding.name.as_ref(), name);
+        assert!(!finding.assignments.is_empty());
         let findings = super::check_items(&db, &[key]).expect_err("legality gate rejects the item");
         assert!(
             findings.iter().any(|finding| finding.kind.code() == "E1214"),
@@ -1039,6 +1088,25 @@ mod tests {
     }
 
     #[test]
+    fn repeated_assignments_to_one_binding_are_one_finding_at_the_declaration() {
+        let source = "unit Main() { i64 n = 0; n = 1; n = 2; i64 m = 0; m = 3; return; }";
+        let (db, root) = one_unit_assembly(source, SyntaxGenerationId(95));
+        let key = function_definitions(&db, root)[0];
+        let findings = super::check_items(&db, &[key]).expect_err("legality gate rejects the item");
+        let immutable: Vec<_> = findings.iter().filter(|finding| finding.kind.code() == "E1214").collect();
+        assert_eq!(immutable.len(), 2, "one finding per binding: {immutable:?}");
+        let n = immutable[0];
+        assert_eq!(n.related.len(), 2);
+        assert!(n.related.iter().all(|(_, label)| *label == "assigned again"));
+        let span = crate::node_span(&db, n.site).expect("span").expect("site span");
+        assert_eq!(&source[span.start..span.end], "n", "anchored at the declaration name");
+        let SemanticIssueKind::ImmutableAssignment { binding, .. } = &n.kind else { panic!("{:?}", n.kind) };
+        assert_eq!(binding.form, beskid_analysis::analysis::diagnostic_kinds::BindingForm::TypedLocal);
+        assert_eq!(&source[binding.declaration.start..binding.declaration.end], "i64 n = 0;");
+        assert_eq!(binding.mut_at, source.find("i64 n").unwrap());
+    }
+
+    #[test]
     fn mutable_local_reassignment_is_not_reported() {
         let source = "unit Main(mut i64 m, pointer p) { mut pointer q = p; mut i64 n = 0; \
                       while n < 3 { q = p; n = n + 1; m = n; } return; }";
@@ -1069,14 +1137,36 @@ mod tests {
 
     const SHAPE: &str = "pub type Pair { i64 a } enum Shape { Dot, Circle(i64 radius) } ";
 
+    /// `name` judged against `Pair { i64 a }`: one edit from `a`, so `a` is suggested.
+    fn pair_member(name: &str) -> UnknownMember {
+        UnknownMember {
+            name: name.into(),
+            type_name: Some("Pair".into()),
+            fields: vec!["a".into()],
+            suggestion: Some("a".into()),
+        }
+    }
+
+    #[test]
+    fn an_unknown_field_names_the_type_lists_its_fields_and_suggests_the_closest() {
+        let source = "pub type Rectangle { i64 width, i64 height } i64 Main(Rectangle r) { return r.heigth; }";
+        let Some(MemberReferenceKind::UnknownStructField(member)) = member_finding(source, 140, 0) else {
+            panic!("`heigth` is unknown")
+        };
+        assert_eq!(member.type_name.as_deref(), Some("Rectangle"));
+        assert_eq!(member.fields.iter().map(|field| field.as_ref()).collect::<Vec<_>>(), ["width", "height"]);
+        assert_eq!(member.suggestion.as_deref(), Some("height"));
+        assert_eq!(member.issue().message(), "type `Rectangle` has no field `heigth`");
+    }
+
     #[test]
     fn unknown_members_and_arities_are_reported_against_the_resolved_declaration() {
         let cases = [
             (
                 "i64 Main() { Pair p = Pair { b: 1 }; return 0; }",
-                MemberReferenceKind::UnknownStructField { name: "b".into() },
+                MemberReferenceKind::UnknownStructField(pair_member("b")),
             ),
-            ("i64 Main(Pair p) { return p.b; }", MemberReferenceKind::UnknownStructField { name: "b".into() }),
+            ("i64 Main(Pair p) { return p.b; }", MemberReferenceKind::UnknownStructField(pair_member("b"))),
             (
                 "i64 Main() { Shape s = Shape::Square; return 0; }",
                 MemberReferenceKind::UnknownEnumVariant { enum_name: "Shape".into(), variant: "Square".into() },

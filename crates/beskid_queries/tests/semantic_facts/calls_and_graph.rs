@@ -413,8 +413,23 @@ fn unresolved_call_target_reports_an_unknown_single_segment_callee_at_the_call()
     let (db, _project, unit, generation, index) = setup(source);
     let main = key(unit, generation, &index, NodeKind::FunctionDefinition, 1);
     let finding = beskid_queries::unresolved_call_target(&db, main).expect("query").expect("`Helpr` names nothing");
-    assert_eq!(finding.kind, beskid_queries::UnresolvedCallKind::UnknownValue { name: Arc::from("Helpr") });
+    // "Did you mean": the unit's `Helper` is one edit away.
+    assert_eq!(
+        finding.kind,
+        beskid_queries::UnresolvedCallKind::UnknownValue { name: Arc::from("Helpr"), suggestion: Some(Arc::from("Helper")) }
+    );
     assert_eq!(finding.call, key(unit, generation, &index, NodeKind::CallExpression, 0));
+}
+
+#[test]
+fn unresolved_value_argument_suggests_the_closest_local_in_scope() {
+    let source = "i64 Twice(i64 value) { return value; } i64 Main() { i64 counter = 1; return Twice(countr); }";
+    let (db, _project, unit, generation, index) = setup(source);
+    let main = key(unit, generation, &index, NodeKind::FunctionDefinition, 1);
+    let finding =
+        beskid_queries::unresolved_value_argument(&db, main).expect("query").expect("`countr` names nothing");
+    assert_eq!(finding.name.as_ref(), "countr");
+    assert_eq!(finding.suggestion.as_deref(), Some("counter"));
 }
 
 #[test]

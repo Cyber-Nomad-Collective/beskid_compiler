@@ -227,6 +227,22 @@ fn stale_generation_cannot_reuse_a_local_slot_identity() {
 }
 
 #[test]
+fn compound_assignment_to_a_mutable_local_is_a_write_with_its_operator() {
+    for (operator, expected) in [
+        ("+=", beskid_queries::CompoundAssignmentOperator::Add),
+        ("-=", beskid_queries::CompoundAssignmentOperator::Sub),
+    ] {
+        let source = format!("i32 F() {{ mut i32 total = 1; total {operator} 2; return total; }}");
+        let (db, _project, unit, generation, index) = setup(&source);
+        let assignment = key(unit, generation, &index, NodeKind::AssignExpression, 0);
+        let write = mutable_local_assignment(&db, assignment)
+            .expect("mutable assignment fact")
+            .expect("a compound write to a mutable local is a local write");
+        assert_eq!(write.compound, Some(expected), "{source}");
+    }
+}
+
+#[test]
 fn mutable_local_assignment_requires_a_current_mutable_lexical_declaration() {
     let source = "i32 Main() { mut i32 total = 0; total = total + 1; return total; }";
     let (mut db, project, unit, generation, index) = setup(source);
@@ -245,6 +261,7 @@ fn mutable_local_assignment_requires_a_current_mutable_lexical_declaration() {
             slot: local_slot(&db, declaration)
                 .expect("mutable declaration slot")
                 .expect("mutable declaration slot fact"),
+            compound: None,
         })
     );
 
@@ -597,7 +614,10 @@ fn the_check_gate_rejects_nominal_iterables_the_protocol_cannot_lower() {
         "{obligations:?}"
     );
     let assignment = immutable_local_assignment(&db, main).expect("immutable assignment query");
-    assert_eq!(assignment.map(|finding| finding.name.to_string()), Some("value".to_string()));
+    assert_eq!(
+        assignment.map(|bindings| bindings.iter().map(|binding| binding.name.to_string()).collect::<Vec<_>>()),
+        Some(vec!["value".to_string()])
+    );
 
     // Inside a generic item the protocol is proven per specialization; only the shape is judged.
     let source = format!(

@@ -11,7 +11,9 @@ use diagnostics::{
     merge_fact_diagnostics,
 };
 use entry_points::session_fingerprint_field;
-pub use entry_points::{SemanticFactAuthority, SemanticFactFinding, prepare_compilation_with_fact_authority};
+pub use entry_points::{
+    SemanticFactAuthority, SemanticFactFinding, SemanticFactRelated, prepare_compilation_with_fact_authority,
+};
 pub use options::{PrepareOptions, PreparedCompilation};
 use spine::run_prepare_spine;
 

@@ -23,7 +23,11 @@ impl SemanticIssueKind {
             )),
 
             // ── Import / syntax diagnostics ──
-            Self::UnknownImportPath { path } => {
+            Self::UnknownImportPath { path, module: Some(module) } => {
+                let item = path.rsplit('.').next().unwrap_or(path);
+                Some(format!("`use` imports modules; write `use {module};` and refer to `{module}.{item}`"))
+            }
+            Self::UnknownImportPath { path, module: None } => {
                 Some(format!("check the module path `{path}` — it may not exist or may not be exported"))
             }
             Self::UseBeforeDeclaration { name } => Some(format!(
@@ -60,7 +64,12 @@ impl SemanticIssueKind {
             Self::FileScopedModuleNotFirstItem { .. } => {
                 Some("move `mod ...;` to the top of the file".to_string())
             }
-            Self::DuplicateFileScopedModule { .. } | Self::ModuleDeclarationForbiddenInFileScopedModule => {
+            Self::DuplicateFileScopedModule { .. } => Some(
+                "a file declares its own module once with `mod X;` at the top; other files of the module do not \
+                 repeat it"
+                    .to_string(),
+            ),
+            Self::ModuleDeclarationForbiddenInFileScopedModule => {
                 Some("keep a single top-level `mod ...;` and remove other module declarations".to_string())
             }
             Self::VisibilityViolationImportPrivate { private_span, .. } => Some(format!(
@@ -74,8 +83,8 @@ impl SemanticIssueKind {
             Self::UnusedImport { path } => {
                 Some(format!("remove the unused `use {path}` or use the imported item"))
             }
-            Self::UnusedPrivateItem { name } => Some(format!(
-                "remove the private item `{name}` or mark it `pub` if it's needed externally"
+            Self::UnusedPrivateItem { name, .. } => Some(format!(
+                "remove `{name}`, or mark it `pub` if other modules need it"
             )),
 
             // ── Contract conformance diagnostics ──
@@ -97,13 +106,25 @@ impl SemanticIssueKind {
             Self::UnresolvedAssociatedType { .. } => {
                 Some("check the contract name and that the referenced type conforms to it".to_string())
             }
+            Self::GenericBoundNotSatisfied { type_name, contract_name, .. }
+                if super::type_names::outer_name(&super::display_type(contract_name)) == "Serializable" =>
+            {
+                Some(format!(
+                    "add `[Serialize]` to type `{}` so the compiler derives its `Serializable` conformance",
+                    super::display_type(type_name)
+                ))
+            }
             Self::GenericBoundNotSatisfied { reason: Some(reason), .. } => Some(reason.clone()),
             Self::GenericBoundNotSatisfied { type_name, contract_name, reason: None } => {
                 Some(format!("make `{type_name}` conform to `{contract_name}` or pass a conforming type"))
             }
-            Self::ImmutableAssignment { .. } => {
-                Some("declare it as `let mut` to allow assignment".to_string())
-            }
+            // The declaration text is needed for the tailored help; `issue_diagnostic` writes it.
+            Self::ImmutableAssignment { name, binding } => Some(match binding.form {
+                super::BindingForm::ForIterator => {
+                    format!("a `for` iterator cannot be assigned; copy `{name}` into a `mut` local first")
+                }
+                _ => format!("declare `{name}` with `mut`"),
+            }),
 
             // ── Pattern / match / control-flow diagnostics ──
             Self::MatchGuardMustBeBoolean => {
@@ -141,7 +162,10 @@ impl SemanticIssueKind {
             }
 
             // ── Resolution diagnostics ──
-            Self::ResolveUnknownValue { name } => Some(format!(
+            Self::ResolveUnknownValue { suggestion: Some(suggestion), .. } => {
+                Some(format!("a name with a similar spelling exists: `{suggestion}`"))
+            }
+            Self::ResolveUnknownValue { name, suggestion: None } => Some(format!(
                 "check the spelling of `{name}` or add a `use` import if it's defined elsewhere"
             )),
             Self::ResolveUnknownType { name } => Some(format!(
@@ -172,13 +196,13 @@ impl SemanticIssueKind {
                 "qualify `{name}` through the child module that declares it; `{module_path}` re-exports more than one"
             )),
             Self::MissingImport { name, module_path } => {
-                Some(format!("add `use {module_path}::{name};` at the top of the file"))
+                Some(format!("add `use {module_path}.{name};` at the top of the file"))
             }
             Self::MissingImportAmbiguous { name, candidates } => Some(format!(
                 "add one of: {}",
                 candidates
                     .iter()
-                    .map(|c| format!("`use {c}::{name};`"))
+                    .map(|c| format!("`use {c}.{name};`"))
                     .collect::<Vec<_>>()
                     .join(" ")
             )),
@@ -191,16 +215,26 @@ impl SemanticIssueKind {
                 "the value's type could not be determined — add a type annotation".to_string()
             ),
             Self::TypeUnknownStructType => Some(
-                "the struct type could not be resolved — check spelling and imports".to_string()
+                "the type could not be resolved — check spelling and imports".to_string()
             ),
             Self::TypeInvalidMemberTarget => Some(
-                "member access requires a struct-like type — check the receiver type".to_string()
+                "member access requires a `type` with fields — check the receiver type".to_string()
             ),
             Self::TypeUnknownEnumType => Some(
                 "the enum type could not be resolved — check spelling and imports".to_string()
             ),
-            Self::TypeUnknownStructField { name } => {
-                Some(format!("check that the struct has a field named `{name}`"))
+            Self::TypeUnknownStructField { suggestion: Some(suggestion), .. } => {
+                Some(format!("a field with a similar name exists: `{suggestion}`"))
+            }
+            Self::TypeUnknownStructField { fields, .. } if !fields.is_empty() => Some(format!(
+                "its fields are: {}",
+                fields.iter().map(|field| format!("`{field}`")).collect::<Vec<_>>().join(", ")
+            )),
+            Self::TypeUnknownStructField { type_name: Some(type_name), .. } => {
+                Some(format!("`{}` declares no fields", super::display_type(type_name)))
+            }
+            Self::TypeUnknownStructField { name, .. } => {
+                Some(format!("check that the type declares a field named `{name}`"))
             }
             Self::TypeInaccessibleStructField { name } => Some(format!(
                 "`{name}` is private to the source unit that declares its type; mark the field `pub` in \
@@ -210,7 +244,7 @@ impl SemanticIssueKind {
                 Some(format!("check that the enum has a variant named `{name}`"))
             }
             Self::TypeMissingStructField { name } => {
-                Some(format!("add the missing field `{name}` to the struct literal"))
+                Some(format!("add `{name}: <value>` to the type literal"))
             }
             Self::TypeMissingTypeAnnotation { name } => Some(format!(
                 "add an explicit type annotation for `{name}`, e.g. `let {name}: i32 = ...`"
@@ -228,18 +262,19 @@ impl SemanticIssueKind {
                 "an earlier argument fixed `{parameter}` to `{first_name}`, but this argument is `{second_name}` — \
                  use matching declared types, or an explicit conversion, for every use of `{parameter}`"
             )),
-            Self::TypeMismatch { expected_name, actual_name } => Some(format!(
-                "expected `{expected_name}` but got `{actual_name}` — check the expression or add a cast"
-            )),
-            Self::TypeMatchArmMismatch { expected_name, actual_name } => Some(format!(
-                "expected `{expected_name}` but got `{actual_name}` — unify the arm types or add a cast"
-            )),
+            Self::TypeMismatch { expected_name, actual_name }
+            | Self::TypeReturnMismatch { expected_name, actual_name }
+            | Self::TypeCallArgumentMismatch { expected_name, actual_name } => {
+                Some(mismatch_help(expected_name, actual_name))
+            }
+            Self::TypeMatchArmMismatch { expected_name, actual_name } => {
+                let (expected, actual) = super::display_type_pair(expected_name, actual_name);
+                Some(format!("make every arm produce `{expected}`; this arm produces `{actual}`"))
+            }
             Self::TypeCallArityMismatch { expected, actual } => Some(format!(
                 "the callable expects {expected} argument(s) but got {actual}"
             )),
-            Self::TypeCallArgumentMismatch { expected_name, actual_name } => Some(format!(
-                "expected argument type `{expected_name}` but got `{actual_name}`"
-            )),
+
             Self::TypeEnumConstructorMismatch { expected, actual } => Some(format!(
                 "the enum constructor expects {expected} argument(s) but got {actual}"
             )),
@@ -272,9 +307,11 @@ impl SemanticIssueKind {
                  the enclosing function's error, and the resource must not escape or be disposed explicitly"
                     .to_string(),
             ),
-            Self::InternalSemanticFactUnavailable { .. } | Self::InternalLoweringRuleMissing { .. } => {
-                Some("this is an internal compiler error, please report it".to_string())
-            }
+            Self::InternalSemanticFactUnavailable { .. }
+            | Self::InternalLoweringRuleMissing { .. }
+            | Self::InternalLoweringInvariant { .. }
+            | Self::InternalModSemanticFailure { .. }
+            | Self::InternalBuildFailure { .. } => self.internal_help(),
             Self::DeadCollectionGrowth => {
                 Some("return the parameter or rebind the grown handle so the caller sees the growth".to_string())
             }
@@ -372,9 +409,6 @@ impl SemanticIssueKind {
             Self::AwaitKeywordReserved => Some(
                 "`await` is not implemented — use fiber `join` instead".to_string()
             ),
-            Self::TypeReturnMismatch { expected_name, actual_name } => Some(format!(
-                "the return expression produces `{actual_name}` but the function expects `{expected_name}`"
-            )),
             Self::TypeNonIterableForTarget => Some(
                 "the for-in target must implement the iterable contract (provide a `Next()` method returning `Option<T>`)".to_string()
             ),
@@ -546,5 +580,37 @@ impl SemanticIssueKind {
             | Self::ExternInvalidOptional { detail }
             | Self::InvalidClifBlock { detail } => Some(detail.clone()),
         }
+    }
+}
+
+/// Help for a value of type `actual` where `expected` is required. A `Result` or `Option` meeting
+/// another type is unwrapped with `?` or `match`, never cast; a cast is suggested only between
+/// numeric primitives.
+fn mismatch_help(expected_name: &str, actual_name: &str) -> String {
+    let (expected, actual) = super::display_type_pair(expected_name, actual_name);
+    let (expected_outer, actual_outer) =
+        (super::type_names::outer_name(&expected), super::type_names::outer_name(&actual));
+    match actual_outer {
+        "Result" if expected_outer != "Result" => {
+            return "add `?` to propagate the error, or `match` on the result".to_string();
+        }
+        "Option" if expected_outer != "Option" => {
+            return "add `?` to propagate `None`, or `match` on the option".to_string();
+        }
+        _ => {}
+    }
+    match expected_outer {
+        "Result" if actual_outer != "Result" => {
+            return format!("wrap the value: `Result::Ok(...)` produces `{expected}`");
+        }
+        "Option" if actual_outer != "Option" => {
+            return format!("wrap the value: `Option::Some(...)` produces `{expected}`");
+        }
+        _ => {}
+    }
+    if super::type_names::is_numeric_primitive(&expected) && super::type_names::is_numeric_primitive(&actual) {
+        format!("convert the value with `{expected}(...)`")
+    } else {
+        format!("this expression has type `{actual}`, but `{expected}` is required here")
     }
 }

@@ -22,7 +22,10 @@ pub use closures::{
     ClosurePointerMapRequirement, ClosureSignature, FiberOwnership, FunctionItemValue, FunctionValueCall,
     SpawnDiagnostic, SpawnDiagnosticKind, SpawnEntryValidation, SpawnHandleType, SpawnLegality, SpawnTarget,
 };
-pub use errors::{GenericBindingConflict, GenericBoundViolation, SemanticError, SemanticFinding, SemanticQueryResult};
+pub use errors::{
+    GenericBindingConflict, GenericBoundViolation, SemanticError, SemanticFinding, SemanticQueryResult,
+    UNAVAILABLE_MESSAGE_MARKER,
+};
 pub use events::{EventHandlerLocalFact, EventOperationFact, EventOperationKind};
 pub use expected::{ExpectedType, ExpectedTypeContext};
 pub use facts::{
@@ -47,7 +50,7 @@ pub use layouts::{
     EnumMatchVariantPatternFact, EnumScalarPayloadObjectLayout, EnumScalarPayloadVariantLayout, EnumVariantLayoutFact,
     EventFieldLayoutFact, ScalarAbiLayout,
 };
-pub use resolution::{LocalSlot, MutableLocalAssignment, ResolvedItem, ResolvedLocal};
+pub use resolution::{CompoundAssignmentOperator, LocalSlot, MutableLocalAssignment, ResolvedItem, ResolvedLocal};
 pub use syntax::{
     ClifParameterShape, CompletionCandidate, CompletionContext, CompletionKind, CompletionMemberSurface, ExportSymbol,
     IndexedNodeKind, LiteralFact, OperatorFact, RuntimeIntrinsic, RuntimeIntrinsicName, SourceSpan, TestItem,

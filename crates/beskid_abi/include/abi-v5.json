@@ -17938,7 +17938,7 @@
       "code": 8
     },
     {
-      "name": "unreachable_or_isle_invariant",
+      "name": "panic",
       "code": 9
     },
     {
