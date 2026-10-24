@@ -295,6 +295,10 @@ impl SemanticIssueKind {
             Self::DefaultValueTypeMismatch { name, expected, .. } => {
                 Some(format!("give `{name}` a constant of type `{expected}`, or change the parameter type"))
             }
+            Self::OptionalParameterNotAllowed { place } if place.contains("host or scope") => Some(
+                "remove the caller-information attribute; a `launch` or `with` may still omit the argument when the parameter has a default value"
+                    .to_string(),
+            ),
             Self::OptionalParameterNotAllowed { .. } => Some(
                 "no call passes this argument, so neither a default value nor a caller-information attribute can apply; remove it"
                     .to_string(),
