@@ -700,8 +700,8 @@ fn argument_parameter_types<'a>(
 /// same structural unification a generic call uses for its arguments. A generic parameter bound
 /// twice to different types is a binding conflict (E1229); a generic parameter left unbound, or
 /// no usable expected function type, is unavailable. `where` bounds are proven in the complete
-/// environment exactly as at a call. A function with contract-typed parameters has no value
-/// form in this release.
+/// environment exactly as at a call. A function with contract-typed parameters is read as the
+/// body that takes contract boxes.
 pub(in crate::semantic_contract) fn function_value_specialization(
     db: &dyn Db,
     site: AstNodeKey,
@@ -711,9 +711,6 @@ pub(in crate::semantic_contract) fn function_value_specialization(
     expected: Option<(&[GenericSourceTypeIdentity], &GenericSourceTypeIdentity)>,
 ) -> Result<GenericSpecializationInstance, SemanticError> {
     let unavailable = || SemanticError::unavailable_at("function_item_value", site);
-    if !contract_parameter_declarations(db, declaration).is_empty() {
-        return Err(unavailable());
-    }
     let generic_names = function.generics.iter().map(|generic| generic.node.name.as_str()).collect::<Vec<_>>();
     let mut abi_substitutions = HashMap::<String, SemanticTypeId>::new();
     let mut source_substitutions = HashMap::<String, GenericSubstitution>::new();

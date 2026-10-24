@@ -37,6 +37,12 @@ pub(in crate::semantic_contract) fn call_lowering_for_node(
             if let Some(receiver) = contract_member_call_receiver(db, program, index, key, call) {
                 return Some(receiver.map(|(method, _)| CallLowering::Direct(method)));
             }
+            // A member call on any expression of a contract type (`all[0].Greet()`,
+            // `Make().Greet()`) is a contract method call dispatched through the value.
+            if let Some(receiver) = super::super::contract_values::contract_value_member_receiver(db, program, index, key)
+            {
+                return Some(receiver.map(|(method, _)| CallLowering::Direct(method)));
+            }
             Ok(flatten_member_as_path_declaration(db, program, index, key, member)
                 .map(CallLowering::Direct)
                 .or_else(|| function_value_callee(db, program, index, key, call).map(CallLowering::FunctionValue))

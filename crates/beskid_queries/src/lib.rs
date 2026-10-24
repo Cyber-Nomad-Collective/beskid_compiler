@@ -60,6 +60,10 @@ pub use semantic_contract::{
     pattern_binding_copy_specialization, value_copy_position, value_copy_specialization,
 };
 pub use semantic_contract::{
+    CONTRACT_BOX_RECEIVER_OFFSET, CONTRACT_BOX_SIZE, CONTRACT_BOX_WITNESS_OFFSET, ContractBoxCoercion, ContractBoxReceiver,
+    ContractDispatch, ContractWitnessTable, contract_box_coercion, contract_dispatch, contract_value_receiver, contract_witness_table_for_declaration,
+};
+pub use semantic_contract::{
     CheckedFailureDestination, ReservedFailureConstructor, canonical_serialization_encode, checked_failure_destination,
     reserved_failure_constructor, serialization_publication_methods,
 };

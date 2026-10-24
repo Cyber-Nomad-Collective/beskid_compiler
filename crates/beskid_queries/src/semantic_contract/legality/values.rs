@@ -59,7 +59,9 @@
 use super::members::enum_definition;
 use super::typing::{compatible, enclosing_callable, expression_nodes, nodes_of_kind, proven_type};
 use super::*;
-use crate::semantic_contract::contracts::{concrete_declaration, type_declaration_conforms_to_contract};
+use crate::semantic_contract::contracts::{
+    concrete_declaration, is_conformable_primitive, primitive_conforms, type_declaration_conforms_to_contract,
+};
 use beskid_analysis::syntax::{
     AssignExpression, AssignOp, AstNodeId, CallExpression, ContractMethodSignature, EnumConstructorExpression,
     Expression, FieldKind, FunctionDefinition, LambdaExpression, LetStatement, MatchExpression, PathExpression,
@@ -240,6 +242,9 @@ fn identities_compatible(expected: &Identity, actual: &Identity) -> bool {
         (Identity::Nominal { qualified_name: expected, .. }, Identity::Nominal { qualified_name: actual, .. }) => {
             expected == actual
         }
+        (Identity::Contract { qualified_name: expected, .. }, Identity::Contract { qualified_name: actual, .. }) => {
+            expected == actual
+        }
         (Identity::Array(expected), Identity::Array(actual)) => match (expected.as_ref(), actual.as_ref()) {
             (Identity::Abi(expected), Identity::Abi(actual)) => {
                 expected == actual || *expected == SemanticTypeId::POINTER || *actual == SemanticTypeId::POINTER
@@ -258,6 +263,15 @@ fn identities_compatible(expected: &Identity, actual: &Identity) -> bool {
 fn contract_accepts(db: &dyn Db, scope: AstNodeKey, contract: AstNodeKey, actual: &Identity) -> Option<bool> {
     match actual {
         Identity::Abi(SemanticTypeId::POINTER | SemanticTypeId::NEVER) | Identity::Function { .. } => None,
+        // A contract value is accepted by its own contract only: a box carries the witness table of
+        // the contract it was made for, and an embedding contract has another table.
+        Identity::Contract { qualified_name, .. } => {
+            Some(stable_declaration_identity(db, contract).as_ref() == Some(qualified_name))
+        }
+        // A primitive conforms through its `impl P : C` block; it is boxed into the destination.
+        Identity::Abi(primitive) if is_conformable_primitive(*primitive) => {
+            Some(primitive_conforms(db, scope, *primitive, contract))
+        }
         Identity::Abi(_) | Identity::Array(_) => Some(false),
         Identity::Nominal { .. } => {
             let concrete = concrete_declaration(db, scope, actual)?;
@@ -285,6 +299,10 @@ fn identity_name(identity: &Identity) -> String {
             identity_name(result),
             parameters.iter().map(identity_name).collect::<Vec<_>>().join(", ")
         ),
+        Identity::Contract { qualified_name, arguments } if arguments.is_empty() => qualified_name.to_string(),
+        Identity::Contract { qualified_name, arguments } => {
+            format!("{qualified_name}<{}>", arguments.iter().map(identity_name).collect::<Vec<_>>().join(", "))
+        }
     }
 }
 

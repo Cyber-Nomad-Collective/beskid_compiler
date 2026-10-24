@@ -16,10 +16,16 @@ pub(in crate::semantic_contract) fn aggregate_field_layout(
         beskid_analysis::syntax::Type::Primitive(_) => {
             AggregateFieldShape::Scalar(semantic_type_from_syntax(&field.node.ty.node)?)
         }
-        beskid_analysis::syntax::Type::Complex(path) => AggregateFieldShape::Nominal(
-            resolve_nominal_layout_declaration(db, program, index, key, &path.node)
-                .ok_or_else(|| SemanticError::unavailable("aggregate_layout"))?,
-        ),
+        beskid_analysis::syntax::Type::Complex(path) => {
+            match resolve_nominal_layout_declaration(db, program, index, key, &path.node) {
+                Some(declaration) => AggregateFieldShape::Nominal(declaration),
+                // A contract-typed field holds a contract box: one managed reference.
+                None if crate::semantic_contract::contracts::resolve_contract(db, key, &path.node).is_some() => {
+                    AggregateFieldShape::ManagedReference(SemanticTypeId::POINTER)
+                }
+                None => return Err(SemanticError::unavailable("aggregate_layout")),
+            }
+        }
         // Arrays are heap-backed reference values in ABI v5, including empty literal payloads, and
         // a function value is its GC-managed closure record.
         beskid_analysis::syntax::Type::Array(_) | beskid_analysis::syntax::Type::Function { .. } => {
@@ -714,9 +720,9 @@ pub(in crate::semantic_contract) fn aggregate_shape_for_binding(
                 .map(AggregateFieldShape::Nominal)
                 .ok_or_else(|| SemanticError::unavailable("aggregate_reference_classification"))
         }
-        GenericSourceTypeIdentity::Array(_) | GenericSourceTypeIdentity::Function { .. } => {
-            Ok(AggregateFieldShape::ManagedReference(SemanticTypeId::POINTER))
-        }
+        GenericSourceTypeIdentity::Array(_)
+        | GenericSourceTypeIdentity::Function { .. }
+        | GenericSourceTypeIdentity::Contract { .. } => Ok(AggregateFieldShape::ManagedReference(SemanticTypeId::POINTER)),
     }
 }
 

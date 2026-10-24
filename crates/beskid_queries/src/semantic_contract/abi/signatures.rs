@@ -72,11 +72,6 @@ pub(in crate::semantic_contract) fn item_abi_signature_tracked(
             if !function.generics.is_empty() {
                 return None;
             }
-            match contract_template_signature(db, key, &function.parameters, return_type) {
-                Ok(true) => return None,
-                Ok(false) => (),
-                Err(error) => return Some(Err(error)),
-            }
             return Some(abi_signature_from_syntax(db, key, &function.parameters, return_type));
         }
         if let Some(method) = node.of::<beskid_analysis::syntax::MethodDefinition>() {
@@ -97,11 +92,6 @@ pub(in crate::semantic_contract) fn item_abi_signature_tracked(
                 // only be emitted after a direct receiver call or a conformance witness proves
                 // that concrete environment.
                 return None;
-            }
-            match contract_template_signature(db, key, &method.parameters, return_type) {
-                Ok(true) => return None,
-                Ok(false) => (),
-                Err(error) => return Some(Err(error)),
             }
             let mut signature = match abi_signature_from_syntax(db, key, &method.parameters, return_type) {
                 Ok(signature) => signature,
@@ -145,28 +135,6 @@ pub(in crate::semantic_contract) fn item_abi_signature_tracked(
             .map(|_| Ok(ItemSignature { parameters: Arc::from([]), result: SemanticTypeId::UNIT }))
     })?
     .transpose()
-}
-
-/// Defer only proven contract parameters. An unrelated unresolved type is still an error.
-fn contract_template_signature(
-    db: &dyn Db,
-    key: AstNodeKey,
-    parameters: &[beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Parameter>],
-    result: Option<&beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Type>>,
-) -> Result<bool, SemanticError> {
-    let contracts = contract_parameter_declarations(db, key);
-    if contracts.is_empty() {
-        return Ok(false);
-    }
-    for (position, parameter) in parameters.iter().enumerate() {
-        if !contracts.iter().any(|(_, candidate, _)| *candidate as usize == position) {
-            item_abi_type_from_syntax(db, key, &parameter.node.ty.node)?;
-        }
-    }
-    if let Some(result) = result {
-        item_abi_type_from_syntax(db, key, &result.node)?;
-    }
-    Ok(true)
 }
 
 /// Derive one direct call's ABI signature from its declaration and exact source arguments.

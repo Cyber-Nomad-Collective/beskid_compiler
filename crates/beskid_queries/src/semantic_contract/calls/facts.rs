@@ -159,6 +159,12 @@ pub(in crate::semantic_contract) fn call_arguments_tracked(
                         .and_then(Result::ok)
                         .map(|(_, receiver)| receiver)
                     })
+                    .or_else(|| {
+                        // A contract-typed field or local read as a contract value.
+                        super::super::contract_values::contract_value_member_receiver(db, program, index, key)
+                            .and_then(Result::ok)
+                            .map(|(_, receiver)| receiver)
+                    })
             };
             let receiver = if path.node.path.node.segments.len() > 2 {
                 field_receiver()?

@@ -112,7 +112,8 @@ impl ExpectedType {
             GenericSourceTypeIdentity::Array(element) => Some(element),
             GenericSourceTypeIdentity::Abi(_)
             | GenericSourceTypeIdentity::Nominal { .. }
-            | GenericSourceTypeIdentity::Function { .. } => None,
+            | GenericSourceTypeIdentity::Function { .. }
+            | GenericSourceTypeIdentity::Contract { .. } => None,
         }
     }
 }

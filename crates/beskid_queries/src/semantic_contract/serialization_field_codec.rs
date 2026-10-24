@@ -334,6 +334,9 @@ pub fn serialization_field_codec_binding(
         GenericSourceTypeIdentity::Function { .. } => {
             return Err(error("function values have no field codec"));
         }
+        GenericSourceTypeIdentity::Contract { .. } => {
+            return Err(error("contract values have no field codec"));
+        }
         GenericSourceTypeIdentity::Nominal { qualified_name, arguments } => {
             let shape = project_serialization_shape(db, entry.declaration, &target_type)?;
             let container = match shape.nodes().first() {

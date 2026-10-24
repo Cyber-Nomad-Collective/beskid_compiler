@@ -23,6 +23,11 @@ mod completion;
 mod composition;
 mod contracts;
 pub use contracts::{AppliedContractIdentity, applied_contract_argument_is_type, method_receiver_abi_type};
+mod contract_values;
+pub use contract_values::{
+    CONTRACT_BOX_RECEIVER_OFFSET, CONTRACT_BOX_SIZE, CONTRACT_BOX_WITNESS_OFFSET, ContractBoxCoercion, ContractBoxReceiver,
+    ContractDispatch, ContractWitnessTable, contract_box_coercion, contract_dispatch, contract_value_receiver, contract_witness_table_for_declaration,
+};
 mod events;
 mod expected_type;
 pub use expected_type::expected_type_in_environment;
