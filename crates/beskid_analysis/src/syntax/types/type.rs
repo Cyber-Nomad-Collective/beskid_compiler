@@ -281,7 +281,7 @@ mod tests {
         assert!(matches!(current.node, Type::Complex(_)));
 
         let program = parse_program(
-            "type Grid { i64[][] cells, } i64[][] Rows(string[][] names) { i64[][] local = cells; return local; }",
+            "type Grid { i64[][] cells; } i64[][] Rows(string[][] names) { i64[][] local = cells; return local; }",
         )
         .expect("nested array types parse in fields, parameters, locals, and return types");
         let formatted = format_program(&program).expect("nested array types format");

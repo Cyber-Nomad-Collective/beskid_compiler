@@ -22,6 +22,7 @@ pub const CODES: &[CodeInfo] = &[
     CodeInfo { code: "E0112", summary: "`self` parameter in a method", tags: &[] },
     CodeInfo { code: "E0113", summary: "nothing to parse", tags: &[] },
     CodeInfo { code: "E0114", summary: "character literal with more than one character", tags: &[] },
+    CodeInfo { code: "E0115", summary: "comma between fields", tags: &[] },
 ];
 
 #[cfg(test)]
@@ -46,6 +47,7 @@ mod tests {
             codes::SELF_PARAMETER,
             codes::EMPTY_SOURCE,
             codes::LONG_CHARACTER_LITERAL,
+            codes::COMMA_BETWEEN_FIELDS,
         ] {
             assert!(CODES.iter().any(|info| info.code == code), "{code} is not registered");
         }

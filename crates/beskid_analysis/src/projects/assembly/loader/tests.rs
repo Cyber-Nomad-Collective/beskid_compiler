@@ -1022,7 +1022,7 @@ fn import_closure_follows_qualified_nominal_references() {
         "Entry.bd",
         "pub Console.ConsoleSize Entry() { return Console.ConsoleSize { columns: 80, rows: 24 }; }",
     );
-    write_bd(&source_root, "Console/Console.bd", "pub type ConsoleSize { i32 columns, i32 rows }");
+    write_bd(&source_root, "Console/Console.bd", "pub type ConsoleSize { i32 columns; i32 rows; }");
     let plan = CompilePlan {
         source_root: source_root.clone(),
         project_root: project_root.clone(),
@@ -1049,8 +1049,8 @@ fn import_closure_follows_qualified_nominal_references() {
 fn import_closure_follows_complete_homonymous_nominal_path() {
     let root = temp_project_root("qualified_homonymous_nominal");
     let source_root = root.join("src");
-    write_bd(&source_root, "Entry.bd", "pub type Compilation { Beskid.Syntax.Nodes.NodeRef entryRoot, }");
-    write_bd(&source_root, "Beskid/Syntax/Nodes/NodeRef.bd", "pub type NodeRef { u64 generation, }");
+    write_bd(&source_root, "Entry.bd", "pub type Compilation { Beskid.Syntax.Nodes.NodeRef entryRoot; }");
+    write_bd(&source_root, "Beskid/Syntax/Nodes/NodeRef.bd", "pub type NodeRef { u64 generation; }");
     let plan = CompilePlan { source_root: source_root.clone(), project_root: root.clone(),
         manifest_path: root.join("project.bproj"), project_name: "fixture".into(),
         target: Target {name: "Entry".into(), kind: TargetKind::Lib, entry: Some("Entry.bd".into())},
@@ -1529,7 +1529,7 @@ fn v06_qualified_reference_closure_follows_transitive_calls_and_types_without_lo
         "Lib/A.bd",
         "/* Fake.Comment.Call(); */ pub Lib.B.Value Run() { return Lib.B.Value { number: 1 }; }",
     );
-    write_bd(&source_root, "Lib/B.bd", "pub type Value { i32 number }");
+    write_bd(&source_root, "Lib/B.bd", "pub type Value { i32 number; }");
     write_bd(&source_root, "Fake/String.bd", "invalid fake string authority ???");
     write_bd(&source_root, "Fake/Comment.bd", "invalid fake comment authority ???");
     let plan = CompilePlan {

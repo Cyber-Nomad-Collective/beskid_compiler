@@ -22,7 +22,7 @@ const Limit = 10;
 [Shape]
 pub type Counter<[Any] T> {
     [Slot]
-    i64 count,
+    i64 count;
 
     [Reader]
     pub i64 Read([Receiver] this) {
@@ -196,7 +196,7 @@ fn spec_scenarios_parse() {
     // language-meta--metaprogramming--metaprogramming, "Attributes on every declaration site".
     let program = parse(
         "pub attribute Receiver(ReceiverParameter) { }\n\
-         pub type Counter { i64 count, pub i64 Read([Receiver] this) { return this.count; } }\n\
+         pub type Counter { i64 count; pub i64 Read([Receiver] this) { return this.count; } }\n\
          unit Keep<[Any] T>(T value) { }",
     );
     let Node::TypeDefinition(counter) = &program.node.items[1].node else { panic!("type") };
@@ -232,7 +232,7 @@ fn member_access_type_arguments_parse_and_format() {
 
 #[test]
 fn receiver_named_like_this_prefix_is_a_parameter() {
-    let program = parse("pub type Holder { i64 count, pub i64 Set(thisValue x) { return 0; } }\npub type thisValue { }");
+    let program = parse("pub type Holder { i64 count; pub i64 Set(thisValue x) { return 0; } }\npub type thisValue { }");
     let Node::TypeDefinition(holder) = &program.node.items[0].node else { panic!("type") };
     let method = &holder.node.methods[0].node;
     assert!(method.receiver.is_none());

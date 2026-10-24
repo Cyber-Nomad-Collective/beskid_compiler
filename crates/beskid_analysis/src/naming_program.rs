@@ -605,7 +605,7 @@ mod tests {
     #[test]
     fn v06_event_members_carry_the_callable_profile() {
         let program =
-            parse_program("pub type Hub { i32 lastSize, event{16} OnResize(i32 size), }").expect("event type parses");
+            parse_program("pub type Hub { i32 lastSize; event{16} OnResize(i32 size); }").expect("event type parses");
         let mut roles = Vec::new();
         walk_program(&program.node, |role, name| roles.push((role, name.node.name.clone())));
         assert!(roles.contains(&(NamingRole::Callable, "OnResize".to_string())), "{roles:?}");

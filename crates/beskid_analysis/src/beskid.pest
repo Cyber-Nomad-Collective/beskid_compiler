@@ -374,8 +374,8 @@ InjectField = { KwInject ~ InjectQualifier? ~ BeskidType ~ Identifier }
 Field = { AttributeList? ~ Visibility? ~ (InjectField | EventField | ValueField) }
 
 TypeConformanceList = { ":" ~ PathList }
-// Fields are comma-separated; inline methods follow (commas inside method types must not split members).
-TypeFieldList = { FieldWithDocs ~ ("," ~ DocGap* ~ FieldWithDocs)* ~ ","? }
+// Every field ends with `;` (value, `inject` and event fields alike); inline methods follow.
+TypeFieldList = { (FieldWithDocs ~ ";" ~ DocGap*)+ }
 TypeBody = { TypeFieldList? ~ (AssociatedTypeBindingWithDocs | ImplMethodWithDocs)* }
 TypeDefinition = { AttributeList? ~ Visibility? ~ KwType ~ Identifier ~ GenericParameters? ~ TypeConformanceList? ~ "{" ~ TypeBody? ~ "}" }
 

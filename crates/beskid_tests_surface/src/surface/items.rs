@@ -141,7 +141,7 @@ fn rejects_legacy_method_declaration_ast() {
 
 #[test]
 fn parses_type_definition_ast() {
-    let node = parse_node_ast("pub type User { string name, i32 age }");
+    let node = parse_node_ast("pub type User { string name; i32 age; }");
 
     match &node.node {
         Node::TypeDefinition(ty) => {
@@ -159,7 +159,7 @@ fn parses_type_definition_ast() {
 
 #[test]
 fn parses_type_definition_with_conformances_ast() {
-    let node = parse_node_ast("type User : Display, Clone { string name }");
+    let node = parse_node_ast("type User : Display, Clone { string name; }");
 
     match &node.node {
         Node::TypeDefinition(ty) => {
@@ -173,7 +173,7 @@ fn parses_type_definition_with_conformances_ast() {
 
 #[test]
 fn parses_type_definition_event_field_kind_ast() {
-    let node = parse_node_ast("type User { event{4} Created(string payload), string name }");
+    let node = parse_node_ast("type User { event{4} Created(string payload); string name; }");
 
     match &node.node {
         Node::TypeDefinition(ty) => {

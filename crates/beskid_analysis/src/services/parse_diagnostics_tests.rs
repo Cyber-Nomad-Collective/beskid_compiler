@@ -245,7 +245,7 @@ fn corpus_messages_never_name_grammar_rules() {
         "unit Main() {\n    i32[] xs = {1, 2, 3};\n}\n",
         "unit Main() {\n    string s = 'hello';\n}\n",
         "unit Main() {\n    string u = $\"v={x}\";\n}\n",
-        "type Point {\n    i32 X;\n    i32 Y;\n}\n",
+        "type Point {\n    i32 X,\n    i32 Y,\n}\n",
         "type Point {\n    i32 X\n    i32 Y\n}\n",
         "struct Point {\n    i32 X,\n}\n",
         "enum E { A = 1 }\n",
@@ -350,4 +350,31 @@ fn conditional_operator_gets_a_match_or_if_help() {
     let (diagnostic, _) = diagnose(source);
     assert_shape(&diagnostic, "E0101");
     assert!(diagnostic.help.as_deref().unwrap().contains("no `? :` operator"), "{:?}", diagnostic.help);
+}
+
+#[test]
+fn comma_between_fields_becomes_a_semicolon() {
+    let source = "type Point {\n    i32 x, i32 y;\n}\n";
+    let (diagnostic, recovered) = diagnose(source);
+    assert_shape(&diagnostic, "E0115");
+    assert_eq!(diagnostic.message, "expected `;` while parsing field `x`, found `,`");
+    assert_eq!(spanned(source, &diagnostic), ",");
+    assert_eq!(apply_fix(source, &diagnostic), "type Point {\n    i32 x; i32 y;\n}\n");
+    assert!(recovered);
+}
+
+#[test]
+fn missing_semicolon_after_the_last_field() {
+    let source = "type Point {\n    i32 x;\n    i32 y\n}\n";
+    let (diagnostic, _) = diagnose(source);
+    assert_shape(&diagnostic, "E0102");
+    assert_eq!(diagnostic.help.as_deref(), Some("end the field with `;`"));
+    assert_eq!(apply_fix(source, &diagnostic), "type Point {\n    i32 x;\n    i32 y;\n}\n");
+}
+
+#[test]
+fn fields_of_every_kind_end_with_semicolons() {
+    let source = "type Widget {\n    i32 size;\n    inject Logger logger;\n    event{4} Changed(i32 size);\n    i32 Size() { return this.size; }\n}\nenum Color { Red, Green }\n";
+    let parsed = parse_program_with_source_name_and_diagnostics("t.bd", source).expect("parses");
+    assert!(parsed.diagnostics.is_empty() && !parsed.recovered, "{:?}", parsed.diagnostics);
 }

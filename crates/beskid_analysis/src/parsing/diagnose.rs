@@ -33,6 +33,7 @@ pub mod codes {
     pub const SELF_PARAMETER: &str = "E0112";
     pub const EMPTY_SOURCE: &str = "E0113";
     pub const LONG_CHARACTER_LITERAL: &str = "E0114";
+    pub const COMMA_BETWEEN_FIELDS: &str = "E0115";
 }
 
 /// A parse failure as a diagnostic, plus the repaired source when the fix makes it parse.
@@ -305,6 +306,7 @@ const ITEM_WORDS: &[&str] = &[
 fn detect_mistake(source: &str, failure: &ParseFailure, construct: Option<&Construct>) -> Option<Mistake> {
     reserved_word(source, failure)
         .or_else(|| long_character_literal(source, failure))
+        .or_else(|| comma_between_fields(failure))
         .or_else(|| host_without_parameters(failure))
         .or_else(|| increment_operator(source, failure))
         .or_else(|| typed_let(source, failure))
@@ -368,6 +370,24 @@ fn long_character_literal(source: &str, failure: &ParseFailure) -> Option<Mistak
     ));
     // A string has another type than a character; the surrounding code may need changes too.
     mistake.applicability = Applicability::MaybeIncorrect;
+    Some(mistake)
+}
+
+/// `type Point { i32 x, i32 y }`: fields end with `;`, not commas.
+fn comma_between_fields(failure: &ParseFailure) -> Option<Mistake> {
+    let found = failure.found.as_ref()?;
+    if !found.is_punct(",") || failure.context.innermost().kind != FrameKind::TypeBody || !failure.expects_token(";") {
+        return None;
+    }
+    let mut mistake = Mistake::new(
+        codes::COMMA_BETWEEN_FIELDS,
+        "every field of a type ends with `;`: `type Point { i32 x; i32 y; }`",
+    );
+    mistake.expected = Some("`;`".to_string());
+    mistake.fix = Some((
+        "Replace `,` with `;`".to_string(),
+        vec![FixEdit::new(SpanInfo { start: found.start, end: found.end, ..SpanInfo::default() }, ";")],
+    ));
     Some(mistake)
 }
 
@@ -505,7 +525,13 @@ fn missing_semicolon(source: &str, failure: &ParseFailure, construct: Option<&Co
     }
     let end = previous_token_end(source, failure.position)?;
     let what = construct.map_or("statement", |construct| {
-        if construct.description.contains("declaration") { "declaration" } else { "statement" }
+        if construct.description.starts_with("field") {
+            "field"
+        } else if construct.description.contains("declaration") {
+            "declaration"
+        } else {
+            "statement"
+        }
     });
     let mut mistake = Mistake::new(codes::MISSING_SEMICOLON, format!("end the {what} with `;`"));
     mistake.expected = Some("`;`".to_string());
@@ -569,7 +595,7 @@ fn foreign_syntax_help(found: Option<&Tok>) -> Option<String> {
             "elif" | "elsif" => "write `else if`",
             "switch" => "use `match value { pattern => result, _ => fallback }`",
             "foreach" => "write `for item in items { ... }`",
-            "struct" | "class" | "record" => "declare a type with `type Name { i32 X, i32 Y }`",
+            "struct" | "class" | "record" => "declare a type with `type Name { i32 X; i32 Y; }`",
             "interface" | "trait" | "protocol" => "declare a contract with `contract Name { ... }`",
             "import" | "using" => "import a module with `use Module.Name;`",
             "namespace" | "package" => "declare a module with `mod Name;`",
@@ -597,7 +623,7 @@ fn construct_help(description: &str) -> Option<String> {
     let help = match first {
         "host" => "a host is written `host Name(parameters) { ... }`",
         "function" => "a function is written `ReturnType Name(Type name, ...) { ... }`",
-        "type" | "field" => "fields are written `Type Name` and separated by commas: `type Point { i32 X, i32 Y }`",
+        "type" | "field" => "every field is written `Type Name;`: `type Point { i32 X; i32 Y; }`",
         "method" => "a method is written `ReturnType Name(Type name, ...) { ... }`",
         "enum" | "variant" => "variants are separated by commas: `enum Shape { Circle(f64 radius), Empty }`",
         "contract" => "a contract lists method signatures such as `i32 Size();`",

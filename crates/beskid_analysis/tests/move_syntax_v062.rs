@@ -9,9 +9,9 @@ use beskid_analysis::syntax::{Expression, Node, Program, Spanned, Statement};
 
 const CORPUS: &str = r#"[Isolated]
 pub type Archive {
-    List<u8[]> blocks,
-    Option<u8[]> pending,
-    u8[] buffer,
+    List<u8[]> blocks;
+    Option<u8[]> pending;
+    u8[] buffer;
 
     pub Archive Add(move this, move u8[] block) {
         this.blocks = this.blocks.Push(move block);
@@ -79,7 +79,7 @@ fn move_is_reserved_and_does_not_combine() {
         "unit F(mut move u8[] block) { }",
         "unit F(move mut u8[] block) { }",
         "unit F(u8[] data) { i64 n = -move data; }",
-        "pub type T { i64 x, pub unit G(mut move this) { } }",
+        "pub type T { i64 x; pub unit G(mut move this) { } }",
     ]
     .into_iter()
     .filter(|rejected| {
