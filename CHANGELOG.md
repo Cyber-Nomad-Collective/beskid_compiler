@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Language: contextual typing of numeric literals
+
+- A numeric literal without a suffix takes the type its context requires in
+  every context: declared locals, assignment targets, function and method
+  arguments (enum variant constructors and inferred generic calls included),
+  type literal fields, `return` values, array elements, match arms and the
+  other operand of a binary operator. `IpAddress::V4(127, 0, 0, 1)`,
+  `PortBytes(0, 0)` and `TcpListener.Bind(any, 8)` need no suffixes. Without
+  a context an integer literal is `i32` when it fits, else `i64`; a float
+  literal is `f64`.
+- A literal that does not fit the type its context gives it is T0905 at the
+  literal in every context, including a negative value for an unsigned type,
+  never a wrapped value or an internal error. The message names the value and
+  the type ("`300` does not fit in `u8`") and the help gives the type's range.
+- A suffix fixes the literal's type and wins over the context. A suffix that
+  differs from a numeric context, and a float literal where an integer is
+  required, are E1206 type mismatches at the literal instead of silent
+  conversions. Binary operands keep numeric promotion.
+
 ## [0.6.6] - 2026-10-16
 
 This release carries the v0.6.1-v0.6.5 program as one release (OpenSpec changes
