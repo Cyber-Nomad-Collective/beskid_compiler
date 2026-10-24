@@ -140,6 +140,11 @@ fn callable_parameters(parameters: &[Spanned<Parameter>], resolution: Option<&Re
             name: parameter.node.name.node.name.clone(),
             ty: type_annotation_for_type(&parameter.node.ty, resolution),
             modifier: parameter_modifier(&parameter.node),
+            default_value: parameter
+                .node
+                .default
+                .as_ref()
+                .and_then(|default| crate::format::Emitter::new().write(&default.node).ok()),
             doc_markdown: None,
         })
         .collect()
@@ -175,7 +180,10 @@ fn callable_signature(
         .collect::<Vec<_>>();
     let text = parameters
         .iter()
-        .map(|(parameter, modifier)| format!("{modifier}{} {}", parameter.ty.display, parameter.name))
+        .map(|(parameter, modifier)| {
+            let default = parameter.default_value.as_deref().map(|value| format!(" = {value}")).unwrap_or_default();
+            format!("{modifier}{} {}{default}", parameter.ty.display, parameter.name)
+        })
         .collect::<Vec<_>>()
         .join(", ");
     (return_type, parameters.into_iter().map(|(parameter, _)| parameter).collect(), format!("{result} {name}({text})"))
@@ -325,5 +333,21 @@ type Outer { Inner inner, }
         let field_type = signature.field_type.expect("fieldType");
         assert_eq!(field_type.display, "Inner");
         assert!(field_type.ref_item_id.is_some());
+    }
+
+    #[test]
+    fn a_signature_shows_default_values() {
+        let source = "pub unit Check(bool ok, string because = \"\", i64 times = -1) { return; }\n";
+        let program = parse_program(source).unwrap();
+        let resolution = Resolver::new().resolve_program(&program).unwrap();
+        let function = resolution
+            .items
+            .iter()
+            .find(|item| item.kind == ItemKind::Function && item.name.contains("Check"))
+            .expect("function Check");
+        let signature = build_item_signature(function, Some(&resolution), &program);
+        assert_eq!(signature.signature.as_deref(), Some("unit Check(bool ok, string because = \"\", i64 times = -1)"));
+        assert_eq!(signature.parameters[1].default_value.as_deref(), Some("\"\""));
+        assert_eq!(signature.parameters[0].default_value, None);
     }
 }

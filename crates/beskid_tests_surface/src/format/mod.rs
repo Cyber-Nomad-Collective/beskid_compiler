@@ -62,6 +62,24 @@ fn format_constant_definition_is_parse_preserving() {
 }
 
 #[test]
+fn format_parameter_default_values_round_trip() {
+    let source = "pub unit Check(bool ok, string because = \"\", i64 times = -1, [CallerLineNumber] i64 line = 0) { return; }";
+    let program = parse_program(source).expect("parse defaults");
+    let formatted = format_program(&program).expect("format defaults");
+    assert!(
+        formatted.starts_with(
+            "pub unit Check(bool ok, string because = \"\", i64 times = -1, [CallerLineNumber] i64 line = 0)\n"
+        ),
+        "{formatted}"
+    );
+    let reparsed = parse_program(&formatted).expect("reparse formatted defaults");
+    assert_eq!(format_program(&reparsed).expect("re-format"), formatted);
+    let Node::Function(function) = &reparsed.node.items[0].node else { panic!("function") };
+    let defaults = function.node.parameters.iter().map(|parameter| parameter.node.default.is_some()).collect::<Vec<_>>();
+    assert_eq!(defaults, [false, true, true, true]);
+}
+
+#[test]
 fn format_if_while_use_parentheses_and_blank_line_before_let() {
     let src = r#"pub unit f() {
 if cond { return; }

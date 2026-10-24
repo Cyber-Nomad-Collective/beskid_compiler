@@ -1,9 +1,9 @@
 //! Syntax-only multi-module project assembly from [`CompilePlan`] and materialized source roots.
 
-mod caller_info;
 mod discovery;
 mod loader;
 mod module_index;
+mod optional_arguments;
 mod roots;
 mod runtime_fixture;
 mod unit_builder;
@@ -148,7 +148,7 @@ impl ProgramAssembly {
         has_core_dependency: bool,
         generation: SyntaxGenerationId,
     ) -> Self {
-        let units = match caller_info::fill_caller_information(&units, &|path| {
+        let units = match optional_arguments::fill_optional_arguments(&units, &|path| {
             module_index.resolve_module(path).map(crate::paths::unit_path_key)
         }) {
             Some(rewritten) => Arc::new(rewritten),

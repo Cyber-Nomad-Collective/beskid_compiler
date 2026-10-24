@@ -234,9 +234,35 @@ impl SemanticIssueKind {
             Self::TypeMatchArmMismatch { expected_name, actual_name } => Some(format!(
                 "expected `{expected_name}` but got `{actual_name}` — unify the arm types or add a cast"
             )),
-            Self::TypeCallArityMismatch { expected, actual } => Some(format!(
-                "the callable expects {expected} argument(s) but got {actual}"
+            Self::TypeCallArityMismatch { required, total, actual } => Some(if required == total {
+                format!("pass exactly {total} argument(s); this call passes {actual}")
+            } else {
+                format!(
+                    "pass the {required} required argument(s) and up to {} optional one(s); this call passes {actual}",
+                    total - required
+                )
+            }),
+            Self::RequiredParameterAfterOptional { name } => Some(format!(
+                "optional parameters (`= value`) come after every required parameter; move `{name}` before them or give it a default value"
             )),
+            Self::DefaultValueNotConstant { .. } => Some(
+                "a default value is a literal (`0`, `1.5`, `true`, `'c'`, `\"text\"`), a negated number, or the name of a `const` declared in this file"
+                    .to_string(),
+            ),
+            Self::DefaultValueTypeMismatch { name, expected, .. } => {
+                Some(format!("give `{name}` a constant of type `{expected}`, or change the parameter type"))
+            }
+            Self::OptionalParameterNotAllowed { .. } => Some(
+                "only parameters of top-level functions can be optional (a default value or a caller-information attribute); pass the value at every call instead"
+                    .to_string(),
+            ),
+            Self::CallerInformationWithoutDefault { name, expected, .. } => Some(format!(
+                "write `{expected} {name} = {}`; a call that omits the argument gets the call site's value",
+                if expected == "string" { "\"\"" } else { "0" }
+            )),
+            Self::CallerInformationParameterType { attribute, expected, .. } => {
+                Some(format!("`[{attribute}]` fills a `{expected}`; declare the parameter as `{expected}`"))
+            }
             Self::TypeCallArgumentMismatch { expected_name, actual_name } => Some(format!(
                 "expected argument type `{expected_name}` but got `{actual_name}`"
             )),

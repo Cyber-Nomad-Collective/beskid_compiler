@@ -74,6 +74,24 @@ fn parses_function_with_mut_parameter_ast() {
 }
 
 #[test]
+fn parses_parameter_default_values() {
+    let node = parse_node_ast("unit Check(bool ok, string because = \"\", [CallerLineNumber] i64 line = 0) { return; }");
+    match &node.node {
+        Node::Function(function) => {
+            let parameters = &function.node.parameters;
+            assert_eq!(parameters.len(), 3);
+            assert!(parameters[0].node.default.is_none());
+            assert!(parameters[1].node.default.is_some());
+            assert_eq!(parameters[2].node.name.node.name, "line");
+            assert!(parameters[2].node.default.is_some());
+        }
+        _ => panic!("expected function definition"),
+    }
+    assert_parse(Rule::Parameter, "mut i64 count = -1");
+    assert_parse_fail(Rule::FunctionDefinition, "unit Bad(i64 count =) { return; }");
+}
+
+#[test]
 fn parses_contextual_runtime_terms_as_pointer_parameter_names() {
     let node = parse_node_ast("unit GcWriteBarrier(pointer parent, pointer event) {}");
     match &node.node {

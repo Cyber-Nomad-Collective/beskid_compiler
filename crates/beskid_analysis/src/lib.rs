@@ -31,6 +31,7 @@ pub mod mod_host;
 pub mod naming_case;
 pub(crate) mod naming_program;
 pub mod parser;
+pub mod parameter_defaults;
 pub mod parsing;
 pub mod paths;
 pub mod projects;

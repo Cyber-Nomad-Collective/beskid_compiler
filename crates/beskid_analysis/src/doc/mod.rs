@@ -25,7 +25,7 @@ pub use api_tier::{
     TIER_STANDARD, TIER_SUPPORTED, TIER_UNSTABLE, parse_tier_directive, resolve_item_tiers,
     validate_prelude_standard_tiers,
 };
-pub use callable::callable_signatures_for_span;
+pub use callable::{callable_signatures_for_span, function_signature_label};
 pub use edit::{DocCommentEdit, doc_comment_edit_for_offset};
 pub use graph_link::{
     ApiDocLinkContext, ApiDocPackageRoots, assign_declaring_packages, attribute_modules_to_members,

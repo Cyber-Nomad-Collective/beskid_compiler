@@ -277,9 +277,44 @@ pub enum SemanticIssueKind {
         expected_name: String,
         actual_name: String,
     },
+    /// E1204: a call passes fewer arguments than the callee's required parameters or more than
+    /// all its parameters. `required == total` when the callee has no optional parameters (or the
+    /// call form cannot omit them).
     TypeCallArityMismatch {
-        expected: usize,
+        required: usize,
+        total: usize,
         actual: usize,
+    },
+    /// E1251: a parameter without a default value after one with a default.
+    RequiredParameterAfterOptional {
+        name: String,
+    },
+    /// E1252: a default value that is not a compile-time constant.
+    DefaultValueNotConstant {
+        name: String,
+    },
+    /// E1253: a constant default value that does not fit the parameter type.
+    DefaultValueTypeMismatch {
+        name: String,
+        value: String,
+        expected: String,
+    },
+    /// E1254: a default value or caller-information attribute where the language allows no
+    /// optional parameter (`place` names it).
+    OptionalParameterNotAllowed {
+        place: String,
+    },
+    /// E1255: a caller-information parameter without a default value.
+    CallerInformationWithoutDefault {
+        name: String,
+        attribute: String,
+        expected: String,
+    },
+    /// E1256: a caller-information parameter of the wrong type.
+    CallerInformationParameterType {
+        name: String,
+        attribute: String,
+        expected: String,
     },
     TypeCallArgumentMismatch {
         expected_name: String,

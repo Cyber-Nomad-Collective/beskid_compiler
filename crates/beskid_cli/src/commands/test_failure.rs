@@ -187,6 +187,14 @@ mod tests {
     }
 
     #[test]
+    fn an_omitted_because_prints_no_because_line() {
+        let content = assertion("expected 1, found 2", "", "1", "2");
+        let TestRunFailure::Assertion(failure) = classify_failed_run("101", "", "", Some(&content)) else { panic!() };
+        assert_eq!(failure.because, None);
+        assert_eq!(failure.render(), "assertion failed: expected 1, found 2\n  at /app/Src/Main.bd:17:5");
+    }
+
+    #[test]
     fn fields_may_hold_the_old_separator_newlines_colons_and_multibyte_text() {
         let because = "a ~~|~~ b\n7:x\nzażółć";
         let content = assertion("h", because, "", "");

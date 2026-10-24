@@ -163,7 +163,14 @@ impl Emit for Parameter {
         }
         self.ty.emit(w, cx)?;
         cx.space(w)?;
-        self.name.emit(w, cx)
+        self.name.emit(w, cx)?;
+        if let Some(default) = &self.default {
+            cx.space(w)?;
+            cx.token(w, "=")?;
+            cx.space(w)?;
+            default.emit(w, cx)?;
+        }
+        Ok(())
     }
 }
 

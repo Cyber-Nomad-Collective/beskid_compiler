@@ -27,6 +27,7 @@
 use super::local_type_resolution::UnresolvedTypeKind;
 use super::*;
 use beskid_analysis::analysis::SemanticIssueKind;
+use beskid_analysis::parameter_defaults::required_parameter_count;
 use beskid_analysis::syntax::{FunctionDefinition, MethodDefinition};
 use beskid_analysis::syntax_query::{NodeKind, SyntaxIndex};
 
@@ -75,7 +76,10 @@ pub use members::{
 pub struct CallArityMismatch {
     /// The call expression (the diagnostic site).
     pub call: AstNodeKey,
-    pub expected: usize,
+    /// Arguments the call must pass: the parameters without a default value.
+    pub required: usize,
+    /// Arguments the call may pass: every parameter.
+    pub total: usize,
     pub actual: usize,
 }
 
@@ -149,29 +153,19 @@ fn call_arity_mismatch_for_call(db: &dyn Db, call: AstNodeKey) -> SemanticQueryR
     if parameters.iter().any(|parameter| parameter.node.bulk) {
         return Ok(None);
     }
-    let expected = parameters.len() + receiver;
+    let total = parameters.len() + receiver;
     let Some(arguments) = call_arguments(db, call)? else { return Ok(None) };
     let actual = arguments.len();
-    if actual == expected {
+    if actual == total {
         return Ok(None);
     }
-    // Caller-information parameters are filled by the compiler and never count as required.
-    let caller_information = parameters
-        .iter()
-        .filter(|parameter| {
-            parameter.node.attributes.iter().any(|attribute| {
-                matches!(
-                    attribute.node.name.node.name.as_str(),
-                    "CallerFilePath" | "CallerLineNumber" | "CallerColumnNumber"
-                )
-            })
-        })
-        .count();
-    let required = expected - caller_information;
-    // A call that already passes exactly the required arguments was not filled (an unsupported
-    // call form); the full count is the only honest expectation then.
-    let expected = if actual == required { expected } else { required };
-    Ok(Some(CallArityMismatch { call, expected, actual }))
+    // The assembly appends omitted optional arguments before indexing
+    // (`projects::assembly::optional_arguments`), so a call that reaches this check with fewer
+    // than every argument was either short of the required ones or written in a form that cannot
+    // omit optional ones; the honest expectation for the latter is every argument.
+    let required = required_parameter_count(parameters) + receiver;
+    let required = if (required..total).contains(&actual) { total } else { required };
+    Ok(Some(CallArityMismatch { call, required, total, actual }))
 }
 
 /// A direct call argument whose proven source type can never satisfy the callee's declared
@@ -567,7 +561,11 @@ pub fn check_items(db: &dyn Db, items: &[AstNodeKey]) -> Result<(), Vec<Semantic
         }
         if let Ok(Some(finding)) = call_arity_mismatch(db, item) {
             findings.push(SemanticFinding {
-                kind: SemanticIssueKind::TypeCallArityMismatch { expected: finding.expected, actual: finding.actual },
+                kind: SemanticIssueKind::TypeCallArityMismatch {
+                    required: finding.required,
+                    total: finding.total,
+                    actual: finding.actual,
+                },
                 site: finding.call,
                 related: Vec::new(),
             });
@@ -758,8 +756,7 @@ mod tests {
         let mismatch = super::call_arity_mismatch(&db, main_item)
             .expect("call_arity_mismatch query")
             .expect("Helper call is missing one argument");
-        assert_eq!(mismatch.expected, 2);
-        assert_eq!(mismatch.actual, 1);
+        assert_eq!((mismatch.required, mismatch.total, mismatch.actual), (2, 2, 1));
     }
 
     fn attribute_codes(source: &str, generation: u64) -> Vec<(String, String)> {
