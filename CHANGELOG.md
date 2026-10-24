@@ -21,12 +21,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `Core.Attributes.Export` exports, and export entries name the exact
   lowered function instead of its simple name. An entry that resolves to no
   function or to several fails the object build.
+- Corelib collections change in place: `items.Push("milk");` needs no rebinding.
+  Every former `move this` mutator of `List`, `Stack`, `Queue`, `Set`, `Map`,
+  `PriorityQueue`, `I64Map`, `StringMap` and `HashTable` is a `mut this` method
+  (or takes a `mut` table) and returns `unit`, `bool`, `Option<T>` or a
+  `Result` that is not the collection. Engine and release fixtures are migrated.
+- `move` is written only at isolate crossings: the native SDK factory generator
+  no longer emits `move` parameters, and the compiler's Beskid fixtures use
+  plain or `mut` parameters.
 
 ### Added
 
 - The checker enforces `[ScopeBorrowed]`: a scope-borrowed value that is
   returned, stored, passed to `spawn` or captured by an escaping closure is
   E1241.
+- Copy on assignment. A type marked `[CopyOnAssign]` declares `This Copy()`;
+  a read of a place of that type that stores the value under a new name (a
+  `let` value, an assignment, an argument of a parameter that is not `mut`, a
+  construction, or a return of a place the callable does not own) calls
+  `Copy`, so two names never share mutable storage. A `mut` parameter shares
+  the caller's value. Corelib `List<T>` is `[CopyOnAssign]`, which fixes two
+  live lists sharing one backing array (0.6.0).
 
 ## [0.6.6] - 2026-10-16
 
