@@ -28,6 +28,7 @@ mod calls;
 mod cleanup;
 mod clif_block;
 mod composition;
+mod compound;
 mod control_flow;
 mod destructive_read;
 mod enums;

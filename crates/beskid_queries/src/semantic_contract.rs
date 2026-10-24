@@ -227,6 +227,7 @@ use typing::{
     semantic_type_for_local_path, semantic_type_for_node,
 };
 
+pub use abi::{CompoundAssignment, compound_assignment};
 pub use abi::{
     generic_call_specialization_in_environment, generic_call_specialization_instance, generic_specialization_instance,
     specialized_builtin_type_argument, specialized_corelib_value_service_result,

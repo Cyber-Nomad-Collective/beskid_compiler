@@ -289,6 +289,13 @@ impl SemanticIssueKind {
                  produce a string from the value first"
                     .to_string(),
             ),
+            Self::TypeInvalidCompoundAssignment { operator, type_name } => Some(match operator.as_str() {
+                "%=" => format!(
+                    "`%` works on integer types only; convert `{}` to an integer type first",
+                    super::display_type(type_name)
+                ),
+                _ => format!("`{operator}` needs a numeric target (`+=` also accepts `string`)"),
+            }),
             Self::TypeInvalidUnaryOp => Some(
                 "the unary operator is not valid for this operand type".to_string()
             ),

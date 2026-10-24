@@ -84,6 +84,7 @@ impl SemanticIssueKind {
             Self::TypeUnknownCallTarget => "unknown call target".to_string(),
             Self::TypeInvalidBinaryOp => "invalid binary operation".to_string(),
             Self::TypeStringConcatOperandNotConvertible { found } => format!("`{found}` has no text form"),
+            Self::TypeInvalidCompoundAssignment { operator, .. } => format!("`{operator}` here"),
             Self::TypeInvalidUnaryOp => "invalid unary operation".to_string(),
             Self::TypeNonBoolCondition => "condition must be boolean".to_string(),
             Self::TypeUnsupportedExpression => "unsupported expression".to_string(),

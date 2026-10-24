@@ -6,6 +6,7 @@ mod specialization;
 mod statements;
 mod types;
 
+pub use statements::{CompoundAssignment, compound_assignment};
 pub use specialization::{
     generic_call_specialization_in_environment, generic_call_specialization_instance, generic_specialization_instance,
     specialized_builtin_type_argument, specialized_corelib_value_service_result,

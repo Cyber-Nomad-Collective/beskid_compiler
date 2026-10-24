@@ -58,12 +58,15 @@ pub enum CompoundAssignmentOperator {
 
 impl CompoundAssignmentOperator {
     /// The operator of `op`, or `None` for a plain `=`. Every compound assignment operator of the
-    /// grammar maps here; the parse slice adds `*=`, `/=` and `%=` to this match with the syntax.
+    /// grammar maps here; never add a wildcard arm (it would lower a new operator as `=`).
     pub fn of(op: beskid_analysis::syntax::AssignOp) -> Option<Self> {
         match op {
             beskid_analysis::syntax::AssignOp::Assign => None,
             beskid_analysis::syntax::AssignOp::AddAssign => Some(Self::Add),
             beskid_analysis::syntax::AssignOp::SubAssign => Some(Self::Sub),
+            beskid_analysis::syntax::AssignOp::MulAssign => Some(Self::Mul),
+            beskid_analysis::syntax::AssignOp::DivAssign => Some(Self::Div),
+            beskid_analysis::syntax::AssignOp::RemAssign => Some(Self::Rem),
         }
     }
 }

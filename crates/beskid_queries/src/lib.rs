@@ -106,7 +106,7 @@ pub use semantic_contract::{
     FunctionValueCall, GenericCallInstantiation,
     GenericCallSpecialization, GenericCallTemplate, GenericNominalMethodReceiver, GenericSpecializationInstance,
     GenericSubstitution, IndexedNodeKind, ItemSignature, LiteralFact, LocalSlot, ManagedReferenceKind, ManifestBuiltin,
-    CompoundAssignmentOperator, MutableLocalAssignment, NativeModCallback, NativeModCallbackOperation, NativeModContractDeclaration,
+    CompoundAssignment, CompoundAssignmentOperator, MutableLocalAssignment, NativeModCallback, compound_assignment, NativeModCallbackOperation, NativeModContractDeclaration,
     NativeModContractFamily, NativeModRequestConstructor, NativeModRequestFactory, NativeModSyntaxConstructor,
     NativeModTransportBody, NativeModTransportField, NativeModTransportNominal, NativeModTransportSignature,
     NativeModTransportType, NativeModTransportVariant, OperatorFact, PrimitiveNumericConversion, RangeForFact,

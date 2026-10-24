@@ -96,13 +96,7 @@ fn assignment_abi_type(
     key: AstNodeKey,
     assignment: &beskid_analysis::syntax::AssignExpression,
 ) -> Result<SemanticTypeId, SemanticError> {
-    if !matches!(assignment.op.node, beskid_analysis::syntax::AssignOp::Assign)
-        && mutable_local_assignment(db, key)?.and_then(|write| write.compound).is_none()
-    {
-        // Compound assignment lowers only to a mutable local (`a = a op b`); a compound write
-        // through a field or index stays unavailable.
-        return Err(SemanticError::unavailable("value_abi_type"));
-    }
+    // A compound assignment `a op= b` stores a value of the target's own type, like `a = b`.
     let storage = assignment_storage_abi_type(db, program, index, key, assignment)?;
     let value = direct_expression_key(program, index, key, assignment.value.as_ref())?;
     require_exact_value_type(db, value, storage)
@@ -159,4 +153,38 @@ fn require_exact_value_type(
     (required_value_type(db, value)? == expected)
         .then_some(expected)
         .ok_or_else(|| SemanticError::unavailable("value_abi_type"))
+}
+
+/// The operator and the target's storage type of a compound assignment `a op= b` to a local,
+/// field or element (never an event subscription, which is not arithmetic). Lowering evaluates
+/// the place once, reads it, applies the operator with the binary-expression rules and stores the
+/// result.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct CompoundAssignment {
+    pub operator: CompoundAssignmentOperator,
+    pub storage: SemanticTypeId,
+}
+
+pub fn compound_assignment(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<CompoundAssignment> {
+    with_registered_syntax(db, key, compound_assignment_tracked)
+}
+
+#[salsa::tracked(persist)]
+fn compound_assignment_tracked(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+) -> SemanticQueryResult<CompoundAssignment> {
+    if event_operation_tracked(db, syntax, key).ok().flatten().is_some() {
+        return Ok(None);
+    }
+    with_node(db, syntax, key, |program, index, node| {
+        let assignment = node.of::<beskid_analysis::syntax::AssignExpression>()?;
+        let operator = CompoundAssignmentOperator::of(assignment.op.node)?;
+        Some(
+            assignment_storage_abi_type(db, program, index, key, assignment)
+                .map(|storage| CompoundAssignment { operator, storage }),
+        )
+    })?
+    .transpose()
 }

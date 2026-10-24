@@ -517,7 +517,7 @@ fn legality_rejection_converts_into_source_excerpt_diagnostics() {
 /// mutable local lowers as `total = total op 2`, reading the local once.
 #[test]
 fn compound_assignment_to_a_mutable_local_lowers_for_every_operator() {
-    for (operator, instruction) in [("+=", "iadd"), ("-=", "isub")] {
+    for (operator, instruction) in [("+=", "iadd"), ("-=", "isub"), ("*=", "imul"), ("/=", "sdiv"), ("%=", "srem")] {
         let source = format!("i32 F() {{ mut i32 total = 1; total {operator} 2; return total; }}");
         let (input, isa, root) = item_fixture_with_root(&source);
         let function = find_function_definitions(input.database(), root)[0];
@@ -533,7 +533,7 @@ fn compound_assignment_to_a_mutable_local_lowers_for_every_operator() {
 /// A compound assignment to an immutable local is the user error E1214, never an internal error.
 #[test]
 fn compound_assignment_to_an_immutable_local_is_e1214() {
-    for operator in ["+=", "-="] {
+    for operator in ["+=", "-=", "*=", "/=", "%="] {
         let source = format!("i32 F() {{ i32 total = 1; total {operator} 2; return total; }}");
         let (input, isa, root) = item_fixture_with_root(&source);
         let function = find_function_definitions(input.database(), root)[0];
@@ -542,5 +542,68 @@ fn compound_assignment_to_an_immutable_local_is_e1214() {
         let rendered = error.to_string();
         assert!(rendered.contains("E1214"), "{rendered}");
         assert!(!rendered.contains("E210"), "{rendered}");
+    }
+}
+
+fn lower_one(source: &str, symbol: &str) -> Result<String, String> {
+    let (input, isa, root) = item_fixture_with_root(source);
+    let function = *find_function_definitions(input.database(), root).last().expect("function");
+    if let Err(findings) = beskid_queries::check_items(input.database(), &[function]) {
+        return Err(format!("{findings:?}"));
+    }
+    lower_syntax_program(&input, isa.as_ref(), &[SyntaxModuleItem { key: function, symbol: symbol.into() }])
+        .map(|artifact| artifact.functions.iter().map(|lowered| lowered.function.display().to_string()).collect())
+        .map_err(|error| error.to_string())
+}
+
+/// Every numeric width keeps its own type through a compound assignment: `u8 += 1` stays `i8`
+/// in CLIF (no silent failure on a widened operand), `u64 /= 2` divides unsigned, `f64 *= 2.0`
+/// multiplies in floating point.
+#[test]
+fn compound_assignment_keeps_unsigned_and_float_widths() {
+    let cases = [
+        ("u8 F() { mut u8 level = 1; level += 1; level *= 3; level -= 1; level /= 2; level %= 2; return level; }", ["iadd", "udiv"]),
+        ("u64 F() { mut u64 total = 10; total += 1; total /= 2; total %= 3; return total; }", ["iadd", "urem"]),
+        ("f64 F() { mut f64 x = 1.5; x += 2.0; x *= 2.0; x -= 1.0; x /= 2.0; return x; }", ["fadd", "fdiv"]),
+    ];
+    for (source, instructions) in cases {
+        let clif = lower_one(source, "F").unwrap_or_else(|error| panic!("must lower: {error}\n{source}"));
+        for instruction in instructions {
+            assert!(clif.contains(instruction), "`{instruction}` expected for {source}:\n{clif}");
+        }
+    }
+}
+
+/// `%=` on a float is the user error E1209 in analysis, never an internal error.
+#[test]
+fn float_remainder_assignment_is_a_user_error() {
+    let source = "f64 F() { mut f64 x = 1.5; x %= 2.0; return x; }";
+    let (input, _isa, root) = item_fixture_with_root(source);
+    let function = find_function_definitions(input.database(), root)[0];
+    let findings = beskid_queries::check_gate_obligations(input.database(), &[function]);
+    let finding = findings.iter().find(|finding| finding.kind.code() == "E1209").expect("E1209 for f64 %=");
+    assert_eq!(finding.kind.message(), "`%=` is not defined for `f64`");
+}
+
+/// `p.x op= v` and `xs[i] op= v` evaluate the receiver and the index once, read the place, and
+/// store the combined value back.
+#[test]
+fn compound_assignment_to_fields_and_elements_lowers() {
+    let field = "pub type Counter { i64 count; } \
+                 i64 F(Counter counter) { counter.count += 2; counter.count *= 3; return counter.count; }";
+    let clif = lower_one(field, "F").unwrap_or_else(|error| panic!("field target must lower: {error}"));
+    assert!(clif.contains("iadd") && clif.contains("imul") && clif.contains("store"), "{clif}");
+    let element = "i64 F(i64[] values) { values[0] += 5; values[1] -= 1; values[0] %= 4; return values[0]; }";
+    let clif = lower_one(element, "F").unwrap_or_else(|error| panic!("element target must lower: {error}"));
+    assert!(clif.contains("iadd") && clif.contains("isub") && clif.contains("srem"), "{clif}");
+}
+
+/// `string +=` on a local concatenates through the Corelib service.
+#[test]
+fn string_compound_addition_concatenates() {
+    let source = "string F() { mut string text = \"a\"; text += \"b\"; return text; }";
+    match lower_one(source, "F") {
+        Ok(clif) => assert!(clif.contains("call"), "{clif}"),
+        Err(error) => assert!(!error.contains("E210"), "string += must not be an internal error: {error}"),
     }
 }

@@ -230,6 +230,9 @@ impl SemanticIssueKind {
             Self::TypeStringConcatOperandNotConvertible { found } => {
                 format!("a value of type `{found}` cannot be concatenated or interpolated into a string")
             }
+            Self::TypeInvalidCompoundAssignment { operator, type_name } => {
+                format!("`{operator}` is not defined for `{}`", super::display_type(type_name))
+            }
             Self::TypeInvalidUnaryOp => "invalid unary operation".to_string(),
             Self::TypeNonBoolCondition => "non-boolean condition".to_string(),
             Self::TypeUnsupportedExpression => "unsupported expression".to_string(),

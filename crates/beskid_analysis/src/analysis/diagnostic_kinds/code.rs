@@ -87,7 +87,9 @@ impl SemanticIssueKind {
             Self::TypeCallArgumentMismatch { .. } => "E1205",
             Self::TypeEnumConstructorMismatch { .. } => "E1302",
             Self::TypeUnknownCallTarget => "E1606",
-            Self::TypeInvalidBinaryOp | Self::TypeStringConcatOperandNotConvertible { .. } => "E1209",
+            Self::TypeInvalidBinaryOp
+            | Self::TypeStringConcatOperandNotConvertible { .. }
+            | Self::TypeInvalidCompoundAssignment { .. } => "E1209",
             Self::TypeInvalidUnaryOp => "E1210",
             Self::TypeNonBoolCondition => "E1208",
             Self::TypeUnsupportedExpression => "E1202",

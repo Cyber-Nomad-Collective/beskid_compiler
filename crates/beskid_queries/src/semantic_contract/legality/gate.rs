@@ -76,6 +76,9 @@ pub enum GateObligationKind {
     UnknownEnumType,
     /// E1211: a method call whose receiver type declares neither the method nor a field.
     UnknownStructField(UnknownMember),
+    /// E1209: a compound assignment whose operator the target's type does not have
+    /// (`f64 %= 2.0`, `bool += true`).
+    InvalidCompoundAssignment { operator: Arc<str>, type_name: Arc<str> },
     /// E1606: a call through a member that is a non-callable field.
     UnknownCallTarget,
     /// E1204: an explicit type-argument list whose count differs from the callee's generics.
@@ -176,6 +179,12 @@ pub fn check_gate_obligations(db: &dyn Db, items: &[AstNodeKey]) -> Vec<Semantic
                     SemanticIssueKind::TypeInvalidEventSubscriptionTarget
                 }
                 GateObligationKind::UnsupportedExpression => SemanticIssueKind::TypeUnsupportedExpression,
+                GateObligationKind::InvalidCompoundAssignment { operator, type_name } => {
+                    SemanticIssueKind::TypeInvalidCompoundAssignment {
+                        operator: operator.to_string(),
+                        type_name: type_name.to_string(),
+                    }
+                }
                 GateObligationKind::MissingTypeAnnotation { name } => {
                     SemanticIssueKind::TypeMissingTypeAnnotation { name: name.to_string() }
                 }

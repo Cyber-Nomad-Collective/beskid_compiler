@@ -1119,13 +1119,13 @@ mod tests {
     #[test]
     fn a_copy_on_assign_type_without_a_valid_copy_hook_is_e1512_at_the_attribute() {
         let cases = [
-            ("[CopyOnAssign] pub type Bag { i64 n } unit Main() { return; }", "it declares no `Copy` method"),
+            ("[CopyOnAssign] pub type Bag { i64 n; } unit Main() { return; }", "it declares no `Copy` method"),
             (
-                "[CopyOnAssign] pub type Bag { i64 n, pub Bag Copy(i64 extra) { return Bag { n: this.n }; } } unit Main() { return; }",
+                "[CopyOnAssign] pub type Bag { i64 n; pub Bag Copy(i64 extra) { return Bag { n: this.n }; } } unit Main() { return; }",
                 "`Copy` must take no parameters",
             ),
             (
-                "[CopyOnAssign] pub type Bag { i64 n, pub i64 Copy() { return this.n; } } unit Main() { return; }",
+                "[CopyOnAssign] pub type Bag { i64 n; pub i64 Copy() { return this.n; } } unit Main() { return; }",
                 "`Copy` must return the type itself",
             ),
         ];
@@ -1146,7 +1146,7 @@ mod tests {
             let span = crate::node_span(&db, finding.site).expect("span").expect("site span");
             assert!(source[span.start..span.end].contains("CopyOnAssign"), "anchored at the attribute");
         }
-        let valid = "[CopyOnAssign] pub type Bag { i64 n, pub This Copy() { return Bag { n: this.n }; } } \
+        let valid = "[CopyOnAssign] pub type Bag { i64 n; pub This Copy() { return Bag { n: this.n }; } } \
                      unit Main() { return; }";
         let (db, root) = one_unit_assembly(valid, SyntaxGenerationId(160));
         let main = function_definitions(&db, root)[0];
@@ -1216,7 +1216,7 @@ mod tests {
 
     #[test]
     fn an_unknown_field_names_the_type_lists_its_fields_and_suggests_the_closest() {
-        let source = "pub type Rectangle { i64 width, i64 height } i64 Main(Rectangle r) { return r.heigth; }";
+        let source = "pub type Rectangle { i64 width; i64 height; } i64 Main(Rectangle r) { return r.heigth; }";
         let Some(MemberReferenceKind::UnknownStructField(member)) = member_finding(source, 140, 0) else {
             panic!("`heigth` is unknown")
         };

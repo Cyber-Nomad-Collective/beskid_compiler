@@ -323,6 +323,11 @@ pub enum SemanticIssueKind {
     TypeStringConcatOperandNotConvertible {
         found: String,
     },
+    /// E1209: a compound assignment `a op= b` whose operator `a`'s type does not have.
+    TypeInvalidCompoundAssignment {
+        operator: String,
+        type_name: String,
+    },
     TypeInvalidUnaryOp,
     TypeNonBoolCondition,
     TypeUnsupportedExpression,
