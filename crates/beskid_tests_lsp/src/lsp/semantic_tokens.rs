@@ -1,3 +1,6 @@
+use std::sync::Arc;
+
+use beskid_lsp::crash::CrashReporter;
 use beskid_lsp::server::backend::Backend;
 use tower_lsp_server::LanguageServer;
 use tower_lsp_server::LspService;
@@ -20,7 +23,7 @@ fn decoded_tokens(tokens: &[SemanticToken]) -> Vec<(u32, u32, u32, u32, u32)> {
 
 #[tokio::test]
 async fn full_returns_none_after_document_close() {
-    let (service, _socket) = LspService::new(Backend::new);
+    let (service, _socket) = LspService::new(|client| Backend::new(client, Arc::new(CrashReporter::new(None))));
     let server = service.inner();
     let doc_uri = uri("file:///semantic_tokens_closed_test.bd");
     open_sample_document(server, doc_uri.clone()).await;
@@ -44,7 +47,7 @@ async fn bsol_configuration_documents_emit_ast_backed_structural_tokens_for_ever
         &[(0, 0, 7, 5, 1), (1, 2, 4, 7, 1), (2, 2, 6, 5, 1), (3, 4, 5, 7, 1)];
 
     for extension in ["bproj", "bws", "bsol"] {
-        let (service, _socket) = LspService::new(Backend::new);
+        let (service, _socket) = LspService::new(|client| Backend::new(client, Arc::new(CrashReporter::new(None))));
         let server = service.inner();
         #[cfg(windows)]
         let doc_uri = uri(&format!("file:///C:/semantic_tokens.{extension}"));
@@ -67,7 +70,7 @@ async fn bsol_configuration_documents_emit_ast_backed_structural_tokens_for_ever
 
 #[tokio::test]
 async fn invalid_bsol_fails_closed_without_semantic_tokens() {
-    let (service, _socket) = LspService::new(Backend::new);
+    let (service, _socket) = LspService::new(|client| Backend::new(client, Arc::new(CrashReporter::new(None))));
     let server = service.inner();
     let doc_uri = uri("file:///invalid-semantic-tokens.bsol");
     open_document(server, doc_uri.clone(), "bsol", "project { name = }".into()).await;

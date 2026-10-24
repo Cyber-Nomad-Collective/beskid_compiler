@@ -64,13 +64,14 @@ fn comments(text: &str) -> Vec<&str> {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn formatting_request_keeps_every_comment_and_then_needs_no_edits() {
-    let (service, socket) = LspService::new(Backend::new);
+    let crash_dir = tempfile::tempdir().expect("crash dir");
+    let (reporter, _reports) = crate::crash::tests::test_reporter(crash_dir.path());
+    let backend_reporter = std::sync::Arc::clone(&reporter);
+    let (service, socket) = LspService::new(move |client| Backend::new(client, backend_reporter));
     tokio::spawn(async move {
         let mut socket = socket;
         while socket.next().await.is_some() {}
     });
-    let crash_dir = tempfile::tempdir().expect("crash dir");
-    let (reporter, _reports) = crate::crash::tests::test_reporter(crash_dir.path());
     let mut service = crate::TextSyncOrderedService::new(service, reporter);
     let uri = "file:///tmp/beskid-v067-fmt-request/Src/Main.bd";
 
