@@ -157,11 +157,57 @@ fn unit_function_call_has_unit_identity() {
 }
 
 #[test]
+fn unsuffixed_numeric_elements_take_the_parameter_width_not_their_default() {
+    let bytes = GenericSourceTypeIdentity::Array(Box::new(GenericSourceTypeIdentity::Abi(SemanticTypeId::U8)));
+    assert_eq!(
+        single_array_identity("pub i64 Take(u8[] bytes) { return 0; }\npub i64 Main() { return Take([1, 2]); }"),
+        Ok(bytes)
+    );
+}
+
+#[test]
 fn unsuffixed_numeric_elements_without_declared_position_fail_closed() {
-    let error = single_array_identity("pub i64 Take(u8[] bytes) { return 0; }\npub i64 Main() { return Take([1, 2]); }")
+    let error = single_array_identity("pub i64 Main() { let values = [1, 2]; return 0; }")
         .expect_err("an unsuffixed literal must not fix the element width to its default");
     assert_eq!(error.unavailable_query(), Some("source_expression_type"));
     assert!(error.to_string().contains("unsuffixed numeric array element"), "{error}");
+}
+
+fn ints(element: SemanticTypeId) -> GenericSourceTypeIdentity {
+    GenericSourceTypeIdentity::Array(Box::new(GenericSourceTypeIdentity::Abi(element)))
+}
+
+/// `FirstOr([7, 8], 0)` (beskid-lings milestone 3): `T` is inferred from the bare integers of the
+/// array literal, at the language default `i32`, instead of the call failing with an internal
+/// `source_expression_type` gap.
+#[test]
+fn generic_call_infers_t_from_an_array_literal_of_bare_integers() {
+    let source = "pub T FirstOr<T>(T[] values, T fallback) { return fallback; }\n\
+                  pub i32 Main() { return FirstOr([7, 8], 0); }";
+    let (_root, db, assembly) = fixture(source);
+    let calls = keys(&db, &assembly, NodeKind::CallExpression);
+    assert_eq!(calls.len(), 1);
+    let specialization = crate::generic_call_specialization(&db, calls[0])
+        .expect("specialization of FirstOr([7, 8], 0)")
+        .expect("FirstOr is generic");
+    assert_eq!(specialization.signature.result, SemanticTypeId::I32);
+    let arrays = keys(&db, &assembly, NodeKind::ArrayLiteralExpression);
+    assert_eq!(generic_source_expression_identity(&db, arrays[0]), Ok(ints(SemanticTypeId::I32)));
+}
+
+/// A later exact argument selects `T`; the bare array elements take that width when they fit.
+#[test]
+fn bare_integer_array_literal_takes_t_from_a_later_exact_argument() {
+    let source = "pub T FirstOr<T>(T[] values, T fallback) { return fallback; }\n\
+                  pub i64 Main() { return FirstOr([7, 8], 5_i64); }";
+    let (_root, db, assembly) = fixture(source);
+    let calls = keys(&db, &assembly, NodeKind::CallExpression);
+    let specialization = crate::generic_call_specialization(&db, calls[0])
+        .expect("specialization of FirstOr([7, 8], 5_i64)")
+        .expect("FirstOr is generic");
+    assert_eq!(specialization.signature.result, SemanticTypeId::I64);
+    let arrays = keys(&db, &assembly, NodeKind::ArrayLiteralExpression);
+    assert_eq!(generic_source_expression_identity(&db, arrays[0]), Ok(ints(SemanticTypeId::I64)));
 }
 
 #[test]

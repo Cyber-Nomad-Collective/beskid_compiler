@@ -111,6 +111,7 @@ use abi::{
     item_abi_signature_tracked, item_abi_type_from_syntax, item_signature_for_node, item_signature_tracked,
     manifest_builtin_abi_signature, signature_from_syntax,
     type_syntax_mentions_generic_parameter, unsuffixed_integer_literal, value_abi_type_tracked,
+    integer_literals_fit_abi, unsuffixed_integer_array_elements,
 };
 use bulk::{bulk_call_element_abi_type_for_call, bulk_parameter_tracked};
 use calls::{

@@ -122,6 +122,29 @@ fn parsed_program_specializes_generic_string_not_equal_as_content_comparison() {
     assert_string_content_comparison(&clif, StringComparison::NotEqual, "NotEqual<string>");
 }
 
+/// beskid-lings milestone 3: `FirstOr([7, 8], 0)` failed with an internal `source_expression_type`
+/// gap. `T` is inferred from the bare integers of the array literal (`i32`) and the call lowers
+/// through its specialization.
+#[test]
+fn parsed_program_infers_t_from_an_array_literal_of_bare_integers() {
+    let (input, isa, root) = item_fixture_with_root(
+        "T FirstOr<T>(T[] values, T fallback) { for value in values { return value; } return fallback; } i32 Main() { return FirstOr([7, 8], 0); }",
+    );
+    let items = find_function_definitions(input.database(), root);
+    let artifact = lower_syntax_program(
+        &input,
+        isa.as_ref(),
+        &[
+            SyntaxModuleItem { key: items[0], symbol: "FirstOr".into() },
+            SyntaxModuleItem { key: items[1], symbol: "Main".into() },
+        ],
+    )
+    .expect("an array literal of bare integers fixes T of a generic call");
+
+    beskid_codegen::validate_artifact(&artifact).expect("FirstOr artifact");
+    assert!(artifact.functions.iter().any(|function| function.name.starts_with("FirstOr#generic_")));
+}
+
 #[test]
 fn parsed_program_keeps_generic_nominal_pointer_equal_as_identity_comparison() {
     let (input, isa, root) = item_fixture_with_root(
