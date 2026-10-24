@@ -8,7 +8,7 @@ pub(crate) fn parse_program_for_discovery(
     source: &str,
 ) -> Result<crate::syntax::Spanned<crate::syntax::Program>, super::AssemblyError> {
     let parsed = crate::services::parse_program_with_source_name_and_diagnostics(&path.display().to_string(), source)
-        .map_err(|error| super::AssemblyError::from_parse_failure(path.to_path_buf(), error))?;
+        .map_err(|error| super::AssemblyError::from_parse_failure(path.to_path_buf(), source, error))?;
     if parsed.recovered || !parsed.diagnostics.is_empty() {
         // The first diagnostic keeps its code, span, related locations and fixes.
         return Err(match parsed.diagnostics.first() {
@@ -16,10 +16,11 @@ pub(crate) fn parse_program_for_discovery(
                 path: path.to_path_buf(),
                 report: crate::analysis::diagnostics::MietteReportError::new(first.clone()),
             },
-            None => super::AssemblyError::Parse {
-                path: path.to_path_buf(),
-                message: "the parser repaired the source".to_string(),
-            },
+            None => super::AssemblyError::from_parse_failure(
+                path.to_path_buf(),
+                source,
+                anyhow::anyhow!("the parser repaired the source"),
+            ),
         });
     }
     Ok(parsed.program)

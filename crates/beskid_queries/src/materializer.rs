@@ -57,7 +57,7 @@ fn parse_unit(
     let logical_name = path.display().to_string();
     let program =
         parse_program_with_source_name(&logical_name, source).map(expand_syntax_for_assembly).map_err(|err| {
-            beskid_analysis::projects::AssemblyError::from_parse_failure(path.clone(), err)
+            beskid_analysis::projects::AssemblyError::from_parse_failure(path.clone(), source, err)
         })?;
     Ok(SourceUnit::bind_request(path, logical_name, source.to_string(), program))
 }

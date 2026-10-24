@@ -1452,7 +1452,7 @@ fn assert_v06_materializer_recovery_policy(policy: crate::projects::AssemblyReco
     let materializer: crate::projects::UnitMaterializer = Arc::new(move |path, source, generation| {
         observed.fetch_add(1, Ordering::SeqCst);
         let program = parse_program_with_source_name(&path.display().to_string(), source)
-            .map_err(|error| AssemblyError::Parse { path: path.to_owned(), message: error.to_string() })?;
+            .map_err(|error| AssemblyError::from_parse_failure(path.to_owned(), source, error))?;
         let unit = SourceUnit::bind_request(path.to_owned(), path.display().to_string(), source.to_owned(), program);
         let index = crate::syntax_query::SyntaxIndex::from_program(&unit.program, generation);
         Ok((unit, index))
@@ -1473,7 +1473,7 @@ fn assert_v06_materializer_recovery_policy(policy: crate::projects::AssemblyReco
         assert_eq!(assembly.units.len(), 1, "repaired use cannot authorize Lib.A dependency");
         assert!(assembly.units[0].path.ends_with("Entry.bd"));
     } else {
-        assert!(matches!(result, Err(AssemblyError::Parse { .. } | AssemblyError::ParseDiagnostic { .. })));
+        assert!(matches!(result, Err(AssemblyError::ParseDiagnostic { .. })));
         assert_eq!(calls.load(Ordering::SeqCst), 0, "materializer presence cannot silently change strict policy");
     }
     fs::remove_dir_all(project_root).unwrap();
