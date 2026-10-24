@@ -1,30 +1,76 @@
 //! Declaration identity for composition. Registry keys, `inject` requests, overrides and the
 //! registration shape checks compare the declarations their paths name, never their spelling:
 //! `A.Clock` and `B.Clock` are different keys, and `Hosting.CommandLine` and `CommandLine` (through
-//! `use`) are one key when they name one declaration.
+//! `use`) are one key when they name one declaration. A generic contract key carries its type
+//! arguments: `Repo<User>` and `Repo<Order>` are different keys, `Repo<User>` twice is one.
 //!
 //! The only authority that resolves a type path (lexical scope, `use` imports, module paths) is the
 //! query layer (`beskid_queries`), which the build pipeline and the editor hand to composition as a
 //! [`CompositionTypeResolver`]. There is no name-based fallback: a pipeline without the resolver
 //! does not run composition at all.
 
-use crate::syntax::{Path, SpanInfo};
+use crate::syntax::{Path, SpanInfo, Spanned, Type};
 
 use super::model::UnitPath;
 
-/// One type, contract or enum declaration of the assembly: the unit that declares it (`None`: the
-/// unit under analysis) and the span of its name.
+/// One type, contract or enum of the assembly: the unit that declares it (`None`: the unit under
+/// analysis), the span of its name, and the type arguments applied to it (empty for a
+/// non-generic use and for the declaration itself).
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TypeIdentity {
     pub unit: UnitPath,
     pub declaration: SpanInfo,
+    pub arguments: Vec<TypeArgument>,
+}
+
+impl TypeIdentity {
+    /// The declaration itself: `Repo` for `Repo<User>`.
+    pub fn declaration_only(&self) -> Self {
+        Self { unit: self.unit.clone(), declaration: self.declaration, arguments: Vec::new() }
+    }
+}
+
+/// One type argument of an applied generic.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum TypeArgument {
+    Declared(TypeIdentity),
+    /// A primitive type, by its source spelling (`i64`, `string`).
+    Primitive(String),
+    Array(Box<TypeArgument>),
 }
 
 /// Resolves a type path to the declaration it names.
 pub trait CompositionTypeResolver {
-    /// The declaration that `path`, written at `site` (the span of the path) in `unit`, names;
-    /// `None` when it names no unique type, contract or enum.
+    /// The declaration that `path`, written at `site` (the span of the path) in `unit`, names,
+    /// with no `arguments`: the type arguments of the path only select a generic declaration of
+    /// that arity ([`path_identity`] resolves them). `None` when it names no unique type,
+    /// contract or enum.
     fn resolve_type(&self, unit: &UnitPath, site: SpanInfo, path: &Path) -> Option<TypeIdentity>;
+}
+
+/// The identity of `path` written in `unit`: its declaration with its type arguments resolved in
+/// the same unit. `None` when the declaration or any argument does not resolve.
+pub fn path_identity(types: &dyn CompositionTypeResolver, unit: &UnitPath, path: &Spanned<Path>) -> Option<TypeIdentity> {
+    let declaration = types.resolve_type(unit, path.span, &path.node)?;
+    let arguments = path
+        .node
+        .segments
+        .last()?
+        .node
+        .type_args
+        .iter()
+        .map(|argument| argument_identity(types, unit, argument))
+        .collect::<Option<Vec<_>>>()?;
+    Some(TypeIdentity { arguments, ..declaration })
+}
+
+fn argument_identity(types: &dyn CompositionTypeResolver, unit: &UnitPath, ty: &Spanned<Type>) -> Option<TypeArgument> {
+    match &ty.node {
+        Type::Primitive(primitive) => Some(TypeArgument::Primitive(format!("{:?}", primitive.node))),
+        Type::Complex(path) => path_identity(types, unit, path).map(TypeArgument::Declared),
+        Type::Array(inner) => argument_identity(types, unit, inner).map(|inner| TypeArgument::Array(Box::new(inner))),
+        Type::Associated { .. } | Type::This | Type::Function { .. } => None,
+    }
 }
 
 #[cfg(test)]
@@ -72,7 +118,7 @@ pub(crate) mod test_types {
             found
                 .entry(name.node.name.clone())
                 .or_default()
-                .push(TypeIdentity { unit: unit.clone(), declaration: name.span });
+                .push(TypeIdentity { unit: unit.clone(), declaration: name.span, arguments: Vec::new() });
         }
     }
 

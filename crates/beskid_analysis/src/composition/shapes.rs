@@ -56,8 +56,9 @@ fn collect_items(
     found: &mut HashMap<TypeIdentity, Declaration>,
     extra_conformances: &mut HashMap<TypeIdentity, Vec<Option<TypeIdentity>>>,
 ) {
-    let resolve = |path: &Spanned<Path>| types.resolve_type(unit, path.span, &path.node);
-    let identity = |name: &Spanned<Identifier>| TypeIdentity { unit: unit.clone(), declaration: name.span };
+    let resolve = |path: &Spanned<Path>| super::types::path_identity(types, unit, path);
+    let identity =
+        |name: &Spanned<Identifier>| TypeIdentity { unit: unit.clone(), declaration: name.span, arguments: Vec::new() };
     for item in items {
         match &item.node {
             Node::ContractDefinition(contract) => {
@@ -66,7 +67,9 @@ fn collect_items(
                     .items
                     .iter()
                     .filter_map(|node| match &node.node {
-                        ContractNode::Embedding(embedding) => Some(resolve(&single_path(&embedding.node.name))),
+                        ContractNode::Embedding(embedding) => {
+                            Some(resolve(&single_path(&embedding.node.name, &embedding.node.type_args)))
+                        }
                         _ => None,
                     })
                     .collect();
@@ -102,7 +105,7 @@ fn collect_items(
                 if let Type::Complex(path) = &block.node.receiver_type.node
                     && let Some(receiver) = resolve(path)
                 {
-                    extra_conformances.entry(receiver).or_default().extend(block.node.conformances.iter().map(resolve));
+                    extra_conformances.entry(receiver.declaration_only()).or_default().extend(block.node.conformances.iter().map(resolve));
                 }
             }
             Node::InlineModule(module) => collect_items(&module.node.items, unit, types, found, extra_conformances),
@@ -111,10 +114,13 @@ fn collect_items(
     }
 }
 
-/// A one-segment path naming `name` at its own span (a contract embedding is written as a name).
-fn single_path(name: &Spanned<Identifier>) -> Spanned<Path> {
+/// A one-segment path naming `name` with `type_args` at the name's span (a contract embedding is
+/// written as a name and its type arguments).
+fn single_path(name: &Spanned<Identifier>, type_args: &[Spanned<Type>]) -> Spanned<Path> {
     Spanned::new(
-        Path { segments: vec![Spanned::new(PathSegment { name: name.clone(), type_args: Vec::new() }, name.span)] },
+        Path {
+            segments: vec![Spanned::new(PathSegment { name: name.clone(), type_args: type_args.to_vec() }, name.span)],
+        },
         name.span,
     )
 }
@@ -122,7 +128,7 @@ fn single_path(name: &Spanned<Identifier>) -> Spanned<Path> {
 /// `Some(true)` when `type_id` conforms to `contract`, `Some(false)` when the declarations prove
 /// it does not, `None` when a conformance names no declaration the assembly holds.
 fn conforms(declarations: &HashMap<TypeIdentity, Declaration>, type_id: &TypeIdentity, contract: &TypeIdentity) -> Option<bool> {
-    let Some(Declaration::Type { conformances, .. }) = declarations.get(type_id) else {
+    let Some(Declaration::Type { conformances, .. }) = declarations.get(&type_id.declaration_only()) else {
         return None;
     };
     let mut pending = conformances.clone();
@@ -139,7 +145,7 @@ fn conforms(declarations: &HashMap<TypeIdentity, Declaration>, type_id: &TypeIde
         if !seen.insert(next.clone()) {
             continue;
         }
-        match declarations.get(&next) {
+        match declarations.get(&next.declaration_only()) {
             Some(Declaration::Contract { embeds, .. }) => pending.extend(embeds.iter().cloned()),
             _ => unknown = true,
         }
@@ -165,7 +171,7 @@ pub fn validate_registrations(
         let Some(implementation_id) = &registration.implementation_identity else {
             continue;
         };
-        let Some(declaration) = declarations.get(implementation_id) else {
+        let Some(declaration) = declarations.get(&implementation_id.declaration_only()) else {
             continue;
         };
         let implementation = declaration.name().to_string();
@@ -208,7 +214,7 @@ pub fn validate_registrations(
                 span: registration.implementation_span,
             }),
             Declaration::Type { .. } => match (&registration.key, &registration.key_identity) {
-                (RegistrationKey::Contract(_), Some(contract_id)) => match declarations.get(contract_id) {
+                (RegistrationKey::Contract(_), Some(contract_id)) => match declarations.get(&contract_id.declaration_only()) {
                     Some(Declaration::Contract { name, .. })
                         if conforms(&declarations, implementation_id, contract_id) == Some(false) =>
                     {

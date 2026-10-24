@@ -270,8 +270,14 @@ impl beskid_analysis::composition::CompositionTypeResolver for CompositionTypes<
         // A registry key, an `inject` request or a conformance names a type, an enum or a
         // contract. Types and enums resolve through the nominal authority, contracts through the
         // contract authority (contracts have no nominal layout); a path both name is ambiguous.
+        // The nominal authority selects a generic type or enum by the arity of the path's type
+        // arguments. The contract authority resolves the bare name; the arity is checked here.
+        // Composition resolves the type arguments themselves (`path_identity`).
+        let arity = path.segments.last()?.node.type_args.len();
+        let mut bare = path.clone();
+        bare.segments.last_mut()?.node.type_args.clear();
         let nominal = resolve_type_declaration(db, key, path);
-        let contract = super::contracts::resolve_contract(db, key, path);
+        let contract = super::contracts::resolve_contract(db, key, &bare);
         let declaration = match (nominal, contract) {
             (Some(declaration), None) | (None, Some(declaration)) => declaration,
             _ => return None,
@@ -282,12 +288,18 @@ impl beskid_analysis::composition::CompositionTypeResolver for CompositionTypes<
         let name = declared
             .of::<beskid_analysis::syntax::TypeDefinition>()
             .map(|definition| definition.name.span)
-            .or_else(|| declared.of::<beskid_analysis::syntax::ContractDefinition>().map(|contract| contract.name.span))
+            .or_else(|| {
+                declared
+                    .of::<beskid_analysis::syntax::ContractDefinition>()
+                    .filter(|contract| contract.generics.len() == arity)
+                    .map(|contract| contract.name.span)
+            })
             .or_else(|| declared.of::<beskid_analysis::syntax::EnumDefinition>().map(|definition| definition.name.span))?;
         Some(beskid_analysis::composition::TypeIdentity {
             unit: (declaration.unit != self.entry)
                 .then(|| std::sync::Arc::from(declaration.unit.path(db).as_path())),
             declaration: name,
+            arguments: Vec::new(),
         })
     }
 }
