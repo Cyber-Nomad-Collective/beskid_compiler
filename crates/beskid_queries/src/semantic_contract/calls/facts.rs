@@ -542,6 +542,41 @@ pub fn for_iterator_specialization(
     }))
 }
 
+/// The iterator fact of the `for` statement whose loop variable the single-segment path
+/// expression `key` reads, in the specialization `enclosing`. Inside a generic item the loop
+/// variable of `for value in values` (`T[] values`) has no target-neutral type; a read of it is
+/// typed by the element its statement binds in the specialization being lowered, exactly as the
+/// statement itself is (`for_iterator_specialization`). `Ok(None)` for any other expression.
+pub fn for_variable_specialization(
+    db: &dyn Db,
+    key: AstNodeKey,
+    enclosing: &GenericSpecializationInstance,
+) -> SemanticQueryResult<ForIteratorFact> {
+    let Some(syntax) = db.syntax_unit(key.unit).filter(|syntax| syntax.accepts_key(db, key)) else { return Ok(None) };
+    let program = syntax.expanded_program(db);
+    let index = syntax.syntax_index(db);
+    let node = normalized_expression_node(index, key.node);
+    let Some(path) = index.node_at(program, node).and_then(|node| node.of::<beskid_analysis::syntax::PathExpression>())
+    else {
+        return Ok(None);
+    };
+    let [segment] = path.path.node.segments.as_slice() else { return Ok(None) };
+    if !segment.node.type_args.is_empty() {
+        return Ok(None);
+    }
+    let Some(declaration) = resolve_lexical_declaration(program, index, node, segment.node.name.node.name.as_str())
+    else {
+        return Ok(None);
+    };
+    let Some(statement) = parent_node(index, declaration)
+        .filter(|parent| index.kind(*parent) == Some(beskid_analysis::syntax_query::NodeKind::ForStatement))
+    else {
+        return Ok(None);
+    };
+    Ok(for_iterator_specialization(db, AstNodeKey { node: statement, ..key }, enclosing)?
+        .filter(|fact| fact.declaration.node == declaration))
+}
+
 #[salsa::tracked(persist)]
 pub(in crate::semantic_contract) fn try_expression_fact_tracked(
     db: &dyn Db,

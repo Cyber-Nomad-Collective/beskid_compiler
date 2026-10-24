@@ -122,6 +122,50 @@ fn parsed_program_specializes_generic_string_not_equal_as_content_comparison() {
     assert_string_content_comparison(&clif, StringComparison::NotEqual, "NotEqual<string>");
 }
 
+/// beskid-lings milestone 3: `for value in values { if value == target ... }` inside a generic
+/// function never matched with `T = string`, because the loop variable had no type in the
+/// specialization and `==` compared the two string pointers. The read of a `for` variable is
+/// typed by the element its statement binds in the specialization being lowered.
+#[test]
+fn parsed_program_compares_a_generic_for_variable_by_string_content() {
+    let (input, isa, root) = item_fixture_with_root(
+        "i64 CountEqual<T>(T[] values, T target) { mut i64 count = 0_i64; for value in values { if value == target { count = count + 1_i64; } } return count; } i64 Main() { return CountEqual<string>([\"a\", \"b\", \"a\"], \"a\"); }",
+    );
+    let items = find_function_definitions(input.database(), root);
+    let artifact = lower_syntax_program(
+        &input,
+        isa.as_ref(),
+        &[
+            SyntaxModuleItem { key: items[0], symbol: "CountEqual".into() },
+            SyntaxModuleItem { key: items[1], symbol: "Main".into() },
+        ],
+    )
+    .expect("generic string equality on a for variable lowers through its exact specialization");
+
+    let count_equal = artifact
+        .functions
+        .iter()
+        .find(|function| function.name.starts_with("CountEqual#generic_"))
+        .expect("specialized CountEqual<string> function");
+    let clif = count_equal.function.display().to_string();
+    // `assert_string_content_comparison` reads the first `iconst.i64 0`, which here is the
+    // counter's initial value, so the str_eq result test is matched directly.
+    let service_ref = clif
+        .lines()
+        .find(|line| line.contains(" = %str_eq "))
+        .and_then(|line| line.split_whitespace().next())
+        .unwrap_or_else(|| panic!("CountEqual<string> must import str_eq:\n{clif}"));
+    let result = clif
+        .lines()
+        .find(|line| line.contains(&format!("= call {service_ref}(")))
+        .and_then(|line| line.split_whitespace().next())
+        .unwrap_or_else(|| panic!("CountEqual<string> must call str_eq for `value == target`:\n{clif}"));
+    assert!(
+        clif.lines().any(|line| line.contains(&format!("icmp ne {result}, "))),
+        "CountEqual<string> must branch on the str_eq result:\n{clif}"
+    );
+}
+
 /// beskid-lings milestone 3: `FirstOr([7, 8], 0)` failed with an internal `source_expression_type`
 /// gap. `T` is inferred from the bare integers of the array literal (`i32`) and the call lowers
 /// through its specialization.

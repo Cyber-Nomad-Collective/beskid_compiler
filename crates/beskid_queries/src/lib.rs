@@ -117,7 +117,7 @@ pub use semantic_contract::{
     TypedArrayAllocation, TypedProgram, abi_type, aggregate_field_access, aggregate_field_access_specialization,
     aggregate_layout, aggregate_literal_declaration, aggregate_literal_field_values, aggregate_literal_layout,
     aggregate_literal_specialization, array_index_element_abi_type, array_index_element_managed_reference_specialization,
-    array_index_element_specialization, for_iterator_protocol, for_iterator_specialization,
+    array_index_element_specialization, for_iterator_protocol, for_iterator_specialization, for_variable_specialization,
     block_statement_nodes, bulk_call_element_abi_type, bulk_parameter, call_abi_signature,
     AffineBinding, AffineFinding, AffineFindingKind, AffineOwnership, CanonicalEmpty, ExchangeCall,
     MoveExpressionForm, affine_ownership, exchange_call, move_expression_form, CanonicalEmptyValue,
