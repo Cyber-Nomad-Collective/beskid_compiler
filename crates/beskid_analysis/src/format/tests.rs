@@ -355,7 +355,10 @@ fn token_check_rejects_code_changes() {
     let after = code_tokens("a - b", &[], &[]);
     assert!(first_difference(&before, &after).is_some());
     let renamed = code_tokens("if (bad_name) { F(x,); }", &[], &[]);
-    let original = code_tokens("if BadName { F(x) }", &[], &[]);
     assert_eq!(first_difference(&renamed, &code_tokens("if (BadName) { F(x); }", &[], &[])), None);
-    assert!(first_difference(&renamed, &original).is_some(), "a dropped `;` is a code change");
+    let more_arguments = code_tokens("if (bad_name) { F(x, y); }", &[], &[]);
+    assert!(first_difference(&renamed, &more_arguments).is_some(), "an added argument is a code change");
+    let lowered = code_tokens("\"a \" + b", &[], &[]);
+    let written = code_tokens("\"a ${b}\"", &[], &[]);
+    assert!(first_difference(&written, &lowered).is_some(), "lowered interpolation is a code change");
 }
