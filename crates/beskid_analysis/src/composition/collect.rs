@@ -84,7 +84,7 @@ pub struct UnitContext<'a> {
 
 impl UnitContext<'_> {
     fn resolve(&self, path: &Spanned<crate::syntax::Path>) -> Option<TypeIdentity> {
-        self.types.resolve_type(&self.unit, path.span, &path.node)
+        super::types::path_identity(self.types, &self.unit, path)
     }
 }
 
@@ -112,7 +112,8 @@ fn collect_inject_fields(items: &[Spanned<Node>], context: &UnitContext<'_>, col
                     })
                     .collect::<Vec<_>>();
                 if !injects.is_empty() {
-                    let declaration = TypeIdentity { unit: context.unit.clone(), declaration: def.node.name.span };
+                    let declaration =
+                        TypeIdentity { unit: context.unit.clone(), declaration: def.node.name.span, arguments: Vec::new() };
                     collected.type_inject_fields.insert(declaration, injects);
                 }
             }
@@ -507,7 +508,7 @@ pub fn dependency_requests(
         let Some(implementation) = &registration.implementation_identity else {
             continue;
         };
-        if let Some(fields) = type_inject_fields.get(implementation) {
+        if let Some(fields) = type_inject_fields.get(&implementation.declaration_only()) {
             for field in fields {
                 requests.push(InjectDependency {
                     field_unit: field.unit.clone(),

@@ -170,3 +170,29 @@ i32 Main() { launch AppHost(); return 0; }
     );
     assert!(codes.iter().any(|code| code == "E1704"), "expected E1704 for the unregistered contract, got {codes:?}");
 }
+
+const GENERIC_CONTRACT_KEYS: &str = r#"
+contract Repo<T> { i64 Count(); }
+type User { }
+type Order { }
+type SqlRepo : Repo<User> { pub i64 Count() { return 0; } }
+type Service { inject Repo<REQUESTED> repo; }
+host AppHost() { registry { single SqlRepo for Repo<User>; single Service; } }
+i32 Main() { launch AppHost(); return 0; }
+"#;
+
+#[test]
+fn a_generic_contract_key_matches_the_inject_with_the_same_type_arguments() {
+    let codes =
+        app_diagnostic_codes("composition_generic_contract_key", &GENERIC_CONTRACT_KEYS.replace("REQUESTED", "User"));
+    assert!(codes.iter().all(|code| !code.starts_with('E')), "expected no errors, got {codes:?}");
+}
+
+#[test]
+fn a_generic_contract_key_does_not_match_other_type_arguments() {
+    let codes = app_diagnostic_codes(
+        "composition_generic_contract_other_arguments",
+        &GENERIC_CONTRACT_KEYS.replace("REQUESTED", "Order"),
+    );
+    assert!(codes.iter().any(|code| code == "E1704"), "`Repo<Order>` is not registered, got {codes:?}");
+}

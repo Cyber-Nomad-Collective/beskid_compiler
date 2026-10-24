@@ -534,7 +534,7 @@ i32 Main() {{ launch AppHost(); return 0; }}
                             if let Node::TypeDefinition(definition) = &inner.node {
                                 declared.insert(
                                     format!("{}.{}", module.node.name.node.name, definition.node.name.node.name),
-                                    crate::composition::TypeIdentity { unit: None, declaration: definition.node.name.span },
+                                    crate::composition::TypeIdentity { unit: None, declaration: definition.node.name.span, arguments: Vec::new() },
                                 );
                             }
                         }
@@ -542,7 +542,7 @@ i32 Main() {{ launch AppHost(); return 0; }}
                     Node::TypeDefinition(definition) => {
                         declared.insert(
                             definition.node.name.node.name.clone(),
-                            crate::composition::TypeIdentity { unit: None, declaration: definition.node.name.span },
+                            crate::composition::TypeIdentity { unit: None, declaration: definition.node.name.span, arguments: Vec::new() },
                         );
                     }
                     _ => {}
@@ -559,6 +559,33 @@ i32 Main() {{ launch AppHost(); return 0; }}
                 [crate::composition::CompositionIssue::UnresolvedInject { requested_type, .. }] if requested_type == "B.Clock"
             ),
             "`B.Clock` has the same simple name but is another declaration: {other:?}"
+        );
+    }
+    #[test]
+    fn generic_contract_keys_compare_type_arguments() {
+        let issues = |requested: &str| {
+            let program = crate::composition::lower_host_hooks(
+                parse_program(&format!(
+                    r#"
+contract Repo<T> {{ i64 Count(); }}
+type User {{ }}
+type Order {{ }}
+type SqlRepo : Repo<User> {{ pub i64 Count() {{ return 0; }} }}
+type Service {{ inject {requested} repo }}
+host AppHost() {{ registry {{ single SqlRepo for Repo<User>; single Service; }} }}
+i32 Main() {{ launch AppHost(); return 0; }}
+"#
+                ))
+                .expect("parse"),
+            );
+            let types = crate::composition::types::test_types::DeclaredTypes::new(&program, &[]);
+            resolve_composition(CompositionInput { program: &program, is_mod_project: false, types: &types }).issues
+        };
+        assert!(issues("Repo<User>").is_empty(), "same declaration and type arguments");
+        let other = issues("Repo<Order>");
+        assert!(
+            matches!(other.as_slice(), [crate::composition::CompositionIssue::UnresolvedInject { .. }]),
+            "other type arguments are another key: {other:?}"
         );
     }
 }
