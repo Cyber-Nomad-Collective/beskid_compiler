@@ -205,6 +205,9 @@ fn lowering_reason(kind: &LoweringErrorKind) -> String {
         LoweringErrorKind::InvalidArrayFor => "invalid array `for` loop".to_owned(),
         LoweringErrorKind::InvalidIteratorFor => "invalid iterator `for` loop".to_owned(),
         LoweringErrorKind::InvalidClifBlock(detail) => format!("invalid clif block ({detail})"),
+        LoweringErrorKind::ValueCopyInAllocationFreeBody => {
+            "a copy-on-assign value is copied in a body that may not allocate".to_owned()
+        }
     }
 }
 

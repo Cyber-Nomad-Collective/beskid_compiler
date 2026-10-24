@@ -478,7 +478,7 @@ fn rebind_provisional_integers(
         return Ok(None);
     }
     let mut rebound = Vec::new();
-    for (generic, literals) in provisional {
+    for generic in provisional.keys() {
         match abi.get(generic).copied() {
             None => {
                 if let Some(previous) = substitutions.get(generic) {
