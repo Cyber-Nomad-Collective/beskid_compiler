@@ -2,6 +2,32 @@ use super::SemanticIssueKind;
 
 impl SemanticIssueKind {
     pub fn message(&self) -> String {
+        let text = self.message_text();
+        if self.names_module_path() { text.replace("::", ".") } else { text }
+    }
+
+    /// Whether this kind's text names module paths, which Beskid writes with `.` (`Core.Text`);
+    /// a resolver that still joins segments with `::` is rendered the same way.
+    pub(super) fn names_module_path(&self) -> bool {
+        matches!(
+            self,
+            Self::UnknownImportPath { .. }
+                | Self::UnusedImport { .. }
+                | Self::VisibilityModuleNotFound { .. }
+                | Self::FileScopedModuleNotFirstItem { .. }
+                | Self::DuplicateFileScopedModule { .. }
+                | Self::ResolveUnknownModulePath { .. }
+                | Self::ResolveUnknownValueInModule { .. }
+                | Self::ResolveUnknownTypeInModule { .. }
+                | Self::ResolvePrivateItemInModule { .. }
+                | Self::ResolveAmbiguousModulePath { .. }
+                | Self::ResolveAmbiguousItemInModule { .. }
+                | Self::MissingImport { .. }
+                | Self::MissingImportAmbiguous { .. }
+        )
+    }
+
+    fn message_text(&self) -> String {
         match self {
             Self::DuplicateDefinitionName { name, .. } => {
                 format!("duplicate definition name `{name}`")

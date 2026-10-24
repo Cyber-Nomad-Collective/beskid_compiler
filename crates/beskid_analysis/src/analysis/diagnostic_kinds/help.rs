@@ -2,6 +2,11 @@ use super::SemanticIssueKind;
 
 impl SemanticIssueKind {
     pub fn help(&self) -> Option<String> {
+        let text = self.help_text();
+        if self.names_module_path() { text.map(|text| text.replace("::", ".")) } else { text }
+    }
+
+    fn help_text(&self) -> Option<String> {
         match self {
             // ── Definition / duplicate-name diagnostics ──
             Self::DuplicateDefinitionName { previous, .. }

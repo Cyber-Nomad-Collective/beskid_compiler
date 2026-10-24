@@ -444,7 +444,7 @@ impl Resolver {
         }
         if self.module_graph.module_id(&module_path).is_none() {
             self.errors
-                .push(ResolveError::UnknownModulePath { path: module_path.join("::"), span: def.node.path.span });
+                .push(ResolveError::UnknownModulePath { path: module_path.join("."), span: def.node.path.span });
             return;
         }
         self.module_imports.insert(alias.clone(), module_path.clone());

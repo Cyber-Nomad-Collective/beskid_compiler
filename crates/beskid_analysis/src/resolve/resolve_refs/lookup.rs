@@ -93,7 +93,7 @@ impl Resolver {
             return ModulePathLookup::ModuleMissing;
         };
 
-        let module_path_string = module_path.join("::");
+        let module_path_string = module_path.join(".");
         if let Some(item) = module.scope.get(name).copied() {
             if !module_path.is_empty()
                 && !self.module_encloses_current(module_id)

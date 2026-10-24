@@ -112,7 +112,7 @@ impl Resolver {
                     self.tables.insert_value(path.span, ResolvedValue::Item(item));
                 } else {
                     self.errors.push(ResolveError::UnknownModulePath {
-                        path: segments[..segments.len() - 1].join("::"),
+                        path: segments[..segments.len() - 1].join("."),
                         span: path.span,
                     });
                 }
@@ -176,7 +176,7 @@ impl Resolver {
             }
             ModulePathLookup::ModuleMissing => {
                 self.errors.push(ResolveError::UnknownModulePath {
-                    path: segments[..segments.len() - 1].join("::"),
+                    path: segments[..segments.len() - 1].join("."),
                     span: path.span,
                 });
             }
@@ -207,7 +207,7 @@ impl Resolver {
                 ModulePathLookup::Found(homonymous) if is_type_item(homonymous) => ModulePathLookup::Found(homonymous),
                 _ => {
                     let (module_path, name) = lookup.split_at(lookup.len() - 1);
-                    ModulePathLookup::NameMissing { module_path: module_path.join("::"), name: name[0].clone() }
+                    ModulePathLookup::NameMissing { module_path: module_path.join("."), name: name[0].clone() }
                 }
             },
             other => other,

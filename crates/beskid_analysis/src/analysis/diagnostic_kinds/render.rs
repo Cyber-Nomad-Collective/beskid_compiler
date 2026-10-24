@@ -276,6 +276,15 @@ mod tests {
     }
 
     #[test]
+    fn module_paths_render_with_dots() {
+        let kind = SemanticIssueKind::ResolveUnknownModulePath { path: "Core::Text".into() };
+        assert_eq!(kind.message(), "unknown module path `Core.Text`");
+        assert!(!kind.help().unwrap_or_default().contains("::"));
+        let value = SemanticIssueKind::ResolveUnknownValueInModule { module_path: "Core::Text".into(), name: "Trim".into() };
+        assert_eq!(value.message(), "unknown value `Trim` in module `Core.Text`");
+    }
+
+    #[test]
     fn import_and_module_declaration_help_wording() {
         let item = SemanticIssueKind::UnknownImportPath { path: "Core.Results.Result".into(), module: Some("Core.Results".into()) };
         assert_eq!(
