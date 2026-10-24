@@ -392,6 +392,38 @@ fn v067_failed_assertion_is_a_test_failure_with_values_and_call_site() {
     }
     assert_eq!(report.matches("assertion failed").count(), 1, "the failure is printed once:\n{report}");
 
+    // Equal, True and False print the because line, the values when known, and the call site.
+    std::fs::write(
+        project.join("Src/Kinds.bd"),
+        "use Testing.Assert;\n\ntest EqualFails {\n    Assert.Equal<i64>(41, 42, \"Answer() should return 42\");\n}\n\ntest TrueFails {\n    Assert.True(false, \"must hold\");\n}\n\ntest FalseFails {\n    Assert.False(true, \"must not hold\");\n}\n",
+    )
+    .unwrap();
+    std::fs::write(&manifest, "Failing { name = \"Failing\" version = \"0.1.0\" }\ntarget \"App\" { kind = \"App\" entry = \"Main.bd\" }\ntarget \"Fails\" { kind = \"Test\" entry = \"Fails.bd\" }\ntarget \"Kinds\" { kind = \"Test\" entry = \"Kinds.bd\" }\n").unwrap();
+    let kinds = run(cli, &home, &["test", "--project", manifest.to_str().unwrap(), "--target", "Kinds", "--plain"]);
+    let output = stderr(&kinds);
+    let lines = output.lines().map(str::trim_end).collect::<Vec<_>>();
+    for (headline, rest, call_line) in [
+        ("assertion failed: the values are not equal", vec!["  Answer() should return 42"], 4),
+        (
+            "assertion failed: expected true, found false",
+            vec!["  must hold", "  expected: true", "  actual:   false"],
+            8,
+        ),
+        (
+            "assertion failed: expected false, found true",
+            vec!["  must not hold", "  expected: false", "  actual:   true"],
+            12,
+        ),
+    ] {
+        let at = lines.iter().position(|line| *line == headline).unwrap_or_else(|| panic!("`{headline}` in:\n{output}"));
+        assert_eq!(&lines[at + 1..at + 1 + rest.len()], rest.as_slice(), "lines after `{headline}`:\n{output}");
+        let location = lines[at + 1 + rest.len()];
+        assert!(
+            location.starts_with("  at ") && location.ends_with(&format!("Kinds.bd:{call_line}:5")),
+            "the exact call site follows `{headline}`: {location}\n{output}"
+        );
+    }
+
     let json = run(cli, &home, &["test", "--project", manifest.to_str().unwrap(), "--target", "Fails", "--json"]);
     let record: serde_json::Value = stdout(&json)
         .lines()

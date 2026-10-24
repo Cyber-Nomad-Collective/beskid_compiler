@@ -156,6 +156,22 @@ fn call_arity_mismatch_for_call(db: &dyn Db, call: AstNodeKey) -> SemanticQueryR
     if actual == expected {
         return Ok(None);
     }
+    // Caller-information parameters are filled by the compiler and never count as required.
+    let caller_information = parameters
+        .iter()
+        .filter(|parameter| {
+            parameter.node.attributes.iter().any(|attribute| {
+                matches!(
+                    attribute.node.name.node.name.as_str(),
+                    "CallerFilePath" | "CallerLineNumber" | "CallerColumnNumber"
+                )
+            })
+        })
+        .count();
+    let required = expected - caller_information;
+    // A call that already passes exactly the required arguments was not filled (an unsupported
+    // call form); the full count is the only honest expectation then.
+    let expected = if actual == required { expected } else { required };
     Ok(Some(CallArityMismatch { call, expected, actual }))
 }
 

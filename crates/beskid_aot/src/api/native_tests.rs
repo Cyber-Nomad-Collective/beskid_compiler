@@ -98,10 +98,18 @@ pub fn emit_native_test_object(
 }
 
 impl NativeTestObject {
-    pub fn execute_linked_entry(&self, executable: &Path, directory: &Path) -> AotResult<std::process::Output> {
-        self.control
-            .run_command(&mut std::process::Command::new(executable), directory, "execute test")
-            .map_err(Into::into)
+    /// Run a linked test with `environment` added to the child's variables.
+    pub fn execute_linked_entry(
+        &self,
+        executable: &Path,
+        directory: &Path,
+        environment: &[(&str, &Path)],
+    ) -> AotResult<std::process::Output> {
+        let mut command = std::process::Command::new(executable);
+        for (name, value) in environment {
+            command.env(name, value);
+        }
+        self.control.run_command(&mut command, directory, "execute test").map_err(Into::into)
     }
     pub fn link_entry(&self, name: &str, directory: &Path) -> AotResult<PathBuf> {
         let symbol = self.entries.get(name).ok_or_else(|| AotError::MissingEntrypoint { symbol: name.into() })?;

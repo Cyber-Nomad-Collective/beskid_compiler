@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Testing
 
 - `beskid test` reports a failed assertion as `assertion failed: expected 3, found 4` with the because text and the `Assert` call site, once, under the test name. A runtime trap is reported as `test crashed: <reason>`. `--json` carries `failure` (kind, expected, actual, location) per failed test.
+- A failed assertion is written to a length-prefixed failure file named by `BESKID_TEST_FAILURE_FILE`; the runner no longer parses output streams. Parameters marked `[CallerFilePath]`, `[CallerLineNumber]` or `[CallerColumnNumber]` are filled by the compiler and never count as required arguments in arity diagnostics.
 - Test names use PascalCase; W1637 now reports a name that is not PascalCase. Corelib and fixture tests are renamed.
 
 ### Diagnostics
