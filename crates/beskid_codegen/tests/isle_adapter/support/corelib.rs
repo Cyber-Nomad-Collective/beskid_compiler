@@ -262,7 +262,7 @@ pub(in super::super) fn canonical_foundation_assert_fixture()
         source: source.source,
         program,
     }];
-    include_imported_corelib_modules(&mut units, &mut roots);
+    include_imported_corelib_modules_to_fixpoint(&mut units, &mut roots);
     let assembly = Arc::new(ProgramAssembly::new(
         roots,
         Arc::new(units),
@@ -434,6 +434,20 @@ pub(in super::super) fn include_imported_corelib_modules(
         assert_eq!(module_of(&unit, roots).as_ref(), Some(&module), "imported module resolves to its own path");
         present.push(module);
         units.push(unit);
+    }
+}
+
+/// Follow the imports of `units` to a fixpoint, as `canonical_corelib_project_fixture` does.
+pub(in super::super) fn include_imported_corelib_modules_to_fixpoint(
+    units: &mut Vec<SourceUnit>,
+    roots: &mut EffectiveCompilationRoots,
+) {
+    loop {
+        let before = units.len();
+        include_imported_corelib_modules(units, roots);
+        if units.len() == before {
+            break;
+        }
     }
 }
 
