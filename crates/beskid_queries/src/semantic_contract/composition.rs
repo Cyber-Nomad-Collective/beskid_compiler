@@ -259,8 +259,16 @@ impl beskid_analysis::composition::CompositionTypeResolver for CompositionTypes<
         (index.generation() == self.generation).then_some(())?;
         // Any node at the path's own span gives the lexical position the path is resolved from.
         let node = index.metadata().iter().find(|node| node.span == Some(site))?.id;
-        let declaration =
-            resolve_type_declaration(db, AstNodeKey { unit: unit_id, generation: self.generation, node }, path)?;
+        let key = AstNodeKey { unit: unit_id, generation: self.generation, node };
+        // A registry key, an `inject` request or a conformance names a type, an enum or a
+        // contract. Types and enums resolve through the nominal authority, contracts through the
+        // contract authority (contracts have no nominal layout); a path both name is ambiguous.
+        let nominal = resolve_type_declaration(db, key, path);
+        let contract = super::contracts::resolve_contract(db, key, path);
+        let declaration = match (nominal, contract) {
+            (Some(declaration), None) | (None, Some(declaration)) => declaration,
+            _ => return None,
+        };
         let declaring = db.syntax_unit(declaration.unit)?;
         let program = declaring.expanded_program(db);
         let declared = declaring.syntax_index(db).node_at(program, declaration.node)?;

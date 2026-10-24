@@ -102,3 +102,71 @@ i32 marker() {
 
     let _ = fs::remove_dir_all(root);
 }
+
+/// Analyze one App project whose `Main.bd` is `source` and return its diagnostic codes. The
+/// pipeline hands composition the query layer's type authority (`CompositionTypes`), so keys and
+/// inject requests resolve as `beskid check` resolves them.
+fn app_diagnostic_codes(case: &str, source: &str) -> Vec<String> {
+    let root = temp_case_dir(case);
+    let src_dir = root.join("Src");
+    fs::create_dir_all(&src_dir).expect("create source root");
+    write_manifest(
+        &root,
+        r#"
+project {
+  name = "ContractKeyedApp"
+  version = "0.1.0"
+}
+
+target "app" {
+  kind = App
+  entry = "Main.bd"
+}
+"#,
+    );
+    let entry = src_dir.join("Main.bd");
+    fs::write(&entry, source).expect("write source");
+    let mut codes = Vec::new();
+    with_cwd_at_workspace_root(&root, || {
+        let diagnostics = analyze_file_with_mods(&entry).expect("analyze project source");
+        codes = diagnostics.into_iter().filter_map(|diagnostic| diagnostic.code).collect();
+    });
+    let _ = fs::remove_dir_all(root);
+    codes
+}
+
+#[test]
+fn contract_keyed_registration_satisfies_inject_of_the_contract() {
+    let codes = app_diagnostic_codes(
+        "composition_contract_keyed_inject",
+        r#"
+contract Clock { i64 Now(); }
+type SystemClock : Clock { pub i64 Now() { return 1; } }
+type Reception { pub i32 Greet() { return 1; } }
+type User { inject Clock clock; }
+host AppHost()
+{
+    registry { single SystemClock for Clock; single User; single Reception; }
+    startup(Reception reception, Clock clock) { reception.Greet(); clock.Now(); }
+}
+i32 Main() { launch AppHost(); return 0; }
+"#,
+    );
+    assert!(codes.iter().all(|code| !code.starts_with('E')), "expected no errors, got {codes:?}");
+}
+
+#[test]
+fn inject_of_an_unregistered_contract_has_no_provider() {
+    let codes = app_diagnostic_codes(
+        "composition_contract_unregistered_inject",
+        r#"
+contract Clock { i64 Now(); }
+contract Calendar { i64 Today(); }
+type SystemClock : Clock { pub i64 Now() { return 1; } }
+type User { inject Calendar calendar; }
+host AppHost() { registry { single SystemClock for Clock; single User; } }
+i32 Main() { launch AppHost(); return 0; }
+"#,
+    );
+    assert!(codes.iter().any(|code| code == "E1704"), "expected E1704 for the unregistered contract, got {codes:?}");
+}

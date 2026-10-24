@@ -250,11 +250,13 @@ fn record_type(record: &Record, span: SpanInfo) -> Spanned<Node> {
     Spanned::new(Node::TypeDefinition(Spanned::new(definition, span)), span)
 }
 
-/// Whether `body` names `name` as a single-segment path anywhere (a superset of its reads).
+/// Whether `body` names `name` as the first segment of a path anywhere (a superset of its
+/// reads). A member call on a parameter parses as one path (`reception.Greet()` is the call of
+/// `reception.Greet`), so the root segment, not only a single-segment path, is a read.
 fn mentions(body: &Spanned<Block>, name: &str) -> bool {
-    crate::syntax_query::Query::from(&body.node).of::<PathExpression>().any(|path| {
-        matches!(path.path.node.segments.as_slice(), [segment] if segment.node.name.node.name == name)
-    })
+    crate::syntax_query::Query::from(&body.node)
+        .of::<PathExpression>()
+        .any(|path| path.path.node.segments.first().is_some_and(|segment| segment.node.name.node.name == name))
 }
 
 /// `T name = <object>.name;` for each of `parameters` that `body` names.
@@ -664,6 +666,31 @@ i32 Main()
         assert!(dispose.body.node.statements.is_empty(), "nothing named, nothing read");
 
         assert_eq!(lower_host_hooks(lowered.clone()), lowered, "lowering with records is idempotent");
+    }
+
+    #[test]
+    fn a_service_the_body_calls_a_method_on_is_read_from_the_argument_object() {
+        let lowered = lower_host_hooks(
+            parse_program(
+                r#"
+type Reception { pub i32 Greet() { return 1; } }
+host AppHost()
+{
+    registry { single Reception; }
+    startup(Reception reception) { reception.Greet(); }
+}
+i32 Main() { launch AppHost(); return 0; }
+"#,
+            )
+            .expect("parse"),
+        );
+        let startup = function(&lowered, &format!("{HOOK_ITEM_PREFIX}_AppHost_startup_"));
+        assert_eq!(startup.parameters.len(), 1);
+        assert_eq!(startup.parameters[0].node.name.node.name, SERVICES_PARAMETER);
+        // `reception.Greet()` is the call of the path `reception.Greet`; its root is a read.
+        let Statement::Let(read) = &startup.body.node.statements[0].node else { panic!("service read") };
+        assert_eq!(read.node.name.node.name, "reception");
+        assert_eq!(startup.body.node.statements.len(), 2);
     }
 
     #[test]
