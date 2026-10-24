@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Move semantics apply only where a value crosses to another isolate: a port
+  send (`Port.Send`, `__port_send`) and a `move` capture in a
+  `[Captures]`-bounded or isolate task body. Ordinary code never consumes a
+  value and never needs `move`; `move` written elsewhere is E1239 with the
+  help to remove it. At a crossing the operand needs `move` (E1242), must be
+  the only name for its value in the callable (E1241, copy it first), and a
+  later read is E1234 (E1240 in a loop). `exchange` takes its value without
+  `move`. The 0.6.7 borrowed-element-return check is withdrawn.
+- `[Export]` resolves by declaration identity: only a use of
+  `Core.Attributes.Export` exports, and export entries name the exact
+  lowered function instead of its simple name. An entry that resolves to no
+  function or to several fails the object build.
+
+### Added
+
+- The checker enforces `[ScopeBorrowed]`: a scope-borrowed value that is
+  returned, stored, passed to `spawn` or captured by an escaping closure is
+  E1241.
+
 ## [0.6.6] - 2026-10-16
 
 This release carries the v0.6.1-v0.6.5 program as one release (OpenSpec changes
