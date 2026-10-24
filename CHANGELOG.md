@@ -75,6 +75,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   carries the channel handle. `HubError` and `MutexError` gain
   `Unexpected(i64 code)` too, and a failed `Hub.Register` names its member
   index.
+### Diagnostics: semantic wording and internal errors (0.6.7, slice sem)
+
+- Every internal compiler error is one coded diagnostic at its construct: E2101 missing
+  semantic fact, E2102 missing lowering rule, E2103 lowering or verification inconsistency,
+  E2104 Mod semantic request failure, E2105 build failure without a site. The message says
+  "internal compiler error: ...; please report this"; the internal reason is in the help.
+  The AOT build keeps structured diagnostics instead of `[E4041] Invalid build request` text.
+- E1214 is reported once per binding at its declaration, with each assignment as a related
+  location "assigned again", help in the declaration's own form (`mut i32 count = 0;`) and a
+  machine-applicable fix that inserts `mut`.
+- Type mismatches print Beskid paths (`Result<i32, string>`), suggest `?` or `match` for
+  `Result` and `Option`, and suggest a conversion only between numeric types.
+- Messages say "type" and "type literal" instead of "struct"; an unknown field names the type
+  and lists its fields.
+- "Did you mean" for unknown locals, functions and fields, as help and a fix to check.
+- Unused private items are W2101 with the Unnecessary tag and a fix that removes the item.
+- Help for `use Module.Item`, a repeated `mod X;`, and a missing `[Serialize]` conformance.
+- E1512: a `[CopyOnAssign]` type without a valid `This Copy()` method.
+- Compound assignment to a mutable local (`total += 2`, `total -= 2`) lowers instead of
+  failing with E2102.
+- Runtime trap 9 is named `panic` (a failed assertion no longer reads as a compiler invariant).
+
 ### Parse diagnostics
 
 - Parse errors are structured diagnostics with codes `E0101`-`E0116`. The

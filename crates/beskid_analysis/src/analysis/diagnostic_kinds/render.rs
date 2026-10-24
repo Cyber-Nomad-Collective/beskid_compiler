@@ -43,6 +43,21 @@ pub fn issue_diagnostic(source_name: &str, source: &str, span: SpanInfo, kind: &
                 None => diagnostic,
             }
         }
+        SemanticIssueKind::GenericBoundNotSatisfied { type_name, declaration_at: Some(at), .. }
+            if source.get(..*at).is_some() =>
+        {
+            let line_start = source[..*at].rfind('\n').map_or(0, |index| index + 1);
+            let indent: String = source[line_start..*at].chars().take_while(|c| c.is_whitespace()).collect();
+            if source[line_start..*at].trim().is_empty() {
+                diagnostic.with_fix(Fix::new(
+                    format!("Add `[Serialize]` to `{}`", super::display_type(type_name)),
+                    Applicability::MachineApplicable,
+                    vec![FixEdit::insert(*at, format!("[Serialize]\n{indent}"))],
+                ))
+            } else {
+                diagnostic
+            }
+        }
         SemanticIssueKind::UnusedPrivateItem { name, item, .. } => diagnostic.with_fix(Fix::replace(
             format!("Remove `{name}`"),
             whole_lines(source, *item),
@@ -236,11 +251,54 @@ mod tests {
             type_name: "App::Point".into(),
             contract_name: "Core::Serialization::Serializable<Json>".into(),
             reason: None,
+            declaration_at: None,
         };
         assert_eq!(
             kind.help().as_deref(),
             Some("add `[Serialize]` to type `Point` so the compiler derives its `Serializable` conformance")
         );
+    }
+
+    #[test]
+    fn a_missing_serialize_attribute_gets_a_preferred_insert_fix() {
+        let source = "mod App;\n\n    pub type Point { i64 x }\n\nunit Main() { Send(Point { x: 1 }); }\n";
+        let at = source.find("pub type Point").unwrap();
+        let kind = SemanticIssueKind::GenericBoundNotSatisfied {
+            type_name: "App::Point".into(),
+            contract_name: "Serializable<Json>".into(),
+            reason: None,
+            declaration_at: Some(at),
+        };
+        let diagnostic = issue_diagnostic("Main.bd", source, span(source, "Point { x: 1 }"), &kind);
+        assert!(diagnostic.fixes[0].is_preferred());
+        assert_eq!(diagnostic.fixes[0].title, "Add `[Serialize]` to `Point`");
+        assert!(apply(source, &diagnostic).contains("\n    [Serialize]\n    pub type Point { i64 x }"));
+    }
+
+    #[test]
+    fn capture_and_function_type_wording_uses_beskid_terms() {
+        let kind = SemanticIssueKind::CaptureNotTransferable {
+            name: "order".into(),
+            type_name: "Main::Order".into(),
+            class: "Never".into(),
+        };
+        let message = kind.message();
+        assert_eq!(message, "`order` cannot be captured here because a `Order` value never leaves the task that created it");
+        assert!(!message.contains("::") && !message.contains("transfer class"));
+        let mismatch = SemanticIssueKind::TypeMismatch {
+            expected_name: "() -> i32".into(),
+            actual_name: "(i64) -> i32".into(),
+        };
+        assert_eq!(mismatch.message(), "type mismatch: expected `() => i32`, got `(i64) => i32`");
+    }
+
+    #[test]
+    fn module_paths_render_with_dots() {
+        let kind = SemanticIssueKind::ResolveUnknownModulePath { path: "Core::Text".into() };
+        assert_eq!(kind.message(), "unknown module path `Core.Text`");
+        assert!(!kind.help().unwrap_or_default().contains("::"));
+        let value = SemanticIssueKind::ResolveUnknownValueInModule { module_path: "Core::Text".into(), name: "Trim".into() };
+        assert_eq!(value.message(), "unknown value `Trim` in module `Core.Text`");
     }
 
     #[test]

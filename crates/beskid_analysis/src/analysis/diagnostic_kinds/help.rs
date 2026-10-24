@@ -2,6 +2,11 @@ use super::SemanticIssueKind;
 
 impl SemanticIssueKind {
     pub fn help(&self) -> Option<String> {
+        let text = self.help_text();
+        if self.names_module_path() { text.map(|text| text.replace("::", ".")) } else { text }
+    }
+
+    fn help_text(&self) -> Option<String> {
         match self {
             // ── Definition / duplicate-name diagnostics ──
             Self::DuplicateDefinitionName { previous, .. }
@@ -115,7 +120,7 @@ impl SemanticIssueKind {
                 ))
             }
             Self::GenericBoundNotSatisfied { reason: Some(reason), .. } => Some(reason.clone()),
-            Self::GenericBoundNotSatisfied { type_name, contract_name, reason: None } => {
+            Self::GenericBoundNotSatisfied { type_name, contract_name, reason: None, .. } => {
                 Some(format!("make `{type_name}` conform to `{contract_name}` or pass a conforming type"))
             }
             // The declaration text is needed for the tailored help; `issue_diagnostic` writes it.
@@ -289,6 +294,13 @@ impl SemanticIssueKind {
                  produce a string from the value first"
                     .to_string(),
             ),
+            Self::TypeInvalidCompoundAssignment { operator, type_name } => Some(match operator.as_str() {
+                "%=" => format!(
+                    "`%` works on integer types only; convert `{}` to an integer type first",
+                    super::display_type(type_name)
+                ),
+                _ => format!("`{operator}` needs a numeric target (`+=` also accepts `string`)"),
+            }),
             Self::TypeInvalidUnaryOp => Some(
                 "the unary operator is not valid for this operand type".to_string()
             ),
@@ -312,6 +324,10 @@ impl SemanticIssueKind {
             | Self::InternalLoweringInvariant { .. }
             | Self::InternalModSemanticFailure { .. }
             | Self::InternalBuildFailure { .. } => self.internal_help(),
+            Self::CopyOnAssignWithoutCopy { type_name, .. } => Some(format!(
+                "declare `pub This Copy() {{ ... }}` in `{type_name}`: a borrowed receiver, no parameters, returning \
+                 a `{type_name}` with its own storage"
+            )),
             Self::DeadCollectionGrowth => {
                 Some("return the parameter or rebind the grown handle so the caller sees the growth".to_string())
             }

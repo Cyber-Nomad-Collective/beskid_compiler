@@ -19,11 +19,75 @@ use super::super::members::{declared_member_names, is_call_callee};
 use super::super::typing::{is_numeric, nodes_of_kind};
 use super::*;
 use beskid_analysis::syntax::{
-    ArrayLiteralExpression, CallExpression, EnumConstructorExpression, EnumDefinition, Expression,
+    ArrayLiteralExpression, CallExpression, ConditionalExpression, EnumConstructorExpression, EnumDefinition, Expression,
     ExtendTypeDefinition, FunctionDefinition, IndexExpression, LambdaParameter, LetStatement, MemberExpression,
     Parameter, PathExpression, StructLiteralExpression, Type, TypeDefinition, Visibility,
 };
 use beskid_analysis::syntax_query::DynNodeRef;
+
+/// `cond ? a : b`: the condition must be `bool` (E1208 at the condition); both branches must have
+/// exactly the same type (E1206 at the else-branch, both branches related). A bare numeric
+/// literal branch is not judged here: it takes the other branch's type through its expected
+/// type, whose own checks (T0905, E1206) report a literal that does not fit. Two nominal values
+/// are compared by their source identities (`Point` against `Rect`); a `never` branch (a block
+/// that cannot fall through) constrains nothing.
+fn collect_conditional_obligations(
+    db: &dyn Db,
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &SyntaxIndex,
+    key: AstNodeKey,
+    findings: &mut Vec<GateObligation>,
+) {
+    for node in nodes_of_kind(index, key.node, NodeKind::ConditionalExpression) {
+        let Some(conditional) = index.node_at(program, node).and_then(|node| node.of::<ConditionalExpression>()) else {
+            continue;
+        };
+        // The condition's own value node is the site: the wrapper's span runs to the `?`.
+        if let Some((_, subject, ty)) = proven_operand(db, program, index, key, node, &conditional.condition)
+            && !matches!(ty, SemanticTypeId::BOOL | SemanticTypeId::NEVER | SemanticTypeId::POINTER)
+        {
+            findings.push(GateObligation {
+                kind: GateObligationKind::ConditionalConditionNotBool,
+                site: AstNodeKey { node: subject, ..key },
+            });
+        }
+        if is_numeric_literal_branch(&conditional.then_branch.node) || is_numeric_literal_branch(&conditional.else_branch.node) {
+            continue;
+        }
+        let Some((then_site, then_subject)) = super::super::typing::expression_nodes(program, index, node, &conditional.then_branch)
+        else {
+            continue;
+        };
+        let Some((else_site, else_subject)) = super::super::typing::expression_nodes(program, index, node, &conditional.else_branch)
+        else {
+            continue;
+        };
+        let then_key = AstNodeKey { node: then_subject, ..key };
+        let else_key = AstNodeKey { node: else_subject, ..key };
+        // A proven primitive is its ABI type; a nominal, array or function value is its source
+        // identity (`Point`, `u8[]`). Either side unproven, or `never`: nothing to judge.
+        let (Some(then_identity), Some(else_identity)) =
+            (super::super::values::value_identity(db, then_key), super::super::values::value_identity(db, else_key))
+        else {
+            continue;
+        };
+        let never = |identity: &GenericSourceTypeIdentity| identity.abi_type() == SemanticTypeId::NEVER;
+        if never(&then_identity) || never(&else_identity) || then_identity == else_identity {
+            continue;
+        }
+        {
+            let (then_name, else_name) = (then_identity.display_name(), else_identity.display_name());
+            findings.push(GateObligation {
+                kind: GateObligationKind::ConditionalBranchMismatch {
+                    then_site: AstNodeKey { node: then_site, ..key },
+                    then_type: Arc::from(then_name),
+                    else_type: Arc::from(else_name),
+                },
+                site: AstNodeKey { node: else_site, ..key },
+            });
+        }
+    }
+}
 
 pub(super) fn collect_expression_obligations(
     db: &dyn Db,
@@ -32,10 +96,7 @@ pub(super) fn collect_expression_obligations(
     key: AstNodeKey,
     findings: &mut Vec<GateObligation>,
 ) {
-    // `cond ? a : b` parses but is not typed or lowered yet (slice sem replaces this obligation).
-    for node in nodes_of_kind(index, key.node, NodeKind::ConditionalExpression) {
-        findings.push(GateObligation { kind: GateObligationKind::UnsupportedExpression, site: AstNodeKey { node, ..key } });
-    }
+    collect_conditional_obligations(db, program, index, key, findings);
     for node in nodes_of_kind(index, key.node, NodeKind::IndexExpression) {
         let Some(expression) = index.node_at(program, node).and_then(|node| node.of::<IndexExpression>()) else {
             continue;

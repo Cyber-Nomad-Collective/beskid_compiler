@@ -94,6 +94,7 @@ pub const COMPILER_RECOGNIZED_ATTRIBUTES: &[RecognizedAttribute] = &[
     RecognizedAttribute { name: "Immutable", targets: &["TypeDefinition"] },
     RecognizedAttribute { name: "Isolated", targets: &["TypeDefinition"] },
     RecognizedAttribute { name: "Copyable", targets: &["TypeDefinition"] },
+    RecognizedAttribute { name: "CopyOnAssign", targets: &["TypeDefinition"] },
     RecognizedAttribute { name: "NeverTransferable", targets: &["TypeDefinition"] },
     RecognizedAttribute { name: "ImmutableStorage", targets: &["Field"] },
     RecognizedAttribute { name: "ScopeBorrowed", targets: &["TypeDefinition"] },

@@ -267,15 +267,24 @@ pub(super) fn collect_event_obligations(
         if !judgeable_primitive(target) {
             continue;
         }
-        let supported = match assign.op.node {
-            AssignOp::AddAssign => is_numeric(target) || target == SemanticTypeId::STRING,
-            AssignOp::SubAssign | AssignOp::MulAssign | AssignOp::DivAssign | AssignOp::RemAssign => {
-                is_numeric(target)
-            }
-            AssignOp::Assign => true,
+        let is_float = matches!(target, SemanticTypeId::F32 | SemanticTypeId::F64);
+        let (supported, operator) = match assign.op.node {
+            AssignOp::AddAssign => (is_numeric(target) || target == SemanticTypeId::STRING, "+="),
+            AssignOp::SubAssign => (is_numeric(target), "-="),
+            AssignOp::MulAssign => (is_numeric(target), "*="),
+            AssignOp::DivAssign => (is_numeric(target), "/="),
+            // `%` has no floating-point form, so neither has `%=`.
+            AssignOp::RemAssign => (is_numeric(target) && !is_float, "%="),
+            AssignOp::Assign => (true, "="),
         };
         if !supported {
-            findings.push(GateObligation { kind: GateObligationKind::UnsupportedExpression, site });
+            findings.push(GateObligation {
+                kind: GateObligationKind::InvalidCompoundAssignment {
+                    operator: Arc::from(operator),
+                    type_name: Arc::from(target.display_name()),
+                },
+                site,
+            });
         }
     }
 }

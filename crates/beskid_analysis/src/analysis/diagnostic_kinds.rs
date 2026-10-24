@@ -139,6 +139,10 @@ pub enum SemanticIssueKind {
         contract_name: String,
         /// For a compiler-derived marker bound: the first offending field or the class reason.
         reason: Option<String>,
+        /// For a `Serializable` bound: the byte offset of the conforming type's declaration when
+        /// it is the only declaration of that name in the diagnostic's own source, where the
+        /// `[Serialize]` fix inserts the attribute.
+        declaration_at: Option<usize>,
     },
 
     /// E1214, reported once per binding at its declaration; every assignment is a related
@@ -319,6 +323,11 @@ pub enum SemanticIssueKind {
     TypeStringConcatOperandNotConvertible {
         found: String,
     },
+    /// E1209: a compound assignment `a op= b` whose operator `a`'s type does not have.
+    TypeInvalidCompoundAssignment {
+        operator: String,
+        type_name: String,
+    },
     TypeInvalidUnaryOp,
     TypeNonBoolCondition,
     TypeUnsupportedExpression,
@@ -442,6 +451,12 @@ pub enum SemanticIssueKind {
     ExclusiveMarkerAttribute {
         marker: String,
         previous: String,
+    },
+    /// E1512: a `[CopyOnAssign]` type without a valid `This Copy()` hook; `problem` says what is
+    /// wrong ("it declares no `Copy` method").
+    CopyOnAssignWithoutCopy {
+        type_name: String,
+        problem: String,
     },
     /// E1510: an attribute that only corelib (`Core.*` modules) may use, such as `[ImmutableStorage]`.
     CorelibOnlyAttribute {

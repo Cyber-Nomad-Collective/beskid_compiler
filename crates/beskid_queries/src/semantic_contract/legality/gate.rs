@@ -76,6 +76,9 @@ pub enum GateObligationKind {
     UnknownEnumType,
     /// E1211: a method call whose receiver type declares neither the method nor a field.
     UnknownStructField(UnknownMember),
+    /// E1209: a compound assignment whose operator the target's type does not have
+    /// (`f64 %= 2.0`, `bool += true`).
+    InvalidCompoundAssignment { operator: Arc<str>, type_name: Arc<str> },
     /// E1606: a call through a member that is a non-callable field.
     UnknownCallTarget,
     /// E1204: an explicit type-argument list whose count differs from the callee's generics.
@@ -94,6 +97,12 @@ pub enum GateObligationKind {
     /// E1232: a `clif { ... }` block the legacy `type_clif_block`, `type_clif_block_statement`,
     /// `check_clif_block_body`, or `check_clif_parameters` rejects, with the legacy detail text.
     InvalidClifBlock { detail: Arc<str> },
+    /// E1208: the condition of `cond ? a : b` has a proven type other than `bool`.
+    ConditionalConditionNotBool,
+    /// E1206: the branches of `cond ? a : b` have two different proven types (typed values never
+    /// widen: an `i32` and an `i64` value are a mismatch). Reported at the else-branch, with both
+    /// branches related; `then_site` is the then-branch and the type names are source spellings.
+    ConditionalBranchMismatch { then_site: AstNodeKey, then_type: Arc<str>, else_type: Arc<str> },
 }
 
 /// A failed `check` obligation and the exact node that carries the diagnostic.
@@ -147,6 +156,19 @@ pub fn check_gate_obligations(db: &dyn Db, items: &[AstNodeKey]) -> Vec<Semantic
     for &item in items {
         let Ok(Some(obligations)) = gate_obligations(db, item) else { continue };
         for obligation in obligations.iter() {
+            if let GateObligationKind::ConditionalBranchMismatch { then_site, then_type, else_type } = &obligation.kind {
+                let then_type = beskid_analysis::analysis::diagnostic_kinds::display_type(then_type);
+                let else_type = beskid_analysis::analysis::diagnostic_kinds::display_type(else_type);
+                findings.push(SemanticFinding {
+                    kind: SemanticIssueKind::TypeMismatch { expected_name: then_type.clone(), actual_name: else_type.clone() },
+                    site: obligation.site,
+                    related: vec![
+                        (*then_site, format!("this branch is `{then_type}`").into()),
+                        (obligation.site, format!("this branch is `{else_type}`").into()),
+                    ],
+                });
+                continue;
+            }
             let kind = match &obligation.kind {
                 GateObligationKind::InvalidBinaryOp => SemanticIssueKind::TypeInvalidBinaryOp,
                 GateObligationKind::InvalidUnaryOp => SemanticIssueKind::TypeInvalidUnaryOp,
@@ -176,6 +198,12 @@ pub fn check_gate_obligations(db: &dyn Db, items: &[AstNodeKey]) -> Vec<Semantic
                     SemanticIssueKind::TypeInvalidEventSubscriptionTarget
                 }
                 GateObligationKind::UnsupportedExpression => SemanticIssueKind::TypeUnsupportedExpression,
+                GateObligationKind::InvalidCompoundAssignment { operator, type_name } => {
+                    SemanticIssueKind::TypeInvalidCompoundAssignment {
+                        operator: operator.to_string(),
+                        type_name: type_name.to_string(),
+                    }
+                }
                 GateObligationKind::MissingTypeAnnotation { name } => {
                     SemanticIssueKind::TypeMissingTypeAnnotation { name: name.to_string() }
                 }
@@ -209,6 +237,7 @@ pub fn check_gate_obligations(db: &dyn Db, items: &[AstNodeKey]) -> Vec<Semantic
                         type_name: type_name.to_string(),
                         contract_name: contract_name.to_string(),
                         reason: reason.as_deref().map(str::to_owned),
+                        declaration_at: super::serialize_declaration_at(db, obligation.site, type_name, contract_name),
                     }
                 }
                 GateObligationKind::GenericReceiverMethodUndeclared { method, parameter } => {
@@ -220,6 +249,8 @@ pub fn check_gate_obligations(db: &dyn Db, items: &[AstNodeKey]) -> Vec<Semantic
                 GateObligationKind::InvalidClifBlock { detail } => {
                     SemanticIssueKind::InvalidClifBlock { detail: detail.to_string() }
                 }
+                GateObligationKind::ConditionalConditionNotBool => SemanticIssueKind::TypeNonBoolCondition,
+                GateObligationKind::ConditionalBranchMismatch { .. } => unreachable!("converted above with its related sites"),
             };
             findings.push(SemanticFinding { kind, site: obligation.site, related: Vec::new() });
         }

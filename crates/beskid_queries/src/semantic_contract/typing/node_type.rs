@@ -73,6 +73,14 @@ pub(in crate::semantic_contract) fn node_type_tracked(
         {
             return Some(Ok(integer_literal_semantic_type(&text)));
         }
+        if node.of::<beskid_analysis::syntax::ConditionalExpression>().is_some() {
+            // `cond ? a : b` has the type of its result branch (the non-literal branch).
+            return Some(
+                conditional_result_branch_key(program, index, key)
+                    .ok_or_else(|| SemanticError::unavailable("node_type"))
+                    .and_then(|branch| node_type(db, branch)?.ok_or_else(|| SemanticError::unavailable("node_type"))),
+            );
+        }
         if node.of::<beskid_analysis::syntax::MatchExpression>().is_some() {
             if let Ok(Some(fact)) = enum_match(db, key) {
                 return Some(match_arms_result_semantic_type(db, &fact.arms));

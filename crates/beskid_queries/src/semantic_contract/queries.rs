@@ -631,6 +631,13 @@ pub fn contextual_integer_literal_abi_type(db: &dyn Db, key: AstNodeKey) -> Sema
     with_registered_syntax(db, key, contextual_integer_literal_abi_type_tracked)
 }
 
+/// Return the value node of the branch that types the conditional expression `cond ? a : b` at
+/// `key`: the then-branch, unless only the then-branch is a bare numeric literal (which takes the
+/// else-branch's type). Nodes that are not conditional expressions contain no fact.
+pub fn conditional_result_branch(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<AstNodeKey> {
+    with_registered_syntax(db, key, conditional_result_branch_tracked)
+}
+
 /// Return the exact lambda parameters and outer lexical captures in source order.
 ///
 /// Captures never include declarations owned by the lambda itself. Stale, unregistered, and

@@ -41,6 +41,7 @@ node_kinds!(
     StructLiteralExpression,
     EnumLiteralExpression,
     MatchExpression,
+    ConditionalExpression,
     RangeExpression,
     BlockExpression,
     ForStatement,
@@ -94,6 +95,7 @@ pub const fn classify_syntax_node_kind(kind: beskid_queries::IndexedNodeKind) ->
         Syntax::StructLiteralExpression => IsleLowered(NodeKind::StructLiteralExpression),
         Syntax::EnumConstructorExpression => IsleLowered(NodeKind::EnumLiteralExpression),
         Syntax::MatchExpression => IsleLowered(NodeKind::MatchExpression),
+        Syntax::ConditionalExpression => IsleLowered(NodeKind::ConditionalExpression),
         Syntax::RangeExpression => IsleLowered(NodeKind::RangeExpression),
         Syntax::Block | Syntax::BlockExpression => IsleLowered(NodeKind::BlockExpression),
         Syntax::ForStatement => IsleLowered(NodeKind::ForStatement),
@@ -109,9 +111,7 @@ pub const fn classify_syntax_node_kind(kind: beskid_queries::IndexedNodeKind) ->
         | Syntax::RegistryEntry
         | Syntax::ScopeDefinition
         | Syntax::ScopeHook
-        | Syntax::CodeStringLiteral
-        // `cond ? a : b` parses; its typing and lowering land with the semantic slice.
-        | Syntax::ConditionalExpression => UnsupportedTypedOperation,
+        | Syntax::CodeStringLiteral => UnsupportedTypedOperation,
 
         Syntax::Node
         | Syntax::ConstantDefinition
@@ -192,7 +192,6 @@ pub const UNSUPPORTED_TYPED_OPERATION_KINDS: &[beskid_queries::IndexedNodeKind] 
     beskid_queries::IndexedNodeKind::RegistryEntry,
     beskid_queries::IndexedNodeKind::ScopeDefinition,
     beskid_queries::IndexedNodeKind::ScopeHook,
-    beskid_queries::IndexedNodeKind::ConditionalExpression,
     beskid_queries::IndexedNodeKind::CodeStringLiteral,
 ];
 

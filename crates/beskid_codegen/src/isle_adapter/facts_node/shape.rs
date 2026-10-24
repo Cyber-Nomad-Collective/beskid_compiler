@@ -182,7 +182,7 @@ impl SyntaxNodeFacts<'_> {
             // write can never lower as a plain `=`.
             .filter(|assignment| {
                 assignment.compound.is_none()
-                    || self.query(beskid_queries::abi_type(self.db, assignment.declaration)).is_some()
+                    || self.query(beskid_queries::compound_assignment(self.db, key)).is_some()
             })
             .map(|assignment| LocalSlotId { owner_node: assignment.slot.owner.node.0, index: assignment.slot.index })
     }

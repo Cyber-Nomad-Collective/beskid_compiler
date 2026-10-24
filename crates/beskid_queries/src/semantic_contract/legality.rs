@@ -34,6 +34,7 @@ pub(super) mod calls;
 mod attributes;
 mod captures;
 mod cleanup;
+mod copy_on_assign;
 mod externs;
 mod function_values;
 mod gate;
@@ -509,7 +510,7 @@ pub fn check_items(db: &dyn Db, items: &[AstNodeKey]) -> Result<(), Vec<Semantic
             findings.extend(bindings.into_iter().map(|binding| SemanticFinding {
                 kind: SemanticIssueKind::ImmutableAssignment { name: binding.name.to_string(), binding: binding.binding },
                 site: binding.declaration,
-                related: binding.assignments.into_iter().map(|assignment| (assignment, "assigned again")).collect(),
+                related: binding.assignments.into_iter().map(|assignment| (assignment, "assigned again".into())).collect(),
             }));
         }
         if let Ok(Some(finding)) = unresolved_call_target(db, item) {
@@ -608,7 +609,7 @@ pub fn check_items(db: &dyn Db, items: &[AstNodeKey]) -> Result<(), Vec<Semantic
                     actual_name: finding.actual.to_string(),
                 },
                 site: finding.argument,
-                related: vec![(finding.call, "in this call")],
+                related: vec![(finding.call, "in this call".into())],
             });
         }
         if let Ok(Some(finding)) = call_arity_mismatch(db, item) {
@@ -661,6 +662,33 @@ pub fn check_typing_obligations(db: &dyn Db, items: &[AstNodeKey]) -> Vec<Semant
     findings
 }
 
+/// For a `Serializable` bound violation at `site`: the start of the conforming type's declaration
+/// when the site's own unit declares exactly one `type` or `enum` of that name at top level, where
+/// the `[Serialize]` fix inserts the attribute. `None` for any other bound or an ambiguous name.
+pub(super) fn serialize_declaration_at(db: &dyn Db, site: AstNodeKey, type_name: &str, contract_name: &str) -> Option<usize> {
+    let outer = |name: &str| -> String {
+        let head = name.split('<').next().unwrap_or(name).trim();
+        head.rsplit(['.', ':']).next().unwrap_or(head).to_string()
+    };
+    if outer(contract_name) != "Serializable" {
+        return None;
+    }
+    let wanted = outer(type_name);
+    let syntax = db.syntax_unit(site.unit).filter(|syntax| syntax.accepts_key(db, site))?;
+    let program = syntax.expanded_program(db);
+    let mut declarations = program.node.items.iter().filter_map(|item| match &item.node {
+        beskid_analysis::syntax::Node::TypeDefinition(definition) if definition.node.name.node.name == wanted => {
+            Some(item.span.start)
+        }
+        beskid_analysis::syntax::Node::EnumDefinition(definition) if definition.node.name.node.name == wanted => {
+            Some(item.span.start)
+        }
+        _ => None,
+    });
+    let first = declarations.next()?;
+    declarations.next().is_none().then_some(first)
+}
+
 /// E1105: every top-level `use` that names no assembled module, in each unit that owns one of
 /// `items`, judged once per unit in first-owner order. A `use` inside a unit nothing requested is
 /// not judged, so an assembly may carry units whose imports reach outside it as long as nothing
@@ -676,6 +704,7 @@ fn import_findings(db: &dyn Db, items: &[AstNodeKey]) -> Vec<SemanticFinding> {
         judged_units.push(unit_root);
         findings.extend(attributes::attribute_findings(db, unit_root));
         findings.extend(transfer::transfer_declaration_findings(db, unit_root));
+        findings.extend(copy_on_assign::copy_on_assign_findings(db, unit_root));
         findings.extend(captures::captures_declaration_findings(db, unit_root));
         if let Ok(Some(imports)) = unresolved_imports(db, unit_root) {
             findings.extend(imports.iter().map(|import| SemanticFinding {
@@ -1101,6 +1130,44 @@ mod tests {
         for (offset, body) in struct_cases.iter().enumerate() {
             assert_immutable_assignment(&format!("{pair}{body}"), 80 + offset as u64, 0, "v");
         }
+    }
+
+    #[test]
+    fn a_copy_on_assign_type_without_a_valid_copy_hook_is_e1512_at_the_attribute() {
+        let cases = [
+            ("[CopyOnAssign] pub type Bag { i64 n; } unit Main() { return; }", "it declares no `Copy` method"),
+            (
+                "[CopyOnAssign] pub type Bag { i64 n; pub Bag Copy(i64 extra) { return Bag { n: this.n }; } } unit Main() { return; }",
+                "`Copy` must take no parameters",
+            ),
+            (
+                "[CopyOnAssign] pub type Bag { i64 n; pub i64 Copy() { return this.n; } } unit Main() { return; }",
+                "`Copy` must return the type itself",
+            ),
+        ];
+        for (offset, (source, problem)) in cases.iter().enumerate() {
+            let (db, root) = one_unit_assembly(source, SyntaxGenerationId(150 + offset as u64));
+            let main = function_definitions(&db, root)[0];
+            let findings = super::check_items(&db, &[main]).expect_err("the copy hook is invalid");
+            let finding = findings
+                .iter()
+                .find(|finding| finding.kind.code() == "E1512")
+                .unwrap_or_else(|| panic!("E1512 expected: {findings:?}\n{source}"));
+            assert!(
+                matches!(&finding.kind, SemanticIssueKind::CopyOnAssignWithoutCopy { type_name, problem: found }
+                    if type_name == "Bag" && found == problem),
+                "{:?}",
+                finding.kind
+            );
+            let span = crate::node_span(&db, finding.site).expect("span").expect("site span");
+            assert!(source[span.start..span.end].contains("CopyOnAssign"), "anchored at the attribute");
+        }
+        let valid = "[CopyOnAssign] pub type Bag { i64 n; pub This Copy() { return Bag { n: this.n }; } } \
+                     unit Main() { return; }";
+        let (db, root) = one_unit_assembly(valid, SyntaxGenerationId(160));
+        let main = function_definitions(&db, root)[0];
+        let findings = super::check_items(&db, &[main]).err().unwrap_or_default();
+        assert!(findings.iter().all(|finding| finding.kind.code() != "E1512"), "{findings:?}");
     }
 
     #[test]
@@ -1961,5 +2028,96 @@ mod tests {
         let codes = captures_codes("unit Main(move u8[] data) { i64 id = __isolate_spawn<i64>(() => Len(data), 0); return; }", 6761);
         assert!(codes.contains(&"E1237".to_owned()), "{codes:?}");
     }
-}
 
+    /// `(code, message, site text, related labels)` of every gate-obligation finding of the last
+    /// function.
+    fn conditional_report(source: &str, generation: u64) -> Vec<(String, String, String, Vec<String>)> {
+        let (db, root) = one_unit_assembly(source, SyntaxGenerationId(generation));
+        let key = *function_definitions(&db, root).last().expect("function");
+        super::check_gate_obligations(&db, &[key])
+            .into_iter()
+            .map(|finding| {
+                let span = crate::node_span(&db, finding.site).expect("span").expect("site span");
+                // A single-operand operator chain keeps its pest pair span, which runs over the
+                // whitespace before the next token (`n ?`); the site text is compared trimmed
+                // until the parser trims that span (request to slice parse).
+                (
+                    finding.kind.code().to_string(),
+                    finding.kind.message(),
+                    source[span.start..span.end].trim_end().to_string(),
+                    finding.related.iter().map(|(_, label)| label.to_string()).collect(),
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn conditional_with_a_non_bool_condition_is_e1208_at_the_condition() {
+        let report = conditional_report("i32 F(i32 n, i32 a, i32 b) { return n ? a : b; }", 7101);
+        assert_eq!(report.len(), 1, "{report:?}");
+        assert_eq!(report[0].0, "E1208");
+        assert_eq!(report[0].2, "n", "anchored at the condition");
+        let report = conditional_report("i32 F(i32 n, i32 a, i32 b) { return n + 1 ? a : b; }", 7102);
+        assert_eq!(
+            report.iter().map(|finding| (finding.0.as_str(), finding.2.as_str())).collect::<Vec<_>>(),
+            vec![("E1208", "n + 1")]
+        );
+    }
+
+    #[test]
+    fn conditional_branches_of_two_typed_widths_are_e1206_at_the_else_branch_with_both_related() {
+        let report = conditional_report("i64 F(bool c, i32 a, i64 b) { return c ? a : b; }", 7103);
+        assert_eq!(report.len(), 1, "{report:?}");
+        let (code, message, site, related) = &report[0];
+        assert_eq!(code, "E1206");
+        assert!(message.contains("i32") && message.contains("i64"), "{message}");
+        assert_eq!(site, "b", "anchored at the else-branch");
+        assert_eq!(related, &["this branch is `i32`", "this branch is `i64`"]);
+        let report = conditional_report("string F(bool c, string a, bool b) { return c ? a : b; }", 7104);
+        assert_eq!(report.iter().map(|finding| finding.0.as_str()).collect::<Vec<_>>(), vec!["E1206"]);
+        assert_eq!(report[0].3, ["this branch is `string`", "this branch is `bool`"]);
+    }
+
+    #[test]
+    fn conditional_branches_of_two_nominal_types_are_e1206_by_source_identity() {
+        let report = conditional_report(
+            "pub type Point { i64 x; } pub type Rect { i64 w; } \
+             Point F(bool c, Point p, Rect r) { return c ? p : r; }",
+            7105,
+        );
+        assert_eq!(report.len(), 1, "{report:?}");
+        assert_eq!(report[0].0, "E1206");
+        assert_eq!(report[0].2, "r");
+        assert_eq!(report[0].3, ["this branch is `Point`", "this branch is `Rect`"]);
+    }
+
+    #[test]
+    fn conditional_with_a_literal_branch_reports_no_branch_mismatch() {
+        for (source, generation) in [
+            ("i64 F(bool c) { return c ? 1 : 2_i64; }", 7106u64),
+            ("i64 F(bool c, i64 n) { return c ? n : 2; }", 7107),
+            ("i64 F(bool c, i64 n) { return c ? -1 : n; }", 7108),
+            ("i32 F(bool c, i32 a, i32 b) { return c ? a : b; }", 7109),
+            ("pub type Point { i64 x; } Point F(bool c, Point p, Point q) { return c ? p : q; }", 7110),
+        ] {
+            let report = conditional_report(source, generation);
+            assert!(report.is_empty(), "{source}: {report:?}");
+        }
+    }
+
+    #[test]
+    fn conditional_has_the_type_of_its_non_literal_branch() {
+        let source = "i64 F(bool c, i64 n) { i64 r = c ? 1 : n; return r; }";
+        let (db, root) = one_unit_assembly(source, SyntaxGenerationId(7111));
+        let key = function_definitions(&db, root)[0];
+        let mut conditionals = Vec::new();
+        nodes_of_kind(&db, key, IndexedNodeKind::ConditionalExpression, &mut conditionals);
+        assert_eq!(conditionals.len(), 1);
+        assert_eq!(node_type(&db, conditionals[0]).expect("query"), Some(SemanticTypeId::I64));
+        assert_eq!(abi_type(&db, conditionals[0]).expect("query"), Some(SemanticTypeId::I64));
+        let branch = crate::conditional_result_branch(&db, conditionals[0]).expect("query").expect("branch");
+        let span = crate::node_span(&db, branch).expect("span").expect("branch span");
+        assert_eq!(&source[span.start..span.end], "n");
+        assert!(super::check_typing_obligations(&db, &[key]).is_empty());
+    }
+}

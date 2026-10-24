@@ -348,7 +348,7 @@ pub fn semantic_diagnostics_for_roots(
                     Some(beskid_analysis::services::SemanticFactRelated {
                         unit: *units.get(&site.unit)?,
                         span: crate::node_span(db, *site).ok().flatten()?,
-                        label: (*label).to_string(),
+                        label: label.to_string(),
                     })
                 })
                 .collect();

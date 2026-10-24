@@ -227,14 +227,31 @@ macro_rules! generated_aggregate_methods {
             // "Index expression evaluation order").
             let base = self.indexed_base_operands(self.facts.child(target, 0)?)?;
             let index = generated::constructor_lower_expression(self, self.facts.child(target, 1)?)?;
-            let value = generated::constructor_lower_expression(self, value_key)?;
+            if self.facts.compound_assignment_unproven(key) {
+                return None;
+            }
+            let (value, address) = match self.facts.compound_assignment_operator(key) {
+                None => {
+                    let value = generated::constructor_lower_expression(self, value_key)?;
+                    let array = self.read_indexed_base(base)?;
+                    (value, self.checked_element_address(array, index, layout)?)
+                }
+                // `xs[i] op= v`: the array and the index are evaluated once; the element is read
+                // from that address, combined with `v`, and stored back to the same address.
+                Some((operator, storage)) => {
+                    let array = self.read_indexed_base(base)?;
+                    let address = self.checked_element_address(array, index, layout)?;
+                    let current = self.builder.ins().load(layout.element_type, MemFlagsData::new(), address, 0);
+                    let value =
+                        self.compound_assignment_value(key, operator, storage, current, value_key, layout.element_type)?;
+                    (value, address)
+                }
+            };
             if self.builder.func.dfg.value_type(value) != layout.element_type {
                 self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidArrayLayout });
                 return None;
             }
             let managed = self.store_overwrites_managed_reference(key, target)?;
-            let array = self.read_indexed_base(base)?;
-            let address = self.checked_element_address(array, index, layout)?;
             if managed {
                 self.emit_barriered_store(address, value)?;
             } else {
@@ -317,7 +334,19 @@ macro_rules! generated_aggregate_methods {
             };
             let field = field?;
             let base = self.field_base_pointer(target)?;
-            let value = generated::constructor_lower_expression(self, value_key)?;
+            if self.facts.compound_assignment_unproven(key) {
+                return None;
+            }
+            let value = match self.facts.compound_assignment_operator(key) {
+                None => generated::constructor_lower_expression(self, value_key)?,
+                // `p.x op= v`: the receiver is evaluated once; the field is read through it,
+                // combined with `v`, and stored back through the same base.
+                Some((operator, storage)) => {
+                    let offset = i32::try_from(field.offset).ok()?;
+                    let current = self.builder.ins().load(field.value_type, MemFlagsData::new(), base, offset);
+                    self.compound_assignment_value(key, operator, storage, current, value_key, field.value_type)?
+                }
+            };
             if self.builder.func.dfg.value_type(value) != field.value_type
                 || self.facts.scalar_type(key)? != field.value_type
             {

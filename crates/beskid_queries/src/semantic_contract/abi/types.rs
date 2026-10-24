@@ -157,6 +157,14 @@ pub(in crate::semantic_contract) fn abi_type_tracked(
         if let Some(expression) = node.of::<beskid_analysis::syntax::Expression>() {
             return Some(abi_type_for_expression(db, program, index, key, expression));
         }
+        if node.of::<beskid_analysis::syntax::ConditionalExpression>().is_some() {
+            // `cond ? a : b` has the type of its result branch (the non-literal branch).
+            return Some(
+                conditional_result_branch_key(program, index, key)
+                    .ok_or_else(|| SemanticError::unavailable("abi_type"))
+                    .and_then(|branch| abi_type(db, branch)?.ok_or_else(|| SemanticError::unavailable("abi_type"))),
+            );
+        }
         if node.of::<beskid_analysis::syntax::GroupedExpression>().is_some() {
             let inner = normalized_expression_node(index, key.node);
             return Some(
@@ -354,6 +362,7 @@ pub(in crate::semantic_contract) fn abi_type_for_expression(
         | Expression::StructLiteral(_)
         | Expression::Unary(_)
         | Expression::Lambda(_)
+        | Expression::Conditional(_)
         | Expression::Try(_) => {
             let normalized = normalized_expression_node(index, key.node);
             abi_type(db, AstNodeKey { node: normalized, ..key })?.ok_or_else(|| SemanticError::unavailable("abi_type"))

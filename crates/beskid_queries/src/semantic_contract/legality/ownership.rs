@@ -49,7 +49,11 @@ pub(super) fn affine_findings(db: &dyn Db, item: AstNodeKey) -> Vec<SemanticFind
                     None,
                 ),
             };
-            findings.push(SemanticFinding { kind, site: finding.site, related: related.into_iter().collect() });
+            findings.push(SemanticFinding {
+                kind,
+                site: finding.site,
+                related: related.into_iter().map(|(site, label): (AstNodeKey, &'static str)| (site, label.into())).collect(),
+            });
         }
     }
     findings

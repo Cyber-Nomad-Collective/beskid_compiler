@@ -400,10 +400,8 @@ pub(in crate::semantic_contract) fn array_index_element_template_tracked(
         let (index_node, indexed) = if let Some(indexed) = node.of::<beskid_analysis::syntax::IndexExpression>() {
             (key.node, indexed)
         } else {
+            // A plain or compound element write: the element type is the target's either way.
             let assignment = node.of::<beskid_analysis::syntax::AssignExpression>()?;
-            if assignment.op.node != beskid_analysis::syntax::AssignOp::Assign {
-                return Some(Err(SemanticError::unavailable("array_index_element_abi_type")));
-            }
             let target = index
                 .direct_child_id(
                     program,

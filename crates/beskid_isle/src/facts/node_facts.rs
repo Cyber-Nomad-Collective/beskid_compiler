@@ -247,6 +247,11 @@ pub trait NodeFacts {
     fn mutable_local_assignment_slot(&self, _key: AstNodeKey) -> Option<LocalSlotId> {
         None
     }
+    /// Whether `key` is a compound assignment whose operator or storage type is not proven; such a
+    /// write must never lower as a plain `=`.
+    fn compound_assignment_unproven(&self, _key: AstNodeKey) -> bool {
+        false
+    }
     /// The operator of a compound local assignment (`total += 2`), proven with its slot, and the
     /// local's declared semantic type (numeric, or `string` for `+=`).
     fn compound_assignment_operator(

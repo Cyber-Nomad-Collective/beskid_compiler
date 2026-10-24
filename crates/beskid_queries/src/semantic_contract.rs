@@ -218,6 +218,7 @@ use syntax_facts::{
 };
 use typed_arrays::typed_array_allocation_tracked;
 use typing::{
+    conditional_result_branch_key, conditional_result_branch_tracked, is_numeric_literal_branch,
     element_type_for_for_iterable, for_iterable_declared_array_element, match_arms_result_semantic_type,
     local_declaration_type, range_iterable_bounds,
     managed_reference_kind_tracked, node_type_tracked, enum_match_pattern_binding, pattern_binding_fact,
@@ -227,6 +228,7 @@ use typing::{
     semantic_type_for_local_path, semantic_type_for_node,
 };
 
+pub use abi::{CompoundAssignment, compound_assignment};
 pub use abi::{
     generic_call_specialization_in_environment, generic_call_specialization_instance, generic_specialization_instance,
     specialized_builtin_type_argument, specialized_corelib_value_service_result,
@@ -279,8 +281,8 @@ pub use queries::{
     bulk_call_element_abi_type, bulk_parameter, call_abi_signature, call_arguments, call_lowering,
     affine_ownership, callable_fiber_ownership, callable_signature, capture_storage, cast_intents, child_nodes,
     clif_block_body, move_expression_form,
-    clif_block_parameters, closure_call_target, closure_environment, closure_signature, collection_operation, constant_integer,
-    constant_integer_literal,
+    clif_block_parameters, closure_call_target, closure_environment, closure_signature, collection_operation,
+    conditional_result_branch, constant_integer, constant_integer_literal,
     contextual_integer_literal_abi_type, control_flow, direct_callees, empty_array_literal_element_abi_type,
     enum_constructor, enum_layout, enum_match, event_field_layout, scalar_match,
     event_handler_lambda_for_local, event_operation, expected_type, for_iterator_fact, function_item_value,
