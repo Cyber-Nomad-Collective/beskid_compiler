@@ -241,6 +241,13 @@ fn with_direct_callees(db: &dyn beskid_queries::Db, seeds: Vec<SyntaxModuleItem>
             if seen.contains(&declaration) {
                 continue;
             }
+            // A contract method has no body: a call through a contract value or a `T: C` bound
+            // dispatches through a witness table, whose entries the module emits on its own.
+            if beskid_queries::node_kind(db, declaration).ok().flatten()
+                == Some(beskid_queries::IndexedNodeKind::ContractMethodSignature)
+            {
+                continue;
+            }
             if beskid_queries::generic_call_specialization(db, call).ok().flatten().is_some() {
                 continue;
             }
