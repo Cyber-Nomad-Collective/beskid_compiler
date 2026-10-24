@@ -200,7 +200,10 @@ mod tests {
         let content = assertion("expected 1, found 2", "", "1", "2");
         let TestRunFailure::Assertion(failure) = classify_failed_run("101", "", "", Some(&content)) else { panic!() };
         assert_eq!(failure.because, None);
-        assert_eq!(failure.render(), "assertion failed: expected 1, found 2\n  at /app/Src/Main.bd:17:5");
+        assert_eq!(
+            failure.render(),
+            "assertion failed: expected 1, found 2\n  expected: 1\n  actual:   2\n  at /app/Src/Main.bd:17:5"
+        );
     }
 
     #[test]
