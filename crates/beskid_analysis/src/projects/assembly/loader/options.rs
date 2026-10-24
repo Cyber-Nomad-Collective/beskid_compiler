@@ -147,7 +147,7 @@ impl AssemblyError {
                 error.to_string(),
                 "cannot parse this",
                 None,
-                Some("parse".to_string()),
+                Some(crate::analysis::diagnostic_codes::parse::SYNTAX.to_string()),
                 crate::analysis::Severity::Error,
             )),
         };
