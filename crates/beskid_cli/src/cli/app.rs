@@ -245,6 +245,7 @@ pub(crate) fn CapabilityDocument() -> serde_json::Value {
     serde_json::json!({
         "schemaVersion": 1,
         "cliVersion": env!("CARGO_PKG_VERSION"),
+        "runtimeAbi": beskid_abi::BESKID_RUNTIME_ABI_VERSION,
         "commands": commands,
         "devCommands": dev_commands,
         "outputSchemas": crate::machine_output::SchemaDescriptions(),

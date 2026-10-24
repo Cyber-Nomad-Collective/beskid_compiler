@@ -730,3 +730,10 @@ fn v067_log_file_flag_wins_over_the_environment_variable() {
     let bare = super::app::ParseInvocation(["beskid", "check"]).expect("parses");
     assert!(bare.log_file.is_none());
 }
+
+#[test]
+fn v067_capability_document_reports_the_runtime_abi() {
+    let document = super::app::CapabilityDocument();
+    assert_eq!(document["runtimeAbi"], u64::from(beskid_abi::BESKID_RUNTIME_ABI_VERSION));
+    assert!(document["runtimeAbi"].is_u64(), "runtimeAbi is a number the extension can compare: {document}");
+}
