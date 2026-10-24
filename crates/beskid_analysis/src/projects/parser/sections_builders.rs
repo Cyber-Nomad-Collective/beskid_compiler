@@ -295,13 +295,12 @@ pub(super) fn build_manifest(parsed: ParsedBlocks) -> Result<ProjectManifest, Pr
 
     let project_section = assemble_project_section(&project)?;
     if !project_root_block_matches_package_name(&project_section.block_kind, &project_section.name) {
-        return Err(ProjectError::meta_contract(
-            "E1896",
-            format!(
-                "project root block kind `{}` must match `name = \"{}\"` or its underscore projection",
-                project_section.block_kind, project_section.name
-            ),
-        ));
+        return Err(ProjectError::RootBlockNameMismatch {
+            block: project_section.block_kind.clone(),
+            name: project_section.name.clone(),
+            block_span: Some((project.block_span.start, project.block_span.end)),
+            name_span: project.name_span.map(|span| (span.start, span.end)),
+        });
     }
 
     let mut targets = Vec::with_capacity(parsed.targets.len());

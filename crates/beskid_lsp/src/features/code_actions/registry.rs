@@ -35,6 +35,7 @@ pub(super) fn code_action_providers() -> Vec<Box<dyn CodeActionProvider>> {
         Box::new(CompilerRemoveLinesProvider),
         Box::new(CompilerRemoveRangeProvider),
         Box::new(CompilerDocCommentProvider),
+        Box::new(super::lock_migration::LockMigrationProvider),
         Box::new(ModQuickFixProvider),
     ]
 }

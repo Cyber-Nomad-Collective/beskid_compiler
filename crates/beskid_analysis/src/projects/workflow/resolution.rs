@@ -2,7 +2,8 @@
 #![allow(non_snake_case)]
 
 use super::lockfile::{
-    preflight_existing_lock_for_plan, reject_unreachable_registry_pins, validate_existing_lock_graph,
+    lock_graph_differs, preflight_existing_lock_for_plan, reject_unreachable_registry_pins,
+    validate_existing_lock_graph,
 };
 use super::prepare::{installed_corelib_lock_root, portable_entry_for_dependency};
 use super::registry::{ResolvedRegistryDependency, parse_registry_descriptor, resolve_registry_dependency};
@@ -69,6 +70,11 @@ pub(super) fn ResolveWorkspaceDependencies(
         }
         entries.push(entry);
     }
+    // A lock without registry pins is regenerated when the graph changed (a copied or renamed
+    // folder); the write is refused only under `--locked` or `--frozen`.
+    let existing = existing.filter(|lock| {
+        policy.locked || !lock.is_pin_free() || !lock_graph_differs(lock, &entries)
+    });
     validate_existing_lock_graph(existing.as_ref(), &entries, options.refresh_lock)?;
     let rules = discover_workspace_resolution_rules(&plan.manifest_path)?;
     // A mutation (graph change or refresh) may select coordinates for transitive packages whose

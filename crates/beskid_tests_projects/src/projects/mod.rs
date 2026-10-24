@@ -30,6 +30,8 @@ mod discovery;
 #[cfg(test)]
 mod graph;
 #[cfg(test)]
+mod lock_regeneration;
+#[cfg(test)]
 mod lockfile;
 #[cfg(test)]
 mod manifest;

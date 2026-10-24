@@ -177,6 +177,11 @@ pub fn report_from_anyhow(err: &Error) -> Report {
     if let Some(bundle) = err.downcast_ref::<SemanticDiagnosticsError>() {
         return semantic_diagnostics_bundle_report(bundle);
     }
+    if let Some(diagnostic) =
+        err.downcast_ref::<beskid_analysis::projects::AssemblyError>().and_then(|assembly| assembly.diagnostic())
+    {
+        return Report::new(diagnostic.clone());
+    }
     miette::miette!("{err:#}")
 }
 

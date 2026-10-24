@@ -22,6 +22,10 @@ pub enum AssemblyError {
     Read { path: PathBuf, source: std::io::Error },
     #[error("failed to parse {path}: {message}")]
     Parse { path: PathBuf, message: String },
+    /// A parse failure that keeps the structured diagnostic (code, span, related locations and
+    /// fixes), so `beskid check` and the editor render it like any other diagnostic.
+    #[error("failed to parse {path}: {report}")]
+    ParseDiagnostic { path: PathBuf, report: crate::analysis::diagnostics::MietteReportError },
     #[error("entry file not found under effective roots: {path}")]
     EntryNotFound { path: PathBuf },
     #[error(
@@ -113,4 +117,22 @@ pub fn assembly_options_for_prepare(plan: &CompilePlan, front_end_discovery: Ass
         options.discovery = front_end_discovery;
     }
     options
+}
+
+impl AssemblyError {
+    /// A parse failure of `path`; keeps the structured diagnostic when the parser produced one.
+    pub fn from_parse_failure(path: PathBuf, error: anyhow::Error) -> Self {
+        match error.downcast_ref::<crate::analysis::diagnostics::MietteReportError>() {
+            Some(report) => Self::ParseDiagnostic { path, report: report.clone() },
+            None => Self::Parse { path, message: error.to_string() },
+        }
+    }
+
+    /// The structured diagnostic this error carries, if any.
+    pub fn diagnostic(&self) -> Option<&crate::analysis::diagnostics::SemanticDiagnostic> {
+        match self {
+            Self::ParseDiagnostic { report, .. } => Some(report.diagnostic()),
+            _ => None,
+        }
+    }
 }
