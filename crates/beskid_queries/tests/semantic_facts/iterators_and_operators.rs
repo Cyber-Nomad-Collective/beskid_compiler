@@ -326,12 +326,14 @@ fn declared_array_index_assignment_has_its_proven_element_abi() {
 }
 
 #[test]
-fn declared_array_compound_index_assignment_has_no_element_abi_fact() {
+fn declared_array_compound_index_assignment_has_the_element_abi() {
+    // A compound index assignment is typed like a plain one: the declared array proves the
+    // element representation the store and the expression value use.
     let source = "i32[] Store(i32[] values, i32 value) { values[0] += value; return values; }";
     let (db, _project, unit, generation, index) = setup(source);
     let assignment = key(unit, generation, &index, NodeKind::AssignExpression, 0);
 
-    assert_unavailable(abi_type(&db, assignment));
+    assert_eq!(abi_type(&db, assignment).expect("compound index assignment"), Some(SemanticTypeId::I32));
 }
 
 #[test]

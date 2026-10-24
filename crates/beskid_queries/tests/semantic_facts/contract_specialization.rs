@@ -2,8 +2,9 @@ use super::support::{key, setup};
 use beskid_analysis::syntax_query::NodeKind;
 use beskid_queries::{
     AstNodeKey, CallLowering, call_lowering, generic_call_specialization, generic_call_specialization_in_environment,
-    generic_call_specialization_instance, generic_specialization_identity, item_abi_signature,
+    generic_call_specialization_instance, generic_specialization_identity, item_abi_signature, ItemSignature,
 };
+use std::sync::Arc;
 
 #[test]
 fn function_generic_name_shadows_outer_contract() {
@@ -138,7 +139,14 @@ unit Main() {
 "#;
     let (db, _, unit, generation, index) = setup(source);
     let read_both = key(unit, generation, &index, NodeKind::FunctionDefinition, 0);
-    assert_eq!(item_abi_signature(&db, read_both).expect("resolved contract template"), None);
+    // The unspecialized body takes contract values (boxes): one pointer per contract parameter.
+    assert_eq!(
+        item_abi_signature(&db, read_both).expect("resolved contract template"),
+        Some(ItemSignature {
+            parameters: Arc::from([beskid_queries::SemanticTypeId::POINTER; 2]),
+            result: beskid_queries::SemanticTypeId::I64,
+        })
+    );
     let instances = index
         .ids_of_kind(NodeKind::CallExpression)
         .map(|node| AstNodeKey { unit, generation, node })
