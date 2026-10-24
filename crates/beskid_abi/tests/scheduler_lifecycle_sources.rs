@@ -1,6 +1,6 @@
 use beskid_abi::runtime_source::{
     CANONICAL_CHANNEL_SOURCE_PATH, CANONICAL_FIBER_SOURCE_PATH, CANONICAL_HUB_SOURCE_PATH, CANONICAL_MUTEX_SOURCE_PATH,
-    CANONICAL_SCHEDULER_CORE_SOURCE_PATH, CANONICAL_SCHEDULER_EXTERNAL_SOURCE_PATH, CANONICAL_SCHEDULER_LOOP_SOURCE_PATH,
+    CANONICAL_SCHEDULER_CORE_SOURCE_PATH, CANONICAL_SCHEDULER_LOOP_SOURCE_PATH,
     CANONICAL_PROCESS_SOURCE_PATH, CANONICAL_SYSCALLS_SOURCE_PATH, CANONICAL_WAITGROUP_SOURCE_PATH, canonical_runtime_sources,
 };
 
@@ -59,7 +59,8 @@ fn external_waits_register_the_root_caller_as_a_waiter() {
             .source
             .clone()
     };
-    let external = text(CANONICAL_SCHEDULER_EXTERNAL_SOURCE_PATH);
+    // `CANONICAL_SCHEDULER_EXTERNAL_SOURCE_PATH` is not re-exported by `runtime_source`.
+    let external = text("src/Runtime/Fiber/Scheduler/External.bd");
     assert!(external.contains("pub word ExternalWaiterHandle()"));
     assert!(external.contains("ExternalWaitRegister(ExternalWaiterHandle(), 3, deadline)"), "sleep registers the root");
     assert!(text(CANONICAL_SYSCALLS_SOURCE_PATH).contains("ExternalWaitRegister(ExternalWaiterHandle(), operation, -1)"));
