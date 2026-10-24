@@ -228,6 +228,7 @@ const ALWAYS_AVAILABLE_STRING_SERVICES: &[&str] =
 const COMPOSITION_SERVICES: &[&str] = &[
     "composition_container_create",
     "composition_container_drop",
+    "composition_exit_register",
     "composition_launch",
     "composition_scope_enter",
     "composition_scope_leave",

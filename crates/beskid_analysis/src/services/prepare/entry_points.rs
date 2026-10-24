@@ -55,6 +55,18 @@ pub trait SemanticFactAuthority {
     fn mod_scope(&self) -> Option<&dyn crate::mod_host::ModSemanticScope> {
         None
     }
+    /// Run `resolve` with the type authority of `assembly` (whose entry program is `program`),
+    /// which composition resolves every registry key and `inject` request through. An authority
+    /// without a type resolver fails: composition has no name-based fallback.
+    fn with_composition_types(
+        &self,
+        assembly: &ProgramAssembly,
+        program: &Spanned<crate::syntax::Program>,
+        resolve: &mut dyn FnMut(&dyn crate::composition::CompositionTypeResolver) -> Result<()>,
+    ) -> Result<()> {
+        let _ = (assembly, program, resolve);
+        anyhow::bail!("composition needs the query type authority; this semantic authority provides none")
+    }
 }
 impl<F> SemanticFactAuthority for F
 where

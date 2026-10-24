@@ -29,16 +29,15 @@ pub use analyze::{
     compile_plan_for_input_path, compile_plan_for_input_path_with_member, reserved_keyword_diagnostic,
 };
 pub use composition::{
-    composition_diagnostics_for_program, composition_diagnostics_for_program_with_imports, composition_imports,
-    composition_result_to_diagnostics, is_mod_compile_plan,
-    prepare_program_for_composition, resolve_program_composition, resolve_program_composition_with_imports,
+    CompositionUnitSource, composition_imports, composition_result_to_diagnostics, composition_unit_sources,
+    is_mod_compile_plan, prepare_program_for_composition, resolve_program_composition_with_imports,
 };
 pub use diagnostics_emit::{parse_error_diagnostic, pest_error_diagnostic, project_error_diagnostic};
 pub use document::{
     AnalysisSymbolKind, CompletionInfo, CompletionKind, DefinitionInfo, DocumentAnalysisSnapshot, DocumentSymbolInfo,
     HoverInfo, ReferenceInfo, SymbolLocation, TestCaseInfo, assemble_for_api_documentation,
     build_api_documentation_snapshot, build_document_analysis, build_document_analysis_for_resolved,
-    build_document_analysis_from_resolution, build_document_analysis_with_context, collect_document_symbols,
+    build_document_analysis_from_resolution, collect_document_symbols,
     collect_test_cases, completion_candidates, definition_at_offset, hover_at_offset, item_id_at_offset,
     references_at_offset, references_at_offset_workspace, resolve_assembly_for_api_documentation, symbol_kind_name,
 };

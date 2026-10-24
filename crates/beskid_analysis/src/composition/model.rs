@@ -53,6 +53,11 @@ pub struct Registration {
     pub source_node_id: AstNodeId,
     /// The unit that declares the registry line.
     pub unit: UnitPath,
+    /// The declaration the key names (the contract of `for Contract`, else the implementation);
+    /// keys compare by it. `None` when the path names no declaration (the type checker reports it).
+    pub key_identity: Option<super::types::TypeIdentity>,
+    /// The declaration the implementation path names.
+    pub implementation_identity: Option<super::types::TypeIdentity>,
     pub scope_id: ScopeId,
     pub key: RegistrationKey,
     pub implementation: String,
@@ -69,6 +74,8 @@ pub struct InjectDependency {
     pub field_unit: UnitPath,
     pub owner_registration_id: u32,
     pub requested_type: String,
+    /// The declaration the requested type names; requests match registrations by it.
+    pub requested_identity: Option<super::types::TypeIdentity>,
     pub is_plural: bool,
     pub qualifier: Option<InjectQualifier>,
     pub field_name: String,
@@ -82,6 +89,10 @@ pub struct CompositionScope {
     pub name: String,
     pub parent: Option<ScopeId>,
     pub span: SpanInfo,
+    /// Number of parameters the scope declares (`scope Visit(i32 id)`); `with` passes them.
+    pub parameter_count: usize,
+    /// The unit of the host that declares the scope.
+    pub unit: UnitPath,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -90,6 +101,10 @@ pub struct CompositionHost {
     pub unit: UnitPath,
     pub base_host: Option<String>,
     pub span: SpanInfo,
+    /// Number of parameters the host declares; `launch` passes them.
+    pub parameter_count: usize,
+    /// Whether one of the host's scopes declares parameters.
+    pub scope_parameters: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -132,6 +147,9 @@ pub struct CompositionHookPlan {
     /// The registration of the generated argument type whose injected fields are the hook
     /// parameters in order; `None` for a hook without parameters.
     pub arguments_registration_id: Option<u32>,
+    /// Whether the hook function takes its host's (global hook) or scope's record as first
+    /// parameter: the `launch`/`with` site passes the local it built (see [`super::hooks`]).
+    pub takes_arguments_record: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]

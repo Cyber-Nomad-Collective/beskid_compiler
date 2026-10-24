@@ -17,6 +17,6 @@ pub use navigation::{
 pub use snapshot::{
     assemble_for_api_documentation, build_api_documentation_snapshot, build_document_analysis,
     build_document_analysis_for_resolved, build_document_analysis_from_resolution,
-    build_document_analysis_with_context, resolve_assembly_for_api_documentation,
+    resolve_assembly_for_api_documentation,
 };
 pub use symbols::{collect_document_symbols, collect_test_cases};

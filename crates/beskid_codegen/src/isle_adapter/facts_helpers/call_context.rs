@@ -46,12 +46,12 @@ impl SyntaxNodeFacts<'_> {
         self.input.runtime_intrinsic_for(key, &name.0)
     }
 
-    pub(in crate::isle_adapter) fn scheduler_compiler_operation(
+    pub(in crate::isle_adapter) fn runtime_compiler_operation(
         &self,
         key: AstNodeKey,
-    ) -> Option<crate::SchedulerCompilerOperation> {
+    ) -> Option<crate::RuntimeCompilerOperation> {
         let name = self.query(runtime_intrinsic_name(self.db, key))?;
-        self.input.scheduler_compiler_operation_for(key, &name.0)
+        self.input.runtime_compiler_operation_for(key, &name.0)
     }
 
     pub(in crate::isle_adapter) fn collect_function_parameters(

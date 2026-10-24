@@ -2,7 +2,7 @@ use crate::analysis::SemanticDiagnostic;
 use crate::analysis::diagnostic_kinds::SemanticIssueKind;
 use crate::analysis::diagnostics::make_diagnostic;
 use crate::composition::baseline::lib_project_rejects_launch;
-use crate::composition::{CompositionInput, CompositionIssue, CompositionResult};
+use crate::composition::{CompositionInput, CompositionIssue, CompositionResult, CompositionTypeResolver};
 use crate::mod_host::{ModHostGenerateResult, ModHostInput, run_through_generate};
 use crate::projects::CompilePlan;
 use crate::syntax::{Program, SpanInfo, Spanned};
@@ -34,22 +34,17 @@ pub fn prepare_program_for_composition(
     )
 }
 
-pub fn resolve_program_composition(
-    program: &Spanned<Program>,
-    compile_plan: Option<&CompilePlan>,
-) -> CompositionResult {
-    resolve_program_composition_with_imports(program, &[], compile_plan)
-}
-
 /// Resolve the entry composition with the other units of its assembly available as base hosts
-/// (a library's or Corelib's `host`, such as `ConsoleHost`).
+/// (a library's or Corelib's `host`, such as `ConsoleHost`). `types` is the query layer's type
+/// authority (`beskid_queries::CompositionTypes`).
 pub fn resolve_program_composition_with_imports(
     program: &Spanned<Program>,
     imported: &[(std::sync::Arc<std::path::Path>, &Spanned<Program>)],
+    types: &dyn CompositionTypeResolver,
     compile_plan: Option<&CompilePlan>,
 ) -> CompositionResult {
     crate::composition::resolve_composition_with_imports(
-        CompositionInput { program, is_mod_project: is_mod_compile_plan(compile_plan) },
+        CompositionInput { program, is_mod_project: is_mod_compile_plan(compile_plan), types },
         imported,
     )
 }
@@ -67,38 +62,41 @@ pub fn composition_imports<'a>(
         .collect()
 }
 
-pub fn composition_diagnostics_for_program(
-    program: &Spanned<Program>,
-    compile_plan: Option<&CompilePlan>,
-    source_name: &str,
-    source: &str,
-) -> anyhow::Result<Vec<SemanticDiagnostic>> {
-    composition_diagnostics_for_program_with_imports(program, &[], compile_plan, source_name, source)
+/// The name and text of one imported unit of the assembly, for composition diagnostics located
+/// in it (a base host's registry line, an imported service's `inject` field).
+#[derive(Debug, Clone, Copy)]
+pub struct CompositionUnitSource<'a> {
+    pub path: &'a std::path::Path,
+    pub name: &'a str,
+    pub source: &'a str,
 }
 
-pub fn composition_diagnostics_for_program_with_imports(
-    program: &Spanned<Program>,
-    imported: &[(std::sync::Arc<std::path::Path>, &Spanned<Program>)],
-    compile_plan: Option<&CompilePlan>,
-    source_name: &str,
-    source: &str,
-) -> anyhow::Result<Vec<SemanticDiagnostic>> {
-    let generated = prepare_program_for_composition(program.clone(), compile_plan, source_name, source)?;
-    let composition_result = resolve_program_composition_with_imports(&generated.program, imported, compile_plan);
-    Ok(composition_result_to_diagnostics(
-        &composition_result,
-        generated.program.span,
-        source_name,
-        source,
-        compile_plan,
-    ))
+/// The units of `assembly` other than `entry`, as diagnostic sources.
+pub fn composition_unit_sources<'a>(
+    assembly: &'a crate::projects::ProgramAssembly,
+    entry: &std::path::Path,
+) -> Vec<CompositionUnitSource<'a>> {
+    assembly
+        .units
+        .iter()
+        .filter(|unit| unit.path != entry)
+        .map(|unit| CompositionUnitSource {
+            path: unit.path.as_path(),
+            name: unit.logical_name.as_str(),
+            source: unit.source.as_str(),
+        })
+        .collect()
 }
 
+/// Diagnostics of a composition result: entry issues in `source_name`, and each issue located in
+/// an imported unit in that unit's own file (`units`). A foreign issue whose unit text is not
+/// among `units` is reported in the entry at `program_span`, never dropped.
 pub fn composition_result_to_diagnostics(
     composition: &CompositionResult,
     program_span: SpanInfo,
     source_name: &str,
     source: &str,
+    units: &[CompositionUnitSource<'_>],
     plan: Option<&CompilePlan>,
 ) -> Vec<SemanticDiagnostic> {
     let mut diagnostics = composition
@@ -106,6 +104,21 @@ pub fn composition_result_to_diagnostics(
         .iter()
         .map(|issue| composition_issue_to_diagnostic(issue, program_span, source_name, source))
         .collect::<Vec<_>>();
+    for (path, issue) in &composition.foreign_issues {
+        diagnostics.push(match units.iter().find(|unit| unit.path == path.as_ref()) {
+            Some(unit) => composition_issue_to_diagnostic(issue, SpanInfo::default(), unit.name, unit.source),
+            None => make_diagnostic(
+                source_name,
+                source,
+                program_span,
+                format!("composition issue in `{}` that has no source text: {issue:?}", path.display()),
+                "composition issue in another unit",
+                None,
+                Some(crate::composition::diagnostics::composition_issue_code(issue).to_string()),
+                crate::analysis::Severity::Error,
+            ),
+        });
+    }
 
     if plan.is_some_and(|compile_plan| {
         lib_project_rejects_launch(compile_plan.target.kind) && !composition.snapshot.launched_host.is_empty()
@@ -206,6 +219,35 @@ fn composition_issue_to_diagnostic(
                     .to_string(),
             ),
         ),
+        CompositionIssue::LaunchArgumentCount { host_name, expected, found, cross_unit: true, span } => (
+            *span,
+            format!("`launch {host_name}(...)` cannot pass arguments to a host declared in another unit"),
+            "host parameters from another unit",
+            Some(format!(
+                "`{host_name}` declares {expected} parameter(s) and this `launch` passes {found}; declare the launched host with parameters in the unit that launches it"
+            )),
+        ),
+        CompositionIssue::LaunchArgumentCount { host_name, expected, found, span, .. } => (
+            *span,
+            format!("`launch {host_name}(...)` passes {found} argument(s), but `{host_name}` declares {expected} parameter(s)"),
+            "wrong number of launch arguments",
+            Some(format!("pass one argument for each parameter of `host {host_name}(...)`, in order")),
+        ),
+        CompositionIssue::WithArgumentCount { scope_name, expected, found, span } => (
+            *span,
+            format!("`with {scope_name}(...)` passes {found} argument(s), but scope `{scope_name}` declares {expected} parameter(s)"),
+            "wrong number of scope arguments",
+            Some(format!("pass one argument for each parameter of `scope {scope_name}(...)`, in order")),
+        ),
+        CompositionIssue::BaseHostParameters { host_name, span } => (
+            *span,
+            format!("base host `{host_name}` cannot declare parameters"),
+            "parameters on a base host",
+            Some(
+                "only the launched host receives `launch` arguments, and only its scopes receive `with` arguments; move the parameters to the launched host, or inject a service that holds the value"
+                    .to_string(),
+            ),
+        ),
         CompositionIssue::UnknownRegistrationId { registration_id, span } => (
             span.unwrap_or(program_span),
             format!("composition produced unknown registration id `{registration_id}` while building dependency graph"),
@@ -301,12 +343,17 @@ fn plural_field_name(name: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::composition_diagnostics_for_program;
     use crate::services::parse_program;
 
+    /// Expansion (with hook lowering) as the build pipeline runs it, then composition with the
+    /// test type resolver.
     fn diagnostics(source: &str) -> Vec<crate::analysis::SemanticDiagnostic> {
         let program = parse_program(source).expect("parse");
-        composition_diagnostics_for_program(&program, None, "Main.bd", source).expect("composition diagnostics")
+        let generated =
+            super::prepare_program_for_composition(program, None, "Main.bd", source).expect("expansion");
+        let types = crate::composition::types::test_types::DeclaredTypes::new(&generated.program, &[]);
+        let result = super::resolve_program_composition_with_imports(&generated.program, &[], &types, None);
+        super::composition_result_to_diagnostics(&result, generated.program.span, "Main.bd", source, &[], None)
     }
 
     #[test]
@@ -410,5 +457,85 @@ i32 Main() { launch AppHost(); return 0; }
         fixed.replace_range(start..end, &text);
         assert!(fixed.contains("single PoliteGreeter for Greeter;"), "{fixed}");
         assert!(diagnostics(&fixed).iter().all(|diagnostic| diagnostic.code.as_deref() != Some("E1718")));
+    }
+    #[test]
+    fn launch_and_with_argument_counts_are_checked() {
+        let source = r#"
+host AppHost(string name)
+{
+    scope Visit(i32 id) { }
+}
+i32 Main()
+{
+    launch AppHost();
+    with Visit(1, 2) { }
+    return 0;
+}
+"#;
+        let found = diagnostics(source);
+        let launch = found
+            .iter()
+            .find(|diagnostic| diagnostic.code.as_deref() == Some("E1722"))
+            .unwrap_or_else(|| panic!("E1722 expected: {found:?}"));
+        assert!(launch.message.contains("passes 0 argument(s)"), "{}", launch.message);
+        let with = found
+            .iter()
+            .find(|diagnostic| diagnostic.code.as_deref() == Some("E1708"))
+            .unwrap_or_else(|| panic!("E1708 expected: {found:?}"));
+        assert!(with.message.contains("declares 1 parameter(s)"), "{}", with.message);
+
+        let matching = source.replace("launch AppHost();", "launch AppHost(\"Ada\");").replace("Visit(1, 2)", "Visit(1)");
+        let found = diagnostics(&matching);
+        assert!(
+            found.iter().all(|diagnostic| !matches!(diagnostic.code.as_deref(), Some("E1722" | "E1708"))),
+            "{found:?}"
+        );
+    }
+
+    #[test]
+    fn a_base_host_with_parameters_is_rejected() {
+        let source = r#"
+host BaseHost(string name) { scope Visit(i32 id) { } }
+host AppHost() : BaseHost { }
+i32 Main() { launch AppHost(); return 0; }
+"#;
+        let found = diagnostics(source);
+        let base = found
+            .iter()
+            .find(|diagnostic| diagnostic.code.as_deref() == Some("E1723"))
+            .unwrap_or_else(|| panic!("E1723 expected: {found:?}"));
+        assert!(base.message.contains("`BaseHost`"), "{}", base.message);
+    }
+    #[test]
+    fn an_imported_registration_is_checked_and_reported_in_its_own_unit() {
+        let library_source = r#"
+pub type Prefixed { string prefix }
+host BaseHost() { registry { single Prefixed; } }
+"#;
+        let library = parse_program(library_source).expect("library parses");
+        let source = r#"
+host AppHost() : BaseHost { }
+i32 Main() { launch AppHost(); return 0; }
+"#;
+        let program = crate::composition::lower_host_hooks(parse_program(source).expect("parse"));
+        let path: std::sync::Arc<std::path::Path> = std::sync::Arc::from(std::path::Path::new("/lib/Base.bd"));
+        let imported = [(std::sync::Arc::clone(&path), &library)];
+        let types = crate::composition::types::test_types::DeclaredTypes::new(&program, &imported);
+        let result = super::resolve_program_composition_with_imports(&program, &imported, &types, None);
+        assert!(result.issues.is_empty(), "nothing is wrong in the entry: {:?}", result.issues);
+        let [(unit, crate::composition::CompositionIssue::UnconstructibleRegistration { .. })] =
+            result.foreign_issues.as_slice()
+        else {
+            panic!("E1719 in the library unit expected: {:?}", result.foreign_issues)
+        };
+        assert_eq!(unit, &path);
+        let units = [super::CompositionUnitSource { path: &path, name: "Base.bd", source: library_source }];
+        let diagnostics =
+            super::composition_result_to_diagnostics(&result, program.span, "Main.bd", source, &units, None);
+        let [diagnostic] = diagnostics.as_slice() else { panic!("one diagnostic: {diagnostics:?}") };
+        assert_eq!(diagnostic.code.as_deref(), Some("E1719"));
+        assert_eq!(diagnostic.src.name(), "Base.bd", "reported in the library file");
+        let start = diagnostic.span.offset();
+        assert_eq!(&library_source[start..start + diagnostic.span.len()], "Prefixed");
     }
 }

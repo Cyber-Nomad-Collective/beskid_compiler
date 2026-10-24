@@ -20,7 +20,7 @@ pub use catalogue::{
 pub use destructive_read::{CanonicalEmptyPlan, ExchangePlan, MoveExpressionPlan};
 pub use kinds::{
     AssignmentKind, CallKind, EventOperation, ForIterableKind, IndexTarget, LiteralKind, OperatorFact,
-    RuntimeIntrinsicKind,
+    RuntimeIntrinsicKind, COMPOSITION_HOOK_ARGUMENTS_MAX,
 };
 pub use match_range::{MatchArmBindingFact, MatchArmFact, MatchPayloadPatternFact, RangeFact, Unit};
 pub use node_facts::NodeFacts;

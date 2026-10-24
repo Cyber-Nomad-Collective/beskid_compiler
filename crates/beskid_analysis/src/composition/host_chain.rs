@@ -54,7 +54,7 @@ pub fn merge_host_registries(
     host_registries: &HashMap<String, Vec<Registration>>,
     host_scopes: &HashMap<String, Vec<super::model::CompositionScope>>,
     merged_scopes: &[super::model::CompositionScope],
-) -> (Vec<Registration>, Vec<CompositionIssue>) {
+) -> (Vec<Registration>, Vec<(super::model::UnitPath, CompositionIssue)>) {
     let scope_name_by_id: HashMap<ScopeId, String> =
         merged_scopes.iter().map(|scope| (scope.id, scope.name.clone())).collect();
     let unified_scope_id: HashMap<String, ScopeId> =
@@ -88,21 +88,24 @@ pub fn merge_host_registries(
                 .iter()
                 .enumerate()
                 .filter(|(index, existing)| {
-                    owners[*index] < host_index && existing.scope_id == reg.scope_id && same_key(&existing.key, &reg.key)
+                    owners[*index] < host_index && existing.scope_id == reg.scope_id && same_key(existing, &reg)
                 })
                 .map(|(index, _)| index)
                 .collect::<Vec<_>>();
             if let Some(&first) = overridden.first() {
                 let existing = &merged[first];
                 if existing.lifetime != reg.lifetime {
-                    issues.push(CompositionIssue::OverrideLifetimeMismatch {
-                        binding: reg.key.name().to_string(),
-                        span: reg.span,
-                        lifetime: reg.lifetime.keyword(),
-                        // A base registration in another unit has no place in this file.
-                        overridden_span: existing.unit.is_none().then_some(existing.span),
-                        overridden_lifetime: existing.lifetime.keyword(),
-                    });
+                    issues.push((
+                        reg.unit.clone(),
+                        CompositionIssue::OverrideLifetimeMismatch {
+                            binding: reg.key.name().to_string(),
+                            span: reg.span,
+                            lifetime: reg.lifetime.keyword(),
+                            // A base registration in another unit has no place in this file.
+                            overridden_span: (existing.unit == reg.unit).then_some(existing.span),
+                            overridden_lifetime: existing.lifetime.keyword(),
+                        },
+                    ));
                 }
                 // The derived host replaces every base registration of the key at its position.
                 merged[first] = reg;
@@ -120,12 +123,11 @@ pub fn merge_host_registries(
     (merged, issues)
 }
 
-/// Keys compare by kind and last path segment (`Hosting.Clock` and `Clock` are one key).
-fn same_key(left: &super::model::RegistrationKey, right: &super::model::RegistrationKey) -> bool {
+/// Keys compare by kind and by the declaration they name; a key that names no declaration never
+/// overrides.
+fn same_key(left: &Registration, right: &Registration) -> bool {
     use super::model::RegistrationKey::{Contract, SelfType};
-    let tail = |name: &str| name.rsplit('.').next().unwrap_or(name).to_string();
-    match (left, right) {
-        (Contract(a), Contract(b)) | (SelfType(a), SelfType(b)) => tail(a) == tail(b),
-        _ => false,
-    }
+    matches!((&left.key, &right.key), (Contract(_), Contract(_)) | (SelfType(_), SelfType(_)))
+        && left.key_identity.is_some()
+        && left.key_identity == right.key_identity
 }

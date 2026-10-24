@@ -16,18 +16,24 @@ use crate::{
     syntax_query::{NodeKind, SyntaxSnapshot},
 };
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub struct CompositionInput<'a> {
     /// Expanded syntax is the composition authority; this pass does not require syntax.
     pub program: &'a Spanned<Program>,
     pub is_mod_project: bool,
+    /// The type authority every registry key, `inject` request and shape check resolves through.
+    pub types: &'a dyn super::types::CompositionTypeResolver,
 }
 
 #[derive(Debug, Clone)]
 pub struct CompositionResult {
     pub plan: BindingPlan,
     pub snapshot: CompositionSnapshot,
+    /// Issues located in the unit under analysis.
     pub issues: Vec<CompositionIssue>,
+    /// Issues located in an imported unit (a base host's registry, an imported service's
+    /// `inject` field, a hook of an imported host), reported at that unit's own positions.
+    pub foreign_issues: Vec<(std::sync::Arc<std::path::Path>, CompositionIssue)>,
     pub dependency_edges: Vec<(u32, u32)>,
 }
 
@@ -41,28 +47,28 @@ pub fn resolve_composition_with_imports(
     input: CompositionInput<'_>,
     imported: &[(std::sync::Arc<std::path::Path>, &Spanned<Program>)],
 ) -> CompositionResult {
-    let collected = collect_with_imports(input.program, imported);
+    let collected = collect_with_imports(input.program, imported, input.types);
     let mut issues = Vec::new();
 
     if input.is_mod_project {
         for host in collected.hosts.values() {
-            issues.push(CompositionIssue::HostInModProject { span: host.span });
+            issues.push((host.unit.clone(), CompositionIssue::HostInModProject { span: host.span }));
         }
     }
 
     let (launch_host, launch_span) = match collected.launches.as_slice() {
         [] => {
             if !collected.hosts.is_empty() {
-                issues.push(CompositionIssue::MissingLaunchHost { span: Some(input.program.span) });
+                issues.push((None, CompositionIssue::MissingLaunchHost { span: Some(input.program.span) }));
             }
             (String::new(), SpanInfo::default())
         }
         [single] => (single.host_name.clone(), single.span),
         [first, second, ..] => {
-            issues.push(CompositionIssue::MultipleLaunchHosts {
-                first_span: Some(first.span),
-                second_span: Some(second.span),
-            });
+            issues.push((
+                None,
+                CompositionIssue::MultipleLaunchHosts { first_span: Some(first.span), second_span: Some(second.span) },
+            ));
             (first.host_name.clone(), first.span)
         }
     };
@@ -73,37 +79,89 @@ pub fn resolve_composition_with_imports(
         match build_host_chain(&collected.hosts, &launch_host, launch_span) {
             Ok(chain) => chain,
             Err(issue) => {
-                issues.push(issue);
+                // A cycle is reported at the host that closes it, in that host's unit.
+                let unit = match &issue {
+                    CompositionIssue::HostInheritanceCycle { host_name, .. } => {
+                        collected.hosts.get(host_name).and_then(|host| host.unit.clone())
+                    }
+                    _ => None,
+                };
+                issues.push((unit, issue));
                 Vec::new()
             }
         }
     };
 
     let merged_scopes = merge_host_scopes(&host_chain, &collected.host_scopes);
-    issues.extend(validate_scope_tree(&merged_scopes));
+    for issue in validate_scope_tree(&merged_scopes) {
+        let unit = match &issue {
+            CompositionIssue::DuplicateScopeName { span, .. } | CompositionIssue::UnknownParentScope { span, .. } => {
+                merged_scopes.iter().find(|scope| scope.span == *span).and_then(|scope| scope.unit.clone())
+            }
+            _ => None,
+        };
+        issues.push((unit, issue));
+    }
     for with_site in &collected.with_sites {
         if !with_site.after_launch {
-            issues.push(CompositionIssue::WithWithoutLaunch {
-                scope_name: with_site.scope_name.clone(),
-                span: with_site.span,
-            });
+            issues.push((
+                None,
+                CompositionIssue::WithWithoutLaunch { scope_name: with_site.scope_name.clone(), span: with_site.span },
+            ));
         }
-        if !merged_scopes.iter().any(|scope| scope.name == with_site.scope_name) {
-            issues.push(CompositionIssue::WithArgsMismatch {
-                scope_name: with_site.scope_name.clone(),
-                span: with_site.span,
-            });
+        match merged_scopes.iter().find(|scope| scope.name == with_site.scope_name) {
+            None => issues.push((
+                None,
+                CompositionIssue::WithArgsMismatch { scope_name: with_site.scope_name.clone(), span: with_site.span },
+            )),
+            // Expansion moved a matching argument list into the record local; anything else
+            // (arguments left, or a scope with parameters and no record) does not match.
+            Some(scope)
+                if with_site.argument_count != 0 || (scope.parameter_count > 0 && !with_site.arguments_bound) =>
+            {
+                issues.push((
+                    None,
+                    CompositionIssue::WithArgumentCount {
+                        scope_name: with_site.scope_name.clone(),
+                        expected: scope.parameter_count,
+                        found: with_site.argument_count,
+                        span: with_site.span,
+                    },
+                ))
+            }
+            Some(_) => {}
+        }
+    }
+    if let Some((launched, bases)) = host_chain.split_last() {
+        for base in bases {
+            if base.parameter_count > 0 || base.scope_parameters {
+                issues.push((
+                    base.unit.clone(),
+                    CompositionIssue::BaseHostParameters { host_name: base.name.clone(), span: base.span },
+                ));
+            }
+        }
+        for site in collected.launches.iter().filter(|site| site.span == launch_span) {
+            if site.argument_count != 0 || (launched.parameter_count > 0 && !site.arguments_bound) {
+                issues.push((
+                    None,
+                    CompositionIssue::LaunchArgumentCount {
+                        host_name: launched.name.clone(),
+                        expected: launched.parameter_count,
+                        found: site.argument_count,
+                        cross_unit: launched.unit.is_some(),
+                        span: site.span,
+                    },
+                ));
+            }
         }
     }
 
     let (mut merged_registrations, merge_issues) =
         merge_host_registries(&host_chain, &collected.host_registries, &collected.host_scopes, &merged_scopes);
     issues.extend(merge_issues);
-    issues.extend(super::shapes::validate_registrations(
-        &merged_registrations,
-        input.program,
-        &imported.iter().map(|(_, program)| *program).collect::<Vec<_>>(),
-    ));
+    // Registrations of imported units are checked too; their issues stay in their own unit.
+    issues.extend(super::shapes::validate_registrations(&merged_registrations, input.program, imported, input.types));
     // Parser `Spanned.id` is deliberately unset. Freeze identities from the same deterministic
     // expanded-tree pre-order that the generation-bound query index uses; a non-unique source
     // span remains invalid and is rejected at the codegen boundary.
@@ -156,14 +214,21 @@ pub fn resolve_composition_with_imports(
                     ));
                 }
             }
-            Err(issue) => issues.push(issue),
+            Err(issue) => issues.push((request.field_unit.clone(), issue)),
         }
     }
 
     let registration_order = match build_graph(&merged_registrations, &edges) {
         Ok(dag) => topo_registration_order(&dag),
         Err(issue) => {
-            issues.push(issue);
+            let unit = match &issue {
+                CompositionIssue::DependencyCycle { from_id, .. } => merged_registrations
+                    .iter()
+                    .find(|registration| registration.id == *from_id)
+                    .and_then(|registration| registration.unit.clone()),
+                _ => None,
+            };
+            issues.push((unit, issue));
             Vec::new()
         }
     };
@@ -225,15 +290,18 @@ pub fn resolve_composition_with_imports(
                         .map(|scope| scope.id)
                 };
                 let Some(scope_id) = scope_id else {
-                    issues.push(CompositionIssue::UnknownParentScope {
-                        scope_name: "<composition hook>".into(),
-                        parent_scope: hook.scope_id,
-                        span: hook.span,
-                    });
+                    issues.push((
+                        hook.unit.clone(),
+                        CompositionIssue::UnknownParentScope {
+                            scope_name: "<composition hook>".into(),
+                            parent_scope: hook.scope_id,
+                            span: hook.span,
+                        },
+                    ));
                     continue;
                 };
                 if hook.kind == crate::syntax::ScopeHookKind::Startup && scope_id != ScopeId::GLOBAL {
-                    issues.push(CompositionIssue::StartupInNamedScope { span: hook.span });
+                    issues.push((hook.unit.clone(), CompositionIssue::StartupInNamedScope { span: hook.span }));
                     continue;
                 }
                 let arguments = super::hooks::hook_arguments_name(&host.name, hook.kind, hook.span);
@@ -248,6 +316,7 @@ pub fn resolve_composition_with_imports(
                         .iter()
                         .find(|registration| registration.implementation == arguments && registration.unit == hook.unit)
                         .map(|registration| registration.id),
+                    takes_arguments_record: hook.takes_record,
                 });
             }
         }
@@ -279,7 +348,15 @@ pub fn resolve_composition_with_imports(
         disposal_hooks,
     };
 
-    CompositionResult { plan, snapshot, issues, dependency_edges: edges }
+    let mut entry_issues = Vec::new();
+    let mut foreign_issues = Vec::new();
+    for (unit, issue) in issues {
+        match unit {
+            None => entry_issues.push(issue),
+            Some(path) => foreign_issues.push((path, issue)),
+        }
+    }
+    CompositionResult { plan, snapshot, issues: entry_issues, foreign_issues, dependency_edges: edges }
 }
 
 fn unique_source_node(index: &SyntaxSnapshot<'_>, kind: NodeKind, span: SpanInfo) -> AstNodeId {
@@ -315,7 +392,8 @@ i32 Main() {
         )
         .expect("composition source parses");
 
-        let result = resolve_composition(CompositionInput { program: &program, is_mod_project: false });
+        let types = crate::composition::types::test_types::DeclaredTypes::new(&program, &[]);
+        let result = resolve_composition(CompositionInput { program: &program, is_mod_project: false, types: &types });
 
         assert_eq!(result.snapshot.launched_host, "AppHost");
         assert_eq!(result.plan.activation.len(), 1);
@@ -340,7 +418,8 @@ i32 Main() { launch AppHost(); return 0; }
 "#,
         )
         .expect("composition source parses");
-        let result = resolve_composition(CompositionInput { program: &program, is_mod_project: false });
+        let types = crate::composition::types::test_types::DeclaredTypes::new(&program, &[]);
+        let result = resolve_composition(CompositionInput { program: &program, is_mod_project: false, types: &types });
         assert!(result.issues.is_empty(), "issues: {:?}", result.issues);
         assert_eq!(result.plan.activation.len(), 2);
         assert_eq!(result.plan.singulars.len(), 1);
@@ -364,7 +443,8 @@ i32 Main() { launch AppHost(); return 0; }
 "#,
         )
         .expect("composition source parses");
-        let result = resolve_composition(CompositionInput { program: &program, is_mod_project: false });
+        let types = crate::composition::types::test_types::DeclaredTypes::new(&program, &[]);
+        let result = resolve_composition(CompositionInput { program: &program, is_mod_project: false, types: &types });
         assert!(result.issues.is_empty(), "issues: {:?}", result.issues);
         assert_eq!(result.plan.plurals.len(), 2, "both plural fields require independent plans");
         assert_ne!(result.plan.plurals[0].field_span, result.plan.plurals[1].field_span);
@@ -396,10 +476,10 @@ i32 Main() { launch AppHost(); return 0; }
             .expect("application parses"),
         );
         let path: std::sync::Arc<std::path::Path> = std::sync::Arc::from(std::path::Path::new("/corelib/Hosting.bd"));
-        let result = resolve_composition_with_imports(
-            CompositionInput { program: &program, is_mod_project: false },
-            &[(std::sync::Arc::clone(&path), &library)],
-        );
+        let imported = [(std::sync::Arc::clone(&path), &library)];
+        let types = crate::composition::types::test_types::DeclaredTypes::new(&program, &imported);
+        let result =
+            resolve_composition_with_imports(CompositionInput { program: &program, is_mod_project: false, types: &types }, &imported);
         assert!(result.issues.is_empty(), "issues: {:?}", result.issues);
         let imported = result
             .snapshot
@@ -412,5 +492,71 @@ i32 Main() { launch AppHost(); return 0; }
         assert_eq!(result.plan.startup_hooks.len(), 1);
         let ids = result.snapshot.registrations.iter().map(|registration| registration.id).collect::<std::collections::HashSet<_>>();
         assert_eq!(ids.len(), result.snapshot.registrations.len(), "registration ids stay unique across units");
+    }
+    /// Resolves `Module.Type` paths to the type declared in that inline module: enough to tell
+    /// two declarations with one simple name apart.
+    struct QualifiedTypes(std::collections::HashMap<String, crate::composition::TypeIdentity>);
+
+    impl crate::composition::CompositionTypeResolver for QualifiedTypes {
+        fn resolve_type(
+            &self,
+            _unit: &crate::composition::UnitPath,
+            _site: crate::syntax::SpanInfo,
+            path: &crate::syntax::Path,
+        ) -> Option<crate::composition::TypeIdentity> {
+            let name =
+                path.segments.iter().map(|segment| segment.node.name.node.name.as_str()).collect::<Vec<_>>().join(".");
+            self.0.get(&name).cloned()
+        }
+    }
+
+    #[test]
+    fn keys_and_requests_compare_by_declaration_not_by_simple_name() {
+        use crate::syntax::Node;
+        let issues = |requested: &str| {
+            let program = parse_program(&format!(
+                r#"
+mod A {{ pub type Clock {{ }} }}
+mod B {{ pub type Clock {{ }} }}
+type Report {{ inject {requested} clock }}
+host AppHost() {{ registry {{ single A.Clock; single Report; }} }}
+i32 Main() {{ launch AppHost(); return 0; }}
+"#
+            ))
+            .expect("parse");
+            let mut declared = std::collections::HashMap::new();
+            for item in &program.node.items {
+                match &item.node {
+                    Node::InlineModule(module) => {
+                        for inner in &module.node.items {
+                            if let Node::TypeDefinition(definition) = &inner.node {
+                                declared.insert(
+                                    format!("{}.{}", module.node.name.node.name, definition.node.name.node.name),
+                                    crate::composition::TypeIdentity { unit: None, declaration: definition.node.name.span },
+                                );
+                            }
+                        }
+                    }
+                    Node::TypeDefinition(definition) => {
+                        declared.insert(
+                            definition.node.name.node.name.clone(),
+                            crate::composition::TypeIdentity { unit: None, declaration: definition.node.name.span },
+                        );
+                    }
+                    _ => {}
+                }
+            }
+            let types = QualifiedTypes(declared);
+            resolve_composition(CompositionInput { program: &program, is_mod_project: false, types: &types }).issues
+        };
+        assert!(issues("A.Clock").is_empty(), "`A.Clock` is the registered declaration");
+        let other = issues("B.Clock");
+        assert!(
+            matches!(
+                other.as_slice(),
+                [crate::composition::CompositionIssue::UnresolvedInject { requested_type, .. }] if requested_type == "B.Clock"
+            ),
+            "`B.Clock` has the same simple name but is another declaration: {other:?}"
+        );
     }
 }

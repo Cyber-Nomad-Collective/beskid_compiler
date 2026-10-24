@@ -187,6 +187,8 @@ pub(super) fn validate(manifest: &RuntimeManifestV5) -> Result<(), String> {
         "__composition_scope_leave",
         "__composition_scope_depth",
         "__composition_shutdown",
+        "__composition_exit_register",
+        "__composition_exit",
         "__process_exit",
         "__process_getpid",
         "__child_begin",

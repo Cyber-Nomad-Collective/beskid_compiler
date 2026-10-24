@@ -32,7 +32,15 @@ pub enum RuntimeIntrinsicKind {
     SchedulerFiberEntryAddress,
     SchedulerReturnTrampolineAddress,
     SchedulerPollEntryInvoke,
+    /// Indirect call of a host-hook function with up to the given number of pointer arguments
+    /// read from an argument array (`composition_hook_invoke(function, arguments, count)`).
+    CompositionHookInvoke(usize),
 }
+
+/// The most arguments a host-hook function takes: its host or scope record and its argument
+/// object. It is the runtime exit entry's capacity (`COMPOSITION_EXIT_ARGUMENTS_MAX` in
+/// `Runtime/Host/Composition.bd`) and the arities `composition_hook_invoke` dispatches.
+pub const COMPOSITION_HOOK_ARGUMENTS_MAX: usize = 2;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum OperatorFact {

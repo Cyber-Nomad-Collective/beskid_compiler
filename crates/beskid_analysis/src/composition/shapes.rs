@@ -3,36 +3,46 @@
 //! only its `inject` fields; so it must be a non-generic `type` without value fields, and a
 //! `for Contract` registration must name a type that conforms to the contract.
 //!
-//! The checks use the declarations of the unit under analysis. A registration naming a type that
-//! the unit does not declare (an imported one) is left to the resolver and the backend.
+//! The checks cover every merged registration, including those of base hosts in imported units;
+//! an issue is reported in the unit that declares the registry line.
 
 use std::collections::{HashMap, HashSet};
 
 use super::diagnostics::{CompositionIssue, UnconstructibleReason};
-use super::model::{Registration, RegistrationKey};
-use crate::syntax::{ContractNode, FieldKind, Node, Program, Spanned, Type};
+use super::model::{Registration, RegistrationKey, UnitPath};
+use super::types::{CompositionTypeResolver, TypeIdentity};
+use crate::syntax::{ContractNode, FieldKind, Identifier, Node, Path, PathSegment, Program, Spanned, Type};
 
 #[derive(Debug, Clone)]
 enum Declaration {
-    Contract { embeds: Vec<String> },
-    Type { conformances: Vec<String>, value_field: Option<String>, generic: bool },
-    Enum,
+    Contract { name: String, embeds: Vec<Option<TypeIdentity>> },
+    Type { name: String, conformances: Vec<Option<TypeIdentity>>, value_field: Option<String>, generic: bool },
+    Enum { name: String },
 }
 
-fn tail(path: &Spanned<crate::syntax::Path>) -> String {
-    path.node.segments.last().map(|segment| segment.node.name.node.name.clone()).unwrap_or_default()
-}
-
-fn declarations(program: &Spanned<Program>, imported: &[&Spanned<Program>]) -> HashMap<String, Declaration> {
-    let mut found = HashMap::new();
-    let mut extra_conformances: HashMap<String, Vec<String>> = HashMap::new();
-    // Imported declarations first, so a name the unit itself declares wins.
-    for unit in imported {
-        collect_items(&unit.node.items, &mut found, &mut extra_conformances);
+impl Declaration {
+    fn name(&self) -> &str {
+        match self {
+            Self::Contract { name, .. } | Self::Type { name, .. } | Self::Enum { name } => name,
+        }
     }
-    collect_items(&program.node.items, &mut found, &mut extra_conformances);
-    for (name, conformances) in extra_conformances {
-        if let Some(Declaration::Type { conformances: existing, .. }) = found.get_mut(&name) {
+}
+
+/// The type, contract and enum declarations of every unit, keyed by their identity; each
+/// conformance and embedding is resolved in the unit that writes it.
+fn declarations(
+    program: &Spanned<Program>,
+    imported: &[(std::sync::Arc<std::path::Path>, &Spanned<Program>)],
+    types: &dyn CompositionTypeResolver,
+) -> HashMap<TypeIdentity, Declaration> {
+    let mut found = HashMap::new();
+    let mut extra_conformances: HashMap<TypeIdentity, Vec<Option<TypeIdentity>>> = HashMap::new();
+    collect_items(&program.node.items, &None, types, &mut found, &mut extra_conformances);
+    for (path, unit) in imported {
+        collect_items(&unit.node.items, &Some(std::sync::Arc::clone(path)), types, &mut found, &mut extra_conformances);
+    }
+    for (declaration, conformances) in extra_conformances {
+        if let Some(Declaration::Type { conformances: existing, .. }) = found.get_mut(&declaration) {
             existing.extend(conformances);
         }
     }
@@ -41,9 +51,13 @@ fn declarations(program: &Spanned<Program>, imported: &[&Spanned<Program>]) -> H
 
 fn collect_items(
     items: &[Spanned<Node>],
-    found: &mut HashMap<String, Declaration>,
-    extra_conformances: &mut HashMap<String, Vec<String>>,
+    unit: &UnitPath,
+    types: &dyn CompositionTypeResolver,
+    found: &mut HashMap<TypeIdentity, Declaration>,
+    extra_conformances: &mut HashMap<TypeIdentity, Vec<Option<TypeIdentity>>>,
 ) {
+    let resolve = |path: &Spanned<Path>| types.resolve_type(unit, path.span, &path.node);
+    let identity = |name: &Spanned<Identifier>| TypeIdentity { unit: unit.clone(), declaration: name.span };
     for item in items {
         match &item.node {
             Node::ContractDefinition(contract) => {
@@ -52,11 +66,14 @@ fn collect_items(
                     .items
                     .iter()
                     .filter_map(|node| match &node.node {
-                        ContractNode::Embedding(embedding) => Some(embedding.node.name.node.name.clone()),
+                        ContractNode::Embedding(embedding) => Some(resolve(&single_path(&embedding.node.name))),
                         _ => None,
                     })
                     .collect();
-                found.insert(contract.node.name.node.name.clone(), Declaration::Contract { embeds });
+                found.insert(
+                    identity(&contract.node.name),
+                    Declaration::Contract { name: contract.node.name.node.name.clone(), embeds },
+                );
             }
             Node::TypeDefinition(definition) => {
                 let value_field = definition
@@ -66,87 +83,106 @@ fn collect_items(
                     .find(|field| field.node.kind == FieldKind::Value)
                     .map(|field| field.node.name.node.name.clone());
                 found.insert(
-                    definition.node.name.node.name.clone(),
+                    identity(&definition.node.name),
                     Declaration::Type {
-                        conformances: definition.node.conformances.iter().map(tail).collect(),
+                        name: definition.node.name.node.name.clone(),
+                        conformances: definition.node.conformances.iter().map(resolve).collect(),
                         value_field,
                         generic: !definition.node.generics.is_empty(),
                     },
                 );
             }
             Node::EnumDefinition(definition) => {
-                found.insert(definition.node.name.node.name.clone(), Declaration::Enum);
+                found.insert(
+                    identity(&definition.node.name),
+                    Declaration::Enum { name: definition.node.name.node.name.clone() },
+                );
             }
             Node::ImplBlock(block) => {
-                if let Type::Complex(path) = &block.node.receiver_type.node {
-                    extra_conformances.entry(tail(path)).or_default().extend(block.node.conformances.iter().map(tail));
+                if let Type::Complex(path) = &block.node.receiver_type.node
+                    && let Some(receiver) = resolve(path)
+                {
+                    extra_conformances.entry(receiver).or_default().extend(block.node.conformances.iter().map(resolve));
                 }
             }
-            Node::InlineModule(module) => collect_items(&module.node.items, found, extra_conformances),
+            Node::InlineModule(module) => collect_items(&module.node.items, unit, types, found, extra_conformances),
             _ => {}
         }
     }
 }
 
-/// `Some(true)` when `type_name` conforms to `contract`, `Some(false)` when the unit proves it
-/// does not, `None` when a conformance leaves the unit (an imported contract may embed it).
-fn conforms(declarations: &HashMap<String, Declaration>, type_name: &str, contract: &str) -> Option<bool> {
-    let Some(Declaration::Type { conformances, .. }) = declarations.get(type_name) else {
+/// A one-segment path naming `name` at its own span (a contract embedding is written as a name).
+fn single_path(name: &Spanned<Identifier>) -> Spanned<Path> {
+    Spanned::new(
+        Path { segments: vec![Spanned::new(PathSegment { name: name.clone(), type_args: Vec::new() }, name.span)] },
+        name.span,
+    )
+}
+
+/// `Some(true)` when `type_id` conforms to `contract`, `Some(false)` when the declarations prove
+/// it does not, `None` when a conformance names no declaration the assembly holds.
+fn conforms(declarations: &HashMap<TypeIdentity, Declaration>, type_id: &TypeIdentity, contract: &TypeIdentity) -> Option<bool> {
+    let Some(Declaration::Type { conformances, .. }) = declarations.get(type_id) else {
         return None;
     };
     let mut pending = conformances.clone();
     let mut seen = HashSet::new();
     let mut unknown = false;
-    while let Some(name) = pending.pop() {
-        if name == contract {
+    while let Some(next) = pending.pop() {
+        let Some(next) = next else {
+            unknown = true;
+            continue;
+        };
+        if &next == contract {
             return Some(true);
         }
-        if !seen.insert(name.clone()) {
+        if !seen.insert(next.clone()) {
             continue;
         }
-        match declarations.get(&name) {
-            Some(Declaration::Contract { embeds }) => pending.extend(embeds.iter().cloned()),
+        match declarations.get(&next) {
+            Some(Declaration::Contract { embeds, .. }) => pending.extend(embeds.iter().cloned()),
             _ => unknown = true,
         }
     }
     if unknown { None } else { Some(false) }
 }
 
-fn last_segment(name: &str) -> &str {
-    name.rsplit('.').next().unwrap_or(name)
-}
-
-/// Check every merged registration against the unit's declarations.
+/// Check every merged registration against the declaration its paths name. A registration whose
+/// implementation names no declaration is left to the type checker, which reports the path.
 pub fn validate_registrations(
     registrations: &[Registration],
     program: &Spanned<Program>,
-    imported: &[&Spanned<Program>],
-) -> Vec<CompositionIssue> {
-    let declarations = declarations(program, imported);
-    let mut issues = Vec::new();
+    imported: &[(std::sync::Arc<std::path::Path>, &Spanned<Program>)],
+    types: &dyn CompositionTypeResolver,
+) -> Vec<(UnitPath, CompositionIssue)> {
+    let declarations = declarations(program, imported, types);
+    let mut located = Vec::new();
     for registration in registrations {
-        // Generated hook arguments are always constructible; an imported unit's registry lines
-        // are diagnosed when that unit is analysed.
-        if super::hooks::is_hook_item_name(&registration.implementation) || registration.unit.is_some() {
+        // Generated hook arguments are always constructible.
+        if super::hooks::is_hook_item_name(&registration.implementation) {
             continue;
         }
-        let implementation = last_segment(&registration.implementation);
-        match declarations.get(implementation) {
-            Some(Declaration::Contract { .. }) => {
+        let Some(implementation_id) = &registration.implementation_identity else {
+            continue;
+        };
+        let Some(declaration) = declarations.get(implementation_id) else {
+            continue;
+        };
+        let implementation = declaration.name().to_string();
+        let issue = match declaration {
+            Declaration::Contract { .. } => {
                 let mut candidates = declarations
-                    .keys()
-                    .filter(|name| conforms(&declarations, name, implementation) == Some(true))
-                    .filter(|name| {
-                        matches!(
-                            declarations.get(name.as_str()),
-                            Some(Declaration::Type { value_field: None, generic: false, .. })
-                        )
+                    .iter()
+                    .filter(|(id, candidate)| {
+                        matches!(candidate, Declaration::Type { value_field: None, generic: false, .. })
+                            && conforms(&declarations, id, implementation_id) == Some(true)
                     })
-                    .cloned()
+                    .map(|(_, candidate)| candidate.name().to_string())
                     .collect::<Vec<_>>();
                 candidates.sort();
-                issues.push(CompositionIssue::RegisteredContract {
-                    contract: implementation.to_string(),
+                candidates.dedup();
+                Some(CompositionIssue::RegisteredContract {
+                    contract: implementation,
                     target: match &registration.key {
                         RegistrationKey::Contract(target) => Some(target.clone()),
                         RegistrationKey::SelfType(_) => None,
@@ -154,43 +190,42 @@ pub fn validate_registrations(
                     span: registration.span,
                     implementation_span: registration.implementation_span,
                     candidates,
-                });
+                })
             }
-            Some(Declaration::Enum) => issues.push(CompositionIssue::UnconstructibleRegistration {
-                implementation: implementation.to_string(),
+            Declaration::Enum { .. } => Some(CompositionIssue::UnconstructibleRegistration {
+                implementation,
                 reason: UnconstructibleReason::Enum,
                 span: registration.implementation_span,
             }),
-            Some(Declaration::Type { generic: true, .. }) => issues.push(CompositionIssue::UnconstructibleRegistration {
-                implementation: implementation.to_string(),
+            Declaration::Type { generic: true, .. } => Some(CompositionIssue::UnconstructibleRegistration {
+                implementation,
                 reason: UnconstructibleReason::Generic,
                 span: registration.implementation_span,
             }),
-            Some(Declaration::Type { value_field: Some(field), .. }) => {
-                issues.push(CompositionIssue::UnconstructibleRegistration {
-                    implementation: implementation.to_string(),
-                    reason: UnconstructibleReason::ValueField(field.clone()),
-                    span: registration.implementation_span,
-                })
-            }
-            Some(Declaration::Type { .. }) => {
-                if let RegistrationKey::Contract(contract) = &registration.key {
-                    let contract = last_segment(contract);
-                    if matches!(declarations.get(contract), Some(Declaration::Contract { .. }))
-                        && conforms(&declarations, implementation, contract) == Some(false)
+            Declaration::Type { value_field: Some(field), .. } => Some(CompositionIssue::UnconstructibleRegistration {
+                implementation,
+                reason: UnconstructibleReason::ValueField(field.clone()),
+                span: registration.implementation_span,
+            }),
+            Declaration::Type { .. } => match (&registration.key, &registration.key_identity) {
+                (RegistrationKey::Contract(_), Some(contract_id)) => match declarations.get(contract_id) {
+                    Some(Declaration::Contract { name, .. })
+                        if conforms(&declarations, implementation_id, contract_id) == Some(false) =>
                     {
-                        issues.push(CompositionIssue::NonConformingRegistration {
-                            implementation: implementation.to_string(),
-                            contract: contract.to_string(),
+                        Some(CompositionIssue::NonConformingRegistration {
+                            implementation,
+                            contract: name.clone(),
                             span: registration.implementation_span,
-                        });
+                        })
                     }
-                }
-            }
-            None => {}
-        }
+                    _ => None,
+                },
+                _ => None,
+            },
+        };
+        located.extend(issue.map(|issue| (registration.unit.clone(), issue)));
     }
-    issues
+    located
 }
 
 #[cfg(test)]
@@ -200,7 +235,8 @@ mod tests {
 
     fn issues(source: &str) -> Vec<CompositionIssue> {
         let program = lower_host_hooks(parse_program(source).expect("parse"));
-        resolve_composition(CompositionInput { program: &program, is_mod_project: false }).issues
+        let types = crate::composition::types::test_types::DeclaredTypes::new(&program, &[]);
+        resolve_composition(CompositionInput { program: &program, is_mod_project: false, types: &types }).issues
     }
 
     #[test]

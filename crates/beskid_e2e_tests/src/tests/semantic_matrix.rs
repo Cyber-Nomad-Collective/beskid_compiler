@@ -117,7 +117,11 @@ fn console_host_base_registers_the_command_line() {
     let workspace = E2eWorkspace::from_fixture("console_host");
     let manifest = workspace.join("ConsoleHost.bproj");
     let run = cli.run(["run", "--project", manifest.to_str().expect("manifest path str"), "--target", "App"]);
-    assert_exit_code(&run, 7, "console host startup ends the program through CommandLine.Exit");
+    assert_exit_code(&run, 7, "CommandLine.Exit inside a scope ends the program through the host");
     let stdout = String::from_utf8_lossy(&run.stdout);
-    assert_eq!(stdout.lines().map(str::trim_end).filter(|line| !line.is_empty()).collect::<Vec<_>>(), ["hello 0"]);
+    assert_eq!(
+        stdout.lines().map(str::trim_end).filter(|line| !line.is_empty()).collect::<Vec<_>>(),
+        ["hello Ada 0", "enter 3", "exit", "leave 3", "shutdown"],
+        "the open scope's dispose runs innermost first, then the global dispose"
+    );
 }

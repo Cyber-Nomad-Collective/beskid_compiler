@@ -8,7 +8,7 @@ use beskid_analysis::projects::model::AssemblyOptions;
 use beskid_analysis::projects::{
     CompilePlan, ProjectGraphBuildOptions, parse_workspace_manifest, project_manifest_for_member_dir,
 };
-use beskid_analysis::services::{parse_program_with_source_name, resolve_program_composition};
+use beskid_analysis::services::{composition_imports, resolve_program_composition_with_imports};
 use beskid_graph::{
     GraphDocument, GraphKind, from_composition, from_import_closure, from_module_graph, from_project_graph,
     from_workspace,
@@ -114,14 +114,32 @@ fn build_assembly_graph(
             from_import_closure(&units).map_err(GraphQueryError::from)
         }
         GraphKind::HostComposition => {
-            let source = request
-                .entry_source
-                .clone()
-                .or_else(|| std::fs::read_to_string(entry).ok())
-                .ok_or_else(|| GraphQueryError::Message("entry source required for host graph".to_owned()))?;
-            let program = parse_program_with_source_name(&entry.display().to_string(), &source)
-                .map_err(|e| GraphQueryError::Parse(e.to_string()))?;
-            let composition = resolve_program_composition(&program, Some(plan));
+            // The host graph is the composition the build resolves: over the expanded assembly,
+            // with the query layer's type authority.
+            let assembly = Arc::new(program_assembly(
+                db,
+                plan,
+                None,
+                entry,
+                request.entry_source.as_deref(),
+                &AssemblyOptions::default(),
+            )?);
+            let message = |error: &dyn std::fmt::Display| GraphQueryError::Message(error.to_string());
+            let project = crate::project_session_for_planned_syntax_assembly(
+                db,
+                &assembly,
+                plan,
+                entry,
+                crate::typed_entry_bundle::lockfile_digest_for_plan(plan),
+            )
+            .map_err(|error| message(&error))?;
+            let typed = crate::build_mod_authority_typed_program(db, project, Arc::clone(&assembly))
+                .map_err(|error| message(&error))?;
+            let entry_unit = assembly.entry_unit();
+            let imported = composition_imports(&assembly, &entry_unit.path);
+            let types = crate::CompositionTypes::new(&*db, &typed);
+            let composition =
+                resolve_program_composition_with_imports(&entry_unit.program, &imported, &types, Some(plan));
             from_composition(&composition.snapshot, &composition.snapshot.registrations, &composition.dependency_edges)
                 .map_err(GraphQueryError::from)
         }

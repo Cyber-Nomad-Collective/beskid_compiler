@@ -142,6 +142,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Registry lines resolve their types (an unknown name is reported at the line),
   and a contract named only by a registry line, a `where` bound or an `inject`
   field is no longer an unused private item.
+- Host and scope parameters reach hooks: `launch App("Ada")` and
+  `with Visit(3)` build a record of the arguments, each argument type-checked
+  at its own position; `startup` and global `init`/`dispose` read the host
+  parameters, a scope's hooks read that scope's parameters. E1722 a `launch`
+  with the wrong number of arguments, E1708 a `with` with the wrong number,
+  E1723 parameters on a base host or its scopes.
+- Registry keys and `inject` requests compare by the declaration they name
+  (`A.Clock` and `B.Clock` are different keys), resolved by the query layer;
+  the last-segment name matching is gone.
+- Registrations of base hosts in other units are checked too; their errors are
+  reported in their own file.
+- `CommandLine.Exit(code)` runs the `dispose` hooks of every open scope,
+  innermost first, then the global `dispose` hooks, then exits. Runtime exports
+  `composition_exit_register` and `composition_exit`; the runtime calls a hook
+  through the compiler operation `composition_hook_invoke`.
 
 ### Added
 

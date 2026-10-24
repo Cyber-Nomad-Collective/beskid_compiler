@@ -2,13 +2,12 @@
 mod tests {
     use std::path::{Path, PathBuf};
 
-    use crate::compilation_context::ProjectSessionHandle;
     use crate::projects::{
         AssemblyDiscovery, AssemblyOptions, ProgramAssembly, WorkspacePrepareOptions, assemble_program,
         prepare_project_workspace_with_options,
     };
     use crate::services::{
-        build_document_analysis_from_resolution, build_document_analysis_with_context, completion_candidates,
+        build_document_analysis, build_document_analysis_from_resolution, completion_candidates,
         definition_at_offset, parse_program_with_source_name, references_at_offset_workspace, resolve_input,
     };
 
@@ -133,7 +132,6 @@ mod tests {
             &fixture.main_path,
             Some(resolution),
             module_paths,
-            None,
             None,
         )
     }
@@ -317,20 +315,11 @@ mod tests {
             let fixture = corelib_mvp_paths();
             let program =
                 parse_program_with_source_name(&fixture.main_path.to_string_lossy(), &fixture.source).expect("parse");
-            let handle = ProjectSessionHandle::try_for_analysis_path(&fixture.main_path, None);
-            let snapshot = build_document_analysis_with_context(
-                &program,
-                fixture.main_path.to_string_lossy(),
-                &fixture.source,
-                &fixture.main_path,
-                handle.as_ref(),
-                None,
-            );
+            let snapshot = build_document_analysis(&program, fixture.main_path.to_string_lossy(), &fixture.source, None);
             assert!(
                 snapshot.resolution.is_none(),
                 "without query-backed entry resolution, snapshot should not resolve"
             );
-            assert!(handle.is_some(), "project session should still be available for composition diagnostics");
         });
     }
 }

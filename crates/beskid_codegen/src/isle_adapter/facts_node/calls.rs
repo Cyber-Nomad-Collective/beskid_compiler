@@ -19,7 +19,7 @@ impl SyntaxNodeFacts<'_> {
         if self.query(beskid_queries::primitive_numeric_conversion(self.db, key)).is_some() {
             return Some(CallKind::PrimitiveNumericConversion);
         }
-        if self.runtime_intrinsic(key).is_some() || self.scheduler_compiler_operation(key).is_some() {
+        if self.runtime_intrinsic(key).is_some() || self.runtime_compiler_operation(key).is_some() {
             return Some(CallKind::RuntimeIntrinsic);
         }
         // Canonical `Array.Empty<T>` is a compiler-owned typed allocation form. Recognize its
@@ -64,15 +64,18 @@ impl SyntaxNodeFacts<'_> {
     }
 
     pub(super) fn runtime_intrinsic_kind_impl(&self, key: AstNodeKey) -> Option<RuntimeIntrinsicKind> {
-        if let Some(operation) = self.scheduler_compiler_operation(key) {
+        if let Some(operation) = self.runtime_compiler_operation(key) {
             return Some(match operation {
-                crate::SchedulerCompilerOperation::FiberEntryAddress => {
+                crate::RuntimeCompilerOperation::FiberEntryAddress => {
                     RuntimeIntrinsicKind::SchedulerFiberEntryAddress
                 }
-                crate::SchedulerCompilerOperation::ReturnTrampolineAddress => {
+                crate::RuntimeCompilerOperation::ReturnTrampolineAddress => {
                     RuntimeIntrinsicKind::SchedulerReturnTrampolineAddress
                 }
-                crate::SchedulerCompilerOperation::PollEntryInvoke => RuntimeIntrinsicKind::SchedulerPollEntryInvoke,
+                crate::RuntimeCompilerOperation::PollEntryInvoke => RuntimeIntrinsicKind::SchedulerPollEntryInvoke,
+                crate::RuntimeCompilerOperation::CompositionHookInvoke => {
+                    RuntimeIntrinsicKind::CompositionHookInvoke(beskid_isle::COMPOSITION_HOOK_ARGUMENTS_MAX)
+                }
             });
         }
         let (_, intrinsic) = self.runtime_intrinsic(key)?;
@@ -127,14 +130,17 @@ impl SyntaxNodeFacts<'_> {
         if let Some((_, intrinsic)) = self.runtime_intrinsic(key) {
             return signature_for_runtime_intrinsic(self.isa?, intrinsic);
         }
-        if let Some(operation) = self.scheduler_compiler_operation(key) {
+        if let Some(operation) = self.runtime_compiler_operation(key) {
             let emitter = FunctionEmitter::new(self.isa?);
             let pointer = self.isa?.pointer_type();
             return Some(match operation {
-                crate::SchedulerCompilerOperation::FiberEntryAddress
-                | crate::SchedulerCompilerOperation::ReturnTrampolineAddress => emitter.signature([], [pointer]),
-                crate::SchedulerCompilerOperation::PollEntryInvoke => {
+                crate::RuntimeCompilerOperation::FiberEntryAddress
+                | crate::RuntimeCompilerOperation::ReturnTrampolineAddress => emitter.signature([], [pointer]),
+                crate::RuntimeCompilerOperation::PollEntryInvoke => {
                     emitter.signature([pointer, pointer, pointer, pointer], [types::I32])
+                }
+                crate::RuntimeCompilerOperation::CompositionHookInvoke => {
+                    emitter.signature([pointer, pointer, pointer], [])
                 }
             });
         }

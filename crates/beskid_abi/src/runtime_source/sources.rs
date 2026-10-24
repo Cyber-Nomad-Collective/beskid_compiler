@@ -75,6 +75,8 @@ pub const CANONICAL_CORELIB_CONSOLE_MACOS_SOURCE_PATH: &str = "Platform/MacOS.bd
 pub const CANONICAL_CORELIB_CONSOLE_WINDOWS_SOURCE_PATH: &str = "Platform/Windows.bd";
 /// Canonical Console terminal facade eligible for environment lookup authority.
 pub const CANONICAL_CORELIB_CONSOLE_TERMINAL_SOURCE_PATH: &str = "Platform/Terminal.bd";
+/// Canonical Console hosting facade (`ConsoleHost`, `CommandLine`) eligible for the host exit service.
+pub const CANONICAL_CORELIB_CONSOLE_HOSTING_SOURCE_PATH: &str = "Console/Hosting.bd";
 /// Canonical Foundation filesystem facade eligible for private ABI-v5 filesystem services.
 pub const CANONICAL_CORELIB_FS_SOURCE_PATH: &str = "Core/FS/FS.bd";
 /// Canonical concurrency channel facade eligible for its private ABI-v5 services.
@@ -273,6 +275,8 @@ const CANONICAL_CORELIB_CONSOLE_WINDOWS_SOURCE: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../corelib/packages/console/src/Platform/Windows.bd"));
 const CANONICAL_CORELIB_CONSOLE_TERMINAL_SOURCE: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../corelib/packages/console/src/Platform/Terminal.bd"));
+const CANONICAL_CORELIB_CONSOLE_HOSTING_SOURCE: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../corelib/packages/console/src/Console/Hosting.bd"));
 const CANONICAL_CORELIB_FS_SOURCE: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../corelib/packages/foundation/src/Core/FS/FS.bd"));
 const CANONICAL_CORELIB_CHANNEL_SOURCE: &str =
@@ -733,6 +737,10 @@ pub fn canonical_corelib_service_sources() -> Vec<SourceUnit> {
     sources.push(SourceUnit {
         logical_path: CANONICAL_CORELIB_CONSOLE_TERMINAL_SOURCE_PATH.into(),
         source: CANONICAL_CORELIB_CONSOLE_TERMINAL_SOURCE.into(),
+    });
+    sources.push(SourceUnit {
+        logical_path: CANONICAL_CORELIB_CONSOLE_HOSTING_SOURCE_PATH.into(),
+        source: CANONICAL_CORELIB_CONSOLE_HOSTING_SOURCE.into(),
     });
     sources.push(SourceUnit {
         logical_path: CANONICAL_CORELIB_FS_SOURCE_PATH.into(),

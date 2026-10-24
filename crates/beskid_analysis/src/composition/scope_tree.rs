@@ -42,7 +42,14 @@ pub fn merge_host_scopes(
 
             by_name.insert(
                 scope.name.clone(),
-                CompositionScope { id: unified_id, name: scope.name.clone(), parent: unified_parent, span: scope.span },
+                CompositionScope {
+                    id: unified_id,
+                    name: scope.name.clone(),
+                    parent: unified_parent,
+                    span: scope.span,
+                    parameter_count: scope.parameter_count,
+                    unit: scope.unit.clone(),
+                },
             );
         }
     }

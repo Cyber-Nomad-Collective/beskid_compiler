@@ -20,7 +20,7 @@ pub fn resolve_dependency_targets(
     };
 
     for scope in scoped_chain {
-        let matches = container.find_scope_matches(scope, &dependency.requested_type);
+        let matches = container.find_scope_matches(scope, dependency.requested_identity.as_ref());
         if dependency.is_plural {
             if !matches.is_empty() {
                 return Ok(matches);
@@ -34,7 +34,12 @@ pub fn resolve_dependency_targets(
                 field_name: dependency.field_name.clone(),
                 name_span: dependency.name_span,
                 type_span: dependency.type_span,
-                candidates: matches.iter().map(|registration| registration.span).collect(),
+                // Related places are shown in the field's own file; registrations elsewhere are not.
+                candidates: matches
+                    .iter()
+                    .filter(|registration| registration.unit == dependency.field_unit)
+                    .map(|registration| registration.span)
+                    .collect(),
             });
         }
     }

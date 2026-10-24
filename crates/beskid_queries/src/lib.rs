@@ -171,7 +171,7 @@ pub use semantic_contract::{
 };
 pub use semantic_contract::{
     CompositionInjectedAccessFact, CompositionInjectionFieldFact, CompositionLaunchFact, CompositionRegistrationFact,
-    CompositionScopeFact, composition_injected_field_access, composition_injection_field, composition_launch,
+    CompositionScopeFact, CompositionTypes, composition_injected_field_access, composition_injection_field, composition_launch,
     composition_registration, composition_scope,
 };
 pub use semantic_contract::{DeadCollectionGrowth, dead_collection_growth, is_growth_call_candidate};

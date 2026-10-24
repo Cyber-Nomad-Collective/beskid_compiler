@@ -154,7 +154,7 @@ use closures_spawn::{
 };
 pub use composition::{
     CompositionInjectedAccessFact, CompositionInjectionFieldFact, CompositionLaunchFact, CompositionRegistrationFact,
-    CompositionScopeFact, composition_injected_field_access, composition_injection_field, composition_launch,
+    CompositionScopeFact, CompositionTypes, composition_injected_field_access, composition_injection_field, composition_launch,
     composition_registration, composition_scope,
 };
 use contracts::{
