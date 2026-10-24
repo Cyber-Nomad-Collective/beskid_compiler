@@ -317,6 +317,18 @@ pub fn assemble_program_with_materializer(
                         );
                         Err(AssemblyError::Parse { path, message: "skipped".to_string() })
                     }
+                    Err(AssemblyError::ParseDiagnostic { path, report })
+                        if options.skip_parse_errors && !input.is_entry =>
+                    {
+                        tracing::warn!(
+                            target: "beskid.analysis.assembly",
+                            unit = %path.display(),
+                            file = %path.display(),
+                            error = %report,
+                            "skipping unparseable unit"
+                        );
+                        Err(AssemblyError::Parse { path, message: "skipped".to_string() })
+                    }
                     Err(err) => Err(err),
                 };
                 unit_span.record("duration_ms", started.elapsed().as_millis() as u64);

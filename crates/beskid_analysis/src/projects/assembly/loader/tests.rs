@@ -1384,12 +1384,13 @@ fn v06_import_recovery_rejection_retains_actual_diagnostic() {
         .expect("canonical parser must support the missing-semicolon recovery fixture");
     assert!(parsed.recovered && !parsed.diagnostics.is_empty());
     let error = super::scanner::parse_program_for_discovery(Path::new("Recovery.bd"), source).unwrap_err();
-    let AssemblyError::Parse { path, message } = error else { panic!("parse error required") };
+    let AssemblyError::ParseDiagnostic { path, report } = error else { panic!("structured parse error required") };
     assert_eq!(path, Path::new("Recovery.bd"));
     let diagnostic = &parsed.diagnostics[0];
-    assert!(message.contains(&diagnostic.message), "original recovery diagnostic lost: {message}");
-    assert!(message.contains(diagnostic.code.as_deref().unwrap()), "original diagnostic code lost: {message}");
-    assert!(message.contains(&diagnostic.span.offset().to_string()), "original source offset lost: {message}");
+    let kept = report.diagnostic();
+    assert_eq!(kept.message, diagnostic.message, "original recovery diagnostic lost");
+    assert_eq!(kept.code, diagnostic.code, "original diagnostic code lost");
+    assert_eq!(kept.span, diagnostic.span, "original source span lost");
 }
 
 #[test]
@@ -1489,17 +1490,14 @@ fn v06_import_unrecoverable_parse_retains_actual_diagnostic_bounds() {
         .expect("canonical parser error must carry source diagnostic")
         .diagnostic();
     let error = super::scanner::parse_program_for_discovery(Path::new("Broken.bd"), source).unwrap_err();
-    let AssemblyError::Parse { path, message } = error else { panic!("parse error required") };
+    let AssemblyError::ParseDiagnostic { path, report } = error else { panic!("structured parse error required") };
     assert_eq!(path, Path::new("Broken.bd"));
-    assert!(message.contains(&diagnostic.message));
-    assert!(message.contains(diagnostic.code.as_deref().unwrap_or("parse")));
-    assert!(message.contains(&format!(
-        "bytes {}..{}",
-        diagnostic.span.offset(),
-        diagnostic.span.offset() + diagnostic.span.len()
-    )));
-    assert!(diagnostic.span.offset() <= source.len());
-    assert!(diagnostic.span.offset() + diagnostic.span.len() <= source.len());
+    let kept = report.diagnostic();
+    assert_eq!(kept.message, diagnostic.message);
+    assert_eq!(kept.code, diagnostic.code);
+    assert_eq!(kept.span, diagnostic.span);
+    assert_eq!(kept.fixes.len(), diagnostic.fixes.len());
+    assert_eq!(kept.related.len(), diagnostic.related.len());
 }
 
 #[test]
