@@ -566,8 +566,8 @@ impl SemanticIssueKind {
             Self::NamingNotCamelCaseMacro { name } => {
                 format!("macro `{name}` should use lowerCamelCase")
             }
-            Self::NumericLiteralOutOfRange { primitive } => {
-                format!("numeric literal outside {primitive} range")
+            Self::NumericLiteralOutOfRange { value, primitive } => {
+                format!("`{value}` does not fit in `{primitive}`")
             }
             Self::ExternInvalidAbi { .. } => "invalid extern ABI; only Abi:\"C\" is supported".to_string(),
             Self::ExternMissingLibrary => "extern contract missing Library".to_string(),

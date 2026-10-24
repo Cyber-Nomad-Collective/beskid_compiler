@@ -310,8 +310,8 @@ pub(super) fn specialization_for_call_in_environment(
             let source_identity = proven_source_identity
                 .as_ref()
                 .ok_or_else(|| SemanticError::unavailable_at("call_abi_signature", key))?;
-            // An exact argument (`5_i64`, `[7_i64]`) replaces a binding only bare literals set,
-            // when every one of those literals fits the exact type.
+            // An exact argument (`5_i64`, `[7_i64]`) replaces a binding only bare literals set;
+            // a literal that does not fit it is T0905 at the literal.
             if let Some((abi, source, rebound)) = rebind_provisional_integers(
                 db,
                 declaration,
@@ -373,6 +373,9 @@ pub(super) fn specialization_for_call_in_environment(
                         provisional_integer_substitutions.insert(generic.to_owned(), literals);
                     }
                 }
+                // A bare literal never decides against an exact binding: `Same(1_u8, 300)` keeps
+                // `T = u8`, and the literal that does not fit it is T0905 at the literal.
+                Some(_) if bare_integer => {}
                 Some(existing) => {
                     return Err(SemanticError::generic_binding_conflict(
                         generic,
@@ -447,10 +450,10 @@ pub(super) fn specialization_for_call_in_environment(
 type ReboundBindings = (HashMap<String, SemanticTypeId>, HashMap<String, GenericSubstitution>, Vec<String>);
 
 /// The bindings after inferring one exactly typed argument with every binding that only bare
-/// integer literals set left open, when that argument rebinds at least one of them to a type all
-/// of its literals fit (`FirstOr([7, 8], 5_i64)` binds `T = i64`). Bindings the argument does not
-/// mention are kept. `None` when the argument rebinds nothing or a literal does not fit, so the
-/// ordinary inference reports the conflict.
+/// integer literals set left open, when that argument rebinds at least one of them
+/// (`FirstOr([7, 8], 5_i64)` binds `T = i64`, `Same(300, 1_u8)` binds `T = u8`). The exact
+/// argument wins; a literal that does not fit the new binding is T0905 at the literal. Bindings
+/// the argument does not mention are kept. `None` when the argument rebinds nothing.
 #[expect(clippy::too_many_arguments, reason = "one inference step over the call's binding state")]
 fn rebind_provisional_integers(
     db: &dyn Db,
@@ -485,9 +488,8 @@ fn rebind_provisional_integers(
                     source.insert(generic.clone(), previous.clone());
                 }
             }
-            Some(bound) if substitutions.get(generic) == Some(&bound) => rebound.push(generic.clone()),
-            Some(bound) if integer_literals_fit_abi(db, literals, bound)? => rebound.push(generic.clone()),
-            Some(_) => return Ok(None),
+            // The exact argument wins; a literal that does not fit it is T0905 at the literal.
+            Some(_) => rebound.push(generic.clone()),
         }
     }
     Ok((!rebound.is_empty()).then_some((abi, source, rebound)))

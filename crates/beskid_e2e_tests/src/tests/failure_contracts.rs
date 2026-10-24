@@ -85,7 +85,7 @@ fn integer_constant_outside_its_destination_is_a_range_error_not_an_internal_err
 
     let run = cli.run(["run", "--project", manifest.to_str().expect("manifest path str"), "--target", "App"]);
     assert_failure(&run, "run integer-constant-range fixture");
-    assert_output_contains(&run, "numeric literal outside i32 range", "run integer-constant-range fixture");
+    assert_output_contains(&run, "`BIG32` does not fit in `i32`", "run integer-constant-range fixture");
     let text = format!("{}{}", String::from_utf8_lossy(&run.stdout), String::from_utf8_lossy(&run.stderr));
     assert!(!text.contains("internal compiler error"), "the range error must not be an ICE:\n{text}");
 }
@@ -98,7 +98,7 @@ fn literal_next_to_a_narrower_operand_is_a_range_error_not_a_promotion() {
 
     let run = cli.run(["run", "--project", manifest.to_str().expect("manifest path str"), "--target", "App"]);
     assert_failure(&run, "run integer-operand-range fixture");
-    assert_output_contains(&run, "numeric literal outside i32 range", "run integer-operand-range fixture");
+    assert_output_contains(&run, "`3000000000` does not fit in `i32`", "run integer-operand-range fixture");
     let text = format!("{}{}", String::from_utf8_lossy(&run.stdout), String::from_utf8_lossy(&run.stderr));
     assert!(!text.contains("internal compiler error"), "the range error must not be an ICE:\n{text}");
 }

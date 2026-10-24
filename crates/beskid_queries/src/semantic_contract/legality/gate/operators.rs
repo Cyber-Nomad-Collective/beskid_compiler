@@ -1,19 +1,16 @@
-//! Operator and numeric-literal obligations (E1209, E1210, binary E1206, T0905).
+//! Operator and numeric-literal obligations (E1209, E1210, binary E1206, literal E1206, T0905).
 //!
-//! Mirrors the legacy `type_binary_expression`, `type_unary_expression`, and
-//! `type_id_for_literal`: operands are judged only when both are proven primitives that the
-//! legacy checker classifies (`judgeable_primitive`); two numeric primitives promote to one
-//! operand type as in `promote_binary_numeric_operands`. Suffixed integers and float literals
-//! are judged against their own primitive. An unsuffixed integer literal takes its primitive
-//! from the legacy `contextual_expected_type` and is judged only at a surface-declared
-//! destination that proves a primitive integer (`contextual_literal_primitive`).
+//! Mirrors the legacy `type_binary_expression` and `type_unary_expression`: operands are judged
+//! only when both are proven primitives that the legacy checker classifies
+//! (`judgeable_primitive`); two numeric primitives promote to one operand type as in
+//! `promote_binary_numeric_operands`. Numeric literals follow contextual literal typing (see
+//! [`collect_literal_obligations`]): the one [`expected_type`] authority supplies the context.
 
-use super::super::typing::{enclosing_callable, is_numeric, nodes_of_kind};
+use super::super::typing::{is_numeric, nodes_of_kind};
 use super::*;
 use beskid_analysis::syntax::{
-    BinaryExpression, BinaryOp, CallExpression, Expression, FunctionDefinition, LetStatement, Literal,
-    MethodDefinition, PrimitiveType, ReturnStatement, UnaryExpression, UnaryOp, float_literal_magnitude,
-    float_literal_primitive_type, integer_literal_fits_primitive, integer_literal_magnitude,
+    BinaryExpression, BinaryOp, LetStatement, Literal, PrimitiveType, UnaryExpression, UnaryOp,
+    float_literal_magnitude, float_literal_primitive_type, integer_literal_fits_primitive, integer_literal_magnitude,
     integer_literal_primitive_type,
 };
 use beskid_analysis::syntax_query::DynNodeRef;
@@ -92,11 +89,23 @@ pub(super) fn collect_operator_obligations(
     }
 }
 
-/// Integer literals (including a directly negated one, judged as the negative value at the unary
-/// expression exactly as the legacy `type_unary_expression` does) and float literals outside
-/// their primitive's range. A suffixed literal is judged against its suffix; an unsuffixed one
-/// against the primitive integer of its proven destination (legacy `type_id_for_literal` under
-/// `contextual_expected_type`), and not at all without one.
+/// Numeric literals against their own primitive and their context (rule T1, contextual literal
+/// typing). Every position [`expected_type`] gives a type is a context: a declared local, an
+/// assignment target, a call or method argument (an inferred generic parameter included), an enum
+/// payload, a struct field, a `return`, an array element, a match arm, a value block, and the peer
+/// of a binary operand.
+///
+/// * An unsuffixed integer literal (a directly negated one is the negative value, judged at the
+///   unary expression) takes the primitive integer of its context and must fit it (T0905); a
+///   negative value never fits an unsigned type. Without a context it has its default type
+///   (`i32`, else `i64`, else `word` for a hexadecimal bit pattern), which only an inferred `let`
+///   initializer has to fit.
+/// * An unsuffixed float literal takes `f32` from its context, `f64` otherwise, and must be
+///   finite in it (T0905).
+/// * A suffix fixes the literal's type and wins over the context; a suffix whose type differs
+///   from a numeric context is a type mismatch (E1206) at the literal, never a conversion, and so
+///   is a float literal in an integer context. Binary operands keep the operator's numeric
+///   promotion, so neither applies to them.
 pub(super) fn collect_literal_obligations(
     db: &dyn Db,
     program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
@@ -107,66 +116,130 @@ pub(super) fn collect_literal_obligations(
     for node in nodes_of_kind(index, key.node, NodeKind::Literal) {
         let Some(literal) = index.node_at(program, node).and_then(|node| node.of::<Literal>()) else { continue };
         match literal {
-            Literal::Integer(text) => {
-                let unsuffixed = integer_literal_magnitude(text) == text;
-                let negation = negating_unary(program, index, node);
-                let primitive = if unsuffixed {
-                    // The value root is the negation when there is one: the legacy checker types
-                    // the whole `-literal` under the destination's contextual type.
-                    let root = negation.or_else(|| parent_node(index, node));
-                    match root.and_then(|root| literal_destination_primitive(db, program, index, key, root)) {
-                        Some(primitive) => primitive,
-                        // An inferred `let` takes the literal's natural type, so the literal must
-                        // fit it (a decimal above `i64::MAX` has no natural integer type).
-                        None if root.is_some_and(|root| inferred_let_initializer(program, index, root)) => {
-                            integer_literal_primitive_type(text)
-                        }
-                        None => continue,
-                    }
-                } else {
-                    integer_literal_primitive_type(text)
-                };
-                let (fits, site) = match negation {
-                    Some(unary) => (integer_literal_fits_primitive(&format!("-{text}"), primitive), unary),
-                    None => (integer_literal_fits_primitive(text, primitive), node),
-                };
-                if !fits {
-                    findings.push(GateObligation {
-                        kind: GateObligationKind::NumericLiteralOutOfRange {
-                            primitive: Arc::from(format!("{primitive:?}").to_lowercase()),
-                        },
-                        site: AstNodeKey { node: site, ..key },
-                    });
-                }
-            }
-            Literal::Float(text) => {
-                let primitive = float_literal_primitive_type(text);
-                let magnitude = float_literal_magnitude(text);
-                let valid = match primitive {
-                    beskid_analysis::syntax::PrimitiveType::F32 => {
-                        magnitude.parse::<f32>().is_ok_and(|value| value.is_finite())
-                    }
-                    _ => magnitude.parse::<f64>().is_ok_and(|value| value.is_finite()),
-                };
-                if !valid {
-                    findings.push(GateObligation {
-                        kind: GateObligationKind::NumericLiteralOutOfRange {
-                            primitive: Arc::from(format!("{primitive:?}").to_lowercase()),
-                        },
-                        site: AstNodeKey { node, ..key },
-                    });
-                }
-            }
+            Literal::Integer(text) => judge_integer_literal(db, program, index, key, node, text, findings),
+            Literal::Float(text) => judge_float_literal(db, index, key, node, text, findings),
             _ => {}
         }
     }
     collect_constant_obligations(db, program, index, key, findings);
 }
 
-/// Module constant uses at a surface-declared integer destination their declared literal does
-/// not fit (`i32 x = LIMIT;` with `const LIMIT = 3000000000;`). A constant use behaves as its
-/// literal, so it is judged exactly as an unsuffixed literal at that destination and reported
-/// at the use site, never left to fail as a missing lowering fact.
+fn judge_integer_literal(
+    db: &dyn Db,
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &SyntaxIndex,
+    key: AstNodeKey,
+    node: beskid_analysis::syntax::AstNodeId,
+    text: &str,
+    findings: &mut Vec<GateObligation>,
+) {
+    let negation = negating_unary(program, index, node);
+    // The value root is the negation when there is one: the whole `-literal` takes the context.
+    let root = negation.or_else(|| parent_node(index, node));
+    let expected = root.and_then(|root| literal_expected_type(db, key, root));
+    let site = AstNodeKey { node: negation.unwrap_or(node), ..key };
+    let primitive = if integer_literal_magnitude(text) == text {
+        match expected.as_ref().and_then(|expected| integer_primitive_for_semantic(expected.abi_type())) {
+            Some(primitive) => primitive,
+            // An inferred `let` takes the literal's default type, so the literal must fit it (a
+            // decimal above `i64::MAX` has no default integer type).
+            None if root.is_some_and(|root| inferred_let_initializer(program, index, root)) => {
+                integer_literal_primitive_type(text)
+            }
+            None => return,
+        }
+    } else {
+        let own = integer_literal_primitive_type(text);
+        if let Some(expected) = expected.as_ref().and_then(numeric_value_context)
+            && expected != semantic_type_for_primitive(own)
+        {
+            findings.push(GateObligation {
+                kind: GateObligationKind::LiteralTypeMismatch { expected, actual: semantic_type_for_primitive(own) },
+                site,
+            });
+            return;
+        }
+        own
+    };
+    let value = match negation {
+        Some(_) => format!("-{text}"),
+        None => text.to_string(),
+    };
+    if !integer_literal_fits_primitive(&value, primitive) {
+        findings.push(GateObligation {
+            kind: GateObligationKind::NumericLiteralOutOfRange { value: Arc::from(value), primitive: primitive_name(primitive) },
+            site,
+        });
+    }
+}
+
+fn judge_float_literal(
+    db: &dyn Db,
+    index: &SyntaxIndex,
+    key: AstNodeKey,
+    node: beskid_analysis::syntax::AstNodeId,
+    text: &str,
+    findings: &mut Vec<GateObligation>,
+) {
+    let site = AstNodeKey { node, ..key };
+    let suffixed = text.ends_with("_f32") || text.ends_with("_f64");
+    let own = semantic_type_for_primitive(float_literal_primitive_type(text));
+    let expected = parent_node(index, node).and_then(|root| literal_expected_type(db, key, root));
+    if let Some(expected) = expected.as_ref().and_then(numeric_value_context)
+        && (primitive_integer(expected) || (suffixed && expected != own))
+    {
+        findings.push(GateObligation { kind: GateObligationKind::LiteralTypeMismatch { expected, actual: own }, site });
+        return;
+    }
+    let primitive = match expected.map(|expected| expected.abi_type()) {
+        Some(SemanticTypeId::F32) if !suffixed => PrimitiveType::F32,
+        _ => float_literal_primitive_type(text),
+    };
+    let magnitude = float_literal_magnitude(text);
+    let valid = match primitive {
+        PrimitiveType::F32 => magnitude.parse::<f32>().is_ok_and(|value| value.is_finite()),
+        _ => magnitude.parse::<f64>().is_ok_and(|value| value.is_finite()),
+    };
+    if !valid {
+        findings.push(GateObligation {
+            kind: GateObligationKind::NumericLiteralOutOfRange {
+                value: Arc::from(magnitude),
+                primitive: primitive_name(primitive),
+            },
+            site,
+        });
+    }
+}
+
+/// The context of the literal value rooted at `root` (its `LiteralExpression`, or the negating
+/// `UnaryExpression`), when one exists.
+fn literal_expected_type(
+    db: &dyn Db,
+    key: AstNodeKey,
+    root: beskid_analysis::syntax::AstNodeId,
+) -> Option<ExpectedType> {
+    expected_type(db, AstNodeKey { node: root, ..key }).ok().flatten()
+}
+
+/// The numeric primitive a value context requires of a literal whose type is already fixed (by a
+/// suffix, or by being a float). A binary operand follows the operator's numeric promotion
+/// instead, and a non-numeric context is judged by the typing obligations.
+fn numeric_value_context(expected: &ExpectedType) -> Option<SemanticTypeId> {
+    if matches!(expected.context, ExpectedTypeContext::BinaryOperand { .. } | ExpectedTypeContext::ExpressionStatement { .. }) {
+        return None;
+    }
+    let GenericSourceTypeIdentity::Abi(ty) = &expected.identity else { return None };
+    is_numeric(*ty).then_some(*ty)
+}
+
+fn primitive_name(primitive: PrimitiveType) -> Arc<str> {
+    Arc::from(format!("{primitive:?}").to_lowercase())
+}
+
+/// Module constant uses at an integer context their declared literal does not fit
+/// (`i32 x = LIMIT;` with `const LIMIT = 3000000000;`). A constant use behaves as its literal,
+/// so it is judged exactly as an unsuffixed literal in that context and reported at the use
+/// site, never left to fail as a missing lowering fact.
 fn collect_constant_obligations(
     db: &dyn Db,
     program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
@@ -177,35 +250,25 @@ fn collect_constant_obligations(
     for node in nodes_of_kind(index, key.node, NodeKind::PathExpression) {
         let site = AstNodeKey { node, ..key };
         let Ok(Some(text)) = constant_integer_literal(db, site) else { continue };
-        let Some(primitive) = literal_destination_primitive(db, program, index, key, node) else { continue };
+        let Some(primitive) = literal_expected_type(db, key, node)
+            .and_then(|expected| integer_primitive_for_semantic(expected.abi_type()))
+        else {
+            continue;
+        };
         if !integer_literal_fits_primitive(&text, primitive) {
+            let name = index
+                .node_at(program, node)
+                .and_then(|node| node.of::<beskid_analysis::syntax::PathExpression>())
+                .map(|path| {
+                    path.path.node.segments.iter().map(|segment| segment.node.name.node.name.as_str()).collect::<Vec<_>>().join(".")
+                })
+                .unwrap_or_else(|| text.to_string());
             findings.push(GateObligation {
-                kind: GateObligationKind::NumericLiteralOutOfRange {
-                    primitive: Arc::from(format!("{primitive:?}").to_lowercase()),
-                },
+                kind: GateObligationKind::NumericLiteralOutOfRange { value: Arc::from(name), primitive: primitive_name(primitive) },
                 site,
             });
         }
     }
-}
-
-/// The primitive integer an unsuffixed literal or constant use rooted at `root` takes: its
-/// surface-declared destination, else (rule T1) the type of the other operand of the binary
-/// expression it is an operand of, a call result included. Two bare operands share the type
-/// their binary expression takes from its own context. No promotion to a wider type exists.
-fn literal_destination_primitive(
-    db: &dyn Db,
-    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
-    index: &SyntaxIndex,
-    key: AstNodeKey,
-    root: beskid_analysis::syntax::AstNodeId,
-) -> Option<PrimitiveType> {
-    contextual_literal_primitive(db, program, index, key, root).or_else(|| {
-        let expected = expected_type(db, AstNodeKey { node: root, ..key }).ok()??;
-        matches!(expected.context, ExpectedTypeContext::BinaryOperand { .. })
-            .then(|| integer_primitive_for_semantic(expected.abi_type()))
-            .flatten()
-    })
 }
 
 /// Whether `root` (a literal value root) is the initializer of a `let` without a type annotation.
@@ -251,100 +314,4 @@ fn negating_unary(
         && matches!(&unary.expr.node, beskid_analysis::syntax::Expression::Literal(value)
             if matches!(value.node.literal.node, Literal::Integer(_))))
     .then_some(candidate)
-}
-
-/// The primitive integer the legacy `contextual_expected_type` gives the unsuffixed integer
-/// value rooted at `root` (its `LiteralExpression`, or the negating `UnaryExpression`), when the
-/// value is, up to `Expression` and grouping wrappers, directly one of the surface-declared
-/// destinations the legacy checker types it under:
-///
-/// * the initializer of an annotated `let` (`type_statement`, `Statement::Let`);
-/// * the value of a `return` owned by the item, against the declared result
-///   (`type_statement`, `Statement::Return`, with `current_return_type`);
-/// * an argument of a direct call to a non-generic function without `bulk` parameters, against
-///   the declared parameter (`type_argument_with_expected`).
-///
-/// A destination that is not a primitive integer gives no contextual primitive (the legacy
-/// checker then falls back to the literal's own `i64`), and is not judged here.
-/// `contextual_integer_literal_abi_type` cannot serve: it proves a destination only for a
-/// literal that fits it.
-fn contextual_literal_primitive(
-    db: &dyn Db,
-    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
-    index: &SyntaxIndex,
-    key: AstNodeKey,
-    root: beskid_analysis::syntax::AstNodeId,
-) -> Option<PrimitiveType> {
-    let mut child = root;
-    let mut parent = parent_node(index, child)?;
-    while matches!(index.kind(parent), Some(NodeKind::Expression | NodeKind::GroupedExpression)) {
-        child = parent;
-        parent = parent_node(index, child)?;
-    }
-    let expected = match index.kind(parent)? {
-        NodeKind::LetStatement => {
-            let binding = index.node_at(program, parent)?.of::<LetStatement>()?;
-            if index.direct_child_id(program, parent, DynNodeRef::from(&binding.value))? != child {
-                return None;
-            }
-            semantic_type_from_syntax(&binding.type_annotation.as_ref()?.node).ok()?
-        }
-        NodeKind::ReturnStatement => {
-            let statement = index.node_at(program, parent)?.of::<ReturnStatement>()?;
-            if index.direct_child_id(program, parent, DynNodeRef::from(statement.value.as_ref()?))? != child {
-                return None;
-            }
-            if enclosing_callable(index, parent)? != key.node {
-                return None;
-            }
-            let item = index.node_at(program, key.node)?;
-            let declared = if let Some(function) = item.of::<FunctionDefinition>() {
-                function.return_type.as_ref()
-            } else {
-                item.of::<MethodDefinition>()?.return_type.as_ref()
-            };
-            semantic_type_from_syntax(&declared?.node).ok()?
-        }
-        NodeKind::CallExpression => {
-            let call = index.node_at(program, parent)?.of::<CallExpression>()?;
-            if !matches!(call.callee.node, Expression::Path(_))
-                || index.direct_child_id(program, parent, DynNodeRef::from(call.callee.as_ref()))? == child
-            {
-                return None;
-            }
-            let call_key = AstNodeKey { node: parent, ..key };
-            let Ok(Some(CallLowering::Direct(declaration))) = call_lowering(db, call_key) else { return None };
-            let declaration_syntax =
-                db.syntax_unit(declaration.unit).filter(|syntax| syntax.accepts_key(db, declaration))?;
-            let declaration_index = declaration_syntax.syntax_index(db);
-            let declaration_program = declaration_syntax.expanded_program(db);
-            let function =
-                declaration_index.node_at(declaration_program, declaration.node)?.of::<FunctionDefinition>()?;
-            if !function.generics.is_empty() || function.parameters.iter().any(|parameter| parameter.node.bulk) {
-                return None;
-            }
-            let arguments = call_arguments(db, call_key).ok()??;
-            if arguments.len() != function.parameters.len() {
-                return None;
-            }
-            let subject = normalized_expression_node(index, child);
-            let position = arguments
-                .iter()
-                .position(|argument| argument.node == child || normalized_expression_node(index, argument.node) == subject)?;
-            semantic_type_from_syntax(&function.parameters[position].node.ty.node).ok()?
-        }
-        _ => return None,
-    };
-    Some(match expected {
-        SemanticTypeId::I8 => PrimitiveType::I8,
-        SemanticTypeId::I16 => PrimitiveType::I16,
-        SemanticTypeId::I32 => PrimitiveType::I32,
-        SemanticTypeId::I64 => PrimitiveType::I64,
-        SemanticTypeId::U8 => PrimitiveType::U8,
-        SemanticTypeId::U16 => PrimitiveType::U16,
-        SemanticTypeId::U32 => PrimitiveType::U32,
-        SemanticTypeId::U64 => PrimitiveType::U64,
-        SemanticTypeId::WORD => PrimitiveType::Word,
-        _ => return None,
-    })
 }
