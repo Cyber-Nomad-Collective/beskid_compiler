@@ -142,6 +142,20 @@ impl Emit for Type {
 
 impl Emit for Spanned<Type> {
     fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
+        // A function type keeps the spelling it was written in: `(T) => U` or `U(T)`.
+        if let Type::Function { return_type, parameters } = &self.node
+            && cx.source_text(self.span.start, self.span.end).is_some_and(|text| text.starts_with('('))
+        {
+            w.write_char('(')?;
+            for (i, p) in parameters.iter().enumerate() {
+                if i > 0 {
+                    cx.token(w, ", ")?;
+                }
+                p.emit(w, cx)?;
+            }
+            cx.token(w, ") => ")?;
+            return return_type.emit(w, cx);
+        }
         self.node.emit(w, cx)
     }
 }

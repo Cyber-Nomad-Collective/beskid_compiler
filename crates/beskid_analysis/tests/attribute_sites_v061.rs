@@ -174,7 +174,7 @@ fn formatter_round_trips_every_site() {
         "[Slot]\n",
         "[Reader]\n",
         "Read([Receiver] this)",
-        "Apply<[Any] U>(mut this, U(T) f, T value) where U: Shown",
+        "Apply<[Any] U>(mut this, (T) => U f, T value) where U: Shown",
         "[Legacy]\n",
         "[Assoc]\n",
         "[Embed]\n",

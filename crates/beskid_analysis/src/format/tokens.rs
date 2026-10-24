@@ -5,7 +5,7 @@
 //! rewrites the house style rules allow:
 //! - identifier case and underscores (naming normalization: `bad_name` to `BadName`);
 //! - parentheses around `if`, `while` and `match` conditions;
-//! - trailing commas before `}` or `)`;
+//! - trailing commas before `}` or `)`, and an optional `;` before `}` (a contract embedding);
 //! - empty `()` (a nullary enum constructor loses its call parentheses);
 //! - parentheses around a single lambda parameter.
 //!
@@ -144,6 +144,11 @@ fn normalize(mut tokens: Vec<String>) -> Vec<String> {
                 } else {
                     out.push(token);
                 }
+            }
+            // Optional `;` before a closing brace.
+            "}" if out.last().is_some_and(|t| t == ";") => {
+                out.pop();
+                out.push(token);
             }
             // Empty call parentheses.
             ")" if out.last().is_some_and(|t| t == "(") => {
