@@ -42,6 +42,23 @@ fn format_scoped_use_preserves_both_regions_and_nested_statement_counts() {
 }
 
 #[test]
+fn format_conditional_expression_round_trips_on_one_line() {
+    let src = "i32 Pick(bool a, bool b, i32 x) { i32 y = a?x:-x; y = a ? 1 : b ? 2 : (b ? 3 : 4); return F()? ? y : 0; }";
+    let once = fmt(src);
+    let expected = concat!(
+        "i32 Pick(bool a, bool b, i32 x)\n",
+        "{\n",
+        "    i32 y = a ? x : -x;\n",
+        "    y = a ? 1 : b ? 2 : (b ? 3 : 4);\n",
+        "    return F()? ? y : 0;\n",
+        "}\n",
+    );
+    assert_eq!(once, expected);
+    parse_program(&once).expect("re-parse formatted");
+    assert_eq!(fmt(&once), once, "formatter output must be stable");
+}
+
+#[test]
 fn format_golden_use_and_function() {
     let src = "use a.b;\npub i32 Main() { return 42; }\n";
     let out = fmt(src);

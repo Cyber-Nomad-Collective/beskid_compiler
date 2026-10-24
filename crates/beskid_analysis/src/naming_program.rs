@@ -443,6 +443,11 @@ fn walk_expression(expr: &Expression, visit: &mut impl FnMut(NamingRole, &Spanne
             walk_expression(&b.node.left.node, visit);
             walk_expression(&b.node.right.node, visit);
         }
+        Expression::Conditional(c) => {
+            walk_expression(&c.node.condition.node, visit);
+            walk_expression(&c.node.then_branch.node, visit);
+            walk_expression(&c.node.else_branch.node, visit);
+        }
         Expression::Unary(u) => walk_expression(&u.node.expr.node, visit),
         Expression::Call(c) => {
             walk_expression(&c.node.callee.node, visit);
@@ -507,6 +512,11 @@ fn walk_expression_mut(expr: &mut Expression, visit: &mut impl FnMut(NamingRole,
         Expression::Binary(b) => {
             walk_expression_mut(&mut b.node.left.node, visit);
             walk_expression_mut(&mut b.node.right.node, visit);
+        }
+        Expression::Conditional(c) => {
+            walk_expression_mut(&mut c.node.condition.node, visit);
+            walk_expression_mut(&mut c.node.then_branch.node, visit);
+            walk_expression_mut(&mut c.node.else_branch.node, visit);
         }
         Expression::Unary(u) => walk_expression_mut(&mut u.node.expr.node, visit),
         Expression::Call(c) => {

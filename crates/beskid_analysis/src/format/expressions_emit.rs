@@ -1,10 +1,10 @@
 use crate::format::emit::{Emit, EmitCtx, EmitError};
 use crate::syntax::{
     ArrayLiteralExpression, AssignExpression, AssignOp, BinaryExpression, BinaryOp, BlockExpression, CallExpression,
-    CodeStringLiteral, CodeStringSegment, EnumConstructorExpression, EnumPattern, Expression, GroupedExpression,
-    IndexExpression, LambdaExpression, LambdaParameter, Literal, LiteralExpression, MatchArm, MatchExpression,
-    MemberExpression, PathExpression, Pattern, Spanned, StructLiteralExpression, StructLiteralField, TryExpression,
-    UnaryExpression, UnaryOp,
+    CodeStringLiteral, CodeStringSegment, ConditionalExpression, EnumConstructorExpression, EnumPattern, Expression,
+    GroupedExpression, IndexExpression, LambdaExpression, LambdaParameter, Literal, LiteralExpression, MatchArm,
+    MatchExpression, MemberExpression, PathExpression, Pattern, Spanned, StructLiteralExpression, StructLiteralField,
+    TryExpression, UnaryExpression, UnaryOp,
 };
 use std::fmt::Write;
 
@@ -160,6 +160,27 @@ impl Emit for AssignExpression {
 }
 
 impl Emit for Spanned<AssignExpression> {
+    fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
+        self.node.emit(w, cx)
+    }
+}
+
+/// `cond ? a : b` on one line; a grouped branch keeps its parentheses (they are their own node).
+impl Emit for ConditionalExpression {
+    fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
+        self.condition.emit(w, cx)?;
+        cx.space(w)?;
+        cx.token(w, "?")?;
+        cx.space(w)?;
+        self.then_branch.emit(w, cx)?;
+        cx.space(w)?;
+        cx.token(w, ":")?;
+        cx.space(w)?;
+        self.else_branch.emit(w, cx)
+    }
+}
+
+impl Emit for Spanned<ConditionalExpression> {
     fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
         self.node.emit(w, cx)
     }
@@ -498,6 +519,7 @@ impl Emit for Expression {
             Expression::Lambda(l) => l.emit(w, cx),
             Expression::Assign(a) => a.emit(w, cx),
             Expression::Binary(b) => b.emit(w, cx),
+            Expression::Conditional(c) => c.emit(w, cx),
             Expression::Unary(u) => u.emit(w, cx),
             Expression::Call(c) => c.emit(w, cx),
             Expression::Member(m) => m.emit(w, cx),

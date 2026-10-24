@@ -46,6 +46,8 @@ struct Mistake {
     fix: Option<(String, Vec<FixEdit>)>,
     /// How safe the fix is; most mistake fixes have one meaning.
     applicability: Applicability,
+    /// Where the fixed source must get past (default: the failure position).
+    fix_anchor: Option<usize>,
 }
 
 impl Mistake {
@@ -60,6 +62,7 @@ impl Mistake {
             related: Vec::new(),
             fix: None,
             applicability: Applicability::MachineApplicable,
+            fix_anchor: None,
         }
     }
 }
@@ -91,7 +94,6 @@ pub fn diagnose_parse_failure(
     let help = match &mistake {
         Some(mistake) => Some(mistake.help.clone()),
         None => foreign_syntax_help(failure.found.as_ref())
-            .or_else(|| conditional_operator_help(source, &failure))
             .or_else(|| foreign_item_help(&failure))
             .or_else(|| construct.as_ref().and_then(|construct| construct_help(&construct.description))),
     };
@@ -123,8 +125,9 @@ pub fn diagnose_parse_failure(
             diagnostic = diagnostic.with_related(SpanInfo::from_byte_range_in_source(source, start, end), label);
         }
         let applicability = mistake.applicability;
+        let anchor = mistake.fix_anchor.unwrap_or(failure.position);
         if let Some((title, edits)) = mistake.fix {
-            match check_fix(rule, source, &edits, failure.position) {
+            match check_fix(rule, source, &edits, anchor) {
                 FixCheck::Parses(repaired) => {
                     repaired_source = Some(repaired);
                     diagnostic = diagnostic.with_fix(Fix::new(title, applicability, edits));
@@ -295,6 +298,7 @@ fn detect_mistake(source: &str, failure: &ParseFailure, construct: Option<&Const
         .or_else(|| increment_operator(source, failure))
         .or_else(|| typed_let(source, failure))
         .or_else(|| block_match_arm(failure))
+        .or_else(|| conditional_without_colon(source, failure))
         .or_else(|| missing_semicolon(source, failure, construct))
         .or_else(|| unclosed_at_end(source, failure))
 }
@@ -545,14 +549,60 @@ fn unclosed_at_end(source: &str, failure: &ParseFailure) -> Option<Mistake> {
     Some(mistake)
 }
 
-/// `x > 0 ? 1 : 2`: `?` parses as the error-propagation operator, so the parse fails one token later.
-fn conditional_operator_help(source: &str, failure: &ParseFailure) -> Option<String> {
-    let found = failure.found.as_ref()?;
-    if found.is_punct(";") || found.is_punct(")") || found.is_punct(",") || found.is_punct("}") {
-        return None;
+/// `ready ? 1 0`: a `?` that error propagation cannot explain starts a conditional expression, and
+/// the `:` after its first branch is missing.
+///
+/// The grammar reads `?` as propagation when no `:` completes a conditional, so the parse fails at
+/// the token after the `?` (or, through the grammar's look-ahead, where the `:` belongs). The `?`
+/// counts only when `x?` followed by the same tokens cannot continue as an expression.
+fn conditional_without_colon(source: &str, failure: &ParseFailure) -> Option<Mistake> {
+    let before = tokens_before(source, failure.position + 1);
+    for question in before.iter().rev().take(64) {
+        if question.is_punct(";") || question.is_punct("{") || question.is_punct("}") {
+            return None;
+        }
+        if !question.is_punct("?") {
+            continue;
+        }
+        let after = skip_trivia(source, question.end);
+        if after >= source.len() || failure.position < after {
+            continue;
+        }
+        let rest = &source[after..];
+        if expression_prefix_end(&format!("x?{rest}")).is_none_or(|end| end > 2) {
+            continue;
+        }
+        // The expression span may run over trailing whitespace; the `:` goes right after its last token.
+        let Some(branch_end) = expression_prefix_end(rest).map(|end| after + rest[..end].trim_end().len()) else {
+            continue;
+        };
+        let next = token_at(source, branch_end);
+        let next_start = next.as_ref().map_or(source.len(), |tok| tok.start);
+        if next.as_ref().is_some_and(|tok| tok.is_punct(":")) || failure.position > next_start {
+            continue;
+        }
+        let found = next.as_ref().map_or_else(|| "end of file".to_string(), |tok| tok.describe(source));
+        let mut mistake = Mistake::new(
+            codes::CONDITIONAL_WITHOUT_COLON,
+            "a conditional expression is written `condition ? value : otherwise`",
+        );
+        mistake.message = Some(format!("expected `:` while parsing conditional expression, found {found}"));
+        mistake.expected = Some("`:`".to_string());
+        mistake.span = Some(next.as_ref().map_or((source.len(), source.len()), |tok| (tok.start, tok.end)));
+        mistake.label = Some("expected `:`".to_string());
+        mistake.related.push((question.start, question.end, "this `?` starts a conditional expression".to_string()));
+        mistake.fix = Some(("Insert `:`".to_string(), vec![FixEdit::insert(branch_end, " :")]));
+        mistake.fix_anchor = Some(next_start);
+        return Some(mistake);
     }
-    let previous = tokens_before(source, found.start).pop()?;
-    previous.is_punct("?").then(|| "Beskid has no `? :` operator; use `match` or an `if` block".to_string())
+    None
+}
+
+/// Length of the expression at the start of `text`, when one parses there.
+fn expression_prefix_end(text: &str) -> Option<usize> {
+    use pest::Parser;
+    let mut pairs = crate::parser::BeskidParser::parse(Rule::Expression, text).ok()?;
+    Some(pairs.next()?.as_span().end())
 }
 
 /// Help when the item or statement being parsed starts with another language's keyword
@@ -590,7 +640,6 @@ fn foreign_syntax_help(found: Option<&Tok>) -> Option<String> {
             _ => return None,
         },
         TokKind::Punct("->") => "a return type comes first: `i32 Name()`; match arms and lambdas use `=>`",
-        TokKind::Punct("?") => "Beskid has no `? :` operator; use `match` or an `if` block",
         TokKind::Punct("'") => "strings use double quotes: `\"text\"`; single quotes hold one character",
         TokKind::Punct("$") => "interpolate with `\"${value}\"`",
         TokKind::Punct("++") => "write `+= 1`",

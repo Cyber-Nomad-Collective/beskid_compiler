@@ -75,6 +75,7 @@ node_kinds!(
     RangeExpression,
     Expression,
     AssignExpression,
+    ConditionalExpression,
     BinaryExpression,
     BinaryOp,
     UnaryExpression,

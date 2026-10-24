@@ -53,6 +53,7 @@ pub enum ReflectSdkNodeKind {
     MoveExpression,
     Expression,
     AssignExpression,
+    ConditionalExpression,
     BinaryExpression,
     BinaryOp,
     UnaryExpression,

@@ -495,9 +495,9 @@ mod native_callback_surface_tests {
     #[test]
     fn v06_native_node_reference_retains_unit_and_invocation_issuer() {
         let source = emit_node_ref_bd();
-        assert!(source.contains("string sourceUnit,"));
-        assert!(source.contains("u64 invocationIssuer,"));
-        assert!(source.contains("u64 syntaxGenerationId,"));
-        assert!(source.contains("u32 nodeId,"));
+        assert!(source.contains("string sourceUnit;"));
+        assert!(source.contains("u64 invocationIssuer;"));
+        assert!(source.contains("u64 syntaxGenerationId;"));
+        assert!(source.contains("u32 nodeId;"));
     }
 }
