@@ -6,7 +6,10 @@ use zip::ZipArchive;
 use crate::errors::ArtifactError;
 use crate::manifest::{validate_manifest, validate_template_contract};
 use crate::model::ValidatedArtifact;
-use crate::project_manifest::{project_field, project_root_block_identifier, validate_published_project_dependencies};
+use crate::project_manifest::{
+    DEFAULT_PROJECT_SOURCE_ROOT, project_field, project_root_block_identifier, project_source_root,
+    validate_published_project_dependencies,
+};
 use crate::zip_support::{
     MAX_ENTRIES, MAX_UNCOMPRESSED_BYTES, REQUIRED_ENTRIES, normalize_zip_path, parse_checksums, read_entry,
     read_entry_bytes, sha256_hex,
@@ -18,6 +21,18 @@ pub fn validate_package_artifact(
     expected_package_name: &str,
     expected_version: &str,
 ) -> Result<ValidatedArtifact, ArtifactError> {
+    validate_package_artifact_with_source_root(bytes, expected_package_name, expected_version)
+        .map(|(validated, _)| validated)
+}
+
+/// Validates the artifact and also returns the archive-relative source root:
+/// the declared project `root` of a non-aggregate library (Mods included), or
+/// the default root when the package has no root project manifest.
+pub(crate) fn validate_package_artifact_with_source_root(
+    bytes: &[u8],
+    expected_package_name: &str,
+    expected_version: &str,
+) -> Result<(ValidatedArtifact, Option<String>), ArtifactError> {
     if bytes.is_empty() {
         return Err(ArtifactError::EmptyArtifact);
     }
@@ -60,6 +75,8 @@ pub fn validate_package_artifact(
             project_manifests.len()
         )));
     }
+    let mut source_root =
+        if project_manifests.is_empty() { Some(DEFAULT_PROJECT_SOURCE_ROOT.to_owned()) } else { None };
     if let Some(project_manifest) = project_manifests.first() {
         let project = read_entry(&mut zip, entries[project_manifest])?;
         let project_name = project_field(&project, "name")
@@ -83,10 +100,16 @@ pub fn validate_package_artifact(
             )));
         }
         validate_published_project_dependencies(&project, &manifest.dependencies)?;
-        let has_sources = entries.keys().any(|path| path.starts_with("src/"));
         let is_aggregate = project_field(&project, "type") == Some("Aggregate");
-        if package_kind == "library" && !has_sources && !is_aggregate {
-            return Err(ArtifactError::InvalidZip("library package is missing source under src/".into()));
+        if package_kind == "library" && !is_aggregate {
+            let root = project_source_root(&project, project_name)?;
+            let prefix = format!("{root}/");
+            if !entries.keys().any(|path| path.starts_with(&prefix)) {
+                return Err(ArtifactError::InvalidZip(format!(
+                    "library package is missing source under its project root {prefix}"
+                )));
+            }
+            source_root = Some(root);
         }
     }
     if package_kind == "template"
@@ -121,14 +144,17 @@ pub fn validate_package_artifact(
             return Err(ArtifactError::InvalidChecksums(format!("references missing entry '{path}'")));
         }
     }
-    Ok(ValidatedArtifact {
-        package_name: expected_package_name.to_owned(),
-        version: expected_version.to_owned(),
-        checksum_sha256: sha256_hex(bytes),
-        size_bytes: bytes.len() as u64,
-        manifest_json,
-        metadata: manifest,
-    })
+    Ok((
+        ValidatedArtifact {
+            package_name: expected_package_name.to_owned(),
+            version: expected_version.to_owned(),
+            checksum_sha256: sha256_hex(bytes),
+            size_bytes: bytes.len() as u64,
+            manifest_json,
+            metadata: manifest,
+        },
+        source_root,
+    ))
 }
 
 pub(crate) fn forbidden_path(path: &str) -> bool {

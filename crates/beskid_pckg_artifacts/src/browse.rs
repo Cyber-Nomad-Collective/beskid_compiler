@@ -6,7 +6,7 @@ use zip::ZipArchive;
 
 use crate::errors::ArtifactError;
 use crate::model::{ArtifactDocumentation, ArtifactFile, ArtifactFileContent, BrowseEntry, ValidatedArtifact};
-use crate::validate::validate_package_artifact;
+use crate::validate::validate_package_artifact_with_source_root;
 use crate::zip_support::{
     MAX_API_DOCS_BYTES, MAX_BROWSE_READ_BYTES, normalize_zip_path, read_entry_limited, sha256_hex,
 };
@@ -21,6 +21,9 @@ pub struct ArtifactBrowser {
     bytes: Vec<u8>,
     entries: BTreeMap<String, BrowseEntry>,
     indices: BTreeMap<String, usize>,
+    /// `<root>/` prefix of the project's declared source root, when the
+    /// package has one (libraries and Mods); templates browse their payload.
+    source_prefix: Option<String>,
 }
 
 impl ArtifactBrowser {
@@ -28,7 +31,9 @@ impl ArtifactBrowser {
         if sha256_hex(bytes) != validated.checksum_sha256 {
             return Err(ArtifactError::ChecksumMismatch);
         }
-        validate_package_artifact(bytes, &validated.package_name, &validated.version)?;
+        let (_, source_root) =
+            validate_package_artifact_with_source_root(bytes, &validated.package_name, &validated.version)?;
+        let source_prefix = source_root.map(|root| format!("{root}/"));
 
         let mut zip =
             ZipArchive::new(Cursor::new(bytes)).map_err(|error| ArtifactError::InvalidZip(error.to_string()))?;
@@ -43,13 +48,15 @@ impl ArtifactBrowser {
             // A hidden segment inside the public documentation or source trees
             // makes the whole artifact unbrowseable (fail closed); hidden
             // entries elsewhere are merely never listed or served.
-            if (is_documentation_path(&path) || is_source_path(&path)) && !is_public_browse_entry(&path) {
+            if (is_documentation_path(&path) || is_source_path(source_prefix.as_deref(), &path))
+                && !is_public_browse_entry(&path)
+            {
                 return Err(ArtifactError::UnsafeBrowseEntry(path));
             }
             entries.insert(path.clone(), BrowseEntry { path: path.clone(), size_bytes: entry.size() });
             indices.insert(path, index);
         }
-        Ok(Self { bytes: bytes.to_vec(), entries, indices })
+        Ok(Self { bytes: bytes.to_vec(), entries, indices, source_prefix })
     }
 
     pub fn list_docs(&self) -> Result<Vec<BrowseEntry>, ArtifactError> {
@@ -75,13 +82,17 @@ impl ArtifactBrowser {
         Ok(self
             .entries
             .values()
-            .filter(|entry| is_source_path(&entry.path) && is_visible_path(&entry.path))
+            .filter(|entry| self.is_source_path(&entry.path) && is_visible_path(&entry.path))
             .cloned()
             .collect())
     }
 
     pub fn read_source(&self, path: &str) -> Result<String, ArtifactError> {
-        self.read_text(path, is_source_path, MAX_BROWSE_READ_BYTES)
+        self.read_text(path, |path| self.is_source_path(path), MAX_BROWSE_READ_BYTES)
+    }
+
+    fn is_source_path(&self, path: &str) -> bool {
+        is_source_path(self.source_prefix.as_deref(), path)
     }
 
     /// Every file of the verified artifact that is safe to show in a package
@@ -149,7 +160,7 @@ impl ArtifactBrowser {
     fn read_text(
         &self,
         requested_path: &str,
-        allowed: fn(&str) -> bool,
+        allowed: impl Fn(&str) -> bool,
         limit_bytes: u64,
     ) -> Result<String, ArtifactError> {
         let path = normalize_browse_request(requested_path)?;
@@ -176,8 +187,8 @@ fn is_documentation_path(path: &str) -> bool {
     path == "README.md" || path.starts_with("docs/") || path.starts_with(".beskid/docs/")
 }
 
-fn is_source_path(path: &str) -> bool {
-    path.starts_with("src/")
+fn is_source_path(source_prefix: Option<&str>, path: &str) -> bool {
+    source_prefix.is_some_and(|prefix| path.starts_with(prefix))
         || path.starts_with("content/")
         || path.starts_with("workspace/")
         || path.starts_with("item/")

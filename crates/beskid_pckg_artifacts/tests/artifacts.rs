@@ -432,3 +432,65 @@ fn browser_rejects_oversized_text_reads() {
 
     assert!(matches!(browser.read_doc("docs/large.md"), Err(ArtifactError::EntryTooLarge { .. })));
 }
+
+fn library_archive_with_project(project: &str, files: &[(&str, &str)]) -> Vec<u8> {
+    let manifest =
+        r#"{"schema":"beskid.package.v1","id":"serialization_mod","version":"0.6.0","packageKind":"library"}"#;
+    let mut entries = vec![("package.json", manifest.to_string()), ("serialization_mod.bproj", project.to_string())];
+    entries.extend(files.iter().map(|(path, contents)| (*path, (*contents).to_string())));
+    archive_from_files(entries)
+}
+
+const MOD_PROJECT_WITH_SRC_ROOT: &str = "serialization_mod {\n  name = \"serialization_mod\"\n  version = \"0.6.0\"\n  root = \"Src\"\n  type = Mod\n  mod { capabilities = [read_project_sources, query_semantic_snapshot, emit_syntax] }\n}\n";
+
+#[test]
+fn validates_mod_package_with_declared_source_root_and_browses_it() {
+    let artifact =
+        library_archive_with_project(MOD_PROJECT_WITH_SRC_ROOT, &[("Src/Mod.bd", "pub i32 Value() { return 1; }")]);
+
+    let validated = validate_package_artifact(&artifact, "serialization_mod", "0.6.0").unwrap();
+    let browser = ArtifactBrowser::from_validated_bytes(&artifact, &validated).unwrap();
+
+    let sources = browser.list_source_tree().unwrap().into_iter().map(|entry| entry.path).collect::<Vec<_>>();
+    assert_eq!(sources, vec!["Src/Mod.bd".to_string()]);
+    assert_eq!(browser.read_source("Src/Mod.bd").unwrap(), "pub i32 Value() { return 1; }");
+}
+
+#[test]
+fn rejects_package_whose_sources_are_outside_the_declared_root() {
+    let artifact =
+        library_archive_with_project(MOD_PROJECT_WITH_SRC_ROOT, &[("src/Mod.bd", "pub i32 Value() { return 1; }")]);
+
+    assert!(matches!(
+        validate_package_artifact(&artifact, "serialization_mod", "0.6.0"),
+        Err(ArtifactError::InvalidZip(message)) if message.contains("missing source under its project root Src/")
+    ));
+}
+
+#[test]
+fn rejects_library_without_sources_under_the_default_root() {
+    let project = "serialization_mod {\n  name = \"serialization_mod\"\n}\n";
+    let artifact = library_archive_with_project(project, &[("README.md", "# docs only")]);
+
+    assert!(matches!(
+        validate_package_artifact(&artifact, "serialization_mod", "0.6.0"),
+        Err(ArtifactError::InvalidZip(message)) if message.contains("missing source under its project root src/")
+    ));
+}
+
+#[test]
+fn rejects_project_source_root_that_escapes_the_package() {
+    for root in ["../outside", "/abs", "..", "Src/../..", ".", "", "C:/src", ".hidden"] {
+        let project =
+            format!("serialization_mod {{\n  name = \"serialization_mod\"\n  root = \"{root}\"\n  type = Mod\n}}\n");
+        let artifact = library_archive_with_project(&project, &[("src/Mod.bd", "x"), ("Src/Mod.bd", "x")]);
+
+        assert!(
+            matches!(
+                validate_package_artifact(&artifact, "serialization_mod", "0.6.0"),
+                Err(ArtifactError::InvalidManifest(message)) if message.contains("must be a relative path inside the package")
+            ),
+            "root {root:?} must be rejected"
+        );
+    }
+}

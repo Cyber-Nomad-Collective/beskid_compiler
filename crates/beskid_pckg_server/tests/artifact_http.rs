@@ -512,3 +512,83 @@ async fn package_file_browser_lists_every_visible_file_and_guards_binary_and_tra
     assert_eq!(private_listing.status(), StatusCode::NOT_FOUND);
     std::fs::remove_dir_all(root).expect("artifact root is removed");
 }
+
+fn mod_artifact_with_source_root(name: &str, version: &str, root: &str, source_path: &str) -> Vec<u8> {
+    let manifest =
+        format!(r#"{{"schema":"beskid.package.v1","id":"{name}","version":"{version}","packageKind":"library"}}"#,);
+    let project_name = name.replace('.', "_").to_ascii_lowercase();
+    let project = format!(
+        "{project_name} {{\n  name = \"{project_name}\"\n  version = \"{version}\"\n  root = \"{root}\"\n  type = Mod\n  mod {{ capabilities = [read_project_sources] }}\n}}\n"
+    );
+    let entries = vec![
+        ("package.json".to_string(), manifest.into_bytes()),
+        (format!("{project_name}.bproj"), project.into_bytes()),
+        (source_path.to_string(), b"module Mod\n".to_vec()),
+    ];
+    let checksums =
+        entries.iter().map(|(path, bytes)| format!("{}  {path}", hex_sha256(bytes))).collect::<Vec<_>>().join("\n");
+    let mut output = std::io::Cursor::new(Vec::new());
+    let mut zip = zip::ZipWriter::new(&mut output);
+    let options = SimpleFileOptions::default();
+    for (path, contents) in entries {
+        zip.start_file(path, options).expect("entry starts");
+        zip.write_all(&contents).expect("entry writes");
+    }
+    zip.start_file("checksums.sha256", options).expect("checksums entry starts");
+    zip.write_all(checksums.as_bytes()).expect("checksums entry writes");
+    zip.finish().expect("zip finishes");
+    output.into_inner()
+}
+
+#[tokio::test]
+async fn mod_package_publishes_and_browses_sources_under_its_declared_root() {
+    let root = std::env::temp_dir().join(format!("pckg-artifact-mod-root-{}", std::process::id()));
+    let app = router(config(&root));
+
+    let created = app
+        .clone()
+        .oneshot(
+            Request::post("/api/packages")
+                .header("content-type", "application/json")
+                .header("remote-user", "owner")
+                .body(Body::from(r#"{"name":"serialization_mod","isPublic":true,"submitForReview":false}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(created.status(), StatusCode::CREATED);
+
+    let misplaced = mod_artifact_with_source_root("serialization_mod", "0.6.0", "Src", "src/Mod.bd");
+    let rejected =
+        app.clone().oneshot(multipart_publish_request("serialization_mod", "0.6.0", "owner", misplaced)).await.unwrap();
+    assert_eq!(rejected.status(), StatusCode::BAD_REQUEST);
+
+    let artifact = mod_artifact_with_source_root("serialization_mod", "0.6.0", "Src", "Src/Mod.bd");
+    let uploaded =
+        app.clone().oneshot(multipart_publish_request("serialization_mod", "0.6.0", "owner", artifact)).await.unwrap();
+    let uploaded_status = uploaded.status();
+    assert_eq!(uploaded_status, StatusCode::CREATED, "{:?}", json(uploaded).await);
+
+    let tree = app
+        .clone()
+        .oneshot(
+            Request::get("/api/packages/serialization_mod/versions/0.6.0/source/tree").body(Body::empty()).unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(tree.status(), StatusCode::OK);
+    assert_eq!(json(tree).await[0]["path"], "Src/Mod.bd");
+
+    let source = app
+        .oneshot(
+            Request::get("/api/packages/serialization_mod/versions/0.6.0/source/file?path=Src%2FMod.bd")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(source.status(), StatusCode::OK);
+    assert_eq!(source.into_body().collect().await.unwrap().to_bytes(), "module Mod\n");
+
+    std::fs::remove_dir_all(root).expect("artifact root is removed");
+}
