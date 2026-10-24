@@ -7,45 +7,45 @@ use Core.Results;
 use Core.Dynamic;
 
 pub type DynamicRegistryRecordV1 {
-    pub DynamicShapeRecordV1[] shapes,
-    pub DynamicMappingRecordV1[] mappings,
-    pub u64 processIssuer,
-    pub u64 session,
-    pub u64 generation,
-    pub u64 closed,
+    pub DynamicShapeRecordV1[] shapes;
+    pub DynamicMappingRecordV1[] mappings;
+    pub u64 processIssuer;
+    pub u64 session;
+    pub u64 generation;
+    pub u64 closed;
 }
 
 pub type DynamicShapeRecordV1 {
-    pub DynamicRegistryRecordV1 registryOwner,
-    pub u8[] signature,
-    pub u8[] stableDigest,
-    pub pointer payloadDescriptor,
-    pub pointer cellDescriptor,
-    pub pointer constructCell,
-    pub pointer readPayload,
-    pub u8[] sourceIdentity,
-    pub u64 generation,
-    pub u64 library,
-    pub u64 tag,
+    pub DynamicRegistryRecordV1 registryOwner;
+    pub u8[] signature;
+    pub u8[] stableDigest;
+    pub pointer payloadDescriptor;
+    pub pointer cellDescriptor;
+    pub pointer constructCell;
+    pub pointer readPayload;
+    pub u8[] sourceIdentity;
+    pub u64 generation;
+    pub u64 library;
+    pub u64 tag;
 }
 
 pub type DynamicMappingRecordV1 {
-    pub DynamicShapeRecordV1 source,
-    pub DynamicShapeRecordV1 destination,
-    pub u8[] transformationSignature,
-    pub pointer transformPayload,
-    pub u64 generation,
-    pub u64 library,
-    pub u64 token,
+    pub DynamicShapeRecordV1 source;
+    pub DynamicShapeRecordV1 destination;
+    pub u8[] transformationSignature;
+    pub pointer transformPayload;
+    pub u64 generation;
+    pub u64 library;
+    pub u64 token;
 }
 
 // Pack's source-qualified box is already constructed. This canonical cell
 // stores that sealed managed payload directly; no primitive box relabeling or
 // raw pointer-to-nominal cast is performed by source code.
 pub type DynamicErasedCellV1 {
-    pub DynamicPayloadV1 payload,
-    pub DynamicShapeRecordV1 shapeRecord,
-    pub u64 tag,
+    pub DynamicPayloadV1 payload;
+    pub DynamicShapeRecordV1 shapeRecord;
+    pub u64 tag;
 }
 [Export(Abi:"C", Symbol:"beskid_dynamic_v1_erased_construct")]
 pub DynamicErasedCellV1 DynamicErasedConstructV1(DynamicPayloadV1 payload, DynamicShapeRecordV1 shape) {
@@ -54,11 +54,11 @@ pub DynamicErasedCellV1 DynamicErasedConstructV1(DynamicPayloadV1 payload, Dynam
 [Export(Abi:"C", Symbol:"beskid_dynamic_v1_erased_read")]
 pub DynamicPayloadV1 DynamicErasedReadV1(DynamicErasedCellV1 cell) { return cell.payload; }
 
-pub type DynamicBoxV1<T> { pub T value, }
+pub type DynamicBoxV1<T> { pub T value; }
 pub type DynamicCellV1<T> {
-    pub DynamicBoxV1<T> payload,
-    pub DynamicShapeRecordV1 shapeRecord,
-    pub u64 tag,
+    pub DynamicBoxV1<T> payload;
+    pub DynamicShapeRecordV1 shapeRecord;
+    pub u64 tag;
 }
 
 // These generic constructors are instantiated only from current-assembly

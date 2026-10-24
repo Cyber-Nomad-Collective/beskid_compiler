@@ -5,9 +5,9 @@ use Core.Results;
 [Extern(Abi:"C")]
 pub contract Probe { unit gc_collect(); unit beskid_trap_message(string message); word str_len(string message); }
 
-pub type Aggregate { u8[] bytes, i64 marker, }
+pub type Aggregate { u8[] bytes; i64 marker; }
 // Foundation-local opaque token: transport does not dispose the resource.
-pub type OwnedResource { i64 token, }
+pub type OwnedResource { i64 token; }
 
 u8[] KeepBytes(move u8[] value) { Probe.gc_collect(); return value; }
 Aggregate KeepAggregate(Aggregate value) { Probe.gc_collect(); return value; }

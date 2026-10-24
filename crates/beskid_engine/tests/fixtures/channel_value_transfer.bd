@@ -9,8 +9,8 @@ use Core.Results;
 
 [Extern(Abi:"C")]
 pub contract Probe { unit gc_collect(); }
-pub type Aggregate { u8[] bytes, i64 marker, }
-pub type OwnedResource { i64 token, }
+pub type Aggregate { u8[] bytes; i64 marker; }
+pub type OwnedResource { i64 token; }
 i64 Bytes(u8[] bytes) { u8 first = bytes[0]; return i64(first); }
 i64 AggregateValue(Aggregate value) { return Bytes(value.bytes); }
 i64 ResourceValue(OwnedResource value) { return value.token; }

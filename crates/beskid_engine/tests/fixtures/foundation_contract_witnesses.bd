@@ -5,11 +5,11 @@ use Core.Results;
 pub contract Probe { unit gc_collect(); unit beskid_rt_v5_fiber_yield(); }
 contract Reader { i64 Read(); }
 type MemoryReader: Reader {
-    u8[] bytes,
+    u8[] bytes;
     pub i64 Read() { Probe.gc_collect(); u8[] data = bytes; return i64(data[0]); }
 }
 type FileReader: Reader {
-    u8[] bytes,
+    u8[] bytes;
     pub i64 Read() { Probe.gc_collect(); u8[] data = bytes; return i64(data[0]) + 1_i64; }
 }
 i64 ReadBoth(Reader left, Reader right) {

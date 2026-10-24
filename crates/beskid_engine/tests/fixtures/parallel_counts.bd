@@ -23,14 +23,14 @@ pub contract Probe {
 
 [Immutable]
 pub type Config {
-    pub string name,
-    pub i64 width,
+    pub string name;
+    pub i64 width;
 }
 
 [Isolated]
 pub type Node {
-    pub i64 value,
-    pub Node[] next,
+    pub i64 value;
+    pub Node[] next;
 }
 
 i64 Collected() {

@@ -7,11 +7,11 @@ pub enum Option<T> { Some(T value), None }
 [Extern(Abi:"C")]
 pub contract Probe { unit gc_collect(); }
 
-pub type Cell { i64 value }
+pub type Cell { i64 value; }
 
 pub type Counter {
-    i64 current,
-    i64 limit,
+    i64 current;
+    i64 limit;
     pub Option<i64> Next() {
         if this.current >= this.limit { return Option::None; }
         this.current = this.current + 1_i64;
@@ -20,8 +20,8 @@ pub type Counter {
 }
 
 pub type Cells {
-    i64 next,
-    i64 limit,
+    i64 next;
+    i64 limit;
     pub Option<Cell> Next() {
         if this.next >= this.limit { return Option::None; }
         this.next = this.next + 1_i64;
@@ -30,8 +30,8 @@ pub type Cells {
 }
 
 pub type Repeat<T> {
-    T value,
-    i64 left,
+    T value;
+    i64 left;
     pub Option<T> Next() {
         if this.left <= 0_i64 { return Option::None; }
         this.left = this.left - 1_i64;

@@ -6,8 +6,8 @@ use Testing.Assert;
 // Shape, packing, mapping and extraction use the actual public managed APIs; the
 // mapping token is issued only by the compiler from Mapping<S, D>().
 
-pub type DynamicFixtureSource { pub i64 value, }
-pub type DynamicFixtureDestination { pub i64 value, pub Option<i64> absent, }
+pub type DynamicFixtureSource { pub i64 value; }
+pub type DynamicFixtureDestination { pub i64 value; pub Option<i64> absent; }
 
 Result<DynamicValueV1, DynamicErrorV1> CreateScopedSource(u64 shape, i64 value) {
     DynamicPayloadV1 payload = match Pack<DynamicFixtureSource>(DynamicFixtureSource { value: value }) {

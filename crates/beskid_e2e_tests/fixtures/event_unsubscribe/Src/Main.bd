@@ -1,6 +1,6 @@
 use Testing.Assert;
 
-type User { event{4} created(string payload) }
+type User { event{4} created(string payload); }
 
 impl User {
     unit Emit(string payload) {

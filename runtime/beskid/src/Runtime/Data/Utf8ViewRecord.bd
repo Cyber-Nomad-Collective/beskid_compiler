@@ -6,9 +6,9 @@ use Core.Collections.Array;
 const LIVENESS_UTF8_RECORD_ADOPT = 9;
 
 pub type Utf8ViewRecord {
-    pub u8[] payload,
-    pub pointer data,
-    pub word length,
+    pub u8[] payload;
+    pub pointer data;
+    pub word length;
 }
 
 [Export(Abi:"C", Symbol:"beskid_rt_v5_utf8_record_construct")]

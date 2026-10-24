@@ -29,9 +29,9 @@ pub contract ArrayProbe {
     word gc_object_mark_state(u8[] bytes);
 }
 
-pub type Leaf { i64 value, }
-pub type Holder { Leaf f, i64 tag, }
-pub type Box { Holder inner, }
+pub type Leaf { i64 value; }
+pub type Holder { Leaf f; i64 tag; }
+pub type Box { Holder inner; }
 
 const STEP = 32768;
 
