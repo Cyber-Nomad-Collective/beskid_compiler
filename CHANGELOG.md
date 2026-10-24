@@ -13,8 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `Channel.Send`, `WaitGroup.Wait`, `Mutex.Lock` or `Hub.WaitReceive` in
   `Main` drives the scheduler until another fiber or pending I/O lets it
   complete, as `Join` already did. `Receive` on an empty channel in `Main`
-  returned `Closed(0)`. When nothing can make progress the runtime traps with
-  a deadlock.
+  returned `Closed(0)`. `Time.Sleep`, socket and DNS operations, console
+  I/O and child-process waits in `Main` park the same way, so other fibers
+  run while `Main` sleeps, reads or runs a child; they failed at once or
+  busy-waited. When nothing can make progress the runtime traps with a
+  deadlock.
 - Returning from `Main` ends the process while a detached fiber is parked in
   I/O, for example in `Input.ReadLine()`. The worker pool no longer joins a
   worker blocked in the OS call of a cancelled request; the orphaned worker
@@ -26,7 +29,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   keeps stdout and stderr; `ProcessError::ExitCode` is removed and
   `Process.Message(error)` describes an error. `ChannelError` and
   `Concurrency.Status` gain `Unexpected(i64 code)`, and `ChannelError::Closed`
-  carries the channel handle.
+  carries the channel handle. `HubError` and `MutexError` gain
+  `Unexpected(i64 code)` too, and a failed `Hub.Register` names its member
+  index.
 
 ## [0.6.6] - 2026-10-16
 
