@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased (0.6.7, conf slice)
 
-- Primitive types conform to contracts: `impl i64 : Formatting { ... }` (every integer width, `word`, `f32`, `f64`, `bool`, `char`, `string`). A `where T: Contract` bound is proven for a primitive `T`, and `value.Method()` through the bound calls the primitive's implementation with the receiver passed by value. An implementation for a primitive type must name a contract declared in the same file, takes no type parameters or `where` bounds, and may not repeat a conformance; otherwise it is E1611 (invalid primitive implementation).
+- Primitive types conform to contracts: `impl i64 : Formatting { ... }` (every integer width, `word`, `f32`, `f64`, `bool`, `char`, `string`). A `where T: Contract` bound is proven for a primitive `T`, and `value.Method()` through the bound calls the primitive's implementation with the receiver passed by value. A primitive value also calls its implementation's methods directly (`n.Format()`, `3.Format()`, `"text".Format()`), statically. An implementation for a primitive type must name a contract declared in the same file, takes no type parameters or `where` bounds, and may not repeat a conformance; otherwise it is E1611 (invalid primitive implementation).
 - Corelib `Core.Text.Formatting` (`string Format()`) for every primitive. `Testing.Assert.Equal<T>`/`NotEqual<T>` and the new `Testing.Expect.Equal<T>` require `T: Formatting` and put the expected and actual text into the failure record; `Expect.EqualI64`, `EqualString` and `EqualBool` are removed.
 
 ## Unreleased (0.6.7, test slice)
