@@ -329,3 +329,23 @@ fn corelib_formatting_implementations_lower_for_every_primitive() {
     let specializations = artifact.functions.iter().filter(|function| function.name.starts_with("Show#generic_")).count();
     assert_eq!(specializations, 14, "one specialization per primitive");
 }
+
+/// Direct calls on primitive values (`n.Format()`, `3.Format()`, a literal string receiver) call
+/// the primitive's implementation statically, the receiver passed by value.
+#[test]
+fn primitive_values_call_their_implementation_methods_directly() {
+    let (input, isa, root) = item_fixture_with_root(
+        "contract Shown { string Show(); } \
+         impl i32 : Shown { pub string Show() { return \"${this}\"; } } \
+         impl i64 : Shown { pub string Show() { return \"${this}\"; } } \
+         impl f64 : Shown { pub string Show() { return \"${this}\"; } } \
+         impl bool : Shown { pub string Show() { if this { return \"yes\"; } return \"no\"; } } \
+         impl string : Shown { pub string Show() { return this; } } \
+         string Main(f64 x) { i64 n = 3; bool flag = true; string s = \"t\"; \
+         return n.Show() + x.Show() + flag.Show() + s.Show() + 3.Show() + (n).Show() + \"lit\".Show(); }",
+    );
+    let items = module_items(&input, &[root]);
+    let artifact = lower_syntax_program(&input, isa.as_ref(), &items)
+        .expect("direct calls on primitive values lower to their implementation methods");
+    beskid_codegen::validate_artifact(&artifact).expect("direct primitive call artifact");
+}

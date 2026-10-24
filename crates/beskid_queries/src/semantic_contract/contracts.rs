@@ -2041,6 +2041,27 @@ fn primitive_implementation_blocks(db: &dyn Db, context: AstNodeKey, primitive: 
     blocks
 }
 
+/// The method `name` a value of `primitive` calls directly (`n.Format()`, `3.Format()`): the one
+/// method of that name among the admissible `impl <primitive> : C` blocks of the compilation. It is
+/// `pub` or declared in the calling unit; an ambiguous or missing name resolves nothing.
+pub(in crate::semantic_contract) fn primitive_method_declaration(
+    db: &dyn Db,
+    context: AstNodeKey,
+    primitive: SemanticTypeId,
+    name: &str,
+) -> Option<AstNodeKey> {
+    let methods = primitive_implementation_blocks(db, context, primitive)
+        .into_iter()
+        .filter(|(implementation, block)| primitive_implementation_is_admissible(db, *implementation, block))
+        .filter_map(|(implementation, _)| unique_nominal_method_declaration(db, implementation, name))
+        .collect::<Vec<_>>();
+    let [method] = methods.as_slice() else { return None };
+    let syntax = db.syntax_unit(method.unit).filter(|syntax| syntax.accepts_key(db, *method))?;
+    let definition =
+        syntax.syntax_index(db).node_at(syntax.expanded_program(db), method.node)?.of::<MethodDefinition>()?;
+    (method.unit == context.unit || definition.visibility.node == Visibility::Public).then_some(*method)
+}
+
 /// Prove `primitive : contract<applied_arguments>` from the one admissible primitive `impl`
 /// block that names the contract (directly or through an embedding contract). The block is the
 /// conformance's implementor: its methods are the witness methods, and it has no generic

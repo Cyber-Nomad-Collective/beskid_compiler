@@ -154,6 +154,13 @@ pub(in crate::semantic_contract) fn abi_type_for_local_path(
             }
         }
         [receiver, field] if receiver.node.type_args.is_empty() && field.node.type_args.is_empty() => {
+            // `n.Format` as the callee of a direct primitive method call denotes its receiver `n`.
+            if let Some((_, local)) =
+                crate::semantic_contract::calls::primitive_local_member_receiver(db, program, index, key, path)
+            {
+                return abi_local_declaration_type(db, program, index, key, local.node)
+                    .unwrap_or_else(|| Err(SemanticError::unavailable("abi_type")));
+            }
             abi_type_for_direct_aggregate_field_projection(
                 db,
                 program,

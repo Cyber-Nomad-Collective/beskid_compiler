@@ -465,6 +465,21 @@ fn primitive_conformance_program_produces_no_finding() {
     assert!(findings.is_empty(), "{findings:?}");
 }
 
+/// Direct calls on primitive values reach their implementation methods and pass the gate.
+#[test]
+fn direct_primitive_method_calls_produce_no_finding() {
+    let source = "pub contract Shown { string Show(); } \
+                  impl i32 : Shown { pub string Show() { return \"${this}\"; } } \
+                  impl i64 : Shown { pub string Show() { return \"${this}\"; } } \
+                  impl f64 : Shown { pub string Show() { return \"${this}\"; } } \
+                  impl bool : Shown { pub string Show() { return \"${this}\"; } } \
+                  impl string : Shown { pub string Show() { return this; } } \
+                  string Main(f64 x) { i64 n = 3; bool flag = true; string s = \"t\"; \
+                  string a = n.Show(); return a + x.Show() + flag.Show() + s.Show() + 3.Show() + \"lit\".Show(); }";
+    let findings = root_findings(source, 691);
+    assert!(findings.is_empty(), "{findings:?}");
+}
+
 #[test]
 fn clean_root_items_produce_no_finding() {
     let source = format!(

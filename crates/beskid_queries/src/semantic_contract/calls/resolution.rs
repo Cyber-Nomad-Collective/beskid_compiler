@@ -542,6 +542,19 @@ pub(in crate::semantic_contract) fn method_declaration_for_member_receiver(
         beskid_analysis::syntax_query::DynNodeRef::from(member.node.target.as_ref()),
     )?;
     let receiver = AstNodeKey { node: normalized_expression_node(index, receiver), ..key };
+    // `3.Format()`, `(n).Format()`: a value of a primitive type calls its primitive implementation.
+    if let Some(primitive) = generic_source_expression_identity(db, receiver)
+        .ok()
+        .as_ref()
+        .and_then(super::super::contracts::conformable_primitive_identity)
+    {
+        return super::super::contracts::primitive_method_declaration(
+            db,
+            key,
+            primitive,
+            &member.node.member.node.name,
+        );
+    }
     let declaration = generic_source_expression_identity(db, receiver)
         .ok()
         .and_then(|identity| super::super::contracts::concrete_declaration(db, key, &identity))
@@ -642,6 +655,9 @@ pub(in crate::semantic_contract) fn nominal_local_member_receiver(
     key: AstNodeKey,
     path: &beskid_analysis::syntax::Path,
 ) -> Option<(AstNodeKey, AstNodeKey)> {
+    if let Some(primitive) = primitive_local_member_receiver(db, program, index, key, path) {
+        return Some(primitive);
+    }
     // A two-segment spelling is a field chain when its root is not a lexical local: inside a
     // method `field.Method()` projects the implicit receiver before the call.
     let chained = path.segments.len() > 2
@@ -834,4 +850,27 @@ pub(in crate::semantic_contract) fn corelib_service_for(
         .iter()
         .copied()
         .find(|service| service.name == name)
+}
+
+/// `n.Format()` where `n` is a local (parameter or `let`) of a primitive type: the method of the
+/// primitive's implementation and the local that is its receiver. A local typed by a generic
+/// parameter has no primitive identity and keeps the bound-member rules.
+pub(in crate::semantic_contract) fn primitive_local_member_receiver(
+    db: &dyn Db,
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    key: AstNodeKey,
+    path: &beskid_analysis::syntax::Path,
+) -> Option<(AstNodeKey, AstNodeKey)> {
+    let [receiver, member] = path.segments.as_slice() else {
+        return None;
+    };
+    if !receiver.node.type_args.is_empty() || !member.node.type_args.is_empty() {
+        return None;
+    }
+    let local = resolve_lexical_declaration(program, index, key.node, receiver.node.name.node.name.as_str())?;
+    let identity = generic_source_local_identity(db, program, index, key, local).ok()?;
+    let primitive = super::super::contracts::conformable_primitive_identity(&identity)?;
+    let method = super::super::contracts::primitive_method_declaration(db, key, primitive, &member.node.name.node.name)?;
+    Some((method, AstNodeKey { node: local, ..key }))
 }

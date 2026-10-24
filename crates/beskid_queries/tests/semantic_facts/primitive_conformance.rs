@@ -128,3 +128,53 @@ fn malformed_primitive_implementations_are_e1611() {
     let accepted = primitive_findings(&format!("{CONTRACT}impl i64 : Sized {{ pub i64 Size() {{ return 8; }} }}"));
     assert!(accepted.is_empty(), "a well-formed primitive implementation has no finding: {accepted:?}");
 }
+
+/// Primitive implementations of one contract, with no generic function anywhere: every call in
+/// `Main` is a direct call on a primitive value.
+const SHOWN: &str = "contract Shown { string Show(); } \
+    impl i32 : Shown { pub string Show() { return \"${this}\"; } } \
+    impl i64 : Shown { pub string Show() { return \"${this}\"; } } \
+    impl f64 : Shown { pub string Show() { return \"${this}\"; } } \
+    impl bool : Shown { pub string Show() { return \"${this}\"; } } \
+    impl string : Shown { pub string Show() { return this; } } ";
+
+#[test]
+fn primitive_values_call_their_implementation_methods_directly() {
+    let source = format!(
+        "{SHOWN}string Main(f64 x) {{ i64 n = 3; bool flag = true; string s = \"t\"; \
+         return n.Show() + x.Show() + flag.Show() + s.Show() + 3.Show() + (n).Show() + \"lit\".Show(); }}"
+    );
+    let (db, _, unit, generation, index) = setup(&source);
+    let expected = [
+        ("n.Show()", SemanticTypeId::I64),
+        ("x.Show()", SemanticTypeId::F64),
+        ("flag.Show()", SemanticTypeId::BOOL),
+        ("s.Show()", SemanticTypeId::STRING),
+        ("3.Show()", SemanticTypeId::I32),
+        ("(n).Show()", SemanticTypeId::I64),
+        ("\"lit\".Show()", SemanticTypeId::STRING),
+    ];
+    for (occurrence, (spelling, abi)) in expected.into_iter().enumerate() {
+        let call = key(unit, generation, &index, NodeKind::CallExpression, occurrence);
+        let Ok(Some(beskid_queries::CallLowering::Direct(method))) = beskid_queries::call_lowering(&db, call) else {
+            panic!("`{spelling}` is a direct call: {:?}", beskid_queries::call_lowering(&db, call));
+        };
+        assert_eq!(method_receiver_abi_type(&db, method), abi, "`{spelling}` calls the `{}` implementation", abi.as_str());
+        let arguments = beskid_queries::call_arguments(&db, call).expect("call arguments").expect("arguments");
+        assert_eq!(arguments.len(), 1, "`{spelling}` passes its receiver as the only argument");
+        let signature = beskid_queries::call_abi_signature(&db, call).expect("call signature").expect("signature");
+        assert_eq!(signature.parameters.as_ref(), &[abi], "`{spelling}` receiver ABI");
+        assert_eq!(signature.result, SemanticTypeId::STRING);
+    }
+}
+
+#[test]
+fn a_primitive_without_the_method_has_no_direct_call_target() {
+    let source = format!("{SHOWN}string Main() {{ u16 n = 3_u16; return n.Show(); }}");
+    let (db, _, unit, generation, index) = setup(&source);
+    let call = key(unit, generation, &index, NodeKind::CallExpression, 0);
+    assert!(
+        !matches!(beskid_queries::call_lowering(&db, call), Ok(Some(beskid_queries::CallLowering::Direct(_)))),
+        "u16 has no Shown implementation, so `n.Show()` resolves nothing"
+    );
+}
