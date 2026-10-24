@@ -213,21 +213,12 @@ fn unresolved_callee_kind(
     if unit_declares_namespace_name(program, index, root) {
         return None;
     }
-    if let Some((module_len, units)) = longest_declared_module_prefix(db, call, &qualifier) {
-        if module_len == qualifier.len() {
-            return None;
+    match missing_module_member(db, call, &qualifier) {
+        ModulePrefix::MissingMember { module_path, name } => {
+            return Some(UnresolvedCallKind::UnknownValueInModule { module_path, name });
         }
-        // `Console.Out.WriteLine()` where `Console` is a module and `Out` names nothing in it: the
-        // path stops at `Out`. A type, contract, enum, inline module or function named `Out` in
-        // the module makes the rest a member path, which its own authorities judge.
-        let next = qualifier[module_len].as_str();
-        if units.iter().any(|unit| unit_declares_function_name(db, *unit, call.generation, next)) {
-            return None;
-        }
-        return Some(UnresolvedCallKind::UnknownValueInModule {
-            module_path: Arc::from(qualifier[..module_len].join(".")),
-            name: Arc::from(next),
-        });
+        ModulePrefix::Declared => return None,
+        ModulePrefix::None => {}
     }
     if import_binds_name(db, call, root) {
         return None;
@@ -266,6 +257,34 @@ pub(in crate::semantic_contract) fn import_binds_name(db: &dyn Db, key: AstNodeK
         })
 }
 
+/// What the longest visible module prefix of an unresolved qualifier says about it.
+pub(in crate::semantic_contract) enum ModulePrefix {
+    /// No prefix names a visible module.
+    None,
+    /// The whole qualifier is a module, or the segment after the module prefix is declared in it
+    /// (a type, contract, enum, inline module, function or constant): a member path its own
+    /// authorities judge.
+    Declared,
+    /// `Console.Out...` where `Console` is a module that declares nothing named `Out`.
+    MissingMember { module_path: Arc<str>, name: Arc<str> },
+}
+
+/// Judge `qualifier` by its longest visible module prefix (`Console` in `Console.Out.WriteLine`):
+/// the path stops at the first segment the module does not declare.
+pub(in crate::semantic_contract) fn missing_module_member(db: &dyn Db, key: AstNodeKey, qualifier: &[String]) -> ModulePrefix {
+    let Some((module_len, units)) = longest_declared_module_prefix(db, key, qualifier) else {
+        return ModulePrefix::None;
+    };
+    if module_len == qualifier.len() {
+        return ModulePrefix::Declared;
+    }
+    let next = qualifier[module_len].as_str();
+    if units.iter().any(|unit| unit_declares_function_name(db, *unit, key.generation, next)) {
+        return ModulePrefix::Declared;
+    }
+    ModulePrefix::MissingMember { module_path: Arc::from(qualifier[..module_len].join(".")), name: Arc::from(next) }
+}
+
 /// The longest prefix of `module_path` that names an assembled module visible to `key`, with
 /// that module's units.
 fn longest_declared_module_prefix(
@@ -279,11 +298,6 @@ fn longest_declared_module_prefix(
     })
 }
 
-pub(in crate::semantic_contract) fn assembly_declares_module(db: &dyn Db, key: AstNodeKey, module_path: &[String]) -> bool {
-    let registry = db.syntax_dependency_registry().lock().expect("syntax dependency registry");
-    (1..=module_path.len())
-        .any(|length| registry.visible_module_units(key.generation, &module_path[..length]).is_some())
-}
 
 /// Whether the current unit declares a type, enum, contract, or inline module named `name`, at
 /// any depth. A qualified callee rooted at such a name is a member path, not a module path.

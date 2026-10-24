@@ -74,6 +74,12 @@ fn a_missing_member_of_a_known_module_is_a_user_error_not_an_internal_one() {
     for main in [
         "use Console; pub unit Main() { Console.Out.WriteLine(\"hi\"); }",
         "pub unit Main() { Console.Out.WriteLine(\"hi\"); }",
+        // Value paths: a two-segment path and a longer one through the missing member.
+        "use Console; pub unit Main() { let f = Console.Out; return; }",
+        "use Console; pub unit Main() { let f = Console.Out.Writer; return; }",
+        // Type paths.
+        "use Console; pub unit Main(Console.Out value) { return; }",
+        "use Console; pub unit Main(Console.Out.Writer value) { return; }",
     ] {
         for diagnostics in diagnostics_with_modules(main, &[("Console.bd", console)]) {
             let errors = diagnostics
@@ -87,7 +93,8 @@ fn a_missing_member_of_a_known_module_is_a_user_error_not_an_internal_one() {
             );
             let unknown = errors
                 .iter()
-                .filter(|diagnostic| matches!(diagnostic.code.as_deref(), Some("E1101" | "E1108")))
+                .filter(|diagnostic| matches!(diagnostic.code.as_deref(), Some("E1101" | "E1108" | "E1201")))
+                .filter(|diagnostic| diagnostic.message.contains("Out"))
                 .collect::<Vec<_>>();
             assert_eq!(unknown.len(), 1, "one unknown-name diagnostic for {main}: {errors:#?}");
             assert!(unknown[0].message.contains("`Out`") || unknown[0].message.contains("Console.Out"), "{}", unknown[0].message);
