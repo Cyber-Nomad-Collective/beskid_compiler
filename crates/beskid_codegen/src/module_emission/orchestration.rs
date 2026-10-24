@@ -664,7 +664,7 @@ fn lower_resolved_syntax_program(
     };
     for symbol in checked_constructor_exports {
         artifact.exports.push(crate::ExportEntry {
-            beskid_name: symbol.clone(),
+            function: symbol.clone(),
             exported_symbol: symbol,
             abi: "C".into(),
         });

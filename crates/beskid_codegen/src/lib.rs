@@ -44,7 +44,7 @@ pub use array_static::{
 };
 pub use artifact::{
     CodegenArtifact, CodegenContext, ExportEntry, ExternImport, LoweredFunction, internal_link_symbol,
-    object_link_symbol,
+    object_link_symbol, resolve_export_entries,
 };
 pub use artifact_validation::{
     MissingSymbol, referenced_extern_imports, referenced_trusted_extern_imports, validate_artifact,

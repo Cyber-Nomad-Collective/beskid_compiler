@@ -24,11 +24,39 @@ pub struct ExternImport {
 }
 
 /// One exported Beskid function and its linker-visible symbol.
+///
+/// The entry names its declaration by identity: `function` is the exact `LoweredFunction::name`
+/// lowering issued for the `[Export]` declaration, never its simple source name, so two
+/// functions with the same simple name in different modules are two entries.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExportEntry {
-    pub beskid_name: String,
+    pub function: String,
     pub exported_symbol: String,
     pub abi: String,
+}
+
+impl ExportEntry {
+    /// Whether the lowered function `name` is this entry's declaration: its exact symbol, or a
+    /// generic specialization of it (`<symbol>#generic_...`).
+    pub fn exports(&self, name: &str) -> bool {
+        name == self.function
+            || name.strip_prefix(self.function.as_str()).is_some_and(|rest| rest.starts_with("#generic_"))
+    }
+}
+
+/// Every export entry resolves to exactly one lowered function of `functions`; an entry that
+/// names no function, or several, fails closed instead of emitting a registration.
+pub fn resolve_export_entries(functions: &[LoweredFunction], exports: &[ExportEntry]) -> Result<(), String> {
+    for entry in exports {
+        let matches = functions.iter().filter(|function| entry.exports(&function.name)).count();
+        if matches != 1 {
+            return Err(format!(
+                "export `{}` of `{}` resolves to {matches} lowered functions; an export names exactly one declaration",
+                entry.exported_symbol, entry.function
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// Complete output of the syntax → ISLE → verified CLIF path.
@@ -132,10 +160,10 @@ pub fn is_valid_link_name(name: &str) -> bool {
 /// alphabet; otherwise it is deterministically mangled first (see
 /// [`mangle_internal_link_name`]) so the raw, unmangled internal key never reaches the linker.
 pub fn object_link_symbol(beskid_name: &str, exports: &[ExportEntry]) -> String {
-    let logical = beskid_name.split('#').next().unwrap_or(beskid_name);
-    if let Some(entry) = exports.iter().find(|entry| entry.beskid_name == logical || entry.beskid_name == beskid_name) {
+    if let Some(entry) = exports.iter().find(|entry| entry.exports(beskid_name)) {
         return entry.exported_symbol.clone();
     }
+    let logical = beskid_name.split('#').next().unwrap_or(beskid_name);
     if logical == "Main" {
         return "main".to_owned();
     }
@@ -276,11 +304,43 @@ mod tests {
     #[test]
     fn object_link_symbol_leaves_an_explicit_export_untouched() {
         let exports = vec![ExportEntry {
-            beskid_name: "Widget".to_owned(),
+            function: "Widget#syntax_a_4".to_owned(),
             exported_symbol: "beskid_widget_entry".to_owned(),
             abi: "C".to_owned(),
         }];
-        assert_eq!(object_link_symbol("Widget#generic_1_2", &exports), "beskid_widget_entry");
+        assert_eq!(object_link_symbol("Widget#syntax_a_4", &exports), "beskid_widget_entry");
+        assert_eq!(object_link_symbol("Widget#syntax_a_4#generic_1_2", &exports), "beskid_widget_entry");
+    }
+
+    #[test]
+    fn an_export_entry_resolves_by_declaration_identity_not_by_simple_name() {
+        let exports = vec![ExportEntry {
+            function: "Handle#syntax_net_7".to_owned(),
+            exported_symbol: "net_handle".to_owned(),
+            abi: "C".to_owned(),
+        }];
+        // Another declaration with the same simple name keeps its own internal identity.
+        assert_eq!(object_link_symbol("Handle#syntax_net_7", &exports), "net_handle");
+        assert_ne!(object_link_symbol("Handle#syntax_disk_3", &exports), "net_handle");
+        assert_ne!(object_link_symbol("Handle", &exports), "net_handle");
+        // A lambda or other item derived from the exported symbol is not the declaration.
+        assert_ne!(object_link_symbol("Handle#syntax_net_7#lambda_g1_n9", &exports), "net_handle");
+    }
+
+    #[test]
+    fn every_export_entry_names_exactly_one_lowered_function() {
+        let function = |name: &str| super::LoweredFunction { name: name.to_owned(), function: cranelift_codegen::ir::Function::new() };
+        let entry = |function: &str| ExportEntry {
+            function: function.to_owned(),
+            exported_symbol: "sym".to_owned(),
+            abi: "C".to_owned(),
+        };
+        let functions = vec![function("Handle#syntax_net_7"), function("Handle#syntax_disk_3")];
+        assert!(super::resolve_export_entries(&functions, &[entry("Handle#syntax_net_7")]).is_ok());
+        assert!(super::resolve_export_entries(&functions, &[entry("Handle")]).is_err(), "a simple name is no identity");
+        assert!(super::resolve_export_entries(&functions, &[entry("Missing#syntax_x_1")]).is_err());
+        let generic = vec![function("Id#syntax_a_1#generic_1"), function("Id#syntax_a_1#generic_2")];
+        assert!(super::resolve_export_entries(&generic, &[entry("Id#syntax_a_1")]).is_err(), "two specializations");
     }
 
     #[test]

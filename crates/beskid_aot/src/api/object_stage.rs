@@ -28,6 +28,9 @@ pub(super) fn emit_object_stage(req: &AotBuildRequest) -> AotResult<ObjectStageR
 
     let entry_adapter = core_args_entry_adapter(&req.artifact, &target.triple)?;
     let exports = req.artifact.exports.clone();
+    // Every `[Export]` entry names exactly one emitted declaration; nothing is matched by name.
+    beskid_codegen::resolve_export_entries(&req.artifact.functions, &exports)
+        .map_err(|message| crate::error::AotError::InvalidRequest { message })?;
     // The program entry is the exact function the entrypoint lowering resolved, never a function
     // that merely shares its unqualified name (`req.entrypoint` only names it for diagnostics).
     let executable_entry = if req.output_kind == BuildOutputKind::Exe {
@@ -43,16 +46,14 @@ pub(super) fn emit_object_stage(req: &AotBuildRequest) -> AotResult<ObjectStageR
     if let Some(entry) = executable_entry {
         if let Some(export) = exports.iter().find(|export| {
             matches!(export.exported_symbol.as_str(), "main" | "wmain")
-                || (export.exported_symbol == entry.symbol
-                    && export.beskid_name.split('#').next() != entry.function.split('#').next())
+                || (export.exported_symbol == entry.symbol && !export.exports(entry.function))
         }) {
             return Err(crate::error::AotError::InvalidRequest {
                 message: format!("explicit export `{}` collides with the executable bootstrap", export.exported_symbol),
             });
         }
         if let Some(export) = exports.iter().find(|export| {
-            export.beskid_name.split('#').next() == entry.function.split('#').next()
-                && export.exported_symbol != entry.symbol
+            export.exports(entry.function) && export.exported_symbol != entry.symbol
         }) {
             return Err(crate::error::AotError::InvalidRequest {
                 message: format!(
@@ -209,7 +210,7 @@ mod tests {
     fn executable_rejects_explicit_exports_that_collide_with_its_startup() {
         let (_temp, mut request) = custom_entry_request();
         request.artifact.exports.push(beskid_codegen::ExportEntry {
-            beskid_name: "Start".into(),
+            function: "Start#0".into(),
             exported_symbol: "main".into(),
             abi: "C".into(),
         });
@@ -231,7 +232,7 @@ mod tests {
     fn executable_rejects_a_selected_entry_export_alias_it_cannot_emit() {
         let (_temp, mut request) = custom_entry_request();
         request.artifact.exports.push(beskid_codegen::ExportEntry {
-            beskid_name: "Start".into(),
+            function: "Start#0".into(),
             exported_symbol: "PublicStart".into(),
             abi: "C".into(),
         });
@@ -254,7 +255,7 @@ mod tests {
         helper.name = "Main#1".into();
         request.artifact.functions.push(helper);
         request.artifact.exports.push(beskid_codegen::ExportEntry {
-            beskid_name: "Main".into(),
+            function: "Main#1".into(),
             exported_symbol: "PublicHelper".into(),
             abi: "C".into(),
         });
@@ -280,7 +281,7 @@ mod tests {
                 helper.name = "Helper#1".into();
                 request.artifact.functions.push(helper);
                 request.artifact.exports.push(beskid_codegen::ExportEntry {
-                    beskid_name: "Helper".into(),
+                    function: "Helper#1".into(),
                     exported_symbol: startup.into(),
                     abi: "C".into(),
                 });
