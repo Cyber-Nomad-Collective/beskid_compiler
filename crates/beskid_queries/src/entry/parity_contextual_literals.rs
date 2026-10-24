@@ -170,3 +170,49 @@ fn bare_literals_take_an_inferred_generic_from_an_exact_argument_in_either_order
     let table = fixtures.iter().map(|(class, source)| (*class, source.as_str())).collect::<Vec<_>>();
     assert_silent(&table, 9530);
 }
+
+/// A bare literal branch of `c ? a : b` takes the conditional's context, or without one the other
+/// branch's type; two bare literals keep the default, and a typed branch never widens.
+#[test]
+fn conditional_literal_branches_take_the_context_or_the_other_branch() {
+    let fixtures = [
+        ("both literals at an i64 return", "i64 F(bool c) { return c ? 1 : 2; }".to_string()),
+        ("wide literal branch at an i64 return", "i64 F(bool c) { return c ? 1 : 3000000000; }".to_string()),
+        ("literal branch takes the typed branch", "i64 F(bool c, i64 x) { let y = c ? 1 : x; return y; }".to_string()),
+        ("two literals without a context", "unit F(bool c) { let y = c ? 1 : 2; return; }".to_string()),
+    ];
+    let table = fixtures.iter().map(|(class, source)| (*class, source.as_str())).collect::<Vec<_>>();
+    assert_silent(&table, 9540);
+}
+
+#[test]
+fn a_conditional_literal_branch_that_does_not_fit_is_t0905_at_the_literal() {
+    for (generation, source, value, primitive) in [
+        (9550, "u8 F(bool c) { return c ? 1 : 300; }", "300", "u8"),
+        (9551, "bool F(bool c, u8 b) { let y = c ? b : 300; return true; }", "300", "u8"),
+    ] {
+        let findings = root_findings(source, generation);
+        let finding = findings
+            .iter()
+            .find(|finding| {
+                matches!(&finding.kind, SemanticIssueKind::NumericLiteralOutOfRange { value: v, primitive: p }
+                    if v == value && p == primitive)
+            })
+            .unwrap_or_else(|| panic!("expected `{value}` does not fit in `{primitive}` for {source}, got {findings:?}"));
+        assert_eq!(&source[finding.span.start..finding.span.end], value);
+        assert_eq!(findings.len(), 1, "{source}: {findings:?}");
+    }
+}
+
+#[test]
+fn a_conditional_branch_suffix_conflicting_with_the_context_is_one_type_mismatch() {
+    let source = "u8 F(bool c) { return c ? 1 : 5_i64; }";
+    let findings = root_findings(source, 9560);
+    assert_eq!(findings.len(), 1, "one mismatch at the literal: {findings:?}");
+    let finding = &findings[0];
+    assert!(
+        matches!(&finding.kind, SemanticIssueKind::TypeMismatch { expected_name, actual_name } if expected_name == "u8" && actual_name == "i64"),
+        "{findings:?}"
+    );
+    assert_eq!(&source[finding.span.start..finding.span.end], "5_i64");
+}

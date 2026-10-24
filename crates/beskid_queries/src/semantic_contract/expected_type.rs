@@ -269,6 +269,40 @@ fn expected_type_for(
         return Ok(ExpectedType::new(ExpectedTypeContext::MatchArm { expression: expression_key }, outer.identity));
     }
 
+    if let Some(conditional) = node.of::<syntax::ConditionalExpression>() {
+        let then_child = is_child(DynNodeRef::from(conditional.then_branch.as_ref()));
+        if !then_child && !is_child(DynNodeRef::from(conditional.else_branch.as_ref())) {
+            // The condition is checked against `bool` by the conditional's own typing.
+            return Err(unavailable());
+        }
+        let context = ExpectedTypeContext::ConditionalBranch { expression: parent_key };
+        match forwarded(db, program, index, parent_key, enclosing) {
+            Ok(outer) => return Ok(ExpectedType::new(context, outer.identity)),
+            Err(error) if !error.is_unavailable() => return Err(error),
+            Err(_) => {}
+        }
+        // No context: a bare numeric literal branch takes the other branch's proven type. Two bare
+        // literals keep the default; a typed branch never takes the other's type (no widening).
+        let own = AstNodeKey { node: normalized_expression_node(index, child), ..key };
+        if !contextual_numeric_operand(db, own)? {
+            return Err(unavailable());
+        }
+        let peer = if then_child { &conditional.else_branch } else { &conditional.then_branch };
+        let peer = index.direct_child_id(program, parent, DynNodeRef::from(peer.as_ref())).ok_or_else(unavailable)?;
+        let peer_key = AstNodeKey { node: normalized_expression_node(index, peer), ..key };
+        if contextual_numeric_operand(db, peer_key)? {
+            return Err(unavailable());
+        }
+        return match value_abi_type(db, peer_key) {
+            Ok(Some(abi)) if abi != SemanticTypeId::POINTER => {
+                Ok(ExpectedType::new(context, GenericSourceTypeIdentity::Abi(abi)))
+            }
+            Ok(_) => Err(unavailable()),
+            Err(error) if error.is_unavailable() => Err(unavailable()),
+            Err(error) => Err(error),
+        };
+    }
+
     if let Some(binary) = node.of::<syntax::BinaryExpression>() {
         if index.kind(child) == Some(NodeKind::BinaryOp) {
             return Err(unavailable());
