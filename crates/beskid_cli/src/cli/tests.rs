@@ -692,3 +692,41 @@ fn native_mod_worker_strips_test_only_runtime_environment() {
         assert_eq!(std::env::var_os(name), None, "{name} reaches the Mod runtime");
     }
 }
+
+#[test]
+fn v067_output_flags_select_verbosity() {
+    use beskid_telemetry::Verbosity;
+    let level = |args: &[&str]| {
+        let mut argv = vec!["beskid"];
+        argv.extend_from_slice(args);
+        super::app::ParseInvocation(argv).expect("parses").Verbosity()
+    };
+    assert_eq!(level(&["check"]), Verbosity::Normal);
+    assert_eq!(level(&["check", "--plain"]), Verbosity::Normal, "--plain keeps the default verbosity");
+    assert_eq!(level(&["-v", "check"]), Verbosity::Verbose);
+    assert_eq!(level(&["check", "-v", "--plain"]), Verbosity::Verbose);
+    assert_eq!(level(&["-vv", "check"]), Verbosity::Debug);
+    assert_eq!(level(&["-v", "-v", "check"]), Verbosity::Debug);
+    assert_eq!(level(&["-q", "check"]), Verbosity::Quiet);
+    assert_eq!(level(&["check", "--plain", "-q"]), Verbosity::Quiet);
+}
+
+#[test]
+fn v067_quiet_and_verbose_conflict() {
+    for args in [["beskid", "-q", "-v", "check"], ["beskid", "-q", "-vv", "check"]] {
+        let error = match super::app::ParseInvocation(args) {
+            Ok(_) => panic!("{args:?} parsed"),
+            Err(error) => error,
+        };
+        assert_eq!(error.exit_code(), 2);
+    }
+}
+
+#[test]
+fn v067_log_file_flag_wins_over_the_environment_variable() {
+    let cli = super::app::ParseInvocation(["beskid", "--log-file", "from-flag.log", "check"]).expect("parses");
+    assert_eq!(cli.log_file.as_deref(), Some(std::path::Path::new("from-flag.log")));
+    assert_eq!(cli.LogFile().as_deref(), Some(std::path::Path::new("from-flag.log")));
+    let bare = super::app::ParseInvocation(["beskid", "check"]).expect("parses");
+    assert!(bare.log_file.is_none());
+}

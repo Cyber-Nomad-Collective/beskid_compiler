@@ -22,24 +22,31 @@ use super::docs::{anyhow_to_miette, ensure_corelib_ready, maybe_generate_docs_fo
     after_help = "First project:\n  beskid new hello\n  cd hello\n  beskid add <package>[@<version>]\n  beskid run\n\nUse `beskid dev --help` for compiler inspection and maintenance."
 )]
 pub struct Cli {
-    /// Print only errors, diagnostics and command results (no progress, summaries or info logs)
+    /// Print only errors, diagnostics and command results (no status lines, progress or logs)
     #[arg(short, long, global = true, conflicts_with = "verbose")]
     pub quiet: bool,
-    /// Print every progress step and debug-level logs
-    #[arg(short, long, global = true)]
-    pub verbose: bool,
+    /// Print every pipeline step and info-level logs; repeat (`-vv`) for debug-level logs
+    #[arg(short, long, global = true, action = clap::ArgAction::Count)]
+    pub verbose: u8,
+    /// Write logs to this file instead of stderr (the `BESKID_LOG` environment variable sets the same)
+    #[arg(long, global = true, value_name = "PATH")]
+    pub log_file: Option<std::path::PathBuf>,
     #[command(subcommand)]
     pub command: Commands,
 }
 
 impl Cli {
-    /// Output verbosity selected by `--quiet` / `--verbose`.
+    /// Output verbosity selected by `--quiet` / `-v` / `-vv`.
     pub fn Verbosity(&self) -> beskid_telemetry::Verbosity {
-        match (self.quiet, self.verbose) {
-            (true, _) => beskid_telemetry::Verbosity::Quiet,
-            (false, true) => beskid_telemetry::Verbosity::Verbose,
-            (false, false) => beskid_telemetry::Verbosity::Normal,
-        }
+        beskid_telemetry::Verbosity::from_flags(self.quiet, self.verbose)
+    }
+
+    /// Log destination: `--log-file`, else a non-empty `BESKID_LOG`; `None` logs to stderr.
+    pub fn LogFile(&self) -> Option<std::path::PathBuf> {
+        self.log_file.clone().or_else(|| {
+            let value = env::var_os("BESKID_LOG")?;
+            (!value.is_empty()).then(|| std::path::PathBuf::from(value))
+        })
     }
 }
 #[derive(Subcommand)]
@@ -130,7 +137,7 @@ pub fn run() -> miette::Result<()> {
         .map_err(|error| miette::miette!("cannot expand argument file: {error}"))?;
     let cli = ParseInvocation(args).unwrap_or_else(|error| error.exit());
     let backend_logs = matches!(&cli.command, Commands::Dev(args) if args.log_cranelift);
-    beskid_telemetry::init(InitOptions::cli(backend_logs).with_verbosity(cli.Verbosity()));
+    beskid_telemetry::init(InitOptions::cli(backend_logs).with_verbosity(cli.Verbosity()).with_log_file(cli.LogFile()));
     if NeedsCorelib(&cli.command) {
         ensure_corelib_ready().map_err(anyhow_to_miette)?;
     }
