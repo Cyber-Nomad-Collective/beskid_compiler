@@ -1,0 +1,17 @@
+// intro1
+//
+// Welcome to beskid-lings. Each exercise is a small Beskid project that does
+// not compile or does not pass its tests yet. Fix it, save, and the runner
+// moves on.
+//
+// In Beskid the return type comes first, then the function name.
+// `i32 Answer()` is a function that takes no arguments and returns an i32.
+//
+
+i32 Answer() {
+    return 42;
+}
+
+test answer_is_forty_two {
+    Testing.Assert.Equal(Answer(), 42, "Answer() should return 42");
+}

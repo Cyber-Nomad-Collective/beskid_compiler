@@ -3,7 +3,7 @@
 //! `[Captures]` form (`tooling--formatter--verification-and-traceability`, "move forms in the
 //! formatter corpus").
 
-use beskid_analysis::format::format_program;
+use beskid_analysis::format::format_source;
 use beskid_analysis::services::parse_program;
 use beskid_analysis::syntax::{Expression, Node, Program, Spanned, Statement};
 
@@ -100,8 +100,9 @@ fn move_is_reserved_and_does_not_combine() {
 #[test]
 fn formatter_round_trips_every_move_form() {
     let program = parse(CORPUS);
-    let once = format_program(&program).expect("format");
-    let twice = format_program(&parse(&once)).expect("format again");
+    let _ = &program;
+    let once = format_source("<memory>", CORPUS).expect("format");
+    let twice = format_source("<memory>", &once).expect("format again");
     assert_eq!(once, twice, "format must be a fixed point:\n{once}");
     let missing = [
         "pub Archive Add(move this, move u8[] block)",

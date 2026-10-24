@@ -1,44 +1,36 @@
 use crate::doc::LeadingDocComment;
 use crate::format::emit::{Emit, EmitCtx, EmitError};
+use crate::format::lines::{Line, body_is_empty, emit_line, open_body};
+use crate::format::policy::{ItemKind, blank_between_items, item_kind};
 use crate::syntax::{
     ConstantDefinition, HostBodyItem, HostDefinition, InlineModule, Literal, Node, Program, RegistryBlock,
     RegistryEntry, ScopeDefinition, ScopeHook, ScopeHookKind, Spanned,
 };
 use std::fmt::Write;
 
-pub(super) fn emit_leading_doc_lines<W: Write>(
-    doc: Option<&LeadingDocComment>,
+/// Emit top-level or inline-module items with their documentation, comments and separation.
+fn emit_items<W: Write>(
+    items: &[Spanned<Node>],
+    docs: &[Option<LeadingDocComment>],
     w: &mut W,
     cx: &mut EmitCtx,
 ) -> Result<(), EmitError> {
-    let Some(d) = doc else {
-        return Ok(());
-    };
-    for line in d.normalized_source.lines() {
-        cx.write_indent(w)?;
-        w.write_str("///")?;
-        if !line.is_empty() {
-            w.write_char(' ')?;
-            w.write_str(line)?;
-        }
-        cx.nl(w)?;
+    let mut previous: Option<ItemKind> = None;
+    for (i, item) in items.iter().enumerate() {
+        let kind = item_kind(&item.node);
+        let line = Line::new(item.span)
+            .doc(docs.get(i).and_then(Option::as_ref))
+            .blank(blank_between_items(previous, kind));
+        emit_line(w, cx, line, "", |w, cx| item.emit(w, cx))?;
+        previous = Some(kind);
     }
     Ok(())
 }
 
 impl Emit for Program {
     fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
-        for (i, item) in self.items.iter().enumerate() {
-            if i > 0 {
-                cx.between_top_level_declarations(w)?;
-            }
-            let doc = self.leading_docs.get(i).and_then(|x| x.as_ref());
-            emit_leading_doc_lines(doc, w, cx)?;
-            cx.write_indent(w)?;
-            item.emit(w, cx)?;
-            cx.nl(w)?;
-        }
-        Ok(())
+        emit_items(&self.items, &self.leading_docs, w, cx)?;
+        cx.finish(w)
     }
 }
 
@@ -87,41 +79,37 @@ impl Emit for Spanned<ConstantDefinition> {
     }
 }
 
-impl Emit for HostDefinition {
+impl Emit for Spanned<HostDefinition> {
     fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
+        let container_end = self.span.end;
+        let this = &self.node;
         cx.token(w, "host")?;
         cx.space(w)?;
-        self.name.emit(w, cx)?;
+        this.name.emit(w, cx)?;
         w.write_char('(')?;
-        for (i, param) in self.parameters.iter().enumerate() {
+        for (i, param) in this.parameters.iter().enumerate() {
             if i > 0 {
                 cx.token(w, ", ")?;
             }
             param.emit(w, cx)?;
         }
         w.write_char(')')?;
-        if let Some(base) = &self.base_host {
+        if let Some(base) = &this.base_host {
             cx.space(w)?;
             cx.token(w, ":")?;
             cx.space(w)?;
             base.emit(w, cx)?;
         }
-        cx.nl(w)?;
-        cx.write_indent(w)?;
-        cx.open_brace(w)?;
-        for item in &self.body {
-            cx.write_indent(w)?;
-            item.emit(w, cx)?;
-            cx.nl(w)?;
+        if body_is_empty(cx, this.body.len(), container_end) {
+            cx.space(w)?;
+            return cx.token(w, "{ }");
         }
-        cx.close_brace(w)?;
+        open_body(w, cx)?;
+        for item in &this.body {
+            emit_line(w, cx, Line::new(item.span), "", |w, cx| item.emit(w, cx))?;
+        }
+        cx.close_brace(w, container_end)?;
         Ok(())
-    }
-}
-
-impl Emit for Spanned<HostDefinition> {
-    fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
-        self.node.emit(w, cx)
     }
 }
 
@@ -142,24 +130,18 @@ impl Emit for Spanned<HostBodyItem> {
     }
 }
 
-impl Emit for RegistryBlock {
-    fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
-        cx.token(w, "registry")?;
-        cx.space(w)?;
-        cx.open_brace(w)?;
-        for entry in &self.entries {
-            cx.write_indent(w)?;
-            entry.emit(w, cx)?;
-            cx.nl(w)?;
-        }
-        cx.close_brace(w)?;
-        Ok(())
-    }
-}
-
 impl Emit for Spanned<RegistryBlock> {
     fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
-        self.node.emit(w, cx)
+        cx.token(w, "registry")?;
+        if body_is_empty(cx, self.node.entries.len(), self.span.end) {
+            cx.space(w)?;
+            return cx.token(w, "{ }");
+        }
+        open_body(w, cx)?;
+        for entry in &self.node.entries {
+            emit_line(w, cx, Line::new(entry.span), "", |w, cx| entry.emit(w, cx))?;
+        }
+        cx.close_brace(w, self.span.end)
     }
 }
 
@@ -190,34 +172,30 @@ impl Emit for Spanned<RegistryEntry> {
     }
 }
 
-impl Emit for ScopeDefinition {
+impl Emit for Spanned<ScopeDefinition> {
     fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
+        let container_end = self.span.end;
+        let this = &self.node;
         cx.token(w, "scope")?;
         cx.space(w)?;
-        self.name.emit(w, cx)?;
+        this.name.emit(w, cx)?;
         w.write_char('(')?;
-        for (i, param) in self.parameters.iter().enumerate() {
+        for (i, param) in this.parameters.iter().enumerate() {
             if i > 0 {
                 cx.token(w, ", ")?;
             }
             param.emit(w, cx)?;
         }
         w.write_char(')')?;
-        cx.space(w)?;
-        cx.open_brace(w)?;
-        for item in &self.body {
-            cx.write_indent(w)?;
-            item.emit(w, cx)?;
-            cx.nl(w)?;
+        if body_is_empty(cx, this.body.len(), container_end) {
+            cx.space(w)?;
+            return cx.token(w, "{ }");
         }
-        cx.close_brace(w)?;
-        Ok(())
-    }
-}
-
-impl Emit for Spanned<ScopeDefinition> {
-    fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
-        self.node.emit(w, cx)
+        open_body(w, cx)?;
+        for item in &this.body {
+            emit_line(w, cx, Line::new(item.span), "", |w, cx| item.emit(w, cx))?;
+        }
+        cx.close_brace(w, container_end)
     }
 }
 
@@ -237,8 +215,7 @@ impl Emit for ScopeHook {
             param.emit(w, cx)?;
         }
         w.write_char(')')?;
-        cx.nl(w)?;
-        cx.write_indent(w)?;
+        cx.before_open_brace(w)?;
         self.body.emit(w, cx)
     }
 }
@@ -255,38 +232,21 @@ impl Emit for Spanned<Node> {
     }
 }
 
-impl Emit for InlineModule {
+impl Emit for Spanned<InlineModule> {
     fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
-        crate::format::attribute_lists::emit_attribute_block(&self.attributes, w, cx)?;
-        self.visibility.emit(w, cx)?;
+        let this = &self.node;
+        crate::format::attribute_lists::emit_attribute_block(&this.attributes, w, cx)?;
+        this.visibility.emit(w, cx)?;
         cx.token(w, "mod")?;
         cx.space(w)?;
-        self.name.emit(w, cx)?;
-        if self.items.is_empty() {
+        this.name.emit(w, cx)?;
+        if body_is_empty(cx, this.items.len(), self.span.end) {
             cx.space(w)?;
             w.write_str("{ }")?;
             return Ok(());
         }
-        cx.nl(w)?;
-        cx.write_indent(w)?;
-        cx.open_brace(w)?;
-        for (i, item) in self.items.iter().enumerate() {
-            if i > 0 {
-                cx.between_top_level_declarations(w)?;
-            }
-            let doc = self.leading_docs.get(i).and_then(|x| x.as_ref());
-            emit_leading_doc_lines(doc, w, cx)?;
-            cx.write_indent(w)?;
-            item.emit(w, cx)?;
-            cx.nl(w)?;
-        }
-        cx.close_brace(w)?;
-        Ok(())
-    }
-}
-
-impl Emit for Spanned<InlineModule> {
-    fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
-        self.node.emit(w, cx)
+        open_body(w, cx)?;
+        emit_items(&this.items, &this.leading_docs, w, cx)?;
+        cx.close_brace(w, self.span.end)
     }
 }

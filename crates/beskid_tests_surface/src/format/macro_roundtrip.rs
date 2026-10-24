@@ -1,14 +1,14 @@
 //! Formatter round-trip tests for language macro AST nodes.
 
-use beskid_analysis::format::format_program;
+use beskid_analysis::format::format_source;
 use beskid_analysis::services::parse_program;
 use beskid_analysis::syntax::expressions::{Expression, MacroInvocation};
 use beskid_analysis::syntax::items::{MacroDefinition, MacroFragmentKind, Node};
 use beskid_analysis::syntax::{Program, Spanned};
 
 fn parse_format_reparse(source: &str) -> Spanned<Program> {
-    let program = parse_program(source).expect("parse");
-    let formatted = format_program(&program).expect("format");
+    let _program = parse_program(source).expect("parse");
+    let formatted = format_source("<memory>", source).expect("format");
     parse_program(&formatted).expect("re-parse formatted")
 }
 
@@ -118,7 +118,7 @@ unit Main() {
 #[test]
 fn macro_metavariable_roundtrip_preserves_parameter_names() {
     let source = "macro m (expression x) { $x; }\nunit Main() { return; }\n";
-    let program = parse_program(source).expect("parse");
-    let formatted = format_program(&program).expect("format");
+    let _program = parse_program(source).expect("parse");
+    let formatted = format_source("<memory>", source).expect("format");
     assert!(formatted.contains("$x"), "formatted macro body should retain $x metavariable, got:\n{formatted}");
 }

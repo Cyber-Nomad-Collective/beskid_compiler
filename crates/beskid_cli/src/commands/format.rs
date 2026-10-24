@@ -2,8 +2,7 @@
 
 use anyhow::{Context, Result, bail};
 use beskid_analysis::MietteReportError;
-use beskid_analysis::format::{emit_error_semantic_diagnostic, format_program};
-use beskid_analysis::services;
+use beskid_analysis::format::format_source;
 use clap::Args;
 use std::ffi::OsStr;
 use std::fs;
@@ -27,6 +26,9 @@ pub struct FormatArgs {
 }
 
 /// Format in place by default; check or write a separate output when requested.
+///
+/// Every file goes through [`format_source`], the same function the language server uses. A
+/// file that does not parse is reported and left unchanged, and the command then exits non-zero.
 pub fn execute(args: FormatArgs) -> Result<()> {
     let started = Instant::now();
     let input_is_dir = fs::metadata(&args.input)
@@ -52,47 +54,50 @@ pub fn execute(args: FormatArgs) -> Result<()> {
     if paths.len() == 1
         && let Some(out) = args.output.as_ref()
     {
-        let formatted = format_path_to_string(&paths[0])?;
+        let source = fs::read_to_string(&paths[0]).with_context(|| format!("read {}", paths[0].display()))?;
+        let formatted = format_file(&paths[0], &source)?;
         fs::write(out, formatted).with_context(|| format!("write {}", out.display()))?;
         Progress(format!("beskid fmt: 1 file in {}", fmt_duration(started.elapsed())));
         return Ok(());
     }
 
+    // Format every file, then fail once with the first error after reporting the others.
+    let mut failures: Vec<anyhow::Error> = Vec::new();
     for path in &paths {
-        format_one(path, args.check).with_context(|| format!("{}", path.display()))?;
+        if let Err(error) = format_one(path, args.check) {
+            failures.push(error);
+        }
     }
 
     let elapsed = started.elapsed();
     let label = if args.check { "checked" } else { "formatted" };
-    Progress(format!("beskid fmt: {label} {} .bd file(s) in {}", paths.len(), fmt_duration(elapsed)));
-
-    Ok(())
+    if failures.is_empty() {
+        Progress(format!("beskid fmt: {label} {} .bd file(s) in {}", paths.len(), fmt_duration(elapsed)));
+        return Ok(());
+    }
+    let count = failures.len();
+    let mut failures = failures.into_iter();
+    let first = failures.next().expect("at least one failure");
+    for other in failures {
+        beskid_tools::print_report(&beskid_tools::diagnostics::report_from_anyhow(&other));
+    }
+    Progress(format!(
+        "beskid fmt: {count} of {} .bd file(s) failed in {}",
+        paths.len(),
+        fmt_duration(elapsed)
+    ));
+    Err(first)
 }
 
-fn format_path_to_string(path: &Path) -> Result<String> {
-    let source = fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
-    let program = services::parse_program_with_source_name(&path.display().to_string(), &source)
-        .with_context(|| format!("parse {}", path.display()))?;
-    format_program(&program).map_err(|e| {
-        anyhow::Error::new(MietteReportError::new(emit_error_semantic_diagnostic(
-            &path.display().to_string(),
-            &source,
-            e,
-        )))
-    })
+/// Format one file's text, or report why it cannot be formatted (the file is left unchanged).
+fn format_file(path: &Path, source: &str) -> Result<String> {
+    format_source(&path.display().to_string(), source)
+        .map_err(|error| anyhow::Error::new(MietteReportError::new(error.into_diagnostic())))
 }
 
 fn format_one(path: &Path, check: bool) -> Result<()> {
     let source = fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
-    let program = services::parse_program_with_source_name(&path.display().to_string(), &source)
-        .with_context(|| format!("parse {}", path.display()))?;
-    let formatted = format_program(&program).map_err(|e| {
-        anyhow::Error::new(MietteReportError::new(emit_error_semantic_diagnostic(
-            &path.display().to_string(),
-            &source,
-            e,
-        )))
-    })?;
+    let formatted = format_file(path, &source)?;
 
     if check {
         if formatted != source {
@@ -105,7 +110,9 @@ fn format_one(path: &Path, check: bool) -> Result<()> {
         return Ok(());
     }
 
-    fs::write(path, formatted).with_context(|| format!("write {}", path.display()))?;
+    if formatted != source {
+        fs::write(path, formatted).with_context(|| format!("write {}", path.display()))?;
+    }
     Ok(())
 }
 
@@ -202,6 +209,44 @@ mod v06_tests {
             "canonical fmt should edit the selected source without extra --write"
         );
         assert!(actual.contains("    return 0;"));
+    }
+
+    fn temp_root(tag: &str) -> std::path::PathBuf {
+        let root = std::env::temp_dir().join(format!(
+            "beskid-v067-fmt-{tag}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        root
+    }
+
+    #[test]
+    fn v067_fmt_fails_on_a_parse_error_and_leaves_the_file_unchanged() {
+        let root = temp_root("broken");
+        let path = root.join("Broken.bd");
+        let source = "i32 Main()\n{\n    let x: i32 = 5\n    return x;\n}\n";
+        std::fs::write(&path, source).unwrap();
+        let result = execute(FormatArgs { input: path.clone(), output: None, check: false });
+        let actual = std::fs::read_to_string(&path).unwrap();
+        std::fs::remove_dir_all(root).unwrap();
+        assert!(result.is_err(), "a parse error must fail `beskid fmt`");
+        assert_eq!(actual, source, "a file that does not parse must not be rewritten");
+    }
+
+    #[test]
+    fn v067_fmt_check_passes_on_its_own_output_and_keeps_comments() {
+        let root = temp_root("check");
+        let path = root.join("Main.bd");
+        let source = "// Header comment.\n// TODO: keep me.\n\ni32 Answer() { return 0; } // trailing\n";
+        std::fs::write(&path, source).unwrap();
+        execute(FormatArgs { input: path.clone(), output: None, check: false }).unwrap();
+        let formatted = std::fs::read_to_string(&path).unwrap();
+        let check = execute(FormatArgs { input: path.clone(), output: None, check: true });
+        std::fs::remove_dir_all(root).unwrap();
+        assert!(formatted.starts_with("// Header comment.\n// TODO: keep me.\n\n"), "{formatted}");
+        assert!(formatted.contains("} // trailing"), "{formatted}");
+        check.expect("`--check` must pass on the formatter's own output");
     }
 }
 

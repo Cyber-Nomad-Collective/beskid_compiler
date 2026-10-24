@@ -1,0 +1,38 @@
+// Exercise header.
+// TODO: implement Answer.
+
+use Core.Io; // io for printing
+// Text helpers.
+use Core.Text;
+
+/* A point. */
+pub type Point
+{
+    // fields follow
+    i32 x, // horizontal
+    // vertical next
+    i32 y,
+    // end of fields
+}
+
+pub i32 Answer()
+{
+    // Start.
+    let a = 1; // one
+
+    // After blank lines.
+    if (a < 2)
+    {
+        // why
+        return 42; // the answer
+    }
+    return a;
+    // End of body.
+}
+
+i32 Todo()
+{
+    // TODO
+}
+
+// End of file.

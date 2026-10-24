@@ -87,21 +87,41 @@ impl Backend {
     }
 
     async fn refresh_workspace_scan(&self) {
-        let roots = { self.workspace_roots.read().await.clone() };
-        let focused = { self.state.read().await.focused_project.clone() };
-        let filter = *self.log_filter.read().await;
-        for root in roots {
-            client_log(&self.client, filter, MessageType::INFO, format!("workspace scan started: {}", root.display()))
-                .await;
-            scan_workspace(&self.client, &self.state, &root, focused.as_deref()).await;
-            client_log(
-                &self.client,
-                filter,
-                MessageType::INFO,
-                format!("workspace scan completed: {}", root.display()),
-            )
-            .await;
-        }
+        scan_workspace_roots(&self.client, &self.state, &self.workspace_roots, &self.log_filter).await;
+    }
+}
+
+/// Scan every workspace root (project discovery, closed-file diagnostics).
+async fn scan_workspace_roots(
+    client: &Client,
+    state: &RwLock<State>,
+    workspace_roots: &RwLock<Vec<PathBuf>>,
+    log_filter: &RwLock<ClientLogFilter>,
+) {
+    let roots = { workspace_roots.read().await.clone() };
+    let focused = { state.read().await.focused_project.clone() };
+    let filter = *log_filter.read().await;
+    for root in roots {
+        client_log(client, filter, MessageType::INFO, format!("workspace scan started: {}", root.display())).await;
+        scan_workspace(client, state, &root, focused.as_deref()).await;
+        client_log(client, filter, MessageType::INFO, format!("workspace scan completed: {}", root.display())).await;
+    }
+}
+
+impl Backend {
+    /// Run the initial workspace scan in the background.
+    ///
+    /// The transport handles at most a few messages at once; a scan awaited inside `initialized`
+    /// would hold one of those slots for its whole duration (18 s for a folder of 17 projects)
+    /// and delay unrelated requests such as formatting.
+    fn spawn_initial_workspace_scan(&self) {
+        let client = self.client.clone();
+        let state = Arc::clone(&self.state);
+        let roots = Arc::clone(&self.workspace_roots);
+        let log_filter = Arc::clone(&self.log_filter);
+        tokio::spawn(async move {
+            scan_workspace_roots(&client, &state, &roots, &log_filter).await;
+        });
     }
 }
 
@@ -148,7 +168,7 @@ impl LanguageServer for Backend {
     async fn initialized(&self, _: InitializedParams) {
         let filter = *self.log_filter.read().await;
         client_log(&self.client, filter, MessageType::INFO, "Beskid LSP initialized".to_string()).await;
-        self.refresh_workspace_scan().await;
+        self.spawn_initial_workspace_scan();
     }
 
     async fn shutdown(&self) -> Result<()> {
@@ -409,19 +429,19 @@ impl LanguageServer for Backend {
         refresh_after_disk_change(&self.client, &self.state, &changed).await;
     }
 
+    // Formatting is syntax-only: it reads the open text, never the analysis state, so it does
+    // not wait for workspace discovery or analysis.
     async fn formatting(&self, params: DocumentFormattingParams) -> Result<Option<Vec<TextEdit>>> {
-        let uri = params.text_document.uri;
-        let Some(document) = snapshot_document(&self.state, &uri).await else {
+        let Some(text) = formatting::open_texts::open_text(&params.text_document.uri) else {
             return Ok(None);
         };
-        Ok(formatting::handler::handle_document_formatting(&document))
+        Ok(formatting::handler::handle_document_formatting(&text))
     }
 
     async fn range_formatting(&self, params: DocumentRangeFormattingParams) -> Result<Option<Vec<TextEdit>>> {
-        let uri = params.text_document.uri;
-        let Some(document) = snapshot_document(&self.state, &uri).await else {
+        let Some(text) = formatting::open_texts::open_text(&params.text_document.uri) else {
             return Ok(None);
         };
-        Ok(formatting::handler::handle_range_formatting(&document, params.range))
+        Ok(formatting::handler::handle_range_formatting(&text, params.range))
     }
 }

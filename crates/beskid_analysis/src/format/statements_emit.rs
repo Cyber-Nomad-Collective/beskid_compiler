@@ -1,16 +1,20 @@
 use crate::format::emit::{Emit, EmitCtx, EmitError};
+use crate::format::lines::{Line, body_is_empty, emit_line};
+use crate::format::policy::PARENTHESIZE_CONDITIONS;
 use crate::syntax::{
-    BreakStatement, ContinueStatement, ElseBranch, Expression, ExpressionStatement, ForStatement, IfStatement,
+    Block, BreakStatement, ContinueStatement, ElseBranch, Expression, ExpressionStatement, ForStatement, IfStatement,
     LaunchStatement, LetStatement, RangeExpression, ReturnStatement, Spanned, Statement, WhileStatement, WithStatement,
 };
 use std::fmt::Write;
 
-fn emit_parenthesized_condition<W: Write>(
+/// A condition in the house style: parenthesized once (an already grouped one is not wrapped again).
+pub(crate) fn emit_parenthesized_condition<W: Write>(
     condition: &Spanned<Expression>,
     w: &mut W,
     cx: &mut EmitCtx,
 ) -> Result<(), EmitError> {
     match &condition.node {
+        _ if !PARENTHESIZE_CONDITIONS => condition.emit(w, cx),
         // Keep idempotence: avoid wrapping already-grouped conditions again.
         Expression::Grouped(_) => condition.emit(w, cx),
         _ => {
@@ -130,8 +134,7 @@ impl Emit for WhileStatement {
         cx.token(w, "while")?;
         cx.space(w)?;
         emit_parenthesized_condition(&self.condition, w, cx)?;
-        cx.nl(w)?;
-        cx.write_indent(w)?;
+        cx.before_open_brace(w)?;
         self.body.emit(w, cx)
     }
 }
@@ -151,8 +154,7 @@ impl Emit for ForStatement {
         cx.token(w, "in")?;
         cx.space(w)?;
         self.iterable.emit(w, cx)?;
-        cx.nl(w)?;
-        cx.write_indent(w)?;
+        cx.before_open_brace(w)?;
         self.body.emit(w, cx)
     }
 }
@@ -168,8 +170,7 @@ impl Emit for ElseBranch {
         match self {
             Self::If(if_stmt) => if_stmt.emit(w, cx),
             Self::Block(block) => {
-                cx.nl(w)?;
-                cx.write_indent(w)?;
+                cx.before_open_brace(w)?;
                 block.emit(w, cx)
             }
         }
@@ -187,8 +188,7 @@ impl Emit for IfStatement {
         cx.token(w, "if")?;
         cx.space(w)?;
         emit_parenthesized_condition(&self.condition, w, cx)?;
-        cx.nl(w)?;
-        cx.write_indent(w)?;
+        cx.before_open_brace(w)?;
         self.then_block.emit(w, cx)?;
         if let Some(else_b) = &self.else_branch {
             cx.nl(w)?;
@@ -237,7 +237,7 @@ impl Emit for Statement {
                     w.write_char('(')?;
                     s.node.binding.node.emit_binding(w, cx)?;
                     w.write_char(')')?;
-                    cx.space(w)?;
+                    cx.before_open_brace(w)?;
                     body.emit(w, cx)
                 } else {
                     s.node.binding.emit(w, cx)
@@ -275,8 +275,7 @@ impl Emit for WithStatement {
             arg.emit(w, cx)?;
         }
         w.write_char(')')?;
-        cx.nl(w)?;
-        cx.write_indent(w)?;
+        cx.before_open_brace(w)?;
         self.body.emit(w, cx)
     }
 }
@@ -308,5 +307,18 @@ impl Emit for LaunchStatement {
 impl Emit for Spanned<LaunchStatement> {
     fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
         self.node.emit(w, cx)
+    }
+}
+
+impl Emit for Spanned<Block> {
+    fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
+        if body_is_empty(cx, self.node.statements.len(), self.span.end) {
+            return cx.token(w, "{ }");
+        }
+        cx.open_brace(w)?;
+        for statement in &self.node.statements {
+            emit_line(w, cx, Line::new(statement.span), "", |w, cx| statement.emit(w, cx))?;
+        }
+        cx.close_brace(w, self.span.end)
     }
 }
