@@ -13,9 +13,12 @@ pub enum AssignOp {
     Assign,
     AddAssign,
     SubAssign,
+    MulAssign,
+    DivAssign,
+    RemAssign,
 }
 
-/// Assignment or compound assignment (`=`, `+=`, `-=`).
+/// Assignment or compound assignment (`=`, `+=`, `-=`, `*=`, `/=`, `%=`).
 #[derive(AstNode, Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct AssignExpression {
     #[ast(child)]
@@ -50,6 +53,9 @@ fn parse_assign_op(pair: Pair<Rule>) -> Result<Spanned<AssignOp>, ParseError> {
             "=" => AssignOp::Assign,
             "+=" => AssignOp::AddAssign,
             "-=" => AssignOp::SubAssign,
+            "*=" => AssignOp::MulAssign,
+            "/=" => AssignOp::DivAssign,
+            "%=" => AssignOp::RemAssign,
             _ => {
                 return Err(ParseError::unexpected_rule(pair, Some(Rule::AssignmentOperator)));
             }

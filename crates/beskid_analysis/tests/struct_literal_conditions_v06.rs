@@ -170,7 +170,7 @@ fn parenthesized_struct_literal_is_allowed_as_scrutinee_and_iterable() {
 
 #[test]
 fn unparenthesized_struct_literal_condition_is_rejected() {
-    let source = "type P { i64 x } unit Run(P p) { if p == P { x: 1 } { return; } }";
+    let source = "type P { i64 x; } unit Run(P p) { if p == P { x: 1 } { return; } }";
     assert!(parse_program(source).is_err(), "a top-level struct literal in a condition must be parenthesized");
 }
 

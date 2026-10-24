@@ -6,30 +6,25 @@
 
 use std::collections::HashSet;
 
-use crate::analysis::diagnostics::SemanticDiagnostic;
 use crate::parser::Rule;
-use crate::services::diagnostics_emit::parse_recovery_diagnostic;
-use crate::syntax::SpanInfo;
 
 use super::candidate::RepairCandidate;
 use super::edit::apply_repair;
 use super::{policy, scan};
 
-/// Collect, phase-score, dedupe, and cap recovery source candidates with diagnostics.
+/// Collect, phase-score, dedupe, and cap repaired sources with the repair that produced each.
 pub(crate) fn collect_repair_candidates(
-    source_name: &str,
     source: &str,
     parse_error: &pest::error::Error<Rule>,
-) -> Vec<(String, Vec<SemanticDiagnostic>)> {
-    collect_repair_candidates_with_policy(source_name, source, parse_error, policy::recovery_phases())
+) -> Vec<(String, Option<RepairCandidate>)> {
+    collect_repair_candidates_with_policy(source, parse_error, policy::recovery_phases())
 }
 
 pub(crate) fn collect_repair_candidates_with_policy(
-    source_name: &str,
     source: &str,
     parse_error: &pest::error::Error<Rule>,
     phases: &[policy::RecoveryPhase],
-) -> Vec<(String, Vec<SemanticDiagnostic>)> {
+) -> Vec<(String, Option<RepairCandidate>)> {
     let error_pos = scan::error_byte_pos(parse_error);
     let mut repairs = Vec::new();
 
@@ -53,7 +48,7 @@ pub(crate) fn collect_repair_candidates_with_policy(
             .then_with(|| a.reason.cmp(b.reason))
     });
 
-    let mut out: Vec<(String, Vec<SemanticDiagnostic>)> = Vec::new();
+    let mut out: Vec<(String, Option<RepairCandidate>)> = Vec::new();
     let mut seen = HashSet::new();
     for repair in repairs {
         let Some(repaired) = apply_repair(source, &repair) else {
@@ -62,20 +57,14 @@ pub(crate) fn collect_repair_candidates_with_policy(
         if !seen.insert(repaired.clone()) {
             continue;
         }
-        let diagnostics = vec![parse_recovery_diagnostic(
-            source_name,
-            source,
-            SpanInfo::from_byte_range_in_source(source, repair.position, repair.position),
-            repair.reason,
-        )];
-        out.push((repaired, diagnostics));
+        out.push((repaired, Some(repair)));
         if out.len() >= policy::MAX_RECOVERY_CANDIDATES {
             break;
         }
     }
 
     if out.is_empty() {
-        out.push((source.to_string(), Vec::new()));
+        out.push((source.to_string(), None));
     }
     out
 }

@@ -554,7 +554,7 @@ mod tests {
     #[test]
     fn extend_type_cannot_access_private_target_members() {
         let source = r#"
-            type Account { i64 balance }
+            type Account { i64 balance; }
             extend type Account {
                 pub i64 Balance() {
                     Account account = Account { balance: 1 };
@@ -575,7 +575,7 @@ mod tests {
     #[test]
     fn extend_type_allows_public_target_members() {
         let source = r#"
-            pub type Account { pub i64 balance }
+            pub type Account { pub i64 balance; }
             extend type Account {
                 pub i64 Balance() {
                     Account account = Account { balance: 1 };
@@ -862,7 +862,7 @@ mod tests {
     /// `exchange(place, move value)` is a builtin call, not an unknown value.
     #[test]
     fn exchange_builtin_call_resolves_without_a_declaration() {
-        let source = "type S { u8[] b } u8[] Swap(S s, move u8[] n) { return exchange(s.b, move n); }";
+        let source = "type S { u8[] b; } u8[] Swap(S s, move u8[] n) { return exchange(s.b, move n); }";
         let entry = parse_program(source).expect("parse entry");
         let mut resolver = Resolver::new();
         if let Err(errors) = resolver.resolve_program(&entry) {

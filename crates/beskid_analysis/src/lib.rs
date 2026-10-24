@@ -34,6 +34,7 @@ pub mod parser;
 pub mod parsing;
 pub mod paths;
 pub mod projects;
+pub mod rule_words;
 pub mod syntax_query;
 
 /// Mod-origin quick-fix shapes returned by the prepare spine and consumed by LSP

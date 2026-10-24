@@ -87,17 +87,17 @@ fn path_parses_and_builds_ast() {
 
 #[test]
 fn parses_type_definition() {
-    assert_parse(Rule::TypeDefinition, "type User { string name, i32 age }");
+    assert_parse(Rule::TypeDefinition, "type User { string name; i32 age; }");
 }
 
 #[test]
 fn parses_type_definition_with_conformances() {
-    assert_parse(Rule::TypeDefinition, "type User : Display, Clone { string name }");
+    assert_parse(Rule::TypeDefinition, "type User : Display, Clone { string name; }");
 }
 
 #[test]
 fn rejects_type_definition_with_legacy_when_conformances() {
-    assert_parse_fail(Rule::TypeDefinition, "type User when Display, Clone { string name }");
+    assert_parse_fail(Rule::TypeDefinition, "type User when Display, Clone { string name; }");
 }
 
 #[test]

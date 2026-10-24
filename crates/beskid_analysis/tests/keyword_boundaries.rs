@@ -61,7 +61,7 @@ fn keywords_still_parse_at_word_boundaries() {
     assert!(matches!(single_statement("let x = spawn Work();"), Statement::Let(_)));
     assert!(matches!(single_statement("while true { break; }"), Statement::While(_)));
     assert!(matches!(single_statement("for item in items { continue; }"), Statement::For(_)));
-    assert!(parse_program("pub type Point { i64 x, i64 y, }").is_ok());
+    assert!(parse_program("pub type Point { i64 x; i64 y; }").is_ok());
     assert!(parse_program("i64 F(i64 v) { return clif { return %0 }; }").is_ok());
     assert!(parse_program("i64 F(i64 v) { return match v { 0 => 1, _ => 2, }; }").is_ok());
     assert!(parse_program("use Core.Results as R;").is_ok());

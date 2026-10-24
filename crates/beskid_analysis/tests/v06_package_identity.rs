@@ -30,8 +30,8 @@ fn prepare(at: &Path, version: &str, body: &str) -> beskid_analysis::projects::P
 #[test]
 fn verified_package_identity_is_location_independent_and_preserves_declared_version() {
     let root = tempfile::tempdir().unwrap();
-    let left = prepare(&root.path().join("left"), "1.2.3", "pub type Item { pub i32 Value, }\n");
-    let right = prepare(&root.path().join("right"), "1.2.3", "pub type Item { pub i32 Value, }\n");
+    let left = prepare(&root.path().join("left"), "1.2.3", "pub type Item { pub i32 Value; }\n");
+    let right = prepare(&root.path().join("right"), "1.2.3", "pub type Item { pub i32 Value; }\n");
     let a = left.package_identities().for_source(&left.materialized_source_root.join("Main.bd")).unwrap();
     let b = right.package_identities().for_source(&right.materialized_source_root.join("Main.bd")).unwrap();
     assert_eq!(a.identity(), b.identity());
@@ -44,9 +44,9 @@ fn verified_package_identity_is_location_independent_and_preserves_declared_vers
 #[test]
 fn package_identity_changes_for_version_or_source_and_rejects_stale_materialization() {
     let root = tempfile::tempdir().unwrap();
-    let a = prepare(&root.path().join("a"), "1.0.0", "pub type Item { pub i32 Value, }\n");
-    let b = prepare(&root.path().join("b"), "2.0.0", "pub type Item { pub i32 Value, }\n");
-    let c = prepare(&root.path().join("c"), "1.0.0", "pub type Item { pub i64 Value, }\n");
+    let a = prepare(&root.path().join("a"), "1.0.0", "pub type Item { pub i32 Value; }\n");
+    let b = prepare(&root.path().join("b"), "2.0.0", "pub type Item { pub i32 Value; }\n");
+    let c = prepare(&root.path().join("c"), "1.0.0", "pub type Item { pub i64 Value; }\n");
     let get = |workspace: &beskid_analysis::projects::PreparedProjectWorkspace| {
         workspace
             .package_identities()
@@ -65,12 +65,12 @@ fn package_identity_changes_for_version_or_source_and_rejects_stale_materializat
 #[test]
 fn verified_source_rejects_editor_override_and_ignores_private_generated_content() {
     let root = tempfile::tempdir().unwrap();
-    let workspace = prepare(root.path(), "1.0.0", "pub type Item { pub i32 Value, }\n");
+    let workspace = prepare(root.path(), "1.0.0", "pub type Item { pub i32 Value; }\n");
     let path = workspace.materialized_source_root.join("Main.bd");
     assert!(
-        workspace.package_identities().validate_source(&path, "pub type Item { pub i32 Value, }\n").unwrap().is_some()
+        workspace.package_identities().validate_source(&path, "pub type Item { pub i32 Value; }\n").unwrap().is_some()
     );
-    assert!(workspace.package_identities().validate_source(&path, "pub type Item { pub i64 Value, }\n").is_err());
+    assert!(workspace.package_identities().validate_source(&path, "pub type Item { pub i64 Value; }\n").is_err());
     std::fs::create_dir(workspace.materialized_source_root.join("obj")).unwrap();
     std::fs::write(workspace.materialized_source_root.join("obj/Generated.bd"), "generated").unwrap();
     workspace.package_identities().validate().unwrap();
@@ -81,11 +81,11 @@ fn nested_project_is_outside_package_while_package_tests_directory_ships() {
     let root = tempfile::tempdir().unwrap();
     let at = root.path().join("pkg");
     std::fs::create_dir_all(at.join("src/tests")).unwrap();
-    std::fs::write(at.join("src/tests/Helper.bd"), "pub type Helper { pub i32 Value, }\n").unwrap();
+    std::fs::write(at.join("src/tests/Helper.bd"), "pub type Helper { pub i32 Value; }\n").unwrap();
     std::fs::create_dir_all(at.join("src/nested/src")).unwrap();
     std::fs::write(at.join("src/nested/Nested.bproj"), "Nested { name = \"Nested\" version = \"1.0.0\" }\n").unwrap();
-    std::fs::write(at.join("src/nested/src/Inner.bd"), "pub type Inner { pub i32 Value, }\n").unwrap();
-    let workspace = prepare(&at, "1.0.0", "pub type Item { pub i32 Value, }\n");
+    std::fs::write(at.join("src/nested/src/Inner.bd"), "pub type Inner { pub i32 Value; }\n").unwrap();
+    let workspace = prepare(&at, "1.0.0", "pub type Item { pub i32 Value; }\n");
     let materialized = &workspace.materialized_source_root;
     assert!(materialized.join("tests/Helper.bd").is_file(), "a package tests directory is package source");
     assert!(!materialized.join("nested").exists(), "a nested project is not materialized into its parent");
@@ -99,16 +99,16 @@ fn rematerialization_removes_deleted_sources_and_keeps_private_build_output() {
     let root = tempfile::tempdir().unwrap();
     let at = root.path().join("pkg");
     std::fs::create_dir_all(at.join("src/old")).unwrap();
-    std::fs::write(at.join("src/Old.bd"), "pub type Old { pub i32 Value, }\n").unwrap();
-    std::fs::write(at.join("src/old/Gone.bd"), "pub type Gone { pub i32 Value, }\n").unwrap();
-    let first = prepare(&at, "1.0.0", "pub type Item { pub i32 Value, }\n");
+    std::fs::write(at.join("src/Old.bd"), "pub type Old { pub i32 Value; }\n").unwrap();
+    std::fs::write(at.join("src/old/Gone.bd"), "pub type Gone { pub i32 Value; }\n").unwrap();
+    let first = prepare(&at, "1.0.0", "pub type Item { pub i32 Value; }\n");
     let materialized = first.materialized_source_root.clone();
     assert!(materialized.join("Old.bd").is_file());
     std::fs::create_dir_all(materialized.join("obj")).unwrap();
     std::fs::write(materialized.join("obj/Generated.bd"), "generated").unwrap();
     std::fs::remove_file(at.join("src/Old.bd")).unwrap();
     std::fs::remove_dir_all(at.join("src/old")).unwrap();
-    let second = prepare(&at, "1.0.0", "pub type Item { pub i32 Value, }\n");
+    let second = prepare(&at, "1.0.0", "pub type Item { pub i32 Value; }\n");
     assert!(!materialized.join("Old.bd").exists(), "deleted source file must not linger");
     assert!(!materialized.join("old").exists(), "deleted source directory must not linger");
     assert!(materialized.join("obj/Generated.bd").is_file(), "private build output is not package source");
@@ -123,8 +123,8 @@ fn package_relative_source_path_is_slash_separated_at_the_producer() {
     let root = tempfile::tempdir().unwrap();
     let at = root.path().join("pkg");
     std::fs::create_dir_all(at.join("src/Core/Collections")).unwrap();
-    std::fs::write(at.join("src/Core/Collections/Map.bd"), "pub type Map { pub i32 Value, }\n").unwrap();
-    let workspace = prepare(&at, "1.0.0", "pub type Item { pub i32 Value, }\n");
+    std::fs::write(at.join("src/Core/Collections/Map.bd"), "pub type Map { pub i32 Value; }\n").unwrap();
+    let workspace = prepare(&at, "1.0.0", "pub type Item { pub i32 Value; }\n");
     let source = workspace.materialized_source_root.join("Core").join("Collections").join("Map.bd");
     let package = workspace.package_identities().for_source(&source).unwrap();
     let relative = package.relative_source_path(&source).unwrap();
@@ -138,7 +138,7 @@ fn materialized_copy_inside_a_project_root_source_validates_against_its_own_root
     let root = tempfile::tempdir().unwrap();
     let at = root.path().join("pkg");
     std::fs::create_dir_all(&at).unwrap();
-    std::fs::write(at.join("Main.bd"), "pub type Item { pub i32 Value, }\n").unwrap();
+    std::fs::write(at.join("Main.bd"), "pub type Item { pub i32 Value; }\n").unwrap();
     let manifest = at.join("Example.bproj");
     std::fs::write(&manifest, "Example { name = \"Example\" version = \"1.0.0\" }\ntarget \"Example\" { kind = \"Lib\" }\n")
         .unwrap();
@@ -161,7 +161,7 @@ fn materialized_copy_inside_a_project_root_source_validates_against_its_own_root
     assert!(
         workspace
             .package_identities()
-            .validate_source(&materialized, "pub type Item { pub i32 Value, }\n")
+            .validate_source(&materialized, "pub type Item { pub i32 Value; }\n")
             .unwrap()
             .is_some()
     );
@@ -175,8 +175,8 @@ fn glue_host_at_project_root_owns_its_nominal_sources_through_the_nested_materia
     let root = tempfile::tempdir().unwrap();
     let at = root.path().join("manual_owned");
     std::fs::create_dir_all(&at).unwrap();
-    std::fs::write(at.join("ManualTypes.bd"), "pub type Pair { pub i32 Left, pub i32 Right, }\n").unwrap();
-    std::fs::write(at.join("ManualExport.bd"), "pub type Unit { pub i32 Value, }\n").unwrap();
+    std::fs::write(at.join("ManualTypes.bd"), "pub type Pair { pub i32 Left; pub i32 Right; }\n").unwrap();
+    std::fs::write(at.join("ManualExport.bd"), "pub type Unit { pub i32 Value; }\n").unwrap();
     let manifest = at.join("manual_owned.bproj");
     std::fs::write(
         &manifest,
@@ -230,7 +230,7 @@ fn parallel_preparations_of_one_project_never_observe_a_partial_mirror() {
         let at = root.path().join(format!("round-{round}"));
         std::fs::create_dir_all(at.join("src")).unwrap();
         for index in 0..8 {
-            let body = format!("pub type Item{index} {{ pub i32 Value, }}\n// {}\n", "x".repeat(2 * 1024 * 1024));
+            let body = format!("pub type Item{index;} {{ pub i32 Value, }}\n// {}\n", "x".repeat(2 * 1024 * 1024));
             std::fs::write(at.join(format!("src/Unit{index}.bd")), body).unwrap();
         }
         let manifest = at.join("Example.bproj");
