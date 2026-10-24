@@ -9,6 +9,7 @@ pub(crate) mod logging;
 pub(crate) mod manifest_uri;
 pub(crate) mod position;
 pub(crate) mod protocol;
+pub(crate) mod scan_schedule;
 pub mod server;
 pub(crate) mod session;
 pub(crate) mod standalone_bsol;

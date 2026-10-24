@@ -349,6 +349,46 @@ pub(super) fn push_unit_member_candidates(
         }
     }
     push_unit_type_candidates(candidates, program, index, prefix, context, true);
+    // A hub module such as `Core.String` declares only `pub mod` children; those children are its
+    // members (`String.Search`, `String.Core`), so they must complete after `String.`.
+    for id in index.ids_of_kind(beskid_analysis::syntax_query::NodeKind::ModuleDeclaration) {
+        if let Some(declaration) =
+            index.node_at(program, id).and_then(|node| node.of::<beskid_analysis::syntax::ModuleDeclaration>())
+            && declaration.visibility.node == beskid_analysis::syntax::Visibility::Public
+            && let Some(last) = declaration.path.node.segments.last()
+        {
+            push_completion_candidate(
+                candidates,
+                last.node.name.node.name.as_str(),
+                CompletionKind::Module,
+                Some("module"),
+                prefix,
+                context,
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod hub_module_tests {
+    use super::*;
+
+    #[test]
+    fn hub_module_lists_its_public_submodules() {
+        let source = "pub mod Core.String.Core;\npub mod Core.String.Search;\nmod Core.String.Hidden;\npub i32 Own() { return 1; }\n";
+        let program = beskid_analysis::services::parse_program_with_source_name("Hub.bd", source).expect("hub parses");
+        let index = beskid_analysis::syntax_query::SyntaxIndex::from_program(
+            &program,
+            beskid_analysis::syntax::SyntaxGenerationId(0),
+        );
+        let context = CompletionContext { cursor: 0, replacement_start: 0, replacement_end: 0 };
+        let mut candidates = Vec::new();
+        push_unit_member_candidates(&mut candidates, &program, &index, "", &context);
+        let labels: Vec<&str> = candidates.iter().map(|c| c.label.as_ref()).collect();
+        assert!(labels.contains(&"Core") && labels.contains(&"Search") && labels.contains(&"Own"), "{labels:?}");
+        assert!(!labels.contains(&"Hidden"), "private modules stay out: {labels:?}");
+        assert!(candidates.iter().any(|c| c.label.as_ref() == "Search" && c.kind == CompletionKind::Module));
+    }
 }
 
 pub(super) fn push_nominal_receiver_candidates(
