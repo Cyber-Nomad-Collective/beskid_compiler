@@ -88,7 +88,7 @@ pub fn merge_host_registries(
                 .iter()
                 .enumerate()
                 .filter(|(index, existing)| {
-                    owners[*index] < host_index && existing.scope_id == reg.scope_id && same_key(&existing.key, &reg.key)
+                    owners[*index] < host_index && existing.scope_id == reg.scope_id && same_key(existing, &reg)
                 })
                 .map(|(index, _)| index)
                 .collect::<Vec<_>>();
@@ -123,12 +123,11 @@ pub fn merge_host_registries(
     (merged, issues)
 }
 
-/// Keys compare by kind and last path segment (`Hosting.Clock` and `Clock` are one key).
-fn same_key(left: &super::model::RegistrationKey, right: &super::model::RegistrationKey) -> bool {
+/// Keys compare by kind and by the declaration they name; a key that names no declaration never
+/// overrides.
+fn same_key(left: &Registration, right: &Registration) -> bool {
     use super::model::RegistrationKey::{Contract, SelfType};
-    let tail = |name: &str| name.rsplit('.').next().unwrap_or(name).to_string();
-    match (left, right) {
-        (Contract(a), Contract(b)) | (SelfType(a), SelfType(b)) => tail(a) == tail(b),
-        _ => false,
-    }
+    matches!((&left.key, &right.key), (Contract(_), Contract(_)) | (SelfType(_), SelfType(_)))
+        && left.key_identity.is_some()
+        && left.key_identity == right.key_identity
 }

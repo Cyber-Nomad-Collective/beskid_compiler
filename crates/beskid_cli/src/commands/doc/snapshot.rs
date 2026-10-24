@@ -71,7 +71,6 @@ pub(super) fn build_doc_snapshot(
             &resolved.source_path,
             resolution,
             &assembly,
-            plan,
             docs_ref,
         );
         return Ok((snap, Some(assembly)));

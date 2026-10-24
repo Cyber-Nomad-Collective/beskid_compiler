@@ -1,7 +1,6 @@
 use std::collections::HashSet;
 use std::path::Path;
 
-use crate::compilation_context::ProjectSessionHandle;
 use crate::doc::DocRefLinkContext;
 use crate::projects::assembly::{AssemblyError, ProgramAssembly};
 use crate::projects::{
@@ -10,7 +9,6 @@ use crate::projects::{
 use crate::resolve::Resolution;
 use crate::syntax::{Program, Spanned};
 
-use super::super::composition;
 use super::model::DocumentAnalysisSnapshot;
 
 /// Assemble the entry import closure for `api.json` (same discovery as prepare / `beskid build`).
@@ -33,7 +31,6 @@ pub fn build_api_documentation_snapshot(
     path: &Path,
     resolution: Resolution,
     assembly: &ProgramAssembly,
-    compile_plan: &CompilePlan,
     docs_ref_links: Option<&DocRefLinkContext>,
 ) -> DocumentAnalysisSnapshot {
     let module_paths = assembly.module_index.known_module_path_strings();
@@ -45,7 +42,6 @@ pub fn build_api_documentation_snapshot(
         Some(resolution),
         module_paths,
         Some(assembly),
-        Some(compile_plan),
         docs_ref_links,
     )
 }
@@ -63,7 +59,6 @@ fn build_document_snapshot(
     resolution: Option<Resolution>,
     assembly_module_paths: HashSet<String>,
     assembly: Option<&ProgramAssembly>,
-    compile_plan: Option<&CompilePlan>,
     docs_ref_links: Option<&DocRefLinkContext>,
 ) -> DocumentAnalysisSnapshot {
     let item_docs = if let Some(res) = resolution.as_ref() {
@@ -82,22 +77,12 @@ fn build_document_snapshot(
         .as_ref()
         .map(|r| crate::doc::collect_doc_diagnostics(&program.node, r, source_name, source_text))
         .unwrap_or_default();
-    let imported = assembly.map(|assembly| composition::composition_imports(assembly, path)).unwrap_or_default();
-    let composition_diagnostics = composition::composition_diagnostics_for_program_with_imports(
-        program,
-        &imported,
-        compile_plan,
-        source_name,
-        source_text,
-    )
-    .unwrap_or_default();
 
     DocumentAnalysisSnapshot {
         program: program.clone(),
         resolution,
         item_docs,
         doc_diagnostics,
-        composition_diagnostics,
         source_path: path.to_path_buf(),
         assembly_module_paths,
     }
@@ -112,7 +97,6 @@ pub fn build_document_analysis_from_resolution(
     path: &Path,
     resolution: Option<Resolution>,
     assembly_module_paths: HashSet<String>,
-    compile_plan: Option<&CompilePlan>,
     docs_ref_links: Option<&DocRefLinkContext>,
 ) -> DocumentAnalysisSnapshot {
     build_document_snapshot(
@@ -123,7 +107,6 @@ pub fn build_document_analysis_from_resolution(
         resolution,
         assembly_module_paths,
         None,
-        compile_plan,
         docs_ref_links,
     )
 }
@@ -162,35 +145,6 @@ pub fn build_document_analysis_for_resolved(
         resolution,
         assembly_module_paths,
         assembly,
-        None,
-        docs_ref_links,
-    )
-}
-
-/// Build an IDE snapshot using project session metadata (composition diagnostics only).
-///
-/// For entry resolution and multi-unit docs, callers must use
-/// [`beskid_queries::entry_resolution_with_db`] (or the prepare spine) and then
-/// [`build_document_analysis_from_resolution`].
-pub fn build_document_analysis_with_context(
-    program: &Spanned<Program>,
-    source_name: impl AsRef<str>,
-    source_text: &str,
-    path: &Path,
-    ctx: Option<&ProjectSessionHandle>,
-    docs_ref_links: Option<&DocRefLinkContext>,
-) -> DocumentAnalysisSnapshot {
-    let compile_plan = ctx.and_then(|handle| handle.compile_plan.as_ref());
-
-    build_document_snapshot(
-        program,
-        source_name.as_ref(),
-        source_text,
-        path,
-        None,
-        HashSet::new(),
-        None,
-        compile_plan,
         docs_ref_links,
     )
 }

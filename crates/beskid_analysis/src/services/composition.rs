@@ -2,7 +2,7 @@ use crate::analysis::SemanticDiagnostic;
 use crate::analysis::diagnostic_kinds::SemanticIssueKind;
 use crate::analysis::diagnostics::make_diagnostic;
 use crate::composition::baseline::lib_project_rejects_launch;
-use crate::composition::{CompositionInput, CompositionIssue, CompositionResult};
+use crate::composition::{CompositionInput, CompositionIssue, CompositionResult, CompositionTypeResolver};
 use crate::mod_host::{ModHostGenerateResult, ModHostInput, run_through_generate};
 use crate::projects::CompilePlan;
 use crate::syntax::{Program, SpanInfo, Spanned};
@@ -34,22 +34,17 @@ pub fn prepare_program_for_composition(
     )
 }
 
-pub fn resolve_program_composition(
-    program: &Spanned<Program>,
-    compile_plan: Option<&CompilePlan>,
-) -> CompositionResult {
-    resolve_program_composition_with_imports(program, &[], compile_plan)
-}
-
 /// Resolve the entry composition with the other units of its assembly available as base hosts
-/// (a library's or Corelib's `host`, such as `ConsoleHost`).
+/// (a library's or Corelib's `host`, such as `ConsoleHost`). `types` is the query layer's type
+/// authority (`beskid_queries::CompositionTypes`).
 pub fn resolve_program_composition_with_imports(
     program: &Spanned<Program>,
     imported: &[(std::sync::Arc<std::path::Path>, &Spanned<Program>)],
+    types: &dyn CompositionTypeResolver,
     compile_plan: Option<&CompilePlan>,
 ) -> CompositionResult {
     crate::composition::resolve_composition_with_imports(
-        CompositionInput { program, is_mod_project: is_mod_compile_plan(compile_plan) },
+        CompositionInput { program, is_mod_project: is_mod_compile_plan(compile_plan), types },
         imported,
     )
 }
@@ -91,34 +86,6 @@ pub fn composition_unit_sources<'a>(
             source: unit.source.as_str(),
         })
         .collect()
-}
-
-pub fn composition_diagnostics_for_program(
-    program: &Spanned<Program>,
-    compile_plan: Option<&CompilePlan>,
-    source_name: &str,
-    source: &str,
-) -> anyhow::Result<Vec<SemanticDiagnostic>> {
-    composition_diagnostics_for_program_with_imports(program, &[], compile_plan, source_name, source)
-}
-
-pub fn composition_diagnostics_for_program_with_imports(
-    program: &Spanned<Program>,
-    imported: &[(std::sync::Arc<std::path::Path>, &Spanned<Program>)],
-    compile_plan: Option<&CompilePlan>,
-    source_name: &str,
-    source: &str,
-) -> anyhow::Result<Vec<SemanticDiagnostic>> {
-    let generated = prepare_program_for_composition(program.clone(), compile_plan, source_name, source)?;
-    let composition_result = resolve_program_composition_with_imports(&generated.program, imported, compile_plan);
-    Ok(composition_result_to_diagnostics(
-        &composition_result,
-        generated.program.span,
-        source_name,
-        source,
-        &[],
-        compile_plan,
-    ))
 }
 
 /// Diagnostics of a composition result: entry issues in `source_name`, and each issue located in
@@ -376,12 +343,17 @@ fn plural_field_name(name: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::composition_diagnostics_for_program;
     use crate::services::parse_program;
 
+    /// Expansion (with hook lowering) as the build pipeline runs it, then composition with the
+    /// test type resolver.
     fn diagnostics(source: &str) -> Vec<crate::analysis::SemanticDiagnostic> {
         let program = parse_program(source).expect("parse");
-        composition_diagnostics_for_program(&program, None, "Main.bd", source).expect("composition diagnostics")
+        let generated =
+            super::prepare_program_for_composition(program, None, "Main.bd", source).expect("expansion");
+        let types = crate::composition::types::test_types::DeclaredTypes::new(&generated.program, &[]);
+        let result = super::resolve_program_composition_with_imports(&generated.program, &[], &types, None);
+        super::composition_result_to_diagnostics(&result, generated.program.span, "Main.bd", source, &[], None)
     }
 
     #[test]
@@ -547,11 +519,9 @@ i32 Main() { launch AppHost(); return 0; }
 "#;
         let program = crate::composition::lower_host_hooks(parse_program(source).expect("parse"));
         let path: std::sync::Arc<std::path::Path> = std::sync::Arc::from(std::path::Path::new("/lib/Base.bd"));
-        let result = super::resolve_program_composition_with_imports(
-            &program,
-            &[(std::sync::Arc::clone(&path), &library)],
-            None,
-        );
+        let imported = [(std::sync::Arc::clone(&path), &library)];
+        let types = crate::composition::types::test_types::DeclaredTypes::new(&program, &imported);
+        let result = super::resolve_program_composition_with_imports(&program, &imported, &types, None);
         assert!(result.issues.is_empty(), "nothing is wrong in the entry: {:?}", result.issues);
         let [(unit, crate::composition::CompositionIssue::UnconstructibleRegistration { .. })] =
             result.foreign_issues.as_slice()

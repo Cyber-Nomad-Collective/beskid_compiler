@@ -224,3 +224,55 @@ fn arguments_local(
         (Some(_), Some(_)) => None,
     }
 }
+
+/// Composition's type authority (`beskid_analysis::composition::CompositionTypeResolver`): a type
+/// path written in a unit names the declaration [`resolve_type_declaration`] proves, with the
+/// unit's lexical scope, `use` imports and module paths. Two types with one simple name in two
+/// modules are two identities; a path that names no unique declaration has none.
+pub struct CompositionTypes<'db> {
+    db: &'db dyn Db,
+    entry: SourceUnitId,
+    generation: beskid_analysis::syntax::SyntaxGenerationId,
+}
+
+impl<'db> CompositionTypes<'db> {
+    /// The authority over the registered syntax of `typed` (its entry is composition's `None` unit).
+    pub fn new(db: &'db dyn Db, typed: &TypedProgram) -> Self {
+        Self { db, entry: typed.entry, generation: typed.generation }
+    }
+}
+
+impl beskid_analysis::composition::CompositionTypeResolver for CompositionTypes<'_> {
+    fn resolve_type(
+        &self,
+        unit: &beskid_analysis::composition::UnitPath,
+        site: beskid_analysis::syntax::SpanInfo,
+        path: &beskid_analysis::syntax::Path,
+    ) -> Option<beskid_analysis::composition::TypeIdentity> {
+        let db = self.db;
+        let unit_id = match unit {
+            None => self.entry,
+            Some(path) => SourceUnitId::new(db, path.to_path_buf()),
+        };
+        let syntax = db.syntax_unit(unit_id)?;
+        let index = syntax.syntax_index(db);
+        (index.generation() == self.generation).then_some(())?;
+        // Any node at the path's own span gives the lexical position the path is resolved from.
+        let node = index.metadata().iter().find(|node| node.span == Some(site))?.id;
+        let declaration =
+            resolve_type_declaration(db, AstNodeKey { unit: unit_id, generation: self.generation, node }, path)?;
+        let declaring = db.syntax_unit(declaration.unit)?;
+        let program = declaring.expanded_program(db);
+        let declared = declaring.syntax_index(db).node_at(program, declaration.node)?;
+        let name = declared
+            .of::<beskid_analysis::syntax::TypeDefinition>()
+            .map(|definition| definition.name.span)
+            .or_else(|| declared.of::<beskid_analysis::syntax::ContractDefinition>().map(|contract| contract.name.span))
+            .or_else(|| declared.of::<beskid_analysis::syntax::EnumDefinition>().map(|definition| definition.name.span))?;
+        Some(beskid_analysis::composition::TypeIdentity {
+            unit: (declaration.unit != self.entry)
+                .then(|| std::sync::Arc::from(declaration.unit.path(db).as_path())),
+            declaration: name,
+        })
+    }
+}

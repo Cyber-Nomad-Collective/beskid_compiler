@@ -19,8 +19,6 @@ pub struct DocumentAnalysisSnapshot {
     pub item_docs: Vec<Option<ResolvedDoc>>,
     /// Documentation validation (codes `W161x`); empty when resolution failed.
     pub doc_diagnostics: Vec<SemanticDiagnostic>,
-    /// Native IoC composition diagnostics (`E170x`); populated for IDE snapshot warm paths.
-    pub composition_diagnostics: Vec<SemanticDiagnostic>,
     /// Entry file path used for IDE location fallbacks.
     pub source_path: PathBuf,
     /// Known logical module paths when assembly-backed resolution ran.

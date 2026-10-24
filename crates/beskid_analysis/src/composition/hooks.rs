@@ -559,9 +559,11 @@ i32 Main() { launch AppHost(); return 0; }
     #[test]
     fn argument_types_register_in_the_hook_container_level() {
         let program = lower_host_hooks(parse_program(SOURCE).expect("parse"));
+        let types = crate::composition::types::test_types::DeclaredTypes::new(&program, &[]);
         let result = crate::composition::resolve_composition(crate::composition::CompositionInput {
             program: &program,
             is_mod_project: false,
+            types: &types,
         });
         let arguments = result
             .snapshot
@@ -653,9 +655,11 @@ i32 Main()
         let main = function(&lowered, "Main");
         let Statement::Launch(launch) = &main.body.node.statements[0].node else { panic!("launch stays first") };
         assert_eq!(launch.node.arguments.len(), 1);
+        let types = crate::composition::types::test_types::DeclaredTypes::new(&lowered, &[]);
         let result = crate::composition::resolve_composition(crate::composition::CompositionInput {
             program: &lowered,
             is_mod_project: false,
+            types: &types,
         });
         assert!(
             result.issues.iter().any(|issue| matches!(
@@ -670,9 +674,11 @@ i32 Main()
     #[test]
     fn hooks_of_a_host_with_parameters_take_the_record() {
         let lowered = lower_host_hooks(parse_program(PARAMETERS).expect("parse"));
+        let types = crate::composition::types::test_types::DeclaredTypes::new(&lowered, &[]);
         let result = crate::composition::resolve_composition(crate::composition::CompositionInput {
             program: &lowered,
             is_mod_project: false,
+            types: &types,
         });
         assert!(result.issues.is_empty(), "{:?}", result.issues);
         assert!(result.plan.startup_hooks.iter().all(|hook| hook.takes_arguments_record));

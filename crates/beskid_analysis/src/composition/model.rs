@@ -53,6 +53,11 @@ pub struct Registration {
     pub source_node_id: AstNodeId,
     /// The unit that declares the registry line.
     pub unit: UnitPath,
+    /// The declaration the key names (the contract of `for Contract`, else the implementation);
+    /// keys compare by it. `None` when the path names no declaration (the type checker reports it).
+    pub key_identity: Option<super::types::TypeIdentity>,
+    /// The declaration the implementation path names.
+    pub implementation_identity: Option<super::types::TypeIdentity>,
     pub scope_id: ScopeId,
     pub key: RegistrationKey,
     pub implementation: String,
@@ -69,6 +74,8 @@ pub struct InjectDependency {
     pub field_unit: UnitPath,
     pub owner_registration_id: u32,
     pub requested_type: String,
+    /// The declaration the requested type names; requests match registrations by it.
+    pub requested_identity: Option<super::types::TypeIdentity>,
     pub is_plural: bool,
     pub qualifier: Option<InjectQualifier>,
     pub field_name: String,

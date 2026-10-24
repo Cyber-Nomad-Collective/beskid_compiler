@@ -20,7 +20,7 @@ pub fn resolve_dependency_targets(
     };
 
     for scope in scoped_chain {
-        let matches = container.find_scope_matches(scope, &dependency.requested_type);
+        let matches = container.find_scope_matches(scope, dependency.requested_identity.as_ref());
         if dependency.is_plural {
             if !matches.is_empty() {
                 return Ok(matches);

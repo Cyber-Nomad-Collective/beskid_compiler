@@ -4,6 +4,7 @@ use super::model::{
     CompositionHost, CompositionScope, InjectDependency, Registration, RegistrationKey,
     RegistrationLifetime as Lifetime, ScopeId,
 };
+use super::types::{CompositionTypeResolver, TypeIdentity};
 use crate::syntax::{
     FieldKind, HostBodyItem, HostDefinition, InjectQualifier, Node, Program, RegistrationLifetime, RegistryBlock,
     RegistryEntry, ScopeDefinition, ScopeHookKind, Spanned, Type,
@@ -13,6 +14,8 @@ use crate::syntax::{
 pub struct TypeInjectField {
     pub unit: super::model::UnitPath,
     pub requested_type: String,
+    /// The declaration the requested type (the element type of a plural request) names.
+    pub requested_identity: Option<TypeIdentity>,
     pub qualifier: Option<InjectQualifier>,
     pub is_plural: bool,
     pub span: crate::syntax::SpanInfo,
@@ -30,7 +33,8 @@ pub struct CollectedComposition {
     pub host_hooks: HashMap<String, Vec<CollectedHook>>,
     pub launches: Vec<LaunchSite>,
     pub with_sites: Vec<WithSite>,
-    pub type_inject_fields: HashMap<String, Vec<TypeInjectField>>,
+    /// `inject` fields of each type declaration, keyed by the declaration.
+    pub type_inject_fields: HashMap<TypeIdentity, Vec<TypeInjectField>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -72,26 +76,32 @@ pub struct WithSite {
 ///
 /// Composition only consumes declarations and statement shape, so lowering it to syntax would add
 /// no semantic information and would make this diagnostic path depend on the retired pipeline.
-pub fn collect(program: &Spanned<Program>) -> CollectedComposition {
-    let mut collected = CollectedComposition::default();
-    let mut next_registration_id = 1_u32;
-    let mut next_scope_id = 1_u32;
+/// The unit being collected and the type authority that resolves its paths.
+pub struct UnitContext<'a> {
+    pub unit: super::model::UnitPath,
+    pub types: &'a dyn CompositionTypeResolver,
+}
 
-    for item in &program.node.items {
+impl UnitContext<'_> {
+    fn resolve(&self, path: &Spanned<crate::syntax::Path>) -> Option<TypeIdentity> {
+        self.types.resolve_type(&self.unit, path.span, &path.node)
+    }
+}
+
+/// The `inject` fields of the type declarations of `items`, at any inline-module depth.
+fn collect_inject_fields(items: &[Spanned<Node>], context: &UnitContext<'_>, collected: &mut CollectedComposition) {
+    for item in items {
         match &item.node {
-            Node::HostDefinition(host) => {
-                collect_host(host, &mut collected, &mut next_registration_id, &mut next_scope_id);
-            }
             Node::TypeDefinition(def) => {
-                let key = def.node.name.node.name.clone();
                 let injects = def
                     .node
                     .fields
                     .iter()
                     .filter(|field| field.node.kind == FieldKind::Injected)
                     .map(|field| TypeInjectField {
-                        unit: None,
+                        unit: context.unit.clone(),
                         requested_type: type_name(&field.node.ty),
+                        requested_identity: element_path(&field.node.ty).and_then(|path| context.resolve(path)),
                         qualifier: field.node.inject_qualifier,
                         is_plural: type_is_plural(&field.node.ty),
                         span: field.span,
@@ -102,8 +112,35 @@ pub fn collect(program: &Spanned<Program>) -> CollectedComposition {
                     })
                     .collect::<Vec<_>>();
                 if !injects.is_empty() {
-                    collected.type_inject_fields.insert(key, injects);
+                    let declaration = TypeIdentity { unit: context.unit.clone(), declaration: def.node.name.span };
+                    collected.type_inject_fields.insert(declaration, injects);
                 }
+            }
+            Node::InlineModule(module) => collect_inject_fields(&module.node.items, context, collected),
+            _ => {}
+        }
+    }
+}
+
+/// The path of a requested service type: the type itself, or the element type of an array.
+fn element_path(ty: &Spanned<Type>) -> Option<&Spanned<crate::syntax::Path>> {
+    match &ty.node {
+        Type::Complex(path) => Some(path),
+        Type::Array(inner) => element_path(inner),
+        _ => None,
+    }
+}
+
+pub fn collect(program: &Spanned<Program>, context: &UnitContext<'_>) -> CollectedComposition {
+    let mut collected = CollectedComposition::default();
+    let mut next_registration_id = 1_u32;
+    let mut next_scope_id = 1_u32;
+
+    collect_inject_fields(&program.node.items, context, &mut collected);
+    for item in &program.node.items {
+        match &item.node {
+            Node::HostDefinition(host) => {
+                collect_host(host, context, &mut collected, &mut next_registration_id, &mut next_scope_id);
             }
             Node::Function(def) => {
                 collect_launch_and_with_statements(&def.node.body.node.statements, &mut collected, false);
@@ -132,11 +169,11 @@ pub fn collect(program: &Spanned<Program>) -> CollectedComposition {
 pub fn collect_with_imports(
     program: &Spanned<Program>,
     imported: &[(std::sync::Arc<std::path::Path>, &Spanned<Program>)],
+    types: &dyn CompositionTypeResolver,
 ) -> CollectedComposition {
-    let mut collected = collect(program);
+    let mut collected = collect(program, &UnitContext { unit: None, types });
     for (path, unit_program) in imported {
-        let unit: super::model::UnitPath = Some(std::sync::Arc::clone(path));
-        let mut foreign = collect(unit_program);
+        let mut foreign = collect(unit_program, &UnitContext { unit: Some(std::sync::Arc::clone(path)), types });
         let offset = collected
             .host_registries
             .values()
@@ -144,35 +181,21 @@ pub fn collect_with_imports(
             .map(|registration| registration.id)
             .max()
             .unwrap_or(0);
-        for (name, mut host) in foreign.hosts.drain() {
+        for (name, host) in foreign.hosts.drain() {
             if collected.hosts.contains_key(&name) {
                 continue;
             }
-            host.unit = unit.clone();
             let mut registrations = foreign.host_registries.remove(&name).unwrap_or_default();
             for registration in &mut registrations {
                 registration.id += offset;
-                registration.unit = unit.clone();
-            }
-            let mut hooks = foreign.host_hooks.remove(&name).unwrap_or_default();
-            for hook in &mut hooks {
-                hook.unit = unit.clone();
             }
             collected.host_registries.insert(name.clone(), registrations);
-            let mut scopes = foreign.host_scopes.remove(&name).unwrap_or_default();
-            for scope in &mut scopes {
-                scope.unit = unit.clone();
-            }
-            collected.host_scopes.insert(name.clone(), scopes);
-            collected.host_hooks.insert(name.clone(), hooks);
+            collected.host_scopes.insert(name.clone(), foreign.host_scopes.remove(&name).unwrap_or_default());
+            collected.host_hooks.insert(name.clone(), foreign.host_hooks.remove(&name).unwrap_or_default());
             collected.hosts.insert(name, host);
         }
-        for (name, mut fields) in foreign.type_inject_fields.drain() {
-            for field in &mut fields {
-                field.unit = unit.clone();
-            }
-            collected.type_inject_fields.entry(name).or_insert(fields);
-        }
+        // Declarations are keyed by their own unit, so the units never collide.
+        collected.type_inject_fields.extend(foreign.type_inject_fields.drain());
     }
     collected
 }
@@ -309,6 +332,7 @@ fn record_launch_site(
 
 fn collect_host(
     host: &Spanned<HostDefinition>,
+    context: &UnitContext<'_>,
     collected: &mut CollectedComposition,
     next_registration_id: &mut u32,
     next_scope_id: &mut u32,
@@ -318,7 +342,7 @@ fn collect_host(
         host_name.clone(),
         CompositionHost {
             name: host_name.clone(),
-            unit: None,
+            unit: context.unit.clone(),
             base_host: host.node.base_host.as_ref().map(path_name),
             span: host.span,
             parameter_count: host.node.parameters.len(),
@@ -332,11 +356,12 @@ fn collect_host(
     for item in &host.node.body {
         match &item.node {
             HostBodyItem::Registry(registry) => {
-                host_regs.extend(registrations_from_block(ScopeId::GLOBAL, registry, next_registration_id));
+                host_regs.extend(registrations_from_block(context, ScopeId::GLOBAL, registry, next_registration_id));
             }
             HostBodyItem::Scope(scope) => {
                 collect_scope(
                     scope,
+                    context,
                     ScopeId::GLOBAL,
                     &mut host_scopes,
                     &mut host_regs,
@@ -347,7 +372,7 @@ fn collect_host(
             }
             HostBodyItem::Hook(hook) => {
                 host_hooks.push(CollectedHook {
-                    unit: None,
+                    unit: context.unit.clone(),
                     scope_id: ScopeId::GLOBAL,
                     kind: hook.node.kind,
                     source_node_id: hook.id,
@@ -356,7 +381,7 @@ fn collect_host(
                 });
             }
             HostBodyItem::Registration(entry) => {
-                host_regs.push(registration_from_entry(ScopeId::GLOBAL, entry, next_registration_id));
+                host_regs.push(registration_from_entry(context, ScopeId::GLOBAL, entry, next_registration_id));
             }
         }
     }
@@ -371,6 +396,7 @@ fn collect_host(
 
 fn collect_scope(
     scope: &Spanned<ScopeDefinition>,
+    context: &UnitContext<'_>,
     parent_scope_id: ScopeId,
     scopes: &mut Vec<CompositionScope>,
     regs: &mut Vec<Registration>,
@@ -386,23 +412,23 @@ fn collect_scope(
         parent: Some(parent_scope_id),
         span: scope.span,
         parameter_count: scope.node.parameters.len(),
-        unit: None,
+        unit: context.unit.clone(),
     });
 
     for item in &scope.node.body {
         match &item.node {
             HostBodyItem::Registry(registry) => {
-                regs.extend(registrations_from_block(scope_id, registry, next_registration_id));
+                regs.extend(registrations_from_block(context, scope_id, registry, next_registration_id));
             }
             HostBodyItem::Registration(entry) => {
-                regs.push(registration_from_entry(scope_id, entry, next_registration_id));
+                regs.push(registration_from_entry(context, scope_id, entry, next_registration_id));
             }
             HostBodyItem::Scope(child_scope) => {
-                collect_scope(child_scope, scope_id, scopes, regs, hooks, next_registration_id, next_scope_id);
+                collect_scope(child_scope, context, scope_id, scopes, regs, hooks, next_registration_id, next_scope_id);
             }
             HostBodyItem::Hook(hook) => {
                 hooks.push(CollectedHook {
-                    unit: None,
+                    unit: context.unit.clone(),
                     scope_id,
                     kind: hook.node.kind,
                     source_node_id: hook.id,
@@ -415,6 +441,7 @@ fn collect_scope(
 }
 
 fn registration_from_entry(
+    context: &UnitContext<'_>,
     scope_id: ScopeId,
     entry: &Spanned<RegistryEntry>,
     next_registration_id: &mut u32,
@@ -437,10 +464,17 @@ fn registration_from_entry(
         (false, Some(RegistrationLifetime::Transient)) => Lifetime::Transient,
         (false, None) => Lifetime::Scoped,
     };
+    let implementation_identity = context.resolve(&entry.node.implementation);
+    let key_identity = match &entry.node.target {
+        Some(target) => context.resolve(target),
+        None => implementation_identity.clone(),
+    };
     Registration {
         id,
         source_node_id: entry.id,
-        unit: None,
+        unit: context.unit.clone(),
+        key_identity,
+        implementation_identity,
         scope_id,
         key,
         implementation,
@@ -451,20 +485,28 @@ fn registration_from_entry(
 }
 
 fn registrations_from_block(
+    context: &UnitContext<'_>,
     scope_id: ScopeId,
     registry: &Spanned<RegistryBlock>,
     next_registration_id: &mut u32,
 ) -> Vec<Registration> {
-    registry.node.entries.iter().map(|entry| registration_from_entry(scope_id, entry, next_registration_id)).collect()
+    registry
+        .node
+        .entries
+        .iter()
+        .map(|entry| registration_from_entry(context, scope_id, entry, next_registration_id))
+        .collect()
 }
 
 pub fn dependency_requests(
     registrations: &[Registration],
-    type_inject_fields: &HashMap<String, Vec<TypeInjectField>>,
+    type_inject_fields: &HashMap<TypeIdentity, Vec<TypeInjectField>>,
 ) -> Vec<InjectDependency> {
     let mut requests = Vec::new();
     for registration in registrations {
-        let implementation = registration.implementation.rsplit('.').next().unwrap_or(&registration.implementation);
+        let Some(implementation) = &registration.implementation_identity else {
+            continue;
+        };
         if let Some(fields) = type_inject_fields.get(implementation) {
             for field in fields {
                 requests.push(InjectDependency {
@@ -473,6 +515,7 @@ pub fn dependency_requests(
                     field_node_id: field.field_node_id,
                     owner_registration_id: registration.id,
                     requested_type: field.requested_type.clone(),
+                    requested_identity: field.requested_identity.clone(),
                     is_plural: field.is_plural,
                     qualifier: field.qualifier,
                     field_name: field.field_name.clone(),

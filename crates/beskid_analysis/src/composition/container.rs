@@ -20,17 +20,20 @@ impl ServiceContainer {
         self.by_scope.get(&scope_id).map(Vec::as_slice).unwrap_or_default()
     }
 
-    pub fn find_scope_matches(&self, scope_id: ScopeId, requested: &str) -> Vec<Registration> {
+    /// The registrations of `scope_id` whose key is the requested declaration. A request or key
+    /// that names no declaration matches nothing.
+    pub fn find_scope_matches(
+        &self,
+        scope_id: ScopeId,
+        requested: Option<&super::types::TypeIdentity>,
+    ) -> Vec<Registration> {
+        let Some(requested) = requested else {
+            return Vec::new();
+        };
         self.registrations_for_scope(scope_id)
             .iter()
-            // Keys and requests compare by their last path segment, so `Hosting.CommandLine` and
-            // `CommandLine` (through `use`) name the same service.
-            .filter(|registration| last_segment(registration.key.name()) == last_segment(requested))
+            .filter(|registration| registration.key_identity.as_ref() == Some(requested))
             .cloned()
             .collect()
     }
-}
-
-fn last_segment(name: &str) -> &str {
-    name.rsplit('.').next().unwrap_or(name)
 }

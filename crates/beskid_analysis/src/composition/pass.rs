@@ -16,11 +16,13 @@ use crate::{
     syntax_query::{NodeKind, SyntaxSnapshot},
 };
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub struct CompositionInput<'a> {
     /// Expanded syntax is the composition authority; this pass does not require syntax.
     pub program: &'a Spanned<Program>,
     pub is_mod_project: bool,
+    /// The type authority every registry key, `inject` request and shape check resolves through.
+    pub types: &'a dyn super::types::CompositionTypeResolver,
 }
 
 #[derive(Debug, Clone)]
@@ -45,7 +47,7 @@ pub fn resolve_composition_with_imports(
     input: CompositionInput<'_>,
     imported: &[(std::sync::Arc<std::path::Path>, &Spanned<Program>)],
 ) -> CompositionResult {
-    let collected = collect_with_imports(input.program, imported);
+    let collected = collect_with_imports(input.program, imported, input.types);
     let mut issues = Vec::new();
 
     if input.is_mod_project {
@@ -159,11 +161,7 @@ pub fn resolve_composition_with_imports(
         merge_host_registries(&host_chain, &collected.host_registries, &collected.host_scopes, &merged_scopes);
     issues.extend(merge_issues);
     // Registrations of imported units are checked too; their issues stay in their own unit.
-    issues.extend(super::shapes::validate_registrations(
-        &merged_registrations,
-        input.program,
-        &imported.iter().map(|(_, program)| *program).collect::<Vec<_>>(),
-    ));
+    issues.extend(super::shapes::validate_registrations(&merged_registrations, input.program, imported, input.types));
     // Parser `Spanned.id` is deliberately unset. Freeze identities from the same deterministic
     // expanded-tree pre-order that the generation-bound query index uses; a non-unique source
     // span remains invalid and is rejected at the codegen boundary.
@@ -394,7 +392,8 @@ i32 Main() {
         )
         .expect("composition source parses");
 
-        let result = resolve_composition(CompositionInput { program: &program, is_mod_project: false });
+        let types = crate::composition::types::test_types::DeclaredTypes::new(&program, &[]);
+        let result = resolve_composition(CompositionInput { program: &program, is_mod_project: false, types: &types });
 
         assert_eq!(result.snapshot.launched_host, "AppHost");
         assert_eq!(result.plan.activation.len(), 1);
@@ -419,7 +418,8 @@ i32 Main() { launch AppHost(); return 0; }
 "#,
         )
         .expect("composition source parses");
-        let result = resolve_composition(CompositionInput { program: &program, is_mod_project: false });
+        let types = crate::composition::types::test_types::DeclaredTypes::new(&program, &[]);
+        let result = resolve_composition(CompositionInput { program: &program, is_mod_project: false, types: &types });
         assert!(result.issues.is_empty(), "issues: {:?}", result.issues);
         assert_eq!(result.plan.activation.len(), 2);
         assert_eq!(result.plan.singulars.len(), 1);
@@ -443,7 +443,8 @@ i32 Main() { launch AppHost(); return 0; }
 "#,
         )
         .expect("composition source parses");
-        let result = resolve_composition(CompositionInput { program: &program, is_mod_project: false });
+        let types = crate::composition::types::test_types::DeclaredTypes::new(&program, &[]);
+        let result = resolve_composition(CompositionInput { program: &program, is_mod_project: false, types: &types });
         assert!(result.issues.is_empty(), "issues: {:?}", result.issues);
         assert_eq!(result.plan.plurals.len(), 2, "both plural fields require independent plans");
         assert_ne!(result.plan.plurals[0].field_span, result.plan.plurals[1].field_span);
@@ -475,10 +476,10 @@ i32 Main() { launch AppHost(); return 0; }
             .expect("application parses"),
         );
         let path: std::sync::Arc<std::path::Path> = std::sync::Arc::from(std::path::Path::new("/corelib/Hosting.bd"));
-        let result = resolve_composition_with_imports(
-            CompositionInput { program: &program, is_mod_project: false },
-            &[(std::sync::Arc::clone(&path), &library)],
-        );
+        let imported = [(std::sync::Arc::clone(&path), &library)];
+        let types = crate::composition::types::test_types::DeclaredTypes::new(&program, &imported);
+        let result =
+            resolve_composition_with_imports(CompositionInput { program: &program, is_mod_project: false, types: &types }, &imported);
         assert!(result.issues.is_empty(), "issues: {:?}", result.issues);
         let imported = result
             .snapshot
@@ -491,5 +492,71 @@ i32 Main() { launch AppHost(); return 0; }
         assert_eq!(result.plan.startup_hooks.len(), 1);
         let ids = result.snapshot.registrations.iter().map(|registration| registration.id).collect::<std::collections::HashSet<_>>();
         assert_eq!(ids.len(), result.snapshot.registrations.len(), "registration ids stay unique across units");
+    }
+    /// Resolves `Module.Type` paths to the type declared in that inline module: enough to tell
+    /// two declarations with one simple name apart.
+    struct QualifiedTypes(std::collections::HashMap<String, crate::composition::TypeIdentity>);
+
+    impl crate::composition::CompositionTypeResolver for QualifiedTypes {
+        fn resolve_type(
+            &self,
+            _unit: &crate::composition::UnitPath,
+            _site: crate::syntax::SpanInfo,
+            path: &crate::syntax::Path,
+        ) -> Option<crate::composition::TypeIdentity> {
+            let name =
+                path.segments.iter().map(|segment| segment.node.name.node.name.as_str()).collect::<Vec<_>>().join(".");
+            self.0.get(&name).cloned()
+        }
+    }
+
+    #[test]
+    fn keys_and_requests_compare_by_declaration_not_by_simple_name() {
+        use crate::syntax::Node;
+        let issues = |requested: &str| {
+            let program = parse_program(&format!(
+                r#"
+mod A {{ pub type Clock {{ }} }}
+mod B {{ pub type Clock {{ }} }}
+type Report {{ inject {requested} clock }}
+host AppHost() {{ registry {{ single A.Clock; single Report; }} }}
+i32 Main() {{ launch AppHost(); return 0; }}
+"#
+            ))
+            .expect("parse");
+            let mut declared = std::collections::HashMap::new();
+            for item in &program.node.items {
+                match &item.node {
+                    Node::InlineModule(module) => {
+                        for inner in &module.node.items {
+                            if let Node::TypeDefinition(definition) = &inner.node {
+                                declared.insert(
+                                    format!("{}.{}", module.node.name.node.name, definition.node.name.node.name),
+                                    crate::composition::TypeIdentity { unit: None, declaration: definition.node.name.span },
+                                );
+                            }
+                        }
+                    }
+                    Node::TypeDefinition(definition) => {
+                        declared.insert(
+                            definition.node.name.node.name.clone(),
+                            crate::composition::TypeIdentity { unit: None, declaration: definition.node.name.span },
+                        );
+                    }
+                    _ => {}
+                }
+            }
+            let types = QualifiedTypes(declared);
+            resolve_composition(CompositionInput { program: &program, is_mod_project: false, types: &types }).issues
+        };
+        assert!(issues("A.Clock").is_empty(), "`A.Clock` is the registered declaration");
+        let other = issues("B.Clock");
+        assert!(
+            matches!(
+                other.as_slice(),
+                [crate::composition::CompositionIssue::UnresolvedInject { requested_type, .. }] if requested_type == "B.Clock"
+            ),
+            "`B.Clock` has the same simple name but is another declaration: {other:?}"
+        );
     }
 }

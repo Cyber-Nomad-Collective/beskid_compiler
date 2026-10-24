@@ -235,7 +235,12 @@ pub(super) fn run_prepare_spine(
 
     let mut composition_result = observe_phase_result(pipeline, COMPOSITION_RESOLVE, || {
         let imported = super::super::composition::composition_imports(&assembly, &entry_unit.path);
-        Ok::<_, anyhow::Error>(resolve_program_composition_with_imports(&program, &imported, Some(plan)))
+        let mut resolved = None;
+        fact_authority.with_composition_types(&assembly, &program, &mut |types| {
+            resolved = Some(resolve_program_composition_with_imports(&program, &imported, types, Some(plan)));
+            Ok(())
+        })?;
+        resolved.ok_or_else(|| anyhow::anyhow!("the composition type authority did not run composition"))
     })?;
     composition_result.snapshot.source_unit_path = Some(entry_unit.path.clone());
 

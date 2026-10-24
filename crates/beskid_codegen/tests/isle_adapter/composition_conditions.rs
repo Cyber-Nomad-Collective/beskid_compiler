@@ -18,6 +18,7 @@ i32 Main() { launch AppHost(); return 0; }
     let result = resolve_composition(CompositionInput {
         program: &input.typed_program().assembly.entry_unit().program,
         is_mod_project: false,
+        types: &beskid_queries::CompositionTypes::new(input.database(), input.typed_program()),
     });
     assert!(result.issues.is_empty(), "composition must validate: {:?}", result.issues);
     let mut snapshot = result.snapshot;
@@ -70,6 +71,7 @@ i32 Main() { launch AppHost(); return 0; }
     let result = resolve_composition(CompositionInput {
         program: &input.typed_program().assembly.entry_unit().program,
         is_mod_project: false,
+        types: &beskid_queries::CompositionTypes::new(input.database(), input.typed_program()),
     });
     assert!(result.issues.is_empty(), "composition must validate: {:?}", result.issues);
     assert_eq!(result.plan.activation.len(), 2);
@@ -135,6 +137,7 @@ i32 Main() { launch AppHost(); return 0; }
     let result = resolve_composition(CompositionInput {
         program: &input.typed_program().assembly.entry_unit().program,
         is_mod_project: false,
+        types: &beskid_queries::CompositionTypes::new(input.database(), input.typed_program()),
     });
     assert!(result.issues.is_empty(), "composition must validate: {:?}", result.issues);
     assert_eq!(result.plan.singulars.len(), 1);
@@ -190,6 +193,7 @@ i32 Main() { launch AppHost(); return 0; }
     let result = resolve_composition(CompositionInput {
         program: &input.typed_program().assembly.entry_unit().program,
         is_mod_project: false,
+        types: &beskid_queries::CompositionTypes::new(input.database(), input.typed_program()),
     });
     assert!(result.issues.is_empty(), "composition must validate: {:?}", result.issues);
     assert_eq!(result.plan.plurals.len(), 2);
@@ -284,6 +288,7 @@ i32 Main() { launch AppHost(); with Request() { return 0; } }
     let result = resolve_composition(CompositionInput {
         program: &input.typed_program().assembly.entry_unit().program,
         is_mod_project: false,
+        types: &beskid_queries::CompositionTypes::new(input.database(), input.typed_program()),
     });
     assert!(result.issues.is_empty(), "composition must validate: {:?}", result.issues);
     let mut snapshot = result.snapshot;
@@ -319,6 +324,7 @@ i32 Main() { launch AppHost(); with Outer() { with Inner() {} } return 0; }
     let result = resolve_composition(CompositionInput {
         program: &input.typed_program().assembly.entry_unit().program,
         is_mod_project: false,
+        types: &beskid_queries::CompositionTypes::new(input.database(), input.typed_program()),
     });
     assert!(result.issues.is_empty(), "composition must validate: {:?}", result.issues);
     let mut snapshot = result.snapshot;
@@ -369,6 +375,7 @@ i32 Main() {
     let result = resolve_composition(CompositionInput {
         program: &input.typed_program().assembly.entry_unit().program,
         is_mod_project: false,
+        types: &beskid_queries::CompositionTypes::new(input.database(), input.typed_program()),
     });
     assert!(result.issues.is_empty(), "composition must validate: {:?}", result.issues);
     let mut snapshot = result.snapshot;
@@ -407,6 +414,7 @@ fn failed_launch_branches_through_teardown_before_trapping() {
     let result = resolve_composition(CompositionInput {
         program: &input.typed_program().assembly.entry_unit().program,
         is_mod_project: false,
+        types: &beskid_queries::CompositionTypes::new(input.database(), input.typed_program()),
     });
     assert!(result.issues.is_empty(), "composition must validate: {:?}", result.issues);
     let mut snapshot = result.snapshot;
@@ -444,6 +452,7 @@ fn failed_slot_publication_and_object_allocation_branch_through_teardown() {
     let result = resolve_composition(CompositionInput {
         program: &input.typed_program().assembly.entry_unit().program,
         is_mod_project: false,
+        types: &beskid_queries::CompositionTypes::new(input.database(), input.typed_program()),
     });
     assert!(result.issues.is_empty(), "composition must validate: {:?}", result.issues);
     let mut snapshot = result.snapshot;
@@ -484,6 +493,7 @@ fn structured_scope_exits_balance_return_break_and_continue() {
         let result = resolve_composition(CompositionInput {
             program: &input.typed_program().assembly.entry_unit().program,
             is_mod_project: false,
+            types: &beskid_queries::CompositionTypes::new(input.database(), input.typed_program()),
         });
         assert!(result.issues.is_empty(), "{label}: composition must validate: {:?}", result.issues);
         let mut snapshot = result.snapshot;
@@ -540,6 +550,7 @@ i32 Main() { launch AppHost(); return 0; }
     let result = resolve_composition(CompositionInput {
         program: &input.typed_program().assembly.entry_unit().program,
         is_mod_project: false,
+        types: &beskid_queries::CompositionTypes::new(input.database(), input.typed_program()),
     });
     assert!(result.issues.is_empty(), "composition must validate: {:?}", result.issues);
     assert_eq!(result.plan.activation.len(), 2);
@@ -626,6 +637,7 @@ i32 Main() { launch AppHost(); return 0; }
     let result = resolve_composition(CompositionInput {
         program: &input.typed_program().assembly.entry_unit().program,
         is_mod_project: false,
+        types: &beskid_queries::CompositionTypes::new(input.database(), input.typed_program()),
     });
     assert!(result.issues.is_empty(), "composition must validate: {:?}", result.issues);
     let mut snapshot = result.snapshot;
@@ -712,6 +724,7 @@ i32 Main(bool early)
     let result = resolve_composition(CompositionInput {
         program: &input.typed_program().assembly.entry_unit().program,
         is_mod_project: false,
+        types: &beskid_queries::CompositionTypes::new(input.database(), input.typed_program()),
     });
     assert!(result.issues.is_empty(), "composition must validate: {:?}", result.issues);
     assert_eq!(result.plan.startup_hooks.len(), 1);
@@ -790,6 +803,7 @@ i32 Main(bool early)
     let result = resolve_composition(CompositionInput {
         program: &input.typed_program().assembly.entry_unit().program,
         is_mod_project: false,
+        types: &beskid_queries::CompositionTypes::new(input.database(), input.typed_program()),
     });
     assert!(result.issues.is_empty(), "composition must validate: {:?}", result.issues);
     assert!(result.plan.startup_hooks.iter().chain(&result.plan.init_hooks).all(|hook| hook.takes_arguments_record));
@@ -847,6 +861,7 @@ i32 Main()
     let result = resolve_composition(CompositionInput {
         program: &input.typed_program().assembly.entry_unit().program,
         is_mod_project: false,
+        types: &beskid_queries::CompositionTypes::new(input.database(), input.typed_program()),
     });
     assert!(result.issues.is_empty(), "composition must validate: {:?}", result.issues);
     let mut snapshot = result.snapshot;
@@ -867,3 +882,4 @@ i32 Main()
     // One registration for the global dispose after launch, one for the scope dispose after init.
     assert_eq!(calls_of(&clif, "composition_exit_register"), 2, "{clif}");
 }
+

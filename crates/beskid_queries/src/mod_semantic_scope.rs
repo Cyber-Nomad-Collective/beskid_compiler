@@ -53,6 +53,20 @@ impl<'a> QueryModSemanticScope<'a> {
         let mut db = self.db.try_borrow_mut().map_err(|_| anyhow::anyhow!("reentrant Mod query authority access"))?;
         action(&mut db)
     }
+    /// The project session that owns `registered` in the database: the planned project when this
+    /// scope serves a compile plan, else an invocation-local one.
+    fn registered_project(&self, db: &mut BeskidDatabase, registered: &ProgramAssembly) -> Result<crate::ProjectSession> {
+        Ok(match self.planned.and_then(|resolved| Some((resolved.compile_plan.as_ref()?, resolved))) {
+            Some((plan, resolved)) => crate::project_session_for_planned_syntax_assembly(
+                db,
+                registered,
+                plan,
+                &resolved.source_path,
+                crate::typed_entry_bundle::lockfile_digest_for_plan(plan),
+            )?,
+            None => crate::project_session_for_syntax_assembly(db, registered, "mod-invocation", "source-authority")?,
+        })
+    }
     fn update_program(&self, program: Option<&Spanned<Program>>) -> Result<()> {
         let Some(program) = program else {
             return Ok(());
@@ -83,18 +97,7 @@ impl ModSemanticScope for QueryModSemanticScope<'_> {
         }
         let registered = Arc::new(assembly.clone());
         let mut db = self.db.try_borrow_mut().map_err(|_| anyhow::anyhow!("reentrant Mod query authority access"))?;
-        let project = match self.planned.and_then(|resolved| Some((resolved.compile_plan.as_ref()?, resolved))) {
-            Some((plan, resolved)) => crate::project_session_for_planned_syntax_assembly(
-                &mut db,
-                &registered,
-                plan,
-                &resolved.source_path,
-                crate::typed_entry_bundle::lockfile_digest_for_plan(plan),
-            )?,
-            None => {
-                crate::project_session_for_syntax_assembly(&mut db, &registered, "mod-invocation", "source-authority")?
-            }
-        };
+        let project = self.registered_project(&mut db, &registered)?;
         build_mod_authority_typed_program(&mut db, project, Arc::clone(&registered))?;
         let authority = ModSemanticQueryAuthority::for_registered_assembly(&**db, project, &registered)?;
         invoke(&authority)?;
@@ -145,5 +148,22 @@ impl beskid_analysis::services::SemanticFactAuthority for QueryModSemanticScope<
     }
     fn mod_scope(&self) -> Option<&dyn ModSemanticScope> {
         Some(self)
+    }
+    fn with_composition_types(
+        &self,
+        assembly: &ProgramAssembly,
+        program: &Spanned<Program>,
+        resolve: &mut dyn FnMut(&dyn beskid_analysis::composition::CompositionTypeResolver) -> Result<()>,
+    ) -> Result<()> {
+        self.update_program(Some(program))?;
+        let current = self.assembly();
+        if current.generation != assembly.generation {
+            bail!("composition assembly differs from current Mod generation");
+        }
+        let registered = Arc::new(current);
+        let mut db = self.db.try_borrow_mut().map_err(|_| anyhow::anyhow!("reentrant composition type access"))?;
+        let project = self.registered_project(&mut db, &registered)?;
+        let typed = build_mod_authority_typed_program(&mut db, project, registered)?;
+        resolve(&crate::CompositionTypes::new(&**db, &typed))
     }
 }

@@ -13,6 +13,7 @@ pub mod resolve_inject;
 pub mod scope_tree;
 pub mod shapes;
 pub mod snapshot;
+pub mod types;
 
 pub use diagnostics::{CompositionIssue, UnconstructibleReason, composition_issue_code};
 pub use hooks::{is_hook_item_name, lower_host_hooks};
@@ -22,3 +23,4 @@ pub use model::{
 };
 pub use pass::{CompositionInput, CompositionResult, resolve_composition, resolve_composition_with_imports};
 pub use snapshot::CompositionSnapshot;
+pub use types::{CompositionTypeResolver, TypeIdentity};
