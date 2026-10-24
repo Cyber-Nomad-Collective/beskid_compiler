@@ -187,6 +187,9 @@ enum {
    * ownership state. They cannot collide because abandonment has always been
    * written as zero or one. An owned duplicate may itself be descriptor zero. */
   BESKID_WORKER_ABANDONED = 1u,
+  /* Private: a pool stop orphaned the worker running this request and already
+   * took it out of the admission count, so a later release must not. */
+  BESKID_WORKER_UNCOUNTED = UINT32_C(0x40000000),
   BESKID_WORKER_OWNS_DESCRIPTOR = UINT32_C(0x80000000)
 };
 struct BeskidWorkerRequest {
@@ -276,12 +279,14 @@ static void BeskidWorkerFree(struct BeskidWorkerRequest *request) {
 }
 #define BESKID_WORKER_MAX 4
 #define BESKID_REQUEST_MAX 32
-/* One record per OS worker thread. A pool stop that finds a worker blocked in
- * the OS call of an abandoned request (a cancelled read on an idle terminal,
- * for example) orphans that worker instead of joining it: the process must not
- * wait for an OS call nobody will consume. The orphan frees its request when
- * the call returns and then exits without touching pool state; a later pool
- * start or stop reaps its record. */
+/* One record per OS worker thread. A pool stop never waits for an OS call: it
+ * orphans every worker that is inside one (a read on an idle terminal or pipe,
+ * cancelled or not) instead of joining it, and settles every queued request
+ * without performing it. When the call returns, the orphan touches only its
+ * own request and its own record, under the process-lifetime transport lock:
+ * it frees an abandoned request, or marks a live one complete for its owner's
+ * release, posts nothing to any owner mailbox and exits. A later pool start or
+ * stop reaps its record. */
 struct BeskidWorkerSlot {
   struct BeskidWorkerSlot *next; /* orphan list link */
   struct BeskidWorkerRequest *running;
@@ -341,9 +346,11 @@ static void *beskid_worker_main(void *argument) {
     BeskidLock();
     if (slot->orphaned) {
       /* The pool stopped while this OS call blocked and gave up waiting for
-       * it. Only the abandoned request and this orphan record remain ours. */
-      --beskid_request_count;
-      BeskidWorkerFree(request);
+       * it; the stop already took the request out of the count. No runtime
+       * state is touched: an abandoned request is freed here, a live one is
+       * left complete for its owner's release. */
+      if (BeskidWorkerIsAbandoned(request)) BeskidWorkerFree(request);
+      else request->state = BESKID_WORKER_COMPLETE;
       slot->running = NULL;
       slot->finished = 1;
       break;
@@ -399,10 +406,25 @@ static void BeskidWorkerPoolStopLocked(void) {
   int orphaned[BESKID_WORKER_MAX] = {0};
   BeskidLock();
   beskid_workers_stop = 1;
+  /* Queued work is never started once the pool stops: an abandoned request is
+   * freed, a live one completes as cancelled for its owner. */
+  while (beskid_work_head) {
+    struct BeskidWorkerRequest *request = beskid_work_head;
+    beskid_work_head = request->next;
+    request->next = NULL;
+    if (BeskidWorkerIsAbandoned(request)) { --beskid_request_count; BeskidWorkerFree(request); continue; }
+    request->result = -1;
+    request->error = ECANCELED;
+    request->state = BESKID_WORKER_COMPLETE;
+    BeskidOwnerPostLocked(request->owner, request->tag, 1);
+  }
+  beskid_work_tail = NULL;
   for (size_t i = 0; i < beskid_worker_count; ++i) {
     struct BeskidWorkerSlot *slot = beskid_workers[i];
-    if (slot->running && BeskidWorkerIsAbandoned(slot->running)) {
+    if (slot->running) {
       slot->orphaned = orphaned[i] = 1;
+      slot->running->abandoned |= BESKID_WORKER_UNCOUNTED;
+      --beskid_request_count;
       slot->next = beskid_worker_orphans;
       beskid_worker_orphans = slot;
     }
@@ -506,7 +528,7 @@ void beskid_rt_v5_intrinsic_worker_release(struct BeskidWorkerRequest *r) {
   if (!r) return;
   BeskidLock();
   if (r->state == 0 || r->state == BESKID_WORKER_COMPLETE) {
-    if (r->state != 0) --beskid_request_count;
+    if (r->state != 0 && !(r->abandoned & BESKID_WORKER_UNCOUNTED)) --beskid_request_count;
     BeskidWorkerFree(r);
   } else {
     /* Cancellation unregisters the source. The worker retains its native
