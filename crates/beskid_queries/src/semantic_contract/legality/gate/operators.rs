@@ -7,6 +7,8 @@
 //! [`collect_literal_obligations`]): the one [`expected_type`] authority supplies the context.
 
 use super::super::typing::{is_numeric, nodes_of_kind};
+use crate::semantic_contract::calls::generic_source_expression_identity;
+use crate::semantic_contract::model::GenericSourceTypeIdentity;
 use super::*;
 use beskid_analysis::syntax::{
     BinaryExpression, BinaryOp, LetStatement, Literal, PrimitiveType, UnaryExpression, UnaryOp,
@@ -26,14 +28,28 @@ pub(super) fn collect_operator_obligations(
         let Some(binary) = index.node_at(program, node).and_then(|node| node.of::<BinaryExpression>()) else {
             continue;
         };
-        let Some((_, _, left)) = proven_operand(db, program, index, key, node, binary.left.as_ref()) else { continue };
-        let Some((_, _, right)) = proven_operand(db, program, index, key, node, binary.right.as_ref()) else {
+        let Some((_, left_subject, left)) = proven_operand(db, program, index, key, node, binary.left.as_ref()) else {
             continue;
         };
+        let Some((_, right_subject, right)) = proven_operand(db, program, index, key, node, binary.right.as_ref())
+        else {
+            continue;
+        };
+        let site = AstNodeKey { node, ..key };
+        // A contract value (a box, v0.6.7) has no operators: its identity is the implementing
+        // value's, which no operator reads in this release.
+        if [left_subject, right_subject].into_iter().any(|subject| {
+            matches!(
+                generic_source_expression_identity(db, AstNodeKey { node: subject, ..key }),
+                Ok(GenericSourceTypeIdentity::Contract { .. })
+            )
+        }) {
+            findings.push(GateObligation { kind: GateObligationKind::InvalidBinaryOp, site });
+            continue;
+        }
         if !judgeable_primitive(left) || !judgeable_primitive(right) {
             continue;
         }
-        let site = AstNodeKey { node, ..key };
         let op = binary.op.node;
         if op == BinaryOp::Add && (left == SemanticTypeId::STRING || right == SemanticTypeId::STRING) {
             continue;
