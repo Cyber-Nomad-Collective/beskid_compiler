@@ -5,7 +5,8 @@ use super::support::{
     SyntaxGenerationId, SyntaxModuleItem, TargetMetadata,
     build_typed_program_with_corelib_services, call_abi_signature, call_lowering, canonical_corelib_service_capability,
     canonical_corelib_service_source_path, canonical_foundation_assert_fixture, enum_layout, find_call_expression,
-    find_corelib_service_call, find_definition_of_kind, find_function_definitions, include_imported_corelib_modules,
+    find_corelib_service_call, find_definition_of_kind, find_function_definitions, find_nodes_of_kind, include_imported_corelib_modules,
+    include_imported_corelib_modules_to_fixpoint,
     isa, item_fixture_with_root, item_name, lower_syntax_program, parse_program_with_source_name, settings,
 };
 
@@ -225,10 +226,36 @@ fn user_copy_of_foundation_output_cannot_import_the_panic_service() {
         "identical user bytes at an untrusted physical path must not acquire the panic import"
     );
 }
+/// `seeds` plus every non-generic function or method they call directly, transitively, each under
+/// a unique symbol. A direct call lowers only when its callee is part of the lowered program, and
+/// `Fail` reaches `Core.Environment`, `Core.FS` and `Core.String` through `Raise`.
+fn with_direct_callees(db: &dyn beskid_queries::Db, seeds: Vec<SyntaxModuleItem>) -> Vec<SyntaxModuleItem> {
+    let mut seen = seeds.iter().map(|item| item.key).collect::<Vec<_>>();
+    let mut items = seeds;
+    let mut next = 0;
+    while next < items.len() {
+        let key = items[next].key;
+        next += 1;
+        for call in find_nodes_of_kind(db, key, beskid_queries::IndexedNodeKind::CallExpression) {
+            let Ok(Some(beskid_queries::CallLowering::Direct(declaration))) = call_lowering(db, call) else { continue };
+            if seen.contains(&declaration) {
+                continue;
+            }
+            if beskid_queries::generic_call_specialization(db, call).ok().flatten().is_some() {
+                continue;
+            }
+            seen.push(declaration);
+            let name = item_name(db, declaration).ok().flatten().unwrap_or_else(|| "method".into());
+            items.push(SyntaxModuleItem { key: declaration, symbol: format!("callee{}_{name}", items.len()).into() });
+        }
+    }
+    items
+}
+
 #[test]
 fn canonical_foundation_assert_public_helpers_lower_through_syntax_isle() {
     let (input, isa, root) = canonical_foundation_assert_fixture();
-    // Non-generic helpers and their direct callees. Contains stays out: it pulls Core.String.
+    // Non-generic helpers; `with_direct_callees` adds what they call. Contains stays out.
     // Equal is exercised below with an explicit call-derived i64 specialization.
     let items = ["TriggerFailure", "Fail", "FailWithBecause", "True", "False"];
     let mut module_items = Vec::new();
@@ -239,6 +266,7 @@ fn canonical_foundation_assert_public_helpers_lower_through_syntax_isle() {
             .unwrap_or_else(|| panic!("canonical Assert {name}"));
         module_items.push(SyntaxModuleItem { key, symbol: name.into() });
     }
+    let module_items = with_direct_callees(input.database(), module_items);
     let artifact = lower_syntax_program(&input, isa.as_ref(), &module_items)
         .expect("canonical Assert helpers lower through syntax ISLE");
     for name in items {
@@ -328,7 +356,7 @@ fn canonical_foundation_assert_equal_specialization_lowers_through_syntax_isle()
             program: assert_program,
         },
     ];
-    include_imported_corelib_modules(&mut units, &mut roots);
+    include_imported_corelib_modules_to_fixpoint(&mut units, &mut roots);
     let assembly = Arc::new(ProgramAssembly::new(
         roots,
         Arc::new(units),
@@ -375,6 +403,7 @@ fn canonical_foundation_assert_equal_specialization_lowers_through_syntax_isle()
             .unwrap_or_else(|| panic!("expected {name}"));
         module_items.push(SyntaxModuleItem { key, symbol: name.into() });
     }
+    let module_items = with_direct_callees(input.database(), module_items);
     let artifact = lower_syntax_program(&input, isa.as_ref(), &module_items)
         .expect("Assert.Equal specialization lowers through syntax ISLE");
     assert!(
