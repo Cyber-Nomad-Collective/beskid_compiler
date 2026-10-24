@@ -236,12 +236,12 @@ impl ProjectLockfileV2 {
             Some(pin) if pin.source == ProjectLockSource::Registry => {
                 let version = pin.resolved_version.as_deref().unwrap_or("unversioned");
                 ProjectError::Validation(format!(
-                    "{base}; its registry pin `{}@{version}` is not trusted here, run `beskid update --all` to resolve it again",
+                    "{base}; its registry pin `{}@{version}` is not trusted here, delete Project.lock to resolve it again",
                     pin.name
                 ))
             }
             Some(pin) => ProjectError::Validation(format!(
-                "{base}; its path dependency `{}` is not trusted here, run `beskid update --all` to resolve it again",
+                "{base}; its path dependency `{}` is not trusted here, delete Project.lock to resolve it again",
                 pin.name
             )),
             None => ProjectError::Validation(format!(
