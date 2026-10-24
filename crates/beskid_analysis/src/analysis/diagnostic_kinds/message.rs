@@ -21,7 +21,7 @@ impl SemanticIssueKind {
                 "embedded contract `{contract_name}` introduces conflicting method `{method_name}`"
             ),
             Self::AmbiguousImport { name, .. } => format!("ambiguous import for `{name}`"),
-            Self::UnknownImportPath { path } => format!("unknown import path `{path}`"),
+            Self::UnknownImportPath { path, .. } => format!("unknown import path `{path}`"),
             Self::UseBeforeDeclaration { name } => {
                 format!("use of `{name}` before declaration")
             }

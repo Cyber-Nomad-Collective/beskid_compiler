@@ -23,7 +23,11 @@ impl SemanticIssueKind {
             )),
 
             // ── Import / syntax diagnostics ──
-            Self::UnknownImportPath { path } => {
+            Self::UnknownImportPath { path, module: Some(module) } => {
+                let item = path.rsplit('.').next().unwrap_or(path);
+                Some(format!("`use` imports modules; write `use {module};` and refer to `{module}.{item}`"))
+            }
+            Self::UnknownImportPath { path, module: None } => {
                 Some(format!("check the module path `{path}` — it may not exist or may not be exported"))
             }
             Self::UseBeforeDeclaration { name } => Some(format!(
@@ -60,7 +64,12 @@ impl SemanticIssueKind {
             Self::FileScopedModuleNotFirstItem { .. } => {
                 Some("move `mod ...;` to the top of the file".to_string())
             }
-            Self::DuplicateFileScopedModule { .. } | Self::ModuleDeclarationForbiddenInFileScopedModule => {
+            Self::DuplicateFileScopedModule { .. } => Some(
+                "a file declares its own module once with `mod X;` at the top; other files of the module do not \
+                 repeat it"
+                    .to_string(),
+            ),
+            Self::ModuleDeclarationForbiddenInFileScopedModule => {
                 Some("keep a single top-level `mod ...;` and remove other module declarations".to_string())
             }
             Self::VisibilityViolationImportPrivate { private_span, .. } => Some(format!(
@@ -96,6 +105,14 @@ impl SemanticIssueKind {
             }
             Self::UnresolvedAssociatedType { .. } => {
                 Some("check the contract name and that the referenced type conforms to it".to_string())
+            }
+            Self::GenericBoundNotSatisfied { type_name, contract_name, .. }
+                if super::type_names::outer_name(&super::display_type(contract_name)) == "Serializable" =>
+            {
+                Some(format!(
+                    "add `[Serialize]` to type `{}` so the compiler derives its `Serializable` conformance",
+                    super::display_type(type_name)
+                ))
             }
             Self::GenericBoundNotSatisfied { reason: Some(reason), .. } => Some(reason.clone()),
             Self::GenericBoundNotSatisfied { type_name, contract_name, reason: None } => {

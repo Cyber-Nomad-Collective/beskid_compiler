@@ -231,6 +231,33 @@ mod tests {
     }
 
     #[test]
+    fn a_missing_serializable_conformance_asks_for_serialize() {
+        let kind = SemanticIssueKind::GenericBoundNotSatisfied {
+            type_name: "App::Point".into(),
+            contract_name: "Core::Serialization::Serializable<Json>".into(),
+            reason: None,
+        };
+        assert_eq!(
+            kind.help().as_deref(),
+            Some("add `[Serialize]` to type `Point` so the compiler derives its `Serializable` conformance")
+        );
+    }
+
+    #[test]
+    fn import_and_module_declaration_help_wording() {
+        let item = SemanticIssueKind::UnknownImportPath { path: "Core.Results.Result".into(), module: Some("Core.Results".into()) };
+        assert_eq!(
+            item.help().as_deref(),
+            Some("`use` imports modules; write `use Core.Results;` and refer to `Core.Results.Result`")
+        );
+        let duplicate = SemanticIssueKind::DuplicateFileScopedModule { module_path: "App".into() };
+        assert_eq!(
+            duplicate.help().as_deref(),
+            Some("a file declares its own module once with `mod X;` at the top; other files of the module do not repeat it")
+        );
+    }
+
+    #[test]
     fn result_mismatch_uses_beskid_paths_and_suggests_try_or_match() {
         let kind = SemanticIssueKind::TypeMismatch {
             expected_name: "i32".into(),

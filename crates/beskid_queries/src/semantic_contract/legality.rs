@@ -663,7 +663,7 @@ fn import_findings(db: &dyn Db, items: &[AstNodeKey]) -> Vec<SemanticFinding> {
         findings.extend(captures::captures_declaration_findings(db, unit_root));
         if let Ok(Some(imports)) = unresolved_imports(db, unit_root) {
             findings.extend(imports.iter().map(|import| SemanticFinding {
-                kind: SemanticIssueKind::UnknownImportPath { path: import.path.to_string() },
+                kind: SemanticIssueKind::UnknownImportPath { path: import.path.to_string(), module: None },
                 site: import.site,
                 related: Vec::new(),
             }));

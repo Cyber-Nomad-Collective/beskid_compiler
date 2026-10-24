@@ -47,6 +47,9 @@ pub enum SemanticIssueKind {
     },
     UnknownImportPath {
         path: String,
+        /// The module the path's prefix names when the last segment is an item of it
+        /// (`use Module.Item`): `use` imports modules only.
+        module: Option<String>,
     },
     UseBeforeDeclaration {
         name: String,
