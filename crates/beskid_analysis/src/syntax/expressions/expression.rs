@@ -1,7 +1,7 @@
 use crate::parser::Rule;
 use crate::parsing::error::ParseError;
 use crate::parsing::parsable::Parsable;
-use crate::syntax::expressions::span::span_from_bounds;
+use crate::syntax::expressions::span::{span_from_bounds, trim_trailing_trivia};
 use crate::syntax::{SpanInfo, Spanned};
 use pest::iterators::Pair;
 
@@ -89,7 +89,46 @@ impl Parsable for Expression {
     }
 }
 
+/// Parses an expression pair; the expression and its node end at the expression's last token.
 pub(crate) fn parse_expression(pair: Pair<Rule>) -> Result<Spanned<Expression>, ParseError> {
+    let input = pair.as_span().get_input();
+    let mut expression = parse_expression_pair(pair)?;
+    expression.span = trim_trailing_trivia(input, expression.span);
+    let node = node_span_mut(&mut expression.node);
+    *node = trim_trailing_trivia(input, *node);
+    Ok(expression)
+}
+
+/// The span of the node an expression wraps.
+fn node_span_mut(expression: &mut Expression) -> &mut SpanInfo {
+    match expression {
+        Expression::Match(node) => &mut node.span,
+        Expression::Lambda(node) => &mut node.span,
+        Expression::Assign(node) => &mut node.span,
+        Expression::Conditional(node) => &mut node.span,
+        Expression::Binary(node) => &mut node.span,
+        Expression::Unary(node) => &mut node.span,
+        Expression::Call(node) => &mut node.span,
+        Expression::Member(node) => &mut node.span,
+        Expression::Literal(node) => &mut node.span,
+        Expression::Path(node) => &mut node.span,
+        Expression::StructLiteral(node) => &mut node.span,
+        Expression::EnumConstructor(node) => &mut node.span,
+        Expression::Block(node) => &mut node.span,
+        Expression::Grouped(node) => &mut node.span,
+        Expression::Try(node) => &mut node.span,
+        Expression::Spawn(node) => &mut node.span,
+        Expression::Move(node) => &mut node.span,
+        Expression::MacroInvocation(node) => &mut node.span,
+        Expression::MacroMetavariable(node) => &mut node.span,
+        Expression::Index(node) => &mut node.span,
+        Expression::ArrayLiteral(node) => &mut node.span,
+        Expression::CodeString(node) => &mut node.span,
+        Expression::ClifBlock(node) => &mut node.span,
+    }
+}
+
+fn parse_expression_pair(pair: Pair<Rule>) -> Result<Spanned<Expression>, ParseError> {
     let span = SpanInfo::from_span(&pair.as_span());
 
     match pair.as_rule() {

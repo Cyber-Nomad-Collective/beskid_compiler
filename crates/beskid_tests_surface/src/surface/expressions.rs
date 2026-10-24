@@ -218,6 +218,63 @@ fn conditional_parses_in_statements() {
     assert_parse(Rule::Statement, "string s = \"${c ? 1 : 2}\";");
 }
 
+fn spanned_text(input: &str, span: beskid_analysis::syntax::SpanInfo) -> &str {
+    &input[span.start..span.end]
+}
+
+/// The text a node covers, outer and inner span alike.
+fn node_text<'a>(input: &'a str, expr: &Spanned<Expression>) -> &'a str {
+    let outer = spanned_text(input, expr.span);
+    let inner = match &expr.node {
+        Expression::Binary(node) => node.span,
+        Expression::Path(node) => node.span,
+        Expression::Conditional(node) => node.span,
+        // A call node spans its argument list, not the callee.
+        Expression::Call(_) => return outer,
+        other => panic!("unexpected node {other:?}"),
+    };
+    assert_eq!(outer, spanned_text(input, inner), "outer and node spans differ");
+    outer
+}
+
+#[test]
+fn binary_chain_span_ends_at_its_last_token() {
+    let input = "a + b * c   // trailing\n";
+    let expr = parse_expression_ast(input);
+    assert_eq!(node_text(input, &expr), "a + b * c");
+    let (left, _, right) = expect_binary(&expr.node, BinaryOp::Add);
+    assert_eq!(node_text(input, left), "a");
+    assert_eq!(node_text(input, right), "b * c");
+
+    let input = "a || b /* note */ ";
+    assert_eq!(node_text(input, &parse_expression_ast(input)), "a || b");
+}
+
+#[test]
+fn single_operand_before_question_mark_ends_at_its_last_token() {
+    let input = "c  ? a  : b ";
+    let expr = parse_expression_ast(input);
+    assert_eq!(node_text(input, &expr), "c  ? a  : b");
+    let (condition, then_branch, else_branch) = expect_conditional(&expr.node);
+    assert_eq!(node_text(input, condition), "c");
+    assert_eq!(node_text(input, then_branch), "a");
+    assert_eq!(node_text(input, else_branch), "b");
+
+    // A comment holding `//` inside a string does not cut the operand short.
+    let input = "F(\"x//y\") // done\n";
+    assert_eq!(node_text(input, &parse_expression_ast(input)), "F(\"x//y\")");
+}
+
+#[test]
+fn if_condition_span_ends_at_its_last_token() {
+    let input = "if n  /* why */ { }";
+    let statement = crate::surface::ast::parse_statement_ast(Rule::IfStatement, input);
+    let beskid_analysis::syntax::Statement::If(if_statement) = &statement.node else {
+        panic!("expected if statement, got {:?}", statement.node);
+    };
+    assert_eq!(node_text(input, &if_statement.node.condition), "n");
+}
+
 #[test]
 fn parses_logical_binary_expression() {
     let expr = parse_expression_ast("true || false");

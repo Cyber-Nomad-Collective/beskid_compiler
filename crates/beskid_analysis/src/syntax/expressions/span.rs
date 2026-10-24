@@ -10,6 +10,42 @@ pub(crate) fn span_from_bounds(input: &str, start: usize, end: usize) -> Option<
     Some(SpanInfo::from_span(&span))
 }
 
+/// `span` without the whitespace and comments at its end.
+///
+/// The grammar skips whitespace and comments implicitly between the elements of a rule, so a rule
+/// that ends in an optional or repeated part (an operator chain, an operand before an unused `?`)
+/// ends after the trivia that preceded the part it did not match. An expression ends at its last
+/// token.
+pub(crate) fn trim_trailing_trivia(input: &str, span: SpanInfo) -> SpanInfo {
+    let bytes = input.as_bytes();
+    let (start, end) = (span.start, span.end.min(bytes.len()));
+    if end <= start || !(bytes[end - 1].is_ascii_whitespace() || input[..end].ends_with("*/")) {
+        return span;
+    }
+    let mut trimmed = end;
+    while trimmed > start && bytes[trimmed - 1].is_ascii_whitespace() {
+        trimmed -= 1;
+    }
+    let line_start = input[..trimmed].rfind('\n').map_or(0, |index| index + 1).max(start);
+    let comment_possible = input[..trimmed].ends_with("*/") || input[line_start..trimmed].contains("//");
+    if comment_possible {
+        // Find the last token by lexing the span; comments and strings make a backward scan ambiguous.
+        trimmed = start;
+        let mut pos = start;
+        while let Some(token) = crate::parsing::syntax_context::token_at(input, pos) {
+            if token.start >= end {
+                break;
+            }
+            trimmed = token.end.min(end);
+            pos = token.end.max(pos + 1);
+        }
+    }
+    if trimmed == span.end || trimmed <= start {
+        return span;
+    }
+    span_from_bounds(input, start, trimmed).unwrap_or(span)
+}
+
 /// Rebase byte/line spans parsed from a substring back into `source`.
 pub(crate) fn remap_span(span: SpanInfo, offset: usize, source: &str) -> SpanInfo {
     if offset == 0 {
