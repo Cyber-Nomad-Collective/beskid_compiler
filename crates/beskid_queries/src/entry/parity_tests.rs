@@ -308,6 +308,20 @@ const COVERED_KINDS: &[(&str, &str, &str, &str)] = &[
         "unit Take<T>(T::Item value) { return; }",
     ),
     (
+        "TypeError::GenericBoundNotSatisfied (primitive without implementation)",
+        "GenericBoundNotSatisfied",
+        "E1610",
+        "pub contract Named { string Name(); } impl i64 : Named { pub string Name() { return \"i64\"; } } \
+         string Describe<T>(T value) where T: Named { return value.Name(); } \
+         unit Main() { Describe<u16>(2_u16); return; }",
+    ),
+    (
+        "InvalidPrimitiveImplementation",
+        "InvalidPrimitiveImplementation",
+        "E1611",
+        "pub contract Named { string Name(); } impl pointer : Named { pub string Name() { return \"p\"; } }",
+    ),
+    (
         "TypeError::ExternInvalidAbi",
         "ExternInvalidAbi",
         "T0901",
@@ -430,6 +444,24 @@ fn well_typed_nominal_positions_produce_no_finding() {
                   i64 Main() { Pair p = Make(1_i64); Pair q = p; Shape s = Shape::Boxed(q); string n = Describe(p); \
                   i64 total = p.Sum(2_i64); i64 code = match total { 0 => 1_i64, _ => 2_i64, }; return Measure(s) + code; }";
     let findings = root_findings(source, 802);
+    assert!(findings.is_empty(), "{findings:?}");
+}
+
+/// Primitive implementations of a contract, their bodies reading `this` by value, and calls
+/// through a `where` bound for each primitive pass the whole gate.
+#[test]
+fn primitive_conformance_program_produces_no_finding() {
+    let source = "pub contract Shown { string Show(); } \
+                  impl i32 : Shown { pub string Show() { return \"${this}\"; } } \
+                  impl i64 : Shown { pub string Show() { i64 doubled = this * 2_i64; return \"${doubled}\"; } } \
+                  impl u8 : Shown { pub string Show() { return \"${i64(this)}\"; } } \
+                  impl f64 : Shown { pub string Show() { return \"${this}\"; } } \
+                  impl bool : Shown { pub string Show() { if this { return \"yes\"; } return \"no\"; } } \
+                  impl string : Shown { pub string Show() { return this; } } \
+                  string Render<T>(T value) where T: Shown { return value.Show(); } \
+                  string Main() { return Render<i32>(1_i32) + Render<i64>(2_i64) + Render<u8>(3_u8) \
+                  + Render<f64>(0.5_f64) + Render(true) + Render(\"text\"); }";
+    let findings = root_findings(source, 690);
     assert!(findings.is_empty(), "{findings:?}");
 }
 

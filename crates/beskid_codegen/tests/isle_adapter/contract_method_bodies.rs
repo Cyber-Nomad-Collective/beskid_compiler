@@ -304,3 +304,28 @@ fn primitive_implementation_methods_take_their_receiver_by_value() {
         assert_eq!(signature.result, beskid_queries::SemanticTypeId::I64);
     }
 }
+
+/// The Corelib `Formatting` implementations themselves (digit loop for `u64`, `word` conversion,
+/// UTF-8 array literals for `char`, interpolation of `this`) lower for every primitive through a
+/// `where T: Formatting` bound.
+#[test]
+fn corelib_formatting_implementations_lower_for_every_primitive() {
+    // The single-unit fixture has no `Core.String`; only the final UTF-8 materialization is stubbed.
+    let formatting =
+        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../corelib/packages/foundation/src/Core/Text/Formatting.bd"))
+            .replace("use Core.String;\n", "")
+            .replace("return String.FromUtf8CodeUnits(bytes);", "return \"?\";");
+    assert!(!formatting.contains("String."), "the stub replaced every Core.String use");
+    let (input, isa, root) = item_fixture_with_root(&format!(
+        "{formatting}\nstring Show<T>(T value) where T: Formatting {{ return value.Format(); }}\n\
+         string Main() {{ return Show<i8>(-1_i8) + Show<i16>(2_i16) + Show<i32>(3_i32) + Show<i64>(4_i64) \
+         + Show<u8>(5_u8) + Show<u16>(6_u16) + Show<u32>(7_u32) + Show<u64>(8_u64) + Show<word>(word(9_i64)) \
+         + Show<f32>(1.5_f32) + Show<f64>(2.5_f64) + Show<bool>(true) + Show<char>('x') + Show<string>(\"s\"); }}\n"
+    ));
+    let items = module_items(&input, &[root]);
+    let artifact = lower_syntax_program(&input, isa.as_ref(), &items)
+        .expect("every Corelib Formatting implementation lowers through a bound");
+    beskid_codegen::validate_artifact(&artifact).expect("Formatting artifact");
+    let specializations = artifact.functions.iter().filter(|function| function.name.starts_with("Show#generic_")).count();
+    assert_eq!(specializations, 14, "one specialization per primitive");
+}
