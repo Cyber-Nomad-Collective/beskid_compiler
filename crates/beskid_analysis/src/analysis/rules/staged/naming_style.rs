@@ -43,7 +43,7 @@ impl NamingIssue for NamingRole {
             Self::ModuleSegment => SemanticIssueKind::NamingNotPascalCaseModuleSegment { segment: name },
             Self::GenericParameter => SemanticIssueKind::NamingNotPascalCaseGeneric { name },
             Self::Binding => SemanticIssueKind::NamingNotCamelCaseBinding { name },
-            Self::Test => SemanticIssueKind::NamingNotSnakeCaseTest { name },
+            Self::Test => SemanticIssueKind::NamingNotPascalCaseTest { name },
             Self::Macro => SemanticIssueKind::NamingNotCamelCaseMacro { name },
         }
     }
@@ -75,9 +75,26 @@ mod tests {
     }
 
     #[test]
-    fn bad_test_name_emits_w1637() {
-        let codes = warning_codes("test BadTestName { return; }");
-        assert!(codes.iter().any(|c| c == "W1637"));
+    fn snake_case_test_name_emits_w1637() {
+        let codes = warning_codes("test parse_empty_input { return; }");
+        assert_eq!(codes.iter().filter(|c| *c == "W1637").count(), 1, "{codes:?}");
+    }
+
+    #[test]
+    fn w1637_is_reported_on_the_test_name_with_a_pascal_case_suggestion() {
+        let src = "test hub_register_accepts_channel { return; }";
+        let program = parse_program(src).expect("parse").node;
+        let mut ctx = RuleContext::new("test.bd", src, AnalysisOptions::default());
+        walk_program(&program, |role, ident| check_naming_role(&mut ctx, role, ident));
+        let diagnostic = ctx.diagnostics.iter().find(|d| d.code.as_deref() == Some("W1637")).expect("W1637");
+        assert!(diagnostic.message.contains("PascalCase"), "{}", diagnostic.message);
+        assert_eq!(diagnostic.help.as_deref(), Some("try `HubRegisterAcceptsChannel`"));
+        assert_eq!(&src[diagnostic.span.offset()..diagnostic.span.offset() + diagnostic.span.len()], "hub_register_accepts_channel");
+    }
+
+    #[test]
+    fn pascal_case_test_name_emits_nothing() {
+        assert!(warning_codes("test ParseEmptyInput { return; }").is_empty());
     }
 
     #[test]
@@ -100,7 +117,7 @@ contract Ordinary {
         let src = r#"
 pub type Hub { bool isTty }
 pub unit Register(i64 index) { let caps = 0; return; }
-test hub_register_accepts_channel { return; }
+test HubRegisterAcceptsChannel { return; }
 "#;
         assert!(warning_codes(src).is_empty());
     }

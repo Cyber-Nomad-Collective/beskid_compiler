@@ -353,7 +353,7 @@ fn cli06_04_redirected_build_and_test_complete_without_cursor_controls() {
     let project = home.work().join("Native");
     std::fs::create_dir_all(project.join("Src")).unwrap();
     std::fs::write(project.join("Src/Main.bd"), "i32 Main() { return 0; }\n").unwrap();
-    std::fs::write(project.join("Src/Smoke.bd"), "use Testing.Assert;\ntest smoke_passes { Assert.True(true, \"redirected test\"); }\n").unwrap();
+    std::fs::write(project.join("Src/Smoke.bd"), "use Testing.Assert;\ntest SmokePasses { Assert.True(true, \"redirected test\"); }\n").unwrap();
     let manifest = project.join("Native.bproj");
     std::fs::write(&manifest, "Native { name = \"Native\" version = \"0.1.0\" }\ntarget \"App\" { kind = \"App\" entry = \"Main.bd\" }\ntarget \"Smoke\" { kind = \"Test\" entry = \"Smoke.bd\" }\n").unwrap();
     let build = run(cli, &home, &["build", "--project", manifest.to_str().unwrap(), "--target", "App"]);
@@ -364,7 +364,47 @@ fn cli06_04_redirected_build_and_test_complete_without_cursor_controls() {
     assert!(!has_cursor_controls(&test.stdout) && !has_cursor_controls(&test.stderr), "redirected test streams carry no cursor controls:\n{}", transcript(&test));
     // stdout carries the readable result summary; per-test rows are progress on stderr.
     assert!(stdout(&test).contains("passed=1") && stdout(&test).contains("failed=0"), "the test summary is readable:\n{}", transcript(&test));
-    assert!(stderr(&test).contains("smoke_passes"), "the passing test row names the test:\n{}", transcript(&test));
+    assert!(stderr(&test).contains("SmokePasses"), "the passing test row names the test:\n{}", transcript(&test));
+}
+
+#[test]
+fn v067_failed_assertion_is_a_test_failure_with_values_and_call_site() {
+    let cli = Cli::qualified();
+    let home = Home::new();
+    let project = home.work().join("Failing");
+    std::fs::create_dir_all(project.join("Src")).unwrap();
+    std::fs::write(project.join("Src/Main.bd"), "i32 Main() { return 0; }\n").unwrap();
+    std::fs::write(
+        project.join("Src/Fails.bd"),
+        "use Testing.Assert;\nuse Testing.Expect;\ni64 Add(i64 a, i64 b) { return a + b; }\n\ntest AddsNumbers {\n    Expect.EqualI64(Add(1, 3), 3, \"adds\");\n}\n\ntest KeepsGoing {\n    Assert.True(true, \"fine\");\n}\n",
+    )
+    .unwrap();
+    let manifest = project.join("Failing.bproj");
+    std::fs::write(&manifest, "Failing { name = \"Failing\" version = \"0.1.0\" }\ntarget \"App\" { kind = \"App\" entry = \"Main.bd\" }\ntarget \"Fails\" { kind = \"Test\" entry = \"Fails.bd\" }\n").unwrap();
+    let text = run(cli, &home, &["test", "--project", manifest.to_str().unwrap(), "--target", "Fails", "--plain"]);
+    assert_eq!(text.status.code(), Some(1), "a failed assertion fails the run:\n{}", transcript(&text));
+    let report = stderr(&text);
+    assert!(report.contains("FAIL") && report.contains("AddsNumbers"), "the failure is under the test name:\n{report}");
+    assert!(report.contains("assertion failed: expected 3, found 4"), "the assertion text names both values:\n{report}");
+    assert!(report.contains("Fails.bd:6:5"), "the call site is the Expect call:\n{report}");
+    for hidden in ["isle_invariant", "runtime trap", "exited exit status", "test crashed"] {
+        assert!(!report.contains(hidden), "internal text `{hidden}` is not shown for an assertion failure:\n{report}");
+    }
+    assert_eq!(report.matches("assertion failed").count(), 1, "the failure is printed once:\n{report}");
+
+    let json = run(cli, &home, &["test", "--project", manifest.to_str().unwrap(), "--target", "Fails", "--json"]);
+    let record: serde_json::Value = stdout(&json)
+        .lines()
+        .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+        .find(|record| record["command"] == "test" && record["event"] == "result")
+        .unwrap_or_else(|| panic!("a result record on stdout:\n{}", transcript(&json)));
+    let tests = record["tests"].as_array().expect("tests array");
+    let failed = tests.iter().find(|test| test["outcome"] == "failed").expect("one failed test");
+    assert_eq!(failed["failure"]["kind"], "assertion");
+    assert_eq!(failed["failure"]["expected"], "3");
+    assert_eq!(failed["failure"]["actual"], "4");
+    assert_eq!(failed["failure"]["location"]["line"], 6);
+    assert_eq!(failed["failure"]["location"]["column"], 5);
 }
 
 // ---------------------------------------------------------------------------------------------

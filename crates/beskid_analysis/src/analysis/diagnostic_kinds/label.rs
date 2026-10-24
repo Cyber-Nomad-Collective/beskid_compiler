@@ -181,7 +181,7 @@ impl SemanticIssueKind {
             Self::NamingNotPascalCaseModuleSegment { .. } => "module segment not PascalCase".to_string(),
             Self::NamingNotPascalCaseGeneric { .. } => "generic parameter not PascalCase".to_string(),
             Self::NamingNotCamelCaseBinding { .. } => "binding not lowerCamelCase".to_string(),
-            Self::NamingNotSnakeCaseTest { .. } => "test name not snake_case".to_string(),
+            Self::NamingNotPascalCaseTest { .. } => "test name not PascalCase".to_string(),
             Self::NamingNotCamelCaseMacro { .. } => "macro name not lowerCamelCase".to_string(),
             Self::NumericLiteralOutOfRange { .. } => "numeric literal".to_string(),
             Self::ExternInvalidAbi { .. } | Self::ExternMissingLibrary => "extern attribute".to_string(),

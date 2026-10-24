@@ -9,7 +9,7 @@ use Runtime.Mem.Gc.State;
 use Testing.Assert;
 use HostRuntimeSupport;
 
-test lifecycle_uses_manifest_state_generation_and_48_byte_tls {
+test LifecycleUsesManifestStateGenerationAnd48ByteTls {
     pointer hostRuntime = SuspendHostRuntime();
     pointer runtime = Native.SystemAllocate(64, 8);
     memory_set(runtime, 0, 64);
@@ -49,7 +49,7 @@ test lifecycle_uses_manifest_state_generation_and_48_byte_tls {
     Assert.Equal(generationAfterReinitialization, 2, "reinitialization advances generation");
 }
 
-test failed_thread_attach_does_not_publish_partial_state {
+test FailedThreadAttachDoesNotPublishPartialState {
     pointer hostRuntime = SuspendHostRuntime();
     pointer runtime = Native.SystemAllocate(64, 8);
     memory_set(runtime, 0, 64);
@@ -66,7 +66,7 @@ test failed_thread_attach_does_not_publish_partial_state {
 
 // ── Isolate prerequisites (0.6.1): one instance per process, split lifecycle ──
 
-test isolate_prerequisite_atomics_follow_the_word_contract {
+test IsolatePrerequisiteAtomicsFollowTheWordContract {
     pointer cell = Native.SystemAllocate(8, 8);
     Native.AtomicWordStore(cell, 7, 4);
     Assert.Equal(Native.AtomicWordCompareExchange(cell, 7, 9, 4), 7, "successful exchange returns the expected value");
@@ -82,7 +82,7 @@ test isolate_prerequisite_atomics_follow_the_word_contract {
     Assert.True(Native.HostProcessorCount() >= 1, "the host reports at least one logical processor");
 }
 
-test isolate_prerequisite_descriptor_immutable_flag_is_a_property_bit {
+test IsolatePrerequisiteDescriptorImmutableFlagIsAPropertyBit {
     Assert.Equal(Objects.TypeDescriptorImmutableFlag(), 4, "TYPE_DESCRIPTOR_IMMUTABLE is bit value 4");
     pointer descriptor = Native.SystemAllocate(40, 8);
     memory_set(descriptor, 0, 40);
@@ -100,7 +100,7 @@ test isolate_prerequisite_descriptor_immutable_flag_is_a_property_bit {
     Native.SystemFree(descriptor, 40);
 }
 
-test isolate_lifecycle_publishes_instance_record_region_owner_and_primary {
+test IsolateLifecyclePublishesInstanceRecordRegionOwnerAndPrimary {
     pointer hostRuntime = SuspendHostRuntime();
     pointer runtime = Native.SystemAllocate(64, 8);
     memory_set(runtime, 0, 64);
@@ -157,7 +157,7 @@ pub unit SpawnPanickingMain(pointer message) {
     return;
 }
 
-test isolate_main_fiber_panic_message_is_copied_out_of_the_heap {
+test IsolateMainFiberPanicMessageIsCopiedOutOfTheHeap {
     pointer hostRuntime = SuspendHostRuntime();
     pointer runtime = Native.SystemAllocate(64, 8);
     memory_set(runtime, 0, 64);

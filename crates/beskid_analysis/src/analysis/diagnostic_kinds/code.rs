@@ -183,7 +183,7 @@ impl SemanticIssueKind {
             Self::NamingNotPascalCaseModuleSegment { .. } => "W1634",
             Self::NamingNotPascalCaseGeneric { .. } => "W1635",
             Self::NamingNotCamelCaseBinding { .. } => "W1636",
-            Self::NamingNotSnakeCaseTest { .. } => "W1637",
+            Self::NamingNotPascalCaseTest { .. } => "W1637",
             Self::NamingNotCamelCaseMacro { .. } => "W1638",
             Self::NumericLiteralOutOfRange { .. } => "T0905",
             Self::ExternInvalidAbi { .. } => "T0901",

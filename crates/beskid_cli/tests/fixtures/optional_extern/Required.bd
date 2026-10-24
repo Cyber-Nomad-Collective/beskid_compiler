@@ -13,7 +13,7 @@ i64 MaybeCall(bool enabled) {
     return 0;
 }
 
-test required_library_fails_to_load {
+test RequiredLibraryFailsToLoad {
     Assert.Equal<i64>(MaybeCall(false), 0, "never reached: loading fails");
 }
 

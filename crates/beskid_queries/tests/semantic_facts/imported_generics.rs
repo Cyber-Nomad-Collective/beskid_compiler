@@ -572,7 +572,7 @@ use Core.Args;
 use Core.Results;
 use Testing.Assert;
 
-test corelib_generic_specialization {
+test CorelibGenericSpecialization {
     Core.Results.Result<string, Core.Args.ArgsError> result = Args.Get(0);
     Assert.True(Results.IsOk(result), "args[0] should be valid");
     string[] all = Args.All();

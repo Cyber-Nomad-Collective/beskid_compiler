@@ -563,7 +563,7 @@ pub enum SemanticIssueKind {
     NamingNotCamelCaseBinding {
         name: String,
     },
-    NamingNotSnakeCaseTest {
+    NamingNotPascalCaseTest {
         name: String,
     },
     NamingNotCamelCaseMacro {

@@ -522,7 +522,8 @@ impl SemanticIssueKind {
             | Self::NamingNotPascalCaseVariant { name }
             | Self::NamingNotPascalCaseCallable { name }
             | Self::NamingNotPascalCaseModuleSegment { segment: name }
-            | Self::NamingNotPascalCaseGeneric { name } => Some(format!(
+            | Self::NamingNotPascalCaseGeneric { name }
+            | Self::NamingNotPascalCaseTest { name } => Some(format!(
                 "try `{}`",
                 crate::naming_case::normalize_to_profile(name, crate::naming_case::NamingProfile::PascalCase)
             )),
@@ -531,10 +532,6 @@ impl SemanticIssueKind {
             | Self::NamingNotCamelCaseMacro { name } => Some(format!(
                 "try `{}`",
                 crate::naming_case::normalize_to_profile(name, crate::naming_case::NamingProfile::LowerCamelCase)
-            )),
-            Self::NamingNotSnakeCaseTest { name } => Some(format!(
-                "try `{}`",
-                crate::naming_case::normalize_to_profile(name, crate::naming_case::NamingProfile::SnakeCase)
             )),
             Self::NumericLiteralOutOfRange { .. } => {
                 Some("use an in-range literal of the declared fixed-width type".to_string())

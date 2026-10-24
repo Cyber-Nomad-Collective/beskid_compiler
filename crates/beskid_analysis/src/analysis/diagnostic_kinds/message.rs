@@ -501,8 +501,8 @@ impl SemanticIssueKind {
             Self::NamingNotCamelCaseBinding { name } => {
                 format!("binding `{name}` should use lowerCamelCase")
             }
-            Self::NamingNotSnakeCaseTest { name } => {
-                format!("test name `{name}` should use snake_case")
+            Self::NamingNotPascalCaseTest { name } => {
+                format!("test name `{name}` should use PascalCase")
             }
             Self::NamingNotCamelCaseMacro { name } => {
                 format!("macro `{name}` should use lowerCamelCase")

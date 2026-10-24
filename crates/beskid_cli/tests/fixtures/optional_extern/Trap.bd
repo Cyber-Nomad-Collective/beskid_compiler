@@ -8,7 +8,7 @@ pub contract MissingNative {
     i64 beskid_missing_symbol(i64 value);
 }
 
-test calling_an_absent_symbol_traps {
+test CallingAnAbsentSymbolTraps {
     Assert.Equal<i64>(MissingNative.beskid_missing_symbol(1), 0, "unreachable: the call traps");
 }
 

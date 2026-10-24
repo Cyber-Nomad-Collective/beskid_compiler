@@ -30,9 +30,9 @@ impl NamingRole {
             | Self::EnumVariant
             | Self::Callable
             | Self::ModuleSegment
-            | Self::GenericParameter => NamingProfile::PascalCase,
+            | Self::GenericParameter
+            | Self::Test => NamingProfile::PascalCase,
             Self::Field | Self::Binding | Self::Macro => NamingProfile::LowerCamelCase,
-            Self::Test => NamingProfile::SnakeCase,
         }
     }
 }
