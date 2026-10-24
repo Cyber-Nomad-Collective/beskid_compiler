@@ -1,55 +1,39 @@
-//! Parse errors, `E0101`–`E0199`.
-//!
-//! Owned by the parse-wording work (0.6.7 slice S2): add one [`CodeInfo`] per parse error below,
-//! in code order. Parse codes carry no tags.
+//! Parse errors, `E0101`–`E0199`. These constants are the only place parse codes are spelled; the
+//! parser names them as `diagnostic_codes::parse::*`.
 
 use super::{CodeFamily, CodeInfo};
+
+pub const SYNTAX: &str = "E0101";
+pub const MISSING_SEMICOLON: &str = "E0102";
+pub const UNCLOSED_DELIMITER: &str = "E0103";
+pub const HOST_WITHOUT_PARAMETERS: &str = "E0104";
+pub const INCREMENT_OPERATOR: &str = "E0105";
+pub const TYPED_LET: &str = "E0106";
+pub const RESERVED_WORD: &str = "E0107";
+pub const BLOCK_MATCH_ARM: &str = "E0108";
+pub const UNKNOWN_ESCAPE: &str = "E0109";
+pub const INVALID_UNICODE_ESCAPE: &str = "E0110";
+// E0111 is retired: an unexpected syntax tree shape is internal, `internal::UNEXPECTED_TREE`.
+pub const SELF_PARAMETER: &str = "E0112";
+pub const EMPTY_SOURCE: &str = "E0113";
+pub const LONG_CHARACTER_LITERAL: &str = "E0114";
+pub const COMMA_BETWEEN_FIELDS: &str = "E0115";
 
 pub const FAMILY: CodeFamily = CodeFamily { name: "parse", first: "E0101", last: "E0199", codes: CODES };
 
 pub const CODES: &[CodeInfo] = &[
-    CodeInfo { code: "E0101", summary: "unexpected token", tags: &[] },
-    CodeInfo { code: "E0102", summary: "missing `;`", tags: &[] },
-    CodeInfo { code: "E0103", summary: "unclosed delimiter", tags: &[] },
-    CodeInfo { code: "E0104", summary: "host without a parameter list", tags: &[] },
-    CodeInfo { code: "E0105", summary: "`++` or `--` operator", tags: &[] },
-    CodeInfo { code: "E0106", summary: "type annotation on `let`", tags: &[] },
-    CodeInfo { code: "E0107", summary: "reserved word used as a name", tags: &[] },
-    CodeInfo { code: "E0108", summary: "block used as a match arm value", tags: &[] },
-    CodeInfo { code: "E0109", summary: "unknown string escape", tags: &[] },
-    CodeInfo { code: "E0110", summary: "invalid `\\u{...}` escape", tags: &[] },
-    CodeInfo { code: "E0111", summary: "unexpected syntax tree shape", tags: &[] },
-    CodeInfo { code: "E0112", summary: "`self` parameter in a method", tags: &[] },
-    CodeInfo { code: "E0113", summary: "nothing to parse", tags: &[] },
-    CodeInfo { code: "E0114", summary: "character literal with more than one character", tags: &[] },
-    CodeInfo { code: "E0115", summary: "comma between fields", tags: &[] },
+    CodeInfo { code: SYNTAX, summary: "unexpected token", tags: &[] },
+    CodeInfo { code: MISSING_SEMICOLON, summary: "missing `;`", tags: &[] },
+    CodeInfo { code: UNCLOSED_DELIMITER, summary: "unclosed delimiter", tags: &[] },
+    CodeInfo { code: HOST_WITHOUT_PARAMETERS, summary: "host without a parameter list", tags: &[] },
+    CodeInfo { code: INCREMENT_OPERATOR, summary: "`++` or `--` operator", tags: &[] },
+    CodeInfo { code: TYPED_LET, summary: "type annotation on `let`", tags: &[] },
+    CodeInfo { code: RESERVED_WORD, summary: "reserved word used as a name", tags: &[] },
+    CodeInfo { code: BLOCK_MATCH_ARM, summary: "block used as a match arm value", tags: &[] },
+    CodeInfo { code: UNKNOWN_ESCAPE, summary: "unknown string escape", tags: &[] },
+    CodeInfo { code: INVALID_UNICODE_ESCAPE, summary: "invalid `\\u{...}` escape", tags: &[] },
+    CodeInfo { code: SELF_PARAMETER, summary: "`self` parameter in a method", tags: &[] },
+    CodeInfo { code: EMPTY_SOURCE, summary: "nothing to parse", tags: &[] },
+    CodeInfo { code: LONG_CHARACTER_LITERAL, summary: "character literal with more than one character", tags: &[] },
+    CodeInfo { code: COMMA_BETWEEN_FIELDS, summary: "comma between fields", tags: &[] },
 ];
-
-#[cfg(test)]
-mod tests {
-    use super::CODES;
-    use crate::parsing::diagnose::codes;
-
-    #[test]
-    fn every_parse_code_the_parser_emits_is_registered() {
-        for code in [
-            codes::SYNTAX,
-            codes::MISSING_SEMICOLON,
-            codes::UNCLOSED_DELIMITER,
-            codes::HOST_WITHOUT_PARAMETERS,
-            codes::INCREMENT_OPERATOR,
-            codes::TYPED_LET,
-            codes::RESERVED_WORD,
-            codes::BLOCK_MATCH_ARM,
-            codes::UNKNOWN_ESCAPE,
-            codes::INVALID_UNICODE_ESCAPE,
-            codes::UNEXPECTED_TREE,
-            codes::SELF_PARAMETER,
-            codes::EMPTY_SOURCE,
-            codes::LONG_CHARACTER_LITERAL,
-            codes::COMMA_BETWEEN_FIELDS,
-        ] {
-            assert!(CODES.iter().any(|info| info.code == code), "{code} is not registered");
-        }
-    }
-}

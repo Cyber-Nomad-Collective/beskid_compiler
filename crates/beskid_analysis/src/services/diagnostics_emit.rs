@@ -26,14 +26,14 @@ pub fn parse_error_diagnostic(source_name: &str, source: &str, err: &ParseError)
                 Some(rule) => format!("expected {}, found {found_words}", rule_words(*rule).render()),
                 None => format!("unexpected {found_words}"),
             };
-            diagnostic(*span, message, "unexpected here", None, codes::UNEXPECTED_TREE)
+            diagnostic(*span, message, "unexpected here", None, crate::analysis::diagnostic_codes::internal::UNEXPECTED_TREE)
         }
         ParseError::MissingPair { expected } => diagnostic(
             SpanInfo { start: 0, end: 0, line_col_start: (1, 1), line_col_end: (1, 1) },
             format!("expected {}", rule_words(*expected).render()),
             "missing here",
             None,
-            codes::UNEXPECTED_TREE,
+            crate::analysis::diagnostic_codes::internal::UNEXPECTED_TREE,
         ),
         ParseError::ForbiddenImplSelfParameter { span } => diagnostic(
             *span,

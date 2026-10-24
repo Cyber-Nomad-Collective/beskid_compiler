@@ -11,6 +11,6 @@ pub const FAMILY: CodeFamily = CodeFamily { name: "unused", first: "W1000", last
 pub const CODES: &[CodeInfo] = &[
     CodeInfo { code: "W1403", summary: "unreachable statement", tags: UNNECESSARY },
     CodeInfo { code: "W1503", summary: "unused import", tags: UNNECESSARY },
-    // Unused item, including unused private items (replaces W1504; semantic slice S3 emits it).
+    // Unused item, including unused private items (replaces W1504). Not `E2101`, the internal error.
     CodeInfo { code: "W2101", summary: "unused item", tags: UNNECESSARY },
 ];

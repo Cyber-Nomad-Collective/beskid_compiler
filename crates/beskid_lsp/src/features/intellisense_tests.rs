@@ -358,7 +358,7 @@ mod tests {
                 let failures = doc
                     .syntax_diagnostics
                     .iter()
-                    .filter(|diagnostic| diagnostic.code.as_deref() == Some("project-preparation"))
+                    .filter(|diagnostic| diagnostic.code.as_deref() == Some("E3040"))
                     .map(|diagnostic| diagnostic.message.as_str())
                     .collect::<Vec<_>>();
                 assert!(failures.is_empty(), "version {version} ({policy}) failed project preparation: {failures:#?}");
