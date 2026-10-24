@@ -240,7 +240,9 @@ InterpolationExpression = !{ Expression }
 // with its own code instead of failing the whole string at the grammar level.
 StringEscape = { "\\" ~ ("${" | "u{" ~ (!("}" | "\"") ~ ANY)* ~ "}" | ANY) }
 StringText = { (!("\"" | "\\" | "$") ~ ANY)+ | ("$" ~ !("{")) }
-CharLiteral = @{ "'" ~ ("\\'" | !("'") ~ ANY) ~ "'" }
+// One character or one escape. Escapes are those of strings plus `\'`; like `StringEscape`, the rule
+// accepts a backslash before any character so lowering reports an unknown escape with its own code.
+CharLiteral = @{ "'" ~ ("\\" ~ ("u{" ~ (!("}" | "'") ~ ANY)* ~ "}" | ANY) | !("'" | "\\") ~ ANY) ~ "'" }
 
 CodeLanguageTag = @{ ASCII_ALPHA+ }
 CodeHole = { PUSH("@{") ~ InterpolationExpression ~ DROP ~ "}" }

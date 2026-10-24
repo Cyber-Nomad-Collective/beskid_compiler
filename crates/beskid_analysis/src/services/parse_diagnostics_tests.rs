@@ -303,3 +303,51 @@ fn every_compound_assignment_operator_parses_in_a_body() {
         assert!(text.contains(&format!("{expected:?}")), "{operator}: no {expected:?} node");
     }
 }
+
+#[test]
+fn character_escapes_parse() {
+    let source = "unit Main() {\n    char a = '\\n';\n    char b = '\\t';\n    char c = '\\0';\n    char d = '\\u{263A}';\n    char e = '\\'';\n}\n";
+    let parsed = parse_program_with_source_name_and_diagnostics("t.bd", source).expect("escapes parse");
+    assert!(parsed.diagnostics.is_empty() && !parsed.recovered, "{:?}", parsed.diagnostics);
+}
+
+#[test]
+fn unknown_character_escape_has_its_own_code_and_span() {
+    let source = "unit Main() {\n    char c = '\\q';\n}\n";
+    let (diagnostic, recovered) = diagnose(source);
+    assert!(!recovered);
+    assert_shape(&diagnostic, "E0109");
+    assert_eq!(spanned(source, &diagnostic), "\\q");
+}
+
+#[test]
+fn invalid_unicode_character_escape_has_its_own_code_and_span() {
+    let source = "unit Main() {\n    char c = '\\u{110000}';\n}\n";
+    let (diagnostic, _) = diagnose(source);
+    assert_shape(&diagnostic, "E0110");
+    assert_eq!(spanned(source, &diagnostic), "\\u{110000}");
+}
+
+#[test]
+fn several_characters_in_single_quotes_suggest_a_string() {
+    let source = "unit Main() {\n    string s = 'hello';\n}\n";
+    let (diagnostic, _) = diagnose(source);
+    assert_shape(&diagnostic, "E0114");
+    assert_eq!(diagnostic.message, "a character literal holds exactly one character");
+    assert_eq!(spanned(source, &diagnostic), "'hello'");
+    assert!(diagnostic.help.as_deref().unwrap().contains("\"hello\""));
+    let fix = diagnostic.fixes.first().expect("a fix");
+    assert_eq!(fix.applicability, Applicability::MaybeIncorrect, "a string changes the type");
+    assert_eq!(fix.edits.len(), 1);
+    assert_eq!(fix.edits[0].replacement, "\"hello\"");
+    let (start, end) = fix.edits[0].range();
+    assert_eq!(&source[start..end], "'hello'");
+}
+
+#[test]
+fn conditional_operator_gets_a_match_or_if_help() {
+    let source = "i32 Main(i32 x) {\n    return x > 0 ? 1 : 2;\n}\n";
+    let (diagnostic, _) = diagnose(source);
+    assert_shape(&diagnostic, "E0101");
+    assert!(diagnostic.help.as_deref().unwrap().contains("no `? :` operator"), "{:?}", diagnostic.help);
+}

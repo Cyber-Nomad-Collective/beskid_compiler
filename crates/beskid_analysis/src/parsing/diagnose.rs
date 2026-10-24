@@ -32,6 +32,7 @@ pub mod codes {
     pub const UNEXPECTED_TREE: &str = "E0111";
     pub const SELF_PARAMETER: &str = "E0112";
     pub const EMPTY_SOURCE: &str = "E0113";
+    pub const LONG_CHARACTER_LITERAL: &str = "E0114";
 }
 
 /// A parse failure as a diagnostic, plus the repaired source when the fix makes it parse.
@@ -58,6 +59,8 @@ struct Mistake {
     help: String,
     related: Vec<(usize, usize, String)>,
     fix: Option<(String, Vec<FixEdit>)>,
+    /// How safe the fix is; most mistake fixes have one meaning.
+    applicability: Applicability,
 }
 
 impl Mistake {
@@ -71,6 +74,7 @@ impl Mistake {
             help: help.into(),
             related: Vec::new(),
             fix: None,
+            applicability: Applicability::MachineApplicable,
         }
     }
 }
@@ -102,6 +106,7 @@ pub fn diagnose_parse_failure(
     let help = match &mistake {
         Some(mistake) => Some(mistake.help.clone()),
         None => foreign_syntax_help(failure.found.as_ref())
+            .or_else(|| conditional_operator_help(source, &failure))
             .or_else(|| foreign_item_help(&failure))
             .or_else(|| construct.as_ref().and_then(|construct| construct_help(&construct.description))),
     };
@@ -132,14 +137,15 @@ pub fn diagnose_parse_failure(
         for (start, end, label) in mistake.related {
             diagnostic = diagnostic.with_related(SpanInfo::from_byte_range_in_source(source, start, end), label);
         }
+        let applicability = mistake.applicability;
         if let Some((title, edits)) = mistake.fix {
             match check_fix(rule, source, &edits, failure.position) {
                 FixCheck::Parses(repaired) => {
                     repaired_source = Some(repaired);
-                    diagnostic = diagnostic.with_fix(Fix::new(title, Applicability::MachineApplicable, edits));
+                    diagnostic = diagnostic.with_fix(Fix::new(title, applicability, edits));
                 }
                 FixCheck::GetsPast => {
-                    diagnostic = diagnostic.with_fix(Fix::new(title, Applicability::MachineApplicable, edits));
+                    diagnostic = diagnostic.with_fix(Fix::new(title, applicability, edits));
                 }
                 FixCheck::Fails => {}
             }
@@ -298,6 +304,7 @@ const ITEM_WORDS: &[&str] = &[
 
 fn detect_mistake(source: &str, failure: &ParseFailure, construct: Option<&Construct>) -> Option<Mistake> {
     reserved_word(source, failure)
+        .or_else(|| long_character_literal(source, failure))
         .or_else(|| host_without_parameters(failure))
         .or_else(|| increment_operator(source, failure))
         .or_else(|| typed_let(source, failure))
@@ -331,6 +338,36 @@ fn reserved_word(source: &str, failure: &ParseFailure) -> Option<Mistake> {
         Mistake::new(codes::RESERVED_WORD, "reserved words cannot name bindings, parameters, fields or items");
     mistake.message = Some(format!("`{word}` is a reserved word; choose another name"));
     mistake.label = Some("reserved word".to_string());
+    Some(mistake)
+}
+
+/// `'hello'`: single quotes around more than one character, meant as a string.
+fn long_character_literal(source: &str, failure: &ParseFailure) -> Option<Mistake> {
+    let position = failure.position.min(source.len());
+    let line_start = source[..position].rfind('\n').map_or(0, |index| index + 1);
+    let open = line_start + source[line_start..position].rfind('\'')?;
+    let line_end = source[open..].find('\n').map_or(source.len(), |index| open + index);
+    let close = open + 1 + source[open + 1..line_end].find('\'')?;
+    let text = &source[open + 1..close];
+    // One character or one escape is a valid character literal, not this mistake.
+    if close < position || text.chars().count() < 2 || text.starts_with('\\') {
+        return None;
+    }
+    let escaped = text.replace('"', "\\\"");
+    let replacement = format!("\"{escaped}\"");
+    let mut mistake = Mistake::new(
+        codes::LONG_CHARACTER_LITERAL,
+        format!("single quotes hold one character; for text, write the string `{replacement}`"),
+    );
+    mistake.message = Some("a character literal holds exactly one character".to_string());
+    mistake.span = Some((open, close + 1));
+    mistake.label = Some("more than one character".to_string());
+    mistake.fix = Some((
+        format!("Write the string `{replacement}`"),
+        vec![FixEdit::new(SpanInfo::from_byte_range_in_source(source, open, close + 1), replacement)],
+    ));
+    // A string has another type than a character; the surrounding code may need changes too.
+    mistake.applicability = Applicability::MaybeIncorrect;
     Some(mistake)
 }
 
@@ -496,6 +533,16 @@ fn unclosed_at_end(source: &str, failure: &ParseFailure) -> Option<Mistake> {
     let words = closers.chars().map(|ch| format!("`{ch}`")).collect::<Vec<_>>().join(" and ");
     mistake.fix = Some((format!("Insert {words}"), vec![FixEdit::insert(source.len(), text)]));
     Some(mistake)
+}
+
+/// `x > 0 ? 1 : 2`: `?` parses as the error-propagation operator, so the parse fails one token later.
+fn conditional_operator_help(source: &str, failure: &ParseFailure) -> Option<String> {
+    let found = failure.found.as_ref()?;
+    if found.is_punct(";") || found.is_punct(")") || found.is_punct(",") || found.is_punct("}") {
+        return None;
+    }
+    let previous = tokens_before(source, found.start).pop()?;
+    previous.is_punct("?").then(|| "Beskid has no `? :` operator; use `match` or an `if` block".to_string())
 }
 
 /// Help when the item or statement being parsed starts with another language's keyword

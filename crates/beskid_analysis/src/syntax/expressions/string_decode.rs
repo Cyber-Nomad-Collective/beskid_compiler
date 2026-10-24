@@ -36,6 +36,41 @@ pub fn decode_string_literal_token(token: &str) -> Result<String, ParseError> {
     Ok(out)
 }
 
+/// Decode a `'x'` character literal token (`'\n'`, `'\u{41}'`, `'\''`) to its character.
+///
+/// Error spans are relative to `token`.
+pub fn decode_char_literal_token(token: &str) -> Result<char, ParseError> {
+    decode_char_literal_at(token, 0)
+}
+
+/// Decode a character literal token that starts at byte `offset` of its source (error spans
+/// are then source offsets).
+pub(crate) fn decode_char_literal_at(token: &str, offset: usize) -> Result<char, ParseError> {
+    let body =
+        token.strip_prefix('\'').and_then(|rest| rest.strip_suffix('\'')).filter(|body| !body.is_empty()).ok_or(
+            ParseError::UnexpectedRule {
+                expected: Some(Rule::CharLiteral),
+                found: Rule::CharLiteral,
+                span: SpanInfo { start: offset, end: offset + token.len(), ..SpanInfo::default() },
+            },
+        )?;
+    if !body.starts_with('\\') {
+        return body.chars().next().ok_or(ParseError::MissingPair { expected: Rule::CharLiteral });
+    }
+    let span = SpanInfo { start: offset + 1, end: offset + 1 + body.len(), ..SpanInfo::default() };
+    if body == "\\'" {
+        return Ok('\'');
+    }
+    let mut decoded = String::new();
+    decode_string_escape(body, span, &mut decoded)?;
+    let mut chars = decoded.chars();
+    match (chars.next(), chars.next()) {
+        (Some(ch), None) => Ok(ch),
+        // `\${` is a string escape for two characters; a character literal has no use for it.
+        _ => Err(ParseError::UnknownStringEscape { span, escape: body.to_string() }),
+    }
+}
+
 /// Decode when the token is a plain string literal without `${ ... }` holes.
 pub fn try_decode_string_literal_token(token: &str) -> Option<String> {
     decode_string_literal_token(token).ok()
@@ -297,6 +332,36 @@ mod tests {
             assert_eq!(found, escape, "{token}");
             assert_eq!(&token[span.start..span.end], escape, "{token}");
         }
+    }
+
+    #[test]
+    fn decodes_character_literals_and_their_escapes() {
+        for (token, expected) in [
+            ("'a'", 'a'),
+            ("'\\n'", '\n'),
+            ("'\\t'", '\t'),
+            ("'\\r'", '\r'),
+            ("'\\0'", '\0'),
+            ("'\\''", '\''),
+            ("'\\\\'", '\\'),
+            ("'\\\"'", '"'),
+            ("'\\u{263A}'", '\u{263A}'),
+            ("'é'", 'é'),
+        ] {
+            assert_eq!(decode_char_literal_token(token), Ok(expected), "{token}");
+        }
+    }
+
+    #[test]
+    fn rejects_unknown_and_invalid_character_escapes() {
+        let err = decode_char_literal_token("'\\q'").expect_err("unknown escape");
+        let ParseError::UnknownStringEscape { span, escape } = err else { panic!("unexpected error {err:?}") };
+        assert_eq!((escape.as_str(), span.start, span.end), ("\\q", 1, 3));
+        let err = decode_char_literal_token("'\\${'").expect_err("two-character escape");
+        assert!(matches!(err, ParseError::UnknownStringEscape { .. }), "{err:?}");
+        let err = decode_char_literal_token("'\\u{D800}'").expect_err("surrogate");
+        let ParseError::InvalidUnicodeEscape { span, .. } = err else { panic!("unexpected error {err:?}") };
+        assert_eq!((span.start, span.end), (1, 9));
     }
 
     #[test]

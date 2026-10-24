@@ -112,7 +112,10 @@ impl crate::parsing::parsable::Parsable for Literal {
                 }
                 Self::String(text.to_string())
             }
-            crate::parser::Rule::CharLiteral => Self::Char(text.to_string()),
+            crate::parser::Rule::CharLiteral => {
+                super::string_decode::decode_char_literal_at(text, span.start)?;
+                Self::Char(text.to_string())
+            }
             crate::parser::Rule::Literal => {
                 let mut inner = pair.clone().into_inner();
                 if let Some(inner_pair) = inner.next() {

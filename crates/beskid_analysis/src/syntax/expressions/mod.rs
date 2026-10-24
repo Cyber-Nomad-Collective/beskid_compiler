@@ -58,7 +58,7 @@ pub use pattern::{EnumPattern, Pattern};
 pub use move_expression::MoveExpression;
 pub use spawn_expression::SpawnExpression;
 pub use string_decode::{
-    StringLiteralPart, decode_string_literal_token, split_string_literal_parts, split_string_literal_token,
+    StringLiteralPart, decode_char_literal_token, decode_string_literal_token, split_string_literal_parts, split_string_literal_token,
     try_decode_string_literal, try_decode_string_literal_token,
 };
 pub use struct_literal_expression::StructLiteralExpression;
