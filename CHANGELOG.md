@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Runtime: Main as the root fiber, shutdown, child processes
+
+- `Main` parks like any other fiber. A blocking `Channel.Receive` or
+  `Channel.Send`, `WaitGroup.Wait`, `Mutex.Lock` or `Hub.WaitReceive` in
+  `Main` drives the scheduler until another fiber or pending I/O lets it
+  complete, as `Join` already did. `Receive` on an empty channel in `Main`
+  returned `Closed(0)`. When nothing can make progress the runtime traps with
+  a deadlock.
+- Returning from `Main` ends the process while a detached fiber is parked in
+  I/O, for example in `Input.ReadLine()`. The worker pool no longer joins a
+  worker blocked in the OS call of a cancelled request; the orphaned worker
+  frees its request when the call returns.
+- A child program name without a path separator resolves through the `PATH`
+  of the child's environment, like `execvp`; on Windows a name without an
+  extension gets `.exe`. `Process.Run("beskid", ...)` now finds `beskid`.
+- Corelib: `Process.Run` returns `Ok(output)` whenever the child started and
+  keeps stdout and stderr; `ProcessError::ExitCode` is removed and
+  `Process.Message(error)` describes an error. `ChannelError` and
+  `Concurrency.Status` gain `Unexpected(i64 code)`, and `ChannelError::Closed`
+  carries the channel handle.
+
 ## [0.6.6] - 2026-10-16
 
 This release carries the v0.6.1-v0.6.5 program as one release (OpenSpec changes
