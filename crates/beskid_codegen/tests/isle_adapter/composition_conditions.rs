@@ -1000,6 +1000,102 @@ i32 Main() { launch AppHost(); return 0; }
     }
 }
 
+/// Lower every function and method of `source` with its frozen composition plan attached.
+fn lower_composed(source: &str) -> beskid_codegen::CodegenArtifact {
+    use std::sync::Arc;
+
+    use beskid_analysis::composition::{CompositionInput, resolve_composition};
+
+    let (input, isa, root) = item_fixture_with_root(source);
+    let result = resolve_composition(CompositionInput {
+        program: &input.typed_program().assembly.entry_unit().program,
+        is_mod_project: false,
+        types: &beskid_queries::CompositionTypes::new(input.database(), input.typed_program()),
+    });
+    assert!(result.issues.is_empty(), "composition must validate: {:?}", result.issues);
+    let mut snapshot = result.snapshot;
+    snapshot.source_unit_path = Some(root.unit.path(input.database()).to_path_buf());
+    let generation = input.typed_program().generation;
+    let input = input
+        .with_composition_authority(generation, Arc::new(result.plan), Arc::new(snapshot))
+        .expect("attach frozen composition authority");
+    let mut items = Vec::new();
+    for kind in [beskid_queries::IndexedNodeKind::FunctionDefinition, beskid_queries::IndexedNodeKind::MethodDefinition] {
+        for key in find_nodes_of_kind(input.database(), root, kind) {
+            let symbol = item_name(input.database(), key).expect("item query").expect("item name").to_string();
+            items.push(SyntaxModuleItem { symbol, key });
+        }
+    }
+    let artifact = lower_syntax_program(&input, isa.as_ref(), &items).expect("composed contract values lower");
+    beskid_codegen::validate_artifact(&artifact).expect("composed contract value artifact");
+    artifact
+}
+
+/// `inject Greeter[] all` with two registered implementations: activation boxes each
+/// implementation into the array with its own witness table, and a loop over the elements
+/// dispatches every call through the table.
+#[test]
+fn plural_contract_injection_boxes_every_implementation_and_dispatches_in_a_loop() {
+    let artifact = lower_composed(
+        r#"
+contract Greeter { i64 Rank(); }
+type Hello : Greeter { pub i64 Rank() { return 1_i64; } }
+type Bye : Greeter { pub i64 Rank() { return 2_i64; } }
+type Worker {
+    inject Greeter[] all;
+    pub i64 Total() {
+        mut i64 total = 0_i64;
+        mut i64 i = 0_i64;
+        while i < 2_i64 { total = total + all[i].Rank(); i = i + 1_i64; }
+        return total;
+    }
+}
+host AppHost() { registry { single Hello for Greeter; single Bye for Greeter; single Worker; } }
+i32 Main() { launch AppHost(); return 0; }
+"#,
+    );
+    let total = artifact.functions.iter().find(|function| function.name == "Total").expect("Total lowered");
+    let total = total.function.display().to_string();
+    assert!(total.contains("call_indirect"), "each element dispatches through its table:\n{total}");
+    assert_eq!(artifact.witness_tables.len(), 2, "Hello and Bye: {:?}", artifact.witness_tables);
+    let main = artifact.functions.iter().find(|function| function.name == "Main").expect("Main lowered");
+    let main = main.function.display().to_string();
+    assert!(main.contains("__beskid_contract_box_reference_request_v5"), "activation boxes the implementations:\n{main}");
+}
+
+/// A singular `inject Greeter greeter` whose binding differs between the host registry and a
+/// scope: the field holds a box whose table is the binding of the activating scope, so the call
+/// dispatches at run time instead of naming one implementation.
+#[test]
+fn a_singular_contract_injection_bound_differently_per_scope_dispatches_at_run_time() {
+    let artifact = lower_composed(
+        r#"
+contract Greeter { i64 Rank(); }
+type Hello : Greeter { pub i64 Rank() { return 1_i64; } }
+type Bye : Greeter { pub i64 Rank() { return 2_i64; } }
+type Worker {
+    inject Greeter greeter;
+    pub i64 Rank() { return greeter.Rank(); }
+}
+host AppHost() {
+    registry { single Hello for Greeter; transient Worker; }
+    scope Request() { single Bye for Greeter; transient Worker; }
+}
+i32 Main() { launch AppHost(); with Request() { return 0; } }
+"#,
+    );
+    let rank = artifact
+        .functions
+        .iter()
+        .find(|function| function.name.ends_with("Rank") && function.function.display().to_string().contains("+16"))
+        .map(|function| function.function.display().to_string())
+        .unwrap_or_else(|| {
+            panic!("Worker.Rank lowered: {:?}", artifact.functions.iter().map(|f| f.name.as_str()).collect::<Vec<_>>())
+        });
+    assert!(rank.contains("call_indirect"), "two bindings: the call dispatches through the box:\n{rank}");
+    assert_eq!(artifact.witness_tables.len(), 2, "Hello and Bye: {:?}", artifact.witness_tables);
+}
+
 /// A `mut` contract-typed local may hold any implementation, so a contract call on it resolves
 /// to the contract method and dispatches through the box's witness table (runtime contract
 /// dispatch, v0.6.7).
