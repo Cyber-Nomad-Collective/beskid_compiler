@@ -545,14 +545,32 @@ fn compound_assignment_to_an_immutable_local_is_e1214() {
     }
 }
 
+/// Lower every function of `source` (so calls between them resolve) and return the CLIF of the
+/// last one, named `symbol`; the others are named `symbol_0`, `symbol_1`, ... in source order.
 fn lower_one(source: &str, symbol: &str) -> Result<String, String> {
     let (input, isa, root) = item_fixture_with_root(source);
-    let function = *find_function_definitions(input.database(), root).last().expect("function");
-    if let Err(findings) = beskid_queries::check_items(input.database(), &[function]) {
+    let functions = find_function_definitions(input.database(), root);
+    assert!(!functions.is_empty(), "function");
+    if let Err(findings) = beskid_queries::check_items(input.database(), &functions) {
         return Err(format!("{findings:?}"));
     }
-    lower_syntax_program(&input, isa.as_ref(), &[SyntaxModuleItem { key: function, symbol: symbol.into() }])
-        .map(|artifact| artifact.functions.iter().map(|lowered| lowered.function.display().to_string()).collect())
+    let items = functions
+        .iter()
+        .enumerate()
+        .map(|(index, key)| SyntaxModuleItem {
+            key: *key,
+            symbol: if index + 1 == functions.len() { symbol.into() } else { format!("{symbol}_{index}").into() },
+        })
+        .collect::<Vec<_>>();
+    lower_syntax_program(&input, isa.as_ref(), &items)
+        .map(|artifact| {
+            artifact
+                .functions
+                .iter()
+                .find(|lowered| lowered.name == symbol)
+                .map(|lowered| lowered.function.display().to_string())
+                .unwrap_or_default()
+        })
         .map_err(|error| error.to_string())
 }
 

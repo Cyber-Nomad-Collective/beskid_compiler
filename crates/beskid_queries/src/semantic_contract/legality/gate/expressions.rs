@@ -42,12 +42,13 @@ fn collect_conditional_obligations(
         let Some(conditional) = index.node_at(program, node).and_then(|node| node.of::<ConditionalExpression>()) else {
             continue;
         };
-        if let Some((site, _, ty)) = proven_operand(db, program, index, key, node, &conditional.condition)
+        // The condition's own value node is the site: the wrapper's span runs to the `?`.
+        if let Some((_, subject, ty)) = proven_operand(db, program, index, key, node, &conditional.condition)
             && !matches!(ty, SemanticTypeId::BOOL | SemanticTypeId::NEVER | SemanticTypeId::POINTER)
         {
             findings.push(GateObligation {
                 kind: GateObligationKind::ConditionalConditionNotBool,
-                site: AstNodeKey { node: site, ..key },
+                site: AstNodeKey { node: subject, ..key },
             });
         }
         if is_numeric_literal_branch(&conditional.then_branch.node) || is_numeric_literal_branch(&conditional.else_branch.node) {
@@ -63,28 +64,19 @@ fn collect_conditional_obligations(
         };
         let then_key = AstNodeKey { node: then_subject, ..key };
         let else_key = AstNodeKey { node: else_subject, ..key };
-        let (Some(then_type), Some(else_type)) =
-            (super::super::typing::proven_type(db, then_key), super::super::typing::proven_type(db, else_key))
+        // A proven primitive is its ABI type; a nominal, array or function value is its source
+        // identity (`Point`, `u8[]`). Either side unproven, or `never`: nothing to judge.
+        let (Some(then_identity), Some(else_identity)) =
+            (super::super::values::value_identity(db, then_key), super::super::values::value_identity(db, else_key))
         else {
             continue;
         };
-        if then_type == SemanticTypeId::NEVER || else_type == SemanticTypeId::NEVER {
+        let never = |identity: &GenericSourceTypeIdentity| identity.abi_type() == SemanticTypeId::NEVER;
+        if never(&then_identity) || never(&else_identity) || then_identity == else_identity {
             continue;
         }
-        let mismatch = if then_type == SemanticTypeId::POINTER && else_type == SemanticTypeId::POINTER {
-            // Two nominal values: compare their source identities when both are proven.
-            match (super::super::values::value_identity(db, then_key), super::super::values::value_identity(db, else_key)) {
-                (Some(then_identity), Some(else_identity)) if then_identity != else_identity => {
-                    Some((then_identity.display_name(), else_identity.display_name()))
-                }
-                _ => None,
-            }
-        } else if then_type != else_type {
-            Some((then_type.display_name(), else_type.display_name()))
-        } else {
-            None
-        };
-        if let Some((then_name, else_name)) = mismatch {
+        {
+            let (then_name, else_name) = (then_identity.display_name(), else_identity.display_name());
             findings.push(GateObligation {
                 kind: GateObligationKind::ConditionalBranchMismatch {
                     then_site: AstNodeKey { node: then_site, ..key },
