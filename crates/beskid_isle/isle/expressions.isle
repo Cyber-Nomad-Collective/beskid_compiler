@@ -9,6 +9,8 @@
 (extern constructor emit_try_expression emit_try_expression)
 (decl partial emit_try_statement (AstNodeKey) Unit)
 (extern constructor emit_try_statement emit_try_statement)
+(decl partial emit_conditional (AstNodeKey) Value)
+(extern constructor emit_conditional emit_conditional)
 
 (rule (lower_expression key @ (node_kind (NodeKind.GroupedExpression)))
       (lower_expression (child_at key 0)))
@@ -20,6 +22,8 @@
       (emit_lambda key))
 (rule (lower_expression key @ (node_kind (NodeKind.TryExpression)))
       (emit_try_expression key))
+(rule (lower_expression key @ (node_kind (NodeKind.ConditionalExpression)))
+      (emit_conditional key))
 (rule (lower_statement key @ (node_kind (NodeKind.TryExpression)))
       (emit_try_statement key))
 

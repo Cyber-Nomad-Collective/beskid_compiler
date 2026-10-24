@@ -102,6 +102,12 @@ impl SyntaxNodeFacts<'_> {
         {
             return Some(managed);
         }
+        // `cond ? a : b` is classified like the branch that types it (both branches agree).
+        if self.query(node_kind(self.db, key)) == Some(beskid_queries::IndexedNodeKind::ConditionalExpression)
+            && let Some(branch) = self.query(beskid_queries::conditional_result_branch(self.db, key))
+        {
+            return self.managed_reference_in_context(branch);
+        }
         if self.query(node_kind(self.db, key)) == Some(beskid_queries::IndexedNodeKind::PathExpression)
             && let Some(binding) = self.specialized_pattern_binding(key)
         {

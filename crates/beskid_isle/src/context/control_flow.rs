@@ -121,6 +121,29 @@ impl IsleContext<'_, '_, '_, '_> {
         if kind == NodeKind::ClifBlock {
             return clif_block::lower_clif_block_for_effect(self, key);
         }
+        // A `unit`-valued `cond ? a : b` (two calls of `unit` functions) has no value to merge:
+        // evaluate the condition, then exactly one branch for its effects.
+        if kind == NodeKind::ConditionalExpression && self.is_unit_value(key) {
+            let condition_key = self.facts.child(key, 0)?;
+            let then_key = self.facts.child(key, 1)?;
+            let else_key = self.facts.child(key, 2)?;
+            let condition = self.lower_nested_expression(condition_key)?;
+            let then_block = self.builder.create_block();
+            let else_block = self.builder.create_block();
+            let merge_block = self.builder.create_block();
+            self.builder.ins().brif(condition, then_block, &[], else_block, &[]);
+            self.builder.switch_to_block(then_block);
+            self.builder.seal_block(then_block);
+            self.lower_expression_for_effect(then_key)?;
+            jump_from_current_if_unterminated(self.builder, merge_block);
+            self.builder.switch_to_block(else_block);
+            self.builder.seal_block(else_block);
+            self.lower_expression_for_effect(else_key)?;
+            jump_from_current_if_unterminated(self.builder, merge_block);
+            self.builder.switch_to_block(merge_block);
+            self.builder.seal_block(merge_block);
+            return Some(());
+        }
         if self.facts.semantic_type(key) == Some(beskid_queries::SemanticTypeId::UNIT)
             && matches!(kind, NodeKind::FieldExpression | NodeKind::AssignExpression)
         {
@@ -217,6 +240,40 @@ macro_rules! generated_control_flow_methods {
 
         fn emit_clif_block(&mut self, key: AstNodeKey) -> Option<Value> {
             clif_block::lower_clif_block(self, key)
+        }
+
+        /// `cond ? a : b`: branch on the condition, lower exactly one branch in its own block,
+        /// and merge the chosen value through one block parameter of the conditional's CLIF
+        /// type. A bare literal branch lowered at its default width is adapted to that type
+        /// (sign- or zero-extended by its semantic signedness, reduced, promoted or demoted), so
+        /// `c ? 1 : 2_i64` merges two `i64` values.
+        fn emit_conditional(&mut self, key: AstNodeKey) -> Option<Value> {
+            let condition_key = self.facts.child(key, 0)?;
+            let then_key = self.facts.child(key, 1)?;
+            let else_key = self.facts.child(key, 2)?;
+            let result_type = self.facts.scalar_type(key)?;
+            let condition = self.lower_nested_expression(condition_key)?;
+            let then_block = self.builder.create_block();
+            let else_block = self.builder.create_block();
+            let merge_block = self.builder.create_block();
+            self.builder.append_block_param(merge_block, result_type);
+            self.builder.ins().brif(condition, then_block, &[], else_block, &[]);
+
+            self.builder.switch_to_block(then_block);
+            self.builder.seal_block(then_block);
+            let then_value = self.lower_nested_expression(then_key)?;
+            let then_value = self.adapt_scalar_boundary(then_key, then_value, result_type)?;
+            self.builder.ins().jump(merge_block, &[then_value.into()]);
+
+            self.builder.switch_to_block(else_block);
+            self.builder.seal_block(else_block);
+            let else_value = self.lower_nested_expression(else_key)?;
+            let else_value = self.adapt_scalar_boundary(else_key, else_value, result_type)?;
+            self.builder.ins().jump(merge_block, &[else_value.into()]);
+
+            self.builder.switch_to_block(merge_block);
+            self.builder.seal_block(merge_block);
+            self.builder.block_params(merge_block).first().copied()
         }
 
         fn emit_return(&mut self, key: AstNodeKey) -> Option<()> {

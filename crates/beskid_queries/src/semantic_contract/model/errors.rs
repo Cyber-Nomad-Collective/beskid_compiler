@@ -225,5 +225,5 @@ pub type SemanticQueryResult<T> = Result<Option<T>, SemanticError>;
 pub struct SemanticFinding {
     pub kind: beskid_analysis::analysis::SemanticIssueKind,
     pub site: AstNodeKey,
-    pub related: Vec<(AstNodeKey, &'static str)>,
+    pub related: Vec<(AstNodeKey, std::borrow::Cow<'static, str>)>,
 }

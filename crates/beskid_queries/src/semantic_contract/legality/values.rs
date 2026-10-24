@@ -170,7 +170,7 @@ fn generic_declared_destination(
 
 /// The identity of a value: its proven primitive, its source expression identity, or the
 /// declared result of a call through a local of function type.
-fn value_identity(db: &dyn Db, value: AstNodeKey) -> Option<Identity> {
+pub(super) fn value_identity(db: &dyn Db, value: AstNodeKey) -> Option<Identity> {
     match proven_type(db, value) {
         Some(ty) if ty != SemanticTypeId::POINTER => Some(Identity::Abi(ty)),
         _ => generic_source_expression_identity(db, value).ok().or_else(|| callable_value_call_result(db, value)),

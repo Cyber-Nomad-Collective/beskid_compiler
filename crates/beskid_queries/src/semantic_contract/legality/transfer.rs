@@ -111,7 +111,7 @@ fn type_findings(db: &dyn Db, key: AstNodeKey, definition: &TypeDefinition, find
                     cause: format!("field `{field_name}`"),
                 },
                 site: marker_site,
-                related: vec![(field_site, "never-transferable field")],
+                related: vec![(field_site, "never-transferable field".into())],
             });
             continue;
         }

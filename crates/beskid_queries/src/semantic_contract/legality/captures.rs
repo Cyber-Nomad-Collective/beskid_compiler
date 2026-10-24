@@ -393,7 +393,7 @@ fn judge_lambda(
         } else {
             SemanticIssueKind::BorrowEscapes { name }
         };
-        let related = if owning { Vec::new() } else { vec![(declaration, "borrowed here")] };
+        let related = if owning { Vec::new() } else { vec![(declaration, "borrowed here".into())] };
         findings.push(SemanticFinding { kind, site, related });
     }
 }
@@ -518,7 +518,7 @@ pub(super) fn isolate_spawn_findings(db: &dyn Db, key: AstNodeKey) -> Vec<Semant
                     actual_name: identity_spelling(&identity),
                 },
                 site: body,
-                related: vec![(call, "in this call")],
+                related: vec![(call, "in this call".into())],
             });
             continue;
         };
@@ -529,7 +529,7 @@ pub(super) fn isolate_spawn_findings(db: &dyn Db, key: AstNodeKey) -> Vec<Semant
                     actual_name: identity_spelling(&identity),
                 },
                 site: body,
-                related: vec![(call, "in this call")],
+                related: vec![(call, "in this call".into())],
             });
             continue;
         }
@@ -543,7 +543,7 @@ pub(super) fn isolate_spawn_findings(db: &dyn Db, key: AstNodeKey) -> Vec<Semant
                     class: class.to_string(),
                 },
                 site: body,
-                related: vec![(call, "in this call")],
+                related: vec![(call, "in this call".into())],
             });
         }
     }
@@ -757,7 +757,7 @@ pub(super) fn repeated_capture_argument_findings(db: &dyn Db, key: AstNodeKey) -
                         .to_owned(),
                 },
                 site: argument,
-                related: vec![(call, "in this call")],
+                related: vec![(call, "in this call".into())],
             });
         }
     }

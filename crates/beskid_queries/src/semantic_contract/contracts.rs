@@ -976,6 +976,12 @@ pub(super) fn specialized_source_expression_identity(
             &environment,
         );
     }
+    // `cond ? a : b` has the identity of its result branch in this environment.
+    if node.of::<beskid_analysis::syntax::ConditionalExpression>().is_some() {
+        let branch = conditional_result_branch_key(program, index, key)
+            .ok_or_else(|| source_expression_unavailable(db, key, "conditional expression has no result branch"))?;
+        return specialized_source_expression_identity(db, branch, Some(enclosing));
+    }
     // A constructor and a lambda are typed by their position's expectation in this environment.
     if let Some(constructor) = node.of::<beskid_analysis::syntax::EnumConstructorExpression>() {
         return applied_enum_constructor_identity(db, key, constructor, Some(enclosing));

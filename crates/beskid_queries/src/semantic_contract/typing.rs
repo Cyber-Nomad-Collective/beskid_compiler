@@ -1,5 +1,6 @@
 //! Focused semantic-contract implementation cluster.
 
+mod conditional;
 mod expression;
 mod managed_reference;
 mod match_binding;
@@ -20,5 +21,8 @@ pub use match_binding::pattern_binding_specialization;
 pub(in crate::semantic_contract) use match_binding::{
     enum_match_pattern_binding, pattern_binding_fact, pattern_binding_fact_in_environment,
     pattern_binding_semantic_type,
+};
+pub(in crate::semantic_contract) use conditional::{
+    conditional_result_branch, conditional_result_branch_key, conditional_result_branch_tracked, is_numeric_literal_branch,
 };
 pub(in crate::semantic_contract) use node_type::{match_arms_result_semantic_type, node_type_tracked};

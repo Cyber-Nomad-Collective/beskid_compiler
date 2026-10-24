@@ -169,6 +169,7 @@ pub(in crate::semantic_contract) fn expression_fact_target(kind: beskid_analysis
             | NodeKind::SpawnExpression
             | NodeKind::LambdaExpression
             | NodeKind::MatchExpression
+            | NodeKind::ConditionalExpression
             | NodeKind::Literal
     )
 }

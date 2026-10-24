@@ -49,6 +49,10 @@ pub(in crate::semantic_contract) fn semantic_type_for_node(
         }
         return result.map(Ok).or_else(|| Some(Err(SemanticError::unavailable("node_type"))));
     }
+    if let Some(conditional) = node.of::<beskid_analysis::syntax::ConditionalExpression>() {
+        let branch = super::conditional_result_branch(conditional);
+        return Some(semantic_type_for_expression(program, index, reference, &branch.node));
+    }
     if let Some(expression) = node.of::<beskid_analysis::syntax::Expression>() {
         return Some(semantic_type_for_expression(program, index, reference, expression));
     }
@@ -90,6 +94,10 @@ pub(in crate::semantic_contract) fn semantic_type_for_expression(
         ),
         beskid_analysis::syntax::Expression::Unary(unary) => {
             semantic_type_for_unary_operand(program, index, reference, &unary.node)
+        }
+        beskid_analysis::syntax::Expression::Conditional(conditional) => {
+            let branch = super::conditional_result_branch(&conditional.node);
+            semantic_type_for_expression(program, index, reference, &branch.node)
         }
         _ => Err(SemanticError::unavailable("node_type")),
     }

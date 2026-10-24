@@ -49,6 +49,12 @@ pub(in crate::semantic_contract) fn generic_source_expression_identity(
     if let Some(literal) = node.of::<beskid_analysis::syntax::LiteralExpression>() {
         return Ok(GenericSourceTypeIdentity::Abi(semantic_type_for_literal(&literal.literal.node)));
     }
+    // `cond ? a : b` has the identity of its result branch (the non-literal branch).
+    if node.of::<beskid_analysis::syntax::ConditionalExpression>().is_some() {
+        let branch = conditional_result_branch_key(program, index, normalized_key)
+            .ok_or_else(|| source_expression_unavailable(db, normalized_key, "conditional expression has no result branch"))?;
+        return generic_source_expression_identity(db, branch);
+    }
     if let Some(literal) = node.of::<beskid_analysis::syntax::StructLiteralExpression>() {
         return generic_source_path_identity(db, normalized_key, &literal.path.node);
     }

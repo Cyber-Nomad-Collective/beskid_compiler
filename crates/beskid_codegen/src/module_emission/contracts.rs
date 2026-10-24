@@ -135,7 +135,7 @@ fn finding_diagnostic(
             related_unit.logical_name.clone(),
             related_unit.source.clone(),
             related_span,
-            *label,
+            label.to_string(),
         );
     }
     Some(diagnostic)

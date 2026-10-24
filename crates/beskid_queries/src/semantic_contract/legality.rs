@@ -494,7 +494,7 @@ pub fn check_items(db: &dyn Db, items: &[AstNodeKey]) -> Result<(), Vec<Semantic
             findings.extend(bindings.into_iter().map(|binding| SemanticFinding {
                 kind: SemanticIssueKind::ImmutableAssignment { name: binding.name.to_string(), binding: binding.binding },
                 site: binding.declaration,
-                related: binding.assignments.into_iter().map(|assignment| (assignment, "assigned again")).collect(),
+                related: binding.assignments.into_iter().map(|assignment| (assignment, "assigned again".into())).collect(),
             }));
         }
         if let Ok(Some(finding)) = unresolved_call_target(db, item) {
@@ -593,7 +593,7 @@ pub fn check_items(db: &dyn Db, items: &[AstNodeKey]) -> Result<(), Vec<Semantic
                     actual_name: finding.actual.to_string(),
                 },
                 site: finding.argument,
-                related: vec![(finding.call, "in this call")],
+                related: vec![(finding.call, "in this call".into())],
             });
         }
         if let Ok(Some(finding)) = call_arity_mismatch(db, item) {
@@ -2012,5 +2012,93 @@ mod tests {
         let codes = captures_codes("unit Main(move u8[] data) { i64 id = __isolate_spawn<i64>(() => Len(data), 0); return; }", 6761);
         assert!(codes.contains(&"E1237".to_owned()), "{codes:?}");
     }
-}
 
+    /// `(code, message, site text, related labels)` of every gate-obligation finding of the last
+    /// function.
+    fn conditional_report(source: &str, generation: u64) -> Vec<(String, String, String, Vec<String>)> {
+        let (db, root) = one_unit_assembly(source, SyntaxGenerationId(generation));
+        let key = *function_definitions(&db, root).last().expect("function");
+        super::check_gate_obligations(&db, &[key])
+            .into_iter()
+            .map(|finding| {
+                let span = crate::node_span(&db, finding.site).expect("span").expect("site span");
+                (
+                    finding.kind.code().to_string(),
+                    finding.kind.message(),
+                    source[span.start..span.end].to_string(),
+                    finding.related.iter().map(|(_, label)| label.to_string()).collect(),
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn conditional_with_a_non_bool_condition_is_e1208_at_the_condition() {
+        let report = conditional_report("i32 F(i32 n, i32 a, i32 b) { return n ? a : b; }", 7101);
+        assert_eq!(report.len(), 1, "{report:?}");
+        assert_eq!(report[0].0, "E1208");
+        assert_eq!(report[0].2, "n", "anchored at the condition");
+        let report = conditional_report("i32 F(i32 n, i32 a, i32 b) { return n + 1 ? a : b; }", 7102);
+        assert_eq!(
+            report.iter().map(|finding| (finding.0.as_str(), finding.2.as_str())).collect::<Vec<_>>(),
+            vec![("E1208", "n + 1")]
+        );
+    }
+
+    #[test]
+    fn conditional_branches_of_two_typed_widths_are_e1206_at_the_else_branch_with_both_related() {
+        let report = conditional_report("i64 F(bool c, i32 a, i64 b) { return c ? a : b; }", 7103);
+        assert_eq!(report.len(), 1, "{report:?}");
+        let (code, message, site, related) = &report[0];
+        assert_eq!(code, "E1206");
+        assert!(message.contains("i32") && message.contains("i64"), "{message}");
+        assert_eq!(site, "b", "anchored at the else-branch");
+        assert_eq!(related, &["this branch is `i32`", "this branch is `i64`"]);
+        let report = conditional_report("string F(bool c, string a, bool b) { return c ? a : b; }", 7104);
+        assert_eq!(report.iter().map(|finding| finding.0.as_str()).collect::<Vec<_>>(), vec!["E1206"]);
+        assert_eq!(report[0].3, ["this branch is `string`", "this branch is `bool`"]);
+    }
+
+    #[test]
+    fn conditional_branches_of_two_nominal_types_are_e1206_by_source_identity() {
+        let report = conditional_report(
+            "pub type Point { i64 x; } pub type Rect { i64 w; } \
+             Point F(bool c, Point p, Rect r) { return c ? p : r; }",
+            7105,
+        );
+        assert_eq!(report.len(), 1, "{report:?}");
+        assert_eq!(report[0].0, "E1206");
+        assert_eq!(report[0].2, "r");
+        assert_eq!(report[0].3, ["this branch is `Point`", "this branch is `Rect`"]);
+    }
+
+    #[test]
+    fn conditional_with_a_literal_branch_reports_no_branch_mismatch() {
+        for (source, generation) in [
+            ("i64 F(bool c) { return c ? 1 : 2_i64; }", 7106u64),
+            ("i64 F(bool c, i64 n) { return c ? n : 2; }", 7107),
+            ("i64 F(bool c, i64 n) { return c ? -1 : n; }", 7108),
+            ("i32 F(bool c, i32 a, i32 b) { return c ? a : b; }", 7109),
+            ("pub type Point { i64 x; } Point F(bool c, Point p, Point q) { return c ? p : q; }", 7110),
+        ] {
+            let report = conditional_report(source, generation);
+            assert!(report.is_empty(), "{source}: {report:?}");
+        }
+    }
+
+    #[test]
+    fn conditional_has_the_type_of_its_non_literal_branch() {
+        let source = "i64 F(bool c, i64 n) { i64 r = c ? 1 : n; return r; }";
+        let (db, root) = one_unit_assembly(source, SyntaxGenerationId(7111));
+        let key = function_definitions(&db, root)[0];
+        let mut conditionals = Vec::new();
+        nodes_of_kind(&db, key, IndexedNodeKind::ConditionalExpression, &mut conditionals);
+        assert_eq!(conditionals.len(), 1);
+        assert_eq!(node_type(&db, conditionals[0]).expect("query"), Some(SemanticTypeId::I64));
+        assert_eq!(abi_type(&db, conditionals[0]).expect("query"), Some(SemanticTypeId::I64));
+        let branch = crate::conditional_result_branch(&db, conditionals[0]).expect("query").expect("branch");
+        let span = crate::node_span(&db, branch).expect("span").expect("branch span");
+        assert_eq!(&source[span.start..span.end], "n");
+        assert!(super::check_typing_obligations(&db, &[key]).is_empty());
+    }
+}

@@ -607,3 +607,134 @@ fn string_compound_addition_concatenates() {
         Err(error) => assert!(!error.contains("E210"), "string += must not be an internal error: {error}"),
     }
 }
+
+/// `cond ? a : b` lowers for every value representation: a `brif` on the condition, one block per
+/// branch, and a merge block whose parameter carries the chosen value.
+#[test]
+fn conditional_expression_lowers_for_scalars_strings_and_nominal_types() {
+    let cases = [
+        ("i32 F(bool c, i32 a, i32 b) { return c ? a : b; }", "i32"),
+        ("bool F(bool c, bool a, bool b) { return c ? a : b; }", "i8"),
+        ("string F(bool c, string a, string b) { return c ? a : b; }", "i64"),
+        ("f64 F(bool c, f64 a, f64 b) { return c ? a : b; }", "f64"),
+        ("pub type Point { i64 x; } Point F(bool c, Point p1, Point p2) { Point p = c ? p1 : p2; return p; }", "i64"),
+    ];
+    for (source, merge_type) in cases {
+        let clif = lower_one(source, "F").unwrap_or_else(|error| panic!("must lower: {error}\n{source}"));
+        assert!(clif.contains("brif"), "`brif` expected for {source}:\n{clif}");
+        assert!(
+            has_single_parameter_block(&clif, merge_type),
+            "merge block with one `{merge_type}` parameter expected for {source}:\n{clif}"
+        );
+    }
+}
+
+/// Whether the CLIF text has a block header with exactly one parameter of `ty`
+/// (`block3(v5: i64):`), the shape of a conditional's merge block.
+fn has_single_parameter_block(clif: &str, ty: &str) -> bool {
+    clif.lines().map(str::trim).any(|line| {
+        line.starts_with("block") && line.ends_with(&format!(": {ty}):")) && line.matches(':').count() == 2
+    })
+}
+
+/// A conditional is an ordinary value: a `let` initializer, a call argument, a return value, and
+/// a nested else-branch (`c ? 1 : d ? 2 : 3`, right-associative) all lower.
+#[test]
+fn conditional_expression_lowers_in_value_positions_and_nests() {
+    let cases = [
+        "i32 F(bool c, i32 a, i32 b) { i32 x = c ? a : b; return x + 1; }",
+        "i64 G(i64 v) { return v; } i64 F(bool c, i64 a, i64 b) { return G(c ? a : b); }",
+        "i32 F(bool c, bool d) { return c ? 1 : d ? 2 : 3; }",
+        "i32 F(bool c, bool d, i32 a, i32 b, i32 e) { return c ? (d ? a : b) : e; }",
+    ];
+    for source in cases {
+        let clif = lower_one(source, "F").unwrap_or_else(|error| panic!("must lower: {error}\n{source}"));
+        assert!(clif.contains("brif"), "`brif` expected for {source}:\n{clif}");
+    }
+    let nested = "i32 F(bool c, bool d) { return c ? 1 : d ? 2 : 3; }";
+    let clif = lower_one(nested, "F").expect("nested conditional lowers");
+    assert_eq!(clif.matches("brif").count(), 2, "one `brif` per conditional:\n{clif}");
+}
+
+/// A bare numeric literal branch takes the other branch's type: `c ? 1 : 2_i64` is `i64` and the
+/// `i32`-lowered literal is extended before the merge; `c ? n : 2` with `i64 n` likewise.
+#[test]
+fn conditional_expression_literal_branch_takes_the_other_branch_type() {
+    let cases = [
+        "i64 F(bool c) { return c ? 1 : 2_i64; }",
+        "i64 F(bool c, i64 n) { return c ? n : 2; }",
+        "i64 F(bool c, i64 n) { return c ? -1 : n; }",
+        "u8 F(bool c, u8 n) { return c ? n : 2; }",
+    ];
+    for source in cases {
+        let clif = lower_one(source, "F").unwrap_or_else(|error| panic!("must lower: {error}\n{source}"));
+        assert!(clif.contains("brif"), "`brif` expected for {source}:\n{clif}");
+        let merge_type = if source.starts_with("u8") { "i8" } else { "i64" };
+        assert!(
+            has_single_parameter_block(&clif, merge_type),
+            "the merge carries the typed branch's width `{merge_type}` for {source}:\n{clif}"
+        );
+        assert!(!has_single_parameter_block(&clif, "i32"), "no `i32` merge for {source}:\n{clif}");
+    }
+}
+
+/// Only the chosen branch is evaluated: two calls in the branches of one conditional sit in two
+/// different blocks after the `brif`, never both in the entry block.
+#[test]
+fn conditional_expression_evaluates_only_the_chosen_branch() {
+    let source = "i64 First() { return 1; } i64 Second() { return 2; } \
+                  i64 F(bool c) { return c ? First() : Second(); }";
+    let clif = lower_one(source, "F").unwrap_or_else(|error| panic!("must lower: {error}"));
+    let blocks = clif.split("\nblock").skip(1).collect::<Vec<_>>();
+    let calling_blocks = blocks.iter().filter(|block| block.contains("call ")).count();
+    assert_eq!(calling_blocks, 2, "each call in its own block:\n{clif}");
+    let branching = blocks.iter().find(|block| block.contains("brif")).expect("a block branches on the condition");
+    assert!(!branching.contains("call "), "no call before the branch:\n{clif}");
+}
+
+/// A `unit`-valued conditional used as a statement (`c ? Left() : Right();`) evaluates exactly
+/// one branch for its effects.
+#[test]
+fn conditional_expression_statement_of_unit_calls_lowers() {
+    let source = "unit Left() { return; } unit Right() { return; } \
+                  unit F(bool c) { c ? Left() : Right(); return; }";
+    let clif = lower_one(source, "F").unwrap_or_else(|error| panic!("must lower: {error}"));
+    assert!(clif.contains("brif"), "{clif}");
+    assert_eq!(clif.matches("call ").count(), 2, "{clif}");
+}
+
+/// A well-formed conditional never leaves the gate with an internal error: the legality gate,
+/// the gate obligations, and the typing obligations are all clean.
+#[test]
+fn conditional_expression_is_clean_under_every_check_pass() {
+    let sources = [
+        "i32 F(bool c, i32 a, i32 b) { return c ? a : b; }",
+        "i64 F(bool c) { return c ? 1 : 2_i64; }",
+        "pub type Point { i64 x; } Point F(bool c, Point p1, Point p2) { return c ? p1 : p2; }",
+        "string F(bool c) { return c ? \"yes\" : \"no\"; }",
+    ];
+    for source in sources {
+        let (input, _isa, root) = item_fixture_with_root(source);
+        let function = *find_function_definitions(input.database(), root).last().expect("function");
+        let db = input.database();
+        if let Err(findings) = beskid_queries::check_items(db, &[function]) {
+            panic!("check_items must be clean for {source}: {findings:?}");
+        }
+        let findings = beskid_queries::check_gate_obligations(db, &[function]);
+        assert!(findings.is_empty(), "gate obligations must be clean for {source}: {findings:?}");
+        let findings = beskid_queries::check_typing_obligations(db, &[function]);
+        assert!(findings.is_empty(), "typing obligations must be clean for {source}: {findings:?}");
+    }
+}
+
+/// The branch mismatch of a conditional renders with both branches as related labels.
+#[test]
+fn conditional_expression_branch_mismatch_renders_both_branches_as_related() {
+    let source = "i64 F(bool c, i32 a, i64 b) { return c ? a : b; }";
+    let (input, _isa, root) = item_fixture_with_root(source);
+    let function = find_function_definitions(input.database(), root)[0];
+    let findings = beskid_queries::check_gate_obligations(input.database(), &[function]);
+    let finding = findings.iter().find(|finding| finding.kind.code() == "E1206").expect("E1206 for i32 against i64");
+    let labels = finding.related.iter().map(|(_, label)| label.as_ref()).collect::<Vec<_>>();
+    assert_eq!(labels, ["this branch is `i32`", "this branch is `i64`"]);
+}
