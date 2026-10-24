@@ -168,8 +168,8 @@ const COVERED_KINDS: &[(&str, &str, &str, &str)] = &[
     ("TypeError::UnsupportedExpression (index)", "TypeUnsupportedExpression", "E1202", "i64 Main(i64 n) { return n[0]; }"),
     (
         "TypeError::UnsupportedExpression (compound assignment)",
-        "TypeUnsupportedExpression",
-        "E1202",
+        "TypeInvalidCompoundAssignment",
+        "E1209",
         "unit Main() { mut bool b = true; b += false; return; }",
     ),
     (
