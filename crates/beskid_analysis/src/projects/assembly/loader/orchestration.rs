@@ -274,7 +274,7 @@ pub fn assemble_program_with_materializer(
         .num_threads(thread_cap.max(1))
         .stack_size(compiler_stack_size())
         .build()
-        .map_err(|err| AssemblyError::Parse { path: entry_path.to_path_buf(), message: err.to_string() })?;
+        .map_err(|err| AssemblyError::WorkerPool { message: err.to_string() })?;
 
     let project_root_for_pool = project_root.clone();
     let salsa_build = materializer.as_ref().map(|build| build.as_ref() as _);
@@ -307,16 +307,6 @@ pub fn assemble_program_with_materializer(
                         report_progress(pipeline, PROGRAM_ASSEMBLE, done, build_total.max(1), label);
                         Ok((discovered_index, input.is_entry, unit, syntax_index))
                     }
-                    Err(AssemblyError::Parse { path, message }) if options.skip_parse_errors && !input.is_entry => {
-                        tracing::warn!(
-                            target: "beskid.analysis.assembly",
-                            unit = %path.display(),
-                            file = %path.display(),
-                            error = %message,
-                            "skipping unparseable unit"
-                        );
-                        Err(AssemblyError::Parse { path, message: "skipped".to_string() })
-                    }
                     Err(AssemblyError::ParseDiagnostic { path, report })
                         if options.skip_parse_errors && !input.is_entry =>
                     {
@@ -327,7 +317,7 @@ pub fn assemble_program_with_materializer(
                             error = %report,
                             "skipping unparseable unit"
                         );
-                        Err(AssemblyError::Parse { path, message: "skipped".to_string() })
+                        Err(AssemblyError::Skipped { path })
                     }
                     Err(err) => Err(err),
                 };
@@ -335,10 +325,7 @@ pub fn assemble_program_with_materializer(
                 result
             })
             .filter(|result| {
-                !matches!(
-                    result,
-                    Err(AssemblyError::Parse { message, .. }) if message == "skipped"
-                )
+                !matches!(result, Err(AssemblyError::Skipped { .. }))
             })
             .collect()
     });

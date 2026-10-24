@@ -20,8 +20,18 @@ pub enum AssemblyError {
     GenerationExhausted,
     #[error("failed to read {path}: {source}")]
     Read { path: PathBuf, source: std::io::Error },
-    #[error("failed to parse {path}: {message}")]
-    Parse { path: PathBuf, message: String },
+    /// A unit left out of the assembly on purpose (`skip_parse_errors`); filtered before the
+    /// assembly is returned, never reported.
+    #[error("skipped unparseable unit {path}")]
+    Skipped { path: PathBuf },
+    /// Serializing a built unit into its cache snapshot failed.
+    #[error("failed to write the unit artifact for {path}: {message}")]
+    Artifact { path: PathBuf, message: String },
+    /// The compiler-declared runtime fixture does not match the plan.
+    #[error("runtime fixture for {path}: {message}")]
+    RuntimeFixture { path: PathBuf, message: String },
+    #[error("cannot start the assembly worker pool: {message}")]
+    WorkerPool { message: String },
     /// A parse failure that keeps the structured diagnostic (code, span, related locations and
     /// fixes), so `beskid check` and the editor render it like any other diagnostic.
     #[error("failed to parse {path}: {report}")]
@@ -121,11 +131,27 @@ pub fn assembly_options_for_prepare(plan: &CompilePlan, front_end_discovery: Ass
 
 impl AssemblyError {
     /// A parse failure of `path`; keeps the structured diagnostic when the parser produced one.
-    pub fn from_parse_failure(path: PathBuf, error: anyhow::Error) -> Self {
-        match error.downcast_ref::<crate::analysis::diagnostics::MietteReportError>() {
-            Some(report) => Self::ParseDiagnostic { path, report: report.clone() },
-            None => Self::Parse { path, message: error.to_string() },
-        }
+    pub fn from_parse_failure(path: PathBuf, source: &str, error: anyhow::Error) -> Self {
+        use crate::analysis::diagnostics::{MietteReportError, make_diagnostic};
+        let report = match error.downcast_ref::<MietteReportError>() {
+            Some(report) => report.clone(),
+            None => MietteReportError::new(make_diagnostic(
+                &path.display().to_string(),
+                source,
+                crate::syntax::SpanInfo {
+                    start: 0,
+                    end: source.len().min(1),
+                    line_col_start: (1, 1),
+                    line_col_end: (1, 1),
+                },
+                error.to_string(),
+                "cannot parse this",
+                None,
+                Some("parse".to_string()),
+                crate::analysis::Severity::Error,
+            )),
+        };
+        Self::ParseDiagnostic { path, report }
     }
 
     /// The structured diagnostic this error carries, if any.

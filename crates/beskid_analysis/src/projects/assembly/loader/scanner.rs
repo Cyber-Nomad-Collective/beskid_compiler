@@ -16,10 +16,11 @@ pub(crate) fn parse_program_for_discovery(
                 path: path.to_path_buf(),
                 report: crate::analysis::diagnostics::MietteReportError::new(first.clone()),
             },
-            None => super::AssemblyError::Parse {
-                path: path.to_path_buf(),
-                message: "the parser repaired the source".to_string(),
-            },
+            None => super::AssemblyError::from_parse_failure(
+                path.to_path_buf(),
+                source,
+                anyhow::anyhow!("the parser repaired the source"),
+            ),
         });
     }
     Ok(parsed.program)

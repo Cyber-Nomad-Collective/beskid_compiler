@@ -68,7 +68,7 @@ impl<'a> UnitBuilder<'a> {
         let logical_name = path.display().to_string();
         let program = crate::services::parse_program_with_source_name(&logical_name, source)
             .map(expand_syntax_for_assembly)
-            .map_err(|err| AssemblyError::from_parse_failure(path.to_path_buf(), err))?;
+            .map_err(|err| AssemblyError::from_parse_failure(path.to_path_buf(), source, err))?;
         let unit = SourceUnit::bind_request(path.to_path_buf(), logical_name, source.to_string(), program);
         let syntax_index = SyntaxIndex::from_program(&unit.program, generation);
         self.write_artifacts(&unit)?;
@@ -78,7 +78,7 @@ impl<'a> UnitBuilder<'a> {
     fn write_artifacts(&self, unit: &SourceUnit) -> Result<(), AssemblyError> {
         let imports = import_paths_from_program(&unit.program.node);
         let ast = source_unit_snapshot(unit, &imports)
-            .map_err(|err| AssemblyError::Parse { path: unit.path.clone(), message: err.to_string() })?;
+            .map_err(|err| AssemblyError::Artifact { path: unit.path.clone(), message: err.to_string() })?;
         if let Err(err) = self.store.write_unit(&ast) {
             log::warn!("failed to write unit artifact for {}: {err}", unit.path.display());
         }

@@ -50,7 +50,7 @@ pub(super) fn attach_runtime_fixture(
     mut assembly: ProgramAssembly,
     plan: &CompilePlan,
 ) -> Result<ProgramAssembly, AssemblyError> {
-    let failure = |message: &str| AssemblyError::Parse { path: plan.manifest_path.clone(), message: message.into() };
+    let failure = |message: &str| AssemblyError::RuntimeFixture { path: plan.manifest_path.clone(), message: message.into() };
     let Some(proof) = prove_runtime_fixture(
         &plan.manifest_path,
         &plan.target.name,
@@ -117,7 +117,7 @@ pub(super) fn attach_runtime_fixture(
         let path = canonical_source_path(&runtime_root, &assembled_foundation_root, &source.logical_path);
         let program =
             crate::services::parse_program_with_source_name(path.to_str().unwrap_or_default(), &source.source)
-                .map_err(|error| AssemblyError::Parse { path: path.clone(), message: error.to_string() })?;
+                .map_err(|error| AssemblyError::from_parse_failure(path.clone(), &source.source, error))?;
         units.push(SourceUnit {
             logical_name: source.logical_path,
             origin_path: path.clone(),
