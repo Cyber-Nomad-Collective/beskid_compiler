@@ -1,16 +1,22 @@
 //! Copy on assignment (v0.6.7, `language-meta--memory-model--memory-and-references` and
 //! `core-library--foundation-and-primitives--core-collections`).
 //!
-//! A type marked `[CopyOnAssign]` (Corelib `List<T>`) is a value: a read of a place of that type
-//! (a local, a parameter, a field or an array element) that stores the value under a new name
-//! calls the type's `This Copy()` method, so two names never share mutable storage. The copy
-//! positions are a `let` value, an assignment value, an argument of a parameter that is not
-//! `mut`, a struct field, array element or enum payload of a construction, and a returned place
-//! that the callable does not own (a field, an element, `this`, a `mut` parameter or a pattern
-//! binding). A method receiver, a `mut` parameter argument, a `move` operand, an operand of an
-//! operator and a match scrutinee read the place without a copy. Values of a type parameter are
-//! decided per specialization: inside `Get<T>` instantiated with `List<i64>`, `return
-//! values[index]` copies.
+//! A type marked `[CopyOnAssign]` (Corelib `List<T>` only) is a value: wherever a value of that
+//! type gets a new name, the compiler calls the type's `This Copy()` method, so a write through
+//! one name is never visible through another. `Copy` is copy-on-write: it returns a new value
+//! that shares the storage and marks the storage shared, and the first mutation through either
+//! name copies the storage. Read-only use costs one small allocation per new name and no
+//! element copy.
+//!
+//! A new name is made by a read of a place (a local, a parameter, a field, an array element, or
+//! the payload `r?` takes out of a `Result`/`Option`) in a copy position: a `let` value, an
+//! assignment value, an argument of a parameter that is not `mut`, a struct field, array
+//! element or enum payload of a construction, and a returned place that the callable does not
+//! own (a field, an element, `this`, a `mut` parameter or a pattern binding). The element an
+//! array `for` loop binds and every closure capture are new names too. A method receiver, a
+//! `mut` parameter argument, a `move` operand, an operator operand and a match scrutinee read
+//! the place without a copy. Values of a type parameter are decided per specialization: inside
+//! `Get<T>` instantiated with `List<i64>`, `return values[index]` copies.
 
 use beskid_analysis::syntax_query::{DynNodeRef, NodeKind, SyntaxIndex};
 
@@ -69,20 +75,95 @@ pub fn value_copy_specialization(
     let Ok(identity) = place_identity(db, key, enclosing) else {
         return Ok(None);
     };
-    let GenericSourceTypeIdentity::Nominal { arguments, .. } = &identity else {
+    hook_instance(db, key, &identity)
+}
+
+/// The `Copy` instance the element read of an array `for` loop calls before it binds the loop
+/// variable, so the variable is a copy of the element like any other binding.
+pub fn for_element_copy_specialization(
+    db: &dyn Db,
+    statement: AstNodeKey,
+    enclosing: Option<&GenericSpecializationInstance>,
+) -> SemanticQueryResult<GenericSpecializationInstance> {
+    let Some(syntax) = db.syntax_unit(statement.unit).filter(|syntax| syntax.accepts_key(db, statement)) else {
         return Ok(None);
     };
-    let Some(declaration) = concrete_declaration(db, key, &identity) else {
+    let index = syntax.syntax_index(db);
+    let program = syntax.expanded_program(db);
+    let Some(for_statement) =
+        index.node_at(program, statement.node).and_then(|node| node.of::<beskid_analysis::syntax::ForStatement>())
+    else {
+        return Ok(None);
+    };
+    let Some(iterable) = index.direct_child_id(program, statement.node, DynNodeRef::from(&for_statement.iterable))
+    else {
+        return Ok(None);
+    };
+    let Ok(GenericSourceTypeIdentity::Array(element)) =
+        specialized_source_expression_identity(db, AstNodeKey { node: iterable, ..statement }, enclosing)
+    else {
+        return Ok(None);
+    };
+    hook_instance(db, statement, &element)
+}
+
+/// The `Copy` instance a closure calls when it captures the local `declaration` (its declaring
+/// identifier), so the closure holds a copy like any other binding.
+pub fn capture_copy_specialization(
+    db: &dyn Db,
+    declaration: AstNodeKey,
+    enclosing: Option<&GenericSpecializationInstance>,
+) -> SemanticQueryResult<GenericSpecializationInstance> {
+    let identity = match enclosing {
+        Some(enclosing) => match super::contracts::specialized_local_declaration_identity(db, declaration, enclosing) {
+            Some(Ok(identity)) => Some(identity),
+            _ => None,
+        },
+        None => None,
+    };
+    let identity = match identity {
+        Some(identity) => identity,
+        None => {
+            let Some(syntax) = db.syntax_unit(declaration.unit).filter(|syntax| syntax.accepts_key(db, declaration))
+            else {
+                return Ok(None);
+            };
+            let Ok(identity) = generic_source_local_identity(
+                db,
+                syntax.expanded_program(db),
+                syntax.syntax_index(db),
+                declaration,
+                declaration.node,
+            ) else {
+                return Ok(None);
+            };
+            identity
+        }
+    };
+    hook_instance(db, declaration, &identity)
+}
+
+/// The exact `Copy` instance of a value of `identity`, or `None` when its type is not
+/// `[CopyOnAssign]`.
+fn hook_instance(
+    db: &dyn Db,
+    site: AstNodeKey,
+    identity: &GenericSourceTypeIdentity,
+) -> SemanticQueryResult<GenericSpecializationInstance> {
+    let GenericSourceTypeIdentity::Nominal { arguments, .. } = identity else {
+        return Ok(None);
+    };
+    let Some(declaration) = concrete_declaration(db, site, identity) else {
         return Ok(None);
     };
     let Some((hook, generics)) = copy_hook(db, declaration)? else {
         return Ok(None);
     };
     if generics.len() != arguments.len() {
-        return Err(SemanticError::unavailable_at("value_copy_specialization", key));
+        return Err(SemanticError::unavailable_at("value_copy_specialization", site));
     }
     let declaration_identity = stable_declaration_identity(db, hook)
-        .ok_or_else(|| SemanticError::unavailable_at("value_copy_specialization", key))?;
+        .ok_or_else(|| SemanticError::unavailable_at("value_copy_specialization", site))?;
     let substitutions = generics
         .iter()
         .zip(arguments.iter())
@@ -189,7 +270,7 @@ fn copy_position(
     let place = key.node;
     if !matches!(
         index.kind(place)?,
-        NodeKind::PathExpression | NodeKind::MemberExpression | NodeKind::IndexExpression
+        NodeKind::PathExpression | NodeKind::MemberExpression | NodeKind::IndexExpression | NodeKind::TryExpression
     ) {
         return None;
     }
@@ -419,5 +500,45 @@ mod tests {
         let key = place(&db, source, root, "p").expect("place");
         assert_eq!(value_copy_position(&db, key).expect("position"), Some(ValueCopyPosition::Binding));
         assert_eq!(value_copy_specialization(&db, key, None).expect("specialization"), None);
+    }
+
+    fn first_of_kind(db: &dyn Db, key: AstNodeKey, kind: IndexedNodeKind) -> Option<AstNodeKey> {
+        if node_kind(db, key).expect("node kind") == Some(kind) {
+            return Some(key);
+        }
+        child_nodes(db, key).expect("child nodes")?.iter().find_map(|child| first_of_kind(db, *child, kind))
+    }
+
+    #[test]
+    fn a_for_element_a_capture_and_a_try_payload_are_new_names() {
+        let source = format!(
+            "{BAG}i64 Loop(Bag<i64>[] bags) {{ for b in bags {{ b.Put(1_i64); }} return 0_i64; }} \
+             i64 Capture(Bag<i64> captured) {{ let f = () => captured.count; return f(); }} \
+             i64 Main() {{ return 0_i64; }}"
+        );
+        let (db, root) = assembly(&source, 6704);
+        let for_statement = first_of_kind(&db, root, IndexedNodeKind::ForStatement).expect("for statement");
+        let element = for_element_copy_specialization(&db, for_statement, None)
+            .expect("for element copy")
+            .expect("the loop variable is a copy of the element");
+        assert_eq!(item_name(&db, element.declaration).expect("hook name").as_deref(), Some("Copy"));
+        let lambda = first_of_kind(&db, root, IndexedNodeKind::LambdaExpression).expect("lambda");
+        let environment = closure_environment(&db, lambda).expect("closure environment").expect("captures");
+        let capture = environment.captures.first().expect("one capture");
+        let copied = capture_copy_specialization(&db, capture.declaration, None)
+            .expect("capture copy")
+            .expect("a captured list is a copy");
+        assert_eq!(item_name(&db, copied.declaration).expect("hook name").as_deref(), Some("Copy"));
+    }
+
+    #[test]
+    fn a_try_payload_in_a_binding_is_a_copy_position() {
+        let source = format!(
+            "{BAG}Core.Results.Result<Bag<i64>, i64> Make(Bag<i64> b) {{ return Core.Results.Result::Ok(b); }} \
+             Core.Results.Result<i64, i64> Main(Bag<i64> a) {{ Bag<i64> taken = Make(a)?; return Core.Results.Result::Ok(taken.count); }}"
+        );
+        let (db, root) = assembly(&source, 6705);
+        let try_expression = first_of_kind(&db, root, IndexedNodeKind::TryExpression).expect("try expression");
+        assert_eq!(value_copy_position(&db, try_expression).expect("position"), Some(ValueCopyPosition::Binding));
     }
 }

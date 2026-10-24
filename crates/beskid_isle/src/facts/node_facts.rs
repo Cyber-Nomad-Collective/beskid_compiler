@@ -30,6 +30,10 @@ pub trait NodeFacts {
     fn value_copy(&self, _key: AstNodeKey) -> Option<ValueCopyPlan> {
         None
     }
+    /// The `Copy` hook an array `for` loop calls on each element before binding its variable.
+    fn for_element_copy(&self, _key: AstNodeKey) -> Option<ValueCopyPlan> {
+        None
+    }
     fn node_kind(&self, key: AstNodeKey) -> Option<NodeKind>;
     fn literal_kind(&self, _key: AstNodeKey) -> Option<LiteralKind> {
         None

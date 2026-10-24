@@ -35,13 +35,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The checker enforces `[ScopeBorrowed]`: a scope-borrowed value that is
   returned, stored, passed to `spawn` or captured by an escaping closure is
   E1241.
-- Copy on assignment. A type marked `[CopyOnAssign]` declares `This Copy()`;
-  a read of a place of that type that stores the value under a new name (a
-  `let` value, an assignment, an argument of a parameter that is not `mut`, a
-  construction, or a return of a place the callable does not own) calls
-  `Copy`, so two names never share mutable storage. A `mut` parameter shares
-  the caller's value. Corelib `List<T>` is `[CopyOnAssign]`, which fixes two
-  live lists sharing one backing array (0.6.0).
+- Copy on assignment, copy-on-write. A type marked `[CopyOnAssign]` declares
+  `This Copy()`; wherever a value of that type gets a new name (a `let`
+  value, an assignment, an argument of a parameter that is not `mut`, a
+  construction, a return of a place the callable does not own, an array `for`
+  element, a closure capture, a `?` payload) the compiler calls `Copy`. A `mut`
+  parameter shares the caller's value. Corelib `List<T>` is the only
+  `[CopyOnAssign]` type; its `Copy` shares the backing array and marks it
+  shared, and the first write through any name copies it. This fixes two live
+  lists sharing one backing array (0.6.0) at no cost for read-only use.
 
 ## [0.6.6] - 2026-10-16
 

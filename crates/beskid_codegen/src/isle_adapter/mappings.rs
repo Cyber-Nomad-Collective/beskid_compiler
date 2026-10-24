@@ -168,3 +168,17 @@ mod tests {
         assert_eq!(runtime_intrinsic_kind_for_name("untrusted"), None);
     }
 }
+
+/// The callee and signature of one exact `Copy` hook instance. Module emission collects the same
+/// instance at the same site, so the callee is always among the emitted items.
+pub(crate) fn value_copy_plan(
+    isa: &dyn cranelift_codegen::isa::TargetIsa,
+    instance: &beskid_queries::GenericSpecializationInstance,
+) -> Option<beskid_isle::ValueCopyPlan> {
+    let callee = if instance.substitutions.is_empty() && instance.contract_witnesses.is_empty() {
+        beskid_isle::DirectCallee::item(instance.declaration)
+    } else {
+        beskid_isle::DirectCallee::specialized_item(instance.declaration, specialization_identity(instance))
+    };
+    Some(beskid_isle::ValueCopyPlan { callee, signature: signature_for_item(isa, instance.signature.clone())? })
+}

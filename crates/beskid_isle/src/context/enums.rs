@@ -716,7 +716,8 @@ macro_rules! generated_enum_methods {
         }
 
         fn emit_try_expression(&mut self, key: AstNodeKey) -> Option<Value> {
-            self.emit_try_dispatch(key)?
+            let value = self.emit_try_dispatch(key)??;
+            self.copy_on_assign(key, value)
         }
 
         fn emit_try_statement(&mut self, key: AstNodeKey) -> Option<()> {

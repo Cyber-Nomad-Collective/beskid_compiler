@@ -527,6 +527,10 @@ macro_rules! generated_control_flow_methods {
             };
             let address = self.builder.ins().iadd(data, offset);
             let element = self.builder.ins().load(element_type, MemFlagsData::new(), address, 0);
+            let element = match self.facts.for_element_copy(key) {
+                Some(plan) => self.call_copy_hook(key, &plan, element)?,
+                None => element,
+            };
             self.assign_local(slot, element)?;
             let body_scope_depth = self.local_root_scope_depth();
             self.begin_local_root_scope();

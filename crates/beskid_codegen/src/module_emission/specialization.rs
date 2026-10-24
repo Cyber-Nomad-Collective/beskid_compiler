@@ -490,19 +490,33 @@ fn collect_generic_call_specializations_in_environment(
             }
         }
     }
-    // A place read of a `[CopyOnAssign]` value in a copy position calls the type's `Copy` hook
-    // without a CallExpression node (v0.6.7 copy on assignment). Its exact instance in this
-    // environment is the callee ISLE imports at the read, so it joins this worklist like a
-    // direct call.
-    if matches!(
-        node_kind(db, key).map_err(|error| emission_verification(error.to_string()))?,
+    // A new name of a `[CopyOnAssign]` value (a place read in a copy position, an array `for`
+    // element, a closure capture) calls the type's `Copy` hook without a CallExpression node
+    // (v0.6.7 copy on assignment). Its exact instance in this environment is the callee ISLE
+    // imports there, so it joins this worklist like a direct call.
+    let kind = node_kind(db, key).map_err(|error| emission_verification(error.to_string()))?;
+    let copies = match kind {
         Some(
             beskid_queries::IndexedNodeKind::PathExpression
-                | beskid_queries::IndexedNodeKind::MemberExpression
-                | beskid_queries::IndexedNodeKind::IndexExpression
-        )
-    ) {
-        let copy = beskid_queries::value_copy_specialization(db, key, environment).map_err(|error| {
+            | beskid_queries::IndexedNodeKind::MemberExpression
+            | beskid_queries::IndexedNodeKind::IndexExpression
+            | beskid_queries::IndexedNodeKind::TryExpression,
+        ) => vec![beskid_queries::value_copy_specialization(db, key, environment)],
+        Some(beskid_queries::IndexedNodeKind::ForStatement) => {
+            vec![beskid_queries::for_element_copy_specialization(db, key, environment)]
+        }
+        Some(beskid_queries::IndexedNodeKind::LambdaExpression) => match beskid_queries::closure_environment(db, key) {
+            Ok(Some(closure)) => closure
+                .captures
+                .iter()
+                .map(|capture| beskid_queries::capture_copy_specialization(db, capture.declaration, environment))
+                .collect(),
+            _ => Vec::new(),
+        },
+        _ => Vec::new(),
+    };
+    for copy in copies {
+        let copy = copy.map_err(|error| {
             semantic_fact_error(
                 db,
                 key,

@@ -180,6 +180,8 @@ pub(in crate::module_emission) fn resolve_spawn_trampolines(
                                 field_offset: u32::try_from(field.field_offset).ok()?,
                                 pointer_map_index: field.pointer_map_index,
                                 value_type: map_signature_type(isa, field.abi_type)?,
+                                // The entry loads captures; the copy happens where the environment is built.
+                                copy: None,
                             })
                         })
                         .collect::<Option<Vec<_>>>()

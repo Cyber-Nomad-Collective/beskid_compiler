@@ -77,3 +77,19 @@ fn a_type_parameter_read_copies_in_the_specialization_that_binds_it_to_a_copy_on
         "the returned element copies only in First<Bag<i64>>: {names:?}"
     );
 }
+
+#[test]
+fn a_for_element_and_a_closure_capture_call_the_copy_hook() {
+    let functions = lower(&format!(
+        "{BAG} i64 Loop(Bag<i64>[] bags) {{ mut i64 total = 0; for bag in bags {{ total = total + bag.count; }} return total; }} \
+         i64 Apply(() => i64 read) {{ return read(); }} \
+         i64 Capture(Bag<i64> captured) {{ return Apply(() => captured.count); }}"
+    ));
+    let names = functions.iter().map(|(name, _)| name.as_str()).collect::<Vec<_>>();
+    assert_eq!(
+        names.iter().filter(|name| name.starts_with("Copy#generic_")).count(),
+        1,
+        "the loop element and the capture both call the Bag<i64> Copy instance: {names:?}"
+    );
+    assert!(calls_in(&functions, "Loop") >= 1, "{:?}", functions.iter().find(|(name, _)| name == "Loop"));
+}

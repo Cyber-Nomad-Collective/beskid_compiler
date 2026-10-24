@@ -55,7 +55,10 @@ mod modhost;
 mod output;
 mod persistence;
 mod semantic_contract;
-pub use semantic_contract::{ValueCopyPosition, value_copy_position, value_copy_specialization};
+pub use semantic_contract::{
+    ValueCopyPosition, capture_copy_specialization, for_element_copy_specialization, value_copy_position,
+    value_copy_specialization,
+};
 pub use semantic_contract::{
     CheckedFailureDestination, ReservedFailureConstructor, canonical_serialization_encode, checked_failure_destination,
     reserved_failure_constructor, serialization_publication_methods,

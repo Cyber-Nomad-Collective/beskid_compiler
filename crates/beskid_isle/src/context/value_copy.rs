@@ -1,8 +1,9 @@
-//! Copy on assignment (v0.6.7): a place read of a `[CopyOnAssign]` value in a copy position
-//! (a binding, an assignment, a non-`mut` argument, a construction or a return of a shared place)
-//! calls the type's `Copy` hook, so the position stores a value with its own storage.
+//! Copy on assignment (v0.6.7): a new name of a `[CopyOnAssign]` value (a place read in a copy
+//! position, an array `for` element, a closure capture) calls the type's `Copy` hook. The hook is
+//! copy-on-write: the new value shares storage until its first mutation.
 
 use super::*;
+use crate::ValueCopyPlan;
 
 impl IsleContext<'_, '_, '_, '_> {
     /// `value` was just read from the place `key`. When the place is in a copy position, return
@@ -11,6 +12,11 @@ impl IsleContext<'_, '_, '_, '_> {
         let Some(plan) = self.facts.value_copy(key) else {
             return Some(value);
         };
+        self.call_copy_hook(key, &plan, value)
+    }
+
+    /// Call the `Copy` hook of `plan` on `value` and return the copy.
+    pub(super) fn call_copy_hook(&mut self, key: AstNodeKey, plan: &ValueCopyPlan, value: Value) -> Option<Value> {
         if self.facts.nonallocating_publication_body() {
             self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::ValueCopyInAllocationFreeBody });
             return None;
@@ -19,12 +25,13 @@ impl IsleContext<'_, '_, '_, '_> {
         {
             Ok(function) => function,
             Err(CallImportError::UnknownCallee) => {
-                self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::UnknownCallee(plan.callee) });
+                self.pending_error =
+                    Some(LoweringError { key, kind: LoweringErrorKind::UnknownCallee(plan.callee.clone()) });
                 return None;
             }
         };
         // The source stays reachable through its place for the whole call, and the hook roots its
-        // receiver on entry; the copy is a fresh result rooted by whichever position stores it.
+        // receiver on entry; the copy is a fresh result rooted by whichever name stores it.
         let call = self.builder.ins().call(function, &[value]);
         self.guard_checked_allocation()?;
         self.builder.inst_results(call).first().copied()

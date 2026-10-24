@@ -132,12 +132,27 @@ impl SyntaxNodeFacts<'_> {
             key,
             self.current_item_specialization(),
         ))?;
-        let callee = if instance.substitutions.is_empty() && instance.contract_witnesses.is_empty() {
-            DirectCallee::item(instance.declaration)
-        } else {
-            DirectCallee::specialized_item(instance.declaration, specialization_identity(&instance))
-        };
-        Some(beskid_isle::ValueCopyPlan { callee, signature: signature_for_item(self.isa?, instance.signature)? })
+        value_copy_plan(self.isa?, &instance)
+    }
+
+    /// The `Copy` hook an array `for` loop at `key` calls on each element (copy on assignment).
+    pub(super) fn for_element_copy_impl(&self, key: AstNodeKey) -> Option<beskid_isle::ValueCopyPlan> {
+        let instance = self.query(beskid_queries::for_element_copy_specialization(
+            self.db,
+            key,
+            self.current_item_specialization(),
+        ))?;
+        value_copy_plan(self.isa?, &instance)
+    }
+
+    /// The `Copy` hook a closure calls when it captures `declaration` (copy on assignment).
+    pub(in crate::isle_adapter) fn capture_copy(
+        &self,
+        declaration: AstNodeKey,
+        enclosing: Option<&beskid_queries::GenericSpecializationInstance>,
+    ) -> Option<beskid_isle::ValueCopyPlan> {
+        let instance = self.query(beskid_queries::capture_copy_specialization(self.db, declaration, enclosing))?;
+        value_copy_plan(self.isa?, &instance)
     }
 
     pub(super) fn call_signature_impl(&self, key: AstNodeKey) -> Option<Signature> {
@@ -370,6 +385,7 @@ impl SyntaxNodeFacts<'_> {
                         field_offset: u32::try_from(field.field_offset).ok()?,
                         pointer_map_index: field.pointer_map_index,
                         value_type: map_signature_type(self.isa?, field.abi_type)?,
+                        copy: self.capture_copy(field.capture.declaration, Some(instance)),
                     })
                 })
                 .collect::<Option<Vec<_>>>()?;
@@ -475,6 +491,7 @@ impl SyntaxNodeFacts<'_> {
                         field_offset: u32::try_from(field.field_offset).ok()?,
                         pointer_map_index: field.pointer_map_index,
                         value_type: map_signature_type(self.isa?, field.abi_type)?,
+                        copy: self.capture_copy(field.capture.declaration, self.current_item_specialization()),
                     })
                 })
                 .collect::<Option<Vec<_>>>()?;
@@ -492,3 +509,4 @@ impl SyntaxNodeFacts<'_> {
         })
     }
 }
+
