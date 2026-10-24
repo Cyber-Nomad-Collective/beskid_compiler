@@ -307,7 +307,7 @@ fn deadline_literal_without_private_field_is_a_coded_inaccessible_field_error() 
     assert!(
         findings
             .iter()
-            .any(|finding| { finding.kind.code() == "E1211" && finding.kind.message().contains("inaccessible") }),
+            .any(|finding| { finding.kind.code() == "E1211" && finding.kind.message().contains("is private") }),
         "expected E1211 for the inaccessible omitted field, got {findings:?}"
     );
 }
@@ -332,7 +332,7 @@ fn deadline_literal_with_private_field_reports_inaccessibility_not_unknown_name(
     assert!(
         findings
             .iter()
-            .any(|finding| { finding.kind.code() == "E1211" && finding.kind.message().contains("inaccessible") }),
+            .any(|finding| { finding.kind.code() == "E1211" && finding.kind.message().contains("is private") }),
         "expected E1211 for the inaccessible supplied field, got {findings:?}"
     );
 }

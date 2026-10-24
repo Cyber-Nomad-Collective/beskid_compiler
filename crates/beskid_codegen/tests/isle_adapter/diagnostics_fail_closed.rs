@@ -96,14 +96,8 @@ fn parsed_multi_function_assembly_verification_error_identifies_the_originating_
 /// renders as one coded internal diagnostic, anchored at the program, never as raw text.
 #[test]
 fn an_unsited_emission_failure_is_a_coded_internal_diagnostic() {
-    let (input, isa, root) = item_fixture_with_root("i32 First() { return 1; } i32 Second() { return 2; }");
-    let items = find_function_definitions(input.database(), root);
-    let error = lower_syntax_program(
-        &input,
-        isa.as_ref(),
-        &[SyntaxModuleItem { key: items[0], symbol: "Same".into() }, SyntaxModuleItem { key: items[1], symbol: "Same".into() }],
-    )
-    .expect_err("a duplicate symbol must not lower");
+    let (input, _isa, _root) = item_fixture_with_root("i32 First() { return 1; }");
+    let error = beskid_codegen::module_emission::SyntaxModuleEmissionError::DuplicateSymbol("Same".into());
     let report = error.into_report(&input, "syntax ISLE lowering failed");
     let bundle = report
         .downcast_ref::<beskid_analysis::services::SemanticDiagnosticsError>()

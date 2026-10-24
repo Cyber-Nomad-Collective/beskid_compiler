@@ -116,6 +116,7 @@ impl SemanticIssueKind {
             Self::CompilerDerivedConformance { .. } | Self::CompilerDerivedNotMarker { .. } => "E1607",
             Self::DerivedContractMember { .. } => "E1003",
             Self::ExclusiveMarkerAttribute { .. } | Self::CorelibOnlyAttribute { .. } => "E1510",
+            Self::CopyOnAssignWithoutCopy { .. } => "E1512",
             Self::InternalSemanticFactUnavailable { .. } => "E2101",
             Self::InternalLoweringRuleMissing { .. } => "E2102",
             Self::InternalLoweringInvariant { .. } => "E2103",

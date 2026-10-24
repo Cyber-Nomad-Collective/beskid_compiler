@@ -113,6 +113,7 @@ impl SemanticIssueKind {
             Self::CompilerDerivedNotMarker { .. } => "not a marker contract".to_string(),
             Self::DerivedContractMember { member, .. } => format!("member `{member}`"),
             Self::ExclusiveMarkerAttribute { marker, .. } => format!("second marker `[{marker}]`"),
+            Self::CopyOnAssignWithoutCopy { .. } => "`[CopyOnAssign]` here".to_string(),
             Self::CorelibOnlyAttribute { attribute } => format!("`[{attribute}]` outside corelib"),
             Self::InternalSemanticFactUnavailable { .. }
             | Self::InternalLoweringRuleMissing { .. }

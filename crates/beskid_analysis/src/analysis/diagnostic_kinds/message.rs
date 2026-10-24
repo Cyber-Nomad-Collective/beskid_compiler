@@ -245,6 +245,9 @@ impl SemanticIssueKind {
             | Self::InternalLoweringInvariant { .. }
             | Self::InternalModSemanticFailure { .. }
             | Self::InternalBuildFailure { .. } => self.internal_message().unwrap_or_default(),
+            Self::CopyOnAssignWithoutCopy { type_name, problem } => {
+                format!("`[CopyOnAssign]` type `{type_name}` has no valid `Copy` method: {problem}")
+            }
             Self::DeadCollectionGrowth => "the grown handle of a `mut T[]` parameter is discarded and the body never \
                                            publishes the parameter, so the caller keeps the ungrown array"
                 .to_string(),

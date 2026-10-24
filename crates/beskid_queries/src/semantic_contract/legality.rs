@@ -34,6 +34,7 @@ pub(super) mod calls;
 mod attributes;
 mod captures;
 mod cleanup;
+mod copy_on_assign;
 mod externs;
 mod function_values;
 mod gate;
@@ -660,6 +661,7 @@ fn import_findings(db: &dyn Db, items: &[AstNodeKey]) -> Vec<SemanticFinding> {
         judged_units.push(unit_root);
         findings.extend(attributes::attribute_findings(db, unit_root));
         findings.extend(transfer::transfer_declaration_findings(db, unit_root));
+        findings.extend(copy_on_assign::copy_on_assign_findings(db, unit_root));
         findings.extend(captures::captures_declaration_findings(db, unit_root));
         if let Ok(Some(imports)) = unresolved_imports(db, unit_root) {
             findings.extend(imports.iter().map(|import| SemanticFinding {
@@ -1085,6 +1087,44 @@ mod tests {
         for (offset, body) in struct_cases.iter().enumerate() {
             assert_immutable_assignment(&format!("{pair}{body}"), 80 + offset as u64, 0, "v");
         }
+    }
+
+    #[test]
+    fn a_copy_on_assign_type_without_a_valid_copy_hook_is_e1512_at_the_attribute() {
+        let cases = [
+            ("[CopyOnAssign] pub type Bag { i64 n } unit Main() { return; }", "it declares no `Copy` method"),
+            (
+                "[CopyOnAssign] pub type Bag { i64 n, pub Bag Copy(i64 extra) { return Bag { n: this.n }; } } unit Main() { return; }",
+                "`Copy` must take no parameters",
+            ),
+            (
+                "[CopyOnAssign] pub type Bag { i64 n, pub i64 Copy() { return this.n; } } unit Main() { return; }",
+                "`Copy` must return the type itself",
+            ),
+        ];
+        for (offset, (source, problem)) in cases.iter().enumerate() {
+            let (db, root) = one_unit_assembly(source, SyntaxGenerationId(150 + offset as u64));
+            let main = function_definitions(&db, root)[0];
+            let findings = super::check_items(&db, &[main]).expect_err("the copy hook is invalid");
+            let finding = findings
+                .iter()
+                .find(|finding| finding.kind.code() == "E1512")
+                .unwrap_or_else(|| panic!("E1512 expected: {findings:?}\n{source}"));
+            assert!(
+                matches!(&finding.kind, SemanticIssueKind::CopyOnAssignWithoutCopy { type_name, problem: found }
+                    if type_name == "Bag" && found == problem),
+                "{:?}",
+                finding.kind
+            );
+            let span = crate::node_span(&db, finding.site).expect("span").expect("site span");
+            assert!(source[span.start..span.end].contains("CopyOnAssign"), "anchored at the attribute");
+        }
+        let valid = "[CopyOnAssign] pub type Bag { i64 n, pub This Copy() { return Bag { n: this.n }; } } \
+                     unit Main() { return; }";
+        let (db, root) = one_unit_assembly(valid, SyntaxGenerationId(160));
+        let main = function_definitions(&db, root)[0];
+        let findings = super::check_items(&db, &[main]).err().unwrap_or_default();
+        assert!(findings.iter().all(|finding| finding.kind.code() != "E1512"), "{findings:?}");
     }
 
     #[test]

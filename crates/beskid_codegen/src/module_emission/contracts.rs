@@ -151,8 +151,19 @@ fn construct_of(db: &dyn beskid_queries::Db, key: AstNodeKey) -> String {
 /// internal invariant (E2103) at its construct; all carry the site, never only text.
 pub(super) fn emission_error(input: &CodegenInput<'_>, error: FunctionEmissionError) -> SyntaxModuleEmissionError {
     let db = input.database();
-    let FunctionEmissionError::Lowering(lowering) = &error else {
-        return SyntaxModuleEmissionError::Emission(error.display_with_db(db));
+    let lowering = match &error {
+        FunctionEmissionError::Lowering(lowering) => lowering,
+        FunctionEmissionError::Verification { site, message } => {
+            return internal_error(
+                db,
+                SemanticIssueKind::InternalLoweringInvariant {
+                    construct: construct_of(db, *site),
+                    reason: format!("the generated function failed verification: {message}"),
+                },
+                *site,
+                &error.display_with_db(db),
+            );
+        }
     };
     let key = lowering.key();
     let construct = construct_of(db, key);

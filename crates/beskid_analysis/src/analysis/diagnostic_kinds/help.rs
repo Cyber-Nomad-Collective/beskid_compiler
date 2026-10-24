@@ -312,6 +312,10 @@ impl SemanticIssueKind {
             | Self::InternalLoweringInvariant { .. }
             | Self::InternalModSemanticFailure { .. }
             | Self::InternalBuildFailure { .. } => self.internal_help(),
+            Self::CopyOnAssignWithoutCopy { type_name, .. } => Some(format!(
+                "declare `pub This Copy() {{ ... }}` in `{type_name}`: a borrowed receiver, no parameters, returning \
+                 a `{type_name}` with its own storage"
+            )),
             Self::DeadCollectionGrowth => {
                 Some("return the parameter or rebind the grown handle so the caller sees the growth".to_string())
             }

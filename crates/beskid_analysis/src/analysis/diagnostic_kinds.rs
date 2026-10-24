@@ -443,6 +443,12 @@ pub enum SemanticIssueKind {
         marker: String,
         previous: String,
     },
+    /// E1512: a `[CopyOnAssign]` type without a valid `This Copy()` hook; `problem` says what is
+    /// wrong ("it declares no `Copy` method").
+    CopyOnAssignWithoutCopy {
+        type_name: String,
+        problem: String,
+    },
     /// E1510: an attribute that only corelib (`Core.*` modules) may use, such as `[ImmutableStorage]`.
     CorelibOnlyAttribute {
         attribute: String,
