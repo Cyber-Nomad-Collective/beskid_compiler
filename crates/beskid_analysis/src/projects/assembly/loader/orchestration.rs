@@ -397,18 +397,6 @@ pub fn assemble_program_with_materializer(
     let _ = beskid_artifacts::ArtifactStore::new(&project_root).refresh_manifest();
 
     let module_index = Arc::new(ModuleIndex::build(&units, &syntax_indexes, &roots, plan));
-    // Caller information is part of every assembly's syntax, exactly as in `ProgramAssembly::new`:
-    // a loaded assembly and any rebuild of it (`with_entry_program`) must register the same tree
-    // for a unit, or one syntax generation would describe two expanded trees.
-    let (units, syntax_indexes) = match super::super::caller_info::fill_caller_information(&units, &|path| {
-        module_index.resolve_module(path).map(crate::paths::unit_path_key)
-    }) {
-        Some(rewritten) => {
-            let indexes = rewritten.iter().map(|unit| SyntaxIndex::from_program(&unit.program, generation)).collect();
-            (rewritten, indexes)
-        }
-        None => (units, syntax_indexes),
-    };
 
     let trusted_corelib_service_paths = trusted_corelib_service_paths(plan, &roots, &units);
     let glue_libraries = manifest_glue_libraries(plan)?;
