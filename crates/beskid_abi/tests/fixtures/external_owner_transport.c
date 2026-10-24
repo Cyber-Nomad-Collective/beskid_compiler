@@ -355,7 +355,7 @@ int main(void) {
     assert(fixture_monotonic_nanos() - stop_started < INT64_C(5000000000));
     BeskidLock();
     assert(beskid_worker_count == 0 && beskid_worker_orphans && !beskid_worker_orphans->finished);
-    assert(beskid_request_count == 1);
+    assert(beskid_request_count == 0); /* the stop took the orphaned request out of admission */
     BeskidUnlock();
     /* A new pool starts while the orphan still blocks and serves its own work. */
     assert(beskid_rt_v5_intrinsic_worker_pool_init(1) == 0);
@@ -374,6 +374,45 @@ int main(void) {
     BeskidLock(); assert(beskid_request_count == 0); BeskidUnlock();
     beskid_rt_v5_intrinsic_worker_pool_shutdown();
     BeskidLock(); assert(!beskid_worker_orphans); BeskidUnlock();
+
+    /* A live (not cancelled) read that blocks must not hold up shutdown either,
+     * and queued work is settled, never started. The orphan of a live request
+     * posts nothing and frees nothing: it leaves the request complete for its
+     * owner, whose release then frees it without recounting it. */
+    while (beskid_rt_v5_intrinsic_owner_pop(replacement, &command)) {} /* earlier completions */
+    size_t live_baseline = atomic_load(&live_allocations);
+    assert(beskid_rt_v5_intrinsic_worker_pool_init(1) == 0);
+    struct BeskidWorkerRequest *live = request_for(idle_descriptors[0], replacement, 4096);
+    assert(beskid_rt_v5_intrinsic_worker_submit(live) == 0);
+    await_running(live);
+    struct BeskidWorkerRequest *queued = request_for(idle_descriptors[0], replacement, 4097);
+    assert(beskid_rt_v5_intrinsic_worker_submit(queued) == 0);
+    stop_started = fixture_monotonic_nanos();
+    beskid_rt_v5_intrinsic_worker_pool_shutdown();
+    assert(fixture_monotonic_nanos() - stop_started < INT64_C(5000000000));
+    BeskidLock();
+    assert(beskid_worker_orphans && !beskid_worker_orphans->finished);
+    assert(queued->state == BESKID_WORKER_COMPLETE && queued->result == -1 && queued->error == ECANCELED);
+    assert(beskid_request_count == 1); /* only the settled queued request is still admitted */
+    BeskidUnlock();
+    assert(beskid_rt_v5_intrinsic_owner_pop(replacement, &command));
+    assert(command.wait == 4097 && command.source == 1);
+    assert(!beskid_rt_v5_intrinsic_owner_pop(replacement, &command));
+    beskid_rt_v5_intrinsic_worker_release(queued);
+    fixture_pipe_write(idle_descriptors[1], "w", 1);
+    for (;;) {
+        BeskidLock(); int finished = beskid_worker_orphans && beskid_worker_orphans->finished; BeskidUnlock();
+        if (finished) break;
+        fixture_yield();
+    }
+    assert(beskid_rt_v5_intrinsic_worker_poll(live) && live->result == 1 && live->buffer[0] == 'w');
+    assert(!beskid_rt_v5_intrinsic_owner_pop(replacement, &command)); /* the orphan posted nothing */
+    beskid_rt_v5_intrinsic_worker_release(live);
+    BeskidLock(); assert(beskid_request_count == 0); BeskidUnlock();
+    assert(beskid_rt_v5_intrinsic_worker_pool_init(1) == 0); /* reaps the finished orphan */
+    beskid_rt_v5_intrinsic_worker_pool_shutdown();
+    BeskidLock(); assert(!beskid_worker_orphans); BeskidUnlock();
+    assert(atomic_load(&live_allocations) == live_baseline);
     fixture_pipe_close(idle_descriptors[0]); fixture_pipe_close(idle_descriptors[1]);
     fixture_pipe_close(saturation_descriptors[0]);
     fixture_pipe_close(saturation_descriptors[1]);
@@ -382,6 +421,6 @@ int main(void) {
     beskid_rt_v5_intrinsic_owner_destroy(replacement);
     beskid_rt_v5_intrinsic_owner_destroy(other);
     assert(atomic_load(&live_allocations) == 0);
-    puts("owner_transport matrix=64 stale-owner=rejected close-rebind=preserved queue-rejection=released in-flight=worker-owned blocked-read-shutdown=orphaned shutdown=complete");
+    puts("owner_transport matrix=64 stale-owner=rejected close-rebind=preserved queue-rejection=released in-flight=worker-owned blocked-read-shutdown=orphaned live-read-shutdown=orphaned queued-at-stop=settled shutdown=complete");
     return 0;
 }
