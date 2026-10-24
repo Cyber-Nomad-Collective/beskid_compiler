@@ -5,6 +5,7 @@ use std::collections::HashSet;
 
 mod control_flow;
 mod definitions;
+mod discarded_growth;
 mod missing_imports;
 mod name_resolution;
 mod naming_style;
@@ -64,6 +65,7 @@ impl SemanticPipelineRule {
         // and style rules only (`stage2_type_check` below is structural-immutability-only).
         observe_stage(pipeline, phases::SEMANTIC_TYPE_CHECK, || {
             self.stage2_type_check(ctx, &program);
+            self.check_discarded_growth(ctx, &program);
         });
         observe_stage(pipeline, phases::SEMANTIC_NAMING_STYLE, || {
             self.stage_naming_style(ctx, &program.node);

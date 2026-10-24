@@ -1,4 +1,4 @@
-use super::SemanticIssueKind;
+use super::{DiscardedGrowthRepair, SemanticIssueKind};
 
 impl SemanticIssueKind {
     pub fn help(&self) -> Option<String> {
@@ -357,6 +357,18 @@ impl SemanticIssueKind {
                 "declare `pub This Copy() {{ ... }}` in `{type_name}`: a borrowed receiver, no parameters, returning \
                  a `{type_name}` with its own storage"
             )),
+            Self::DiscardedArrayGrowth { call, repair, .. } => Some(match repair {
+                DiscardedGrowthRepair::MutParameter { name, .. } => {
+                    format!("declare the parameter `mut` (`mut ... {name}`) so the call grows the caller's array")
+                }
+                DiscardedGrowthRepair::Assign { name, .. } => format!("assign the result: `{name} = {call};`"),
+                DiscardedGrowthRepair::Bind { declaration: Some(declaration), .. } => {
+                    format!("use the result: `{declaration} grown = {call};`")
+                }
+                DiscardedGrowthRepair::Bind { declaration: None, .. } => {
+                    "use the result: bind it to a new local".to_string()
+                }
+            }),
             Self::DeadCollectionGrowth => {
                 Some("return the parameter or rebind the grown handle so the caller sees the growth".to_string())
             }

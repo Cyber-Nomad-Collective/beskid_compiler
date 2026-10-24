@@ -756,3 +756,33 @@ fn conditional_expression_branch_mismatch_renders_both_branches_as_related() {
     let labels = finding.related.iter().map(|(_, label)| label.as_ref()).collect::<Vec<_>>();
     assert_eq!(labels, ["this branch is `i32`", "this branch is `i64`"]);
 }
+
+/// The ICE floor for growth (beskid-lings preview.2, E2103 "the owner of a collection is not
+/// proven"): a program that checks clean and grows an array that a parameter names, or that a
+/// fresh local names inside a loop, lowers without an internal error.
+#[test]
+fn growth_of_an_array_without_a_proven_owner_is_never_an_internal_error() {
+    use super::support::canonical_corelib_project_fixture;
+    let sources = [
+        "use Core.Collections.Array; string[] Add(string[] xs, string n) { return Array.Append<string>(xs, n); }",
+        "use Core.Collections.Array; string[] Gather(string[] xs) { string[] out = Array.Empty<string>(); \
+         for x in xs { Array.Append<string>(out, x); } return out; }",
+        "use Core.Collections.Array; unit Drop(string[] xs, string n) { Array.Append<string>(xs, n); return; }",
+    ];
+    for (offset, source) in sources.iter().enumerate() {
+        let (input, isa, root) =
+            canonical_corelib_project_fixture(&[("App/Floor.bd", source)], SyntaxGenerationId(6820 + offset as u64));
+        let functions = find_function_definitions(input.database(), root);
+        if let Err(findings) = beskid_queries::check_items(input.database(), &functions) {
+            panic!("check_items must be clean for {source}: {findings:?}");
+        }
+        let items = functions
+            .iter()
+            .enumerate()
+            .map(|(index, key)| SyntaxModuleItem { key: *key, symbol: format!("Floor_{index}").into() })
+            .collect::<Vec<_>>();
+        if let Err(error) = lower_syntax_program(&input, isa.as_ref(), &items) {
+            panic!("a clean check never ends in an internal error ({source}): {error}");
+        }
+    }
+}

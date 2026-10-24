@@ -105,6 +105,7 @@ impl SemanticIssueKind {
             Self::TypeInvalidPrimitiveConversionArgument => "E1228",
             Self::ScopedCleanupRejected { .. } => "E1230",
             Self::DeadCollectionGrowth => "E1231",
+            Self::DiscardedArrayGrowth { .. } => "W1240",
             Self::LambdaCapturesStackReference { .. } => "E1233",
             Self::UseAfterMove { .. } => "E1234",
             Self::CapturedLocalAssignedInBoundLambda { .. } => "E1235",

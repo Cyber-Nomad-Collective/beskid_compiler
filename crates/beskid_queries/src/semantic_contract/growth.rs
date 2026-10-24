@@ -91,7 +91,7 @@ fn dead_collection_growth_for_call(
     if !is_growth_call_candidate(program, index, key.node) {
         return None;
     }
-    // An unproven (non-`mut`) owner is already rejected by lowering; it is not this fact.
+    // An array without a proven owner is copied by the ordinary Corelib `Append`; it is not this fact.
     let Ok(Some(
         CollectionOperation::Append { owner: CollectionMutationOwner::Local(_) }
         | CollectionOperation::TryAppend { owner: CollectionMutationOwner::Local(_) },

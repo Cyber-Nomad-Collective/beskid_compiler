@@ -31,7 +31,8 @@ impl SemanticIssueKind {
             | Self::NamingNotCamelCaseBinding { .. }
             | Self::NamingNotPascalCaseTest { .. }
             | Self::NamingNotCamelCaseMacro { .. }
-            | Self::RedundantEnumConstructorParens => Severity::Warning,
+            | Self::RedundantEnumConstructorParens
+            | Self::DiscardedArrayGrowth { .. } => Severity::Warning,
             _ => Severity::Error,
         }
     }

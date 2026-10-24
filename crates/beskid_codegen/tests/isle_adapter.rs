@@ -8,6 +8,8 @@ mod call_argument_array_literals;
 mod calls_conversions;
 #[path = "isle_adapter/channel_conditions.rs"]
 mod channel_conditions;
+#[path = "isle_adapter/collection_growth_owner.rs"]
+mod collection_growth_owner;
 #[path = "isle_adapter/composition_conditions.rs"]
 mod composition_conditions;
 #[path = "isle_adapter/contract_dispatch.rs"]
