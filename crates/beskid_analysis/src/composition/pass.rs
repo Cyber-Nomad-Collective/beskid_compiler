@@ -58,7 +58,9 @@ pub fn resolve_composition_with_imports(
 
     let (launch_host, launch_span) = match collected.launches.as_slice() {
         [] => {
-            if !collected.hosts.is_empty() {
+            // Only a host this unit declares needs a `launch`; base hosts of imported units (a
+            // library's or Corelib's `ConsoleHost`) do not make every program a composition root.
+            if collected.hosts.values().any(|host| host.unit.is_none()) {
                 issues.push((None, CompositionIssue::MissingLaunchHost { span: Some(input.program.span) }));
             }
             (String::new(), SpanInfo::default())
