@@ -536,9 +536,7 @@ impl SemanticIssueKind {
                 "try `{}`",
                 crate::naming_case::normalize_to_profile(name, crate::naming_case::NamingProfile::SnakeCase)
             )),
-            Self::NumericLiteralOutOfRange { .. } => {
-                Some("use an in-range literal of the declared fixed-width type".to_string())
-            }
+            Self::NumericLiteralOutOfRange { value, primitive } => Some(numeric_range_help(value, primitive)),
             Self::ExternInvalidAbi { .. } => {
                 Some("Use [Extern(Abi:\"C\", Library:\"...\")] on the contract".to_string())
             }
@@ -549,5 +547,58 @@ impl SemanticIssueKind {
             | Self::ExternInvalidOptional { detail }
             | Self::InvalidClifBlock { detail } => Some(detail.clone()),
         }
+    }
+}
+
+/// The range help of T0905: what `primitive` holds, and for a negative value at an unsigned
+/// type that it holds no negative value.
+fn numeric_range_help(value: &str, primitive: &str) -> String {
+    let range = match primitive {
+        "i8" => Some((i8::MIN.to_string(), i8::MAX.to_string())),
+        "i16" => Some((i16::MIN.to_string(), i16::MAX.to_string())),
+        "i32" => Some((i32::MIN.to_string(), i32::MAX.to_string())),
+        "i64" => Some((i64::MIN.to_string(), i64::MAX.to_string())),
+        "u8" => Some(("0".to_string(), u8::MAX.to_string())),
+        "u16" => Some(("0".to_string(), u16::MAX.to_string())),
+        "u32" => Some(("0".to_string(), u32::MAX.to_string())),
+        "u64" | "word" => Some(("0".to_string(), u64::MAX.to_string())),
+        _ => None,
+    };
+    match range {
+        Some((low, _)) if low == "0" && value.starts_with('-') => {
+            format!("`{primitive}` holds no negative values; use a signed type such as `i64`")
+        }
+        Some((low, high)) => {
+            format!("`{primitive}` holds values from {low} to {high}; use a value in that range or a wider type")
+        }
+        None => format!("`{primitive}` holds only finite values; use a smaller value or `f64`"),
+    }
+}
+
+#[cfg(test)]
+mod numeric_range_help_tests {
+    use super::super::SemanticIssueKind;
+
+    #[test]
+    fn out_of_range_literal_names_the_value_the_type_and_its_range() {
+        let issue = SemanticIssueKind::NumericLiteralOutOfRange { value: "300".to_string(), primitive: "u8".to_string() };
+        assert_eq!(issue.code(), "T0905");
+        assert_eq!(issue.message(), "`300` does not fit in `u8`");
+        assert_eq!(issue.label(), "out of range for `u8`");
+        assert_eq!(issue.help().as_deref(), Some("`u8` holds values from 0 to 255; use a value in that range or a wider type"));
+    }
+
+    #[test]
+    fn negative_literal_at_an_unsigned_type_says_it_holds_no_negative_values() {
+        let issue = SemanticIssueKind::NumericLiteralOutOfRange { value: "-1".to_string(), primitive: "u32".to_string() };
+        assert_eq!(issue.message(), "`-1` does not fit in `u32`");
+        assert_eq!(issue.help().as_deref(), Some("`u32` holds no negative values; use a signed type such as `i64`"));
+    }
+
+    #[test]
+    fn float_out_of_range_says_the_type_holds_finite_values() {
+        let issue = SemanticIssueKind::NumericLiteralOutOfRange { value: "1e40".to_string(), primitive: "f32".to_string() };
+        assert_eq!(issue.message(), "`1e40` does not fit in `f32`");
+        assert_eq!(issue.help().as_deref(), Some("`f32` holds only finite values; use a smaller value or `f64`"));
     }
 }

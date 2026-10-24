@@ -53,7 +53,7 @@ fn unsuffixed_literal_out_of_range_names_the_destination_primitive_at_the_value(
     let findings = root_findings(source, 1010);
     let finding = findings
         .iter()
-        .find(|finding| matches!(&finding.kind, SemanticIssueKind::NumericLiteralOutOfRange { primitive } if primitive == "i8"))
+        .find(|finding| matches!(&finding.kind, SemanticIssueKind::NumericLiteralOutOfRange { primitive, .. } if primitive == "i8"))
         .unwrap_or_else(|| panic!("expected an i8 T0905, got {findings:?}"));
     assert_eq!(&source[finding.span.start..finding.span.end], "-200");
     assert_eq!(findings.len(), 1, "{findings:?}");
@@ -115,7 +115,7 @@ fn constant_out_of_range_names_the_destination_primitive_at_the_use() {
     let findings = root_findings(source, 1040);
     let finding = findings
         .iter()
-        .find(|finding| matches!(&finding.kind, SemanticIssueKind::NumericLiteralOutOfRange { primitive } if primitive == "i32"))
+        .find(|finding| matches!(&finding.kind, SemanticIssueKind::NumericLiteralOutOfRange { primitive, .. } if primitive == "i32"))
         .unwrap_or_else(|| panic!("expected an i32 T0905, got {findings:?}"));
     assert_eq!(&source[finding.span.start..finding.span.end], "BIG");
     assert_eq!(findings.len(), 1, "{findings:?}");
@@ -178,7 +178,7 @@ fn binary_operand_out_of_range_names_the_other_operand_type_at_the_literal() {
     let findings = root_findings(source, 1070);
     let finding = findings
         .iter()
-        .find(|finding| matches!(&finding.kind, SemanticIssueKind::NumericLiteralOutOfRange { primitive } if primitive == "i32"))
+        .find(|finding| matches!(&finding.kind, SemanticIssueKind::NumericLiteralOutOfRange { primitive, .. } if primitive == "i32"))
         .unwrap_or_else(|| panic!("expected an i32 T0905, got {findings:?}"));
     assert_eq!(&source[finding.span.start..finding.span.end], "3000000000");
     assert_eq!(findings.len(), 1, "{findings:?}");

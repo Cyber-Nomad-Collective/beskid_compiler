@@ -183,7 +183,7 @@ impl SemanticIssueKind {
             Self::NamingNotCamelCaseBinding { .. } => "binding not lowerCamelCase".to_string(),
             Self::NamingNotSnakeCaseTest { .. } => "test name not snake_case".to_string(),
             Self::NamingNotCamelCaseMacro { .. } => "macro name not lowerCamelCase".to_string(),
-            Self::NumericLiteralOutOfRange { .. } => "numeric literal".to_string(),
+            Self::NumericLiteralOutOfRange { primitive, .. } => format!("out of range for `{primitive}`"),
             Self::ExternInvalidAbi { .. } | Self::ExternMissingLibrary => "extern attribute".to_string(),
             Self::ExternDisallowedParamType { .. } => "parameter type".to_string(),
             Self::ExternDisallowedReturnType { .. } => "return type".to_string(),

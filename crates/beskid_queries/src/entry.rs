@@ -357,6 +357,9 @@ mod parity_literals_externs_clif;
 #[path = "entry/parity_values.rs"]
 mod parity_values;
 #[cfg(test)]
+#[path = "entry/parity_contextual_literals.rs"]
+mod parity_contextual_literals;
+#[cfg(test)]
 #[path = "entry/parity_resolution.rs"]
 mod parity_resolution;
 #[cfg(test)]

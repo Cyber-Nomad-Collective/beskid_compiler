@@ -610,9 +610,10 @@ pub enum SemanticIssueKind {
     },
 
     // ── Query-gate numeric literal, extern profile, and Glue obligations ──
-    /// T0905: a suffixed integer literal, or a float literal, outside its declared fixed-width
-    /// primitive's range.
+    /// T0905: a numeric literal (`value` as written) or integer constant use (`value` is its
+    /// name) that does not fit `primitive`, the type its suffix or its context gives it.
     NumericLiteralOutOfRange {
+        value: String,
         primitive: String,
     },
     /// T0901: an `[Extern]` contract whose `Abi` is not `"C"`.
@@ -661,7 +662,7 @@ mod query_gate_kind_tests {
             detail: "Optional takes a boolean literal: Optional:true or Optional:false".to_string(),
         };
         assert_eq!(issue.code(), "T0906");
-        assert_ne!(issue.code(), SemanticIssueKind::NumericLiteralOutOfRange { primitive: "i8".to_string() }.code());
+        assert_ne!(issue.code(), SemanticIssueKind::NumericLiteralOutOfRange { value: "300".to_string(), primitive: "i8".to_string() }.code());
         assert_eq!(issue.message(), "invalid optional extern contract");
         assert_eq!(issue.label(), "extern attribute");
         assert_eq!(issue.help().as_deref(), Some("Optional takes a boolean literal: Optional:true or Optional:false"));

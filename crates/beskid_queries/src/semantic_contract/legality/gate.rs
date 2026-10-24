@@ -9,7 +9,7 @@
 //! checker rejected; unproven shapes (nominal values represented as `pointer`, generic
 //! parameters, inferred lambdas) are never findings.
 //!
-//! The collectors live in `gate/operators.rs` (E1209, E1210, binary E1206, T0905),
+//! The collectors live in `gate/operators.rs` (E1209, E1210, binary and literal E1206, T0905),
 //! `gate/strings.rs` (E1209 for a string concatenation or interpolation operand without a text
 //! form), `gate/control.rs` (E1215-E1218, E1219, E1221, E1223-E1225), `gate/expressions.rs`
 //! (E1102, E1201, E1202, E1204, E1211, E1213, E1228, E1606, E1610) and `gate/clif.rs` (E1232).
@@ -35,11 +35,13 @@ pub enum GateObligationKind {
     /// E1209: a string concatenation or interpolation operand of a proven type that has no text
     /// form (`found` is its source spelling).
     StringConcatOperandNotConvertible { found: Arc<str> },
-    /// T0905: a suffixed integer literal or a float literal outside its primitive's range, or
-    /// an unsuffixed integer literal outside the primitive integer its proven destination
-    /// declares (legacy `type_id_for_literal` / `type_unary_expression` under
-    /// `contextual_expected_type`).
-    NumericLiteralOutOfRange { primitive: Arc<str> },
+    /// T0905: a numeric literal (`value`, as written, with a negation) or an integer constant
+    /// use (`value` is its name) that does not fit `primitive`: its suffix, or the type its
+    /// context gives an unsuffixed literal. A negative value never fits an unsigned type.
+    NumericLiteralOutOfRange { value: Arc<str>, primitive: Arc<str> },
+    /// E1206: a numeric literal whose own type (fixed by its suffix, or a float literal) differs
+    /// from the numeric type its context requires. Contextual typing never converts it.
+    LiteralTypeMismatch { expected: SemanticTypeId, actual: SemanticTypeId },
     /// E1223: a `spawn` whose target is not a zero-argument callable entry.
     SpawnTargetNotFiberCompatible,
     /// E1224: a fiber join of a handle owned by an ancestor fiber of the joining fiber.
@@ -157,9 +159,13 @@ pub fn check_gate_obligations(db: &dyn Db, items: &[AstNodeKey]) -> Vec<Semantic
                 GateObligationKind::StringConcatOperandNotConvertible { found } => {
                     SemanticIssueKind::TypeStringConcatOperandNotConvertible { found: found.to_string() }
                 }
-                GateObligationKind::NumericLiteralOutOfRange { primitive } => {
-                    SemanticIssueKind::NumericLiteralOutOfRange { primitive: primitive.to_string() }
+                GateObligationKind::NumericLiteralOutOfRange { value, primitive } => {
+                    SemanticIssueKind::NumericLiteralOutOfRange { value: value.to_string(), primitive: primitive.to_string() }
                 }
+                GateObligationKind::LiteralTypeMismatch { expected, actual } => SemanticIssueKind::TypeMismatch {
+                    expected_name: expected.display_name(),
+                    actual_name: actual.display_name(),
+                },
                 GateObligationKind::SpawnTargetNotFiberCompatible => SemanticIssueKind::SpawnTargetNotFiberCompatible,
                 GateObligationKind::JoinWouldDeadlock => SemanticIssueKind::JoinWouldDeadlock,
                 GateObligationKind::StackReferenceEscapesSpawn => SemanticIssueKind::StackReferenceEscapesSpawn,
