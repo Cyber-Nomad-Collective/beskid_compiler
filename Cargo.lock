@@ -550,6 +550,7 @@ dependencies = [
  "clap",
  "crossterm",
  "graphs-tui",
+ "libc",
  "log",
  "miette",
  "pest",

@@ -9,7 +9,7 @@ use walkdir::WalkDir;
 
 pub(super) fn ensure_corelib_ready() -> anyhow::Result<()> {
     let provisioned = beskid_tools::ensure_bundled_corelib(&beskid_corelib_embed::CORELIB_BUNDLE)?;
-    if provisioned.updated && beskid_telemetry::verbosity() != beskid_telemetry::Verbosity::Quiet {
+    if provisioned.updated && beskid_telemetry::verbosity().shows_detail() {
         eprintln!(
             "corelib: updated to {} at {}",
             provisioned.version,

@@ -141,10 +141,14 @@ fn run_build_and_execute(args: RunArgs) -> Result<()> {
     let exit_code = run_program(&exe_path, &args.program_args);
     let _ = std::fs::remove_dir_all(&temp_dir);
     let exit_code = exit_code?;
-    session.pipeline().finish_session_with_summary(
-        "Run complete",
-        Some(CommandSummary::plain("Run", "Run complete").with_stat("exit", exit_code.to_string())),
-    );
+    // `beskid run` prints at most one status line, before the program's own output; the closing
+    // summary after the program is detail for `-v`.
+    if beskid_telemetry::verbosity().shows_detail() {
+        session.pipeline().finish_session_with_summary(
+            "Run complete",
+            Some(CommandSummary::plain("Run", "Run complete").with_stat("exit", exit_code.to_string())),
+        );
+    }
     if exit_code != 0 {
         std::process::exit(exit_code);
     }

@@ -652,7 +652,7 @@ fn v06_cli_owned_commands_accept_json() {
 fn v06_capability_document_lists_version_commands_dev_routes_and_schemas() {
     let document = super::app::CapabilityDocument();
     assert_eq!(document["schemaVersion"], 1);
-    assert_eq!(document["cliVersion"], env!("CARGO_PKG_VERSION"));
+    assert_eq!(document["cliVersion"], super::app::VERSION);
     let names = |key: &str| {
         let mut names: Vec<String> =
             document[key].as_array().unwrap().iter().map(|value| value.as_str().unwrap().to_owned()).collect();
@@ -691,4 +691,62 @@ fn native_mod_worker_strips_test_only_runtime_environment() {
     for name in super::app::TEST_ONLY_RUNTIME_ENVIRONMENT {
         assert_eq!(std::env::var_os(name), None, "{name} reaches the Mod runtime");
     }
+}
+
+#[test]
+fn v067_output_flags_select_verbosity() {
+    use beskid_telemetry::Verbosity;
+    let level = |args: &[&str]| {
+        let mut argv = vec!["beskid"];
+        argv.extend_from_slice(args);
+        super::app::ParseInvocation(argv).expect("parses").Verbosity()
+    };
+    assert_eq!(level(&["check"]), Verbosity::Normal);
+    assert_eq!(level(&["check", "--plain"]), Verbosity::Normal, "--plain keeps the default verbosity");
+    assert_eq!(level(&["-v", "check"]), Verbosity::Verbose);
+    assert_eq!(level(&["check", "-v", "--plain"]), Verbosity::Verbose);
+    assert_eq!(level(&["-vv", "check"]), Verbosity::Debug);
+    assert_eq!(level(&["-v", "-v", "check"]), Verbosity::Debug);
+    assert_eq!(level(&["-q", "check"]), Verbosity::Quiet);
+    assert_eq!(level(&["check", "--plain", "-q"]), Verbosity::Quiet);
+}
+
+#[test]
+fn v067_quiet_and_verbose_conflict() {
+    for args in [["beskid", "-q", "-v", "check"], ["beskid", "-q", "-vv", "check"]] {
+        let error = match super::app::ParseInvocation(args) {
+            Ok(_) => panic!("{args:?} parsed"),
+            Err(error) => error,
+        };
+        assert_eq!(error.exit_code(), 2);
+    }
+}
+
+#[test]
+fn v067_log_file_flag_wins_over_the_environment_variable() {
+    let cli = super::app::ParseInvocation(["beskid", "--log-file", "from-flag.log", "check"]).expect("parses");
+    assert_eq!(cli.log_file.as_deref(), Some(std::path::Path::new("from-flag.log")));
+    assert_eq!(cli.LogFile().as_deref(), Some(std::path::Path::new("from-flag.log")));
+    let bare = super::app::ParseInvocation(["beskid", "check"]).expect("parses");
+    assert!(bare.log_file.is_none());
+}
+
+#[test]
+fn v067_capability_document_reports_the_runtime_abi() {
+    let document = super::app::CapabilityDocument();
+    assert_eq!(document["runtimeAbi"], u64::from(beskid_abi::BESKID_RUNTIME_ABI_VERSION));
+    assert!(document["runtimeAbi"].is_u64(), "runtimeAbi is a number the extension can compare: {document}");
+}
+
+#[test]
+fn v067_preview_label_replaces_the_manifest_version() {
+    use super::app::{ResolveVersion, VERSION};
+    assert_eq!(ResolveVersion(Some("0.6.7-preview.3"), "0.6.7"), "0.6.7-preview.3");
+    assert_eq!(ResolveVersion(None, "0.6.7"), "0.6.7");
+    assert_eq!(ResolveVersion(Some(""), "0.6.7"), "0.6.7", "an empty label keeps the manifest version");
+    let expected = option_env!("BESKID_PREVIEW_LABEL").filter(|label| !label.is_empty()).unwrap_or(env!("CARGO_PKG_VERSION"));
+    assert_eq!(VERSION, expected);
+    assert_eq!(super::app::CapabilityDocument()["cliVersion"], VERSION);
+    let rendered = Cli::command().render_version().to_string();
+    assert!(rendered.contains(VERSION), "{rendered}");
 }
