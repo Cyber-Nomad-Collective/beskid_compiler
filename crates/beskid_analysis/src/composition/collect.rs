@@ -347,6 +347,7 @@ fn collect_host(
             base_host: host.node.base_host.as_ref().map(path_name),
             span: host.span,
             parameter_count: host.node.parameters.len(),
+            required_parameter_count: super::hooks::required_parameter_count(&host.node.parameters),
             scope_parameters: false,
         },
     );
@@ -413,6 +414,7 @@ fn collect_scope(
         parent: Some(parent_scope_id),
         span: scope.span,
         parameter_count: scope.node.parameters.len(),
+        required_parameter_count: super::hooks::required_parameter_count(&scope.node.parameters),
         unit: context.unit.clone(),
     });
 

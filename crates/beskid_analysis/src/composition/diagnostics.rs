@@ -57,11 +57,12 @@ pub enum CompositionIssue {
     WithWithoutLaunch { scope_name: String, span: SpanInfo },
     InjectOnConstructor { span: SpanInfo },
     HostInModProject { span: SpanInfo },
-    /// `launch Host(...)` passes another number of arguments than the host declares.
+    /// `launch Host(...)` passes fewer arguments than the host's required parameters or more than
+    /// all its parameters (`required..=total`).
     /// `cross_unit`: the host is declared in another unit, which cannot take `launch` arguments.
-    LaunchArgumentCount { host_name: String, expected: usize, found: usize, cross_unit: bool, span: SpanInfo },
-    /// `with Scope(...)` passes another number of arguments than the scope declares.
-    WithArgumentCount { scope_name: String, expected: usize, found: usize, span: SpanInfo },
+    LaunchArgumentCount { host_name: String, required: usize, total: usize, found: usize, cross_unit: bool, span: SpanInfo },
+    /// `with Scope(...)` passes a number of arguments outside the scope's `required..=total`.
+    WithArgumentCount { scope_name: String, required: usize, total: usize, found: usize, span: SpanInfo },
     /// A host used as a base declares parameters (on itself or on one of its scopes); only the
     /// launched host receives `launch` and `with` arguments.
     BaseHostParameters { host_name: String, span: SpanInfo },

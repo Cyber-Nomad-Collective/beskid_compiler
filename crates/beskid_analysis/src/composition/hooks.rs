@@ -17,13 +17,21 @@
 //! __BeskidHookHostArgs_App { name: a };`), so the ordinary type checker checks every argument at
 //! its own position. The hooks of that host (`startup`, global `init`/`dispose`) or scope take the
 //! record as their first parameter and read the parameters they name from it. Lowering passes the
-//! local to them. An argument count that does not match is left in place and composition reports
-//! it (E1722 for `launch`, E1708 for `with`).
+//! local to them.
+//!
+//! Host and scope parameters may be optional (`host App(string name, i32 port = 8080)`). A site may
+//! omit trailing optional arguments: the record takes each omitted parameter's default value
+//! ([`crate::parameter_defaults::omitted_arguments`]), so a site passes between the number of
+//! required parameters and the number of all parameters. An argument count outside that range (or
+//! a declaration whose defaults are invalid, which the declaration rules report) is left in place
+//! and composition reports it (E1722 for `launch`, E1708 for `with`).
 //!
 //! The hook node stays in the host with its span (the composition plan keys hooks by it); its
 //! parameters and body are emptied so that each source node exists exactly once in the tree.
 
 use std::collections::{HashMap, HashSet};
+
+use crate::parameter_defaults::{DefaultConstant, OmittedArgument, omitted_arguments};
 
 use crate::syntax::{
     Block, ElseBranch, Expression, Field, FieldKind, FunctionDefinition, HostBodyItem, Identifier, LetStatement,
@@ -91,29 +99,77 @@ fn kind_name(kind: ScopeHookKind) -> &'static str {
     }
 }
 
-/// The parameters of one host of the unit and of its scopes (at any depth), by name.
-#[derive(Default)]
-struct HostSignature {
+/// The parameters of one host or scope and the default values of its trailing optional ones.
+struct ParameterList {
     parameters: Vec<Spanned<Parameter>>,
-    scopes: HashMap<String, Vec<Spanned<Parameter>>>,
+    /// One default per trailing optional parameter, in order; empty when there is none or the
+    /// declaration is invalid (then every site must pass every argument).
+    defaults: Vec<DefaultConstant>,
 }
 
-fn host_signatures(items: &[Spanned<Node>]) -> HashMap<String, HostSignature> {
-    fn scopes(body: &[Spanned<HostBodyItem>], found: &mut HashMap<String, Vec<Spanned<Parameter>>>) {
+impl ParameterList {
+    fn new(parameters: &[Spanned<Parameter>], program: &Program) -> Self {
+        // Caller information is rejected on host and scope parameters (E1254): `launch` and
+        // `with` are statements, not calls, so no call site supplies it.
+        let defaults = omitted_arguments(parameters, program)
+            .and_then(|omitted| {
+                omitted
+                    .into_iter()
+                    .map(|argument| match argument {
+                        OmittedArgument::Default(value) => Some(value),
+                        OmittedArgument::Caller(_) => None,
+                    })
+                    .collect::<Option<Vec<_>>>()
+            })
+            .unwrap_or_default();
+        Self { parameters: parameters.to_vec(), defaults }
+    }
+
+    /// The full argument list for a site that passes `arguments`, or `None` when their number is
+    /// outside `required..=total` or the list has no parameters (nothing to bind).
+    fn bind(&self, mut arguments: Vec<Spanned<Expression>>, span: SpanInfo) -> Result<Vec<Spanned<Expression>>, Vec<Spanned<Expression>>> {
+        let total = self.parameters.len();
+        let required = total - self.defaults.len();
+        if total == 0 || arguments.len() < required || arguments.len() > total {
+            return Err(arguments);
+        }
+        let omitted = &self.defaults[arguments.len() - required..];
+        arguments.extend(omitted.iter().map(|value| value.to_expression(span)));
+        Ok(arguments)
+    }
+}
+
+/// The number of parameters before the first one with a default value: a `launch` or `with`
+/// passes at least that many arguments.
+pub(crate) fn required_parameter_count(parameters: &[Spanned<Parameter>]) -> usize {
+    parameters.iter().position(|parameter| parameter.node.default.is_some()).unwrap_or(parameters.len())
+}
+
+/// The parameters of one host of the unit and of its scopes (at any depth), by name.
+struct HostSignature {
+    host: ParameterList,
+    scopes: HashMap<String, ParameterList>,
+}
+
+fn host_signatures(program: &Program) -> HashMap<String, HostSignature> {
+    fn scopes(body: &[Spanned<HostBodyItem>], program: &Program, found: &mut HashMap<String, ParameterList>) {
         for item in body {
             if let HostBodyItem::Scope(scope) = &item.node {
-                found.insert(scope.node.name.node.name.clone(), scope.node.parameters.clone());
-                scopes(&scope.node.body, found);
+                found.insert(scope.node.name.node.name.clone(), ParameterList::new(&scope.node.parameters, program));
+                scopes(&scope.node.body, program, found);
             }
         }
     }
-    items
+    program
+        .items
         .iter()
         .filter_map(|item| match &item.node {
             Node::HostDefinition(host) => {
-                let mut signature =
-                    HostSignature { parameters: host.node.parameters.clone(), scopes: HashMap::new() };
-                scopes(&host.node.body, &mut signature.scopes);
+                let mut signature = HostSignature {
+                    host: ParameterList::new(&host.node.parameters, program),
+                    scopes: HashMap::new(),
+                };
+                scopes(&host.node.body, program, &mut signature.scopes);
                 Some((host.node.name.node.name.clone(), signature))
             }
             _ => None,
@@ -132,6 +188,7 @@ struct Record {
 /// item that already exists is left alone, and a rewritten site has no arguments left.
 pub fn lower_host_hooks(program: Spanned<Program>) -> Spanned<Program> {
     let span = program.span;
+    let signatures = host_signatures(&program.node);
     let Program { mut items, leading_docs } = program.node;
     let existing = items
         .iter()
@@ -142,7 +199,6 @@ pub fn lower_host_hooks(program: Spanned<Program>) -> Spanned<Program> {
         })
         .filter(|name| is_hook_item_name(name))
         .collect::<HashSet<_>>();
-    let signatures = host_signatures(&items);
     let mut generated = Vec::new();
     for item in &mut items {
         if let Node::HostDefinition(host) = &mut item.node {
@@ -440,9 +496,16 @@ fn record_local(
     Spanned::new(Statement::Let(Spanned::new(statement, span)), span)
 }
 
-/// Insert the record local before each `launch`/`with` whose argument count matches the
-/// declaration and clear the statement's arguments. `launched` is the host that an earlier
-/// `launch` of the same body launched; a `with` names a scope of that host.
+/// Whether the statement before `index` is the generated record local `local` (the site was
+/// rewritten by an earlier lowering).
+fn already_bound(statements: &[Spanned<Statement>], index: usize, local: &str) -> bool {
+    index > 0 && matches!(&statements[index - 1].node, Statement::Let(binding) if binding.node.name.node.name == local)
+}
+
+/// Insert the record local before each `launch`/`with` whose argument count fits the declaration
+/// (omitted trailing optional arguments take their defaults) and clear the statement's arguments.
+/// `launched` is the host that an earlier `launch` of the same body launched; a `with` names a
+/// scope of that host.
 fn rewrite_statements(
     statements: &mut Vec<Spanned<Statement>>,
     signatures: &HashMap<String, HostSignature>,
@@ -451,39 +514,49 @@ fn rewrite_statements(
     let mut index = 0;
     while index < statements.len() {
         let mut inserted = None;
-        match &mut statements[index].node {
+        let (before, rest) = statements.split_at_mut(index);
+        match &mut rest[0].node {
             Statement::Launch(launch) => {
                 let host = launch.node.host_path.node.segments.last().map(|segment| segment.node.name.node.name.clone());
                 launched = host.filter(|host| signatures.contains_key(host));
-                if let Some(host) = &launched {
-                    let parameters = &signatures[host].parameters;
-                    if !launch.node.arguments.is_empty() && launch.node.arguments.len() == parameters.len() {
-                        let arguments = std::mem::take(&mut launch.node.arguments);
-                        inserted = Some(record_local(
-                            &host_record_name(host),
-                            launch_arguments_local(launch.span),
-                            parameters,
-                            arguments,
-                            launch.span,
-                        ));
+                let local = launch_arguments_local(launch.span);
+                if let Some(host) = &launched
+                    && !already_bound(before, index, &local)
+                {
+                    let list = &signatures[host].host;
+                    match list.bind(std::mem::take(&mut launch.node.arguments), launch.span) {
+                        Ok(arguments) => {
+                            inserted = Some(record_local(
+                                &host_record_name(host),
+                                local,
+                                &list.parameters,
+                                arguments,
+                                launch.span,
+                            ));
+                        }
+                        Err(arguments) => launch.node.arguments = arguments,
                     }
                 }
             }
             Statement::With(with) => {
                 let scope = &with.node.scope_name.node.name;
+                let local = scope_arguments_local(with.span);
                 if let Some(host) = &launched
-                    && let Some(parameters) = signatures[host].scopes.get(scope)
-                    && !with.node.arguments.is_empty()
-                    && with.node.arguments.len() == parameters.len()
+                    && let Some(list) = signatures[host].scopes.get(scope)
+                    && !already_bound(before, index, &local)
                 {
-                    let arguments = std::mem::take(&mut with.node.arguments);
-                    inserted = Some(record_local(
-                        &scope_record_name(host, scope),
-                        scope_arguments_local(with.span),
-                        parameters,
-                        arguments,
-                        with.span,
-                    ));
+                    match list.bind(std::mem::take(&mut with.node.arguments), with.span) {
+                        Ok(arguments) => {
+                            inserted = Some(record_local(
+                                &scope_record_name(host, scope),
+                                local,
+                                &list.parameters,
+                                arguments,
+                                with.span,
+                            ));
+                        }
+                        Err(arguments) => with.node.arguments = arguments,
+                    }
                 }
                 rewrite_statements(&mut with.node.body.node.statements, signatures, launched.clone());
             }
@@ -709,7 +782,7 @@ i32 Main() { launch AppHost(); return 0; }
         assert!(
             result.issues.iter().any(|issue| matches!(
                 issue,
-                crate::composition::CompositionIssue::LaunchArgumentCount { expected: 2, found: 1, .. }
+                crate::composition::CompositionIssue::LaunchArgumentCount { required: 2, total: 2, found: 1, .. }
             )),
             "{:?}",
             result.issues
@@ -729,5 +802,97 @@ i32 Main() { launch AppHost(); return 0; }
         assert!(result.plan.startup_hooks.iter().all(|hook| hook.takes_arguments_record));
         assert!(result.plan.init_hooks.iter().all(|hook| hook.takes_arguments_record));
         assert!(result.plan.disposal_hooks.iter().all(|hook| hook.takes_arguments_record));
+    }
+
+    const OPTIONAL: &str = r#"
+const DefaultPort = 8080;
+host AppHost(string name, i64 port = DefaultPort, bool verbose = false)
+{
+    startup() { Say(name); }
+    scope Visit(i64 id = -1)
+    {
+        init() { Note(id); }
+    }
+}
+unit Say(string text) { }
+unit Note(i64 id) { }
+i32 Main()
+{
+    launch AppHost("Ada");
+    with Visit() { }
+    with Visit(7) { }
+    return 0;
+}
+"#;
+
+    fn record_fields(statement: &Spanned<Statement>) -> Vec<(String, String)> {
+        let Statement::Let(record) = &statement.node else { panic!("record local, got {statement:?}") };
+        let Expression::StructLiteral(literal) = &record.node.value.node else { panic!("record literal") };
+        literal
+            .node
+            .fields
+            .iter()
+            .map(|field| {
+                let value = crate::format::Emitter::new().write(&field.node.value.node).expect("emit");
+                (field.node.name.node.name.clone(), value)
+            })
+            .collect()
+    }
+
+    fn composition_issues(lowered: &Spanned<Program>) -> Vec<crate::composition::CompositionIssue> {
+        let types = crate::composition::types::test_types::DeclaredTypes::new(lowered, &[]);
+        crate::composition::resolve_composition(crate::composition::CompositionInput {
+            program: lowered,
+            is_mod_project: false,
+            types: &types,
+        })
+        .issues
+    }
+
+    #[test]
+    fn omitted_optional_host_and_scope_arguments_take_their_defaults() {
+        let lowered = lower_host_hooks(parse_program(OPTIONAL).expect("parse"));
+        let main = function(&lowered, "Main");
+        let statements = &main.body.node.statements;
+        assert_eq!(
+            record_fields(&statements[0]),
+            [
+                ("name".to_string(), "\"Ada\"".to_string()),
+                ("port".to_string(), "8080".to_string()),
+                ("verbose".to_string(), "false".to_string()),
+            ]
+        );
+        let Statement::Launch(launch) = &statements[1].node else { panic!("launch") };
+        assert!(launch.node.arguments.is_empty());
+        // `with Visit()` passes nothing: the record still exists, with the default.
+        assert_eq!(record_fields(&statements[2]), [("id".to_string(), "-1".to_string())]);
+        assert_eq!(record_fields(&statements[4]), [("id".to_string(), "7".to_string())]);
+        assert!(composition_issues(&lowered).is_empty(), "{:?}", composition_issues(&lowered));
+        assert_eq!(lower_host_hooks(lowered.clone()), lowered, "lowering with defaults is idempotent");
+    }
+
+    #[test]
+    fn an_argument_count_outside_the_optional_range_is_reported_with_the_range() {
+        for (site, found) in [("launch AppHost();", 0), ("launch AppHost(\"Ada\", 1, true, 2);", 4)] {
+            let source = OPTIONAL.replace("launch AppHost(\"Ada\");", site);
+            let lowered = lower_host_hooks(parse_program(&source).expect("parse"));
+            let issues = composition_issues(&lowered);
+            assert!(
+                issues.iter().any(|issue| matches!(
+                    issue,
+                    crate::composition::CompositionIssue::LaunchArgumentCount { required: 1, total: 3, found: f, .. } if *f == found
+                )),
+                "{site}: {issues:?}"
+            );
+        }
+        let source = OPTIONAL.replace("with Visit(7) { }", "with Visit(7, 8) { }");
+        let issues = composition_issues(&lower_host_hooks(parse_program(&source).expect("parse")));
+        assert!(
+            issues.iter().any(|issue| matches!(
+                issue,
+                crate::composition::CompositionIssue::WithArgumentCount { required: 0, total: 1, found: 2, .. }
+            )),
+            "{issues:?}"
+        );
     }
 }

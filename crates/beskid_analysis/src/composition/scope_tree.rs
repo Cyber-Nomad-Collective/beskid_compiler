@@ -48,6 +48,7 @@ pub fn merge_host_scopes(
                     parent: unified_parent,
                     span: scope.span,
                     parameter_count: scope.parameter_count,
+                    required_parameter_count: scope.required_parameter_count,
                     unit: scope.unit.clone(),
                 },
             );

@@ -116,8 +116,9 @@ pub fn resolve_composition_with_imports(
                 None,
                 CompositionIssue::WithArgsMismatch { scope_name: with_site.scope_name.clone(), span: with_site.span },
             )),
-            // Expansion moved a matching argument list into the record local; anything else
-            // (arguments left, or a scope with parameters and no record) does not match.
+            // Expansion moved an argument list that fits (omitted optional arguments filled) into
+            // the record local; anything else (arguments left, or a scope with parameters and no
+            // record) does not fit.
             Some(scope)
                 if with_site.argument_count != 0 || (scope.parameter_count > 0 && !with_site.arguments_bound) =>
             {
@@ -125,7 +126,8 @@ pub fn resolve_composition_with_imports(
                     None,
                     CompositionIssue::WithArgumentCount {
                         scope_name: with_site.scope_name.clone(),
-                        expected: scope.parameter_count,
+                        required: scope.required_parameter_count,
+                        total: scope.parameter_count,
                         found: with_site.argument_count,
                         span: with_site.span,
                     },
@@ -149,7 +151,8 @@ pub fn resolve_composition_with_imports(
                     None,
                     CompositionIssue::LaunchArgumentCount {
                         host_name: launched.name.clone(),
-                        expected: launched.parameter_count,
+                        required: launched.required_parameter_count,
+                        total: launched.parameter_count,
                         found: site.argument_count,
                         cross_unit: launched.unit.is_some(),
                         span: site.span,

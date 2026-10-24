@@ -219,25 +219,32 @@ fn composition_issue_to_diagnostic(
                     .to_string(),
             ),
         ),
-        CompositionIssue::LaunchArgumentCount { host_name, expected, found, cross_unit: true, span } => (
+        CompositionIssue::LaunchArgumentCount { host_name, required, total, found, cross_unit: true, span } => (
             *span,
             format!("`launch {host_name}(...)` cannot pass arguments to a host declared in another unit"),
             "host parameters from another unit",
             Some(format!(
-                "`{host_name}` declares {expected} parameter(s) and this `launch` passes {found}; declare the launched host with parameters in the unit that launches it"
+                "`{host_name}` declares {} and this `launch` passes {found}; declare the launched host with parameters in the unit that launches it",
+                declared_parameters(*required, *total)
             )),
         ),
-        CompositionIssue::LaunchArgumentCount { host_name, expected, found, span, .. } => (
+        CompositionIssue::LaunchArgumentCount { host_name, required, total, found, span, .. } => (
             *span,
-            format!("`launch {host_name}(...)` passes {found} argument(s), but `{host_name}` declares {expected} parameter(s)"),
+            format!(
+                "`launch {host_name}(...)` passes {found} argument(s), but `{host_name}` declares {}",
+                declared_parameters(*required, *total)
+            ),
             "wrong number of launch arguments",
-            Some(format!("pass one argument for each parameter of `host {host_name}(...)`, in order")),
+            Some(argument_count_help(&format!("host {host_name}(...)"), *required, *total)),
         ),
-        CompositionIssue::WithArgumentCount { scope_name, expected, found, span } => (
+        CompositionIssue::WithArgumentCount { scope_name, required, total, found, span } => (
             *span,
-            format!("`with {scope_name}(...)` passes {found} argument(s), but scope `{scope_name}` declares {expected} parameter(s)"),
+            format!(
+                "`with {scope_name}(...)` passes {found} argument(s), but scope `{scope_name}` declares {}",
+                declared_parameters(*required, *total)
+            ),
             "wrong number of scope arguments",
-            Some(format!("pass one argument for each parameter of `scope {scope_name}(...)`, in order")),
+            Some(argument_count_help(&format!("scope {scope_name}(...)"), *required, *total)),
         ),
         CompositionIssue::BaseHostParameters { host_name, span } => (
             *span,
@@ -339,6 +346,27 @@ fn with_composition_context(diagnostic: SemanticDiagnostic, issue: &CompositionI
 
 fn plural_field_name(name: &str) -> String {
     if name.ends_with('s') { name.to_string() } else { format!("{name}s") }
+}
+
+
+/// `2 parameter(s)` or `1 required and 2 optional parameter(s)`.
+fn declared_parameters(required: usize, total: usize) -> String {
+    if required == total {
+        format!("{total} parameter(s)")
+    } else {
+        format!("{required} required and {} optional parameter(s)", total - required)
+    }
+}
+
+fn argument_count_help(declaration: &str, required: usize, total: usize) -> String {
+    if required == total {
+        format!("pass one argument for each parameter of `{declaration}`, in order")
+    } else {
+        format!(
+            "pass the {required} required argument(s) of `{declaration}` in order, then up to {} optional one(s); an omitted optional argument takes its default value",
+            total - required
+        )
+    }
 }
 
 #[cfg(test)]

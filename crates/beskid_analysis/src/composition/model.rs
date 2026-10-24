@@ -91,6 +91,8 @@ pub struct CompositionScope {
     pub span: SpanInfo,
     /// Number of parameters the scope declares (`scope Visit(i32 id)`); `with` passes them.
     pub parameter_count: usize,
+    /// Number of those parameters without a default value; `with` passes at least that many.
+    pub required_parameter_count: usize,
     /// The unit of the host that declares the scope.
     pub unit: UnitPath,
 }
@@ -103,6 +105,8 @@ pub struct CompositionHost {
     pub span: SpanInfo,
     /// Number of parameters the host declares; `launch` passes them.
     pub parameter_count: usize,
+    /// Number of those parameters without a default value; `launch` passes at least that many.
+    pub required_parameter_count: usize,
     /// Whether one of the host's scopes declares parameters.
     pub scope_parameters: bool,
 }

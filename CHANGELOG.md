@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - E1204 names the accepted range: `call arity mismatch: expected 2–3 arguments, got 1`.
 - `Testing.Assert` and `Testing.Expect` take an optional `because`: `Assert.Equal(1, 1)` is a complete call, and an omitted because adds no line to the failure output.
 - The formatter, API signatures, hovers and signature help show default values.
+- Host and scope parameters may be optional: `launch App("Ada");` for `host App(string name, i64 port = 8080)` builds the host record with the default, and `with Visit()` works for `scope Visit(i64 id = -1)`. E1722 and E1708 name the accepted range. Caller-information attributes on host and scope parameters are E1254 (`launch` and `with` are not calls).
 
 ### Contracts
 

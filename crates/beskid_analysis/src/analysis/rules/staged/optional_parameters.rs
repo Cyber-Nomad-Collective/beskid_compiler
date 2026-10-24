@@ -1,7 +1,8 @@
 //! Declaration rules for optional parameters (see [`crate::parameter_defaults`]):
 //! E1251 a required parameter after an optional one, E1252 a default that is not a compile-time
 //! constant, E1253 a default that does not fit the parameter type, E1254 an optional parameter
-//! where no call can pass it (hook parameters, `bulk` parameters), E1255 a caller-information parameter without a default, E1256 a
+//! where no call can pass it (hook parameters, `bulk` parameters) and caller information on a host
+//! or scope parameter, E1255 a caller-information parameter without a default, E1256 a
 //! caller-information parameter of the wrong type.
 
 use super::SemanticPipelineRule;
@@ -13,6 +14,8 @@ use crate::syntax::{ContractNode, HostBodyItem, MethodDefinition, Node, Paramete
 
 const HOOK: &str = "a parameter of an `init`, `dispose` or `startup` hook";
 const BULK: &str = "a `bulk` parameter";
+const HOST_CALLER: &str =
+    "a caller-information parameter of a host or scope (`launch` and `with` are statements, not calls)";
 
 impl SemanticPipelineRule {
     pub(super) fn stage_optional_parameters(&self, ctx: &mut RuleContext, program: &Program) {
@@ -42,6 +45,7 @@ fn check_items(ctx: &mut RuleContext, program: &Program, items: &[Spanned<Node>]
             }
             Node::HostDefinition(host) => {
                 check_parameters(ctx, program, &host.node.parameters);
+                reject_caller_information(ctx, &host.node.parameters);
                 check_host_body(ctx, program, &host.node.body);
             }
             Node::InlineModule(module) => check_items(ctx, program, &module.node.items),
@@ -55,6 +59,7 @@ fn check_host_body(ctx: &mut RuleContext, program: &Program, body: &[Spanned<Hos
         match &item.node {
             HostBodyItem::Scope(scope) => {
                 check_parameters(ctx, program, &scope.node.parameters);
+                reject_caller_information(ctx, &scope.node.parameters);
                 check_host_body(ctx, program, &scope.node.body);
             }
             // The composition runtime starts hooks; no call site passes their arguments, so a
@@ -74,6 +79,20 @@ fn reject_optional(ctx: &mut RuleContext, parameters: &[Spanned<Parameter>], pla
             (None, None) => continue,
         };
         ctx.emit_issue(site, SemanticIssueKind::OptionalParameterNotAllowed { place: place.to_string() });
+    }
+}
+
+/// E1254 for every caller-information attribute in `parameters` of a host or scope: a `launch` or
+/// `with` site may omit an optional argument (it takes the default value), but no call site
+/// supplies the caller's file, line or column.
+fn reject_caller_information(ctx: &mut RuleContext, parameters: &[Spanned<Parameter>]) {
+    for parameter in parameters {
+        if caller_kind(&parameter.node).is_some() {
+            ctx.emit_issue(
+                parameter.node.name.span,
+                SemanticIssueKind::OptionalParameterNotAllowed { place: HOST_CALLER.to_string() },
+            );
+        }
     }
 }
 
@@ -226,6 +245,25 @@ mod tests {
             [
                 ("E1255".to_string(), "`[CallerLineNumber]` parameter `line` needs a default value".to_string()),
                 ("E1256".to_string(), "`[CallerFilePath]` parameter `file` must have type `string`".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn host_and_scope_parameters_take_defaults_but_not_caller_information() {
+        let source = "host App(string name, i64 port = 8080, [CallerLineNumber] i64 line = 0) { scope Visit(i64 id = 1, [CallerFilePath] string file = \"\") { } }";
+        let found = findings(source);
+        assert_eq!(
+            found,
+            [
+                (
+                    "E1254".to_string(),
+                    "a caller-information parameter of a host or scope (`launch` and `with` are statements, not calls) cannot be optional".to_string()
+                ),
+                (
+                    "E1254".to_string(),
+                    "a caller-information parameter of a host or scope (`launch` and `with` are statements, not calls) cannot be optional".to_string()
+                ),
             ]
         );
     }
