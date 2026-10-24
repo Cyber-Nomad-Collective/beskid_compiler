@@ -265,8 +265,9 @@ fn fields_and_methods_are_separated_and_methods_stand_apart() {
 #[test]
 fn statements_keep_the_author_grouping_in_functions_and_tests() {
     let source = "test checks_values {\n    Testing.Assert.Equal(1, 1);\n    Testing.Assert.Equal(2, 2);\n    Testing.Assert.Equal(3, 3);\n\n\n    Testing.Assert.Equal(4, 4);\n}\n";
+    // Test names are written in PascalCase (W1637); the formatter applies the naming style.
     let expected = concat!(
-        "test checks_values\n",
+        "test ChecksValues\n",
         "{\n",
         "    Testing.Assert.Equal(1, 1);\n",
         "    Testing.Assert.Equal(2, 2);\n",

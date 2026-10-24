@@ -341,7 +341,7 @@ i32 Main() { launch AppHost(); return 0; }
         for ((start, end), text) in edits {
             fixed.replace_range(start..end, &text);
         }
-        assert!(fixed.contains("inject Greeter[] greeters,"), "{fixed}");
+        assert!(fixed.contains("inject Greeter[] greeters;"), "{fixed}");
     }
 
     #[test]
