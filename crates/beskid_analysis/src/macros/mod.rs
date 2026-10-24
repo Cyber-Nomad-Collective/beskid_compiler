@@ -16,6 +16,7 @@ pub use expand::{DEFAULT_MAX_MACRO_EXPANSION_DEPTH, expand_program};
 pub use match_args::{FragmentBinding, MatchError, fragment_kind_keyword};
 pub use registry::MacroRegistry;
 pub use substitute::Bindings;
+pub(crate) use walk::map_statement;
 
 #[derive(Debug, Clone)]
 pub struct MacroExpansionOutcome {

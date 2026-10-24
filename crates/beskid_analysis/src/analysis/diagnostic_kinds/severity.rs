@@ -29,7 +29,7 @@ impl SemanticIssueKind {
             | Self::NamingNotPascalCaseModuleSegment { .. }
             | Self::NamingNotPascalCaseGeneric { .. }
             | Self::NamingNotCamelCaseBinding { .. }
-            | Self::NamingNotSnakeCaseTest { .. }
+            | Self::NamingNotPascalCaseTest { .. }
             | Self::NamingNotCamelCaseMacro { .. }
             | Self::RedundantEnumConstructorParens => Severity::Warning,
             _ => Severity::Error,

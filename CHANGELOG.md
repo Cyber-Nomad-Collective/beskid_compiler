@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when applicable.
 
+## Unreleased (0.6.7, test slice)
+
+- `beskid test` reports a failed assertion as `assertion failed: expected 3, found 4` with the because text and the `Assert` call site, once, under the test name. A runtime trap is reported as `test crashed: <reason>`. `--json` carries `failure` (kind, expected, actual, location) per failed test.
+- Test names use PascalCase; W1637 now reports a name that is not PascalCase. Corelib and fixture tests are renamed.
+
 ## [Unreleased]
 
 ### Diagnostics

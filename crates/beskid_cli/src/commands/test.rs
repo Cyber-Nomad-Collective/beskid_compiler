@@ -4,12 +4,15 @@ use anyhow::{Result, anyhow};
 use beskid_engine::services::SyntaxTestItem;
 use clap::Args;
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use crate::project_args::{LockfilePolicyArgs, ProjectResolveArgs};
 use beskid_tools::diagnostics;
 use beskid_tools::pipeline::{tui::FileLineLink, tui::TestRowState, tui::TestRunUi};
+
+use super::test_failure::{AssertionFailure, SourceLocation, TestCrash, TestRunFailure};
+use beskid_analysis::analysis::diagnostics::source_map::SourceMapper;
 
 use super::prepared_matrix::{
     Cancellation, ExecutionBudgets, PhaseRecord, PreparedTarget, PreparedWorkspace, TargetReport, TargetResult,
@@ -101,6 +104,17 @@ struct TestExecution {
     reason: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     output: Option<String>,
+    /// Structured detail of a failed test: the assertion with its values and call site, or the crash.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    failure: Option<FailureDetail>,
+}
+
+/// Why a test failed, for `--json` consumers and editors.
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum FailureDetail {
+    Assertion(AssertionFailure),
+    Crash(TestCrash),
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
@@ -209,6 +223,7 @@ pub(crate) fn execute_prepared_target(
     let mut budget_expired = false;
     let mut first_failure = None;
     let mut last_started_test = None;
+    let mut source_mapper = SourceMapper::new();
     // Pending tests link and run ahead of this loop on a bounded pool; the loop still reports,
     // budgets and records them one by one in manifest order.
     let pending = planned
@@ -233,6 +248,7 @@ pub(crate) fn execute_prepared_target(
                     outcome: TestOutcome::FilteredOut,
                     reason: Some("filtered by CLI options".to_string()),
                     output: None,
+                    failure: None,
                 });
                 summary.filtered_out += 1;
                 continue;
@@ -248,6 +264,7 @@ pub(crate) fn execute_prepared_target(
                     outcome: TestOutcome::Skipped,
                     reason: reason.map(str::to_owned),
                     output: None,
+                    failure: None,
                 });
                 summary.skipped += 1;
                 continue;
@@ -275,6 +292,7 @@ pub(crate) fn execute_prepared_target(
                         outcome: TestOutcome::Passed,
                         reason: None,
                         output: Some(output),
+                        failure: None,
                     });
                     summary.passed += 1;
                     if target_started.elapsed() >= workspace.target_timeout() {
@@ -303,20 +321,44 @@ pub(crate) fn execute_prepared_target(
                         )?;
                         break;
                     }
-                    let reason = if args.json {
-                        error.to_string()
-                    } else {
-                        diagnostics::format_report(&diagnostics::report_from_anyhow(&error)).to_string()
+                    let (reason, detail) = match error.downcast_ref::<TestRunFailure>() {
+                        Some(TestRunFailure::Assertion(assertion)) => {
+                            let mut assertion = assertion.clone();
+                            // The call site is the file the compiler saw; report the authored file.
+                            if let Some(location) = assertion.location.as_mut()
+                                && let Some(authored) = source_mapper.authored_name(&location.file.display().to_string())
+                            {
+                                location.file = PathBuf::from(authored);
+                            }
+                            if assertion.location.is_none() {
+                                assertion.location = Some(declaration_location(&mut source_mapper, &target.resolved.source_path, test));
+                            }
+                            (assertion.render(), Some(FailureDetail::Assertion(assertion)))
+                        }
+                        Some(TestRunFailure::Crashed(crash)) => {
+                            let mut crash = crash.clone();
+                            crash.location = Some(declaration_location(&mut source_mapper, &target.resolved.source_path, test));
+                            (format!("test crashed: {}", crash.reason), Some(FailureDetail::Crash(crash)))
+                        }
+                        None => {
+                            let reason = if args.json {
+                                error.to_string()
+                            } else {
+                                diagnostics::format_report(&diagnostics::report_from_anyhow(&error)).to_string()
+                            };
+                            if first_failure.is_none() {
+                                first_failure = Some(format!("{}: {}", test.qualified_name, reason.trim()));
+                            }
+                            (reason, None)
+                        }
                     };
-                    if first_failure.is_none() {
-                        first_failure = Some(format!("{}: {}", test.qualified_name, reason.trim()));
-                    }
                     if emit {
-                        let detail =
-                            format!("\n  FAIL {name}: {reason}", name = test.qualified_name, reason = reason.trim());
                         workspace.session().pipeline().halt_progress_bars_for_output();
-                        eprintln!("{detail}");
                         test_ui.finish_row(row_index, TestRowState::Failed, duration, Some(&reason))?;
+                        // The failure is printed once, under the `FAIL <test>` line.
+                        for line in reason.trim().lines() {
+                            eprintln!("  {line}");
+                        }
                     }
                     executions.push(TestExecution {
                         name: test.name.to_string(),
@@ -324,6 +366,7 @@ pub(crate) fn execute_prepared_target(
                         outcome: TestOutcome::Failed,
                         reason: Some(reason),
                         output: None,
+                        failure: detail,
                     });
                     summary.failed += 1;
                 }
@@ -390,12 +433,9 @@ pub(crate) fn execute_prepared_target(
     let error = timeout_error
         .map(|error| error.to_string())
         .or_else(|| {
-            (summary.failed > 0).then(|| {
-                format!(
-                    "{} test(s) failed; first failure: {}",
-                    summary.failed,
-                    first_failure.as_deref().unwrap_or("unknown test failure")
-                )
+            (summary.failed > 0).then(|| match first_failure.as_deref() {
+                Some(first) => format!("{} test(s) failed; first failure: {first}", summary.failed),
+                None => format!("{} test(s) failed", summary.failed),
             })
         })
         .or_else(|| {
@@ -427,6 +467,16 @@ pub(crate) fn execute_prepared_target(
     })
 }
 
+/// The declaration of `test`, in the authored file.
+fn declaration_location(mapper: &mut SourceMapper, source_path: &Path, test: &SyntaxTestItem) -> SourceLocation {
+    let file = mapper.authored_name(&source_path.display().to_string()).map_or_else(|| source_path.to_path_buf(), PathBuf::from);
+    SourceLocation {
+        file,
+        line: test.selection_span.line_col_start.0 as u32,
+        column: test.selection_span.line_col_start.1 as u32,
+    }
+}
+
 /// Records a test that never ran because the target's execution budget expired first.
 /// Distinct from a `skip.condition`-driven skip: this test would otherwise have executed,
 /// so folding it into "skipped" would silently understate lost coverage.
@@ -453,6 +503,7 @@ fn record_timed_out_test(
         outcome: TestOutcome::TimedOut,
         reason: Some("target execution budget expired before this test could run".to_string()),
         output: None,
+        failure: None,
     });
     summary.timed_out += 1;
     Ok(())
@@ -527,6 +578,55 @@ fn is_filtered_out(
 mod tests {
     use super::*;
     use beskid_analysis::syntax::common::span::SpanInfo;
+
+    #[test]
+    fn assertion_failure_serializes_values_and_call_site_for_editors() {
+        let execution = TestExecution {
+            name: "AddsNumbers".into(),
+            qualified_name: "Main.AddsNumbers".into(),
+            outcome: TestOutcome::Failed,
+            reason: Some("assertion failed: expected 3, found 4".into()),
+            output: None,
+            failure: Some(FailureDetail::Assertion(AssertionFailure {
+                headline: "expected 3, found 4".into(),
+                because: Some("adds".into()),
+                expected: Some("3".into()),
+                actual: Some("4".into()),
+                location: Some(SourceLocation { file: PathBuf::from("Src/Main.bd"), line: 17, column: 5 }),
+            })),
+        };
+        let json = serde_json::to_value(&execution).unwrap();
+        assert_eq!(json["outcome"], "failed");
+        assert_eq!(json["failure"]["kind"], "assertion");
+        assert_eq!(json["failure"]["expected"], "3");
+        assert_eq!(json["failure"]["actual"], "4");
+        assert_eq!(json["failure"]["location"]["file"], "Src/Main.bd");
+        assert_eq!(json["failure"]["location"]["line"], 17);
+        assert_eq!(json["failure"]["location"]["column"], 5);
+    }
+
+    #[test]
+    fn crash_serializes_as_a_separate_kind_without_assertion_fields() {
+        let execution = TestExecution {
+            name: "Divides".into(),
+            qualified_name: "Main.Divides".into(),
+            outcome: TestOutcome::Failed,
+            reason: Some("test crashed: division by zero".into()),
+            output: None,
+            failure: Some(FailureDetail::Crash(TestCrash {
+                trap: Some("unreachable_or_isle_invariant".into()),
+                reason: "division by zero".into(),
+                location: Some(SourceLocation { file: PathBuf::from("Src/Main.bd"), line: 12, column: 1 }),
+            })),
+        };
+        let json = serde_json::to_value(&execution).unwrap();
+        assert_eq!(json["failure"]["kind"], "crash");
+        assert_eq!(json["failure"]["reason"], "division by zero");
+        assert!(json["failure"].get("expected").is_none());
+        assert_eq!(json["failure"]["location"]["file"], "Src/Main.bd");
+        assert_eq!(json["failure"]["location"]["line"], 12);
+        assert_eq!(json["failure"]["location"]["column"], 1);
+    }
 
     fn sample_project_resolve_args() -> ProjectResolveArgs {
         ProjectResolveArgs { project: None, target: None, workspace_member: None }

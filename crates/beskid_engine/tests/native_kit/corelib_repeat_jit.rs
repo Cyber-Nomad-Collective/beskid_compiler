@@ -71,7 +71,7 @@ fn run_corelib_tests(entry: &str, target_name: &str, test_names: &[&str]) -> Vec
 
 #[test]
 fn jit_corelib_repeat_builds_string_entrypoint() {
-    run_corelib_test("src/console/ConsoleSuite.bd", "ConsoleSuite", "repeat_builds_string");
+    run_corelib_test("src/console/ConsoleSuite.bd", "ConsoleSuite", "RepeatBuildsString");
 }
 
 #[test]
@@ -79,7 +79,7 @@ fn jit_progress_bar_mixed_interpolation_preserves_exact_fill() {
     run_corelib_test(
         "src/console/ConsoleSuite.bd",
         "ConsoleSuite",
-        "progress_bar_renders_body_with_exact_fill",
+        "ProgressBarRendersBodyWithExactFill",
     );
 }
 
@@ -88,7 +88,7 @@ fn jit_numeric_interpolation_preserves_value() {
     run_corelib_test(
         "src/console/ConsoleSuite.bd",
         "ConsoleSuite",
-        "progress_bar_formats_numeric_interpolation",
+        "ProgressBarFormatsNumericInterpolation",
     );
 }
 
@@ -109,6 +109,6 @@ fn jit_adjacent_string_interpolation_preserves_values() {
     run_corelib_test(
         "src/console/ConsoleSuite.bd",
         "ConsoleSuite",
-        "progress_bar_concatenates_adjacent_string_interpolations",
+        "ProgressBarConcatenatesAdjacentStringInterpolations",
     );
 }

@@ -44,7 +44,7 @@ pub unit Sha256(u8[] data, u8[] digest) {
     return;
 }
 
-test native_memcpy {
+test NativeMemcpy {
     mut u8[] destination = [0_u8, 0_u8, 0_u8, 9_u8];
     u8[] source = [1_u8, 2_u8, 3_u8];
     Copy(destination, source);
@@ -53,14 +53,14 @@ test native_memcpy {
     Assert.Equal(destination[3], 9_u8, "byte past the copy");
 }
 
-test native_memset {
+test NativeMemset {
     mut u8[] bytes = [0_u8, 0_u8, 0_u8];
     Fill(bytes, 171);
     Assert.Equal(bytes[0], 171_u8, "first byte");
     Assert.Equal(bytes[2], 171_u8, "last byte");
 }
 
-test native_sha256 {
+test NativeSha256 {
     u8[] message = [97_u8, 98_u8, 99_u8];
     mut u8[] digest = [0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8,
         0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8];

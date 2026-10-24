@@ -54,10 +54,10 @@ pub unit CheckHostWorkSurvivesWait(word winner) {
     return;
 }
 
-test cancelled_wait_retains_host_work_until_host_exit {
+test CancelledWaitRetainsHostWorkUntilHostExit {
     CheckHostWorkSurvivesWait(EXTERNAL_CANCELLED);
 }
 
-test expired_wait_retains_host_work_until_host_exit {
+test ExpiredWaitRetainsHostWorkUntilHostExit {
     CheckHostWorkSurvivesWait(EXTERNAL_TIMEOUT);
 }

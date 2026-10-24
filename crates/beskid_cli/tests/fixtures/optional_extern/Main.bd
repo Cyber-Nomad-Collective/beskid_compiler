@@ -31,19 +31,19 @@ pub i64 Absolute(i64 value) {
     return value;
 }
 
-test missing_library_is_unavailable {
+test MissingLibraryIsUnavailable {
     Assert.Equal<bool>(MissingNative.Available(), false, "the library is not installed");
 }
 
-test missing_library_takes_the_pure_path {
+test MissingLibraryTakesThePurePath {
     Assert.Equal<i64>(MaybeMissing(41), 42, "the pure fallback runs");
 }
 
-test present_library_is_available {
+test PresentLibraryIsAvailable {
     Assert.Equal<bool>(PresentNative.Available(), true, "libc provides labs");
 }
 
-test present_library_call_works {
+test PresentLibraryCallWorks {
     Assert.Equal<i64>(Absolute(-5), 5, "labs runs natively");
 }
 

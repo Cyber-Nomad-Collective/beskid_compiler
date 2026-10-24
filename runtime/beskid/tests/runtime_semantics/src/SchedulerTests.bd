@@ -126,7 +126,7 @@ pub word ReceivedWord(pointer slot) {
     return raw_word_load(pointer_add(payload, 16));
 }
 
-test scheduler_executes_argument_yield_resume_and_return_trampoline {
+test SchedulerExecutesArgumentYieldResumeAndReturnTrampoline {
     pointer runtime = InstallSchedulerRuntime();
     pointer argument = SystemAllocate(8, 8);
     raw_word_store(argument, 0);
@@ -155,7 +155,7 @@ test scheduler_executes_argument_yield_resume_and_return_trampoline {
     ShutdownSchedulerRuntime(runtime);
 }
 
-test synchronization_bounds_handles_and_teardown_are_deterministic {
+test SynchronizationBoundsHandlesAndTeardownAreDeterministic {
     pointer runtime = InstallSchedulerRuntime();
 
     // Channels are linked cells, not a fixed ring: any non-negative capacity is valid
@@ -214,7 +214,7 @@ test synchronization_bounds_handles_and_teardown_are_deterministic {
     ShutdownSchedulerRuntime(runtime);
 }
 
-test callback_registry_rejects_merged_overflow_without_publication {
+test CallbackRegistryRejectsMergedOverflowWithoutPublication {
     pointer runtime = InstallSchedulerRuntime();
     pointer first = SystemAllocate(32 * 16, 8);
     pointer overflow = SystemAllocate(16, 8);
@@ -235,7 +235,7 @@ test callback_registry_rejects_merged_overflow_without_publication {
     ShutdownSchedulerRuntime(runtime);
 }
 
-test poll_slots_reuse_with_generation_and_stale_handle_denial_across_long_cycles {
+test PollSlotsReuseWithGenerationAndStaleHandleDenialAcrossLongCycles {
     pointer runtime = InstallSchedulerRuntime();
     mut word staleTask = 0;
     mut word staleMonitor = 0;
@@ -277,7 +277,7 @@ test poll_slots_reuse_with_generation_and_stale_handle_denial_across_long_cycles
     ShutdownSchedulerRuntime(runtime);
 }
 
-test poll_terminal_transition_has_a_single_winner {
+test PollTerminalTransitionHasASingleWinner {
     pointer runtime = InstallSchedulerRuntime();
     word taskIndex = PollTaskAllocate();
     pointer task = PollTaskRecord(taskIndex);
@@ -291,7 +291,7 @@ test poll_terminal_transition_has_a_single_winner {
     ShutdownSchedulerRuntime(runtime);
 }
 
-test channel_close_and_shutdown_drain_queued_pointer_handles {
+test ChannelCloseAndShutdownDrainQueuedPointerHandles {
     pointer runtime = InstallSchedulerRuntime();
     pointer descriptor = SystemAllocate(40, 8);
     memory_set(descriptor, 0, 40);
@@ -314,7 +314,7 @@ test channel_close_and_shutdown_drain_queued_pointer_handles {
     SystemFree(descriptor, 40);
 }
 
-test channel_close_releases_an_unconsumed_pointer_receipt {
+test ChannelCloseReleasesAnUnconsumedPointerReceipt {
     pointer runtime = InstallSchedulerRuntime();
     pointer descriptor = SystemAllocate(40, 8);
     memory_set(descriptor, 0, 40);
@@ -335,7 +335,7 @@ test channel_close_releases_an_unconsumed_pointer_receipt {
     SystemFree(descriptor, 40);
 }
 
-test poll_task_pointer_roots_release_on_terminal_drop_and_slot_reuse {
+test PollTaskPointerRootsReleaseOnTerminalDropAndSlotReuse {
     pointer runtime = InstallSchedulerRuntime();
     pointer descriptor = SystemAllocate(40, 8);
     memory_set(descriptor, 0, 40);
@@ -363,7 +363,7 @@ test poll_task_pointer_roots_release_on_terminal_drop_and_slot_reuse {
     ShutdownSchedulerRuntime(runtime);
 }
 
-test scheduler_shutdown_cancels_active_fiber_and_invalidates_reused_handle {
+test SchedulerShutdownCancelsActiveFiberAndInvalidatesReusedHandle {
     pointer runtime = InstallSchedulerRuntime();
     pointer argument = SystemAllocate(8, 8);
     raw_word_store(argument, 0);

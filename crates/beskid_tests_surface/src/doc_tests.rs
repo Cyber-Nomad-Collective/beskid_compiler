@@ -200,7 +200,7 @@ i64 Sum(
     i64 right
 ) { return left + right; }
 
-test docs_inside_test_body {
+test DocsInsideTestBody {
     /// statement doc
     i64 value = 1;
 }

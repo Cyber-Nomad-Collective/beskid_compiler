@@ -22,6 +22,7 @@ pub mod run;
 pub mod runtime_kit;
 mod syntax_codegen;
 pub mod test;
+mod test_failure;
 pub mod tree;
 pub mod validate_bsol;
 

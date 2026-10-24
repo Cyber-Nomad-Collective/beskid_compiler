@@ -598,7 +598,11 @@ impl NativeTests {
         let stdout = String::from_utf8_lossy(&output.stdout);
         let stderr = String::from_utf8_lossy(&output.stderr);
         if !output.status.success() {
-            return Err(anyhow!("native test `{name}` exited {}: {stdout}{stderr}", output.status));
+            return Err(anyhow::Error::new(super::test_failure::classify_failed_run(
+                &output.status.to_string(),
+                &stdout,
+                &stderr,
+            )));
         }
         Ok(format!("{stdout}{stderr}"))
     }
