@@ -102,6 +102,14 @@ pub(super) fn doc_comment_quickfix(
 pub fn handle_code_actions(uri: &Uri, doc: &Document, params: &CodeActionParams) -> CodeActionResponse {
     let mut actions: Vec<CodeActionOrCommand> = Vec::new();
 
+    // Fixes the compiler attached to a diagnostic travel in its `data`, for source files and
+    // project manifests alike.
+    for diag in &params.context.diagnostics {
+        actions.extend(
+            crate::diagnostics::quick_fixes_from_data(uri, diag).into_iter().map(CodeActionOrCommand::CodeAction),
+        );
+    }
+
     if !project_manifest::is_manifest_uri(uri) {
         if let Some(edits) = formatting::handler::handle_document_formatting(doc) {
             let mut changes = HashMap::new();
@@ -239,5 +247,61 @@ mod tests {
             edits.iter().any(|edit| edit.new_text.contains("@arg(value)")),
             "expected stub from syntax documentation facts, got {edits:?}"
         );
+    }
+
+    #[test]
+    fn manifest_diagnostics_offer_their_compiler_fixes_as_quick_fixes() {
+        use crate::diagnostics::{DiagnosticDetail, FixFact, lsp_diagnostics_from_syntax};
+        use crate::session::store::{SyntaxDiagnostic, SyntaxDiagnosticSeverity};
+        let uri = Uri::from_str("file:///tmp/code-actions/App.bproj").expect("uri");
+        let source = "Ap {\n  name = \"App\"\n}\n";
+        let fact = SyntaxDiagnostic {
+            start: 0,
+            end: 2,
+            severity: SyntaxDiagnosticSeverity::Error,
+            code: Some("E1896".into()),
+            message: "The project block is named `Ap`.".into(),
+            source: "beskid".into(),
+            detail: DiagnosticDetail {
+                uri: Some(uri.to_string()),
+                fixes: vec![FixFact {
+                    title: "Rename the block to `App`".into(),
+                    applicability: beskid_analysis::Applicability::MachineApplicable,
+                    edits: vec![(0, 2, "App".into())],
+                }],
+                ..DiagnosticDetail::default()
+            },
+        };
+        let diagnostics = lsp_diagnostics_from_syntax(source, &[fact]);
+        let doc = Document {
+            version: 1,
+            text: source.to_string(),
+            syntax_definitions: Vec::new(),
+            syntax_hovers: Vec::new(),
+            syntax_symbols: Vec::new(),
+            bsol_semantic_token_candidates: Vec::new(),
+            syntax_attribute_names: Vec::new(),
+            syntax_completion: None,
+            syntax_inlay_hints: Vec::new(),
+            syntax_documentation: Vec::new(),
+            syntax_diagnostics: Vec::new(),
+            syntax_fixes: Vec::new(),
+        };
+        let params = CodeActionParams {
+            text_document: TextDocumentIdentifier { uri: uri.clone() },
+            range: Range { start: Position::new(0, 0), end: Position::new(0, 2) },
+            context: CodeActionContext { diagnostics, only: None, trigger_kind: None },
+            work_done_progress_params: WorkDoneProgressParams::default(),
+            partial_result_params: Default::default(),
+        };
+
+        let actions = handle_code_actions(&uri, &doc, &params);
+        let fix = actions.iter().find_map(|action| match action {
+            CodeActionOrCommand::CodeAction(action) if action.title == "Rename the block to `App`" => Some(action),
+            _ => None,
+        });
+        let fix = fix.expect("manifest quick fix");
+        assert_eq!(fix.is_preferred, Some(true));
+        assert_eq!(fix.edit.as_ref().unwrap().changes.as_ref().unwrap()[&uri][0].new_text, "App");
     }
 }

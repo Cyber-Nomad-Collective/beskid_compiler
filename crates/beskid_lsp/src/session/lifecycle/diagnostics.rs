@@ -130,6 +130,7 @@ mod tests {
             code: Some("old".into()),
             message: "old compilation generation".into(),
             source: "beskid".into(),
+            detail: Default::default(),
         };
         let old_generation = state.read().await.diagnostic_generation;
         invalidate_compilation_cache(&state).await;

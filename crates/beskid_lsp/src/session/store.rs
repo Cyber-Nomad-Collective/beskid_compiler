@@ -96,6 +96,8 @@ pub struct SyntaxDiagnostic {
     /// `"beskid:mod:<type_id>"` for mod-origin diagnostics produced by a native
     /// `Analyzer` contract. Mirrors `SemanticDiagnostic.origin`.
     pub source: String,
+    /// Help, related locations, fixes and tags of the structured diagnostic.
+    pub detail: crate::diagnostics::DiagnosticDetail,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -39,6 +39,7 @@ fn lockfile_replay_diagnostic(plan: &CompilePlan) -> Option<SyntaxDiagnostic> {
             code: Some("lockfile".into()),
             message: error.to_string(),
             source: "beskid".into(),
+            detail: Default::default(),
         }
     })
 }
@@ -140,7 +141,8 @@ fn preparation_failure_facts(
 ) -> (Vec<crate::session::store::SyntaxDiagnostic>, Vec<beskid_analysis::SyntaxFix>) {
     tracing::warn!(uri = %uri.as_str(), "project preparation failed: {error:#}");
     let (mut diagnostics, _fixes) = collect_syntax_diagnostics(None, uri, text, None);
-    diagnostics.push(project_preparation_failure(error));
+    let failure = project_preparation_failure(uri, error, &diagnostics);
+    diagnostics.extend(failure);
     (diagnostics, Vec::new())
 }
 
