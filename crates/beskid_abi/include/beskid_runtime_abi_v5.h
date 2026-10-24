@@ -15,7 +15,7 @@ struct BeskidStr;
 #define BESKID_TRAP_NAME_6 "invalid_or_stale_handle"
 #define BESKID_TRAP_NAME_7 "scheduler_deadlock"
 #define BESKID_TRAP_NAME_8 "abi_or_layout_mismatch"
-#define BESKID_TRAP_NAME_9 "unreachable_or_isle_invariant"
+#define BESKID_TRAP_NAME_9 "panic"
 #define BESKID_TRAP_NAME_10 "runtime_internal_corruption"
 #define BESKID_TRAP_NAME_11 "extern_unavailable"
 #if defined(__GNUC__) || defined(__clang__)
