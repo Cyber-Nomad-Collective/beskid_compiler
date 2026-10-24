@@ -11,7 +11,6 @@ pub const FAMILY: CodeFamily = CodeFamily { name: "unused", first: "W1000", last
 pub const CODES: &[CodeInfo] = &[
     CodeInfo { code: "W1403", summary: "unreachable statement", tags: UNNECESSARY },
     CodeInfo { code: "W1503", summary: "unused import", tags: UNNECESSARY },
-    CodeInfo { code: "W1504", summary: "unused private item", tags: UNNECESSARY },
-    // Reserved for 0.6.7: unused item (semantic slice S3 emits it).
+    // Unused item, including unused private items (replaces W1504; semantic slice S3 emits it).
     CodeInfo { code: "W2101", summary: "unused item", tags: UNNECESSARY },
 ];

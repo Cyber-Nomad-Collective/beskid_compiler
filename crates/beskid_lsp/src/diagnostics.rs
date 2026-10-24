@@ -753,8 +753,8 @@ mod tests {
             "stale typed generation must fail closed to structural diagnostics for the current buffer"
         );
         assert!(
-            collected.iter().all(|diag| diag.code.as_deref() != Some("W1504")),
-            "stale generation must not emit prepare-spine diagnostics such as W1504: {collected:#?}",
+            collected.iter().all(|diag| diag.code.as_deref() != Some("W2101")),
+            "stale generation must not emit prepare-spine diagnostics such as W2101: {collected:#?}",
         );
     }
 

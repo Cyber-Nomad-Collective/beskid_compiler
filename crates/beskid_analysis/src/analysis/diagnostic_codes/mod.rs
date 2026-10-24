@@ -107,10 +107,11 @@ mod tests {
 
     #[test]
     fn unused_codes_are_tagged_unnecessary() {
-        for code in ["W1503", "W1504", "W1403", "W2101"] {
+        for code in ["W1503", "W1403", "W2101"] {
             assert_eq!(default_tags(code), &[DiagnosticTag::Unnecessary], "{code}");
         }
         assert!(default_tags("E1214").is_empty());
+        assert!(lookup("W1504").is_none(), "W2101 replaces W1504");
     }
 
     #[test]
