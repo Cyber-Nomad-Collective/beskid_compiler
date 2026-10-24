@@ -79,8 +79,40 @@ fn parsed_multi_function_assembly_verification_error_identifies_the_originating_
     assert_eq!(first, repeated);
     assert!(first.contains(&failing_site), "{first}");
     assert!(!first.contains(&sibling_site), "{first}");
-    assert!(first.contains("syntax ISLE emission failed: Verification("), "{first}");
+    // A verification failure with a site is the internal error E2103 at that construct.
+    assert!(first.contains("syntax ISLE emission failed: E2103 internal compiler error: "), "{first}");
     assert!(first.contains("FunctionDefinition@"), "{first}");
+    let report = error.into_report(&input, "syntax ISLE lowering failed");
+    let bundle = report
+        .downcast_ref::<beskid_analysis::services::SemanticDiagnosticsError>()
+        .expect("the internal error keeps its structured diagnostic");
+    let diagnostic = &bundle.diagnostics()[0];
+    assert_eq!(diagnostic.code.as_deref(), Some("E2103"));
+    assert!(diagnostic.message.ends_with("please report this"), "{}", diagnostic.message);
+    assert!(!diagnostic.message.contains("Verification("), "{}", diagnostic.message);
+}
+
+/// The ICE floor: a failure without any construct (here, two items claiming one symbol) still
+/// renders as one coded internal diagnostic, anchored at the program, never as raw text.
+#[test]
+fn an_unsited_emission_failure_is_a_coded_internal_diagnostic() {
+    let (input, isa, root) = item_fixture_with_root("i32 First() { return 1; } i32 Second() { return 2; }");
+    let items = find_function_definitions(input.database(), root);
+    let error = lower_syntax_program(
+        &input,
+        isa.as_ref(),
+        &[SyntaxModuleItem { key: items[0], symbol: "Same".into() }, SyntaxModuleItem { key: items[1], symbol: "Same".into() }],
+    )
+    .expect_err("a duplicate symbol must not lower");
+    let report = error.into_report(&input, "syntax ISLE lowering failed");
+    let bundle = report
+        .downcast_ref::<beskid_analysis::services::SemanticDiagnosticsError>()
+        .expect("an unsited failure still renders as a structured diagnostic");
+    let diagnostic = &bundle.diagnostics()[0];
+    assert_eq!(diagnostic.code.as_deref(), Some("E2105"));
+    assert!(diagnostic.message.starts_with("internal compiler error: "), "{}", diagnostic.message);
+    assert!(diagnostic.help.as_deref().is_some_and(|help| help.contains("duplicate symbol `Same`")));
+    assert_eq!(diagnostic.span.offset(), 0, "anchored at the program");
 }
 
 #[test]
@@ -179,7 +211,7 @@ host AppHost() {
 }
 
 type Logger {
-    i32 value
+    i32 value;
 }
 
 i32 Main() {
@@ -277,7 +309,7 @@ fn immutable_local_reassignment_is_rejected_with_e1214_before_isle() {
     let function_cases = [
         "unit Main(pointer p) { pointer q = p; while true { q = p; } return; }",
         "unit Main() { i64 n = 0; while n < 3 { n = n + 1; } return; }",
-        "pub type Pair { i64 a } unit Main(bool c) { Pair v = Pair { a: 1 }; if c { v = Pair { a: 2 }; } return; }",
+        "pub type Pair { i64 a; } unit Main(bool c) { Pair v = Pair { a: 1 }; if c { v = Pair { a: 2 }; } return; }",
     ];
     for source in function_cases {
         let (input, isa, root) = item_fixture_with_root(source);
@@ -327,7 +359,7 @@ fn unknown_callee_is_rejected_with_a_resolution_code_before_isle() {
 /// an unavailable layout fact (`MissingRuleOrFact`) or `NonExhaustiveMatch`.
 #[test]
 fn member_and_match_violations_are_rejected_with_their_codes_before_isle() {
-    let shape = "pub type Pair { i64 a } enum Shape { Dot, Circle(i64 radius) } ";
+    let shape = "pub type Pair { i64 a; } enum Shape { Dot, Circle(i64 radius) } ";
     let cases = [
         ("i64 Main() { Pair p = Pair { b: 1 }; return 0; }", "E1211"),
         ("i64 Main(Pair p) { return p.b; }", "E1211"),
@@ -476,7 +508,45 @@ fn legality_rejection_converts_into_source_excerpt_diagnostics() {
         .expect("legality findings keep their structured diagnostics");
     let diagnostic = &bundle.diagnostics()[0];
     assert_eq!(diagnostic.code.as_deref(), Some("E1214"));
-    assert_eq!(diagnostic.help, beskid_analysis::analysis::SemanticIssueKind::ImmutableAssignment { name: "n".into() }.help());
+    assert_eq!(bundle.diagnostics().len(), 2, "one diagnostic per immutable binding");
+    assert_eq!(diagnostic.help.as_deref(), Some("write `mut i64 n = 0;`"));
     let excerpt = &source[diagnostic.span.offset()..diagnostic.span.offset() + diagnostic.span.len()];
-    assert!(excerpt.starts_with("n = 1"), "the diagnostic points at the assignment: `{excerpt}`");
+    assert_eq!(excerpt, "n", "the diagnostic points at the declaration, where the fix goes");
+    assert_eq!(diagnostic.span.offset(), source.find("n = 0").unwrap());
+    assert_eq!(diagnostic.related.len(), 1);
+    assert_eq!(diagnostic.related[0].label, "assigned again");
+    assert!(diagnostic.fixes[0].is_preferred(), "inserting `mut` is machine-applicable");
+}
+
+/// Owner report (beskid-lings): `total += 2` on a mutable local passed `beskid check` and then
+/// failed lowering with E2102 `MissingRuleOrFact AssignExpression`. A compound assignment to a
+/// mutable local lowers as `total = total op 2`, reading the local once.
+#[test]
+fn compound_assignment_to_a_mutable_local_lowers_for_every_operator() {
+    for (operator, instruction) in [("+=", "iadd"), ("-=", "isub"), ("*=", "imul"), ("/=", "sdiv"), ("%=", "srem")] {
+        let source = format!("i32 F() {{ mut i32 total = 1; total {operator} 2; return total; }}");
+        let (input, isa, root) = item_fixture_with_root(&source);
+        let function = find_function_definitions(input.database(), root)[0];
+        beskid_queries::check_items(input.database(), &[function]).expect("a clean legality gate");
+        let artifact =
+            lower_syntax_program(&input, isa.as_ref(), &[SyntaxModuleItem { key: function, symbol: "F".into() }])
+                .unwrap_or_else(|error| panic!("`{operator}` must lower, never an internal error: {error}"));
+        let clif = artifact.functions.iter().map(|lowered| lowered.function.display().to_string()).collect::<String>();
+        assert!(clif.contains(instruction), "`{operator}` lowers to `{instruction}`:\n{clif}");
+    }
+}
+
+/// A compound assignment to an immutable local is the user error E1214, never an internal error.
+#[test]
+fn compound_assignment_to_an_immutable_local_is_e1214() {
+    for operator in ["+=", "-=", "*=", "/=", "%="] {
+        let source = format!("i32 F() {{ i32 total = 1; total {operator} 2; return total; }}");
+        let (input, isa, root) = item_fixture_with_root(&source);
+        let function = find_function_definitions(input.database(), root)[0];
+        let error = lower_syntax_program(&input, isa.as_ref(), &[SyntaxModuleItem { key: function, symbol: "F".into() }])
+            .expect_err("an immutable target must not lower");
+        let rendered = error.to_string();
+        assert!(rendered.contains("E1214"), "{rendered}");
+        assert!(!rendered.contains("E210"), "{rendered}");
+    }
 }

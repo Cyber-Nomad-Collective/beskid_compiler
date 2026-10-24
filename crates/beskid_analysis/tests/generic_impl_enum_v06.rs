@@ -30,7 +30,7 @@ fn v06_generic_impl_and_enum_attributes_survive_formatter_roundtrip() {
         impl<T, E> Packet<T> : Serializable<E> where E: Encoder { pub unit Encode(E encoder) {} }";
     let parsed = parse_program_with_source_name_and_diagnostics("Roundtrip.bd", source).unwrap();
     assert!(!parsed.recovered && parsed.diagnostics.is_empty());
-    let output = beskid_analysis::format::format_program(&parsed.program).unwrap();
+    let output = beskid_analysis::format::format_source("Roundtrip.bd", source).unwrap();
     let reparsed = parse_program_with_source_name_and_diagnostics("Roundtrip.bd", &output).unwrap();
     assert!(!reparsed.recovered && reparsed.diagnostics.is_empty(), "{output}");
     let Node::EnumDefinition(definition) = &reparsed.program.node.items[0].node else { panic!("enum expected") };
@@ -39,5 +39,5 @@ fn v06_generic_impl_and_enum_attributes_survive_formatter_roundtrip() {
     assert_eq!(block.node.generics.len(), 2);
     assert_eq!(block.node.where_bounds.len(), 1);
     assert_eq!(block.node.methods.len(), 1);
-    assert_eq!(beskid_analysis::format::format_program(&reparsed.program).unwrap(), output);
+    assert_eq!(beskid_analysis::format::format_source("Roundtrip.bd", &output).unwrap(), output);
 }

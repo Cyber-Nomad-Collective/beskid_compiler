@@ -12,11 +12,11 @@ use std::sync::Arc;
 
 const SOURCE: &str = r#"
 enum Literal { Str(string raw), Int(string digits), }
-type SpannedLiteral { Literal node, u32 id, }
-type LiteralExpression { SpannedLiteral literal, }
-type SpannedLiteralExpression { LiteralExpression node, u32 id, }
+type SpannedLiteral { Literal node; u32 id; }
+type LiteralExpression { SpannedLiteral literal; }
+type SpannedLiteralExpression { LiteralExpression node; u32 id; }
 enum Expression { Literal(SpannedLiteralExpression value), Other, }
-type SpannedExpression { Expression node, u32 id, }
+type SpannedExpression { Expression node; u32 id; }
 string Text(SpannedExpression expression) {
     match expression.node {
         Expression::Literal(value) => {

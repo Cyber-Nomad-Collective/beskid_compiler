@@ -550,6 +550,7 @@ dependencies = [
  "clap",
  "crossterm",
  "graphs-tui",
+ "libc",
  "log",
  "miette",
  "pest",
@@ -820,6 +821,13 @@ name = "beskid_pipeline"
 version = "0.1.0"
 dependencies = [
  "tracing",
+]
+
+[[package]]
+name = "beskid_proof"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
 ]
 
 [[package]]

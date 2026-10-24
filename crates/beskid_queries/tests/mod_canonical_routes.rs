@@ -135,7 +135,7 @@ fn mod_companion_package_routes_do_not_depend_on_user_imports() {
     let resolved = resolved_app_with_main(
         temp.path(),
         &mut db,
-        "use Core.Serialization.Contracts;\n\n[Serialize]\npub type Point {\n    pub i32 x,\n    pub i32 y,\n}\n\ni32 Main() {\n    Point point = Point { x: 1, y: 2 };\n    return point.x - 1;\n}\n",
+        "use Core.Serialization.Contracts;\n\n[Serialize]\npub type Point {\n    pub i32 x;\n    pub i32 y;\n}\n\ni32 Main() {\n    Point point = Point { x: 1, y: 2 };\n    return point.x - 1;\n}\n",
     );
     let assembly = Arc::new(resolved.assembly.clone().expect("assembly"));
     for logical in [

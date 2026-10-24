@@ -81,8 +81,8 @@ target "native" {
 
     let err = parse_manifest(src).expect_err("noncanonical project root must fail");
     match err {
-        ProjectError::MetaContractViolation { code, .. } => assert_eq!(code, "E1896"),
-        other => panic!("expected MetaContractViolation E1896, got {other:?}"),
+        error @ ProjectError::RootBlockNameMismatch { .. } => assert_eq!(error.code(), "E1896"),
+        other => panic!("expected RootBlockNameMismatch, got {other:?}"),
     }
 }
 
@@ -102,8 +102,8 @@ target "native" {
 
     let err = validate_manifest(&manifest).expect_err("validator must reject a noncanonical root");
     match err {
-        ProjectError::MetaContractViolation { code, .. } => assert_eq!(code, "E1896"),
-        other => panic!("expected MetaContractViolation E1896, got {other:?}"),
+        error @ ProjectError::RootBlockNameMismatch { .. } => assert_eq!(error.code(), "E1896"),
+        other => panic!("expected RootBlockNameMismatch, got {other:?}"),
     }
 }
 

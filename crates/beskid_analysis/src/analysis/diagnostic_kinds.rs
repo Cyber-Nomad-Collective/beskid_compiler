@@ -1,8 +1,15 @@
 mod code;
 mod help;
+mod internal;
 mod label;
 mod message;
+mod render;
 mod severity;
+mod type_names;
+
+pub use internal::{INTERNAL_ERROR_REPORT, humanize_construct};
+pub use render::issue_diagnostic;
+pub use type_names::{display_type, display_type_pair};
 
 use crate::syntax::SpanInfo;
 
@@ -40,6 +47,9 @@ pub enum SemanticIssueKind {
     },
     UnknownImportPath {
         path: String,
+        /// The module the path's prefix names when the last segment is an item of it
+        /// (`use Module.Item`): `use` imports modules only.
+        module: Option<String>,
     },
     UseBeforeDeclaration {
         name: String,
@@ -93,8 +103,12 @@ pub enum SemanticIssueKind {
     UnusedImport {
         path: String,
     },
+    /// W2101: a private item nothing references. `item` spans the whole declaration (the removal
+    /// fix deletes it); `kind` names the item kind (`function`, `type`, ...).
     UnusedPrivateItem {
         name: String,
+        kind: String,
+        item: SpanInfo,
     },
 
     // ── Contract conformance diagnostics ──
@@ -127,8 +141,11 @@ pub enum SemanticIssueKind {
         reason: Option<String>,
     },
 
+    /// E1214, reported once per binding at its declaration; every assignment is a related
+    /// location "assigned again".
     ImmutableAssignment {
         name: String,
+        binding: ImmutableBinding,
     },
 
     // ── Pattern / match / control-flow diagnostics ──
@@ -176,6 +193,8 @@ pub enum SemanticIssueKind {
     },
     ResolveUnknownValue {
         name: String,
+        /// The closest name in scope ("did you mean"), when one is within the edit bound.
+        suggestion: Option<String>,
     },
     ResolveUnknownType {
         name: String,
@@ -237,8 +256,13 @@ pub enum SemanticIssueKind {
     TypeUnknownStructType,
     TypeInvalidMemberTarget,
     TypeUnknownEnumType,
+    /// E1211: a field the type does not declare. `type_name` and `fields` describe the type
+    /// when the detecting fact resolved it; `suggestion` is the closest declared field.
     TypeUnknownStructField {
         name: String,
+        type_name: Option<String>,
+        fields: Vec<String>,
+        suggestion: Option<String>,
     },
     TypeInaccessibleStructField {
         name: String,
@@ -423,16 +447,32 @@ pub enum SemanticIssueKind {
     CorelibOnlyAttribute {
         attribute: String,
     },
-    /// Internal compiler error (E2101-E2199 band): a semantic fact a lowering request needs is
-    /// still unavailable after the legality gate passed for its items. A compiler gap, never a
-    /// user error.
+    /// Internal compiler error E2101 (E2101-E2199 band): a semantic fact a lowering request needs
+    /// is still unavailable after the legality gate passed for its items. A compiler gap, never a
+    /// user error. `construct` is the syntax node kind of the site (`AssignExpression`).
     InternalSemanticFactUnavailable {
         query: String,
+        construct: String,
     },
-    /// Internal compiler error: no ISLE lowering rule or fact exists for a construct after the
-    /// legality gate passed for its item. A compiler gap, never a user error.
+    /// Internal compiler error E2102: no ISLE lowering rule or fact exists for a construct after
+    /// the legality gate passed for its item.
     InternalLoweringRuleMissing {
         construct: String,
+    },
+    /// Internal compiler error E2103: lowering or module emission met an inconsistency (an
+    /// invalid layout, a failed verification). `reason` is a readable sentence, never debug text.
+    InternalLoweringInvariant {
+        construct: String,
+        reason: String,
+    },
+    /// Internal compiler error E2104: the compiler could not answer a Mod's semantic request.
+    InternalModSemanticFailure {
+        reason: String,
+    },
+    /// Internal compiler error E2105: a build step failed on a compiler inconsistency that has no
+    /// source site (a stringified upstream failure).
+    InternalBuildFailure {
+        reason: String,
     },
     TypeInvalidEventInvocationScope,
     TypeInvalidEventCapacity,
@@ -563,7 +603,7 @@ pub enum SemanticIssueKind {
     NamingNotCamelCaseBinding {
         name: String,
     },
-    NamingNotSnakeCaseTest {
+    NamingNotPascalCaseTest {
         name: String,
     },
     NamingNotCamelCaseMacro {
@@ -648,6 +688,46 @@ pub enum SemanticIssueKind {
     InvalidClifBlock {
         detail: String,
     },
+}
+
+/// The declaration of a binding an E1214 assignment writes, as the renderer needs it to tailor
+/// the help and the fix to the declaration form (`mut i32 count = 0;`, `let mut count = 0;`,
+/// `mut i32 count` for a parameter).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct ImmutableBinding {
+    pub form: BindingForm,
+    /// The whole declaration (`i32 count = 0;`, `let count = 0;`, `i32 count`).
+    pub declaration: SpanInfo,
+    /// Where `mut ` is inserted: the type of a typed local or parameter, the name of a `let`.
+    pub mut_at: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub enum BindingForm {
+    TypedLocal,
+    InferredLocal,
+    Parameter,
+    ForIterator,
+}
+
+impl ImmutableBinding {
+    /// The binding of a `let` statement spanning `declaration`.
+    pub fn of_let(statement: &crate::syntax::LetStatement, declaration: SpanInfo) -> Self {
+        match &statement.type_annotation {
+            Some(ty) => Self { form: BindingForm::TypedLocal, declaration, mut_at: ty.span.start },
+            None => Self { form: BindingForm::InferredLocal, declaration, mut_at: statement.name.span.start },
+        }
+    }
+
+    /// The binding of a parameter.
+    pub fn of_parameter(parameter: &crate::syntax::Spanned<crate::syntax::Parameter>) -> Self {
+        Self { form: BindingForm::Parameter, declaration: parameter.span, mut_at: parameter.node.ty.span.start }
+    }
+
+    /// The binding of a `for` iterator (`name` is the iterator identifier).
+    pub fn of_for_iterator(name: SpanInfo) -> Self {
+        Self { form: BindingForm::ForIterator, declaration: name, mut_at: name.start }
+    }
 }
 
 #[cfg(test)]

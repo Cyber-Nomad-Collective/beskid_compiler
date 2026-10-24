@@ -325,7 +325,7 @@ fn pseq066_02_parallel_map_reduce_equals_serial_at_one_isolate_and_default() {
 const MOVE_PROGRAM: &str = r#"use Core.Collections.Array;
 
 type Stage {
-    i64[] buffer,
+    i64[] buffer;
 }
 
 i64[] Fill(i64 count) {

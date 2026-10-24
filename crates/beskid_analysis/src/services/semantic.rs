@@ -99,12 +99,17 @@ impl miette::Diagnostic for SemanticDiagnosticsError {
     }
 }
 
-/// The structured diagnostics an error carries: a single [`crate::MietteReportError`] or a
-/// [`SemanticDiagnosticsError`] bundle anywhere in its chain. `None` for an unstructured error.
+/// The structured diagnostics an error carries: a single [`crate::MietteReportError`], an assembly
+/// error with its parse diagnostic, or a [`SemanticDiagnosticsError`] bundle anywhere in its chain. `None` for an unstructured error.
 pub fn structured_diagnostics(error: &anyhow::Error) -> Option<Vec<SemanticDiagnostic>> {
     error.chain().find_map(|cause| {
         if let Some(wrapped) = cause.downcast_ref::<crate::MietteReportError>() {
             return Some(vec![wrapped.diagnostic().clone()]);
+        }
+        if let Some(assembly) = cause.downcast_ref::<crate::projects::AssemblyError>()
+            && let Some(diagnostic) = assembly.diagnostic()
+        {
+            return Some(vec![diagnostic.clone()]);
         }
         cause.downcast_ref::<SemanticDiagnosticsError>().map(|bundle| bundle.diagnostics().to_vec())
     })

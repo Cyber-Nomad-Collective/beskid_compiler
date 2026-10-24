@@ -1,16 +1,14 @@
-test api_smoke
+test ApiSmoke
 {
     meta
     {
         tags = "fast,unit";
-
         group = "parser";
     }
 
     skip
     {
         condition = false;
-
         reason = "none";
     }
 

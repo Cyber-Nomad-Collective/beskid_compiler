@@ -9,7 +9,7 @@
 
 use super::parity_harness::{codes, root_findings, root_findings_with_glue};
 
-const PAIR: &str = "pub type Pair { i64 a } ";
+const PAIR: &str = "pub type Pair { i64 a; } ";
 const SHAPE: &str = "enum Shape { Dot, Circle(i64 radius) } ";
 
 /// One fixture per legacy diagnostic class the query gate covers: (legacy class, code, source).
@@ -54,7 +54,7 @@ const COVERED: &[(&str, &str, &str)] = &[
     (
         "TypeError::UnknownStructField",
         "E1211",
-        "pub type Pair { i64 a } i64 Main() { Pair p = Pair { b: 1 }; return 0; }",
+        "pub type Pair { i64 a; } i64 Main() { Pair p = Pair { b: 1 }; return 0; }",
     ),
     ("ResolveError / immutable assignment", "E1214", "unit Main() { i64 n = 0; n = 1; return; }"),
     (
@@ -139,13 +139,13 @@ const COVERED_KINDS: &[(&str, &str, &str, &str)] = &[
         "TypeError::UnknownCallTarget (non-callable field)",
         "TypeUnknownCallTarget",
         "E1606",
-        "pub type Box { i64 value } i64 Main(Box b) { return b.value(); }",
+        "pub type Box { i64 value; } i64 Main(Box b) { return b.value(); }",
     ),
     (
         "TypeError::UnknownStructField (unknown method)",
         "TypeUnknownStructField",
         "E1211",
-        "pub type Box { i64 value } i64 Main(Box b) { return b.Missing(); }",
+        "pub type Box { i64 value; } i64 Main(Box b) { return b.Missing(); }",
     ),
     (
         "TypeError::UnknownStructType",
@@ -157,13 +157,13 @@ const COVERED_KINDS: &[(&str, &str, &str, &str)] = &[
         "TypeError::UnknownEnumType",
         "TypeUnknownEnumType",
         "E1201",
-        "pub type Pair { i64 a } unit Main() { Pair p = Pair::A; return; }",
+        "pub type Pair { i64 a; } unit Main() { Pair p = Pair::A; return; }",
     ),
     (
         "TypeError::UnknownValueType (method as value)",
         "TypeUnknownValueType",
         "E1201",
-        "pub type Box { i64 value, pub i64 Get() { return 1_i64; } } i64 Main(Box b) { i64 f = (b).Get; return f; }",
+        "pub type Box { i64 value; pub i64 Get() { return 1_i64; } } i64 Main(Box b) { i64 f = (b).Get; return f; }",
     ),
     ("TypeError::UnsupportedExpression (index)", "TypeUnsupportedExpression", "E1202", "i64 Main(i64 n) { return n[0]; }"),
     (
@@ -194,7 +194,7 @@ const COVERED_KINDS: &[(&str, &str, &str, &str)] = &[
         "TypeError::GenericBoundNotSatisfied",
         "GenericBoundNotSatisfied",
         "E1610",
-        "pub contract Named { string Name(); } pub type Plain { i64 v } \
+        "pub contract Named { string Name(); } pub type Plain { i64 v; } \
          string Describe<T>(T value) where T: Named { return value.Name(); } \
          unit Main() { Describe(Plain { v: 1 }); return; }",
     ),
@@ -210,7 +210,7 @@ const COVERED_KINDS: &[(&str, &str, &str, &str)] = &[
         "ResolveError::DuplicateItem (method named like a field)",
         "ResolveDuplicateItem",
         "E1102",
-        "pub type Box { i64 value, pub i64 value() { return 1_i64; } }",
+        "pub type Box { i64 value; pub i64 value() { return 1_i64; } }",
     ),
     (
         "TypeError::NonIterableForTarget (primitive)",
@@ -222,21 +222,21 @@ const COVERED_KINDS: &[(&str, &str, &str, &str)] = &[
         "TypeError::NonIterableForTarget (nominal without Next)",
         "TypeNonIterableForTarget",
         "E1215",
-        "pub type Bag { i64 n } unit Main(Bag bag) { for i in bag { return; } return; }",
+        "pub type Bag { i64 n; } unit Main(Bag bag) { for i in bag { return; } return; }",
     ),
     (
         "TypeError::IterableNextArityMismatch",
         "TypeIterableNextArityMismatch",
         "E1216",
         "pub enum Option<T> { Some(T value), None } \
-         pub type Iter { i64 n, pub Option<i64> Next(i64 step) { return Option::None; } } \
+         pub type Iter { i64 n; pub Option<i64> Next(i64 step) { return Option::None; } } \
          unit Main(Iter it) { for x in it { return; } return; }",
     ),
     (
         "TypeError::IterableNextReturnNotOption",
         "TypeIterableNextReturnNotOption",
         "E1217",
-        "pub type Iter { i64 n, pub i64 Next() { return 1_i64; } } \
+        "pub type Iter { i64 n; pub i64 Next() { return 1_i64; } } \
          unit Main(Iter it) { for x in it { return; } return; }",
     ),
     (
@@ -244,26 +244,26 @@ const COVERED_KINDS: &[(&str, &str, &str, &str)] = &[
         "TypeIterableOptionSomeArityMismatch",
         "E1218",
         "pub enum Option<T> { Some(T value), None } \
-         pub type Iter { i64 n, pub Option<i64, bool> Next() { return Option::None; } } \
+         pub type Iter { i64 n; pub Option<i64, bool> Next() { return Option::None; } } \
          unit Main(Iter it) { for x in it { return; } return; }",
     ),
     (
         "TypeError::InvalidEventInvocationScope",
         "TypeInvalidEventInvocationScope",
         "E1219",
-        "pub type Hub { event OnPing(i64 value) } unit Main(Hub hub) { hub.OnPing(1_i64); return; }",
+        "pub type Hub { event OnPing(i64 value); } unit Main(Hub hub) { hub.OnPing(1_i64); return; }",
     ),
     (
         "TypeError::InvalidEventCapacity",
         "TypeInvalidEventCapacity",
         "E1220",
-        "pub type Hub { event{0} OnPing(i64 value) } unit Main() { return; }",
+        "pub type Hub { event{0} OnPing(i64 value); } unit Main() { return; }",
     ),
     (
         "TypeError::InvalidEventSubscriptionTarget",
         "TypeInvalidEventSubscriptionTarget",
         "E1221",
-        "pub type Box { i64 value } unit Main(Box b) { b.value += ((i64 x) => x); return; }",
+        "pub type Box { i64 value; } unit Main(Box b) { b.value += ((i64 x) => x); return; }",
     ),
     (
         "TypeError::SpawnTargetNotFiberCompatible",
@@ -275,25 +275,25 @@ const COVERED_KINDS: &[(&str, &str, &str, &str)] = &[
         "TypeError::ContractMethodMissingImplementation",
         "ContractMethodMissingImplementation",
         "E1601",
-        "pub contract Named { string Name(); } pub type Plain : Named { i64 v }",
+        "pub contract Named { string Name(); } pub type Plain : Named { i64 v; }",
     ),
     (
         "TypeError::ContractImplementationSignatureMismatch",
         "ContractImplementationSignatureMismatch",
         "E1602",
-        "pub contract Named { string Name(); } pub type Plain : Named { i64 v, pub i64 Name() { return 1_i64; } }",
+        "pub contract Named { string Name(); } pub type Plain : Named { i64 v; pub i64 Name() { return 1_i64; } }",
     ),
     (
         "TypeError::ContractAssociatedTypeMissingBinding",
         "ContractAssociatedTypeMissingBinding",
         "E1607",
-        "pub contract Seq { type Item; } pub type Numbers : Seq { i64 v }",
+        "pub contract Seq { type Item; } pub type Numbers : Seq { i64 v; }",
     ),
     (
         "ResolveError::InvalidConformanceTarget",
         "ResolveInvalidConformanceTarget",
         "E1607",
-        "pub type Base { i64 v } pub type Derived : Base { i64 w }",
+        "pub type Base { i64 v; } pub type Derived : Base { i64 w; }",
     ),
     (
         "TypeError::ThisUsedOutsideContractOrImpl",
@@ -330,25 +330,25 @@ const COVERED_KINDS: &[(&str, &str, &str, &str)] = &[
         "TypeError::TypeMismatch (nominal let)",
         "TypeMismatch",
         "E1206",
-        "pub type Pair { i64 a } pub type Other { i64 b } unit Main(Other o) { Pair p = o; return; }",
+        "pub type Pair { i64 a; } pub type Other { i64 b; } unit Main(Other o) { Pair p = o; return; }",
     ),
     (
         "TypeError::TypeMismatch (nominal return)",
         "TypeMismatch",
         "E1206",
-        "pub type Pair { i64 a } string Main(Pair p) { return p; }",
+        "pub type Pair { i64 a; } string Main(Pair p) { return p; }",
     ),
     (
         "TypeError::TypeMismatch (nominal call argument)",
         "TypeMismatch",
         "E1206",
-        "pub type Pair { i64 a } unit Take(Pair p) { return; } unit Main() { Take(1_i64); return; }",
+        "pub type Pair { i64 a; } unit Take(Pair p) { return; } unit Main() { Take(1_i64); return; }",
     ),
     (
         "TypeError::TypeMismatch (struct literal field)",
         "TypeMismatch",
         "E1206",
-        "pub type Pair { i64 a } unit Main() { Pair p = Pair { a: true }; return; }",
+        "pub type Pair { i64 a; } unit Main() { Pair p = Pair { a: true }; return; }",
     ),
     (
         "TypeError::TypeMismatch (enum constructor argument)",
@@ -360,7 +360,7 @@ const COVERED_KINDS: &[(&str, &str, &str, &str)] = &[
         "TypeError::TypeMismatch (method call argument)",
         "TypeMismatch",
         "E1206",
-        "pub type Counter { i64 n, pub unit Add(i64 step) { return; } } unit Main(Counter c) { c.Add(true); return; }",
+        "pub type Counter { i64 n; pub unit Add(i64 step) { return; } } unit Main(Counter c) { c.Add(true); return; }",
     ),
     (
         "TypeError::TypeMismatch (literal pattern against scrutinee)",
@@ -378,7 +378,7 @@ const COVERED_KINDS: &[(&str, &str, &str, &str)] = &[
         "TypeError::TypeMismatch (match arm against contextual destination)",
         "TypeMismatch",
         "E1206",
-        "pub type Pair { i64 a } enum Shape { Dot, Circle(i64 radius) } \
+        "pub type Pair { i64 a; } enum Shape { Dot, Circle(i64 radius) } \
          i64 Pick(Shape s, Pair p) { i64 v = match s { Shape::Dot => 0_i64, Shape::Circle(r) => p, }; return v; }",
     ),
 ];
@@ -421,7 +421,7 @@ fn glue_library_extern_methods_are_held_to_the_glue_binding_authority() {
 #[test]
 fn well_typed_nominal_positions_produce_no_finding() {
     let source = "pub contract Named { string Name(); } \
-                  pub type Pair : Named { i64 a, pub string Name() { return \"pair\"; } \
+                  pub type Pair : Named { i64 a; pub string Name() { return \"pair\"; } \
                   pub i64 Sum(i64 extra) { return this.a + extra; } } \
                   enum Shape { Dot, Circle(i64 radius), Boxed(Pair pair) } \
                   Pair Make(i64 a) { return Pair { a: a }; } \
@@ -493,7 +493,7 @@ fn hub_module_declarations_are_not_a_finding() {
 /// (an SDK-shaped `Collector`) replace neither the local contract nor the local signature types.
 #[test]
 fn inline_method_conformance_to_a_same_named_local_contract_is_not_a_finding() {
-    let source = "mod Sdk { pub type CollectRequest { i64 marker } pub type CollectTargetSet { i64 marker } \
+    let source = "mod Sdk { pub type CollectRequest { i64 marker; } pub type CollectTargetSet { i64 marker; } \
                   pub contract Collector { CollectTargetSet Collect(CollectRequest request); } } \
                   pub type CollectRequest {} pub type CollectTargetSet {} \
                   pub contract Collector { CollectTargetSet Collect(CollectRequest request); } \
@@ -550,10 +550,10 @@ fn transfer_legality_findings_carry_their_attribute_and_member_spans() {
             "Captures(Bound: Disposable)",
         ),
         ("pub unit Bad([Captures(Bound: Transferable)] i64 count) { return; }", "E1248", "Captures(Bound: Transferable)"),
-        ("pub type Job { [Captures(Bound: Transferable)] i64 count }", "E1248", "Captures(Bound: Transferable)"),
-        ("[Immutable] [Isolated] pub type Both { i64 id }", "E1510", "Isolated"),
-        ("[NeverTransferable] [Copyable] pub type Channel { i64 id }", "E1246", "Copyable"),
-        ("pub type Token : Shared { i64 id }", "E1607", "Shared"),
+        ("pub type Job { [Captures(Bound: Transferable)] i64 count; }", "E1248", "Captures(Bound: Transferable)"),
+        ("[Immutable] [Isolated] pub type Both { i64 id; }", "E1510", "Isolated"),
+        ("[NeverTransferable] [Copyable] pub type Channel { i64 id; }", "E1246", "Copyable"),
+        ("pub type Token : Shared { i64 id; }", "E1607", "Shared"),
         ("[CompilerDerived] pub contract Sized { i64 Size(); }", "E1003", "i64 Size()"),
     ];
     let mut failures = Vec::new();

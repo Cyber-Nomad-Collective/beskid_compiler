@@ -21,7 +21,7 @@ fn literal_flags(source: &str, kind: IndexedNodeKind) -> Vec<u64> {
 
 #[test]
 fn immutable_record_specialization_is_flagged_and_isolated_record_is_not() {
-    let source = "[Immutable] type Frozen<T> { i64 index, T value } [Isolated] type Owned<T> { i64 index, T value } \
+    let source = "[Immutable] type Frozen<T> { i64 index; T value; } [Isolated] type Owned<T> { i64 index; T value; } \
                   i64 Main() { Frozen<string> a = Frozen<string> { index: 1_i64, value: \"x\" }; \
                   Owned<string> b = Owned<string> { index: 2_i64, value: \"y\" }; return a.index + b.index; }";
     let flags = literal_flags(source, IndexedNodeKind::StructLiteralExpression);
@@ -43,6 +43,6 @@ fn generic_enum_is_immutable_only_when_its_arguments_are_shared() {
 
 #[test]
 fn non_generic_unmarked_record_stays_unflagged() {
-    let source = "type Plain { i64 a } i64 Main() { Plain p = Plain { a: 1_i64 }; return p.a; }";
+    let source = "type Plain { i64 a; } i64 Main() { Plain p = Plain { a: 1_i64 }; return p.a; }";
     assert_eq!(literal_flags(source, IndexedNodeKind::StructLiteralExpression), vec![0]);
 }

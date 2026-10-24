@@ -340,14 +340,48 @@ int main(void) {
         beskid_rt_v5_intrinsic_worker_release(saturated[index]);
     }
     assert(atomic_load(&live_allocations) == saturation_baseline);
+    /* A cancelled read that still blocks in its OS call (a detached fiber on
+     * an idle terminal) must not hold up pool shutdown: the worker is orphaned,
+     * not joined. Its descriptor stays private, so the caller's write later
+     * completes the orphaned read, which then frees only its own storage. */
+    int32_t idle_descriptors[2];
+    fixture_pipe_open(idle_descriptors);
+    struct BeskidWorkerRequest *idle = request_for(idle_descriptors[0], replacement, 2048);
+    assert(beskid_rt_v5_intrinsic_worker_submit(idle) == 0);
+    await_running(idle);
+    beskid_rt_v5_intrinsic_worker_release(idle);
+    int64_t stop_started = fixture_monotonic_nanos();
+    beskid_rt_v5_intrinsic_worker_pool_shutdown();
+    assert(fixture_monotonic_nanos() - stop_started < INT64_C(5000000000));
+    BeskidLock();
+    assert(beskid_worker_count == 0 && beskid_worker_orphans && !beskid_worker_orphans->finished);
+    assert(beskid_request_count == 1);
+    BeskidUnlock();
+    /* A new pool starts while the orphan still blocks and serves its own work. */
+    assert(beskid_rt_v5_intrinsic_worker_pool_init(1) == 0);
+    struct BeskidWorkerRequest *fresh = request_for(saturation_descriptors[0], replacement, 2049);
+    assert(beskid_rt_v5_intrinsic_worker_submit(fresh) == 0);
+    fixture_pipe_write(saturation_descriptors[1], "f", 1);
+    await_complete(fresh);
+    assert(fresh->result == 1 && fresh->buffer[0] == 'f');
+    beskid_rt_v5_intrinsic_worker_release(fresh);
+    fixture_pipe_write(idle_descriptors[1], "z", 1);
+    for (;;) {
+        BeskidLock(); int finished = beskid_worker_orphans && beskid_worker_orphans->finished; BeskidUnlock();
+        if (finished) break;
+        fixture_yield();
+    }
+    BeskidLock(); assert(beskid_request_count == 0); BeskidUnlock();
+    beskid_rt_v5_intrinsic_worker_pool_shutdown();
+    BeskidLock(); assert(!beskid_worker_orphans); BeskidUnlock();
+    fixture_pipe_close(idle_descriptors[0]); fixture_pipe_close(idle_descriptors[1]);
     fixture_pipe_close(saturation_descriptors[0]);
     fixture_pipe_close(saturation_descriptors[1]);
-    beskid_rt_v5_intrinsic_worker_pool_shutdown();
     fixture_pipe_close(descriptors[0]); fixture_pipe_close(descriptors[1]);
     fixture_pipe_close(rebound_descriptors[1]);
     beskid_rt_v5_intrinsic_owner_destroy(replacement);
     beskid_rt_v5_intrinsic_owner_destroy(other);
     assert(atomic_load(&live_allocations) == 0);
-    puts("owner_transport matrix=64 stale-owner=rejected close-rebind=preserved queue-rejection=released in-flight=worker-owned shutdown=complete");
+    puts("owner_transport matrix=64 stale-owner=rejected close-rebind=preserved queue-rejection=released in-flight=worker-owned blocked-read-shutdown=orphaned shutdown=complete");
     return 0;
 }

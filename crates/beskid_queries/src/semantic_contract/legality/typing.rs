@@ -519,8 +519,8 @@ mod tests {
     #[test]
     fn nominal_and_unproven_positions_are_never_judged() {
         let cases = [
-            "pub type Pair { i64 a } unit Main() { Pair p = Pair { a: 1 }; Pair q = p; return; }",
-            "pub type Pair { i64 a } Pair Make() { return Pair { a: 1 }; } unit Main() { string s = Make(); return; }",
+            "pub type Pair { i64 a; } unit Main() { Pair p = Pair { a: 1 }; Pair q = p; return; }",
+            "pub type Pair { i64 a; } Pair Make() { return Pair { a: 1 }; } unit Main() { string s = Make(); return; }",
             "unit Forward<U>(U value) { return; } unit Main() { Forward(true); return; }",
         ];
         for (offset, source) in cases.iter().enumerate() {

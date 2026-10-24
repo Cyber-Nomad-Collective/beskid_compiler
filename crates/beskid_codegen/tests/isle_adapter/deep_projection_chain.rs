@@ -3,7 +3,7 @@
 //! shorter chain they extend, one hop deeper.
 use super::support::{emit_isle_item, find_function_definition, item_fixture_with_root};
 
-const TYPES: &str = "type Node { u64 issuer, u64 gen } type Compilation { string name, Node root } type Context { Compilation compilation } type Request { Context context } ";
+const TYPES: &str = "type Node { u64 issuer; u64 gen; } type Compilation { string name; Node root; } type Context { Compilation compilation; } type Request { Context context; } ";
 
 fn offsets_in(clif: &str) -> Vec<String> {
     clif.lines()
@@ -73,10 +73,10 @@ fn four_segment_projection_as_a_call_argument_matches_the_let_form() {
 #[test]
 fn unary_operators_over_nested_field_reads_lower_as_field_write_values() {
     let source = r#"
-type Input { bool failed, i64 nodes }
-type State { Input input, bool active, i64 count }
+type Input { bool failed; i64 nodes; }
+type State { Input input; bool active; i64 count; }
 type Reader {
-    State state,
+    State state;
     pub i64 Go() {
         this.state.active = !this.state.input.failed;
         this.state.count = -this.state.input.nodes;

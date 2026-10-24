@@ -144,3 +144,42 @@ pub(crate) fn project_root_block_identifier(content: &str) -> Option<&str> {
     }
     Some(identifier)
 }
+
+/// Source root used when a project manifest declares no `root` field.
+pub(crate) const DEFAULT_PROJECT_SOURCE_ROOT: &str = "src";
+
+/// Returns the archive-relative source root a project declares with `root =`
+/// in its named root block, or [`DEFAULT_PROJECT_SOURCE_ROOT`] when absent.
+///
+/// The value must be a relative path that stays inside the artifact: empty,
+/// `.`, absolute, drive-qualified, backslash, or `..` roots are rejected.
+pub(crate) fn project_source_root(project: &str, project_name: &str) -> Result<String, ArtifactError> {
+    let document = parse_bsol_document(project)
+        .map_err(|error| ArtifactError::InvalidManifest(format!("project manifest is invalid: {error}")))?;
+    let declared = document
+        .blocks
+        .iter()
+        .find(|block| block.kind == project_name)
+        .and_then(|block| block_string_field(block, "root"));
+    match declared {
+        Some(root) => normalize_project_source_root(&root),
+        None => Ok(DEFAULT_PROJECT_SOURCE_ROOT.to_owned()),
+    }
+}
+
+fn normalize_project_source_root(raw: &str) -> Result<String, ArtifactError> {
+    let invalid = || {
+        ArtifactError::InvalidManifest(format!(
+            "project source root '{raw}' must be a relative path inside the package"
+        ))
+    };
+    let trimmed = raw.trim();
+    if trimmed.is_empty() || trimmed.contains('\\') || trimmed.contains(':') || trimmed.starts_with('/') {
+        return Err(invalid());
+    }
+    let segments = trimmed.split('/').filter(|segment| !segment.is_empty() && *segment != ".").collect::<Vec<_>>();
+    if segments.is_empty() || segments.iter().any(|segment| *segment == ".." || segment.starts_with('.')) {
+        return Err(invalid());
+    }
+    Ok(segments.join("/"))
+}

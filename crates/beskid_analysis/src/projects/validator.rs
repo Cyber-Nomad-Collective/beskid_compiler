@@ -16,13 +16,12 @@ const MOD_ARTIFACT_POLICIES: &[&str] = &["reuse", "rebuild", "clean_rebuild"];
 
 pub fn validate_manifest(manifest: &ProjectManifest) -> Result<(), ProjectError> {
     if !project_root_block_matches_package_name(&manifest.project.block_kind, &manifest.project.name) {
-        return Err(ProjectError::meta_contract(
-            "E1896",
-            format!(
-                "project root block kind `{}` must match `name` (`{}`) or its underscore projection",
-                manifest.project.block_kind, manifest.project.name
-            ),
-        ));
+        return Err(ProjectError::RootBlockNameMismatch {
+            block: manifest.project.block_kind.clone(),
+            name: manifest.project.name.clone(),
+            block_span: None,
+            name_span: None,
+        });
     }
     if manifest.project.name.trim().is_empty() {
         return Err(ProjectError::Validation("`name` is required in the project root block".to_string()));

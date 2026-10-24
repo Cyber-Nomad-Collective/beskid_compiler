@@ -13,6 +13,11 @@ use crate::inputs::ProjectSession;
 use super::super::queries::{node_kind, node_span};
 use super::*;
 
+/// The fixed text every unavailable (compiler-gap) [`SemanticError`] carries. A boundary that
+/// only sees stringified errors (`beskid_aot`'s lowering wrappers) recognises a compiler gap by it
+/// and reports an internal compiler error instead of a user-facing request error.
+pub const UNAVAILABLE_MESSAGE_MARKER: &str = "is unavailable until its AST/Salsa port is complete";
+
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error, serde::Serialize, serde::Deserialize)]
 #[error("{message}")]
 pub struct SemanticError {
@@ -84,7 +89,7 @@ impl SemanticError {
 
     pub fn unavailable(query: &str) -> Self {
         let message =
-            Arc::<str>::from(format!("semantic query `{query}` is unavailable until its AST/Salsa port is complete"));
+            Arc::<str>::from(format!("semantic query `{query}` {UNAVAILABLE_MESSAGE_MARKER}"));
         Self {
             diagnostics: Arc::from([Arc::clone(&message)]),
             message,
@@ -101,7 +106,7 @@ impl SemanticError {
     /// unsited "unavailable" message.
     pub fn unavailable_at(query: &str, site: AstNodeKey) -> Self {
         let message =
-            Arc::<str>::from(format!("semantic query `{query}` is unavailable until its AST/Salsa port is complete"));
+            Arc::<str>::from(format!("semantic query `{query}` {UNAVAILABLE_MESSAGE_MARKER}"));
         Self {
             diagnostics: Arc::from([Arc::clone(&message)]),
             message,
@@ -118,8 +123,7 @@ impl SemanticError {
     /// are the same as `unavailable_at`; only the text gains an `(at <site>: <reason>)` suffix.
     pub(crate) fn unavailable_at_described(query: &str, site: AstNodeKey, rendered_site: &str, reason: &str) -> Self {
         let message = Arc::<str>::from(format!(
-            "semantic query `{query}` is unavailable until its AST/Salsa port is complete (at {rendered_site}: \
-             {reason})"
+            "semantic query `{query}` {UNAVAILABLE_MESSAGE_MARKER} (at {rendered_site}: {reason})"
         ));
         Self {
             diagnostics: Arc::from([Arc::clone(&message)]),

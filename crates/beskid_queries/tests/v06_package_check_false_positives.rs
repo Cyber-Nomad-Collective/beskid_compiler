@@ -154,7 +154,7 @@ fn impl_where_bounds_govern_method_bodies() {
              pub contract Source { Result<i64, string> Next(); } \
              pub contract Sink<T, R> { Result<T, string> Read(R reader); } \
              Result<unit, string> Check<R>(R reader) where R: Source { i64 n = reader.Next()?; return Result::Ok(()); } \
-             pub type Wrap<R> { i64 dummy, } \
+             pub type Wrap<R> { i64 dummy; } \
              impl<R> Wrap<R> : Sink<i64, R> where R: Source { \
                  pub Result<i64, string> Read(R reader) { \
                      Check<R>(reader)?; \
@@ -174,7 +174,7 @@ fn generic_call_infers_parameter_from_earlier_argument() {
         (
             "Main.bd",
             "use Core.Results; \
-             pub type Box<T> { T value, } \
+             pub type Box<T> { T value; } \
              pub unit Put<T>(Box<T> b, T v) { } \
              pub unit UsePut(Box<Result<i64, string>> b) { Put(b, Result::Error(\"x\")); Put(b, Result::Ok(1_i64)); }",
         ),
@@ -193,7 +193,7 @@ const CONTAINER_DECODER: &str = "use Core.Results; \
      pub contract Source { Result<i64, string> Next(); } \
      pub contract FieldDecoder<T, R> { Result<T, string> Read(R reader); } \
      Result<unit, string> Count<R>(R reader, i64 count) where R: Source { return Result::Ok(()); } \
-     pub type ArrayBinding<T, R, B> { B element, } \
+     pub type ArrayBinding<T, R, B> { B element; } \
      impl<T, R, B> ArrayBinding<T, R, B> : FieldDecoder<T[], R> where R: Source, B: FieldDecoder<T, R> { \
          pub Result<T[], string> Read(R reader) { \
              i64 count = reader.Next()?; \
@@ -222,7 +222,7 @@ fn qualified_generic_call_with_enclosing_type_argument_and_bound_decoder_method(
              pub contract Source { Result<i64, string> Next(); } \
              pub contract FieldDecoder<T, R> { Result<T, string> Read(R reader); } \
              pub contract Decoder<T> { Result<T, string> ReadTyped(); } \
-             type BoundDecoder<T, R, B> { R reader, B binding, } \
+             type BoundDecoder<T, R, B> { R reader; B binding; } \
              impl<T, R, B> BoundDecoder<T, R, B> : Decoder<T> where R: Source, B: FieldDecoder<T, R> { \
                  pub Result<T, string> ReadTyped() { T value = this.binding.Read(this.reader)?; return Result::Ok(value); } \
              } \
@@ -249,7 +249,7 @@ fn empty_array_return_in_diverging_statement_match_arm_takes_the_return_type() {
              } \
              pub i64[] Empty() { return []; }",
         ),
-        ("Repro/Nodes.bd", "pub enum Kind { Alpha, Beta, } pub type Item { pub i64 value, }"),
+        ("Repro/Nodes.bd", "pub enum Kind { Alpha, Beta, } pub type Item { pub i64 value; }"),
         ("Repro/Check.bd", "pub unit Fail(string message) { }"),
     ]);
     assert!(found.is_empty(), "{found:#?}");

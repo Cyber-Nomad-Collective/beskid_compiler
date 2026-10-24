@@ -6,8 +6,8 @@ use super::*;
 fn parsed_direct_spawn_with_arguments_transfers_them_through_a_traced_start_environment() {
     let project = tempfile::tempdir().expect("project directory");
     let source = "
-        pub type Fiber<T> { i64 handle, }
-        type Counter { i64 value, }
+        pub type Fiber<T> { i64 handle; }
+        type Counter { i64 value; }
         i64 Entry(i64 delta, Counter counter) { return counter.value + delta; }
         i64 Main() {
             Counter counter = Counter { value: 40_i64 };
@@ -81,7 +81,7 @@ fn parsed_direct_spawn_with_arguments_transfers_them_through_a_traced_start_envi
 fn parsed_lambda_spawn_with_call_arguments_fails_closed() {
     let project = tempfile::tempdir().expect("project directory");
     let source = "
-        pub type Fiber<T> { i64 handle, }
+        pub type Fiber<T> { i64 handle; }
         i64 Main() { let child = spawn ((i64 value) => value)(7_i64); return 0_i64; }
     ";
     let assembly = parse_production_units(project.path(), &[("Unsupported.bd", "Main", source)]);
@@ -93,7 +93,7 @@ fn parsed_lambda_spawn_with_call_arguments_fails_closed() {
 fn parsed_zero_capture_lambda_spawn_emits_syntax_owned_entry_and_fiber_dispatch() {
     let project = tempfile::tempdir().expect("project directory");
     let source = "
-        pub type Fiber<T> { i64 handle, }
+        pub type Fiber<T> { i64 handle; }
         i64 Main() { let child = spawn (() => 7_i64); return 0_i64; }
     ";
     let assembly = parse_production_units(project.path(), &[("Main.bd", "Main", source)]);
@@ -141,7 +141,7 @@ fn parsed_zero_capture_lambda_spawn_emits_syntax_owned_entry_and_fiber_dispatch(
 fn parsed_capturing_lambda_spawn_allocates_roots_and_dispatches_fiber_entry() {
     let project = tempfile::tempdir().expect("project directory");
     let source = "
-        pub type Fiber<T> { i64 handle, }
+        pub type Fiber<T> { i64 handle; }
         i64 Main() { i64 outer = 41_i64; let child = spawn (() => outer); return 0_i64; }
     ";
     let assembly = parse_production_units(project.path(), &[("Main.bd", "Main", source)]);
@@ -194,7 +194,7 @@ fn parsed_capturing_lambda_spawn_allocates_roots_and_dispatches_fiber_entry() {
 fn parsed_unit_capturing_lambda_spawn_preserves_zero_return_entry() {
     let project = tempfile::tempdir().expect("project directory");
     let source = "
-        pub type Fiber<T> { i64 handle, }
+        pub type Fiber<T> { i64 handle; }
         unit Serve(i64 listener) { return; }
         i64 Main() { i64 listener = 41_i64; let child = spawn (() => Serve(listener)); return 0_i64; }
     ";

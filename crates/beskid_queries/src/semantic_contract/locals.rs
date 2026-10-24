@@ -275,9 +275,7 @@ pub(super) fn mutable_local_assignment_tracked(
 ) -> SemanticQueryResult<MutableLocalAssignment> {
     with_node(db, syntax, key, |program, index, node| {
         let assignment = node.of::<beskid_analysis::syntax::AssignExpression>()?;
-        if !matches!(assignment.op.node, beskid_analysis::syntax::AssignOp::Assign) {
-            return None;
-        }
+        let compound = CompoundAssignmentOperator::of(assignment.op.node);
         let beskid_analysis::syntax::Expression::Path(path) = &assignment.target.node else {
             return None;
         };
@@ -293,7 +291,7 @@ pub(super) fn mutable_local_assignment_tracked(
         }
         let declaration = AstNodeKey { node: declaration, ..key };
         let slot = local_slot_for_declaration(index, declaration)?;
-        Some(slot.map(|slot| MutableLocalAssignment { declaration, slot }))
+        Some(slot.map(|slot| MutableLocalAssignment { declaration, slot, compound }))
     })?
     .transpose()
 }
@@ -395,6 +393,39 @@ pub(super) fn resolve_lexical_declaration(
         }
     }
     best.map(|(_, _, declaration)| declaration)
+}
+
+/// The closest local, function or constant name visible at `reference` to the unknown `name`
+/// ("did you mean"): locals whose scope contains the reference, plus the unit's top-level
+/// functions and constants.
+pub(super) fn closest_visible_name(
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    reference: beskid_analysis::syntax::AstNodeId,
+    name: &str,
+) -> Option<Arc<str>> {
+    let mut candidates = Vec::new();
+    for declaration in index.ids_of_kind(beskid_analysis::syntax_query::NodeKind::Identifier) {
+        let Some(scope) = local_declaration_scope(index, declaration, reference) else { continue };
+        if ancestor_distance(index, scope, reference).is_none() {
+            continue;
+        }
+        if let Some(identifier) =
+            index.node_at(program, declaration).and_then(|node| node.of::<beskid_analysis::syntax::Identifier>())
+        {
+            candidates.push(identifier.name.clone());
+        }
+    }
+    for item in &program.node.items {
+        match &item.node {
+            beskid_analysis::syntax::Node::Function(function) => candidates.push(function.node.name.node.name.clone()),
+            beskid_analysis::syntax::Node::ConstantDefinition(constant) => {
+                candidates.push(constant.node.name.node.name.clone())
+            }
+            _ => {}
+        }
+    }
+    beskid_analysis::analysis::suggest::closest_name(name, candidates.iter().map(String::as_str)).map(Arc::from)
 }
 
 pub(super) fn local_declaration_scope(

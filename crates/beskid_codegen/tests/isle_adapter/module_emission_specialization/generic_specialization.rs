@@ -125,7 +125,7 @@ fn parsed_program_specializes_generic_string_not_equal_as_content_comparison() {
 #[test]
 fn parsed_program_keeps_generic_nominal_pointer_equal_as_identity_comparison() {
     let (input, isa, root) = item_fixture_with_root(
-        "type Box<T> { i64 value } unit Equal<T>(T actual, T expected) { if actual == expected { return; } return; } unit Main() { Box<i64> value = Box<i64> { value: 0_i64 }; Equal(value, value); }",
+        "type Box<T> { i64 value; } unit Equal<T>(T actual, T expected) { if actual == expected { return; } return; } unit Main() { Box<i64> value = Box<i64> { value: 0_i64 }; Equal(value, value); }",
     );
     let db = input.database();
     let items = find_function_definitions(db, root);
@@ -164,7 +164,7 @@ fn parsed_program_specializes_zero_argument_generic_factory_without_hir() {
     // Channel<T> Create<T>() collapses to POINTER at the ABI layer. Item ABI must still refuse a
     // fixed signature so module emission registers SpecializedItem, matching call-site imports.
     let (input, isa, root) = item_fixture_with_root(
-        "type Channel<T> { i64 handle } Channel<T> Create<T>() { return Channel<T> { handle: 0_i64 }; } unit Main() { Channel<i64> ch = Create<i64>(); return; }",
+        "type Channel<T> { i64 handle; } Channel<T> Create<T>() { return Channel<T> { handle: 0_i64 }; } unit Main() { Channel<i64> ch = Create<i64>(); return; }",
     );
     let items = find_function_definitions(input.database(), root);
     let create = items
@@ -200,7 +200,7 @@ fn parsed_program_specializes_zero_argument_generic_factory_without_hir() {
 #[test]
 fn parsed_program_specializes_generic_aggregate_literal_layout_without_hir() {
     let (input, isa, root) = item_fixture_with_root(
-        "type Pair<T> { T value, i64 rest } Pair<T> Make<T>(T value) { return Pair<T> { value: value, rest: 9_i64 }; } i64 Main() { Pair<i32> pair = Make<i32>(7); return pair.rest; }",
+        "type Pair<T> { T value; i64 rest; } Pair<T> Make<T>(T value) { return Pair<T> { value: value, rest: 9_i64 }; } i64 Main() { Pair<i32> pair = Make<i32>(7); return pair.rest; }",
     );
     let items = find_function_definitions(input.database(), root);
     let make = items
@@ -229,7 +229,7 @@ fn parsed_program_specializes_generic_aggregate_literal_layout_without_hir() {
 #[test]
 fn parsed_program_specializes_generic_pattern_payload_field_layout_without_hir() {
     let (input, isa, root) = item_fixture_with_root(
-        "type Applied<T> { T value, i64 rest } enum Result<T> { Ok(Applied<T> success), Err(i64 error) } i64 Rest<T>(Result<T> result) { return match result { Result::Ok(success) => success.rest, Result::Err(_) => -1_i64, }; } i64 Main(Result<i32> result) { return Rest<i32>(result); }",
+        "type Applied<T> { T value; i64 rest; } enum Result<T> { Ok(Applied<T> success), Err(i64 error) } i64 Rest<T>(Result<T> result) { return match result { Result::Ok(success) => success.rest, Result::Err(_) => -1_i64, }; } i64 Main(Result<i32> result) { return Rest<i32>(result); }",
     );
     let items = find_function_definitions(input.database(), root);
     let rest = items
@@ -305,7 +305,7 @@ fn generic_method_on_a_nested_enum_pattern_binding_is_specialized() {
     // `Outcome::Error(Problem::Failed(failures))` (Core.Parallel ParallelSuite shape): the receiver
     // has no written type, so its applied owner comes from the binding's proven source identity.
     let (input, isa, root) = item_fixture_with_root(
-        "type List<T> { T[] values, i64 count, i64 Count() { return count; } } enum Problem { Failed(List<i64> failures), Empty } enum Outcome<TValue, TError> { Ok(TValue value), Error(TError error) } i64 Main(Outcome<i64, Problem> result) { match result { Outcome::Error(Problem::Failed(failures)) => { return failures.Count(); }, _ => { return 0_i64; }, }; return 0_i64; }",
+        "type List<T> { T[] values; i64 count; i64 Count() { return count; } } enum Problem { Failed(List<i64> failures), Empty } enum Outcome<TValue, TError> { Ok(TValue value), Error(TError error) } i64 Main(Outcome<i64, Problem> result) { match result { Outcome::Error(Problem::Failed(failures)) => { return failures.Count(); }, _ => { return 0_i64; }, }; return 0_i64; }",
     );
     let method = find_node(input.database(), root, beskid_queries::IndexedNodeKind::MethodDefinition)
         .expect("List.Count method");
@@ -331,7 +331,7 @@ fn method_with_its_own_type_parameters_on_a_plain_owner_is_only_emitted_speciali
     // (here a nested explicit `Id<T>(..)` over a function-typed parameter) is walked only in the
     // environment of a concrete call, never as a declaration-level item.
     let (input, isa, root) = item_fixture_with_root(
-        "T Id<T>(T value) { return value; } type Runner { i64 id, T Apply<T>(() => T body) { return Id<T>(body()); } } i64 Main(Runner runner) { return runner.Apply<i64>(() => 7_i64); }",
+        "T Id<T>(T value) { return value; } type Runner { i64 id; T Apply<T>(() => T body) { return Id<T>(body()); } } i64 Main(Runner runner) { return runner.Apply<i64>(() => 7_i64); }",
     );
     let method = find_node(input.database(), root, beskid_queries::IndexedNodeKind::MethodDefinition)
         .expect("Runner.Apply method");
@@ -361,7 +361,7 @@ fn nested_pattern_bindings_of_a_call_match_in_a_generic_body_are_specialized() {
     // `Result::Ok(Sequenced::Item(sequence, value))`, and both bindings feed a generic-owner method
     // call. The callee's instance in the enclosing environment applies the scrutinee's result.
     let (input, isa, root) = item_fixture_with_root(
-        "enum Result<TValue, TError> { Ok(TValue value), Error(TError error) } enum Item<T> { Entry(i64 sequence, T value), Done } type Bag<V> { V[] values, i64 count, Bag<V> Put(i64 key, V value) { return Bag<V> { values: values, count: count + key }; } } type Source<T> { T value, Result<Item<T>, string> Next() { return Result::Ok(Item::Entry(1_i64, value)); } } i64 Drain<T>(Source<T> source, Bag<T> bag) { match source.Next() { Result::Ok(Item::Entry(sequence, value)) => { Bag<T> next = bag.Put(sequence, value); return next.count; }, _ => { return 0_i64; }, }; return 0_i64; } i64 Main(Source<i64> source, Bag<i64> bag) { return Drain<i64>(source, bag); }",
+        "enum Result<TValue, TError> { Ok(TValue value), Error(TError error) } enum Item<T> { Entry(i64 sequence, T value), Done } type Bag<V> { V[] values; i64 count; Bag<V> Put(i64 key, V value) { return Bag<V> { values: values, count: count + key }; } } type Source<T> { T value; Result<Item<T>, string> Next() { return Result::Ok(Item::Entry(1_i64, value)); } } i64 Drain<T>(Source<T> source, Bag<T> bag) { match source.Next() { Result::Ok(Item::Entry(sequence, value)) => { Bag<T> next = bag.Put(sequence, value); return next.count; }, _ => { return 0_i64; }, }; return 0_i64; } i64 Main(Source<i64> source, Bag<i64> bag) { return Drain<i64>(source, bag); }",
     );
     let items = find_function_definitions(input.database(), root);
     let named = |name: &str| {
@@ -389,7 +389,7 @@ fn contextual_generic_enum_constructor_argument_of_a_receiver_bound_parameter_is
     // Core.Parallel `output.Send(Sequenced::Item(next, item))` shape: the receiver binds the
     // parameter's generic, so the constructor is checked against that type instead of inferring.
     let (input, isa, root) = item_fixture_with_root(
-        "type Port<T> { i64 id, unit Send(T value) { return; } } enum Item<T> { Entry(i64 sequence, T value), Done } unit Forward<T>(Port<Item<T>> output, T value) { output.Send(Item::Entry(1_i64, value)); return; } unit Main(Port<Item<i64>> output) { Forward<i64>(output, 7_i64); output.Send(Item::Entry(2_i64, 8_i64)); return; }",
+        "type Port<T> { i64 id; unit Send(T value) { return; } } enum Item<T> { Entry(i64 sequence, T value), Done } unit Forward<T>(Port<Item<T>> output, T value) { output.Send(Item::Entry(1_i64, value)); return; } unit Main(Port<Item<i64>> output) { Forward<i64>(output, 7_i64); output.Send(Item::Entry(2_i64, 8_i64)); return; }",
     );
     let items = find_function_definitions(input.database(), root);
     let named = |name: &str| {
@@ -417,7 +417,7 @@ fn typed_lambda_parameter_receiver_in_a_generic_body_is_specialized() {
     // Core.Parallel `Collect` shape: `(List<T> leaf, T value) => leaf.Push(value)` inside a generic
     // body; the lambda parameter's written type is applied through the enclosing environment.
     let (input, isa, root) = item_fixture_with_root(
-        "type Bag<V> { V[] values, i64 count, Bag<V> Put(V value) { return Bag<V> { values: values, count: count + 1_i64 }; } } L Fold<T, L>(L seed, T value, (L, T) => L step) { return step(seed, value); } Bag<T> Gather<T>(Bag<T> seed, T value) { return Fold<T, Bag<T>>(seed, value, (Bag<T> bag, T item) => bag.Put(item)); } i64 Main(Bag<i64> bag) { Bag<i64> next = Gather<i64>(bag, 7_i64); return next.count; }",
+        "type Bag<V> { V[] values; i64 count; Bag<V> Put(V value) { return Bag<V> { values: values, count: count + 1_i64 }; } } L Fold<T, L>(L seed, T value, (L, T) => L step) { return step(seed, value); } Bag<T> Gather<T>(Bag<T> seed, T value) { return Fold<T, Bag<T>>(seed, value, (Bag<T> bag, T item) => bag.Put(item)); } i64 Main(Bag<i64> bag) { Bag<i64> next = Gather<i64>(bag, 7_i64); return next.count; }",
     );
     let items = find_function_definitions(input.database(), root);
     let named = |name: &str| {
@@ -447,7 +447,7 @@ fn capturing_lambda_in_a_generic_body_has_an_instance_closure_layout() {
     // `Drive<T, L, R>` shape: a lambda captures a value of the enclosing generic type, so its
     // closure layout (scalar `i64` here, a managed reference for `Bag<i64>`) depends on the instance.
     let (input, isa, root) = item_fixture_with_root(
-        "type Bag<V> { V[] values, i64 count, Bag<V> Put(V value) { return Bag<V> { values: values, count: count + 1_i64 }; } } L Fold<T, L>(L seed, T value, (L, T) => L step) { return step(seed, value); } Bag<T> Keep<T>(Bag<T> seed, T value, T extra) { return Fold<T, Bag<T>>(seed, value, (Bag<T> bag, T item) => bag.Put(extra)); } i64 Main(Bag<i64> bag, Bag<Bag<i64>> nested) { Bag<i64> next = Keep<i64>(bag, 7_i64, 8_i64); Bag<Bag<i64>> outer = Keep<Bag<i64>>(nested, bag, next); return next.count + outer.count; }",
+        "type Bag<V> { V[] values; i64 count; Bag<V> Put(V value) { return Bag<V> { values: values, count: count + 1_i64 }; } } L Fold<T, L>(L seed, T value, (L, T) => L step) { return step(seed, value); } Bag<T> Keep<T>(Bag<T> seed, T value, T extra) { return Fold<T, Bag<T>>(seed, value, (Bag<T> bag, T item) => bag.Put(extra)); } i64 Main(Bag<i64> bag, Bag<Bag<i64>> nested) { Bag<i64> next = Keep<i64>(bag, 7_i64, 8_i64); Bag<Bag<i64>> outer = Keep<Bag<i64>>(nested, bag, next); return next.count + outer.count; }",
     );
     let items = find_function_definitions(input.database(), root);
     let named = |name: &str| {
@@ -476,7 +476,7 @@ fn genericless_constructor_lambda_body_takes_the_expected_result() {
     // ParallelSuite `s.SpawnTry<i64>(() => Result::Error("no input"))`: the lambda body is a
     // constructor whose type only the expected function result (`Outcome<i64, string>`) proves.
     let (input, isa, root) = item_fixture_with_root(
-        "enum Outcome<T, E> { Ok(T value), Error(E error) } type Runner { i64 id, i64 Try<T>(() => Outcome<T, string> body) { return 1_i64; } } i64 Main(Runner runner) { return runner.Try<i64>(() => Outcome::Error(\"no input\")); }",
+        "enum Outcome<T, E> { Ok(T value), Error(E error) } type Runner { i64 id; i64 Try<T>(() => Outcome<T, string> body) { return 1_i64; } } i64 Main(Runner runner) { return runner.Try<i64>(() => Outcome::Error(\"no input\")); }",
     );
     let items = find_function_definitions(input.database(), root);
     let main = items
@@ -495,7 +495,7 @@ fn contract_call_on_a_captured_bounded_parameter_in_a_lambda_uses_the_instance_w
     // `ParallelSeq.Reduce<C>` shape: `(T acc, T value) => combiner.Combine(acc, value)` captures a
     // contract-bounded parameter; the lambda body dispatches through the enclosing instance's witness.
     let (input, isa, root) = item_fixture_with_root(
-        "contract Joins<T> { T Combine(T left, T right); } type Plus : Joins<i64> { i64 id, pub i64 Combine(i64 left, i64 right) { return left + right; } } L Fold<T, L>(L seed, T value, (L, T) => L step) { return step(seed, value); } T Merge<T, C>(T seed, T value, C combiner) where C: Joins<T> { return Fold<T, T>(seed, value, (T acc, T item) => combiner.Combine(acc, item)); } i64 Main(Plus plus) { return Merge<i64, Plus>(1_i64, 2_i64, plus); }",
+        "contract Joins<T> { T Combine(T left, T right); } type Plus : Joins<i64> { i64 id; pub i64 Combine(i64 left, i64 right) { return left + right; } } L Fold<T, L>(L seed, T value, (L, T) => L step) { return step(seed, value); } T Merge<T, C>(T seed, T value, C combiner) where C: Joins<T> { return Fold<T, T>(seed, value, (T acc, T item) => combiner.Combine(acc, item)); } i64 Main(Plus plus) { return Merge<i64, Plus>(1_i64, 2_i64, plus); }",
     );
     let items = find_function_definitions(input.database(), root);
     let main = items
@@ -541,7 +541,7 @@ fn match_on_a_call_through_a_typed_local_of_a_lambda_in_a_generic_body_is_specia
     // inside a lambda of a generic body; the scrutinee's applied enum is read through the typed
     // local's identity in the enclosing instance.
     let (input, isa, root) = item_fixture_with_root(
-        "enum Outcome<T, E> { Ok(T value), Error(E error) } type Box<T> { T item, Outcome<T, string> Take() { return Outcome::Ok(this.item); } } Box<T> Make<T>(T item) { return Box<T> { item: item }; } i64 Run<T>(() => Outcome<T, string> body) { return 1_i64; } i64 Wrap<R>(R value) { return Run<R>(() => { Box<R> b = Make<R>(value); return match b.Take() { Outcome::Ok(v) => Outcome::Ok(v), Outcome::Error(e) => Outcome::Error(e) }; }); } i64 Main() { return Wrap<i64>(5_i64); }",
+        "enum Outcome<T, E> { Ok(T value), Error(E error) } type Box<T> { T item; Outcome<T, string> Take() { return Outcome::Ok(this.item); } } Box<T> Make<T>(T item) { return Box<T> { item: item }; } i64 Run<T>(() => Outcome<T, string> body) { return 1_i64; } i64 Wrap<R>(R value) { return Run<R>(() => { Box<R> b = Make<R>(value); return match b.Take() { Outcome::Ok(v) => Outcome::Ok(v), Outcome::Error(e) => Outcome::Error(e) }; }); } i64 Main() { return Wrap<i64>(5_i64); }",
     );
     let items = find_function_definitions(input.database(), root);
     let main = items
@@ -562,7 +562,7 @@ fn receiver_bound_constructor_argument_inside_a_lambda_of_a_generic_body_is_spec
     // `Port<Item<T>> output` captured by a lambda of `Forward<T>`; the receiver's identity in the
     // instance binds the parameter's generic, so the constructor is checked against it.
     let (input, isa, root) = item_fixture_with_root(
-        "type Port<T> { i64 id, unit Send(T value) { return; } } enum Item<T> { Entry(i64 sequence, T value), Done } unit Each<T>(T value, (T) => unit f) { f(value); return; } unit Forward<T>(Port<Item<T>> output, T value) { Each<T>(value, (T v) => output.Send(Item::Entry(1_i64, v))); return; } unit Main(Port<Item<i64>> output) { Forward<i64>(output, 7_i64); return; }",
+        "type Port<T> { i64 id; unit Send(T value) { return; } } enum Item<T> { Entry(i64 sequence, T value), Done } unit Each<T>(T value, (T) => unit f) { f(value); return; } unit Forward<T>(Port<Item<T>> output, T value) { Each<T>(value, (T v) => output.Send(Item::Entry(1_i64, v))); return; } unit Main(Port<Item<i64>> output) { Forward<i64>(output, 7_i64); return; }",
     );
     let items = find_function_definitions(input.database(), root);
     let named = |name: &str| {
@@ -591,7 +591,7 @@ fn chained_generic_call_receiver_in_a_lambda_of_a_generic_body_is_specialized() 
     // `Push` is a method of a generic owner and the receiver is itself a
     // generic call with explicit arguments naming the enclosing parameter.
     let (input, isa, root) = item_fixture_with_root(
-        "type Bag<V> { i64 count, Bag<V> Put(V value) { return Bag<V> { count: this.count + 1_i64 }; } } Bag<V> NewBag<V>() { return Bag<V> { count: 0_i64 }; } R Fold<T, L, R>(T value, () => L start, (L, T) => L step, (L) => R finish) { return finish(step(start(), value)); } Bag<Bag<T>> Collect<T>(T value) { return Fold<T, Bag<T>, Bag<Bag<T>>>(value, () => NewBag<T>(), (Bag<T> leaf, T v) => leaf.Put(v), (Bag<T> leaf) => NewBag<Bag<T>>().Put(leaf)); } i64 Main() { return Collect<i64>(5_i64).count; }",
+        "type Bag<V> { i64 count; Bag<V> Put(V value) { return Bag<V> { count: this.count + 1_i64 }; } } Bag<V> NewBag<V>() { return Bag<V> { count: 0_i64 }; } R Fold<T, L, R>(T value, () => L start, (L, T) => L step, (L) => R finish) { return finish(step(start(), value)); } Bag<Bag<T>> Collect<T>(T value) { return Fold<T, Bag<T>, Bag<Bag<T>>>(value, () => NewBag<T>(), (Bag<T> leaf, T v) => leaf.Put(v), (Bag<T> leaf) => NewBag<Bag<T>>().Put(leaf)); } i64 Main() { return Collect<i64>(5_i64).count; }",
     );
     let items = find_function_definitions(input.database(), root);
     let main = items

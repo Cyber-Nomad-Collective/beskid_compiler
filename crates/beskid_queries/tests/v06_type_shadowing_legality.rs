@@ -19,9 +19,9 @@ fn fixture(source: &str) -> (tempfile::TempDir, BeskidDatabase, Arc<ProgramAssem
     std::fs::write(&path, source).unwrap();
     let bounded = dependency.join("src/Probe/Bounded.bd");
     std::fs::create_dir_all(bounded.parent().unwrap()).unwrap();
-    std::fs::write(&bounded, "pub type PatternLimits { pub i64 maxWork, }").unwrap();
+    std::fs::write(&bounded, "pub type PatternLimits { pub i64 maxWork; }").unwrap();
     let other = dependency.join("src/Probe/Other.bd");
-    std::fs::write(&other, "pub type PatternLimits { pub bool enabled, }").unwrap();
+    std::fs::write(&other, "pub type PatternLimits { pub bool enabled; }").unwrap();
     let plan = CompilePlan {
         project_root: host.clone(),
         manifest_path: host.join("schema.bproj"),
@@ -58,7 +58,7 @@ fn fixture(source: &str) -> (tempfile::TempDir, BeskidDatabase, Arc<ProgramAssem
 #[test]
 fn local_type_shadows_imported_same_leaf_at_parameter_legality() {
     let (_temporary, db, _assembly, items) = fixture(
-        "use Probe.Bounded;\npub type PatternLimits { pub i64 maxDepth, }\npub i64 ValidateWithPatternLimits(PatternLimits policy) { return policy.maxDepth; }\n",
+        "use Probe.Bounded;\npub type PatternLimits { pub i64 maxDepth; }\npub i64 ValidateWithPatternLimits(PatternLimits policy) { return policy.maxDepth; }\n",
     );
     assert_eq!(
         unresolved_type_reference(&db, items[0]),
@@ -71,7 +71,7 @@ fn local_type_shadows_imported_same_leaf_at_parameter_legality() {
 #[test]
 fn qualified_import_and_local_same_leaf_keep_distinct_field_declarations() {
     let (_temporary, db, assembly, items) = fixture(
-        "use Probe.Bounded;\npub type PatternLimits { pub i64 maxDepth, }\npub i64 Local(PatternLimits policy) { return policy.maxDepth; }\npub i64 Imported(Bounded.PatternLimits policy) { return policy.maxWork; }\n",
+        "use Probe.Bounded;\npub type PatternLimits { pub i64 maxDepth; }\npub i64 Local(PatternLimits policy) { return policy.maxDepth; }\npub i64 Imported(Bounded.PatternLimits policy) { return policy.maxWork; }\n",
     );
     assert!(check_items(&db, &items).is_ok(), "both scoped signatures are legal");
     let paths = assembly.entry_syntax_index().ids_of_kind(NodeKind::PathExpression).collect::<Vec<_>>();

@@ -1,6 +1,6 @@
 contract Service { i32 Run(i32 x); }
 
-type Worker : Service { i32 base }
+type Worker : Service { i32 base; }
 
 impl Worker {
     pub i32 Run(i32 x) {

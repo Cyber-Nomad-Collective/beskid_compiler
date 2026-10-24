@@ -80,7 +80,7 @@ fn doc_diagnostics_unknown_variant_name() {
 #[ignore = "build_document_analysis returns no resolution for these sources (verified 2026-10-12); doc diagnostics need a query-backed analysis path"]
 #[test]
 fn doc_diagnostics_variant_on_type_is_wrong_placement() {
-    let src = "/// @variant(x) bad\ntype Point { i64 x, }\n";
+    let src = "/// @variant(x) bad\ntype Point { i64 x; }\n";
     let program = parse_program(src).unwrap();
     let snap = build_document_analysis(&program, "t.bd", src, None);
     assert!(snap.resolution.is_some());
@@ -166,7 +166,7 @@ fn parser_accepts_docs_on_nested_members_and_statements() {
     let src = r#"
 type User {
     /// field doc
-    string name,
+    string name;
 }
 
 enum Value {
@@ -200,7 +200,7 @@ i64 Sum(
     i64 right
 ) { return left + right; }
 
-test docs_inside_test_body {
+test DocsInsideTestBody {
     /// statement doc
     i64 value = 1;
 }
@@ -214,7 +214,7 @@ fn hover_includes_member_doc_markdown() {
     let src = r#"
 type User {
     /// Display name of the user.
-    string name,
+    string name;
 }
 "#;
     let program = parse_program(src).expect("program parse");

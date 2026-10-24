@@ -215,23 +215,45 @@ impl SemanticPipelineRule {
                 continue;
             }
 
-            let (name, visibility, span) = match &item.node {
-                Node::Function(definition) => {
-                    (definition.node.name.node.name.clone(), definition.node.visibility.node, definition.node.name.span)
+            let (name, visibility, span, kind) = match &item.node {
+                // Generated host-hook items are called by `launch` / `with` lowering.
+                Node::Function(definition) if crate::composition::is_hook_item_name(&definition.node.name.node.name) => {
+                    continue;
                 }
-                Node::TypeDefinition(definition) => {
-                    (definition.node.name.node.name.clone(), definition.node.visibility.node, definition.node.name.span)
+                Node::TypeDefinition(definition)
+                    if crate::composition::is_hook_item_name(&definition.node.name.node.name) =>
+                {
+                    continue;
                 }
-                Node::EnumDefinition(definition) => {
-                    (definition.node.name.node.name.clone(), definition.node.visibility.node, definition.node.name.span)
-                }
-                Node::ContractDefinition(definition) => {
-                    (definition.node.name.node.name.clone(), definition.node.visibility.node, definition.node.name.span)
-                }
+                Node::Function(definition) => (
+                    definition.node.name.node.name.clone(),
+                    definition.node.visibility.node,
+                    definition.node.name.span,
+                    "function",
+                ),
+                Node::TypeDefinition(definition) => (
+                    definition.node.name.node.name.clone(),
+                    definition.node.visibility.node,
+                    definition.node.name.span,
+                    "type",
+                ),
+                Node::EnumDefinition(definition) => (
+                    definition.node.name.node.name.clone(),
+                    definition.node.visibility.node,
+                    definition.node.name.span,
+                    "enum",
+                ),
+                Node::ContractDefinition(definition) => (
+                    definition.node.name.node.name.clone(),
+                    definition.node.visibility.node,
+                    definition.node.name.span,
+                    "contract",
+                ),
                 Node::ModuleDeclaration(definition) => (
                     self.path_tail_stage5(&definition.node.path),
                     definition.node.visibility.node,
                     definition.node.path.span,
+                    "module",
                 ),
                 _ => continue,
             };
@@ -245,7 +267,7 @@ impl SemanticPipelineRule {
                 continue;
             }
 
-            ctx.emit_issue(span, SemanticIssueKind::UnusedPrivateItem { name });
+            ctx.emit_issue(span, SemanticIssueKind::UnusedPrivateItem { name, kind: kind.to_string(), item: item.span });
         }
     }
 
@@ -352,6 +374,27 @@ impl SemanticPipelineRule {
             }
             for ty in Query::from(&item.node).of::<Type>() {
                 self.collect_used_from_type(ty, &shadowed, used);
+            }
+            // Composition and generic bounds name types outside `Type` positions: a registry
+            // line (`single Impl for Contract;`) and a `where T: Contract` bound are uses.
+            for entry in Query::from(&item.node).of::<crate::syntax::RegistryEntry>() {
+                self.collect_used_from_path(&entry.implementation, &shadowed, used);
+                if let Some(target) = &entry.target {
+                    self.collect_used_from_path(target, &shadowed, used);
+                }
+            }
+            let mut bounds = Vec::new();
+            for function in Query::from(&item.node).of::<crate::syntax::FunctionDefinition>() {
+                bounds.extend(function.where_bounds.iter());
+            }
+            for method in Query::from(&item.node).of::<crate::syntax::MethodDefinition>() {
+                bounds.extend(method.where_bounds.iter());
+            }
+            for implementation in Query::from(&item.node).of::<crate::syntax::ImplBlock>() {
+                bounds.extend(implementation.where_bounds.iter());
+            }
+            for bound in bounds {
+                self.collect_used_from_path(&bound.contract, &HashSet::new(), used);
             }
         }
     }
@@ -541,7 +584,7 @@ mod tests {
     #[test]
     fn extend_type_cannot_access_private_target_members() {
         let source = r#"
-            type Account { i64 balance }
+            type Account { i64 balance; }
             extend type Account {
                 pub i64 Balance() {
                     Account account = Account { balance: 1 };
@@ -562,7 +605,7 @@ mod tests {
     #[test]
     fn extend_type_allows_public_target_members() {
         let source = r#"
-            pub type Account { pub i64 balance }
+            pub type Account { pub i64 balance; }
             extend type Account {
                 pub i64 Balance() {
                     Account account = Account { balance: 1 };
@@ -702,7 +745,7 @@ mod tests {
         analyze(source)
             .diagnostics
             .iter()
-            .filter(|diagnostic| diagnostic.code.as_deref() == Some("W1504"))
+            .filter(|diagnostic| diagnostic.code.as_deref() == Some("W2101"))
             .map(|diagnostic| diagnostic.message.clone())
             .collect()
     }
@@ -715,9 +758,30 @@ mod tests {
         run_rules(&program.node, "test.bd", source, &builtin_rules(), options)
             .diagnostics
             .iter()
-            .filter(|diagnostic| diagnostic.code.as_deref() == Some("W1504"))
+            .filter(|diagnostic| diagnostic.code.as_deref() == Some("W2101"))
             .map(|diagnostic| diagnostic.message.clone())
             .collect()
+    }
+
+    #[test]
+    fn an_unused_private_function_is_w2101_unnecessary_with_a_removal_fix() {
+        let source = "pub unit Main() { return; }\n\nunit Helper() {\n    return;\n}\n";
+        let pair =
+            BeskidParser::parse(Rule::Program, source).expect("source should parse").next().expect("program pair");
+        let program = Program::parse(pair).expect("source should build AST");
+        let result = run_rules(&program.node, "test.bd", source, &builtin_rules(), AnalysisOptions::default());
+        let unused = result
+            .diagnostics
+            .iter()
+            .find(|diagnostic| diagnostic.code.as_deref() == Some("W2101"))
+            .expect("Helper is unused");
+        assert_eq!(unused.message, "`Helper` is never used");
+        assert_eq!(unused.label, "unused function");
+        assert_eq!(unused.tags, [crate::analysis::DiagnosticTag::Unnecessary]);
+        let fix = &unused.fixes[0];
+        assert!(!fix.is_preferred(), "removing code may be wrong");
+        let (start, end) = fix.edits[0].range();
+        assert_eq!(&source[start..end], "unit Helper() {\n    return;\n}\n");
     }
 
     #[test]
@@ -828,7 +892,7 @@ mod tests {
     /// `exchange(place, move value)` is a builtin call, not an unknown value.
     #[test]
     fn exchange_builtin_call_resolves_without_a_declaration() {
-        let source = "type S { u8[] b } u8[] Swap(S s, move u8[] n) { return exchange(s.b, move n); }";
+        let source = "type S { u8[] b; } u8[] Swap(S s, move u8[] n) { return exchange(s.b, move n); }";
         let entry = parse_program(source).expect("parse entry");
         let mut resolver = Resolver::new();
         if let Err(errors) = resolver.resolve_program(&entry) {
@@ -841,5 +905,47 @@ mod tests {
         let unknown = "unit Run() { Swap(1); return; }";
         let entry = parse_program(unknown).expect("parse entry");
         assert!(Resolver::new().resolve_program(&entry).is_err(), "an undeclared callee is still unknown");
+    }
+
+    fn unused_items(source: &str) -> Vec<String> {
+        analyze(source)
+            .diagnostics
+            .into_iter()
+            .filter(|diagnostic| diagnostic.message.starts_with("unused private item"))
+            .map(|diagnostic| diagnostic.message)
+            .collect()
+    }
+
+    #[test]
+    fn contract_named_only_by_a_registry_line_is_used() {
+        let source = r#"
+            contract Clock { i64 Now(); }
+            type SystemClock : Clock { pub i64 Now() { return 0; } }
+            host AppHost() { registry { single SystemClock for Clock; } }
+            pub i32 Main() { launch AppHost(); return 0; }
+        "#;
+        let unused = unused_items(source);
+        assert!(unused.iter().all(|message| !message.contains("`Clock`")), "{unused:?}");
+        assert!(unused.iter().all(|message| !message.contains("`SystemClock`")), "{unused:?}");
+    }
+
+    #[test]
+    fn contract_named_only_by_a_where_bound_is_used() {
+        let source = r#"
+            contract Clock { i64 Now(); }
+            pub i64 Read<T>(T clock) where T: Clock { return clock.Now(); }
+        "#;
+        let unused = unused_items(source);
+        assert!(unused.iter().all(|message| !message.contains("`Clock`")), "{unused:?}");
+    }
+
+    #[test]
+    fn contract_named_only_by_an_inject_field_is_used() {
+        let source = r#"
+            contract Clock { i64 Now(); }
+            pub type Report { inject Clock clock; }
+        "#;
+        let unused = unused_items(source);
+        assert!(unused.iter().all(|message| !message.contains("`Clock`")), "{unused:?}");
     }
 }

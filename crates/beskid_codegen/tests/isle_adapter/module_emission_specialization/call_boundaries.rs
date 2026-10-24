@@ -23,7 +23,7 @@ fn nested_module_static_call_results_are_valid_comparison_operands() {
         ),
         (
             &cursor_path,
-            "pub type CursorBuilder { i64 row } pub enum ParseResult<T> { Ok(T value), Err } pub CursorBuilder Start() { return CursorBuilder { row: 0_i64 }; } pub CursorBuilder Position(CursorBuilder self, i64 row, i64 col) { return CursorBuilder { row: row }; } pub ParseResult<string> Echo(CursorBuilder cursor, ParseResult<string> parsed) { return parsed; } pub i64 Width(CursorBuilder self) { return self.row; } pub i64 Zero() { return 0_i64; }",
+            "pub type CursorBuilder { i64 row; } pub enum ParseResult<T> { Ok(T value), Err } pub CursorBuilder Start() { return CursorBuilder { row: 0_i64 }; } pub CursorBuilder Position(CursorBuilder self, i64 row, i64 col) { return CursorBuilder { row: row }; } pub ParseResult<string> Echo(CursorBuilder cursor, ParseResult<string> parsed) { return parsed; } pub i64 Width(CursorBuilder self) { return self.row; } pub i64 Zero() { return 0_i64; }",
         ),
     ];
     for (path, source) in &sources {
@@ -112,7 +112,7 @@ fn nested_direct_call_adapts_scalars_at_the_exact_inner_parameter_boundary() {
         ),
         (
             &cursor_path,
-            "pub type CursorBuilder { string parts } pub CursorBuilder Start() { return CursorBuilder { parts: \"\" }; } pub CursorBuilder Position(CursorBuilder self, i64 row, i64 col) { return CursorBuilder { parts: self.parts }; } pub string IntoSequence(CursorBuilder self) { return self.parts; }",
+            "pub type CursorBuilder { string parts; } pub CursorBuilder Start() { return CursorBuilder { parts: \"\" }; } pub CursorBuilder Position(CursorBuilder self, i64 row, i64 col) { return CursorBuilder { parts: self.parts }; } pub string IntoSequence(CursorBuilder self) { return self.parts; }",
         ),
     ];
     for (path, source) in &sources {

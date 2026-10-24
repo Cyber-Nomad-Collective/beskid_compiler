@@ -34,17 +34,16 @@ impl Emit for MacroDefinition {
         self.visibility.emit(w, cx)?;
         write!(w, "macro ")?;
         self.name.emit(w, cx)?;
-        if !self.parameters.is_empty() {
-            write!(w, " (")?;
-            for (index, param) in self.parameters.iter().enumerate() {
-                if index > 0 {
-                    write!(w, ", ")?;
-                }
-                param.emit(w, cx)?;
+        // The grammar requires the parameter list, even when it is empty.
+        write!(w, "(")?;
+        for (index, param) in self.parameters.iter().enumerate() {
+            if index > 0 {
+                write!(w, ", ")?;
             }
-            write!(w, ")")?;
+            param.emit(w, cx)?;
         }
-        write!(w, " ")?;
+        write!(w, ")")?;
+        cx.before_open_brace(w)?;
         self.body.emit(w, cx)
     }
 }

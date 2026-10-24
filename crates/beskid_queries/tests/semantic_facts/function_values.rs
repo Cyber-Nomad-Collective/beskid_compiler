@@ -13,7 +13,7 @@ use super::support::{assert_unavailable, key, key_at_start, setup};
 
 #[test]
 fn a_function_typed_field_projection_is_a_function_value_callee() {
-    let source = "type Handler { (i64) => i64 op } i64 Main(Handler h) { return h.op(5); }";
+    let source = "type Handler { (i64) => i64 op; } i64 Main(Handler h) { return h.op(5); }";
     let (db, _project, unit, generation, index) = setup(source);
     let call = key(unit, generation, &index, NodeKind::CallExpression, 0);
     let lowering = call_lowering(&db, call).expect("call lowering query").expect("call lowering");
@@ -220,7 +220,7 @@ fn lambda_value_requirement_follows_the_use_of_the_lambda() {
 fn a_typed_lambda_parameter_is_classified_by_its_written_type() {
     // ParallelSuite `Parallel.Scope<bool>((Core.Parallel.Scopes.Scope s) => { .. })`: the lambda
     // trampoline needs each parameter's managed-reference class from its annotation.
-    let source = "type Box { i64 v } i64 Run((Box, i64) => i64 f, Box b) { return f(b, 1); } \
+    let source = "type Box { i64 v; } i64 Run((Box, i64) => i64 f, Box b) { return f(b, 1); } \
                   i64 Main(Box b) { return Run((Box s, i64 n) => s.v + n, b); }";
     let (db, _project, unit, generation, index) = setup(source);
     let boxed = key_at_start(unit, generation, &index, NodeKind::Identifier, source.find("s, i64 n").expect("s"));

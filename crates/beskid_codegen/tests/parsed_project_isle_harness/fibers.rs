@@ -5,7 +5,7 @@ use super::*;
 #[test]
 fn bound_spawn_returns_runtime_handle_without_invoking_child_in_parent() {
     let project = tempfile::tempdir().expect("project directory");
-    let source = "pub type Fiber<T> { i64 handle, } i64 Compute() { return 7_i64; } i64 Main() { let child = spawn Compute(); return 0_i64; }";
+    let source = "pub type Fiber<T> { i64 handle; } i64 Compute() { return 7_i64; } i64 Main() { let child = spawn Compute(); return 0_i64; }";
     let assembly = parse_production_units(project.path(), &[("Main.bd", "Main", source)]);
     let (target, isa) = x86_64_target_and_isa();
     let lowered = lower_verified_entrypoint(assembly, target, isa.as_ref());
@@ -132,7 +132,7 @@ fn parsed_direct_zero_argument_spawn_emits_syntax_owned_trampoline_and_fiber_dis
     let project = tempfile::tempdir().expect("project directory");
     let source = "
         i64 Entry() { return 7_i64; }
-        pub type Fiber<T> { i64 handle, }
+        pub type Fiber<T> { i64 handle; }
         i64 Main() { let child = spawn Entry; return 0_i64; }
     ";
     let assembly = parse_production_units(project.path(), &[("Main.bd", "Main", source)]);

@@ -17,6 +17,8 @@ use crate::features::{
     code_actions, completion, definition, document_symbols, formatting, hover, inlay_hints, references, rename,
     semantic_tokens, signature_help, workspace_symbols,
 };
+use crate::crash::CrashReporter;
+use crate::scan_schedule::{InteractiveGuard, ScanCoordinator, ScanRunGuard};
 use crate::logging::{ClientLogFilter, client_log};
 use crate::protocol::request::{snapshot_document, snapshot_lsp_request, snapshot_request};
 use crate::server::init::initialize_result;
@@ -40,19 +42,33 @@ pub struct Backend {
     pckg_registry: Arc<RwLock<PckgRegistryState>>,
     log_filter: Arc<RwLock<ClientLogFilter>>,
     diagnostics_revision: Arc<Mutex<HashMap<Uri, u64>>>,
+    reporter: Arc<CrashReporter>,
+    scan: Arc<ScanCoordinator>,
+    interactive: Arc<std::sync::atomic::AtomicUsize>,
 }
 
 impl Backend {
     /// Construct server state wired to the LSP [`Client`] (empty workspace until `initialize`).
     pub fn new(client: Client) -> Self {
+        let state = State::default();
+        let interactive = Arc::clone(&state.interactive_inflight);
         Self {
             client,
-            state: Arc::new(RwLock::new(State::default())),
+            state: Arc::new(RwLock::new(state)),
             workspace_roots: Arc::new(RwLock::new(Vec::new())),
             pckg_registry: Arc::new(RwLock::new(PckgRegistryState::default())),
             log_filter: Arc::new(RwLock::new(ClientLogFilter::Info)),
             diagnostics_revision: Arc::new(Mutex::new(HashMap::new())),
+            reporter: Arc::new(CrashReporter::for_home()),
+            scan: Arc::new(ScanCoordinator::default()),
+            interactive,
         }
+    }
+
+    /// Share the session crash reporter so background tasks report and de-duplicate with request handlers.
+    pub fn with_crash_reporter(mut self, reporter: Arc<CrashReporter>) -> Self {
+        self.reporter = reporter;
+        self
     }
 
     /// Unblock analysis paths that wait on the initial workspace scan (integration tests only).
@@ -72,7 +88,8 @@ impl Backend {
         let state = self.state.clone();
         let revisions = self.diagnostics_revision.clone();
         let filter = *self.log_filter.read().await;
-        tokio::spawn(async move {
+        // A panic while analysing must not silently kill diagnostics for the session.
+        self.reporter.spawn_guarded("textDocument/publishDiagnostics", Some(uri.as_str().to_string()), async move {
             tokio::time::sleep(Duration::from_millis(120)).await;
             let should_run = {
                 let map = revisions.lock().await;
@@ -86,22 +103,41 @@ impl Backend {
         });
     }
 
+    /// Request a workspace scan. Never waits for the scan: at most one scan runs at a time,
+    /// and triggers that arrive while it runs coalesce into a single follow-up round.
     async fn refresh_workspace_scan(&self) {
-        let roots = { self.workspace_roots.read().await.clone() };
-        let focused = { self.state.read().await.focused_project.clone() };
-        let filter = *self.log_filter.read().await;
-        for root in roots {
-            client_log(&self.client, filter, MessageType::INFO, format!("workspace scan started: {}", root.display()))
-                .await;
-            scan_workspace(&self.client, &self.state, &root, focused.as_deref()).await;
-            client_log(
-                &self.client,
-                filter,
-                MessageType::INFO,
-                format!("workspace scan completed: {}", root.display()),
-            )
-            .await;
+        if !self.scan.request() {
+            return;
         }
+        let scan = Arc::clone(&self.scan);
+        let client = self.client.clone();
+        let state = Arc::clone(&self.state);
+        let roots = Arc::clone(&self.workspace_roots);
+        let log_filter = Arc::clone(&self.log_filter);
+        self.reporter.spawn_guarded("beskid/workspaceScan", None, async move {
+            let mut run = ScanRunGuard::new(Arc::clone(&scan));
+            loop {
+                let current_roots = roots.read().await.clone();
+                let focused = state.read().await.focused_project.clone();
+                let filter = *log_filter.read().await;
+                for root in current_roots {
+                    client_log(&client, filter, MessageType::INFO, format!("workspace scan started: {}", root.display()))
+                        .await;
+                    scan_workspace(&client, &state, &root, focused.as_deref()).await;
+                    client_log(
+                        &client,
+                        filter,
+                        MessageType::INFO,
+                        format!("workspace scan completed: {}", root.display()),
+                    )
+                    .await;
+                }
+                if !scan.finish_round() {
+                    run.disarm();
+                    break;
+                }
+            }
+        });
     }
 }
 
@@ -148,6 +184,8 @@ impl LanguageServer for Backend {
     async fn initialized(&self, _: InitializedParams) {
         let filter = *self.log_filter.read().await;
         client_log(&self.client, filter, MessageType::INFO, "Beskid LSP initialized".to_string()).await;
+        // Never awaits the scan itself: the scan runs as a crash-guarded background task, so a
+        // large workspace does not hold a transport slot and delay formatting.
         self.refresh_workspace_scan().await;
     }
 
@@ -161,13 +199,15 @@ impl LanguageServer for Backend {
     }
 
     async fn did_open(&self, params: DidOpenTextDocumentParams) {
+        let _active = InteractiveGuard::new(&self.interactive);
         let doc = params.text_document;
         let _ = set_document(&self.state, doc.uri.clone(), doc.version, doc.text).await;
         self.schedule_publish_diagnostics(doc.uri.clone()).await;
-        schedule_persistence_snapshot_save(self.state.clone()).await;
+        schedule_persistence_snapshot_save(self.state.clone(), self.reporter.clone()).await;
     }
 
     async fn did_change(&self, params: DidChangeTextDocumentParams) {
+        let _active = InteractiveGuard::new(&self.interactive);
         let uri = params.text_document.uri.clone();
         let content_changes = params.content_changes;
         let updated = if let Some(mut doc) = snapshot_document(&self.state, &uri).await {
@@ -182,7 +222,7 @@ impl LanguageServer for Backend {
         };
         if updated {
             self.schedule_publish_diagnostics(uri.clone()).await;
-            schedule_persistence_snapshot_save(self.state.clone()).await;
+            schedule_persistence_snapshot_save(self.state.clone(), self.reporter.clone()).await;
         }
     }
 
@@ -190,7 +230,7 @@ impl LanguageServer for Backend {
         self.schedule_publish_diagnostics(params.text_document.uri.clone()).await;
         // A user-initiated disk save is a natural persistence hint — schedule the
         // debounced DB snapshot save so the snapshot follows the file save.
-        schedule_persistence_snapshot_save(self.state.clone()).await;
+        schedule_persistence_snapshot_save(self.state.clone(), self.reporter.clone()).await;
     }
 
     async fn did_close(&self, params: DidCloseTextDocumentParams) {
@@ -239,6 +279,7 @@ impl LanguageServer for Backend {
     }
 
     async fn completion(&self, params: CompletionParams) -> Result<Option<CompletionResponse>> {
+        let _active = InteractiveGuard::new(&self.interactive);
         let update_gate = document_update_gate(&self.state, &params.text_document_position.text_document.uri).await;
         let update_guard = update_gate.lock().await;
         let Some(snapshot) = snapshot_lsp_request(&self.state, params).await else {
@@ -252,9 +293,13 @@ impl LanguageServer for Backend {
             }))
         })
         .await
-        .map_err(|error| {
-            tracing::error!(%error, "parallel Salsa completion task failed");
-            tower_lsp_server::jsonrpc::Error::internal_error()
+        .map_err(|error| match error.try_into_panic() {
+            // Re-raise on the request task so the service-level guard reports it.
+            Ok(payload) => std::panic::resume_unwind(payload),
+            Err(error) => {
+                tracing::error!(%error, "parallel Salsa completion task failed");
+                tower_lsp_server::jsonrpc::Error::internal_error()
+            }
         })?
         .map_err(|cancelled| {
             tracing::debug!(%cancelled, "parallel Salsa completion invalidated by a newer input revision");
@@ -324,6 +369,7 @@ impl LanguageServer for Backend {
     }
 
     async fn execute_command(&self, params: ExecuteCommandParams) -> Result<Option<LSPAny>> {
+        let _active = InteractiveGuard::new(&self.interactive);
         if params.command == "beskid.refreshWorkspace" {
             self.refresh_workspace_scan().await;
             return Ok(None);
@@ -409,19 +455,70 @@ impl LanguageServer for Backend {
         refresh_after_disk_change(&self.client, &self.state, &changed).await;
     }
 
+    // Formatting is syntax-only: it reads the open text, never the analysis state, so it does
+    // not wait for workspace discovery or analysis.
     async fn formatting(&self, params: DocumentFormattingParams) -> Result<Option<Vec<TextEdit>>> {
-        let uri = params.text_document.uri;
-        let Some(document) = snapshot_document(&self.state, &uri).await else {
+        let Some(text) = formatting::open_texts::open_text(&params.text_document.uri) else {
             return Ok(None);
         };
-        Ok(formatting::handler::handle_document_formatting(&document))
+        Ok(formatting::handler::handle_document_formatting(&text))
     }
 
     async fn range_formatting(&self, params: DocumentRangeFormattingParams) -> Result<Option<Vec<TextEdit>>> {
-        let uri = params.text_document.uri;
-        let Some(document) = snapshot_document(&self.state, &uri).await else {
+        let Some(text) = formatting::open_texts::open_text(&params.text_document.uri) else {
             return Ok(None);
         };
-        Ok(formatting::handler::handle_range_formatting(&document, params.range))
+        Ok(formatting::handler::handle_range_formatting(&text, params.range))
+    }
+}
+
+#[cfg(test)]
+mod scan_tests {
+    use std::str::FromStr;
+
+    use tower_lsp_server::LspService;
+
+    use super::*;
+
+    fn completion_params(uri: &str) -> CompletionParams {
+        CompletionParams {
+            text_document_position: TextDocumentPositionParams {
+                text_document: TextDocumentIdentifier { uri: Uri::from_str(uri).expect("uri") },
+                position: Position { line: 0, character: 0 },
+            },
+            work_done_progress_params: Default::default(),
+            partial_result_params: Default::default(),
+            context: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn completion_answers_while_a_scan_is_in_progress() {
+        let (service, _socket) = LspService::new(Backend::new);
+        let backend = service.inner();
+        backend.signal_workspace_ready_for_tests().await;
+        // A scan is running and a background scan task is yielding to interactive work.
+        assert!(backend.scan.request());
+        let answer =
+            tokio::time::timeout(Duration::from_secs(2), backend.completion(completion_params("file:///tmp/A.bd")))
+                .await
+                .expect("completion must not wait for the scan")
+                .expect("completion result");
+        assert!(answer.is_some());
+        assert_eq!(backend.interactive.load(std::sync::atomic::Ordering::Acquire), 0, "guard released");
+    }
+
+    #[tokio::test]
+    async fn scan_triggers_during_a_scan_do_not_wait_and_coalesce() {
+        let (service, _socket) = LspService::new(Backend::new);
+        let backend = service.inner();
+        assert!(backend.scan.request(), "a scan is running");
+        for _ in 0..3 {
+            tokio::time::timeout(Duration::from_secs(1), backend.refresh_workspace_scan())
+                .await
+                .expect("a trigger during a scan returns at once");
+        }
+        assert!(backend.scan.finish_round(), "three triggers leave exactly one follow-up round");
+        assert!(!backend.scan.finish_round());
     }
 }

@@ -134,19 +134,19 @@ pub i64 AddWithCarry(i64 left, i64 right) {
     };
 }
 
-test block_xor {
+test BlockXor {
     Assert.Equal(Xor(12, 10), 6, "bxor");
 }
 
-test block_mul_high {
+test BlockMulHigh {
     Assert.Equal(MulHigh(-1, 3), 2, "umulhi of (2^64 - 1) * 3");
 }
 
-test block_rotate_left_u32 {
+test BlockRotateLeftU32 {
     Assert.Equal(RotateLeft(2147483649_u32, 4_u32), 24_u32, "rotl on u32");
 }
 
-test block_payload_xor_store {
+test BlockPayloadXorStore {
     mut u32[] words = [1_u32, 4042260480_u32, 3_u32];
     u32 mixed = XorWordAt(words, 1, 65295_u32);
     Assert.Equal(mixed, 4042325775_u32, "returned word");
@@ -155,24 +155,24 @@ test block_payload_xor_store {
     Assert.Equal(words[2], 3_u32, "upper neighbour untouched");
 }
 
-test block_simd_i32x4 {
+test BlockSimdI32x4 {
     i32 a = 5;
     i32 b = 7;
     i32 expected = 22;
     Assert.Equal(SimdLaneSum(a, b), expected, "i32x4 lane sum");
 }
 
-test block_declared_extern_call {
+test BlockDeclaredExternCall {
     Assert.Equal(Magnitude(-42), 42, "labs through a declaration-only extern contract");
 }
 
-test block_length_and_let_context {
+test BlockLengthAndLetContext {
     i64[] values = [1_i64, 2_i64, 3_i64, 4_i64];
     Assert.Equal(Count(values), 4, "length pseudo-instruction");
     Assert.Equal(Twice(21), 42, "typed let context");
 }
 
-test block_loop_assignment_and_argument_contexts {
+test BlockLoopAssignmentAndArgumentContexts {
     mut i64[] cursor = [0_i64, 5_i64, 0_i64];
     Advance(cursor);
     Assert.Equal(cursor[0], 5, "loop-body let");
@@ -180,13 +180,13 @@ test block_loop_assignment_and_argument_contexts {
     Assert.Equal(cursor[2], 7, "call argument in a unit function");
 }
 
-test block_statement_store {
+test BlockStatementStore {
     mut u32[] words = [41_u32];
     Bump(words);
     Assert.Equal(words[0], 42_u32, "statement block");
 }
 
-test block_carry_in {
+test BlockCarryIn {
     Assert.Equal(AddWithCarry(-1, 0), 0, "carry in wraps");
     Assert.Equal(AddWithCarry(40, 1), 42, "carry in adds one");
 }

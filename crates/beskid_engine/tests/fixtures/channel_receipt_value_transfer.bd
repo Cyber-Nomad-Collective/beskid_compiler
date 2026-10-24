@@ -16,10 +16,10 @@ pub contract Probe {
     bool fiber_cancel(i64 fiber, i64 reason);
     unit beskid_rt_v5_fiber_yield();
 }
-pub type Aggregate { u8[] bytes, i64 marker, }
+pub type Aggregate { u8[] bytes; i64 marker; }
 pub type OwnedResource: Disposable {
-    i64 token,
-    i64[] disposalCount,
+    i64 token;
+    i64[] disposalCount;
 
     pub Result<unit, DisposeError> Dispose() {
         i64[] count = disposalCount;

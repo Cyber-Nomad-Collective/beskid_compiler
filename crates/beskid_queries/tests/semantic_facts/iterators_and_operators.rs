@@ -28,7 +28,7 @@ fn syntax_only_signatures_preserve_runtime_pointer_and_never_primitives() {
 
 #[test]
 fn local_slots_cover_methods_for_iterators_and_match_bindings() {
-    let method_source = r#"type Value { i32 raw }
+    let method_source = r#"type Value { i32 raw; }
 impl Value { i32 Sum(i32 first) { let local = first; return local; } }"#;
     let (db, _project, unit, generation, index) = setup(method_source);
     let method = key(unit, generation, &index, NodeKind::MethodDefinition, 0);
@@ -227,6 +227,25 @@ fn stale_generation_cannot_reuse_a_local_slot_identity() {
 }
 
 #[test]
+fn compound_assignment_to_a_mutable_local_is_a_write_with_its_operator() {
+    for (operator, expected) in [
+        ("+=", beskid_queries::CompoundAssignmentOperator::Add),
+        ("-=", beskid_queries::CompoundAssignmentOperator::Sub),
+        ("*=", beskid_queries::CompoundAssignmentOperator::Mul),
+        ("/=", beskid_queries::CompoundAssignmentOperator::Div),
+        ("%=", beskid_queries::CompoundAssignmentOperator::Rem),
+    ] {
+        let source = format!("i32 F() {{ mut i32 total = 1; total {operator} 2; return total; }}");
+        let (db, _project, unit, generation, index) = setup(&source);
+        let assignment = key(unit, generation, &index, NodeKind::AssignExpression, 0);
+        let write = mutable_local_assignment(&db, assignment)
+            .expect("mutable assignment fact")
+            .expect("a compound write to a mutable local is a local write");
+        assert_eq!(write.compound, Some(expected), "{source}");
+    }
+}
+
+#[test]
 fn mutable_local_assignment_requires_a_current_mutable_lexical_declaration() {
     let source = "i32 Main() { mut i32 total = 0; total = total + 1; return total; }";
     let (mut db, project, unit, generation, index) = setup(source);
@@ -245,6 +264,7 @@ fn mutable_local_assignment_requires_a_current_mutable_lexical_declaration() {
             slot: local_slot(&db, declaration)
                 .expect("mutable declaration slot")
                 .expect("mutable declaration slot fact"),
+            compound: None,
         })
     );
 
@@ -272,7 +292,7 @@ fn immutable_local_assignment_is_an_explicit_unavailable_syntax_fact() {
 
 #[test]
 fn contextual_integer_literal_abi_type_contextualizes_declared_struct_fields() {
-    let source = "type Cursor { i64 pos } Cursor Main() { return Cursor { pos: 0 }; }";
+    let source = "type Cursor { i64 pos; } Cursor Main() { return Cursor { pos: 0 }; }";
     let (db, _project, unit, generation, index) = setup(source);
     let literal = key(unit, generation, &index, NodeKind::LiteralExpression, 0);
     assert_eq!(
@@ -327,7 +347,7 @@ fn contextual_integer_literal_abi_type_contextualizes_only_bare_integer_literals
         Some(SemanticTypeId::I64)
     );
 
-    let struct_field = "type Cursor { i64 pos } Cursor Main() { return Cursor { pos: 0 }; }";
+    let struct_field = "type Cursor { i64 pos; } Cursor Main() { return Cursor { pos: 0 }; }";
     let (db, _project, unit, generation, index) = setup(struct_field);
     let literal = key(unit, generation, &index, NodeKind::LiteralExpression, 0);
     assert_eq!(
@@ -443,7 +463,7 @@ fn item_body_is_the_exact_function_and_method_body_child() {
         Some(AstNodeKey { node: beskid_analysis::syntax::AstNodeId(expected_function_body), ..function })
     );
 
-    let method_source = "type Value { i32 raw } impl Value { i32 Get() { return this.raw; } }";
+    let method_source = "type Value { i32 raw; } impl Value { i32 Get() { return this.raw; } }";
     let (method_db, _project, unit, generation, index) = setup(method_source);
     let method = key(unit, generation, &index, NodeKind::MethodDefinition, 0);
     let method_program =
@@ -461,14 +481,14 @@ fn item_body_is_the_exact_function_and_method_body_child() {
 }
 
 const OPTION_AND_COUNTER: &str = "pub enum Option<T> { Some(T value), None } \
-     pub type Counter { i64 current, i64 limit, \
+     pub type Counter { i64 current; i64 limit; \
          pub Option<i64> Next() { \
              if this.current >= this.limit { return Option::None; } \
              this.current = this.current + 1_i64; \
              return Option::Some(this.current); \
          } \
      } \
-     pub type Repeat<T> { T value, i64 left, \
+     pub type Repeat<T> { T value; i64 left; \
          pub Option<T> Next() { \
              if this.left <= 0_i64 { return Option::None; } \
              this.left = this.left - 1_i64; \
@@ -575,7 +595,7 @@ fn the_check_gate_rejects_nominal_iterables_the_protocol_cannot_lower() {
     // `Next` has the declared shape, but `Option` is not the `Some`/`None` enum, so no lowering
     // fact exists: `check` must reject what `build` cannot lower (E1215).
     let source = "pub enum Option<T> { Present(T value), Absent } \
-                  pub type Odd { i64 n, pub Option<i64> Next() { return Option::Absent; } } \
+                  pub type Odd { i64 n; pub Option<i64> Next() { return Option::Absent; } } \
                   unit Main(Odd odd) { for x in odd { return; } return; }";
     let (db, _project, unit, generation, index) = setup(source);
     let main = key(unit, generation, &index, NodeKind::FunctionDefinition, 0);
@@ -597,7 +617,10 @@ fn the_check_gate_rejects_nominal_iterables_the_protocol_cannot_lower() {
         "{obligations:?}"
     );
     let assignment = immutable_local_assignment(&db, main).expect("immutable assignment query");
-    assert_eq!(assignment.map(|finding| finding.name.to_string()), Some("value".to_string()));
+    assert_eq!(
+        assignment.map(|bindings| bindings.iter().map(|binding| binding.name.to_string()).collect::<Vec<_>>()),
+        Some(vec!["value".to_string()])
+    );
 
     // Inside a generic item the protocol is proven per specialization; only the shape is judged.
     let source = format!(

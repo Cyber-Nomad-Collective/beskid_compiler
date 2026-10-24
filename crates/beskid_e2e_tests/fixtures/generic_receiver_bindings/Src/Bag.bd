@@ -1,8 +1,8 @@
 // `Bag.Empty<T>()` and `Bag.One<T>()` are type-qualified calls to functions of this unit, made
 // inside specialized generic bodies.
 pub type Bag<T> {
-    T[] values,
-    i64 count,
+    T[] values;
+    i64 count;
     pub Bag<T> Put(T next) { return Bag<T> { values: values, count: count + 1 }; }
     pub i64 Size() { return count; }
 }

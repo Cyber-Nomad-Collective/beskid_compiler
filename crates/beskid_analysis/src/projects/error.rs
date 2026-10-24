@@ -37,6 +37,22 @@ pub enum ProjectError {
     UnsupportedDependencySourceV1 { dependency_source: String },
     #[error("lockfile is out of date for project '{project}'")]
     LockfileOutOfDate { project: String },
+    /// `Project.lock` in the retired v1 format. Only an explicit migration rewrites it.
+    #[error(
+        "Project.lock uses the retired v1 format; migrate it with `beskid dev project lock` or `beskid update --all`"
+    )]
+    LockfileV1,
+    /// The block that opens the project manifest is named differently from `name`.
+    ///
+    /// Spans are byte ranges into the manifest source: the block name and the `name` assignment.
+    /// They are absent when the manifest was built in memory.
+    #[error("the project block is named `{block}` but `name` is `{name}`")]
+    RootBlockNameMismatch {
+        block: String,
+        name: String,
+        block_span: Option<(usize, usize)>,
+        name_span: Option<(usize, usize)>,
+    },
     #[error("Project.lock update forbidden in frozen mode")]
     LockfileFrozenMode,
     #[error("lockfile required in locked mode at {path}")]
@@ -142,6 +158,8 @@ impl ProjectError {
             Self::LockfileWrite { .. } => "E3021",
             Self::LockfileOutOfDate { .. } => "E3022",
             Self::LockfileFrozenMode => "E3023",
+            Self::LockfileV1 => "E3024",
+            Self::RootBlockNameMismatch { .. } => "E1896",
             Self::LockfileRequired { .. } => "E3023",
             Self::MaterializationCreateDir { .. } => "E3030",
             Self::MaterializationLock { .. } => "E3030",

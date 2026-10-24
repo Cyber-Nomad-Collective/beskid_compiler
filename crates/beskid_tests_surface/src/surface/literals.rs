@@ -40,3 +40,15 @@ fn rejects_empty_char_literal() {
 fn rejects_malformed_float_literal() {
     assert_parse_fail(Rule::FloatLiteral, "3.");
 }
+
+#[test]
+fn parses_character_escapes() {
+    for literal in ["'\\n'", "'\\t'", "'\\r'", "'\\0'", "'\\''", "'\\\\'", "'\\u{41}'"] {
+        assert_parse(Rule::CharLiteral, literal);
+    }
+}
+
+#[test]
+fn rejects_several_characters_in_single_quotes() {
+    assert_parse_fail(Rule::CharLiteral, "'ab'");
+}

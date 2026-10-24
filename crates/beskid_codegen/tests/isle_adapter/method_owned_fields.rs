@@ -84,7 +84,7 @@ fn specialized_generic_method_lowers_an_implicit_array_field_local_without_hir()
     let (input, isa, root) = item_fixture_with_root(
         r#"
 type List<T> {
-    T[] storage,
+    T[] storage;
     unit CopyStorage() {
         mut T[] nextStorage = storage;
         return;
@@ -123,7 +123,7 @@ fn specialized_generic_method_lowers_bounds_over_an_implicit_scalar_field_withou
     let (input, isa, root) = item_fixture_with_root(
         r#"
 type List<T> {
-    i64 count,
+    i64 count;
     bool Outside(i64 index) {
         return index < 0 || index >= count;
     }
@@ -163,7 +163,7 @@ fn concrete_parameter_field_assignment_retains_its_declared_storage_abi() {
     let (input, isa, root) = item_fixture_with_root(
         r#"
 type Random {
-    i64 state,
+    i64 state;
 }
 i64 Advance(mut Random random) {
     random.state = random.state + 1;
@@ -203,7 +203,7 @@ fn specialized_generic_method_lowers_nested_array_append_with_its_enclosing_elem
     let list_source = r#"
 use Core.Collections.Array;
 pub type List<T> {
-    T[] storage,
+    T[] storage;
     pub List<T> Push(T value) {
         mut T[] nextStorage = storage;
         Array.Append<T>(nextStorage, value);
@@ -243,11 +243,11 @@ fn specialized_generic_method_lowers_array_append_of_a_nested_nominal_element() 
     let map_source = r#"
 use Core.Collections.Array;
 pub type MapEntry<TKey, TValue> {
-    TKey key,
-    TValue value,
+    TKey key;
+    TValue value;
 }
 pub type Map<TKey, TValue> {
-    MapEntry<TKey, TValue>[] entries,
+    MapEntry<TKey, TValue>[] entries;
     pub unit Insert(TKey key, TValue value) {
         MapEntry<TKey, TValue> fresh = MapEntry<TKey, TValue> { key: key, value: value };
         mut MapEntry<TKey, TValue>[] nextEntries = entries;
@@ -387,7 +387,7 @@ fn specialized_generic_method_lowers_nested_generic_call_as_enum_payload() {
 use Core.Collections.Array;
 use Core.Results;
 pub type List<T> {
-    T[] storage,
+    T[] storage;
     pub Result<T, string> Get(i64 index) {
         return Result::Ok(Array.Get<T>(storage, index));
     }
@@ -422,7 +422,7 @@ fn specialized_generic_method_lowers_nested_generic_return_call() {
     let list_source = r#"
 use Core.Collections.Array;
 pub type List<T> {
-    T[] storage,
+    T[] storage;
     pub T Get(i64 index) { return Array.Get<T>(storage, index); }
 }
 unit Main(List<i64> list) { list.Get(0_i64); return; }
@@ -450,9 +450,9 @@ unit Main(List<i64> list) { list.Get(0_i64); return; }
 fn field_of_an_indexed_method_owned_array_element_lowers() {
     let (input, isa, root) = item_fixture_with_root(
         r#"
-type Entry { string route, i64 signature, }
+type Entry { string route; i64 signature; }
 type Table {
-    Entry[] entries,
+    Entry[] entries;
     i64 Find(string route) {
         mut i64 index = 0_i64;
         while (index < 2_i64) {
@@ -480,11 +480,11 @@ i64 Main(Table table) { return table.Find("a"); }
 fn specialized_generic_method_lowers_a_nested_projection_through_the_implicit_receiver() {
     let outer_source = r#"
 pub type Inner<T> {
-    T[] items,
-    i64 count,
+    T[] items;
+    i64 count;
 }
 pub type Outer<T> {
-    Inner<T> inner,
+    Inner<T> inner;
     pub i64 Count() {
         return this.inner.count;
     }

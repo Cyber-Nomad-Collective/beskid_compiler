@@ -9,7 +9,7 @@ use Core.IO.TransferFailure;
 use Core.Results;
 
 type PartialReader: Reader {
-    i64[] state,
+    i64[] state;
     pub Result<i64, IoError> Read(u8[] destination, i64 offset, i64 count) {
         i64[] cursor = state;
         cursor[0] = cursor[0] + 1_i64;
@@ -20,8 +20,8 @@ type PartialReader: Reader {
     }
 }
 type PartialWriter: Writer {
-    i64[] state,
-    bool stall,
+    i64[] state;
+    bool stall;
     pub Result<i64, IoError> Write(u8[] source, i64 offset, i64 count) {
         i64[] cursor = state;
         cursor[0] = cursor[0] + 1_i64;
@@ -32,8 +32,8 @@ type PartialWriter: Writer {
     }
 }
 type InvalidCountReader: Reader {
-    i64[] state,
-    i64 response,
+    i64[] state;
+    i64 response;
     pub Result<i64, IoError> Read(u8[] destination, i64 offset, i64 count) {
         i64[] calls = state;
         calls[0] = calls[0] + 1_i64;
@@ -41,8 +41,8 @@ type InvalidCountReader: Reader {
     }
 }
 type InvalidCountWriter: Writer {
-    i64[] state,
-    i64 response,
+    i64[] state;
+    i64 response;
     pub Result<i64, IoError> Write(u8[] source, i64 offset, i64 count) {
         i64[] calls = state;
         calls[0] = calls[0] + 1_i64;
@@ -50,7 +50,7 @@ type InvalidCountWriter: Writer {
     }
 }
 type ErrorReader: Reader {
-    i64[] state,
+    i64[] state;
     pub Result<i64, IoError> Read(u8[] destination, i64 offset, i64 count) {
         i64[] calls = state;
         calls[0] = calls[0] + 1_i64;
@@ -58,7 +58,7 @@ type ErrorReader: Reader {
     }
 }
 type ErrorWriter: Writer {
-    i64[] state,
+    i64[] state;
     pub Result<i64, IoError> Write(u8[] source, i64 offset, i64 count) {
         i64[] calls = state;
         calls[0] = calls[0] + 1_i64;
@@ -116,11 +116,11 @@ bool IsPeerResetWriteAll(Result<unit, IoError> result) {
 }
 // Lifecycle counters and the release trace are shared by a stream and the caller that reads them,
 // so they are an unmarked (Never class) record: a borrowed `i64[]` could not be stored in a stream.
-type Cells { i64[] values }
+type Cells { i64[] values; }
 type TestStream: Stream, Closer, Disposable {
-    Cells state,
-    Cells trace,
-    i64 digit,
+    Cells state;
+    Cells trace;
+    i64 digit;
     pub Result<i64, IoError> Read(u8[] destination, i64 offset, i64 count) {
         return Result::Ok(0_i64);
     }

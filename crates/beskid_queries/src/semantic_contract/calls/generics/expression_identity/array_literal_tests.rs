@@ -65,7 +65,7 @@ fn nominal_array_named(identity: &GenericSourceTypeIdentity, name: &str) -> bool
 #[test]
 fn empty_literal_in_struct_field_takes_the_declared_field_type() {
     let identity = single_array_identity(
-        "pub type Bag { pub string[] items, }\npub Bag Make() { return Bag { items: [] }; }",
+        "pub type Bag { pub string[] items; }\npub Bag Make() { return Bag { items: [] }; }",
     );
     assert_eq!(identity, Ok(strings()));
 }
@@ -73,7 +73,7 @@ fn empty_literal_in_struct_field_takes_the_declared_field_type() {
 #[test]
 fn string_literal_in_struct_field_matches_sdk_target_set_shape() {
     let identity = single_array_identity(
-        "pub type TargetSet { pub string[] targetIds, }\n\
+        "pub type TargetSet { pub string[] targetIds; }\n\
          pub TargetSet Make() { return TargetSet { targetIds: [\"Native.GeneratedUnit\"] }; }",
     );
     assert_eq!(identity, Ok(strings()));
@@ -82,7 +82,7 @@ fn string_literal_in_struct_field_matches_sdk_target_set_shape() {
 #[test]
 fn generic_struct_field_substitutes_spelled_type_arguments() {
     let identity = single_array_identity(
-        "pub type Holder<T> { pub T[] items, }\npub Holder<i64> Make() { return Holder<i64> { items: [] }; }",
+        "pub type Holder<T> { pub T[] items; }\npub Holder<i64> Make() { return Holder<i64> { items: [] }; }",
     );
     assert_eq!(
         identity,
@@ -93,7 +93,7 @@ fn generic_struct_field_substitutes_spelled_type_arguments() {
 #[test]
 fn nested_nominal_elements_in_struct_field_keep_nominal_identity() {
     let identity = single_array_identity(
-        "pub type Segment { pub string name, }\npub type SegmentList { pub Segment[] items, }\n\
+        "pub type Segment { pub string name; }\npub type SegmentList { pub Segment[] items; }\n\
          pub SegmentList Make(string name) { return SegmentList { items: [Segment { name: name }] }; }",
     )
     .expect("nominal element array identity");
@@ -111,7 +111,7 @@ fn call_argument_literal_derives_identity_from_equal_elements() {
 #[test]
 fn call_argument_literal_of_struct_literals_and_calls_is_nominal() {
     let identity = single_array_identity(
-        "pub type Item { pub i64 value, }\npub Item MakeItem(i64 value) { return Item { value: value }; }\n\
+        "pub type Item { pub i64 value; }\npub Item MakeItem(i64 value) { return Item { value: value }; }\n\
          pub i64 Take(Item[] items) { return 0; }\n\
          pub i64 Main() { return Take([Item { value: 1 }, MakeItem(2)]); }",
     )
@@ -172,7 +172,7 @@ fn suffixed_numeric_elements_and_declared_byte_fields_are_exact() {
         Ok(bytes.clone())
     );
     assert_eq!(
-        single_array_identity("pub type Blob { pub u8[] bytes, }\npub Blob Make() { return Blob { bytes: [1, 2] }; }"),
+        single_array_identity("pub type Blob { pub u8[] bytes; }\npub Blob Make() { return Blob { bytes: [1, 2] }; }"),
         Ok(bytes)
     );
 }

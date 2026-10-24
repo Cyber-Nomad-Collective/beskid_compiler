@@ -256,7 +256,7 @@ mod tests {
     #[test]
     fn attribute_names_at_every_site_use_the_decorator_token() {
         let source = "[Meta]\npub attribute Hot(LambdaExpression, LambdaParameter, TypeParameter, LetStatement) { }\n\
-[Shape]\npub type Box<[Hot] T> { T value, }\n\
+[Shape]\npub type Box<[Hot] T> { T value; }\n\
 [Entry]\ni64 Run() {\n    [Hot]\n    let square = [Hot] ([Hot] i64 x) => x * x;\n    return square(2);\n}\n";
         let program = beskid_analysis::services::parse_program(source).expect("attribute corpus parses");
         let names = crate::session::attribute_facts::attribute_names_for_program(&program);

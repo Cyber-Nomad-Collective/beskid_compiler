@@ -31,7 +31,7 @@ fn fixture(
         .canonicalize()
         .unwrap();
     let path = source_root.join("Main.bd");
-    std::fs::write(&path, "use Core.Collections.Array;\npub type Profile { pub i64[] roots, } pub type Loader { pub Profile profile, } pub unit Main(Loader loader) { Array.TryAppend<i64>(loader.profile.roots, 7_i64); return; }").unwrap();
+    std::fs::write(&path, "use Core.Collections.Array;\npub type Profile { pub i64[] roots; } pub type Loader { pub Profile profile; } pub unit Main(Loader loader) { Array.TryAppend<i64>(loader.profile.roots, 7_i64); return; }").unwrap();
     let plan = CompilePlan {
         project_root: source_root.parent().unwrap().to_owned(),
         manifest_path: source_root.parent().unwrap().join("Host.bproj"),

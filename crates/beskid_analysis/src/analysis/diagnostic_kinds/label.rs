@@ -26,7 +26,7 @@ impl SemanticIssueKind {
             Self::VisibilityViolationImportPrivate { .. } => "visibility violation".to_string(),
             Self::ExtendTypePrivateMemberAccess { .. } => "extend type private member access".to_string(),
             Self::UnusedImport { .. } => "unused import".to_string(),
-            Self::UnusedPrivateItem { .. } => "unused private item".to_string(),
+            Self::UnusedPrivateItem { kind, .. } => format!("unused {kind}"),
             Self::ContractMethodNotFound { .. } => "method not found".to_string(),
             Self::ContractImplementationSignatureMismatch { .. } => {
                 "contract implementation signature mismatch".to_string()
@@ -36,7 +36,7 @@ impl SemanticIssueKind {
             Self::ThisUsedOutsideContractOrImpl => "`This` used outside a contract or impl".to_string(),
             Self::UnresolvedAssociatedType { .. } => "unresolved associated type".to_string(),
             Self::GenericBoundNotSatisfied { .. } => "generic bound not satisfied".to_string(),
-            Self::ImmutableAssignment { .. } => "immutable assignment".to_string(),
+            Self::ImmutableAssignment { .. } => "declared without `mut`".to_string(),
             Self::MatchGuardMustBeBoolean => "guard type mismatch".to_string(),
             Self::MatchArmTypeMismatch { .. } => "match arm type mismatch".to_string(),
             Self::MatchNonExhaustive { .. } => "match non-exhaustive".to_string(),
@@ -65,13 +65,13 @@ impl SemanticIssueKind {
             Self::MissingImportAmbiguous { .. } => "ambiguous import candidate".to_string(),
             Self::TypeUnknownType { .. } => "unknown type".to_string(),
             Self::TypeUnknownValueType => "unknown value type".to_string(),
-            Self::TypeUnknownStructType => "unknown struct type".to_string(),
+            Self::TypeUnknownStructType => "unknown type".to_string(),
             Self::TypeInvalidMemberTarget => "invalid member access target".to_string(),
             Self::TypeUnknownEnumType => "unknown enum type".to_string(),
-            Self::TypeUnknownStructField { .. } => "unknown struct field".to_string(),
-            Self::TypeInaccessibleStructField { .. } => "inaccessible struct field".to_string(),
+            Self::TypeUnknownStructField { .. } => "unknown field".to_string(),
+            Self::TypeInaccessibleStructField { .. } => "private field".to_string(),
             Self::TypeUnknownEnumVariant { .. } => "unknown enum variant".to_string(),
-            Self::TypeMissingStructField { .. } => "missing struct field".to_string(),
+            Self::TypeMissingStructField { .. } => "missing field".to_string(),
             Self::TypeMissingTypeAnnotation { .. } => "missing type annotation".to_string(),
             Self::TypeMissingTypeArguments { .. } => "missing type arguments".to_string(),
             Self::TypeGenericArgumentMismatch { .. } => "generic argument mismatch".to_string(),
@@ -114,8 +114,11 @@ impl SemanticIssueKind {
             Self::DerivedContractMember { member, .. } => format!("member `{member}`"),
             Self::ExclusiveMarkerAttribute { marker, .. } => format!("second marker `[{marker}]`"),
             Self::CorelibOnlyAttribute { attribute } => format!("`[{attribute}]` outside corelib"),
-            Self::InternalSemanticFactUnavailable { query } => format!("`{query}` unavailable here"),
-            Self::InternalLoweringRuleMissing { construct } => format!("no lowering rule for this `{construct}`"),
+            Self::InternalSemanticFactUnavailable { .. }
+            | Self::InternalLoweringRuleMissing { .. }
+            | Self::InternalLoweringInvariant { .. }
+            | Self::InternalModSemanticFailure { .. }
+            | Self::InternalBuildFailure { .. } => self.internal_label().unwrap_or_default(),
             Self::TypeInvalidEventInvocationScope => "invalid event invocation scope".to_string(),
             Self::TypeInvalidEventCapacity => "invalid event capacity".to_string(),
             Self::TypeInvalidEventSubscriptionTarget => "invalid event subscription target".to_string(),
@@ -181,7 +184,7 @@ impl SemanticIssueKind {
             Self::NamingNotPascalCaseModuleSegment { .. } => "module segment not PascalCase".to_string(),
             Self::NamingNotPascalCaseGeneric { .. } => "generic parameter not PascalCase".to_string(),
             Self::NamingNotCamelCaseBinding { .. } => "binding not lowerCamelCase".to_string(),
-            Self::NamingNotSnakeCaseTest { .. } => "test name not snake_case".to_string(),
+            Self::NamingNotPascalCaseTest { .. } => "test name not PascalCase".to_string(),
             Self::NamingNotCamelCaseMacro { .. } => "macro name not lowerCamelCase".to_string(),
             Self::NumericLiteralOutOfRange { .. } => "numeric literal".to_string(),
             Self::ExternInvalidAbi { .. } | Self::ExternMissingLibrary => "extern attribute".to_string(),

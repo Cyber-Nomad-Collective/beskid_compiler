@@ -322,7 +322,7 @@ fn imported_type_qualified_static_call_resolves_to_its_exact_syntax_item() {
     let main_path = root.join("Main.bd");
     let progress_path = root.join("Console/Controls/ProgressBar.bd");
     let main_source = "use Console.Controls.ProgressBar;\ni32 Main() { return ProgressBar.ProgressBar.New(); }";
-    let progress_source = "pub type ProgressBar { i32 percent }\npub i32 New() { return 1; }";
+    let progress_source = "pub type ProgressBar { i32 percent; }\npub i32 New() { return 1; }";
     let main_program =
         expand_program(parse_program(main_source).expect("main parse"), DEFAULT_MAX_MACRO_EXPANSION_DEPTH);
     let progress_program =
@@ -919,7 +919,7 @@ unit Main(Concurrency.Fiber<i64> parameter) {
 }
 "#;
     let fiber_source = r#"
-pub type Fiber<T> { i64 handle, pub unit Join() { return; } }
+pub type Fiber<T> { i64 handle; pub unit Join() { return; } }
 unit ShardUse(Concurrency.Fiber<i64> parameter) {
     parameter.Join();
     parameter.Join();

@@ -8,30 +8,21 @@ pub(crate) fn parse_program_for_discovery(
     source: &str,
 ) -> Result<crate::syntax::Spanned<crate::syntax::Program>, super::AssemblyError> {
     let parsed = crate::services::parse_program_with_source_name_and_diagnostics(&path.display().to_string(), source)
-        .map_err(|error| super::AssemblyError::Parse {
-        path: path.to_path_buf(),
-        message: error
-            .downcast_ref::<crate::analysis::diagnostics::MietteReportError>()
-            .map(|report| discovery_diagnostic_message(report.diagnostic()))
-            .unwrap_or_else(|| error.to_string()),
-    })?;
+        .map_err(|error| super::AssemblyError::from_parse_failure(path.to_path_buf(), error))?;
     if parsed.recovered || !parsed.diagnostics.is_empty() {
-        return Err(super::AssemblyError::Parse {
-            path: path.to_path_buf(),
-            message: parsed.diagnostics.iter().map(discovery_diagnostic_message).collect::<Vec<_>>().join("; "),
+        // The first diagnostic keeps its code, span, related locations and fixes.
+        return Err(match parsed.diagnostics.first() {
+            Some(first) => super::AssemblyError::ParseDiagnostic {
+                path: path.to_path_buf(),
+                report: crate::analysis::diagnostics::MietteReportError::new(first.clone()),
+            },
+            None => super::AssemblyError::Parse {
+                path: path.to_path_buf(),
+                message: "the parser repaired the source".to_string(),
+            },
         });
     }
     Ok(parsed.program)
-}
-
-fn discovery_diagnostic_message(diagnostic: &crate::analysis::diagnostics::SemanticDiagnostic) -> String {
-    format!(
-        "{} [{}; bytes {}..{}]",
-        diagnostic.message,
-        diagnostic.code.as_deref().unwrap_or("parse"),
-        diagnostic.span.offset(),
-        diagnostic.span.offset().saturating_add(diagnostic.span.len())
-    )
 }
 
 pub(crate) fn import_paths_from_program(program: &crate::syntax::Program) -> Vec<String> {

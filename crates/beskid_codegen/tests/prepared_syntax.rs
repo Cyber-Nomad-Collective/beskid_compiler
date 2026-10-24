@@ -390,7 +390,7 @@ fn named_function_values_build_through_the_prepared_front_end() {
 fn function_typed_fields_build_through_the_prepared_front_end() {
     let artifact = lower_main(
         "function_typed_field",
-        "type Holder { (i64) => i64 op } \
+        "type Holder { (i64) => i64 op; } \
          i64 Increment(i64 value) { return value + 1_i64; } \
          i64 Main() { Holder holder = Holder { op: Increment }; return holder.op(41_i64); }",
     );
@@ -420,14 +420,14 @@ fn for_over_arrays_builds_through_the_prepared_front_end() {
 }
 
 const ITERATORS: &str = "pub enum Option<T> { Some(T value), None } \
-     pub type Counter { i64 current, i64 limit, \
+     pub type Counter { i64 current; i64 limit; \
          pub Option<i64> Next() { \
              if this.current >= this.limit { return Option::None; } \
              this.current = this.current + 1_i64; \
              return Option::Some(this.current); \
          } \
      } \
-     pub type Repeat<T> { T value, i64 left, \
+     pub type Repeat<T> { T value; i64 left; \
          pub Option<T> Next() { \
              if this.left <= 0_i64 { return Option::None; } \
              this.left = this.left - 1_i64; \

@@ -6,12 +6,12 @@ pub contract Probe { unit gc_collect(); }
 
 // The trace record is shared by every resource of a scenario and by the caller that reads it, so
 // it is an unmarked (Never class) record: a borrowed `i64[]` could not be stored in a resource.
-type Trace { i64[] cells }
+type Trace { i64[] cells; }
 
 type Resource: Disposable {
-    Trace trace,
-    i64 digit,
-    bool fail,
+    Trace trace;
+    i64 digit;
+    bool fail;
     pub Result<unit, DisposeError> Dispose() {
         Trace log = trace;
         Probe.gc_collect();

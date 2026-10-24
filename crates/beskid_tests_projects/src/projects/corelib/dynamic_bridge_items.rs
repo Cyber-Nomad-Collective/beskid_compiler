@@ -15,7 +15,7 @@ fn unused_private_items(diagnostics: &[beskid_analysis::SemanticDiagnostic]) -> 
         .into_iter()
         .filter(|name| {
             diagnostics.iter().any(|diagnostic| {
-                diagnostic.code.as_deref() == Some("W1504") && diagnostic.message.contains(&format!("`{name}`"))
+                diagnostic.code.as_deref() == Some("W2101") && diagnostic.message.contains(&format!("`{name}`"))
             })
         })
         .collect()

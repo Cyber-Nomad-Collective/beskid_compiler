@@ -55,6 +55,24 @@ fn parses_compound_assignment_expression() {
 }
 
 #[test]
+fn parses_every_compound_assignment_operator() {
+    for (source, expected) in [
+        ("x += 2", AssignOp::AddAssign),
+        ("x -= 2", AssignOp::SubAssign),
+        ("x *= 2", AssignOp::MulAssign),
+        ("x /= 2", AssignOp::DivAssign),
+        ("x %= 2", AssignOp::RemAssign),
+    ] {
+        let expr = parse_expression_ast(source);
+        let (target, op, value) = expect_assign(&expr.node);
+        assert_eq!(op.node, expected, "{source}");
+        assert_eq!(&source[op.span.start..op.span.end], &source[2..4], "{source}");
+        expect_identifier_path(&target.node, "x");
+        expect_integer_literal(&value.node, "2");
+    }
+}
+
+#[test]
 fn parses_calls_and_member_access() {
     let expr = parse_expression_ast("foo.bar(1, 2)");
     let (callee, args) = expect_call(&expr.node, 2);

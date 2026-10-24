@@ -4,7 +4,7 @@ mod macro_roundtrip;
 mod naming_normalize;
 
 use beskid_analysis::format::Emitter;
-use beskid_analysis::format::format_program;
+use beskid_analysis::format::format_source;
 use beskid_analysis::parsing::parsable::Parsable;
 use beskid_analysis::services::parse_program;
 use beskid_analysis::syntax::items::impl_block::ImplBlock;
@@ -14,6 +14,10 @@ use pest::Parser;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+fn fmt(src: &str) -> String {
+    format_source("<memory>", src).unwrap_or_else(|e| panic!("format failed: {e}\n{src}"))
+}
+
 #[test]
 fn format_program_is_idempotent() {
     let src = r#"use a.b;
@@ -21,36 +25,33 @@ fn format_program_is_idempotent() {
 
 pub i32 Main() { return 42; }
 "#;
-    let p = parse_program(src).expect("parse");
-    let once = format_program(&p).expect("format");
-    let p2 = parse_program(&once).expect("re-parse formatted");
-    let twice = format_program(&p2).expect("re-format");
+    let once = fmt(src);
+    let twice = fmt(&once);
     assert_eq!(once, twice, "formatter output must be stable");
 }
 
 #[test]
 fn format_scoped_use_preserves_both_regions_and_nested_statement_counts() {
-    let program = parse_program("use Core.Disposable; Result<unit, DisposeError> Run() { use Resource outer = Open(); use (Resource inner = Resource {}) { inner.Read(); } return Result::Ok(()); }").unwrap();
+    let source = "use Core.Disposable; Result<unit, DisposeError> Run() { use Resource outer = Open(); use (Resource inner = Resource {}) { inner.Read(); } return Result::Ok(()); }";
+    let program = parse_program(source).unwrap();
     assert_eq!(program_statement_count(&program.node), 4);
-    let once = format_program(&program).unwrap();
+    let once = fmt(source);
     let reparsed = parse_program(&once).unwrap();
     assert_eq!(program_statement_count(&reparsed.node), 4);
-    assert_eq!(format_program(&reparsed).unwrap(), once);
+    assert_eq!(fmt(&once), once);
 }
 
 #[test]
 fn format_golden_use_and_function() {
     let src = "use a.b;\npub i32 Main() { return 42; }\n";
-    let p = parse_program(src).expect("parse");
-    let out = format_program(&p).expect("format");
+    let out = fmt(src);
     let expected = concat!("use A.B;\n", "\n", "pub i32 Main()\n", "{\n", "    return 42;\n", "}\n",);
     assert_eq!(out, expected);
 }
 
 #[test]
 fn format_constant_definition_is_parse_preserving() {
-    let program = parse_program("const Answer = 42;").expect("parse constant");
-    let formatted = format_program(&program).expect("format constant");
+    let formatted = fmt("const Answer = 42;");
     assert_eq!(formatted, "const Answer = 42;\n");
 
     let reparsed = parse_program(&formatted).expect("reparse formatted constant");
@@ -62,14 +63,13 @@ fn format_constant_definition_is_parse_preserving() {
 }
 
 #[test]
-fn format_if_while_use_parentheses_and_blank_line_before_let() {
+fn format_if_while_use_parentheses_and_keep_statement_grouping() {
     let src = r#"pub unit f() {
 if cond { return; }
 while cond2 { break; }
 let x = 1;
 }"#;
-    let p = parse_program(src).expect("parse");
-    let out = format_program(&p).expect("format");
+    let out = fmt(src);
     let expected = concat!(
         "pub unit F()\n",
         "{\n",
@@ -81,7 +81,6 @@ let x = 1;
         "    {\n",
         "        break;\n",
         "    }\n",
-        "\n",
         "    let x = 1;\n",
         "}\n",
     );
@@ -91,10 +90,8 @@ let x = 1;
 #[test]
 fn format_if_condition_grouped_idempotent() {
     let src = r#"pub unit f() { if ((cond)) { return; } }"#;
-    let p = parse_program(src).expect("parse");
-    let once = format_program(&p).expect("format");
-    let p2 = parse_program(&once).expect("re-parse");
-    let twice = format_program(&p2).expect("re-format");
+    let once = fmt(src);
+    let twice = fmt(&once);
     assert_eq!(once, twice, "grouped if condition must not accumulate extra parens");
     assert!(once.contains("if (") && once.contains("cond"), "expected if header with condition, got:\n{once}");
 }
@@ -120,8 +117,7 @@ fn format_binary_ops_emit_canonical_operators() {
     ];
     for (op, expr_src) in cases {
         let src = format!("pub unit t() {{ let _ = {expr_src}; return; }}");
-        let p = parse_program(&src).unwrap_or_else(|e| panic!("parse {op}: {e}"));
-        let out = format_program(&p).unwrap_or_else(|e| panic!("format {op}: {e:?}"));
+        let out = format_source("<memory>", &src).unwrap_or_else(|e| panic!("format {op}: {e}"));
         assert!(out.contains(op), "formatted output should contain operator `{op}`; got:\n{out}");
     }
 }
@@ -129,41 +125,37 @@ fn format_binary_ops_emit_canonical_operators() {
 #[test]
 fn format_type_enum_contract_match() {
     let src = r#"use core.io;
-pub type Point { i32 x, i32 y, }
+pub type Point { i32 x; i32 y; }
 pub enum E { A, B(i32 x,) }
 pub contract C { i32 m(); Other }
 pub unit demo() {
 let v = match 0 { _ => 1, };
 }"#;
-    let p = parse_program(src).expect("parse");
-    let out = format_program(&p).expect("format");
+    let out = fmt(src);
     let expected = concat!(
         "use Core.Io;\n",
         "\n",
         "pub type Point\n",
         "{\n",
-        "    i32 x,\n",
-        "\n",
-        "    i32 y,\n",
+        "    i32 x;\n",
+        "    i32 y;\n",
         "}\n",
         "\n",
         "pub enum E\n",
         "{\n",
         "    A,\n",
-        "\n",
         "    B(i32 x),\n",
         "}\n",
         "\n",
         "pub contract C\n",
         "{\n",
         "    i32 M();\n",
-        "\n",
         "    Other;\n",
         "}\n",
         "\n",
         "pub unit Demo()\n",
         "{\n",
-        "    let v = match 0\n",
+        "    let v = match (0)\n",
         "    {\n",
         "        _ => 1,\n",
         "    };\n",
@@ -175,8 +167,7 @@ let v = match 0 { _ => 1, };
 #[test]
 fn format_nullary_enum_constructor_without_parentheses() {
     let src = "enum E { None } pub unit demo() { let x = E::None(); return; }";
-    let p = parse_program(src).expect("parse");
-    let out = format_program(&p).expect("format");
+    let out = fmt(src);
     assert!(
         out.contains("let x = E::None;"),
         "expected nullary enum constructor to format without parens, got:\n{out}"
@@ -184,12 +175,16 @@ fn format_nullary_enum_constructor_without_parentheses() {
     assert!(!out.contains("E::None()"), "expected formatter to drop redundant empty-call syntax, got:\n{out}");
 }
 
+/// Formatter fixtures: Beskid sources under `fixtures/format` (`*.input.bd`) and the exact text
+/// `beskid fmt` must produce for each (`*.expected.bd`). Every mismatch is reported with the
+/// full formatted text between `=== FORMATTED <path> ===` and `=== END ===` markers.
 #[test]
 fn fixture_corpus_is_stable_and_parse_preserving() {
     let fixture_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/format");
     let paths = collect_input_fixtures(&fixture_root);
     assert!(!paths.is_empty(), "expected at least one format fixture");
 
+    let mut failures = Vec::new();
     for path in &paths {
         let input = fs::read_to_string(path).unwrap_or_else(|e| panic!("read {path:?}: {e}"));
         let expected_path = path.with_file_name(
@@ -198,18 +193,39 @@ fn fixture_corpus_is_stable_and_parse_preserving() {
         let expected =
             fs::read_to_string(&expected_path).unwrap_or_else(|e| panic!("read {}: {e}", expected_path.display()));
 
-        let original = parse_program(&input).unwrap_or_else(|e| panic!("fixture input parses {:?}: {e}", path));
-        let formatted = format_program(&original).unwrap_or_else(|e| panic!("fixture formats {:?}: {e:?}", path));
+        let formatted = match format_source(&path.display().to_string(), &input) {
+            Ok(formatted) => formatted,
+            Err(e) => {
+                failures.push(format!("fixture does not format {}: {e}", path.display()));
+                continue;
+            }
+        };
         if formatted != expected {
-            panic!("fixture golden mismatch for {:?}\n{}", path, first_mismatch_lines(&formatted, &expected));
+            let relative = path.strip_prefix(&fixture_root).unwrap_or(path);
+            println!("=== FORMATTED {} ===\n{formatted}=== END ===", relative.display());
+            failures.push(format!(
+                "fixture golden mismatch for {:?}\n{}",
+                path,
+                first_mismatch_lines(&formatted, &expected)
+            ));
+            continue;
         }
 
+        let original = parse_program(&input).unwrap_or_else(|e| panic!("fixture input parses {:?}: {e}", path));
         let reparsed =
             parse_program(&formatted).unwrap_or_else(|e| panic!("formatted fixture reparses {:?}: {e}", path));
-        let reformatted =
-            format_program(&reparsed).unwrap_or_else(|e| panic!("reformat formatted fixture {:?}: {e:?}", path));
+        let reformatted = format_source("<memory>", &formatted)
+            .unwrap_or_else(|e| panic!("reformat formatted fixture {:?}: {e}", path));
         if reformatted != formatted {
-            panic!("fixture not idempotent for {:?}\n{}", path, first_mismatch_lines(&reformatted, &formatted));
+            failures.push(format!(
+                "fixture not idempotent for {:?}\n{}",
+                path,
+                first_mismatch_lines(&reformatted, &formatted)
+            ));
+            continue;
+        }
+        if expected != reformatted {
+            failures.push(format!("expected output of {:?} does not pass `--check`", path));
         }
 
         let lhs_kinds = top_level_kinds_relaxed(&original.node.items);
@@ -220,6 +236,7 @@ fn fixture_corpus_is_stable_and_parse_preserving() {
         let c1 = program_statement_count(&reparsed.node);
         assert_eq!(c0, c1, "statement count changed for {:?} (before {c0}, after {c1})", path);
     }
+    assert!(failures.is_empty(), "{} fixture failure(s):\n{}", failures.len(), failures.join("\n"));
 }
 
 fn collect_input_fixtures(root: &Path) -> Vec<PathBuf> {
@@ -376,7 +393,7 @@ pub i32 abs(i32 value) { return value; }
     let mut pairs = BeskidParser::parse(Rule::ImplBlock, source).expect("parse impl block");
     let pair = pairs.next().expect("impl block pair");
     let parsed = ImplBlock::parse(pair).expect("impl block ast");
-    let text = Emitter::new().write(&parsed.node).expect("emit impl block");
+    let text = Emitter::new().write(&parsed).expect("emit impl block");
     assert!(text.contains("impl Number"));
     assert!(text.contains("pub i32 abs(i32 value)"));
 }

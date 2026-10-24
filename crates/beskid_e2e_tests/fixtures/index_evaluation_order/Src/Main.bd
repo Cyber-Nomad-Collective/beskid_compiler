@@ -3,7 +3,7 @@
 use Core.Collections.Array;
 
 type Table {
-    i64[] values,
+    i64[] values;
 }
 
 // Appends a zero and returns its index. Growth replaces `table.values` with a new array whenever

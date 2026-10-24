@@ -12,7 +12,7 @@ pub contract Probe {
     u8 gc_heap_verify();
 }
 
-pub type Chunk { u8[] bytes, i64 marker, }
+pub type Chunk { u8[] bytes; i64 marker; }
 
 u8[] NewFilledBytes(word length, u8 fill) {
     mut u8[] buffer = Array.Empty<u8>();

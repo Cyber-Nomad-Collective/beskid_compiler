@@ -94,9 +94,9 @@ fn this_used_as_a_value_inside_a_generic_type_body_method_lowers() {
     lower_single_unit(
         r#"
 type Cursor<T> {
-    T[] source,
-    i64 index,
-    i64 length,
+    T[] source;
+    i64 index;
+    i64 length;
 
     bool Done() {
         return this.index >= this.length;
@@ -122,8 +122,8 @@ fn bare_field_comparison_and_interpolation_after_early_return_lower_inside_a_met
     lower_single_unit(
         r#"
 type Probe {
-    i64 count,
-    string label,
+    i64 count;
+    string label;
 
     bool Changed(i64 other) {
         return count != other && label != "";
@@ -165,7 +165,7 @@ unit Main(Counter counter) {
             "Lib/Counter.bd",
             r#"
 pub type Counter {
-    i64 value,
+    i64 value;
 }
 
 impl Counter {
@@ -190,7 +190,7 @@ contract Step {
 }
 
 type Walker : Step {
-    i64 steps,
+    i64 steps;
 
     This Next() {
         return Walker { steps: steps + 1 };
@@ -213,11 +213,11 @@ fn this_rooted_field_chain_lowers_through_the_receiver() {
     lower_single_unit(
         r#"
 type Inner {
-    i64 value,
+    i64 value;
 }
 
 type Outer {
-    Inner inner,
+    Inner inner;
 
     i64 Read() {
         return this.inner.value;
@@ -242,8 +242,8 @@ unit Main(Outer outer) {
 fn bounded_generic_receivers_dispatch_to_each_instantiation() {
     let (input, isa, root) = item_fixture_with_root(
         "contract Sized { i64 Size(); } \
-         type Box : Sized { i64 n, pub i64 Size() { return this.n; } } \
-         type Bag : Sized { i64 m, pub i64 Size() { return 100; } } \
+         type Box : Sized { i64 n; pub i64 Size() { return this.n; } } \
+         type Bag : Sized { i64 m; pub i64 Size() { return 100; } } \
          i64 SizeOf<T>(T value) where T: Sized { return value.Size(); } \
          i64 Main() { return SizeOf<Box>(Box { n: 2 }) + SizeOf(Bag { m: 1 }); }",
     );

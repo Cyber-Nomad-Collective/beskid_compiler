@@ -136,6 +136,9 @@ impl Emit for AssignOp {
             AssignOp::Assign => cx.token(w, "="),
             AssignOp::AddAssign => cx.token(w, "+="),
             AssignOp::SubAssign => cx.token(w, "-="),
+            AssignOp::MulAssign => cx.token(w, "*="),
+            AssignOp::DivAssign => cx.token(w, "/="),
+            AssignOp::RemAssign => cx.token(w, "%="),
         }
     }
 }
@@ -360,36 +363,24 @@ impl Emit for Spanned<MatchArm> {
     }
 }
 
-impl Emit for MatchExpression {
+impl Emit for Spanned<MatchExpression> {
     fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
+        let this = &self.node;
         cx.token(w, "match")?;
         cx.space(w)?;
-        self.scrutinee.emit(w, cx)?;
-        if self.arms.is_empty() {
+        crate::format::statements_emit::emit_parenthesized_condition(&this.scrutinee, w, cx)?;
+        if crate::format::lines::body_is_empty(cx, this.arms.len(), self.span.end) {
             cx.space(w)?;
             w.write_str("{ }")?;
             return Ok(());
         }
-        cx.nl(w)?;
-        cx.write_indent(w)?;
-        cx.open_brace(w)?;
-        for (i, arm) in self.arms.iter().enumerate() {
-            if i > 0 {
-                cx.nl(w)?;
-            }
-            cx.write_indent(w)?;
-            arm.emit(w, cx)?;
-            cx.token(w, ",")?;
-            cx.nl(w)?;
+        crate::format::lines::open_body(w, cx)?;
+        for arm in &this.arms {
+            crate::format::lines::emit_line(w, cx, crate::format::lines::Line::new(arm.span), ",", |w, cx| {
+                arm.emit(w, cx)
+            })?;
         }
-        cx.close_brace(w)?;
-        Ok(())
-    }
-}
-
-impl Emit for Spanned<MatchExpression> {
-    fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
-        self.node.emit(w, cx)
+        cx.close_brace(w, self.span.end)
     }
 }
 
@@ -407,34 +398,22 @@ impl Emit for Spanned<StructLiteralField> {
     }
 }
 
-impl Emit for StructLiteralExpression {
+impl Emit for Spanned<StructLiteralExpression> {
     fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
-        self.path.emit(w, cx)?;
-        if self.fields.is_empty() {
+        let this = &self.node;
+        this.path.emit(w, cx)?;
+        if crate::format::lines::body_is_empty(cx, this.fields.len(), self.span.end) {
             cx.space(w)?;
             w.write_str("{ }")?;
             return Ok(());
         }
-        cx.nl(w)?;
-        cx.write_indent(w)?;
-        cx.open_brace(w)?;
-        for (i, f) in self.fields.iter().enumerate() {
-            if i > 0 {
-                cx.nl(w)?;
-            }
-            cx.write_indent(w)?;
-            f.emit(w, cx)?;
-            cx.token(w, ",")?;
-            cx.nl(w)?;
+        crate::format::lines::open_body(w, cx)?;
+        for field in &this.fields {
+            crate::format::lines::emit_line(w, cx, crate::format::lines::Line::new(field.span), ",", |w, cx| {
+                field.emit(w, cx)
+            })?;
         }
-        cx.close_brace(w)?;
-        Ok(())
-    }
-}
-
-impl Emit for Spanned<StructLiteralExpression> {
-    fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
-        self.node.emit(w, cx)
+        cx.close_brace(w, self.span.end)
     }
 }
 

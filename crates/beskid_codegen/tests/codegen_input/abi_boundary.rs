@@ -55,7 +55,7 @@ fn composition_plan_is_generation_bound_and_has_no_dynamic_fallback() {
 
     let source = r#"
 type Logger {}
-type Worker { inject Logger[] loggers }
+type Worker { inject Logger[] loggers; }
 host AppHost() { registry { single Logger; single Worker; } }
 i32 Main() { launch AppHost(); return 0; }
 "#;

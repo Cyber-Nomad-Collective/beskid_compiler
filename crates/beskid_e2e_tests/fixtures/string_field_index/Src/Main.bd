@@ -2,8 +2,8 @@
 // and a field of a field. Each read is the byte at that index.
 
 type Cursor {
-    string text,
-    i64 at,
+    string text;
+    i64 at;
 
     pub i64 Current() {
         return i64(this.text[this.at]);
@@ -11,7 +11,7 @@ type Cursor {
 }
 
 type Outer {
-    Cursor cursor,
+    Cursor cursor;
 }
 
 i64 ByteOf(Cursor cursor, i64 at) {

@@ -3,7 +3,7 @@
 enum Maybe<T> { None(), Some(T value) }
 
 type Holder {
-    i64 n,
+    i64 n;
 
     i64 Pick(Maybe<i64> other) {
         return match other {

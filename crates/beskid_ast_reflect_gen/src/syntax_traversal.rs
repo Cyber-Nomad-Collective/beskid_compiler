@@ -372,20 +372,20 @@ use Core.Optional.Option;
 use Core.Collections.Array;
 
 pub type QueryBounds {
-    pub i64 maxNodes,
-    pub i64 maxDepth,
+    pub i64 maxNodes;
+    pub i64 maxDepth;
 }
 pub type SyntaxQuery {
-    pub Beskid.Syntax.Nodes.NodeRef start,
-    pub QueryBounds bounds,
+    pub Beskid.Syntax.Nodes.NodeRef start;
+    pub QueryBounds bounds;
 }
 pub type SyntaxSelection {
-    pub Beskid.Syntax.Nodes.NodeRef[] nodes,
-    pub QueryBounds bounds,
+    pub Beskid.Syntax.Nodes.NodeRef[] nodes;
+    pub QueryBounds bounds;
 }
 pub type SyntaxPipeline {
-    pub Beskid.Syntax.Nodes.NodeRef root,
-    pub QueryBounds bounds,
+    pub Beskid.Syntax.Nodes.NodeRef root;
+    pub QueryBounds bounds;
 }
 "#,
     );

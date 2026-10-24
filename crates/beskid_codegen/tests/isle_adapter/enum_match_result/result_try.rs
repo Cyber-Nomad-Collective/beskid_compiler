@@ -45,7 +45,7 @@ fn result_try_inside_method_body_lowers_with_its_declared_return_layout() {
 #[test]
 fn nested_result_try_as_a_concrete_call_argument_lowers() {
     let (input, isa, root) = item_fixture_with_root(
-        "enum Error { Closed() } enum Result<TValue, TError> { Ok(TValue value), Error(TError error) } type AddressValue { i64 value, } Result<unit, Error> Main(Socket left, Socket right) { left.Connect(right.Address()?)?; return Result::Ok(()); } type Socket { pub Result<AddressValue, Error> Address() { return Result::Ok(AddressValue { value: 1_i64 }); } pub Result<unit, Error> Connect(AddressValue address) { return Result::Ok(()); } }",
+        "enum Error { Closed() } enum Result<TValue, TError> { Ok(TValue value), Error(TError error) } type AddressValue { i64 value; } Result<unit, Error> Main(Socket left, Socket right) { left.Connect(right.Address()?)?; return Result::Ok(()); } type Socket { pub Result<AddressValue, Error> Address() { return Result::Ok(AddressValue { value: 1_i64 }); } pub Result<unit, Error> Connect(AddressValue address) { return Result::Ok(()); } }",
     );
     let main = super::super::support::named_function(&input, root, "Main");
     let expressions = find_nodes_of_kind(input.database(), main, beskid_queries::IndexedNodeKind::TryExpression);
@@ -95,7 +95,7 @@ fn imported_direct_call_try_preserves_result_identity_with_distinct_success_type
         ),
         (
             "Network/Api.bd",
-            "use Core.Results; pub enum NetworkError { Closed() } pub type Connection { i64 value, } pub type Listener { pub Result<Connection, NetworkError> Accept() { return Result::Ok(Connection { value: 1_i64 }); } } pub Result<Connection, NetworkError> Connect() { return Result::Error(NetworkError::Closed); }",
+            "use Core.Results; pub enum NetworkError { Closed() } pub type Connection { i64 value; } pub type Listener { pub Result<Connection, NetworkError> Accept() { return Result::Ok(Connection { value: 1_i64 }); } } pub Result<Connection, NetworkError> Connect() { return Result::Error(NetworkError::Closed); }",
         ),
         ("Core/Results.bd", "pub enum Result<TValue, TError> { Ok(TValue value), Error(TError error) }"),
     ]);

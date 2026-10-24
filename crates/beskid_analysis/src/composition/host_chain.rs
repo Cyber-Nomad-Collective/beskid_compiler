@@ -61,8 +61,12 @@ pub fn merge_host_registries(
         merged_scopes.iter().map(|scope| (scope.name.clone(), scope.id)).collect();
 
     let mut merged: Vec<Registration> = Vec::new();
+    // The host (index in `chain`) that contributed each merged entry. Only a later host
+    // overrides a key; several registrations of one key inside one host are all kept, and a
+    // singular inject of that key is then ambiguous (E1705).
+    let mut owners: Vec<usize> = Vec::new();
     let mut issues = Vec::new();
-    for host in chain {
+    for (host_index, host) in chain.iter().enumerate() {
         let Some(regs) = host_registries.get(&host.name) else {
             continue;
         };
@@ -80,21 +84,48 @@ pub fn merge_host_registries(
                 reg.scope_id = *unified;
             }
 
-            if let Some(existing_index) =
-                merged.iter().position(|existing| existing.scope_id == reg.scope_id && existing.key == reg.key)
-            {
-                let existing = &merged[existing_index];
+            let overridden = merged
+                .iter()
+                .enumerate()
+                .filter(|(index, existing)| {
+                    owners[*index] < host_index && existing.scope_id == reg.scope_id && same_key(&existing.key, &reg.key)
+                })
+                .map(|(index, _)| index)
+                .collect::<Vec<_>>();
+            if let Some(&first) = overridden.first() {
+                let existing = &merged[first];
                 if existing.lifetime != reg.lifetime {
                     issues.push(CompositionIssue::OverrideLifetimeMismatch {
-                        binding: format!("{:?}", reg.key),
+                        binding: reg.key.name().to_string(),
                         span: reg.span,
+                        lifetime: reg.lifetime.keyword(),
+                        // A base registration in another unit has no place in this file.
+                        overridden_span: existing.unit.is_none().then_some(existing.span),
+                        overridden_lifetime: existing.lifetime.keyword(),
                     });
                 }
-                merged[existing_index] = reg;
+                // The derived host replaces every base registration of the key at its position.
+                merged[first] = reg;
+                owners[first] = host_index;
+                for index in overridden.into_iter().skip(1).rev() {
+                    merged.remove(index);
+                    owners.remove(index);
+                }
             } else {
                 merged.push(reg);
+                owners.push(host_index);
             }
         }
     }
     (merged, issues)
+}
+
+/// Keys compare by kind and last path segment (`Hosting.Clock` and `Clock` are one key).
+fn same_key(left: &super::model::RegistrationKey, right: &super::model::RegistrationKey) -> bool {
+    use super::model::RegistrationKey::{Contract, SelfType};
+    let tail = |name: &str| name.rsplit('.').next().unwrap_or(name).to_string();
+    match (left, right) {
+        (Contract(a), Contract(b)) | (SelfType(a), SelfType(b)) => tail(a) == tail(b),
+        _ => false,
+    }
 }

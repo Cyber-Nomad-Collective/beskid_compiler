@@ -110,7 +110,7 @@ fn match_on_a_method_of_an_array_element_call_in_a_generic_body_is_specialized()
         &[(
             "Main.bd",
             "use Core.Collections.Array; use Core.Results; \
-             pub type Cell<T> { T value, pub Result<T, i64> Take() { return Result::Ok(value); } } \
+             pub type Cell<T> { T value; pub Result<T, i64> Take() { return Result::Ok(value); } } \
              i64 Count<R>(Cell<R>[] cells) { mut i64 n = 0_i64; mut i64 k = 0_i64; while k < Array.Len<Cell<R>>(cells) { match Array.Get<Cell<R>>(cells, k).Take() { Result::Ok(part) => { n = n + 1_i64; }, Result::Error(_) => { }, }; k = k + 1_i64; } return n; } \
              i64 Main(Cell<i64>[] numbers, Cell<string>[] texts) { return Count<i64>(numbers) + Count<string>(texts); }",
         )],

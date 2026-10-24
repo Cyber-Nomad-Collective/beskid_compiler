@@ -6,7 +6,7 @@
 [Extern(Abi:"C")]
 pub contract Probe { unit gc_collect(); }
 
-pub type Cell { i64 value }
+pub type Cell { i64 value; }
 
 T Identity<T>(T x) { return x; }
 

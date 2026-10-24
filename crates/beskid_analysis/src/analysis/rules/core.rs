@@ -96,16 +96,8 @@ impl RuleContext {
     }
 
     pub fn emit_issue(&mut self, span: crate::syntax::SpanInfo, issue: SemanticIssueKind) {
-        let diagnostic = make_diagnostic(
-            &self.source_name,
-            &self.source,
-            span,
-            issue.message(),
-            issue.label(),
-            issue.help(),
-            Some(issue.code().to_string()),
-            issue.severity(),
-        );
+        let diagnostic =
+            crate::analysis::diagnostic_kinds::issue_diagnostic(&self.source_name, &self.source, span, &issue);
         self.emit(diagnostic);
     }
 }

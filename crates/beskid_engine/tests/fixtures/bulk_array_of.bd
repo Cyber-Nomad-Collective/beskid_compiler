@@ -9,7 +9,7 @@ use Core.Collections.Array;
 [Extern(Abi:"C")]
 pub contract Probe { unit gc_collect(); }
 
-pub type Cell { i64 value }
+pub type Cell { i64 value; }
 
 i64 Sum(bulk i64[] values) {
     mut i64 total = 0;

@@ -102,7 +102,12 @@ impl SemanticPipelineRule {
                 if Self::import_path_known_in_assembly(&path, &known_paths) {
                     continue;
                 }
-                ctx.emit_issue(use_decl.node.path.span, SemanticIssueKind::UnknownImportPath { path });
+                // `use Module.Item`: the prefix is a module, the last segment an item of it.
+                let module = path
+                    .rsplit_once('.')
+                    .map(|(prefix, _)| prefix.to_string())
+                    .filter(|prefix| Self::import_path_known_in_assembly(prefix, &known_paths));
+                ctx.emit_issue(use_decl.node.path.span, SemanticIssueKind::UnknownImportPath { path, module });
             }
             return;
         }
@@ -144,7 +149,7 @@ impl SemanticPipelineRule {
 
             ctx.emit_issue(
                 use_decl.node.path.span,
-                SemanticIssueKind::UnknownImportPath { path: self.path_to_string_local(&use_decl.node.path) },
+                SemanticIssueKind::UnknownImportPath { path: self.path_to_string_local(&use_decl.node.path), module: None },
             );
         }
     }

@@ -13,13 +13,13 @@ use crate::shared_kit;
 
 const SOURCE: &str = r#"
 enum Option<T> { Some(T value), None }
-type Point { i64 x }
+type Point { i64 x; }
 type Holder<T> {
-    Option<T[]> slot,
+    Option<T[]> slot;
     i64 Has() { return match this.slot { Option::Some(_) => 1_i64, Option::None => 0_i64, }; }
     T FirstOr(T fallback) { let x = match slot { Option::Some(values) => values[0], Option::None => fallback, }; return x; }
 }
-type Outer<T> { Holder<T> inner }
+type Outer<T> { Holder<T> inner; }
 i64 HasFn<T>(Holder<T> h) { return match (h).slot { Option::Some(_) => 10_i64, Option::None => 0_i64, }; }
 T SecondOr<T>(Holder<T> h, T fallback) { let x = match h.slot { Option::Some(values) => values[1], Option::None => fallback, }; return x; }
 i64 Nested<T>(Outer<T> o, i64 limit) {

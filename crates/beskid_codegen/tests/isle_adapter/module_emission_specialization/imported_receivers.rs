@@ -16,7 +16,7 @@ pub(super) enum StringComparison {
 #[test]
 fn imported_chained_nominal_receiver_specializes_generic_argument_and_lowers() {
     assert_imported_chained_receiver(
-        "pub type Inner { pub i64 value, pub i64 Value() { return value; } } pub type Outer { pub Inner inner }",
+        "pub type Inner { pub i64 value; pub i64 Value() { return value; } } pub type Outer { pub Inner inner; }",
         "outer.inner.Value()",
         true,
     );
@@ -25,7 +25,7 @@ fn imported_chained_nominal_receiver_specializes_generic_argument_and_lowers() {
 #[test]
 fn imported_chained_nominal_receiver_retains_generic_identity_and_nested_projections() {
     assert_imported_chained_receiver(
-        "pub type Inner<T> { pub T value, pub T Value() { return value; } } pub type Middle { pub Inner<i64> inner } pub type Outer { pub Middle middle }",
+        "pub type Inner<T> { pub T value; pub T Value() { return value; } } pub type Middle { pub Inner<i64> inner; } pub type Outer { pub Middle middle; }",
         "outer.middle.inner.Value()",
         true,
     );
@@ -34,15 +34,15 @@ fn imported_chained_nominal_receiver_retains_generic_identity_and_nested_project
 #[test]
 fn imported_chained_nominal_receiver_rejects_unproven_or_inaccessible_members() {
     for (model, expression) in [
-        ("pub type Inner { pub i64 Value() { return 1_i64; } } pub type Outer { Inner inner }", "outer.inner.Value()"),
-        ("pub type Inner { i64 Value() { return 1_i64; } } pub type Outer { pub Inner inner }", "outer.inner.Value()"),
+        ("pub type Inner { pub i64 Value() { return 1_i64; } } pub type Outer { Inner inner; }", "outer.inner.Value()"),
+        ("pub type Inner { i64 Value() { return 1_i64; } } pub type Outer { pub Inner inner; }", "outer.inner.Value()"),
         (
-            "pub type Inner { pub i64 Value() { return 1_i64; } } pub type Outer { pub Inner inner }",
+            "pub type Inner { pub i64 Value() { return 1_i64; } } pub type Outer { pub Inner inner; }",
             "outer.missing.Value()",
         ),
-        ("pub type Outer { pub pointer inner }", "outer.inner.Value()"),
+        ("pub type Outer { pub pointer inner; }", "outer.inner.Value()"),
         (
-            "pub type Inner { pub i64 Value() { return 1_i64; } } pub type Outer { pub Inner inner, pub Inner inner }",
+            "pub type Inner { pub i64 Value() { return 1_i64; } } pub type Outer { pub Inner inner; pub Inner inner; }",
             "outer.inner.Value()",
         ),
     ] {
@@ -60,7 +60,7 @@ fn assert_imported_chained_receiver(model: &str, expression: &str, supported: bo
 #[test]
 fn indexed_match_bound_nominal_receiver_preserves_source_identity_and_lowers() {
     assert_imported_receiver_program(
-        "pub type Inner<T> { pub T value, pub T Value() { return value; } } pub type Outer<T> { pub Inner<T> inner }",
+        "pub type Inner<T> { pub T value; pub T Value() { return value; } } pub type Outer<T> { pub Inner<T> inner; }",
         "use Model; use Testing.Assert; enum Result<T,E> { Ok(T value), Error(E error) } bool Main(Result<Model.Outer<i64>[], i64> result) { return match result { Result::Ok(addresses) => Assert.Equal(addresses[0].inner.Value(), 443_i64), Result::Error(_) => false, }; }",
         true,
     );
@@ -69,7 +69,7 @@ fn indexed_match_bound_nominal_receiver_preserves_source_identity_and_lowers() {
 #[test]
 fn indexed_match_bound_nominal_receiver_rejects_unproven_bindings_indices_and_members() {
     let model =
-        "pub type Inner { pub i64 value, pub i64 Value() { return value; } } pub type Outer { pub Inner inner }";
+        "pub type Inner { pub i64 value; pub i64 Value() { return value; } } pub type Outer { pub Inner inner; }";
     for (payload, expression) in [
         ("Model.Outer[]", "addresses[true].inner.Value()"),
         ("Model.Outer[]", "addresses[Unknown()].inner.Value()"),
@@ -83,9 +83,9 @@ fn indexed_match_bound_nominal_receiver_rejects_unproven_bindings_indices_and_me
         assert_imported_receiver_program(model, &source, false);
     }
     for model in [
-        "pub type Inner { pub i64 Value() { return 1_i64; } } pub type Outer { Inner inner }",
-        "pub type Inner { i64 Value() { return 1_i64; } } pub type Outer { pub Inner inner }",
-        "pub type Inner { pub i64 Value() { return 1_i64; } } pub type Outer { pub Inner inner, pub Inner inner }",
+        "pub type Inner { pub i64 Value() { return 1_i64; } } pub type Outer { Inner inner; }",
+        "pub type Inner { i64 Value() { return 1_i64; } } pub type Outer { pub Inner inner; }",
+        "pub type Inner { pub i64 Value() { return 1_i64; } } pub type Outer { pub Inner inner; pub Inner inner; }",
     ] {
         assert_imported_receiver_program(
             model,
@@ -98,8 +98,8 @@ fn indexed_match_bound_nominal_receiver_rejects_unproven_bindings_indices_and_me
 #[test]
 fn projected_array_field_specializes_generic_argument_and_lowers() {
     for (model, receiver) in [
-        ("pub type Outer { pub u8[] payload }", "Model.Outer"),
-        ("pub type Outer<T> { pub T[] payload }", "Model.Outer<u8>"),
+        ("pub type Outer { pub u8[] payload; }", "Model.Outer"),
+        ("pub type Outer<T> { pub T[] payload; }", "Model.Outer<u8>"),
     ] {
         let main = format!(
             "use Model; use Testing.Assert; bool Main({receiver} received) {{ return Assert.Equal(received.payload[0], 99_u8); }}"
@@ -111,12 +111,12 @@ fn projected_array_field_specializes_generic_argument_and_lowers() {
 #[test]
 fn projected_array_field_rejects_unproven_indices_and_fields() {
     for (model, expression) in [
-        ("pub type Outer { u8[] payload }", "received.payload[0]"),
-        ("pub type Outer { pub u8[] payload, pub u8[] payload }", "received.payload[0]"),
-        ("pub type Outer { pub pointer payload }", "received.payload[0]"),
-        ("pub type Outer { pub u8[] payload }", "received.missing[0]"),
-        ("pub type Outer { pub u8[] payload }", "received.payload[true]"),
-        ("pub type Outer { pub u8[] payload }", "received.payload[Unknown()]"),
+        ("pub type Outer { u8[] payload; }", "received.payload[0]"),
+        ("pub type Outer { pub u8[] payload; pub u8[] payload; }", "received.payload[0]"),
+        ("pub type Outer { pub pointer payload; }", "received.payload[0]"),
+        ("pub type Outer { pub u8[] payload; }", "received.missing[0]"),
+        ("pub type Outer { pub u8[] payload; }", "received.payload[true]"),
+        ("pub type Outer { pub u8[] payload; }", "received.payload[Unknown()]"),
     ] {
         let main = format!(
             "use Model; use Testing.Assert; bool Main(Model.Outer received) {{ return Assert.Equal({expression}, 99_u8); }}"

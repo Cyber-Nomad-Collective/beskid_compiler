@@ -39,8 +39,8 @@ pub i64 SyscallSubmitAndPark(word descriptor, pointer managedBuffer, word len, w
     raw_word_store(pointer_add(request, 32), NativeWord(nativeBuffer));
     raw_word_store(pointer_add(request, 40), len);
 
-    word fiberIndex = SchedulerCurrentFiber();
-    if fiberIndex == FIBER_NONE {
+    if SchedTable() == NativePointer(0) {
+        // No scheduler yet or any more (process start or teardown): wait on the worker in place.
         if WorkerSubmit(request) != 0 {
             SystemFree(request, BESKID_WORKER_REQUEST_SIZE);
             SystemFree(nativeBuffer, allocation);
@@ -51,7 +51,8 @@ pub i64 SyscallSubmitAndPark(word descriptor, pointer managedBuffer, word len, w
         worker_release(request);
         return result;
     }
-    word token = ExternalWaitRegister(FiberHandle(fiberIndex), operation, -1);
+    // A fiber parks; the root caller (Main) drives the scheduler until the worker posts.
+    word token = ExternalWaitRegister(ExternalWaiterHandle(), operation, -1);
     if token == 0 {
         SystemFree(request, BESKID_WORKER_REQUEST_SIZE);
         SystemFree(nativeBuffer, allocation);

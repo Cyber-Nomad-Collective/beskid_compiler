@@ -20,7 +20,7 @@ use beskid_analysis::syntax_query::DynNodeRef;
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum UnresolvedCallKind {
     /// A single-segment callee that is not a local and names no function (E1101).
-    UnknownValue { name: Arc<str> },
+    UnknownValue { name: Arc<str>, suggestion: Option<Arc<str>> },
     /// A qualified callee whose leading segment names no import, module, type, contract,
     /// inline module, or local (E1108). `path` is the qualifier, without the terminal name.
     UnknownModulePath { path: Arc<str> },
@@ -159,7 +159,8 @@ fn unresolved_callee_kind(
         if resolve_lexical_declaration(program, index, call.node, name).is_some() {
             return None;
         }
-        return Some(UnresolvedCallKind::UnknownValue { name: Arc::from(name) });
+        let suggestion = closest_visible_name(program, index, call.node, name);
+        return Some(UnresolvedCallKind::UnknownValue { name: Arc::from(name), suggestion });
     };
     let root = first.node.name.node.name.as_str();
     if resolve_lexical_declaration(program, index, call.node, root).is_some() || matches!(root, "this" | "self") {
@@ -280,6 +281,8 @@ pub(in crate::semantic_contract) fn unit_declares_namespace_name(
 pub struct UnresolvedValueArgument {
     pub site: AstNodeKey,
     pub name: Arc<str>,
+    /// The closest visible name ("did you mean").
+    pub suggestion: Option<Arc<str>>,
 }
 
 pub fn unresolved_value_argument(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<UnresolvedValueArgument> {
@@ -325,7 +328,8 @@ fn unresolved_value_argument_tracked(
                 {
                     continue;
                 }
-                return Some(UnresolvedValueArgument { site, name: Arc::from(name) });
+                let suggestion = closest_visible_name(program, index, node, name);
+                return Some(UnresolvedValueArgument { site, name: Arc::from(name), suggestion });
             }
         }
         None

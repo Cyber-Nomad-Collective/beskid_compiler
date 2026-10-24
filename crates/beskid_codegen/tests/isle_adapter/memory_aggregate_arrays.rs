@@ -70,7 +70,7 @@ fn primitive_conversion_array_literal_rejects_invalid_conversions() {
 
 #[test]
 fn applied_generic_aggregate_plans_distinguish_pointer_and_scalar_fields() {
-    let source = "type Applied<T> { T value, i64 rest } i64 Main() { Applied<string> pointerValue = Applied<string> { value: \"ok\", rest: 1_i64 }; Applied<i32> scalarValue = Applied<i32> { value: 2, rest: 3_i64 }; return scalarValue.rest; }";
+    let source = "type Applied<T> { T value; i64 rest; } i64 Main() { Applied<string> pointerValue = Applied<string> { value: \"ok\", rest: 1_i64 }; Applied<i32> scalarValue = Applied<i32> { value: 2, rest: 3_i64 }; return scalarValue.rest; }";
     let (input, _isa, root) = item_fixture_with_root(source);
     let literals = find_nodes_of_kind(input.database(), root, beskid_queries::IndexedNodeKind::StructLiteralExpression);
     let [pointer_literal, scalar_literal] = literals.as_slice() else {
@@ -88,7 +88,7 @@ fn applied_generic_aggregate_plans_distinguish_pointer_and_scalar_fields() {
 #[test]
 fn applied_generic_integer_field_uses_the_instantiated_layout_when_lowered() {
     let (input, isa, root) = item_fixture_with_root(
-        "type Applied<T> { T value } i32 Main() { Applied<i32> value = Applied<i32> { value: 7 }; return value.value; }",
+        "type Applied<T> { T value; } i32 Main() { Applied<i32> value = Applied<i32> { value: 7 }; return value.value; }",
     );
     let function = find_function_definition(input.database(), root).expect("Main definition");
     let literal = find_node(input.database(), root, beskid_queries::IndexedNodeKind::LiteralExpression)
@@ -112,7 +112,7 @@ fn applied_generic_integer_field_uses_the_instantiated_layout_when_lowered() {
 #[test]
 fn named_aggregate_fields_lower_in_declaration_layout_order() {
     let (input, isa, root) = item_fixture_with_root(
-        "type Mixed { i32 narrow, i64 wide } i64 Main() { Mixed value = Mixed { wide: 9_i64, narrow: 7 }; return value.wide; }",
+        "type Mixed { i32 narrow; i64 wide; } i64 Main() { Mixed value = Mixed { wide: 9_i64, narrow: 7 }; return value.wide; }",
     );
     let function = find_function_definition(input.database(), root).expect("Main definition");
     let literal = find_node(input.database(), root, beskid_queries::IndexedNodeKind::StructLiteralExpression)
@@ -165,7 +165,7 @@ fn parsed_struct_literal_uses_source_aggregate_layout_without_hir() {
     let mut db = BeskidDatabase::default();
     let directory = tempfile::tempdir().expect("project").keep();
     let source_path = directory.join("Main.bd");
-    let source = "i32 Main() { let point = Point { x: 1, y: 2 }; return 0; } type Point { i32 x, i32 y }";
+    let source = "i32 Main() { let point = Point { x: 1, y: 2 }; return 0; } type Point { i32 x; i32 y; }";
     std::fs::write(&source_path, source).expect("source");
     let program = parse_program_with_source_name(source_path.to_str().unwrap(), source).expect("parse source");
     let entry = SourceUnitId::new(&db, source_path.clone());
@@ -220,7 +220,7 @@ fn parsed_struct_literal_uses_source_aggregate_layout_without_hir() {
 
 #[test]
 fn parsed_empty_array_field_uses_declared_nominal_element_abi_without_hir() {
-    let source = "type SyntaxContributionItem {} type GeneratedSyntaxContribution { SyntaxContributionItem[] items } GeneratedSyntaxContribution Main() { return GeneratedSyntaxContribution { items: [] }; }";
+    let source = "type SyntaxContributionItem {} type GeneratedSyntaxContribution { SyntaxContributionItem[] items; } GeneratedSyntaxContribution Main() { return GeneratedSyntaxContribution { items: [] }; }";
     let (input, isa, root) = item_fixture_with_root(source);
     let array = find_node(input.database(), root, beskid_queries::IndexedNodeKind::ArrayLiteralExpression)
         .expect("empty array literal");
@@ -293,7 +293,7 @@ fn empty_array_context_rejects_inferred_and_nested_literals_and_admits_assignmen
 
     // A field assignment takes the field's declared element type.
     let (input, isa, root) = item_fixture_with_root(
-        "type Token { i64 n } type Bag { i64[] items, Token[] tokens } Bag Main() { Bag bag = Bag { items: [1_i64], tokens: [Token { n: 1_i64 }] }; bag.items = []; bag.tokens = []; return bag; }",
+        "type Token { i64 n; } type Bag { i64[] items; Token[] tokens; } Bag Main() { Bag bag = Bag { items: [1_i64], tokens: [Token { n: 1_i64 }] }; bag.items = []; bag.tokens = []; return bag; }",
     );
     let arrays = find_nodes_of_kind(input.database(), root, beskid_queries::IndexedNodeKind::ArrayLiteralExpression);
     let empty = arrays
@@ -316,7 +316,7 @@ fn managed_struct_field_access_uses_allocation_plan_offsets() {
     // header-relative. Field access previously recomputed offsets from zero and therefore read the
     // header instead of the payload, which corrupted the loaded value (an enum tag read this way
     // reaches an exhaustive-match default trap and aborts with SIGILL at run time).
-    let source = "type Point { i32 x, i32 y } i32 Main() { Point point = Point { x: 1, y: 2 }; return point.y; }";
+    let source = "type Point { i32 x; i32 y; } i32 Main() { Point point = Point { x: 1, y: 2 }; return point.y; }";
     let (input, isa, root) = item_fixture_with_root(source);
     let literal =
         find_node(input.database(), root, beskid_queries::IndexedNodeKind::StructLiteralExpression).expect("literal");
@@ -351,7 +351,7 @@ fn managed_struct_field_access_uses_allocation_plan_offsets() {
 #[test]
 fn parsed_nominal_parameter_field_read_lowers_without_hir() {
     let (input, isa, root) =
-        item_fixture_with_root("type Style { i64 code } bool Main(Style chain) { return chain.code == 0; }");
+        item_fixture_with_root("type Style { i64 code; } bool Main(Style chain) { return chain.code == 0; }");
     let item = find_function_definition(input.database(), root).expect("main item");
     let field =
         find_node(input.database(), root, beskid_queries::IndexedNodeKind::PathExpression).expect("field expression");
@@ -389,8 +389,8 @@ fn lower_struct_array_main(source: &str) -> String {
 #[test]
 fn struct_array_element_read_into_local_lowers() {
     for source in [
-        "type Chunk { i64 a, i64 b } i64 Main(Chunk[] batch, i64 i) { Chunk survivor = batch[i]; return survivor.b; }",
-        "type Chunk { i64 a, i64 b } i64 Main(i64 i) { Chunk[] batch = [Chunk { a: 1, b: 2 }]; Chunk survivor = batch[i]; return survivor.b; }",
+        "type Chunk { i64 a; i64 b; } i64 Main(Chunk[] batch, i64 i) { Chunk survivor = batch[i]; return survivor.b; }",
+        "type Chunk { i64 a; i64 b; } i64 Main(i64 i) { Chunk[] batch = [Chunk { a: 1, b: 2 }]; Chunk survivor = batch[i]; return survivor.b; }",
     ] {
         let clif = lower_struct_array_main(source);
         assert!(clif.contains("load.i64"), "managed element reference and its field are loaded: {clif}");
@@ -402,12 +402,12 @@ fn struct_array_element_read_into_local_lowers() {
 fn inferred_local_field_read_lowers() {
     // An unannotated local takes its nominal type from its initializer's source-proven identity.
     let clif = lower_struct_array_main(
-        "type Chunk { i64 a, i64 b } i64 Main(Chunk[] batch, i64 i) { let survivor = batch[i]; return survivor.b; }",
+        "type Chunk { i64 a; i64 b; } i64 Main(Chunk[] batch, i64 i) { let survivor = batch[i]; return survivor.b; }",
     );
     assert!(clif.contains("load.i64"), "inferred element local field is loaded: {clif}");
     assert!(clif.contains("heap_oob"), "element reads stay bounds-checked: {clif}");
 
-    let source = "type Chunk { i64 a, i64 b } i64 Main() { let c = Chunk { a: 1, b: 2 }; return c.b; }";
+    let source = "type Chunk { i64 a; i64 b; } i64 Main() { let c = Chunk { a: 1, b: 2 }; return c.b; }";
     let (input, isa, root) = item_fixture_with_root(source);
     let function = find_function_definition(input.database(), root).expect("Main definition");
     let clif = emit_isle_item(&input, isa.as_ref(), function)
@@ -420,7 +420,7 @@ fn inferred_local_field_read_lowers() {
 #[test]
 fn inferred_call_result_local_field_read_lowers() {
     let (input, isa, root) = item_fixture_with_root(
-        "type Chunk { i64 a, i64 b } Chunk MakeChunk() { return Chunk { a: 1, b: 2 }; } i64 Main() { let c = MakeChunk(); return c.b; }",
+        "type Chunk { i64 a; i64 b; } Chunk MakeChunk() { return Chunk { a: 1, b: 2 }; } i64 Main() { let c = MakeChunk(); return c.b; }",
     );
     let db = input.database();
     let items = find_function_definitions(db, root);
@@ -447,8 +447,8 @@ fn inferred_call_result_local_field_read_lowers() {
 #[test]
 fn struct_array_element_write_from_local_lowers() {
     for source in [
-        "type Chunk { i64 a, i64 b } unit Main(Chunk[] batch, i64 i, Chunk survivor) { batch[i] = survivor; }",
-        "type Chunk { i64 a, i64 b } unit Main(Chunk[] batch, i64 i) { Chunk survivor = batch[0]; batch[i] = survivor; }",
+        "type Chunk { i64 a; i64 b; } unit Main(Chunk[] batch, i64 i, Chunk survivor) { batch[i] = survivor; }",
+        "type Chunk { i64 a; i64 b; } unit Main(Chunk[] batch, i64 i) { Chunk survivor = batch[0]; batch[i] = survivor; }",
     ] {
         let clif = lower_struct_array_main(source);
         assert!(clif.contains("store"), "managed element reference is stored: {clif}");

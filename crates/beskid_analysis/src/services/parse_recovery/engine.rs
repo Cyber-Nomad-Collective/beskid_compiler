@@ -9,7 +9,7 @@ mod tests {
         let source = "if true";
         let parse_error = BeskidParser::parse(Rule::Program, source).expect_err("unexpectedly parsed malformed source");
 
-        let candidates = collect_repair_candidates("<repl>", source, &parse_error);
+        let candidates = collect_repair_candidates(source, &parse_error);
         let recovered_sources: Vec<_> = candidates.into_iter().map(|(text, _)| text).collect();
         assert!(
             recovered_sources.iter().any(|candidate| candidate == "if true { }"),
@@ -22,7 +22,7 @@ mod tests {
         let source = "match x";
         let parse_error = BeskidParser::parse(Rule::Program, source).expect_err("unexpectedly parsed malformed source");
 
-        let candidates = collect_repair_candidates("<repl>", source, &parse_error);
+        let candidates = collect_repair_candidates(source, &parse_error);
         let recovered_sources: Vec<_> = candidates.into_iter().map(|(text, _)| text).collect();
 
         assert!(
@@ -36,7 +36,7 @@ mod tests {
         let source = "fn x(a: i32, b: word";
         let parse_error = BeskidParser::parse(Rule::Program, source).expect_err("unexpectedly parsed malformed source");
 
-        let candidates = collect_repair_candidates("<repl>", source, &parse_error);
+        let candidates = collect_repair_candidates(source, &parse_error);
         let recovered_sources: Vec<_> = candidates.into_iter().map(|(text, _)| text).collect();
 
         assert!(
@@ -50,7 +50,7 @@ mod tests {
         let source = "let value: Nat = 1";
         let parse_error = BeskidParser::parse(Rule::Program, source).expect_err("unexpectedly parsed malformed source");
 
-        let candidates = collect_repair_candidates("<repl>", source, &parse_error);
+        let candidates = collect_repair_candidates(source, &parse_error);
         let recovered_sources: Vec<_> = candidates.into_iter().map(|(text, _)| text).collect();
 
         assert!(
@@ -64,7 +64,7 @@ mod tests {
         let source = "for i in values";
         let parse_error = BeskidParser::parse(Rule::Program, source).expect_err("unexpectedly parsed malformed source");
 
-        let candidates = collect_repair_candidates("<repl>", source, &parse_error);
+        let candidates = collect_repair_candidates(source, &parse_error);
         let recovered_sources: Vec<_> = candidates.into_iter().map(|(text, _)| text).collect();
 
         assert!(
@@ -79,7 +79,7 @@ mod tests {
         let parse_error =
             BeskidParser::parse(Rule::Program, source).expect_err("unexpectedly parsed malformed scope body");
 
-        let candidates = collect_repair_candidates("<repl>", source, &parse_error);
+        let candidates = collect_repair_candidates(source, &parse_error);
         let recovered_sources: Vec<_> = candidates.into_iter().map(|(text, _)| text).collect();
 
         assert!(
@@ -95,7 +95,7 @@ mod tests {
         let source = "let value: Nat = 1\nlet other: Nat = 2";
         let parse_error = BeskidParser::parse(Rule::Program, source).expect_err("unexpectedly parsed malformed source");
 
-        let candidates = collect_repair_candidates("<repl>", source, &parse_error);
+        let candidates = collect_repair_candidates(source, &parse_error);
         let recovered_sources: Vec<_> = candidates.into_iter().map(|(text, _)| text).collect();
 
         assert!(
@@ -109,7 +109,7 @@ mod tests {
         let source = "let value: Nat = 1\nhost App() {}";
         let parse_error = BeskidParser::parse(Rule::Program, source).expect_err("unexpectedly parsed malformed source");
 
-        let candidates = collect_repair_candidates("<repl>", source, &parse_error);
+        let candidates = collect_repair_candidates(source, &parse_error);
         let recovered_sources: Vec<_> = candidates.into_iter().map(|(text, _)| text).collect();
 
         assert!(
@@ -143,7 +143,7 @@ mod tests {
             let parse_error =
                 BeskidParser::parse(Rule::Program, source).expect_err("unexpectedly parsed malformed source");
             let recovered: Vec<_> =
-                collect_repair_candidates("<repl>", source, &parse_error).into_iter().map(|(text, _)| text).collect();
+                collect_repair_candidates(source, &parse_error).into_iter().map(|(text, _)| text).collect();
 
             assert!(
                 recovered.iter().any(|candidate| candidate == &format!("let value: Nat = 1;\n{expected_tail}")),
@@ -217,7 +217,7 @@ mod tests {
             let parse_error =
                 BeskidParser::parse(Rule::Program, &source).expect_err("unexpectedly parsed malformed source");
 
-            let candidates = collect_repair_candidates("<repl>", &source, &parse_error);
+            let candidates = collect_repair_candidates(&source, &parse_error);
             let recovered_sources: Vec<_> = candidates.into_iter().map(|(text, _)| text).collect();
             let expected = format!("let value: Nat = 1;\n{expected_tail}");
 
@@ -234,7 +234,7 @@ mod tests {
         let parse_error = BeskidParser::parse(Rule::Program, source).expect_err("unexpectedly parsed malformed source");
 
         let recovered_sources: Vec<_> =
-            collect_repair_candidates("<repl>", source, &parse_error).into_iter().map(|(text, _)| text).collect();
+            collect_repair_candidates(source, &parse_error).into_iter().map(|(text, _)| text).collect();
 
         assert!(
             recovered_sources.iter().any(|candidate| candidate == "let value: Nat = 1;\nin values {}"),
@@ -253,7 +253,7 @@ mod tests {
         for source in cases {
             let parse_error =
                 BeskidParser::parse(Rule::Program, source).expect_err("unexpectedly parsed malformed source");
-            let _ = collect_repair_candidates("<repl>", source, &parse_error);
+            let _ = collect_repair_candidates(source, &parse_error);
         }
     }
 
@@ -261,7 +261,7 @@ mod tests {
     fn recovers_expression_with_missing_member_access_field() {
         let source = "let value = receiver.";
         let parse_error = BeskidParser::parse(Rule::Program, source).expect_err("unexpectedly parsed malformed source");
-        let candidates = collect_repair_candidates("<repl>", source, &parse_error);
+        let candidates = collect_repair_candidates(source, &parse_error);
         let recovered: Vec<_> = candidates.into_iter().map(|(text, _)| text).collect();
 
         assert!(
@@ -274,7 +274,7 @@ mod tests {
     fn recovers_expression_with_missing_index_element() {
         let source = "let value = collection[";
         let parse_error = BeskidParser::parse(Rule::Program, source).expect_err("unexpectedly parsed malformed source");
-        let candidates = collect_repair_candidates("<repl>", source, &parse_error);
+        let candidates = collect_repair_candidates(source, &parse_error);
         let recovered: Vec<_> = candidates.into_iter().map(|(text, _)| text).collect();
 
         assert!(
@@ -287,7 +287,7 @@ mod tests {
     fn recovers_expression_with_trailing_operator() {
         let source = "let value = 1 +";
         let parse_error = BeskidParser::parse(Rule::Program, source).expect_err("unexpectedly parsed malformed source");
-        let candidates = collect_repair_candidates("<repl>", source, &parse_error);
+        let candidates = collect_repair_candidates(source, &parse_error);
         let recovered: Vec<_> = candidates.into_iter().map(|(text, _)| text).collect();
 
         assert!(
@@ -301,7 +301,7 @@ mod tests {
         let range_case = "fn f(x: i32, )";
         let range_error =
             BeskidParser::parse(Rule::Program, range_case).expect_err("unexpectedly parsed malformed source");
-        let range_candidates = collect_repair_candidates("<repl>", range_case, &range_error);
+        let range_candidates = collect_repair_candidates(range_case, &range_error);
         let range_recovered: Vec<_> = range_candidates.into_iter().map(|(text, _)| text).collect();
 
         let range_fixed = range_recovered
@@ -311,14 +311,14 @@ mod tests {
         let call_case = "range(0,)";
         let call_error =
             BeskidParser::parse(Rule::Program, call_case).expect_err("unexpectedly parsed malformed source");
-        let call_candidates = collect_repair_candidates("<repl>", call_case, &call_error);
+        let call_candidates = collect_repair_candidates(call_case, &call_error);
         let call_recovered: Vec<_> = call_candidates.into_iter().map(|(text, _)| text).collect();
         let call_fixed = call_recovered.iter().any(|candidate| matches!(candidate.as_str(), "range(0,0)" | "range(0)"));
 
         let tuple_case = "let x = (1,";
         let tuple_error =
             BeskidParser::parse(Rule::Program, tuple_case).expect_err("unexpectedly parsed malformed source");
-        let tuple_candidates = collect_repair_candidates("<repl>", tuple_case, &tuple_error);
+        let tuple_candidates = collect_repair_candidates(tuple_case, &tuple_error);
         let tuple_recovered: Vec<_> = tuple_candidates.into_iter().map(|(text, _)| text).collect();
         let tuple_fixed = tuple_recovered
             .iter()
@@ -333,7 +333,7 @@ mod tests {
         let array_case = "let x = [1,";
         let array_error =
             BeskidParser::parse(Rule::Program, array_case).expect_err("unexpectedly parsed malformed source");
-        let array_candidates = collect_repair_candidates("<repl>", array_case, &array_error);
+        let array_candidates = collect_repair_candidates(array_case, &array_error);
         let array_recovered: Vec<_> = array_candidates.into_iter().map(|(text, _)| text).collect();
 
         assert!(
@@ -355,7 +355,7 @@ mod tests {
         for (source, label) in cases {
             let parse_error = BeskidParser::parse(Rule::Program, source)
                 .expect_err(&format!("unexpectedly parsed malformed source: {label}"));
-            let candidates = collect_repair_candidates("<repl>", source, &parse_error);
+            let candidates = collect_repair_candidates(source, &parse_error);
             let recovered: Vec<_> = candidates.into_iter().map(|(text, _)| text).collect();
 
             assert!(
@@ -372,7 +372,7 @@ mod tests {
     fn recovers_trailing_comma_in_angle_type_lists() {
         let source = "let value: Foo<T,";
         let parse_error = BeskidParser::parse(Rule::Program, source).expect_err("unexpectedly parsed malformed source");
-        let candidates = collect_repair_candidates("<repl>", source, &parse_error);
+        let candidates = collect_repair_candidates(source, &parse_error);
         let recovered: Vec<_> = candidates.into_iter().map(|(text, _)| text).collect();
 
         assert!(
@@ -389,7 +389,7 @@ mod tests {
     fn recovers_trailing_comma_in_struct_literal_fields() {
         let source = "let value = Foo { a: 1,";
         let parse_error = BeskidParser::parse(Rule::Program, source).expect_err("unexpectedly parsed malformed source");
-        let candidates = collect_repair_candidates("<repl>", source, &parse_error);
+        let candidates = collect_repair_candidates(source, &parse_error);
         let recovered: Vec<_> = candidates.into_iter().map(|(text, _)| text).collect();
 
         assert!(
@@ -407,7 +407,7 @@ mod tests {
     fn recovers_trailing_comma_in_type_field_lists() {
         let source = "type User { id: word,";
         let parse_error = BeskidParser::parse(Rule::Program, source).expect_err("unexpectedly parsed malformed source");
-        let candidates = collect_repair_candidates("<repl>", source, &parse_error);
+        let candidates = collect_repair_candidates(source, &parse_error);
         let recovered: Vec<_> = candidates.into_iter().map(|(text, _)| text).collect();
 
         assert!(
@@ -420,7 +420,7 @@ mod tests {
     fn recovers_trailing_comma_in_enum_variant_lists() {
         let source = "enum Event { Started, Running,";
         let parse_error = BeskidParser::parse(Rule::Program, source).expect_err("unexpectedly parsed malformed source");
-        let candidates = collect_repair_candidates("<repl>", source, &parse_error);
+        let candidates = collect_repair_candidates(source, &parse_error);
         let recovered: Vec<_> = candidates.into_iter().map(|(text, _)| text).collect();
 
         assert!(

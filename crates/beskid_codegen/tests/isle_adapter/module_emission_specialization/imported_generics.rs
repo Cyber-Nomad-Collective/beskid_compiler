@@ -12,7 +12,7 @@ use super::{StringComparison, assert_string_content_comparison};
 #[test]
 fn parsed_program_specializes_a_generic_nominal_method_without_hir() {
     let (input, isa, root) = item_fixture_with_root(
-        "type List<T> { T value, T Echo(T input) { return input; } } i64 Main(List<i64> list) { return list.Echo(1_i64); }",
+        "type List<T> { T value; T Echo(T input) { return input; } } i64 Main(List<i64> list) { return list.Echo(1_i64); }",
     );
     let db = input.database();
     let method = find_node(db, root, beskid_queries::IndexedNodeKind::MethodDefinition).expect("List.Echo method");

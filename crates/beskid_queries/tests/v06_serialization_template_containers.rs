@@ -20,11 +20,11 @@ use std::sync::Arc;
 const SOURCE: &str = r#"
 use Core.Collections.List;
 use Core.Optional;
-pub type Bag<T> { pub Option<T> Item, }
-pub type Many<T> { pub List<T>[] Groups, }
-pub type Box<T> { pub T Value, }
-pub type Plain<T> { pub T Value, pub i32[] Counts, }
-pub type Uses { pub Bag<i32> A, pub Many<string> B, pub Box<Option<i32>> C, pub Plain<string> D, }
+pub type Bag<T> { pub Option<T> Item; }
+pub type Many<T> { pub List<T>[] Groups; }
+pub type Box<T> { pub T Value; }
+pub type Plain<T> { pub T Value; pub i32[] Counts; }
+pub type Uses { pub Bag<i32> A; pub Many<string> B; pub Box<Option<i32>> C; pub Plain<string> D; }
 pub unit Main() { return; }
 "#;
 

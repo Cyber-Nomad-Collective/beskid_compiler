@@ -1,0 +1,41 @@
+use Core.Io;
+use Core.Text;
+
+use Core.Testing;
+
+const Limit = 10;
+const Other = 20;
+
+pub type Point
+{
+    i32 x;
+    i32 y;
+
+    i32 z;
+}
+
+pub enum Color
+{
+    Red,
+    Green,
+    Blue,
+}
+
+pub i32 First()
+{
+    return 1;
+}
+
+pub i32 Second()
+{
+    return 2;
+}
+
+test grouping_is_kept
+{
+    Testing.Assert.Equal(1, 1);
+    Testing.Assert.Equal(2, 2);
+    Testing.Assert.Equal(3, 3);
+
+    Testing.Assert.Equal(4, 4);
+}

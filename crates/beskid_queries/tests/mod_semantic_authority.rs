@@ -28,13 +28,13 @@ impl Fixture {
         Self::with_source(
             verified,
             r#"
-pub type Inner { pub string Label, }
-pub type Configuration { pub i32 Count, pub Inner Child, pub bool Enabled, pub f64 Ratio, }
-pub type Box<T> { pub T Value, }
-pub type Applied { pub Box<i32> Item, }
+pub type Inner { pub string Label; }
+pub type Configuration { pub i32 Count; pub Inner Child; pub bool Enabled; pub f64 Ratio; }
+pub type Box<T> { pub T Value; }
+pub type Applied { pub Box<i32> Item; }
 pub enum Node { Empty, Branch(string Label, Node[] Children), }
 pub enum Choice<T> { None, Some(T Value), }
-pub type EnumApplied { pub Choice<i32> Item, }
+pub type EnumApplied { pub Choice<i32> Item; }
 pub unit Main() { return; }
 "#,
         )
@@ -401,7 +401,7 @@ fn typed_rewriter_accepts_new_owned_declaration_and_rejects_invalid_projection()
     else {
         panic!("declaration")
     };
-    let replacement = beskid_analysis::services::parse_program("pub type Rewritten { pub bool Ready, }").unwrap();
+    let replacement = beskid_analysis::services::parse_program("pub type Rewritten { pub bool Ready; }").unwrap();
     let Node::TypeDefinition(declaration) = &replacement.node.items[0].node else { panic!("typed declaration") };
     let value = serde_json::to_value(&declaration.node).unwrap();
     let request = |target, kind, value, bounds| ModSyntaxRequest::ReplaceProjection {
@@ -613,18 +613,18 @@ fn canonical_path_planning_rejects_unregistered_sources_unknown_and_foreign_requ
 /// Policy, template and descriptor fixtures. Field policy is the Mod's
 /// `SerializeField` attribute; the host reads it with the Mod's literal rules.
 const POLICY_SOURCE: &str = r#"
-pub type Loop<T> { pub T Value, pub Loop<T> Next, }
-pub type SkippedLoop<T> { pub T Value, [SerializeField(SkipSerialize: true, SkipDeserialize: true, Default: "MakeSkipped")] pub SkippedLoop<T> Next, }
+pub type Loop<T> { pub T Value; pub Loop<T> Next; }
+pub type SkippedLoop<T> { pub T Value; [SerializeField(SkipSerialize: true, SkipDeserialize: true, Default: "MakeSkipped")] pub SkippedLoop<T> Next; }
 pub enum Tree<T> { Leaf(T Value), Branch(Tree<T> Left, Tree<T> Right), }
 pub enum Packet { Data(i32 Kept, [SerializeField(SkipSerialize: true, SkipDeserialize: true, Default: "MakeCache")] string Cache), Other(i32 Value), }
 pub enum Halved { Broken([SerializeField(SkipSerialize: true)] i32 Half), }
-pub type Policies { [SerializeField(Name: "renamed")] pub i32 Plain, [SerializeField(SkipSerialize: true)] pub i32 DecodeOnly, [SerializeField(SkipDeserialize: true, Default: "MakeCount")] pub i32 EncodeOnly, [SerializeField(WordWidth: 32)] pub word[] Widths, [SerializeField(Bytes: true)] pub u8[] Blob, }
-pub type RawHolder { pub i32 Kept, [SerializeField(SkipSerialize: true, SkipDeserialize: true, Default: "MakeRaw")] pub pointer Raw, }
-pub type RawLeak { pub pointer Raw, }
-pub type Cached<T> { pub T Value, [SerializeField(SkipSerialize: true, SkipDeserialize: true, Default: "MakeCache")] pub string Cache, }
-pub type Counted<T> { pub T Value, [SerializeField(SkipDeserialize: true, Default: "MakeCount")] pub T Count, }
-pub type Box<T> { pub T Value, }
-pub type Uses { pub Loop<i32> A, pub SkippedLoop<i32> B, pub Tree<string> C, pub Box<bool> D, pub Cached<i32> E, pub Counted<i32> F, pub Counted<string> G, }
+pub type Policies { [SerializeField(Name: "renamed")] pub i32 Plain; [SerializeField(SkipSerialize: true)] pub i32 DecodeOnly; [SerializeField(SkipDeserialize: true, Default: "MakeCount")] pub i32 EncodeOnly; [SerializeField(WordWidth: 32)] pub word[] Widths; [SerializeField(Bytes: true)] pub u8[] Blob; }
+pub type RawHolder { pub i32 Kept; [SerializeField(SkipSerialize: true, SkipDeserialize: true, Default: "MakeRaw")] pub pointer Raw; }
+pub type RawLeak { pub pointer Raw; }
+pub type Cached<T> { pub T Value; [SerializeField(SkipSerialize: true, SkipDeserialize: true, Default: "MakeCache")] pub string Cache; }
+pub type Counted<T> { pub T Value; [SerializeField(SkipDeserialize: true, Default: "MakeCount")] pub T Count; }
+pub type Box<T> { pub T Value; }
+pub type Uses { pub Loop<i32> A; pub SkippedLoop<i32> B; pub Tree<string> C; pub Box<bool> D; pub Cached<i32> E; pub Counted<i32> F; pub Counted<string> G; }
 pub string MakeCache() { return ""; }
 pub i32 MakeCount() { return 0_i32; }
 pub unit Main() { return; }
@@ -824,10 +824,10 @@ fn mod_shape_authority_rejects_partial_assembly_registration() {
 }
 
 const RECURSIVE_SOURCE: &str = r#"
-pub type Tree { pub i32 Value, pub Tree[] Children, }
-pub type Wrap<T> { pub T Value, }
-pub type Grow<T> { pub Grow<Wrap<T> >[] Next, }
-pub type GrowRoot { pub Grow<i32> Start, }
+pub type Tree { pub i32 Value; pub Tree[] Children; }
+pub type Wrap<T> { pub T Value; }
+pub type Grow<T> { pub Grow<Wrap<T> >[] Next; }
+pub type GrowRoot { pub Grow<i32> Start; }
 pub unit Main() { return; }
 "#;
 
@@ -912,9 +912,9 @@ fn mod_shape_doubling_substitution_terminates_at_the_identity_node_budget() {
         let fixture = Fixture::with_source(
             false,
             r#"
-    pub type Pair<A, B> { pub A First, pub B Second, }
-    pub type Double<T> { pub Double<Pair<T, T> >[] Next, }
-    pub type DoubleRoot { pub Double<i32> Start, }
+    pub type Pair<A, B> { pub A First; pub B Second; }
+    pub type Double<T> { pub Double<Pair<T, T> >[] Next; }
+    pub type DoubleRoot { pub Double<i32> Start; }
     pub unit Main() { return; }
     "#,
         );

@@ -487,7 +487,7 @@ mod tests {
         let mut text = fs::read_to_string(&source).expect("mod source");
         text.push_str(
             "\npub contract Sequence<T> { T Head(); }\n\
-             pub type Holder<T> : Sequence<T> {\n    T value,\n\n    pub T Head() {\n        return this.value;\n    }\n}\n",
+             pub type Holder<T> : Sequence<T> {\n    T value;\n\n    pub T Head() {\n        return this.value;\n    }\n}\n",
         );
         fs::write(&source, text).expect("mod source with an unrelated generic conformance");
 

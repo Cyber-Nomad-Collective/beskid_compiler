@@ -3,7 +3,7 @@
 use Core.Collections.Array;
 
 type Grid {
-    i64[][] cells,
+    i64[][] cells;
 }
 
 i64[][] Square(i64 size) {

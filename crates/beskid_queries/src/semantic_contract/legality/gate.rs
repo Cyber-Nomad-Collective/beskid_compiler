@@ -75,7 +75,7 @@ pub enum GateObligationKind {
     /// E1201: an enum constructor whose type path names a struct.
     UnknownEnumType,
     /// E1211: a method call whose receiver type declares neither the method nor a field.
-    UnknownStructField { name: Arc<str> },
+    UnknownStructField(UnknownMember),
     /// E1606: a call through a member that is a non-callable field.
     UnknownCallTarget,
     /// E1204: an explicit type-argument list whose count differs from the callee's generics.
@@ -186,9 +186,7 @@ pub fn check_gate_obligations(db: &dyn Db, items: &[AstNodeKey]) -> Vec<Semantic
                 GateObligationKind::UnknownValueType => SemanticIssueKind::TypeUnknownValueType,
                 GateObligationKind::UnknownStructType => SemanticIssueKind::TypeUnknownStructType,
                 GateObligationKind::UnknownEnumType => SemanticIssueKind::TypeUnknownEnumType,
-                GateObligationKind::UnknownStructField { name } => {
-                    SemanticIssueKind::TypeUnknownStructField { name: name.to_string() }
-                }
+                GateObligationKind::UnknownStructField(member) => member.issue(),
                 GateObligationKind::UnknownCallTarget => SemanticIssueKind::TypeUnknownCallTarget,
                 GateObligationKind::MethodTypeParameterShadowsOwner { parameter, owner, method } => {
                     SemanticIssueKind::TypeGenericParameterConflict {

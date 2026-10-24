@@ -811,9 +811,9 @@ mod tests {
     /// `pub mod`, the way the SDK hub `Beskid.Syntax.Nodes` exposes `NodeSpan`.
     #[test]
     fn hub_module_use_reaches_items_of_its_public_child_modules() {
-        let span = parse_program("pub type NodeSpan { pub u64 start, }").expect("parse child");
-        let field = parse_program("pub type Field { pub u64 id, }").expect("parse child");
-        let hidden = parse_program("pub type Hidden { pub u64 id, }").expect("parse private child");
+        let span = parse_program("pub type NodeSpan { pub u64 start; }").expect("parse child");
+        let field = parse_program("pub type Field { pub u64 id; }").expect("parse child");
+        let hidden = parse_program("pub type Hidden { pub u64 id; }").expect("parse private child");
         let hub = parse_program(
             "pub mod Beskid.Syntax.Nodes.NodeSpan;\npub mod Beskid.Syntax.Nodes.Field;\nmod Beskid.Syntax.Nodes.Hidden;",
         )
@@ -850,8 +850,8 @@ mod tests {
     /// the hub `use` imports neither.
     #[test]
     fn hub_module_use_omits_names_two_children_provide() {
-        let left = parse_program("pub type Shared { pub u64 left, }").expect("parse left");
-        let right = parse_program("pub type Shared { pub u64 right, }").expect("parse right");
+        let left = parse_program("pub type Shared { pub u64 left; }").expect("parse left");
+        let right = parse_program("pub type Shared { pub u64 right; }").expect("parse right");
         let hub = parse_program("pub mod Hub.Left;\npub mod Hub.Right;").expect("parse hub");
         let entry = parse_program("use Hub;\npub Shared Pick(Shared value) { return value; }").expect("parse entry");
 
@@ -872,7 +872,7 @@ mod tests {
     #[test]
     fn qualified_hub_path_reaches_items_of_its_public_child_modules() {
         let option = parse_program(
-            "pub type Option<T> { pub bool present, }\npub Option<T> Empty<T>() { return Option<T> { present: false }; }\npub i64 Depth() { return 2_i64; }",
+            "pub type Option<T> { pub bool present; }\npub Option<T> Empty<T>() { return Option<T> { present: false }; }\npub i64 Depth() { return 2_i64; }",
         )
         .expect("parse child");
         let hub = parse_program("pub mod Core.Optional.Option;\npub i64 Depth() { return 1_i64; }").expect("parse hub");
@@ -933,9 +933,9 @@ mod tests {
     /// hub only re-exports, whichever `use` comes first.
     #[test]
     fn direct_import_beats_hub_reexport_regardless_of_use_order() {
-        let syntax_field = parse_program("pub type Field { pub u64 id, }").expect("parse syntax field");
+        let syntax_field = parse_program("pub type Field { pub u64 id; }").expect("parse syntax field");
         let hub = parse_program("pub mod Beskid.Syntax.Nodes.Field;").expect("parse hub");
-        let semantic = parse_program("pub type Field { pub u64 token, }").expect("parse semantic");
+        let semantic = parse_program("pub type Field { pub u64 token; }").expect("parse semantic");
         let entry = parse_program(
             "use Beskid.Syntax.Nodes;\nuse Beskid.Compiler.Semantic;\npub u64 Token(Field field) { return field.token; }",
         )
@@ -971,5 +971,53 @@ mod tests {
             .max_by_key(|id| id.0)
             .expect("Semantic.Field");
         assert_eq!(*item, semantic_field, "the directly imported Semantic.Field wins over the re-exported one");
+    }
+
+    /// A method's symbol carries its declaring module: a user `Stack.Push` next to Corelib's
+    /// `Core.Collections.Stack.Push` (same package, same receiver name, same method name) is not a
+    /// duplicate, while a second `Stack` in one module still is.
+    #[test]
+    fn same_named_methods_of_same_named_types_in_different_modules_are_distinct_symbols() {
+        let corelib = parse_program("pub type Stack<T> { T[] storage;\n pub Stack<T> Push(move this, T value) { return this; } }")
+            .expect("parse corelib stack");
+        let entry = parse_program(
+            "pub type Stack<T> { T[] items;\n pub unit Push(mut this, T value) { return; } }\nunit Main() { return; }",
+        )
+        .expect("parse entry");
+        let mut resolver = Resolver::new();
+        resolver.collect_program_in_module(
+            &corelib,
+            &["Core".to_owned(), "Collections".to_owned(), "Stack".to_owned()],
+            None,
+        );
+        let result = resolver.resolve_program(&entry);
+        if let Err(errors) = &result {
+            assert!(
+                !errors.iter().any(|error| matches!(
+                    error,
+                    super::ResolveError::DuplicateSymbol { .. } | super::ResolveError::DuplicateItem { .. }
+                )),
+                "a user Stack.Push must not collide with Core.Collections.Stack.Push: {errors:?}"
+            );
+        }
+
+        let first = parse_program("pub type Stack<T> { T[] items;\n pub unit Push(mut this, T value) { return; } }")
+            .expect("parse first");
+        let second = parse_program("pub type Stack<T> { T[] items;\n pub unit Push(mut this, T value) { return; } }")
+            .expect("parse second");
+        let mut resolver = Resolver::new();
+        let module = ["Lib".to_owned()];
+        resolver.collect_program_in_module(&first, &module, None);
+        resolver.collect_program_in_module(&second, &module, None);
+        let errors = resolver
+            .resolve_program(&parse_program("unit Main() { return; }").expect("parse main"))
+            .expect_err("one module declaring Stack twice is a duplicate");
+        assert!(
+            errors.iter().any(|error| matches!(
+                error,
+                super::ResolveError::DuplicateItem { name, .. } if name == "Stack"
+            )),
+            "{errors:?}"
+        );
     }
 }

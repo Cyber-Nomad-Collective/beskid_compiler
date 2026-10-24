@@ -358,7 +358,7 @@ fn parsed_mutable_range_accumulator_exposes_local_write_syntax_facts() {
         .expect("assignment target slot fact");
     assert_eq!(
         mutable_local_assignment(db, assignment).expect("mutable assignment query"),
-        Some(beskid_queries::MutableLocalAssignment { declaration, slot })
+        Some(beskid_queries::MutableLocalAssignment { declaration, slot, compound: None })
     );
     assert_eq!(
         facts.mutable_local_assignment_slot(assignment),
@@ -385,7 +385,7 @@ fn parsed_mutable_string_local_exposes_local_write_syntax_facts() {
         .expect("assignment target slot fact");
     assert_eq!(
         mutable_local_assignment(db, assignment).expect("mutable assignment query"),
-        Some(beskid_queries::MutableLocalAssignment { declaration, slot })
+        Some(beskid_queries::MutableLocalAssignment { declaration, slot, compound: None })
     );
     assert_eq!(
         facts.mutable_local_assignment_slot(assignment),

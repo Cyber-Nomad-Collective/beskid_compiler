@@ -115,7 +115,7 @@ pub async fn save_snapshot_now(state: &RwLock<State>) {
 /// stops typing.
 ///
 /// No-op (no spawn) when saves are disabled or the debounce window is zero.
-pub async fn schedule_persistence_snapshot_save(state: Arc<RwLock<State>>) {
+pub async fn schedule_persistence_snapshot_save(state: Arc<RwLock<State>>, reporter: Arc<crate::crash::CrashReporter>) {
     let (revision, debounce, enabled) = {
         let mut write = state.write().await;
         write.persistence_save_revision = write.persistence_save_revision.saturating_add(1);
@@ -125,7 +125,7 @@ pub async fn schedule_persistence_snapshot_save(state: Arc<RwLock<State>>) {
         return;
     }
     let state_for_task = state;
-    tokio::spawn(async move {
+    reporter.spawn_guarded("beskid/persistenceSnapshotSave", None, async move {
         tokio::time::sleep(debounce).await;
         let should_run = {
             let read = state_for_task.read().await;

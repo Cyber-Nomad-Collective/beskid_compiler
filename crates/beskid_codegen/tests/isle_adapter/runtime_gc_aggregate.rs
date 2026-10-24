@@ -3,7 +3,7 @@ use super::support::*;
 #[test]
 fn specialized_map_descriptor_traces_its_array_field() {
     let (input, _isa, root) = item_fixture_with_root(
-        "type Entry<TKey, TValue> { TKey key, TValue value } type Map<TKey, TValue> { Entry<TKey, TValue>[] entries, i64 count, Map<TKey, TValue> Insert(TKey key, TValue value) { Entry<TKey, TValue> fresh = Entry<TKey, TValue> { key: key, value: value }; return Map<TKey, TValue> { entries: entries, count: count + 1 }; } } i64 Main(Map<string, string> map) { Map<string, string> next = map.Insert(\"key\", \"value\"); return next.count; }",
+        "type Entry<TKey, TValue> { TKey key; TValue value; } type Map<TKey, TValue> { Entry<TKey, TValue>[] entries; i64 count; Map<TKey, TValue> Insert(TKey key, TValue value) { Entry<TKey, TValue> fresh = Entry<TKey, TValue> { key: key, value: value }; return Map<TKey, TValue> { entries: entries, count: count + 1 }; } } i64 Main(Map<string, string> map) { Map<string, string> next = map.Insert(\"key\", \"value\"); return next.count; }",
     );
     let db = input.database();
     let functions = find_function_definitions(db, root);
@@ -43,9 +43,9 @@ fn specialized_map_descriptor_traces_its_array_field() {
 fn specialized_generic_string_field_uses_content_equality() {
     let (input, isa, root) = item_fixture_with_root(
         r#"
-type Entry<T> { T key }
+type Entry<T> { T key; }
 type Map<T> {
-    Entry<T> entry,
+    Entry<T> entry;
     bool Contains(T key) {
         Entry<T> current = entry;
         return current.key == key;
@@ -82,10 +82,10 @@ bool Main(Map<string> map) { return map.Contains("key"); }
 fn specialized_nested_generic_call_result_field_lowers() {
     let (input, isa, root) = item_fixture_with_root(
         r#"
-type Entry<T> { T key }
+type Entry<T> { T key; }
 T Fetch<T>(T[] entries, i64 index) { return entries[index]; }
 type Map<T> {
-    Entry<T>[] entries,
+    Entry<T>[] entries;
     bool Contains(T key) { return Fetch<Entry<T>>(entries, 0_i64).key == key; }
 }
 bool Main(Map<string> map) { return map.Contains("key"); }

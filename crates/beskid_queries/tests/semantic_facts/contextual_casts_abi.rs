@@ -160,7 +160,7 @@ fn final_match_statement_of_a_lambda_block_body_is_a_statement_not_the_lambda_va
     // The lambda's block body is not a value (its `return`s are), so its final expression
     // statement expects `unit` and the match keeps its ordinary enum match fact.
     let source = "enum Outcome<T, E> { Ok(T value), Error(E error) } \
-                  type Box<T> { T item, Outcome<T, string> Take() { return Outcome::Ok(this.item); } } \
+                  type Box<T> { T item; Outcome<T, string> Take() { return Outcome::Ok(this.item); } } \
                   i64 Call<T>(() => T body) { return 1_i64; } \
                   i64 Main(Box<i64> b) { return Call<i64>(() => { match b.Take() { Outcome::Ok(c) => { return c; }, Outcome::Error(_) => { return -1_i64; }, }; }); }";
     let (db, _project, unit, generation, index) = setup(source);

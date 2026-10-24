@@ -413,14 +413,14 @@ mod source_ownership_tests {
         let _ = std::fs::remove_dir_all(&base);
         let host = base.join("host");
         let host_manifest = package(&host, "Host");
-        std::fs::write(host.join("Main.bd"), "pub type Main { pub i32 Value, }\n").unwrap();
+        std::fs::write(host.join("Main.bd"), "pub type Main { pub i32 Value; }\n").unwrap();
         let materialized = host.join("obj/beskid/root/Host");
         std::fs::create_dir_all(&materialized).unwrap();
-        std::fs::write(materialized.join("Main.bd"), "pub type Main { pub i32 Value, }\n").unwrap();
+        std::fs::write(materialized.join("Main.bd"), "pub type Main { pub i32 Value; }\n").unwrap();
         let dependency = host.join("obj/beskid/root/Dep");
         let dependency_manifest = package(&base.join("dep"), "Dep");
         std::fs::create_dir_all(&dependency).unwrap();
-        std::fs::write(dependency.join("Lib.bd"), "pub type Lib { pub i32 Value, }\n").unwrap();
+        std::fs::write(dependency.join("Lib.bd"), "pub type Lib { pub i32 Value; }\n").unwrap();
 
         let mut identities = VerifiedPackageIdentities::default();
         identities.issue(&host_manifest, vec![host.clone(), materialized.clone()], VerifiedPackageSource::Local, None).unwrap();

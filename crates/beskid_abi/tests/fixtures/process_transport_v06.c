@@ -165,8 +165,46 @@ static void environment_and_cwd(const char *executable) {
   assert(!rmdir(directory));
 #endif
 }
+/* A bare program name resolves through the PATH of the child's environment,
+ * not the working directory; a name found in no PATH entry is NotFound. */
+static void bare_name_resolves_through_path(const char *executable) {
+  const char *base = executable;
+  for (const char *at = executable; *at; at++)
+    if (*at == '/' || *at == '\\') base = at + 1;
+  size_t directory = (size_t)(base - executable) - 1;
+  assert(base != executable && *base);
+  /* Leave the executable's directory so a working-directory lookup cannot find it. */
+#ifdef _WIN32
+  wchar_t original[4096], temporary[4096];
+  DWORD length = GetCurrentDirectoryW(4096, original);
+  assert(length > 0 && length < 4096);
+  length = GetTempPathW(4096, temporary);
+  assert(length > 0 && length < 4096 && SetCurrentDirectoryW(temporary));
+#else
+  char original[4096]; current_directory(original, sizeof original);
+  assert(!chdir("/"));
+#endif
+  uint64_t token = beskid_rt_v5_intrinsic_child_begin((const uint8_t *)base, strlen(base), NULL, 0, 1);
+  assert(token && !beskid_rt_v5_intrinsic_child_argument(token, (const uint8_t *)"--exit-23", 9));
+  assert(!beskid_rt_v5_intrinsic_child_environment(token, (const uint8_t *)"PATH", 4, (const uint8_t *)executable, directory));
+  assert(!spawn_ready(token));
+  int64_t deadline = now_ms() + 5000, status;
+  do { status = beskid_rt_v5_intrinsic_child_poll(token); if (status == -2) pause_probe(); } while (status == -2 && now_ms() < deadline);
+  assert(status == 23 && !beskid_rt_v5_intrinsic_child_close(token));
+  const char *missing = "beskid-no-such-program";
+  uint64_t absent = beskid_rt_v5_intrinsic_child_begin((const uint8_t *)missing, strlen(missing), NULL, 0, 1);
+  assert(absent && !beskid_rt_v5_intrinsic_child_environment(absent, (const uint8_t *)"PATH", 4, (const uint8_t *)executable, directory));
+  assert(spawn_ready(absent) == -7);
+  assert(!close_ready(absent));
+#ifdef _WIN32
+  assert(SetCurrentDirectoryW(original));
+#else
+  assert(!chdir(original));
+#endif
+}
 int main(int argc, char **argv) {
   if (argc > 1 && !strcmp(argv[1], "--sleep")) { for (;;) pause_probe(); }
+  if (argc > 1 && !strcmp(argv[1], "--exit-23")) return 23;
   if (argc > 1 && !strcmp(argv[1], "--environment")) {
     char directory[4096]; current_directory(directory, sizeof directory);
     assert(argc == 3);
@@ -235,6 +273,7 @@ int main(int argc, char **argv) {
   environment_and_cwd(executable);
   spawn_settles_synchronously_on_windows(executable);
   spawn_failure_carries_os_error();
+  bare_name_resolves_through_path(executable);
   uint64_t replacement = beskid_rt_v5_intrinsic_child_begin((const uint8_t *)executable, strlen(executable), NULL, 0, 1);
   assert(replacement && replacement != running);
   assert(beskid_rt_v5_intrinsic_child_argument(running, (const uint8_t *)"stale", 5) < 0);
@@ -253,5 +292,5 @@ int main(int argc, char **argv) {
   assert(setup_status == 0 || setup_status == -2);
   assert(!close_ready(setup));
   assert(beskid_rt_v5_intrinsic_child_poll(setup) == -11);
-  puts("binary=exact argv=exact stderr=drained reap=bounded environment=isolated cwd=exact stale=denied shutdown=bounded os_error=carried"); return 0;
+  puts("binary=exact argv=exact stderr=drained reap=bounded environment=isolated cwd=exact stale=denied shutdown=bounded os_error=carried path=searched"); return 0;
 }

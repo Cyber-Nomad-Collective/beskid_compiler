@@ -30,9 +30,9 @@ impl NamingRole {
             | Self::EnumVariant
             | Self::Callable
             | Self::ModuleSegment
-            | Self::GenericParameter => NamingProfile::PascalCase,
+            | Self::GenericParameter
+            | Self::Test => NamingProfile::PascalCase,
             Self::Field | Self::Binding | Self::Macro => NamingProfile::LowerCamelCase,
-            Self::Test => NamingProfile::SnakeCase,
         }
     }
 }
@@ -51,6 +51,9 @@ pub fn walk_program_mut(program: &mut Program, mut visit: impl FnMut(NamingRole,
 
 fn walk_node(node: &Node, visit: &mut impl FnMut(NamingRole, &Spanned<Identifier>)) {
     match node {
+        // A generated host-hook argument type mirrors the hook parameters, which the generated
+        // function already carries; walking both would report each parameter twice.
+        Node::TypeDefinition(def) if crate::composition::is_hook_item_name(&def.node.name.node.name) => {}
         Node::TypeDefinition(def) => walk_type_definition(&def.node, visit),
         Node::EnumDefinition(def) => walk_enum_definition(&def.node, visit),
         Node::ContractDefinition(def) => walk_contract_definition(&def.node, visit),
@@ -605,7 +608,7 @@ mod tests {
     #[test]
     fn v06_event_members_carry_the_callable_profile() {
         let program =
-            parse_program("pub type Hub { i32 lastSize, event{16} OnResize(i32 size), }").expect("event type parses");
+            parse_program("pub type Hub { i32 lastSize; event{16} OnResize(i32 size); }").expect("event type parses");
         let mut roles = Vec::new();
         walk_program(&program.node, |role, name| roles.push((role, name.node.name.clone())));
         assert!(roles.contains(&(NamingRole::Callable, "OnResize".to_string())), "{roles:?}");

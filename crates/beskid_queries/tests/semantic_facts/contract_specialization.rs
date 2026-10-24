@@ -361,7 +361,7 @@ fn a_method_of_a_generic_implementation_has_no_declaration_level_abi() {
     // is emitted only in a witnessed environment, never as one declaration-level item.
     let source = r#"
 contract Sink<E> { unit Put(E value); }
-type Point { pub i64 x, }
+type Point { pub i64 x; }
 impl<E> Point : Sink<E> { pub unit Put(E value) { return; } }
 unit Main() { return; }
 "#;

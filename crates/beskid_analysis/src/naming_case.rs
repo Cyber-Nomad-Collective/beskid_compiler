@@ -5,7 +5,6 @@
 pub enum NamingProfile {
     PascalCase,
     LowerCamelCase,
-    SnakeCase,
 }
 
 /// Reserved spellings that force a leading `_` escape (see `beskid.pest` Keyword overlap).
@@ -117,7 +116,6 @@ pub fn normalize_to_profile(name: &str, profile: NamingProfile) -> String {
             }
             out
         }
-        NamingProfile::SnakeCase => words.join("_"),
     };
     escape_reserved(&raw)
 }
@@ -151,16 +149,6 @@ fn profile_body_matches(name: &str, profile: NamingProfile) -> bool {
             }
             ch.all(|c| c.is_ascii_alphanumeric())
         }
-        NamingProfile::SnakeCase => {
-            let mut ch = core.chars();
-            let Some(first) = ch.next() else {
-                return false;
-            };
-            if !first.is_ascii_lowercase() {
-                return false;
-            }
-            ch.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_') && !core.contains("__")
-        }
     }
 }
 
@@ -187,14 +175,14 @@ mod tests {
     fn normalize_profiles() {
         assert_eq!(normalize_to_profile("hub_register", NamingProfile::PascalCase), "HubRegister");
         assert_eq!(normalize_to_profile("HubRegister", NamingProfile::LowerCamelCase), "hubRegister");
-        assert_eq!(normalize_to_profile("hubRegister", NamingProfile::SnakeCase), "hub_register");
     }
 
     #[test]
     fn matches_corelib_examples() {
         assert!(matches_profile("IsOk", NamingProfile::PascalCase));
         assert!(matches_profile("isTty", NamingProfile::LowerCamelCase));
-        assert!(matches_profile("hub_register_accepts_channel", NamingProfile::SnakeCase));
+        assert!(matches_profile("HubRegisterAcceptsChannel", NamingProfile::PascalCase));
+        assert!(!matches_profile("hub_register_accepts_channel", NamingProfile::PascalCase));
         assert!(!matches_profile("is_tty", NamingProfile::LowerCamelCase));
         assert!(!matches_profile("isok", NamingProfile::PascalCase));
     }

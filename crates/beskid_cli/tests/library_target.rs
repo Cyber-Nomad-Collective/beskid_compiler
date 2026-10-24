@@ -111,7 +111,7 @@ fn global_symbols(artifact: &std::path::Path) -> Vec<String> {
 
 #[test]
 fn type_only_library_builds_object_without_main() {
-    let case = LibraryCase::new("pub type Placeholder { i32 value, }\n");
+    let case = LibraryCase::new("pub type Placeholder { i32 value; }\n");
     let (output, artifact) = case.build(Some("object"));
     assert!(output.status.success(), "library object build failed: {}", text(&output));
     assert!(artifact.is_file(), "library object was not emitted: {}", text(&output));
@@ -122,7 +122,7 @@ fn type_only_library_builds_object_without_main() {
 #[ignore = "requires the staged native runtime-kit matrix prefix"]
 fn type_only_library_builds_without_main() {
     require_staged_runtime_prefix();
-    let case = LibraryCase::new("pub type Placeholder { i32 value, }\n");
+    let case = LibraryCase::new("pub type Placeholder { i32 value; }\n");
     let (output, artifact) = case.build(None);
     assert!(output.status.success(), "library build failed: {}", text(&output));
     assert!(artifact.is_file(), "library artifact was not emitted: {}", text(&output));

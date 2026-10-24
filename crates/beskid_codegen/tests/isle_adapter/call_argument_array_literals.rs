@@ -14,8 +14,8 @@ use beskid_queries::{IndexedNodeKind, SemanticTypeId, empty_array_literal_elemen
 const RECEIVER_SOURCE: &str = r#"
 use Core.Collections.Array;
 type Builder {}
-type Name { string name }
-type Node { Name node }
+type Name { string name; }
+type Node { Name node; }
 type Item {}
 Item Named(Builder builder, string[] names, Item[] arguments) { return Item {}; }
 Item[] Receiver(Builder builder, Node[] parameters) {

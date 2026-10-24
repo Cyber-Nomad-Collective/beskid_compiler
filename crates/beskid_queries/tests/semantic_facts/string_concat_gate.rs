@@ -9,7 +9,7 @@ use super::support::{key, setup};
 
 #[test]
 fn interpolating_a_nominal_value_is_reported_once_at_the_operand() {
-    let source = "type Point { i64 x } string Main(Point p, i64 n, bool b, f64 f) { return \"p ${p} ${n} ${b} ${f}\"; }";
+    let source = "type Point { i64 x; } string Main(Point p, i64 n, bool b, f64 f) { return \"p ${p} ${n} ${b} ${f}\"; }";
     let (db, _project, unit, generation, index) = setup(source);
     let main = key(unit, generation, &index, NodeKind::FunctionDefinition, 0);
     let obligations = gate_obligations(&db, main).expect("gate query").expect("gate obligations");

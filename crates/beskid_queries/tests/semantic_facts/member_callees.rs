@@ -17,13 +17,13 @@ const PRELUDE: &str = "enum Error { Failed() } \
     enum Result<TValue, TError> { Ok(TValue value), Error(TError error) } \
     contract Source { Result<i64, Error> Begin(i64 limit); } \
     type Reader : Source { \
-        i64 n, \
+        i64 n; \
         pub Result<i64, Error> Begin(i64 limit) { return Result::Ok(limit + n); } \
         pub Reader With(i64 v) { return Reader { n: n + v }; } \
         pub i64 Value() { return n; } \
     } \
     Reader MakeReader() { return Reader { n: 1 }; } \
-    type Holder { Reader[] items, Reader reader } ";
+    type Holder { Reader[] items; Reader reader; } ";
 
 /// Every call whose callee is a member access named `member`, as node keys.
 fn member_calls(source: &str, member: &str) -> Vec<AstNodeKey> {
@@ -112,7 +112,7 @@ fn a_method_called_on_a_field_of_a_grouped_receiver_is_a_method_call() {
 #[test]
 fn a_method_called_on_a_field_of_the_implicit_receiver_member_is_a_method_call() {
     assert_member_methods(
-        "type Owner { Reader reader, \
+        "type Owner { Reader reader; \
              pub Result<i64, Error> Run() { i64 value = (this).reader.Begin(1)?; return Result::Ok(value); } }",
         &["Begin"],
     );
@@ -143,7 +143,7 @@ fn a_bound_member_called_on_a_grouped_generic_parameter_is_a_method_call() {
 fn a_bound_member_called_on_a_generic_field_of_the_implicit_receiver_is_a_method_call() {
     assert_member_methods(
         "contract Decoder { Result<i64, Error> ReadTyped(i64 limit); } \
-         type Adapter<R> { R reader } \
+         type Adapter<R> { R reader; } \
          impl<R> Adapter<R> : Decoder where R: Source { \
              pub Result<i64, Error> ReadTyped(i64 limit) { i64 value = (this).reader.Begin(limit)?; return Result::Ok(value); } \
          }",

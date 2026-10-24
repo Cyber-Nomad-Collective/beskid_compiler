@@ -31,6 +31,10 @@ pub fn resolve_dependency_targets(
             return Err(CompositionIssue::AmbiguousInject {
                 requested_type: dependency.requested_type.clone(),
                 span: dependency.span,
+                field_name: dependency.field_name.clone(),
+                name_span: dependency.name_span,
+                type_span: dependency.type_span,
+                candidates: matches.iter().map(|registration| registration.span).collect(),
             });
         }
     }

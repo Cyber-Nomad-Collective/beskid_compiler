@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
-use crate::format::{EmitError, format_program};
+use crate::format::{EmitError, format_generated_program};
 use crate::projects::CompilePlan;
 use crate::syntax::{Program, SpanInfo, Spanned};
 
@@ -178,7 +178,7 @@ fn write_text_file(out_path: &Path, header: &str, body: &str) -> Result<(), Stri
 fn format_items(items: &[Spanned<ProgramItem>]) -> Result<String, EmitError> {
     let program =
         Spanned::new(Program { items: items.to_vec(), leading_docs: vec![None; items.len()] }, SpanInfo::default());
-    format_program(&program)
+    format_generated_program(&program)
 }
 
 #[cfg(test)]
@@ -216,7 +216,7 @@ mod tests {
     fn layout_v1_splits_typed_items_into_files() {
         let items = materialize_program_items([
             "pub contract DemoStep { DemoStep Run(); }",
-            "pub type DemoFluent { i64 inner }",
+            "pub type DemoFluent { i64 inner; }",
             "pub DemoFluent FromDemo() { return DemoFluent { inner: 0 }; }",
         ])
         .expect("materialize");

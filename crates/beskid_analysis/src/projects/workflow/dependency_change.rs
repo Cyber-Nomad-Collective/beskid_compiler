@@ -195,9 +195,7 @@ pub fn PlanDependencyChange(
     if original_lock.as_ref().is_some_and(|bytes| bytes.starts_with(b"# Project.lock v1"))
         && !matches!(mutation, DependencyMutation::Update { .. })
     {
-        return Err(ProjectError::Validation(
-            "Project.lock v1 requires `beskid dev project lock` or explicit update migration".into(),
-        ));
+        return Err(ProjectError::LockfileV1);
     }
     let mut mutation = mutation.clone();
     if let DependencyMutation::Add(intent) = &mut mutation

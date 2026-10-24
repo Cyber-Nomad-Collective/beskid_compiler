@@ -81,7 +81,7 @@ pub fn execute(args: PackageArgs) -> Result<()> {
         api_key: args.api_key,
         timeout_secs: args.timeout_secs,
         config_file: args.config_file,
-        verbose: beskid_telemetry::verbosity() == beskid_telemetry::Verbosity::Verbose,
+        verbose: beskid_telemetry::verbosity().shows_detail(),
         command,
     })
 }

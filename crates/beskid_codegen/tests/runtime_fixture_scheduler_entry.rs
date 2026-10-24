@@ -44,7 +44,7 @@ fn x86_64_target_and_isa() -> (TargetMetadata, Arc<dyn cranelift_codegen::isa::T
     (target, isa)
 }
 
-/// `ExternalWorkTests.bd`'s `cancelled_wait_retains_host_work_until_host_exit` reaches
+/// `ExternalWorkTests.bd`'s `CancelledWaitRetainsHostWorkUntilHostExit` reaches
 /// `Core.FiberAlloc`, which requires a spawn/context trampoline, which in turn requires the
 /// complete `SCHEDULER_ENTRY_HELPERS` set — the exact shape that used to fail closed.
 #[test]
@@ -55,7 +55,7 @@ fn external_work_tests_fixture_entrypoint_resolves_the_full_scheduler_entry_help
     let lowered = lower_syntax_assembly_entrypoint(
         &mut db,
         assembly,
-        "cancelled_wait_retains_host_work_until_host_exit",
+        "CancelledWaitRetainsHostWorkUntilHostExit",
         target,
         isa.as_ref(),
     );
@@ -67,7 +67,7 @@ fn external_work_tests_fixture_entrypoint_resolves_the_full_scheduler_entry_help
     );
 }
 
-/// `LifecycleTests.bd`'s `lifecycle_uses_manifest_state_generation_and_48_byte_tls` is a second,
+/// `LifecycleTests.bd`'s `LifecycleUsesManifestStateGenerationAnd48ByteTls` is a second,
 /// independent fixture target exercising the same reachability gap through a different call path
 /// (`Lifecycle.ProcessInit`, not `Core.FiberAlloc`).
 #[test]
@@ -78,7 +78,7 @@ fn lifecycle_tests_fixture_entrypoint_resolves_the_full_scheduler_entry_helper_s
     let lowered = lower_syntax_assembly_entrypoint(
         &mut db,
         assembly,
-        "lifecycle_uses_manifest_state_generation_and_48_byte_tls",
+        "LifecycleUsesManifestStateGenerationAnd48ByteTls",
         target,
         isa.as_ref(),
     );

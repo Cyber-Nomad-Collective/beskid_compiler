@@ -193,7 +193,7 @@ fn bare_sibling_method_beats_same_named_free_function() {
     // The free `Add` takes three arguments; binding the bare call to it would be an arity error.
     let source = r#"
 pub type Counter {
-    i64 value,
+    i64 value;
 
     pub i64 Add(i64 amount) { return value + amount; }
 
@@ -213,7 +213,7 @@ mod Tools {
 }
 
 pub type Counter {
-    i64 value,
+    i64 value;
 
     pub i64 Add(i64 amount) { return value + amount; }
 
@@ -234,7 +234,7 @@ pub i64 UseFree() {
 fn bare_sibling_method_in_generic_type_dispatches_on_receiver() {
     let source = r#"
 pub type Holder<T> {
-    T item,
+    T item;
 
     pub bool Has() { return true; }
 
@@ -248,8 +248,8 @@ pub type Holder<T> {
 fn bare_receiver_field_reads_are_not_method_dispatches() {
     let source = r#"
 pub type Port {
-    u8 high,
-    u8 low,
+    u8 high;
+    u8 low;
 
     pub i64 Value() { return i64(high) * 256_i64 + i64(low); }
 }

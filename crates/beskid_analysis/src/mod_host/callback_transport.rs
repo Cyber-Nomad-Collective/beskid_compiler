@@ -568,7 +568,8 @@ mod tests {
         let mut session = NativeSemanticSession::new(&authority).unwrap();
         let request = frame(&session, 1);
         let response: serde_json::Value = serde_json::from_slice(&session.handle_frame(&request).unwrap()).unwrap();
-        assert_eq!(response["error"], "expired issuer token");
+        let error = response["error"].as_str().expect("error text");
+        assert!(error.starts_with("[E2104]") && error.ends_with("(expired issuer token)"), "{error}");
         assert_eq!(authority.calls.get(), 1);
         assert!(session.handle_frame(&request).is_err());
         assert!(session.handle_frame(&frame(&session, 2)).is_err());

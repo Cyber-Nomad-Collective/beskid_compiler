@@ -379,11 +379,11 @@ mod tests {
         with_project_test_env(&root, || {
             lower_corelib_tests_entrypoint(
                 "system/SystemSuite.bd",
-                "env_get_empty_name_returns_invalid_name_error",
+                "EnvGetEmptyNameReturnsInvalidNameError",
             );
             lower_corelib_tests_entrypoint(
                 "system/SystemSuite.bd",
-                "env_set_empty_name_returns_invalid_name_error",
+                "EnvSetEmptyNameReturnsInvalidNameError",
             );
         });
     }

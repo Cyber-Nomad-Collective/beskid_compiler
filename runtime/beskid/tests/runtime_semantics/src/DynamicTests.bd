@@ -25,34 +25,34 @@ bool DynamicRejectedV1(pointer input, u64 token, word operation) {
     return rejected;
 }
 
-test dynamic_zero_shape_is_rejected {
+test DynamicZeroShapeIsRejected {
     Assert.True(DynamicRejectedV1(NativePointer(0), 0_u64, 0), "zero shape rejects without publishing output");
 }
-test dynamic_unknown_source_shape_is_checked {
+test DynamicUnknownSourceShapeIsChecked {
     pointer foreign = SystemAllocate(40, 8);
     memory_set(foreign, 0, 40);
     Assert.True(DynamicRejectedV1(foreign, 37_u64, 1), "unregistered foreign cell rejects before dereference");
     SystemFree(foreign, 40);
 }
-test dynamic_mapping_rejects_zero_token_without_source_alias {
+test DynamicMappingRejectsZeroTokenWithoutSourceAlias {
     pointer foreign = SystemAllocate(40, 8);
     memory_set(foreign, 0, 40);
     Assert.True(DynamicRejectedV1(foreign, 0_u64, 2), "zero mapping token has no passthrough path");
     SystemFree(foreign, 40);
 }
-test dynamic_mapping_rejects_unknown_token_without_source_alias {
+test DynamicMappingRejectsUnknownTokenWithoutSourceAlias {
     pointer foreign = SystemAllocate(40, 8);
     memory_set(foreign, 0, 40);
     Assert.True(DynamicRejectedV1(foreign, 83_u64, 2), "unknown mapping does not return source address");
     SystemFree(foreign, 40);
 }
-test dynamic_cell_rejects_unregistered_payload {
+test DynamicCellRejectsUnregisteredPayload {
     pointer foreign = SystemAllocate(24, 8);
     memory_set(foreign, 0, 24);
     Assert.True(DynamicRejectedV1(foreign, 71_u64, 0), "native allocation is not registered typed payload");
     SystemFree(foreign, 24);
 }
-test dynamic_box_preserves_canonical_descriptor_across_collection {
+test DynamicBoxPreservesCanonicalDescriptorAcrossCollection {
     pointer payload = DynamicTransportV1.beskid_rt_v5_dynamic_i64_box(101_i64);
     // Root the box before anything else allocates (an assertion message is a managed string):
     // under `BESKID_GC_STRESS=alloc` that allocation collects first.
@@ -66,7 +66,7 @@ test dynamic_box_preserves_canonical_descriptor_across_collection {
     Assert.Equal(raw_word_load(pointer_add(payload, 16)), word(101), "canonical primitive box retains value");
     GcUnrootHandle(root);
 }
-test dynamic_null_input_fails_closed {
+test DynamicNullInputFailsClosed {
     Assert.True(DynamicRejectedV1(NativePointer(0), 37_u64, 0), "null create rejects");
     Assert.True(DynamicRejectedV1(NativePointer(0), 37_u64, 1), "null cast rejects");
     Assert.True(DynamicRejectedV1(NativePointer(0), 37_u64, 2), "null map rejects");

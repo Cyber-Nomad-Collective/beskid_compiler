@@ -196,7 +196,7 @@ fn unimported_type_named_as_a_return_type_is_reported_at_the_item() {
 
 #[test]
 fn unimported_type_named_as_a_field_is_reported_at_the_field() {
-    let (db, _project, unit, generation, index) = support::setup("type Holder { Missing value }");
+    let (db, _project, unit, generation, index) = support::setup("type Holder { Missing value; }");
     let item = key(unit, generation, &index, NodeKind::TypeDefinition, 0);
     let outcome = key(unit, generation, &index, NodeKind::Field, 0);
 
@@ -261,7 +261,7 @@ fn same_unit_contract_named_as_a_parameter_type_resolves() {
 #[test]
 fn generic_contract_parameter_naming_the_contract_generic_resolves() {
     let (db, _project, unit, generation, index) = support::setup(
-        "type Holder<T> { T value } contract Bridge<T> { i64 Pack(Holder<T> boxed); T Echo(T value); }",
+        "type Holder<T> { T value; } contract Bridge<T> { i64 Pack(Holder<T> boxed); T Echo(T value); }",
     );
     for position in 0..2 {
         let item = key(unit, generation, &index, NodeKind::ContractMethodSignature, position);
@@ -276,7 +276,7 @@ fn generic_contract_parameter_naming_the_contract_generic_resolves() {
 #[test]
 fn generic_contract_parameter_naming_an_unknown_type_is_still_reported() {
     let (db, _project, unit, generation, index) =
-        support::setup("type Holder<T> { T value } contract Bridge<T> { i64 Pack(Holder<U> boxed); }");
+        support::setup("type Holder<T> { T value; } contract Bridge<T> { i64 Pack(Holder<U> boxed); }");
     let item = key(unit, generation, &index, NodeKind::ContractMethodSignature, 0);
     let outcome = key(unit, generation, &index, NodeKind::Parameter, 0);
 
@@ -291,7 +291,7 @@ fn generic_contract_parameter_naming_an_unknown_type_is_still_reported() {
 fn impl_block_parameter_named_in_a_method_body_resolves() {
     // `impl<E> Point : Sink<E>`: E is an impl parameter the receiver declaration does not declare.
     let (db, _project, unit, generation, index) = support::setup(
-        "pub contract Sink<E> { unit Put(E value); } pub type Point { pub i64 x, } \
+        "pub contract Sink<E> { unit Put(E value); } pub type Point { pub i64 x; } \
          impl<E> Point : Sink<E> { pub unit Put(E value) { E copy = value; return; } }",
     );
     let method = key(unit, generation, &index, NodeKind::MethodDefinition, 0);

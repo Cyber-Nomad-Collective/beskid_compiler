@@ -183,7 +183,7 @@ pub use legality::{
     UnitAttributeSurface, UnitAttributeUse, attribute_findings, check_attribute_obligations, resolve_attribute_use,
     unit_attribute_surface, GateObligationKind, GenericParameterConflict,
     ImmutableLocalAssignment,
-    MemberReferenceFinding, MemberReferenceKind, NonExhaustiveMatch, TypingObligation, TypingObligationKind,
+    MemberReferenceFinding, MemberReferenceKind, NonExhaustiveMatch, TypingObligation, TypingObligationKind, UnknownMember,
     UnitObligation, UnitObligationKind, UnresolvedCallKind, UnresolvedCallTarget, UnresolvedImport,
     UnresolvedValueArgument, ValueObligation, call_argument_type_mismatch, call_arity_mismatch, check_gate_obligations, check_items,
     check_typing_obligations,
@@ -193,7 +193,7 @@ pub use legality::{
 };
 pub use local_type_resolution::{UnresolvedTypeReference, unresolved_type_reference};
 use locals::{
-    ancestor_distance, constant_integer_literal_tracked, constant_integer_tracked, implicit_method_receiver_tracked, is_ancestor,
+    ancestor_distance, closest_visible_name, constant_integer_literal_tracked, constant_integer_tracked, implicit_method_receiver_tracked, is_ancestor,
     local_declaration_is_mutable, local_declaration_owner, local_declaration_scope, local_slot_for_declaration,
     local_slot_tracked, method_owner_declaration, method_owner_node, method_this_type, mutable_local_assignment_tracked, nearest_ancestor,
     parent_node, resolve_lexical_declaration, resolved_local_tracked,
@@ -263,9 +263,11 @@ pub use model::{
     ForIterableSource, ForIteratorFact, ForIteratorProtocol, FunctionItemValue, FunctionValueCall, GenericBindingConflict, GenericBoundViolation, GenericCallInstantiation, GenericCallSpecialization,
     GenericCallTemplate,
     GenericNominalMethodReceiver, GenericSpecializationInstance, GenericSubstitution, IndexedNodeKind, ItemSignature,
-    LiteralFact, LocalSlot, ManagedReferenceKind, ManifestBuiltin, MutableLocalAssignment, OperatorFact,
+    CompoundAssignmentOperator, LiteralFact, LocalSlot, ManagedReferenceKind, ManifestBuiltin, MutableLocalAssignment,
+    OperatorFact,
     PrimitiveNumericConversion, RangeForFact, ResolvedItem, ResolvedLocal, RuntimeIntrinsic, RuntimeIntrinsicName,
     ScalarAbiLayout, SemanticError, SemanticFinding, SemanticQueryResult, SemanticTypeId, SourceSpan, SourceUnitId,
+    UNAVAILABLE_MESSAGE_MARKER,
     SpawnDiagnostic, SpawnDiagnosticKind, SpawnEntryValidation, SpawnHandleType, SpawnLegality, SpawnTarget,
     SyntaxUnitInput, SyntaxUnitRevision, TestItem, TryExpressionFact, TypedArrayAllocation, TypedProgram,
     format_ast_node_key, format_ast_node_site, format_ast_node_trace, format_source_span_range,

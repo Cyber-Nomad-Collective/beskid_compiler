@@ -6,7 +6,7 @@ use super::super::support::{
     lower_syntax_program,
 };
 
-const BAG: &str = "type Bag<T> { T[] values, i64 count, Bag<T> Put(T next) { return Bag<T> { values: values, count: count + 1 }; } i64 Size() { return count; } } T[] NoValues<T>() { return []; } Bag<T> Empty<T>() { return Bag<T> { values: NoValues<T>(), count: 0 }; }";
+const BAG: &str = "type Bag<T> { T[] values; i64 count; Bag<T> Put(T next) { return Bag<T> { values: values, count: count + 1 }; } i64 Size() { return count; } } T[] NoValues<T>() { return []; } Bag<T> Empty<T>() { return Bag<T> { values: NoValues<T>(), count: 0 }; }";
 
 /// Lower every method and function of one fixture and return the emitted function names.
 fn lower_all(source: &str) -> Vec<String> {
@@ -89,10 +89,10 @@ enum Error { Failed() }
 enum Result<TValue, TError> { Ok(TValue value), Error(TError error) }
 contract Source { Result<i64, Error> Begin(i64 limit); }
 type Reader : Source {
-    i64 n,
+    i64 n;
     pub Result<i64, Error> Begin(i64 limit) { return Result::Ok(limit + n); }
 }
-type Bag<T> { T[] values, i64 count, Bag<T> Put(T next) { return Bag<T> { values: values, count: count + 1 }; } i64 Size() { return count; } }
+type Bag<T> { T[] values; i64 count; Bag<T> Put(T next) { return Bag<T> { values: values, count: count + 1 }; } i64 Size() { return count; } }
 T[] NoValues<T>() { return []; }
 Bag<T> Empty<T>() { return Bag<T> { values: NoValues<T>(), count: 0 }; }
 Result<T, Error> ReadOne<T, R>(R reader, T value) where R: Source { i64 begun = reader.Begin(1_i64)?; return Result::Ok(value); }
@@ -102,10 +102,10 @@ Result<Bag<T>, Error> Collect<T, R>(R reader, T value) where R: Source {
 }
 Result<unit, Error> Admit<T>(i64 limit) { if (limit < 0_i64) { return Result::Error(Error::Failed()); } return Result::Ok(()); }
 Result<T, Error> Load<T>(T value, i64 limit) { Admit<T>(limit)?; return Result::Ok(value); }
-type Point { i64 x }
-type Boxed<T> { T item, T[] history }
+type Point { i64 x; }
+type Boxed<T> { T item; T[] history; }
 enum Option<T> { Some(T value), None() }
-type Holder<T> { T item }
+type Holder<T> { T item; }
 Result<Holder<T>, Error> Assemble<T, R>(R reader, T value) where R: Source {
     mut Option<T> slot = Option<T>::None();
     slot = Option<T>::Some(ReadOne<T, R>(reader, value)?);

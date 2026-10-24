@@ -163,10 +163,10 @@ fn matches_on_generic_record_fields_are_proven_in_their_specializations() {
     };
 
     const HOLDER: &str = "enum Option<T> { Some(T value), None } \
-         type Holder<T> { Option<T[]> slot, \
+         type Holder<T> { Option<T[]> slot; \
          i64 Has() { return match this.slot { Option::Some(_) => 1_i64, Option::None => 0_i64, }; } \
          T FirstOr(T fallback) { let x = match slot { Option::Some(values) => values[0], Option::None => fallback, }; return x; } } \
-         type Outer<T> { Holder<T> inner } \
+         type Outer<T> { Holder<T> inner; } \
          i64 HasFn<T>(Holder<T> h) { return match h.slot { Option::Some(_) => 1_i64, Option::None => 0_i64, }; } \
          T FirstFn<T>(Holder<T> h, T fallback) { let x = match (h).slot { Option::Some(values) => values[0], Option::None => fallback, }; return x; } \
          i64 HasOuter<T>(Outer<T> o) { return match o.inner.slot { Option::Some(_) => 1_i64, Option::None => 0_i64, }; } ";

@@ -1,4 +1,5 @@
 use crate::format::emit::{Emit, EmitCtx, EmitError};
+use crate::format::lines::{Line, body_is_empty, emit_line, open_body};
 use crate::syntax::{Spanned, TestDefinition, TestMetaSection, TestMetadataEntry, TestSkipEntry, TestSkipSection};
 use std::fmt::Write;
 
@@ -38,116 +39,90 @@ impl Emit for Spanned<TestSkipEntry> {
     }
 }
 
-impl Emit for TestMetaSection {
-    fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
-        cx.token(w, "meta")?;
-        if self.entries.is_empty() {
-            cx.space(w)?;
-            w.write_str("{ }")?;
-            return Ok(());
-        }
-        cx.nl(w)?;
-        cx.write_indent(w)?;
-        cx.open_brace(w)?;
-        for (idx, entry) in self.entries.iter().enumerate() {
-            if idx > 0 {
-                cx.between_members(w)?;
-            }
-            cx.write_indent(w)?;
-            entry.emit(w, cx)?;
-            cx.nl(w)?;
-        }
-        cx.close_brace(w)?;
-        Ok(())
-    }
-}
-
 impl Emit for Spanned<TestMetaSection> {
     fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
-        self.node.emit(w, cx)
-    }
-}
-
-impl Emit for TestSkipSection {
-    fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
-        cx.token(w, "skip")?;
-        if self.entries.is_empty() {
+        cx.token(w, "meta")?;
+        if body_is_empty(cx, self.node.entries.len(), self.span.end) {
             cx.space(w)?;
             w.write_str("{ }")?;
             return Ok(());
         }
-        cx.nl(w)?;
-        cx.write_indent(w)?;
-        cx.open_brace(w)?;
-        for (idx, entry) in self.entries.iter().enumerate() {
-            if idx > 0 {
-                cx.between_members(w)?;
-            }
-            cx.write_indent(w)?;
-            entry.emit(w, cx)?;
-            cx.nl(w)?;
+        open_body(w, cx)?;
+        for entry in &self.node.entries {
+            emit_line(w, cx, Line::new(entry.span), "", |w, cx| entry.emit(w, cx))?;
         }
-        cx.close_brace(w)?;
-        Ok(())
+        cx.close_brace(w, self.span.end)
     }
 }
 
 impl Emit for Spanned<TestSkipSection> {
     fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
-        self.node.emit(w, cx)
-    }
-}
-
-impl Emit for TestDefinition {
-    fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
-        crate::format::attribute_lists::emit_attribute_block(&self.attributes, w, cx)?;
-        self.visibility.emit(w, cx)?;
-        cx.token(w, "test")?;
-        cx.space(w)?;
-        self.name.emit(w, cx)?;
-        if self.meta.is_none() && self.skip.is_none() && self.statements.is_empty() {
+        cx.token(w, "skip")?;
+        if body_is_empty(cx, self.node.entries.len(), self.span.end) {
             cx.space(w)?;
             w.write_str("{ }")?;
             return Ok(());
         }
-
-        cx.nl(w)?;
-        cx.write_indent(w)?;
-        cx.open_brace(w)?;
-
-        let mut first = true;
-        if let Some(meta) = &self.meta {
-            cx.write_indent(w)?;
-            meta.emit(w, cx)?;
-            cx.nl(w)?;
-            first = false;
+        open_body(w, cx)?;
+        for entry in &self.node.entries {
+            emit_line(w, cx, Line::new(entry.span), "", |w, cx| entry.emit(w, cx))?;
         }
-        if let Some(skip) = &self.skip {
-            if !first {
-                cx.between_members(w)?;
-            }
-            cx.write_indent(w)?;
-            skip.emit(w, cx)?;
-            cx.nl(w)?;
-            first = false;
-        }
-        for statement in &self.statements {
-            if !first {
-                cx.between_members(w)?;
-            }
-            cx.write_indent(w)?;
-            statement.emit(w, cx)?;
-            cx.nl(w)?;
-            first = false;
-        }
-
-        cx.close_brace(w)?;
-        Ok(())
+        cx.close_brace(w, self.span.end)
     }
+}
+
+/// One element of a test body, in source order.
+enum TestItem<'a> {
+    Meta(&'a Spanned<TestMetaSection>),
+    Skip(&'a Spanned<TestSkipSection>),
+    Statement(&'a Spanned<crate::syntax::Statement>, Option<&'a crate::doc::LeadingDocComment>),
 }
 
 impl Emit for Spanned<TestDefinition> {
     fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
-        self.node.emit(w, cx)
+        let this = &self.node;
+        crate::format::attribute_lists::emit_attribute_block(&this.attributes, w, cx)?;
+        this.visibility.emit(w, cx)?;
+        cx.token(w, "test")?;
+        cx.space(w)?;
+        this.name.emit(w, cx)?;
+        let count = this.statements.len() + usize::from(this.meta.is_some()) + usize::from(this.skip.is_some());
+        if body_is_empty(cx, count, self.span.end) {
+            cx.space(w)?;
+            w.write_str("{ }")?;
+            return Ok(());
+        }
+        open_body(w, cx)?;
+
+        let mut items: Vec<(usize, TestItem<'_>)> = Vec::new();
+        if let Some(meta) = &this.meta {
+            items.push((meta.span.start, TestItem::Meta(meta)));
+        }
+        if let Some(skip) = &this.skip {
+            items.push((skip.span.start, TestItem::Skip(skip)));
+        }
+        for (i, statement) in this.statements.iter().enumerate() {
+            let doc = this.statement_docs.get(i).and_then(Option::as_ref);
+            let start = doc.map_or(statement.span.start, |d| d.span.start.min(statement.span.start));
+            items.push((start, TestItem::Statement(statement, doc)));
+        }
+        items.sort_by_key(|(start, _)| *start);
+
+        // `meta` and `skip` sections stand apart from the statements; statements keep the
+        // author's grouping.
+        let mut previous_was_section: Option<bool> = None;
+        for (_, item) in &items {
+            let is_section = !matches!(item, TestItem::Statement(..));
+            let blank = previous_was_section.is_some_and(|p| p || is_section);
+            previous_was_section = Some(is_section);
+            match item {
+                TestItem::Meta(meta) => emit_line(w, cx, Line::new(meta.span).blank(blank), "", |w, cx| meta.emit(w, cx))?,
+                TestItem::Skip(skip) => emit_line(w, cx, Line::new(skip.span).blank(blank), "", |w, cx| skip.emit(w, cx))?,
+                TestItem::Statement(statement, doc) => {
+                    emit_line(w, cx, Line::new(statement.span).doc(*doc).blank(blank), "", |w, cx| statement.emit(w, cx))?
+                }
+            }
+        }
+        cx.close_brace(w, self.span.end)
     }
 }

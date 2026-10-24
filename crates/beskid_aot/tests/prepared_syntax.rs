@@ -36,7 +36,7 @@ fn entry_identity_is_the_free_function_even_when_a_type_method_shares_its_name()
     std::fs::create_dir_all(&directory).expect("create project");
     let path = directory.join("Main.bd");
     // The type and its `Main` method precede the program entry and have a different result type.
-    let source = "type Other { i64 value, i64 Main() { return this.value; } } \
+    let source = "type Other { i64 value; i64 Main() { return this.value; } } \
                   i32 Main() { Other other = Other { value: 3_i64 }; i64 seen = other.Main(); return 0; }";
     std::fs::write(&path, source).expect("write source");
     let plan = synthetic_compile_plan_for_source(&path);

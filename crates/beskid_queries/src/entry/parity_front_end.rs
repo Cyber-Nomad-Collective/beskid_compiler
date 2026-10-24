@@ -31,25 +31,25 @@ fn legacy_executable_front_end_acceptances_stay_silent() {
             ),
             (
                 "a bare sibling method call beats a same-named free function",
-                "pub type Counter { i64 value, pub i64 Add(i64 amount) { return value + amount; } \
+                "pub type Counter { i64 value; pub i64 Add(i64 amount) { return value + amount; } \
                  pub i64 Twice(i64 amount) { return Add(Add(amount)); } } \
                  pub i64 Add(Counter counter, i64 amount, i64 extra) { return counter.value + amount + extra; }",
             ),
             (
                 "a free function stays callable by module path and outside methods",
                 "mod Tools { pub i64 Add(Counter counter, i64 amount, i64 extra) { return counter.value + amount + extra; } } \
-                 pub type Counter { i64 value, pub i64 Add(i64 amount) { return value + amount; } \
+                 pub type Counter { i64 value; pub i64 Add(i64 amount) { return value + amount; } \
                  pub i64 Both(i64 amount) { return Tools.Add(this, Add(amount), 1); } } \
                  pub i64 Add(Counter counter, i64 amount, i64 extra) { return counter.value + amount + extra; } \
                  pub i64 UseFree() { Counter counter = Counter { value: 1 }; return Add(counter, 2, 3); }",
             ),
             (
                 "a bare sibling method in a generic type dispatches on the receiver",
-                "pub type Holder<T> { T item, pub bool Has() { return true; } pub bool Check() { return Has(); } }",
+                "pub type Holder<T> { T item; pub bool Has() { return true; } pub bool Check() { return Has(); } }",
             ),
             (
                 "bare receiver field reads resolve in type-body methods",
-                "pub type Port { u8 high, u8 low, pub i64 Value() { return i64(high) * 256_i64 + i64(low); } }",
+                "pub type Port { u8 high; u8 low; pub i64 Value() { return i64(high) * 256_i64 + i64(low); } }",
             ),
         ],
         BASE,
@@ -70,13 +70,13 @@ fn legacy_executable_front_end_rejections_are_reported() {
                 "an unknown bare call inside a method",
                 "ResolveUnknownValue",
                 "E1101",
-                "pub type Counter { i64 value, pub i64 Get() { return Missing(); } }",
+                "pub type Counter { i64 value; pub i64 Get() { return Missing(); } }",
             ),
             (
                 "a missing accessible struct field",
                 "TypeMissingStructField",
                 "E1212",
-                "pub type Pair { pub i64 left, pub i64 right } i64 Main() { Pair pair = Pair { left: 1_i64 }; return pair.left; }",
+                "pub type Pair { pub i64 left; pub i64 right; } i64 Main() { Pair pair = Pair { left: 1_i64 }; return pair.left; }",
             ),
         ],
         BASE + 100,
@@ -94,11 +94,11 @@ fn dependency_signatures_use_their_own_same_leaf_type() {
             ),
             (
                 "Probe/Text/Regex/Bounded.bd",
-                "pub type PatternLimits { pub i64 work, } pub i64 Read(PatternLimits policy) { return policy.work; }",
+                "pub type PatternLimits { pub i64 work; } pub i64 Read(PatternLimits policy) { return policy.work; }",
             ),
             (
                 "Probe/Bsol/Schema.bd",
-                "use Probe.Text.Regex.Bounded; pub type PatternLimits { pub i64 depth, } \
+                "use Probe.Text.Regex.Bounded; pub type PatternLimits { pub i64 depth; } \
                  pub i64 Validate(PatternLimits policy) { return policy.depth; }",
             ),
         ],
@@ -107,8 +107,8 @@ fn dependency_signatures_use_their_own_same_leaf_type() {
     assert!(findings.is_empty(), "each signature keeps its lexical type declaration: {:?}", codes(&findings));
 }
 
-const NODES: &str = "pub type NodeRef { pub u64 issuer, pub u64 node, } pub type NodeSpan { pub u64 start, pub u64 end, }";
-const QUERY: &str = "use Probe.Syntax.Nodes; pub type SyntaxQuery { pub Probe.Syntax.Nodes.NodeRef start, pub u64 bound, } \
+const NODES: &str = "pub type NodeRef { pub u64 issuer; pub u64 node; } pub type NodeSpan { pub u64 start; pub u64 end; }";
+const QUERY: &str = "use Probe.Syntax.Nodes; pub type SyntaxQuery { pub Probe.Syntax.Nodes.NodeRef start; pub u64 bound; } \
      pub SyntaxQuery At(Probe.Syntax.Nodes.NodeRef root) { return SyntaxQuery { start: root, bound: 1_u64 }; } \
      pub Probe.Syntax.Nodes.NodeSpan Span(Probe.Syntax.Nodes.NodeRef node) { return Probe.Syntax.Nodes.NodeSpan { start: node.node, end: node.node }; }";
 

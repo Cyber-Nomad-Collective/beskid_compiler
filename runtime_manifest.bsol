@@ -2434,7 +2434,7 @@ trap "out_of_memory" { code = 5 }
 trap "invalid_or_stale_handle" { code = 6 }
 trap "scheduler_deadlock" { code = 7 }
 trap "abi_or_layout_mismatch" { code = 8 }
-trap "unreachable_or_isle_invariant" { code = 9 }
+trap "panic" { code = 9 }
 trap "runtime_internal_corruption" { code = 10 }
 trap "extern_unavailable" { code = 11 }
 

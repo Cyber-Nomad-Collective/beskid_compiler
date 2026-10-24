@@ -324,9 +324,17 @@ pub unit ChannelWakeAll(pointer ch, word waiterOffset) {
     return;
 }
 // Enter and return locked. Predicate/register/unlock cannot lose a wake.
+// The root caller (Main) parks by driving the scheduler with the channel unlocked; the caller
+// re-checks its predicate after every round, so it needs no waiter registration.
 pub i64 ChannelPark(pointer ch, word waiterOffset) {
     word index = SchedulerCurrentFiber();
-    if index == FIBER_NONE || !FiberExists(index) { return CHANNEL_STATUS_WOULD_BLOCK; }
+    if index == FIBER_NONE {
+        ChannelUnlock(ch);
+        SchedulerRootWait();
+        ChannelLock(ch);
+        return CHANNEL_STATUS_OK;
+    }
+    if !FiberExists(index) { return CHANNEL_STATUS_WOULD_BLOCK; }
     if ChannelCancelled() { return CHANNEL_STATUS_CANCELLED; }
     pointer fiber = FiberRecord(index);
     // Registration precedes the unlock, so a wake between unlock and switch is never lost.

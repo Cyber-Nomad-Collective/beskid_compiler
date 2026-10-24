@@ -10,19 +10,19 @@ use std::sync::Arc;
 
 const SOURCE: &str = r#"
 pub type GlueOwnerRecord {
-    pub GlueOwnerRecord[] next,
-    pub u8[] payload,
-    pub pointer foreignBuffer,
-    pub word length,
-    pub word allocationSize,
-    pub u64 processIssuer,
-    pub u64 session,
-    pub u64 library,
-    pub u64 generation,
-    pub u64 kind,
-    pub u64 shape,
-    pub u64 token,
-    pub u64 released,
+    pub GlueOwnerRecord[] next;
+    pub u8[] payload;
+    pub pointer foreignBuffer;
+    pub word length;
+    pub word allocationSize;
+    pub u64 processIssuer;
+    pub u64 session;
+    pub u64 library;
+    pub u64 generation;
+    pub u64 kind;
+    pub u64 shape;
+    pub u64 token;
+    pub u64 released;
 }
 pub GlueOwnerRecord Construct(GlueOwnerRecord[] next, u8[] payload, pointer foreignBuffer,
     word length, word allocationSize, u64 processIssuer, u64 session, u64 library,
@@ -43,8 +43,8 @@ fn registered_owner_record_constructor_owns_its_traced_descriptor_geometry() {
 fn ordinary_mixed_record_traces_managed_fields_but_not_native_pointer() {
     assert_geometry(
         r#"
-        type Leaf { i64 value }
-        type Mixed { pointer native, u8[] bytes, Leaf leaf, word scalar }
+        type Leaf { i64 value; }
+        type Mixed { pointer native; u8[] bytes; Leaf leaf; word scalar; }
         Mixed Construct(pointer native, u8[] bytes, Leaf leaf, word scalar) {
             return Mixed { native: native, bytes: bytes, leaf: leaf, scalar: scalar };
         }
@@ -59,7 +59,7 @@ fn ordinary_mixed_record_traces_managed_fields_but_not_native_pointer() {
 fn native_pointer_only_record_has_no_gc_trace_slots() {
     assert_geometry(
         r#"
-        type Native { pointer address, u64 tag }
+        type Native { pointer address; u64 tag; }
         Native Construct(pointer address, u64 tag) {
             return Native { address: address, tag: tag };
         }
@@ -74,7 +74,7 @@ fn native_pointer_only_record_has_no_gc_trace_slots() {
 fn ordinary_utf8_geometry_traces_only_its_managed_backing_array() {
     assert_geometry(
         r#"
-        type Utf8ViewRecord { u8[] payload, pointer data, word length }
+        type Utf8ViewRecord { u8[] payload; pointer data; word length; }
         Utf8ViewRecord Construct(u8[] payload, pointer data, word length) {
             return Utf8ViewRecord { payload: payload, data: data, length: length };
         }
@@ -88,7 +88,7 @@ fn ordinary_utf8_geometry_traces_only_its_managed_backing_array() {
 #[test]
 fn ordinary_utf8_lookalike_cannot_issue_canonical_view_descriptor() {
     let source = r#"
-        type Utf8ViewRecord { u8[] payload, pointer data, word length }
+        type Utf8ViewRecord { u8[] payload; pointer data; word length; }
         Utf8ViewRecord Construct(u8[] payload, pointer data, word length) {
             return Utf8ViewRecord { payload: payload, data: data, length: length };
         }

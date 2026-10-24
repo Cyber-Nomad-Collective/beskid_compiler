@@ -9,7 +9,7 @@ use std::borrow::Cow;
 use std::env;
 use std::io::{IsTerminal, Write, stderr};
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use anyhow::Result;
 use beskid_analysis::analysis::SemanticDiagnostic;
@@ -36,6 +36,14 @@ pub enum PipelineProgressKind {
     FullBuild,
     ModBuild,
     PrepareAndRun,
+}
+
+/// A step must run this long before the transient progress line appears; faster steps stay silent.
+pub const PROGRESS_DELAY: Duration = Duration::from_secs(1);
+
+/// Whether a step that has run for `elapsed` is slow enough for a progress line.
+pub fn progress_due(elapsed: Duration) -> bool {
+    elapsed >= PROGRESS_DELAY
 }
 
 /// Persistent phase lines with a bounded, input-free TTY progress line.
@@ -95,14 +103,14 @@ impl CliPipeline {
         let counts = count_severities(diagnostics);
         self.halt_progress_bars_for_output();
         if diagnostics.is_empty() {
-            self.println_session("No diagnostics.");
+            self.println_detail("No diagnostics.");
             return counts;
         }
         for diagnostic in crate::diagnostics::authored_diagnostics(diagnostics.iter().cloned()) {
             crate::diagnostics::eprint_diagnostic(&diagnostic);
         }
         let _ = stderr().flush();
-        self.println_session(format!("Analysis: {}", format_severity_summary(counts)));
+        self.println_status(format!("Analysis: {}", format_severity_summary(counts)));
         counts
     }
 
@@ -112,21 +120,37 @@ impl CliPipeline {
             return;
         }
         *finished = true;
-        self.finish_session(message);
+        self.finish_detail(message);
     }
 
     pub fn prepare_ui_finished(&self) -> bool {
         *self.prepare_ui_finished.lock().expect("prepare mutex poisoned")
     }
 
-    /// Print one progress or summary line on stderr; `--quiet` suppresses these lines, never
-    /// diagnostics or command results.
-    pub fn println_session(&self, line: impl AsRef<str>) {
+    /// Print the command's status line on stderr (default output and above). `-q` suppresses it,
+    /// never diagnostics or command results. A command prints at most one per outcome.
+    pub fn println_status(&self, line: impl AsRef<str>) {
         self.halt_progress_bars_for_output();
-        if beskid_telemetry::verbosity() == beskid_telemetry::Verbosity::Quiet {
+        if !beskid_telemetry::verbosity().shows_status() {
             return;
         }
         eprintln!("{}", line.as_ref());
+    }
+
+    /// Print one pipeline detail line (phase tree, work units, sub-steps) on stderr; only `-v` and
+    /// above show these.
+    pub fn println_detail(&self, line: impl AsRef<str>) {
+        self.halt_progress_bars_for_output();
+        if !beskid_telemetry::verbosity().shows_detail() {
+            return;
+        }
+        eprintln!("{}", line.as_ref());
+    }
+
+    /// Finish a pipeline stage that is not the command's last: reported with `-v` only.
+    pub fn finish_detail(&self, message: impl Into<Cow<'static, str>>) {
+        self.flush_pending_work_unit();
+        self.println_detail(format!("{} in {}", message.into(), format_duration(self.started_at.elapsed())));
     }
 
     pub fn finish_session(&self, message: impl Into<Cow<'static, str>>) {
@@ -139,10 +163,10 @@ impl CliPipeline {
         summary: Option<tui::CommandSummary>,
     ) {
         self.flush_pending_work_unit();
-        self.println_session(format!("{} in {}", message.into(), format_duration(self.started_at.elapsed())));
+        self.println_status(format!("{} in {}", message.into(), format_duration(self.started_at.elapsed())));
         if let Some(summary) = summary {
             for stat in summary.stats {
-                self.println_session(format!("  {}: {}", stat.label, stat.value));
+                self.println_detail(format!("  {}: {}", stat.label, stat.value));
             }
         }
     }
@@ -156,12 +180,23 @@ impl CliPipeline {
     fn flush_pending_work_unit(&self) {
         let pending = self.pending_work_unit.lock().expect("work unit mutex poisoned").take();
         if let Some(line) = pending {
-            self.println_session(line);
+            self.println_detail(line);
         }
     }
 
+    /// Time the running top-level step has been going, or the whole command when between steps.
+    fn step_elapsed(&self) -> Duration {
+        let stack = self.phase_stack.lock().expect("phase mutex poisoned");
+        stack.first().map_or_else(|| self.started_at.elapsed(), |entry| entry.started.elapsed())
+    }
+
     fn show_progress(&self, done: u64, total: u64, label: &str) {
-        if self.plain || beskid_telemetry::verbosity() == beskid_telemetry::Verbosity::Quiet {
+        // `plain` is set unless stderr is an interactive terminal; `-q` and `-v` (whose phase lines
+        // already narrate the work) never draw the transient line either.
+        if self.plain || beskid_telemetry::verbosity() != beskid_telemetry::Verbosity::Normal {
+            return;
+        }
+        if !progress_due(self.step_elapsed()) {
             return;
         }
         let width = crossterm::terminal::size().map(|(width, _)| usize::from(width)).unwrap_or(80).saturating_sub(1);
@@ -192,7 +227,7 @@ impl CliPipeline {
             stack.push(PhaseStackEntry { started: Instant::now() });
             depth
         };
-        self.println_session(format_phase_start(depth, self.plain, phase_label(id)));
+        self.println_detail(format_phase_start(depth, self.plain, phase_label(id)));
     }
 
     fn on_phase_end(&self, id: &'static str) {
@@ -203,7 +238,7 @@ impl CliPipeline {
             let duration = stack.pop().map(|entry| entry.started.elapsed()).unwrap_or_default();
             (depth, duration)
         };
-        self.println_session(format_phase_end(depth, self.plain, phase_label(id), &format_duration(duration)));
+        self.println_detail(format_phase_end(depth, self.plain, phase_label(id), &format_duration(duration)));
         if depth == 0 {
             let mut position = self.total_pos.lock().expect("total mutex poisoned");
             *position = position.saturating_add(1);
@@ -250,25 +285,50 @@ impl PipelineObserver for CliPipeline {
             PipelineEvent::PhaseStart { id } => self.on_phase_start(id),
             PipelineEvent::PhaseEnd { id } => self.on_phase_end(id),
             PipelineEvent::WorkUnit { id: _, done, total, label } => {
+                if !beskid_telemetry::verbosity().shows_detail() {
+                    self.show_progress(done, total, &label);
+                    return;
+                }
                 let depth = self.phase_stack.lock().expect("phase mutex poisoned").len().saturating_add(1);
                 let line = format_work_unit(depth, self.plain, done, total, &label);
                 let emit = {
                     let mut events = self.work_unit_events.lock().expect("work unit mutex poisoned");
                     *events = events.saturating_add(1);
-                    // `--verbose` reports every work unit; otherwise long phases are sampled.
-                    beskid_telemetry::verbosity() == beskid_telemetry::Verbosity::Verbose
+                    // `-vv` reports every work unit; `-v` samples long phases.
+                    beskid_telemetry::verbosity() == beskid_telemetry::Verbosity::Debug
                         || *events == 1
                         || events.is_multiple_of(32)
                         || done >= total
                 };
                 if emit {
                     self.pending_work_unit.lock().expect("work unit mutex poisoned").take();
-                    self.println_session(line);
+                    self.println_detail(line);
                 } else {
                     *self.pending_work_unit.lock().expect("work unit mutex poisoned") = Some(line);
                 }
                 self.show_progress(done, total, &label);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod v067_tests {
+    use super::*;
+
+    #[test]
+    fn progress_appears_only_after_about_one_second() {
+        assert!(!progress_due(Duration::ZERO));
+        assert!(!progress_due(Duration::from_millis(999)));
+        assert!(progress_due(PROGRESS_DELAY));
+        assert!(progress_due(Duration::from_secs(5)));
+    }
+
+    #[test]
+    fn non_terminal_sessions_never_draw_progress() {
+        // `new_with_kind(false, ..)` is the `--plain` / piped-stderr configuration.
+        let pipeline = CliPipeline::new_with_kind(false, PipelineProgressKind::FullBuild);
+        assert!(pipeline.plain);
+        assert!(pipeline.step_elapsed() < PROGRESS_DELAY);
     }
 }

@@ -6,8 +6,8 @@ use Testing.Assert;
 // Shape, packing, mapping and extraction use the actual public managed APIs; the
 // mapping token is issued only by the compiler from Mapping<S, D>().
 
-pub type DynamicFixtureSource { pub i64 value, }
-pub type DynamicFixtureDestination { pub i64 value, pub Option<i64> absent, }
+pub type DynamicFixtureSource { pub i64 value; }
+pub type DynamicFixtureDestination { pub i64 value; pub Option<i64> absent; }
 
 Result<DynamicValueV1, DynamicErrorV1> CreateScopedSource(u64 shape, i64 value) {
     DynamicPayloadV1 payload = match Pack<DynamicFixtureSource>(DynamicFixtureSource { value: value }) {
@@ -17,7 +17,7 @@ Result<DynamicValueV1, DynamicErrorV1> CreateScopedSource(u64 shape, i64 value) 
     return Create(payload, shape);
 }
 
-test dynamic_v1_registered_cell_only_root_survives_collection {
+test DynamicV1RegisteredCellOnlyRootSurvivesCollection {
     u64 shape = Shape<DynamicFixtureSource>();
     DynamicValueV1 cell = match CreateScopedSource(shape, 71_i64) {
         Result::Ok(value) => value,
@@ -35,7 +35,7 @@ test dynamic_v1_registered_cell_only_root_survives_collection {
     Assert.Equal(unpacked.value, 71_i64, "payload reachable only through cell retains contents");
 }
 
-test dynamic_v1_registered_mapping_is_fresh_and_preserves_source {
+test DynamicV1RegisteredMappingIsFreshAndPreservesSource {
     u64 sourceShape = Shape<DynamicFixtureSource>();
     u64 destinationShape = Shape<DynamicFixtureDestination>();
     u64 mapping = match Mapping<DynamicFixtureSource, DynamicFixtureDestination>() { Result::Ok(value) => value, Result::Error(_) => { Assert.True(false, "compiler-issued mapping registration"); return; }, };
@@ -61,7 +61,7 @@ test dynamic_v1_registered_mapping_is_fresh_and_preserves_source {
     Assert.Equal(sourceValue.value, 83_i64, "source remains unchanged");
 }
 
-test dynamic_v1_zero_tokens_and_unknown_mapping_fail_closed {
+test DynamicV1ZeroTokensAndUnknownMappingFailClosed {
     DynamicPayloadV1 payload = match Pack<DynamicFixtureSource>(DynamicFixtureSource { value: 101_i64 }) {
         Result::Ok(value) => value, Result::Error(_) => { Assert.True(false, "packing"); return; },
     };

@@ -50,9 +50,9 @@ fn syscall_result_predicates_have_call_derived_pointer_specializations() {
                         matches!(
                             item_name(db, *key).ok().flatten().as_deref(),
                             Some(
-                                "syscall_write_empty_string_returns_non_negative"
-                                    | "syscall_write_stdout_smoke"
-                                    | "syscall_write_prints_newline"
+                                "SyscallWriteEmptyStringReturnsNonNegative"
+                                    | "SyscallWriteStdoutSmoke"
+                                    | "SyscallWritePrintsNewline"
                             )
                         )
                     })
@@ -80,7 +80,7 @@ fn syscall_result_predicates_have_call_derived_pointer_specializations() {
                     .map(|node| AstNodeKey { unit, generation, node })
                     .find(|key| {
                         item_name(db, *key).ok().flatten().as_deref()
-                            == Some("syscall_write_empty_string_returns_non_negative")
+                            == Some("SyscallWriteEmptyStringReturnsNonNegative")
                     })
                     .expect("syscall test entrypoint");
                 let root = AstNodeKey { unit, generation, node: AstNodeId(0) };

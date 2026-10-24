@@ -5,6 +5,7 @@ pub mod diagnostic_codes;
 pub mod diagnostic_kinds;
 pub mod diagnostics;
 pub mod rules;
+pub mod suggest;
 
 pub use builtin::builtin_rules;
 pub use diagnostic_kinds::SemanticIssueKind;

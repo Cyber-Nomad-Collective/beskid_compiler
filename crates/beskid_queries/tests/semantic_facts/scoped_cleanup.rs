@@ -199,7 +199,7 @@ fn scoped_acquisition_requires_source_proven_fresh_ownership() {
         ("Resource Loop() { return Loop(); }", "Loop()", false),
         ("", "Unknown()", false),
         ("", "factory()", false),
-        ("type Holder { Resource item, pub Resource Borrow() { return item; } }", "holder.Borrow()", false),
+        ("type Holder { Resource item; pub Resource Borrow() { return item; } }", "holder.Borrow()", false),
     ] {
         let source = format!(
             "{CONTRACT} {extra} Result<unit, DisposeError> Main(Resource existing) {{ use Resource resource = {initializer}; return Result::Ok(unit); }}"

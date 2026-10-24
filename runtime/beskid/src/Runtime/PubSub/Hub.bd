@@ -155,37 +155,45 @@ pub i64 HubUnregister(i64 hubId, i64 index) {
 }
 
 // Poll all channels round-robin until one delivers, then return index and value.
+// A fiber parks on the hub's waiter list; the root caller (Main) parks by driving the
+// scheduler between polls.
 [Export(Abi:"C", Symbol:"hub_wait_receive_status")]
 pub i64 HubWaitReceiveStatus(i64 hubId) {
-    pointer hub = HubById(hubId);
-    if hub == NativePointer(0) { return HUB_STATUS_HUB_NOT_FOUND; }
-    word entryCount = HubEntryCount(hub);
-    if entryCount == 0 { return HUB_STATUS_HUB_EMPTY; }
-    word startPos = raw_word_load(pointer_add(hub, HUB_CURSOR)) % entryCount;
-    mut word attempts = 0;
-    while attempts < entryCount {
-        word pos = (startPos + attempts) % entryCount;
-        pointer entry = HubEntry(hub, pos);
-        i64 chId = i64(raw_word_load(pointer_add(entry, 8)));
-        i64 status = ChannelClaimReceive(chId);
-        if status == CHANNEL_STATUS_OK {
-            raw_word_store(pointer_add(hub, HUB_CURSOR), (pos + 1) % entryCount);
-            return CHANNEL_STATUS_OK;
+    while true {
+        pointer hub = HubById(hubId);
+        if hub == NativePointer(0) { return HUB_STATUS_HUB_NOT_FOUND; }
+        word entryCount = HubEntryCount(hub);
+        if entryCount == 0 { return HUB_STATUS_HUB_EMPTY; }
+        word startPos = raw_word_load(pointer_add(hub, HUB_CURSOR)) % entryCount;
+        mut word attempts = 0;
+        while attempts < entryCount {
+            word pos = (startPos + attempts) % entryCount;
+            pointer entry = HubEntry(hub, pos);
+            i64 chId = i64(raw_word_load(pointer_add(entry, 8)));
+            i64 status = ChannelClaimReceive(chId);
+            if status == CHANNEL_STATUS_OK {
+                raw_word_store(pointer_add(hub, HUB_CURSOR), (pos + 1) % entryCount);
+                return CHANNEL_STATUS_OK;
+            }
+            attempts = attempts + 1;
         }
-        attempts = attempts + 1;
+        word fiberIndex = SchedulerCurrentFiber();
+        if fiberIndex == FIBER_NONE {
+            SchedulerRootWait();
+        } else {
+            if !FiberExists(fiberIndex) { return HUB_STATUS_HUB_EMPTY; }
+            pointer fiber = FiberRecord(fiberIndex);
+            if raw_byte_load(pointer_add(fiber, 41)) != 0 { return CHANNEL_STATUS_CANCELLED; }
+            if !VecPushWordUnique(pointer_add(hub, HUB_WAITERS), fiberIndex) { Trap(5, NativePointer(0), 0); }
+            FiberSetState(fiberIndex, FIBER_STATE_PARKED);
+            SaveFiberLocalState(fiberIndex);
+            SchedulerSetCurrentFiber(FIBER_NONE);
+            ContextSwitch(NativePointer(raw_word_load(pointer_add(fiber, 104))), SchedulerContext());
+            VecRemoveWord(pointer_add(hub, HUB_WAITERS), fiberIndex);
+            if raw_byte_load(pointer_add(fiber, 41)) != 0 { return CHANNEL_STATUS_CANCELLED; }
+        }
     }
-    mut word fiberIndex = SchedulerCurrentFiber();
-    if fiberIndex == FIBER_NONE || !FiberExists(fiberIndex) { return HUB_STATUS_HUB_EMPTY; }
-    pointer fiber = FiberRecord(fiberIndex);
-    if raw_byte_load(pointer_add(fiber, 41)) != 0 { return CHANNEL_STATUS_CANCELLED; }
-    if !VecPushWordUnique(pointer_add(hub, HUB_WAITERS), fiberIndex) { Trap(5, NativePointer(0), 0); }
-    FiberSetState(fiberIndex, FIBER_STATE_PARKED);
-    SaveFiberLocalState(fiberIndex);
-    SchedulerSetCurrentFiber(FIBER_NONE);
-    ContextSwitch(NativePointer(raw_word_load(pointer_add(fiber, 104))), SchedulerContext());
-    VecRemoveWord(pointer_add(hub, HUB_WAITERS), fiberIndex);
-    if raw_byte_load(pointer_add(fiber, 41)) != 0 { return CHANNEL_STATUS_CANCELLED; }
-    return HubWaitReceiveStatus(hubId);
+    return HUB_STATUS_HUB_EMPTY;
 }
 
 pub unit HubWakeChannel(i64 channelId) {

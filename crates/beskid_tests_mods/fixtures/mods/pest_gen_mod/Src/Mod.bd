@@ -4,7 +4,7 @@ pub type CollectRequest {}
 pub type CollectTargetSet {}
 pub type GenerationRequest {}
 pub type GeneratedSyntaxContribution {
-    SyntaxContributionItem[] items,
+    SyntaxContributionItem[] items;
 }
 pub type SyntaxContributionItem {}
 

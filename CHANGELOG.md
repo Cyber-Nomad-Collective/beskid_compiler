@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Testing
+
+- `beskid test` reports a failed assertion as `assertion failed: expected 3, found 4` with the because text and the `Assert` call site, once, under the test name. A runtime trap is reported as `test crashed: <reason>`. `--json` carries `failure` (kind, expected, actual, location) per failed test.
+- Test names use PascalCase; W1637 now reports a name that is not PascalCase. Corelib and fixture tests are renamed.
+
 ### Diagnostics
 
 - One structured diagnostic for every source of errors: a one-sentence
@@ -32,6 +37,91 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `--error-format=json` on `check`, `build`, `run`, `test`, `fmt` and
   `dev build` writes one rustc-style JSON object per diagnostic to stderr
   (schema in `docs/diagnostics-json.md`).
+### Changed
+- CLI output defaults: warnings and errors only; info logs and the pipeline tree need `-v`, debug logs `-vv`; `-q` prints errors and results only; `--plain` changes neither verbosity nor content except colour and animation.
+- Pipeline progress draws only on an interactive stderr and only for steps longer than about one second; `beskid run` prints at most one status line before the program's output.
+- Logs go to stderr, or to a file with `--log-file <path>` or `BESKID_LOG`.
+- `beskid` restores the default `SIGPIPE` action, so `beskid ... | head` ends quietly instead of aborting.
+- `beskid dev capabilities` reports `runtimeAbi`; `--version` and `cliVersion` show the build-time `BESKID_PREVIEW_LABEL` when set.
+### Runtime: Main as the root fiber, shutdown, child processes
+
+- `Main` parks like any other fiber. A blocking `Channel.Receive` or
+  `Channel.Send`, `WaitGroup.Wait`, `Mutex.Lock` or `Hub.WaitReceive` in
+  `Main` drives the scheduler until another fiber or pending I/O lets it
+  complete, as `Join` already did. `Receive` on an empty channel in `Main`
+  returned `Closed(0)`. `Time.Sleep`, socket and DNS operations, console
+  I/O and child-process waits in `Main` park the same way, so other fibers
+  run while `Main` sleeps, reads or runs a child; they failed at once or
+  busy-waited. When nothing can make progress the runtime traps with a
+  deadlock.
+- Returning from `Main` ends the process while a detached fiber is parked in
+  I/O, for example in `Input.ReadLine()`. The worker pool no longer joins a
+  worker blocked in the OS call of a cancelled request; the orphaned worker
+  frees its request when the call returns.
+- A child program name without a path separator resolves through the `PATH`
+  of the child's environment, like `execvp`; on Windows a name without an
+  extension gets `.exe`. `Process.Run("beskid", ...)` now finds `beskid`.
+- Corelib: `Process.Run` returns `Ok(output)` whenever the child started and
+  keeps stdout and stderr; `ProcessError::ExitCode` is removed and
+  `Process.Message(error)` describes an error. `ChannelError` and
+  `Concurrency.Status` gain `Unexpected(i64 code)`, and `ChannelError::Closed`
+  carries the channel handle. `HubError` and `MutexError` gain
+  `Unexpected(i64 code)` too, and a failed `Hub.Register` names its member
+  index.
+### Parse diagnostics
+
+- Parse errors are structured diagnostics with codes `E0101`-`E0113`. The
+  message says what was expected, what was being parsed and what was found
+  ("expected `(` while parsing host `App`, found `{`"); it points at the token
+  found, marks where the construct starts and carries one help line. No grammar
+  rule names, pest excerpts or recovery wording reach the user; a table beside
+  `beskid.pest` names every grammar rule in words, and a test fails when a rule
+  has none.
+- Quick fixes where the repair has one meaning, offered only when the parser
+  gets past the mistake with the fix applied: a missing `;`, unclosed
+  delimiters, `host Name {` (inserts `()`; replaces the stopgap line scan),
+  `i++`/`i--` (becomes `i += 1`/`i -= 1`) and `let x: T` (becomes `T x`).
+  A repaired parse is reported as the original error.
+- Own wording for a reserved word used as a name ("`test` is a reserved word;
+  choose another name") and for a block used as a match-arm value.
+
+### Language
+
+- String escapes `\n`, `\t`, `\r`, `\0` and `\u{...}` beside `\"`, `\\` and
+  `\${`. An unknown escape (`E0109`) or a `\u{...}` value that is not a Unicode
+  scalar value (`E0110`) is an error at the escape.
+- Compound assignments `*=`, `/=` and `%=` beside `+=` and `-=`.
+### Host composition
+
+- Host hooks run. `startup` runs once after `launch` builds the container; a
+  scope's `init` runs after `with` enters it and before the body; its `dispose`
+  runs on every exit of the body (end, `return`, `break`, `continue`). A global
+  `init` runs before `startup`, a global `dispose` before the container shuts
+  down. Across a host chain `init` and `startup` run base host first, `dispose`
+  launched host first. Hook parameters are resolved like `inject` fields.
+- A host may extend a base host declared in a library or in Corelib, such as
+  Corelib's new `ConsoleHost`.
+- Several registrations of one key inside one host are all kept; only a derived
+  host overrides a base registration. A singular `inject` of such a key is
+  E1705 with a fix to `inject T[] ts;`.
+- E1713 names the binding (`Clock`) and shows the base registration.
+- New diagnostics: E1717 `startup` inside a named scope, E1718 a contract
+  registered as itself (fix: the conforming type), E1719 a type the container
+  cannot create (value field, generic, enum), E1720 a registration for a
+  contract the type does not conform to, E1721 `with` outside the function
+  that launches the host.
+- Registry lines resolve their types (an unknown name is reported at the line),
+  and a contract named only by a registry line, a `where` bound or an `inject`
+  field is no longer an unused private item.
+
+### Added
+
+- pckg server: `GET /api/auth/session` identifies a bearer publisher key (`bpk_` key) by returning the owner subject, key name and scopes; unknown, revoked or malformed keys get 401, and the key and its hash are never returned.
+- Stability-proof gate for 0.6.7 (`scripts/v067-proof.sh`): a language-server soak
+  client (`beskid-soak`, crate `beskid_proof`), an internal-error sweep over Corelib,
+  Mods, fixtures, templates and the beskid-lings exercises with a deterministic
+  mutation corpus (`beskid-mutate`, `scripts/proof/ice_sweep.py`), and a clean-machine
+  onboarding check (`scripts/proof/onboarding_check.py`).
 
 ## [0.6.6] - 2026-10-16
 

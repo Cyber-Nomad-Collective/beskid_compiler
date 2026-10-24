@@ -41,7 +41,7 @@ fn nested_nominal_enum_payload_binding_lowers_without_hir() {
 #[test]
 fn nominal_match_payload_field_projection_lowers_from_authoritative_binding_layout() {
     let (input, isa, item) = item_fixture(
-        "type ParseSuccess<T> { T value, i64 rest } enum TextParseResult<T> { Ok(ParseSuccess<T> success), Err(i64 error) } i64 Main(TextParseResult<string> result) { return match result { TextParseResult::Ok(success) => success.rest, TextParseResult::Err(_) => -1_i64, }; }",
+        "type ParseSuccess<T> { T value; i64 rest; } enum TextParseResult<T> { Ok(ParseSuccess<T> success), Err(i64 error) } i64 Main(TextParseResult<string> result) { return match result { TextParseResult::Ok(success) => success.rest, TextParseResult::Err(_) => -1_i64, }; }",
     );
 
     emit_isle_item(&input, isa.as_ref(), item)
@@ -51,7 +51,7 @@ fn nominal_match_payload_field_projection_lowers_from_authoritative_binding_layo
 #[test]
 fn scalar_applied_nominal_match_payload_projects_the_specialized_value_layout() {
     let (input, isa, item) = item_fixture(
-        "type ParseSuccess<T> { T value, i64 rest } enum TextParseResult<T> { Ok(ParseSuccess<T> success), Err(i64 error) } i32 Main(TextParseResult<i32> result) { return match result { TextParseResult::Ok(success) => success.value, TextParseResult::Err(_) => -1, }; }",
+        "type ParseSuccess<T> { T value; i64 rest; } enum TextParseResult<T> { Ok(ParseSuccess<T> success), Err(i64 error) } i32 Main(TextParseResult<i32> result) { return match result { TextParseResult::Ok(success) => success.value, TextParseResult::Err(_) => -1, }; }",
     );
 
     emit_isle_item(&input, isa.as_ref(), item)
@@ -156,7 +156,7 @@ fn cross_unit_generic_receiver_match_preserves_a_concrete_nominal_error() {
     let fiber_status_path = source_root.join("Concurrency/WorkStatus.bd");
     let results_path = source_root.join("Core/Results.bd");
     let main_source = "use Concurrency.Work; unit Main() { Work<i64> fiber = Work<i64> { value: 7_i64, handle: -1_i64 }; Work<i64>.Join(fiber); return; }";
-    let fiber_source = "use Concurrency.WorkError; use Concurrency.WorkStatus; use Core.Results; pub type Work<T> { pub T value, pub i64 handle } pub Core.Results.Result<T, WorkError> Join<T>(Work<T> self) { WorkStatus status = WorkStatus::Panicked(self.handle, \"panic\"); return match status { WorkStatus::Ok(_) => Result::Ok(self.value), WorkStatus::Cancelled(reason, cancelerId) => Result::Error(WorkError::Cancelled(reason, cancelerId)), WorkStatus::StackOverflow(limitBytes, requestedBytes) => Result::Error(WorkError::StackOverflow(limitBytes, requestedBytes)), WorkStatus::Panicked(code, message) => Result::Error(WorkError::Panicked(code, message)), WorkStatus::NotDone => Result::Error(WorkError::Panicked(-1_i64, \"not done\")), }; }";
+    let fiber_source = "use Concurrency.WorkError; use Concurrency.WorkStatus; use Core.Results; pub type Work<T> { pub T value; pub i64 handle; } pub Core.Results.Result<T, WorkError> Join<T>(Work<T> self) { WorkStatus status = WorkStatus::Panicked(self.handle, \"panic\"); return match status { WorkStatus::Ok(_) => Result::Ok(self.value), WorkStatus::Cancelled(reason, cancelerId) => Result::Error(WorkError::Cancelled(reason, cancelerId)), WorkStatus::StackOverflow(limitBytes, requestedBytes) => Result::Error(WorkError::StackOverflow(limitBytes, requestedBytes)), WorkStatus::Panicked(code, message) => Result::Error(WorkError::Panicked(code, message)), WorkStatus::NotDone => Result::Error(WorkError::Panicked(-1_i64, \"not done\")), }; }";
     let fiber_error_source = "pub enum WorkError { Cancelled(i64 reason, i64 cancelerId), StackOverflow(i64 limitBytes, i64 requestedBytes), Panicked(i64 code, string message) }";
     let fiber_status_source = "pub enum WorkStatus { Ok(i64 value), Cancelled(i64 reason, i64 cancelerId), StackOverflow(i64 limitBytes, i64 requestedBytes), Panicked(i64 code, string message), NotDone }";
     let results_source = "pub enum Result<TValue, TError> { Ok(TValue value), Error(TError error) }";
@@ -287,7 +287,7 @@ fn enum_match_lowers_multi_field_payload_patterns_in_source_order() {
 #[test]
 fn regex_span_list_match_lowers_two_nominal_payload_fields() {
     let (input, isa, item) = item_fixture(
-        "type MatchSpan { i64 start, i64 end } enum MatchSpanList { Nil, Cons(MatchSpan head, MatchSpanList tail) } bool Main(MatchSpanList list) { return match list { MatchSpanList::Nil => true, MatchSpanList::Cons(_, _) => false, }; }",
+        "type MatchSpan { i64 start; i64 end; } enum MatchSpanList { Nil, Cons(MatchSpan head, MatchSpanList tail) } bool Main(MatchSpanList list) { return match list { MatchSpanList::Nil => true, MatchSpanList::Cons(_, _) => false, }; }",
     );
 
     emit_isle_item(&input, isa.as_ref(), item)
@@ -297,7 +297,7 @@ fn regex_span_list_match_lowers_two_nominal_payload_fields() {
 #[test]
 fn regex_span_list_constructor_stores_two_nominal_payload_fields_in_source_order() {
     let (input, isa, item) = item_fixture(
-        "type MatchSpan { i64 start, i64 end } enum MatchSpanList { Nil, Cons(MatchSpan head, MatchSpanList tail) } MatchSpanList Main(MatchSpan head, MatchSpanList tail) { return MatchSpanList::Cons(head, tail); }",
+        "type MatchSpan { i64 start; i64 end; } enum MatchSpanList { Nil, Cons(MatchSpan head, MatchSpanList tail) } MatchSpanList Main(MatchSpan head, MatchSpanList tail) { return MatchSpanList::Cons(head, tail); }",
     );
     let constructor = find_node(input.database(), item, beskid_queries::IndexedNodeKind::EnumConstructorExpression)
         .expect("Regex MatchSpanList::Cons constructor");

@@ -36,7 +36,7 @@ fn lockfile_replay_diagnostic(plan: &CompilePlan) -> Option<SyntaxDiagnostic> {
             start: 0,
             end: 0,
             severity: SyntaxDiagnosticSeverity::Error,
-            code: Some("lockfile".into()),
+            code: Some(error.code().into()),
             message: error.to_string(),
             source: "beskid".into(),
             detail: Default::default(),

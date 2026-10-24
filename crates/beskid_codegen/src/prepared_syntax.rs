@@ -465,6 +465,7 @@ fn lower_syntax_assembly_entrypoints_with_composition(
             .ok_or_else(|| anyhow::anyhow!("entrypoint `{entrypoint}` is not a syntax function or test"))?;
         entries.push(PreparedSyntaxEntry { name: entrypoint.clone(), symbol, return_type: signature.result });
     }
+    close_composition_hook_reachability(input.database(), &input, &mut selected, &mut items)?;
     close_scheduler_entry_reachability(input.database(), &input, &mut selected, &mut items)?;
     let mut artifact = lower_syntax_program(&input, isa, &items)
         .map_err(|error| error.into_report(&input, "syntax ISLE lowering failed"))?;
@@ -722,6 +723,41 @@ fn syntax_export_entries_matching(
         });
     }
     Ok(exports)
+}
+
+/// A launched composition calls its generated hook functions (`startup`, `init`, `dispose`)
+/// without a call expression; a base host's hooks may live in another unit (a library or
+/// Corelib host). Every hook of the frozen plan and what it reaches is emitted.
+pub(crate) fn close_composition_hook_reachability(
+    db: &dyn beskid_queries::Db,
+    input: &CodegenInput<'_>,
+    selected: &mut HashSet<AstNodeKey>,
+    items: &mut Vec<SyntaxModuleItem>,
+) -> Result<()> {
+    let Some((plan, _)) = input.composition_authority() else {
+        return Ok(());
+    };
+    for hook in plan.init_hooks.iter().chain(&plan.startup_hooks).chain(&plan.disposal_hooks) {
+        let function = input.composition_unit_key(&hook.unit, hook.function_node_id);
+        let root = input
+            .roots()
+            .iter()
+            .copied()
+            .find(|root| root.unit == function.unit)
+            .ok_or_else(|| anyhow::anyhow!("composition hook has no source root"))?;
+        let reachable = reachable_items(db, root, function)
+            .map_err(|error| anyhow::anyhow!("composition hook reachability failed: {error}"))?
+            .ok_or_else(|| anyhow::anyhow!("incomplete direct-call facts for a composition hook"))?;
+        for key in reachable.iter().copied() {
+            if !selected.insert(key) {
+                continue;
+            }
+            let symbol = syntax_item_symbol(db, input, key)
+                .ok_or_else(|| anyhow::anyhow!("composition hook reachable item is not a syntax function"))?;
+            items.push(SyntaxModuleItem { key, symbol });
+        }
+    }
+    Ok(())
 }
 
 /// Close the scheduler-entry reachability gap for entrypoint (test/AOT/JIT) lowering.

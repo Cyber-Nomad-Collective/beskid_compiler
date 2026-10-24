@@ -25,7 +25,7 @@ pub use kinds::{
 pub use match_range::{MatchArmBindingFact, MatchArmFact, MatchPayloadPatternFact, RangeFact, Unit};
 pub use node_facts::NodeFacts;
 pub use operations::{
-    ArrayForFact, CollectionMutationOwner, CollectionOperation, CompositionInjectionPlan, CompositionLaunchPlan,
+    ArrayForFact, CollectionMutationOwner, CollectionOperation, CompositionHookCall, CompositionInjectionPlan, CompositionLaunchPlan,
     CompositionRegistrationPlan, CompositionScopePlan, EventHandlerLocalPlan, EventOperationPlan, IteratorForFact,
     LocalSlotId, ManagedReferenceFact, ParameterSlot, ScopedCleanupPlan,
 };

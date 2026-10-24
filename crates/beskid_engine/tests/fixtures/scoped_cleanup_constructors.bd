@@ -1,7 +1,7 @@
 enum DisposeError { Failed() }
 enum Result<T, E> { Ok(T value), Error(E error) }
 enum Envelope { Wrap(i64 value) }
-type Box { i64[] item, i64 digit, }
+type Box { i64[] item; i64 digit; }
 contract Disposable { Result<unit, DisposeError> Dispose(); }
 [Extern(Abi:"C")]
 pub contract Probe {
@@ -10,9 +10,9 @@ pub contract Probe {
     i64 gc_external_root_count();
 }
 type Resource: Disposable {
-    i64 minimum,
-    bool collect,
-    bool fail,
+    i64 minimum;
+    bool collect;
+    bool fail;
     pub Result<unit, DisposeError> Dispose() {
         if collect { Probe.gc_collect(); }
         if Probe.gc_object_count() < minimum { return Result::Error(DisposeError::Failed()); }

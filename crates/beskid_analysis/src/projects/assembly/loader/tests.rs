@@ -1032,7 +1032,7 @@ fn import_closure_follows_qualified_nominal_references() {
         "Entry.bd",
         "pub Console.ConsoleSize Entry() { return Console.ConsoleSize { columns: 80, rows: 24 }; }",
     );
-    write_bd(&source_root, "Console/Console.bd", "pub type ConsoleSize { i32 columns, i32 rows }");
+    write_bd(&source_root, "Console/Console.bd", "pub type ConsoleSize { i32 columns; i32 rows; }");
     let plan = CompilePlan {
         source_root: source_root.clone(),
         project_root: project_root.clone(),
@@ -1059,8 +1059,8 @@ fn import_closure_follows_qualified_nominal_references() {
 fn import_closure_follows_complete_homonymous_nominal_path() {
     let root = temp_project_root("qualified_homonymous_nominal");
     let source_root = root.join("src");
-    write_bd(&source_root, "Entry.bd", "pub type Compilation { Beskid.Syntax.Nodes.NodeRef entryRoot, }");
-    write_bd(&source_root, "Beskid/Syntax/Nodes/NodeRef.bd", "pub type NodeRef { u64 generation, }");
+    write_bd(&source_root, "Entry.bd", "pub type Compilation { Beskid.Syntax.Nodes.NodeRef entryRoot; }");
+    write_bd(&source_root, "Beskid/Syntax/Nodes/NodeRef.bd", "pub type NodeRef { u64 generation; }");
     let plan = CompilePlan { source_root: source_root.clone(), project_root: root.clone(),
         manifest_path: root.join("project.bproj"), project_name: "fixture".into(),
         target: Target {name: "Entry".into(), kind: TargetKind::Lib, entry: Some("Entry.bd".into())},
@@ -1304,7 +1304,7 @@ fn assert_v06_parsed_import_paths(source: &str, expected: &[&str]) {
 
 #[test]
 fn v06_import_discovery_respects_same_line_declaration_boundaries() {
-    assert_v06_parsed_import_paths("use Lib.A; use Lib.B; pub type Record { i32 value }", &["Lib.A", "Lib.B"]);
+    assert_v06_parsed_import_paths("use Lib.A; use Lib.B; pub type Record { i32 value; }", &["Lib.A", "Lib.B"]);
 }
 
 #[test]
@@ -1394,12 +1394,13 @@ fn v06_import_recovery_rejection_retains_actual_diagnostic() {
         .expect("canonical parser must support the missing-semicolon recovery fixture");
     assert!(parsed.recovered && !parsed.diagnostics.is_empty());
     let error = super::scanner::parse_program_for_discovery(Path::new("Recovery.bd"), source).unwrap_err();
-    let AssemblyError::Parse { path, message } = error else { panic!("parse error required") };
+    let AssemblyError::ParseDiagnostic { path, report } = error else { panic!("structured parse error required") };
     assert_eq!(path, Path::new("Recovery.bd"));
     let diagnostic = &parsed.diagnostics[0];
-    assert!(message.contains(&diagnostic.message), "original recovery diagnostic lost: {message}");
-    assert!(message.contains(diagnostic.code.as_deref().unwrap()), "original diagnostic code lost: {message}");
-    assert!(message.contains(&diagnostic.span.offset().to_string()), "original source offset lost: {message}");
+    let kept = report.diagnostic();
+    assert_eq!(kept.message, diagnostic.message, "original recovery diagnostic lost");
+    assert_eq!(kept.code, diagnostic.code, "original diagnostic code lost");
+    assert_eq!(kept.span, diagnostic.span, "original source span lost");
 }
 
 #[test]
@@ -1472,7 +1473,7 @@ fn assert_v06_materializer_recovery_policy(policy: crate::projects::AssemblyReco
         assert_eq!(assembly.units.len(), 1, "repaired use cannot authorize Lib.A dependency");
         assert!(assembly.units[0].path.ends_with("Entry.bd"));
     } else {
-        assert!(matches!(result, Err(AssemblyError::Parse { .. })));
+        assert!(matches!(result, Err(AssemblyError::Parse { .. } | AssemblyError::ParseDiagnostic { .. })));
         assert_eq!(calls.load(Ordering::SeqCst), 0, "materializer presence cannot silently change strict policy");
     }
     fs::remove_dir_all(project_root).unwrap();
@@ -1499,17 +1500,14 @@ fn v06_import_unrecoverable_parse_retains_actual_diagnostic_bounds() {
         .expect("canonical parser error must carry source diagnostic")
         .diagnostic();
     let error = super::scanner::parse_program_for_discovery(Path::new("Broken.bd"), source).unwrap_err();
-    let AssemblyError::Parse { path, message } = error else { panic!("parse error required") };
+    let AssemblyError::ParseDiagnostic { path, report } = error else { panic!("structured parse error required") };
     assert_eq!(path, Path::new("Broken.bd"));
-    assert!(message.contains(&diagnostic.message));
-    assert!(message.contains(diagnostic.code.as_deref().unwrap_or("parse")));
-    assert!(message.contains(&format!(
-        "bytes {}..{}",
-        diagnostic.span.offset(),
-        diagnostic.span.offset() + diagnostic.span.len()
-    )));
-    assert!(diagnostic.span.offset() <= source.len());
-    assert!(diagnostic.span.offset() + diagnostic.span.len() <= source.len());
+    let kept = report.diagnostic();
+    assert_eq!(kept.message, diagnostic.message);
+    assert_eq!(kept.code, diagnostic.code);
+    assert_eq!(kept.span, diagnostic.span);
+    assert_eq!(kept.fixes.len(), diagnostic.fixes.len());
+    assert_eq!(kept.related.len(), diagnostic.related.len());
 }
 
 #[test]
@@ -1539,7 +1537,7 @@ fn v06_qualified_reference_closure_follows_transitive_calls_and_types_without_lo
         "Lib/A.bd",
         "/* Fake.Comment.Call(); */ pub Lib.B.Value Run() { return Lib.B.Value { number: 1 }; }",
     );
-    write_bd(&source_root, "Lib/B.bd", "pub type Value { i32 number }");
+    write_bd(&source_root, "Lib/B.bd", "pub type Value { i32 number; }");
     write_bd(&source_root, "Fake/String.bd", "invalid fake string authority ???");
     write_bd(&source_root, "Fake/Comment.bd", "invalid fake comment authority ???");
     let plan = CompilePlan {

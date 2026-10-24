@@ -16,10 +16,10 @@ fn indexed_member_call_operand_retains_canonical_string_abi() {
     std::fs::write(
         &path,
         r#"
-pub type TypeExpression { pub string targetRule, }
-pub type Field { pub i64 typeIndex, }
-pub type Rule { pub Field[] fields, }
-pub type Profile { pub TypeExpression[] types, }
+pub type TypeExpression { pub string targetRule; }
+pub type Field { pub i64 typeIndex; }
+pub type Rule { pub Field[] fields; }
+pub type Profile { pub TypeExpression[] types; }
 pub unit AssertEqual<T>(T left, T right) {}
 pub unit Verify(Profile profile, Rule config) {
     AssertEqual<string>(profile.types[config.fields[0].typeIndex].targetRule, "item");

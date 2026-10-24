@@ -33,7 +33,7 @@ fn write_typed_generate_output_v2_renders_items_under_package_generated_root() {
 fn write_typed_generate_output_v1_honors_layout_manifest() {
     let items = materialize_program_items([
         "pub contract DemoStep { DemoStep Run(); }",
-        "pub type DemoFluent { i64 inner }",
+        "pub type DemoFluent { i64 inner; }",
         "pub DemoFluent FromDemo() { return DemoFluent { inner: 0 }; }",
     ])
     .expect("materialize");

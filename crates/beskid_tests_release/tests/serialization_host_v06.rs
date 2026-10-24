@@ -240,7 +240,7 @@ fn ser04_installed_build_rejects_forged_semantic_handle_before_lowering() {
 fn ser02_installed_check_rejects_pointer_field_at_declaration_span() {
     let cli = Cli::qualified();
     let home = Home::new();
-    let source = "use Core.Serialization.Contracts;\n\n[Serialize]\npub type Handle {\n    pub i32 count,\n    pub pointer raw,\n}\n\ni32 Main() { return 0; }\n";
+    let source = "use Core.Serialization.Contracts;\n\n[Serialize]\npub type Handle {\n    pub i32 count;\n    pub pointer raw;\n}\n\ni32 Main() { return 0; }\n";
     let manifest = write_app(&home.work(), "Pointer", source);
     let output = run(cli, &home, &["check", "--plain", "--offline", "--project", path_text(&manifest)]);
     assert_eq!(output.status.code(), Some(1), "a pointer field under [Serialize] fails check:\n{}", transcript(&output));
@@ -263,7 +263,7 @@ fn ser02_installed_check_rejects_pointer_field_at_declaration_span() {
 fn ser_contracts_only_import_builds_runs_and_round_trips_bsol() {
     let cli = Cli::qualified();
     let home = Home::new();
-    let declaration = "use Core.Serialization.Contracts;\n\n[Serialize]\npub type Point {\n    pub i32 x,\n    pub i32 y,\n}\n\n";
+    let declaration = "use Core.Serialization.Contracts;\n\n[Serialize]\npub type Point {\n    pub i32 x;\n    pub i32 y;\n}\n\n";
     let plain = format!("{declaration}i32 Main() {{\n    Point point = Point {{ x: 3_i32, y: 4_i32 }};\n    if (point.x + point.y == 7_i32) {{ return 0; }}\n    return 1;\n}}\n");
     let manifest = write_app(&home.work(), "ContractsOnly", &plain);
     let output = run(cli, &home, &["run", "--offline", "--plain", "--project", path_text(&manifest)]);
@@ -349,7 +349,7 @@ fn mod06_02_installed_build_of_instantiated_generic_helpers_fails_before_lowerin
     let home = Home::new();
     // `Opaque` carries no serialization facts; a generic `[Serialize]` helper instantiated with it has
     // no substituted shape to authorize its encoder, so compilation must stop with a diagnostic.
-    let source = "use Core.Serialization.Contracts;\n\npub type Opaque {\n    pub i32 inner,\n}\n\n[Serialize]\npub type Pair<T> {\n    pub T left,\n    pub T right,\n}\n\n[Serialize]\npub type Holder {\n    pub Pair<Opaque> nested,\n}\n\ni32 Main() { return 0; }\n";
+    let source = "use Core.Serialization.Contracts;\n\npub type Opaque {\n    pub i32 inner;\n}\n\n[Serialize]\npub type Pair<T> {\n    pub T left;\n    pub T right;\n}\n\n[Serialize]\npub type Holder {\n    pub Pair<Opaque> nested;\n}\n\ni32 Main() { return 0; }\n";
     let manifest = write_app(&home.work(), "Facts", source);
     let executable = home.work().join(beskid_tests_release::installed::executable_name("facts-out"));
     let output = run(cli, &home, &["build", "--plain", "--offline", "--project", path_text(&manifest), "--output", path_text(&executable)]);

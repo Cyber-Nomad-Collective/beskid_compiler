@@ -3,19 +3,19 @@
 use Core.Collections.Array;
 
 pub type GlueOwnerRecord {
-    pub GlueOwnerRecord[] next,
-    pub u8[] payload,
-    pub pointer foreignBuffer,
-    pub word length,
-    pub word allocationSize,
-    pub u64 processIssuer,
-    pub u64 session,
-    pub u64 library,
-    pub u64 generation,
-    pub u64 kind,
-    pub u64 shape,
-    pub u64 token,
-    pub u64 released,
+    pub GlueOwnerRecord[] next;
+    pub u8[] payload;
+    pub pointer foreignBuffer;
+    pub word length;
+    pub word allocationSize;
+    pub u64 processIssuer;
+    pub u64 session;
+    pub u64 library;
+    pub u64 generation;
+    pub u64 kind;
+    pub u64 shape;
+    pub u64 token;
+    pub u64 released;
 }
 
 u8[] GlueCopyManagedPayload(pointer source, word length) {

@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use super::model::{Registration, RegistrationKey, ScopeId};
+use super::model::{Registration, ScopeId};
 
 #[derive(Debug, Clone, Default)]
 pub struct ServiceContainer {
@@ -23,11 +23,14 @@ impl ServiceContainer {
     pub fn find_scope_matches(&self, scope_id: ScopeId, requested: &str) -> Vec<Registration> {
         self.registrations_for_scope(scope_id)
             .iter()
-            .filter(|registration| match &registration.key {
-                RegistrationKey::Contract(contract) => contract == requested,
-                RegistrationKey::SelfType(type_name) => type_name == requested,
-            })
+            // Keys and requests compare by their last path segment, so `Hosting.CommandLine` and
+            // `CommandLine` (through `use`) name the same service.
+            .filter(|registration| last_segment(registration.key.name()) == last_segment(requested))
             .cloned()
             .collect()
     }
+}
+
+fn last_segment(name: &str) -> &str {
+    name.rsplit('.').next().unwrap_or(name)
 }

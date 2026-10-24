@@ -20,7 +20,7 @@ fn api_json_contains_member_doc_markdown() {
     let source = r#"
 type User {
     /// Display name of user.
-    string name,
+    string name;
 }
 "#;
     std::fs::write(&source_path, source).expect("write source");
@@ -80,7 +80,7 @@ fn api_json_graph_links_type_field_enum_variant_and_method() {
     let source = r#"
 type Widget {
     /// widget value
-    i64 value,
+    i64 value;
 }
 
 enum Mode {
@@ -186,8 +186,8 @@ fn api_json_v4_emits_field_type_ref_for_nested_types() {
     let source_path = root.join("Nested.bd");
     let out_path = root.join("out");
     let source = r#"
-type Inner { i64 x, }
-type Outer { Inner inner, }
+type Inner { i64 x; }
+type Outer { Inner inner; }
 "#;
     std::fs::write(&source_path, source).expect("write source");
     execute(DocArgs {

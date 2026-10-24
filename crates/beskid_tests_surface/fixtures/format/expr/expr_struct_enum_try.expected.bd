@@ -1,12 +1,11 @@
 pub type User
 {
-    string name,
+    string name;
 }
 
 pub enum Opt
 {
     Some(i32 v),
-
     None,
 }
 
