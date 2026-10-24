@@ -327,7 +327,7 @@ mod respan_tests {
     #[test]
     fn merged_generated_items_receive_distinct_nested_synthetic_spans() {
         let host = parse_program_with_source_name("Main.bd", "unit Main() { return; }").expect("parse host");
-        let generated_source = "pub unit GeneratedUnit() { return; }\npub type SerializedRecord<T> { pub T value }";
+        let generated_source = "pub unit GeneratedUnit() { return; }\npub type SerializedRecord<T> { pub T value; }";
         let generated_items = parse_program_with_source_name("Gen.bd", generated_source)
             .expect("parse generated")
             .node

@@ -290,7 +290,7 @@ i32 Main() {
         let program = parse_program(
             r#"
 type Logger {}
-type Worker { inject Logger logger }
+type Worker { inject Logger logger; }
 host AppHost() {
     registry { single Logger; single Worker; }
     startup() {}
@@ -316,8 +316,8 @@ i32 Main() { launch AppHost(); return 0; }
             r#"
 type Logger {}
 type Worker {
-    inject Logger[] primary,
-    inject Logger[] secondary
+    inject Logger[] primary;
+    inject Logger[] secondary;
 }
 host AppHost() { registry { single Logger; single Worker; } }
 i32 Main() { launch AppHost(); return 0; }

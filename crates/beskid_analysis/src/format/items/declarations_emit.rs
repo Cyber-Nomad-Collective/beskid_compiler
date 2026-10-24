@@ -82,7 +82,7 @@ impl Emit for TypeDefinition {
             super::root_emit::emit_leading_doc_lines(self.field_docs.get(i).and_then(Option::as_ref), w, cx)?;
             cx.write_indent(w)?;
             f.emit(w, cx)?;
-            cx.token(w, ",")?;
+            cx.token(w, ";")?;
             cx.nl(w)?;
         }
         for (i, binding) in self.associated_type_bindings.iter().enumerate() {

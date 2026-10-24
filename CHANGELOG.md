@@ -68,6 +68,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   carries the channel handle. `HubError` and `MutexError` gain
   `Unexpected(i64 code)` too, and a failed `Hub.Register` names its member
   index.
+### Parse diagnostics
+
+- Parse errors are structured diagnostics with codes `E0101`-`E0113`. The
+  message says what was expected, what was being parsed and what was found
+  ("expected `(` while parsing host `App`, found `{`"); it points at the token
+  found, marks where the construct starts and carries one help line. No grammar
+  rule names, pest excerpts or recovery wording reach the user; a table beside
+  `beskid.pest` names every grammar rule in words, and a test fails when a rule
+  has none.
+- Quick fixes where the repair has one meaning, offered only when the parser
+  gets past the mistake with the fix applied: a missing `;`, unclosed
+  delimiters, `host Name {` (inserts `()`; replaces the stopgap line scan),
+  `i++`/`i--` (becomes `i += 1`/`i -= 1`) and `let x: T` (becomes `T x`).
+  A repaired parse is reported as the original error.
+- Own wording for a reserved word used as a name ("`test` is a reserved word;
+  choose another name") and for a block used as a match-arm value.
+
+### Language
+
+- String escapes `\n`, `\t`, `\r`, `\0` and `\u{...}` beside `\"`, `\\` and
+  `\${`. An unknown escape (`E0109`) or a `\u{...}` value that is not a Unicode
+  scalar value (`E0110`) is an error at the escape.
+- Compound assignments `*=`, `/=` and `%=` beside `+=` and `-=`.
 
 ## [0.6.6] - 2026-10-16
 

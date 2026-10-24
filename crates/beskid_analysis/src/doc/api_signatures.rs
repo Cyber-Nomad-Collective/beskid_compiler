@@ -311,8 +311,8 @@ mod tests {
     #[test]
     fn field_type_links_nested_type() {
         let source = r#"
-type Inner { i64 x, }
-type Outer { Inner inner, }
+type Inner { i64 x; }
+type Outer { Inner inner; }
 "#;
         let program = parse_program(source).unwrap();
         let resolution = Resolver::new().resolve_program(&program).unwrap();

@@ -62,7 +62,7 @@ mod tests {
 
     #[test]
     fn materializes_type_definition_from_source() {
-        let item = materialize_type_definition("type Account { i64 balance }").expect("type materialize");
+        let item = materialize_type_definition("type Account { i64 balance; }").expect("type materialize");
         assert_eq!(item.node.name.node.name, "Account");
     }
 

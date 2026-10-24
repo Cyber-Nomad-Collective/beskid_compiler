@@ -1,84 +1,65 @@
-use pest::error::InputLocation;
-
-use crate::analysis::diagnostics::SemanticDiagnostic;
+use crate::analysis::diagnostics::{SemanticDiagnostic, Severity, make_diagnostic};
 use crate::parser::Rule;
+use crate::parsing::diagnose::{codes, diagnose_parse_failure};
 use crate::parsing::error::ParseError;
 use crate::projects::ProjectError;
+use crate::rule_words::rule_words;
+use crate::syntax::SpanInfo;
 
+/// A grammar error as a structured parse diagnostic (`E0101`–`E0199`), for a failed `Program` parse.
+///
+/// Prefer [`crate::services::parse_program_with_source_name_and_diagnostics`], which also offers
+/// fixes; this entry point only describes the error.
 pub fn pest_error_diagnostic(source_name: &str, source: &str, err: &pest::error::Error<Rule>) -> SemanticDiagnostic {
-    let start = match err.location {
-        InputLocation::Pos(pos) => pos,
-        InputLocation::Span((start, _)) => start,
-    };
-    crate::analysis::diagnostics::make_diagnostic(
-        source_name,
-        source,
-        crate::syntax::SpanInfo { start, end: start.saturating_add(1), line_col_start: (1, 1), line_col_end: (1, 1) },
-        format!("parse error: {err}"),
-        "parse",
-        None,
-        Some("parse".to_string()),
-        crate::analysis::Severity::Error,
-    )
+    diagnose_parse_failure(source_name, source, Rule::Program, err).diagnostic
 }
 
+/// A failure while building the syntax tree from a successful grammar parse.
 pub fn parse_error_diagnostic(source_name: &str, source: &str, err: &ParseError) -> SemanticDiagnostic {
+    let diagnostic = |span: SpanInfo, message: String, label: &str, help: Option<String>, code: &str| {
+        make_diagnostic(source_name, source, span, message, label, help, Some(code.to_string()), Severity::Error)
+    };
     match err {
         ParseError::UnexpectedRule { expected, found, span } => {
+            let found_words = rule_words(*found).render();
             let message = match expected {
-                Some(rule) => format!("parse error: expected {rule:?}, found {found:?}"),
-                None => format!("parse error: unexpected {found:?}"),
+                Some(rule) => format!("expected {}, found {found_words}", rule_words(*rule).render()),
+                None => format!("unexpected {found_words}"),
             };
-            crate::analysis::diagnostics::make_diagnostic(
-                source_name,
-                source,
-                *span,
-                message,
-                "parse errmsg",
-                None,
-                Some("parse".to_string()),
-                crate::analysis::Severity::Error,
-            )
+            diagnostic(*span, message, "unexpected here", None, codes::UNEXPECTED_TREE)
         }
-        ParseError::MissingPair { expected } => crate::analysis::diagnostics::make_diagnostic(
-            source_name,
-            source,
-            crate::syntax::SpanInfo { start: 0, end: 0, line_col_start: (1, 1), line_col_end: (1, 1) },
-            format!("parse error: missing {expected:?}"),
-            "missing blk",
+        ParseError::MissingPair { expected } => diagnostic(
+            SpanInfo { start: 0, end: 0, line_col_start: (1, 1), line_col_end: (1, 1) },
+            format!("expected {}", rule_words(*expected).render()),
+            "missing here",
             None,
-            Some("parse".to_string()),
-            crate::analysis::Severity::Error,
+            codes::UNEXPECTED_TREE,
         ),
-        ParseError::ForbiddenImplSelfParameter { span } => crate::analysis::diagnostics::make_diagnostic(
-            source_name,
-            source,
+        ParseError::ForbiddenImplSelfParameter { span } => diagnostic(
             *span,
-            "explicit `self` parameter is not allowed in impl methods",
-            "forbidden self",
-            None,
-            Some("parse".to_string()),
-            crate::analysis::Severity::Error,
+            "a method receiver is written `this`, not `self`".to_string(),
+            "`self` parameter",
+            Some("write `this` as the first parameter, or leave the receiver implicit".to_string()),
+            codes::SELF_PARAMETER,
+        ),
+        ParseError::UnknownStringEscape { span, escape } => diagnostic(
+            *span,
+            format!("unknown escape `{escape}` in string"),
+            "unknown escape",
+            Some(
+                "the escapes are `\\n`, `\\t`, `\\r`, `\\0`, `\\\"`, `\\\\`, `\\${` and `\\u{...}`; write `\\\\` for a backslash"
+                    .to_string(),
+            ),
+            codes::UNKNOWN_ESCAPE,
+        ),
+        ParseError::InvalidUnicodeEscape { span, escape, reason } => diagnostic(
+            *span,
+            format!("invalid escape `{escape}`: {reason}"),
+            "invalid escape",
+            Some("write one to six hexadecimal digits of a Unicode scalar value, for example `\\u{1F600}`".to_string()),
+            codes::INVALID_UNICODE_ESCAPE,
         ),
     }
-}
-
-pub fn parse_recovery_diagnostic(
-    source_name: &str,
-    source: &str,
-    span: crate::syntax::SpanInfo,
-    message: &str,
-) -> SemanticDiagnostic {
-    crate::analysis::diagnostics::make_diagnostic(
-        source_name,
-        source,
-        span,
-        format!("recovery: {message}"),
-        "recovery",
-        None,
-        Some("parse.recovery".to_string()),
-        crate::analysis::Severity::Warning,
-    )
 }
 
 pub fn project_error_diagnostic(source_name: &str, source: &str, error: &ProjectError) -> SemanticDiagnostic {

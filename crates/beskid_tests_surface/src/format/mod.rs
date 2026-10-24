@@ -129,7 +129,7 @@ fn format_binary_ops_emit_canonical_operators() {
 #[test]
 fn format_type_enum_contract_match() {
     let src = r#"use core.io;
-pub type Point { i32 x, i32 y, }
+pub type Point { i32 x; i32 y; }
 pub enum E { A, B(i32 x,) }
 pub contract C { i32 m(); Other }
 pub unit demo() {

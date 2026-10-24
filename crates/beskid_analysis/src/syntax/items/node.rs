@@ -192,7 +192,7 @@ mod tests {
     #[test]
     fn extend_type_parses_and_formats() {
         let src = r#"
-            type Account { i64 balance }
+            type Account { i64 balance; }
             extend type Account {
                 pub unit Deposit(i64 amount) {
                     return;
@@ -227,7 +227,7 @@ mod tests {
                 unit log();
             }
             type Widget {
-                i32 v,
+                i32 v;
             }
             impl Widget : Loggable {
                 pub unit log() {
@@ -261,7 +261,7 @@ mod tests {
         use crate::syntax::items::Node;
 
         let src = r#"
-            type Number { i32 v, }
+            type Number { i32 v; }
             impl Number {
                 pub i32 dbl(i32 x) { return x * 2; }
             }

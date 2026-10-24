@@ -50,7 +50,7 @@ impl SyntaxNodeFacts<'_> {
         let LiteralFact::Char(text) = self.literal(key)? else {
             return None;
         };
-        text.trim_matches('\'').chars().next()
+        beskid_analysis::syntax::decode_char_literal_token(&text).ok()
     }
 
     pub(super) fn string_literal_impl(&self, key: AstNodeKey) -> Option<std::sync::Arc<str>> {
