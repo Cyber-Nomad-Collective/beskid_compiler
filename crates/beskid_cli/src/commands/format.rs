@@ -8,7 +8,6 @@ use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
-use walkdir::WalkDir;
 
 #[derive(Args, Debug)]
 pub struct FormatArgs {
@@ -122,20 +121,7 @@ fn format_one(path: &Path, check: bool) -> Result<()> {
 fn collect_bd_files(path: &Path, input_is_dir: bool) -> Result<Vec<PathBuf>> {
     if input_is_dir {
         let mut paths = Vec::new();
-        for entry in WalkDir::new(path).into_iter().filter_entry(|e| {
-            if !e.file_type().is_dir() {
-                return true;
-            }
-            if e.depth() == 0 {
-                return true;
-            }
-            !is_skipped_dir(e.file_name())
-        }) {
-            let entry = entry.map_err(|e| anyhow::anyhow!("walk {}: {e}", path.display()))?;
-            if entry.file_type().is_file() && is_bd_path(entry.path()) {
-                paths.push(entry.path().to_path_buf());
-            }
-        }
+        collect_dir(path, &mut paths)?;
         paths.sort();
         Ok(paths)
     } else if is_bd_path(path) {
@@ -143,6 +129,54 @@ fn collect_bd_files(path: &Path, input_is_dir: bool) -> Result<Vec<PathBuf>> {
     } else {
         bail!("expected a `.bd` file or directory, got {}", path.display());
     }
+}
+
+/// Collect the `.bd` sources under `dir` that belong to the user.
+///
+/// A directory with a project manifest (`*.bproj`) contributes only its source root (the
+/// manifest's `root`), so build output (`obj/`, with the dependency and Corelib copies in
+/// `obj/beskid/deps`), `target/` and `.beskid/` are never formatted. Other directories are walked,
+/// skipping build, tool and VCS directories.
+fn collect_dir(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
+    let mut entries: Vec<PathBuf> = fs::read_dir(dir)
+        .with_context(|| format!("read directory {}", dir.display()))?
+        .map(|entry| entry.map(|e| e.path()))
+        .collect::<std::io::Result<_>>()
+        .with_context(|| format!("read directory {}", dir.display()))?;
+    entries.sort();
+
+    let manifests: Vec<&PathBuf> = entries
+        .iter()
+        .filter(|p| p.is_file() && p.extension().and_then(OsStr::to_str) == Some("bproj"))
+        .collect();
+    if !manifests.is_empty() {
+        let mut roots: Vec<PathBuf> = Vec::new();
+        for manifest_path in manifests {
+            let manifest = beskid_analysis::projects::load_manifest_from_path(manifest_path)
+                .with_context(|| format!("read project manifest {}", manifest_path.display()))?;
+            let root = dir.join(&manifest.project.root);
+            if !roots.contains(&root) {
+                roots.push(root);
+            }
+        }
+        for root in roots {
+            if root.is_dir() {
+                collect_dir(&root, out)?;
+            }
+        }
+        return Ok(());
+    }
+
+    for entry in entries {
+        if entry.is_dir() {
+            if !entry.file_name().is_some_and(is_skipped_dir) {
+                collect_dir(&entry, out)?;
+            }
+        } else if is_bd_path(&entry) {
+            out.push(entry);
+        }
+    }
+    Ok(())
 }
 
 fn is_bd_path(path: &Path) -> bool {
@@ -156,6 +190,8 @@ fn is_skipped_dir(name: &OsStr) -> bool {
         name.to_str(),
         Some(
             ".git"
+                | "obj"
+                | ".beskid"
                 | ".svn"
                 | ".hg"
                 | "target"
@@ -223,6 +259,33 @@ mod v06_tests {
         ));
         std::fs::create_dir_all(&root).unwrap();
         root
+    }
+
+    #[test]
+    fn v067_fmt_in_a_project_formats_only_its_source_root() {
+        let root = temp_root("project");
+        std::fs::create_dir_all(root.join("Src")).unwrap();
+        std::fs::create_dir_all(root.join("obj/beskid/deps/Core/Src")).unwrap();
+        std::fs::create_dir_all(root.join(".beskid")).unwrap();
+        std::fs::create_dir_all(root.join("target")).unwrap();
+        std::fs::write(
+            root.join("App.bproj"),
+            "App { name = \"App\" version = \"0.1.0\" root = \"Src\" }\ntarget \"Main\" { kind = \"Lib\" entry = \"Main.bd\" }\n",
+        )
+        .unwrap();
+        let source = "i32 Main() { return 0; }\n";
+        let broken = "this is not Beskid\n";
+        std::fs::write(root.join("Src/Main.bd"), source).unwrap();
+        for other in ["obj/beskid/deps/Core/Src/Generated.bd", ".beskid/Cache.bd", "target/Out.bd", "Loose.bd"] {
+            std::fs::write(root.join(other), broken).unwrap();
+        }
+        let paths = collect_bd_files(&root, true).unwrap();
+        let result = execute(FormatArgs { diagnostics: Default::default(), input: root.clone(), output: None, check: false });
+        let formatted = std::fs::read_to_string(root.join("Src/Main.bd")).unwrap();
+        std::fs::remove_dir_all(&root).unwrap();
+        assert_eq!(paths, vec![root.join("Src/Main.bd")], "only the source root is formatted");
+        result.expect("files outside the source root are not read");
+        assert!(formatted.contains("i32 Main()\n{\n"), "{formatted}");
     }
 
     #[test]

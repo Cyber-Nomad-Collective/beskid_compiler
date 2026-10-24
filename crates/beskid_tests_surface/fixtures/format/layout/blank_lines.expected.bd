@@ -31,7 +31,7 @@ pub i32 Second()
     return 2;
 }
 
-test grouping_is_kept
+test GroupingIsKept
 {
     Testing.Assert.Equal(1, 1);
     Testing.Assert.Equal(2, 2);
