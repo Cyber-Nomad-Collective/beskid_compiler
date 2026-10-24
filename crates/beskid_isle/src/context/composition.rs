@@ -69,13 +69,11 @@ impl IsleContext<'_, '_, '_, '_> {
         })
     }
 
-    /// The arguments of one hook call: the site's record, when the hook takes one, then the
-    /// injected fields of its argument object. The argument objects are container slots, rooted
-    /// for the whole launch.
+    /// The arguments of one hook call: the site's record, when the hook takes one, then its
+    /// argument object. The argument objects are container slots, rooted for the whole launch.
     fn composition_hook_arguments(&mut self, call: &crate::CompositionHookCall, slots: &[Value]) -> Option<Vec<Value>> {
-        let pointer = dispatch::pointer_type(self.frontend_config);
-        let leading = usize::from(call.record.is_some());
-        (call.signature.params.len() == leading + call.argument_offsets.len()).then_some(())?;
+        (call.signature.params.len() == usize::from(call.record.is_some()) + usize::from(call.arguments_slot.is_some()))
+            .then_some(())?;
         let mut arguments = Vec::with_capacity(call.signature.params.len());
         if let Some(record) = call.record {
             // The record local is declared just before the `launch`/`with` statement, in the
@@ -83,14 +81,8 @@ impl IsleContext<'_, '_, '_, '_> {
             let slot = self.facts.local_slot(record)?;
             arguments.push(self.builder.use_var(self.locals.get(&slot)?.variable));
         }
-        match call.arguments_slot {
-            Some(slot) => {
-                let object = *slots.get(usize::try_from(slot).ok()?)?;
-                for offset in &call.argument_offsets {
-                    arguments.push(self.builder.ins().load(pointer, MemFlagsData::new(), object, i32::try_from(*offset).ok()?));
-                }
-            }
-            None => call.argument_offsets.is_empty().then_some(())?,
+        if let Some(slot) = call.arguments_slot {
+            arguments.push(*slots.get(usize::try_from(slot).ok()?)?);
         }
         Some(arguments)
     }

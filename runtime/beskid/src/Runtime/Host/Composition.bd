@@ -11,14 +11,15 @@ const COMPOSITION_CONTAINER_SIZE = 64;
 const COMPOSITION_SCOPE_SIZE = 64;
 // `exit_entries` of a container (global `dispose` hooks) and of a scope (its `dispose` hooks): a
 // list of exit entries that `composition_exit` runs. Exit entry: next(0), function(8),
-// argument_count(16), arguments(24, rooted, at most COMPOSITION_EXIT_ARGUMENTS_MAX words).
+// argument_count(16), arguments(24, rooted, at most COMPOSITION_EXIT_ARGUMENTS_MAX words: a hook
+// takes its host or scope record and its argument object).
 const COMPOSITION_CONTAINER_EXIT_OFFSET = 56;
 const COMPOSITION_SCOPE_EXIT_OFFSET = 56;
 const COMPOSITION_EXIT_ENTRY_FUNCTION = 8;
 const COMPOSITION_EXIT_ENTRY_COUNT = 16;
 const COMPOSITION_EXIT_ENTRY_ARGUMENTS = 24;
-const COMPOSITION_EXIT_ARGUMENTS_MAX = 8;
-const COMPOSITION_EXIT_ENTRY_SIZE = 88;
+const COMPOSITION_EXIT_ARGUMENTS_MAX = 2;
+const COMPOSITION_EXIT_ENTRY_SIZE = 40;
 const COMPOSITION_SCOPE_OWNED_COUNT = 16;
 const COMPOSITION_SCOPE_OWNED_VALUES = 24;
 const COMPOSITION_SCOPE_OWNED_CAPACITY = 48;

@@ -883,3 +883,65 @@ i32 Main()
     assert_eq!(calls_of(&clif, "composition_exit_register"), 2, "{clif}");
 }
 
+
+#[test]
+fn a_hook_with_ten_injected_services_takes_its_argument_object() {
+    use std::sync::Arc;
+
+    use beskid_analysis::composition::{CompositionInput, is_hook_item_name, resolve_composition};
+
+    let services = (0..10).map(|index| format!("S{index}")).collect::<Vec<_>>();
+    let types = services.iter().map(|name| format!("type {name} {{}}\n")).collect::<String>();
+    let registry = services.iter().map(|name| format!("single {name}; ")).collect::<String>();
+    let parameters =
+        services.iter().map(|name| format!("{name} {}", name.to_lowercase())).collect::<Vec<_>>().join(", ");
+    let source = format!(
+        r#"
+{types}unit Use(S9 last) {{ }}
+host AppHost(i64 count)
+{{
+    registry {{ {registry}}}
+    startup({parameters}) {{ Use(s9); }}
+    dispose({parameters}) {{ Use(s9); }}
+    scope Visit()
+    {{
+        dispose({parameters}) {{ Use(s9); }}
+    }}
+}}
+i32 Main()
+{{
+    launch AppHost(1);
+    with Visit() {{ }}
+    return 0;
+}}
+"#
+    );
+    let (input, isa, root) = item_fixture_with_root(&source);
+    let result = resolve_composition(CompositionInput {
+        program: &input.typed_program().assembly.entry_unit().program,
+        is_mod_project: false,
+        types: &beskid_queries::CompositionTypes::new(input.database(), input.typed_program()),
+    });
+    assert!(result.issues.is_empty(), "composition must validate: {:?}", result.issues);
+    let mut snapshot = result.snapshot;
+    snapshot.source_unit_path = Some(root.unit.path(input.database()).to_path_buf());
+    let generation = input.typed_program().generation;
+    let input = input
+        .with_composition_authority(generation, Arc::new(result.plan), Arc::new(snapshot))
+        .expect("composition authority");
+    let items = find_function_definitions(input.database(), root)
+        .into_iter()
+        .map(|key| SyntaxModuleItem {
+            symbol: item_name(input.database(), key).expect("item query").expect("item name").to_string(),
+            key,
+        })
+        .collect::<Vec<_>>();
+    let artifact = lower_syntax_program(&input, isa.as_ref(), &items)
+        .expect("hooks with ten services lower: each takes its record and argument object");
+    let clif = artifact.functions.iter().find(|function| function.name == "Main").expect("lowered Main").function.display().to_string();
+    let hooks = items.iter().map(|item| item.symbol.clone()).filter(|name| is_hook_item_name(name)).collect::<Vec<_>>();
+    let startup = hooks.iter().find(|name| name.contains("_startup_")).expect("startup function");
+    assert_eq!(calls_of(&clif, startup), 1, "{clif}");
+    // Both dispose hooks are registered for the host exit, each with at most two arguments.
+    assert_eq!(calls_of(&clif, "composition_exit_register"), 2, "{clif}");
+}

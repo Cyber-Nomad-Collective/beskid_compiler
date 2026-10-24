@@ -168,42 +168,27 @@ impl SyntaxNodeFacts<'_> {
         (self.query(node_kind(self.db, function)) == Some(beskid_queries::IndexedNodeKind::FunctionDefinition))
             .then_some(())?;
         let signature = signature_for_item(self.isa?, self.query(item_abi_signature(self.db, function))?)?;
-        let (arguments_slot, argument_offsets) = match hook.arguments_registration_id {
-            None => (None, Vec::new()),
+        // The argument object is an exact registration of the plan, passed whole: the hook reads
+        // its injected fields itself.
+        let arguments_slot = match hook.arguments_registration_id {
+            None => None,
             Some(id) => {
                 let slot = plan.slot_for_registration(id)?;
                 let registration = snapshot.registrations.iter().find(|entry| entry.id == id)?;
                 let source = self.input.composition_unit_key(&registration.unit, registration.source_node_id);
                 let fact = self.query(beskid_queries::composition_registration(self.db, source))?;
                 (fact.site == source && fact.implementation.as_ref() == registration.implementation).then_some(())?;
-                let layout = self.input.aggregate_object_layout(fact.declaration)?;
-                let mut fields = layout
-                    .injected_fields
-                    .iter()
-                    .map(|(field, offset)| {
-                        let field = self.query(beskid_queries::composition_injection_field(self.db, *field))?;
-                        (field.owner_type == fact.declaration).then_some(())?;
-                        Some((field.ordinal, u32::try_from(*offset).ok()?))
-                    })
-                    .collect::<Option<Vec<_>>>()?;
-                fields.sort_by_key(|(ordinal, _)| *ordinal);
-                (Some(slot.0), fields.into_iter().map(|(_, offset)| offset).collect::<Vec<_>>())
+                Some(slot.0)
             }
         };
         // A hook that takes the record needs the site's record local; one that does not never
         // receives it.
         let record = if hook.takes_arguments_record { Some(site_record?) } else { None };
-        // The record and every service argument are one object reference each.
+        // The record and the argument object are one object reference each.
         let pointer = self.isa?.pointer_type();
-        (signature.params.len() == usize::from(record.is_some()) + argument_offsets.len()
+        (signature.params.len() == usize::from(record.is_some()) + usize::from(arguments_slot.is_some())
             && signature.params.iter().all(|parameter| parameter.value_type == pointer))
         .then_some(())?;
-        Some(CompositionHookCall {
-            function: DirectCallee::item(function),
-            signature,
-            record,
-            arguments_slot,
-            argument_offsets,
-        })
+        Some(CompositionHookCall { function: DirectCallee::item(function), signature, record, arguments_slot })
     }
 }

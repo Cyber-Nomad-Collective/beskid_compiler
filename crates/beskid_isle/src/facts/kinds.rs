@@ -37,10 +37,10 @@ pub enum RuntimeIntrinsicKind {
     CompositionHookInvoke(usize),
 }
 
-/// The most arguments one host-hook call registered for `composition_exit` may carry: the
-/// runtime exit entry's capacity (`COMPOSITION_EXIT_ARGUMENTS_MAX` in
-/// `Runtime/Host/Composition.bd`), and the arities `composition_hook_invoke` dispatches.
-pub const COMPOSITION_HOOK_ARGUMENTS_MAX: usize = 8;
+/// The most arguments a host-hook function takes: its host or scope record and its argument
+/// object. It is the runtime exit entry's capacity (`COMPOSITION_EXIT_ARGUMENTS_MAX` in
+/// `Runtime/Host/Composition.bd`) and the arities `composition_hook_invoke` dispatches.
+pub const COMPOSITION_HOOK_ARGUMENTS_MAX: usize = 2;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum OperatorFact {

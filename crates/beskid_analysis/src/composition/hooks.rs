@@ -6,7 +6,9 @@
 //! the hook has parameters, a private argument type whose injected fields mirror the parameters
 //! one to one. The argument type is registered in the hook's own container level, so the
 //! ordinary composition graph resolves, orders and diagnoses every hook parameter exactly like a
-//! field `inject`. Lowering calls the function with the argument object's fields.
+//! field `inject`. The function takes the argument object itself (`__beskidServices`) and reads
+//! the parameters its body names from it, so every hook function takes at most two arguments
+//! (record and argument object), however many services it injects.
 //!
 //! Host parameters (`host App(string name)`) and scope parameters (`scope Visit(i32 id)`) become
 //! a private value type per host or scope whose fields are the parameters. Each `launch App(a);`
@@ -38,6 +40,8 @@ pub const LAUNCH_ARGUMENTS_LOCAL_PREFIX: &str = "__beskidLaunchArgs_";
 pub const SCOPE_ARGUMENTS_LOCAL_PREFIX: &str = "__beskidScopeArgs_";
 /// The leading parameter of a hook function that receives its host or scope record.
 pub const ARGUMENTS_RECORD_PARAMETER: &str = "__beskidArgs";
+/// The parameter of a hook function that receives its argument object (the injected services).
+pub const SERVICES_PARAMETER: &str = "__beskidServices";
 
 /// Whether `name` is a compiler-generated hook item: a hook function, a hook argument type, a
 /// host or scope record type, or one of the generated locals and parameters that carry records.
@@ -46,6 +50,7 @@ pub fn is_hook_item_name(name: &str) -> bool {
         || name.starts_with(LAUNCH_ARGUMENTS_LOCAL_PREFIX)
         || name.starts_with(SCOPE_ARGUMENTS_LOCAL_PREFIX)
         || name == ARGUMENTS_RECORD_PARAMETER
+        || name == SERVICES_PARAMETER
 }
 
 /// Name of the function that holds the body of the hook declared at `span` in `host`.
@@ -252,6 +257,52 @@ fn mentions(body: &Spanned<Block>, name: &str) -> bool {
     })
 }
 
+/// `T name = <object>.name;` for each of `parameters` that `body` names.
+fn read_prelude(object: &str, parameters: &[Spanned<Parameter>], body: &Spanned<Block>) -> Vec<Spanned<Statement>> {
+    parameters
+        .iter()
+        .filter(|parameter| mentions(body, &parameter.node.name.node.name))
+        .map(|parameter| {
+            let read = Expression::Member(Spanned::new(
+                MemberExpression {
+                    target: Box::new(Spanned::new(
+                        Expression::Path(Spanned::new(
+                            PathExpression { path: single_path(object, parameter.span) },
+                            parameter.span,
+                        )),
+                        parameter.span,
+                    )),
+                    member: parameter.node.name.clone(),
+                    type_args: Vec::new(),
+                },
+                parameter.span,
+            ));
+            let local = LetStatement {
+                attributes: Vec::new(),
+                mutable: parameter.node.mutable,
+                name: parameter.node.name.clone(),
+                type_annotation: Some(parameter.node.ty.clone()),
+                value: Spanned::new(read, parameter.span),
+            };
+            Spanned::new(Statement::Let(Spanned::new(local, parameter.span)), parameter.span)
+        })
+        .collect()
+}
+
+fn object_parameter(name: &str, type_name: &str, span: SpanInfo) -> Spanned<Parameter> {
+    Spanned::new(
+        Parameter {
+            attributes: Vec::new(),
+            bulk: false,
+            mutable: false,
+            movable: false,
+            name: identifier(name, span),
+            ty: Spanned::new(Type::Complex(single_path(type_name, span)), span),
+        },
+        span,
+    )
+}
+
 /// Generate the function (and argument type) for one hook; returns the argument type's
 /// registration when the hook has injected parameters.
 fn lower_hook(
@@ -266,52 +317,18 @@ fn lower_hook(
     let parameters = std::mem::take(&mut hook.node.parameters);
     let body_span = hook.node.body.span;
     let mut body = std::mem::replace(&mut hook.node.body, Spanned::new(Block { statements: Vec::new() }, body_span));
-    let mut function_parameters = Vec::with_capacity(parameters.len() + 1);
+    let arguments_name = hook_arguments_name(host, hook.node.kind, span);
+    let mut function_parameters = Vec::with_capacity(2);
+    let mut prelude = Vec::new();
     if let Some(record) = record {
-        function_parameters.push(Spanned::new(
-            Parameter {
-                attributes: Vec::new(),
-                bulk: false,
-                mutable: false,
-                movable: false,
-                name: identifier(ARGUMENTS_RECORD_PARAMETER, span),
-                ty: Spanned::new(Type::Complex(single_path(&record.type_name, span)), span),
-            },
-            span,
-        ));
-        // `T name = __beskidArgs.name;` for each record parameter the body names.
-        let prelude = record
-            .parameters
-            .iter()
-            .filter(|parameter| mentions(&body, &parameter.node.name.node.name))
-            .map(|parameter| {
-                let read = Expression::Member(Spanned::new(
-                    MemberExpression {
-                        target: Box::new(Spanned::new(
-                            Expression::Path(Spanned::new(
-                                PathExpression { path: single_path(ARGUMENTS_RECORD_PARAMETER, parameter.span) },
-                                parameter.span,
-                            )),
-                            parameter.span,
-                        )),
-                        member: parameter.node.name.clone(),
-                        type_args: Vec::new(),
-                    },
-                    parameter.span,
-                ));
-                let local = LetStatement {
-                    attributes: Vec::new(),
-                    mutable: parameter.node.mutable,
-                    name: parameter.node.name.clone(),
-                    type_annotation: Some(parameter.node.ty.clone()),
-                    value: Spanned::new(read, parameter.span),
-                };
-                Spanned::new(Statement::Let(Spanned::new(local, parameter.span)), parameter.span)
-            })
-            .collect::<Vec<_>>();
-        body.node.statements.splice(0..0, prelude);
+        function_parameters.push(object_parameter(ARGUMENTS_RECORD_PARAMETER, &record.type_name, span));
+        prelude.extend(read_prelude(ARGUMENTS_RECORD_PARAMETER, &record.parameters, &body));
     }
-    function_parameters.extend(parameters.iter().cloned());
+    if !parameters.is_empty() {
+        function_parameters.push(object_parameter(SERVICES_PARAMETER, &arguments_name, span));
+        prelude.extend(read_prelude(SERVICES_PARAMETER, &parameters, &body));
+    }
+    body.node.statements.splice(0..0, prelude);
     let function = FunctionDefinition {
         attributes: Vec::new(),
         visibility: Spanned::new(Visibility::Private, span),
@@ -328,14 +345,14 @@ fn lower_hook(
         return None;
     }
 
-    let arguments_name = hook_arguments_name(host, hook.node.kind, span);
+    // Public fields: the hook function, outside the type, reads them.
     let fields = parameters
         .iter()
         .map(|parameter| {
             Spanned::new(
                 Field {
                     attributes: Vec::new(),
-                    visibility: Spanned::new(Visibility::Private, parameter.span),
+                    visibility: Spanned::new(Visibility::Public, parameter.span),
                     kind: FieldKind::Injected,
                     event_capacity: None,
                     inject_qualifier: None,
@@ -633,7 +650,8 @@ i32 Main()
         assert!(with.node.arguments.is_empty());
 
         let startup = function(&lowered, &format!("{HOOK_ITEM_PREFIX}_AppHost_startup_"));
-        assert_eq!(startup.parameters.len(), 2, "record first, then the injected parameter");
+        assert_eq!(startup.parameters.len(), 2, "record first, then the argument object");
+        assert_eq!(startup.parameters[1].node.name.node.name, SERVICES_PARAMETER);
         assert_eq!(startup.parameters[0].node.name.node.name, ARGUMENTS_RECORD_PARAMETER);
         // Only the parameter the body names is read from the record.
         let Statement::Let(read) = &startup.body.node.statements[0].node else { panic!("record read") };
