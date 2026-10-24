@@ -21,7 +21,9 @@ use crate::projects::{
     assembly_options_for_prepare,
 };
 
-use super::super::composition::{composition_result_to_diagnostics, resolve_program_composition_with_imports};
+use super::super::composition::{
+    composition_result_to_diagnostics, composition_unit_sources, resolve_program_composition_with_imports,
+};
 use super::super::entry_session::{
     cached_executable_if_valid, store_executable_and_snapshot, update_semantic_snapshot,
 };
@@ -308,6 +310,7 @@ pub(super) fn run_prepare_spine(
             program.span,
             entry_unit.logical_name.as_str(),
             entry_source,
+            &composition_unit_sources(&assembly, &entry_unit.path),
             Some(plan),
         );
         require_no_semantic_errors(&composition_diagnostics)?;
@@ -317,6 +320,7 @@ pub(super) fn run_prepare_spine(
             program.span,
             entry_unit.logical_name.as_str(),
             entry_source,
+            &composition_unit_sources(&assembly, &entry_unit.path),
             Some(plan),
         ));
     }

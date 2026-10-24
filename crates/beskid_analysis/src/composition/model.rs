@@ -84,6 +84,8 @@ pub struct CompositionScope {
     pub span: SpanInfo,
     /// Number of parameters the scope declares (`scope Visit(i32 id)`); `with` passes them.
     pub parameter_count: usize,
+    /// The unit of the host that declares the scope.
+    pub unit: UnitPath,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

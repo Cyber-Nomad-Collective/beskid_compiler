@@ -3,8 +3,8 @@
 //! only its `inject` fields; so it must be a non-generic `type` without value fields, and a
 //! `for Contract` registration must name a type that conforms to the contract.
 //!
-//! The checks use the declarations of the unit under analysis. A registration naming a type that
-//! the unit does not declare (an imported one) is left to the resolver and the backend.
+//! The checks cover every merged registration, including those of base hosts in imported units;
+//! an issue is reported in the unit that declares the registry line.
 
 use std::collections::{HashMap, HashSet};
 
@@ -121,15 +121,16 @@ pub fn validate_registrations(
     registrations: &[Registration],
     program: &Spanned<Program>,
     imported: &[&Spanned<Program>],
-) -> Vec<CompositionIssue> {
+) -> Vec<(super::model::UnitPath, CompositionIssue)> {
     let declarations = declarations(program, imported);
     let mut issues = Vec::new();
+    let mut located = Vec::new();
     for registration in registrations {
-        // Generated hook arguments are always constructible; an imported unit's registry lines
-        // are diagnosed when that unit is analysed.
-        if super::hooks::is_hook_item_name(&registration.implementation) || registration.unit.is_some() {
+        // Generated hook arguments are always constructible.
+        if super::hooks::is_hook_item_name(&registration.implementation) {
             continue;
         }
+        let issues_before = issues.len();
         let implementation = last_segment(&registration.implementation);
         match declarations.get(implementation) {
             Some(Declaration::Contract { .. }) => {
@@ -189,8 +190,9 @@ pub fn validate_registrations(
             }
             None => {}
         }
+        located.extend(issues.drain(issues_before..).map(|issue| (registration.unit.clone(), issue)));
     }
-    issues
+    located
 }
 
 #[cfg(test)]

@@ -28,7 +28,7 @@ pub use analyze::{
 };
 pub use composition::{
     composition_diagnostics_for_program, composition_diagnostics_for_program_with_imports, composition_imports,
-    composition_result_to_diagnostics, is_mod_compile_plan,
+    CompositionUnitSource, composition_result_to_diagnostics, composition_unit_sources, is_mod_compile_plan,
     prepare_program_for_composition, resolve_program_composition, resolve_program_composition_with_imports,
 };
 pub use diagnostics_emit::{parse_error_diagnostic, pest_error_diagnostic, project_error_diagnostic};

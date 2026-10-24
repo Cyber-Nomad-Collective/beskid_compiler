@@ -159,7 +159,11 @@ pub fn collect_with_imports(
                 hook.unit = unit.clone();
             }
             collected.host_registries.insert(name.clone(), registrations);
-            collected.host_scopes.insert(name.clone(), foreign.host_scopes.remove(&name).unwrap_or_default());
+            let mut scopes = foreign.host_scopes.remove(&name).unwrap_or_default();
+            for scope in &mut scopes {
+                scope.unit = unit.clone();
+            }
+            collected.host_scopes.insert(name.clone(), scopes);
             collected.host_hooks.insert(name.clone(), hooks);
             collected.hosts.insert(name, host);
         }
@@ -382,6 +386,7 @@ fn collect_scope(
         parent: Some(parent_scope_id),
         span: scope.span,
         parameter_count: scope.node.parameters.len(),
+        unit: None,
     });
 
     for item in &scope.node.body {

@@ -67,6 +67,32 @@ pub fn composition_imports<'a>(
         .collect()
 }
 
+/// The name and text of one imported unit of the assembly, for composition diagnostics located
+/// in it (a base host's registry line, an imported service's `inject` field).
+#[derive(Debug, Clone, Copy)]
+pub struct CompositionUnitSource<'a> {
+    pub path: &'a std::path::Path,
+    pub name: &'a str,
+    pub source: &'a str,
+}
+
+/// The units of `assembly` other than `entry`, as diagnostic sources.
+pub fn composition_unit_sources<'a>(
+    assembly: &'a crate::projects::ProgramAssembly,
+    entry: &std::path::Path,
+) -> Vec<CompositionUnitSource<'a>> {
+    assembly
+        .units
+        .iter()
+        .filter(|unit| unit.path != entry)
+        .map(|unit| CompositionUnitSource {
+            path: unit.path.as_path(),
+            name: unit.logical_name.as_str(),
+            source: unit.source.as_str(),
+        })
+        .collect()
+}
+
 pub fn composition_diagnostics_for_program(
     program: &Spanned<Program>,
     compile_plan: Option<&CompilePlan>,
@@ -90,15 +116,20 @@ pub fn composition_diagnostics_for_program_with_imports(
         generated.program.span,
         source_name,
         source,
+        &[],
         compile_plan,
     ))
 }
 
+/// Diagnostics of a composition result: entry issues in `source_name`, and each issue located in
+/// an imported unit in that unit's own file (`units`). A foreign issue whose unit text is not
+/// among `units` is reported in the entry at `program_span`, never dropped.
 pub fn composition_result_to_diagnostics(
     composition: &CompositionResult,
     program_span: SpanInfo,
     source_name: &str,
     source: &str,
+    units: &[CompositionUnitSource<'_>],
     plan: Option<&CompilePlan>,
 ) -> Vec<SemanticDiagnostic> {
     let mut diagnostics = composition
@@ -106,6 +137,21 @@ pub fn composition_result_to_diagnostics(
         .iter()
         .map(|issue| composition_issue_to_diagnostic(issue, program_span, source_name, source))
         .collect::<Vec<_>>();
+    for (path, issue) in &composition.foreign_issues {
+        diagnostics.push(match units.iter().find(|unit| unit.path == path.as_ref()) {
+            Some(unit) => composition_issue_to_diagnostic(issue, SpanInfo::default(), unit.name, unit.source),
+            None => make_diagnostic(
+                source_name,
+                source,
+                program_span,
+                format!("composition issue in `{}` that has no source text: {issue:?}", path.display()),
+                "composition issue in another unit",
+                None,
+                Some(crate::composition::diagnostics::composition_issue_code(issue).to_string()),
+                crate::analysis::Severity::Error,
+            ),
+        });
+    }
 
     if plan.is_some_and(|compile_plan| {
         lib_project_rejects_launch(compile_plan.target.kind) && !composition.snapshot.launched_host.is_empty()
@@ -487,5 +533,39 @@ i32 Main() { launch AppHost(); return 0; }
             .find(|diagnostic| diagnostic.code.as_deref() == Some("E1723"))
             .unwrap_or_else(|| panic!("E1723 expected: {found:?}"));
         assert!(base.message.contains("`BaseHost`"), "{}", base.message);
+    }
+    #[test]
+    fn an_imported_registration_is_checked_and_reported_in_its_own_unit() {
+        let library_source = r#"
+pub type Prefixed { string prefix }
+host BaseHost() { registry { single Prefixed; } }
+"#;
+        let library = parse_program(library_source).expect("library parses");
+        let source = r#"
+host AppHost() : BaseHost { }
+i32 Main() { launch AppHost(); return 0; }
+"#;
+        let program = crate::composition::lower_host_hooks(parse_program(source).expect("parse"));
+        let path: std::sync::Arc<std::path::Path> = std::sync::Arc::from(std::path::Path::new("/lib/Base.bd"));
+        let result = super::resolve_program_composition_with_imports(
+            &program,
+            &[(std::sync::Arc::clone(&path), &library)],
+            None,
+        );
+        assert!(result.issues.is_empty(), "nothing is wrong in the entry: {:?}", result.issues);
+        let [(unit, crate::composition::CompositionIssue::UnconstructibleRegistration { .. })] =
+            result.foreign_issues.as_slice()
+        else {
+            panic!("E1719 in the library unit expected: {:?}", result.foreign_issues)
+        };
+        assert_eq!(unit, &path);
+        let units = [super::CompositionUnitSource { path: &path, name: "Base.bd", source: library_source }];
+        let diagnostics =
+            super::composition_result_to_diagnostics(&result, program.span, "Main.bd", source, &units, None);
+        let [diagnostic] = diagnostics.as_slice() else { panic!("one diagnostic: {diagnostics:?}") };
+        assert_eq!(diagnostic.code.as_deref(), Some("E1719"));
+        assert_eq!(diagnostic.src.name(), "Base.bd", "reported in the library file");
+        let start = diagnostic.span.offset();
+        assert_eq!(&library_source[start..start + diagnostic.span.len()], "Prefixed");
     }
 }
