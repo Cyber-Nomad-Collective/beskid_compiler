@@ -63,13 +63,11 @@ pub i32 NetworkDnsResolve(pointer hostName, i64 port, i64 family, i64 deadline, 
     SchedInit();
     if deadline < -1 { return NETWORK_UNSUPPORTED; }
     if port <= 0 || port > 65535 || (family != 0 && family != 4 && family != 6) || NetworkArrayData(resultArray, 1) == NativePointer(0) { return NETWORK_INVALID_ADDRESS; }
-    word current = SchedulerCurrentFiber();
-    if current == FIBER_NONE { return NETWORK_UNSUPPORTED; }
     raw_word_store(NetworkArrayData(resultArray, 1), 0);
     pointer record = SystemAllocate(NETWORK_DNS_RECORD_SIZE, 8);
     if record == NativePointer(0) { return NETWORK_RESOURCE_EXHAUSTED; }
     memory_set(record, 0, NETWORK_DNS_RECORD_SIZE);
-    word token = ExternalWaitRegister(FiberHandle(current), 23, deadline);
+    word token = ExternalWaitRegister(ExternalWaiterHandle(), 23, deadline);
     if token == 0 { SystemFree(record, NETWORK_DNS_RECORD_SIZE); return NETWORK_BUSY; }
     if deadline >= 0 && deadline <= clock_monotonic_nanos() {
         ExternalTryComplete(token & 0xFFFFFFFF, token >> 32, EXTERNAL_TIMEOUT);

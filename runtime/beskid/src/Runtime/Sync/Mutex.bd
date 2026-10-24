@@ -93,6 +93,11 @@ pub i32 MutexLock(pointer id) {
     mut word waiterHandle = 0;
     if fiberIndex != FIBER_NONE { waiterHandle = FiberHandle(fiberIndex); }
     while raw_byte_load(slot) == MutexState::Locked {
+        if fiberIndex == FIBER_NONE {
+            // Main parks as the root fiber: it drives the scheduler until the holder unlocks.
+            SchedulerRootWait();
+            continue;
+        }
         if waiterHandle == 0 || !FiberHandleValid(waiterHandle) { return 1; }
         pointer fiber = FiberRecord(fiberIndex);
         if raw_byte_load(pointer_add(fiber, 41)) != 0 { return 1; }

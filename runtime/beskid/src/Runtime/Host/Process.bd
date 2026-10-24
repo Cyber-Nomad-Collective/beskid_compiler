@@ -47,7 +47,8 @@ pub i64 ChildPoll(u64 token) { return child_poll(token); }
 [Export(Abi:"C", Symbol:"beskid_rt_v5_child_terminate")]
 pub i32 ChildTerminate(u64 token) { return child_terminate(token); }
 
-// 1ms readiness granularity, one Foundation cancellation/deadline authority.
+// 1ms readiness granularity, one Foundation cancellation/deadline authority. In Main the
+// pause is a root sleep, so other fibers run while Main waits for its child.
 [Export(Abi:"C", Symbol:"beskid_rt_v5_child_pause")]
 pub i64 ChildPause(i64 deadline) {
     i64 now = clock_monotonic_nanos();
@@ -55,7 +56,8 @@ pub i64 ChildPause(i64 deadline) {
     if deadline >= 0 && now >= deadline { return -4; }
     mut i64 next = now + 1000000;
     if deadline >= 0 && deadline < next { next = deadline; }
-    if SchedulerCurrentFiber() == FIBER_NONE { thread_yield(); return 0; }
+    // Without a scheduler (process start or teardown) there is nothing else to run.
+    if SchedTable() == NativePointer(0) { thread_yield(); return 0; }
     word winner = ExternalSleepUntil(next);
     if winner == EXTERNAL_CANCELLED { return -3; }
     if winner == 0 { return -5; }

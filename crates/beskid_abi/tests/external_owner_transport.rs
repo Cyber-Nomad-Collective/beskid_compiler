@@ -81,5 +81,11 @@ fn native_owner_wake_closes_each_park_window_and_routes_only_to_its_owner() {
         String::from_utf8_lossy(&run.stdout),
         String::from_utf8_lossy(&run.stderr),
     );
+    assert!(
+        String::from_utf8_lossy(&run.stdout).contains("blocked-read-shutdown=orphaned"),
+        "fixture did not prove that pool shutdown orphans a worker blocked in a cancelled read:\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr),
+    );
     print!("{}", String::from_utf8_lossy(&run.stdout));
 }
