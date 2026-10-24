@@ -464,7 +464,8 @@ LambdaParameterList = { LambdaParameter ~ ("," ~ LambdaParameter)* }
 LambdaParameter = { AttributeList? ~ (BeskidType ~ Identifier | Identifier) }
 LambdaBody = { BlockExpression | Expression }
 
-AssignmentOperator = { "=" | "+=" | "-=" }
+// Every arithmetic operator has a compound assignment.
+AssignmentOperator = { "=" | "+=" | "-=" | "*=" | "/=" | "%=" }
 AssignmentExpression = { LogicalOrExpression ~ (AssignmentOperator ~ AssignmentExpression)? }
 LogicalOrExpression = { LogicalAndExpression ~ ("||" ~ LogicalAndExpression)* }
 LogicalAndExpression = { BitwiseOrExpression ~ ("&&" ~ BitwiseOrExpression)* }

@@ -170,7 +170,7 @@ const ITEM_KEYWORDS: &[&str] =
     &["type", "enum", "contract", "impl", "extend", "mod", "use", "host", "test", "pub", "const", "attribute", "macro"];
 const BINARY_OPERATORS: &[&str] = &[
     "+", "-", "*", "/", "%", "==", "!=", "===", "!==", "<", ">", "<=", ">=", "<<", ">>", "&&", "||", "&", "|", "=",
-    "+=", "-=",
+    "+=", "-=", "*=", "/=", "%=",
 ];
 const POSTFIX_OPERATORS: &[&str] = &[".", "(", "[", "?"];
 /// Tokens that start an expression; several of them together read as "an expression".

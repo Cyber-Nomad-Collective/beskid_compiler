@@ -285,3 +285,21 @@ fn corpus_messages_never_name_grammar_rules() {
         }
     }
 }
+
+#[test]
+fn every_compound_assignment_operator_parses_in_a_body() {
+    use crate::syntax::AssignOp;
+    for (operator, expected) in [
+        ("+=", AssignOp::AddAssign),
+        ("-=", AssignOp::SubAssign),
+        ("*=", AssignOp::MulAssign),
+        ("/=", AssignOp::DivAssign),
+        ("%=", AssignOp::RemAssign),
+    ] {
+        let source = format!("unit Main() {{\n    i32 x = 6;\n    x {operator} 2;\n}}\n");
+        let parsed = parse_program_with_source_name_and_diagnostics("t.bd", &source).expect("parses");
+        assert!(parsed.diagnostics.is_empty() && !parsed.recovered, "{operator}: {:?}", parsed.diagnostics);
+        let text = format!("{:?}", parsed.program.node);
+        assert!(text.contains(&format!("{expected:?}")), "{operator}: no {expected:?} node");
+    }
+}

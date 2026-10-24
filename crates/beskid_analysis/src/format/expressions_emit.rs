@@ -136,6 +136,9 @@ impl Emit for AssignOp {
             AssignOp::Assign => cx.token(w, "="),
             AssignOp::AddAssign => cx.token(w, "+="),
             AssignOp::SubAssign => cx.token(w, "-="),
+            AssignOp::MulAssign => cx.token(w, "*="),
+            AssignOp::DivAssign => cx.token(w, "/="),
+            AssignOp::RemAssign => cx.token(w, "%="),
         }
     }
 }

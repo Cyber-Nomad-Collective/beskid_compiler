@@ -522,6 +522,7 @@ fn collect_assignment_values(
                 let Some(actual) = value_identity(db, value_key) else { continue };
                 judge(db, findings, &Destination::Identity(expected), &actual, assignment_key);
             }
+            AssignOp::MulAssign | AssignOp::DivAssign | AssignOp::RemAssign => {}
             AssignOp::AddAssign | AssignOp::SubAssign => {
                 let Ok(Some(fact)) = event_operation(db, assignment_key) else { continue };
                 let Some(field_syntax) = db.syntax_unit(fact.field.unit).filter(|syntax| syntax.accepts_key(db, fact.field))

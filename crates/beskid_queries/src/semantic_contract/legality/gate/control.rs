@@ -269,7 +269,9 @@ pub(super) fn collect_event_obligations(
         }
         let supported = match assign.op.node {
             AssignOp::AddAssign => is_numeric(target) || target == SemanticTypeId::STRING,
-            AssignOp::SubAssign => is_numeric(target),
+            AssignOp::SubAssign | AssignOp::MulAssign | AssignOp::DivAssign | AssignOp::RemAssign => {
+                is_numeric(target)
+            }
             AssignOp::Assign => true,
         };
         if !supported {
