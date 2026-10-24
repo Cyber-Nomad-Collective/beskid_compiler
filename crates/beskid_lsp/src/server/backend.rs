@@ -31,7 +31,7 @@ use crate::session::mod_host::mod_host_from_initialization_options;
 use crate::session::store::State;
 use crate::text_sync::apply_document_changes;
 use crate::workspace_scan::{
-    clear_closed_workspace_under_root, hydrate_disk_after_close, refresh_after_disk_change, scan_workspace, uri_to_path,
+    clear_closed_workspace_under_root, hydrate_disk_after_close, refresh_after_disk_change, scan_workspace_roots, uri_to_path,
 };
 
 /// Tower-LSP [`LanguageServer`] implementation for Beskid (sync, diagnostics, IDE features).
@@ -114,18 +114,19 @@ impl Backend {
                 let current_roots = roots.read().await.clone();
                 let focused = state.read().await.focused_project.clone();
                 let filter = *log_filter.read().await;
-                for root in current_roots {
-                    client_log(&client, filter, MessageType::INFO, format!("workspace scan started: {}", root.display()))
-                        .await;
-                    scan_workspace(&client, &state, &root, focused.as_deref()).await;
-                    client_log(
-                        &client,
-                        filter,
-                        MessageType::INFO,
-                        format!("workspace scan completed: {}", root.display()),
-                    )
-                    .await;
-                }
+                let hook_client = client.clone();
+                let hook: crate::workspace_scan::RootHook = Arc::new(move |root, phase| {
+                    let client = hook_client.clone();
+                    Box::pin(async move {
+                        let what = match phase {
+                            crate::workspace_scan::RootPhase::Started => "started",
+                            crate::workspace_scan::RootPhase::Completed => "completed",
+                        };
+                        client_log(&client, filter, MessageType::INFO, format!("workspace scan {what}: {}", root.display()))
+                            .await;
+                    })
+                });
+                scan_workspace_roots(&client, &state, &current_roots, focused.as_deref(), Some(hook)).await;
                 if !scan.finish_round() {
                     run.disarm();
                     break;

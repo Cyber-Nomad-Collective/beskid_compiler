@@ -73,7 +73,7 @@ async fn emit_scan_idle(client: &Client) {
 }
 
 /// Recursively index `root` for Beskid sources, publish diagnostics for closed files, then emit idle status.
-pub async fn scan_workspace(client: &Client, state: &RwLock<State>, root: &Path, focused_project: Option<&Path>) {
+pub async fn scan_workspace_root(client: &Client, state: &RwLock<State>, root: &Path, focused_project: Option<&Path>) {
     let mut paths: Vec<PathBuf> = Vec::new();
     for entry in WalkDir::new(root)
         .into_iter()
@@ -258,8 +258,45 @@ pub async fn scan_workspace(client: &Client, state: &RwLock<State>, root: &Path,
         clear_disk_snapshot(client, state, &uri).await;
     }
 
-    state.read().await.mark_workspace_index_complete();
     emit_scan_idle(client).await;
+}
+
+/// Boundary of one root inside a multi-root scan.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RootPhase {
+    Started,
+    Completed,
+}
+
+/// Called at each root boundary (logging, tests).
+pub type RootHook = std::sync::Arc<
+    dyn Fn(PathBuf, RootPhase) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> + Send + Sync,
+>;
+
+/// Scan every workspace root in order. `workspace_index_complete` is set only after the last
+/// root's closed sources have been analyzed, never between roots.
+pub async fn scan_workspace_roots(
+    client: &Client,
+    state: &RwLock<State>,
+    roots: &[PathBuf],
+    focused_project: Option<&Path>,
+    hook: Option<RootHook>,
+) {
+    for root in roots {
+        if let Some(hook) = &hook {
+            hook(root.clone(), RootPhase::Started).await;
+        }
+        scan_workspace_root(client, state, root, focused_project).await;
+        if let Some(hook) = &hook {
+            hook(root.clone(), RootPhase::Completed).await;
+        }
+    }
+    state.read().await.mark_workspace_index_complete();
+}
+
+/// Scan a single root as a complete workspace.
+pub async fn scan_workspace(client: &Client, state: &RwLock<State>, root: &Path, focused_project: Option<&Path>) {
+    scan_workspace_roots(client, state, std::slice::from_ref(&root.to_path_buf()), focused_project, None).await;
 }
 
 /// Remove a workspace-indexed document and clear its diagnostics.
@@ -560,6 +597,49 @@ mod tests {
         }
         ticker.abort();
         assert!(ticks.load(std::sync::atomic::Ordering::Relaxed) > 0, "other tasks ran while files were read");
+    }
+
+    fn write_project(root: &Path, name: &str) {
+        fs::create_dir_all(root.join("Src")).expect("src");
+        fs::write(
+            root.join(format!("{name}.bproj")),
+            format!("{name} {{\n  name = \"{name}\"\n  version = \"0.1.0\"\n}}\n\ntarget \"App\" {{\n  kind = App\n  entry = \"Main.bd\"\n}}\n"),
+        )
+        .expect("manifest");
+        fs::write(root.join("Src/Main.bd"), "i32 Main() { return 0; }\n").expect("source");
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn index_completes_only_after_every_root_is_analyzed() {
+        let (client, _notifications) = initialized_client().await;
+        let first = TempDir::new().expect("first root");
+        let second = TempDir::new().expect("second root");
+        write_project(first.path(), "First");
+        write_project(second.path(), "Second");
+        let state = Arc::new(RwLock::new(State::default()));
+        let complete = Arc::clone(&state.read().await.workspace_index_complete);
+        let seen: Arc<Mutex<Vec<(String, bool)>>> = Arc::new(Mutex::new(Vec::new()));
+        let hook: RootHook = {
+            let seen = Arc::clone(&seen);
+            let complete = Arc::clone(&complete);
+            Arc::new(move |root, phase| {
+                let seen = Arc::clone(&seen);
+                let flag = complete.load(std::sync::atomic::Ordering::Acquire);
+                Box::pin(async move {
+                    seen.lock().expect("seen").push((format!("{:?}:{}", phase, root.file_name().unwrap().to_string_lossy()), flag));
+                })
+            })
+        };
+        let roots = vec![first.path().to_path_buf(), second.path().to_path_buf()];
+        scan_workspace_roots(&client, &state, &roots, None, Some(hook)).await;
+
+        let seen = seen.lock().expect("seen").clone();
+        assert_eq!(seen.len(), 4, "two boundaries per root: {seen:?}");
+        assert!(seen.iter().all(|(_, flag)| !flag), "the index is partial at every root boundary: {seen:?}");
+        let read = state.read().await;
+        assert!(read.workspace_index_complete.load(std::sync::atomic::Ordering::Acquire));
+        let indexed = |name: &str| read.workspace_index.keys().any(|uri| uri.as_str().contains(name));
+        assert!(indexed("First") && indexed("Second"), "both roots' closed sources are indexed");
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
