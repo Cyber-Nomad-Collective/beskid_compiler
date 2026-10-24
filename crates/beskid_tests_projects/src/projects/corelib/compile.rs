@@ -84,20 +84,45 @@ fn checked_in_corelib_sources_do_not_emit_error_diagnostics_in_project_context()
     });
 }
 
-/// Members of Corelib's generic types are judged against their own type parameters (E1206 in a
-/// generic body, beskid-lings milestone 3); a correct Corelib reports none of them.
+/// Generic functions and members of generic types are judged against their own type parameters
+/// (E1206 in a generic body, beskid-lings milestone 3); a correct Corelib reports none of them.
+/// The files are every foundation unit that declares a generic type or function.
 #[test]
-fn checked_in_corelib_generic_collections_have_no_generic_body_type_mismatches() {
+fn checked_in_corelib_generic_declarations_have_no_generic_body_type_mismatches() {
     with_cwd_at_workspace_root(&compiler_workspace_root(), || {
-        let root = corelib_workspace_root();
-        let collections = root.join("packages/foundation/src/Core/Collections");
-        let mut paths = fs::read_dir(&collections)
-            .unwrap_or_else(|error| panic!("read {}: {error}", collections.display()))
-            .map(|entry| entry.expect("collections entry").path())
-            .filter(|path| path.extension().is_some_and(|extension| extension == "bd"))
-            .collect::<Vec<_>>();
-        paths.push(root.join("packages/foundation/src/Core/Results/Results.bd"));
-        paths.sort();
+        let core = corelib_workspace_root().join("packages/foundation/src/Core");
+        let paths = [
+            "Collections/Array.bd",
+            "Collections/Array/ArrayIter.bd",
+            "Collections/HashTable.bd",
+            "Collections/I64Map.bd",
+            "Collections/List.bd",
+            "Collections/Map.bd",
+            "Collections/Map/MapEntry.bd",
+            "Collections/PriorityQueue.bd",
+            "Collections/Queue.bd",
+            "Collections/Set.bd",
+            "Collections/Sort.bd",
+            "Collections/Stack.bd",
+            "Collections/Storage.bd",
+            "Collections/StringMap.bd",
+            "Bytes/BufferReader.bd",
+            "Bytes/BufferWriter.bd",
+            "Dynamic/Dynamic.bd",
+            "Json/Json.bd",
+            "Memory/Managed.bd",
+            "Optional/Option.bd",
+            "Process/Process.bd",
+            "Results/Results.bd",
+            "Text/Parser/Result.bd",
+            "Text/Pest/Emit.bd",
+            "Text/Pest/Expr.bd",
+            "Text/Pest/Grammar.bd",
+            "Text/Regex.bd",
+            "Time/Calendar.bd",
+            "Time/Deadline.bd",
+        ]
+        .map(|relative| core.join(relative));
         let mut mismatches = Vec::new();
         for path in paths {
             let source = fs::read_to_string(&path).unwrap_or_else(|_| panic!("read corelib source {}", path.display()));

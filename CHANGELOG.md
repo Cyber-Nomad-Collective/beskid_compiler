@@ -18,10 +18,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `for value in values` compares string contents when `T = string`. The
   variable is typed by the element its statement binds in the specialization;
   before, the two string pointers were compared.
-- Member bodies of generic types are checked against the type's own
-  parameters. `pub A Second() { return this.second; }` in `Pair<A, B>`, or
-  `Pair<B, A> { first: this.first, ... }`, is E1206 at the body instead of a
-  conflicting generic binding at a use site.
+- Bodies of generic functions and of members of generic types are checked
+  against their own type parameters. `pub A Second() { return this.second; }`
+  in `Pair<A, B>`, `Pair<B, A> { first: this.first, ... }`, or
+  `B Pick<A, B>(A first, B second) { return first; }` is E1206 at the body
+  instead of a conflicting generic binding at a use site.
 - A user type `Stack` with a `Push` method no longer collides with Corelib's
   `Core.Collections.Stack.Push` as `duplicate item ::Stack::Push`: method
   symbols include their declaring module.
