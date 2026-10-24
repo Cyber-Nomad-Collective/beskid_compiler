@@ -89,6 +89,15 @@ pub struct IteratorForFact {
     pub element_managed: ManagedReferenceFact,
 }
 
+/// The `Copy` hook of a `[CopyOnAssign]` type that a place read in a copy position calls
+/// (v0.6.7 copy on assignment). The hook takes the read value as its receiver and returns the
+/// copy that the position stores.
+#[derive(Clone)]
+pub struct ValueCopyPlan {
+    pub callee: DirectCallee,
+    pub signature: Signature,
+}
+
 #[derive(Clone)]
 pub struct ScopedCleanupPlan {
     pub binding: AstNodeKey,

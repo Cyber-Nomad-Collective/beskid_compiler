@@ -2,6 +2,8 @@
 
 #[path = "module_emission_specialization/call_boundaries.rs"]
 mod call_boundaries;
+#[path = "module_emission_specialization/copy_on_assign.rs"]
+mod copy_on_assign;
 #[path = "module_emission_specialization/generic_function_bodies.rs"]
 mod generic_function_bodies;
 #[path = "module_emission_specialization/generic_literals.rs"]

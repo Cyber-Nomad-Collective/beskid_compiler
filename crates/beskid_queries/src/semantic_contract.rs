@@ -94,6 +94,8 @@ use transfer::{
 };
 mod typed_arrays;
 mod typing;
+mod value_copy;
+pub use value_copy::{ValueCopyPosition, value_copy_position, value_copy_specialization};
 
 pub use typing::{pattern_binding_specialization, specialized_call_result_managed_reference_kind};
 

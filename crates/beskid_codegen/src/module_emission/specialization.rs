@@ -490,6 +490,42 @@ fn collect_generic_call_specializations_in_environment(
             }
         }
     }
+    // A place read of a `[CopyOnAssign]` value in a copy position calls the type's `Copy` hook
+    // without a CallExpression node (v0.6.7 copy on assignment). Its exact instance in this
+    // environment is the callee ISLE imports at the read, so it joins this worklist like a
+    // direct call.
+    if matches!(
+        node_kind(db, key).map_err(|error| emission_verification(error.to_string()))?,
+        Some(
+            beskid_queries::IndexedNodeKind::PathExpression
+                | beskid_queries::IndexedNodeKind::MemberExpression
+                | beskid_queries::IndexedNodeKind::IndexExpression
+        )
+    ) {
+        let copy = beskid_queries::value_copy_specialization(db, key, environment).map_err(|error| {
+            semantic_fact_error(
+                db,
+                key,
+                format_args!("copy on assignment failed at {}", beskid_queries::format_ast_node_site(db, key)),
+                error,
+            )
+        })?;
+        if let Some(instance) = copy {
+            let specialized = !instance.substitutions.is_empty() || !instance.contract_witnesses.is_empty();
+            let instances = specializations.entry(instance.declaration).or_default();
+            if !instances.contains(&instance) {
+                instances.push(instance.clone());
+                if specialized {
+                    collect_generic_call_specializations_in_environment(
+                        db,
+                        instance.declaration,
+                        Some(&instance),
+                        specializations,
+                    )?;
+                }
+            }
+        }
+    }
     if let Some(children) = child_nodes(db, key).map_err(|error| emission_verification(error.to_string()))? {
         for child in children.iter().copied() {
             collect_generic_call_specializations_in_environment(db, child, environment, specializations)?;

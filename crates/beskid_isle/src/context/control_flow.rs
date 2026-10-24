@@ -753,7 +753,8 @@ macro_rules! generated_control_flow_methods {
             }
             let slot = self.facts.local_slot(key)?;
             let binding = self.locals.get(&slot).copied()?;
-            Some(self.builder.use_var(binding.variable))
+            let value = self.builder.use_var(binding.variable);
+            self.copy_on_assign(key, value)
         }
 
         fn emit_local_assign(&mut self, key: AstNodeKey) -> Option<Value> {

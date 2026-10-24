@@ -123,6 +123,23 @@ impl SyntaxNodeFacts<'_> {
         Some(DirectCallee::item(declaration))
     }
 
+    /// The `Copy` hook a place read at `key` calls (copy on assignment, v0.6.7), with the exact
+    /// instance in the specialization of the item being lowered. Module emission collects the same
+    /// instance at the same read, so the callee is always among the emitted items.
+    pub(super) fn value_copy_impl(&self, key: AstNodeKey) -> Option<beskid_isle::ValueCopyPlan> {
+        let instance = self.query(beskid_queries::value_copy_specialization(
+            self.db,
+            key,
+            self.current_item_specialization(),
+        ))?;
+        let callee = if instance.substitutions.is_empty() && instance.contract_witnesses.is_empty() {
+            DirectCallee::item(instance.declaration)
+        } else {
+            DirectCallee::specialized_item(instance.declaration, specialization_identity(&instance))
+        };
+        Some(beskid_isle::ValueCopyPlan { callee, signature: signature_for_item(self.isa?, instance.signature)? })
+    }
+
     pub(super) fn call_signature_impl(&self, key: AstNodeKey) -> Option<Signature> {
         if let Some((_, intrinsic)) = self.runtime_intrinsic(key) {
             return signature_for_runtime_intrinsic(self.isa?, intrinsic);
