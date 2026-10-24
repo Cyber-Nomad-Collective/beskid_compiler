@@ -571,7 +571,7 @@ contract Repo<T> {{ i64 Count(); }}
 type User {{ }}
 type Order {{ }}
 type SqlRepo : Repo<User> {{ pub i64 Count() {{ return 0; }} }}
-type Service {{ inject {requested} repo }}
+type Service {{ inject {requested} repo; }}
 host AppHost() {{ registry {{ single SqlRepo for Repo<User>; single Service; }} }}
 i32 Main() {{ launch AppHost(); return 0; }}
 "#

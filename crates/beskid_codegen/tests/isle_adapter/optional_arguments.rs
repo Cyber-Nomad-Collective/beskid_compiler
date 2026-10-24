@@ -55,7 +55,7 @@ fn lowers_with_methods(source: &str) {
 #[test]
 fn a_method_call_gets_the_method_defaults() {
     lowers_with_methods(
-        "type Counter { i64 n\n pub i64 Add(i64 base, i64 step = 1) { return base + step + n; } }\n\
+        "type Counter { i64 n;\n pub i64 Add(i64 base, i64 step = 1) { return base + step + n; } }\n\
          i64 Main() { Counter counter = Counter { n: 0_i64 }; return counter.Add(2) + counter.Add(2, 3); }",
     );
 }
@@ -64,7 +64,7 @@ fn a_method_call_gets_the_method_defaults() {
 fn a_contract_bound_call_gets_the_contract_defaults() {
     lowers_with_methods(
         "contract Stepper { i64 Step(i64 base, i64 by = 1); }\n\
-         type Walker : Stepper { i64 n\n pub i64 Step(i64 base, i64 by) { return base + by + n; } }\n\
+         type Walker : Stepper { i64 n;\n pub i64 Step(i64 base, i64 by) { return base + by + n; } }\n\
          i64 Use<T>(T stepper) where T: Stepper { return stepper.Step(5); }\n\
          i64 Main() { Walker walker = Walker { n: 0_i64 }; return Use<Walker>(walker) + walker.Step(1); }",
     );
