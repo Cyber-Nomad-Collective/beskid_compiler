@@ -10,9 +10,15 @@ impl SyntaxNodeFacts<'_> {
         &self,
         key: AstNodeKey,
     ) -> Option<(beskid_queries::CompositionInjectedAccessFact, u32, u32, u8)> {
+        // A field read is a whole path or member expression, or the segment that ends one inside a
+        // call path (`this.greeter` in `this.greeter.Greet()`).
         matches!(
             self.query(beskid_queries::node_kind(self.db, key)),
-            Some(beskid_queries::IndexedNodeKind::PathExpression | beskid_queries::IndexedNodeKind::MemberExpression)
+            Some(
+                beskid_queries::IndexedNodeKind::PathExpression
+                    | beskid_queries::IndexedNodeKind::MemberExpression
+                    | beskid_queries::IndexedNodeKind::PathSegment
+            )
         )
         .then_some(())?;
         let (plan, snapshot) = self.input.composition_authority()?;
@@ -190,5 +196,37 @@ impl SyntaxNodeFacts<'_> {
             && signature.params.iter().all(|parameter| parameter.value_type == pointer))
         .then_some(())?;
         Some(CompositionHookCall { function: DirectCallee::item(function), signature, record, arguments_slot })
+    }
+
+    /// The implementation a contract method call on an injected contract-typed field calls: the
+    /// frozen plan binds every singular injection of that field to one registration slot, and
+    /// all of them must name one implementation type. Its method that implements `signature` is
+    /// called directly; no other binding is accepted.
+    pub(in crate::isle_adapter) fn injected_contract_implementation(
+        &self,
+        key: AstNodeKey,
+        signature: AstNodeKey,
+    ) -> Option<AstNodeKey> {
+        let receiver = *self.query(beskid_queries::call_arguments(self.db, key))?.first()?;
+        let (access, _, _, _) = self.composition_injected_access(receiver)?;
+        let (plan, snapshot) = self.input.composition_authority()?;
+        let mut implementations = Vec::new();
+        for singular in
+            plan.singulars.iter().filter(|entry| self.input.composition_unit_key(&entry.field_unit, entry.field_node_id) == access.field)
+        {
+            let target = plan.activation.iter().find(|entry| entry.slot == singular.target_slot)?;
+            let registration = snapshot.registrations.iter().find(|entry| entry.id == target.registration_id)?;
+            let source = self.input.composition_unit_key(&registration.unit, registration.source_node_id);
+            let fact = self.query(beskid_queries::composition_registration(self.db, source))?;
+            (fact.site == source && fact.implementation.as_ref() == registration.implementation).then_some(())?;
+            if !implementations.contains(&fact.declaration) {
+                implementations.push(fact.declaration);
+            }
+        }
+        let [concrete] = implementations.as_slice() else { return None };
+        let contract = self.query(beskid_queries::contract_of_method_signature(self.db, signature))?;
+        self.query(beskid_queries::type_contract_implementation(self.db, *concrete, contract))?
+            .iter()
+            .find_map(|(candidate, implementation)| (*candidate == signature).then_some(*implementation))
     }
 }

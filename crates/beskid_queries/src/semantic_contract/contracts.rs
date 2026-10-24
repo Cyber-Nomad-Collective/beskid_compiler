@@ -646,6 +646,9 @@ pub(super) fn contract_member_receiver(
     if let Some(field_member) = bounded_field_member_receiver(db, program, index, key, path) {
         return Some(field_member);
     }
+    if let Some(injected) = injected_contract_field_receiver(db, program, index, key, path) {
+        return Some(injected);
+    }
     let [receiver, member] = path.segments.as_slice() else {
         return None;
     };
@@ -654,6 +657,9 @@ pub(super) fn contract_member_receiver(
     }
     let identifier = resolve_lexical_declaration(program, index, key.node, &receiver.node.name.node.name)?;
     let parameter_node = parent_node(index, identifier)?;
+    if index.kind(parameter_node) == Some(NodeKind::LetStatement) {
+        return contract_local_member(db, program, index, key, identifier, parameter_node, &member.node.name.node.name);
+    }
     let parameter = index.node_at(program, parameter_node)?.of::<Parameter>()?;
     // A receiver typed by a bounded lexical generic (`T value` with `where T: Contract<E>`)
     // keeps that generic: its members are exactly the bound contracts' members.
@@ -707,6 +713,133 @@ pub(super) fn contract_member_receiver(
         }
     });
     Some(result)
+}
+
+/// The member named `name` among a contract's methods, embeddings included.
+fn contract_member_named(db: &dyn Db, contract: AstNodeKey, name: &str) -> Result<AstNodeKey, SemanticError> {
+    let methods = contract_methods(db, contract, &mut HashSet::new())?;
+    let candidates = methods
+        .into_iter()
+        .filter(|method| {
+            db.syntax_unit(method.unit)
+                .and_then(|syntax| {
+                    syntax
+                        .syntax_index(db)
+                        .node_at(syntax.expanded_program(db), method.node)
+                        .and_then(|node| node.of::<ContractMethodSignature>())
+                        .map(|signature| signature.name.node.name == name)
+                })
+                .unwrap_or(false)
+        })
+        .collect::<Vec<_>>();
+    match candidates.as_slice() {
+        [method] => Ok(*method),
+        _ => Err(SemanticError::new(format!("contract member is not visible: {name}"))),
+    }
+}
+
+/// A member call on an injected field whose declared type is a contract (`this.greeter.Greet()`,
+/// `greeter.Greet()` inside a method, `host.greeter.Greet()`, `(this).greeter.Greet()`): the
+/// contract method and the receiver that reads the field. Code generation selects the
+/// implementation from the frozen composition plan, which names the one registration the field
+/// is bound to.
+pub(super) fn injected_contract_field_receiver(
+    db: &dyn Db,
+    program: &Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    key: AstNodeKey,
+    path: &Path,
+) -> Option<Result<(AstNodeKey, AstNodeKey), SemanticError>> {
+    let member = path.segments.last()?;
+    if !member.node.type_args.is_empty() {
+        return None;
+    }
+    let callee = match index.node_at(program, key.node)?.of::<beskid_analysis::syntax::CallExpression>() {
+        Some(call) => AstNodeKey {
+            node: normalized_expression_node(index, index.direct_child_id(program, key.node, DynNodeRef::from(call.callee.as_ref()))?),
+            ..key
+        },
+        None => key,
+    };
+    let receiver = match index.node_at(program, callee.node)?.of::<beskid_analysis::syntax::MemberExpression>() {
+        Some(member) => AstNodeKey {
+            node: normalized_expression_node(
+                index,
+                index.direct_child_id(program, callee.node, DynNodeRef::from(member.target.as_ref()))?,
+            ),
+            ..key
+        },
+        None => {
+            if path.segments.len() < 2 {
+                return None;
+            }
+            super::layouts::path_projection_segment(db, callee, path.segments.len() - 2)?
+        }
+    };
+    let access = super::composition::composition_injected_field_access(db, receiver).ok().flatten()?;
+    let syntax = db.syntax_unit(access.field.unit).filter(|syntax| syntax.accepts_key(db, access.field))?;
+    let field = syntax
+        .syntax_index(db)
+        .node_at(syntax.expanded_program(db), access.field.node)?
+        .of::<beskid_analysis::syntax::Field>()?;
+    // A plural injection (`inject Greeter[] all`) is an array, not a contract receiver.
+    let Type::Complex(annotation) = &field.ty.node else {
+        return None;
+    };
+    let contract = resolve_contract(db, access.field, &annotation.node)?;
+    Some(contract_member_named(db, contract, &member.node.name.node.name).map(|method| (method, receiver)))
+}
+
+/// A member call on an immutable local whose declared type is a contract (`Greeter g = Hello {};
+/// g.Greet()`): the concrete type of the initializer selects the implementation statically, the
+/// same conformance proof a contract-typed parameter's argument gets. A `mut` local, or an
+/// initializer without a concrete type, has no single implementation and is an error.
+fn contract_local_member(
+    db: &dyn Db,
+    program: &Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    key: AstNodeKey,
+    identifier: beskid_analysis::syntax::AstNodeId,
+    statement_node: beskid_analysis::syntax::AstNodeId,
+    member: &str,
+) -> Option<Result<(AstNodeKey, AstNodeKey), SemanticError>> {
+    let statement = index.node_at(program, statement_node)?.of::<beskid_analysis::syntax::LetStatement>()?;
+    let Type::Complex(annotation) = &statement.type_annotation.as_ref()?.node else {
+        return None;
+    };
+    let contract = resolve_contract(db, key, &annotation.node)?;
+    let name = statement.name.node.name.clone();
+    Some((|| {
+        if statement.mutable {
+            return Err(SemanticError::new(format!(
+                "`{name}.{member}()` needs one implementation, but `mut {name}` may hold any `{}`; call it through a parameter of the contract type",
+                bound_contract_name(&annotation.node)
+            )));
+        }
+        let signature = contract_member_named(db, contract, member)?;
+        let value = index
+            .direct_child_id(program, statement_node, DynNodeRef::from(&statement.value))
+            .ok_or_else(|| SemanticError::unavailable("contract_local_member"))?;
+        let value = AstNodeKey { node: normalized_expression_node(index, value), ..key };
+        let identity = generic_source_expression_identity(db, value)?;
+        let proven = prove_applied_conformance(db, value, &identity, contract, &[], &|concrete| match concrete {
+            None => SemanticError::new(format!(
+                "`{name}.{member}()` needs the concrete type of `{name}`, and its initializer has none"
+            )),
+            Some(concrete) => SemanticError::new(format!("missing contract conformance for {concrete}")),
+        })?;
+        if !proven.environment.is_empty() {
+            return Err(SemanticError::new(format!(
+                "`{name}.{member}()` on a generic implementation is not supported; call it through a parameter of the contract type"
+            )));
+        }
+        let implementation = proven
+            .methods
+            .iter()
+            .find_map(|(candidate, implementation)| (*candidate == signature).then_some(*implementation))
+            .ok_or_else(|| SemanticError::new(format!("missing contract method implementation: {member}")))?;
+        Ok((implementation, AstNodeKey { node: identifier, ..key }))
+    })())
 }
 
 /// A member call on a field of the implicit receiver (`this.element.Read(...)`, or
@@ -2063,6 +2196,13 @@ pub(super) fn contract_method_specialization(
         return Ok(None);
     };
     let (method, receiver) = receiver?;
+    // A contract-typed local resolves to its implementation without a witness; an injected
+    // contract field is bound by the composition plan at code generation.
+    if node_kind(db, method)? != Some(NodeKind::ContractMethodSignature)
+        || super::composition::composition_injected_field_access(db, receiver)?.is_some()
+    {
+        return Ok(None);
+    }
     let parameter = parent_node(index, receiver.node).map(|node| AstNodeKey { node, ..receiver });
     // A parameter may carry several bound witnesses (`T: A, T: B`); the member's contract
     // method selects exactly one of them.

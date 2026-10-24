@@ -146,6 +146,19 @@ pub(in crate::semantic_contract) fn call_arguments_tracked(
                         .and_then(Result::ok)
                         .map(|(_, receiver)| receiver)
                     })
+                    .or_else(|| {
+                        // An injected contract-typed field (`this.greeter.Greet()`) is read by its
+                        // field segment, like a nominal field chain.
+                        super::super::contracts::injected_contract_field_receiver(
+                            db,
+                            program,
+                            index,
+                            key,
+                            &path.node.path.node,
+                        )
+                        .and_then(Result::ok)
+                        .map(|(_, receiver)| receiver)
+                    })
             };
             let receiver = if path.node.path.node.segments.len() > 2 {
                 field_receiver()?

@@ -155,7 +155,7 @@ pub use semantic_contract::{
 pub use semantic_contract::{
     AppliedContractIdentity, applied_contract_argument_is_type, type_applied_contract_implementation,
     type_contract_applications, type_contract_applications_of, type_contract_declarations,
-    type_contract_implementation,
+    type_contract_implementation, contract_of_method_signature,
 };
 pub use semantic_contract::{
     CallArgumentTypeMismatch, CallArityMismatch, GateObligation, GateObligationKind, GenericBindingConflict,

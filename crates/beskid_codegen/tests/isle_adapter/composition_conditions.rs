@@ -1,5 +1,5 @@
 use super::support::{
-    SyntaxModuleItem, find_function_definitions, find_node, item_fixture_with_root, item_name, lower_syntax_program,
+    SyntaxModuleItem, find_function_definitions, find_node, find_nodes_of_kind, item_fixture_with_root, item_name, lower_syntax_program,
 };
 
 #[test]
@@ -944,4 +944,75 @@ i32 Main()
     assert_eq!(calls_of(&clif, startup), 1, "{clif}");
     // Both dispose hooks are registered for the host exit, each with at most two arguments.
     assert_eq!(calls_of(&clif, "composition_exit_register"), 2, "{clif}");
+}
+
+/// Contract method calls on contract-typed receivers that are not parameters: an injected field
+/// read as `this.greeter`, as a bare `greeter`, as `(this).greeter` and through a host value, and
+/// an immutable local initialized with a concrete type. Each calls the one implementation
+/// statically (the composition plan binds the injected field to `Hello`).
+#[test]
+fn contract_calls_on_injected_fields_and_locals_call_the_bound_implementation() {
+    use std::sync::Arc;
+
+    use beskid_analysis::composition::{CompositionInput, resolve_composition};
+
+    let source = r#"
+contract Greeter { string Greet(string name); }
+type Hello : Greeter { pub string Greet(string name) { return "hi " + name; } }
+type Worker {
+    inject Greeter greeter;
+    pub string ViaThis(string name) { return this.greeter.Greet(name); }
+    pub string ViaField(string name) { return greeter.Greet(name); }
+    pub string ViaGrouped(string name) { return (this).greeter.Greet(name); }
+}
+string ViaHost(Worker worker) { return worker.greeter.Greet("w"); }
+string ViaLocal() { Greeter g = Hello {}; return g.Greet("l"); }
+host AppHost() { registry { single Hello for Greeter; single Worker; } }
+i32 Main() { launch AppHost(); return 0; }
+"#;
+    let (input, isa, root) = item_fixture_with_root(source);
+    let result = resolve_composition(CompositionInput {
+        program: &input.typed_program().assembly.entry_unit().program,
+        is_mod_project: false,
+        types: &beskid_queries::CompositionTypes::new(input.database(), input.typed_program()),
+    });
+    assert!(result.issues.is_empty(), "composition must validate: {:?}", result.issues);
+    let mut snapshot = result.snapshot;
+    snapshot.source_unit_path = Some(root.unit.path(input.database()).to_path_buf());
+    let generation = input.typed_program().generation;
+    let input = input
+        .with_composition_authority(generation, Arc::new(result.plan), Arc::new(snapshot))
+        .expect("attach frozen composition authority");
+    let mut items = Vec::new();
+    for kind in [beskid_queries::IndexedNodeKind::FunctionDefinition, beskid_queries::IndexedNodeKind::MethodDefinition] {
+        for key in find_nodes_of_kind(input.database(), root, kind) {
+            let symbol = item_name(input.database(), key).expect("item query").expect("item name").to_string();
+            items.push(SyntaxModuleItem { symbol, key });
+        }
+    }
+    let artifact = lower_syntax_program(&input, isa.as_ref(), &items)
+        .expect("contract calls on injected fields and contract-typed locals lower");
+    beskid_codegen::validate_artifact(&artifact).expect("contract receiver artifact");
+    for caller in ["ViaThis", "ViaField", "ViaGrouped", "ViaHost", "ViaLocal"] {
+        let function = artifact.functions.iter().find(|function| function.name == caller).expect("caller lowered");
+        let clif = function.function.display().to_string();
+        assert!(clif.contains("call "), "`{caller}` calls the implementation directly:\n{clif}");
+    }
+}
+
+/// A `mut` contract-typed local may hold any implementation, so a contract call on it fails
+/// closed before lowering instead of reaching code generation.
+#[test]
+fn contract_call_on_a_mutable_contract_local_fails_closed() {
+    let (input, _, root) = item_fixture_with_root(
+        "contract Greeter { string Greet(); } \
+         type Hello : Greeter { pub string Greet() { return \"hi\"; } } \
+         string Main() { mut Greeter g = Hello {}; return g.Greet(); }",
+    );
+    let call = find_nodes_of_kind(input.database(), root, beskid_queries::IndexedNodeKind::CallExpression)
+        .into_iter()
+        .next()
+        .expect("the call");
+    let error = beskid_queries::call_lowering(input.database(), call).expect_err("a mut contract local has no implementation");
+    assert!(format!("{error:?}").contains("mut g"), "{error:?}");
 }

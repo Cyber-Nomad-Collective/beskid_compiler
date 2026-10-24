@@ -300,7 +300,7 @@ pub use queries::{
     resolved_item, resolved_local, runtime_intrinsic, runtime_intrinsic_name, spawn_entry_validation,
     spawn_handle_type, spawn_legality, spawn_target, test_item, test_statement_nodes, specialized_try_expression_fact, try_expression_fact, try_expression_judgement, try_expression_legality,
     type_applied_contract_implementation, type_contract_applications, type_contract_applications_of,
-    type_contract_declarations, type_contract_implementation, typed_array_allocation, value_abi_type,
+    type_contract_declarations, type_contract_implementation, contract_of_method_signature, typed_array_allocation, value_abi_type,
 };
 
 pub use native_mod_transport::{native_mod_expression_payload, native_mod_single_array_element};

@@ -123,6 +123,13 @@ impl SyntaxNodeFacts<'_> {
                 specialization_identity(&specialization),
             ));
         }
+        // A contract method called on an injected contract-typed field calls the implementation
+        // the composition plan binds that field to.
+        if self.query(node_kind(self.db, declaration)) == Some(beskid_queries::IndexedNodeKind::ContractMethodSignature)
+            && let Some(implementation) = self.injected_contract_implementation(key, declaration)
+        {
+            return Some(DirectCallee::item(implementation));
+        }
         Some(DirectCallee::item(declaration))
     }
 
