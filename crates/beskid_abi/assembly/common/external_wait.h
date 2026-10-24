@@ -276,11 +276,24 @@ static void BeskidWorkerFree(struct BeskidWorkerRequest *request) {
 }
 #define BESKID_WORKER_MAX 4
 #define BESKID_REQUEST_MAX 32
+/* One record per OS worker thread. A pool stop that finds a worker blocked in
+ * the OS call of an abandoned request (a cancelled read on an idle terminal,
+ * for example) orphans that worker instead of joining it: the process must not
+ * wait for an OS call nobody will consume. The orphan frees its request when
+ * the call returns and then exits without touching pool state; a later pool
+ * start or stop reaps its record. */
+struct BeskidWorkerSlot {
+  struct BeskidWorkerSlot *next; /* orphan list link */
+  struct BeskidWorkerRequest *running;
+  int orphaned, finished;
 #ifdef _WIN32
-static HANDLE beskid_workers[BESKID_WORKER_MAX];
+  HANDLE thread;
 #else
-static pthread_t beskid_workers[BESKID_WORKER_MAX];
+  pthread_t thread;
 #endif
+};
+static struct BeskidWorkerSlot *beskid_workers[BESKID_WORKER_MAX];
+static struct BeskidWorkerSlot *beskid_worker_orphans;
 static size_t beskid_worker_count, beskid_request_count;
 static int beskid_workers_stop;
 static struct BeskidWorkerRequest *beskid_work_head, *beskid_work_tail;
@@ -307,11 +320,11 @@ static void BeskidWorkerPerform(struct BeskidWorkerRequest *r) {
 #endif
 }
 #ifdef _WIN32
-static DWORD WINAPI beskid_worker_main(LPVOID unused) {
+static DWORD WINAPI beskid_worker_main(LPVOID argument) {
 #else
-static void *beskid_worker_main(void *unused) {
+static void *beskid_worker_main(void *argument) {
 #endif
-  (void)unused;
+  struct BeskidWorkerSlot *slot = argument;
   BeskidLock();
   for (;;) {
     while (!beskid_work_head && !beskid_workers_stop) BeskidConditionWait(&beskid_work_ready, -1);
@@ -322,9 +335,20 @@ static void *beskid_worker_main(void *unused) {
     request->next = NULL;
     if (BeskidWorkerIsAbandoned(request)) { --beskid_request_count; BeskidWorkerFree(request); continue; }
     request->state = BESKID_WORKER_RUNNING;
+    slot->running = request;
     BeskidUnlock();
     BeskidWorkerPerform(request);
     BeskidLock();
+    if (slot->orphaned) {
+      /* The pool stopped while this OS call blocked and gave up waiting for
+       * it. Only the abandoned request and this orphan record remain ours. */
+      --beskid_request_count;
+      BeskidWorkerFree(request);
+      slot->running = NULL;
+      slot->finished = 1;
+      break;
+    }
+    slot->running = NULL;
     if (BeskidWorkerIsAbandoned(request)) { --beskid_request_count; BeskidWorkerFree(request); }
     else {
       request->state = BESKID_WORKER_COMPLETE;
@@ -336,9 +360,9 @@ static void *beskid_worker_main(void *unused) {
   return 0;
 }
 /* The pool is process-wide and reference counted: the first holder creates
- * the threads, later holders share them, and the last release stops and joins
- * them. The holder lock is separate from the transport lock because shutdown
- * joins workers that take the transport lock. */
+ * the threads, later holders share them, and the last release stops them. The
+ * holder lock is separate from the transport lock because shutdown joins
+ * workers that take the transport lock. */
 #ifdef _WIN32
 static SRWLOCK beskid_pool_lock = SRWLOCK_INIT;
 static void BeskidPoolLock(void) { AcquireSRWLockExclusive(&beskid_pool_lock); }
@@ -349,16 +373,55 @@ static void BeskidPoolLock(void) { pthread_mutex_lock(&beskid_pool_lock); }
 static void BeskidPoolUnlock(void) { pthread_mutex_unlock(&beskid_pool_lock); }
 #endif
 static size_t beskid_worker_holders;
-static void BeskidWorkerPoolStopLocked(void) {
-  BeskidLock(); beskid_workers_stop = 1; BeskidConditionSignal(&beskid_work_ready); BeskidUnlock();
-  for (size_t i = 0; i < beskid_worker_count; ++i) {
-#ifdef _WIN32
-    WaitForSingleObject(beskid_workers[i], INFINITE); CloseHandle(beskid_workers[i]);
-#else
-    pthread_join(beskid_workers[i], NULL);
+/* Called with the pool lock held. Releases the records of orphans whose OS
+ * call has returned. A finished orphan holds no lock and only returns, so the
+ * POSIX join below completes at once. */
+static void BeskidWorkerReapOrphans(void) {
+  struct BeskidWorkerSlot *finished = NULL;
+  BeskidLock();
+  struct BeskidWorkerSlot **link = &beskid_worker_orphans;
+  while (*link) {
+    struct BeskidWorkerSlot *slot = *link;
+    if (slot->finished) { *link = slot->next; slot->next = finished; finished = slot; }
+    else link = &slot->next;
+  }
+  BeskidUnlock();
+  while (finished) {
+    struct BeskidWorkerSlot *slot = finished;
+    finished = slot->next;
+#ifndef _WIN32
+    pthread_join(slot->thread, NULL);
 #endif
+    beskid_rt_v5_intrinsic_system_free(slot, sizeof(*slot));
+  }
+}
+static void BeskidWorkerPoolStopLocked(void) {
+  int orphaned[BESKID_WORKER_MAX] = {0};
+  BeskidLock();
+  beskid_workers_stop = 1;
+  for (size_t i = 0; i < beskid_worker_count; ++i) {
+    struct BeskidWorkerSlot *slot = beskid_workers[i];
+    if (slot->running && BeskidWorkerIsAbandoned(slot->running)) {
+      slot->orphaned = orphaned[i] = 1;
+      slot->next = beskid_worker_orphans;
+      beskid_worker_orphans = slot;
+    }
+  }
+  BeskidConditionSignal(&beskid_work_ready);
+  BeskidUnlock();
+  for (size_t i = 0; i < beskid_worker_count; ++i) {
+    struct BeskidWorkerSlot *slot = beskid_workers[i];
+    beskid_workers[i] = NULL;
+#ifdef _WIN32
+    if (!orphaned[i]) WaitForSingleObject(slot->thread, INFINITE);
+    CloseHandle(slot->thread);
+#else
+    if (!orphaned[i]) pthread_join(slot->thread, NULL);
+#endif
+    if (!orphaned[i]) beskid_rt_v5_intrinsic_system_free(slot, sizeof(*slot));
   }
   beskid_worker_count = 0;
+  BeskidWorkerReapOrphans();
 }
 int32_t beskid_rt_v5_intrinsic_worker_pool_init(size_t count) {
   BeskidPoolLock();
@@ -368,15 +431,23 @@ int32_t beskid_rt_v5_intrinsic_worker_pool_init(size_t count) {
     return 0;
   }
   if (!count || count > BESKID_WORKER_MAX) { BeskidPoolUnlock(); return -1; }
+  BeskidWorkerReapOrphans();
   BeskidLock(); beskid_workers_stop = 0; BeskidUnlock();
   size_t created = 0;
   for (; created < count; ++created) {
+    struct BeskidWorkerSlot *slot = beskid_rt_v5_intrinsic_system_allocate(sizeof(*slot), 8);
+    if (!slot) break;
+    __builtin_memset(slot, 0, sizeof(*slot));
 #ifdef _WIN32
-    beskid_workers[created] = CreateThread(NULL, 0, beskid_worker_main, NULL, 0, NULL);
-    if (!beskid_workers[created]) break;
+    slot->thread = CreateThread(NULL, 0, beskid_worker_main, slot, 0, NULL);
+    if (!slot->thread) { beskid_rt_v5_intrinsic_system_free(slot, sizeof(*slot)); break; }
 #else
-    if (pthread_create(&beskid_workers[created], NULL, beskid_worker_main, NULL)) break;
+    if (pthread_create(&slot->thread, NULL, beskid_worker_main, slot)) {
+      beskid_rt_v5_intrinsic_system_free(slot, sizeof(*slot));
+      break;
+    }
 #endif
+    beskid_workers[created] = slot;
   }
   beskid_worker_count = created;
   if (created == count) {
