@@ -1,0 +1,17 @@
+[package]
+name = "beskid_proof"
+version = "0.1.0"
+edition = "2024"
+license.workspace = true
+description = "Stability-proof harnesses for the 0.6.7 gate: deterministic source mutation and the language-server soak client."
+
+[[bin]]
+name = "beskid-mutate"
+path = "src/bin/beskid-mutate.rs"
+
+[[bin]]
+name = "beskid-soak"
+path = "src/bin/beskid-soak.rs"
+
+[dependencies]
+serde_json = "1"

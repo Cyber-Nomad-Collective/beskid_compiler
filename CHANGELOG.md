@@ -116,6 +116,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - pckg server: `GET /api/auth/session` identifies a bearer publisher key (`bpk_` key) by returning the owner subject, key name and scopes; unknown, revoked or malformed keys get 401, and the key and its hash are never returned.
+### Added
+
+- Stability-proof gate for 0.6.7 (`scripts/v067-proof.sh`): a language-server soak
+  client (`beskid-soak`, crate `beskid_proof`), an internal-error sweep over Corelib,
+  Mods, fixtures, templates and the beskid-lings exercises with a deterministic
+  mutation corpus (`beskid-mutate`, `scripts/proof/ice_sweep.py`), and a clean-machine
+  onboarding check (`scripts/proof/onboarding_check.py`).
 
 ## [0.6.6] - 2026-10-16
 
