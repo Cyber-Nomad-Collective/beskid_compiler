@@ -8,9 +8,28 @@ use crate::syntax::SpanInfo;
 /// Rule mismatch, missing child rule, or grammar-specific constraint (for example `self` in `impl`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ParseError {
-    UnexpectedRule { expected: Option<Rule>, found: Rule, span: SpanInfo },
-    MissingPair { expected: Rule },
-    ForbiddenImplSelfParameter { span: SpanInfo },
+    UnexpectedRule {
+        expected: Option<Rule>,
+        found: Rule,
+        span: SpanInfo,
+    },
+    MissingPair {
+        expected: Rule,
+    },
+    ForbiddenImplSelfParameter {
+        span: SpanInfo,
+    },
+    /// A string escape Beskid does not define (`\q`). `escape` is the written text.
+    UnknownStringEscape {
+        span: SpanInfo,
+        escape: String,
+    },
+    /// A `\u{...}` escape whose value is not a Unicode scalar value. `reason` is a clause in words.
+    InvalidUnicodeEscape {
+        span: SpanInfo,
+        escape: String,
+        reason: &'static str,
+    },
 }
 
 impl ParseError {
