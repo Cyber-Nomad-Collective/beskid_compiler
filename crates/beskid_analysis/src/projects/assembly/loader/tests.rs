@@ -1294,7 +1294,7 @@ fn assert_v06_parsed_import_paths(source: &str, expected: &[&str]) {
 
 #[test]
 fn v06_import_discovery_respects_same_line_declaration_boundaries() {
-    assert_v06_parsed_import_paths("use Lib.A; use Lib.B; pub type Record { i32 value }", &["Lib.A", "Lib.B"]);
+    assert_v06_parsed_import_paths("use Lib.A; use Lib.B; pub type Record { i32 value; }", &["Lib.A", "Lib.B"]);
 }
 
 #[test]

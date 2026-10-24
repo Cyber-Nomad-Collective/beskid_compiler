@@ -15,9 +15,9 @@ variants, struct values and contract bodies are untouched. Prints each changed f
 import re
 import sys
 
-# A Beskid type header: `type` starts the line (after indentation, a Rust string's opening quote, an
-# escaped newline, `pub` or attributes) and the name is PascalCase.
-HEADER = re.compile(r'(?m)(?:^|"|\\n|\])[ \t]*(?:pub[ \t]+)?type[ \t]+[A-Z]\w*')
+# A Beskid type header: `type` starts the line or follows `;`/`}` (after indentation, a Rust string's
+# opening quote, an escaped newline, `pub` or attributes) and the name is PascalCase.
+HEADER = re.compile(r'(?m)(?:^|"|\\n|\]|;|\})[ \t]*(?:pub[ \t]+)?type[ \t]+[A-Z]\w*')
 OPEN = {"(": ")", "[": "]", "<": ">", "{": "}"}
 CLOSE = {")", "]", ">", "}"}
 
