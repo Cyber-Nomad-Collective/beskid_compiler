@@ -5,12 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when applicable.
 
-## Unreleased (0.6.7, test slice)
+## [Unreleased]
+
+### Testing
 
 - `beskid test` reports a failed assertion as `assertion failed: expected 3, found 4` with the because text and the `Assert` call site, once, under the test name. A runtime trap is reported as `test crashed: <reason>`. `--json` carries `failure` (kind, expected, actual, location) per failed test.
 - Test names use PascalCase; W1637 now reports a name that is not PascalCase. Corelib and fixture tests are renamed.
-
-## [Unreleased]
 
 ### Diagnostics
 
@@ -113,11 +113,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Registry lines resolve their types (an unknown name is reported at the line),
   and a contract named only by a registry line, a `where` bound or an `inject`
   field is no longer an unused private item.
+
 ### Added
 
 - pckg server: `GET /api/auth/session` identifies a bearer publisher key (`bpk_` key) by returning the owner subject, key name and scopes; unknown, revoked or malformed keys get 401, and the key and its hash are never returned.
-### Added
-
 - Stability-proof gate for 0.6.7 (`scripts/v067-proof.sh`): a language-server soak
   client (`beskid-soak`, crate `beskid_proof`), an internal-error sweep over Corelib,
   Mods, fixtures, templates and the beskid-lings exercises with a deterministic
