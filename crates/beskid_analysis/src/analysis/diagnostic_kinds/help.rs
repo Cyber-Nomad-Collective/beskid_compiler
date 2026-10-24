@@ -253,12 +253,15 @@ impl SemanticIssueKind {
                 Some(format!("give `{name}` a constant of type `{expected}`, or change the parameter type"))
             }
             Self::OptionalParameterNotAllowed { .. } => Some(
-                "only parameters of top-level functions can be optional (a default value or a caller-information attribute); pass the value at every call instead"
+                "no call passes this argument, so neither a default value nor a caller-information attribute can apply; remove it"
                     .to_string(),
             ),
             Self::CallerInformationWithoutDefault { name, expected, .. } => Some(format!(
                 "write `{expected} {name} = {}`; a call that omits the argument gets the call site's value",
                 if expected == "string" { "\"\"" } else { "0" }
+            )),
+            Self::ContractDefaultValueMismatch { parameter, .. } => Some(format!(
+                "a contract method's default values belong to the contract; remove the default of `{parameter}` from the implementation (it inherits the contract's) or make it equal"
             )),
             Self::CallerInformationParameterType { attribute, expected, .. } => {
                 Some(format!("`[{attribute}]` fills a `{expected}`; declare the parameter as `{expected}`"))

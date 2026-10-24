@@ -2,9 +2,10 @@
 //!
 //! A parameter written `T name = <constant>` is optional. The model is C# optional parameters: the
 //! default is a compile-time constant, optional parameters come after every required one, and a
-//! call may omit any number of trailing optional arguments. The compiler fills each omitted
-//! argument at the call site (`projects::assembly::optional_arguments`), so every later stage sees
-//! ordinary explicit arguments.
+//! call may omit any number of trailing optional arguments. Once type checking knows the callee
+//! of a call (`beskid_queries` `semantic_contract::optional_arguments`), the compiler fills each
+//! omitted argument at the call site with [`fill_omitted_arguments`], so lowering sees ordinary
+//! explicit arguments.
 //!
 //! A compile-time constant is one of:
 //! - a literal: `true`, `false`, an integer, a float, a character or a string without
@@ -17,9 +18,13 @@
 //! parameter whose omitted argument is the call site's file, line or column instead of its
 //! default.
 
+use std::collections::HashMap;
+
+use crate::macros::map_statement;
 use crate::syntax::{
-    Expression, Literal, LiteralExpression, Node, Parameter, PrimitiveType, Program, SpanInfo, Spanned, Type,
-    UnaryExpression, UnaryOp, integer_literal_fits_primitive, integer_literal_primitive_type,
+    Expression, HostBodyItem, Literal, LiteralExpression, MethodDefinition, Node, Parameter, PrimitiveType, Program,
+    SpanInfo, Spanned, Statement, Type, UnaryExpression, UnaryOp, integer_literal_fits_primitive,
+    integer_literal_primitive_type,
 };
 
 /// The value of a default after constant evaluation, in source spelling.
@@ -237,11 +242,6 @@ pub fn caller_kind(parameter: &Parameter) -> Option<CallerKind> {
     })
 }
 
-/// Number of parameters a call must pass: those without a default value.
-pub fn required_parameter_count(parameters: &[Spanned<Parameter>]) -> usize {
-    parameters.iter().filter(|parameter| parameter.node.default.is_none()).count()
-}
-
 /// The integer value of each top-level `const` of `program`, by name.
 pub fn top_level_constant(program: &Program, name: &str) -> Option<String> {
     program.items.iter().find_map(|item| match &item.node {
@@ -251,6 +251,126 @@ pub fn top_level_constant(program: &Program, name: &str) -> Option<String> {
         },
         _ => None,
     })
+}
+
+/// What the compiler passes for one omitted optional parameter.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum OmittedArgument {
+    /// The parameter's default value, converted to the parameter type.
+    Default(DefaultConstant),
+    /// The call site's file, line or column.
+    Caller(CallerKind),
+}
+
+/// The arguments the compiler passes for the trailing optional parameters of `parameters`, in
+/// order (one per parameter from the first optional one on), or `None` when there is no optional
+/// parameter or the declaration is invalid (a required parameter after an optional one, a default
+/// that is not a constant, a caller-information parameter without a default, a `bulk` default).
+/// Invalid declarations are reported by the declaration rules; their calls must pass every
+/// argument. `program` is the declaring file (for `const` defaults).
+pub fn omitted_arguments(parameters: &[Spanned<Parameter>], program: &Program) -> Option<Vec<OmittedArgument>> {
+    let first = parameters.iter().position(|parameter| parameter.node.default.is_some())?;
+    parameters[first..]
+        .iter()
+        .map(|parameter| {
+            let default = parameter.node.default.as_ref()?;
+            if parameter.node.bulk {
+                return None;
+            }
+            let value = default_constant(default, &|name| top_level_constant(program, name))?;
+            Some(match caller_kind(&parameter.node) {
+                Some(kind) => OmittedArgument::Caller(kind),
+                None => OmittedArgument::Default(converted_to(value, &parameter.node.ty.node)),
+            })
+        })
+        .collect()
+}
+
+/// `program` with the omitted arguments appended to each call named in `fills` by the span
+/// (`start`, `end`) of its call expression. Appended nodes carry the span of the call's callee
+/// expression; caller information is `file` (the unit's requested path) and the 1-based line and
+/// column where the callee expression starts.
+pub fn fill_omitted_arguments(
+    program: &Spanned<Program>,
+    file: &str,
+    fills: &HashMap<(usize, usize), Vec<OmittedArgument>>,
+) -> Spanned<Program> {
+    let mut program = program.clone();
+    let mut map = |expression: Spanned<Expression>| -> Spanned<Expression> {
+        let Expression::Call(call) = &expression.node else { return expression };
+        let Some(arguments) = fills
+            .get(&(call.span.start, call.span.end))
+            .or_else(|| fills.get(&(expression.span.start, expression.span.end)))
+        else {
+            return expression;
+        };
+        let span = call.node.callee.span;
+        let (line, column) = span.line_col_start;
+        let mut call = call.clone();
+        for argument in arguments {
+            call.node.args.push(match argument {
+                OmittedArgument::Default(value) => value.to_expression(span),
+                OmittedArgument::Caller(kind) => {
+                    let literal = match kind {
+                        CallerKind::File => Literal::String(format!("\"{}\"", escape(file))),
+                        CallerKind::Line => Literal::Integer(format!("{line}_i64")),
+                        CallerKind::Column => Literal::Integer(format!("{column}_i64")),
+                    };
+                    let literal = Spanned::new(literal, span);
+                    Spanned::new(Expression::Literal(Spanned::new(LiteralExpression { literal }, span)), span)
+                }
+            });
+        }
+        Spanned::new(Expression::Call(call), expression.span)
+    };
+    for item in &mut program.node.items {
+        rewrite_item(item, &mut map);
+    }
+    program
+}
+
+fn escape(text: &str) -> String {
+    text.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
+type Map<'a> = dyn FnMut(Spanned<Expression>) -> Spanned<Expression> + 'a;
+
+fn rewrite_block(statements: &mut Vec<Spanned<Statement>>, map: &mut Map<'_>) {
+    *statements = std::mem::take(statements).into_iter().map(|statement| map_statement(statement, &mut |e| map(e))).collect();
+}
+
+fn rewrite_methods(methods: &mut [Spanned<MethodDefinition>], map: &mut Map<'_>) {
+    for method in methods {
+        rewrite_block(&mut method.node.body.node.statements, map);
+    }
+}
+
+fn rewrite_host_body(body: &mut [Spanned<HostBodyItem>], map: &mut Map<'_>) {
+    for item in body {
+        match &mut item.node {
+            HostBodyItem::Hook(hook) => rewrite_block(&mut hook.node.body.node.statements, map),
+            HostBodyItem::Scope(scope) => rewrite_host_body(&mut scope.node.body, map),
+            HostBodyItem::Registry(_) | HostBodyItem::Registration(_) => {}
+        }
+    }
+}
+
+fn rewrite_item(item: &mut Spanned<Node>, map: &mut Map<'_>) {
+    match &mut item.node {
+        Node::Function(function) => rewrite_block(&mut function.node.body.node.statements, map),
+        Node::Method(method) => rewrite_block(&mut method.node.body.node.statements, map),
+        Node::ImplBlock(implementation) => rewrite_methods(&mut implementation.node.methods, map),
+        Node::ExtendTypeDefinition(extension) => rewrite_methods(&mut extension.node.methods, map),
+        Node::TypeDefinition(definition) => rewrite_methods(&mut definition.node.methods, map),
+        Node::HostDefinition(host) => rewrite_host_body(&mut host.node.body, map),
+        Node::TestDefinition(test) => rewrite_block(&mut test.node.statements, map),
+        Node::InlineModule(module) => {
+            for inner in &mut module.node.items {
+                rewrite_item(inner, map);
+            }
+        }
+        _ => {}
+    }
 }
 
 #[cfg(test)]
@@ -333,9 +453,91 @@ mod tests {
         assert_eq!(unary.node.op.node, UnaryOp::Neg);
     }
 
+    fn emitted_call_arguments(program: &Spanned<Program>) -> Vec<Vec<String>> {
+        let mut calls = Vec::new();
+        let mut collect = |expression: Spanned<Expression>| {
+            if let Expression::Call(call) = &expression.node {
+                calls.push(
+                    call.node
+                        .args
+                        .iter()
+                        .map(|argument| crate::format::Emitter::new().write(&argument.node).expect("emit"))
+                        .collect::<Vec<_>>(),
+                );
+            }
+            expression
+        };
+        let mut items = program.node.items.clone();
+        for item in &mut items {
+            rewrite_item(item, &mut collect);
+        }
+        calls
+    }
+
+    fn call_spans(program: &Spanned<Program>) -> Vec<(usize, usize)> {
+        let mut spans = Vec::new();
+        let mut collect = |expression: Spanned<Expression>| {
+            if let Expression::Call(call) = &expression.node {
+                spans.push((call.span.start, call.span.end));
+            }
+            expression
+        };
+        let mut items = program.node.items.clone();
+        for item in &mut items {
+            rewrite_item(item, &mut collect);
+        }
+        spans
+    }
+
     #[test]
-    fn required_count_skips_defaults() {
-        let (_, parameters) = first_parameters("unit F(bool a, string b = \"\", i64 c = 0) { return; }");
-        assert_eq!(required_parameter_count(&parameters), 1);
+    fn omitted_arguments_cover_the_trailing_optional_parameters() {
+        let (program, parameters) = first_parameters(
+            "const Limit = 4;\nunit F(bool ok, string because = \"\", f64 scale = 2, i64 n = Limit, [CallerLineNumber] i64 line = 0) { return; }",
+        );
+        assert_eq!(
+            omitted_arguments(&parameters, &program),
+            Some(vec![
+                OmittedArgument::Default(DefaultConstant::String("\"\"".into())),
+                OmittedArgument::Default(DefaultConstant::Float("2.0".into())),
+                OmittedArgument::Default(DefaultConstant::Integer("4".into())),
+                OmittedArgument::Caller(CallerKind::Line),
+            ])
+        );
+        let (program, parameters) = first_parameters("unit F(i64 a = G(), i64 b = 1) { return; }");
+        assert_eq!(omitted_arguments(&parameters, &program), None);
+        let (program, parameters) = first_parameters("unit F(i64 a = 1, i64 b) { return; }");
+        assert_eq!(omitted_arguments(&parameters, &program), None);
+        let (program, parameters) = first_parameters("unit F(i64 a) { return; }");
+        assert_eq!(omitted_arguments(&parameters, &program), None);
+    }
+
+    #[test]
+    fn named_calls_get_the_omitted_arguments_and_others_stay() {
+        let source = "unit Run() {\n    Say(\"a\");\n    Other(1);\n}\ntype Box { unit Go() { Say(\"b\"); } }\nhost App() { startup() { Say(\"c\"); } }\n";
+        let program = parse_program(source).expect("parse");
+        let spans = call_spans(&program);
+        let fills = [spans[0], spans[2], spans[3]]
+            .into_iter()
+            .map(|span| {
+                (span, vec![OmittedArgument::Default(DefaultConstant::Integer("-2".into())), OmittedArgument::Caller(CallerKind::Line)])
+            })
+            .collect::<HashMap<_, _>>();
+        let filled = fill_omitted_arguments(&program, "/app/Main.bd", &fills);
+        let calls = emitted_call_arguments(&filled);
+        assert_eq!(calls[0], ["\"a\"", "-2", "2_i64"], "{calls:?}");
+        assert_eq!(calls[1], ["1"], "{calls:?}");
+        assert_eq!(calls[2][1..], ["-2", "5_i64"], "{calls:?}");
+        assert_eq!(calls[3].len(), 3, "{calls:?}");
+    }
+
+    #[test]
+    fn the_caller_file_is_escaped() {
+        let program = parse_program("unit Run() { Say(); }").expect("parse");
+        let fills = call_spans(&program)
+            .into_iter()
+            .map(|span| (span, vec![OmittedArgument::Caller(CallerKind::File)]))
+            .collect::<HashMap<_, _>>();
+        let filled = fill_omitted_arguments(&program, "C:\\a\"b", &fills);
+        assert_eq!(emitted_call_arguments(&filled)[0], ["\"C:\\\\a\\\"b\""]);
     }
 }

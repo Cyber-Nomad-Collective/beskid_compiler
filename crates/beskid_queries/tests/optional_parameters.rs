@@ -1,5 +1,6 @@
 //! Optional parameters in checking: a call may omit trailing optional arguments (defaults and
-//! caller information are filled before checking), an explicit argument is accepted, arity errors
+//! caller information are filled once the callee is known, for functions, methods and contract
+//! methods), an explicit argument is accepted, arity errors
 //! name the required-to-total range, and invalid declarations are reported at the declaration.
 use std::sync::Arc;
 
@@ -130,4 +131,79 @@ fn an_invalid_default_is_reported_at_the_declaration() {
     let found = errors(&[("Main.bd", "pub unit Take(i64 count = \"x\") { return; } pub unit Run() { Take(1); }")]);
     assert_eq!(found.len(), 1, "{found:#?}");
     assert!(found[0].contains("E1253") && found[0].contains("default value `\"x\"` does not fit parameter `count` of type `i64`"), "{found:#?}");
+}
+
+const STEPPER: &str = "pub contract Stepper { i64 Step(i64 base, i64 by = 1); }\n";
+
+#[test]
+fn a_method_call_omits_the_method_defaults() {
+    let found = errors(&[(
+        "Main.bd",
+        "pub type Counter { pub i64 Add(i64 base, i64 step = 1) { return base + step; } }\n\
+         pub i64 Run() { Counter counter = Counter {}; return counter.Add(2) + counter.Add(2, 3); }",
+    )]);
+    assert!(found.is_empty(), "{found:#?}");
+}
+
+#[test]
+fn a_method_call_without_its_required_arguments_names_the_range_with_the_receiver() {
+    let found = errors(&[(
+        "Main.bd",
+        "pub type Counter { pub i64 Add(i64 base, i64 step = 1) { return base + step; } }\n\
+         pub i64 Run() { Counter counter = Counter {}; return counter.Add(); }",
+    )]);
+    assert_eq!(found.len(), 1, "{found:#?}");
+    assert!(found[0].contains("expected 2\u{2013}3 arguments, got 1"), "{found:#?}");
+}
+
+#[test]
+fn an_implementation_inherits_the_contract_defaults() {
+    let source = format!(
+        "{STEPPER}pub type Walker : Stepper {{ pub i64 Step(i64 base, i64 by) {{ return base + by; }} }}\n\
+         pub i64 Run() {{ Walker walker = Walker {{}}; return walker.Step(1); }}"
+    );
+    let found = errors(&[("Main.bd", source.as_str())]);
+    assert!(found.is_empty(), "{found:#?}");
+}
+
+#[test]
+fn a_call_through_a_contract_bound_gets_the_contract_defaults() {
+    let source = format!(
+        "{STEPPER}pub type Walker : Stepper {{ pub i64 Step(i64 base, i64 by) {{ return base + by; }} }}\n\
+         i64 Use<T>(T stepper) where T: Stepper {{ return stepper.Step(5); }}\n\
+         pub i64 Run() {{ Walker walker = Walker {{}}; return Use<Walker>(walker); }}"
+    );
+    let found = errors(&[("Main.bd", source.as_str())]);
+    assert!(found.is_empty(), "{found:#?}");
+}
+
+#[test]
+fn an_implementation_that_repeats_a_different_default_is_e1612() {
+    let source = format!(
+        "{STEPPER}pub type Walker : Stepper {{ pub i64 Step(i64 base, i64 by = 2) {{ return base + by; }} }}"
+    );
+    let found = errors(&[("Main.bd", source.as_str())]);
+    assert_eq!(found.len(), 1, "{found:#?}");
+    assert!(
+        found[0].contains("E1612") && found[0].contains("`Step` gives parameter `by` the default `2`, but the contract declares `1`"),
+        "{found:#?}"
+    );
+}
+
+#[test]
+fn an_implementation_that_repeats_the_same_default_checks() {
+    let source = format!(
+        "{STEPPER}pub type Walker : Stepper {{ pub i64 Step(i64 base, i64 by = 1) {{ return base + by; }} }}"
+    );
+    let found = errors(&[("Main.bd", source.as_str())]);
+    assert!(found.is_empty(), "{found:#?}");
+}
+
+#[test]
+fn a_function_in_an_inline_module_takes_defaults() {
+    let found = errors(&[(
+        "Main.bd",
+        "mod Inner { pub i64 Go(i64 x = 1) { return x; } }\npub i64 Run() { return Inner.Go() + Inner.Go(2); }",
+    )]);
+    assert!(found.is_empty(), "{found:#?}");
 }

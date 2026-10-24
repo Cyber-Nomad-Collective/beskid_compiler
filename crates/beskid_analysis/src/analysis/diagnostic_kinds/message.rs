@@ -226,6 +226,9 @@ impl SemanticIssueKind {
             Self::CallerInformationWithoutDefault { name, attribute, .. } => {
                 format!("`[{attribute}]` parameter `{name}` needs a default value")
             }
+            Self::ContractDefaultValueMismatch { method_name, parameter, expected, actual } => format!(
+                "`{method_name}` gives parameter `{parameter}` the default `{actual}`, but the contract declares {expected}"
+            ),
             Self::CallerInformationParameterType { name, attribute, expected } => {
                 format!("`[{attribute}]` parameter `{name}` must have type `{expected}`")
             }

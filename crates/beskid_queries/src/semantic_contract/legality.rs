@@ -27,7 +27,6 @@
 use super::local_type_resolution::UnresolvedTypeKind;
 use super::*;
 use beskid_analysis::analysis::SemanticIssueKind;
-use beskid_analysis::parameter_defaults::required_parameter_count;
 use beskid_analysis::syntax::{FunctionDefinition, MethodDefinition};
 use beskid_analysis::syntax_query::{NodeKind, SyntaxIndex};
 
@@ -159,11 +158,14 @@ fn call_arity_mismatch_for_call(db: &dyn Db, call: AstNodeKey) -> SemanticQueryR
     if actual == total {
         return Ok(None);
     }
-    // The assembly appends omitted optional arguments before indexing
-    // (`projects::assembly::optional_arguments`), so a call that reaches this check with fewer
-    // than every argument was either short of the required ones or written in a form that cannot
-    // omit optional ones; the honest expectation for the latter is every argument.
-    let required = required_parameter_count(parameters) + receiver;
+    // `build_typed_program` fills omitted optional arguments once callees are known
+    // (`optional_arguments`), so a call that reaches this check with fewer than every argument
+    // was either short of the required ones or could not be filled; the honest expectation for
+    // the latter is every argument. A method inherits the defaults of the contract method it
+    // implements.
+    let optional = super::optional_arguments::declared_omitted_arguments(db, declaration)
+        .map_or(0, |(omitted, _)| omitted.len());
+    let required = parameters.len() - optional + receiver;
     let required = if (required..total).contains(&actual) { total } else { required };
     Ok(Some(CallArityMismatch { call, required, total, actual }))
 }

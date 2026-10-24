@@ -63,6 +63,7 @@ pub(crate) mod mod_shapes;
 mod model;
 mod native_mod_callbacks;
 mod native_mod_transport;
+pub(crate) mod optional_arguments;
 pub use native_mod_callbacks::{
     NativeModCallback, NativeModCallbackOperation, NativeModContractDeclaration, NativeModContractFamily,
     NativeModRequestConstructor, NativeModRequestFactory, NativeModSyntaxConstructor, native_mod_callback_symbol,

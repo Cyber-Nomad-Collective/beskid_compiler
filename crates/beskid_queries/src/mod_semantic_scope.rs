@@ -95,7 +95,9 @@ impl ModSemanticScope for QueryModSemanticScope<'_> {
                 crate::project_session_for_syntax_assembly(&mut db, &registered, "mod-invocation", "source-authority")?
             }
         };
-        build_mod_authority_typed_program(&mut db, project, Arc::clone(&registered))?;
+        // The registered assembly is the typed program's: omitted optional arguments are filled
+        // there (`build_typed_program`).
+        let registered = build_mod_authority_typed_program(&mut db, project, Arc::clone(&registered))?.assembly;
         let authority = ModSemanticQueryAuthority::for_registered_assembly(&**db, project, &registered)?;
         invoke(&authority)?;
         let applied = authority.take_all_applied_syntax();

@@ -3,7 +3,6 @@
 mod discovery;
 mod loader;
 mod module_index;
-mod optional_arguments;
 mod roots;
 mod runtime_fixture;
 mod unit_builder;
@@ -148,12 +147,6 @@ impl ProgramAssembly {
         has_core_dependency: bool,
         generation: SyntaxGenerationId,
     ) -> Self {
-        let units = match optional_arguments::fill_optional_arguments(&units, &|path| {
-            module_index.resolve_module(path).map(crate::paths::unit_path_key)
-        }) {
-            Some(rewritten) => Arc::new(rewritten),
-            None => units,
-        };
         let syntax_indexes =
             Arc::new(units.iter().map(|unit| SyntaxIndex::from_program(&unit.program, generation)).collect::<Vec<_>>());
         Self {
@@ -198,6 +191,34 @@ impl ProgramAssembly {
             Arc::clone(&self.module_index),
             self.has_core_dependency,
             generation,
+        )
+        .with_recovery_policy(self.recovery_policy)
+        .with_trusted_corelib_service_paths(Arc::clone(&self.trusted_corelib_service_paths))
+        .with_glue_libraries(Arc::clone(&self.glue_libraries))
+        .with_runtime_fixture(self.runtime_fixture.clone())
+        .with_root_set(self.root_set.clone());
+        next.verified_package_identities = self.verified_package_identities.clone();
+        next.compiled_mod_metadata = self.compiled_mod_metadata.clone();
+        next
+    }
+
+    /// The same assembly with every unit's syntax replaced by `programs` (same order and length
+    /// as `units`), indexed under the same generation. Used after type checking fills omitted
+    /// optional arguments (`beskid_queries` `optional_arguments`); every other property is carried
+    /// over as in [`ProgramAssembly::with_entry_program`].
+    pub fn with_programs(&self, programs: Vec<Spanned<Program>>) -> Self {
+        let mut units = self.units.as_ref().clone();
+        for (unit, program) in units.iter_mut().zip(programs) {
+            unit.program = program;
+        }
+        let mut next = Self::new(
+            self.roots.clone(),
+            Arc::new(units),
+            self.entry_index,
+            self.discovery,
+            Arc::clone(&self.module_index),
+            self.has_core_dependency,
+            self.generation,
         )
         .with_recovery_policy(self.recovery_policy)
         .with_trusted_corelib_service_paths(Arc::clone(&self.trusted_corelib_service_paths))

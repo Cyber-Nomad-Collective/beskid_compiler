@@ -7,7 +7,7 @@ use beskid_ast_derive::AstNode;
 /// may also be mutable or owning); the flags are parser-derived and retained in the SDK
 /// constructor schema. `move` declares an owning parameter: the caller's value is consumed.
 /// `default` is the value after `=`: the parameter is optional and a call may omit it; the
-/// compiler then passes the default (see `projects::assembly::optional_arguments`).
+/// compiler then passes the default (see `crate::parameter_defaults`).
 #[derive(AstNode, Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Parameter {
     #[ast(children)]

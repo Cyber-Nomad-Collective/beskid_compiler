@@ -527,7 +527,7 @@ pub(super) fn contract_parameter_declarations(
         .collect()
 }
 
-fn contract_methods(
+pub(in crate::semantic_contract) fn contract_methods(
     db: &dyn Db,
     contract: AstNodeKey,
     active: &mut HashSet<AstNodeKey>,
@@ -1306,6 +1306,9 @@ pub(in crate::semantic_contract) enum ContractConformanceFailure {
     MissingMethod { method_name: String, expected: String },
     /// The implementor's method has a different closed signature (E1602).
     SignatureMismatch { method_name: String, expected: String, actual: String },
+    /// The implementor's method repeats a default value that differs from the contract's (E1612).
+    /// `expected` is the contract's default in backticks, or "no default".
+    DefaultMismatch { method_name: String, parameter: String, expected: String, actual: String },
 }
 
 /// Classify the first contract method of `contract` that `concrete` (a non-generic `type`
@@ -1349,6 +1352,29 @@ pub(in crate::semantic_contract) fn contract_conformance_failure(
             .node_at(syntax.expanded_program(db), implementation.node)
             .and_then(|node| node.of::<MethodDefinition>())
             .ok_or_else(|| SemanticError::unavailable("contract_method"))?;
+        // Default values belong to the contract: an implementation may leave them out (it
+        // inherits them) but may not repeat a different one.
+        if expected.parameters.len() == actual.parameters.len() {
+            let text = |parameter: &Spanned<Parameter>| {
+                parameter
+                    .node
+                    .default
+                    .as_ref()
+                    .and_then(|default| beskid_analysis::format::Emitter::new().write(&default.node).ok())
+            };
+            for (declared, implemented) in expected.parameters.iter().zip(&actual.parameters) {
+                let Some(actual_default) = text(implemented) else { continue };
+                let expected_default = text(declared);
+                if expected_default.as_deref() != Some(actual_default.as_str()) {
+                    return Ok(Some(ContractConformanceFailure::DefaultMismatch {
+                        method_name,
+                        parameter: implemented.node.name.node.name.clone(),
+                        expected: expected_default.map_or_else(|| "no default".to_string(), |value| format!("`{value}`")),
+                        actual: actual_default,
+                    }));
+                }
+            }
+        }
         let open = expected
             .parameters
             .iter()

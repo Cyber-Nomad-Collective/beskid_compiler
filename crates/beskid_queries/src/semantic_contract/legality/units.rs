@@ -58,6 +58,8 @@ pub enum UnitObligationKind {
     ContractMethodMissingImplementation { contract_name: Arc<str>, method_name: Arc<str>, expected: Arc<str> },
     /// E1602: an implementing method whose closed signature differs from the contract's.
     ContractImplementationSignatureMismatch { method_name: Arc<str>, expected: Arc<str>, actual: Arc<str> },
+    /// E1612: an implementing method repeats a default value that differs from the contract's.
+    ContractDefaultValueMismatch { method_name: Arc<str>, parameter: Arc<str>, expected: Arc<str>, actual: Arc<str> },
     /// E1607: a contract associated type with no default and no implementor binding.
     ContractAssociatedTypeMissingBinding { contract_name: Arc<str>, assoc_name: Arc<str> },
     /// E1607: a conformance path that names a type or enum, not a contract.
@@ -138,6 +140,14 @@ pub fn check_unit_obligations(db: &dyn Db, roots: &[AstNodeKey]) -> Vec<Semantic
                 UnitObligationKind::ContractImplementationSignatureMismatch { method_name, expected, actual } => {
                     SemanticIssueKind::ContractImplementationSignatureMismatch {
                         method_name: method_name.to_string(),
+                        expected: expected.to_string(),
+                        actual: actual.to_string(),
+                    }
+                }
+                UnitObligationKind::ContractDefaultValueMismatch { method_name, parameter, expected, actual } => {
+                    SemanticIssueKind::ContractDefaultValueMismatch {
+                        method_name: method_name.to_string(),
+                        parameter: parameter.to_string(),
                         expected: expected.to_string(),
                         actual: actual.to_string(),
                     }
@@ -487,6 +497,17 @@ fn judge_conformance(
             findings.push(UnitObligation {
                 kind: UnitObligationKind::ContractImplementationSignatureMismatch {
                     method_name: Arc::from(method_name.as_str()),
+                    expected: Arc::from(expected.as_str()),
+                    actual: Arc::from(actual.as_str()),
+                },
+                site,
+            });
+        }
+        Ok(Some(ContractConformanceFailure::DefaultMismatch { method_name, parameter, expected, actual })) => {
+            findings.push(UnitObligation {
+                kind: UnitObligationKind::ContractDefaultValueMismatch {
+                    method_name: Arc::from(method_name.as_str()),
+                    parameter: Arc::from(parameter.as_str()),
                     expected: Arc::from(expected.as_str()),
                     actual: Arc::from(actual.as_str()),
                 },

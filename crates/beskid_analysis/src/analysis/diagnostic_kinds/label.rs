@@ -85,6 +85,7 @@ impl SemanticIssueKind {
             Self::OptionalParameterNotAllowed { .. } => "optional parameter not allowed here".to_string(),
             Self::CallerInformationWithoutDefault { .. } => "caller-information parameter without a default".to_string(),
             Self::CallerInformationParameterType { expected, .. } => format!("expected type `{expected}`"),
+            Self::ContractDefaultValueMismatch { .. } => "differs from the contract's default".to_string(),
             Self::TypeCallArgumentMismatch { .. } => "call argument mismatch".to_string(),
             Self::TypeEnumConstructorMismatch { .. } => "enum constructor arity mismatch".to_string(),
             Self::TypeUnknownCallTarget => "unknown call target".to_string(),

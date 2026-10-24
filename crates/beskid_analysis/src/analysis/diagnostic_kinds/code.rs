@@ -90,6 +90,7 @@ impl SemanticIssueKind {
             Self::OptionalParameterNotAllowed { .. } => "E1254",
             Self::CallerInformationWithoutDefault { .. } => "E1255",
             Self::CallerInformationParameterType { .. } => "E1256",
+            Self::ContractDefaultValueMismatch { .. } => "E1612",
             Self::TypeCallArgumentMismatch { .. } => "E1205",
             Self::TypeEnumConstructorMismatch { .. } => "E1302",
             Self::TypeUnknownCallTarget => "E1606",

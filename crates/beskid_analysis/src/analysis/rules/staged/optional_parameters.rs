@@ -1,7 +1,7 @@
 //! Declaration rules for optional parameters (see [`crate::parameter_defaults`]):
 //! E1251 a required parameter after an optional one, E1252 a default that is not a compile-time
 //! constant, E1253 a default that does not fit the parameter type, E1254 an optional parameter
-//! where none is allowed, E1255 a caller-information parameter without a default, E1256 a
+//! where no call can pass it (hook parameters, `bulk` parameters), E1255 a caller-information parameter without a default, E1256 a
 //! caller-information parameter of the wrong type.
 
 use super::SemanticPipelineRule;
@@ -11,68 +11,55 @@ use crate::format::Emitter;
 use crate::parameter_defaults::{caller_kind, default_constant, default_fits, top_level_constant};
 use crate::syntax::{ContractNode, HostBodyItem, MethodDefinition, Node, Parameter, Program, Spanned, Type};
 
-const METHOD: &str = "a parameter of a method";
-const CONTRACT_METHOD: &str = "a parameter of a contract method";
-const HOST: &str = "a parameter of a host, scope or hook";
-const INLINE_MODULE_FUNCTION: &str = "a parameter of a function in an inline module";
+const HOOK: &str = "a parameter of an `init`, `dispose` or `startup` hook";
 const BULK: &str = "a `bulk` parameter";
 
 impl SemanticPipelineRule {
     pub(super) fn stage_optional_parameters(&self, ctx: &mut RuleContext, program: &Program) {
-        for item in &program.items {
-            match &item.node {
-                Node::Function(function) => check_function_parameters(ctx, program, &function.node.parameters),
-                Node::InlineModule(module) => check_inline_module(ctx, &module.node.items),
-                other => check_item_without_optional_parameters(ctx, other),
-            }
-        }
+        check_items(ctx, program, &program.items);
     }
 }
 
-fn check_inline_module(ctx: &mut RuleContext, items: &[Spanned<Node>]) {
-    for item in items {
-        match &item.node {
-            Node::Function(function) => reject_optional(ctx, &function.node.parameters, INLINE_MODULE_FUNCTION),
-            Node::InlineModule(module) => check_inline_module(ctx, &module.node.items),
-            other => check_item_without_optional_parameters(ctx, other),
-        }
-    }
-}
-
-fn check_item_without_optional_parameters(ctx: &mut RuleContext, node: &Node) {
+fn check_items(ctx: &mut RuleContext, program: &Program, items: &[Spanned<Node>]) {
     let methods = |ctx: &mut RuleContext, methods: &[Spanned<MethodDefinition>]| {
         for method in methods {
-            reject_optional(ctx, &method.node.parameters, METHOD);
+            check_parameters(ctx, program, &method.node.parameters);
         }
     };
-    match node {
-        Node::Method(method) => reject_optional(ctx, &method.node.parameters, METHOD),
-        Node::ImplBlock(implementation) => methods(ctx, &implementation.node.methods),
-        Node::ExtendTypeDefinition(extension) => methods(ctx, &extension.node.methods),
-        Node::TypeDefinition(definition) => methods(ctx, &definition.node.methods),
-        Node::ContractDefinition(contract) => {
-            for item in &contract.node.items {
-                if let ContractNode::MethodSignature(signature) = &item.node {
-                    reject_optional(ctx, &signature.node.parameters, CONTRACT_METHOD);
+    for item in items {
+        match &item.node {
+            Node::Function(function) => check_parameters(ctx, program, &function.node.parameters),
+            Node::Method(method) => check_parameters(ctx, program, &method.node.parameters),
+            Node::ImplBlock(implementation) => methods(ctx, &implementation.node.methods),
+            Node::ExtendTypeDefinition(extension) => methods(ctx, &extension.node.methods),
+            Node::TypeDefinition(definition) => methods(ctx, &definition.node.methods),
+            Node::ContractDefinition(contract) => {
+                for item in &contract.node.items {
+                    if let ContractNode::MethodSignature(signature) = &item.node {
+                        check_parameters(ctx, program, &signature.node.parameters);
+                    }
                 }
             }
+            Node::HostDefinition(host) => {
+                check_parameters(ctx, program, &host.node.parameters);
+                check_host_body(ctx, program, &host.node.body);
+            }
+            Node::InlineModule(module) => check_items(ctx, program, &module.node.items),
+            _ => {}
         }
-        Node::HostDefinition(host) => {
-            reject_optional(ctx, &host.node.parameters, HOST);
-            check_host_body(ctx, &host.node.body);
-        }
-        _ => {}
     }
 }
 
-fn check_host_body(ctx: &mut RuleContext, body: &[Spanned<HostBodyItem>]) {
+fn check_host_body(ctx: &mut RuleContext, program: &Program, body: &[Spanned<HostBodyItem>]) {
     for item in body {
         match &item.node {
             HostBodyItem::Scope(scope) => {
-                reject_optional(ctx, &scope.node.parameters, HOST);
-                check_host_body(ctx, &scope.node.body);
+                check_parameters(ctx, program, &scope.node.parameters);
+                check_host_body(ctx, program, &scope.node.body);
             }
-            HostBodyItem::Hook(hook) => reject_optional(ctx, &hook.node.parameters, HOST),
+            // The composition runtime starts hooks; no call site passes their arguments, so a
+            // default could never apply.
+            HostBodyItem::Hook(hook) => reject_optional(ctx, &hook.node.parameters, HOOK),
             HostBodyItem::Registry(_) | HostBodyItem::Registration(_) => {}
         }
     }
@@ -90,7 +77,7 @@ fn reject_optional(ctx: &mut RuleContext, parameters: &[Spanned<Parameter>], pla
     }
 }
 
-fn check_function_parameters(ctx: &mut RuleContext, program: &Program, parameters: &[Spanned<Parameter>]) {
+fn check_parameters(ctx: &mut RuleContext, program: &Program, parameters: &[Spanned<Parameter>]) {
     let mut optional_seen = false;
     for parameter in parameters {
         let parameter = &parameter.node;
@@ -203,22 +190,31 @@ mod tests {
     }
 
     #[test]
-    fn optional_parameters_outside_top_level_functions_are_e1254() {
+    fn methods_contract_methods_inline_modules_hosts_and_scopes_take_optional_parameters() {
         let source = "pub type Box { pub unit Run(i64 x = 1) { return; } }\n\
-                      pub contract Runner { unit Go(i64 x = 1); }\n\
+                      pub contract Runner { unit Go(i64 x = 1, string because = \"\"); }\n\
                       mod Inner { pub unit Go(i64 x = 1) { return; } }\n\
-                      pub unit Many(bulk i64[] values = 1) { return; }";
-        let found = findings(source);
-        let messages = found.iter().map(|(_, message)| message.as_str()).collect::<Vec<_>>();
+                      host App(i64 port = 80) { scope Request(string id = \"\") { } }";
+        assert!(findings(source).is_empty(), "{:?}", findings(source));
+    }
+
+    #[test]
+    fn the_declaration_rules_apply_to_methods_too() {
+        let found = findings("pub type Box { pub unit Run(i64 x = \"no\", bool y) { return; } }");
+        let codes = found.iter().map(|(code, _)| code.as_str()).collect::<Vec<_>>();
+        assert_eq!(codes, ["E1253", "E1251"], "{found:?}");
+    }
+
+    #[test]
+    fn hook_and_bulk_parameters_cannot_be_optional() {
+        let source = "host App() { startup(i64 x = 1) { } }\npub unit Many(bulk i64[] values = 1) { return; }";
+        let messages = findings(source).into_iter().map(|(_, message)| message).collect::<Vec<_>>();
         assert_eq!(
             messages,
             [
-                "a parameter of a method cannot be optional",
-                "a parameter of a contract method cannot be optional",
-                "a parameter of a function in an inline module cannot be optional",
+                "a parameter of an `init`, `dispose` or `startup` hook cannot be optional",
                 "a `bulk` parameter cannot be optional",
-            ],
-            "{found:?}"
+            ]
         );
     }
 

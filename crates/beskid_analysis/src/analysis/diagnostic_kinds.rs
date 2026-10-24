@@ -299,8 +299,8 @@ pub enum SemanticIssueKind {
         value: String,
         expected: String,
     },
-    /// E1254: a default value or caller-information attribute where the language allows no
-    /// optional parameter (`place` names it).
+    /// E1254: a default value or caller-information attribute on a parameter no call passes
+    /// (a hook parameter) or that takes every remaining argument (`bulk`); `place` names it.
     OptionalParameterNotAllowed {
         place: String,
     },
@@ -309,6 +309,13 @@ pub enum SemanticIssueKind {
         name: String,
         attribute: String,
         expected: String,
+    },
+    /// E1612: an implementing method repeats a default value that differs from the contract's.
+    ContractDefaultValueMismatch {
+        method_name: String,
+        parameter: String,
+        expected: String,
+        actual: String,
     },
     /// E1256: a caller-information parameter of the wrong type.
     CallerInformationParameterType {
