@@ -36,10 +36,13 @@ impl SemanticPipelineRule {
             DuplicateKind::ItemName,
             |definition| (definition.name.node.name.clone(), definition.name.span),
         );
+        // Tests have their own namespace: a test may share its name with a function or any
+        // other item, and only two tests of one name collide.
+        let mut seen_tests: HashMap<String, SpanInfo> = HashMap::new();
         self.check_duplicate_query_entries::<crate::syntax::TestDefinition>(
             ctx,
             program,
-            &mut seen,
+            &mut seen_tests,
             DuplicateKind::ItemName,
             |definition| (definition.name.node.name.clone(), definition.name.span),
         );

@@ -343,6 +343,19 @@ impl Resolver {
         };
 
         let id = ItemId(self.items.len());
+        // A test never enters the module's item scope (it never resolves as a value or a call);
+        // only another test of the same module collides with it.
+        if let Node::TestDefinition(_) = &item.node {
+            if let Some(previous) = self.test_names.get(&(self.current_module, name.clone())).copied() {
+                let previous = self.items[previous.0].span;
+                self.errors.push(ResolveError::DuplicateItem { name, span: item.span, previous });
+                return;
+            }
+            self.test_names.insert((self.current_module, name.clone()), id);
+            self.push_item(id, None, name, kind, visibility, item.span, method_receiver, self.current_module_path());
+            self.collect_member_items(item, id);
+            return;
+        }
         let module_id = match &item.node {
             Node::ModuleDeclaration(def) => {
                 let segments: Vec<String> =
@@ -1016,6 +1029,45 @@ mod tests {
             errors.iter().any(|error| matches!(
                 error,
                 super::ResolveError::DuplicateItem { name, .. } if name == "Stack"
+            )),
+            "{errors:?}"
+        );
+    }
+
+    /// Owner ruling (0.6.7): tests have their own namespace. A test may share its name with a
+    /// function, a call to the name resolves to the function, and only two tests of one name in
+    /// one module collide.
+    #[test]
+    fn a_test_may_share_its_name_with_the_function_it_calls() {
+        let entry = parse_program(
+            "i32 SumOfSquares(i32 n) { return n * n; }\ntest SumOfSquares { i32 value = SumOfSquares(2); return; }",
+        )
+        .expect("parse entry");
+        let resolution = Resolver::new().resolve_program(&entry).expect("a test and a function may share a name");
+        let crate::syntax::Node::TestDefinition(test) = &entry.node.items[1].node else { panic!("test expected") };
+        let crate::syntax::Statement::Let(statement) = &test.node.statements[0].node else { panic!("let expected") };
+        let crate::syntax::Expression::Call(call) = &statement.node.value.node else { panic!("call expected") };
+        let crate::syntax::Expression::Path(callee) = &call.node.callee.node else { panic!("path callee expected") };
+        let Some(super::super::tables::ResolvedValue::Item(item)) =
+            resolution.tables.resolved_values.get(&callee.node.path.span)
+        else {
+            panic!("`SumOfSquares` must resolve to an item")
+        };
+        assert_eq!(resolution.items[item.0].kind, super::ItemKind::Function, "the call resolves to the function");
+        assert!(
+            resolution.items.iter().any(|info| info.name == "SumOfSquares" && info.kind == super::ItemKind::Test),
+            "the test is still collected for discovery"
+        );
+    }
+
+    #[test]
+    fn two_tests_of_one_name_in_one_module_are_a_duplicate() {
+        let entry = parse_program("test SumOfSquares { return; }\ntest SumOfSquares { return; }").expect("parse entry");
+        let errors = Resolver::new().resolve_program(&entry).expect_err("two tests of one name collide");
+        assert!(
+            errors.iter().any(|error| matches!(
+                error,
+                super::ResolveError::DuplicateItem { name, .. } if name == "SumOfSquares"
             )),
             "{errors:?}"
         );

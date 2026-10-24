@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Tests have their own namespace. A test cannot be called or named as a value,
+  so `test SumOfSquares` may share its name with a function, type or other
+  item, and a call to the name resolves to that item. Two tests of one name in
+  one module are still E1102.
+
 ### Fixed
 
 - A generic call infers `T` from an array literal of bare integers:
