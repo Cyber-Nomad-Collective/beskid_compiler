@@ -18,7 +18,7 @@ use std::sync::Arc;
 
 const TYPES: &str = r#"[GlueRecord(Library:"glue_manual")]
 [RustOwner(Path:"implementation::Point")]
-pub type Point { u8 tag, i64 x, f64 weight, bool visible, char mark, word size, }
+pub type Point { u8 tag; i64 x; f64 weight; bool visible; char mark; word size; }
 
 [GlueEnum(Library:"glue_manual")]
 [RustOwner(Path:"implementation::Color")]
@@ -26,7 +26,7 @@ pub enum Color { Red, Green, Blue, }
 
 [GlueHandle(Library:"glue_manual", Nullable:true)]
 [RustOwner(Path:"implementation::ManualOwned")]
-pub type ManualOpaque<T> { u64 token, }
+pub type ManualOpaque<T> { u64 token; }
 "#;
 const CONTRACT: &str = r#"[Extern(Abi:"C", Library:"glue_manual")]
 pub contract Foreign {
@@ -198,14 +198,14 @@ fn records_take_their_layout_from_the_c_profile() {
 #[test]
 fn unadmitted_record_enum_and_callback_forms_are_rejected() {
     let cases = [
-        ("[GlueRecord] pub type Bad { string text, }", "Bad glue_bad(Bad value);", "GlueRecord field `text`"),
+        ("[GlueRecord] pub type Bad { string text; }", "Bad glue_bad(Bad value);", "GlueRecord field `text`"),
         ("[GlueRecord] pub type Bad { }", "Bad glue_bad(Bad value);", "1..=64 fields"),
-        ("[GlueRecord] pub type Bad<T> { i64 value, }", "Bad<i64> glue_bad(Bad<i64> value);", "not generic"),
-        ("[GlueRecord] pub type Bad { i64 value, }\n[GlueRecord] pub type Outer { i64 v, }", "i64 glue_bad((Bad) => unit visit);", "records are not"),
+        ("[GlueRecord] pub type Bad<T> { i64 value; }", "Bad<i64> glue_bad(Bad<i64> value);", "not generic"),
+        ("[GlueRecord] pub type Bad { i64 value; }\n[GlueRecord] pub type Outer { i64 v; }", "i64 glue_bad((Bad) => unit visit);", "records are not"),
         ("[GlueEnum] pub enum Bad { None, Some(i64 value), }", "Bad glue_bad(Bad value);", "tagged variants are not admitted"),
         ("pub enum Bad { A, B, }", "Bad glue_bad(Bad value);", "exactly one GlueEnum marker"),
-        ("pub type Bad { i64 value, }", "Bad glue_bad(Bad value);", "GlueHandle brand or GlueRecord marker"),
-        ("[GlueRecord(Unknown:\"x\")] pub type Bad { i64 value, }", "Bad glue_bad(Bad value);", "unknown Glue metadata"),
+        ("pub type Bad { i64 value; }", "Bad glue_bad(Bad value);", "GlueHandle brand or GlueRecord marker"),
+        ("[GlueRecord(Unknown:\"x\")] pub type Bad { i64 value; }", "Bad glue_bad(Bad value);", "unknown Glue metadata"),
         ("", "(i64) => i64 glue_bad(i64 value);", "admitted only as import parameters"),
         ("", "i64 glue_bad((string) => unit visit);", "string is a view"),
         ("", "i64 glue_bad(((i64) => unit) => unit visit);", "admitted only as import parameters"),
@@ -232,10 +232,10 @@ fn record_and_enum_owner_types_are_closed_placements() {
     assert!(placements.contains(&(RustOwnerPlacement::EnumType, "implementation::Color")), "{placements:?}");
     for (source, expected) in [
         (
-            "[GlueRecord(Library:\"glue_manual\")]\n[RustOwner(Path:\"implementation::P\", Fallible:true)]\npub type P { i64 x, }\n",
+            "[GlueRecord(Library:\"glue_manual\")]\n[RustOwner(Path:\"implementation::P\", Fallible:true)]\npub type P { i64 x; }\n",
             "Fallible is not allowed on a GlueRecord type",
         ),
-        ("[GlueRecord]\n[RustOwner(Path:\"implementation::P\")]\npub type P { i64 x, }\n", "requires GlueRecord Library"),
+        ("[GlueRecord]\n[RustOwner(Path:\"implementation::P\")]\npub type P { i64 x; }\n", "requires GlueRecord Library"),
         ("[GlueEnum(Library:\"glue_manual\")]\n[RustOwner]\npub enum E { A, }\n", "requires Path"),
     ] {
         let fixture = Fixture::new(source);

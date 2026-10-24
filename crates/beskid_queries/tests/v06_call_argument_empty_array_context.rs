@@ -69,7 +69,7 @@ fn module_qualified_callee_resolves_qualified_element_type_in_its_own_unit() {
     let (_temporary, db, _assembly, arrays) = fixture(
         "use Probe.Generation; unit Main() { Generation.Record(0_i64, []); }",
         &[
-            ("Probe/Read.bd", "pub type ContainerSite { pub i64 slot, }"),
+            ("Probe/Read.bd", "pub type ContainerSite { pub i64 slot; }"),
             ("Probe/Generation.bd", "use Probe.Read; pub unit Record(i64 count, Read.ContainerSite[] containers) {}"),
         ],
     );

@@ -734,8 +734,8 @@ mod tests {
         (db, root)
     }
 
-    const QUERY_SHAPE: &str = "type NodeRef { u64 issuer, u64 node } type NodeSpan { u64 start, u64 end } \
-        mod Query { pub type SyntaxQuery { NodeRef start, u64 bound } \
+    const QUERY_SHAPE: &str = "type NodeRef { u64 issuer; u64 node; } type NodeSpan { u64 start; u64 end; } \
+        mod Query { pub type SyntaxQuery { NodeRef start; u64 bound; } \
         pub SyntaxQuery At(NodeRef root) { return SyntaxQuery { start: root, bound: 1_u64 }; } \
         pub NodeSpan Span(NodeRef node) { return NodeSpan { start: node.node, end: node.node }; } } ";
 
@@ -770,7 +770,7 @@ mod tests {
 
     #[test]
     fn scalar_parameter_rejects_a_record_and_record_parameter_rejects_a_scalar() {
-        let source = "type Point { i64 x } unit Len(string text) { return; } unit Show(Point point) { return; } \
+        let source = "type Point { i64 x; } unit Len(string text) { return; } unit Show(Point point) { return; } \
                       unit Main(Point point, string text) { Len(point); Show(text); return; }";
         let (db, root) = one_unit_assembly(source, SyntaxGenerationId(63));
         let main_item = *function_definitions(&db, root).last().expect("Main");
@@ -818,16 +818,16 @@ mod tests {
     #[test]
     fn attribute_uses_are_checked_against_their_declaration() {
         // Declaration without targets accepts nothing.
-        let findings = attribute_codes("pub attribute Sealed { } [Sealed] pub type Door { i64 width }", 6103);
+        let findings = attribute_codes("pub attribute Sealed { } [Sealed] pub type Door { i64 width; }", 6103);
         assert_eq!(findings.iter().map(|f| f.0.as_str()).collect::<Vec<_>>(), ["E1510"]);
         // Field attribute on a type, then on a field.
         let findings =
-            attribute_codes("pub attribute FluentInner(Field) { } [FluentInner] pub type Wrapper { i64 inner }", 6104);
+            attribute_codes("pub attribute FluentInner(Field) { } [FluentInner] pub type Wrapper { i64 inner; }", 6104);
         assert_eq!(findings.len(), 1);
         assert!(findings[0].1.contains("TypeDefinition"), "{findings:?}");
-        assert!(attribute_codes("pub attribute FluentInner(Field) { } pub type Wrapper { [FluentInner] i64 inner }", 6105).is_empty());
+        assert!(attribute_codes("pub attribute FluentInner(Field) { } pub type Wrapper { [FluentInner] i64 inner; }", 6105).is_empty());
         // Undeclared.
-        let findings = attribute_codes("[Frozen] pub type Ice { i64 temperature }", 6106);
+        let findings = attribute_codes("[Frozen] pub type Ice { i64 temperature; }", 6106);
         assert_eq!(findings.len(), 1);
         assert!(findings[0].1.contains("no declaration"), "{findings:?}");
     }
@@ -839,7 +839,7 @@ mod tests {
                       pub attribute Pinned(LetStatement) { } pub attribute Legacy(EnumVariant) { } \
                       pub attribute Receiver(ReceiverParameter) { } \
                       pub enum Mode { Fast, [Legacy] Slow } \
-                      pub type Counter { i64 count, pub i64 Read([Receiver] this) { return this.count; } } \
+                      pub type Counter { i64 count; pub i64 Read([Receiver] this) { return this.count; } } \
                       unit Keep<[Any] T>(T value) { } \
                       i64 Add([Trace] i64 left, i64 right) { [Pinned] mut i64 total = 0; \
                       let square = [Pure] ([Hot] i64 x) => x * x; return left + right; }";
@@ -855,7 +855,7 @@ mod tests {
         let findings = attribute_codes("[Extern(Abi:\"C\", Library:\"libc\")] pub i64 Getpid() { return 0; }", 6109);
         assert_eq!(findings.len(), 1);
         assert_eq!(findings[0].0, "E1510");
-        let (db, root) = one_unit_assembly("pub type Point { [Immutable] i64 x, i64 y }", SyntaxGenerationId(6110));
+        let (db, root) = one_unit_assembly("pub type Point { [Immutable] i64 x; i64 y; }", SyntaxGenerationId(6110));
         let finding = super::attribute_findings(&db, root).pop().expect("E1510");
         let SemanticIssueKind::AttributeTargetNotAllowed { allowed, declared, .. } = finding.kind else { panic!() };
         assert!(declared);
@@ -865,11 +865,11 @@ mod tests {
 
     #[test]
     fn a_user_declaration_shadows_a_recognized_attribute() {
-        let source = "pub attribute Immutable(Field) { } pub type Point { [Immutable] i64 x }";
+        let source = "pub attribute Immutable(Field) { } pub type Point { [Immutable] i64 x; }";
         let (db, root) = one_unit_assembly(source, SyntaxGenerationId(6112));
         assert!(super::attribute_findings(&db, root).is_empty());
         assert!(!super::resolve_attribute_use(&db, root, "Immutable").is_recognized());
-        let (db, root) = one_unit_assembly("pub type Point { i64 x }", SyntaxGenerationId(6113));
+        let (db, root) = one_unit_assembly("pub type Point { i64 x; }", SyntaxGenerationId(6113));
         assert!(super::resolve_attribute_use(&db, root, "Immutable").is_recognized());
     }
 
@@ -921,23 +921,23 @@ mod tests {
         (findings, substitutions)
     }
 
-    const BOX: &str = "pub type Box<T> { T item, \
+    const BOX: &str = "pub type Box<T> { T item; \
         pub U Apply<U>((T) => U f) { return f(this.item); } \
         pub Box<U> Map<U>((T) => U f) { return Box<U> { item: f(this.item) }; } } ";
 
-    const SCOPE: &str = "pub type Task<T> { T value } pub enum Outcome<T> { Done(T value), Failed(string reason) } \
-        pub type Scope { i64 id, \
+    const SCOPE: &str = "pub type Task<T> { T value; } pub enum Outcome<T> { Done(T value), Failed(string reason) } \
+        pub type Scope { i64 id; \
         pub Task<T> Spawn<T>(() => T body) { return Task<T> { value: body() }; } \
         pub i64 SpawnTry<T>(() => Outcome<T> body) { return 0_i64; } } ";
     const SEQ: &str = "pub contract Folder<T> { T Add(T a, T b); } \
-        pub type AddAll : Folder<i64> { i64 unused, pub i64 Add(i64 a, i64 b) { return a + b; } } \
-        pub type Plain { i64 x } \
+        pub type AddAll : Folder<i64> { i64 unused; pub i64 Add(i64 a, i64 b) { return a + b; } } \
+        pub type Plain { i64 x; } \
         pub contract Shown { i64 Show(); } \
-        pub type Label : Shown { i64 x, pub i64 Show() { return this.x; } } \
-        pub type Cell<T> { T value, pub T Read() where T: Shown { return this.value; } } \
-        pub type Seq<T> { T[] items, pub T Fold<C>(T seed, C combiner) where C: Folder<T> { return seed; } } \
+        pub type Label : Shown { i64 x; pub i64 Show() { return this.x; } } \
+        pub type Cell<T> { T value; pub T Read() where T: Shown { return this.value; } } \
+        pub type Seq<T> { T[] items; pub T Fold<C>(T seed, C combiner) where C: Folder<T> { return seed; } } \
         pub T Pick<T>(T a, T b) { return a; } ";
-    const CLASH: &str = "pub type Clash<T> { T value, pub T Same<T>(T other) { return other; } } ";
+    const CLASH: &str = "pub type Clash<T> { T value; pub T Same<T>(T other) { return other; } } ";
 
     fn assert_method_call(source: &str, generation: u64, findings: &[&str], substitutions: &[&str]) {
         let (actual_findings, actual_substitutions) = method_generic_report(source, generation);
@@ -1000,7 +1000,7 @@ mod tests {
         assert_method_call(&clash, 6309, &["E1229"], &[]);
     }
 
-    const FOLD: &str = "pub type Numbers<T> { T[] items, \
+    const FOLD: &str = "pub type Numbers<T> { T[] items; \
         pub U Fold<U>(U seed, (U, T) => U step) { return seed; } \
         pub B Pipe<A, B>(() => A first, (A) => B second) { return second(first()); } } ";
 
@@ -1020,7 +1020,7 @@ mod tests {
     #[test]
     fn an_explicit_receiver_resolves_like_the_implicit_one() {
         let source = "pub attribute Receiver(ReceiverParameter) { } \
-            pub type Counter { i64 count, pub i64 Read([Receiver] this) { return this.count; } \
+            pub type Counter { i64 count; pub i64 Read([Receiver] this) { return this.count; } \
             pub i64 Bump(this, i64 by) { return this.count + by; } } \
             i64 Main(Counter c) { return c.Read() + c.Bump(2_i64); }";
         let (findings, substitutions) = method_generic_report(source, 6320);
@@ -1061,7 +1061,7 @@ mod tests {
 
     #[test]
     fn immutable_local_reassignment_is_reported_for_each_type_and_control_flow_shape() {
-        let pair = "pub type Pair { i64 a } ";
+        let pair = "pub type Pair { i64 a; } ";
         let cases = [
             ("unit Main(pointer p) { pointer q = p; q = p; return; }", "q"),
             ("unit Main(pointer p) { pointer q = p; while true { q = p; } return; }", "q"),
@@ -1135,7 +1135,7 @@ mod tests {
         super::member_reference_legality(&db, key).expect("member_reference_legality query").map(|finding| finding.kind)
     }
 
-    const SHAPE: &str = "pub type Pair { i64 a } enum Shape { Dot, Circle(i64 radius) } ";
+    const SHAPE: &str = "pub type Pair { i64 a; } enum Shape { Dot, Circle(i64 radius) } ";
 
     /// `name` judged against `Pair { i64 a }`: one edit from `a`, so `a` is suggested.
     fn pair_member(name: &str) -> UnknownMember {
@@ -1149,7 +1149,7 @@ mod tests {
 
     #[test]
     fn an_unknown_field_names_the_type_lists_its_fields_and_suggests_the_closest() {
-        let source = "pub type Rectangle { i64 width, i64 height } i64 Main(Rectangle r) { return r.heigth; }";
+        let source = "pub type Rectangle { i64 width; i64 height; } i64 Main(Rectangle r) { return r.heigth; }";
         let Some(MemberReferenceKind::UnknownStructField(member)) = member_finding(source, 140, 0) else {
             panic!("`heigth` is unknown")
         };
@@ -1366,18 +1366,18 @@ mod tests {
 
     #[test]
     fn transfer_classes_follow_the_ten_rules() {
-        let source = "[Immutable] pub type Job { string id, i64 size } \
-            [Isolated] pub type Index { i64[] offsets, Job head } \
-            [Copyable] pub type Pixel { u8 r, u8 g, u8 b } \
-            [Copyable] pub type Frame { i64 width, u8[] pixels } \
-            [NeverTransferable] pub type Handle { i64 id } \
-            pub type Cache { i64[] entries } \
-            [Immutable] pub type WorkerId { u64 processId, u64 sequence } \
+        let source = "[Immutable] pub type Job { string id; i64 size; } \
+            [Isolated] pub type Index { i64[] offsets; Job head; } \
+            [Copyable] pub type Pixel { u8 r; u8 g; u8 b; } \
+            [Copyable] pub type Frame { i64 width; u8[] pixels; } \
+            [NeverTransferable] pub type Handle { i64 id; } \
+            pub type Cache { i64[] entries; } \
+            [Immutable] pub type WorkerId { u64 processId; u64 sequence; } \
             pub enum Maybe<T> { Some(T value), None } \
             pub enum Mode { Fast, Slow } \
-            [Isolated] pub type Node { i64 value, Maybe<Node> next } \
-            [Isolated] pub type Raw { pointer data } \
-            [Isolated] pub type Holder { Handle handle } ";
+            [Isolated] pub type Node { i64 value; Maybe<Node> next; } \
+            [Isolated] pub type Raw { pointer data; } \
+            [Isolated] pub type Holder { Handle handle; } ";
         let expected = [
             ("Job", "Shared"),
             ("Index", "Moved"),
@@ -1453,7 +1453,7 @@ mod tests {
 
     #[test]
     fn immutable_fields_are_set_only_by_construction() {
-        let source = "[Immutable] pub type Job { string id, i64 size, pub unit Grow() { this.size = this.size + 1; } } \
+        let source = "[Immutable] pub type Job { string id; i64 size; pub unit Grow() { this.size = this.size + 1; } } \
             unit Rename(Job job) { job.id = \"renamed\"; } \
             Job Make() { return Job { id: \"a\", size: 1 }; }";
         let report = transfer_report(source, 6440);
@@ -1465,7 +1465,7 @@ mod tests {
 
     #[test]
     fn glue_owner_handles_are_never_transferable() {
-        let source = "[GlueHandle(Library: \"codec\")] [Immutable] pub type Codec { i64 id }";
+        let source = "[GlueHandle(Library: \"codec\")] [Immutable] pub type Codec { i64 id; }";
         let report = transfer_report(source, 6450);
         assert!(
             report.iter().any(|(code, message, _)| code == "E1246" && message.contains("GlueHandle")),
@@ -1506,21 +1506,21 @@ mod tests {
             ("u8[] Main(u8[] data) { return data; }", &["E1241"]),
             ("unit Main() { string name = \"a\"; string other = move name; return; }", &["E1239"]),
             ("i64 Size(move string name) { return 0; }", &["E1239"]),
-            ("pub type Plain { i64 x, pub unit Take(move this) { return; } }", &["E1239"]),
+            ("pub type Plain { i64 x; pub unit Take(move this) { return; } }", &["E1239"]),
             (
-                "[Isolated] pub type Holder { u8[] cache, pub unit Put(mut this, move u8[] data) { this.cache = data; return; } }",
+                "[Isolated] pub type Holder { u8[] cache; pub unit Put(mut this, move u8[] data) { this.cache = data; return; } }",
                 &["E1242"],
             ),
             (
-                "[Isolated] pub type Holder { u8[] cache, pub unit Put(mut this, move u8[] data) { this.cache = move data; return; } }",
+                "[Isolated] pub type Holder { u8[] cache; pub unit Put(mut this, move u8[] data) { this.cache = move data; return; } }",
                 &[],
             ),
             (
-                "[Isolated] pub type Holder { u8[] cache, pub unit Put(mut this, u8[] data) { this.cache = data; return; } }",
+                "[Isolated] pub type Holder { u8[] cache; pub unit Put(mut this, u8[] data) { this.cache = data; return; } }",
                 &["E1241"],
             ),
-            ("[Isolated] pub type Stage { u8[] buffer, pub Stage Same() { return this; } }", &["E1241"]),
-            ("[Isolated] pub type Stage { u8[] buffer, pub Stage Same(move this) { return this; } }", &[]),
+            ("[Isolated] pub type Stage { u8[] buffer; pub Stage Same() { return this; } }", &["E1241"]),
+            ("[Isolated] pub type Stage { u8[] buffer; pub Stage Same(move this) { return this; } }", &[]),
             ("unit Keep(move u8[] data) { let take = () => Store(move data); return; }", &["E1239"]),
             ("i64 Total(u8[] data) { let sum = () => Len(data); return sum() + sum(); }", &[]),
         ];
@@ -1574,7 +1574,7 @@ mod tests {
         let cases: &[(&str, &[&str])] = &[
             ("u8[] Main(move u8[] data, bool fail) { if fail { return Id(move data); } return Id(move data); }", &[]),
             (
-                "pub type Node { u8[] bytes } i64 Main(move u8[] data, bool fail) { if fail { Node n = Node { bytes: move data }; return 1; } \
+                "pub type Node { u8[] bytes; } i64 Main(move u8[] data, bool fail) { if fail { Node n = Node { bytes: move data }; return 1; } \
                  Node m = Node { bytes: move data }; return 2; }",
                 &[],
             ),
@@ -1617,7 +1617,7 @@ mod tests {
     /// does not reach a use after the branch.
     #[test]
     fn reassignment_decides_whether_a_local_is_owning() {
-        let holder = "pub type Holder { u8[] bytes } u8[] Join(u8[] left, u8[] right) { return Make(); } ";
+        let holder = "pub type Holder { u8[] bytes; } u8[] Join(u8[] left, u8[] right) { return Make(); } ";
         let cases: &[(&str, &[&str])] = &[
             ("unit Main(Holder s) { mut u8[] buf = s.bytes; buf = Join(buf, buf); s.bytes = move buf; return; }", &[]),
             ("unit Main(Holder s) { mut u8[] buf = s.bytes; s.bytes = move buf; return; }", &["E1241"]),
@@ -1641,9 +1641,9 @@ mod tests {
     /// Shared and Copied values have no owning or borrowed classification.
     #[test]
     fn literal_initializers_consume_owning_names_and_reject_borrowed_ones() {
-        let types = "[Isolated] pub type Node { u8[] bytes } [Isolated] pub type Outer { Node inner } \
-            [Copyable] pub type Pixel { u8 r } [Immutable] pub type Tag { string name } \
-            [Isolated] pub type Bag { u8 level, Pixel pixel, Tag tag, string label } \
+        let types = "[Isolated] pub type Node { u8[] bytes; } [Isolated] pub type Outer { Node inner; } \
+            [Copyable] pub type Pixel { u8 r; } [Immutable] pub type Tag { string name; } \
+            [Isolated] pub type Bag { u8 level; Pixel pixel; Tag tag; string label; } \
             pub enum Slot { Empty, Full(u8[] bytes) } ";
         let cases: &[(&str, &[&str])] = &[
             // Borrowed parameters stored into a literal.
@@ -1658,11 +1658,11 @@ mod tests {
             ("Node Wrap(u8[] state) { let alias = state; return Node { bytes: alias }; }", &["E1241"]),
             // `this` without `move this` is borrowed.
             (
-                "[Isolated] pub type Pair { Link left } [Isolated] pub type Link { u8[] bytes, pub Pair Wrap() { return Pair { left: this }; } }",
+                "[Isolated] pub type Pair { Link left; } [Isolated] pub type Link { u8[] bytes; pub Pair Wrap() { return Pair { left: this }; } }",
                 &["E1241"],
             ),
             (
-                "[Isolated] pub type Pair { Link left } [Isolated] pub type Link { u8[] bytes, pub Pair Wrap(move this) { return Pair { left: this }; } }",
+                "[Isolated] pub type Pair { Link left; } [Isolated] pub type Link { u8[] bytes; pub Pair Wrap(move this) { return Pair { left: this }; } }",
                 &[],
             ),
             // `move` parameters, owned locals and explicit `move` are consumed.
@@ -1690,8 +1690,8 @@ mod tests {
 
     #[test]
     fn stored_field_reads_follow_the_owning_and_borrowed_rules() {
-        let types = "[Isolated] pub type Node { u8[] bytes } [Isolated] pub type Holder { u8[] bytes, Node node } \
-            [Isolated] pub type Tagged { string label, u8 level } ";
+        let types = "[Isolated] pub type Node { u8[] bytes; } [Isolated] pub type Holder { u8[] bytes; Node node; } \
+            [Isolated] pub type Tagged { string label; u8 level; } ";
         let cases: &[(&str, &[&str])] = &[
             // Through a borrowed root the field read is borrowed: storing it is E1241.
             ("Node Wrap(Holder h) { return Node { bytes: h.bytes }; }", &["E1241"]),
@@ -1700,7 +1700,7 @@ mod tests {
             ("unit Fill(Node n, Holder h) { n.bytes = h.bytes; return; }", &["E1241"]),
             ("u8[][] Wrap(Holder h) { return [h.bytes]; }", &["E1241"]),
             (
-                "[Isolated] pub type Link { u8[] bytes, pub Node Wrap() { return Node { bytes: this.bytes }; } }",
+                "[Isolated] pub type Link { u8[] bytes; pub Node Wrap() { return Node { bytes: this.bytes }; } }",
                 &["E1241"],
             ),
             ("unit Main(move Holder h) { let wrap = () => Node { bytes: h.bytes }; return; }", &["E1241"]),
@@ -1710,7 +1710,7 @@ mod tests {
             ("Node Wrap(move Holder h) { return Node { bytes: move h.bytes }; }", &[]),
             ("unit Keep(move Holder h) { Store(move h.bytes); return; }", &[]),
             (
-                "[Isolated] pub type Link { u8[] bytes, pub Node Wrap(move this) { return Node { bytes: move this.bytes }; } }",
+                "[Isolated] pub type Link { u8[] bytes; pub Node Wrap(move this) { return Node { bytes: move this.bytes }; } }",
                 &[],
             ),
             // Reads, and fields of a class other than Moved, are not judged.
@@ -1724,8 +1724,8 @@ mod tests {
 
     #[test]
     fn stored_element_reads_follow_the_owning_and_borrowed_rules() {
-        let types = "[Isolated] pub type Node { u8[] bytes } [Isolated] pub type Holder { u8[] bytes, Node node } \
-            [Isolated] pub type Tagged { string label, u8 level } \
+        let types = "[Isolated] pub type Node { u8[] bytes; } [Isolated] pub type Holder { u8[] bytes; Node node; } \
+            [Isolated] pub type Tagged { string label; u8 level; } \
             Holder MakeHolder() { return Holder { bytes: Make(), node: Node { bytes: Make() } }; } \
             u8[][] MakeAll() { return [Make()]; } ";
         let cases: &[(&str, &[&str])] = &[
@@ -1757,9 +1757,9 @@ mod tests {
 
     #[test]
     fn a_corelib_scope_borrowed_view_stores_a_borrowed_value() {
-        let view = "[Immutable] [ScopeBorrowed] pub type View<T> { [ImmutableStorage] T[] items } \
-            [Immutable] [ScopeBorrowed] pub type Bytes { [ImmutableStorage] u8[] items } \
-            pub type Plain { u8[] bytes } ";
+        let view = "[Immutable] [ScopeBorrowed] pub type View<T> { [ImmutableStorage] T[] items; } \
+            [Immutable] [ScopeBorrowed] pub type Bytes { [ImmutableStorage] u8[] items; } \
+            pub type Plain { u8[] bytes; } ";
         let bodies = "pub View<T> Over<T>(T[] values) where T: Transferable { return View<T> { items: values }; } \
             Bytes OverBytes(u8[] values) { return Bytes { items: values }; } \
             Bytes Owned(move u8[] values) { Bytes view = Bytes { items: values }; Store(move values); return view; } \
@@ -1789,16 +1789,16 @@ mod tests {
 
     #[test]
     fn destructive_reads_and_exchange_need_a_moved_place() {
-        let holder = "[Isolated] pub type Index { u8[] offsets } ";
+        let holder = "[Isolated] pub type Index { u8[] offsets; } ";
         let cases: &[(&str, &[&str])] = &[
-            ("[Isolated] pub type Pair { u8[] left, pub u8[] TakeLeft(move this) { return move this.left; } }", &[]),
-            ("[Isolated] pub type Pair { Index right, pub Index TakeRight(move this) { return move this.right; } }", &["E1243"]),
+            ("[Isolated] pub type Pair { u8[] left; pub u8[] TakeLeft(move this) { return move this.left; } }", &[]),
+            ("[Isolated] pub type Pair { Index right; pub Index TakeRight(move this) { return move this.right; } }", &["E1243"]),
             (
-                "[Isolated] pub type Stage { u8[] buffer, pub u8[] Swap(mut this, move u8[] next) { return exchange(this.buffer, move next); } }",
+                "[Isolated] pub type Stage { u8[] buffer; pub u8[] Swap(mut this, move u8[] next) { return exchange(this.buffer, move next); } }",
                 &[],
             ),
             (
-                "pub type Named { string name, pub string Rename(mut this, string next) { return exchange(this.name, next); } }",
+                "pub type Named { string name; pub string Rename(mut this, string next) { return exchange(this.name, next); } }",
                 &["E1239"],
             ),
         ];
@@ -1834,12 +1834,12 @@ mod tests {
     fn captures_bounds_judge_bounded_lambda_arguments() {
         let cases: &[(&str, &[&str])] = &[
             (
-                "[Immutable] pub type Config { string name, i64 retries } [Copyable] pub type Pixel { u8 r, u8 g, u8 b } \
+                "[Immutable] pub type Config { string name; i64 retries; } [Copyable] pub type Pixel { u8 r; u8 g; u8 b; } \
                  unit Main(Config config, Pixel pixel) { Run(() => config.retries + i64(pixel.r)); return; }",
                 &[],
             ),
             ("i64 Count() { mut i64 count = 0; Run(() => { count = count + 1; return count; }); return count; }", &["E1235"]),
-            ("pub type Cache { i64[] entries } unit Main(Cache cache) { Run(() => Len([1_u8])); Run(() => cache.entries[0]); return; }", &["E1236"]),
+            ("pub type Cache { i64[] entries; } unit Main(Cache cache) { Run(() => Len([1_u8])); Run(() => cache.entries[0]); return; }", &["E1236"]),
             ("unit Main(move u8[] data) { Run(() => Len(data)); return; }", &["E1237"]),
             ("unit Main(move u8[] data) { Run(() => Len(move data)); i64 n = Len(data); return; }", &["E1234"]),
             ("i64 Work() { return 1; } unit Main() { Run(Work); return; }", &[]),
@@ -1850,7 +1850,7 @@ mod tests {
             ("pub contract Disposable { } pub unit Bad([Captures(Bound: Disposable)] () => i64 body) { return; }", &["E1248"]),
             ("pub unit Bad([Captures(Bound: Transferable)] i64 count) { return; }", &["E1248"]),
             (
-                "pub type Job { [Captures(Bound: Transferable)] () => i64 body } \
+                "pub type Job { [Captures(Bound: Transferable)] () => i64 body; } \
                  unit Main(move u8[] data) { Job job = Job { body: () => Len(data) }; return; }",
                 &["E1237"],
             ),
@@ -1868,7 +1868,7 @@ mod tests {
         let fold = "pub i64 Probe<T>(T value) { return 0; } \
                     pub unit Fold<T>(T seed) where T: Transferable { Run(() => Probe<T>(seed)); return; } ";
         let cases: &[(&str, &[&str])] = &[
-            ("[Immutable] pub type Config { i64 retries } unit Main(Config config) { Fold<Config>(config); return; }", &[]),
+            ("[Immutable] pub type Config { i64 retries; } unit Main(Config config) { Fold<Config>(config); return; }", &[]),
             ("unit Main() { Fold<i64>(1_i64); return; }", &[]),
             ("unit Main(move u8[] data) { Fold<u8[]>(data); return; }", &["E1236"]),
         ];
@@ -1893,7 +1893,7 @@ mod tests {
         let cases: &[(&str, &[&str])] = &[
             ("unit Main(move u8[] data) { Wrap<u8[]>(data); return; }", &["E1236"]),
             ("unit Main(move u8[] data) { Twice<u8[]>(2, data); return; }", &["E1236"]),
-            ("[Immutable] pub type Config { i64 retries } unit Main(Config config) { Wrap<Config>(config); return; }", &[]),
+            ("[Immutable] pub type Config { i64 retries; } unit Main(Config config) { Wrap<Config>(config); return; }", &[]),
             ("unit Main() { Twice<i64>(2, 1_i64); return; }", &[]),
             ("unit Main(move u8[] data) { Ping<u8[]>(data, 2); return; }", &[]),
             ("unit Main(move u8[] data) { Keep<u8[]>(data); return; }", &[]),

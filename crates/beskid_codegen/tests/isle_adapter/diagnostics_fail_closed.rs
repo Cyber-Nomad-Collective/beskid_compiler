@@ -211,7 +211,7 @@ host AppHost() {
 }
 
 type Logger {
-    i32 value
+    i32 value;
 }
 
 i32 Main() {
@@ -309,7 +309,7 @@ fn immutable_local_reassignment_is_rejected_with_e1214_before_isle() {
     let function_cases = [
         "unit Main(pointer p) { pointer q = p; while true { q = p; } return; }",
         "unit Main() { i64 n = 0; while n < 3 { n = n + 1; } return; }",
-        "pub type Pair { i64 a } unit Main(bool c) { Pair v = Pair { a: 1 }; if c { v = Pair { a: 2 }; } return; }",
+        "pub type Pair { i64 a; } unit Main(bool c) { Pair v = Pair { a: 1 }; if c { v = Pair { a: 2 }; } return; }",
     ];
     for source in function_cases {
         let (input, isa, root) = item_fixture_with_root(source);
@@ -359,7 +359,7 @@ fn unknown_callee_is_rejected_with_a_resolution_code_before_isle() {
 /// an unavailable layout fact (`MissingRuleOrFact`) or `NonExhaustiveMatch`.
 #[test]
 fn member_and_match_violations_are_rejected_with_their_codes_before_isle() {
-    let shape = "pub type Pair { i64 a } enum Shape { Dot, Circle(i64 radius) } ";
+    let shape = "pub type Pair { i64 a; } enum Shape { Dot, Circle(i64 radius) } ";
     let cases = [
         ("i64 Main() { Pair p = Pair { b: 1 }; return 0; }", "E1211"),
         ("i64 Main(Pair p) { return p.b; }", "E1211"),

@@ -21,25 +21,25 @@ const COVERED_KINDS: &[(&str, &str, &str, &str)] = &[
         "TypeError::UnknownValueType (type-qualified value path)",
         "TypeUnknownValueType",
         "E1201",
-        "pub type Pair { i64 a } i64 Main() { return Pair.a; }",
+        "pub type Pair { i64 a; } i64 Main() { return Pair.a; }",
     ),
     (
         "TypeError::InvalidMemberTarget (three-segment field path through a primitive)",
         "TypeInvalidMemberTarget",
         "E1213",
-        "pub type Inner { i64 n } pub type Outer { Inner inner } i64 Main(Outer o) { return o.inner.n.value; }",
+        "pub type Inner { i64 n; } pub type Outer { Inner inner; } i64 Main(Outer o) { return o.inner.n.value; }",
     ),
     (
         "TypeError::UnknownStructField (three-segment field path)",
         "TypeUnknownStructField",
         "E1211",
-        "pub type Inner { i64 n } pub type Outer { Inner inner } i64 Main(Outer o) { return o.inner.missing; }",
+        "pub type Inner { i64 n; } pub type Outer { Inner inner; } i64 Main(Outer o) { return o.inner.missing; }",
     ),
     (
         "TypeError::UnknownStructType (field path through an enum)",
         "TypeUnknownStructType",
         "E1201",
-        "enum Shape { Dot } pub type Outer { Shape s } i64 Main(Outer o) { return o.s.x; }",
+        "enum Shape { Dot } pub type Outer { Shape s; } i64 Main(Outer o) { return o.s.x; }",
     ),
     (
         "ResolveError::DuplicateItem (two mod declarations of one path)",
@@ -57,25 +57,25 @@ const COVERED_KINDS: &[(&str, &str, &str, &str)] = &[
         "TypeError::ContractMethodMissingImplementation (generic implementor)",
         "ContractMethodMissingImplementation",
         "E1601",
-        "pub contract Named { string Name(); } pub type Box<T> : Named { T v }",
+        "pub contract Named { string Name(); } pub type Box<T> : Named { T v; }",
     ),
     (
         "TypeError::ContractMethodMissingImplementation (applied generic contract)",
         "ContractMethodMissingImplementation",
         "E1601",
-        "pub contract Seq<T> { i64 Count(); } pub type Numbers : Seq<i64> { i64 v }",
+        "pub contract Seq<T> { i64 Count(); } pub type Numbers : Seq<i64> { i64 v; }",
     ),
     (
         "TypeError::ContractAssociatedTypeMissingBinding (generic implementor)",
         "ContractAssociatedTypeMissingBinding",
         "E1607",
-        "pub contract Seq { type Item; } pub type Box<T> : Seq { T v }",
+        "pub contract Seq { type Item; } pub type Box<T> : Seq { T v; }",
     ),
     (
         "TypeError::ContractImplementationSignatureMismatch (closed signature of an applied generic contract)",
         "ContractImplementationSignatureMismatch",
         "E1602",
-        "pub contract Seq<T> { i64 Count(); } pub type Numbers : Seq<i64> { i64 v, pub bool Count() { return true; } }",
+        "pub contract Seq<T> { i64 Count(); } pub type Numbers : Seq<i64> { i64 v; pub bool Count() { return true; } }",
     ),
 ];
 
@@ -91,21 +91,21 @@ const SILENT: &[(&str, &str)] = &[
     ("local read", "i64 Main(i64 n) { i64 m = n; return m; }"),
     (
         "three-segment field path",
-        "pub type Inner { i64 n } pub type Outer { Inner inner } i64 Main(Outer o) { return o.inner.n; }",
+        "pub type Inner { i64 n; } pub type Outer { Inner inner; } i64 Main(Outer o) { return o.inner.n; }",
     ),
     ("one mod declaration", "pub mod Hub.Child; pub i64 Version() { return 6_i64; }"),
     ("builtin-like name of another spelling", "unit Range() { return; } unit Main() { return; }"),
     (
         "generic implementor with the method",
-        "pub contract Named { string Name(); } pub type Box<T> : Named { T v, pub string Name() { return \"box\"; } }",
+        "pub contract Named { string Name(); } pub type Box<T> : Named { T v; pub string Name() { return \"box\"; } }",
     ),
     (
         "applied generic contract with an open signature",
-        "pub contract Seq<T> { T First(); } pub type Numbers : Seq<i64> { i64 v, pub i64 First() { return v; } }",
+        "pub contract Seq<T> { T First(); } pub type Numbers : Seq<i64> { i64 v; pub i64 First() { return v; } }",
     ),
     (
         "generic implementor with the associated binding",
-        "pub contract Seq { type Item; } pub type Box<T> : Seq { T v type Item = T; }",
+        "pub contract Seq { type Item; } pub type Box<T> : Seq { T v; type Item = T; }",
     ),
 ];
 
@@ -147,7 +147,7 @@ fn duplicate_item_across_units_of_one_module_is_reported_in_the_later_unit() {
     );
 }
 
-const HELPER_TYPES: (&str, &str) = ("Lib/Helper.bd", "type Hidden { i64 n } pub type Shown { i64 n }");
+const HELPER_TYPES: (&str, &str) = ("Lib/Helper.bd", "type Hidden { i64 n; } pub type Shown { i64 n; }");
 
 /// Qualified type paths keep the legacy resolver's classes: private (E1107), missing in the
 /// module (E1201 `ResolveUnknownTypeInModule`), and unknown module (E1108).
@@ -174,9 +174,9 @@ fn qualified_hub_paths_follow_the_reexport_rule() {
     let hub = ("Lib/Hub.bd", "pub mod Lib.Hub.Left; pub mod Lib.Hub.Right; pub i64 Own() { return 0_i64; }");
     let left = (
         "Lib/Hub/Left.bd",
-        "pub i64 Shared() { return 1_i64; } pub i64 Only() { return 1_i64; } pub type Twin { i64 n } pub type Solo { i64 n } pub i64 Own() { return 1_i64; }",
+        "pub i64 Shared() { return 1_i64; } pub i64 Only() { return 1_i64; } pub type Twin { i64 n; } pub type Solo { i64 n; } pub i64 Own() { return 1_i64; }",
     );
-    let right = ("Lib/Hub/Right.bd", "pub i64 Shared() { return 2_i64; } pub type Twin { i64 n }");
+    let right = ("Lib/Hub/Right.bd", "pub i64 Shared() { return 2_i64; } pub type Twin { i64 n; }");
     assert_units_silent(
         &[("Main.bd", "use Lib.Hub; i64 Main(Hub.Solo s) { return Hub.Only() + Hub.Own(); }"), hub, left, right],
         3500,
@@ -214,11 +214,11 @@ fn qualified_value_paths_are_classified_like_qualified_callees() {
 fn private_field_of_another_unit_is_inaccessible() {
     let main = ("Main.bd", "use Lib.Secret; i64 Main(Secret.Secret s) { return s.hidden; }");
     assert_reports(
-        &[main, ("Lib/Secret.bd", "pub type Secret { i64 hidden }")],
+        &[main, ("Lib/Secret.bd", "pub type Secret { i64 hidden; }")],
         3500,
         "TypeInaccessibleStructField",
         "E1211",
         0,
     );
-    assert_units_silent(&[main, ("Lib/Secret.bd", "pub type Secret { pub i64 hidden }")], 3501);
+    assert_units_silent(&[main, ("Lib/Secret.bd", "pub type Secret { pub i64 hidden; }")], 3501);
 }

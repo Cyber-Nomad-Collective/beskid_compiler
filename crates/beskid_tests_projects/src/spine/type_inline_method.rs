@@ -9,7 +9,7 @@ fn type_body_parses_inline_method() {
         "test.bd",
         r#"
 type Counter {
-    i32 value,
+    i32 value;
 
     pub unit Increment() {
         value += 1;
@@ -32,7 +32,7 @@ fn generic_type_body_parses_inline_method() {
         "test.bd",
         r#"
 type Container<T> {
-    T item,
+    T item;
 
     pub T Get() {
         return item;
@@ -56,7 +56,7 @@ fn duplicate_field_and_method_name_is_parseable() {
         "test.bd",
         r#"
 type Bad {
-    i32 value,
+    i32 value;
 
     pub unit value() {
         return;

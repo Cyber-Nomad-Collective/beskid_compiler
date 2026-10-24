@@ -19,7 +19,7 @@ fn v06_indented_documentation_retains_variant_text_and_source_bounds() {
 
 #[test]
 fn v06_tab_indented_documentation_preserves_record_field_metadata() {
-    let source = "pub type Record {\n\t/// First field line.\n\t/// Second field line.\n\tu32 value,\n}\n";
+    let source = "pub type Record {\n\t/// First field line.\n\t/// Second field line.\n\tu32 value;\n}\n";
     let parsed = parse_program_with_source_name_and_diagnostics("Record.bd", source).unwrap();
     assert!(!parsed.recovered && parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
     let Node::TypeDefinition(definition) = &parsed.program.node.items[0].node else { panic!("expected record") };

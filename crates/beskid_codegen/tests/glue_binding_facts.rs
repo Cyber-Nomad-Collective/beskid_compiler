@@ -72,7 +72,7 @@ fn canonical_glue_generic_reference_keeps_its_declaration_and_position() {
 }
 #[test]
 fn canonical_glue_handle_brand_retains_qualified_owner_and_arguments() {
-    let source = r#"[GlueHandle(Library:"manual",Nullable:false)] pub type Token<T> { u64 token, }
+    let source = r#"[GlueHandle(Library:"manual",Nullable:false)] pub type Token<T> { u64 token; }
     [Export(Abi:"C",Symbol:"handle")] pub Token<i32> ExportHandle(Token<i32> value) {return value;}"#;
     let binding = fact(source, "ExportHandle").unwrap();
     let GlueLogicalType::Handle(brand) = &binding.parameters[0].ty else {
@@ -88,7 +88,7 @@ fn canonical_glue_handle_brand_retains_qualified_owner_and_arguments() {
 #[test]
 fn opaque_shape_projection_preserves_applied_arguments_without_scalar_brand_grants() {
     let source=r#"
-        [GlueHandle(Library:"foreign", Nullable:false)] pub type Token<T> { u64 token, }
+        [GlueHandle(Library:"foreign", Nullable:false)] pub type Token<T> { u64 token; }
         [Export(Abi:"C",Symbol:"signed_token")] pub Token<i64> Signed(Token<i64> token) { return token; }
         [Export(Abi:"C",Symbol:"unsigned_token")] pub Token<u64> Unsigned(Token<u64> token) { return token; }
         [Export(Abi:"C",Symbol:"ordinary")] pub u64 Ordinary(u64 token) { return token; }

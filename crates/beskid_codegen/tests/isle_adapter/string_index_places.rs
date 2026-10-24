@@ -4,8 +4,8 @@
 
 use super::support::{SyntaxModuleItem, find_nodes_of_kind, item_fixture_with_root, item_name, lower_syntax_program};
 
-const CURSOR: &str = "type Cursor { string text, i64 at, pub i64 Current() { return i64(this.text[this.at]); } } \
-                      type Outer { Cursor cursor } ";
+const CURSOR: &str = "type Cursor { string text; i64 at; pub i64 Current() { return i64(this.text[this.at]); } } \
+                      type Outer { Cursor cursor; } ";
 
 fn lowers(source: &str) {
     let source = format!("{CURSOR}{source}");

@@ -16,7 +16,7 @@ fn removed_parent_owned_cancel_slot_builtin_is_unavailable() {
 
 #[test]
 fn inferred_spawn_handle_preserves_nominal_receiver_and_result_identity() {
-    let source = "pub type Fiber<T> { i64 handle, pub unit Cancel() { return; } } i64 Compute() { return 42_i64; } unit Main() { let child = spawn Compute(); child.Cancel(); return; }";
+    let source = "pub type Fiber<T> { i64 handle; pub unit Cancel() { return; } } i64 Compute() { return 42_i64; } unit Main() { let child = spawn Compute(); child.Cancel(); return; }";
     let (db, _project, unit, generation, index) = setup(source);
     let spawn = key(unit, generation, &index, NodeKind::SpawnExpression, 0);
     assert_eq!(beskid_queries::abi_type(&db, spawn).unwrap(), Some(SemanticTypeId::POINTER));
@@ -103,7 +103,7 @@ fn closure_environment_retains_only_resolved_nominal_method_receivers() {
             assert_eq!(capture_storage(&db, path).unwrap().unwrap().declaration, captures[0].declaration);
         }
     }
-    let source = "pub type Fiber<T> { i64 handle, pub i64 Join() { return 1_i64; } } unit Main() { mut Fiber<i64> child = Fiber<i64> { handle: 1_i64 }; let next = spawn (() => child.Join())(); return; }";
+    let source = "pub type Fiber<T> { i64 handle; pub i64 Join() { return 1_i64; } } unit Main() { mut Fiber<i64> child = Fiber<i64> { handle: 1_i64 }; let next = spawn (() => child.Join())(); return; }";
     let (db, _project, unit, generation, index) = setup(source);
     let spawn = key(unit, generation, &index, NodeKind::SpawnExpression, 0);
     let legality = spawn_legality(&db, spawn).unwrap().unwrap();
@@ -247,14 +247,14 @@ fn fiber_ownership_rejects_repeatable_closures_consuming_captures() {
 fn fiber_ownership_tracks_inferred_factory_method_results() {
     for (factory, parameter) in [
         (
-            "pub type Factory { i64 value, pub Fiber<i64> Start() { return Fiber<i64> { handle: 1_i64 }; } }",
+            "pub type Factory { i64 value; pub Fiber<i64> Start() { return Fiber<i64> { handle: 1_i64 }; } }",
             "Factory factory",
         ),
         (
-            "pub type Factory<T> { T value, pub Fiber<T> Start() { return Fiber<T> { handle: 1_i64 }; } }",
+            "pub type Factory<T> { T value; pub Fiber<T> Start() { return Fiber<T> { handle: 1_i64 }; } }",
             "Factory<i64> factory",
         ),
-        ("pub type Factory<T> { T value, pub T Start() { return this.value; } }", "Factory<Fiber<i64>> factory"),
+        ("pub type Factory<T> { T value; pub T Start() { return this.value; } }", "Factory<Fiber<i64>> factory"),
     ] {
         for (body, rejected) in [
             ("child.Join(); child.Join();", true),
@@ -279,7 +279,7 @@ fn fiber_ownership_tracks_inferred_factory_method_results() {
 
 #[test]
 fn fiber_ownership_does_not_invent_capabilities_for_other_factory_results() {
-    let source = "pub type Fiber<T> { i64 handle, } pub type Value { i64 raw, pub unit Join() { return; } } pub type Factory { i64 raw, pub Value Start() { return Value { raw: 1_i64 }; } } unit Main(Factory factory) { let value = factory.Start(); value.Join(); value.Join(); return; }";
+    let source = "pub type Fiber<T> { i64 handle; } pub type Value { i64 raw; pub unit Join() { return; } } pub type Factory { i64 raw; pub Value Start() { return Value { raw: 1_i64 }; } } unit Main(Factory factory) { let value = factory.Start(); value.Join(); value.Join(); return; }";
     let (db, _project, unit, generation, index) = setup(source);
     let callable = key(unit, generation, &index, NodeKind::FunctionDefinition, 0);
     assert!(beskid_queries::callable_fiber_ownership(&db, callable).unwrap().unwrap().diagnostics.is_empty());
@@ -287,7 +287,7 @@ fn fiber_ownership_does_not_invent_capabilities_for_other_factory_results() {
 
 #[test]
 fn fiber_source_identity_does_not_depend_on_terminal_ownership_legality() {
-    let source = "pub type Fiber<T> { i64 handle, pub T Join() { return 1_i64; } } i64 Compute() { return 42_i64; } unit Main() { let child = spawn Compute(); let value = child.Join(); child.Join(); return; }";
+    let source = "pub type Fiber<T> { i64 handle; pub T Join() { return 1_i64; } } i64 Compute() { return 42_i64; } unit Main() { let child = spawn Compute(); let value = child.Join(); child.Join(); return; }";
     let (db, _project, unit, generation, index) = setup(source);
     let spawn = key(unit, generation, &index, NodeKind::SpawnExpression, 0);
     assert!(beskid_queries::spawn_handle_type(&db, spawn).unwrap().is_some());

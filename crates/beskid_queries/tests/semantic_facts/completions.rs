@@ -41,7 +41,7 @@ fn completion_candidates_are_generation_safe_and_deterministic() {
 
 #[test]
 fn completion_candidates_cover_lexical_type_and_receiver_families() {
-    let source = r#"type Value { i32 raw
+    let source = r#"type Value { i32 raw;
 i32 Sum(i32 first) { return first + raw; }
 }
 i32 Helper() { return 1; }
@@ -99,7 +99,7 @@ i32 Main(Value value) {
         vec![("Sum", beskid_queries::CompletionKind::Method)]
     );
 
-    let inferred = "type Value { i32 raw }\ni32 Main() { let value = 1; return value.x; }";
+    let inferred = "type Value { i32 raw; }\ni32 Main() { let value = 1; return value.x; }";
     let (db, _project, unit, generation, index) = setup(inferred);
     let program = key(unit, generation, &index, NodeKind::Program, 0);
     let inferred_cursor = inferred.find("value.x").expect("inferred site") + "value.".len();

@@ -9,7 +9,7 @@ use std::sync::Arc;
 fn item_signatures_cover_primitive_functions_methods_and_contracts() {
     let source = r#"
 i64 Convert(i32 value, bool checked) { return value; }
-type Counter { i64 value }
+type Counter { i64 value; }
 impl Counter { bool IsPositive(u8 threshold) { return true; } }
 contract Converter { string Format(char value); }
 "#;

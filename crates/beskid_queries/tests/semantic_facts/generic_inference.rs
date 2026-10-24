@@ -10,8 +10,8 @@ use std::sync::Arc;
 #[test]
 fn generic_parameter_type_argument_call_remains_direct_inside_generic_body() {
     let source = r#"
-type Channel<T> { i64 handle }
-type Options { i64 flags }
+type Channel<T> { i64 handle; }
+type Options { i64 flags; }
 Options Default() { return Options { flags: 0_i64 }; }
 Channel<T> CreateWithOptions<T>(Options options) { return Channel<T> { handle: options.flags }; }
 Channel<T> Create<T>() { return CreateWithOptions<T>(Default()); }
@@ -48,7 +48,7 @@ unit Main() { Channel<i64> ch = Create<i64>(); return; }
 #[test]
 fn inferred_generic_call_uses_source_types_for_fields_calls_and_pattern_bindings() {
     let source = r#"
-type Box { i64 value }
+type Box { i64 value; }
 enum Result<T> { Ok(T value), Error() }
 i64 Current() { return 7_i64; }
 unit Equal<T>(T actual, T expected, string because) { return; }
@@ -77,7 +77,7 @@ unit Main(Box box, Result<string> result) {
 #[test]
 fn explicit_generic_call_does_not_reinfer_its_source_argument_from_expressions() {
     let source = r#"
-type Box { i64 value }
+type Box { i64 value; }
 unit Append<T>(T[] values, T value) { return; }
 unit Main(i64[] values, Box box) { Append<i64>(values, box.value); }
 "#;
@@ -99,7 +99,7 @@ unit Main(i64[] values, Box box) { Append<i64>(values, box.value); }
 #[test]
 fn nested_generic_application_is_materialized_from_the_enclosing_source_environment() {
     let source = r#"
-type Entry<TKey, TValue> { TKey key, TValue value }
+type Entry<TKey, TValue> { TKey key; TValue value; }
 T[] Empty<T>() { return []; }
 Entry<TKey, TValue>[] Entries<TKey, TValue>() { return Empty<Entry<TKey, TValue>>(); }
 "#;
@@ -132,8 +132,8 @@ Entry<TKey, TValue>[] Entries<TKey, TValue>() { return Empty<Entry<TKey, TValue>
 #[test]
 fn nominal_generic_specializations_keep_distinct_source_identities() {
     let source = r#"
-type Left { i64 value }
-type Right { i64 value }
+type Left { i64 value; }
+type Right { i64 value; }
 unit Use<T>(T value) { return; }
 unit Main() {
     Use<Left>(Left { value: 1_i64 });
@@ -208,8 +208,8 @@ unit Main() { Consume<Choice>(Choice::Left()); }
 #[test]
 fn inferred_nominal_generic_specializations_keep_distinct_source_identities() {
     let source = r#"
-type Left { i64 value }
-type Right { i64 value }
+type Left { i64 value; }
+type Right { i64 value; }
 unit Use<T>(T value) { return; }
 unit Main() {
     Use(Left { value: 1_i64 });
@@ -287,10 +287,10 @@ unit Main() {
 #[test]
 fn inferred_nested_nominal_parameter_recursively_binds_its_generic_argument() {
     let source = r#"
-type Left { i64 value }
-type Right { i64 value }
-type Outer<T> { T value }
-type Inner<T> { T value }
+type Left { i64 value; }
+type Right { i64 value; }
+type Outer<T> { T value; }
+type Inner<T> { T value; }
 Inner<T> Project<T>(Outer<T> source) { return Inner<T> { value: source.value }; }
 unit Main(Outer<Left> left, Outer<Right> right) {
     Inner<Left> projectedLeft = Project(left);
@@ -334,8 +334,8 @@ unit Main(Outer<Left> left, Outer<Right> right) {
 #[test]
 fn concrete_nominal_type_argument_is_not_a_nested_generic_call_template() {
     let source = r#"
-type ConsoleMessage { i64 kind }
-type Channel<T> { i64 handle }
+type ConsoleMessage { i64 kind; }
+type Channel<T> { i64 handle; }
 Channel<T> Create<T>() { return Channel<T> { handle: 0_i64 }; }
 Channel<ConsoleMessage> MessagesChannel() { return Create<ConsoleMessage>(); }
 "#;
@@ -483,7 +483,7 @@ unit Main(Result<string, string> result) {
 fn generic_nominal_method_specializes_from_its_explicit_receiver_application() {
     let source = r#"
 type List<T> {
-    T value,
+    T value;
     T Echo(T input) { return input; }
 }
 unit Main(List<i64> list) { list.Echo(1_i64); }
@@ -521,7 +521,7 @@ unit Main(List<i64> list) { list.Echo(1_i64); }
 fn generic_nominal_method_receiver_is_applied_by_a_nested_enum_pattern_binding() {
     let source = r#"
 type List<T> {
-    T value,
+    T value;
     T Echo(T input) { return input; }
 }
 enum Problem { Failed(List<i64> failures), Empty }
@@ -558,7 +558,7 @@ fn generic_nominal_method_owner_binds_nested_generic_templates() {
     let source = r#"
 T Id<T>(T value) { return value; }
 type List<T> {
-    T value,
+    T value;
     T Echo(T input) { return Id<T>(input); }
 }
 unit Main(List<i64> list) { list.Echo(1_i64); }
@@ -646,8 +646,8 @@ unit Main() {{ Equal(Position(), {explicit_literal}, "initial position"); return
 #[test]
 fn nominal_generic_types_have_only_source_derived_pointer_abi_facts() {
     let source = r#"
-type Channel<T> { i64 handle }
-type Pair<T> { i64 left, i64 right }
+type Channel<T> { i64 handle; }
+type Pair<T> { i64 left; i64 right; }
 Channel<T> Create<T>() { return Channel<T> { handle: 0_i64 }; }
 Pair<T> CreatePair<T>() { return Pair<T> { left: 0_i64, right: 0_i64 }; }
 unit Main() {
@@ -766,17 +766,17 @@ fn pipeline_chain_specializes_typed_and_untyped_lambda_parameter_receivers() {
     let base = r#"
 [CompilerDerived] pub contract Transferable { }
 type Port<T> {
-    i64 id,
+    i64 id;
     unit Send(SENDPARAM) BOUND { return; }
 }
 type Stage<T> {
-    i64 id,
+    i64 id;
     Stage<U> Map<U>(i64 workers, CAPS (T) => U step) BOUND2 { return Stage<U> { id: id }; }
     Stage<T> Ordered() BOUND { return Stage<T> { id: id }; }
     i64 Sink(CAPS (T) => unit sink) BOUND { return id; }
 }
 type Scope {
-    i64 id,
+    i64 id;
     Stage<T> Source<T>(CAPS (Port<T>) => unit source) BOUND { return Stage<T> { id: id }; }
     Port<T> PortWith<T>(i64 capacity) { return Port<T> { id: capacity }; }
 }

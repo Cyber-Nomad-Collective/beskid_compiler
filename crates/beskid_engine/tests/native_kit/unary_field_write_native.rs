@@ -9,10 +9,10 @@ use crate::runtime_prefix::RuntimePrefixContext;
 use crate::shared_kit;
 
 const SOURCE: &str = r#"
-type Input { bool failed, i64 nodes }
-type State { Input input, bool active, i64 count }
+type Input { bool failed; i64 nodes; }
+type State { Input input; bool active; i64 count; }
 type Reader {
-    State state,
+    State state;
     pub i64 Go() {
         this.state.active = !this.state.input.failed;
         this.state.count = -this.state.input.nodes;

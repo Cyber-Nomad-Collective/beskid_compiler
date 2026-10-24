@@ -70,7 +70,7 @@ fn type_qualified_calls_resolve_to_functions_of_the_declaring_unit() {
     // Inside the unit that declares `Crate`, `Crate.Make<T>` and `Crate.Twice` name this unit's
     // own functions, the same static spelling an importer writes as `Kit.Crate.Make`.
     let source = r#"
-pub type Crate<T> { T value }
+pub type Crate<T> { T value; }
 pub Crate<T> Make<T>(T value) { return Crate<T> { value: value }; }
 pub i64 Twice(i64 value) { return value * 2; }
 pub Crate<T> Pack<T>(T value) { return Crate.Make<T>(value); }
@@ -96,7 +96,7 @@ fn type_qualified_local_calls_fail_closed_without_one_exact_target() {
     // A shadowing local, a mismatched written arity, a qualifier that names no type of this unit,
     // and a function name declared twice stay unresolved instead of guessing a callable.
     let source = r#"
-pub type Crate<T> { T value }
+pub type Crate<T> { T value; }
 pub i64 Twice(i64 value) { return value * 2; }
 pub i64 Twin() { return 1; }
 pub i64 Twin(i64 value) { return value; }
@@ -130,7 +130,7 @@ fn collection_operation_denies_user_append_lookalikes() {
 #[test]
 fn call_lowering_resolves_an_explicit_nominal_parameter_method() {
     let source = r#"
-type Point { i32 x, i32 Ping() { return 7; } }
+type Point { i32 x; i32 Ping() { return 7; } }
 i32 Main(Point point) { return point.Ping(); }
 "#;
     let (db, _project, unit, generation, index) = setup(source);
@@ -159,7 +159,7 @@ i32 Main(Point point) { return point.Ping(); }
 fn unqualified_method_call_materializes_the_enclosing_receiver_argument() {
     let source = r#"
 type Counter {
-    i64 value,
+    i64 value;
     i64 Current() { return value; }
     i64 Next() { return Current() + 1; }
 }
@@ -187,7 +187,7 @@ type Counter {
 #[test]
 fn call_lowering_resolves_an_explicit_nominal_let_method() {
     let source = r#"
-type Point { i32 x, i32 Ping() { return 7; } }
+type Point { i32 x; i32 Ping() { return 7; } }
 i32 Main() { Point point = Point { x: 1 }; return point.Ping(); }
 "#;
     let (db, _project, unit, generation, index) = setup(source);
@@ -252,7 +252,7 @@ i32 Main() {
 
 #[test]
 fn reachable_items_includes_inline_method_callees_without_hir() {
-    let source = "type Point { i32 x, i32 Ping() { return 7; } } i32 Main() { return Point { x: 1 }.Ping(); }";
+    let source = "type Point { i32 x; i32 Ping() { return 7; } } i32 Main() { return Point { x: 1 }.Ping(); }";
     let (db, _project, unit, generation, index) = setup(source);
     let program = key(unit, generation, &index, NodeKind::Program, 0);
     let main = key(unit, generation, &index, NodeKind::FunctionDefinition, 0);
@@ -455,7 +455,7 @@ fn unresolved_call_target_accepts_calls_other_authorities_own() {
         ("T[] Empty<T>() { return []; } unit Main() { Empty<i64>(); return; }", 1),
         // A qualifier that names a local type is a member path, not a module path; its member
         // has other authorities.
-        ("pub type Pair { i64 a } i64 Main() { return Pair.Missing(); }", 0),
+        ("pub type Pair { i64 a; } i64 Main() { return Pair.Missing(); }", 0),
     ];
     for (source, item) in cases {
         assert_eq!(unresolved_call_in_item(source, item), None, "{source}");
@@ -465,7 +465,7 @@ fn unresolved_call_target_accepts_calls_other_authorities_own() {
 #[test]
 fn reachable_items_accepts_a_method_entry_and_follows_its_callees() {
     // Native Mod adapters enter through contract methods and factory `Create` methods.
-    let source = "i32 Leaf() { return 7; } type Point { i32 x, i32 Ping() { return Leaf(); } } i32 Main() { return 0; }";
+    let source = "i32 Leaf() { return 7; } type Point { i32 x; i32 Ping() { return Leaf(); } } i32 Main() { return 0; }";
     let (db, _project, unit, generation, index) = setup(source);
     let program = key(unit, generation, &index, NodeKind::Program, 0);
     let leaf = key(unit, generation, &index, NodeKind::FunctionDefinition, 0);
@@ -482,7 +482,7 @@ fn reachable_items_accepts_a_method_entry_and_follows_its_callees() {
 
 #[test]
 fn native_mod_expression_payload_strips_only_expression_and_grouping_wrappers() {
-    let source = "type Point { i32 x, i32[] items, i32 y } \
+    let source = "type Point { i32 x; i32[] items; i32 y; } \
                   i32 Make(i32 value) { return value; } \
                   Point Build(i32 value) { return Point { x: (value), items: [value], y: Make(value) }; }";
     let (db, _project, unit, generation, index) = setup(source);

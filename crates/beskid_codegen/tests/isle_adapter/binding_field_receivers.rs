@@ -87,7 +87,7 @@ const RESULT_SOURCE: &str = "pub enum Result<TValue, TError> { Ok(TValue value),
 const LISTENER_SOURCE: &str = r#"
 use Core.Results;
 pub type TcpListener {
-    word handle,
+    word handle;
     pub Result<i64, string> LocalAddress() { return Result::Ok(7_i64); }
     pub Result<unit, string> Close() { return Result::Ok(()); }
 }
@@ -99,7 +99,7 @@ fn method_call_on_an_imported_nominal_field_of_the_implicit_receiver_lowers() {
 use Core.Results;
 use Network.Tcp.TcpListener;
 pub type HttpServer {
-    TcpListener listener,
+    TcpListener listener;
     pub Result<i64, string> LocalAddress() {
         Result<i64, string> address = listener.LocalAddress();
         return match address {
@@ -149,7 +149,7 @@ fn unit_result_method_call_on_an_imported_nominal_field_of_the_implicit_receiver
 use Core.Results;
 use Network.Tcp.TcpListener;
 pub type HttpServer {
-    TcpListener listener,
+    TcpListener listener;
     pub Result<unit, string> Close() {
         Result<unit, string> closed = listener.Close();
         return match closed {
@@ -193,8 +193,8 @@ unit Main(HttpServer server) { server.Close(); return; }
 fn array_literal_of_struct_literals_inside_a_struct_literal_field_lowers() {
     let (input, isa, root) = item_fixture_with_root(
         r#"
-type Header { string name, string value, }
-type Request { string method, Header[] headers, }
+type Header { string name; string value; }
+type Request { string method; Header[] headers; }
 Request Build() {
     return Request { method: "GET", headers: [Header { name: "Host", value: "loopback.test" }] };
 }
@@ -228,7 +228,7 @@ unit Main() { Build(); return; }
 fn scalar_array_literal_inside_a_struct_literal_field_lowers() {
     let (input, isa, root) = item_fixture_with_root(
         r#"
-type Packet { i64 kind, i64[] words, }
+type Packet { i64 kind; i64[] words; }
 Packet Build() { return Packet { kind: 1_i64, words: [2_i64, 3_i64] }; }
 unit Main() { Build(); return; }
 "#,
@@ -284,7 +284,7 @@ bool Main(Result<Request, HttpError> head) {
             ("Http/Server.bd", entry_source),
             ("Core/Results/Results.bd", RESULT_SOURCE),
             ("Http/Errors/Errors.bd", "pub enum HttpError { InvalidFraming(), Closed() }"),
-            ("Http/Requests/Requests.bd", "pub type Request { pub string method, pub u8[] body, }"),
+            ("Http/Requests/Requests.bd", "pub type Request { pub string method; pub u8[] body; }"),
         ],
         SyntaxGenerationId(191),
     );
@@ -386,7 +386,7 @@ unit Drive(i64[] state) {
 fn field_of_a_function_call_result_lowers() {
     let (input, isa, root) = item_fixture_with_root(
         r#"
-type Point { i64 x, i64 y, }
+type Point { i64 x; i64 y; }
 Point Make() { return Point { x: 9_i64, y: 2_i64 }; }
 i64 Main() { return Make().x + Make().y; }
 "#,
@@ -405,10 +405,10 @@ fn generic_impl_method_extending_an_imported_generic_type_is_specialized() {
     // Core.Parallel's `impl<T> List<T> { Parallel() }` shape: the impl block lives in another unit
     // than the generic owner it extends, so the owner is resolved across units and the receiver's
     // applied arguments bind the impl's own type parameter.
-    let list_source = "pub type List<T> { pub T[] storage, pub i64 count }";
+    let list_source = "pub type List<T> { pub T[] storage; pub i64 count; }";
     let seq_source = r#"
 use Core.Collections.List;
-pub type Seq<T> { pub i64 count }
+pub type Seq<T> { pub i64 count; }
 pub Seq<T> OfList<T>(List<T> values) { return Seq<T> { count: values.count }; }
 impl<T> List<T> {
     pub Seq<T> Par() { return OfList<T>(this); }

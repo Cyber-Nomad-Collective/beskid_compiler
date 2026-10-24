@@ -411,7 +411,7 @@ fn generic_function_value_without_type_arguments_stops_at_the_legality_gate() {
 
 #[test]
 fn function_typed_struct_field_is_called_through_its_record() {
-    let source = "type Handler { (i64) => i64 op }\n\
+    let source = "type Handler { (i64) => i64 op; }\n\
                   i64 Main(i64 n) { Handler h = Handler { op: (i64 x) => x + n }; return h.op(5); }\n";
     let (input, isa, root) = item_fixture_with_root(source);
     let db = input.database();
@@ -508,7 +508,7 @@ fn untyped_lambda_parameters_take_the_callee_parameter_types() {
 
 #[test]
 fn generic_struct_literal_with_an_unsuffixed_literal_field_lowers() {
-    let source = "type Bag<T> { T value, i64 size }\n\
+    let source = "type Bag<T> { T value; i64 size; }\n\
                   Bag<T> Make<T>(T value) { return Bag<T> { value: value, size: 1 }; }\n\
                   Bag<i64> Direct() { return Bag<i64> { value: 2, size: 3 }; }\n\
                   i64 Main() { Bag<i64> bag = Make<i64>(7_i64); Bag<i64> direct = Direct(); return bag.size + direct.value; }\n";

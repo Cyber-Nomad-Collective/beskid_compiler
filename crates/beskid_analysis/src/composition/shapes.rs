@@ -209,7 +209,7 @@ mod tests {
             r#"
 contract Greeter { string Greet(); }
 type PoliteGreeter : Greeter { pub string Greet() { return "hello"; } }
-type Reception { inject Greeter greeter }
+type Reception { inject Greeter greeter; }
 host AppHost() { registry { single Greeter; single Reception; } }
 i32 Main() { launch AppHost(); return 0; }
 "#,
@@ -230,7 +230,7 @@ i32 Main() { launch AppHost(); return 0; }
         let found = issues(
             r#"
 contract Clock { i64 Now(); }
-type Prefixed { string prefix }
+type Prefixed { string prefix; }
 type Boxed<T> { }
 enum Mode { Fast(), Slow(), }
 type Plain { }

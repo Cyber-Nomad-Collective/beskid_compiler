@@ -49,7 +49,7 @@ fn move_of_a_name_is_a_transfer_without_a_store() {
 
 #[test]
 fn destructive_read_of_an_array_field_stores_the_empty_array_behind_the_barrier() {
-    let take = &lower_module("type Holder { u8[] buf } u8[] Take(mut Holder h) { return move h.buf; }", &["Take"])[0];
+    let take = &lower_module("type Holder { u8[] buf; } u8[] Take(mut Holder h) { return move h.buf; }", &["Take"])[0];
     assert_eq!(assert_guarded_stores(take), 1, "{take}");
     assert_eq!(calls_to(take, ARRAY_ALLOCATE), 1, "the empty array is allocated: {take}");
     assert!(take.contains("beskid_rt_v5_array_construction_finish"), "{take}");
@@ -61,7 +61,7 @@ fn destructive_read_of_an_option_field_stores_none_behind_the_barrier() {
     let take = &lower_module(
         r#"
 pub enum Option<T> { Some(T value), None }
-type Slot { Option<string> item }
+type Slot { Option<string> item; }
 Option<string> Take(mut Slot s) { return move s.item; }
 "#,
         &["Take"],
@@ -76,8 +76,8 @@ Option<string> Take(mut Slot s) { return move s.item; }
 fn destructive_read_of_a_list_field_stores_the_empty_list_behind_the_barrier() {
     let take = &lower_module(
         r#"
-type List<T> { T[] storage, i64 count }
-type Bag { List<string> items }
+type List<T> { T[] storage; i64 count; }
+type Bag { List<string> items; }
 List<string> Take(mut Bag b) { return move b.items; }
 "#,
         &["Take"],
@@ -91,7 +91,7 @@ List<string> Take(mut Bag b) { return move b.items; }
 #[test]
 fn exchange_of_a_field_stores_the_value_behind_the_barrier_and_yields_the_old_value() {
     let swap = &lower_module(
-        "type Stage { u8[] buffer } u8[] Swap(mut Stage s, move u8[] next) { return exchange(s.buffer, move next); }",
+        "type Stage { u8[] buffer; } u8[] Swap(mut Stage s, move u8[] next) { return exchange(s.buffer, move next); }",
         &["Swap"],
     )[0];
     assert_eq!(assert_guarded_stores(swap), 1, "{swap}");

@@ -978,10 +978,10 @@ mod tests {
     /// duplicate, while a second `Stack` in one module still is.
     #[test]
     fn same_named_methods_of_same_named_types_in_different_modules_are_distinct_symbols() {
-        let corelib = parse_program("pub type Stack<T> { T[] storage,\n pub Stack<T> Push(move this, T value) { return this; } }")
+        let corelib = parse_program("pub type Stack<T> { T[] storage;\n pub Stack<T> Push(move this, T value) { return this; } }")
             .expect("parse corelib stack");
         let entry = parse_program(
-            "pub type Stack<T> { T[] items,\n pub unit Push(mut this, T value) { return; } }\nunit Main() { return; }",
+            "pub type Stack<T> { T[] items;\n pub unit Push(mut this, T value) { return; } }\nunit Main() { return; }",
         )
         .expect("parse entry");
         let mut resolver = Resolver::new();
@@ -1001,9 +1001,9 @@ mod tests {
             );
         }
 
-        let first = parse_program("pub type Stack<T> { T[] items,\n pub unit Push(mut this, T value) { return; } }")
+        let first = parse_program("pub type Stack<T> { T[] items;\n pub unit Push(mut this, T value) { return; } }")
             .expect("parse first");
-        let second = parse_program("pub type Stack<T> { T[] items,\n pub unit Push(mut this, T value) { return; } }")
+        let second = parse_program("pub type Stack<T> { T[] items;\n pub unit Push(mut this, T value) { return; } }")
             .expect("parse second");
         let mut resolver = Resolver::new();
         let module = ["Lib".to_owned()];

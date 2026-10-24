@@ -30,7 +30,7 @@ fn captured_char_lambda_uses_i32_in_its_environment_and_target_signature() {
 #[test]
 fn parsed_syntax_program_omits_uncalled_generic_enum_declarations() {
     let (input, isa, root) = item_fixture_with_root(
-        "type Box<T> { T value } enum Option<T> { Some(T value), None } i32 Main() { return 0; }",
+        "type Box<T> { T value; } enum Option<T> { Some(T value), None } i32 Main() { return 0; }",
     );
     let boxed = find_definition_of_kind(input.database(), root, beskid_queries::IndexedNodeKind::TypeDefinition)
         .expect("generic type declaration");
@@ -59,7 +59,7 @@ fn parsed_syntax_program_omits_uncalled_generic_enum_declarations() {
 #[test]
 fn nested_applied_generic_call_inside_an_aggregate_literal_lowers_from_one_environment() {
     let (input, isa, root) = item_fixture_with_root(
-        "type Entry<TKey, TValue> { TKey key, TValue value } type Map<TKey, TValue> { Entry<TKey, TValue>[] entries, i64 count } T[] Identity<T>(T[] values) { return values; } Map<TKey, TValue> New<TKey, TValue>(Entry<TKey, TValue>[] empty) { return Map<TKey, TValue> { entries: Identity<Entry<TKey, TValue>>(empty), count: 0 }; } i64 Main(Entry<i64, string>[] empty) { Map<i64, string> map = New<i64, string>(empty); return map.count; }",
+        "type Entry<TKey, TValue> { TKey key; TValue value; } type Map<TKey, TValue> { Entry<TKey, TValue>[] entries; i64 count; } T[] Identity<T>(T[] values) { return values; } Map<TKey, TValue> New<TKey, TValue>(Entry<TKey, TValue>[] empty) { return Map<TKey, TValue> { entries: Identity<Entry<TKey, TValue>>(empty), count: 0 }; } i64 Main(Entry<i64, string>[] empty) { Map<i64, string> map = New<i64, string>(empty); return map.count; }",
     );
     let items = find_function_definitions(input.database(), root)
         .into_iter()
@@ -104,7 +104,7 @@ fn nested_applied_generic_call_inside_an_aggregate_literal_lowers_from_one_envir
 #[test]
 fn generic_aggregate_literal_keeps_declared_scalar_field_widths() {
     let (input, isa, root) = item_fixture_with_root(
-        "type Queue<T> { T[] storage, i64 head, i64 count } T[] Identity<T>(T[] values) { return values; } Queue<T> New<T>(T[] empty) { return Queue<T> { storage: Identity<T>(empty), head: 0, count: 0 }; } i64 Main(string[] empty) { Queue<string> queue = New<string>(empty); return queue.count; }",
+        "type Queue<T> { T[] storage; i64 head; i64 count; } T[] Identity<T>(T[] values) { return values; } Queue<T> New<T>(T[] empty) { return Queue<T> { storage: Identity<T>(empty), head: 0, count: 0 }; } i64 Main(string[] empty) { Queue<string> queue = New<string>(empty); return queue.count; }",
     );
     let items = find_function_definitions(input.database(), root)
         .into_iter()
@@ -121,7 +121,7 @@ fn generic_aggregate_literal_keeps_declared_scalar_field_widths() {
 #[test]
 fn generic_nominal_method_aggregate_literal_specializes_a_zero_argument_array_factory() {
     let (input, isa, root) = item_fixture_with_root(
-        "type Queue<T> { T[] storage, i64 head, i64 count, Queue<T> Reset() { return Queue<T> { storage: Empty<T>(), head: 0, count: 0 }; } } T[] Empty<T>() { return []; } i64 Main(Queue<string> queue) { Queue<string> reset = queue.Reset(); return reset.count; }",
+        "type Queue<T> { T[] storage; i64 head; i64 count; Queue<T> Reset() { return Queue<T> { storage: Empty<T>(), head: 0, count: 0 }; } } T[] Empty<T>() { return []; } i64 Main(Queue<string> queue) { Queue<string> reset = queue.Reset(); return reset.count; }",
     );
     let db = input.database();
     let reset = find_node(db, root, beskid_queries::IndexedNodeKind::MethodDefinition).expect("Queue.Reset method");
@@ -171,7 +171,7 @@ fn generic_nominal_method_aggregate_literal_specializes_a_zero_argument_array_fa
 #[test]
 fn unqualified_sibling_method_reuses_the_enclosing_nominal_specialization() {
     let (input, isa, root) = item_fixture_with_root(
-        "type Set<T> { T[] values, bool Contains(T value) { return false; } Set<T> Add(T value) { if Contains(value) { return self; } return self; } } unit Main(Set<string> set) { set.Add(\"x\"); return; }",
+        "type Set<T> { T[] values; bool Contains(T value) { return false; } Set<T> Add(T value) { if Contains(value) { return self; } return self; } } unit Main(Set<string> set) { set.Add(\"x\"); return; }",
     );
     let mut keys = find_nodes_of_kind(input.database(), root, beskid_queries::IndexedNodeKind::MethodDefinition);
     keys.extend(find_function_definitions(input.database(), root));
@@ -190,7 +190,7 @@ fn unqualified_sibling_method_reuses_the_enclosing_nominal_specialization() {
 #[test]
 fn parsed_struct_literal_method_call_uses_receiver_abi_without_hir() {
     let (input, isa, root) = item_fixture_with_root(
-        "type Point { i32 x, i32 Ping() { return 7; } } i32 Main() { return Point { x: 1 }.Ping(); }",
+        "type Point { i32 x; i32 Ping() { return 7; } } i32 Main() { return Point { x: 1 }.Ping(); }",
     );
     let db = input.database();
     let main = find_function_definitions(db, root)
@@ -236,7 +236,7 @@ fn parsed_struct_literal_method_call_uses_receiver_abi_without_hir() {
 #[test]
 fn parsed_nominal_parameter_method_call_uses_receiver_abi_without_hir() {
     let (input, isa, root) = item_fixture_with_root(
-        "type Point { i32 x, i32 Ping() { return 7; } } i32 Main(Point point) { return point.Ping(); }",
+        "type Point { i32 x; i32 Ping() { return 7; } } i32 Main(Point point) { return point.Ping(); }",
     );
     let db = input.database();
     let main = find_function_definitions(db, root)

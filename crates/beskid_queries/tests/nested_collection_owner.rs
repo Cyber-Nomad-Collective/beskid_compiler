@@ -11,7 +11,7 @@ use beskid_queries::{
 };
 use std::sync::Arc;
 
-const MAIN: &str = "use Core.Collections.Array;\npub type Profile { pub i64[] roots, } pub type Loader { pub Profile profile, } pub unit Main(Loader loader) { Array.Append<i64>(loader.profile.roots, 7_i64); return; }";
+const MAIN: &str = "use Core.Collections.Array;\npub type Profile { pub i64[] roots; } pub type Loader { pub Profile profile; } pub unit Main(Loader loader) { Array.Append<i64>(loader.profile.roots, 7_i64); return; }";
 
 fn fixture(
     copied_source: Option<&str>,
@@ -175,11 +175,11 @@ fn exact_copied_canonical_array_without_physical_authority_is_ordinary_source() 
 fn receiver_field_collection_owner_is_the_method_receiver() {
     for (main, nested) in [
         (
-            "use Core.Collections.Array;\npub type Bag { pub i64[] items, pub unit Add(i64 value) { this.items = Array.Append<i64>(this.items, value); return; } }",
+            "use Core.Collections.Array;\npub type Bag { pub i64[] items; pub unit Add(i64 value) { this.items = Array.Append<i64>(this.items, value); return; } }",
             false,
         ),
         (
-            "use Core.Collections.Array;\npub type State { pub i64[] items, } pub type Bag { pub State state, pub unit Add(i64 value) { this.state.items = Array.Append<i64>(this.state.items, value); return; } }",
+            "use Core.Collections.Array;\npub type State { pub i64[] items; } pub type Bag { pub State state; pub unit Add(i64 value) { this.state.items = Array.Append<i64>(this.state.items, value); return; } }",
             true,
         ),
     ] {

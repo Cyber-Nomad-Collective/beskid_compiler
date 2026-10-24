@@ -13,7 +13,7 @@ fn indexed_record_enum_match_retains_layout_and_generation_authority() {
     let source_root = root.path().join("src");
     std::fs::create_dir(&source_root).unwrap();
     let path = source_root.join("Main.bd");
-    std::fs::write(&path, "pub enum Stage { Profile, Other, }\npub type Diagnostic { pub Stage stage, }\npub unit AssertBool(bool value) {}\npub unit Verify(Diagnostic[] diagnostics) { AssertBool(match diagnostics[0].stage { Stage::Profile => true, _ => false }); }\n").unwrap();
+    std::fs::write(&path, "pub enum Stage { Profile, Other, }\npub type Diagnostic { pub Stage stage; }\npub unit AssertBool(bool value) {}\npub unit Verify(Diagnostic[] diagnostics) { AssertBool(match diagnostics[0].stage { Stage::Profile => true, _ => false }); }\n").unwrap();
     let plan = CompilePlan {
         project_root: root.path().to_owned(),
         manifest_path: root.path().join("Host.bproj"),

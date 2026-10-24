@@ -164,7 +164,7 @@ fn missing_linker_is_rejected() {
 
 #[test]
 fn tool_flags_are_rejected_for_clif() {
-    let case = GlueCase::new("Lib", &[], "pub type Placeholder { i32 value, }\n");
+    let case = GlueCase::new("Lib", &[], "pub type Placeholder { i32 value; }\n");
     let linker = case.tool("cc").display().to_string();
     let output = case.build(&["--linker", &linker]);
     case.assert_rejected(&output, "apply only to `--backend glue-rust`");
@@ -204,7 +204,7 @@ fn glue_blocks_with_default_clif_backend_are_rejected() {
 
 #[test]
 fn glue_block_without_referencing_binding_is_rejected() {
-    let case = GlueCase::new("Lib", &["glue_a"], "pub type Placeholder { i32 value, }\n");
+    let case = GlueCase::new("Lib", &["glue_a"], "pub type Placeholder { i32 value; }\n");
     let output = case.glue_rust(&[]);
     case.assert_rejected(&output, "requires at least one glue block referenced by an Extern import");
 }

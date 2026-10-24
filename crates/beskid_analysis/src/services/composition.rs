@@ -315,7 +315,7 @@ mod tests {
 contract Greeter { string Greet(); }
 type English : Greeter { pub string Greet() { return "hello"; } }
 type Polish : Greeter { pub string Greet() { return "czesc"; } }
-type Reception { inject Greeter greeter, }
+type Reception { inject Greeter greeter; }
 host AppHost()
 {
     registry
@@ -369,7 +369,7 @@ i32 Main() { launch AppHost(); return 0; }
 contract Clock { i64 Now(); }
 type SystemClock : Clock { pub i64 Now() { return 0; } }
 type FixedClock : Clock { pub i64 Now() { return 1; } }
-type Report { inject Clock[] clocks, }
+type Report { inject Clock[] clocks; }
 host AppHost() { registry { single SystemClock for Clock; transient FixedClock for Clock; single Report; } }
 i32 Main() { launch AppHost(); return 0; }
 "#;
@@ -393,7 +393,7 @@ i32 Main() { launch AppHost(); return 0; }
         let source = r#"
 contract Greeter { string Greet(); }
 type PoliteGreeter : Greeter { pub string Greet() { return "hello"; } }
-type Reception { inject Greeter greeter, }
+type Reception { inject Greeter greeter; }
 host AppHost() { registry { single Greeter; single Reception; } }
 i32 Main() { launch AppHost(); return 0; }
 "#;

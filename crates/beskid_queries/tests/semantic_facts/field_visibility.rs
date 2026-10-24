@@ -10,7 +10,7 @@ use beskid_queries::{
 use super::deadline_projection::fact_result;
 
 const MODEL_SOURCE: &str =
-    "pub type Inner { i64 secret, pub i64 shared } pub type Request { pub Inner inner, i64 token }";
+    "pub type Inner { i64 secret; pub i64 shared; } pub type Request { pub Inner inner; i64 token; }";
 
 fn model(owner_source: &str) -> (tempfile::TempDir, std::path::PathBuf, std::path::PathBuf, String) {
     let temp = tempfile::tempdir().expect("application root");
@@ -72,7 +72,7 @@ fn cross_unit_read_of_a_pub_field_is_accessible() {
 #[test]
 fn same_unit_read_of_a_private_field_is_accessible() {
     let (_temp, owner_path, model_path, owner_source) =
-        model("pub type Local { i64 hidden } i64 Reveal(Local local) { return local.hidden; }");
+        model("pub type Local { i64 hidden; } i64 Reveal(Local local) { return local.hidden; }");
     let result = fact_result(
         owner_path,
         owner_source,
@@ -175,7 +175,7 @@ fn inaccessible_field_diagnostic_is_e1211_with_pub_help() {
     assert!(help.contains("mark the field `pub` in its declaring type"), "{help}");
 }
 
-const MAKER_SOURCE: &str = "pub type Inner { i64 secret, pub i64 shared } pub type Request { pub Inner inner, i64 token } \
+const MAKER_SOURCE: &str = "pub type Inner { i64 secret; pub i64 shared; } pub type Request { pub Inner inner; i64 token; } \
                             pub Request Make() { return Request { inner: Inner { secret: 1_i64, shared: 2_i64 }, token: 3_i64 }; }";
 
 fn call_result_finding(owner_source: &str) -> Option<beskid_queries::MemberReferenceFinding> {

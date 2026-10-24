@@ -125,7 +125,7 @@ fn deadline_projection_rejects_a_lookalike_nominal_type() {
     let owner_path = temp.path().join("Main.bd");
     let deadline_path = temp.path().join("Core/Time/Deadline.bd");
     let owner_source = "use Core.Time.Deadline; i64 Reveal(Deadline deadline) { return deadline.monotonicNanos; }";
-    let deadline_source = "pub type Deadline { i64 monotonicNanos }";
+    let deadline_source = "pub type Deadline { i64 monotonicNanos; }";
     assert!(
         projection_result(owner_path, owner_source.into(), deadline_path, deadline_source.into()).is_err(),
         "a same-named user type cannot acquire canonical Deadline projection authority"
@@ -138,7 +138,7 @@ fn direct_projection_rejects_a_private_network_handle_across_source_units() {
     let owner_path = temp.path().join("Main.bd");
     let declaration_path = temp.path().join("Network/Tcp/TcpStream.bd");
     let owner_source = "use Network.Tcp.TcpStream; i64 Reveal(TcpStream value) { return value.handle; }";
-    let declaration_source = "pub type TcpStream { i64 handle, pub i64 visible }";
+    let declaration_source = "pub type TcpStream { i64 handle; pub i64 visible; }";
     let result = fact_result(
         owner_path,
         owner_source.into(),
@@ -157,7 +157,7 @@ fn direct_projection_keeps_public_network_fields_accessible() {
     let owner_path = temp.path().join("Main.bd");
     let declaration_path = temp.path().join("Network/Tcp/TcpStream.bd");
     let owner_source = "use Network.Tcp.TcpStream; i64 Reveal(TcpStream value) { return value.visible; }";
-    let declaration_source = "pub type TcpStream { i64 handle, pub i64 visible }";
+    let declaration_source = "pub type TcpStream { i64 handle; pub i64 visible; }";
     let result = fact_result(
         owner_path,
         owner_source.into(),
@@ -176,7 +176,7 @@ fn private_field_read_is_a_coded_member_error_before_lowering() {
     let owner_path = temp.path().join("Main.bd");
     let declaration_path = temp.path().join("Network/Tcp/TcpStream.bd");
     let owner_source = "use Network.Tcp.TcpStream; i64 Reveal(TcpStream value) { return value.handle; }";
-    let declaration_source = "pub type TcpStream { i64 handle, pub i64 visible }";
+    let declaration_source = "pub type TcpStream { i64 handle; pub i64 visible; }";
     let finding = fact_result(
         owner_path,
         owner_source.into(),
@@ -226,7 +226,7 @@ fn deadline_projection_rejects_lookalike_even_inside_canonical_network_internal(
         .expect("canonical Network/Internal source");
     let owner_source = std::fs::read_to_string(&owner_path).expect("read canonical Network/Internal source");
     let deadline_path = temp.path().join("Core/Time/Deadline.bd");
-    let deadline_source = "pub type Deadline { i64 monotonicNanos }";
+    let deadline_source = "pub type Deadline { i64 monotonicNanos; }";
     assert!(
         projection_result(owner_path, owner_source, deadline_path, deadline_source.into()).is_err(),
         "a canonical owner cannot project a same-named user type"
@@ -342,7 +342,7 @@ fn ordinary_literal_missing_accessible_field_remains_e1212() {
     let temp = tempfile::tempdir().expect("application root");
     let owner_path = temp.path().join("Main.bd");
     let owner_source =
-        "pub type Pair { pub i64 left, pub i64 right } i64 Main() { Pair pair = Pair { left: 1_i64 }; return pair.left; }";
+        "pub type Pair { pub i64 left; pub i64 right; } i64 Main() { Pair pair = Pair { left: 1_i64 }; return pair.left; }";
     let (deadline_path, deadline_source) = canonical_deadline();
     let findings = fact_result(
         owner_path,
@@ -370,7 +370,7 @@ fn deadline_literal_does_not_restrict_an_unrelated_lookalike() {
     let deadline_path = temp.path().join("Core/Time/Deadline.bd");
     let owner_source = "use Core.Time.Deadline; Deadline Make() { return Deadline { monotonicNanos: 1_i64 }; }";
     // The general field rule still applies: only a `pub` field of the lookalike is constructible.
-    let deadline_source = "pub type Deadline { pub i64 monotonicNanos }";
+    let deadline_source = "pub type Deadline { pub i64 monotonicNanos; }";
     assert!(
         fact_result(
             owner_path,

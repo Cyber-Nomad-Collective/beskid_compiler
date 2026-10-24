@@ -491,7 +491,7 @@ fn zero_sized_unit_enum_payload_still_evaluates_its_direct_call() {
 fn generic_enum_constructor_as_a_struct_literal_field_value_uses_the_field_type() {
     let source = r#"
 enum Option<T> { Some(T value), None() }
-type Holder<T> { Option<i32[]> window, Option<T> item, i64 count }
+type Holder<T> { Option<i32[]> window; Option<T> item; i64 count; }
 Holder<string> Make() {
     return Holder<string> { window: Option::Some([3_i32, -4_i32]), item: Option::Some("x"), count: 1_i64 };
 }

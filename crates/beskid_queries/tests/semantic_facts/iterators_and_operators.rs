@@ -28,7 +28,7 @@ fn syntax_only_signatures_preserve_runtime_pointer_and_never_primitives() {
 
 #[test]
 fn local_slots_cover_methods_for_iterators_and_match_bindings() {
-    let method_source = r#"type Value { i32 raw }
+    let method_source = r#"type Value { i32 raw; }
 impl Value { i32 Sum(i32 first) { let local = first; return local; } }"#;
     let (db, _project, unit, generation, index) = setup(method_source);
     let method = key(unit, generation, &index, NodeKind::MethodDefinition, 0);
@@ -289,7 +289,7 @@ fn immutable_local_assignment_is_an_explicit_unavailable_syntax_fact() {
 
 #[test]
 fn contextual_integer_literal_abi_type_contextualizes_declared_struct_fields() {
-    let source = "type Cursor { i64 pos } Cursor Main() { return Cursor { pos: 0 }; }";
+    let source = "type Cursor { i64 pos; } Cursor Main() { return Cursor { pos: 0 }; }";
     let (db, _project, unit, generation, index) = setup(source);
     let literal = key(unit, generation, &index, NodeKind::LiteralExpression, 0);
     assert_eq!(
@@ -344,7 +344,7 @@ fn contextual_integer_literal_abi_type_contextualizes_only_bare_integer_literals
         Some(SemanticTypeId::I64)
     );
 
-    let struct_field = "type Cursor { i64 pos } Cursor Main() { return Cursor { pos: 0 }; }";
+    let struct_field = "type Cursor { i64 pos; } Cursor Main() { return Cursor { pos: 0 }; }";
     let (db, _project, unit, generation, index) = setup(struct_field);
     let literal = key(unit, generation, &index, NodeKind::LiteralExpression, 0);
     assert_eq!(
@@ -460,7 +460,7 @@ fn item_body_is_the_exact_function_and_method_body_child() {
         Some(AstNodeKey { node: beskid_analysis::syntax::AstNodeId(expected_function_body), ..function })
     );
 
-    let method_source = "type Value { i32 raw } impl Value { i32 Get() { return this.raw; } }";
+    let method_source = "type Value { i32 raw; } impl Value { i32 Get() { return this.raw; } }";
     let (method_db, _project, unit, generation, index) = setup(method_source);
     let method = key(unit, generation, &index, NodeKind::MethodDefinition, 0);
     let method_program =
@@ -478,14 +478,14 @@ fn item_body_is_the_exact_function_and_method_body_child() {
 }
 
 const OPTION_AND_COUNTER: &str = "pub enum Option<T> { Some(T value), None } \
-     pub type Counter { i64 current, i64 limit, \
+     pub type Counter { i64 current; i64 limit; \
          pub Option<i64> Next() { \
              if this.current >= this.limit { return Option::None; } \
              this.current = this.current + 1_i64; \
              return Option::Some(this.current); \
          } \
      } \
-     pub type Repeat<T> { T value, i64 left, \
+     pub type Repeat<T> { T value; i64 left; \
          pub Option<T> Next() { \
              if this.left <= 0_i64 { return Option::None; } \
              this.left = this.left - 1_i64; \
@@ -592,7 +592,7 @@ fn the_check_gate_rejects_nominal_iterables_the_protocol_cannot_lower() {
     // `Next` has the declared shape, but `Option` is not the `Some`/`None` enum, so no lowering
     // fact exists: `check` must reject what `build` cannot lower (E1215).
     let source = "pub enum Option<T> { Present(T value), Absent } \
-                  pub type Odd { i64 n, pub Option<i64> Next() { return Option::Absent; } } \
+                  pub type Odd { i64 n; pub Option<i64> Next() { return Option::Absent; } } \
                   unit Main(Odd odd) { for x in odd { return; } return; }";
     let (db, _project, unit, generation, index) = setup(source);
     let main = key(unit, generation, &index, NodeKind::FunctionDefinition, 0);

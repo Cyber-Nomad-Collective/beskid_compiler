@@ -2392,7 +2392,7 @@ mod generic_conformance_tests {
     use super::serialization_target_tests::{fixture_with_source, key};
     use super::*;
 
-    const SOURCE: &str = "pub contract Sequence<T> { T Head(); }\npub contract Marker { unit Mark(); }\npub type Holder<T> : Sequence<T> {\n    T value,\n\n    pub T Head() {\n        return this.value;\n    }\n}\npub type Plain : Marker { pub unit Mark() { return; } }\npub unit Main() { return; }";
+    const SOURCE: &str = "pub contract Sequence<T> { T Head(); }\npub contract Marker { unit Mark(); }\npub type Holder<T> : Sequence<T> {\n    T value;\n\n    pub T Head() {\n        return this.value;\n    }\n}\npub type Plain : Marker { pub unit Mark() { return; } }\npub unit Main() { return; }";
 
     #[test]
     fn generic_conformance_identity_resolves_owner_parameters_in_applied_environment() {
@@ -2479,7 +2479,7 @@ mod serialization_target_tests {
     }
     fn fixture() -> (tempfile::TempDir, BeskidDatabase, Arc<beskid_analysis::projects::ProgramAssembly>) {
         fixture_with_source(
-            "pub contract Codec<T> { T Read(); }\npub type Box<T> { pub T Value, }\nimpl Box<T> : Codec<T> { pub T Read() { return this.Value; } }\npub enum Choice<T> { Some(T Value), }\nimpl Choice<T> : Codec<T> { pub T Read() { return 0; } }\npub unit Main() { return; }",
+            "pub contract Codec<T> { T Read(); }\npub type Box<T> { pub T Value; }\nimpl Box<T> : Codec<T> { pub T Read() { return this.Value; } }\npub enum Choice<T> { Some(T Value), }\nimpl Choice<T> : Codec<T> { pub T Read() { return 0; } }\npub unit Main() { return; }",
         )
     }
     pub(super) fn key(
@@ -2497,7 +2497,7 @@ mod serialization_target_tests {
     #[test]
     fn implementation_encoder_parameter_retains_exact_source_application() {
         let (_root, db, assembly) = fixture_with_source(
-            "pub contract Codec<E> { unit Write(E encoder); }\npub type Box<T> { pub T Value, }\npub type Wire {}\nimpl<T,E> Box<T> : Codec<E> { pub unit Write(E encoder) { return; } }\npub unit Main() { return; }",
+            "pub contract Codec<E> { unit Write(E encoder); }\npub type Box<T> { pub T Value; }\npub type Wire {}\nimpl<T,E> Box<T> : Codec<E> { pub unit Write(E encoder) { return; } }\npub unit Main() { return; }",
         );
         let owner = key(&db, &assembly, NodeKind::TypeDefinition, 0);
         let wire = key(&db, &assembly, NodeKind::TypeDefinition, 1);
@@ -2551,7 +2551,7 @@ mod serialization_target_tests {
     #[test]
     fn decoder_receiver_retains_reader_and_field_binding_environment() {
         let (_root, db, assembly) = fixture_with_source(
-            "pub contract Decode<T> { T Read(); }\npub type Target<T> { pub T Value, }\npub type Reader {}\npub type Field {}\npub type Adapter<T,R,B> { pub R Reader, pub B Binding, }\nimpl<T,R,B> Adapter<T,R,B> : Decode<T> { pub T Read() { return 0; } }\npub unit Main() { return; }",
+            "pub contract Decode<T> { T Read(); }\npub type Target<T> { pub T Value; }\npub type Reader {}\npub type Field {}\npub type Adapter<T,R,B> { pub R Reader; pub B Binding; }\nimpl<T,R,B> Adapter<T,R,B> : Decode<T> { pub T Read() { return 0; } }\npub unit Main() { return; }",
         );
         let target = key(&db, &assembly, NodeKind::TypeDefinition, 0);
         let reader = key(&db, &assembly, NodeKind::TypeDefinition, 1);

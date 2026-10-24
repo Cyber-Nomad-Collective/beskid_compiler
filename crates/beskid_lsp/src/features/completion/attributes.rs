@@ -229,7 +229,7 @@ mod tests {
 
     #[test]
     fn completion_on_a_type_offers_recognized_type_attributes() {
-        let source = "[Imm]\npub type Job { string id, i64 size }\n";
+        let source = "[Imm]\npub type Job { string id; i64 size; }\n";
         let offset = source.find("Imm").expect("attribute") + 3;
         let labels = labels(source, offset).expect("attribute list completion");
         assert!(labels.contains(&"Immutable".to_string()), "{labels:?}");

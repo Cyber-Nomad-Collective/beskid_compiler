@@ -234,7 +234,7 @@ fn mutable_capture_is_rejected_with_e1233_before_isle() {
 fn parsed_project_inline_method_reaches_verified_clif_through_production_entrypoint() {
     let project = tempfile::tempdir().expect("project directory");
     let source = "
-        type Point { i32 x, i32 Ping() { return 7; } }
+        type Point { i32 x; i32 Ping() { return 7; } }
         i32 Main() { return Point { x: 1 }.Ping(); }
     ";
     let assembly = parse_production_units(project.path(), &[("Method.bd", "Main", source)]);

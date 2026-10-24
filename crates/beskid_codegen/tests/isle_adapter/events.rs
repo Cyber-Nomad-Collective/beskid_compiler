@@ -5,8 +5,8 @@ use super::support::{
 
 #[test]
 fn event_fields_have_zeroed_physical_slots_without_shifting_value_fields() {
-    let source = r#"type EventOnly { event{2} First(), event Removed() }
-type Mixed { i32 count, event{4} Changed(string payload), i64 total, event Removed() }
+    let source = r#"type EventOnly { event{2} First(); event Removed(); }
+type Mixed { i32 count; event{4} Changed(string payload); i64 total; event Removed(); }
 unit Main() {
     EventOnly first = EventOnly { };
     EventOnly second = EventOnly { };
@@ -127,7 +127,7 @@ fn event_assignments_have_generation_bound_subscribe_and_first_unsubscribe_facts
 
 #[test]
 fn event_handler_bindings_and_event_assignments_have_managed_pointer_abi_facts() {
-    let source = r#"type User { event{4} created(string payload) }
+    let source = r#"type User { event{4} created(string payload); }
 impl User { unit Fire() { this.created("payload"); } }
 unit Main() {
     User u = User { };
@@ -188,7 +188,7 @@ unit Main() {
 
 #[test]
 fn event_operation_selector_does_not_claim_value_field_assignments_or_event_reads() {
-    let source = r#"type User { event{4} Created(string payload), i32 Count }
+    let source = r#"type User { event{4} Created(string payload); i32 Count; }
 unit Main() {
     User u = User { Count: 1 };
     u.Count += 1;
@@ -208,7 +208,7 @@ unit Main() {
     );
 
     let (event_input, _isa, event_root) = item_fixture_with_root(
-        "type User { event{4} Created(string payload) } unit Main(User u) { u.Created(\"x\"); return; }",
+        "type User { event{4} Created(string payload); } unit Main(User u) { u.Created(\"x\"); return; }",
     );
     let event_db = event_input.database();
     let event_facts = beskid_codegen::isle_adapter::SyntaxNodeFacts::new(&event_input);
@@ -230,7 +230,7 @@ fn event_selector_rejects_stale_keys_and_does_not_lower_unbounded_declarations_a
     assert!(facts.event_operation(stale).is_none(), "stale generations do not select the event rule");
 
     let (unbounded_input, _isa, unbounded_root) = item_fixture_with_root(
-        "type User { event Changed() } unit Main(User u) { unit() handler = () => { return; }; u.Changed += handler; return; }",
+        "type User { event Changed(); } unit Main(User u) { unit() handler = () => { return; }; u.Changed += handler; return; }",
     );
     let unbounded_db = unbounded_input.database();
     let unbounded_operation =
@@ -251,7 +251,7 @@ fn event_selector_rejects_stale_keys_and_does_not_lower_unbounded_declarations_a
 
 #[test]
 fn event_subscribe_and_unsubscribe_import_manifest_services_and_use_the_declared_capacity() {
-    let source = r#"type User { event{4} Created(string payload) }
+    let source = r#"type User { event{4} Created(string payload); }
 unit Main() {
     User u = User { };
     unit(string) boom = (string payload) => { return; };
@@ -307,7 +307,7 @@ unit Main() {
     assert!(clif.contains("event_unsubscribe_first"), "unsubscribe call appears in verified CLIF:\n{clif}");
 }
 
-const EVENT_SOURCE: &str = r#"type User { event{4} Created(string payload) }
+const EVENT_SOURCE: &str = r#"type User { event{4} Created(string payload); }
 unit Main(i64 captured) {
     User u = User { };
     unit(string) boom = (string payload) => { captured; return; };
@@ -378,7 +378,7 @@ fn parsed_event_subscribe_unsubscribe_and_raise_import_the_canonical_abi_at_thei
 
 #[test]
 fn captured_local_event_handler_materializes_at_declaration_and_lowers_in_aot_entry() {
-    let source = r#"type User { event{4} created(string payload) }
+    let source = r#"type User { event{4} created(string payload); }
 impl User { unit Emit(string payload) { this.created(payload); } }
 i32 Main() {
     User u = User { };
@@ -472,7 +472,7 @@ i32 Main() {
 
 #[test]
 fn event_operation_resolves_each_local_lambda_initializer_for_stable_handler_materialization() {
-    let source = r#"type User { event{4} Created(string payload) }
+    let source = r#"type User { event{4} Created(string payload); }
 unit Main(i64 captured) {
     User u = User { };
     unit(string) first = (string payload) => { captured; return; };

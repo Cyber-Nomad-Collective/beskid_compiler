@@ -10,7 +10,7 @@ use crate::shared_kit;
 
 const SOURCE: &str = r#"
 enum Option<T> { Some(T value), None() }
-type Holder<T> { Option<i64[]> window, Option<T> item, i64 count }
+type Holder<T> { Option<i64[]> window; Option<T> item; i64 count; }
 Holder<i64> Make() {
     return Holder<i64> { window: Option::Some([30_i64, 8_i64]), item: Option::Some(3_i64), count: 1_i64 };
 }

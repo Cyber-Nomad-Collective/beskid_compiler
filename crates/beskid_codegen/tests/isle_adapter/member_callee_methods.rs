@@ -15,14 +15,14 @@ enum Result<TValue, TError> { Ok(TValue value), Error(TError error) }
 contract Source { Result<i64, Error> Begin(i64 limit); }
 contract Decoder { Result<i64, Error> ReadTyped(i64 limit); }
 type Reader : Source {
-    i64 n,
+    i64 n;
     pub Result<i64, Error> Begin(i64 limit) { return Result::Ok(limit + n); }
     pub Reader With(i64 v) { return Reader { n: n + v }; }
     pub i64 Value() { return n; }
 }
 Reader MakeReader() { return Reader { n: 1_i64 }; }
-type Holder { Reader[] items, Reader reader }
-type Adapter<R> { R reader }
+type Holder { Reader[] items; Reader reader; }
+type Adapter<R> { R reader; }
 "#;
 
 /// The bounded impl whose generic field receiver is spelled `receiver` (`(this).reader` is a
@@ -110,7 +110,7 @@ fn a_method_on_a_field_of_the_implicit_receiver_member_lowers_directly() {
     lower(
         r#"
 type Owner {
-    Reader reader,
+    Reader reader;
     pub Result<i64, Error> Run() { i64 value = (this).reader.Begin(1_i64)?; return Result::Ok(value); }
 }
 Result<i64, Error> Main() { Owner owner = Owner { reader: MakeReader() }; return owner.Run(); }

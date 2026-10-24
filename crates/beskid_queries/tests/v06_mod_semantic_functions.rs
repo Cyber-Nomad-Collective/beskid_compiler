@@ -17,8 +17,8 @@ use beskid_queries::{
 use std::sync::Arc;
 
 const HOST: &str = r#"use Probe.Bounded;
-pub type Settings { pub Bounded.Limits limits, pub i32 count, pub Box<i32> boxed, }
-pub type Box<T> { pub T Value, }
+pub type Settings { pub Bounded.Limits limits; pub i32 count; pub Box<i32> boxed; }
+pub type Box<T> { pub T Value; }
 pub i32 LocalCount() { return 1_i32; }
 pub Box<i32> RightBox() { return Box<i32> { Value: 1_i32 }; }
 pub Box<u32> WrongBox() { return Box<u32> { Value: 1_u32 }; }
@@ -28,7 +28,7 @@ pub mod Defaults { pub i32 MakeCount() { return 2_i32; } i32 Hidden() { return 3
 mod Sealed { pub i32 Inside() { return 4_i32; } }
 "#;
 
-const BOUNDED: &str = r#"pub type Limits { pub i64 maxWork, }
+const BOUNDED: &str = r#"pub type Limits { pub i64 maxWork; }
 pub Limits DefaultLimits() { return Limits { maxWork: 1_i64 }; }
 Limits HiddenLimits() { return Limits { maxWork: 2_i64 }; }
 "#;
@@ -231,7 +231,7 @@ fn resolve_function_rejects_foreign_stale_and_closed_callers() {
 #[test]
 fn check_serializable_exposes_the_host_gate_for_opaque_resources() {
     let fixture = Fixture::verified(
-        "pub type Clean { pub i32 count, pub string label, }\npub type Raw { pub pointer address, }\npub type Holder { pub Raw raw, }\n",
+        "pub type Clean { pub i32 count; pub string label; }\npub type Raw { pub pointer address; }\npub type Holder { pub Raw raw; }\n",
     );
     let authority = fixture.authority();
     let clean = authority.resolve_type(fixture.type_key(0)).unwrap();

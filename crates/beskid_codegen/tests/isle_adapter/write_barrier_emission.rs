@@ -132,7 +132,7 @@ pub(super) fn assert_guarded_stores(clif: &str) -> usize {
 #[test]
 fn managed_field_store_is_guarded() {
     let set = &lower_module(
-        "type Leaf { i64 v } type Node { Leaf next, i64 value } unit Set(mut Node a, Leaf b) { a.next = b; return; }",
+        "type Leaf { i64 v; } type Node { Leaf next; i64 value; } unit Set(mut Node a, Leaf b) { a.next = b; return; }",
         &["Set"],
     )[0];
     assert_eq!(assert_guarded_stores(set), 1, "{set}");
@@ -143,8 +143,8 @@ fn managed_field_store_is_guarded() {
 fn scalar_field_and_literals_carry_no_barrier() {
     let build = &lower_module(
         r#"
-type Leaf { i64 v }
-type Node { Leaf next, i64 value }
+type Leaf { i64 v; }
+type Node { Leaf next; i64 value; }
 i64 Build(mut Node a) {
     a.value = 1_i64;
     Node c = Node { next: a.next, value: 2_i64 };
@@ -176,7 +176,7 @@ fn scalar_index_store_carries_no_barrier() {
 #[test]
 fn leaf_root_elision_survives_the_barrier() {
     let set = &lower_module(
-        "type Leaf { i64 v } type Node { Leaf next, i64 value } unit Set(mut Node a, Leaf b) { a.next = b; return; }",
+        "type Leaf { i64 v; } type Node { Leaf next; i64 value; } unit Set(mut Node a, Leaf b) { a.next = b; return; }",
         &["Set"],
     )[0];
     assert_eq!(calls_to(set, "gc_register_root") + calls_to(set, "gc_unregister_root"), 0, "{set}");

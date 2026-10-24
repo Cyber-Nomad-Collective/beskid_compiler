@@ -14,9 +14,9 @@ use std::sync::Arc;
 const SOURCE: &str = r#"
 [GlueHandle(Library:"glue_manual", Nullable:false)]
 [RustOwner(Path:"implementation::ManualOwned")]
-pub type ManualOpaque<T> { u64 token, }
+pub type ManualOpaque<T> { u64 token; }
 
-pub type RuntimePlain { i64 value, }
+pub type RuntimePlain { i64 value; }
 
 [Extern(Abi:"C", Library:"beskid_runtime")]
 contract RuntimeBridge {

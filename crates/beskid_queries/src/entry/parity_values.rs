@@ -6,8 +6,8 @@
 
 use super::parity_harness::{assert_covered_kinds, assert_silent, codes, reports_kind, root_findings};
 
-const NAMED: &str = "pub contract Named { string Name(); } pub type Plain { i64 v } ";
-const HUB: &str = "pub type Hub { event OnPing(i64 value), pub unit Fire() { this.OnPing(1_i64); } } ";
+const NAMED: &str = "pub contract Named { string Name(); } pub type Plain { i64 v; } ";
+const HUB: &str = "pub type Hub { event OnPing(i64 value); pub unit Fire() { this.OnPing(1_i64); } } ";
 
 /// (legacy class, variant, code, source): every row carries the exact `TypeMismatch` variant.
 const COVERED_VALUE_KINDS: &[(&str, &str, &str, &str)] = &[
@@ -27,7 +27,7 @@ const COVERED_VALUE_KINDS: &[(&str, &str, &str, &str)] = &[
         "generic method of a generic owner, parameter without generics (row a)",
         "TypeMismatch",
         "E1206",
-        "pub type Box<T> { T value, pub unit Set(T value, bool flag) { return; } } \
+        "pub type Box<T> { T value; pub unit Set(T value, bool flag) { return; } } \
          unit Main(Box<i64> b) { b.Set(1_i64, 2_i64); return; }",
     ),
     (
@@ -46,13 +46,13 @@ const COVERED_VALUE_KINDS: &[(&str, &str, &str, &str)] = &[
         "callable-value call result into a declared destination (row c)",
         "TypeMismatch",
         "E1206",
-        "pub type Pair { i64 a } string Apply(Pair(bool) f) { return f(true); }",
+        "pub type Pair { i64 a; } string Apply(Pair(bool) f) { return f(true); }",
     ),
     (
         "event raise argument (row d)",
         "TypeMismatch",
         "E1206",
-        "pub type Hub { event OnPing(i64 value), pub unit Fire() { this.OnPing(true); } }",
+        "pub type Hub { event OnPing(i64 value); pub unit Fire() { this.OnPing(true); } }",
     ),
     (
         "lambda body against a typed let (row e)",
@@ -70,26 +70,26 @@ const COVERED_VALUE_KINDS: &[(&str, &str, &str, &str)] = &[
         "event subscription handler signature (row e)",
         "TypeMismatch",
         "E1206",
-        "pub type Hub { event OnPing(i64 value) } unit Main(Hub hub) { hub.OnPing += ((bool x) => x); return; }",
+        "pub type Hub { event OnPing(i64 value); } unit Main(Hub hub) { hub.OnPing += ((bool x) => x); return; }",
     ),
     (
         "non-conforming nominal into a contract-typed let (row f)",
         "TypeMismatch",
         "E1206",
-        "pub contract Named { string Name(); } pub type Plain { i64 v } unit Main() { Named n = Plain { v: 1 }; return; }",
+        "pub contract Named { string Name(); } pub type Plain { i64 v; } unit Main() { Named n = Plain { v: 1 }; return; }",
     ),
     (
         "non-conforming nominal into a contract-typed parameter (row f)",
         "TypeMismatch",
         "E1206",
-        "pub contract Named { string Name(); } pub type Plain { i64 v } \
+        "pub contract Named { string Name(); } pub type Plain { i64 v; } \
          unit Show(Named n) { return; } unit Main() { Show(Plain { v: 1 }); return; }",
     ),
     (
         "non-conforming nominal into a contract-typed return (row f)",
         "TypeMismatch",
         "E1206",
-        "pub contract Named { string Name(); } pub type Plain { i64 v } Named Make() { return Plain { v: 1 }; }",
+        "pub contract Named { string Name(); } pub type Plain { i64 v; } Named Make() { return Plain { v: 1 }; }",
     ),
     (
         "primitive into a contract-typed let (row f)",
@@ -101,19 +101,19 @@ const COVERED_VALUE_KINDS: &[(&str, &str, &str, &str)] = &[
         "generic type literal, field without generics (row g)",
         "TypeMismatch",
         "E1206",
-        "pub type Box<T> { T value, bool flag } unit Main() { Box<i64> b = Box<i64> { value: 1_i64, flag: 3_i64 }; return; }",
+        "pub type Box<T> { T value; bool flag; } unit Main() { Box<i64> b = Box<i64> { value: 1_i64, flag: 3_i64 }; return; }",
     ),
     (
         "generic type literal, field fixed by the literal path (row g)",
         "TypeMismatch",
         "E1206",
-        "pub type Box<T> { T value } unit Main() { Box<i64> b = Box<i64> { value: true }; return; }",
+        "pub type Box<T> { T value; } unit Main() { Box<i64> b = Box<i64> { value: true }; return; }",
     ),
     (
         "generic type literal, field fixed by the typed let (row g)",
         "TypeMismatch",
         "E1206",
-        "pub type Box<T> { T value } unit Main() { Box<i64> b = Box { value: true }; return; }",
+        "pub type Box<T> { T value; } unit Main() { Box<i64> b = Box { value: true }; return; }",
     ),
     (
         "generic enum constructor, field without generics (row g)",
@@ -156,7 +156,7 @@ const COVERED_VALUE_KINDS: &[(&str, &str, &str, &str)] = &[
         "nominal return in a test body (row i)",
         "TypeMismatch",
         "E1206",
-        "pub type Pair { i64 a } test T { return Pair { a: 1 }; }",
+        "pub type Pair { i64 a; } test T { return Pair { a: 1 }; }",
     ),
 ];
 
@@ -173,7 +173,7 @@ const SILENT_VALUE_SHAPES: &[(&str, &str)] = &[
     ),
     (
         "generic method of a generic owner with matching arguments",
-        "pub type Box<T> { T value, pub unit Set(T value, bool flag) { return; } } \
+        "pub type Box<T> { T value; pub unit Set(T value, bool flag) { return; } } \
          unit Main(Box<i64> b) { b.Set(1_i64, true); return; }",
     ),
     (
@@ -182,24 +182,24 @@ const SILENT_VALUE_SHAPES: &[(&str, &str)] = &[
     ),
     (
         "callable-value calls with matching arguments and results",
-        "pub type Pair { i64 a } Pair Apply(Pair(bool) f) { return f(true); } i64 Count(i64(i64) g) { return g(1_i64); }",
+        "pub type Pair { i64 a; } Pair Apply(Pair(bool) f) { return f(true); } i64 Count(i64(i64) g) { return g(1_i64); }",
     ),
     ("event raise with matching arguments", HUB),
     (
         "lambdas against typed destinations and a unit-valued subscription",
-        "unit Sink(i64 v) { return; } unit Run(i64(i64) f) { return; } pub type Hub { event OnPing(i64 value) } \
+        "unit Sink(i64 v) { return; } unit Run(i64(i64) f) { return; } pub type Hub { event OnPing(i64 value); } \
          unit Main(Hub hub) { i64(i64) f = (i64 x) => x; Run((i64 x) => x); Run(f); hub.OnPing += ((i64 x) => Sink(x)); return; }",
     ),
     (
         "conforming nominal into contract-typed destinations",
-        "pub contract Named { string Name(); } pub type Plain : Named { i64 v, pub string Name() { return \"p\"; } } \
-         pub type Other { i64 w } impl Other : Named { pub string Name() { return \"o\"; } } \
+        "pub contract Named { string Name(); } pub type Plain : Named { i64 v; pub string Name() { return \"p\"; } } \
+         pub type Other { i64 w; } impl Other : Named { pub string Name() { return \"o\"; } } \
          unit Show(Named n) { return; } Named Make() { return Plain { v: 1 }; } \
          unit Main() { Named n = Plain { v: 1 }; Named m = Other { w: 1 }; Show(Other { w: 2 }); return; }",
     ),
     (
         "generic literals and constructors with matching fields",
-        "pub type Box<T> { T value, bool flag } pub enum Opt<T> { Some(T value, bool flag), None } \
+        "pub type Box<T> { T value; bool flag; } pub enum Opt<T> { Some(T value, bool flag), None } \
          unit Main() { Box<i64> b = Box<i64> { value: 1_i64, flag: true }; Box<bool> c = Box<bool> { value: true, flag: false }; \
          Opt<i64> o = Opt::Some(1_i64, true); Opt<bool> p = Opt::Some(false, true); return; }",
     ),
@@ -209,7 +209,7 @@ const SILENT_VALUE_SHAPES: &[(&str, &str)] = &[
          i64 Main(Outer o) { return match o { Outer::Wrap(Inner::X) => 0_i64, Outer::Wrap(i) => 1_i64, Outer::Lit(true) => 2_i64, _ => 3_i64, }; } \
          i64 Pick(Opt<i64> o) { return match o { Opt::Some(1) => 0_i64, _ => 1_i64, }; }",
     ),
-    ("test body without a valued return", "pub type Pair { i64 a } test T { Pair p = Pair { a: 1 }; i64 v = 1; return; }"),
+    ("test body without a valued return", "pub type Pair { i64 a; } test T { Pair p = Pair { a: 1 }; i64 v = 1; return; }"),
 ];
 
 #[test]

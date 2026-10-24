@@ -188,7 +188,7 @@ fn parses_type_definition_event_field_kind_ast() {
 
 #[test]
 fn parses_arrow_function_type_annotation_ast() {
-    let node = parse_node_ast("type FnHolder { (i64, i64) => i64 callback }");
+    let node = parse_node_ast("type FnHolder { (i64, i64) => i64 callback; }");
 
     match &node.node {
         Node::TypeDefinition(ty) => match &ty.node.fields[0].node.ty.node {

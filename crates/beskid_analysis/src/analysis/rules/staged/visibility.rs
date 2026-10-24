@@ -943,7 +943,7 @@ mod tests {
     fn contract_named_only_by_an_inject_field_is_used() {
         let source = r#"
             contract Clock { i64 Now(); }
-            pub type Report { inject Clock clock }
+            pub type Report { inject Clock clock; }
         "#;
         let unused = unused_items(source);
         assert!(unused.iter().all(|message| !message.contains("`Clock`")), "{unused:?}");

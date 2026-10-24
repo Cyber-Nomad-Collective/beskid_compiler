@@ -305,9 +305,9 @@ fn unit_payload_binding_read_as_a_value_lowers() {
 /// specialization (a method of `Holder<T>` or a generic function), so its enum match fact must be
 /// proven in the specialization's environment.
 const GENERIC_FIELD_HOLDER: &str = "enum Option<T> { Some(T value), None } \
-     type Point { i64 x } \
-     type Holder<T> { Option<T[]> slot, Option<T> one } \
-     type Outer<T> { Holder<T> inner } ";
+     type Point { i64 x; } \
+     type Holder<T> { Option<T[]> slot; Option<T> one; } \
+     type Outer<T> { Holder<T> inner; } ";
 
 /// Instantiations of the probed generic items for `i64` and `Point`.
 const GENERIC_FIELD_MAIN: &str = "Holder<i64> Ints() { i64[] values = [3_i64, 4_i64]; \
@@ -334,9 +334,9 @@ fn lower_generic_program(label: &str, source: &str) {
 /// and a `Main` that calls them for `i64` and `Point`.
 fn lower_generic_field_form(label: &str, methods: &str, functions: &str, main: &str) {
     let source = GENERIC_FIELD_HOLDER.replace(
-        "type Holder<T> { Option<T[]> slot, Option<T> one }",
+        "type Holder<T> { Option<T[]> slot; Option<T> one; }",
         &if methods.is_empty() {
-            "type Holder<T> { Option<T[]> slot, Option<T> one }".to_string()
+            "type Holder<T> { Option<T[]> slot; Option<T> one; }".to_string()
         } else {
             format!("type Holder<T> {{ Option<T[]> slot, Option<T> one, {methods} }}")
         },

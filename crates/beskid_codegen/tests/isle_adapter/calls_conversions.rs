@@ -301,7 +301,7 @@ fn parsed_pointer_signature_uses_the_target_pointer_type_without_hir() {
 fn parsed_generic_nominal_aggregate_uses_its_source_proven_pointer_abi_signature() {
     // Generic Create<T> has no fixed item ABI; the call site must prove Channel<i64> -> POINTER.
     let (input, isa, root) = item_fixture_with_root(
-        "type Channel<T> { i64 handle } Channel<T> Create<T>() { return Channel<T> { handle: 0_i64 }; } unit Main() { Channel<i64> ch = Create<i64>(); return; }",
+        "type Channel<T> { i64 handle; } Channel<T> Create<T>() { return Channel<T> { handle: 0_i64 }; } unit Main() { Channel<i64> ch = Create<i64>(); return; }",
     );
     let db = input.database();
     let items = find_function_definitions(db, root);

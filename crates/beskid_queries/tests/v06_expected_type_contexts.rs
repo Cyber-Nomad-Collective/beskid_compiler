@@ -182,7 +182,7 @@ fn enum_payloads_take_their_declared_slot_including_applied_generic_arguments() 
 #[test]
 fn struct_fields_take_their_declared_type_including_applied_generic_arguments() {
     let fixture = Fixture::new(
-        "type Point { u8 x, u16 y } type Applied<T> { T value } unit Main() { Point point = Point { x: 1, y: 2 }; Applied<i32> applied = Applied<i32> { value: 7 }; return; }",
+        "type Point { u8 x; u16 y; } type Applied<T> { T value; } unit Main() { Point point = Point { x: 1, y: 2 }; Applied<i32> applied = Applied<i32> { value: 7 }; return; }",
     );
     let point = fixture.key(NodeKind::StructLiteralExpression, 0);
     let x = fixture.expected(fixture.literal(0));

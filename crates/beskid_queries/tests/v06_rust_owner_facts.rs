@@ -12,7 +12,7 @@ use std::sync::Arc;
 
 const HANDLE: &str = "[GlueHandle(Library:\"glue_manual\", Nullable:false)]\n";
 const OWNED: &str = "[RustOwner(Path:\"implementation::ManualOwned\")]\n";
-const TYPE: &str = "pub type ManualOpaque<T> { u64 token, }\n";
+const TYPE: &str = "pub type ManualOpaque<T> { u64 token; }\n";
 const CONTRACT: &str = r#"[Extern(Abi:"C", Library:"glue_manual")]
 pub contract Foreign {
     i32 glue_i32(i32 value);
@@ -251,10 +251,10 @@ fn misplaced_rust_owner_is_rejected() {
 
     for misplaced in [
         "[RustOwner(Path:\"implementation::plain\")]\npub i32 Plain(i32 value) { return value; }\n",
-        "[RustOwner(Path:\"implementation::Plain\")]\npub type Plain { u64 token, }\n",
+        "[RustOwner(Path:\"implementation::Plain\")]\npub type Plain { u64 token; }\n",
         "pub contract Local {\n    [RustOwner(Path:\"implementation::local\")]\n    i32 local(i32 value);\n}\n",
         "[RustOwner(Path:\"implementation::Foreign\")]\n[Extern(Abi:\"C\", Library:\"other\")]\npub contract Other {\n    i32 other(i32 value);\n}\n",
-        "pub type Fielded {\n    [RustOwner(Path:\"implementation::field\")]\n    u64 token,\n}\n",
+        "pub type Fielded {\n    [RustOwner(Path:\"implementation::field\")]\n    u64 token;\n}\n",
     ] {
         let fixture = Fixture::new(&format!("{}{misplaced}", owned_source()));
         assert_spanned(&fixture.declarations_error(), "allowed only on a GlueHandle, GlueRecord or GlueEnum type or an Extern contract method");

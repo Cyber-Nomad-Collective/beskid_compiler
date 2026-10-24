@@ -25,7 +25,7 @@ fn enum_pattern_variant_index(arm: &EnumMatchArmFact) -> u32 {
 
 #[test]
 fn aggregate_layout_keeps_channel_options_nominal_capacity() {
-    let source = "enum ChannelCapacity { Unbounded(), Bounded(i64 capacity) } type ChannelOptions { ChannelCapacity capacity, bool singleReader, bool singleWriter }";
+    let source = "enum ChannelCapacity { Unbounded(), Bounded(i64 capacity) } type ChannelOptions { ChannelCapacity capacity; bool singleReader; bool singleWriter; }";
     let (db, _project, unit, generation, index) = setup(source);
     let options = key(unit, generation, &index, NodeKind::TypeDefinition, 0);
     let capacity = key(unit, generation, &index, NodeKind::EnumDefinition, 0);
@@ -38,7 +38,7 @@ fn aggregate_layout_keeps_channel_options_nominal_capacity() {
 
 #[test]
 fn phantom_generic_aggregate_literal_materializes_its_source_independent_layout() {
-    let source = "type ArrayIter<T> { i64 index, i64 length } ArrayIter<T> Make<T>() { return ArrayIter<T> { index: 0, length: 1 }; }";
+    let source = "type ArrayIter<T> { i64 index; i64 length; } ArrayIter<T> Make<T>() { return ArrayIter<T> { index: 0, length: 1 }; }";
     let (db, _project, unit, generation, index) = setup(source);
     let literal = key(unit, generation, &index, NodeKind::StructLiteralExpression, 0);
     let zero = key(unit, generation, &index, NodeKind::LiteralExpression, 0);
@@ -62,9 +62,9 @@ fn phantom_generic_aggregate_literal_materializes_its_source_independent_layout(
 fn event_bearing_aggregate_keeps_value_field_layout_and_projection_for_cyb_162() {
     let source = r#"
 type ProgressBar {
-    i64 percent,
-    i32 anchorRow,
-    event{4} onTick(),
+    i64 percent;
+    i32 anchorRow;
+    event{4} onTick();
 }
 bool Main(ProgressBar bar) { return bar.anchorRow == 1; }
 "#;
@@ -90,7 +90,7 @@ bool Main(ProgressBar bar) { return bar.anchorRow == 1; }
 #[test]
 fn generic_aggregate_direct_field_projection_uses_the_explicit_receiver_application_for_cyb_140() {
     let source = r#"
-type ProgressBar<T> { T percent }
+type ProgressBar<T> { T percent; }
 unit Equal<T>(T actual, T expected) { return; }
 unit Main() {
     ProgressBar<i64> bar = ProgressBar<i64> { percent: 100_i64 };
@@ -123,7 +123,7 @@ unit Main() {
 #[test]
 fn aggregate_field_projection_abi_requires_typed_roots_and_resolves_chained_receivers() {
     let inferred = r#"
-type ProgressBar<T> { T percent }
+type ProgressBar<T> { T percent; }
 unit Main() {
     let bar = ProgressBar<i64> { percent: 100_i64 };
     bar.percent;
@@ -141,8 +141,8 @@ unit Main() {
     assert_unavailable(abi_type(&db, projection));
 
     let chained = r#"
-type Inner { i64 percent }
-type Outer { Inner bar }
+type Inner { i64 percent; }
+type Outer { Inner bar; }
 unit Main() {
     Outer outer = Outer { bar: Inner { percent: 100_i64 } };
     outer.bar.percent;
@@ -164,8 +164,8 @@ unit Main() {
 fn method_owned_fields_resolve_through_the_implicit_receiver() {
     let source = r#"
 type List<T> {
-    T[] storage,
-    i64 count,
+    T[] storage;
+    i64 count;
 
     unit Probe(i64 index) {
         mut T[] nextStorage = storage;
@@ -201,8 +201,8 @@ type List<T> {
 fn parameters_and_locals_shadow_method_owned_fields() {
     let source = r#"
 type Holder {
-    string text,
-    i64 count,
+    string text;
+    i64 count;
 
     string Echo(string text) {
         return text;
@@ -231,7 +231,7 @@ type Holder {
 
 #[test]
 fn this_qualified_sibling_call_uses_the_implicit_method_receiver() {
-    let source = "type Counter { i64 n, i64 Double() { return 2; } i64 Quad() { return this.Double() * 2; } }";
+    let source = "type Counter { i64 n; i64 Double() { return 2; } i64 Quad() { return this.Double() * 2; } }";
     let (db, _project, unit, generation, index) = setup(source);
     let quad = key(unit, generation, &index, NodeKind::MethodDefinition, 1);
     let callee =
@@ -242,7 +242,7 @@ fn this_qualified_sibling_call_uses_the_implicit_method_receiver() {
 
 #[test]
 fn this_qualified_sibling_call_lowers_as_a_direct_call_with_the_receiver_argument() {
-    let source = "type Counter { i64 n, i64 Double() { return 2; } i64 Quad() { return this.Double() * 2; } }";
+    let source = "type Counter { i64 n; i64 Double() { return 2; } i64 Quad() { return this.Double() * 2; } }";
     let (db, _project, unit, generation, index) = setup(source);
     let double = key(unit, generation, &index, NodeKind::MethodDefinition, 0);
     let call = key(unit, generation, &index, NodeKind::CallExpression, 0);
@@ -261,7 +261,7 @@ fn field_of_a_call_result_resolves_through_the_callee_result_type() {
     // `Make()` is not generic and the call site spells no type arguments: the callee's declared
     // result is the receiver authority, and the projected field types the binary expression.
     let source = r#"
-type Point { i64 x, i64 y, }
+type Point { i64 x; i64 y; }
 Point Make() { return Point { x: 9_i64, y: 2_i64 }; }
 i64 Main() { return Make().x + Make().y; }
 "#;
@@ -282,7 +282,7 @@ i64 Main() { return Make().x + Make().y; }
 #[test]
 fn field_of_a_generic_call_result_applies_the_call_substitutions() {
     let source = r#"
-type Box<T> { T value, i64 tag, }
+type Box<T> { T value; i64 tag; }
 Box<T> Wrap<T>(T value) { return Box<T> { value: value, tag: 1_i64 }; }
 i64 Main() { return Wrap<i64>(4_i64).value + Wrap<string>("s").tag; }
 "#;
@@ -299,9 +299,9 @@ i64 Main() { return Wrap<i64>(4_i64).value + Wrap<string>("s").tag; }
 #[test]
 fn field_of_an_indexed_method_owned_array_element_resolves_inside_the_method() {
     let source = r#"
-type Entry { string route, i64 signature, }
+type Entry { string route; i64 signature; }
 type Table {
-    Entry[] entries,
+    Entry[] entries;
     i64 Find(string route) {
         mut i64 index = 0_i64;
         while (index < 2_i64) {
@@ -383,7 +383,7 @@ fn sample_mod_method_abi_signatures_include_pointer_receiver_and_nominal_paramet
 
 #[test]
 fn enum_layout_keeps_channel_capacity_variants_in_source_order() {
-    let source = "enum ChannelCapacity { Unbounded(), Bounded(i64 capacity) } type ChannelOptions { ChannelCapacity capacity, bool singleReader, bool singleWriter }";
+    let source = "enum ChannelCapacity { Unbounded(), Bounded(i64 capacity) } type ChannelOptions { ChannelCapacity capacity; bool singleReader; bool singleWriter; }";
     let (db, _project, unit, generation, index) = setup(source);
     let capacity = key(unit, generation, &index, NodeKind::EnumDefinition, 0);
 
@@ -723,7 +723,7 @@ fn generic_enum_constructor_takes_its_application_from_a_method_parameter() {
     let source = r#"
 enum Maybe<T> { None(), Some(T value) }
 type Holder {
-    i64 n,
+    i64 n;
 
     i64 Pick(Maybe<i64> other) { return 0; }
 }

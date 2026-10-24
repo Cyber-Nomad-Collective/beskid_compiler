@@ -32,7 +32,7 @@ fn contract_specialization_module_admission_rejects_unproved_calls_and_hidden_me
 fn parsed_project_reaches_verified_isle_without_a_legacy_codegen_entrypoint() {
     let project = tempfile::tempdir().expect("project directory");
     let source = "
-        type Pair { i32 left, i32 right }
+        type Pair { i32 left; i32 right; }
         i32 Add(i32 left, i32 right) { return left + right; }
         i32 Main() {
             Pair pair = Pair { left: 19, right: 23 };

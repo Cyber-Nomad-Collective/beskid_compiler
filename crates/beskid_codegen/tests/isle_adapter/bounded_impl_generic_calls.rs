@@ -76,8 +76,8 @@ T ReadWith<T, B>(i64 seed, B binding) where B: Reader<T> {
 }
 
 type Dec<T, B> {
-    i64 seed,
-    B binding,
+    i64 seed;
+    B binding;
 }
 
 impl<T, B> Dec<T, B> : Decoder<T> where B: Reader<T> {

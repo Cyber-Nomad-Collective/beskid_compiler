@@ -127,7 +127,7 @@ fn composition_authority_rejects_unplanned_injection_and_hook() {
 
     let source = r#"
 type Logger {}
-type Worker { inject Logger logger }
+type Worker { inject Logger logger; }
 host AppHost() { registry { single Logger; single Worker; } startup() {} }
 i32 Main() { launch AppHost(); return 0; }
 "#;
@@ -182,7 +182,7 @@ fn owner_only_plural_lookup_rejects_multiple_fields_until_source_keyed() {
 
     let source = r#"
 type Logger {}
-type Worker { inject Logger[] primary, inject Logger[] secondary }
+type Worker { inject Logger[] primary; inject Logger[] secondary; }
 host AppHost() { registry { single Logger; single Worker; } }
 i32 Main() { launch AppHost(); return 0; }
 "#;
@@ -532,7 +532,7 @@ fn launch_materializes_registration_slots_and_static_injections_before_activatio
 
     let source = r#"
 type Logger {}
-type Worker { inject Logger primary, inject Logger[] allLoggers }
+type Worker { inject Logger primary; inject Logger[] allLoggers; }
 host AppHost() { registry { single Logger; single Worker; } }
 i32 Main() { launch AppHost(); return 0; }
 "#;
@@ -617,7 +617,7 @@ fn parsed_injected_field_read_uses_frozen_physical_slot() {
 
     let source = r#"
 type Logger {}
-type Worker { inject Logger primary }
+type Worker { inject Logger primary; }
 host AppHost() { registry { single Logger; single Worker; } }
 Logger Read(Worker worker) { return worker.primary; }
 i32 Main() { launch AppHost(); return 0; }

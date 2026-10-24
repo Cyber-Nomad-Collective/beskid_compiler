@@ -971,7 +971,7 @@ fn bound_dispatch_diagnostics(name: &str, source: &str) -> Vec<SemanticDiagnosti
 #[test]
 fn bounded_generic_receiver_calls_the_bound_contract_methods() {
     let contracts = "contract Sized { i64 Size(); } contract Scaled { i64 Scale(i64 factor); } \
-                     type Box : Sized, Scaled { i64 n, pub i64 Size() { return this.n; } pub i64 Scale(i64 factor) { return this.n * factor; } } ";
+                     type Box : Sized, Scaled { i64 n; pub i64 Size() { return this.n; } pub i64 Scale(i64 factor) { return this.n * factor; } } ";
     let accepted = format!(
         "{contracts}i64 Both<T>(T value) where T: Sized, T: Scaled {{ return value.Size() + value.Scale(10); }} \
          i64 Main() {{ return Both<Box>(Box {{ n: 3 }}); }}"
@@ -986,7 +986,7 @@ fn bounded_generic_receiver_calls_the_bound_contract_methods() {
 #[test]
 fn bounded_generic_receiver_rejects_methods_no_bound_declares() {
     let contracts = "contract Sized { i64 Size(); } contract Scaled { i64 Scale(i64 factor); } \
-                     type Box : Sized, Scaled { i64 n, pub i64 Size() { return this.n; } pub i64 Scale(i64 factor) { return this.n * factor; } } ";
+                     type Box : Sized, Scaled { i64 n; pub i64 Size() { return this.n; } pub i64 Scale(i64 factor) { return this.n * factor; } } ";
     for (name, body) in [
         ("bound_dispatch_outside", "i64 Other<T>(T value) where T: Sized { return value.Extra(); }"),
         ("bound_dispatch_unbounded", "i64 Free<T>(T value) { return value.Size(); }"),

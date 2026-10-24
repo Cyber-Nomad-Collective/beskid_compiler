@@ -51,7 +51,7 @@ fn applied_contract_witness_substitutes_exact_source_types_and_rejects_stale_own
 #[test]
 fn instance_factory_argument_retains_exact_nominal_receiver_identity() {
     let (db, typed, root, _) = support::input_fixture_with_source(
-        "pub type State { i32 value, } pub type Foreign { i32 value, } \
+        "pub type State { i32 value; } pub type Foreign { i32 value; } \
          pub contract Factory<T> { T Create(); } \
          pub type Good : Factory<State> { pub State Create() { return State { value: 7 }; } }",
     );

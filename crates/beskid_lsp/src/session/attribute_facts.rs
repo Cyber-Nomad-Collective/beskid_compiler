@@ -317,9 +317,9 @@ mod tests {
     const SOURCE: &str = "pub attribute Trace(Parameter) { }\n\
 pub attribute Pure(LambdaExpression) { }\n\
 i64 Add([Trace] i64 left, i64 right) {\n    let square = [Pure] (i64 x) => x * x;\n    return left + right;\n}\n\
-[Immutable] pub type Job { string id, i64 size }\n\
-pub type Cache { i64[] entries }\n\
-[Isolated] pub type Box<T> { T item }\n\
+[Immutable] pub type Job { string id; i64 size; }\n\
+pub type Cache { i64[] entries; }\n\
+[Isolated] pub type Box<T> { T item; }\n\
 i64 Checksum(u8[] data) { return 0; }\n\
 unit Keep(move u8[] block) { return; }\n";
 

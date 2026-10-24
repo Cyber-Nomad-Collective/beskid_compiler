@@ -314,7 +314,7 @@ const CLIF_CLASSES: &[(&str, &str, &str)] = &[
     ),
     (
         "method receiver",
-        "pub type Box { i64 value, pub i64 Get() { return clif { return %0 }; } }",
+        "pub type Box { i64 value; pub i64 Get() { return clif { return %0 }; } }",
         "`%0` is a method receiver or has an unresolved type",
     ),
     (

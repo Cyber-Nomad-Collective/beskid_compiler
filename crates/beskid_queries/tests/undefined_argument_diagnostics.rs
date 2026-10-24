@@ -17,7 +17,7 @@ fn reachable_imported_undefined_argument_is_diagnosed_before_lowering() {
         (true, "const NODE = 7_i64; pub unit Accept(i64 value) {} pub unit Verify() { Accept(NODE); }"),
         (
             true,
-            "pub unit Accept(i64 value) {} pub type Holder { pub i64 node, pub unit Send() { Accept(node); } } pub unit Verify() { Holder holder = Holder { node: 7_i64 }; holder.Send(); }",
+            "pub unit Accept(i64 value) {} pub type Holder { pub i64 node; pub unit Send() { Accept(node); } } pub unit Verify() { Holder holder = Holder { node: 7_i64 }; holder.Send(); }",
         ),
     ] {
         let directory = tempfile::tempdir().unwrap();
