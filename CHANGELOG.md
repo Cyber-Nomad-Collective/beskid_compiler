@@ -113,6 +113,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Registry lines resolve their types (an unknown name is reported at the line),
   and a contract named only by a registry line, a `where` bound or an `inject`
   field is no longer an unused private item.
+### Added
+
+- pckg server: `GET /api/auth/session` identifies a bearer publisher key (`bpk_` key) by returning the owner subject, key name and scopes; unknown, revoked or malformed keys get 401, and the key and its hash are never returned.
 
 ## [0.6.6] - 2026-10-16
 

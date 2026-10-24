@@ -82,6 +82,27 @@ pub(crate) async fn authenticated_publisher_subject(state: &AppState, headers: &
 /// frontend can render role-gated UI without a second round-trip. Anonymous
 /// requests get 401, which the frontend maps to `null`.
 pub(crate) async fn read_session(State(state): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
+    // A bearer publisher key identifies itself and never combines with session
+    // headers or the mock principal. The response carries the key owner as
+    // `subject`, plus the key name and scopes; never the key or its hash.
+    match bearer_api_key(&headers) {
+        BearerApiKey::Absent => {}
+        BearerApiKey::Invalid => return unauthorized_response(),
+        BearerApiKey::Token(token) => {
+            let Some(key) = active_api_key(&state, token).await else {
+                return unauthorized_response();
+            };
+            return Json(serde_json::json!({
+                "subject": key.subject,
+                "email": null,
+                "displayName": key.subject,
+                "groups": [],
+                "keyName": key.label,
+                "keyScopes": key.scopes,
+            }))
+            .into_response();
+        }
+    }
     let Some(auth) = state.auth.clone() else {
         return unauthorized_response();
     };
@@ -140,7 +161,8 @@ fn authelia_identity(headers: &HeaderMap) -> Option<AutheliaIdentity> {
     })
 }
 
-async fn active_api_key_principal(state: &AppState, token: &str) -> Option<Principal> {
+/// Looks up an active publisher key: not revoked and carrying the publish scope.
+async fn active_api_key(state: &AppState, token: &str) -> Option<beskid_pckg_store::ApiKey> {
     let repository = state.api_key_auth.as_ref()?;
     let key = repository.find_active_api_key_by_token(token).await.ok()??;
     if key.revoked_at_unix_seconds.is_some()
@@ -148,6 +170,11 @@ async fn active_api_key_principal(state: &AppState, token: &str) -> Option<Princ
     {
         return None;
     }
+    Some(key)
+}
+
+async fn active_api_key_principal(state: &AppState, token: &str) -> Option<Principal> {
+    let key = active_api_key(state, token).await?;
     Some(Principal::from_api_key(ApiKeyIdentity { key_id: key.id, subject: key.subject, scopes: key.scopes }))
 }
 

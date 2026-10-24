@@ -230,3 +230,66 @@ async fn every_publication_mutation_rejects_an_invalid_bearer_before_remote_iden
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     }
 }
+
+fn session_request(authorization: Option<&str>, remote_user: Option<&str>) -> Request<Body> {
+    let mut request = Request::get("/api/auth/session").body(Body::empty()).unwrap();
+    if let Some(value) = authorization {
+        request.headers_mut().insert("authorization", HeaderValue::from_str(value).unwrap());
+    }
+    if let Some(value) = remote_user {
+        request.headers_mut().insert("remote-user", HeaderValue::from_str(value).unwrap());
+    }
+    request
+}
+
+async fn json_body(response: axum::response::Response) -> serde_json::Value {
+    let bytes = http_body_util::BodyExt::collect(response.into_body()).await.unwrap().to_bytes();
+    serde_json::from_slice(&bytes).unwrap()
+}
+
+#[tokio::test]
+async fn session_identifies_an_active_bearer_key_without_leaking_it() {
+    let (config, token) = active_key_config();
+    let response = router(config)
+        .oneshot(session_request(Some(&bearer(&token)), Some("header-attacker")))
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = json_body(response).await;
+    assert_eq!(body["subject"], "key-owner");
+    assert_eq!(body["keyName"], "CI");
+    assert_eq!(body["keyScopes"], serde_json::json!(["publish"]));
+    let text = body.to_string();
+    assert!(!text.contains(&token) && !text.contains(&"a".repeat(64)));
+}
+
+#[tokio::test]
+async fn session_rejects_an_unknown_bearer_key() {
+    let (config, _) = active_key_config();
+    let unknown = format!("bpk_{}", "b".repeat(64));
+    let response = router(config).oneshot(session_request(Some(&bearer(&unknown)), Some("header-attacker"))).await.unwrap();
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn session_rejects_a_revoked_bearer_key() {
+    let token = format!("bpk_{}", "d".repeat(64));
+    let config = config_for_key(
+        PckgServerConfig::default().with_authelia_auth(),
+        &token,
+        test_key(vec!["publish".to_owned()], Some(1)),
+    );
+    let response = router(config).oneshot(session_request(Some(&bearer(&token)), None)).await.unwrap();
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn session_cookie_headers_still_identify_the_browser_user() {
+    let (config, _) = active_key_config();
+    let response = router(config).oneshot(session_request(None, Some("alice"))).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = json_body(response).await;
+    assert_eq!(body["subject"], "alice");
+    assert!(body.get("keyName").is_none());
+}
