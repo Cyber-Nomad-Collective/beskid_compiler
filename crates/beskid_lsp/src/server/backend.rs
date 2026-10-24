@@ -184,6 +184,8 @@ impl LanguageServer for Backend {
     async fn initialized(&self, _: InitializedParams) {
         let filter = *self.log_filter.read().await;
         client_log(&self.client, filter, MessageType::INFO, "Beskid LSP initialized".to_string()).await;
+        // Never awaits the scan itself: the scan runs as a crash-guarded background task, so a
+        // large workspace does not hold a transport slot and delay formatting.
         self.refresh_workspace_scan().await;
     }
 
@@ -453,20 +455,20 @@ impl LanguageServer for Backend {
         refresh_after_disk_change(&self.client, &self.state, &changed).await;
     }
 
+    // Formatting is syntax-only: it reads the open text, never the analysis state, so it does
+    // not wait for workspace discovery or analysis.
     async fn formatting(&self, params: DocumentFormattingParams) -> Result<Option<Vec<TextEdit>>> {
-        let uri = params.text_document.uri;
-        let Some(document) = snapshot_document(&self.state, &uri).await else {
+        let Some(text) = formatting::open_texts::open_text(&params.text_document.uri) else {
             return Ok(None);
         };
-        Ok(formatting::handler::handle_document_formatting(&document))
+        Ok(formatting::handler::handle_document_formatting(&text))
     }
 
     async fn range_formatting(&self, params: DocumentRangeFormattingParams) -> Result<Option<Vec<TextEdit>>> {
-        let uri = params.text_document.uri;
-        let Some(document) = snapshot_document(&self.state, &uri).await else {
+        let Some(text) = formatting::open_texts::open_text(&params.text_document.uri) else {
             return Ok(None);
         };
-        Ok(formatting::handler::handle_range_formatting(&document, params.range))
+        Ok(formatting::handler::handle_range_formatting(&text, params.range))
     }
 }
 

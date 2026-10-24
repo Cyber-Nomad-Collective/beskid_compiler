@@ -1,14 +1,16 @@
 //! `beskid fmt` keeps every attribute the 0.6.0 grammar accepts. Functions, methods, fields and
 //! contract method signatures lost their attributes before; each site round-trips here.
 
-use beskid_analysis::format::format_program;
+use beskid_analysis::format::format_source;
 use beskid_analysis::services::parse_program;
 
 fn assert_round_trip(source: &str, expected: &[&str]) {
     let program = parse_program(source).unwrap_or_else(|error| panic!("source must parse: {error:?}\n{source}"));
-    let once = format_program(&program).expect("format");
+    let _ = &program;
+    let once = format_source("<memory>", source).expect("format");
     let reparsed = parse_program(&once).unwrap_or_else(|error| panic!("formatted output must parse: {error:?}\n{once}"));
-    let twice = format_program(&reparsed).expect("format again");
+    let _ = &reparsed;
+    let twice = format_source("<memory>", &once).expect("format again");
     assert_eq!(once, twice, "format must be a fixed point:\n{once}");
     for fragment in expected {
         assert!(once.contains(fragment), "formatted output lacks {fragment:?}:\n{once}");

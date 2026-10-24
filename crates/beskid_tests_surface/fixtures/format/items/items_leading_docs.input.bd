@@ -1,6 +1,6 @@
 /// Root A
 /// Root B
-pub type DocT { i32 x, }
+pub type DocT { i32 x; }
 
 /// Between items
 /// Second line

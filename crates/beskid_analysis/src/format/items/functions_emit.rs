@@ -33,10 +33,9 @@ impl Emit for FunctionDefinition {
         }
         self.name.emit(w, cx)?;
         emit_generics_list(&self.generics, w, cx)?;
-        emit_parameter_list(&self.parameters, w, cx)?;
+        emit_parameter_list(&self.parameters, &self.parameter_docs, w, cx)?;
         emit_where_bounds(&self.where_bounds, w, cx)?;
-        cx.nl(w)?;
-        cx.write_indent(w)?;
+        cx.before_open_brace(w)?;
         self.body.emit(w, cx)
     }
 }
@@ -57,10 +56,9 @@ impl Emit for MethodDefinition {
         }
         self.name.emit(w, cx)?;
         emit_generics_list(&self.generics, w, cx)?;
-        emit_method_parameter_list(self.receiver.as_ref(), &self.parameters, w, cx)?;
+        emit_method_parameter_list(self.receiver.as_ref(), &self.parameters, &self.parameter_docs, w, cx)?;
         emit_where_bounds(&self.where_bounds, w, cx)?;
-        cx.nl(w)?;
-        cx.write_indent(w)?;
+        cx.before_open_brace(w)?;
         self.body.emit(w, cx)
     }
 }

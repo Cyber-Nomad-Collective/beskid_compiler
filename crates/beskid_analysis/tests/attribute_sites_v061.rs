@@ -1,7 +1,7 @@
 //! 0.6.1: attributes on every declaration site parse into the `attributes` field of their node,
 //! and the formatter round-trips each one in the position the grammar gives it.
 
-use beskid_analysis::format::format_program;
+use beskid_analysis::format::format_source;
 use beskid_analysis::services::parse_program;
 use beskid_analysis::syntax::{
     ContractNode, Expression, Node, Program, Spanned, Statement,
@@ -66,7 +66,7 @@ i64 Add([Trace] i64 left, i64 right) {
     mut i64 total = 0;
     [Pinned]
     let square = [Pure] ([Hot] i64 x) => x * x;
-    let single = [Pure] ([Hot] y) => y;
+    let solo = [Pure] ([Hot] y) => y;
     return total + left + right;
 }
 
@@ -162,8 +162,9 @@ fn every_site_carries_its_attributes() {
 #[test]
 fn formatter_round_trips_every_site() {
     let program = parse(CORPUS);
-    let once = format_program(&program).expect("format");
-    let twice = format_program(&parse(&once)).expect("format again");
+    let _ = &program;
+    let once = format_source("<memory>", CORPUS).expect("format");
+    let twice = format_source("<memory>", &once).expect("format again");
     assert_eq!(once, twice, "format must be a fixed point:\n{once}");
     for expected in [
         "[Area]\npub mod Inner",
@@ -219,7 +220,7 @@ fn member_access_type_arguments_parse_and_format() {
     let Expression::Call(inner) = &outer_member.node.target.node else { panic!("inner call") };
     let Expression::Path(inner_path) = &inner.node.callee.node else { panic!("inner path callee") };
     assert_eq!(inner_path.node.path.node.segments.last().expect("segment").node.type_args.len(), 1);
-    let formatted = format_program(&program).expect("format");
+    let formatted = format_source("<memory>", source).expect("format");
     assert!(formatted.contains(".Map<i64>((i64 x) => x * 2).Map<string>("), "{formatted}");
 
     // Comparisons after a member access are not type arguments.

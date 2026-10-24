@@ -74,16 +74,17 @@ impl Emit for Spanned<AttributeParameter> {
     }
 }
 
-impl Emit for AttributeDeclaration {
+impl Emit for Spanned<AttributeDeclaration> {
     fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
-        crate::format::attribute_lists::emit_attribute_block(&self.attributes, w, cx)?;
-        self.visibility.emit(w, cx)?;
+        let this = &self.node;
+        crate::format::attribute_lists::emit_attribute_block(&this.attributes, w, cx)?;
+        this.visibility.emit(w, cx)?;
         cx.token(w, "attribute")?;
         cx.space(w)?;
-        self.name.emit(w, cx)?;
-        if !self.targets.is_empty() {
+        this.name.emit(w, cx)?;
+        if !this.targets.is_empty() {
             w.write_char('(')?;
-            for (i, t) in self.targets.iter().enumerate() {
+            for (i, t) in this.targets.iter().enumerate() {
                 if i > 0 {
                     cx.token(w, ", ")?;
                 }
@@ -91,30 +92,15 @@ impl Emit for AttributeDeclaration {
             }
             w.write_char(')')?;
         }
-        if self.parameters.is_empty() {
+        if crate::format::lines::body_is_empty(cx, this.parameters.len(), self.span.end) {
             cx.space(w)?;
             w.write_str("{ }")?;
             return Ok(());
         }
-        cx.nl(w)?;
-        cx.write_indent(w)?;
-        cx.open_brace(w)?;
-        for (i, p) in self.parameters.iter().enumerate() {
-            if i > 0 {
-                cx.between_members(w)?;
-            }
-            cx.write_indent(w)?;
-            p.emit(w, cx)?;
-            cx.token(w, ",")?;
-            cx.nl(w)?;
+        crate::format::lines::open_body(w, cx)?;
+        for p in &this.parameters {
+            crate::format::lines::emit_line(w, cx, crate::format::lines::Line::new(p.span), ",", |w, cx| p.emit(w, cx))?;
         }
-        cx.close_brace(w)?;
-        Ok(())
-    }
-}
-
-impl Emit for Spanned<AttributeDeclaration> {
-    fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
-        self.node.emit(w, cx)
+        cx.close_brace(w, self.span.end)
     }
 }

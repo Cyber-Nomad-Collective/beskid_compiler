@@ -160,7 +160,7 @@ impl crate::parsing::parsable::Parsable for Type {
 
 #[cfg(test)]
 mod tests {
-    use crate::format::format_program;
+    use crate::format::format_source;
     use crate::parser::{BeskidParser, Rule};
     use crate::parsing::parsable::Parsable;
     use crate::services::parse_program;
@@ -186,7 +186,7 @@ mod tests {
         assert_eq!(contract.node.segments[0].node.name.node.name, "Iterator");
         assert_eq!(name.node.name, "Item");
         assert!(
-            format_program(&program).expect("associated type reference should format").contains("Iterator::Item"),
+            format_source("<memory>", "Iterator::Item Current() { return; }").expect("associated type reference should format").contains("Iterator::Item"),
             "formatter must preserve the associated-type separator"
         );
     }
@@ -234,7 +234,7 @@ mod tests {
     #[test]
     fn associated_type_references_round_trip_through_the_formatter() {
         let source = "Iterator::Item[] ArrayCurrent() { return; } Iterator::Item(i64) Mapper() { return; } Container<Iterator::Item> Wrapped() { return; }";
-        let formatted = format_program(&parse_program(source).expect("compositional associated types should parse"))
+        let formatted = format_source("<memory>", source)
             .expect("compositional associated types should format");
 
         assert!(formatted.contains("Iterator::Item[]"));
@@ -266,8 +266,8 @@ mod tests {
         let double = BeskidParser::parse(Rule::BeskidType, source).expect("two-rank array").flatten();
         assert_eq!(double.filter(|pair| pair.as_rule() == Rule::ArraySuffix).count(), 1);
         // The type ends at its last `]`, not at whitespace after it.
-        let program = parse_program("unit F() { mut u8[]   bytes = []; i64[][]  rows = []; }").expect("typed locals");
-        let formatted = format_program(&program).expect("typed locals format");
+        let formatted = format_source("<memory>", "unit F() { mut u8[]   bytes = []; i64[][]  rows = []; }")
+            .expect("typed locals format");
         assert!(formatted.contains("u8[] bytes") && formatted.contains("i64[][] rows"), "{formatted}");
 
         let triple = parse_type("Map<i64>[] [] []");
@@ -280,11 +280,11 @@ mod tests {
         assert_eq!(ranks, 3);
         assert!(matches!(current.node, Type::Complex(_)));
 
-        let program = parse_program(
+        let formatted = format_source(
+            "<memory>",
             "type Grid { i64[][] cells; } i64[][] Rows(string[][] names) { i64[][] local = cells; return local; }",
         )
-        .expect("nested array types parse in fields, parameters, locals, and return types");
-        let formatted = format_program(&program).expect("nested array types format");
+        .expect("nested array types format");
         assert!(formatted.contains("i64[][] cells"), "{formatted}");
         assert!(formatted.contains("i64[][] Rows(string[][] names)"), "{formatted}");
         parse_program(&formatted).expect("formatted nested array types reparse");

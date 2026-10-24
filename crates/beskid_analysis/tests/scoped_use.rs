@@ -3,9 +3,9 @@ use beskid_analysis::syntax::Node;
 
 #[test]
 fn scoped_use_is_a_binding_while_module_use_remains_an_import() {
-    let program = parse_program(
-        "use Core.Disposable; Result<unit, DisposeError> Run() { use Resource resource = Open(); return Result::Ok(unit); }",
-    )
+    let source =
+        "use Core.Disposable; Result<unit, DisposeError> Run() { use Resource resource = Open(); return Result::Ok(unit); }";
+    let program = parse_program(source)
     .expect("a scoped use binding must parse alongside an import");
     assert!(matches!(program.node.items[0].node, Node::UseDeclaration(_)));
     let Node::Function(function) = &program.node.items[1].node else {
@@ -16,7 +16,7 @@ fn scoped_use_is_a_binding_while_module_use_remains_an_import() {
         panic!("scoped ownership must have a distinct AST node");
     };
     assert_eq!(scoped.node.binding.node.name.node.name, "resource");
-    let formatted = beskid_analysis::format::format_program(&program).unwrap();
+    let formatted = beskid_analysis::format::format_source("<memory>", source).unwrap();
     let reparsed = parse_program(&formatted).unwrap();
     let Node::Function(function) = &reparsed.node.items[1].node else { panic!("formatted function") };
     assert!(matches!(function.node.body.node.statements[0].node, beskid_analysis::syntax::Statement::Use(_)));
@@ -37,14 +37,15 @@ fn scoped_use_rejects_using_alias_and_missing_initializer() {
 
 #[test]
 fn scoped_use_block_header_unambiguously_separates_a_struct_initializer() {
-    let program = parse_program("use Core.Disposable; Result<unit, DisposeError> Run() { use (Resource resource = Resource {}) { resource.Read(); } return Result::Ok(()); }").expect("block use must parse");
+    let source = "use Core.Disposable; Result<unit, DisposeError> Run() { use (Resource resource = Resource {}) { resource.Read(); } return Result::Ok(()); }";
+    let program = parse_program(source).expect("block use must parse");
     let Node::Function(function) = &program.node.items[1].node else { panic!("function") };
     let beskid_analysis::syntax::Statement::Use(scoped) = &function.node.body.node.statements[0].node else {
         panic!("one scoped-use AST")
     };
     assert_eq!(scoped.node.binding.node.name.node.name, "resource");
     assert_eq!(scoped.node.body.as_ref().expect("explicit use body").node.statements.len(), 1);
-    let formatted = beskid_analysis::format::format_program(&program).unwrap();
+    let formatted = beskid_analysis::format::format_source("<memory>", source).unwrap();
     assert!(formatted.contains("use (Resource resource"));
     assert!(parse_program(&formatted).is_ok());
 }

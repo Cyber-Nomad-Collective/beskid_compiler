@@ -1,0 +1,36 @@
+/// A shape.
+pub enum Shape
+{
+    /// A circle.
+    Circle(
+        /// The radius.
+        i32 radius),
+    /// A square.
+    Square(i32 side),
+}
+
+/// Measures things.
+pub contract Measure
+{
+    /// The area.
+    i32 Area();
+}
+
+impl Shape
+{
+    /// Returns one.
+    pub i32 One()
+    {
+        return 1;
+    }
+}
+
+/// Adds numbers.
+pub i32 Add(
+    /// The left value.
+    i32 left,
+    /// The right value.
+    i32 right)
+{
+    return left + right;
+}

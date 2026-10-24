@@ -117,10 +117,17 @@ where
     }
 
     fn call(&mut self, request: Request) -> Self::Future {
+        // Keep the open texts current in transport order before any handler runs.
+        features::formatting::open_texts::observe(&request);
         let is_text_sync =
             matches!(request.method(), "textDocument/didOpen" | "textDocument/didChange" | "textDocument/didClose");
         let ordering_key = text_document_key(&request);
-        let required = ordering_key.as_ref().and_then(|key| self.next_text_sync.get(key)).copied().unwrap_or(0);
+        // Syntax-only requests read the open texts (already current here) and skip the fence.
+        let required = if features::formatting::open_texts::is_syntax_only_request(request.method()) {
+            0
+        } else {
+            ordering_key.as_ref().and_then(|key| self.next_text_sync.get(key)).copied().unwrap_or(0)
+        };
         let ticket = if is_text_sync {
             ordering_key.as_ref().map(|key| {
                 let next = self.next_text_sync.entry(key.clone()).or_default();

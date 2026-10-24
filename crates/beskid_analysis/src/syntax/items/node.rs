@@ -126,7 +126,7 @@ fn parse_node(pair: Pair<Rule>) -> Result<Spanned<Node>, ParseError> {
 mod tests {
     use crate::parser::{BeskidParser, Rule};
     use crate::parsing::parsable::Parsable;
-    use crate::{format::format_program, syntax::Program};
+    use crate::{format::format_source, syntax::Program};
     use pest::Parser;
 
     #[test]
@@ -212,7 +212,7 @@ mod tests {
             "parsing should preserve the extend-type block as one top-level syntax item"
         );
 
-        let formatted = format_program(&program).expect("extend type should format");
+        let formatted = format_source("<memory>", src).expect("extend type should format");
         assert!(formatted.contains("extend type Account"));
         assert!(formatted.contains("pub unit Deposit(i64 amount)"));
         assert!(formatted.contains("pub i64 Balance()"));
@@ -304,7 +304,7 @@ mod tests {
         let pair = BeskidParser::parse(Rule::Program, src).expect("host should parse").next().expect("program pair");
         let program = Program::parse(pair).expect("host should build AST");
         assert_eq!(program.node.items.len(), 1);
-        let formatted = format_program(&program).expect("host should format");
+        let formatted = format_source("<memory>", src).expect("host should format");
         assert!(formatted.contains("host AppHost(string[] args) : ConsoleHost"));
         assert!(!formatted.contains("with"));
     }
