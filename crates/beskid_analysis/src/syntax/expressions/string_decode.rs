@@ -140,7 +140,10 @@ fn split_string_content_segment(
     for segment in content.into_inner() {
         match segment.as_rule() {
             Rule::StringText => text.push_str(segment.as_str()),
-            Rule::StringEscape => text.push_str(decode_string_escape(segment.as_str())?),
+            Rule::StringEscape => {
+                let escape_span = offset_span(SpanInfo::from_span(&segment.as_span()), inner_offset);
+                decode_string_escape(segment.as_str(), escape_span, &mut text)?;
+            }
             Rule::StringInterpolation => {
                 let interpolation_span = offset_span(SpanInfo::from_span(&segment.as_span()), inner_offset);
                 flush_text_part(parts, &mut text, text_start, interpolation_span.start, input)?;
@@ -183,17 +186,53 @@ fn flush_text_part(
     Ok(())
 }
 
-fn decode_string_escape(raw: &str) -> Result<&'static str, ParseError> {
-    match raw {
-        "\\\"" => Ok("\""),
-        "\\\\" => Ok("\\"),
-        "\\${" => Ok("${"),
-        _ => Err(ParseError::UnexpectedRule {
-            expected: Some(Rule::StringEscape),
-            found: Rule::StringEscape,
-            span: SpanInfo::default(),
-        }),
+/// Decode one escape (`raw` includes the backslash) onto `out`; `span` locates it for an error.
+fn decode_string_escape(raw: &str, span: SpanInfo, out: &mut String) -> Result<(), ParseError> {
+    let unknown = || ParseError::UnknownStringEscape { span, escape: raw.to_string() };
+    let body = raw.strip_prefix('\\').ok_or_else(unknown)?;
+    let ch = match body {
+        "${" => {
+            out.push_str("${");
+            return Ok(());
+        }
+        "\"" => '"',
+        "\\" => '\\',
+        "n" => '\n',
+        "t" => '\t',
+        "r" => '\r',
+        "0" => '\0',
+        _ if body.starts_with("u{") && body.ends_with('}') => {
+            decode_unicode_escape(raw, &body[2..body.len() - 1], span)?
+        }
+        _ if body.starts_with('u') => {
+            return Err(ParseError::InvalidUnicodeEscape {
+                span,
+                escape: raw.to_string(),
+                reason: "write the code point in braces, as in `\\u{41}`",
+            });
+        }
+        _ => return Err(unknown()),
+    };
+    out.push(ch);
+    Ok(())
+}
+
+fn decode_unicode_escape(raw: &str, digits: &str, span: SpanInfo) -> Result<char, ParseError> {
+    let invalid = |reason: &'static str| ParseError::InvalidUnicodeEscape { span, escape: raw.to_string(), reason };
+    if digits.is_empty() {
+        return Err(invalid("no hexadecimal digits"));
     }
+    if digits.len() > 6 {
+        return Err(invalid("more than six hexadecimal digits"));
+    }
+    if !digits.chars().all(|ch| ch.is_ascii_hexdigit()) {
+        return Err(invalid("only hexadecimal digits may appear between the braces"));
+    }
+    let value = u32::from_str_radix(digits, 16).map_err(|_| invalid("not a hexadecimal number"))?;
+    if (0xD800..=0xDFFF).contains(&value) {
+        return Err(invalid("surrogate code points are not characters"));
+    }
+    char::from_u32(value).ok_or_else(|| invalid("the value is above `10FFFF`"))
 }
 
 fn span_from_absolute(input: &str, start: usize, end: usize) -> Result<SpanInfo, ParseError> {
@@ -224,6 +263,40 @@ mod tests {
     fn decodes_string_escape_sequences() {
         let value = decode_string_literal_token("\"a\\\"b\\\\c\\${d\"").expect("decode");
         assert_eq!(value, "a\"b\\c${d");
+    }
+
+    #[test]
+    fn decodes_control_and_unicode_escapes() {
+        let value = decode_string_literal_token("\"a\\nb\\tc\\rd\\0e\\u{41}\\u{1F600}\"").expect("decode");
+        assert_eq!(value, "a\nb\tc\rd\0eA\u{1F600}");
+    }
+
+    #[test]
+    fn rejects_unknown_escape_at_its_span() {
+        let token = "\"ab\\qc\"";
+        let err = decode_string_literal_token(token).expect_err("unknown escape");
+        let ParseError::UnknownStringEscape { span, escape } = err else { panic!("unexpected error {err:?}") };
+        assert_eq!(escape, "\\q");
+        assert_eq!(&token[span.start..span.end], "\\q");
+    }
+
+    #[test]
+    fn rejects_invalid_unicode_escapes() {
+        for (token, escape) in [
+            ("\"\\u{D800}\"", "\\u{D800}"),
+            ("\"\\u{110000}\"", "\\u{110000}"),
+            ("\"\\u{}\"", "\\u{}"),
+            ("\"\\u{12345678}\"", "\\u{12345678}"),
+            ("\"\\u{zz}\"", "\\u{zz}"),
+            ("\"\\u41\"", "\\u"),
+        ] {
+            let err = decode_string_literal_token(token).expect_err(token);
+            let ParseError::InvalidUnicodeEscape { escape: found, span, .. } = err else {
+                panic!("{token}: unexpected error {err:?}")
+            };
+            assert_eq!(found, escape, "{token}");
+            assert_eq!(&token[span.start..span.end], escape, "{token}");
+        }
     }
 
     #[test]

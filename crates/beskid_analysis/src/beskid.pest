@@ -235,7 +235,10 @@ StringLiteralValue = ${ SOI ~ StringLiteralValueBody ~ EOI }
 StringContent = { StringInterpolation | StringEscape | StringText }
 StringInterpolation = { PUSH("${") ~ InterpolationExpression ~ DROP ~ "}" }
 InterpolationExpression = !{ Expression }
-StringEscape = { "\\\"" | "\\\\" | "\\${" }
+// `\"`, `\\`, `\${`, `\n`, `\t`, `\r`, `\0` and `\u{...}` are the escapes. The rule accepts a
+// backslash before any character so an unknown escape reaches literal lowering, which reports it
+// with its own code instead of failing the whole string at the grammar level.
+StringEscape = { "\\" ~ ("${" | "u{" ~ (!("}" | "\"") ~ ANY)* ~ "}" | ANY) }
 StringText = { (!("\"" | "\\" | "$") ~ ANY)+ | ("$" ~ !("{")) }
 CharLiteral = @{ "'" ~ ("\\'" | !("'") ~ ANY) ~ "'" }
 

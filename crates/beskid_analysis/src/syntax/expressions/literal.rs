@@ -104,7 +104,14 @@ impl crate::parsing::parsable::Parsable for Literal {
         let node = match rule {
             crate::parser::Rule::IntegerLiteral => Self::Integer(text.to_string()),
             crate::parser::Rule::FloatLiteral => Self::Float(text.to_string()),
-            crate::parser::Rule::StringLiteral => Self::String(text.to_string()),
+            crate::parser::Rule::StringLiteral => {
+                // Escapes are checked here so an unknown or invalid one is a parse error with
+                // its own code, located at the escape.
+                if text.contains('\\') {
+                    super::string_decode::split_string_literal_parts(text, pair.as_span().get_input(), span)?;
+                }
+                Self::String(text.to_string())
+            }
             crate::parser::Rule::CharLiteral => Self::Char(text.to_string()),
             crate::parser::Rule::Literal => {
                 let mut inner = pair.clone().into_inner();
