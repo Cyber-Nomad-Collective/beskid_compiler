@@ -81,8 +81,8 @@ impl Backend {
         let state = self.state.clone();
         let revisions = self.diagnostics_revision.clone();
         let filter = *self.log_filter.read().await;
-        let reporter = self.reporter.clone();
-        tokio::spawn(async move {
+        // A panic while analysing must not silently kill diagnostics for the session.
+        self.reporter.spawn_guarded("textDocument/publishDiagnostics", Some(uri.as_str().to_string()), async move {
             tokio::time::sleep(Duration::from_millis(120)).await;
             let should_run = {
                 let map = revisions.lock().await;
@@ -91,14 +91,7 @@ impl Backend {
             if should_run {
                 client_log(&client, filter, MessageType::LOG, format!("publishing diagnostics for {}", uri.as_str()))
                     .await;
-                // A panic while analysing must not silently kill diagnostics for the session.
-                let _ = reporter
-                    .guard(
-                        "textDocument/publishDiagnostics",
-                        Some(uri.as_str()),
-                        publish_diagnostics_for_uri(&client, &state, &uri),
-                    )
-                    .await;
+                publish_diagnostics_for_uri(&client, &state, &uri).await;
             }
         });
     }
@@ -181,7 +174,7 @@ impl LanguageServer for Backend {
         let doc = params.text_document;
         let _ = set_document(&self.state, doc.uri.clone(), doc.version, doc.text).await;
         self.schedule_publish_diagnostics(doc.uri.clone()).await;
-        schedule_persistence_snapshot_save(self.state.clone()).await;
+        schedule_persistence_snapshot_save(self.state.clone(), self.reporter.clone()).await;
     }
 
     async fn did_change(&self, params: DidChangeTextDocumentParams) {
@@ -199,7 +192,7 @@ impl LanguageServer for Backend {
         };
         if updated {
             self.schedule_publish_diagnostics(uri.clone()).await;
-            schedule_persistence_snapshot_save(self.state.clone()).await;
+            schedule_persistence_snapshot_save(self.state.clone(), self.reporter.clone()).await;
         }
     }
 
@@ -207,7 +200,7 @@ impl LanguageServer for Backend {
         self.schedule_publish_diagnostics(params.text_document.uri.clone()).await;
         // A user-initiated disk save is a natural persistence hint — schedule the
         // debounced DB snapshot save so the snapshot follows the file save.
-        schedule_persistence_snapshot_save(self.state.clone()).await;
+        schedule_persistence_snapshot_save(self.state.clone(), self.reporter.clone()).await;
     }
 
     async fn did_close(&self, params: DidCloseTextDocumentParams) {

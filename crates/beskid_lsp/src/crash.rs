@@ -143,6 +143,20 @@ impl CrashReporter {
         }
     }
 
+    /// Spawn a detached background task under the guard. A panic is reported like a handler
+    /// panic and ends only that task; the next scheduling spawns a fresh one.
+    pub fn spawn_guarded(
+        self: &Arc<Self>,
+        method: &'static str,
+        path: Option<String>,
+        future: impl Future<Output = ()> + Send + 'static,
+    ) {
+        let reporter = Arc::clone(self);
+        tokio::spawn(async move {
+            let _ = reporter.guard(method, path.as_deref(), future).await;
+        });
+    }
+
     /// Run a synchronous section (for example building a service future) under the same guard.
     pub async fn guard_sync<T>(
         &self,
@@ -284,6 +298,27 @@ pub(crate) mod tests {
         assert_eq!(sent.len(), 1);
         assert_eq!(sent[0].report_path, files[0].display().to_string());
         assert_eq!(sent[0].method, "textDocument/hover");
+    }
+
+    #[tokio::test]
+    async fn panicking_background_task_produces_one_report_and_one_notification() {
+        let dir = tempfile::tempdir().unwrap();
+        let (reporter, sent) = test_reporter(dir.path());
+        // Same call site twice, like a debounced task rescheduled after it died.
+        for _ in 0..2 {
+            reporter.spawn_guarded("textDocument/publishDiagnostics", Some("file:///p/A.bd".into()), async {
+                panic!("analysis bug");
+            });
+            for _ in 0..50 {
+                tokio::task::yield_now().await;
+            }
+        }
+        let files = report_files(dir.path());
+        assert_eq!(files.len(), 1);
+        assert!(std::fs::read_to_string(&files[0]).unwrap().contains("method: textDocument/publishDiagnostics"));
+        assert_eq!(sent.lock().unwrap().len(), 1);
+        // The runtime and reporter keep working afterwards.
+        assert_eq!(reporter.guard("x", None, async { 1 }).await, Ok(1));
     }
 
     #[tokio::test]
