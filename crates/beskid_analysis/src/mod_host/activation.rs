@@ -88,12 +88,25 @@ pub fn active_mod_manifests_for_input(
                 &options,
                 None,
             )
-            .map_err(|error| anyhow::anyhow!("{error}"))
+            .map_err(assembly_error_for_activation)
             .with_context(|| format!("assemble {} to decide its active Mods", resolved.source_path.display()))?;
             reached_packages(plan, &assembly)
         }
     };
     active_mods(plan, &mods, &reached)
+}
+
+/// An assembly failure while deciding the active Mods. A parse failure keeps its structured
+/// diagnostic (code, span, related locations, fixes), mapped from the materialized copy under
+/// `obj/beskid` back to the authored file; any other failure keeps its typed error.
+fn assembly_error_for_activation(error: crate::projects::AssemblyError) -> anyhow::Error {
+    use crate::analysis::diagnostics::{MietteReportError, source_map::SourceMapper};
+    match error.diagnostic() {
+        Some(diagnostic) => anyhow::Error::new(MietteReportError::new(
+            SourceMapper::new().map_diagnostic(diagnostic.clone()),
+        )),
+        None => anyhow::Error::new(error),
+    }
 }
 
 /// Project names of the reached dependency packages that declare a Mod directly: the **companion
@@ -358,5 +371,33 @@ mod tests {
         .expect("host manifest");
         let plan = build_compile_plan(&root.path().join("Host/Host.bproj"), None).expect("host plan");
         assert_eq!(names(&active_mod_manifests(&plan, &assembly(&plan)).expect("activation")), ["ModB"]);
+    }
+
+    #[test]
+    fn a_parse_error_while_deciding_active_mods_keeps_its_code_and_names_the_authored_file() {
+        use crate::analysis::diagnostics::{MietteReportError, source_map::SourceOrigins};
+        let project = tempfile::tempdir().expect("project");
+        let authored = project.path().join("Src/Main.bd");
+        let obj = project.path().join("obj/beskid");
+        let mirrored = obj.join("root/Src/Main.bd");
+        let broken = "pub unit Main( ???";
+        for path in [&authored, &mirrored] {
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, broken).unwrap();
+        }
+        let mut origins = SourceOrigins::new();
+        origins.record(&obj, &obj.join("root/Src"), &project.path().join("Src"));
+        origins.write(&obj).unwrap();
+
+        let error = crate::services::parse_program_with_source_name(mirrored.to_str().unwrap(), broken)
+            .map_err(|error| crate::projects::AssemblyError::from_parse_failure(mirrored.clone(), broken, error))
+            .expect_err("broken source");
+        let error = super::assembly_error_for_activation(error);
+
+        let report = error.downcast_ref::<MietteReportError>().expect("structured diagnostic survives");
+        let diagnostic = report.diagnostic();
+        assert!(diagnostic.code.is_some(), "the parse diagnostic keeps its code");
+        assert_eq!(diagnostic.file_name(), authored.canonicalize().unwrap().to_str().unwrap());
+        assert!(!diagnostic.file_name().contains("obj/beskid"));
     }
 }
