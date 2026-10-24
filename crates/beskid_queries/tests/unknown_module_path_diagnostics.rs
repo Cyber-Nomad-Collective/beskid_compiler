@@ -42,6 +42,7 @@ fn diagnostics_of(main: &str) -> Vec<Vec<beskid_analysis::analysis::SemanticDiag
 fn an_unknown_module_path_is_one_diagnostic_with_dot_paths() {
     for main in [
         "pub i64 Main() { return Core.Text.Length(); }",
+        "use Core.Output.WriteLine; pub i64 Main() { return Core.Text.Length(); }",
         "pub unit Main(Core.Text.Thing value) { return; }",
         "pub unit Main() { let f = Core.Text.Thing; return; }",
     ] {
