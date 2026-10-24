@@ -652,7 +652,7 @@ fn v06_cli_owned_commands_accept_json() {
 fn v06_capability_document_lists_version_commands_dev_routes_and_schemas() {
     let document = super::app::CapabilityDocument();
     assert_eq!(document["schemaVersion"], 1);
-    assert_eq!(document["cliVersion"], env!("CARGO_PKG_VERSION"));
+    assert_eq!(document["cliVersion"], super::app::VERSION);
     let names = |key: &str| {
         let mut names: Vec<String> =
             document[key].as_array().unwrap().iter().map(|value| value.as_str().unwrap().to_owned()).collect();

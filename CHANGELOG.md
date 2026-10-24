@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- CLI output defaults: warnings and errors only; info logs and the pipeline tree need `-v`, debug logs `-vv`; `-q` prints errors and results only; `--plain` changes neither verbosity nor content except colour and animation.
+- Pipeline progress draws only on an interactive stderr and only for steps longer than about one second; `beskid run` prints at most one status line before the program's output.
+- Logs go to stderr, or to a file with `--log-file <path>` or `BESKID_LOG`.
+- `beskid` restores the default `SIGPIPE` action, so `beskid ... | head` ends quietly instead of aborting.
+- `beskid dev capabilities` reports `runtimeAbi`; `--version` and `cliVersion` show the build-time `BESKID_PREVIEW_LABEL` when set.
+
 ## [0.6.6] - 2026-10-16
 
 This release carries the v0.6.1-v0.6.5 program as one release (OpenSpec changes
