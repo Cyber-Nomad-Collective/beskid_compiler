@@ -209,6 +209,7 @@ pub fn check_gate_obligations(db: &dyn Db, items: &[AstNodeKey]) -> Vec<Semantic
                         type_name: type_name.to_string(),
                         contract_name: contract_name.to_string(),
                         reason: reason.as_deref().map(str::to_owned),
+                        declaration_at: super::serialize_declaration_at(db, obligation.site, type_name, contract_name),
                     }
                 }
                 GateObligationKind::GenericReceiverMethodUndeclared { method, parameter } => {

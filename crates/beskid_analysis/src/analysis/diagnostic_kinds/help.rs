@@ -115,7 +115,7 @@ impl SemanticIssueKind {
                 ))
             }
             Self::GenericBoundNotSatisfied { reason: Some(reason), .. } => Some(reason.clone()),
-            Self::GenericBoundNotSatisfied { type_name, contract_name, reason: None } => {
+            Self::GenericBoundNotSatisfied { type_name, contract_name, reason: None, .. } => {
                 Some(format!("make `{type_name}` conform to `{contract_name}` or pass a conforming type"))
             }
             // The declaration text is needed for the tailored help; `issue_diagnostic` writes it.

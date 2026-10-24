@@ -1491,6 +1491,7 @@ fn generic_bound_not_satisfied_because(type_name: String, contract: &Path, reaso
         type_name: type_name.clone(),
         contract_name: contract_name.clone(),
         reason: reason.clone(),
+        declaration_at: None,
     };
     SemanticError::generic_bound_not_satisfied(
         format!("{}: {}", issue.code(), issue.message()),

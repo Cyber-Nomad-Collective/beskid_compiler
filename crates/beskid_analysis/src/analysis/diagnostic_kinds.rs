@@ -139,6 +139,10 @@ pub enum SemanticIssueKind {
         contract_name: String,
         /// For a compiler-derived marker bound: the first offending field or the class reason.
         reason: Option<String>,
+        /// For a `Serializable` bound: the byte offset of the conforming type's declaration when
+        /// it is the only declaration of that name in the diagnostic's own source, where the
+        /// `[Serialize]` fix inserts the attribute.
+        declaration_at: Option<usize>,
     },
 
     /// E1214, reported once per binding at its declaration; every assignment is a related

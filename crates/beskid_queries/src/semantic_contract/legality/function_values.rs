@@ -111,6 +111,7 @@ pub(super) fn generic_function_value_semantic_findings(db: &dyn Db, key: AstNode
                 },
                 GenericFunctionValueKind::BoundNotSatisfied { type_name, contract_name, reason } => {
                     SemanticIssueKind::GenericBoundNotSatisfied {
+                        declaration_at: super::serialize_declaration_at(db, finding.site, &type_name, &contract_name),
                         type_name: type_name.to_string(),
                         contract_name: contract_name.to_string(),
                         reason: reason.as_deref().map(str::to_owned),

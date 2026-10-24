@@ -646,6 +646,33 @@ pub fn check_typing_obligations(db: &dyn Db, items: &[AstNodeKey]) -> Vec<Semant
     findings
 }
 
+/// For a `Serializable` bound violation at `site`: the start of the conforming type's declaration
+/// when the site's own unit declares exactly one `type` or `enum` of that name at top level, where
+/// the `[Serialize]` fix inserts the attribute. `None` for any other bound or an ambiguous name.
+pub(super) fn serialize_declaration_at(db: &dyn Db, site: AstNodeKey, type_name: &str, contract_name: &str) -> Option<usize> {
+    let outer = |name: &str| -> String {
+        let head = name.split('<').next().unwrap_or(name).trim();
+        head.rsplit(['.', ':']).next().unwrap_or(head).to_string()
+    };
+    if outer(contract_name) != "Serializable" {
+        return None;
+    }
+    let wanted = outer(type_name);
+    let syntax = db.syntax_unit(site.unit).filter(|syntax| syntax.accepts_key(db, site))?;
+    let program = syntax.expanded_program(db);
+    let mut declarations = program.node.items.iter().filter_map(|item| match &item.node {
+        beskid_analysis::syntax::Node::TypeDefinition(definition) if definition.node.name.node.name == wanted => {
+            Some(item.span.start)
+        }
+        beskid_analysis::syntax::Node::EnumDefinition(definition) if definition.node.name.node.name == wanted => {
+            Some(item.span.start)
+        }
+        _ => None,
+    });
+    let first = declarations.next()?;
+    declarations.next().is_none().then_some(first)
+}
+
 /// E1105: every top-level `use` that names no assembled module, in each unit that owns one of
 /// `items`, judged once per unit in first-owner order. A `use` inside a unit nothing requested is
 /// not judged, so an assembly may carry units whose imports reach outside it as long as nothing
