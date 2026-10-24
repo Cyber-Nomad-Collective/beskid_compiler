@@ -44,12 +44,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `--error-format=json` on `check`, `build`, `run`, `test`, `fmt` and
   `dev build` writes one rustc-style JSON object per diagnostic to stderr
   (schema in `docs/diagnostics-json.md`).
+
 ### Changed
+
 - CLI output defaults: warnings and errors only; info logs and the pipeline tree need `-v`, debug logs `-vv`; `-q` prints errors and results only; `--plain` changes neither verbosity nor content except colour and animation.
 - Pipeline progress draws only on an interactive stderr and only for steps longer than about one second; `beskid run` prints at most one status line before the program's output.
 - Logs go to stderr, or to a file with `--log-file <path>` or `BESKID_LOG`.
 - `beskid` restores the default `SIGPIPE` action, so `beskid ... | head` ends quietly instead of aborting.
 - `beskid dev capabilities` reports `runtimeAbi`; `--version` and `cliVersion` show the build-time `BESKID_PREVIEW_LABEL` when set.
+- Tests have their own namespace. A test cannot be called or named as a value,
+  so `test SumOfSquares` may share its name with a function, type or other
+  item, and a call to the name resolves to that item. Two tests of one name in
+  one module are still E1102.
+- Move semantics apply only where a value crosses to another isolate: a port
+  send (`Port.Send`, `__port_send`) and a `move` capture in a
+  `[Captures]`-bounded or isolate task body. Ordinary code never consumes a
+  value and never needs `move`; `move` written elsewhere is E1239 with the
+  help to remove it. At a crossing the operand needs `move` (E1242), must be
+  the only name for its value in the callable (E1241, copy it first), and a
+  later read is E1234 (E1240 in a loop). `exchange` takes its value without
+  `move`. The 0.6.7 borrowed-element-return check is withdrawn.
+- `[Export]` resolves by declaration identity: only a use of
+  `Core.Attributes.Export` exports, and export entries name the exact
+  lowered function instead of its simple name. An entry that resolves to no
+  function or to several fails the object build.
+- Corelib collections change in place: `items.Push("milk");` needs no rebinding.
+  Every former `move this` mutator of `List`, `Stack`, `Queue`, `Set`, `Map`,
+  `PriorityQueue`, `I64Map`, `StringMap` and `HashTable` is a `mut this` method
+  (or takes a `mut` table) and returns `unit`, `bool`, `Option<T>` or a
+  `Result` that is not the collection. Engine and release fixtures are migrated.
+- `move` is written only at isolate crossings: the native SDK factory generator
+  no longer emits `move` parameters, and the compiler's Beskid fixtures use
+  plain or `mut` parameters.
+
 ### Runtime: Main as the root fiber, shutdown, child processes
 
 - `Main` parks like any other fiber. A blocking `Channel.Receive` or
@@ -75,7 +102,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   carries the channel handle. `HubError` and `MutexError` gain
   `Unexpected(i64 code)` too, and a failed `Hub.Register` names its member
   index.
-### Diagnostics: semantic wording and internal errors (0.6.7, slice sem)
+
+### Diagnostics: semantic wording and internal errors
 
 - Every internal compiler error is one coded diagnostic at its construct: E2101 missing
   semantic fact, E2102 missing lowering rule, E2103 lowering or verification inconsistency,
@@ -120,6 +148,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `\${`. An unknown escape (`E0109`) or a `\u{...}` value that is not a Unicode
   scalar value (`E0110`) is an error at the escape.
 - Compound assignments `*=`, `/=` and `%=` beside `+=` and `-=`.
+
 ### Host composition
 
 - Host hooks run. `startup` runs once after `launch` builds the container; a
@@ -179,12 +208,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   formatter prints a conditional on one line. Expressions without `? :` keep
   their parse tree. Typing and lowering are not in place yet: the legality gate
   rejects a conditional as an unsupported expression.
-### Changed
-
-- Tests have their own namespace. A test cannot be called or named as a value,
-  so `test SumOfSquares` may share its name with a function, type or other
-  item, and a call to the name resolves to that item. Two tests of one name in
-  one module are still E1102.
+- The checker enforces `[ScopeBorrowed]`: a scope-borrowed value that is
+  returned, stored, passed to `spawn` or captured by an escaping closure is
+  E1241.
+- Copy on assignment, copy-on-write. A type marked `[CopyOnAssign]` declares
+  `This Copy()`; wherever a value of that type gets a new name (a `let`
+  value, an assignment, an argument of a parameter that is not `mut`, a
+  construction, a return of a place the callable does not own, an array `for`
+  element, a closure capture, a `?` payload) the compiler calls `Copy`. A `mut`
+  parameter shares the caller's value. Corelib `List<T>` is the only
+  `[CopyOnAssign]` type; its `Copy` shares the backing array and marks it
+  shared, and the first write through any name copies it. This fixes two live
+  lists sharing one backing array (0.6.0) at no cost for read-only use.
 
 ### Fixed
 
@@ -213,43 +248,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A user type `Stack` with a `Push` method no longer collides with Corelib's
   `Core.Collections.Stack.Push` as `duplicate item ::Stack::Push`: method
   symbols include their declaring module.
-### Changed
 
-- Move semantics apply only where a value crosses to another isolate: a port
-  send (`Port.Send`, `__port_send`) and a `move` capture in a
-  `[Captures]`-bounded or isolate task body. Ordinary code never consumes a
-  value and never needs `move`; `move` written elsewhere is E1239 with the
-  help to remove it. At a crossing the operand needs `move` (E1242), must be
-  the only name for its value in the callable (E1241, copy it first), and a
-  later read is E1234 (E1240 in a loop). `exchange` takes its value without
-  `move`. The 0.6.7 borrowed-element-return check is withdrawn.
-- `[Export]` resolves by declaration identity: only a use of
-  `Core.Attributes.Export` exports, and export entries name the exact
-  lowered function instead of its simple name. An entry that resolves to no
-  function or to several fails the object build.
-- Corelib collections change in place: `items.Push("milk");` needs no rebinding.
-  Every former `move this` mutator of `List`, `Stack`, `Queue`, `Set`, `Map`,
-  `PriorityQueue`, `I64Map`, `StringMap` and `HashTable` is a `mut this` method
-  (or takes a `mut` table) and returns `unit`, `bool`, `Option<T>` or a
-  `Result` that is not the collection. Engine and release fixtures are migrated.
-- `move` is written only at isolate crossings: the native SDK factory generator
-  no longer emits `move` parameters, and the compiler's Beskid fixtures use
-  plain or `mut` parameters.
-
-### Added
-
-- The checker enforces `[ScopeBorrowed]`: a scope-borrowed value that is
-  returned, stored, passed to `spawn` or captured by an escaping closure is
-  E1241.
-- Copy on assignment, copy-on-write. A type marked `[CopyOnAssign]` declares
-  `This Copy()`; wherever a value of that type gets a new name (a `let`
-  value, an assignment, an argument of a parameter that is not `mut`, a
-  construction, a return of a place the callable does not own, an array `for`
-  element, a closure capture, a `?` payload) the compiler calls `Copy`. A `mut`
-  parameter shares the caller's value. Corelib `List<T>` is the only
-  `[CopyOnAssign]` type; its `Copy` shares the backing array and marks it
-  shared, and the first write through any name copies it. This fixes two live
-  lists sharing one backing array (0.6.0) at no cost for read-only use.
 ### Language: contextual typing of numeric literals
 
 - A numeric literal without a suffix takes the type its context requires in
