@@ -7,7 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased (0.6.7, optional parameters)
 
-- Optional parameters: a parameter of a top-level function may end with `= <constant>` (a literal, a negated number or a `const` of the same file). A call may omit trailing optional arguments; the compiler passes the defaults at the call site. Optional parameters come after required ones (E1251); a default must be a constant (E1252) of the parameter type (E1253); methods, contract methods, hosts, scopes, hooks, inline-module functions and `bulk` parameters cannot be optional (E1254).
+- Optional parameters: a parameter of a function, method, contract method, host or scope may end with `= <constant>` (a literal, a negated number or a `const` of the same file). A call may omit trailing optional arguments; once the callee is known the compiler passes the defaults at the call site. Optional parameters come after required ones (E1251); a default must be a constant (E1252) of the parameter type (E1253); hook and `bulk` parameters cannot be optional (E1254).
+- A contract method's defaults belong to the contract: an implementation without defaults inherits them, and one that repeats a different default is E1612.
 - Caller information is an optional parameter: `[CallerFilePath] string file = ""`, `[CallerLineNumber] i64 line = 0`, `[CallerColumnNumber] i64 column = 0`; an omitted argument gets the call site's value. Without a default it is E1255, with another type E1256.
 - E1204 names the accepted range: `call arity mismatch: expected 2–3 arguments, got 1`.
 - `Testing.Assert` and `Testing.Expect` take an optional `because`: `Assert.Equal(1, 1)` is a complete call, and an omitted because adds no line to the failure output.
