@@ -131,6 +131,7 @@ pub fn run() -> miette::Result<()> {
     let cli = ParseInvocation(args).unwrap_or_else(|error| error.exit());
     let backend_logs = matches!(&cli.command, Commands::Dev(args) if args.log_cranelift);
     beskid_telemetry::init(InitOptions::cli(backend_logs).with_verbosity(cli.Verbosity()));
+    crate::cli::error_format::ApplyErrorFormat(&cli.command);
     if NeedsCorelib(&cli.command) {
         ensure_corelib_ready().map_err(anyhow_to_miette)?;
     }

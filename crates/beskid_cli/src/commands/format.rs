@@ -13,6 +13,9 @@ use walkdir::WalkDir;
 
 #[derive(Args, Debug)]
 pub struct FormatArgs {
+    #[command(flatten)]
+    pub diagnostics: crate::cli::error_format::ErrorFormatArgs,
+
     /// Beskid source file (`.bd`) or directory to scan recursively for `.bd` files
     #[arg(default_value = ".")]
     pub input: PathBuf,
@@ -193,6 +196,7 @@ mod v06_tests {
             input: path.clone(),
             output: None,
             check: false,
+            diagnostics: Default::default(),
         });
         let actual = std::fs::read_to_string(&path).unwrap();
         std::fs::remove_dir_all(root).unwrap();

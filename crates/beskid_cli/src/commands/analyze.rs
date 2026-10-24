@@ -13,6 +13,9 @@ use beskid_tools::pipeline::{
 
 #[derive(Args, Debug)]
 pub struct AnalyzeArgs {
+    #[command(flatten)]
+    pub diagnostics: crate::cli::error_format::ErrorFormatArgs,
+
     /// The input Beskid file to analyze
     pub input: Option<PathBuf>,
 

@@ -10,7 +10,9 @@
 //! ([`dedupe`]).
 
 pub mod dedupe;
+pub mod json;
 pub mod model;
+pub mod source_map;
 
 use std::fmt;
 

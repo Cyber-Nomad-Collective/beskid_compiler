@@ -35,6 +35,9 @@ pub enum BuildKind {
 /// Compile a project or source file.
 #[derive(Args, Debug)]
 pub struct BuildArgs {
+    #[command(flatten)]
+    pub diagnostics: crate::cli::error_format::ErrorFormatArgs,
+
     /// The input Beskid file to compile
     pub input: Option<PathBuf>,
 

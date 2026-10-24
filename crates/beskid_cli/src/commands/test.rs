@@ -18,6 +18,9 @@ use super::prepared_matrix::{
 
 #[derive(Args, Debug, Clone)]
 pub struct TestArgs {
+    #[command(flatten)]
+    pub diagnostics: crate::cli::error_format::ErrorFormatArgs,
+
     /// The input Beskid file to test
     pub input: Option<PathBuf>,
 
@@ -600,6 +603,7 @@ mod tests {
             all_targets: false,
             target_timeout: None,
             matrix_timeout: None,
+            diagnostics: Default::default(),
         };
         assert_eq!(args.execution_budgets().target, Duration::from_secs(120));
     }
@@ -618,6 +622,7 @@ mod tests {
             all_targets: false,
             target_timeout: Some(5),
             matrix_timeout: None,
+            diagnostics: Default::default(),
         };
         assert_eq!(args.execution_budgets().target, Duration::from_secs(5));
     }

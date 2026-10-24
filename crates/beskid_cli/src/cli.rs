@@ -3,6 +3,7 @@
 pub(crate) mod app;
 mod dev;
 mod docs;
+pub mod error_format;
 
 #[cfg(test)]
 mod tests;

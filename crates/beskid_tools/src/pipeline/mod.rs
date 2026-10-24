@@ -98,8 +98,8 @@ impl CliPipeline {
             self.println_session("No diagnostics.");
             return counts;
         }
-        for diagnostic in diagnostics {
-            eprint!("{}", crate::diagnostics::format_diagnostic(diagnostic));
+        for diagnostic in crate::diagnostics::authored_diagnostics(diagnostics.iter().cloned()) {
+            crate::diagnostics::eprint_diagnostic(&diagnostic);
         }
         let _ = stderr().flush();
         self.println_session(format!("Analysis: {}", format_severity_summary(counts)));

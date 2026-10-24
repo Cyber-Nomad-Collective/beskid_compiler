@@ -21,6 +21,7 @@ use super::{
     },
     registry::materialize_registry_dependency,
 };
+use crate::analysis::diagnostics::source_map::{ORIGINS_FILE, SourceOrigins};
 use crate::projects::{
     error::ProjectError,
     model::{
@@ -159,6 +160,15 @@ pub fn prepare_project_workspace_plan_with_options(
         .map(|segment| segment.to_string_lossy().to_string())
         .unwrap_or_else(|| "Src".to_string());
     let materialized_source_root = root_materialized_project.join(&source_segment);
+    let obj_beskid = plan.project_root.join("obj").join("beskid");
+    let mut origins = SourceOrigins::new();
+    if let Some(source_root) = &plan.source_root {
+        origins.record(&obj_beskid, &materialized_source_root, source_root);
+        if let (Some(source_parent), Some(materialized_parent)) = (source_root.parent(), materialized_source_root.parent())
+        {
+            origins.record(&obj_beskid, &materialized_parent.join(".generated"), &source_parent.join(".generated"));
+        }
+    }
     if let Some(source_root) = &plan.source_root {
         observe_phase_result(pipeline, WORKSPACE_MATERIALIZE_LOCAL, || {
             copy_directory_when_newer(source_root, &materialized_source_root)?;
@@ -175,6 +185,7 @@ pub fn prepare_project_workspace_plan_with_options(
         for (index, dependency) in plan.dependency_projects.iter().enumerate() {
             let materialized_root = plan.project_root.join(&lock_entries[index].materialized_root);
             copy_directory_when_newer(&dependency.project_root, &materialized_root)?;
+            origins.record(&obj_beskid, &materialized_root, &dependency.project_root);
 
             report_progress(
                 pipeline,
@@ -216,6 +227,11 @@ pub fn prepare_project_workspace_plan_with_options(
         }
         Ok::<(), ProjectError>(())
     })?;
+
+    // Diagnostics map spans in the mirrored tree back to these authored roots.
+    origins
+        .write(&obj_beskid)
+        .map_err(|source| ProjectError::MaterializationCreateDir { path: obj_beskid.join(ORIGINS_FILE), source })?;
 
     lock_entries.sort_by(|left, right| left.name.cmp(&right.name));
     let lockfile_path = observe_phase_result(pipeline, WORKSPACE_MATERIALIZE_LOCKFILE, || {

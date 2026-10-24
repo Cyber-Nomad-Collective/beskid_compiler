@@ -60,7 +60,7 @@ pub use project::{
 pub use render::render_program_tree;
 pub use semantic::{
     SemanticDiagnosticsError, require_no_semantic_errors, semantic_rule_diagnostics_for_program,
-    semantic_rule_diagnostics_for_program_with_pipeline,
+    semantic_rule_diagnostics_for_program_with_pipeline, structured_diagnostics,
 };
 pub use session::{
     CompilationSession, SEMANTIC_SNAPSHOT_VERSION, SemanticSnapshot, SessionFingerprint, cached_compilation_session,

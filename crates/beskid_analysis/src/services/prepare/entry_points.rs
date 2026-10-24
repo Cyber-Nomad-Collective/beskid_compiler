@@ -94,7 +94,9 @@ pub fn prepare_compilation_with_fact_authority(
         !isolated,
         authority,
     )?;
-    Ok((output.prepared, output.collected_diagnostics, output.collected_fixes))
+    // Diagnostics name the authored source, never a materialized copy, and each cause once.
+    let diagnostics = crate::analysis::diagnostics::source_map::map_and_dedupe(output.collected_diagnostics);
+    Ok((output.prepared, diagnostics, output.collected_fixes))
 }
 
 pub(super) fn session_fingerprint_field(fingerprint: &SessionFingerprint) -> String {
