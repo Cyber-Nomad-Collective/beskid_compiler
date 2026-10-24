@@ -1,5 +1,5 @@
-//! Affine ownership findings (E1234, E1239-E1243) of `affine_ownership`, reported per callable
-//! of the item, including the lambdas it contains.
+//! Affine ownership findings (E1234, E1239-E1243, and E1241 for `[ScopeBorrowed]` escapes) of
+//! `affine_ownership`, reported per callable of the item, including the lambdas it contains.
 
 use super::*;
 
@@ -41,6 +41,10 @@ pub(super) fn affine_findings(db: &dyn Db, item: AstNodeKey) -> Vec<SemanticFind
                     finding.related.map(|related| (related, "borrowed here")),
                 ),
                 AffineFindingKind::ImplicitAliasOfMovedValue => (SemanticIssueKind::ImplicitAliasOfMovedValue { name }, None),
+                AffineFindingKind::ScopeBorrowedEscapes => (
+                    SemanticIssueKind::ScopeBorrowedEscapes { name, type_name: finding.detail.clone().unwrap_or_default() },
+                    finding.related.map(|related| (related, "borrowed here")),
+                ),
                 AffineFindingKind::DestructiveReadWithoutEmpty => (
                     SemanticIssueKind::DestructiveReadWithoutEmpty {
                         field: name,
@@ -49,6 +53,12 @@ pub(super) fn affine_findings(db: &dyn Db, item: AstNodeKey) -> Vec<SemanticFind
                     None,
                 ),
             };
+            // A use inside a lambda can be judged by the lambda and by the callable that holds it.
+            if findings.iter().any(|known: &SemanticFinding| {
+                known.site == finding.site && known.kind.code() == kind.code() && known.kind.message() == kind.message()
+            }) {
+                continue;
+            }
             findings.push(SemanticFinding { kind, site: finding.site, related: related.into_iter().collect() });
         }
     }

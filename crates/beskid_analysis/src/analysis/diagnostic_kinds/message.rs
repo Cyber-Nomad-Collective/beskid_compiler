@@ -258,16 +258,19 @@ impl SemanticIssueKind {
             }
             Self::MoveOfNonOwningName { name, class } => match class {
                 Some(class) => format!("`move` needs a Moved-class owning name, but `{name}` has class {class}"),
-                None => format!("`move` needs an owning name, but `{name}` is borrowed"),
+                None => format!("`move {name}` is not a crossing operand: `move` applies only when a value crosses to another isolate"),
             },
             Self::MoveInLoopWithoutReassignment { name } => format!(
                 "`{name}` is moved inside a loop body and not reassigned before the next iteration"
             ),
             Self::BorrowEscapes { name } => {
-                format!("the borrowed Moved value `{name}` cannot be stored, returned, captured or moved")
+                format!("`{name}` is not the only name for its Moved value, so it cannot cross to another isolate")
             }
+            Self::ScopeBorrowedEscapes { name, type_name } => format!(
+                "`{name}` of the scope-borrowed type `{type_name}` cannot be stored, returned, passed to `spawn` or captured by an escaping closure"
+            ),
             Self::ImplicitAliasOfMovedValue { name } => {
-                format!("`{name}` is still owned by a live name; this use would alias a Moved value")
+                format!("`{name}` crosses to another isolate without `move`")
             }
             Self::DestructiveReadWithoutEmpty { field, type_name } => format!(
                 "`move` cannot read field `{field}`: its type `{type_name}` has no canonical empty value"

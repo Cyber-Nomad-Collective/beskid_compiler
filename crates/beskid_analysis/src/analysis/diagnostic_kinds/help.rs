@@ -290,24 +290,25 @@ impl SemanticIssueKind {
                 "capture a Shared or Copied value, or `move` a Moved one, as the `[Captures]` bound requires"
                     .to_string(),
             ),
-            // An element of an owning array: take it out with `exchange`.
-            Self::ImplicitAliasOfMovedValue { name } if name.contains('[') => {
-                Some(format!("take the element with `exchange({name}, move <value>)`"))
-            }
             Self::MovedCaptureWithoutMove { name } | Self::ImplicitAliasOfMovedValue { name } => {
                 Some(format!("write `move {name}`"))
             }
             Self::CapturesArgumentNotLiteral => Some("pass the lambda literal".to_string()),
-            // An element read through a borrowed name: the name cannot give the element away.
+            Self::ScopeBorrowedEscapes { .. } => {
+                Some("use the value inside the scope that created it: read it or pass it to a call".to_string())
+            }
+            // A place read at a crossing stays reachable from its root.
             Self::BorrowEscapes { name } if name.contains('[') => Some(format!(
-                "take the element out through an owning name with `exchange({name}, move <value>)`, or clone it"
+                "copy `{name}` first, or take it out with `exchange({name}, <value>)`"
             )),
-            // A field read through a borrowed name: the name cannot give the field away.
-            Self::BorrowEscapes { name } if name.contains('.') => Some(format!(
-                "store a copy of `{name}`, or reach it through an owning name and write `move {name}`"
-            )),
-            Self::MoveOfNonOwningName { name, class: None } | Self::BorrowEscapes { name } => {
-                Some(format!("declare the parameter `move T {name}`"))
+            Self::BorrowEscapes { name } if name.contains('.') => {
+                Some(format!("copy `{name}` first, or take it out with `move {name}`"))
+            }
+            Self::BorrowEscapes { name } => {
+                Some(format!("copy `{name}` first: another name in this callable can still reach its value"))
+            }
+            Self::MoveOfNonOwningName { class: None, .. } => {
+                Some("remove `move`; it applies only when a value crosses to another isolate".to_string())
             }
             Self::MoveOfNonOwningName { class: Some(_), .. } => {
                 Some("remove `move`: Shared and Copied values pass without it".to_string())
@@ -315,7 +316,7 @@ impl SemanticIssueKind {
             Self::MoveInLoopWithoutReassignment { name } => {
                 Some(format!("assign `{name}` a new value before the end of the loop body"))
             }
-            Self::DestructiveReadWithoutEmpty { .. } => Some("use `exchange(<place>, move <value>)`".to_string()),
+            Self::DestructiveReadWithoutEmpty { .. } => Some("use `exchange(<place>, <value>)`".to_string()),
             Self::ImmutableFieldNotShared { .. } => {
                 Some("declare the field with a Shared type, such as a primitive, string or `[Immutable]` type".to_string())
             }
