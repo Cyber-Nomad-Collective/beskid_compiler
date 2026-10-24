@@ -59,8 +59,8 @@ impl IsleContext<'_, '_, '_, '_> {
         Some(object)
     }
 
-    /// The receiver word of a primitive: integers are extended to the word (signed types by
-    /// sign, `bool`, `char` and unsigned types by zero), floats keep their bit pattern.
+    /// The receiver word of a primitive: integers, `bool` and `char` are zero-extended to the
+    /// word, floats keep their bit pattern; the witness thunk narrows the word back.
     fn widen_receiver_word(&mut self, value: Value, ty: Type, pointer: Type) -> Option<Value> {
         let actual = self.builder.func.dfg.value_type(value);
         (actual == ty).then_some(())?;

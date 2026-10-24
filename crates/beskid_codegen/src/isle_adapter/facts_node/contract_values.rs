@@ -47,11 +47,14 @@ impl SyntaxNodeFacts<'_> {
         Some(ContractDispatchCall { slot: dispatch.slot, signature })
     }
 
-    /// Whether the direct method call at `key` reads its receiver word out of a contract box.
+    /// Whether the direct method call at `key` reads its receiver word out of a contract box: the
+    /// callee it imports is a method definition (conf2's static selection on a local or an
+    /// injected field) and the receiver argument is a contract value.
     pub(super) fn contract_value_receiver_impl(&self, key: AstNodeKey) -> bool {
-        let Some(beskid_queries::CallLowering::Direct(declaration)) = self.query(beskid_queries::call_lowering(self.db, key))
-        else {
-            return false;
+        let declaration = match self.direct_callee_impl(key) {
+            Some(beskid_isle::DirectCallee::Item(declaration))
+            | Some(beskid_isle::DirectCallee::SpecializedItem { declaration, .. }) => declaration,
+            _ => return false,
         };
         if self.query(beskid_queries::node_kind(self.db, declaration)) != Some(beskid_queries::IndexedNodeKind::MethodDefinition)
         {
