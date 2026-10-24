@@ -1,19 +1,18 @@
 //! Generated hook items stay out of editor surfaces.
 //!
-//! Hook items are compiler-generated declarations whose names begin `__BeskidHook`. This local
-//! helper has the shape of `beskid_analysis::composition::is_hook_item_name`; integration swaps
-//! the body for that function.
+//! Hook items are compiler-generated declarations (hook functions, hook argument and record types,
+//! and the locals and parameters that carry records); the composition pass names them.
 
-const HOOK_PREFIX: &str = "__BeskidHook";
+use beskid_analysis::composition::hooks::HOOK_ITEM_PREFIX;
 
 /// Whether `name` is a generated hook item.
 pub(crate) fn is_hook_item_name(name: &str) -> bool {
-    name.starts_with(HOOK_PREFIX)
+    beskid_analysis::composition::is_hook_item_name(name)
 }
 
 /// Whether rendered text (a hover body) names a hook item.
 pub(crate) fn mentions_hook_item(text: &str) -> bool {
-    text.contains(HOOK_PREFIX)
+    text.contains(HOOK_ITEM_PREFIX)
 }
 
 #[cfg(test)]
