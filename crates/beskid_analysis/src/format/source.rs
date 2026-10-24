@@ -4,6 +4,7 @@
 //! call [`format_source`], so the editor and the CLI always agree. Formatting is syntax-only: it
 //! reads nothing but the given text.
 
+use crate::analysis::diagnostic_codes::{internal as internal_codes, parse as parse_codes};
 use crate::analysis::diagnostics::{SemanticDiagnostic, Severity, make_diagnostic};
 use crate::format::emit::{Emit, EmitCtx, EmitError};
 use crate::format::naming_normalize::normalize_program_naming;
@@ -61,7 +62,7 @@ fn parse_strict(source_name: &str, source: &str) -> Result<ParsedSource, FormatE
     let mut pairs = BeskidParser::parse(Rule::Program, source)
         .map_err(|err| FormatError::Parse(Box::new(pest_error_diagnostic(source_name, source, &err))))?;
     let pair = pairs.next().ok_or_else(|| {
-        FormatError::Parse(Box::new(whole_file_diagnostic(source_name, source, "no program found in source")))
+        FormatError::Parse(Box::new(whole_file_diagnostic(source_name, source, parse_codes::EMPTY_SOURCE, "no program found in source")))
     })?;
     let comments = trivia::collect_comments(source, pair.clone().into_inner());
     let doc_texts = pair
@@ -77,7 +78,12 @@ fn parse_strict(source_name: &str, source: &str) -> Result<ParsedSource, FormatE
     Ok(ParsedSource { program, comments, doc_texts })
 }
 
-fn whole_file_diagnostic(source_name: &str, source: &str, message: impl Into<String>) -> SemanticDiagnostic {
+fn whole_file_diagnostic(
+    source_name: &str,
+    source: &str,
+    code: &str,
+    message: impl Into<String>,
+) -> SemanticDiagnostic {
     let end = if source.is_empty() { 0 } else { 1.min(source.len()) };
     make_diagnostic(
         source_name,
@@ -86,13 +92,13 @@ fn whole_file_diagnostic(source_name: &str, source: &str, message: impl Into<Str
         message,
         "format",
         None,
-        Some("format".to_string()),
+        Some(code.to_string()),
         Severity::Error,
     )
 }
 
 fn internal(source_name: &str, source: &str, message: impl Into<String>) -> FormatError {
-    FormatError::Internal(Box::new(whole_file_diagnostic(source_name, source, message)))
+    FormatError::Internal(Box::new(whole_file_diagnostic(source_name, source, internal_codes::FORMATTER_FAILURE, message)))
 }
 
 /// Format `source` in the house style.

@@ -89,10 +89,11 @@ pub(crate) fn project_preparation_failure(
     };
     if let Some(structured) = services::structured_diagnostics(error) {
         let mut mapper = SourceMapper::new();
+        let mut buffer = BufferNames::new(uri);
         let (local, foreign): (Vec<_>, Vec<_>) = structured
             .into_iter()
             .map(|diagnostic| mapper.map_diagnostic(diagnostic))
-            .partition(|diagnostic| names_buffer(uri, diagnostic.file_name()));
+            .partition(|diagnostic| buffer.names(diagnostic.file_name()));
         let mut facts =
             local.into_iter().map(syntax_diagnostic_from_semantic).filter(|fact| !covered(fact)).collect::<Vec<_>>();
         if let Some(first) = foreign.into_iter().find(|diagnostic| diagnostic.severity == Severity::Error) {
@@ -102,7 +103,7 @@ pub(crate) fn project_preparation_failure(
                 end: 0,
                 severity: SyntaxDiagnosticSeverity::Error,
                 code: first.code.clone(),
-                message: format!("Project preparation failed in another file: {}", first.message),
+                message: format!("project preparation failed in another file: {}", first.message),
                 source: "beskid".to_string(),
                 detail: DiagnosticDetail { uri: Some(uri.to_string()), ..DiagnosticDetail::default() },
             };
@@ -126,8 +127,8 @@ pub(crate) fn project_preparation_failure(
         start: 0,
         end: 0,
         severity: SyntaxDiagnosticSeverity::Error,
-        code: Some("project-preparation".to_string()),
-        message: format!("Project preparation failed: {}", first_line(&error.to_string())),
+        code: Some(diagnostic_codes::project_files::PREPARATION_FAILED.to_string()),
+        message: format!("project preparation failed: {}", first_line(&error.to_string())),
         source: "beskid".to_string(),
         detail: DiagnosticDetail::default(),
     }]
@@ -137,14 +138,32 @@ fn first_line(text: &str) -> &str {
     text.lines().next().unwrap_or_default().trim()
 }
 
-/// Whether a diagnostic file name (a path or a `file:` URI string) names the buffer at `uri`.
-fn names_buffer(uri: &Uri, name: &str) -> bool {
-    if name == uri.as_str() {
-        return true;
+/// The names one buffer goes by: its URI, its path and its canonical path (resolved once).
+/// Diagnostic file names that need canonicalizing are resolved once each.
+struct BufferNames {
+    uri: String,
+    path: Option<std::path::PathBuf>,
+    canonical: Option<std::path::PathBuf>,
+    resolved: std::collections::HashMap<String, bool>,
+}
+
+impl BufferNames {
+    fn new(uri: &Uri) -> Self {
+        let path = uri.to_file_path().map(|path| path.into_owned());
+        let canonical = path.as_ref().and_then(|path| path.canonicalize().ok());
+        Self { uri: uri.to_string(), path, canonical, resolved: std::collections::HashMap::new() }
     }
-    let Some(path) = uri.to_file_path() else { return false };
-    let (name, path) = (std::path::Path::new(name), path.as_ref());
-    name == path || (name.canonicalize().ok().zip(path.canonicalize().ok())).is_some_and(|(left, right)| left == right)
+
+    /// Whether a diagnostic file name (a path or a `file:` URI string) names this buffer.
+    fn names(&mut self, name: &str) -> bool {
+        if name == self.uri || self.path.as_deref().is_some_and(|path| path == std::path::Path::new(name)) {
+            return true;
+        }
+        let Some(canonical) = self.canonical.as_deref() else { return false };
+        *self.resolved.entry(name.to_string()).or_insert_with(|| {
+            std::path::Path::new(name).canonicalize().is_ok_and(|resolved| resolved == canonical)
+        })
+    }
 }
 
 /// The `file:` URI string for a diagnostic file name (a URI string or an absolute path).
@@ -202,18 +221,32 @@ struct FixData {
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 struct DiagnosticData {
+    /// Fingerprint of the exact buffer text the fixes were computed for ([`text_fingerprint`]).
+    text: String,
     fixes: Vec<FixData>,
+}
+
+/// A stable fingerprint of a buffer text (length and 64-bit FNV-1a), so a fix computed for one
+/// revision is never applied to another, whatever the client's version numbering.
+fn text_fingerprint(text: &str) -> String {
+    let hash = text.bytes().fold(0xcbf2_9ce4_8422_2325_u64, |hash, byte| {
+        (hash ^ u64::from(byte)).wrapping_mul(0x0000_0100_0000_01b3)
+    });
+    format!("{}:{hash:016x}", text.len())
 }
 
 /// Quick fixes for one diagnostic the client sent back with its `data`: every fix the compiler
 /// attached, preferred only when machine-applicable, with a title that says to check the result
-/// otherwise.
-pub(crate) fn quick_fixes_from_data(uri: &Uri, diagnostic: &Diagnostic) -> Vec<CodeAction> {
+/// otherwise. Fixes computed for another revision of the buffer than `text` are refused.
+pub(crate) fn quick_fixes_from_data(uri: &Uri, text: &str, diagnostic: &Diagnostic) -> Vec<CodeAction> {
     let Some(data) =
         diagnostic.data.clone().and_then(|data| serde_json::from_value::<DiagnosticData>(data).ok())
     else {
         return Vec::new();
     };
+    if data.text != text_fingerprint(text) {
+        return Vec::new();
+    }
     data.fixes
         .into_iter()
         .filter_map(|fix| {
@@ -299,13 +332,14 @@ fn entry_buffer_diagnostics(
     assembly: &ProgramAssembly,
     diagnostics: Vec<SemanticDiagnostic>,
 ) -> impl Iterator<Item = SemanticDiagnostic> {
+    let mut mapper = SourceMapper::new();
     let foreign = assembly
         .units
         .iter()
         .enumerate()
         .filter(|(index, _)| *index != assembly.entry_index)
         .flat_map(|(_, unit)| {
-            let authored = SourceMapper::new().authored_name(&unit.logical_name);
+            let authored = mapper.authored_name(&unit.logical_name);
             std::iter::once(unit.logical_name.clone()).chain(authored)
         })
         .collect::<std::collections::HashSet<_>>();
@@ -411,7 +445,7 @@ fn structural_syntax_diagnostics(source_name: &str, source: &str) -> Vec<SyntaxD
                 start: 0,
                 end: 0,
                 severity: SyntaxDiagnosticSeverity::Error,
-                code: Some("parse".to_string()),
+                code: Some(diagnostic_codes::parse::SYNTAX.to_string()),
                 message: first_line(&err.to_string()).to_string(),
                 source: "beskid".to_string(),
                 detail: DiagnosticDetail::default(),
@@ -548,7 +582,8 @@ fn syntax_to_lsp_diagnostics(source: &str, fact: &SyntaxDiagnostic, out: &mut Ve
                     .collect(),
             })
             .collect();
-        serde_json::to_value(DiagnosticData { fixes }).expect("diagnostic data serializes")
+        serde_json::to_value(DiagnosticData { text: text_fingerprint(source), fixes })
+            .expect("diagnostic data serializes")
     });
     let source_tag = Some(fact.source.clone());
     out.push(Diagnostic {
@@ -753,8 +788,8 @@ mod tests {
             "stale typed generation must fail closed to structural diagnostics for the current buffer"
         );
         assert!(
-            collected.iter().all(|diag| diag.code.as_deref() != Some("W1504")),
-            "stale generation must not emit prepare-spine diagnostics such as W1504: {collected:#?}",
+            collected.iter().all(|diag| diag.code.as_deref() != Some("W2101")),
+            "stale generation must not emit prepare-spine diagnostics such as W2101: {collected:#?}",
         );
     }
 
@@ -943,7 +978,7 @@ mod tests {
     fn quick_fixes_come_from_diagnostic_data_and_only_machine_applicable_ones_are_preferred() {
         let uri = Uri::from_str("file:///tmp/Main.bd").expect("uri");
         let diagnostics = lsp_diagnostics_from_syntax(IMMUTABLE, &[immutable_fact()]);
-        let actions = super::quick_fixes_from_data(&uri, &diagnostics[0]);
+        let actions = super::quick_fixes_from_data(&uri, IMMUTABLE, &diagnostics[0]);
         assert_eq!(actions.len(), 2);
         assert_eq!(actions[0].title, "Make `n` mutable");
         assert_eq!(actions[0].is_preferred, Some(true));
@@ -952,7 +987,12 @@ mod tests {
         assert_eq!(edits[0].range.start, edits[0].range.end, "an insertion");
         assert_eq!(actions[1].title, "Rename the second `n` (check the result)");
         assert_eq!(actions[1].is_preferred, Some(false));
-        assert!(super::quick_fixes_from_data(&uri, &diagnostics[1]).is_empty(), "markers carry no fixes");
+        assert!(super::quick_fixes_from_data(&uri, IMMUTABLE, &diagnostics[1]).is_empty(), "markers carry no fixes");
+        let edited = format!("{IMMUTABLE}// edited\n");
+        assert!(
+            super::quick_fixes_from_data(&uri, &edited, &diagnostics[0]).is_empty(),
+            "fixes for an older revision of the buffer are refused"
+        );
     }
 
     #[test]
@@ -1009,7 +1049,8 @@ mod tests {
         let error = anyhow::anyhow!("cannot read /tmp/secret/path\n  --> detail").context("Mod artifact is stale");
         let facts = super::project_preparation_failure(&uri, &error, &[]);
         assert_eq!(facts.len(), 1);
-        assert_eq!(facts[0].message, "Project preparation failed: Mod artifact is stale");
+        assert_eq!(facts[0].message, "project preparation failed: Mod artifact is stale");
+        assert_eq!(facts[0].code.as_deref(), Some("E3040"));
         let file_error = SyntaxDiagnostic { start: 1, end: 2, ..facts[0].clone() };
         assert!(super::project_preparation_failure(&uri, &error, &[file_error]).is_empty());
     }

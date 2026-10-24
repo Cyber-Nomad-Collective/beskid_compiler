@@ -7,8 +7,8 @@ use beskid_analysis::parser::Rule;
 use beskid_analysis::parsing::error::ParseError;
 use beskid_analysis::services::{self, SemanticDiagnosticsError};
 use beskid_analysis::analysis::diagnostics::json;
-use beskid_analysis::analysis::diagnostics::source_map::{self, SourceMapper};
-use beskid_analysis::{MietteReportError, SemanticDiagnostic};
+use beskid_analysis::analysis::diagnostics::source_map;
+use beskid_analysis::SemanticDiagnostic;
 use miette::{Diagnostic, GraphicalReportHandler, Report, Severity};
 use pest::error::Error as PestError;
 use tracing::{error, warn};
@@ -169,33 +169,20 @@ pub fn print_semantic_diagnostics(diagnostics: impl IntoIterator<Item = Semantic
 }
 
 /// Build a single [`Report`] for anything the compiler surfaced through `anyhow` while
-/// preserving structured diagnostics when present.
+/// preserving structured diagnostics found anywhere in the error chain (a build wraps the gate's
+/// diagnostics in context such as the AOT summary line).
 pub fn report_from_anyhow(err: &Error) -> Report {
-    if let Some(wrapped) = err.downcast_ref::<MietteReportError>() {
-        return Report::new(SourceMapper::new().map_diagnostic(wrapped.diagnostic().clone()));
+    let Some(diagnostics) = services::structured_diagnostics(err) else {
+        return miette::miette!("{err:#}");
+    };
+    let mut diagnostics = authored_diagnostics(diagnostics);
+    match diagnostics.len() {
+        0 => miette::miette!("{err:#}"),
+        1 => Report::new(diagnostics.remove(0)),
+        // The bundle renders its first diagnostic and every other one as `related`, so a FAIL line
+        // shows each finding of a legality pass with its own source excerpt.
+        _ => Report::new(SemanticDiagnosticsError::from_diagnostics(diagnostics)),
     }
-    if let Some(bundle) = err.downcast_ref::<SemanticDiagnosticsError>() {
-        return semantic_diagnostics_bundle_report(bundle);
-    }
-    if let Some(diagnostic) =
-        err.downcast_ref::<beskid_analysis::projects::AssemblyError>().and_then(|assembly| assembly.diagnostic())
-    {
-        return Report::new(diagnostic.clone());
-    }
-    miette::miette!("{err:#}")
-}
-
-fn semantic_diagnostics_bundle_report(bundle: &SemanticDiagnosticsError) -> Report {
-    let diagnostics = bundle.diagnostics();
-    if diagnostics.is_empty() {
-        return miette::miette!("semantic errors (empty diagnostic list)");
-    }
-    if diagnostics.len() == 1 {
-        return Report::new(SourceMapper::new().map_diagnostic(diagnostics[0].clone()));
-    }
-    // The bundle renders its first diagnostic and every other one as `related`, so a FAIL line
-    // shows each finding of a legality pass with its own source excerpt.
-    Report::new(SemanticDiagnosticsError::from_diagnostics(authored_diagnostics(diagnostics.iter().cloned())))
 }
 
 #[cfg(test)]
@@ -241,5 +228,26 @@ mod error_format_tests {
         assert_eq!(error_format(), ErrorFormat::Json);
         set_error_format(ErrorFormat::Human);
         assert_eq!(error_format(), ErrorFormat::Human);
+    }
+
+    #[test]
+    fn structured_diagnostics_are_found_below_context_layers() {
+        let error = anyhow::Error::new(beskid_analysis::MietteReportError::new(diagnostic("E1101")))
+            .context("type checking failed")
+            .context("AOT build failed: 1 error");
+        let report = report_from_anyhow(&error);
+        let found = report.downcast_ref::<SemanticDiagnostic>().expect("the coded diagnostic, not the summary");
+        assert_eq!(found.code.as_deref(), Some("E1101"));
+
+        let bundle = anyhow::Error::new(SemanticDiagnosticsError::from_diagnostics(vec![
+            diagnostic("E1101"),
+            diagnostic("E1201"),
+        ]))
+        .context("AOT build failed");
+        let report = report_from_anyhow(&bundle);
+        assert_eq!(report.downcast_ref::<SemanticDiagnosticsError>().map(|bundle| bundle.diagnostics().len()), Some(2));
+
+        let plain = report_from_anyhow(&anyhow::anyhow!("cannot open").context("AOT build failed"));
+        assert!(plain.to_string().contains("AOT build failed"));
     }
 }

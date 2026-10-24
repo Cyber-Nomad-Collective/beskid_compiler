@@ -18,15 +18,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   message, the primary span where the fix goes, labelled related locations,
   help, fixes with applicability (`MachineApplicable`, `MaybeIncorrect`,
   `HasPlaceholders`) and tags (`Unnecessary`, `Deprecated`). The CLI draws it
-  with labels and a help block; the code registry is split into one file per
-  family (parse `E0101`-`E0199`, unused, deprecated), and `W2101` (unused item)
-  is reserved with the `Unnecessary` tag.
+  with labels and a help block.
+- The diagnostic-code registry is the one table of codes, one file per family
+  (parse, semantic, project, macros, internal, project files, lints, unused,
+  deprecated). Every code the compiler emits is registered (a test scans the
+  sources), and named codes are spelled only there. `W2101` (unused item, with
+  the `Unnecessary` tag) replaces `W1504`. The unexpected-syntax-tree condition
+  moves from `E0111` to the internal error `E2106`; formatter failures are
+  `E2107`; an unstructured project-preparation failure is `E3040`.
 - Editor diagnostics: the exact span, the code with a link to the
   diagnostic-code registry page, source `beskid`, the cause message with one
   `Help:` line, related locations as `relatedInformation`, a Hint marker at
   each related place in the buffer, tags, and the fixes in `data`, offered as
   quick fixes (preferred only when machine-applicable; other titles say to
-  check the result). Project manifests get their fixes as quick fixes too. A
+  check the result; fixes computed for another revision of the buffer are
+  refused). Project manifests get their fixes as quick fixes too. A
   failed parse is reported at the parse error, not at the start of the file,
   and a failed project preparation does not repeat a cause the file already
   reports.

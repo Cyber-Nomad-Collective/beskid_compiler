@@ -17,24 +17,8 @@ use super::syntax_context::{
     tokens_before,
 };
 
-/// Parse error codes. The registry entries live in `analysis::diagnostic_codes::parse`.
-pub mod codes {
-    pub const SYNTAX: &str = "E0101";
-    pub const MISSING_SEMICOLON: &str = "E0102";
-    pub const UNCLOSED_DELIMITER: &str = "E0103";
-    pub const HOST_WITHOUT_PARAMETERS: &str = "E0104";
-    pub const INCREMENT_OPERATOR: &str = "E0105";
-    pub const TYPED_LET: &str = "E0106";
-    pub const RESERVED_WORD: &str = "E0107";
-    pub const BLOCK_MATCH_ARM: &str = "E0108";
-    pub const UNKNOWN_ESCAPE: &str = "E0109";
-    pub const INVALID_UNICODE_ESCAPE: &str = "E0110";
-    pub const UNEXPECTED_TREE: &str = "E0111";
-    pub const SELF_PARAMETER: &str = "E0112";
-    pub const EMPTY_SOURCE: &str = "E0113";
-    pub const LONG_CHARACTER_LITERAL: &str = "E0114";
-    pub const COMMA_BETWEEN_FIELDS: &str = "E0115";
-}
+/// Parse error codes, spelled once in the registry.
+pub use crate::analysis::diagnostic_codes::parse as codes;
 
 /// A parse failure as a diagnostic, plus the repaired source when the fix makes it parse.
 #[derive(Debug, Clone)]
