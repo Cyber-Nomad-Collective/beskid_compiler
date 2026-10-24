@@ -1463,7 +1463,7 @@ fn assert_v06_materializer_recovery_policy(policy: crate::projects::AssemblyReco
         assert_eq!(assembly.units.len(), 1, "repaired use cannot authorize Lib.A dependency");
         assert!(assembly.units[0].path.ends_with("Entry.bd"));
     } else {
-        assert!(matches!(result, Err(AssemblyError::Parse { .. })));
+        assert!(matches!(result, Err(AssemblyError::Parse { .. } | AssemblyError::ParseDiagnostic { .. })));
         assert_eq!(calls.load(Ordering::SeqCst), 0, "materializer presence cannot silently change strict policy");
     }
     fs::remove_dir_all(project_root).unwrap();
