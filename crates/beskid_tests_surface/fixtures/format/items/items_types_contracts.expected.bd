@@ -1,6 +1,6 @@
 pub type Number
 {
-    i32 v,
+    i32 v;
 }
 
 pub contract Widget

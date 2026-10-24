@@ -6,10 +6,10 @@ use Core.Text;
 use Core.Testing;
 const Limit = 10;
 const Other = 20;
-pub type Point { i32 x, i32 y,
+pub type Point { i32 x; i32 y;
 
 
- i32 z, }
+ i32 z; }
 pub enum Color { Red, Green, Blue }
 pub i32 First() { return 1; }
 pub i32 Second() { return 2; }

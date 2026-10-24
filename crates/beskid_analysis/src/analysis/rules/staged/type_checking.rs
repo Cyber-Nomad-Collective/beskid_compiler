@@ -172,7 +172,7 @@ mod tests {
         assert!(messages[0].contains(name), "E1214 must name `{name}`: {messages:?}");
     }
 
-    const PAIR: &str = "pub type Pair { i64 a }\n";
+    const PAIR: &str = "pub type Pair { i64 a; }\n";
 
     #[test]
     fn function_top_level_reassignment_reports_e1214_for_each_type() {

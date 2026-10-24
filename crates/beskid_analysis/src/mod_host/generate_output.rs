@@ -216,7 +216,7 @@ mod tests {
     fn layout_v1_splits_typed_items_into_files() {
         let items = materialize_program_items([
             "pub contract DemoStep { DemoStep Run(); }",
-            "pub type DemoFluent { i64 inner }",
+            "pub type DemoFluent { i64 inner; }",
             "pub DemoFluent FromDemo() { return DemoFluent { inner: 0 }; }",
         ])
         .expect("materialize");

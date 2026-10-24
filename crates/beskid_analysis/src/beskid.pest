@@ -235,9 +235,14 @@ StringLiteralValue = ${ SOI ~ StringLiteralValueBody ~ EOI }
 StringContent = { StringInterpolation | StringEscape | StringText }
 StringInterpolation = { PUSH("${") ~ InterpolationExpression ~ DROP ~ "}" }
 InterpolationExpression = !{ Expression }
-StringEscape = { "\\\"" | "\\\\" | "\\${" }
+// `\"`, `\\`, `\${`, `\n`, `\t`, `\r`, `\0` and `\u{...}` are the escapes. The rule accepts a
+// backslash before any character so an unknown escape reaches literal lowering, which reports it
+// with its own code instead of failing the whole string at the grammar level.
+StringEscape = { "\\" ~ ("${" | "u{" ~ (!("}" | "\"") ~ ANY)* ~ "}" | ANY) }
 StringText = { (!("\"" | "\\" | "$") ~ ANY)+ | ("$" ~ !("{")) }
-CharLiteral = @{ "'" ~ ("\\'" | !("'") ~ ANY) ~ "'" }
+// One character or one escape. Escapes are those of strings plus `\'`; like `StringEscape`, the rule
+// accepts a backslash before any character so lowering reports an unknown escape with its own code.
+CharLiteral = @{ "'" ~ ("\\" ~ ("u{" ~ (!("}" | "'") ~ ANY)* ~ "}" | ANY) | !("'" | "\\") ~ ANY) ~ "'" }
 
 CodeLanguageTag = @{ ASCII_ALPHA+ }
 CodeHole = { PUSH("@{") ~ InterpolationExpression ~ DROP ~ "}" }
@@ -369,8 +374,8 @@ InjectField = { KwInject ~ InjectQualifier? ~ BeskidType ~ Identifier }
 Field = { AttributeList? ~ Visibility? ~ (InjectField | EventField | ValueField) }
 
 TypeConformanceList = { ":" ~ PathList }
-// Fields are comma-separated; inline methods follow (commas inside method types must not split members).
-TypeFieldList = { FieldWithDocs ~ ("," ~ DocGap* ~ FieldWithDocs)* ~ ","? }
+// Every field ends with `;` (value, `inject` and event fields alike); inline methods follow.
+TypeFieldList = { (FieldWithDocs ~ ";" ~ DocGap*)+ }
 TypeBody = { TypeFieldList? ~ (AssociatedTypeBindingWithDocs | ImplMethodWithDocs)* }
 TypeDefinition = { AttributeList? ~ Visibility? ~ KwType ~ Identifier ~ GenericParameters? ~ TypeConformanceList? ~ "{" ~ TypeBody? ~ "}" }
 
@@ -461,7 +466,8 @@ LambdaParameterList = { LambdaParameter ~ ("," ~ LambdaParameter)* }
 LambdaParameter = { AttributeList? ~ (BeskidType ~ Identifier | Identifier) }
 LambdaBody = { BlockExpression | Expression }
 
-AssignmentOperator = { "=" | "+=" | "-=" }
+// Every arithmetic operator has a compound assignment.
+AssignmentOperator = { "=" | "+=" | "-=" | "*=" | "/=" | "%=" }
 AssignmentExpression = { LogicalOrExpression ~ (AssignmentOperator ~ AssignmentExpression)? }
 LogicalOrExpression = { LogicalAndExpression ~ ("||" ~ LogicalAndExpression)* }
 LogicalAndExpression = { BitwiseOrExpression ~ ("&&" ~ BitwiseOrExpression)* }

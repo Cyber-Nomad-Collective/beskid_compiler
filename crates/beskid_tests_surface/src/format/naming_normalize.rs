@@ -4,7 +4,7 @@ use beskid_analysis::services::parse_program;
 #[test]
 fn format_normalizes_type_and_field_case() {
     let src = r#"pub type hub_register {
-    bool is_tty,
+    bool is_tty;
 }
 "#;
     let _program = parse_program(src).expect("parse");
@@ -16,7 +16,7 @@ fn format_normalizes_type_and_field_case() {
 #[test]
 fn format_naming_normalization_is_idempotent() {
     let src = r#"pub type bad_type {
-    i32 bad_field,
+    i32 bad_field;
 }
 
 pub unit bad_fn() {

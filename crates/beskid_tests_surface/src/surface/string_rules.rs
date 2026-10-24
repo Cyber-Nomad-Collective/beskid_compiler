@@ -42,8 +42,15 @@ fn parses_string_escape_rule() {
 }
 
 #[test]
-fn rejects_string_escape_rule() {
-    assert_parse_fail(Rule::StringEscape, "\\n");
+fn parses_control_and_unicode_string_escapes() {
+    for escape in ["\\n", "\\t", "\\r", "\\0", "\\u{41}", "\\${"] {
+        assert_parse(Rule::StringEscape, escape);
+    }
+}
+
+#[test]
+fn rejects_string_escape_without_backslash() {
+    assert_parse_fail(Rule::StringEscape, "n");
 }
 
 #[test]

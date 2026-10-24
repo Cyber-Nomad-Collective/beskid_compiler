@@ -88,7 +88,7 @@ fn emit_members<W: Write>(mut members: Vec<Member<'_>>, w: &mut W, cx: &mut Emit
         previous = Some(kind);
         match member {
             Member::Field(field, doc) => {
-                emit_line(w, cx, Line::new(field.span).doc(*doc).blank(blank), ",", |w, cx| field.emit(w, cx))?
+                emit_line(w, cx, Line::new(field.span).doc(*doc).blank(blank), ";", |w, cx| field.emit(w, cx))?
             }
             Member::Binding(binding) => emit_line(w, cx, Line::new(binding.span).blank(blank), ";", |w, cx| {
                 cx.token(w, "type ")?;

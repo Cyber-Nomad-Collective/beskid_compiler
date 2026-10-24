@@ -30,7 +30,7 @@ mod preservation_tests {
     fn inline_type_methods_survive_formatting_with_and_without_fields() {
         for source in [
             "pub type Binding { pub i32 Read() { return 42; } }",
-            "pub type Binding { pub i32 count, pub i32 Read() { return this.count; } }",
+            "pub type Binding { pub i32 count; pub i32 Read() { return this.count; } }",
         ] {
             let original = parse_program(source).expect("parse inline method fixture");
             let Node::TypeDefinition(before) = &original.node.items[0].node else { panic!("type expected") };

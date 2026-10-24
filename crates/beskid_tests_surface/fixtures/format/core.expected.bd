@@ -2,8 +2,8 @@ use Core.Io;
 
 pub type Pair
 {
-    i32 left,
-    i32 right,
+    i32 left;
+    i32 right;
 }
 
 pub enum Result<T>

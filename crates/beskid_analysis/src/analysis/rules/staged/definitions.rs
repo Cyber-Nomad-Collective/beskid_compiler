@@ -630,8 +630,8 @@ mod tests {
     fn inline_methods_see_their_generic_type_parameters() {
         let source = r#"
             pub type Pair<TKey, TValue> {
-                TKey key,
-                TValue value,
+                TKey key;
+                TValue value;
 
                 pub TKey Key() { return this.key; }
                 pub bool Matches(TKey other, TValue payload) { return true; }
@@ -643,7 +643,7 @@ mod tests {
     #[test]
     fn impl_methods_see_their_impl_generic_parameters() {
         let source = r#"
-            pub type Box<T> { T value }
+            pub type Box<T> { T value; }
             impl<T> Box<T> {
                 pub T Get() { return this.value; }
             }
@@ -657,7 +657,7 @@ mod tests {
     fn methods_see_their_own_generic_parameters() {
         let source = r#"
             pub type Seq<T> {
-                T head,
+                T head;
 
                 pub U Map<U>((T) => U project, U fallback) { return fallback; }
             }
@@ -669,7 +669,7 @@ mod tests {
     fn inline_methods_still_reject_undeclared_types() {
         let source = r#"
             pub type Holder<T> {
-                T value,
+                T value;
 
                 pub Missing Get(T other) { return this.value; }
             }

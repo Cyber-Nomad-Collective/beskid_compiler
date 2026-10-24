@@ -20,8 +20,8 @@ use Core.Text;
 pub type Point
 {
     // Comment before the first field.
-    i32 x, // trailing comment on a field
-    /* inline block comment before a field */ i32 y,
+    i32 x; // trailing comment on a field
+    /* inline block comment before a field */ i32 y;
     // Comment after the last field.
 }
 
@@ -173,15 +173,15 @@ fn parse_error_is_an_error_and_never_repaired() {
 
 #[test]
 fn consecutive_uses_fields_and_variants_stay_together() {
-    let source = "use Core.Io;\nuse Core.Text;\ntype P { i32 x, i32 y, }\nenum E { A, B, }\n";
+    let source = "use Core.Io;\nuse Core.Text;\ntype P { i32 x; i32 y; }\nenum E { A, B, }\n";
     let expected = concat!(
         "use Core.Io;\n",
         "use Core.Text;\n",
         "\n",
         "type P\n",
         "{\n",
-        "    i32 x,\n",
-        "    i32 y,\n",
+        "    i32 x;\n",
+        "    i32 y;\n",
         "}\n",
         "\n",
         "enum E\n",
@@ -195,7 +195,7 @@ fn consecutive_uses_fields_and_variants_stay_together() {
 
 #[test]
 fn author_blank_lines_are_kept_once_and_runs_collapse() {
-    let source = "use Core.Io;\n\n\n\nuse Core.Text;\ntype P {\n\n    i32 x,\n\n\n    i32 y,\n\n}\n";
+    let source = "use Core.Io;\n\n\n\nuse Core.Text;\ntype P {\n\n    i32 x;\n\n\n    i32 y;\n\n}\n";
     let expected = concat!(
         "use Core.Io;\n",
         "\n",
@@ -203,9 +203,9 @@ fn author_blank_lines_are_kept_once_and_runs_collapse() {
         "\n",
         "type P\n",
         "{\n",
-        "    i32 x,\n",
+        "    i32 x;\n",
         "\n",
-        "    i32 y,\n",
+        "    i32 y;\n",
         "}\n",
     );
     assert_eq!(fmt(source), expected);
@@ -213,18 +213,18 @@ fn author_blank_lines_are_kept_once_and_runs_collapse() {
 
 #[test]
 fn different_item_kinds_are_separated_like_csharp() {
-    let source = "use Core.Io;\ntype A { i32 x, }\ntype B { i32 y, }\ni32 F() { return 1; }\ni32 G() { return 2; }\n";
+    let source = "use Core.Io;\ntype A { i32 x; }\ntype B { i32 y; }\ni32 F() { return 1; }\ni32 G() { return 2; }\n";
     let expected = concat!(
         "use Core.Io;\n",
         "\n",
         "type A\n",
         "{\n",
-        "    i32 x,\n",
+        "    i32 x;\n",
         "}\n",
         "\n",
         "type B\n",
         "{\n",
-        "    i32 y,\n",
+        "    i32 y;\n",
         "}\n",
         "\n",
         "i32 F()\n",
@@ -242,11 +242,11 @@ fn different_item_kinds_are_separated_like_csharp() {
 
 #[test]
 fn fields_and_methods_are_separated_and_methods_stand_apart() {
-    let source = "type C { i32 count, i32 Get() { return 1; } i32 Set() { return 2; } }\n";
+    let source = "type C { i32 count; i32 Get() { return 1; } i32 Set() { return 2; } }\n";
     let expected = concat!(
         "type C\n",
         "{\n",
-        "    i32 count,\n",
+        "    i32 count;\n",
         "\n",
         "    i32 Get()\n",
         "    {\n",

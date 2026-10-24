@@ -14,7 +14,10 @@ pub(in crate::semantic_contract) fn event_operation_tracked(
             let operation = match assignment.op.node {
                 beskid_analysis::syntax::AssignOp::AddAssign => EventOperationKind::Subscribe,
                 beskid_analysis::syntax::AssignOp::SubAssign => EventOperationKind::UnsubscribeFirst,
-                beskid_analysis::syntax::AssignOp::Assign => return None,
+                beskid_analysis::syntax::AssignOp::Assign
+                | beskid_analysis::syntax::AssignOp::MulAssign
+                | beskid_analysis::syntax::AssignOp::DivAssign
+                | beskid_analysis::syntax::AssignOp::RemAssign => return None,
             };
             let target = normalized_expression_node(
                 index,

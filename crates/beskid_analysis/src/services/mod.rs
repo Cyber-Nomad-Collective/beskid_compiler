@@ -11,6 +11,8 @@ mod entry_session;
 mod front_end;
 mod input;
 mod parse;
+#[cfg(test)]
+mod parse_diagnostics_tests;
 mod parse_recovery;
 mod prepare;
 mod project;

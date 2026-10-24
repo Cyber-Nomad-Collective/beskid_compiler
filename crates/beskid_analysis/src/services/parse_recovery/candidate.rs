@@ -36,3 +36,15 @@ impl RepairCandidate {
         Self { position, kind: RepairKind::Replace { len, text: text.to_string() }, reason, priority }
     }
 }
+
+impl RepairCandidate {
+    /// The repair as the parse diagnostic sees it: an insertion, or something else.
+    pub(crate) fn as_engine_repair(&self) -> crate::parsing::diagnose::EngineRepair<'_> {
+        use crate::parsing::diagnose::EngineRepair;
+        match &self.kind {
+            RepairKind::InsertStatic { text } => EngineRepair::Insert { position: self.position, text },
+            RepairKind::InsertDynamic { text } => EngineRepair::Insert { position: self.position, text },
+            RepairKind::Delete { .. } | RepairKind::Replace { .. } => EngineRepair::Other,
+        }
+    }
+}

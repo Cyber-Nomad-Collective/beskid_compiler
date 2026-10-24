@@ -29,7 +29,7 @@ fn function_attributes_round_trip() {
 fn method_attributes_round_trip_in_type_and_impl_bodies() {
     assert_round_trip(
         "pub attribute Traced(MethodDefinition) { }\n\
-         pub type Counter { i64 count, [Traced] pub i64 Read() { return this.count; } }\n\
+         pub type Counter { i64 count; [Traced] pub i64 Read() { return this.count; } }\n\
          impl Counter { [Traced] pub i64 Twice() { return this.count * 2; } }",
         &["[Traced]\n    pub i64 Read()", "[Traced]\n    pub i64 Twice()"],
     );
@@ -38,7 +38,7 @@ fn method_attributes_round_trip_in_type_and_impl_bodies() {
 #[test]
 fn field_attributes_round_trip() {
     assert_round_trip(
-        "pub attribute Slot(Field) { }\npub type Point { [Slot] i64 x, i64 y }",
+        "pub attribute Slot(Field) { }\npub type Point { [Slot] i64 x; i64 y; }",
         &["[Slot]\n    i64 x,"],
     );
 }
@@ -54,7 +54,7 @@ fn contract_method_attributes_round_trip() {
 #[test]
 fn item_attributes_keep_round_tripping() {
     assert_round_trip(
-        "[Shape]\npub type Box { i64 width }\n[Kind]\npub enum Mode { Fast, Slow }\n[Api]\npub contract Shown { i64 Show(); }",
+        "[Shape]\npub type Box { i64 width; }\n[Kind]\npub enum Mode { Fast, Slow }\n[Api]\npub contract Shown { i64 Show(); }",
         &["[Shape]\npub type Box", "[Kind]\npub enum Mode", "[Api]\npub contract Shown"],
     );
 }

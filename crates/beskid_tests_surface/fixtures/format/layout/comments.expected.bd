@@ -9,9 +9,9 @@ use Core.Text;
 pub type Point
 {
     // fields follow
-    i32 x, // horizontal
+    i32 x; // horizontal
     // vertical next
-    i32 y,
+    i32 y;
     // end of fields
 }
 

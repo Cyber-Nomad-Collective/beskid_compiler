@@ -98,7 +98,7 @@ contract Ordinary {
     #[test]
     fn conforming_names_emit_nothing() {
         let src = r#"
-pub type Hub { bool isTty }
+pub type Hub { bool isTty; }
 pub unit Register(i64 index) { let caps = 0; return; }
 test hub_register_accepts_channel { return; }
 "#;

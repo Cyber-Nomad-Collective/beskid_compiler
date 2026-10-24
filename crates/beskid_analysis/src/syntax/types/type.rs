@@ -282,7 +282,7 @@ mod tests {
 
         let formatted = format_source(
             "<memory>",
-            "type Grid { i64[][] cells, } i64[][] Rows(string[][] names) { i64[][] local = cells; return local; }",
+            "type Grid { i64[][] cells; } i64[][] Rows(string[][] names) { i64[][] local = cells; return local; }",
         )
         .expect("nested array types format");
         assert!(formatted.contains("i64[][] cells"), "{formatted}");
