@@ -410,24 +410,19 @@ pub(super) fn contract_value_member_receiver(
             if !member.node.type_args.is_empty() || prefix.is_empty() {
                 return None;
             }
+            // An unqualified local receiver is denoted by the callee path itself (the lowering
+            // reads the local from its first segment); a field chain by its field segment.
             let receiver = match prefix {
                 [single] if single.node.type_args.is_empty() => {
-                    let identifier = resolve_lexical_declaration(program, index, key.node, &single.node.name.node.name)?;
-                    AstNodeKey { node: identifier, ..key }
+                    resolve_lexical_declaration(program, index, key.node, &single.node.name.node.name)?;
+                    AstNodeKey { node: callee, ..key }
                 }
                 _ => super::layouts::path_projection_segment(db, AstNodeKey { node: callee, ..key }, prefix.len() - 1)?,
             };
             (receiver, member.node.name.node.name.clone())
         }
     };
-    let identity = match index.kind(receiver.node) {
-        Some(NodeKind::Identifier) => local_identity(db, program, index, receiver, None)?,
-        Some(NodeKind::PathSegment) => {
-            super::layouts::nominal_field_projection_in_environment(db, receiver, None)?.ok()?.1
-        }
-        _ => super::calls::generic_source_expression_identity(db, receiver).ok()?,
-    };
-    let GenericSourceTypeIdentity::Contract { qualified_name, .. } = identity else {
+    let GenericSourceTypeIdentity::Contract { qualified_name, .. } = receiver_identity(db, key, receiver, None)? else {
         return None;
     };
     let contract = contract_declaration_for_identity(db, key, &qualified_name)?;

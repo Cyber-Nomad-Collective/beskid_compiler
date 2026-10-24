@@ -814,7 +814,14 @@ fn contract_local_member(
     let contract = resolve_contract_head(db, key, &annotation.node)?;
     Some((|| {
         let signature = contract_member_named(db, contract, member)?;
-        let receiver = AstNodeKey { node: identifier, ..key };
+        // The receiver is the callee path (`g.Greet`): the lowering reads the local from its
+        // first segment, and call-argument collection denotes the receiver the same way.
+        let receiver = index
+            .node_at(program, key.node)
+            .and_then(|node| node.of::<beskid_analysis::syntax::CallExpression>())
+            .and_then(|call| index.direct_child_id(program, key.node, DynNodeRef::from(call.callee.as_ref())))
+            .map(|callee| AstNodeKey { node: normalized_expression_node(index, callee), ..key })
+            .unwrap_or(AstNodeKey { node: identifier, ..key });
         // Static selection (the fast path): an immutable local initialized with a value of one
         // non-generic nominal type calls that type's implementation directly, with the receiver
         // read out of the box. Everything else (`mut`, a contract-typed or primitive initializer,
