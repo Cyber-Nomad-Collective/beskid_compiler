@@ -130,7 +130,7 @@ fn closed_stdout_ends_quietly_without_abort_or_panic() {
     let fixture = Fixture::new();
     let mut child = fixture
         .command()
-        .args(["dev", "capabilities"])
+        .args(["dev", "capabilities", "--json"])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()

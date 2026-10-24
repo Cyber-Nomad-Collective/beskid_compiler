@@ -737,3 +737,16 @@ fn v067_capability_document_reports_the_runtime_abi() {
     assert_eq!(document["runtimeAbi"], u64::from(beskid_abi::BESKID_RUNTIME_ABI_VERSION));
     assert!(document["runtimeAbi"].is_u64(), "runtimeAbi is a number the extension can compare: {document}");
 }
+
+#[test]
+fn v067_preview_label_replaces_the_manifest_version() {
+    use super::app::{ResolveVersion, VERSION};
+    assert_eq!(ResolveVersion(Some("0.6.7-preview.3"), "0.6.7"), "0.6.7-preview.3");
+    assert_eq!(ResolveVersion(None, "0.6.7"), "0.6.7");
+    assert_eq!(ResolveVersion(Some(""), "0.6.7"), "0.6.7", "an empty label keeps the manifest version");
+    let expected = option_env!("BESKID_PREVIEW_LABEL").filter(|label| !label.is_empty()).unwrap_or(env!("CARGO_PKG_VERSION"));
+    assert_eq!(VERSION, expected);
+    assert_eq!(super::app::CapabilityDocument()["cliVersion"], VERSION);
+    let rendered = Cli::command().render_version().to_string();
+    assert!(rendered.contains(VERSION), "{rendered}");
+}

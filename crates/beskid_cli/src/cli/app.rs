@@ -15,9 +15,23 @@ use std::env;
 use super::dev::{DevArgs, DevCommand, DevProjectCommand, DevSyntaxCommand};
 use super::docs::{anyhow_to_miette, ensure_corelib_ready, maybe_generate_docs_for_pack};
 
+/// Version shown by `beskid --version` and `dev capabilities`: the preview label when the build set
+/// `BESKID_PREVIEW_LABEL` (for example `0.6.7-preview.3`), else the manifest version. Read at build
+/// time, never at run time.
+pub const VERSION: &str = ResolveVersion(option_env!("BESKID_PREVIEW_LABEL"), env!("CARGO_PKG_VERSION"));
+
+/// A non-empty `label` replaces the manifest version.
+#[allow(non_snake_case)]
+pub const fn ResolveVersion(label: Option<&'static str>, manifest: &'static str) -> &'static str {
+    match label {
+        Some(label) if !label.is_empty() => label,
+        _ => manifest,
+    }
+}
+
 /// Parsed canonical user-task invocation.
 #[derive(Parser)]
-#[command(name = "beskid", about = "beskid application tooling", version, author)]
+#[command(name = "beskid", about = "beskid application tooling", version = VERSION, author)]
 #[command(
     after_help = "First project:\n  beskid new hello\n  cd hello\n  beskid add <package>[@<version>]\n  beskid run\n\nUse `beskid dev --help` for compiler inspection and maintenance."
 )]
@@ -244,7 +258,7 @@ pub(crate) fn CapabilityDocument() -> serde_json::Value {
         .collect::<Vec<_>>();
     serde_json::json!({
         "schemaVersion": 1,
-        "cliVersion": env!("CARGO_PKG_VERSION"),
+        "cliVersion": VERSION,
         "runtimeAbi": beskid_abi::BESKID_RUNTIME_ABI_VERSION,
         "commands": commands,
         "devCommands": dev_commands,
