@@ -57,6 +57,14 @@ pub enum CompositionIssue {
     WithWithoutLaunch { scope_name: String, span: SpanInfo },
     InjectOnConstructor { span: SpanInfo },
     HostInModProject { span: SpanInfo },
+    /// `launch Host(...)` passes another number of arguments than the host declares.
+    /// `cross_unit`: the host is declared in another unit, which cannot take `launch` arguments.
+    LaunchArgumentCount { host_name: String, expected: usize, found: usize, cross_unit: bool, span: SpanInfo },
+    /// `with Scope(...)` passes another number of arguments than the scope declares.
+    WithArgumentCount { scope_name: String, expected: usize, found: usize, span: SpanInfo },
+    /// A host used as a base declares parameters (on itself or on one of its scopes); only the
+    /// launched host receives `launch` and `with` arguments.
+    BaseHostParameters { host_name: String, span: SpanInfo },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -124,7 +132,10 @@ pub fn to_semantic_issue(issue: &CompositionIssue) -> Option<(SpanInfo, Semantic
         | CompositionIssue::RegisteredContract { .. }
         | CompositionIssue::UnconstructibleRegistration { .. }
         | CompositionIssue::NonConformingRegistration { .. }
-        | CompositionIssue::WithWithoutLaunch { .. } => None,
+        | CompositionIssue::WithWithoutLaunch { .. }
+        | CompositionIssue::LaunchArgumentCount { .. }
+        | CompositionIssue::WithArgumentCount { .. }
+        | CompositionIssue::BaseHostParameters { .. } => None,
     }
 }
 
@@ -153,5 +164,8 @@ pub fn composition_issue_code(issue: &CompositionIssue) -> &'static str {
         CompositionIssue::UnconstructibleRegistration { .. } => "E1719",
         CompositionIssue::NonConformingRegistration { .. } => "E1720",
         CompositionIssue::WithWithoutLaunch { .. } => "E1721",
+        CompositionIssue::LaunchArgumentCount { .. } => "E1722",
+        CompositionIssue::WithArgumentCount { .. } => "E1708",
+        CompositionIssue::BaseHostParameters { .. } => "E1723",
     }
 }

@@ -40,18 +40,29 @@ pub struct CollectedHook {
     pub kind: ScopeHookKind,
     pub source_node_id: crate::syntax::AstNodeId,
     pub span: crate::syntax::SpanInfo,
+    /// Whether the generated hook function takes the host or scope record first.
+    pub takes_record: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LaunchSite {
     pub host_name: String,
     pub span: crate::syntax::SpanInfo,
+    /// Arguments left on the statement: expansion moves a matching argument list into the
+    /// record local, so any argument left here does not match the host's parameters.
+    pub argument_count: usize,
+    /// Whether the generated record local precedes the statement.
+    pub arguments_bound: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WithSite {
     pub scope_name: String,
     pub span: crate::syntax::SpanInfo,
+    /// Arguments left on the statement (see [`LaunchSite::argument_count`]).
+    pub argument_count: usize,
+    /// Whether the generated record local precedes the statement.
+    pub arguments_bound: bool,
     /// Whether a `launch` precedes this `with` in its own block or an enclosing block of the
     /// same function body. Lowering reaches the launched container only that way.
     pub after_launch: bool,
@@ -180,13 +191,15 @@ fn collect_statements_outside_ordered_positions(items: &[Spanned<Node>], collect
                     collected.with_sites.push(WithSite {
                         scope_name: with_stmt.node.scope_name.node.name.clone(),
                         span: with_stmt.span,
+                        argument_count: with_stmt.node.arguments.len(),
+                        arguments_bound: false,
                         after_launch: false,
                     });
                 }
                 crate::syntax::Statement::Launch(launch_stmt)
                     if !collected.launches.iter().any(|site| site.span == launch_stmt.span) =>
                 {
-                    record_launch_site(collected, &launch_stmt.node.host_path, launch_stmt.span);
+                    record_launch_site(collected, launch_stmt, false);
                 }
                 _ => {}
             }
@@ -239,18 +252,24 @@ fn collect_launch_and_with_statements(
     collected: &mut CollectedComposition,
     mut launched: bool,
 ) {
+    let mut previous: Option<&crate::syntax::Statement> = None;
     for statement in statements {
+        let bound = |local: String| {
+            matches!(previous, Some(crate::syntax::Statement::Let(binding)) if binding.node.name.node.name == local)
+        };
         match &statement.node {
             crate::syntax::Statement::With(with_stmt) => {
                 collected.with_sites.push(WithSite {
                     scope_name: with_stmt.node.scope_name.node.name.clone(),
                     span: with_stmt.span,
+                    argument_count: with_stmt.node.arguments.len(),
+                    arguments_bound: bound(super::hooks::scope_arguments_local(with_stmt.span)),
                     after_launch: launched,
                 });
                 collect_launch_and_with_statements(&with_stmt.node.body.node.statements, collected, launched);
             }
             crate::syntax::Statement::Launch(launch_stmt) => {
-                record_launch_site(collected, &launch_stmt.node.host_path, launch_stmt.span);
+                record_launch_site(collected, launch_stmt, bound(super::hooks::launch_arguments_local(launch_stmt.span)));
                 launched = true;
             }
             crate::syntax::Statement::If(if_stmt) => {
@@ -267,15 +286,21 @@ fn collect_launch_and_with_statements(
             }
             _ => {}
         }
+        previous = Some(&statement.node);
     }
 }
 
 fn record_launch_site(
     collected: &mut CollectedComposition,
-    host_path: &Spanned<crate::syntax::Path>,
-    span: crate::syntax::SpanInfo,
+    launch: &Spanned<crate::syntax::LaunchStatement>,
+    arguments_bound: bool,
 ) {
-    collected.launches.push(LaunchSite { host_name: path_name(host_path), span });
+    collected.launches.push(LaunchSite {
+        host_name: path_name(&launch.node.host_path),
+        span: launch.span,
+        argument_count: launch.node.arguments.len(),
+        arguments_bound,
+    });
 }
 
 fn collect_host(
@@ -292,6 +317,8 @@ fn collect_host(
             unit: None,
             base_host: host.node.base_host.as_ref().map(path_name),
             span: host.span,
+            parameter_count: host.node.parameters.len(),
+            scope_parameters: false,
         },
     );
 
@@ -321,6 +348,7 @@ fn collect_host(
                     kind: hook.node.kind,
                     source_node_id: hook.id,
                     span: hook.span,
+                    takes_record: !host.node.parameters.is_empty(),
                 });
             }
             HostBodyItem::Registration(entry) => {
@@ -329,6 +357,9 @@ fn collect_host(
         }
     }
 
+    if let Some(entry) = collected.hosts.get_mut(&host_name) {
+        entry.scope_parameters = host_scopes.iter().any(|scope: &CompositionScope| scope.parameter_count > 0);
+    }
     collected.host_registries.insert(host_name.clone(), host_regs);
     collected.host_scopes.insert(host_name.clone(), host_scopes);
     collected.host_hooks.insert(host_name, host_hooks);
@@ -350,6 +381,7 @@ fn collect_scope(
         name: scope.node.name.node.name.clone(),
         parent: Some(parent_scope_id),
         span: scope.span,
+        parameter_count: scope.node.parameters.len(),
     });
 
     for item in &scope.node.body {
@@ -370,6 +402,7 @@ fn collect_scope(
                     kind: hook.node.kind,
                     source_node_id: hook.id,
                     span: hook.span,
+                    takes_record: !scope.node.parameters.is_empty(),
                 })
             }
         }

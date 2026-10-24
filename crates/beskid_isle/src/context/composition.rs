@@ -79,8 +79,15 @@ impl IsleContext<'_, '_, '_, '_> {
     ) -> Option<()> {
         let pointer = dispatch::pointer_type(self.frontend_config);
         for call in calls {
-            (call.signature.params.len() == call.argument_offsets.len()).then_some(())?;
-            let mut arguments = Vec::with_capacity(call.argument_offsets.len());
+            let leading = usize::from(call.record.is_some());
+            (call.signature.params.len() == leading + call.argument_offsets.len()).then_some(())?;
+            let mut arguments = Vec::with_capacity(call.signature.params.len());
+            if let Some(record) = call.record {
+                // The record local is declared just before the `launch`/`with` statement, in
+                // the same block, so it is live at every hook call of that site.
+                let slot = self.facts.local_slot(record)?;
+                arguments.push(self.builder.use_var(self.locals.get(&slot)?.variable));
+            }
             match call.arguments_slot {
                 Some(slot) => {
                     let object = *slots.get(usize::try_from(slot).ok()?)?;

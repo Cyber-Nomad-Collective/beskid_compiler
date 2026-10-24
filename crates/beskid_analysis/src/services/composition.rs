@@ -206,6 +206,35 @@ fn composition_issue_to_diagnostic(
                     .to_string(),
             ),
         ),
+        CompositionIssue::LaunchArgumentCount { host_name, expected, found, cross_unit: true, span } => (
+            *span,
+            format!("`launch {host_name}(...)` cannot pass arguments to a host declared in another unit"),
+            "host parameters from another unit",
+            Some(format!(
+                "`{host_name}` declares {expected} parameter(s) and this `launch` passes {found}; declare the launched host with parameters in the unit that launches it"
+            )),
+        ),
+        CompositionIssue::LaunchArgumentCount { host_name, expected, found, span, .. } => (
+            *span,
+            format!("`launch {host_name}(...)` passes {found} argument(s), but `{host_name}` declares {expected} parameter(s)"),
+            "wrong number of launch arguments",
+            Some(format!("pass one argument for each parameter of `host {host_name}(...)`, in order")),
+        ),
+        CompositionIssue::WithArgumentCount { scope_name, expected, found, span } => (
+            *span,
+            format!("`with {scope_name}(...)` passes {found} argument(s), but scope `{scope_name}` declares {expected} parameter(s)"),
+            "wrong number of scope arguments",
+            Some(format!("pass one argument for each parameter of `scope {scope_name}(...)`, in order")),
+        ),
+        CompositionIssue::BaseHostParameters { host_name, span } => (
+            *span,
+            format!("base host `{host_name}` cannot declare parameters"),
+            "parameters on a base host",
+            Some(
+                "only the launched host receives `launch` arguments, and only its scopes receive `with` arguments; move the parameters to the launched host, or inject a service that holds the value"
+                    .to_string(),
+            ),
+        ),
         CompositionIssue::UnknownRegistrationId { registration_id, span } => (
             span.unwrap_or(program_span),
             format!("composition produced unknown registration id `{registration_id}` while building dependency graph"),
@@ -410,5 +439,53 @@ i32 Main() { launch AppHost(); return 0; }
         fixed.replace_range(start..end, &text);
         assert!(fixed.contains("single PoliteGreeter for Greeter;"), "{fixed}");
         assert!(diagnostics(&fixed).iter().all(|diagnostic| diagnostic.code.as_deref() != Some("E1718")));
+    }
+    #[test]
+    fn launch_and_with_argument_counts_are_checked() {
+        let source = r#"
+host AppHost(string name)
+{
+    scope Visit(i32 id) { }
+}
+i32 Main()
+{
+    launch AppHost();
+    with Visit(1, 2) { }
+    return 0;
+}
+"#;
+        let found = diagnostics(source);
+        let launch = found
+            .iter()
+            .find(|diagnostic| diagnostic.code.as_deref() == Some("E1722"))
+            .unwrap_or_else(|| panic!("E1722 expected: {found:?}"));
+        assert!(launch.message.contains("passes 0 argument(s)"), "{}", launch.message);
+        let with = found
+            .iter()
+            .find(|diagnostic| diagnostic.code.as_deref() == Some("E1708"))
+            .unwrap_or_else(|| panic!("E1708 expected: {found:?}"));
+        assert!(with.message.contains("declares 1 parameter(s)"), "{}", with.message);
+
+        let matching = source.replace("launch AppHost();", "launch AppHost(\"Ada\");").replace("Visit(1, 2)", "Visit(1)");
+        let found = diagnostics(&matching);
+        assert!(
+            found.iter().all(|diagnostic| !matches!(diagnostic.code.as_deref(), Some("E1722" | "E1708"))),
+            "{found:?}"
+        );
+    }
+
+    #[test]
+    fn a_base_host_with_parameters_is_rejected() {
+        let source = r#"
+host BaseHost(string name) { scope Visit(i32 id) { } }
+host AppHost() : BaseHost { }
+i32 Main() { launch AppHost(); return 0; }
+"#;
+        let found = diagnostics(source);
+        let base = found
+            .iter()
+            .find(|diagnostic| diagnostic.code.as_deref() == Some("E1723"))
+            .unwrap_or_else(|| panic!("E1723 expected: {found:?}"));
+        assert!(base.message.contains("`BaseHost`"), "{}", base.message);
     }
 }

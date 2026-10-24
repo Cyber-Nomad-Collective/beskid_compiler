@@ -111,7 +111,7 @@ impl SyntaxNodeFacts<'_> {
             .iter()
             .filter(global)
             .chain(plan.startup_hooks.iter().filter(global))
-            .map(|hook| self.composition_hook_call(key, hook, plan, snapshot))
+            .map(|hook| self.composition_hook_call(hook, fact.arguments, plan, snapshot))
             .collect::<Option<Vec<_>>>()?;
         // A `startup` outside global scope is rejected by composition (E1717); never drop one.
         (plan.startup_hooks.iter().all(|hook| hook.scope_id == ScopeId::GLOBAL)).then_some(())?;
@@ -119,7 +119,7 @@ impl SyntaxNodeFacts<'_> {
             .disposal_hooks
             .iter()
             .filter(global)
-            .map(|hook| self.composition_hook_call(key, hook, plan, snapshot))
+            .map(|hook| self.composition_hook_call(hook, fact.arguments, plan, snapshot))
             .collect::<Option<Vec<_>>>()?;
         Some(CompositionLaunchPlan {
             site: key,
@@ -146,7 +146,7 @@ impl SyntaxNodeFacts<'_> {
             hooks
                 .iter()
                 .filter(|hook| hook.scope_id == *scope_id)
-                .map(|hook| self.composition_hook_call(key, hook, plan, snapshot))
+                .map(|hook| self.composition_hook_call(hook, fact.arguments, plan, snapshot))
                 .collect::<Option<Vec<_>>>()
         };
         let init = calls(&plan.init_hooks)?;
@@ -154,12 +154,13 @@ impl SyntaxNodeFacts<'_> {
         Some(CompositionScopePlan { site: key, scope_id: scope_id.0, parent_scope_id, body: fact.body, init, dispose })
     }
 
-    /// One planned hook call: the generated hook function and, for a hook with parameters, the
-    /// slot and injected-field offsets of its argument object in parameter order.
+    /// One planned hook call: the generated hook function, the site's record local when the hook
+    /// takes its host or scope record, and, for a hook with injected parameters, the slot and
+    /// injected-field offsets of its argument object in parameter order.
     fn composition_hook_call(
         &self,
-        _site: AstNodeKey,
         hook: &CompositionHookPlan,
+        site_record: Option<AstNodeKey>,
         plan: &BindingPlan,
         snapshot: &CompositionSnapshot,
     ) -> Option<CompositionHookCall> {
@@ -189,11 +190,20 @@ impl SyntaxNodeFacts<'_> {
                 (Some(slot.0), fields.into_iter().map(|(_, offset)| offset).collect::<Vec<_>>())
             }
         };
-        // Every argument is one service reference loaded from its injected field.
+        // A hook that takes the record needs the site's record local; one that does not never
+        // receives it.
+        let record = if hook.takes_arguments_record { Some(site_record?) } else { None };
+        // The record and every service argument are one object reference each.
         let pointer = self.isa?.pointer_type();
-        (signature.params.len() == argument_offsets.len()
+        (signature.params.len() == usize::from(record.is_some()) + argument_offsets.len()
             && signature.params.iter().all(|parameter| parameter.value_type == pointer))
         .then_some(())?;
-        Some(CompositionHookCall { function: DirectCallee::item(function), signature, arguments_slot, argument_offsets })
+        Some(CompositionHookCall {
+            function: DirectCallee::item(function),
+            signature,
+            record,
+            arguments_slot,
+            argument_offsets,
+        })
     }
 }

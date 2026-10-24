@@ -756,3 +756,64 @@ i32 Main(bool early)
     }
     assert_eq!(calls_of(&clif, "composition_launch"), 1);
 }
+
+#[test]
+fn hooks_receive_the_launch_and_with_arguments_as_records() {
+    use std::sync::Arc;
+
+    use beskid_analysis::composition::{CompositionInput, is_hook_item_name, resolve_composition};
+
+    let source = r#"
+type Greeter {}
+host AppHost(i64 count)
+{
+    registry { single Greeter; }
+    startup(Greeter greeter) { Note(count); }
+    scope Visit(i64 id)
+    {
+        init() { Note(id); }
+        dispose() { Note(id); }
+    }
+}
+unit Note(i64 value) { }
+i32 Main(bool early)
+{
+    launch AppHost(3);
+    with Visit(7)
+    {
+        if early { return 1; }
+    }
+    return 0;
+}
+"#;
+    let (input, isa, root) = item_fixture_with_root(source);
+    let result = resolve_composition(CompositionInput {
+        program: &input.typed_program().assembly.entry_unit().program,
+        is_mod_project: false,
+    });
+    assert!(result.issues.is_empty(), "composition must validate: {:?}", result.issues);
+    assert!(result.plan.startup_hooks.iter().chain(&result.plan.init_hooks).all(|hook| hook.takes_arguments_record));
+    let mut snapshot = result.snapshot;
+    snapshot.source_unit_path = Some(root.unit.path(input.database()).to_path_buf());
+    let generation = input.typed_program().generation;
+    let input = input
+        .with_composition_authority(generation, Arc::new(result.plan), Arc::new(snapshot))
+        .expect("hook functions and argument registrations are exact authority");
+    let items = find_function_definitions(input.database(), root)
+        .into_iter()
+        .map(|key| SyntaxModuleItem {
+            symbol: item_name(input.database(), key).expect("item query").expect("item name").to_string(),
+            key,
+        })
+        .collect::<Vec<_>>();
+    let artifact =
+        lower_syntax_program(&input, isa.as_ref(), &items).expect("hook calls with records lower to verified CLIF");
+    let clif = artifact.functions.iter().find(|function| function.name == "Main").expect("lowered Main").function.display().to_string();
+    let hooks = items.iter().map(|item| item.symbol.clone()).filter(|name| is_hook_item_name(name)).collect::<Vec<_>>();
+    for kind in ["startup", "init"] {
+        let name = hooks.iter().find(|name| name.contains(&format!("_{kind}_"))).expect("hook function");
+        assert_eq!(calls_of(&clif, name), 1, "{kind} runs once with its record:\n{clif}");
+    }
+    let dispose = hooks.iter().find(|name| name.contains("_dispose_")).expect("scope dispose");
+    assert_eq!(calls_of(&clif, dispose), 2, "scope dispose runs on both exits:\n{clif}");
+}

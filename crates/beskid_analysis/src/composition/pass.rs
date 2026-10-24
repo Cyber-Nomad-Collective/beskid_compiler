@@ -88,11 +88,42 @@ pub fn resolve_composition_with_imports(
                 span: with_site.span,
             });
         }
-        if !merged_scopes.iter().any(|scope| scope.name == with_site.scope_name) {
-            issues.push(CompositionIssue::WithArgsMismatch {
+        match merged_scopes.iter().find(|scope| scope.name == with_site.scope_name) {
+            None => issues.push(CompositionIssue::WithArgsMismatch {
                 scope_name: with_site.scope_name.clone(),
                 span: with_site.span,
-            });
+            }),
+            // Expansion moved a matching argument list into the record local; anything else
+            // (arguments left, or a scope with parameters and no record) does not match.
+            Some(scope)
+                if with_site.argument_count != 0 || (scope.parameter_count > 0 && !with_site.arguments_bound) =>
+            {
+                issues.push(CompositionIssue::WithArgumentCount {
+                    scope_name: with_site.scope_name.clone(),
+                    expected: scope.parameter_count,
+                    found: with_site.argument_count,
+                    span: with_site.span,
+                })
+            }
+            Some(_) => {}
+        }
+    }
+    if let Some((launched, bases)) = host_chain.split_last() {
+        for base in bases {
+            if base.parameter_count > 0 || base.scope_parameters {
+                issues.push(CompositionIssue::BaseHostParameters { host_name: base.name.clone(), span: base.span });
+            }
+        }
+        for site in collected.launches.iter().filter(|site| site.span == launch_span) {
+            if site.argument_count != 0 || (launched.parameter_count > 0 && !site.arguments_bound) {
+                issues.push(CompositionIssue::LaunchArgumentCount {
+                    host_name: launched.name.clone(),
+                    expected: launched.parameter_count,
+                    found: site.argument_count,
+                    cross_unit: launched.unit.is_some(),
+                    span: site.span,
+                });
+            }
         }
     }
 
@@ -248,6 +279,7 @@ pub fn resolve_composition_with_imports(
                         .iter()
                         .find(|registration| registration.implementation == arguments && registration.unit == hook.unit)
                         .map(|registration| registration.id),
+                    takes_arguments_record: hook.takes_record,
                 });
             }
         }

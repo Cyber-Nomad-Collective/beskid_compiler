@@ -82,6 +82,8 @@ pub struct CompositionScope {
     pub name: String,
     pub parent: Option<ScopeId>,
     pub span: SpanInfo,
+    /// Number of parameters the scope declares (`scope Visit(i32 id)`); `with` passes them.
+    pub parameter_count: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -90,6 +92,10 @@ pub struct CompositionHost {
     pub unit: UnitPath,
     pub base_host: Option<String>,
     pub span: SpanInfo,
+    /// Number of parameters the host declares; `launch` passes them.
+    pub parameter_count: usize,
+    /// Whether one of the host's scopes declares parameters.
+    pub scope_parameters: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -132,6 +138,9 @@ pub struct CompositionHookPlan {
     /// The registration of the generated argument type whose injected fields are the hook
     /// parameters in order; `None` for a hook without parameters.
     pub arguments_registration_id: Option<u32>,
+    /// Whether the hook function takes its host's (global hook) or scope's record as first
+    /// parameter: the `launch`/`with` site passes the local it built (see [`super::hooks`]).
+    pub takes_arguments_record: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]

@@ -114,12 +114,15 @@ pub struct CompositionLaunchPlan {
     pub shutdown: Vec<CompositionHookCall>,
 }
 
-/// One call of a generated host-hook function. Its arguments are the injected fields of the
-/// hook's argument object, which the launch installed in `arguments_slot`.
+/// One call of a generated host-hook function. Its arguments are the host or scope record, when
+/// the hook takes one, then the injected fields of the hook's argument object, which the launch
+/// installed in `arguments_slot`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CompositionHookCall {
     pub function: DirectCallee,
     pub signature: Signature,
+    /// The generated `let` of the `launch`/`with` site that holds the record passed first.
+    pub record: Option<AstNodeKey>,
     pub arguments_slot: Option<u32>,
     /// Byte offsets of the argument object's injected fields, in parameter order.
     pub argument_offsets: Vec<u32>,

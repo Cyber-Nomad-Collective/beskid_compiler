@@ -13,6 +13,9 @@ use super::*;
 pub struct CompositionLaunchFact {
     pub site: AstNodeKey,
     pub host: Arc<str>,
+    /// The generated `let` that holds the host record built from the `launch` arguments
+    /// (`beskid_analysis::composition::hooks`); `None` when the host has no parameters.
+    pub arguments: Option<AstNodeKey>,
 }
 
 /// Syntax names a scope; only the assembled frontend snapshot assigns its authoritative ID.
@@ -21,6 +24,8 @@ pub struct CompositionScopeFact {
     pub site: AstNodeKey,
     pub scope_name: Arc<str>,
     pub body: AstNodeKey,
+    /// The generated `let` that holds the scope record built from the `with` arguments.
+    pub arguments: Option<AstNodeKey>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -160,7 +165,7 @@ fn composition_launch_tracked(
     syntax: SyntaxUnitInput,
     key: AstNodeKey,
 ) -> SemanticQueryResult<CompositionLaunchFact> {
-    with_node(db, syntax, key, |_program, _index, node| {
+    with_node(db, syntax, key, |program, index, node| {
         let launch = node.of::<LaunchStatement>()?;
         let host = launch
             .host_path
@@ -170,7 +175,12 @@ fn composition_launch_tracked(
             .map(|segment| segment.node.name.node.name.as_str())
             .collect::<Vec<_>>()
             .join(".");
-        Some(CompositionLaunchFact { site: key, host: Arc::from(host) })
+        let local = beskid_analysis::composition::hooks::launch_arguments_local(node.span()?);
+        Some(CompositionLaunchFact {
+            site: key,
+            host: Arc::from(host),
+            arguments: arguments_local(program, index, key, &local)?,
+        })
     })
 }
 
@@ -184,10 +194,33 @@ fn composition_scope_tracked(
         let with_statement = node.of::<WithStatement>()?;
         let scope_name = &with_statement.scope_name.node.name;
         let body = index.direct_child_id(program, key.node, DynNodeRef::from(&with_statement.body))?;
+        let local = beskid_analysis::composition::hooks::scope_arguments_local(node.span()?);
         Some(CompositionScopeFact {
             site: key,
             scope_name: Arc::from(scope_name.as_str()),
             body: AstNodeKey { node: body, ..key },
+            arguments: arguments_local(program, index, key, &local)?,
         })
     })
+}
+
+/// The generated record `let` named `local` in the unit of `site`: `Some(None)` when there is
+/// none, `None` (no fact) when the name is not unique.
+fn arguments_local(
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    site: AstNodeKey,
+    local: &str,
+) -> Option<Option<AstNodeKey>> {
+    let mut matches = index.ids_of_kind(beskid_analysis::syntax_query::NodeKind::LetStatement).filter(|id| {
+        index
+            .node_at(program, *id)
+            .and_then(|node| node.of::<beskid_analysis::syntax::LetStatement>())
+            .is_some_and(|binding| binding.name.node.name == local)
+    });
+    match (matches.next(), matches.next()) {
+        (None, _) => Some(None),
+        (Some(id), None) => Some(Some(AstNodeKey { node: id, ..site })),
+        (Some(_), Some(_)) => None,
+    }
 }
