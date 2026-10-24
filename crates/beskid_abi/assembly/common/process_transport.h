@@ -340,6 +340,80 @@ static DWORD ChildWindowsPipe(HANDLE *parent, HANDLE *child, int input,
   *child = client;
   return 0;
 }
+/* A bare program name (no separator or drive) is resolved through the PATH
+ * entry of the child's environment block, like execvp: each directory in
+ * order, with ".exe" appended when the name has no extension. Only the first
+ * existing regular file is used; no other search location is consulted. */
+static int ChildWideIsBareName(const wchar_t *s) {
+  if (!*s)
+    return 0;
+  for (; *s; s++)
+    if (*s == L'\\' || *s == L'/' || *s == L':')
+      return 0;
+  return 1;
+}
+static int ChildWideHasDot(const wchar_t *s) {
+  for (; *s; s++)
+    if (*s == L'.')
+      return 1;
+  return 0;
+}
+static wchar_t *ChildResolveFromPath(const wchar_t *exe,
+                                     const wchar_t *environment,
+                                     size_t *allocated) {
+  if (!ChildWideIsBareName(exe))
+    return NULL;
+  const wchar_t *search = NULL;
+  for (const wchar_t *p = environment; *p; p += ChildWideLength(p) + 1)
+    if (ChildWideLength(p) > 4 && p[4] == L'=' &&
+        CompareStringOrdinal(p, 4, L"PATH", 4, TRUE) == CSTR_EQUAL) {
+      search = p + 5;
+      break;
+    }
+  if (!search)
+    return NULL;
+  size_t exe_length = ChildWideLength(exe);
+  int add_extension = !ChildWideHasDot(exe);
+  for (const wchar_t *at = search;;) {
+    const wchar_t *end = at;
+    while (*end && *end != L';')
+      end++;
+    const wchar_t *first = at, *last = end;
+    if (first < last && *first == L'"')
+      first++;
+    if (last > first && last[-1] == L'"')
+      last--;
+    size_t directory = (size_t)(last - first);
+    if (directory) {
+      size_t bytes = (directory + exe_length + 6) * sizeof(wchar_t);
+      wchar_t *candidate = ChildAllocate(bytes);
+      if (!candidate)
+        return NULL;
+      memcpy(candidate, first, directory * sizeof(wchar_t));
+      size_t n = directory;
+      if (candidate[n - 1] != L'\\' && candidate[n - 1] != L'/')
+        candidate[n++] = L'\\';
+      memcpy(candidate + n, exe, exe_length * sizeof(wchar_t));
+      n += exe_length;
+      if (add_extension) {
+        memcpy(candidate + n, L".exe", 4 * sizeof(wchar_t));
+        n += 4;
+      }
+      candidate[n] = 0;
+      DWORD attributes = GetFileAttributesW(candidate);
+      if (attributes != INVALID_FILE_ATTRIBUTES &&
+          !(attributes & FILE_ATTRIBUTE_DIRECTORY)) {
+        *allocated = bytes;
+        return candidate;
+      }
+      ChildFree(candidate, bytes);
+    }
+    if (!*end)
+      break;
+    at = end + 1;
+  }
+  return NULL;
+}
 static int ChildSpawnPlatform(struct ChildTransport *c) {
   size_t en = 0, cn = 0;
   wchar_t *exe = ChildWide(c->executable.data, c->executable.length, &en);
@@ -444,6 +518,13 @@ static int ChildSpawnPlatform(struct ChildTransport *c) {
     ChildFree(w, bytes);
   }
   environment[at] = 0;
+  size_t resolved_bytes = 0;
+  wchar_t *resolved = ChildResolveFromPath(exe, environment, &resolved_bytes);
+  if (resolved) {
+    ChildFree(exe, en);
+    exe = resolved;
+    en = resolved_bytes;
+  }
   for (int i = 0; i < 3; i++)
     if ((os_error = ChildWindowsPipe(&c->pipes[i], &child[i], i == 0,
                                      c->token)))
@@ -562,6 +643,55 @@ static int ChildPipe(int p[2]) {
     }
   return 0;
 }
+/* Runs in the forked child, so it allocates nothing. A program name without
+ * '/' is resolved through the PATH entry of the child's environment (the POSIX
+ * default "/usr/bin:/bin" when it has none), like execvp: each directory in
+ * order, an empty entry meaning the working directory. A directory that denies
+ * access is skipped but reported if no later one runs. Returns only on failure,
+ * with errno set. */
+static void ChildExecute(const char *file, char **args, char **env) {
+  if (!*file) {
+    errno = ENOENT;
+    return;
+  }
+  if (strchr(file, '/')) {
+    execve(file, args, env);
+    return;
+  }
+  const char *search = "/usr/bin:/bin";
+  for (char **entry = env; *entry; entry++)
+    if (!memcmp(*entry, "PATH=", 5)) {
+      search = *entry + 5;
+      break;
+    }
+  size_t file_length = strlen(file);
+  int denied = 0;
+  char candidate[4096];
+  for (const char *at = search;;) {
+    const char *end = at;
+    while (*end && *end != ':')
+      end++;
+    size_t directory = (size_t)(end - at);
+    if (directory + file_length + 2 <= sizeof candidate) {
+      size_t n = 0;
+      if (directory) {
+        memcpy(candidate, at, directory);
+        n = directory;
+        candidate[n++] = '/';
+      }
+      memcpy(candidate + n, file, file_length + 1);
+      execve(candidate, args, env);
+      if (errno == EACCES)
+        denied = 1;
+      else if (errno != ENOENT && errno != ENOTDIR)
+        return;
+    }
+    if (!*end)
+      break;
+    at = end + 1;
+  }
+  errno = denied ? EACCES : ENOENT;
+}
 static int ChildSpawnPlatform(struct ChildTransport *c) {
   int p[3][2] = {{-1, -1}, {-1, -1}, {-1, -1}}, error_pipe[2] = {-1, -1};
   int result = -1, os_error = 0;
@@ -646,7 +776,7 @@ static int ChildSpawnPlatform(struct ChildTransport *c) {
     if (!failure && c->cwd.length && chdir(c->cwd.data))
       failure = errno;
     if (!failure)
-      execve(c->executable.data, args, env);
+      ChildExecute(c->executable.data, args, env);
     if (!failure)
       failure = errno;
     (void)write(3, &failure, sizeof failure);
