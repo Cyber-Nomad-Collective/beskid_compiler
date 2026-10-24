@@ -300,7 +300,7 @@ impl SemanticIssueKind {
             Self::CapturesArgumentNotLiteral => Some("pass the lambda literal".to_string()),
             // An element read through a borrowed name: the name cannot give the element away.
             Self::BorrowEscapes { name } if name.contains('[') => Some(format!(
-                "store a copy of `{name}`, or reach it through an owning name and take it with `exchange({name}, move <value>)`"
+                "take the element out through an owning name with `exchange({name}, move <value>)`, or clone it"
             )),
             // A field read through a borrowed name: the name cannot give the field away.
             Self::BorrowEscapes { name } if name.contains('.') => Some(format!(

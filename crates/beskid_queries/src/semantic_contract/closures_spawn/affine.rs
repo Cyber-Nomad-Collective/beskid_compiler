@@ -248,7 +248,7 @@ pub(in crate::semantic_contract) fn identity_spelling(identity: &GenericSourceTy
 
 /// A short spelling of an index expression for a diagnostic (`xs[i]`, `xs[0]`); anything but a
 /// path or a literal is `..`.
-fn expression_spelling(expression: &beskid_analysis::syntax::Expression) -> String {
+pub(super) fn expression_spelling(expression: &beskid_analysis::syntax::Expression) -> String {
     use beskid_analysis::syntax::{Expression, Literal};
     match expression {
         Expression::Path(path) => {
@@ -1030,6 +1030,9 @@ impl<'a> Analysis<'a> {
                 UseContext::Construction => !(borrowed && self.scope_borrowed_field_value(top)),
                 UseContext::AssignValue { target_is_local: false } => true,
                 UseContext::Argument(call, position) => self.parameter_movable(call, position),
+                // `return xs[i]` through a borrowed root gives the borrowed element away (E1241,
+                // v0.6.7 ruling "Borrowed element return"); through an owning root it is a read.
+                UseContext::ReturnValue => borrowed,
                 _ => false,
             };
             if stored {

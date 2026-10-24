@@ -731,7 +731,7 @@ mod query_gate_kind_tests {
         );
         assert_eq!(
             SemanticIssueKind::BorrowEscapes { name: "chunks[i]".into() }.help().as_deref(),
-            Some("store a copy of `chunks[i]`, or reach it through an owning name and take it with `exchange(chunks[i], move <value>)`")
+            Some("take the element out through an owning name with `exchange(chunks[i], move <value>)`, or clone it")
         );
         assert_eq!(
             SemanticIssueKind::ImplicitAliasOfMovedValue { name: "chunks[0]".into() }.help().as_deref(),

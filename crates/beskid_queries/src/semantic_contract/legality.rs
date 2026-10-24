@@ -1665,6 +1665,41 @@ mod tests {
         }
     }
 
+    /// v0.6.7 ruling "Borrowed element return": returning `xs[i]` of class Moved through a
+    /// borrowed root gives the borrowed element away (E1241); the help names `exchange` and a clone.
+    #[test]
+    fn returning_a_borrowed_element_of_class_moved_escapes() {
+        let types = "[Isolated] pub type Block { u8[] bytes } [Isolated] pub type Holder { Block[] blocks } \
+            Block[] MakeBlocks() { return [Block { bytes: Make() }]; } ";
+        let cases: &[(&str, &[&str])] = &[
+            ("Block First(Block[] blocks) { return blocks[0]; }", &["E1241"]),
+            ("Block At(Block[] blocks, i64 i) { return blocks[i]; }", &["E1241"]),
+            ("Block First(Block[] blocks) { return (blocks[0]); }", &["E1241"]),
+            ("u8[] Bytes(Block[] blocks) { return blocks[0].bytes; }", &["E1241"]),
+            ("Block First(Holder h) { return h.blocks[0]; }", &["E1241"]),
+            ("Block First(Block[] blocks) { let b = blocks[0]; return b; }", &["E1241"]),
+            ("unit Main(Block[] blocks) { let first = () => blocks[0]; return; }", &["E1241"]),
+            // An owned root, an owned temporary and the taken-out value are not borrowed.
+            ("Block First(move Block[] blocks) { return blocks[0]; }", &[]),
+            ("Block First() { return MakeBlocks()[0]; }", &[]),
+            ("Block Take(move Block[] blocks) { return exchange(blocks[0], Block { bytes: Make() }); }", &[]),
+            // Elements of a class other than Moved are plain values.
+            ("i64 First(i64[] values) { return values[0]; }", &[]),
+            ("string First(string[] names) { return names[0]; }", &[]),
+            ("u8 Byte(Block[] blocks) { return blocks[0].bytes[0]; }", &[]),
+        ];
+        for (offset, (body, expected)) in cases.iter().enumerate() {
+            assert_affine(&format!("{types}{body}"), 7960 + offset as u64, expected);
+        }
+        let report = affine_report(&format!("{AFFINE_PRELUDE}{types}Block First(Block[] blocks) {{ return blocks[0]; }}"), 7990);
+        let help = transfer_report(&format!("{AFFINE_PRELUDE}{types}Block First(Block[] blocks) {{ return blocks[0]; }}"), 7991)
+            .into_iter()
+            .find(|(code, ..)| code == "E1241")
+            .map(|(_, _, help)| help)
+            .unwrap_or_default();
+        assert!(help.contains("exchange(blocks[0], move <value>)") && help.contains("clone"), "{report:?} {help}");
+    }
+
     #[test]
     fn a_corelib_scope_borrowed_view_stores_a_borrowed_value() {
         let view = "[Immutable] [ScopeBorrowed] pub type View<T> { [ImmutableStorage] T[] items } \
