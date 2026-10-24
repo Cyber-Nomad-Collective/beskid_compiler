@@ -230,7 +230,7 @@ fn parallel_preparations_of_one_project_never_observe_a_partial_mirror() {
         let at = root.path().join(format!("round-{round}"));
         std::fs::create_dir_all(at.join("src")).unwrap();
         for index in 0..8 {
-            let body = format!("pub type Item{index;} {{ pub i32 Value, }}\n// {}\n", "x".repeat(2 * 1024 * 1024));
+            let body = format!("pub type Item{index} {{ pub i32 Value; }}\n// {}\n", "x".repeat(2 * 1024 * 1024));
             std::fs::write(at.join(format!("src/Unit{index}.bd")), body).unwrap();
         }
         let manifest = at.join("Example.bproj");

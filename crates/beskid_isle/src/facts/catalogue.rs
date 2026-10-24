@@ -109,7 +109,9 @@ pub const fn classify_syntax_node_kind(kind: beskid_queries::IndexedNodeKind) ->
         | Syntax::RegistryEntry
         | Syntax::ScopeDefinition
         | Syntax::ScopeHook
-        | Syntax::CodeStringLiteral => UnsupportedTypedOperation,
+        | Syntax::CodeStringLiteral
+        // `cond ? a : b` parses; its typing and lowering land with the semantic slice.
+        | Syntax::ConditionalExpression => UnsupportedTypedOperation,
 
         Syntax::Node
         | Syntax::ConstantDefinition
@@ -190,6 +192,7 @@ pub const UNSUPPORTED_TYPED_OPERATION_KINDS: &[beskid_queries::IndexedNodeKind] 
     beskid_queries::IndexedNodeKind::RegistryEntry,
     beskid_queries::IndexedNodeKind::ScopeDefinition,
     beskid_queries::IndexedNodeKind::ScopeHook,
+    beskid_queries::IndexedNodeKind::ConditionalExpression,
     beskid_queries::IndexedNodeKind::CodeStringLiteral,
 ];
 

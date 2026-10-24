@@ -99,6 +99,11 @@ impl Resolver {
             Expression::Grouped(grouped_expr) => {
                 self.resolve_expression(&grouped_expr.node.expr);
             }
+            Expression::Conditional(conditional) => {
+                self.resolve_expression(&conditional.node.condition);
+                self.resolve_expression(&conditional.node.then_branch);
+                self.resolve_expression(&conditional.node.else_branch);
+            }
             Expression::Try(try_expr) => {
                 self.resolve_expression(&try_expr.node.expr);
             }

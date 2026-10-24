@@ -42,6 +42,8 @@ pub enum Expression {
     #[ast(child)]
     Assign(Spanned<AssignExpression>),
     #[ast(child)]
+    Conditional(Spanned<super::conditional_expression::ConditionalExpression>),
+    #[ast(child)]
     Binary(Spanned<BinaryExpression>),
     #[ast(child)]
     Unary(Spanned<UnaryExpression>),
@@ -99,6 +101,7 @@ pub(crate) fn parse_expression(pair: Pair<Rule>) -> Result<Spanned<Expression>, 
         Rule::LambdaExpression => parse_lambda_expression(pair),
         Rule::MatchExpression => parse_match_expression(pair),
         Rule::AssignmentExpression => super::assign_expression::parse_assignment_expression(pair),
+        Rule::ConditionalElse => super::conditional_expression::parse_conditional_else(pair),
         Rule::LogicalOrExpression
         | Rule::LogicalAndExpression
         | Rule::BitwiseOrExpression

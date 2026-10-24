@@ -195,6 +195,11 @@ fn scan_expression_residuals(
             scan_expression_residuals(source_name, source, b.node.left.as_ref(), out);
             scan_expression_residuals(source_name, source, b.node.right.as_ref(), out);
         }
+        Expression::Conditional(c) => {
+            scan_expression_residuals(source_name, source, c.node.condition.as_ref(), out);
+            scan_expression_residuals(source_name, source, c.node.then_branch.as_ref(), out);
+            scan_expression_residuals(source_name, source, c.node.else_branch.as_ref(), out);
+        }
         Expression::Unary(u) => {
             scan_expression_residuals(source_name, source, u.node.expr.as_ref(), out);
         }
