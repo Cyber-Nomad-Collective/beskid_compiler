@@ -6,6 +6,7 @@ use salsa::Setter;
 use crate::inputs::ProjectSession;
 use crate::semantic_contract::{SemanticError, SourceUnitId, SyntaxUnitInput, SyntaxUnitRevision};
 
+use super::syntax_fingerprint::expanded_syntax_fingerprint;
 use super::{BeskidDatabase, Db};
 
 impl BeskidDatabase {
@@ -38,7 +39,7 @@ impl BeskidDatabase {
             }
         }
         let program = self.parse_and_expand(unit, &source)?;
-        let tree_fingerprint = Arc::<str>::from(expanded_syntax_fingerprint(&program)?);
+        let tree_fingerprint = Arc::<str>::from(expanded_syntax_fingerprint(&program));
         self.register_expanded_syntax(
             project,
             unit,
@@ -131,7 +132,7 @@ impl BeskidDatabase {
                 same_source = Some((input, Arc::clone(&revision.tree_fingerprint)));
             }
         }
-        let tree_fingerprint = Arc::<str>::from(expanded_syntax_fingerprint(expanded_program)?);
+        let tree_fingerprint = Arc::<str>::from(expanded_syntax_fingerprint(expanded_program));
         if let Some((input, registered)) = same_source
             && registered == tree_fingerprint
         {
@@ -156,7 +157,7 @@ impl BeskidDatabase {
             }
         }
         let program = self.parse_and_expand(unit, &source)?;
-        let tree_fingerprint = Arc::<str>::from(expanded_syntax_fingerprint(&program)?);
+        let tree_fingerprint = Arc::<str>::from(expanded_syntax_fingerprint(&program));
         let input = self.register_expanded_syntax(
             project,
             unit,
@@ -294,32 +295,4 @@ impl BeskidDatabase {
 enum ExpandedRegistration {
     Current(SyntaxUnitInput),
     Changed { source_fingerprint: Arc<str>, tree_fingerprint: Arc<str> },
-}
-
-pub(crate) fn expanded_syntax_fingerprint(
-    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
-) -> Result<String, SemanticError> {
-    let mut structural = serde_json::to_value(program)
-        .map_err(|error| SemanticError::new(format!("failed to fingerprint expanded syntax: {error}")))?;
-    remove_span_fields(&mut structural);
-    let encoded = serde_json::to_string(&structural)
-        .map_err(|error| SemanticError::new(format!("failed to fingerprint expanded syntax: {error}")))?;
-    Ok(beskid_artifacts::content_fingerprint(&encoded))
-}
-
-fn remove_span_fields(value: &mut serde_json::Value) {
-    match value {
-        serde_json::Value::Array(values) => {
-            for value in values {
-                remove_span_fields(value);
-            }
-        }
-        serde_json::Value::Object(fields) => {
-            fields.remove("span");
-            for value in fields.values_mut() {
-                remove_span_fields(value);
-            }
-        }
-        _ => {}
-    }
 }

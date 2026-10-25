@@ -5,7 +5,8 @@ mod files;
 mod lifecycle;
 mod sessions;
 mod syntax;
-pub(crate) use syntax::expanded_syntax_fingerprint;
+mod syntax_fingerprint;
+pub(crate) use syntax_fingerprint::expanded_syntax_fingerprint;
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
