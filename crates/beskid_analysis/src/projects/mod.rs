@@ -76,8 +76,8 @@ pub use readme::{
 pub use validator::{GLUE_LIBRARY_LABEL_MAX_LEN, MOD_CAPABILITY_NAMES, validate_manifest, validate_workspace_manifest};
 pub use workflow::{
     PROJECT_LOCK_FILE_NAME, PortableLockPath, PortableLockPathBaseKind, ProjectLockDependencyEntry, ProjectLockSource,
-    ProjectLockfile, WorkspacePrepareOptions, load_project_lock_dependencies,
-    load_project_lock_dependencies_for_plan, load_project_lock_dependencies_from_path, prepare_project_workspace,
-    prepare_project_workspace_plan_with_options, prepare_project_workspace_with_options, shared_corelib_package_of,
+    ProjectLockfile, WorkspacePrepareOptions, load_project_lock_dependencies, load_project_lock_dependencies_for_plan,
+    load_project_lock_dependencies_from_path, prepare_project_workspace, prepare_project_workspace_plan_with_options,
+    prepare_project_workspace_with_options, shared_corelib_package_of,
 };
 pub(crate) use workspace_plan::workspace_plan_from_graph;

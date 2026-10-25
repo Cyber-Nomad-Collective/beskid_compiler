@@ -239,7 +239,10 @@ mod tests {
         let corelib = mapper.map_diagnostic(diagnostic(shared.to_str().unwrap()));
         assert_eq!(corelib.file_name(), shared.to_str().unwrap());
         assert_eq!(corelib.range(), (20, 21));
-        assert_eq!(mapper.map_diagnostic(diagnostic(mirrored.to_str().unwrap())).file_name(), authored.to_str().unwrap());
+        assert_eq!(
+            mapper.map_diagnostic(diagnostic(mirrored.to_str().unwrap())).file_name(),
+            authored.to_str().unwrap()
+        );
     }
 
     #[test]

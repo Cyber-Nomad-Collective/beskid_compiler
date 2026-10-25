@@ -134,7 +134,9 @@ impl ResolvedRegistryDependency {
         pinned: Option<&ProjectLockDependencyEntry>,
     ) -> Result<(), ProjectError> {
         let Some(pinned) = pinned else { return Ok(()) };
-        if pinned.project != self.materialized_relative || pinned.materialized_root.as_deref() != Some(self.materialized_relative.as_str()) {
+        if pinned.project != self.materialized_relative
+            || pinned.materialized_root.as_deref() != Some(self.materialized_relative.as_str())
+        {
             return Err(stale_registry_pin(&self.dependency_name));
         }
 

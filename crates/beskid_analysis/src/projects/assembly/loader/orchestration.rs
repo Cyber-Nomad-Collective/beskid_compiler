@@ -299,8 +299,7 @@ pub fn assemble_program_with_materializer(
                 );
                 let _unit_guard = unit_span.enter();
 
-                let builder =
-                    UnitBuilder::new(&project_root_for_pool).with_shared_corelib(shared_corelib_root.clone());
+                let builder = UnitBuilder::new(&project_root_for_pool).with_shared_corelib(shared_corelib_root.clone());
                 let builder = if let Some(build) = salsa_build { builder.with_salsa_build(build) } else { builder };
                 let label = unit_progress_label(&input.path);
                 let result = match builder.build_unit(&input.path, &input.source, generation) {

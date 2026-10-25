@@ -224,7 +224,9 @@ fn scan_workspace(label: &str, corelib_root: &Path, shared_root: Option<&Path>) 
         diagnostics = diagnostics_for(&messages, &broken_uri);
     }
     assert!(
-        diagnostics.iter().any(|diagnostic| diagnostic["message"].as_str().is_some_and(|m| m.contains("WriteLineMissing"))),
+        diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic["message"].as_str().is_some_and(|m| m.contains("WriteLineMissing"))),
         "{label}: the unknown Corelib member is reported: {diagnostics:?}"
     );
     let _ = child.kill();

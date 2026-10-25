@@ -97,8 +97,14 @@ mod tests {
             &root.join("CoreLib.bws"),
             "workspace {\n  name = \"corelib\"\n}\n\nmember \"corelib\" {\n  path = \"beskid_corelib\"\n}\n\nmember \"core_text\" {\n  path = \"packages/core_text\"\n}\n",
         );
-        write(&root.join("beskid_corelib/corelib.bproj"), "corelib {\n  name = \"corelib\"\n  version = \"0.6.7\"\n}\n");
-        write(&root.join("packages/core_text/core_text.bproj"), "core_text {\n  name = \"core_text\"\n  version = \"0.6.7\"\n}\n");
+        write(
+            &root.join("beskid_corelib/corelib.bproj"),
+            "corelib {\n  name = \"corelib\"\n  version = \"0.6.7\"\n}\n",
+        );
+        write(
+            &root.join("packages/core_text/core_text.bproj"),
+            "core_text {\n  name = \"core_text\"\n  version = \"0.6.7\"\n}\n",
+        );
         write(&root.join("packages/core_text/Src/Text.bd"), "pub i32 Length() { return 0; }\n");
     }
 

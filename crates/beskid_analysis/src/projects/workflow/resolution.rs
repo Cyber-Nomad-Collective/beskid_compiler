@@ -6,8 +6,8 @@ use super::lockfile::{
     validate_existing_lock_graph,
 };
 use super::prepare::portable_entry_for_dependency;
-use super::shared_corelib::SharedCorelib;
 use super::registry::{ResolvedRegistryDependency, parse_registry_descriptor, resolve_registry_dependency};
+use super::shared_corelib::SharedCorelib;
 use super::{ProjectLockDependencyEntry, ProjectLockSource, WorkspacePrepareOptions};
 use crate::projects::{
     DependencySource, ProjectError, ProjectWorkspacePlan, ResolvedDependencyProject, UnresolvedDependencyNote,

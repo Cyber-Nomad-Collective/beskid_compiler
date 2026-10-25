@@ -288,9 +288,8 @@ impl ProjectLockfile {
     }
 
     pub fn parse(content: &str) -> Result<Self, ProjectError> {
-        let body = content
-            .strip_suffix('\n')
-            .ok_or_else(|| ProjectError::Validation("lockfile must end with LF".into()))?;
+        let body =
+            content.strip_suffix('\n').ok_or_else(|| ProjectError::Validation("lockfile must end with LF".into()))?;
         let lines: Vec<&str> = body.split('\n').collect();
         if lines.len() < 4 || lines[0] != PROJECT_LOCK_HEADER_V3 {
             return Err(ProjectError::Validation("lockfile header must be exactly `# Project.lock v3`".into()));
@@ -368,9 +367,8 @@ impl ProjectLockfile {
 }
 
 fn parse_top_level(line: &str, expected_key: &str) -> Result<String, ProjectError> {
-    let (key, value) = line
-        .split_once('=')
-        .ok_or_else(|| ProjectError::Validation(format!("lockfile missing `{expected_key}`")))?;
+    let (key, value) =
+        line.split_once('=').ok_or_else(|| ProjectError::Validation(format!("lockfile missing `{expected_key}`")))?;
     if key != expected_key {
         return Err(ProjectError::Validation(format!("lockfile expected `{expected_key}`")));
     }
@@ -378,9 +376,8 @@ fn parse_top_level(line: &str, expected_key: &str) -> Result<String, ProjectErro
 }
 
 fn parse_entry(line: &str) -> Result<ProjectLockDependencyEntry, ProjectError> {
-    let body = line
-        .strip_prefix("- ")
-        .ok_or_else(|| ProjectError::Validation("invalid lockfile dependency line".into()))?;
+    let body =
+        line.strip_prefix("- ").ok_or_else(|| ProjectError::Validation("invalid lockfile dependency line".into()))?;
     let fields: Vec<&str> = body.split(';').collect();
     if fields.len() < 2 {
         return Err(ProjectError::Validation("lockfile dependency lacks a source".into()));

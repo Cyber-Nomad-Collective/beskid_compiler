@@ -39,9 +39,13 @@ fn write_workspace(root: &Path, broken_member: Option<usize>) {
             format!("{name} {{\n  name = \"{name}\"\n  version = \"0.1.0\"\n}}\n\ntarget \"App\" {{\n  kind = App\n  entry = \"Main.bd\"\n}}\n"),
         )
         .expect("member manifest");
-        let body = if broken_member == Some(index) { "Output.WriteLineMissing(\"ok\");" } else { "Output.WriteLine(\"ok\");" };
-        fs::write(dir.join("Src/Main.bd"), format!("use Core.Output;\n\ni32 Main() {{\n    {body}\n    return 0;\n}}\n"))
-            .expect("member source");
+        let body =
+            if broken_member == Some(index) { "Output.WriteLineMissing(\"ok\");" } else { "Output.WriteLine(\"ok\");" };
+        fs::write(
+            dir.join("Src/Main.bd"),
+            format!("use Core.Output;\n\ni32 Main() {{\n    {body}\n    return 0;\n}}\n"),
+        )
+        .expect("member source");
     }
     fs::write(root.join("Many.bws"), workspace).expect("workspace manifest");
 }
@@ -135,7 +139,8 @@ fn shared_corelib_saves_the_per_project_copies() {
             assert!(output.status.success(), "workspace check: {}", text(&output));
             times.push(elapsed);
         }
-        let bytes = (0..MEMBERS).map(|index| directory_bytes(&root.join(format!("M{index}/obj/beskid/deps")))).sum::<u64>();
+        let bytes =
+            (0..MEMBERS).map(|index| directory_bytes(&root.join(format!("M{index}/obj/beskid/deps")))).sum::<u64>();
         (times, bytes)
     };
     let (after_times, after_bytes) = measure(shared.path(), &sealed);
@@ -157,7 +162,11 @@ fn shared_corelib_saves_the_per_project_copies() {
 fn all_members_reports_a_failing_member_and_checks_the_rest() {
     let root = tempfile::tempdir().expect("fixture directory");
     write_workspace(root.path(), Some(2));
-    let (output, _) = check(root.path(), &root.path().join("corelib"), &["--project", root.path().to_str().unwrap(), "--all-members"]);
+    let (output, _) = check(
+        root.path(),
+        &root.path().join("corelib"),
+        &["--project", root.path().to_str().unwrap(), "--all-members"],
+    );
     let report = text(&output);
     assert!(!output.status.success(), "a broken member fails the workspace check: {report}");
     assert!(report.contains("WriteLineMissing"), "{report}");

@@ -40,10 +40,7 @@ fn lock_serialization_has_exact_header_and_sorts_dependencies() {
 
     let parsed = ProjectLockfile::parse(unsorted).expect("parse unsorted lock");
     assert_eq!(parsed.to_content(), expected);
-    assert_eq!(
-        ProjectLockfile::parse(&parsed.to_content()).expect("parse serialized lock").to_content(),
-        expected
-    );
+    assert_eq!(ProjectLockfile::parse(&parsed.to_content()).expect("parse serialized lock").to_content(), expected);
 }
 
 #[test]
@@ -57,7 +54,9 @@ fn lock_accepts_corelib_source_with_relative_installed_workspace_identity() {
 fn corelib_entries_name_the_shared_corelib_and_have_no_project_local_copy() {
     // A Corelib entry is read in place from the toolchain's shared Corelib, so a copy destination
     // is not part of its record; one that names a copy is a retired v2 shape and is rejected.
-    parse_rejects("# Project.lock v3\nroot_manifest=Project.proj\nproject_name=App\ndependencies:\n- name=Core;source=corelib;project=stdlib/core;manifest=Project.proj;source_root=Src;materialized_root=obj/beskid/deps/src/core\n");
+    parse_rejects(
+        "# Project.lock v3\nroot_manifest=Project.proj\nproject_name=App\ndependencies:\n- name=Core;source=corelib;project=stdlib/core;manifest=Project.proj;source_root=Src;materialized_root=obj/beskid/deps/src/core\n",
+    );
     // Path and registry entries still require their copy destination.
     parse_rejects(&PATH_LOCK.replace(";materialized_root=obj/beskid/deps/src/shared", ""));
     // Two Corelib entries never collide on a destination.

@@ -20,8 +20,7 @@ use crate::syntax_query::SyntaxIndex;
 /// project is reused by the next instead of being parsed and expanded again. A unit is a pure
 /// function of its path and bytes (the on-disk artifact store is content keyed for the same
 /// reason), and the shared Corelib is sealed, so the map holds at most one entry per file.
-static SHARED_CORELIB_UNITS: LazyLock<Mutex<HashMap<(PathBuf, String), SourceUnit>>> =
-    LazyLock::new(Default::default);
+static SHARED_CORELIB_UNITS: LazyLock<Mutex<HashMap<(PathBuf, String), SourceUnit>>> = LazyLock::new(Default::default);
 
 /// Builds expanded source and generation-bound syntax-index facts with artifact persistence.
 pub struct UnitBuilder<'a> {
@@ -76,17 +75,15 @@ impl<'a> UnitBuilder<'a> {
         let Some(shared_key) = shared_key else {
             return self.build_unit_uncached(path, source, &fp, generation);
         };
-        let reused = SHARED_CORELIB_UNITS.lock().unwrap_or_else(std::sync::PoisonError::into_inner).get(&shared_key).cloned();
+        let reused =
+            SHARED_CORELIB_UNITS.lock().unwrap_or_else(std::sync::PoisonError::into_inner).get(&shared_key).cloned();
         if let Some(unit) = reused {
             crate::projects::assembly::unit_cache::record_shared_corelib_hit();
             let syntax_index = SyntaxIndex::from_program(&unit.program, generation);
             return Ok((unit, syntax_index));
         }
         let (unit, syntax_index) = self.build_unit_uncached(path, source, &fp, generation)?;
-        SHARED_CORELIB_UNITS
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .insert(shared_key, unit.clone());
+        SHARED_CORELIB_UNITS.lock().unwrap_or_else(std::sync::PoisonError::into_inner).insert(shared_key, unit.clone());
         Ok((unit, syntax_index))
     }
 

@@ -46,11 +46,15 @@ pub struct AnalyzeArgs {
 pub fn execute(args: AnalyzeArgs) -> Result<()> {
     if args.all_members {
         if args.input.is_some() || args.project.target.is_some() || args.project.workspace_member.is_some() {
-            anyhow::bail!("`--all-members` checks a whole workspace; it takes no input file, `--target` or `--workspace-member`");
+            anyhow::bail!(
+                "`--all-members` checks a whole workspace; it takes no input file, `--target` or `--workspace-member`"
+            );
         }
-        let project = args.project.project.as_ref().ok_or_else(|| {
-            anyhow::anyhow!("`--all-members` needs `--project <workspace.bws or its directory>`")
-        })?;
+        let project = args
+            .project
+            .project
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("`--all-members` needs `--project <workspace.bws or its directory>`"))?;
         let members = workspace_member_manifests(project)?;
         if args.json {
             return Records::new("check").Run(|records| run_members(&args, &members, Some(records)));
@@ -113,7 +117,12 @@ fn run_members(
         }
     }
     if !failures.is_empty() {
-        anyhow::bail!("{} of {} workspace members failed analysis: {}", failures.len(), members.len(), failures.join("; "));
+        anyhow::bail!(
+            "{} of {} workspace members failed analysis: {}",
+            failures.len(),
+            members.len(),
+            failures.join("; ")
+        );
     }
     Ok(serde_json::json!({ "members": results }))
 }
