@@ -2211,4 +2211,29 @@ mod tests {
         let report = contract_value_report(&invalid, 7211);
         assert!(report.iter().any(|(code, _)| code == "E1206"), "{report:?}");
     }
+
+    #[test]
+    fn a_type_converts_to_the_generic_contract_application_it_declares_and_no_other() {
+        let contracts = "pub contract Repo<T> { T Get(); } \
+            pub type Numbers : Repo<i64> { pub i64 Get() { return 9_i64; } } ";
+        let valid = format!(
+            "{contracts} i64 F() {{ mut Repo<i64> repo = Numbers {{}}; Repo<i64> other = repo; return other.Get(); }}"
+        );
+        assert_eq!(contract_value_report(&valid, 7231), Vec::<(String, String)>::new());
+        let invalid = format!("{contracts} i64 F() {{ Repo<string> words = Numbers {{}}; return 0_i64; }}");
+        let report = contract_value_report(&invalid, 7232);
+        assert!(report.iter().any(|(code, _)| code == "E1206"), "{report:?}");
+    }
+
+    #[test]
+    fn mixed_primitives_box_into_a_contract_element_array_literal() {
+        let contracts = "pub contract Shown { string Show(); } \
+            impl i64 : Shown { pub string Show() { return \"i\"; } } \
+            impl bool : Shown { pub string Show() { return \"b\"; } } ";
+        let valid = format!("{contracts} string F() {{ Shown[] mixed = [7_i64, false]; return mixed[0].Show(); }}");
+        assert_eq!(contract_value_report(&valid, 7233), Vec::<(String, String)>::new());
+        let invalid = "i64 F() { i64[] mixed = [7_i64, false]; return mixed[0]; }";
+        let report = contract_value_report(invalid, 7234);
+        assert!(!report.is_empty(), "a mixed literal without a contract element type stays rejected");
+    }
 }
