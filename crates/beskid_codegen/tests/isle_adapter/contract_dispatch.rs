@@ -2,7 +2,10 @@
 //! are boxed with a witness table; calls through a contract value load the table entry and call
 //! it indirectly; conf2's static selections stay direct calls.
 
-use super::support::{find_nodes_of_kind, item_fixture_with_root, item_name, lower_syntax_program, SyntaxModuleItem};
+use super::support::{
+    SyntaxGenerationId, SyntaxModuleItem, canonical_corelib_host_project_fixture, find_nodes_of_kind,
+    item_fixture_with_root, item_name, lower_syntax_program,
+};
 
 fn lower(source: &str) -> beskid_codegen::CodegenArtifact {
     let (input, isa, root) = item_fixture_with_root(source);
@@ -298,4 +301,144 @@ i64 Main() {
     assert!(main.contains("call_indirect"), "`numbers.Get()` dispatches:\n{main}");
     assert_eq!(artifact.witness_tables.len(), 2, "{:?}", artifact.witness_tables);
     assert!(artifact.witness_tables.iter().any(|table| table.symbol.contains("Repo_i64")), "{:?}", artifact.witness_tables);
+}
+
+/// Every function and method of the entry unit, with its item symbol.
+fn entry_items(input: &beskid_codegen::CodegenInput<'_>, root: beskid_queries::AstNodeKey) -> Vec<SyntaxModuleItem> {
+    let mut items = Vec::new();
+    for kind in [beskid_queries::IndexedNodeKind::FunctionDefinition, beskid_queries::IndexedNodeKind::MethodDefinition] {
+        for key in find_nodes_of_kind(input.database(), root, kind) {
+            let symbol = item_name(input.database(), key).expect("item query").expect("item name").to_string();
+            items.push(SyntaxModuleItem { symbol, key });
+        }
+    }
+    items
+}
+
+/// The error codes `beskid check` reports for `source` (one `App/Main.bd` against the canonical
+/// Corelib, host hooks expanded as the front end does).
+fn check_errors(source: &str, generation: u64) -> Vec<&'static str> {
+    let (input, _, root) = canonical_corelib_host_project_fixture(&[("App/Main.bd", source)], SyntaxGenerationId(generation));
+    let keys = entry_items(&input, root).iter().map(|item| item.key).collect::<Vec<_>>();
+    check_findings(input.database(), &keys)
+}
+
+/// The error codes of every pass `beskid check` runs over `items`: the legality gate, the gate
+/// obligations and the typing obligations (E1206).
+fn check_findings(db: &dyn beskid_queries::Db, items: &[beskid_queries::AstNodeKey]) -> Vec<&'static str> {
+    let mut findings = beskid_queries::check_items(db, items).err().unwrap_or_default();
+    findings.extend(beskid_queries::check_gate_obligations(db, items));
+    findings.extend(beskid_queries::check_typing_obligations(db, items));
+    findings.iter().map(|finding| finding.kind.code()).filter(|code| code.starts_with('E')).collect()
+}
+
+/// Check `source` as `beskid build` does (it must be clean), then compose its hosts with the
+/// frozen plan and lower every function and method of the entry unit against the canonical
+/// Corelib.
+fn build(source: &str, generation: u64) -> beskid_codegen::CodegenArtifact {
+    use std::sync::Arc;
+
+    use beskid_analysis::composition::{CompositionInput, resolve_composition};
+
+    let (input, isa, root) = canonical_corelib_host_project_fixture(&[("App/Main.bd", source)], SyntaxGenerationId(generation));
+    let keys = entry_items(&input, root).iter().map(|item| item.key).collect::<Vec<_>>();
+    let errors = check_findings(input.database(), &keys);
+    assert!(errors.is_empty(), "the program checks clean: {errors:?}");
+    let input = if source.contains("host ") {
+        let result = resolve_composition(CompositionInput {
+            program: &input.typed_program().assembly.entry_unit().program,
+            is_mod_project: false,
+            types: &beskid_queries::CompositionTypes::new(input.database(), input.typed_program()),
+        });
+        assert!(result.issues.is_empty(), "composition must validate: {:?}", result.issues);
+        let mut snapshot = result.snapshot;
+        snapshot.source_unit_path = Some(root.unit.path(input.database()).to_path_buf());
+        let generation = input.typed_program().generation;
+        input
+            .with_composition_authority(generation, Arc::new(result.plan), Arc::new(snapshot))
+            .expect("attach frozen composition authority")
+    } else {
+        input
+    };
+    let items = entry_items(&input, root);
+    let artifact = lower_syntax_program(&input, isa.as_ref(), &items)
+        .unwrap_or_else(|error| panic!("the program lowers without an internal error: {error}"));
+    beskid_codegen::validate_artifact(&artifact).expect("contract value artifact");
+    artifact
+}
+
+fn function_names(artifact: &beskid_codegen::CodegenArtifact) -> Vec<&str> {
+    artifact.functions.iter().map(|function| function.name.as_str()).collect()
+}
+
+const CORELIB_GREETERS: &str = r#"
+use Core.Collections.List;
+use Core.Results;
+contract Greeter {
+    string Greet(string name);
+}
+type Hello : Greeter {
+    pub string Greet(string name) { return "Hello, " + name; }
+}
+type Bye : Greeter {
+    i64 times;
+    pub string Greet(string name) { return "Bye, " + name; }
+}
+unit Use(string text) { }
+"#;
+
+/// A generic parameter already bound to a contract (by the receiver's type arguments, explicit
+/// type arguments or an earlier argument) is the expected type of every later argument of that
+/// parameter: a conforming value is boxed there instead of conflicting with the binding (E1229).
+#[test]
+fn a_generic_parameter_bound_to_a_contract_boxes_conforming_arguments() {
+    let artifact = build(
+        &format!(
+            "{CORELIB_GREETERS}
+T Pick<T>(T first, T second) {{ return second; }}
+T Same<T>(T value) {{ return value; }}
+i64 Main() {{
+    mut List<Greeter> list = List.New<Greeter>();
+    list.Push(Hello {{}});
+    list.Push(Bye {{ times: 2 }});
+    mut Greeter g = Bye {{ times: 3 }};
+    Greeter picked = Pick(g, Hello {{}});
+    Greeter same = Same<Greeter>(Hello {{}});
+    Use(picked.Greet(\"a\"));
+    Use(same.Greet(\"b\"));
+    return list.Count();
+}}"
+        ),
+        6731,
+    );
+    let main = clif(&artifact, "Main");
+    assert!(
+        main.matches("__beskid_contract_box_reference_request_v5").count() >= 5,
+        "both pushed values, the local, and the later `Pick` and explicit `Same` arguments are boxed:\n{main}"
+    );
+    let names = function_names(&artifact);
+    assert_eq!(
+        names.iter().filter(|name| name.starts_with("Pick#generic_")).count(),
+        1,
+        "`Pick` has one specialization, at `T = Greeter`: {names:?}"
+    );
+}
+
+/// A conforming argument never rebinds a contract-bound parameter: a non-conforming one still
+/// conflicts.
+#[test]
+fn a_non_conforming_argument_of_a_contract_bound_parameter_is_still_rejected() {
+    let errors = check_errors(
+        &format!(
+            "{CORELIB_GREETERS}
+type Stone {{ i64 weight; }}
+i64 Main() {{
+    mut List<Greeter> list = List.New<Greeter>();
+    list.Push(Stone {{ weight: 1 }});
+    return list.Count();
+}}"
+        ),
+        6732,
+    );
+    assert!(!errors.is_empty(), "a `Stone` is no `Greeter`");
 }

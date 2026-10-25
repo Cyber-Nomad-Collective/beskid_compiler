@@ -462,6 +462,23 @@ pub(in super::super) fn canonical_corelib_project_fixture(
     sources: &[(&str, &str)],
     generation: SyntaxGenerationId,
 ) -> (CodegenInput<'static>, Arc<dyn cranelift_codegen::isa::TargetIsa>, AstNodeKey) {
+    canonical_corelib_fixture(sources, generation, false)
+}
+
+/// [`canonical_corelib_project_fixture`] for sources that declare hosts: expansion moves the
+/// host-hook bodies into generated items first, as the front end does.
+pub(in super::super) fn canonical_corelib_host_project_fixture(
+    sources: &[(&str, &str)],
+    generation: SyntaxGenerationId,
+) -> (CodegenInput<'static>, Arc<dyn cranelift_codegen::isa::TargetIsa>, AstNodeKey) {
+    canonical_corelib_fixture(sources, generation, true)
+}
+
+fn canonical_corelib_fixture(
+    sources: &[(&str, &str)],
+    generation: SyntaxGenerationId,
+    lower_host_hooks: bool,
+) -> (CodegenInput<'static>, Arc<dyn cranelift_codegen::isa::TargetIsa>, AstNodeKey) {
     let mut db = Box::new(BeskidDatabase::default());
     let root = tempfile::tempdir().expect("project").keep();
     let mut units = sources
@@ -472,6 +489,8 @@ pub(in super::super) fn canonical_corelib_project_fixture(
             std::fs::write(&path, source).expect("write source");
             let program =
                 parse_program_with_source_name(path.to_str().expect("UTF-8 path"), source).expect("parse source");
+            let program =
+                if lower_host_hooks { beskid_analysis::composition::lower_host_hooks(program) } else { program };
             SourceUnit {
                 logical_name: path.display().to_string(),
                 origin_path: path.clone(),

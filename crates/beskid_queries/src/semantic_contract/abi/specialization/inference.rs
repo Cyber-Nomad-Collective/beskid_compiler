@@ -324,6 +324,23 @@ pub(super) fn specialization_for_call_in_environment(
             let source_identity = proven_source_identity
                 .as_ref()
                 .ok_or_else(|| SemanticError::unavailable_at("call_abi_signature", key))?;
+            // A `T` already bound to a contract (by the receiver's type arguments, explicit type
+            // arguments or an earlier argument) is the expected type of a later `T` argument: a
+            // conforming value converts to the contract there (it is boxed), it does not rebind
+            // `T` (`List<Greeter>.Push(Hello {})`, `Pick(greeter, Hello {})`).
+            if let Some(generic) = generic
+                && let Some(bound) = source_substitutions.get(generic)
+                && matches!(bound.source_identity(), GenericSourceTypeIdentity::Contract { .. })
+                && bound.source_identity() != source_identity
+                && super::super::super::contract_values::converts_to_contract_value(
+                    db,
+                    key,
+                    source_identity,
+                    bound.source_identity(),
+                )
+            {
+                continue;
+            }
             // An exact argument (`5_i64`, `[7_i64]`) replaces a binding only bare literals set;
             // a literal that does not fit it is T0905 at the literal.
             if let Some((abi, source, rebound)) = rebind_provisional_integers(

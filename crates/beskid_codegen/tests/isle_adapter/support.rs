@@ -13,7 +13,8 @@ mod service_import_facts;
 pub(super) use common::{TEST_CURRENT_TLS, test_system_allocate, test_tls_get, test_trap};
 pub(super) use common::{canonical_runtime_test_assembly, function_signature, item_fixture, item_fixture_with_root};
 pub(super) use corelib::{
-    assert_args_module_cannot_emit_imports, canonical_corelib_project_fixture, canonical_corelib_syscall_fixture,
+    assert_args_module_cannot_emit_imports, canonical_corelib_host_project_fixture, canonical_corelib_project_fixture,
+    canonical_corelib_syscall_fixture,
     canonical_foundation_assert_fixture, canonical_foundation_error_fixture, canonical_foundation_output_fixture,
     core_args_fixture, include_imported_corelib_modules, include_imported_corelib_modules_to_fixpoint, materialized_corelib_syscall_fixture, named_function,
 };
