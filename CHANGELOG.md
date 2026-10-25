@@ -203,6 +203,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   innermost first, then the global `dispose` hooks, then exits. Runtime exports
   `composition_exit_register` and `composition_exit`; the runtime calls a hook
   through the compiler operation `composition_hook_invoke`.
+- A hook with an injected parameter builds when a call before it omits an
+  optional argument (for example `Testing.Assert.Equal` in a `startup` body).
+  The composition plan names its declarations by kind and span, and codegen
+  binds their node ids in the syntax it lowers; it no longer fails with E4041
+  "composition plan disagrees with the validated snapshot". That error now
+  names the check that failed.
 
 ### Added
 
