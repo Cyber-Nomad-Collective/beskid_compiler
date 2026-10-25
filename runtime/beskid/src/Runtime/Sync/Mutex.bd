@@ -5,15 +5,16 @@
 // FIFO vector when running inside a scheduler; outside a scheduler, lock/unlock still works for
 // try_lock.
 
-pub enum MutexState {
-    Unlocked,
-    Locked,
-}
+// Mutex state byte. Plain constants, not an enum: an enum value is not a byte, so storing one
+// with `raw_byte_store` and comparing it with `raw_byte_load` never matched, and a held mutex
+// looked unlocked to every other caller.
+const MUTEX_UNLOCKED = 0;
+const MUTEX_LOCKED = 1;
 
 // ── Scheduler-owned mutex table ─────────────────────────────────────
 
 // Mutex record layout (MUTEX_SLOT_SIZE bytes, never relocates):
-//   offset  0: state (u8, MutexState)
+//   offset  0: state (u8, MUTEX_UNLOCKED or MUTEX_LOCKED)
 //   offset  8: owner handle (word)
 //   offset 16: waiters (growable vector of fiber handles, FIFO)
 const MUTEX_WAITERS = 16;
@@ -48,7 +49,7 @@ pub pointer MutexCreate() {
     word index = ChunkTableAppend(table);
     if index == 0xFFFFFFFFFFFFFFFF { return NativePointer(0); }
     pointer slot = ChunkTableRecord(table, index);
-    raw_byte_store(slot, MutexState::Unlocked);
+    raw_byte_store(slot, MUTEX_UNLOCKED);
     raw_word_store(pointer_add(slot, 8), 0);
     return NativePointer(index + 1);
 }
@@ -92,7 +93,7 @@ pub i32 MutexLock(pointer id) {
     word fiberIndex = SchedulerCurrentFiber();
     mut word waiterHandle = 0;
     if fiberIndex != FIBER_NONE { waiterHandle = FiberHandle(fiberIndex); }
-    while raw_byte_load(slot) == MutexState::Locked {
+    while raw_byte_load(slot) == MUTEX_LOCKED {
         if fiberIndex == FIBER_NONE {
             // Main parks as the root fiber: it drives the scheduler until the holder unlocks.
             SchedulerRootWait();
@@ -109,7 +110,7 @@ pub i32 MutexLock(pointer id) {
         MutexWaiterRemove(slot, waiterHandle);
         if !FiberHandleValid(waiterHandle) || raw_byte_load(pointer_add(fiber, 41)) != 0 { return 1; }
     }
-    raw_byte_store(slot, MutexState::Locked);
+    raw_byte_store(slot, MUTEX_LOCKED);
     if fiberIndex == FIBER_NONE { raw_word_store(pointer_add(slot, 8), 0); }
     else { raw_word_store(pointer_add(slot, 8), FiberHandle(fiberIndex)); }
     return 0;
@@ -120,8 +121,8 @@ pub i32 MutexLock(pointer id) {
 pub i32 MutexTryLock(pointer id) {
     pointer slot = MutexSlot(id);
     if slot == NativePointer(0) { return 1; }
-    if raw_byte_load(slot) == MutexState::Locked { return 1; }
-    raw_byte_store(slot, MutexState::Locked);
+    if raw_byte_load(slot) == MUTEX_LOCKED { return 1; }
+    raw_byte_store(slot, MUTEX_LOCKED);
     word fiberIndex = SchedulerCurrentFiber();
     if fiberIndex == FIBER_NONE { raw_word_store(pointer_add(slot, 8), 0); }
     else { raw_word_store(pointer_add(slot, 8), FiberHandle(fiberIndex)); }
@@ -135,9 +136,9 @@ pub unit MutexUnlock(pointer id) {
     if slot == NativePointer(0) { return; }
     word current = SchedulerCurrentFiber();
     word owner = raw_word_load(pointer_add(slot, 8));
-    if raw_byte_load(slot) != MutexState::Locked { return; }
+    if raw_byte_load(slot) != MUTEX_LOCKED { return; }
     if owner != 0 && (current == FIBER_NONE || owner != FiberHandle(current)) { return; }
-    raw_byte_store(slot, MutexState::Unlocked);
+    raw_byte_store(slot, MUTEX_UNLOCKED);
     raw_word_store(pointer_add(slot, 8), 0);
     MutexWakeFirst(slot);
     return;

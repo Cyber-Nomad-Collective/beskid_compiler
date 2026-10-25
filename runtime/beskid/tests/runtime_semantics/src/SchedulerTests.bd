@@ -554,10 +554,12 @@ test RootHubWaitReceiveOverClosedMembersIsClosed {
     ShutdownSchedulerRuntime(runtime);
 }
 
-// argument: word 0 = mutex handle; word 8 is set to 1 just before the fiber unlocks.
+// argument: word 0 = mutex handle; word 8 is set to 1 just before the fiber unlocks; word 16 is
+// set to 1 once the fiber holds the mutex.
 pub unit HoldMutexAcrossYields(pointer argument) {
     pointer mutex = NativePointer(raw_word_load(argument));
     if MutexTryLock(mutex) != 0 { return; }
+    raw_word_store(pointer_add(argument, 16), 1);
     FiberYield();
     FiberYield();
     raw_word_store(pointer_add(argument, 8), 1);
@@ -570,19 +572,37 @@ pub unit SpawnMutexHolder(pointer argument) {
     return;
 }
 
+test HeldMutexRefusesASecondLock {
+    pointer runtime = InstallSchedulerRuntime();
+    pointer mutex = MutexCreate();
+    Assert.Equal(MutexTryLock(mutex), 0, "a free mutex locks");
+    // The state byte compared an enum value with a byte and never matched: a held mutex looked free.
+    Assert.Equal(MutexTryLock(mutex), 1, "a held mutex refuses a second lock");
+    MutexUnlock(mutex);
+    Assert.Equal(MutexTryLock(mutex), 0, "an unlocked mutex locks again");
+    MutexUnlock(mutex);
+    ShutdownSchedulerRuntime(runtime);
+}
+
 test RootMutexLockParksUntilTheHolderUnlocks {
     pointer runtime = InstallSchedulerRuntime();
     pointer mutex = MutexCreate();
-    pointer argument = SystemAllocate(16, 8);
+    pointer argument = SystemAllocate(24, 8);
     raw_word_store(argument, NativeWord(mutex));
     raw_word_store(pointer_add(argument, 8), 0);
+    raw_word_store(pointer_add(argument, 16), 0);
     SpawnMutexHolder(argument);
-    Assert.True(SchedStep(), "the holder runs, locks and yields");
+    mut word steps = 0;
+    while raw_word_load(pointer_add(argument, 16)) == 0 && steps < 16 {
+        bool stepped = SchedStep();
+        steps = steps + 1;
+    }
+    Assert.Equal(raw_word_load(pointer_add(argument, 16)), 1, "the holder runs, locks and yields");
     Assert.Equal(MutexTryLock(mutex), 1, "the fiber holds the mutex");
     Assert.Equal(MutexLock(mutex), 0, "the root lock parks until the holder unlocks, not cancelled");
     Assert.Equal(raw_word_load(pointer_add(argument, 8)), 1, "the holder finished its critical section first");
     MutexUnlock(mutex);
-    SystemFree(argument, 16);
+    SystemFree(argument, 24);
     ShutdownSchedulerRuntime(runtime);
 }
 
