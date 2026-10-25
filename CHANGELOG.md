@@ -248,6 +248,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The incremental cache (`obj/beskid/cache/salsa/db.json`) no longer grows on every run. Each compile numbers its syntax trees anew, and the query keys the driver created outside a query stayed pinned in the snapshot with all their results, so `corelib.bproj` grew by about 150 MB per `beskid check` (534, 694, 832 MB). A snapshot now keeps only the results the run used, and keys from earlier runs are reused: three runs give 534, 565 and 567 MB, loading takes about 10 s instead of 13-16 s and `check` 86-99 s instead of 128-130 s (debug build). Source unit identities are never recycled.
+- Detecting a changed expanded syntax tree no longer prints it as JSON: the span-independent fingerprint now hashes the tree structure directly (Corelib's 902 files: 0.22 s instead of 2.45 s, debug build).
 - A contract method called on an injected contract-typed field (`this.greeter.Greet()`, `greeter.Greet()`, `(this).greeter.Greet()`, `host.greeter.Greet()`) calls the implementation the composition plan binds that field to, and on an immutable contract-typed local (`Greeter g = Hello {}; g.Greet()`) the implementation of its initializer's type; both used to pass `check` and fail at build with E2102. A call on a `mut` contract-typed local is rejected, because it has no single implementation.
 - A test that shares its name with a function builds and runs: the native
   test build selected entries by name alone, picked the function, and failed
