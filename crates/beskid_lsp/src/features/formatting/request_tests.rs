@@ -72,7 +72,7 @@ async fn formatting_request_keeps_every_comment_and_then_needs_no_edits() {
         let mut socket = socket;
         while socket.next().await.is_some() {}
     });
-    let mut service = crate::TextSyncOrderedService::new(service, reporter);
+    let mut service = crate::server::ordered_service::TextSyncOrderedService::new(service, reporter);
     let uri = "file:///tmp/beskid-v067-fmt-request/Src/Main.bd";
 
     let init = Request::build("initialize").params(json!({"processId": null, "capabilities": {}})).id(1).finish();
