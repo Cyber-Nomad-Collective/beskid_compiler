@@ -26,6 +26,11 @@ impl<'a> DynNodeRef<'a> {
     pub fn span(self) -> Option<SpanInfo> {
         self.0.span()
     }
+
+    /// Address identity: whether both references point at the same node in one syntax tree.
+    pub fn is_same_node(self, other: DynNodeRef<'_>) -> bool {
+        std::ptr::eq(std::ptr::from_ref(self.0).cast::<()>(), std::ptr::from_ref(other.0).cast::<()>())
+    }
 }
 
 impl<'a, T: AstNode + 'a> From<&'a T> for DynNodeRef<'a> {

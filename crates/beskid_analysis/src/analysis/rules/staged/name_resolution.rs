@@ -20,12 +20,11 @@ impl SemanticPipelineRule {
         self.check_unknown_import_paths(ctx, program);
         self.check_use_before_declaration(ctx, program);
 
+        // The stages after this one read only the entry's value bindings, used imports and
+        // warnings, never the other units' declaration types.
         let resolution = if let Some(assembly) = ctx.options.program_assembly.as_ref() {
-            match assembly.module_index.resolve_entry_program(
-                program,
-                ctx.options.entry_source_path.as_deref(),
-                assembly,
-            ) {
+            match assembly.module_index.resolve_entry_names(program, ctx.options.entry_source_path.as_deref(), assembly)
+            {
                 Ok(resolution) => resolution,
                 Err(errors) => {
                     for error in errors {

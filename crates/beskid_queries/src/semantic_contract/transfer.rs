@@ -277,11 +277,26 @@ pub fn transfer_marker_contract(db: &dyn Db, contract: AstNodeKey) -> Option<Tra
 /// One generic environment of the class computation: type parameter name to class.
 type ClassEnvironment = HashMap<String, TransferClass>;
 
+/// One nominal instantiation: the declaration and the classes of its type arguments.
+type Instantiation = (AstNodeKey, Vec<TransferClass>);
+
 /// The class computation with the instantiations in progress, so a recursive type
 /// (`[Isolated] type Node { Option<Node> next }`) assumes its marker's class coinductively.
+///
+/// Every finished instantiation is remembered, so a type reached along many field paths (a
+/// diamond-shaped type graph) is classified once per walk instead of once per path; without this
+/// the walk is exponential in the depth of such a graph. A class that used the assumption of a
+/// still-unfinished instantiation is only valid while that instantiation stays in progress, so it
+/// is kept apart and dropped when that instantiation finishes.
 struct ClassWalker<'db> {
     db: &'db dyn Db,
-    in_progress: Vec<(AstNodeKey, Vec<TransferClass>)>,
+    in_progress: Vec<Instantiation>,
+    /// Classes that depend on no assumption of an unfinished instantiation.
+    settled: HashMap<Instantiation, TransferClass>,
+    /// Classes that used the assumption of `in_progress[depth]`, with that depth.
+    provisional: HashMap<Instantiation, (TransferClass, usize)>,
+    /// The shallowest `in_progress` depth whose assumption the current computation used.
+    assumed_depth: usize,
 }
 
 fn abi_class(ty: SemanticTypeId) -> TransferClass {
@@ -327,7 +342,61 @@ fn enum_class(type_name: &str, fields: &[(String, TransferClass)]) -> TransferCl
 
 impl<'db> ClassWalker<'db> {
     fn new(db: &'db dyn Db) -> Self {
-        Self { db, in_progress: Vec::new() }
+        Self {
+            db,
+            in_progress: Vec::new(),
+            settled: HashMap::new(),
+            provisional: HashMap::new(),
+            assumed_depth: usize::MAX,
+        }
+    }
+
+    /// Whether the instantiation is in progress; if so, its assumption is used, and recorded.
+    fn assume(&mut self, declaration: AstNodeKey, arguments: &[TransferClass]) -> bool {
+        let Some(depth) =
+            self.in_progress.iter().position(|(key, classes)| *key == declaration && classes.as_slice() == arguments)
+        else {
+            return false;
+        };
+        self.assumed_depth = self.assumed_depth.min(depth);
+        true
+    }
+
+    /// Finish the innermost instantiation: classes that assumed it are no longer valid.
+    fn finish(&mut self) {
+        self.in_progress.pop();
+        let depth = self.in_progress.len();
+        self.provisional.retain(|_, (_, assumed)| *assumed < depth);
+    }
+
+    /// Rules 4-10 for one nominal instantiation whose arguments have the classes `arguments`,
+    /// remembered for the rest of the walk.
+    fn nominal_class(
+        &mut self,
+        declaration: AstNodeKey,
+        arguments: Vec<TransferClass>,
+    ) -> Result<TransferClass, SemanticError> {
+        let instantiation = (declaration, arguments);
+        if let Some(class) = self.settled.get(&instantiation) {
+            return Ok(class.clone());
+        }
+        if let Some((class, assumed)) = self.provisional.get(&instantiation) {
+            self.assumed_depth = self.assumed_depth.min(*assumed);
+            return Ok(class.clone());
+        }
+        let depth = self.in_progress.len();
+        let outer = std::mem::replace(&mut self.assumed_depth, usize::MAX);
+        let result = self.instantiation_class(declaration, instantiation.1.clone());
+        let assumed = self.assumed_depth;
+        self.assumed_depth = outer.min(assumed);
+        let class = result?;
+        // Using only its own assumption (depth) or none, the class holds wherever it is reached.
+        if assumed >= depth {
+            self.settled.insert(instantiation, class.clone());
+        } else {
+            self.provisional.insert(instantiation, (class.clone(), assumed));
+        }
+        Ok(class)
     }
 
     /// The class of a source type written at `context`, with the generic environment `environment`.
@@ -397,8 +466,8 @@ impl<'db> ClassWalker<'db> {
         }
     }
 
-    /// Rules 4-10 for one nominal instantiation whose arguments have the classes `arguments`.
-    fn nominal_class(
+    /// Rules 4-10 for one nominal instantiation, computed (see [`Self::nominal_class`]).
+    fn instantiation_class(
         &mut self,
         declaration: AstNodeKey,
         arguments: Vec<TransferClass>,
@@ -417,7 +486,7 @@ impl<'db> ClassWalker<'db> {
                 return Ok(TransferClass::Never(TransferNeverReason::NeverTransferable { type_name }));
             }
             let marker = marker_attributes(db, declaration, &definition.attributes).first().map(|(marker, _)| *marker);
-            if self.in_progress.iter().any(|(key, classes)| *key == declaration && *classes == arguments) {
+            if self.assume(declaration, &arguments) {
                 return Ok(marker
                     .map(TransferMarkerAttribute::class)
                     .unwrap_or(TransferClass::Never(TransferNeverReason::NoMarker { type_name })));
@@ -425,7 +494,7 @@ impl<'db> ClassWalker<'db> {
             let environment = generic_environment(&definition.generics, &arguments).ok_or_else(unavailable)?;
             self.in_progress.push((declaration, arguments));
             let fields = self.field_classes(declaration, &definition.fields, &environment);
-            self.in_progress.pop();
+            self.finish();
             let fields = fields?;
             // Rule 5, then the marker rules 6-8, then rule 10.
             if let Some((field, class, _)) = fields.iter().find(|(_, class, _)| !class.is_transferable()) {
@@ -445,7 +514,7 @@ impl<'db> ClassWalker<'db> {
         }
         let definition = node.of::<beskid_analysis::syntax::EnumDefinition>().ok_or_else(unavailable)?;
         let type_name = definition.name.node.name.clone();
-        if self.in_progress.iter().any(|(key, classes)| *key == declaration && *classes == arguments) {
+        if self.assume(declaration, &arguments) {
             // A recursive enum (`List<T> = Cons(T, List<T>) | Nil`) adds nothing to its own class.
             return Ok(TransferClass::Shared);
         }
@@ -462,7 +531,7 @@ impl<'db> ClassWalker<'db> {
                 }
             }
         }
-        self.in_progress.pop();
+        self.finish();
         result?;
         Ok(enum_class(&type_name, &fields))
     }

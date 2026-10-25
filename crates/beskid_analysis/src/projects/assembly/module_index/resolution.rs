@@ -38,6 +38,24 @@ impl ModuleIndex {
         entry_source_path: Option<&Path>,
         assembly: &ProgramAssembly,
     ) -> ResolveResult<Resolution> {
+        let mut resolution = self.resolve_entry_names(program, entry_source_path, assembly)?;
+        self.merge_dependency_declaration_tables(&mut resolution, assembly);
+        Ok(resolution)
+    }
+
+    /// The entry program's own resolution against the assembled module graph, without the
+    /// declaration types of the other units ([`Self::resolve_entry_program`] adds them).
+    ///
+    /// For the structural rules, which read only the entry's value bindings, used imports and
+    /// warnings. Merging the other units' declaration types resolves the declarations of every
+    /// unit of the assembly, so doing it for each own unit made a check quadratic in the size of
+    /// the project.
+    pub fn resolve_entry_names(
+        &self,
+        program: &Spanned<Program>,
+        entry_source_path: Option<&Path>,
+        assembly: &ProgramAssembly,
+    ) -> ResolveResult<Resolution> {
         let mut resolver = Resolver::new();
         let entry_source_path = entry_source_path.map(|path| path.to_path_buf());
         resolver.set_current_source_path(entry_source_path.clone());
@@ -52,9 +70,7 @@ impl ModuleIndex {
         let entry_module_path = infer_logical_module_path(entry_unit, &assembly.roots);
         resolver.set_current_source_path(entry_source_path);
 
-        let mut resolution = resolver.resolve_entry_program_in_module(program, entry_module_path.as_deref())?;
-        self.merge_dependency_declaration_tables(&mut resolution, assembly);
-        Ok(resolution)
+        resolver.resolve_entry_program_in_module(program, entry_module_path.as_deref())
     }
 
     /// Resolve a non-entry unit program against the assembled module graph.
