@@ -442,3 +442,78 @@ i64 Main() {{
     );
     assert!(!errors.is_empty(), "a `Stone` is no `Greeter`");
 }
+
+/// `List.Get` returns `Result<T, string>`: written into a contract-typed local it is a type
+/// mismatch, not a value to box.
+#[test]
+fn a_result_written_into_a_contract_typed_local_is_a_type_mismatch() {
+    let errors = check_errors(
+        &format!(
+            "{CORELIB_GREETERS}
+i64 Main() {{
+    mut List<Greeter> list = List.New<Greeter>();
+    Greeter h = Hello {{}};
+    list.Push(h);
+    Greeter got = list.Get(0);
+    Use(got.Greet(\"Cy\"));
+    return 0;
+}}"
+        ),
+        6733,
+    );
+    assert!(errors.contains(&"E1206"), "`Result<Greeter, string>` is no `Greeter`: {errors:?}");
+}
+
+/// Contract values that come back out of a generic container (a `Result<Greeter, string>`
+/// payload bound by a `match` pattern, a generic return specialized at `T = Greeter`) are
+/// already boxes: they pass through unchanged and calls on them dispatch.
+#[test]
+fn contract_values_returned_by_generic_code_pass_through_and_dispatch() {
+    let artifact = build(
+        &format!(
+            "{CORELIB_GREETERS}
+T Same<T>(T value) {{ return value; }}
+string First(List<Greeter> list) {{
+    Greeter fallback = Hello {{}};
+    Greeter got = match list.Get(0) {{ Result::Ok(v) => v, Result::Error(e) => fallback, }};
+    Greeter again = Same<Greeter>(got);
+    return again.Greet(\"Cy\");
+}}
+string Each(List<Greeter> list) {{
+    mut string out = \"\";
+    mut i64 i = 0;
+    while (i < list.Count()) {{
+        match list.Get(i) {{
+            Result::Ok(v) => {{ out = out + v.Greet(\"Cy\"); }},
+            Result::Error(e) => {{ out = out + e; }},
+        }};
+        i += 1;
+    }}
+    return out;
+}}
+i64 Main() {{
+    mut List<Greeter> list = List.New<Greeter>();
+    Greeter h = Hello {{}};
+    list.Push(h);
+    Use(First(list));
+    Use(Each(list));
+    return 0;
+}}"
+        ),
+        6734,
+    );
+    for function in ["First", "Each"] {
+        let body = clif(&artifact, function);
+        assert!(body.contains("call_indirect"), "`{function}` dispatches through the box it got back:\n{body}");
+        assert!(
+            !body.contains("__beskid_contract_box_scalar_request_v5"),
+            "no value that is already a box is boxed again:\n{body}"
+        );
+    }
+    let first = clif(&artifact, "First");
+    assert_eq!(
+        first.matches("__beskid_contract_box_reference_request_v5").count(),
+        1,
+        "only the concrete fallback is boxed:\n{first}"
+    );
+}

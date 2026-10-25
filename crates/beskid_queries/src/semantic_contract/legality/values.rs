@@ -47,7 +47,8 @@
 //! non-function destination is not judged; two primitives follow `typing::compatible`. A
 //! contract-typed destination (legacy `is_contract_compatible`) accepts a nominal value whose
 //! `type` declaration conforms to the contract through its own conformance list or an `impl`
-//! block, and rejects a proven primitive, an array, or a nominal `type` that does not conform.
+//! block, and rejects a proven primitive, an array, an enum, or a nominal `type` that does not
+//! conform.
 //!
 //! The fact is fail-closed: a generic parameter, or anything `generic_source_type_identity`
 //! cannot prove, is never judged, and neither is a value whose identity is unavailable, a
@@ -61,8 +62,8 @@ use super::typing::{compatible, enclosing_callable, expression_nodes, nodes_of_k
 use super::*;
 use crate::semantic_contract::contract_values::upcast_targets;
 use crate::semantic_contract::contracts::{
-    concrete_declaration, contract_declaration_for_identity, is_conformable_primitive, primitive_conforms,
-    type_declaration_conforms_to_contract,
+    concrete_declaration, concrete_type_or_enum_declaration, contract_declaration_for_identity, is_conformable_primitive,
+    primitive_conforms, type_declaration_conforms_to_contract,
 };
 use beskid_analysis::syntax::{
     AssignExpression, AssignOp, AstNodeId, CallExpression, ContractMethodSignature, EnumConstructorExpression,
@@ -321,7 +322,11 @@ fn contract_accepts(db: &dyn Db, scope: AstNodeKey, contract: AstNodeKey, actual
         }
         Identity::Abi(_) | Identity::Array(_) => Some(false),
         Identity::Nominal { .. } => {
-            let concrete = concrete_declaration(db, scope, actual)?;
+            let Some(concrete) = concrete_declaration(db, scope, actual) else {
+                // An enum never conforms to a contract (`Greeter g = list.Get(0);` holds a
+                // `Result<Greeter, string>`, not a `Greeter`); an unresolved name stays unjudged.
+                return concrete_type_or_enum_declaration(db, scope, actual).map(|_| false);
+            };
             let definition = type_definition(db, concrete)?;
             Some(type_declaration_conforms_to_contract(db, concrete, &definition, contract))
         }
