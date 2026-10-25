@@ -876,6 +876,26 @@ i32 Main() {
     beskid_codegen::validate_artifact(&artifact).expect("reachable artifact");
 }
 
+/// `==` between a contract value and a concrete value is no contract-value comparison: the
+/// operand is not boxed for an operator, so the comparison is E1209 in either order.
+#[test]
+fn a_contract_value_compared_with_a_concrete_value_is_a_check_error() {
+    for comparison in ["g == h", "h == g", "g != Hello {}"] {
+        let errors = check_errors(
+            &format!(
+                "{CORELIB_GREETERS}
+bool Main() {{
+    Greeter g = Hello {{}};
+    Hello h = Hello {{}};
+    return {comparison};
+}}"
+            ),
+            6740,
+        );
+        assert!(errors.contains(&"E1209"), "`{comparison}`: {errors:?}");
+    }
+}
+
 const MARKED_SCORES: &str = r#"
 use Core.Results;
 use Core.Parallel;
