@@ -517,3 +517,181 @@ i64 Main() {{
         "only the concrete fallback is boxed:\n{first}"
     );
 }
+
+const CROWD: &str = r#"
+use Core.Collections.Array;
+contract Greeter {
+    string Greet(string name);
+}
+type Hello : Greeter {
+    pub string Greet(string name) { return "Hello, " + name; }
+}
+type Bye : Greeter {
+    pub string Greet(string name) { return "Bye, " + name; }
+}
+type Crowd {
+    inject Greeter[] all;
+    pub string First(string name) { return this.all[0].Greet(name); }
+    pub string Both(string name) { return this.all[0].Greet(name) + " / " + this.all[1].Greet(name); }
+    pub string Local(string name) { Greeter g = this.all[0]; return g.Greet(name); }
+    pub i64 Count() { return Array.Len<Greeter>(this.all); }
+}
+unit Use(string text) { }
+host ManyHost() {
+    registry {
+        single Hello for Greeter;
+        single Bye for Greeter;
+        single Crowd;
+    }
+    startup(Crowd crowd) {
+        Use(crowd.First("Bo") + crowd.Both("Bo") + crowd.Local("Bo"));
+        mut i64 count = crowd.Count();
+    }
+}
+i32 Main() {
+    launch ManyHost();
+    return 0;
+}
+"#;
+
+/// Element reads of a contract-typed injected array field through `this` (`this.all[0]`) are
+/// contract values: a call on one dispatches through its witness table, and one written into a
+/// contract-typed local passes through.
+#[test]
+fn elements_of_a_contract_typed_injected_array_read_through_this_dispatch() {
+    let artifact = build(CROWD, 6735);
+    for method in ["First", "Both", "Local"] {
+        let body = clif(&artifact, method);
+        assert!(body.contains("call_indirect"), "`{method}` dispatches through each element's table:\n{body}");
+        assert!(
+            !body.contains("__beskid_contract_box_reference_request_v5"),
+            "an element is already a box:\n{body}"
+        );
+    }
+    assert_eq!(clif(&artifact, "Both").matches("call_indirect").count(), 2);
+    assert_eq!(artifact.witness_tables.len(), 2, "Hello and Bye: {:?}", artifact.witness_tables);
+}
+
+/// The 0.6.7-preview.3 smoke repros (`c1`, `c2`, `d3`, `d4`, `d5`) as programs that check and
+/// lower (`Core.Output.WriteLine` is a local `Use`: the fixture lowers the entry unit only).
+/// `List.Get` returns `Result<T, string>`, so `c1` and `d4` unwrap it with `match`
+/// (written as in the smoke, `Greeter got = list.Get(0);` is E1206, see
+/// `a_result_written_into_a_contract_typed_local_is_a_type_mismatch`). `c1` keeps only its
+/// launched host and its `Reception` (the fixture lowers every hook of every host); `c2`, `d3`
+/// and `d5` cover `ManyHost` and `Crowd`.
+#[test]
+fn the_preview_smoke_contract_repros_build() {
+    const C1: &str = r#"
+use Core.Collections.List;
+use Core.Results;
+unit Use(string text) { }
+contract Greeter {
+    string Greet(string name);
+}
+type Hello : Greeter {
+    pub string Greet(string name) { return "Hello, " + name; }
+}
+type Bye : Greeter {
+    i64 times;
+    pub string Greet(string name) { return "Bye, " + name; }
+}
+type Reception {
+    inject Greeter greeter;
+    pub string Welcome(string name) { return this.greeter.Greet(name); }
+}
+host AppHost() {
+    registry {
+        single Hello for Greeter;
+        single Reception;
+    }
+    startup(Reception reception) {
+        Use(reception.Welcome("Ada"));
+    }
+}
+i32 Main() {
+    mut List<Greeter> list = List.New<Greeter>();
+    list.Push(Hello {});
+    list.Push(Bye { times: 2 });
+    mut i64 i = 0;
+    while (i < list.Count()) {
+        match list.Get(i) {
+            Result::Ok(g) => { Use(g.Greet("Cy")); },
+            Result::Error(e) => { Use(e); },
+        };
+        i += 1;
+    }
+    Greeter g = Bye { times: 3 };
+    Use(g.Greet("Di"));
+    launch AppHost();
+    return 0;
+}
+"#;
+    const D4: &str = r#"
+use Core.Collections.List;
+use Core.Results;
+unit Use(string text) { }
+contract Greeter {
+    string Greet(string name);
+}
+type Hello : Greeter {
+    pub string Greet(string name) { return "Hello, " + name; }
+}
+i32 Main() {
+    mut List<Greeter> list = List.New<Greeter>();
+    Greeter h = Hello {};
+    list.Push(h);
+    Greeter got = match list.Get(0) { Result::Ok(v) => v, Result::Error(e) => h, };
+    Use(got.Greet("Cy"));
+    return 0;
+}
+"#;
+    let crowd = |body: &str| {
+        format!(
+            r#"
+use Core.Collections.Array;
+unit Use(string text) {{ }}
+contract Greeter {{
+    string Greet(string name);
+}}
+type Hello : Greeter {{
+    pub string Greet(string name) {{ return "Hello, " + name; }}
+}}
+type Bye : Greeter {{
+    pub string Greet(string name) {{ return "Bye, " + name; }}
+}}
+type Crowd {{
+    inject Greeter[] all;
+    {body}
+    pub i64 Count() {{ return Array.Len<Greeter>(this.all); }}
+}}
+host ManyHost() {{
+    registry {{
+        single Hello for Greeter;
+        single Bye for Greeter;
+        single Crowd;
+    }}
+    startup(Crowd crowd) {{
+        Use(crowd.Run("Bo"));
+    }}
+}}
+i32 Main() {{
+    launch ManyHost();
+    return 0;
+}}
+"#
+        )
+    };
+    let c2 = crowd(r#"pub string Run(string name) { return this.all[0].Greet(name) + " / " + this.all[1].Greet(name); }"#);
+    let d3 = crowd("pub string Run(string name) { Greeter g = this.all[0]; return g.Greet(name); }");
+    let d5 = crowd("pub string Run(string name) { return this.all[0].Greet(name); }");
+    for (generation, (name, source)) in
+        (6740_u64..).zip([("c1", C1), ("c2", c2.as_str()), ("d3", d3.as_str()), ("d4", D4), ("d5", d5.as_str())])
+    {
+        let artifact = build(source, generation);
+        assert!(
+            artifact.functions.iter().any(|function| function.function.display().to_string().contains("call_indirect")),
+            "`{name}` dispatches at least one contract call: {:?}",
+            function_names(&artifact)
+        );
+    }
+}
