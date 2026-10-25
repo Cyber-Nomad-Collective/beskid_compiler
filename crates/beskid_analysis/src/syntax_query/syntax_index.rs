@@ -101,17 +101,28 @@ impl SyntaxIndex {
     }
 
     /// Resolve the exact already-indexed direct child represented by `target`.
+    ///
+    /// Resolves `parent` once and walks its children a single time, so the cost is linear in the
+    /// parent's child count. Resolving every child through [`Self::node_at`] instead made this
+    /// quadratic in the child count, and callers that test each element of a large array literal
+    /// turned that into a check that never finished.
     pub fn direct_child_id(
         &self,
         program: &Spanned<Program>,
         parent: AstNodeId,
         target: DynNodeRef<'_>,
     ) -> Option<AstNodeId> {
-        self.children(parent)?.iter().copied().find(|child| {
-            self.node_at(program, *child).is_some_and(|node| {
-                std::ptr::eq(std::ptr::from_ref(node.0).cast::<()>(), std::ptr::from_ref(target.0).cast::<()>())
-            })
-        })
+        let children = self.children(parent)?;
+        let parent_node = self.node_at(program, parent)?;
+        let mut ordinal = 0usize;
+        let mut found = None;
+        parent_node.children(|child| {
+            if found.is_none() && child.is_same_node(target) {
+                found = Some(ordinal);
+            }
+            ordinal += 1;
+        });
+        children.get(found?).copied()
     }
 
     /// Resolve metadata only when the caller's generation is current.

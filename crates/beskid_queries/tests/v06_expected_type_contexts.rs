@@ -231,6 +231,26 @@ fn array_elements_take_the_element_of_the_expected_array_in_declared_and_argumen
     assert_eq!(fixture.integer_abi(fixture.literal(3)), Some(SemanticTypeId::U16));
 }
 
+/// Regression (0.6.7 hang): Corelib `Codec.Mem` returns 4,096-element `u8[]` tables. Resolving
+/// each element's expected type compared every element against every indexed child through a
+/// root-to-node path walk, which was quartic in the table length, and `beskid check` on the codec
+/// package never finished. Every element must resolve, and the whole table within a time bound.
+#[test]
+fn a_large_array_literal_resolves_every_element_within_a_time_bound() {
+    const LENGTH: usize = 4096;
+    let elements = vec!["0"; LENGTH].join(", ");
+    let fixture = Fixture::new(&format!("u8[] Table() {{ return [{elements}]; }}"));
+    let array = fixture.key(NodeKind::ArrayLiteralExpression, 0);
+    let started = std::time::Instant::now();
+    for occurrence in 0..LENGTH {
+        let expected = fixture.expected(fixture.literal(occurrence));
+        assert_eq!(expected.context, ExpectedTypeContext::ArrayElement { array });
+        assert_eq!(expected.abi_type(), SemanticTypeId::U8);
+    }
+    let elapsed = started.elapsed();
+    assert!(elapsed < std::time::Duration::from_secs(30), "{LENGTH} elements took {elapsed:?}");
+}
+
 #[test]
 fn match_arms_forward_the_match_expectation() {
     let fixture = Fixture::new(

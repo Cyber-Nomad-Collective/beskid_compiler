@@ -143,7 +143,10 @@ fn expected_type_for(
     }
     let parent_key = AstNodeKey { node: parent, ..key };
     let node = index.node_at(program, parent).ok_or_else(unavailable)?;
-    let is_child = |target: DynNodeRef<'_>| index.direct_child_id(program, parent, target) == Some(child);
+    // Resolve the child once and compare addresses: asking the index for each candidate made an
+    // array literal's element scan cubic in its length (a 4,096-element table never finished).
+    let child_node = index.node_at(program, child).ok_or_else(unavailable)?;
+    let is_child = |target: DynNodeRef<'_>| child_node.is_same_node(target);
     let environment = enclosing_environment(enclosing);
 
     if let Some(statement) = node.of::<syntax::LetStatement>() {
