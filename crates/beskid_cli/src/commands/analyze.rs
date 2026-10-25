@@ -188,7 +188,9 @@ fn validate_bsol_manifest(args: &AnalyzeArgs, manifest_path: &Path) -> Result<se
         }
         eprintln!("Check complete: schema-only Bsol project, {} schema export(s) valid", profiles.len());
     }
-    Ok(serde_json::json!({ "source": manifest_path, "bsol_profiles": profiles, "errors": 0, "warnings": 0, "notes": 0 }))
+    Ok(
+        serde_json::json!({ "source": manifest_path, "bsol_profiles": profiles, "errors": 0, "warnings": 0, "notes": 0 }),
+    )
 }
 
 /// Names of all manifest targets when `check` was pointed at one project manifest without a target selection and

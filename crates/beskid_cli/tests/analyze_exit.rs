@@ -108,7 +108,6 @@ fn bsol_project_check_validates_its_schema_exports() {
         .env("BESKID_CORELIB_ROOT", root.path().join("corelib"))
         .output()
         .expect("check a Bsol project with a missing export");
-    let failed_text =
-        format!("{}{}", String::from_utf8_lossy(&failed.stdout), String::from_utf8_lossy(&failed.stderr));
+    let failed_text = format!("{}{}", String::from_utf8_lossy(&failed.stdout), String::from_utf8_lossy(&failed.stderr));
     assert!(!failed.status.success(), "a missing schema export fails the check: {failed_text}");
 }
