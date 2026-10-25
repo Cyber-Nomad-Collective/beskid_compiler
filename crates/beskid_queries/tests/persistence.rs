@@ -379,3 +379,64 @@ fn legacy_owned_value_snapshot_is_rejected_without_touching_the_database() {
     std::fs::write(snapshot, serde_json::to_vec(&legacy).unwrap()).unwrap();
     assert_rejected_and_usable(directory.path(), &path);
 }
+
+/// Interned and memo entry counts and byte size of a project's snapshot.
+fn snapshot_shape(directory: &std::path::Path) -> (usize, usize, usize) {
+    let bytes = std::fs::read(beskid_queries::cache_root_for_project(directory).join("db.json")).unwrap();
+    let envelope: Envelope = serde_json::from_slice(&bytes).unwrap();
+    let payload: serde_json::Value = serde_json::from_str(envelope.db.get()).unwrap();
+    let (mut interned, mut memos) = (0, 0);
+    for entries in payload["ingredients"].as_object().unwrap().values() {
+        for (key, entry) in entries.as_object().unwrap() {
+            if key.contains(':') {
+                memos += 1;
+            } else if entry.get("last_interned_at").is_some() {
+                interned += 1;
+            }
+        }
+    }
+    (interned, memos, bytes.len())
+}
+
+/// Every compile of an unchanged project numbers its syntax trees with a new generation, so the
+/// keys of the previous compile are dead after it. Their memos must not be written again and
+/// their slots must be reused: repeated compiles keep the snapshot at one size.
+#[test]
+fn repeated_compiles_of_an_unchanged_project_keep_the_snapshot_size() {
+    use beskid_analysis::services::{PrepareOptions, ResolvedInput, synthetic_compile_plan_for_source};
+
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("Main.bd");
+    let source = "enum Result<TValue, TError> { Ok(TValue value), Error(TError error) } enum Problem { Closed() } Result<i64, Problem> Accept() { return Result::Ok(1_i64); } Result<unit, Problem> Main() { i64 value = Accept()?; return Result::Ok(()); }";
+    std::fs::write(&path, source).unwrap();
+    let mut shapes = Vec::new();
+    let mut generations = Vec::new();
+    for _ in 0..4 {
+        let mut db = BeskidDatabase::with_persistence(directory.path());
+        let resolved = ResolvedInput {
+            source_path: path.clone(),
+            source: source.into(),
+            compile_plan: Some(synthetic_compile_plan_for_source(&path)),
+            prepared_workspace: None,
+            workspace_summary: None,
+            assembly: None,
+        };
+        let (prepared, _, _) = beskid_queries::prepare_compilation_diagnostics_with_db(
+            &mut db,
+            &resolved,
+            PrepareOptions::without_mods(),
+            None,
+        )
+        .unwrap();
+        generations.push(prepared.assembly.generation);
+        drop(prepared);
+        beskid_queries::persist_session_snapshot(&mut db);
+        shapes.push(snapshot_shape(directory.path()));
+    }
+    assert!(generations.windows(2).all(|pair| pair[1] > pair[0]), "every compile is a new generation: {generations:?}");
+    let (interned, memos, bytes) = shapes[1];
+    for &(later_interned, later_memos, later_bytes) in &shapes[2..] {
+        assert_eq!((later_interned, later_memos), (interned, memos), "snapshot entries must not grow: {shapes:?}");
+        assert!(later_bytes.abs_diff(bytes) * 100 <= bytes, "snapshot bytes must not grow: {shapes:?}");
+    }
+}

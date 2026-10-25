@@ -14,7 +14,10 @@ use super::super::queries::{node_kind, node_span};
 use super::*;
 
 /// Source-unit identity, interned by a normalized absolute logical path.
-#[salsa::interned(constructor = intern_path, no_lifetime, debug, persist)]
+///
+/// Never garbage collected: plain-Rust registries (syntax units, files, unit caches) hold these
+/// ids across revisions and processes, so a slot must never be reused for another path.
+#[salsa::interned(constructor = intern_path, no_lifetime, debug, persist, revisions = usize::MAX)]
 pub struct SourceUnitId {
     #[get(interned_path)]
     #[returns(ref)]

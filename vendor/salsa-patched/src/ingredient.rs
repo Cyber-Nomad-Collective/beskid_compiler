@@ -277,6 +277,10 @@ pub trait Ingredient: Any + fmt::Debug + Send + Sync {
         unimplemented!("called `serialize` on ingredient where `should_serialize` returns `false`")
     }
 
+    /// Called once after a snapshot restore, when the runtime holds the restored revision.
+    #[cfg(feature = "persistence")]
+    fn finish_restore(&mut self, _restored: crate::Revision) {}
+
     /// Deserialize the ingredient.
     #[cfg(feature = "persistence")]
     fn deserialize(

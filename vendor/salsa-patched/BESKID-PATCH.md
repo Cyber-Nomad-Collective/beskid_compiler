@@ -23,9 +23,22 @@ omitted; all other upstream files are preserved except the delta below.
   or serialization representation is introduced.
 - `src/ingredient.rs` and `src/function/accumulated.rs`: pass the already-available
   owning `Zalsa` through accumulator traversal to the same shared accessor.
+- `src/interned.rs`, `src/zalsa.rs`, `src/database.rs`, `src/ingredient.rs`,
+  `src/function.rs`, `src/function/memo.rs`: bounded snapshots. A value interned
+  outside any query is pinned (`Durability::MAX`, `Revision::max()`) only for the
+  process that interned it; a restored pinned value is *detached* (low
+  durability, stale, reusable) until this process interns it again, which pins it
+  again outside a query or validates it inside one. After a restore every
+  interned revision queue holds the restore revision and each LRU list is ordered
+  by `last_interned_at`, so restored values nobody reads are reused at once.
+  Serialization writes only the memos verified after the restore revision (all
+  of them when the session never advanced past it). Without this, the compiler's
+  per-compile argument keys and their memos accumulated in every snapshot.
 - `tests/persistence_replay.rs` and its Cargo target: fresh custom-view database
   replay, revision change, parent-before-child dependency validation, and
-  rejection of an unregistered dependency view. A separate test binary avoids
+  rejection of an unregistered dependency view, repeated sessions with fresh
+  top-level keys keeping the snapshot at one size, and re-pinning of restored
+  keys interned again. A separate test binary avoids
   changing upstream persistence golden ingredient indexes.
 
 The compiler registers its own typed `Db` view on the candidate before publishing
@@ -38,11 +51,11 @@ The patch does not add support for serializing accumulator values, which upstrea
 Run from the root workspace:
 
 ```sh
-cargo test -p salsa --features persistence --test persistence_replay --test persistence --test accumulate-chain
+cargo test -p salsa --features persistence --test persistence_replay --test persistence --test accumulate-chain --test interned-revisions
 cargo test -p beskid_queries --features persistence --test persistence
 ```
 
 Retain this small delta until an upstream release provides equivalent typed
-initialization semantics and passes both these regressions and repeated compiler
+initialization and bounded-snapshot semantics and passes both these regressions and repeated compiler
 snapshot replay. Then remove the override and vendor directory together; do not
 leave competing Salsa implementations or a compatibility fallback.

@@ -166,6 +166,10 @@ pub struct Zalsa {
     runtime: Runtime,
 
     event_callback: Option<Box<dyn Fn(crate::Event) + Send + Sync>>,
+
+    /// The revision this database was restored at, when it was deserialized from a snapshot.
+    /// Serialization keeps only memos verified after it (see [`Zalsa::persists_memo_verified_at`]).
+    restored_revision: Option<Revision>,
 }
 
 /// All fields on Zalsa are locked behind [`Mutex`]es and [`RwLock`]s and cannot enter
@@ -189,6 +193,7 @@ impl Zalsa {
             runtime: Runtime::default(),
             memo_ingredient_indices: Default::default(),
             event_callback,
+            restored_revision: None,
             #[cfg(not(feature = "inventory"))]
             nonce: NONCE.nonce(),
         };
@@ -279,6 +284,29 @@ impl Zalsa {
     }
 
     #[allow(unused)]
+    /// Whether a memo verified at `verified_at` belongs in a snapshot of this database.
+    ///
+    /// A database restored from a snapshot keeps only the memos this session verified: a memo
+    /// still at or before the restore revision was not used since and is dropped. A session
+    /// that never advanced past the restore revision keeps everything it restored.
+    pub(crate) fn persists_memo_verified_at(&self, verified_at: Revision) -> bool {
+        match self.restored_revision {
+            None => true,
+            Some(restored) => verified_at > restored || self.current_revision() == restored,
+        }
+    }
+
+    /// Complete a snapshot restore once the runtime revisions are in place: remember the
+    /// restore revision and let every ingredient settle its restored state.
+    #[cfg(feature = "persistence")]
+    pub(crate) fn finish_restore(&mut self) {
+        let restored = self.current_revision();
+        self.restored_revision = Some(restored);
+        for ingredient in &mut self.ingredients_vec {
+            ingredient.finish_restore(restored);
+        }
+    }
+
     pub(crate) fn ingredients(&self) -> impl Iterator<Item = &dyn Ingredient> {
         self.ingredients_vec
             .iter()

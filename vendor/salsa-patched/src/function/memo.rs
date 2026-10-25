@@ -113,10 +113,12 @@ impl<'db, C: Configuration> Memo<'db, C> {
     }
 
     /// Returns `true` if this memo should be serialized.
-    pub(super) fn should_serialize(&self) -> bool {
-        // TODO: Serialization is a good opportunity to prune old query results based on
-        // the `verified_at` revision.
-        self.value.is_some() && !self.may_be_provisional()
+    /// Whether this memo belongs in a snapshot: a final value that the current session verified
+    /// (see [`Zalsa::persists_memo_verified_at`]).
+    pub(super) fn should_serialize(&self, zalsa: &crate::zalsa::Zalsa) -> bool {
+        self.value.is_some()
+            && !self.may_be_provisional()
+            && zalsa.persists_memo_verified_at(self.verified_at.load())
     }
 
     /// True if this may be a provisional cycle-iteration result.
