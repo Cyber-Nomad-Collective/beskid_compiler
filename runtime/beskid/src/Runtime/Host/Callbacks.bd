@@ -21,61 +21,41 @@ const TLS_ATTACH_DEPTH_OFFSET = 24;
 // Returns the manifest-owned callback_registry field of the active runtime.
 // The named offset is the generated ABI-v5 field offset, not spare storage
 // beyond the runtime-state record.
-pub pointer CallbackRegistrySlot()
-{
+pub pointer CallbackRegistrySlot() {
     pointer state = RuntimeState();
-    if (state == NativePointer(0))
-    {
-        return NativePointer(0);
-    }
+    if state == NativePointer(0) { return NativePointer(0); }
     return pointer_add(state, CALLBACK_REGISTRY_STATE_OFFSET);
 }
 
-pub pointer CallbackRegistry()
-{
+pub pointer CallbackRegistry() {
     pointer slot = CallbackRegistrySlot();
-    if (slot == NativePointer(0))
-    {
-        return NativePointer(0);
-    }
+    if slot == NativePointer(0) { return NativePointer(0); }
     return NativePointer(raw_word_load(slot));
 }
 
 // An FFI registration row is `{ identity, target }`.  The validation pass is
 // intentionally separate from allocation and publication so invalid input
 // cannot alter the prior runtime-owned snapshot.
-pub word CallbackRegistrationValid(pointer entries, word count)
-{
-    if (entries == NativePointer(0) || count == 0 || count > CallbackTableMax)
-    {
-        return 0;
-    }
+pub word CallbackRegistrationValid(pointer entries, word count) {
+    if entries == NativePointer(0) || count == 0 || count > CallbackTableMax { return 0; }
     mut word index = 0;
-    while (index < count)
-    {
+    while index < count {
         pointer entry = pointer_add(entries, index * CALLBACK_REGISTRY_ENTRY_SIZE);
-        if (raw_word_load(entry) == 0 || raw_word_load(pointer_add(entry, 8)) == 0)
-        {
-            return 0;
-        }
+        if raw_word_load(entry) == 0 || raw_word_load(pointer_add(entry, 8)) == 0 { return 0; }
         index = index + 1;
     }
     return 1;
 }
 
-pub pointer CallbackEntries(pointer callbackState, word kind)
-{
-    if (kind == 0)
-    {
+pub pointer CallbackEntries(pointer callbackState, word kind) {
+    if kind == 0 {
         return pointer_add(callbackState, CALLBACK_REGISTRY_CALLBACK_ENTRIES_OFFSET);
     }
     return pointer_add(callbackState, CALLBACK_REGISTRY_HANDLER_ENTRIES_OFFSET);
 }
 
-pub pointer CallbackEntryCountSlot(pointer callbackState, word kind)
-{
-    if (kind == 0)
-    {
+pub pointer CallbackEntryCountSlot(pointer callbackState, word kind) {
+    if kind == 0 {
         return pointer_add(callbackState, CALLBACK_REGISTRY_CALLBACK_COUNT_OFFSET);
     }
     return pointer_add(callbackState, CALLBACK_REGISTRY_HANDLER_COUNT_OFFSET);
@@ -84,19 +64,14 @@ pub pointer CallbackEntryCountSlot(pointer callbackState, word kind)
 // Copies one already-published category into a new registry.  Registry rows
 // have already been de-duplicated, so a direct ordered copy preserves its
 // deterministic replacement result.
-pub unit CallbackCopyEntries(pointer destination, pointer source, word kind)
-{
-    if (source == NativePointer(0))
-    {
-        return;
-    }
+pub unit CallbackCopyEntries(pointer destination, pointer source, word kind) {
+    if source == NativePointer(0) { return; }
     pointer sourceCountSlot = CallbackEntryCountSlot(source, kind);
     word count = raw_word_load(sourceCountSlot);
     pointer sourceEntries = CallbackEntries(source, kind);
     pointer destinationEntries = CallbackEntries(destination, kind);
     mut word index = 0;
-    while (index < count)
-    {
+    while index < count {
         pointer from = pointer_add(sourceEntries, index * CALLBACK_REGISTRY_ENTRY_SIZE);
         pointer to = pointer_add(destinationEntries, index * CALLBACK_REGISTRY_ENTRY_SIZE);
         raw_word_store(to, raw_word_load(from));
@@ -110,31 +85,26 @@ pub unit CallbackCopyEntries(pointer destination, pointer source, word kind)
 // Writes one category with stable first-insertion order.  A repeated identity
 // updates that slot in place, so the last supplied value wins without creating
 // multiple competing callback or handler targets.
-pub unit CallbackInstallEntries(pointer callbackState, pointer entries, word count, word kind)
-{
+pub unit CallbackInstallEntries(pointer callbackState, pointer entries, word count, word kind) {
     pointer countSlot = CallbackEntryCountSlot(callbackState, kind);
     mut word installed = raw_word_load(countSlot);
     pointer destinationEntries = CallbackEntries(callbackState, kind);
     mut word sourceIndex = 0;
-    while (sourceIndex < count)
-    {
+    while sourceIndex < count {
         pointer source = pointer_add(entries, sourceIndex * CALLBACK_REGISTRY_ENTRY_SIZE);
         word identity = raw_word_load(source);
         word target = raw_word_load(pointer_add(source, 8));
         mut word destinationIndex = 0;
         mut word replaced = 0;
-        while (destinationIndex < installed)
-        {
+        while destinationIndex < installed {
             pointer destination = pointer_add(destinationEntries, destinationIndex * CALLBACK_REGISTRY_ENTRY_SIZE);
-            if (raw_word_load(destination) == identity)
-            {
+            if raw_word_load(destination) == identity {
                 raw_word_store(pointer_add(destination, 8), target);
                 replaced = 1;
             }
             destinationIndex = destinationIndex + 1;
         }
-        if (replaced == 0)
-        {
+        if replaced == 0 {
             pointer destination = pointer_add(destinationEntries, installed * CALLBACK_REGISTRY_ENTRY_SIZE);
             raw_word_store(destination, identity);
             raw_word_store(pointer_add(destination, 8), target);
@@ -149,79 +119,45 @@ pub unit CallbackInstallEntries(pointer callbackState, pointer entries, word cou
 // Validation precedes allocation; allocation and copying complete before this
 // function returns a candidate.  The caller performs the sole publication
 // store, preserving the previous registry on every failure path.
-pub bool CallbackMergedFits(pointer previous, pointer entries, word count, word kind)
-{
+pub bool CallbackMergedFits(pointer previous, pointer entries, word count, word kind) {
     mut word merged = 0;
-    if (previous != NativePointer(0))
-    {
-        merged = raw_word_load(CallbackEntryCountSlot(previous, kind));
-    }
+    if previous != NativePointer(0) { merged = raw_word_load(CallbackEntryCountSlot(previous, kind)); }
     mut word sourceIndex = 0;
-    while (sourceIndex < count)
-    {
+    while sourceIndex < count {
         word identity = raw_word_load(pointer_add(entries, sourceIndex * CALLBACK_REGISTRY_ENTRY_SIZE));
         mut word found = 0;
         mut word priorSource = 0;
-        while (priorSource < sourceIndex)
-        {
-            if (raw_word_load(pointer_add(entries, priorSource * CALLBACK_REGISTRY_ENTRY_SIZE)) == identity)
-            {
-                found = 1;
-            }
+        while priorSource < sourceIndex {
+            if raw_word_load(pointer_add(entries, priorSource * CALLBACK_REGISTRY_ENTRY_SIZE)) == identity { found = 1; }
             priorSource = priorSource + 1;
         }
-        if (found == 0 && previous != NativePointer(0))
-        {
+        if found == 0 && previous != NativePointer(0) {
             word existingCount = raw_word_load(CallbackEntryCountSlot(previous, kind));
             pointer existing = CallbackEntries(previous, kind);
             mut word existingIndex = 0;
-            while (existingIndex < existingCount)
-            {
-                if (raw_word_load(pointer_add(existing, existingIndex * CALLBACK_REGISTRY_ENTRY_SIZE)) == identity)
-                {
-                    found = 1;
-                }
+            while existingIndex < existingCount {
+                if raw_word_load(pointer_add(existing, existingIndex * CALLBACK_REGISTRY_ENTRY_SIZE)) == identity { found = 1; }
                 existingIndex = existingIndex + 1;
             }
         }
-        if (found == 0)
-        {
-            merged = merged + 1;
-        }
-        if (merged > CallbackTableMax)
-        {
-            return false;
-        }
+        if found == 0 { merged = merged + 1; }
+        if merged > CallbackTableMax { return false; }
         sourceIndex = sourceIndex + 1;
     }
     return true;
 }
 
-pub pointer CallbackRegistryReplacement(pointer entries, word count, word kind)
-{
-    if (CallbackRegistrationValid(entries, count) == 0)
-    {
-        return NativePointer(0);
-    }
+pub pointer CallbackRegistryReplacement(pointer entries, word count, word kind) {
+    if CallbackRegistrationValid(entries, count) == 0 { return NativePointer(0); }
     pointer state = RuntimeState();
-    if (state == NativePointer(0))
-    {
-        return NativePointer(0);
-    }
+    if state == NativePointer(0) { return NativePointer(0); }
     pointer previous = CallbackRegistry();
-    if (!CallbackMergedFits(previous, entries, count, kind))
-    {
-        return NativePointer(0);
-    }
+    if !CallbackMergedFits(previous, entries, count, kind) { return NativePointer(0); }
     pointer replacement = SystemAllocate(CALLBACK_REGISTRY_SIZE, 8);
-    if (replacement == NativePointer(0))
-    {
-        return NativePointer(0);
-    }
+    if replacement == NativePointer(0) { return NativePointer(0); }
     memory_set(replacement, 0, CALLBACK_REGISTRY_SIZE);
     raw_word_store(pointer_add(replacement, CALLBACK_REGISTRY_OWNER_OFFSET), NativeWord(state));
-    if (previous != NativePointer(0))
-    {
+    if previous != NativePointer(0) {
         raw_word_store(pointer_add(replacement, 24), raw_word_load(pointer_add(previous, 24)));
         raw_word_store(pointer_add(replacement, CALLBACK_DYNAMIC_ROOT_OFFSET), raw_word_load(pointer_add(previous, CALLBACK_DYNAMIC_ROOT_OFFSET)));
         raw_word_store(pointer_add(replacement, CALLBACK_GLUE_ROOT_OFFSET), raw_word_load(pointer_add(previous, CALLBACK_GLUE_ROOT_OFFSET)));
@@ -232,26 +168,17 @@ pub pointer CallbackRegistryReplacement(pointer entries, word count, word kind)
     return replacement;
 }
 
-pub pointer CallbackLookup(pointer identity)
-{
+pub pointer CallbackLookup(pointer identity) {
     pointer callbackState = CallbackRegistry();
     pointer state = RuntimeState();
-    if (callbackState == NativePointer(0) || state == NativePointer(0))
-    {
-        return NativePointer(0);
-    }
-    if (raw_word_load(pointer_add(callbackState, CALLBACK_REGISTRY_OWNER_OFFSET)) != NativeWord(state))
-    {
-        return NativePointer(0);
-    }
+    if callbackState == NativePointer(0) || state == NativePointer(0) { return NativePointer(0); }
+    if raw_word_load(pointer_add(callbackState, CALLBACK_REGISTRY_OWNER_OFFSET)) != NativeWord(state) { return NativePointer(0); }
     word count = raw_word_load(pointer_add(callbackState, CALLBACK_REGISTRY_CALLBACK_COUNT_OFFSET));
     pointer entries = CallbackEntries(callbackState, 0);
     mut word index = 0;
-    while (index < count)
-    {
+    while index < count {
         pointer entry = pointer_add(entries, index * CALLBACK_REGISTRY_ENTRY_SIZE);
-        if (raw_word_load(entry) == NativeWord(identity))
-        {
+        if raw_word_load(entry) == NativeWord(identity) {
             return NativePointer(raw_word_load(pointer_add(entry, 8)));
         }
         index = index + 1;
@@ -263,261 +190,147 @@ pub pointer CallbackLookup(pointer identity)
 // and restores it on all local rejection/success paths.  Dynamic foreign
 // function invocation is intentionally not fabricated here: only a resolved
 // registry target is published for the native trampoline boundary.
-pub pointer CallbackEnterScope()
-{
+pub pointer CallbackEnterScope() {
     pointer tls = CurrentThreadState();
     pointer state = RuntimeState();
-    if (tls == NativePointer(0) || state == NativePointer(0))
-    {
-        return NativePointer(0);
-    }
-    if (NativePointer(raw_word_load(tls)) != state)
-    {
-        return NativePointer(0);
-    }
+    if tls == NativePointer(0) || state == NativePointer(0) { return NativePointer(0); }
+    if NativePointer(raw_word_load(tls)) != state { return NativePointer(0); }
     pointer depth = pointer_add(tls, TLS_ATTACH_DEPTH_OFFSET);
     raw_word_store(depth, raw_word_load(depth) + 1);
     return tls;
 }
 
-pub unit CallbackLeaveScope(pointer tls)
-{
-    if (tls == NativePointer(0))
-    {
-        return;
-    }
+pub unit CallbackLeaveScope(pointer tls) {
+    if tls == NativePointer(0) { return; }
     pointer depth = pointer_add(tls, TLS_ATTACH_DEPTH_OFFSET);
     word current = raw_word_load(depth);
-    if (current > 0)
-    {
-        raw_word_store(depth, current - 1);
-    }
+    if current > 0 { raw_word_store(depth, current - 1); }
     return;
 }
 
-[Export(Abi: "C", Symbol: "beskid_register_callbacks")]
-pub unit BeskidRegisterCallbacks(pointer entries, word count)
-{
+[Export(Abi:"C", Symbol:"beskid_register_callbacks")]
+pub unit BeskidRegisterCallbacks(pointer entries, word count) {
     pointer replacement = CallbackRegistryReplacement(entries, count, 0);
-    if (replacement == NativePointer(0))
-    {
-        return;
-    }
+    if replacement == NativePointer(0) { return; }
     pointer slot = CallbackRegistrySlot();
-    if (slot == NativePointer(0))
-    {
-        SystemFree(replacement, CALLBACK_REGISTRY_SIZE);
-        return;
-    }
+    if slot == NativePointer(0) { SystemFree(replacement, CALLBACK_REGISTRY_SIZE); return; }
     pointer previous = NativePointer(raw_word_load(slot));
     raw_word_store(slot, NativeWord(replacement));
-    if (previous != NativePointer(0))
-    {
-        memory_set(previous, 0, CALLBACK_REGISTRY_SIZE);
-        SystemFree(previous, CALLBACK_REGISTRY_SIZE);
-    }
+    if previous != NativePointer(0) { memory_set(previous, 0, CALLBACK_REGISTRY_SIZE); SystemFree(previous, CALLBACK_REGISTRY_SIZE); }
     return;
 }
 
-pub unit InstallCallbackTrampoline(pointer target, pointer handler)
-{
-    if (target == NativePointer(0) || handler == NativePointer(0))
-    {
-        return;
-    }
+pub unit InstallCallbackTrampoline(pointer target, pointer handler) {
+    if target == NativePointer(0) || handler == NativePointer(0) { return; }
     pointer scopeSlot = CallbackEnterScope();
-    if (scopeSlot == NativePointer(0))
-    {
-        return;
-    }
+    if scopeSlot == NativePointer(0) { return; }
     pointer selected = CallbackLookup(handler);
-    if (selected == NativePointer(0))
-    {
-        CallbackLeaveScope(scopeSlot);
-        return;
-    }
+    if selected == NativePointer(0) { CallbackLeaveScope(scopeSlot); return; }
     raw_word_store(target, NativeWord(selected));
     CallbackLeaveScope(scopeSlot);
     return;
 }
 
-[Export(Abi: "C", Symbol: "beskid_register_handlers")]
-pub unit BeskidRegisterHandlers(pointer entries, word count)
-{
+[Export(Abi:"C", Symbol:"beskid_register_handlers")]
+pub unit BeskidRegisterHandlers(pointer entries, word count) {
     pointer replacement = CallbackRegistryReplacement(entries, count, 1);
-    if (replacement == NativePointer(0))
-    {
-        return;
-    }
+    if replacement == NativePointer(0) { return; }
     pointer slot = CallbackRegistrySlot();
-    if (slot == NativePointer(0))
-    {
-        SystemFree(replacement, CALLBACK_REGISTRY_SIZE);
-        return;
-    }
+    if slot == NativePointer(0) { SystemFree(replacement, CALLBACK_REGISTRY_SIZE); return; }
     pointer previous = NativePointer(raw_word_load(slot));
     raw_word_store(slot, NativeWord(replacement));
-    if (previous != NativePointer(0))
-    {
-        memory_set(previous, 0, CALLBACK_REGISTRY_SIZE);
-        SystemFree(previous, CALLBACK_REGISTRY_SIZE);
-    }
+    if previous != NativePointer(0) { memory_set(previous, 0, CALLBACK_REGISTRY_SIZE); SystemFree(previous, CALLBACK_REGISTRY_SIZE); }
     return;
 }
 
 // V3 transports resolve only canonical live handles owned by the active registry.
-[Export(Abi: "C", Symbol: "beskid_glue_v1_root_load")]
-pub pointer GlueOwnerRootLoad()
-{
+[Export(Abi:"C", Symbol:"beskid_glue_v1_root_load")]
+pub pointer GlueOwnerRootLoad() {
     pointer ownerRegistry = CallbackRegistry();
-    if (ownerRegistry == NativePointer(0))
-    {
-        return NativePointer(0);
-    }
-    if (raw_word_load(ownerRegistry) != NativeWord(RuntimeState()))
-    {
-        return NativePointer(0);
-    }
+    if ownerRegistry == NativePointer(0) { return NativePointer(0); }
+    if raw_word_load(ownerRegistry) != NativeWord(RuntimeState()) { return NativePointer(0); }
     word handle = raw_word_load(pointer_add(ownerRegistry, CALLBACK_GLUE_ROOT_OFFSET));
-    if (handle == 0)
-    {
-        return NativePointer(0);
-    }
+    if handle == 0 { return NativePointer(0); }
     return GcResolveHandle(handle);
 }
 
-[Export(Abi: "C", Symbol: "beskid_glue_v1_root_publish")]
-pub bool GlueOwnerRootPublish(pointer record)
-{
+[Export(Abi:"C", Symbol:"beskid_glue_v1_root_publish")]
+pub bool GlueOwnerRootPublish(pointer record) {
     pointer ownerRegistry = CallbackRegistry();
-    if (ownerRegistry == NativePointer(0) || raw_word_load(ownerRegistry) != NativeWord(RuntimeState()))
-    {
-        return false;
-    }
+    if ownerRegistry == NativePointer(0) || raw_word_load(ownerRegistry) != NativeWord(RuntimeState()) { return false; }
     word handle = GcRootHandle(record);
-    if (handle == 0)
-    {
-        return false;
-    }
+    if handle == 0 { return false; }
     pointer slot = pointer_add(ownerRegistry, CALLBACK_GLUE_ROOT_OFFSET);
     word previous = raw_word_load(slot);
     raw_word_store(slot, handle);
-    if (previous != 0)
-    {
-        GcUnrootHandle(previous);
-    }
+    if previous != 0 { GcUnrootHandle(previous); }
     return true;
 }
 
-[Export(Abi: "C", Symbol: "beskid_glue_v1_root_clear")]
-pub unit GlueOwnerRootClear()
-{
+[Export(Abi:"C", Symbol:"beskid_glue_v1_root_clear")]
+pub unit GlueOwnerRootClear() {
     pointer ownerRegistry = CallbackRegistry();
-    if (ownerRegistry == NativePointer(0) || raw_word_load(ownerRegistry) != NativeWord(RuntimeState()))
-    {
-        return;
-    }
+    if ownerRegistry == NativePointer(0) || raw_word_load(ownerRegistry) != NativeWord(RuntimeState()) { return; }
     pointer slot = pointer_add(ownerRegistry, CALLBACK_GLUE_ROOT_OFFSET);
     word handle = raw_word_load(slot);
     raw_word_store(slot, 0);
-    if (handle != 0)
-    {
-        GcUnrootHandle(handle);
-    }
+    if handle != 0 { GcUnrootHandle(handle); }
     return;
 }
 
-[Export(Abi: "C", Symbol: "beskid_glue_v1_runtime_generation")]
-pub u64 GlueOwnerRuntimeGeneration()
-{
+[Export(Abi:"C", Symbol:"beskid_glue_v1_runtime_generation")]
+pub u64 GlueOwnerRuntimeGeneration() {
     pointer state = RuntimeState();
     pointer ownerRegistry = CallbackRegistry();
-    if (state == NativePointer(0) || ownerRegistry == NativePointer(0) || raw_word_load(ownerRegistry) != NativeWord(state))
-    {
-        return 0;
-    }
+    if state == NativePointer(0) || ownerRegistry == NativePointer(0) || raw_word_load(ownerRegistry) != NativeWord(state) { return 0; }
     word lifecycle = raw_word_load(pointer_add(state, 56));
     // Active (2) admits owner operations. Shutting down (3) keeps the same generation so
     // process shutdown can revoke and close every still-open library after the scheduler
     // and children have stopped; no later lifecycle state admits anything.
     word phase = lifecycle & 0xFFFFFFFF;
-    if (phase != 2 && phase != 3)
-    {
-        return 0;
-    }
+    if phase != 2 && phase != 3 { return 0; }
     return u64(lifecycle >> 32);
 }
 
-pub unit CallbackRegistryRootsDrop()
-{
+pub unit CallbackRegistryRootsDrop() {
     pointer ownerRegistry = CallbackRegistry();
-    if (ownerRegistry == NativePointer(0))
-    {
-        return;
-    }
+    if ownerRegistry == NativePointer(0) { return; }
     pointer slot = pointer_add(ownerRegistry, CALLBACK_DYNAMIC_ROOT_OFFSET);
     word handle = raw_word_load(slot);
     raw_word_store(slot, 0);
-    if (handle != 0)
-    {
-        GcUnrootHandle(handle);
-    }
+    if handle != 0 { GcUnrootHandle(handle); }
     GlueOwnerRootClear();
     return;
 }
 
-[Export(Abi: "C", Symbol: "beskid_dynamic_v1_root_load")]
-pub pointer DynamicRegistryRootLoadV1()
-{
+[Export(Abi:"C", Symbol:"beskid_dynamic_v1_root_load")]
+pub pointer DynamicRegistryRootLoadV1() {
     pointer ownerRegistry = CallbackRegistry();
-    if (ownerRegistry == NativePointer(0) || raw_word_load(ownerRegistry) != NativeWord(RuntimeState()))
-    {
-        return NativePointer(0);
-    }
+    if ownerRegistry == NativePointer(0) || raw_word_load(ownerRegistry) != NativeWord(RuntimeState()) { return NativePointer(0); }
     word handle = raw_word_load(pointer_add(ownerRegistry, CALLBACK_DYNAMIC_ROOT_OFFSET));
-    if (handle == 0)
-    {
-        return NativePointer(0);
-    }
+    if handle == 0 { return NativePointer(0); }
     return GcResolveHandle(handle);
 }
 
-[Export(Abi: "C", Symbol: "beskid_dynamic_v1_root_publish")]
-pub bool DynamicRegistryRootPublishV1(pointer record)
-{
+[Export(Abi:"C", Symbol:"beskid_dynamic_v1_root_publish")]
+pub bool DynamicRegistryRootPublishV1(pointer record) {
     pointer ownerRegistry = CallbackRegistry();
-    if (ownerRegistry == NativePointer(0) || raw_word_load(ownerRegistry) != NativeWord(RuntimeState()))
-    {
-        return false;
-    }
+    if ownerRegistry == NativePointer(0) || raw_word_load(ownerRegistry) != NativeWord(RuntimeState()) { return false; }
     word handle = GcRootHandle(record);
-    if (handle == 0)
-    {
-        return false;
-    }
+    if handle == 0 { return false; }
     pointer slot = pointer_add(ownerRegistry, CALLBACK_DYNAMIC_ROOT_OFFSET);
     word previous = raw_word_load(slot);
     raw_word_store(slot, handle);
-    if (previous != 0)
-    {
-        GcUnrootHandle(previous);
-    }
+    if previous != 0 { GcUnrootHandle(previous); }
     return true;
 }
 
-[Export(Abi: "C", Symbol: "beskid_dynamic_v1_root_clear")]
-pub unit DynamicRegistryRootClearV1()
-{
+[Export(Abi:"C", Symbol:"beskid_dynamic_v1_root_clear")]
+pub unit DynamicRegistryRootClearV1() {
     pointer ownerRegistry = CallbackRegistry();
-    if (ownerRegistry == NativePointer(0) || raw_word_load(ownerRegistry) != NativeWord(RuntimeState()))
-    {
-        return;
-    }
+    if ownerRegistry == NativePointer(0) || raw_word_load(ownerRegistry) != NativeWord(RuntimeState()) { return; }
     pointer slot = pointer_add(ownerRegistry, CALLBACK_DYNAMIC_ROOT_OFFSET);
     word handle = raw_word_load(slot);
     raw_word_store(slot, 0);
-    if (handle != 0)
-    {
-        GcUnrootHandle(handle);
-    }
+    if handle != 0 { GcUnrootHandle(handle); }
 }

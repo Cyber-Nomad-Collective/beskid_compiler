@@ -7,8 +7,7 @@ use Runtime.Fiber.Scheduler.Loop;
 use Testing.Assert;
 use HostRuntimeSupport;
 
-pub unit CheckHostWorkSurvivesWait(word winner)
-{
+pub unit CheckHostWorkSurvivesWait(word winner) {
     pointer hostRuntime = SuspendHostRuntime();
     pointer runtime = Native.SystemAllocate(64, 8);
     memory_set(runtime, 0, 64);
@@ -19,21 +18,15 @@ pub unit CheckHostWorkSurvivesWait(word winner)
     Assert.True(fiber != FIBER_NONE, "wait owner allocated");
     Core.FiberSetState(fiber, FIBER_STATE_PARKED);
     mut i64 deadline = -1;
-    if (winner == EXTERNAL_TIMEOUT)
-    {
-        deadline = 0;
-    }
+    if winner == EXTERNAL_TIMEOUT { deadline = 0; }
     word token = External.ExternalWaitRegister(Core.FiberHandle(fiber), 32, deadline);
     Assert.True(token != 0, "resolver wait registered");
     External.ExternalWorkRetain();
     Assert.Equal(External.ExternalActiveCount(), 2, "wait and live host resolver own independent obligations");
 
-    if (winner == EXTERNAL_TIMEOUT)
-    {
+    if winner == EXTERNAL_TIMEOUT {
         External.ExternalPump(0);
-    }
-    else
-    {
+    } else {
         Assert.True(External.ExternalTryComplete(token & 0xFFFFFFFF, token >> 32, winner), "cancellation wins the wait");
     }
     Assert.Equal(raw_word_load(pointer_add(External.ExternalWaitRecord(token), 32)), winner, "one terminal source owns the wait");
@@ -61,12 +54,10 @@ pub unit CheckHostWorkSurvivesWait(word winner)
     return;
 }
 
-test CancelledWaitRetainsHostWorkUntilHostExit
-{
+test CancelledWaitRetainsHostWorkUntilHostExit {
     CheckHostWorkSurvivesWait(EXTERNAL_CANCELLED);
 }
 
-test ExpiredWaitRetainsHostWorkUntilHostExit
-{
+test ExpiredWaitRetainsHostWorkUntilHostExit {
     CheckHostWorkSurvivesWait(EXTERNAL_TIMEOUT);
 }

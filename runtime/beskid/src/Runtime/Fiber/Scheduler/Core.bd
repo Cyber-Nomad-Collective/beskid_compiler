@@ -93,11 +93,7 @@ const FIBER_INDEX_MAX = 0xFFFFFFFE;
 // they only resolve within their own declaring file. Callers in other packages — including
 // tests that are not part of the compiler-embedded runtime fixture allowlist — read the
 // no-fiber sentinel through this function instead of the bare constant.
-pub word FiberNone()
-{
-    return FIBER_NONE;
-}
-
+pub word FiberNone() { return FIBER_NONE; }
 // Guarded stacks are a scheduler-owned native reservation. The manifest-only
 // adapter derives the target's guard granularity; source owns the portable
 // usable-capacity policy and never addresses below the returned usable base.
@@ -113,84 +109,63 @@ const SCHEDULER_FIBER_TABLE_OFFSET = 192;
 const SCHEDULER_FIBER_STACK_MAX_OFFSET = 200;
 
 // Returns the scheduler table owned by the active ABI-v5 runtime state.
-pub pointer SchedTable()
-{
+pub pointer SchedTable() {
     pointer state = RuntimeState();
-    if (state == NativePointer(0))
-    {
+    if state == NativePointer(0) {
         return NativePointer(0);
     }
     return NativePointer(raw_word_load(pointer_add(state, SCHEDULER_STATE_OFFSET)));
 }
 
 // Returns the chunked fiber-record table owned by the active scheduler.
-pub pointer SchedulerFiberTable()
-{
+pub pointer SchedulerFiberTable() {
     mut pointer table = SchedTable();
-    if (table == NativePointer(0))
-    {
-        return NativePointer(0);
-    }
+    if table == NativePointer(0) { return NativePointer(0); }
     return NativePointer(raw_word_load(pointer_add(table, SCHEDULER_FIBER_TABLE_OFFSET)));
 }
 
 // Returns a fiber record pointer by index. Records below `fiber_count` are always
 // addressable; `FiberAlloc` grows the table before it addresses a new index.
-pub pointer FiberRecord(word index)
-{
+pub pointer FiberRecord(word index) {
     pointer fibers = SchedulerFiberTable();
-    if (fibers == NativePointer(0))
-    {
+    if fibers == NativePointer(0) {
         return NativePointer(0);
     }
     return ChunkTableRecord(fibers, index);
 }
 
 // Per-fiber stack reservation in effect for new fibers (default 8 MiB).
-pub word SchedulerFiberStackMax()
-{
+pub word SchedulerFiberStackMax() {
     mut pointer table = SchedTable();
-    if (table == NativePointer(0))
-    {
-        return FIBER_STACK_MAX_SIZE;
-    }
+    if table == NativePointer(0) { return FIBER_STACK_MAX_SIZE; }
     word configured = raw_word_load(pointer_add(table, SCHEDULER_FIBER_STACK_MAX_OFFSET));
-    if (configured == 0)
-    {
-        return FIBER_STACK_MAX_SIZE;
-    }
+    if configured == 0 { return FIBER_STACK_MAX_SIZE; }
     return configured;
 }
 
 // Installs the per-fiber reservation for fibers spawned from now on. The value must be a
 // whole multiple of the initial committed size and at least that size; anything else is
 // rejected so a misconfigured process never runs with a stack policy nobody asked for.
-pub bool SchedulerSetFiberStackMax(word maximumSize)
-{
+pub bool SchedulerSetFiberStackMax(word maximumSize) {
     mut pointer table = SchedTable();
-    if (table == NativePointer(0))
-    {
-        return false;
-    }
-    if (maximumSize < FIBER_STACK_INITIAL_SIZE || maximumSize % FIBER_STACK_INITIAL_SIZE != 0)
-    {
-        return false;
-    }
+    if table == NativePointer(0) { return false; }
+    if maximumSize < FIBER_STACK_INITIAL_SIZE || maximumSize % FIBER_STACK_INITIAL_SIZE != 0 { return false; }
     raw_word_store(pointer_add(table, SCHEDULER_FIBER_STACK_MAX_OFFSET), maximumSize);
     return true;
 }
 
 // Internal scheduler operations use slot indices. Public handles combine the
 // low 32-bit slot index with a generation in the high 32 bits.
-pub word FiberGeneration(pointer fiber)
-{
+pub word FiberGeneration(pointer fiber) {
     // Mask before shifting: byte-to-word lowering may sign-extend its u8 input.
     // Generation 128 must remain 128, never become a negative public handle.
-    return (word(raw_byte_load(pointer_add(fiber, 44))) & 0xFF) | ((word(raw_byte_load(pointer_add(fiber, 45))) & 0xFF) << 8) | ((word(raw_byte_load(pointer_add(fiber, 46))) & 0xFF) << 16) | ((word(raw_byte_load(pointer_add(fiber, 47))) & 0xFF) << 24);
+    return (word(raw_byte_load(pointer_add(fiber, 44))) & 0xFF) |
+           ((word(raw_byte_load(pointer_add(fiber, 45))) & 0xFF) << 8) |
+           ((word(raw_byte_load(pointer_add(fiber, 46))) & 0xFF) << 16) |
+           ((word(raw_byte_load(pointer_add(fiber, 47))) & 0xFF) << 24);
 }
 
-pub unit FiberSetGeneration(pointer fiber, word generation)
-{
+pub unit FiberSetGeneration(pointer fiber, word generation) {
     raw_byte_store(pointer_add(fiber, 44), u8(generation & 0xFF));
     raw_byte_store(pointer_add(fiber, 45), u8((generation >> 8) & 0xFF));
     raw_byte_store(pointer_add(fiber, 46), u8((generation >> 16) & 0xFF));
@@ -198,37 +173,24 @@ pub unit FiberSetGeneration(pointer fiber, word generation)
     return;
 }
 
-pub bool FiberExists(word index)
-{
+pub bool FiberExists(word index) {
     mut pointer table = SchedTable();
-    if (table == NativePointer(0))
-    {
-        return false;
-    }
+    if table == NativePointer(0) { return false; }
     return index < raw_word_load(table) && FiberGeneration(FiberRecord(index)) != 0;
 }
 
-pub word FiberHandle(word index)
-{
-    if (!FiberExists(index))
-    {
-        return 0;
-    }
+pub word FiberHandle(word index) {
+    if !FiberExists(index) { return 0; }
     return (FiberGeneration(FiberRecord(index)) << 32) | index;
 }
 
-pub word FiberHandleIndex(word handle)
-{
+pub word FiberHandleIndex(word handle) {
     return handle & 0xFFFFFFFF;
 }
 
-pub bool FiberHandleValid(word handle)
-{
+pub bool FiberHandleValid(word handle) {
     mut word index = FiberHandleIndex(handle);
-    if (!FiberExists(index))
-    {
-        return false;
-    }
+    if !FiberExists(index) { return false; }
     return FiberGeneration(FiberRecord(index)) == (handle >> 32);
 }
 
@@ -236,8 +198,7 @@ pub bool FiberHandleValid(word handle)
 // obtain its context or guarded stack.  The handle is intentionally retained
 // in the one scheduler table so callers can observe status 3 without a fake
 // stack reservation or a second failure registry.
-pub unit FiberAllocationFailed(word index, word generation)
-{
+pub unit FiberAllocationFailed(word index, word generation) {
     pointer fib = FiberRecord(index);
     memory_set(fib, 0, BESKID_FIBER_RECORD_SIZE);
     FiberSetGeneration(fib, generation);
@@ -252,43 +213,28 @@ pub unit FiberAllocationFailed(word index, word generation)
 // generation; joined fibers remain stable until explicitly detached. The table
 // has no fixed capacity: a fresh slot grows the chunked record table, and the
 // only failure is the system allocator refusing that growth.
-pub word FiberAlloc(word entry, word arg, word cancelSlot, word parent)
-{
+pub word FiberAlloc(word entry, word arg, word cancelSlot, word parent) {
     mut pointer table = SchedTable();
     pointer fibers = SchedulerFiberTable();
-    if (table == NativePointer(0) || fibers == NativePointer(0))
-    {
-        return FIBER_NONE;
-    }
+    if table == NativePointer(0) || fibers == NativePointer(0) { return FIBER_NONE; }
     word count = raw_word_load(table);
     mut word index = count;
     mut word generation = 1;
     mut word scan = 0;
-    while (scan < count)
-    {
+    while scan < count {
         pointer candidate = FiberRecord(scan);
-        if ((raw_byte_load(pointer_add(candidate, 40)) != 0 || raw_byte_load(pointer_add(candidate, 42)) != 0) && FiberFinished(scan) && FiberGeneration(candidate) < 0x7FFFFFFF)
-        {
+        if (raw_byte_load(pointer_add(candidate, 40)) != 0 || raw_byte_load(pointer_add(candidate, 42)) != 0) && FiberFinished(scan) && FiberGeneration(candidate) < 0x7FFFFFFF {
             FiberCleanup(scan);
             index = scan;
             generation = FiberGeneration(candidate) + 1;
             scan = count;
-        }
-        else
-        {
+        } else {
             scan = scan + 1;
         }
     }
-    if (index == count)
-    {
-        if (count > FIBER_INDEX_MAX)
-        {
-            return FIBER_NONE;
-        }
-        if (!ChunkTableEnsure(fibers, index))
-        {
-            return FIBER_NONE;
-        }
+    if index == count {
+        if count > FIBER_INDEX_MAX { return FIBER_NONE; }
+        if !ChunkTableEnsure(fibers, index) { return FIBER_NONE; }
     }
     word stackMaximumSize = SchedulerFiberStackMax();
     pointer fib = FiberRecord(index);
@@ -297,32 +243,18 @@ pub word FiberAlloc(word entry, word arg, word cancelSlot, word parent)
     // Context storage is independent from the fixed scheduler record and derives
     // both of its allocation parameters from the selected ABI-v5 target layout.
     pointer context = SystemAllocate(ArchContextSize(), ArchContextAlignment());
-    if (context == NativePointer(0))
-    {
-        if (cancelSlot != 0)
-        {
-            SystemFree(NativePointer(cancelSlot), 8);
-        }
+    if context == NativePointer(0) {
+        if cancelSlot != 0 { SystemFree(NativePointer(cancelSlot), 8); }
         FiberAllocationFailed(index, generation);
-        if (index == count)
-        {
-            raw_word_store(table, count + 1);
-        }
+        if index == count { raw_word_store(table, count + 1); }
         return index;
     }
     pointer stack = GuardedStackAllocate(FIBER_STACK_INITIAL_SIZE, stackMaximumSize);
-    if (stack == NativePointer(0))
-    {
+    if stack == NativePointer(0) {
         SystemFree(context, ArchContextSize());
-        if (cancelSlot != 0)
-        {
-            SystemFree(NativePointer(cancelSlot), 8);
-        }
+        if cancelSlot != 0 { SystemFree(NativePointer(cancelSlot), 8); }
         FiberAllocationFailed(index, generation);
-        if (index == count)
-        {
-            raw_word_store(table, count + 1);
-        }
+        if index == count { raw_word_store(table, count + 1); }
         return index;
     }
     memory_set(context, 0, ArchContextSize());
@@ -339,39 +271,25 @@ pub word FiberAlloc(word entry, word arg, word cancelSlot, word parent)
     raw_word_store(pointer_add(fib, 112), ArchContextSize());
     raw_word_store(pointer_add(fib, 120), FIBER_STACK_INITIAL_SIZE);
     mut bool captureRooted = true;
-    if (arg != 0)
-    {
+    if arg != 0 {
         pointer object = ManagedObjectForReference(Heap(), NativePointer(arg));
-        if (object == NativePointer(0))
-        {
+        if object == NativePointer(0) {
             captureRooted = false;
-        }
-        else
-        {
+        } else {
             word descriptor = raw_word_load(object);
             captureRooted = AbiValueInitialize(pointer_add(fib, BESKID_FIBER_RECORD_CAPTURE_OFFSET), descriptor, NativePointer(arg), NativePointer(descriptor));
         }
     }
-    if (captureRooted == false)
-    {
+    if captureRooted == false {
         GuardedStackFree(stack, stackMaximumSize);
         SystemFree(context, ArchContextSize());
-        if (cancelSlot != 0)
-        {
-            SystemFree(NativePointer(cancelSlot), 8);
-        }
+        if cancelSlot != 0 { SystemFree(NativePointer(cancelSlot), 8); }
         FiberAllocationFailed(index, generation);
-        if (index == count)
-        {
-            raw_word_store(table, count + 1);
-        }
+        if index == count { raw_word_store(table, count + 1); }
         return index;
     }
     ContextInit(context, pointer_add(stack, stackMaximumSize), SchedulerFiberEntryAddress(), fib, SchedulerReturnTrampolineAddress());
-    if (index == count)
-    {
-        raw_word_store(table, count + 1);
-    }
+    if index == count { raw_word_store(table, count + 1); }
     return index;
 }
 
@@ -381,23 +299,15 @@ pub word FiberAlloc(word entry, word arg, word cancelSlot, word parent)
 // package API. There is no safe synchronous native-fault interception here: an
 // unchecked access into the protected range remains an OS fault rather than a
 // recoverable scheduler event.
-[Export(Abi: "C", Symbol: "beskid_rt_v5_scheduler_stack_check")]
-pub bool SchedulerStackCheck(word requiredUsableSize)
-{
+[Export(Abi:"C", Symbol:"beskid_rt_v5_scheduler_stack_check")]
+pub bool SchedulerStackCheck(word requiredUsableSize) {
     mut word index = SchedulerCurrentFiber();
-    if (index == FIBER_NONE || !FiberExists(index))
-    {
-        return false;
-    }
+    if index == FIBER_NONE || !FiberExists(index) { return false; }
     pointer fib = FiberRecord(index);
     word committedSize = raw_word_load(pointer_add(fib, 120));
     word maximumSize = raw_word_load(pointer_add(fib, 88));
-    if (requiredUsableSize <= committedSize)
-    {
-        return true;
-    }
-    if (requiredUsableSize > maximumSize)
-    {
+    if requiredUsableSize <= committedSize { return true; }
+    if requiredUsableSize > maximumSize {
         raw_word_store(fib, FIBER_STATE_DONE);
         raw_word_store(pointer_add(fib, 48), FIBER_JOIN_STACK_OVERFLOW);
         raw_word_store(pointer_add(fib, 56), 0);
@@ -407,8 +317,7 @@ pub bool SchedulerStackCheck(word requiredUsableSize)
     }
     word requestedSize = ((requiredUsableSize + FIBER_STACK_INITIAL_SIZE - 1) / FIBER_STACK_INITIAL_SIZE) * FIBER_STACK_INITIAL_SIZE;
     pointer stack = NativePointer(raw_word_load(pointer_add(fib, 96)));
-    if (!GuardedStackGrow(stack, committedSize, requestedSize, maximumSize))
-    {
+    if !GuardedStackGrow(stack, committedSize, requestedSize, maximumSize) {
         raw_word_store(fib, FIBER_STATE_DONE);
         raw_word_store(pointer_add(fib, 48), FIBER_JOIN_STACK_OVERFLOW);
         raw_word_store(pointer_add(fib, 56), 0);
@@ -422,14 +331,10 @@ pub bool SchedulerStackCheck(word requiredUsableSize)
 
 // Records an overflow detected by a compiler stack-limit comparison before the
 // protected range is touched. Its public join status is the ABI-stable value 3.
-[Export(Abi: "C", Symbol: "beskid_rt_v5_scheduler_stack_overflow_observed")]
-pub unit SchedulerStackOverflowObserved()
-{
+[Export(Abi:"C", Symbol:"beskid_rt_v5_scheduler_stack_overflow_observed")]
+pub unit SchedulerStackOverflowObserved() {
     mut word index = SchedulerCurrentFiber();
-    if (index == FIBER_NONE || !FiberExists(index))
-    {
-        return;
-    }
+    if index == FIBER_NONE || !FiberExists(index) { return; }
     pointer fib = FiberRecord(index);
     raw_word_store(fib, FIBER_STATE_DONE);
     raw_word_store(pointer_add(fib, 48), FIBER_JOIN_STACK_OVERFLOW);
@@ -440,21 +345,17 @@ pub unit SchedulerStackOverflowObserved()
 // Returns the public join status for one live scheduler record.  The five
 // values are ABI-stable: 0 normal, 1 cancelled, 2 panicked/stale, 3 allocation
 // or stack overflow, and 4 not yet terminal.
-pub word FiberJoinStatusWord(word index)
-{
-    if (!FiberExists(index))
-    {
+pub word FiberJoinStatusWord(word index) {
+    if !FiberExists(index) {
         return FIBER_JOIN_PANICKED;
     }
     pointer fib = FiberRecord(index);
     word state = raw_word_load(fib);
-    if (state != FIBER_STATE_DONE && state != FIBER_STATE_CANCELLED)
-    {
+    if state != FIBER_STATE_DONE && state != FIBER_STATE_CANCELLED {
         return FIBER_JOIN_NOT_DONE;
     }
     word outcome = raw_word_load(pointer_add(fib, 48));
-    if (outcome == FIBER_JOIN_OK || outcome == FIBER_JOIN_CANCELLED || outcome == FIBER_JOIN_PANICKED || outcome == FIBER_JOIN_STACK_OVERFLOW)
-    {
+    if outcome == FIBER_JOIN_OK || outcome == FIBER_JOIN_CANCELLED || outcome == FIBER_JOIN_PANICKED || outcome == FIBER_JOIN_STACK_OVERFLOW {
         return outcome;
     }
     return FIBER_JOIN_PANICKED;
@@ -462,61 +363,43 @@ pub word FiberJoinStatusWord(word index)
 
 // The current handle is scheduler-owned rather than a second TLS/global
 // scheduler.  A no-fiber sentinel is never observable through the public ABI.
-pub word SchedulerCurrentFiber()
-{
+pub word SchedulerCurrentFiber() {
     mut pointer table = SchedTable();
-    if (table == NativePointer(0))
-    {
+    if table == NativePointer(0) {
         return FIBER_NONE;
     }
     return raw_word_load(pointer_add(table, SCHEDULER_CURRENT_FIBER_OFFSET));
 }
 
-pub bool SchedulerAcquireMutatorToken()
-{
-    mut pointer table = SchedTable();
-    pointer thread = CurrentThreadState();
-    if (table == NativePointer(0) || thread == NativePointer(0))
-    {
-        return false;
-    }
+
+pub bool SchedulerAcquireMutatorToken() {
+    mut pointer table = SchedTable(); pointer thread = CurrentThreadState();
+    if table == NativePointer(0) || thread == NativePointer(0) { return false; }
     word owner = raw_word_load(pointer_add(table, SCHEDULER_MUTATOR_TOKEN_OFFSET));
-    if (owner != 0 && owner != NativeWord(thread))
-    {
-        return false;
-    }
+    if owner != 0 && owner != NativeWord(thread) { return false; }
     raw_word_store(pointer_add(table, SCHEDULER_MUTATOR_TOKEN_OFFSET), NativeWord(thread));
     return true;
 }
 
-pub unit SchedulerReleaseMutatorToken()
-{
-    mut pointer table = SchedTable();
-    pointer thread = CurrentThreadState();
-    if (table != NativePointer(0) && raw_word_load(pointer_add(table, SCHEDULER_MUTATOR_TOKEN_OFFSET)) == NativeWord(thread))
-    {
+pub unit SchedulerReleaseMutatorToken() {
+    mut pointer table = SchedTable(); pointer thread = CurrentThreadState();
+    if table != NativePointer(0) && raw_word_load(pointer_add(table, SCHEDULER_MUTATOR_TOKEN_OFFSET)) == NativeWord(thread) {
         raw_word_store(pointer_add(table, SCHEDULER_MUTATOR_TOKEN_OFFSET), 0);
     }
     return;
 }
 
-pub unit SchedulerSetCurrentFiber(word index)
-{
+pub unit SchedulerSetCurrentFiber(word index) {
     mut pointer table = SchedTable();
-    if (table != NativePointer(0))
-    {
+    if table != NativePointer(0) {
         raw_word_store(pointer_add(table, SCHEDULER_CURRENT_FIBER_OFFSET), index);
     }
     return;
 }
 
-pub unit SaveFiberLocalState(word index)
-{
+pub unit SaveFiberLocalState(word index) {
     pointer tls = CurrentThreadState();
-    if (tls == NativePointer(0) || !FiberExists(index))
-    {
-        return;
-    }
+    if tls == NativePointer(0) || !FiberExists(index) { return; }
     pointer fiber = FiberRecord(index);
     raw_word_store(pointer_add(fiber, 64), raw_word_load(pointer_add(tls, 32)));
     raw_word_store(pointer_add(fiber, 72), raw_word_load(pointer_add(tls, 40)));
@@ -527,13 +410,9 @@ pub unit SaveFiberLocalState(word index)
     return;
 }
 
-pub unit RestoreFiberLocalState(word index)
-{
+pub unit RestoreFiberLocalState(word index) {
     pointer tls = CurrentThreadState();
-    if (tls == NativePointer(0) || !FiberExists(index))
-    {
-        return;
-    }
+    if tls == NativePointer(0) || !FiberExists(index) { return; }
     pointer fiber = FiberRecord(index);
     raw_word_store(pointer_add(tls, 32), raw_word_load(pointer_add(fiber, 64)));
     raw_word_store(pointer_add(tls, 40), raw_word_load(pointer_add(fiber, 72)));
@@ -541,20 +420,14 @@ pub unit RestoreFiberLocalState(word index)
     return;
 }
 
-pub bool MarkRootFrameChain(mut pointer frame)
-{
-    while (frame != NativePointer(0))
-    {
+pub bool MarkRootFrameChain(mut pointer frame) {
+    while frame != NativePointer(0) {
         pointer slots = NativePointer(raw_word_load(pointer_add(frame, 8)));
         word count = raw_word_load(pointer_add(frame, 16));
         mut word index = 0;
-        while (slots != NativePointer(0) && index < count)
-        {
+        while slots != NativePointer(0) && index < count {
             pointer value = NativePointer(raw_word_load(pointer_add(slots, index * 8)));
-            if (value != NativePointer(0))
-            {
-                GcMarkGray(value);
-            }
+            if value != NativePointer(0) { GcMarkGray(value); }
             index = index + 1;
         }
         frame = NativePointer(raw_word_load(frame));
@@ -562,24 +435,15 @@ pub bool MarkRootFrameChain(mut pointer frame)
     return true;
 }
 
-pub bool MarkSuspendedFiberRoots()
-{
+pub bool MarkSuspendedFiberRoots() {
     mut pointer table = SchedTable();
-    if (table == NativePointer(0))
-    {
-        return true;
-    }
+    if table == NativePointer(0) { return true; }
     word current = SchedulerCurrentFiber();
     word count = raw_word_load(table);
     mut word index = 0;
-    while (index < count)
-    {
-        if (index != current && FiberExists(index) && !FiberFinished(index))
-        {
-            if (MarkRootFrameChain(NativePointer(raw_word_load(pointer_add(FiberRecord(index), 80)))) == false)
-            {
-                return false;
-            }
+    while index < count {
+        if index != current && FiberExists(index) && !FiberFinished(index) {
+            if MarkRootFrameChain(NativePointer(raw_word_load(pointer_add(FiberRecord(index), 80)))) == false { return false; }
         }
         index = index + 1;
     }
@@ -587,26 +451,21 @@ pub bool MarkSuspendedFiberRoots()
 }
 
 // Yields the current fiber.
-[Export(Abi: "C", Symbol: "beskid_rt_v5_fiber_yield")]
-pub unit FiberYield()
-{
+[Export(Abi:"C", Symbol:"beskid_rt_v5_fiber_yield")]
+pub unit FiberYield() {
     // Incremental collection: a marking or sweeping heap performs one step here, before any
     // scheduler state changes, so fibers that yield without allocating still finish a cycle.
     GcYieldStep();
     mut word index = SchedulerCurrentFiber();
-    if (index == FIBER_NONE || !FiberExists(index))
-    {
+    if index == FIBER_NONE || !FiberExists(index) {
         return;
     }
     pointer fib = FiberRecord(index);
-    if (raw_byte_load(pointer_add(fib, 41)) != 0 && !ChannelHasOperation(index))
-    {
+    if raw_byte_load(pointer_add(fib, 41)) != 0 && !ChannelHasOperation(index) {
         raw_word_store(fib, FIBER_STATE_CANCELLED);
         raw_word_store(pointer_add(fib, 48), FIBER_JOIN_CANCELLED);
         raw_word_store(pointer_add(fib, 56), 0);
-    }
-    else
-    {
+    } else {
         FiberSetState(index, FIBER_STATE_RUNNABLE);
         RunQueuePush(index);
     }
@@ -617,12 +476,10 @@ pub unit FiberYield()
 }
 
 // Returns the current generation-safe fiber handle, or -1 outside a child.
-[Export(Abi: "C", Symbol: "fiber_current_id")]
-pub i64 FiberCurrentId()
-{
+[Export(Abi:"C", Symbol:"fiber_current_id")]
+pub i64 FiberCurrentId() {
     mut word index = SchedulerCurrentFiber();
-    if (index == FIBER_NONE)
-    {
+    if index == FIBER_NONE {
         return -1;
     }
     return i64(FiberHandle(index));
@@ -632,69 +489,50 @@ pub i64 FiberCurrentId()
 
 // Push a live runnable fiber exactly once. The ring grows on demand; false means
 // the system allocator refused the growth.
-pub bool RunQueuePush(word fiberIndex)
-{
+pub bool RunQueuePush(word fiberIndex) {
     mut pointer table = SchedTable();
-    if (table == NativePointer(0) || !FiberExists(fiberIndex))
-    {
-        return false;
-    }
+    if table == NativePointer(0) || !FiberExists(fiberIndex) { return false; }
     pointer ring = pointer_add(table, SCHEDULER_RUN_QUEUE_OFFSET);
-    if (RingContains(ring, fiberIndex))
-    {
-        return true;
-    }
+    if RingContains(ring, fiberIndex) { return true; }
     return RingPush(ring, fiberIndex);
 }
 
 // Pop a fiber index from the run queue. Returns FIBER_NONE if empty.
-pub word RunQueuePop()
-{
+pub word RunQueuePop() {
     mut pointer table = SchedTable();
-    if (table == NativePointer(0))
-    {
-        return FIBER_NONE;
-    }
+    if table == NativePointer(0) { return FIBER_NONE; }
     return RingPop(pointer_add(table, SCHEDULER_RUN_QUEUE_OFFSET), FIBER_NONE);
 }
 
 // Check if run queue is empty.
-pub bool RunQueueEmpty()
-{
+pub bool RunQueueEmpty() {
     mut pointer table = SchedTable();
-    if (table == NativePointer(0))
-    {
-        return true;
-    }
+    if table == NativePointer(0) { return true; }
     return RingEmpty(pointer_add(table, SCHEDULER_RUN_QUEUE_OFFSET));
 }
 
 // ── Fiber State Transitions ────────────────────────────────────────
 
 // Set fiber state. Must hold scheduler lock.
-pub unit FiberSetState(word index, word state)
-{
+pub unit FiberSetState(word index, word state) {
     pointer fib = FiberRecord(index);
     raw_word_store(fib, state);
     return;
 }
 
 // Get fiber state.
-pub word FiberState(word index)
-{
+pub word FiberState(word index) {
     pointer fib = FiberRecord(index);
     return raw_word_load(fib);
 }
 
 // Check if fiber is parked (waiting on a channel/mutex/wg).
-pub bool FiberParked(word index)
-{
+pub bool FiberParked(word index) {
     return FiberState(index) == FIBER_STATE_PARKED;
 }
 
 // Check if fiber is finished.
-pub bool FiberFinished(word index)
-{
+pub bool FiberFinished(word index) {
     word s = FiberState(index);
     return s == FIBER_STATE_DONE || s == FIBER_STATE_CANCELLED;
 }
@@ -708,43 +546,28 @@ const FIBER_RELEASE_ROOT_BLOCK_SLOTS = 16;
 
 // Terminal context transfer skips generated epilogues. Remove only this fiber's
 // stack-slot roots; scheduler-owned ABI slots and every other stack remain rooted.
-pub unit FiberReleaseStackRoots(word index)
-{
-    if (!FiberExists(index))
-    {
-        return;
-    }
+pub unit FiberReleaseStackRoots(word index) {
+    if !FiberExists(index) { return; }
     pointer fiber = FiberRecord(index);
     word base = raw_word_load(pointer_add(fiber, 96));
-    if (base == 0)
-    {
-        return;
-    }
+    if base == 0 { return; }
     word end = base + raw_word_load(pointer_add(fiber, 88));
     pointer heap = Heap();
-    if (heap == NativePointer(0))
-    {
-        return;
-    }
+    if heap == NativePointer(0) { return; }
     // Roots now live in a segmented, growable chain of blocks (the fixed-array SIGILL fix, see
     // docs/superpowers/specs/2026-09-22-gc-span-heap-design.md); walk every block, and for each
     // matching address call the existing `GcUnregisterRoot` (address-identity removal). A
     // removal swaps a different live entry from the end of the SAME block into this slot, so the
     // slot index is rechecked rather than advanced whenever a match is removed.
     mut pointer block = NativePointer(raw_word_load(pointer_add(heap, FIBER_RELEASE_HEAP_ROOT_STACK_HEAD)));
-    while (block != NativePointer(0))
-    {
+    while block != NativePointer(0) {
         pointer nextBlock = NativePointer(raw_word_load(pointer_add(block, FIBER_RELEASE_ROOT_BLOCK_NEXT)));
         mut word slot = 0;
-        while (slot < raw_word_load(pointer_add(block, FIBER_RELEASE_ROOT_BLOCK_COUNT)))
-        {
+        while slot < raw_word_load(pointer_add(block, FIBER_RELEASE_ROOT_BLOCK_COUNT)) {
             word address = raw_word_load(pointer_add(block, FIBER_RELEASE_ROOT_BLOCK_SLOTS + slot * 8));
-            if (address >= base && address < end)
-            {
+            if address >= base && address < end {
                 GcUnregisterRoot(NativePointer(address));
-            }
-            else
-            {
+            } else {
                 slot = slot + 1;
             }
         }
@@ -753,50 +576,32 @@ pub unit FiberReleaseStackRoots(word index)
     return;
 }
 
-pub unit FiberCleanup(word index)
-{
-    if (!FiberExists(index))
-    {
-        return;
-    }
+pub unit FiberCleanup(word index) {
+    if !FiberExists(index) { return; }
     ChannelReleaseReceipts(FiberHandle(index));
     PortReleaseReceipts(FiberHandle(index));
     FiberReleaseStackRoots(index);
     pointer fib = FiberRecord(index);
     pointer message = NativePointer(raw_word_load(pointer_add(fib, 56)));
-    if (message != NativePointer(0))
-    {
+    if message != NativePointer(0) {
         mut word length = raw_word_load(pointer_add(message, 8));
-        if (length == 0)
-        {
-            length = 1;
-        }
+        if length == 0 { length = 1; }
         SystemFree(NativePointer(raw_word_load(message)), length);
         SystemFree(message, 16);
         raw_word_store(pointer_add(fib, 56), 0);
     }
     pointer environmentSlot = pointer_add(fib, 16);
-    if (AbiValueClear(pointer_add(fib, BESKID_FIBER_RECORD_CAPTURE_OFFSET)) == false || AbiValueClear(pointer_add(fib, BESKID_FIBER_RECORD_RESULT_OFFSET)) == false)
-    {
+    if AbiValueClear(pointer_add(fib, BESKID_FIBER_RECORD_CAPTURE_OFFSET)) == false || AbiValueClear(pointer_add(fib, BESKID_FIBER_RECORD_RESULT_OFFSET)) == false {
         Trap(10, NativePointer(0), 0);
     }
     pointer stack = NativePointer(raw_word_load(pointer_add(fib, 96)));
     word stackMaximumSize = raw_word_load(pointer_add(fib, 88));
-    if (stack != NativePointer(0) && stackMaximumSize != 0)
-    {
-        GuardedStackFree(stack, stackMaximumSize);
-    }
+    if stack != NativePointer(0) && stackMaximumSize != 0 { GuardedStackFree(stack, stackMaximumSize); }
     pointer context = NativePointer(raw_word_load(pointer_add(fib, 104)));
     word contextSize = raw_word_load(pointer_add(fib, 112));
-    if (context != NativePointer(0) && contextSize != 0)
-    {
-        SystemFree(context, contextSize);
-    }
+    if context != NativePointer(0) && contextSize != 0 { SystemFree(context, contextSize); }
     pointer cancelSlot = NativePointer(raw_word_load(pointer_add(fib, 24)));
-    if (cancelSlot != NativePointer(0))
-    {
-        SystemFree(cancelSlot, 8);
-    }
+    if cancelSlot != NativePointer(0) { SystemFree(cancelSlot, 8); }
     raw_word_store(environmentSlot, 0);
     raw_word_store(pointer_add(fib, 24), 0);
     raw_word_store(pointer_add(fib, 88), 0);
@@ -812,80 +617,49 @@ pub unit FiberCleanup(word index)
 }
 
 // Mark fiber done with a return value.
-pub unit FiberDone(word index, pointer value)
-{
-    if (!FiberExists(index))
-    {
-        Trap(10, NativePointer(0), 0);
-    }
+pub unit FiberDone(word index, pointer value) {
+    if !FiberExists(index) { Trap(10, NativePointer(0), 0); }
     pointer fib = FiberRecord(index);
     word state = FiberState(index);
-    if (state == FIBER_STATE_DONE || state == FIBER_STATE_CANCELLED)
-    {
-        return;
-    }
-    if (state != FIBER_STATE_RUNNABLE && state != FIBER_STATE_RUNNING)
-    {
-        Trap(10, NativePointer(0), 0);
-    }
+    if state == FIBER_STATE_DONE || state == FIBER_STATE_CANCELLED { return; }
+    if state != FIBER_STATE_RUNNABLE && state != FIBER_STATE_RUNNING { Trap(10, NativePointer(0), 0); }
     u8 cancelled = raw_byte_load(pointer_add(fib, 41));
-    if (cancelled != 0)
-    {
+    if cancelled != 0 {
         raw_word_store(fib, FIBER_STATE_CANCELLED);
         raw_word_store(pointer_add(fib, 48), FIBER_JOIN_CANCELLED);
         raw_word_store(pointer_add(fib, 56), 0);
-    }
-    else
-    {
+    } else {
         pointer object = ManagedObjectForReference(Heap(), value);
-        if (object == NativePointer(0))
-        {
-            Trap(10, NativePointer(0), 0);
-        }
+        if object == NativePointer(0) { Trap(10, NativePointer(0), 0); }
         word descriptor = raw_word_load(object);
-        if (AbiValueInitialize(pointer_add(fib, BESKID_FIBER_RECORD_RESULT_OFFSET), descriptor, value, NativePointer(descriptor)) == false)
-        {
+        if AbiValueInitialize(pointer_add(fib, BESKID_FIBER_RECORD_RESULT_OFFSET), descriptor, value, NativePointer(descriptor)) == false {
             Trap(5, NativePointer(0), 0);
         }
         raw_word_store(fib, FIBER_STATE_DONE);
         raw_word_store(pointer_add(fib, 48), FIBER_JOIN_OK);
     }
-    if (AbiValueClear(pointer_add(fib, BESKID_FIBER_RECORD_CAPTURE_OFFSET)) == false)
-    {
-        Trap(10, NativePointer(0), 0);
-    }
+    if AbiValueClear(pointer_add(fib, BESKID_FIBER_RECORD_CAPTURE_OFFSET)) == false { Trap(10, NativePointer(0), 0); }
     raw_word_store(pointer_add(fib, 16), 0);
     return;
 }
 
-pub pointer SchedulerContext()
-{
+pub pointer SchedulerContext() {
     mut pointer table = SchedTable();
-    if (table == NativePointer(0))
-    {
-        return NativePointer(0);
-    }
+    if table == NativePointer(0) { return NativePointer(0); }
     return NativePointer(raw_word_load(pointer_add(table, SCHEDULER_CONTEXT_OFFSET)));
 }
 
+
 // Initialize the scheduler for the first time.
-pub unit SchedInit()
-{
+pub unit SchedInit() {
     mut pointer table = SchedTable();
-    if (table != NativePointer(0))
-    {
-        return;
-    }
+    if table != NativePointer(0) { return; }
     pointer state = RuntimeState();
     table = SystemAllocate(BESKID_SCHEDULER_STATE_SIZE, 8);
-    if (table == NativePointer(0))
-    {
-        return;
-    }
+    if table == NativePointer(0) { return; }
     memory_set(table, 0, BESKID_SCHEDULER_STATE_SIZE);
     pointer fibers = ChunkTableCreate(BESKID_FIBER_RECORD_SIZE);
-    if (fibers == NativePointer(0))
-    {
+    if fibers == NativePointer(0) {
         SystemFree(table, BESKID_SCHEDULER_STATE_SIZE);
         return;
     }
@@ -893,8 +667,7 @@ pub unit SchedInit()
     raw_word_store(pointer_add(table, SCHEDULER_FIBER_STACK_MAX_OFFSET), FIBER_STACK_MAX_SIZE);
     raw_word_store(pointer_add(state, SCHEDULER_STATE_OFFSET), NativeWord(table));
     pointer schedulerContext = SystemAllocate(ArchContextSize(), ArchContextAlignment());
-    if (schedulerContext == NativePointer(0))
-    {
+    if schedulerContext == NativePointer(0) {
         raw_word_store(pointer_add(state, SCHEDULER_STATE_OFFSET), 0);
         ChunkTableFree(fibers);
         SystemFree(table, BESKID_SCHEDULER_STATE_SIZE);
@@ -910,96 +683,58 @@ pub unit SchedInit()
 
 // Normal shutdown joins children by driving them to natural completion. Cancellation
 // is reserved for explicit forced/error teardown.
-pub bool SchedShutdown()
-{
-    return SchedShutdownForced(false);
-}
+pub bool SchedShutdown() { return SchedShutdownForced(false); }
 
-pub bool SchedShutdownForced(bool forced)
-{
+pub bool SchedShutdownForced(bool forced) {
     mut pointer table = SchedTable();
-    if (table == NativePointer(0))
-    {
-        return true;
-    }
-    if (SchedulerCurrentFiber() != FIBER_NONE)
-    {
-        return false;
-    }
+    if table == NativePointer(0) { return true; }
+    if SchedulerCurrentFiber() != FIBER_NONE { return false; }
     mut word count = 0;
     mut word index = 0;
-    while (true)
-    {
+    while true {
         // An owned child may create further owned or detached work. Re-scan
         // before every scheduling step, not only the initial shutdown snapshot.
         count = raw_word_load(table);
         index = 0;
-        while (index < count)
-        {
-            if (FiberExists(index) && raw_byte_load(pointer_add(FiberRecord(index), 40)) != 0 && !FiberFinished(index))
-            {
+        while index < count {
+            if FiberExists(index) && raw_byte_load(pointer_add(FiberRecord(index), 40)) != 0 && !FiberFinished(index) {
                 // Detach relinquishes shutdown liveness. No detached context is
                 // resumed once shutdown starts; owned storage is released below.
                 ExternalCancelFiber(FiberHandle(index));
                 raw_word_store(FiberRecord(index), FIBER_STATE_CANCELLED);
                 raw_word_store(pointer_add(FiberRecord(index), 48), FIBER_JOIN_CANCELLED);
             }
-            if (forced && FiberExists(index) && !FiberFinished(index) && raw_byte_load(pointer_add(FiberRecord(index), 41)) == 0)
-            {
+            if forced && FiberExists(index) && !FiberFinished(index) && raw_byte_load(pointer_add(FiberRecord(index), 41)) == 0 {
                 pointer fiber = FiberRecord(index);
                 raw_byte_store(pointer_add(fiber, 41), 1);
                 pointer cancelSlot = NativePointer(raw_word_load(pointer_add(fiber, 24)));
-                if (cancelSlot != NativePointer(0))
-                {
-                    raw_word_store(cancelSlot, 1);
-                }
-                if (!ExternalCancelFiber(FiberHandle(index)) && FiberState(index) == FIBER_STATE_PARKED)
-                {
-                    WakeEnqueue(index);
-                }
-                if (FiberState(index) == FIBER_STATE_RUNNABLE)
-                {
-                    RunQueuePush(index);
-                }
+                if cancelSlot != NativePointer(0) { raw_word_store(cancelSlot, 1); }
+                if !ExternalCancelFiber(FiberHandle(index)) && FiberState(index) == FIBER_STATE_PARKED { WakeEnqueue(index); }
+                if FiberState(index) == FIBER_STATE_RUNNABLE { RunQueuePush(index); }
             }
             index = index + 1;
         }
-        if (SchedStep() == false)
-        {
-            if (ExternalActiveCount() == 0)
-            {
-                break;
-            }
+        if SchedStep() == false {
+            if ExternalActiveCount() == 0 { break; }
             owner_wait(ExternalOwnerId(), ExternalNextDeadline());
         }
     }
     count = raw_word_load(table);
     index = 0;
-    while (index < count)
-    {
-        if (FiberExists(index) && !FiberFinished(index))
-        {
-            return false;
-        }
+    while index < count {
+        if FiberExists(index) && !FiberFinished(index) { return false; }
         index = index + 1;
     }
     // Host-work retains have drained while the owner and its mailbox remain
     // alive. Close this owner's sockets before dropping stacks or owner state;
     // the network audit reports opaque handle details before failing on leaks.
-    if (NetworkShutdown(ExternalOwnerId()) != 0)
-    {
-        Trap(10, NativePointer(0), 0);
-    }
+    if NetworkShutdown(ExternalOwnerId()) != 0 { Trap(10, NativePointer(0), 0); }
     // Every fiber has finished and the heap is alive: copy a main-fiber panic message into
     // native storage before fiber records (and later the heap) are released.
     IsolateCapturePanicMessage(RuntimeState());
     index = 0;
-    while (index < count)
-    {
-        if (FiberExists(index))
-        {
-            FiberCleanup(index);
-        }
+    while index < count {
+        if FiberExists(index) { FiberCleanup(index); }
         index = index + 1;
     }
     ExternalShutdown(table);
@@ -1010,10 +745,7 @@ pub bool SchedShutdownForced(bool forced)
     ChunkTableFree(SchedulerFiberTable());
     raw_word_store(pointer_add(table, SCHEDULER_FIBER_TABLE_OFFSET), 0);
     pointer schedulerContext = SchedulerContext();
-    if (schedulerContext != NativePointer(0))
-    {
-        SystemFree(schedulerContext, ArchContextSize());
-    }
+    if schedulerContext != NativePointer(0) { SystemFree(schedulerContext, ArchContextSize()); }
     pointer state = RuntimeState();
     raw_word_store(pointer_add(state, SCHEDULER_STATE_OFFSET), 0);
     memory_set(table, 0, BESKID_SCHEDULER_STATE_SIZE);
@@ -1023,38 +755,22 @@ pub bool SchedShutdownForced(bool forced)
 
 // Registers work in the scheduler-owned table and returns a generation-safe
 // public handle. Execution starts only when the scheduler switches to it.
-pub i64 SchedulerSpawn(pointer entry, pointer environment, pointer cancelledSlot)
-{
+pub i64 SchedulerSpawn(pointer entry, pointer environment, pointer cancelledSlot) {
     SchedInit();
     mut pointer table = SchedTable();
-    if (table == NativePointer(0))
-    {
-        if (cancelledSlot != NativePointer(0))
-        {
-            SystemFree(cancelledSlot, 8);
-        }
+    if table == NativePointer(0) {
+        if cancelledSlot != NativePointer(0) { SystemFree(cancelledSlot, 8); }
         return -1;
     }
     mut word parent = SchedulerCurrentFiber();
-    if (parent == FIBER_NONE)
-    {
-        parent = raw_word_load(pointer_add(table, 8));
-    }
-    mut word index = FiberAlloc(NativeWord(entry), NativeWord(environment), NativeWord(cancelledSlot), parent);
-    if (index == FIBER_NONE)
-    {
-        if (cancelledSlot != NativePointer(0))
-        {
-            SystemFree(cancelledSlot, 8);
-        }
+        if parent == FIBER_NONE { parent = raw_word_load(pointer_add(table, 8)); }
+        mut word index = FiberAlloc(NativeWord(entry), NativeWord(environment), NativeWord(cancelledSlot), parent);
+    if index == FIBER_NONE {
+        if cancelledSlot != NativePointer(0) { SystemFree(cancelledSlot, 8); }
         return -1;
     }
-    if (raw_word_load(pointer_add(table, 8)) == FIBER_NONE)
-    {
-        raw_word_store(pointer_add(table, 8), index);
-    }
-    if (FiberJoinStatusWord(index) != FIBER_JOIN_STACK_OVERFLOW && RunQueuePush(index) == false)
-    {
+    if raw_word_load(pointer_add(table, 8)) == FIBER_NONE { raw_word_store(pointer_add(table, 8), index); }
+    if FiberJoinStatusWord(index) != FIBER_JOIN_STACK_OVERFLOW && RunQueuePush(index) == false {
         FiberCleanup(index);
         FiberAllocationFailed(index, FiberGeneration(FiberRecord(index)));
     }

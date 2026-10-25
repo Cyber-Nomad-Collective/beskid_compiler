@@ -80,7 +80,7 @@ i32 Main()
     with Visit()
     {
         Output.WriteLine("early exit");
-        if (Early())
+        if Early()
         {
             return 3;
         }

@@ -1,22 +1,12 @@
-enum Error
-{
-    Failed,
-}
+enum Error { Failed() }
+enum Result<TValue, TError> { Ok(TValue value), Error(TError error) }
 
-enum Result<TValue, TError>
-{
-    Ok(TValue value),
-    Error(TError error),
-}
-
-Result<i32, Error> Propagate(Result<i32, Error> input)
-{
+Result<i32, Error> Propagate(Result<i32, Error> input) {
     Result<i32, Error> bound = input;
     i32 value = bound?;
     return Result::Ok(value);
 }
 
-i32 Main()
-{
+i32 Main() {
     return 1;
 }

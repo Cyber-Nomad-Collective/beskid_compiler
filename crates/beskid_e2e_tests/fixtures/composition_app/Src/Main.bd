@@ -1,15 +1,12 @@
-host AppHost()
-{
-    registry
-    {
+host AppHost() {
+    registry {
         single Logger;
     }
 }
 
-type Logger { }
+type Logger {}
 
-i32 Main()
-{
+i32 Main() {
     launch AppHost();
     return 0;
 }

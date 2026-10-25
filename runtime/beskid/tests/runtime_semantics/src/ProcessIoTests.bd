@@ -5,8 +5,7 @@ use Runtime.Io.Syscalls;
 use Testing.Assert;
 use HostRuntimeSupport;
 
-test ProcessAndByteIoSurfaceIsTargetConsistent
-{
+test ProcessAndByteIoSurfaceIsTargetConsistent {
     pointer hostRuntime = SuspendHostRuntime();
     pointer runtime = SystemAllocate(64, 8);
     memory_set(runtime, 0, 64);

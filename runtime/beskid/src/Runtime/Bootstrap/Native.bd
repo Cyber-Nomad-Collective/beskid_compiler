@@ -2,14 +2,12 @@
 //
 // `native_word_from_pointer` is not a user-visible extern: codegen recognizes this direct call
 // only after the compiler has attached canonical-runtime authority to this exact source corpus.
-pub word NativeWord(pointer value)
-{
+pub word NativeWord(pointer value) {
     return native_word_from_pointer(value);
 }
 
 // Converts a pointer-width runtime word back to an opaque native address.
-pub pointer NativePointer(word value)
-{
+pub pointer NativePointer(word value) {
     return pointer_from_native_word(value);
 }
 
@@ -18,23 +16,20 @@ pub pointer NativePointer(word value)
 // This is deliberately not a managed-object allocation: object headers, descriptor validation,
 // GC accounting, and collection policy remain owned by the future heap module.  The wrapper only
 // preserves the ABI-v5 allocator boundary used by bootstrap state.
-pub pointer SystemAllocate(word size, word alignment)
-{
+pub pointer SystemAllocate(word size, word alignment) {
     return system_allocate(size, alignment);
 }
 
 // Native scratch belongs to a witnessed checked operation, rather than the collector's
 // root-stack growth. Preserve ordinary null returns while retaining checked exhaustion.
 // Keeping this separate avoids relabeling a root-admission failure as native scratch OOM.
-pub pointer SystemAllocateScratch(word size, word alignment)
-{
-    if (CheckedScopeFailureReason() != 0)
-    {
+pub pointer SystemAllocateScratch(word size, word alignment) {
+    if CheckedScopeFailureReason() != 0 {
         return NativePointer(0);
     }
     pointer result = SystemAllocate(size, alignment);
-    if (result == NativePointer(0) && size != 0 && alignment != 0 && (alignment & (alignment - 1)) == 0)
-    {
+    if result == NativePointer(0) && size != 0 && alignment != 0 &&
+       (alignment & (alignment - 1)) == 0 {
         CheckedScopeRecordFailure(2);
     }
     return result;
@@ -44,8 +39,7 @@ pub pointer SystemAllocateScratch(word size, word alignment)
 //
 // The manifest owns the size-only release contract.  This wrapper must not infer ownership or
 // run destructors; managed lifetime is not part of this bootstrap corpus.
-pub unit SystemFree(pointer address, word size)
-{
+pub unit SystemFree(pointer address, word size) {
     system_free(address, size);
     return;
 }
@@ -54,14 +48,12 @@ pub unit SystemFree(pointer address, word size)
 //
 // The value is a `BeskidTlsState` address only after a caller has installed one.  Keeping it
 // opaque prevents this source-only bootstrap layer from imposing scheduler or GC-thread policy.
-pub pointer CurrentThreadState()
-{
+pub pointer CurrentThreadState() {
     return tls_get();
 }
 
 // Installs the opaque state for the current runtime thread.
-pub unit SetCurrentThreadState(pointer state)
-{
+pub unit SetCurrentThreadState(pointer state) {
     tls_set(state);
     return;
 }
@@ -69,125 +61,68 @@ pub unit SetCurrentThreadState(pointer state)
 // OS threads. `entry` is a `pointer (pointer)` function; the host stores an opaque
 // handle cell in `handleOut`. A new thread has no runtime TLS state until it calls
 // `ThreadAttach` or `IsolateCreate`. These wrappers are the only callers.
-pub i32 ThreadCreate(pointer entry, pointer argument, pointer handleOut)
-{
+pub i32 ThreadCreate(pointer entry, pointer argument, pointer handleOut) {
     return thread_create(entry, argument, handleOut);
 }
-
-pub i32 ThreadJoin(pointer handle)
-{
-    return thread_join(handle);
-}
+pub i32 ThreadJoin(pointer handle) { return thread_join(handle); }
 
 // Single-word atomics on naturally aligned native storage. Order bytes: 0 relaxed,
 // 1 acquire, 2 release, 3 acquire-release, 4 sequentially consistent.
-pub word AtomicWordLoad(pointer address, u8 order)
-{
-    return atomic_word_load(address, order);
-}
-
-pub unit AtomicWordStore(pointer address, word value, u8 order)
-{
+pub word AtomicWordLoad(pointer address, u8 order) { return atomic_word_load(address, order); }
+pub unit AtomicWordStore(pointer address, word value, u8 order) {
     atomic_word_store(address, value, order);
     return;
 }
-
 // Returns the observed value; the exchange happened exactly when it equals `expected`.
-pub word AtomicWordCompareExchange(pointer address, word expected, word desired, u8 order)
-{
+pub word AtomicWordCompareExchange(pointer address, word expected, word desired, u8 order) {
     return atomic_word_compare_exchange(address, expected, desired, order);
 }
-
 // Returns the previous value.
-pub word AtomicWordFetchAdd(pointer address, word delta, u8 order)
-{
+pub word AtomicWordFetchAdd(pointer address, word delta, u8 order) {
     return atomic_word_fetch_add(address, delta, order);
 }
-
-pub unit AtomicFence(u8 order)
-{
+pub unit AtomicFence(u8 order) {
     atomic_fence(order);
     return;
 }
 
 // The host's logical processor count (at least 1); not the scheduler mutator count.
-pub word HostProcessorCount()
-{
-    return host_processor_count();
-}
+pub word HostProcessorCount() { return host_processor_count(); }
 
 // The address of the process barrier word `beskid_rt_v5_gc_barrier_active` (platform_tls.c): the
 // number of heaps that are marking. Changed only with atomic add (Collection.bd).
-pub pointer GcBarrierActiveWord()
-{
-    return gc_barrier_active_word();
-}
+pub pointer GcBarrierActiveWord() { return gc_barrier_active_word(); }
 
 // True in the debug runtime kit (the platform object reports its build profile).
-pub bool KitDebugProfile()
-{
-    return kit_debug_profile() != 0;
-}
+pub bool KitDebugProfile() { return kit_debug_profile() != 0; }
 
 // One zero-initialized block of process-wide native words (see Lifecycle.bd for its layout).
-pub pointer ProcessStateRoot()
-{
-    return process_state_root();
-}
+pub pointer ProcessStateRoot() { return process_state_root(); }
 
 // OS workers operate exclusively on native request storage. These calls are the
 // complete Beskid/host seam; worker entrypoints never attach as mutators or call GC.
 // The pool is process-wide and reference counted: every runtime instance holds it
 // once (`WorkerPoolInit`) and releases it once (`WorkerPoolShutdown`); the last
 // release stops and joins the threads.
-pub i32 WorkerPoolInit(word workerCount)
-{
-    return worker_pool_init(workerCount);
-}
-
-pub unit WorkerPoolShutdown()
-{
-    worker_pool_shutdown();
-    return;
-}
-
-pub i32 WorkerSubmit(pointer request)
-{
-    return worker_submit(request);
-}
-
-pub bool WorkerPoll(pointer request)
-{
-    return worker_poll(request) != 0;
-}
+pub i32 WorkerPoolInit(word workerCount) { return worker_pool_init(workerCount); }
+pub unit WorkerPoolShutdown() { worker_pool_shutdown(); return; }
+pub i32 WorkerSubmit(pointer request) { return worker_submit(request); }
+pub bool WorkerPoll(pointer request) { return worker_poll(request) != 0; }
 
 // Terminates through the manifest-owned ABI-v5 trap entrypoint.
-[Export(Abi: "C", Symbol: "beskid_rt_v5_trap")]
-pub never Trap(u8 code, pointer message, word messageLength)
-{
+[Export(Abi:"C", Symbol:"beskid_rt_v5_trap")]
+pub never Trap(u8 code, pointer message, word messageLength) {
     trap(code, message, messageLength);
 }
 
-[Export(Abi: "C", Symbol: "beskid_rt_v5_float_to_bits32")]
-pub u32 FloatToBits32(f32 value)
-{
-    return float_to_bits32(value);
-}
+[Export(Abi:"C", Symbol:"beskid_rt_v5_float_to_bits32")]
+pub u32 FloatToBits32(f32 value) { return float_to_bits32(value); }
 
-[Export(Abi: "C", Symbol: "beskid_rt_v5_float_from_bits32")]
-pub f32 FloatFromBits32(u32 value)
-{
-    return float_from_bits32(value);
-}
+[Export(Abi:"C", Symbol:"beskid_rt_v5_float_from_bits32")]
+pub f32 FloatFromBits32(u32 value) { return float_from_bits32(value); }
 
-[Export(Abi: "C", Symbol: "beskid_rt_v5_float_to_bits64")]
-pub u64 FloatToBits64(f64 value)
-{
-    return float_to_bits64(value);
-}
+[Export(Abi:"C", Symbol:"beskid_rt_v5_float_to_bits64")]
+pub u64 FloatToBits64(f64 value) { return float_to_bits64(value); }
 
-[Export(Abi: "C", Symbol: "beskid_rt_v5_float_from_bits64")]
-pub f64 FloatFromBits64(u64 value)
-{
-    return float_from_bits64(value);
-}
+[Export(Abi:"C", Symbol:"beskid_rt_v5_float_from_bits64")]
+pub f64 FloatFromBits64(u64 value) { return float_from_bits64(value); }

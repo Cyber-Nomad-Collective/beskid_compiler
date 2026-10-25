@@ -11,24 +11,16 @@ use Testing.Assert;
 // Assertion messages are managed strings and need an attached runtime. Between these two calls
 // only a runtime that the fixture itself initialized can be attached, so assert only while that
 // runtime is active, or record the observation and assert it after `ResumeHostRuntime`.
-pub pointer SuspendHostRuntime()
-{
+pub pointer SuspendHostRuntime() {
     pointer hostRuntime = State.RuntimeState();
-    if (hostRuntime == Native.NativePointer(0))
-    {
-        return hostRuntime;
-    }
+    if hostRuntime == Native.NativePointer(0) { return hostRuntime; }
     Lifecycle.ProcessShutdown(hostRuntime);
     return hostRuntime;
 }
 
 // Restores the runtime retired by `SuspendHostRuntime`. On a bare thread both calls are no-ops.
-pub unit ResumeHostRuntime(pointer hostRuntime)
-{
-    if (hostRuntime == Native.NativePointer(0))
-    {
-        return;
-    }
+pub unit ResumeHostRuntime(pointer hostRuntime) {
+    if hostRuntime == Native.NativePointer(0) { return; }
     Assert.True(Lifecycle.ProcessInit(hostRuntime) == hostRuntime, "host runtime restored");
     return;
 }

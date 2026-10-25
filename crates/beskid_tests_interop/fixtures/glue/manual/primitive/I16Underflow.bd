@@ -1,4 +1,1 @@
-pub i16 Main()
-{
-    return -32769_i16;
-}
+pub i16 Main() { return -32769_i16; }

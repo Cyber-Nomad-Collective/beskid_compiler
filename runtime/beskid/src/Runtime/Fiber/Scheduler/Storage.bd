@@ -18,53 +18,25 @@ const VEC_DATA = 16;
 const VEC_HEADER_SIZE = 24;
 const VEC_INITIAL_CAPACITY = 64;
 
-pub word VecHeaderSize()
-{
-    return VEC_HEADER_SIZE;
-}
-
-pub word VecCount(pointer vec)
-{
-    return raw_word_load(pointer_add(vec, VEC_COUNT));
-}
-
-pub pointer VecData(pointer vec)
-{
-    return NativePointer(raw_word_load(pointer_add(vec, VEC_DATA)));
-}
+pub word VecHeaderSize() { return VEC_HEADER_SIZE; }
+pub word VecCount(pointer vec) { return raw_word_load(pointer_add(vec, VEC_COUNT)); }
+pub pointer VecData(pointer vec) { return NativePointer(raw_word_load(pointer_add(vec, VEC_DATA))); }
 
 // Guarantees room for `needed` elements. Growth doubles (at least 64 elements) and copies the
 // live prefix. Returns false only when the system allocator refuses the new storage.
-pub bool VecReserve(pointer vec, word elementSize, word needed)
-{
+pub bool VecReserve(pointer vec, word elementSize, word needed) {
     word capacity = raw_word_load(pointer_add(vec, VEC_CAPACITY));
-    if (needed <= capacity)
-    {
-        return true;
-    }
+    if needed <= capacity { return true; }
     mut word next = capacity * 2;
-    if (next < VEC_INITIAL_CAPACITY)
-    {
-        next = VEC_INITIAL_CAPACITY;
-    }
-    while (next < needed)
-    {
-        next = next * 2;
-    }
+    if next < VEC_INITIAL_CAPACITY { next = VEC_INITIAL_CAPACITY; }
+    while next < needed { next = next * 2; }
     pointer fresh = SystemAllocate(next * elementSize, 8);
-    if (fresh == NativePointer(0))
-    {
-        return false;
-    }
+    if fresh == NativePointer(0) { return false; }
     memory_set(fresh, 0, next * elementSize);
     pointer old = VecData(vec);
     word count = raw_word_load(pointer_add(vec, VEC_COUNT));
-    if (old != NativePointer(0))
-    {
-        if (count != 0)
-        {
-            memory_copy(fresh, old, count * elementSize);
-        }
+    if old != NativePointer(0) {
+        if count != 0 { memory_copy(fresh, old, count * elementSize); }
         SystemFree(old, capacity * elementSize);
     }
     raw_word_store(pointer_add(vec, VEC_DATA), NativeWord(fresh));
@@ -72,68 +44,50 @@ pub bool VecReserve(pointer vec, word elementSize, word needed)
     return true;
 }
 
-pub bool VecPushWord(pointer vec, word value)
-{
+pub bool VecPushWord(pointer vec, word value) {
     word count = raw_word_load(pointer_add(vec, VEC_COUNT));
-    if (!VecReserve(vec, 8, count + 1))
-    {
-        return false;
-    }
+    if !VecReserve(vec, 8, count + 1) { return false; }
     raw_word_store(pointer_add(VecData(vec), count * 8), value);
     raw_word_store(pointer_add(vec, VEC_COUNT), count + 1);
     return true;
 }
 
 // Pushes `value` unless it is already present. Returns false only on allocation failure.
-pub bool VecPushWordUnique(pointer vec, word value)
-{
-    if (VecContainsWord(vec, value))
-    {
-        return true;
-    }
+pub bool VecPushWordUnique(pointer vec, word value) {
+    if VecContainsWord(vec, value) { return true; }
     return VecPushWord(vec, value);
 }
 
-pub word VecWordAt(pointer vec, word index)
-{
+pub word VecWordAt(pointer vec, word index) {
     return raw_word_load(pointer_add(VecData(vec), index * 8));
 }
 
-pub bool VecContainsWord(pointer vec, word value)
-{
+pub bool VecContainsWord(pointer vec, word value) {
     word count = raw_word_load(pointer_add(vec, VEC_COUNT));
     mut word index = 0;
-    while (index < count)
-    {
-        if (VecWordAt(vec, index) == value)
-        {
-            return true;
-        }
+    while index < count {
+        if VecWordAt(vec, index) == value { return true; }
         index = index + 1;
     }
     return false;
 }
 
 // Removes every occurrence of `value`, preserving the order of the remaining elements.
-pub unit VecRemoveWord(pointer vec, word value)
-{
+pub unit VecRemoveWord(pointer vec, word value) {
     word count = raw_word_load(pointer_add(vec, VEC_COUNT));
     pointer data = VecData(vec);
     mut word read = 0;
     mut word write = 0;
-    while (read < count)
-    {
+    while read < count {
         word candidate = raw_word_load(pointer_add(data, read * 8));
-        if (candidate != value)
-        {
+        if candidate != value {
             raw_word_store(pointer_add(data, write * 8), candidate);
             write = write + 1;
         }
         read = read + 1;
     }
     mut word clear = write;
-    while (clear < count)
-    {
+    while clear < count {
         raw_word_store(pointer_add(data, clear * 8), 0);
         clear = clear + 1;
     }
@@ -142,18 +96,13 @@ pub unit VecRemoveWord(pointer vec, word value)
 }
 
 // Removes and returns the oldest element, or `missing` when the vector is empty.
-pub word VecShiftWord(pointer vec, word missing)
-{
+pub word VecShiftWord(pointer vec, word missing) {
     word count = raw_word_load(pointer_add(vec, VEC_COUNT));
-    if (count == 0)
-    {
-        return missing;
-    }
+    if count == 0 { return missing; }
     pointer data = VecData(vec);
     word first = raw_word_load(data);
     mut word index = 1;
-    while (index < count)
-    {
+    while index < count {
         raw_word_store(pointer_add(data, (index - 1) * 8), raw_word_load(pointer_add(data, index * 8)));
         index = index + 1;
     }
@@ -162,21 +111,16 @@ pub word VecShiftWord(pointer vec, word missing)
     return first;
 }
 
-pub unit VecClear(pointer vec)
-{
+pub unit VecClear(pointer vec) {
     raw_word_store(pointer_add(vec, VEC_COUNT), 0);
     return;
 }
 
 // Releases the element storage and zeroes the header.
-pub unit VecFree(pointer vec, word elementSize)
-{
+pub unit VecFree(pointer vec, word elementSize) {
     pointer data = VecData(vec);
     word capacity = raw_word_load(pointer_add(vec, VEC_CAPACITY));
-    if (data != NativePointer(0) && capacity != 0)
-    {
-        SystemFree(data, capacity * elementSize);
-    }
+    if data != NativePointer(0) && capacity != 0 { SystemFree(data, capacity * elementSize); }
     memory_set(vec, 0, VEC_HEADER_SIZE);
     return;
 }
@@ -192,60 +136,38 @@ const RING_DATA = 24;
 const RING_HEADER_SIZE = 32;
 const RING_INITIAL_CAPACITY = 64;
 
-pub word RingHeaderSize()
-{
-    return RING_HEADER_SIZE;
-}
+pub word RingHeaderSize() { return RING_HEADER_SIZE; }
 
-pub bool RingEmpty(pointer ring)
-{
+pub bool RingEmpty(pointer ring) {
     return raw_word_load(pointer_add(ring, RING_HEAD)) == raw_word_load(pointer_add(ring, RING_TAIL));
 }
 
-pub word RingCount(pointer ring)
-{
+pub word RingCount(pointer ring) {
     word head = raw_word_load(pointer_add(ring, RING_HEAD));
     word tail = raw_word_load(pointer_add(ring, RING_TAIL));
     word capacity = raw_word_load(pointer_add(ring, RING_CAPACITY));
-    if (capacity == 0)
-    {
-        return 0;
-    }
-    if (tail >= head)
-    {
-        return tail - head;
-    }
+    if capacity == 0 { return 0; }
+    if tail >= head { return tail - head; }
     return capacity - head + tail;
 }
 
-pub bool RingGrow(pointer ring)
-{
+pub bool RingGrow(pointer ring) {
     word capacity = raw_word_load(pointer_add(ring, RING_CAPACITY));
     mut word next = capacity * 2;
-    if (next < RING_INITIAL_CAPACITY)
-    {
-        next = RING_INITIAL_CAPACITY;
-    }
+    if next < RING_INITIAL_CAPACITY { next = RING_INITIAL_CAPACITY; }
     pointer fresh = SystemAllocate(next * 8, 8);
-    if (fresh == NativePointer(0))
-    {
-        return false;
-    }
+    if fresh == NativePointer(0) { return false; }
     memory_set(fresh, 0, next * 8);
     word count = RingCount(ring);
     pointer old = NativePointer(raw_word_load(pointer_add(ring, RING_DATA)));
     mut word head = raw_word_load(pointer_add(ring, RING_HEAD));
     mut word moved = 0;
-    while (moved < count)
-    {
+    while moved < count {
         raw_word_store(pointer_add(fresh, moved * 8), raw_word_load(pointer_add(old, head * 8)));
         head = (head + 1) % capacity;
         moved = moved + 1;
     }
-    if (old != NativePointer(0) && capacity != 0)
-    {
-        SystemFree(old, capacity * 8);
-    }
+    if old != NativePointer(0) && capacity != 0 { SystemFree(old, capacity * 8); }
     raw_word_store(pointer_add(ring, RING_DATA), NativeWord(fresh));
     raw_word_store(pointer_add(ring, RING_CAPACITY), next);
     raw_word_store(pointer_add(ring, RING_HEAD), 0);
@@ -253,15 +175,10 @@ pub bool RingGrow(pointer ring)
     return true;
 }
 
-pub bool RingPush(pointer ring, word value)
-{
+pub bool RingPush(pointer ring, word value) {
     mut word capacity = raw_word_load(pointer_add(ring, RING_CAPACITY));
-    if (capacity == 0 || (raw_word_load(pointer_add(ring, RING_TAIL)) + 1) % capacity == raw_word_load(pointer_add(ring, RING_HEAD)))
-    {
-        if (!RingGrow(ring))
-        {
-            return false;
-        }
+    if capacity == 0 || (raw_word_load(pointer_add(ring, RING_TAIL)) + 1) % capacity == raw_word_load(pointer_add(ring, RING_HEAD)) {
+        if !RingGrow(ring) { return false; }
         capacity = raw_word_load(pointer_add(ring, RING_CAPACITY));
     }
     word tail = raw_word_load(pointer_add(ring, RING_TAIL));
@@ -270,45 +187,32 @@ pub bool RingPush(pointer ring, word value)
     return true;
 }
 
-pub word RingPop(pointer ring, word missing)
-{
+pub word RingPop(pointer ring, word missing) {
     word head = raw_word_load(pointer_add(ring, RING_HEAD));
     word tail = raw_word_load(pointer_add(ring, RING_TAIL));
-    if (head == tail)
-    {
-        return missing;
-    }
+    if head == tail { return missing; }
     word capacity = raw_word_load(pointer_add(ring, RING_CAPACITY));
     word value = raw_word_load(pointer_add(NativePointer(raw_word_load(pointer_add(ring, RING_DATA))), head * 8));
     raw_word_store(pointer_add(ring, RING_HEAD), (head + 1) % capacity);
     return value;
 }
 
-pub bool RingContains(pointer ring, word value)
-{
+pub bool RingContains(pointer ring, word value) {
     mut word cursor = raw_word_load(pointer_add(ring, RING_HEAD));
     word tail = raw_word_load(pointer_add(ring, RING_TAIL));
     word capacity = raw_word_load(pointer_add(ring, RING_CAPACITY));
     pointer data = NativePointer(raw_word_load(pointer_add(ring, RING_DATA)));
-    while (cursor != tail)
-    {
-        if (raw_word_load(pointer_add(data, cursor * 8)) == value)
-        {
-            return true;
-        }
+    while cursor != tail {
+        if raw_word_load(pointer_add(data, cursor * 8)) == value { return true; }
         cursor = (cursor + 1) % capacity;
     }
     return false;
 }
 
-pub unit RingFree(pointer ring)
-{
+pub unit RingFree(pointer ring) {
     pointer data = NativePointer(raw_word_load(pointer_add(ring, RING_DATA)));
     word capacity = raw_word_load(pointer_add(ring, RING_CAPACITY));
-    if (data != NativePointer(0) && capacity != 0)
-    {
-        SystemFree(data, capacity * 8);
-    }
+    if data != NativePointer(0) && capacity != 0 { SystemFree(data, capacity * 8); }
     memory_set(ring, 0, RING_HEADER_SIZE);
     return;
 }
@@ -327,52 +231,31 @@ const CHUNK_RECORDS_SHIFT = 6;
 const CHUNK_RECORDS_MASK = 63;
 const CHUNK_INITIAL_CHUNK_CAPACITY = 16;
 
-pub pointer ChunkTableCreate(word recordSize)
-{
-    if (recordSize == 0 || recordSize % 8 != 0)
-    {
-        return NativePointer(0);
-    }
+pub pointer ChunkTableCreate(word recordSize) {
+    if recordSize == 0 || recordSize % 8 != 0 { return NativePointer(0); }
     pointer table = SystemAllocate(BESKID_CHUNK_TABLE_SIZE, 8);
-    if (table == NativePointer(0))
-    {
-        return NativePointer(0);
-    }
+    if table == NativePointer(0) { return NativePointer(0); }
     memory_set(table, 0, BESKID_CHUNK_TABLE_SIZE);
     raw_word_store(pointer_add(table, BESKID_CHUNK_TABLE_RECORD_SIZE_OFFSET), recordSize);
     return table;
 }
 
-pub word ChunkTableRecordSize(pointer table)
-{
-    return raw_word_load(pointer_add(table, BESKID_CHUNK_TABLE_RECORD_SIZE_OFFSET));
-}
-
-pub word ChunkTableCount(pointer table)
-{
-    return raw_word_load(pointer_add(table, BESKID_CHUNK_TABLE_COUNT_OFFSET));
-}
-
-pub unit ChunkTableSetCount(pointer table, word count)
-{
+pub word ChunkTableRecordSize(pointer table) { return raw_word_load(pointer_add(table, BESKID_CHUNK_TABLE_RECORD_SIZE_OFFSET)); }
+pub word ChunkTableCount(pointer table) { return raw_word_load(pointer_add(table, BESKID_CHUNK_TABLE_COUNT_OFFSET)); }
+pub unit ChunkTableSetCount(pointer table, word count) {
     raw_word_store(pointer_add(table, BESKID_CHUNK_TABLE_COUNT_OFFSET), count);
     return;
 }
 
 // Records currently addressable without growing.
-pub word ChunkTableCapacity(pointer table)
-{
+pub word ChunkTableCapacity(pointer table) {
     return raw_word_load(pointer_add(table, BESKID_CHUNK_TABLE_CHUNK_COUNT_OFFSET)) * CHUNK_RECORDS;
 }
 
 // Address of record `index`, or null when the index lies beyond the allocated chunks.
-pub pointer ChunkTableRecord(pointer table, word index)
-{
+pub pointer ChunkTableRecord(pointer table, word index) {
     word chunk = index >> CHUNK_RECORDS_SHIFT;
-    if (chunk >= raw_word_load(pointer_add(table, BESKID_CHUNK_TABLE_CHUNK_COUNT_OFFSET)))
-    {
-        return NativePointer(0);
-    }
+    if chunk >= raw_word_load(pointer_add(table, BESKID_CHUNK_TABLE_CHUNK_COUNT_OFFSET)) { return NativePointer(0); }
     pointer chunks = NativePointer(raw_word_load(pointer_add(table, BESKID_CHUNK_TABLE_CHUNKS_OFFSET)));
     pointer base = NativePointer(raw_word_load(pointer_add(chunks, chunk * 8)));
     return pointer_add(base, (index & CHUNK_RECORDS_MASK) * raw_word_load(pointer_add(table, BESKID_CHUNK_TABLE_RECORD_SIZE_OFFSET)));
@@ -380,39 +263,21 @@ pub pointer ChunkTableRecord(pointer table, word index)
 
 // Makes record `index` addressable, allocating zeroed chunks (and growing the chunk pointer array)
 // as needed. Returns false only when the system allocator refuses.
-pub bool ChunkTableEnsure(pointer table, word index)
-{
+pub bool ChunkTableEnsure(pointer table, word index) {
     word needed = (index >> CHUNK_RECORDS_SHIFT) + 1;
     mut word chunkCount = raw_word_load(pointer_add(table, BESKID_CHUNK_TABLE_CHUNK_COUNT_OFFSET));
-    if (needed <= chunkCount)
-    {
-        return true;
-    }
+    if needed <= chunkCount { return true; }
     word capacity = raw_word_load(pointer_add(table, BESKID_CHUNK_TABLE_CHUNK_CAPACITY_OFFSET));
-    if (needed > capacity)
-    {
+    if needed > capacity {
         mut word next = capacity * 2;
-        if (next < CHUNK_INITIAL_CHUNK_CAPACITY)
-        {
-            next = CHUNK_INITIAL_CHUNK_CAPACITY;
-        }
-        while (next < needed)
-        {
-            next = next * 2;
-        }
+        if next < CHUNK_INITIAL_CHUNK_CAPACITY { next = CHUNK_INITIAL_CHUNK_CAPACITY; }
+        while next < needed { next = next * 2; }
         pointer fresh = SystemAllocate(next * 8, 8);
-        if (fresh == NativePointer(0))
-        {
-            return false;
-        }
+        if fresh == NativePointer(0) { return false; }
         memory_set(fresh, 0, next * 8);
         pointer old = NativePointer(raw_word_load(pointer_add(table, BESKID_CHUNK_TABLE_CHUNKS_OFFSET)));
-        if (old != NativePointer(0))
-        {
-            if (chunkCount != 0)
-            {
-                memory_copy(fresh, old, chunkCount * 8);
-            }
+        if old != NativePointer(0) {
+            if chunkCount != 0 { memory_copy(fresh, old, chunkCount * 8); }
             SystemFree(old, capacity * 8);
         }
         raw_word_store(pointer_add(table, BESKID_CHUNK_TABLE_CHUNKS_OFFSET), NativeWord(fresh));
@@ -420,13 +285,9 @@ pub bool ChunkTableEnsure(pointer table, word index)
     }
     word chunkBytes = CHUNK_RECORDS * raw_word_load(pointer_add(table, BESKID_CHUNK_TABLE_RECORD_SIZE_OFFSET));
     pointer chunks = NativePointer(raw_word_load(pointer_add(table, BESKID_CHUNK_TABLE_CHUNKS_OFFSET)));
-    while (chunkCount < needed)
-    {
+    while chunkCount < needed {
         pointer chunk = SystemAllocate(chunkBytes, 8);
-        if (chunk == NativePointer(0))
-        {
-            return false;
-        }
+        if chunk == NativePointer(0) { return false; }
         memory_set(chunk, 0, chunkBytes);
         raw_word_store(pointer_add(chunks, chunkCount * 8), NativeWord(chunk));
         chunkCount = chunkCount + 1;
@@ -436,43 +297,28 @@ pub bool ChunkTableEnsure(pointer table, word index)
 }
 
 // Appends one zeroed record and returns its index, or 0xFFFFFFFFFFFFFFFF on allocation failure.
-pub word ChunkTableAppend(pointer table)
-{
+pub word ChunkTableAppend(pointer table) {
     word count = raw_word_load(pointer_add(table, BESKID_CHUNK_TABLE_COUNT_OFFSET));
-    if (!ChunkTableEnsure(table, count))
-    {
-        return 0xFFFFFFFFFFFFFFFF;
-    }
+    if !ChunkTableEnsure(table, count) { return 0xFFFFFFFFFFFFFFFF; }
     memory_set(ChunkTableRecord(table, count), 0, raw_word_load(pointer_add(table, BESKID_CHUNK_TABLE_RECORD_SIZE_OFFSET)));
     raw_word_store(pointer_add(table, BESKID_CHUNK_TABLE_COUNT_OFFSET), count + 1);
     return count;
 }
 
 // Releases every chunk, the chunk pointer array, and the header.
-pub unit ChunkTableFree(pointer table)
-{
-    if (table == NativePointer(0))
-    {
-        return;
-    }
+pub unit ChunkTableFree(pointer table) {
+    if table == NativePointer(0) { return; }
     word chunkCount = raw_word_load(pointer_add(table, BESKID_CHUNK_TABLE_CHUNK_COUNT_OFFSET));
     word capacity = raw_word_load(pointer_add(table, BESKID_CHUNK_TABLE_CHUNK_CAPACITY_OFFSET));
     word chunkBytes = CHUNK_RECORDS * raw_word_load(pointer_add(table, BESKID_CHUNK_TABLE_RECORD_SIZE_OFFSET));
     pointer chunks = NativePointer(raw_word_load(pointer_add(table, BESKID_CHUNK_TABLE_CHUNKS_OFFSET)));
     mut word index = 0;
-    while (index < chunkCount)
-    {
+    while index < chunkCount {
         pointer chunk = NativePointer(raw_word_load(pointer_add(chunks, index * 8)));
-        if (chunk != NativePointer(0))
-        {
-            SystemFree(chunk, chunkBytes);
-        }
+        if chunk != NativePointer(0) { SystemFree(chunk, chunkBytes); }
         index = index + 1;
     }
-    if (chunks != NativePointer(0) && capacity != 0)
-    {
-        SystemFree(chunks, capacity * 8);
-    }
+    if chunks != NativePointer(0) && capacity != 0 { SystemFree(chunks, capacity * 8); }
     memory_set(table, 0, BESKID_CHUNK_TABLE_SIZE);
     SystemFree(table, BESKID_CHUNK_TABLE_SIZE);
     return;
@@ -487,98 +333,63 @@ const SCHEDULER_MUTEX_STATE_OFFSET = 136;
 const SCHEDULER_WAITGROUP_STATE_OFFSET = 144;
 const SCHEDULER_HUB_STATE_OFFSET = 160;
 
-pub pointer SchedulerSubsystemTable(word stateOffset, word recordSize)
-{
+pub pointer SchedulerSubsystemTable(word stateOffset, word recordSize) {
     SchedInit();
     pointer scheduler = SchedTable();
-    if (scheduler == NativePointer(0))
-    {
-        return NativePointer(0);
-    }
+    if scheduler == NativePointer(0) { return NativePointer(0); }
     mut pointer table = NativePointer(raw_word_load(pointer_add(scheduler, stateOffset)));
-    if (table != NativePointer(0))
-    {
-        return table;
-    }
+    if table != NativePointer(0) { return table; }
     table = ChunkTableCreate(recordSize);
-    if (table == NativePointer(0))
-    {
-        return NativePointer(0);
-    }
+    if table == NativePointer(0) { return NativePointer(0); }
     raw_word_store(pointer_add(scheduler, stateOffset), NativeWord(table));
     return table;
 }
 
 // Returns the channel table owned by this scheduler. Channel operations deliberately do not
 // claim parking or wake semantics here; this is storage ownership only.
-pub pointer SchedulerChannelTable()
-{
+pub pointer SchedulerChannelTable() {
     return SchedulerSubsystemTable(SCHEDULER_CHANNEL_STATE_OFFSET, ChannelSlotSize());
 }
 
-pub pointer SchedulerMutexTable()
-{
+pub pointer SchedulerMutexTable() {
     return SchedulerSubsystemTable(SCHEDULER_MUTEX_STATE_OFFSET, MutexSlotSize());
 }
 
-pub pointer SchedulerWaitGroupTable()
-{
+pub pointer SchedulerWaitGroupTable() {
     return SchedulerSubsystemTable(SCHEDULER_WAITGROUP_STATE_OFFSET, WaitGroupSlotSize());
 }
 
-pub pointer SchedulerHubTable()
-{
+pub pointer SchedulerHubTable() {
     return SchedulerSubsystemTable(SCHEDULER_HUB_STATE_OFFSET, HubSlotSize());
 }
 
-pub unit SchedulerStorageShutdown(pointer scheduler)
-{
+pub unit SchedulerStorageShutdown(pointer scheduler) {
     pointer channelTable = NativePointer(raw_word_load(pointer_add(scheduler, SCHEDULER_CHANNEL_STATE_OFFSET)));
     pointer mutexTable = NativePointer(raw_word_load(pointer_add(scheduler, SCHEDULER_MUTEX_STATE_OFFSET)));
     pointer waitgroupTable = NativePointer(raw_word_load(pointer_add(scheduler, SCHEDULER_WAITGROUP_STATE_OFFSET)));
     pointer hubTable = NativePointer(raw_word_load(pointer_add(scheduler, SCHEDULER_HUB_STATE_OFFSET)));
-    if (channelTable != NativePointer(0))
-    {
+    if channelTable != NativePointer(0) {
         word count = ChunkTableCount(channelTable);
         mut word index = 0;
-        while (index < count)
-        {
-            ChannelDrain(ChunkTableRecord(channelTable, index));
-            index = index + 1;
-        }
+        while index < count { ChannelDrain(ChunkTableRecord(channelTable, index)); index = index + 1; }
         ChunkTableFree(channelTable);
     }
-    if (mutexTable != NativePointer(0))
-    {
+    if mutexTable != NativePointer(0) {
         word count = ChunkTableCount(mutexTable);
         mut word index = 0;
-        while (index < count)
-        {
-            MutexRelease(ChunkTableRecord(mutexTable, index));
-            index = index + 1;
-        }
+        while index < count { MutexRelease(ChunkTableRecord(mutexTable, index)); index = index + 1; }
         ChunkTableFree(mutexTable);
     }
-    if (waitgroupTable != NativePointer(0))
-    {
+    if waitgroupTable != NativePointer(0) {
         word count = ChunkTableCount(waitgroupTable);
         mut word index = 0;
-        while (index < count)
-        {
-            WaitGroupRelease(ChunkTableRecord(waitgroupTable, index));
-            index = index + 1;
-        }
+        while index < count { WaitGroupRelease(ChunkTableRecord(waitgroupTable, index)); index = index + 1; }
         ChunkTableFree(waitgroupTable);
     }
-    if (hubTable != NativePointer(0))
-    {
+    if hubTable != NativePointer(0) {
         word count = ChunkTableCount(hubTable);
         mut word index = 0;
-        while (index < count)
-        {
-            HubRelease(ChunkTableRecord(hubTable, index));
-            index = index + 1;
-        }
+        while index < count { HubRelease(ChunkTableRecord(hubTable, index)); index = index + 1; }
         ChunkTableFree(hubTable);
     }
     raw_word_store(pointer_add(scheduler, SCHEDULER_CHANNEL_STATE_OFFSET), 0);

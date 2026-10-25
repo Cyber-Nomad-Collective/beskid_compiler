@@ -56,17 +56,14 @@ const SPAN_SWEEP_GENERATION = 248;
 const SPAN_HEADER_SIZE = 256;
 const SIZE_CLASS_LARGE = 14;
 
-pub word AlignUp(word value, word alignment)
-{
+pub word AlignUp(word value, word alignment) {
     word remainder = value % alignment;
-    if (remainder == 0)
-    {
+    if remainder == 0 {
         return value;
     }
     word increase = alignment - remainder;
     mut word aligned = value + increase;
-    if (aligned < value)
-    {
+    if aligned < value {
         return 0;
     }
     return aligned;
@@ -77,22 +74,17 @@ pub word AlignUp(word value, word alignment)
 // Carves a span from the current region first (its free list, then its untouched pages), then
 // from the free lists and untouched pages of every other region. Earlier regions are not
 // abandoned once the heap grows: spans that a collection freed there serve later requests.
-pub pointer CarveSpanInAnyRegion(pointer heap, word pageCount, word sizeClass)
-{
+pub pointer CarveSpanInAnyRegion(pointer heap, word pageCount, word sizeClass) {
     pointer current = NativePointer(raw_word_load(pointer_add(heap, HEAP_CURRENT_REGION)));
     pointer entry = CarveSpan(current, pageCount, sizeClass);
-    if (entry != NativePointer(0))
-    {
+    if entry != NativePointer(0) {
         return StampSweepGeneration(heap, entry);
     }
     mut pointer region = NativePointer(raw_word_load(pointer_add(heap, HEAP_FIRST_REGION)));
-    while (region != NativePointer(0))
-    {
-        if (region != current)
-        {
+    while region != NativePointer(0) {
+        if region != current {
             pointer other = CarveSpan(region, pageCount, sizeClass);
-            if (other != NativePointer(0))
-            {
+            if other != NativePointer(0) {
                 return StampSweepGeneration(heap, other);
             }
         }
@@ -102,8 +94,7 @@ pub pointer CarveSpanInAnyRegion(pointer heap, word pageCount, word sizeClass)
 }
 
 // A carved span holds no object of the current cycle's sweep: it counts as swept.
-pub pointer StampSweepGeneration(pointer heap, pointer entry)
-{
+pub pointer StampSweepGeneration(pointer heap, pointer entry) {
     raw_word_store(pointer_add(entry, SPAN_SWEEP_GENERATION), raw_word_load(pointer_add(heap, HEAP_SWEEP_GENERATION)));
     return entry;
 }
@@ -113,11 +104,9 @@ pub pointer StampSweepGeneration(pointer heap, pointer entry)
 // Carves a fresh 1-page span for `class` (see `CarveSpanInAnyRegion`) and threads its free list.
 // Returns null when no region has room (neither a free span nor an untouched page); the caller
 // decides whether to collect, grow, or fail.
-pub pointer RefillSpanForClass(pointer heap, word class)
-{
+pub pointer RefillSpanForClass(pointer heap, word class) {
     pointer entry = CarveSpanInAnyRegion(heap, 1, class);
-    if (entry == NativePointer(0))
-    {
+    if entry == NativePointer(0) {
         return NativePointer(0);
     }
     word base = raw_word_load(pointer_add(entry, SPAN_BASE));
@@ -126,13 +115,11 @@ pub pointer RefillSpanForClass(pointer heap, word class)
     return entry;
 }
 
-pub pointer GcAllocSmall(pointer heap, word class)
-{
+pub pointer GcAllocSmall(pointer heap, word class) {
     mut pointer entry = NativePointer(raw_word_load(pointer_add(heap, HEAP_CURRENT_SPAN_BY_CLASS + class * 8)));
     word classBytes = SizeClassBytes(class);
     mut pointer slot = NativePointer(0);
-    if (entry != NativePointer(0))
-    {
+    if entry != NativePointer(0) {
         // Defensive: the cache can go stale (a sweep may have freed this exact span and handed
         // its page to an unrelated class via `CarveSpan`'s free-list reuse before this class's
         // next allocation ran) even though `FreeSpanEntry` now invalidates the cache on the path
@@ -144,19 +131,16 @@ pub pointer GcAllocSmall(pointer heap, word class)
         EnsureSpanSwept(heap, entry);
         word base = raw_word_load(pointer_add(entry, SPAN_BASE));
         word cachedClass = raw_word_load(pointer_add(entry, SPAN_SIZE_CLASS));
-        if (base != 0 && cachedClass == class)
-        {
+        if base != 0 && cachedClass == class {
             slot = PopFreeSlot(entry, classBytes, base);
         }
     }
-    if (slot == NativePointer(0))
-    {
+    if slot == NativePointer(0) {
         // A span refill is a pacing point. The step may sweep or free the cached span, so the
         // refill below always carves a fresh one.
         GcPace(heap);
         entry = RefillSpanForClass(heap, class);
-        if (entry == NativePointer(0))
-        {
+        if entry == NativePointer(0) {
             return NativePointer(0);
         }
         word base = raw_word_load(pointer_add(entry, SPAN_BASE));
@@ -170,43 +154,33 @@ pub pointer GcAllocSmall(pointer heap, word class)
 // Pages of the dedicated span that serves one large request. `GcAllocLargeOnce`, `GcGrow` and
 // `SlotBytesForRequest` all size that span through this one function. Returns 0 when the request
 // overflows the word range; no region can serve it.
-pub word LargeSpanPages(word size, word alignment)
-{
+pub word LargeSpanPages(word size, word alignment) {
     word bytesNeeded = size + alignment;
-    if (bytesNeeded < size)
-    {
+    if bytesNeeded < size {
         return 0;
     }
     word aligned = AlignUp(bytesNeeded, PAGE_SIZE);
-    if (aligned == 0)
-    {
+    if aligned == 0 {
         return 0;
     }
     mut word pages = aligned / PAGE_SIZE;
-    if (pages == 0)
-    {
-        pages = 1;
-    }
+    if pages == 0 { pages = 1; }
     return pages;
 }
 
-pub pointer GcAllocLargeOnce(pointer heap, word size, word alignment)
-{
+pub pointer GcAllocLargeOnce(pointer heap, word size, word alignment) {
     word pages = LargeSpanPages(size, alignment);
-    if (pages == 0)
-    {
+    if pages == 0 {
         return NativePointer(0);
     }
     // A large request is a pacing point.
     GcPace(heap);
     pointer entry = CarveSpanInAnyRegion(heap, pages, SIZE_CLASS_LARGE);
-    if (entry == NativePointer(0))
-    {
+    if entry == NativePointer(0) {
         return NativePointer(0);
     }
     word base = raw_word_load(pointer_add(entry, SPAN_BASE));
-    if (base == 0)
-    {
+    if base == 0 {
         return NativePointer(0);
     }
     // A reused page can hold a freed object's header or the debug kit's poison: clear the header
@@ -222,8 +196,7 @@ pub pointer GcAllocLargeOnce(pointer heap, word size, word alignment)
 // Pages in front of the object pages of a region of `totalPages` pages: `RegionInit` (State.bd)
 // places the region header and one span directory entry per region page there, then aligns the
 // first object page up to `PAGE_SIZE`.
-pub word RegionOverheadPages(word totalPages)
-{
+pub word RegionOverheadPages(word totalPages) {
     return AlignUp(REGION_HEADER_SIZE_ALLOC + totalPages * SPAN_HEADER_SIZE, PAGE_SIZE) / PAGE_SIZE;
 }
 
@@ -233,12 +206,10 @@ pub word RegionOverheadPages(word totalPages)
 // pages themselves, and a large request that sizes the new region on its own then fails right
 // after a successful grow. The caller bounds `objectPages` by the heap cap, so no product here
 // overflows.
-pub word RegionSizeForObjectPages(word objectPages)
-{
+pub word RegionSizeForObjectPages(word objectPages) {
     mut word totalPages = objectPages;
     mut word neededPages = objectPages + RegionOverheadPages(totalPages);
-    while (neededPages > totalPages)
-    {
+    while neededPages > totalPages {
         totalPages = neededPages;
         neededPages = objectPages + RegionOverheadPages(totalPages);
     }
@@ -246,40 +217,29 @@ pub word RegionSizeForObjectPages(word objectPages)
 }
 
 // Adds one region that holds at least `objectPages` contiguous untouched pages.
-pub word GcGrow(pointer heap, word objectPages)
-{
+pub word GcGrow(pointer heap, word objectPages) {
     word nextRegionSize = raw_word_load(pointer_add(heap, HEAP_NEXT_REGION_SIZE));
     word cap = raw_word_load(pointer_add(heap, HEAP_CAP_BYTES));
-    if (objectPages == 0 || objectPages > cap / PAGE_SIZE)
-    {
+    if objectPages == 0 || objectPages > cap / PAGE_SIZE {
         return HEAP_FAILURE_REQUEST_LARGER_THAN_CAP;
     }
     word requiredForRequest = RegionSizeForObjectPages(objectPages);
     mut word newSize = nextRegionSize;
-    if (requiredForRequest > newSize)
-    {
+    if requiredForRequest > newSize {
         newSize = requiredForRequest;
     }
     word committed = raw_word_load(pointer_add(heap, HEAP_COMMITTED_BYTES));
     word total = committed + newSize;
-    if (total < committed || total > cap)
-    {
-        if (requiredForRequest > cap)
-        {
+    if total < committed || total > cap {
+        if requiredForRequest > cap {
             return HEAP_FAILURE_REQUEST_LARGER_THAN_CAP;
         }
         mut word budget = 0;
-        if (cap > committed)
-        {
-            budget = cap - committed;
-        }
+        if cap > committed { budget = cap - committed; }
         word roundedBudget = budget - (budget % PAGE_SIZE);
-        if (roundedBudget >= requiredForRequest)
-        {
+        if roundedBudget >= requiredForRequest {
             newSize = roundedBudget;
-        }
-        else
-        {
+        } else {
             return HEAP_FAILURE_CAP_REACHED;
         }
     }
@@ -293,19 +253,16 @@ pub word GcGrow(pointer heap, word objectPages)
     // stored `base` — that only agrees with `CarveSpan` when `region` is itself PAGE_SIZE-aligned.
     pointer rawRegionAllocation = SystemAllocate(newSize + PAGE_SIZE, 8);
     mut pointer region = NativePointer(0);
-    if (rawRegionAllocation != NativePointer(0))
-    {
+    if rawRegionAllocation != NativePointer(0) {
         region = NativePointer(AlignUp(NativeWord(rawRegionAllocation), PAGE_SIZE));
     }
-    if (region == NativePointer(0))
-    {
+    if region == NativePointer(0) {
         return HEAP_FAILURE_SYSTEM_ALLOCATE_FAILED;
     }
     RegionInit(region, newSize);
     // The process-wide region-to-owner map learns the region before anything is allocated in
     // it. Only the heap installed in the calling instance is registered, under that instance.
-    if (heap == Heap() && RegionMapRegisterRegion(region, RuntimeState()) == false)
-    {
+    if heap == Heap() && RegionMapRegisterRegion(region, RuntimeState()) == false {
         SystemFree(rawRegionAllocation, newSize + PAGE_SIZE);
         return HEAP_FAILURE_SYSTEM_ALLOCATE_FAILED;
     }
@@ -316,23 +273,20 @@ pub word GcGrow(pointer heap, word objectPages)
     raw_word_store(pointer_add(heap, HEAP_COMMITTED_BYTES), committed + newSize);
     raw_word_store(pointer_add(heap, HEAP_REGION_COUNT), raw_word_load(pointer_add(heap, HEAP_REGION_COUNT)) + 1);
     mut word doubled = nextRegionSize * 2;
-    if (doubled > HEAP_MAX_REGION_SIZE || doubled < nextRegionSize)
-    {
+    if doubled > HEAP_MAX_REGION_SIZE || doubled < nextRegionSize {
         doubled = HEAP_MAX_REGION_SIZE;
     }
     raw_word_store(pointer_add(heap, HEAP_NEXT_REGION_SIZE), doubled);
     return HEAP_FAILURE_NONE;
 }
 
-pub word GcGrowForClass(pointer heap, word class)
-{
+pub word GcGrowForClass(pointer heap, word class) {
     return GcGrow(heap, 1);
 }
 
 // ---- Exhaustion diagnostic (Decision 3) ----
 
-pub never GcReportExhaustion(pointer heap, word reason, word requestBytes)
-{
+pub never GcReportExhaustion(pointer heap, word reason, word requestBytes) {
     raw_word_store(pointer_add(heap, HEAP_FAILURE_REASON), reason);
     raw_word_store(pointer_add(heap, HEAP_FAILURE_REQUEST_BYTES), requestBytes);
     pointer diagnostic = pointer_add(heap, HEAP_DIAGNOSTIC);
@@ -341,98 +295,65 @@ pub never GcReportExhaustion(pointer heap, word reason, word requestBytes)
     raw_byte_store(pointer_add(diagnostic, offset), 82); // 'R'
     offset = offset + 1;
     offset = WriteDecimal(diagnostic, offset, reason);
-    raw_byte_store(pointer_add(diagnostic, offset), 32);
-    offset = offset + 1; // ' '
-    raw_byte_store(pointer_add(diagnostic, offset), 114);
-    offset = offset + 1; // 'r'
-    raw_byte_store(pointer_add(diagnostic, offset), 101);
-    offset = offset + 1; // 'e'
-    raw_byte_store(pointer_add(diagnostic, offset), 113);
-    offset = offset + 1; // 'q'
-    raw_byte_store(pointer_add(diagnostic, offset), 61);
-    offset = offset + 1; // '='
+    raw_byte_store(pointer_add(diagnostic, offset), 32); offset = offset + 1; // ' '
+    raw_byte_store(pointer_add(diagnostic, offset), 114); offset = offset + 1; // 'r'
+    raw_byte_store(pointer_add(diagnostic, offset), 101); offset = offset + 1; // 'e'
+    raw_byte_store(pointer_add(diagnostic, offset), 113); offset = offset + 1; // 'q'
+    raw_byte_store(pointer_add(diagnostic, offset), 61); offset = offset + 1; // '='
     offset = WriteDecimal(diagnostic, offset, requestBytes);
-    raw_byte_store(pointer_add(diagnostic, offset), 32);
-    offset = offset + 1; // ' '
-    raw_byte_store(pointer_add(diagnostic, offset), 108);
-    offset = offset + 1; // 'l'
-    raw_byte_store(pointer_add(diagnostic, offset), 105);
-    offset = offset + 1; // 'i'
-    raw_byte_store(pointer_add(diagnostic, offset), 118);
-    offset = offset + 1; // 'v'
-    raw_byte_store(pointer_add(diagnostic, offset), 101);
-    offset = offset + 1; // 'e'
-    raw_byte_store(pointer_add(diagnostic, offset), 61);
-    offset = offset + 1; // '='
+    raw_byte_store(pointer_add(diagnostic, offset), 32); offset = offset + 1; // ' '
+    raw_byte_store(pointer_add(diagnostic, offset), 108); offset = offset + 1; // 'l'
+    raw_byte_store(pointer_add(diagnostic, offset), 105); offset = offset + 1; // 'i'
+    raw_byte_store(pointer_add(diagnostic, offset), 118); offset = offset + 1; // 'v'
+    raw_byte_store(pointer_add(diagnostic, offset), 101); offset = offset + 1; // 'e'
+    raw_byte_store(pointer_add(diagnostic, offset), 61); offset = offset + 1; // '='
     offset = WriteDecimal(diagnostic, offset, raw_word_load(pointer_add(heap, HEAP_LIVE_BYTES)));
-    raw_byte_store(pointer_add(diagnostic, offset), 32);
-    offset = offset + 1; // ' '
-    raw_byte_store(pointer_add(diagnostic, offset), 99);
-    offset = offset + 1; // 'c'
-    raw_byte_store(pointer_add(diagnostic, offset), 111);
-    offset = offset + 1; // 'o'
-    raw_byte_store(pointer_add(diagnostic, offset), 109);
-    offset = offset + 1; // 'm'
-    raw_byte_store(pointer_add(diagnostic, offset), 109);
-    offset = offset + 1; // 'm'
-    raw_byte_store(pointer_add(diagnostic, offset), 105);
-    offset = offset + 1; // 'i'
-    raw_byte_store(pointer_add(diagnostic, offset), 116);
-    offset = offset + 1; // 't'
-    raw_byte_store(pointer_add(diagnostic, offset), 116);
-    offset = offset + 1; // 't'
-    raw_byte_store(pointer_add(diagnostic, offset), 101);
-    offset = offset + 1; // 'e'
-    raw_byte_store(pointer_add(diagnostic, offset), 100);
-    offset = offset + 1; // 'd'
-    raw_byte_store(pointer_add(diagnostic, offset), 61);
-    offset = offset + 1; // '='
+    raw_byte_store(pointer_add(diagnostic, offset), 32); offset = offset + 1; // ' '
+    raw_byte_store(pointer_add(diagnostic, offset), 99); offset = offset + 1; // 'c'
+    raw_byte_store(pointer_add(diagnostic, offset), 111); offset = offset + 1; // 'o'
+    raw_byte_store(pointer_add(diagnostic, offset), 109); offset = offset + 1; // 'm'
+    raw_byte_store(pointer_add(diagnostic, offset), 109); offset = offset + 1; // 'm'
+    raw_byte_store(pointer_add(diagnostic, offset), 105); offset = offset + 1; // 'i'
+    raw_byte_store(pointer_add(diagnostic, offset), 116); offset = offset + 1; // 't'
+    raw_byte_store(pointer_add(diagnostic, offset), 116); offset = offset + 1; // 't'
+    raw_byte_store(pointer_add(diagnostic, offset), 101); offset = offset + 1; // 'e'
+    raw_byte_store(pointer_add(diagnostic, offset), 100); offset = offset + 1; // 'd'
+    raw_byte_store(pointer_add(diagnostic, offset), 61); offset = offset + 1; // '='
     offset = WriteDecimal(diagnostic, offset, raw_word_load(pointer_add(heap, HEAP_COMMITTED_BYTES)));
-    raw_byte_store(pointer_add(diagnostic, offset), 32);
-    offset = offset + 1; // ' '
-    raw_byte_store(pointer_add(diagnostic, offset), 99);
-    offset = offset + 1; // 'c'
-    raw_byte_store(pointer_add(diagnostic, offset), 97);
-    offset = offset + 1; // 'a'
-    raw_byte_store(pointer_add(diagnostic, offset), 112);
-    offset = offset + 1; // 'p'
-    raw_byte_store(pointer_add(diagnostic, offset), 61);
-    offset = offset + 1; // '='
+    raw_byte_store(pointer_add(diagnostic, offset), 32); offset = offset + 1; // ' '
+    raw_byte_store(pointer_add(diagnostic, offset), 99); offset = offset + 1; // 'c'
+    raw_byte_store(pointer_add(diagnostic, offset), 97); offset = offset + 1; // 'a'
+    raw_byte_store(pointer_add(diagnostic, offset), 112); offset = offset + 1; // 'p'
+    raw_byte_store(pointer_add(diagnostic, offset), 61); offset = offset + 1; // '='
     offset = WriteDecimal(diagnostic, offset, raw_word_load(pointer_add(heap, HEAP_CAP_BYTES)));
     Trap(5, diagnostic, offset);
 }
 
 // A root/handle stack block failed to grow (`SystemAllocate` returned null). Distinct from heap
 // exhaustion (reason 4 instead of 1-3) so the diagnostic names the starved subsystem.
-pub never GcReportRootStackExhaustion(pointer heap)
-{
+pub never GcReportRootStackExhaustion(pointer heap) {
     raw_word_store(pointer_add(heap, HEAP_FAILURE_REASON), HEAP_FAILURE_ROOT_STACK_FAILED_ALLOC);
-    CheckedScopeRecordFailure(HEAP_FAILURE_ROOT_STACK_FAILED_ALLOC);
+        CheckedScopeRecordFailure(HEAP_FAILURE_ROOT_STACK_FAILED_ALLOC);
     raw_word_store(pointer_add(heap, HEAP_FAILURE_REQUEST_BYTES), 0);
     pointer diagnostic = pointer_add(heap, HEAP_DIAGNOSTIC);
     memory_set(diagnostic, 0, HEAP_DIAGNOSTIC_SIZE);
     mut word offset = 0;
-    raw_byte_store(pointer_add(diagnostic, offset), 82);
-    offset = offset + 1; // 'R'
+    raw_byte_store(pointer_add(diagnostic, offset), 82); offset = offset + 1; // 'R'
     offset = WriteDecimal(diagnostic, offset, HEAP_FAILURE_ROOT_STACK_FAILED_ALLOC);
     Trap(5, diagnostic, offset);
 }
 
 // ---- Orchestration ----
 
-pub pointer TryAllocOnce(pointer heap, word size, word alignment, word class)
-{
-    if (class != 0)
-    {
+pub pointer TryAllocOnce(pointer heap, word size, word alignment, word class) {
+    if class != 0 {
         return GcAllocSmall(heap, class);
     }
     return GcAllocLargeOnce(heap, size, alignment);
 }
 
-pub word GrowForRequest(pointer heap, word size, word alignment, word class)
-{
-    if (class != 0)
-    {
+pub word GrowForRequest(pointer heap, word size, word alignment, word class) {
+    if class != 0 {
         return GcGrowForClass(heap, class);
     }
     return GcGrow(heap, LargeSpanPages(size, alignment));
@@ -445,10 +366,8 @@ pub word GrowForRequest(pointer heap, word size, word alignment, word class)
 // the same way on every collection; `GcAlloc` below must track the identical quantity between
 // collections; using the raw requested size instead made the two accountings diverge, most
 // visibly right after a collection when only the slot-rounded amount is provably still live.
-pub word SlotBytesForRequest(word size, word alignment, word class)
-{
-    if (class != 0)
-    {
+pub word SlotBytesForRequest(word size, word alignment, word class) {
+    if class != 0 {
         return SizeClassBytes(class);
     }
     return LargeSpanPages(size, alignment) * PAGE_SIZE;
@@ -456,24 +375,14 @@ pub word SlotBytesForRequest(word size, word alignment, word class)
 
 // Checked construction entry: null is observable only to compiler-issued fallible paths.
 // Ordinary GcAlloc retains its exhaustion trap contract below.
-[Export(Abi: "C", Symbol: "beskid_rt_v5_gc_try_alloc")]
-pub pointer GcTryAlloc(word size, word alignment)
-{
-    if (CheckedScopeFailureReason() != 0)
-    {
-        return NativePointer(0);
-    }
+[Export(Abi:"C", Symbol:"beskid_rt_v5_gc_try_alloc")]
+pub pointer GcTryAlloc(word size, word alignment) {
+    if CheckedScopeFailureReason() != 0 { return NativePointer(0); }
     pointer heap = Heap();
-    if (heap == NativePointer(0))
-    {
-        return NativePointer(0);
-    }
+    if heap == NativePointer(0) { return NativePointer(0); }
     raw_word_store(pointer_add(heap, HEAP_FAILURE_REASON), HEAP_FAILURE_NONE);
     raw_word_store(pointer_add(heap, HEAP_FAILURE_REQUEST_BYTES), 0);
-    if (size < 16 || size % 8 != 0 || IsValidObjectAlignment(alignment) == false)
-    {
-        return NativePointer(0);
-    }
+    if size < 16 || size % 8 != 0 || IsValidObjectAlignment(alignment) == false { return NativePointer(0); }
     // Stress mode (`BESKID_GC_STRESS` or `gc_heap_set_stress_interval`, Verify.bd): collect
     // BEFORE this allocation's object exists, not after. At this point every live object is
     // already reachable from the root stack, the handle stack (construction temporaries hold a
@@ -481,63 +390,49 @@ pub pointer GcTryAlloc(word size, word alignment)
     // frame; the object this call is about to produce does not exist yet, so there is nothing new
     // for the collector to lose. Collecting after allocating instead would sweep the
     // just-allocated, not-yet-rooted object out from under its own caller.
-    if (StressShouldCollect())
-    {
+    if StressShouldCollect() {
         GcCollect();
     }
     GcIncrementalStressStep(heap);
     word class = SizeClassForSize(size);
     mut pointer result = TryAllocOnce(heap, size, alignment, class);
-    if (result == NativePointer(0))
-    {
+    if result == NativePointer(0) {
         // No committed page can serve the request. A heap whose live bytes reached the threshold
         // completes its cycle (starting one when idle) before it grows; a sweeping heap finishes
         // its sweep before it grows; otherwise it grows, also while marking.
         word live = raw_word_load(pointer_add(heap, HEAP_LIVE_BYTES));
         word threshold = raw_word_load(pointer_add(heap, HEAP_COLLECTION_THRESHOLD));
-        if (live >= threshold)
-        {
+        if live >= threshold {
             GcCompleteCycle(heap, true);
             result = TryAllocOnce(heap, size, alignment, class);
-        }
-        else if (raw_word_load(pointer_add(heap, HEAP_GC_PHASE)) == GC_PHASE_SWEEPING_ALLOC)
-        {
+        } else if raw_word_load(pointer_add(heap, HEAP_GC_PHASE)) == GC_PHASE_SWEEPING_ALLOC {
             GcCompleteCycle(heap, false);
             result = TryAllocOnce(heap, size, alignment, class);
         }
     }
-    if (result == NativePointer(0))
-    {
+    if result == NativePointer(0) {
         mut word growStatus = GrowForRequest(heap, size, alignment, class);
-        if (growStatus == HEAP_FAILURE_NONE)
-        {
+        if growStatus == HEAP_FAILURE_NONE {
             result = TryAllocOnce(heap, size, alignment, class);
-        }
-        else if (growStatus == HEAP_FAILURE_CAP_REACHED)
-        {
+        } else if growStatus == HEAP_FAILURE_CAP_REACHED {
             // Cap pressure: complete the cycle in progress and retry; then one more complete
             // cycle and one more retry, so garbage dropped during a cycle is reclaimed.
             GcCompleteCycle(heap, true);
             result = TryAllocOnce(heap, size, alignment, class);
-            if (result == NativePointer(0))
-            {
+            if result == NativePointer(0) {
                 GcCompleteCycle(heap, true);
                 result = TryAllocOnce(heap, size, alignment, class);
             }
-            if (result == NativePointer(0))
-            {
+            if result == NativePointer(0) {
                 growStatus = GrowForRequest(heap, size, alignment, class);
-                if (growStatus == HEAP_FAILURE_NONE)
-                {
+                if growStatus == HEAP_FAILURE_NONE {
                     result = TryAllocOnce(heap, size, alignment, class);
                 }
             }
         }
-        if (result == NativePointer(0))
-        {
+        if result == NativePointer(0) {
             mut word reason = growStatus;
-            if (reason == HEAP_FAILURE_NONE)
-            {
+            if reason == HEAP_FAILURE_NONE {
                 reason = HEAP_FAILURE_CAP_REACHED;
             }
             raw_word_store(pointer_add(heap, HEAP_FAILURE_REASON), reason);
@@ -552,8 +447,7 @@ pub pointer GcTryAlloc(word size, word alignment)
     // Zeroed bytes for every caller, then the black state while marking: the large-object mark
     // word is part of the object bytes, so it is set after zeroing.
     memory_set(result, 0, size);
-    if (raw_word_load(pointer_add(heap, HEAP_GC_PHASE)) == GC_PHASE_MARKING_ALLOC)
-    {
+    if raw_word_load(pointer_add(heap, HEAP_GC_PHASE)) == GC_PHASE_MARKING_ALLOC {
         AllocateBlack(heap, result, class);
     }
     return result;
@@ -561,15 +455,10 @@ pub pointer GcTryAlloc(word size, word alignment)
 
 // Allocation in black (Yuasa): an object allocated while its heap is marking survives the cycle
 // and is never traced by it.
-pub unit AllocateBlack(pointer heap, pointer object, word class)
-{
+pub unit AllocateBlack(pointer heap, pointer object, word class) {
     pointer entry = SpanHeaderFor(heap, NativeWord(object));
-    if (entry == NativePointer(0))
-    {
-        return;
-    }
-    if (class == 0)
-    {
+    if entry == NativePointer(0) { return; }
+    if class == 0 {
         raw_word_store(pointer_add(object, 8), GcMarkBlack());
         return;
     }
@@ -580,81 +469,56 @@ pub unit AllocateBlack(pointer heap, pointer object, word class)
     return;
 }
 
-pub unit GcClearAllocationFailure()
-{
+pub unit GcClearAllocationFailure() {
     pointer heap = Heap();
-    if (heap != NativePointer(0))
-    {
+    if heap != NativePointer(0) {
         raw_word_store(pointer_add(heap, HEAP_FAILURE_REASON), HEAP_FAILURE_NONE);
         raw_word_store(pointer_add(heap, HEAP_FAILURE_REQUEST_BYTES), 0);
     }
 }
 
-pub unit GcRecordRootStackFailure()
-{
+pub unit GcRecordRootStackFailure() {
     pointer heap = Heap();
-    if (heap != NativePointer(0))
-    {
+    if heap != NativePointer(0) {
         raw_word_store(pointer_add(heap, HEAP_FAILURE_REASON), HEAP_FAILURE_ROOT_STACK_FAILED_ALLOC);
         CheckedScopeRecordFailure(HEAP_FAILURE_ROOT_STACK_FAILED_ALLOC);
         raw_word_store(pointer_add(heap, HEAP_FAILURE_REQUEST_BYTES), 0);
     }
 }
 
-[Export(Abi: "C", Symbol: "beskid_rt_v5_gc_allocation_failure_reason")]
-pub word GcAllocationFailureReason()
-{
+[Export(Abi:"C", Symbol:"beskid_rt_v5_gc_allocation_failure_reason")]
+pub word GcAllocationFailureReason() {
     pointer heap = Heap();
-    if (heap == NativePointer(0))
-    {
-        return 5;
-    }
+    if heap == NativePointer(0) { return 5; }
     return raw_word_load(pointer_add(heap, HEAP_FAILURE_REASON));
 }
 
-pub pointer GcAlloc(word size, word alignment)
-{
-    if (CheckedScopeFailureReason() != 0)
-    {
-        return NativePointer(0);
-    }
+pub pointer GcAlloc(word size, word alignment) {
+    if CheckedScopeFailureReason() != 0 { return NativePointer(0); }
     pointer value = GcTryAlloc(size, alignment);
-    if (value == NativePointer(0))
-    {
+    if value == NativePointer(0) {
         pointer heap = Heap();
-        if (heap != NativePointer(0))
-        {
+        if heap != NativePointer(0) {
             word reason = GcAllocationFailureReason();
-            if (reason != HEAP_FAILURE_NONE)
-            {
-                if (CheckedScopeCurrent() != NativePointer(0))
-                {
-                    CheckedScopeRecordFailure(reason);
-                }
-                else
-                {
-                    GcReportExhaustion(heap, reason, size);
-                }
+            if reason != HEAP_FAILURE_NONE {
+                if CheckedScopeCurrent() != NativePointer(0) { CheckedScopeRecordFailure(reason); }
+                else { GcReportExhaustion(heap, reason, size); }
             }
         }
     }
     return value;
 }
 
-[Export(Abi: "C", Symbol: "alloc")]
-pub pointer Alloc(word size, pointer descriptorPtr)
-{
-    if (descriptorPtr == NativePointer(0) || ValidateTypeDescriptor(descriptorPtr) == false)
-    {
+[Export(Abi:"C", Symbol:"alloc")]
+pub pointer Alloc(word size, pointer descriptorPtr) {
+    if descriptorPtr == NativePointer(0) || ValidateTypeDescriptor(descriptorPtr) == false {
         return NativePointer(0);
     }
-    if (size != TypeDescriptorSize(descriptorPtr))
-    {
+    if size != TypeDescriptorSize(descriptorPtr) {
         return NativePointer(0);
     }
     pointer object = GcAlloc(size, TypeDescriptorAlignment(descriptorPtr));
-    if (object == NativePointer(0))
-    {
+    if object == NativePointer(0) {
         return object;
     }
     // `GcTryAlloc` returned zeroed bytes (and, while marking, a black large-object mark word).

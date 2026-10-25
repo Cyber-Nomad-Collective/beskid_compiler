@@ -4,165 +4,57 @@
 // held in fields survive forced collections. Each check returns its own failure code; 42 is
 // success.
 
-[Extern(Abi: "C")]
-pub contract Probe
-{
-    unit gc_collect();
+[Extern(Abi:"C")]
+pub contract Probe { unit gc_collect(); }
+
+contract Greeter { string Greet(); i64 Rank(); }
+type Hello : Greeter {
+    pub string Greet() { return "hello"; }
+    pub i64 Rank() { return 1_i64; }
 }
-
-contract Greeter
-{
-    string Greet();
-    i64 Rank();
-}
-
-type Hello : Greeter
-{
-    pub string Greet()
-    {
-        return "hello";
-    }
-
-    pub i64 Rank()
-    {
-        return 1_i64;
-    }
-}
-
-type Bye : Greeter
-{
+type Bye : Greeter {
     i64 extra;
-
-    pub string Greet()
-    {
-        return "bye";
-    }
-
-    pub i64 Rank()
-    {
-        return 10_i64 + this.extra;
-    }
+    pub string Greet() { return "bye"; }
+    pub i64 Rank() { return 10_i64 + this.extra; }
 }
+contract Shown { i64 Twice(); }
+impl i32 : Shown { pub i64 Twice() { return i64(this) * 2_i64; } }
+pub type Holder { Greeter greeter; i64 tag; }
 
-contract Shown
-{
-    i64 Twice();
-}
-
-impl i32 : Shown
-{
-    pub i64 Twice()
-    {
-        return i64(this) * 2_i64;
-    }
-}
-
-pub type Holder
-{
-    Greeter greeter;
-    i64 tag;
-}
-
-i64 Through(Greeter g)
-{
-    return g.Rank();
-}
-
-Greeter Pick(bool first)
-{
-    if (first)
-    {
-        return Hello { };
-    }
-    return Bye
-    {
-        extra: 5_i64,
-    };
-}
-
-i64 Sum(Greeter[] all)
-{
+i64 Through(Greeter g) { return g.Rank(); }
+Greeter Pick(bool first) { if first { return Hello {}; } return Bye { extra: 5_i64 }; }
+i64 Sum(Greeter[] all) {
     mut i64 total = 0_i64;
     mut i64 i = 0_i64;
-    while (i < 3_i64)
-    {
-        total = total + all[i].Rank();
-        i = i + 1_i64;
-    }
+    while i < 3_i64 { total = total + all[i].Rank(); i = i + 1_i64; }
     return total;
 }
 
-[Export(Abi: "C", Symbol: "RunContractDispatch")]
-pub i64 RunContractDispatch()
-{
-    Greeter[] all = [Hello { }, Bye
-    {
-        extra: 5_i64,
-    }, Hello { }];
-    if (Sum(all) != 17_i64)
-    {
-        return 1_i64;
-    }
-    mut Greeter g = Hello { };
-    g = Bye
-    {
-        extra: 1_i64,
-    };
-    if (g.Rank() != 11_i64)
-    {
-        return 2_i64;
-    }
-    Greeter h = Hello { };
-    if (h.Rank() != 1_i64)
-    {
-        return 3_i64;
-    }
-    if (Through(all[1]) + Through(Hello { }) != 16_i64)
-    {
-        return 4_i64;
-    }
-    if (Pick(false).Rank() != 15_i64)
-    {
-        return 5_i64;
-    }
-    Holder holder = Holder
-    {
-        greeter: Bye
-        {
-            extra: 2_i64,
-        },
-        tag: 12_i64,
-    };
-    if (holder.greeter.Rank() != 12_i64)
-    {
-        return 6_i64;
-    }
+[Export(Abi:"C", Symbol:"RunContractDispatch")]
+pub i64 RunContractDispatch() {
+    Greeter[] all = [Hello {}, Bye { extra: 5_i64 }, Hello {}];
+    if Sum(all) != 17_i64 { return 1_i64; }
+    mut Greeter g = Hello {};
+    g = Bye { extra: 1_i64 };
+    if g.Rank() != 11_i64 { return 2_i64; }
+    Greeter h = Hello {};
+    if h.Rank() != 1_i64 { return 3_i64; }
+    if Through(all[1]) + Through(Hello {}) != 16_i64 { return 4_i64; }
+    if Pick(false).Rank() != 15_i64 { return 5_i64; }
+    Holder holder = Holder { greeter: Bye { extra: 2_i64 }, tag: 12_i64 };
+    if holder.greeter.Rank() != 12_i64 { return 6_i64; }
     Shown s = 21_i32;
-    if (s.Twice() != 42_i64)
-    {
-        return 7_i64;
-    }
+    if s.Twice() != 42_i64 { return 7_i64; }
     mut Holder[] holders = [holder, holder, holder, holder];
     mut i64 i = 0_i64;
-    while (i < 64_i64)
-    {
+    while i < 64_i64 {
         bool even = i % 2_i64 == 0_i64;
         mut i64 tag = 15_i64;
-        if (even)
-        {
-            tag = 1_i64;
-        }
-        holders[i % 4_i64] = Holder
-        {
-            greeter: Pick(even),
-            tag: tag,
-        };
+        if even { tag = 1_i64; }
+        holders[i % 4_i64] = Holder { greeter: Pick(even), tag: tag };
         Probe.gc_collect();
         Holder read = holders[(i + 1_i64) % 4_i64];
-        if (read.greeter.Rank() != read.tag)
-        {
-            return 8_i64;
-        }
+        if read.greeter.Rank() != read.tag { return 8_i64; }
         i = i + 1_i64;
     }
     return 42_i64;

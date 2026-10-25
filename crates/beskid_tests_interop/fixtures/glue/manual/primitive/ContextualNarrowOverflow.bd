@@ -1,5 +1,1 @@
-pub i8 Main()
-{
-    i8 value = 128;
-    return value;
-}
+pub i8 Main() { i8 value = 128; return value; }

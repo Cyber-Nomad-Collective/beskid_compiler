@@ -10,62 +10,44 @@
 const WG_WAITERS = 8;
 const WG_SLOT_SIZE = 32;
 
-pub word WaitGroupSlotSize()
-{
-    return WG_SLOT_SIZE;
-}
+pub word WaitGroupSlotSize() { return WG_SLOT_SIZE; }
 
 // Returns the chunked WaitGroup table owned by the active scheduler.
 // WaitGroup storage must never be derived from an undeclared RuntimeState offset.
-pub pointer WgTable()
-{
+pub pointer WgTable() {
     return SchedulerWaitGroupTable();
 }
 
 // Resolves an opaque wait-group ID (slot index + 1) to its record, or null.
-pub pointer WaitGroupSlot(pointer id)
-{
+pub pointer WaitGroupSlot(pointer id) {
     word encoded = NativeWord(id);
-    if (encoded == 0)
-    {
-        return NativePointer(0);
-    }
+    if encoded == 0 { return NativePointer(0); }
     word slotIndex = encoded - 1;
     pointer table = WgTable();
-    if (table == NativePointer(0) || slotIndex >= ChunkTableCount(table))
-    {
-        return NativePointer(0);
-    }
+    if table == NativePointer(0) || slotIndex >= ChunkTableCount(table) { return NativePointer(0); }
     return ChunkTableRecord(table, slotIndex);
 }
 
 // Creates a wait group and returns its opaque ID. A null return means the system
 // allocator refused to grow the table.
-[Export(Abi: "C", Symbol: "wait_group_create")]
-pub pointer WaitGroupCreate()
-{
+[Export(Abi:"C", Symbol:"wait_group_create")]
+pub pointer WaitGroupCreate() {
     pointer table = WgTable();
-    if (table == NativePointer(0))
-    {
+    if table == NativePointer(0) {
         return NativePointer(0);
     }
     word index = ChunkTableAppend(table);
-    if (index == 0xFFFFFFFFFFFFFFFF)
-    {
-        return NativePointer(0);
-    }
+    if index == 0xFFFFFFFFFFFFFFFF { return NativePointer(0); }
     return NativePointer(index + 1);
 }
 
 // Shutdown only: releases the waiter vector of one record.
-pub unit WaitGroupRelease(pointer slot)
-{
+pub unit WaitGroupRelease(pointer slot) {
     VecFree(pointer_add(slot, WG_WAITERS), 8);
     return;
 }
 
-pub unit WaitGroupWaiterRemove(pointer slot, word waiterHandle)
-{
+pub unit WaitGroupWaiterRemove(pointer slot, word waiterHandle) {
     VecRemoveWord(pointer_add(slot, WG_WAITERS), waiterHandle);
     return;
 }
@@ -73,21 +55,15 @@ pub unit WaitGroupWaiterRemove(pointer slot, word waiterHandle)
 // Queues every valid waiter registered on `slot` for the scheduler wake phase.
 // This is intentionally only the ownership/wake-recording half of cooperative
 // waiting: fiber context switching remains the scheduler's separate ABI work.
-pub unit WaitGroupWakeAll(pointer slot)
-{
+pub unit WaitGroupWakeAll(pointer slot) {
     pointer waiters = pointer_add(slot, WG_WAITERS);
     word count = VecCount(waiters);
     mut word i = 0;
-    while (i < count)
-    {
+    while i < count {
         word waiterHandle = VecWordAt(waiters, i);
-        if (FiberHandleValid(waiterHandle))
-        {
+        if FiberHandleValid(waiterHandle) {
             word waiterIndex = FiberHandleIndex(waiterHandle);
-            if (FiberParked(waiterIndex))
-            {
-                WakeEnqueue(waiterIndex);
-            }
+            if FiberParked(waiterIndex) { WakeEnqueue(waiterIndex); }
         }
         i = i + 1;
     }
@@ -96,90 +72,49 @@ pub unit WaitGroupWakeAll(pointer slot)
 }
 
 // Adds `delta` to the wait group counter.
-[Export(Abi: "C", Symbol: "wait_group_add")]
-pub unit WaitGroupAdd(pointer id, i64 delta)
-{
+[Export(Abi:"C", Symbol:"wait_group_add")]
+pub unit WaitGroupAdd(pointer id, i64 delta) {
     pointer slot = WaitGroupSlot(id);
-    if (slot == NativePointer(0))
-    {
-        return;
-    }
+    if slot == NativePointer(0) { return; }
     mut i64 current = i64(raw_word_load(slot));
-    if (delta < 0 && current < -delta)
-    {
-        return;
-    }
+    if delta < 0 && current < -delta { return; }
     raw_word_store(slot, word(current + delta));
-    if (current + delta == 0)
-    {
-        WaitGroupWakeAll(slot);
-    }
+    if current + delta == 0 { WaitGroupWakeAll(slot); }
     return;
 }
 
 // Decrements the counter. Wakes waiters when it reaches zero.
-[Export(Abi: "C", Symbol: "wait_group_done")]
-pub unit WaitGroupDone(pointer id)
-{
+[Export(Abi:"C", Symbol:"wait_group_done")]
+pub unit WaitGroupDone(pointer id) {
     pointer slot = WaitGroupSlot(id);
-    if (slot == NativePointer(0))
-    {
-        return;
-    }
+    if slot == NativePointer(0) { return; }
     mut i64 current = i64(raw_word_load(slot));
-    if (current <= 0)
-    {
-        return;
-    }
+    if current <= 0 { return; }
     current = current - 1;
     raw_word_store(slot, word(current));
-    if (current == 0)
-    {
-        WaitGroupWakeAll(slot);
-    }
+    if current == 0 { WaitGroupWakeAll(slot); }
     return;
 }
 
 // Blocks until the counter reaches zero.
-[Export(Abi: "C", Symbol: "wait_group_wait")]
-pub i32 WaitGroupWait(pointer id)
-{
+[Export(Abi:"C", Symbol:"wait_group_wait")]
+pub i32 WaitGroupWait(pointer id) {
     pointer slot = WaitGroupSlot(id);
-    if (slot == NativePointer(0))
-    {
-        return 1;
-    }
-    if (i64(raw_word_load(slot)) <= 0)
-    {
-        return 0;
-    }
+    if slot == NativePointer(0) { return 1; }
+    if i64(raw_word_load(slot)) <= 0 { return 0; }
     word currentFiber = SchedulerCurrentFiber();
-    if (currentFiber == FIBER_NONE)
-    {
+    if currentFiber == FIBER_NONE {
         // Main parks as the root fiber: it drives the scheduler until the count reaches zero.
-        while (i64(raw_word_load(slot)) > 0)
-        {
-            SchedulerRootWait();
-        }
+        while i64(raw_word_load(slot)) > 0 { SchedulerRootWait(); }
         return 0;
     }
-    if (!FiberExists(currentFiber))
-    {
-        return 1;
-    }
+    if !FiberExists(currentFiber) { return 1; }
     word waiterHandle = FiberHandle(currentFiber);
     pointer waiters = pointer_add(slot, WG_WAITERS);
-    if (VecContainsWord(waiters, waiterHandle))
-    {
-        return 1;
-    }
-    if (!VecPushWord(waiters, waiterHandle))
-    {
-        return 1;
-    }
+    if VecContainsWord(waiters, waiterHandle) { return 1; }
+    if !VecPushWord(waiters, waiterHandle) { return 1; }
     pointer fiber = FiberRecord(currentFiber);
-    if (raw_byte_load(pointer_add(fiber, 41)) != 0)
-    {
+    if raw_byte_load(pointer_add(fiber, 41)) != 0 {
         WaitGroupWaiterRemove(slot, waiterHandle);
         return 1;
     }
@@ -188,9 +123,6 @@ pub i32 WaitGroupWait(pointer id)
     SchedulerSetCurrentFiber(FIBER_NONE);
     ContextSwitch(NativePointer(raw_word_load(pointer_add(fiber, 104))), SchedulerContext());
     WaitGroupWaiterRemove(slot, waiterHandle);
-    if (!FiberHandleValid(waiterHandle) || raw_byte_load(pointer_add(fiber, 41)) != 0)
-    {
-        return 1;
-    }
+    if !FiberHandleValid(waiterHandle) || raw_byte_load(pointer_add(fiber, 41)) != 0 { return 1; }
     return 0;
 }

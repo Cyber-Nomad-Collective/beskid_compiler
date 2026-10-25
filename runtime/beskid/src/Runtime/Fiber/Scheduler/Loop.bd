@@ -1,12 +1,8 @@
 // Canonical cooperative scheduler loop.
 // Drive one scheduling step. Returns true if work was done.
-pub bool SchedStep()
-{
+pub bool SchedStep() {
     pointer table = SchedTable();
-    if (table == NativePointer(0))
-    {
-        return false;
-    }
+    if table == NativePointer(0) { return false; }
     ApplyPendingSpawns();
     // Cancellation words set by other isolates (Runtime/Parallel/Registry.bd) become fiber
     // cancellations before the pending ones are applied.
@@ -20,40 +16,28 @@ pub bool SchedStep()
     i32 pollState = PollExecutorRunOnce();
     bool pollWorked = pollState == 0;
 
-    if (RunQueueEmpty())
-    {
+    if RunQueueEmpty() {
         // Check if any fibers are still alive (runnable or parked).
         word fiberCount = raw_word_load(table);
-        mut word i = 0;
-        mut bool alive = false;
-        while (i < fiberCount)
-        {
+        mut word i = 0; mut bool alive = false;
+        while i < fiberCount {
             word s = FiberState(i);
-            if (s == FIBER_STATE_RUNNABLE || s == FIBER_STATE_PARKED || s == FIBER_STATE_RUNNING)
-            {
+            if s == FIBER_STATE_RUNNABLE || s == FIBER_STATE_PARKED || s == FIBER_STATE_RUNNING {
                 alive = true;
             }
             i = i + 1;
         }
-        if (!alive)
-        {
+        if !alive {
             return pollWorked; // Scheduler is done only when neither executor made progress.
         }
         return pollWorked; // SchedRun waits on the owner primitive when external waits remain.
     }
+
     word next = RunQueuePop();
-    if (next == FIBER_NONE)
-    {
-        return false;
-    }
-    if (!FiberExists(next) || FiberParked(next) || FiberFinished(next))
-    {
-        return true;
-    }
-    if (!SchedulerAcquireMutatorToken())
-    {
-        return false;
-    }
+    if next == FIBER_NONE { return false; }
+    if !FiberExists(next) || FiberParked(next) || FiberFinished(next) { return true; }
+
+    if !SchedulerAcquireMutatorToken() { return false; }
     FiberSetState(next, FIBER_STATE_RUNNING);
     // A watched Core.Parallel task fiber can observe cancellation from its first run on.
     IsolateObserveFiberStarting(next);
@@ -63,12 +47,8 @@ pub bool SchedStep()
     SchedulerReleaseMutatorToken();
     SchedulerSetCurrentFiber(FIBER_NONE);
     // A local Core.Parallel task's fiber hands its outcome to its task (Runtime/Parallel/Isolates.bd).
-    if (FiberFinished(next))
-    {
-        IsolateObserveFiberFinished(next);
-    }
-    if (FiberExists(next) && FiberFinished(next) && raw_byte_load(pointer_add(FiberRecord(next), 40)) != 0)
-    {
+    if FiberFinished(next) { IsolateObserveFiberFinished(next); }
+    if FiberExists(next) && FiberFinished(next) && raw_byte_load(pointer_add(FiberRecord(next), 40)) != 0 {
         FiberCleanup(next);
     }
     return true;
@@ -79,71 +59,39 @@ pub bool SchedStep()
 // instead of switching away. One call is one wait round: a scheduling step, or a sleep on the
 // owner mailbox while external work (I/O, timers) is pending. When nothing can make progress
 // the root waits forever, which is a deadlock and traps.
-pub unit SchedulerRootWait()
-{
-    if (SchedulerCurrentFiber() != FIBER_NONE)
-    {
-        Trap(10, NativePointer(0), 0);
-    }
-    if (SchedStep())
-    {
-        return;
-    }
-    if (ExternalActiveCount() == 0)
-    {
-        Trap(7, NativePointer(0), 0);
-    }
+pub unit SchedulerRootWait() {
+    if SchedulerCurrentFiber() != FIBER_NONE { Trap(10, NativePointer(0), 0); }
+    if SchedStep() { return; }
+    if ExternalActiveCount() == 0 { Trap(7, NativePointer(0), 0); }
     owner_wait(ExternalOwnerId(), ExternalNextDeadline());
     return;
 }
 
 // Run the scheduler until quiescence. Typed results remain owned by their handles.
-pub i64 SchedRun()
-{
+pub i64 SchedRun() {
     SchedInit();
-    while (true)
-    {
-        if (!SchedStep())
-        {
+    while true {
+        if !SchedStep() {
             // Check all-blocked (deadlock).
             pointer table = SchedTable();
             word fiberCount = raw_word_load(table);
-            mut word i = 0;
-            mut bool anyAlive = false;
-            mut bool anyRunnable = false;
-            while (i < fiberCount)
-            {
+            mut word i = 0; mut bool anyAlive = false; mut bool anyRunnable = false;
+            while i < fiberCount {
                 word s = FiberState(i);
-                if (s == FIBER_STATE_RUNNABLE)
-                {
-                    anyRunnable = true;
-                }
-                if (s == FIBER_STATE_PARKED || s == FIBER_STATE_RUNNING)
-                {
-                    anyAlive = true;
-                }
+                if s == FIBER_STATE_RUNNABLE { anyRunnable = true; }
+                if s == FIBER_STATE_PARKED || s == FIBER_STATE_RUNNING { anyAlive = true; }
                 i = i + 1;
             }
-            if (anyRunnable)
-            {
-                break;
-            }
-            if (ExternalActiveCount() != 0)
-            {
+            if anyRunnable { break; }
+            if ExternalActiveCount() != 0 {
                 owner_wait(ExternalOwnerId(), ExternalNextDeadline());
                 continue;
             }
             // Pending poll tasks are externally wakeable quiescence, not a
             // fiber deadlock. Leave their state intact for run_once/wake only
             // after servicing registered external fiber waits.
-            if (PollExecutorHasActiveTasks())
-            {
-                break;
-            }
-            if (anyAlive)
-            {
-                Trap(7, NativePointer(0), 0);
-            }
+            if PollExecutorHasActiveTasks() { break; }
+            if anyAlive { Trap(7, NativePointer(0), 0); }
             break;
         }
     }

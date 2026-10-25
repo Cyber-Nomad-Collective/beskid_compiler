@@ -1,11 +1,9 @@
 use Core.Output;
 use Core.String;
 
-i32 Main()
-{
+i32 Main() {
     Output.WriteLine("ok");
-    if (String.IsEmpty("ok"))
-    {
+    if String.IsEmpty("ok") {
         return 31;
     }
     return 0;

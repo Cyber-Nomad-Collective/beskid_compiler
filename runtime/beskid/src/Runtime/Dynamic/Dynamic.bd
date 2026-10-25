@@ -2,104 +2,65 @@
 use Core.Results;
 use Core.Dynamic;
 
-[Extern(Abi: "C", Library: "beskid_runtime")]
-contract DynamicBridgeV1
-{
+[Extern(Abi:"C", Library:"beskid_runtime")]
+contract DynamicBridgeV1 {
     DynamicValueV1 beskid_dynamic_v1_create_owned(DynamicPayloadV1 payload, u64 tag, pointer status);
     DynamicPayloadV1 beskid_dynamic_v1_cast_owned(DynamicValueV1 value, u64 tag, pointer status);
     DynamicValueV1 beskid_dynamic_v1_map_owned(DynamicValueV1 value, u64 mapping, pointer status);
 }
 
-pub bool DynamicStatusBufferValidV1(pointer status)
-{
-    return status != NativePointer(0);
-}
+pub bool DynamicStatusBufferValidV1(pointer status) { return status != NativePointer(0); }
 
-DynamicErrorV1 DynamicErrorFromStatusV1(word status)
-{
-    if (status == 1)
-    {
-        return DynamicErrorV1::Invalid;
-    }
-    if (status == 4)
-    {
-        return DynamicErrorV1::Busy;
-    }
+DynamicErrorV1 DynamicErrorFromStatusV1(word status) {
+    if status == 1 { return DynamicErrorV1::Invalid; }
+    if status == 4 { return DynamicErrorV1::Busy; }
     return DynamicErrorV1::Foreign;
 }
 
 // The checked native dispatcher owns `status` on its native stack. These exact
 // source helpers are cloned with allocation/root guards before every Result store.
-Result<DynamicValueV1, DynamicErrorV1> DynamicCreateResultFactoryV1(DynamicPayloadV1 payload, u64 tag, pointer status)
-{
+Result<DynamicValueV1, DynamicErrorV1> DynamicCreateResultFactoryV1(DynamicPayloadV1 payload, u64 tag, pointer status) {
     raw_word_store(status, 1);
     DynamicValueV1 value = DynamicBridgeV1.beskid_dynamic_v1_create_owned(payload, tag, status);
     word code = raw_word_load(status);
-    if (code != 0)
-    {
-        return Result::Error(DynamicErrorFromStatusV1(code));
-    }
+    if code != 0 { return Result::Error(DynamicErrorFromStatusV1(code)); }
     return Result::Ok(value);
 }
-
-Result<DynamicPayloadV1, DynamicErrorV1> DynamicCastResultFactoryV1(DynamicValueV1 value, u64 tag, pointer status)
-{
+Result<DynamicPayloadV1, DynamicErrorV1> DynamicCastResultFactoryV1(DynamicValueV1 value, u64 tag, pointer status) {
     raw_word_store(status, 1);
     DynamicPayloadV1 payload = DynamicBridgeV1.beskid_dynamic_v1_cast_owned(value, tag, status);
     word code = raw_word_load(status);
-    if (code != 0)
-    {
-        return Result::Error(DynamicErrorFromStatusV1(code));
-    }
+    if code != 0 { return Result::Error(DynamicErrorFromStatusV1(code)); }
     return Result::Ok(payload);
 }
-
-Result<DynamicValueV1, DynamicErrorV1> DynamicMapResultFactoryV1(DynamicValueV1 value, u64 mapping, pointer status)
-{
+Result<DynamicValueV1, DynamicErrorV1> DynamicMapResultFactoryV1(DynamicValueV1 value, u64 mapping, pointer status) {
     raw_word_store(status, 1);
     DynamicValueV1 mapped = DynamicBridgeV1.beskid_dynamic_v1_map_owned(value, mapping, status);
     word code = raw_word_load(status);
-    if (code != 0)
-    {
-        return Result::Error(DynamicErrorFromStatusV1(code));
-    }
+    if code != 0 { return Result::Error(DynamicErrorFromStatusV1(code)); }
     return Result::Ok(mapped);
 }
 
-[Export(Abi: "C", Symbol: "beskid_dynamic_v1_create_result")]
-pub Result<DynamicValueV1, DynamicErrorV1> DynamicCreateResultV1(DynamicPayloadV1 payload, u64 tag)
-{
+[Export(Abi:"C", Symbol:"beskid_dynamic_v1_create_result")]
+pub Result<DynamicValueV1, DynamicErrorV1> DynamicCreateResultV1(DynamicPayloadV1 payload, u64 tag) {
     pointer status = SystemAllocate(8, 8);
-    if (DynamicStatusBufferValidV1(status) == false)
-    {
-        return Result::Error(DynamicErrorV1::Allocation);
-    }
+    if DynamicStatusBufferValidV1(status) == false { return Result::Error(DynamicErrorV1::Allocation); }
     Result<DynamicValueV1, DynamicErrorV1> result = DynamicCreateResultFactoryV1(payload, tag, status);
     SystemFree(status, 8);
     return result;
 }
-
-[Export(Abi: "C", Symbol: "beskid_dynamic_v1_cast_result")]
-pub Result<DynamicPayloadV1, DynamicErrorV1> DynamicCastResultV1(DynamicValueV1 value, u64 tag)
-{
+[Export(Abi:"C", Symbol:"beskid_dynamic_v1_cast_result")]
+pub Result<DynamicPayloadV1, DynamicErrorV1> DynamicCastResultV1(DynamicValueV1 value, u64 tag) {
     pointer status = SystemAllocate(8, 8);
-    if (DynamicStatusBufferValidV1(status) == false)
-    {
-        return Result::Error(DynamicErrorV1::Allocation);
-    }
+    if DynamicStatusBufferValidV1(status) == false { return Result::Error(DynamicErrorV1::Allocation); }
     Result<DynamicPayloadV1, DynamicErrorV1> result = DynamicCastResultFactoryV1(value, tag, status);
     SystemFree(status, 8);
     return result;
 }
-
-[Export(Abi: "C", Symbol: "beskid_dynamic_v1_map_result")]
-pub Result<DynamicValueV1, DynamicErrorV1> DynamicMapResultV1(DynamicValueV1 value, u64 mapping)
-{
+[Export(Abi:"C", Symbol:"beskid_dynamic_v1_map_result")]
+pub Result<DynamicValueV1, DynamicErrorV1> DynamicMapResultV1(DynamicValueV1 value, u64 mapping) {
     pointer status = SystemAllocate(8, 8);
-    if (DynamicStatusBufferValidV1(status) == false)
-    {
-        return Result::Error(DynamicErrorV1::Allocation);
-    }
+    if DynamicStatusBufferValidV1(status) == false { return Result::Error(DynamicErrorV1::Allocation); }
     Result<DynamicValueV1, DynamicErrorV1> result = DynamicMapResultFactoryV1(value, mapping, status);
     SystemFree(status, 8);
     return result;
