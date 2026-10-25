@@ -192,7 +192,17 @@ pub fn contract_upcast(
 /// order their tables follow the method entries of every witness table of `contract`.
 pub(in crate::semantic_contract) fn upcast_targets(db: &dyn Db, contract: AstNodeKey) -> Option<Vec<AstNodeKey>> {
     let embedded = contract_embedded_contracts(db, contract)?;
-    Some(embedded.into_iter().filter(|embedded| contract_generic_count(db, *embedded) == Some(0)).collect())
+    // A transfer marker (`Transferable`, ...) is proven from the transfer class, never by an
+    // implementation: it has no witness table and no contract values.
+    Some(
+        embedded
+            .into_iter()
+            .filter(|embedded| {
+                contract_generic_count(db, *embedded) == Some(0)
+                    && super::transfer::transfer_marker_contract(db, *embedded).is_none()
+            })
+            .collect(),
+    )
 }
 
 /// Whether a value of `source` converts to the contract value type `target` at a conversion
@@ -387,7 +397,9 @@ fn declared_contract_destination(db: &dyn Db, key: AstNodeKey, element: bool) ->
             .of::<beskid_analysis::syntax::FunctionDefinition>()
             .and_then(|function| function.return_type.as_ref())
             .or_else(|| {
-                item_node.of::<beskid_analysis::syntax::MethodDefinition>().and_then(|method| method.return_type.as_ref())
+                item_node
+                    .of::<beskid_analysis::syntax::MethodDefinition>()
+                    .and_then(|method| method.return_type.as_ref())
             })
             .map(|declared| declared.node.clone());
         (item, declared)

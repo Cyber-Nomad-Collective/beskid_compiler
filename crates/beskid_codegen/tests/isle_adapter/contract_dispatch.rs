@@ -875,3 +875,79 @@ i32 Main() {
         .unwrap_or_else(|error| panic!("the reachable items lower without an internal error: {error}"));
     beskid_codegen::validate_artifact(&artifact).expect("reachable artifact");
 }
+
+const MARKED_SCORES: &str = r#"
+use Core.Results;
+use Core.Parallel;
+use Core.Parallel.Scopes;
+use Core.Parallel.Port;
+contract Scored { Transferable; i64 Score(); }
+contract Loose { i64 Score(); }
+[Isolated]
+type Low : Scored, Loose { pub i64 Score() { return 1_i64; } }
+type Plain : Scored, Loose { pub i64 Score() { return 2_i64; } }
+"#;
+
+/// A contract value takes its transfer class from the markers its contract embeds: a contract
+/// without one is not Transferable (a `Port<Loose>` is E1610), and a type that does not satisfy
+/// the marker cannot be boxed into the contract (E1206), so a box never carries a
+/// non-transferable value across a heap boundary.
+#[test]
+fn contract_values_cross_a_heap_boundary_only_through_a_marked_contract() {
+    let port_of = |contract: &str, value: &str, generation: u64| {
+        check_errors(
+            &format!(
+                "{MARKED_SCORES}
+i64 Main() {{
+    Result<i64, ParallelError> result = Parallel.Scope<i64>((Core.Parallel.Scopes.Scope s) => {{
+        Port<{contract}> scores = s.PortWith<{contract}>(1_i64);
+        {contract} value = {value};
+        scores.Send(move value);
+        return Result::Ok(0_i64);
+    }});
+    return 0_i64;
+}}"
+            ),
+            generation,
+        )
+    };
+    let marked = port_of("Scored", "Low {}", 6741);
+    assert!(marked.is_empty(), "a marked contract with a Moved implementation crosses: {marked:?}");
+    let unmarked = port_of("Loose", "Low {}", 6742);
+    assert!(unmarked.contains(&"E1610"), "an unmarked contract is not Transferable: {unmarked:?}");
+    let laundered = port_of("Scored", "Plain {}", 6743);
+    assert!(laundered.contains(&"E1206"), "a type without a marker is not boxed into `Scored`: {laundered:?}");
+    // A task captures the port and sends contract values of two implementations through it.
+    let captured = check_errors(
+        &format!(
+            "{MARKED_SCORES}
+[Isolated]
+type High : Scored {{ i64 bonus; pub i64 Score() {{ return 100_i64 + this.bonus; }} }}
+i64 Main() {{
+    Result<i64, ParallelError> result = Parallel.Scope<i64>((Core.Parallel.Scopes.Scope s) => {{
+        Port<Scored> scores = s.PortWith<Scored>(2_i64);
+        Task<unit> producer = s.Spawn(() => {{
+            Scored low = Low {{}};
+            scores.Send(move low);
+            Scored high = High {{ bonus: 5_i64 }};
+            scores.Send(move high);
+            scores.Close();
+            return;
+        }});
+        mut i64 total = 0_i64;
+        mut bool open = true;
+        while open {{
+            match scores.Receive() {{
+                Result::Ok(v) => {{ total = total + v.Score(); }},
+                Result::Error(_) => {{ open = false; }},
+            }};
+        }}
+        return Result::Ok(total);
+    }});
+    return 0_i64;
+}}"
+        ),
+        6744,
+    );
+    assert!(captured.is_empty(), "a captured port of a marked contract crosses: {captured:?}");
+}

@@ -2562,6 +2562,13 @@ fn prove_applied_conformance(
     applied_arguments: &[GenericSourceTypeIdentity],
     unsatisfied: &dyn Fn(Option<&str>) -> SemanticError,
 ) -> Result<ProvenConformance, SemanticError> {
+    // An implementing type satisfies every transfer marker the contract embeds (a contract value
+    // takes its transfer class from them); a contract value already did when it was boxed.
+    if !matches!(source_identity, GenericSourceTypeIdentity::Contract { .. })
+        && !super::transfer::satisfies_contract_markers(db, context, source_identity, contract)?
+    {
+        return Err(unsatisfied(Some(&source_identity.display_name())));
+    }
     if let Some(primitive) = conformable_primitive_identity(source_identity) {
         return prove_primitive_conformance(db, context, primitive, contract, applied_arguments)?
             .ok_or_else(|| unsatisfied(Some(primitive.as_str())));
