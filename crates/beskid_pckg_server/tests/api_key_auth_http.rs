@@ -292,3 +292,55 @@ async fn session_cookie_headers_still_identify_the_browser_user() {
     assert_eq!(body["subject"], "alice");
     assert!(body.get("keyName").is_none());
 }
+
+#[tokio::test]
+async fn proxied_browser_authorization_headers_do_not_end_the_session() {
+    for authorization in ["Basic YWxpY2U6c2VjcmV0", "Bearer eyJhbGciOiJSUzI1NiJ9.e30.sig", "Token abc", "Bearer"] {
+        let (config, _) = active_key_config();
+        let response = router(config).oneshot(session_request(Some(authorization), Some("alice"))).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK, "{authorization}");
+        let body = json_body(response).await;
+        assert_eq!(body["subject"], "alice", "{authorization}");
+        assert!(body.get("keyName").is_none() && body.get("keyScopes").is_none());
+    }
+}
+
+#[tokio::test]
+async fn proxied_non_key_authorization_without_session_headers_stays_anonymous() {
+    let (config, _) = active_key_config();
+    let response = router(config).oneshot(session_request(Some("Basic YWxpY2U6c2VjcmV0"), None)).await.unwrap();
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn malformed_publisher_key_is_rejected_even_with_session_headers() {
+    for authorization in ["Bearer bpk_short", "Bearer bpk_zzzz", "bearer bpk_not-a-valid-issued-token"] {
+        let (config, _) = active_key_config();
+        let response = router(config).oneshot(session_request(Some(authorization), Some("alice"))).await.unwrap();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED, "{authorization}");
+    }
+}
+
+#[tokio::test]
+async fn session_rejects_a_key_without_the_publish_scope() {
+    let token = format!("bpk_{}", "c".repeat(64));
+    let config = config_for_key(
+        PckgServerConfig::default().with_authelia_auth(),
+        &token,
+        test_key(vec!["read".to_owned()], None),
+    );
+    let response = router(config).oneshot(session_request(Some(&bearer(&token)), Some("alice"))).await.unwrap();
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn session_answer_for_a_key_uses_the_session_identity_contract() {
+    let (config, token) = active_key_config();
+    let response = router(config).oneshot(session_request(Some(&bearer(&token)), None)).await.unwrap();
+    let body = json_body(response).await;
+    let identity: beskid_pckg_auth::SessionIdentity = serde_json::from_value(body).expect("SessionIdentity");
+    assert_eq!(identity.subject, "key-owner");
+    assert_eq!(identity.display_name.as_deref(), Some("key-owner"));
+    assert_eq!(identity.key_name.as_deref(), Some("CI"));
+    assert_eq!(identity.key_scopes, Some(vec!["publish".to_owned()]));
+}
