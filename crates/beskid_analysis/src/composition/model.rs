@@ -49,7 +49,8 @@ impl RegistrationLifetime {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Registration {
     pub id: u32,
-    /// Exact registry-entry syntax identity; the backend never rediscovers it by name.
+    /// The registry entry node (kind `RegistryEntry` at `span`). Codegen binds it in the syntax it
+    /// lowers; `AstNodeId::INVALID` in the analysis result.
     pub source_node_id: AstNodeId,
     /// The unit that declares the registry line.
     pub unit: UnitPath,
@@ -124,6 +125,7 @@ pub struct ActivationPlanEntry {
 pub struct PluralPlan {
     pub owner_registration_id: u32,
     pub field_span: SpanInfo,
+    /// The `inject` field node (kind `Field` at `field_span`), bound by codegen.
     pub field_node_id: AstNodeId,
     pub field_unit: UnitPath,
     pub target_slots: Vec<ServiceSlot>,
@@ -133,6 +135,7 @@ pub struct PluralPlan {
 pub struct SingularPlan {
     pub owner_registration_id: u32,
     pub field_span: SpanInfo,
+    /// The `inject` field node (kind `Field` at `field_span`), bound by codegen.
     pub field_node_id: AstNodeId,
     pub field_unit: UnitPath,
     pub target_slot: ServiceSlot,
@@ -142,11 +145,13 @@ pub struct SingularPlan {
 pub struct CompositionHookPlan {
     pub scope_id: ScopeId,
     pub kind: ScopeHookKind,
+    /// The hook node (kind `ScopeHook` at `span`), bound by codegen.
     pub source_node_id: AstNodeId,
     pub span: SpanInfo,
     /// The unit of the host that declares the hook (its generated items live there too).
     pub unit: UnitPath,
-    /// The generated function that holds the hook body (see [`super::hooks`]).
+    /// The generated function that holds the hook body (kind `FunctionDefinition` at `span`, see
+    /// [`super::hooks`]), bound by codegen.
     pub function_node_id: AstNodeId,
     /// The registration of the generated argument type whose injected fields are the hook
     /// parameters in order; `None` for a hook without parameters.

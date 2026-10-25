@@ -80,7 +80,15 @@ i32 Main() { launch AppHost(); return 0; }
     let input = input
         .with_composition_authority(generation, Arc::clone(&plan), Arc::clone(&snapshot))
         .expect("current-generation composition authority");
-    assert_eq!(input.composition_authority(), Some((plan.as_ref(), snapshot.as_ref())));
+    let (attached_plan, attached_snapshot) = input.composition_authority().expect("attached authority");
+    // The attached authority is the frozen plan with its node ids bound in the lowered syntax.
+    assert_eq!(attached_plan.activation, plan.activation);
+    assert_eq!(attached_snapshot.launched_host, snapshot.launched_host);
+    assert!(attached_plan.plurals.iter().all(|plural| plural.field_node_id.is_valid()), "plural fields are bound");
+    assert!(
+        attached_snapshot.registrations.iter().all(|registration| registration.source_node_id.is_valid()),
+        "registry entries are bound"
+    );
     let facts = beskid_codegen::SyntaxNodeFacts::new(&input);
     assert_eq!(facts.composition_service_slot(owner), Some(1));
     assert_eq!(facts.composition_plural_slots(owner), Some(vec![0]));

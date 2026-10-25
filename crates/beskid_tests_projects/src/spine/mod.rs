@@ -3,6 +3,7 @@
 mod assembly_prelude;
 mod corelib_tests_codegen;
 mod diagnostics_parity;
+mod host_hook_parameters;
 mod legality_compile_fail;
 mod link_completeness;
 mod materialization_parse;

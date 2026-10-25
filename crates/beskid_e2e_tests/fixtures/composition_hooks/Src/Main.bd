@@ -1,6 +1,13 @@
 // Host hooks run at run time: `startup` once after launch, scope `init` before each `with`
 // body, scope `dispose` after it (also on an early return), and the global `dispose` last.
+// Hook parameters come from the registry, contract-typed or concrete. `Say` has a
+// caller-information parameter: the compiler fills it at every call, also inside hook bodies.
 use Core.Output;
+
+unit Say(string text, [CallerLineNumber] i64 line = 0)
+{
+    Output.WriteLine(text);
+}
 
 contract Greeter
 {
@@ -33,9 +40,9 @@ host AppHost()
         single Reception;
     }
 
-    startup(Reception reception)
+    startup(Reception reception, Greeter greeter)
     {
-        Output.WriteLine("startup ${reception.Welcome()}");
+        Say("startup ${reception.Welcome()} ${greeter.Greet()}");
     }
 
     dispose()
@@ -47,7 +54,7 @@ host AppHost()
     {
         init(Greeter greeter)
         {
-            Output.WriteLine("init ${greeter.Greet()}");
+            Say("init ${greeter.Greet()}");
         }
 
         dispose()

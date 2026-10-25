@@ -77,7 +77,7 @@ fn composition_hooks_run_in_order_on_every_exit() {
     let manifest = workspace.join("CompositionHooks.bproj");
     let expected = [
         "before launch",
-        "startup hello",
+        "startup hello hello",
         "init hello",
         "inside with",
         "dispose",

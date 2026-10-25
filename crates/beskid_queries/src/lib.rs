@@ -152,7 +152,7 @@ pub use semantic_contract::{
     item_body, item_export_symbol, item_name, item_signature, literal_fact, local_slot, managed_reference_kind,
     mutable_local_assignment, native_mod_callback_symbol, native_mod_contract_declaration,
     native_mod_request_constructor, native_mod_syntax_constructor, native_mod_transport_nominal,
-    native_mod_transport_signature, node_kind, node_span, node_type, nominal_member_receiver, operator_fact,
+    native_mod_transport_signature, node_at_span, node_kind, node_span, node_type, nominal_member_receiver, operator_fact,
     parameter_generic_reference, pattern_binding_specialization, primitive_numeric_conversion, range_for_fact,
     reachable_items, resolved_item, resolved_local, runtime_intrinsic, runtime_intrinsic_name, scoped_cleanup,
     spawn_entry_validation, spawn_handle_type, spawn_legality, spawn_target,

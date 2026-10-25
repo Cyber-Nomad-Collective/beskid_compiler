@@ -11,10 +11,7 @@ use super::{
     scope_tree::{merge_host_scopes, scope_parent_map, validate_scope_tree},
     snapshot::CompositionSnapshot,
 };
-use crate::{
-    syntax::{AstNodeId, Program, SpanInfo, Spanned},
-    syntax_query::{NodeKind, SyntaxSnapshot},
-};
+use crate::syntax::{AstNodeId, Program, SpanInfo, Spanned};
 
 #[derive(Clone, Copy)]
 pub struct CompositionInput<'a> {
@@ -162,25 +159,16 @@ pub fn resolve_composition_with_imports(
         }
     }
 
-    let (mut merged_registrations, merge_issues) =
+    let (merged_registrations, merge_issues) =
         merge_host_registries(&host_chain, &collected.host_registries, &collected.host_scopes, &merged_scopes);
     issues.extend(merge_issues);
     // Registrations of imported units are checked too; their issues stay in their own unit.
     issues.extend(super::shapes::validate_registrations(&merged_registrations, input.program, imported, input.types));
-    // Parser `Spanned.id` is deliberately unset. Freeze identities from the same deterministic
-    // expanded-tree pre-order that the generation-bound query index uses; a non-unique source
-    // span remains invalid and is rejected at the codegen boundary.
-    let mut indexes = HashMap::new();
-    indexes.insert(None, SyntaxSnapshot::from_program(input.program, 0));
-    for (path, program) in imported {
-        indexes.insert(Some(std::sync::Arc::clone(path)), SyntaxSnapshot::from_program(program, 0));
-    }
-    let source_node = |unit: &super::model::UnitPath, kind: NodeKind, span: SpanInfo| {
-        indexes.get(unit).map_or(AstNodeId::INVALID, |index| unique_source_node(index, kind, span))
-    };
-    for registration in &mut merged_registrations {
-        registration.source_node_id = source_node(&registration.unit, NodeKind::RegistryEntry, registration.span);
-    }
+    // Node identities are not frozen here: node ids are pre-order positions in the syntax that
+    // codegen lowers, and typing still adds nodes to it (filled optional arguments). The plan
+    // names every declaration by unit, kind and span; codegen binds the ids in its own syntax
+    // (`CodegenInput::with_composition_authority`) and rejects a plan that does not bind. The
+    // node ids below stay `AstNodeId::INVALID` (parser ids are unset as well).
 
     let scope_parents = scope_parent_map(&merged_scopes);
     let container = ServiceContainer::from_registrations(&merged_registrations);
@@ -207,14 +195,14 @@ pub fn resolve_composition_with_imports(
                     plural_registration_ids.push((
                         request.owner_registration_id,
                         request.span,
-                        (request.field_node_id, request.field_unit.clone()),
+                        request.field_unit.clone(),
                         targets.iter().map(|target| target.id).collect::<Vec<_>>(),
                     ));
                 } else if let [target] = targets.as_slice() {
                     singular_registration_ids.push((
                         request.owner_registration_id,
                         request.span,
-                        (request.field_node_id, request.field_unit.clone()),
+                        request.field_unit.clone(),
                         target.id,
                     ));
                 }
@@ -254,32 +242,26 @@ pub fn resolve_composition_with_imports(
     let slots = activation.iter().map(|entry| (entry.registration_id, entry.slot)).collect::<HashMap<_, _>>();
     let mut singulars = singular_registration_ids
         .into_iter()
-        .map(|(owner_registration_id, field_span, (field_node_id, field_unit), target_id)| SingularPlan {
+        .map(|(owner_registration_id, field_span, field_unit, target_id)| SingularPlan {
             owner_registration_id,
             field_span,
-            field_node_id,
+            field_node_id: AstNodeId::INVALID,
             field_unit,
             target_slot: slots[&target_id],
         })
         .collect::<Vec<_>>();
     singulars.sort_by_key(|singular| (singular.owner_registration_id, singular.field_span.start));
-    for singular in &mut singulars {
-        singular.field_node_id = source_node(&singular.field_unit, NodeKind::Field, singular.field_span);
-    }
     let mut plurals = plural_registration_ids
         .into_iter()
-        .map(|(owner_registration_id, field_span, (field_node_id, field_unit), targets)| PluralPlan {
+        .map(|(owner_registration_id, field_span, field_unit, targets)| PluralPlan {
             owner_registration_id,
             field_span,
-            field_node_id,
+            field_node_id: AstNodeId::INVALID,
             field_unit,
             target_slots: targets.into_iter().map(|target| slots[&target]).collect(),
         })
         .collect::<Vec<_>>();
     plurals.sort_by_key(|plural| (plural.owner_registration_id, plural.field_span.start));
-    for plural in &mut plurals {
-        plural.field_node_id = source_node(&plural.field_unit, NodeKind::Field, plural.field_span);
-    }
 
     let mut hooks = Vec::new();
     for host in &host_chain {
@@ -313,10 +295,10 @@ pub fn resolve_composition_with_imports(
                 hooks.push(CompositionHookPlan {
                     scope_id,
                     kind: hook.kind,
-                    source_node_id: source_node(&hook.unit, NodeKind::ScopeHook, hook.span),
+                    source_node_id: AstNodeId::INVALID,
                     span: hook.span,
                     unit: hook.unit.clone(),
-                    function_node_id: source_node(&hook.unit, NodeKind::FunctionDefinition, hook.span),
+                    function_node_id: AstNodeId::INVALID,
                     arguments_registration_id: merged_registrations
                         .iter()
                         .find(|registration| registration.implementation == arguments && registration.unit == hook.unit)
@@ -362,16 +344,6 @@ pub fn resolve_composition_with_imports(
         }
     }
     CompositionResult { plan, snapshot, issues: entry_issues, foreign_issues, dependency_edges: edges }
-}
-
-fn unique_source_node(index: &SyntaxSnapshot<'_>, kind: NodeKind, span: SpanInfo) -> AstNodeId {
-    let mut matches = (0..index.len())
-        .filter(|id| index.kind_of(*id as u32) == Some(kind) && index.span_of(*id as u32) == Some(span))
-        .filter_map(|id| u32::try_from(id).ok());
-    match (matches.next(), matches.next()) {
-        (Some(id), None) => AstNodeId(id),
-        _ => AstNodeId::INVALID,
-    }
 }
 
 #[cfg(test)]
@@ -493,7 +465,6 @@ i32 Main() { launch AppHost(); return 0; }
             .find(|registration| registration.implementation == "CommandLine")
             .expect("base registration merged");
         assert_eq!(imported.unit.as_deref(), Some(path.as_ref()));
-        assert!(imported.source_node_id.is_valid(), "the base registration keeps its own unit's identity");
         assert_eq!(result.plan.startup_hooks.len(), 1);
         let ids = result.snapshot.registrations.iter().map(|registration| registration.id).collect::<std::collections::HashSet<_>>();
         assert_eq!(ids.len(), result.snapshot.registrations.len(), "registration ids stay unique across units");

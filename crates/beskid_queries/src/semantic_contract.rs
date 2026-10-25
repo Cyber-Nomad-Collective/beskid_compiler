@@ -304,7 +304,7 @@ pub use queries::{
     function_value_call, generic_call_instantiation, lambda_value_required,
     generic_call_specialization, generic_call_template, generic_nominal_method_receiver, implicit_method_receiver,
     item_abi_signature, item_body, item_export_symbol, item_name, item_signature, literal_fact, local_slot,
-    managed_reference_kind, mutable_local_assignment, node_kind, node_span, node_type, nominal_member_receiver,
+    managed_reference_kind, mutable_local_assignment, node_at_span, node_kind, node_span, node_type, nominal_member_receiver,
     operator_fact, parameter_generic_reference, primitive_numeric_conversion, range_for_fact, reachable_items,
     resolved_item, resolved_local, runtime_intrinsic, runtime_intrinsic_name, spawn_entry_validation,
     spawn_handle_type, spawn_legality, spawn_target, test_item, test_statement_nodes, specialized_try_expression_fact, try_expression_fact, try_expression_judgement, try_expression_legality,

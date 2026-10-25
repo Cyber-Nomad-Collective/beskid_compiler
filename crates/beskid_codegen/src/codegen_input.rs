@@ -3,7 +3,7 @@
 use std::{collections::HashSet, sync::Arc};
 
 use beskid_abi::abi_v5::{AbiManifestV5, TargetMetadata};
-use beskid_queries::{AstNodeKey, Db, IndexedNodeKind, SourceUnitId, TypedProgram, node_kind, node_span};
+use beskid_queries::{AstNodeKey, Db, IndexedNodeKind, SourceUnitId, TypedProgram, node_kind};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RuntimeCompilerOperation {
@@ -34,8 +34,8 @@ pub enum CodegenInputError {
     StaleCompositionPlan,
     #[error("composition snapshot belongs to a foreign source unit")]
     ForeignCompositionUnit,
-    #[error("composition plan disagrees with the validated snapshot")]
-    InvalidCompositionPlan,
+    #[error("composition plan disagrees with the validated snapshot: {0}")]
+    InvalidCompositionPlan(&'static str),
 }
 
 /// Complete typed input required before generated ISLE selection may begin.
@@ -295,21 +295,55 @@ impl<'db> CodegenInput<'db> {
         {
             return Err(CodegenInputError::ForeignCompositionUnit);
         }
-        let registrations = snapshot.registrations.iter().map(|registration| registration.id).collect::<HashSet<_>>();
-        let unit_key = |unit: &beskid_analysis::composition::UnitPath, node| AstNodeKey {
-            unit: match unit {
-                None => self.typed_program.entry,
-                Some(path) => SourceUnitId::new(self.db, path.to_path_buf()),
-            },
-            generation,
-            node,
+        // The plan names every declaration by unit, kind and span. Node ids are pre-order
+        // positions in the syntax this input lowers, which typing extends (filled optional
+        // arguments), so they are bound here, against exactly that syntax, and nowhere else.
+        let mut plan = Arc::unwrap_or_clone(plan);
+        let mut snapshot = Arc::unwrap_or_clone(snapshot);
+        let (db, entry) = (self.db, self.typed_program.entry);
+        let bind = |unit: &beskid_analysis::composition::UnitPath, kind: IndexedNodeKind, span| {
+            let unit = match unit {
+                None => entry,
+                Some(path) => SourceUnitId::new(db, path.to_path_buf()),
+            };
+            beskid_queries::node_at_span(db, unit, generation, kind, span).map(|key| key.node)
         };
-        let valid_registration_sources = snapshot.registrations.iter().all(|registration| {
-            let key = unit_key(&registration.unit, registration.source_node_id);
-            registration.source_node_id.is_valid()
-                && matches!(node_kind(self.db, key), Ok(Some(IndexedNodeKind::RegistryEntry)))
-                && matches!(node_span(self.db, key), Ok(Some(span)) if span == registration.span)
-        });
+        let mut bound_registration_sources = true;
+        for registration in &mut snapshot.registrations {
+            match bind(&registration.unit, IndexedNodeKind::RegistryEntry, registration.span) {
+                Some(node) => registration.source_node_id = node,
+                None => bound_registration_sources = false,
+            }
+        }
+        let mut bound_singulars = true;
+        for singular in &mut plan.singulars {
+            match bind(&singular.field_unit, IndexedNodeKind::Field, singular.field_span) {
+                Some(node) => singular.field_node_id = node,
+                None => bound_singulars = false,
+            }
+        }
+        let mut bound_plurals = true;
+        for plural in &mut plan.plurals {
+            match bind(&plural.field_unit, IndexedNodeKind::Field, plural.field_span) {
+                Some(node) => plural.field_node_id = node,
+                None => bound_plurals = false,
+            }
+        }
+        let mut bound_hooks = true;
+        for hook in plan.init_hooks.iter_mut().chain(&mut plan.startup_hooks).chain(&mut plan.disposal_hooks) {
+            match (
+                bind(&hook.unit, IndexedNodeKind::ScopeHook, hook.span),
+                bind(&hook.unit, IndexedNodeKind::FunctionDefinition, hook.span),
+            ) {
+                (Some(source), Some(function)) => {
+                    hook.source_node_id = source;
+                    hook.function_node_id = function;
+                }
+                _ => bound_hooks = false,
+            }
+        }
+
+        let registrations = snapshot.registrations.iter().map(|registration| registration.id).collect::<HashSet<_>>();
         let mut assigned_registrations = HashSet::new();
         let mut assigned_slots = HashSet::new();
         let valid_activation = plan.activation.len() == snapshot.registrations.len()
@@ -320,40 +354,37 @@ impl<'db> CodegenInput<'db> {
                     && usize::try_from(entry.slot.0).is_ok_and(|slot| slot < plan.activation.len())
                     && assigned_slots.insert(entry.slot.0)
             });
-        let valid_plurals = plan.plurals.iter().all(|plural| {
-            registrations.contains(&plural.owner_registration_id)
-                && plural.target_slots.iter().all(|slot| assigned_slots.contains(&slot.0))
-                && plural.field_node_id.is_valid()
-                && matches!(node_kind(self.db, unit_key(&plural.field_unit, plural.field_node_id)), Ok(Some(IndexedNodeKind::Field)))
-                && matches!(node_span(self.db, unit_key(&plural.field_unit, plural.field_node_id)), Ok(Some(span)) if span == plural.field_span)
-        });
-        let valid_singulars = plan.singulars.iter().all(|singular| {
-            registrations.contains(&singular.owner_registration_id)
-                && assigned_slots.contains(&singular.target_slot.0)
-                && singular.field_node_id.is_valid()
-                && matches!(node_kind(self.db, unit_key(&singular.field_unit, singular.field_node_id)), Ok(Some(IndexedNodeKind::Field)))
-                && matches!(node_span(self.db, unit_key(&singular.field_unit, singular.field_node_id)), Ok(Some(span)) if span == singular.field_span)
-        });
+        let valid_plurals = bound_plurals
+            && plan.plurals.iter().all(|plural| {
+                registrations.contains(&plural.owner_registration_id)
+                    && plural.target_slots.iter().all(|slot| assigned_slots.contains(&slot.0))
+            });
+        let valid_singulars = bound_singulars
+            && plan.singulars.iter().all(|singular| {
+                registrations.contains(&singular.owner_registration_id) && assigned_slots.contains(&singular.target_slot.0)
+            });
         let valid_scopes = snapshot.scope_names.keys().all(|scope_id| plan.scope_parents.contains_key(scope_id));
-        let valid_hooks = plan.init_hooks.iter().chain(&plan.startup_hooks).chain(&plan.disposal_hooks).all(|hook| {
-            (hook.scope_id == beskid_analysis::composition::ScopeId::GLOBAL
-                || plan.scope_parents.contains_key(&hook.scope_id))
-                && hook.source_node_id.is_valid()
-                && matches!(node_kind(self.db, unit_key(&hook.unit, hook.source_node_id)), Ok(Some(IndexedNodeKind::ScopeHook)))
-                && hook.function_node_id.is_valid()
-                && matches!(node_kind(self.db, unit_key(&hook.unit, hook.function_node_id)), Ok(Some(IndexedNodeKind::FunctionDefinition)))
-                && hook.arguments_registration_id.is_none_or(|id| registrations.contains(&id))
-        });
-        if plan.launched_host != snapshot.launched_host
-            || !valid_activation
-            || !valid_registration_sources
-            || !valid_singulars
-            || !valid_plurals
-            || !valid_scopes
-            || !valid_hooks
-        {
-            return Err(CodegenInputError::InvalidCompositionPlan);
+        let valid_hooks = bound_hooks
+            && plan.init_hooks.iter().chain(&plan.startup_hooks).chain(&plan.disposal_hooks).all(|hook| {
+                (hook.scope_id == beskid_analysis::composition::ScopeId::GLOBAL
+                    || plan.scope_parents.contains_key(&hook.scope_id))
+                    && hook.arguments_registration_id.is_none_or(|id| registrations.contains(&id))
+            });
+        let defect = [
+            (plan.launched_host == snapshot.launched_host, "launched host"),
+            (valid_activation, "activation slots"),
+            (bound_registration_sources, "registration source nodes"),
+            (valid_singulars, "singular injection fields"),
+            (valid_plurals, "plural injection fields"),
+            (valid_scopes, "scope parents"),
+            (valid_hooks, "hook nodes"),
+        ]
+        .into_iter()
+        .find_map(|(valid, defect)| (!valid).then_some(defect));
+        if let Some(defect) = defect {
+            return Err(CodegenInputError::InvalidCompositionPlan(defect));
         }
+        let (plan, snapshot) = (Arc::new(plan), Arc::new(snapshot));
         self.composition_plan = Some(plan);
         self.composition_snapshot = Some(snapshot);
         Ok(self)
