@@ -248,6 +248,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `beskid check` on Corelib codec and on the aggregate `corelib.bproj` finishes (codec in seconds; it never finished before). The expected type of an array literal element was quartic in the array length (codec has 4,096-element tables), and the transfer-class walk re-classified a type for every field path that reached it (exponential in the depth of a diamond-shaped type graph). Both are now linear.
 - A contract method called on an injected contract-typed field (`this.greeter.Greet()`, `greeter.Greet()`, `(this).greeter.Greet()`, `host.greeter.Greet()`) calls the implementation the composition plan binds that field to, and on an immutable contract-typed local (`Greeter g = Hello {}; g.Greet()`) the implementation of its initializer's type; both used to pass `check` and fail at build with E2102. A call on a `mut` contract-typed local is rejected, because it has no single implementation.
 - A test that shares its name with a function builds and runs: the native
   test build selected entries by name alone, picked the function, and failed
