@@ -1009,6 +1009,7 @@ version = "0.1.0"
 dependencies = [
  "beskid_abi",
  "beskid_analysis",
+ "beskid_aot",
  "beskid_codegen",
  "beskid_engine",
  "beskid_pckg",

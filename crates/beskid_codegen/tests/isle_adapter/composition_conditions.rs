@@ -81,14 +81,14 @@ i32 Main() { launch AppHost(); return 0; }
     let snapshot = Arc::new(snapshot);
 
     let mut wrong_source = (*snapshot).clone();
-    wrong_source.registrations[0].source_node_id = beskid_queries::AstNodeId::INVALID;
+    wrong_source.registrations[0].span = Default::default();
     assert!(matches!(
         input.with_artifact_namespace(Arc::from("wrong-registration-source")).with_composition_authority(
             generation,
             Arc::new(result.plan.clone()),
             Arc::new(wrong_source)
         ),
-        Err(CodegenInputError::InvalidCompositionPlan)
+        Err(CodegenInputError::InvalidCompositionPlan(_))
     ));
 
     let mut foreign_registration = result.plan.clone();
@@ -99,7 +99,7 @@ i32 Main() { launch AppHost(); return 0; }
             Arc::new(foreign_registration),
             Arc::clone(&snapshot)
         ),
-        Err(CodegenInputError::InvalidCompositionPlan)
+        Err(CodegenInputError::InvalidCompositionPlan(_))
     ));
 
     let mut duplicate_slot = result.plan;
@@ -111,12 +111,12 @@ i32 Main() { launch AppHost(); return 0; }
             Arc::new(wrong_host),
             Arc::clone(&snapshot)
         ),
-        Err(CodegenInputError::InvalidCompositionPlan)
+        Err(CodegenInputError::InvalidCompositionPlan(_))
     ));
     duplicate_slot.activation[1].slot = duplicate_slot.activation[0].slot;
     assert!(matches!(
         input.with_composition_authority(generation, Arc::new(duplicate_slot), snapshot),
-        Err(CodegenInputError::InvalidCompositionPlan)
+        Err(CodegenInputError::InvalidCompositionPlan(_))
     ));
 }
 
@@ -148,14 +148,14 @@ i32 Main() { launch AppHost(); return 0; }
     let snapshot = Arc::new(snapshot);
 
     let mut wrong_field = result.plan.clone();
-    wrong_field.singulars[0].field_node_id = beskid_queries::AstNodeId::INVALID;
+    wrong_field.singulars[0].field_span = Default::default();
     assert!(matches!(
         input.with_artifact_namespace(Arc::from("wrong-injection-field")).with_composition_authority(
             generation,
             Arc::new(wrong_field),
             Arc::clone(&snapshot)
         ),
-        Err(CodegenInputError::InvalidCompositionPlan)
+        Err(CodegenInputError::InvalidCompositionPlan(_))
     ));
 
     let mut wrong_target = result.plan.clone();
@@ -166,14 +166,14 @@ i32 Main() { launch AppHost(); return 0; }
             Arc::new(wrong_target),
             Arc::clone(&snapshot)
         ),
-        Err(CodegenInputError::InvalidCompositionPlan)
+        Err(CodegenInputError::InvalidCompositionPlan(_))
     ));
 
     let mut missing_hook = result.plan;
-    missing_hook.startup_hooks[0].source_node_id = beskid_queries::AstNodeId::INVALID;
+    missing_hook.startup_hooks[0].span = Default::default();
     assert!(matches!(
         input.with_composition_authority(generation, Arc::new(missing_hook), snapshot),
-        Err(CodegenInputError::InvalidCompositionPlan)
+        Err(CodegenInputError::InvalidCompositionPlan(_))
     ));
 }
 
@@ -556,10 +556,17 @@ i32 Main() { launch AppHost(); return 0; }
     assert_eq!(result.plan.activation.len(), 2);
     assert_eq!(result.plan.singulars.len(), 1);
     assert_eq!(result.plan.plurals.len(), 1);
-    for registration in &result.snapshot.registrations {
+    let mut snapshot = result.snapshot;
+    snapshot.source_unit_path = Some(root.unit.path(input.database()).to_path_buf());
+    let generation = input.typed_program().generation;
+    let input = input
+        .with_composition_authority(generation, Arc::new(result.plan), Arc::new(snapshot))
+        .expect("attach frozen authority");
+    let (bound_plan, bound_snapshot) = input.composition_authority().expect("bound composition authority");
+    for registration in &bound_snapshot.registrations {
         let site = beskid_queries::AstNodeKey {
             unit: root.unit,
-            generation: input.typed_program().generation,
+            generation,
             node: registration.source_node_id,
         };
         assert_eq!(
@@ -573,26 +580,19 @@ i32 Main() { launch AppHost(); return 0; }
         assert_eq!(fact.implementation.as_ref(), registration.implementation);
         assert_eq!(fact.site, site);
     }
-    for field in result
-        .plan
+    for field in bound_plan
         .singulars
         .iter()
         .map(|entry| entry.field_node_id)
-        .chain(result.plan.plurals.iter().map(|entry| entry.field_node_id))
+        .chain(bound_plan.plurals.iter().map(|entry| entry.field_node_id))
     {
         let key =
-            beskid_queries::AstNodeKey { unit: root.unit, generation: input.typed_program().generation, node: field };
+            beskid_queries::AstNodeKey { unit: root.unit, generation, node: field };
         assert!(
             beskid_queries::composition_injection_field(input.database(), key).expect("injection query").is_some(),
             "validated injection field must have an exact source key"
         );
     }
-    let mut snapshot = result.snapshot;
-    snapshot.source_unit_path = Some(root.unit.path(input.database()).to_path_buf());
-    let generation = input.typed_program().generation;
-    let input = input
-        .with_composition_authority(generation, Arc::new(result.plan), Arc::new(snapshot))
-        .expect("attach frozen authority");
     let main = find_function_definitions(input.database(), root)
         .into_iter()
         .find(|key| item_name(input.database(), *key).ok().flatten().as_deref() == Some("Main"))
@@ -768,6 +768,87 @@ i32 Main(bool early)
         assert_eq!(*calls, 2, "{name} must run on both exits:\n{clif}");
     }
     assert_eq!(calls_of(&clif, "composition_launch"), 1);
+}
+
+/// Every hook kind takes a contract-typed and a concrete service from the registry, and a body
+/// that omits an optional argument (typing fills it, which adds syntax nodes before the generated
+/// argument types) still binds the frozen plan to the lowered syntax.
+#[test]
+fn every_hook_kind_takes_contract_and_concrete_services_from_the_registry() {
+    use std::sync::Arc;
+
+    use beskid_analysis::composition::{CompositionInput, is_hook_item_name, resolve_composition};
+
+    let source = r#"
+unit Note(string text, [CallerLineNumber] i64 line = 0) { return; }
+unit Early() { Note("early"); }
+contract Greeter { string Greet(string name); }
+type PoliteGreeter : Greeter { pub string Greet(string name) { return "Good morning"; } }
+type Reception
+{
+    inject Greeter greeter;
+    pub string Welcome(string name) { return this.greeter.Greet(name); }
+}
+host AppHost()
+{
+    registry { single PoliteGreeter for Greeter; single Reception; }
+    startup(Greeter greeter, Reception reception) { Note(greeter.Greet("a")); Note(reception.Welcome("b")); }
+    init(Greeter greeter, Reception reception) { Note(greeter.Greet("c")); Note(reception.Welcome("d")); }
+    dispose(Greeter greeter, Reception reception) { Note(greeter.Greet("e")); Note(reception.Welcome("f")); }
+    scope Visit()
+    {
+        init(Greeter greeter, Reception reception) { Note(greeter.Greet("g")); Note(reception.Welcome("h")); }
+        dispose(Greeter greeter, Reception reception) { Note(greeter.Greet("i")); Note(reception.Welcome("j")); }
+    }
+}
+i32 Main()
+{
+    Early();
+    launch AppHost();
+    with Visit() { }
+    return 0;
+}
+"#;
+    let (input, isa, root) = item_fixture_with_root(source);
+    let result = resolve_composition(CompositionInput {
+        program: &input.typed_program().assembly.entry_unit().program,
+        is_mod_project: false,
+        types: &beskid_queries::CompositionTypes::new(input.database(), input.typed_program()),
+    });
+    assert!(result.issues.is_empty(), "composition must validate: {:?}", result.issues);
+    let hooks = result.plan.startup_hooks.iter().chain(&result.plan.init_hooks).chain(&result.plan.disposal_hooks);
+    assert_eq!(hooks.clone().count(), 5);
+    assert!(hooks.clone().all(|hook| hook.arguments_registration_id.is_some()), "every hook takes injected services");
+    let mut snapshot = result.snapshot;
+    snapshot.source_unit_path = Some(root.unit.path(input.database()).to_path_buf());
+    let generation = input.typed_program().generation;
+    let input = input
+        .with_composition_authority(generation, Arc::new(result.plan), Arc::new(snapshot))
+        .expect("the frozen plan binds to the lowered syntax");
+    let mut items = Vec::new();
+    for kind in [beskid_queries::IndexedNodeKind::FunctionDefinition, beskid_queries::IndexedNodeKind::MethodDefinition] {
+        for key in find_nodes_of_kind(input.database(), root, kind) {
+            let symbol = item_name(input.database(), key).expect("item query").expect("item name").to_string();
+            items.push(SyntaxModuleItem { symbol, key });
+        }
+    }
+    let hooks = items.iter().map(|item| item.symbol.clone()).filter(|name| is_hook_item_name(name)).collect::<Vec<_>>();
+    assert_eq!(hooks.len(), 5, "one generated function per hook: {hooks:?}");
+    let artifact = lower_syntax_program(&input, isa.as_ref(), &items).expect("hooks with services lower to verified CLIF");
+    beskid_codegen::validate_artifact(&artifact).expect("hook artifact");
+    let clif_of = |name: &str| {
+        artifact.functions.iter().find(|function| function.name == name).expect("lowered function").function.display().to_string()
+    };
+    let main = clif_of("Main");
+    for kind in ["_startup_", "_init_"] {
+        for hook in hooks.iter().filter(|name| name.contains(kind)) {
+            assert!(calls_of(&main, hook) >= 1, "{hook} runs from Main:\n{main}");
+        }
+    }
+    for hook in &hooks {
+        let body = clif_of(hook);
+        assert!(body.matches("call").count() >= 4, "{hook} calls both services and Note twice:\n{body}");
+    }
 }
 
 #[test]

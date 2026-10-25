@@ -838,6 +838,34 @@ pub fn node_span(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<SourceSpan
     with_registered_syntax(db, key, node_span_tracked)
 }
 
+/// The one node of `kind` whose span is exactly `span` in the registered syntax of `unit` at
+/// `generation`. `None` when the unit is not registered at that generation, or when no node or
+/// more than one node of that kind has that span.
+///
+/// Facts frozen before typing (the composition plan) name their declarations by kind and span:
+/// node ids are pre-order positions, and typing still adds nodes (filled optional arguments).
+pub fn node_at_span(
+    db: &dyn Db,
+    unit: SourceUnitId,
+    generation: SyntaxGenerationId,
+    kind: IndexedNodeKind,
+    span: SourceSpan,
+) -> Option<AstNodeKey> {
+    let syntax = db.syntax_unit(unit)?;
+    let index = syntax.syntax_index(db);
+    if index.generation() != generation {
+        return None;
+    }
+    let program = syntax.expanded_program(db);
+    let mut matches = index
+        .ids_of_kind(kind)
+        .filter(|id| index.node_at(program, *id).and_then(|node| node.span()) == Some(span));
+    match (matches.next(), matches.next()) {
+        (Some(node), None) => Some(AstNodeKey { unit, generation, node }),
+        _ => None,
+    }
+}
+
 pub fn operator_fact(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<OperatorFact> {
     with_registered_syntax(db, key, operator_fact_tracked)
 }
