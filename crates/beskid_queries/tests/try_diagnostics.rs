@@ -343,7 +343,7 @@ fn fact_authority_diagnostics(
 
 const HELPER_WITH_UNIMPORTED_TYPE: &str = "pub enum Slot<T> { Filled(T value), Empty() }\npub i64 Run() { Slot<Missing> slot = Slot::Empty(); return 0_i64; }";
 
-/// Design slice 6: a legality finding in a dependency unit reached from the entry surfaces in
+/// A legality finding in a dependency unit reached from the entry surfaces in
 /// `analyze` (the prepare spine) with the same code the lowering gate reports, located in the
 /// dependency unit's own source -- World A never judges dependency bodies.
 #[test]

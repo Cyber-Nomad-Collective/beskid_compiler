@@ -132,8 +132,7 @@ pub i64 RunLargeObjectBeyondNextRegion() {
 }
 
 // ---- Span reuse across size classes after a collection frees a span. ----
-// Regression for the stale `HEAP_CURRENT_SPAN_BY_CLASS` cache bug (gdb-localized by slice
-// deeprec, independently reproduced by slice chanrace): `Sweep`'s empty-span path returned a
+// Regression for the stale `HEAP_CURRENT_SPAN_BY_CLASS` cache bug: `Sweep`'s empty-span path returned a
 // fully-dead small span to the region's free-page list without invalidating the per-class "current
 // span" cache that could still be pointing at it. A later allocation of a DIFFERENT size class
 // could then have `CarveSpan` re-carve that same page (via the free-list reuse it is pushed onto

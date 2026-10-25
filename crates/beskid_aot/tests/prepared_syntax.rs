@@ -86,7 +86,7 @@ fn host_target() -> TargetMetadata {
 /// Tests have their own namespace (owner ruling, 0.6.7): `test SumOfSquares` next to
 /// `i32 SumOfSquares(i32 n)` passes `beskid check`, and its native test build must select the test,
 /// not the function. Selecting by name alone picked the function and the build failed with E4041
-/// (`native test must take no arguments and return void`), seen in the 0.6.7-preview.2 smoke.
+/// (`native test must take no arguments and return void`).
 #[test]
 fn a_test_sharing_its_name_with_a_function_builds_as_a_native_test_object() {
     let directory = tempfile::tempdir().expect("project");

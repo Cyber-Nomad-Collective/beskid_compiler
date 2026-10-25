@@ -1,4 +1,4 @@
-//! Stability-proof harnesses (ticket 15 of the 0.6.7 program).
+//! Stability-proof harnesses.
 //!
 //! * [`mutate`] is the deterministic mutation generator behind the internal-error sweep
 //!   (`scripts/proof/ice-sweep.py`).

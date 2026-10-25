@@ -4,7 +4,7 @@
 //! Production publish/refresh paths consume [`SyntaxDiagnostic`] facts attached to the
 //! current buffer revision. They never read `Document.analysis` or HIR snapshots.
 //!
-//! Editor shape (ticket 03, "B plus C"): one diagnostic per cause at its exact span, its message
+//! Editor shape: one diagnostic per cause at its exact span, its message
 //! the cause sentence plus at most one `Help:` line, `code` with a `codeDescription` link to the
 //! registry page, `source` `beskid`, labelled `relatedInformation`, tags, and its fixes in `data`
 //! ([`quick_fixes_from_data`] turns them into quick fixes). Each related place in the buffer also

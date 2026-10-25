@@ -14,7 +14,7 @@ use crate::projects::with_cwd;
 use beskid_tests_support::{temp_case_dir, write_project_manifest as write_manifest};
 
 /// `Note` has a caller-information parameter: typing fills it at every call, which adds syntax
-/// nodes after the composition plan was resolved (the 0.6.7-preview.3 failure: E4041
+/// nodes after the composition plan was resolved (which failed with E4041
 /// "composition plan disagrees with the validated snapshot"). `Early` puts such a call before the
 /// host, the hook bodies put one before the generated hook argument types.
 const SERVICES: &str = r#"
@@ -218,7 +218,7 @@ mod Testing
 }
 "#;
 
-/// The course's host-hooks lesson as it failed on 0.6.7-preview.3 (E4041), verbatim. `Assert.Equal`
+/// The course's host-hooks lesson that failed with E4041, verbatim. `Assert.Equal`
 /// passes all three explicit arguments; its caller-information arguments are still filled.
 const COURSE_LESSON: &str = r#"
 pub contract Greeter { string Greet(string name); }

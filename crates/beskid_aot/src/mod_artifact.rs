@@ -1166,7 +1166,7 @@ mod cache_integrity_v06_tests {
     }
 
     #[test]
-    fn v066_cache_key_is_32_lowercase_hex_digits_naming_the_entry() {
+    fn cache_key_is_32_lowercase_hex_digits_naming_the_entry() {
         let root = tempfile::tempdir().unwrap();
         let sidecar = publish(root.path());
         let key = sidecar.parent().unwrap().parent().unwrap().file_name().unwrap().to_str().unwrap().to_owned();

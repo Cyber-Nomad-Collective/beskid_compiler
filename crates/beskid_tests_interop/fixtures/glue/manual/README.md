@@ -37,8 +37,8 @@ and call-scoped callbacks. `extensions.h` fixes the record layout of the C ABI p
 assertions. `extensions.rs` is the hand-written Rust library and `extensions_caller.rs` is the
 hand-written consumer: it checks received discriminants and Bool/`char` fields and links one
 callback frame per call on the calling thread, so a retained token or another thread gets status
-2. The interop test `v061_glue_extensions_manual_c_abi` builds both with the explicit `rustc`
+2. The interop test `glue_extensions_manual_c_abi` builds both with the explicit `rustc`
 (`BESKID_V06_GLUE_RUSTC`) and checks the header with the explicit C driver
 (`BESKID_V06_GLUE_LINKER`, not on Windows). The generated path
-(`../extensions/owned`, test `v061_glue_extensions_owned_roundtrip`) must reproduce the same
+(`../extensions/owned`, test `glue_extensions_owned_roundtrip`) must reproduce the same
 behaviour.

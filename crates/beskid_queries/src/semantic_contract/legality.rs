@@ -2037,8 +2037,7 @@ mod tests {
             .map(|finding| {
                 let span = crate::node_span(&db, finding.site).expect("span").expect("site span");
                 // A single-operand operator chain keeps its pest pair span, which runs over the
-                // whitespace before the next token (`n ?`); the site text is compared trimmed
-                // until the parser trims that span (request to slice parse).
+                // whitespace before the next token (`n ?`); the site text is compared trimmed.
                 (
                     finding.kind.code().to_string(),
                     finding.kind.message(),

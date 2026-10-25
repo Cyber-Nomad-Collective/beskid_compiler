@@ -208,7 +208,7 @@ fn lower_bag_for(symbols: &[&str]) -> Result<beskid_codegen::CodegenArtifact, St
     lower_syntax_program(&input, isa.as_ref(), &items).map_err(|error| format!("{error:#}"))
 }
 
-/// Slice coll: a method call on the `for` variable of an array of an instantiated generic type
+/// A method call on the `for` variable of an array of an instantiated generic type
 /// (`for bag in bags { bag.Put(2); }` with `Bag<i32>[] bags`) lowered with MissingRuleOrFact.
 #[test]
 fn parsed_program_calls_a_method_on_a_for_variable_of_an_instantiated_generic_type() {
@@ -216,7 +216,7 @@ fn parsed_program_calls_a_method_on_a_for_variable_of_an_instantiated_generic_ty
     beskid_codegen::validate_artifact(&artifact).expect("FillAll artifact");
 }
 
-/// Slice coll: the same call inside a generic function (`Bag<T>[] bags`), lowered through the
+/// The same call inside a generic function (`Bag<T>[] bags`), lowered through the
 /// enclosing specialization.
 #[test]
 fn parsed_program_calls_a_method_on_a_for_variable_of_a_generic_type_in_a_specialized_body() {

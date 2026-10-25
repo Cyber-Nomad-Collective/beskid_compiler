@@ -212,7 +212,7 @@ fn dependency_assembly_input(
     (directory, resolved)
 }
 
-/// Design slice 6: the prepare spine reports a dependency unit's legality finding against that
+/// The prepare spine reports a dependency unit's legality finding against that
 /// unit's source. The LSP publishes it for the dependency's own URI (when that unit is the
 /// open buffer) and never at the entry buffer's offsets.
 #[test]

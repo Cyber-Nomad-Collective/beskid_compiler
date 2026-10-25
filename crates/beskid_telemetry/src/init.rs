@@ -319,7 +319,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn v067_verbosity_selects_the_default_filter() {
+    fn verbosity_selects_the_default_filter() {
         assert_eq!(default_filter(false, Verbosity::Quiet), "error");
         assert_eq!(default_filter(false, Verbosity::Normal), "warn");
         assert_eq!(default_filter(true, Verbosity::Normal), "warn");
@@ -339,7 +339,7 @@ mod tests {
     }
 
     #[test]
-    fn v067_flags_map_to_verbosity() {
+    fn flags_map_to_verbosity() {
         assert_eq!(Verbosity::from_flags(false, 0), Verbosity::Normal);
         assert_eq!(Verbosity::from_flags(false, 1), Verbosity::Verbose);
         assert_eq!(Verbosity::from_flags(false, 2), Verbosity::Debug);
@@ -349,7 +349,7 @@ mod tests {
     }
 
     #[test]
-    fn v067_line_kinds_follow_verbosity() {
+    fn line_kinds_follow_verbosity() {
         assert!(!Verbosity::Quiet.shows_status() && !Verbosity::Quiet.shows_detail());
         assert!(Verbosity::Normal.shows_status() && !Verbosity::Normal.shows_detail());
         assert!(Verbosity::Verbose.shows_status() && Verbosity::Verbose.shows_detail());
@@ -357,7 +357,7 @@ mod tests {
     }
 
     #[test]
-    fn v067_log_file_receives_appended_lines_and_creates_parents() {
+    fn log_file_receives_appended_lines_and_creates_parents() {
         let root = std::env::temp_dir().join(format!("beskid-telemetry-log-{}", std::process::id()));
         let path = root.join("nested").join("run.log");
         let sink = open_log_file(&path).expect("log file opens");

@@ -727,7 +727,7 @@ fn canonical_runtime_closure_descriptor_validation_and_rooting_execute_fail_clos
     assert_eq!(unsafe { *object_header.add(1) }, 0, "managed allocation clears the GC word");
 
     // Span-directory proof (docs/superpowers/specs/2026-09-22-gc-span-heap-design.md, section
-    // 9, slice 6.12/6.13): a 32-byte request lands on a size-class-2 span, and that span's
+    // 9): a 32-byte request lands on a size-class-2 span, and that span's
     // directory entry records size class 2 and one allocated slot, not a mixed-class block walk.
     const SPAN_HEADER_SIZE_WORDS: usize = 256 / 8;
     const SPAN_SIZE_CLASS_WORD: usize = 24 / 8;

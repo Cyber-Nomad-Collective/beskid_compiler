@@ -1,6 +1,5 @@
 //! Compile-fail corpus for the reachability-scoped semantic legality gate (design
-//! `docs/superpowers/specs/2026-09-23-production-semantic-diagnostics-design.md`, section 4
-//! slice 9).
+//! `docs/superpowers/specs/2026-09-23-production-semantic-diagnostics-design.md`, section 4).
 //!
 //! `corelib/beskid_corelib/tests/corelib_tests/fixtures/compile-fail/legality/` holds one
 //! `beskid test` target per legality code. Each target's test calls a helper in a dependency

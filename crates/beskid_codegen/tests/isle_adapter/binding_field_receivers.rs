@@ -1,4 +1,4 @@
-//! Slice `binding2` reproducers: method calls whose receiver is a nominal field of the implicit
+//! Reproducers for method calls whose receiver is a nominal field of the implicit
 //! method receiver, and array literals nested directly inside struct literal fields.
 
 use super::support::{
@@ -248,7 +248,7 @@ unit Main() { Build(); return; }
     .expect("a scalar array literal lowers as a struct literal field");
 }
 
-/// `appendown` slice reproducer: `Array.Append` on an array field reached through a match
+/// Reproducer: `Array.Append` on an array field reached through a match
 /// binding (`Result::Ok(request) => { Array.Append(request.headers, ...) }`). The owner proof
 /// this exercises is [`beskid_isle`]'s `CollectionMutationOwner::AggregateField` path in
 /// `emit_collection_operation_value` (crates/beskid_isle/src/context/calls/collections.rs) -- distinct from

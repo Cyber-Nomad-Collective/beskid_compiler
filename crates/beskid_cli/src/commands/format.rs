@@ -235,7 +235,7 @@ mod v06_tests {
     }
 
     #[test]
-    fn v067_fmt_in_a_project_formats_only_its_source_root() {
+    fn fmt_in_a_project_formats_only_its_source_root() {
         let root = temp_root("project");
         std::fs::create_dir_all(root.join("Src")).unwrap();
         std::fs::create_dir_all(root.join("obj/beskid/deps/Core/Src")).unwrap();
@@ -263,7 +263,7 @@ mod v06_tests {
     }
 
     #[test]
-    fn v067_fmt_fails_on_a_parse_error_and_leaves_the_file_unchanged() {
+    fn fmt_fails_on_a_parse_error_and_leaves_the_file_unchanged() {
         let root = temp_root("broken");
         let path = root.join("Broken.bd");
         let source = "i32 Main()\n{\n    let x: i32 = 5\n    return x;\n}\n";
@@ -277,7 +277,7 @@ mod v06_tests {
     }
 
     #[test]
-    fn v067_fmt_check_passes_on_its_own_output_and_keeps_comments() {
+    fn fmt_check_passes_on_its_own_output_and_keeps_comments() {
         let root = temp_root("check");
         let path = root.join("Main.bd");
         let source = "// Header comment.\n// TODO: keep me.\n\ni32 Answer() { return 0; } // trailing\n";

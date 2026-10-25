@@ -1,10 +1,10 @@
-//! Growth of an array without a proven owner (v0.6.7, `move` only at isolate crossings).
+//! Growth of an array without a proven owner (`move` only at isolate crossings).
 //!
 //! `Array.Append` lowers to the rooted in-place growth operation only when its first argument
 //! owns the array: a `let` local (mutable or not), a `mut` parameter, or an aggregate field. Any
 //! other array (a parameter that is not `mut`, a loop or pattern variable, a call result) is an
 //! ordinary call of the Corelib `Append`, which copies into a fresh array. Neither shape is an
-//! internal error (beskid-lings preview.2 reported both as E2103).
+//! internal error (E2103).
 
 use super::support::{
     SyntaxGenerationId, SyntaxModuleItem, canonical_corelib_project_fixture, find_function_definitions, item_name,

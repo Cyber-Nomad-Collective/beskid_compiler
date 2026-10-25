@@ -254,7 +254,7 @@ unit Main() { Outer<i64>(Memory {}, File {}, 0_i64); }
 
 #[test]
 fn impl_block_conformance_mints_the_same_contract_witness_as_type_conformance() {
-    // Slice 6: `impl X : Contract { }` must feed the same conformance fact as `type X : Contract { }`,
+    // `impl X : Contract { }` must feed the same conformance fact as `type X : Contract { }`,
     // not a parallel/duplicate mechanism.
     let via_type_conformance = "contract Reader { i64 Read(); } type Source: Reader { pub i64 Read() { return 17_i64; } } i64 ReadOne(Reader reader) { return reader.Read(); } unit Main() { ReadOne(Source {}); }";
     let via_impl_conformance = "contract Reader { i64 Read(); } type Source { } impl Source : Reader { pub i64 Read() { return 17_i64; } } i64 ReadOne(Reader reader) { return reader.Read(); } unit Main() { ReadOne(Source {}); }";

@@ -588,7 +588,7 @@ fn elements_of_a_contract_typed_injected_array_read_through_this_dispatch() {
     assert_eq!(artifact.witness_tables.len(), 2, "Hello and Bye: {:?}", artifact.witness_tables);
 }
 
-/// The 0.6.7-preview.3 smoke repros (`c1`, `c2`, `d3`, `d4`, `d5`) as programs that check and
+/// Reproducers (`c1`, `c2`, `d3`, `d4`, `d5`) as programs that check and
 /// lower (`Core.Output.WriteLine` is a local `Use`: the fixture lowers the entry unit only).
 /// `List.Get` returns `Result<T, string>`, so `c1` and `d4` unwrap it with `match`
 /// (written as in the smoke, `Greeter got = list.Get(0);` is E1206, see

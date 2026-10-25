@@ -736,7 +736,7 @@ fn native_mod_worker_strips_test_only_runtime_environment() {
 }
 
 #[test]
-fn v067_output_flags_select_verbosity() {
+fn output_flags_select_verbosity() {
     use beskid_telemetry::Verbosity;
     let level = |args: &[&str]| {
         let mut argv = vec!["beskid"];
@@ -754,7 +754,7 @@ fn v067_output_flags_select_verbosity() {
 }
 
 #[test]
-fn v067_quiet_and_verbose_conflict() {
+fn quiet_and_verbose_conflict() {
     for args in [["beskid", "-q", "-v", "check"], ["beskid", "-q", "-vv", "check"]] {
         let error = match super::app::parse_invocation(args) {
             Ok(_) => panic!("{args:?} parsed"),
@@ -765,7 +765,7 @@ fn v067_quiet_and_verbose_conflict() {
 }
 
 #[test]
-fn v067_log_file_flag_wins_over_the_environment_variable() {
+fn log_file_flag_wins_over_the_environment_variable() {
     let cli = super::app::parse_invocation(["beskid", "--log-file", "from-flag.log", "check"]).expect("parses");
     assert_eq!(cli.log_file.as_deref(), Some(std::path::Path::new("from-flag.log")));
     assert_eq!(cli.log_file().as_deref(), Some(std::path::Path::new("from-flag.log")));
@@ -774,14 +774,14 @@ fn v067_log_file_flag_wins_over_the_environment_variable() {
 }
 
 #[test]
-fn v067_capability_document_reports_the_runtime_abi() {
+fn capability_document_reports_the_runtime_abi() {
     let document = super::app::capability_document();
     assert_eq!(document["runtimeAbi"], u64::from(beskid_abi::BESKID_RUNTIME_ABI_VERSION));
     assert!(document["runtimeAbi"].is_u64(), "runtimeAbi is a number the extension can compare: {document}");
 }
 
 #[test]
-fn v067_preview_label_replaces_the_manifest_version() {
+fn preview_label_replaces_the_manifest_version() {
     use super::app::{resolve_version, VERSION};
     assert_eq!(resolve_version(Some("0.6.7-preview.3"), "0.6.7"), "0.6.7-preview.3");
     assert_eq!(resolve_version(None, "0.6.7"), "0.6.7");

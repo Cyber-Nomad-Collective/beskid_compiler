@@ -276,7 +276,7 @@ impl PipelineObserver for CliPipeline {
 }
 
 #[cfg(test)]
-mod v067_tests {
+mod tests {
     use super::*;
 
     #[test]
