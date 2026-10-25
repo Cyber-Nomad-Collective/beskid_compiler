@@ -662,7 +662,21 @@ pub(super) fn contract_member_receiver(
         return contract_local_member(db, program, index, key, identifier, parameter_node, &member.node.name.node.name);
     }
     let Some(parameter) = index.node_at(program, parameter_node).and_then(|node| node.of::<Parameter>()) else {
-        // A `for` variable or a pattern binding of a contract type: a contract value.
+        // A `for` variable or a pattern binding of a contract type: a contract value. Asked about
+        // the callee path itself (the member receiver of `v.Greet`), the receiver is the binding,
+        // whose slot holds the box, exactly as for a contract-typed `let` local.
+        if index.kind(key.node) == Some(NodeKind::PathExpression) {
+            let binding = AstNodeKey { node: identifier, ..key };
+            let GenericSourceTypeIdentity::Contract { qualified_name, .. } =
+                super::calls::generic_source_local_identity(db, program, index, binding, identifier).ok()?
+            else {
+                return None;
+            };
+            let contract = contract_declaration_for_identity(db, key, &qualified_name)?;
+            return Some(
+                contract_member_named(db, contract, &member.node.name.node.name).map(|signature| (signature, binding)),
+            );
+        }
         return super::contract_values::contract_value_member_receiver(db, program, index, key);
     };
     // A receiver typed by a bounded lexical generic (`T value` with `where T: Contract<E>`)

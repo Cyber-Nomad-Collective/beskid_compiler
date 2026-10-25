@@ -786,3 +786,42 @@ fn growth_of_an_array_without_a_proven_owner_is_never_an_internal_error() {
         }
     }
 }
+
+/// The ICE floor for method calls on enum values (0.6.7-preview.3 smoke): `list.Get(0).Greet()`
+/// on a `Result<Hello, string>` and `option.Count()` on an `Option<i64>` passed check and had no
+/// lowering rule (E2102). Check rejects both with E1257 and tells how to unwrap the payload.
+#[test]
+fn a_method_call_on_an_enum_value_is_a_check_error() {
+    use super::support::canonical_corelib_project_fixture;
+    let source = "use Core.Collections.List; use Core.Optional;
+type Hello { pub string Greet(string name) { return name; } }
+string Through(List<Hello> list) { return list.Get(0).Greet(\"x\"); }
+i64 Count(Option<i64> option) { return option.Count(); }";
+    let (input, _isa, root) = canonical_corelib_project_fixture(&[("App/Floor.bd", source)], SyntaxGenerationId(6830));
+    let functions = find_function_definitions(input.database(), root);
+    let findings = beskid_queries::check_gate_obligations(input.database(), &functions);
+    let enum_calls = findings.iter().filter(|finding| finding.kind.code() == "E1257").collect::<Vec<_>>();
+    assert_eq!(enum_calls.len(), 2, "both enum receivers are rejected: {findings:?}");
+    for finding in enum_calls {
+        assert_eq!(finding.kind.help().as_deref(), Some("unwrap with `match` or `?` first"));
+    }
+    assert!(
+        findings.iter().any(|finding| finding.kind.message().contains("Result") && finding.kind.message().contains("Greet")),
+        "{findings:?}"
+    );
+}
+
+/// A resolved call on an enum value's unwrapped payload stays legal.
+#[test]
+fn a_method_call_on_an_unwrapped_enum_payload_is_not_an_enum_value_call() {
+    use super::support::canonical_corelib_project_fixture;
+    let source = "use Core.Collections.List; use Core.Results;
+type Hello { pub string Greet(string name) { return name; } }
+string Through(List<Hello> list) {
+    return match list.Get(0) { Result::Ok(v) => v.Greet(\"x\"), Result::Error(e) => e, };
+}";
+    let (input, _isa, root) = canonical_corelib_project_fixture(&[("App/Floor.bd", source)], SyntaxGenerationId(6831));
+    let functions = find_function_definitions(input.database(), root);
+    let findings = beskid_queries::check_gate_obligations(input.database(), &functions);
+    assert!(findings.iter().all(|finding| finding.kind.code() != "E1257"), "{findings:?}");
+}

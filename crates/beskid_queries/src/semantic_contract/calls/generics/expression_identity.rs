@@ -142,9 +142,19 @@ pub(in crate::semantic_contract) fn generic_source_expression_identity(
             let field =
                 super::super::super::layouts::path_projection_segment(db, target, path.path.node.segments.len() - 1)
                     .ok_or_else(|| source_expression_unavailable(db, target, "index target projection is unproven"))?;
-            super::super::super::layouts::nominal_field_projection(db, field)
-                .ok_or_else(|| source_expression_unavailable(db, field, "index target field projection is unproven"))??
-                .1
+            match super::super::super::layouts::nominal_field_projection(db, field) {
+                Some(Ok((_, identity))) => identity,
+                // An injected field of the receiver (`this.all` for `inject Greeter[] all`) holds
+                // its declared type, as the bare field read `all` does.
+                projection => match super::super::super::contract_values::injected_field_identity(db, field) {
+                    Some(identity) => identity,
+                    None => projection
+                        .ok_or_else(|| {
+                            source_expression_unavailable(db, field, "index target field projection is unproven")
+                        })??
+                        .1,
+                },
+            }
         } else {
             generic_source_expression_identity(db, target)?
         };

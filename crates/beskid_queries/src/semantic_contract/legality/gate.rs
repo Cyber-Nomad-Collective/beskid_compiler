@@ -94,6 +94,8 @@ pub enum GateObligationKind {
     /// E1250: a method call on a value of a type parameter whose `where` bounds declare no
     /// method of that name.
     GenericReceiverMethodUndeclared { method: Arc<str>, parameter: Arc<str> },
+    /// E1257: a method call on a value whose type is an enum (enums declare no methods).
+    EnumValueMethodCall { method: Arc<str>, enum_name: Arc<str> },
     /// E1610: a call whose concrete type does not satisfy a `where` bound of the callee.
     GenericBoundNotSatisfied { type_name: Arc<str>, contract_name: Arc<str>, reason: Option<Arc<str>> },
     /// E1232: a `clif { ... }` block the legacy `type_clif_block`, `type_clif_block_statement`,
@@ -245,6 +247,9 @@ pub fn check_gate_obligations(db: &dyn Db, items: &[AstNodeKey]) -> Vec<Semantic
                         reason: reason.as_deref().map(str::to_owned),
                         declaration_at: super::serialize_declaration_at(db, obligation.site, type_name, contract_name),
                     }
+                }
+                GateObligationKind::EnumValueMethodCall { method, enum_name } => {
+                    SemanticIssueKind::EnumValueMethodCall { method: method.to_string(), enum_name: enum_name.to_string() }
                 }
                 GateObligationKind::GenericReceiverMethodUndeclared { method, parameter } => {
                     SemanticIssueKind::GenericReceiverMethodUndeclared {

@@ -496,6 +496,12 @@ pub enum SemanticIssueKind {
         method: String,
         parameter: String,
     },
+    /// E1257: a method call on an enum value (`list.Get(0).Greet()` on a `Result<Greeter, string>`,
+    /// `option.Count()`): an enum declares no methods, so its payload must be unwrapped first.
+    EnumValueMethodCall {
+        method: String,
+        enum_name: String,
+    },
     /// E1607: a `[CompilerDerived]` contract listed in a conformance list (`type X : C`,
     /// `impl X : C`); conformance to it is proven only by the transfer class query.
     CompilerDerivedConformance {

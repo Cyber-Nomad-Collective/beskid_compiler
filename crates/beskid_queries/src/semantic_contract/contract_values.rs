@@ -193,6 +193,43 @@ pub(in crate::semantic_contract) fn upcast_targets(db: &dyn Db, contract: AstNod
     Some(embedded.into_iter().filter(|embedded| contract_generic_count(db, *embedded) == Some(0)).collect())
 }
 
+/// Whether a value of `source` converts to the contract value type `target` at a conversion
+/// site: the same contract, a contract that embeds `target`'s non-generic contract, or a
+/// nominal type, `string` or primitive whose conformance to `target` is proven (the same proof
+/// that builds its witness table). Anything else (an enum, an array, a function, a different
+/// contract) does not convert.
+pub(in crate::semantic_contract) fn converts_to_contract_value(
+    db: &dyn Db,
+    context: AstNodeKey,
+    source: &GenericSourceTypeIdentity,
+    target: &GenericSourceTypeIdentity,
+) -> bool {
+    let GenericSourceTypeIdentity::Contract { qualified_name, arguments } = target else {
+        return false;
+    };
+    let Some(contract) = contract_declaration_for_identity(db, context, qualified_name) else {
+        return false;
+    };
+    match source {
+        GenericSourceTypeIdentity::Contract { qualified_name: source_name, arguments: source_arguments } => {
+            if source_name == qualified_name {
+                return source_arguments == arguments;
+            }
+            arguments.is_empty()
+                && contract_declaration_for_identity(db, context, source_name)
+                    .and_then(|source| upcast_targets(db, source))
+                    .is_some_and(|targets| targets.contains(&contract))
+        }
+        GenericSourceTypeIdentity::Nominal { .. } | GenericSourceTypeIdentity::Abi(SemanticTypeId::STRING) => {
+            prove_box_conformance(db, context, source, contract, arguments).is_ok()
+        }
+        GenericSourceTypeIdentity::Abi(primitive) if is_conformable_primitive(*primitive) => {
+            prove_box_conformance(db, context, source, contract, arguments).is_ok()
+        }
+        _ => false,
+    }
+}
+
 /// The number of generic parameters a contract declares.
 fn contract_generic_count(db: &dyn Db, contract: AstNodeKey) -> Option<usize> {
     let syntax = db.syntax_unit(contract.unit).filter(|syntax| syntax.accepts_key(db, contract))?;
@@ -714,6 +751,12 @@ pub fn array_literal_has_contract_elements(
     key: AstNodeKey,
     enclosing: Option<&GenericSpecializationInstance>,
 ) -> SemanticQueryResult<bool> {
+    // Only an array literal has elements to box. Any other expression of a contract array type
+    // (`__array_new<T>(0)` returned from `Array.Empty<T>` at `T = Greeter`) is no literal: its
+    // children are a callee and arguments, not elements.
+    if node_kind(db, key)? != Some(NodeKind::ArrayLiteralExpression) {
+        return Ok(Some(false));
+    }
     let expected = match expected_type_in(db, key, enclosing) {
         Ok(Some(expected)) => expected,
         Ok(None) => return Ok(None),

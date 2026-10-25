@@ -16,7 +16,7 @@ pub mod snapshot;
 pub mod types;
 
 pub use diagnostics::{CompositionIssue, UnconstructibleReason, composition_issue_code};
-pub use hooks::{is_hook_item_name, lower_host_hooks};
+pub use hooks::{hook_function_host, is_hook_item_name, lower_host_hooks};
 pub use model::{
     ActivationPlanEntry, BindingPlan, CompositionHookPlan, CompositionHost, CompositionScope, PluralPlan, Registration,
     RegistrationKey, RegistrationLifetime, ScopeId, ServiceSlot, SingularPlan, UnitPath,

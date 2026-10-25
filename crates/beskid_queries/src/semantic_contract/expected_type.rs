@@ -628,7 +628,9 @@ fn direct_parameter_identity(
     let bindings = if mentioned.is_empty() {
         Vec::new()
     } else {
-        let bindings = callee_generic_bindings(db, call_key, call, declaration, &generic_names, environment, enclosing)?;
+        let mut bindings =
+            callee_generic_bindings(db, call_key, call, declaration, &generic_names, environment, enclosing)?;
+        contract_sibling_bindings(db, call_key, call, callee, position, &mentioned, &mut bindings, enclosing);
         if mentioned.iter().any(|name| !bindings.iter().any(|(bound, _)| bound == name)) {
             return Err(unavailable());
         }
@@ -636,6 +638,60 @@ fn direct_parameter_identity(
     };
     let callee_environment = bindings.iter().map(|(name, identity)| (name.as_str(), identity)).collect::<Environment<'_>>();
     generic_source_type_identity_with_substitutions(db, declaration, parameter_type, &callee_environment)
+}
+
+/// Bind a still-unbound generic parameter `T` the argument at `position` is written into, when
+/// another argument of a parameter that is exactly `T` is a plain local holding a contract value
+/// (`Pick(greeter, Hello {})` with `T Pick<T>(T first, T second)`): the call specializes at
+/// `T = Greeter` and this argument converts to the contract. Only plain locals are consulted, whose
+/// identity never depends on an expected type, so the query cannot cycle through a sibling.
+#[expect(clippy::too_many_arguments, reason = "one call walk with its callee and bindings")]
+fn contract_sibling_bindings(
+    db: &dyn Db,
+    call_key: AstNodeKey,
+    call: &syntax::CallExpression,
+    callee: DynNodeRef<'_>,
+    position: usize,
+    mentioned: &[&str],
+    bindings: &mut Vec<(String, GenericSourceTypeIdentity)>,
+    enclosing: Option<&GenericSpecializationInstance>,
+) {
+    let Some(syntax) = db.syntax_unit(call_key.unit).filter(|syntax| syntax.accepts_key(db, call_key)) else { return };
+    let program = syntax.expanded_program(db);
+    let index = syntax.syntax_index(db);
+    for name in mentioned {
+        if bindings.iter().any(|(bound, _)| bound == name) {
+            continue;
+        }
+        for candidate in (0..call.args.len()).filter(|candidate| *candidate != position) {
+            let Ok(parameter_type) = declared_parameter_type(callee, call, candidate) else { continue };
+            if generic_parameter_reference_name(parameter_type) != Some(*name) {
+                continue;
+            }
+            let Some(argument) = index.direct_child_id(program, call_key.node, DynNodeRef::from(&call.args[candidate]))
+            else {
+                continue;
+            };
+            let argument = AstNodeKey { node: normalized_expression_node(index, argument), ..call_key };
+            let Some(path) = index.node_at(program, argument.node).and_then(|node| node.of::<syntax::PathExpression>())
+            else {
+                continue;
+            };
+            let [segment] = path.path.node.segments.as_slice() else { continue };
+            if !segment.node.type_args.is_empty()
+                || resolve_lexical_declaration(program, index, argument.node, segment.node.name.node.name.as_str())
+                    .is_none()
+            {
+                continue;
+            }
+            if let Ok(identity @ GenericSourceTypeIdentity::Contract { .. }) =
+                specialized_source_expression_identity(db, argument, enclosing)
+            {
+                bindings.push(((*name).to_owned(), identity));
+                break;
+            }
+        }
+    }
 }
 
 /// The written type of the callee parameter that receives argument `position`.

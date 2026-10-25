@@ -438,6 +438,7 @@ impl SemanticIssueKind {
             Self::GenericReceiverMethodUndeclared { method, parameter } => Some(format!(
                 "add a `where {parameter}: Contract` bound whose contract declares `{method}`"
             )),
+            Self::EnumValueMethodCall { .. } => Some("unwrap with `match` or `?` first".to_string()),
             Self::CompilerDerivedConformance { contract } => {
                 Some(format!("remove `{contract}` from the conformance list and use a marker attribute on the type"))
             }
