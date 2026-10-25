@@ -117,9 +117,9 @@ fn assert_invalid_lock_rejected_without_mutation(case: &ProjectCase, command: &s
     case.assert_no_obj();
 }
 
-fn assert_v2_lock(lock: &Path) -> String {
-    let text = fs::read_to_string(lock).expect("v2 lock exists");
-    assert!(text.starts_with("# Project.lock v2\n"), "wrong lock header: {text}");
+fn assert_current_lock(lock: &Path) -> String {
+    let text = fs::read_to_string(lock).expect("lock exists");
+    assert!(text.starts_with("# Project.lock v3\n"), "wrong lock header: {text}");
     text
 }
 
@@ -199,7 +199,7 @@ fn lock_and_update_explicitly_migrate_v1_from_current_manifest() {
         case.write_legacy_lock();
         let output = case.invoke(command, None);
         assert!(output.status.success(), "{command} failed: {}", output_text(&output));
-        let lock = assert_v2_lock(&case.lock);
+        let lock = assert_current_lock(&case.lock);
         assert!(lock.contains("name=Kernel"), "current dependency missing: {lock}");
         assert!(lock.contains("project=../Kernel"), "current relative project missing: {lock}");
         assert!(!lock.contains("/obsolete/"), "v1 path reused: {lock}");
@@ -230,8 +230,8 @@ fn unknown_lock_header_fails_for_update_without_preparation_writes() {
 
 fn malformed_v2_case(command: &str) {
     let case = ProjectCase::new();
-    let malformed = b"# Project.lock v2\nroot_manifest=App.bproj\nproject_name=App\ndependencies:\n- name=Kernel;source=path;project=../Kernel;manifest=Kernel.bproj;source_root=Src;materialized_root=obj/beskid/deps/src/Kernel-old;unexpected=1\n";
-    fs::write(&case.lock, malformed).expect("write malformed v2 lock");
+    let malformed = b"# Project.lock v3\nroot_manifest=App.bproj\nproject_name=App\ndependencies:\n- name=Kernel;source=path;project=../Kernel;manifest=Kernel.bproj;source_root=Src;materialized_root=obj/beskid/deps/src/Kernel-old;unexpected=1\n";
+    fs::write(&case.lock, malformed).expect("write malformed lock");
     assert_invalid_lock_rejected_without_mutation(&case, command, malformed);
 }
 
@@ -267,7 +267,7 @@ fn ordinary_build_creates_missing_v2_lock() {
     // A later compiler/runtime-kit failure is outside this policy check; preparation must
     // already have written the lock before the build can reach those stages.
     let _output = case.invoke("build", None);
-    assert_v2_lock(&case.lock);
+    assert_current_lock(&case.lock);
 }
 
 #[cfg(unix)]
@@ -309,7 +309,7 @@ fn stale_v2_lock_is_rejected_without_rewrite() {
     let case = ProjectCase::new();
     let lock_output = case.invoke("lock", None);
     assert!(lock_output.status.success(), "lock failed: {}", output_text(&lock_output));
-    let original = fs::read(&case.lock).expect("read v2 lock");
+    let original = fs::read(&case.lock).expect("read lock");
     case.write_app_manifest("Other");
     let obj = case.app.join("obj");
     let original_obj = tree_snapshot(&obj);
@@ -324,7 +324,7 @@ fn stale_v2_lock_is_rejected_without_rewrite() {
             "missing stale-lock diagnosis: {diagnostic}"
         );
         assert!(diagnostic.contains("graph"), "missing graph-mismatch diagnosis: {diagnostic}");
-        assert_eq!(fs::read(&case.lock).expect("v2 lock retained"), original);
+        assert_eq!(fs::read(&case.lock).expect("lock retained"), original);
         assert_eq!(tree_snapshot(&obj), original_obj, "stale lock mutated obj/");
     }
 }
@@ -350,7 +350,7 @@ fn copied_source_project_has_identical_lock_and_locked_commands_preserve_it() {
     let second_lock_output = relocated.invoke("lock", None);
     assert!(second_lock_output.status.success(), "relocated lock failed: {}", output_text(&second_lock_output));
     let expected = fs::read(&original.lock).expect("first generated lock");
-    assert!(expected.starts_with(b"# Project.lock v2\n"), "expected portable v2 lock");
+    assert!(expected.starts_with(b"# Project.lock v3\n"), "expected portable v3 lock");
     assert!(String::from_utf8_lossy(&expected).contains("source=path"), "fixture must exercise its path dependency");
     assert_eq!(fs::read(&relocated.lock).expect("relocated generated lock"), expected);
 

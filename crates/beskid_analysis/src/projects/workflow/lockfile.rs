@@ -19,6 +19,7 @@ pub use portable_path::{PortableLockPath, PortableLockPathBaseKind};
 pub const PROJECT_LOCK_FILE_NAME: &str = "Project.lock";
 const PROJECT_LOCK_HEADER_V1: &str = "# Project.lock v1";
 const PROJECT_LOCK_HEADER_V2: &str = "# Project.lock v2";
+const PROJECT_LOCK_HEADER_V3: &str = "# Project.lock v3";
 
 fn regular_lockfile_exists(lock_path: &Path) -> Result<bool, ProjectError> {
     match fs::symlink_metadata(lock_path) {
@@ -64,7 +65,9 @@ pub struct ProjectLockDependencyEntry {
     pub(super) manifest: String,
     pub(super) project: String,
     pub(super) source_root: String,
-    pub(super) materialized_root: String,
+    /// The project-local copy beneath `obj/beskid/deps/src`. A Corelib entry has none: Corelib is
+    /// read in place from the toolchain's shared Corelib root.
+    pub(super) materialized_root: Option<String>,
     pub(super) resolved_version: Option<String>,
     pub(super) artifact_digest: Option<String>,
     pub(super) registry: Option<String>,
@@ -87,8 +90,8 @@ impl ProjectLockDependencyEntry {
         &self.source_root
     }
 
-    pub fn materialized_root(&self) -> &str {
-        &self.materialized_root
+    pub fn materialized_root(&self) -> Option<&str> {
+        self.materialized_root.as_deref()
     }
 
     pub fn manifest(&self) -> &str {
@@ -110,7 +113,11 @@ impl ProjectLockDependencyEntry {
     pub fn to_v1_line(&self) -> String {
         let mut line = format!(
             "name={};manifest={};project={};source_root={};materialized_root={}",
-            self.name, self.manifest, self.project, self.source_root, self.materialized_root
+            self.name,
+            self.manifest,
+            self.project,
+            self.source_root,
+            self.materialized_root.as_deref().unwrap_or_default()
         );
 
         if let Some(version) = &self.resolved_version {
@@ -195,9 +202,9 @@ impl ProjectLockDependencyEntry {
             source_root: source_root.ok_or_else(|| {
                 ProjectError::Validation("lockfile dependency entry missing `source_root`".to_string())
             })?,
-            materialized_root: materialized_root.ok_or_else(|| {
+            materialized_root: Some(materialized_root.ok_or_else(|| {
                 ProjectError::Validation("lockfile dependency entry missing `materialized_root`".to_string())
-            })?,
+            })?),
             resolved_version,
             artifact_digest,
             registry,
@@ -206,13 +213,13 @@ impl ProjectLockDependencyEntry {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ProjectLockfileV2 {
+pub struct ProjectLockfile {
     root_manifest: String,
     project_name: String,
     pub(super) dependencies: Vec<ProjectLockDependencyEntry>,
 }
 
-impl ProjectLockfileV2 {
+impl ProjectLockfile {
     /// A lock that pins nothing beyond the toolchain's Corelib records only what the installed
     /// toolchain re-derives, so it may be regenerated when it no longer matches, for example
     /// after the project folder was copied. Any other entry (a registry pin or a path
@@ -222,7 +229,7 @@ impl ProjectLockfileV2 {
     }
 
     /// Whether this lock was issued for the project the plan describes.
-    pub(super) fn belongs_to(&self, current: &ProjectLockfileV2) -> bool {
+    pub(super) fn belongs_to(&self, current: &ProjectLockfile) -> bool {
         self.root_manifest == current.root_manifest && self.project_name == current.project_name
     }
 
@@ -274,39 +281,40 @@ impl ProjectLockfileV2 {
             entry.source == ProjectLockSource::Registry
                 && (entry.registry.is_none() || entry.resolved_version.is_none() || entry.artifact_digest.is_none())
         }) {
-            return Err(ProjectError::Validation("registry dependency lacks a complete v2 pin".into()));
+            return Err(ProjectError::Validation("registry dependency lacks a complete pin".into()));
         }
         let candidate = Self { root_manifest, project_name: plan.project_name.clone(), dependencies: entries.to_vec() };
-        Self::parse_v2(&candidate.to_v2_content())
+        Self::parse(&candidate.to_content())
     }
 
-    pub fn parse_v2(content: &str) -> Result<Self, ProjectError> {
-        let body = content
-            .strip_suffix('\n')
-            .ok_or_else(|| ProjectError::Validation("v2 lockfile must end with LF".into()))?;
+    pub fn parse(content: &str) -> Result<Self, ProjectError> {
+        let body =
+            content.strip_suffix('\n').ok_or_else(|| ProjectError::Validation("lockfile must end with LF".into()))?;
         let lines: Vec<&str> = body.split('\n').collect();
-        if lines.len() < 4 || lines[0] != PROJECT_LOCK_HEADER_V2 {
-            return Err(ProjectError::Validation("lockfile header must be exactly `# Project.lock v2`".into()));
+        if lines.len() < 4 || lines[0] != PROJECT_LOCK_HEADER_V3 {
+            return Err(ProjectError::Validation("lockfile header must be exactly `# Project.lock v3`".into()));
         }
-        let root_manifest = parse_v2_top_level(lines[1], "root_manifest")?;
+        let root_manifest = parse_top_level(lines[1], "root_manifest")?;
         let root_manifest =
             PortableLockPath::parse("root_manifest", &root_manifest, PortableLockPathBaseKind::LockDirectory)?
                 .as_str()
                 .to_string();
-        let project_name = parse_v2_top_level(lines[2], "project_name")?;
+        let project_name = parse_top_level(lines[2], "project_name")?;
         if lines[3] != "dependencies:" {
-            return Err(ProjectError::Validation("v2 lockfile missing `dependencies:`".into()));
+            return Err(ProjectError::Validation("lockfile missing `dependencies:`".into()));
         }
 
         let mut dependencies = Vec::new();
         let mut names = HashSet::new();
         let mut destinations = HashSet::new();
         for line in &lines[4..] {
-            let entry = parse_v2_entry(line)?;
+            let entry = parse_entry(line)?;
             if !names.insert(entry.name.clone()) {
                 return Err(ProjectError::Validation("lockfile duplicates a dependency name".into()));
             }
-            if !destinations.insert(entry.materialized_root.clone()) {
+            if let Some(destination) = &entry.materialized_root
+                && !destinations.insert(destination.clone())
+            {
                 return Err(ProjectError::Validation("lockfile duplicates a materialized destination".into()));
             }
             dependencies.push(entry);
@@ -315,29 +323,30 @@ impl ProjectLockfileV2 {
         Ok(Self { root_manifest, project_name, dependencies })
     }
 
-    pub fn to_v2_content(&self) -> String {
+    pub fn to_content(&self) -> String {
         let mut content = format!(
-            "{PROJECT_LOCK_HEADER_V2}\nroot_manifest={}\nproject_name={}\ndependencies:\n",
-            encode_v2_value(&self.root_manifest),
-            encode_v2_value(&self.project_name)
+            "{PROJECT_LOCK_HEADER_V3}\nroot_manifest={}\nproject_name={}\ndependencies:\n",
+            encode_value(&self.root_manifest),
+            encode_value(&self.project_name)
         );
         let mut dependencies = self.dependencies.iter().collect::<Vec<_>>();
         dependencies.sort_by(|left, right| left.name.cmp(&right.name));
         for entry in dependencies {
             content.push_str("- name=");
-            content.push_str(&encode_v2_value(&entry.name));
+            content.push_str(&encode_value(&entry.name));
             content.push_str(";source=");
             content.push_str(entry.source.as_str());
             for (key, value) in [
-                ("project", &entry.project),
-                ("manifest", &entry.manifest),
-                ("source_root", &entry.source_root),
-                ("materialized_root", &entry.materialized_root),
+                ("project", Some(&entry.project)),
+                ("manifest", Some(&entry.manifest)),
+                ("source_root", Some(&entry.source_root)),
+                ("materialized_root", entry.materialized_root.as_ref()),
             ] {
+                let Some(value) = value else { continue };
                 content.push(';');
                 content.push_str(key);
                 content.push('=');
-                content.push_str(&encode_v2_value(value));
+                content.push_str(&encode_value(value));
             }
             if entry.source == ProjectLockSource::Registry {
                 for (key, value) in [
@@ -348,7 +357,7 @@ impl ProjectLockfileV2 {
                     content.push(';');
                     content.push_str(key);
                     content.push('=');
-                    content.push_str(&encode_v2_value(value));
+                    content.push_str(&encode_value(value));
                 }
             }
             content.push('\n');
@@ -357,31 +366,31 @@ impl ProjectLockfileV2 {
     }
 }
 
-fn parse_v2_top_level(line: &str, expected_key: &str) -> Result<String, ProjectError> {
-    let (key, value) = line
-        .split_once('=')
-        .ok_or_else(|| ProjectError::Validation(format!("v2 lockfile missing `{expected_key}`")))?;
+fn parse_top_level(line: &str, expected_key: &str) -> Result<String, ProjectError> {
+    let (key, value) =
+        line.split_once('=').ok_or_else(|| ProjectError::Validation(format!("lockfile missing `{expected_key}`")))?;
     if key != expected_key {
-        return Err(ProjectError::Validation(format!("v2 lockfile expected `{expected_key}`")));
+        return Err(ProjectError::Validation(format!("lockfile expected `{expected_key}`")));
     }
-    decode_v2_value(value)
+    decode_value(value)
 }
 
-fn parse_v2_entry(line: &str) -> Result<ProjectLockDependencyEntry, ProjectError> {
-    let body = line
-        .strip_prefix("- ")
-        .ok_or_else(|| ProjectError::Validation("invalid v2 lockfile dependency line".into()))?;
+fn parse_entry(line: &str) -> Result<ProjectLockDependencyEntry, ProjectError> {
+    let body =
+        line.strip_prefix("- ").ok_or_else(|| ProjectError::Validation("invalid lockfile dependency line".into()))?;
     let fields: Vec<&str> = body.split(';').collect();
     if fields.len() < 2 {
-        return Err(ProjectError::Validation("v2 lockfile dependency lacks a source".into()));
+        return Err(ProjectError::Validation("lockfile dependency lacks a source".into()));
     }
     let (source_key, source_value) = fields[1]
         .split_once('=')
-        .ok_or_else(|| ProjectError::Validation("v2 lockfile dependency source is malformed".into()))?;
+        .ok_or_else(|| ProjectError::Validation("lockfile dependency source is malformed".into()))?;
     if source_key != "source" {
-        return Err(ProjectError::Validation("v2 lockfile dependency fields are out of order".into()));
+        return Err(ProjectError::Validation("lockfile dependency fields are out of order".into()));
     }
-    let source = ProjectLockSource::parse(&decode_v2_value(source_value)?)?;
+    let source = ProjectLockSource::parse(&decode_value(source_value)?)?;
+    // A Corelib entry names its package under the shared Corelib root and has no project-local copy.
+    const CORELIB: [&str; 5] = ["name", "source", "project", "manifest", "source_root"];
     const COMMON: [&str; 6] = ["name", "source", "project", "manifest", "source_root", "materialized_root"];
     const REGISTRY: [&str; 9] = [
         "name",
@@ -394,19 +403,23 @@ fn parse_v2_entry(line: &str) -> Result<ProjectLockDependencyEntry, ProjectError
         "resolved_version",
         "artifact_digest",
     ];
-    let expected: &[&str] = if source == ProjectLockSource::Registry { &REGISTRY } else { &COMMON };
+    let expected: &[&str] = match source {
+        ProjectLockSource::Registry => &REGISTRY,
+        ProjectLockSource::Corelib => &CORELIB,
+        ProjectLockSource::Path => &COMMON,
+    };
     if fields.len() != expected.len() {
-        return Err(ProjectError::Validation("v2 lockfile dependency has missing or extra fields".into()));
+        return Err(ProjectError::Validation("lockfile dependency has missing or extra fields".into()));
     }
     let mut values = Vec::with_capacity(fields.len());
     for (field, expected_key) in fields.into_iter().zip(expected) {
         let (key, value) = field
             .split_once('=')
-            .ok_or_else(|| ProjectError::Validation(format!("v2 lockfile `{expected_key}` is malformed")))?;
+            .ok_or_else(|| ProjectError::Validation(format!("lockfile `{expected_key}` is malformed")))?;
         if key != *expected_key {
-            return Err(ProjectError::Validation(format!("v2 lockfile dependency expected `{expected_key}`")));
+            return Err(ProjectError::Validation(format!("lockfile dependency expected `{expected_key}`")));
         }
-        values.push(decode_v2_value(value)?);
+        values.push(decode_value(value)?);
     }
     let path_base = match source {
         ProjectLockSource::Path => PortableLockPathBaseKind::ExternalProject,
@@ -420,16 +433,20 @@ fn parse_v2_entry(line: &str) -> Result<ProjectLockDependencyEntry, ProjectError
     let source_root = PortableLockPath::parse("source_root", &values[4], PortableLockPathBaseKind::ProjectDirectory)?
         .as_str()
         .to_string();
-    let materialized_root =
-        PortableLockPath::parse("materialized_root", &values[5], PortableLockPathBaseKind::MaterializedRoot)?
-            .as_str()
-            .to_string();
+    let materialized_root = match source {
+        ProjectLockSource::Corelib => None,
+        ProjectLockSource::Path | ProjectLockSource::Registry => Some(
+            PortableLockPath::parse("materialized_root", &values[5], PortableLockPathBaseKind::MaterializedRoot)?
+                .as_str()
+                .to_string(),
+        ),
+    };
     if values[0].is_empty() {
-        return Err(ProjectError::Validation("v2 lockfile dependency name is empty".into()));
+        return Err(ProjectError::Validation("lockfile dependency name is empty".into()));
     }
     let (registry, resolved_version, artifact_digest) = if source == ProjectLockSource::Registry {
-        if values[6].is_empty() || values[7].is_empty() || !valid_v2_digest(&values[8]) {
-            return Err(ProjectError::Validation("v2 registry lock entry has an invalid pin".into()));
+        if values[6].is_empty() || values[7].is_empty() || !valid_digest(&values[8]) {
+            return Err(ProjectError::Validation("registry lock entry has an invalid pin".into()));
         }
         (Some(values[6].clone()), Some(values[7].clone()), Some(values[8].clone()))
     } else {
@@ -448,14 +465,14 @@ fn parse_v2_entry(line: &str) -> Result<ProjectLockDependencyEntry, ProjectError
     })
 }
 
-fn valid_v2_digest(value: &str) -> bool {
+fn valid_digest(value: &str) -> bool {
     let Some(hex) = value.strip_prefix("sha256:") else { return false };
     hex.len() == 64 && hex.bytes().all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
-fn decode_v2_value(value: &str) -> Result<String, ProjectError> {
+fn decode_value(value: &str) -> Result<String, ProjectError> {
     if value.is_empty() {
-        return Err(ProjectError::Validation("v2 lockfile value is empty".into()));
+        return Err(ProjectError::Validation("lockfile value is empty".into()));
     }
     let mut decoded = Vec::with_capacity(value.len());
     let bytes = value.as_bytes();
@@ -463,42 +480,42 @@ fn decode_v2_value(value: &str) -> Result<String, ProjectError> {
     while index < bytes.len() {
         if bytes[index] == b'%' {
             if index + 2 >= bytes.len() {
-                return Err(ProjectError::Validation("v2 lockfile has an incomplete percent escape".into()));
+                return Err(ProjectError::Validation("lockfile has an incomplete percent escape".into()));
             }
             let high = uppercase_hex_digit(bytes[index + 1])?;
             let low = uppercase_hex_digit(bytes[index + 2])?;
             let byte = high * 16 + low;
-            if safe_v2_byte(byte) {
-                return Err(ProjectError::Validation("v2 lockfile unnecessarily escapes a literal-safe byte".into()));
+            if safe_lock_byte(byte) {
+                return Err(ProjectError::Validation("lockfile unnecessarily escapes a literal-safe byte".into()));
             }
             decoded.push(byte);
             index += 3;
-        } else if safe_v2_byte(bytes[index]) {
+        } else if safe_lock_byte(bytes[index]) {
             decoded.push(bytes[index]);
             index += 1;
         } else {
-            return Err(ProjectError::Validation("v2 lockfile contains a raw noncanonical byte".into()));
+            return Err(ProjectError::Validation("lockfile contains a raw noncanonical byte".into()));
         }
     }
-    String::from_utf8(decoded).map_err(|_| ProjectError::Validation("v2 lockfile has malformed UTF-8".into()))
+    String::from_utf8(decoded).map_err(|_| ProjectError::Validation("lockfile has malformed UTF-8".into()))
 }
 
 fn uppercase_hex_digit(byte: u8) -> Result<u8, ProjectError> {
     match byte {
         b'0'..=b'9' => Ok(byte - b'0'),
         b'A'..=b'F' => Ok(byte - b'A' + 10),
-        _ => Err(ProjectError::Validation("v2 lockfile requires uppercase hex escapes".into())),
+        _ => Err(ProjectError::Validation("lockfile requires uppercase hex escapes".into())),
     }
 }
 
-fn safe_v2_byte(byte: u8) -> bool {
+fn safe_lock_byte(byte: u8) -> bool {
     byte.is_ascii_alphanumeric() || b"._/:-@+".contains(&byte)
 }
 
-fn encode_v2_value(value: &str) -> String {
+fn encode_value(value: &str) -> String {
     let mut encoded = String::with_capacity(value.len());
     for byte in value.bytes() {
-        if safe_v2_byte(byte) {
+        if safe_lock_byte(byte) {
             encoded.push(byte as char);
         } else {
             encoded.push('%');
@@ -589,7 +606,7 @@ pub fn load_project_lock_dependencies(project_root: &Path) -> Result<Vec<Project
     load_project_lock_dependencies_from_path(&project_root.join(PROJECT_LOCK_FILE_NAME))
 }
 
-/// Strictly load the v2 dependency entries from one explicit lockfile path.
+/// Strictly load the dependency entries from one explicit lockfile path.
 ///
 /// Callers that replay lockfile paths must use this parser rather than scanning
 /// individual lines: malformed or duplicate entries invalidate the entire
@@ -602,15 +619,39 @@ pub fn load_project_lock_dependencies_from_path(
     }
     let content = fs::read_to_string(lock_path)
         .map_err(|e| ProjectError::Validation(format!("failed to read {}: {e}", lock_path.display())))?;
-    reject_v1_lock_for_replay(&content)?;
-    Ok(ProjectLockfileV2::parse_v2(&content)?.dependencies)
+    reject_retired_lock_for_replay(&content)?;
+    Ok(ProjectLockfile::parse(&content)?.dependencies)
 }
 
-fn reject_v1_lock_for_replay(content: &str) -> Result<(), ProjectError> {
-    if content.lines().next() == Some(PROJECT_LOCK_HEADER_V1) {
-        return Err(ProjectError::LockfileV1);
+/// A lock in a retired format (v1, or v2 with project-local Corelib copies).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct RetiredLock {
+    pub(super) version: u32,
+    /// A v2 lock whose every dependency is a Corelib entry records only what the toolchain
+    /// re-derives, so ordinary preparation regenerates it. A v1 lock always needs migration.
+    pub(super) pin_free: bool,
+}
+
+pub(super) fn retired_lock(content: &str) -> Option<RetiredLock> {
+    let version = match content.lines().next()? {
+        PROJECT_LOCK_HEADER_V1 => 1,
+        PROJECT_LOCK_HEADER_V2 => 2,
+        _ => return None,
+    };
+    let pin_free = version == 2
+        && content
+            .lines()
+            .map(str::trim)
+            .filter(|line| line.starts_with("- "))
+            .all(|line| line.contains(";source=corelib;"));
+    Some(RetiredLock { version, pin_free })
+}
+
+fn reject_retired_lock_for_replay(content: &str) -> Result<(), ProjectError> {
+    match retired_lock(content) {
+        Some(retired) => Err(ProjectError::LockfileFormatRetired { version: retired.version }),
+        None => Ok(()),
     }
-    Ok(())
 }
 
 /// Replay only a lockfile issued for this exact project. Other callers may inspect
@@ -624,8 +665,8 @@ pub fn load_project_lock_dependencies_for_plan(
     regular_lockfile_exists(lock_path)?;
     let content = fs::read_to_string(lock_path)
         .map_err(|e| ProjectError::Validation(format!("failed to read {}: {e}", lock_path.display())))?;
-    reject_v1_lock_for_replay(&content)?;
-    let parsed = ProjectLockfileV2::parse_v2(&content)?;
+    reject_retired_lock_for_replay(&content)?;
+    let parsed = ProjectLockfile::parse(&content)?;
     let lock_root = lock_path.parent().ok_or_else(|| ProjectError::Validation("lockfile has no parent".into()))?;
     let root_manifest = lock_root.join(&parsed.root_manifest);
     let same_manifest = match (root_manifest.canonicalize(), plan.manifest_path.canonicalize()) {
@@ -636,11 +677,11 @@ pub fn load_project_lock_dependencies_for_plan(
     if !same_manifest || parsed.project_name != plan.project_name {
         return Err(parsed.foreign_lock_error(&plan.project_name));
     }
-    let corelib_lock_root = super::prepare::installed_corelib_lock_root();
+    let shared_corelib = super::shared_corelib::SharedCorelib::resolve();
     let path_entries = plan
         .dependency_projects
         .iter()
-        .map(|dependency| super::prepare::portable_entry_for_dependency(plan, dependency, corelib_lock_root.as_deref()))
+        .map(|dependency| super::prepare::portable_entry_for_dependency(plan, dependency, shared_corelib.as_ref()))
         .collect::<Result<Vec<_>, _>>()?;
     let registry_names = plan
         .unresolved_dependencies
@@ -664,7 +705,7 @@ pub struct WorkspacePrepareOptions {
 pub(super) fn preflight_existing_lock_for_plan(
     plan: &ProjectWorkspacePlan,
     options: WorkspacePrepareOptions,
-) -> Result<Option<ProjectLockfileV2>, ProjectError> {
+) -> Result<Option<ProjectLockfile>, ProjectError> {
     let lock_path = plan.project_root.join(PROJECT_LOCK_FILE_NAME);
     if !regular_lockfile_exists(&lock_path)? {
         if options.locked {
@@ -677,17 +718,24 @@ pub(super) fn preflight_existing_lock_for_plan(
     }
     let content =
         fs::read_to_string(&lock_path).map_err(|source| ProjectError::LockfileRead { path: lock_path, source })?;
-    match content.lines().next() {
-        Some(PROJECT_LOCK_HEADER_V1) => {
-            if !options.refresh_lock {
-                return Err(ProjectError::LockfileV1);
+    if let Some(retired) = retired_lock(&content) {
+        // A retired lock is never replayed. An explicit migration rewrites it; a lock that pins
+        // nothing beyond Corelib is regenerated like any other pin-free lock.
+        if options.refresh_lock {
+            if retired.version == 1 {
+                ProjectLockfileV1::parse_v1(&content)?;
             }
-            ProjectLockfileV1::parse_v1(&content)?;
-            Ok(None)
+            return Ok(None);
         }
-        Some(PROJECT_LOCK_HEADER_V2) => {
-            let existing = ProjectLockfileV2::parse_v2(&content)?;
-            let current = ProjectLockfileV2::from_plan(plan, &[])?;
+        if retired.pin_free && !options.locked && !options.frozen {
+            return Ok(None);
+        }
+        return Err(ProjectError::LockfileFormatRetired { version: retired.version });
+    }
+    match content.lines().next() {
+        Some(PROJECT_LOCK_HEADER_V3) => {
+            let existing = ProjectLockfile::parse(&content)?;
+            let current = ProjectLockfile::from_plan(plan, &[])?;
             if !existing.belongs_to(&current) {
                 // A pin-free lock from another project (a copied folder) is regenerated unless the
                 // run must not write the lock; pins are never replaced silently.
@@ -703,7 +751,7 @@ pub(super) fn preflight_existing_lock_for_plan(
 }
 
 /// Whether the path and Corelib entries of `existing` differ from the current project graph.
-pub(super) fn lock_graph_differs(existing: &ProjectLockfileV2, path_entries: &[ProjectLockDependencyEntry]) -> bool {
+pub(super) fn lock_graph_differs(existing: &ProjectLockfile, path_entries: &[ProjectLockDependencyEntry]) -> bool {
     let existing_paths =
         existing.dependencies.iter().filter(|entry| entry.source != ProjectLockSource::Registry).collect::<Vec<_>>();
     existing_paths.len() != path_entries.len() || path_entries.iter().any(|entry| !existing_paths.contains(&entry))
@@ -714,7 +762,7 @@ pub(super) fn lock_graph_differs(existing: &ProjectLockfileV2, path_entries: &[P
 /// ([`reject_unreachable_registry_pins`]), because transitive registry packages are only known once
 /// their requesters' manifests are read.
 pub(super) fn validate_existing_lock_graph(
-    existing: Option<&ProjectLockfileV2>,
+    existing: Option<&ProjectLockfile>,
     path_entries: &[ProjectLockDependencyEntry],
     refresh_lock: bool,
 ) -> Result<(), ProjectError> {
@@ -735,7 +783,7 @@ pub(super) fn validate_existing_lock_graph(
 /// A declared registry dependency may still lack a pin while the registry cannot serve it
 /// (warning-only ordinary preparation), so reachable names need not all be pinned.
 pub(super) fn reject_unreachable_registry_pins(
-    existing: &ProjectLockfileV2,
+    existing: &ProjectLockfile,
     reachable: &HashSet<&str>,
 ) -> Result<(), ProjectError> {
     if let Some(entry) = existing
@@ -759,7 +807,7 @@ pub(super) fn reject_unreachable_registry_pins(
 /// preparation re-resolves the closure from digest-verified artifacts and rejects it there.
 fn replay_registry_pins_reachable(
     lock_root: &Path,
-    existing: &ProjectLockfileV2,
+    existing: &ProjectLockfile,
     declared_registry_names: &[&str],
 ) -> Result<(), ProjectError> {
     let pins = existing
@@ -776,7 +824,11 @@ fn replay_registry_pins_reachable(
             continue;
         }
         let Some(pin) = pins.get(name) else { continue };
-        let manifest = lock_root.join(&pin.materialized_root).join(&pin.manifest);
+        let Some(materialized_root) = pin.materialized_root.as_deref() else {
+            complete = false;
+            continue;
+        };
+        let manifest = lock_root.join(materialized_root).join(&pin.manifest);
         let Ok(text) = fs::read_to_string(&manifest) else {
             complete = false;
             continue;
@@ -799,8 +851,8 @@ pub(super) fn sync_project_lockfile(
     options: WorkspacePrepareOptions,
 ) -> Result<std::path::PathBuf, ProjectError> {
     let lock_path = plan.project_root.join(PROJECT_LOCK_FILE_NAME);
-    let expected_lockfile = ProjectLockfileV2::from_plan(plan, lock_entries)?;
-    let expected_content = expected_lockfile.to_v2_content();
+    let expected_lockfile = ProjectLockfile::from_plan(plan, lock_entries)?;
+    let expected_content = expected_lockfile.to_content();
     let lock_exists = regular_lockfile_exists(&lock_path)?;
 
     if options.locked && !lock_exists {
@@ -813,7 +865,7 @@ pub(super) fn sync_project_lockfile(
         let existing_matches = if existing == expected_content {
             true
         } else {
-            ProjectLockfileV2::parse_v2(&existing).map(|parsed| parsed == expected_lockfile).unwrap_or(false)
+            ProjectLockfile::parse(&existing).map(|parsed| parsed == expected_lockfile).unwrap_or(false)
         };
 
         if existing_matches {
@@ -827,8 +879,8 @@ pub(super) fn sync_project_lockfile(
         if options.locked {
             return Err(ProjectError::LockfileOutOfDate { project: plan.project_name.clone() });
         }
-        let pin_free = ProjectLockfileV2::parse_v2(&existing).is_ok_and(|parsed| parsed.is_pin_free());
-        if !options.refresh_lock && !pin_free && existing.starts_with(PROJECT_LOCK_HEADER_V2) {
+        let pin_free = ProjectLockfile::parse(&existing).is_ok_and(|parsed| parsed.is_pin_free());
+        if !options.refresh_lock && !pin_free && existing.starts_with(PROJECT_LOCK_HEADER_V3) {
             return Err(ProjectError::Validation(
                 "Project.lock is stale: dependency graph changed; run `beskid update`".into(),
             ));

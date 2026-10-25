@@ -708,8 +708,8 @@ fn lock_replayed_foundation_syscall_fixture(label: &str) -> (CompilePlan, PathBu
     // lock, including its portable source identity and stable destination ID.
     let workspace = crate::projects::prepare_project_workspace(&plan).expect("prepare replay workspace");
     let lockfile = fs::read_to_string(&workspace.lockfile_path).expect("read generated replay lockfile");
-    crate::projects::ProjectLockfileV2::parse_v2(&lockfile).expect("parse generated v2 lockfile");
-    assert!(lockfile.starts_with("# Project.lock v2\n"));
+    crate::projects::ProjectLockfile::parse(&lockfile).expect("parse generated lockfile");
+    assert!(lockfile.starts_with("# Project.lock v3\n"));
     assert_eq!(lockfile.lines().filter(|line| line.starts_with("- name=")).count(), 1);
     let materialized_source_root = &workspace.materialized_dependencies[0].materialized_source_root;
     let destination = materialized_source_root.join("Core/Syscall/Syscall.bd");
@@ -761,7 +761,7 @@ fn lock_replay_outside_materialized_dependencies_cannot_grant_service_authority(
     assert_eq!(
         trusted_corelib_service_paths(&plan, &untampered_roots, std::slice::from_ref(&unit)),
         Arc::from([destination.clone()]),
-        "the untampered v2 lock must grant exactly its canonical replay destination"
+        "the untampered lock must grant exactly its canonical replay destination"
     );
     fs::create_dir_all(plan.project_root.join("outside")).expect("create outside replay root");
     let lock_path = plan.project_root.join("Project.lock");
@@ -788,7 +788,7 @@ fn lock_replay_with_forged_dependency_identity_cannot_grant_service_authority() 
         assert_eq!(
             trusted_corelib_service_paths(&plan, &untampered_roots, std::slice::from_ref(&unit)),
             Arc::from([destination.clone()]),
-            "the untampered v2 lock must grant exactly its canonical replay destination"
+            "the untampered lock must grant exactly its canonical replay destination"
         );
         let lock_path = plan.project_root.join("Project.lock");
         let lockfile = fs::read_to_string(&lock_path).expect("read replay lockfile");
@@ -808,7 +808,7 @@ fn lock_replay_with_forged_dependency_identity_cannot_grant_service_authority() 
             _ => unreachable!(),
         };
         assert_ne!(forged, lockfile, "fixture must change the lockfile identity");
-        crate::projects::ProjectLockfileV2::parse_v2(&forged).expect("forged identity keeps valid v2 syntax");
+        crate::projects::ProjectLockfile::parse(&forged).expect("forged identity keeps valid v2 syntax");
         fs::write(&lock_path, forged).expect("write forged replay lockfile");
 
         let roots = crate::projects::effective_roots_for_plan(&plan, None);
@@ -829,7 +829,7 @@ fn lock_replay_with_foreign_project_identity_cannot_grant_service_authority() {
         assert_eq!(
             trusted_corelib_service_paths(&plan, &untampered_roots, std::slice::from_ref(&unit)),
             Arc::from([destination]),
-            "the untampered v2 lock must grant exactly its canonical replay destination"
+            "the untampered lock must grant exactly its canonical replay destination"
         );
         let lock_path = plan.project_root.join("Project.lock");
         let lockfile = fs::read_to_string(&lock_path).expect("read replay lockfile");
@@ -842,7 +842,7 @@ fn lock_replay_with_foreign_project_identity_cannot_grant_service_authority() {
             _ => unreachable!(),
         };
         assert_ne!(forged, lockfile, "fixture must change the root identity");
-        crate::projects::ProjectLockfileV2::parse_v2(&forged).expect("foreign identity keeps valid v2 syntax");
+        crate::projects::ProjectLockfile::parse(&forged).expect("foreign identity keeps valid v2 syntax");
         fs::write(&lock_path, forged).expect("write foreign lockfile");
 
         let roots = crate::projects::effective_roots_for_plan(&plan, None);

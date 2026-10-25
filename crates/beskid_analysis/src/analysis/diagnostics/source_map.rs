@@ -8,7 +8,9 @@
 //! the materialized path rather than pointing at the wrong text.
 //!
 //! Registry packages are not recorded: the package cache keeps only artifact archives, so the
-//! read-only tree extracted under `obj/beskid/deps/src/` is the package source.
+//! read-only tree extracted under `obj/beskid/deps/src/` is the package source. Corelib is not
+//! recorded either: its units are read in place from the toolchain's shared Corelib, so their
+//! diagnostics already name the shared files.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -215,6 +217,32 @@ mod tests {
         ]);
         assert_eq!(kept.len(), 1);
         assert!(kept[0].help.is_none(), "the first reporter wins");
+    }
+
+    /// Corelib units are read in place from the toolchain's shared Corelib, so a diagnostic in
+    /// Corelib already names the shared file; mapping leaves it, its span and its text unchanged,
+    /// while host diagnostics of the same project still map from the mirror.
+    #[test]
+    fn a_corelib_diagnostic_points_at_the_shared_file() {
+        let (project, authored, mirrored) = materialized_project();
+        let toolchain = tempfile::tempdir().expect("toolchain");
+        let shared = toolchain.path().join("beskid_corelib/packages/console/src/Console/Style.bd");
+        std::fs::create_dir_all(shared.parent().unwrap()).unwrap();
+        std::fs::write(&shared, TEXT).unwrap();
+        let obj = project.path().join("obj/beskid");
+        assert!(
+            SourceOrigins::load(&obj).roots.iter().all(|root| !root.origin.starts_with(toolchain.path())),
+            "the shared Corelib is never a mirrored root"
+        );
+
+        let mut mapper = SourceMapper::new();
+        let corelib = mapper.map_diagnostic(diagnostic(shared.to_str().unwrap()));
+        assert_eq!(corelib.file_name(), shared.to_str().unwrap());
+        assert_eq!(corelib.range(), (20, 21));
+        assert_eq!(
+            mapper.map_diagnostic(diagnostic(mirrored.to_str().unwrap())).file_name(),
+            authored.to_str().unwrap()
+        );
     }
 
     #[test]

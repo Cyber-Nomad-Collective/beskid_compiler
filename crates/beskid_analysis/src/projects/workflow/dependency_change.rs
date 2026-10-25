@@ -1,7 +1,7 @@
 //! Plan exact dependency intent and commit the manifest/lock pair through the guarded journal.
 #![allow(non_snake_case)]
 use super::resolution::{ResolveWorkspaceDependencies, ResolvedWorkspaceDependencies};
-use super::{ProjectLockfileV2, RefreshScope, ResolutionPolicy};
+use super::{ProjectLockfile, RefreshScope, ResolutionPolicy};
 use crate::projects::dependency_edit::{DependencyIntentSource, DependencyMutation, EditManifest};
 use crate::projects::dependency_transaction::CommitDependencyPair;
 use crate::projects::graph::builder::{build_project_graph_from_manifest, discover_workspace_resolution_rules};
@@ -192,10 +192,15 @@ pub fn PlanDependencyChange(
     let text = std::str::from_utf8(&original).map_err(|_| ProjectError::Validation("manifest must be UTF-8".into()))?;
     let before = parse_manifest(text)?;
     let original_lock = ReadOptional(&root.join("Project.lock"))?;
-    if original_lock.as_ref().is_some_and(|bytes| bytes.starts_with(b"# Project.lock v1"))
+    let retired = original_lock
+        .as_ref()
+        .and_then(|bytes| std::str::from_utf8(bytes).ok())
+        .and_then(super::lockfile::retired_lock)
+        .filter(|retired| !retired.pin_free);
+    if let Some(retired) = retired
         && !matches!(mutation, DependencyMutation::Update { .. })
     {
-        return Err(ProjectError::LockfileV1);
+        return Err(ProjectError::LockfileFormatRetired { version: retired.version });
     }
     let mut mutation = mutation.clone();
     if let DependencyMutation::Add(intent) = &mut mutation
@@ -259,11 +264,11 @@ pub fn PlanDependencyChange(
         entries.push(registry.lock_entry()?);
     }
     entries.sort_by(|left, right| left.name.cmp(&right.name));
-    let replacement_lock = Some(ProjectLockfileV2::from_plan(&workspace, &entries)?.to_v2_content().into_bytes());
+    let replacement_lock = Some(ProjectLockfile::from_plan(&workspace, &entries)?.to_content().into_bytes());
     let before_digests = original_lock
         .as_deref()
         .and_then(|bytes| std::str::from_utf8(bytes).ok())
-        .and_then(|text| ProjectLockfileV2::parse_v2(text).ok())
+        .and_then(|text| ProjectLockfile::parse(text).ok())
         .map(|lock| LockedDigests(&lock.dependencies))
         .unwrap_or_default();
     let after_digests = LockedDigests(&entries);
@@ -316,7 +321,7 @@ pub fn PlanDependencyChange(
     let before_registry = original_lock
         .as_deref()
         .and_then(|bytes| std::str::from_utf8(bytes).ok())
-        .and_then(|text| ProjectLockfileV2::parse_v2(text).ok())
+        .and_then(|text| ProjectLockfile::parse(text).ok())
         .map(|lock| lock.dependencies)
         .unwrap_or_default();
     effects.extend(TransitiveEffects(&before_registry, &entries, &declared));

@@ -146,14 +146,17 @@ pub(crate) fn get_project_dependencies(project_uri: &str) -> Result<Value> {
 
 fn serialize_lock_entry(entry: &ProjectLockDependencyEntry, plan: &CompilePlan) -> Option<(String, Value)> {
     let declared = plan.dependency_projects.iter().find(|dependency| dependency.dependency_name == entry.name());
-    let materialized = PortableLockPath::parse(
-        "materialized_root",
-        entry.materialized_root(),
-        PortableLockPathBaseKind::MaterializedRoot,
-    )
-    .ok()?
-    .resolve(&plan.project_root)
-    .ok()?;
+    // A Corelib entry has no project-local copy: its packages are read in place from the
+    // toolchain's shared Corelib.
+    let materialized = match entry.materialized_root() {
+        Some(relative) => {
+            PortableLockPath::parse("materialized_root", relative, PortableLockPathBaseKind::MaterializedRoot)
+                .ok()?
+                .resolve(&plan.project_root)
+                .ok()?
+        }
+        None => declared?.project_root.clone(),
+    };
     let (project, manifest, source_root) = match entry.source() {
         ProjectLockSource::Path | ProjectLockSource::Corelib => declared
             .map(|dependency| {

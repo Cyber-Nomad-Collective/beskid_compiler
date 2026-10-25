@@ -1,4 +1,4 @@
-//! `Project.lock` regeneration and v1 migration policy (0.6.7).
+//! `Project.lock` regeneration and retired-format (v1, v2) migration policy (0.6.7).
 //!
 //! A lock that pins nothing beyond the toolchain's Corelib is rewritten when it no longer matches
 //! the project (a copied folder); `--locked` and `--frozen` never rewrite. A v1 lock is refused
@@ -87,7 +87,7 @@ fn v1_lock_is_refused_until_an_explicit_refresh_migrates_it() {
     fs::write(project.join(PROJECT_LOCK_FILE_NAME), &v1).expect("v1 lock");
 
     let error = prepare(&root, &manifest, WorkspacePrepareOptions::default()).expect_err("v1 lock must be refused");
-    assert!(matches!(error, ProjectError::LockfileV1), "unexpected error: {error:?}");
+    assert!(matches!(error, ProjectError::LockfileFormatRetired { version: 1 }), "unexpected error: {error:?}");
     assert_eq!(error.code(), "E3024");
     let message = error.to_string();
     assert!(message.contains("v1") && message.contains("beskid dev project lock"), "{message}");
@@ -95,6 +95,49 @@ fn v1_lock_is_refused_until_an_explicit_refresh_migrates_it() {
 
     prepare(&root, &manifest, WorkspacePrepareOptions { refresh_lock: true, ..Default::default() })
         .expect("refresh migrates the v1 lock");
-    assert!(lock(&project).starts_with("# Project.lock v2"), "{}", lock(&project));
+    assert!(lock(&project).starts_with("# Project.lock v3"), "{}", lock(&project));
     prepare(&root, &manifest, WorkspacePrepareOptions::default()).expect("migrated lock is accepted");
+}
+
+/// A v2 lock (Corelib copied into `obj/beskid/deps`) that pins nothing beyond Corelib is
+/// regenerated as v3 by ordinary preparation; `--locked` refuses it with the retired-format code.
+#[test]
+fn retired_v2_corelib_only_lock_is_regenerated_unless_locked() {
+    let _env = super::core_dependency_env_lock();
+    let root = temp_case_dir("lock_regeneration_v2_corelib");
+    let project = root.join("app");
+    let manifest = write_project(&project, "app");
+    let v2 = "# Project.lock v2\nroot_manifest=app.bproj\nproject_name=app\ndependencies:\n- name=Core;source=corelib;project=beskid_corelib;manifest=corelib.bproj;source_root=.;materialized_root=obj/beskid/deps/src/Core-81dbe9b059abfcd73535c29e5d790e42\n";
+    fs::write(project.join(PROJECT_LOCK_FILE_NAME), v2).expect("v2 lock");
+
+    let error = prepare(&root, &manifest, WorkspacePrepareOptions { locked: true, ..Default::default() })
+        .expect_err("a locked run never rewrites a retired lock");
+    assert!(matches!(error, ProjectError::LockfileFormatRetired { version: 2 }), "unexpected error: {error:?}");
+    assert_eq!(error.code(), "E3024");
+    assert_eq!(lock(&project), v2, "the refused lock was rewritten");
+
+    prepare(&root, &manifest, WorkspacePrepareOptions::default()).expect("a Corelib-only v2 lock regenerates");
+    let regenerated = lock(&project);
+    assert!(regenerated.starts_with("# Project.lock v3\n"), "{regenerated}");
+    assert!(!regenerated.contains("materialized_root=obj/beskid/deps/src/Core"), "{regenerated}");
+}
+
+/// A v2 lock with a path pin is a user choice: it is refused until an explicit migration.
+#[test]
+fn retired_v2_lock_with_a_path_pin_needs_migration() {
+    let _env = super::core_dependency_env_lock();
+    let root = temp_case_dir("lock_regeneration_v2_path");
+    let project = root.join("app");
+    let manifest = write_project(&project, "app");
+    let v2 = "# Project.lock v2\nroot_manifest=app.bproj\nproject_name=app\ndependencies:\n- name=Lib;source=path;project=../lib;manifest=lib.bproj;source_root=Src;materialized_root=obj/beskid/deps/src/Lib-0\n";
+    fs::write(project.join(PROJECT_LOCK_FILE_NAME), v2).expect("v2 lock");
+
+    let error = prepare(&root, &manifest, WorkspacePrepareOptions::default()).expect_err("v2 path pin is refused");
+    assert!(matches!(error, ProjectError::LockfileFormatRetired { version: 2 }), "unexpected error: {error:?}");
+    assert!(error.to_string().contains("retired v2 format"), "{error}");
+    assert_eq!(lock(&project), v2);
+
+    prepare(&root, &manifest, WorkspacePrepareOptions { refresh_lock: true, ..Default::default() })
+        .expect("refresh migrates the v2 lock");
+    assert!(lock(&project).starts_with("# Project.lock v3\n"), "{}", lock(&project));
 }

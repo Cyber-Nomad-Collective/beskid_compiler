@@ -43,8 +43,8 @@ fn dep06_plan_is_read_only_and_commit_writes_consistent_pair() {
     let parsed = beskid_analysis::projects::parse_manifest(&updated).unwrap();
     assert_eq!(parsed.dependencies[0].path.as_deref(), Some("../Local"));
     let lock = std::fs::read_to_string(manifest.with_file_name("Project.lock")).unwrap();
-    let parsed_lock = beskid_analysis::projects::ProjectLockfileV2::parse_v2(&lock).unwrap();
-    assert_eq!(parsed_lock.to_v2_content(), lock);
+    let parsed_lock = beskid_analysis::projects::ProjectLockfile::parse(&lock).unwrap();
+    assert_eq!(parsed_lock.to_content(), lock);
     assert!(lock.contains("Local"));
 }
 

@@ -24,6 +24,16 @@ fn write_portable_test_project(project_dir: &Path, name: &str, dependency: Optio
     write_manifest(project_dir, &manifest)
 }
 
+fn dependency_project_roots(workspace: &beskid_analysis::projects::PreparedProjectWorkspace) -> Vec<PathBuf> {
+    workspace.materialized_dependencies.iter().map(|dependency| dependency.materialized_project_root.clone()).collect()
+}
+
+fn dependency_copies(project_dir: &Path) -> Vec<PathBuf> {
+    fs::read_dir(project_dir.join("obj/beskid/deps/src"))
+        .map(|entries| entries.filter_map(Result::ok).map(|entry| entry.path()).collect())
+        .unwrap_or_default()
+}
+
 fn materialized_dependency_names(workspace: &beskid_analysis::projects::PreparedProjectWorkspace) -> Vec<String> {
     let mut names = workspace
         .materialized_dependencies
@@ -58,7 +68,7 @@ fn relocated_sibling_path_keeps_lock_bytes_and_materialized_names() {
         let workspace = prepare_project_workspace(&plan).expect("original workspace");
         (fs::read(&workspace.lockfile_path).expect("read original lock"), materialized_dependency_names(&workspace))
     });
-    assert!(original_lock.starts_with(b"# Project.lock v2\n"));
+    assert!(original_lock.starts_with(b"# Project.lock v3\n"));
     assert!(String::from_utf8_lossy(&original_lock).contains("source=path"));
     assert!(!original_names.is_empty());
 
@@ -121,6 +131,9 @@ fn relocated_path_with_missing_declared_sibling_fails_closed() {
     let _ = fs::remove_dir_all(moved_parent);
 }
 
+/// Two toolchains side by side each have their own sealed Corelib. A project prepared by either
+/// reads Corelib in place from that toolchain's bundle: no copy lands in `obj/beskid/deps`, the
+/// lock bytes do not depend on which toolchain wrote them, and the shared bundle is never written.
 #[test]
 fn distinct_installed_corelib_roots_keep_lock_bytes_and_materialized_names() {
     let fixture = temp_case_dir("portable_corelib_roots");
@@ -138,20 +151,36 @@ fn distinct_installed_corelib_roots_keep_lock_bytes_and_materialized_names() {
             .expect("mark verified Corelib fixture");
     }
 
-    let (first_lock, first_names) = {
+    let sealed_before = [&first_corelib, &second_corelib]
+        .map(|install| fingerprint_corelib_bundle_dir(install).expect("fingerprint before preparation"));
+    // A stale Corelib copy left by an older toolchain is removed by the next preparation.
+    let stale_copy = app_dir.join("obj/beskid/deps/src/Core-81dbe9b059abfcd73535c29e5d790e42");
+    fs::create_dir_all(stale_copy.join("Src")).expect("stale Corelib copy");
+    fs::write(stale_copy.join("Src/Old.bd"), "pub i32 Old() { return 0; }\n").expect("stale Corelib source");
+
+    let (first_lock, first_names, first_roots) = {
         let _corelib_root = super::super::scoped_core_dependency_root(&first_corelib);
         with_cwd_at_workspace_root(&fixture, || {
             let plan = build_compile_plan(&app_manifest, None).expect("plan with first installed Corelib");
             assert!(plan.has_core_dependency, "fixture must resolve implicit Core");
             let workspace = prepare_project_workspace(&plan).expect("workspace with first installed Corelib");
-            (fs::read(&workspace.lockfile_path).expect("read first lock"), materialized_dependency_names(&workspace))
+            (
+                fs::read(&workspace.lockfile_path).expect("read first lock"),
+                materialized_dependency_names(&workspace),
+                dependency_project_roots(&workspace),
+            )
         })
     };
-    assert!(first_lock.starts_with(b"# Project.lock v2\n"));
-    assert!(String::from_utf8_lossy(&first_lock).contains("source=corelib"));
+    assert!(first_lock.starts_with(b"# Project.lock v3\n"));
+    let first_text = String::from_utf8_lossy(&first_lock).into_owned();
+    assert!(first_text.contains("source=corelib"), "{first_text}");
+    assert!(!first_text.contains("materialized_root"), "a Corelib entry records no copy: {first_text}");
     assert!(!first_names.is_empty());
+    let first_install = first_corelib.canonicalize().expect("canonical first install");
+    assert!(first_roots.iter().all(|root| root.starts_with(&first_install)), "{first_roots:?}");
+    assert!(dependency_copies(&app_dir).is_empty(), "no Corelib copy: {:?}", dependency_copies(&app_dir));
 
-    let (second_lock, second_names) = {
+    let (second_lock, second_names, second_roots) = {
         let _corelib_root = super::super::scoped_core_dependency_root(&second_corelib);
         with_cwd_at_workspace_root(&fixture, || {
             let plan = build_compile_plan(&app_manifest, None).expect("plan with second installed Corelib");
@@ -162,12 +191,50 @@ fn distinct_installed_corelib_roots_keep_lock_bytes_and_materialized_names() {
                 None,
             )
             .expect("the same lock must accept another installed Corelib root");
-            (fs::read(&workspace.lockfile_path).expect("read second lock"), materialized_dependency_names(&workspace))
+            (
+                fs::read(&workspace.lockfile_path).expect("read second lock"),
+                materialized_dependency_names(&workspace),
+                dependency_project_roots(&workspace),
+            )
         })
     };
+    let second_install = second_corelib.canonicalize().expect("canonical second install");
+    assert!(second_roots.iter().all(|root| root.starts_with(&second_install)), "{second_roots:?}");
+    assert!(dependency_copies(&app_dir).is_empty());
+    let sealed_after = [&first_corelib, &second_corelib]
+        .map(|install| fingerprint_corelib_bundle_dir(install).expect("fingerprint after preparation"));
+    assert_eq!(sealed_after, sealed_before, "preparation must never write into a shared Corelib");
     assert_eq!(second_lock, first_lock, "Corelib installation path must not rewrite Project.lock");
     assert_eq!(second_names, first_names, "Corelib installation path must not rename materialized dependencies");
 
+    let _ = fs::remove_dir_all(fixture);
+}
+
+/// The shared Corelib is read-only: preparation fails closed (E3032) once a sealed bundle no longer
+/// matches its fingerprint, and it never repairs or rewrites the bundle.
+#[test]
+fn modified_shared_corelib_fails_closed() {
+    let fixture = temp_case_dir("shared_corelib_modified");
+    let app_manifest = write_portable_test_project(&fixture.join("App"), "App", None);
+    let install = fixture.join("install");
+    write_portable_test_project(&install.join("beskid_corelib"), "corelib", None);
+    fs::write(install.join("CoreLib.bws"), "workspace {\n  name = \"corelib\"\n  resolver = v1\n  schema = \"beskid.workspace.v1\"\n}\n\nmember \"corelib\" {\n  path = \"beskid_corelib\"\n}\n")
+        .expect("write installed Corelib workspace manifest");
+    let fingerprint = fingerprint_corelib_bundle_dir(&install).expect("fingerprint installed Corelib fixture");
+    fs::write(install.join(CORELIB_BUNDLE_FINGERPRINT_FILE), format!("{fingerprint}\n")).expect("seal fixture");
+
+    let _corelib_root = super::super::scoped_core_dependency_root(&install);
+    with_cwd_at_workspace_root(&fixture, || {
+        let plan = build_compile_plan(&app_manifest, None).expect("plan with sealed Corelib");
+        prepare_project_workspace(&plan).expect("an intact shared Corelib prepares");
+
+        let edited = install.join("beskid_corelib/Src/Main.bd");
+        fs::write(&edited, "Fn Main() { Tampered(); }\n").expect("edit the shared Corelib");
+        let error = prepare_project_workspace(&plan).expect_err("a modified shared Corelib must fail closed");
+        assert!(matches!(error, ProjectError::SharedCorelibModified { .. }), "unexpected error: {error:?}");
+        assert_eq!(error.code(), "E3032");
+        assert_eq!(fs::read_to_string(&edited).unwrap(), "Fn Main() { Tampered(); }\n", "never repaired");
+    });
     let _ = fs::remove_dir_all(fixture);
 }
 
@@ -337,7 +404,7 @@ dependency "Kernel" {
         assert!(workspace.materialized_dependencies.iter().any(|dependency| dependency.dependency_name == "Kernel"));
         assert!(workspace.materialized_dependencies[0].materialized_source_root.is_dir());
         let lock_content = fs::read_to_string(&lockfile_path).expect("read lockfile");
-        assert!(lock_content.starts_with("# Project.lock v2\n"));
+        assert!(lock_content.starts_with("# Project.lock v3\n"));
         assert!(lock_content.contains("project_name=App"));
         assert!(lock_content.contains("name=Kernel"));
 

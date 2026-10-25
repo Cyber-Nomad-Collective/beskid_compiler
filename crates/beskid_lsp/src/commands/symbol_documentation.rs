@@ -116,9 +116,13 @@ fn extract_symbol_name(markdown: &str) -> Option<String> {
     None
 }
 
-/// Extract package id and version from materialized dependency paths like
-/// `.../obj/beskid/deps/src/corelib_console-abc123/src/...`
+/// Package id and version of a dependency source: a Corelib package read in place from the
+/// toolchain's shared Corelib, or a project-local copy like
+/// `.../obj/beskid/deps/src/<package>-abc123/src/...`.
 fn package_from_materialized_path(path: &Path) -> Option<(String, String)> {
+    if let Some(package) = beskid_analysis::projects::shared_corelib_package_of(path) {
+        return Some((package, "latest".to_string()));
+    }
     let path_str = path.to_string_lossy();
     let marker = "/deps/src/";
     let idx = path_str.find(marker)?;

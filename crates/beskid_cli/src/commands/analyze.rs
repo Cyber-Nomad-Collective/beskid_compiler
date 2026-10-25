@@ -3,7 +3,7 @@
 use anyhow::Result;
 use beskid_analysis::services::{self, FrontEndOptions, PrepareOptions};
 use clap::Args;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::machine_output::Records;
 use crate::project_args::{LockfilePolicyArgs, ProjectResolveArgs};
@@ -32,6 +32,11 @@ pub struct AnalyzeArgs {
     /// Print schema-1 newline-delimited JSON records (`diagnostic`, then one `result`) on stdout
     #[arg(long)]
     pub json: bool,
+
+    /// Check every member of the `.bws` workspace named by `--project`, each through all of its
+    /// targets, in one process (members share the toolchain's Corelib and its analysis)
+    #[arg(long = "all-members")]
+    pub all_members: bool,
 }
 
 /// Resolve the project, analyze the entry source, and print diagnostics (or "No diagnostics.").
@@ -39,14 +44,94 @@ pub struct AnalyzeArgs {
 /// A project without an explicit `--target` is checked through every target of its manifest (App, Lib and
 /// Test), so sources reachable only from a non-default target (per-suite test entries) are never skipped.
 pub fn execute(args: AnalyzeArgs) -> Result<()> {
+    if args.all_members {
+        if args.input.is_some() || args.project.target.is_some() || args.project.workspace_member.is_some() {
+            anyhow::bail!(
+                "`--all-members` checks a whole workspace; it takes no input file, `--target` or `--workspace-member`"
+            );
+        }
+        let project = args
+            .project
+            .project
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("`--all-members` needs `--project <workspace.bws or its directory>`"))?;
+        let members = workspace_member_manifests(project)?;
+        if args.json {
+            return Records::new("check").Run(|records| run_members(&args, &members, Some(records)));
+        }
+        return run_members(&args, &members, None).map(|_| ());
+    }
     if let Some(manifest_path) = bsol_project_manifest(&args) {
         return check_bsol_project(&args, &manifest_path);
     }
     let targets = manifest_targets_to_check(&args);
+    let project = args.project.project.as_deref();
     if args.json {
-        return Records::new("check").Run(|records| run_targets(&args, &targets, Some(records)));
+        return Records::new("check").Run(|records| run_targets(&args, project, &targets, Some(records)));
     }
-    run_targets(&args, &targets, None).map(|_| ())
+    run_targets(&args, project, &targets, None).map(|_| ())
+}
+
+/// The project manifest of every member of the workspace at `project` (a `.bws` file or the
+/// directory that holds one), in manifest order.
+fn workspace_member_manifests(project: &Path) -> Result<Vec<(String, PathBuf)>> {
+    use beskid_analysis::projects::{
+        discover_project_manifest_in_dir, discover_workspace_manifest_in_dir, parse_workspace_manifest,
+    };
+    let workspace = if project.is_dir() {
+        discover_workspace_manifest_in_dir(project)?
+            .ok_or_else(|| anyhow::anyhow!("no `.bws` workspace manifest in {}", project.display()))?
+    } else if project.extension().is_some_and(|extension| extension == "bws") {
+        project.to_path_buf()
+    } else {
+        anyhow::bail!("`--all-members` needs a `.bws` workspace, got {}", project.display());
+    };
+    let source = std::fs::read_to_string(&workspace)
+        .map_err(|error| anyhow::anyhow!("read workspace manifest {}: {error}", workspace.display()))?;
+    let manifest = parse_workspace_manifest(&source)?;
+    let root = workspace.parent().unwrap_or_else(|| Path::new("."));
+    manifest
+        .members
+        .iter()
+        .map(|member| {
+            let directory = root.join(&member.path);
+            let manifest = discover_project_manifest_in_dir(&directory)?.ok_or_else(|| {
+                anyhow::anyhow!("workspace member `{}` has no project manifest in {}", member.name, directory.display())
+            })?;
+            Ok((member.name.clone(), manifest))
+        })
+        .collect()
+}
+
+/// Check every member in this process. A failing member does not stop the others; the command
+/// fails when any member failed.
+fn run_members(
+    args: &AnalyzeArgs,
+    members: &[(String, PathBuf)],
+    records: Option<&Records>,
+) -> Result<serde_json::Value> {
+    let mut failures = Vec::new();
+    let mut results = Vec::new();
+    for (name, manifest) in members {
+        let outcome = if is_bsol_manifest(manifest) {
+            validate_bsol_manifest(args, manifest)
+        } else {
+            run_targets(args, Some(manifest), &targets_of_manifest(manifest), records)
+        };
+        match outcome {
+            Ok(value) => results.push(serde_json::json!({ "member": name, "result": value })),
+            Err(error) => failures.push(format!("member `{name}`: {error:#}")),
+        }
+    }
+    if !failures.is_empty() {
+        anyhow::bail!(
+            "{} of {} workspace members failed analysis: {}",
+            failures.len(),
+            members.len(),
+            failures.join("; ")
+        );
+    }
+    Ok(serde_json::json!({ "members": results }))
 }
 
 /// The manifest `check` was pointed at, when it is one project manifest (a `.bproj` path or a
@@ -75,37 +160,47 @@ fn selected_project_manifest(args: &AnalyzeArgs) -> Option<PathBuf> {
 
 /// The selected manifest when it declares a schema-only `type = Bsol` project.
 fn bsol_project_manifest(args: &AnalyzeArgs) -> Option<PathBuf> {
-    let manifest_path = selected_project_manifest(args)?;
-    let manifest = beskid_analysis::projects::load_manifest_from_path(&manifest_path).ok()?;
-    (manifest.project.kind == beskid_analysis::projects::ProjectKind::Bsol).then_some(manifest_path)
+    selected_project_manifest(args).filter(|manifest_path| is_bsol_manifest(manifest_path))
+}
+
+/// Whether the manifest declares a schema-only `type = Bsol` project.
+fn is_bsol_manifest(manifest_path: &Path) -> bool {
+    beskid_analysis::projects::load_manifest_from_path(manifest_path)
+        .is_ok_and(|manifest| manifest.project.kind == beskid_analysis::projects::ProjectKind::Bsol)
 }
 
 /// A `type = Bsol` project has no Beskid source: checking it validates every schema export, the same
 /// validation `beskid dev bsol validate <manifest>.bproj` runs.
-fn check_bsol_project(args: &AnalyzeArgs, manifest_path: &std::path::Path) -> Result<()> {
+fn check_bsol_project(args: &AnalyzeArgs, manifest_path: &Path) -> Result<()> {
+    if args.json {
+        return Records::new("check").Run(|_records| validate_bsol_manifest(args, manifest_path));
+    }
+    validate_bsol_manifest(args, manifest_path).map(|_| ())
+}
+
+fn validate_bsol_manifest(args: &AnalyzeArgs, manifest_path: &Path) -> Result<serde_json::Value> {
     let manifest = beskid_analysis::projects::load_manifest_from_path(manifest_path)
         .map_err(|error| anyhow::Error::msg(error.to_string()))?;
-    let run = || -> Result<serde_json::Value> {
-        let profiles = super::validate_bsol::validate_bsol_project(manifest_path, &manifest, None)?;
-        if !args.json {
-            for profile in &profiles {
-                eprintln!("ok: validated exported schema profile `{profile}`");
-            }
-            eprintln!("Check complete: schema-only Bsol project, {} schema export(s) valid", profiles.len());
+    let profiles = super::validate_bsol::validate_bsol_project(manifest_path, &manifest, None)?;
+    if !args.json {
+        for profile in &profiles {
+            eprintln!("ok: validated exported schema profile `{profile}`");
         }
-        Ok(serde_json::json!({ "source": manifest_path, "bsol_profiles": profiles, "errors": 0, "warnings": 0, "notes": 0 }))
-    };
-    if args.json {
-        return Records::new("check").Run(|_records| run());
+        eprintln!("Check complete: schema-only Bsol project, {} schema export(s) valid", profiles.len());
     }
-    run().map(|_| ())
+    Ok(serde_json::json!({ "source": manifest_path, "bsol_profiles": profiles, "errors": 0, "warnings": 0, "notes": 0 }))
 }
 
 /// Names of all manifest targets when `check` was pointed at one project manifest without a target selection and
 /// that manifest declares several targets; empty means "check the one default target" as before.
 fn manifest_targets_to_check(args: &AnalyzeArgs) -> Vec<String> {
     let Some(manifest_path) = selected_project_manifest(args) else { return Vec::new() };
-    match beskid_analysis::projects::load_manifest_from_path(&manifest_path) {
+    targets_of_manifest(&manifest_path)
+}
+
+/// Every target of a manifest that declares several; empty means its one default target.
+fn targets_of_manifest(manifest_path: &Path) -> Vec<String> {
+    match beskid_analysis::projects::load_manifest_from_path(manifest_path) {
         Ok(manifest) if manifest.targets.len() > 1 => {
             manifest.targets.iter().map(|target| target.name.clone()).collect()
         }
@@ -113,14 +208,19 @@ fn manifest_targets_to_check(args: &AnalyzeArgs) -> Vec<String> {
     }
 }
 
-fn run_targets(args: &AnalyzeArgs, targets: &[String], records: Option<&Records>) -> Result<serde_json::Value> {
+fn run_targets(
+    args: &AnalyzeArgs,
+    project: Option<&Path>,
+    targets: &[String],
+    records: Option<&Records>,
+) -> Result<serde_json::Value> {
     if targets.is_empty() {
-        return run_analyze(args, args.project.target.as_deref(), records);
+        return run_analyze(args, project, args.project.target.as_deref(), records);
     }
     let mut failures = Vec::new();
     let mut results = Vec::new();
     for target in targets {
-        match run_analyze(args, Some(target), records) {
+        match run_analyze(args, project, Some(target), records) {
             Ok(value) => results.push(serde_json::json!({ "target": target, "result": value })),
             Err(error) => failures.push(format!("target `{target}`: {error:#}")),
         }
@@ -131,10 +231,16 @@ fn run_targets(args: &AnalyzeArgs, targets: &[String], records: Option<&Records>
     Ok(serde_json::json!({ "targets": results }))
 }
 
-fn run_analyze(args: &AnalyzeArgs, target: Option<&str>, records: Option<&Records>) -> Result<serde_json::Value> {
+fn run_analyze(
+    args: &AnalyzeArgs,
+    project: Option<&Path>,
+    target: Option<&str>,
+    records: Option<&Records>,
+) -> Result<serde_json::Value> {
+    let project = project.map(Path::to_path_buf);
     let (pipeline_ui, resolved) = resolve_input_with_cli_pipeline(CliResolveOptions::new(
         args.input.as_ref(),
-        args.project.project.as_ref(),
+        project.as_ref(),
         target,
         args.project.workspace_member.as_deref(),
         args.lockfile.WorkspaceOptions(),

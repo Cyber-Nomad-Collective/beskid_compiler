@@ -37,11 +37,19 @@ pub enum ProjectError {
     UnsupportedDependencySourceV1 { dependency_source: String },
     #[error("lockfile is out of date for project '{project}'")]
     LockfileOutOfDate { project: String },
-    /// `Project.lock` in the retired v1 format. Only an explicit migration rewrites it.
+    /// `Project.lock` in a retired format (v1, or v2 with project-local Corelib copies). Only an
+    /// explicit migration rewrites it, except a v2 lock that pins nothing beyond Corelib, which
+    /// ordinary preparation regenerates.
     #[error(
-        "Project.lock uses the retired v1 format; migrate it with `beskid dev project lock` or `beskid update --all`"
+        "Project.lock uses the retired v{version} format; migrate it with `beskid dev project lock` or `beskid update --all`"
     )]
-    LockfileV1,
+    LockfileFormatRetired { version: u32 },
+    /// The toolchain's shared Corelib bundle no longer matches its fingerprint marker.
+    #[error(
+        "the shared Corelib at {root} does not match its seal (a file was changed, added or removed); the shared \
+         Corelib is read-only, reinstall the toolchain or run `beskid dev corelib`"
+    )]
+    SharedCorelibModified { root: PathBuf },
     /// The block that opens the project manifest is named differently from `name`.
     ///
     /// Spans are byte ranges into the manifest source: the block name and the `name` assignment.
@@ -158,7 +166,8 @@ impl ProjectError {
             Self::LockfileWrite { .. } => "E3021",
             Self::LockfileOutOfDate { .. } => "E3022",
             Self::LockfileFrozenMode => "E3023",
-            Self::LockfileV1 => "E3024",
+            Self::LockfileFormatRetired { .. } => "E3024",
+            Self::SharedCorelibModified { .. } => "E3032",
             Self::RootBlockNameMismatch { .. } => "E1896",
             Self::LockfileRequired { .. } => "E3023",
             Self::MaterializationCreateDir { .. } => "E3030",

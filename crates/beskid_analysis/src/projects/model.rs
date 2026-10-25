@@ -315,6 +315,9 @@ pub struct ResolvedDependencyProject {
     pub source_root: PathBuf,
 }
 
+/// Where preparation placed one dependency's sources. A path or registry dependency is a copy
+/// beneath `obj/beskid/deps/src`; a Corelib package is the toolchain's shared, read-only Corelib
+/// package itself (its roots equal the resolved dependency's roots).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MaterializedDependencyProject {
     pub dependency_name: String,

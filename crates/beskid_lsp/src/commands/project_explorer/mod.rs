@@ -309,7 +309,7 @@ target "Ext" {
             beskid_analysis::projects::WorkspacePrepareOptions { refresh_lock: true, ..Default::default() },
             None,
         )
-        .expect("write genuine v2 lock");
+        .expect("write genuine lock");
         let uri = path_to_uri_string(&project);
         let value = graph::get_project_dependencies(&uri).expect("deps");
         let declared = value["declared"].as_array().expect("declared");
@@ -378,21 +378,21 @@ dependency "missing" {
         let error = graph::get_project_dependencies(&uri).expect_err("v1 lock must not disappear from tooling");
         assert!(error.message.contains("v1") && error.message.contains("beskid dev project lock"), "{error:?}");
 
-        write(&lock_path, "# Project.lock v2\nnot-a-lock\n");
-        let error = graph::get_project_dependencies(&uri).expect_err("malformed v2 must not disappear");
+        write(&lock_path, "# Project.lock v3\nnot-a-lock\n");
+        let error = graph::get_project_dependencies(&uri).expect_err("malformed lock must not disappear");
         assert!(error.message.contains("lockfile"), "{error:?}");
 
-        fs::remove_file(&lock_path).expect("remove malformed fixture lock before generating valid v2");
+        fs::remove_file(&lock_path).expect("remove malformed fixture lock before generating a valid lock");
         let plan = beskid_analysis::projects::build_compile_plan(&project, None).expect("resolve graph");
         beskid_analysis::projects::prepare_project_workspace_with_options(
             &plan,
             beskid_analysis::projects::WorkspacePrepareOptions { refresh_lock: true, ..Default::default() },
             None,
         )
-        .expect("generate v2");
-        let valid = fs::read_to_string(&lock_path).expect("read v2");
+        .expect("generate lock");
+        let valid = fs::read_to_string(&lock_path).expect("read lock");
         write(&lock_path, &valid.replace("project_name=demo", "project_name=stale"));
-        let error = graph::get_project_dependencies(&uri).expect_err("stale v2 must not disappear");
+        let error = graph::get_project_dependencies(&uri).expect_err("stale lock must not disappear");
         assert!(error.message.contains("different project"), "{error:?}");
     }
 

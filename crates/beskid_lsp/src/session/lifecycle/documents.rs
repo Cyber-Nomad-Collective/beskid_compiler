@@ -573,7 +573,7 @@ target "App" {
             full_diagnostics.iter().any(|d| d.message.contains("v1") && d.message.contains("beskid dev project lock"))
         );
 
-        fs::write(&lock_path, "# Project.lock v2\nnot-a-lock\n").expect("malformed lock");
+        fs::write(&lock_path, "# Project.lock v3\nnot-a-lock\n").expect("malformed lock");
         let doc = build_initial_workspace_document(&state, &uri, 2, source.to_string()).await;
         assert!(doc.syntax_diagnostics.iter().any(|d| d.message.contains("lockfile")));
 
@@ -585,7 +585,7 @@ target "App" {
             None,
         )
         .expect("generate v2");
-        let valid = fs::read_to_string(&lock_path).expect("v2 lock");
+        let valid = fs::read_to_string(&lock_path).expect("lock");
         fs::write(&lock_path, valid.replace("project_name=App", "project_name=Other")).expect("stale lock");
         let doc = build_initial_workspace_document(&state, &uri, 3, source.to_string()).await;
         assert!(doc.syntax_diagnostics.iter().any(|d| d.message.contains("different project")));

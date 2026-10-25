@@ -6,7 +6,7 @@ use std::{
     process::{Command, Output},
 };
 
-use beskid_analysis::projects::{ProjectLockSource, ProjectLockfileV2, load_project_lock_dependencies};
+use beskid_analysis::projects::{ProjectLockSource, ProjectLockfile, load_project_lock_dependencies};
 
 struct TemplateCase {
     root: PathBuf,
@@ -105,8 +105,8 @@ fn new_template_authoring_project_locks_corelib_and_replays_after_relocation() {
     let mut case = TemplateCase::new();
     assert_success(case.generate(), "new authoring package post-action");
     let original = case.lock();
-    assert!(original.starts_with("# Project.lock v2\nroot_manifest=AuthorPackage.bproj\nproject_name=AuthorPackage\n"));
-    ProjectLockfileV2::parse_v2(&original).expect("portable v2 lock");
+    assert!(original.starts_with("# Project.lock v3\nroot_manifest=AuthorPackage.bproj\nproject_name=AuthorPackage\n"));
+    ProjectLockfile::parse(&original).expect("portable lock");
     let entries = load_project_lock_dependencies(&case.project).expect("Corelib lock entries");
     assert!(!entries.is_empty(), "authoring lock omitted Corelib closure");
     assert!(entries.iter().all(|entry| entry.source() == ProjectLockSource::Corelib));

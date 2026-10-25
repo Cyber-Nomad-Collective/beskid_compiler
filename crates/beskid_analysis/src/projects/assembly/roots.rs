@@ -10,7 +10,7 @@ use std::{
 use crate::projects::{
     CompilePlan, PROJECT_LOCK_FILE_NAME, PreparedProjectWorkspace, ProjectError, ProjectLockDependencyEntry,
     ProjectLockSource,
-    workflow::{installed_corelib_lock_root, load_project_lock_dependencies_for_plan},
+    workflow::{SharedCorelib, load_project_lock_dependencies_for_plan},
 };
 
 /// One searchable source root (host or named dependency).
@@ -82,11 +82,9 @@ pub fn effective_roots_from_lockfile_checked(
         Ok(_) => {}
     }
     let entries = load_project_lock_dependencies_for_plan(lockfile_path, plan)?;
-    let Some(trusted_dependencies_root) = plan.project_root.join("obj/beskid/deps/src").canonicalize().ok() else {
-        return Ok(base);
-    };
+    let trusted_dependencies_root = plan.project_root.join("obj/beskid/deps/src").canonicalize().ok();
     let Some(replayed_dependencies) =
-        replayed_dependency_roots(plan, lockfile_path, &entries, &trusted_dependencies_root)
+        replayed_dependency_roots(plan, lockfile_path, &entries, trusted_dependencies_root.as_deref())
     else {
         return Ok(base);
     };
@@ -110,7 +108,7 @@ fn replayed_dependency_roots(
     plan: &CompilePlan,
     lockfile_path: &Path,
     entries: &[ProjectLockDependencyEntry],
-    trusted_dependencies_root: &Path,
+    trusted_dependencies_root: Option<&Path>,
 ) -> Option<Vec<RootEntry>> {
     let expected_names: HashSet<_> =
         plan.dependency_projects.iter().map(|dependency| dependency.dependency_name.as_str()).collect();
@@ -120,20 +118,14 @@ fn replayed_dependency_roots(
     }
 
     let lock_root = lockfile_path.parent()?;
-    let corelib_lock_root = installed_corelib_lock_root();
+    let shared_corelib = SharedCorelib::resolve();
     let mut replayed = Vec::with_capacity(entries.len());
     for entry in entries {
         let dependency =
             plan.dependency_projects.iter().find(|dependency| dependency.dependency_name == entry.name())?;
-        let materialized = resolve_lock_path(lock_root, Path::new(entry.materialized_root()));
-        let materialized = materialized.canonicalize().ok()?;
-        if !materialized.starts_with(trusted_dependencies_root) {
-            return None;
-        }
-
         let project_base = match entry.source() {
             ProjectLockSource::Path | ProjectLockSource::Registry => lock_root,
-            ProjectLockSource::Corelib => corelib_lock_root.as_deref()?,
+            ProjectLockSource::Corelib => shared_corelib.as_ref()?.root(),
         };
         let project = project_base.join(entry.project());
         let manifest = project.join(entry.manifest());
@@ -145,6 +137,22 @@ fn replayed_dependency_roots(
             || project.canonicalize().ok()? != dependency.project_root.canonicalize().ok()?
             || source_root.canonicalize().ok()? != dependency.source_root.canonicalize().ok()?
         {
+            return None;
+        }
+        // A Corelib package is read in place from the shared Corelib; every other dependency is
+        // read from its project-local copy.
+        let materialized = match entry.materialized_root() {
+            None if entry.source() == ProjectLockSource::Corelib => {
+                replayed.push(RootEntry {
+                    dependency_name: Some(dependency.dependency_name.clone()),
+                    source_root: source_root.canonicalize().ok()?,
+                });
+                continue;
+            }
+            None => return None,
+            Some(relative) => resolve_lock_path(lock_root, Path::new(relative)).canonicalize().ok()?,
+        };
+        if !trusted_dependencies_root.is_some_and(|trusted| materialized.starts_with(trusted)) {
             return None;
         }
         let relative = source_root.strip_prefix(&project).ok()?;
