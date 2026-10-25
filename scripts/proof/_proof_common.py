@@ -8,6 +8,7 @@ from __future__ import annotations
 import os
 import re
 import shutil
+import signal
 import subprocess
 import time
 from dataclasses import dataclass
@@ -15,13 +16,11 @@ from pathlib import Path
 
 SKIP_DIRS = {"obj", ".git", "target", "node_modules", ".beskid"}
 
-# Signatures of an internal compiler error (ticket 01 inventory). Until the ICE-floor slice routes
-# every internal failure to one coded diagnostic, the codes E2101/E2102/E4041 and the raw texts
-# below are the evidence. Extra patterns (for the floor's code) come from --ice-pattern or
-# BESKID_PROOF_ICE_PATTERNS (regexes separated by `|||`).
+# Signatures of an internal compiler error. The whole internal diagnostic family E21xx is matched
+# by one pattern (E2101..E2107 and any later member), plus E4041 and the raw texts below.
+# Extra patterns come from --ice-pattern or BESKID_PROOF_ICE_PATTERNS (regexes separated by `|||`).
 _BASE_PATTERNS = [
-    ("E2101", r"\bE2101\b"),
-    ("E2102", r"\bE2102\b"),
+    ("E21xx internal diagnostic", r"\bE21\d\d\b"),
     ("E4041", r"\bE4041\b"),
     ("internal compiler error", r"internal compiler error"),
     ("MissingRuleOrFact", r"MissingRuleOrFact"),
@@ -66,26 +65,49 @@ class RunResult:
     timed_out: bool
 
 
+MAX_OUTPUT_BYTES = 4 * 1024 * 1024
+
+
+def _kill_group(process):
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError):
+        pass
+
+
 def run(command, cwd=None, timeout=600, env=None) -> RunResult:
+    """Run a command in its own process group; on timeout the whole group (linker, test
+    executables, grandchildren) is killed. Captured output is capped at MAX_OUTPUT_BYTES."""
     started = time.monotonic()
     try:
-        completed = subprocess.run(
+        process = subprocess.Popen(
             [str(c) for c in command],
             cwd=cwd,
             env=env,
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
-            timeout=timeout,
-            text=True,
-            errors="replace",
+            start_new_session=True,
         )
-        return RunResult(list(command), completed.returncode, completed.stdout or "", time.monotonic() - started, False)
-    except subprocess.TimeoutExpired as expired:
-        out = expired.stdout.decode("utf-8", "replace") if isinstance(expired.stdout, bytes) else (expired.stdout or "")
-        return RunResult(list(command), None, out, time.monotonic() - started, True)
     except OSError as error:
         return RunResult(list(command), 127, f"cannot run {command[0]}: {error}", time.monotonic() - started, False)
+    timed_out = False
+    try:
+        data, _ = process.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        timed_out = True
+        _kill_group(process)
+        try:
+            data, _ = process.communicate(timeout=10)
+        except subprocess.TimeoutExpired:
+            data = b""
+    else:
+        _kill_group(process)  # reap stragglers that outlived the leader
+    data = data or b""
+    if len(data) > MAX_OUTPUT_BYTES:
+        data = data[:MAX_OUTPUT_BYTES // 2] + b"\n[output truncated]\n" + data[-MAX_OUTPUT_BYTES // 2:]
+    output = data.decode("utf-8", "replace")
+    return RunResult(list(command), None if timed_out else process.returncode, output, time.monotonic() - started, timed_out)
 
 
 def excerpt(output: str, patterns, width: int = 400) -> str:

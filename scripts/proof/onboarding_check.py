@@ -10,7 +10,7 @@ Runs in a fresh temporary HOME so nothing from the developer machine leaks in:
      installed `beskid_lsp`, failing on any crash report: "no editor errors"
 
 A step fails on a nonzero exit (except `test` reporting that the template has no tests), a timeout,
-a signal, or an internal-error signature (E2101, E2102, E4041, panic text, ...).
+a signal, or an internal-error signature (an E21xx internal diagnostic, E4041, panic text, ...).
 The editor extension install itself is the one manual step on a fresh macOS user; this script covers
 everything the extension relies on.
 
@@ -40,7 +40,25 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _proof_common as common  # noqa: E402
 
-NO_TESTS = re.compile(r"no tests? (were )?(found|discovered|selected)|0 tests", re.IGNORECASE)
+NO_TESTS = re.compile(r"no tests? (were )?(found|discovered|selected)|(?<![\d.,])0 tests?\b(?! (failed|passed))", re.IGNORECASE)
+
+
+def tool_dirs():
+    """Directories of bash and a C compiler as resolved on the caller's PATH, so the restricted
+    PATH below also works where they are not in /usr/bin (the NixOS builder)."""
+    dirs = []
+    for tool in ("bash", "cc", "ld"):
+        found = shutil.which(tool)
+        if found:
+            directory = str(Path(found).parent)
+            if directory not in dirs:
+                dirs.append(directory)
+    return dirs
+
+
+def restricted_path(prefix):
+    parts = [str(prefix / "bin"), *tool_dirs(), "/usr/bin", "/bin", "/usr/sbin", "/sbin"]
+    return os.pathsep.join(dict.fromkeys(parts))
 
 
 def step_status(name, result, patterns):
@@ -70,7 +88,7 @@ def main(argv=None):
     env = {
         "HOME": str(home),
         "USERPROFILE": str(home),
-        "PATH": f"{prefix / 'bin'}{os.pathsep}/usr/bin{os.pathsep}/bin{os.pathsep}/usr/sbin{os.pathsep}/sbin",
+        "PATH": restricted_path(prefix),
         "LANG": os.environ.get("LANG", "C.UTF-8"),
         "TMPDIR": str(home / "tmp"),
     }
@@ -86,7 +104,7 @@ def main(argv=None):
                       "seconds": round(result.seconds, 1) if result else 0})
         print(f"[onboarding] {scope}: {step}: {status}", file=sys.stderr)
 
-    install = common.run(["bash", args.installer, args.bundle, args.version, prefix], timeout=args.timeout, env=env)
+    install = common.run([shutil.which("bash") or "bash", args.installer, args.bundle, args.version, prefix], timeout=args.timeout, env=env)
     record("toolchain", "install", "ok" if install.returncode == 0 else "FAIL", install)
     beskid = str(prefix / "bin" / "beskid")
     if install.returncode != 0 or not Path(beskid).exists():

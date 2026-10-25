@@ -3,9 +3,8 @@
 
 Runs `beskid check`, `beskid build` and `beskid test` over six corpora, then a deterministic
 mutation sweep over the same corpora, and fails when any run shows an internal compiler error:
-the codes E2101, E2102, E4041 (until the ICE floor routes everything to one coded internal
-diagnostic; pass that code with --ice-pattern), the raw internal texts, a Rust panic, a signal
-death or a timeout. A user error (nonzero exit with an ordinary diagnostic) is NOT a failure.
+any code of the internal diagnostic family E21xx, E4041 (pass further codes with
+--ice-pattern), the raw internal texts, a Rust panic, a signal death or a timeout. A user error (nonzero exit with an ordinary diagnostic) is NOT a failure.
 
 Corpora (each is copied to a work directory first; the originals are never touched):
   corelib    <compiler>/corelib, without mods
@@ -55,16 +54,19 @@ class Corpus:
         self.stats = {c: {"runs": 0, "nonzero": 0, "ice": 0, "timeouts": 0} for c in CLEAN_COMMANDS}
         self.mutation = {"planned": 0, "run": 0, "check_accepted": 0, "ice": 0, "timeouts": 0, "skipped": 0}
         self.first = {}  # signature -> example
+        self.new_ice = 0  # `beskid new` runs that showed an internal error or timed out
 
 
 def record(corpus, signature, example):
     corpus.first.setdefault(signature, example)
 
 
-def build_corpora(args, work):
+def build_corpora(args, work, patterns=()):
+    """Returns (corpora, missing): `missing` names explicitly requested corpora that were not found."""
     wanted = set(args.corpora.split(",")) if args.corpora else None
     compiler = Path(args.compiler)
     corpora = []
+    missing = []
 
     def add(name, sources):
         if wanted is not None and name not in wanted:
@@ -72,6 +74,8 @@ def build_corpora(args, work):
         sources = [s for s in sources if s.is_dir()]
         if not sources:
             print(f"[sweep] corpus {name}: nothing found, skipped", file=sys.stderr)
+            if wanted is not None:
+                missing.append(name)
             return
         corpus = Corpus(name)
         for index, source in enumerate(sources):
@@ -86,19 +90,29 @@ def build_corpora(args, work):
     add("mods", [compiler / "corelib" / "mods"])
     fixtures = sorted(p for p in (compiler / "crates").glob("*/fixtures") if p.is_dir())
     add("fixtures", fixtures)
-    if args.lings:
-        add("lings", [Path(args.lings) / "exercises", Path(args.lings) / "solutions", Path(args.lings) / "Runner"])
+    if args.lings or (wanted is not None and "lings" in wanted):
+        add("lings", [Path(args.lings or "/nonexistent-lings") / "exercises", Path(args.lings or "/nonexistent-lings") / "solutions", Path(args.lings or "/nonexistent-lings") / "Runner"])
     if wanted is None or "templates" in wanted:
-        templates = generate_templates(args, work)
-        if templates:
-            corpus = Corpus("templates")
+        corpus = Corpus("templates")
+        templates = generate_templates(args, work, corpus, patterns)
+        if templates or corpus.new_ice:
             corpus.roots = templates
             corpora.append(corpus)
-    return corpora
+        elif wanted is not None:
+            missing.append("templates")
+    return corpora, missing
 
 
-def generate_templates(args, work):
+def generate_templates(args, work, corpus, patterns):
     names, listing = common.discover_templates(args.beskid)
+    listing_signatures = common.classify(listing.output, listing.returncode, listing.timed_out, patterns)
+    if listing_signatures:
+        corpus.new_ice += 1
+        for signature in listing_signatures:
+            record(corpus, signature, {
+                "phase": "new", "command": "new --list", "project": "templates",
+                "returncode": listing.returncode, "excerpt": common.excerpt(listing.output, patterns),
+            })
     if not names:
         print("[sweep] corpus templates: `beskid new --list` gave no templates:\n" + listing.output[:400], file=sys.stderr)
         return []
@@ -112,6 +126,14 @@ def generate_templates(args, work):
             cwd=base,
             timeout=args.timeout,
         )
+        signatures = common.classify(result.output, result.returncode, result.timed_out, patterns)
+        if signatures:
+            corpus.new_ice += 1
+            for signature in signatures:
+                record(corpus, signature, {
+                    "phase": "new", "command": f"new --template {short}", "project": str(out),
+                    "returncode": result.returncode, "excerpt": common.excerpt(result.output, patterns),
+                })
         if result.returncode == 0 and out.is_dir():
             roots.append(out)
         else:
@@ -199,12 +221,14 @@ def summarize(corpora):
     for corpus in corpora:
         clean_ice = sum(s["ice"] + s["timeouts"] for s in corpus.stats.values())
         mutation_ice = corpus.mutation["ice"] + corpus.mutation["timeouts"]
-        failures += clean_ice + mutation_ice
+        failures += clean_ice + mutation_ice + corpus.new_ice
         runs = ", ".join(
             f"{c}: {s['runs']} runs/{s['nonzero']} user errors/{s['ice']} internal" for c, s in corpus.stats.items() if s["runs"]
         )
         m = corpus.mutation
         lines.append(f"{corpus.name}: {len(corpus.projects)} projects; {runs or 'no clean runs'}")
+        if corpus.new_ice:
+            lines.append(f"  `beskid new`: {corpus.new_ice} internal-error or timeout runs")
         lines.append(
             f"  mutation: {m['planned']} planned, {m['run']} run, {m['check_accepted']} accepted by check, "
             f"{m['ice']} internal, {m['timeouts']} timeouts, {m['skipped']} skipped"
@@ -241,7 +265,10 @@ def main(argv=None):
     work = Path(args.work_dir) if args.work_dir else Path(tempfile.mkdtemp(prefix="beskid-ice-sweep-"))
     work.mkdir(parents=True, exist_ok=True)
     patterns = common.ice_patterns(args.ice_pattern)
-    corpora = build_corpora(args, work)
+    corpora, missing = build_corpora(args, work, patterns)
+    if missing:
+        print(f"requested corpus not available: {', '.join(missing)}", file=sys.stderr)
+        return 2
     if not corpora:
         print("no corpus available", file=sys.stderr)
         return 2
