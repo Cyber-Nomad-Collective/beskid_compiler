@@ -273,6 +273,32 @@ fn target_typed_conditionals_match_arms_block_results_and_lambdas_convert_each_b
 }
 
 #[test]
+fn an_immutable_local_whose_initializer_forwards_the_expected_type_dispatches_at_run_time() {
+    // The identity of `c ? Hello {} : Bye {}` is its then-branch, but either branch may be boxed
+    // into the local: a static `Hello.Rank` would run on a `Bye`. Every forwarding initializer
+    // (conditional, grouped conditional, `match`, value block, lambda result) dispatches.
+    let artifact = lower(&format!(
+        "{GREETERS}
+        enum Pick {{ First, Second }}
+        i64 Conditional(bool c) {{ Greeter g = c ? Hello {{}} : Bye {{}}; return g.Rank(); }}
+        i64 Grouped(bool c) {{ Greeter g = (c ? Hello {{}} : Bye {{}}); return g.Rank(); }}
+        i64 Matched(Pick p) {{
+            Greeter g = match p {{ Pick::First => Hello {{}}, Pick::Second => Bye {{}}, }};
+            return g.Rank();
+        }}
+        i64 Blocked(bool c) {{ Greeter g = {{ c ? Hello {{}} : Bye {{}}; }}; return g.Rank(); }}
+        i64 Lambda(bool c) {{ Greeter() make = () => c ? Hello {{}} : Bye {{}}; Greeter g = make(); return g.Rank(); }}
+        i64 Static() {{ Greeter g = Hello {{}}; return g.Rank(); }}"
+    ));
+    for function in ["Conditional", "Grouped", "Matched", "Blocked", "Lambda"] {
+        let clif = clif(&artifact, function);
+        assert!(clif.contains("call_indirect"), "`g` in `{function}` dispatches through its witness table:\n{clif}");
+    }
+    let main = clif(&artifact, "Static");
+    assert!(!main.contains("call_indirect"), "a plain nominal initializer keeps the static selection:\n{main}");
+}
+
+#[test]
 fn a_contract_as_the_argument_of_a_bounded_generic_dispatches_at_run_time() {
     let artifact = lower(&format!(
         "{GREETERS}

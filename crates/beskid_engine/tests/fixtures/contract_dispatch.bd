@@ -21,7 +21,21 @@ contract Shown { i64 Twice(); }
 impl i32 : Shown { pub i64 Twice() { return i64(this) * 2_i64; } }
 pub type Holder { Greeter greeter; i64 tag; }
 
+enum Which { First, Second }
+
 i64 Through(Greeter g) { return g.Rank(); }
+i64 ConditionalRank(bool c) { Greeter g = c ? Hello {} : Bye { extra: 3_i64 }; return g.Rank(); }
+i64 SwappedRank(bool c) { Greeter g = c ? Bye { extra: 5_i64 } : Hello {}; return g.Rank(); }
+i64 MatchedRank(Which w) {
+    Greeter g = match w { Which::First => Bye { extra: 4_i64 }, Which::Second => Hello {}, };
+    return g.Rank();
+}
+i64 BlockRank(bool c) { Greeter g = { c ? Bye { extra: 6_i64 } : Hello {}; }; return g.Rank(); }
+i64 LambdaRank(bool c) {
+    Greeter() make = () => c ? Hello {} : Bye { extra: 7_i64 };
+    Greeter g = make();
+    return g.Rank();
+}
 Greeter Pick(bool first) { if first { return Hello {}; } return Bye { extra: 5_i64 }; }
 i64 Sum(Greeter[] all) {
     mut i64 total = 0_i64;
@@ -58,5 +72,10 @@ pub i64 RunContractDispatch() {
         if read.greeter.Rank() != read.tag { return 8_i64; }
         i = i + 1_i64;
     }
+    if ConditionalRank(true) != 1_i64 || ConditionalRank(false) != 13_i64 { return 9_i64; }
+    if SwappedRank(true) != 15_i64 || SwappedRank(false) != 1_i64 { return 10_i64; }
+    if MatchedRank(Which::First) != 14_i64 || MatchedRank(Which::Second) != 1_i64 { return 11_i64; }
+    if BlockRank(true) != 16_i64 || BlockRank(false) != 1_i64 { return 12_i64; }
+    if LambdaRank(true) != 1_i64 || LambdaRank(false) != 17_i64 { return 13_i64; }
     return 42_i64;
 }
