@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Runtime and host composition (second review)
+
+- `Hub.WaitReceive` over members that are all closed returns `HubError::Closed(member)`, naming the first closed member; in `Main` it trapped as a scheduler deadlock (code 7), and a fiber parked forever.
+- `Main` keeps its open `with` scope across a wait that runs other fibers (`Receive`, `Join`, `Sleep`, `Lock`, ...). The scheduler overwrote and then cleared Main's scope words, so leaving the scope afterwards trapped.
+- A `dispose` hook that calls `CommandLine.Exit` runs once; the exit no longer runs it a second time. An exit inside one `dispose` hook still runs the hooks after it.
+- `CommandLine.Exit` from a spawned fiber runs the `dispose` hooks of the scopes `Main` holds open, then the global `dispose` hooks.
+- A composition plan that does not bind to the lowered syntax is internal error E2105 at the declaration that did not bind (unit, node kind, span, match count), not E4041 "Invalid build request" without a location.
+- E1724: the same implementation registered twice for the same key in one host and scope (`single Clock; single Clock;`). Distinct implementations of one key stay allowed.
+- A held runtime mutex excludes other lockers: its state byte was compared with an enum value that never matched, so `Mutex.Lock` and `TryLock` took a held mutex.
+- The worker pool reads and writes its worker count only under its lock; a syscall made without a scheduler yields while it waits for its worker; a second root wait traps as an invariant failure; Windows `PATH` lookup tries a dotted bare name (`python3.11`) as written, then with `.exe`.
+- Known limitation: a `scoped` registration is created once per launch, not once per `with` activation.
+
 ### Corelib check
 
 - Every Corelib project passes `beskid check` on its own. A Corelib package checked directly from the installed (or `BESKID_CORELIB_ROOT`) bundle has Corelib identity, as it has as a dependency, so the compiler-issued Dynamic and serialization bridges no longer fail the C extern profile (T0903, T0904) and their compiler-referenced helpers are no longer unused (W2101). `Console/Hosting.bd` is a described Corelib service source, so its `__composition_exit` call is admitted (it was E1107).
