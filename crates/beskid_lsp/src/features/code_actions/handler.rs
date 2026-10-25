@@ -114,7 +114,7 @@ pub fn handle_code_actions(uri: &Uri, doc: &Document, params: &CodeActionParams)
 
     if !project_manifest::is_manifest_uri(uri) {
         if let Some(edits) =
-            formatting::handler::handle_document_formatting(&doc.text).filter(|edits| !edits.is_empty())
+            formatting::handler::handle_document_formatting(&doc.text).ok().filter(|edits| !edits.is_empty())
         {
             let mut changes = HashMap::new();
             changes.insert(uri.clone(), edits);

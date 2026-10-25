@@ -477,14 +477,39 @@ impl LanguageServer for Backend {
         let Some(text) = formatting::open_texts::open_text(&params.text_document.uri) else {
             return Ok(None);
         };
-        Ok(formatting::handler::handle_document_formatting(&text))
+        Ok(self.formatting_result(&params.text_document.uri, formatting::handler::handle_document_formatting(&text)).await)
     }
 
     async fn range_formatting(&self, params: DocumentRangeFormattingParams) -> Result<Option<Vec<TextEdit>>> {
         let Some(text) = formatting::open_texts::open_text(&params.text_document.uri) else {
             return Ok(None);
         };
-        Ok(formatting::handler::handle_range_formatting(&text, params.range))
+        Ok(self
+            .formatting_result(&params.text_document.uri, formatting::handler::handle_range_formatting(&text, params.range))
+            .await)
+    }
+}
+
+impl Backend {
+    /// The edits of a formatting request, or no edits with the refusal reason sent to the client.
+    async fn formatting_result(
+        &self,
+        uri: &Uri,
+        result: std::result::Result<Vec<TextEdit>, beskid_analysis::format::FormatError>,
+    ) -> Option<Vec<TextEdit>> {
+        match result {
+            Ok(edits) => Some(edits),
+            Err(error) => {
+                let document = uri_to_path(uri).map_or_else(|| uri.as_str().to_string(), |path| path.display().to_string());
+                let (kind, message) = formatting::handler::refusal_message(&document, &error);
+                let filter = *self.log_filter.read().await;
+                client_log(&self.client, filter, kind, message.clone()).await;
+                if kind == MessageType::WARNING {
+                    self.client.show_message(kind, message).await;
+                }
+                None
+            }
+        }
     }
 }
 
