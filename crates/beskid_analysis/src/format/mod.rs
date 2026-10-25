@@ -7,7 +7,6 @@ mod emit;
 mod expressions_emit;
 mod items;
 mod lines;
-mod naming_normalize;
 mod policy;
 mod source;
 mod statements_emit;

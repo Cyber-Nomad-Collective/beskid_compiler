@@ -1,0 +1,23 @@
+// Names that do not follow the naming style are kept: the formatter never renames.
+type point_2d
+{
+    i32 x_pos;
+    i32 y_pos;
+}
+
+i32 add_one(i32 the_value)
+{
+    let my_value = the_value + 1;
+    return my_value;
+}
+
+i32 sum_x(point_2d p)
+{
+    return p.x_pos + add_one(p.y_pos);
+}
+
+test adds_one_to_zero
+{
+    let one_more = add_one(0);
+    return;
+}

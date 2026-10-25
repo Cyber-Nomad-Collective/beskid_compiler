@@ -256,9 +256,9 @@ fn fields_and_methods_are_separated_and_methods_stand_apart() {
 #[test]
 fn statements_keep_the_author_grouping_in_functions_and_tests() {
     let source = "test checks_values {\n    Testing.Assert.Equal(1, 1);\n    Testing.Assert.Equal(2, 2);\n    Testing.Assert.Equal(3, 3);\n\n\n    Testing.Assert.Equal(4, 4);\n}\n";
-    // Test names are written in PascalCase (W1637); the formatter applies the naming style.
+    // The formatter never renames: the naming-style lint (W1637) reports the test name instead.
     let expected = concat!(
-        "test ChecksValues\n",
+        "test checks_values\n",
         "{\n",
         "    Testing.Assert.Equal(1, 1);\n",
         "    Testing.Assert.Equal(2, 2);\n",
@@ -346,10 +346,14 @@ fn token_check_rejects_code_changes() {
     let before = code_tokens("a + b", &[], &[]);
     let after = code_tokens("a - b", &[], &[]);
     assert!(first_difference(&before, &after).is_some());
-    let renamed = code_tokens("if (bad_name) { F(x,); }", &[], &[]);
-    assert_eq!(first_difference(&renamed, &code_tokens("if (BadName) { F(x); }", &[], &[])), None);
+    let written = code_tokens("if (bad_name) { F(x,); }", &[], &[]);
+    assert_eq!(first_difference(&written, &code_tokens("if (bad_name) { F(x); }", &[], &[])), None);
+    let renamed = code_tokens("if (BadName) { F(x); }", &[], &[]);
+    assert!(first_difference(&written, &renamed).is_some(), "a renamed identifier is a code change");
+    let respelled = code_tokens("if (badname) { F(x); }", &[], &[]);
+    assert!(first_difference(&written, &respelled).is_some(), "a dropped underscore is a code change");
     let more_arguments = code_tokens("if (bad_name) { F(x, y); }", &[], &[]);
-    assert!(first_difference(&renamed, &more_arguments).is_some(), "an added argument is a code change");
+    assert!(first_difference(&written, &more_arguments).is_some(), "an added argument is a code change");
     let lowered = code_tokens("\"a \" + b", &[], &[]);
     let written = code_tokens("\"a ${b}\"", &[], &[]);
     assert!(first_difference(&written, &lowered).is_some(), "lowered interpolation is a code change");

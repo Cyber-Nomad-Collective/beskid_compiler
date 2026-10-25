@@ -7,7 +7,6 @@
 use crate::analysis::diagnostic_codes::{internal as internal_codes, parse as parse_codes};
 use crate::analysis::diagnostics::{SemanticDiagnostic, Severity, make_diagnostic};
 use crate::format::emit::{Emit, EmitCtx, EmitError};
-use crate::format::naming_normalize::normalize_program_naming;
 use crate::format::tokens::{self, OpaqueToken};
 use crate::format::trivia::{self, Comment};
 use crate::parser::{BeskidParser, Rule};
@@ -178,10 +177,9 @@ pub fn format_source(source_name: &str, source: &str) -> Result<String, FormatEr
 /// Print a program that has no source text, such as items a Mod generated.
 ///
 /// Source text, and so comments, do not exist for such a program. Never use this for a parsed
-/// file: [`format_source`] is the only function that keeps a file's comments.
+/// file: [`format_source`] is the only function that keeps a file's comments. Like
+/// [`format_source`], it never renames: identifiers are printed as the program spells them.
 pub fn format_generated_program(program: &Spanned<Program>) -> Result<String, EmitError> {
-    let mut program = program.clone();
-    normalize_program_naming(&mut program.node);
     let mut cx = EmitCtx::new();
     let mut out = String::new();
     program.node.emit(&mut out, &mut cx)?;
@@ -190,11 +188,10 @@ pub fn format_generated_program(program: &Spanned<Program>) -> Result<String, Em
 
 fn emit(
     source: &str,
-    mut program: Spanned<Program>,
+    program: Spanned<Program>,
     comments: Vec<Comment>,
     strings: Vec<(usize, usize)>,
 ) -> Result<String, EmitError> {
-    normalize_program_naming(&mut program.node);
     let mut cx = EmitCtx::with_source(source, comments, strings);
     let mut out = String::new();
     program.node.emit(&mut out, &mut cx)?;

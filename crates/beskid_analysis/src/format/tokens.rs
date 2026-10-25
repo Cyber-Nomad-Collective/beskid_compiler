@@ -2,8 +2,8 @@
 //!
 //! The input and the output are reduced to their code tokens (no whitespace, no comments, no
 //! documentation; comments and documentation have their own checks) and compared after the
-//! rewrites the house style rules allow:
-//! - identifier case and underscores (naming normalization: `bad_name` to `BadName`);
+//! rewrites the house style rules allow. Identifiers are compared exactly: the formatter never
+//! renames (the naming-style lint and its quick fix rename declarations together with their uses).
 //! - parentheses around `if`, `while` and `match` conditions;
 //! - trailing commas before `}`, `)` or `]` (the printer writes none in argument, parameter and
 //!   array lists, and one after every member of a braced list), and an optional `;` before `}`
@@ -79,8 +79,7 @@ pub(crate) fn code_tokens(source: &str, comments: &[Comment], opaque: &[OpaqueTo
                     break;
                 }
             }
-            // Naming normalization may change case and underscores, nothing else.
-            tokens.push(source[start..i].chars().filter(|c| *c != '_').flat_map(char::to_lowercase).collect());
+            tokens.push(source[start..i].to_string());
         } else {
             tokens.push(ch.to_string());
             i += ch.len_utf8();
@@ -128,7 +127,7 @@ fn normalize(mut tokens: Vec<String>) -> Vec<String> {
             && tokens[index + 2] == ")"
             && tokens[index + 3] == "="
             && tokens[index + 4] == ">"
-            && tokens[index + 1].chars().all(|c| c.is_alphanumeric())
+            && tokens[index + 1].chars().all(|c| c.is_alphanumeric() || c == '_')
         {
             tokens.remove(index + 2);
             tokens.remove(index);
