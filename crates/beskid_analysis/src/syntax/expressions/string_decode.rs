@@ -55,7 +55,7 @@ pub(crate) fn decode_char_literal_at(token: &str, offset: usize) -> Result<char,
             },
         )?;
     if !body.starts_with('\\') {
-        return body.chars().next().ok_or(ParseError::MissingPair { expected: Rule::CharLiteral });
+        return body.chars().next().ok_or(ParseError::MissingPair { expected: Rule::CharLiteral, span: None });
     }
     let span = SpanInfo { start: offset + 1, end: offset + 1 + body.len(), ..SpanInfo::default() };
     if body == "\\'" {
@@ -104,7 +104,7 @@ pub fn split_string_literal_parts(
         found: Rule::StringLiteralValue,
         span: literal_span,
     })?;
-    let root = pairs.next().ok_or(ParseError::MissingPair { expected: Rule::StringLiteralValue })?;
+    let root = pairs.next().ok_or(ParseError::MissingPair { expected: Rule::StringLiteralValue, span: None })?;
 
     let inner_offset = literal_span.start + 1;
 
@@ -137,7 +137,7 @@ fn parse_string_literal_pair(token: &str) -> Result<Pair<'_, Rule>, ParseError> 
         found: Rule::StringLiteral,
         span: SpanInfo::default(),
     })?;
-    let pair = pairs.next().ok_or(ParseError::MissingPair { expected: Rule::StringLiteral })?;
+    let pair = pairs.next().ok_or(ParseError::MissingPair { expected: Rule::StringLiteral, span: None })?;
     if pairs.next().is_some() {
         return Err(ParseError::UnexpectedRule {
             expected: None,
@@ -185,7 +185,7 @@ fn split_string_content_segment(
                 let expr = segment
                     .into_inner()
                     .next()
-                    .ok_or(ParseError::MissingPair { expected: Rule::InterpolationExpression })?;
+                    .ok_or(ParseError::MissingPair { expected: Rule::InterpolationExpression, span: None })?;
                 let expr_span = offset_span(SpanInfo::from_span(&expr.as_span()), inner_offset);
                 parts.push(StringLiteralPart::RuntimeInterpolation {
                     expression_source: expr.as_str().trim().to_string(),

@@ -4,7 +4,7 @@ use crate::doc::{LeadingDocComment, leading_doc_from_doc_run};
 use crate::parser::Rule;
 use crate::parsing::error::ParseError;
 use crate::parsing::parsable::Parsable;
-use crate::syntax::{Node, Spanned};
+use crate::syntax::{Node, SpanInfo, Spanned};
 
 /// Parses `ItemWithDocs` pairs into nodes and parallel leading-doc slots.
 pub fn parse_doc_attached_items<'i, I>(
@@ -31,7 +31,8 @@ where
             (None, first)
         };
 
-        items.push(Node::parse(item_pair)?);
+        let item_span = SpanInfo::from_span(&item_pair.as_span());
+        items.push(Node::parse(item_pair).map_err(|error| error.located(item_span))?);
         leading_docs.push(doc_opt);
     }
 

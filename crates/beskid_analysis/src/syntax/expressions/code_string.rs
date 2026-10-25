@@ -59,7 +59,7 @@ pub fn parse_plain_code_body(source: &str) -> Result<Vec<CodeStringSegment>, Par
         found: Rule::CodePlainBody,
         span: SpanInfo::default(),
     })?;
-    let root = pairs.next().ok_or(ParseError::MissingPair { expected: Rule::CodePlainBody })?;
+    let root = pairs.next().ok_or(ParseError::MissingPair { expected: Rule::CodePlainBody, span: None })?;
 
     let mut segments = Vec::new();
     for child in root.into_inner() {
