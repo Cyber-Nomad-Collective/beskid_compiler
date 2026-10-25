@@ -277,6 +277,8 @@ pub fn assemble_program_with_materializer(
 
     let project_root_for_pool = project_root.clone();
     let salsa_build = materializer.as_ref().map(|build| build.as_ref() as _);
+    let shared_corelib_root =
+        crate::projects::workflow::SharedCorelib::resolve().map(|shared| shared.root().to_path_buf());
     let build_total = build_inputs.len() as u64;
     let build_done = AtomicU64::new(0);
     let discovery_elapsed = assembly_started.elapsed();
@@ -297,7 +299,8 @@ pub fn assemble_program_with_materializer(
                 );
                 let _unit_guard = unit_span.enter();
 
-                let builder = UnitBuilder::new(&project_root_for_pool);
+                let builder =
+                    UnitBuilder::new(&project_root_for_pool).with_shared_corelib(shared_corelib_root.clone());
                 let builder = if let Some(build) = salsa_build { builder.with_salsa_build(build) } else { builder };
                 let label = unit_progress_label(&input.path);
                 let result = match builder.build_unit(&input.path, &input.source, generation) {

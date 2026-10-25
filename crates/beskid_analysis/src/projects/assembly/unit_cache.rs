@@ -9,11 +9,18 @@ pub use beskid_artifacts::persistence::cache_root_for_project;
 
 static DISK_HITS: AtomicUsize = AtomicUsize::new(0);
 static DISK_MISSES: AtomicUsize = AtomicUsize::new(0);
+static SHARED_CORELIB_HITS: AtomicUsize = AtomicUsize::new(0);
 
 #[derive(Debug, Default, Clone, Copy)]
 pub struct UnitCacheStats {
     pub hits: usize,
     pub misses: usize,
+    /// Units of the shared Corelib reused from an assembly of another project in this process.
+    pub shared_corelib_hits: usize,
+}
+
+pub fn record_shared_corelib_hit() {
+    SHARED_CORELIB_HITS.fetch_add(1, Ordering::Relaxed);
 }
 
 pub fn record_disk_hit() {
@@ -25,7 +32,11 @@ pub fn record_disk_miss() {
 }
 
 pub fn disk_cache_stats() -> UnitCacheStats {
-    UnitCacheStats { hits: DISK_HITS.load(Ordering::Relaxed), misses: DISK_MISSES.load(Ordering::Relaxed) }
+    UnitCacheStats {
+        hits: DISK_HITS.load(Ordering::Relaxed),
+        misses: DISK_MISSES.load(Ordering::Relaxed),
+        shared_corelib_hits: SHARED_CORELIB_HITS.load(Ordering::Relaxed),
+    }
 }
 
 /// Legacy path-bound fingerprint (tests only); production uses [`unit_content_fingerprint`].
