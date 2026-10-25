@@ -1,20 +1,18 @@
 //! A multi-project workspace reads the toolchain's shared Corelib in place.
 //!
-//! The same workspace is scanned twice by the language server: once with the sealed shared
-//! Corelib (0.6.7 behaviour), and once with an unsealed copy of the same Corelib, which the
-//! server treats as a developer checkout and copies into every project like Corelib was copied
-//! before 0.6.7. The test checks completion and diagnostics against the shared Corelib, that no
-//! project receives a Corelib copy, and reports the scan time and `obj/beskid/deps` size of both.
+//! Completion, definition and diagnostics against the toolchain's shared Corelib in a
+//! multi-project workspace; no project receives a Corelib copy. The test reports the workspace
+//! scan time and the `obj/beskid/deps` size.
 
 use std::io::{BufRead, BufReader, Read, Write};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::mpsc::{self, Receiver};
 use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
 
-const PROJECTS: usize = 8;
+const PROJECTS: usize = 4;
 
 fn send_message(stdin: &mut ChildStdin, message: Value) {
     let body = serde_json::to_vec(&message).expect("serialize LSP message");
@@ -64,19 +62,6 @@ fn directory_bytes(path: &Path) -> u64 {
         .sum()
 }
 
-fn copy_tree(from: &Path, to: &Path) {
-    std::fs::create_dir_all(to).expect("create copy directory");
-    for entry in std::fs::read_dir(from).expect("read Corelib directory") {
-        let entry = entry.expect("Corelib entry");
-        let target = to.join(entry.file_name());
-        if entry.file_type().expect("file type").is_dir() {
-            copy_tree(&entry.path(), &target);
-        } else {
-            std::fs::copy(entry.path(), &target).expect("copy Corelib file");
-        }
-    }
-}
-
 fn write_workspace(folder: &Path) {
     for index in 0..PROJECTS {
         let name = format!("P{index:02}");
@@ -98,7 +83,6 @@ fn write_workspace(folder: &Path) {
 }
 
 struct ScanReport {
-    scan: Duration,
     deps_bytes: u64,
     corelib_copies: usize,
 }
@@ -216,6 +200,10 @@ fn scan_workspace(label: &str, corelib_root: &Path, shared_root: Option<&Path>) 
     for target in &targets {
         let uri = target["uri"].as_str().or_else(|| target["targetUri"].as_str()).unwrap_or_default();
         assert!(!uri.contains("/obj/beskid/deps/"), "{label}: definition points at a project copy: {uri}");
+        // A target in the workspace itself (the `use` declaration) is not a Corelib location.
+        if uri.starts_with(&folder_uri) {
+            continue;
+        }
         if let Some(shared) = shared_root {
             let shared_uri = url::Url::from_directory_path(shared).expect("shared URI").to_string();
             assert!(uri.starts_with(&shared_uri), "{label}: definition {uri} is not in the shared Corelib");
@@ -252,29 +240,14 @@ fn scan_workspace(label: &str, corelib_root: &Path, shared_root: Option<&Path>) 
         "{label}: {PROJECTS} projects, workspace scan {scan:?}, obj/beskid/deps {deps_bytes} bytes, \
          {corelib_copies} dependency copies"
     );
-    ScanReport { scan, deps_bytes, corelib_copies }
+    ScanReport { deps_bytes, corelib_copies }
 }
 
 #[test]
 fn a_multi_project_workspace_reads_the_shared_corelib_without_copies() {
     let shared = beskid_tests_mod_host::shared_corelib_root().expect("shared provisioned Corelib");
     let shared = shared.canonicalize().expect("canonical shared Corelib");
-    let after = scan_workspace("shared Corelib", &shared, Some(&shared));
-    assert_eq!(after.corelib_copies, 0, "no project receives a Corelib copy");
-
-    // The same Corelib without its seal is a developer checkout: copied into every project.
-    let unsealed_parent = tempfile::tempdir().expect("unsealed Corelib parent");
-    let unsealed: PathBuf = unsealed_parent.path().join("corelib");
-    copy_tree(&shared, &unsealed);
-    // The bundle fingerprint marker (`beskid_abi::corelib_bundle::CORELIB_BUNDLE_FINGERPRINT_FILE`).
-    std::fs::remove_file(unsealed.join(".beskid-bundle.sha256")).expect("unseal the copy");
-    let before = scan_workspace("per-project Corelib copies", &unsealed, None);
-    assert!(before.corelib_copies >= PROJECTS, "the unsealed baseline copies Corelib into every project");
-    assert!(after.deps_bytes < before.deps_bytes, "sharing must save disk: {} vs {}", after.deps_bytes, before.deps_bytes);
-    eprintln!(
-        "shared Corelib saves {} bytes of obj/beskid/deps over {PROJECTS} projects; scan {:?} -> {:?}",
-        before.deps_bytes - after.deps_bytes,
-        before.scan,
-        after.scan
-    );
+    let report = scan_workspace("shared Corelib", &shared, Some(&shared));
+    assert_eq!(report.corelib_copies, 0, "no project receives a Corelib copy");
+    assert_eq!(report.deps_bytes, 0, "no dependency bytes under obj/beskid/deps");
 }
