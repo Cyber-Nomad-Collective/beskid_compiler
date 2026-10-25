@@ -81,6 +81,13 @@ pub fn issue_diagnostic(
             )),
             DiscardedGrowthRepair::Bind { declaration: None, .. } => diagnostic,
         },
+        SemanticIssueKind::BorrowedParameterKept { parameter, move_at: Some(at), .. } if source.get(..*at).is_some() => {
+            diagnostic.with_fix(Fix::new(
+                format!("Declare `{parameter}` `move`"),
+                Applicability::MachineApplicable,
+                vec![FixEdit::insert(*at, "move ")],
+            ))
+        }
         SemanticIssueKind::UnusedPrivateItem { name, item, .. } => diagnostic.with_fix(Fix::replace(
             format!("Remove `{name}`"),
             whole_lines(source, *item),
@@ -365,5 +372,20 @@ mod tests {
         assert!(!unrelated.help().unwrap_or_default().contains("cast"));
         let numeric = SemanticIssueKind::TypeMismatch { expected_name: "i64".into(), actual_name: "i32".into() };
         assert_eq!(numeric.help().as_deref(), Some("convert the value with `i64(...)`"));
+    }
+
+    #[test]
+    fn a_kept_borrowed_parameter_offers_to_declare_it_move() {
+        let source = "unit Keep(Holder h, u8[] b) { h.buf = b; return; }";
+        let kind = SemanticIssueKind::BorrowedParameterKept {
+            name: "b".into(),
+            parameter: "b".into(),
+            move_at: Some(source.find("u8[] b").expect("parameter")),
+        };
+        let diagnostic = issue_diagnostic("Main.bd", source, span(source, "b;"), &kind);
+        assert_eq!(diagnostic.code.as_deref(), Some("E1241"));
+        assert_eq!(diagnostic.help.as_deref(), Some("copy it, or declare the parameter `move`"));
+        assert_eq!(diagnostic.fixes[0].applicability, Applicability::MachineApplicable);
+        assert_eq!(apply(source, &diagnostic), "unit Keep(Holder h, move u8[] b) { h.buf = b; return; }");
     }
 }

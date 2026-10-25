@@ -211,6 +211,10 @@ pub enum AffineFindingKind {
     /// `spawn` argument, or captured by an escaping lambda); `detail` is the type name and
     /// `related` the binding it reads.
     ScopeBorrowedEscapes,
+    /// E1241: a plain (not `move`) parameter of Moved class, or a local holding one, is stored,
+    /// constructed into a value, returned, or handed to a parameter that keeps it; `detail` is
+    /// the parameter's name, `related` its declaration and `fix_at` where `move ` goes.
+    BorrowedParameterKept,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
@@ -223,6 +227,9 @@ pub struct AffineFinding {
     pub related: Option<AstNodeKey>,
     /// The binding is a `Fiber` handle (projected into spawn legality).
     pub fiber: bool,
+    /// Byte offset of a source insertion that repairs the finding (`move ` before a parameter
+    /// type for [`AffineFindingKind::BorrowedParameterKept`]).
+    pub fix_at: Option<usize>,
 }
 
 /// Ownership classification of one binding of Moved class (or a `Fiber` handle).

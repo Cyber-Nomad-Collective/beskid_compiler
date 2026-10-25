@@ -43,6 +43,20 @@ struct Owner {
     assignments: Vec<(BranchPath, bool)>,
     /// Prior consumptions, in source order.
     consumed: Vec<Consumption>,
+    /// The name is a plain (not `move`) parameter whose value the caller still owns, or a local
+    /// that holds one: it may be read and passed on, but not kept (RB5 owner ruling).
+    kept_parameter: Option<BorrowedParameter>,
+}
+
+/// A plain parameter of Moved class that is not a `[CopyOnAssign]` value (that one is copied
+/// wherever it is kept). Storing it, returning it or handing it to a parameter that keeps it
+/// would give its value a second owner while the caller still owns it.
+#[derive(Clone)]
+struct BorrowedParameter {
+    declaration: AstNodeId,
+    name: String,
+    /// Where `move ` goes in the parameter declaration (the start of its type).
+    move_at: usize,
 }
 
 /// One consuming use: its branch path, its site, and the source ranges it does not reach.
@@ -301,6 +315,7 @@ impl<'a> Analysis<'a> {
             detail,
             related: related.map(|related| self.at(related)),
             fiber,
+            fix_at: None,
         });
     }
 
@@ -381,12 +396,45 @@ impl<'a> Analysis<'a> {
             .owners
             .insert(
                 declaration,
-                Owner { name, fiber, owning, aliased: false, assignments: Vec::new(), consumed: Vec::new() },
+                Owner {
+                    name,
+                    fiber,
+                    owning,
+                    aliased: false,
+                    assignments: Vec::new(),
+                    consumed: Vec::new(),
+                    kept_parameter: None,
+                },
             )
             .is_none()
         {
             self.order.push(declaration);
         }
+    }
+
+    /// The binding's declared type is `[CopyOnAssign]` (Corelib `List<T>`).
+    fn copy_on_assign_binding(&self, name: AstNodeId) -> bool {
+        generic_source_local_identity(self.db, self.program, self.index, self.at(name), name)
+            .is_ok_and(|identity| super::super::value_copy::is_copy_on_assign(self.db, self.at(name), &identity))
+    }
+
+    /// The owner a bare one-segment path expression `value` (inside `parent`) names.
+    fn bare_path_owner(
+        &self,
+        parent: AstNodeId,
+        value: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Expression>,
+    ) -> Option<AstNodeId> {
+        let node = normalized_expression_node(self.index, self.child(parent, DynNodeRef::from(value))?);
+        self.bare_path_owner_at(node)
+    }
+
+    fn bare_path_owner_at(&self, node: AstNodeId) -> Option<AstNodeId> {
+        let path = self.index.node_at(self.program, node)?.of::<beskid_analysis::syntax::PathExpression>()?;
+        if path.path.node.segments.len() != 1 {
+            return None;
+        }
+        let declaration = self.declaration_of(node, &path.path.node)?;
+        self.owners.contains_key(&declaration).then_some(declaration)
     }
 
     fn seed(&mut self) {
@@ -406,6 +454,8 @@ impl<'a> Analysis<'a> {
             self.this_declaration = Some(declaration);
             self.insert(declaration, "this".to_owned(), false, owning);
         }
+        let native_constructor = matches!(super::super::native_mod_syntax_constructor(db, key), Ok(Some(_)))
+            || matches!(super::super::native_mod_request_constructor(db, key), Ok(Some(_)));
         let mut declarations = Vec::new();
         for kind in [NodeKind::Parameter, NodeKind::LetStatement, NodeKind::LambdaParameter, NodeKind::ForStatement] {
             declarations.extend(
@@ -433,15 +483,43 @@ impl<'a> Analysis<'a> {
                     }
                     _ => {}
                 }
+                // A plain parameter of Moved class is lent by the caller (RB5). A `mut` parameter
+                // is the caller's own binding (the caller treats the call as keeping it), and a
+                // `bulk` parameter receives the array its call packs, so the callee owns it. The
+                // generated SDK constructors that native Mods call (`NativeFactories`,
+                // `NativeRequests`) keep their arguments by design: the native caller hands them
+                // over.
+                if !parameter.movable
+                    && !native_constructor
+                    && !parameter.mutable
+                    && !parameter.bulk
+                    && self.owners.contains_key(&name)
+                    && !self.copy_on_assign_binding(name)
+                {
+                    let kept = BorrowedParameter {
+                        declaration: name,
+                        name: parameter.name.node.name.clone(),
+                        move_at: parameter.ty.span.start,
+                    };
+                    if let Some(owner) = self.owners.get_mut(&name) {
+                        owner.kept_parameter = Some(kept);
+                    }
+                }
             } else if let Some(statement) = syntax.of::<beskid_analysis::syntax::LetStatement>() {
                 let Some(name) = self.child(node, DynNodeRef::from(&statement.name)) else { continue };
                 let class = match statement.type_annotation.as_ref() {
                     Some(annotation) => self.type_class(node, &annotation.node),
                     None => self.local_class(name),
                 };
+                let held = self.bare_path_owner(node, &statement.value).and_then(|source| {
+                    self.owners.get(&source).and_then(|owner| owner.kept_parameter.clone())
+                });
                 if class == Some(TransferClass::Moved) {
                     let owning = self.initializer_is_owned(node, &statement.value);
                     self.insert(name, statement.name.node.name.clone(), false, owning);
+                    if let Some(owner) = self.owners.get_mut(&name) {
+                        owner.kept_parameter = held;
+                    }
                 }
             } else if let Some(parameter) = syntax.of::<beskid_analysis::syntax::LambdaParameter>() {
                 let Some(name) = self.child(node, DynNodeRef::from(&parameter.name)) else { continue };
@@ -461,6 +539,8 @@ impl<'a> Analysis<'a> {
     /// of an assignment or of a literal element, or a capture by a lambda without `move`.
     fn mark_aliases(&mut self) {
         let mut aliased = Vec::new();
+        let mut held = Vec::new();
+        let mut copy_on_assign: HashMap<AstNodeId, bool> = HashMap::new();
         for node in self.index.ids_of_kind(NodeKind::PathExpression) {
             if !is_ancestor(self.index, self.key.node, node) {
                 continue;
@@ -479,8 +559,24 @@ impl<'a> Analysis<'a> {
             if self.owners.get(&declaration).is_none_or(|owner| owner.fiber) {
                 continue;
             }
-            let takes = match self.context(node) {
+            // A `[CopyOnAssign]` value (Corelib `List<T>`) gives every new name a copy, so no use
+            // makes another name for the value itself.
+            if *copy_on_assign.entry(declaration).or_insert_with(|| self.copy_on_assign_binding(declaration)) {
+                continue;
+            }
+            let context = self.context(node);
+            if let UseContext::AssignValue { target_is_local: true } = context
+                && let Some(target) = self.assigned_local(node)
+                && let Some(kept) = self.owners.get(&declaration).and_then(|owner| owner.kept_parameter.clone())
+            {
+                held.push((target, kept));
+            }
+            let takes = match context {
                 UseContext::LetValue(_) | UseContext::AssignValue { .. } | UseContext::Construction => true,
+                // The callee may keep the value: another name holds it after the call.
+                UseContext::Argument(call, position) => {
+                    self.keeping_argument(call, position) || self.shared_argument(call, position)
+                }
                 UseContext::Move(_) => false,
                 // A capture by a `[Captures]`-bounded lambda is itself a crossing operand
                 // (judged in `legality/captures.rs`); any other closure keeps a name.
@@ -498,6 +594,22 @@ impl<'a> Analysis<'a> {
                 owner.aliased = true;
             }
         }
+        // `y = b` makes the local `y` hold the borrowed parameter `b` (flow-insensitive).
+        for (target, kept) in held {
+            if let Some(owner) = self.owners.get_mut(&target)
+                && owner.kept_parameter.is_none()
+            {
+                owner.kept_parameter = Some(kept);
+            }
+        }
+    }
+
+    /// The local owner an assignment whose value is the use `node` writes (`y = b`).
+    fn assigned_local(&self, node: AstNodeId) -> Option<AstNodeId> {
+        let assignment = self.enclosing_assignment(node)?;
+        let syntax = self.index.node_at(self.program, assignment)?.of::<beskid_analysis::syntax::AssignExpression>()?;
+        let target = normalized_expression_node(self.index, self.child(assignment, DynNodeRef::from(syntax.target.as_ref()))?);
+        self.bare_path_owner_at(target)
     }
 
     fn identifier_name(&self, node: AstNodeId) -> String {
@@ -515,7 +627,12 @@ impl<'a> Analysis<'a> {
         statement: AstNodeId,
         value: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Expression>,
     ) -> bool {
-        let Some(mut node) = self.child(statement, DynNodeRef::from(value)) else { return false };
+        self.child(statement, DynNodeRef::from(value)).is_some_and(|node| self.owned_expression(node))
+    }
+
+    /// See [`Self::initializer_is_owned`]; `r?` takes the payload out of an owned result
+    /// (`u8[] bytes = Read(f)?`).
+    fn owned_expression(&self, mut node: AstNodeId) -> bool {
         while matches!(self.index.kind(node), Some(NodeKind::Expression | NodeKind::GroupedExpression)) {
             let Some(child) = self.index.children(node).and_then(|children| children.first()).copied() else {
                 break;
@@ -524,6 +641,11 @@ impl<'a> Analysis<'a> {
         }
         match self.index.kind(node) {
             Some(NodeKind::IndexExpression | NodeKind::MemberExpression) => self.projection_of_temporary(node),
+            Some(NodeKind::TryExpression) => self
+                .index
+                .children(node)
+                .and_then(|children| children.first())
+                .is_some_and(|operand| self.owned_expression(*operand)),
             Some(
                 NodeKind::CallExpression
                 | NodeKind::LiteralExpression
@@ -807,10 +929,14 @@ impl<'a> Analysis<'a> {
     /// A lambda literal passed to a `[Captures]` parameter or initializing a `[Captures]` field.
     fn lambda_is_bounded(&self, lambda: AstNodeId) -> bool {
         match self.context(lambda) {
-            // The body of `__isolate_spawn` runs on another isolate, like a bounded task body.
+            // The body of `__isolate_spawn` (and of `__isolate_spawn_local`, the same task run on
+            // the scope's isolate pool) runs as a task, like a bounded task body.
             UseContext::Argument(call, position) => {
                 call_argument_captures_bound(self.db, self.at(call), position).is_some()
-                    || self.callee_spelling(call).as_deref() == Some("__isolate_spawn")
+                    || matches!(
+                        self.callee_spelling(call).as_deref(),
+                        Some("__isolate_spawn" | "__isolate_spawn_local")
+                    )
             }
             UseContext::Construction => self.literal_field_bound(lambda),
             _ => false,
@@ -1037,6 +1163,31 @@ impl<'a> Analysis<'a> {
         }
     }
 
+    /// `move x.f` whose root is not a tracked owner (a root of a class other than Moved): E1243
+    /// when the field type has no canonical empty value, which the build could not lower.
+    fn judge_untracked_destructive_read(
+        &mut self,
+        node: AstNodeId,
+        operand: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Expression>,
+        place: &str,
+    ) {
+        let Some(operand) = self.child(node, DynNodeRef::from(operand)) else { return };
+        let operand = normalized_expression_node(self.index, operand);
+        if let Ok(identity) = generic_source_expression_identity(self.db, self.at(operand))
+            && canonical_empty(&identity).is_none()
+        {
+            let field = place.rsplit('.').next().unwrap_or(place).to_owned();
+            self.push(
+                AffineFindingKind::DestructiveReadWithoutEmpty,
+                node,
+                &field,
+                Some(identity_spelling(&identity)),
+                None,
+                false,
+            );
+        }
+    }
+
     /// The class of a binding of this callable: its declared parameter type or its local identity.
     fn declaration_class(&self, declaration: AstNodeId) -> Option<TransferClass> {
         let parent = parent_node(self.index, declaration)?;
@@ -1061,6 +1212,19 @@ impl<'a> Analysis<'a> {
         let crossing = self.lambda_crossing(node, declaration);
         let Some(owner) = self.owners.get(&declaration) else { return };
         let (name, fiber, owning) = (owner.name.clone(), owner.fiber, self.owning_at(owner, &branches));
+        let kept = owner.kept_parameter.clone();
+        // A plain parameter (or a local that holds one) is lent by its caller: storing it,
+        // returning it or handing it to a parameter that keeps it would give its value a second
+        // owner (E1241, "declare the parameter `move`").
+        if let Some(kept) = kept
+            && !explicit
+            && segments.len() == 1
+            && crossing == LambdaCrossing::None
+            && self.keeps_value(node, destination)
+        {
+            self.push_kept(node, &name, &kept);
+            return;
+        }
         if fiber {
             self.visit_fiber_use(
                 node,
@@ -1147,62 +1311,102 @@ impl<'a> Analysis<'a> {
         self.consume(declaration, site, &name, branches, &loops);
     }
 
-    /// Whether a use in `context` is the value handed to another isolate by a port send: the
-    /// payload of `__port_send`, or the `move` parameter of the corelib `Port.Send`.
-    fn crossing_argument(&self, context: UseContext) -> bool {
-        let UseContext::Argument(call, position) = context else { return false };
-        if self.callee_spelling(call).as_deref() == Some("__port_send") {
-            return position == 1;
+    /// Whether a use in `context` keeps the value beyond the call: a store into a field or an
+    /// element, a struct field, array element or enum payload of a construction, a returned
+    /// value, or an argument of a parameter that keeps it.
+    fn keeps_value(&self, node: AstNodeId, context: UseContext) -> bool {
+        match context {
+            UseContext::AssignValue { target_is_local: false } | UseContext::ReturnValue => true,
+            // A corelib `[ScopeBorrowed]` view keeps the borrow inside the scope that builds it
+            // (`affine_scope.rs` judges the view).
+            UseContext::Construction => !self.constructs_scope_borrowed_view(node),
+            UseContext::Argument(call, position) => self.keeping_argument(call, position),
+            _ => false,
         }
-        let Some(declaration) = direct_callee(self.db, self.at(call)) else { return false };
-        if !super::super::transfer::unit_in_core_module(self.db, declaration) {
+    }
+
+    /// An argument the callee keeps (call-site rule, RB5 owner ruling): the argument of a `move`
+    /// parameter of an ordinary call, or any argument of a `spawn` target call (the fiber runs
+    /// after the caller continues). The value handed over by a port send is judged as a crossing
+    /// instead.
+    fn keeping_argument(&self, call: AstNodeId, position: usize) -> bool {
+        if self.crossing_argument(UseContext::Argument(call, position)) {
             return false;
         }
-        let port_send = super::capture_bounds::with_declaration(self.db, declaration, |node| {
-            node.of::<beskid_analysis::syntax::MethodDefinition>().map(|method| method.name.node.name == "Send")
-        })
-        .unwrap_or(false)
-            && self.owner_type_name(declaration).as_deref() == Some("Port");
-        port_send
-            && declared_parameters(self.db, declaration)
-    /// `move x.f` whose root is not a tracked owner (a root of a class other than Moved): E1243
-    /// when the field type has no canonical empty value, which the build could not lower.
-    fn judge_untracked_destructive_read(
-        &mut self,
-        node: AstNodeId,
-        operand: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Expression>,
-        place: &str,
-    ) {
-        let Some(operand) = self.child(node, DynNodeRef::from(operand)) else { return };
-        let operand = normalized_expression_node(self.index, operand);
-        if let Ok(identity) = generic_source_expression_identity(self.db, self.at(operand))
-            && canonical_empty(&identity).is_none()
-        {
-            let field = place.rsplit('.').next().unwrap_or(place).to_owned();
-            self.push(
-                AffineFindingKind::DestructiveReadWithoutEmpty,
-                node,
-                &field,
-                Some(identity_spelling(&identity)),
-                None,
-                false,
-            );
+        // `exchange(place, value)` stores `value` in the place.
+        if self.spawn_target_call(call) || (position == 1 && self.exchange_call(call)) {
+            return true;
         }
+        direct_callee(self.db, self.at(call))
+            .and_then(|declaration| declared_parameters(self.db, declaration))
+            .and_then(|(parameters, _)| parameters.get(position).map(|parameter| parameter.node.movable))
+            .unwrap_or(false)
     }
 
-                .and_then(|(parameters, _)| parameters.get(position).map(|parameter| parameter.node.movable))
-                .unwrap_or(false)
+    /// The use `node` initializes a field of a struct literal of a corelib `[ScopeBorrowed]` type.
+    fn constructs_scope_borrowed_view(&self, node: AstNodeId) -> bool {
+        let mut child = node;
+        while let Some(parent) = parent_node(self.index, child) {
+            match self.index.kind(parent) {
+                Some(NodeKind::Expression | NodeKind::GroupedExpression) => child = parent,
+                Some(NodeKind::StructLiteralField) => {
+                    let Some(literal) = parent_node(self.index, parent) else { return false };
+                    return self
+                        .index
+                        .node_at(self.program, literal)
+                        .and_then(|node| node.of::<beskid_analysis::syntax::StructLiteralExpression>())
+                        .and_then(|syntax| resolve_type_declaration(self.db, self.at(literal), &syntax.path.node))
+                        .is_some_and(|declaration| super::super::transfer::corelib_scope_borrowed(self.db, declaration));
+                }
+                _ => return false,
+            }
+        }
+        false
     }
 
-    /// The name of the type declaration that holds the method `declaration`.
-    fn owner_type_name(&self, declaration: AstNodeKey) -> Option<String> {
-        let syntax = self.db.syntax_unit(declaration.unit).filter(|syntax| syntax.accepts_key(self.db, declaration))?;
-        let index = syntax.syntax_index(self.db);
-        let owner = nearest_ancestor(index, declaration.node, |kind| kind == NodeKind::TypeDefinition)?;
-        index
-            .node_at(syntax.expanded_program(self.db), owner)?
-            .of::<beskid_analysis::syntax::TypeDefinition>()
-            .map(|definition| definition.name.node.name.clone())
+    /// An argument of a `mut` parameter of a direct call: the callee shares the caller's binding
+    /// and may keep it, so after the call the binding is not the only name for its value.
+    fn shared_argument(&self, call: AstNodeId, position: usize) -> bool {
+        direct_callee(self.db, self.at(call))
+            .and_then(|declaration| declared_parameters(self.db, declaration))
+            .and_then(|(parameters, _)| parameters.get(position).map(|parameter| parameter.node.mutable))
+            .unwrap_or(false)
+    }
+
+    /// The call is the target of a `spawn` expression.
+    fn spawn_target_call(&self, call: AstNodeId) -> bool {
+        let mut child = call;
+        while let Some(parent) = parent_node(self.index, child) {
+            match self.index.kind(parent) {
+                Some(NodeKind::Expression | NodeKind::GroupedExpression) => child = parent,
+                Some(NodeKind::SpawnExpression) => return true,
+                _ => return false,
+            }
+        }
+        false
+    }
+
+    fn push_kept(&mut self, site: AstNodeId, name: &str, kept: &BorrowedParameter) {
+        let Some(span) = self.span(site) else { return };
+        if self.findings.iter().any(|finding| finding.kind == AffineFindingKind::BorrowedParameterKept && finding.site.node == site) {
+            return;
+        }
+        self.findings.push(AffineFinding {
+            kind: AffineFindingKind::BorrowedParameterKept,
+            site: self.at(site),
+            span,
+            name: name.to_owned(),
+            detail: Some(kept.name.clone()),
+            related: Some(self.at(kept.declaration)),
+            fiber: false,
+            fix_at: Some(kept.move_at),
+        });
+    }
+
+    /// Whether a use in `context` is the value handed to another isolate by a port send.
+    fn crossing_argument(&self, context: UseContext) -> bool {
+        let UseContext::Argument(call, position) = context else { return false };
+        port_send_argument(self.db, self.program, self.index, self.at(call), position)
     }
 
     /// A field or element read handed to a crossing (`out.Send(x.bytes)`, `out.Send(xs[i])`)
@@ -1405,6 +1609,53 @@ impl<'a> Analysis<'a> {
             }
         }
     }
+}
+
+/// Whether argument `position` of the call `call` is the value handed to another isolate by a
+/// port send: the payload of `__port_send`, or the `move` parameter of the corelib `Port.Send`
+/// (resolved through `direct_callee`, not by spelling alone).
+pub(in crate::semantic_contract) fn port_send_argument(
+    db: &dyn Db,
+    program: &Program,
+    index: &SyntaxIndex,
+    call: AstNodeKey,
+    position: usize,
+) -> bool {
+    let Some(call_node) =
+        index.node_at(program, call.node).and_then(|node| node.of::<beskid_analysis::syntax::CallExpression>())
+    else {
+        return false;
+    };
+    if let beskid_analysis::syntax::Expression::Path(path) = &call_node.callee.node
+        && let [segment] = path.node.path.node.segments.as_slice()
+        && segment.node.name.node.name == "__port_send"
+    {
+        return position == 1;
+    }
+    let Some(declaration) = direct_callee(db, call) else { return false };
+    if !super::super::transfer::unit_in_core_module(db, declaration) {
+        return false;
+    }
+    let port_send = super::capture_bounds::with_declaration(db, declaration, |node| {
+        node.of::<beskid_analysis::syntax::MethodDefinition>().map(|method| method.name.node.name == "Send")
+    })
+    .unwrap_or(false)
+        && owner_type_name(db, declaration).as_deref() == Some("Port");
+    port_send
+        && declared_parameters(db, declaration)
+            .and_then(|(parameters, _)| parameters.get(position).map(|parameter| parameter.node.movable))
+            .unwrap_or(false)
+}
+
+/// The name of the type declaration that holds the method `declaration`.
+fn owner_type_name(db: &dyn Db, declaration: AstNodeKey) -> Option<String> {
+    let syntax = db.syntax_unit(declaration.unit).filter(|syntax| syntax.accepts_key(db, declaration))?;
+    let index = syntax.syntax_index(db);
+    let owner = nearest_ancestor(index, declaration.node, |kind| kind == NodeKind::TypeDefinition)?;
+    index
+        .node_at(syntax.expanded_program(db), owner)?
+        .of::<beskid_analysis::syntax::TypeDefinition>()
+        .map(|definition| definition.name.node.name.clone())
 }
 
 /// The evaluation form of a `move` expression: a consumption, or a destructive field read with

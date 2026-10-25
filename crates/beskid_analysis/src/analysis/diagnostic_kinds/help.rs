@@ -392,6 +392,7 @@ impl SemanticIssueKind {
                 Some(format!("write `move {name}`"))
             }
             Self::CapturesArgumentNotLiteral => Some("pass the lambda literal".to_string()),
+            Self::BorrowedParameterKept { .. } => Some("copy it, or declare the parameter `move`".to_string()),
             Self::ScopeBorrowedEscapes { .. } => {
                 Some("use the value inside the scope that created it: read it or pass it to a call".to_string())
             }

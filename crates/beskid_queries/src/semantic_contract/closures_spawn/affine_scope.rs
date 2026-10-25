@@ -8,7 +8,9 @@
 //! - it is stored: the value of an assignment to a field or an element, a field initializer of a
 //!   struct literal whose type is not itself `[ScopeBorrowed]`, an array literal element or an
 //!   enum constructor payload;
-//! - it is an argument of a `spawn` target call;
+//! - it is an argument of a `spawn` target call, or of a parameter that may keep it: a `move`
+//!   parameter, or a parameter whose type is a type parameter of the callee (a generic body
+//!   `Store<T>(T v)` cannot know that it holds a borrowed view);
 //! - an escaping lambda captures it. A lambda escapes when it is returned, is the value of an
 //!   assignment to a field or an element, is an array literal element or an enum constructor
 //!   payload, initializes a struct literal field without a `[Captures]` bound, or is the operand
@@ -27,7 +29,7 @@ use super::super::transfer::corelib_scope_borrowed;
 use super::super::*;
 use super::affine::expression_spelling;
 use super::affine_ownership::containing_fiber_callable;
-use super::capture_bounds::{field_captures_bound, with_declaration};
+use super::capture_bounds::{declared_parameters, direct_callee, field_captures_bound, with_declaration};
 
 type Program = beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>;
 
@@ -52,8 +54,33 @@ pub(super) fn scope_borrowed_findings(
     let mut check = ScopeCheck { db, program, index, key, findings: Vec::new() };
     check.values();
     check.spawn_arguments();
+    check.kept_arguments();
     check.captures();
     check.findings
+}
+
+/// The type parameters a callable's parameter types may name: its own and those of the type
+/// that declares it.
+fn callee_type_parameters(db: &dyn Db, declaration: AstNodeKey) -> Vec<String> {
+    let mut names = with_declaration(db, declaration, |node| {
+        if let Some(function) = node.of::<beskid_analysis::syntax::FunctionDefinition>() {
+            return Some(function.generics.iter().map(|generic| generic.node.name.clone()).collect::<Vec<_>>());
+        }
+        node.of::<beskid_analysis::syntax::MethodDefinition>()
+            .map(|method| method.generics.iter().map(|generic| generic.node.name.clone()).collect::<Vec<_>>())
+    })
+    .unwrap_or_default();
+    if let Some(syntax) = db.syntax_unit(declaration.unit).filter(|syntax| syntax.accepts_key(db, declaration)) {
+        let index = syntax.syntax_index(db);
+        if let Some(owner) = nearest_ancestor(index, declaration.node, |kind| kind == NodeKind::TypeDefinition)
+            && let Some(definition) = index
+                .node_at(syntax.expanded_program(db), owner)
+                .and_then(|node| node.of::<beskid_analysis::syntax::TypeDefinition>())
+        {
+            names.extend(definition.generics.iter().map(|generic| generic.node.name.clone()));
+        }
+    }
+    names
 }
 
 impl ScopeCheck<'_> {
@@ -82,6 +109,7 @@ impl ScopeCheck<'_> {
             detail: Some(type_name),
             related: related.map(|related| self.at(related)),
             fiber: false,
+            fix_at: None,
         });
     }
 
@@ -158,6 +186,40 @@ impl ScopeCheck<'_> {
             let Ok(Some(target)) = spawn_target(self.db, self.at(spawn)) else { continue };
             for argument in target.arguments.iter() {
                 let value = normalized_expression_node(self.index, argument.node);
+                if let Some((type_name, related)) = self.view_of_expression(value, ALIAS_DEPTH) {
+                    let name = self.spelling(value);
+                    self.push(value, name, type_name, related);
+                }
+            }
+        }
+    }
+
+    /// Arguments of a parameter that may keep its value: a `move` parameter, or one typed by a
+    /// type parameter of the callee (its generic body stores a `T` like any other value).
+    fn kept_arguments(&mut self) {
+        let calls =
+            self.index.ids_of_kind(NodeKind::CallExpression).filter(|node| self.owned_here(*node)).collect::<Vec<_>>();
+        for call in calls {
+            let Some(syntax) = self
+                .index
+                .node_at(self.program, call)
+                .and_then(|node| node.of::<beskid_analysis::syntax::CallExpression>())
+            else {
+                continue;
+            };
+            let Some(declaration) = direct_callee(self.db, self.at(call)) else { continue };
+            let Some((parameters, _)) = declared_parameters(self.db, declaration) else { continue };
+            let generics = callee_type_parameters(self.db, declaration);
+            for (position, argument) in syntax.args.iter().enumerate() {
+                let Some(parameter) = parameters.get(position) else { continue };
+                let generic = matches!(&parameter.node.ty.node, beskid_analysis::syntax::Type::Complex(path)
+                    if path.node.segments.len() == 1
+                        && generics.iter().any(|name| *name == path.node.segments[0].node.name.node.name));
+                if !parameter.node.movable && !generic {
+                    continue;
+                }
+                let Some(argument) = self.child(call, DynNodeRef::from(argument)) else { continue };
+                let value = normalized_expression_node(self.index, argument);
                 if let Some((type_name, related)) = self.view_of_expression(value, ALIAS_DEPTH) {
                     let name = self.spelling(value);
                     self.push(value, name, type_name, related);
