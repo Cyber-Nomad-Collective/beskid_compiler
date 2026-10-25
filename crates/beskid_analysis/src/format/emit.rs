@@ -180,9 +180,10 @@ impl EmitCtx {
         while pending.comments.get(inner_end).is_some_and(|c| c.start < end) {
             inner_end += 1;
         }
-        let trailing = pending.comments.get(inner_end).is_some_and(|c| {
-            c.start >= end && trivia::is_same_line_gap(&pending.source[end..c.start])
-        });
+        let trailing = pending
+            .comments
+            .get(inner_end)
+            .is_some_and(|c| c.start >= end && trivia::is_same_line_gap(&pending.source[end..c.start]));
         let last = if trailing { inner_end + 1 } else { inner_end };
         self.last_end = end;
         if first == last {
@@ -288,4 +289,3 @@ impl Emitter {
         Ok(s)
     }
 }
-

@@ -377,8 +377,14 @@ fn move066_01_move_and_exchange_run_and_use_after_move_is_e1234() {
     assert_eq!(ran.status.code(), Some(0), "exchange swaps the buffers:\n{}", transcript(&ran));
 
     let manifest = write_app(&home.work(), "UseAfterMove", USE_AFTER_MOVE_PROGRAM);
-    let checked =
-        cli.run(cli.command(&home).args(["check", "--json", "--plain", "--offline", "--project", path_text(&manifest)]));
+    let checked = cli.run(cli.command(&home).args([
+        "check",
+        "--json",
+        "--plain",
+        "--offline",
+        "--project",
+        path_text(&manifest),
+    ]));
     assert!(!checked.status.success(), "a read after the send `move data` fails check:\n{}", transcript(&checked));
     let diagnostics = text(&checked.stdout)
         .lines()
@@ -387,14 +393,14 @@ fn move066_01_move_and_exchange_run_and_use_after_move_is_e1234() {
         .collect::<Vec<_>>();
     let read_line = USE_AFTER_MOVE_PROGRAM.lines().position(|line| line.contains("i64 second")).unwrap() + 1;
     let read_column = USE_AFTER_MOVE_PROGRAM.lines().nth(read_line - 1).unwrap().find("(data)").unwrap() + 2;
-    let use_after_move = diagnostics
-        .iter()
-        .filter(|diagnostic| diagnostic["code"] == "E1234")
-        .collect::<Vec<_>>();
+    let use_after_move = diagnostics.iter().filter(|diagnostic| diagnostic["code"] == "E1234").collect::<Vec<_>>();
     assert_eq!(use_after_move.len(), 1, "exactly one E1234 record:\n{diagnostics:#?}\n{}", transcript(&checked));
     let record = use_after_move[0];
     assert_eq!(record["severity"], "error", "{record:#}");
-    assert!(record["message"].as_str().is_some_and(|message| message.contains("data")), "names the moved binding: {record:#}");
+    assert!(
+        record["message"].as_str().is_some_and(|message| message.contains("data")),
+        "names the moved binding: {record:#}"
+    );
     assert_eq!(
         (&record["span"]["start"]["line"], &record["span"]["start"]["column"]),
         (&serde_json::json!(read_line), &serde_json::json!(read_column)),

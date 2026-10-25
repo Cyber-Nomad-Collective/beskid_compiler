@@ -14,7 +14,7 @@ pub fn runtime_managed_opaque_kind(db: &dyn Db, declaration: AstNodeKey) -> Opti
     if !input.accepts_key(db, declaration) {
         return None;
     }
-    if crate::canonical_corelib_source_path(db,declaration).as_deref()
+    if crate::canonical_corelib_source_path(db, declaration).as_deref()
         == Some(beskid_abi::runtime_source::CANONICAL_SERIALIZATION_DESCRIPTORS_SOURCE_PATH)
         && node_kind(db, declaration).ok().flatten()? == IndexedNodeKind::TypeDefinition
         && crate::corelib_source_authority::registered_declaration_name(db, declaration)?.as_str() == "ExtrasBinding"

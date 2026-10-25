@@ -6,7 +6,7 @@ use beskid_abi::abi_v5::TargetMetadata;
 use beskid_analysis::projects::{
     AssemblyRootSet, CompilePlan, ResolvedDependencyProject, Target, TargetKind, plan_entry_path,
 };
-use beskid_analysis::services::{FrontEndOptions, ExecutableFrontEnd, resolved_input_from_plan};
+use beskid_analysis::services::{ExecutableFrontEnd, FrontEndOptions, resolved_input_from_plan};
 use beskid_codegen::{CodegenArtifact, lower_prepared_syntax_library};
 use beskid_queries::{compile_mod_free_front_end, with_db};
 use cranelift_codegen::{isa, settings};

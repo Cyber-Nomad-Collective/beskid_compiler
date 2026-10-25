@@ -48,12 +48,22 @@ fn byte_node_and_depth_policies_are_aggregate() {
 #[test]
 fn adapters_abort_failed_output_and_validate_decoded_values() {
     use beskid_serialization::{Decoder, Encoder, Error, decode, encode};
-    struct Writer { aborted: bool }
+    struct Writer {
+        aborted: bool,
+    }
     impl Encoder for Writer {
-        fn begin(&mut self, _: &Limits) -> Result<(), Error> { Ok(()) }
-        fn write_value(&mut self, _: &DataValue) -> Result<(), Error> { Err(Error::Adapter("injected".into())) }
-        fn commit(&mut self) -> Result<Vec<u8>, Error> { panic!("failed value must never commit") }
-        fn abort(&mut self) { self.aborted = true; }
+        fn begin(&mut self, _: &Limits) -> Result<(), Error> {
+            Ok(())
+        }
+        fn write_value(&mut self, _: &DataValue) -> Result<(), Error> {
+            Err(Error::Adapter("injected".into()))
+        }
+        fn commit(&mut self) -> Result<Vec<u8>, Error> {
+            panic!("failed value must never commit")
+        }
+        fn abort(&mut self) {
+            self.aborted = true;
+        }
     }
     let mut writer = Writer { aborted: false };
     assert!(encode(&DataValue::Unit, &mut writer, &Limits::default()).is_err());

@@ -70,9 +70,14 @@ impl Fixture {
                 .unwrap(),
         );
         let mut db = BeskidDatabase::default();
-        let project =
-            project_session_for_planned_syntax_assembly(&mut db, &assembly, &plan, &path, "glue-extension-facts".into())
-                .unwrap();
+        let project = project_session_for_planned_syntax_assembly(
+            &mut db,
+            &assembly,
+            &plan,
+            &path,
+            "glue-extension-facts".into(),
+        )
+        .unwrap();
         build_typed_program(&mut db, project, assembly.generation, assembly.clone()).unwrap();
         let unit = SourceUnitId::new(&db, assembly.entry_unit().path.clone());
         Self { _root: root, db, unit, assembly }
@@ -190,7 +195,8 @@ fn records_take_their_layout_from_the_c_profile() {
     assert_eq!((shape.size, shape.alignment), (40, 8));
     assert_eq!(shape.fields[3].scalar.domain, ScalarDomain::Bool);
     assert_eq!(CAbiProfile.bind(&TypeShape::Record(shape)).view, CProfileView::Record { size: 40, alignment: 8 });
-    let text = glue_interop_signature(&glue_binding(&fixture.db, fixture.method("glue_text")).unwrap().unwrap()).unwrap();
+    let text =
+        glue_interop_signature(&glue_binding(&fixture.db, fixture.method("glue_text")).unwrap().unwrap()).unwrap();
     assert_eq!(text.parameters[0].call, CallShapeClass::View);
     assert_eq!(text.returns.ownership, OwnershipClass::Transfer);
 }
@@ -201,11 +207,23 @@ fn unadmitted_record_enum_and_callback_forms_are_rejected() {
         ("[GlueRecord] pub type Bad { string text; }", "Bad glue_bad(Bad value);", "GlueRecord field `text`"),
         ("[GlueRecord] pub type Bad { }", "Bad glue_bad(Bad value);", "1..=64 fields"),
         ("[GlueRecord] pub type Bad<T> { i64 value; }", "Bad<i64> glue_bad(Bad<i64> value);", "not generic"),
-        ("[GlueRecord] pub type Bad { i64 value; }\n[GlueRecord] pub type Outer { i64 v; }", "i64 glue_bad((Bad) => unit visit);", "records are not"),
-        ("[GlueEnum] pub enum Bad { None, Some(i64 value), }", "Bad glue_bad(Bad value);", "tagged variants are not admitted"),
+        (
+            "[GlueRecord] pub type Bad { i64 value; }\n[GlueRecord] pub type Outer { i64 v; }",
+            "i64 glue_bad((Bad) => unit visit);",
+            "records are not",
+        ),
+        (
+            "[GlueEnum] pub enum Bad { None, Some(i64 value), }",
+            "Bad glue_bad(Bad value);",
+            "tagged variants are not admitted",
+        ),
         ("pub enum Bad { A, B, }", "Bad glue_bad(Bad value);", "exactly one GlueEnum marker"),
         ("pub type Bad { i64 value; }", "Bad glue_bad(Bad value);", "GlueHandle brand or GlueRecord marker"),
-        ("[GlueRecord(Unknown:\"x\")] pub type Bad { i64 value; }", "Bad glue_bad(Bad value);", "unknown Glue metadata"),
+        (
+            "[GlueRecord(Unknown:\"x\")] pub type Bad { i64 value; }",
+            "Bad glue_bad(Bad value);",
+            "unknown Glue metadata",
+        ),
         ("", "(i64) => i64 glue_bad(i64 value);", "admitted only as import parameters"),
         ("", "i64 glue_bad((string) => unit visit);", "string is a view"),
         ("", "i64 glue_bad(((i64) => unit) => unit visit);", "admitted only as import parameters"),
@@ -218,7 +236,9 @@ fn unadmitted_record_enum_and_callback_forms_are_rejected() {
         let error = fixture.binding_error(fixture.method("glue_bad"));
         assert!(error.contains(expected), "`{method}`: `{error}` does not contain `{expected}`");
     }
-    let export = Fixture::new("[Export(Abi:\"C\", Symbol:\"beskid_visit\")]\npub i64 Visit((i64) => i64 visit) { return visit(1); }\n");
+    let export = Fixture::new(
+        "[Export(Abi:\"C\", Symbol:\"beskid_visit\")]\npub i64 Visit((i64) => i64 visit) { return visit(1); }\n",
+    );
     let error = export.binding_error(export.named(NodeKind::FunctionDefinition, "Visit"));
     assert!(error.contains("admitted only as import parameters"), "{error}");
 }
@@ -235,11 +255,15 @@ fn record_and_enum_owner_types_are_closed_placements() {
             "[GlueRecord(Library:\"glue_manual\")]\n[RustOwner(Path:\"implementation::P\", Fallible:true)]\npub type P { i64 x; }\n",
             "Fallible is not allowed on a GlueRecord type",
         ),
-        ("[GlueRecord]\n[RustOwner(Path:\"implementation::P\")]\npub type P { i64 x; }\n", "requires GlueRecord Library"),
+        (
+            "[GlueRecord]\n[RustOwner(Path:\"implementation::P\")]\npub type P { i64 x; }\n",
+            "requires GlueRecord Library",
+        ),
         ("[GlueEnum(Library:\"glue_manual\")]\n[RustOwner]\npub enum E { A, }\n", "requires Path"),
     ] {
         let fixture = Fixture::new(source);
-        let error = rust_owner_declarations(&fixture.db, fixture.unit).expect_err("placement must be rejected").to_string();
+        let error =
+            rust_owner_declarations(&fixture.db, fixture.unit).expect_err("placement must be rejected").to_string();
         assert!(error.contains(expected), "`{error}` does not contain `{expected}`");
     }
 }
@@ -256,6 +280,7 @@ fn owner_tables_require_owner_types_for_records_and_enums() {
         identity_sha256: "1".repeat(64),
         opaque: vec![],
     };
-    let error = rust_owner_tables(&fixture.db, "glue_manual", &[digest]).expect_err("record owner type required").to_string();
+    let error =
+        rust_owner_tables(&fixture.db, "glue_manual", &[digest]).expect_err("record owner type required").to_string();
     assert!(error.contains("GlueRecord type of a Rust glue owner requires RustOwner"), "{error}");
 }

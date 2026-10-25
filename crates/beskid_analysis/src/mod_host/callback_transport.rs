@@ -318,7 +318,8 @@ impl<'a> NativeSemanticSession<'a> {
                     }
                 }
                 if !nominal {
-                    return self.reply(request.sequence, "issued syntax reference is not a concrete nominal declaration");
+                    return self
+                        .reply(request.sequence, "issued syntax reference is not a concrete nominal declaration");
                 }
                 let declaration = ModSemanticDeclaration {
                     source_unit: reference.source_unit,
@@ -660,7 +661,10 @@ mod tests {
         // An unapplied generic is a semantic rejection of a valid reference: the Mod receives an
         // error reply and the invocation stays open for its next request.
         let output: serde_json::Value = serde_json::from_slice(&session.handle_frame(&frame).unwrap()).unwrap();
-        assert!(output["error"].as_str().is_some_and(|error| error.contains("requires template authority")), "{output}");
+        assert!(
+            output["error"].as_str().is_some_and(|error| error.contains("requires template authority")),
+            "{output}"
+        );
         assert!(output.get("handle").is_none());
         let frame = serde_json::to_vec(&serde_json::json!({"version":2,"invocation":session.invocation(),"sequence":3,
             "operation":{"kind":"ResolveSyntaxTemplate","reference":reference}}))
@@ -690,9 +694,10 @@ mod tests {
             assert!(session.handle_frame(&resolve(&session, invalid)).is_err());
         }
         let mut session = NativeSemanticSession::new(&authority).unwrap();
-        let output: serde_json::Value =
-            serde_json::from_slice(&session.handle_frame(&resolve(&session, serde_json::json!(["Defaults", "Make"]))).unwrap())
-                .unwrap();
+        let output: serde_json::Value = serde_json::from_slice(
+            &session.handle_frame(&resolve(&session, serde_json::json!(["Defaults", "Make"]))).unwrap(),
+        )
+        .unwrap();
         assert!(output["error"].as_str().is_some_and(|error| error.contains("cannot resolve")), "{output}");
         assert!(output.get("function").is_none());
         let frame = serde_json::to_vec(&serde_json::json!({"version":2,"invocation":session.invocation(),"sequence":2,

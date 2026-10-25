@@ -111,10 +111,9 @@ impl ModSemanticQueryAuthority<'_> {
             // Prefer the shortest visible route, then lexical order; no prefix is guessed.
             routes.sort_by(|a, b| a.len().cmp(&b.len()).then_with(|| a.cmp(b)));
             routes.dedup();
-            let segments = routes
-                .into_iter()
-                .next()
-                .ok_or_else(|| Self::error(&format!("canonical declaration `{selector}` has no caller-visible route")))?;
+            let segments = routes.into_iter().next().ok_or_else(|| {
+                Self::error(&format!("canonical declaration `{selector}` has no caller-visible route"))
+            })?;
             output.push(ModCanonicalPath { logical_name: selector.clone(), segments });
         }
         Ok(output)

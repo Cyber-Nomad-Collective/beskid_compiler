@@ -33,7 +33,8 @@ use beskid_analysis::syntax::{
 const NEEDS_TYPED_CONTEXT: &str =
     "a clif block needs a typed context: use it as a return value, a typed `let` initializer, or a call argument";
 /// Legacy `type_clif_block` detail when the context is not a CLIF scalar.
-const NOT_SCALAR_CONTEXT: &str = "a clif block must produce a scalar value (bool, char, integer, f64, word, or pointer)";
+const NOT_SCALAR_CONTEXT: &str =
+    "a clif block must produce a scalar value (bool, char, integer, f64, word, or pointer)";
 /// Legacy `check_clif_parameters` detail inside a lambda.
 const LAMBDA_PARAMETERS: &str = "clif blocks inside lambdas cannot name parameters with `%N`";
 
@@ -47,7 +48,10 @@ pub(super) fn collect_clif_obligations(
     for node in nodes_of_kind(index, key.node, NodeKind::ClifBlockExpression) {
         let site = AstNodeKey { node, ..key };
         let mut report = |detail: String| {
-            findings.push(GateObligation { kind: GateObligationKind::InvalidClifBlock { detail: Arc::from(detail) }, site });
+            findings.push(GateObligation {
+                kind: GateObligationKind::InvalidClifBlock { detail: Arc::from(detail) },
+                site,
+            });
         };
         let mode = match block_position(db, program, index, site) {
             BlockPosition::Statement => ClifBlockMode::Statement,
@@ -253,7 +257,8 @@ fn parameter_violations(
         match parameters.get(index) {
             Some(LegacyClifParameter::Receiver) => violations.push(receiver(index)),
             Some(LegacyClifParameter::Primitive(_) | LegacyClifParameter::OtherArray) => {
-                let allowed = CLIF_PAYLOAD_ELEMENT_TYPES.iter().map(|(name, _)| format!("{name}[]")).collect::<Vec<_>>();
+                let allowed =
+                    CLIF_PAYLOAD_ELEMENT_TYPES.iter().map(|(name, _)| format!("{name}[]")).collect::<Vec<_>>();
                 violations.push(format!("`payload`/`length` require a parameter of type {}", allowed.join(", ")));
             }
             Some(LegacyClifParameter::PayloadArray | LegacyClifParameter::Unproven) | None => {}

@@ -18,11 +18,20 @@ pub enum MatchPayloadPatternFact {
     Ignore,
     Unit,
     Binding(MatchArmBindingFact),
-    ScalarLiteral { expression: AstNodeKey, value_type: Type },
+    ScalarLiteral {
+        expression: AstNodeKey,
+        value_type: Type,
+    },
     /// A string literal compared to the matched `string` by content (`str_eq`).
-    StringLiteral { expression: AstNodeKey },
+    StringLiteral {
+        expression: AstNodeKey,
+    },
     Fields(Vec<MatchPayloadPatternFact>),
-    Enum { layout: EnumLayout, discriminant: u64, payload: Box<MatchPayloadPatternFact> },
+    Enum {
+        layout: EnumLayout,
+        discriminant: u64,
+        payload: Box<MatchPayloadPatternFact>,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -38,7 +47,12 @@ pub struct MatchArmFact {
 
 impl MatchArmFact {
     pub const fn variant(discriminant: u64, body: AstNodeKey) -> Self {
-        Self { discriminant: Some(discriminant), body, payload: MatchPayloadPatternFact::Fields(Vec::new()), guard: None }
+        Self {
+            discriminant: Some(discriminant),
+            body,
+            payload: MatchPayloadPatternFact::Fields(Vec::new()),
+            guard: None,
+        }
     }
 
     pub fn variant_with_binding(discriminant: u64, body: AstNodeKey, binding: Option<MatchArmBindingFact>) -> Self {

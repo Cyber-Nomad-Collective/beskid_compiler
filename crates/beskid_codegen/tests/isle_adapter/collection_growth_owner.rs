@@ -16,7 +16,8 @@ const GROW: &str = "beskid_rt_v5_array_grow_rooted";
 /// Lower every function of `source` against the canonical Corelib and return each emitted
 /// function's name with its CLIF text.
 fn lower(source: &str, generation: u64) -> Vec<(String, String)> {
-    let (input, isa, root) = canonical_corelib_project_fixture(&[("App/Growth.bd", source)], SyntaxGenerationId(generation));
+    let (input, isa, root) =
+        canonical_corelib_project_fixture(&[("App/Growth.bd", source)], SyntaxGenerationId(generation));
     let functions = find_function_definitions(input.database(), root);
     if let Err(findings) = beskid_queries::check_items(input.database(), &functions) {
         panic!("the repro checks clean: {findings:?}");

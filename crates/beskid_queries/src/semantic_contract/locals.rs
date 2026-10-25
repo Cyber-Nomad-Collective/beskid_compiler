@@ -36,9 +36,14 @@ pub(super) fn implicit_method_receiver_tracked(
                     beskid_analysis::syntax_query::DynNodeRef::from(call.callee.as_ref()),
                 )?;
                 (normalized_expression_node(index, callee) == key.node).then_some(())?;
-                return unqualified_enclosing_method_call(program, index, AstNodeKey { node: call_node, ..key }, &path.path.node)
-                    .filter(|(_, enclosing)| enclosing.node == method)
-                    .map(|(_, enclosing)| Ok(enclosing));
+                return unqualified_enclosing_method_call(
+                    program,
+                    index,
+                    AstNodeKey { node: call_node, ..key },
+                    &path.path.node,
+                )
+                .filter(|(_, enclosing)| enclosing.node == method)
+                .map(|(_, enclosing)| Ok(enclosing));
             }
             _ => return None,
         };

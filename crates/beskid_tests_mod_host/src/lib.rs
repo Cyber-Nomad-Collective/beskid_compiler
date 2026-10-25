@@ -146,9 +146,8 @@ fn stage_shared_corelib() -> Result<PathBuf> {
 /// `corelib_root` as its installed Corelib, so consumers must resolve the same root (set
 /// `BESKID_CORELIB_ROOT` to it). Runs once per root and process.
 pub fn provision_corelib_mods(corelib_root: &Path) -> Result<()> {
-    let root = corelib_root
-        .canonicalize()
-        .with_context(|| format!("resolve Corelib root {}", corelib_root.display()))?;
+    let root =
+        corelib_root.canonicalize().with_context(|| format!("resolve Corelib root {}", corelib_root.display()))?;
     let mut provisioned = PROVISIONED_CORELIBS.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     if provisioned.contains(&root) {
         return Ok(());
@@ -202,7 +201,10 @@ fn qualified_mod_host_for_input(
     // packages than an import closure), so it is decided on that same assembly.
     let manifests = beskid_analysis::mod_host::active_mod_manifests_for_input(resolved, front_end, false)?;
     provisioned_mod_host(&manifests, runtime, |cli| {
-        match ModHostSelection::explicit(cli)?.with_runtime_kit(runtime.clone()).mod_host_for_input(resolved, front_end)? {
+        match ModHostSelection::explicit(cli)?
+            .with_runtime_kit(runtime.clone())
+            .mod_host_for_input(resolved, front_end)?
+        {
             ModHost::NoMods => bail!("input {} activates no native Mod", resolved.source_path.display()),
             mod_host => Ok(mod_host),
         }
@@ -286,15 +288,12 @@ fn cached(cell: &'static OnceLock<Result<PathBuf, String>>, init: fn() -> Result
 /// Cargo places in `<target>/<profile>/deps`.
 fn harness_root() -> Result<PathBuf> {
     let executable = std::env::current_exe().context("locate the running test executable")?;
-    let deps = executable
-        .parent()
-        .filter(|directory| directory.file_name() == Some(OsStr::new("deps")))
-        .ok_or_else(|| {
+    let deps =
+        executable.parent().filter(|directory| directory.file_name() == Some(OsStr::new("deps"))).ok_or_else(|| {
             anyhow!("test executable {} is not inside a Cargo `<profile>/deps` directory", executable.display())
         })?;
-    let profile = deps
-        .parent()
-        .ok_or_else(|| anyhow!("Cargo deps directory {} has no profile directory", deps.display()))?;
+    let profile =
+        deps.parent().ok_or_else(|| anyhow!("Cargo deps directory {} has no profile directory", deps.display()))?;
     Ok(profile.join("beskid-test-mod-host"))
 }
 
@@ -348,7 +347,15 @@ fn locate_cli() -> Result<PathBuf> {
     // test run drives Mods through a CLI of the same profile.
     let output = Command::new(std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into()))
         .current_dir(&workspace)
-        .args(["build", "--locked", "-p", CLI_PACKAGE, "--bin", CLI_PACKAGE, "--message-format=json-render-diagnostics"])
+        .args([
+            "build",
+            "--locked",
+            "-p",
+            CLI_PACKAGE,
+            "--bin",
+            CLI_PACKAGE,
+            "--message-format=json-render-diagnostics",
+        ])
         .args(cargo_profile_args()?)
         .output()
         .context("invoke `cargo build -p beskid_cli`")?;
@@ -397,8 +404,8 @@ fn corelib_mod_manifests(corelib_root: &Path) -> Result<Vec<PathBuf>> {
 }
 
 fn is_mod_manifest(manifest_path: &Path) -> Result<bool> {
-    let manifest = load_manifest_from_path(manifest_path)
-        .map_err(|error| anyhow!("load {}: {error}", manifest_path.display()))?;
+    let manifest =
+        load_manifest_from_path(manifest_path).map_err(|error| anyhow!("load {}: {error}", manifest_path.display()))?;
     Ok(manifest.project.kind == ProjectKind::Mod)
 }
 
@@ -437,9 +444,7 @@ fn rebuild_mod(
     if let Some(corelib_root) = corelib_root {
         command.env(ENV_CORELIB_ROOT, corelib_root);
     }
-    let output = command
-        .output()
-        .with_context(|| format!("invoke `{} dev mod rebuild`", cli.display()))?;
+    let output = command.output().with_context(|| format!("invoke `{} dev mod rebuild`", cli.display()))?;
     if !output.status.success() {
         bail!(
             "provision native Mod {}\nstdout:\n{}\nstderr:\n{}",

@@ -707,23 +707,29 @@ mod numeric_range_help_tests {
 
     #[test]
     fn out_of_range_literal_names_the_value_the_type_and_its_range() {
-        let issue = SemanticIssueKind::NumericLiteralOutOfRange { value: "300".to_string(), primitive: "u8".to_string() };
+        let issue =
+            SemanticIssueKind::NumericLiteralOutOfRange { value: "300".to_string(), primitive: "u8".to_string() };
         assert_eq!(issue.code(), "T0905");
         assert_eq!(issue.message(), "`300` does not fit in `u8`");
         assert_eq!(issue.label(), "out of range for `u8`");
-        assert_eq!(issue.help().as_deref(), Some("`u8` holds values from 0 to 255; use a value in that range or a wider type"));
+        assert_eq!(
+            issue.help().as_deref(),
+            Some("`u8` holds values from 0 to 255; use a value in that range or a wider type")
+        );
     }
 
     #[test]
     fn negative_literal_at_an_unsigned_type_says_it_holds_no_negative_values() {
-        let issue = SemanticIssueKind::NumericLiteralOutOfRange { value: "-1".to_string(), primitive: "u32".to_string() };
+        let issue =
+            SemanticIssueKind::NumericLiteralOutOfRange { value: "-1".to_string(), primitive: "u32".to_string() };
         assert_eq!(issue.message(), "`-1` does not fit in `u32`");
         assert_eq!(issue.help().as_deref(), Some("`u32` holds no negative values; use a signed type such as `i64`"));
     }
 
     #[test]
     fn float_out_of_range_says_the_type_holds_finite_values() {
-        let issue = SemanticIssueKind::NumericLiteralOutOfRange { value: "1e40".to_string(), primitive: "f32".to_string() };
+        let issue =
+            SemanticIssueKind::NumericLiteralOutOfRange { value: "1e40".to_string(), primitive: "f32".to_string() };
         assert_eq!(issue.message(), "`1e40` does not fit in `f32`");
         assert_eq!(issue.help().as_deref(), Some("`f32` holds only finite values; use a smaller value or `f64`"));
     }

@@ -9,7 +9,7 @@ use beskid_analysis::projects::{
 use beskid_tests_support::{temp_case_dir, write_project_manifest as write_manifest};
 
 use super::fixture_harness::{enter_mod_host, mod_host_for};
-use super::{scoped_core_dependency_root, core_dependency_env_lock, test_cwd::with_cwd_at_workspace_root};
+use super::{core_dependency_env_lock, scoped_core_dependency_root, test_cwd::with_cwd_at_workspace_root};
 
 #[test]
 fn parses_template_type_and_nested_block() {

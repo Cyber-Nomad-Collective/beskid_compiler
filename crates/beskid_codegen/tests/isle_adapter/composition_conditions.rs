@@ -1,5 +1,6 @@
 use super::support::{
-    SyntaxModuleItem, find_function_definitions, find_node, find_nodes_of_kind, item_fixture_with_root, item_name, lower_syntax_program,
+    SyntaxModuleItem, find_function_definitions, find_node, find_nodes_of_kind, item_fixture_with_root, item_name,
+    lower_syntax_program,
 };
 
 #[test]
@@ -312,9 +313,9 @@ i32 Main() { launch AppHost(); with Request() { return 0; } }
 
 #[test]
 fn nested_composition_scope_facts_keep_the_frozen_parent_identity() {
-    use std::sync::Arc;
     use beskid_analysis::composition::{CompositionInput, resolve_composition};
     use beskid_isle::NodeFacts;
+    use std::sync::Arc;
 
     let source = r#"
 host AppHost() { scope Outer() { scope Inner() {} } }
@@ -330,9 +331,11 @@ i32 Main() { launch AppHost(); with Outer() { with Inner() {} } return 0; }
     let mut snapshot = result.snapshot;
     snapshot.source_unit_path = Some(root.unit.path(input.database()).to_path_buf());
     let generation = input.typed_program().generation;
-    let input = input.with_composition_authority(generation, Arc::new(result.plan), Arc::new(snapshot))
+    let input = input
+        .with_composition_authority(generation, Arc::new(result.plan), Arc::new(snapshot))
         .expect("attach exact authority");
-    let scopes = super::support::find_nodes_of_kind(input.database(), root, beskid_queries::IndexedNodeKind::WithStatement);
+    let scopes =
+        super::support::find_nodes_of_kind(input.database(), root, beskid_queries::IndexedNodeKind::WithStatement);
     assert_eq!(scopes.len(), 2);
     let facts = beskid_codegen::SyntaxNodeFacts::new(&input);
     let outer = facts.composition_scope(scopes[0]).expect("outer scope");
@@ -406,8 +409,8 @@ i32 Main() {
 
 #[test]
 fn failed_launch_branches_through_teardown_before_trapping() {
-    use std::sync::Arc;
     use beskid_analysis::composition::{CompositionInput, resolve_composition};
+    use std::sync::Arc;
 
     let source = "host AppHost() {} i32 Main() { launch AppHost(); return 0; }";
     let (input, isa, root) = item_fixture_with_root(source);
@@ -420,7 +423,8 @@ fn failed_launch_branches_through_teardown_before_trapping() {
     let mut snapshot = result.snapshot;
     snapshot.source_unit_path = Some(root.unit.path(input.database()).to_path_buf());
     let generation = input.typed_program().generation;
-    let input = input.with_composition_authority(generation, Arc::new(result.plan), Arc::new(snapshot))
+    let input = input
+        .with_composition_authority(generation, Arc::new(result.plan), Arc::new(snapshot))
         .expect("attach exact authority");
     let main = find_function_definitions(input.database(), root)
         .into_iter()
@@ -428,11 +432,19 @@ fn failed_launch_branches_through_teardown_before_trapping() {
         .expect("Main function");
     let artifact = lower_syntax_program(&input, isa.as_ref(), &[SyntaxModuleItem { key: main, symbol: "Main".into() }])
         .expect("validated launch lowers");
-    let clif = artifact.functions.iter().find(|function| function.name == "Main")
-        .expect("lowered Main").function.display().to_string();
+    let clif = artifact
+        .functions
+        .iter()
+        .find(|function| function.name == "Main")
+        .expect("lowered Main")
+        .function
+        .display()
+        .to_string();
     let (failed, active) = clif.split_once("trap user9").expect("failure path must trap after teardown");
     for symbol in ["composition_shutdown", "composition_container_drop"] {
-        let callees = clif.lines().filter(|line| line.contains(&format!("%{symbol}")))
+        let callees = clif
+            .lines()
+            .filter(|line| line.contains(&format!("%{symbol}")))
             .filter_map(|line| line.split_whitespace().next())
             .map(|callee| format!("call {callee}("))
             .collect::<Vec<_>>();
@@ -444,10 +456,11 @@ fn failed_launch_branches_through_teardown_before_trapping() {
 
 #[test]
 fn failed_slot_publication_and_object_allocation_branch_through_teardown() {
-    use std::sync::Arc;
     use beskid_analysis::composition::{CompositionInput, resolve_composition};
+    use std::sync::Arc;
 
-    let source = "type Logger {} host AppHost() { registry { single Logger; } } i32 Main() { launch AppHost(); return 0; }";
+    let source =
+        "type Logger {} host AppHost() { registry { single Logger; } } i32 Main() { launch AppHost(); return 0; }";
     let (input, isa, root) = item_fixture_with_root(source);
     let result = resolve_composition(CompositionInput {
         program: &input.typed_program().assembly.entry_unit().program,
@@ -458,7 +471,8 @@ fn failed_slot_publication_and_object_allocation_branch_through_teardown() {
     let mut snapshot = result.snapshot;
     snapshot.source_unit_path = Some(root.unit.path(input.database()).to_path_buf());
     let generation = input.typed_program().generation;
-    let input = input.with_composition_authority(generation, Arc::new(result.plan), Arc::new(snapshot))
+    let input = input
+        .with_composition_authority(generation, Arc::new(result.plan), Arc::new(snapshot))
         .expect("attach exact authority");
     let main = find_function_definitions(input.database(), root)
         .into_iter()
@@ -466,28 +480,51 @@ fn failed_slot_publication_and_object_allocation_branch_through_teardown() {
         .expect("Main function");
     let artifact = lower_syntax_program(&input, isa.as_ref(), &[SyntaxModuleItem { key: main, symbol: "Main".into() }])
         .expect("validated launch lowers");
-    let clif = artifact.functions.iter().find(|function| function.name == "Main")
-        .expect("lowered Main").function.display().to_string();
+    let clif = artifact
+        .functions
+        .iter()
+        .find(|function| function.name == "Main")
+        .expect("lowered Main")
+        .function
+        .display()
+        .to_string();
     assert!(clif.contains("%composition_slot_store"), "registration must publish its slot:\n{clif}");
     for symbol in ["composition_shutdown", "composition_container_drop"] {
-        let callees = clif.lines().filter(|line| line.contains(&format!("%{symbol}")))
+        let callees = clif
+            .lines()
+            .filter(|line| line.contains(&format!("%{symbol}")))
             .filter_map(|line| line.split_whitespace().next())
             .map(|callee| format!("call {callee}("))
             .collect::<Vec<_>>();
         let calls = callees.iter().map(|call| clif.matches(call).count()).sum::<usize>();
-        assert!(calls >= 4, "allocation failure, slot-store failure, launch failure, and normal exit each need {symbol}:\n{clif}");
+        assert!(
+            calls >= 4,
+            "allocation failure, slot-store failure, launch failure, and normal exit each need {symbol}:\n{clif}"
+        );
     }
 }
 
 #[test]
 fn structured_scope_exits_balance_return_break_and_continue() {
-    use std::sync::Arc;
     use beskid_analysis::composition::{CompositionInput, resolve_composition};
+    use std::sync::Arc;
 
     for (label, source, expected) in [
-        ("nested return", "host AppHost() { scope Outer() { scope Inner() {} } } i32 Main() { launch AppHost(); with Outer() { with Inner() { return 0; } } }", 2),
-        ("loop break", "host AppHost() { scope Outer() {} } i32 Main() { launch AppHost(); while true { with Outer() { break; } } return 0; }", 1),
-        ("loop continue", "host AppHost() { scope Outer() {} } i32 Main() { launch AppHost(); while true { with Outer() { continue; } } return 0; }", 1),
+        (
+            "nested return",
+            "host AppHost() { scope Outer() { scope Inner() {} } } i32 Main() { launch AppHost(); with Outer() { with Inner() { return 0; } } }",
+            2,
+        ),
+        (
+            "loop break",
+            "host AppHost() { scope Outer() {} } i32 Main() { launch AppHost(); while true { with Outer() { break; } } return 0; }",
+            1,
+        ),
+        (
+            "loop continue",
+            "host AppHost() { scope Outer() {} } i32 Main() { launch AppHost(); while true { with Outer() { continue; } } return 0; }",
+            1,
+        ),
     ] {
         let (input, isa, root) = item_fixture_with_root(source);
         let result = resolve_composition(CompositionInput {
@@ -499,18 +536,28 @@ fn structured_scope_exits_balance_return_break_and_continue() {
         let mut snapshot = result.snapshot;
         snapshot.source_unit_path = Some(root.unit.path(input.database()).to_path_buf());
         let generation = input.typed_program().generation;
-        let input = input.with_composition_authority(generation, Arc::new(result.plan), Arc::new(snapshot))
+        let input = input
+            .with_composition_authority(generation, Arc::new(result.plan), Arc::new(snapshot))
             .expect("attach exact authority");
         let main = find_function_definitions(input.database(), root)
             .into_iter()
             .find(|key| item_name(input.database(), *key).ok().flatten().as_deref() == Some("Main"))
             .expect("Main function");
-        let artifact = lower_syntax_program(&input, isa.as_ref(), &[SyntaxModuleItem { key: main, symbol: "Main".into() }])
-            .expect("structured composition exit lowers to verified CLIF");
-        let clif = artifact.functions.iter().find(|function| function.name == "Main")
-            .expect("lowered Main").function.display().to_string();
+        let artifact =
+            lower_syntax_program(&input, isa.as_ref(), &[SyntaxModuleItem { key: main, symbol: "Main".into() }])
+                .expect("structured composition exit lowers to verified CLIF");
+        let clif = artifact
+            .functions
+            .iter()
+            .find(|function| function.name == "Main")
+            .expect("lowered Main")
+            .function
+            .display()
+            .to_string();
         for symbol in ["composition_scope_enter", "composition_scope_leave"] {
-            let callees = clif.lines().filter(|line| line.contains(&format!("%{symbol}")))
+            let callees = clif
+                .lines()
+                .filter(|line| line.contains(&format!("%{symbol}")))
                 .filter_map(|line| line.split_whitespace().next())
                 .map(|callee| format!("call {callee}("))
                 .collect::<Vec<_>>();
@@ -564,11 +611,7 @@ i32 Main() { launch AppHost(); return 0; }
         .expect("attach frozen authority");
     let (bound_plan, bound_snapshot) = input.composition_authority().expect("bound composition authority");
     for registration in &bound_snapshot.registrations {
-        let site = beskid_queries::AstNodeKey {
-            unit: root.unit,
-            generation,
-            node: registration.source_node_id,
-        };
+        let site = beskid_queries::AstNodeKey { unit: root.unit, generation, node: registration.source_node_id };
         assert_eq!(
             beskid_queries::node_kind(input.database(), site).expect("registration node kind"),
             Some(beskid_queries::IndexedNodeKind::RegistryEntry),
@@ -586,8 +629,7 @@ i32 Main() { launch AppHost(); return 0; }
         .map(|entry| entry.field_node_id)
         .chain(bound_plan.plurals.iter().map(|entry| entry.field_node_id))
     {
-        let key =
-            beskid_queries::AstNodeKey { unit: root.unit, generation, node: field };
+        let key = beskid_queries::AstNodeKey { unit: root.unit, generation, node: field };
         assert!(
             beskid_queries::composition_injection_field(input.database(), key).expect("injection query").is_some(),
             "validated injection field must have an exact source key"
@@ -607,15 +649,19 @@ i32 Main() { launch AppHost(); return 0; }
         "registered services need exact managed allocation:\n{clif}"
     );
     for symbol in ["composition_shutdown", "composition_container_drop"] {
-        let callees = clif.lines().filter(|line| line.contains(&format!("%{symbol}")))
+        let callees = clif
+            .lines()
+            .filter(|line| line.contains(&format!("%{symbol}")))
             .filter_map(|line| line.split_whitespace().next())
             .map(|callee| format!("call {callee}("))
             .collect::<Vec<_>>();
         let calls = callees.iter().map(|call| clif.matches(call).count()).sum::<usize>();
         // Plural injection arrays are initialized without a barrier (0.6.2), so no barrier
         // failure path remains.
-        assert!(calls >= 7,
-            "both object and slot failures, plural allocation failure, launch failure, and normal exit need {symbol}:\n{clif}");
+        assert!(
+            calls >= 7,
+            "both object and slot failures, plural allocation failure, launch failure, and normal exit need {symbol}:\n{clif}"
+        );
         assert!(!clif.contains("beskid_rt_v5_array_write_barrier"), "no array barrier for injection arrays:\n{clif}");
     }
 }
@@ -747,7 +793,14 @@ i32 Main(bool early)
     let hooks = items.iter().map(|item| item.symbol.clone()).filter(|name| is_hook_item_name(name)).collect::<Vec<_>>();
     assert_eq!(hooks.len(), 4, "one generated function per hook: {hooks:?}");
     let artifact = lower_syntax_program(&input, isa.as_ref(), &items).expect("hook calls lower to verified CLIF");
-    let clif = artifact.functions.iter().find(|function| function.name == "Main").expect("lowered Main").function.display().to_string();
+    let clif = artifact
+        .functions
+        .iter()
+        .find(|function| function.name == "Main")
+        .expect("lowered Main")
+        .function
+        .display()
+        .to_string();
     let named = |kind: &str| {
         hooks
             .iter()
@@ -826,7 +879,8 @@ i32 Main()
         .with_composition_authority(generation, Arc::new(result.plan), Arc::new(snapshot))
         .expect("the frozen plan binds to the lowered syntax");
     let mut items = Vec::new();
-    for kind in [beskid_queries::IndexedNodeKind::FunctionDefinition, beskid_queries::IndexedNodeKind::MethodDefinition] {
+    for kind in [beskid_queries::IndexedNodeKind::FunctionDefinition, beskid_queries::IndexedNodeKind::MethodDefinition]
+    {
         for key in find_nodes_of_kind(input.database(), root, kind) {
             let symbol = item_name(input.database(), key).expect("item query").expect("item name").to_string();
             items.push(SyntaxModuleItem { symbol, key });
@@ -834,10 +888,18 @@ i32 Main()
     }
     let hooks = items.iter().map(|item| item.symbol.clone()).filter(|name| is_hook_item_name(name)).collect::<Vec<_>>();
     assert_eq!(hooks.len(), 5, "one generated function per hook: {hooks:?}");
-    let artifact = lower_syntax_program(&input, isa.as_ref(), &items).expect("hooks with services lower to verified CLIF");
+    let artifact =
+        lower_syntax_program(&input, isa.as_ref(), &items).expect("hooks with services lower to verified CLIF");
     beskid_codegen::validate_artifact(&artifact).expect("hook artifact");
     let clif_of = |name: &str| {
-        artifact.functions.iter().find(|function| function.name == name).expect("lowered function").function.display().to_string()
+        artifact
+            .functions
+            .iter()
+            .find(|function| function.name == name)
+            .expect("lowered function")
+            .function
+            .display()
+            .to_string()
     };
     let main = clif_of("Main");
     for kind in ["_startup_", "_init_"] {
@@ -903,7 +965,14 @@ i32 Main(bool early)
         .collect::<Vec<_>>();
     let artifact =
         lower_syntax_program(&input, isa.as_ref(), &items).expect("hook calls with records lower to verified CLIF");
-    let clif = artifact.functions.iter().find(|function| function.name == "Main").expect("lowered Main").function.display().to_string();
+    let clif = artifact
+        .functions
+        .iter()
+        .find(|function| function.name == "Main")
+        .expect("lowered Main")
+        .function
+        .display()
+        .to_string();
     let hooks = items.iter().map(|item| item.symbol.clone()).filter(|name| is_hook_item_name(name)).collect::<Vec<_>>();
     for kind in ["startup", "init"] {
         let name = hooks.iter().find(|name| name.contains(&format!("_{kind}_"))).expect("hook function");
@@ -958,12 +1027,19 @@ i32 Main()
             key,
         })
         .collect::<Vec<_>>();
-    let artifact = lower_syntax_program(&input, isa.as_ref(), &items).expect("exit registrations lower to verified CLIF");
-    let clif = artifact.functions.iter().find(|function| function.name == "Main").expect("lowered Main").function.display().to_string();
+    let artifact =
+        lower_syntax_program(&input, isa.as_ref(), &items).expect("exit registrations lower to verified CLIF");
+    let clif = artifact
+        .functions
+        .iter()
+        .find(|function| function.name == "Main")
+        .expect("lowered Main")
+        .function
+        .display()
+        .to_string();
     // One registration for the global dispose after launch, one for the scope dispose after init.
     assert_eq!(calls_of(&clif, "composition_exit_register"), 2, "{clif}");
 }
-
 
 #[test]
 fn a_hook_with_ten_injected_services_takes_its_argument_object() {
@@ -1019,7 +1095,14 @@ i32 Main()
         .collect::<Vec<_>>();
     let artifact = lower_syntax_program(&input, isa.as_ref(), &items)
         .expect("hooks with ten services lower: each takes its record and argument object");
-    let clif = artifact.functions.iter().find(|function| function.name == "Main").expect("lowered Main").function.display().to_string();
+    let clif = artifact
+        .functions
+        .iter()
+        .find(|function| function.name == "Main")
+        .expect("lowered Main")
+        .function
+        .display()
+        .to_string();
     let hooks = items.iter().map(|item| item.symbol.clone()).filter(|name| is_hook_item_name(name)).collect::<Vec<_>>();
     let startup = hooks.iter().find(|name| name.contains("_startup_")).expect("startup function");
     assert_eq!(calls_of(&clif, startup), 1, "{clif}");
@@ -1065,7 +1148,8 @@ i32 Main() { launch AppHost(); return 0; }
         .with_composition_authority(generation, Arc::new(result.plan), Arc::new(snapshot))
         .expect("attach frozen composition authority");
     let mut items = Vec::new();
-    for kind in [beskid_queries::IndexedNodeKind::FunctionDefinition, beskid_queries::IndexedNodeKind::MethodDefinition] {
+    for kind in [beskid_queries::IndexedNodeKind::FunctionDefinition, beskid_queries::IndexedNodeKind::MethodDefinition]
+    {
         for key in find_nodes_of_kind(input.database(), root, kind) {
             let symbol = item_name(input.database(), key).expect("item query").expect("item name").to_string();
             items.push(SyntaxModuleItem { symbol, key });
@@ -1101,7 +1185,8 @@ fn lower_composed(source: &str) -> beskid_codegen::CodegenArtifact {
         .with_composition_authority(generation, Arc::new(result.plan), Arc::new(snapshot))
         .expect("attach frozen composition authority");
     let mut items = Vec::new();
-    for kind in [beskid_queries::IndexedNodeKind::FunctionDefinition, beskid_queries::IndexedNodeKind::MethodDefinition] {
+    for kind in [beskid_queries::IndexedNodeKind::FunctionDefinition, beskid_queries::IndexedNodeKind::MethodDefinition]
+    {
         for key in find_nodes_of_kind(input.database(), root, kind) {
             let symbol = item_name(input.database(), key).expect("item query").expect("item name").to_string();
             items.push(SyntaxModuleItem { symbol, key });
@@ -1141,7 +1226,10 @@ i32 Main() { launch AppHost(); return 0; }
     assert_eq!(artifact.witness_tables.len(), 2, "Hello and Bye: {:?}", artifact.witness_tables);
     let main = artifact.functions.iter().find(|function| function.name == "Main").expect("Main lowered");
     let main = main.function.display().to_string();
-    assert!(main.contains("__beskid_contract_box_reference_request_v5"), "activation boxes the implementations:\n{main}");
+    assert!(
+        main.contains("__beskid_contract_box_reference_request_v5"),
+        "activation boxes the implementations:\n{main}"
+    );
 }
 
 /// A singular `inject Greeter greeter` whose binding differs between the host registry and a

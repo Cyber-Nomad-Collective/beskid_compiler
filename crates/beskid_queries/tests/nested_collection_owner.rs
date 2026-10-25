@@ -85,11 +85,16 @@ fn fixture_with_main(
     let unit = SourceUnitId::new(&db, assembly.entry_unit().path.clone());
     let node = assembly.entry_syntax_index().ids_of_kind(NodeKind::CallExpression).next().unwrap();
     let call = AstNodeKey { unit, generation: assembly.generation, node };
-    let program = AstNodeKey { node: assembly.entry_syntax_index().ids_of_kind(NodeKind::Program).next().unwrap(), ..call };
+    let program =
+        AstNodeKey { node: assembly.entry_syntax_index().ids_of_kind(NodeKind::Program).next().unwrap(), ..call };
     let imports = beskid_queries::unresolved_imports(&db, program).unwrap().unwrap();
     for source in assembly.units.iter() {
-        eprintln!("assembled unit {:?}, origin {:?}, module {:?}", source.path, source.origin_path,
-            beskid_analysis::projects::infer_logical_module_path(source, &assembly.roots));
+        eprintln!(
+            "assembled unit {:?}, origin {:?}, module {:?}",
+            source.path,
+            source.origin_path,
+            beskid_analysis::projects::infer_logical_module_path(source, &assembly.roots)
+        );
     }
     assert!(imports.is_empty(), "real materializer must register the Array import: {imports:?}");
     let parsed_call = assembly
@@ -99,8 +104,12 @@ fn fixture_with_main(
         .unwrap();
     eprintln!("owner call syntax {:?}; generation {:?}", parsed_call.callee, assembly.generation);
     for source in assembly.units.iter() {
-        eprintln!("owner assembled unit {:?}, module {:?}, origin {:?}", source.path,
-            beskid_analysis::projects::infer_logical_module_path(source, &assembly.roots), source.origin_path);
+        eprintln!(
+            "owner assembled unit {:?}, module {:?}, origin {:?}",
+            source.path,
+            beskid_analysis::projects::infer_logical_module_path(source, &assembly.roots),
+            source.origin_path
+        );
         let source_unit = SourceUnitId::new(&db, source.path.clone());
         for declaration in
             assembly.syntax_index_for_path(&source.path).unwrap().ids_of_kind(NodeKind::FunctionDefinition)
@@ -184,12 +193,16 @@ fn receiver_field_collection_owner_is_the_method_receiver() {
         ),
     ] {
         let (_root, db, _assembly, call) = fixture_with_main(main, None);
-        let Some(CollectionOperation::Append { owner: CollectionMutationOwner::ReceiverField { method, receiver, .. } }) =
-            collection_operation(&db, call).unwrap()
+        let Some(CollectionOperation::Append {
+            owner: CollectionMutationOwner::ReceiverField { method, receiver, .. },
+        }) = collection_operation(&db, call).unwrap()
         else {
             panic!("receiver field owner proof required for {main}")
         };
-        assert_eq!(beskid_queries::node_kind(&db, method).unwrap(), Some(beskid_queries::IndexedNodeKind::MethodDefinition));
+        assert_eq!(
+            beskid_queries::node_kind(&db, method).unwrap(),
+            Some(beskid_queries::IndexedNodeKind::MethodDefinition)
+        );
         assert_eq!(receiver == method, !nested, "the terminal receiver is the method only for a direct field");
     }
 }

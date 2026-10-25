@@ -857,9 +857,8 @@ pub fn node_at_span(
         return None;
     }
     let program = syntax.expanded_program(db);
-    let mut matches = index
-        .ids_of_kind(kind)
-        .filter(|id| index.node_at(program, *id).and_then(|node| node.span()) == Some(span));
+    let mut matches =
+        index.ids_of_kind(kind).filter(|id| index.node_at(program, *id).and_then(|node| node.span()) == Some(span));
     match (matches.next(), matches.next()) {
         (Some(node), None) => Some(AstNodeKey { unit, generation, node }),
         _ => None,

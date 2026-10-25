@@ -90,14 +90,16 @@ fn scalar(value: PrimitiveType) -> Result<(&'static str, &'static str, &'static 
 }
 pub(super) fn physical(ty: &GlueLogicalType) -> Result<GluePhysicalType, BackendError> {
     match ty {
-        GlueLogicalType::Primitive(PrimitiveType::String) => Ok(GluePhysicalType::plain(
-            "utf8",
-            vec!["const uint8_t*".into(), "size_t".into()],
-            true,
-        )),
+        GlueLogicalType::Primitive(PrimitiveType::String) => {
+            Ok(GluePhysicalType::plain("utf8", vec!["const uint8_t*".into(), "size_t".into()], true))
+        }
         GlueLogicalType::Primitive(p) => {
             let (logical, _, c, checked) = scalar(*p)?;
-            Ok(GluePhysicalType::plain(logical, if *p == PrimitiveType::Unit { vec![] } else { vec![c.into()] }, checked))
+            Ok(GluePhysicalType::plain(
+                logical,
+                if *p == PrimitiveType::Unit { vec![] } else { vec![c.into()] },
+                checked,
+            ))
         }
         GlueLogicalType::Array(element) if element.as_ref() == &GlueLogicalType::Primitive(PrimitiveType::U8) => {
             Ok(GluePhysicalType::plain("bytes", vec!["const uint8_t*".into(), "size_t".into()], true))
@@ -175,7 +177,8 @@ pub(super) fn physical(ty: &GlueLogicalType) -> Result<GluePhysicalType, Backend
             })
         }
         GlueLogicalType::Enum(enumeration) => {
-            beskid_queries::glue_type_shape(ty).map_err(|error| BackendError::UnsupportedRustGlueType(error.to_string()))?;
+            beskid_queries::glue_type_shape(ty)
+                .map_err(|error| BackendError::UnsupportedRustGlueType(error.to_string()))?;
             let enum_sha256 = digest(
                 &serde_json::to_vec(&(&*enumeration.qualified_identity, &*enumeration.variants))
                     .map_err(GlueArtifactError::from)?,
@@ -198,7 +201,8 @@ pub(super) fn physical(ty: &GlueLogicalType) -> Result<GluePhysicalType, Backend
             })
         }
         GlueLogicalType::Callback(callback) => {
-            beskid_queries::glue_type_shape(ty).map_err(|error| BackendError::UnsupportedRustGlueType(error.to_string()))?;
+            beskid_queries::glue_type_shape(ty)
+                .map_err(|error| BackendError::UnsupportedRustGlueType(error.to_string()))?;
             let parameters = callback.parameters.iter().map(physical).collect::<Result<Vec<_>, _>>()?;
             let result = physical(&callback.result)?;
             let callback_sha256 =
@@ -295,32 +299,42 @@ fn checked_rust_type(logical: &str) -> Option<&'static str> {
     })
 }
 fn checked_rust_wrapper(index: usize, binding: &GlueBindingManifest) -> Result<String, BackendError> {
-    let result = if let Some(opaque)=&binding.result.opaque {
-        let name=format!("OpaqueHandle{}",opaque.brand_sha256);
-        if opaque.nullable{format!("Option<{name}>")}else{name}
-    }else if let Some(nominal) = nominal_rust_type(&binding.result) {
+    let result = if let Some(opaque) = &binding.result.opaque {
+        let name = format!("OpaqueHandle{}", opaque.brand_sha256);
+        if opaque.nullable { format!("Option<{name}>") } else { name }
+    } else if let Some(nominal) = nominal_rust_type(&binding.result) {
         nominal
-    }else{let Some(result)=checked_rust_type(&binding.result.logical)else{return Ok(String::new())};result.to_owned()};
+    } else {
+        let Some(result) = checked_rust_type(&binding.result.logical) else { return Ok(String::new()) };
+        result.to_owned()
+    };
     let mut parameters = Vec::new();
     let mut arguments = Vec::new();
     for (n, ty) in binding.parameters.iter().enumerate() {
         let name = format!("arg_{n}");
-        let native = if let Some(opaque)=&ty.opaque {
-            let name=format!("OpaqueHandle{}",opaque.brand_sha256);
-            if opaque.nullable{format!("Option<&{name}>")}else{format!("&{name}")}
-        }else if let Some(nominal) = nominal_rust_type(ty) {
+        let native = if let Some(opaque) = &ty.opaque {
+            let name = format!("OpaqueHandle{}", opaque.brand_sha256);
+            if opaque.nullable { format!("Option<&{name}>") } else { format!("&{name}") }
+        } else if let Some(nominal) = nominal_rust_type(ty) {
             nominal
-        }else{match ty.logical.as_str() {
-            "utf8" => "&str",
-            "bytes" => "&[u8]",
-            logical => match checked_rust_type(logical) {
-                Some(ty) => ty,
-                None => return Ok(String::new()),
-            },
-        }.to_owned()};
+        } else {
+            match ty.logical.as_str() {
+                "utf8" => "&str",
+                "bytes" => "&[u8]",
+                logical => match checked_rust_type(logical) {
+                    Some(ty) => ty,
+                    None => return Ok(String::new()),
+                },
+            }
+            .to_owned()
+        };
         parameters.push(format!("{name}: {native}"));
-        if let Some(opaque)=&ty.opaque {
-            arguments.push(if opaque.nullable{format!("{name}.map_or(0,|value|value.token)")}else{format!("{name}.token")});
+        if let Some(opaque) = &ty.opaque {
+            arguments.push(if opaque.nullable {
+                format!("{name}.map_or(0,|value|value.token)")
+            } else {
+                format!("{name}.token")
+            });
             continue;
         }
         if ty.enumeration.is_some() {
@@ -375,11 +389,14 @@ fn checked_rust_wrapper(index: usize, binding: &GlueBindingManifest) -> Result<S
         body.push_str(&format!(
             "if status!=0{{return Err(GlueError::Status(status));}}\n{nominal}::from_raw(output).ok_or(GlueError::InvalidDiscriminant)\n"
         ));
-    } else if let Some(opaque)=&binding.result.opaque {
+    } else if let Some(opaque) = &binding.result.opaque {
         body.push_str("if status!=0{return Err(GlueError::Status(status));}\n");
-        let name=format!("OpaqueHandle{}",opaque.brand_sha256);
-        if opaque.nullable{body.push_str(&format!("if output==0{{Ok(None)}}else{{Ok(Some({name}{{token:output}}))}}\n"));}
-        else{body.push_str(&format!("if output==0{{Err(GlueError::Protocol)}}else{{Ok({name}{{token:output}})}}\n"));}
+        let name = format!("OpaqueHandle{}", opaque.brand_sha256);
+        if opaque.nullable {
+            body.push_str(&format!("if output==0{{Ok(None)}}else{{Ok(Some({name}{{token:output}}))}}\n"));
+        } else {
+            body.push_str(&format!("if output==0{{Err(GlueError::Protocol)}}else{{Ok({name}{{token:output}})}}\n"));
+        }
     } else {
         body.push_str("if status!=0{return Err(GlueError::Status(status));}\n");
         body.push_str(match binding.result.logical.as_str() {
@@ -481,20 +498,32 @@ pub fn emit(
                 adapters.insert(format!("{}:{}:{label}", library, fact.symbol));
             }
         }
-        for plan in super::handles::source_handle_box_plans(input,item.key)? {
+        for plan in super::handles::source_handle_box_plans(input, item.key)? {
             // Record and enum transports carry their metadata in the physical type already.
             if plan.value.is_some() {
                 continue;
             }
-            let metadata=GlueOpaqueType{
-                brand_sha256:plan.brand_sha256.clone(),library:plan.library,nullable:plan.nullable,
-                constructor:format!("beskid_glue_handle_{}_construct",plan.brand_sha256),
-                reader:format!("beskid_glue_handle_{}_read",plan.brand_sha256),
-                descriptor:plan.plan.descriptor_getter.ok_or_else(||BackendError::UnsupportedRustGlueType("opaque descriptor getter absent".into()))?,
+            let metadata = GlueOpaqueType {
+                brand_sha256: plan.brand_sha256.clone(),
+                library: plan.library,
+                nullable: plan.nullable,
+                constructor: format!("beskid_glue_handle_{}_construct", plan.brand_sha256),
+                reader: format!("beskid_glue_handle_{}_read", plan.brand_sha256),
+                descriptor: plan
+                    .plan
+                    .descriptor_getter
+                    .ok_or_else(|| BackendError::UnsupportedRustGlueType("opaque descriptor getter absent".into()))?,
             };
             match plan.position {
-                Some(index)=>parameters.get_mut(index).ok_or_else(||BackendError::UnsupportedRustGlueType("opaque position outside signature".into()))?.opaque=Some(metadata),
-                None=>result.opaque=Some(metadata),
+                Some(index) => {
+                    parameters
+                        .get_mut(index)
+                        .ok_or_else(|| {
+                            BackendError::UnsupportedRustGlueType("opaque position outside signature".into())
+                        })?
+                        .opaque = Some(metadata)
+                }
+                None => result.opaque = Some(metadata),
             }
         }
         let unit = input
@@ -561,13 +590,15 @@ unsafe fn copy_owned(view:GlueOwnedView,release:unsafe extern "C" fn(u64)->i32)-
 }
 "#,
     );
-    let mut emitted_brands=std::collections::BTreeSet::new();
+    let mut emitted_brands = std::collections::BTreeSet::new();
     for binding in &bindings {
         for physical in binding.parameters.iter().chain(std::iter::once(&binding.result)) {
-            let Some(opaque)=&physical.opaque else{continue};
-            if !emitted_brands.insert(opaque.brand_sha256.clone()){continue;}
-            let name=format!("OpaqueHandle{}",opaque.brand_sha256);
-            let release=format!("beskid_glue_opaque_{}_release",opaque.brand_sha256);
+            let Some(opaque) = &physical.opaque else { continue };
+            if !emitted_brands.insert(opaque.brand_sha256.clone()) {
+                continue;
+            }
+            let name = format!("OpaqueHandle{}", opaque.brand_sha256);
+            let release = format!("beskid_glue_opaque_{}_release", opaque.brand_sha256);
             rust.push_str(&format!("#[derive(Debug)]\npub struct {name}{{token:u64}}\nimpl {name}{{pub fn close(&mut self)->Result<(),GlueError>{{if self.token==0{{return Ok(());}}let status=unsafe{{{release}(self.token)}};if status==0||status==2||status==6{{self.token=0;}}if status==0{{Ok(())}}else{{Err(GlueError::Release(status))}}}}}}\nimpl Drop for {name}{{fn drop(&mut self){{let token=core::mem::replace(&mut self.token,0);if token!=0{{let _=unsafe{{{release}(token)}};}}}}}}\n#[link(name={native_library:?})]\nunsafe extern \"C\"{{fn {release}(token:u64)->i32;}}\n"));
         }
     }
@@ -840,7 +871,8 @@ fn emit_nominal_declarations(
                     let rust_type = checked_rust_type(&field.logical)
                         .ok_or_else(|| BackendError::UnsupportedRustGlueType("record field type".into()))?;
                     rust_fields.push(format!("pub {rust_name}:{rust_type}"));
-                    rust_asserts.push_str(&format!("assert!(core::mem::offset_of!({name},{rust_name})=={});", field.offset));
+                    rust_asserts
+                        .push_str(&format!("assert!(core::mem::offset_of!({name},{rust_name})=={});", field.offset));
                 }
                 header.push_str(&format!("typedef struct {{{c_fields} }} {name};\n{asserts}"));
                 rust.push_str(&format!(
@@ -853,8 +885,11 @@ fn emit_nominal_declarations(
                 && seen.insert(enumeration.enum_sha256.clone())
             {
                 let name = format!("GlueEnum_{}", enumeration.enum_sha256);
-                let variants =
-                    enumeration.variants.iter().map(|variant| rust_identifier(variant)).collect::<Result<Vec<_>, _>>()?;
+                let variants = enumeration
+                    .variants
+                    .iter()
+                    .map(|variant| rust_identifier(variant))
+                    .collect::<Result<Vec<_>, _>>()?;
                 let from_raw = variants
                     .iter()
                     .enumerate()
@@ -963,7 +998,11 @@ mod extension_tests {
                 parameters: vec![scalar("i64", "int64_t"), enumeration()],
                 result: scalar("bool", "uint8_t"),
             })),
-            ..GluePhysicalType::plain(format!("callback:{sha}"), vec![format!("GlueCallback_{sha}"), "uint64_t".into()], true)
+            ..GluePhysicalType::plain(
+                format!("callback:{sha}"),
+                vec![format!("GlueCallback_{sha}"), "uint64_t".into()],
+                true,
+            )
         }
     }
 
@@ -1007,7 +1046,13 @@ mod extension_tests {
             bindings: vec![
                 binding("import", "glue_point", '4', vec![record()], record()),
                 binding("import", "glue_color", '5', vec![enumeration()], enumeration()),
-                binding("import", "glue_each", '6', vec![scalar("i64", "int64_t"), callback()], scalar("i64", "int64_t")),
+                binding(
+                    "import",
+                    "glue_each",
+                    '6',
+                    vec![scalar("i64", "int64_t"), callback()],
+                    scalar("i64", "int64_t"),
+                ),
                 binding("export", "beskid_point", '7', vec![record(), enumeration()], record()),
                 binding("export", "beskid_color", '8', vec![scalar("i32", "int32_t")], enumeration()),
             ],
@@ -1024,11 +1069,9 @@ mod extension_tests {
         );
         let mut rust = String::new();
         emit_nominal_declarations(&manifest.bindings, &mut header, &mut rust).unwrap();
-        let (native, _) = super::super::native::emit(
-            &manifest,
-            &CheckedScopeGeometry { size: 64, failure_reason_offset: 24 },
-        )
-        .unwrap();
+        let (native, _) =
+            super::super::native::emit(&manifest, &CheckedScopeGeometry { size: 64, failure_reason_offset: 24 })
+                .unwrap();
         (header, String::from_utf8(native).unwrap(), rust)
     }
 
@@ -1038,23 +1081,47 @@ mod extension_tests {
         let record = format!("GlueRecord_{}", "1".repeat(64));
         assert!(header.contains(&format!("typedef struct {{ uint8_t field_tag; int64_t field_x; uint8_t field_visible; uint32_t field_mark; }} {record};")), "{header}");
         assert!(header.contains(&format!("_Static_assert(offsetof({record},field_mark)==20")), "{header}");
-        assert!(header.contains(&format!("typedef int32_t (*GlueCallback_{})(uint64_t,int64_t,uint32_t,uint8_t*);", "3".repeat(64))), "{header}");
-        assert!(rust.contains(&format!("pub struct {record}{{pub tag:u8,pub x:i64,pub visible:bool,pub mark:char}}")), "{rust}");
+        assert!(
+            header.contains(&format!(
+                "typedef int32_t (*GlueCallback_{})(uint64_t,int64_t,uint32_t,uint8_t*);",
+                "3".repeat(64)
+            )),
+            "{header}"
+        );
+        assert!(
+            rust.contains(&format!("pub struct {record}{{pub tag:u8,pub x:i64,pub visible:bool,pub mark:char}}")),
+            "{rust}"
+        );
         assert!(rust.contains("pub enum GlueEnum_") && rust.contains("{Red,Green,Blue}"), "{rust}");
         // Import: the record is copied out before the call and a foreign record result is
         // domain-checked before a managed record is constructed.
-        assert!(native.contains(&format!("status=beskid_glue_record_{}_read(value_0,&record_0); if(status) goto cleanup;", "1".repeat(64))), "{native}");
+        assert!(
+            native.contains(&format!(
+                "status=beskid_glue_record_{}_read(value_0,&record_0); if(status) goto cleanup;",
+                "1".repeat(64)
+            )),
+            "{native}"
+        );
         assert!(native.contains(" if(foreign_result.field_visible>1) {status=1;goto cleanup;}"), "{native}");
         assert!(native.contains(" if(foreign_result>=UINT32_C(3)) {status=1;goto cleanup;}"), "{native}");
         // Callback: rooted and linked for the foreign call only; the trampoline finds its frame.
         assert!(native.contains("glue_callback_push(&callback_frame_1,callback_root_1)"), "{native}");
         assert!(native.contains("if(callback_linked_1) glue_callback_pop(&callback_frame_1);"), "{native}");
-        assert!(native.contains("GlueCallbackFrame *frame=glue_callback_find(context); if(!frame) return 2;"), "{native}");
+        assert!(
+            native.contains("GlueCallbackFrame *frame=glue_callback_find(context); if(!frame) return 2;"),
+            "{native}"
+        );
         assert!(native.contains(" if(arg_1>=UINT32_C(3)) {return 1;}"), "{native}");
         // Export: domain checks before body effects, then managed construction.
         assert!(native.contains(" if(arg_0_0.field_visible>1) {return 1;}"), "{native}");
-        assert!(native.contains(&format!("void *managed_0=beskid_glue_record_{}_construct(&arg_0_0);", "1".repeat(64))), "{native}");
-        assert!(native.contains(&format!(" status=beskid_glue_record_{}_read(result,output);", "1".repeat(64))), "{native}");
+        assert!(
+            native.contains(&format!("void *managed_0=beskid_glue_record_{}_construct(&arg_0_0);", "1".repeat(64))),
+            "{native}"
+        );
+        assert!(
+            native.contains(&format!(" status=beskid_glue_record_{}_read(result,output);", "1".repeat(64))),
+            "{native}"
+        );
     }
 
     #[test]

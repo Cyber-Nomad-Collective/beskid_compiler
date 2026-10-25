@@ -9,9 +9,9 @@ use rayon::prelude::*;
 
 use super::super::discovery::resolve_module_file;
 use super::super::module_index::{ModuleIndex, package_for_path};
+use super::super::roots::EffectiveCompilationRoots;
 use super::super::unit_builder::UnitBuilder;
 use super::super::unit_cache::{disk_cache_stats, ensure_manifest};
-use super::super::roots::EffectiveCompilationRoots;
 use super::super::{AssemblyRootSet, ProgramAssembly, SourceUnit, own_unit_paths_under};
 use super::discovery::{collect_bd_files, unit_progress_label};
 use super::options::{AssemblyError, UnitMaterializer};
@@ -106,8 +106,7 @@ pub fn assemble_program_with_materializer(
             // reached package adds a companion (see `mod_host::mod_companion_packages`).
             loop {
                 let Some(path) = queue.pop_front() else {
-                    let companion_seeds =
-                        mod_companion_seed_paths(plan, &roots, &discovered, &mut seeded_companions)?;
+                    let companion_seeds = mod_companion_seed_paths(plan, &roots, &discovered, &mut seeded_companions)?;
                     if companion_seeds.is_empty() {
                         break;
                     }
@@ -324,9 +323,7 @@ pub fn assemble_program_with_materializer(
                 unit_span.record("duration_ms", started.elapsed().as_millis() as u64);
                 result
             })
-            .filter(|result| {
-                !matches!(result, Err(AssemblyError::Skipped { .. }))
-            })
+            .filter(|result| !matches!(result, Err(AssemblyError::Skipped { .. })))
             .collect()
     });
 
@@ -402,7 +399,8 @@ pub fn assemble_program_with_materializer(
     let glue_libraries = manifest_glue_libraries(plan)?;
 
     super::super::runtime_fixture::attach_runtime_fixture(
-        ProgramAssembly { compiled_mod_metadata: Vec::new(),
+        ProgramAssembly {
+            compiled_mod_metadata: Vec::new(),
             verified_package_identities: workspace
                 .map(|workspace| workspace.package_identities().clone())
                 .unwrap_or_default(),
@@ -446,10 +444,8 @@ fn mod_companion_seed_paths(
         .iter()
         .map(|dependency| (dependency.dependency_name.clone(), dependency.project_name.clone()))
         .collect();
-    let mut reached: std::collections::BTreeSet<String> = discovered
-        .iter()
-        .map(|path| package_for_path(path, roots, &plan.project_name, &dependency_packages))
-        .collect();
+    let mut reached: std::collections::BTreeSet<String> =
+        discovered.iter().map(|path| package_for_path(path, roots, &plan.project_name, &dependency_packages)).collect();
     reached.insert(plan.project_name.clone());
     let companions = crate::mod_host::mod_companion_packages(plan, &reached)
         .map_err(|error| AssemblyError::ModCompanionPackages { message: format!("{error:#}") })?;
@@ -516,7 +512,8 @@ fn aggregate_member_source_roots(
             manifest_error(format!("member `{}` declares source = path without `path`", dependency.name))
         })?;
         let member_manifest = normalize_existing_path(
-            &dependency_manifest_path(&plan.project_root, relative).map_err(|error| manifest_error(error.to_string()))?,
+            &dependency_manifest_path(&plan.project_root, relative)
+                .map_err(|error| manifest_error(error.to_string()))?,
         );
         let Some(resolved) = plan
             .dependency_projects

@@ -43,10 +43,8 @@ pub(crate) fn parse_type_parameters(pair: Pair<Rule>) -> Result<Vec<Spanned<Type
             Rule::Identifier => {
                 let span = SpanInfo::from_span(&item.as_span());
                 let name = item.as_str().to_string();
-                parameters.push(Spanned::new(
-                    TypeParameter { attributes: std::mem::take(&mut attributes), name },
-                    span,
-                ));
+                parameters
+                    .push(Spanned::new(TypeParameter { attributes: std::mem::take(&mut attributes), name }, span));
             }
             _ => return Err(ParseError::unexpected_rule(item, Some(Rule::GenericParameters))),
         }

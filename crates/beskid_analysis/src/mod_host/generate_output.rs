@@ -254,8 +254,8 @@ mod tests {
     #[test]
     fn layout_v2_multi_file_requires_exact_item_counts() {
         let package = unique_dir("generate_output_v2_counts");
-        let items =
-            materialize_program_items(["pub i64 First() { return 1; }", "pub i64 Second() { return 2; }"]).expect("items");
+        let items = materialize_program_items(["pub i64 First() { return 1; }", "pub i64 Second() { return 2; }"])
+            .expect("items");
         let missing = GenerateOutputLayout { schema_version: 2, files: vec![file_v2(1, "One"), file_v2(0, "Two")] };
         assert!(write_typed_generate_output(None, &package, &package, &items, &missing).is_err());
         let short = GenerateOutputLayout { schema_version: 2, files: vec![file_v2(1, "One"), file_v2(2, "Two")] };

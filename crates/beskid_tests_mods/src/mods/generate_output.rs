@@ -60,7 +60,8 @@ fn write_typed_generate_output_v1_honors_layout_manifest() {
 /// typed item and needs no source-text contribution.
 #[test]
 fn corelib_pest_gen_layout_is_a_single_typed_v2_file() {
-    let layout = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../corelib/mods/corelib_pest_gen/generate.layout.json");
+    let layout =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../corelib/mods/corelib_pest_gen/generate.layout.json");
     let layout = beskid_analysis::mod_host::load_generate_output_layout(&layout).expect("Pest Mod layout");
     assert_eq!(layout.schema_version, 2);
     assert_eq!(layout.files.len(), 1);

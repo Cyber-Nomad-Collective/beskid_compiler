@@ -598,7 +598,17 @@ fn v06_owner_producer_is_explicit_closed_and_has_no_prefix_override() {
 #[test]
 fn v06_run_passes_trailing_program_arguments_unchanged() {
     let cli = super::app::ParseInvocation([
-        "beskid", "run", "--plain", "--project", "App.bproj", "--", "", "two words", "--dash", "caf\u{e9}", "--json",
+        "beskid",
+        "run",
+        "--plain",
+        "--project",
+        "App.bproj",
+        "--",
+        "",
+        "two words",
+        "--dash",
+        "caf\u{e9}",
+        "--json",
     ])
     .expect("run with program arguments");
     let Commands::Run(args) = cli.command else { panic!("expected run") };
@@ -634,16 +644,18 @@ fn v06_cli_owned_commands_accept_json() {
         vec!["beskid", "update", "Local", "--dry-run", "--json"],
         vec!["beskid", "doctor", "--json"],
     ] {
-        let json = match super::app::ParseInvocation(args.clone()).unwrap_or_else(|error| panic!("{args:?}: {error}")).command {
-            Commands::Check(args) => args.json,
-            Commands::Build(args) => args.json,
-            Commands::Test(args) => args.json,
-            Commands::Add(args) => args.policy.json,
-            Commands::Remove(args) => args.policy.json,
-            Commands::Update(args) => args.policy.json,
-            Commands::Doctor(args) => args.json,
-            _ => panic!("{args:?} dispatched elsewhere"),
-        };
+        let json =
+            match super::app::ParseInvocation(args.clone()).unwrap_or_else(|error| panic!("{args:?}: {error}")).command
+            {
+                Commands::Check(args) => args.json,
+                Commands::Build(args) => args.json,
+                Commands::Test(args) => args.json,
+                Commands::Add(args) => args.policy.json,
+                Commands::Remove(args) => args.policy.json,
+                Commands::Update(args) => args.policy.json,
+                Commands::Doctor(args) => args.json,
+                _ => panic!("{args:?} dispatched elsewhere"),
+            };
         assert!(json, "{args:?}");
     }
 }
@@ -661,17 +673,47 @@ fn v06_capability_document_lists_version_commands_dev_routes_and_schemas() {
     };
     assert_eq!(
         names("commands"),
-        ["add", "build", "check", "dev", "doc", "doctor", "fmt", "new", "package", "remove", "run", "test", "toolchain", "update"]
+        [
+            "add",
+            "build",
+            "check",
+            "dev",
+            "doc",
+            "doctor",
+            "fmt",
+            "new",
+            "package",
+            "remove",
+            "run",
+            "test",
+            "toolchain",
+            "update"
+        ]
     );
     let dev = names("devCommands");
-    for route in ["syntax", "build", "project", "corelib", "runtime-kit", "mod", "import", "lsp", "bsol", "repl", "toolchain-owner", "capabilities"] {
+    for route in [
+        "syntax",
+        "build",
+        "project",
+        "corelib",
+        "runtime-kit",
+        "mod",
+        "import",
+        "lsp",
+        "bsol",
+        "repl",
+        "toolchain-owner",
+        "capabilities",
+    ] {
         assert!(dev.iter().any(|name| name == route), "dev route {route}: {dev:?}");
     }
     assert!(!dev.iter().any(|name| name == "native-mod-worker" || name == "help"), "{dev:?}");
     let schemas = document["outputSchemas"].as_array().unwrap();
     for command in ["check", "build", "test", "add", "remove", "update", "doctor"] {
         assert!(
-            schemas.iter().any(|schema| schema["command"] == command && schema["schemaVersion"] == 1 && schema["format"] == "ndjson"),
+            schemas.iter().any(|schema| schema["command"] == command
+                && schema["schemaVersion"] == 1
+                && schema["format"] == "ndjson"),
             "{command}: {schemas:?}"
         );
     }
@@ -744,7 +786,8 @@ fn v067_preview_label_replaces_the_manifest_version() {
     assert_eq!(ResolveVersion(Some("0.6.7-preview.3"), "0.6.7"), "0.6.7-preview.3");
     assert_eq!(ResolveVersion(None, "0.6.7"), "0.6.7");
     assert_eq!(ResolveVersion(Some(""), "0.6.7"), "0.6.7", "an empty label keeps the manifest version");
-    let expected = option_env!("BESKID_PREVIEW_LABEL").filter(|label| !label.is_empty()).unwrap_or(env!("CARGO_PKG_VERSION"));
+    let expected =
+        option_env!("BESKID_PREVIEW_LABEL").filter(|label| !label.is_empty()).unwrap_or(env!("CARGO_PKG_VERSION"));
     assert_eq!(VERSION, expected);
     assert_eq!(super::app::CapabilityDocument()["cliVersion"], VERSION);
     let rendered = Cli::command().render_version().to_string();

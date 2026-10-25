@@ -544,7 +544,11 @@ fn extra_corelib_package_keeps_fiber_service_provenance() {
         "packages/extra/src/Extra/Dummy.bd",
         "pub mod Extra.Dummy;\npub i64 Answer() { return 42; }\n",
     );
-    write_bd(&fixture.bundle_root, "packages/extra/corelib_extra.bproj", "corelib_extra { name = \"corelib_extra\" }\n");
+    write_bd(
+        &fixture.bundle_root,
+        "packages/extra/corelib_extra.bproj",
+        "corelib_extra { name = \"corelib_extra\" }\n",
+    );
     write_bd(&fixture.bundle_root, "packages/concurrency/src/Concurrency/Extra.bd", "pub i64 Extra() { return 1; }\n");
 
     assert_eq!(
@@ -1061,14 +1065,24 @@ fn import_closure_follows_complete_homonymous_nominal_path() {
     let source_root = root.join("src");
     write_bd(&source_root, "Entry.bd", "pub type Compilation { Beskid.Syntax.Nodes.NodeRef entryRoot; }");
     write_bd(&source_root, "Beskid/Syntax/Nodes/NodeRef.bd", "pub type NodeRef { u64 generation; }");
-    let plan = CompilePlan { source_root: source_root.clone(), project_root: root.clone(),
-        manifest_path: root.join("project.bproj"), project_name: "fixture".into(),
-        target: Target {name: "Entry".into(), kind: TargetKind::Lib, entry: Some("Entry.bd".into())},
-        dependency_projects: vec![], unresolved_dependencies: vec![], has_core_dependency: false };
-    let assembly = assemble_program(&plan, None, &source_root.join("Entry.bd"), None,
-        &assembly_options_for_plan(&plan), None).unwrap();
-    assert!(assembly.units.iter().any(|unit| unit.path.ends_with("Beskid/Syntax/Nodes/NodeRef.bd")),
-        "complete qualified nominal source missing: {:?}", assembly.units.iter().map(|unit| &unit.path).collect::<Vec<_>>());
+    let plan = CompilePlan {
+        source_root: source_root.clone(),
+        project_root: root.clone(),
+        manifest_path: root.join("project.bproj"),
+        project_name: "fixture".into(),
+        target: Target { name: "Entry".into(), kind: TargetKind::Lib, entry: Some("Entry.bd".into()) },
+        dependency_projects: vec![],
+        unresolved_dependencies: vec![],
+        has_core_dependency: false,
+    };
+    let assembly =
+        assemble_program(&plan, None, &source_root.join("Entry.bd"), None, &assembly_options_for_plan(&plan), None)
+            .unwrap();
+    assert!(
+        assembly.units.iter().any(|unit| unit.path.ends_with("Beskid/Syntax/Nodes/NodeRef.bd")),
+        "complete qualified nominal source missing: {:?}",
+        assembly.units.iter().map(|unit| &unit.path).collect::<Vec<_>>()
+    );
     let _ = fs::remove_dir_all(root);
 }
 
@@ -1757,7 +1771,8 @@ fn checking_the_compiler_foundation_package_directly_trusts_its_materialized_ser
         .expect("embedded Foundation syscall source");
     let identity = beskid_abi::runtime_source::corelib_service_source_identity(&source.logical_path)
         .expect("compiler-owned syscall path");
-    let canonical_source_root = identity.canonical_path.ancestors().nth(3).expect("Foundation source root").to_path_buf();
+    let canonical_source_root =
+        identity.canonical_path.ancestors().nth(3).expect("Foundation source root").to_path_buf();
     let canonical_project_root = canonical_source_root.parent().expect("Foundation project root").to_path_buf();
     let relative = identity.canonical_path.strip_prefix(&canonical_source_root).expect("syscall below source root");
 
@@ -1893,7 +1908,8 @@ fn ordinary_build_never_seeds_native_mod_adapter_sources() {
     assert_eq!(paths.len(), 1, "an ordinary build assembles only the import closure: {paths:?}");
     assert!(
         !assembly.units.iter().any(|unit| {
-            unit.path.ends_with("Beskid/Compiler/NativeRequests.bd") || unit.path.ends_with("Beskid/Syntax/NativeFactories.bd")
+            unit.path.ends_with("Beskid/Compiler/NativeRequests.bd")
+                || unit.path.ends_with("Beskid/Syntax/NativeFactories.bd")
         }),
         "adapter sources reached a non-Mod build: {paths:?}"
     );

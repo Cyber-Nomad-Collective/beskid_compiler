@@ -307,7 +307,9 @@ pub(crate) fn execute_prepared_target(
                     }
                 }
                 Err(error) => {
-                    if let Err(budget_error) = workspace.check_budget(&target.name, "execute_tests", Some(target_started)) {
+                    if let Err(budget_error) =
+                        workspace.check_budget(&target.name, "execute_tests", Some(target_started))
+                    {
                         timeout_error = Some(budget_error);
                         budget_expired = true;
                         record_timed_out_test(
@@ -326,18 +328,21 @@ pub(crate) fn execute_prepared_target(
                             let mut assertion = assertion.clone();
                             // The call site is the file the compiler saw; report the authored file.
                             if let Some(location) = assertion.location.as_mut()
-                                && let Some(authored) = source_mapper.authored_name(&location.file.display().to_string())
+                                && let Some(authored) =
+                                    source_mapper.authored_name(&location.file.display().to_string())
                             {
                                 location.file = PathBuf::from(authored);
                             }
                             if assertion.location.is_none() {
-                                assertion.location = Some(declaration_location(&mut source_mapper, &target.resolved.source_path, test));
+                                assertion.location =
+                                    Some(declaration_location(&mut source_mapper, &target.resolved.source_path, test));
                             }
                             (assertion.render(), Some(FailureDetail::Assertion(assertion)))
                         }
                         Some(TestRunFailure::Crashed(crash)) => {
                             let mut crash = crash.clone();
-                            crash.location = Some(declaration_location(&mut source_mapper, &target.resolved.source_path, test));
+                            crash.location =
+                                Some(declaration_location(&mut source_mapper, &target.resolved.source_path, test));
                             (format!("test crashed: {}", crash.reason), Some(FailureDetail::Crash(crash)))
                         }
                         None => {
@@ -469,7 +474,9 @@ pub(crate) fn execute_prepared_target(
 
 /// The declaration of `test`, in the authored file.
 fn declaration_location(mapper: &mut SourceMapper, source_path: &Path, test: &SyntaxTestItem) -> SourceLocation {
-    let file = mapper.authored_name(&source_path.display().to_string()).map_or_else(|| source_path.to_path_buf(), PathBuf::from);
+    let file = mapper
+        .authored_name(&source_path.display().to_string())
+        .map_or_else(|| source_path.to_path_buf(), PathBuf::from);
     SourceLocation {
         file,
         line: test.selection_span.line_col_start.0 as u32,

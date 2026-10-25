@@ -14,10 +14,10 @@ pub(crate) mod scan_schedule;
 pub mod server;
 pub(crate) mod session;
 pub(crate) mod standalone_bsol;
-pub(crate) mod text_sync;
-pub(crate) mod workspace_scan;
 #[cfg(test)]
 pub(crate) mod test_mod_host;
+pub(crate) mod text_sync;
+pub(crate) mod workspace_scan;
 
 /// Serializes unit tests that share process-global state: the working directory
 /// and the process-wide entry-session / typed-entry registries keyed by the

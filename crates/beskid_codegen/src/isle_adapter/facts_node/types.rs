@@ -14,16 +14,17 @@ impl SyntaxNodeFacts<'_> {
                 OperatorFact::ContractNotEq
             });
         }
-        let specialized_string_operands = matches!(
-            operator,
-            beskid_queries::OperatorFact::Eq
-                | beskid_queries::OperatorFact::NotEq
-                | beskid_queries::OperatorFact::Lt
-                | beskid_queries::OperatorFact::Lte
-                | beskid_queries::OperatorFact::Gt
-                | beskid_queries::OperatorFact::Gte
-        ) && self.child(key, 0).and_then(|operand| self.scalar_semantic_type(operand))
-                    == Some(SemanticTypeId::STRING)
+        let specialized_string_operands =
+            matches!(
+                operator,
+                beskid_queries::OperatorFact::Eq
+                    | beskid_queries::OperatorFact::NotEq
+                    | beskid_queries::OperatorFact::Lt
+                    | beskid_queries::OperatorFact::Lte
+                    | beskid_queries::OperatorFact::Gt
+                    | beskid_queries::OperatorFact::Gte
+            ) && self.child(key, 0).and_then(|operand| self.scalar_semantic_type(operand))
+                == Some(SemanticTypeId::STRING)
                 && self.child(key, 1).and_then(|operand| self.scalar_semantic_type(operand))
                     == Some(SemanticTypeId::STRING);
         let specialized_enum_operands =

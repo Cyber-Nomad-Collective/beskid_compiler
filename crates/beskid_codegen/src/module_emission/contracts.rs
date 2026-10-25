@@ -51,14 +51,11 @@ impl SyntaxModuleEmissionError {
         let diagnostics = match self {
             Self::Legality { findings, .. } => findings
                 .iter()
-                .map(|finding| {
-                    finding_diagnostic(input, finding)
-                        .or_else(|| program_diagnostic(input, &finding.kind))
-                })
+                .map(|finding| finding_diagnostic(input, finding).or_else(|| program_diagnostic(input, &finding.kind)))
                 .collect::<Option<Vec<_>>>(),
-            Self::Internal { finding, .. } => {
-                finding_diagnostic(input, &finding).or_else(|| program_diagnostic(input, &finding.kind)).map(|d| vec![d])
-            }
+            Self::Internal { finding, .. } => finding_diagnostic(input, &finding)
+                .or_else(|| program_diagnostic(input, &finding.kind))
+                .map(|d| vec![d]),
             Self::Emission(reason) => program_diagnostic(
                 input,
                 &SemanticIssueKind::InternalLoweringInvariant { construct: "Program".to_owned(), reason },
@@ -74,7 +71,9 @@ impl SyntaxModuleEmissionError {
             .map(|diagnostic| vec![diagnostic]),
             Self::DuplicateSymbol(symbol) => program_diagnostic(
                 input,
-                &SemanticIssueKind::InternalBuildFailure { reason: format!("duplicate symbol `{symbol}` in the module") },
+                &SemanticIssueKind::InternalBuildFailure {
+                    reason: format!("duplicate symbol `{symbol}` in the module"),
+                },
             )
             .map(|diagnostic| vec![diagnostic]),
             Self::Module(error) => program_diagnostic(
@@ -143,7 +142,11 @@ fn finding_diagnostic(
 
 /// The syntax node kind of `key` (`AssignExpression`), or `Unknown`.
 fn construct_of(db: &dyn beskid_queries::Db, key: AstNodeKey) -> String {
-    beskid_queries::node_kind(db, key).ok().flatten().map(|kind| format!("{kind:?}")).unwrap_or_else(|| "Unknown".to_owned())
+    beskid_queries::node_kind(db, key)
+        .ok()
+        .flatten()
+        .map(|kind| format!("{kind:?}"))
+        .unwrap_or_else(|| "Unknown".to_owned())
 }
 
 /// Classify a function emission failure. A missing rule is internal error E2102, a rejected
@@ -172,7 +175,11 @@ pub(super) fn emission_error(input: &CodegenInput<'_>, error: FunctionEmissionEr
         LoweringErrorKind::InvalidClifBlock(detail) => {
             return legality_error(
                 db,
-                vec![SemanticFinding { kind: SemanticIssueKind::InvalidClifBlock { detail }, site: key, related: Vec::new() }],
+                vec![SemanticFinding {
+                    kind: SemanticIssueKind::InvalidClifBlock { detail },
+                    site: key,
+                    related: Vec::new(),
+                }],
             );
         }
         other => SemanticIssueKind::InternalLoweringInvariant { construct, reason: lowering_reason(&other) },
@@ -184,7 +191,9 @@ pub(super) fn emission_error(input: &CodegenInput<'_>, error: FunctionEmissionEr
 fn lowering_reason(kind: &LoweringErrorKind) -> String {
     match kind {
         LoweringErrorKind::MissingRuleOrFact => "no lowering rule or fact matches this construct".to_owned(),
-        LoweringErrorKind::StringMaterialization(error) => format!("a string value could not be materialized ({error})"),
+        LoweringErrorKind::StringMaterialization(error) => {
+            format!("a string value could not be materialized ({error})")
+        }
         LoweringErrorKind::UnknownCallee(_) => "the call target has no lowering".to_owned(),
         LoweringErrorKind::InvalidPrimitiveNumericConversion(reason) => {
             format!("invalid primitive numeric conversion ({reason})")

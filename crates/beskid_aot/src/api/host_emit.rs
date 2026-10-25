@@ -140,13 +140,17 @@ fn validate_host_extern_bindings(
     };
     let manifest = AbiManifestV5::canonical_runtime(target.clone());
     for import in &artifact.extern_imports {
-        let Some(library) = import.library.as_deref() else { continue; };
-        if library != "beskid_runtime" || import.abi.as_deref() != Some("C")
+        let Some(library) = import.library.as_deref() else {
+            continue;
+        };
+        if library != "beskid_runtime"
+            || import.abi.as_deref() != Some("C")
             || !native_definitions.contains(&import.symbol)
             || !manifest.exports.iter().any(|export| export.symbol == import.symbol)
         {
             return Err(AotError::UnresolvedExternLibrary {
-                library: library.to_owned(), symbol: import.symbol.clone(),
+                library: library.to_owned(),
+                symbol: import.symbol.clone(),
             });
         }
     }
@@ -187,10 +191,13 @@ fn emit_library_pair_with_objects(
         library_search_paths: Vec::new(),
         pipeline: None,
     };
-    let native_definitions = additional_object_paths.iter()
+    let native_definitions = additional_object_paths
+        .iter()
         .map(|path| extract_symbol_inventory(path, provenance_policy.symbol_prefix()))
-        .collect::<AotResult<Vec<_>>>()?.into_iter()
-        .flat_map(|inventory| inventory.defined).collect::<std::collections::HashSet<_>>();
+        .collect::<AotResult<Vec<_>>>()?
+        .into_iter()
+        .flat_map(|inventory| inventory.defined)
+        .collect::<std::collections::HashSet<_>>();
     validate_host_extern_bindings(&request.artifact, &provenance_policy, &native_definitions)?;
     let object = emit_object_stage(&request)?;
     let mut linked_exports = object.exported_symbols.clone();
@@ -379,8 +386,10 @@ mod link_tests {
         let target = TargetMetadata::for_triple("aarch64-apple-darwin").unwrap();
         let mut artifact = CodegenArtifact::default();
         artifact.extern_imports.push(beskid_codegen::ExternImport {
-            symbol: "beskid_dynamic_v1_map_owned".into(), abi: Some("C".into()),
-            library: Some("beskid_runtime".into()), optional: false,
+            symbol: "beskid_dynamic_v1_map_owned".into(),
+            abi: Some("C".into()),
+            library: Some("beskid_runtime".into()),
+            optional: false,
         });
         let mut actual = std::collections::HashSet::new();
         let canonical = ProvenancePolicy::CanonicalRuntime(target.clone());
@@ -398,5 +407,4 @@ mod link_tests {
         actual.insert("uncontracted_export".into());
         assert!(validate_host_extern_bindings(&artifact, &canonical, &actual).is_err());
     }
-
 }

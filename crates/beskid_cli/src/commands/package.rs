@@ -1,19 +1,13 @@
 #![allow(non_snake_case)]
 use super::new::{InstallArgs, ListArgs, UninstallArgs};
 use anyhow::Result;
-use beskid_pckg::cli::{
-    ConfigureArgs, DetailsArgs, PackArgs, PckgArgs, PckgCommand, PublishArgs, SearchArgs,
-};
+use beskid_pckg::cli::{ConfigureArgs, DetailsArgs, PackArgs, PckgArgs, PckgCommand, PublishArgs, SearchArgs};
 use clap::{Args, Subcommand};
 use std::path::PathBuf;
 
 #[derive(Args, Debug)]
 pub struct PackageArgs {
-    #[arg(
-        long,
-        env = "BESKID_PCKG_URL",
-        default_value = "https://pckg.beskid-lang.org"
-    )]
+    #[arg(long, env = "BESKID_PCKG_URL", default_value = "https://pckg.beskid-lang.org")]
     pub base_url: String,
     #[arg(long, env = "BESKID_PCKG_TOKEN", conflicts_with = "api_key")]
     pub bearer_token: Option<String>,
@@ -62,10 +56,9 @@ pub fn execute(args: PackageArgs) -> Result<()> {
         PackageCommand::Info(value) => PckgCommand::Details(value),
         PackageCommand::Pack(value) => PckgCommand::Pack(value),
         PackageCommand::Publish(value) => PckgCommand::Upload(value),
-        PackageCommand::Login(value) => PckgCommand::Configure(ConfigureArgs {
-            repository_url: None,
-            api_key: value.key,
-        }),
+        PackageCommand::Login(value) => {
+            PckgCommand::Configure(ConfigureArgs { repository_url: None, api_key: value.key })
+        }
         PackageCommand::Logout => return LogoutRepository(&args.config_file, &args.base_url),
         PackageCommand::Template(value) => {
             return match value.command {
@@ -95,12 +88,8 @@ fn LogoutRepository(path: &std::path::Path, base_url: &str) -> Result<()> {
     let repository = config
         .get_mut("repositories")
         .and_then(serde_json::Value::as_object_mut)
-        .ok_or_else(|| {
-            anyhow::anyhow!("saved repository configuration is malformed; it was not changed")
-        })?;
-    let canonical = beskid_pckg::PckgClientConfig::new(base_url.trim())?
-        .base_url
-        .to_string();
+        .ok_or_else(|| anyhow::anyhow!("saved repository configuration is malformed; it was not changed"))?;
+    let canonical = beskid_pckg::PckgClientConfig::new(base_url.trim())?.base_url.to_string();
     let key = canonical.trim_end_matches('/');
     repository.retain(|url, _| url.trim_end_matches('/') != key);
     let mut bytes = serde_json::to_vec_pretty(&config)?;
@@ -130,29 +119,19 @@ mod tests {
         let root = std::env::temp_dir().join(format!(
             "beskid-v06-logout-{}-{}",
             std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
         ));
         std::fs::create_dir_all(&root).unwrap();
         let path = root.join("repositories.json");
         std::fs::write(&path, br#"{"repositories":{"https://one.invalid/":{"api_key":"fixture-one"},"https://two.invalid/":{"api_key":"fixture-two"}}}"#).unwrap();
         LogoutRepository(&path, "https://one.invalid").unwrap();
-        let saved: serde_json::Value =
-            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        let saved: serde_json::Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
         assert!(saved["repositories"].get("https://one.invalid/").is_none());
-        assert_eq!(
-            saved["repositories"]["https://two.invalid/"]["api_key"],
-            "fixture-two"
-        );
+        assert_eq!(saved["repositories"]["https://two.invalid/"]["api_key"], "fixture-two");
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            assert_eq!(
-                std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
-                0o600
-            );
+            assert_eq!(std::fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o600);
         }
         std::fs::remove_dir_all(root).unwrap();
     }

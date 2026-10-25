@@ -66,7 +66,9 @@ impl SemanticIssueKind {
             | Self::InternalBuildFailure { reason } => reason.clone(),
             _ => return None,
         };
-        Some(format!("report it at {INTERNAL_ERROR_REPORT} with the source that triggers it; internal reason: {reason}"))
+        Some(format!(
+            "report it at {INTERNAL_ERROR_REPORT} with the source that triggers it; internal reason: {reason}"
+        ))
     }
 
     pub(super) fn internal_label(&self) -> Option<String> {

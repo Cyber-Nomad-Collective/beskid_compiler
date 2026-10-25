@@ -147,7 +147,8 @@ pub(in crate::module_emission) fn resolve_lambda_trampolines(
         if closure_captures.is_some() {
             signature.params.insert(0, AbiParam::new(isa.pointer_type()));
         }
-        let symbol = format!("__beskid_lambda_entry_syntax_g{}_n{}", input.generation_tag(lambda.generation), lambda.node.0);
+        let symbol =
+            format!("__beskid_lambda_entry_syntax_g{}_n{}", input.generation_tag(lambda.generation), lambda.node.0);
         trampolines.push(LambdaTrampoline {
             lambda,
             callee: DirectCallee::lambda_trampoline(lambda),
@@ -209,9 +210,9 @@ fn resolve_specialized_lambda_trampoline(
     let closure_captures = if fact.fields.is_empty() {
         None
     } else {
-        let authority = input.specialized_closure_lowering_authority(lambda, lambda, instance).ok_or_else(|| {
-            emission_verification(format!("lambda {} has no closure allocation authority", site()))
-        })?;
+        let authority = input
+            .specialized_closure_lowering_authority(lambda, lambda, instance)
+            .ok_or_else(|| emission_verification(format!("lambda {} has no closure allocation authority", site())))?;
         Some(
             authority
                 .plan

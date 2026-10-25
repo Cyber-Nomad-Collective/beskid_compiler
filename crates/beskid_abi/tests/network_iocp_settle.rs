@@ -104,18 +104,28 @@ fn iocp_transport_settles_runtime_cancels_boundedly_and_orphans_only_on_native_c
         settle.contains("BeskidSettleOnExpire(") && settle.contains("request->status = NET_CANCELLED"),
         "an expired settle must abandon the operation and give the caller a final cancelled status"
     );
-    assert!(!settle.contains("BeskidNetworkOperationFree"), "an abandoned operation must keep its storage until its packet");
+    assert!(
+        !settle.contains("BeskidNetworkOperationFree"),
+        "an abandoned operation must keep its storage until its packet"
+    );
     let poll = &source[source.find("int32_t beskid_rt_v5_intrinsic_network_reactor_poll").unwrap()..];
     let poll = &poll[..poll.find("\n}\n").unwrap()];
     assert!(poll.contains("BeskidSettleAbandonedPoisons("), "a late abandoned packet must decide stream poison");
-    assert!(poll.contains("BeskidNetworkUnslot(operation);\n  BeskidNetworkOperationFree(operation);"), "the slot is released only with the packet");
+    assert!(
+        poll.contains("BeskidNetworkUnslot(operation);\n  BeskidNetworkOperationFree(operation);"),
+        "the slot is released only with the packet"
+    );
     let destroy = &source[source.find("void beskid_rt_v5_intrinsic_network_reactor_destroy").unwrap()..];
     let destroy = &destroy[..destroy.find("\n}\n").unwrap()];
     assert!(
-        destroy.contains("WaitForSingleObject(reactor->thread, BESKID_SETTLE_DRAIN_MS)") && !destroy.contains("INFINITE"),
+        destroy.contains("WaitForSingleObject(reactor->thread, BESKID_SETTLE_DRAIN_MS)")
+            && !destroy.contains("INFINITE"),
         "the shutdown drain must be bounded"
     );
-    assert!(source.contains("if (socket->poisoned) { status = NET_CONNECTION_ABORTED; goto done; }"), "a poisoned stream fails closed");
+    assert!(
+        source.contains("if (socket->poisoned) { status = NET_CONNECTION_ABORTED; goto done; }"),
+        "a poisoned stream fails closed"
+    );
     assert!(source.contains("BeskidSettleClassify("), "the reactor must classify packets with the shared rules");
     assert!(source.contains("WakeAllConditionVariable(&beskid_network_settled)"));
 }

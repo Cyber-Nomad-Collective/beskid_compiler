@@ -76,7 +76,8 @@ Item[] Main(Item[] items) { return Copy<Item>(items); }
 /// traced reference; the pointer ABI alone must not be guessed either way.
 #[test]
 fn specialized_generic_function_appends_an_indexed_nominal_element() {
-    let (input, isa, root) = canonical_corelib_project_fixture(&[("App/Copy.bd", COPY_SOURCE)], SyntaxGenerationId(212));
+    let (input, isa, root) =
+        canonical_corelib_project_fixture(&[("App/Copy.bd", COPY_SOURCE)], SyntaxGenerationId(212));
     let functions = find_function_definitions(input.database(), root);
     let copy = functions[0];
     let main = functions[1];
@@ -102,7 +103,8 @@ Statement[] Body(Builder builder, Statement begin, Statement finish) {
 /// same managed element representation, so the literal has one exact static plan.
 #[test]
 fn array_literal_mixing_call_results_and_nominal_locals_lowers() {
-    let (input, isa, root) = canonical_corelib_project_fixture(&[("App/Body.bd", BODY_SOURCE)], SyntaxGenerationId(214));
+    let (input, isa, root) =
+        canonical_corelib_project_fixture(&[("App/Body.bd", BODY_SOURCE)], SyntaxGenerationId(214));
     let functions = find_function_definitions(input.database(), root);
     let let_item = functions[0];
     let body = functions[1];
@@ -115,7 +117,10 @@ fn array_literal_mixing_call_results_and_nominal_locals_lowers() {
     lower_syntax_program(
         &input,
         isa.as_ref(),
-        &[SyntaxModuleItem { key: let_item, symbol: "Let".into() }, SyntaxModuleItem { key: body, symbol: "Body".into() }],
+        &[
+            SyntaxModuleItem { key: let_item, symbol: "Let".into() },
+            SyntaxModuleItem { key: body, symbol: "Body".into() },
+        ],
     )
     .expect("an array literal of call results and nominal locals lowers through generated ISLE");
 }

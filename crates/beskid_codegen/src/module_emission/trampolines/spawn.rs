@@ -204,7 +204,11 @@ pub(in crate::module_emission) fn resolve_spawn_trampolines(
                 if closure_captures.is_some() {
                     signature.params.insert(0, AbiParam::new(isa.pointer_type()));
                 }
-                let target_symbol = format!("__beskid_spawn_lambda_syntax_g{}_n{}", input.generation_tag(spawn.generation), spawn.node.0);
+                let target_symbol = format!(
+                    "__beskid_spawn_lambda_syntax_g{}_n{}",
+                    input.generation_tag(spawn.generation),
+                    spawn.node.0
+                );
                 let symbol = spawn_trampoline_symbol(input, &target_symbol, spawn);
                 let result_plan = spawn_result_plan(input, spawn, &symbol, lambda.callable.result)?;
                 trampolines.push(SpawnTrampoline {

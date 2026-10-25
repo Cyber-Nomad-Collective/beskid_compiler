@@ -84,30 +84,26 @@ fn ensure_exact_runtime_kit(cli_binary: &Path, profile: &str) -> PathBuf {
     let staged = STAGED_RUNTIME_KIT.get_or_init(|| Mutex::new(HashMap::new()));
     // The guard is never held across a panic; recover regardless so a stray poison cannot cascade.
     let mut outcomes = staged.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    let outcome = outcomes
-        .entry(profile.to_string())
-        .or_insert_with(|| stage_exact_runtime_kit(cli_binary, profile))
-        .clone();
+    let outcome =
+        outcomes.entry(profile.to_string()).or_insert_with(|| stage_exact_runtime_kit(cli_binary, profile)).clone();
     drop(outcomes);
     outcome.unwrap_or_else(|error| panic!("{error}"))
 }
 
 fn stage_exact_runtime_kit(cli_binary: &Path, profile: &str) -> Result<PathBuf, String> {
-    let triple = host_abi_v5_triple()
-        .map_err(|host| format!("e2e CLI harness requires a supported ABI-v5 host; got {host}"))?;
+    let triple =
+        host_abi_v5_triple().map_err(|host| format!("e2e CLI harness requires a supported ABI-v5 host; got {host}"))?;
     let target = TargetMetadata::for_triple(triple)
         .map_err(|error| format!("host ABI-v5 target `{triple}` is unsupported: {error:?}"))?;
-    let build_profile =
-        BuildProfile::parse(profile)
+    let build_profile = BuildProfile::parse(profile)
         .map_err(|error| format!("harness profile `{profile}` is not debug or release: {error:?}"))?;
     // A shared Cargo target directory may retain kits from an older compiler source state.
     // Never use its unkeyed runtime-kit root as evidence for this compiler's embedded corpus.
     let prefix = install_prefix_for_cli(cli_binary);
     let metadata = prefix.join("lib/beskid-runtime/abi-5").join(triple).join(profile).join("abi.json");
     if metadata.is_file() {
-        resolve_canonical_runtime_kit(&prefix, &target, build_profile).map_err(|error| {
-            format!("existing e2e runtime kit `{}` is not exact: {error:?}", prefix.display())
-        })?;
+        resolve_canonical_runtime_kit(&prefix, &target, build_profile)
+            .map_err(|error| format!("existing e2e runtime kit `{}` is not exact: {error:?}", prefix.display()))?;
         return Ok(prefix);
     }
 
@@ -213,7 +209,9 @@ fn cargo_profile_directory() -> String {
         .and_then(Path::file_name)
         .and_then(|name| name.to_str())
         .map(str::to_owned)
-        .unwrap_or_else(|| panic!("test executable {} is not inside a Cargo `<profile>/deps` directory", executable.display()))
+        .unwrap_or_else(|| {
+            panic!("test executable {} is not inside a Cargo `<profile>/deps` directory", executable.display())
+        })
 }
 
 /// Target directory the nested `cargo build -p beskid_cli` writes to.
@@ -317,7 +315,10 @@ mod tests {
         let command = build_current_cli_command(&workspace_root());
 
         assert_eq!(command.get_program(), "cargo");
-        assert_eq!(command.get_args().take(3).collect::<Vec<_>>(), ["build", "-p", "beskid_cli"].map(std::ffi::OsStr::new));
+        assert_eq!(
+            command.get_args().take(3).collect::<Vec<_>>(),
+            ["build", "-p", "beskid_cli"].map(std::ffi::OsStr::new)
+        );
         let profile = command.get_args().skip(3).collect::<Vec<_>>();
         match cargo_profile_directory().as_str() {
             "debug" => assert!(profile.is_empty(), "dev-profile run adds no profile flag: {profile:?}"),

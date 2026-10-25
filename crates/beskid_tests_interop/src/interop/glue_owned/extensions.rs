@@ -53,7 +53,15 @@ fn v061_glue_extensions_manual_c_abi() {
     }
     run_tool(
         Command::new(&rustc)
-            .args(["--edition", "2024", "--crate-type", "cdylib", "--crate-name", "glue_extensions_manual", "--out-dir"])
+            .args([
+                "--edition",
+                "2024",
+                "--crate-type",
+                "cdylib",
+                "--crate-name",
+                "glue_extensions_manual",
+                "--out-dir",
+            ])
             .arg(root)
             .arg(root.join("extensions.rs")),
         "manual extension library",
@@ -88,7 +96,10 @@ fn materialize_extension_project(root: &Path) -> PathBuf {
     for (name, text) in EXTENSION_FIXTURE_FILES {
         fs::write(project.join(name), text).unwrap();
     }
-    assert!(EXTENSION_FIXTURE_MANIFEST.contains(OWNED_FIXTURE_CORELIB), "extension manifest corelib dependency changed");
+    assert!(
+        EXTENSION_FIXTURE_MANIFEST.contains(OWNED_FIXTURE_CORELIB),
+        "extension manifest corelib dependency changed"
+    );
     let corelib = installed_corelib(&require_qualified_prefix()).join("beskid_corelib");
     let corelib = corelib.to_str().expect("UTF-8 corelib path").replace('\\', "/");
     fs::write(
@@ -107,8 +118,11 @@ fn build_extensions(prefix: &Path, work: &Path) -> anyhow::Result<OwnedBuild> {
     let sources = manifest_owner_sources(&manifest)?;
     with_glue_input(&manifest, EXTENSION_PROJECT, EXTENSION_CONSUMER, |input, items| {
         let declarations = glue_declarations(input, items, &[OWNER_LIBRARY.to_owned()])?;
-        let imports =
-            declarations.iter().filter(|declaration| declaration.is_import_of(OWNER_LIBRARY)).cloned().collect::<Vec<_>>();
+        let imports = declarations
+            .iter()
+            .filter(|declaration| declaration.is_import_of(OWNER_LIBRARY))
+            .cloned()
+            .collect::<Vec<_>>();
         let selected = declarations.iter().map(|declaration| declaration.item.clone()).collect::<Vec<_>>();
         let consumer_packet = beskid_codegen::glue::emit(input, &selected, EXTENSION_CONSUMER)?;
         consumer_packet.validate()?;
@@ -221,12 +235,17 @@ fn assert_extensions(process: &GlueProcess, packet: &GlueArtifact) {
 
 #[test]
 fn v061_glue_extensions_owned_roundtrip() {
-    run_in_private_prefix("extensions::v061_glue_extensions_owned_roundtrip", DriverStaging::Exact, ChildProject::Warmed, |prefix| {
-        let build = build_extensions(prefix, prefix).unwrap_or_else(|error| panic!("{error:#}"));
-        let (process, _owner, packet) = open_owned(build);
-        assert_extensions(&process, &packet);
-        drop(process);
-    });
+    run_in_private_prefix(
+        "extensions::v061_glue_extensions_owned_roundtrip",
+        DriverStaging::Exact,
+        ChildProject::Warmed,
+        |prefix| {
+            let build = build_extensions(prefix, prefix).unwrap_or_else(|error| panic!("{error:#}"));
+            let (process, _owner, packet) = open_owned(build);
+            assert_extensions(&process, &packet);
+            drop(process);
+        },
+    );
 }
 
 /// Release case GLUE066-01: the installed CLI builds the extension fixture's Rust owner and

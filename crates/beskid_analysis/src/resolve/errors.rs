@@ -11,20 +11,62 @@ fn span_loc(span: SpanInfo) -> String {
 /// Failed binding of a path, type, module segment, or visibility; returned as a batch from [`crate::resolve::Resolver::resolve_program`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ResolveError {
-    DuplicateItem { name: String, span: SpanInfo, previous: SpanInfo },
-    DuplicateSymbol { symbol: String, span: SpanInfo, previous: SpanInfo },
-    DuplicateLocal { name: String, span: SpanInfo, previous: SpanInfo },
+    DuplicateItem {
+        name: String,
+        span: SpanInfo,
+        previous: SpanInfo,
+    },
+    DuplicateSymbol {
+        symbol: String,
+        span: SpanInfo,
+        previous: SpanInfo,
+    },
+    DuplicateLocal {
+        name: String,
+        span: SpanInfo,
+        previous: SpanInfo,
+    },
     /// `suggestion` is the closest name in scope ("did you mean").
-    UnknownValue { name: String, span: SpanInfo, suggestion: Option<String> },
-    UnknownType { name: String, span: SpanInfo },
-    UnknownModulePath { path: String, span: SpanInfo },
-    UnknownValueInModule { module_path: String, name: String, span: SpanInfo },
-    UnknownTypeInModule { module_path: String, name: String, span: SpanInfo },
-    InvalidConformanceTarget { name: String, span: SpanInfo },
-    PrivateItemInModule { module_path: String, name: String, span: SpanInfo },
+    UnknownValue {
+        name: String,
+        span: SpanInfo,
+        suggestion: Option<String>,
+    },
+    UnknownType {
+        name: String,
+        span: SpanInfo,
+    },
+    UnknownModulePath {
+        path: String,
+        span: SpanInfo,
+    },
+    UnknownValueInModule {
+        module_path: String,
+        name: String,
+        span: SpanInfo,
+    },
+    UnknownTypeInModule {
+        module_path: String,
+        name: String,
+        span: SpanInfo,
+    },
+    InvalidConformanceTarget {
+        name: String,
+        span: SpanInfo,
+    },
+    PrivateItemInModule {
+        module_path: String,
+        name: String,
+        span: SpanInfo,
+    },
     /// `Module.Name` reaches `candidates` distinct items through the module's public re-exports
     /// at one distance, and the module declares none of its own.
-    AmbiguousItemInModule { module_path: String, name: String, candidates: usize, span: SpanInfo },
+    AmbiguousItemInModule {
+        module_path: String,
+        name: String,
+        candidates: usize,
+        span: SpanInfo,
+    },
 }
 
 impl fmt::Display for ResolveError {

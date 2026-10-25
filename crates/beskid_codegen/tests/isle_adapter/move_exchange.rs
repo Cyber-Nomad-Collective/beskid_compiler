@@ -81,16 +81,17 @@ fn exchange_of_a_field_stores_the_value_behind_the_barrier_and_yields_the_old_va
         &["Swap"],
     )[0];
     assert_eq!(assert_guarded_stores(swap), 1, "{swap}");
-    assert_eq!(calls_to(swap, ARRAY_ALLOCATE) + calls_to(swap, OBJECT_ALLOCATE), 0, "exchange allocates nothing: {swap}");
+    assert_eq!(
+        calls_to(swap, ARRAY_ALLOCATE) + calls_to(swap, OBJECT_ALLOCATE),
+        0,
+        "exchange allocates nothing: {swap}"
+    );
     assert_yields_loaded_value(swap);
 }
 
 #[test]
 fn exchange_of_an_element_stores_the_value_behind_the_barrier_and_yields_the_old_value() {
-    let swap = &lower_module(
-        "u8[] Swap(u8[][] xs, i64 i, u8[] s) { return exchange(xs[i], s); }",
-        &["Swap"],
-    )[0];
+    let swap = &lower_module("u8[] Swap(u8[][] xs, i64 i, u8[] s) { return exchange(xs[i], s); }", &["Swap"])[0];
     assert_eq!(assert_guarded_stores(swap), 1, "{swap}");
     assert!(swap.contains("heap_oob"), "the element exchange stays bounds-checked: {swap}");
     assert_yields_loaded_value(swap);

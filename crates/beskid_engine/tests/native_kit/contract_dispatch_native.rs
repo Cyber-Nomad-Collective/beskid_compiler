@@ -8,6 +8,7 @@
 //! contract values dispatch through their witness tables under the JIT, and the same artifact
 //! (witness tables, box descriptors and thunks included) compiles to an AOT object.
 
+use crate::shared_kit;
 use beskid_abi::runtime_kit::BuildProfile;
 use beskid_analysis::{
     projects::{AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, ProgramAssembly, RootEntry, SourceUnit},
@@ -15,7 +16,6 @@ use beskid_analysis::{
 };
 use beskid_queries::{BeskidDatabase, SyntaxGenerationId};
 use std::{path::Path, sync::Arc};
-use crate::shared_kit;
 
 fn lowered() -> beskid_codegen::PreparedSyntaxEntrypoint {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
@@ -23,7 +23,10 @@ fn lowered() -> beskid_codegen::PreparedSyntaxEntrypoint {
     let source = std::fs::read_to_string(&path).unwrap();
     let program = parse_program_with_source_name(path.to_str().unwrap(), &source).unwrap();
     let assembly = Arc::new(ProgramAssembly::new(
-        EffectiveCompilationRoots { host: RootEntry { dependency_name: None, source_root: root }, dependencies: vec![] },
+        EffectiveCompilationRoots {
+            host: RootEntry { dependency_name: None, source_root: root },
+            dependencies: vec![],
+        },
         Arc::new(vec![SourceUnit {
             origin_path: path.clone(),
             path,

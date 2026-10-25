@@ -9,6 +9,7 @@
 //! loop variable of `for value in values` compares string contents in the `T = string`
 //! specialization, and `FirstOr([7, 8], 0)` infers `T` from the bare integers of its array literal.
 
+use crate::shared_kit;
 use beskid_abi::runtime_kit::BuildProfile;
 use beskid_analysis::{
     projects::{AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, ProgramAssembly, RootEntry, SourceUnit},
@@ -16,7 +17,6 @@ use beskid_analysis::{
 };
 use beskid_queries::{BeskidDatabase, SyntaxGenerationId};
 use std::{path::Path, sync::Arc};
-use crate::shared_kit;
 
 #[test]
 fn generic_for_variables_compare_by_value_and_bare_integer_arrays_bind_t() {
@@ -46,9 +46,14 @@ fn generic_for_variables_compare_by_value_and_bare_integer_arrays_bind_t() {
     let settings = beskid_codegen::cranelift_host::production_isa_settings_builder().unwrap();
     let isa = cranelift_native::builder().unwrap().finish(cranelift_codegen::settings::Flags::new(settings)).unwrap();
     let mut db = BeskidDatabase::default();
-    let lowered =
-        beskid_codegen::lower_syntax_assembly_entrypoint(&mut db, assembly, "RunGenericForValues", target.clone(), isa.as_ref())
-            .expect("generic array functions must lower through source facts");
+    let lowered = beskid_codegen::lower_syntax_assembly_entrypoint(
+        &mut db,
+        assembly,
+        "RunGenericForValues",
+        target.clone(),
+        isa.as_ref(),
+    )
+    .expect("generic array functions must lower through source facts");
     let shared = shared_kit::debug();
     let mut engine = beskid_engine::Engine::with_runtime_kit(shared.prefix(), target, BuildProfile::Debug).unwrap();
     engine.compile_artifact(&lowered.artifact()).expect("compile generic-for-values artifact");

@@ -409,8 +409,8 @@ fn generic_enum_constructor_uses_its_explicit_generic_call_parameter_context() {
         .expect("Map specialization instance");
     assert!(
         beskid_queries::enum_match_specialization(input.database(), match_expression, &specialization)
-        .expect("generic Map match specialization")
-        .is_some(),
+            .expect("generic Map match specialization")
+            .is_some(),
         "the call-derived environment must materialize exact match layout and ownership facts"
     );
     for body_constructor in
@@ -418,8 +418,8 @@ fn generic_enum_constructor_uses_its_explicit_generic_call_parameter_context() {
     {
         assert!(
             beskid_queries::enum_constructor_specialization(input.database(), body_constructor, &specialization)
-            .expect("Map body constructor specialization query")
-            .is_some(),
+                .expect("Map body constructor specialization query")
+                .is_some(),
             "each Map body constructor must consume the same generic environment"
         );
     }

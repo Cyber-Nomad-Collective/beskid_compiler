@@ -105,7 +105,10 @@ fn collect_items(
                 if let Type::Complex(path) = &block.node.receiver_type.node
                     && let Some(receiver) = resolve(path)
                 {
-                    extra_conformances.entry(receiver.declaration_only()).or_default().extend(block.node.conformances.iter().map(resolve));
+                    extra_conformances
+                        .entry(receiver.declaration_only())
+                        .or_default()
+                        .extend(block.node.conformances.iter().map(resolve));
                 }
             }
             Node::InlineModule(module) => collect_items(&module.node.items, unit, types, found, extra_conformances),
@@ -127,7 +130,11 @@ fn single_path(name: &Spanned<Identifier>, type_args: &[Spanned<Type>]) -> Spann
 
 /// `Some(true)` when `type_id` conforms to `contract`, `Some(false)` when the declarations prove
 /// it does not, `None` when a conformance names no declaration the assembly holds.
-fn conforms(declarations: &HashMap<TypeIdentity, Declaration>, type_id: &TypeIdentity, contract: &TypeIdentity) -> Option<bool> {
+fn conforms(
+    declarations: &HashMap<TypeIdentity, Declaration>,
+    type_id: &TypeIdentity,
+    contract: &TypeIdentity,
+) -> Option<bool> {
     let Some(Declaration::Type { conformances, .. }) = declarations.get(&type_id.declaration_only()) else {
         return None;
     };
@@ -214,18 +221,20 @@ pub fn validate_registrations(
                 span: registration.implementation_span,
             }),
             Declaration::Type { .. } => match (&registration.key, &registration.key_identity) {
-                (RegistrationKey::Contract(_), Some(contract_id)) => match declarations.get(&contract_id.declaration_only()) {
-                    Some(Declaration::Contract { name, .. })
-                        if conforms(&declarations, implementation_id, contract_id) == Some(false) =>
-                    {
-                        Some(CompositionIssue::NonConformingRegistration {
-                            implementation,
-                            contract: name.clone(),
-                            span: registration.implementation_span,
-                        })
+                (RegistrationKey::Contract(_), Some(contract_id)) => {
+                    match declarations.get(&contract_id.declaration_only()) {
+                        Some(Declaration::Contract { name, .. })
+                            if conforms(&declarations, implementation_id, contract_id) == Some(false) =>
+                        {
+                            Some(CompositionIssue::NonConformingRegistration {
+                                implementation,
+                                contract: name.clone(),
+                                span: registration.implementation_span,
+                            })
+                        }
+                        _ => None,
                     }
-                    _ => None,
-                },
+                }
                 _ => None,
             },
         };
@@ -306,7 +315,8 @@ i32 Main(bool flag)
 }
 "#,
         );
-        let misplaced = found.iter().filter(|issue| matches!(issue, CompositionIssue::WithWithoutLaunch { .. })).count();
+        let misplaced =
+            found.iter().filter(|issue| matches!(issue, CompositionIssue::WithWithoutLaunch { .. })).count();
         assert_eq!(misplaced, 2, "{found:?}");
     }
 }

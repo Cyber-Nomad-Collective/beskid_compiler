@@ -164,7 +164,8 @@ pub fn prepare_project_workspace_plan_with_options(
     let mut origins = SourceOrigins::new();
     if let Some(source_root) = &plan.source_root {
         origins.record(&obj_beskid, &materialized_source_root, source_root);
-        if let (Some(source_parent), Some(materialized_parent)) = (source_root.parent(), materialized_source_root.parent())
+        if let (Some(source_parent), Some(materialized_parent)) =
+            (source_root.parent(), materialized_source_root.parent())
         {
             origins.record(&obj_beskid, &materialized_parent.join(".generated"), &source_parent.join(".generated"));
         }

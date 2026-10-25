@@ -48,7 +48,11 @@ pub fn specialized_builtin_type_argument(
     let [argument] = terminal.node.type_args.as_slice() else { return Ok(None) };
     let environment = enclosing
         .map(|enclosing| {
-            enclosing.substitutions.iter().map(|binding| (binding.parameter.as_ref(), binding.source_identity())).collect()
+            enclosing
+                .substitutions
+                .iter()
+                .map(|binding| (binding.parameter.as_ref(), binding.source_identity()))
+                .collect()
         })
         .unwrap_or_default();
     let source = generic_source_type_identity_with_substitutions(db, key, &argument.node, &environment)?;

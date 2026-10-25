@@ -398,10 +398,8 @@ impl ProgramAssembly {
         let mut result = vec![None; items.len()];
         for metadata in &self.compiled_mod_metadata {
             let Some(attribution) = metadata.description().attribution() else { continue };
-            let Some(unit) = self
-                .units
-                .iter()
-                .find(|unit| crate::paths::same_file(&unit.path, &attribution.attributed_unit))
+            let Some(unit) =
+                self.units.iter().find(|unit| crate::paths::same_file(&unit.path, &attribution.attributed_unit))
             else {
                 continue;
             };
@@ -413,7 +411,8 @@ impl ProgramAssembly {
                 .items
                 .iter()
                 .map(|item| {
-                    let matches = items.iter().enumerate().filter(|(_, candidate)| *candidate == item).collect::<Vec<_>>();
+                    let matches =
+                        items.iter().enumerate().filter(|(_, candidate)| *candidate == item).collect::<Vec<_>>();
                     match matches.as_slice() {
                         [(index, _)] => Some(*index),
                         _ => None,

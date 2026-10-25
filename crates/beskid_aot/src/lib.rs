@@ -31,8 +31,8 @@ pub use bundled::{default_runtime_strategy, installed_runtime_strategy, resolve_
 pub use error::{AotError, AotResult};
 pub use export_table::{ExportTable, ExportTableEntry};
 pub use mod_artifact::{
-    CachedModArtifactRequest, ContractRegistration, ModArtifactBuildRequest, ModArtifactDescriptor, QualifiedModInvoker,
-    ModCacheLock, QualifiedNativeMod, build_mod_artifact, mod_artifact_dir, qualify_cached_mod_artifact,
+    CachedModArtifactRequest, ContractRegistration, ModArtifactBuildRequest, ModArtifactDescriptor, ModCacheLock,
+    QualifiedModInvoker, QualifiedNativeMod, build_mod_artifact, mod_artifact_dir, qualify_cached_mod_artifact,
 };
 pub use mod_producer::ModProducerIdentity;
 pub use prepared_syntax::{

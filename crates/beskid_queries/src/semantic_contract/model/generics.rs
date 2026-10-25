@@ -87,12 +87,21 @@ pub struct GenericSubstitution {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) enum GenericSourceTypeIdentity {
     Abi(SemanticTypeId),
-    Nominal { qualified_name: Arc<str>, arguments: Arc<[GenericSourceTypeIdentity]> },
+    Nominal {
+        qualified_name: Arc<str>,
+        arguments: Arc<[GenericSourceTypeIdentity]>,
+    },
     Array(Box<GenericSourceTypeIdentity>),
-    Function { parameters: Arc<[GenericSourceTypeIdentity]>, result: Box<GenericSourceTypeIdentity> },
+    Function {
+        parameters: Arc<[GenericSourceTypeIdentity]>,
+        result: Box<GenericSourceTypeIdentity>,
+    },
     /// A contract-typed value: a contract box holding an implementing value and its witness table
     /// (runtime dispatch, v0.6.7). `arguments` are the applied contract arguments.
-    Contract { qualified_name: Arc<str>, arguments: Arc<[GenericSourceTypeIdentity]> },
+    Contract {
+        qualified_name: Arc<str>,
+        arguments: Arc<[GenericSourceTypeIdentity]>,
+    },
 }
 
 impl GenericSubstitution {

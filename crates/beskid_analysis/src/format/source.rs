@@ -73,7 +73,12 @@ fn parse_strict(source_name: &str, source: &str) -> Result<ParsedSource, FormatE
     let mut pairs = BeskidParser::parse(Rule::Program, source)
         .map_err(|err| FormatError::Parse(Box::new(pest_error_diagnostic(source_name, source, &err))))?;
     let pair = pairs.next().ok_or_else(|| {
-        FormatError::Parse(Box::new(whole_file_diagnostic(source_name, source, parse_codes::EMPTY_SOURCE, "no program found in source")))
+        FormatError::Parse(Box::new(whole_file_diagnostic(
+            source_name,
+            source,
+            parse_codes::EMPTY_SOURCE,
+            "no program found in source",
+        )))
     })?;
     let comments = trivia::collect_comments(source, pair.clone().into_inner());
     let mut opaque = Vec::new();
@@ -112,7 +117,12 @@ fn whole_file_diagnostic(
 }
 
 fn internal(source_name: &str, source: &str, message: impl Into<String>) -> FormatError {
-    FormatError::Internal(Box::new(whole_file_diagnostic(source_name, source, internal_codes::FORMATTER_FAILURE, message)))
+    FormatError::Internal(Box::new(whole_file_diagnostic(
+        source_name,
+        source,
+        internal_codes::FORMATTER_FAILURE,
+        message,
+    )))
 }
 
 /// Format `source` in the house style.
@@ -130,16 +140,16 @@ pub fn format_source(source_name: &str, source: &str) -> Result<String, FormatEr
         .map_err(|err| internal(source_name, source, format!("format error: {err}")))?;
 
     let reparsed = parse_strict(source_name, &formatted).map_err(|err| {
-        internal(source_name, source, format!("formatter produced text that does not parse ({err}); file left unchanged"))
+        internal(
+            source_name,
+            source,
+            format!("formatter produced text that does not parse ({err}); file left unchanged"),
+        )
     })?;
     let before: Vec<String> = parsed.comments.iter().map(|c| trivia::comparable(&c.text)).collect();
     let after: Vec<String> = reparsed.comments.iter().map(|c| trivia::comparable(&c.text)).collect();
     if before != after {
-        return Err(internal(
-            source_name,
-            source,
-            "formatter would drop or reorder a comment; file left unchanged",
-        ));
+        return Err(internal(source_name, source, "formatter would drop or reorder a comment; file left unchanged"));
     }
     let code_after = tokens::code_tokens(&formatted, &reparsed.comments, &reparsed.opaque);
     if let Some(difference) = tokens::first_difference(&code_before, &code_after) {

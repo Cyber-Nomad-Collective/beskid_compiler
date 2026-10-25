@@ -12,12 +12,12 @@ mod channel_conditions;
 mod collection_growth_owner;
 #[path = "isle_adapter/composition_conditions.rs"]
 mod composition_conditions;
+#[path = "isle_adapter/contextual_literals.rs"]
+mod contextual_literals;
 #[path = "isle_adapter/contract_dispatch.rs"]
 mod contract_dispatch;
 #[path = "isle_adapter/contract_method_bodies.rs"]
 mod contract_method_bodies;
-#[path = "isle_adapter/contextual_literals.rs"]
-mod contextual_literals;
 #[path = "isle_adapter/control_flow_closures_spawn.rs"]
 mod control_flow_closures_spawn;
 #[path = "isle_adapter/control_flow_loop_termination.rs"]
@@ -44,14 +44,20 @@ mod lambda_parameter_match;
 mod literal_operators;
 #[path = "isle_adapter/managed_references.rs"]
 mod managed_references;
-#[path = "isle_adapter/memory_aggregate_arrays.rs"]
-mod memory_aggregate_arrays;
 #[path = "isle_adapter/member_callee_methods.rs"]
 mod member_callee_methods;
+#[path = "isle_adapter/memory_aggregate_arrays.rs"]
+mod memory_aggregate_arrays;
 #[path = "isle_adapter/method_owned_fields.rs"]
 mod method_owned_fields;
 #[path = "isle_adapter/module_emission_specialization.rs"]
 mod module_emission_specialization;
+#[path = "isle_adapter/move_exchange.rs"]
+mod move_exchange;
+#[path = "isle_adapter/move_generic_arguments.rs"]
+mod move_generic_arguments;
+#[path = "isle_adapter/optional_arguments.rs"]
+mod optional_arguments;
 #[path = "isle_adapter/parallel_runtime_builtins.rs"]
 mod parallel_runtime_builtins;
 #[path = "isle_adapter/projected_path_match.rs"]
@@ -70,9 +76,3 @@ mod unit_let;
 mod waitgroup_conditions;
 #[path = "isle_adapter/write_barrier_emission.rs"]
 mod write_barrier_emission;
-#[path = "isle_adapter/move_exchange.rs"]
-mod move_exchange;
-#[path = "isle_adapter/move_generic_arguments.rs"]
-mod move_generic_arguments;
-#[path = "isle_adapter/optional_arguments.rs"]
-mod optional_arguments;

@@ -88,10 +88,9 @@ fn explicit_and_contextual_generic_enum_payloads_substitute_element_type() {
 
 #[test]
 fn absent_declaration_and_nonarray_slot_have_no_array_authority() {
-    for source in [
-        "unit Main() { Missing::Items([]); }",
-        "enum Scalar { Value(i64 value), } unit Main() { Scalar::Value([]); }",
-    ] {
+    for source in
+        ["unit Main() { Missing::Items([]); }", "enum Scalar { Value(i64 value), } unit Main() { Scalar::Value([]); }"]
+    {
         let (_temporary, db, _assembly, arrays) = fixture(source, false);
         assert_eq!(arrays.len(), 1);
         assert!(

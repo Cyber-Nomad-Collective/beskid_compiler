@@ -263,7 +263,10 @@ fn resolve_mod_project(
     let manifest_path = observe_phase_result(pipeline, RESOLVE_MANIFEST, || resolve_manifest_path(project))?;
     let manifest = load_manifest_from_path(&manifest_path).map_err(anyhow::Error::from)?;
     if manifest.project.kind != ProjectKind::Mod {
-        return Err(anyhow!("`beskid dev mod rebuild` requires a `type = Mod` project, got `{}`", manifest.project.name));
+        return Err(anyhow!(
+            "`beskid dev mod rebuild` requires a `type = Mod` project, got `{}`",
+            manifest.project.name
+        ));
     }
 
     let plan = observe_phase_result(pipeline, RESOLVE_GRAPH, || {
@@ -560,7 +563,10 @@ mod tests {
         );
         let shipped = mod_root.join(".beskid/obj/mods/DemoMod");
         assert!(
-            WalkDir::new(&shipped).into_iter().filter_map(Result::ok).any(|entry| entry.file_name() == "mod.descriptor.json"),
+            WalkDir::new(&shipped)
+                .into_iter()
+                .filter_map(Result::ok)
+                .any(|entry| entry.file_name() == "mod.descriptor.json"),
             "the CLI ships the descriptor inside the Mod project under {}",
             shipped.display()
         );
@@ -633,7 +639,8 @@ mod tests {
     /// program that imports that package's surface activates it.
     #[test]
     fn corelib_mods_activate_only_for_programs_that_reach_their_package() {
-        beskid_tools::ensure_bundled_corelib(&beskid_corelib_embed::CORELIB_BUNDLE).expect("provision the installed Corelib");
+        beskid_tools::ensure_bundled_corelib(&beskid_corelib_embed::CORELIB_BUNDLE)
+            .expect("provision the installed Corelib");
         let root = unique_temp_dir("beskid_cli_mod_activation");
         let host_input = |name: &str, source: &str| {
             let host = root.join(name);
@@ -657,16 +664,14 @@ mod tests {
             plan.dependency_projects.iter().any(|dependency| dependency.project_name == "serialization_mod"),
             "the implicit Corelib aggregate puts the Serialization Mod in every graph"
         );
-        let active = beskid_analysis::mod_host::active_mod_manifests_for_input(&hello, &FrontEndOptions::default(), false)
-            .expect("hello-world activation");
+        let active =
+            beskid_analysis::mod_host::active_mod_manifests_for_input(&hello, &FrontEndOptions::default(), false)
+                .expect("hello-world activation");
         assert!(active.is_empty(), "hello-world activates no Mod: {active:?}");
         let host = prepare_native_mod_executor(&hello, Default::default(), None).expect("hello-world Mod host");
         assert!(!host.is_native(), "hello-world needs no native Mod host, so nothing is built");
 
-        let serializing = host_input(
-            "Serializing",
-            "use Core.Serialization.Contracts;\nunit Main() { return; }\n",
-        );
+        let serializing = host_input("Serializing", "use Core.Serialization.Contracts;\nunit Main() { return; }\n");
         let active =
             beskid_analysis::mod_host::active_mod_manifests_for_input(&serializing, &FrontEndOptions::default(), false)
                 .expect("serialization activation");

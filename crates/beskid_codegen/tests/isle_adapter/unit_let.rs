@@ -1,7 +1,10 @@
 //! A `unit` local has no storage: `unit done = Effect();` and a generic `T value = ...;` at
 //! `T = unit` (the `Task<unit>.Join()` shape, `T value = __isolate_join_value<T>(id)`) lower by
 //! evaluating the initializer for its effects.
-use super::support::{SyntaxGenerationId, SyntaxModuleItem, canonical_corelib_project_fixture, find_function_definitions, lower_syntax_program};
+use super::support::{
+    SyntaxGenerationId, SyntaxModuleItem, canonical_corelib_project_fixture, find_function_definitions,
+    lower_syntax_program,
+};
 
 const SOURCE: &str = r#"
 enum Outcome<T> { Done(T value), Failed, }

@@ -9,12 +9,12 @@
 //! image and so its record. The consumer record pins every Rust owner image by its exact digest,
 //! and names the provider digest. The provider and the compiler driver are resolved from the
 //! installed toolchain prefix, never from a file beside the outputs.
-use super::{
-    AotResult, CheckedEntryWitness, DynamicShapeWitness, GlueProducerWitness, HandleTransportWitness,
-    IssuedGlueImage, PreparedRustOwner, bounded_file, consumer_exports, hash, hash_file, invalid, provider_identity,
-    require_exports, require_sole_provider, target_shared_image,
-};
 use super::loader::{GlueProcess, IssuedRustOwner};
+use super::{
+    AotResult, CheckedEntryWitness, DynamicShapeWitness, GlueProducerWitness, HandleTransportWitness, IssuedGlueImage,
+    PreparedRustOwner, bounded_file, consumer_exports, hash, hash_file, invalid, provider_identity, require_exports,
+    require_sole_provider, target_shared_image,
+};
 use crate::runtime::{RuntimeBuildRequest, RuntimeLinkage, prepare_runtime};
 use beskid_codegen::glue::GlueArtifact;
 use object::{Object, ObjectSection};
@@ -271,10 +271,12 @@ impl ConsumerRecord {
         if self.generation == 0 {
             return Err(invalid("published Glue consumer record has no source generation"));
         }
-        let adapter =
-            self.packet.files.iter().find(|file| file.path == "native/adapters.c").ok_or_else(|| {
-                invalid("published Glue consumer packet lacks its generated adapter source")
-            })?;
+        let adapter = self
+            .packet
+            .files
+            .iter()
+            .find(|file| file.path == "native/adapters.c")
+            .ok_or_else(|| invalid("published Glue consumer packet lacks its generated adapter source"))?;
         for digest in [
             &self.body_object_sha256,
             &self.adapter_object_sha256,
@@ -443,7 +445,8 @@ pub(super) fn read_record<T: DeserializeOwned + Serialize>(native: &object::File
     }
     let framed = mapped(native, export.address(), RECORD_HEADER + length)?;
     let payload = &framed[RECORD_HEADER as usize..];
-    let record: T = serde_json::from_slice(payload).map_err(|error| invalid(format!("Glue admission record: {error}")))?;
+    let record: T =
+        serde_json::from_slice(payload).map_err(|error| invalid(format!("Glue admission record: {error}")))?;
     if serde_json::to_vec(&record).map_err(|error| invalid(error.to_string()))? != payload {
         return Err(invalid("Glue admission record is not canonically encoded"));
     }
@@ -556,7 +559,10 @@ pub fn admit_published_glue_images(req: &PublishedGlueRequest<'_>) -> AotResult<
         let native = target_shared_image(&bytes, target)?;
         let owner: OwnerRecord = read_record(&native, OWNER_RECORD_SYMBOL)?;
         if owner.format != RECORD_FORMAT || owner.compiler != RECORD_COMPILER {
-            return Err(invalid(format!("owner `{}` was produced by `{}`, not `{RECORD_COMPILER}`", pin.library, owner.compiler)));
+            return Err(invalid(format!(
+                "owner `{}` was produced by `{}`, not `{RECORD_COMPILER}`",
+                pin.library, owner.compiler
+            )));
         }
         if owner.library != pin.library || owner.generation != producer.syntax_generation.0 {
             return Err(invalid("owner admission record names another library or source generation"));

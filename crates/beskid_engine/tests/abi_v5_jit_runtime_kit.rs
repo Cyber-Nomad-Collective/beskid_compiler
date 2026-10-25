@@ -178,8 +178,14 @@ fn trusted_intrinsic_ffi_may_supply_a_manifest_export_allowlist_symbol_that_auth
 
     let via_trusted_intrinsic_ffi = [(intrinsic_symbol, std::ptr::dangling::<u8>())];
     assert!(
-        BeskidJitModule::new_with_runtime_kit(temp.path(), &target, BuildProfile::Debug, &[], &via_trusted_intrinsic_ffi)
-            .is_ok(),
+        BeskidJitModule::new_with_runtime_kit(
+            temp.path(),
+            &target,
+            BuildProfile::Debug,
+            &[],
+            &via_trusted_intrinsic_ffi
+        )
+        .is_ok(),
         "trusted_intrinsic_ffi must not be rejected as an export-allowlist override"
     );
 }
@@ -349,9 +355,13 @@ fn codegen_input_route_fails_closed_when_exact_kit_manifest_is_missing() {
     };
     let empty = TestDir::new();
     let _runtime_prefix = RuntimePrefixContext::install(empty.path());
-    let error =
-        beskid_engine::services::run_entrypoint(Path::new("missing-kit.bd"), "i64 Main() { return 1; }", "Main", &beskid_engine::ModHost::NoMods)
-            .expect_err("CodegenInput JIT route must fail closed without an exact kit");
+    let error = beskid_engine::services::run_entrypoint(
+        Path::new("missing-kit.bd"),
+        "i64 Main() { return 1; }",
+        "Main",
+        &beskid_engine::ModHost::NoMods,
+    )
+    .expect_err("CodegenInput JIT route must fail closed without an exact kit");
     let message = error.to_string();
     let expected =
         empty.path().join("lib/beskid-runtime/abi-5").join(target.triple.as_str()).join("debug").join("abi.json");
@@ -375,9 +385,13 @@ fn codegen_input_route_fails_closed_when_exact_kit_is_tampered() {
     fs::write(shared, b"tampered shared runtime").unwrap();
 
     let _runtime_prefix = RuntimePrefixContext::install(tampered.path());
-    let error =
-        beskid_engine::services::run_entrypoint(Path::new("tampered-kit.bd"), "i64 Main() { return 1; }", "Main", &beskid_engine::ModHost::NoMods)
-            .expect_err("CodegenInput JIT route must reject a tampered exact kit");
+    let error = beskid_engine::services::run_entrypoint(
+        Path::new("tampered-kit.bd"),
+        "i64 Main() { return 1; }",
+        "Main",
+        &beskid_engine::ModHost::NoMods,
+    )
+    .expect_err("CodegenInput JIT route must reject a tampered exact kit");
     let message = error.to_string();
     assert!(
         message.contains("runtime kit")

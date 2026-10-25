@@ -22,7 +22,8 @@ fn provisioned_corelib_root() -> &'static std::path::Path {
         let root = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("pipeline-output").join("corelib");
         let workspace = tempfile::tempdir().map_err(|error| format!("create provisioning project: {error}"))?;
         let project = workspace.path().to_path_buf();
-        std::fs::create_dir_all(project.join("Src")).map_err(|error| format!("create provisioning project: {error}"))?;
+        std::fs::create_dir_all(project.join("Src"))
+            .map_err(|error| format!("create provisioning project: {error}"))?;
         std::fs::write(project.join("Src/Provision.bd"), "pub i64 Main() { return 0; }\n")
             .map_err(|error| format!("write provisioning source: {error}"))?;
         std::fs::write(

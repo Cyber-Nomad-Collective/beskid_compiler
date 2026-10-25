@@ -136,7 +136,11 @@ pub fn corelib_service_signature(
 /// Canonical import signature of a process-linked runtime symbol ([`beskid_abi::is_runtime_import_symbol`]).
 /// The shape comes only from the generated ABI-v5 tables
 /// (`canonical_corelib_service_abi_for_adapter`); `None` for any other symbol or an ambiguous shape.
-pub fn runtime_import_signature(pointer: cranelift_codegen::ir::Type, call_conv: CallConv, symbol: &str) -> Option<Signature> {
+pub fn runtime_import_signature(
+    pointer: cranelift_codegen::ir::Type,
+    call_conv: CallConv,
+    symbol: &str,
+) -> Option<Signature> {
     if !beskid_abi::is_runtime_import_symbol(symbol) {
         return None;
     }

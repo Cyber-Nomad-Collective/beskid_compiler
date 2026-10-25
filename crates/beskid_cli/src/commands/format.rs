@@ -33,18 +33,13 @@ pub struct FormatArgs {
 /// file that does not parse is reported and left unchanged, and the command then exits non-zero.
 pub fn execute(args: FormatArgs) -> Result<()> {
     let started = Instant::now();
-    let input_is_dir = fs::metadata(&args.input)
-        .with_context(|| format!("stat {}", args.input.display()))?
-        .is_dir();
+    let input_is_dir = fs::metadata(&args.input).with_context(|| format!("stat {}", args.input.display()))?.is_dir();
 
-    let paths = collect_bd_files(&args.input, input_is_dir)
-        .with_context(|| format!("scan {}", args.input.display()))?;
+    let paths =
+        collect_bd_files(&args.input, input_is_dir).with_context(|| format!("scan {}", args.input.display()))?;
 
     if paths.is_empty() {
-        Progress(format!(
-            "beskid fmt: 0 .bd file(s) in {}",
-            fmt_duration(started.elapsed())
-        ));
+        Progress(format!("beskid fmt: 0 .bd file(s) in {}", fmt_duration(started.elapsed())));
         return Ok(());
     }
 
@@ -83,11 +78,7 @@ pub fn execute(args: FormatArgs) -> Result<()> {
     for other in failures {
         beskid_tools::print_report(&beskid_tools::diagnostics::report_from_anyhow(&other));
     }
-    Progress(format!(
-        "beskid fmt: {count} of {} .bd file(s) failed in {}",
-        paths.len(),
-        fmt_duration(elapsed)
-    ));
+    Progress(format!("beskid fmt: {count} of {} .bd file(s) failed in {}", paths.len(), fmt_duration(elapsed)));
     Err(first)
 }
 
@@ -103,11 +94,7 @@ fn format_one(path: &Path, check: bool) -> Result<()> {
 
     if check {
         if formatted != source {
-            bail!(
-                "not formatted: {} (run `beskid fmt {}`)",
-                path.display(),
-                path.display()
-            );
+            bail!("not formatted: {} (run `beskid fmt {}`)", path.display(), path.display());
         }
         return Ok(());
     }
@@ -145,10 +132,8 @@ fn collect_dir(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
         .with_context(|| format!("read directory {}", dir.display()))?;
     entries.sort();
 
-    let manifests: Vec<&PathBuf> = entries
-        .iter()
-        .filter(|p| p.is_file() && p.extension().and_then(OsStr::to_str) == Some("bproj"))
-        .collect();
+    let manifests: Vec<&PathBuf> =
+        entries.iter().filter(|p| p.is_file() && p.extension().and_then(OsStr::to_str) == Some("bproj")).collect();
     if !manifests.is_empty() {
         let mut roots: Vec<PathBuf> = Vec::new();
         for manifest_path in manifests {
@@ -180,9 +165,7 @@ fn collect_dir(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
 }
 
 fn is_bd_path(path: &Path) -> bool {
-    path.extension()
-        .and_then(OsStr::to_str)
-        .is_some_and(|ext| ext.eq_ignore_ascii_case("bd"))
+    path.extension().and_then(OsStr::to_str).is_some_and(|ext| ext.eq_ignore_ascii_case("bd"))
 }
 
 fn is_skipped_dir(name: &OsStr) -> bool {
@@ -226,28 +209,18 @@ mod v06_tests {
         let root = std::env::temp_dir().join(format!(
             "beskid-v06-fmt-{}-{}",
             std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
         ));
         std::fs::create_dir_all(&root).unwrap();
         let path = root.join("Main.bd");
         let source = "i32 Main(){return 0;}\n";
         std::fs::write(&path, source).unwrap();
-        let result = execute(FormatArgs {
-            input: path.clone(),
-            output: None,
-            check: false,
-            diagnostics: Default::default(),
-        });
+        let result =
+            execute(FormatArgs { input: path.clone(), output: None, check: false, diagnostics: Default::default() });
         let actual = std::fs::read_to_string(&path).unwrap();
         std::fs::remove_dir_all(root).unwrap();
         result.unwrap();
-        assert_ne!(
-            actual, source,
-            "canonical fmt should edit the selected source without extra --write"
-        );
+        assert_ne!(actual, source, "canonical fmt should edit the selected source without extra --write");
         assert!(actual.contains("    return 0;"));
     }
 
@@ -280,7 +253,8 @@ mod v06_tests {
             std::fs::write(root.join(other), broken).unwrap();
         }
         let paths = collect_bd_files(&root, true).unwrap();
-        let result = execute(FormatArgs { diagnostics: Default::default(), input: root.clone(), output: None, check: false });
+        let result =
+            execute(FormatArgs { diagnostics: Default::default(), input: root.clone(), output: None, check: false });
         let formatted = std::fs::read_to_string(root.join("Src/Main.bd")).unwrap();
         std::fs::remove_dir_all(&root).unwrap();
         assert_eq!(paths, vec![root.join("Src/Main.bd")], "only the source root is formatted");
@@ -294,7 +268,8 @@ mod v06_tests {
         let path = root.join("Broken.bd");
         let source = "i32 Main()\n{\n    let x: i32 = 5\n    return x;\n}\n";
         std::fs::write(&path, source).unwrap();
-        let result = execute(FormatArgs { diagnostics: Default::default(), input: path.clone(), output: None, check: false });
+        let result =
+            execute(FormatArgs { diagnostics: Default::default(), input: path.clone(), output: None, check: false });
         let actual = std::fs::read_to_string(&path).unwrap();
         std::fs::remove_dir_all(root).unwrap();
         assert!(result.is_err(), "a parse error must fail `beskid fmt`");
@@ -307,9 +282,11 @@ mod v06_tests {
         let path = root.join("Main.bd");
         let source = "// Header comment.\n// TODO: keep me.\n\ni32 Answer() { return 0; } // trailing\n";
         std::fs::write(&path, source).unwrap();
-        execute(FormatArgs { diagnostics: Default::default(), input: path.clone(), output: None, check: false }).unwrap();
+        execute(FormatArgs { diagnostics: Default::default(), input: path.clone(), output: None, check: false })
+            .unwrap();
         let formatted = std::fs::read_to_string(&path).unwrap();
-        let check = execute(FormatArgs { diagnostics: Default::default(), input: path.clone(), output: None, check: true });
+        let check =
+            execute(FormatArgs { diagnostics: Default::default(), input: path.clone(), output: None, check: true });
         std::fs::remove_dir_all(root).unwrap();
         assert!(formatted.starts_with("// Header comment.\n// TODO: keep me.\n\n"), "{formatted}");
         assert!(formatted.contains("} // trailing"), "{formatted}");

@@ -76,10 +76,9 @@ fn bound_of_position(db: &dyn Db, value: AstNodeKey) -> Option<CapturesBound> {
             NodeKind::Expression | NodeKind::GroupedExpression => child = parent,
             NodeKind::CallExpression => {
                 let call = index.node_at(program, parent)?.of::<beskid_analysis::syntax::CallExpression>()?;
-                let position = call
-                    .args
-                    .iter()
-                    .position(|argument| index.direct_child_id(program, parent, DynNodeRef::from(argument)) == Some(child))?;
+                let position = call.args.iter().position(|argument| {
+                    index.direct_child_id(program, parent, DynNodeRef::from(argument)) == Some(child)
+                })?;
                 // The task body of `__isolate_spawn[_local]<T>(() => T body, i64 scope)` runs in
                 // another runtime instance: it is judged like `[Captures(Bound: Transferable)]`.
                 if position == 0 && isolate_spawn_call(call) {
@@ -90,7 +89,8 @@ fn bound_of_position(db: &dyn Db, value: AstNodeKey) -> Option<CapturesBound> {
             NodeKind::StructLiteralField => {
                 let field = index.node_at(program, parent)?.of::<beskid_analysis::syntax::StructLiteralField>()?;
                 let literal = parent_node(index, parent)?;
-                let path = &index.node_at(program, literal)?.of::<beskid_analysis::syntax::StructLiteralExpression>()?.path;
+                let path =
+                    &index.node_at(program, literal)?.of::<beskid_analysis::syntax::StructLiteralExpression>()?.path;
                 let owner = resolve_type_declaration(db, AstNodeKey { node: literal, ..value }, &path.node)?;
                 return field_captures_bound(db, owner, &field.name.node.name);
             }
@@ -125,7 +125,9 @@ pub(super) fn captures_declaration_findings(db: &dyn Db, unit_root: AstNodeKey) 
         });
     };
     for node in index.ids_of_kind(NodeKind::Parameter) {
-        if let Some(parameter) = index.node_at(program, node).and_then(|node| node.of::<beskid_analysis::syntax::Parameter>()) {
+        if let Some(parameter) =
+            index.node_at(program, node).and_then(|node| node.of::<beskid_analysis::syntax::Parameter>())
+        {
             judge(node, &parameter.attributes, &parameter.ty.node);
         }
     }
@@ -151,7 +153,10 @@ pub(super) fn captures_argument_findings(db: &dyn Db, key: AstNodeKey) -> Vec<Se
                 continue;
             };
             values.extend(
-                expression.args.iter().filter_map(|argument| index.direct_child_id(program, call, DynNodeRef::from(argument))),
+                expression
+                    .args
+                    .iter()
+                    .filter_map(|argument| index.direct_child_id(program, call, DynNodeRef::from(argument))),
             );
         }
         let mut fields = Vec::new();
@@ -227,7 +232,8 @@ fn bounded_source(
     bound: TransferMarker,
 ) -> bool {
     let compatible = |declared: TransferMarker| declared == bound || bound == TransferMarker::Transferable;
-    let Some(path) = index.node_at(program, path_key.node).and_then(|node| node.of::<beskid_analysis::syntax::PathExpression>())
+    let Some(path) =
+        index.node_at(program, path_key.node).and_then(|node| node.of::<beskid_analysis::syntax::PathExpression>())
     else {
         return false;
     };
@@ -241,7 +247,10 @@ fn bounded_source(
         } else {
             resolve_lexical_declaration(program, index, path_key.node, receiver).and_then(|declaration| {
                 let parent = parent_node(index, declaration)?;
-                index.node_at(program, parent)?.of::<beskid_analysis::syntax::Parameter>().map(|parameter| parameter.ty.node.clone())
+                index
+                    .node_at(program, parent)?
+                    .of::<beskid_analysis::syntax::Parameter>()
+                    .map(|parameter| parameter.ty.node.clone())
             })
         };
         if let Some(beskid_analysis::syntax::Type::Complex(owner_path)) = owner_type
@@ -253,7 +262,8 @@ fn bounded_source(
         return false;
     }
     let [segment] = segments.as_slice() else { return false };
-    let Some(declaration) = resolve_lexical_declaration(program, index, path_key.node, &segment.node.name.node.name) else {
+    let Some(declaration) = resolve_lexical_declaration(program, index, path_key.node, &segment.node.name.node.name)
+    else {
         return false;
     };
     let Some(parent) = parent_node(index, declaration) else { return false };
@@ -310,9 +320,11 @@ fn capture_uses(
                 }
                 Some(NodeKind::AssignExpression) => {
                     if assigned.is_none()
-                        && let Some(assignment) =
-                            index.node_at(program, parent).and_then(|node| node.of::<beskid_analysis::syntax::AssignExpression>())
-                        && index.direct_child_id(program, parent, DynNodeRef::from(assignment.target.as_ref())) == Some(child)
+                        && let Some(assignment) = index
+                            .node_at(program, parent)
+                            .and_then(|node| node.of::<beskid_analysis::syntax::AssignExpression>())
+                        && index.direct_child_id(program, parent, DynNodeRef::from(assignment.target.as_ref()))
+                            == Some(child)
                     {
                         assigned = Some(parent);
                     }
@@ -356,12 +368,15 @@ fn judge_lambda(
         {
             continue;
         }
-        let parameter_type = parent_syntax
-            .as_ref()
-            .and_then(|node| node.of::<beskid_analysis::syntax::Parameter>().map(|parameter| parameter.ty.node.clone()));
+        let parameter_type = parent_syntax.as_ref().and_then(|node| {
+            node.of::<beskid_analysis::syntax::Parameter>().map(|parameter| parameter.ty.node.clone())
+        });
         let identity = generic_source_local_identity(db, program, index, declaration, declaration.node).ok();
         let class = match parameter_type.as_ref() {
-            Some(ty) => transfer_class_of_type(db, AstNodeKey { node: parent.unwrap_or(declaration.node), ..declaration }, ty).ok(),
+            Some(ty) => {
+                transfer_class_of_type(db, AstNodeKey { node: parent.unwrap_or(declaration.node), ..declaration }, ty)
+                    .ok()
+            }
             None => identity.as_ref().and_then(|identity| transfer_class(db, declaration, identity).ok()),
         };
         let Some(class) = class else { continue };
@@ -386,7 +401,9 @@ fn judge_lambda(
         }
         let owning = containing_callable(index, declaration.node)
             .and_then(|callable| affine_ownership(db, AstNodeKey { node: callable, ..declaration }).ok().flatten())
-            .and_then(|ownership| ownership.bindings.iter().find(|binding| binding.declaration == declaration).map(|b| b.owning))
+            .and_then(|ownership| {
+                ownership.bindings.iter().find(|binding| binding.declaration == declaration).map(|b| b.owning)
+            })
             .unwrap_or(true);
         let kind = if owning {
             SemanticIssueKind::MovedCaptureWithoutMove { name }
@@ -413,7 +430,8 @@ fn lambda_captures(
             let path = syntax.of::<beskid_analysis::syntax::PathExpression>()?;
             let head = path.path.node.segments.first()?.node.name.node.name.clone();
             let declaration = resolve_lexical_declaration(program, index, node, &head)?;
-            (!is_ancestor(index, lambda.node, declaration)).then(|| (syntax.span().map_or(0, |span| span.start), declaration, head))
+            (!is_ancestor(index, lambda.node, declaration))
+                .then(|| (syntax.span().map_or(0, |span| span.start), declaration, head))
         })
         .collect::<Vec<_>>();
     uses.sort();
@@ -431,7 +449,10 @@ fn containing_callable(index: &SyntaxIndex, node: AstNodeId) -> Option<AstNodeId
     nearest_ancestor(index, node, |kind| {
         matches!(
             kind,
-            NodeKind::FunctionDefinition | NodeKind::MethodDefinition | NodeKind::TestDefinition | NodeKind::LambdaExpression
+            NodeKind::FunctionDefinition
+                | NodeKind::MethodDefinition
+                | NodeKind::TestDefinition
+                | NodeKind::LambdaExpression
         )
     })
 }
@@ -647,7 +668,8 @@ fn repeated_capture_facts_tracked(
             .filter_map(|(position, parameter)| {
                 let declaration = index.direct_child_id(program, key.node, DynNodeRef::from(parameter))?;
                 let name = index.direct_child_id(program, declaration, DynNodeRef::from(&parameter.node.name))?;
-                let class = transfer_class_of_type(db, AstNodeKey { node: declaration, ..key }, &parameter.node.ty.node);
+                let class =
+                    transfer_class_of_type(db, AstNodeKey { node: declaration, ..key }, &parameter.node.ty.node);
                 matches!(class, Ok(TransferClass::SomeTransferable))
                     .then(|| (name, position, parameter.node.name.node.name.clone()))
             })
@@ -682,7 +704,8 @@ fn repeated_capture_facts_tracked(
         for call in calls.into_iter().map(|node| AstNodeKey { node, ..key }) {
             let Ok(Some(CallLowering::Direct(callee))) = call_lowering(db, call) else { continue };
             let Ok(Some(arguments)) = call_arguments(db, call) else { continue };
-            let receiver_offset = usize::from(matches!(node_kind(db, callee), Ok(Some(IndexedNodeKind::MethodDefinition))));
+            let receiver_offset =
+                usize::from(matches!(node_kind(db, callee), Ok(Some(IndexedNodeKind::MethodDefinition))));
             for (argument_index, argument) in arguments.iter().enumerate() {
                 let Some(callee_position) = argument_index.checked_sub(receiver_offset) else { continue };
                 let argument_node = normalized_expression_node(index, argument.node);
@@ -737,13 +760,12 @@ pub(super) fn repeated_capture_argument_findings(db: &dyn Db, key: AstNodeKey) -
             continue;
         }
         let Ok(Some(arguments)) = call_arguments(db, call) else { continue };
-        let is_method = matches!(
-            node_kind(db, declaration),
-            Ok(Some(IndexedNodeKind::MethodDefinition))
-        );
+        let is_method = matches!(node_kind(db, declaration), Ok(Some(IndexedNodeKind::MethodDefinition)));
         let receiver_offset = usize::from(is_method);
         for parameter in repeated.iter() {
-            let Some(argument) = arguments.get(parameter.position as usize + receiver_offset).copied() else { continue };
+            let Some(argument) = arguments.get(parameter.position as usize + receiver_offset).copied() else {
+                continue;
+            };
             let Ok(identity) = generic_source_expression_identity(db, argument) else { continue };
             if !matches!(transfer_class(db, argument, &identity), Ok(TransferClass::Moved)) {
                 continue;

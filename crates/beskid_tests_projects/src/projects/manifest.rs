@@ -290,10 +290,8 @@ fn non_core_path_dependency_without_path_is_rejected() {
 
 #[test]
 fn core_dependency_label_requires_path_source() {
-    let source = format!(
-        "{}\ndependency \"Core\" {{\n  source = \"registry\"\n  version = \"1.2.3\"\n}}\n",
-        base_manifest()
-    );
+    let source =
+        format!("{}\ndependency \"Core\" {{\n  source = \"registry\"\n  version = \"1.2.3\"\n}}\n", base_manifest());
 
     let error = parse_manifest(&source).expect_err("`Core` is reserved for the Corelib aggregate");
     assert!(

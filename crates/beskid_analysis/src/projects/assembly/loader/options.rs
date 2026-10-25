@@ -64,7 +64,8 @@ pub enum AssemblyError {
 }
 
 /// SDK-root-relative compiler-owned adapter sources a native Mod build always compiles.
-pub(crate) const NATIVE_MOD_ADAPTER_SOURCES: [&str; 2] = ["Beskid/Compiler/NativeRequests.bd", "Beskid/Syntax/NativeFactories.bd"];
+pub(crate) const NATIVE_MOD_ADAPTER_SOURCES: [&str; 2] =
+    ["Beskid/Compiler/NativeRequests.bd", "Beskid/Syntax/NativeFactories.bd"];
 
 /// Exact adapter source files inside the single `corelib_compiler_sdk` dependency root.
 pub(crate) fn native_mod_adapter_seed_paths(
@@ -85,13 +86,12 @@ pub(crate) fn native_mod_adapter_seed_paths(
         .iter()
         .map(|relative| {
             let path = sdk.source_root.join(relative);
-            let metadata = std::fs::symlink_metadata(&path)
-                .map_err(|error| AssemblyError::NativeModAdapterSource { path: path.clone(), message: error.to_string() })?;
+            let metadata = std::fs::symlink_metadata(&path).map_err(|error| AssemblyError::NativeModAdapterSource {
+                path: path.clone(),
+                message: error.to_string(),
+            })?;
             if !metadata.is_file() {
-                return Err(AssemblyError::NativeModAdapterSource {
-                    path,
-                    message: "not a regular file".to_owned(),
-                });
+                return Err(AssemblyError::NativeModAdapterSource { path, message: "not a regular file".to_owned() });
             }
             Ok(path)
         })

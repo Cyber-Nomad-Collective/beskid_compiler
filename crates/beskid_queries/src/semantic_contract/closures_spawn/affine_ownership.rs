@@ -102,10 +102,9 @@ pub(in crate::semantic_contract) fn callable_fiber_ownership_tracked(
     let Some(affine) = callable_affine_ownership_tracked(db, syntax, key)? else {
         return Ok(None);
     };
-    let mut diagnostics = with_node(db, syntax, key, |program, index, _node| {
-        Some(discarded_handle_diagnostics(program, index, key))
-    })?
-    .unwrap_or_default();
+    let mut diagnostics =
+        with_node(db, syntax, key, |program, index, _node| Some(discarded_handle_diagnostics(program, index, key)))?
+            .unwrap_or_default();
     diagnostics.extend(
         affine
             .findings
@@ -117,7 +116,11 @@ pub(in crate::semantic_contract) fn callable_fiber_ownership_tracked(
                         AffineFindingKind::UseAfterMove | AffineFindingKind::MoveInLoopWithoutReassignment
                     )
             })
-            .map(|finding| SpawnDiagnostic { kind: SpawnDiagnosticKind::UseAfterMove, span: finding.span, capture: None }),
+            .map(|finding| SpawnDiagnostic {
+                kind: SpawnDiagnosticKind::UseAfterMove,
+                span: finding.span,
+                capture: None,
+            }),
     );
     Ok(Some(FiberOwnership { callable: key, diagnostics: diagnostics.into() }))
 }

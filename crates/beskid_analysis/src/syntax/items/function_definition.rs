@@ -5,7 +5,7 @@ use crate::parser::Rule;
 use crate::parsing::error::ParseError;
 use crate::parsing::parsable::Parsable;
 use crate::syntax::items::parse_helpers::{
-    parse_attributes, parse_type_parameter_list, parse_parameter_list_with_docs, parse_visibility_or_default,
+    parse_attributes, parse_parameter_list_with_docs, parse_type_parameter_list, parse_visibility_or_default,
 };
 use crate::syntax::{Attribute, Block, Identifier, Parameter, Path, SpanInfo, Spanned, Type, Visibility};
 

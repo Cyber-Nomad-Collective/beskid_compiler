@@ -41,7 +41,11 @@ fn the_prepare_spine_always_carries_the_executable_front_end() {
     .expect("prepare");
 
     let syntax = prepared.syntax_assembly();
-    assert_eq!(syntax.entry_unit().program, prepared.program, "the syntax assembly projects the prepared entry program");
+    assert_eq!(
+        syntax.entry_unit().program,
+        prepared.program,
+        "the syntax assembly projects the prepared entry program"
+    );
     assert_eq!(syntax.entry_unit().program, prepared.executable().syntax_assembly().entry_unit().program);
     assert_eq!(prepared.executable().assembly.generation, prepared.assembly.generation);
     assert_eq!(prepared.executable().binding_plan, prepared.binding_plan);
@@ -58,8 +62,8 @@ fn a_rewritten_entry_program_is_what_the_syntax_assembly_projects() {
     std::fs::write(&entry_path, source).expect("entry source");
     let plan = synthetic_compile_plan_for_source(&entry_path);
     let resolved = resolved_input_from_plan(entry_path.clone(), source.to_string(), plan, None, None);
-    let mut front = beskid_queries::compile_mod_free_front_end(&resolved, FrontEndOptions::default(), None)
-        .expect("front end");
+    let mut front =
+        beskid_queries::compile_mod_free_front_end(&resolved, FrontEndOptions::default(), None).expect("front end");
     let rewritten =
         parse_program_with_source_name("Main.bd", "i32 Rewritten() { return 0; }").expect("rewritten entry program");
     front.program = rewritten.clone();

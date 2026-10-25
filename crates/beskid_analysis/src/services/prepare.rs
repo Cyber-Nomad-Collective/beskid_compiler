@@ -7,8 +7,7 @@ mod spine;
 
 pub use diagnostics::resolved_input_from_plan;
 use diagnostics::{
-    collect_analyzer_diagnostics, collect_analyzer_fixes, fact_findings_to_diagnostics,
-    merge_fact_diagnostics,
+    collect_analyzer_diagnostics, collect_analyzer_fixes, fact_findings_to_diagnostics, merge_fact_diagnostics,
 };
 use entry_points::session_fingerprint_field;
 pub use entry_points::{

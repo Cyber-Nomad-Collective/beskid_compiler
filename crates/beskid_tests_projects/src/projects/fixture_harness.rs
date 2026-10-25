@@ -13,8 +13,8 @@ use beskid_analysis::services::{
     FrontEndOptions, PrepareOptions, ResolvedInput, compile_plan_for_input_path, resolve_input,
     resolved_input_from_plan,
 };
-use beskid_tests_mod_host::ModHostScope;
 use beskid_queries::{configure_db_for_project, program_assembly, with_db};
+use beskid_tests_mod_host::ModHostScope;
 
 use super::core_env_lock::core_dependency_env_lock;
 use super::test_cwd::{compiler_workspace_root, with_cwd_at_workspace_root};
@@ -46,8 +46,8 @@ pub fn mod_host_for(scope: &ModHostScope, resolved: &ResolvedInput) -> ModHost {
 /// through the registered query authority, which only that spine installs.
 pub fn analyze_file_with_mods(path: &Path) -> Result<Vec<SemanticDiagnostic>, String> {
     let source = std::fs::read_to_string(path).map_err(|error| format!("read {}: {error}", path.display()))?;
-    let plan = compile_plan_for_input_path(path)
-        .ok_or_else(|| format!("{} has no project compile plan", path.display()))?;
+    let plan =
+        compile_plan_for_input_path(path).ok_or_else(|| format!("{} has no project compile plan", path.display()))?;
     let scope = enter_mod_host();
     let native_mods = scope.corelib_mod_host(&plan).map_err(|error| format!("{error:#}"))?;
     let resolved = resolved_input_from_plan(path.to_path_buf(), source, plan, None, None);
@@ -243,8 +243,10 @@ mod tests {
             front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
             ..PrepareOptions::with_mod_host(mod_host_for(&scope, resolved))
         };
-        let (_, diagnostics, _fixes) = beskid_queries::prepare_compilation_diagnostics_isolated(resolved, options, None)
-            .unwrap_or_else(|error| panic!("{suite}: the production semantic gate must judge the suite: {error:#}"));
+        let (_, diagnostics, _fixes) =
+            beskid_queries::prepare_compilation_diagnostics_isolated(resolved, options, None).unwrap_or_else(|error| {
+                panic!("{suite}: the production semantic gate must judge the suite: {error:#}")
+            });
         let errors = diagnostics
             .iter()
             .filter(|diagnostic| diagnostic.severity == beskid_analysis::Severity::Error)
@@ -256,7 +258,9 @@ mod tests {
     fn suite_section(source: &str, former_file: &str) -> std::ops::Range<usize> {
         let marker = format!("// ---- {former_file} ");
         let start = source.find(&marker).unwrap_or_else(|| panic!("suite has no section for {former_file}"));
-        let end = source[start + marker.len()..].find("\n// ---- ").map_or(source.len(), |offset| start + marker.len() + offset);
+        let end = source[start + marker.len()..]
+            .find("\n// ---- ")
+            .map_or(source.len(), |offset| start + marker.len() + offset);
         start..end
     }
 
@@ -377,14 +381,8 @@ mod tests {
     fn system_environment_error_constructors_lower_from_their_dependency_unit() {
         let root = corelib_tests_project_root();
         with_project_test_env(&root, || {
-            lower_corelib_tests_entrypoint(
-                "system/SystemSuite.bd",
-                "EnvGetEmptyNameReturnsInvalidNameError",
-            );
-            lower_corelib_tests_entrypoint(
-                "system/SystemSuite.bd",
-                "EnvSetEmptyNameReturnsInvalidNameError",
-            );
+            lower_corelib_tests_entrypoint("system/SystemSuite.bd", "EnvGetEmptyNameReturnsInvalidNameError");
+            lower_corelib_tests_entrypoint("system/SystemSuite.bd", "EnvSetEmptyNameReturnsInvalidNameError");
         });
     }
 

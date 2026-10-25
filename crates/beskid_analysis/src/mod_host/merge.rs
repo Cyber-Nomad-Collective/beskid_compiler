@@ -161,17 +161,26 @@ impl<'de> serde::Deserialize<'de> for OrderedValue {
             fn visit_none<E>(self) -> std::result::Result<OrderedValue, E> {
                 Ok(OrderedValue::Leaf(serde_json::Value::Null))
             }
-            fn visit_some<D: serde::Deserializer<'de>>(self, deserializer: D) -> std::result::Result<OrderedValue, D::Error> {
+            fn visit_some<D: serde::Deserializer<'de>>(
+                self,
+                deserializer: D,
+            ) -> std::result::Result<OrderedValue, D::Error> {
                 serde::Deserialize::deserialize(deserializer)
             }
-            fn visit_seq<A: serde::de::SeqAccess<'de>>(self, mut seq: A) -> std::result::Result<OrderedValue, A::Error> {
+            fn visit_seq<A: serde::de::SeqAccess<'de>>(
+                self,
+                mut seq: A,
+            ) -> std::result::Result<OrderedValue, A::Error> {
                 let mut items = Vec::new();
                 while let Some(item) = seq.next_element()? {
                     items.push(item);
                 }
                 Ok(OrderedValue::Array(items))
             }
-            fn visit_map<A: serde::de::MapAccess<'de>>(self, mut map: A) -> std::result::Result<OrderedValue, A::Error> {
+            fn visit_map<A: serde::de::MapAccess<'de>>(
+                self,
+                mut map: A,
+            ) -> std::result::Result<OrderedValue, A::Error> {
                 let mut entries = Vec::new();
                 while let Some(entry) = map.next_entry()? {
                     entries.push(entry);
@@ -296,13 +305,18 @@ mod respan_tests {
     /// so lexical resolution sees each parameter declared before its uses.
     #[test]
     fn synthetic_spans_follow_source_field_order() {
-        let item = generated_function("pub i64 Twice(i64 value) { i64 doubled = value + value; return doubled; }")
-            .remove(0);
+        let item =
+            generated_function("pub i64 Twice(i64 value) { i64 doubled = value + value; return doubled; }").remove(0);
         let mut cursor = 100;
         let respanned = respan_generated_item(&item, &mut cursor).expect("respan");
         let crate::syntax::Node::Function(function) = &respanned.node else { panic!("function expected") };
         let parameter = &function.node.parameters[0];
-        assert!(parameter.span.end < function.node.body.span.start, "parameter {:?} body {:?}", parameter.span, function.node.body.span);
+        assert!(
+            parameter.span.end < function.node.body.span.start,
+            "parameter {:?} body {:?}",
+            parameter.span,
+            function.node.body.span
+        );
         assert!(function.node.name.span.end <= parameter.span.start, "name precedes parameters");
         assert!(respanned.span.start >= 100 && respanned.span.end < cursor, "item nests the walk");
     }
@@ -357,8 +371,8 @@ mod respan_tests {
         let generated = GeneratedSyntax { typed_items: generated_items, provenance, ..Default::default() };
         let host_end = synthetic_span_origin(&host);
 
-        let merged = merge_generated_syntax(host, &generated, Some(crate::syntax::SyntaxGenerationId(7)))
-            .expect("merge");
+        let merged =
+            merge_generated_syntax(host, &generated, Some(crate::syntax::SyntaxGenerationId(7))).expect("merge");
         assert_eq!(merged.lineage.len(), 2, "every appended item retains its origin lineage");
         assert!(merged.lineage.iter().all(|lineage| lineage.provenance.origin_generation == 7));
         let merged = merged.program;

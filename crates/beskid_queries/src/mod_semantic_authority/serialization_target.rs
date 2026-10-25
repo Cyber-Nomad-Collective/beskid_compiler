@@ -402,7 +402,12 @@ impl ModSemanticQueryAuthority<'_> {
         };
         let attribution = group_attribution(self.db, owner, contribution, members);
         let metadata = ModCompiledMetadata::with_issuer_payload(
-            ModSerializationTargetClaim { contribution_index, target, generation: self.assembly.generation, attribution },
+            ModSerializationTargetClaim {
+                contribution_index,
+                target,
+                generation: self.assembly.generation,
+                attribution,
+            },
             proof,
         );
         self.issued_metadata.borrow_mut().push(metadata.clone());
@@ -412,7 +417,10 @@ impl ModSemanticQueryAuthority<'_> {
 
 /// Members are the unbound items of the group: never an impl block (an impl is bound on its
 /// own), never the bound contribution itself, and each index at most once.
-pub(super) fn validate_members(contribution_index: u32, members: &[ModContributionMember]) -> Result<(), ModSemanticError> {
+pub(super) fn validate_members(
+    contribution_index: u32,
+    members: &[ModContributionMember],
+) -> Result<(), ModSemanticError> {
     for (position, member) in members.iter().enumerate() {
         if member.contribution_index == contribution_index
             || members[..position].iter().any(|other| other.contribution_index == member.contribution_index)
@@ -478,8 +486,11 @@ pub(super) fn appended_group_attribution(
     if exact_append(original_items, current_items, contribution, members).is_err() {
         return Ok(None);
     }
-    let items = std::iter::once(contribution.clone()).chain(members.iter().map(|member| member.item.clone())).collect::<Vec<_>>();
-    let Some(nodes) = crate::contribution_attribution::appended_item_nodes(current, original_items.len(), &items) else {
+    let items = std::iter::once(contribution.clone())
+        .chain(members.iter().map(|member| member.item.clone()))
+        .collect::<Vec<_>>();
+    let Some(nodes) = crate::contribution_attribution::appended_item_nodes(current, original_items.len(), &items)
+    else {
         return Ok(None);
     };
     Ok(Some((SourceUnitId::new(db, current_unit.path.clone()), nodes)))

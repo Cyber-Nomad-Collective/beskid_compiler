@@ -18,7 +18,15 @@ fn run_and_build(cli: &BeskidCliInvoker, fixture: &str, manifest: &str) -> (E2eW
     let manifest = workspace.join(manifest);
     let manifest = manifest.to_str().expect("manifest path str");
     let binary = workspace.join(format!("out/{fixture}"));
-    let build = cli.run(["build", "--project", manifest, "--target", "App", "--output", binary.to_str().expect("output path str")]);
+    let build = cli.run([
+        "build",
+        "--project",
+        manifest,
+        "--target",
+        "App",
+        "--output",
+        binary.to_str().expect("output path str"),
+    ]);
     assert_success(&build, &format!("build {fixture}"));
     assert_file_exists(&binary, &format!("{fixture} executable"));
     (workspace, binary)
@@ -110,11 +118,8 @@ fn argument_strings_are_written_and_used_as_paths() {
     let cli = BeskidCliInvoker::new();
     let (workspace, binary) = run_and_build(&cli, "args_strings", "ArgsStrings.bproj");
     let target = workspace.join("out/written.txt");
-    let output = run_binary_with_args(
-        &binary,
-        &[target.as_os_str(), OsStr::new("hello-args")],
-        Duration::from_secs(20),
-    );
+    let output =
+        run_binary_with_args(&binary, &[target.as_os_str(), OsStr::new("hello-args")], Duration::from_secs(20));
     assert_exit_code(&output, EXPECTED, "execute args_strings");
     assert_eq!(
         String::from_utf8_lossy(&output.stdout),

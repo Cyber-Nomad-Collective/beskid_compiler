@@ -67,7 +67,9 @@ pub enum AotError {
 
     /// A compiler inconsistency that reached the build only as text (an unavailable semantic
     /// fact behind a stringified upstream error). Never a user request error.
-    #[error("[E2105] internal compiler error: the build stopped on an inconsistency in the compiler; please report this ({reason})")]
+    #[error(
+        "[E2105] internal compiler error: the build stopped on an inconsistency in the compiler; please report this ({reason})"
+    )]
     Internal { reason: String },
 
     #[error("[E4050] unresolved extern library `{library}` for symbol `{symbol}`")]
@@ -147,11 +149,8 @@ mod lowering_classification_tests {
 
     #[test]
     fn a_stringified_compiler_gap_is_an_internal_error_not_an_invalid_request() {
-        let gap = anyhow::anyhow!(
-            "semantic query `callable_signature` {}",
-            beskid_queries::UNAVAILABLE_MESSAGE_MARKER
-        )
-        .context("syntax program preparation failed");
+        let gap = anyhow::anyhow!("semantic query `callable_signature` {}", beskid_queries::UNAVAILABLE_MESSAGE_MARKER)
+            .context("syntax program preparation failed");
         let error = AotError::from_lowering(gap);
         let text = error.to_string();
         assert!(text.starts_with("[E2105] internal compiler error: "), "{text}");

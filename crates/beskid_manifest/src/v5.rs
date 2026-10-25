@@ -133,14 +133,10 @@ pub fn dynamic_v1_contract(symbol: &str) -> Option<(&'static [&'static str], &'s
         "beskid_dynamic_v1_checked_erased_read" => Some((&["pointer"], "pointer")),
         "beskid_dynamic_v1_checked_create_result_factory"
         | "beskid_dynamic_v1_checked_cast_result_factory"
-        | "beskid_dynamic_v1_checked_map_result_factory" => {
-            Some((&["pointer", "u64", "pointer"], "pointer"))
-        }
+        | "beskid_dynamic_v1_checked_map_result_factory" => Some((&["pointer", "u64", "pointer"], "pointer")),
         "beskid_dynamic_v1_checked_create_result_dispatch"
         | "beskid_dynamic_v1_checked_cast_result_dispatch"
-        | "beskid_dynamic_v1_checked_map_result_dispatch" => {
-            Some((&["pointer", "u64"], "pointer"))
-        }
+        | "beskid_dynamic_v1_checked_map_result_dispatch" => Some((&["pointer", "u64"], "pointer")),
         "beskid_dynamic_v1_erased_read" => Some((&["pointer"], "pointer")),
         "beskid_dynamic_v1_erased_cell_descriptor" => Some((&[], "pointer")),
         "beskid_dynamic_v1_create_result" | "beskid_dynamic_v1_cast_result" | "beskid_dynamic_v1_map_result" => {

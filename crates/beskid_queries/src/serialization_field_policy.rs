@@ -210,7 +210,11 @@ pub fn serialization_field_policy(db: &dyn Db, field: AstNodeKey) -> Result<Seri
         }
     }
     if policy.catchall
-        && (policy.renamed || policy.bytes || policy.word_width.is_some() || policy.default_factory.is_some() || policy.skip_read)
+        && (policy.renamed
+            || policy.bytes
+            || policy.word_width.is_some()
+            || policy.default_factory.is_some()
+            || policy.skip_read)
     {
         return Err(SemanticError::new(
             "SerializationCatchall: a catchall field admits only SkipSerialize; it has no wire name, width, bytes, \

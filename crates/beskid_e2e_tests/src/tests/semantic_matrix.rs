@@ -14,12 +14,48 @@ struct SemanticCase {
 }
 
 const CASES: &[SemanticCase] = &[
-    SemanticCase { fixture: "contracts_dispatch", manifest: "ContractsDispatch.bproj", expected: 42, native_exec_expected: false, expected_symbols: &[] },
-    SemanticCase { fixture: "enums_match", manifest: "EnumsMatch.bproj", expected: 7, native_exec_expected: false, expected_symbols: &[] },
-    SemanticCase { fixture: "method_dispatch", manifest: "MethodDispatch.bproj", expected: 42, native_exec_expected: false, expected_symbols: &[] },
-    SemanticCase { fixture: "closure_capture", manifest: "ClosureCapture.bproj", expected: 42, native_exec_expected: true, expected_symbols: &[] },
-    SemanticCase { fixture: "try_expression", manifest: "TryExpression.bproj", expected: 1, native_exec_expected: false, expected_symbols: &[] },
-    SemanticCase { fixture: "composition_app", manifest: "CompositionApp.bproj", expected: 0, native_exec_expected: false, expected_symbols: &[] },
+    SemanticCase {
+        fixture: "contracts_dispatch",
+        manifest: "ContractsDispatch.bproj",
+        expected: 42,
+        native_exec_expected: false,
+        expected_symbols: &[],
+    },
+    SemanticCase {
+        fixture: "enums_match",
+        manifest: "EnumsMatch.bproj",
+        expected: 7,
+        native_exec_expected: false,
+        expected_symbols: &[],
+    },
+    SemanticCase {
+        fixture: "method_dispatch",
+        manifest: "MethodDispatch.bproj",
+        expected: 42,
+        native_exec_expected: false,
+        expected_symbols: &[],
+    },
+    SemanticCase {
+        fixture: "closure_capture",
+        manifest: "ClosureCapture.bproj",
+        expected: 42,
+        native_exec_expected: true,
+        expected_symbols: &[],
+    },
+    SemanticCase {
+        fixture: "try_expression",
+        manifest: "TryExpression.bproj",
+        expected: 1,
+        native_exec_expected: false,
+        expected_symbols: &[],
+    },
+    SemanticCase {
+        fixture: "composition_app",
+        manifest: "CompositionApp.bproj",
+        expected: 0,
+        native_exec_expected: false,
+        expected_symbols: &[],
+    },
 ];
 
 #[test]

@@ -27,8 +27,8 @@ pub mod tree;
 pub mod validate_bsol;
 
 pub mod dependency;
+pub mod doctor;
 pub mod package;
 pub mod toolchain;
-pub mod doctor;
 
 pub mod toolchain_owner;

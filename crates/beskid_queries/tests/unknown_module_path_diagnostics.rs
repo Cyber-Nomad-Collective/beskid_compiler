@@ -2,13 +2,18 @@
 //! twice, as `Core::Text` and `Core.Text`).
 use beskid_analysis::projects::{AssemblyOptions, CompilePlan, Target, TargetKind, assemble_program_with_materializer};
 use beskid_analysis::services::{PrepareOptions, ResolvedInput};
-use beskid_queries::{BeskidDatabase, prepare_compilation_diagnostics_isolated, prepare_compilation_diagnostics_with_db};
+use beskid_queries::{
+    BeskidDatabase, prepare_compilation_diagnostics_isolated, prepare_compilation_diagnostics_with_db,
+};
 
 fn diagnostics_of(main: &str) -> Vec<Vec<beskid_analysis::analysis::SemanticDiagnostic>> {
     diagnostics_with_modules(main, &[])
 }
 
-fn diagnostics_with_modules(main: &str, modules: &[(&str, &str)]) -> Vec<Vec<beskid_analysis::analysis::SemanticDiagnostic>> {
+fn diagnostics_with_modules(
+    main: &str,
+    modules: &[(&str, &str)],
+) -> Vec<Vec<beskid_analysis::analysis::SemanticDiagnostic>> {
     let directory = tempfile::tempdir().unwrap();
     let root = directory.path().canonicalize().unwrap();
     let src = root.join("src");
@@ -41,7 +46,8 @@ fn diagnostics_with_modules(main: &str, modules: &[(&str, &str)]) -> Vec<Vec<bes
     let mut db = BeskidDatabase::default();
     let (_, shared, _) =
         prepare_compilation_diagnostics_with_db(&mut db, &resolved, PrepareOptions::without_mods(), None).unwrap();
-    let (_, isolated, _) = prepare_compilation_diagnostics_isolated(&resolved, PrepareOptions::without_mods(), None).unwrap();
+    let (_, isolated, _) =
+        prepare_compilation_diagnostics_isolated(&resolved, PrepareOptions::without_mods(), None).unwrap();
     vec![shared, isolated]
 }
 
@@ -97,7 +103,11 @@ fn a_missing_member_of_a_known_module_is_a_user_error_not_an_internal_one() {
                 .filter(|diagnostic| diagnostic.message.contains("Out"))
                 .collect::<Vec<_>>();
             assert_eq!(unknown.len(), 1, "one unknown-name diagnostic for {main}: {errors:#?}");
-            assert!(unknown[0].message.contains("`Out`") || unknown[0].message.contains("Console.Out"), "{}", unknown[0].message);
+            assert!(
+                unknown[0].message.contains("`Out`") || unknown[0].message.contains("Console.Out"),
+                "{}",
+                unknown[0].message
+            );
         }
     }
 }

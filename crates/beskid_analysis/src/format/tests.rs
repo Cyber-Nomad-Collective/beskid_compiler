@@ -135,17 +135,8 @@ fn file_header_comment_survives_formatting() {
 #[test]
 fn comment_only_and_empty_bodies_keep_their_comments() {
     let source = "i32 F() {\n    // TODO\n}\ntype T {\n    // fields later\n}\n";
-    let expected = concat!(
-        "i32 F()\n",
-        "{\n",
-        "    // TODO\n",
-        "}\n",
-        "\n",
-        "type T\n",
-        "{\n",
-        "    // fields later\n",
-        "}\n",
-    );
+    let expected =
+        concat!("i32 F()\n", "{\n", "    // TODO\n", "}\n", "\n", "type T\n", "{\n", "    // fields later\n", "}\n",);
     assert_eq!(fmt(source), expected);
 }
 

@@ -29,9 +29,19 @@ fn network_lifecycle_services_carry_absolute_deadlines_on_every_target() {
                 "i32",
             ),
             ("__network_accept", "beskid_rt_v5_network_accept", &["usize", "i64", "pointer"][..], "i32"),
-            ("__network_receive", "beskid_rt_v5_network_receive", &["usize", "pointer", "pointer", "u8", "i64"][..], "i64"),
+            (
+                "__network_receive",
+                "beskid_rt_v5_network_receive",
+                &["usize", "pointer", "pointer", "u8", "i64"][..],
+                "i64",
+            ),
             ("__network_send", "beskid_rt_v5_network_send", &["usize", "pointer", "pointer", "u8", "i64"][..], "i64"),
-            ("__network_dns_resolve", "beskid_rt_v5_network_dns_resolve", &["pointer", "i64", "i64", "i64", "pointer"][..], "i32"),
+            (
+                "__network_dns_resolve",
+                "beskid_rt_v5_network_dns_resolve",
+                &["pointer", "i64", "i64", "i64", "pointer"][..],
+                "i32",
+            ),
         ] {
             let binding = ABI_V5_CORELIB_SERVICE_BINDINGS
                 .iter()
@@ -149,78 +159,71 @@ fn canonical_bootstrap_lifecycle_closure_and_trap_signatures_are_preserved() {
         .map(|entry| (entry.symbol.as_str(), entry.params.as_slice(), entry.result))
         .collect::<Vec<_>>();
     let expected = vec![
-            ("beskid_library_attach_v5", &[AbiType::Pointer][..], AbiType::I32,),
-            ("beskid_library_detach_v5", &[AbiType::Pointer][..], AbiType::Void,),
-            ("beskid_rt_v5_abi_value_clear", &[AbiType::Pointer][..], AbiType::U8),
-            (
-                "beskid_rt_v5_abi_value_initialize",
-                &[AbiType::Pointer, AbiType::USize, AbiType::Pointer, AbiType::Pointer][..],
-                AbiType::U8
-            ),
-            ("beskid_rt_v5_abi_value_move_out", &[AbiType::Pointer, AbiType::Pointer][..], AbiType::U8),
-            ("beskid_rt_v5_abi_value_replace_with_barrier", &[AbiType::Pointer, AbiType::Pointer][..], AbiType::U8),
-            ("beskid_rt_v5_abi_version", &[][..], AbiType::U32),
-            ("beskid_rt_v5_array_allocate_rooted", &[AbiType::Pointer, AbiType::Pointer][..], AbiType::Pointer,),
-            ("beskid_rt_v5_array_construction_finish", &[AbiType::Pointer][..], AbiType::U8,),
-            (
-                "beskid_rt_v5_array_grow_rooted",
-                &[AbiType::Pointer, AbiType::USize, AbiType::Pointer][..],
-                AbiType::Pointer,
-            ),
-            (
-                "beskid_rt_v5_closure_capture_store",
-                &[AbiType::Pointer, AbiType::Pointer, AbiType::USize, AbiType::Pointer,][..],
-                AbiType::U8,
-            ),
-            ("beskid_rt_v5_closure_environment_allocate", &[AbiType::Pointer][..], AbiType::Pointer,),
-            (
-                "beskid_rt_v5_closure_environment_root",
-                &[AbiType::Pointer, AbiType::USize, AbiType::Pointer][..],
-                AbiType::U8,
-            ),
-            ("beskid_rt_v5_closure_environment_root_current", &[AbiType::USize, AbiType::Pointer][..], AbiType::U8,),
-            ("beskid_rt_v5_external_active_count", &[][..], AbiType::USize),
-            ("beskid_rt_v5_external_owner_id", &[][..], AbiType::USize),
-            ("beskid_rt_v5_external_pump", &[AbiType::I64][..], AbiType::Void),
-            ("beskid_rt_v5_external_sleep_until", &[AbiType::I64][..], AbiType::USize),
-            ("beskid_rt_v5_external_try_complete", &[AbiType::USize, AbiType::USize, AbiType::USize][..], AbiType::U8),
-            ("beskid_rt_v5_external_wait_park", &[AbiType::USize][..], AbiType::USize),
-            ("beskid_rt_v5_external_wait_post", &[AbiType::USize, AbiType::USize, AbiType::USize][..], AbiType::U8),
-            ("beskid_rt_v5_external_wait_post_deadline", &[AbiType::USize, AbiType::USize, AbiType::I64][..], AbiType::U8),
-            (
-                "beskid_rt_v5_external_wait_register",
-                &[AbiType::USize, AbiType::USize, AbiType::I64][..],
-                AbiType::USize
-            ),
-            ("beskid_rt_v5_external_wait_release", &[AbiType::USize][..], AbiType::U8),
-            ("beskid_rt_v5_external_wait_set_deadline", &[AbiType::USize, AbiType::I64][..], AbiType::U8),
-            ("beskid_rt_v5_fiber_yield", &[][..], AbiType::Void,),
-            ("beskid_rt_v5_heap_set_cap", &[AbiType::USize][..], AbiType::U8,),
-            ("beskid_rt_v5_managed_object_allocate", &[AbiType::Pointer][..], AbiType::Pointer,),
-            ("beskid_rt_v5_network_set_deadlines", &[AbiType::USize, AbiType::I64, AbiType::I64][..], AbiType::I32),
-            ("beskid_rt_v5_poll_executor_run_once", &[][..], AbiType::I32,),
-            (
-                "beskid_rt_v5_poll_executor_spawn",
-                &[AbiType::Pointer, AbiType::Pointer, AbiType::Pointer, AbiType::Pointer][..],
-                AbiType::I64,
-            ),
-            ("beskid_rt_v5_poll_executor_wake", &[AbiType::I64][..], AbiType::I32,),
-            ("beskid_rt_v5_poll_link_clone", &[AbiType::I64][..], AbiType::I64,),
-            ("beskid_rt_v5_poll_link_drop", &[AbiType::I64][..], AbiType::Void,),
-            ("beskid_rt_v5_poll_link_new", &[AbiType::I64][..], AbiType::I64,),
-            ("beskid_rt_v5_poll_link_poll", &[AbiType::I64, AbiType::Pointer][..], AbiType::I32,),
-            ("beskid_rt_v5_poll_monitor_drop", &[AbiType::I64][..], AbiType::Void,),
-            ("beskid_rt_v5_poll_monitor_new", &[AbiType::I64][..], AbiType::I64,),
-            ("beskid_rt_v5_poll_monitor_poll", &[AbiType::I64, AbiType::Pointer][..], AbiType::I32,),
-            ("beskid_rt_v5_process_init", &[AbiType::Pointer][..], AbiType::Pointer,),
-            ("beskid_rt_v5_process_shutdown", &[AbiType::Pointer][..], AbiType::Void,),
-            ("beskid_rt_v5_scheduler_stack_check", &[AbiType::USize][..], AbiType::U8,),
-            ("beskid_rt_v5_scheduler_stack_overflow_observed", &[][..], AbiType::Void,),
-            ("beskid_rt_v5_thread_attach", &[AbiType::Pointer][..], AbiType::Pointer,),
-            ("beskid_rt_v5_thread_detach", &[AbiType::Pointer][..], AbiType::Void,),
-            ("beskid_rt_v5_trap", &[AbiType::U8, AbiType::Pointer, AbiType::USize][..], AbiType::Void,),
-        ];
-    let bootstrap = actual.into_iter().filter(|entry| expected.iter().any(|required| required.0 == entry.0)).collect::<Vec<_>>();
+        ("beskid_library_attach_v5", &[AbiType::Pointer][..], AbiType::I32),
+        ("beskid_library_detach_v5", &[AbiType::Pointer][..], AbiType::Void),
+        ("beskid_rt_v5_abi_value_clear", &[AbiType::Pointer][..], AbiType::U8),
+        (
+            "beskid_rt_v5_abi_value_initialize",
+            &[AbiType::Pointer, AbiType::USize, AbiType::Pointer, AbiType::Pointer][..],
+            AbiType::U8,
+        ),
+        ("beskid_rt_v5_abi_value_move_out", &[AbiType::Pointer, AbiType::Pointer][..], AbiType::U8),
+        ("beskid_rt_v5_abi_value_replace_with_barrier", &[AbiType::Pointer, AbiType::Pointer][..], AbiType::U8),
+        ("beskid_rt_v5_abi_version", &[][..], AbiType::U32),
+        ("beskid_rt_v5_array_allocate_rooted", &[AbiType::Pointer, AbiType::Pointer][..], AbiType::Pointer),
+        ("beskid_rt_v5_array_construction_finish", &[AbiType::Pointer][..], AbiType::U8),
+        ("beskid_rt_v5_array_grow_rooted", &[AbiType::Pointer, AbiType::USize, AbiType::Pointer][..], AbiType::Pointer),
+        (
+            "beskid_rt_v5_closure_capture_store",
+            &[AbiType::Pointer, AbiType::Pointer, AbiType::USize, AbiType::Pointer][..],
+            AbiType::U8,
+        ),
+        ("beskid_rt_v5_closure_environment_allocate", &[AbiType::Pointer][..], AbiType::Pointer),
+        (
+            "beskid_rt_v5_closure_environment_root",
+            &[AbiType::Pointer, AbiType::USize, AbiType::Pointer][..],
+            AbiType::U8,
+        ),
+        ("beskid_rt_v5_closure_environment_root_current", &[AbiType::USize, AbiType::Pointer][..], AbiType::U8),
+        ("beskid_rt_v5_external_active_count", &[][..], AbiType::USize),
+        ("beskid_rt_v5_external_owner_id", &[][..], AbiType::USize),
+        ("beskid_rt_v5_external_pump", &[AbiType::I64][..], AbiType::Void),
+        ("beskid_rt_v5_external_sleep_until", &[AbiType::I64][..], AbiType::USize),
+        ("beskid_rt_v5_external_try_complete", &[AbiType::USize, AbiType::USize, AbiType::USize][..], AbiType::U8),
+        ("beskid_rt_v5_external_wait_park", &[AbiType::USize][..], AbiType::USize),
+        ("beskid_rt_v5_external_wait_post", &[AbiType::USize, AbiType::USize, AbiType::USize][..], AbiType::U8),
+        ("beskid_rt_v5_external_wait_post_deadline", &[AbiType::USize, AbiType::USize, AbiType::I64][..], AbiType::U8),
+        ("beskid_rt_v5_external_wait_register", &[AbiType::USize, AbiType::USize, AbiType::I64][..], AbiType::USize),
+        ("beskid_rt_v5_external_wait_release", &[AbiType::USize][..], AbiType::U8),
+        ("beskid_rt_v5_external_wait_set_deadline", &[AbiType::USize, AbiType::I64][..], AbiType::U8),
+        ("beskid_rt_v5_fiber_yield", &[][..], AbiType::Void),
+        ("beskid_rt_v5_heap_set_cap", &[AbiType::USize][..], AbiType::U8),
+        ("beskid_rt_v5_managed_object_allocate", &[AbiType::Pointer][..], AbiType::Pointer),
+        ("beskid_rt_v5_network_set_deadlines", &[AbiType::USize, AbiType::I64, AbiType::I64][..], AbiType::I32),
+        ("beskid_rt_v5_poll_executor_run_once", &[][..], AbiType::I32),
+        (
+            "beskid_rt_v5_poll_executor_spawn",
+            &[AbiType::Pointer, AbiType::Pointer, AbiType::Pointer, AbiType::Pointer][..],
+            AbiType::I64,
+        ),
+        ("beskid_rt_v5_poll_executor_wake", &[AbiType::I64][..], AbiType::I32),
+        ("beskid_rt_v5_poll_link_clone", &[AbiType::I64][..], AbiType::I64),
+        ("beskid_rt_v5_poll_link_drop", &[AbiType::I64][..], AbiType::Void),
+        ("beskid_rt_v5_poll_link_new", &[AbiType::I64][..], AbiType::I64),
+        ("beskid_rt_v5_poll_link_poll", &[AbiType::I64, AbiType::Pointer][..], AbiType::I32),
+        ("beskid_rt_v5_poll_monitor_drop", &[AbiType::I64][..], AbiType::Void),
+        ("beskid_rt_v5_poll_monitor_new", &[AbiType::I64][..], AbiType::I64),
+        ("beskid_rt_v5_poll_monitor_poll", &[AbiType::I64, AbiType::Pointer][..], AbiType::I32),
+        ("beskid_rt_v5_process_init", &[AbiType::Pointer][..], AbiType::Pointer),
+        ("beskid_rt_v5_process_shutdown", &[AbiType::Pointer][..], AbiType::Void),
+        ("beskid_rt_v5_scheduler_stack_check", &[AbiType::USize][..], AbiType::U8),
+        ("beskid_rt_v5_scheduler_stack_overflow_observed", &[][..], AbiType::Void),
+        ("beskid_rt_v5_thread_attach", &[AbiType::Pointer][..], AbiType::Pointer),
+        ("beskid_rt_v5_thread_detach", &[AbiType::Pointer][..], AbiType::Void),
+        ("beskid_rt_v5_trap", &[AbiType::U8, AbiType::Pointer, AbiType::USize][..], AbiType::Void),
+    ];
+    let bootstrap =
+        actual.into_iter().filter(|entry| expected.iter().any(|required| required.0 == entry.0)).collect::<Vec<_>>();
     assert_eq!(bootstrap, expected);
     assert_eq!(TRAP_EXIT_STATUS, 101);
     assert_eq!(TRAP_DIAGNOSTIC_PREFIX, "beskid runtime trap v5");
@@ -237,7 +240,26 @@ fn trusted_intrinsics_are_typed_and_owned_only_by_the_canonical_package() {
     assert_eq!(package.abi_version(), ABI_V5);
     let names = manifest.trusted_runtime_intrinsics.iter().map(|intrinsic| intrinsic.name.as_str()).collect::<Vec<_>>();
     assert_eq!(names.len(), 108);
-    for added in ["glue_owner_shutdown", "float_to_bits32", "float_from_bits32", "float_to_bits64", "float_from_bits64", "utf8_view_new", "dynamic_registry_shutdown_v1", "child_begin", "child_argument", "child_environment", "child_spawn", "child_poll", "child_read", "child_write", "child_close_pipe", "child_terminate", "child_close", "child_shutdown"] {
+    for added in [
+        "glue_owner_shutdown",
+        "float_to_bits32",
+        "float_from_bits32",
+        "float_to_bits64",
+        "float_from_bits64",
+        "utf8_view_new",
+        "dynamic_registry_shutdown_v1",
+        "child_begin",
+        "child_argument",
+        "child_environment",
+        "child_spawn",
+        "child_poll",
+        "child_read",
+        "child_write",
+        "child_close_pipe",
+        "child_terminate",
+        "child_close",
+        "child_shutdown",
+    ] {
         assert!(names.contains(&added), "missing source-owned runtime intrinsic {added}");
     }
     assert!(names.contains(&"pointer_add"));
@@ -269,9 +291,16 @@ fn trusted_intrinsics_are_typed_and_owned_only_by_the_canonical_package() {
     assert!(names.contains(&"fs_read_text"));
     assert!(names.contains(&"tty_winsize"));
     assert!(names.contains(&"worker_submit"));
-    for name in
-        ["worker_release", "owner_create", "owner_destroy", "owner_post", "owner_post_deadline", "owner_pop", "owner_wait", "wait_claim"]
-    {
+    for name in [
+        "worker_release",
+        "owner_create",
+        "owner_destroy",
+        "owner_post",
+        "owner_post_deadline",
+        "owner_pop",
+        "owner_wait",
+        "wait_claim",
+    ] {
         assert!(names.contains(&name));
     }
     for name in [
@@ -338,14 +367,9 @@ fn network_operation_registry_mismatch_is_rejected_before_execution() {
 fn network_leak_diagnostic_contract_carries_the_observed_operation_winner_and_count() {
     let target = supported_targets().into_iter().next().unwrap();
     let manifest = AbiManifestV5::canonical_runtime(target);
-    let diagnostic = manifest
-        .intrinsic_metadata("network_report_leak")
-        .expect("network leak diagnostic intrinsic");
+    let diagnostic = manifest.intrinsic_metadata("network_report_leak").expect("network leak diagnostic intrinsic");
 
-    assert_eq!(
-        diagnostic.param_names,
-        ["slot", "generation", "owner", "kind", "operation", "winner", "leak_count"]
-    );
+    assert_eq!(diagnostic.param_names, ["slot", "generation", "owner", "kind", "operation", "winner", "leak_count"]);
     assert_eq!(diagnostic.params, vec![AbiType::USize; 7]);
 
     let source = include_str!("../assembly/common/network.h").replace("\r\n", "\n");
@@ -761,7 +785,23 @@ fn target_system_imports_are_exact_and_unknown_contracts_are_rejected() {
         // Host logical processor count (`host_processor_count`).
         expected_symbols.push(if is_windows { "GetActiveProcessorCount" } else { "sysconf" });
         if !is_windows {
-            expected_symbols.extend(["chdir", "dup2", "execve", "fork", "getrlimit", "kill", "memchr", "memcmp", "pthread_sigmask", "setpgid", "sigpending", "sigwait", "strchr", "strnlen", "waitpid"]);
+            expected_symbols.extend([
+                "chdir",
+                "dup2",
+                "execve",
+                "fork",
+                "getrlimit",
+                "kill",
+                "memchr",
+                "memcmp",
+                "pthread_sigmask",
+                "setpgid",
+                "sigpending",
+                "sigwait",
+                "strchr",
+                "strnlen",
+                "waitpid",
+            ]);
         }
         // The process environment is a data import: Darwin exports `environ`, while glibc's
         // canonical symbol is `__environ` (`environ` is only its weak alias).
@@ -1129,7 +1169,8 @@ fn canonical_release_export_closure_rejects_every_removed_or_retyped_export() {
         let name = removed.exports.remove(index).symbol;
         assert!(removed.validate().is_err(), "removed export {name} must reject");
         let mut retyped = original.clone();
-        retyped.exports[index].result = if retyped.exports[index].result == AbiType::Void { AbiType::I32 } else { AbiType::Void };
+        retyped.exports[index].result =
+            if retyped.exports[index].result == AbiType::Void { AbiType::I32 } else { AbiType::Void };
         assert!(retyped.validate().is_err(), "retyped export {name} must reject");
     }
     let mut extra = original;

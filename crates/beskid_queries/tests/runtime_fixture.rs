@@ -68,7 +68,10 @@ fn fixture_assembly_never_replays_local_materialized_snapshots() {
     for root in &assembly.roots.dependencies {
         let checkout = root.source_root.canonicalize().expect("dependency root exists");
         assert!(
-            declared.dependencies.iter().any(|declared| declared.source_root.canonicalize().ok().as_ref() == Some(&checkout)),
+            declared
+                .dependencies
+                .iter()
+                .any(|declared| declared.source_root.canonicalize().ok().as_ref() == Some(&checkout)),
             "dependency root {root:?} is not a plan-declared checkout root"
         );
     }
@@ -80,11 +83,7 @@ fn fixture_assembly_never_replays_local_materialized_snapshots() {
             unit.path.display()
         );
     }
-    let results = assembly
-        .units
-        .iter()
-        .filter(|unit| unit.path.ends_with("Core/Results/Results.bd"))
-        .count();
+    let results = assembly.units.iter().filter(|unit| unit.path.ends_with("Core/Results/Results.bd")).count();
     assert_eq!(results, 1, "exactly one Core.Results declaration enters the fixture assembly");
 }
 
@@ -134,8 +133,10 @@ fn prepared_workspace_fixture_assembles_one_foundation_copy() {
     let mut db = BeskidDatabase::default();
     let findings = semantic_diagnostics_for_roots(&mut db, None, &assembly, &assembly.entry_unit().program, None)
         .expect("the query gate must judge the prepared fixture");
-    let errors =
-        findings.iter().filter(|finding| finding.kind.severity() == beskid_analysis::Severity::Error).collect::<Vec<_>>();
+    let errors = findings
+        .iter()
+        .filter(|finding| finding.kind.severity() == beskid_analysis::Severity::Error)
+        .collect::<Vec<_>>();
     assert!(errors.is_empty(), "{errors:?}");
 }
 
@@ -253,7 +254,9 @@ fn canonical_network_deadline_call_and_boolean_facts_preserve_signed_clock() {
         // Concrete operand spans retain the full condition plus parser whitespace.
         let start = binary.left.span.start;
         let end = binary.right.span.end;
-        if source.source[start..end].trim_end() == "effectiveDeadline >= 0 && effectiveDeadline <= clock_monotonic_nanos()" {
+        if source.source[start..end].trim_end()
+            == "effectiveDeadline >= 0 && effectiveDeadline <= clock_monotonic_nanos()"
+        {
             conditions += 1;
             assert_eq!(binary.op.span.line_col_start.0, 83, "actual failing production deadline condition");
             let beskid_analysis::syntax::Expression::Binary(left) = &binary.left.node else {

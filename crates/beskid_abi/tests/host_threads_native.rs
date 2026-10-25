@@ -58,10 +58,7 @@ fn run_host_threads_fixture(define: Option<&str>) -> String {
     let output_dir = FixtureDirectory::create();
     let executable = output_dir.0.join(executable_name("host_threads"));
     let mut compile = native_c_compiler();
-    compile
-        .args(["-Wall", "-Wextra", "-Werror"])
-        .arg("-I")
-        .arg(root.join("include"));
+    compile.args(["-Wall", "-Wextra", "-Werror"]).arg("-I").arg(root.join("include"));
     if let Some(define) = define {
         compile.arg(if cfg!(windows) { format!("/D{define}") } else { format!("-D{define}") });
     }
@@ -97,8 +94,7 @@ fn run_host_threads_fixture(define: Option<&str>) -> String {
 #[test]
 fn host_processor_count_is_a_separate_corelib_service() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let facade =
-        std::fs::read_to_string(root.join("../../corelib/packages/concurrency/src/Concurrency.bd")).unwrap();
+    let facade = std::fs::read_to_string(root.join("../../corelib/packages/concurrency/src/Concurrency.bd")).unwrap();
     assert!(facade.contains("pub i64 HostProcessorCount() {\n    return __host_processor_count();\n}"));
     assert!(facade.contains("pub i64 ProcessorCount() {\n    return __fiber_processor_count();\n}"));
     let source = std::fs::read_to_string(root.join("assembly/common/host_threads.h")).unwrap();

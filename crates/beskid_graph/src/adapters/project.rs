@@ -39,7 +39,12 @@ pub fn from_project_graph(graph: &ProjectGraph) -> Result<GraphDocument, crate::
             NodeMetadata { project_name: Some("corelib".to_owned()), ..Default::default() },
         );
         if let Some(root_id) = index_to_id.get(&graph.root) {
-            builder.add_edge(root_id, &corelib_id, Some(beskid_analysis::projects::CORE_DEPENDENCY_NAME.to_owned()), None);
+            builder.add_edge(
+                root_id,
+                &corelib_id,
+                Some(beskid_analysis::projects::CORE_DEPENDENCY_NAME.to_owned()),
+                None,
+            );
         }
     }
 
@@ -128,8 +133,8 @@ mod tests {
 
     #[test]
     fn project_graph_renders_mermaid() {
-        let manifest = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../beskid_e2e_tests/fixtures/enums_match/EnumsMatch.bproj");
+        let manifest =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../beskid_e2e_tests/fixtures/enums_match/EnumsMatch.bproj");
         assert!(manifest.is_file(), "fixture manifest missing: {manifest:?}");
         let graph = beskid_analysis::projects::build_project_graph(&manifest).expect("graph");
         let doc = from_project_graph(&graph).expect("render");

@@ -163,20 +163,45 @@ fn bind_parameter(
     Ok(())
 }
 
-pub(super) fn is_callback_value_constructor(input:&CodegenInput<'_>,item:&SyntaxModuleItem)->Result<bool> {
-    let unit=input.typed_program().assembly.units.iter().find(|unit|beskid_queries::SourceUnitId::new(input.database(),unit.path.clone())==item.key.unit).context("semantic constructor unit absent")?;
-    let Some(proof)=input.typed_program().assembly.package_identities().for_source(&unit.path) else {return Ok(false)};
-    let relative=proof.relative_source_path(&unit.path);
-    let canonical=match relative.as_deref(){Some("Beskid/Compiler/Semantic.bd")=>"src/Beskid/Compiler/Semantic.bd",Some("Beskid/Compiler/Query.bd")=>"src/Beskid/Compiler/Query.bd",_=>return Ok(false)};
-    super::authority::require_sdk_package(input,item.key)?;
-    beskid_abi::sdk_source::verify_canonical_sdk_source(canonical,unit.source.as_bytes())?;
-    let Some(signature)=native_mod_transport_signature(input.database(),item.key)? else {return Ok(false)};
-    let NativeModTransportType::Nominal{declaration,..}=signature.result() else {return Ok(false)};
-    let mut pending=vec![item.key];let mut visited=std::collections::HashSet::new();
-    while let Some(key)=pending.pop(){if !visited.insert(key){continue;}if visited.len()>100000{bail!("semantic constructor traversal budget exceeded");}
-        if aggregate_literal_declaration(input.database(),key)?==Some(*declaration) {return Ok(true)};
-        if enum_constructor(input.database(),key)?.is_some_and(|constructor|constructor.declaration==*declaration){return Ok(true)};
-        if let Some(children)=child_nodes(input.database(),key)?{pending.extend(children.iter().copied());}
+pub(super) fn is_callback_value_constructor(input: &CodegenInput<'_>, item: &SyntaxModuleItem) -> Result<bool> {
+    let unit = input
+        .typed_program()
+        .assembly
+        .units
+        .iter()
+        .find(|unit| beskid_queries::SourceUnitId::new(input.database(), unit.path.clone()) == item.key.unit)
+        .context("semantic constructor unit absent")?;
+    let Some(proof) = input.typed_program().assembly.package_identities().for_source(&unit.path) else {
+        return Ok(false);
+    };
+    let relative = proof.relative_source_path(&unit.path);
+    let canonical = match relative.as_deref() {
+        Some("Beskid/Compiler/Semantic.bd") => "src/Beskid/Compiler/Semantic.bd",
+        Some("Beskid/Compiler/Query.bd") => "src/Beskid/Compiler/Query.bd",
+        _ => return Ok(false),
+    };
+    super::authority::require_sdk_package(input, item.key)?;
+    beskid_abi::sdk_source::verify_canonical_sdk_source(canonical, unit.source.as_bytes())?;
+    let Some(signature) = native_mod_transport_signature(input.database(), item.key)? else { return Ok(false) };
+    let NativeModTransportType::Nominal { declaration, .. } = signature.result() else { return Ok(false) };
+    let mut pending = vec![item.key];
+    let mut visited = std::collections::HashSet::new();
+    while let Some(key) = pending.pop() {
+        if !visited.insert(key) {
+            continue;
+        }
+        if visited.len() > 100000 {
+            bail!("semantic constructor traversal budget exceeded");
+        }
+        if aggregate_literal_declaration(input.database(), key)? == Some(*declaration) {
+            return Ok(true);
+        };
+        if enum_constructor(input.database(), key)?.is_some_and(|constructor| constructor.declaration == *declaration) {
+            return Ok(true);
+        };
+        if let Some(children) = child_nodes(input.database(), key)? {
+            pending.extend(children.iter().copied());
+        }
     }
     Ok(false)
 }

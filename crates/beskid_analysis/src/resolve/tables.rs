@@ -298,7 +298,10 @@ mod scoped_lookup_tests {
         assert_eq!(table.resolved_type_at(span(), Some(&dependency)), Some(ResolvedType::Generic("entryOnly".into())));
         assert_eq!(table.scoped_resolved_type_at(span(), &dependency), None);
         table.merge_from(&unit("dependency"), dependency.clone());
-        assert_eq!(table.scoped_resolved_type_at(span(), &dependency), Some(ResolvedType::Generic("dependency".into())));
+        assert_eq!(
+            table.scoped_resolved_type_at(span(), &dependency),
+            Some(ResolvedType::Generic("dependency".into()))
+        );
     }
 
     #[test]

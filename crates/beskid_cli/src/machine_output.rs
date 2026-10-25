@@ -136,9 +136,7 @@ impl Records {
     /// Write one record line to stdout and flush it.
     pub fn Emit(&self, event: &'static str, status: &str, fields: Value) -> Result<()> {
         debug_assert!(
-            OUTPUT_SCHEMAS
-                .iter()
-                .any(|schema| schema.command == self.command && schema.events.contains(&event)),
+            OUTPUT_SCHEMAS.iter().any(|schema| schema.command == self.command && schema.events.contains(&event)),
             "{} does not declare event {event}",
             self.command
         );

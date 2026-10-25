@@ -99,7 +99,12 @@ impl IsleContext<'_, '_, '_, '_> {
     }
 
     /// The address of element `index` of `array`, after the null and bounds checks.
-    pub(crate) fn checked_element_address(&mut self, array: Value, index: Value, layout: crate::layout::ArrayLayout) -> Option<Value> {
+    pub(crate) fn checked_element_address(
+        &mut self,
+        array: Value,
+        index: Value,
+        layout: crate::layout::ArrayLayout,
+    ) -> Option<Value> {
         let index_type = self.builder.func.dfg.value_type(index);
         let pointer_type = self.builder.func.dfg.value_type(array);
         if !index_type.is_int() || !pointer_type.is_int() {
@@ -243,8 +248,14 @@ macro_rules! generated_aggregate_methods {
                     let array = self.read_indexed_base(base)?;
                     let address = self.checked_element_address(array, index, layout)?;
                     let current = self.builder.ins().load(layout.element_type, MemFlagsData::new(), address, 0);
-                    let value =
-                        self.compound_assignment_value(key, operator, storage, current, value_key, layout.element_type)?;
+                    let value = self.compound_assignment_value(
+                        key,
+                        operator,
+                        storage,
+                        current,
+                        value_key,
+                        layout.element_type,
+                    )?;
                     (value, address)
                 }
             };

@@ -99,8 +99,9 @@ fn admit_outcome(
         )
     })?;
     let items = std::mem::take(&mut outcome.typed_items);
-    let admitted = super::structural::admit_generated_items(&registration.type_id, generation.0, input.source_name, items)
-        .map_err(|err| anyhow::anyhow!("generator `{}` contribution rejected: {err}", registration.type_id))?;
+    let admitted =
+        super::structural::admit_generated_items(&registration.type_id, generation.0, input.source_name, items)
+            .map_err(|err| anyhow::anyhow!("generator `{}` contribution rejected: {err}", registration.type_id))?;
     for item in admitted {
         outcome.typed_items.push(item.item);
         outcome.provenance.push(item.provenance);

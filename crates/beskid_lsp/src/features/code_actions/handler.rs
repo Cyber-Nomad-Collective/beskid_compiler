@@ -106,7 +106,9 @@ pub fn handle_code_actions(uri: &Uri, doc: &Document, params: &CodeActionParams)
     // project manifests alike.
     for diag in &params.context.diagnostics {
         actions.extend(
-            crate::diagnostics::quick_fixes_from_data(uri, &doc.text, diag).into_iter().map(CodeActionOrCommand::CodeAction),
+            crate::diagnostics::quick_fixes_from_data(uri, &doc.text, diag)
+                .into_iter()
+                .map(CodeActionOrCommand::CodeAction),
         );
     }
 

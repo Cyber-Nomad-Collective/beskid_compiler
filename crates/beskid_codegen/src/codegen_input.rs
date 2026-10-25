@@ -361,7 +361,8 @@ impl<'db> CodegenInput<'db> {
             });
         let valid_singulars = bound_singulars
             && plan.singulars.iter().all(|singular| {
-                registrations.contains(&singular.owner_registration_id) && assigned_slots.contains(&singular.target_slot.0)
+                registrations.contains(&singular.owner_registration_id)
+                    && assigned_slots.contains(&singular.target_slot.0)
             });
         let valid_scopes = snapshot.scope_names.keys().all(|scope_id| plan.scope_parents.contains_key(scope_id));
         let valid_hooks = bound_hooks

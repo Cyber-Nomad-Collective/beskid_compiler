@@ -51,8 +51,9 @@ pub(in crate::semantic_contract) fn generic_source_expression_identity(
     }
     // `cond ? a : b` has the identity of its result branch (the non-literal branch).
     if node.of::<beskid_analysis::syntax::ConditionalExpression>().is_some() {
-        let branch = conditional_result_branch_key(program, index, normalized_key)
-            .ok_or_else(|| source_expression_unavailable(db, normalized_key, "conditional expression has no result branch"))?;
+        let branch = conditional_result_branch_key(program, index, normalized_key).ok_or_else(|| {
+            source_expression_unavailable(db, normalized_key, "conditional expression has no result branch")
+        })?;
         return generic_source_expression_identity(db, branch);
     }
     if let Some(literal) = node.of::<beskid_analysis::syntax::StructLiteralExpression>() {
@@ -68,7 +69,9 @@ pub(in crate::semantic_contract) fn generic_source_expression_identity(
     // the member expression itself, exactly like a method-owned field path below.
     if node.of::<beskid_analysis::syntax::MemberExpression>().is_some() {
         return aggregate_field_access(db, normalized_key)?
-            .ok_or_else(|| source_expression_unavailable(db, normalized_key, "member expression has no field access fact"))
+            .ok_or_else(|| {
+                source_expression_unavailable(db, normalized_key, "member expression has no field access fact")
+            })
             .and_then(|access| generic_source_aggregate_field_identity(db, &access));
     }
     if let Some(path) = node.of::<beskid_analysis::syntax::PathExpression>() {
@@ -148,11 +151,13 @@ pub(in crate::semantic_contract) fn generic_source_expression_identity(
                 // its declared type, as the bare field read `all` does.
                 projection => match super::super::super::contract_values::injected_field_identity(db, field) {
                     Some(identity) => identity,
-                    None => projection
-                        .ok_or_else(|| {
-                            source_expression_unavailable(db, field, "index target field projection is unproven")
-                        })??
-                        .1,
+                    None => {
+                        projection
+                            .ok_or_else(|| {
+                                source_expression_unavailable(db, field, "index target field projection is unproven")
+                            })??
+                            .1
+                    }
                 },
             }
         } else {
@@ -161,7 +166,9 @@ pub(in crate::semantic_contract) fn generic_source_expression_identity(
         return match target_identity {
             GenericSourceTypeIdentity::Array(element) => Ok(*element),
             // A string index reads one UTF-8 byte.
-            GenericSourceTypeIdentity::Abi(SemanticTypeId::STRING) => Ok(GenericSourceTypeIdentity::Abi(SemanticTypeId::U8)),
+            GenericSourceTypeIdentity::Abi(SemanticTypeId::STRING) => {
+                Ok(GenericSourceTypeIdentity::Abi(SemanticTypeId::U8))
+            }
             _ => Err(source_expression_unavailable(db, target, "indexed value is not an array or a string")),
         };
     }

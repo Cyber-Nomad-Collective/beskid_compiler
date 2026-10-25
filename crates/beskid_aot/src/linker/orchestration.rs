@@ -270,6 +270,9 @@ mod runtime_input_v06_tests {
         let linked = args(&request(provider));
         assert!(!linked.contains(&"-lbeskid_runtime".to_owned()), "{linked:?}");
         assert!(linked.contains(&"-lc".to_owned()));
-        assert!(args(&request(None)).contains(&"-lbeskid_runtime".to_owned()), "no runtime input keeps the logical library");
+        assert!(
+            args(&request(None)).contains(&"-lbeskid_runtime".to_owned()),
+            "no runtime input keeps the logical library"
+        );
     }
 }

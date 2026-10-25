@@ -147,7 +147,8 @@ impl DynamicPackingShape {
         impl Rewrite<'_> {
             fn visit(&mut self, old: u32, rewrite: bool, depth: usize) -> Result<u32, SemanticError> {
                 let graph = self.graph;
-                let source = graph.nodes.get(old as usize).ok_or_else(|| error("word rewrite reference outside graph"))?;
+                let source =
+                    graph.nodes.get(old as usize).ok_or_else(|| error("word rewrite reference outside graph"))?;
                 if let DynamicPackingNode::Scalar { name, managed } = source {
                     let name = if rewrite && *name == "word" { self.scalar } else { *name };
                     if let Some(index) = self.scalars.get(name) {

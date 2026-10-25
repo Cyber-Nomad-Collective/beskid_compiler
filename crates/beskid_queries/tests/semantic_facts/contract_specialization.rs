@@ -1,8 +1,9 @@
 use super::support::{key, setup};
 use beskid_analysis::syntax_query::NodeKind;
 use beskid_queries::{
-    AstNodeKey, CallLowering, call_lowering, generic_call_specialization, generic_call_specialization_in_environment,
-    generic_call_specialization_instance, generic_specialization_identity, item_abi_signature, ItemSignature,
+    AstNodeKey, CallLowering, ItemSignature, call_lowering, generic_call_specialization,
+    generic_call_specialization_in_environment, generic_call_specialization_instance, generic_specialization_identity,
+    item_abi_signature,
 };
 use std::sync::Arc;
 

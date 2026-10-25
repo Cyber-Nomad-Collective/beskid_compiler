@@ -57,8 +57,7 @@ pub(super) fn run_prepare_spine(
 ) -> Result<PrepareSpineOutput> {
     // Injected executor identity is not part of a reusable session cache key.
     // A native Mod adapter closure is a different assembly than the session's ordinary one.
-    let use_session_cache =
-        use_session_cache && !options.mod_host.is_native() && !options.native_mod_adapter_sources;
+    let use_session_cache = use_session_cache && !options.mod_host.is_native() && !options.native_mod_adapter_sources;
     let mut assembly_options = assembly_options_for_prepare(plan, options.front_end.assembly_discovery);
     assembly_options.recovery_policy = options.front_end.assembly_recovery;
     assembly_options.native_mod_adapter_sources = options.native_mod_adapter_sources;
@@ -104,8 +103,9 @@ pub(super) fn run_prepare_spine(
     let run_rules = options.front_end.with_semantic_diagnostics || collect_diagnostics;
     // The program entry function (`Main`) of an App or Test target is invoked by the host, not
     // by a source reference; the unused-private-item rule exempts it in the entry unit only.
-    let entry_function = (plan.target.kind != TargetKind::Lib && !matches!(assembly.root_set, AssemblyRootSet::OwnUnits(_)))
-        .then(|| crate::projects::PROGRAM_ENTRY_FUNCTION.to_owned());
+    let entry_function = (plan.target.kind != TargetKind::Lib
+        && !matches!(assembly.root_set, AssemblyRootSet::OwnUnits(_)))
+    .then(|| crate::projects::PROGRAM_ENTRY_FUNCTION.to_owned());
 
     if use_session_cache && let Some(cached) = cached_executable_if_valid(&session_fingerprint, assembly.generation) {
         let syntax_generation_id = assembly.generation.0;

@@ -20,8 +20,8 @@ use std::{
     sync::{Mutex, MutexGuard, OnceLock, PoisonError},
 };
 
-use beskid_abi::runtime_kit::ResolvedRuntimeKit;
 use beskid_abi::runtime_kit::BuildProfile;
+use beskid_abi::runtime_kit::ResolvedRuntimeKit;
 use beskid_abi::runtime_source::resolve_canonical_runtime_kit;
 
 struct SharedKit {

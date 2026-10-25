@@ -10,7 +10,7 @@ pub(crate) use test_cwd::{compiler_workspace_root, with_cwd, with_cwd_at_workspa
 mod core_env_lock;
 
 #[cfg(test)]
-pub(crate) use core_env_lock::{scoped_core_dependency_root, core_dependency_env_lock};
+pub(crate) use core_env_lock::{core_dependency_env_lock, scoped_core_dependency_root};
 
 #[cfg(test)]
 pub(crate) mod fixture_harness;
@@ -18,11 +18,11 @@ pub(crate) mod fixture_harness;
 #[cfg(test)]
 mod assembly;
 #[cfg(test)]
+mod cargo_workspace;
+#[cfg(test)]
 mod compile_plan;
 #[cfg(test)]
 mod composition;
-#[cfg(test)]
-mod cargo_workspace;
 #[cfg(test)]
 mod corelib;
 #[cfg(test)]
@@ -41,9 +41,9 @@ mod manifest;
 #[cfg(test)]
 mod mod_manifest;
 #[cfg(test)]
-mod resolution;
-#[cfg(test)]
 mod registry_lock;
+#[cfg(test)]
+mod resolution;
 #[cfg(test)]
 mod templates;
 #[cfg(test)]

@@ -21,11 +21,8 @@ fn type_is_unit(ty: &Type) -> bool {
 /// attributes and default values appear.
 pub fn function_signature_label(def: &FunctionDefinition) -> String {
     let emitter = crate::format::Emitter::new();
-    let result = def
-        .return_type
-        .as_ref()
-        .and_then(|ty| emitter.write(&ty.node).ok())
-        .unwrap_or_else(|| "unit".to_string());
+    let result =
+        def.return_type.as_ref().and_then(|ty| emitter.write(&ty.node).ok()).unwrap_or_else(|| "unit".to_string());
     let generics = if def.generics.is_empty() {
         String::new()
     } else {

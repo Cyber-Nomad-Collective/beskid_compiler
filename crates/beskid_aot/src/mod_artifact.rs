@@ -7,9 +7,9 @@ use crate::{
 use beskid_abi::runtime_kit::{BuildProfile as RuntimeKitProfile, GlueProviderToolV1};
 pub use beskid_analysis::mod_host::{ContractRegistration, ModArtifactDescriptor};
 use beskid_analysis::mod_host::{
-    NATIVE_MOD_COMPILER_TOOL_ROLE, NATIVE_MOD_DESCRIPTOR_FILE, NATIVE_MOD_DESCRIPTOR_SCHEMA, mod_artifact_inventory, native_mod_artifact_key,
-    native_mod_evidence_is_current, native_mod_file_sha256, native_mod_inventory_identity, native_mod_runtime_binding,
-    read_mod_artifact_descriptor,
+    NATIVE_MOD_COMPILER_TOOL_ROLE, NATIVE_MOD_DESCRIPTOR_FILE, NATIVE_MOD_DESCRIPTOR_SCHEMA, mod_artifact_inventory,
+    native_mod_artifact_key, native_mod_evidence_is_current, native_mod_file_sha256, native_mod_inventory_identity,
+    native_mod_runtime_binding, read_mod_artifact_descriptor,
 };
 use beskid_codegen::PreparedNativeMod;
 use sha2::{Digest, Sha256};
@@ -165,7 +165,8 @@ fn read_cached_entry(sidecar: &Path, package_id: &str, runtime_prefix: &Path) ->
         serde_json::from_value(value).map_err(|_| tampered("the descriptor does not match descriptor schema V3"))?;
     descriptor.artifact_dir = artifact_dir.to_path_buf();
     let key = native_mod_artifact_key(&descriptor).map_err(invalid)?;
-    let named_by_key = artifact_dir.file_name().and_then(|name| name.to_str()) == Some(descriptor.target_triple.as_str())
+    let named_by_key = artifact_dir.file_name().and_then(|name| name.to_str())
+        == Some(descriptor.target_triple.as_str())
         && artifact_dir.parent().and_then(Path::file_name).and_then(|name| name.to_str()) == Some(key.as_str());
     if !named_by_key {
         return Err(tampered("the descriptor identity no longer matches its content-addressed directory"));
@@ -268,7 +269,9 @@ fn prune_superseded_mod_artifacts(
         let recorded_profile = fs::read(&sidecar)
             .ok()
             .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
-            .and_then(|value| serde_json::from_value::<RuntimeKitProfile>(value.get("runtime")?.get("profile")?.clone()).ok());
+            .and_then(|value| {
+                serde_json::from_value::<RuntimeKitProfile>(value.get("runtime")?.get("profile")?.clone()).ok()
+            });
         if recorded_profile.is_some_and(|recorded| recorded != profile) {
             continue;
         }
@@ -841,7 +844,8 @@ fn lock_file_exclusive(file: &fs::File, wait: bool) -> std::io::Result<()> {
     const LOCKFILE_EXCLUSIVE_LOCK: u32 = 2;
     const LOCKFILE_FAIL_IMMEDIATELY: u32 = 1;
     const ERROR_LOCK_VIOLATION: u32 = 33;
-    let mut overlapped = Overlapped { internal: 0, internal_high: 0, offset: 0, offset_high: 0, event: std::ptr::null_mut() };
+    let mut overlapped =
+        Overlapped { internal: 0, internal_high: 0, offset: 0, offset_high: 0, event: std::ptr::null_mut() };
     let flags = LOCKFILE_EXCLUSIVE_LOCK | if wait { 0 } else { LOCKFILE_FAIL_IMMEDIATELY };
     if unsafe { LockFileEx(file.as_raw_handle() as *mut _, flags, 0, 1, 0, &mut overlapped) } == 0 {
         let code = unsafe { GetLastError() };
@@ -857,7 +861,13 @@ fn unlock_file(file: &fs::File) -> std::io::Result<()> {
     use std::os::windows::io::AsRawHandle;
     #[link(name = "kernel32")]
     unsafe extern "system" {
-        fn UnlockFile(file: *mut std::ffi::c_void, offset_low: u32, offset_high: u32, bytes_low: u32, bytes_high: u32) -> i32;
+        fn UnlockFile(
+            file: *mut std::ffi::c_void,
+            offset_low: u32,
+            offset_high: u32,
+            bytes_low: u32,
+            bytes_high: u32,
+        ) -> i32;
     }
     if unsafe { UnlockFile(file.as_raw_handle() as *mut _, 0, 0, 1, 0) } == 0 {
         return Err(std::io::Error::last_os_error());

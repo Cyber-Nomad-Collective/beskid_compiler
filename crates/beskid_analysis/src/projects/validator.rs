@@ -320,10 +320,9 @@ pub(crate) fn validate_glue_owner_path(owner: &ProjectGlueOwner) -> Result<(), P
         None
     };
     match reason {
-        Some(reason) => Err(ProjectError::meta_contract(
-            "E1863",
-            format!("glue `{}` path `{raw}` {reason}", owner.library),
-        )),
+        Some(reason) => {
+            Err(ProjectError::meta_contract("E1863", format!("glue `{}` path `{raw}` {reason}", owner.library)))
+        }
         None => Ok(()),
     }
 }

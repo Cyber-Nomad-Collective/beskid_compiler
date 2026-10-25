@@ -224,7 +224,8 @@ mod tests {
                     let literal = &rest[..end];
                     let after = rest[end + 1..].trim_start_matches(".to_string()").trim_start_matches(".into()");
                     let after = after.trim_start_matches(')').trim_start_matches(',').trim_start();
-                    let is_code_argument = marker.starts_with("code") || after.starts_with("Severity::")
+                    let is_code_argument = marker.starts_with("code")
+                        || after.starts_with("Severity::")
                         || after.starts_with("crate::analysis::Severity::");
                     if is_code_argument && !is_registry_code(literal) {
                         free_form.push(format!("`{literal}` in {}", path.display()));

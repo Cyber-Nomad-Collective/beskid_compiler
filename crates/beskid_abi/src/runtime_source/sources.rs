@@ -255,10 +255,8 @@ const CANONICAL_CORELIB_PARALLEL_ISOLATE_SOURCE: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../corelib/packages/concurrency/src/Core/Parallel/Isolate.bd"
 ));
-const CANONICAL_CORELIB_PARALLEL_PORT_SOURCE: &str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../corelib/packages/concurrency/src/Core/Parallel/Port.bd"
-));
+const CANONICAL_CORELIB_PARALLEL_PORT_SOURCE: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../corelib/packages/concurrency/src/Core/Parallel/Port.bd"));
 const CANONICAL_CORELIB_PARALLEL_SEQ_SOURCE: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../corelib/packages/concurrency/src/Core/Parallel/ParallelSeq.bd"

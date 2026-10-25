@@ -3,8 +3,10 @@
 //! shape of the Corelib `beskid_runtime` Dynamic bridges) must not fail the Glue build with
 //! "nominal Glue types require exactly one validated GlueHandle brand".
 use beskid_abi::abi_v5::{AbiManifestV5, TargetMetadata};
+use beskid_analysis::projects::{
+    AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, ProgramAssembly, RootEntry, SourceUnit,
+};
 use beskid_aot::api::glue::glue_declarations;
-use beskid_analysis::projects::{AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, ProgramAssembly, RootEntry, SourceUnit};
 use beskid_queries::{
     AstNodeId, AstNodeKey, BeskidDatabase, GlueDirection, ProjectSession, SourceUnitId, SyntaxGenerationId,
     build_typed_program,
@@ -67,11 +69,18 @@ fn glue_declarations_select_only_manifest_glue_libraries() {
     ));
     let typed = build_typed_program(&mut db, project, generation, assembly).unwrap();
     let root = AstNodeKey { unit, generation, node: AstNodeId(0) };
-    let target =
-        TargetMetadata::supported().into_iter().find(|target| target.triple.as_str() == "x86_64-unknown-linux-gnu").unwrap();
-    let input =
-        beskid_codegen::CodegenInput::new(&db, typed, Arc::from([root]), target.clone(), AbiManifestV5::canonical_runtime(target))
-            .unwrap();
+    let target = TargetMetadata::supported()
+        .into_iter()
+        .find(|target| target.triple.as_str() == "x86_64-unknown-linux-gnu")
+        .unwrap();
+    let input = beskid_codegen::CodegenInput::new(
+        &db,
+        typed,
+        Arc::from([root]),
+        target.clone(),
+        AbiManifestV5::canonical_runtime(target),
+    )
+    .unwrap();
 
     let declarations = glue_declarations(&input, &[], &["glue_manual".to_owned()])
         .expect("a non-Glue Extern contract must not be judged as a Glue import");

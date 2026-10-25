@@ -275,7 +275,10 @@ fn imported_result_binding_array_field_flows_into_a_call_argument() {
         ),
         ("Core/Results.bd", "pub enum Result<TValue, TError> { Ok(TValue value), Error(TError error) }"),
         ("Http/Errors.bd", "pub enum HttpError { InvalidFraming(), Closed() }"),
-        ("Http/Requests.bd", "pub type Header { pub string name; } pub type Request { pub string method; pub Header[] headers; }"),
+        (
+            "Http/Requests.bd",
+            "pub type Header { pub string name; } pub type Request { pub string method; pub Header[] headers; }",
+        ),
     ]);
 }
 

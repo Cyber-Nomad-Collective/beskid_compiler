@@ -48,7 +48,10 @@ fn emit_assignment_on_cursor(
                     "{target} = Parser.Fail({cursor}, Parser.Result.ParseErrorKind::ExpectedLiteral(\"{rule}: unrepresentable literal\"), \"{rule}: unrepresentable literal\");"
                 );
             }
-            format!("{target} = Parser.Literal({cursor}, \"{}\", \"{rule}\");", crate::strings::escape_beskid_string(value))
+            format!(
+                "{target} = Parser.Literal({cursor}, \"{}\", \"{rule}\");",
+                crate::strings::escape_beskid_string(value)
+            )
         }
         Expr::RuleRef(name) if rules.contains_key(name.as_str()) => {
             format!("{target} = {}({cursor});", rule_name_to_callable(name))

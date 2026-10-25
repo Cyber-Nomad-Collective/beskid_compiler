@@ -3,9 +3,7 @@
 
 use beskid_analysis::format::format_source;
 use beskid_analysis::services::parse_program;
-use beskid_analysis::syntax::{
-    ContractNode, Expression, Node, Program, Spanned, Statement,
-};
+use beskid_analysis::syntax::{ContractNode, Expression, Node, Program, Spanned, Statement};
 
 /// One attribute at every site of the attribute target catalogue.
 const CORPUS: &str = r#"[Area]
@@ -209,7 +207,8 @@ fn spec_scenarios_parse() {
 
 #[test]
 fn member_access_type_arguments_parse_and_format() {
-    let source = "Box<string> Twice(Box<i64> b) { return b.Map<i64>((i64 x) => x * 2).Map<string>((i64 y) => \"${y}\"); }";
+    let source =
+        "Box<string> Twice(Box<i64> b) { return b.Map<i64>((i64 x) => x * 2).Map<string>((i64 y) => \"${y}\"); }";
     let program = parse(source);
     let Node::Function(twice) = &program.node.items[0].node else { panic!("function") };
     let Statement::Return(ret) = &twice.node.body.node.statements[0].node else { panic!("return") };
@@ -233,7 +232,8 @@ fn member_access_type_arguments_parse_and_format() {
 
 #[test]
 fn receiver_named_like_this_prefix_is_a_parameter() {
-    let program = parse("pub type Holder { i64 count; pub i64 Set(thisValue x) { return 0; } }\npub type thisValue { }");
+    let program =
+        parse("pub type Holder { i64 count; pub i64 Set(thisValue x) { return 0; } }\npub type thisValue { }");
     let Node::TypeDefinition(holder) = &program.node.items[0].node else { panic!("type") };
     let method = &holder.node.methods[0].node;
     assert!(method.receiver.is_none());

@@ -149,8 +149,7 @@ fn linux_signal_set_imports_are_exact_glibc_functions_for_linux_only() {
         ("sigemptyset", &["pointer"][..]),
         ("sigismember", &["pointer", "i32"][..]),
     ] {
-        let entries =
-            manifest.platform_imports.iter().filter(|entry| entry.symbol == symbol).collect::<Vec<_>>();
+        let entries = manifest.platform_imports.iter().filter(|entry| entry.symbol == symbol).collect::<Vec<_>>();
         assert_eq!(entries.len(), 1, "{symbol} must be declared for exactly one target");
         let entry = entries[0];
         assert_eq!(entry.target, linux, "{symbol} is a header macro on Darwin and absent on Windows");
@@ -171,9 +170,17 @@ fn windows_process_transport_avoids_ucrt_inline_helpers_and_declares_its_imports
     let transport = include_str!("../../beskid_abi/assembly/common/process_transport.h");
     let windows_host = include_str!("../../beskid_abi/assembly/x86_64-pc-windows-msvc/platform_host.c");
     for (name, source) in [("process_transport.h", transport), ("windows platform_host.c", windows_host)] {
-        for forbidden in
-            ["<wchar.h>", "<stdio.h>", "printf(", "wcslen(", "wcschr(", "wcsncmp(", "_wcsnicmp(", "wmemcpy(", "wmemset("]
-        {
+        for forbidden in [
+            "<wchar.h>",
+            "<stdio.h>",
+            "printf(",
+            "wcslen(",
+            "wcschr(",
+            "wcsncmp(",
+            "_wcsnicmp(",
+            "wmemcpy(",
+            "wmemset(",
+        ] {
             assert!(!source.contains(forbidden), "{name} uses UCRT inline-helper surface `{forbidden}`");
         }
     }

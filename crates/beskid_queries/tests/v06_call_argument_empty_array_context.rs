@@ -11,7 +11,10 @@ use beskid_queries::{
 };
 use std::sync::Arc;
 
-fn fixture(source: &str, modules: &[(&str, &str)]) -> (tempfile::TempDir, BeskidDatabase, Arc<ProgramAssembly>, Vec<AstNodeKey>) {
+fn fixture(
+    source: &str,
+    modules: &[(&str, &str)],
+) -> (tempfile::TempDir, BeskidDatabase, Arc<ProgramAssembly>, Vec<AstNodeKey>) {
     let temporary = tempfile::tempdir().unwrap();
     let root = temporary.path().join("src");
     std::fs::create_dir_all(&root).unwrap();
@@ -51,10 +54,8 @@ fn fixture(source: &str, modules: &[(&str, &str)]) -> (tempfile::TempDir, Beskid
 
 #[test]
 fn direct_non_generic_call_arguments_take_declared_parameter_element_abi() {
-    let (_temporary, db, _assembly, arrays) = fixture(
-        "type Item {} unit Named(string[] names, Item[] arguments) {} unit Main() { Named([], []); }",
-        &[],
-    );
+    let (_temporary, db, _assembly, arrays) =
+        fixture("type Item {} unit Named(string[] names, Item[] arguments) {} unit Main() { Named([], []); }", &[]);
     assert_eq!(arrays.len(), 2);
     assert_eq!(empty_array_literal_element_abi_type(&db, arrays[0]), Ok(Some(SemanticTypeId::STRING)));
     assert_eq!(

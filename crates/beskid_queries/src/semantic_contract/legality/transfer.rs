@@ -9,8 +9,8 @@
 use super::typing::nodes_of_kind;
 use super::*;
 use crate::semantic_contract::transfer::{declared_field_class, indexed_site, unit_in_core_module};
-use beskid_analysis::syntax_query::DynNodeRef;
 use beskid_analysis::syntax::{ContractDefinition, ContractNode, ImplBlock, Path, Spanned, TypeDefinition};
+use beskid_analysis::syntax_query::DynNodeRef;
 
 /// Whether the contract named by `path` at `key` carries the recognized `[CompilerDerived]`.
 fn compiler_derived_contract(db: &dyn Db, key: AstNodeKey, path: &Path) -> Option<String> {
@@ -20,15 +20,18 @@ fn compiler_derived_contract(db: &dyn Db, key: AstNodeKey, path: &Path) -> Optio
     }
     let contract = resolve_contract(db, key, &declaration_path)?;
     let syntax = db.syntax_unit(contract.unit).filter(|syntax| syntax.accepts_key(db, contract))?;
-    let definition = syntax
-        .syntax_index(db)
-        .node_at(syntax.expanded_program(db), contract.node)?
-        .of::<ContractDefinition>()?;
+    let definition =
+        syntax.syntax_index(db).node_at(syntax.expanded_program(db), contract.node)?.of::<ContractDefinition>()?;
     has_recognized_attribute(db, contract, &definition.attributes, "CompilerDerived")
         .then(|| definition.name.node.name.clone())
 }
 
-fn conformance_findings(db: &dyn Db, root: AstNodeKey, conformances: &[Spanned<Path>], findings: &mut Vec<SemanticFinding>) {
+fn conformance_findings(
+    db: &dyn Db,
+    root: AstNodeKey,
+    conformances: &[Spanned<Path>],
+    findings: &mut Vec<SemanticFinding>,
+) {
     for conformance in conformances {
         let site = indexed_site(db, root, DynNodeRef::from(conformance));
         if let Some(contract) = compiler_derived_contract(db, site, &conformance.node) {
@@ -41,7 +44,12 @@ fn conformance_findings(db: &dyn Db, root: AstNodeKey, conformances: &[Spanned<P
     }
 }
 
-fn contract_findings(db: &dyn Db, key: AstNodeKey, definition: &ContractDefinition, findings: &mut Vec<SemanticFinding>) {
+fn contract_findings(
+    db: &dyn Db,
+    key: AstNodeKey,
+    definition: &ContractDefinition,
+    findings: &mut Vec<SemanticFinding>,
+) {
     let Some(attribute) = recognized_attribute_use(db, key, &definition.attributes, "CompilerDerived") else { return };
     let contract = definition.name.node.name.clone();
     if TransferMarker::from_name(&contract).is_none() {
@@ -53,9 +61,13 @@ fn contract_findings(db: &dyn Db, key: AstNodeKey, definition: &ContractDefiniti
     }
     for item in &definition.items {
         let (member, id) = match &item.node {
-            ContractNode::MethodSignature(signature) => (signature.node.name.node.name.clone(), DynNodeRef::from(signature)),
+            ContractNode::MethodSignature(signature) => {
+                (signature.node.name.node.name.clone(), DynNodeRef::from(signature))
+            }
             ContractNode::Embedding(embedding) => (embedding.node.name.node.name.clone(), DynNodeRef::from(embedding)),
-            ContractNode::AssociatedType(associated) => (associated.node.name.node.name.clone(), DynNodeRef::from(associated)),
+            ContractNode::AssociatedType(associated) => {
+                (associated.node.name.node.name.clone(), DynNodeRef::from(associated))
+            }
         };
         findings.push(SemanticFinding {
             kind: SemanticIssueKind::DerivedContractMember { contract: contract.clone(), member },
@@ -243,7 +255,8 @@ fn immutable_member_field(
                     .node
                     .segments
                     .len();
-                let segment = crate::semantic_contract::layouts::path_projection_segment(db, site, segments.checked_sub(1)?)?;
+                let segment =
+                    crate::semantic_contract::layouts::path_projection_segment(db, site, segments.checked_sub(1)?)?;
                 nominal_field_projection(db, segment)?.ok()?.0.declaration
             }
         },
@@ -291,7 +304,9 @@ fn passed_to_mut_parameter(
     let Some(syntax) = db.syntax_unit(declaration.unit).filter(|syntax| syntax.accepts_key(db, declaration)) else {
         return false;
     };
-    let Some(node) = syntax.syntax_index(db).node_at(syntax.expanded_program(db), declaration.node) else { return false };
+    let Some(node) = syntax.syntax_index(db).node_at(syntax.expanded_program(db), declaration.node) else {
+        return false;
+    };
     let parameter = if let Some(function) = node.of::<beskid_analysis::syntax::FunctionDefinition>() {
         function.parameters.get(position)
     } else if let Some(method) = node.of::<beskid_analysis::syntax::MethodDefinition>() {
@@ -378,4 +393,3 @@ pub fn immutable_field_findings(db: &dyn Db, item: AstNodeKey) -> Vec<SemanticFi
     findings.sort_by_key(|finding| finding.site.node);
     findings
 }
-

@@ -97,10 +97,18 @@ fn unit_attribute_surface_tracked(
                 let parent = parent_node(index, node)?;
                 let site = attribute_site_target(index.kind(parent)?)?;
                 let attribute = index.node_at(program, node)?.of::<Attribute>()?;
-                Some(UnitAttributeUse { node, name: Arc::from(attribute.name.node.name.as_str()), site: Arc::from(site) })
+                Some(UnitAttributeUse {
+                    node,
+                    name: Arc::from(attribute.name.node.name.as_str()),
+                    site: Arc::from(site),
+                })
             })
             .collect::<Vec<_>>();
-        Some(UnitAttributeSurface { declarations: declarations.into(), target_nodes: target_nodes.into(), uses: uses.into() })
+        Some(UnitAttributeSurface {
+            declarations: declarations.into(),
+            target_nodes: target_nodes.into(),
+            uses: uses.into(),
+        })
     })
 }
 
@@ -164,7 +172,11 @@ fn recognized_module_units(db: &dyn Db, generation: SyntaxGenerationId) -> Vec<S
     registry.visible_module_units(generation, &path).map(<[_]>::to_vec).unwrap_or_default()
 }
 
-fn declared(found: Vec<(AstNodeKey, Arc<[Arc<str>]>)>, recognized_units: &[SourceUnitId], name: &str) -> AttributeResolution {
+fn declared(
+    found: Vec<(AstNodeKey, Arc<[Arc<str>]>)>,
+    recognized_units: &[SourceUnitId],
+    name: &str,
+) -> AttributeResolution {
     let declaration = found[0].0;
     let mut targets = Vec::<Arc<str>>::new();
     for (_, listed) in &found {
@@ -174,8 +186,8 @@ fn declared(found: Vec<(AstNodeKey, Arc<[Arc<str>]>)>, recognized_units: &[Sourc
             }
         }
     }
-    let recognized = recognized_attribute(name).is_some()
-        && found.iter().all(|(key, _)| recognized_units.contains(&key.unit));
+    let recognized =
+        recognized_attribute(name).is_some() && found.iter().all(|(key, _)| recognized_units.contains(&key.unit));
     AttributeResolution::Declared { declaration, targets, recognized }
 }
 
@@ -259,7 +271,10 @@ pub fn attribute_findings(db: &dyn Db, root: AstNodeKey) -> Vec<SemanticFinding>
             } else if let Some((_, previous)) = seen.iter().find(|(name, _)| *name == target.as_ref()) {
                 let previous = node_span(db, AstNodeKey { node: *previous, ..root }).ok().flatten().unwrap_or_default();
                 findings.push(SemanticFinding {
-                    kind: SemanticIssueKind::DuplicateAttributeDeclarationTarget { target: target.to_string(), previous },
+                    kind: SemanticIssueKind::DuplicateAttributeDeclarationTarget {
+                        target: target.to_string(),
+                        previous,
+                    },
                     site,
                     related: Vec::new(),
                 });

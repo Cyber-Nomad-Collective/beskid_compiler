@@ -16,15 +16,16 @@ pub mod array_static;
 pub mod artifact;
 mod artifact_validation;
 pub mod backend;
-pub mod glue;
+pub mod checked_effect;
 pub mod closure_static;
-pub mod contract_static;
 pub mod codegen_input;
-pub mod dynamic_shape;
+pub mod contract_static;
+pub mod cranelift_host;
 pub mod dynamic_initialization;
 pub mod dynamic_mapping;
-pub mod cranelift_host;
+pub mod dynamic_shape;
 pub mod event_handler_static;
+pub mod glue;
 pub mod isle_adapter;
 mod isle_trace;
 pub mod module_emission;
@@ -32,13 +33,11 @@ pub mod native_mod;
 mod native_tls;
 pub mod prepared_syntax;
 pub mod reserved_failure;
-pub mod checked_effect;
 pub mod services;
 
 pub use aggregate_static::{
     ABI_V5_MANAGED_OBJECT_ALLOCATE, AggregateObjectLayout, AggregateStaticField, AggregateStaticPlan,
-    TYPE_DESCRIPTOR_IMMUTABLE,
-    emit_aggregate_static_data,
+    TYPE_DESCRIPTOR_IMMUTABLE, emit_aggregate_static_data,
 };
 pub use array_static::{
     ABI_V5_ARRAY_ALLOCATE_ROOTED, ABI_V5_ARRAY_CONSTRUCTION_FINISH, ArrayStaticPlan, emit_array_static_data,
@@ -71,10 +70,10 @@ pub use module_emission::{
     emit_string_literals, emit_syntax_program_in_session, lower_syntax_program,
 };
 pub use prepared_syntax::{
-    PreparedSyntaxEntry, PreparedSyntaxEntrypoint, PreparedSyntaxEntrypoints, lower_canonical_runtime_prepared_syntax,
-    EntrypointKind, lower_prepared_syntax_entrypoint, lower_prepared_syntax_entrypoints, lower_prepared_syntax_module,
-    lower_prepared_syntax_library, lower_prepared_syntax_selected_callables,
-    lower_prepared_syntax_module_with_callables, PreparedSyntaxCallable, PreparedSyntaxModule,
+    EntrypointKind, PreparedSyntaxCallable, PreparedSyntaxEntry, PreparedSyntaxEntrypoint, PreparedSyntaxEntrypoints,
+    PreparedSyntaxModule, lower_canonical_runtime_prepared_syntax, lower_prepared_syntax_entrypoint,
+    lower_prepared_syntax_entrypoints, lower_prepared_syntax_library, lower_prepared_syntax_module,
+    lower_prepared_syntax_module_with_callables, lower_prepared_syntax_selected_callables,
     lower_syntax_assembly_entrypoint, lower_syntax_assembly_test_entrypoint, with_prepared_glue_input,
 };
 pub use services::{materialize_source_path_for_lowering, render_clif};

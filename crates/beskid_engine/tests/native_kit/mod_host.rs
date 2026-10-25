@@ -101,8 +101,12 @@ fn mod_host_without_mod_dependencies_compiles_in_engine() -> Result<()> {
 
     observe_phase(Some(pipeline.as_ref()), LOWER_READY, || {});
     // JIT compile uses the sole CodegenInput -> ISLE route against the host entry source.
-    let prepared =
-        prepare_jit_entrypoint(workspace.host_dir.join("Src").join("Main.bd").as_path(), HOST_SOURCE, "Main", &beskid_engine::ModHost::NoMods)?;
+    let prepared = prepare_jit_entrypoint(
+        workspace.host_dir.join("Src").join("Main.bd").as_path(),
+        HOST_SOURCE,
+        "Main",
+        &beskid_engine::ModHost::NoMods,
+    )?;
 
     let kit_lease = shared_kit::debug();
     let kit_prefix = kit_lease.prefix();

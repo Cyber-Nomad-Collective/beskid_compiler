@@ -87,30 +87,36 @@ fn canonical_glue_handle_brand_retains_qualified_owner_and_arguments() {
 
 #[test]
 fn opaque_shape_projection_preserves_applied_arguments_without_scalar_brand_grants() {
-    let source=r#"
+    let source = r#"
         [GlueHandle(Library:"foreign", Nullable:false)] pub type Token<T> { u64 token; }
         [Export(Abi:"C",Symbol:"signed_token")] pub Token<i64> Signed(Token<i64> token) { return token; }
         [Export(Abi:"C",Symbol:"unsigned_token")] pub Token<u64> Unsigned(Token<u64> token) { return token; }
         [Export(Abi:"C",Symbol:"ordinary")] pub u64 Ordinary(u64 token) { return token; }
     "#;
-    let (db,_typed,root,_)=support::input_fixture_with_source(source);
-    let mut declarations=Vec::new();
-    for (name,scalar) in [("Signed","i64"),("Unsigned","u64")] {
-        let key=function(&db,root,name).unwrap();
-        let shape=beskid_queries::glue_handle_shape(&db,key,Some(0)).unwrap().unwrap();
-        let beskid_queries::DynamicPackingNode::Record{declaration,arguments,fields,..}=&shape.nodes()[0] else {
+    let (db, _typed, root, _) = support::input_fixture_with_source(source);
+    let mut declarations = Vec::new();
+    for (name, scalar) in [("Signed", "i64"), ("Unsigned", "u64")] {
+        let key = function(&db, root, name).unwrap();
+        let shape = beskid_queries::glue_handle_shape(&db, key, Some(0)).unwrap().unwrap();
+        let beskid_queries::DynamicPackingNode::Record { declaration, arguments, fields, .. } = &shape.nodes()[0]
+        else {
             panic!("opaque signature must retain its actual nominal record");
         };
-        assert_eq!(arguments.len(),1);
-        assert!(matches!(&shape.nodes()[arguments[0] as usize],beskid_queries::DynamicPackingNode::Scalar{name,..} if *name==scalar));
-        assert_eq!(fields.len(),1);
+        assert_eq!(arguments.len(), 1);
+        assert!(
+            matches!(&shape.nodes()[arguments[0] as usize],beskid_queries::DynamicPackingNode::Scalar{name,..} if *name==scalar)
+        );
+        assert_eq!(fields.len(), 1);
         assert!(!fields[0].managed);
-        assert!(matches!(&shape.nodes()[fields[0].ty as usize],beskid_queries::DynamicPackingNode::Scalar{name:"u64",managed:false}));
+        assert!(matches!(
+            &shape.nodes()[fields[0].ty as usize],
+            beskid_queries::DynamicPackingNode::Scalar { name: "u64", managed: false }
+        ));
         declarations.push(*declaration);
-        let result=beskid_queries::glue_handle_shape(&db,key,None).unwrap().unwrap();
-        assert_eq!(result.nodes(),shape.nodes());
+        let result = beskid_queries::glue_handle_shape(&db, key, None).unwrap().unwrap();
+        assert_eq!(result.nodes(), shape.nodes());
     }
-    assert_eq!(declarations[0],declarations[1]);
-    let scalar=function(&db,root,"Ordinary").unwrap();
-    assert!(beskid_queries::glue_handle_shape(&db,scalar,Some(0)).unwrap().is_none());
+    assert_eq!(declarations[0], declarations[1]);
+    let scalar = function(&db, root, "Ordinary").unwrap();
+    assert!(beskid_queries::glue_handle_shape(&db, scalar, Some(0)).unwrap().is_none());
 }

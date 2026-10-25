@@ -5,8 +5,8 @@ use crate::mod_host::{
     ModInvocationContext, ScriptedContractInvoker,
 };
 use crate::projects::SourceUnit;
-use crate::services::semantic::require_no_semantic_errors;
 use crate::services::parse_program_with_source_name;
+use crate::services::semantic::require_no_semantic_errors;
 
 /// Build a `ModHostAnalyzeResult` carrying one scripted `Analyzer` outcome so the
 /// prepare-spine mod-diagnostic gate can be exercised without a native mod artifact.

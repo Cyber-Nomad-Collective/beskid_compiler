@@ -149,7 +149,10 @@ impl SemanticPipelineRule {
 
             ctx.emit_issue(
                 use_decl.node.path.span,
-                SemanticIssueKind::UnknownImportPath { path: self.path_to_string_local(&use_decl.node.path), module: None },
+                SemanticIssueKind::UnknownImportPath {
+                    path: self.path_to_string_local(&use_decl.node.path),
+                    module: None,
+                },
             );
         }
     }

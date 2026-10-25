@@ -83,9 +83,10 @@ pub fn diagnostic_json(diagnostic: &SemanticDiagnostic, rendered: Option<&str>) 
             .collect();
         children.push(child(&fix.title, spans));
     }
-    let code = diagnostic.code.as_deref().map(|code| {
-        json!({ "code": code, "explanation": null, "url": diagnostic_codes::docs_url(code) })
-    });
+    let code = diagnostic
+        .code
+        .as_deref()
+        .map(|code| json!({ "code": code, "explanation": null, "url": diagnostic_codes::docs_url(code) }));
     json!({
         "$message_type": "diagnostic",
         "schema": SCHEMA_VERSION,
@@ -140,7 +141,11 @@ mod tests {
             Severity::Warning,
         )
         .with_related(span(13, 17), "entry point")
-        .with_fix(Fix::new("Remove the import", Applicability::MachineApplicable, vec![FixEdit::new(span(0, 9), "")]));
+        .with_fix(Fix::new(
+            "Remove the import",
+            Applicability::MachineApplicable,
+            vec![FixEdit::new(span(0, 9), "")],
+        ));
         let value = diagnostic_json(&diagnostic, Some("rendered text"));
 
         assert_eq!(value["$message_type"], "diagnostic");

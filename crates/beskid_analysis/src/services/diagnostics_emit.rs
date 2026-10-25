@@ -199,7 +199,8 @@ mod project_error_tests {
         &source[span.offset()..span.offset() + span.len()]
     }
 
-    const MISMATCH: &str = "Runner {\n  name = \"lings\"\n  version = \"0.1.0\"\n}\n\ntarget \"lings\" {\n  kind = Lib\n}\n";
+    const MISMATCH: &str =
+        "Runner {\n  name = \"lings\"\n  version = \"0.1.0\"\n}\n\ntarget \"lings\" {\n  kind = Lib\n}\n";
 
     #[test]
     fn block_name_mismatch_anchors_on_the_block_name_with_the_name_value_related() {
@@ -225,7 +226,8 @@ mod project_error_tests {
 
     #[test]
     fn hyphenated_names_are_renamed_to_their_underscore_projection() {
-        let source = "Wrong {\n  name = \"beskid-runtime\"\n  version = \"0.1.0\"\n}\n\ntarget \"x\" {\n  kind = Lib\n}\n";
+        let source =
+            "Wrong {\n  name = \"beskid-runtime\"\n  version = \"0.1.0\"\n}\n\ntarget \"x\" {\n  kind = Lib\n}\n";
         let error = parse_manifest(source).expect_err("mismatch");
         let diagnostic = project_error_diagnostic("m.bproj", source, &error);
         assert_eq!(diagnostic.fixes[0].edits[0].replacement, "beskid_runtime");

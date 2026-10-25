@@ -35,7 +35,7 @@ fn canonical_serialization_mod_sources_parse_without_recovery() {
 
 #[test]
 fn serialization_library_loads_canonical_mod_dependency_closure() {
-    use beskid_analysis::projects::{build_project_graph, ProjectGraphNode, ProjectKind};
+    use beskid_analysis::projects::{ProjectGraphNode, ProjectKind, build_project_graph};
     let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../corelib/packages/serialization/corelib_serialization.bproj");
     let graph = build_project_graph(&manifest).expect("canonical Serialization dependency graph");
@@ -45,11 +45,14 @@ fn serialization_library_loads_canonical_mod_dependency_closure() {
             dependencies.insert(project_name.as_str(), (*project_kind, manifest_path));
         }
     }
-    let (kind, path) = dependencies.get("serialization_mod")
+    let (kind, path) = dependencies
+        .get("serialization_mod")
         .expect("Serialization consumers must transitively load the Serialization Mod");
     assert_eq!(*kind, ProjectKind::Mod);
-    assert_eq!(path.canonicalize().unwrap(), manifest.parent().unwrap()
-        .join("../../mods/serialization_mod/serialization_mod.bproj").canonicalize().unwrap());
+    assert_eq!(
+        path.canonicalize().unwrap(),
+        manifest.parent().unwrap().join("../../mods/serialization_mod/serialization_mod.bproj").canonicalize().unwrap()
+    );
     assert!(dependencies.contains_key("corelib_compiler_sdk"));
     assert!(dependencies.contains_key("corelib_foundation"));
 }

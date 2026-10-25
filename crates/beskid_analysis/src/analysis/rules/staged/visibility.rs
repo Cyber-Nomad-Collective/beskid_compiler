@@ -1,13 +1,13 @@
 use super::SemanticPipelineRule;
 use crate::analysis::diagnostic_kinds::SemanticIssueKind;
 use crate::analysis::rules::RuleContext;
+use crate::clif_surface::{ClifBlockMode, ClifStatement, parse_clif_surface_in};
+use crate::projects::{module_path_to_relative_path, resolve_module_file};
 use crate::resolve::Resolution;
 use crate::syntax::Spanned;
-use crate::clif_surface::{ClifBlockMode, ClifStatement, parse_clif_surface_in};
 use crate::syntax::{Block, ContractNode, Expression, Node, Path, Program, Statement, Type, Visibility};
 use crate::syntax_query::Query;
 use std::collections::{HashMap, HashSet};
-use crate::projects::{module_path_to_relative_path, resolve_module_file};
 
 /// Private items of the canonical public Dynamic unit that only the compiler references, by
 /// name, when it issues specialized Dynamic bridges: `ReserveAllocationFailureV1`
@@ -217,7 +217,9 @@ impl SemanticPipelineRule {
 
             let (name, visibility, span, kind) = match &item.node {
                 // Generated host-hook items are called by `launch` / `with` lowering.
-                Node::Function(definition) if crate::composition::is_hook_item_name(&definition.node.name.node.name) => {
+                Node::Function(definition)
+                    if crate::composition::is_hook_item_name(&definition.node.name.node.name) =>
+                {
                     continue;
                 }
                 Node::TypeDefinition(definition)
@@ -267,7 +269,10 @@ impl SemanticPipelineRule {
                 continue;
             }
 
-            ctx.emit_issue(span, SemanticIssueKind::UnusedPrivateItem { name, kind: kind.to_string(), item: item.span });
+            ctx.emit_issue(
+                span,
+                SemanticIssueKind::UnusedPrivateItem { name, kind: kind.to_string(), item: item.span },
+            );
         }
     }
 
@@ -754,7 +759,8 @@ mod tests {
         let pair =
             BeskidParser::parse(Rule::Program, source).expect("source should parse").next().expect("program pair");
         let program = Program::parse(pair).expect("source should build AST");
-        let options = AnalysisOptions { program_entry_function: entry.map(str::to_owned), ..AnalysisOptions::default() };
+        let options =
+            AnalysisOptions { program_entry_function: entry.map(str::to_owned), ..AnalysisOptions::default() };
         run_rules(&program.node, "test.bd", source, &builtin_rules(), options)
             .diagnostics
             .iter()
@@ -802,7 +808,10 @@ mod tests {
     fn a_lowercase_main_is_not_the_entry_function() {
         let source = "i32 main() { return 0; }";
         let unused = unused_private_items_with_entry(source, Some(crate::projects::PROGRAM_ENTRY_FUNCTION));
-        assert!(unused.iter().any(|message| message.contains("main")), "`main` is an ordinary private item: {unused:?}");
+        assert!(
+            unused.iter().any(|message| message.contains("main")),
+            "`main` is an ordinary private item: {unused:?}"
+        );
     }
 
     #[test]
@@ -821,7 +830,10 @@ mod tests {
             }
         "#;
         let unused = unused_private_items(source);
-        assert!(!unused.iter().any(|message| message.contains("MemLibc")), "clif call uses the extern contract: {unused:?}");
+        assert!(
+            !unused.iter().any(|message| message.contains("MemLibc")),
+            "clif call uses the extern contract: {unused:?}"
+        );
     }
 
     #[test]
@@ -840,7 +852,10 @@ mod tests {
             }
         "#;
         let unused = unused_private_items(source);
-        assert!(unused.iter().any(|message| message.contains("MemLibc")), "an uncalled extern contract stays unused: {unused:?}");
+        assert!(
+            unused.iter().any(|message| message.contains("MemLibc")),
+            "an uncalled extern contract stays unused: {unused:?}"
+        );
     }
 
     #[test]
@@ -858,7 +873,10 @@ mod tests {
             }
         "#;
         let unused = unused_private_items(source);
-        assert!(unused.iter().any(|message| message.contains("Plain")), "only [Extern] members are link symbols: {unused:?}");
+        assert!(
+            unused.iter().any(|message| message.contains("Plain")),
+            "only [Extern] members are link symbols: {unused:?}"
+        );
     }
 
     fn unused_imports_with_contract_module(source: &str) -> Vec<String> {

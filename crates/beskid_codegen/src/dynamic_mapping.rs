@@ -12,8 +12,7 @@
 use crate::{AggregateObjectLayout, AggregateStaticPlan, CodegenInput};
 use beskid_queries::{
     AggregateFieldShape, AggregateLayoutFact, DynamicMappingBinding, DynamicMappingOutcome, DynamicMappingPlan,
-    DynamicMappingStep, DynamicPackingNode, DynamicPackingShape, EnumLayoutFact, EnumVariantLayoutFact,
-    SemanticTypeId,
+    DynamicMappingStep, DynamicPackingNode, DynamicPackingShape, EnumLayoutFact, EnumVariantLayoutFact, SemanticTypeId,
 };
 use sha2::{Digest, Sha256};
 use std::fmt::Write;
@@ -94,7 +93,8 @@ impl CodegenInput<'_> {
         let destination = self
             .compiled_dynamic_packing_shape(binding.destination())?
             .ok_or("Dynamic mapping destination graph is unavailable")?;
-        let outcome = beskid_queries::dynamic_mapping_plan(self.database(), binding).map_err(|error| error.to_string())?;
+        let outcome =
+            beskid_queries::dynamic_mapping_plan(self.database(), binding).map_err(|error| error.to_string())?;
         let plan = match outcome {
             DynamicMappingOutcome::Rejected(reason) => {
                 return Ok(CompiledDynamicMapping {
@@ -257,7 +257,11 @@ impl Emitter<'_, '_> {
                 if canonical.object_size != layout.object_size
                     || canonical.object_alignment != layout.object_alignment
                     || canonical.pointer_map_offsets != layout.pointer_map_offsets
-                    || canonical.fields.iter().map(|field| field.field_offset).ne(layout.fields.iter().map(|field| field.field_offset))
+                    || canonical
+                        .fields
+                        .iter()
+                        .map(|field| field.field_offset)
+                        .ne(layout.fields.iter().map(|field| field.field_offset))
                 {
                     return Err("Dynamic mapping record layout disagrees with its declaration layout".into());
                 }
@@ -312,7 +316,8 @@ impl Emitter<'_, '_> {
                 )
             }
             DynamicMappingStep::Exact { scalar } => {
-                let (_, size) = c_scalar(scalar).ok_or_else(|| format!("Dynamic mapping scalar {scalar} has no storage"))?;
+                let (_, size) =
+                    c_scalar(scalar).ok_or_else(|| format!("Dynamic mapping scalar {scalar} has no storage"))?;
                 let source = source.ok_or("Dynamic mapping scalar source slot is missing")?;
                 format!("{reload}memcpy({address},{source},{size});\n")
             }
@@ -348,7 +353,12 @@ impl Emitter<'_, '_> {
         }
     }
 
-    fn emit(&self, source_box: &AggregateStaticPlan, destination_box: &AggregateStaticPlan, getter: &str) -> Result<String, String> {
+    fn emit(
+        &self,
+        source_box: &AggregateStaticPlan,
+        destination_box: &AggregateStaticPlan,
+        getter: &str,
+    ) -> Result<String, String> {
         let prefix = &self.prefix;
         let source = self.plan.source();
         let destination = self.plan.destination();
@@ -368,7 +378,10 @@ impl Emitter<'_, '_> {
                     else {
                         return Err("Dynamic mapping record destination changed".into());
                     };
-                    definitions.push_str(&Self::pointer_map(&format!("{prefix}_m{index}"), &destination_layout.pointer_map_offsets));
+                    definitions.push_str(&Self::pointer_map(
+                        &format!("{prefix}_m{index}"),
+                        &destination_layout.pointer_map_offsets,
+                    ));
                     writeln!(
                         definitions,
                         "static const BeskidDynamicMapTypeDescriptorV1 {prefix}_d{index}={{{},{},{prefix}_m{index},{},0}};",
@@ -409,7 +422,11 @@ impl Emitter<'_, '_> {
                             }
                             None => None,
                         };
-                        body.push_str(&self.transfer(field.step, source_slot.as_deref(), &Self::record_slot(destination_offset))?);
+                        body.push_str(&self.transfer(
+                            field.step,
+                            source_slot.as_deref(),
+                            &Self::record_slot(destination_offset),
+                        )?);
                     }
                     write!(
                         definitions,
@@ -431,8 +448,10 @@ impl Emitter<'_, '_> {
                     .map_err(|error| error.to_string())?;
                 }
                 DynamicMappingStep::Array { source: from, destination: to, element } => {
-                    let (DynamicPackingNode::Array { element: source_element }, DynamicPackingNode::Array { element: destination_element }) =
-                        (Self::node(source, *from)?, Self::node(destination, *to)?)
+                    let (
+                        DynamicPackingNode::Array { element: source_element },
+                        DynamicPackingNode::Array { element: destination_element },
+                    ) = (Self::node(source, *from)?, Self::node(destination, *to)?)
                     else {
                         return Err("Dynamic mapping array node changed".into());
                     };
@@ -499,7 +518,12 @@ impl Emitter<'_, '_> {
                                     fields: variant
                                         .fields
                                         .iter()
-                                        .map(|field| Ok((Arc::<str>::from(field.name.as_str()), Self::field_shape(destination, field.ty)?)))
+                                        .map(|field| {
+                                            Ok((
+                                                Arc::<str>::from(field.name.as_str()),
+                                                Self::field_shape(destination, field.ty)?,
+                                            ))
+                                        })
                                         .collect::<Result<Vec<_>, String>>()?
                                         .into(),
                                 })
@@ -517,7 +541,8 @@ impl Emitter<'_, '_> {
                     let physical = fact
                         .scalar_payload_object_layout(64, header.size, header.alignment)
                         .ok_or("Dynamic mapping optional layout is unavailable")?;
-                    definitions.push_str(&Self::pointer_map(&format!("{prefix}_m{index}"), &physical.pointer_map_offsets));
+                    definitions
+                        .push_str(&Self::pointer_map(&format!("{prefix}_m{index}"), &physical.pointer_map_offsets));
                     writeln!(
                         definitions,
                         "static const BeskidDynamicMapTypeDescriptorV1 {prefix}_d{index}={{{},{},{prefix}_m{index},{},0}};",
@@ -547,12 +572,15 @@ impl Emitter<'_, '_> {
                     )
                     .map_err(|error| error.to_string())?;
                 }
-                DynamicMappingStep::Exact { .. } | DynamicMappingStep::Widen { .. } | DynamicMappingStep::Shared { .. } => {}
+                DynamicMappingStep::Exact { .. }
+                | DynamicMappingStep::Widen { .. }
+                | DynamicMappingStep::Shared { .. } => {}
             }
         }
         let source_offset = source_box.fields[0].field_offset;
         let destination_offset = destination_box.fields[0].field_offset;
-        let root = self.transfer(0, Some(&format!("source+{source_offset}")), &Self::record_slot(destination_offset))?;
+        let root =
+            self.transfer(0, Some(&format!("source+{source_offset}")), &Self::record_slot(destination_offset))?;
         let mut native = declarations;
         native.push_str(&definitions);
         write!(

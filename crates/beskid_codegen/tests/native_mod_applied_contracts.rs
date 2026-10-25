@@ -89,15 +89,19 @@ fn enum_applied_contract_uses_exact_impl_receiver_and_nominal_argument() {
          impl Choice : Applied<Choice> { pub Choice Rewrite(Choice value) { return value; } }",
     );
     let index = typed.assembly.entry_syntax_index();
-    let node = index.ids_of_kind(NodeKind::EnumDefinition).find(|node|
-        index.node_at(&typed.assembly.entry_unit().program, *node)
-            .and_then(|node| node.of::<EnumDefinition>())
-            .is_some_and(|definition| definition.name.node.name == "Choice")).unwrap();
+    let node = index
+        .ids_of_kind(NodeKind::EnumDefinition)
+        .find(|node| {
+            index
+                .node_at(&typed.assembly.entry_unit().program, *node)
+                .and_then(|node| node.of::<EnumDefinition>())
+                .is_some_and(|definition| definition.name.node.name == "Choice")
+        })
+        .unwrap();
     let key = AstNodeKey { node, ..root };
-    let applications = type_contract_applications(&db, key).unwrap()
-        .expect("registered enum must expose its actual impl conformance");
+    let applications =
+        type_contract_applications(&db, key).unwrap().expect("registered enum must expose its actual impl conformance");
     assert_eq!(applications.len(), 1);
-    assert_eq!(type_applied_contract_implementation(&db, key, &applications[0])
-        .unwrap().unwrap().len(), 1);
+    assert_eq!(type_applied_contract_implementation(&db, key, &applications[0]).unwrap().unwrap().len(), 1);
     assert!(beskid_queries::applied_contract_argument_is_type(&db, &applications[0], 0, key).unwrap());
 }

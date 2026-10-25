@@ -107,7 +107,8 @@ fn dependency_signatures_use_their_own_same_leaf_type() {
     assert!(findings.is_empty(), "each signature keeps its lexical type declaration: {:?}", codes(&findings));
 }
 
-const NODES: &str = "pub type NodeRef { pub u64 issuer; pub u64 node; } pub type NodeSpan { pub u64 start; pub u64 end; }";
+const NODES: &str =
+    "pub type NodeRef { pub u64 issuer; pub u64 node; } pub type NodeSpan { pub u64 start; pub u64 end; }";
 const QUERY: &str = "use Probe.Syntax.Nodes; pub type SyntaxQuery { pub Probe.Syntax.Nodes.NodeRef start; pub u64 bound; } \
      pub SyntaxQuery At(Probe.Syntax.Nodes.NodeRef root) { return SyntaxQuery { start: root, bound: 1_u64 }; } \
      pub Probe.Syntax.Nodes.NodeSpan Span(Probe.Syntax.Nodes.NodeRef node) { return Probe.Syntax.Nodes.NodeSpan { start: node.node, end: node.node }; }";

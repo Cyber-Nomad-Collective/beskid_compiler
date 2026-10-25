@@ -138,8 +138,7 @@ impl ModuleIndex {
         assembly: &ProgramAssembly,
     ) -> Option<Resolution> {
         let entry_source_path = assembly.entry_unit().path.clone();
-        let entry_module_path =
-            infer_logical_module_path(assembly.entry_unit(), &assembly.roots);
+        let entry_module_path = infer_logical_module_path(assembly.entry_unit(), &assembly.roots);
 
         let mut resolver = Resolver::new();
         resolver.set_current_source_path(Some(entry_source_path.clone()));

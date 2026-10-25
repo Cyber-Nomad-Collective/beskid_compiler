@@ -10,7 +10,8 @@ fn append_publicates_the_proven_owner_before_exactly_one_finish() {
     let grow = append.find("beskid_rt_v5_array_grow_rooted").expect("rooted grow");
     let element_store = append.find("store(MemFlagsData::new(), value, address, 0)").expect("typed element store");
     let owner_store = append.find("self.publish_managed_local(slot, array)").expect("local owner-slot store");
-    let field_store = append.find("self.emit_barriered_store(slot, array)").expect("barriered aggregate owner-field store");
+    let field_store =
+        append.find("self.emit_barriered_store(slot, array)").expect("barriered aggregate owner-field store");
     let finish = append.find("beskid_rt_v5_array_construction_finish").expect("construction finish");
 
     assert!(grow < element_store);
@@ -21,7 +22,10 @@ fn append_publicates_the_proven_owner_before_exactly_one_finish() {
     // The owner-field store is barriered with the grown array (0.6.2 incremental marking), and
     // the element store into the slot past the old length needs none.
     assert!(!append.contains("beskid_rt_v5_array_write_barrier"), "no 0.6.1 array barrier in generated code");
-    assert!(!append.contains("emit_barriered_store(slot, owner)"), "the owner store must publish the grown array, not the stale pre-grow owner");
+    assert!(
+        !append.contains("emit_barriered_store(slot, owner)"),
+        "the owner store must publish the grown array, not the stale pre-grow owner"
+    );
 }
 
 #[test]

@@ -33,13 +33,12 @@ impl NativeModCallbackCapability {
                 .copied()
                 .find(|root| root.unit == key.unit)
                 .context("native callable has no registered source root")?;
-            let closure = beskid_queries::reachable_items(input.database(), root, key)?
-                .with_context(|| {
-                    format!(
-                        "native callable reachable facts are incomplete at {}",
-                        beskid_queries::format_ast_node_site(input.database(), key)
-                    )
-                })?;
+            let closure = beskid_queries::reachable_items(input.database(), root, key)?.with_context(|| {
+                format!(
+                    "native callable reachable facts are incomplete at {}",
+                    beskid_queries::format_ast_node_site(input.database(), key)
+                )
+            })?;
             reachable.extend(closure.iter().copied());
             reachable.insert(key);
         }
@@ -90,8 +89,12 @@ impl NativeModCallbackCapability {
         let callbacks = ordered.into_iter().map(|(_, _, callback)| callback).collect::<Vec<_>>();
         Ok(Self { generation, wrappers: Arc::new(wrappers), callbacks: Arc::new(callbacks) })
     }
-    pub(super) fn callbacks(&self) -> impl Iterator<Item=NativeModCallback> + '_ { self.callbacks.iter().copied() }
-    pub(super) fn wrappers(&self) -> impl Iterator<Item=AstNodeKey> + '_ { self.wrappers.iter().copied() }
+    pub(super) fn callbacks(&self) -> impl Iterator<Item = NativeModCallback> + '_ {
+        self.callbacks.iter().copied()
+    }
+    pub(super) fn wrappers(&self) -> impl Iterator<Item = AstNodeKey> + '_ {
+        self.wrappers.iter().copied()
+    }
     pub(crate) fn authorizes(&self, callback: NativeModCallback) -> bool {
         callback.wrapper().generation == self.generation && self.wrappers.contains(&callback.wrapper())
     }

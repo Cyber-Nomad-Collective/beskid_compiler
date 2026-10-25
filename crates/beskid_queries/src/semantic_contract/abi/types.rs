@@ -20,9 +20,11 @@ pub(in crate::semantic_contract) fn contextual_integer_literal_abi_type_tracked(
     key: AstNodeKey,
 ) -> SemanticQueryResult<SemanticTypeId> {
     with_node(db, syntax, key, |_program, _index, _node| {
-        let bare_integer = (|| Ok::<bool, SemanticError>(
-            unsuffixed_integer_literal(db, key)? || contextual_constant_integer(db, key)?.is_some(),
-        ))();
+        let bare_integer = (|| {
+            Ok::<bool, SemanticError>(
+                unsuffixed_integer_literal(db, key)? || contextual_constant_integer(db, key)?.is_some(),
+            )
+        })();
         match bare_integer {
             Ok(true) => {}
             // An explicitly suffixed literal already fixed its width; a contextual width is a gap.
@@ -108,7 +110,9 @@ pub(in crate::semantic_contract) fn abi_type_tracked(
         if node.of::<beskid_analysis::syntax::MemberExpression>().is_some() {
             // `call().field`: the field access fact names the projected field's shape.
             return Some(aggregate_field_access(db, key).and_then(|access| {
-                access.and_then(|access| aggregate_field_access_abi_type(&access)).ok_or_else(|| SemanticError::unavailable("abi_type"))
+                access
+                    .and_then(|access| aggregate_field_access_abi_type(&access))
+                    .ok_or_else(|| SemanticError::unavailable("abi_type"))
             }));
         }
         if node.of::<beskid_analysis::syntax::ArrayLiteralExpression>().is_some() {
@@ -218,7 +222,10 @@ pub(in crate::semantic_contract) fn abi_type_tracked(
                 return Some(Ok(SemanticTypeId::I64));
             }
             if let Some(exchange) = exchange_call_for_node(program, index, key) {
-                return Some(abi_type(db, exchange.place).and_then(|ty| ty.ok_or_else(|| SemanticError::unavailable("abi_type"))));
+                return Some(
+                    abi_type(db, exchange.place)
+                        .and_then(|ty| ty.ok_or_else(|| SemanticError::unavailable("abi_type"))),
+                );
             }
             match primitive_numeric_conversion(db, key) {
                 Ok(Some(conversion)) => return Some(Ok(conversion.to)),
@@ -419,7 +426,9 @@ pub(in crate::semantic_contract) fn abi_type_for_expression(
 
 /// ABI representation of the field a resolved access reads: scalars and managed references keep
 /// their own representation, a nominal field is a managed pointer.
-pub(in crate::semantic_contract) fn aggregate_field_access_abi_type(access: &AggregateFieldAccess) -> Option<SemanticTypeId> {
+pub(in crate::semantic_contract) fn aggregate_field_access_abi_type(
+    access: &AggregateFieldAccess,
+) -> Option<SemanticTypeId> {
     access.layout.fields.get(usize::try_from(access.index).ok()?).map(|(_, shape)| match shape {
         AggregateFieldShape::Scalar(semantic) | AggregateFieldShape::ManagedReference(semantic) => *semantic,
         AggregateFieldShape::Nominal(_) => SemanticTypeId::POINTER,

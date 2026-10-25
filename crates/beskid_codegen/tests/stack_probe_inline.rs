@@ -33,7 +33,9 @@
 
 use cranelift_codegen::Context;
 use cranelift_codegen::control::ControlPlane;
-use cranelift_codegen::ir::{AbiParam, Function, InstBuilder, Signature, StackSlotData, StackSlotKind, UserFuncName, types};
+use cranelift_codegen::ir::{
+    AbiParam, Function, InstBuilder, Signature, StackSlotData, StackSlotKind, UserFuncName, types,
+};
 use cranelift_codegen::isa::{self, CallConv};
 use cranelift_codegen::settings::{self, Configurable};
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
@@ -44,7 +46,10 @@ use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
 const LARGE_FRAME_SLOT_BYTES: u32 = 20 * 1024;
 
 fn x86_64_isa(flags: settings::Flags) -> std::sync::Arc<dyn isa::TargetIsa> {
-    isa::lookup_by_name("x86_64").expect("x86_64 ISA is always available for cross-compilation").finish(flags).expect("ISA settings are valid")
+    isa::lookup_by_name("x86_64")
+        .expect("x86_64 ISA is always available for cross-compilation")
+        .finish(flags)
+        .expect("ISA settings are valid")
 }
 
 /// Builds `fn() -> i64` that reads through a pointer-sized local stored at the far end of a
@@ -61,7 +66,8 @@ fn build_large_frame_function(isa: &dyn isa::TargetIsa) -> Function {
     let mut builder = FunctionBuilder::new(&mut function, &mut builder_context);
     let block = builder.create_block();
     builder.switch_to_block(block);
-    let slot = builder.create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, LARGE_FRAME_SLOT_BYTES, 0));
+    let slot =
+        builder.create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, LARGE_FRAME_SLOT_BYTES, 0));
     let zero = builder.ins().iconst(types::I64, 0);
     // `stack_store` takes the pointer type explicitly as its first operand in this Cranelift
     // version (matches the real usage in
@@ -80,14 +86,17 @@ fn compiled_vcode(isa: &dyn isa::TargetIsa, function: Function) -> String {
     let mut context = Context::for_function(function);
     context.set_disasm(true);
     let mut control_plane = ControlPlane::default();
-    let compiled = context.compile(isa, &mut control_plane).expect("large-frame function compiles under every ISA setting combination tested here");
+    let compiled = context
+        .compile(isa, &mut control_plane)
+        .expect("large-frame function compiles under every ISA setting combination tested here");
     compiled.vcode.clone().expect("set_disasm(true) requests vcode text")
 }
 
 #[test]
 fn inline_probestack_setting_emits_a_stack_probe_loop_for_an_oversized_frame() {
     let flags = settings::Flags::new(
-        beskid_codegen::cranelift_host::production_isa_settings_builder().expect("production ISA settings build cleanly"),
+        beskid_codegen::cranelift_host::production_isa_settings_builder()
+            .expect("production ISA settings build cleanly"),
     );
     assert!(flags.enable_probestack(), "production_isa_settings_builder must enable stack probing");
     let isa = x86_64_isa(flags);

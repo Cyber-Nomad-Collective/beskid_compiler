@@ -329,7 +329,8 @@ fn supervise_worker(args: TestArgs) -> Result<()> {
             for (worker, shard) in workers.iter_mut().zip(matrix.shards.iter_mut()) {
                 shard.exit = kill_and_reap(&mut worker.child, &mut worker.cancel).or(shard.exit);
             }
-            interruption = Some(if matrix_expired { "whole-matrix deadline expired" } else { "per-target deadline expired" });
+            interruption =
+                Some(if matrix_expired { "whole-matrix deadline expired" } else { "per-target deadline expired" });
             break;
         }
         // A fatal worker error stops the whole run: its shard can no longer complete.
@@ -367,9 +368,23 @@ fn supervise_worker(args: TestArgs) -> Result<()> {
     let actives = matrix.shards.iter().filter_map(|shard| shard.active.clone()).collect::<Vec<_>>();
     if let Some(reason) = interruption {
         report.timed_out = true;
-        assemble_targets(&mut report, &matrix.selected_targets, matrix.finished, &actives, TargetResult::TimedOut, reason);
+        assemble_targets(
+            &mut report,
+            &matrix.selected_targets,
+            matrix.finished,
+            &actives,
+            TargetResult::TimedOut,
+            reason,
+        );
     } else if let Some(error) = matrix.fatal.take() {
-        assemble_targets(&mut report, &matrix.selected_targets, matrix.finished, &actives, TargetResult::Failed, &error);
+        assemble_targets(
+            &mut report,
+            &matrix.selected_targets,
+            matrix.finished,
+            &actives,
+            TargetResult::Failed,
+            &error,
+        );
         report.cancelled = true;
     } else if matrix.finished.len() < matrix.selected_targets.len() {
         assemble_targets(
@@ -404,7 +419,10 @@ fn supervise_worker(args: TestArgs) -> Result<()> {
 fn merged_exit_cause(shards: &[ShardState]) -> Option<WorkerExitCause> {
     let causes = shards.iter().map(|shard| shard.exit.as_ref().map(worker_exit_cause)).collect::<Vec<_>>();
     if causes.iter().any(Option::is_none) {
-        return causes.into_iter().find(|cause| cause.is_some_and(|cause| cause != WorkerExitCause::Exited { code: 0 })).flatten();
+        return causes
+            .into_iter()
+            .find(|cause| cause.is_some_and(|cause| cause != WorkerExitCause::Exited { code: 0 }))
+            .flatten();
     }
     causes
         .iter()

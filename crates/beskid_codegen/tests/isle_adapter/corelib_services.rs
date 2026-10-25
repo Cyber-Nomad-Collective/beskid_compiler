@@ -2,12 +2,12 @@ use super::support::{
     AbiManifestV5, Arc, AssemblyDiscovery, AstNodeId, AstNodeKey, BeskidDatabase,
     CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH, CANONICAL_FOUNDATION_STRING_CORE_SOURCE_PATH, CodegenInput,
     EffectiveCompilationRoots, ModuleIndex, ProgramAssembly, ProjectSession, RootEntry, SourceUnit, SourceUnitId,
-    SyntaxGenerationId, SyntaxModuleItem, TargetMetadata,
-    build_typed_program_with_corelib_services, call_abi_signature, call_lowering, canonical_corelib_service_capability,
-    canonical_corelib_service_source_path, canonical_foundation_assert_fixture, enum_layout, find_call_expression,
-    find_corelib_service_call, find_definition_of_kind, find_function_definitions, find_nodes_of_kind, include_imported_corelib_modules,
-    include_imported_corelib_modules_to_fixpoint,
-    isa, item_fixture_with_root, item_name, lower_syntax_program, parse_program_with_source_name, settings,
+    SyntaxGenerationId, SyntaxModuleItem, TargetMetadata, build_typed_program_with_corelib_services,
+    call_abi_signature, call_lowering, canonical_corelib_service_capability, canonical_corelib_service_source_path,
+    canonical_foundation_assert_fixture, enum_layout, find_call_expression, find_corelib_service_call,
+    find_definition_of_kind, find_function_definitions, find_nodes_of_kind, include_imported_corelib_modules,
+    include_imported_corelib_modules_to_fixpoint, isa, item_fixture_with_root, item_name, lower_syntax_program,
+    parse_program_with_source_name, settings,
 };
 
 fn network_internal_panic_fixture(
@@ -144,7 +144,8 @@ fn copied_network_internal_panic_remains_unauthorized() {
             .expect_err("identical untrusted Network source must not gain panic authority");
     let rendered = error.to_string();
     assert!(
-        rendered.contains("E1107 `__panic_str` is a private runtime builtin and cannot be called from this source unit"),
+        rendered
+            .contains("E1107 `__panic_str` is a private runtime builtin and cannot be called from this source unit"),
         "untrusted Network source must be denied by the legality gate before lowering: {error}"
     );
 }

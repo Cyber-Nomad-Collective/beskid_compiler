@@ -9,6 +9,7 @@
 //! from explicit type arguments, a callee parameter, a generic callee's explicit type arguments or
 //! an annotated local, and its closure record survives forced collections.
 
+use crate::shared_kit;
 use beskid_abi::runtime_kit::BuildProfile;
 use beskid_analysis::{
     projects::{AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, ProgramAssembly, RootEntry, SourceUnit},
@@ -16,7 +17,6 @@ use beskid_analysis::{
 };
 use beskid_queries::{BeskidDatabase, SyntaxGenerationId};
 use std::{path::Path, sync::Arc};
-use crate::shared_kit;
 
 #[test]
 fn generic_function_values_run_through_their_specializations() {
@@ -46,9 +46,14 @@ fn generic_function_values_run_through_their_specializations() {
     let settings = beskid_codegen::cranelift_host::production_isa_settings_builder().unwrap();
     let isa = cranelift_native::builder().unwrap().finish(cranelift_codegen::settings::Flags::new(settings)).unwrap();
     let mut db = BeskidDatabase::default();
-    let lowered =
-        beskid_codegen::lower_syntax_assembly_entrypoint(&mut db, assembly, "RunGenericFunctionValues", target.clone(), isa.as_ref())
-            .expect("generic function values must lower through source facts");
+    let lowered = beskid_codegen::lower_syntax_assembly_entrypoint(
+        &mut db,
+        assembly,
+        "RunGenericFunctionValues",
+        target.clone(),
+        isa.as_ref(),
+    )
+    .expect("generic function values must lower through source facts");
     let shared = shared_kit::debug();
     let mut engine = beskid_engine::Engine::with_runtime_kit(shared.prefix(), target, BuildProfile::Debug).unwrap();
     engine.compile_artifact(&lowered.artifact()).expect("compile generic function value artifact");

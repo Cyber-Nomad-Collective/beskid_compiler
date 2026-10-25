@@ -102,9 +102,9 @@ pub fn active_mod_manifests_for_input(
 fn assembly_error_for_activation(error: crate::projects::AssemblyError) -> anyhow::Error {
     use crate::analysis::diagnostics::{MietteReportError, source_map::SourceMapper};
     match error.diagnostic() {
-        Some(diagnostic) => anyhow::Error::new(MietteReportError::new(
-            SourceMapper::new().map_diagnostic(diagnostic.clone()),
-        )),
+        Some(diagnostic) => {
+            anyhow::Error::new(MietteReportError::new(SourceMapper::new().map_diagnostic(diagnostic.clone())))
+        }
         None => anyhow::Error::new(error),
     }
 }
@@ -286,10 +286,7 @@ mod tests {
                     "{name} {{\n  name = \"{name}\"\n  version = \"0.1.0\"\n  root = \"Src\"\n}}\ndependency \"{mod_name}\" {{ source = path path = \"../{mod_name}\" }}\ntarget \"lib\" {{ kind = Lib }}\n"
                 ),
             );
-            write(
-                &root.path().join(format!("{name}/Src/{name}/Api.bd")),
-                "pub unit Touch() { return; }\n",
-            );
+            write(&root.path().join(format!("{name}/Src/{name}/Api.bd")), "pub unit Touch() { return; }\n");
         }
         write(
             &root.path().join("Host/Host.bproj"),
@@ -308,10 +305,7 @@ mod tests {
     }
 
     fn names(manifests: &[PathBuf]) -> Vec<String> {
-        manifests
-            .iter()
-            .map(|path| path.file_stem().and_then(|stem| stem.to_str()).expect("stem").to_owned())
-            .collect()
+        manifests.iter().map(|path| path.file_stem().and_then(|stem| stem.to_str()).expect("stem").to_owned()).collect()
     }
 
     #[test]
@@ -320,7 +314,8 @@ mod tests {
         let assembly = assembly(&plan);
         assert!(active_mod_manifests(&plan, &assembly).expect("activation").is_empty());
         let narrowed = active_mod_plan(&plan, &assembly).expect("narrowed plan");
-        let kept = narrowed.dependency_projects.iter().map(|dependency| dependency.project_name.as_str()).collect::<Vec<_>>();
+        let kept =
+            narrowed.dependency_projects.iter().map(|dependency| dependency.project_name.as_str()).collect::<Vec<_>>();
         assert!(kept.contains(&"Lib") && kept.contains(&"Facade"), "libraries stay in the plan: {kept:?}");
         assert!(!kept.iter().any(|name| name.starts_with("Mod")), "inactive Mods leave the plan: {kept:?}");
     }
@@ -350,7 +345,10 @@ mod tests {
         assert!(!has("Facade/Api.bd"), "a package that is not reached stays out");
         assert!(!has("ModA/Src/Mod.bd"), "a Mod's own sources never join the host assembly");
         let reached = reached_packages(&plan, &assembly);
-        assert_eq!(mod_companion_packages(&plan, &reached).expect("companions").into_iter().collect::<Vec<_>>(), ["Lib"]);
+        assert_eq!(
+            mod_companion_packages(&plan, &reached).expect("companions").into_iter().collect::<Vec<_>>(),
+            ["Lib"]
+        );
     }
 
     #[test]
@@ -358,7 +356,12 @@ mod tests {
         let (root, plan) = workspace("unit Main() { return; }\n");
         fs::write(root.path().join("Lib/Src/Lib/Routes.bd"), "pub unit Route() { return; }\n").expect("route unit");
         let assembly = assembly(&plan);
-        assert_eq!(assembly.units.len(), 1, "only the entry unit: {:?}", assembly.units.iter().map(|unit| &unit.path).collect::<Vec<_>>());
+        assert_eq!(
+            assembly.units.len(),
+            1,
+            "only the entry unit: {:?}",
+            assembly.units.iter().map(|unit| &unit.path).collect::<Vec<_>>()
+        );
     }
 
     #[test]

@@ -339,7 +339,9 @@ fn copied_source_project_has_identical_lock_and_locked_commands_preserve_it() {
     let mut manifest = fs::read_to_string(original.app.join("App.bproj")).expect("app manifest");
     manifest.push_str("\ntarget \"AppTests\" {\n  kind = \"Test\"\n  entry = \"Tests.bd\"\n}\n");
     fs::write(original.app.join("App.bproj"), manifest).expect("test target manifest");
-    for relative in ["App/App.bproj", "App/Src/Main.bd", "App/Src/Tests.bd", "Kernel/Kernel.bproj", "Kernel/Src/Kernel.bd"] {
+    for relative in
+        ["App/App.bproj", "App/Src/Main.bd", "App/Src/Tests.bd", "Kernel/Kernel.bproj", "Kernel/Src/Kernel.bd"]
+    {
         fs::copy(original.root.join(relative), relocated.root.join(relative)).expect("copy source-bearing fixture");
     }
 

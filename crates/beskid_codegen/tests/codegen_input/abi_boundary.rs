@@ -61,12 +61,11 @@ i32 Main() { launch AppHost(); return 0; }
 "#;
     let (db, typed, root, target) = input_fixture_with_source(source);
     let generation = typed.generation;
-    let resolved =
-        resolve_composition(CompositionInput {
-            program: &typed.assembly.entry_unit().program,
-            is_mod_project: false,
-            types: &beskid_queries::CompositionTypes::new(&db, &typed),
-        });
+    let resolved = resolve_composition(CompositionInput {
+        program: &typed.assembly.entry_unit().program,
+        is_mod_project: false,
+        types: &beskid_queries::CompositionTypes::new(&db, &typed),
+    });
     assert!(resolved.issues.is_empty(), "composition must validate: {:?}", resolved.issues);
     let mut snapshot = resolved.snapshot;
     snapshot.source_unit_path = Some(root.unit.path(&db).to_path_buf());

@@ -18,6 +18,10 @@ use std::{
 };
 
 use anyhow::{Context, Result, anyhow, bail, ensure};
+use beskid_analysis::projects::{
+    ProjectGlueBackend, ProjectGlueOwner, ProjectManifest, TargetKind, collect_glue_owner_sources,
+    load_manifest_from_path,
+};
 use beskid_aot::{
     BuildOutputKind, BuildProfile,
     api::{
@@ -30,18 +34,14 @@ use beskid_aot::{
     },
     runtime::{RuntimeBuildRequest, RuntimeLinkage},
 };
-use beskid_analysis::projects::{
-    ProjectGlueBackend, ProjectGlueOwner, ProjectManifest, TargetKind, collect_glue_owner_sources,
-    load_manifest_from_path,
-};
 use beskid_codegen::{CodegenInput, glue::GlueArtifact};
 use beskid_queries::GlueDirection;
 use beskid_tools::PipelineProgressKind;
 use beskid_tools::pipeline::tui::CommandSummary;
 use beskid_tools::session::{CommandSession, SemanticGateOptions};
 
-use crate::machine_output::Records;
 use super::{BuildArgs, BuildKind, default_output_path, resolve_input_args};
+use crate::machine_output::Records;
 
 /// Wall-clock budget for the complete owner and consumer production of one build.
 const GLUE_BUILD_BUDGET: Duration = Duration::from_secs(900);
@@ -55,7 +55,8 @@ pub(super) struct RustGlueTools {
     pub linker: PathBuf,
 }
 
-const TOOL_FORM: &str = "pass `--rust-toolchain <prefix>`, or both `--cargo <path>` and `--rustc <path>`, plus `--linker <path>`";
+const TOOL_FORM: &str =
+    "pass `--rust-toolchain <prefix>`, or both `--cargo <path>` and `--rustc <path>`, plus `--linker <path>`";
 
 /// Select the Rust tools from the command-line flags only. Pure: no file system access.
 pub(super) fn select_tools(
@@ -213,7 +214,9 @@ pub(super) fn run(args: BuildArgs, tools: RustGlueTools, records: Option<&Record
     let (mut session, resolved) =
         CommandSession::open_and_resolve(args.plain, PipelineProgressKind::FullBuild, &resolve_args)?;
     let plan = resolved.compile_plan.as_ref().ok_or_else(|| {
-        anyhow!("`--backend glue-rust` builds a project Lib target; pass `--project <manifest>` instead of a source file")
+        anyhow!(
+            "`--backend glue-rust` builds a project Lib target; pass `--project <manifest>` instead of a source file"
+        )
     })?;
     match plan.target.kind {
         TargetKind::Lib => {}
@@ -278,110 +281,119 @@ pub(super) fn run(args: BuildArgs, tools: RustGlueTools, records: Option<&Record
         .prefix(STAGE_PREFIX)
         .tempdir_in(&parent)
         .with_context(|| format!("create a staging directory in `{}`", parent.display()))?;
-    let images = beskid_aot::with_prepared_glue_input(&front, abi_target, |input, items| -> Result<Vec<StagedImage>> {
-        let glue_libraries = manifest.glue.iter().map(|owner| owner.library.clone()).collect::<Vec<_>>();
-        let declarations = glue_declarations(input, items, &glue_libraries)?;
-        validate_rust_owner_declarations(input, &manifest)?;
-        ensure!(
-            declarations.iter().any(|declaration| declaration.direction == GlueDirection::Import),
-            "`--backend glue-rust` requires at least one glue block referenced by an Extern import; target `{consumer_library}` has none"
-        );
-        let selected = declarations.iter().map(|declaration| declaration.item.clone()).collect::<Vec<_>>();
-        let consumer_packet = beskid_codegen::glue::emit(input, &selected, &consumer_library)?;
-        consumer_packet.validate()?;
-        let referenced = referenced_libraries(&consumer_packet);
-        for library in &referenced {
+    let images = beskid_aot::with_prepared_glue_input(
+        &front,
+        abi_target,
+        |input, items| -> Result<Vec<StagedImage>> {
+            let glue_libraries = manifest.glue.iter().map(|owner| owner.library.clone()).collect::<Vec<_>>();
+            let declarations = glue_declarations(input, items, &glue_libraries)?;
+            validate_rust_owner_declarations(input, &manifest)?;
             ensure!(
-                select_owner(&manifest, library).is_some(),
-                "Glue library `{library}` is referenced by target `{consumer_library}` but has no manifest `glue \"{library}\"` block"
+                declarations.iter().any(|declaration| declaration.direction == GlueDirection::Import),
+                "`--backend glue-rust` requires at least one glue block referenced by an Extern import; target `{consumer_library}` has none"
             );
-        }
-        for owner in &manifest.glue {
-            ensure!(
-                referenced.contains(&owner.library),
-                "glue `{}` is not referenced by any selected Extern import or GlueHandle type of target `{consumer_library}`",
-                owner.library
-            );
-        }
+            let selected = declarations.iter().map(|declaration| declaration.item.clone()).collect::<Vec<_>>();
+            let consumer_packet = beskid_codegen::glue::emit(input, &selected, &consumer_library)?;
+            consumer_packet.validate()?;
+            let referenced = referenced_libraries(&consumer_packet);
+            for library in &referenced {
+                ensure!(
+                    select_owner(&manifest, library).is_some(),
+                    "Glue library `{library}` is referenced by target `{consumer_library}` but has no manifest `glue \"{library}\"` block"
+                );
+            }
+            for owner in &manifest.glue {
+                ensure!(
+                    referenced.contains(&owner.library),
+                    "glue `{}` is not referenced by any selected Extern import or GlueHandle type of target `{consumer_library}`",
+                    owner.library
+                );
+            }
 
-        let runtime = RuntimeBuildRequest {
-            kit: beskid_aot::default_runtime_strategy(profile, target_triple.as_deref())?,
-            linkage: RuntimeLinkage::GlueSharedProviderV1,
-        };
-        let control = NativeExecutionControl::new(Instant::now() + GLUE_BUILD_BUDGET, Arc::new(|| false));
-        let mut images = Vec::new();
-        let mut owners = Vec::new();
-        for owner in &manifest.glue {
-            let imports = declarations
-                .iter()
-                .filter(|declaration| declaration.is_import_of(&owner.library))
-                .cloned()
-                .collect::<Vec<_>>();
-            ensure!(
-                !imports.is_empty(),
-                "glue `{}` is referenced only by GlueHandle types; a Rust owner needs at least one Extern import",
-                owner.library
-            );
-            let owner_selected = imports.iter().map(|declaration| declaration.item.clone()).collect::<Vec<_>>();
-            let packet = beskid_codegen::glue::emit(input, &owner_selected, &owner.library)?;
-            packet.validate()?;
-            let tables = rust_owner_source_tables(input, &owner.library, &imports, &packet)?;
-            let types = tables.types.into_iter().map(RustOwnerType::from).collect::<Vec<_>>();
-            let callables = tables.callables.into_iter().map(RustOwnerCallable::from).collect::<Vec<_>>();
-            let sources = collect_glue_owner_sources(&project_root, owner)?
-                .files
-                .into_iter()
-                .map(|file| RustOwnerSource { relative_path: file.relative_path, bytes: file.bytes })
-                .collect::<Vec<_>>();
-            let file_name = beskid_aot::target::output_filename(&owner.library, BuildOutputKind::SharedLib, &target);
-            let destination = parent.join(&file_name);
-            ensure!(
-                destination.file_name() != Some(output_name),
-                "glue owner `{}` image `{file_name}` collides with the consumer output `{}`",
-                owner.library,
-                output.display()
-            );
-            let staged = stage.path().join(&file_name);
-            let prepared = build_rust_owner(&RustOwnerBuildRequest {
+            let runtime = RuntimeBuildRequest {
+                kit: beskid_aot::default_runtime_strategy(profile, target_triple.as_deref())?,
+                linkage: RuntimeLinkage::GlueSharedProviderV1,
+            };
+            let control = NativeExecutionControl::new(Instant::now() + GLUE_BUILD_BUDGET, Arc::new(|| false));
+            let mut images = Vec::new();
+            let mut owners = Vec::new();
+            for owner in &manifest.glue {
+                let imports = declarations
+                    .iter()
+                    .filter(|declaration| declaration.is_import_of(&owner.library))
+                    .cloned()
+                    .collect::<Vec<_>>();
+                ensure!(
+                    !imports.is_empty(),
+                    "glue `{}` is referenced only by GlueHandle types; a Rust owner needs at least one Extern import",
+                    owner.library
+                );
+                let owner_selected = imports.iter().map(|declaration| declaration.item.clone()).collect::<Vec<_>>();
+                let packet = beskid_codegen::glue::emit(input, &owner_selected, &owner.library)?;
+                packet.validate()?;
+                let tables = rust_owner_source_tables(input, &owner.library, &imports, &packet)?;
+                let types = tables.types.into_iter().map(RustOwnerType::from).collect::<Vec<_>>();
+                let callables = tables.callables.into_iter().map(RustOwnerCallable::from).collect::<Vec<_>>();
+                let sources = collect_glue_owner_sources(&project_root, owner)?
+                    .files
+                    .into_iter()
+                    .map(|file| RustOwnerSource { relative_path: file.relative_path, bytes: file.bytes })
+                    .collect::<Vec<_>>();
+                let file_name =
+                    beskid_aot::target::output_filename(&owner.library, BuildOutputKind::SharedLib, &target);
+                let destination = parent.join(&file_name);
+                ensure!(
+                    destination.file_name() != Some(output_name),
+                    "glue owner `{}` image `{file_name}` collides with the consumer output `{}`",
+                    owner.library,
+                    output.display()
+                );
+                let staged = stage.path().join(&file_name);
+                let prepared = build_rust_owner(&RustOwnerBuildRequest {
+                    input,
+                    selected: &owner_selected,
+                    native_library: &owner.library,
+                    expected: &packet,
+                    consumer: &consumer_packet,
+                    sources: &sources,
+                    types: &types,
+                    callables: &callables,
+                    runtime: &runtime,
+                    cargo: &tools.cargo,
+                    rustc: &tools.rustc,
+                    linker: &tools.linker,
+                    release,
+                    output_path: &staged,
+                    control: &control,
+                    image_cache: None,
+                })
+                .with_context(|| format!("build Rust owner `{}`", owner.library))?;
+                images.push(StagedImage { staged, destination, sha256: prepared.native_sha256().to_owned() });
+                owners.push(prepared);
+            }
+            let staged = stage.path().join(output_name);
+            // The consumer's embedded admission record pins every owner image digest (Gate WEB-GLUE03).
+            let owner_pins = owners.iter().collect::<Vec<_>>();
+            let consumer = build_glue_artifact(&GlueArtifactBuildRequest {
                 input,
-                selected: &owner_selected,
-                native_library: &owner.library,
-                expected: &packet,
-                consumer: &consumer_packet,
-                sources: &sources,
-                types: &types,
-                callables: &callables,
+                all_items: items,
+                selected: &selected,
+                native_library: &consumer_library,
+                expected: &consumer_packet,
                 runtime: &runtime,
-                cargo: &tools.cargo,
-                rustc: &tools.rustc,
-                linker: &tools.linker,
-                release,
                 output_path: &staged,
                 control: &control,
-                image_cache: None,
+                owners: &owner_pins,
             })
-            .with_context(|| format!("build Rust owner `{}`", owner.library))?;
-            images.push(StagedImage { staged, destination, sha256: prepared.native_sha256().to_owned() });
-            owners.push(prepared);
-        }
-        let staged = stage.path().join(output_name);
-        // The consumer's embedded admission record pins every owner image digest (Gate WEB-GLUE03).
-        let owner_pins = owners.iter().collect::<Vec<_>>();
-        let consumer = build_glue_artifact(&GlueArtifactBuildRequest {
-            input,
-            all_items: items,
-            selected: &selected,
-            native_library: &consumer_library,
-            expected: &consumer_packet,
-            runtime: &runtime,
-            output_path: &staged,
-            control: &control,
-            owners: &owner_pins,
-        })
-        .with_context(|| format!("build Glue consumer `{consumer_library}`"))?;
-        images.push(StagedImage { staged, destination: output.clone(), sha256: consumer.native_sha256().to_owned() });
-        Ok(images)
-    })?;
+            .with_context(|| format!("build Glue consumer `{consumer_library}`"))?;
+            images.push(StagedImage {
+                staged,
+                destination: output.clone(),
+                sha256: consumer.native_sha256().to_owned(),
+            });
+            Ok(images)
+        },
+    )?;
     publish_images(stage.path(), &images)?;
     drop(stage);
 
@@ -428,7 +440,8 @@ mod tests {
     #[test]
     fn explicit_cargo_and_rustc_select_exact_paths() {
         let tools =
-            select_tools(None, Some(Path::new("/c/cargo")), Some(Path::new("/c/rustc")), Some(Path::new("/cc"))).unwrap();
+            select_tools(None, Some(Path::new("/c/cargo")), Some(Path::new("/c/rustc")), Some(Path::new("/cc")))
+                .unwrap();
         assert_eq!(tools, RustGlueTools { cargo: path("/c/cargo"), rustc: path("/c/rustc"), linker: path("/cc") });
     }
 

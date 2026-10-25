@@ -324,9 +324,17 @@ mod tests {
         assert_eq!(default_filter(false, Verbosity::Normal), "warn");
         assert_eq!(default_filter(true, Verbosity::Normal), "warn");
         let verbose = default_filter(false, Verbosity::Verbose);
-        assert!(verbose.starts_with("info,") && verbose.contains("beskid_tools=info") && verbose.contains("cranelift_codegen=warn"));
+        assert!(
+            verbose.starts_with("info,")
+                && verbose.contains("beskid_tools=info")
+                && verbose.contains("cranelift_codegen=warn")
+        );
         let debug = default_filter(false, Verbosity::Debug);
-        assert!(debug.contains("beskid_tools=debug") && debug.contains("beskid_runtime=warn") && debug.contains("salsa=warn"));
+        assert!(
+            debug.contains("beskid_tools=debug")
+                && debug.contains("beskid_runtime=warn")
+                && debug.contains("salsa=warn")
+        );
         assert!(!default_filter(true, Verbosity::Debug).contains("cranelift_codegen=warn"));
     }
 

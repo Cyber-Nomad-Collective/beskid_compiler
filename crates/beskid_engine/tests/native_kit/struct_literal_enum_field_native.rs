@@ -24,7 +24,8 @@ i64 Main() {
 fn generic_enum_constructors_in_struct_literal_fields_run() {
     let kit = shared_kit::debug();
     let _runtime_prefix = RuntimePrefixContext::install(kit.prefix());
-    let output = run_entrypoint(Path::new("struct-literal-enum-field.bd"), SOURCE, "Main", &beskid_engine::ModHost::NoMods)
-        .expect("generic enum constructors in struct literal fields lower and run");
+    let output =
+        run_entrypoint(Path::new("struct-literal-enum-field.bd"), SOURCE, "Main", &beskid_engine::ModHost::NoMods)
+            .expect("generic enum constructors in struct literal fields lower and run");
     assert_eq!(output, "42", "the constructed field payload and the count survive construction");
 }

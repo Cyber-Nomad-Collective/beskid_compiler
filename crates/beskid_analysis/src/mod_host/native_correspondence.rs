@@ -216,8 +216,9 @@ mod tests {
             assert!(schema.to_rust(name, &json!({"extra":1})).is_err());
             assert!(schema.to_source(name, &json!({})).is_err());
         }
-        let parsed = crate::services::parse_program_with_source_name("Loop.bd", "unit Loop() { while true { break; } }")
-            .expect("parse loop");
+        let parsed =
+            crate::services::parse_program_with_source_name("Loop.bd", "unit Loop() { while true { break; } }")
+                .expect("parse loop");
         let crate::syntax::Node::Function(function) = &parsed.node.items[0].node else { panic!("function") };
         let rust = serde_json::to_value(function).unwrap();
         let source = schema.to_source("SpannedFunctionDefinition", &rust).unwrap();

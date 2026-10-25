@@ -19,14 +19,26 @@ impl SemanticPipelineRule {
         for item in &program.node.items {
             match &item.node {
                 crate::syntax::Node::Function(definition) => {
-                    walk_callable(&mut writes, Some(definition.node.parameters.as_slice()), NodeRef::from(&definition.node.body.node));
+                    walk_callable(
+                        &mut writes,
+                        Some(definition.node.parameters.as_slice()),
+                        NodeRef::from(&definition.node.body.node),
+                    );
                 }
                 crate::syntax::Node::Method(definition) => {
-                    walk_callable(&mut writes, Some(definition.node.parameters.as_slice()), NodeRef::from(&definition.node.body.node));
+                    walk_callable(
+                        &mut writes,
+                        Some(definition.node.parameters.as_slice()),
+                        NodeRef::from(&definition.node.body.node),
+                    );
                 }
                 crate::syntax::Node::ExtendTypeDefinition(definition) => {
                     for method in &definition.node.methods {
-                        walk_callable(&mut writes, Some(method.node.parameters.as_slice()), NodeRef::from(&method.node.body.node));
+                        walk_callable(
+                            &mut writes,
+                            Some(method.node.parameters.as_slice()),
+                            NodeRef::from(&method.node.body.node),
+                        );
                     }
                 }
                 crate::syntax::Node::TestDefinition(definition) => {
@@ -54,7 +66,11 @@ impl SemanticPipelineRule {
     }
 }
 
-fn walk_callable<'a>(writes: &mut Vec<ImmutableWrites>, parameters: Option<&'a [Spanned<Parameter>]>, body: NodeRef<'a>) {
+fn walk_callable<'a>(
+    writes: &mut Vec<ImmutableWrites>,
+    parameters: Option<&'a [Spanned<Parameter>]>,
+    body: NodeRef<'a>,
+) {
     let mut visitor = MutabilityVisitor::new(writes);
     if let Some(parameters) = parameters {
         visitor.seed_parameters(parameters);
@@ -211,7 +227,10 @@ mod tests {
     fn function_top_level_reassignment_reports_e1214_for_each_type() {
         assert_reports("pub unit F(pointer p) { pointer q = p; q = p; return; }", "q");
         assert_reports("pub unit F() { i64 n = 0; n = 1; return; }", "n");
-        assert_reports(&format!("{PAIR}pub unit F() {{ Pair v = Pair {{ a: 1 }}; v = Pair {{ a: 2 }}; return; }}"), "v");
+        assert_reports(
+            &format!("{PAIR}pub unit F() {{ Pair v = Pair {{ a: 1 }}; v = Pair {{ a: 2 }}; return; }}"),
+            "v",
+        );
     }
 
     #[test]
@@ -219,7 +238,9 @@ mod tests {
         assert_reports("pub unit F(pointer p) { pointer q = p; while true { q = p; } return; }", "q");
         assert_reports("pub unit F() { i64 n = 0; while n < 3 { n = n + 1; } return; }", "n");
         assert_reports(
-            &format!("{PAIR}pub unit F() {{ Pair v = Pair {{ a: 1 }}; while true {{ v = Pair {{ a: 2 }}; }} return; }}"),
+            &format!(
+                "{PAIR}pub unit F() {{ Pair v = Pair {{ a: 1 }}; while true {{ v = Pair {{ a: 2 }}; }} return; }}"
+            ),
             "v",
         );
     }
@@ -229,7 +250,9 @@ mod tests {
         assert_reports("pub unit F(pointer p, bool c) { pointer q = p; if c { q = p; } return; }", "q");
         assert_reports("pub unit F(bool c) { i64 n = 0; if c { n = 1; } return; }", "n");
         assert_reports(
-            &format!("{PAIR}pub unit F(bool c) {{ Pair v = Pair {{ a: 1 }}; if c {{ v = Pair {{ a: 2 }}; }} return; }}"),
+            &format!(
+                "{PAIR}pub unit F(bool c) {{ Pair v = Pair {{ a: 1 }}; if c {{ v = Pair {{ a: 2 }}; }} return; }}"
+            ),
             "v",
         );
     }
@@ -252,7 +275,10 @@ mod tests {
         assert_reports("test t { pointer q = NativePointer(0); while true { q = NativePointer(0); } }", "q");
         assert_reports("test t { i64 n = 0; if true { n = 1; } }", "n");
         assert_reports("test t { i64 n = 0; for i in range(0, 4) { n = 1; } }", "n");
-        assert_reports(&format!("{PAIR}test t {{ Pair v = Pair {{ a: 1 }}; while true {{ v = Pair {{ a: 2 }}; }} }}"), "v");
+        assert_reports(
+            &format!("{PAIR}test t {{ Pair v = Pair {{ a: 1 }}; while true {{ v = Pair {{ a: 2 }}; }} }}"),
+            "v",
+        );
     }
 
     #[test]

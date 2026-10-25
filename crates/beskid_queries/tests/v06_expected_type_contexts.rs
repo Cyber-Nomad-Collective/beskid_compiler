@@ -75,7 +75,9 @@ fn assert_unavailable<T>(result: Result<Option<T>, SemanticError>) {
 fn declared_local_supplies_its_annotation_and_an_inferred_local_supplies_nothing() {
     let fixture = Fixture::new("unit Main() { u8 value = 1; let inferred = 2; }");
     let declared = fixture.expected(fixture.literal(0));
-    assert!(matches!(declared.context, ExpectedTypeContext::DeclaredLocal { statement } if statement == fixture.key(NodeKind::LetStatement, 0)));
+    assert!(
+        matches!(declared.context, ExpectedTypeContext::DeclaredLocal { statement } if statement == fixture.key(NodeKind::LetStatement, 0))
+    );
     assert_eq!(declared.abi_type(), SemanticTypeId::U8);
     assert_eq!(fixture.integer_abi(fixture.literal(0)), Some(SemanticTypeId::U8));
 
@@ -87,7 +89,9 @@ fn declared_local_supplies_its_annotation_and_an_inferred_local_supplies_nothing
 fn assignment_supplies_the_target_declaration_type() {
     let fixture = Fixture::new("unit Main(mut u16 count) { count = 7; }");
     let expected = fixture.expected(fixture.literal(0));
-    assert!(matches!(expected.context, ExpectedTypeContext::Assignment { assignment } if assignment == fixture.key(NodeKind::AssignExpression, 0)));
+    assert!(
+        matches!(expected.context, ExpectedTypeContext::Assignment { assignment } if assignment == fixture.key(NodeKind::AssignExpression, 0))
+    );
     assert_eq!(expected.abi_type(), SemanticTypeId::U16);
     assert_eq!(fixture.integer_abi(fixture.literal(0)), Some(SemanticTypeId::U16));
 }
@@ -199,7 +203,9 @@ fn struct_fields_take_their_declared_type_including_applied_generic_arguments() 
 fn return_values_take_the_declared_return_type() {
     let fixture = Fixture::new("u8 Main() { return 1; }");
     let expected = fixture.expected(fixture.literal(0));
-    assert!(matches!(expected.context, ExpectedTypeContext::Return { item } if item == fixture.key(NodeKind::FunctionDefinition, 0)));
+    assert!(
+        matches!(expected.context, ExpectedTypeContext::Return { item } if item == fixture.key(NodeKind::FunctionDefinition, 0))
+    );
     assert_eq!(expected.abi_type(), SemanticTypeId::U8);
 
     let arrays = Fixture::new("u8[] Main() { return []; }");
@@ -310,7 +316,9 @@ fn nodes_that_are_not_bare_integers_have_no_contextual_integer_fact() {
 
 #[test]
 fn a_block_bodied_lambda_return_expects_the_declared_function_result() {
-    let fixture = Fixture::new("u8 Pick(u8 v, (u8) => u8 f) { return f(v); } u8 Main() { return Pick(9, (u8 x) => { return 2; }); }");
+    let fixture = Fixture::new(
+        "u8 Pick(u8 v, (u8) => u8 f) { return f(v); } u8 Main() { return Pick(9, (u8 x) => { return 2; }); }",
+    );
     let lambda = fixture.key(NodeKind::LambdaExpression, 0);
     // The lambda itself is checked against the callee parameter `(u8) => u8`.
     let own = fixture.expected(lambda);
@@ -355,7 +363,6 @@ fn an_untyped_lambda_parameter_takes_the_expected_parameter_type_and_nothing_wit
     assert_unavailable(expected_type(&orphan.db, orphan.key(NodeKind::LambdaExpression, 0)));
     assert_unavailable(beskid_queries::closure_signature(&orphan.db, orphan.key(NodeKind::LambdaExpression, 0)));
 }
-
 
 #[test]
 fn the_final_statement_of_a_value_block_forwards_and_other_statements_are_unit() {

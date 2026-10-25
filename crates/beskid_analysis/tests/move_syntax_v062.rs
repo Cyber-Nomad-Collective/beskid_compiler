@@ -91,8 +91,11 @@ fn move_is_reserved_and_does_not_combine() {
     // `exchange` stays an ordinary identifier.
     use pest::Parser;
     assert!(
-        beskid_analysis::parser::BeskidParser::parse(beskid_analysis::parser::Rule::Program, "unit F() { i64 exchange = 1; }")
-            .is_ok()
+        beskid_analysis::parser::BeskidParser::parse(
+            beskid_analysis::parser::Rule::Program,
+            "unit F() { i64 exchange = 1; }"
+        )
+        .is_ok()
     );
     parse("unit F() { i64 exchange = 1; }");
 }

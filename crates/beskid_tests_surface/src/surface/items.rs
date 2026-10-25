@@ -75,7 +75,8 @@ fn parses_function_with_mut_parameter_ast() {
 
 #[test]
 fn parses_parameter_default_values() {
-    let node = parse_node_ast("unit Check(bool ok, string because = \"\", [CallerLineNumber] i64 line = 0) { return; }");
+    let node =
+        parse_node_ast("unit Check(bool ok, string because = \"\", [CallerLineNumber] i64 line = 0) { return; }");
     match &node.node {
         Node::Function(function) => {
             let parameters = &function.node.parameters;

@@ -122,9 +122,8 @@ impl SoakConfig {
                 }
                 "--request-timeout" => config.request_timeout = parse_duration(&value("--request-timeout")?)?,
                 "--max-memory-growth" => {
-                    config.memory_growth_limit_percent = value("--max-memory-growth")?
-                        .parse()
-                        .map_err(|_| "bad --max-memory-growth".to_string())?
+                    config.memory_growth_limit_percent =
+                        value("--max-memory-growth")?.parse().map_err(|_| "bad --max-memory-growth".to_string())?
                 }
                 "--report" => config.report = Some(value("--report")?.into()),
                 "-h" | "--help" => return Err(USAGE.to_string()),
@@ -386,8 +385,17 @@ impl SoakReport {
             "soak {} after {}s\n  actions: {} edits, {} undos, {} saves, {} queries, {} file rotations, {} refreshes, {} lock migrations ({} quick fixes seen)\n  responses: {} ({} errors), diagnostics published: {}\n",
             if self.passed() { "PASS" } else { "FAIL" },
             self.duration.as_secs(),
-            c.edits, c.undos, c.saves, c.queries, c.rotations, c.refreshes, c.lock_migrations,
-            c.migrate_quickfix_offered, c.responses, c.error_responses, c.diagnostics_published,
+            c.edits,
+            c.undos,
+            c.saves,
+            c.queries,
+            c.rotations,
+            c.refreshes,
+            c.lock_migrations,
+            c.migrate_quickfix_offered,
+            c.responses,
+            c.error_responses,
+            c.diagnostics_published,
         );
         match &self.memory {
             Some(m) => out.push_str(&format!(
@@ -672,7 +680,8 @@ pub fn run(config: &SoakConfig, smoke: bool) -> Result<SoakReport, String> {
 
     let crash_before = list_directory(&crash_dir);
     let log = work.join("beskid_lsp.stderr.log");
-    let mut client = Client::spawn(config, &home, &log).map_err(|e| format!("cannot start {}: {e}", config.server.display()))?;
+    let mut client =
+        Client::spawn(config, &home, &log).map_err(|e| format!("cannot start {}: {e}", config.server.display()))?;
     client.report.server_log = Some(log);
 
     // Handshake.
@@ -773,10 +782,16 @@ pub fn run(config: &SoakConfig, smoke: bool) -> Result<SoakReport, String> {
     let crash_after = list_directory(&crash_dir);
     report.new_crash_files = new_entries(&crash_before, &crash_after);
     if !report.crash_reports.is_empty() {
-        report.failures.push(format!("{} `{CRASH_REPORT_METHOD}` notification(s) received", report.crash_reports.len()));
+        report
+            .failures
+            .push(format!("{} `{CRASH_REPORT_METHOD}` notification(s) received", report.crash_reports.len()));
     }
     if !report.new_crash_files.is_empty() {
-        report.failures.push(format!("new crash file(s) in {}: {}", crash_dir.display(), report.new_crash_files.join(", ")));
+        report.failures.push(format!(
+            "new crash file(s) in {}: {}",
+            crash_dir.display(),
+            report.new_crash_files.join(", ")
+        ));
     }
     if !report.internal_errors.is_empty() {
         report.failures.push(format!(
@@ -818,13 +833,7 @@ fn text_position(doc: &Document, rng: &mut Rng) -> Value {
 }
 
 /// One random action.
-fn step(
-    client: &mut Client,
-    rng: &mut Rng,
-    open: &mut Vec<Document>,
-    sources: &[PathBuf],
-    folders: &[PathBuf],
-) {
+fn step(client: &mut Client, rng: &mut Rng, open: &mut Vec<Document>, sources: &[PathBuf], folders: &[PathBuf]) {
     if open.is_empty() {
         return;
     }
@@ -869,10 +878,13 @@ fn step(
                     client.request("textDocument/semanticTokens/full", json!({"textDocument": {"uri": doc.uri}}));
                 }
                 _ => {
-                    client.request("textDocument/formatting", json!({
-                        "textDocument": {"uri": doc.uri},
-                        "options": {"tabSize": 4, "insertSpaces": true}
-                    }));
+                    client.request(
+                        "textDocument/formatting",
+                        json!({
+                            "textDocument": {"uri": doc.uri},
+                            "options": {"tabSize": 4, "insertSpaces": true}
+                        }),
+                    );
                 }
             }
         }
@@ -893,18 +905,12 @@ fn step(
             // Workspace refresh: file watcher event for a file and a workspace-wide symbol search.
             client.report.counters.refreshes += 1;
             let doc = &open[index];
-            client.notify(
-                "workspace/didChangeWatchedFiles",
-                json!({"changes": [{"uri": doc.uri, "type": 2}]}),
-            );
+            client.notify("workspace/didChangeWatchedFiles", json!({"changes": [{"uri": doc.uri, "type": 2}]}));
             if rng.chance(50) {
                 client.request("workspace/symbol", json!({"query": ""}));
             } else {
                 let folder = &folders[rng.below(folders.len())];
-                client.notify(
-                    "workspace/didChangeWorkspaceFolders",
-                    json!({"event": {"added": [], "removed": []}}),
-                );
+                client.notify("workspace/didChangeWorkspaceFolders", json!({"event": {"added": [], "removed": []}}));
                 client.notify(
                     "workspace/didChangeWatchedFiles",
                     json!({"changes": [{"uri": path_to_uri(folder), "type": 2}]}),
@@ -931,10 +937,8 @@ fn migrate_lock(client: &mut Client, config: &SoakConfig, lock: &Path, open: &mu
     // The quick fix is offered on the manifest next to the lock.
     if let Some(dir) = lock.parent()
         && let Ok(entries) = fs::read_dir(dir)
-        && let Some(manifest) = entries
-            .filter_map(Result::ok)
-            .map(|e| e.path())
-            .find(|p| p.extension().is_some_and(|e| e == "bproj"))
+        && let Some(manifest) =
+            entries.filter_map(Result::ok).map(|e| e.path()).find(|p| p.extension().is_some_and(|e| e == "bproj"))
         && let Ok(text) = fs::read_to_string(&manifest)
     {
         let uri = path_to_uri(&manifest);
@@ -998,7 +1002,8 @@ mod tests {
         let to_args = |items: &[&str]| items.iter().map(|s| s.to_string()).collect::<Vec<_>>();
         assert!(SoakConfig::from_args(to_args(&["--duration", "5m"])).is_err());
         let (config, smoke) =
-            SoakConfig::from_args(to_args(&["--corpus", "/a", "--corpus", "/b", "--duration", "5m", "--smoke"])).unwrap();
+            SoakConfig::from_args(to_args(&["--corpus", "/a", "--corpus", "/b", "--duration", "5m", "--smoke"]))
+                .unwrap();
         assert!(smoke);
         assert_eq!(config.duration, Duration::from_secs(60));
         assert_eq!(config.corpora.len(), 2);
@@ -1011,7 +1016,13 @@ mod tests {
 
     #[test]
     fn memory_growth_compares_first_and_last_window() {
-        let samples = [sample(10, 100_000), sample(50, 100_000), sample(500, 110_000), sample(590, 114_000), sample(600, 114_000)];
+        let samples = [
+            sample(10, 100_000),
+            sample(50, 100_000),
+            sample(500, 110_000),
+            sample(590, 114_000),
+            sample(600, 114_000),
+        ];
         let verdict = memory_growth(&samples, Duration::from_secs(600), Duration::from_secs(60)).unwrap();
         assert_eq!(verdict.first_window_kib, 100_000);
         assert_eq!(verdict.last_window_kib, 114_000);

@@ -12,7 +12,8 @@ use super::support::{
 fn module_items(input: &CodegenInput<'_>, roots: &[AstNodeKey]) -> Vec<SyntaxModuleItem> {
     let mut items = Vec::new();
     for root in roots {
-        for kind in [beskid_queries::IndexedNodeKind::MethodDefinition, beskid_queries::IndexedNodeKind::FunctionDefinition]
+        for kind in
+            [beskid_queries::IndexedNodeKind::MethodDefinition, beskid_queries::IndexedNodeKind::FunctionDefinition]
         {
             for key in find_nodes_of_kind(input.database(), *root, kind) {
                 let name = item_name(input.database(), key).ok().flatten().expect("item name");
@@ -177,8 +178,7 @@ impl Counter {
         ),
     ]);
     let items = module_items(&input, &roots);
-    lower_syntax_program(&input, isa.as_ref(), &items)
-        .expect("a cross-unit call to an impl-block method must lower");
+    lower_syntax_program(&input, isa.as_ref(), &items).expect("a cross-unit call to an impl-block method must lower");
 }
 
 #[test]
@@ -205,8 +205,6 @@ unit Main(Walker walker) {
     )
     .expect("`This` in an implementing method's own signature must lower as the receiver type");
 }
-
-
 
 #[test]
 fn this_rooted_field_chain_lowers_through_the_receiver() {
@@ -311,10 +309,12 @@ fn primitive_implementation_methods_take_their_receiver_by_value() {
 #[test]
 fn corelib_formatting_implementations_lower_for_every_primitive() {
     // The single-unit fixture has no `Core.String`; only the final UTF-8 materialization is stubbed.
-    let formatting =
-        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../corelib/packages/foundation/src/Core/Text/Formatting.bd"))
-            .replace("use Core.String;\n", "")
-            .replace("return String.FromUtf8CodeUnits(bytes);", "return \"?\";");
+    let formatting = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../corelib/packages/foundation/src/Core/Text/Formatting.bd"
+    ))
+    .replace("use Core.String;\n", "")
+    .replace("return String.FromUtf8CodeUnits(bytes);", "return \"?\";");
     assert!(!formatting.contains("String."), "the stub replaced every Core.String use");
     let (input, isa, root) = item_fixture_with_root(&format!(
         "{formatting}\nstring Show<T>(T value) where T: Formatting {{ return value.Format(); }}\n\
@@ -326,7 +326,8 @@ fn corelib_formatting_implementations_lower_for_every_primitive() {
     let artifact = lower_syntax_program(&input, isa.as_ref(), &items)
         .expect("every Corelib Formatting implementation lowers through a bound");
     beskid_codegen::validate_artifact(&artifact).expect("Formatting artifact");
-    let specializations = artifact.functions.iter().filter(|function| function.name.starts_with("Show#generic_")).count();
+    let specializations =
+        artifact.functions.iter().filter(|function| function.name.starts_with("Show#generic_")).count();
     assert_eq!(specializations, 14, "one specialization per primitive");
 }
 

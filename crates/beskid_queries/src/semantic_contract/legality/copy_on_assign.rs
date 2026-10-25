@@ -43,7 +43,11 @@ fn copy_hook_problem(definition: &TypeDefinition) -> Option<&'static str> {
     let methods: Vec<&MethodDefinition> =
         definition.methods.iter().map(|method| &method.node).filter(|method| method.name.node.name == "Copy").collect();
     let [method] = methods.as_slice() else {
-        return Some(if methods.is_empty() { "it declares no `Copy` method" } else { "it declares more than one `Copy`" });
+        return Some(if methods.is_empty() {
+            "it declares no `Copy` method"
+        } else {
+            "it declares more than one `Copy`"
+        });
     };
     if method.receiver.as_ref().is_some_and(|receiver| receiver.node.mutable || receiver.node.movable) {
         return Some("`Copy` must take a borrowed receiver, not `mut this` or `move this`");

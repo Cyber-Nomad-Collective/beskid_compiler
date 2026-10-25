@@ -7,9 +7,9 @@
 //! [`collect_literal_obligations`]): the one [`expected_type`] authority supplies the context.
 
 use super::super::typing::{is_numeric, nodes_of_kind};
+use super::*;
 use crate::semantic_contract::calls::generic_source_expression_identity;
 use crate::semantic_contract::model::GenericSourceTypeIdentity;
-use super::*;
 use beskid_analysis::syntax::{
     BinaryExpression, BinaryOp, LetStatement, Literal, PrimitiveType, UnaryExpression, UnaryOp,
     float_literal_magnitude, float_literal_primitive_type, integer_literal_fits_primitive, integer_literal_magnitude,
@@ -63,8 +63,10 @@ pub(super) fn collect_operator_obligations(
         }
         let promoted = is_numeric(left) && is_numeric(right);
         if !promoted && left != right {
-            findings
-                .push(GateObligation { kind: GateObligationKind::OperandMismatch { expected: left, actual: right }, site });
+            findings.push(GateObligation {
+                kind: GateObligationKind::OperandMismatch { expected: left, actual: right },
+                site,
+            });
             continue;
         }
         let legal = match op {
@@ -107,7 +109,8 @@ pub(super) fn collect_operator_obligations(
             UnaryOp::Not => operand == SemanticTypeId::BOOL,
         };
         if !legal {
-            findings.push(GateObligation { kind: GateObligationKind::InvalidUnaryOp, site: AstNodeKey { node, ..key } });
+            findings
+                .push(GateObligation { kind: GateObligationKind::InvalidUnaryOp, site: AstNodeKey { node, ..key } });
         }
     }
 }
@@ -190,7 +193,10 @@ fn judge_integer_literal(
     };
     if !integer_literal_fits_primitive(&value, primitive) {
         findings.push(GateObligation {
-            kind: GateObligationKind::NumericLiteralOutOfRange { value: Arc::from(value), primitive: primitive_name(primitive) },
+            kind: GateObligationKind::NumericLiteralOutOfRange {
+                value: Arc::from(value),
+                primitive: primitive_name(primitive),
+            },
             site,
         });
     }
@@ -248,7 +254,10 @@ fn literal_expected_type(
 /// suffix, or by being a float). A binary operand follows the operator's numeric promotion
 /// instead, and a non-numeric context is judged by the typing obligations.
 fn numeric_value_context(expected: &ExpectedType) -> Option<SemanticTypeId> {
-    if matches!(expected.context, ExpectedTypeContext::BinaryOperand { .. } | ExpectedTypeContext::ExpressionStatement { .. }) {
+    if matches!(
+        expected.context,
+        ExpectedTypeContext::BinaryOperand { .. } | ExpectedTypeContext::ExpressionStatement { .. }
+    ) {
         return None;
     }
     let GenericSourceTypeIdentity::Abi(ty) = &expected.identity else { return None };
@@ -283,11 +292,20 @@ fn collect_constant_obligations(
                 .node_at(program, node)
                 .and_then(|node| node.of::<beskid_analysis::syntax::PathExpression>())
                 .map(|path| {
-                    path.path.node.segments.iter().map(|segment| segment.node.name.node.name.as_str()).collect::<Vec<_>>().join(".")
+                    path.path
+                        .node
+                        .segments
+                        .iter()
+                        .map(|segment| segment.node.name.node.name.as_str())
+                        .collect::<Vec<_>>()
+                        .join(".")
                 })
                 .unwrap_or_else(|| text.to_string());
             findings.push(GateObligation {
-                kind: GateObligationKind::NumericLiteralOutOfRange { value: Arc::from(name), primitive: primitive_name(primitive) },
+                kind: GateObligationKind::NumericLiteralOutOfRange {
+                    value: Arc::from(name),
+                    primitive: primitive_name(primitive),
+                },
                 site,
             });
         }

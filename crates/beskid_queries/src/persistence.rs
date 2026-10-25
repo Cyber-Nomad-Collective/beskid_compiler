@@ -1,9 +1,9 @@
 //! On-disk persistence adapter for Salsa session state under `obj/beskid/cache/salsa/`.
 
 use std::fs;
+use std::path::{Path, PathBuf};
 #[cfg(feature = "persistence")]
 use std::sync::Arc;
-use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
@@ -671,19 +671,20 @@ fn rehydrate_syntax_units(
         }
         sources.push((unit, input, path, text, revision));
     }
-    let build = |path: &Path, text: &str, unit: crate::semantic_contract::SourceUnitId, db: &crate::db::BeskidDatabase| {
-        let fingerprint = beskid_artifacts::content_fingerprint(text);
-        let stored = store.as_ref().and_then(|store| store.read_ast(&fingerprint)).and_then(|snapshot| {
-            (snapshot.meta.source_len == text.len())
-                .then(|| beskid_analysis::artifacts::source_unit_from_ast_snapshot(&snapshot, path, text).ok())
-                .flatten()
-                .map(|unit| unit.program)
-        });
-        match stored {
-            Some(program) => Some((fingerprint, program)),
-            None => db.parse_and_expand(unit, text).ok().map(|program| (fingerprint, program)),
-        }
-    };
+    let build =
+        |path: &Path, text: &str, unit: crate::semantic_contract::SourceUnitId, db: &crate::db::BeskidDatabase| {
+            let fingerprint = beskid_artifacts::content_fingerprint(text);
+            let stored = store.as_ref().and_then(|store| store.read_ast(&fingerprint)).and_then(|snapshot| {
+                (snapshot.meta.source_len == text.len())
+                    .then(|| beskid_analysis::artifacts::source_unit_from_ast_snapshot(&snapshot, path, text).ok())
+                    .flatten()
+                    .map(|unit| unit.program)
+            });
+            match stored {
+                Some(program) => Some((fingerprint, program)),
+                None => db.parse_and_expand(unit, text).ok().map(|program| (fingerprint, program)),
+            }
+        };
     let mut published = Vec::with_capacity(sources.len());
     for (unit, input, path, text, revision) in sources {
         let Some((fingerprint, program)) = build(&path, &text, unit, db) else { continue };

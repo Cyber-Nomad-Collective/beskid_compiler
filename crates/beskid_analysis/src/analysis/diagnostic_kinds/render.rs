@@ -8,7 +8,12 @@ use crate::syntax::SpanInfo;
 
 /// The diagnostic of `kind` at `span` in `source`. Every diagnostics path renders a kind through
 /// this one function, so the help and the fixes are the same on the CLI, in JSON and in the editor.
-pub fn issue_diagnostic(source_name: &str, source: &str, span: SpanInfo, kind: &SemanticIssueKind) -> SemanticDiagnostic {
+pub fn issue_diagnostic(
+    source_name: &str,
+    source: &str,
+    span: SpanInfo,
+    kind: &SemanticIssueKind,
+) -> SemanticDiagnostic {
     let diagnostic = make_diagnostic(
         source_name,
         source,
@@ -218,7 +223,8 @@ mod tests {
     #[test]
     fn did_you_mean_replaces_only_the_name_and_is_not_preferred() {
         let source = "i32 Main(Point point) { i32 counter = 0; return countr + point.heigth; }";
-        let local = SemanticIssueKind::ResolveUnknownValue { name: "countr".into(), suggestion: Some("counter".into()) };
+        let local =
+            SemanticIssueKind::ResolveUnknownValue { name: "countr".into(), suggestion: Some("counter".into()) };
         let diagnostic = issue_diagnostic("Main.bd", source, span(source, "countr"), &local);
         assert_eq!(diagnostic.help.as_deref(), Some("a name with a similar spelling exists: `counter`"));
         assert!(!diagnostic.fixes[0].is_preferred());
@@ -301,12 +307,13 @@ mod tests {
             class: "Never".into(),
         };
         let message = kind.message();
-        assert_eq!(message, "`order` cannot be captured here because a `Order` value never leaves the task that created it");
+        assert_eq!(
+            message,
+            "`order` cannot be captured here because a `Order` value never leaves the task that created it"
+        );
         assert!(!message.contains("::") && !message.contains("transfer class"));
-        let mismatch = SemanticIssueKind::TypeMismatch {
-            expected_name: "() -> i32".into(),
-            actual_name: "(i64) -> i32".into(),
-        };
+        let mismatch =
+            SemanticIssueKind::TypeMismatch { expected_name: "() -> i32".into(), actual_name: "(i64) -> i32".into() };
         assert_eq!(mismatch.message(), "type mismatch: expected `() => i32`, got `(i64) => i32`");
     }
 
@@ -315,13 +322,17 @@ mod tests {
         let kind = SemanticIssueKind::ResolveUnknownModulePath { path: "Core::Text".into() };
         assert_eq!(kind.message(), "unknown module path `Core.Text`");
         assert!(!kind.help().unwrap_or_default().contains("::"));
-        let value = SemanticIssueKind::ResolveUnknownValueInModule { module_path: "Core::Text".into(), name: "Trim".into() };
+        let value =
+            SemanticIssueKind::ResolveUnknownValueInModule { module_path: "Core::Text".into(), name: "Trim".into() };
         assert_eq!(value.message(), "unknown value `Trim` in module `Core.Text`");
     }
 
     #[test]
     fn import_and_module_declaration_help_wording() {
-        let item = SemanticIssueKind::UnknownImportPath { path: "Core.Results.Result".into(), module: Some("Core.Results".into()) };
+        let item = SemanticIssueKind::UnknownImportPath {
+            path: "Core.Results.Result".into(),
+            module: Some("Core.Results".into()),
+        };
         assert_eq!(
             item.help().as_deref(),
             Some("`use` imports modules; write `use Core.Results;` and refer to `Core.Results.Result`")
@@ -329,7 +340,9 @@ mod tests {
         let duplicate = SemanticIssueKind::DuplicateFileScopedModule { module_path: "App".into() };
         assert_eq!(
             duplicate.help().as_deref(),
-            Some("a file declares its own module once with `mod X;` at the top; other files of the module do not repeat it")
+            Some(
+                "a file declares its own module once with `mod X;` at the top; other files of the module do not repeat it"
+            )
         );
     }
 

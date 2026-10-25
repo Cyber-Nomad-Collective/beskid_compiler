@@ -13,12 +13,12 @@ use beskid_aot::{
     AotBuildRequest, BuildOutputKind, BuildProfile, ExportPolicy, LinkMode, ProjectTargetKind, build,
     default_output_kind, default_runtime_strategy, resolve_entrypoint,
 };
+use beskid_codegen::backend::BackendKind;
 use beskid_engine::link_libraries::{apply_link_libraries, link_libraries_for_artifact};
 use beskid_pipeline::PipelineObserver;
 use beskid_tools::PipelineProgressKind;
 use beskid_tools::pipeline::tui::CommandSummary;
 use beskid_tools::session::{CommandSession, ResolveInputArgs, SemanticGateOptions};
-use beskid_codegen::backend::BackendKind;
 use clap::{Args, ValueEnum};
 
 mod glue_rust;
@@ -158,8 +158,7 @@ fn select_backend(args: &BuildArgs) -> Result<SelectedBackend> {
     };
     match kind {
         BackendKind::CraneliftClif => {
-            if args.rust_toolchain.is_some() || args.cargo.is_some() || args.rustc.is_some() || args.linker.is_some()
-            {
+            if args.rust_toolchain.is_some() || args.cargo.is_some() || args.rustc.is_some() || args.linker.is_some() {
                 return Err(anyhow::anyhow!(
                     "`--rust-toolchain`, `--cargo`, `--rustc` and `--linker` apply only to `--backend glue-rust`"
                 ));
@@ -201,9 +200,11 @@ fn default_output_path(
     target: &beskid_aot::target::TargetInfo,
 ) -> PathBuf {
     let input_path = &resolved.source_path;
-    let stem = resolved.compile_plan.as_ref().map(|plan| plan.target.name.as_str()).unwrap_or_else(|| {
-        input_path.file_stem().and_then(|part| part.to_str()).unwrap_or("aot_out")
-    });
+    let stem = resolved
+        .compile_plan
+        .as_ref()
+        .map(|plan| plan.target.name.as_str())
+        .unwrap_or_else(|| input_path.file_stem().and_then(|part| part.to_str()).unwrap_or("aot_out"));
     let file_name = beskid_aot::target::output_filename(stem, output_kind, target);
     let parent = input_path.parent().map(PathBuf::from).unwrap_or_else(|| PathBuf::from("."));
     parent.join(file_name)
@@ -406,7 +407,8 @@ mod tests {
         assert_eq!(tools.cargo, PathBuf::from("/c"));
         assert_eq!(tools.rustc, PathBuf::from("/r"));
         assert_eq!(tools.linker, PathBuf::from("/cc"));
-        let shared = parse(&["--backend", "glue-rust", "--rust-toolchain", "/rust", "--linker", "/cc", "--kind", "shared"]);
+        let shared =
+            parse(&["--backend", "glue-rust", "--rust-toolchain", "/rust", "--linker", "/cc", "--kind", "shared"]);
         assert!(matches!(select_backend(&shared), Ok(SelectedBackend::GlueRust(_))));
     }
 

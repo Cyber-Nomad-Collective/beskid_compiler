@@ -1,9 +1,9 @@
 //! Actual canonical Decoder contract and prepare-owned source proof.
 #[path = "isle_adapter/support.rs"]
 mod support;
+use beskid_analysis::mod_host::ModContributionMember;
 use beskid_analysis::mod_host::ModSemanticAuthority;
 use beskid_analysis::projects::{CompilePlan, Target, TargetKind, prepare_project_workspace};
-use beskid_analysis::mod_host::ModContributionMember;
 use beskid_queries::{
     CompiledSerializationTarget, CompiledSerializationTemplate, MemberReferenceKind, ModSemanticQueryAuthority,
     SerializationContributionKind, contribution_attributed_unit, member_reference_legality,
@@ -277,10 +277,21 @@ fn cross_unit(generation: SyntaxGenerationId) -> CrossUnit {
         generation,
     );
     assembly.verified_package_identities = prepared.verified_package_identities;
-    let project =
-        ProjectSession::new(&db, directory.path().into(), path.clone(), "serialization-cross-unit".into(), "canonical".into());
-    build_typed_program_with_corelib_services(&mut db, project, generation, Arc::new(assembly.clone()), linux_capability())
-        .unwrap();
+    let project = ProjectSession::new(
+        &db,
+        directory.path().into(),
+        path.clone(),
+        "serialization-cross-unit".into(),
+        "canonical".into(),
+    );
+    build_typed_program_with_corelib_services(
+        &mut db,
+        project,
+        generation,
+        Arc::new(assembly.clone()),
+        linux_capability(),
+    )
+    .unwrap();
     CrossUnit { db, _directory: directory, project, assembly, entry_path: path, model_path }
 }
 fn linux_capability() -> beskid_abi::runtime_source::CorelibServiceCapability {
@@ -354,12 +365,17 @@ fn hidden_read_item(name: &str) -> beskid_analysis::syntax::Spanned<beskid_analy
     item(&format!("pub Hidden {name}(i32 shown, i32 secret) {{ return Hidden {{ shown: shown, secret: secret, }}; }}"))
 }
 /// The top-level entry item of `assembly` equal to `item`, as a key of `generation`.
-fn item_key(db: &BeskidDatabase, assembly: &ProgramAssembly, item: &beskid_analysis::syntax::Spanned<beskid_analysis::mod_host::ProgramItem>) -> AstNodeKey {
+fn item_key(
+    db: &BeskidDatabase,
+    assembly: &ProgramAssembly,
+    item: &beskid_analysis::syntax::Spanned<beskid_analysis::mod_host::ProgramItem>,
+) -> AstNodeKey {
     let entry = assembly.entry_unit();
     let index = assembly.entry_syntax_index();
     let root = index.ids_of_kind(NodeKind::Program).next().unwrap();
     let appended = entry.program.node.items.iter().find(|candidate| *candidate == item).unwrap();
-    let node = index.direct_child_id(&entry.program, root, beskid_analysis::syntax_query::DynNodeRef::from(appended)).unwrap();
+    let node =
+        index.direct_child_id(&entry.program, root, beskid_analysis::syntax_query::DynNodeRef::from(appended)).unwrap();
     AstNodeKey { unit: SourceUnitId::new(db, entry.path.clone()), generation: assembly.generation, node }
 }
 
@@ -367,7 +383,8 @@ fn item_key(db: &BeskidDatabase, assembly: &ProgramAssembly, item: &beskid_analy
 fn bind_cross_unit_target(target: &str) -> Result<(), String> {
     let fixture = cross_unit(SyntaxGenerationId(130));
     let owner = fixture.type_key(target);
-    let authority = ModSemanticQueryAuthority::for_registered_assembly(&fixture.db, fixture.project, &fixture.assembly).unwrap();
+    let authority =
+        ModSemanticQueryAuthority::for_registered_assembly(&fixture.db, fixture.project, &fixture.assembly).unwrap();
     let handle = authority.resolve_type(owner).map_err(|error| error.to_string())?;
     authority
         .compile_serialization_target(992, 0, handle, &decoder_item(target), &[])
@@ -402,7 +419,8 @@ fn other_unit_target_with_a_private_field_binds_and_its_group_is_attributed_to_t
     let twin = hidden_read_item("ReadHiddenUnbound");
     let carrier = {
         let authority =
-            ModSemanticQueryAuthority::for_registered_assembly(&fixture.db, fixture.project, &fixture.assembly).unwrap();
+            ModSemanticQueryAuthority::for_registered_assembly(&fixture.db, fixture.project, &fixture.assembly)
+                .unwrap();
         let handle = authority.resolve_type(owner).unwrap();
         let members = [ModContributionMember { contribution_index: 1, item: read.clone() }];
         authority.compile_serialization_target(993, 0, handle, &contribution, &members).unwrap()
@@ -420,7 +438,10 @@ fn other_unit_target_with_a_private_field_binds_and_its_group_is_attributed_to_t
     let read_key = item_key(db, &next, &read);
     let impl_key = item_key(db, &next, &contribution);
     let twin_key = item_key(db, &next, &twin);
-    let original_key = AstNodeKey { node: next.entry_syntax_index().ids_of_kind(NodeKind::TypeDefinition).next().unwrap(), ..read_key };
+    let original_key = AstNodeKey {
+        node: next.entry_syntax_index().ids_of_kind(NodeKind::TypeDefinition).next().unwrap(),
+        ..read_key
+    };
     assert_eq!(contribution_attributed_unit(db, read_key), model);
     assert_eq!(contribution_attributed_unit(db, impl_key), model);
     assert_eq!(contribution_attributed_unit(db, twin_key), entry);
@@ -452,18 +473,21 @@ fn other_unit_target_with_a_private_field_binds_and_its_group_is_attributed_to_t
 fn group_members_exclude_impl_blocks_and_repeated_indexes() {
     let fixture = cross_unit(SyntaxGenerationId(150));
     let owner = fixture.type_key("Open");
-    let authority = ModSemanticQueryAuthority::for_registered_assembly(&fixture.db, fixture.project, &fixture.assembly).unwrap();
+    let authority =
+        ModSemanticQueryAuthority::for_registered_assembly(&fixture.db, fixture.project, &fixture.assembly).unwrap();
     let handle = authority.resolve_type(owner).unwrap();
     let contribution = decoder_item("Open");
     let read = item("pub Open ReadOpen(i32 value) { return Open { value: value, }; }");
     let as_impl = [ModContributionMember { contribution_index: 1, item: decoder_item("Open") }];
-    let error = authority.compile_serialization_target(994, 0, handle, &contribution, &as_impl).unwrap_err().to_string();
+    let error =
+        authority.compile_serialization_target(994, 0, handle, &contribution, &as_impl).unwrap_err().to_string();
     assert!(error.contains("impl block"), "{error}");
     let repeated = [
         ModContributionMember { contribution_index: 1, item: read.clone() },
         ModContributionMember { contribution_index: 1, item: read.clone() },
     ];
-    let error = authority.compile_serialization_target(994, 0, handle, &contribution, &repeated).unwrap_err().to_string();
+    let error =
+        authority.compile_serialization_target(994, 0, handle, &contribution, &repeated).unwrap_err().to_string();
     assert!(error.contains("bound more than once"), "{error}");
     let self_bound = [ModContributionMember { contribution_index: 0, item: read }];
     assert!(authority.compile_serialization_target(994, 0, handle, &contribution, &self_bound).is_err());
@@ -479,7 +503,8 @@ fn missing_group_member_breaks_correspondence_and_attribution() {
     let read = hidden_read_item("ReadHidden");
     let carrier = {
         let authority =
-            ModSemanticQueryAuthority::for_registered_assembly(&fixture.db, fixture.project, &fixture.assembly).unwrap();
+            ModSemanticQueryAuthority::for_registered_assembly(&fixture.db, fixture.project, &fixture.assembly)
+                .unwrap();
         let handle = authority.resolve_type(owner).unwrap();
         let members = [ModContributionMember { contribution_index: 1, item: read.clone() }];
         authority.compile_serialization_target(995, 0, handle, &contribution, &members).unwrap()
@@ -489,7 +514,10 @@ fn missing_group_member_breaks_correspondence_and_attribution() {
     let error = proof.rebind(&fixture.db, &typed).err().expect("a group without its member cannot rebind").to_string();
     assert!(error.contains("group member"), "{error}");
     let impl_key = item_key(&fixture.db, &next, &contribution);
-    assert_eq!(contribution_attributed_unit(&fixture.db, impl_key), SourceUnitId::new(&fixture.db, fixture.entry_path.clone()));
+    assert_eq!(
+        contribution_attributed_unit(&fixture.db, impl_key),
+        SourceUnitId::new(&fixture.db, fixture.entry_path.clone())
+    );
     assert!(next.entry_item_attributions().iter().all(Option::is_none));
 }
 
@@ -506,7 +534,8 @@ fn every_build_of_a_generation_registers_the_same_attribution() {
     let read = hidden_read_item("ReadHidden");
     let carrier = {
         let authority =
-            ModSemanticQueryAuthority::for_registered_assembly(&fixture.db, fixture.project, &fixture.assembly).unwrap();
+            ModSemanticQueryAuthority::for_registered_assembly(&fixture.db, fixture.project, &fixture.assembly)
+                .unwrap();
         let handle = authority.resolve_type(owner).unwrap();
         let members = [ModContributionMember { contribution_index: 1, item: read.clone() }];
         authority.compile_serialization_target(996, 0, handle, &contribution, &members).unwrap()
@@ -575,7 +604,9 @@ fn every_build_of_a_generation_registers_the_same_attribution() {
 /// instance of an ordinary method is not a template contribution.
 #[test]
 fn generic_target_template_rebinds_per_concrete_instance() {
-    use beskid_analysis::mod_host::{ModSemanticDeclaration, ModSyntaxAuthority, ModSyntaxBounds, ModSyntaxRequest, ModSyntaxResponse};
+    use beskid_analysis::mod_host::{
+        ModSemanticDeclaration, ModSyntaxAuthority, ModSyntaxBounds, ModSyntaxRequest, ModSyntaxResponse,
+    };
     let mut fixture = cross_unit(SyntaxGenerationId(170));
     let owner = fixture.type_key("Box");
     let adapter = item("pub type Adapter<T, R> { pub R reader; }");
@@ -584,19 +615,32 @@ fn generic_target_template_rebinds_per_concrete_instance() {
     );
     let carrier = {
         let authority =
-            ModSemanticQueryAuthority::for_registered_assembly(&fixture.db, fixture.project, &fixture.assembly).unwrap();
+            ModSemanticQueryAuthority::for_registered_assembly(&fixture.db, fixture.project, &fixture.assembly)
+                .unwrap();
         let ModSyntaxResponse::Node(Some(root)) = authority.syntax_query(996, &ModSyntaxRequest::Root).unwrap() else {
             panic!("entry root")
         };
         let ModSyntaxResponse::Nodes(nodes) = authority
-            .syntax_query(996, &ModSyntaxRequest::OfKind { node: root, bounds: ModSyntaxBounds { max_nodes: 65536, max_depth: 256 }, kind: NodeKind::TypeDefinition })
+            .syntax_query(
+                996,
+                &ModSyntaxRequest::OfKind {
+                    node: root,
+                    bounds: ModSyntaxBounds { max_nodes: 65536, max_depth: 256 },
+                    kind: NodeKind::TypeDefinition,
+                },
+            )
             .unwrap()
         else {
             panic!("entry type definitions")
         };
         let reference = nodes.into_iter().find(|node| node.node == owner.node).expect("Box<T> reference");
         let span = fixture.assembly.entry_syntax_index().metadata()[owner.node.0 as usize].span.unwrap();
-        let declaration = ModSemanticDeclaration { source_unit: fixture.entry_path.clone(), generation: owner.generation, node: owner.node, span };
+        let declaration = ModSemanticDeclaration {
+            source_unit: fixture.entry_path.clone(),
+            generation: owner.generation,
+            node: owner.node,
+            span,
+        };
         let members = [ModContributionMember { contribution_index: 1, item: adapter.clone() }];
         authority.compile_serialization_template(996, 0, &reference, &declaration, &contribution, &members).unwrap()
     };
@@ -619,7 +663,8 @@ fn generic_target_template_rebinds_per_concrete_instance() {
         })
         .expect("ReadTyped call")
         .id;
-    let call_key = AstNodeKey { unit: SourceUnitId::new(db, entry.path.clone()), generation: next.generation, node: call };
+    let call_key =
+        AstNodeKey { unit: SourceUnitId::new(db, entry.path.clone()), generation: next.generation, node: call };
     let specialization = beskid_queries::generic_call_specialization(db, call_key)
         .expect("call specialization query")
         .expect("ReadTyped call is a concrete instantiation of the generic adapter method");
@@ -631,11 +676,8 @@ fn generic_target_template_rebinds_per_concrete_instance() {
     assert_eq!(rebound.owner(), AstNodeKey { generation: next.generation, ..owner });
     assert!(rebound.shape(db, &typed).is_ok());
     // An ordinary entry method instance is not a template contribution.
-    let main = index
-        .ids_of_kind(NodeKind::FunctionDefinition)
-        .map(|node| AstNodeKey { node, ..call_key })
-        .next()
-        .unwrap();
+    let main =
+        index.ids_of_kind(NodeKind::FunctionDefinition).map(|node| AstNodeKey { node, ..call_key }).next().unwrap();
     let foreign = beskid_queries::GenericSpecializationInstance { declaration: main, ..instance.clone() };
     assert!(beskid_queries::serialization_template_instance_rebind(db, &typed, &foreign).unwrap().is_none());
 }
@@ -711,10 +753,21 @@ fn field_decoder_fixture(factory_output: &str) -> Result<String, String> {
         generation,
     );
     assembly.verified_package_identities = prepared.verified_package_identities;
-    let project =
-        ProjectSession::new(&db, directory.path().into(), path.clone(), "serialization-field-decoder".into(), "canonical".into());
-    build_typed_program_with_corelib_services(&mut db, project, generation, Arc::new(assembly.clone()), linux_capability())
-        .unwrap();
+    let project = ProjectSession::new(
+        &db,
+        directory.path().into(),
+        path.clone(),
+        "serialization-field-decoder".into(),
+        "canonical".into(),
+    );
+    build_typed_program_with_corelib_services(
+        &mut db,
+        project,
+        generation,
+        Arc::new(assembly.clone()),
+        linux_capability(),
+    )
+    .unwrap();
     let owner = AstNodeKey {
         unit: SourceUnitId::new(&db, path.clone()),
         generation,
@@ -751,8 +804,14 @@ fn field_decoder_fixture(factory_output: &str) -> Result<String, String> {
     );
     next.verified_package_identities = assembly.verified_package_identities.clone();
     next.compiled_mod_metadata.push(carrier);
-    let typed = build_typed_program_with_corelib_services(&mut db, project, next.generation, Arc::new(next), linux_capability())
-        .unwrap();
+    let typed = build_typed_program_with_corelib_services(
+        &mut db,
+        project,
+        next.generation,
+        Arc::new(next),
+        linux_capability(),
+    )
+    .unwrap();
     let entry = SourceUnitId::new(&db, path.clone());
     let mut instances = Vec::new();
     let mut seen = Vec::new();

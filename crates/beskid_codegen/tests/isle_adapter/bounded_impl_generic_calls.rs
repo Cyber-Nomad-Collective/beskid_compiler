@@ -23,10 +23,9 @@ fn describe_nested_call_facts(source: &str) -> String {
         rendered.push(format!("call {site}: lowering={:?}", beskid_queries::call_lowering(db, *call)));
     }
     let enclosing = calls.iter().find_map(|call| {
-        beskid_queries::generic_call_specialization(db, *call)
-            .ok()
-            .flatten()
-            .and_then(|specialization| beskid_queries::generic_call_specialization_instance(db, specialization).ok().flatten())
+        beskid_queries::generic_call_specialization(db, *call).ok().flatten().and_then(|specialization| {
+            beskid_queries::generic_call_specialization_instance(db, specialization).ok().flatten()
+        })
     });
     rendered.push(format!("enclosing instance: {enclosing:#?}"));
     if let Some(enclosing) = enclosing {
@@ -45,7 +44,8 @@ fn describe_nested_call_facts(source: &str) -> String {
 fn module_items(input: &CodegenInput<'_>, roots: &[AstNodeKey]) -> Vec<SyntaxModuleItem> {
     let mut items = Vec::new();
     for root in roots {
-        for kind in [beskid_queries::IndexedNodeKind::MethodDefinition, beskid_queries::IndexedNodeKind::FunctionDefinition]
+        for kind in
+            [beskid_queries::IndexedNodeKind::MethodDefinition, beskid_queries::IndexedNodeKind::FunctionDefinition]
         {
             for key in find_nodes_of_kind(input.database(), *root, kind) {
                 let name = item_name(input.database(), key).ok().flatten().expect("item name");
@@ -107,9 +107,8 @@ i64 Main() {{
 }}
 "
     );
-    lower_single_unit(&source).expect(
-        "a where-bound generic call from a bounded impl method, dispatched through a contract witness, lowers",
-    );
+    lower_single_unit(&source)
+        .expect("a where-bound generic call from a bounded impl method, dispatched through a contract witness, lowers");
 }
 
 #[test]

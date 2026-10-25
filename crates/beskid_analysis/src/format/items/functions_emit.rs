@@ -1,5 +1,5 @@
-use crate::format::emit::{Emit, EmitCtx, EmitError};
 use crate::format::attribute_lists::emit_attribute_block;
+use crate::format::emit::{Emit, EmitCtx, EmitError};
 use crate::format::items::helpers::{emit_generics_list, emit_method_parameter_list, emit_parameter_list};
 use crate::syntax::{Expression, FunctionDefinition, MethodDefinition, Spanned, Statement, WhereBound};
 use std::fmt::Write;

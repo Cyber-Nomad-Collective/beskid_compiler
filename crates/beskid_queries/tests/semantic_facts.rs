@@ -67,9 +67,9 @@ mod dead_growth;
 mod local_type_resolution;
 #[path = "semantic_facts/function_values.rs"]
 mod function_values;
-#[path = "semantic_facts/string_concat_gate.rs"]
-mod string_concat_gate;
 #[path = "semantic_facts/match_coverage.rs"]
 mod match_coverage;
 #[path = "semantic_facts/member_callees.rs"]
 mod member_callees;
+#[path = "semantic_facts/string_concat_gate.rs"]
+mod string_concat_gate;

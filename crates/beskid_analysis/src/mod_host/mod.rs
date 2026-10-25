@@ -15,10 +15,10 @@ mod descriptor;
 pub mod diagnostics;
 mod discovery;
 pub use descriptor::{
-    NATIVE_MOD_BUILD_TOOL_ROLES, NATIVE_MOD_COMPILER_TOOL_ROLE, NATIVE_MOD_DESCRIPTOR_FILE, NATIVE_MOD_DESCRIPTOR_SCHEMA, NativeModCallableIdentity,
-    NativeModRuntimeBinding, mod_artifact_inventory, native_mod_artifact_key, native_mod_dependency_identity,
-    native_mod_dependency_sources, native_mod_evidence_is_current, native_mod_file_sha256,
-    native_mod_contract_id, native_mod_inventory_identity, native_mod_runtime_binding,
+    NATIVE_MOD_BUILD_TOOL_ROLES, NATIVE_MOD_COMPILER_TOOL_ROLE, NATIVE_MOD_DESCRIPTOR_FILE,
+    NATIVE_MOD_DESCRIPTOR_SCHEMA, NativeModCallableIdentity, NativeModRuntimeBinding, mod_artifact_inventory,
+    native_mod_artifact_key, native_mod_contract_id, native_mod_dependency_identity, native_mod_dependency_sources,
+    native_mod_evidence_is_current, native_mod_file_sha256, native_mod_inventory_identity, native_mod_runtime_binding,
     read_mod_artifact_descriptor,
 };
 mod emit_bridge;
@@ -44,7 +44,6 @@ pub use api::{
 };
 mod host;
 pub use beskid_abi::runtime_kit::BuildProfile as RuntimeKitProfile;
-pub use host::{ModHost, RuntimeKitSelection};
 pub use collect::{capture_target_fingerprint, targets_changed};
 pub use context::{ModCollectRequest, ModGenerationRequest, ModInvocationContext};
 pub use diagnostics::{
@@ -56,9 +55,10 @@ pub use emit_bridge::{
     materialize_program_items, materialize_type_definition,
 };
 pub use generate_output::{
-    GenerateOutputFile, GenerateOutputLayout, load_generate_output_layout, resolve_generated_path, resolve_package_root,
-    write_typed_generate_output,
+    GenerateOutputFile, GenerateOutputLayout, load_generate_output_layout, resolve_generated_path,
+    resolve_package_root, write_typed_generate_output,
 };
+pub use host::{ModHost, RuntimeKitSelection};
 pub use invoker::{
     AnalyzerDiagnostic, AnalyzerFix, AnalyzerOutcome, AnalyzerSeverity, CollectorOutcome, ContractInvocationError,
     ContractInvoker, GeneratorOutcome, InvocationKind, RewriteEdit, RewriterOutcome, ScriptedContractInvoker,

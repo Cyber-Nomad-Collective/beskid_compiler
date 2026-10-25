@@ -46,11 +46,13 @@ impl UnknownMember {
     /// `name` judged against the `type` declared at `declaration`; a declaration that is not a
     /// readable `type` gives the bare name.
     pub(crate) fn of(db: &dyn Db, declaration: AstNodeKey, name: &str) -> Self {
-        let definition = db
-            .syntax_unit(declaration.unit)
-            .filter(|syntax| syntax.accepts_key(db, declaration))
-            .and_then(|syntax| {
-                syntax.syntax_index(db).node_at(syntax.expanded_program(db), declaration.node)?.of::<TypeDefinition>().cloned()
+        let definition =
+            db.syntax_unit(declaration.unit).filter(|syntax| syntax.accepts_key(db, declaration)).and_then(|syntax| {
+                syntax
+                    .syntax_index(db)
+                    .node_at(syntax.expanded_program(db), declaration.node)?
+                    .of::<TypeDefinition>()
+                    .cloned()
             });
         let Some(definition) = definition else { return Self::bare(name) };
         let fields: Vec<Arc<str>> = definition
@@ -159,22 +161,31 @@ fn unknown_struct_literal_field(
         return Some(MemberReferenceFinding { site, kind: MemberReferenceKind::InaccessibleStructField { name } });
     }
     let declared = declared_member_names(db, declaration)?;
-    if let Some(field) = literal.fields.iter().find(|field| !declared.fields.contains(field.node.name.node.name.as_str()))
+    if let Some(field) =
+        literal.fields.iter().find(|field| !declared.fields.contains(field.node.name.node.name.as_str()))
     {
         let site = index
             .direct_child_id(program, literal_key.node, beskid_analysis::syntax_query::DynNodeRef::from(field))
             .map_or(literal_key, |node| AstNodeKey { node, ..literal_key });
         return Some(MemberReferenceFinding {
             site,
-            kind: MemberReferenceKind::UnknownStructField(UnknownMember::of(db, declaration, &field.node.name.node.name)),
+            kind: MemberReferenceKind::UnknownStructField(UnknownMember::of(
+                db,
+                declaration,
+                &field.node.name.node.name,
+            )),
         });
     }
     // E1212: every declared value field must be supplied (event fields are never written by a
     // literal). Reported at the literal, in declaration order, after the unknown and inaccessible
     // field checks above.
     let supplied = literal.fields.iter().map(|field| field.node.name.node.name.as_str()).collect::<HashSet<_>>();
-    let missing = declared_value_field_names(db, declaration)?.into_iter().find(|name| !supplied.contains(name.as_str()))?;
-    Some(MemberReferenceFinding { site: literal_key, kind: MemberReferenceKind::MissingStructField { name: Arc::from(missing) } })
+    let missing =
+        declared_value_field_names(db, declaration)?.into_iter().find(|name| !supplied.contains(name.as_str()))?;
+    Some(MemberReferenceFinding {
+        site: literal_key,
+        kind: MemberReferenceKind::MissingStructField { name: Arc::from(missing) },
+    })
 }
 
 /// The value fields of a `type` declaration, in declaration order.
@@ -508,7 +519,9 @@ fn missing_pattern_witness(
     let irrefutable = |pattern: &EnumMatchPatternFact| {
         matches!(
             pattern,
-            EnumMatchPatternFact::Wildcard | EnumMatchPatternFact::Binding(_) | EnumMatchPatternFact::UnitLiteral { .. }
+            EnumMatchPatternFact::Wildcard
+                | EnumMatchPatternFact::Binding(_)
+                | EnumMatchPatternFact::UnitLiteral { .. }
         )
     };
     let enum_column = column.or_else(|| {

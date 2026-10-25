@@ -110,13 +110,18 @@ pub(super) fn validate(manifest: &RuntimeManifestV5) -> Result<(), String> {
         return Err("trap names must not be empty".into());
     }
     unique(
-        manifest.exports.iter().map(|entry| entry.symbol.as_str()).chain(manifest.data_exports.iter().map(|entry| entry.symbol.as_str())),
+        manifest
+            .exports
+            .iter()
+            .map(|entry| entry.symbol.as_str())
+            .chain(manifest.data_exports.iter().map(|entry| entry.symbol.as_str())),
         "export",
     )?;
     for entry in &manifest.data_exports {
         // A data export is one naturally aligned process-wide word that generated code loads by
         // symbol; it carries the ABI-v5 runtime prefix like every manifest-owned export.
-        if !entry.symbol.starts_with("beskid_rt_v5_") || !matches!(entry.ty.as_str(), "usize" | "u64" | "isize" | "i64") {
+        if !entry.symbol.starts_with("beskid_rt_v5_") || !matches!(entry.ty.as_str(), "usize" | "u64" | "isize" | "i64")
+        {
             return Err(format!("data export {} must be a beskid_rt_v5_ word", entry.symbol));
         }
     }

@@ -12,7 +12,8 @@
 
 use crate::abi_v5::AbiType;
 use crate::interop::{
-    CallShapeClass, InteropSignature, OwnershipClass, RecordFieldShape, RecordShape, ScalarDomain, ScalarShape, TypeShape,
+    CallShapeClass, InteropSignature, OwnershipClass, RecordFieldShape, RecordShape, ScalarDomain, ScalarShape,
+    TypeShape,
 };
 
 /// Method an `[Extern(..., Optional:true)]` contract reserves for its availability query. In an
@@ -152,7 +153,11 @@ impl CAbiProfile {
             fields: fields
                 .iter()
                 .zip(&layout.offsets)
-                .map(|((name, scalar), offset)| RecordFieldShape { name: name.clone(), scalar: *scalar, offset: *offset })
+                .map(|((name, scalar), offset)| RecordFieldShape {
+                    name: name.clone(),
+                    scalar: *scalar,
+                    offset: *offset,
+                })
                 .collect(),
             size: layout.size,
             alignment: layout.alignment,
@@ -171,7 +176,8 @@ impl CAbiProfile {
                 }
             }
             TypeShape::BrandedHandle(handle) => {
-                if handle.identity.is_empty() || handle.arguments.iter().any(|argument| !self.bind(argument).permitted) {
+                if handle.identity.is_empty() || handle.arguments.iter().any(|argument| !self.bind(argument).permitted)
+                {
                     return rejected;
                 }
                 CProfileBinding { permitted: true, view: CProfileView::HandleToken }
@@ -289,8 +295,7 @@ mod record_tests {
     fn record_layout_matches_the_c_struct_rule() {
         let layout = CAbiProfile.record_layout(&[raw(AbiType::U8), raw(AbiType::I64)]).unwrap();
         assert_eq!(layout, CRecordLayout { offsets: vec![0, 8], size: 16, alignment: 8 });
-        let layout =
-            CAbiProfile.record_layout(&[raw(AbiType::I64), raw(AbiType::I64), raw(AbiType::F64)]).unwrap();
+        let layout = CAbiProfile.record_layout(&[raw(AbiType::I64), raw(AbiType::I64), raw(AbiType::F64)]).unwrap();
         assert_eq!(layout, CRecordLayout { offsets: vec![0, 8, 16], size: 24, alignment: 8 });
         let layout = CAbiProfile
             .record_layout(&[
@@ -339,7 +344,8 @@ mod record_tests {
             variants: vec!["Red".into(), "Green".into()],
         });
         assert_eq!(CAbiProfile.bind(&enumeration).view, CProfileView::Discriminant { variants: 2 });
-        let callback = CallbackShape { parameters: vec![TypeShape::Scalar(raw(AbiType::I64)), enumeration], result: None };
+        let callback =
+            CallbackShape { parameters: vec![TypeShape::Scalar(raw(AbiType::I64)), enumeration], result: None };
         assert_eq!(CAbiProfile.bind(&TypeShape::Callback(callback.clone())).view, CProfileView::CallbackPointer);
         let mut nested = callback;
         nested.parameters.push(TypeShape::StringLike);

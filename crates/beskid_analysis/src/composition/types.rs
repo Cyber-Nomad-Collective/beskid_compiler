@@ -50,7 +50,11 @@ pub trait CompositionTypeResolver {
 
 /// The identity of `path` written in `unit`: its declaration with its type arguments resolved in
 /// the same unit. `None` when the declaration or any argument does not resolve.
-pub fn path_identity(types: &dyn CompositionTypeResolver, unit: &UnitPath, path: &Spanned<Path>) -> Option<TypeIdentity> {
+pub fn path_identity(
+    types: &dyn CompositionTypeResolver,
+    unit: &UnitPath,
+    path: &Spanned<Path>,
+) -> Option<TypeIdentity> {
     let declaration = types.resolve_type(unit, path.span, &path.node)?;
     let arguments = path
         .node
@@ -115,10 +119,11 @@ pub(crate) mod test_types {
                 }
                 _ => continue,
             };
-            found
-                .entry(name.node.name.clone())
-                .or_default()
-                .push(TypeIdentity { unit: unit.clone(), declaration: name.span, arguments: Vec::new() });
+            found.entry(name.node.name.clone()).or_default().push(TypeIdentity {
+                unit: unit.clone(),
+                declaration: name.span,
+                arguments: Vec::new(),
+            });
         }
     }
 

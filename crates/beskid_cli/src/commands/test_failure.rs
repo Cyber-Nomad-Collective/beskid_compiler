@@ -97,7 +97,12 @@ impl AssertionFailure {
 
 /// Classify a native test process that exited unsuccessfully. `failure_file` is the content of the
 /// failure file when the process wrote one.
-pub(crate) fn classify_failed_run(status: &str, stdout: &str, stderr: &str, failure_file: Option<&[u8]>) -> TestRunFailure {
+pub(crate) fn classify_failed_run(
+    status: &str,
+    stdout: &str,
+    stderr: &str,
+    failure_file: Option<&[u8]>,
+) -> TestRunFailure {
     if let Some(content) = failure_file {
         return match parse_failure_file(content) {
             Some(failure) => TestRunFailure::Assertion(failure),
@@ -108,14 +113,14 @@ pub(crate) fn classify_failed_run(status: &str, stdout: &str, stderr: &str, fail
             }),
         };
     }
-    if let Some(trap_line) = stderr.lines().find_map(|line| line.find(TRAP_PREFIX).map(|at| &line[at + TRAP_PREFIX.len()..]))
+    if let Some(trap_line) =
+        stderr.lines().find_map(|line| line.find(TRAP_PREFIX).map(|at| &line[at + TRAP_PREFIX.len()..]))
     {
         // `<kind> (<code>): <message>`
         let (trap, reason) = match trap_line.split_once(" (") {
-            Some((kind, rest)) => (
-                Some(kind.to_string()),
-                rest.split_once("): ").map_or(rest, |(_, message)| message).trim().to_string(),
-            ),
+            Some((kind, rest)) => {
+                (Some(kind.to_string()), rest.split_once("): ").map_or(rest, |(_, message)| message).trim().to_string())
+            }
             None => (None, trap_line.trim().to_string()),
         };
         return TestRunFailure::Crashed(TestCrash { trap, reason, location: None });
@@ -151,7 +156,13 @@ pub(crate) fn parse_failure_file(content: &[u8]) -> Option<AssertionFailure> {
         (false, Ok(line), Ok(column)) => Some(SourceLocation { file: PathBuf::from(file), line, column }),
         _ => None,
     };
-    Some(AssertionFailure { headline, because: present(because), expected: present(expected), actual: present(actual), location })
+    Some(AssertionFailure {
+        headline,
+        because: present(because),
+        expected: present(expected),
+        actual: present(actual),
+        location,
+    })
 }
 
 #[cfg(test)]
@@ -178,7 +189,8 @@ mod tests {
     fn a_failure_file_is_an_assertion_failure_with_its_call_site() {
         let content = assertion("expected 3, found 4", "adds", "3", "4");
         let stderr = trap_stderr("assertion failed: expected 3, found 4");
-        let TestRunFailure::Assertion(failure) = classify_failed_run("exit status: 101", "", &stderr, Some(&content)) else {
+        let TestRunFailure::Assertion(failure) = classify_failed_run("exit status: 101", "", &stderr, Some(&content))
+        else {
             panic!("expected an assertion failure");
         };
         assert_eq!(failure.headline, "expected 3, found 4");

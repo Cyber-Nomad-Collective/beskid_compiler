@@ -14,6 +14,7 @@
 
 pub mod analysis;
 pub mod artifacts;
+pub mod attribute_targets;
 pub mod builtins;
 pub mod clif_surface;
 pub mod compilation_context;
@@ -22,7 +23,6 @@ pub mod compiler_sdk_reflect;
 pub mod composition;
 pub mod doc;
 pub mod doc_comment_parser;
-pub mod attribute_targets;
 pub mod external_library;
 pub mod format;
 
@@ -30,8 +30,8 @@ pub mod macros;
 pub mod mod_host;
 pub mod naming_case;
 pub(crate) mod naming_program;
-pub mod parser;
 pub mod parameter_defaults;
+pub mod parser;
 pub mod parsing;
 pub mod paths;
 pub mod projects;

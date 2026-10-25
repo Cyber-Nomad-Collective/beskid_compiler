@@ -121,7 +121,12 @@ impl Resolver {
                 self.errors.push(ResolveError::UnknownValueInModule { module_path, name, span: path.span });
             }
             ModulePathLookup::Ambiguous { module_path, name, candidates } => {
-                self.errors.push(ResolveError::AmbiguousItemInModule { module_path, name, candidates, span: path.span });
+                self.errors.push(ResolveError::AmbiguousItemInModule {
+                    module_path,
+                    name,
+                    candidates,
+                    span: path.span,
+                });
             }
             ModulePathLookup::NotVisible { module_path, name } => {
                 self.errors.push(ResolveError::PrivateItemInModule { module_path, name, span: path.span });
@@ -184,7 +189,12 @@ impl Resolver {
                 self.errors.push(ResolveError::UnknownTypeInModule { module_path, name, span: path.span });
             }
             ModulePathLookup::Ambiguous { module_path, name, candidates } => {
-                self.errors.push(ResolveError::AmbiguousItemInModule { module_path, name, candidates, span: path.span });
+                self.errors.push(ResolveError::AmbiguousItemInModule {
+                    module_path,
+                    name,
+                    candidates,
+                    span: path.span,
+                });
             }
             ModulePathLookup::NotVisible { module_path, name } => {
                 self.errors.push(ResolveError::PrivateItemInModule { module_path, name, span: path.span });

@@ -248,9 +248,7 @@ fn parsed_empty_array_field_uses_declared_nominal_element_abi_without_hir() {
 
 #[test]
 fn parsed_empty_array_local_uses_its_direct_declared_element_abi_without_hir() {
-    let (input, isa, root) = item_fixture_with_root(
-        "u8[] Main() { mut u8[] output = []; return output; }",
-    );
+    let (input, isa, root) = item_fixture_with_root("u8[] Main() { mut u8[] output = []; return output; }");
     let array = find_node(input.database(), root, beskid_queries::IndexedNodeKind::ArrayLiteralExpression)
         .expect("empty array literal");
 
@@ -276,9 +274,13 @@ fn parsed_empty_array_local_uses_its_direct_declared_element_abi_without_hir() {
 fn empty_array_context_rejects_inferred_and_nested_literals_and_admits_assignments() {
     for source in ["unit Main() { let values = []; }"] {
         let (input, _isa, root) = item_fixture_with_root(source);
-        let arrays = find_nodes_of_kind(input.database(), root, beskid_queries::IndexedNodeKind::ArrayLiteralExpression);
+        let arrays =
+            find_nodes_of_kind(input.database(), root, beskid_queries::IndexedNodeKind::ArrayLiteralExpression);
         assert_eq!(arrays.len(), 1, "fixture has one empty literal: {source}");
-        assert!(input.array_static_plan(arrays[0]).is_none(), "unproven empty literal context must stay unavailable: {source}");
+        assert!(
+            input.array_static_plan(arrays[0]).is_none(),
+            "unproven empty literal context must stay unavailable: {source}"
+        );
     }
     // The final statement of a value block is checked against the block's declared destination.
     let (input, _isa, root) = item_fixture_with_root("u8[] Main() { u8[] values = { [] }; return values; }");
@@ -299,11 +301,19 @@ fn empty_array_context_rejects_inferred_and_nested_literals_and_admits_assignmen
     let empty = arrays
         .iter()
         .copied()
-        .filter(|array| beskid_queries::child_nodes(input.database(), *array).ok().flatten().is_none_or(|children| children.is_empty()))
+        .filter(|array| {
+            beskid_queries::child_nodes(input.database(), *array)
+                .ok()
+                .flatten()
+                .is_none_or(|children| children.is_empty())
+        })
         .collect::<Vec<_>>();
     assert_eq!(empty.len(), 2, "fixture has two empty field assignments");
     assert_eq!(
-        empty.iter().map(|array| empty_array_literal_element_abi_type(input.database(), *array).ok().flatten()).collect::<Vec<_>>(),
+        empty
+            .iter()
+            .map(|array| empty_array_literal_element_abi_type(input.database(), *array).ok().flatten())
+            .collect::<Vec<_>>(),
         vec![Some(beskid_queries::SemanticTypeId::I64), Some(beskid_queries::SemanticTypeId::POINTER)],
     );
     let main = find_function_definition(input.database(), root).expect("Main");

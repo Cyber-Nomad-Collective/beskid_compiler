@@ -292,6 +292,9 @@ fn imported_result_binding_array_field_owns_a_canonical_append() {
         ("Core/Results.bd", "pub enum Result<TValue, TError> { Ok(TValue value), Error(TError error) }"),
         ("Core/Collections/Array.bd", "pub T[] Append<T>(mut T[] values, T value) { return values; }"),
         ("Http/Errors.bd", "pub enum HttpError { InvalidFraming(), Closed() }"),
-        ("Http/Requests.bd", "pub type Header { pub string name; } pub type Request { pub string method; pub Header[] headers; }"),
+        (
+            "Http/Requests.bd",
+            "pub type Header { pub string name; } pub type Request { pub string method; pub Header[] headers; }",
+        ),
     ]);
 }

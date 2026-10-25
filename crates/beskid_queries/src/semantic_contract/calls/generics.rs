@@ -8,13 +8,13 @@ mod tracked;
 
 pub(in crate::semantic_contract) use callables::{
     exported_generic_type_named, expression_is_lambda, function_declares_generics, generic_call_instantiation_for_node,
-    generic_callable_owner_count, generic_callable_parameters, method_own_generic_names, imported_call_receiver_exists,
-    imported_generic_nominal_receiver_requires_instantiation,
+    generic_callable_owner_count, generic_callable_parameters, imported_call_receiver_exists,
+    imported_generic_nominal_receiver_requires_instantiation, method_own_generic_names,
 };
 pub(in crate::semantic_contract) use explicit_arguments::{
     call_explicit_member_type_arguments, explicit_generic_type_argument_syntax,
-    generic_call_uses_parameter_type_arguments,
-    type_syntax_is_enclosing_generic_parameter_reference, type_syntax_is_generic_parameter_reference,
+    generic_call_uses_parameter_type_arguments, type_syntax_is_enclosing_generic_parameter_reference,
+    type_syntax_is_generic_parameter_reference,
 };
 pub(in crate::semantic_contract) use expression_identity::{
     generic_source_expression_identity, generic_source_field_shape_identity, result_mentions_callable_generics,

@@ -21,7 +21,8 @@ fn prepare_diagnostics_collect_without_legacy_document_snapshot() {
 
     let plan = synthetic_compile_plan_for_source(&entry_path);
     let resolved = resolved_input_from_plan(entry_path.clone(), source.to_string(), plan, None, None);
-    let (prepared, diags, _fixes) = beskid_queries::prepare_compilation_diagnostics_with_db(&mut BeskidDatabase::default(), 
+    let (prepared, diags, _fixes) = beskid_queries::prepare_compilation_diagnostics_with_db(
+        &mut BeskidDatabase::default(),
         &resolved,
         PrepareOptions {
             front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
@@ -57,17 +58,16 @@ fn isolated_diagnostics_do_not_read_or_replace_entry_session_assembly() {
     let second_source = "i32 Main() { return MissingNew; }";
     let assembly_options =
         beskid_analysis::projects::assembly_options_for_prepare(&plan, FrontEndOptions::default().assembly_discovery);
-    let second_assembly =
-        beskid_analysis::projects::assemble_program_with_materializer(
-            &plan,
-            None,
-            &entry_path,
-            Some(second_source),
-            &assembly_options,
-            None,
-            None,
-        )
-            .expect("second assembly");
+    let second_assembly = beskid_analysis::projects::assemble_program_with_materializer(
+        &plan,
+        None,
+        &entry_path,
+        Some(second_source),
+        &assembly_options,
+        None,
+        None,
+    )
+    .expect("second assembly");
     let second = resolved_input_from_plan(
         entry_path.clone(),
         second_source.to_string(),
@@ -88,8 +88,7 @@ fn isolated_diagnostics_do_not_read_or_replace_entry_session_assembly() {
     assert_eq!(prepared.assembly.entry_unit().source, second_source);
     assert!(!diagnostics.is_empty(), "second assembly should diagnose its unresolved name");
     let fingerprint = SessionFingerprint::for_entry(&plan, &entry_path);
-    let cached = cached_compilation_session(&fingerprint)
-        .expect("seeded entry session remains cached");
+    let cached = cached_compilation_session(&fingerprint).expect("seeded entry session remains cached");
     assert_eq!(cached.assembly.entry_unit().source, first_source);
 
     invalidate_entry_sessions_for_project(&root);
@@ -107,7 +106,8 @@ fn prepare_diagnostics_reports_nonconforming_inferred_generic_bound_with_code() 
 
     let plan = synthetic_compile_plan_for_source(&entry_path);
     let resolved = resolved_input_from_plan(entry_path.clone(), source.to_string(), plan, None, None);
-    let (_, diagnostics, _) = beskid_queries::prepare_compilation_diagnostics_with_db(&mut BeskidDatabase::default(), 
+    let (_, diagnostics, _) = beskid_queries::prepare_compilation_diagnostics_with_db(
+        &mut BeskidDatabase::default(),
         &resolved,
         PrepareOptions {
             front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
@@ -141,7 +141,8 @@ fn prepare_diagnostics_reports_nonconforming_explicit_generic_bound_with_code() 
 
     let plan = synthetic_compile_plan_for_source(&entry_path);
     let resolved = resolved_input_from_plan(entry_path.clone(), source.to_string(), plan, None, None);
-    let (_, diagnostics, _) = beskid_queries::prepare_compilation_diagnostics_with_db(&mut BeskidDatabase::default(), 
+    let (_, diagnostics, _) = beskid_queries::prepare_compilation_diagnostics_with_db(
+        &mut BeskidDatabase::default(),
         &resolved,
         PrepareOptions {
             front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
@@ -174,7 +175,8 @@ fn prepare_diagnostics_rejects_unconstrained_generic_forwarding_with_code() {
 
     let plan = synthetic_compile_plan_for_source(&entry_path);
     let resolved = resolved_input_from_plan(entry_path.clone(), source.to_string(), plan, None, None);
-    let (_, diagnostics, _) = beskid_queries::prepare_compilation_diagnostics_with_db(&mut BeskidDatabase::default(), 
+    let (_, diagnostics, _) = beskid_queries::prepare_compilation_diagnostics_with_db(
+        &mut BeskidDatabase::default(),
         &resolved,
         PrepareOptions {
             front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
@@ -207,7 +209,8 @@ fn prepare_diagnostics_reports_nested_generic_bound_failure_once() {
 
     let plan = synthetic_compile_plan_for_source(&entry_path);
     let resolved = resolved_input_from_plan(entry_path.clone(), source.to_string(), plan, None, None);
-    let (_, diagnostics, _) = beskid_queries::prepare_compilation_diagnostics_with_db(&mut BeskidDatabase::default(), 
+    let (_, diagnostics, _) = beskid_queries::prepare_compilation_diagnostics_with_db(
+        &mut BeskidDatabase::default(),
         &resolved,
         PrepareOptions {
             front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
@@ -236,7 +239,8 @@ fn prepare_diagnostics_enforces_qualified_contract_from_imported_module() {
 
     let plan = synthetic_compile_plan_for_source(&entry_path);
     let resolved = resolved_input_from_plan(entry_path.clone(), source.to_string(), plan, None, None);
-    let (_, diagnostics, _) = beskid_queries::prepare_compilation_diagnostics_with_db(&mut BeskidDatabase::default(), 
+    let (_, diagnostics, _) = beskid_queries::prepare_compilation_diagnostics_with_db(
+        &mut BeskidDatabase::default(),
         &resolved,
         PrepareOptions {
             front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
@@ -270,7 +274,8 @@ fn prepare_diagnostics_accepts_conforming_qualified_contract_from_imported_modul
 
     let plan = synthetic_compile_plan_for_source(&entry_path);
     let resolved = resolved_input_from_plan(entry_path.clone(), source.to_string(), plan, None, None);
-    let (_, diagnostics, _) = beskid_queries::prepare_compilation_diagnostics_with_db(&mut BeskidDatabase::default(), 
+    let (_, diagnostics, _) = beskid_queries::prepare_compilation_diagnostics_with_db(
+        &mut BeskidDatabase::default(),
         &resolved,
         PrepareOptions {
             front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
@@ -299,7 +304,8 @@ fn prepare_diagnostics_rejects_direct_contract_item_import_alias() {
 
     let plan = synthetic_compile_plan_for_source(&entry_path);
     let resolved = resolved_input_from_plan(entry_path.clone(), source.to_string(), plan, None, None);
-    let (_, diagnostics, _) = beskid_queries::prepare_compilation_diagnostics_with_db(&mut BeskidDatabase::default(), 
+    let (_, diagnostics, _) = beskid_queries::prepare_compilation_diagnostics_with_db(
+        &mut BeskidDatabase::default(),
         &resolved,
         PrepareOptions {
             front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
@@ -329,7 +335,8 @@ fn prepare_diagnostics_rejects_unresolved_bound_on_unused_function() {
 
     let plan = synthetic_compile_plan_for_source(&entry_path);
     let resolved = resolved_input_from_plan(entry_path.clone(), source.to_string(), plan, None, None);
-    let (_, diagnostics, _) = beskid_queries::prepare_compilation_diagnostics_with_db(&mut BeskidDatabase::default(), 
+    let (_, diagnostics, _) = beskid_queries::prepare_compilation_diagnostics_with_db(
+        &mut BeskidDatabase::default(),
         &resolved,
         PrepareOptions {
             front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
@@ -359,7 +366,8 @@ fn prepare_diagnostics_rejects_invalid_bound_parameter_and_noncontract_target() 
 
     let plan = synthetic_compile_plan_for_source(&entry_path);
     let resolved = resolved_input_from_plan(entry_path.clone(), source.to_string(), plan, None, None);
-    let (_, diagnostics, _) = beskid_queries::prepare_compilation_diagnostics_with_db(&mut BeskidDatabase::default(), 
+    let (_, diagnostics, _) = beskid_queries::prepare_compilation_diagnostics_with_db(
+        &mut BeskidDatabase::default(),
         &resolved,
         PrepareOptions {
             front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
@@ -391,7 +399,8 @@ fn prepare_diagnostics_resolves_same_named_bounds_within_sibling_inline_modules(
 
     let plan = synthetic_compile_plan_for_source(&entry_path);
     let resolved = resolved_input_from_plan(entry_path.clone(), source.to_string(), plan, None, None);
-    let (_, diagnostics, _) = beskid_queries::prepare_compilation_diagnostics_with_db(&mut BeskidDatabase::default(), 
+    let (_, diagnostics, _) = beskid_queries::prepare_compilation_diagnostics_with_db(
+        &mut BeskidDatabase::default(),
         &resolved,
         PrepareOptions {
             front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
@@ -419,7 +428,8 @@ fn prepare_diagnostics_rejects_bound_visible_only_in_unrelated_inline_module() {
 
     let plan = synthetic_compile_plan_for_source(&entry_path);
     let resolved = resolved_input_from_plan(entry_path.clone(), source.to_string(), plan, None, None);
-    let (_, diagnostics, _) = beskid_queries::prepare_compilation_diagnostics_with_db(&mut BeskidDatabase::default(), 
+    let (_, diagnostics, _) = beskid_queries::prepare_compilation_diagnostics_with_db(
+        &mut BeskidDatabase::default(),
         &resolved,
         PrepareOptions {
             front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
@@ -449,7 +459,8 @@ fn prepare_diagnostics_keeps_duplicate_contract_error_within_one_inline_module()
 
     let plan = synthetic_compile_plan_for_source(&entry_path);
     let resolved = resolved_input_from_plan(entry_path.clone(), source.to_string(), plan, None, None);
-    let (_, diagnostics, _) = beskid_queries::prepare_compilation_diagnostics_with_db(&mut BeskidDatabase::default(), 
+    let (_, diagnostics, _) = beskid_queries::prepare_compilation_diagnostics_with_db(
+        &mut BeskidDatabase::default(),
         &resolved,
         PrepareOptions {
             front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
@@ -477,7 +488,8 @@ fn prepare_diagnostics_resolves_bound_from_enclosing_inline_module_scope() {
 
     let plan = synthetic_compile_plan_for_source(&entry_path);
     let resolved = resolved_input_from_plan(entry_path.clone(), source.to_string(), plan, None, None);
-    let (_, diagnostics, _) = beskid_queries::prepare_compilation_diagnostics_with_db(&mut BeskidDatabase::default(), 
+    let (_, diagnostics, _) = beskid_queries::prepare_compilation_diagnostics_with_db(
+        &mut BeskidDatabase::default(),
         &resolved,
         PrepareOptions {
             front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
@@ -505,7 +517,8 @@ fn prepare_diagnostics_does_not_skip_noncontract_shadow_in_child_module() {
 
     let plan = synthetic_compile_plan_for_source(&entry_path);
     let resolved = resolved_input_from_plan(entry_path.clone(), source.to_string(), plan, None, None);
-    let (_, diagnostics, _) = beskid_queries::prepare_compilation_diagnostics_with_db(&mut BeskidDatabase::default(), 
+    let (_, diagnostics, _) = beskid_queries::prepare_compilation_diagnostics_with_db(
+        &mut BeskidDatabase::default(),
         &resolved,
         PrepareOptions {
             front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
@@ -540,7 +553,8 @@ fn prepare_diagnostics_preserves_imported_export_bound_owner() {
 
     let plan = synthetic_compile_plan_for_source(&entry_path);
     let resolved = resolved_input_from_plan(entry_path.clone(), source.to_string(), plan, None, None);
-    let (_, diagnostics, _) = beskid_queries::prepare_compilation_diagnostics_with_db(&mut BeskidDatabase::default(), 
+    let (_, diagnostics, _) = beskid_queries::prepare_compilation_diagnostics_with_db(
+        &mut BeskidDatabase::default(),
         &resolved,
         PrepareOptions {
             front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
@@ -577,7 +591,8 @@ fn prepare_diagnostics_preserves_imported_embedded_contract_owner() {
 
     let plan = synthetic_compile_plan_for_source(&entry_path);
     let resolved = resolved_input_from_plan(entry_path.clone(), source.to_string(), plan, None, None);
-    let (_, diagnostics, _) = beskid_queries::prepare_compilation_diagnostics_with_db(&mut BeskidDatabase::default(), 
+    let (_, diagnostics, _) = beskid_queries::prepare_compilation_diagnostics_with_db(
+        &mut BeskidDatabase::default(),
         &resolved,
         PrepareOptions {
             front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
@@ -606,7 +621,8 @@ fn prepare_diagnostics_rejects_private_qualified_contract_bound_from_other_modul
 
     let plan = synthetic_compile_plan_for_source(&entry_path);
     let resolved = resolved_input_from_plan(entry_path.clone(), source.to_string(), plan, None, None);
-    let (_, diagnostics, _) = beskid_queries::prepare_compilation_diagnostics_with_db(&mut BeskidDatabase::default(), 
+    let (_, diagnostics, _) = beskid_queries::prepare_compilation_diagnostics_with_db(
+        &mut BeskidDatabase::default(),
         &resolved,
         PrepareOptions {
             front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
@@ -636,7 +652,8 @@ fn prepare_diagnostics_accepts_private_qualified_contract_in_declaring_module() 
 
     let plan = synthetic_compile_plan_for_source(&entry_path);
     let resolved = resolved_input_from_plan(entry_path.clone(), source.to_string(), plan, None, None);
-    let (_, diagnostics, _) = beskid_queries::prepare_compilation_diagnostics_with_db(&mut BeskidDatabase::default(), 
+    let (_, diagnostics, _) = beskid_queries::prepare_compilation_diagnostics_with_db(
+        &mut BeskidDatabase::default(),
         &resolved,
         PrepareOptions {
             front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
@@ -664,7 +681,8 @@ fn prepare_diagnostics_accepts_bound_via_embedded_contract() {
 
     let plan = synthetic_compile_plan_for_source(&entry_path);
     let resolved = resolved_input_from_plan(entry_path.clone(), source.to_string(), plan, None, None);
-    let (_, diagnostics, _) = beskid_queries::prepare_compilation_diagnostics_with_db(&mut BeskidDatabase::default(), 
+    let (_, diagnostics, _) = beskid_queries::prepare_compilation_diagnostics_with_db(
+        &mut BeskidDatabase::default(),
         &resolved,
         PrepareOptions {
             front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
@@ -731,7 +749,11 @@ impl RootUnitFixture {
             project_root: root.clone(),
             manifest_path: root.join("fixture.bproj"),
             project_name: "fixture".to_string(),
-            target: beskid_analysis::projects::Target { name: "Fixture".to_string(), kind, entry: entry.map(str::to_string) },
+            target: beskid_analysis::projects::Target {
+                name: "Fixture".to_string(),
+                kind,
+                entry: entry.map(str::to_string),
+            },
             dependency_projects,
             unresolved_dependencies: Vec::new(),
             has_core_dependency: false,
@@ -753,10 +775,7 @@ impl Drop for RootUnitFixture {
     }
 }
 
-fn error_diagnostics_in(
-    diagnostics: &[SemanticDiagnostic],
-    file_name: &str,
-) -> Vec<SemanticDiagnostic> {
+fn error_diagnostics_in(diagnostics: &[SemanticDiagnostic], file_name: &str) -> Vec<SemanticDiagnostic> {
     diagnostics
         .iter()
         .filter(|diagnostic| diagnostic.severity == Severity::Error && diagnostic.src.name().ends_with(file_name))
@@ -776,9 +795,13 @@ fn entry_less_lib_reports_type_error_in_second_own_unit() {
         &[("Alpha.bd", HEALTHY_UNIT), ("Beta.bd", BROKEN_UNIT)],
         &[],
     );
-    let (prepared, diagnostics, _) =
-        beskid_queries::prepare_compilation_diagnostics_with_db(&mut BeskidDatabase::default(), &fixture.resolved(), PrepareOptions::without_mods(), None)
-            .expect("prepare diagnostics");
+    let (prepared, diagnostics, _) = beskid_queries::prepare_compilation_diagnostics_with_db(
+        &mut BeskidDatabase::default(),
+        &fixture.resolved(),
+        PrepareOptions::without_mods(),
+        None,
+    )
+    .expect("prepare diagnostics");
     assert!(
         matches!(prepared.assembly.root_set, beskid_analysis::projects::AssemblyRootSet::OwnUnits(ref paths) if paths.len() == 2),
         "entry-less library must judge both own units as roots: {:?}",
@@ -807,9 +830,13 @@ fn entry_less_lib_does_not_report_dependency_unit_errors() {
         &[("Alpha.bd", HEALTHY_UNIT), ("Gamma.bd", "pub i64 Gamma() { return 3_i64; }")],
         &[("DepBroken.bd", BROKEN_UNIT)],
     );
-    let (prepared, diagnostics, _) =
-        beskid_queries::prepare_compilation_diagnostics_with_db(&mut BeskidDatabase::default(), &fixture.resolved(), PrepareOptions::without_mods(), None)
-            .expect("prepare diagnostics");
+    let (prepared, diagnostics, _) = beskid_queries::prepare_compilation_diagnostics_with_db(
+        &mut BeskidDatabase::default(),
+        &fixture.resolved(),
+        PrepareOptions::without_mods(),
+        None,
+    )
+    .expect("prepare diagnostics");
     assert!(
         prepared.assembly.units.iter().any(|unit| unit.path.ends_with("DepBroken.bd")),
         "workspace scan must assemble the dependency unit"
@@ -844,8 +871,13 @@ fn single_entry_app_judges_every_own_unit() {
             front_end: FrontEndOptions { assembly_discovery: discovery, ..Default::default() },
             ..PrepareOptions::without_mods()
         };
-        let (prepared, diagnostics, _) =
-            beskid_queries::prepare_compilation_diagnostics_with_db(&mut BeskidDatabase::default(), &fixture.resolved(), options, None).expect("prepare diagnostics");
+        let (prepared, diagnostics, _) = beskid_queries::prepare_compilation_diagnostics_with_db(
+            &mut BeskidDatabase::default(),
+            &fixture.resolved(),
+            options,
+            None,
+        )
+        .expect("prepare diagnostics");
         assert_eq!(prepared.assembly.root_set, beskid_analysis::projects::AssemblyRootSet::Entry, "{discovery:?}");
         assert!(prepared.assembly.entry_unit().path.ends_with("Main.bd"), "{discovery:?}");
         assert_eq!(prepared.assembly.additional_root_indices(), Some(Vec::new()), "{discovery:?}");
@@ -859,7 +891,10 @@ fn single_entry_app_judges_every_own_unit() {
             // The import closure of the entry never reaches the uncalled sibling: it is not part of
             // the assembly, so nothing can judge it (the build path).
             AssemblyDiscovery::ImportClosure => {
-                assert!(!sibling_assembled, "the import closure does not assemble an uncalled sibling: {diagnostics:?}");
+                assert!(
+                    !sibling_assembled,
+                    "the import closure does not assemble an uncalled sibling: {diagnostics:?}"
+                );
                 assert!(sibling_errors.is_empty(), "{diagnostics:?}");
             }
             // `beskid check` scans the workspace: every own unit is assembled and judged.
@@ -875,10 +910,7 @@ fn single_entry_app_judges_every_own_unit() {
     }
 }
 
-fn diagnostics_with_code<'a>(
-    diagnostics: &'a [SemanticDiagnostic],
-    code: &str,
-) -> Vec<&'a SemanticDiagnostic> {
+fn diagnostics_with_code<'a>(diagnostics: &'a [SemanticDiagnostic], code: &str) -> Vec<&'a SemanticDiagnostic> {
     diagnostics.iter().filter(|diagnostic| diagnostic.code.as_deref() == Some(code)).collect()
 }
 
@@ -895,8 +927,13 @@ fn entry_less_lib_resolves_nested_hub_module_declarations_from_the_source_root()
         ],
         &[],
     );
-    let (_, diagnostics, _) = beskid_queries::prepare_compilation_diagnostics_with_db(&mut BeskidDatabase::default(), &fixture.resolved(), PrepareOptions::without_mods(), None)
-        .expect("prepare diagnostics");
+    let (_, diagnostics, _) = beskid_queries::prepare_compilation_diagnostics_with_db(
+        &mut BeskidDatabase::default(),
+        &fixture.resolved(),
+        PrepareOptions::without_mods(),
+        None,
+    )
+    .expect("prepare diagnostics");
     assert!(
         diagnostics_with_code(&diagnostics, "E1502").is_empty(),
         "hub `pub mod A.B;` names a logical path from the source root, not from the hub's directory: {diagnostics:?}"
@@ -915,8 +952,13 @@ fn entry_less_lib_reports_hub_module_declaration_without_a_unit() {
         ],
         &[],
     );
-    let (_, diagnostics, _) = beskid_queries::prepare_compilation_diagnostics_with_db(&mut BeskidDatabase::default(), &fixture.resolved(), PrepareOptions::without_mods(), None)
-        .expect("prepare diagnostics");
+    let (_, diagnostics, _) = beskid_queries::prepare_compilation_diagnostics_with_db(
+        &mut BeskidDatabase::default(),
+        &fixture.resolved(),
+        PrepareOptions::without_mods(),
+        None,
+    )
+    .expect("prepare diagnostics");
     let missing = diagnostics_with_code(&diagnostics, "E1502");
     assert_eq!(missing.len(), 1, "exactly the undeclared child is missing: {diagnostics:?}");
     assert!(missing[0].message.contains("Network.Missing"), "{:?}", missing[0]);
@@ -938,8 +980,13 @@ fn import_of_the_declaring_module_is_used_even_when_another_import_passes_the_it
         ],
         &[],
     );
-    let (_, diagnostics, _) = beskid_queries::prepare_compilation_diagnostics_with_db(&mut BeskidDatabase::default(), &fixture.resolved(), PrepareOptions::without_mods(), None)
-        .expect("prepare diagnostics");
+    let (_, diagnostics, _) = beskid_queries::prepare_compilation_diagnostics_with_db(
+        &mut BeskidDatabase::default(),
+        &fixture.resolved(),
+        PrepareOptions::without_mods(),
+        None,
+    )
+    .expect("prepare diagnostics");
     assert!(
         diagnostics_with_code(&diagnostics, "W1503").is_empty(),
         "both imports are used; the declaring module's import owns `IoError`: {diagnostics:?}"

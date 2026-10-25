@@ -29,7 +29,8 @@ fn parses_optional_and_group() {
 
 #[test]
 fn parses_regex_grammar_rules() {
-    let src = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../corelib/packages/foundation/grammars/regex.pest"));
+    let src =
+        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../corelib/packages/foundation/grammars/regex.pest"));
     let rules = parse_grammar_rules(src).expect("regex.pest should parse");
     assert!(rules.iter().any(|rule| rule.name == "pat"));
     assert!(rules.iter().any(|rule| rule.name == "lower_run"));

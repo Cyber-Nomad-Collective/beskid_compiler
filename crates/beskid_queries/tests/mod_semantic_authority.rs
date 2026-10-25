@@ -641,7 +641,12 @@ fn field_key(fixture: &Fixture, field: &ModSemanticField) -> AstNodeKey {
 fn named(fixture: &Fixture, authority: &ModSemanticQueryAuthority<'_>, kind: NodeKind, name: &str) -> ModSemanticShape {
     (0..)
         .map_while(|occurrence| {
-            fixture.assembly.entry_syntax_index().ids_of_kind(kind).nth(occurrence).map(|_| fixture.key(kind, occurrence))
+            fixture
+                .assembly
+                .entry_syntax_index()
+                .ids_of_kind(kind)
+                .nth(occurrence)
+                .map(|_| fixture.key(kind, occurrence))
         })
         .filter_map(|key| authority.type_shape(authority.resolve_type(key).ok()?).ok())
         .find(|shape| shape.name == name)
@@ -656,7 +661,12 @@ fn handle_named(
 ) -> beskid_analysis::mod_host::ModSemanticHandle {
     (0..)
         .map_while(|occurrence| {
-            fixture.assembly.entry_syntax_index().ids_of_kind(kind).nth(occurrence).map(|_| fixture.key(kind, occurrence))
+            fixture
+                .assembly
+                .entry_syntax_index()
+                .ids_of_kind(kind)
+                .nth(occurrence)
+                .map(|_| fixture.key(kind, occurrence))
         })
         .filter_map(|key| authority.resolve_type(key).ok())
         .find(|handle| authority.type_shape(*handle).is_ok_and(|shape| shape.name == name))
@@ -700,7 +710,9 @@ fn record_policy_reads_wire_name_direction_requiredness_width_and_bytes() {
         ModSemanticQueryAuthority::for_registered_assembly(&fixture.db, fixture.project, &fixture.assembly).unwrap();
     let shape = named(&fixture, &authority, NodeKind::TypeDefinition, "Policies");
     let fields = record_fields(&shape);
-    let policy = |index: usize| beskid_queries::serialization_field_policy(&fixture.db, field_key(&fixture, &fields[index])).unwrap();
+    let policy = |index: usize| {
+        beskid_queries::serialization_field_policy(&fixture.db, field_key(&fixture, &fields[index])).unwrap()
+    };
     assert_eq!(policy(0).wire_name(), "renamed");
     assert!(policy(0).required_in_both_directions());
     // Decode-only and encode-only fields are never required in both directions.
@@ -712,11 +724,16 @@ fn record_policy_reads_wire_name_direction_requiredness_width_and_bytes() {
     // The word wire width rewrites the field's word scalars to the fixed-width tag.
     let handle = handle_named(&fixture, &authority, NodeKind::TypeDefinition, "Policies");
     let graph = authority.serialization_shape(handle).unwrap();
-    let beskid_queries::DynamicPackingNode::Record { fields: wire, .. } = &graph.nodes()[0] else { panic!("record graph") };
+    let beskid_queries::DynamicPackingNode::Record { fields: wire, .. } = &graph.nodes()[0] else {
+        panic!("record graph")
+    };
     let widths = wire.iter().find(|field| field.name == "Widths").unwrap();
     let rewritten = graph.with_word_width(widths.ty, 32).unwrap();
     let beskid_queries::DynamicPackingNode::Array { element } = &rewritten.nodes()[0] else { panic!("array root") };
-    assert!(matches!(rewritten.nodes()[*element as usize], beskid_queries::DynamicPackingNode::Scalar { name: "u32", .. }));
+    assert!(matches!(
+        rewritten.nodes()[*element as usize],
+        beskid_queries::DynamicPackingNode::Scalar { name: "u32", .. }
+    ));
     assert!(graph.with_word_width(widths.ty, 12).is_err());
 }
 
@@ -838,7 +855,8 @@ fn mod_shape_recursive_record_interns_its_own_handle() {
     bounded(120, || {
         let fixture = Fixture::with_source(false, RECURSIVE_SOURCE);
         let authority =
-            ModSemanticQueryAuthority::for_registered_assembly(&fixture.db, fixture.project, &fixture.assembly).unwrap();
+            ModSemanticQueryAuthority::for_registered_assembly(&fixture.db, fixture.project, &fixture.assembly)
+                .unwrap();
         let tree = authority.resolve_type(fixture.key(NodeKind::TypeDefinition, 0)).unwrap();
         let shape = authority.type_shape(tree).unwrap();
         assert_eq!(shape.name, "Tree");
@@ -857,8 +875,10 @@ fn mod_shape_cyclic_substitution_expansion_terminates_at_the_identity_limit() {
     bounded(120, || {
         let fixture = Fixture::with_source(false, RECURSIVE_SOURCE);
         let authority =
-            ModSemanticQueryAuthority::for_registered_assembly(&fixture.db, fixture.project, &fixture.assembly).unwrap();
-        let root = authority.type_shape(authority.resolve_type(fixture.key(NodeKind::TypeDefinition, 3)).unwrap()).unwrap();
+            ModSemanticQueryAuthority::for_registered_assembly(&fixture.db, fixture.project, &fixture.assembly)
+                .unwrap();
+        let root =
+            authority.type_shape(authority.resolve_type(fixture.key(NodeKind::TypeDefinition, 3)).unwrap()).unwrap();
         assert_eq!(root.name, "GrowRoot");
         let ModSemanticFieldType::Nominal(mut current) = record_fields(&root)[0].ty else { panic!("applied Grow") };
         let mut steps = 0usize;
@@ -893,8 +913,10 @@ fn mod_shape_explicit_nesting_past_the_identity_depth_is_unavailable() {
         );
         let fixture = Fixture::with_source(false, &source);
         let authority =
-            ModSemanticQueryAuthority::for_registered_assembly(&fixture.db, fixture.project, &fixture.assembly).unwrap();
-        let shallow = authority.type_shape(authority.resolve_type(fixture.key(NodeKind::TypeDefinition, 2)).unwrap()).unwrap();
+            ModSemanticQueryAuthority::for_registered_assembly(&fixture.db, fixture.project, &fixture.assembly)
+                .unwrap();
+        let shallow =
+            authority.type_shape(authority.resolve_type(fixture.key(NodeKind::TypeDefinition, 2)).unwrap()).unwrap();
         assert_eq!(shallow.name, "Shallow");
         assert!(matches!(record_fields(&shallow)[0].ty, ModSemanticFieldType::Nominal(_)));
         let deep = authority.resolve_type(fixture.key(NodeKind::TypeDefinition, 1)).unwrap();
@@ -919,8 +941,10 @@ fn mod_shape_doubling_substitution_terminates_at_the_identity_node_budget() {
     "#,
         );
         let authority =
-            ModSemanticQueryAuthority::for_registered_assembly(&fixture.db, fixture.project, &fixture.assembly).unwrap();
-        let root = authority.type_shape(authority.resolve_type(fixture.key(NodeKind::TypeDefinition, 2)).unwrap()).unwrap();
+            ModSemanticQueryAuthority::for_registered_assembly(&fixture.db, fixture.project, &fixture.assembly)
+                .unwrap();
+        let root =
+            authority.type_shape(authority.resolve_type(fixture.key(NodeKind::TypeDefinition, 2)).unwrap()).unwrap();
         assert_eq!(root.name, "DoubleRoot");
         let ModSemanticFieldType::Nominal(mut current) = record_fields(&root)[0].ty else { panic!("applied Double") };
         let mut steps = 0usize;

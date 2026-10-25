@@ -21,15 +21,15 @@ impl IsleContext<'_, '_, '_, '_> {
             self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::ValueCopyInAllocationFreeBody });
             return None;
         }
-        let function = match self.call_importer.as_deref_mut()?.import(self.builder, plan.callee.clone(), &plan.signature)
-        {
-            Ok(function) => function,
-            Err(CallImportError::UnknownCallee) => {
-                self.pending_error =
-                    Some(LoweringError { key, kind: LoweringErrorKind::UnknownCallee(plan.callee.clone()) });
-                return None;
-            }
-        };
+        let function =
+            match self.call_importer.as_deref_mut()?.import(self.builder, plan.callee.clone(), &plan.signature) {
+                Ok(function) => function,
+                Err(CallImportError::UnknownCallee) => {
+                    self.pending_error =
+                        Some(LoweringError { key, kind: LoweringErrorKind::UnknownCallee(plan.callee.clone()) });
+                    return None;
+                }
+            };
         // The source stays reachable through its place for the whole call, and the hook roots its
         // receiver on entry; the copy is a fresh result rooted by whichever name stores it.
         let call = self.builder.ins().call(function, &[value]);

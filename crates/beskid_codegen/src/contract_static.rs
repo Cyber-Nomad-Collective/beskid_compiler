@@ -115,7 +115,8 @@ pub fn emit_witness_tables<M: Module>(
     for plan in plans {
         tables.insert(plan.symbol.as_str(), module.declare_data(&plan.symbol, Linkage::Local, false, false)?);
     }
-    let overflow = |symbol: &str| ModuleError::Backend(anyhow::anyhow!("witness table `{symbol}` exceeds the ABI word"));
+    let overflow =
+        |symbol: &str| ModuleError::Backend(anyhow::anyhow!("witness table `{symbol}` exceeds the ABI word"));
     for plan in plans {
         let table = tables[plan.symbol.as_str()];
         let mut bytes = vec![0u8; (header + plan.entries.len() + plan.embedded.len()) * 8];
@@ -125,7 +126,10 @@ pub fn emit_witness_tables<M: Module>(
         data.define(bytes.into_boxed_slice());
         for (slot, entry) in plan.entries.iter().enumerate() {
             let id = function_id(entry).ok_or_else(|| {
-                ModuleError::Backend(anyhow::anyhow!("witness table `{}` names an undeclared function `{entry}`", plan.symbol))
+                ModuleError::Backend(anyhow::anyhow!(
+                    "witness table `{}` names an undeclared function `{entry}`",
+                    plan.symbol
+                ))
             })?;
             let reference = module.declare_func_in_data(id, &mut data);
             let offset = u32::try_from((header + slot) * 8).map_err(|_| overflow(&plan.symbol))?;
@@ -133,7 +137,10 @@ pub fn emit_witness_tables<M: Module>(
         }
         for (position, embedded) in plan.embedded.iter().enumerate() {
             let id = *tables.get(embedded.as_str()).ok_or_else(|| {
-                ModuleError::Backend(anyhow::anyhow!("witness table `{}` names an undefined table `{embedded}`", plan.symbol))
+                ModuleError::Backend(anyhow::anyhow!(
+                    "witness table `{}` names an undefined table `{embedded}`",
+                    plan.symbol
+                ))
             })?;
             let reference = module.declare_data_in_data(id, &mut data);
             let offset =
@@ -190,7 +197,12 @@ pub fn emit_witness_thunk(plan: &WitnessThunkPlan, isa: &dyn TargetIsa) -> Optio
 }
 
 /// Narrow the receiver word back to the primitive the implementation takes by value.
-fn narrow_receiver(builder: &mut FunctionBuilder<'_>, word: cranelift_codegen::ir::Value, receiver: Type, pointer: Type) -> Option<cranelift_codegen::ir::Value> {
+fn narrow_receiver(
+    builder: &mut FunctionBuilder<'_>,
+    word: cranelift_codegen::ir::Value,
+    receiver: Type,
+    pointer: Type,
+) -> Option<cranelift_codegen::ir::Value> {
     if receiver == pointer {
         return Some(word);
     }

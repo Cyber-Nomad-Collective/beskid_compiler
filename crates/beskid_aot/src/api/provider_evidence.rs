@@ -89,10 +89,8 @@ fn provider_version_digest(output: &ToolVersionOutput) -> String {
 }
 
 fn select_probe(executable: &Path, windows_target: bool) -> VersionProbe {
-    let is_msvc_link = executable
-        .file_stem()
-        .and_then(|stem| stem.to_str())
-        .is_some_and(|stem| stem.eq_ignore_ascii_case("link"));
+    let is_msvc_link =
+        executable.file_stem().and_then(|stem| stem.to_str()).is_some_and(|stem| stem.eq_ignore_ascii_case("link"));
     if windows_target && is_msvc_link { VersionProbe::MsvcLinker } else { VersionProbe::DashVersion }
 }
 
@@ -127,7 +125,8 @@ fn validated_version_output(
                 Some(code) if code >= 1000 => {}
                 other => return Err(probe_failed(&format!("link.exe exited with {other:?}"))),
             }
-            let banner = msvc_linker_banner(&stdout).ok_or_else(|| probe_failed("link.exe printed no version banner"))?;
+            let banner =
+                msvc_linker_banner(&stdout).ok_or_else(|| probe_failed("link.exe printed no version banner"))?;
             Ok(ToolVersionOutput { stdout: format!("{banner}\n").into_bytes(), stderr: Vec::new() })
         }
     }
@@ -140,8 +139,9 @@ fn msvc_linker_banner(stdout: &[u8]) -> Option<String> {
     text.lines().map(str::trim).find_map(|line| {
         let version = line.strip_prefix(MSVC_LINKER_BANNER)?;
         let parts: Vec<&str> = version.split('.').collect();
-        (parts.len() >= 2 && parts.iter().all(|part| !part.is_empty() && part.bytes().all(|byte| byte.is_ascii_digit())))
-            .then(|| line.to_owned())
+        (parts.len() >= 2
+            && parts.iter().all(|part| !part.is_empty() && part.bytes().all(|byte| byte.is_ascii_digit())))
+        .then(|| line.to_owned())
     })
 }
 
@@ -160,7 +160,12 @@ Copyright (C) Microsoft Corporation.  All rights reserved.\r\n\r\n usage: LINK [
         assert_eq!(select_probe(Path::new("/usr/bin/link"), false), VersionProbe::DashVersion);
     }
 
-    fn validate(probe: VersionProbe, status: Option<i32>, stdout: &[u8], stderr: &[u8]) -> AotResult<ToolVersionOutput> {
+    fn validate(
+        probe: VersionProbe,
+        status: Option<i32>,
+        stdout: &[u8],
+        stderr: &[u8],
+    ) -> AotResult<ToolVersionOutput> {
         validated_version_output(probe, status, stdout.to_vec(), stderr.to_vec())
     }
 

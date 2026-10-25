@@ -26,12 +26,12 @@ pub struct GlueSourceAuthority {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct GlueOpaqueType {
-    pub brand_sha256:String,
-    pub library:String,
-    pub nullable:bool,
-    pub constructor:String,
-    pub reader:String,
-    pub descriptor:String,
+    pub brand_sha256: String,
+    pub library: String,
+    pub nullable: bool,
+    pub constructor: String,
+    pub reader: String,
+    pub descriptor: String,
 }
 /// One field of a by-value record: its scalar logical name, C type and C ABI profile offset.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -87,7 +87,7 @@ pub struct GluePhysicalType {
     pub logical: String,
     pub slots: Vec<String>,
     pub checked: bool,
-    pub opaque:Option<GlueOpaqueType>,
+    pub opaque: Option<GlueOpaqueType>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub record: Option<GlueRecordType>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -208,14 +208,14 @@ pub fn export_transport_symbol(binding: &GlueBindingManifest) -> String {
     if requires_checked_primary(binding) { checked_invocation_symbol(binding) } else { binding.symbol.clone() }
 }
 pub fn owned_release_symbols(manifest: &GlueManifest) -> Vec<String> {
-    let mut symbols=std::collections::BTreeSet::new();
+    let mut symbols = std::collections::BTreeSet::new();
     for binding in &manifest.bindings {
-        if binding.direction=="export"&&matches!(binding.result.logical.as_str(),"utf8"|"bytes") {
+        if binding.direction == "export" && matches!(binding.result.logical.as_str(), "utf8" | "bytes") {
             symbols.insert(owned_release_symbol(&binding.library));
         }
         for physical in binding.parameters.iter().chain(std::iter::once(&binding.result)) {
-            if let Some(opaque)=&physical.opaque {
-                symbols.insert(format!("beskid_glue_opaque_{}_release",opaque.brand_sha256));
+            if let Some(opaque) = &physical.opaque {
+                symbols.insert(format!("beskid_glue_opaque_{}_release", opaque.brand_sha256));
             }
         }
     }
@@ -318,19 +318,22 @@ impl GlueArtifact {
                 return Err(invalid("binding source authority differs"));
             }
             for ty in binding.parameters.iter().chain(std::iter::once(&binding.result)) {
-                match (&ty.opaque,ty.logical.starts_with("opaque:")) {
-                    (Some(opaque),true)=>{
-                        if opaque.brand_sha256.len()!=64 || !opaque.brand_sha256.bytes().all(|b|b.is_ascii_hexdigit()) ||
-                            opaque.library.is_empty() || opaque.library.contains('\0') ||
-                            opaque.constructor!=format!("beskid_glue_handle_{}_construct",opaque.brand_sha256) ||
-                            opaque.reader!=format!("beskid_glue_handle_{}_read",opaque.brand_sha256) ||
-                            opaque.descriptor!=format!("beskid_glue_handle_{}_descriptor",opaque.brand_sha256) ||
-                            ty.slots!=["uint64_t"] {
+                match (&ty.opaque, ty.logical.starts_with("opaque:")) {
+                    (Some(opaque), true) => {
+                        if opaque.brand_sha256.len() != 64
+                            || !opaque.brand_sha256.bytes().all(|b| b.is_ascii_hexdigit())
+                            || opaque.library.is_empty()
+                            || opaque.library.contains('\0')
+                            || opaque.constructor != format!("beskid_glue_handle_{}_construct", opaque.brand_sha256)
+                            || opaque.reader != format!("beskid_glue_handle_{}_read", opaque.brand_sha256)
+                            || opaque.descriptor != format!("beskid_glue_handle_{}_descriptor", opaque.brand_sha256)
+                            || ty.slots != ["uint64_t"]
+                        {
                             return Err(invalid("opaque source transport metadata differs"));
                         }
-                    },
-                    (None,false)=>{},
-                    _=>return Err(invalid("opaque source transport metadata absent or attached to ordinary type")),
+                    }
+                    (None, false) => {}
+                    _ => return Err(invalid("opaque source transport metadata absent or attached to ordinary type")),
                 }
             }
             for ty in nominal_values(binding) {
@@ -441,9 +444,11 @@ fn validate_nominal(ty: &GluePhysicalType) -> Result<(), &'static str> {
                 || callback.invoke != format!("beskid_glue_callback_{digest}_invoke")
                 || ty.slots != [callback.c_name.clone(), "uint64_t".to_owned()]
                 || callback.parameters.len() > 16
-                || callback.parameters.iter().chain(std::iter::once(&callback.result)).any(|member| {
-                    member.callback.is_some() || member.record.is_some() || member.opaque.is_some()
-                })
+                || callback
+                    .parameters
+                    .iter()
+                    .chain(std::iter::once(&callback.result))
+                    .any(|member| member.callback.is_some() || member.record.is_some() || member.opaque.is_some())
             {
                 return Err("callback transport metadata differs");
             }

@@ -71,10 +71,7 @@ impl Engine {
         if self.arguments_initialized {
             return Err(JitError::RuntimeKit("Core.Args was already initialized for this engine".to_owned()));
         }
-        self.jit
-            .runtime_kit()
-            .handoff_arguments(&self.runtime_kit.target, arguments)
-            .map_err(JitError::RuntimeKit)?;
+        self.jit.runtime_kit().handoff_arguments(&self.runtime_kit.target, arguments).map_err(JitError::RuntimeKit)?;
         self.arguments_initialized = true;
         Ok(())
     }

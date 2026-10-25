@@ -32,7 +32,10 @@ pub(in crate::semantic_contract) fn node_type_tracked(
                 return Some(Ok(SemanticTypeId::I64));
             }
             if let Some(exchange) = exchange_call_for_node(program, index, key) {
-                return Some(node_type(db, exchange.place).and_then(|ty| ty.ok_or_else(|| SemanticError::unavailable("node_type"))));
+                return Some(
+                    node_type(db, exchange.place)
+                        .and_then(|ty| ty.ok_or_else(|| SemanticError::unavailable("node_type"))),
+                );
             }
             match primitive_numeric_conversion(db, key) {
                 Ok(Some(conversion)) => return Some(Ok(conversion.to)),

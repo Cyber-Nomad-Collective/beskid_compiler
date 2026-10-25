@@ -1,11 +1,13 @@
 //! Compiler-issued native Glue admission. Generated JSON is a packet, not authority.
-mod rust_owner;
 mod owner_values;
+mod rust_owner;
 pub use rust_owner::{
     PreparedRustOwner, RustOwnerBuildRequest, RustOwnerCallable, RustOwnerSource, RustOwnerType, build_rust_owner,
 };
 mod owner_tables;
-pub use owner_tables::{GlueDeclaration, glue_declarations, rust_owner_declaration_libraries, rust_owner_source_tables};
+pub use owner_tables::{
+    GlueDeclaration, glue_declarations, rust_owner_declaration_libraries, rust_owner_source_tables,
+};
 mod initialization;
 mod loader;
 pub use initialization::{CompiledDynamicInitialization, compile_dynamic_initialization};
@@ -28,7 +30,7 @@ use std::{
 };
 
 const GLUE_INITIALIZATION_SYMBOL: &str = "beskid_glue_artifact_v1_initialize";
-const GLUE_IMPORT_BINDING_SYMBOL:&str="beskid_glue_artifact_v1_bind_imports";
+const GLUE_IMPORT_BINDING_SYMBOL: &str = "beskid_glue_artifact_v1_bind_imports";
 
 /// Non-deserializable witness issued only after current source and native closure validation.
 #[derive(Debug)]
@@ -244,8 +246,10 @@ pub fn build_glue_artifact(req: &GlueArtifactBuildRequest<'_>) -> AotResult<Prep
                 packet_values.insert(record.record_sha256.clone(), (record.constructor.clone(), record.reader.clone()));
             }
             if let Some(enumeration) = &physical.enumeration {
-                packet_values
-                    .insert(enumeration.enum_sha256.clone(), (enumeration.constructor.clone(), enumeration.reader.clone()));
+                packet_values.insert(
+                    enumeration.enum_sha256.clone(),
+                    (enumeration.constructor.clone(), enumeration.reader.clone()),
+                );
             }
         }
     }
@@ -274,23 +278,37 @@ pub fn build_glue_artifact(req: &GlueArtifactBuildRequest<'_>) -> AotResult<Prep
         let span = beskid_queries::node_span(req.input.database(), source)
             .map_err(|error| invalid(error.to_string()))?
             .ok_or_else(|| invalid("opaque source position has no canonical span"))?;
-        let unit = req.input.typed_program().assembly.units.iter().find(|unit|
-            beskid_queries::SourceUnitId::new(req.input.database(),unit.path.clone()) == source.unit)
+        let unit = req
+            .input
+            .typed_program()
+            .assembly
+            .units
+            .iter()
+            .find(|unit| beskid_queries::SourceUnitId::new(req.input.database(), unit.path.clone()) == source.unit)
             .ok_or_else(|| invalid("opaque source unit is not in current assembly"))?;
-        let binding = packet.manifest.bindings.iter().find(|binding|
-            binding.source.logical_unit == req.input.portable_unit_label(&unit.path, &unit.logical_name)
-            && binding.source.span_start == span.start && binding.source.span_end == span.end)
+        let binding = packet
+            .manifest
+            .bindings
+            .iter()
+            .find(|binding| {
+                binding.source.logical_unit == req.input.portable_unit_label(&unit.path, &unit.logical_name)
+                    && binding.source.span_start == span.start
+                    && binding.source.span_end == span.end
+            })
             .ok_or_else(|| invalid("opaque object transport has no selected source binding"))?;
         let physical = match transport.position() {
-            Some(position) => binding.parameters.get(position)
-                .ok_or_else(|| invalid("opaque transport exceeds source arity"))?,
+            Some(position) => {
+                binding.parameters.get(position).ok_or_else(|| invalid("opaque transport exceeds source arity"))?
+            }
             None => &binding.result,
         };
-        let metadata = physical.opaque.as_ref()
-            .ok_or_else(|| invalid("opaque object transport has no normalized metadata"))?;
+        let metadata =
+            physical.opaque.as_ref().ok_or_else(|| invalid("opaque object transport has no normalized metadata"))?;
         if metadata.brand_sha256 != transport.brand_sha256()
-            || metadata.constructor != transport.constructor() || metadata.reader != transport.reader()
-            || metadata.descriptor != transport.descriptor() {
+            || metadata.constructor != transport.constructor()
+            || metadata.reader != transport.reader()
+            || metadata.descriptor != transport.descriptor()
+        {
             return Err(invalid("opaque packet differs from actual source object transport"));
         }
     }
@@ -303,9 +321,15 @@ pub fn build_glue_artifact(req: &GlueArtifactBuildRequest<'_>) -> AotResult<Prep
             descriptor: transport.descriptor().to_owned(),
         })
         .collect::<Vec<_>>();
-    let expected_handles = packet.manifest.bindings.iter().map(|binding|
-        binding.parameters.iter().filter(|parameter|parameter.opaque.is_some()).count()
-        + usize::from(binding.result.opaque.is_some())).sum::<usize>();
+    let expected_handles = packet
+        .manifest
+        .bindings
+        .iter()
+        .map(|binding| {
+            binding.parameters.iter().filter(|parameter| parameter.opaque.is_some()).count()
+                + usize::from(binding.result.opaque.is_some())
+        })
+        .sum::<usize>();
     if expected_handles != handle_transports.len() {
         return Err(invalid("opaque packet/object position coverage differs"));
     }
@@ -508,8 +532,10 @@ fn consumer_exports(manifest: &beskid_codegen::glue::GlueManifest, producer: &Gl
 
 /// Loader identity of the canonical shared provider: `@rpath/<basename>` on Mach-O, else the basename.
 fn provider_identity(target: &str, provider: &Path) -> AotResult<String> {
-    let filename =
-        provider.file_name().and_then(|name| name.to_str()).ok_or_else(|| invalid("invalid shared provider filename"))?;
+    let filename = provider
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| invalid("invalid shared provider filename"))?;
     Ok(if target.contains("apple") { format!("@rpath/{filename}") } else { filename.to_owned() })
 }
 

@@ -199,7 +199,10 @@ mod tests {
 
     #[test]
     fn dotnet_backend_is_unavailable() {
-        assert_eq!(BackendError::Unavailable { kind: BackendKind::DotNetProject }.to_string(), "backend `glue-dotnet` is unavailable in 0.6");
+        assert_eq!(
+            BackendError::Unavailable { kind: BackendKind::DotNetProject }.to_string(),
+            "backend `glue-dotnet` is unavailable in 0.6"
+        );
     }
 
     #[test]

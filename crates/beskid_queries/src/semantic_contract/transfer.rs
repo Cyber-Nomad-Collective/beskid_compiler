@@ -232,7 +232,10 @@ pub(in crate::semantic_contract) fn indexed_site(
     let wanted = std::ptr::from_ref(target.0).cast::<()>();
     let mut pending = std::collections::VecDeque::from([owner.node]);
     while let Some(node) = pending.pop_front() {
-        if index.node_at(program, node).is_some_and(|candidate| std::ptr::eq(std::ptr::from_ref(candidate.0).cast::<()>(), wanted)) {
+        if index
+            .node_at(program, node)
+            .is_some_and(|candidate| std::ptr::eq(std::ptr::from_ref(candidate.0).cast::<()>(), wanted))
+        {
             return AstNodeKey { node, ..owner };
         }
         pending.extend(index.children(node).into_iter().flatten().copied());
@@ -345,8 +348,8 @@ impl<'db> ClassWalker<'db> {
             Type::Array(element) => Ok(array_class(self.syntax_class(context, &element.node, environment)?)),
             Type::Function { .. } => Ok(TransferClass::Never(TransferNeverReason::FunctionType)),
             Type::This => {
-                let receiver =
-                    method_this_type(self.db, context).ok_or_else(|| SemanticError::unavailable_at("transfer_class", context))?;
+                let receiver = method_this_type(self.db, context)
+                    .ok_or_else(|| SemanticError::unavailable_at("transfer_class", context))?;
                 self.syntax_class(context, &receiver, environment)
             }
             Type::Associated { .. } => Err(SemanticError::unavailable_at("transfer_class", context)),
@@ -402,8 +405,12 @@ impl<'db> ClassWalker<'db> {
     ) -> Result<TransferClass, SemanticError> {
         let db = self.db;
         let unavailable = || SemanticError::unavailable_at("transfer_class", declaration);
-        let syntax = db.syntax_unit(declaration.unit).filter(|syntax| syntax.accepts_key(db, declaration)).ok_or_else(unavailable)?;
-        let node = syntax.syntax_index(db).node_at(syntax.expanded_program(db), declaration.node).ok_or_else(unavailable)?;
+        let syntax = db
+            .syntax_unit(declaration.unit)
+            .filter(|syntax| syntax.accepts_key(db, declaration))
+            .ok_or_else(unavailable)?;
+        let node =
+            syntax.syntax_index(db).node_at(syntax.expanded_program(db), declaration.node).ok_or_else(unavailable)?;
         if let Some(definition) = node.of::<beskid_analysis::syntax::TypeDefinition>() {
             let type_name = definition.name.node.name.clone();
             if never_transferable_cause(db, declaration, &definition.attributes).is_some() {
@@ -428,8 +435,8 @@ impl<'db> ClassWalker<'db> {
                 return Ok(TransferClass::Never(TransferNeverReason::NoMarker { type_name }));
             };
             for (field, class, immutable_storage) in &fields {
-                let admitted = marker.admits(class)
-                    || (marker == TransferMarkerAttribute::Immutable && *immutable_storage);
+                let admitted =
+                    marker.admits(class) || (marker == TransferMarkerAttribute::Immutable && *immutable_storage);
                 if !admitted {
                     return Ok(field_never(&type_name, field, class));
                 }
@@ -492,7 +499,12 @@ impl<'db> ClassWalker<'db> {
                 };
                 let immutable_storage = match &field.node.ty.node {
                     beskid_analysis::syntax::Type::Array(element)
-                        if has_recognized_attribute(self.db, declaration, &field.node.attributes, "ImmutableStorage") =>
+                        if has_recognized_attribute(
+                            self.db,
+                            declaration,
+                            &field.node.attributes,
+                            "ImmutableStorage",
+                        ) =>
                     {
                         let element = self.syntax_class(declaration, &element.node, environment)?;
                         // A corelib `[ScopeBorrowed]` view borrows storage of any transferable
@@ -581,7 +593,9 @@ fn scope_environment(db: &dyn Db, site: AstNodeKey) -> ClassEnvironment {
     let owner = nearest_ancestor(index, site.node, |kind| {
         matches!(kind, NodeKind::TypeDefinition | NodeKind::EnumDefinition | NodeKind::ImplBlock)
     })
-    .or_else(|| matches!(index.kind(site.node), Some(NodeKind::TypeDefinition | NodeKind::EnumDefinition)).then_some(site.node));
+    .or_else(|| {
+        matches!(index.kind(site.node), Some(NodeKind::TypeDefinition | NodeKind::EnumDefinition)).then_some(site.node)
+    });
     if let Some(node) = owner.and_then(|owner| index.node_at(program, owner)) {
         let generics = node
             .of::<beskid_analysis::syntax::TypeDefinition>()
@@ -596,7 +610,8 @@ fn scope_environment(db: &dyn Db, site: AstNodeKey) -> ClassEnvironment {
         matches!(kind, NodeKind::FunctionDefinition | NodeKind::MethodDefinition)
     })
     .or_else(|| {
-        matches!(index.kind(site.node), Some(NodeKind::FunctionDefinition | NodeKind::MethodDefinition)).then_some(site.node)
+        matches!(index.kind(site.node), Some(NodeKind::FunctionDefinition | NodeKind::MethodDefinition))
+            .then_some(site.node)
     });
     if let Some(callable) = callable {
         let callable = AstNodeKey { node: callable, ..site };
@@ -675,8 +690,7 @@ pub fn enum_constructor_transfer_class(
     let syntax = db.syntax_unit(constructor.unit).filter(|syntax| syntax.accepts_key(db, constructor))?;
     let node = syntax.syntax_index(db).node_at(syntax.expanded_program(db), constructor.node)?;
     let expression = node.of::<beskid_analysis::syntax::EnumConstructorExpression>()?;
-    let identity =
-        applied_enum_constructor_identity(db, constructor, expression, enclosing).ok()?;
+    let identity = applied_enum_constructor_identity(db, constructor, expression, enclosing).ok()?;
     transfer_class(db, constructor, &identity).ok()
 }
 

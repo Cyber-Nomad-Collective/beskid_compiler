@@ -59,9 +59,7 @@ impl RustAbiProfile {
             | TypeShape::Record(_)
             | TypeShape::Enumeration(_)
             | TypeShape::Callback(_)
-            | TypeShape::Unit => {
-                RustProfileBinding { permitted: false, view: RustProfileView::Rejected }
-            }
+            | TypeShape::Unit => RustProfileBinding { permitted: false, view: RustProfileView::Rejected },
         }
     }
 

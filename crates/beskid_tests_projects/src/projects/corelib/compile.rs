@@ -504,7 +504,8 @@ fn checked_in_corelib_beskid_test_sources_parse() {
     }
     test_files.sort();
     // Every target entry of the manifest is among the discovered sources.
-    let manifest = fs::read_to_string(source_root.with_file_name("corelib_tests.bproj")).expect("read corelib_tests.bproj");
+    let manifest =
+        fs::read_to_string(source_root.with_file_name("corelib_tests.bproj")).expect("read corelib_tests.bproj");
     let entries = manifest
         .lines()
         .filter_map(|line| line.trim().strip_prefix("entry = \"")?.strip_suffix('"'))

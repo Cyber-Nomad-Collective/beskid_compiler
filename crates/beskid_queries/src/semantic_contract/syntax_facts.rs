@@ -497,9 +497,8 @@ pub(super) fn direct_callees_for_item(
         .collect::<Vec<_>>();
     if !launched.is_empty() {
         for node in index.ids_of_kind(beskid_analysis::syntax_query::NodeKind::FunctionDefinition) {
-            let Some(function) = index
-                .node_at(program, node)
-                .and_then(|node| node.of::<beskid_analysis::syntax::FunctionDefinition>())
+            let Some(function) =
+                index.node_at(program, node).and_then(|node| node.of::<beskid_analysis::syntax::FunctionDefinition>())
             else {
                 continue;
             };

@@ -20,8 +20,7 @@ use beskid_analysis::syntax::AstNodeId;
 use beskid_analysis::syntax_query::{DynNodeRef, NodeKind, SyntaxIndex};
 
 use super::super::transfer::{
-    TransferClass, TransferNeverReason, marker_attributes, transfer_class,
-    transfer_class_of_type,
+    TransferClass, TransferNeverReason, marker_attributes, transfer_class, transfer_class_of_type,
 };
 use super::super::*;
 use super::affine_ownership::{containing_fiber_callable, fiber_owner_seed};
@@ -70,8 +69,12 @@ impl Divergence {
     fn join(self, other: Self) -> Self {
         match (self, other) {
             (Self::Return, Self::Return) => Self::Return,
-            (Self::Return, Self::Loop { continues }) | (Self::Loop { continues }, Self::Return) => Self::Loop { continues },
-            (Self::Loop { continues: left }, Self::Loop { continues: right }) => Self::Loop { continues: left || right },
+            (Self::Return, Self::Loop { continues }) | (Self::Loop { continues }, Self::Return) => {
+                Self::Loop { continues }
+            }
+            (Self::Loop { continues: left }, Self::Loop { continues: right }) => {
+                Self::Loop { continues: left || right }
+            }
         }
     }
 }
@@ -246,9 +249,15 @@ pub(in crate::semantic_contract) fn identity_spelling(identity: &GenericSourceTy
 pub(super) fn expression_spelling(expression: &beskid_analysis::syntax::Expression) -> String {
     use beskid_analysis::syntax::{Expression, Literal};
     match expression {
-        Expression::Path(path) => {
-            path.node.path.node.segments.iter().map(|segment| segment.node.name.node.name.as_str()).collect::<Vec<_>>().join(".")
-        }
+        Expression::Path(path) => path
+            .node
+            .path
+            .node
+            .segments
+            .iter()
+            .map(|segment| segment.node.name.node.name.as_str())
+            .collect::<Vec<_>>()
+            .join("."),
         Expression::Literal(literal) => match &literal.node.literal.node {
             Literal::Integer(text) | Literal::Float(text) => text.clone(),
             _ => "..".to_owned(),
@@ -322,7 +331,14 @@ impl<'a> Analysis<'a> {
             let Some(class) = self.type_class(site, &parameter.node.ty.node) else { continue };
             if !self.movable_type(site, &parameter.node.ty.node, &class) {
                 let name = parameter.node.name.node.name.clone();
-                self.push(AffineFindingKind::MoveOfNonOwningName, site, &name, Some(class.name().to_owned()), None, false);
+                self.push(
+                    AffineFindingKind::MoveOfNonOwningName,
+                    site,
+                    &name,
+                    Some(class.name().to_owned()),
+                    None,
+                    false,
+                );
             }
         }
         if let Some(receiver) = receiver.filter(|receiver| receiver.node.movable)
@@ -363,7 +379,10 @@ impl<'a> Analysis<'a> {
     fn insert(&mut self, declaration: AstNodeId, name: String, fiber: bool, owning: bool) {
         if self
             .owners
-            .insert(declaration, Owner { name, fiber, owning, aliased: false, assignments: Vec::new(), consumed: Vec::new() })
+            .insert(
+                declaration,
+                Owner { name, fiber, owning, aliased: false, assignments: Vec::new(), consumed: Vec::new() },
+            )
             .is_none()
         {
             self.order.push(declaration);
@@ -373,7 +392,8 @@ impl<'a> Analysis<'a> {
     fn seed(&mut self) {
         let (db, program, index, key) = (self.db, self.program, self.index, self.key);
         if index.kind(key.node) == Some(NodeKind::MethodDefinition)
-            && let Some(method) = index.node_at(program, key.node).and_then(|node| node.of::<beskid_analysis::syntax::MethodDefinition>())
+            && let Some(method) =
+                index.node_at(program, key.node).and_then(|node| node.of::<beskid_analysis::syntax::MethodDefinition>())
             && let Some(owner) = method_this_type(db, key)
             && self.type_class(key.node, &owner) == Some(TransferClass::Moved)
         {
@@ -445,8 +465,10 @@ impl<'a> Analysis<'a> {
             if !is_ancestor(self.index, self.key.node, node) {
                 continue;
             }
-            let Some(path) =
-                self.index.node_at(self.program, node).and_then(|node| node.of::<beskid_analysis::syntax::PathExpression>())
+            let Some(path) = self
+                .index
+                .node_at(self.program, node)
+                .and_then(|node| node.of::<beskid_analysis::syntax::PathExpression>())
             else {
                 continue;
             };
@@ -462,7 +484,10 @@ impl<'a> Analysis<'a> {
                 UseContext::Move(_) => false,
                 // A capture by a `[Captures]`-bounded lambda is itself a crossing operand
                 // (judged in `legality/captures.rs`); any other closure keeps a name.
-                _ => matches!(self.lambda_crossing(node, declaration), LambdaCrossing::OneShot | LambdaCrossing::Ordinary),
+                _ => matches!(
+                    self.lambda_crossing(node, declaration),
+                    LambdaCrossing::OneShot | LambdaCrossing::Ordinary
+                ),
             };
             if takes {
                 aliased.push(declaration);
@@ -518,18 +543,19 @@ impl<'a> Analysis<'a> {
             let Some(syntax) = self.index.node_at(self.program, current) else { return false };
             let target = match self.index.kind(current) {
                 Some(NodeKind::Expression | NodeKind::GroupedExpression) => {
-                    let Some(child) = self.index.children(current).and_then(|children| children.first()).copied() else {
+                    let Some(child) = self.index.children(current).and_then(|children| children.first()).copied()
+                    else {
                         return false;
                     };
                     current = child;
                     continue;
                 }
-                Some(NodeKind::IndexExpression) => {
-                    syntax.of::<beskid_analysis::syntax::IndexExpression>().map(|index| DynNodeRef::from(index.target.as_ref()))
-                }
-                Some(NodeKind::MemberExpression) => {
-                    syntax.of::<beskid_analysis::syntax::MemberExpression>().map(|member| DynNodeRef::from(member.target.as_ref()))
-                }
+                Some(NodeKind::IndexExpression) => syntax
+                    .of::<beskid_analysis::syntax::IndexExpression>()
+                    .map(|index| DynNodeRef::from(index.target.as_ref())),
+                Some(NodeKind::MemberExpression) => syntax
+                    .of::<beskid_analysis::syntax::MemberExpression>()
+                    .map(|member| DynNodeRef::from(member.target.as_ref())),
                 Some(
                     NodeKind::CallExpression
                     | NodeKind::StructLiteralExpression
@@ -592,8 +618,10 @@ impl<'a> Analysis<'a> {
             if !is_ancestor(self.index, self.key.node, node) {
                 continue;
             }
-            let Some(path) =
-                self.index.node_at(self.program, node).and_then(|node| node.of::<beskid_analysis::syntax::PathExpression>())
+            let Some(path) = self
+                .index
+                .node_at(self.program, node)
+                .and_then(|node| node.of::<beskid_analysis::syntax::PathExpression>())
             else {
                 continue;
             };
@@ -625,7 +653,9 @@ impl<'a> Analysis<'a> {
                     let (path, _) = self.path_to_callable(node, declaration);
                     let owned = self.assigned_value_is_owned(node);
                     if let Some(owner) = self.owners.get_mut(&declaration) {
-                        owner.consumed.retain(|consumption| !path.iter().all(|step| consumption.branches.contains(step)));
+                        owner
+                            .consumed
+                            .retain(|consumption| !path.iter().all(|step| consumption.branches.contains(step)));
                         owner.assignments.push((path, owned));
                     }
                 }
@@ -648,11 +678,11 @@ impl<'a> Analysis<'a> {
     fn owning_at(&self, owner: &Owner, branches: &BranchPath) -> bool {
         !owner.aliased
             && owner
-            .assignments
-            .iter()
-            .rev()
-            .find(|(path, _)| path.iter().all(|step| branches.contains(step)))
-            .map_or(owner.owning, |(_, owned)| *owned)
+                .assignments
+                .iter()
+                .rev()
+                .find(|(path, _)| path.iter().all(|step| branches.contains(step)))
+                .map_or(owner.owning, |(_, owned)| *owned)
     }
 
     fn enclosing_assignment(&self, node: AstNodeId) -> Option<AstNodeId> {
@@ -754,7 +784,9 @@ impl<'a> Analysis<'a> {
             if parent == self.key.node {
                 break;
             }
-            if self.index.kind(parent) == Some(NodeKind::LambdaExpression) && !is_ancestor(self.index, parent, declaration) {
+            if self.index.kind(parent) == Some(NodeKind::LambdaExpression)
+                && !is_ancestor(self.index, parent, declaration)
+            {
                 crossing = crossing.max(self.lambda_kind(parent));
             }
             current = parent;
@@ -791,8 +823,12 @@ impl<'a> Analysis<'a> {
         };
         let Some(literal) = parent_node(self.index, field) else { return false };
         let (Some(field_node), Some(literal_node)) = (
-            self.index.node_at(self.program, field).and_then(|node| node.of::<beskid_analysis::syntax::StructLiteralField>()),
-            self.index.node_at(self.program, literal).and_then(|node| node.of::<beskid_analysis::syntax::StructLiteralExpression>()),
+            self.index
+                .node_at(self.program, field)
+                .and_then(|node| node.of::<beskid_analysis::syntax::StructLiteralField>()),
+            self.index
+                .node_at(self.program, literal)
+                .and_then(|node| node.of::<beskid_analysis::syntax::StructLiteralExpression>()),
         ) else {
             return false;
         };
@@ -805,10 +841,9 @@ impl<'a> Analysis<'a> {
     /// alternative arm, and not cut off by a diverging statement between the two.
     fn prior_consumption(&self, declaration: AstNodeId, branches: &BranchPath, position: usize) -> Option<AstNodeId> {
         self.owners.get(&declaration)?.consumed.iter().rev().find_map(|consumption| {
-            let alternative = consumption
-                .branches
-                .iter()
-                .any(|(condition, arm)| branches.iter().any(|(other, other_arm)| condition == other && arm != other_arm));
+            let alternative = consumption.branches.iter().any(|(condition, arm)| {
+                branches.iter().any(|(other, other_arm)| condition == other && arm != other_arm)
+            });
             let cut_off = consumption.unreachable.iter().any(|(start, end)| (*start..*end).contains(&position));
             (!alternative && !cut_off).then_some(consumption.site)
         })
@@ -830,19 +865,20 @@ impl<'a> Analysis<'a> {
                 .node_at(self.program, parent)
                 .and_then(|node| node.of::<beskid_analysis::syntax::Block>())
                 .and_then(|block| {
-                    block
-                        .statements
-                        .iter()
-                        .filter(|statement| statement.span.end > site_start)
-                        .find_map(|statement| statement_divergence(&statement.node).map(|kind| (kind, statement.span.end)))
+                    block.statements.iter().filter(|statement| statement.span.end > site_start).find_map(|statement| {
+                        statement_divergence(&statement.node).map(|kind| (kind, statement.span.end))
+                    })
                 });
             match divergence {
                 Some((Divergence::Return, end)) => {
                     let boundary = nearest_ancestor(self.index, parent, |kind| kind == NodeKind::LambdaExpression)
                         .filter(|lambda| *lambda != self.key.node && is_ancestor(self.index, self.key.node, *lambda))
                         .unwrap_or(self.key.node);
-                    let boundary_end =
-                        if boundary == self.key.node { usize::MAX } else { self.span(boundary).map_or(usize::MAX, |span| span.end) };
+                    let boundary_end = if boundary == self.key.node {
+                        usize::MAX
+                    } else {
+                        self.span(boundary).map_or(usize::MAX, |span| span.end)
+                    };
                     exits.unreachable.push((end, boundary_end));
                     let mut current = parent;
                     while let Some(lp) = self.innermost_loop(current) {
@@ -881,8 +917,10 @@ impl<'a> Analysis<'a> {
     }
 
     fn exchange_call(&self, call: AstNodeId) -> bool {
-        let Some(call_node) =
-            self.index.node_at(self.program, call).and_then(|node| node.of::<beskid_analysis::syntax::CallExpression>())
+        let Some(call_node) = self
+            .index
+            .node_at(self.program, call)
+            .and_then(|node| node.of::<beskid_analysis::syntax::CallExpression>())
         else {
             return false;
         };
@@ -893,10 +931,21 @@ impl<'a> Analysis<'a> {
     }
 
     fn callee_spelling(&self, call: AstNodeId) -> Option<String> {
-        let call_node =
-            self.index.node_at(self.program, call).and_then(|node| node.of::<beskid_analysis::syntax::CallExpression>())?;
+        let call_node = self
+            .index
+            .node_at(self.program, call)
+            .and_then(|node| node.of::<beskid_analysis::syntax::CallExpression>())?;
         let beskid_analysis::syntax::Expression::Path(path) = &call_node.callee.node else { return None };
-        Some(path.node.path.node.segments.iter().map(|segment| segment.node.name.node.name.as_str()).collect::<Vec<_>>().join("."))
+        Some(
+            path.node
+                .path
+                .node
+                .segments
+                .iter()
+                .map(|segment| segment.node.name.node.name.as_str())
+                .collect::<Vec<_>>()
+                .join("."),
+        )
     }
 
     /// E1239 for `move` on anything but a tracked owning name: a Shared, Copied or Never binding,
@@ -909,8 +958,10 @@ impl<'a> Analysis<'a> {
             .filter(|node| is_ancestor(self.index, self.key.node, *node))
             .collect::<Vec<_>>();
         for node in moves {
-            let Some(moved) =
-                self.index.node_at(self.program, node).and_then(|node| node.of::<beskid_analysis::syntax::MoveExpression>())
+            let Some(moved) = self
+                .index
+                .node_at(self.program, node)
+                .and_then(|node| node.of::<beskid_analysis::syntax::MoveExpression>())
             else {
                 continue;
             };
@@ -918,13 +969,23 @@ impl<'a> Analysis<'a> {
                 beskid_analysis::syntax::Expression::Path(path) => {
                     // A destructive read `move x.f` is judged with its root binding.
                     let segments = &path.node.path.node.segments;
-                    if segments.len() > 1 || segments.first().is_some_and(|segment| segment.node.name.node.name == "this") {
+                    if segments.len() > 1
+                        || segments.first().is_some_and(|segment| segment.node.name.node.name == "this")
+                    {
                         continue;
                     }
                     let Some(declaration) = self.declaration_of(node, &path.node.path.node) else {
                         if containing_fiber_callable(self.index, node) == Some(self.key.node) {
-                            let name = path.node.path.node.segments.first().map(|segment| segment.node.name.node.name.clone());
-                            self.push(AffineFindingKind::MoveOfNonOwningName, node, &name.unwrap_or_default(), Some("unknown".to_owned()), None, false);
+                            let name =
+                                path.node.path.node.segments.first().map(|segment| segment.node.name.node.name.clone());
+                            self.push(
+                                AffineFindingKind::MoveOfNonOwningName,
+                                node,
+                                &name.unwrap_or_default(),
+                                Some("unknown".to_owned()),
+                                None,
+                                false,
+                            );
                         }
                         continue;
                     };
@@ -933,8 +994,17 @@ impl<'a> Analysis<'a> {
                     {
                         continue;
                     }
-                    let name = path.node.path.node.segments.first().map(|segment| segment.node.name.node.name.clone()).unwrap_or_default();
-                    let class = self.declaration_class(declaration).map_or_else(|| "unknown".to_owned(), |class| class.name().to_owned());
+                    let name = path
+                        .node
+                        .path
+                        .node
+                        .segments
+                        .first()
+                        .map(|segment| segment.node.name.node.name.clone())
+                        .unwrap_or_default();
+                    let class = self
+                        .declaration_class(declaration)
+                        .map_or_else(|| "unknown".to_owned(), |class| class.name().to_owned());
                     self.push(AffineFindingKind::MoveOfNonOwningName, node, &name, Some(class), None, false);
                     continue;
                 }
@@ -978,7 +1048,17 @@ impl<'a> Analysis<'a> {
         let Some(owner) = self.owners.get(&declaration) else { return };
         let (name, fiber, owning) = (owner.name.clone(), owner.fiber, self.owning_at(owner, &branches));
         if fiber {
-            self.visit_fiber_use(node, declaration, segments, destination, explicit.then_some(move_node).flatten(), branches, &loops, crossing, &name);
+            self.visit_fiber_use(
+                node,
+                declaration,
+                segments,
+                destination,
+                explicit.then_some(move_node).flatten(),
+                branches,
+                &loops,
+                crossing,
+                &name,
+            );
             return;
         }
         // Only an isolate crossing consumes (0.6.7 owner ruling), so every consumption on record
@@ -1102,7 +1182,14 @@ impl<'a> Analysis<'a> {
     /// Records a consumption. A diverging statement after it on its path (`return F(move x)`,
     /// an arm that consumes then returns, `break` out of a loop) keeps the consumed state from
     /// the code it cuts off and from the next iteration of the loops it leaves.
-    fn consume(&mut self, declaration: AstNodeId, site: AstNodeId, name: &str, branches: BranchPath, loops: &[AstNodeId]) {
+    fn consume(
+        &mut self,
+        declaration: AstNodeId,
+        site: AstNodeId,
+        name: &str,
+        branches: BranchPath,
+        loops: &[AstNodeId],
+    ) {
         let position = self.span(site).map_or(0, |span| span.end);
         let exits = self.exits_after(site);
         if loops.iter().any(|lp| {
@@ -1213,8 +1300,10 @@ impl<'a> Analysis<'a> {
         // A local initializer transfers the join capability to the new binding.
         if method.is_none()
             && let UseContext::LetValue(statement) = destination
-            && let Some(binding) =
-                self.index.node_at(self.program, statement).and_then(|node| node.of::<beskid_analysis::syntax::LetStatement>())
+            && let Some(binding) = self
+                .index
+                .node_at(self.program, statement)
+                .and_then(|node| node.of::<beskid_analysis::syntax::LetStatement>())
             && let Some(alias) = self.child(statement, DynNodeRef::from(&binding.name))
         {
             let alias_name = binding.name.node.name.clone();
@@ -1231,8 +1320,10 @@ impl<'a> Analysis<'a> {
             .filter(|call| self.exchange_call(*call))
             .collect::<Vec<_>>();
         for call in calls {
-            let Some(call_node) =
-                self.index.node_at(self.program, call).and_then(|node| node.of::<beskid_analysis::syntax::CallExpression>())
+            let Some(call_node) = self
+                .index
+                .node_at(self.program, call)
+                .and_then(|node| node.of::<beskid_analysis::syntax::CallExpression>())
             else {
                 continue;
             };
@@ -1240,7 +1331,14 @@ impl<'a> Analysis<'a> {
             let Some(site) = self.child(call, DynNodeRef::from(place)) else { continue };
             let spelling = match &place.node {
                 beskid_analysis::syntax::Expression::Path(path) if path.node.path.node.segments.len() > 1 => Some(
-                    path.node.path.node.segments.iter().map(|segment| segment.node.name.node.name.as_str()).collect::<Vec<_>>().join("."),
+                    path.node
+                        .path
+                        .node
+                        .segments
+                        .iter()
+                        .map(|segment| segment.node.name.node.name.as_str())
+                        .collect::<Vec<_>>()
+                        .join("."),
                 ),
                 beskid_analysis::syntax::Expression::Index(_) => Some("element".to_owned()),
                 _ => None,
@@ -1251,7 +1349,14 @@ impl<'a> Analysis<'a> {
             match (spelling, class) {
                 (Some(_), Some(TransferClass::Moved)) => {}
                 (Some(spelling), Some(class)) => {
-                    self.push(AffineFindingKind::MoveOfNonOwningName, site, &spelling, Some(class.name().to_owned()), None, false);
+                    self.push(
+                        AffineFindingKind::MoveOfNonOwningName,
+                        site,
+                        &spelling,
+                        Some(class.name().to_owned()),
+                        None,
+                        false,
+                    );
                 }
                 (None, class) => {
                     let class = class.map_or_else(|| "unknown".to_owned(), |class| class.name().to_owned());

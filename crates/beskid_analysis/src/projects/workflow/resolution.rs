@@ -72,9 +72,7 @@ pub(super) fn ResolveWorkspaceDependencies(
     }
     // A lock without registry pins is regenerated when the graph changed (a copied or renamed
     // folder); the write is refused only under `--locked` or `--frozen`.
-    let existing = existing.filter(|lock| {
-        policy.locked || !lock.is_pin_free() || !lock_graph_differs(lock, &entries)
-    });
+    let existing = existing.filter(|lock| policy.locked || !lock.is_pin_free() || !lock_graph_differs(lock, &entries));
     validate_existing_lock_graph(existing.as_ref(), &entries, options.refresh_lock)?;
     let rules = discover_workspace_resolution_rules(&plan.manifest_path)?;
     // A mutation (graph change or refresh) may select coordinates for transitive packages whose
@@ -445,8 +443,8 @@ mod tests {
         let installed = tempfile::tempdir().unwrap();
         let explicit = dependency("corelib_foundation", &checkout.path().join("packages/foundation"));
         let implicit = dependency("corelib_foundation", &installed.path().join("packages/foundation"));
-        let error = RejectAmbiguousDependencyNames(&[explicit.clone(), implicit.clone()], Some(installed.path()))
-            .unwrap_err();
+        let error =
+            RejectAmbiguousDependencyNames(&[explicit.clone(), implicit.clone()], Some(installed.path())).unwrap_err();
         let ProjectError::Validation(message) = error else { panic!("expected a validation error") };
         assert!(message.contains("`corelib_foundation` resolves to two different packages"), "{message}");
         assert!(message.contains(&explicit.manifest_path.display().to_string()), "{message}");
@@ -519,7 +517,9 @@ mod tests {
             ]);
             let error = resolve(&packages, &[("Alpha", "1.0.0"), ("Beta", "1.0.0")], &mut Vec::new()).unwrap_err();
             let message = error.to_string();
-            for expected in ["`Alpha@1.0.0` requires `Shared@1.0.0`", "`Beta@1.0.0` requires `Shared@2.0.0`", "override"] {
+            for expected in
+                ["`Alpha@1.0.0` requires `Shared@1.0.0`", "`Beta@1.0.0` requires `Shared@2.0.0`", "override"]
+            {
                 assert!(message.contains(expected), "{expected} in {message}");
             }
         }
@@ -551,8 +551,9 @@ mod tests {
         #[test]
         fn direct_and_transitive_requests_must_agree() {
             let packages = Packages::from([("Alpha@1.0.0", vec![("Shared", "2.0.0")]), ("Shared@1.0.0", vec![])]);
-            let message =
-                resolve(&packages, &[("Alpha", "1.0.0"), ("Shared", "1.0.0")], &mut Vec::new()).unwrap_err().to_string();
+            let message = resolve(&packages, &[("Alpha", "1.0.0"), ("Shared", "1.0.0")], &mut Vec::new())
+                .unwrap_err()
+                .to_string();
             assert!(message.contains("`App` requires `Shared@1.0.0`"), "{message}");
             assert!(message.contains("`Alpha@1.0.0` requires `Shared@2.0.0`"), "{message}");
         }
@@ -590,8 +591,9 @@ mod tests {
             // `Shared` is declared directly but unavailable (warning-only); a package requiring it
             // cannot be satisfied.
             let packages = Packages::from([("Alpha@1.0.0", vec![("Shared", "1.0.0")])]);
-            let message =
-                resolve(&packages, &[("Shared", "1.0.0"), ("Alpha", "1.0.0")], &mut Vec::new()).unwrap_err().to_string();
+            let message = resolve(&packages, &[("Shared", "1.0.0"), ("Alpha", "1.0.0")], &mut Vec::new())
+                .unwrap_err()
+                .to_string();
             assert!(message.contains("required by `Alpha@1.0.0` is unavailable"), "{message}");
         }
 

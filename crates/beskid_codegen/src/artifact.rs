@@ -334,7 +334,10 @@ mod tests {
 
     #[test]
     fn every_export_entry_names_exactly_one_lowered_function() {
-        let function = |name: &str| super::LoweredFunction { name: name.to_owned(), function: cranelift_codegen::ir::Function::new() };
+        let function = |name: &str| super::LoweredFunction {
+            name: name.to_owned(),
+            function: cranelift_codegen::ir::Function::new(),
+        };
         let entry = |function: &str| ExportEntry {
             function: function.to_owned(),
             exported_symbol: "sym".to_owned(),

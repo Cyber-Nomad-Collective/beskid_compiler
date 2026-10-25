@@ -68,7 +68,9 @@ impl VerifiedPackageRoot {
         let project = self.manifest.parent()?.canonicalize().ok()?;
         self.owned_relative(&path)?;
         let relative = path.strip_prefix(project).ok()?;
-        if relative.components().any(|component| !matches!(component, std::path::Component::Normal(_))) { return None; }
+        if relative.components().any(|component| !matches!(component, std::path::Component::Normal(_))) {
+            return None;
+        }
         Some(relative.to_str()?.replace('\\', "/"))
     }
     pub fn identity(&self) -> &VerifiedPackageIdentity {
@@ -168,7 +170,10 @@ fn is_inside_compiler_corelib_checkout(manifest: &Path) -> bool {
     let Some(corelib) = beskid_abi::runtime_source::compiler_corelib_checkout_root() else {
         return false;
     };
-    let runtime = corelib.parent().map(|checkout| checkout.join("runtime").join("beskid")).and_then(|root| root.canonicalize().ok());
+    let runtime = corelib
+        .parent()
+        .map(|checkout| checkout.join("runtime").join("beskid"))
+        .and_then(|root| root.canonicalize().ok());
     physical.starts_with(&corelib) || runtime.is_some_and(|root| physical.starts_with(root))
 }
 impl VerifiedPackageIdentities {
@@ -220,7 +225,8 @@ impl VerifiedPackageIdentities {
                     return Err(error(format!(
                         "package proof source revision changed under {}: `{changed}` {}",
                         root.display(),
-                        match (entry.files.contains_key(Path::new(&changed)), current.contains_key(Path::new(&changed))) {
+                        match (entry.files.contains_key(Path::new(&changed)), current.contains_key(Path::new(&changed)))
+                        {
                             (true, false) => "was removed",
                             (false, true) => "was added",
                             _ => "differs",
@@ -423,7 +429,9 @@ mod source_ownership_tests {
         std::fs::write(dependency.join("Lib.bd"), "pub type Lib { pub i32 Value; }\n").unwrap();
 
         let mut identities = VerifiedPackageIdentities::default();
-        identities.issue(&host_manifest, vec![host.clone(), materialized.clone()], VerifiedPackageSource::Local, None).unwrap();
+        identities
+            .issue(&host_manifest, vec![host.clone(), materialized.clone()], VerifiedPackageSource::Local, None)
+            .unwrap();
         identities.issue(&dependency_manifest, vec![dependency.clone()], VerifiedPackageSource::Local, None).unwrap();
         let owner = identities.for_source(&materialized.join("Main.bd")).unwrap();
         assert_eq!(owner.identity().package_name(), "Host");

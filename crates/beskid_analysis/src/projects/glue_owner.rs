@@ -142,8 +142,8 @@ impl Collector<'_> {
             .map_err(|error| content_error(self.owner, display_dir, &format!("cannot be listed: {error}")))?;
         let mut entries = Vec::new();
         for entry in reader {
-            let entry = entry
-                .map_err(|error| content_error(self.owner, display_dir, &format!("cannot be listed: {error}")))?;
+            let entry =
+                entry.map_err(|error| content_error(self.owner, display_dir, &format!("cannot be listed: {error}")))?;
             entries.push(entry);
         }
         entries.sort_by_key(|entry| entry.file_name());

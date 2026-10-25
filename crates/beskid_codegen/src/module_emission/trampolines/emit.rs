@@ -184,12 +184,7 @@ pub(super) fn emit_boxed_result(
     let call = builder.ins().call(allocate, &[request]);
     let boxed = builder.inst_results(call)[0];
     builder.ins().trapz(boxed, cranelift_codegen::ir::TrapCode::unwrap_user(5));
-    builder.ins().store(
-        cranelift_codegen::ir::MemFlagsData::new(),
-        result,
-        boxed,
-        plan.fields[0].field_offset as i32,
-    );
+    builder.ins().store(cranelift_codegen::ir::MemFlagsData::new(), result, boxed, plan.fields[0].field_offset as i32);
     if let Some(root) = root {
         let unregister = import_local(builder, "gc_unregister_root", &[pointer], None);
         builder.ins().call(unregister, &[root]);

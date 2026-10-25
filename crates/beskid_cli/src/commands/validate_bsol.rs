@@ -140,8 +140,8 @@ fn validate_bsol_project(
     for export in &schemas.exports {
         let path = package_file(&project_root, &project_root, &export.path)
             .with_context(|| format!("schema export `{}`", export.name))?;
-        let (_, source) = load_package_profile(&path, &export.profile)
-            .with_context(|| format!("schema export `{}`", export.name))?;
+        let (_, source) =
+            load_package_profile(&path, &export.profile).with_context(|| format!("schema export `{}`", export.name))?;
         let base_dir = path.parent().unwrap_or(&project_root).to_path_buf();
         let root = MaterializedSchema::owned(source, format!("file:{}", path.display()));
         resolve_active_profile(root, &base_dir, &sources, &BsolLimits::default())
@@ -311,8 +311,8 @@ mod tests {
 
     #[test]
     fn corelib_pest_gen_schema_package_validates_against_its_declared_exports() {
-        let manifest = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../corelib/packages/pest-gen-schema/pest_gen_schema.bproj");
+        let manifest =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corelib/packages/pest-gen-schema/pest_gen_schema.bproj");
         let loaded = load_manifest_from_path(&manifest).unwrap();
         assert_eq!(loaded.project.kind, ProjectKind::Bsol);
         let validated = validate_bsol_project(&manifest, &loaded, None).expect("shipped schema package validates");
@@ -335,7 +335,10 @@ mod tests {
             bsol_project(&[("base", "other.v1", "schemas/base.v1.bsol")], &[("schemas/base.v1.bsol", BASE_SCHEMA)]);
         let loaded = load_manifest_from_path(&manifest).unwrap();
         let error = validate_bsol_project(&manifest, &loaded, None).expect_err("profile identity mismatch");
-        assert!(format!("{error:#}").contains("declares profile `base.v1` but the export names `other.v1`"), "{error:#}");
+        assert!(
+            format!("{error:#}").contains("declares profile `base.v1` but the export names `other.v1`"),
+            "{error:#}"
+        );
     }
 
     #[test]

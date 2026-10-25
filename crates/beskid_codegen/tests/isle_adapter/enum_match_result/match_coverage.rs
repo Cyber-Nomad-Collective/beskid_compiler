@@ -23,19 +23,13 @@ fn lower_program(label: &str, source: &str) -> Vec<(String, String)> {
         Ok(artifact) => artifact,
         Err(error) => panic!("{label} must lower: {error}"),
     };
-    artifact
-        .functions
-        .iter()
-        .map(|function| (function.name.clone(), function.function.display().to_string()))
-        .collect()
+    artifact.functions.iter().map(|function| (function.name.clone(), function.function.display().to_string())).collect()
 }
 
 fn clif_of<'a>(functions: &'a [(String, String)], name: &str) -> &'a str {
-    functions
-        .iter()
-        .find(|(symbol, _)| symbol.contains(name))
-        .map(|(_, clif)| clif.as_str())
-        .unwrap_or_else(|| panic!("no lowered function {name}: {:?}", functions.iter().map(|(n, _)| n).collect::<Vec<_>>()))
+    functions.iter().find(|(symbol, _)| symbol.contains(name)).map(|(_, clif)| clif.as_str()).unwrap_or_else(|| {
+        panic!("no lowered function {name}: {:?}", functions.iter().map(|(n, _)| n).collect::<Vec<_>>())
+    })
 }
 
 /// ProcessSuite `Fixture`: a value match on a call result whose error arm is a block with a call
@@ -487,9 +481,7 @@ fn match_scrutinee_is_rooted_while_its_tests_can_collect() {
     );
 
     let guarded = clif_of(&functions, "GuardedScrutinee");
-    let guard_call = *calls_to(guarded, "Busy")
-        .first()
-        .unwrap_or_else(|| panic!("the guard calls Busy: {guarded}"));
+    let guard_call = *calls_to(guarded, "Busy").first().unwrap_or_else(|| panic!("the guard calls Busy: {guarded}"));
     let make_call = *calls_to(guarded, "Make").first().unwrap_or_else(|| panic!("the scrutinee calls Make: {guarded}"));
     assert!(
         calls_to(guarded, "gc_register_root").iter().any(|register| (make_call..guard_call).contains(register)),

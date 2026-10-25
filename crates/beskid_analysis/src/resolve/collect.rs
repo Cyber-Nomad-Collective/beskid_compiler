@@ -456,8 +456,7 @@ impl Resolver {
             return;
         }
         if self.module_graph.module_id(&module_path).is_none() {
-            self.errors
-                .push(ResolveError::UnknownModulePath { path: module_path.join("."), span: def.node.path.span });
+            self.errors.push(ResolveError::UnknownModulePath { path: module_path.join("."), span: def.node.path.span });
             return;
         }
         self.module_imports.insert(alias.clone(), module_path.clone());
@@ -512,8 +511,8 @@ impl Resolver {
         imports.sort_by(|left, right| left.0.cmp(&right.0).then(left.1.0.cmp(&right.1.0)));
         for (name, item_id, declared) in imports {
             if let Some(previous) = self.module_graph.insert_item(self.current_module, name.clone(), item_id) {
-                let same_import = previous == item_id
-                    && self.imported_scope_entries.contains(&(self.current_module, name.clone()));
+                let same_import =
+                    previous == item_id && self.imported_scope_entries.contains(&(self.current_module, name.clone()));
                 if !same_import {
                     continue;
                 }
@@ -831,8 +830,10 @@ mod tests {
             "pub mod Beskid.Syntax.Nodes.NodeSpan;\npub mod Beskid.Syntax.Nodes.Field;\nmod Beskid.Syntax.Nodes.Hidden;",
         )
         .expect("parse hub");
-        let entry = parse_program("use Beskid.Syntax.Nodes;\npub NodeSpan Origin(Field field) { return NodeSpan { start: field.id }; }")
-            .expect("parse entry");
+        let entry = parse_program(
+            "use Beskid.Syntax.Nodes;\npub NodeSpan Origin(Field field) { return NodeSpan { start: field.id }; }",
+        )
+        .expect("parse entry");
         let nodes = ["Beskid".to_owned(), "Syntax".to_owned(), "Nodes".to_owned()];
         let child = |name: &str| {
             let mut path = nodes.to_vec();
@@ -854,7 +855,9 @@ mod tests {
             .expect("parse private probe");
         let errors = seeded().resolve_program(&private).expect_err("a private child module is not re-exported");
         assert!(
-            errors.iter().any(|error| matches!(error, super::ResolveError::UnknownType { name, .. } if name == "Hidden")),
+            errors
+                .iter()
+                .any(|error| matches!(error, super::ResolveError::UnknownType { name, .. } if name == "Hidden")),
             "{errors:?}"
         );
     }
@@ -874,7 +877,9 @@ mod tests {
         resolver.collect_program_in_module(&hub, &["Hub".to_owned()], None);
         let errors = resolver.resolve_program(&entry).expect_err("ambiguous re-export fails closed");
         assert!(
-            errors.iter().any(|error| matches!(error, super::ResolveError::UnknownType { name, .. } if name == "Shared")),
+            errors
+                .iter()
+                .any(|error| matches!(error, super::ResolveError::UnknownType { name, .. } if name == "Shared")),
             "{errors:?}"
         );
     }
@@ -894,7 +899,11 @@ mod tests {
         )
         .expect("parse entry");
         let mut resolver = Resolver::new();
-        resolver.collect_program_in_module(&option, &["Core".to_owned(), "Optional".to_owned(), "Option".to_owned()], None);
+        resolver.collect_program_in_module(
+            &option,
+            &["Core".to_owned(), "Optional".to_owned(), "Option".to_owned()],
+            None,
+        );
         resolver.collect_program_in_module(&hub, &["Core".to_owned(), "Optional".to_owned()], None);
         let resolution = resolver.resolve_program(&entry).expect("qualified hub paths reach re-exported child items");
 
@@ -991,8 +1000,10 @@ mod tests {
     /// duplicate, while a second `Stack` in one module still is.
     #[test]
     fn same_named_methods_of_same_named_types_in_different_modules_are_distinct_symbols() {
-        let corelib = parse_program("pub type Stack<T> { T[] storage;\n pub Stack<T> Push(move this, T value) { return this; } }")
-            .expect("parse corelib stack");
+        let corelib = parse_program(
+            "pub type Stack<T> { T[] storage;\n pub Stack<T> Push(move this, T value) { return this; } }",
+        )
+        .expect("parse corelib stack");
         let entry = parse_program(
             "pub type Stack<T> { T[] items;\n pub unit Push(mut this, T value) { return; } }\nunit Main() { return; }",
         )

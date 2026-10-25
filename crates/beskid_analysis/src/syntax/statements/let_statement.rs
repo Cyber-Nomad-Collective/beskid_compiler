@@ -4,7 +4,9 @@ use crate::parser::Rule;
 use crate::parsing::error::ParseError;
 use crate::parsing::parsable::Parsable;
 use crate::syntax::items::parse_helpers::parse_attributes;
-use crate::syntax::{Attribute, Expression, Identifier, Literal, LiteralExpression, PrimitiveType, SpanInfo, Spanned, Type};
+use crate::syntax::{
+    Attribute, Expression, Identifier, Literal, LiteralExpression, PrimitiveType, SpanInfo, Spanned, Type,
+};
 
 use beskid_ast_derive::AstNode;
 

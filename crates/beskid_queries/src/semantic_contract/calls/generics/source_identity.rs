@@ -197,7 +197,10 @@ pub(in crate::semantic_contract) fn generic_source_local_identity(
         Some(beskid_analysis::syntax_query::NodeKind::Pattern) => {
             let binding = pattern_binding_fact(db, index, key, declaration)
                 .ok_or_else(|| source_expression_unavailable(db, key, "pattern binding has no match"))??;
-            binding.source_identity.map(Ok).unwrap_or_else(|| generic_source_field_shape_identity(db, key, binding.payload))
+            binding
+                .source_identity
+                .map(Ok)
+                .unwrap_or_else(|| generic_source_field_shape_identity(db, key, binding.payload))
         }
         _ => Err(source_expression_unavailable(
             db,

@@ -33,10 +33,23 @@ impl ImageClosureRow {
     }
 }
 #[repr(C)]
-struct ImportRowV1 {identity:[u8;32],address:u64,library:u64,generation:u64}
+struct ImportRowV1 {
+    identity: [u8; 32],
+    address: u64,
+    library: u64,
+    generation: u64,
+}
 #[repr(C)]
-struct ImportTableV1 {version:u32,size:u32,count:usize,rows:*const ImportRowV1}
-const _:()={assert!(size_of::<ImportRowV1>()==56);assert!(size_of::<ImportTableV1>()==24);};
+struct ImportTableV1 {
+    version: u32,
+    size: u32,
+    count: usize,
+    rows: *const ImportRowV1,
+}
+const _: () = {
+    assert!(size_of::<ImportRowV1>() == 56);
+    assert!(size_of::<ImportTableV1>() == 24);
+};
 #[repr(C)]
 struct DynamicRegistration {
     version: u32,
@@ -136,15 +149,17 @@ struct AdmittedImage {
     _producer: IssuedGlueImage,
     failures: Vec<super::reserved::ReservedFailureDomain>,
     dynamic_tags: Vec<([u8; 32], u64)>,
-    opaque_domains_admitted:bool,
-    imports_admitted:bool,
+    opaque_domains_admitted: bool,
+    imports_admitted: bool,
 }
 
 struct AdmittedRustOwner {
-    image:usize, library:u64, generation:u64,
+    image: usize,
+    library: u64,
+    generation: u64,
     /// The owner's generated `beskid` module holds the checked export addresses of its consumer.
-    exports_bound:bool,
-    producer:IssuedRustOwner,
+    exports_bound: bool,
+    producer: IssuedRustOwner,
 }
 
 /// Loader-facing admission facts for one Rust owner image. Only actual owner production
@@ -193,8 +208,15 @@ impl From<super::rust_owner::PreparedRustOwner> for IssuedRustOwner {
     }
 }
 #[repr(C)]
-struct OpaqueDomainRow {consumer_brand:[u8;32],owner_library:u64,owner_brand:[u8;32],owner_generation:u64}
-const _:()={assert!(size_of::<OpaqueDomainRow>()==80);};
+struct OpaqueDomainRow {
+    consumer_brand: [u8; 32],
+    owner_library: u64,
+    owner_brand: [u8; 32],
+    owner_generation: u64,
+}
+const _: () = {
+    assert!(size_of::<OpaqueDomainRow>() == 80);
+};
 
 /// Holds one canonical process and all admitted descriptor images until heap
 /// teardown. It inherits the opening-thread restriction of NativeHostLease.
@@ -202,7 +224,7 @@ pub struct GlueProcess {
     lease: Option<NativeHostLease>,
     close: OwnerClose,
     images: Vec<AdmittedImage>,
-    rust_owners:Vec<AdmittedRustOwner>,
+    rust_owners: Vec<AdmittedRustOwner>,
 }
 
 /// Borrowed callable issued by the actual producer and this live process.
@@ -234,7 +256,9 @@ impl CheckedGlueCallable<'_> {
         consume: impl FnOnce(*mut c_void) -> AotResult<R>,
     ) -> AotResult<R> {
         let image = &self.process.images[self.image];
-        if !image.imports_admitted || !image.opaque_domains_admitted {return Err(invalid("source call dependencies are not privately admitted"));}
+        if !image.imports_admitted || !image.opaque_domains_admitted {
+            return Err(invalid("source call dependencies are not privately admitted"));
+        }
         let witness = &image._producer.producer.checked_entries[self.entry];
         let reservation = image
             ._producer
@@ -298,7 +322,7 @@ impl GlueProcess {
         let lease = unsafe { NativeHostLease::open(images) }.map_err(|error| invalid(error.to_string()))?;
         let close = *unsafe { lease.images().provider_symbol::<OwnerClose>(c"beskid_glue_v1_owner_close_library") }
             .map_err(|error| invalid(error.to_string()))?;
-        let mut process = Self { lease: Some(lease), close, images: Vec::new(),rust_owners:Vec::new() };
+        let mut process = Self { lease: Some(lease), close, images: Vec::new(), rust_owners: Vec::new() };
         process.initialize(artifact, 0)?;
         Ok(process)
     }
@@ -336,10 +360,13 @@ impl GlueProcess {
             )
             .map_err(|error| invalid(error.to_string()))?;
         }
-        let mut shapes: BTreeSet<_> = artifact.packet.manifest.bindings.iter().map(|binding| binding.shape_id).collect();
+        let mut shapes: BTreeSet<_> =
+            artifact.packet.manifest.bindings.iter().map(|binding| binding.shape_id).collect();
         for transport in &artifact.producer.handle_transports {
-            shapes.insert(beskid_codegen::glue::artifact::brand_shape(&transport.brand)
-                .map_err(|error|invalid(error.to_string()))?);
+            shapes.insert(
+                beskid_codegen::glue::artifact::brand_shape(&transport.brand)
+                    .map_err(|error| invalid(error.to_string()))?,
+            );
         }
         // Complete source-issued immutable reservation before any usable domain
         // token is published. These symbols are private actual-producer evidence.
@@ -349,10 +376,7 @@ impl GlueProcess {
                 .map_err(|_| invalid("invalid issued failure admission symbol"))?;
             failures.push(unsafe { super::reserved::ReservedFailureDomain::admit(lease, image, &symbol) }?);
         }
-        if shapes.is_empty()
-            || shapes.contains(&0)
-            || shapes.len() > 4096
-        {
+        if shapes.is_empty() || shapes.contains(&0) || shapes.len() > 4096 {
             return Err(invalid("invalid issued Glue shape closure"));
         }
         let open = *unsafe { lease.images().provider_symbol::<OwnerOpen>(c"beskid_glue_v1_owner_open_library") }
@@ -412,129 +436,245 @@ impl GlueProcess {
             _producer: artifact,
             failures,
             dynamic_tags,
-            opaque_domains_admitted:false,
-            imports_admitted:false,
+            opaque_domains_admitted: false,
+            imports_admitted: false,
         });
-        self.bind_opaque_domains()?;self.bind_imports()?;self.bind_owner_exports()?;
+        self.bind_opaque_domains()?;
+        self.bind_imports()?;
+        self.bind_owner_exports()?;
         Ok(())
     }
 
     /// Only actual source compilation can supply the owning image witness.
-    pub fn attach_rust_owner(&mut self,owner:super::rust_owner::PreparedRustOwner)->AotResult<usize>{
+    pub fn attach_rust_owner(&mut self, owner: super::rust_owner::PreparedRustOwner) -> AotResult<usize> {
         owner.verify()?;
         self.attach_issued_owner(IssuedRustOwner::from(owner))
     }
 
     /// Attaches issued owner facts: an actual producer witness or a pinned published record.
-    pub(super) fn attach_issued_owner(&mut self,owner:IssuedRustOwner)->AotResult<usize>{
+    pub(super) fn attach_issued_owner(&mut self, owner: IssuedRustOwner) -> AotResult<usize> {
         owner.verify()?;
-        if self.rust_owners.iter().any(|existing|existing.producer.library==owner.library){
+        if self.rust_owners.iter().any(|existing| existing.producer.library == owner.library) {
             return Err(invalid("opaque owner library already admitted in this process"));
         }
-        let image=unsafe {self.lease.as_mut().ok_or_else(||invalid("closed Glue process"))?
-            .attach_image(&owner.payload_path,&owner.payload_sha256,&owner.provider_sha256)}
-            .map_err(|error|invalid(error.to_string()))?;
-        let lease=self.lease.as_ref().ok_or_else(||invalid("closed Glue process"))?;
-        let open=*unsafe {lease.images().provider_symbol::<OwnerOpen>(c"beskid_glue_v1_owner_open_library")}
-            .map_err(|error|invalid(error.to_string()))?;
-        let bind=*unsafe {lease.images().provider_symbol::<OwnerBind>(c"beskid_glue_v1_owner_bind_shapes")}
-            .map_err(|error|invalid(error.to_string()))?;
-        let mut library=0;let status=unsafe{open(owner.generation,&mut library)};
-        if status!=0||library==0{return Err(invalid("Rust owner library issuance failed"));}
-        let admission=(||->AotResult<()>{
-            let mut ids=BTreeSet::new();let mut rows=Vec::new();
-            for(brand,symbol)in &owner.destructors {
-                let id=u64::from_le_bytes(brand[..8].try_into().map_err(|_|invalid("opaque brand width"))?);
-                if id==0||!ids.insert(id){return Err(invalid("Rust owner folded brand collision"));}
-                type Destructor=unsafe extern "C" fn(*mut c_void)->i32;
-                let name=std::ffi::CString::new(symbol.as_str()).map_err(|_|invalid("Rust owner destructor name"))?;
-                let callback=*unsafe{lease.images().image_symbol::<Destructor>(image,&name)}
-                    .map_err(|error|invalid(error.to_string()))?;
-                rows.push(ImageClosureRow{source:owner.source_sha256,signature:*brand,address:callback as usize as u64,role:6});
+        let image = unsafe {
+            self.lease.as_mut().ok_or_else(|| invalid("closed Glue process"))?.attach_image(
+                &owner.payload_path,
+                &owner.payload_sha256,
+                &owner.provider_sha256,
+            )
+        }
+        .map_err(|error| invalid(error.to_string()))?;
+        let lease = self.lease.as_ref().ok_or_else(|| invalid("closed Glue process"))?;
+        let open = *unsafe { lease.images().provider_symbol::<OwnerOpen>(c"beskid_glue_v1_owner_open_library") }
+            .map_err(|error| invalid(error.to_string()))?;
+        let bind = *unsafe { lease.images().provider_symbol::<OwnerBind>(c"beskid_glue_v1_owner_bind_shapes") }
+            .map_err(|error| invalid(error.to_string()))?;
+        let mut library = 0;
+        let status = unsafe { open(owner.generation, &mut library) };
+        if status != 0 || library == 0 {
+            return Err(invalid("Rust owner library issuance failed"));
+        }
+        let admission = (|| -> AotResult<()> {
+            let mut ids = BTreeSet::new();
+            let mut rows = Vec::new();
+            for (brand, symbol) in &owner.destructors {
+                let id = u64::from_le_bytes(brand[..8].try_into().map_err(|_| invalid("opaque brand width"))?);
+                if id == 0 || !ids.insert(id) {
+                    return Err(invalid("Rust owner folded brand collision"));
+                }
+                type Destructor = unsafe extern "C" fn(*mut c_void) -> i32;
+                let name =
+                    std::ffi::CString::new(symbol.as_str()).map_err(|_| invalid("Rust owner destructor name"))?;
+                let callback = *unsafe { lease.images().image_symbol::<Destructor>(image, &name) }
+                    .map_err(|error| invalid(error.to_string()))?;
+                rows.push(ImageClosureRow {
+                    source: owner.source_sha256,
+                    signature: *brand,
+                    address: callback as usize as u64,
+                    role: 6,
+                });
             }
-            for (identity,symbol,shape) in &owner.checked_exports {
-                if identity.len()!=64 || !identity.bytes().all(|byte|byte.is_ascii_hexdigit())
-                    || symbol!=&format!("beskid_glue_rust_owner_v1_{identity}") || *shape==0 || !ids.insert(*shape) {
+            for (identity, symbol, shape) in &owner.checked_exports {
+                if identity.len() != 64
+                    || !identity.bytes().all(|byte| byte.is_ascii_hexdigit())
+                    || symbol != &format!("beskid_glue_rust_owner_v1_{identity}")
+                    || *shape == 0
+                    || !ids.insert(*shape)
+                {
                     return Err(invalid("Rust owner checked export closure differs or collides"));
                 }
-                type CheckedAddress=unsafe extern "C" fn();
-                let name=std::ffi::CString::new(symbol.as_str()).map_err(|_|invalid("Rust owner checked export name"))?;
-                let _actual=unsafe{lease.images().image_symbol::<CheckedAddress>(image,&name)}
-                    .map_err(|error|invalid(error.to_string()))?;
+                type CheckedAddress = unsafe extern "C" fn();
+                let name =
+                    std::ffi::CString::new(symbol.as_str()).map_err(|_| invalid("Rust owner checked export name"))?;
+                let _actual = unsafe { lease.images().image_symbol::<CheckedAddress>(image, &name) }
+                    .map_err(|error| invalid(error.to_string()))?;
             }
-            let ids=ids.into_iter().collect::<Vec<_>>();
-            if ids.is_empty()||ids.len()>1024{return Err(invalid("Rust owner brand closure bounds"));}
-            if unsafe{bind(library,owner.generation,ids.as_ptr(),ids.len())}!=0{return Err(invalid("Rust owner shape binding failed"));}
+            let ids = ids.into_iter().collect::<Vec<_>>();
+            if ids.is_empty() || ids.len() > 1024 {
+                return Err(invalid("Rust owner brand closure bounds"));
+            }
+            if unsafe { bind(library, owner.generation, ids.as_ptr(), ids.len()) } != 0 {
+                return Err(invalid("Rust owner shape binding failed"));
+            }
             // The owner image closure holds only opaque destructor rows (role 6). An owner without
             // opaque handle types (records, enums, callbacks, scalars) has none, and the provider
             // admits no empty closure; without a bound closure every image-address admission for
             // this library stays refused.
             if !rows.is_empty() {
                 rows.sort_by_key(ImageClosureRow::bytes);
-                type BindImage=unsafe extern "C" fn(u64,u64,*const ImageClosureRow,usize)->i32;
-                let bind_image=*unsafe{lease.images().provider_symbol::<BindImage>(c"beskid_glue_v1_owner_bind_image_closure")}
-                    .map_err(|error|invalid(error.to_string()))?;
-                if unsafe{bind_image(library,owner.generation,rows.as_ptr(),rows.len())}!=0{return Err(invalid("Rust owner actual image closure rejected"));}
+                type BindImage = unsafe extern "C" fn(u64, u64, *const ImageClosureRow, usize) -> i32;
+                let bind_image =
+                    *unsafe { lease.images().provider_symbol::<BindImage>(c"beskid_glue_v1_owner_bind_image_closure") }
+                        .map_err(|error| invalid(error.to_string()))?;
+                if unsafe { bind_image(library, owner.generation, rows.as_ptr(), rows.len()) } != 0 {
+                    return Err(invalid("Rust owner actual image closure rejected"));
+                }
             }
-            type OwnerInitialize=unsafe extern "C" fn(u64,u64)->i32;
-            let initialize=*unsafe{lease.images().image_symbol::<OwnerInitialize>(image,c"beskid_glue_rust_owner_v1_initialize")}
-                .map_err(|error|invalid(error.to_string()))?;
-            if unsafe{initialize(library,owner.generation)}!=0{return Err(invalid("Rust owner context publication rejected"));}
-            lease.images().verify_integrity().map_err(|error|invalid(error.to_string()))?;Ok(())
+            type OwnerInitialize = unsafe extern "C" fn(u64, u64) -> i32;
+            let initialize = *unsafe {
+                lease.images().image_symbol::<OwnerInitialize>(image, c"beskid_glue_rust_owner_v1_initialize")
+            }
+            .map_err(|error| invalid(error.to_string()))?;
+            if unsafe { initialize(library, owner.generation) } != 0 {
+                return Err(invalid("Rust owner context publication rejected"));
+            }
+            lease.images().verify_integrity().map_err(|error| invalid(error.to_string()))?;
+            Ok(())
         })();
-        if let Err(error)=admission {
-            let status=unsafe{(self.close)(library,owner.generation)};
+        if let Err(error) = admission {
+            let status = unsafe { (self.close)(library, owner.generation) };
             return Err(invalid(format!("Rust owner admission failed: {error}; rollback status {status}")));
         }
-        self.rust_owners.push(AdmittedRustOwner{image,library,generation:owner.generation,exports_bound:false,producer:owner});
-        self.bind_opaque_domains()?;self.bind_imports()?;self.bind_owner_exports()?;Ok(image)
+        self.rust_owners.push(AdmittedRustOwner {
+            image,
+            library,
+            generation: owner.generation,
+            exports_bound: false,
+            producer: owner,
+        });
+        self.bind_opaque_domains()?;
+        self.bind_imports()?;
+        self.bind_owner_exports()?;
+        Ok(image)
     }
     /// # Safety
     /// T must be the exact status/out-parameter signature produced for this
     /// current binding identity; the owning process lease must cover invocation.
-    pub unsafe fn rust_owner_export<'a,T:'a>(&'a self,image:usize,identity:&str)
-        ->AotResult<impl std::ops::Deref<Target=T>+'a> {
-        let owner=self.rust_owners.iter().find(|owner|owner.image==image)
-            .ok_or_else(||invalid("Rust owner image was not privately admitted"))?;
+    pub unsafe fn rust_owner_export<'a, T: 'a>(
+        &'a self,
+        image: usize,
+        identity: &str,
+    ) -> AotResult<impl std::ops::Deref<Target = T> + 'a> {
+        let owner = self
+            .rust_owners
+            .iter()
+            .find(|owner| owner.image == image)
+            .ok_or_else(|| invalid("Rust owner image was not privately admitted"))?;
         owner.producer.verify()?;
-        let (_,symbol,_)=owner.producer.checked_exports.iter().find(|(issued,_,_)|issued==identity)
-            .ok_or_else(||invalid("Rust checked callable is outside the issued source closure"))?;
-        let name=std::ffi::CString::new(symbol.as_str()).map_err(|_|invalid("Rust checked callable name"))?;
-        let lease=self.lease.as_ref().ok_or_else(||invalid("closed Glue process"))?;
-        lease.images().verify_integrity().map_err(|error|invalid(error.to_string()))?;
-        unsafe{lease.images().image_symbol::<T>(image,&name)}.map_err(|error|invalid(error.to_string()))
+        let (_, symbol, _) = owner
+            .producer
+            .checked_exports
+            .iter()
+            .find(|(issued, _, _)| issued == identity)
+            .ok_or_else(|| invalid("Rust checked callable is outside the issued source closure"))?;
+        let name = std::ffi::CString::new(symbol.as_str()).map_err(|_| invalid("Rust checked callable name"))?;
+        let lease = self.lease.as_ref().ok_or_else(|| invalid("closed Glue process"))?;
+        lease.images().verify_integrity().map_err(|error| invalid(error.to_string()))?;
+        unsafe { lease.images().image_symbol::<T>(image, &name) }.map_err(|error| invalid(error.to_string()))
     }
-    fn bind_imports(&mut self)->AotResult<()> {
-        let lease=self.lease.as_ref().ok_or_else(||invalid("closed Glue process"))?;
+    fn bind_imports(&mut self) -> AotResult<()> {
+        let lease = self.lease.as_ref().ok_or_else(|| invalid("closed Glue process"))?;
         for image in &mut self.images {
-            if image.imports_admitted {continue;}
-            let bindings=image._producer.packet.manifest.bindings.iter().filter(|binding|binding.direction=="import").collect::<Vec<_>>();
-            if bindings.is_empty(){image.imports_admitted=true;continue;}
-            if bindings.len()>4096{return Err(invalid("source import closure exceeds4096 rows"));}
-            let mut rows=Vec::with_capacity(bindings.len());let mut ready=true;
-            for binding in bindings {
-                let matches=self.rust_owners.iter().filter_map(|owner| {
-                    if owner.producer.library!=binding.library{return None;}
-                    owner.producer.checked_exports.iter().find(|(identity,_,_)|identity==&binding.identity_sha256).map(|entry|(owner,entry))
-                }).collect::<Vec<_>>();
-                if matches.is_empty(){ready=false;break;}
-                if matches.len()!=1{return Err(invalid("source import has ambiguous actual owning images"));}
-                let(owner,(_,symbol,shape))=matches[0];owner.producer.verify()?;
-                if *shape!=binding.shape_id{return Err(invalid("actual Rust checked signature differs from source import"));}
-                let mut identity=[0;32];
-                for(index,byte)in identity.iter_mut().enumerate(){*byte=u8::from_str_radix(binding.identity_sha256.get(index*2..index*2+2).ok_or_else(||invalid("import identity width"))?,16).map_err(|_|invalid("import identity encoding"))?;}
-                type Address=unsafe extern "C" fn();
-                let name=std::ffi::CString::new(symbol.as_str()).map_err(|_|invalid("source import symbol"))?;
-                let address=*unsafe{lease.images().image_symbol::<Address>(owner.image,&name)}.map_err(|error|invalid(error.to_string()))?;
-                rows.push(ImportRowV1{identity,address:address as usize as u64,library:owner.library,generation:owner.generation});
+            if image.imports_admitted {
+                continue;
             }
-            if !ready{continue;}
-            type BindImports=unsafe extern "C" fn(*const ImportTableV1)->i32;
-            let bind=*unsafe{lease.images().image_symbol::<BindImports>(image.image,c"beskid_glue_artifact_v1_bind_imports")}.map_err(|error|invalid(error.to_string()))?;
-            let table=ImportTableV1{version:1,size:size_of::<ImportTableV1>()as u32,count:rows.len(),rows:rows.as_ptr()};
-            if unsafe{bind(&table)}!=0{return Err(invalid("actual source import table admission rejected"));}
-            lease.images().verify_integrity().map_err(|error|invalid(error.to_string()))?;
-            image.imports_admitted=true;
+            let bindings = image
+                ._producer
+                .packet
+                .manifest
+                .bindings
+                .iter()
+                .filter(|binding| binding.direction == "import")
+                .collect::<Vec<_>>();
+            if bindings.is_empty() {
+                image.imports_admitted = true;
+                continue;
+            }
+            if bindings.len() > 4096 {
+                return Err(invalid("source import closure exceeds4096 rows"));
+            }
+            let mut rows = Vec::with_capacity(bindings.len());
+            let mut ready = true;
+            for binding in bindings {
+                let matches = self
+                    .rust_owners
+                    .iter()
+                    .filter_map(|owner| {
+                        if owner.producer.library != binding.library {
+                            return None;
+                        }
+                        owner
+                            .producer
+                            .checked_exports
+                            .iter()
+                            .find(|(identity, _, _)| identity == &binding.identity_sha256)
+                            .map(|entry| (owner, entry))
+                    })
+                    .collect::<Vec<_>>();
+                if matches.is_empty() {
+                    ready = false;
+                    break;
+                }
+                if matches.len() != 1 {
+                    return Err(invalid("source import has ambiguous actual owning images"));
+                }
+                let (owner, (_, symbol, shape)) = matches[0];
+                owner.producer.verify()?;
+                if *shape != binding.shape_id {
+                    return Err(invalid("actual Rust checked signature differs from source import"));
+                }
+                let mut identity = [0; 32];
+                for (index, byte) in identity.iter_mut().enumerate() {
+                    *byte = u8::from_str_radix(
+                        binding
+                            .identity_sha256
+                            .get(index * 2..index * 2 + 2)
+                            .ok_or_else(|| invalid("import identity width"))?,
+                        16,
+                    )
+                    .map_err(|_| invalid("import identity encoding"))?;
+                }
+                type Address = unsafe extern "C" fn();
+                let name = std::ffi::CString::new(symbol.as_str()).map_err(|_| invalid("source import symbol"))?;
+                let address = *unsafe { lease.images().image_symbol::<Address>(owner.image, &name) }
+                    .map_err(|error| invalid(error.to_string()))?;
+                rows.push(ImportRowV1 {
+                    identity,
+                    address: address as usize as u64,
+                    library: owner.library,
+                    generation: owner.generation,
+                });
+            }
+            if !ready {
+                continue;
+            }
+            type BindImports = unsafe extern "C" fn(*const ImportTableV1) -> i32;
+            let bind = *unsafe {
+                lease.images().image_symbol::<BindImports>(image.image, c"beskid_glue_artifact_v1_bind_imports")
+            }
+            .map_err(|error| invalid(error.to_string()))?;
+            let table = ImportTableV1 {
+                version: 1,
+                size: size_of::<ImportTableV1>() as u32,
+                count: rows.len(),
+                rows: rows.as_ptr(),
+            };
+            if unsafe { bind(&table) } != 0 {
+                return Err(invalid("actual source import table admission rejected"));
+            }
+            lease.images().verify_integrity().map_err(|error| invalid(error.to_string()))?;
+            image.imports_admitted = true;
         }
         Ok(())
     }
@@ -543,76 +683,148 @@ impl GlueProcess {
     /// library that consumer imports, so owner code calls Beskid exports through its generated
     /// `beskid` module. The owner compares every row identity with the ones compiled into it and
     /// rejects a table of another consumer; a rejection by every candidate fails admission.
-    fn bind_owner_exports(&mut self)->AotResult<()> {
-        #[repr(C)] struct ExportRowV1{identity:[u8;32],address:u64}
-        #[repr(C)] struct ExportTableV1{version:u32,size:u32,count:usize,rows:*const ExportRowV1}
-        type BindExports=unsafe extern "C" fn(*const ExportTableV1)->i32;
-        let lease=self.lease.as_ref().ok_or_else(||invalid("closed Glue process"))?;
+    fn bind_owner_exports(&mut self) -> AotResult<()> {
+        #[repr(C)]
+        struct ExportRowV1 {
+            identity: [u8; 32],
+            address: u64,
+        }
+        #[repr(C)]
+        struct ExportTableV1 {
+            version: u32,
+            size: u32,
+            count: usize,
+            rows: *const ExportRowV1,
+        }
+        type BindExports = unsafe extern "C" fn(*const ExportTableV1) -> i32;
+        let lease = self.lease.as_ref().ok_or_else(|| invalid("closed Glue process"))?;
         for owner in &mut self.rust_owners {
-            if owner.exports_bound {continue;}
-            let candidates=self.images.iter().filter(|image|image.imports_admitted && image._producer.packet.manifest.bindings.iter()
-                .any(|binding|binding.direction=="import"&&binding.library==owner.producer.library)).collect::<Vec<_>>();
-            if candidates.is_empty() {continue;}
+            if owner.exports_bound {
+                continue;
+            }
+            let candidates =
+                self.images
+                    .iter()
+                    .filter(|image| {
+                        image.imports_admitted
+                            && image._producer.packet.manifest.bindings.iter().any(|binding| {
+                                binding.direction == "import" && binding.library == owner.producer.library
+                            })
+                    })
+                    .collect::<Vec<_>>();
+            if candidates.is_empty() {
+                continue;
+            }
             owner.producer.verify()?;
-            let bind=*unsafe{lease.images().image_symbol::<BindExports>(owner.image,c"beskid_glue_rust_owner_v1_bind_exports")}
-                .map_err(|error|invalid(error.to_string()))?;
+            let bind = *unsafe {
+                lease.images().image_symbol::<BindExports>(owner.image, c"beskid_glue_rust_owner_v1_bind_exports")
+            }
+            .map_err(|error| invalid(error.to_string()))?;
             for image in candidates {
-                let mut rows=Vec::new();
-                for (identity,symbol) in super::owner_values::export_rows(&image._producer.packet.manifest)? {
-                    type Address=unsafe extern "C" fn();
-                    let name=std::ffi::CString::new(symbol).map_err(|_|invalid("consumer export symbol"))?;
-                    let address=*unsafe{lease.images().image_symbol::<Address>(image.image,&name)}.map_err(|error|invalid(error.to_string()))?;
-                    rows.push(ExportRowV1{identity,address:address as usize as u64});
+                let mut rows = Vec::new();
+                for (identity, symbol) in super::owner_values::export_rows(&image._producer.packet.manifest)? {
+                    type Address = unsafe extern "C" fn();
+                    let name = std::ffi::CString::new(symbol).map_err(|_| invalid("consumer export symbol"))?;
+                    let address = *unsafe { lease.images().image_symbol::<Address>(image.image, &name) }
+                        .map_err(|error| invalid(error.to_string()))?;
+                    rows.push(ExportRowV1 { identity, address: address as usize as u64 });
                 }
-                let table=ExportTableV1{version:1,size:size_of::<ExportTableV1>() as u32,count:rows.len(),rows:rows.as_ptr()};
-                match unsafe{bind(&table)} {
-                    0=>{owner.exports_bound=true;break;}
-                    1=>continue,
-                    status=>return Err(invalid(format!("Rust owner export table admission failed with status {status}"))),
+                let table = ExportTableV1 {
+                    version: 1,
+                    size: size_of::<ExportTableV1>() as u32,
+                    count: rows.len(),
+                    rows: rows.as_ptr(),
+                };
+                match unsafe { bind(&table) } {
+                    0 => {
+                        owner.exports_bound = true;
+                        break;
+                    }
+                    1 => continue,
+                    status => {
+                        return Err(invalid(format!("Rust owner export table admission failed with status {status}")));
+                    }
                 }
             }
-            if !owner.exports_bound {return Err(invalid("every consumer export table was rejected by its Rust owner"));}
-            lease.images().verify_integrity().map_err(|error|invalid(error.to_string()))?;
+            if !owner.exports_bound {
+                return Err(invalid("every consumer export table was rejected by its Rust owner"));
+            }
+            lease.images().verify_integrity().map_err(|error| invalid(error.to_string()))?;
         }
         Ok(())
     }
 
-    fn bind_opaque_domains(&mut self)->AotResult<()>{
-        let lease=self.lease.as_ref().ok_or_else(||invalid("closed Glue process"))?;
-        type BindDomains=unsafe extern "C" fn(u64,u64,*const OpaqueDomainRow,usize)->i32;
-        let bind=*unsafe{lease.images().provider_symbol::<BindDomains>(c"beskid_glue_v1_owner_bind_opaque_domains")}
-            .map_err(|error|invalid(error.to_string()))?;
+    fn bind_opaque_domains(&mut self) -> AotResult<()> {
+        let lease = self.lease.as_ref().ok_or_else(|| invalid("closed Glue process"))?;
+        type BindDomains = unsafe extern "C" fn(u64, u64, *const OpaqueDomainRow, usize) -> i32;
+        let bind =
+            *unsafe { lease.images().provider_symbol::<BindDomains>(c"beskid_glue_v1_owner_bind_opaque_domains") }
+                .map_err(|error| invalid(error.to_string()))?;
         for image in &mut self.images {
-            if image.opaque_domains_admitted{continue;}
-            let mut brands=std::collections::BTreeMap::new();
+            if image.opaque_domains_admitted {
+                continue;
+            }
+            let mut brands = std::collections::BTreeMap::new();
             for binding in &image._producer.packet.manifest.bindings {
-                for physical in binding.parameters.iter().chain(std::iter::once(&binding.result)){
-                    if let Some(opaque)=&physical.opaque {
-                        if let Some(previous)=brands.insert(opaque.brand_sha256.clone(),opaque.library.clone()){
-                            if previous!=opaque.library{return Err(invalid("source opaque brand has conflicting owner libraries"));}
+                for physical in binding.parameters.iter().chain(std::iter::once(&binding.result)) {
+                    if let Some(opaque) = &physical.opaque {
+                        if let Some(previous) = brands.insert(opaque.brand_sha256.clone(), opaque.library.clone()) {
+                            if previous != opaque.library {
+                                return Err(invalid("source opaque brand has conflicting owner libraries"));
+                            }
                         }
                     }
                 }
             }
-            if brands.is_empty(){image.opaque_domains_admitted=true;continue;}
-            let mut rows=Vec::new();let mut ready=true;
-            for(brand,owner_name)in brands {
-                let mut bytes=[0;32];for(index,byte)in bytes.iter_mut().enumerate(){
-                    *byte=u8::from_str_radix(brand.get(index*2..index*2+2).ok_or_else(||invalid("opaque brand length"))?,16)
-                        .map_err(|_|invalid("opaque brand encoding"))?;
-                }
-                let candidates=self.rust_owners.iter().filter(|owner|owner.producer.library==owner_name
-                    &&owner.producer.destructors.iter().any(|(owned,_)|owned==&bytes)).collect::<Vec<_>>();
-                if candidates.is_empty(){ready=false;break;}
-                if candidates.len()!=1{return Err(invalid("opaque brand has ambiguous actual owning images"));}
-                let owner=candidates[0];owner.producer.verify()?;
-                rows.push(OpaqueDomainRow{consumer_brand:bytes,owner_library:owner.library,owner_brand:bytes,owner_generation:owner.generation});
+            if brands.is_empty() {
+                image.opaque_domains_admitted = true;
+                continue;
             }
-            if !ready{continue;}
-            rows.sort_by_key(|row|row.consumer_brand);
-            if unsafe{bind(image.library,image.generation,rows.as_ptr(),rows.len())}!=0{return Err(invalid("source/actual-owner opaque domain binding rejected"));}
-            image.opaque_domains_admitted=true;
-        }Ok(())
+            let mut rows = Vec::new();
+            let mut ready = true;
+            for (brand, owner_name) in brands {
+                let mut bytes = [0; 32];
+                for (index, byte) in bytes.iter_mut().enumerate() {
+                    *byte = u8::from_str_radix(
+                        brand.get(index * 2..index * 2 + 2).ok_or_else(|| invalid("opaque brand length"))?,
+                        16,
+                    )
+                    .map_err(|_| invalid("opaque brand encoding"))?;
+                }
+                let candidates = self
+                    .rust_owners
+                    .iter()
+                    .filter(|owner| {
+                        owner.producer.library == owner_name
+                            && owner.producer.destructors.iter().any(|(owned, _)| owned == &bytes)
+                    })
+                    .collect::<Vec<_>>();
+                if candidates.is_empty() {
+                    ready = false;
+                    break;
+                }
+                if candidates.len() != 1 {
+                    return Err(invalid("opaque brand has ambiguous actual owning images"));
+                }
+                let owner = candidates[0];
+                owner.producer.verify()?;
+                rows.push(OpaqueDomainRow {
+                    consumer_brand: bytes,
+                    owner_library: owner.library,
+                    owner_brand: bytes,
+                    owner_generation: owner.generation,
+                });
+            }
+            if !ready {
+                continue;
+            }
+            rows.sort_by_key(|row| row.consumer_brand);
+            if unsafe { bind(image.library, image.generation, rows.as_ptr(), rows.len()) } != 0 {
+                return Err(invalid("source/actual-owner opaque domain binding rejected"));
+            }
+            image.opaque_domains_admitted = true;
+        }
+        Ok(())
     }
 
     fn admit_dynamic(
@@ -639,10 +851,13 @@ impl GlueProcess {
                 .map_err(|error| invalid(error.to_string()))?;
         let read = *unsafe { lease.images().provider_symbol::<DynamicRead>(c"beskid_dynamic_v1_erased_read") }
             .map_err(|error| invalid(error.to_string()))?;
-        let checked_construct = *unsafe { lease.images().provider_symbol::<DynamicConstruct>(c"beskid_dynamic_v1_checked_erased_construct") }
-            .map_err(|error| invalid(error.to_string()))?;
-        let checked_read = *unsafe { lease.images().provider_symbol::<DynamicRead>(c"beskid_dynamic_v1_checked_erased_read") }
-            .map_err(|error| invalid(error.to_string()))?;
+        let checked_construct = *unsafe {
+            lease.images().provider_symbol::<DynamicConstruct>(c"beskid_dynamic_v1_checked_erased_construct")
+        }
+        .map_err(|error| invalid(error.to_string()))?;
+        let checked_read =
+            *unsafe { lease.images().provider_symbol::<DynamicRead>(c"beskid_dynamic_v1_checked_erased_read") }
+                .map_err(|error| invalid(error.to_string()))?;
         let mut resolved = Vec::with_capacity(artifact.producer.dynamic_shapes.len());
         let mut rows = Vec::with_capacity(artifact.producer.dynamic_shapes.len() * 6);
         for shape in &artifact.producer.dynamic_shapes {
@@ -652,34 +867,50 @@ impl GlueProcess {
                 .map_err(|error| invalid(error.to_string()))?;
             let payload = unsafe { getter() };
             lease.images().verify_image_address(image, payload as usize).map_err(|error| invalid(error.to_string()))?;
-            for (address, role) in
-                [(payload as usize, 1), (cell as usize, 2), (construct as usize, 3), (read as usize, 4),
-                 (checked_construct as usize, 13), (checked_read as usize, 14)]
-            {
+            for (address, role) in [
+                (payload as usize, 1),
+                (cell as usize, 2),
+                (construct as usize, 3),
+                (read as usize, 4),
+                (checked_construct as usize, 13),
+                (checked_read as usize, 14),
+            ] {
                 rows.push(ImageClosureRow { source, signature: shape.signature_sha256, address: address as u64, role });
             }
             resolved.push((shape, payload));
         }
         // Opaque nominal descriptors come from this same actual object producer.
         // Full brands remain distinct from the folded lookup ID.
-        let mut admitted_brands=BTreeSet::new();
+        let mut admitted_brands = BTreeSet::new();
         for transport in &artifact.producer.handle_transports {
-            if !admitted_brands.insert(&transport.brand) {continue;}
-            let mut brand=[0;32];
-            for (index,byte) in brand.iter_mut().enumerate() {
-                *byte=u8::from_str_radix(transport.brand.get(index*2..index*2+2)
-                    .ok_or_else(||invalid("invalid source opaque brand"))?,16)
-                    .map_err(|error|invalid(error.to_string()))?;
+            if !admitted_brands.insert(&transport.brand) {
+                continue;
             }
-            let symbol=std::ffi::CString::new(transport.descriptor.as_str())
-                .map_err(|_|invalid("invalid source opaque descriptor getter"))?;
-            let getter=*unsafe {lease.images().image_symbol::<DescriptorGetter>(image,&symbol)}
-                .map_err(|error|invalid(error.to_string()))?;
-            let descriptor=unsafe {getter()};
-            lease.images().verify_image_address(image,descriptor as usize).map_err(|error|invalid(error.to_string()))?;
-            rows.push(ImageClosureRow{source,signature:brand,address:descriptor as usize as u64,role:1});
+            let mut brand = [0; 32];
+            for (index, byte) in brand.iter_mut().enumerate() {
+                *byte = u8::from_str_radix(
+                    transport
+                        .brand
+                        .get(index * 2..index * 2 + 2)
+                        .ok_or_else(|| invalid("invalid source opaque brand"))?,
+                    16,
+                )
+                .map_err(|error| invalid(error.to_string()))?;
+            }
+            let symbol = std::ffi::CString::new(transport.descriptor.as_str())
+                .map_err(|_| invalid("invalid source opaque descriptor getter"))?;
+            let getter = *unsafe { lease.images().image_symbol::<DescriptorGetter>(image, &symbol) }
+                .map_err(|error| invalid(error.to_string()))?;
+            let descriptor = unsafe { getter() };
+            lease
+                .images()
+                .verify_image_address(image, descriptor as usize)
+                .map_err(|error| invalid(error.to_string()))?;
+            rows.push(ImageClosureRow { source, signature: brand, address: descriptor as usize as u64, role: 1 });
         }
-        if rows.len()>4096 {return Err(invalid("combined source image closure exceeds4096 rows"));}
+        if rows.len() > 4096 {
+            return Err(invalid("combined source image closure exceeds4096 rows"));
+        }
         rows.sort_by_key(ImageClosureRow::bytes);
         if rows.windows(2).any(|pair| pair[0].bytes() == pair[1].bytes()) {
             return Err(invalid("duplicate issued Dynamic closure row"));
@@ -743,7 +974,9 @@ impl GlueProcess {
         {
             return Err(invalid("symbol is outside the issued Glue export closure"));
         }
-        if !admitted.imports_admitted || !admitted.opaque_domains_admitted {return Err(invalid("source call dependencies are not privately admitted"));}
+        if !admitted.imports_admitted || !admitted.opaque_domains_admitted {
+            return Err(invalid("source call dependencies are not privately admitted"));
+        }
         let lease = self.lease.as_ref().ok_or_else(|| invalid("closed Glue process"))?;
         lease.images().verify_integrity().map_err(|error| invalid(error.to_string()))?;
         unsafe { lease.images().image_symbol(image, name) }.map_err(|error| invalid(error.to_string()))
@@ -763,8 +996,11 @@ impl Drop for GlueProcess {
             }
         }
         for owner in &self.rust_owners {
-            if unsafe{(self.close)(owner.library,owner.generation)}!=0 {
-                if let Some(lease)=self.lease.take(){std::mem::forget(lease);}return;
+            if unsafe { (self.close)(owner.library, owner.generation) } != 0 {
+                if let Some(lease) = self.lease.take() {
+                    std::mem::forget(lease);
+                }
+                return;
             }
         }
         // Handle owners must die before their provider's heap is destroyed.

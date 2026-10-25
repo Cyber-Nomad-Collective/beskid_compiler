@@ -58,8 +58,7 @@ pub fn portable_nominal_identity(
     if !matches!(node_kind(db, key)?, Some(IndexedNodeKind::TypeDefinition | IndexedNodeKind::EnumDefinition)) {
         return Err(rejected("source key is not a nominal declaration"));
     }
-    let source_path =
-        owner.relative_source_path(&unit.path).ok_or_else(|| rejected("ambiguous source ownership"))?;
+    let source_path = owner.relative_source_path(&unit.path).ok_or_else(|| rejected("ambiguous source ownership"))?;
     let lexical_path = super::mod_shapes::mod_shape_lexical_path(db, key)
         .ok_or_else(|| rejected("lexical nominal ancestry absent"))?;
     Ok(PortableNominalIdentity {

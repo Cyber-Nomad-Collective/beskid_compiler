@@ -40,12 +40,10 @@ pub fn read_message<R: BufRead>(reader: &mut R) -> io::Result<Option<Value>> {
         if let Some((name, value)) = line.split_once(':')
             && name.trim().eq_ignore_ascii_case("content-length")
         {
-            length = Some(
-                value
-                    .trim()
-                    .parse()
-                    .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, format!("bad Content-Length `{value}`")))?,
-            );
+            length =
+                Some(value.trim().parse().map_err(|_| {
+                    io::Error::new(io::ErrorKind::InvalidData, format!("bad Content-Length `{value}`"))
+                })?);
         }
     }
     let length = length.ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "missing Content-Length header"))?;

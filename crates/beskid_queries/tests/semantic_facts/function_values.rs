@@ -18,7 +18,11 @@ fn a_function_typed_field_projection_is_a_function_value_callee() {
     let call = key(unit, generation, &index, NodeKind::CallExpression, 0);
     let lowering = call_lowering(&db, call).expect("call lowering query").expect("call lowering");
     let CallLowering::FunctionValue(callee) = lowering else { panic!("{lowering:?}") };
-    assert_eq!(callee, key(unit, generation, &index, NodeKind::PathExpression, 0), "the callee is the `h.op` projection");
+    assert_eq!(
+        callee,
+        key(unit, generation, &index, NodeKind::PathExpression, 0),
+        "the callee is the `h.op` projection"
+    );
     let fact = function_value_call(&db, call).expect("function value query").expect("function value");
     assert_eq!(fact.callee, callee);
     assert_eq!(fact.signature.parameters.as_ref(), &[SemanticTypeId::I64]);
@@ -58,8 +62,14 @@ fn a_named_function_read_as_a_value_has_a_record_abi_and_is_reachable() {
     assert_eq!(managed_reference_kind(&db, value).expect("managed query"), Some(ManagedReferenceKind::GcManaged));
     assert!(direct_callees(&db, main).expect("callees query").expect("callees").contains(&double));
     // The call callee `Apply` is not a value, and a lexical local never is.
-    assert_eq!(function_item_value(&db, key(unit, generation, &index, NodeKind::PathExpression, 3)).expect("callee"), None);
-    assert_eq!(function_item_value(&db, key(unit, generation, &index, NodeKind::PathExpression, 0)).expect("local"), None);
+    assert_eq!(
+        function_item_value(&db, key(unit, generation, &index, NodeKind::PathExpression, 3)).expect("callee"),
+        None
+    );
+    assert_eq!(
+        function_item_value(&db, key(unit, generation, &index, NodeKind::PathExpression, 0)).expect("local"),
+        None
+    );
 }
 
 /// The path expression that starts at the first occurrence of `needle` in `source`.

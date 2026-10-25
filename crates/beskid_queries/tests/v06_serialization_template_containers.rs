@@ -69,7 +69,10 @@ fn fixture() -> Fixture {
         project_session_for_planned_syntax_assembly(&mut db, &assembly, &plan, &path, "template-containers".into())
             .unwrap();
     let manifest = AbiManifestV5::canonical_runtime(
-        TargetMetadata::supported().into_iter().find(|target| target.triple.as_str() == "x86_64-unknown-linux-gnu").unwrap(),
+        TargetMetadata::supported()
+            .into_iter()
+            .find(|target| target.triple.as_str() == "x86_64-unknown-linux-gnu")
+            .unwrap(),
     );
     build_typed_program_with_corelib_services(
         &mut db,

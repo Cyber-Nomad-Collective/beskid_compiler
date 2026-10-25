@@ -341,8 +341,7 @@ fn deadline_literal_with_private_field_reports_inaccessibility_not_unknown_name(
 fn ordinary_literal_missing_accessible_field_remains_e1212() {
     let temp = tempfile::tempdir().expect("application root");
     let owner_path = temp.path().join("Main.bd");
-    let owner_source =
-        "pub type Pair { pub i64 left; pub i64 right; } i64 Main() { Pair pair = Pair { left: 1_i64 }; return pair.left; }";
+    let owner_source = "pub type Pair { pub i64 left; pub i64 right; } i64 Main() { Pair pair = Pair { left: 1_i64 }; return pair.left; }";
     let (deadline_path, deadline_source) = canonical_deadline();
     let findings = fact_result(
         owner_path,
@@ -356,9 +355,8 @@ fn ordinary_literal_missing_accessible_field_remains_e1212() {
     .expect("legality query")
     .expect("a missing accessible field must be a legality finding");
     assert!(
-        findings
-            .iter()
-            .any(|finding| finding.kind.code() == "E1212" && finding.kind.message() == "missing field `right` in the type literal"),
+        findings.iter().any(|finding| finding.kind.code() == "E1212"
+            && finding.kind.message() == "missing field `right` in the type literal"),
         "expected E1212 for the missing accessible `right`, got {findings:?}"
     );
 }

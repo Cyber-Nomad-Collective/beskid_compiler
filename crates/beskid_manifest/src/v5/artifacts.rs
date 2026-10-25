@@ -82,7 +82,8 @@ pub fn write_v5_artifacts(manifest: &RuntimeManifestV5, workspace: &Path) -> Res
 /// line; regenerating here is the only sanctioned way to change it.
 pub fn refresh_runtime_layout_prelude(manifest: &RuntimeManifestV5, abi_value_path: &Path) -> Result<(), String> {
     let prelude = runtime_layout_source(manifest)?;
-    let on_disk = fs::read_to_string(abi_value_path).map_err(|error| format!("{}: {error}", abi_value_path.display()))?;
+    let on_disk =
+        fs::read_to_string(abi_value_path).map_err(|error| format!("{}: {error}", abi_value_path.display()))?;
     let mut lines = on_disk.split_inclusive('\n');
     match lines.next() {
         Some(first) if first.starts_with("// @generated from runtime_manifest.bsol") => {}

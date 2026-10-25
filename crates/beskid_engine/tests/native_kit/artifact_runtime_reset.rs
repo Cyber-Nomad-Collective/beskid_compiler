@@ -14,8 +14,7 @@ fn replacing_artifacts_restarts_runtime_before_descriptor_storage_is_retired() {
     let kit_lease = shared_kit::debug();
     let prefix = kit_lease.prefix();
     let target = host_runtime_target().expect("supported native host target");
-    let mut engine =
-        Engine::with_runtime_kit(prefix, target, BuildProfile::Debug).expect("load exact runtime kit");
+    let mut engine = Engine::with_runtime_kit(prefix, target, BuildProfile::Debug).expect("load exact runtime kit");
 
     let source = r#"
 i64 AllocateArray() {

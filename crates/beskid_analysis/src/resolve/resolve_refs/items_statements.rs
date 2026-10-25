@@ -108,8 +108,7 @@ impl Resolver {
                     self.resolve_type(return_type);
                 }
                 if include_bodies {
-                    let previous_function =
-                        self.current_function.replace((def.node.name.node.name.clone(), item.span));
+                    let previous_function = self.current_function.replace((def.node.name.node.name.clone(), item.span));
                     self.resolve_block(&def.node.body);
                     self.current_function = previous_function;
                     self.pop_scope();

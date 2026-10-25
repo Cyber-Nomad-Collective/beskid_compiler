@@ -6,8 +6,9 @@ use super::support::{key, setup};
 use beskid_analysis::syntax::AstNodeId;
 use beskid_analysis::syntax_query::NodeKind;
 use beskid_queries::{
-    AstNodeKey, SemanticTypeId, UnitObligationKind, generic_call_specialization, generic_call_specialization_in_environment,
-    generic_call_specialization_instance, item_abi_signature, method_receiver_abi_type, unit_obligations,
+    AstNodeKey, SemanticTypeId, UnitObligationKind, generic_call_specialization,
+    generic_call_specialization_in_environment, generic_call_specialization_instance, item_abi_signature,
+    method_receiver_abi_type, unit_obligations,
 };
 
 /// `SizeOf`'s own member call is the first call of the source; the call in `Main` is the second.
@@ -95,7 +96,9 @@ fn primitive_findings(source: &str) -> Vec<String> {
             UnitObligationKind::InvalidPrimitiveImplementation { type_name, reason } => {
                 format!("E1611 {type_name}: {reason}")
             }
-            UnitObligationKind::ContractMethodMissingImplementation { method_name, .. } => format!("E1601 {method_name}"),
+            UnitObligationKind::ContractMethodMissingImplementation { method_name, .. } => {
+                format!("E1601 {method_name}")
+            }
             UnitObligationKind::ContractImplementationSignatureMismatch { method_name, .. } => {
                 format!("E1602 {method_name}")
             }
@@ -108,8 +111,14 @@ fn primitive_findings(source: &str) -> Vec<String> {
 fn malformed_primitive_implementations_are_e1611() {
     const CONTRACT: &str = "contract Sized { i64 Size(); } ";
     let cases = [
-        ("impl pointer : Sized { pub i64 Size() { return 8; } }", "E1611 pointer: `pointer` cannot implement contracts"),
-        ("impl<T> i64 : Sized { pub i64 Size() { return 8; } }", "E1611 i64: an implementation for `i64` takes no type parameters"),
+        (
+            "impl pointer : Sized { pub i64 Size() { return 8; } }",
+            "E1611 pointer: `pointer` cannot implement contracts",
+        ),
+        (
+            "impl<T> i64 : Sized { pub i64 Size() { return 8; } }",
+            "E1611 i64: an implementation for `i64` takes no type parameters",
+        ),
         ("impl i64 { pub i64 Size() { return 8; } }", "E1611 i64: an implementation for `i64` must name a contract"),
         (
             "impl i64 : Sized { pub i64 Size() { return 8; } } impl i64 : Sized { pub i64 Size() { return 4; } }",
@@ -159,7 +168,12 @@ fn primitive_values_call_their_implementation_methods_directly() {
         let Ok(Some(beskid_queries::CallLowering::Direct(method))) = beskid_queries::call_lowering(&db, call) else {
             panic!("`{spelling}` is a direct call: {:?}", beskid_queries::call_lowering(&db, call));
         };
-        assert_eq!(method_receiver_abi_type(&db, method), abi, "`{spelling}` calls the `{}` implementation", abi.as_str());
+        assert_eq!(
+            method_receiver_abi_type(&db, method),
+            abi,
+            "`{spelling}` calls the `{}` implementation",
+            abi.as_str()
+        );
         let arguments = beskid_queries::call_arguments(&db, call).expect("call arguments").expect("arguments");
         assert_eq!(arguments.len(), 1, "`{spelling}` passes its receiver as the only argument");
         let signature = beskid_queries::call_abi_signature(&db, call).expect("call signature").expect("signature");

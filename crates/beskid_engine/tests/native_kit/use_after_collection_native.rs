@@ -59,7 +59,8 @@ fn dead_managed_operands_trap_with_a_diagnostic_in_static_and_shared_kits() {
             .unwrap();
         assert!(output.status.success(), "{mode}: {}", String::from_utf8_lossy(&output.stderr));
 
-        let live = Command::new(&executable).arg("live").env(library_path_variable, library_directory).output().unwrap();
+        let live =
+            Command::new(&executable).arg("live").env(library_path_variable, library_directory).output().unwrap();
         assert!(
             live.status.success(),
             "{mode}: rooted operands must survive the collection and the services must succeed: {live:?}"

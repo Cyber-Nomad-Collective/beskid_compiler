@@ -1,8 +1,8 @@
 //! Open buffers, on-disk snapshots, compilation cache, and diagnostics refresh helpers.
 
+pub(crate) mod attribute_facts;
 pub(crate) mod db_access;
 pub(crate) mod diagnostics_bridge;
-pub(crate) mod attribute_facts;
 pub(crate) mod documentation_facts;
 pub(crate) mod imports;
 pub(crate) mod lifecycle;

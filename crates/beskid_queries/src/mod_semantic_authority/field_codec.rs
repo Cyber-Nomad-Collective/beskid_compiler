@@ -98,10 +98,16 @@ pub(crate) fn generated_field_codec_factory(
             return Err(reject("serialization target application has more than one field codec factory"));
         }
     }
-    selected.ok_or_else(|| reject(match kind {
-        SerializationContributionKind::Decoder => "serialization target application has no admitted field decoder factory",
-        SerializationContributionKind::Encoder => "serialization target application has no admitted field encoder factory",
-    }))
+    selected.ok_or_else(|| {
+        reject(match kind {
+            SerializationContributionKind::Decoder => {
+                "serialization target application has no admitted field decoder factory"
+            }
+            SerializationContributionKind::Encoder => {
+                "serialization target application has no admitted field encoder factory"
+            }
+        })
+    })
 }
 
 /// The current entry node of an exactly appended group function. The merger appends generated
@@ -146,8 +152,10 @@ fn current_entry_function(
 /// directly, and their element applications are part of the same closure.
 pub fn serialization_field_codec_admission(db: &dyn Db, program: &crate::TypedProgram) -> Result<(), String> {
     let metadata = &program.assembly.compiled_mod_metadata;
-    let targets =
-        metadata.iter().filter_map(|metadata| metadata.issuer_payload::<CompiledSerializationTarget>()).collect::<Vec<_>>();
+    let targets = metadata
+        .iter()
+        .filter_map(|metadata| metadata.issuer_payload::<CompiledSerializationTarget>())
+        .collect::<Vec<_>>();
     if targets.is_empty() {
         return Ok(());
     }
@@ -180,7 +188,8 @@ pub fn serialization_field_codec_admission(db: &dyn Db, program: &crate::TypedPr
             if !visited.insert(index) {
                 continue;
             }
-            let node = nodes.get(index as usize).ok_or_else(|| "serialization wire closure is incomplete".to_owned())?;
+            let node =
+                nodes.get(index as usize).ok_or_else(|| "serialization wire closure is incomplete".to_owned())?;
             let fields = match node {
                 crate::DynamicPackingNode::Scalar { .. } => continue,
                 crate::DynamicPackingNode::Array { element } => {

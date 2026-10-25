@@ -557,7 +557,9 @@ fn specialized_index_element_identity(
             declaration,
             Some(enclosing),
         )?
-        .and_then(|binding| binding.source_identity.ok_or_else(|| SemanticError::unavailable("array_index_element_abi_type"))),
+        .and_then(|binding| {
+            binding.source_identity.ok_or_else(|| SemanticError::unavailable("array_index_element_abi_type"))
+        }),
         None => super::field_read_identity_in_environment(db, target, enclosing)?,
     };
     Some(array.and_then(|array| match array {

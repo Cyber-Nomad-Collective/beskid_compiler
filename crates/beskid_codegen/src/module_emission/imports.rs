@@ -135,8 +135,7 @@ pub(super) fn extern_contract_callees(
     }
     let mut ordered = callees.into_iter().collect::<Vec<_>>();
     ordered.sort_by_cached_key(|(_, declaration)| beskid_queries::format_ast_node_key(db, *declaration));
-    let mut result =
-        ExternContractCallees { symbols: HashMap::new(), imports: Vec::new(), availability: Vec::new() };
+    let mut result = ExternContractCallees { symbols: HashMap::new(), imports: Vec::new(), availability: Vec::new() };
     for (callee, declaration) in ordered {
         let Some(import) = extern_contract_import_for_declaration(db, declaration) else {
             continue;
@@ -409,9 +408,7 @@ impl beskid_isle::CallImporter for ArtifactCallImporter<'_> {
         signature: &Signature,
     ) -> Result<FuncRef, beskid_isle::CallImportError> {
         let symbol = self.symbols.get(&callee).ok_or_else(|| {
-            crate::isle_trace::event(|| {
-                format!("event=import.unknown callee={callee:?} known={}", self.symbols.len())
-            });
+            crate::isle_trace::event(|| format!("event=import.unknown callee={callee:?} known={}", self.symbols.len()));
             beskid_isle::CallImportError::UnknownCallee
         })?;
         let signature = builder.import_signature(signature.clone());

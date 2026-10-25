@@ -11,7 +11,8 @@ use std::time::{Duration, Instant};
 /// `<prefix>/beskid_corelib`). Absence is a test failure, never a skip.
 pub const QUALIFIED_PREFIX_ENV: &str = "BESKID_V06_QUALIFIED_PREFIX";
 /// Developer overrides that would let the installed CLI reach a source checkout or a development kit.
-pub const FORBIDDEN_OVERRIDES: [&str; 3] = ["BESKID_CORELIB_ROOT", "BESKID_RUNTIME_PREFIX", "BESKID_RUNTIME_KIT_PROFILE"];
+pub const FORBIDDEN_OVERRIDES: [&str; 3] =
+    ["BESKID_CORELIB_ROOT", "BESKID_RUNTIME_PREFIX", "BESKID_RUNTIME_KIT_PROFILE"];
 /// Upper bound for one installed invocation; the producer applies its own cell budget on top.
 pub const INVOCATION_LIMIT: Duration = Duration::from_secs(600);
 
@@ -128,7 +129,9 @@ impl Cli {
         self.prove_invocation();
         command.stdin(if stdin.is_some() { Stdio::piped() } else { Stdio::null() });
         command.stdout(Stdio::piped()).stderr(Stdio::piped());
-        let mut child = command.spawn().unwrap_or_else(|error| panic!("spawn installed CLI {}: {error}", self.executable.display()));
+        let mut child = command
+            .spawn()
+            .unwrap_or_else(|error| panic!("spawn installed CLI {}: {error}", self.executable.display()));
         if let Some(bytes) = stdin {
             let mut pipe = child.stdin.take().expect("piped stdin");
             // The child may exit before reading; a closed pipe is not a harness failure.
@@ -226,11 +229,17 @@ impl Default for Home {
 
 /// Lossy text of both streams for diagnostics.
 pub fn transcript(output: &Output) -> String {
-    format!("exit: {:?}\nstdout:\n{}\nstderr:\n{}", output.status.code(), String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr))
+    format!(
+        "exit: {:?}\nstdout:\n{}\nstderr:\n{}",
+        output.status.code(),
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    )
 }
 
 /// True when the bytes contain an ANSI escape or an in-place carriage return (a `\r` that is not
 /// part of a CRLF line ending).
 pub fn has_cursor_controls(bytes: &[u8]) -> bool {
-    bytes.contains(&0x1b) || bytes.iter().enumerate().any(|(index, byte)| *byte == b'\r' && bytes.get(index + 1) != Some(&b'\n'))
+    bytes.contains(&0x1b)
+        || bytes.iter().enumerate().any(|(index, byte)| *byte == b'\r' && bytes.get(index + 1) != Some(&b'\n'))
 }

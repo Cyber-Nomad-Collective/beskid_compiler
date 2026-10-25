@@ -23,7 +23,8 @@ pub contract C { i64 getpid(); }
 
 pub i64 Main() { return 0; }
 "#;
-    let prepared = prepare_jit_entrypoint(std::path::Path::new("<memory>"), src, "Main", &beskid_engine::ModHost::NoMods)?;
+    let prepared =
+        prepare_jit_entrypoint(std::path::Path::new("<memory>"), src, "Main", &beskid_engine::ModHost::NoMods)?;
 
     // Allowed by allowlist
     set_security_policies_for_tests(Some("libc.so.6:getpid"), None);

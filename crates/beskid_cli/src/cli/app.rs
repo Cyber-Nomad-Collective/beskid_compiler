@@ -249,7 +249,11 @@ pub(crate) fn CapabilityDocument() -> serde_json::Value {
     use clap::CommandFactory;
     let root = Cli::command();
     let visible = |command: &clap::Command| command.get_name() != "help" && !command.is_hide_set();
-    let commands = root.get_subcommands().filter(|command| visible(*command)).map(|command| command.get_name()).collect::<Vec<_>>();
+    let commands = root
+        .get_subcommands()
+        .filter(|command| visible(*command))
+        .map(|command| command.get_name())
+        .collect::<Vec<_>>();
     let dev_commands = root
         .find_subcommand("dev")
         .expect("dev route family")

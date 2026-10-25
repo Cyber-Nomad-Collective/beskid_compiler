@@ -9,9 +9,9 @@ use super::diagnostics::{ModHostDiagnostics, ModHostIssue};
 use super::discovery::discover_mod_dependencies;
 use super::generate::{is_generate_registration, resolved_max_generator_rounds, run_generators};
 use super::generate_output::{load_generate_output_layout, write_typed_generate_output};
+use super::host::ModHost;
 use super::invoker::ContractInvoker;
 use super::invoker::GeneratorOutcome;
-use super::host::ModHost;
 use super::load::load_artifacts;
 use super::merge::merge_generated_syntax;
 use super::rewrite::run_rewriters;
@@ -206,8 +206,14 @@ fn materialize_declared_outputs(
             let layout_path = artifact.discovered.project_root.join(&output.layout);
             let layout = load_generate_output_layout(&layout_path).map_err(|err| anyhow::anyhow!("{err}"))?;
             let output_root = artifact.discovered.project_root.join(output.resolved_root());
-            write_typed_generate_output(compile_plan, &artifact.discovered.project_root, &output_root, &typed_items, &layout)
-                .map_err(|err| anyhow::anyhow!("{err}"))?;
+            write_typed_generate_output(
+                compile_plan,
+                &artifact.discovered.project_root,
+                &output_root,
+                &typed_items,
+                &layout,
+            )
+            .map_err(|err| anyhow::anyhow!("{err}"))?;
         }
     }
     Ok(())
@@ -267,8 +273,7 @@ pub fn run_analyze_rewrite_with_host(
             edited_source: None,
         });
     }
-    let (invoker, _) =
-        mod_host.require(session.loaded_artifacts().iter().map(|artifact| &artifact.discovered))?;
+    let (invoker, _) = mod_host.require(session.loaded_artifacts().iter().map(|artifact| &artifact.discovered))?;
     analyze_rewrite_with_invoker(program, session, invoker, host_input, snapshot, pipeline)
 }
 
@@ -441,7 +446,10 @@ dependency "ModA" {
             .collect()
     }
 
-    pub(super) fn write_mod_projects(root: &std::path::Path, mod_manifest: &str) -> (std::path::PathBuf, std::path::PathBuf) {
+    pub(super) fn write_mod_projects(
+        root: &std::path::Path,
+        mod_manifest: &str,
+    ) -> (std::path::PathBuf, std::path::PathBuf) {
         let host = root.join("Host");
         let mod_dir = root.join("ModA");
         fs::create_dir_all(host.join("Src")).expect("host src");

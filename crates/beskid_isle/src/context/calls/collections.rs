@@ -101,11 +101,8 @@ impl IsleContext<'_, '_, '_, '_> {
             self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidArrayLayout });
             return None;
         }
-        let length = if length_type.bits() < pointer.bits() {
-            self.builder.ins().sextend(pointer, length)
-        } else {
-            length
-        };
+        let length =
+            if length_type.bits() < pointer.bits() { self.builder.ins().sextend(pointer, length) } else { length };
         let negative = self.builder.ins().icmp_imm_s(IntCC::SignedLessThan, length, 0);
         self.builder.ins().trapnz(negative, TrapCode::HEAP_OUT_OF_BOUNDS);
         // BeskidArrayAllocationRequest: { element, length, descriptor, reserved } native words.

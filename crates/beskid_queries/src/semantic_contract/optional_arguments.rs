@@ -28,7 +28,10 @@ use beskid_analysis::syntax_query::{NodeKind, Query};
 /// The arguments the compiler passes for the trailing optional parameters of `declaration` (a
 /// function, method or contract method), and its parameter count (without the receiver). `None`
 /// when the callable has no valid optional parameters.
-pub(crate) fn declared_omitted_arguments(db: &dyn Db, declaration: AstNodeKey) -> Option<(Vec<OmittedArgument>, usize)> {
+pub(crate) fn declared_omitted_arguments(
+    db: &dyn Db,
+    declaration: AstNodeKey,
+) -> Option<(Vec<OmittedArgument>, usize)> {
     let syntax = db.syntax_unit(declaration.unit).filter(|syntax| syntax.accepts_key(db, declaration))?;
     let program = syntax.expanded_program(db);
     let index = syntax.syntax_index(db);
@@ -49,7 +52,11 @@ pub(crate) fn declared_omitted_arguments(db: &dyn Db, declaration: AstNodeKey) -
 
 /// The defaults of the contract method that `method` (declared in a conforming `type` or `impl`)
 /// implements: same name and parameter count, declared by one of the owner's contracts.
-fn implemented_contract_method(db: &dyn Db, declaration: AstNodeKey, method: &MethodDefinition) -> Option<Vec<OmittedArgument>> {
+fn implemented_contract_method(
+    db: &dyn Db,
+    declaration: AstNodeKey,
+    method: &MethodDefinition,
+) -> Option<Vec<OmittedArgument>> {
     let syntax = db.syntax_unit(declaration.unit)?;
     let program = syntax.expanded_program(db);
     let index = syntax.syntax_index(db);
@@ -65,7 +72,9 @@ fn implemented_contract_method(db: &dyn Db, declaration: AstNodeKey, method: &Me
             let owner_key = AstNodeKey { node: current, ..declaration };
             for path in conformances {
                 let Some(contract) = super::contracts::resolve_contract(db, owner_key, &path.node) else { continue };
-                let Ok(methods) = super::contracts::contract_methods(db, contract, &mut HashSet::new()) else { continue };
+                let Ok(methods) = super::contracts::contract_methods(db, contract, &mut HashSet::new()) else {
+                    continue;
+                };
                 for signature_key in methods {
                     let Some(signature_syntax) = db.syntax_unit(signature_key.unit) else { continue };
                     let signature_program = signature_syntax.expanded_program(db);
@@ -130,7 +139,9 @@ pub(crate) fn may_omit_arguments(assembly: &ProgramAssembly) -> bool {
 
 fn callee_name(call: &CallExpression) -> Option<&str> {
     match &call.callee.node {
-        Expression::Path(path) => path.node.path.node.segments.last().map(|segment| segment.node.name.node.name.as_str()),
+        Expression::Path(path) => {
+            path.node.path.node.segments.last().map(|segment| segment.node.name.node.name.as_str())
+        }
         Expression::Member(member) => Some(member.node.member.node.name.as_str()),
         _ => None,
     }

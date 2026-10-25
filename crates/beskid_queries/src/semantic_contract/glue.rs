@@ -1,11 +1,11 @@
 //! Canonical generation-bound logical Glue bindings. Physical transport is emitted later.
 use super::*;
+use beskid_abi::interop::{InteropSignature, ScalarDomain, ScalarShape, TypeShape};
 use beskid_analysis::syntax::{
     Attribute, ContractMethodSignature, Expression, FunctionDefinition, Literal, Parameter, PrimitiveType, SpanInfo,
     Spanned, Type, TypeDefinition,
 };
 use beskid_analysis::syntax_query::NodeKind;
-use beskid_abi::interop::{InteropSignature, ScalarDomain, ScalarShape, TypeShape};
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum GlueDirection {
@@ -452,16 +452,12 @@ fn logical_type(
                     Ok(ty)
                 })
                 .collect::<Result<Vec<_>, _>>()?;
-            let result = logical_type(
-                db,
-                key,
-                &return_type.node,
-                generics,
-                depth + 1,
-                remaining,
-                GluePosition::CallbackMember,
-            )?;
-            Ok(GlueLogicalType::Callback(GlueCallbackSignature { parameters: parameters.into(), result: Box::new(result) }))
+            let result =
+                logical_type(db, key, &return_type.node, generics, depth + 1, remaining, GluePosition::CallbackMember)?;
+            Ok(GlueLogicalType::Callback(GlueCallbackSignature {
+                parameters: parameters.into(),
+                result: Box::new(result),
+            }))
         }
         Type::Associated { .. } | Type::This => Err(invalid("unclosed associated or receiver Glue type")),
     }
@@ -483,7 +479,9 @@ fn glue_record(
     if !definition.generics.is_empty() || path.node.segments.iter().any(|segment| !segment.node.type_args.is_empty()) {
         return Err(spanned(&marker.span, "GlueRecord types are not generic"));
     }
-    if definition.fields.is_empty() || definition.fields.len() > beskid_abi::interop::c_profile::C_PROFILE_RECORD_FIELD_LIMIT {
+    if definition.fields.is_empty()
+        || definition.fields.len() > beskid_abi::interop::c_profile::C_PROFILE_RECORD_FIELD_LIMIT
+    {
         return Err(spanned(&marker.span, "GlueRecord types have 1..=64 fields"));
     }
     let mut names = std::collections::HashSet::new();
@@ -504,9 +502,7 @@ fn glue_record(
                 }
                 _ => Err(spanned(
                     &field.span,
-                    format!(
-                        "GlueRecord field `{name}` must be i8..i64, u8..u64, f32, f64, bool, char or word"
-                    ),
+                    format!("GlueRecord field `{name}` must be i8..i64, u8..u64, f32, f64, bool, char or word"),
                 )),
             }
         })
@@ -640,8 +636,14 @@ fn glue_binding_tracked(db: &dyn Db, syntax: SyntaxUnitInput, key: AstNodeKey) -
                 if generics.iter().collect::<std::collections::HashSet<_>>().len() != generics.len() {
                     return Err(invalid("duplicate Glue generic declaration"));
                 }
-                let (parameters, result) =
-                    signature(db, key, &function.parameters, function.return_type.as_ref(), &generics, &GlueDirection::Export)?;
+                let (parameters, result) = signature(
+                    db,
+                    key,
+                    &function.parameters,
+                    function.return_type.as_ref(),
+                    &generics,
+                    &GlueDirection::Export,
+                )?;
                 Ok(GlueBindingFact {
                     declaration: key,
                     direction: GlueDirection::Export,
@@ -707,7 +709,8 @@ fn glue_binding_tracked(db: &dyn Db, syntax: SyntaxUnitInput, key: AstNodeKey) -
                 fallible: declared.as_ref().and_then(|owner| owner.fallible).unwrap_or(false),
                 declared: declared.is_some(),
             };
-            let (parameters, result) = signature(db, key, &method.parameters, method.return_type.as_ref(), &[], &GlueDirection::Import)?;
+            let (parameters, result) =
+                signature(db, key, &method.parameters, method.return_type.as_ref(), &[], &GlueDirection::Import)?;
             Ok(GlueBindingFact {
                 declaration: key,
                 direction: GlueDirection::Import,
@@ -815,9 +818,7 @@ pub fn rust_owner_declarations(db: &dyn Db, unit: SourceUnitId) -> Result<Arc<[R
         }
         owners.push(parent);
         let declaration = AstNodeKey { unit, generation, node: parent };
-        let node = index
-            .node_at(program, parent)
-            .ok_or_else(|| misplaced("RustOwner declaration node absent"))?;
+        let node = index.node_at(program, parent).ok_or_else(|| misplaced("RustOwner declaration node absent"))?;
         let type_attributes = node
             .of::<TypeDefinition>()
             .map(|definition| &definition.attributes)
@@ -825,7 +826,11 @@ pub fn rust_owner_declarations(db: &dyn Db, unit: SourceUnitId) -> Result<Arc<[R
         if let Some(attributes) = type_attributes {
             let mut markers = attributes.iter().filter(|a| {
                 let name = a.node.name.node.name.as_str();
-                if node.of::<TypeDefinition>().is_some() { name == GLUE_HANDLE || name == GLUE_RECORD } else { name == GLUE_ENUM }
+                if node.of::<TypeDefinition>().is_some() {
+                    name == GLUE_HANDLE || name == GLUE_RECORD
+                } else {
+                    name == GLUE_ENUM
+                }
             });
             let (Some(marker), None) = (markers.next(), markers.next()) else {
                 return Err(misplaced(RUST_OWNER_PLACEMENTS));
@@ -838,10 +843,20 @@ pub fn rust_owner_declarations(db: &dyn Db, unit: SourceUnitId) -> Result<Arc<[R
             let marker_name = &marker.node.name.node.name;
             let library = text_attribute(&marker.node, "Library")
                 .map_err(|error| spanned(&marker.span, error))?
-                .ok_or_else(|| spanned(&marker.span, format!("RustOwner on a {marker_name} type requires {marker_name} Library")))?;
-            let owner = rust_owner_attribute(attributes, placement)?.ok_or_else(|| misplaced("RustOwner attribute absent"))?;
-            let path = owner.path.ok_or_else(|| misplaced(&format!("RustOwner on a {marker_name} type requires Path")))?;
-            declarations.push(RustOwnerDeclaration { declaration, placement, library, path: path.into(), fallible: false });
+                .ok_or_else(|| {
+                    spanned(&marker.span, format!("RustOwner on a {marker_name} type requires {marker_name} Library"))
+                })?;
+            let owner =
+                rust_owner_attribute(attributes, placement)?.ok_or_else(|| misplaced("RustOwner attribute absent"))?;
+            let path =
+                owner.path.ok_or_else(|| misplaced(&format!("RustOwner on a {marker_name} type requires Path")))?;
+            declarations.push(RustOwnerDeclaration {
+                declaration,
+                placement,
+                library,
+                path: path.into(),
+                fallible: false,
+            });
         } else if let Some(method) = node.of::<ContractMethodSignature>() {
             let import = calls::extern_contract_import_for_declaration(db, declaration)
                 .ok_or_else(|| misplaced(RUST_OWNER_PLACEMENTS))?;
@@ -923,8 +938,8 @@ pub fn rust_owner_tables(
     let mut types = std::collections::BTreeMap::<String, (AstNodeKey, Arc<str>)>::new();
     let mut callables = std::collections::BTreeMap::<String, RustOwnerCallableRow>::new();
     for row in bindings {
-        let fact = glue_binding(db, row.binding)?
-            .ok_or_else(|| invalid("Rust owner binding has no canonical Glue fact"))?;
+        let fact =
+            glue_binding(db, row.binding)?.ok_or_else(|| invalid("Rust owner binding has no canonical Glue fact"))?;
         if fact.direction != GlueDirection::Import
             || fact.library.as_deref() != Some(library)
             || fact.symbol != row.symbol
@@ -966,9 +981,12 @@ pub fn rust_owner_tables(
         let mut values = Vec::new();
         for ty in fact.parameters.iter().map(|parameter| &parameter.ty).chain(std::iter::once(&fact.result)) {
             match ty {
-                GlueLogicalType::Record(record) => {
-                    values.push((record.declaration, "GlueRecord", record.library.as_deref(), record.rust_owner.is_some()))
-                }
+                GlueLogicalType::Record(record) => values.push((
+                    record.declaration,
+                    "GlueRecord",
+                    record.library.as_deref(),
+                    record.rust_owner.is_some(),
+                )),
                 GlueLogicalType::Enum(enumeration) => values.push((
                     enumeration.declaration,
                     "GlueEnum",
@@ -1028,7 +1046,11 @@ pub fn rust_owner_tables(
                 ));
             }
             let path = brand.rust_owner.clone().ok_or_else(|| {
-                declaration_error(db, brand.declaration, "GlueHandle type of a Rust glue owner requires RustOwner(Path:..)")
+                declaration_error(
+                    db,
+                    brand.declaration,
+                    "GlueHandle type of a Rust glue owner requires RustOwner(Path:..)",
+                )
             })?;
             match types.entry(digest.clone()) {
                 std::collections::btree_map::Entry::Occupied(entry) => {
@@ -1075,7 +1097,9 @@ impl GlueLogicalForm {
     pub fn of(ty: &GlueLogicalType) -> Result<Self, SemanticError> {
         Ok(match ty {
             GlueLogicalType::Primitive(primitive) => Self::Primitive(*primitive),
-            GlueLogicalType::Array(element) if **element == GlueLogicalType::Primitive(PrimitiveType::U8) => Self::Bytes,
+            GlueLogicalType::Array(element) if **element == GlueLogicalType::Primitive(PrimitiveType::U8) => {
+                Self::Bytes
+            }
             GlueLogicalType::Array(_) => return Err(invalid("only u8 arrays are admitted Glue views")),
             GlueLogicalType::Generic { name, .. } => {
                 return Err(invalid(&format!("generic Glue position `{name}` must be specialized before lowering")));
@@ -1147,7 +1171,8 @@ pub fn glue_type_shape(ty: &GlueLogicalType) -> Result<TypeShape, SemanticError>
         GlueLogicalType::Primitive(PrimitiveType::String) => TypeShape::StringLike,
         GlueLogicalType::Primitive(PrimitiveType::Unit) => TypeShape::Unit,
         GlueLogicalType::Primitive(primitive) => TypeShape::Scalar(
-            glue_scalar_shape(*primitive).ok_or_else(|| invalid("raw pointer and never are unsupported Glue signatures"))?,
+            glue_scalar_shape(*primitive)
+                .ok_or_else(|| invalid("raw pointer and never are unsupported Glue signatures"))?,
         ),
         GlueLogicalType::Array(element) if **element == GlueLogicalType::Primitive(PrimitiveType::U8) => {
             TypeShape::Buffer(BufferShape { element_type: AbiType::U8, is_utf8: false })
@@ -1216,10 +1241,9 @@ pub fn glue_logical_form(shape: &TypeShape) -> Option<GlueLogicalForm> {
                 .map(|field| glue_scalar_primitive(&field.scalar).map(|primitive| (field.name.clone(), primitive)))
                 .collect::<Option<_>>()?,
         },
-        TypeShape::Enumeration(enumeration) => GlueLogicalForm::Enum {
-            identity: enumeration.identity.clone(),
-            variants: enumeration.variants.clone(),
-        },
+        TypeShape::Enumeration(enumeration) => {
+            GlueLogicalForm::Enum { identity: enumeration.identity.clone(), variants: enumeration.variants.clone() }
+        }
         TypeShape::Callback(callback) => GlueLogicalForm::Callback {
             parameters: callback.parameters.iter().map(glue_logical_form).collect::<Option<_>>()?,
             result: Box::new(match &callback.result {

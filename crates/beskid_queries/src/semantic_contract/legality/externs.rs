@@ -91,7 +91,9 @@ pub fn extern_profile_findings(
         glue_contract_seen |= glue;
         let methods = index
             .ids_of_kind(NodeKind::ContractMethodSignature)
-            .filter(|method| nearest_ancestor(index, *method, |kind| kind == NodeKind::ContractDefinition) == Some(node))
+            .filter(|method| {
+                nearest_ancestor(index, *method, |kind| kind == NodeKind::ContractDefinition) == Some(node)
+            })
             .collect::<Vec<_>>();
         for method_node in methods {
             let Some(signature) =
@@ -121,7 +123,10 @@ pub fn extern_profile_findings(
     if glue_contract_seen || !glue_libraries.is_empty() {
         match rust_owner_declarations(db, root.unit) {
             Err(error) => findings.push(SemanticFinding {
-                kind: SemanticIssueKind::GlueBindingRejected { method: "RustOwner".to_string(), detail: error.to_string() },
+                kind: SemanticIssueKind::GlueBindingRejected {
+                    method: "RustOwner".to_string(),
+                    detail: error.to_string(),
+                },
                 site: root,
                 related: Vec::new(),
             }),
@@ -192,9 +197,10 @@ fn judge_availability_method(
     signature: &ContractMethodSignature,
     findings: &mut Vec<SemanticFinding>,
 ) {
-    let returns_bool = signature.return_type.as_ref().is_some_and(
-        |ty| matches!(&ty.node, Type::Primitive(primitive) if primitive.node == PrimitiveType::Bool),
-    );
+    let returns_bool = signature
+        .return_type
+        .as_ref()
+        .is_some_and(|ty| matches!(&ty.node, Type::Primitive(primitive) if primitive.node == PrimitiveType::Bool));
     if signature.parameters.is_empty() && returns_bool {
         return;
     }

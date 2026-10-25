@@ -132,16 +132,8 @@ fn rust_toolchain_conflicts_with_cargo() {
     let prefix = case.path().join("tools").display().to_string();
     let cargo = case.tool("cargo").display().to_string();
     let linker = case.tool("cc").display().to_string();
-    let output = case.build(&[
-        "--backend",
-        "glue-rust",
-        "--rust-toolchain",
-        &prefix,
-        "--cargo",
-        &cargo,
-        "--linker",
-        &linker,
-    ]);
+    let output =
+        case.build(&["--backend", "glue-rust", "--rust-toolchain", &prefix, "--cargo", &cargo, "--linker", &linker]);
     case.assert_rejected(&output, "`--rust-toolchain` conflicts with `--cargo`/`--rustc`");
 }
 

@@ -89,7 +89,10 @@ mod tests {
         let diagnostic = ctx.diagnostics.iter().find(|d| d.code.as_deref() == Some("W1637")).expect("W1637");
         assert!(diagnostic.message.contains("PascalCase"), "{}", diagnostic.message);
         assert_eq!(diagnostic.help.as_deref(), Some("try `HubRegisterAcceptsChannel`"));
-        assert_eq!(&src[diagnostic.span.offset()..diagnostic.span.offset() + diagnostic.span.len()], "hub_register_accepts_channel");
+        assert_eq!(
+            &src[diagnostic.span.offset()..diagnostic.span.offset() + diagnostic.span.len()],
+            "hub_register_accepts_channel"
+        );
     }
 
     #[test]

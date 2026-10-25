@@ -30,8 +30,16 @@ fn fixture(target: &str) -> ProgramAssembly {
     let plan = build_compile_plan(&manifest, Some(target)).expect("real fixture plan");
     let entry = plan_entry_path(&plan, &plan.source_root);
     let source = std::fs::read_to_string(&entry).expect("fixture source");
-    assemble_program_with_materializer(&plan, None, &entry, Some(&source), &assembly_options_for_plan(&plan), None, None)
-        .expect("exact runtime and real Corelib assembly")
+    assemble_program_with_materializer(
+        &plan,
+        None,
+        &entry,
+        Some(&source),
+        &assembly_options_for_plan(&plan),
+        None,
+        None,
+    )
+    .expect("exact runtime and real Corelib assembly")
 }
 
 fn x86_64_target_and_isa() -> (TargetMetadata, Arc<dyn cranelift_codegen::isa::TargetIsa>) {

@@ -125,13 +125,19 @@ fn constant_out_of_range_names_the_destination_primitive_at_the_use() {
 fn constants_that_fit_their_destination_are_silent() {
     assert_silent(
         &[
-            ("constant at a wide typed let", "const BIG = 3000000000; unit Main() { i64 x = BIG; u64 y = BIG; return; }"),
+            (
+                "constant at a wide typed let",
+                "const BIG = 3000000000; unit Main() { i64 x = BIG; u64 y = BIG; return; }",
+            ),
             (
                 "word constant at a word destination",
                 "const LIMIT_UNSET = 0xFFFFFFFFFFFFFFFF; word F() { return LIMIT_UNSET; }",
             ),
             ("small constant at a narrow destination", "const SMALL = 7; i8 F() { return SMALL; }"),
-            ("inferred let of a wide literal", "unit Main() { let x = 3000000000; let y = 0xFFFFFFFFFFFFFFFF; return; }"),
+            (
+                "inferred let of a wide literal",
+                "unit Main() { let x = 3000000000; let y = 0xFFFFFFFFFFFFFFFF; return; }",
+            ),
         ],
         1050,
     );
@@ -237,7 +243,8 @@ fn non_boolean_optional_is_reported_at_the_argument_before_the_abi() {
 
 #[test]
 fn malformed_availability_query_is_reported_at_its_signature_and_exempt_from_the_c_profile() {
-    let source = "[Extern(Abi:\"C\", Library:\"m\", Optional:true)] contract Native { string Available(); i64 Abs(i64 v); }";
+    let source =
+        "[Extern(Abi:\"C\", Library:\"m\", Optional:true)] contract Native { string Available(); i64 Abs(i64 v); }";
     let findings = root_findings(source, 1111);
     assert_eq!(codes(&findings), vec!["T0906"], "{findings:?}");
     assert!(source[findings[0].span.start..findings[0].span.end].starts_with("string Available()"), "{findings:?}");
@@ -330,8 +337,13 @@ fn every_invalid_clif_block_class_is_reported_with_the_legacy_detail() {
     for (offset, (class, source, detail)) in CLIF_CLASSES.iter().enumerate() {
         let findings = root_findings(source, 1200 + offset as u64);
         let details = clif_details(&findings);
-        if !reports_kind(&findings, "InvalidClifBlock", "E1232", None) || !details.iter().any(|found| found.contains(detail)) {
-            failures.push(format!("{class}: expected E1232 `{detail}`, got {:?} {details:?}\n  {source}", codes(&findings)));
+        if !reports_kind(&findings, "InvalidClifBlock", "E1232", None)
+            || !details.iter().any(|found| found.contains(detail))
+        {
+            failures.push(format!(
+                "{class}: expected E1232 `{detail}`, got {:?} {details:?}\n  {source}",
+                codes(&findings)
+            ));
         }
     }
     assert!(failures.is_empty(), "query gate misses {} clif class(es):\n{}", failures.len(), failures.join("\n"));
@@ -350,7 +362,10 @@ fn well_formed_clif_blocks_are_silent() {
     assert_silent(
         &[
             ("return value", "pub i64 Echo(i64 value) { return clif { return %0 }; }"),
-            ("typed let", "pub i64 Twice(i64 value) { i64 doubled = clif {\n%d = iadd %0, %0\nreturn %d\n}; return doubled; }"),
+            (
+                "typed let",
+                "pub i64 Twice(i64 value) { i64 doubled = clif {\n%d = iadd %0, %0\nreturn %d\n}; return doubled; }",
+            ),
             ("call", "pub f64 Root(f64 value) { return clif { call @sqrt(%0) }; }"),
             (
                 "payload read",

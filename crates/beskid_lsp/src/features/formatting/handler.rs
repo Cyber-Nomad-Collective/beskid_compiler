@@ -94,8 +94,8 @@ mod tests {
 
     #[test]
     fn formatting_keeps_the_file_header_comment() {
-        let edits = handle_document_formatting("// Header.\n// TODO: keep.\n\ni32 A() { return 1; }\n")
-            .expect("formats");
+        let edits =
+            handle_document_formatting("// Header.\n// TODO: keep.\n\ni32 A() { return 1; }\n").expect("formats");
         assert!(edits[0].new_text.starts_with("// Header.\n// TODO: keep.\n\ni32 A()\n{\n"), "{}", edits[0].new_text);
     }
 }

@@ -64,14 +64,23 @@ impl BeskidObjectModule {
     /// Reissues exact current nominal token layouts, then defines their private
     /// normalized constructors/readers against this object's sole data pass.
     pub(crate) fn emit_glue_handle_transports(
-        &mut self,input:&beskid_codegen::CodegenInput<'_>,bindings:&[beskid_queries::AstNodeKey],
-    )->AotResult<Vec<beskid_codegen::glue::EmittedHandleTransport>> {
-        let module=self.module.as_mut().ok_or_else(||AotError::InvalidRequest{message:"opaque transport after object finalization".into()})?;
-        let emitted=beskid_codegen::glue::emit_source_handle_transports(module,input,bindings)?;
+        &mut self,
+        input: &beskid_codegen::CodegenInput<'_>,
+        bindings: &[beskid_queries::AstNodeKey],
+    ) -> AotResult<Vec<beskid_codegen::glue::EmittedHandleTransport>> {
+        let module = self
+            .module
+            .as_mut()
+            .ok_or_else(|| AotError::InvalidRequest { message: "opaque transport after object finalization".into() })?;
+        let emitted = beskid_codegen::glue::emit_source_handle_transports(module, input, bindings)?;
         for transport in &emitted {
-            for (name,id) in [transport.constructor(),transport.reader()].into_iter().zip(transport.functions().iter().copied()) {
-                self.func_ids.insert(name.to_owned(),id);
-                if !self.declared_symbols.iter().any(|symbol|symbol==name){self.declared_symbols.push(name.to_owned());}
+            for (name, id) in
+                [transport.constructor(), transport.reader()].into_iter().zip(transport.functions().iter().copied())
+            {
+                self.func_ids.insert(name.to_owned(), id);
+                if !self.declared_symbols.iter().any(|symbol| symbol == name) {
+                    self.declared_symbols.push(name.to_owned());
+                }
             }
         }
         Ok(emitted)
@@ -118,18 +127,23 @@ impl BeskidObjectModule {
         specialization: Option<&beskid_queries::GenericSpecializationInstance>,
         symbol: &str,
     ) -> AotResult<beskid_codegen::checked_callback::EmittedCheckedCallback> {
-        let module = self.module.as_mut().ok_or_else(|| AotError::InvalidRequest {
-            message: "checked callback after object finalization".into(),
-        })?;
+        let module = self
+            .module
+            .as_mut()
+            .ok_or_else(|| AotError::InvalidRequest { message: "checked callback after object finalization".into() })?;
         let mut literals = beskid_codegen::CodegenContext::new_with_artifact_namespace(symbol);
         let emitted = beskid_codegen::checked_callback::emit_checked_callback(
-            module, input, isa, entry, specialization, &mut literals,
-            &self.func_ids, symbol, symbol,
+            module,
+            input,
+            isa,
+            entry,
+            specialization,
+            &mut literals,
+            &self.func_ids,
+            symbol,
+            symbol,
         )?;
-        let literal_artifact = CodegenArtifact {
-            string_literals: literals.string_literals,
-            ..Default::default()
-        };
+        let literal_artifact = CodegenArtifact { string_literals: literals.string_literals, ..Default::default() };
         self.data_ids.extend(emit_string_literals(module, &literal_artifact)?);
         self.func_ids.insert(symbol.to_owned(), emitted.function());
         self.declared_symbols.push(symbol.to_owned());
@@ -719,8 +733,9 @@ mod platform_import_tests {
     #[test]
     fn symbols_outside_the_manifest_are_not_admitted() {
         let isa = host_isa();
-        let admitted = referenced_platform_imports(isa.as_ref(), &calling("not_a_platform_symbol", types::F64, types::F64))
-            .expect("unknown symbols are left to the undefined-callee check");
+        let admitted =
+            referenced_platform_imports(isa.as_ref(), &calling("not_a_platform_symbol", types::F64, types::F64))
+                .expect("unknown symbols are left to the undefined-callee check");
         assert!(admitted.is_empty());
     }
 }

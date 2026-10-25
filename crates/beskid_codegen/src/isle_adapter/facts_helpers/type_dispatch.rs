@@ -128,11 +128,8 @@ impl SyntaxNodeFacts<'_> {
         // pointer-shaped element ABI.
         if self.query(node_kind(self.db, key)) == Some(beskid_queries::IndexedNodeKind::IndexExpression)
             && let Some(enclosing) = self.current_item_specialization()
-            && let Some(kind) = self.query(array_index_element_managed_reference_specialization(
-                self.db,
-                key,
-                enclosing,
-            ))
+            && let Some(kind) =
+                self.query(array_index_element_managed_reference_specialization(self.db, key, enclosing))
         {
             return Some(match kind {
                 ManagedReferenceKind::GcManaged => ManagedReferenceFact::GcManaged,
@@ -173,9 +170,8 @@ impl SyntaxNodeFacts<'_> {
         // arithmetic that have no independently inferred node_type, and bare integer
         // literals typed by their expected type. Only a distinct scalar/string identity is
         // sufficient here; POINTER remains ambiguous.
-        if let Some(semantic) = self
-            .scalar_semantic_type(key)
-            .or_else(|| self.query(contextual_integer_literal_abi_type(self.db, key)))
+        if let Some(semantic) =
+            self.scalar_semantic_type(key).or_else(|| self.query(contextual_integer_literal_abi_type(self.db, key)))
             && semantic != SemanticTypeId::POINTER
         {
             return Some(if semantic == SemanticTypeId::STRING {

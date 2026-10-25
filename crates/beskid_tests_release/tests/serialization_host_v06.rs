@@ -152,7 +152,9 @@ pub type ForgedGeneratorFactory : ModFactory<ForgedGenerator> {
 "#;
 
 fn mod_manifest(name: &str) -> String {
-    format!("{name} {{ name = \"{name}\" version = \"0.6.0\" type = Mod root = \"Src\" mod {{ capabilities = [read_project_sources, emit_syntax, query_semantic_snapshot] }} }}\n")
+    format!(
+        "{name} {{ name = \"{name}\" version = \"0.6.0\" type = Mod root = \"Src\" mod {{ capabilities = [read_project_sources, emit_syntax, query_semantic_snapshot] }} }}\n"
+    )
 }
 
 /// Write a Mod project and a host application depending on it; returns the host manifest.
@@ -202,10 +204,20 @@ fn find_descriptor(root: &Path) -> PathBuf {
 fn ser04_installed_build_rejects_generator_code_string_output_before_lowering() {
     let cli = Cli::qualified();
     let home = Home::new();
-    let (_mod, manifest) = mod_and_host(&home, "TextMod", CODE_OUTPUT_MOD_SOURCE, "i32 Main() { return GeneratedUnit() - 1; }\n");
+    let (_mod, manifest) =
+        mod_and_host(&home, "TextMod", CODE_OUTPUT_MOD_SOURCE, "i32 Main() { return GeneratedUnit() - 1; }\n");
     let executable = home.work().join(beskid_tests_release::installed::executable_name("host-out"));
-    let output = run(cli, &home, &["build", "--offline", "--plain", "--project", path_text(&manifest), "--output", path_text(&executable)]);
-    assert_eq!(output.status.code(), Some(1), "a Generator answering with source text must fail before lowering:\n{}", transcript(&output));
+    let output = run(
+        cli,
+        &home,
+        &["build", "--offline", "--plain", "--project", path_text(&manifest), "--output", path_text(&executable)],
+    );
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "a Generator answering with source text must fail before lowering:\n{}",
+        transcript(&output)
+    );
     let diagnostic = text(&output.stderr);
     let lowered = diagnostic.to_ascii_lowercase();
     assert!(lowered.contains("textmod"), "the diagnostic names the Mod:\n{diagnostic}");
@@ -215,21 +227,37 @@ fn ser04_installed_build_rejects_generator_code_string_output_before_lowering() 
     );
     assert!(!lowered.contains("generate from mods ("), "no Generator ran on a code-output contribution:\n{diagnostic}");
     assert!(!executable.exists(), "no executable is produced");
-    assert!(!home.work().join("Host/Src/Generated.bd").exists() && !home.work().join("Host/Generated").exists(), "no source text is written into the host");
+    assert!(
+        !home.work().join("Host/Src/Generated.bd").exists() && !home.work().join("Host/Generated").exists(),
+        "no source text is written into the host"
+    );
 }
 
 #[test]
 fn ser04_installed_build_rejects_forged_semantic_handle_before_lowering() {
     let cli = Cli::qualified();
     let home = Home::new();
-    let (_mod, manifest) = mod_and_host(&home, "ForgedMod", FORGED_HANDLE_MOD_SOURCE, "i32 Main() { GeneratedUnit(); return 0; }\n");
+    let (_mod, manifest) =
+        mod_and_host(&home, "ForgedMod", FORGED_HANDLE_MOD_SOURCE, "i32 Main() { GeneratedUnit(); return 0; }\n");
     let executable = home.work().join(beskid_tests_release::installed::executable_name("host-out"));
-    let output = run(cli, &home, &["build", "--offline", "--plain", "--project", path_text(&manifest), "--output", path_text(&executable)]);
-    assert_eq!(output.status.code(), Some(1), "a contribution bound to a handle the host never issued must fail before lowering:\n{}", transcript(&output));
+    let output = run(
+        cli,
+        &home,
+        &["build", "--offline", "--plain", "--project", path_text(&manifest), "--output", path_text(&executable)],
+    );
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "a contribution bound to a handle the host never issued must fail before lowering:\n{}",
+        transcript(&output)
+    );
     let diagnostic = text(&output.stderr).to_ascii_lowercase();
     assert!(diagnostic.contains("forgedmod"), "the diagnostic names the Mod:\n{diagnostic}");
     // The Mod project itself is compiled (and lowered) before it runs; the host program is not.
-    assert!(diagnostic.contains("stale") || diagnostic.contains("foreign"), "the host rejects the never-issued handle:\n{diagnostic}");
+    assert!(
+        diagnostic.contains("stale") || diagnostic.contains("foreign"),
+        "the host rejects the never-issued handle:\n{diagnostic}"
+    );
     assert!(!executable.exists(), "no executable is produced");
 }
 
@@ -243,12 +271,22 @@ fn ser02_installed_check_rejects_pointer_field_at_declaration_span() {
     let source = "use Core.Serialization.Contracts;\n\n[Serialize]\npub type Handle {\n    pub i32 count;\n    pub pointer raw;\n}\n\ni32 Main() { return 0; }\n";
     let manifest = write_app(&home.work(), "Pointer", source);
     let output = run(cli, &home, &["check", "--plain", "--offline", "--project", path_text(&manifest)]);
-    assert_eq!(output.status.code(), Some(1), "a pointer field under [Serialize] fails check:\n{}", transcript(&output));
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "a pointer field under [Serialize] fails check:\n{}",
+        transcript(&output)
+    );
     let combined = format!("{}{}", text(&output.stdout), text(&output.stderr));
     let lowered = combined.to_ascii_lowercase();
     assert!(lowered.contains("pointer"), "the diagnostic names the unsupported shape:\n{combined}");
     let field_line = source.lines().position(|line| line.contains("pub pointer raw")).unwrap() + 1;
-    assert!(combined.contains(&format!("Main.bd:{field_line}")) || combined.contains(&format!("line {field_line}")) || combined.contains(&format!(":{field_line}:")), "the diagnostic points at the field declaration line {field_line}:\n{combined}");
+    assert!(
+        combined.contains(&format!("Main.bd:{field_line}"))
+            || combined.contains(&format!("line {field_line}"))
+            || combined.contains(&format!(":{field_line}:")),
+        "the diagnostic points at the field declaration line {field_line}:\n{combined}"
+    );
     assert!(!home.work().join("Pointer/obj").join("main").exists(), "nothing is lowered");
 }
 
@@ -263,8 +301,11 @@ fn ser02_installed_check_rejects_pointer_field_at_declaration_span() {
 fn ser_contracts_only_import_builds_runs_and_round_trips_bsol() {
     let cli = Cli::qualified();
     let home = Home::new();
-    let declaration = "use Core.Serialization.Contracts;\n\n[Serialize]\npub type Point {\n    pub i32 x;\n    pub i32 y;\n}\n\n";
-    let plain = format!("{declaration}i32 Main() {{\n    Point point = Point {{ x: 3_i32, y: 4_i32 }};\n    if (point.x + point.y == 7_i32) {{ return 0; }}\n    return 1;\n}}\n");
+    let declaration =
+        "use Core.Serialization.Contracts;\n\n[Serialize]\npub type Point {\n    pub i32 x;\n    pub i32 y;\n}\n\n";
+    let plain = format!(
+        "{declaration}i32 Main() {{\n    Point point = Point {{ x: 3_i32, y: 4_i32 }};\n    if (point.x + point.y == 7_i32) {{ return 0; }}\n    return 1;\n}}\n"
+    );
     let manifest = write_app(&home.work(), "ContractsOnly", &plain);
     let output = run(cli, &home, &["run", "--offline", "--plain", "--project", path_text(&manifest)]);
     assert!(
@@ -333,11 +374,21 @@ fn mod06_01_installed_build_fails_on_tampered_mod_descriptor_without_stub() {
     assert!(relabeled >= 1, "the descriptor inventory records the image digest");
     std::fs::write(&descriptor_path, serde_json::to_vec_pretty(&descriptor).unwrap()).unwrap();
     let output = run(cli, &home, &["run", "--offline", "--plain", "--project", path_text(&manifest)]);
-    assert!(!output.status.success(), "a required Mod whose object cannot load must fail compilation:\n{}", transcript(&output));
+    assert!(
+        !output.status.success(),
+        "a required Mod whose object cannot load must fail compilation:\n{}",
+        transcript(&output)
+    );
     assert!(!text(&output.stdout).contains("stub-ran"), "no program runs on stub results");
     let diagnostic = text(&output.stderr).to_ascii_lowercase();
-    assert!(diagnostic.contains("nativemod") || diagnostic.contains("mod"), "the failure names the native Mod:\n{diagnostic}");
-    assert!(std::fs::read(&image).unwrap() == corrupted, "the host does not silently rebuild over a qualified artifact it could not load");
+    assert!(
+        diagnostic.contains("nativemod") || diagnostic.contains("mod"),
+        "the failure names the native Mod:\n{diagnostic}"
+    );
+    assert!(
+        std::fs::read(&image).unwrap() == corrupted,
+        "the host does not silently rebuild over a qualified artifact it could not load"
+    );
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -352,9 +403,21 @@ fn mod06_02_installed_build_of_instantiated_generic_helpers_fails_before_lowerin
     let source = "use Core.Serialization.Contracts;\n\npub type Opaque {\n    pub i32 inner;\n}\n\n[Serialize]\npub type Pair<T> {\n    pub T left;\n    pub T right;\n}\n\n[Serialize]\npub type Holder {\n    pub Pair<Opaque> nested;\n}\n\ni32 Main() { return 0; }\n";
     let manifest = write_app(&home.work(), "Facts", source);
     let executable = home.work().join(beskid_tests_release::installed::executable_name("facts-out"));
-    let output = run(cli, &home, &["build", "--plain", "--offline", "--project", path_text(&manifest), "--output", path_text(&executable)]);
-    assert_eq!(output.status.code(), Some(1), "a generic helper without facts for its instantiation fails before lowering:\n{}", transcript(&output));
+    let output = run(
+        cli,
+        &home,
+        &["build", "--plain", "--offline", "--project", path_text(&manifest), "--output", path_text(&executable)],
+    );
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "a generic helper without facts for its instantiation fails before lowering:\n{}",
+        transcript(&output)
+    );
     let combined = format!("{}{}", text(&output.stdout), text(&output.stderr));
-    assert!(combined.contains("Opaque") || combined.contains("nested"), "the diagnostic names the unauthorized instantiation:\n{combined}");
+    assert!(
+        combined.contains("Opaque") || combined.contains("nested"),
+        "the diagnostic names the unauthorized instantiation:\n{combined}"
+    );
     assert!(!executable.exists(), "no executable is produced");
 }

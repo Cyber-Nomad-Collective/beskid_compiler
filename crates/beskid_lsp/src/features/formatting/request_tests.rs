@@ -109,6 +109,9 @@ async fn formatting_request_keeps_every_comment_and_then_needs_no_edits() {
     let again = edits_of(call(&mut service, formatting_request(3, uri)).await);
     assert!(again.is_empty(), "a formatted document must need 0 edits, got {again:?}");
 
-    notify(&mut service, Request::build("textDocument/didClose").params(json!({"textDocument": {"uri": uri}})).finish())
-        .await;
+    notify(
+        &mut service,
+        Request::build("textDocument/didClose").params(json!({"textDocument": {"uri": uri}})).finish(),
+    )
+    .await;
 }

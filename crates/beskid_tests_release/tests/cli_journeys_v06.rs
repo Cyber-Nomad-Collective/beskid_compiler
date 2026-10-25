@@ -6,10 +6,25 @@ use beskid_tests_release::registry::Registry;
 use std::path::{Path, PathBuf};
 use std::process::Output;
 
-const ROOT_FAMILIES: [&str; 14] =
-    ["new", "check", "build", "run", "test", "fmt", "doc", "add", "remove", "update", "package", "toolchain", "doctor", "dev"];
+const ROOT_FAMILIES: [&str; 14] = [
+    "new",
+    "check",
+    "build",
+    "run",
+    "test",
+    "fmt",
+    "doc",
+    "add",
+    "remove",
+    "update",
+    "package",
+    "toolchain",
+    "doctor",
+    "dev",
+];
 const DESCRIBED: [&str; 8] = ["build", "run", "test", "doc", "remove", "update", "package", "toolchain"];
-const DEV_ROUTES: [&str; 10] = ["syntax", "build", "project", "corelib", "runtime-kit", "mod", "import", "lsp", "bsol", "repl"];
+const DEV_ROUTES: [&str; 10] =
+    ["syntax", "build", "project", "corelib", "runtime-kit", "mod", "import", "lsp", "bsol", "repl"];
 
 fn run(cli: &Cli, home: &Home, args: &[&str]) -> Output {
     cli.run(cli.command(home).args(args))
@@ -93,7 +108,10 @@ fn cli06_01_root_help_shows_add_example_and_new_add_run_sequence() {
     for family in DESCRIBED {
         let description = description_of(&text, family);
         assert!(!description.is_empty(), "{family} has a user-facing description:\n{text}");
-        assert!(!description.contains("Args") && !description.contains("struct"), "{family} description is not argument-structure documentation: {description}");
+        assert!(
+            !description.contains("Args") && !description.contains("struct"),
+            "{family} description is not argument-structure documentation: {description}"
+        );
     }
     assert!(!home.has_provisioning_writes(), "help must not provision");
 }
@@ -108,7 +126,10 @@ fn cli06_01_add_help_explains_effects_project_targeting_and_recovery() {
     assert!(text.contains("--project"), "add help explains project targeting:\n{text}");
     assert!(text.contains("lock"), "add help explains the lock effect:\n{text}");
     assert!(text.contains("dependency"), "add help explains the dependency effect:\n{text}");
-    assert!(text.contains("--offline") && text.contains("--locked") && text.contains("--frozen"), "add help names the resolution policies used for recovery:\n{text}");
+    assert!(
+        text.contains("--offline") && text.contains("--locked") && text.contains("--frozen"),
+        "add help names the resolution policies used for recovery:\n{text}"
+    );
     assert!(!home.has_provisioning_writes(), "help must not provision");
 }
 
@@ -129,7 +150,10 @@ fn cli06_02_new_offline_bundled_app_builds_checks_runs() {
     let manifest_text = manifest.to_str().unwrap();
     assert_success(&run(cli, &home, &["check", "--plain", "--project", manifest_text]), "check of the bundled app");
     let executable = home.work().join(beskid_tests_release::installed::executable_name("hello-out"));
-    assert_success(&run(cli, &home, &["build", "--plain", "--project", manifest_text, "--output", executable.to_str().unwrap()]), "build of the bundled app");
+    assert_success(
+        &run(cli, &home, &["build", "--plain", "--project", manifest_text, "--output", executable.to_str().unwrap()]),
+        "build of the bundled app",
+    );
     assert!(executable.is_file(), "build writes the requested executable");
     assert_success(&run(cli, &home, &["run", "--plain", "--project", manifest_text]), "run of the bundled app");
 }
@@ -139,11 +163,33 @@ fn cli06_02_new_template_override_binds_name_and_output() {
     let cli = Cli::qualified();
     let home = Home::new();
     let template = local_template(&home.work());
-    assert_success(&run(cli, &home, &["package", "template", "install", "offline-local", "--path", template.to_str().unwrap()]), "template install");
+    assert_success(
+        &run(cli, &home, &["package", "template", "install", "offline-local", "--path", template.to_str().unwrap()]),
+        "template install",
+    );
     let output = home.work().join("custom-output");
-    let created = run(cli, &home, &["new", "ignored-name", "--offline", "--no-interactive", "--template", "offline-local", "--name", "Custom", "--output", output.to_str().unwrap()]);
+    let created = run(
+        cli,
+        &home,
+        &[
+            "new",
+            "ignored-name",
+            "--offline",
+            "--no-interactive",
+            "--template",
+            "offline-local",
+            "--name",
+            "Custom",
+            "--output",
+            output.to_str().unwrap(),
+        ],
+    );
     assert_success(&created, "new with template override");
-    assert_eq!(std::fs::read_to_string(output.join("Name.txt")).unwrap(), "Custom\n", "the template binds the explicit name");
+    assert_eq!(
+        std::fs::read_to_string(output.join("Name.txt")).unwrap(),
+        "Custom\n",
+        "the template binds the explicit name"
+    );
     assert_eq!(std::fs::read_to_string(output.join("README.md")).unwrap(), "verified local bytes\n");
     assert!(!home.work().join("ignored-name").exists(), "explicit --output wins over the positional default");
 }
@@ -160,7 +206,12 @@ fn cli06_02_new_nonempty_output_rejected_byte_for_byte() {
     let rejected = run(cli, &home, &["new", "hello", "--offline", "--no-interactive"]);
     assert_eq!(rejected.status.code(), Some(1), "nonempty output without --force fails:\n{}", transcript(&rejected));
     assert_eq!(snapshot(&existing), before, "every existing byte is preserved");
-    assert!(stderr(&rejected).to_ascii_lowercase().contains("force") || stderr(&rejected).to_ascii_lowercase().contains("empty"), "the conflict is reported:\n{}", transcript(&rejected));
+    assert!(
+        stderr(&rejected).to_ascii_lowercase().contains("force")
+            || stderr(&rejected).to_ascii_lowercase().contains("empty"),
+        "the conflict is reported:\n{}",
+        transcript(&rejected)
+    );
 }
 
 #[test]
@@ -169,7 +220,20 @@ fn cli06_02_new_offline_local_template_resolves_without_network() {
     let home = Home::new();
     let registry = Registry::new();
     let template = local_template(&home.work());
-    let created = run(cli, &home, &["new", "local", "--offline", "--no-interactive", "--path", template.to_str().unwrap(), "--registry-url", registry.url()]);
+    let created = run(
+        cli,
+        &home,
+        &[
+            "new",
+            "local",
+            "--offline",
+            "--no-interactive",
+            "--path",
+            template.to_str().unwrap(),
+            "--registry-url",
+            registry.url(),
+        ],
+    );
     assert_success(&created, "new from a local template");
     assert_eq!(std::fs::read_to_string(home.work().join("local/README.md")).unwrap(), "verified local bytes\n");
     assert_eq!(registry.count(), 0);
@@ -181,8 +245,39 @@ fn cli06_02_new_offline_installed_template_checks_bytes_before_output() {
     let home = Home::new();
     let registry = Registry::new();
     let template = local_template(&home.work());
-    assert_success(&run(cli, &home, &["package", "template", "install", "offline-local", "--path", template.to_str().unwrap(), "--registry-url", registry.url()]), "template install");
-    let instantiate = |name: &str| run(cli, &home, &["new", name, "--offline", "--no-interactive", "--template", "offline-local", "--registry-url", registry.url()]);
+    assert_success(
+        &run(
+            cli,
+            &home,
+            &[
+                "package",
+                "template",
+                "install",
+                "offline-local",
+                "--path",
+                template.to_str().unwrap(),
+                "--registry-url",
+                registry.url(),
+            ],
+        ),
+        "template install",
+    );
+    let instantiate = |name: &str| {
+        run(
+            cli,
+            &home,
+            &[
+                "new",
+                name,
+                "--offline",
+                "--no-interactive",
+                "--template",
+                "offline-local",
+                "--registry-url",
+                registry.url(),
+            ],
+        )
+    };
     assert_success(&instantiate("warm"), "verified installed template");
     assert_eq!(std::fs::read_to_string(home.work().join("warm/README.md")).unwrap(), "verified local bytes\n");
     std::fs::write(home.config().join("templates/installed/test.offline/README.md"), "tampered\n").unwrap();
@@ -256,22 +351,44 @@ fn cli06_03_run_reserves_stdout_for_program_output_and_propagates_exit_status() 
     assert_eq!(stdout(&plain), "stdout-marker\n", "stdout carries only program output:\n{}", transcript(&plain));
     assert!(stderr(&plain).contains("stderr-marker"), "stderr carries the program's stderr:\n{}", transcript(&plain));
     assert!(!has_cursor_controls(&plain.stderr), "redirected progress has no cursor controls:\n{}", transcript(&plain));
-    let with_arguments = run(cli, &home, &["run", "--plain", "--project", manifest.to_str().unwrap(), "--", "", "two words", "--dash", "caf\u{e9}"]);
-    assert_eq!(with_arguments.status.code(), Some(7), "trailing -- arguments are accepted:\n{}", transcript(&with_arguments));
+    let with_arguments = run(
+        cli,
+        &home,
+        &["run", "--plain", "--project", manifest.to_str().unwrap(), "--", "", "two words", "--dash", "caf\u{e9}"],
+    );
+    assert_eq!(
+        with_arguments.status.code(),
+        Some(7),
+        "trailing -- arguments are accepted:\n{}",
+        transcript(&with_arguments)
+    );
     let text = stdout(&with_arguments);
     let lines: Vec<&str> = text.lines().skip(1).collect();
-    assert_eq!(lines, ["arg:", "arg:two words", "arg:--dash", "arg:caf\u{e9}"], "argument boundaries, empty values, spaces, Unicode and leading dashes arrive unchanged");
+    assert_eq!(
+        lines,
+        ["arg:", "arg:two words", "arg:--dash", "arg:caf\u{e9}"],
+        "argument boundaries, empty values, spaces, Unicode and leading dashes arrive unchanged"
+    );
 }
 
 #[test]
 fn cli06_03_removed_root_spellings_exit_2_and_name_canonical_replacement() {
     let cli = Cli::qualified();
     let home = Home::new();
-    for (old, replacement) in [("analyze", "check"), ("pckg", "package"), ("up", "toolchain"), ("fetch", "dev project fetch"), ("lsp", "dev lsp")] {
+    for (old, replacement) in [
+        ("analyze", "check"),
+        ("pckg", "package"),
+        ("up", "toolchain"),
+        ("fetch", "dev project fetch"),
+        ("lsp", "dev lsp"),
+    ] {
         let output = run(cli, &home, &[old]);
         assert_eq!(output.status.code(), Some(2), "`beskid {old}` is a usage error:\n{}", transcript(&output));
         let diagnostic = format!("{}{}", stdout(&output), stderr(&output));
-        assert!(diagnostic.contains(&format!("beskid {replacement}")), "`beskid {old}` names `beskid {replacement}`:\n{diagnostic}");
+        assert!(
+            diagnostic.contains(&format!("beskid {replacement}")),
+            "`beskid {old}` names `beskid {replacement}`:\n{diagnostic}"
+        );
         assert!(!diagnostic.contains("\u{1b}[?1049h"), "no alternate screen");
     }
     assert!(!home.has_provisioning_writes());
@@ -300,18 +417,29 @@ fn cli06_04_update_dry_run_json_stdout_has_only_schema_version_1_records() {
     let home = Home::new();
     write_lib(&home.work(), "Local", "pub i32 Answer() { return 42; }\n");
     let manifest = write_app(&home.work(), "App", "i32 Main() { return 0; }\n");
-    assert_success(&run(cli, &home, &["add", "Local", "--path", "../Local", "--offline", "--project", manifest.to_str().unwrap()]), "add path dependency");
-    let output = run(cli, &home, &["update", "Local", "--dry-run", "--json", "--offline", "--project", manifest.to_str().unwrap()]);
+    assert_success(
+        &run(cli, &home, &["add", "Local", "--path", "../Local", "--offline", "--project", manifest.to_str().unwrap()]),
+        "add path dependency",
+    );
+    let output = run(
+        cli,
+        &home,
+        &["update", "Local", "--dry-run", "--json", "--offline", "--project", manifest.to_str().unwrap()],
+    );
     assert_success(&output, "update --dry-run --json");
     let text = stdout(&output);
     assert!(!text.trim().is_empty(), "machine output is present");
     assert!(!has_cursor_controls(&output.stdout), "JSON stdout has no ANSI or progress");
     let mut saw_result = false;
     for line in text.lines() {
-        let record: serde_json::Value = serde_json::from_str(line).unwrap_or_else(|error| panic!("stdout line is not a JSON record ({error}): {line}"));
+        let record: serde_json::Value = serde_json::from_str(line)
+            .unwrap_or_else(|error| panic!("stdout line is not a JSON record ({error}): {line}"));
         assert_eq!(record["schemaVersion"], 1, "every record carries schemaVersion=1: {line}");
         assert_eq!(record["command"], "update", "every record names the command: {line}");
-        assert!(record["event"].is_string() && record["status"].is_string(), "every record carries event and status: {line}");
+        assert!(
+            record["event"].is_string() && record["status"].is_string(),
+            "every record carries event and status: {line}"
+        );
         saw_result |= record["event"] == "result";
     }
     assert!(saw_result, "a result record is emitted:\n{text}");
@@ -321,12 +449,23 @@ fn cli06_04_update_dry_run_json_stdout_has_only_schema_version_1_records() {
 fn cli06_04_run_json_exits_2_before_executing() {
     let cli = Cli::qualified();
     let home = Home::new();
-    let manifest = write_app(&home.work(), "App", "use Core.Output;\ni32 Main() { Output.WriteLine(\"program-ran\"); return 0; }\n");
+    let manifest = write_app(
+        &home.work(),
+        "App",
+        "use Core.Output;\ni32 Main() { Output.WriteLine(\"program-ran\"); return 0; }\n",
+    );
     let output = run(cli, &home, &["run", "--json", "--plain", "--project", manifest.to_str().unwrap()]);
     assert_eq!(output.status.code(), Some(2), "run --json is a usage error:\n{}", transcript(&output));
     assert!(!stdout(&output).contains("program-ran"), "the program never executes");
     let diagnostic = stderr(&output);
-    assert!(["check", "build", "test", "add", "remove", "update", "doctor"].iter().filter(|command| diagnostic.contains(*command)).count() >= 2, "usage guidance names the commands that support --json:\n{diagnostic}");
+    assert!(
+        ["check", "build", "test", "add", "remove", "update", "doctor"]
+            .iter()
+            .filter(|command| diagnostic.contains(*command))
+            .count()
+            >= 2,
+        "usage guidance names the commands that support --json:\n{diagnostic}"
+    );
     assert!(!home.work().join("App/obj").exists(), "no executable preparation before the usage error");
 }
 
@@ -340,8 +479,14 @@ fn cli06_04_doctor_reports_missing_kit_without_installing_or_touching_credential
     let output = incomplete.run(incomplete.command(&home).arg("doctor"));
     assert_eq!(output.status.code(), Some(1), "doctor on an incomplete installation fails:\n{}", transcript(&output));
     let diagnostic = stderr(&output).to_ascii_lowercase();
-    assert!(diagnostic.contains("runtime kit") || diagnostic.contains("prefix") || diagnostic.contains("corelib"), "doctor names the missing component:\n{diagnostic}");
-    assert!(diagnostic.contains("toolchain update") || diagnostic.contains("install"), "doctor gives an actionable next step:\n{diagnostic}");
+    assert!(
+        diagnostic.contains("runtime kit") || diagnostic.contains("prefix") || diagnostic.contains("corelib"),
+        "doctor names the missing component:\n{diagnostic}"
+    );
+    assert!(
+        diagnostic.contains("toolchain update") || diagnostic.contains("install"),
+        "doctor gives an actionable next step:\n{diagnostic}"
+    );
     assert_eq!(snapshot(&incomplete_root), before, "doctor installs nothing into the prefix");
     assert!(!home.has_provisioning_writes(), "doctor touches no per-user state or credentials");
 }
@@ -353,17 +498,33 @@ fn cli06_04_redirected_build_and_test_complete_without_cursor_controls() {
     let project = home.work().join("Native");
     std::fs::create_dir_all(project.join("Src")).unwrap();
     std::fs::write(project.join("Src/Main.bd"), "i32 Main() { return 0; }\n").unwrap();
-    std::fs::write(project.join("Src/Smoke.bd"), "use Testing.Assert;\ntest SmokePasses { Assert.True(true, \"redirected test\"); }\n").unwrap();
+    std::fs::write(
+        project.join("Src/Smoke.bd"),
+        "use Testing.Assert;\ntest SmokePasses { Assert.True(true, \"redirected test\"); }\n",
+    )
+    .unwrap();
     let manifest = project.join("Native.bproj");
     std::fs::write(&manifest, "Native { name = \"Native\" version = \"0.1.0\" }\ntarget \"App\" { kind = \"App\" entry = \"Main.bd\" }\ntarget \"Smoke\" { kind = \"Test\" entry = \"Smoke.bd\" }\n").unwrap();
     let build = run(cli, &home, &["build", "--project", manifest.to_str().unwrap(), "--target", "App"]);
     assert_success(&build, "redirected build");
-    assert!(!has_cursor_controls(&build.stdout) && !has_cursor_controls(&build.stderr), "redirected build streams carry no cursor controls:\n{}", transcript(&build));
+    assert!(
+        !has_cursor_controls(&build.stdout) && !has_cursor_controls(&build.stderr),
+        "redirected build streams carry no cursor controls:\n{}",
+        transcript(&build)
+    );
     let test = run(cli, &home, &["test", "--project", manifest.to_str().unwrap(), "--target", "Smoke"]);
     assert_success(&test, "redirected test");
-    assert!(!has_cursor_controls(&test.stdout) && !has_cursor_controls(&test.stderr), "redirected test streams carry no cursor controls:\n{}", transcript(&test));
+    assert!(
+        !has_cursor_controls(&test.stdout) && !has_cursor_controls(&test.stderr),
+        "redirected test streams carry no cursor controls:\n{}",
+        transcript(&test)
+    );
     // stdout carries the readable result summary; per-test rows are progress on stderr.
-    assert!(stdout(&test).contains("passed=1") && stdout(&test).contains("failed=0"), "the test summary is readable:\n{}", transcript(&test));
+    assert!(
+        stdout(&test).contains("passed=1") && stdout(&test).contains("failed=0"),
+        "the test summary is readable:\n{}",
+        transcript(&test)
+    );
     assert!(stderr(&test).contains("SmokePasses"), "the passing test row names the test:\n{}", transcript(&test));
 }
 
@@ -385,7 +546,10 @@ fn v067_failed_assertion_is_a_test_failure_with_values_and_call_site() {
     assert_eq!(text.status.code(), Some(1), "a failed assertion fails the run:\n{}", transcript(&text));
     let report = stderr(&text);
     assert!(report.contains("FAIL") && report.contains("AddsNumbers"), "the failure is under the test name:\n{report}");
-    assert!(report.contains("assertion failed: expected 3, found 4"), "the assertion text names both values:\n{report}");
+    assert!(
+        report.contains("assertion failed: expected 3, found 4"),
+        "the assertion text names both values:\n{report}"
+    );
     assert!(report.contains("Fails.bd:6:5"), "the call site is the Expect call:\n{report}");
     for hidden in ["isle_invariant", "runtime trap", "exited exit status", "test crashed"] {
         assert!(!report.contains(hidden), "internal text `{hidden}` is not shown for an assertion failure:\n{report}");
@@ -415,7 +579,8 @@ fn v067_failed_assertion_is_a_test_failure_with_values_and_call_site() {
             12,
         ),
     ] {
-        let at = lines.iter().position(|line| *line == headline).unwrap_or_else(|| panic!("`{headline}` in:\n{output}"));
+        let at =
+            lines.iter().position(|line| *line == headline).unwrap_or_else(|| panic!("`{headline}` in:\n{output}"));
         assert_eq!(&lines[at + 1..at + 1 + rest.len()], rest.as_slice(), "lines after `{headline}`:\n{output}");
         let location = lines[at + 1 + rest.len()];
         assert!(
@@ -438,7 +603,9 @@ fn v067_failed_assertion_is_a_test_failure_with_values_and_call_site() {
     assert_eq!(failed["failure"]["location"]["line"], 6);
     assert_eq!(failed["failure"]["location"]["column"], 5);
     assert!(
-        failed["failure"]["location"]["file"].as_str().is_some_and(|file| file.ends_with("Src/Fails.bd") && !file.contains("obj/beskid")),
+        failed["failure"]["location"]["file"]
+            .as_str()
+            .is_some_and(|file| file.ends_with("Src/Fails.bd") && !file.contains("obj/beskid")),
         "the location names the authored file, not the materialized copy: {failed}"
     );
 }
@@ -460,14 +627,23 @@ fn generic_assert_equal_failure_records_both_formatted_values() {
     let text = run(cli, &home, &["test", "--project", manifest.to_str().unwrap(), "--target", "Fails", "--plain"]);
     assert_eq!(text.status.code(), Some(1), "a failed Assert.Equal fails the run:\n{}", transcript(&text));
     let report = stderr(&text);
-    assert!(report.contains("assertion failed: expected abc, found abd"), "the failure names both string values:\n{report}");
+    assert!(
+        report.contains("assertion failed: expected abc, found abd"),
+        "the failure names both string values:\n{report}"
+    );
     let json = run(cli, &home, &["test", "--project", manifest.to_str().unwrap(), "--target", "Fails", "--json"]);
     let record: serde_json::Value = stdout(&json)
         .lines()
         .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
         .find(|record| record["command"] == "test" && record["event"] == "result")
         .unwrap_or_else(|| panic!("a result record on stdout:\n{}", transcript(&json)));
-    let failed = record["tests"].as_array().expect("tests array").iter().find(|test| test["outcome"] == "failed").cloned().expect("one failed test");
+    let failed = record["tests"]
+        .as_array()
+        .expect("tests array")
+        .iter()
+        .find(|test| test["outcome"] == "failed")
+        .cloned()
+        .expect("one failed test");
     assert_eq!(failed["failure"]["expected"], "abc");
     assert_eq!(failed["failure"]["actual"], "abd");
     assert_eq!(failed["failure"]["location"]["line"], 5);
@@ -479,7 +655,8 @@ fn generic_assert_equal_failure_records_both_formatted_values() {
 fn capabilities(cli: &Cli, home: &Home) -> serde_json::Value {
     let output = run(cli, home, &["dev", "capabilities", "--json"]);
     assert_success(&output, "dev capabilities --json");
-    serde_json::from_str(stdout(&output).trim()).unwrap_or_else(|error| panic!("capabilities is one JSON document ({error}):\n{}", transcript(&output)))
+    serde_json::from_str(stdout(&output).trim())
+        .unwrap_or_else(|error| panic!("capabilities is one JSON document ({error}):\n{}", transcript(&output)))
 }
 
 #[test]
@@ -492,7 +669,12 @@ fn cli06_05_dev_capabilities_json_lists_version_canonical_commands_and_schemas()
     assert_success(&version, "--version");
     let reported = stdout(&version).trim().strip_prefix("beskid ").expect("`beskid <version>`").to_owned();
     assert_eq!(document["cliVersion"], reported, "the capability version is the running CLI version");
-    let mut commands: Vec<String> = document["commands"].as_array().expect("commands array").iter().map(|value| value.as_str().unwrap().to_owned()).collect();
+    let mut commands: Vec<String> = document["commands"]
+        .as_array()
+        .expect("commands array")
+        .iter()
+        .map(|value| value.as_str().unwrap().to_owned())
+        .collect();
     commands.sort();
     let mut expected = ROOT_FAMILIES.map(str::to_owned).to_vec();
     expected.sort();
@@ -511,7 +693,12 @@ fn cli06_05_help_inventory_matches_capability_inventory() {
     let cli = Cli::qualified();
     let home = Home::new();
     let document = capabilities(cli, &home);
-    let mut capability_commands: Vec<String> = document["commands"].as_array().expect("commands").iter().map(|value| value.as_str().unwrap().to_owned()).collect();
+    let mut capability_commands: Vec<String> = document["commands"]
+        .as_array()
+        .expect("commands")
+        .iter()
+        .map(|value| value.as_str().unwrap().to_owned())
+        .collect();
     capability_commands.sort();
     let help = run(cli, &home, &["--help"]);
     assert_success(&help, "root help");
@@ -529,7 +716,10 @@ fn cli06_05_help_inventory_matches_capability_inventory() {
 
 fn assert_outside_checkout(path: &Path) {
     let text = path.to_string_lossy();
-    assert!(!text.contains("/compiler/crates/") && !text.contains("\\compiler\\crates\\"), "journey runs outside the source checkout: {text}");
+    assert!(
+        !text.contains("/compiler/crates/") && !text.contains("\\compiler\\crates\\"),
+        "journey runs outside the source checkout: {text}"
+    );
 }
 
 #[test]
@@ -543,13 +733,23 @@ fn cli06_06_create_add_use_check_build_run_outside_checkout() {
     let manifest_text = manifest.to_str().unwrap();
     let added = run(cli, &home, &["add", "Greeter", "--path", "../Greeter", "--offline", "--project", manifest_text]);
     assert_success(&added, "add");
-    assert!(std::fs::read_to_string(&manifest).unwrap().contains("dependency \"Greeter\""), "add declares the dependency");
+    assert!(
+        std::fs::read_to_string(&manifest).unwrap().contains("dependency \"Greeter\""),
+        "add declares the dependency"
+    );
     assert!(manifest.with_file_name("Project.lock").is_file(), "add writes the lock");
     std::fs::write(home.work().join("hello/Src/Main.bd"), "i32 Main() { return Greeter.Answer() - 42; }\n").unwrap();
     assert_success(&run(cli, &home, &["check", "--plain", "--offline", "--project", manifest_text]), "check");
     // `work/hello` is the project directory; the executable goes beside it.
     let executable = home.work().join(beskid_tests_release::installed::executable_name("hello-app"));
-    assert_success(&run(cli, &home, &["build", "--plain", "--offline", "--project", manifest_text, "--output", executable.to_str().unwrap()]), "build");
+    assert_success(
+        &run(
+            cli,
+            &home,
+            &["build", "--plain", "--offline", "--project", manifest_text, "--output", executable.to_str().unwrap()],
+        ),
+        "build",
+    );
     assert!(executable.is_file());
     let ran = run(cli, &home, &["run", "--plain", "--offline", "--project", manifest_text]);
     assert_eq!(ran.status.code(), Some(0), "run uses the dependency:\n{}", transcript(&ran));
@@ -565,15 +765,30 @@ fn cli06_06_path_dependency_workflow_outside_checkout() {
     let manifest = write_app(&home.work(), "App", "i32 Main() { return Alpha.Value() + Beta.Value() - 3; }\n");
     let manifest_text = manifest.to_str().unwrap();
     for name in ["Alpha", "Beta"] {
-        assert_success(&run(cli, &home, &["add", name, "--path", &format!("../{name}"), "--offline", "--project", manifest_text]), &format!("add {name}"));
+        assert_success(
+            &run(cli, &home, &["add", name, "--path", &format!("../{name}"), "--offline", "--project", manifest_text]),
+            &format!("add {name}"),
+        );
     }
     let lock = std::fs::read_to_string(manifest.with_file_name("Project.lock")).unwrap();
-    assert!(project::lock_pin(&lock, "Alpha").is_some() && project::lock_pin(&lock, "Beta").is_some(), "both path dependencies are locked:\n{lock}");
-    assert_success(&run(cli, &home, &["run", "--plain", "--offline", "--project", manifest_text]), "run with two path dependencies");
+    assert!(
+        project::lock_pin(&lock, "Alpha").is_some() && project::lock_pin(&lock, "Beta").is_some(),
+        "both path dependencies are locked:\n{lock}"
+    );
+    assert_success(
+        &run(cli, &home, &["run", "--plain", "--offline", "--project", manifest_text]),
+        "run with two path dependencies",
+    );
     std::fs::write(home.work().join("App/Src/Main.bd"), "i32 Main() { return Alpha.Value() - 1; }\n").unwrap();
     assert_success(&run(cli, &home, &["remove", "Beta", "--offline", "--project", manifest_text]), "remove Beta");
     let lock = std::fs::read_to_string(manifest.with_file_name("Project.lock")).unwrap();
-    assert!(project::lock_pin(&lock, "Beta").is_none() && project::lock_pin(&lock, "Alpha").is_some(), "remove drops only the removed intent:\n{lock}");
+    assert!(
+        project::lock_pin(&lock, "Beta").is_none() && project::lock_pin(&lock, "Alpha").is_some(),
+        "remove drops only the removed intent:\n{lock}"
+    );
     assert!(!std::fs::read_to_string(&manifest).unwrap().contains("\"Beta\""), "remove deletes the direct intent");
-    assert_success(&run(cli, &home, &["build", "--plain", "--offline", "--project", manifest_text]), "build after remove");
+    assert_success(
+        &run(cli, &home, &["build", "--plain", "--offline", "--project", manifest_text]),
+        "build after remove",
+    );
 }

@@ -12,8 +12,8 @@ mod requests;
 mod marshaling;
 
 pub(crate) mod adapter_plan;
-mod transport_layout;
-mod constructors;
-pub(crate) mod producer;
-mod data_getters;
 mod c_codec;
+mod constructors;
+mod data_getters;
+pub(crate) mod producer;
+mod transport_layout;

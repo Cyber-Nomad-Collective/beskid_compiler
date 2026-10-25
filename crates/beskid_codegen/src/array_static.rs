@@ -185,7 +185,8 @@ impl CodegenInput<'_> {
         // A literal written into a contract-typed element destination (`Greeter[] all = [Hello
         // {}, Bye {}]`) boxes every element (runtime contract dispatch, v0.6.7): the array holds
         // managed references whatever the elements' own types are.
-        if beskid_queries::array_literal_has_contract_elements(self.database(), literal, None).ok().flatten() == Some(true)
+        if beskid_queries::array_literal_has_contract_elements(self.database(), literal, None).ok().flatten()
+            == Some(true)
         {
             let length = u64::try_from(elements.len()).ok()?;
             return self.build_array_static_plan(literal, SemanticTypeId::POINTER, length, None);
@@ -222,7 +223,11 @@ impl CodegenInput<'_> {
                 if matches!(element_type, SemanticTypeId::UNIT | SemanticTypeId::NEVER) {
                     return None;
                 }
-                elements.iter().copied().all(|element| element_abi(element) == Some(element_type)).then_some(element_type)?
+                elements
+                    .iter()
+                    .copied()
+                    .all(|element| element_abi(element) == Some(element_type))
+                    .then_some(element_type)?
             }
             None => empty_array_literal_element_abi_type(self.database(), literal).ok().flatten()?,
         };
@@ -266,8 +271,10 @@ impl CodegenInput<'_> {
             return self.build_array_static_plan(literal, SemanticTypeId::POINTER, length, Some(identity.as_ref()));
         }
         elements.is_empty().then_some(())?;
-        let element_type =
-            expected_type_in_environment(self.database(), literal, specialization).ok().flatten()?.array_element_abi_type()?;
+        let element_type = expected_type_in_environment(self.database(), literal, specialization)
+            .ok()
+            .flatten()?
+            .array_element_abi_type()?;
         self.build_array_static_plan(literal, element_type, 0, Some(identity.as_ref()))
     }
 

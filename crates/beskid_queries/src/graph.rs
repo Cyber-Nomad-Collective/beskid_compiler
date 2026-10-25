@@ -10,8 +10,8 @@ use beskid_analysis::projects::{CompilePlan, PreparedProjectWorkspace};
 
 use crate::db::{BeskidDatabase, Db};
 use crate::inputs::ProjectSession;
-use crate::semantic_contract::SourceUnitId;
 use crate::materializer::unit_materializer_for;
+use crate::semantic_contract::SourceUnitId;
 use crate::stats::{SALSA_TRACE_TARGET, trace_query, trace_query_with_reason};
 use crate::unit::{seed_file_from_disk, unit_imports};
 

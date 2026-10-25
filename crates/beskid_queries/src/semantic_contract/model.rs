@@ -16,11 +16,11 @@ mod typed_program;
 mod types;
 
 pub use closures::{
-    AffineBinding, AffineFinding, AffineFindingKind, AffineOwnership, CanonicalEmpty, MoveExpressionForm,
-    CaptureStorage, CaptureStorageClass, ClosureAllocationStatus, ClosureCallTarget, ClosureCapture,
-    ClosureEnvironment, ClosureEnvironmentAbiShape, ClosureEnvironmentField, ClosureLoweringStatus,
-    ClosurePointerMapRequirement, ClosureSignature, FiberOwnership, FunctionItemValue, FunctionValueCall,
-    SpawnDiagnostic, SpawnDiagnosticKind, SpawnEntryValidation, SpawnHandleType, SpawnLegality, SpawnTarget,
+    AffineBinding, AffineFinding, AffineFindingKind, AffineOwnership, CanonicalEmpty, CaptureStorage,
+    CaptureStorageClass, ClosureAllocationStatus, ClosureCallTarget, ClosureCapture, ClosureEnvironment,
+    ClosureEnvironmentAbiShape, ClosureEnvironmentField, ClosureLoweringStatus, ClosurePointerMapRequirement,
+    ClosureSignature, FiberOwnership, FunctionItemValue, FunctionValueCall, MoveExpressionForm, SpawnDiagnostic,
+    SpawnDiagnosticKind, SpawnEntryValidation, SpawnHandleType, SpawnLegality, SpawnTarget,
 };
 pub use errors::{
     GenericBindingConflict, GenericBoundViolation, SemanticError, SemanticFinding, SemanticQueryResult,
@@ -30,8 +30,7 @@ pub use events::{EventHandlerLocalFact, EventOperationFact, EventOperationKind};
 pub use expected::{ExpectedType, ExpectedTypeContext};
 pub use facts::{
     BulkParameterFact, CastIntent, ControlFlow, ForIterableSource, ForIteratorFact, ForIteratorProtocol, ItemSignature,
-    PrimitiveNumericConversion,
-    RangeForFact, TryExpressionFact,
+    PrimitiveNumericConversion, RangeForFact, TryExpressionFact,
 };
 pub(crate) use generics::GenericSourceTypeIdentity;
 pub use generics::{
@@ -45,10 +44,9 @@ pub use ids::{
 };
 pub use layouts::{
     AggregateFieldAccess, AggregateFieldShape, AggregateLayoutFact, AggregateLiteralFieldValues, EnumConstructorFact,
-    EnumConstructorSpecialization, EnumLayoutFact,
-    EnumMatchArmFact, EnumMatchBindingFact, EnumMatchFact, EnumMatchPatternFact, EnumMatchScalarLiteralFact, ScalarMatchFact,
-    EnumMatchVariantPatternFact, EnumScalarPayloadObjectLayout, EnumScalarPayloadVariantLayout, EnumVariantLayoutFact,
-    EventFieldLayoutFact, ScalarAbiLayout,
+    EnumConstructorSpecialization, EnumLayoutFact, EnumMatchArmFact, EnumMatchBindingFact, EnumMatchFact,
+    EnumMatchPatternFact, EnumMatchScalarLiteralFact, EnumMatchVariantPatternFact, EnumScalarPayloadObjectLayout,
+    EnumScalarPayloadVariantLayout, EnumVariantLayoutFact, EventFieldLayoutFact, ScalarAbiLayout, ScalarMatchFact,
 };
 pub use resolution::{CompoundAssignmentOperator, LocalSlot, MutableLocalAssignment, ResolvedItem, ResolvedLocal};
 pub use syntax::{

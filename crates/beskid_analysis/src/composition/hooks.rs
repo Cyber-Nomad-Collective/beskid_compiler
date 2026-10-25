@@ -35,9 +35,9 @@ use crate::parameter_defaults::{DefaultConstant, OmittedArgument, omitted_argume
 
 use crate::syntax::{
     Block, ElseBranch, Expression, Field, FieldKind, FunctionDefinition, HostBodyItem, Identifier, LetStatement,
-    MemberExpression, Node, Parameter, Path, PathExpression, PathSegment, PrimitiveType, Program,
-    RegistrationLifetime, RegistryEntry, ScopeHook, ScopeHookKind, SpanInfo, Spanned, Statement,
-    StructLiteralExpression, StructLiteralField, Type, TypeDefinition, Visibility,
+    MemberExpression, Node, Parameter, Path, PathExpression, PathSegment, PrimitiveType, Program, RegistrationLifetime,
+    RegistryEntry, ScopeHook, ScopeHookKind, SpanInfo, Spanned, Statement, StructLiteralExpression, StructLiteralField,
+    Type, TypeDefinition, Visibility,
 };
 
 /// Reserved name prefix of compiler-generated hook items. Source never names them.
@@ -140,7 +140,11 @@ impl ParameterList {
 
     /// The full argument list for a site that passes `arguments`, or `None` when their number is
     /// outside `required..=total` or the list has no parameters (nothing to bind).
-    fn bind(&self, mut arguments: Vec<Spanned<Expression>>, span: SpanInfo) -> Result<Vec<Spanned<Expression>>, Vec<Spanned<Expression>>> {
+    fn bind(
+        &self,
+        mut arguments: Vec<Spanned<Expression>>,
+        span: SpanInfo,
+    ) -> Result<Vec<Spanned<Expression>>, Vec<Spanned<Expression>>> {
         let total = self.parameters.len();
         let required = total - self.defaults.len();
         if total == 0 || arguments.len() < required || arguments.len() > total {
@@ -178,10 +182,8 @@ fn host_signatures(program: &Program) -> HashMap<String, HostSignature> {
         .iter()
         .filter_map(|item| match &item.node {
             Node::HostDefinition(host) => {
-                let mut signature = HostSignature {
-                    host: ParameterList::new(&host.node.parameters, program),
-                    scopes: HashMap::new(),
-                };
+                let mut signature =
+                    HostSignature { host: ParameterList::new(&host.node.parameters, program), scopes: HashMap::new() };
                 scopes(&host.node.body, program, &mut signature.scopes);
                 Some((host.node.name.node.name.clone(), signature))
             }
@@ -279,7 +281,9 @@ fn identifier(name: impl Into<String>, span: SpanInfo) -> Spanned<Identifier> {
 
 fn single_path(name: &str, span: SpanInfo) -> Spanned<Path> {
     Spanned::new(
-        Path { segments: vec![Spanned::new(PathSegment { name: identifier(name, span), type_args: Vec::new() }, span)] },
+        Path {
+            segments: vec![Spanned::new(PathSegment { name: identifier(name, span), type_args: Vec::new() }, span)],
+        },
         span,
     )
 }
@@ -531,7 +535,8 @@ fn rewrite_statements(
         let (before, rest) = statements.split_at_mut(index);
         match &mut rest[0].node {
             Statement::Launch(launch) => {
-                let host = launch.node.host_path.node.segments.last().map(|segment| segment.node.name.node.name.clone());
+                let host =
+                    launch.node.host_path.node.segments.last().map(|segment| segment.node.name.node.name.clone());
                 launched = host.filter(|host| signatures.contains_key(host));
                 let local = launch_arguments_local(launch.span);
                 if let Some(host) = &launched
@@ -584,7 +589,11 @@ fn rewrite_statements(
                             branch = None;
                         }
                         ElseBranch::If(nested) => {
-                            rewrite_statements(&mut nested.node.then_block.node.statements, signatures, launched.clone());
+                            rewrite_statements(
+                                &mut nested.node.then_block.node.statements,
+                                signatures,
+                                launched.clone(),
+                            );
                             branch = nested.node.else_branch.as_mut();
                         }
                     }

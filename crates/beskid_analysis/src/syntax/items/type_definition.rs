@@ -52,7 +52,10 @@ fn receiver_type_for_definition(
                 Type::Complex(Spanned::new(
                     Path {
                         segments: vec![Spanned::new(
-                            PathSegment { name: crate::syntax::TypeParameter::identifier(generic), type_args: Vec::new() },
+                            PathSegment {
+                                name: crate::syntax::TypeParameter::identifier(generic),
+                                type_args: Vec::new(),
+                            },
                             generic.span,
                         )],
                     },

@@ -30,8 +30,8 @@ use beskid_analysis::analysis::SemanticIssueKind;
 use beskid_analysis::syntax::{FunctionDefinition, MethodDefinition};
 use beskid_analysis::syntax_query::{NodeKind, SyntaxIndex};
 
-pub(super) mod calls;
 mod attributes;
+pub(super) mod calls;
 mod captures;
 mod cleanup;
 mod copy_on_assign;
@@ -52,10 +52,10 @@ pub use attributes::{
     AttributeResolution, UnitAttributeDeclaration, UnitAttributeSurface, UnitAttributeUse, attribute_findings,
     check_attribute_obligations, resolve_attribute_use, unit_attribute_surface,
 };
-pub use externs::extern_profile_findings;
 pub use captures::{BoundedLambdaCaptures, bounded_lambda_captures, declared_captures_bound};
-pub use transfer::{immutable_field_findings, transfer_declaration_findings};
+pub use externs::extern_profile_findings;
 pub use gate::{GateObligation, GateObligationKind, check_gate_obligations, gate_obligations};
+pub use transfer::{immutable_field_findings, transfer_declaration_findings};
 pub use typing::{TypingObligation, TypingObligationKind, typing_obligations};
 pub use units::{UnitObligation, UnitObligationKind, check_unit_obligations, unit_obligations};
 pub use values::{ValueObligation, value_obligations};
@@ -165,8 +165,8 @@ fn call_arity_mismatch_for_call(db: &dyn Db, call: AstNodeKey) -> SemanticQueryR
     // was either short of the required ones or could not be filled; the honest expectation for
     // the latter is every argument. A method inherits the defaults of the contract method it
     // implements.
-    let optional = super::optional_arguments::declared_omitted_arguments(db, declaration)
-        .map_or(0, |(omitted, _)| omitted.len());
+    let optional =
+        super::optional_arguments::declared_omitted_arguments(db, declaration).map_or(0, |(omitted, _)| omitted.len());
     let required = parameters.len() - optional + receiver;
     let required = if (required..total).contains(&actual) { total } else { required };
     Ok(Some(CallArityMismatch { call, required, total, actual }))
@@ -354,10 +354,7 @@ pub struct ImmutableLocalAssignment {
 /// `mutable_local_assignment` uses when ISLE selects `emit_local_assign`. That query fails closed
 /// on an immutable target, so without this fact such a write reaches lowering and surfaces as
 /// `MissingRuleOrFact AssignExpression` instead of a user diagnostic.
-pub fn immutable_local_assignment(
-    db: &dyn Db,
-    key: AstNodeKey,
-) -> SemanticQueryResult<Vec<ImmutableLocalAssignment>> {
+pub fn immutable_local_assignment(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<Vec<ImmutableLocalAssignment>> {
     with_registered_syntax(db, key, immutable_local_assignment_tracked)
 }
 
@@ -397,7 +394,8 @@ fn immutable_assignment_target<'p>(
     program: &'p beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
     index: &SyntaxIndex,
     assignment: beskid_analysis::syntax::AstNodeId,
-) -> Option<(beskid_analysis::syntax::AstNodeId, &'p str, beskid_analysis::analysis::diagnostic_kinds::ImmutableBinding)> {
+) -> Option<(beskid_analysis::syntax::AstNodeId, &'p str, beskid_analysis::analysis::diagnostic_kinds::ImmutableBinding)>
+{
     use beskid_analysis::analysis::diagnostic_kinds::ImmutableBinding;
     let node = index.node_at(program, assignment)?;
     let assign = node.of::<beskid_analysis::syntax::AssignExpression>()?;
@@ -411,9 +409,10 @@ fn immutable_assignment_target<'p>(
         NodeKind::LetStatement | NodeKind::Parameter if local_declaration_is_mutable(program, index, declaration) => {
             return None;
         }
-        NodeKind::LetStatement => {
-            ImmutableBinding::of_let(declaring_node.of::<beskid_analysis::syntax::LetStatement>()?, declaring_node.span()?)
-        }
+        NodeKind::LetStatement => ImmutableBinding::of_let(
+            declaring_node.of::<beskid_analysis::syntax::LetStatement>()?,
+            declaring_node.span()?,
+        ),
         NodeKind::Parameter => {
             let parameter = declaring_node.of::<beskid_analysis::syntax::Parameter>()?;
             let span = declaring_node.span()?;
@@ -473,7 +472,9 @@ pub fn check_items(db: &dyn Db, items: &[AstNodeKey]) -> Result<(), Vec<Semantic
         }
         if let Ok(Some(finding)) = unresolved_type_reference(db, item) {
             let kind = match finding.kind {
-                UnresolvedTypeKind::UnknownType => SemanticIssueKind::TypeUnknownType { name: finding.name.to_string() },
+                UnresolvedTypeKind::UnknownType => {
+                    SemanticIssueKind::TypeUnknownType { name: finding.name.to_string() }
+                }
                 UnresolvedTypeKind::UnknownModulePath { path } => {
                     SemanticIssueKind::ResolveUnknownModulePath { path: path.to_string() }
                 }
@@ -504,9 +505,13 @@ pub fn check_items(db: &dyn Db, items: &[AstNodeKey]) -> Result<(), Vec<Semantic
         }
         if let Ok(Some(bindings)) = immutable_local_assignment(db, item) {
             findings.extend(bindings.into_iter().map(|binding| SemanticFinding {
-                kind: SemanticIssueKind::ImmutableAssignment { name: binding.name.to_string(), binding: binding.binding },
+                kind: SemanticIssueKind::ImmutableAssignment {
+                    name: binding.name.to_string(),
+                    binding: binding.binding,
+                },
                 site: binding.declaration,
-                related: binding.assignments.into_iter().map(|assignment| (assignment, "assigned again".into())).collect(),
+                related:
+                    binding.assignments.into_iter().map(|assignment| (assignment, "assigned again".into())).collect(),
             }));
         }
         if let Ok(Some(finding)) = unresolved_call_target(db, item) {
@@ -518,7 +523,9 @@ pub fn check_items(db: &dyn Db, items: &[AstNodeKey]) -> Result<(), Vec<Semantic
                 UnresolvedCallKind::UnknownModulePath { path } => {
                     SemanticIssueKind::ResolveUnknownModulePath { path: path.to_string() }
                 }
-                UnresolvedCallKind::MissingTypeArguments => SemanticIssueKind::TypeMissingTypeArguments { parameter: None },
+                UnresolvedCallKind::MissingTypeArguments => {
+                    SemanticIssueKind::TypeMissingTypeArguments { parameter: None }
+                }
                 UnresolvedCallKind::PrivateBuiltin { name } => {
                     SemanticIssueKind::ResolvePrivateRuntimeBuiltin { name: name.to_string() }
                 }
@@ -665,7 +672,12 @@ pub fn check_typing_obligations(db: &dyn Db, items: &[AstNodeKey]) -> Vec<Semant
 /// For a `Serializable` bound violation at `site`: the start of the conforming type's declaration
 /// when the site's own unit declares exactly one `type` or `enum` of that name at top level, where
 /// the `[Serialize]` fix inserts the attribute. `None` for any other bound or an ambiguous name.
-pub(super) fn serialize_declaration_at(db: &dyn Db, site: AstNodeKey, type_name: &str, contract_name: &str) -> Option<usize> {
+pub(super) fn serialize_declaration_at(
+    db: &dyn Db,
+    site: AstNodeKey,
+    type_name: &str,
+    contract_name: &str,
+) -> Option<usize> {
     let outer = |name: &str| -> String {
         let head = name.split('<').next().unwrap_or(name).trim();
         head.rsplit(['.', ':']).next().unwrap_or(head).to_string()
@@ -869,7 +881,10 @@ mod tests {
             attribute_codes("pub attribute FluentInner(Field) { } [FluentInner] pub type Wrapper { i64 inner; }", 6104);
         assert_eq!(findings.len(), 1);
         assert!(findings[0].1.contains("TypeDefinition"), "{findings:?}");
-        assert!(attribute_codes("pub attribute FluentInner(Field) { } pub type Wrapper { [FluentInner] i64 inner; }", 6105).is_empty());
+        assert!(
+            attribute_codes("pub attribute FluentInner(Field) { } pub type Wrapper { [FluentInner] i64 inner; }", 6105)
+                .is_empty()
+        );
         // Undeclared.
         let findings = attribute_codes("[Frozen] pub type Ice { i64 temperature; }", 6106);
         assert_eq!(findings.len(), 1);
@@ -921,7 +936,8 @@ mod tests {
                 .map(|symbol| symbol.0.to_string())
                 .collect::<Vec<_>>()
         };
-        let exported = "[Export(Abi:\"C\", Symbol:\"answer\")] pub i64 Answer() { return 42; } pub i64 Other() { return 1; }";
+        let exported =
+            "[Export(Abi:\"C\", Symbol:\"answer\")] pub i64 Answer() { return 42; } pub i64 Other() { return 1; }";
         assert_eq!(export_of(exported, 6114), ["answer"]);
         let shadowed = format!("pub attribute Export(FunctionDefinition) {{ }} {exported}");
         assert!(export_of(&shadowed, 6115).is_empty(), "a user `Export` declaration exports nothing");
@@ -971,16 +987,23 @@ mod tests {
         nodes_of_kind(&db, last, IndexedNodeKind::CallExpression, &mut calls);
         let substitutions = calls
             .into_iter()
-            .map(|call| format!("{:?} => {}", call_lowering(&db, call).map(|lowering| lowering.map(|l| format!("{l:?}").chars().take(40).collect::<String>())), match generic_call_specialization(&db, call) {
-                Ok(Some(specialization)) => specialization
-                    .substitutions
-                    .iter()
-                    .map(|binding| format!("{}={}", binding.parameter, binding.argument.display_name()))
-                    .collect::<Vec<_>>()
-                    .join(","),
-                Ok(None) => "none".to_string(),
-                Err(error) => format!("error: {error}"),
-            }))
+            .map(|call| {
+                format!(
+                    "{:?} => {}",
+                    call_lowering(&db, call)
+                        .map(|lowering| lowering.map(|l| format!("{l:?}").chars().take(40).collect::<String>())),
+                    match generic_call_specialization(&db, call) {
+                        Ok(Some(specialization)) => specialization
+                            .substitutions
+                            .iter()
+                            .map(|binding| format!("{}={}", binding.parameter, binding.argument.display_name()))
+                            .collect::<Vec<_>>()
+                            .join(","),
+                        Ok(None) => "none".to_string(),
+                        Err(error) => format!("error: {error}"),
+                    }
+                )
+            })
             .collect();
         (findings, substitutions)
     }
@@ -1019,7 +1042,8 @@ mod tests {
         let chain =
             "Box<bool> Twice(Box<i64> b) { return b.Map<i64>((i64 x) => x * 2_i64).Map<bool>((i64 y) => y > 2_i64); }";
         assert_method_call(&format!("{BOX}{chain}"), 6201, &[], &["T=i64,U=bool", "T=i64,U=i64"]);
-        let wrong = "i64 Main() { Box<bool> b = Box<bool> { item: true }; return b.Apply<i64, bool>((bool s) => 3_i64); }";
+        let wrong =
+            "i64 Main() { Box<bool> b = Box<bool> { item: true }; return b.Apply<i64, bool>((bool s) => 3_i64); }";
         assert_method_call(&format!("{BOX}{wrong}"), 6202, &["E1204"], &[]);
     }
 
@@ -1043,18 +1067,21 @@ mod tests {
         assert_method_call(&block, 6301, &[], &["T=i64"]);
         let bare = format!("{SCOPE}i32 Main(Scope s) {{ Task<i32> t = s.Spawn(() => 20); return t.value; }}");
         assert_method_call(&bare, 6310, &[], &["T=i32"]);
-        let fold = format!("{SEQ}i64 Main(Seq<i64> numbers) {{ return numbers.Fold(0_i64, AddAll {{ unused: 0_i64 }}); }}");
+        let fold =
+            format!("{SEQ}i64 Main(Seq<i64> numbers) {{ return numbers.Fold(0_i64, AddAll {{ unused: 0_i64 }}); }}");
         assert_method_call(&fold, 6304, &[], &["T=i64,C=pointer"]);
     }
 
     #[test]
     fn method_type_argument_inference_failures_are_reported() {
-        let unresolved = format!("{SCOPE}i64 Main(Scope s) {{ return s.SpawnTry(() => Outcome::Failed(\"no input\")); }}");
+        let unresolved =
+            format!("{SCOPE}i64 Main(Scope s) {{ return s.SpawnTry(() => Outcome::Failed(\"no input\")); }}");
         let (findings, _) = method_generic_report(&unresolved, 6302);
         assert_eq!(findings.len(), 1, "{findings:?}");
         assert_eq!(findings[0].0, "E1203");
         assert!(findings[0].1.contains("`T`"), "{findings:?}");
-        let explicit = format!("{SCOPE}i64 Main(Scope s) {{ return s.SpawnTry<i64>(() => Outcome::Failed(\"no input\")); }}");
+        let explicit =
+            format!("{SCOPE}i64 Main(Scope s) {{ return s.SpawnTry<i64>(() => Outcome::Failed(\"no input\")); }}");
         assert_method_call(&explicit, 6303, &[], &["T=i64"]);
         let conflict = format!("{SEQ}i64 Main() {{ return Pick(1_i64, true); }}");
         let (findings, _) = method_generic_report(&conflict, 6308);
@@ -1071,13 +1098,16 @@ mod tests {
     #[test]
     fn untyped_lambda_parameters_take_types_inferred_from_sibling_arguments() {
         // `acc` is `U`, bound only by the sibling `seed` argument; `x` is the receiver's `T`.
-        let fold = format!("{FOLD}i64 Main(Numbers<bool> numbers) {{ return numbers.Fold(0_i64, (acc, x) => acc + 1_i64); }}");
+        let fold =
+            format!("{FOLD}i64 Main(Numbers<bool> numbers) {{ return numbers.Fold(0_i64, (acc, x) => acc + 1_i64); }}");
         assert_method_call(&fold, 6330, &[], &["T=bool,U=i64"]);
         // The sibling may follow the lambda: non-lambda arguments are unified first.
-        let pipe = format!("{FOLD}bool Main(Numbers<bool> numbers) {{ return numbers.Pipe(() => 3_i64, (a) => a > 2_i64); }}");
+        let pipe =
+            format!("{FOLD}bool Main(Numbers<bool> numbers) {{ return numbers.Pipe(() => 3_i64, (a) => a > 2_i64); }}");
         assert_method_call(&pipe, 6331, &[], &["T=bool,A=i64,B=bool"]);
         // A receiver-supplied parameter used in the body types the result.
-        let apply = format!("{BOX}bool Main() {{ Box<bool> b = Box<bool> {{ item: true }}; return b.Apply((s) => s); }}");
+        let apply =
+            format!("{BOX}bool Main() {{ Box<bool> b = Box<bool> {{ item: true }}; return b.Apply((s) => s); }}");
         assert_method_call(&apply, 6332, &[], &["T=bool,U=bool"]);
     }
 
@@ -1094,7 +1124,8 @@ mod tests {
 
     #[test]
     fn method_where_bounds_are_proven_at_the_call() {
-        let own = format!("{SEQ}i64 Main(Seq<i64> numbers) {{ return numbers.Fold<Plain>(0_i64, Plain {{ x: 1_i64 }}); }}");
+        let own =
+            format!("{SEQ}i64 Main(Seq<i64> numbers) {{ return numbers.Fold<Plain>(0_i64, Plain {{ x: 1_i64 }}); }}");
         let (findings, _) = method_generic_report(&own, 6305);
         assert_eq!(findings.iter().map(|(code, _)| code.as_str()).collect::<Vec<_>>(), ["E1610"]);
         assert!(findings[0].1.contains("Folder"));
@@ -1459,7 +1490,10 @@ mod tests {
                 let node = syntax.syntax_index(&db).node_at(syntax.expanded_program(&db), key.node).expect("node");
                 node.of::<beskid_analysis::syntax::TypeDefinition>()
                     .map(|definition| definition.name.node.name.as_str())
-                    .or_else(|| node.of::<beskid_analysis::syntax::EnumDefinition>().map(|definition| definition.name.node.name.as_str()))
+                    .or_else(|| {
+                        node.of::<beskid_analysis::syntax::EnumDefinition>()
+                            .map(|definition| definition.name.node.name.as_str())
+                    })
                     == Some(name)
             })
             .expect("declaration");
@@ -1645,7 +1679,10 @@ mod tests {
         let cases: &[(&str, &[&str])] = &[
             ("unit Main(Port<u8[]> p, move u8[] buffer) { p.Send(move buffer); return; }", &[]),
             ("unit Main(Port<u8[]> p) { u8[] data = Make(); p.Send(move data); return; }", &[]),
-            ("unit Main(Port<u8[]> p, move u8[] buffer) { p.Send(move buffer); i64 n = Len(buffer); return; }", &["E1234"]),
+            (
+                "unit Main(Port<u8[]> p, move u8[] buffer) { p.Send(move buffer); i64 n = Len(buffer); return; }",
+                &["E1234"],
+            ),
             ("unit Main(Port<u8[]> p, move u8[] data) { p.Send(data); return; }", &["E1242"]),
             // External uniqueness: a borrowed parameter, an aliased local, a place-initialized
             // local or a capture of a repeatable closure is not the only name (E1241).
@@ -1653,7 +1690,10 @@ mod tests {
             ("unit Main(Port<u8[]> p, u8[] data) { p.Send(data); return; }", &["E1242"]),
             ("unit Main(Port<u8[]> p) { u8[] a = Make(); u8[] b = a; p.Send(move a); return; }", &["E1241"]),
             ("unit Main(Port<u8[]> p, move u8[] data) { let keep = data; p.Send(move data); return; }", &["E1241"]),
-            ("unit Main(Port<u8[]> p) { u8[] a = Make(); Node n = Node { bytes: a }; p.Send(move a); return; }", &["E1241"]),
+            (
+                "unit Main(Port<u8[]> p) { u8[] a = Make(); Node n = Node { bytes: a }; p.Send(move a); return; }",
+                &["E1241"],
+            ),
             ("unit Main(Port<u8[]> p, Holder h) { u8[] b = h.bytes; p.Send(move b); return; }", &["E1241"]),
             ("unit Main(Port<u8[]> p) { u8[] a = Make(); i64 n = Len(a); p.Send(move a); return; }", &[]),
             ("unit Main(Port<u8[]> p, move u8[] data) { let send = () => p.Send(move data); return; }", &["E1241"]),
@@ -1679,7 +1719,10 @@ mod tests {
                 "unit Main(Port<u8[]> p, i64 rounds) { mut u8[] data = Make(); mut i64 i = 0; while i < rounds { p.Send(move data); data = Make(); i = i + 1; } return; }",
                 &[],
             ),
-            ("unit Main(Port<u8[]> p) { mut u8[] data = Make(); p.Send(move data); data = Make(); i64 n = Len(data); return; }", &[]),
+            (
+                "unit Main(Port<u8[]> p) { mut u8[] data = Make(); p.Send(move data); data = Make(); i64 n = Len(data); return; }",
+                &[],
+            ),
             // Fields and elements: through a borrowed root E1241, through an owning root E1242.
             ("unit Main(Port<u8[]> p, Holder h) { p.Send(h.bytes); return; }", &["E1241"]),
             ("unit Main(Port<u8[]> p, move Holder h) { p.Send(h.bytes); return; }", &["E1241"]),
@@ -1795,13 +1838,18 @@ mod tests {
             .collect::<Vec<_>>();
         assert!(mismatches.is_empty(), "{mismatches:#?}");
         // Outside the corelib the attribute grants nothing and the type is ordinary (E1510).
-        let outside = transfer_report_at(&format!("{MARKERS}{AFFINE_PRELUDE}{types}Bytes Back(Bytes b) {{ return b; }}"), 8040, "Main.bd");
+        let outside = transfer_report_at(
+            &format!("{MARKERS}{AFFINE_PRELUDE}{types}Bytes Back(Bytes b) {{ return b; }}"),
+            8040,
+            "Main.bd",
+        );
         assert!(!outside.iter().any(|(_, message, _)| message.contains("scope-borrowed")), "{outside:?}");
     }
 
     #[test]
     fn destructive_reads_and_exchange_need_a_moved_place() {
-        let holder = "[Isolated] pub type Index { u8[] offsets; } [Isolated] pub type Pair { u8[] left; Index right; } ";
+        let holder =
+            "[Isolated] pub type Index { u8[] offsets; } [Isolated] pub type Pair { u8[] left; Index right; } ";
         let cases: &[(&str, &[&str])] = &[
             ("unit Flush(Port<u8[]> p, Pair s) { p.Send(move s.left); return; }", &[]),
             ("unit Flush(Port<Index> p, Pair s) { p.Send(move s.right); return; }", &["E1243"]),
@@ -1847,16 +1895,28 @@ mod tests {
                  unit Main(Config config, Pixel pixel) { Run(() => config.retries + i64(pixel.r)); return; }",
                 &[],
             ),
-            ("i64 Count() { mut i64 count = 0; Run(() => { count = count + 1; return count; }); return count; }", &["E1235"]),
-            ("pub type Cache { i64[] entries; } unit Main(Cache cache) { Run(() => Len([1_u8])); Run(() => cache.entries[0]); return; }", &["E1236"]),
+            (
+                "i64 Count() { mut i64 count = 0; Run(() => { count = count + 1; return count; }); return count; }",
+                &["E1235"],
+            ),
+            (
+                "pub type Cache { i64[] entries; } unit Main(Cache cache) { Run(() => Len([1_u8])); Run(() => cache.entries[0]); return; }",
+                &["E1236"],
+            ),
             ("unit Main(move u8[] data) { Run(() => Len(data)); return; }", &["E1237"]),
             ("unit Main(move u8[] data) { Run(() => Len(move data)); i64 n = Len(data); return; }", &["E1234"]),
             ("i64 Work() { return 1; } unit Main() { Run(Work); return; }", &[]),
             ("unit Main(() => i64 body) { Run(body); return; }", &["E1238"]),
             ("unit Main([Captures(Bound: Transferable)] () => i64 body) { Run(body); return; }", &[]),
-            ("unit Main([Captures(Bound: Transferable)] () => i64 body) { let again = body; Run(again); return; }", &[]),
+            (
+                "unit Main([Captures(Bound: Transferable)] () => i64 body) { let again = body; Run(again); return; }",
+                &[],
+            ),
             ("unit Main(move u8[] data) { Share(() => Len(move data)); return; }", &["E1236"]),
-            ("pub contract Disposable { } pub unit Bad([Captures(Bound: Disposable)] () => i64 body) { return; }", &["E1248"]),
+            (
+                "pub contract Disposable { } pub unit Bad([Captures(Bound: Disposable)] () => i64 body) { return; }",
+                &["E1248"],
+            ),
             ("pub unit Bad([Captures(Bound: Transferable)] i64 count) { return; }", &["E1248"]),
             (
                 "pub type Job { [Captures(Bound: Transferable)] () => i64 body; } \
@@ -1877,7 +1937,10 @@ mod tests {
         let fold = "pub i64 Probe<T>(T value) { return 0; } \
                     pub unit Fold<T>(T seed) where T: Transferable { Run(() => Probe<T>(seed)); return; } ";
         let cases: &[(&str, &[&str])] = &[
-            ("[Immutable] pub type Config { i64 retries; } unit Main(Config config) { Fold<Config>(config); return; }", &[]),
+            (
+                "[Immutable] pub type Config { i64 retries; } unit Main(Config config) { Fold<Config>(config); return; }",
+                &[],
+            ),
             ("unit Main() { Fold<i64>(1_i64); return; }", &[]),
             ("unit Main(move u8[] data) { Fold<u8[]>(data); return; }", &["E1236"]),
         ];
@@ -1902,7 +1965,10 @@ mod tests {
         let cases: &[(&str, &[&str])] = &[
             ("unit Main(move u8[] data) { Wrap<u8[]>(data); return; }", &["E1236"]),
             ("unit Main(move u8[] data) { Twice<u8[]>(2, data); return; }", &["E1236"]),
-            ("[Immutable] pub type Config { i64 retries; } unit Main(Config config) { Wrap<Config>(config); return; }", &[]),
+            (
+                "[Immutable] pub type Config { i64 retries; } unit Main(Config config) { Wrap<Config>(config); return; }",
+                &[],
+            ),
             ("unit Main() { Twice<i64>(2, 1_i64); return; }", &[]),
             ("unit Main(move u8[] data) { Ping<u8[]>(data, 2); return; }", &[]),
             ("unit Main(move u8[] data) { Keep<u8[]>(data); return; }", &[]),
@@ -1954,7 +2020,10 @@ mod tests {
                 crate::TransferClassIntrinsic::PerInstantiation { name: "T".to_owned() },
             ]
         );
-        let codes = captures_codes("unit Main(move u8[] data) { i64 id = __isolate_spawn<i64>(() => Len(data), 0); return; }", 6761);
+        let codes = captures_codes(
+            "unit Main(move u8[] data) { i64 id = __isolate_spawn<i64>(() => Len(data), 0); return; }",
+            6761,
+        );
         assert!(codes.contains(&"E1237".to_owned()), "{codes:?}");
     }
 
@@ -2122,7 +2191,10 @@ mod tests {
         assert_eq!(report.iter().filter(|(code, _)| code == "E1206").count(), 1, "{report:?}");
         assert!(report.iter().any(|(_, message)| message.contains("Plain")), "{report:?}");
         // Without a contract expectation the branches must still have one type.
-        let report = contract_value_report(&format!("{CONTRACT_GREETERS} i64 F(bool c) {{ let g = c ? Hello {{}} : Bye {{}}; return 0_i64; }}"), 7209);
+        let report = contract_value_report(
+            &format!("{CONTRACT_GREETERS} i64 F(bool c) {{ let g = c ? Hello {{}} : Bye {{}}; return 0_i64; }}"),
+            7209,
+        );
         assert!(report.iter().any(|(code, _)| code == "E1206"), "{report:?}");
     }
 
@@ -2134,7 +2206,8 @@ mod tests {
              i64 G() {{ Greeter() make = () => Hello {{}}; return make().Rank(); }}"
         );
         assert_eq!(contract_value_report(&valid, 7210), Vec::<(String, String)>::new());
-        let invalid = format!("{CONTRACT_GREETERS} i64 G() {{ Greeter() make = () => Plain {{ v: 1 }}; return 0_i64; }}");
+        let invalid =
+            format!("{CONTRACT_GREETERS} i64 G() {{ Greeter() make = () => Plain {{ v: 1 }}; return 0_i64; }}");
         let report = contract_value_report(&invalid, 7211);
         assert!(report.iter().any(|(code, _)| code == "E1206"), "{report:?}");
     }

@@ -25,8 +25,7 @@ use beskid_queries::ClifParameterShape;
 use cranelift_codegen::ir::condcodes::IntCC;
 use cranelift_codegen::ir::{
     AbiParam, ExtFuncData, ExternalName, Function, InstBuilder, InstBuilderBase, InstructionData, MemFlagsData, Opcode,
-    Signature,
-    TrapCode, Type, Value, types,
+    Signature, TrapCode, Type, Value, types,
 };
 use cranelift_codegen::settings;
 
@@ -121,20 +120,21 @@ impl ClifLowering<'_, '_, '_, '_, '_> {
                     self.locals.insert(result.clone(), value);
                 }
                 ClifStatement::Length { line, result, parameter } => {
-                    let pointer_bytes = i32::try_from(self.pointer_type().bytes()).map_err(|error| error.to_string())?;
+                    let pointer_bytes =
+                        i32::try_from(self.pointer_type().bytes()).map_err(|error| error.to_string())?;
                     let value = self.array_field(*line, *parameter, pointer_bytes)?;
                     self.locals.insert(result.clone(), value);
                 }
                 ClifStatement::Call { line, result, symbol, arguments, result_type } => {
-                    let returns = match (result_type.as_deref(), result) {
-                        (Some(name), _) => Some(
-                            scalar_type_named(name)
-                                .ok_or_else(|| format!("clif block line {line}: unsupported call result type `{name}`"))?,
-                        ),
-                        // A result-less call ending a value block yields the block's value.
-                        (None, None) => self.result_type,
-                        (None, Some(_)) => unreachable!("the surface requires a typed call result"),
-                    };
+                    let returns =
+                        match (result_type.as_deref(), result) {
+                            (Some(name), _) => Some(scalar_type_named(name).ok_or_else(|| {
+                                format!("clif block line {line}: unsupported call result type `{name}`")
+                            })?),
+                            // A result-less call ending a value block yields the block's value.
+                            (None, None) => self.result_type,
+                            (None, Some(_)) => unreachable!("the surface requires a typed call result"),
+                        };
                     let value = self.emit_call(*line, symbol, arguments, returns)?;
                     match (result, value) {
                         (Some(name), Some(value)) => {
@@ -174,9 +174,9 @@ impl ClifLowering<'_, '_, '_, '_, '_> {
     fn block_value(&self, line: usize, value: Value) -> Result<Value, String> {
         let actual = self.context.builder.func.dfg.value_type(value);
         match self.result_type {
-            Some(expected) if actual != expected => Err(format!(
-                "clif block line {line}: the block yields `{actual}` but its context expects `{expected}`"
-            )),
+            Some(expected) if actual != expected => {
+                Err(format!("clif block line {line}: the block yields `{actual}` but its context expects `{expected}`"))
+            }
             _ => Ok(value),
         }
     }
@@ -606,10 +606,12 @@ fn restore_names(message: &str, names: &[String]) -> String {
         if starts_word && bytes[index] == b'v' {
             let digits_end =
                 (index + 1..bytes.len()).find(|position| !bytes[*position].is_ascii_digit()).unwrap_or(bytes.len());
-            let ends_word = digits_end == bytes.len() || !(bytes[digits_end].is_ascii_alphanumeric() || bytes[digits_end] == b'_');
+            let ends_word =
+                digits_end == bytes.len() || !(bytes[digits_end].is_ascii_alphanumeric() || bytes[digits_end] == b'_');
             if digits_end > index + 1
                 && ends_word
-                && let Some(name) = message[index + 1..digits_end].parse::<usize>().ok().and_then(|number| names.get(number))
+                && let Some(name) =
+                    message[index + 1..digits_end].parse::<usize>().ok().and_then(|number| names.get(number))
             {
                 out.push_str(name);
                 index = digits_end;

@@ -112,8 +112,11 @@ fn collect_inject_fields(items: &[Spanned<Node>], context: &UnitContext<'_>, col
                     })
                     .collect::<Vec<_>>();
                 if !injects.is_empty() {
-                    let declaration =
-                        TypeIdentity { unit: context.unit.clone(), declaration: def.node.name.span, arguments: Vec::new() };
+                    let declaration = TypeIdentity {
+                        unit: context.unit.clone(),
+                        declaration: def.node.name.span,
+                        arguments: Vec::new(),
+                    };
                     collected.type_inject_fields.insert(declaration, injects);
                 }
             }
@@ -175,13 +178,8 @@ pub fn collect_with_imports(
     let mut collected = collect(program, &UnitContext { unit: None, types });
     for (path, unit_program) in imported {
         let mut foreign = collect(unit_program, &UnitContext { unit: Some(std::sync::Arc::clone(path)), types });
-        let offset = collected
-            .host_registries
-            .values()
-            .flatten()
-            .map(|registration| registration.id)
-            .max()
-            .unwrap_or(0);
+        let offset =
+            collected.host_registries.values().flatten().map(|registration| registration.id).max().unwrap_or(0);
         for (name, host) in foreign.hosts.drain() {
             if collected.hosts.contains_key(&name) {
                 continue;
@@ -282,9 +280,7 @@ fn collect_launch_and_with_statements(
 ) {
     let mut previous: Option<&crate::syntax::Statement> = None;
     for statement in statements {
-        let bound = |local: String| {
-            matches!(previous, Some(crate::syntax::Statement::Let(binding)) if binding.node.name.node.name == local)
-        };
+        let bound = |local: String| matches!(previous, Some(crate::syntax::Statement::Let(binding)) if binding.node.name.node.name == local);
         match &statement.node {
             crate::syntax::Statement::With(with_stmt) => {
                 collected.with_sites.push(WithSite {
@@ -297,7 +293,11 @@ fn collect_launch_and_with_statements(
                 collect_launch_and_with_statements(&with_stmt.node.body.node.statements, collected, launched);
             }
             crate::syntax::Statement::Launch(launch_stmt) => {
-                record_launch_site(collected, launch_stmt, bound(super::hooks::launch_arguments_local(launch_stmt.span)));
+                record_launch_site(
+                    collected,
+                    launch_stmt,
+                    bound(super::hooks::launch_arguments_local(launch_stmt.span)),
+                );
                 launched = true;
             }
             crate::syntax::Statement::If(if_stmt) => {
@@ -429,16 +429,14 @@ fn collect_scope(
             HostBodyItem::Scope(child_scope) => {
                 collect_scope(child_scope, context, scope_id, scopes, regs, hooks, next_registration_id, next_scope_id);
             }
-            HostBodyItem::Hook(hook) => {
-                hooks.push(CollectedHook {
-                    unit: context.unit.clone(),
-                    scope_id,
-                    kind: hook.node.kind,
-                    source_node_id: hook.id,
-                    span: hook.span,
-                    takes_record: !scope.node.parameters.is_empty(),
-                })
-            }
+            HostBodyItem::Hook(hook) => hooks.push(CollectedHook {
+                unit: context.unit.clone(),
+                scope_id,
+                kind: hook.node.kind,
+                source_node_id: hook.id,
+                span: hook.span,
+                takes_record: !scope.node.parameters.is_empty(),
+            }),
         }
     }
 }

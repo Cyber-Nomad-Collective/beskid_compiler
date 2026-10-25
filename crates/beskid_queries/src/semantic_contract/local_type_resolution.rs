@@ -205,11 +205,9 @@ fn first_unresolved_nominal_reference(db: &dyn Db, key: AstNodeKey, ty: &Type) -
                 && resolve_type_declaration(db, key, &path.node).is_none()
                 && resolve_contract_head(db, key, &path.node).is_none()
             {
-                return path
-                    .node
-                    .segments
-                    .last()
-                    .map(|segment| (segment.node.name.node.name.clone(), classify_unresolved_type_path(db, key, &path.node)));
+                return path.node.segments.last().map(|segment| {
+                    (segment.node.name.node.name.clone(), classify_unresolved_type_path(db, key, &path.node))
+                });
             }
             path.node.segments.iter().find_map(|segment| {
                 segment
@@ -224,7 +222,9 @@ fn first_unresolved_nominal_reference(db: &dyn Db, key: AstNodeKey, ty: &Type) -
 
 /// Classify an unresolved type path at `key` (see [`UnresolvedTypeKind`]).
 fn classify_unresolved_type_path(db: &dyn Db, key: AstNodeKey, path: &Path) -> UnresolvedTypeKind {
-    use super::legality::calls::{ModulePrefix, import_binds_name, missing_module_member, unit_declares_namespace_name};
+    use super::legality::calls::{
+        ModulePrefix, import_binds_name, missing_module_member, unit_declares_namespace_name,
+    };
 
     let Some((terminal, qualifier)) = path.segments.split_last() else { return UnresolvedTypeKind::UnknownType };
     if qualifier.is_empty() || qualifier.iter().any(|segment| !segment.node.type_args.is_empty()) {
@@ -258,9 +258,10 @@ fn classify_unresolved_type_path(db: &dyn Db, key: AstNodeKey, path: &Path) -> U
         },
         QualifiedModuleResolution::Missing => {
             let root = qualifier[0].as_str();
-            let namespace_owned = db.syntax_unit(key.unit).filter(|syntax| syntax.accepts_key(db, key)).is_none_or(|syntax| {
-                unit_declares_namespace_name(syntax.expanded_program(db), syntax.syntax_index(db), root)
-            });
+            let namespace_owned =
+                db.syntax_unit(key.unit).filter(|syntax| syntax.accepts_key(db, key)).is_none_or(|syntax| {
+                    unit_declares_namespace_name(syntax.expanded_program(db), syntax.syntax_index(db), root)
+                });
             if namespace_owned {
                 return UnresolvedTypeKind::UnknownType;
             }
@@ -323,11 +324,9 @@ fn is_enclosing_container_generic_parameter(db: &dyn Db, key: AstNodeKey, ty: &T
         return false;
     }
     let index = syntax.syntax_index(db);
-    let Some(enclosing) =
-        nearest_ancestor(index, key.node, |kind| {
-            matches!(kind, NodeKind::TypeDefinition | NodeKind::EnumDefinition | NodeKind::ContractDefinition)
-        })
-    else {
+    let Some(enclosing) = nearest_ancestor(index, key.node, |kind| {
+        matches!(kind, NodeKind::TypeDefinition | NodeKind::EnumDefinition | NodeKind::ContractDefinition)
+    }) else {
         return false;
     };
     let program = syntax.expanded_program(db);

@@ -377,13 +377,20 @@ mod report_tests {
     #[test]
     fn source_coordinate_change_retains_both_sides_without_registry_versions() {
         let report = DependencyChangeReport {
-            path: PathBuf::from("App.bproj"), operation: "update", changed: true,
+            path: PathBuf::from("App.bproj"),
+            operation: "update",
+            changed: true,
             effects: vec![DependencyEffect {
-                package: "Local".into(), source: "Path".into(),
-                from_version: None, to_version: None, action: "changed",
+                package: "Local".into(),
+                source: "Path".into(),
+                from_version: None,
+                to_version: None,
+                action: "changed",
                 from_coordinate: Some("path ../Old".into()),
                 to_coordinate: Some("path ../New".into()),
-                from_digest: None, to_digest: None, transitive: false,
+                from_digest: None,
+                to_digest: None,
+                transitive: false,
             }],
             previous_lock_digest: LockDigest(Some(b"old")),
             lock_digest: LockDigest(Some(b"new")),
@@ -397,8 +404,7 @@ mod report_tests {
         assert!(json["effects"][0]["toVersion"].is_null());
         assert!(json["effects"][0]["fromDigest"].is_null() && json["effects"][0]["toDigest"].is_null());
         assert_eq!(
-            json["lockDigest"],
-            "sha256:11507a0e2f5e69d5dfa40a62a1bd7b6ee57e6bcd85c67c9b8431b36fff21c437",
+            json["lockDigest"], "sha256:11507a0e2f5e69d5dfa40a62a1bd7b6ee57e6bcd85c67c9b8431b36fff21c437",
             "the lock digest is the SHA-256 of the written lock bytes"
         );
         assert!(json["previousLockDigest"].as_str().unwrap().starts_with("sha256:"));

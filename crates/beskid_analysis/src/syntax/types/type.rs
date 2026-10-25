@@ -186,7 +186,9 @@ mod tests {
         assert_eq!(contract.node.segments[0].node.name.node.name, "Iterator");
         assert_eq!(name.node.name, "Item");
         assert!(
-            format_source("<memory>", "Iterator::Item Current() { return; }").expect("associated type reference should format").contains("Iterator::Item"),
+            format_source("<memory>", "Iterator::Item Current() { return; }")
+                .expect("associated type reference should format")
+                .contains("Iterator::Item"),
             "formatter must preserve the associated-type separator"
         );
     }
@@ -234,8 +236,7 @@ mod tests {
     #[test]
     fn associated_type_references_round_trip_through_the_formatter() {
         let source = "Iterator::Item[] ArrayCurrent() { return; } Iterator::Item(i64) Mapper() { return; } Container<Iterator::Item> Wrapped() { return; }";
-        let formatted = format_source("<memory>", source)
-            .expect("compositional associated types should format");
+        let formatted = format_source("<memory>", source).expect("compositional associated types should format");
 
         assert!(formatted.contains("Iterator::Item[]"));
         assert!(formatted.contains("Iterator::Item(i64)"));
@@ -305,7 +306,9 @@ mod tests {
                     let next = match &ty.node {
                         Type::Complex(path) => {
                             let [segment] = path.node.segments.as_slice() else { panic!("one segment per level") };
-                            let [argument] = segment.node.type_args.as_slice() else { panic!("one argument per level") };
+                            let [argument] = segment.node.type_args.as_slice() else {
+                                panic!("one argument per level")
+                            };
                             argument.clone()
                         }
                         _ => break,

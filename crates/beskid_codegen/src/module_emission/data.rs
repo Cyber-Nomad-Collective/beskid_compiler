@@ -262,4 +262,3 @@ pub fn emit_string_literals<M: Module>(
     }
     Ok(handles)
 }
-

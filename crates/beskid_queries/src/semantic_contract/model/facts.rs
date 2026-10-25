@@ -52,11 +52,15 @@ pub enum ForIterableSource {
     /// The loop reads every element of the array value evaluated once at loop entry, in index
     /// order. `element_managed` is the GC classification of the elements (the loop variable's
     /// root discipline), derived from the element's source identity, never from its ABI.
-    Array { element_managed: super::types::ManagedReferenceKind },
+    Array {
+        element_managed: super::types::ManagedReferenceKind,
+    },
     /// The loop calls `Next()` on the iterator value evaluated once at loop entry until it
     /// returns `None`, binding each `Some` payload. The callee and `Option` layout are the
     /// [`ForIteratorProtocol`] of the statement; `element_managed` classifies the payloads.
-    Iterator { element_managed: super::types::ManagedReferenceKind },
+    Iterator {
+        element_managed: super::types::ManagedReferenceKind,
+    },
 }
 
 /// Lowering authority of one `for` over the nominal iterator protocol.

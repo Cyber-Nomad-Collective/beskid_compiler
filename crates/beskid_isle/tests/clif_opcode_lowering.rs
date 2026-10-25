@@ -60,10 +60,7 @@ const REPRESENTATIVES: &[(&str, &str)] = &[
     ("popcnt", UNARY_I64),
     ("bswap", UNARY_I64),
     ("bitrev", UNARY_I64),
-    (
-        "icmp",
-        "function %f(i64, i64) -> i8 {\nblock0(v0: i64, v1: i64):\n    v2 = icmp ult v0, v1\n    return v2\n}",
-    ),
+    ("icmp", "function %f(i64, i64) -> i8 {\nblock0(v0: i64, v1: i64):\n    v2 = icmp ult v0, v1\n    return v2\n}"),
     (
         "select",
         "function %f(i8, i64, i64) -> i64 {\nblock0(v0: i8, v1: i64, v2: i64):\n    v3 = select v0, v1, v2\n    \
@@ -88,18 +85,9 @@ const REPRESENTATIVES: &[(&str, &str)] = &[
     ("fmin", BINARY_F64),
     ("fmax", BINARY_F64),
     ("sqrt", UNARY_F64),
-    (
-        "fcmp",
-        "function %f(f64, f64) -> i8 {\nblock0(v0: f64, v1: f64):\n    v2 = fcmp lt v0, v1\n    return v2\n}",
-    ),
-    (
-        "fcvt_from_sint",
-        "function %f(i64) -> f64 {\nblock0(v0: i64):\n    v1 = fcvt_from_sint.f64 v0\n    return v1\n}",
-    ),
-    (
-        "fcvt_from_uint",
-        "function %f(i64) -> f64 {\nblock0(v0: i64):\n    v1 = fcvt_from_uint.f64 v0\n    return v1\n}",
-    ),
+    ("fcmp", "function %f(f64, f64) -> i8 {\nblock0(v0: f64, v1: f64):\n    v2 = fcmp lt v0, v1\n    return v2\n}"),
+    ("fcvt_from_sint", "function %f(i64) -> f64 {\nblock0(v0: i64):\n    v1 = fcvt_from_sint.f64 v0\n    return v1\n}"),
+    ("fcvt_from_uint", "function %f(i64) -> f64 {\nblock0(v0: i64):\n    v1 = fcvt_from_uint.f64 v0\n    return v1\n}"),
     (
         "fcvt_to_sint_sat",
         "function %f(f64) -> i64 {\nblock0(v0: f64):\n    v1 = fcvt_to_sint_sat.i64 v0\n    return v1\n}",
@@ -114,10 +102,7 @@ const REPRESENTATIVES: &[(&str, &str)] = &[
         "function %f(i32x4, i32) -> i32x4 {\nblock0(v0: i32x4, v1: i32):\n    v2 = insertlane v0, v1, 1\n    \
          return v2\n}",
     ),
-    (
-        "extractlane",
-        "function %f(i32x4) -> i32 {\nblock0(v0: i32x4):\n    v1 = extractlane v0, 2\n    return v1\n}",
-    ),
+    ("extractlane", "function %f(i32x4) -> i32 {\nblock0(v0: i32x4):\n    v1 = extractlane v0, 2\n    return v1\n}"),
     (
         "shuffle",
         "function %f(i8x16, i8x16) -> i8x16 {\nblock0(v0: i8x16, v1: i8x16):\n    v2 = shuffle v0, v1, \
@@ -130,10 +115,7 @@ const REPRESENTATIVES: &[(&str, &str)] = &[
     ),
     ("vany_true", "function %f(i32x4) -> i8 {\nblock0(v0: i32x4):\n    v1 = vany_true v0\n    return v1\n}"),
     ("vall_true", "function %f(i32x4) -> i8 {\nblock0(v0: i32x4):\n    v1 = vall_true v0\n    return v1\n}"),
-    (
-        "vhigh_bits",
-        "function %f(i32x4) -> i32 {\nblock0(v0: i32x4):\n    v1 = vhigh_bits.i32 v0\n    return v1\n}",
-    ),
+    ("vhigh_bits", "function %f(i32x4) -> i32 {\nblock0(v0: i32x4):\n    v1 = vhigh_bits.i32 v0\n    return v1\n}"),
     ("snarrow", NARROW_I32X4),
     ("unarrow", NARROW_I32X4),
     ("swiden_low", WIDEN_I16X8),
@@ -208,8 +190,7 @@ fn target_isa(triple: &str) -> Arc<dyn TargetIsa> {
 
 #[test]
 fn every_allowlisted_clif_opcode_has_a_representative() {
-    let missing =
-        CLIF_ALLOWED_OPCODES.iter().filter(|opcode| representative(opcode).is_none()).collect::<Vec<_>>();
+    let missing = CLIF_ALLOWED_OPCODES.iter().filter(|opcode| representative(opcode).is_none()).collect::<Vec<_>>();
     assert!(missing.is_empty(), "add a lowering representative for {missing:?}");
 }
 

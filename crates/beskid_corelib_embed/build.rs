@@ -6,9 +6,7 @@ mod corelib_fingerprint;
 #[path = "../beskid_abi/corelib_workspace_source.rs"]
 mod corelib_workspace_source;
 
-use corelib_fingerprint::{
-    CORELIB_BUNDLE_FINGERPRINT_FILE, copy_corelib_bundle, fingerprint_corelib_bundle_dir,
-};
+use corelib_fingerprint::{CORELIB_BUNDLE_FINGERPRINT_FILE, copy_corelib_bundle, fingerprint_corelib_bundle_dir};
 
 const ENV_CORELIB_SOURCE: &str = "BESKID_CORELIB_SOURCE";
 
@@ -48,20 +46,14 @@ fn main() {
         )
     });
     let fingerprint = fingerprint_corelib_bundle_dir(&dest).expect("fingerprint embedded corelib");
-    std::fs::write(
-        dest.join(CORELIB_BUNDLE_FINGERPRINT_FILE),
-        format!("{fingerprint}\n"),
-    )
-    .expect("write embedded corelib fingerprint");
+    std::fs::write(dest.join(CORELIB_BUNDLE_FINGERPRINT_FILE), format!("{fingerprint}\n"))
+        .expect("write embedded corelib fingerprint");
 
     // Watch the workspace root (manifest and legal files, new members), every walked member
     // directory (added or removed sources), and every embedded file.
     println!("cargo:rerun-if-changed={}", corelib_workspace_dir.display());
     for relative in inventory.directories.iter().chain(&inventory.files) {
-        println!(
-            "cargo:rerun-if-changed={}",
-            corelib_workspace_dir.join(relative).display()
-        );
+        println!("cargo:rerun-if-changed={}", corelib_workspace_dir.join(relative).display());
     }
     println!("cargo:rerun-if-env-changed={ENV_CORELIB_SOURCE}");
 }

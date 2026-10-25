@@ -4,8 +4,8 @@
 use beskid_tools::diagnostics::{ErrorFormat, set_error_format};
 use clap::{Args, ValueEnum};
 
-use crate::cli::app::Commands;
 use super::dev::DevCommand;
+use crate::cli::app::Commands;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, ValueEnum)]
 pub enum ErrorFormatArg {

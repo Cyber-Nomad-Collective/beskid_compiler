@@ -67,8 +67,9 @@ impl CompiledSerializationTemplate {
             .find(|(unit, _)| unit.path == old_unit.path)
             .map(|(_, index)| index)
             .ok_or_else(|| reject("original template index absent"))?;
-        let old_node =
-            old_index.node_at(&old_unit.program, self.owner.node()).ok_or_else(|| reject("original template node absent"))?;
+        let old_node = old_index
+            .node_at(&old_unit.program, self.owner.node())
+            .ok_or_else(|| reject("original template node absent"))?;
         let current_unit = program
             .assembly
             .units
@@ -149,7 +150,8 @@ impl CompiledSerializationTemplate {
     ) -> Result<ReboundSerializationTarget, ModSemanticError> {
         let authority = ModSemanticQueryAuthority::for_registered_assembly(db, program.project, &program.assembly)?;
         let (owner, _) = self.specialized(&authority, db, program, &arguments)?;
-        let syntax = db.syntax_unit(owner.unit).ok_or_else(|| ModSemanticQueryAuthority::error("template source absent"))?;
+        let syntax =
+            db.syntax_unit(owner.unit).ok_or_else(|| ModSemanticQueryAuthority::error("template source absent"))?;
         let body = mod_shape_projection(db, syntax, owner, arguments.clone())
             .map_err(|error| ModSemanticQueryAuthority::error(&error.to_string()))?
             .body;
@@ -243,16 +245,15 @@ pub fn serialization_template_instance_rebind(
     }
     let mut arguments = Vec::with_capacity(parameters.len());
     for parameter in &parameters {
-        let binding = instance
-            .substitutions
-            .iter()
-            .find(|binding| binding.parameter.as_ref() == parameter.as_str())
-            .ok_or_else(|| {
-                reject(&format!(
-                    "serialization template instance does not bind owner parameter `{parameter}`; \
+        let binding =
+            instance.substitutions.iter().find(|binding| binding.parameter.as_ref() == parameter.as_str()).ok_or_else(
+                || {
+                    reject(&format!(
+                        "serialization template instance does not bind owner parameter `{parameter}`; \
                      a generated adapter method is emitted only in a complete substitution environment"
-                ))
-            })?;
+                    ))
+                },
+            )?;
         arguments.push(binding.source_identity().clone());
     }
     template.specialize(db, program, arguments.into(), &instance.substitutions).map(Some)
@@ -293,7 +294,9 @@ pub fn serialization_template_getter_shape(
         }
         let (_, shape) = template.specialized(&authority, db, program, arguments)?;
         if shape.nodes() != binding.graph().nodes() {
-            return Err(ModSemanticQueryAuthority::error("compiled getter application differs from gated template shape"));
+            return Err(ModSemanticQueryAuthority::error(
+                "compiled getter application differs from gated template shape",
+            ));
         }
         gated = Some(shape);
     }
@@ -432,7 +435,8 @@ impl ModSemanticQueryAuthority<'_> {
             ShapeBodyProjection::Enum(variants) => {
                 for variant in variants {
                     for (field, _, ty) in &variant.fields {
-                        let policy = crate::serialization_payload_field_policy(self.db, *field).map_err(policy_error)?;
+                        let policy =
+                            crate::serialization_payload_field_policy(self.db, *field).map_err(policy_error)?;
                         self.template_default_factory(*field, &policy, ty)?;
                         if policy.absent_from_wire() {
                             continue;
@@ -476,18 +480,29 @@ impl ModSemanticQueryAuthority<'_> {
         };
         let declaration = crate::semantic_contract::mod_shapes::mod_resolve_function_route(self.db, caller, route)
             .ok_or_else(|| {
-                located("SerializationDefaultFactory", "default factory does not resolve to one function from the compilation root")
+                located(
+                    "SerializationDefaultFactory",
+                    "default factory does not resolve to one function from the compilation root",
+                )
             })?;
         if declaration.generation != self.assembly.generation
             || self.registered_unit(declaration.unit.path(self.db)).is_none()
         {
-            return Err(located("SerializationDefaultFactory", "default factory is outside the registered assembly generation"));
+            return Err(located(
+                "SerializationDefaultFactory",
+                "default factory is outside the registered assembly generation",
+            ));
         }
         if !crate::semantic_contract::mod_shapes::mod_function_accessible(self.db, caller, declaration) {
-            return Err(located("SerializationDefaultFactory", "default factory is not visible from the compilation root"));
+            return Err(located(
+                "SerializationDefaultFactory",
+                "default factory is not visible from the compilation root",
+            ));
         }
         let signature = crate::semantic_contract::mod_shapes::mod_function_signature_projection(self.db, declaration)
-            .map_err(|_| located("SerializationDefaultFactory", "default factory signature is unavailable or generic"))?;
+            .map_err(|_| {
+            located("SerializationDefaultFactory", "default factory signature is unavailable or generic")
+        })?;
         if signature.generic_count != 0 {
             return Err(located("SerializationDefaultFactory", "default factory must not be generic"));
         }

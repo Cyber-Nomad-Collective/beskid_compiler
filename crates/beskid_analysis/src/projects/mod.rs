@@ -12,10 +12,10 @@ pub mod manifest_resolve;
 pub mod model;
 mod package_identity;
 pub mod parser;
+pub(crate) use package_identity::is_outside_package;
 pub use package_identity::{
     VerifiedPackageIdentities, VerifiedPackageIdentity, VerifiedPackageRoot, VerifiedPackageSource,
 };
-pub(crate) use package_identity::is_outside_package;
 mod readme;
 pub mod validator;
 pub mod workflow;
@@ -25,10 +25,10 @@ pub(crate) use assembly::assemble_program;
 pub use assembly::{
     AmbiguousModulePath, AssemblyError, AssemblyModule, AssemblyRootSet, EffectiveCompilationRoots, ModuleGraph,
     ModuleIndex, ModulePathProvider, ProgramAssembly, RootEntry, SourceUnit, UnitMaterializer,
-    assemble_program_with_materializer,
-    assembly_options_for_plan, assembly_options_for_prepare, effective_roots_for_plan, effective_roots_from_lockfile,
-    effective_roots_from_lockfile_checked, effective_roots_from_plan_and_workspace, infer_logical_module_path,
-    module_path_exists_on_disk, module_path_to_relative_path, module_roots_from_effective, resolve_module_file,
+    assemble_program_with_materializer, assembly_options_for_plan, assembly_options_for_prepare,
+    effective_roots_for_plan, effective_roots_from_lockfile, effective_roots_from_lockfile_checked,
+    effective_roots_from_plan_and_workspace, infer_logical_module_path, module_path_exists_on_disk,
+    module_path_to_relative_path, module_roots_from_effective, resolve_module_file,
 };
 pub use bsol::{BsolBlock, BsolDocument, BsolError, BsolItem, BsolSpan, BsolValue, parse_bsol_document};
 pub use compile_plan::{
@@ -49,10 +49,10 @@ pub use glue_owner::{
     glue_owner_directory,
 };
 pub use graph::{
-    CORE_DEPENDENCY_NAME, DependencyEdge, ProjectGraph, ProjectGraphBuildOptions, ProjectGraphNode, UnresolvedDependency,
-    UnresolvedDependencyKind, WorkspaceResolutionRules, build_project_graph, build_project_graph_with_options,
-    collect_dependency_projects, collect_unresolved_dependencies, discover_workspace_resolution_rules,
-    is_core_dependency_name,
+    CORE_DEPENDENCY_NAME, DependencyEdge, ProjectGraph, ProjectGraphBuildOptions, ProjectGraphNode,
+    UnresolvedDependency, UnresolvedDependencyKind, WorkspaceResolutionRules, build_project_graph,
+    build_project_graph_with_options, collect_dependency_projects, collect_unresolved_dependencies,
+    discover_workspace_resolution_rules, is_core_dependency_name,
 };
 pub use manifest_resolve::{
     discover_project_manifest_from_input_or_cwd, resolve_project_manifest_for_cwd,
@@ -61,11 +61,12 @@ pub use manifest_resolve::{
 };
 pub use model::{
     AssemblyDiscovery, AssemblyOptions, AssemblyRecoveryPolicy, CompilePlan, Dependency, DependencySource,
-    GrammarOutputEntry, MaterializedDependencyProject, ModGeneratedOutput, PreparedProjectWorkspace,
-    ProjectGlueBackend, ProjectGlueOwner, ProjectGrammarSection, ProjectKind, ProjectLinkSection, ProjectManifest,
-    ProjectModSection, ProjectSection, ProjectTemplateSection, ProjectWorkspacePlan, ResolvedDependencyProject,
-    Target, TargetKind, UnresolvedDependencyNote, UnresolvedDependencyPolicy, WorkspaceManifest, WorkspaceMember,
-    PROGRAM_ENTRY_FUNCTION, WorkspaceOverride, WorkspaceRegistry, WorkspaceResolutionSummary, WorkspaceSection,
+    GrammarOutputEntry, MaterializedDependencyProject, ModGeneratedOutput, PROGRAM_ENTRY_FUNCTION,
+    PreparedProjectWorkspace, ProjectGlueBackend, ProjectGlueOwner, ProjectGrammarSection, ProjectKind,
+    ProjectLinkSection, ProjectManifest, ProjectModSection, ProjectSection, ProjectTemplateSection,
+    ProjectWorkspacePlan, ResolvedDependencyProject, Target, TargetKind, UnresolvedDependencyNote,
+    UnresolvedDependencyPolicy, WorkspaceManifest, WorkspaceMember, WorkspaceOverride, WorkspaceRegistry,
+    WorkspaceResolutionSummary, WorkspaceSection,
 };
 pub use parser::{parse_manifest, parse_workspace_manifest};
 pub use readme::{

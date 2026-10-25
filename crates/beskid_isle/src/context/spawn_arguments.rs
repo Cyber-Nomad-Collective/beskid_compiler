@@ -24,8 +24,7 @@ impl IsleContext<'_, '_, '_, '_> {
             values.push((value, field.field_offset, root));
         }
         let request = self.symbol_global(environment.allocation_request_symbol.as_ref(), pointer)?;
-        let allocate =
-            self.import_runtime_helper("beskid_rt_v5_managed_object_allocate", &[pointer], Some(pointer))?;
+        let allocate = self.import_runtime_helper("beskid_rt_v5_managed_object_allocate", &[pointer], Some(pointer))?;
         let allocation = self.builder.ins().call(allocate, &[request]);
         let object = self.builder.inst_results(allocation).first().copied()?;
         self.builder.ins().trapz(object, TrapCode::unwrap_user(5));

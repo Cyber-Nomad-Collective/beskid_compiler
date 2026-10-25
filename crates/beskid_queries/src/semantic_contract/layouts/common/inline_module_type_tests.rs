@@ -62,7 +62,9 @@ fn parameter_types() -> (tempfile::TempDir, BeskidDatabase, Vec<(String, Option<
 
 fn identity(db: &dyn Db, resolved: &[(String, Option<AstNodeKey>)], parameter: &str) -> Option<String> {
     let (_, declaration) = resolved.iter().find(|(name, _)| name == parameter).expect("parameter");
-    declaration.and_then(|declaration| stable_declaration_identity(db, declaration)).map(|identity| identity.to_string())
+    declaration
+        .and_then(|declaration| stable_declaration_identity(db, declaration))
+        .map(|identity| identity.to_string())
 }
 
 #[test]

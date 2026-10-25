@@ -45,7 +45,8 @@ pub(in crate::semantic_contract) fn is_transfer_class_intrinsic(
 /// Transferable` bound of the corelib callers rules it out).
 pub fn transfer_class_intrinsic(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<TransferClassIntrinsic> {
     let Some(syntax) = db.syntax_unit(key.unit) else { return Ok(None) };
-    let Some(argument) = with_node(db, syntax, key, |program, index, _node| is_transfer_class_intrinsic(program, index, key))?
+    let Some(argument) =
+        with_node(db, syntax, key, |program, index, _node| is_transfer_class_intrinsic(program, index, key))?
     else {
         return Ok(None);
     };

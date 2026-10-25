@@ -13,32 +13,31 @@ pub(in crate::semantic_contract) use aggregate::{
     inaccessible_literal_fields, instantiated_aggregate_layout_for_path,
 };
 pub use aggregate::{
-    aggregate_literal_specialization, array_index_element_managed_reference_specialization, array_index_element_specialization,
+    aggregate_literal_specialization, array_index_element_managed_reference_specialization,
+    array_index_element_specialization,
 };
 
 pub(in crate::semantic_contract) use common::{
     abi_local_declaration_type, abi_type_for_direct_aggregate_field_projection, abi_type_for_local_path,
-    aggregate_field_layout, aggregate_shape_for_binding, explicit_local_declaration_type, nominal_aggregate_abi_type,
-    resolve_nominal_layout_declaration, resolve_type_declaration, integer_primitive_for_semantic, semantic_type_for_primitive, semantic_type_from_syntax,
-    unique_assembled_type_in_module, unique_exported_type_in_unit, unique_nominal_type_in_unit, unique_public_type_in_unit,
-    unique_type_in_unit,
+    aggregate_field_layout, aggregate_shape_for_binding, explicit_local_declaration_type,
+    integer_primitive_for_semantic, nominal_aggregate_abi_type, resolve_nominal_layout_declaration,
+    resolve_type_declaration, semantic_type_for_primitive, semantic_type_from_syntax, unique_assembled_type_in_module,
+    unique_exported_type_in_unit, unique_nominal_type_in_unit, unique_public_type_in_unit, unique_type_in_unit,
 };
 
 pub(in crate::semantic_contract) use enum_layout::{
-    aggregate_shape_from_applied_type, applied_enum_constructor_identity, expected_enum_constructor_identity,
-    enum_constructor_tracked, enum_field_layout, enum_layout_for_source_identity, enum_layout_from_definition,
-    enum_layout_substitutions, enum_layout_tracked, enum_match_scrutinee_layout, enum_match_tracked, scalar_match_tracked,
-    enum_pattern_targets_declaration, instantiated_enum_layout_for_path,
+    aggregate_shape_from_applied_type, applied_enum_constructor_identity, enum_constructor_tracked, enum_field_layout,
+    enum_layout_for_source_identity, enum_layout_from_definition, enum_layout_substitutions, enum_layout_tracked,
+    enum_match_scrutinee_layout, enum_match_tracked, enum_pattern_targets_declaration,
+    expected_enum_constructor_identity, instantiated_enum_layout_for_path, scalar_match_tracked,
 };
 pub use enum_layout::{enum_constructor_specialization, enum_match_specialization};
 
 pub use canonical_empty::{CanonicalEmptyValue, canonical_empty_value};
 pub use field_access::aggregate_field_access_specialization;
 pub(in crate::semantic_contract) use field_access::{
-    nominal_field_projection_in_environment,
     FieldAccessReceiver, aggregate_field_access_tracked, explicit_local_complex_type_path, field_access_receiver,
+    field_read_identity_in_environment, is_implicit_receiver_name, nominal_field_projection,
+    nominal_field_projection_in_environment, nominal_local_receiver_declaration, path_projection_segment,
     path_segment_field_receiver,
-    field_read_identity_in_environment,
-    is_implicit_receiver_name,
-    nominal_field_projection, nominal_local_receiver_declaration, path_projection_segment,
 };

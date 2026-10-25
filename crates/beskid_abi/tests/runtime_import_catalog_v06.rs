@@ -40,7 +40,10 @@ fn service_type(ty: &str) -> CorelibServiceAbiType {
 fn compiled_abi_v5_tables_match_the_manifest_regenerated_in_memory() {
     let artifacts = beskid_manifest::generate_v5_artifacts(&manifest()).expect("generate ABI-v5 artifacts");
     let compiled = include_str!(concat!(env!("OUT_DIR"), "/abi_v5_contract.rs"));
-    assert!(compiled == artifacts.rust, "compiled abi_v5_contract.rs differs from runtime_manifest.bsol; rebuild beskid_abi");
+    assert!(
+        compiled == artifacts.rust,
+        "compiled abi_v5_contract.rs differs from runtime_manifest.bsol; rebuild beskid_abi"
+    );
 }
 
 /// Every runtime import shape that lowering, the checked-effect path and the object boundary use
@@ -50,7 +53,8 @@ fn every_runtime_service_import_shape_matches_its_manifest_declaration() {
     let manifest = manifest();
     assert!(!manifest.corelib_services.is_empty());
     for service in &manifest.corelib_services {
-        let expected_parameters = service.params.iter().map(|parameter| service_type(&parameter.ty)).collect::<Vec<_>>();
+        let expected_parameters =
+            service.params.iter().map(|parameter| service_type(&parameter.ty)).collect::<Vec<_>>();
         let expected_result = service_type(&service.result);
         for binding in &service.target_bindings {
             let compiled = ABI_V5_CORELIB_SERVICE_BINDINGS
@@ -66,7 +70,12 @@ fn every_runtime_service_import_shape_matches_its_manifest_declaration() {
         assert_eq!(abi.parameters, expected_parameters, "{} parameters", service.adapter);
         assert_eq!(abi.result, expected_result, "{} result", service.adapter);
         let direct = service.target_bindings.iter().all(|binding| binding.implementation == service.adapter);
-        assert_eq!(beskid_abi::is_runtime_import_symbol(&service.adapter), direct, "{} runtime import admission", service.adapter);
+        assert_eq!(
+            beskid_abi::is_runtime_import_symbol(&service.adapter),
+            direct,
+            "{} runtime import admission",
+            service.adapter
+        );
     }
 }
 
@@ -90,7 +99,9 @@ fn builtin_catalog_is_only_the_generated_soft_builtins() {
     compiled.sort_unstable();
     assert_eq!(compiled, expected);
     assert_eq!(ABI_V5_SOFT_BUILTINS.len(), manifest.soft_builtins.len());
-    for retired in ["dynamic_map_aot", "composition_register", "panic", "panic_str", "beskid_runtime_abi_version", "fiber_yield"] {
+    for retired in
+        ["dynamic_map_aot", "composition_register", "panic", "panic_str", "beskid_runtime_abi_version", "fiber_yield"]
+    {
         assert!(!beskid_abi::is_runtime_import_symbol(retired), "{retired} has no ABI-v5 manifest authority");
     }
     let generated = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/generated");

@@ -89,8 +89,10 @@ impl ScopeCheck<'_> {
     fn values(&mut self) {
         let mut sites = Vec::new();
         for node in self.index.ids_of_kind(NodeKind::ReturnStatement).filter(|node| self.owned_here(*node)) {
-            let Some(statement) =
-                self.index.node_at(self.program, node).and_then(|node| node.of::<beskid_analysis::syntax::ReturnStatement>())
+            let Some(statement) = self
+                .index
+                .node_at(self.program, node)
+                .and_then(|node| node.of::<beskid_analysis::syntax::ReturnStatement>())
             else {
                 continue;
             };
@@ -120,8 +122,10 @@ impl ScopeCheck<'_> {
             }
         }
         for node in self.index.ids_of_kind(NodeKind::ArrayLiteralExpression).filter(|node| self.owned_here(*node)) {
-            if let Some(literal) =
-                self.index.node_at(self.program, node).and_then(|node| node.of::<beskid_analysis::syntax::ArrayLiteralExpression>())
+            if let Some(literal) = self
+                .index
+                .node_at(self.program, node)
+                .and_then(|node| node.of::<beskid_analysis::syntax::ArrayLiteralExpression>())
             {
                 sites.extend(literal.elements.iter().filter_map(|element| self.child(node, DynNodeRef::from(element))));
             }
@@ -132,7 +136,9 @@ impl ScopeCheck<'_> {
                 .node_at(self.program, node)
                 .and_then(|node| node.of::<beskid_analysis::syntax::EnumConstructorExpression>())
             {
-                sites.extend(constructor.args.iter().filter_map(|argument| self.child(node, DynNodeRef::from(argument))));
+                sites.extend(
+                    constructor.args.iter().filter_map(|argument| self.child(node, DynNodeRef::from(argument))),
+                );
             }
         }
         for site in sites {
@@ -146,7 +152,8 @@ impl ScopeCheck<'_> {
 
     /// Arguments of a `spawn` target call are transferred to the new fiber.
     fn spawn_arguments(&mut self) {
-        let spawns = self.index.ids_of_kind(NodeKind::SpawnExpression).filter(|node| self.owned_here(*node)).collect::<Vec<_>>();
+        let spawns =
+            self.index.ids_of_kind(NodeKind::SpawnExpression).filter(|node| self.owned_here(*node)).collect::<Vec<_>>();
         for spawn in spawns {
             let Ok(Some(target)) = spawn_target(self.db, self.at(spawn)) else { continue };
             for argument in target.arguments.iter() {
@@ -178,8 +185,10 @@ impl ScopeCheck<'_> {
                 .filter(|node| is_ancestor(self.index, lambda, *node))
                 .collect::<Vec<_>>();
             for node in uses {
-                let Some(path) =
-                    self.index.node_at(self.program, node).and_then(|node| node.of::<beskid_analysis::syntax::PathExpression>())
+                let Some(path) = self
+                    .index
+                    .node_at(self.program, node)
+                    .and_then(|node| node.of::<beskid_analysis::syntax::PathExpression>())
                 else {
                     continue;
                 };
@@ -229,8 +238,10 @@ impl ScopeCheck<'_> {
 
     /// The value of an assignment whose target is a field or an element (not a local).
     fn stored_assignment_value(&self, assignment: AstNodeId) -> Option<AstNodeId> {
-        let syntax =
-            self.index.node_at(self.program, assignment).and_then(|node| node.of::<beskid_analysis::syntax::AssignExpression>())?;
+        let syntax = self
+            .index
+            .node_at(self.program, assignment)
+            .and_then(|node| node.of::<beskid_analysis::syntax::AssignExpression>())?;
         let local = matches!(&syntax.target.node,
             beskid_analysis::syntax::Expression::Path(path) if path.node.path.node.segments.len() == 1);
         if local {
@@ -240,8 +251,10 @@ impl ScopeCheck<'_> {
     }
 
     fn field_value(&self, field: AstNodeId) -> Option<AstNodeId> {
-        let syntax =
-            self.index.node_at(self.program, field).and_then(|node| node.of::<beskid_analysis::syntax::StructLiteralField>())?;
+        let syntax = self
+            .index
+            .node_at(self.program, field)
+            .and_then(|node| node.of::<beskid_analysis::syntax::StructLiteralField>())?;
         self.child(field, DynNodeRef::from(&syntax.value))
     }
 
@@ -263,8 +276,10 @@ impl ScopeCheck<'_> {
     /// A struct literal field with a `[Captures]` bound.
     fn bounded_field(&self, field: AstNodeId) -> bool {
         let Some(owner) = self.literal_of_field(field) else { return false };
-        let Some(syntax) =
-            self.index.node_at(self.program, field).and_then(|node| node.of::<beskid_analysis::syntax::StructLiteralField>())
+        let Some(syntax) = self
+            .index
+            .node_at(self.program, field)
+            .and_then(|node| node.of::<beskid_analysis::syntax::StructLiteralField>())
         else {
             return false;
         };
@@ -279,7 +294,13 @@ impl ScopeCheck<'_> {
             .or_else(|| {
                 self.index.node_at(self.program, node).and_then(|node| {
                     node.of::<beskid_analysis::syntax::PathExpression>().map(|path| {
-                        path.path.node.segments.iter().map(|segment| segment.node.name.node.name.as_str()).collect::<Vec<_>>().join(".")
+                        path.path
+                            .node
+                            .segments
+                            .iter()
+                            .map(|segment| segment.node.name.node.name.as_str())
+                            .collect::<Vec<_>>()
+                            .join(".")
                     })
                 })
             })
@@ -298,7 +319,9 @@ impl ScopeCheck<'_> {
                         return self.this_view(node).map(|type_name| (type_name, None));
                     }
                     if let Some(declaration) = resolve_lexical_declaration(self.program, self.index, node, name) {
-                        return self.view_of_binding(declaration, depth).map(|type_name| (type_name, Some(declaration)));
+                        return self
+                            .view_of_binding(declaration, depth)
+                            .map(|type_name| (type_name, Some(declaration)));
                     }
                 }
                 self.view_of_identity(node).map(|type_name| (type_name, None))
@@ -353,7 +376,8 @@ impl ScopeCheck<'_> {
             Some(_) => None,
             None => {
                 let identity =
-                    generic_source_local_identity(self.db, self.program, self.index, self.at(declaration), declaration).ok()?;
+                    generic_source_local_identity(self.db, self.program, self.index, self.at(declaration), declaration)
+                        .ok()?;
                 if !matches!(identity, GenericSourceTypeIdentity::Nominal { .. }) {
                     return None;
                 }
@@ -367,7 +391,9 @@ impl ScopeCheck<'_> {
     fn this_view(&self, node: AstNodeId) -> Option<String> {
         let method = nearest_ancestor(self.index, node, |kind| kind == NodeKind::MethodDefinition)?;
         let declaration = match method_this_type(self.db, self.at(method)) {
-            Some(beskid_analysis::syntax::Type::Complex(path)) => resolve_type_declaration(self.db, self.at(method), &path.node)?,
+            Some(beskid_analysis::syntax::Type::Complex(path)) => {
+                resolve_type_declaration(self.db, self.at(method), &path.node)?
+            }
             Some(_) => return None,
             None => self.at(nearest_ancestor(self.index, method, |kind| kind == NodeKind::TypeDefinition)?),
         };

@@ -15,7 +15,8 @@ pub enum MutationKind {
 }
 
 impl MutationKind {
-    pub const ALL: [MutationKind; 3] = [MutationKind::DeleteToken, MutationKind::DuplicateLine, MutationKind::SwapTokens];
+    pub const ALL: [MutationKind; 3] =
+        [MutationKind::DeleteToken, MutationKind::DuplicateLine, MutationKind::SwapTokens];
 
     pub fn name(self) -> &'static str {
         match self {
@@ -184,7 +185,10 @@ mod tests {
 
     #[test]
     fn tokenizer_splits_words_punctuation_and_keeps_literals_whole() {
-        assert_eq!(texts("a.b(\"x y\", 12); // tail\n"), vec!["a", ".", "b", "(", "\"x y\"", ",", "12", ")", ";", "// tail"]);
+        assert_eq!(
+            texts("a.b(\"x y\", 12); // tail\n"),
+            vec!["a", ".", "b", "(", "\"x y\"", ",", "12", ")", ";", "// tail"]
+        );
     }
 
     #[test]

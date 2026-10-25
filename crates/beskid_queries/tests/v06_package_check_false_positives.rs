@@ -61,8 +61,9 @@ fn errors(units: &[(&str, &str)]) -> Vec<String> {
         )),
     };
     let mut db = BeskidDatabase::default();
-    let (_, diagnostics, _) = prepare_compilation_diagnostics_with_db(&mut db, &resolved, PrepareOptions::without_mods(), None)
-        .expect("prepare diagnostics");
+    let (_, diagnostics, _) =
+        prepare_compilation_diagnostics_with_db(&mut db, &resolved, PrepareOptions::without_mods(), None)
+            .expect("prepare diagnostics");
     diagnostics
         .iter()
         .filter(|diagnostic| diagnostic.severity == Severity::Error)
@@ -215,7 +216,10 @@ fn qualified_generic_call_with_enclosing_type_argument_and_bound_decoder_method(
                  return decoder.ReadTyped(); \
              }",
         ),
-        ("Repro/Registry.bd", "use Core.Results; pub Result<unit, string> RegisterCompiled<T>(i64 limit) { return Result::Ok(()); }"),
+        (
+            "Repro/Registry.bd",
+            "use Core.Results; pub Result<unit, string> RegisterCompiled<T>(i64 limit) { return Result::Ok(()); }",
+        ),
         (
             "Repro/Decoding.bd",
             "use Core.Results; \

@@ -207,7 +207,10 @@ fn staged_runtime_kit_emitted_binary_handoffs_core_args_through_the_executable_h
         command.args(["zażółć-🙂", "", "final"]);
         let result = run_bounded("Core.Args wide executable", &mut command, ROUTE_LIMIT);
         assert_eq!(result.status.code(), Some(4), "UTF-16 argument capture: {result:?}");
-        assert_eq!(result.stdout, format!("{}\nzażółć-🙂\n\nfinal\narg:final:final\n", executable.display()).as_bytes());
+        assert_eq!(
+            result.stdout,
+            format!("{}\nzażółć-🙂\n\nfinal\narg:final:final\n", executable.display()).as_bytes()
+        );
         assert!(result.stderr.is_empty());
     }
 }
@@ -595,7 +598,11 @@ fn run_foundation_case(fixture: &str, entry: &str, expected: i64, input_mode: i3
         let mut object =
             beskid_aot::object_module::BeskidObjectModule::new(None, beskid_aot::BuildProfile::Debug).unwrap();
         object
-            .compile_artifact_with_exports(&lowered.artifact(), &std::collections::HashSet::from([symbol.clone()]), None)
+            .compile_artifact_with_exports(
+                &lowered.artifact(),
+                &std::collections::HashSet::from([symbol.clone()]),
+                None,
+            )
             .unwrap();
         object.finalize_to_path(&object_path).unwrap();
         let observed = prefix.path().join("observed-copy.a");

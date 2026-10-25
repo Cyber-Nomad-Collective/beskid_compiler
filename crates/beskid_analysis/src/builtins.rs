@@ -183,10 +183,15 @@ mod tests {
         for spec in builtin_specs() {
             let uses_parameter =
                 [BuiltinType::TypeParameter, BuiltinType::TypeParameterArray, BuiltinType::TypeParameterThunk]
-                .into_iter()
-                .any(|parameter| spec.returns == parameter || spec.params.contains(&parameter));
+                    .into_iter()
+                    .any(|parameter| spec.returns == parameter || spec.params.contains(&parameter));
             if uses_parameter {
-                assert_eq!(spec.type_parameters.len(), 1, "{:?} must declare exactly one type parameter", spec.beskid_path);
+                assert_eq!(
+                    spec.type_parameters.len(),
+                    1,
+                    "{:?} must declare exactly one type parameter",
+                    spec.beskid_path
+                );
             } else {
                 assert!(spec.type_parameters.is_empty(), "{:?} declares an unused type parameter", spec.beskid_path);
             }

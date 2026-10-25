@@ -19,9 +19,13 @@ fn sample_mod_object_descriptor_cannot_qualify_executable_dispatch() {
         entry_symbol: "samplemod_collect".into(),
     };
     let context = beskid_analysis::mod_host::ModInvocationContext::empty();
-    let error =
-        beskid_analysis::mod_host::ContractInvoker::invoke_collector(&invoker, &registration, &context.collect_request, None)
-            .unwrap_err();
+    let error = beskid_analysis::mod_host::ContractInvoker::invoke_collector(
+        &invoker,
+        &registration,
+        &context.collect_request,
+        None,
+    )
+    .unwrap_err();
     assert!(error.message.contains("producer-issued executable authority"), "{error}");
     let _ = fs::remove_dir_all(&root);
 }

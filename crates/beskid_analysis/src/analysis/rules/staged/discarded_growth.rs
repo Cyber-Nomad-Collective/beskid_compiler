@@ -21,14 +21,29 @@ impl SemanticPipelineRule {
         for item in &program.node.items {
             match &item.node {
                 crate::syntax::Node::Function(definition) => {
-                    walk(ctx.source(), &mut findings, &definition.node.parameters, NodeRef::from(&definition.node.body.node));
+                    walk(
+                        ctx.source(),
+                        &mut findings,
+                        &definition.node.parameters,
+                        NodeRef::from(&definition.node.body.node),
+                    );
                 }
                 crate::syntax::Node::Method(definition) => {
-                    walk(ctx.source(), &mut findings, &definition.node.parameters, NodeRef::from(&definition.node.body.node));
+                    walk(
+                        ctx.source(),
+                        &mut findings,
+                        &definition.node.parameters,
+                        NodeRef::from(&definition.node.body.node),
+                    );
                 }
                 crate::syntax::Node::ExtendTypeDefinition(definition) => {
                     for method in &definition.node.methods {
-                        walk(ctx.source(), &mut findings, &method.node.parameters, NodeRef::from(&method.node.body.node));
+                        walk(
+                            ctx.source(),
+                            &mut findings,
+                            &method.node.parameters,
+                            NodeRef::from(&method.node.body.node),
+                        );
                     }
                 }
                 crate::syntax::Node::TestDefinition(definition) => {
@@ -133,7 +148,9 @@ impl<'s, 'f> GrowthVisitor<'s, 'f> {
                 match self.lookup(&name) {
                     None | Some(Binding::Owner) => return,
                     Some(Binding::Parameter { insert_at }) => DiscardedGrowthRepair::MutParameter { name, insert_at },
-                    Some(Binding::Assignable) => DiscardedGrowthRepair::Assign { name, insert_at: expression.span.start },
+                    Some(Binding::Assignable) => {
+                        DiscardedGrowthRepair::Assign { name, insert_at: expression.span.start }
+                    }
                     Some(Binding::Fixed) => self.bind(append, expression.span),
                 }
             }
@@ -268,7 +285,10 @@ mod tests {
         let found = discarded(source);
         assert_eq!(found.len(), 1, "{found:?}");
         assert!(
-            found[0].help.as_deref().is_some_and(|help| help.contains("assign the result: `xs = Array.Append<string>(xs, \"n\");`")),
+            found[0]
+                .help
+                .as_deref()
+                .is_some_and(|help| help.contains("assign the result: `xs = Array.Append<string>(xs, \"n\");`")),
             "{found:?}"
         );
         assert!(apply(source, &found[0]).contains("{ xs = Array.Append<string>(xs, \"n\"); }"));

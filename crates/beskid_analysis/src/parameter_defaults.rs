@@ -53,7 +53,10 @@ impl DefaultConstant {
     /// The constant as an expression whose every node carries `span` (the call site).
     pub fn to_expression(&self, span: SpanInfo) -> Spanned<Expression> {
         let literal = |literal: Literal| {
-            Spanned::new(Expression::Literal(Spanned::new(LiteralExpression { literal: Spanned::new(literal, span) }, span)), span)
+            Spanned::new(
+                Expression::Literal(Spanned::new(LiteralExpression { literal: Spanned::new(literal, span) }, span)),
+                span,
+            )
         };
         let negated = |inner: Spanned<Expression>| {
             Spanned::new(
@@ -85,7 +88,8 @@ impl DefaultConstant {
 /// literal (`1` -> `1.0`), so the call site passes a value of the parameter type. Every other
 /// value is returned unchanged (`default_fits` has already accepted it).
 pub fn converted_to(value: DefaultConstant, ty: &Type) -> DefaultConstant {
-    let float = matches!(ty, Type::Primitive(primitive) if matches!(primitive.node, PrimitiveType::F32 | PrimitiveType::F64));
+    let float =
+        matches!(ty, Type::Primitive(primitive) if matches!(primitive.node, PrimitiveType::F32 | PrimitiveType::F64));
     match value {
         DefaultConstant::Integer(text) if float && !has_integer_suffix(&text) => {
             let clean = text.replace('_', "");
@@ -204,7 +208,11 @@ fn has_integer_suffix(text: &str) -> bool {
 
 fn float_is_finite(text: &str, single: bool) -> bool {
     let magnitude = crate::syntax::float_literal_magnitude(text).replace('_', "");
-    if single { magnitude.parse::<f32>().is_ok_and(f32::is_finite) } else { magnitude.parse::<f64>().is_ok_and(f64::is_finite) }
+    if single {
+        magnitude.parse::<f32>().is_ok_and(f32::is_finite)
+    } else {
+        magnitude.parse::<f64>().is_ok_and(f64::is_finite)
+    }
 }
 
 /// The caller-information attribute of a parameter.
@@ -336,7 +344,8 @@ fn escape(text: &str) -> String {
 type Map<'a> = dyn FnMut(Spanned<Expression>) -> Spanned<Expression> + 'a;
 
 fn rewrite_block(statements: &mut Vec<Spanned<Statement>>, map: &mut Map<'_>) {
-    *statements = std::mem::take(statements).into_iter().map(|statement| map_statement(statement, &mut |e| map(e))).collect();
+    *statements =
+        std::mem::take(statements).into_iter().map(|statement| map_statement(statement, &mut |e| map(e))).collect();
 }
 
 fn rewrite_methods(methods: &mut [Spanned<MethodDefinition>], map: &mut Map<'_>) {
@@ -441,8 +450,14 @@ mod tests {
     fn an_integer_default_for_a_float_parameter_becomes_a_float() {
         let f64_type = Type::Primitive(Spanned::new(PrimitiveType::F64, SpanInfo::default()));
         let i64_type = Type::Primitive(Spanned::new(PrimitiveType::I64, SpanInfo::default()));
-        assert_eq!(converted_to(DefaultConstant::Integer("-2".into()), &f64_type), DefaultConstant::Float("-2.0".into()));
-        assert_eq!(converted_to(DefaultConstant::Integer("0x10".into()), &f64_type), DefaultConstant::Float("16.0".into()));
+        assert_eq!(
+            converted_to(DefaultConstant::Integer("-2".into()), &f64_type),
+            DefaultConstant::Float("-2.0".into())
+        );
+        assert_eq!(
+            converted_to(DefaultConstant::Integer("0x10".into()), &f64_type),
+            DefaultConstant::Float("16.0".into())
+        );
         assert_eq!(converted_to(DefaultConstant::Integer("2".into()), &i64_type), DefaultConstant::Integer("2".into()));
     }
 
@@ -519,7 +534,13 @@ mod tests {
         let fills = [spans[0], spans[2], spans[3]]
             .into_iter()
             .map(|span| {
-                (span, vec![OmittedArgument::Default(DefaultConstant::Integer("-2".into())), OmittedArgument::Caller(CallerKind::Line)])
+                (
+                    span,
+                    vec![
+                        OmittedArgument::Default(DefaultConstant::Integer("-2".into())),
+                        OmittedArgument::Caller(CallerKind::Line),
+                    ],
+                )
             })
             .collect::<HashMap<_, _>>();
         let filled = fill_omitted_arguments(&program, "/app/Main.bd", &fills);

@@ -84,7 +84,8 @@ fn is_likely_statement(snippet: &str) -> bool {
 }
 
 fn prepare_wrapped(source: &str) -> Result<beskid_analysis::services::ExecutableFrontEnd, String> {
-    prepare_syntax_front_end(std::path::Path::new(REPL_SOURCE_PATH), source, &beskid_engine::ModHost::NoMods).map_err(format_lower_error)
+    prepare_syntax_front_end(std::path::Path::new(REPL_SOURCE_PATH), source, &beskid_engine::ModHost::NoMods)
+        .map_err(format_lower_error)
 }
 
 fn run_wrapped(

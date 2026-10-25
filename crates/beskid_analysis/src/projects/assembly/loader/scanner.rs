@@ -84,7 +84,8 @@ pub(crate) fn module_paths_from_qualified_references(program: &crate::syntax::Pr
             _ => None,
         };
         if let Some(path) = nominal {
-            let segments = path.node.segments.iter().map(|segment| segment.node.name.node.name.as_str()).collect::<Vec<_>>();
+            let segments =
+                path.node.segments.iter().map(|segment| segment.node.name.node.name.as_str()).collect::<Vec<_>>();
             if segments.len() >= 2
                 && segments.first().is_some_and(|name| name.as_bytes().first().is_some_and(u8::is_ascii_uppercase))
             {

@@ -1,7 +1,10 @@
 //! A match on a typed lambda parameter (`(i64 index, Color color) => match color { ... }`, the Glue
 //! extensions callback shape) lowers: the scrutinee is typed by the binding-identity authority, in
 //! a non-generic body and inside a generic specialization.
-use super::support::{SyntaxGenerationId, SyntaxModuleItem, canonical_corelib_project_fixture, find_function_definitions, lower_syntax_program};
+use super::support::{
+    SyntaxGenerationId, SyntaxModuleItem, canonical_corelib_project_fixture, find_function_definitions,
+    lower_syntax_program,
+};
 
 const PLAIN_SOURCE: &str = r#"
 enum Color { Red, Green, }
@@ -13,7 +16,8 @@ i64 Main() {
 
 #[test]
 fn match_on_a_typed_lambda_parameter_lowers() {
-    let (input, isa, root) = canonical_corelib_project_fixture(&[("App/Visit.bd", PLAIN_SOURCE)], SyntaxGenerationId(251));
+    let (input, isa, root) =
+        canonical_corelib_project_fixture(&[("App/Visit.bd", PLAIN_SOURCE)], SyntaxGenerationId(251));
     let functions = find_function_definitions(input.database(), root);
     lower_syntax_program(
         &input,
@@ -37,7 +41,8 @@ i64 Main() { return Count<i64>(Slot<i64>::Full(3_i64)); }
 
 #[test]
 fn match_on_a_typed_lambda_parameter_in_a_generic_body_lowers() {
-    let (input, isa, root) = canonical_corelib_project_fixture(&[("App/Count.bd", GENERIC_SOURCE)], SyntaxGenerationId(252));
+    let (input, isa, root) =
+        canonical_corelib_project_fixture(&[("App/Count.bd", GENERIC_SOURCE)], SyntaxGenerationId(252));
     let functions = find_function_definitions(input.database(), root);
     lower_syntax_program(
         &input,

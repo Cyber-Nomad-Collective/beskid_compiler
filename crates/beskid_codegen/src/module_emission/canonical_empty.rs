@@ -58,12 +58,10 @@ impl CodegenInput<'_> {
                     abi_type: SemanticTypeId::I32,
                     field_offset: physical.tag_offset,
                 })
-                .chain(
-                    physical
-                        .storage_fields
-                        .iter()
-                        .map(|(abi_type, field_offset)| AggregateStaticField { abi_type: *abi_type, field_offset: *field_offset }),
-                )
+                .chain(physical.storage_fields.iter().map(|(abi_type, field_offset)| AggregateStaticField {
+                    abi_type: *abi_type,
+                    field_offset: *field_offset,
+                }))
                 .collect::<Vec<_>>();
                 let symbol = self.canonical_empty_identity(key, "none", identity.as_deref())?;
                 (

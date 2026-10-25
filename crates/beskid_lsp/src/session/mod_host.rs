@@ -44,7 +44,9 @@ pub fn mod_host_from_initialization_options(options: &Value) -> Result<Option<Mo
         bail!("`{MOD_HOST_OPTION}` must be an object with `path`, `runtimePrefix` or `runtimeProfile`");
     };
     if let Some(unknown) = object.keys().find(|key| !KEYS.contains(&key.as_str())) {
-        bail!("`{MOD_HOST_OPTION}.{unknown}` is not a Mod host setting; expected `path`, `runtimePrefix` or `runtimeProfile`");
+        bail!(
+            "`{MOD_HOST_OPTION}.{unknown}` is not a Mod host setting; expected `path`, `runtimePrefix` or `runtimeProfile`"
+        );
     }
     if object.is_empty() {
         bail!("`{MOD_HOST_OPTION}` must set `path`, `runtimePrefix` or both");

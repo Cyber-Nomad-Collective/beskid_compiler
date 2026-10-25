@@ -29,7 +29,8 @@ impl SyntaxNodeFacts<'_> {
             return None;
         }
         let enclosing = self.current_item_specialization()?;
-        self.query(beskid_queries::specialized_try_expression_fact(self.db, key, enclosing)).map(|fact| fact.operand_layout)
+        self.query(beskid_queries::specialized_try_expression_fact(self.db, key, enclosing))
+            .map(|fact| fact.operand_layout)
     }
 
     /// The layout of an enum read from an aggregate field (`node.kind`, `this.state`): the field

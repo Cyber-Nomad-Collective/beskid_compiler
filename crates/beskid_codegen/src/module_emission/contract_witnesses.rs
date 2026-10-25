@@ -4,7 +4,9 @@
 
 use std::collections::{BTreeMap, HashSet};
 
-use beskid_queries::{AstNodeKey, ContractBoxReceiver, ContractWitnessTable, GenericSpecializationInstance, SemanticTypeId};
+use beskid_queries::{
+    AstNodeKey, ContractBoxReceiver, ContractWitnessTable, GenericSpecializationInstance, SemanticTypeId,
+};
 use cranelift_codegen::isa::TargetIsa;
 
 use super::contracts::{SyntaxModuleEmissionError, emission_verification};
@@ -142,9 +144,10 @@ fn composition_contract_injections(input: &CodegenInput<'_>) -> Vec<(AstNodeKey,
         (fact.site == source && fact.implementation.as_ref() == registration.implementation).then_some(fact.declaration)
     };
     let mut injections = Vec::new();
-    let singulars = plan.singulars.iter().map(|entry| {
-        (input.composition_unit_key(&entry.field_unit, entry.field_node_id), vec![entry.target_slot.0])
-    });
+    let singulars = plan
+        .singulars
+        .iter()
+        .map(|entry| (input.composition_unit_key(&entry.field_unit, entry.field_node_id), vec![entry.target_slot.0]));
     let plurals = plan.plurals.iter().map(|entry| {
         (
             input.composition_unit_key(&entry.field_unit, entry.field_node_id),

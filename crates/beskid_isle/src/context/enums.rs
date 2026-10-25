@@ -565,7 +565,9 @@ impl IsleContext<'_, '_, '_, '_> {
                     destinations,
                     &mut bindings,
                 )?,
-                (None, _) => self.emit_value_pattern_branch(key, scrutinee, arm.payload, destinations, &mut bindings)?,
+                (None, _) => {
+                    self.emit_value_pattern_branch(key, scrutinee, arm.payload, destinations, &mut bindings)?
+                }
                 (Some(_), None) => {
                     self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidMatchArms });
                     return None;

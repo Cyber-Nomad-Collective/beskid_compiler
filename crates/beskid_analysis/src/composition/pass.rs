@@ -455,8 +455,10 @@ i32 Main() { launch AppHost(); return 0; }
         let path: std::sync::Arc<std::path::Path> = std::sync::Arc::from(std::path::Path::new("/corelib/Hosting.bd"));
         let imported = [(std::sync::Arc::clone(&path), &library)];
         let types = crate::composition::types::test_types::DeclaredTypes::new(&program, &imported);
-        let result =
-            resolve_composition_with_imports(CompositionInput { program: &program, is_mod_project: false, types: &types }, &imported);
+        let result = resolve_composition_with_imports(
+            CompositionInput { program: &program, is_mod_project: false, types: &types },
+            &imported,
+        );
         assert!(result.issues.is_empty(), "issues: {:?}", result.issues);
         let imported = result
             .snapshot
@@ -466,7 +468,12 @@ i32 Main() { launch AppHost(); return 0; }
             .expect("base registration merged");
         assert_eq!(imported.unit.as_deref(), Some(path.as_ref()));
         assert_eq!(result.plan.startup_hooks.len(), 1);
-        let ids = result.snapshot.registrations.iter().map(|registration| registration.id).collect::<std::collections::HashSet<_>>();
+        let ids = result
+            .snapshot
+            .registrations
+            .iter()
+            .map(|registration| registration.id)
+            .collect::<std::collections::HashSet<_>>();
         assert_eq!(ids.len(), result.snapshot.registrations.len(), "registration ids stay unique across units");
     }
     /// Resolves `Module.Type` paths to the type declared in that inline module: enough to tell
@@ -508,7 +515,11 @@ i32 Main() {{ launch AppHost(); return 0; }}
                             if let Node::TypeDefinition(definition) = &inner.node {
                                 declared.insert(
                                     format!("{}.{}", module.node.name.node.name, definition.node.name.node.name),
-                                    crate::composition::TypeIdentity { unit: None, declaration: definition.node.name.span, arguments: Vec::new() },
+                                    crate::composition::TypeIdentity {
+                                        unit: None,
+                                        declaration: definition.node.name.span,
+                                        arguments: Vec::new(),
+                                    },
                                 );
                             }
                         }
@@ -516,7 +527,11 @@ i32 Main() {{ launch AppHost(); return 0; }}
                     Node::TypeDefinition(definition) => {
                         declared.insert(
                             definition.node.name.node.name.clone(),
-                            crate::composition::TypeIdentity { unit: None, declaration: definition.node.name.span, arguments: Vec::new() },
+                            crate::composition::TypeIdentity {
+                                unit: None,
+                                declaration: definition.node.name.span,
+                                arguments: Vec::new(),
+                            },
                         );
                     }
                     _ => {}

@@ -34,7 +34,9 @@ impl SyntaxNodeFacts<'_> {
             .or_else(|| {
                 plan.plurals
                     .iter()
-                    .find(|entry| self.input.composition_unit_key(&entry.field_unit, entry.field_node_id) == access.field)
+                    .find(|entry| {
+                        self.input.composition_unit_key(&entry.field_unit, entry.field_node_id) == access.field
+                    })
                     .map(|entry| entry.owner_registration_id)
             })?;
         let owner = snapshot.registrations.iter().find(|entry| entry.id == owner_id)?;
@@ -219,8 +221,10 @@ impl SyntaxNodeFacts<'_> {
         let (access, _, _, _) = self.composition_injected_access(receiver)?;
         let (plan, snapshot) = self.input.composition_authority()?;
         let mut implementations = Vec::new();
-        for singular in
-            plan.singulars.iter().filter(|entry| self.input.composition_unit_key(&entry.field_unit, entry.field_node_id) == access.field)
+        for singular in plan
+            .singulars
+            .iter()
+            .filter(|entry| self.input.composition_unit_key(&entry.field_unit, entry.field_node_id) == access.field)
         {
             let target = plan.activation.iter().find(|entry| entry.slot == singular.target_slot)?;
             let registration = snapshot.registrations.iter().find(|entry| entry.id == target.registration_id)?;

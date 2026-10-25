@@ -95,7 +95,8 @@ pub fn reserved_failure_constructor(
     let Some(factory) = factory else {
         return Ok(None);
     };
-    let specialized = enclosing.map(|enclosing| enum_constructor_specialization(db, key, enclosing)).transpose()?.flatten();
+    let specialized =
+        enclosing.map(|enclosing| enum_constructor_specialization(db, key, enclosing)).transpose()?.flatten();
     let result = if let Some(fact) = &specialized {
         fact.constructor.clone()
     } else if let Some(fact) = enum_constructor(db, key)? {

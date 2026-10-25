@@ -160,11 +160,15 @@ pub fn check_gate_obligations(db: &dyn Db, items: &[AstNodeKey]) -> Vec<Semantic
     for &item in items {
         let Ok(Some(obligations)) = gate_obligations(db, item) else { continue };
         for obligation in obligations.iter() {
-            if let GateObligationKind::ConditionalBranchMismatch { then_site, then_type, else_type } = &obligation.kind {
+            if let GateObligationKind::ConditionalBranchMismatch { then_site, then_type, else_type } = &obligation.kind
+            {
                 let then_type = beskid_analysis::analysis::diagnostic_kinds::display_type(then_type);
                 let else_type = beskid_analysis::analysis::diagnostic_kinds::display_type(else_type);
                 findings.push(SemanticFinding {
-                    kind: SemanticIssueKind::TypeMismatch { expected_name: then_type.clone(), actual_name: else_type.clone() },
+                    kind: SemanticIssueKind::TypeMismatch {
+                        expected_name: then_type.clone(),
+                        actual_name: else_type.clone(),
+                    },
                     site: obligation.site,
                     related: vec![
                         (*then_site, format!("this branch is `{then_type}`").into()),
@@ -184,7 +188,10 @@ pub fn check_gate_obligations(db: &dyn Db, items: &[AstNodeKey]) -> Vec<Semantic
                     SemanticIssueKind::TypeStringConcatOperandNotConvertible { found: found.to_string() }
                 }
                 GateObligationKind::NumericLiteralOutOfRange { value, primitive } => {
-                    SemanticIssueKind::NumericLiteralOutOfRange { value: value.to_string(), primitive: primitive.to_string() }
+                    SemanticIssueKind::NumericLiteralOutOfRange {
+                        value: value.to_string(),
+                        primitive: primitive.to_string(),
+                    }
                 }
                 GateObligationKind::LiteralTypeMismatch { expected, actual } => SemanticIssueKind::TypeMismatch {
                     expected_name: expected.display_name(),
@@ -249,7 +256,10 @@ pub fn check_gate_obligations(db: &dyn Db, items: &[AstNodeKey]) -> Vec<Semantic
                     }
                 }
                 GateObligationKind::EnumValueMethodCall { method, enum_name } => {
-                    SemanticIssueKind::EnumValueMethodCall { method: method.to_string(), enum_name: enum_name.to_string() }
+                    SemanticIssueKind::EnumValueMethodCall {
+                        method: method.to_string(),
+                        enum_name: enum_name.to_string(),
+                    }
                 }
                 GateObligationKind::GenericReceiverMethodUndeclared { method, parameter } => {
                     SemanticIssueKind::GenericReceiverMethodUndeclared {
@@ -261,7 +271,9 @@ pub fn check_gate_obligations(db: &dyn Db, items: &[AstNodeKey]) -> Vec<Semantic
                     SemanticIssueKind::InvalidClifBlock { detail: detail.to_string() }
                 }
                 GateObligationKind::ConditionalConditionNotBool => SemanticIssueKind::TypeNonBoolCondition,
-                GateObligationKind::ConditionalBranchMismatch { .. } => unreachable!("converted above with its related sites"),
+                GateObligationKind::ConditionalBranchMismatch { .. } => {
+                    unreachable!("converted above with its related sites")
+                }
             };
             findings.push(SemanticFinding { kind, site: obligation.site, related: Vec::new() });
         }
@@ -300,7 +312,8 @@ fn collect_method_type_parameter_obligations(
     key: AstNodeKey,
     findings: &mut Vec<GateObligation>,
 ) {
-    let Some(method) = index.node_at(program, key.node).and_then(|node| node.of::<beskid_analysis::syntax::MethodDefinition>())
+    let Some(method) =
+        index.node_at(program, key.node).and_then(|node| node.of::<beskid_analysis::syntax::MethodDefinition>())
     else {
         return;
     };

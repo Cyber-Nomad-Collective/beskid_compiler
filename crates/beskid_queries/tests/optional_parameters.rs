@@ -15,7 +15,6 @@ use beskid_analysis::syntax::SyntaxGenerationId;
 use beskid_analysis::syntax_query::SyntaxIndex;
 use beskid_queries::{BeskidDatabase, prepare_compilation_diagnostics_with_db};
 
-
 /// Error diagnostics of `units[0]` prepared as the entry of an import-closure assembly, as
 /// `<code> <message> @<span>`.
 fn errors(units: &[(&str, &str)]) -> Vec<String> {
@@ -60,8 +59,9 @@ fn errors(units: &[(&str, &str)]) -> Vec<String> {
         )),
     };
     let mut db = BeskidDatabase::default();
-    let (_, diagnostics, _) = prepare_compilation_diagnostics_with_db(&mut db, &resolved, PrepareOptions::without_mods(), None)
-        .expect("prepare diagnostics");
+    let (_, diagnostics, _) =
+        prepare_compilation_diagnostics_with_db(&mut db, &resolved, PrepareOptions::without_mods(), None)
+            .expect("prepare diagnostics");
     diagnostics
         .iter()
         .filter(|diagnostic| diagnostic.severity == Severity::Error)
@@ -99,7 +99,10 @@ fn a_call_that_omits_because_and_the_caller_parameters_checks() {
 #[test]
 fn omitted_defaults_take_their_parameter_types() {
     let found = errors(&[
-        ("Main.bd", "use Testing.Assert; pub unit Run() { Assert.Scale(1.5); Assert.Scale(1.5, 3); Assert.Scale(1.5, 3, 9, false); }"),
+        (
+            "Main.bd",
+            "use Testing.Assert; pub unit Run() { Assert.Scale(1.5); Assert.Scale(1.5, 3); Assert.Scale(1.5, 3, 9, false); }",
+        ),
         ASSERT,
     ]);
     assert!(found.is_empty(), "{found:#?}");
@@ -114,7 +117,8 @@ fn a_missing_required_argument_names_the_range() {
 
 #[test]
 fn too_many_arguments_name_the_range() {
-    let found = errors(&[("Main.bd", "use Testing.Assert; pub unit Run() { Assert.Scale(1.5, 1, 2, true, 4); }"), ASSERT]);
+    let found =
+        errors(&[("Main.bd", "use Testing.Assert; pub unit Run() { Assert.Scale(1.5, 1, 2, true, 4); }"), ASSERT]);
     assert_eq!(found.len(), 1, "{found:#?}");
     assert!(found[0].contains("expected 1\u{2013}4 arguments, got 5"), "{found:#?}");
 }
@@ -130,7 +134,11 @@ fn a_function_without_optional_parameters_names_one_count() {
 fn an_invalid_default_is_reported_at_the_declaration() {
     let found = errors(&[("Main.bd", "pub unit Take(i64 count = \"x\") { return; } pub unit Run() { Take(1); }")]);
     assert_eq!(found.len(), 1, "{found:#?}");
-    assert!(found[0].contains("E1253") && found[0].contains("default value `\"x\"` does not fit parameter `count` of type `i64`"), "{found:#?}");
+    assert!(
+        found[0].contains("E1253")
+            && found[0].contains("default value `\"x\"` does not fit parameter `count` of type `i64`"),
+        "{found:#?}"
+    );
 }
 
 const STEPPER: &str = "pub contract Stepper { i64 Step(i64 base, i64 by = 1); }\n";
@@ -179,22 +187,21 @@ fn a_call_through_a_contract_bound_gets_the_contract_defaults() {
 
 #[test]
 fn an_implementation_that_repeats_a_different_default_is_e1612() {
-    let source = format!(
-        "{STEPPER}pub type Walker : Stepper {{ pub i64 Step(i64 base, i64 by = 2) {{ return base + by; }} }}"
-    );
+    let source =
+        format!("{STEPPER}pub type Walker : Stepper {{ pub i64 Step(i64 base, i64 by = 2) {{ return base + by; }} }}");
     let found = errors(&[("Main.bd", source.as_str())]);
     assert_eq!(found.len(), 1, "{found:#?}");
     assert!(
-        found[0].contains("E1612") && found[0].contains("`Step` gives parameter `by` the default `2`, but the contract declares `1`"),
+        found[0].contains("E1612")
+            && found[0].contains("`Step` gives parameter `by` the default `2`, but the contract declares `1`"),
         "{found:#?}"
     );
 }
 
 #[test]
 fn an_implementation_that_repeats_the_same_default_checks() {
-    let source = format!(
-        "{STEPPER}pub type Walker : Stepper {{ pub i64 Step(i64 base, i64 by = 1) {{ return base + by; }} }}"
-    );
+    let source =
+        format!("{STEPPER}pub type Walker : Stepper {{ pub i64 Step(i64 base, i64 by = 1) {{ return base + by; }} }}");
     let found = errors(&[("Main.bd", source.as_str())]);
     assert!(found.is_empty(), "{found:#?}");
 }

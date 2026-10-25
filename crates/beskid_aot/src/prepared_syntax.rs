@@ -88,7 +88,7 @@ pub fn lower_prepared_syntax_entrypoints(
             target,
             isa.as_ref(),
         )
-            .map_err(crate::error::AotError::from_lowering)
+        .map_err(crate::error::AotError::from_lowering)
     })
 }
 
@@ -113,7 +113,7 @@ pub fn lower_frozen_syntax_entrypoints(
         target,
         isa.as_ref(),
     )
-        .map_err(crate::error::AotError::from_lowering)
+    .map_err(crate::error::AotError::from_lowering)
 }
 
 /// Produce frozen C ABI Mod adapters from their canonical prepared source SDK authority.

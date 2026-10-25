@@ -126,9 +126,12 @@ impl RigidJudge<'_> {
         {
             return self.this_field(member.member.node.name.as_str());
         }
-        let identity =
-            specialized_source_expression_identity(self.db, AstNodeKey { node: value, ..self.key }, Some(self.instance))
-                .ok()?;
+        let identity = specialized_source_expression_identity(
+            self.db,
+            AstNodeKey { node: value, ..self.key },
+            Some(self.instance),
+        )
+        .ok()?;
         // A call's result is trusted only when it was read through the rigid parameters. A call
         // the rigid environment cannot specialize (an extern contract bridge such as
         // `DynamicUnpackingBridgeV1<T>.beskid_dynamic_v1_unpack_box(payload)` in Corelib) falls
@@ -167,8 +170,13 @@ impl RigidJudge<'_> {
         let scope = AstNodeKey { node: parent, ..self.key };
         let node = self.index.node_at(self.program, parent)?;
         if let Some(parameter) = node.of::<beskid_analysis::syntax::Parameter>() {
-            return generic_source_type_identity_with_substitutions(self.db, scope, &parameter.ty.node, self.environment)
-                .ok();
+            return generic_source_type_identity_with_substitutions(
+                self.db,
+                scope,
+                &parameter.ty.node,
+                self.environment,
+            )
+            .ok();
         }
         // A `for` variable is an element of its iterable's array identity.
         if let Some(statement) = node.of::<beskid_analysis::syntax::ForStatement>() {
@@ -187,7 +195,8 @@ impl RigidJudge<'_> {
                 generic_source_type_identity_with_substitutions(self.db, scope, &annotation.node, self.environment).ok()
             }
             None => {
-                let initializer = self.index.direct_child_id(self.program, parent, DynNodeRef::from(&statement.value))?;
+                let initializer =
+                    self.index.direct_child_id(self.program, parent, DynNodeRef::from(&statement.value))?;
                 self.value(initializer)
             }
         }
@@ -222,7 +231,9 @@ impl RigidJudge<'_> {
             Some(expected) => expected,
             // A contract destination is judged by conformance, which a rigid parameter has no
             // declaration for; only a concrete declared identity is compared.
-            None if matches!(ty, Type::Complex(path) if resolve_contract(self.db, scope, &path.node).is_some()) => return,
+            None if matches!(ty, Type::Complex(path) if resolve_contract(self.db, scope, &path.node).is_some()) => {
+                return;
+            }
             None => match generic_source_type_identity(self.db, scope, ty) {
                 Ok(expected) => expected,
                 Err(_) => return,
@@ -306,7 +317,9 @@ pub(super) fn collect_generic_member_values(
                 continue;
             };
             if declared.node.kind != FieldKind::Value
-                || !generics.iter().any(|generic| type_syntax_mentions_generic_parameter(&declared.node.ty.node, generic))
+                || !generics
+                    .iter()
+                    .any(|generic| type_syntax_mentions_generic_parameter(&declared.node.ty.node, generic))
             {
                 continue;
             }
@@ -354,7 +367,9 @@ mod tests {
         let (db, root) = one_unit_assembly(source, SyntaxGenerationId(generation));
         crate::semantic_contract::legality::tests::function_definitions(&db, root)
             .into_iter()
-            .flat_map(|function| value_obligations(&db, function).expect("value obligations").map(|found| found.to_vec()))
+            .flat_map(|function| {
+                value_obligations(&db, function).expect("value obligations").map(|found| found.to_vec())
+            })
             .flatten()
             .map(|finding| (finding.expected.to_string(), finding.actual.to_string()))
             .collect()
@@ -416,7 +431,8 @@ mod tests {
     /// beskid-lings milestone 3: the body is judged against the type's own parameters.
     #[test]
     fn returning_one_parameter_where_another_is_declared_is_reported_in_the_body() {
-        let found = findings("pub type Pair<A, B> { A first; B second; pub A Second() { return this.second; } }", 9_671);
+        let found =
+            findings("pub type Pair<A, B> { A first; B second; pub A Second() { return this.second; } }", 9_671);
         assert_eq!(found, vec![("A".to_owned(), "B".to_owned())]);
     }
 
@@ -432,7 +448,8 @@ mod tests {
 
     #[test]
     fn a_parameter_into_a_concrete_declared_type_is_reported_in_the_body() {
-        let found = findings("pub type Box<T> { T value; pub i64 Read() { i64 copy = this.value; return copy; } }", 9_673);
+        let found =
+            findings("pub type Box<T> { T value; pub i64 Read() { i64 copy = this.value; return copy; } }", 9_673);
         assert_eq!(found, vec![("i64".to_owned(), "T".to_owned())]);
     }
 

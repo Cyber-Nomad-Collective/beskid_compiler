@@ -293,7 +293,11 @@ fn function_key(unit: SourceUnitId, generation: SyntaxGenerationId, source: &str
     use beskid_analysis::syntax_query::{NodeKind, SyntaxIndex};
     let program = beskid_analysis::services::parse_program(source).expect("parse");
     let index = SyntaxIndex::from_program(&program, generation);
-    AstNodeKey { unit, generation, node: index.ids_of_kind(NodeKind::FunctionDefinition).next().expect("function node") }
+    AstNodeKey {
+        unit,
+        generation,
+        node: index.ids_of_kind(NodeKind::FunctionDefinition).next().expect("function node"),
+    }
 }
 
 #[test]

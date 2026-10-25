@@ -80,7 +80,8 @@ mod tests {
         let doc = document(text, &["__BeskidHookInit", "Main"]);
         let uri = crate::workspace_scan::path_to_uri(&std::env::temp_dir().join("Main.bd")).expect("uri");
 
-        let DocumentSymbolResponse::Nested(outline) = crate::features::document_symbols::handler::handle_document_symbols(&uri, &doc)
+        let DocumentSymbolResponse::Nested(outline) =
+            crate::features::document_symbols::handler::handle_document_symbols(&uri, &doc)
         else {
             panic!("nested outline");
         };
@@ -88,10 +89,12 @@ mod tests {
 
         let mut state = State::default();
         state.docs.insert(uri.clone(), doc.clone());
-        let WorkspaceSymbolResponse::Flat(found) = crate::features::workspace_symbols::handler::handle_workspace_symbols(
-            &state,
-            WorkspaceSymbolParams { query: String::new(), ..Default::default() },
-        ) else {
+        let WorkspaceSymbolResponse::Flat(found) =
+            crate::features::workspace_symbols::handler::handle_workspace_symbols(
+                &state,
+                WorkspaceSymbolParams { query: String::new(), ..Default::default() },
+            )
+        else {
             panic!("flat workspace symbols");
         };
         assert_eq!(found.iter().map(|s| s.name.as_str()).collect::<Vec<_>>(), vec!["Main"]);

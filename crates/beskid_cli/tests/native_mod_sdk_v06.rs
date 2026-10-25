@@ -50,7 +50,10 @@ fn v06_real_compiler_sdk_collector_generator_builds_executable_descriptor() {
         .map(|entry| entry.metadata().unwrap().len())
         .sum();
     let compiler_bytes = fs::metadata(env!("CARGO_BIN_EXE_beskid_cli")).unwrap().len();
-    assert!(artifact_bytes < compiler_bytes, "the artifact ({artifact_bytes} B) must not embed the compiler ({compiler_bytes} B)");
+    assert!(
+        artifact_bytes < compiler_bytes,
+        "the artifact ({artifact_bytes} B) must not embed the compiler ({compiler_bytes} B)"
+    );
     assert_eq!(descriptor["artifactKind"], "executable-shared-library");
     assert!(descriptor.get("objectFile").is_none(), "relocatable objects cannot be executable authority");
     assert_eq!(descriptor["hostAbiVersion"], 2);
@@ -149,7 +152,8 @@ fn assert_enum_adapters_read_tags_at_their_width(plan: &std::path::Path) {
     let plan: serde_json::Value = serde_json::from_slice(&fs::read(plan).expect("adapter plan evidence")).unwrap();
     let types = plan["types"].as_array().expect("adapter types");
     // A unit payload has no storage; its encoder never reads the (placeholder) offset.
-    let is_unit = |id: u64| types.get(id as usize).is_some_and(|ty| ty["kind"].get("Scalar") == Some(&serde_json::json!(0)));
+    let is_unit =
+        |id: u64| types.get(id as usize).is_some_and(|ty| ty["kind"].get("Scalar") == Some(&serde_json::json!(0)));
     let mut enums = 0;
     let mut variants = 0;
     for ty in types {
@@ -173,5 +177,8 @@ fn assert_enum_adapters_read_tags_at_their_width(plan: &std::path::Path) {
             }
         }
     }
-    assert!(enums >= 20 && variants >= 100, "the plan transports the SDK syntax enums ({enums} enums, {variants} variants)");
+    assert!(
+        enums >= 20 && variants >= 100,
+        "the plan transports the SDK syntax enums ({enums} enums, {variants} variants)"
+    );
 }

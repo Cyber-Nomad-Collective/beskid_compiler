@@ -323,7 +323,10 @@ fn named_function_read_as_a_value_is_a_closure_record_with_the_item_entry() {
     let fact = beskid_queries::function_item_value(db, value).expect("function item query").expect("function item");
     assert_eq!(fact.declaration, double);
     assert_eq!(fact.signature.parameters.as_ref(), &[beskid_queries::SemanticTypeId::I64]);
-    assert_eq!(beskid_queries::abi_type(db, value).expect("value ABI query"), Some(beskid_queries::SemanticTypeId::POINTER));
+    assert_eq!(
+        beskid_queries::abi_type(db, value).expect("value ABI query"),
+        Some(beskid_queries::SemanticTypeId::POINTER)
+    );
     assert_eq!(
         beskid_queries::managed_reference_kind(db, value).expect("managed query"),
         Some(beskid_queries::ManagedReferenceKind::GcManaged)
@@ -377,7 +380,10 @@ fn generic_function_read_as_a_value_points_at_its_specialization() {
     let artifact = lower_syntax_program(
         &input,
         isa.as_ref(),
-        &[SyntaxModuleItem { key: apply, symbol: "Apply".into() }, SyntaxModuleItem { key: main, symbol: "Main".into() }],
+        &[
+            SyntaxModuleItem { key: apply, symbol: "Apply".into() },
+            SyntaxModuleItem { key: main, symbol: "Main".into() },
+        ],
     )
     .expect("a generic function read as a value lowers");
     let specialized = artifact
@@ -401,8 +407,9 @@ fn generic_function_value_without_type_arguments_stops_at_the_legality_gate() {
         let (input, isa, root) = item_fixture_with_root(source);
         let db = input.database();
         let main = named(db, &find_function_definitions(db, root), "Main");
-        let error = lower_syntax_program(&input, isa.as_ref(), &[SyntaxModuleItem { key: main, symbol: "Main".into() }])
-            .expect_err("a generic function value without an instance must not lower");
+        let error =
+            lower_syntax_program(&input, isa.as_ref(), &[SyntaxModuleItem { key: main, symbol: "Main".into() }])
+                .expect_err("a generic function value without an instance must not lower");
         let rendered = error.to_string();
         assert!(rendered.contains(code), "{source}: {rendered}");
         assert!(!rendered.contains("MissingRuleOrFact"), "{source}: {rendered}");
@@ -452,10 +459,7 @@ fn call_on_a_call_result_lowers_through_the_returned_record() {
     let artifact = lower_syntax_program(
         &input,
         isa.as_ref(),
-        &[
-            SyntaxModuleItem { key: make, symbol: "Make".into() },
-            SyntaxModuleItem { key: main, symbol: "Main".into() },
-        ],
+        &[SyntaxModuleItem { key: make, symbol: "Make".into() }, SyntaxModuleItem { key: main, symbol: "Main".into() }],
     )
     .expect("a call on a call result lowers");
     let clif = lowered_clif(&artifact, "Main");
@@ -477,10 +481,7 @@ fn block_bodied_lambda_literal_returns_take_the_declared_u8_result() {
     lower_syntax_program(
         &input,
         isa.as_ref(),
-        &[
-            SyntaxModuleItem { key: pick, symbol: "Pick".into() },
-            SyntaxModuleItem { key: main, symbol: "Main".into() },
-        ],
+        &[SyntaxModuleItem { key: pick, symbol: "Pick".into() }, SyntaxModuleItem { key: main, symbol: "Main".into() }],
     )
     .unwrap_or_else(|error| panic!("u8 block lambda lowers: {}", error));
 }

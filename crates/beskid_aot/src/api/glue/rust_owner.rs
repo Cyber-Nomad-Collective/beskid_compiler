@@ -14,8 +14,8 @@ use object::{Object, ObjectKind};
 use sha2::{Digest, Sha256};
 use std::{
     collections::{BTreeMap, BTreeSet},
-    fs,
     ffi::{OsStr, OsString},
+    fs,
     path::{Path, PathBuf},
     sync::Arc,
     time::{Duration, Instant},
@@ -145,7 +145,9 @@ fn cached_owner_image(
         ("child receipts", !witness.child_receipts.is_empty()),
     ];
     if let Some((field, _)) = checks.iter().find(|(_, holds)| !holds) {
-        return Err(invalid(format!("Rust owner image cache entry {key} does not match its admission record ({field})")));
+        return Err(invalid(format!(
+            "Rust owner image cache entry {key} does not match its admission record ({field})"
+        )));
     }
     Ok(Some((bytes, witness)))
 }
@@ -154,10 +156,8 @@ fn cached_owner_image(
 /// same key wins and this one is dropped.
 fn publish_owner_image(cache: &Path, key: &str, bytes: &[u8], witness: &CachedOwnerWitness) -> AotResult<()> {
     fs::create_dir_all(cache).map_err(|e| invalid(e.to_string()))?;
-    let staging = tempfile::Builder::new()
-        .prefix(&format!(".{key}-"))
-        .tempdir_in(cache)
-        .map_err(|e| invalid(e.to_string()))?;
+    let staging =
+        tempfile::Builder::new().prefix(&format!(".{key}-")).tempdir_in(cache).map_err(|e| invalid(e.to_string()))?;
     fs::write(staging.path().join(CACHED_IMAGE_FILE), bytes).map_err(|e| invalid(e.to_string()))?;
     let encoded = serde_json::to_vec(witness).map_err(|e| invalid(e.to_string()))?;
     fs::write(staging.path().join(CACHED_WITNESS_FILE), encoded).map_err(|e| invalid(e.to_string()))?;
@@ -360,7 +360,8 @@ fn bridge_source(
             if let Some((sha, ty)) = values.type_of(param, true)? {
                 if param.enumeration.is_some() {
                     args.push(format!("a{index}:u32"));
-                    checks.push_str(&format!("let Some(e{index})=glue_enum_{sha}_from_raw(a{index}) else{{return 1;}};"));
+                    checks
+                        .push_str(&format!("let Some(e{index})=glue_enum_{sha}_from_raw(a{index}) else{{return 1;}};"));
                     values_list.push(format!("e{index}"));
                 } else {
                     // The consumer adapter copied the record out of its managed object.
@@ -427,10 +428,14 @@ fn bridge_source(
         let body = if let Some((sha, ty)) = &value_result {
             if binding.result.enumeration.is_some() {
                 args.push("out:*mut u32".into());
-                format!("if out.is_null(){{return 1;}}unsafe{{out.write(0);}}{checks}let value:{ty}={call};unsafe{{out.write(glue_enum_{sha}_into_raw(value));}}0")
+                format!(
+                    "if out.is_null(){{return 1;}}unsafe{{out.write(0);}}{checks}let value:{ty}={call};unsafe{{out.write(glue_enum_{sha}_into_raw(value));}}0"
+                )
             } else {
                 args.push(format!("out:*mut {ty}"));
-                format!("if out.is_null(){{return 1;}}unsafe{{core::ptr::write_bytes(out,0,1);}}{checks}let value:{ty}={call};unsafe{{out.write(value);}}0")
+                format!(
+                    "if out.is_null(){{return 1;}}unsafe{{core::ptr::write_bytes(out,0,1);}}{checks}let value:{ty}={call};unsafe{{out.write(value);}}0"
+                )
             }
         } else if let Some(opaque) = &binding.result.opaque {
             if opaque.library != req.native_library || opaque.nullable {
@@ -727,9 +732,9 @@ const INHERITED_ALLOWLIST: &[&str] =
 
 fn inherited_allowed(name: &OsStr) -> bool {
     let name = name.to_string_lossy();
-    INHERITED_ALLOWLIST.iter().any(|allowed| {
-        if cfg!(windows) { name.eq_ignore_ascii_case(allowed) } else { name.as_ref() == *allowed }
-    })
+    INHERITED_ALLOWLIST
+        .iter()
+        .any(|allowed| if cfg!(windows) { name.eq_ignore_ascii_case(allowed) } else { name.as_ref() == *allowed })
 }
 
 type EnvironmentEntry = (OsString, Option<OsString>);
@@ -737,7 +742,10 @@ type EnvironmentEntry = (OsString, Option<OsString>);
 /// Removal entries for every inherited variable outside the allowlist, then an empty-directory
 /// `CARGO_HOME`. The linker service only supports overrides, so removal of each inherited name
 /// reproduces `env_clear` plus the allowlist.
-fn hermetic_environment(inherited_names: impl IntoIterator<Item = OsString>, cargo_home: &Path) -> Vec<EnvironmentEntry> {
+fn hermetic_environment(
+    inherited_names: impl IntoIterator<Item = OsString>,
+    cargo_home: &Path,
+) -> Vec<EnvironmentEntry> {
     let mut environment: Vec<EnvironmentEntry> =
         inherited_names.into_iter().filter(|name| !inherited_allowed(name)).map(|name| (name, None)).collect();
     environment.push(("CARGO_HOME".into(), Some(cargo_home.as_os_str().to_owned())));
@@ -843,8 +851,8 @@ fn probe_rust_tools(
         invocation.current_dir = Some(stage.to_owned());
         invocation.environment = environment.to_vec();
         invocation.args = args.iter().map(|argument| OsString::from(*argument)).collect();
-        let (output, receipt) =
-            run_link_tool(&invocation, stage, Some(&probe_control)).map_err(|error| invalid(format!("{label} failed: {error}")))?;
+        let (output, receipt) = run_link_tool(&invocation, stage, Some(&probe_control))
+            .map_err(|error| invalid(format!("{label} failed: {error}")))?;
         if receipt.sha256 != digest {
             return Err(invalid(format!("{label}: the tool changed after its digest was recorded")));
         }
@@ -861,7 +869,8 @@ fn probe_rust_tools(
     fn field<'a>(text: &'a str, name: &str) -> Option<&'a str> {
         text.lines().find_map(|line| line.strip_prefix(name)).map(str::trim).filter(|value| !value.is_empty())
     }
-    let release = field(&version, "release:").ok_or_else(|| invalid("Rust compiler probe `-vV` reported no release"))?;
+    let release =
+        field(&version, "release:").ok_or_else(|| invalid("Rust compiler probe `-vV` reported no release"))?;
     field(&version, "host:").ok_or_else(|| invalid("Rust compiler probe `-vV` reported no host"))?;
     let mut numbers = release.split(['.', '-']).map(|part| part.parse::<u64>().ok());
     let (Some(Some(major)), Some(Some(minor))) = (numbers.next(), numbers.next()) else {
@@ -873,7 +882,8 @@ fn probe_rust_tools(
             MINIMUM_RUSTC.0, MINIMUM_RUSTC.1
         )));
     }
-    let libdir = run(tools.rustc, tools.rustc_sha256, "Rust compiler", &["--print", "target-libdir", "--target", target])?;
+    let libdir =
+        run(tools.rustc, tools.rustc_sha256, "Rust compiler", &["--print", "target-libdir", "--target", target])?;
     let libdir = Path::new(libdir.trim());
     let has_core = !libdir.as_os_str().is_empty()
         && fs::read_dir(libdir).is_ok_and(|entries| {
@@ -913,10 +923,8 @@ fn staging_area(tmp: Option<OsString>, temp: Option<OsString>, platform_default:
 /// Private staging directory in the system temporary area, never inside the output directory or project.
 fn private_stage(output_parent: &Path) -> AotResult<(tempfile::TempDir, PathBuf)> {
     let area = staging_area(std::env::var_os("TMP"), std::env::var_os("TEMP"), std::env::temp_dir());
-    let stage = tempfile::Builder::new()
-        .prefix("beskid-rust-owner-")
-        .tempdir_in(area)
-        .map_err(|e| invalid(e.to_string()))?;
+    let stage =
+        tempfile::Builder::new().prefix("beskid-rust-owner-").tempdir_in(area).map_err(|e| invalid(e.to_string()))?;
     let canonical = fs::canonicalize(stage.path()).map_err(|e| invalid(e.to_string()))?;
     let output_parent = fs::canonicalize(output_parent).map_err(|e| invalid(e.to_string()))?;
     if canonical.starts_with(&output_parent) {
@@ -1349,7 +1357,10 @@ pub fn build_rust_owner(req: &RustOwnerBuildRequest<'_>) -> AotResult<PreparedRu
                 &serde_json::to_vec(&child_receipts).map_err(|e| invalid(e.to_string()))?,
             )
             .map_err(|e| invalid(e.to_string()))?,
-            destructors: destructors.iter().map(|(brand, symbol)| (super::published::hex(brand), symbol.clone())).collect(),
+            destructors: destructors
+                .iter()
+                .map(|(brand, symbol)| (super::published::hex(brand), symbol.clone()))
+                .collect(),
             checked_exports: checked_exports.clone(),
             exports: exports.clone(),
             source_inventory: inventory.clone(),
@@ -1401,7 +1412,9 @@ mod tests {
             .expect("initializer is generated");
         assert!(initializer.starts_with("library:u64,generation:u64)->i32 { let _=std::hint::black_box(beskid_glue_v1_owner_opaque_create as *const ());"));
         assert!(BRIDGE_PRELUDE.contains("unsafe extern \"C\" { fn beskid_glue_v1_owner_opaque_create("));
-        assert!(BRIDGE_PRELUDE.contains("#[unsafe(no_mangle)] pub extern \"C\" fn beskid_glue_rust_owner_v1_initialize("));
+        assert!(
+            BRIDGE_PRELUDE.contains("#[unsafe(no_mangle)] pub extern \"C\" fn beskid_glue_rust_owner_v1_initialize(")
+        );
         for (provider, flag) in [
             ("/prefix/shared/libbeskid_runtime.so", "link-arg=/prefix/shared/libbeskid_runtime.so"),
             ("/p/libbeskid_runtime.dylib", "link-arg=/p/libbeskid_runtime.dylib"),
@@ -1532,9 +1545,16 @@ mod tests {
     fn rust_owner_environment_removes_inherited_cargo_and_rustc_settings() {
         let home = Path::new("/stage/cargo-home");
         let environment = hermetic_environment(inherited_names(), home);
-        for name in
-            ["RUSTFLAGS", "RUSTDOCFLAGS", "RUSTC", "RUSTC_WRAPPER", "RUSTUP_TOOLCHAIN", "CARGO_TARGET_DIR", "CARGO_BUILD_RUSTFLAGS", "CARGO_ENCODED_RUSTFLAGS"]
-        {
+        for name in [
+            "RUSTFLAGS",
+            "RUSTDOCFLAGS",
+            "RUSTC",
+            "RUSTC_WRAPPER",
+            "RUSTUP_TOOLCHAIN",
+            "CARGO_TARGET_DIR",
+            "CARGO_BUILD_RUSTFLAGS",
+            "CARGO_ENCODED_RUSTFLAGS",
+        ] {
             assert!(environment.iter().any(|(key, value)| key == name && value.is_none()), "{name} not removed");
         }
         for name in ["PATH", "HOME"] {
@@ -1549,7 +1569,10 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let cargo_home = temp.path().join("cargo-home");
         let mut command = std::process::Command::new("/usr/bin/env");
-        command.env("RUSTFLAGS", "-Cinherited").env("CARGO_TARGET_DIR", "/elsewhere").env("RUSTUP_TOOLCHAIN", "nightly");
+        command
+            .env("RUSTFLAGS", "-Cinherited")
+            .env("CARGO_TARGET_DIR", "/elsewhere")
+            .env("RUSTUP_TOOLCHAIN", "nightly");
         let names = inherited_names().into_iter().chain(std::env::vars_os().map(|(name, _)| name));
         for (key, value) in hermetic_environment(names, &cargo_home) {
             match value {
@@ -1570,7 +1593,9 @@ mod tests {
     }
     #[test]
     fn rust_owner_rejects_ancestor_cargo_configuration() {
-        for file in [&[".cargo", "config.toml"][..], &[".cargo", "config"], &["rust-toolchain.toml"], &["rust-toolchain"]] {
+        for file in
+            [&[".cargo", "config.toml"][..], &[".cargo", "config"], &["rust-toolchain.toml"], &["rust-toolchain"]]
+        {
             let temp = tempfile::tempdir().unwrap();
             let stage = temp.path().join("a").join("b").join("stage");
             fs::create_dir_all(&stage).unwrap();

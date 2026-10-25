@@ -1,7 +1,8 @@
-use beskid_analysis::projects::{collect_dependency_projects, parse_manifest};
 use beskid_analysis::projects::graph::builder::build_project_graph_from_manifest;
+use beskid_analysis::projects::{collect_dependency_projects, parse_manifest};
 
-const ORIGINAL: &str = "App { name = \"App\" version = \"0.1.0\" }\ntarget \"App\" { kind = \"App\" entry = \"Main.bd\" }\n";
+const ORIGINAL: &str =
+    "App { name = \"App\" version = \"0.1.0\" }\ntarget \"App\" { kind = \"App\" entry = \"Main.bd\" }\n";
 
 #[test]
 fn dep06_planning_uses_edited_intent_without_writing_or_rebasing_paths() {
@@ -12,7 +13,11 @@ fn dep06_planning_uses_edited_intent_without_writing_or_rebasing_paths() {
     std::fs::create_dir_all(&dependency).unwrap();
     let manifest = app.join("App.bproj");
     std::fs::write(&manifest, ORIGINAL).unwrap();
-    std::fs::write(dependency.join("Local.bproj"), "Local { name = \"Local\" version = \"0.1.0\" }\ntarget \"Local\" { kind = \"Lib\" entry = \"Local.bd\" }\n").unwrap();
+    std::fs::write(
+        dependency.join("Local.bproj"),
+        "Local { name = \"Local\" version = \"0.1.0\" }\ntarget \"Local\" { kind = \"Lib\" entry = \"Local.bd\" }\n",
+    )
+    .unwrap();
     let edited = format!("{ORIGINAL}dependency \"Local\" {{ source = \"path\" path = \"../café package\" }}\n");
     let graph = build_project_graph_from_manifest(&manifest, parse_manifest(&edited).unwrap()).unwrap();
     assert_eq!(std::fs::read_to_string(&manifest).unwrap(), ORIGINAL);

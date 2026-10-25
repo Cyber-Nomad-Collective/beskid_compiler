@@ -117,11 +117,7 @@ fn unresolved_call_target_for_call(
 
 /// ISLE's `call_kind` asks these authorities before `call_lowering`; a call any of them claims (or
 /// rejects with its own diagnostic) is not an unknown callee.
-pub(super) fn claimed_by_another_call_authority(
-    db: &dyn Db,
-    call: AstNodeKey,
-    runtime_intrinsic_claims: bool,
-) -> bool {
+pub(super) fn claimed_by_another_call_authority(db: &dyn Db, call: AstNodeKey, runtime_intrinsic_claims: bool) -> bool {
     matches!(exchange_call(db, call), Ok(Some(_)))
         || matches!(transfer_class_intrinsic(db, call), Ok(Some(_)))
         || !matches!(primitive_numeric_conversion(db, call), Ok(None))
@@ -229,7 +225,12 @@ fn unresolved_callee_kind(
 /// Whether `unit` declares any function, method, type, enum, contract, constant, or inline module
 /// named `name` (ambiguous declarations included), so an unresolved terminal is never reported
 /// as unknown when the module does declare the name in some form.
-pub(in crate::semantic_contract) fn unit_declares_function_name(db: &dyn Db, unit: SourceUnitId, generation: SyntaxGenerationId, name: &str) -> bool {
+pub(in crate::semantic_contract) fn unit_declares_function_name(
+    db: &dyn Db,
+    unit: SourceUnitId,
+    generation: SyntaxGenerationId,
+    name: &str,
+) -> bool {
     let Some(syntax) = db.syntax_unit(unit) else { return true };
     if syntax.generation(db) != generation {
         return true;
@@ -240,8 +241,12 @@ pub(in crate::semantic_contract) fn unit_declares_function_name(db: &dyn Db, uni
         || index.metadata().iter().any(|metadata| {
             index.node_at(program, metadata.id).is_some_and(|node| {
                 node.of::<beskid_analysis::syntax::FunctionDefinition>().is_some_and(|item| item.name.node.name == name)
-                    || node.of::<beskid_analysis::syntax::MethodDefinition>().is_some_and(|item| item.name.node.name == name)
-                    || node.of::<beskid_analysis::syntax::ConstantDefinition>().is_some_and(|item| item.name.node.name == name)
+                    || node
+                        .of::<beskid_analysis::syntax::MethodDefinition>()
+                        .is_some_and(|item| item.name.node.name == name)
+                    || node
+                        .of::<beskid_analysis::syntax::ConstantDefinition>()
+                        .is_some_and(|item| item.name.node.name == name)
             })
         })
 }
@@ -271,7 +276,11 @@ pub(in crate::semantic_contract) enum ModulePrefix {
 
 /// Judge `qualifier` by its longest visible module prefix (`Console` in `Console.Out.WriteLine`):
 /// the path stops at the first segment the module does not declare.
-pub(in crate::semantic_contract) fn missing_module_member(db: &dyn Db, key: AstNodeKey, qualifier: &[String]) -> ModulePrefix {
+pub(in crate::semantic_contract) fn missing_module_member(
+    db: &dyn Db,
+    key: AstNodeKey,
+    qualifier: &[String],
+) -> ModulePrefix {
     let Some((module_len, units)) = longest_declared_module_prefix(db, key, qualifier) else {
         return ModulePrefix::None;
     };
@@ -297,7 +306,6 @@ fn longest_declared_module_prefix(
         registry.visible_module_units(key.generation, &module_path[..length]).map(|units| (length, units.to_vec()))
     })
 }
-
 
 /// Whether the current unit declares a type, enum, contract, or inline module named `name`, at
 /// any depth. A qualified callee rooted at such a name is a member path, not a module path.

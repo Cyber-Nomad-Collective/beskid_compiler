@@ -226,7 +226,8 @@ fn function_with_statements(statements: usize) -> Spanned<Node> {
 
 /// A function returning `depth` nested grouped expressions around a literal.
 fn function_with_nesting(depth: usize) -> Spanned<Node> {
-    let mut expression = node(Expression::Literal(node(LiteralExpression { literal: node(Literal::Integer("1".into())) })));
+    let mut expression =
+        node(Expression::Literal(node(LiteralExpression { literal: node(Literal::Integer("1".into())) })));
     for _ in 0..depth {
         expression = node(Expression::Grouped(node(GroupedExpression { expr: Box::new(expression) })));
     }
@@ -276,7 +277,8 @@ fn production_bounds_are_the_normative_arena_limits() {
 #[test]
 fn production_arena_admits_4096_items_and_rejects_the_4097th() {
     let arena = production_arena();
-    let handles: Vec<_> = (0..4096).map(|_| arena.insert(function(), provenance()).expect("item within budget")).collect();
+    let handles: Vec<_> =
+        (0..4096).map(|_| arena.insert(function(), provenance()).expect("item within budget")).collect();
     assert!(arena.insert(function(), provenance()).is_err(), "item 4097 exceeds the invocation budget");
     assert_eq!(arena.materialize(&handles, "Serialization.AdapterGenerator", 17).unwrap().len(), 4096);
 }
@@ -324,5 +326,8 @@ fn structural_lineage_must_name_the_arena_generation() {
     let arena = arena(17);
     assert!(arena.insert(function(), provenance_at(18)).is_err(), "lineage from another generation");
     let handle = arena.insert(function(), provenance_at(17)).expect("current lineage");
-    assert_eq!(arena.materialize(&[handle], "Serialization.AdapterGenerator", 17).unwrap()[0].provenance.origin_generation, 17);
+    assert_eq!(
+        arena.materialize(&[handle], "Serialization.AdapterGenerator", 17).unwrap()[0].provenance.origin_generation,
+        17
+    );
 }

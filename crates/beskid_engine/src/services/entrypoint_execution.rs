@@ -11,7 +11,12 @@ use crate::jit_callable::{EntryReturnKind, JitCallable};
 
 /// Parse, lower, JIT-compile, and run `entrypoint` (no-arg function or test); returns a string
 /// summary of the return value. The source's native Mods (if any) run in `mod_host`.
-pub fn run_entrypoint(source_path: &std::path::Path, source: &str, entrypoint: &str, mod_host: &ModHost) -> Result<String> {
+pub fn run_entrypoint(
+    source_path: &std::path::Path,
+    source: &str,
+    entrypoint: &str,
+    mod_host: &ModHost,
+) -> Result<String> {
     run_entrypoint_with_pipeline(source_path, source, entrypoint, mod_host, None)
 }
 

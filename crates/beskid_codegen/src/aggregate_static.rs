@@ -158,7 +158,11 @@ impl CodegenInput<'_> {
             .units
             .iter()
             .position(|unit| beskid_queries::SourceUnitId::new(self.database(), unit.path.clone()) == site.unit)?;
-        let identity = format!("{}_u{unit}_g{}_r{registration_id}", artifact_namespace(self), self.generation_tag(site.generation));
+        let identity = format!(
+            "{}_u{unit}_g{}_r{registration_id}",
+            artifact_namespace(self),
+            self.generation_tag(site.generation)
+        );
         Some(AggregateStaticPlan {
             descriptor_flags: 0,
             descriptor_getter: None,
@@ -188,8 +192,12 @@ impl CodegenInput<'_> {
         let unit = self.typed_program().assembly.units.iter().position(|unit| {
             beskid_queries::SourceUnitId::new(self.database(), unit.path.clone()) == declaration.unit
         })?;
-        let identity =
-            format!("{}_u{unit}_g{}_n{}", artifact_namespace(self), self.generation_tag(declaration.generation), declaration.node.0);
+        let identity = format!(
+            "{}_u{unit}_g{}_n{}",
+            artifact_namespace(self),
+            self.generation_tag(declaration.generation),
+            declaration.node.0
+        );
         Some(AggregateStaticPlan {
             descriptor_flags: 0,
             descriptor_getter: None,
@@ -217,7 +225,12 @@ impl CodegenInput<'_> {
             .units
             .iter()
             .position(|unit| beskid_queries::SourceUnitId::new(self.database(), unit.path.clone()) == spawn.unit)?;
-        let identity = format!("{}_u{unit}_g{}_n{}", artifact_namespace(self), self.generation_tag(spawn.generation), spawn.node.0);
+        let identity = format!(
+            "{}_u{unit}_g{}_n{}",
+            artifact_namespace(self),
+            self.generation_tag(spawn.generation),
+            spawn.node.0
+        );
         Some(AggregateStaticPlan {
             descriptor_flags: 0,
             descriptor_getter: None,
@@ -281,7 +294,12 @@ impl CodegenInput<'_> {
             .units
             .iter()
             .position(|unit| beskid_queries::SourceUnitId::new(self.database(), unit.path.clone()) == spawn.unit)?;
-        let identity = format!("{}_u{unit}_g{}_n{}", artifact_namespace(self), self.generation_tag(spawn.generation), spawn.node.0);
+        let identity = format!(
+            "{}_u{unit}_g{}_n{}",
+            artifact_namespace(self),
+            self.generation_tag(spawn.generation),
+            spawn.node.0
+        );
         Some(AggregateStaticPlan {
             descriptor_flags: 0,
             descriptor_getter: None,

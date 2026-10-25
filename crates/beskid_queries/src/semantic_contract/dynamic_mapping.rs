@@ -285,8 +285,7 @@ impl Planner<'_> {
                 }
                 let index = self.reserve(source, destination)?;
                 let element = self.plan(*from, *to, depth + 1)?;
-                self.steps[index as usize] =
-                    Some(DynamicMappingStep::Array { source, destination, element });
+                self.steps[index as usize] = Some(DynamicMappingStep::Array { source, destination, element });
                 Ok(index)
             }
             (
@@ -327,15 +326,16 @@ impl Planner<'_> {
                     match source_fields.iter().position(|candidate| candidate.name == field.name) {
                         Some(found) => {
                             consumed[found] = true;
-                            let step = self.plan(source_fields[found].ty, field.ty, depth + 1).map_err(|rejection| {
-                                match rejection {
-                                    Rejection::Plan(reason) => Rejection::Plan(format!(
-                                        "field `{}` of {destination_identity}: {reason}",
-                                        field.name
-                                    )),
-                                    other => other,
-                                }
-                            })?;
+                            let step =
+                                self.plan(source_fields[found].ty, field.ty, depth + 1).map_err(|rejection| {
+                                    match rejection {
+                                        Rejection::Plan(reason) => Rejection::Plan(format!(
+                                            "field `{}` of {destination_identity}: {reason}",
+                                            field.name
+                                        )),
+                                        other => other,
+                                    }
+                                })?;
                             fields.push(DynamicMappingFieldStep { source: Some(found), destination: position, step });
                         }
                         None => {
@@ -437,7 +437,11 @@ fn graphs_equal(
                 && f1.len() == f2.len()
                 && f1.iter().zip(f2.iter()).all(|(p, q)| p.name == q.name)
                 && all(
-                    a1.iter().copied().zip(a2.iter().copied()).chain(f1.iter().map(|f| f.ty).zip(f2.iter().map(|f| f.ty))).collect(),
+                    a1.iter()
+                        .copied()
+                        .zip(a2.iter().copied())
+                        .chain(f1.iter().map(|f| f.ty).zip(f2.iter().map(|f| f.ty)))
+                        .collect(),
                     visited,
                 )
         }
@@ -503,5 +507,7 @@ fn resource_declaration(db: &dyn Db, declaration: AstNodeKey) -> bool {
         .syntax_index(db)
         .node_at(syntax.expanded_program(db), declaration.node)
         .and_then(|node| node.of::<TypeDefinition>())
-        .is_none_or(|definition| definition.attributes.iter().any(|attribute| attribute.node.name.node.name == "GlueHandle"))
+        .is_none_or(|definition| {
+            definition.attributes.iter().any(|attribute| attribute.node.name.node.name == "GlueHandle")
+        })
 }

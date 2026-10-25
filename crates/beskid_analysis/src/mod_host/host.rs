@@ -129,7 +129,9 @@ impl std::fmt::Debug for ModHost {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::NoMods => formatter.write_str("ModHost::NoMods"),
-            Self::Native { runtime, .. } => formatter.debug_struct("ModHost::Native").field("runtime", runtime).finish(),
+            Self::Native { runtime, .. } => {
+                formatter.debug_struct("ModHost::Native").field("runtime", runtime).finish()
+            }
         }
     }
 }
@@ -137,9 +139,7 @@ impl std::fmt::Debug for ModHost {
 fn no_mod_host_message<'a>(mods: impl IntoIterator<Item = &'a DiscoveredMod>) -> String {
     let named = mods
         .into_iter()
-        .map(|discovered| {
-            format!("`{}` ({})", discovered.dependency_name, discovered.manifest_path.display())
-        })
+        .map(|discovered| format!("`{}` ({})", discovered.dependency_name, discovered.manifest_path.display()))
         .collect::<Vec<_>>();
     format!(
         "native Mod dependency {} requires a native Mod host, but this preparation runs with `ModHost::NoMods`; \

@@ -194,7 +194,8 @@ pub fn semantic_diagnostics_for_roots(
 ) -> Result<Vec<beskid_analysis::services::SemanticFactFinding>> {
     use crate::{
         AstNodeKey, IndexedNodeKind, build_runtime_fixture_typed_program,
-        build_typed_program_with_corelib_syscall_services, project_session_for_syntax_assembly, try_expression_judgement,
+        build_typed_program_with_corelib_syscall_services, project_session_for_syntax_assembly,
+        try_expression_judgement,
     };
     use beskid_abi::abi_v5::AbiManifestV5;
     use beskid_analysis::analysis::SemanticIssueKind;
@@ -317,7 +318,10 @@ pub fn semantic_diagnostics_for_roots(
     // Attribute legality is judged per unit: `check_items` covered the units owning a judged
     // item; root units without items (declarations only) are judged here, once.
     for finding in crate::check_attribute_obligations(db, &root_units) {
-        if !semantic_findings.iter().any(|existing| existing.site == finding.site && existing.kind.code() == finding.kind.code()) {
+        if !semantic_findings
+            .iter()
+            .any(|existing| existing.site == finding.site && existing.kind.code() == finding.kind.code())
+        {
             semantic_findings.push(finding);
         }
     }
@@ -332,16 +336,13 @@ pub fn semantic_diagnostics_for_roots(
             let unit = *units
                 .get(&finding.site.unit)
                 .ok_or_else(|| anyhow::anyhow!("semantic finding site is outside the prepared assembly"))?;
-            let span = crate::node_span(db, finding.site)
-                .ok()
-                .flatten()
-                .ok_or_else(|| {
-                    anyhow::anyhow!(
-                        "semantic finding {} at {} requires its exact source span",
-                        finding.kind.code(),
-                        crate::format_ast_node_key(db, finding.site)
-                    )
-                })?;
+            let span = crate::node_span(db, finding.site).ok().flatten().ok_or_else(|| {
+                anyhow::anyhow!(
+                    "semantic finding {} at {} requires its exact source span",
+                    finding.kind.code(),
+                    crate::format_ast_node_key(db, finding.site)
+                )
+            })?;
             // A related site whose unit or span cannot be located is dropped; the finding itself
             // still renders at its exact site.
             let related = finding
@@ -362,26 +363,26 @@ pub fn semantic_diagnostics_for_roots(
 }
 
 #[cfg(test)]
+#[path = "entry/parity_contextual_literals.rs"]
+mod parity_contextual_literals;
+#[cfg(test)]
+#[path = "entry/parity_front_end.rs"]
+mod parity_front_end;
+#[cfg(test)]
 #[path = "entry/parity_harness.rs"]
 mod parity_harness;
-#[cfg(test)]
-#[path = "entry/parity_tests.rs"]
-mod parity_tests;
 #[cfg(test)]
 #[path = "entry/parity_literals_externs_clif.rs"]
 mod parity_literals_externs_clif;
 #[cfg(test)]
-#[path = "entry/parity_values.rs"]
-mod parity_values;
-#[cfg(test)]
-#[path = "entry/parity_contextual_literals.rs"]
-mod parity_contextual_literals;
-#[cfg(test)]
 #[path = "entry/parity_resolution.rs"]
 mod parity_resolution;
 #[cfg(test)]
-#[path = "entry/parity_front_end.rs"]
-mod parity_front_end;
+#[path = "entry/parity_tests.rs"]
+mod parity_tests;
+#[cfg(test)]
+#[path = "entry/parity_values.rs"]
+mod parity_values;
 
 pub fn typed_entry_bundle(
     db: &mut BeskidDatabase,
@@ -581,8 +582,7 @@ mod tests {
             has_core_dependency: false,
         };
         let entry_path = plan_entry_path(&plan, &source_root);
-        let resolved =
-            beskid_analysis::services::resolved_input_from_plan(entry_path, String::new(), plan, None, None);
+        let resolved = beskid_analysis::services::resolved_input_from_plan(entry_path, String::new(), plan, None, None);
         let mut db = BeskidDatabase::default();
         let (prepared, diagnostics, _) =
             prepare_compilation_diagnostics_with_db(&mut db, &resolved, PrepareOptions::without_mods(), None)

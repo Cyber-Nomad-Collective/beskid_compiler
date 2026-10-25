@@ -145,7 +145,9 @@ impl SyntaxNodeFacts<'_> {
     pub(super) fn local_slot_impl(&self, key: AstNodeKey) -> Option<LocalSlotId> {
         match self.query(node_kind(self.db, key))? {
             // A field access whose receiver is the method itself reads the implicit receiver.
-            beskid_queries::IndexedNodeKind::MethodDefinition => Some(super::super::context::IMPLICIT_METHOD_RECEIVER_SLOT),
+            beskid_queries::IndexedNodeKind::MethodDefinition => {
+                Some(super::super::context::IMPLICIT_METHOD_RECEIVER_SLOT)
+            }
             beskid_queries::IndexedNodeKind::PathExpression => {
                 if self.query(implicit_method_receiver(self.db, key)).is_some() {
                     return Some(super::super::context::IMPLICIT_METHOD_RECEIVER_SLOT);
@@ -181,8 +183,7 @@ impl SyntaxNodeFacts<'_> {
             // A compound write needs its operand type too; without it the slot is withheld, so the
             // write can never lower as a plain `=`.
             .filter(|assignment| {
-                assignment.compound.is_none()
-                    || self.query(beskid_queries::compound_assignment(self.db, key)).is_some()
+                assignment.compound.is_none() || self.query(beskid_queries::compound_assignment(self.db, key)).is_some()
             })
             .map(|assignment| LocalSlotId { owner_node: assignment.slot.owner.node.0, index: assignment.slot.index })
     }

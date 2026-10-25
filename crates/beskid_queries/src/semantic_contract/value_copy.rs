@@ -193,10 +193,7 @@ fn hook_instance(
     Ok(Some(GenericSpecializationInstance {
         declaration: hook,
         declaration_identity,
-        signature: ItemSignature {
-            parameters: Arc::from([SemanticTypeId::POINTER]),
-            result: SemanticTypeId::POINTER,
-        },
+        signature: ItemSignature { parameters: Arc::from([SemanticTypeId::POINTER]), result: SemanticTypeId::POINTER },
         substitutions: substitutions.into(),
         contract_witnesses: Arc::from([]),
     }))
@@ -230,18 +227,14 @@ fn place_identity(
 
 /// The `Copy` method and the owner's generic parameter names of a `[CopyOnAssign]` type, or
 /// `None` for any other type.
-fn copy_hook(
-    db: &dyn Db,
-    declaration: AstNodeKey,
-) -> Result<Option<(AstNodeKey, Vec<Arc<str>>)>, SemanticError> {
+fn copy_hook(db: &dyn Db, declaration: AstNodeKey) -> Result<Option<(AstNodeKey, Vec<Arc<str>>)>, SemanticError> {
     let Some(syntax) = db.syntax_unit(declaration.unit).filter(|syntax| syntax.accepts_key(db, declaration)) else {
         return Ok(None);
     };
     let index = syntax.syntax_index(db);
     let program = syntax.expanded_program(db);
-    let Some(definition) = index
-        .node_at(program, declaration.node)
-        .and_then(|node| node.of::<beskid_analysis::syntax::TypeDefinition>())
+    let Some(definition) =
+        index.node_at(program, declaration.node).and_then(|node| node.of::<beskid_analysis::syntax::TypeDefinition>())
     else {
         return Ok(None);
     };
@@ -282,12 +275,7 @@ fn returns_owner(result: &beskid_analysis::syntax::Type, type_name: &str) -> boo
     }
 }
 
-fn copy_position(
-    db: &dyn Db,
-    key: AstNodeKey,
-    program: &Program,
-    index: &SyntaxIndex,
-) -> Option<ValueCopyPosition> {
+fn copy_position(db: &dyn Db, key: AstNodeKey, program: &Program, index: &SyntaxIndex) -> Option<ValueCopyPosition> {
     let place = key.node;
     if !matches!(
         index.kind(place)?,
@@ -312,7 +300,10 @@ fn copy_position(
             }
             NodeKind::CallExpression => {
                 let call = syntax.of::<beskid_analysis::syntax::CallExpression>()?;
-                let position = call.args.iter().position(|argument| child_of(parent, DynNodeRef::from(argument)) == Some(child))?;
+                let position = call
+                    .args
+                    .iter()
+                    .position(|argument| child_of(parent, DynNodeRef::from(argument)) == Some(child))?;
                 let call_key = AstNodeKey { node: parent, ..key };
                 // `exchange(place, move value)` writes its first argument in place.
                 if position == 0 && exchange_call_for_node(program, index, call_key).is_some() {
@@ -351,7 +342,8 @@ fn copy_position(
 /// A returned place copies unless the callable owns it: a `let` local, or a parameter that is
 /// not `mut` (its argument was already copied at the call).
 fn return_copies(program: &Program, index: &SyntaxIndex, place: beskid_analysis::syntax::AstNodeId) -> bool {
-    let Some(path) = index.node_at(program, place).and_then(|node| node.of::<beskid_analysis::syntax::PathExpression>())
+    let Some(path) =
+        index.node_at(program, place).and_then(|node| node.of::<beskid_analysis::syntax::PathExpression>())
     else {
         return true;
     };
@@ -414,7 +406,9 @@ mod tests {
         let kind = node_kind(db, key).expect("node kind");
         if matches!(
             kind,
-            Some(IndexedNodeKind::PathExpression | IndexedNodeKind::MemberExpression | IndexedNodeKind::IndexExpression)
+            Some(
+                IndexedNodeKind::PathExpression | IndexedNodeKind::MemberExpression | IndexedNodeKind::IndexExpression
+            )
         ) && (node_span(db, key)
             .ok()
             .flatten()
@@ -433,7 +427,15 @@ mod tests {
             .syntax_index(db)
             .node_at(syntax.expanded_program(db), key.node)?
             .of::<beskid_analysis::syntax::PathExpression>()?;
-        Some(path.path.node.segments.iter().map(|segment| segment.node.name.node.name.as_str()).collect::<Vec<_>>().join("."))
+        Some(
+            path.path
+                .node
+                .segments
+                .iter()
+                .map(|segment| segment.node.name.node.name.as_str())
+                .collect::<Vec<_>>()
+                .join("."),
+        )
     }
 
     const BAG: &str = "[CopyOnAssign] pub type Bag<T> { T[] items; i64 count; \

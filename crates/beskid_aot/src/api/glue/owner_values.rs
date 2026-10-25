@@ -224,7 +224,8 @@ pub(super) fn owner_callback(
     } else if let Some((sha, ty)) = values.type_of(&callback.result, true)? {
         (ty, Some("u32".to_owned()), format!("glue_enum_{sha}_from_raw(out).unwrap_or_else(||{fail})"))
     } else {
-        let (abi, logical) = rust_scalar(&callback.result.logical).ok_or_else(|| invalid("callback result transport"))?;
+        let (abi, logical) =
+            rust_scalar(&callback.result.logical).ok_or_else(|| invalid("callback result transport"))?;
         let finish = match callback.result.logical.as_str() {
             "bool" => format!("match out{{0=>false,1=>true,_=>{fail}}}"),
             "char" => format!("char::from_u32(out).unwrap_or_else(||{fail})"),
@@ -291,7 +292,12 @@ pub(super) fn export_rows(manifest: &GlueManifest) -> AotResult<Vec<([u8; 32], S
     Ok(rows)
 }
 
-fn export_function(values: &OwnerValueTypes, index: usize, binding: &GlueBindingManifest, rows: &[([u8; 32], String)]) -> AotResult<String> {
+fn export_function(
+    values: &OwnerValueTypes,
+    index: usize,
+    binding: &GlueBindingManifest,
+    rows: &[([u8; 32], String)],
+) -> AotResult<String> {
     let name = rust_identifier(&binding.symbol).map_err(|error| invalid(error.to_string()))?;
     let mut parameters = Vec::new();
     let mut raw = Vec::new();
@@ -473,11 +479,21 @@ mod tests {
                 parameters: vec![scalar("i64", "int64_t"), color()],
                 result: scalar("bool", "uint8_t"),
             })),
-            ..GluePhysicalType::plain(format!("callback:{sha}"), vec![format!("GlueCallback_{sha}"), "uint64_t".into()], true)
+            ..GluePhysicalType::plain(
+                format!("callback:{sha}"),
+                vec![format!("GlueCallback_{sha}"), "uint64_t".into()],
+                true,
+            )
         }
     }
 
-    fn binding(direction: &str, symbol: &str, digit: char, parameters: Vec<GluePhysicalType>, result: GluePhysicalType) -> GlueBindingManifest {
+    fn binding(
+        direction: &str,
+        symbol: &str,
+        digit: char,
+        parameters: Vec<GluePhysicalType>,
+        result: GluePhysicalType,
+    ) -> GlueBindingManifest {
         let identity = digit.to_string().repeat(64);
         GlueBindingManifest {
             identity_sha256: identity.clone(),
@@ -509,10 +525,28 @@ mod tests {
             native_width_bits: 64,
             compiled_source_sha256: "ab".repeat(32),
             bindings: vec![
-                binding("import", "glue_each", '4', vec![scalar("i64", "int64_t"), callback()], scalar("i64", "int64_t")),
-                binding("export", "ext_point", '5', vec![record('1', Some("implementation::Point"))], record('1', Some("implementation::Point"))),
+                binding(
+                    "import",
+                    "glue_each",
+                    '4',
+                    vec![scalar("i64", "int64_t"), callback()],
+                    scalar("i64", "int64_t"),
+                ),
+                binding(
+                    "export",
+                    "ext_point",
+                    '5',
+                    vec![record('1', Some("implementation::Point"))],
+                    record('1', Some("implementation::Point")),
+                ),
                 binding("export", "ext_mirror", '6', vec![record('7', None)], scalar("unit", "")),
-                binding("export", "ext_color", '8', vec![scalar("bool", "uint8_t"), scalar("char", "uint32_t")], color()),
+                binding(
+                    "export",
+                    "ext_color",
+                    '8',
+                    vec![scalar("bool", "uint8_t"), scalar("char", "uint32_t")],
+                    color(),
+                ),
                 binding(
                     "export",
                     "ext_text",

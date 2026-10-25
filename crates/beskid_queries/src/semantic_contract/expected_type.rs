@@ -131,7 +131,12 @@ fn expected_type_for(
     let mut parent = parent_node(index, child).ok_or_else(unavailable)?;
     while matches!(
         index.kind(parent),
-        Some(NodeKind::Expression | NodeKind::GroupedExpression | NodeKind::LiteralExpression | NodeKind::UnaryExpression)
+        Some(
+            NodeKind::Expression
+                | NodeKind::GroupedExpression
+                | NodeKind::LiteralExpression
+                | NodeKind::UnaryExpression
+        )
     ) {
         child = parent;
         parent = parent_node(index, parent).ok_or_else(unavailable)?;
@@ -163,24 +168,28 @@ fn expected_type_for(
     }
 
     if let Some(call) = node.of::<syntax::CallExpression>() {
-        let position = call.args.iter().position(|argument| is_child(DynNodeRef::from(argument))).ok_or_else(unavailable)?;
-        let identity = match call_argument_identity(db, program, index, parent_key, call, position, &environment, enclosing)
-        {
-            Err(error) if error.is_unavailable() && enclosing.is_none() => {
-                let argument = AstNodeKey { node: child, ..key };
-                inferred_integer_argument_identity(db, parent_key, call, argument, position)
-                    .or_else(|_| inferred_integer_array_argument_identity(db, parent_key, call, argument, position))
-                    .map_err(|_| error)?
-            }
-            result => result?,
-        };
+        let position =
+            call.args.iter().position(|argument| is_child(DynNodeRef::from(argument))).ok_or_else(unavailable)?;
+        let identity =
+            match call_argument_identity(db, program, index, parent_key, call, position, &environment, enclosing) {
+                Err(error) if error.is_unavailable() && enclosing.is_none() => {
+                    let argument = AstNodeKey { node: child, ..key };
+                    inferred_integer_argument_identity(db, parent_key, call, argument, position)
+                        .or_else(|_| inferred_integer_array_argument_identity(db, parent_key, call, argument, position))
+                        .map_err(|_| error)?
+                }
+                result => result?,
+            };
         let position = u32::try_from(position).map_err(|_| unavailable())?;
         return Ok(ExpectedType::new(ExpectedTypeContext::CallArgument { call: parent_key, position }, identity));
     }
 
     if let Some(constructor) = node.of::<syntax::EnumConstructorExpression>() {
-        let position =
-            constructor.args.iter().position(|argument| is_child(DynNodeRef::from(argument))).ok_or_else(unavailable)?;
+        let position = constructor
+            .args
+            .iter()
+            .position(|argument| is_child(DynNodeRef::from(argument)))
+            .ok_or_else(unavailable)?;
         let identity = enum_payload_identity(db, parent_key, constructor, position, enclosing)?;
         let position = u32::try_from(position).map_err(|_| unavailable())?;
         return Ok(ExpectedType::new(ExpectedTypeContext::EnumPayload { constructor: parent_key, position }, identity));
@@ -391,7 +400,8 @@ fn value_block_of_final_statement(
     index: &SyntaxIndex,
     statement: AstNodeKey,
 ) -> Result<Option<AstNodeKey>, SemanticError> {
-    let Some(wrapper) = parent_node(index, statement.node).filter(|node| index.kind(*node) == Some(NodeKind::Statement))
+    let Some(wrapper) =
+        parent_node(index, statement.node).filter(|node| index.kind(*node) == Some(NodeKind::Statement))
     else {
         return Ok(None);
     };
@@ -405,14 +415,19 @@ fn value_block_of_final_statement(
     };
     // The lambda's body is the block expression behind its transparent `Expression` wrapper.
     let mut owner = parent_node(index, expression);
-    while let Some(node) = owner.filter(|node| matches!(index.kind(*node), Some(NodeKind::Expression | NodeKind::GroupedExpression))) {
+    while let Some(node) =
+        owner.filter(|node| matches!(index.kind(*node), Some(NodeKind::Expression | NodeKind::GroupedExpression)))
+    {
         owner = parent_node(index, node);
     }
     if owner.and_then(|parent| index.kind(parent)) == Some(NodeKind::LambdaExpression) {
         return Ok(None);
     }
     let statements = block_statement_nodes(db, AstNodeKey { node: block, ..statement })?.ok_or_else(unavailable)?;
-    Ok(statements.last().filter(|last| last.node == statement.node).map(|_| AstNodeKey { node: expression, ..statement }))
+    Ok(statements
+        .last()
+        .filter(|last| last.node == statement.node)
+        .map(|_| AstNodeKey { node: expression, ..statement }))
 }
 
 /// Whether a binary operand is a bare numeric literal (or integer constant) that takes its
@@ -597,7 +612,8 @@ fn canonical_intrinsic_argument_identity(
         return Err(unavailable());
     };
     let name = segment.node.name.node.name.as_str();
-    if !segment.node.type_args.is_empty() || resolve_lexical_declaration(program, index, call_key.node, name).is_some() {
+    if !segment.node.type_args.is_empty() || resolve_lexical_declaration(program, index, call_key.node, name).is_some()
+    {
         return Err(unavailable());
     }
     canonical_intrinsic_parameter_type(name, position).map(GenericSourceTypeIdentity::Abi).ok_or_else(unavailable)
@@ -612,8 +628,10 @@ fn direct_parameter_identity(
     environment: &Environment<'_>,
     enclosing: Option<&GenericSpecializationInstance>,
 ) -> Result<GenericSourceTypeIdentity, SemanticError> {
-    let callee_syntax =
-        db.syntax_unit(declaration.unit).filter(|syntax| syntax.accepts_key(db, declaration)).ok_or_else(unavailable)?;
+    let callee_syntax = db
+        .syntax_unit(declaration.unit)
+        .filter(|syntax| syntax.accepts_key(db, declaration))
+        .ok_or_else(unavailable)?;
     let callee = callee_syntax
         .syntax_index(db)
         .node_at(callee_syntax.expanded_program(db), declaration.node)
@@ -636,7 +654,8 @@ fn direct_parameter_identity(
         }
         bindings
     };
-    let callee_environment = bindings.iter().map(|(name, identity)| (name.as_str(), identity)).collect::<Environment<'_>>();
+    let callee_environment =
+        bindings.iter().map(|(name, identity)| (name.as_str(), identity)).collect::<Environment<'_>>();
     generic_source_type_identity_with_substitutions(db, declaration, parameter_type, &callee_environment)
 }
 
@@ -774,7 +793,8 @@ fn callee_generic_bindings(
                 return Err(unavailable());
             }
             for (name, argument) in own.iter().zip(arguments.iter()) {
-                let identity = generic_source_type_identity_with_substitutions(db, call_key, &argument.node, environment)?;
+                let identity =
+                    generic_source_type_identity_with_substitutions(db, call_key, &argument.node, environment)?;
                 bindings.push(((*name).to_owned(), identity));
             }
         }
@@ -792,7 +812,10 @@ fn callee_generic_bindings(
         }
     } else if let Some(receiver) = generic_nominal_method_receiver(db, call_key)? {
         bindings.extend(
-            receiver.substitutions.iter().map(|binding| (binding.parameter.to_string(), binding.source_identity().clone())),
+            receiver
+                .substitutions
+                .iter()
+                .map(|binding| (binding.parameter.to_string(), binding.source_identity().clone())),
         );
     }
     Ok(bindings)
@@ -849,8 +872,10 @@ pub(in crate::semantic_contract) fn lambda_argument_parameter_identities(
     let Some(call) = index.node_at(program, parent).and_then(|node| node.of::<syntax::CallExpression>()) else {
         return Ok(None);
     };
-    let Some(position) =
-        call.args.iter().position(|argument| index.direct_child_id(program, parent, DynNodeRef::from(argument)) == Some(child))
+    let Some(position) = call
+        .args
+        .iter()
+        .position(|argument| index.direct_child_id(program, parent, DynNodeRef::from(argument)) == Some(child))
     else {
         return Ok(None);
     };
@@ -889,7 +914,8 @@ pub(in crate::semantic_contract) fn lambda_argument_parameter_identities(
         &generic_names,
         bindings,
     );
-    let callee_environment = bindings.iter().map(|(name, identity)| (name.as_str(), identity)).collect::<Environment<'_>>();
+    let callee_environment =
+        bindings.iter().map(|(name, identity)| (name.as_str(), identity)).collect::<Environment<'_>>();
     let mut identities = Vec::with_capacity(parameters.len());
     for parameter in parameters {
         if generic_names.iter().any(|name| {
@@ -926,7 +952,8 @@ fn sibling_argument_bindings(
     generic_names: &[&str],
     bindings: Vec<(String, GenericSourceTypeIdentity)>,
 ) -> Vec<(String, GenericSourceTypeIdentity)> {
-    let mut abi = bindings.iter().map(|(name, identity)| (name.clone(), identity.abi_type())).collect::<HashMap<_, _>>();
+    let mut abi =
+        bindings.iter().map(|(name, identity)| (name.clone(), identity.abi_type())).collect::<HashMap<_, _>>();
     let mut sources = bindings
         .iter()
         .map(|(name, identity)| {
@@ -970,10 +997,8 @@ fn sibling_argument_bindings(
             sources = next_sources;
         }
     }
-    let mut extended = sources
-        .into_iter()
-        .map(|(name, binding)| (name, binding.source_identity().clone()))
-        .collect::<Vec<_>>();
+    let mut extended =
+        sources.into_iter().map(|(name, binding)| (name, binding.source_identity().clone())).collect::<Vec<_>>();
     extended.sort_by(|left, right| left.0.cmp(&right.0));
     extended
 }
@@ -987,10 +1012,13 @@ fn enum_payload_identity(
 ) -> Result<GenericSourceTypeIdentity, SemanticError> {
     // The outer constructor's own applied enum: written, or expected by its own position.
     let applied = applied_enum_constructor_identity(db, constructor_key, constructor, enclosing)?;
-    let declaration = crate::semantic_contract::contracts::concrete_type_or_enum_declaration(db, constructor_key, &applied)
+    let declaration =
+        crate::semantic_contract::contracts::concrete_type_or_enum_declaration(db, constructor_key, &applied)
+            .ok_or_else(unavailable)?;
+    let enum_syntax = db
+        .syntax_unit(declaration.unit)
+        .filter(|syntax| syntax.accepts_key(db, declaration))
         .ok_or_else(unavailable)?;
-    let enum_syntax =
-        db.syntax_unit(declaration.unit).filter(|syntax| syntax.accepts_key(db, declaration)).ok_or_else(unavailable)?;
     let definition = enum_syntax
         .syntax_index(db)
         .node_at(enum_syntax.expanded_program(db), declaration.node)
@@ -1027,10 +1055,12 @@ fn struct_field_identity(
     field_name: &str,
     environment: &Environment<'_>,
 ) -> Result<GenericSourceTypeIdentity, SemanticError> {
-    let declaration =
-        resolve_nominal_layout_declaration(db, program, index, literal_key, &literal.path.node).ok_or_else(unavailable)?;
-    let owner_syntax =
-        db.syntax_unit(declaration.unit).filter(|syntax| syntax.accepts_key(db, declaration)).ok_or_else(unavailable)?;
+    let declaration = resolve_nominal_layout_declaration(db, program, index, literal_key, &literal.path.node)
+        .ok_or_else(unavailable)?;
+    let owner_syntax = db
+        .syntax_unit(declaration.unit)
+        .filter(|syntax| syntax.accepts_key(db, declaration))
+        .ok_or_else(unavailable)?;
     let definition = owner_syntax
         .syntax_index(db)
         .node_at(owner_syntax.expanded_program(db), declaration.node)

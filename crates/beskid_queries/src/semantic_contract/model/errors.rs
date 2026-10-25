@@ -88,8 +88,7 @@ impl SemanticError {
     }
 
     pub fn unavailable(query: &str) -> Self {
-        let message =
-            Arc::<str>::from(format!("semantic query `{query}` {UNAVAILABLE_MESSAGE_MARKER}"));
+        let message = Arc::<str>::from(format!("semantic query `{query}` {UNAVAILABLE_MESSAGE_MARKER}"));
         Self {
             diagnostics: Arc::from([Arc::clone(&message)]),
             message,
@@ -105,8 +104,7 @@ impl SemanticError {
     /// uses this site to render an internal error at the offending construct instead of an
     /// unsited "unavailable" message.
     pub fn unavailable_at(query: &str, site: AstNodeKey) -> Self {
-        let message =
-            Arc::<str>::from(format!("semantic query `{query}` {UNAVAILABLE_MESSAGE_MARKER}"));
+        let message = Arc::<str>::from(format!("semantic query `{query}` {UNAVAILABLE_MESSAGE_MARKER}"));
         Self {
             diagnostics: Arc::from([Arc::clone(&message)]),
             message,

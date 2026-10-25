@@ -112,8 +112,9 @@ fn ordinary_utf8_lookalike_cannot_issue_canonical_view_descriptor() {
 fn ordinary_dynamic_names_do_not_issue_managed_erasure_authority() {
     let source = "pub type DynamicValueV1 {} pub type DynamicPayloadV1 {}";
     let (db, typed, root, target) = support::input_fixture_with_source(source);
-    let input = CodegenInput::new(&db, typed, Arc::from([root]), target.clone(),
-        AbiManifestV5::canonical_runtime(target)).expect("registered untrusted lookalikes");
+    let input =
+        CodegenInput::new(&db, typed, Arc::from([root]), target.clone(), AbiManifestV5::canonical_runtime(target))
+            .expect("registered untrusted lookalikes");
     fn declarations(db: &dyn beskid_queries::Db, key: AstNodeKey, out: &mut Vec<AstNodeKey>) {
         if node_kind(db, key).expect("declaration kind") == Some(IndexedNodeKind::TypeDefinition) {
             out.push(key);
@@ -128,10 +129,16 @@ fn ordinary_dynamic_names_do_not_issue_managed_erasure_authority() {
     let declarations = declarations_found;
     assert_eq!(declarations.len(), 2);
     for declaration in declarations {
-        assert_eq!(beskid_queries::runtime_managed_opaque_kind(&db, declaration), None,
-            "a name alone must never authorize the canonical 40-byte erased cell");
-        assert_eq!(input.aggregate_object_layout(declaration).expect("ordinary layout").object_size, 16,
-            "untrusted empty types remain ordinary header-only records");
+        assert_eq!(
+            beskid_queries::runtime_managed_opaque_kind(&db, declaration),
+            None,
+            "a name alone must never authorize the canonical 40-byte erased cell"
+        );
+        assert_eq!(
+            input.aggregate_object_layout(declaration).expect("ordinary layout").object_size,
+            16,
+            "untrusted empty types remain ordinary header-only records"
+        );
     }
 }
 

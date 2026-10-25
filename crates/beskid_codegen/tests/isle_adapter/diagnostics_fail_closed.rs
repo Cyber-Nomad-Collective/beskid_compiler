@@ -308,15 +308,15 @@ fn immutable_local_reassignment_is_rejected_with_e1214_before_isle() {
     for source in function_cases {
         let (input, isa, root) = item_fixture_with_root(source);
         let main = find_function_definitions(input.database(), root)[0];
-        let error = lower_syntax_program(&input, isa.as_ref(), &[SyntaxModuleItem { key: main, symbol: "Main".into() }])
-            .expect_err("immutable reassignment must not lower");
+        let error =
+            lower_syntax_program(&input, isa.as_ref(), &[SyntaxModuleItem { key: main, symbol: "Main".into() }])
+                .expect_err("immutable reassignment must not lower");
         let rendered = error.to_string();
         assert!(rendered.contains("E1214"), "{source}: {rendered}");
         assert!(!rendered.contains("MissingRuleOrFact"), "{source}: {rendered}");
     }
 
-    let (input, isa, root) =
-        item_fixture_with_root("test sample { i64 n = 0; while n < 3 { n = n + 1; } }");
+    let (input, isa, root) = item_fixture_with_root("test sample { i64 n = 0; while n < 3 { n = n + 1; } }");
     let test = super::support::find_test_definition(input.database(), root).expect("test item");
     let error = lower_syntax_program(&input, isa.as_ref(), &[SyntaxModuleItem { key: test, symbol: "sample".into() }])
         .expect_err("immutable reassignment in a test body must not lower");
@@ -339,8 +339,9 @@ fn unknown_callee_is_rejected_with_a_resolution_code_before_isle() {
         let (input, isa, root) = item_fixture_with_root(source);
         let db = input.database();
         let main = find_function_definitions(db, root)[item];
-        let error = lower_syntax_program(&input, isa.as_ref(), &[SyntaxModuleItem { key: main, symbol: "Main".into() }])
-            .expect_err("an unknown callee must not lower");
+        let error =
+            lower_syntax_program(&input, isa.as_ref(), &[SyntaxModuleItem { key: main, symbol: "Main".into() }])
+                .expect_err("an unknown callee must not lower");
         let rendered = error.to_string();
         assert!(rendered.contains(code), "{source}: {rendered}");
         assert!(rendered.contains(name), "{source}: {rendered}");
@@ -366,8 +367,9 @@ fn member_and_match_violations_are_rejected_with_their_codes_before_isle() {
         let source = format!("{shape}{body}");
         let (input, isa, root) = item_fixture_with_root(&source);
         let main = find_function_definitions(input.database(), root)[0];
-        let error = lower_syntax_program(&input, isa.as_ref(), &[SyntaxModuleItem { key: main, symbol: "Main".into() }])
-            .expect_err("the violation must not lower");
+        let error =
+            lower_syntax_program(&input, isa.as_ref(), &[SyntaxModuleItem { key: main, symbol: "Main".into() }])
+                .expect_err("the violation must not lower");
         let rendered = error.to_string();
         assert!(rendered.contains(code), "{source}: {rendered}");
         assert!(!rendered.contains("MissingRuleOrFact"), "{source}: {rendered}");
@@ -537,8 +539,9 @@ fn compound_assignment_to_an_immutable_local_is_e1214() {
         let source = format!("i32 F() {{ i32 total = 1; total {operator} 2; return total; }}");
         let (input, isa, root) = item_fixture_with_root(&source);
         let function = find_function_definitions(input.database(), root)[0];
-        let error = lower_syntax_program(&input, isa.as_ref(), &[SyntaxModuleItem { key: function, symbol: "F".into() }])
-            .expect_err("an immutable target must not lower");
+        let error =
+            lower_syntax_program(&input, isa.as_ref(), &[SyntaxModuleItem { key: function, symbol: "F".into() }])
+                .expect_err("an immutable target must not lower");
         let rendered = error.to_string();
         assert!(rendered.contains("E1214"), "{rendered}");
         assert!(!rendered.contains("E210"), "{rendered}");
@@ -580,7 +583,10 @@ fn lower_one(source: &str, symbol: &str) -> Result<String, String> {
 #[test]
 fn compound_assignment_keeps_unsigned_and_float_widths() {
     let cases = [
-        ("u8 F() { mut u8 level = 1; level += 1; level *= 3; level -= 1; level /= 2; level %= 2; return level; }", ["iadd", "udiv"]),
+        (
+            "u8 F() { mut u8 level = 1; level += 1; level *= 3; level -= 1; level /= 2; level %= 2; return level; }",
+            ["iadd", "udiv"],
+        ),
         ("u64 F() { mut u64 total = 10; total += 1; total /= 2; total %= 3; return total; }", ["iadd", "urem"]),
         ("f64 F() { mut f64 x = 1.5; x += 2.0; x *= 2.0; x -= 1.0; x /= 2.0; return x; }", ["fadd", "fdiv"]),
     ];
@@ -650,9 +656,9 @@ fn conditional_expression_lowers_for_scalars_strings_and_nominal_types() {
 /// Whether the CLIF text has a block header with exactly one parameter of `ty`
 /// (`block3(v5: i64):`), the shape of a conditional's merge block.
 fn has_single_parameter_block(clif: &str, ty: &str) -> bool {
-    clif.lines().map(str::trim).any(|line| {
-        line.starts_with("block") && line.ends_with(&format!(": {ty}):")) && line.matches(':').count() == 2
-    })
+    clif.lines()
+        .map(str::trim)
+        .any(|line| line.starts_with("block") && line.ends_with(&format!(": {ty}):")) && line.matches(':').count() == 2)
 }
 
 /// A conditional is an ordinary value: a `let` initializer, a call argument, a return value, and
@@ -806,7 +812,9 @@ i64 Count(Option<i64> option) { return option.Count(); }";
         assert_eq!(finding.kind.help().as_deref(), Some("unwrap with `match` or `?` first"));
     }
     assert!(
-        findings.iter().any(|finding| finding.kind.message().contains("Result") && finding.kind.message().contains("Greet")),
+        findings
+            .iter()
+            .any(|finding| finding.kind.message().contains("Result") && finding.kind.message().contains("Greet")),
         "{findings:?}"
     );
 }

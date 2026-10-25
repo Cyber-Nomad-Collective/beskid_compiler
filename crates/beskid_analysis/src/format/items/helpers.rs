@@ -1,6 +1,6 @@
-use crate::format::emit::{Emit, EmitCtx, EmitError};
 use crate::doc::LeadingDocComment;
 use crate::format::attribute_lists::emit_inline_attributes;
+use crate::format::emit::{Emit, EmitCtx, EmitError};
 use crate::format::lines::emit_leading_doc_lines;
 use crate::syntax::{Parameter, ReceiverParameter, Spanned, TypeParameter};
 use std::fmt::Write;

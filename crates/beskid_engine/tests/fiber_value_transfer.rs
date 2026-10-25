@@ -414,11 +414,8 @@ fn timer_validation_observations(
             counts[0].1 += 1;
         }
     } else {
-        let mut engine = beskid_engine::Engine::with_runtime_kit(
-            &kit_prefix,
-            artifact.input.target().clone(),
-            BuildProfile::Debug,
-        )?;
+        let mut engine =
+            beskid_engine::Engine::with_runtime_kit(&kit_prefix, artifact.input.target().clone(), BuildProfile::Debug)?;
         engine.compile_artifact(&artifact.artifact).context("engine timer compilation")?;
         // SAFETY: the C fixture defines this exact repr(C) transport and entry ABI.
         // Every generated callback was checked against queries and emitted CLIF above;

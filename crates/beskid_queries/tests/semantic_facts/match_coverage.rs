@@ -27,7 +27,8 @@ fn nested_match_on_a_generic_enum_payload_binding_uses_the_applied_payload_layou
              Result::Error(_) => -2_i64, }}; }}"
         );
         let (db, _project, unit, generation, index) = setup(&source);
-        let inner = key_at_start(unit, generation, &index, NodeKind::MatchExpression, source.find("match sent").unwrap());
+        let inner =
+            key_at_start(unit, generation, &index, NodeKind::MatchExpression, source.find("match sent").unwrap());
         let outer = key_at_start(
             unit,
             generation,
@@ -39,7 +40,11 @@ fn nested_match_on_a_generic_enum_payload_binding_uses_the_applied_payload_layou
         let fact = enum_match(&db, inner)
             .unwrap_or_else(|error| panic!("{scrutinee}: inner match query: {error:?}"))
             .expect("inner match fact over the applied Option<i64> payload");
-        assert_eq!(fact.layout.variants[0].fields[0].1, AggregateFieldShape::Scalar(SemanticTypeId::I64), "{scrutinee}");
+        assert_eq!(
+            fact.layout.variants[0].fields[0].1,
+            AggregateFieldShape::Scalar(SemanticTypeId::I64),
+            "{scrutinee}"
+        );
         let EnumMatchPatternFact::Enum(some) = &fact.arms[0].pattern else {
             panic!("{scrutinee}: Some arm must remain an enum pattern");
         };
@@ -111,7 +116,8 @@ fn primitive_scrutinee_matches_have_a_scalar_match_fact() {
                   i64 first = match count { 0 => 1_i64, 7_i64 => 2_i64, other => other, }; \
                   return match name { \"a\" => first, _ => 0_i64, }; }";
     let (db, _project, unit, generation, index) = setup(source);
-    let integer = key_at_start(unit, generation, &index, NodeKind::MatchExpression, source.find("match count").unwrap());
+    let integer =
+        key_at_start(unit, generation, &index, NodeKind::MatchExpression, source.find("match count").unwrap());
     let text = key_at_start(unit, generation, &index, NodeKind::MatchExpression, source.find("match name").unwrap());
 
     let integer_fact = scalar_match(&db, integer).expect("integer match query").expect("integer match fact");
@@ -182,9 +188,13 @@ fn matches_on_generic_record_fields_are_proven_in_their_specializations() {
         .filter_map(|specialization| generic_call_specialization_instance(&db, specialization).ok().flatten())
         .collect::<Vec<_>>();
     let span_of = |node: AstNodeId| index.metadata().iter().find(|metadata| metadata.id == node).and_then(|m| m.span);
-    for (scrutinee, wildcard) in
-        [("match this.slot", true), ("match slot", false), ("match h.slot", true), ("match (h).slot", false), ("match o.inner.slot", true)]
-    {
+    for (scrutinee, wildcard) in [
+        ("match this.slot", true),
+        ("match slot", false),
+        ("match h.slot", true),
+        ("match (h).slot", false),
+        ("match o.inner.slot", true),
+    ] {
         let start = source.find(scrutinee).unwrap();
         let matched = key_at_start(unit, generation, &index, NodeKind::MatchExpression, start);
         // The one instance whose declaration encloses this match.

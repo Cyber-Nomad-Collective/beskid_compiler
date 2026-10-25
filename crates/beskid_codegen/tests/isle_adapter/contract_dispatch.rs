@@ -10,7 +10,8 @@ use super::support::{
 fn lower(source: &str) -> beskid_codegen::CodegenArtifact {
     let (input, isa, root) = item_fixture_with_root(source);
     let mut items = Vec::new();
-    for kind in [beskid_queries::IndexedNodeKind::FunctionDefinition, beskid_queries::IndexedNodeKind::MethodDefinition] {
+    for kind in [beskid_queries::IndexedNodeKind::FunctionDefinition, beskid_queries::IndexedNodeKind::MethodDefinition]
+    {
         for key in find_nodes_of_kind(input.database(), root, kind) {
             let symbol = item_name(input.database(), key).expect("item query").expect("item name").to_string();
             items.push(SyntaxModuleItem { symbol, key });
@@ -22,7 +23,14 @@ fn lower(source: &str) -> beskid_codegen::CodegenArtifact {
 }
 
 fn clif(artifact: &beskid_codegen::CodegenArtifact, name: &str) -> String {
-    artifact.functions.iter().find(|function| function.name == name).unwrap_or_else(|| panic!("{name} lowered")).function.display().to_string()
+    artifact
+        .functions
+        .iter()
+        .find(|function| function.name == name)
+        .unwrap_or_else(|| panic!("{name} lowered"))
+        .function
+        .display()
+        .to_string()
 }
 
 const GREETERS: &str = r#"
@@ -45,7 +53,8 @@ fn a_mutable_contract_local_boxes_its_values_and_dispatches_through_the_witness_
     for table in &artifact.witness_tables {
         assert_eq!(table.entries.len(), 2, "Greet and Rank in slot order: {table:?}");
     }
-    assert!(artifact.witness_tables.iter().any(|table| table.entries == ["Greet", "Rank"] || table.entries.iter().all(|entry| artifact.functions.iter().any(|function| &function.name == entry))));
+    assert!(artifact.witness_tables.iter().any(|table| table.entries == ["Greet", "Rank"]
+        || table.entries.iter().all(|entry| artifact.functions.iter().any(|function| &function.name == entry))));
 }
 
 #[test]
@@ -276,7 +285,10 @@ fn a_contract_as_the_argument_of_a_bounded_generic_dispatches_at_run_time() {
         .map(|function| function.function.display().to_string())
         .collect::<Vec<_>>();
     assert_eq!(specializations.len(), 2, "T = Greeter and T = Hello");
-    assert!(specializations.iter().any(|clif| clif.contains("call_indirect")), "T = Greeter dispatches: {specializations:#?}");
+    assert!(
+        specializations.iter().any(|clif| clif.contains("call_indirect")),
+        "T = Greeter dispatches: {specializations:#?}"
+    );
     assert!(
         specializations.iter().any(|clif| !clif.contains("call_indirect")),
         "T = Hello calls the implementation directly: {specializations:#?}"
@@ -300,13 +312,18 @@ i64 Main() {
     let main = clif(&artifact, "Main");
     assert!(main.contains("call_indirect"), "`numbers.Get()` dispatches:\n{main}");
     assert_eq!(artifact.witness_tables.len(), 2, "{:?}", artifact.witness_tables);
-    assert!(artifact.witness_tables.iter().any(|table| table.symbol.contains("Repo_i64")), "{:?}", artifact.witness_tables);
+    assert!(
+        artifact.witness_tables.iter().any(|table| table.symbol.contains("Repo_i64")),
+        "{:?}",
+        artifact.witness_tables
+    );
 }
 
 /// Every function and method of the entry unit, with its item symbol.
 fn entry_items(input: &beskid_codegen::CodegenInput<'_>, root: beskid_queries::AstNodeKey) -> Vec<SyntaxModuleItem> {
     let mut items = Vec::new();
-    for kind in [beskid_queries::IndexedNodeKind::FunctionDefinition, beskid_queries::IndexedNodeKind::MethodDefinition] {
+    for kind in [beskid_queries::IndexedNodeKind::FunctionDefinition, beskid_queries::IndexedNodeKind::MethodDefinition]
+    {
         for key in find_nodes_of_kind(input.database(), root, kind) {
             let symbol = item_name(input.database(), key).expect("item query").expect("item name").to_string();
             items.push(SyntaxModuleItem { symbol, key });
@@ -318,7 +335,8 @@ fn entry_items(input: &beskid_codegen::CodegenInput<'_>, root: beskid_queries::A
 /// The error codes `beskid check` reports for `source` (one `App/Main.bd` against the canonical
 /// Corelib, host hooks expanded as the front end does).
 fn check_errors(source: &str, generation: u64) -> Vec<&'static str> {
-    let (input, _, root) = canonical_corelib_host_project_fixture(&[("App/Main.bd", source)], SyntaxGenerationId(generation));
+    let (input, _, root) =
+        canonical_corelib_host_project_fixture(&[("App/Main.bd", source)], SyntaxGenerationId(generation));
     let keys = entry_items(&input, root).iter().map(|item| item.key).collect::<Vec<_>>();
     check_findings(input.database(), &keys)
 }
@@ -340,7 +358,8 @@ fn build(source: &str, generation: u64) -> beskid_codegen::CodegenArtifact {
 
     use beskid_analysis::composition::{CompositionInput, resolve_composition};
 
-    let (input, isa, root) = canonical_corelib_host_project_fixture(&[("App/Main.bd", source)], SyntaxGenerationId(generation));
+    let (input, isa, root) =
+        canonical_corelib_host_project_fixture(&[("App/Main.bd", source)], SyntaxGenerationId(generation));
     let keys = entry_items(&input, root).iter().map(|item| item.key).collect::<Vec<_>>();
     let errors = check_findings(input.database(), &keys);
     assert!(errors.is_empty(), "the program checks clean: {errors:?}");
@@ -563,10 +582,7 @@ fn elements_of_a_contract_typed_injected_array_read_through_this_dispatch() {
     for method in ["First", "Both", "Local"] {
         let body = clif(&artifact, method);
         assert!(body.contains("call_indirect"), "`{method}` dispatches through each element's table:\n{body}");
-        assert!(
-            !body.contains("__beskid_contract_box_reference_request_v5"),
-            "an element is already a box:\n{body}"
-        );
+        assert!(!body.contains("__beskid_contract_box_reference_request_v5"), "an element is already a box:\n{body}");
     }
     assert_eq!(clif(&artifact, "Both").matches("call_indirect").count(), 2);
     assert_eq!(artifact.witness_tables.len(), 2, "Hello and Bye: {:?}", artifact.witness_tables);
@@ -681,7 +697,8 @@ i32 Main() {{
 "#
         )
     };
-    let c2 = crowd(r#"pub string Run(string name) { return this.all[0].Greet(name) + " / " + this.all[1].Greet(name); }"#);
+    let c2 =
+        crowd(r#"pub string Run(string name) { return this.all[0].Greet(name) + " / " + this.all[1].Greet(name); }"#);
     let d3 = crowd("pub string Run(string name) { Greeter g = this.all[0]; return g.Greet(name); }");
     let d5 = crowd("pub string Run(string name) { return this.all[0].Greet(name); }");
     for (generation, (name, source)) in
@@ -803,14 +820,14 @@ i32 Main() {
 
     use beskid_analysis::composition::{CompositionInput, resolve_composition};
 
-    let (input, isa, root) = canonical_corelib_host_project_fixture(&[("App/Main.bd", source)], SyntaxGenerationId(6738));
+    let (input, isa, root) =
+        canonical_corelib_host_project_fixture(&[("App/Main.bd", source)], SyntaxGenerationId(6738));
     let all = entry_items(&input, root);
     let errors = check_findings(input.database(), &all.iter().map(|item| item.key).collect::<Vec<_>>());
     assert!(errors.is_empty(), "the program checks clean: {errors:?}");
     let main = all.iter().find(|item| item.symbol == "Main").expect("Main").key;
-    let reachable = beskid_queries::reachable_items(input.database(), root, main)
-        .expect("reachability")
-        .expect("reachable items");
+    let reachable =
+        beskid_queries::reachable_items(input.database(), root, main).expect("reachability").expect("reachable items");
     let reachable = all.iter().filter(|item| reachable.contains(&item.key)).cloned().collect::<Vec<_>>();
     let names = reachable.iter().map(|item| item.symbol.as_str()).collect::<Vec<_>>();
     assert!(names.iter().any(|name| name.starts_with("__BeskidHook_AppHost_startup_")), "{names:?}");

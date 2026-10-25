@@ -99,7 +99,9 @@ impl Emit for Spanned<AttributeDeclaration> {
         }
         crate::format::lines::open_body(w, cx)?;
         for p in &this.parameters {
-            crate::format::lines::emit_line(w, cx, crate::format::lines::Line::new(p.span), ",", |w, cx| p.emit(w, cx))?;
+            crate::format::lines::emit_line(w, cx, crate::format::lines::Line::new(p.span), ",", |w, cx| {
+                p.emit(w, cx)
+            })?;
         }
         cx.close_brace(w, self.span.end)
     }

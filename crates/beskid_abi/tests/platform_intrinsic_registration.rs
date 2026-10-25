@@ -57,10 +57,9 @@ fn canonical_thread_yield_uses_a_host_specific_os_primitive() {
             .find(|binding| binding.target == triple)
             .expect("host-specific thread_yield binding");
         assert_eq!(binding.os_imports, [os_import]);
-        let platform_source = fs::read_to_string(
-            compiler_root().join("crates/beskid_abi/assembly").join(triple).join("platform_host.c"),
-        )
-        .expect("platform host source");
+        let platform_source =
+            fs::read_to_string(compiler_root().join("crates/beskid_abi/assembly").join(triple).join("platform_host.c"))
+                .expect("platform host source");
         assert!(
             platform_source.contains("beskid_rt_v5_thread_yield("),
             "{triple} must define its OS thread yield adapter"

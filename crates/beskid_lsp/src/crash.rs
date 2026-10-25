@@ -182,12 +182,7 @@ impl CrashReporter {
     }
 
     /// Run a synchronous section (for example building a service future) under the same guard.
-    pub async fn guard_sync<T>(
-        &self,
-        method: &str,
-        path: Option<&str>,
-        f: impl FnOnce() -> T,
-    ) -> Result<T, Caught> {
+    pub async fn guard_sync<T>(&self, method: &str, path: Option<&str>, f: impl FnOnce() -> T) -> Result<T, Caught> {
         match std::panic::catch_unwind(AssertUnwindSafe(f)) {
             Ok(value) => Ok(value),
             Err(payload) => Err(self.on_unwind(method, path, payload).await),

@@ -36,12 +36,7 @@ const COVERED_VALUE_KINDS: &[(&str, &str, &str, &str)] = &[
         "E1206",
         "pub contract Named { string Name(bool loud); } string Describe(Named n) { return n.Name(1_i64); }",
     ),
-    (
-        "callable-value call argument (row c)",
-        "TypeMismatch",
-        "E1206",
-        "i64 Apply(i64(bool) f) { return f(1_i64); }",
-    ),
+    ("callable-value call argument (row c)", "TypeMismatch", "E1206", "i64 Apply(i64(bool) f) { return f(1_i64); }"),
     (
         "callable-value call result into a declared destination (row c)",
         "TypeMismatch",
@@ -209,7 +204,10 @@ const SILENT_VALUE_SHAPES: &[(&str, &str)] = &[
          i64 Main(Outer o) { return match o { Outer::Wrap(Inner::X) => 0_i64, Outer::Wrap(i) => 1_i64, Outer::Lit(true) => 2_i64, _ => 3_i64, }; } \
          i64 Pick(Opt<i64> o) { return match o { Opt::Some(1) => 0_i64, _ => 1_i64, }; }",
     ),
-    ("test body without a valued return", "pub type Pair { i64 a; } test T { Pair p = Pair { a: 1 }; i64 v = 1; return; }"),
+    (
+        "test body without a valued return",
+        "pub type Pair { i64 a; } test T { Pair p = Pair { a: 1 }; i64 v = 1; return; }",
+    ),
 ];
 
 #[test]

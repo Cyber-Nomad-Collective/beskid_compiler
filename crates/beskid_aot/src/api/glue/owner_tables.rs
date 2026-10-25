@@ -1,8 +1,8 @@
 //! Source-fact selection for Rust Glue owners, shared by `beskid build --backend glue-rust` and the
 //! native harness. Owner type and callable tables come only from `RustOwner` source facts joined to
 //! the compiler-issued rows of the owner packet; no caller supplies mapping data.
-use super::{AotResult, invalid};
 use super::rust_owner::{RustOwnerCallable, RustOwnerType};
+use super::{AotResult, invalid};
 use beskid_codegen::{
     CodegenInput,
     glue::{GlueArtifact, GlueBindingManifest},

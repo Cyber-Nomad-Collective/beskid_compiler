@@ -17,14 +17,14 @@ use crate::errors::{FunctionEmissionError, LoweringError, LoweringErrorKind, Str
 use crate::facts::{
     AssignmentKind, AstNodeKey, CallImportError, CallKind, CollectionMutationOwner, CollectionOperation, DirectCallee,
     EventHandlerLocalPlan, EventOperation, ForIterableKind, IndexTarget, InlineClosureEnvironment, IsolateSpawnCall,
-    LiteralKind,
-    LocalSlotId, ManagedReferenceFact, MatchArmBindingFact, MatchArmFact, MatchPayloadPatternFact, NodeFacts, NodeKind,
-    OperatorFact, RuntimeIntrinsicKind, Unit,
+    LiteralKind, LocalSlotId, ManagedReferenceFact, MatchArmBindingFact, MatchArmFact, MatchPayloadPatternFact,
+    NodeFacts, NodeKind, OperatorFact, RuntimeIntrinsicKind, Unit,
 };
 use crate::layout::{EnumLayout, FieldLayout};
 
 mod aggregate;
 mod calls;
+mod checked_allocation;
 mod cleanup;
 mod clif_block;
 mod composition;
@@ -37,7 +37,6 @@ mod events;
 mod intrinsics;
 mod operators;
 mod roots;
-mod checked_allocation;
 mod spawn_arguments;
 mod strings;
 mod value_copy;
@@ -78,9 +77,15 @@ struct LocalRootScope {
 
 #[derive(Clone)]
 enum CompositionCleanup {
-    ScopeLeave { site: AstNodeKey },
+    ScopeLeave {
+        site: AstNodeKey,
+    },
     /// The launched container and the object installed in each of its slots, in slot order.
-    Container { site: AstNodeKey, value: Value, slots: std::rc::Rc<[Value]> },
+    Container {
+        site: AstNodeKey,
+        value: Value,
+        slots: std::rc::Rc<[Value]>,
+    },
 }
 
 /// Roots owned by an expression until its value has been published or consumed. They
@@ -262,7 +267,9 @@ pub(crate) fn materialize_parameters(
             "item parameter facts do not match function signature".to_owned(),
         ));
     }
-    context.require_checked_scope().ok_or_else(|| FunctionEmissionError::verification(item, "checked scope entry is unavailable"))?;
+    context
+        .require_checked_scope()
+        .ok_or_else(|| FunctionEmissionError::verification(item, "checked scope entry is unavailable"))?;
     for (parameter, value) in parameters.into_iter().zip(incoming) {
         if context.locals.contains_key(&parameter.slot)
             || context.builder.func.dfg.value_type(value) != parameter.value_type
@@ -391,7 +398,10 @@ pub fn lower_expression(context: &mut IsleContext<'_, '_, '_, '_>, key: AstNodeK
 
 /// Lower an expression written into a destination: a lambda's expression body converts to the
 /// lambda's contract result type like every other conversion site.
-pub fn lower_converted_expression(context: &mut IsleContext<'_, '_, '_, '_>, key: AstNodeKey) -> Result<Value, LoweringError> {
+pub fn lower_converted_expression(
+    context: &mut IsleContext<'_, '_, '_, '_>,
+    key: AstNodeKey,
+) -> Result<Value, LoweringError> {
     generated::constructor_lower_expression(context, key)
         .and_then(|value| context.coerce_to_destination(key, value))
         .ok_or_else(|| {

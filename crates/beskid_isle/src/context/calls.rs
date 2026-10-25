@@ -1,8 +1,8 @@
 //! Call lowering for `IsleContext`, grouped by call shape.
 
+mod checked_collections;
 mod closures;
 mod collections;
-mod checked_collections;
 mod direct;
 mod helpers;
 mod traced;

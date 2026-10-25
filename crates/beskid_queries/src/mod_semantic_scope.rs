@@ -55,7 +55,11 @@ impl<'a> QueryModSemanticScope<'a> {
     }
     /// The project session that owns `registered` in the database: the planned project when this
     /// scope serves a compile plan, else an invocation-local one.
-    fn registered_project(&self, db: &mut BeskidDatabase, registered: &ProgramAssembly) -> Result<crate::ProjectSession> {
+    fn registered_project(
+        &self,
+        db: &mut BeskidDatabase,
+        registered: &ProgramAssembly,
+    ) -> Result<crate::ProjectSession> {
         Ok(match self.planned.and_then(|resolved| Some((resolved.compile_plan.as_ref()?, resolved))) {
             Some((plan, resolved)) => crate::project_session_for_planned_syntax_assembly(
                 db,

@@ -70,9 +70,7 @@ impl SyntaxNodeFacts<'_> {
     pub(super) fn runtime_intrinsic_kind_impl(&self, key: AstNodeKey) -> Option<RuntimeIntrinsicKind> {
         if let Some(operation) = self.runtime_compiler_operation(key) {
             return Some(match operation {
-                crate::RuntimeCompilerOperation::FiberEntryAddress => {
-                    RuntimeIntrinsicKind::SchedulerFiberEntryAddress
-                }
+                crate::RuntimeCompilerOperation::FiberEntryAddress => RuntimeIntrinsicKind::SchedulerFiberEntryAddress,
                 crate::RuntimeCompilerOperation::ReturnTrampolineAddress => {
                     RuntimeIntrinsicKind::SchedulerReturnTrampolineAddress
                 }
@@ -141,11 +139,8 @@ impl SyntaxNodeFacts<'_> {
     /// instance in the specialization of the item being lowered. Module emission collects the same
     /// instance at the same read, so the callee is always among the emitted items.
     pub(super) fn value_copy_impl(&self, key: AstNodeKey) -> Option<beskid_isle::ValueCopyPlan> {
-        let instance = self.query(beskid_queries::value_copy_specialization(
-            self.db,
-            key,
-            self.current_item_specialization(),
-        ))?;
+        let instance =
+            self.query(beskid_queries::value_copy_specialization(self.db, key, self.current_item_specialization()))?;
         value_copy_plan(self.isa?, &instance)
     }
 
@@ -316,7 +311,8 @@ impl SyntaxNodeFacts<'_> {
         else {
             return None;
         };
-        let (result, managed) = crate::module_emission::isolate_entry_shape(self.db, key, self.current_item_specialization())?;
+        let (result, managed) =
+            crate::module_emission::isolate_entry_shape(self.db, key, self.current_item_specialization())?;
         Some(beskid_isle::IsolateSpawnCall {
             symbol,
             trampoline: DirectCallee::isolate_entry_trampoline(result, managed),
@@ -333,9 +329,7 @@ impl SyntaxNodeFacts<'_> {
                     .substitutions
                     .iter()
                     .find(|binding| binding.parameter.as_ref() == name.as_str())?;
-                self.query(
-                    beskid_queries::transfer_class_code_for_substitution(self.db, key, substitution).map(Some),
-                )
+                self.query(beskid_queries::transfer_class_code_for_substitution(self.db, key, substitution).map(Some))
             }
         }
     }
@@ -526,4 +520,3 @@ impl SyntaxNodeFacts<'_> {
         })
     }
 }
-

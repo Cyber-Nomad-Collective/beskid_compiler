@@ -188,9 +188,12 @@ fn emit_effect_closure<'db, M: cranelift_module::Module>(
         ensure_checked_runtime_import(module, input, &mut runtime_functions, symbol)?;
     }
     if current.members.values().any(|member| member.bridge.is_some()) {
-        for symbol in
-            ["gc_root_handle", "beskid_rt_v5_gc_resolve_handle", "gc_unroot_handle", "beskid_rt_v5_checked_scope_failure_reason"]
-        {
+        for symbol in [
+            "gc_root_handle",
+            "beskid_rt_v5_gc_resolve_handle",
+            "gc_unroot_handle",
+            "beskid_rt_v5_checked_scope_failure_reason",
+        ] {
             ensure_checked_runtime_import(module, input, &mut runtime_functions, symbol)?;
         }
     }
@@ -278,8 +281,8 @@ fn emit_effect_closure<'db, M: cranelift_module::Module>(
                 }
             }
         } else {
-            let mut importer =
-                crate::isle_adapter::ItemModuleImporter::new(module, functions.clone()).with_imports(glue_imports.clone());
+            let mut importer = crate::isle_adapter::ItemModuleImporter::new(module, functions.clone())
+                .with_imports(glue_imports.clone());
             crate::isle_adapter::emit_isle_checked_effect_item(
                 input,
                 isa,
@@ -470,7 +473,8 @@ impl CodegenInput<'_> {
                                 }
                                 _ => return Err(reject(site, "provider or callback lacks no-yield witness")),
                             };
-                            if matches!(target, DirectCallee::Item(_)) && self.glue_import_symbol(declaration).is_some() {
+                            if matches!(target, DirectCallee::Item(_)) && self.glue_import_symbol(declaration).is_some()
+                            {
                                 // A current Glue import has no Beskid body: the call reaches its
                                 // generated adapter, which yields no fiber and runs no callback.
                                 glue_imports.insert(target);
@@ -513,7 +517,12 @@ impl CodegenInput<'_> {
                             }
                             pending.push((
                                 fact.next,
-                                CheckedEffectItem { key: declaration, specialization: instance, bridge: None, owned_bridge: None },
+                                CheckedEffectItem {
+                                    key: declaration,
+                                    specialization: instance,
+                                    bridge: None,
+                                    owned_bridge: None,
+                                },
                             ));
                         }
                     }

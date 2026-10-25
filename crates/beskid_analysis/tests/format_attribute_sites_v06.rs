@@ -8,7 +8,8 @@ fn assert_round_trip(source: &str, expected: &[&str]) {
     let program = parse_program(source).unwrap_or_else(|error| panic!("source must parse: {error:?}\n{source}"));
     let _ = &program;
     let once = format_source("<memory>", source).expect("format");
-    let reparsed = parse_program(&once).unwrap_or_else(|error| panic!("formatted output must parse: {error:?}\n{once}"));
+    let reparsed =
+        parse_program(&once).unwrap_or_else(|error| panic!("formatted output must parse: {error:?}\n{once}"));
     let _ = &reparsed;
     let twice = format_source("<memory>", &once).expect("format again");
     assert_eq!(once, twice, "format must be a fixed point:\n{once}");

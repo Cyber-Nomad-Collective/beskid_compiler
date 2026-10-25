@@ -81,7 +81,10 @@ impl SyntaxNodeFacts<'_> {
     /// only proven in the enclosing specialization), its receiver-to-`Option` signature, the
     /// physical `Option<T>` layout and the GC classification of the elements. `None` for `range`
     /// and array loops and for iterables without a proven protocol.
-    pub(in crate::isle_adapter) fn iterator_for_fact_impl(&self, key: AstNodeKey) -> Option<beskid_isle::IteratorForFact> {
+    pub(in crate::isle_adapter) fn iterator_for_fact_impl(
+        &self,
+        key: AstNodeKey,
+    ) -> Option<beskid_isle::IteratorForFact> {
         if self.query(node_kind(self.db, key)) != Some(beskid_queries::IndexedNodeKind::ForStatement) {
             return None;
         }
@@ -135,9 +138,6 @@ impl SyntaxNodeFacts<'_> {
     /// then fails closed; the `Direct` fallback would pass a single scalar argument where the
     /// callee expects an array handle (`Array.Of<i64>(7)` would dereference address 7).
     pub(in crate::isle_adapter) fn is_bulk_call(&self, key: AstNodeKey) -> bool {
-        !matches!(
-            bulk_call_element_abi_type(self.db, key, self.current_item_specialization()),
-            Ok(None)
-        )
+        !matches!(bulk_call_element_abi_type(self.db, key, self.current_item_specialization()), Ok(None))
     }
 }

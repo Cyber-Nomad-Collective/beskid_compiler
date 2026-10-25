@@ -83,7 +83,10 @@ impl BeskidDatabase {
         match restored.as_slice() {
             [] => None,
             [rev] if rev == beskid_pipeline::GRAMMAR_REVISION => None,
-            _ => Some(format!("snapshot grammar revisions {restored:?}, compiler `{}`", beskid_pipeline::GRAMMAR_REVISION)),
+            _ => Some(format!(
+                "snapshot grammar revisions {restored:?}, compiler `{}`",
+                beskid_pipeline::GRAMMAR_REVISION
+            )),
         }
     }
 

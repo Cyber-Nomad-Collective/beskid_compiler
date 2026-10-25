@@ -465,13 +465,17 @@ type Table {
 i64 Main(Table table) { return table.Find("a"); }
 "#,
     );
-    let find = find_node(input.database(), root, beskid_queries::IndexedNodeKind::MethodDefinition).expect("Table.Find");
+    let find =
+        find_node(input.database(), root, beskid_queries::IndexedNodeKind::MethodDefinition).expect("Table.Find");
     let main = find_function_definition(input.database(), root).expect("Main function");
 
     lower_syntax_program(
         &input,
         isa.as_ref(),
-        &[SyntaxModuleItem { key: find, symbol: "Table_Find".into() }, SyntaxModuleItem { key: main, symbol: "Main".into() }],
+        &[
+            SyntaxModuleItem { key: find, symbol: "Table_Find".into() },
+            SyntaxModuleItem { key: main, symbol: "Main".into() },
+        ],
     )
     .expect("a field read from an indexed element of a method-owned array lowers");
 }

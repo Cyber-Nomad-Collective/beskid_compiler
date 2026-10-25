@@ -188,10 +188,8 @@ fn collect_return_obligations(
             }
             None => {
                 if expected != SemanticTypeId::UNIT && expected != SemanticTypeId::NEVER {
-                    findings.push(TypingObligation {
-                        kind: TypingObligationKind::MissingReturnValue { expected },
-                        site,
-                    });
+                    findings
+                        .push(TypingObligation { kind: TypingObligationKind::MissingReturnValue { expected }, site });
                 }
             }
         }
@@ -308,8 +306,7 @@ fn collect_match_arm_obligations(
     findings: &mut Vec<TypingObligation>,
 ) {
     for match_node in nodes_of_kind(index, key.node, NodeKind::MatchExpression) {
-        let Some(match_expression) =
-            index.node_at(program, match_node).and_then(|node| node.of::<MatchExpression>())
+        let Some(match_expression) = index.node_at(program, match_node).and_then(|node| node.of::<MatchExpression>())
         else {
             continue;
         };
@@ -393,7 +390,6 @@ fn collect_call_argument_obligations(
         }
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -490,7 +486,13 @@ mod tests {
     fn match_arms_of_different_primitives_are_a_mismatch_but_never_arms_are_not() {
         let shape = "enum Shape { Dot, Circle(i64 radius) } ";
         assert_eq!(
-            kinds(&format!("{shape}i64 Main(Shape s) {{ return match s {{ Shape::Dot => 0_i64, Shape::Circle(r) => true, }}; }}"), 360, 0),
+            kinds(
+                &format!(
+                    "{shape}i64 Main(Shape s) {{ return match s {{ Shape::Dot => 0_i64, Shape::Circle(r) => true, }}; }}"
+                ),
+                360,
+                0
+            ),
             vec![TypingObligationKind::Mismatch { expected: SemanticTypeId::I64, actual: SemanticTypeId::BOOL }]
         );
         assert_eq!(

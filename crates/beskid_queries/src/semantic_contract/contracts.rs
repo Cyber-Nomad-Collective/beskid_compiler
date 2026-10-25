@@ -297,8 +297,7 @@ pub(super) fn type_contract_applications_in_environment(
                 &format!("conformance arguments name {parameter_kind} without an applied generic environment"),
             ));
         }
-        let application =
-            application_from_path_with_arguments(db, key, context, path, &environment_map(&bindings))?;
+        let application = application_from_path_with_arguments(db, key, context, path, &environment_map(&bindings))?;
         if !applications.contains(&application) {
             applications.push(application);
         }
@@ -331,10 +330,9 @@ pub(super) fn type_applied_contract_implementation_registered(
         return Err(SemanticError::new("applied contract was issued to another source owner"));
     }
     let declaration = application.declaration;
-    let current = type_contract_applications_in_environment(db, syntax, concrete, None, &|candidate| {
-        candidate == declaration
-    })?
-    .ok_or_else(|| SemanticError::unavailable("contract_application.owner"))?;
+    let current =
+        type_contract_applications_in_environment(db, syntax, concrete, None, &|candidate| candidate == declaration)?
+            .ok_or_else(|| SemanticError::unavailable("contract_application.owner"))?;
     if !current.contains(application) {
         return Err(SemanticError::new("applied contract no longer belongs to this source generation"));
     }
@@ -734,7 +732,11 @@ pub(super) fn contract_member_receiver(
 }
 
 /// The member named `name` among a contract's methods, embeddings included.
-pub(super) fn contract_member_named(db: &dyn Db, contract: AstNodeKey, name: &str) -> Result<AstNodeKey, SemanticError> {
+pub(super) fn contract_member_named(
+    db: &dyn Db,
+    contract: AstNodeKey,
+    name: &str,
+) -> Result<AstNodeKey, SemanticError> {
     let methods = contract_methods(db, contract, &mut HashSet::new())?;
     let candidates = methods
         .into_iter()
@@ -774,7 +776,10 @@ pub(super) fn injected_contract_field_receiver(
     }
     let callee = match index.node_at(program, key.node)?.of::<beskid_analysis::syntax::CallExpression>() {
         Some(call) => AstNodeKey {
-            node: normalized_expression_node(index, index.direct_child_id(program, key.node, DynNodeRef::from(call.callee.as_ref()))?),
+            node: normalized_expression_node(
+                index,
+                index.direct_child_id(program, key.node, DynNodeRef::from(call.callee.as_ref()))?,
+            ),
             ..key
         },
         None => key,
@@ -851,9 +856,9 @@ fn contract_local_member(
         else {
             return Ok((signature, receiver));
         };
-        let Ok(proven) =
-            prove_applied_conformance(db, value, &identity, contract, &[], &|_| SemanticError::unavailable("conformance"))
-        else {
+        let Ok(proven) = prove_applied_conformance(db, value, &identity, contract, &[], &|_| {
+            SemanticError::unavailable("conformance")
+        }) else {
             return Ok((signature, receiver));
         };
         if !proven.environment.is_empty() {
@@ -870,7 +875,11 @@ fn contract_local_member(
 
 /// The contract a type annotation names, applied arguments ignored (`Reader<Error>` resolves
 /// `Reader`); `None` for a type that is no contract.
-pub(in crate::semantic_contract) fn resolve_contract_head(db: &dyn Db, key: AstNodeKey, path: &Path) -> Option<AstNodeKey> {
+pub(in crate::semantic_contract) fn resolve_contract_head(
+    db: &dyn Db,
+    key: AstNodeKey,
+    path: &Path,
+) -> Option<AstNodeKey> {
     if path.segments.last().is_some_and(|segment| segment.node.type_args.is_empty()) {
         return resolve_contract(db, key, path);
     }
@@ -902,7 +911,10 @@ pub(in crate::semantic_contract) fn contract_method_slot(db: &dyn Db, signature:
 }
 
 /// The methods of `contract` in witness-table order, embedded contracts included.
-pub(in crate::semantic_contract) fn contract_method_slots(db: &dyn Db, contract: AstNodeKey) -> Option<Vec<AstNodeKey>> {
+pub(in crate::semantic_contract) fn contract_method_slots(
+    db: &dyn Db,
+    contract: AstNodeKey,
+) -> Option<Vec<AstNodeKey>> {
     contract_methods(db, contract, &mut HashSet::new()).ok()
 }
 
@@ -910,8 +922,16 @@ pub(in crate::semantic_contract) fn contract_method_slots(db: &dyn Db, contract:
 /// order of its declaration (each once). A witness table of `contract` stores the address of the
 /// implementing type's table for each of them after its method entries, in this order, so a
 /// contract value converts to any embedded contract without knowing its implementing type.
-pub(in crate::semantic_contract) fn contract_embedded_contracts(db: &dyn Db, contract: AstNodeKey) -> Option<Vec<AstNodeKey>> {
-    fn walk(db: &dyn Db, contract: AstNodeKey, active: &mut HashSet<AstNodeKey>, out: &mut Vec<AstNodeKey>) -> Option<()> {
+pub(in crate::semantic_contract) fn contract_embedded_contracts(
+    db: &dyn Db,
+    contract: AstNodeKey,
+) -> Option<Vec<AstNodeKey>> {
+    fn walk(
+        db: &dyn Db,
+        contract: AstNodeKey,
+        active: &mut HashSet<AstNodeKey>,
+        out: &mut Vec<AstNodeKey>,
+    ) -> Option<()> {
         if !active.insert(contract) {
             return None;
         }
@@ -988,12 +1008,18 @@ pub(in crate::semantic_contract) fn prove_box_conformance(
     contract: AstNodeKey,
     applied_arguments: &[GenericSourceTypeIdentity],
 ) -> Result<(AstNodeKey, Arc<[GenericSubstitution]>, Arc<[(AstNodeKey, AstNodeKey)]>), SemanticError> {
-    let proven = prove_applied_conformance(db, context, source_identity, contract, applied_arguments, &|concrete| {
-        match concrete {
-            None => SemanticError::new("contract value has no concrete conforming type"),
-            Some(name) => SemanticError::new(format!("missing contract conformance for {name}")),
-        }
-    })?;
+    let proven =
+        prove_applied_conformance(
+            db,
+            context,
+            source_identity,
+            contract,
+            applied_arguments,
+            &|concrete| match concrete {
+                None => SemanticError::new("contract value has no concrete conforming type"),
+                Some(name) => SemanticError::new(format!("missing contract conformance for {name}")),
+            },
+        )?;
     Ok((proven.concrete, proven.environment, proven.methods))
 }
 
@@ -1017,7 +1043,10 @@ pub(super) fn bounded_field_member_receiver(
     let member = path.segments.last()?;
     let callee = match index.node_at(program, key.node)?.of::<beskid_analysis::syntax::CallExpression>() {
         Some(call) => AstNodeKey {
-            node: normalized_expression_node(index, index.direct_child_id(program, key.node, DynNodeRef::from(call.callee.as_ref()))?),
+            node: normalized_expression_node(
+                index,
+                index.direct_child_id(program, key.node, DynNodeRef::from(call.callee.as_ref()))?,
+            ),
             ..key
         },
         None => key,
@@ -1132,7 +1161,12 @@ pub(super) fn specialized_local_declaration_identity(
         return Some(Ok(witness.source_identity.clone()));
     }
     if let Some(parameter) = index.node_at(program, parent).and_then(|node| node.of::<Parameter>()) {
-        return Some(generic_source_type_identity_with_substitutions(db, declaration, &parameter.ty.node, &environment));
+        return Some(generic_source_type_identity_with_substitutions(
+            db,
+            declaration,
+            &parameter.ty.node,
+            &environment,
+        ));
     }
     // A typed lambda parameter (`(List<T> leaf, T value) => leaf.Push(value)` in a generic body)
     // has its written type through the enclosing substitutions; an untyped one takes the
@@ -1141,14 +1175,17 @@ pub(super) fn specialized_local_declaration_identity(
         index.node_at(program, parent).and_then(|node| node.of::<beskid_analysis::syntax::LambdaParameter>())
     {
         return Some(match parameter.ty.as_ref() {
-            Some(written) => generic_source_type_identity_with_substitutions(db, declaration, &written.node, &environment),
+            Some(written) => {
+                generic_source_type_identity_with_substitutions(db, declaration, &written.node, &environment)
+            }
             None => untyped_lambda_parameter_identity(db, program, index, identifier, parent, Some(enclosing)),
         });
     }
     // An enum-pattern binding has the payload identity its match proves in this environment. A
     // match this environment does not specialize leaves the binding to the other authorities.
     if index.kind(parent) == Some(NodeKind::Pattern) {
-        let binding = pattern_binding_fact_in_environment(db, index, identifier, identifier.node, Some(enclosing))?.ok()?;
+        let binding =
+            pattern_binding_fact_in_environment(db, index, identifier, identifier.node, Some(enclosing))?.ok()?;
         return match binding.source_identity {
             Some(identity) => Some(Ok(identity)),
             None => generic_source_field_shape_identity(db, identifier, binding.payload).ok().map(Ok),
@@ -1195,7 +1232,10 @@ fn specialized_field_read_identity(
                 .map(|generic| environment.get(generic.node.name.as_str()).map(|identity| (*identity).clone()))
                 .collect::<Option<Vec<_>>>()?;
             stable_declaration_identity(db, owner)
-                .map(|qualified_name| GenericSourceTypeIdentity::Nominal { qualified_name, arguments: arguments.into() })
+                .map(|qualified_name| GenericSourceTypeIdentity::Nominal {
+                    qualified_name,
+                    arguments: arguments.into(),
+                })
                 .ok_or_else(|| source_expression_unavailable(db, key, "method receiver has no stable identity"))
         }
         _ => specialized_source_expression_identity(db, access.receiver, Some(enclosing)),
@@ -1206,10 +1246,8 @@ fn specialized_field_read_identity(
     };
     let GenericSourceTypeIdentity::Nominal { arguments, .. } = &receiver else { return None };
     let owner = db.syntax_unit(access.declaration.unit).filter(|syntax| syntax.accepts_key(db, access.declaration))?;
-    let definition = owner
-        .syntax_index(db)
-        .node_at(owner.expanded_program(db), access.declaration.node)?
-        .of::<TypeDefinition>()?;
+    let definition =
+        owner.syntax_index(db).node_at(owner.expanded_program(db), access.declaration.node)?.of::<TypeDefinition>()?;
     if definition.generics.len() != arguments.len() {
         return None;
     }
@@ -1252,7 +1290,8 @@ pub(super) fn specialized_source_expression_identity(
     if let Some(path) = node.of::<beskid_analysis::syntax::PathExpression>()
         && let [segment] = path.path.node.segments.as_slice()
         && let Some(identifier) = resolve_lexical_declaration(program, index, key.node, &segment.node.name.node.name)
-        && let Some(identity) = specialized_local_declaration_identity(db, AstNodeKey { node: identifier, ..key }, enclosing)
+        && let Some(identity) =
+            specialized_local_declaration_identity(db, AstNodeKey { node: identifier, ..key }, enclosing)
     {
         return identity;
     }
@@ -1663,7 +1702,8 @@ pub(in crate::semantic_contract) fn contract_conformance_failure(
                     return Ok(Some(ContractConformanceFailure::DefaultMismatch {
                         method_name,
                         parameter: implemented.node.name.node.name.clone(),
-                        expected: expected_default.map_or_else(|| "no default".to_string(), |value| format!("`{value}`")),
+                        expected: expected_default
+                            .map_or_else(|| "no default".to_string(), |value| format!("`{value}`")),
                         actual: actual_default,
                     }));
                 }
@@ -1678,7 +1718,8 @@ pub(in crate::semantic_contract) fn contract_conformance_failure(
         if open {
             continue;
         }
-        let Ok(expected_types) = closed_signature_identities(db, method, &expected.parameters, expected.return_type.as_ref())
+        let Ok(expected_types) =
+            closed_signature_identities(db, method, &expected.parameters, expected.return_type.as_ref())
         else {
             continue;
         };
@@ -1763,7 +1804,13 @@ fn render_path_syntax(path: &Path) -> String {
                 format!(
                     "{}<{}>",
                     segment.node.name.node.name,
-                    segment.node.type_args.iter().map(|argument| render_type_syntax(&argument.node)).collect::<Vec<_>>().join(", ")
+                    segment
+                        .node
+                        .type_args
+                        .iter()
+                        .map(|argument| render_type_syntax(&argument.node))
+                        .collect::<Vec<_>>()
+                        .join(", ")
                 )
             }
         })
@@ -2075,7 +2122,11 @@ fn nominal_head(db: &dyn Db, concrete: AstNodeKey) -> Option<NominalHead> {
         });
     }
     let definition = node.of::<EnumDefinition>()?;
-    Some(NominalHead { name: definition.name.node.name.clone(), generics: definition.generics.clone(), conformances: Vec::new() })
+    Some(NominalHead {
+        name: definition.name.node.name.clone(),
+        generics: definition.generics.clone(),
+        conformances: Vec::new(),
+    })
 }
 
 fn applied_conformance_environment(
@@ -2218,8 +2269,16 @@ fn implementation_bounds_hold(
         };
         let definition =
             nominal_head(db, concrete).ok_or_else(|| SemanticError::unavailable("contract_conformance"))?;
-        if applied_conformance_environment(db, concrete, &definition, source_arguments, contract, &arguments, depth + 1)?
-            .is_none()
+        if applied_conformance_environment(
+            db,
+            concrete,
+            &definition,
+            source_arguments,
+            contract,
+            &arguments,
+            depth + 1,
+        )?
+        .is_none()
         {
             return Ok(false);
         }
@@ -2328,12 +2387,17 @@ pub(in crate::semantic_contract) fn primitive_implementation_is_admissible(
             if let Some(segment) = declaration_path.segments.last_mut() {
                 segment.node.type_args.clear();
             }
-            resolve_contract(db, implementation, &declaration_path).is_some_and(|contract| contract.unit == implementation.unit)
+            resolve_contract(db, implementation, &declaration_path)
+                .is_some_and(|contract| contract.unit == implementation.unit)
         })
 }
 
 /// Every `impl` block of the generation whose receiver is the primitive `primitive`.
-fn primitive_implementation_blocks(db: &dyn Db, context: AstNodeKey, primitive: SemanticTypeId) -> Vec<(AstNodeKey, ImplBlock)> {
+fn primitive_implementation_blocks(
+    db: &dyn Db,
+    context: AstNodeKey,
+    primitive: SemanticTypeId,
+) -> Vec<(AstNodeKey, ImplBlock)> {
     let mut units = HashSet::from([context.unit]);
     units.extend(
         db.syntax_dependency_registry()
@@ -2579,19 +2643,19 @@ pub(super) fn contract_method_specialization(
     let parameter = parent_node(index, receiver.node).map(|node| AstNodeKey { node, ..receiver });
     // A parameter may carry several bound witnesses (`T: A, T: B`); the member's contract
     // method selects exactly one of them.
-    let parameter_witness = enclosing
-        .contract_witnesses
-        .iter()
-        .filter(|witness| Some(witness.parameter) == parameter)
-        .find_map(|witness| {
-            witness.methods.iter().find_map(|(signature, implementation)| {
-                (*signature == method).then(|| (witness.environment.clone(), *implementation))
-            })
-        });
+    let parameter_witness =
+        enclosing.contract_witnesses.iter().filter(|witness| Some(witness.parameter) == parameter).find_map(
+            |witness| {
+                witness.methods.iter().find_map(|(signature, implementation)| {
+                    (*signature == method).then(|| (witness.environment.clone(), *implementation))
+                })
+            },
+        );
     // A witness whose concrete is the contract itself (a bound satisfied by a contract value)
     // dispatches at run time: no static target.
     if enclosing.contract_witnesses.iter().any(|witness| {
-        Some(witness.parameter) == parameter && node_kind(db, witness.concrete).ok().flatten() == Some(NodeKind::ContractDefinition)
+        Some(witness.parameter) == parameter
+            && node_kind(db, witness.concrete).ok().flatten() == Some(NodeKind::ContractDefinition)
     }) {
         return Ok(None);
     }
@@ -2672,7 +2736,8 @@ fn bounded_field_member_implementation(
     let environment =
         enclosing.substitutions.iter().map(|binding| (binding.parameter.as_ref(), binding.source_identity())).collect();
     for bound in &bounds {
-        let Some(binding) = enclosing.substitutions.iter().find(|binding| &*binding.parameter == bound.generic.as_str())
+        let Some(binding) =
+            enclosing.substitutions.iter().find(|binding| &*binding.parameter == bound.generic.as_str())
         else {
             continue;
         };
@@ -2688,8 +2753,10 @@ fn bounded_field_member_implementation(
             &applied_arguments,
             &|concrete| generic_bound_not_satisfied(concrete.unwrap_or(bound.generic.as_str()).to_owned(), &bound.path),
         )?;
-        if let Some(implementation) =
-            proven.methods.iter().find_map(|(signature, implementation)| (*signature == method).then_some(*implementation))
+        if let Some(implementation) = proven
+            .methods
+            .iter()
+            .find_map(|(signature, implementation)| (*signature == method).then_some(*implementation))
         {
             return Ok((proven.environment, implementation));
         }
@@ -2741,8 +2808,8 @@ pub(super) fn validate_current_parameter_witness(
             && proven.environment.as_ref() == witness.environment.as_ref()
             && proven.methods.as_ref() == witness.methods.as_ref());
     }
-    let definition = nominal_head(db, witness.concrete)
-        .ok_or_else(|| SemanticError::unavailable("publication.concrete"))?;
+    let definition =
+        nominal_head(db, witness.concrete).ok_or_else(|| SemanticError::unavailable("publication.concrete"))?;
     let GenericSourceTypeIdentity::Nominal { qualified_name, arguments } = &witness.source_identity else {
         return Ok(false);
     };

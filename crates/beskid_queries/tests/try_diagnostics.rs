@@ -78,8 +78,9 @@ fn imported_try_diagnostics_share_exact_result_error_authority() {
                 "{diagnostics:?}"
             );
         }
-        let (_, isolated, _) = prepare_compilation_diagnostics_isolated(&resolved, PrepareOptions::without_mods(), None)
-            .expect("owned editor jobs use the same try authority");
+        let (_, isolated, _) =
+            prepare_compilation_diagnostics_isolated(&resolved, PrepareOptions::without_mods(), None)
+                .expect("owned editor jobs use the same try authority");
         assert_eq!(
             isolated.iter().filter(|diagnostic| diagnostic.code.as_deref() == Some("E1222")).count(),
             expected_errors,
@@ -130,8 +131,9 @@ fn local_try_diagnostic_counts(source: &str) -> (usize, usize) {
         diagnostics.iter().filter(|diagnostic| diagnostic.code.as_deref() == Some("E1222")).count()
     };
     let mut db = BeskidDatabase::default();
-    let (_, shared, _) = prepare_compilation_diagnostics_with_db(&mut db, &resolved, PrepareOptions::without_mods(), None)
-        .expect("shared try authority");
+    let (_, shared, _) =
+        prepare_compilation_diagnostics_with_db(&mut db, &resolved, PrepareOptions::without_mods(), None)
+            .expect("shared try authority");
     let (_, isolated, _) = prepare_compilation_diagnostics_isolated(&resolved, PrepareOptions::without_mods(), None)
         .expect("isolated try authority");
     (count(&shared), count(&isolated))
@@ -228,7 +230,10 @@ fn try_authority_descends_into_nested_control_flow_bodies() {
 "
         );
         let (shared, isolated) = local_try_diagnostic_counts(&source);
-        assert!(shared >= 1 && isolated >= 1, "{wrapper}: the try authority did not descend into the nested body ({shared} {isolated})");
+        assert!(
+            shared >= 1 && isolated >= 1,
+            "{wrapper}: the try authority did not descend into the nested body ({shared} {isolated})"
+        );
     }
 }
 
@@ -328,8 +333,9 @@ fn fact_authority_diagnostics(
         )),
     };
     let mut db = BeskidDatabase::default();
-    let (_, shared, _) = prepare_compilation_diagnostics_with_db(&mut db, &resolved, PrepareOptions::without_mods(), None)
-        .expect("shared semantic fact authority");
+    let (_, shared, _) =
+        prepare_compilation_diagnostics_with_db(&mut db, &resolved, PrepareOptions::without_mods(), None)
+            .expect("shared semantic fact authority");
     let (_, isolated, _) = prepare_compilation_diagnostics_isolated(&resolved, PrepareOptions::without_mods(), None)
         .expect("isolated semantic fact authority");
     (shared, isolated)
@@ -371,10 +377,8 @@ fn unreachable_own_unit_item_is_judged_by_the_prepare_spine() {
         412,
     );
     for diagnostics in [&shared, &isolated] {
-        let found = diagnostics
-            .iter()
-            .filter(|diagnostic| diagnostic.code.as_deref() == Some("E1201"))
-            .collect::<Vec<_>>();
+        let found =
+            diagnostics.iter().filter(|diagnostic| diagnostic.code.as_deref() == Some("E1201")).collect::<Vec<_>>();
         assert_eq!(found.len(), 1, "the own unit's E1201 is judged once: {diagnostics:?}");
         assert_eq!(found[0].src.name(), "Lib/Helper.bd", "{:?}", found[0]);
     }

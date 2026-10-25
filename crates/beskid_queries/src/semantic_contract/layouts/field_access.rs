@@ -1,6 +1,7 @@
 //! Canonical semantic layout implementation.
 
 use super::super::*;
+use crate::semantic_contract::typing::pattern_binding_fact_in_environment;
 use beskid_abi::runtime_source::{
     CANONICAL_CORELIB_MUTEX_GUARD_SOURCE_PATH, CANONICAL_CORELIB_MUTEX_SOURCE_PATH,
     CANONICAL_FOUNDATION_DEADLINE_SOURCE_PATH, CANONICAL_FOUNDATION_PROCESS_SOURCE_PATH,
@@ -9,7 +10,6 @@ use beskid_abi::runtime_source::{
     CANONICAL_NETWORK_UDP_SOCKET_SOURCE_PATH,
 };
 use beskid_analysis::syntax_query::DynNodeRef;
-use crate::semantic_contract::typing::pattern_binding_fact_in_environment;
 
 #[salsa::tracked(persist)]
 pub(in crate::semantic_contract) fn aggregate_field_access_tracked(
@@ -58,9 +58,7 @@ fn aggregate_field_access_for_environment(
     // A projection rooted in an enum-pattern binding of a generic item (`success.rest` inside
     // `Rest<T>`) is proven only through the enclosing specialization's match fact; the
     // target-neutral projection cannot name `T` and must not pre-empt the specialized answer.
-    if let Some(projection) =
-        nominal_field_projection_in_environment(db, key, enclosing)
-    {
+    if let Some(projection) = nominal_field_projection_in_environment(db, key, enclosing) {
         return Some(projection.map(|(access, _)| access));
     }
     let resolved = field_access_receiver(db, program, index, key, node, ambient, enclosing)?;
@@ -145,9 +143,8 @@ pub(in crate::semantic_contract) fn field_access_receiver<'a>(
                 )?,
             );
         }
-        if let Some(path) = index
-            .node_at(program, named)
-            .and_then(|node| node.of::<beskid_analysis::syntax::PathExpression>())
+        if let Some(path) =
+            index.node_at(program, named).and_then(|node| node.of::<beskid_analysis::syntax::PathExpression>())
             && let [segment] = path.path.node.segments.as_slice()
             && segment.node.type_args.is_empty()
             && resolve_lexical_declaration(program, index, key.node, segment.node.name.node.name.as_str()).is_some()
@@ -192,7 +189,8 @@ pub(in crate::semantic_contract) fn field_access_receiver<'a>(
         // local of that name is in scope: a lexical declaration shadows the method-owned field.
         [field]
             if field.node.type_args.is_empty()
-                && resolve_lexical_declaration(program, index, key.node, field.node.name.node.name.as_str()).is_none() =>
+                && resolve_lexical_declaration(program, index, key.node, field.node.name.node.name.as_str())
+                    .is_none() =>
         {
             applied_method_receiver_layout(db, program, index, key, ambient).map(|(declaration, receiver, layout)| {
                 (declaration, receiver, layout, field.node.name.node.name.as_str())
@@ -287,7 +285,14 @@ fn nominal_field_projection_at(
         // `this.field` as a member access (`(this).field`, or the `Member(Local("this"), field)`
         // a Mod spells) is the same projection from the implicit receiver as the path spelling.
         if is_implicit_receiver_expression(program, index, receiver) {
-            return implicit_receiver_field_projection(db, program, index, key, &member.member.node.name, enclosing.map(|enclosing| &enclosing.substitutions));
+            return implicit_receiver_field_projection(
+                db,
+                program,
+                index,
+                key,
+                &member.member.node.name,
+                enclosing.map(|enclosing| &enclosing.substitutions),
+            );
         }
         let identity = generic_source_expression_identity(db, receiver);
         // A named local or parameter whose type names the enclosing generic parameters
@@ -377,7 +382,14 @@ fn nominal_field_projection_at(
                 return None;
             }
             let field_name = segment.node.name.node.name.as_str();
-            return implicit_receiver_field_projection(db, program, index, expression, field_name, enclosing.map(|enclosing| &enclosing.substitutions));
+            return implicit_receiver_field_projection(
+                db,
+                program,
+                index,
+                expression,
+                field_name,
+                enclosing.map(|enclosing| &enclosing.substitutions),
+            );
         }
         (expression, position)
     } else {
@@ -390,8 +402,14 @@ fn nominal_field_projection_at(
     if is_implicit_receiver_name(program, index, path_key, &path.segments[0].node.name.node.name) {
         // `this.a.b`: project `a` from the implicit receiver, then each later field from the
         // previous segment, exactly like a lexical root's chain.
-        let first =
-            implicit_receiver_field_projection(db, program, index, path_key, &path.segments[1].node.name.node.name, enclosing.map(|enclosing| &enclosing.substitutions))?;
+        let first = implicit_receiver_field_projection(
+            db,
+            program,
+            index,
+            path_key,
+            &path.segments[1].node.name.node.name,
+            enclosing.map(|enclosing| &enclosing.substitutions),
+        )?;
         return Some((|| {
             let (mut result, mut identity) = first?;
             let mut receiver = path_projection_segment(db, path_key, 1)
@@ -410,8 +428,14 @@ fn nominal_field_projection_at(
     let Some(root) = resolve_lexical_declaration(program, index, path_key.node, &path.segments[0].node.name.node.name)
     else {
         // `field.a...` inside a method: the root names a field of the implicit receiver.
-        let first =
-            implicit_receiver_field_projection(db, program, index, path_key, &path.segments[0].node.name.node.name, enclosing.map(|enclosing| &enclosing.substitutions))?;
+        let first = implicit_receiver_field_projection(
+            db,
+            program,
+            index,
+            path_key,
+            &path.segments[0].node.name.node.name,
+            enclosing.map(|enclosing| &enclosing.substitutions),
+        )?;
         return Some((|| {
             let (mut result, mut identity) = first?;
             let mut receiver = path_projection_segment(db, path_key, 0)
@@ -513,9 +537,7 @@ pub(in crate::semantic_contract) fn implicit_receiver_field_projection(
         definition
             .generics
             .iter()
-            .map(|generic| {
-                enclosing.iter().find(|binding| binding.parameter.as_ref() == generic.node.name.as_str())
-            })
+            .map(|generic| enclosing.iter().find(|binding| binding.parameter.as_ref() == generic.node.name.as_str()))
             .collect::<Option<Vec<_>>>()?
     };
     let declaration = AstNodeKey { node: declaration, ..reference };
@@ -610,12 +632,16 @@ pub(in crate::semantic_contract) fn field_read_identity_in_environment(
                 .map(|projection| projection.map(|(_, identity)| identity));
         }
         [_] => return None,
-        [receiver, field, ..] if is_implicit_receiver_name(program, index, key, receiver) => {
-            (implicit_receiver_field_projection(db, program, index, key, field, Some(&enclosing.substitutions))?.map(|(_, identity)| identity), 2)
-        }
-        [field, ..] if !lexical_root => {
-            (implicit_receiver_field_projection(db, program, index, key, field, Some(&enclosing.substitutions))?.map(|(_, identity)| identity), 1)
-        }
+        [receiver, field, ..] if is_implicit_receiver_name(program, index, key, receiver) => (
+            implicit_receiver_field_projection(db, program, index, key, field, Some(&enclosing.substitutions))?
+                .map(|(_, identity)| identity),
+            2,
+        ),
+        [field, ..] if !lexical_root => (
+            implicit_receiver_field_projection(db, program, index, key, field, Some(&enclosing.substitutions))?
+                .map(|(_, identity)| identity),
+            1,
+        ),
         [root, ..] => {
             let declaration = resolve_lexical_declaration(program, index, key.node, root)?;
             (local_declaration_identity_in_environment(db, program, index, key, declaration, enclosing)?, 1)
@@ -669,9 +695,10 @@ fn local_declaration_identity_in_environment(
         .collect::<HashMap<_, _>>();
     let parent_key = AstNodeKey { node: parent, ..key };
     let written = match index.kind(parent)? {
-        beskid_analysis::syntax_query::NodeKind::Parameter => {
-            index.node_at(program, parent)?.of::<beskid_analysis::syntax::Parameter>().map(|parameter| &parameter.ty.node)
-        }
+        beskid_analysis::syntax_query::NodeKind::Parameter => index
+            .node_at(program, parent)?
+            .of::<beskid_analysis::syntax::Parameter>()
+            .map(|parameter| &parameter.ty.node),
         beskid_analysis::syntax_query::NodeKind::LetStatement => index
             .node_at(program, parent)?
             .of::<beskid_analysis::syntax::LetStatement>()?
@@ -915,7 +942,9 @@ fn applied_call_result_layout(
         .of::<beskid_analysis::syntax::FunctionDefinition>()
         .and_then(|function| function.return_type.as_ref())
         .or_else(|| {
-            declaration_node.of::<beskid_analysis::syntax::MethodDefinition>().and_then(|method| method.return_type.as_ref())
+            declaration_node
+                .of::<beskid_analysis::syntax::MethodDefinition>()
+                .and_then(|method| method.return_type.as_ref())
         })
         .or_else(|| {
             declaration_node
@@ -930,7 +959,8 @@ fn applied_call_result_layout(
         .collect::<HashMap<_, _>>();
     let identity =
         generic_source_type_identity_with_substitutions(db, specialization.declaration, &result.node, &environment)?;
-    nominal_identity_layout(db, receiver, &identity).map_err(|_| SemanticError::unavailable("aggregate_field_access.nominal_result"))
+    nominal_identity_layout(db, receiver, &identity)
+        .map_err(|_| SemanticError::unavailable("aggregate_field_access.nominal_result"))
 }
 
 fn applied_local_receiver_layout(
@@ -967,16 +997,15 @@ fn is_implicit_receiver_expression(
     index: &beskid_analysis::syntax_query::SyntaxIndex,
     key: AstNodeKey,
 ) -> bool {
-    index
-        .node_at(program, key.node)
-        .and_then(|node| node.of::<beskid_analysis::syntax::PathExpression>())
-        .is_some_and(|path| match path.path.node.segments.as_slice() {
+    index.node_at(program, key.node).and_then(|node| node.of::<beskid_analysis::syntax::PathExpression>()).is_some_and(
+        |path| match path.path.node.segments.as_slice() {
             [root] => {
                 root.node.type_args.is_empty()
                     && is_implicit_receiver_name(program, index, key, root.node.name.node.name.as_str())
             }
             _ => false,
-        })
+        },
+    )
 }
 
 /// Whether `name` spells the implicit method receiver at `key`: `this` or `self` inside a
@@ -1194,14 +1223,17 @@ pub(in crate::semantic_contract) fn nominal_local_receiver_declaration(
     // comes from the iterable's declared element type when one is written (`Bag<T>[] bags`, also
     // inside a generic item, where `T` stays open), else from its proven element identity
     // (`List<i32>[]` returned by a call).
-    if let Some(statement) = index.node_at(program, parent).and_then(|node| node.of::<beskid_analysis::syntax::ForStatement>()) {
+    if let Some(statement) =
+        index.node_at(program, parent).and_then(|node| node.of::<beskid_analysis::syntax::ForStatement>())
+    {
         if let Some(beskid_analysis::syntax::Type::Complex(path)) =
             for_iterable_declared_array_element(program, index, parent, &statement.iterable.node)
         {
             return resolve_type_declaration(db, key, &path.node).map(|declaration| (declaration, receiver));
         }
         let identity = generic_source_local_identity(db, program, index, receiver, local).ok()?;
-        return super::super::contracts::concrete_declaration(db, key, &identity).map(|declaration| (declaration, receiver));
+        return super::super::contracts::concrete_declaration(db, key, &identity)
+            .map(|declaration| (declaration, receiver));
     }
     let path = explicit_local_complex_type_path(program, index, local)?;
     resolve_type_declaration(db, key, path).map(|declaration| (declaration, receiver))
@@ -1221,13 +1253,18 @@ fn template_pattern_binding_fact(
     key: AstNodeKey,
     local: beskid_analysis::syntax::AstNodeId,
 ) -> Option<EnumMatchBindingFact> {
-    let item = nearest_ancestor(index, local, |kind| kind == beskid_analysis::syntax_query::NodeKind::FunctionDefinition)?;
+    let item =
+        nearest_ancestor(index, local, |kind| kind == beskid_analysis::syntax_query::NodeKind::FunctionDefinition)?;
     let item = AstNodeKey { node: item, ..key };
     let (generics, _) = generic_callable_parameters(db, item)?;
     let probe = generics
         .iter()
         .map(|name| {
-            GenericSubstitution::from_source(*name, SemanticTypeId::I64, GenericSourceTypeIdentity::Abi(SemanticTypeId::I64))
+            GenericSubstitution::from_source(
+                *name,
+                SemanticTypeId::I64,
+                GenericSourceTypeIdentity::Abi(SemanticTypeId::I64),
+            )
         })
         .collect::<Vec<_>>();
     let instance = generic_specialization_instance(db, item, probe.into()).ok()??;
@@ -1251,7 +1288,8 @@ pub(in crate::semantic_contract) fn path_segment_field_receiver(
     let expression = index.node_at(program, expression_node)?.of::<beskid_analysis::syntax::PathExpression>()?;
     let segments = expression.path.node.segments.as_slice();
     let position = segments.iter().position(|segment| {
-        index.direct_child_id(program, path_node, beskid_analysis::syntax_query::DynNodeRef::from(segment)) == Some(key.node)
+        index.direct_child_id(program, path_node, beskid_analysis::syntax_query::DynNodeRef::from(segment))
+            == Some(key.node)
     })?;
     if segments[..=position].iter().any(|segment| !segment.node.type_args.is_empty()) {
         return None;
@@ -1262,12 +1300,15 @@ pub(in crate::semantic_contract) fn path_segment_field_receiver(
                 .map(|(declaration, receiver, _)| (declaration, receiver, field.node.name.node.name.clone()))
         }
         [receiver, field]
-            if resolve_lexical_declaration(program, index, key.node, receiver.node.name.node.name.as_str()).is_some() =>
+            if resolve_lexical_declaration(program, index, key.node, receiver.node.name.node.name.as_str())
+                .is_some() =>
         {
             applied_local_receiver_layout(db, program, index, key, receiver.node.name.node.name.as_str(), None)
                 .map(|(declaration, receiver, _)| (declaration, receiver, field.node.name.node.name.clone()))
         }
-        [field] if resolve_lexical_declaration(program, index, key.node, field.node.name.node.name.as_str()).is_none() => {
+        [field]
+            if resolve_lexical_declaration(program, index, key.node, field.node.name.node.name.as_str()).is_none() =>
+        {
             applied_method_receiver_layout(db, program, index, key, None)
                 .map(|(declaration, receiver, _)| (declaration, receiver, field.node.name.node.name.clone()))
         }

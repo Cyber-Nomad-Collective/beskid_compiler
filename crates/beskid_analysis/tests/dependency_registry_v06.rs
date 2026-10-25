@@ -457,7 +457,8 @@ fn dep06_registry_offline_and_frozen_preparation_replay_the_transitive_closure_w
     assert_eq!(registry.count(), count, "a lock and warm cache covering the closure need no request");
 
     // A transitive pin missing from the lock fails strict preparation with update guidance.
-    let without_shared = lock.lines().filter(|line| !line.starts_with("- name=Shared;")).collect::<Vec<_>>().join("\n") + "\n";
+    let without_shared =
+        lock.lines().filter(|line| !line.starts_with("- name=Shared;")).collect::<Vec<_>>().join("\n") + "\n";
     std::fs::write(fixture.manifest.with_file_name("Project.lock"), &without_shared).unwrap();
     let error = prepare_project_workspace_plan_with_options(
         &plan,
@@ -491,7 +492,11 @@ fn dep06_registry_conflicting_transitive_versions_fail_closed_without_project_wr
 #[test]
 fn dep06_registry_published_package_path_dependency_is_rejected() {
     let registry = Registry::new();
-    registry.package_requiring("Alpha", "1.0.0", &["dependency \"Local\" { source = \"path\" path = \"../Local\" }".to_owned()]);
+    registry.package_requiring(
+        "Alpha",
+        "1.0.0",
+        &["dependency \"Local\" { source = \"path\" path = \"../Local\" }".to_owned()],
+    );
     let fixture = Fixture::new(&registry);
     let before = fixture.snapshot();
     let error = PlanDependencyChange(&fixture.manifest, &add("Alpha", "1.0.0"), &policy(false, RefreshScope::None))
@@ -550,9 +555,13 @@ fn dep06_registry_change_reports_list_transitive_coordinate_changes() {
         ],
         "removal reports transitives that become unreachable and keeps the shared one silent"
     );
-    let text = PlanDependencyChange(&fixture.manifest, &DependencyMutation::Remove("Beta".into()), &policy(false, RefreshScope::None))
-        .unwrap()
-        .Report()
-        .to_string();
+    let text = PlanDependencyChange(
+        &fixture.manifest,
+        &DependencyMutation::Remove("Beta".into()),
+        &policy(false, RefreshScope::None),
+    )
+    .unwrap()
+    .Report()
+    .to_string();
     assert!(text.contains("removed Shared (transitive): registry test @ 1.0.0"), "{text}");
 }

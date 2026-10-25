@@ -12,7 +12,9 @@ use std::path::{Path, PathBuf};
 use beskid_proof::mutate::{MutationKind, mutant_for, plan};
 
 fn usage() -> ! {
-    eprintln!("usage: beskid-mutate plan --seed N [--sample N] [--ext bd] <root>...\n       beskid-mutate apply --seed N --kind <delete-token|duplicate-line|swap-tokens> --label L <file>");
+    eprintln!(
+        "usage: beskid-mutate plan --seed N [--sample N] [--ext bd] <root>...\n       beskid-mutate apply --seed N --kind <delete-token|duplicate-line|swap-tokens> --label L <file>"
+    );
     std::process::exit(2);
 }
 

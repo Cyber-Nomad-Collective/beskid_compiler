@@ -41,10 +41,7 @@ impl TemplateCase {
         if operation != "update" {
             command.arg("--plain");
         }
-        command
-            .args(flags)
-            .output()
-            .expect("invoke CLI")
+        command.args(flags).output().expect("invoke CLI")
     }
 
     fn generate(&self) -> Output {

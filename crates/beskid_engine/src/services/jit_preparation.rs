@@ -5,7 +5,7 @@ use anyhow::Result;
 use beskid_abi::abi_v5::TargetMetadata;
 use beskid_analysis::mod_host::ModHost;
 use beskid_analysis::services::{
-    FrontEndOptions, ExecutableFrontEnd, ResolvedInput, resolved_input_from_plan, synthetic_compile_plan_for_source,
+    ExecutableFrontEnd, FrontEndOptions, ResolvedInput, resolved_input_from_plan, synthetic_compile_plan_for_source,
 };
 #[cfg(test)]
 use beskid_analysis::syntax::{AstNodeId, SyntaxGenerationId};

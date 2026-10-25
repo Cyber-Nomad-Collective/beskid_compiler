@@ -89,7 +89,8 @@ fn owner_routed_waits_and_deadlines_have_one_winner() {
     let prefix = tempfile::tempdir().unwrap();
     let prefix_path = prefix.path().canonicalize().unwrap();
     copy_tree(&beskid_tests_mod_host::shared_runtime_prefix().unwrap(), &prefix_path);
-    let kit = resolve_installed_runtime_kit(&prefix_path, &host_runtime_target().unwrap(), BuildProfile::Debug).unwrap();
+    let kit =
+        resolve_installed_runtime_kit(&prefix_path, &host_runtime_target().unwrap(), BuildProfile::Debug).unwrap();
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     #[cfg(unix)]
     let shared_link_library = &kit.shared_library;
@@ -121,7 +122,8 @@ fn owner_routed_waits_and_deadlines_have_one_winner() {
             "{mode} fixture did not prove that an admitted worker duplicate survives caller close/rebind: {output:?}",
         );
         assert!(
-            String::from_utf8_lossy(&output.stderr).contains("readiness-close-timeout triples=24 winner-once=preserved"),
+            String::from_utf8_lossy(&output.stderr)
+                .contains("readiness-close-timeout triples=24 winner-once=preserved"),
             "{mode} fixture did not run the ordered triple matrix: {output:?}",
         );
         let deadlock = run_bounded(&format!("{mode} deadlock"), command.arg("deadlock"), ROUTE_LIMIT);

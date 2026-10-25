@@ -58,7 +58,8 @@ pub(super) fn collect_spawn_obligations(
     for node in nodes_of_kind(index, key.node, NodeKind::CallExpression) {
         let Some(call) = index.node_at(program, node).and_then(|node| node.of::<CallExpression>()) else { continue };
         let Expression::Path(path) = &call.callee.node else { continue };
-        let names = path.node.path.node.segments.iter().map(|segment| segment.node.name.node.name.clone()).collect::<Vec<_>>();
+        let names =
+            path.node.path.node.segments.iter().map(|segment| segment.node.name.node.name.clone()).collect::<Vec<_>>();
         if !beskid_analysis::builtins::builtin_for_path(&names)
             .is_some_and(|(_, spec)| spec.runtime_symbol == "fiber_join_status")
         {
@@ -95,7 +96,10 @@ pub(super) fn collect_spawn_obligations(
                 break;
             }
             if index.kind(ancestor) == Some(NodeKind::SpawnExpression) {
-                findings.push(GateObligation { kind: GateObligationKind::JoinWouldDeadlock, site: AstNodeKey { node, ..key } });
+                findings.push(GateObligation {
+                    kind: GateObligationKind::JoinWouldDeadlock,
+                    site: AstNodeKey { node, ..key },
+                });
                 break;
             }
             current = parent_node(index, ancestor);
@@ -115,14 +119,16 @@ pub(super) fn collect_iterator_obligations(
         if matches!(for_iterator_fact(db, AstNodeKey { node, ..key }), Ok(Some(_))) {
             continue;
         }
-        let Some((site_node, subject)) = super::super::typing::expression_nodes(program, index, node, &statement.iterable)
+        let Some((site_node, subject)) =
+            super::super::typing::expression_nodes(program, index, node, &statement.iterable)
         else {
             continue;
         };
         let site = AstNodeKey { node: site_node, ..key };
         let statement_key = AstNodeKey { node, ..key };
         // A `range(..)` loop is lowered from syntax alone; its operands are judged elsewhere.
-        let lowers_without_fact = crate::semantic_contract::typing::range_iterable_bounds(&statement.iterable.node).is_some();
+        let lowers_without_fact =
+            crate::semantic_contract::typing::range_iterable_bounds(&statement.iterable.node).is_some();
         let unproven_fails = !lowers_without_fact && !for_statement_in_generic_context(db, statement_key);
         // `pointer` is also the ABI of every nominal value: such an iterable is judged by its
         // declared nominal type below, never as a primitive.
@@ -248,7 +254,8 @@ pub(super) fn collect_event_obligations(
             continue;
         }
         let site = AstNodeKey { node, ..key };
-        let Some((_, value)) = super::super::typing::expression_nodes(program, index, node, assign.value.as_ref()) else {
+        let Some((_, value)) = super::super::typing::expression_nodes(program, index, node, assign.value.as_ref())
+        else {
             continue;
         };
         let event = event_operation(db, site);

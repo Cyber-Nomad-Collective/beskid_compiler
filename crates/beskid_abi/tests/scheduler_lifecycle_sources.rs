@@ -1,7 +1,7 @@
 use beskid_abi::runtime_source::{
     CANONICAL_CHANNEL_SOURCE_PATH, CANONICAL_FIBER_SOURCE_PATH, CANONICAL_HUB_SOURCE_PATH, CANONICAL_MUTEX_SOURCE_PATH,
-    CANONICAL_SCHEDULER_CORE_SOURCE_PATH, CANONICAL_SCHEDULER_LOOP_SOURCE_PATH,
-    CANONICAL_PROCESS_SOURCE_PATH, CANONICAL_SYSCALLS_SOURCE_PATH, CANONICAL_WAITGROUP_SOURCE_PATH, canonical_runtime_sources,
+    CANONICAL_PROCESS_SOURCE_PATH, CANONICAL_SCHEDULER_CORE_SOURCE_PATH, CANONICAL_SCHEDULER_LOOP_SOURCE_PATH,
+    CANONICAL_SYSCALLS_SOURCE_PATH, CANONICAL_WAITGROUP_SOURCE_PATH, canonical_runtime_sources,
 };
 
 #[test]
@@ -35,7 +35,10 @@ fn blocking_primitives_wait_through_the_root_wait_round() {
         CANONICAL_HUB_SOURCE_PATH,
         CANONICAL_FIBER_SOURCE_PATH,
     ] {
-        assert!(text(path).contains("SchedulerRootWait();"), "{path} must park the root caller through SchedulerRootWait");
+        assert!(
+            text(path).contains("SchedulerRootWait();"),
+            "{path} must park the root caller through SchedulerRootWait"
+        );
     }
     let channel = text(CANONICAL_CHANNEL_SOURCE_PATH);
     assert!(
@@ -63,7 +66,9 @@ fn external_waits_register_the_root_caller_as_a_waiter() {
     let external = text("src/Runtime/Fiber/Scheduler/External.bd");
     assert!(external.contains("pub word ExternalWaiterHandle()"));
     assert!(external.contains("ExternalWaitRegister(ExternalWaiterHandle(), 3, deadline)"), "sleep registers the root");
-    assert!(text(CANONICAL_SYSCALLS_SOURCE_PATH).contains("ExternalWaitRegister(ExternalWaiterHandle(), operation, -1)"));
+    assert!(
+        text(CANONICAL_SYSCALLS_SOURCE_PATH).contains("ExternalWaitRegister(ExternalWaiterHandle(), operation, -1)")
+    );
     for unit in &sources {
         assert!(
             !unit.source.contains("if current == FIBER_NONE { return NETWORK_UNSUPPORTED; }"),
@@ -71,7 +76,8 @@ fn external_waits_register_the_root_caller_as_a_waiter() {
             unit.logical_path
         );
         assert!(
-            !unit.source.contains("ExternalWaitRegister(FiberHandle(current)") || unit.logical_path.contains("Parallel"),
+            !unit.source.contains("ExternalWaitRegister(FiberHandle(current)")
+                || unit.logical_path.contains("Parallel"),
             "{} must register external waits through ExternalWaiterHandle",
             unit.logical_path
         );

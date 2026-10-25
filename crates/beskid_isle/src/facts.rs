@@ -10,8 +10,8 @@ mod operations;
 
 pub use call_shapes::{
     CallImportError, DirectCallee, FunctionItemValue, FunctionValueCall, InlineCaptureField, InlineClosureEnvironment,
-    InlineLambdaCall, IsolateSpawnCall, LambdaEntry,
-    SpawnArgumentEnvironment, SpawnArgumentField, SpawnEntry, TracedFiberJoinLayout,
+    InlineLambdaCall, IsolateSpawnCall, LambdaEntry, SpawnArgumentEnvironment, SpawnArgumentField, SpawnEntry,
+    TracedFiberJoinLayout,
 };
 pub use catalogue::{
     NodeKind, SyntaxNodeClassification, UNSUPPORTED_TYPED_OPERATION_KINDS, classify_syntax_node_kind,
@@ -19,14 +19,14 @@ pub use catalogue::{
 };
 pub use destructive_read::{CanonicalEmptyPlan, ExchangePlan, MoveExpressionPlan};
 pub use kinds::{
-    AssignmentKind, CallKind, EventOperation, ForIterableKind, IndexTarget, LiteralKind, OperatorFact,
-    RuntimeIntrinsicKind, COMPOSITION_HOOK_ARGUMENTS_MAX,
+    AssignmentKind, COMPOSITION_HOOK_ARGUMENTS_MAX, CallKind, EventOperation, ForIterableKind, IndexTarget,
+    LiteralKind, OperatorFact, RuntimeIntrinsicKind,
 };
 pub use match_range::{MatchArmBindingFact, MatchArmFact, MatchPayloadPatternFact, RangeFact, Unit};
 pub use node_facts::NodeFacts;
 pub use operations::{
-    ArrayForFact, CollectionMutationOwner, CollectionOperation, CompositionHookCall, CompositionInjectionPlan, CompositionLaunchPlan,
-    CompositionRegistrationPlan, CompositionScopePlan, ContractBoxPlan, ContractBoxReceiverFact, ContractDispatchCall, ContractUpcastPlan,
-    EventHandlerLocalPlan, EventOperationPlan, IteratorForFact,
-    LocalSlotId, ManagedReferenceFact, ParameterSlot, ScopedCleanupPlan, ValueCopyPlan,
+    ArrayForFact, CollectionMutationOwner, CollectionOperation, CompositionHookCall, CompositionInjectionPlan,
+    CompositionLaunchPlan, CompositionRegistrationPlan, CompositionScopePlan, ContractBoxPlan, ContractBoxReceiverFact,
+    ContractDispatchCall, ContractUpcastPlan, EventHandlerLocalPlan, EventOperationPlan, IteratorForFact, LocalSlotId,
+    ManagedReferenceFact, ParameterSlot, ScopedCleanupPlan, ValueCopyPlan,
 };

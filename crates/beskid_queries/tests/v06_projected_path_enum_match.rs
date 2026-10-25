@@ -52,7 +52,8 @@ fn fixture(source: &str) -> (tempfile::TempDir, BeskidDatabase, Arc<ProgramAssem
     );
     let mut db = BeskidDatabase::default();
     let project =
-        project_session_for_planned_syntax_assembly(&mut db, &assembly, &plan, &path, "projected-match".into()).unwrap();
+        project_session_for_planned_syntax_assembly(&mut db, &assembly, &plan, &path, "projected-match".into())
+            .unwrap();
     build_typed_program(&mut db, project, assembly.generation, assembly.clone()).unwrap();
     let unit = SourceUnitId::new(&db, assembly.entry_unit().path.clone());
     let matches = assembly

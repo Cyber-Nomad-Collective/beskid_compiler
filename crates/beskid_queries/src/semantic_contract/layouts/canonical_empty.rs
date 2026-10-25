@@ -72,8 +72,10 @@ pub fn canonical_empty_value(
             let (element_abi, element_managed) = element_of(element)?;
             let declaration = super::super::contracts::concrete_type_or_enum_declaration(db, place, &identity)
                 .ok_or_else(unavailable)?;
-            let syntax =
-                db.syntax_unit(declaration.unit).filter(|syntax| syntax.accepts_key(db, declaration)).ok_or_else(unavailable)?;
+            let syntax = db
+                .syntax_unit(declaration.unit)
+                .filter(|syntax| syntax.accepts_key(db, declaration))
+                .ok_or_else(unavailable)?;
             let program = syntax.expanded_program(db);
             let index = syntax.syntax_index(db);
             let definition = index
@@ -83,13 +85,17 @@ pub fn canonical_empty_value(
             let [parameter] = definition.generics.as_slice() else { return Err(unavailable()) };
             let shape = match element {
                 GenericSourceTypeIdentity::Nominal { .. } => AggregateFieldShape::Nominal(
-                    super::super::contracts::concrete_type_or_enum_declaration(db, place, element).ok_or_else(unavailable)?,
+                    super::super::contracts::concrete_type_or_enum_declaration(db, place, element)
+                        .ok_or_else(unavailable)?,
                 ),
-                _ if element_managed == ManagedReferenceKind::GcManaged => AggregateFieldShape::ManagedReference(element_abi),
+                _ if element_managed == ManagedReferenceKind::GcManaged => {
+                    AggregateFieldShape::ManagedReference(element_abi)
+                }
                 _ => AggregateFieldShape::Scalar(element_abi),
             };
             let substitutions = HashMap::from([(parameter.node.name.clone(), shape)]);
-            let layout = aggregate_layout_from_definition(db, program, index, declaration, definition, Some(&substitutions))?;
+            let layout =
+                aggregate_layout_from_definition(db, program, index, declaration, definition, Some(&substitutions))?;
             // The list is exactly its backing array and its element count; any other field would
             // need a value the canonical empty does not define.
             let field = |name: &str| layout.fields.iter().position(|(field, _)| field.as_ref() == name);

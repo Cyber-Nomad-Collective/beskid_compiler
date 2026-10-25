@@ -111,7 +111,9 @@ pub(in crate::semantic_contract) fn item_abi_signature_tracked(
             let generics = nearest_ancestor(index, key.node, |kind| kind == IndexedNodeKind::ContractDefinition)
                 .and_then(|parent| index.node_at(program, parent))
                 .and_then(|node| node.of::<beskid_analysis::syntax::ContractDefinition>())
-                .map(|definition| definition.generics.iter().map(|generic| generic.node.name.clone()).collect::<Vec<_>>())
+                .map(|definition| {
+                    definition.generics.iter().map(|generic| generic.node.name.clone()).collect::<Vec<_>>()
+                })
                 .unwrap_or_default();
             if contract.parameters.iter().any(|parameter| {
                 generic_parameter_reference_name(&parameter.node.ty.node)

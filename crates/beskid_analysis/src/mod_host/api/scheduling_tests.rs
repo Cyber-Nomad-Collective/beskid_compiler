@@ -13,8 +13,7 @@ use anyhow::Result;
 use super::tests::{MODA_MANIFEST, compile_plan, loaded_mod, unique_temp_dir, write_mod_projects};
 use super::*;
 use crate::mod_host::invoker::{
-    AnalyzerDiagnostic, AnalyzerSeverity, ContractInvoker, InvocationKind, ScriptedContractInvoker,
-    StubContractInvoker,
+    AnalyzerDiagnostic, AnalyzerSeverity, ContractInvoker, InvocationKind, ScriptedContractInvoker, StubContractInvoker,
 };
 use crate::syntax::Node;
 
@@ -92,14 +91,7 @@ impl Case {
     ) -> Result<crate::mod_host::ModHostAnalyzeResult> {
         let snapshot = crate::services::SemanticSnapshot::from_diagnostics(&[], 1, "semantic")
             .with_composition(&generated.session.composition_snapshot_or_default());
-        analyze_rewrite_with_invoker(
-            generated.program,
-            &generated.session,
-            invoker,
-            None,
-            Some(&snapshot),
-            None,
-        )
+        analyze_rewrite_with_invoker(generated.program, &generated.session, invoker, None, Some(&snapshot), None)
     }
 }
 
@@ -344,10 +336,8 @@ fn stub_invoker_dispatches_every_registration_once_in_canonical_kind_order() {
 #[test]
 fn scripted_generator_contributions_replay_identically_across_identical_runs() {
     let case = Case::new("sched_scripted_replay");
-    let invoker = ScriptedContractInvoker::new().with_generator_contribution(
-        "SampleMod.SampleGenerate",
-        vec!["pub fn replay_marker() { return; }".to_owned()],
-    );
+    let invoker = ScriptedContractInvoker::new()
+        .with_generator_contribution("SampleMod.SampleGenerate", vec!["pub fn replay_marker() { return; }".to_owned()]);
     let registrations = [(GENERATOR, "SampleMod.SampleGenerate", "samplemod_generate")];
     let first = case.generate(&registrations, &invoker).expect("first run");
     let second = case.generate(&registrations, &invoker).expect("second run");

@@ -61,10 +61,14 @@ impl IsleContext<'_, '_, '_, '_> {
             SemanticTypeId::U8 | SemanticTypeId::U16 | SemanticTypeId::U32 | SemanticTypeId::U64 | SemanticTypeId::WORD
         );
         Some(match (actual.is_int(), storage_type.is_int(), actual.is_float(), storage_type.is_float()) {
-            (true, true, _, _) if actual.bits() > storage_type.bits() => self.builder.ins().ireduce(storage_type, value),
+            (true, true, _, _) if actual.bits() > storage_type.bits() => {
+                self.builder.ins().ireduce(storage_type, value)
+            }
             (true, true, _, _) if unsigned => self.builder.ins().uextend(storage_type, value),
             (true, true, _, _) => self.builder.ins().sextend(storage_type, value),
-            (_, _, true, true) if actual.bits() > storage_type.bits() => self.builder.ins().fdemote(storage_type, value),
+            (_, _, true, true) if actual.bits() > storage_type.bits() => {
+                self.builder.ins().fdemote(storage_type, value)
+            }
             (_, _, true, true) => self.builder.ins().fpromote(storage_type, value),
             _ => return None,
         })

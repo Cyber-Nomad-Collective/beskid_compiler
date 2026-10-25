@@ -76,9 +76,15 @@ fn unsuffixed_literals_that_fit_their_context_need_no_suffix() {
         ("return value", source("u8 F() { return 200; }")),
         ("array elements", source("unit Main() { u8[] bytes = [1, 2, 255]; return; }")),
         ("binary operand", source("bool F(u8 b) { return b + 1 == 255; }")),
-        ("f32 contexts", source("unit Scale(f32 factor) { return; } unit Main() { f32 x = 1.5; Scale(0.25); return; }")),
+        (
+            "f32 contexts",
+            source("unit Scale(f32 factor) { return; } unit Main() { f32 x = 1.5; Scale(0.25); return; }"),
+        ),
         ("integer literal at a float context", source("unit Main() { f64 x = 1; return; }")),
-        ("no context keeps the default type", source("unit Main() { let x = 5; let y = 3000000000; let z = 1.5; return; }")),
+        (
+            "no context keeps the default type",
+            source("unit Main() { let x = 5; let y = 3000000000; let z = 1.5; return; }"),
+        ),
         (
             "the networking example without suffixes",
             source(
@@ -97,7 +103,10 @@ fn suffixes_win_over_the_context() {
     let fixtures = [
         ("matching integer suffix", source("unit Main() { u8 x = 5_u8; i64 y = 7_i64; Take(1_u8); return; }")),
         ("matching float suffix", source("unit Main() { f32 x = 1.5_f32; f64 y = 2.5_f64; return; }")),
-        ("suffix in a binary operand keeps numeric promotion", "bool F(i32 x) { return x + 1_i64 > 0_i64; }".to_string()),
+        (
+            "suffix in a binary operand keeps numeric promotion",
+            "bool F(i32 x) { return x + 1_i64 > 0_i64; }".to_string(),
+        ),
         ("suffixed literal without a context", source("unit Main() { let x = 300_i64; let y = 5_u8; return; }")),
     ];
     let table = fixtures.iter().map(|(class, source)| (*class, source.as_str())).collect::<Vec<_>>();
@@ -116,10 +125,8 @@ fn a_suffix_conflicting_with_the_context_is_a_type_mismatch() {
         ("float suffix at another float", source("unit Main() { f64 x = 1.5_f32; return; }")),
         ("float literal at an integer local", source("unit Main() { i64 x = 1.5; return; }")),
     ];
-    let table = fixtures
-        .iter()
-        .map(|(class, source)| (*class, "TypeMismatch", "E1206", source.as_str()))
-        .collect::<Vec<_>>();
+    let table =
+        fixtures.iter().map(|(class, source)| (*class, "TypeMismatch", "E1206", source.as_str())).collect::<Vec<_>>();
     assert_covered_kinds(&table, 9480);
 
     let source = source("unit Main() { u8 x = 5_i64; return; }");
@@ -198,7 +205,9 @@ fn a_conditional_literal_branch_that_does_not_fit_is_t0905_at_the_literal() {
                 matches!(&finding.kind, SemanticIssueKind::NumericLiteralOutOfRange { value: v, primitive: p }
                     if v == value && p == primitive)
             })
-            .unwrap_or_else(|| panic!("expected `{value}` does not fit in `{primitive}` for {source}, got {findings:?}"));
+            .unwrap_or_else(|| {
+                panic!("expected `{value}` does not fit in `{primitive}` for {source}, got {findings:?}")
+            });
         assert_eq!(&source[finding.span.start..finding.span.end], value);
         assert_eq!(findings.len(), 1, "{source}: {findings:?}");
     }

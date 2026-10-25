@@ -52,15 +52,25 @@ pub unit Verify(Profile profile, Rule config) {
     let operand = arguments[0];
     assert_eq!(abi_type(&db, arguments[1]), Ok(Some(SemanticTypeId::STRING)), "literal control");
     let index = assembly.entry_syntax_index();
-    let expression = index.node_at(&assembly.entry_unit().program, operand.node)
-        .and_then(|node| node.of::<beskid_analysis::syntax::Expression>()).unwrap();
+    let expression = index
+        .node_at(&assembly.entry_unit().program, operand.node)
+        .and_then(|node| node.of::<beskid_analysis::syntax::Expression>())
+        .unwrap();
     let beskid_analysis::syntax::Expression::Member(member) = expression else {
         panic!("fixture requires an indexed member expression wrapper");
     };
-    let member_node = index.direct_child_id(&assembly.entry_unit().program, operand.node,
-        beskid_analysis::syntax_query::DynNodeRef::from(member)).unwrap();
-    assert_eq!(abi_type(&db, AstNodeKey { node: member_node, ..operand }),
-        Ok(Some(SemanticTypeId::STRING)), "canonical member node control");
+    let member_node = index
+        .direct_child_id(
+            &assembly.entry_unit().program,
+            operand.node,
+            beskid_analysis::syntax_query::DynNodeRef::from(member),
+        )
+        .unwrap();
+    assert_eq!(
+        abi_type(&db, AstNodeKey { node: member_node, ..operand }),
+        Ok(Some(SemanticTypeId::STRING)),
+        "canonical member node control"
+    );
     assert_eq!(abi_type(&db, operand), Ok(Some(SemanticTypeId::STRING)), "indexed member ABI");
     assert_eq!(value_abi_type(&db, operand), Ok(Some(SemanticTypeId::STRING)), "canonical operand fact");
     let stale = AstNodeKey { generation: SyntaxGenerationId(generation.0 + 1), ..operand };

@@ -1,8 +1,7 @@
 use super::support::{
     AbiManifestV5, Arc, AstNodeId, AstNodeKey, BeskidDatabase, CANONICAL_BOOTSTRAP_NATIVE_SOURCE_PATH,
-    CANONICAL_BOOTSTRAP_ROOTS_SOURCE_PATH, CodegenInput,
-    JITBuilder, JITModule, Linkage, NodeFacts, ProjectSession, SourceUnitId, SyntaxGenerationId,
-    SyntaxModuleItem, TargetMetadata, build_canonical_runtime_typed_program,
+    CANONICAL_BOOTSTRAP_ROOTS_SOURCE_PATH, CodegenInput, JITBuilder, JITModule, Linkage, NodeFacts, ProjectSession,
+    SourceUnitId, SyntaxGenerationId, SyntaxModuleItem, TargetMetadata, build_canonical_runtime_typed_program,
     canonical_runtime_intrinsic_capability, canonical_runtime_test_assembly, default_libcall_names,
     emit_closure_static_data, emit_isle_item, emit_syntax_program, find_definition_of_kind, find_function_definition,
     find_function_definitions, find_node, find_nodes_of_kind, isa, item_fixture, item_fixture_with_root, item_name,
@@ -541,7 +540,10 @@ fn canonical_runtime_closure_descriptor_validation_and_rooting_execute_fail_clos
     for (symbol, address) in [
         ("beskid_rt_v5_intrinsic_atomic_word_load", host_intrinsics::atomic_word_load as *const u8),
         ("beskid_rt_v5_intrinsic_atomic_word_store", host_intrinsics::atomic_word_store as *const u8),
-        ("beskid_rt_v5_intrinsic_atomic_word_compare_exchange", host_intrinsics::atomic_word_compare_exchange as *const u8),
+        (
+            "beskid_rt_v5_intrinsic_atomic_word_compare_exchange",
+            host_intrinsics::atomic_word_compare_exchange as *const u8,
+        ),
         ("beskid_rt_v5_intrinsic_atomic_word_fetch_add", host_intrinsics::atomic_word_fetch_add as *const u8),
         ("beskid_rt_v5_intrinsic_atomic_fence", host_intrinsics::atomic_fence as *const u8),
         ("beskid_rt_v5_intrinsic_gc_barrier_active_word", host_intrinsics::gc_barrier_active_word as *const u8),
@@ -659,7 +661,11 @@ fn canonical_runtime_closure_descriptor_validation_and_rooting_execute_fail_clos
     // Sized and addressed from the canonical manifest layout: the runtime reads fields appended
     // after the 0.6.0 block (stress, quarantine, incremental marking), so a short fixture would
     // let it read unrelated stack bytes.
-    let heap_layout = input.abi_manifest().layouts.iter().find(|layout| layout.name == "BeskidHeapState")
+    let heap_layout = input
+        .abi_manifest()
+        .layouts
+        .iter()
+        .find(|layout| layout.name == "BeskidHeapState")
         .expect("canonical heap layout");
     assert_eq!(heap_layout.size % std::mem::size_of::<usize>() as u64, 0);
     let heap_word = |name: &str| {
@@ -676,7 +682,11 @@ fn canonical_runtime_closure_descriptor_validation_and_rooting_execute_fail_clos
     heap[heap_word("next_region_size")] = PAGE_SIZE; // irrelevant: no growth expected in this fixture
     let mut runtime_state = [0usize; 8];
     runtime_state[2] = heap.as_mut_ptr() as usize;
-    let tls_layout = input.abi_manifest().layouts.iter().find(|layout| layout.name == "BeskidTlsState")
+    let tls_layout = input
+        .abi_manifest()
+        .layouts
+        .iter()
+        .find(|layout| layout.name == "BeskidTlsState")
         .expect("canonical TLS layout");
     assert_eq!(tls_layout.size % std::mem::size_of::<usize>() as u64, 0);
     let tls_word = |name: &str| {

@@ -305,14 +305,7 @@ fn register_typed_program(
                         [target] => Some(*target),
                         _ => None,
                     })
-                    .map(|target| crate::db::SyntaxImport {
-                        path,
-                        binding,
-                        has_explicit_alias,
-                        target,
-                        public,
-                        origin,
-                    })
+                    .map(|target| crate::db::SyntaxImport { path, binding, has_explicit_alias, target, public, origin })
             })
             .collect();
         registry.imports.insert((unit_id, generation), imports);

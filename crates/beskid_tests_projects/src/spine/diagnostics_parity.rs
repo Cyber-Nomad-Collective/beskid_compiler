@@ -149,7 +149,8 @@ target "app" {
             let sibling = diagnostics
                 .iter()
                 .filter(|diagnostic| {
-                    diagnostic.severity == beskid_analysis::Severity::Error && diagnostic.src.name().ends_with("Driver.bd")
+                    diagnostic.severity == beskid_analysis::Severity::Error
+                        && diagnostic.src.name().ends_with("Driver.bd")
                 })
                 .collect::<Vec<_>>();
             assert!(
@@ -158,7 +159,8 @@ target "app" {
             );
             assert!(
                 !diagnostics.iter().any(|diagnostic| {
-                    diagnostic.severity == beskid_analysis::Severity::Error && diagnostic.src.name().ends_with("Main.bd")
+                    diagnostic.severity == beskid_analysis::Severity::Error
+                        && diagnostic.src.name().ends_with("Main.bd")
                 }),
                 "{label}: the healthy entry carries no error: {diagnostics:#?}"
             );

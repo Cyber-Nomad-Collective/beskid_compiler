@@ -109,10 +109,7 @@ mod tests {
         let error = collect_contracts(&loaded, &input, &invoker, None)
             .expect_err("unavailable native dispatch must fail closed");
         let message = format!("{error:#}");
-        assert!(
-            message.contains("mod `serialization_mod` contract `Beskid.Compiler.Collect.Collector`"),
-            "{message}"
-        );
+        assert!(message.contains("mod `serialization_mod` contract `Beskid.Compiler.Collect.Collector`"), "{message}");
     }
 
     #[test]

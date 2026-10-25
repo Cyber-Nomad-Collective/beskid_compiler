@@ -105,7 +105,10 @@ pub const COMPILER_RECOGNIZED_ATTRIBUTES: &[RecognizedAttribute] = &[
     RecognizedAttribute { name: "GlueHandle", targets: &["TypeDefinition"] },
     RecognizedAttribute { name: "GlueRecord", targets: &["TypeDefinition"] },
     RecognizedAttribute { name: "GlueEnum", targets: &["EnumDefinition"] },
-    RecognizedAttribute { name: "RustOwner", targets: &["TypeDefinition", "EnumDefinition", "ContractMethodSignature"] },
+    RecognizedAttribute {
+        name: "RustOwner",
+        targets: &["TypeDefinition", "EnumDefinition", "ContractMethodSignature"],
+    },
     RecognizedAttribute { name: "CleanupConversion", targets: &["FunctionDefinition"] },
 ];
 

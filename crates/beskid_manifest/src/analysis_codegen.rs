@@ -351,8 +351,14 @@ mod tests {
             if super::TYPED_VALUE_SERVICES.contains(&service.name.as_str()) {
                 let mut expected = String::new();
                 let transport = service.params.iter().map(|parameter| parameter.ty.as_str()).collect::<Vec<_>>();
-                super::write_typed_value_entry(&mut expected, &service.name, &service.adapter, &transport, &service.result)
-                    .unwrap();
+                super::write_typed_value_entry(
+                    &mut expected,
+                    &service.name,
+                    &service.adapter,
+                    &transport,
+                    &service.result,
+                )
+                .unwrap();
                 assert!(generated.contains(&expected), "{} generic source signature missing", service.name);
                 assert!(expected.contains("params: [I64],") && expected.contains("returns: TypeParameter,"));
                 continue;
@@ -360,8 +366,14 @@ mod tests {
             if let Some(managed) = super::managed_source_service(&service.name) {
                 let mut expected = String::new();
                 let transport = service.params.iter().map(|parameter| parameter.ty.as_str()).collect::<Vec<_>>();
-                super::write_managed_source_entry(&mut expected, managed, &service.adapter, &transport, &service.result)
-                    .unwrap();
+                super::write_managed_source_entry(
+                    &mut expected,
+                    managed,
+                    &service.adapter,
+                    &transport,
+                    &service.result,
+                )
+                .unwrap();
                 assert!(generated.contains(&expected), "{} managed source signature missing", service.name);
                 continue;
             }
@@ -430,7 +442,12 @@ mod tests {
         }
 
         let mut drifted = runtime.clone();
-        drifted.corelib_services.iter_mut().find(|service| service.name == "__syscall_write_bytes").unwrap().params
+        drifted
+            .corelib_services
+            .iter_mut()
+            .find(|service| service.name == "__syscall_write_bytes")
+            .unwrap()
+            .params
             .truncate(2);
         assert!(
             append_analysis_intrinsics(baseline, &drifted).is_err(),

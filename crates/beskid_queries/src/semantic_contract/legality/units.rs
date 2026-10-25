@@ -42,8 +42,8 @@ use super::value_paths::{ValuePathKind, collect_value_path_obligations};
 use super::*;
 use beskid_analysis::syntax::{
     AssociatedTypeBinding, ConstantDefinition, ContractDefinition, ContractNode, EnumDefinition, Field, FieldKind,
-    FunctionDefinition, ImplBlock, InlineModule, ModuleDeclaration, Path, Spanned, TestDefinition, Type, TypeDefinition,
-    UseDeclaration, Visibility,
+    FunctionDefinition, ImplBlock, InlineModule, ModuleDeclaration, Path, Spanned, TestDefinition, Type,
+    TypeDefinition, UseDeclaration, Visibility,
 };
 use beskid_analysis::syntax_query::DynNodeRef;
 
@@ -182,7 +182,10 @@ pub fn check_unit_obligations(db: &dyn Db, roots: &[AstNodeKey]) -> Vec<Semantic
                         SemanticIssueKind::ResolveUnknownModulePath { path: path.to_string() }
                     }
                     ValuePathKind::AmbiguousModulePath { path, candidates } => {
-                        SemanticIssueKind::ResolveAmbiguousModulePath { path: path.to_string(), candidates: *candidates }
+                        SemanticIssueKind::ResolveAmbiguousModulePath {
+                            path: path.to_string(),
+                            candidates: *candidates,
+                        }
                     }
                     ValuePathKind::UnknownValueInModule { module_path, name } => {
                         SemanticIssueKind::ResolveUnknownValueInModule {
@@ -329,7 +332,9 @@ fn collect_duplicate_item_obligations(
         };
         for method in &definition.methods {
             let name = method.node.name.node.name.as_str();
-            let Some(field) = definition.fields.iter().find(|field| field.node.name.node.name == name) else { continue };
+            let Some(field) = definition.fields.iter().find(|field| field.node.name.node.name == name) else {
+                continue;
+            };
             let Some(method_node) = index.direct_child_id(program, node, DynNodeRef::from(method)) else { continue };
             let previous = index
                 .direct_child_id(program, node, DynNodeRef::from(field))
@@ -356,7 +361,10 @@ fn collect_event_capacity_obligations(
     for node in index.ids_of_kind(NodeKind::Field) {
         let Some(field) = index.node_at(program, node).and_then(|node| node.of::<Field>()) else { continue };
         if field.kind == FieldKind::Event && field.event_capacity == Some(0) {
-            findings.push(UnitObligation { kind: UnitObligationKind::InvalidEventCapacity, site: AstNodeKey { node, ..key } });
+            findings.push(UnitObligation {
+                kind: UnitObligationKind::InvalidEventCapacity,
+                site: AstNodeKey { node, ..key },
+            });
         }
     }
 }
@@ -408,7 +416,16 @@ fn collect_conformance_obligations(
         };
         let concrete = AstNodeKey { node, ..key };
         for conformance in &definition.conformances {
-            judge_conformance(db, program, index, concrete, concrete, conformance, &definition.associated_type_bindings, findings);
+            judge_conformance(
+                db,
+                program,
+                index,
+                concrete,
+                concrete,
+                conformance,
+                &definition.associated_type_bindings,
+                findings,
+            );
         }
     }
     let mut primitive_conformances = Vec::new();
@@ -432,7 +449,8 @@ fn collect_conformance_obligations(
         if concrete.unit != key.unit {
             continue;
         }
-        let Some(definition) = index.node_at(program, concrete.node).and_then(|node| node.of::<TypeDefinition>()) else {
+        let Some(definition) = index.node_at(program, concrete.node).and_then(|node| node.of::<TypeDefinition>())
+        else {
             continue;
         };
         let bindings = definition
@@ -472,15 +490,26 @@ fn collect_primitive_implementation_obligations(
         });
     };
     let Some(primitive) = receiver.filter(|ty| is_conformable_primitive(*ty)) else {
-        invalid(format!("`{type_name}` cannot implement contracts; only integer, float, `bool`, `char` and `string` types can"), findings);
+        invalid(
+            format!(
+                "`{type_name}` cannot implement contracts; only integer, float, `bool`, `char` and `string` types can"
+            ),
+            findings,
+        );
         return;
     };
     if !block.generics.is_empty() || !block.where_bounds.is_empty() {
-        invalid(format!("an implementation for `{type_name}` takes no type parameters and no `where` bounds"), findings);
+        invalid(
+            format!("an implementation for `{type_name}` takes no type parameters and no `where` bounds"),
+            findings,
+        );
         return;
     }
     if block.conformances.is_empty() {
-        invalid(format!("an implementation for `{type_name}` must name a contract (`impl {type_name} : Contract {{ }}`)"), findings);
+        invalid(
+            format!("an implementation for `{type_name}` must name a contract (`impl {type_name} : Contract {{ }}`)"),
+            findings,
+        );
         return;
     }
     for conformance in &block.conformances {
@@ -493,10 +522,13 @@ fn collect_primitive_implementation_obligations(
             judge_conformance(db, program, index, owner, owner, conformance, &block.associated_type_bindings, findings);
             continue;
         };
-        let contract_name = conformance.node.segments.last().map_or_else(String::new, |segment| segment.node.name.node.name.clone());
+        let contract_name =
+            conformance.node.segments.last().map_or_else(String::new, |segment| segment.node.name.node.name.clone());
         if contract.unit != owner.unit {
             invalid(
-                format!("an implementation of `{contract_name}` for `{type_name}` must be in the source file that declares `{contract_name}`"),
+                format!(
+                    "an implementation of `{contract_name}` for `{type_name}` must be in the source file that declares `{contract_name}`"
+                ),
                 findings,
             );
             continue;
@@ -673,8 +705,10 @@ fn collect_module_declaration_obligations(
     for (path, node) in declarations {
         match seen.get(&path) {
             Some(previous) => {
-                let previous =
-                    index.metadata_for(key.generation, *previous).and_then(|metadata| metadata.span).unwrap_or_default();
+                let previous = index
+                    .metadata_for(key.generation, *previous)
+                    .and_then(|metadata| metadata.span)
+                    .unwrap_or_default();
                 findings.push(UnitObligation {
                     kind: UnitObligationKind::DuplicateItem {
                         name: Arc::from(path.last().map(String::as_str).unwrap_or_default()),
@@ -809,8 +843,9 @@ fn collect_cross_unit_duplicate_obligations(
         if !first_in_unit {
             continue;
         }
-        let Some((_, _, previous)) =
-            earlier.iter().find(|(earlier_namespace, earlier_name, _)| *earlier_namespace == namespace && *earlier_name == name)
+        let Some((_, _, previous)) = earlier
+            .iter()
+            .find(|(earlier_namespace, earlier_name, _)| *earlier_namespace == namespace && *earlier_name == name)
         else {
             continue;
         };

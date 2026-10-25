@@ -172,8 +172,14 @@ pub(in crate::semantic_contract) fn call_arguments_tracked(
                 let implicit_field_root = path.node.path.node.segments.first().is_some_and(|segment| {
                     nominal_local_receiver_declaration(db, program, index, key, segment.node.name.node.name.as_str())
                         .is_none()
-                }) && super::resolution::primitive_local_member_receiver(db, program, index, key, &path.node.path.node)
-                    .is_none();
+                }) && super::resolution::primitive_local_member_receiver(
+                    db,
+                    program,
+                    index,
+                    key,
+                    &path.node.path.node,
+                )
+                .is_none();
                 match implicit_field_root.then(field_receiver).flatten() {
                     Some(receiver) => receiver,
                     None => AstNodeKey { node: normalized_expression_node(index, callee), ..key },
@@ -377,7 +383,8 @@ pub(in crate::semantic_contract) fn for_iterator_protocol_for_identity(
     let GenericSourceTypeIdentity::Nominal { arguments, .. } = identity else { return Err(unavailable()) };
     let owner = super::super::contracts::concrete_declaration(db, iterable, identity).ok_or_else(unavailable)?;
     let next = unique_nominal_method_declaration(db, owner, "Next").ok_or_else(unavailable)?;
-    let next_syntax = db.syntax_unit(next.unit).filter(|syntax| syntax.accepts_key(db, next)).ok_or_else(unavailable)?;
+    let next_syntax =
+        db.syntax_unit(next.unit).filter(|syntax| syntax.accepts_key(db, next)).ok_or_else(unavailable)?;
     let method = next_syntax
         .syntax_index(db)
         .node_at(next_syntax.expanded_program(db), next.node)
@@ -406,8 +413,7 @@ pub(in crate::semantic_contract) fn for_iterator_protocol_for_identity(
         return Err(unavailable());
     };
     let [element] = &**option_arguments else { return Err(unavailable()) };
-    let (option, option_layout) =
-        super::super::layouts::enum_layout_for_source_identity(db, next, &option_identity)?;
+    let (option, option_layout) = super::super::layouts::enum_layout_for_source_identity(db, next, &option_identity)?;
     let option_name = db
         .syntax_unit(option.unit)
         .filter(|syntax| syntax.accepts_key(db, option))
@@ -446,14 +452,8 @@ pub(in crate::semantic_contract) fn for_iterator_protocol_for_identity(
     if signature.parameters[..] != [SemanticTypeId::POINTER] || signature.result != SemanticTypeId::POINTER {
         return Err(unavailable());
     }
-    let contract_witnesses = super::super::contracts::contract_witnesses_for_call(
-        db,
-        next,
-        &[iterable],
-        true,
-        enclosing,
-        &substitutions,
-    )?;
+    let contract_witnesses =
+        super::super::contracts::contract_witnesses_for_call(db, next, &[iterable], true, enclosing, &substitutions)?;
     let next = GenericSpecializationInstance {
         declaration: next,
         declaration_identity: stable_declaration_identity(db, next).ok_or_else(unavailable)?,
@@ -489,8 +489,11 @@ pub(in crate::semantic_contract) fn specialized_for_element_identity(
         .and_then(|node| node.of::<beskid_analysis::syntax::ForStatement>())
         .ok_or_else(unavailable)?;
     if range_iterable_bounds(&statement.iterable.node).is_none()
-        && let Some(iterable) =
-            index.direct_child_id(program, key.node, beskid_analysis::syntax_query::DynNodeRef::from(&statement.iterable))
+        && let Some(iterable) = index.direct_child_id(
+            program,
+            key.node,
+            beskid_analysis::syntax_query::DynNodeRef::from(&statement.iterable),
+        )
     {
         let iterable = AstNodeKey { node: iterable, ..key };
         match super::super::contracts::specialized_source_expression_identity(db, iterable, Some(enclosing)) {
@@ -519,8 +522,11 @@ fn specialized_array_iterable_element(
     if range_iterable_bounds(&statement.iterable.node).is_some() {
         return None;
     }
-    let iterable =
-        index.direct_child_id(program, key.node, beskid_analysis::syntax_query::DynNodeRef::from(&statement.iterable))?;
+    let iterable = index.direct_child_id(
+        program,
+        key.node,
+        beskid_analysis::syntax_query::DynNodeRef::from(&statement.iterable),
+    )?;
     match super::super::contracts::specialized_source_expression_identity(
         db,
         AstNodeKey { node: iterable, ..key },
@@ -694,7 +700,10 @@ fn try_operand_result(
         let Some(CallLowering::Direct(declaration)) = call_lowering(db, operand)? else {
             return Err(unavailable());
         };
-        let syntax = db.syntax_unit(declaration.unit).filter(|syntax| syntax.accepts_key(db, declaration)).ok_or_else(unavailable)?;
+        let syntax = db
+            .syntax_unit(declaration.unit)
+            .filter(|syntax| syntax.accepts_key(db, declaration))
+            .ok_or_else(unavailable)?;
         let declaration_node =
             syntax.syntax_index(db).node_at(syntax.expanded_program(db), declaration.node).ok_or_else(unavailable)?;
         // A member of a bound contract (`reader.Next()?` with `where R: Source`) is as exact a
@@ -712,7 +721,8 @@ fn try_operand_result(
         let result = result.ok_or_else(unavailable)?;
         let definition = canonical_result_definition_for_type(db, declaration, &result.node).ok_or_else(unavailable)?;
         let (_, error) = result_type_parts(&result.node).ok_or_else(unavailable)?;
-        let error = if super::generics::result_mentions_callable_generics(db, declaration, &error.node, contract_member) {
+        let error = if super::generics::result_mentions_callable_generics(db, declaration, &error.node, contract_member)
+        {
             // The error type depends on this call's substitutions.
             match generic_source_expression_identity(db, operand)? {
                 GenericSourceTypeIdentity::Nominal { arguments, .. } => match arguments.as_ref() {

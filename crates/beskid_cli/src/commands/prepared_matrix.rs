@@ -1,8 +1,8 @@
 //! Prepared test-workspace seam shared by single-target and matrix execution.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex, PoisonError};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -385,7 +385,8 @@ impl PreparedWorkspace {
         let Some(native) = native else {
             let mut results = runs.results.lock().unwrap_or_else(PoisonError::into_inner);
             for (row, name) in entries {
-                results.insert(*row, (Err(anyhow!("native test `{name}` has no prepared native object")), Duration::ZERO));
+                results
+                    .insert(*row, (Err(anyhow!("native test `{name}` has no prepared native object")), Duration::ZERO));
             }
             drop(results);
             return body(&runs);
@@ -405,7 +406,10 @@ impl PreparedWorkspace {
                             native.run_entry(name, *row, observer)
                         }))
                         .unwrap_or_else(|_| Err(anyhow!("native test `{name}` runner panicked")));
-                        runs.results.lock().unwrap_or_else(PoisonError::into_inner).insert(*row, (result, started.elapsed()));
+                        runs.results
+                            .lock()
+                            .unwrap_or_else(PoisonError::into_inner)
+                            .insert(*row, (result, started.elapsed()));
                         runs.ready.notify_all();
                     }
                     // Wake a consumer waiting on a test no worker will claim any more.

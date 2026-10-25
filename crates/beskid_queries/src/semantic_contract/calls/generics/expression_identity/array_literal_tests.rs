@@ -64,9 +64,8 @@ fn nominal_array_named(identity: &GenericSourceTypeIdentity, name: &str) -> bool
 
 #[test]
 fn empty_literal_in_struct_field_takes_the_declared_field_type() {
-    let identity = single_array_identity(
-        "pub type Bag { pub string[] items; }\npub Bag Make() { return Bag { items: [] }; }",
-    );
+    let identity =
+        single_array_identity("pub type Bag { pub string[] items; }\npub Bag Make() { return Bag { items: [] }; }");
     assert_eq!(identity, Ok(strings()));
 }
 

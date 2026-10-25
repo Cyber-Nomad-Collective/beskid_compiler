@@ -7,7 +7,9 @@ use std::sync::Arc;
 use beskid_analysis::projects::{
     AssemblyDiscovery, AssemblyRootSet, EffectiveCompilationRoots, ModuleIndex, ProgramAssembly, RootEntry, SourceUnit,
 };
-use beskid_analysis::services::{SemanticFactFinding, parse_program_with_source_name, synthetic_compile_plan_for_source};
+use beskid_analysis::services::{
+    SemanticFactFinding, parse_program_with_source_name, synthetic_compile_plan_for_source,
+};
 use beskid_analysis::syntax::SyntaxGenerationId;
 use beskid_analysis::syntax_query::SyntaxIndex;
 
@@ -68,7 +70,8 @@ pub(super) fn unit_findings_with_glue(
         host: RootEntry { dependency_name: None, source_root: source_root.clone() },
         dependencies: Vec::new(),
     };
-    let indexes = source_units.iter().map(|unit| SyntaxIndex::from_program(&unit.program, generation)).collect::<Vec<_>>();
+    let indexes =
+        source_units.iter().map(|unit| SyntaxIndex::from_program(&unit.program, generation)).collect::<Vec<_>>();
     let index = Arc::new(ModuleIndex::build(&source_units, &indexes, &roots, &plan));
     let program = source_units[0].program.clone();
     let own_paths = source_units.iter().map(|unit| unit.path.clone()).collect::<Vec<_>>();
@@ -85,7 +88,10 @@ pub(super) fn unit_findings_with_glue(
     .with_glue_libraries(glue_libraries.iter().map(|library| (*library).to_string()).collect::<Vec<_>>().into());
     let mut db = BeskidDatabase::default();
     let findings = semantic_diagnostics_for_roots(&mut db, None, &assembly, &program, None).unwrap_or_else(|error| {
-        panic!("query gate must judge the fixture: {error}\n{}", units.iter().map(|(_, s)| *s).collect::<Vec<_>>().join("\n---\n"))
+        panic!(
+            "query gate must judge the fixture: {error}\n{}",
+            units.iter().map(|(_, s)| *s).collect::<Vec<_>>().join("\n---\n")
+        )
     });
     let _ = std::fs::remove_dir_all(&root);
     findings
@@ -98,12 +104,7 @@ pub(super) fn codes(findings: &[SemanticFactFinding]) -> Vec<&'static str> {
 
 /// Whether `findings` carries a finding of `code` whose `SemanticIssueKind` variant name starts
 /// with `variant` (the `Debug` rendering of the kind), optionally located in unit `unit`.
-pub(super) fn reports_kind(
-    findings: &[SemanticFactFinding],
-    variant: &str,
-    code: &str,
-    unit: Option<usize>,
-) -> bool {
+pub(super) fn reports_kind(findings: &[SemanticFactFinding], variant: &str, code: &str, unit: Option<usize>) -> bool {
     findings.iter().any(|finding| {
         finding.kind.code() == code
             && format!("{:?}", finding.kind).starts_with(variant)

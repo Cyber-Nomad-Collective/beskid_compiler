@@ -12,7 +12,8 @@ fn main() {
         Ok(report) => {
             print!("{}", report.render());
             if let Some(path) = &config.report
-                && let Err(error) = std::fs::write(path, serde_json::to_string_pretty(&report.to_json()).unwrap_or_default())
+                && let Err(error) =
+                    std::fs::write(path, serde_json::to_string_pretty(&report.to_json()).unwrap_or_default())
             {
                 eprintln!("cannot write report {}: {error}", path.display());
             }

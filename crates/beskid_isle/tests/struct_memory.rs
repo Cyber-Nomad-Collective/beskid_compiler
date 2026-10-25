@@ -102,9 +102,12 @@ impl NodeFacts for StructFacts {
     }
 
     fn semantic_type(&self, key: AstNodeKey) -> Option<beskid_queries::SemanticTypeId> {
-        (self.unit_middle && (key == self.nodes[4]
-            || (self.field_index == 1 && (key == self.nodes[0] || key == self.nodes[1]
-                || (matches!(self.root, Root::Write) && key == self.nodes[6])))))
+        (self.unit_middle
+            && (key == self.nodes[4]
+                || (self.field_index == 1
+                    && (key == self.nodes[0]
+                        || key == self.nodes[1]
+                        || (matches!(self.root, Root::Write) && key == self.nodes[6])))))
             .then_some(beskid_queries::SemanticTypeId::UNIT)
     }
 
@@ -202,7 +205,10 @@ fn field_assignment_emits_managed_clif_store() {
     let clif = emit(Root::Write, 1, 23).display().to_string();
     assert!(clif.lines().any(|line| line.trim_start().starts_with("store ")), "{clif}");
     // A scalar field store carries no write barrier.
-    assert!(!clif.contains("beskid_rt_v5_gc_barrier_active") && !clif.contains("beskid_rt_v5_gc_write_barrier"), "{clif}");
+    assert!(
+        !clif.contains("beskid_rt_v5_gc_barrier_active") && !clif.contains("beskid_rt_v5_gc_write_barrier"),
+        "{clif}"
+    );
 }
 
 #[test]
@@ -365,17 +371,27 @@ fn unit_initializer_call_is_emitted_once_before_allocation_without_storage() {
 
 #[test]
 fn unit_field_read_and_assignment_evaluate_receiver_without_payload_access() {
-    let isa = cranelift_codegen::isa::lookup(Triple::host()).unwrap()
-        .finish(settings::Flags::new(settings::builder())).unwrap();
+    let isa = cranelift_codegen::isa::lookup(Triple::host())
+        .unwrap()
+        .finish(settings::Flags::new(settings::builder()))
+        .unwrap();
     for (index, root) in [Root::Read, Root::Write].into_iter().enumerate() {
-        let layout = StructLayout::from_logical_fields(24, 3, vec![
-            Some(FieldLayout::new(types::I32, 16)), None, Some(FieldLayout::new(types::I32, 20)),
-        ]);
+        let layout = StructLayout::from_logical_fields(
+            24,
+            3,
+            vec![Some(FieldLayout::new(types::I32, 16)), None, Some(FieldLayout::new(types::I32, 20))],
+        );
         let mut facts = facts(isa.pointer_type(), root, 1, layout);
         facts.unit_middle = true;
         let emitter = FunctionEmitter::new(isa.as_ref());
-        let function = emitter.emit_statement(UserFuncName::user(0, 29 + index as u32),
-            emitter.signature([], []), &facts, AstNodeKey { node: AstNodeId(99), ..facts.nodes[0] }).unwrap();
+        let function = emitter
+            .emit_statement(
+                UserFuncName::user(0, 29 + index as u32),
+                emitter.signature([], []),
+                &facts,
+                AstNodeKey { node: AstNodeId(99), ..facts.nodes[0] },
+            )
+            .unwrap();
         let clif = function.display().to_string();
         assert!(clif.contains("beskid_rt_v5_managed_object_allocate"), "receiver evaluated: {clif}");
         assert_eq!(clif.lines().filter(|line| line.trim_start().starts_with("store ")).count(), 2, "{clif}");

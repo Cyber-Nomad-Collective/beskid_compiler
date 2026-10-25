@@ -43,7 +43,8 @@ fn format_scoped_use_preserves_both_regions_and_nested_statement_counts() {
 
 #[test]
 fn format_conditional_expression_round_trips_on_one_line() {
-    let src = "i32 Pick(bool a, bool b, i32 x) { i32 y = a?x:-x; y = a ? 1 : b ? 2 : (b ? 3 : 4); return F()? ? y : 0; }";
+    let src =
+        "i32 Pick(bool a, bool b, i32 x) { i32 y = a?x:-x; y = a ? 1 : b ? 2 : (b ? 3 : 4); return F()? ? y : 0; }";
     let once = fmt(src);
     let expected = concat!(
         "i32 Pick(bool a, bool b, i32 x)\n",
@@ -81,7 +82,8 @@ fn format_constant_definition_is_parse_preserving() {
 
 #[test]
 fn format_parameter_default_values_round_trip() {
-    let source = "pub unit Check(bool ok, string because = \"\", i64 times = -1, [CallerLineNumber] i64 line = 0) { return; }";
+    let source =
+        "pub unit Check(bool ok, string because = \"\", i64 times = -1, [CallerLineNumber] i64 line = 0) { return; }";
     let formatted = fmt(source);
     assert!(
         formatted.starts_with(
@@ -92,7 +94,8 @@ fn format_parameter_default_values_round_trip() {
     let reparsed = parse_program(&formatted).expect("reparse formatted defaults");
     assert_eq!(fmt(&formatted), formatted);
     let Node::Function(function) = &reparsed.node.items[0].node else { panic!("function") };
-    let defaults = function.node.parameters.iter().map(|parameter| parameter.node.default.is_some()).collect::<Vec<_>>();
+    let defaults =
+        function.node.parameters.iter().map(|parameter| parameter.node.default.is_some()).collect::<Vec<_>>();
     assert_eq!(defaults, [false, true, true, true]);
 }
 

@@ -70,7 +70,12 @@ impl IsleContext<'_, '_, '_, '_> {
     /// `move x.f`: the empty value is built first and rooted, then the receiver is evaluated,
     /// the field is read and the empty value is stored into it behind the guarded barrier. The
     /// read value is the result.
-    pub(super) fn emit_destructive_read(&mut self, key: AstNodeKey, place: AstNodeKey, empty: &CanonicalEmptyPlan) -> Option<Value> {
+    pub(super) fn emit_destructive_read(
+        &mut self,
+        key: AstNodeKey,
+        place: AstNodeKey,
+        empty: &CanonicalEmptyPlan,
+    ) -> Option<Value> {
         let pointer = dispatch::pointer_type(self.frontend_config);
         if self.facts.node_kind(place) != Some(NodeKind::FieldExpression) {
             self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidDestructiveRead });
@@ -145,8 +150,12 @@ macro_rules! generated_destructive_read_methods {
     () => {
         fn emit_move_expression(&mut self, key: AstNodeKey) -> Option<Value> {
             match self.facts.move_expression(key)? {
-                crate::facts::MoveExpressionPlan::Transfer { operand } => generated::constructor_lower_expression(self, operand),
-                crate::facts::MoveExpressionPlan::DestructiveRead { place, empty } => self.emit_destructive_read(key, place, &empty),
+                crate::facts::MoveExpressionPlan::Transfer { operand } => {
+                    generated::constructor_lower_expression(self, operand)
+                }
+                crate::facts::MoveExpressionPlan::DestructiveRead { place, empty } => {
+                    self.emit_destructive_read(key, place, &empty)
+                }
             }
         }
 

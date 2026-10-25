@@ -77,5 +77,6 @@ fn networking_shapes_without_suffixes_lower_with_contextual_widths() {
         .map(|literal| contextual_integer_literal_abi_type(db, literal).expect("contextual literal fact"))
         .collect::<Vec<_>>();
     assert_eq!(widths, vec![Some(SemanticTypeId::I64)], "Bind(.., 8)");
-    lower_syntax_program(&input, isa.as_ref(), &items).expect("the networking shapes lower with contextually typed literals");
+    lower_syntax_program(&input, isa.as_ref(), &items)
+        .expect("the networking shapes lower with contextually typed literals");
 }

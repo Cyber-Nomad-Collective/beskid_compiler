@@ -2,13 +2,13 @@ use std::io::{self, Write};
 use std::sync::atomic::{AtomicU8, Ordering};
 
 use anyhow::Error;
+use beskid_analysis::SemanticDiagnostic;
 use beskid_analysis::analysis::Severity as AnalysisSeverity;
+use beskid_analysis::analysis::diagnostics::json;
+use beskid_analysis::analysis::diagnostics::source_map;
 use beskid_analysis::parser::Rule;
 use beskid_analysis::parsing::error::ParseError;
 use beskid_analysis::services::{self, SemanticDiagnosticsError};
-use beskid_analysis::analysis::diagnostics::json;
-use beskid_analysis::analysis::diagnostics::source_map;
-use beskid_analysis::SemanticDiagnostic;
 use miette::{Diagnostic, GraphicalReportHandler, Report, Severity};
 use pest::error::Error as PestError;
 use tracing::{error, warn};

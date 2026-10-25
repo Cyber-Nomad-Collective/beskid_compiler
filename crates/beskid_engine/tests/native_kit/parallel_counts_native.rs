@@ -252,11 +252,9 @@ fn strings_cross_a_port_and_stay_readable() {
 /// (results adopted at join) and under serial elision.
 #[test]
 fn collect_keeps_every_element_in_order() {
-    for environment in [
-        &[("BESKID_ISOLATES_MAX", "2")][..],
-        &[("BESKID_ISOLATES_MAX", "8")][..],
-        &[("BESKID_ISOLATES_MAX", "1")][..],
-    ] {
+    for environment in
+        [&[("BESKID_ISOLATES_MAX", "2")][..], &[("BESKID_ISOLATES_MAX", "8")][..], &[("BESKID_ISOLATES_MAX", "1")][..]]
+    {
         let output = run("RunCollect", environment);
         assert!(
             output.status.success(),
@@ -291,10 +289,7 @@ fn port_handle_crosses_a_port() {
 /// v0.6.4: a three-stage pipeline of string records keeps input order at every bound.
 #[test]
 fn pipeline_keeps_input_order() {
-    for environment in [
-        &[("BESKID_ISOLATES_MAX", "8")][..],
-        &[("BESKID_ISOLATES_MAX", "2")][..],
-    ] {
+    for environment in [&[("BESKID_ISOLATES_MAX", "8")][..], &[("BESKID_ISOLATES_MAX", "2")][..]] {
         let output = run("RunPipeline", environment);
         assert!(
             output.status.success(),

@@ -50,7 +50,14 @@ fn stderr(output: &Output) -> String {
 #[test]
 fn default_output_has_no_info_logs_and_no_pipeline_tree() {
     let text = stderr(&Fixture::new().check(&[]));
-    for forbidden in ["INFO", "tracing subscriber initialized", "Resolve manifest", "Materialize dependencies", "Salsa", "No diagnostics."] {
+    for forbidden in [
+        "INFO",
+        "tracing subscriber initialized",
+        "Resolve manifest",
+        "Materialize dependencies",
+        "Salsa",
+        "No diagnostics.",
+    ] {
         assert!(!text.contains(forbidden), "default output leaked `{forbidden}`:\n{text}");
     }
     assert!(text.lines().count() <= 1, "default output is at most one status line:\n{text}");
@@ -90,7 +97,8 @@ fn quiet_prints_no_status_line_and_no_info_logs() {
 #[test]
 fn quiet_and_verbose_together_are_a_usage_error() {
     let fixture = Fixture::new();
-    let output = fixture.command().args(["-q", "-v", "check"]).arg(fixture.root.path().join("Valid.bd")).output().expect("run");
+    let output =
+        fixture.command().args(["-q", "-v", "check"]).arg(fixture.root.path().join("Valid.bd")).output().expect("run");
     assert_eq!(output.status.code(), Some(2), "{}", stderr(&output));
 }
 

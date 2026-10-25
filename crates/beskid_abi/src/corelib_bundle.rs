@@ -77,13 +77,16 @@ fn is_verified_bundle_root(root: &Path) -> bool {
         return false;
     };
     let cache = VERIFIED_BUNDLES.get_or_init(Default::default);
-    if let Some(verdict) = cache.lock().unwrap_or_else(std::sync::PoisonError::into_inner).get(root).and_then(
-        |(cached, verdict)| (*cached == signature).then_some(*verdict),
-    ) {
+    if let Some(verdict) = cache
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .get(root)
+        .and_then(|(cached, verdict)| (*cached == signature).then_some(*verdict))
+    {
         return verdict;
     }
-    let verdict = corelib_bundle_members_present(root)
-        && fingerprint_corelib_bundle_dir(root).ok().as_deref() == Some(expected);
+    let verdict =
+        corelib_bundle_members_present(root) && fingerprint_corelib_bundle_dir(root).ok().as_deref() == Some(expected);
     cache.lock().unwrap_or_else(std::sync::PoisonError::into_inner).insert(root.to_path_buf(), (signature, verdict));
     verdict
 }
@@ -391,7 +394,8 @@ pub fn parse_corelib_workspace_member_paths(source: &str) -> Result<Vec<String>,
                                     if path.is_some() {
                                         return Err(format!("`{block}` block assigns `path` twice"));
                                     }
-                                    path = Some(value.ok_or_else(|| format!("`{block}` block `path` must be a string"))?);
+                                    path =
+                                        Some(value.ok_or_else(|| format!("`{block}` block `path` must be a string"))?);
                                 }
                             }
                             Some(Token::Text(_)) => {
@@ -478,7 +482,10 @@ pub fn corelib_bundle_inventory(workspace: &Path) -> io::Result<CorelibBundleInv
             } else if file_type.is_file() {
                 files.push(path.strip_prefix(workspace).expect("file below workspace").to_path_buf());
             } else {
-                return Err(invalid_data(format!("Corelib workspace contains a non-regular entry: {}", path.display())));
+                return Err(invalid_data(format!(
+                    "Corelib workspace contains a non-regular entry: {}",
+                    path.display()
+                )));
             }
         }
         Ok(())
@@ -581,7 +588,11 @@ mod bundle_inventory_tests {
             assert!(inventory.files.contains(&PathBuf::from(wanted)), "bundle inventory omits {wanted}");
         }
         for file in &inventory.files {
-            assert!(!file.starts_with("mods/serialization_mod/Tests"), "nested non-member project shipped: {}", file.display());
+            assert!(
+                !file.starts_with("mods/serialization_mod/Tests"),
+                "nested non-member project shipped: {}",
+                file.display()
+            );
             assert!(
                 !file.components().any(|component| should_skip_component(component.as_os_str())),
                 "build or VCS output shipped: {}",
@@ -593,7 +604,10 @@ mod bundle_inventory_tests {
     #[test]
     fn fingerprint_and_verification_follow_mod_sources() {
         let (_temp, bundle) = sealed_copy();
-        assert_eq!(verified_corelib_bundle_root(&bundle.join("packages/serialization")), Some(bundle.canonicalize().unwrap()));
+        assert_eq!(
+            verified_corelib_bundle_root(&bundle.join("packages/serialization")),
+            Some(bundle.canonicalize().unwrap())
+        );
         let before = fingerprint_corelib_bundle_dir(&bundle).expect("fingerprint before");
         let source = bundle.join("mods/serialization_mod/Src/Mod.bd");
         let mut text = std::fs::read_to_string(&source).expect("read mod source");

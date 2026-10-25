@@ -35,7 +35,10 @@ fn hi_is_not_discoverable_or_dispatched_and_graph_remains_available() {
     let names: Vec<_> = command_names(&help_text).collect();
     assert!(!names.contains(&"hi"), "removed hi command remains in top-level help:\n{help_text}");
     assert!(names.contains(&"dev"), "dev command disappeared from top-level help:\n{help_text}");
-    let dev = Command::new(env!("CARGO_BIN_EXE_beskid_cli")).args(["dev", "project", "--help"]).output().expect("dev project help");
+    let dev = Command::new(env!("CARGO_BIN_EXE_beskid_cli"))
+        .args(["dev", "project", "--help"])
+        .output()
+        .expect("dev project help");
     assert!(String::from_utf8_lossy(&dev.stdout).contains("graph"), "dev project graph disappeared");
 
     let invocation =

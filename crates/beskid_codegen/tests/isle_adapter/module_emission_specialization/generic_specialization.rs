@@ -375,7 +375,8 @@ fn generic_local_annotated_with_a_type_parameter_lowers_for_scalar_and_string() 
     .expect("a local whose annotation is a type parameter takes its type from the specialization");
 
     beskid_codegen::validate_artifact(&artifact).expect("generic local artifact");
-    let specializations = artifact.functions.iter().filter(|function| function.name.starts_with("Same#generic_")).count();
+    let specializations =
+        artifact.functions.iter().filter(|function| function.name.starts_with("Same#generic_")).count();
     assert_eq!(specializations, 2, "one specialization each for i64 and string");
 }
 
@@ -705,7 +706,10 @@ fn chained_generic_call_receiver_in_a_lambda_of_a_generic_body_is_specialized() 
     let artifact = lower_syntax_program(&input, isa.as_ref(), &[SyntaxModuleItem { key: main, symbol: "Main".into() }])
         .expect("a chained generic call receiver in a lambda of a generic body lowers in the instance");
     let names = artifact.functions.iter().map(|function| function.name.as_str()).collect::<Vec<_>>();
-    assert!(names.iter().filter(|name| name.starts_with("Collect#") && name.contains("#lambda_")).count() == 3, "{names:?}");
+    assert!(
+        names.iter().filter(|name| name.starts_with("Collect#") && name.contains("#lambda_")).count() == 3,
+        "{names:?}"
+    );
 }
 
 fn nested_capture_fixture(config: &str, knobs: &str) -> String {

@@ -304,11 +304,12 @@ fn with_composition_context(diagnostic: SemanticDiagnostic, issue: &CompositionI
                 ));
             diagnostic.with_fix(fix)
         }
-        CompositionIssue::OverrideLifetimeMismatch { binding, lifetime, overridden_span, overridden_lifetime, .. } => {
+        CompositionIssue::OverrideLifetimeMismatch {
+            binding, lifetime, overridden_span, overridden_lifetime, ..
+        } => {
             let diagnostic = match overridden_span {
-                Some(span) => {
-                    diagnostic.with_related(*span, format!("base host registers `{binding}` as `{overridden_lifetime}`"))
-                }
+                Some(span) => diagnostic
+                    .with_related(*span, format!("base host registers `{binding}` as `{overridden_lifetime}`")),
                 None => diagnostic,
             };
             diagnostic.with_help(
@@ -348,7 +349,6 @@ fn plural_field_name(name: &str) -> String {
     if name.ends_with('s') { name.to_string() } else { format!("{name}s") }
 }
 
-
 /// `2 parameter(s)` or `1 required and 2 optional parameter(s)`.
 fn declared_parameters(required: usize, total: usize) -> String {
     if required == total {
@@ -377,8 +377,7 @@ mod tests {
     /// test type resolver.
     fn diagnostics(source: &str) -> Vec<crate::analysis::SemanticDiagnostic> {
         let program = parse_program(source).expect("parse");
-        let generated =
-            super::prepare_program_for_composition(program, None, "Main.bd", source).expect("expansion");
+        let generated = super::prepare_program_for_composition(program, None, "Main.bd", source).expect("expansion");
         let types = crate::composition::types::test_types::DeclaredTypes::new(&generated.program, &[]);
         let result = super::resolve_program_composition_with_imports(&generated.program, &[], &types, None);
         super::composition_result_to_diagnostics(&result, generated.program.span, "Main.bd", source, &[], None)
@@ -512,7 +511,8 @@ i32 Main()
             .unwrap_or_else(|| panic!("E1708 expected: {found:?}"));
         assert!(with.message.contains("declares 1 parameter(s)"), "{}", with.message);
 
-        let matching = source.replace("launch AppHost();", "launch AppHost(\"Ada\");").replace("Visit(1, 2)", "Visit(1)");
+        let matching =
+            source.replace("launch AppHost();", "launch AppHost(\"Ada\");").replace("Visit(1, 2)", "Visit(1)");
         let found = diagnostics(&matching);
         assert!(
             found.iter().all(|diagnostic| !matches!(diagnostic.code.as_deref(), Some("E1722" | "E1708"))),

@@ -39,7 +39,8 @@ fn native_host_builder_publishes_the_canonical_runtime_to_an_empty_prefix() {
 
 #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 fn tool_output(program: &str, args: &[&str], path: &std::path::Path) -> String {
-    let output = Command::new(program).args(args).arg(path).output().unwrap_or_else(|error| panic!("run {program}: {error}"));
+    let output =
+        Command::new(program).args(args).arg(path).output().unwrap_or_else(|error| panic!("run {program}: {error}"));
     // codesign reports on stderr, otool on stdout.
     format!("{}{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr))
 }
@@ -77,7 +78,8 @@ fn native_host_shared_runtime_is_relocatable_and_raw_byte_bound() {
 
         // Relocatable identity: `@rpath/<basename>`, no run path, system dependencies only.
         let id_output = tool_output("otool", &["-D"], &dylib);
-        let id = id_output.lines().map(str::trim).filter(|line| !line.is_empty()).last().expect("otool -D ID").to_owned();
+        let id =
+            id_output.lines().map(str::trim).filter(|line| !line.is_empty()).last().expect("otool -D ID").to_owned();
         assert_eq!(id, format!("@rpath/{name}"), "{label} kit dylib ID");
         let load_commands = tool_output("otool", &["-l"], &dylib);
         assert!(!load_commands.contains("LC_RPATH"), "{label} kit dylib must not carry LC_RPATH");
@@ -102,7 +104,8 @@ fn native_host_shared_runtime_is_relocatable_and_raw_byte_bound() {
         // No staging or temp-directory bytes survive in the published artifact.
         let original = fs::read(&dylib).expect("read published kit dylib");
         let temp = std::env::temp_dir();
-        let mut forbidden: Vec<Vec<u8>> = vec![b"beskid-native-runtime-".to_vec(), temp.to_string_lossy().as_bytes().to_vec()];
+        let mut forbidden: Vec<Vec<u8>> =
+            vec![b"beskid-native-runtime-".to_vec(), temp.to_string_lossy().as_bytes().to_vec()];
         if let Ok(canonical) = temp.canonicalize() {
             forbidden.push(canonical.to_string_lossy().as_bytes().to_vec());
         }
@@ -132,7 +135,11 @@ fn native_host_shared_runtime_is_relocatable_and_raw_byte_bound() {
 
         // A Homebrew-style relocation (new ID plus ad-hoc re-sign) changes raw bytes and is rejected.
         let relocated = format!("/opt/homebrew/opt/beskid/libexec/lib/{name}");
-        let status = Command::new("install_name_tool").args(["-id", &relocated]).arg(&dylib).status().expect("install_name_tool");
+        let status = Command::new("install_name_tool")
+            .args(["-id", &relocated])
+            .arg(&dylib)
+            .status()
+            .expect("install_name_tool");
         assert!(status.success(), "install_name_tool failed");
         let status = Command::new("codesign").args(["--force", "-s", "-"]).arg(&dylib).status().expect("codesign");
         assert!(status.success(), "codesign failed");

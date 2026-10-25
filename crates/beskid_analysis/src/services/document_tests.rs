@@ -7,8 +7,8 @@ mod tests {
         prepare_project_workspace_with_options,
     };
     use crate::services::{
-        build_document_analysis, build_document_analysis_from_resolution, completion_candidates,
-        definition_at_offset, parse_program_with_source_name, references_at_offset_workspace, resolve_input,
+        build_document_analysis, build_document_analysis_from_resolution, completion_candidates, definition_at_offset,
+        parse_program_with_source_name, references_at_offset_workspace, resolve_input,
     };
 
     struct CorelibMvpFixture {
@@ -31,7 +31,8 @@ mod tests {
                 std::env::set_var("BESKID_CONFIG_DIR", home.path().join("config"));
                 std::env::set_var("BESKID_CORELIB_ROOT", home.path().join("corelib"));
             }
-            beskid_tools::ensure_bundled_corelib(&beskid_corelib_embed::CORELIB_BUNDLE).expect("provision corelib_mvp fixture Corelib");
+            beskid_tools::ensure_bundled_corelib(&beskid_corelib_embed::CORELIB_BUNDLE)
+                .expect("provision corelib_mvp fixture Corelib");
             home
         })
         .path()
@@ -315,7 +316,8 @@ mod tests {
             let fixture = corelib_mvp_paths();
             let program =
                 parse_program_with_source_name(&fixture.main_path.to_string_lossy(), &fixture.source).expect("parse");
-            let snapshot = build_document_analysis(&program, fixture.main_path.to_string_lossy(), &fixture.source, None);
+            let snapshot =
+                build_document_analysis(&program, fixture.main_path.to_string_lossy(), &fixture.source, None);
             assert!(
                 snapshot.resolution.is_none(),
                 "without query-backed entry resolution, snapshot should not resolve"

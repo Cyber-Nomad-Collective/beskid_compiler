@@ -93,7 +93,9 @@ pub struct DynamicInitializationPlan {
     seal: ArtifactSeal,
 }
 impl DynamicInitializationPlan {
-    pub fn target(&self)->&beskid_abi::abi_v5::TargetMetadata { &self.target }
+    pub fn target(&self) -> &beskid_abi::abi_v5::TargetMetadata {
+        &self.target
+    }
     pub fn generation(&self) -> beskid_queries::SyntaxGenerationId {
         self.generation
     }
@@ -163,14 +165,19 @@ impl DynamicInitializationPlan {
                 (4, "beskid_dynamic_v1_erased_read".into()),
                 (13, "beskid_dynamic_v1_checked_erased_construct".into()),
                 (14, "beskid_dynamic_v1_checked_erased_read".into()),
-            ].into_iter().enumerate() {
+            ]
+            .into_iter()
+            .enumerate()
+            {
                 let row = i * 6 + row_index;
                 c.push_str(&format!("memcpy(rows[{row}].source_sha256,source_{i},32);memcpy(rows[{row}].signature_sha256,digest_{i},32);rows[{row}].address=(uint64_t)(uintptr_t)({address});rows[{row}].role={role};\n"));
             }
         }
         for (i, m) in self.mappings.iter().enumerate() {
             c.push_str(&format!("static const uint8_t mapping_digest_{i}[32]={{{}}};\n", numbers(m.mapping.digest())));
-            for (offset, (role, address)) in [(5, m.mapping.transform_symbol()), (15, m.mapping.checked_transform_symbol())].into_iter().enumerate() {
+            for (offset, (role, address)) in
+                [(5, m.mapping.transform_symbol()), (15, m.mapping.checked_transform_symbol())].into_iter().enumerate()
+            {
                 let row = self.shapes.len() * 6 + i * 2 + offset;
                 c.push_str(&format!("memcpy(rows[{row}].source_sha256,source_0,32);memcpy(rows[{row}].signature_sha256,mapping_digest_{i},32);rows[{row}].address=(uint64_t)(uintptr_t)({address});rows[{row}].role={role};\n"));
             }
@@ -210,9 +217,11 @@ pub(crate) fn issue_dynamic_initialization(
     let mut mappings = BTreeMap::new();
     let mut packings = Vec::new();
     for requested in instances {
-        let binding=beskid_queries::dynamic_shape_binding(input.database(),requested).map_err(|e|e.to_string())?;
-        let unpack=beskid_queries::dynamic_unpacking_bridge(input.database(),requested).map_err(|e|e.to_string())?;
-        let mapping=beskid_queries::dynamic_mapping_binding(input.database(),requested).map_err(|e|e.to_string())?;
+        let binding = beskid_queries::dynamic_shape_binding(input.database(), requested).map_err(|e| e.to_string())?;
+        let unpack =
+            beskid_queries::dynamic_unpacking_bridge(input.database(), requested).map_err(|e| e.to_string())?;
+        let mapping =
+            beskid_queries::dynamic_mapping_binding(input.database(), requested).map_err(|e| e.to_string())?;
         if let Some(mapping) = mapping {
             // Both shapes of a mapping are registered; an approved plan also registers
             // its transform. A rejected plan registers no mapping and keeps token zero.
@@ -220,12 +229,18 @@ pub(crate) fn issue_dynamic_initialization(
             packings.push(mapping.destination().clone());
             let compiled = input.compiled_dynamic_mapping(&mapping)?;
             if let Some(approved) = compiled.approved() {
-                mappings.insert(*approved.digest(), (*compiled.source_shape(), *compiled.destination_shape(), approved.clone()));
+                mappings.insert(
+                    *approved.digest(),
+                    (*compiled.source_shape(), *compiled.destination_shape(), approved.clone()),
+                );
             }
             continue;
         }
-        let instance=binding.as_ref().map(|binding|binding.packing())
-            .or_else(||unpack.as_ref().map(|bridge|bridge.packing())).unwrap_or(requested);
+        let instance = binding
+            .as_ref()
+            .map(|binding| binding.packing())
+            .or_else(|| unpack.as_ref().map(|bridge| bridge.packing()))
+            .unwrap_or(requested);
         packings.push(instance.clone());
     }
     for instance in &packings {
@@ -265,7 +280,11 @@ pub(crate) fn issue_dynamic_initialization(
             order.iter().position(|candidate| candidate == digest).ok_or("Dynamic mapping shape was not registered")
         };
         total = total.checked_add(mapping.signature().len()).ok_or("Dynamic signature total overflow")?;
-        issued_mappings.push(DynamicMappingData { source: index(&source)?, destination: index(&destination)?, mapping });
+        issued_mappings.push(DynamicMappingData {
+            source: index(&source)?,
+            destination: index(&destination)?,
+            mapping,
+        });
     }
     if total > 16 * 1024 * 1024 || shapes.len() * 6 + issued_mappings.len() * 2 > 4096 {
         return Err("Dynamic initializer closure exceeds profile bound".into());
@@ -308,27 +327,43 @@ mod seal_tests {
         include!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/codegen_input/support.rs"));
     }
     use super::*;
-    use std::sync::Arc;
-    use crate::module_emission::{SyntaxModuleItem,lower_syntax_program};
+    use crate::module_emission::{SyntaxModuleItem, lower_syntax_program};
     use beskid_abi::abi_v5::AbiManifestV5;
+    use std::sync::Arc;
 
     #[test]
     fn structural_seal_rejects_changed_registered_body_data_and_imports() {
-        let (db,typed,root,target)=support::input_fixture_with_source("pub string Entry(){return \"held\";}");
-        let key=support::find_node(&db,root,beskid_queries::IndexedNodeKind::FunctionDefinition).unwrap();
-        let input=CodegenInput::new(&db,typed,Arc::from([root]),target.clone(),AbiManifestV5::canonical_runtime(target)).unwrap();
-        let isa=cranelift_codegen::isa::lookup_by_name("x86_64").unwrap()
-            .finish(cranelift_codegen::settings::Flags::new(cranelift_codegen::settings::builder())).unwrap();
-        let artifact=lower_syntax_program(&input,isa.as_ref(),&[SyntaxModuleItem{key,symbol:"Entry".into()}]).unwrap();
-        assert!(!artifact.functions.is_empty());assert!(!artifact.string_literals.is_empty());
-        let seal=ArtifactSeal::capture(&artifact);assert!(seal.matches(&artifact));
-        let mut changed=artifact.clone();changed.functions[0].function.signature.returns.clear();
-        assert!(!seal.matches(&changed),"actual registered function ABI mutation must reject");
-        let mut changed=artifact.clone();changed.string_literals.values_mut().next().unwrap()[0]^=1;
-        assert!(!seal.matches(&changed),"actual source literal substitution must reject");
-        let mut changed=artifact.clone();changed.extern_imports.push(crate::ExternImport{symbol:"foreign".into(),abi:Some("C".into()),library:None,optional:false});
-        assert!(!seal.matches(&changed),"additional native import must reject");
-        let mut changed=artifact.clone();changed.event_handler_wrapper_required=!changed.event_handler_wrapper_required;
-        assert!(!seal.matches(&changed),"descriptor emission mode mutation must reject");
+        let (db, typed, root, target) = support::input_fixture_with_source("pub string Entry(){return \"held\";}");
+        let key = support::find_node(&db, root, beskid_queries::IndexedNodeKind::FunctionDefinition).unwrap();
+        let input =
+            CodegenInput::new(&db, typed, Arc::from([root]), target.clone(), AbiManifestV5::canonical_runtime(target))
+                .unwrap();
+        let isa = cranelift_codegen::isa::lookup_by_name("x86_64")
+            .unwrap()
+            .finish(cranelift_codegen::settings::Flags::new(cranelift_codegen::settings::builder()))
+            .unwrap();
+        let artifact =
+            lower_syntax_program(&input, isa.as_ref(), &[SyntaxModuleItem { key, symbol: "Entry".into() }]).unwrap();
+        assert!(!artifact.functions.is_empty());
+        assert!(!artifact.string_literals.is_empty());
+        let seal = ArtifactSeal::capture(&artifact);
+        assert!(seal.matches(&artifact));
+        let mut changed = artifact.clone();
+        changed.functions[0].function.signature.returns.clear();
+        assert!(!seal.matches(&changed), "actual registered function ABI mutation must reject");
+        let mut changed = artifact.clone();
+        changed.string_literals.values_mut().next().unwrap()[0] ^= 1;
+        assert!(!seal.matches(&changed), "actual source literal substitution must reject");
+        let mut changed = artifact.clone();
+        changed.extern_imports.push(crate::ExternImport {
+            symbol: "foreign".into(),
+            abi: Some("C".into()),
+            library: None,
+            optional: false,
+        });
+        assert!(!seal.matches(&changed), "additional native import must reject");
+        let mut changed = artifact.clone();
+        changed.event_handler_wrapper_required = !changed.event_handler_wrapper_required;
+        assert!(!seal.matches(&changed), "descriptor emission mode mutation must reject");
     }
 }

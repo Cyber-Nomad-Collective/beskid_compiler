@@ -133,7 +133,11 @@ pub(in crate::semantic_contract) fn scalar_match_tracked(
     with_node(db, syntax, key, |program, index, node| {
         let expression = node.of::<beskid_analysis::syntax::MatchExpression>()?;
         let scrutinee = index
-            .direct_child_id(program, key.node, beskid_analysis::syntax_query::DynNodeRef::from(expression.scrutinee.as_ref()))
+            .direct_child_id(
+                program,
+                key.node,
+                beskid_analysis::syntax_query::DynNodeRef::from(expression.scrutinee.as_ref()),
+            )
             .map(|node| AstNodeKey { node: normalized_expression_node(index, node), ..key })?;
         // Only a proven primitive scrutinee type makes a by-value match; an enum, struct, or
         // unproven scrutinee has no scalar match fact (its enum match fact is the authority).

@@ -1,12 +1,12 @@
 pub mod artifact;
 mod checked;
-mod native;
 pub(crate) mod handles;
+mod native;
 mod rust;
 pub use artifact::{GeneratedFile, GlueArtifact, GlueArtifactError, GlueBindingManifest, GlueManifest};
 pub use checked::emit_checked_export;
+pub use handles::{EmittedHandleTransport, GlueTransportKind, emit_source_handle_transports};
 pub use rust::{emit, rust_identifier};
-pub use handles::{EmittedHandleTransport,GlueTransportKind,emit_source_handle_transports};
 
 /// The executable closure of a Glue packet: every selected item and every item it reaches
 /// through direct calls, plus the scheduler entry set when that closure needs it.
@@ -39,7 +39,9 @@ pub fn native_body_items(
             .ok_or_else(|| GlueArtifactError::Invalid(format!("Glue item `{}` has no source root", item.symbol)))?;
         let closure = beskid_queries::reachable_items(db, root, item.key)
             .map_err(|error| crate::backend::BackendError::RustGlueFact { key: item.key, message: error.to_string() })?
-            .ok_or_else(|| GlueArtifactError::Invalid(format!("incomplete direct-call facts for Glue item `{}`", item.symbol)))?;
+            .ok_or_else(|| {
+                GlueArtifactError::Invalid(format!("incomplete direct-call facts for Glue item `{}`", item.symbol))
+            })?;
         reachable.extend(closure.iter().copied());
     }
     let mut items = all_items.iter().filter(|item| reachable.contains(&item.key)).cloned().collect::<Vec<_>>();
@@ -87,8 +89,9 @@ fn selected_bindings<'packet>(
 ) -> Result<Vec<(beskid_queries::AstNodeKey, &'packet GlueBindingManifest)>, crate::backend::BackendError> {
     let mut bindings = Vec::new();
     for selected_item in selected {
-        let Some(fact) = beskid_queries::glue_binding(input.database(), selected_item.key)
-            .map_err(|error| crate::backend::BackendError::RustGlueFact { key: selected_item.key, message: error.to_string() })?
+        let Some(fact) = beskid_queries::glue_binding(input.database(), selected_item.key).map_err(|error| {
+            crate::backend::BackendError::RustGlueFact { key: selected_item.key, message: error.to_string() }
+        })?
         else {
             continue;
         };

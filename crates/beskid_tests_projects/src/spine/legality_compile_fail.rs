@@ -72,8 +72,8 @@ fn every_legality_compile_fail_target_is_rejected_with_its_code_in_the_dependenc
     let targets = corpus_targets();
     let codes = targets.iter().map(|(_, _, code)| code.as_str()).collect::<std::collections::BTreeSet<_>>();
     for expected in [
-        "E1101", "E1105", "E1108", "E1201", "E1203", "E1204", "E1206", "E1211", "E1214", "E1229", "E1230", "E1231", "E1301",
-        "E1302", "E1304", "E1307",
+        "E1101", "E1105", "E1108", "E1201", "E1203", "E1204", "E1206", "E1211", "E1214", "E1229", "E1230", "E1231",
+        "E1301", "E1302", "E1304", "E1307",
     ] {
         assert!(codes.contains(expected), "the compile-fail corpus has no target for {expected}");
     }
@@ -134,7 +134,11 @@ fn every_legality_compile_fail_target_is_rejected_with_its_code_in_the_dependenc
                 .iter()
                 .filter(|diagnostic| diagnostic.severity == Severity::Error)
                 .map(|diagnostic| {
-                    (diagnostic.code.clone().unwrap_or_default(), diagnostic.src.name().to_owned(), diagnostic.message.clone())
+                    (
+                        diagnostic.code.clone().unwrap_or_default(),
+                        diagnostic.src.name().to_owned(),
+                        diagnostic.message.clone(),
+                    )
                 })
                 .collect::<Vec<_>>();
             let helper = format!("Helpers/{target}.bd");

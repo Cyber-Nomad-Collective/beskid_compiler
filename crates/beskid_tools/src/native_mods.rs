@@ -196,8 +196,8 @@ fn qualified_mod_host(
     mod_host_executable: &Path,
     runtime: RuntimeKitSelection,
 ) -> Result<ModHost> {
-    let target = beskid_abi::runtime_kit::host_runtime_target()
-        .map_err(|error| anyhow!("native Mod host target: {error}"))?;
+    let target =
+        beskid_abi::runtime_kit::host_runtime_target().map_err(|error| anyhow!("native Mod host target: {error}"))?;
     let prefix = runtime.prefix().to_path_buf();
     let profile = runtime.profile();
     let mut artifacts = Vec::new();
@@ -244,7 +244,6 @@ fn qualified_mod_host(
         std::time::Duration::from_secs(300),
         Arc::new(|| false),
     )
-        .map_err(anyhow::Error::from)?;
+    .map_err(anyhow::Error::from)?;
     Ok(ModHost::native(Arc::new(invoker), runtime))
 }
-

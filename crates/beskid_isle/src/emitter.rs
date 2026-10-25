@@ -4,8 +4,8 @@ use cranelift_codegen::verify_function;
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
 
 use crate::context::{
-    CallImporter, IsleContext, StringInterner, block_is_terminated, lower_converted_expression, lower_expression, lower_statement,
-    materialize_parameters,
+    CallImporter, IsleContext, StringInterner, block_is_terminated, lower_converted_expression, lower_expression,
+    lower_statement, materialize_parameters,
 };
 use crate::errors::FunctionEmissionError;
 use crate::facts::{AstNodeKey, InlineCaptureField, ManagedReferenceFact, NodeFacts, NodeKind, ParameterSlot};

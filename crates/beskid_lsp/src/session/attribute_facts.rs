@@ -142,13 +142,14 @@ pub(crate) fn transfer_class_hovers(
     for kind in [NodeKind::TypeDefinition, NodeKind::EnumDefinition] {
         for node in index.ids_of_kind(kind) {
             let Some(found) = index.node_at(&entry.program, node) else { continue };
-            let (keyword, name, generic) = if let Some(definition) = found.of::<beskid_analysis::syntax::TypeDefinition>() {
-                ("type", &definition.name, !definition.generics.is_empty())
-            } else if let Some(definition) = found.of::<beskid_analysis::syntax::EnumDefinition>() {
-                ("enum", &definition.name, !definition.generics.is_empty())
-            } else {
-                continue;
-            };
+            let (keyword, name, generic) =
+                if let Some(definition) = found.of::<beskid_analysis::syntax::TypeDefinition>() {
+                    ("type", &definition.name, !definition.generics.is_empty())
+                } else if let Some(definition) = found.of::<beskid_analysis::syntax::EnumDefinition>() {
+                    ("enum", &definition.name, !definition.generics.is_empty())
+                } else {
+                    continue;
+                };
             let class = if generic {
                 "decided per instantiation".to_string()
             } else {
@@ -192,13 +193,17 @@ pub(crate) fn ownership_hovers(
             location_end: end,
         });
     };
-    for kind in [NodeKind::FunctionDefinition, NodeKind::MethodDefinition, NodeKind::TestDefinition, NodeKind::LambdaExpression] {
+    for kind in
+        [NodeKind::FunctionDefinition, NodeKind::MethodDefinition, NodeKind::TestDefinition, NodeKind::LambdaExpression]
+    {
         for node in index.ids_of_kind(kind) {
-            let Ok(Some(ownership)) = beskid_queries::affine_ownership(db, AstNodeKey { unit, generation, node }) else {
+            let Ok(Some(ownership)) = beskid_queries::affine_ownership(db, AstNodeKey { unit, generation, node })
+            else {
                 continue;
             };
             for binding in ownership.bindings.iter() {
-                let Some(span) = index.node_at(&entry.program, binding.declaration.node).and_then(|node| node.span()) else {
+                let Some(span) = index.node_at(&entry.program, binding.declaration.node).and_then(|node| node.span())
+                else {
                     continue;
                 };
                 let state = if binding.owning { "owning" } else { "borrowed" };
@@ -437,7 +442,11 @@ unit Keep(move u8[] block) { return; }\n";
         let (db, unit, generation, assembly) = typed_fixture();
         let hovers = super::ownership_hovers(&db, unit, generation, &assembly.units[0]);
         let data = hovers.iter().find(|hover| hover.markdown.starts_with("`data`")).expect("data hover");
-        assert!(data.markdown.contains("borrowed") && data.markdown.contains("transfer class: Moved"), "{}", data.markdown);
+        assert!(
+            data.markdown.contains("borrowed") && data.markdown.contains("transfer class: Moved"),
+            "{}",
+            data.markdown
+        );
         let block = hovers.iter().find(|hover| hover.markdown.starts_with("`block`")).expect("block hover");
         assert!(block.markdown.contains("owning"), "{}", block.markdown);
     }

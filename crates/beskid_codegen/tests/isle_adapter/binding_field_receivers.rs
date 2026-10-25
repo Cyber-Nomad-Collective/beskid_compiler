@@ -208,15 +208,15 @@ unit Main() { Build(); return; }
     let artifact = lower_syntax_program(
         &input,
         isa.as_ref(),
-        &[SyntaxModuleItem { key: build, symbol: "Build".into() }, SyntaxModuleItem { key: main, symbol: "Main".into() }],
+        &[
+            SyntaxModuleItem { key: build, symbol: "Build".into() },
+            SyntaxModuleItem { key: main, symbol: "Main".into() },
+        ],
     )
     .expect("an array literal of struct literals lowers as a struct literal field");
 
-    let build = artifact
-        .functions
-        .iter()
-        .find(|function| function.name.starts_with("Build"))
-        .expect("lowered Build function");
+    let build =
+        artifact.functions.iter().find(|function| function.name.starts_with("Build")).expect("lowered Build function");
     let clif = build.function.display().to_string();
     assert!(clif.contains("beskid_rt_v5_array_allocate_rooted"), "{clif}");
     // Element stores initialize the array the literal allocated: no barrier of either kind.
@@ -240,7 +240,10 @@ unit Main() { Build(); return; }
     lower_syntax_program(
         &input,
         isa.as_ref(),
-        &[SyntaxModuleItem { key: build, symbol: "Build".into() }, SyntaxModuleItem { key: main, symbol: "Main".into() }],
+        &[
+            SyntaxModuleItem { key: build, symbol: "Build".into() },
+            SyntaxModuleItem { key: main, symbol: "Main".into() },
+        ],
     )
     .expect("a scalar array literal lowers as a struct literal field");
 }
@@ -292,19 +295,15 @@ bool Main(Result<Request, HttpError> head) {
     let framing = functions[0];
     let main = functions[1];
 
-    let appends = super::support::find_nodes_of_kind(
-        input.database(),
-        main,
-        beskid_queries::IndexedNodeKind::CallExpression,
-    )
-    .into_iter()
-    .map(|call| (call, beskid_queries::collection_operation(input.database(), call)))
-    .collect::<Vec<_>>();
+    let appends =
+        super::support::find_nodes_of_kind(input.database(), main, beskid_queries::IndexedNodeKind::CallExpression)
+            .into_iter()
+            .map(|call| (call, beskid_queries::collection_operation(input.database(), call)))
+            .collect::<Vec<_>>();
     assert!(
-        appends.iter().any(|(_, operation)| matches!(
-            operation,
-            Ok(Some(beskid_queries::CollectionOperation::Append { .. }))
-        )),
+        appends
+            .iter()
+            .any(|(_, operation)| matches!(operation, Ok(Some(beskid_queries::CollectionOperation::Append { .. })))),
         "Array.Append<u8>(value.body, ...) must resolve to a canonical Append collection operation: {appends:?}"
     );
 

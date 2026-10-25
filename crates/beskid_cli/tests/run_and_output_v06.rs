@@ -59,8 +59,10 @@ fn v06_check_json_emits_diagnostic_and_result_records() {
     let output = beskid(root.path()).args(["check", "--json", "--plain"]).arg(&invalid).output().unwrap();
     let (stdout, stderr) = text(&output);
     assert_eq!(output.status.code(), Some(1), "{stdout}{stderr}");
-    let records: Vec<serde_json::Value> =
-        stdout.lines().map(|line| serde_json::from_str(line).unwrap_or_else(|error| panic!("{error}: {line}"))).collect();
+    let records: Vec<serde_json::Value> = stdout
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap_or_else(|error| panic!("{error}: {line}")))
+        .collect();
     assert!(records.iter().all(|record| record["schemaVersion"] == 1 && record["command"] == "check"), "{stdout}");
     let diagnostic = records.iter().find(|record| record["event"] == "diagnostic").expect("diagnostic record");
     assert_eq!(diagnostic["status"], "error");
@@ -93,7 +95,13 @@ fn v06_run_interrupt_reaches_program_and_exits_130() {
         "Wait.bd",
         "use Core.Output;\ni32 Main() {\n    Output.WriteLine(\"ready\");\n    while (true) { }\n    return 0;\n}\n",
     );
-    let mut cli = beskid(root.path()).args(["run", "--plain"]).arg(&program).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
+    let mut cli = beskid(root.path())
+        .args(["run", "--plain"])
+        .arg(&program)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
     let stdout = cli.stdout.take().unwrap();
     let (ready_tx, ready_rx) = mpsc::channel();
     let reader = std::thread::spawn(move || {

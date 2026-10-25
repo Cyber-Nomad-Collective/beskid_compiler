@@ -4,12 +4,16 @@ use std::path::{Path, PathBuf};
 
 /// Manifest of an application project with the bundled layout (`Src/Main.bd`).
 pub fn app_manifest(name: &str) -> String {
-    format!("{name} {{\n  name = \"{name}\"\n  version = \"0.1.0\"\n}}\n\ntarget \"App\" {{\n  kind = \"App\"\n  entry = \"Main.bd\"\n}}\n")
+    format!(
+        "{name} {{\n  name = \"{name}\"\n  version = \"0.1.0\"\n}}\n\ntarget \"App\" {{\n  kind = \"App\"\n  entry = \"Main.bd\"\n}}\n"
+    )
 }
 
 /// Manifest of a library project whose single module is `<name>.bd`.
 pub fn lib_manifest(name: &str) -> String {
-    format!("{name} {{ name = \"{name}\" version = \"0.1.0\" }}\ntarget \"{name}\" {{ kind = \"Lib\" entry = \"{name}.bd\" }}\n")
+    format!(
+        "{name} {{ name = \"{name}\" version = \"0.1.0\" }}\ntarget \"{name}\" {{ kind = \"Lib\" entry = \"{name}.bd\" }}\n"
+    )
 }
 
 /// Write an application project at `root/<name>` returning its manifest path.
@@ -71,7 +75,10 @@ fn walk(root: &Path, at: &Path, skip_private: bool, out: &mut BTreeMap<PathBuf, 
         if path.is_dir() {
             walk(root, &path, skip_private, out);
         } else {
-            out.insert(path.strip_prefix(root).expect("below root").to_owned(), std::fs::read(&path).expect("read file"));
+            out.insert(
+                path.strip_prefix(root).expect("below root").to_owned(),
+                std::fs::read(&path).expect("read file"),
+            );
         }
     }
 }

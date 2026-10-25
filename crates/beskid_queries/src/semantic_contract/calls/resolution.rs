@@ -39,7 +39,8 @@ pub(in crate::semantic_contract) fn call_lowering_for_node(
             }
             // A member call on any expression of a contract type (`all[0].Greet()`,
             // `Make().Greet()`) is a contract method call dispatched through the value.
-            if let Some(receiver) = super::super::contract_values::contract_value_member_receiver(db, program, index, key)
+            if let Some(receiver) =
+                super::super::contract_values::contract_value_member_receiver(db, program, index, key)
             {
                 return Some(receiver.map(|(method, _)| CallLowering::Direct(method)));
             }
@@ -65,7 +66,11 @@ pub(in crate::semantic_contract) fn call_lowering_for_node(
 /// Construct name of a callee expression, for gap messages only.
 fn expression_construct_name(expression: &beskid_analysis::syntax::Expression) -> String {
     let debug = format!("{expression:?}");
-    debug.split(|character: char| !character.is_alphanumeric() && character != '_').next().unwrap_or("expression").to_owned()
+    debug
+        .split(|character: char| !character.is_alphanumeric() && character != '_')
+        .next()
+        .unwrap_or("expression")
+        .to_owned()
 }
 
 /// The single sited `call_lowering`-family gap: every path-callee failure names the call node
@@ -112,9 +117,13 @@ impl PathCallResolution {
     ) -> Result<CallLowering, SemanticError> {
         match self {
             Self::Lowered(lowering) => Ok(lowering),
-            Self::Unavailable(query) => {
-                Err(path_call_unavailable(db, key, path, query, "a resolution authority matched but could not complete"))
-            }
+            Self::Unavailable(query) => Err(path_call_unavailable(
+                db,
+                key,
+                path,
+                query,
+                "a resolution authority matched but could not complete",
+            )),
             Self::UnresolvedTarget(query) => Err(path_call_unavailable(
                 db,
                 key,
@@ -277,11 +286,7 @@ pub(in crate::semantic_contract) fn unqualified_enclosing_method_call(
     // Type arguments on `this.Method<T>` bind a generic sibling's own type parameters
     // (`this.Spawn<T>(..)` inside `Scope.SpawnTry<T>`); a non-generic sibling takes none.
     if !segment.node.type_args.is_empty()
-        && index
-            .node_at(program, *target)?
-            .of::<beskid_analysis::syntax::MethodDefinition>()?
-            .generics
-            .is_empty()
+        && index.node_at(program, *target)?.of::<beskid_analysis::syntax::MethodDefinition>()?.generics.is_empty()
     {
         return None;
     }
@@ -451,8 +456,7 @@ pub fn optional_extern_contract_members(
             if enclosing_contract_id(program, index, key)? != contract_id {
                 return None;
             }
-            let method =
-                index.node_at(program, candidate)?.of::<beskid_analysis::syntax::ContractMethodSignature>()?;
+            let method = index.node_at(program, candidate)?.of::<beskid_analysis::syntax::ContractMethodSignature>()?;
             let import = attributes.import_for(&method.name.node.name);
             (!import.availability_query).then_some((key, import))
         })
@@ -561,23 +565,25 @@ pub(in crate::semantic_contract) fn method_declaration_for_member_receiver(
             &member.node.member.node.name,
         );
     }
-    let nominal = (|| generic_source_expression_identity(db, receiver)
-        .ok()
-        .and_then(|identity| super::super::contracts::concrete_declaration(db, key, &identity))
-        .or_else(|| aggregate_literal_declaration(db, receiver).ok().flatten())
-        .or_else(|| call_result_nominal_declaration(db, receiver))
-        .or_else(|| {
-            let receiver_node = index.node_at(program, receiver.node)?;
-            let path = receiver_node.of::<beskid_analysis::syntax::PathExpression>()?;
-            let [segment] = path.path.node.segments.as_slice() else {
-                return None;
-            };
-            if !segment.node.type_args.is_empty() {
-                return None;
-            }
-            nominal_local_receiver_declaration(db, program, index, key, segment.node.name.node.name.as_str())
-                .map(|(declaration, _)| declaration)
-        }))();
+    let nominal = (|| {
+        generic_source_expression_identity(db, receiver)
+            .ok()
+            .and_then(|identity| super::super::contracts::concrete_declaration(db, key, &identity))
+            .or_else(|| aggregate_literal_declaration(db, receiver).ok().flatten())
+            .or_else(|| call_result_nominal_declaration(db, receiver))
+            .or_else(|| {
+                let receiver_node = index.node_at(program, receiver.node)?;
+                let path = receiver_node.of::<beskid_analysis::syntax::PathExpression>()?;
+                let [segment] = path.path.node.segments.as_slice() else {
+                    return None;
+                };
+                if !segment.node.type_args.is_empty() {
+                    return None;
+                }
+                nominal_local_receiver_declaration(db, program, index, key, segment.node.name.node.name.as_str())
+                    .map(|(declaration, _)| declaration)
+            })
+    })();
     let Some(declaration) = nominal else {
         // Any other receiver whose proven value type is a primitive (`(x).Format()` for a `for`
         // variable or a `match` binding).
@@ -585,7 +591,12 @@ pub(in crate::semantic_contract) fn method_declaration_for_member_receiver(
             .ok()
             .flatten()
             .filter(|ty| super::super::contracts::is_conformable_primitive(*ty))?;
-        return super::super::contracts::primitive_method_declaration(db, key, primitive, &member.node.member.node.name);
+        return super::super::contracts::primitive_method_declaration(
+            db,
+            key,
+            primitive,
+            &member.node.member.node.name,
+        );
     };
     let method = unique_nominal_method_declaration(db, declaration, &member.node.member.node.name)?;
     let target = db.syntax_unit(method.unit).filter(|syntax| syntax.accepts_key(db, method))?;
@@ -616,7 +627,9 @@ fn call_result_nominal_declaration(db: &dyn Db, receiver: AstNodeKey) -> Option<
     let result = callee
         .of::<beskid_analysis::syntax::FunctionDefinition>()
         .and_then(|function| function.return_type.as_ref())
-        .or_else(|| callee.of::<beskid_analysis::syntax::MethodDefinition>().and_then(|method| method.return_type.as_ref()))
+        .or_else(|| {
+            callee.of::<beskid_analysis::syntax::MethodDefinition>().and_then(|method| method.return_type.as_ref())
+        })
         .or_else(|| {
             callee
                 .of::<beskid_analysis::syntax::ContractMethodSignature>()
@@ -897,6 +910,7 @@ pub(in crate::semantic_contract) fn primitive_local_member_receiver(
     let primitive = abi_local_declaration_type(db, program, index, key, local)?
         .ok()
         .filter(|ty| super::super::contracts::is_conformable_primitive(*ty))?;
-    let method = super::super::contracts::primitive_method_declaration(db, key, primitive, &member.node.name.node.name)?;
+    let method =
+        super::super::contracts::primitive_method_declaration(db, key, primitive, &member.node.name.node.name)?;
     Some((method, AstNodeKey { node: local, ..key }))
 }

@@ -32,8 +32,9 @@ use beskid_analysis::syntax_query::{DynNodeRef, NodeKind, SyntaxIndex};
 
 use super::abi::generic_abi_type;
 use super::contracts::{
-    contract_declaration_for_identity, contract_embedded_contracts, contract_method_slot, contract_method_slots, contract_parameter_declarations,
-    is_conformable_primitive, prove_box_conformance, specialized_source_expression_identity,
+    contract_declaration_for_identity, contract_embedded_contracts, contract_method_slot, contract_method_slots,
+    contract_parameter_declarations, is_conformable_primitive, prove_box_conformance,
+    specialized_source_expression_identity,
 };
 use super::expected_type::expected_type_in;
 use super::*;
@@ -178,7 +179,8 @@ pub fn contract_upcast(
         return Ok(None);
     };
     let methods = contract_method_slots(db, source).ok_or_else(|| SemanticError::unavailable("contract_methods"))?;
-    let word = usize::try_from(WITNESS_HEADER_WORDS).unwrap_or(usize::MAX)
+    let word = usize::try_from(WITNESS_HEADER_WORDS)
+        .unwrap_or(usize::MAX)
         .checked_add(methods.len())
         .and_then(|word| word.checked_add(position))
         .and_then(|word| u32::try_from(word).ok())
@@ -319,7 +321,8 @@ pub fn contract_value_equality(
     };
     let index = syntax.syntax_index(db);
     let program = syntax.expanded_program(db);
-    let Some(binary) = index.node_at(program, key.node).and_then(|node| node.of::<beskid_analysis::syntax::BinaryExpression>())
+    let Some(binary) =
+        index.node_at(program, key.node).and_then(|node| node.of::<beskid_analysis::syntax::BinaryExpression>())
     else {
         return Ok(None);
     };
@@ -374,7 +377,8 @@ pub(super) fn witness_table(
             .ok_or_else(|| SemanticError::new("missing contract method implementation for a witness table"))?;
         ordered.push((*slot, implementation));
     }
-    let contract_name = stable_declaration_identity(db, contract).ok_or_else(|| SemanticError::unavailable("contract"))?;
+    let contract_name =
+        stable_declaration_identity(db, contract).ok_or_else(|| SemanticError::unavailable("contract"))?;
     let contract_display = GenericSourceTypeIdentity::Contract {
         qualified_name: contract_name,
         arguments: applied_arguments.iter().cloned().collect(),
@@ -560,7 +564,10 @@ pub fn contract_value_receiver(
     let Some(receiver) = call_arguments(db, key)?.and_then(|arguments| arguments.first().copied()) else {
         return Ok(None);
     };
-    Ok(Some(matches!(receiver_identity(db, key, receiver, enclosing), Some(GenericSourceTypeIdentity::Contract { .. }))))
+    Ok(Some(matches!(
+        receiver_identity(db, key, receiver, enclosing),
+        Some(GenericSourceTypeIdentity::Contract { .. })
+    )))
 }
 
 /// The identity of a call receiver as call-argument collection denotes it: an expression, the
@@ -580,11 +587,13 @@ fn receiver_identity(
         Some(NodeKind::Identifier) => local_identity(db, program, index, receiver, enclosing),
         Some(NodeKind::PathSegment) => segment_identity(db, receiver, enclosing),
         Some(NodeKind::PathExpression) if is_callee_of(index, program, call, receiver.node) => {
-            let path = &index.node_at(program, receiver.node)?.of::<beskid_analysis::syntax::PathExpression>()?.path.node;
+            let path =
+                &index.node_at(program, receiver.node)?.of::<beskid_analysis::syntax::PathExpression>()?.path.node;
             let (_, prefix) = path.segments.split_last()?;
             if let [single] = prefix
                 && single.node.type_args.is_empty()
-                && let Some(identifier) = resolve_lexical_declaration(program, index, call.node, &single.node.name.node.name)
+                && let Some(identifier) =
+                    resolve_lexical_declaration(program, index, call.node, &single.node.name.node.name)
             {
                 return local_identity(db, program, index, AstNodeKey { node: identifier, ..receiver }, enclosing);
             }
@@ -612,7 +621,10 @@ fn segment_identity(
 
 /// The declared identity of the injected field read at `key` (a field path or path segment):
 /// `Greeter` for `inject Greeter greeter`, `Greeter[]` for `inject Greeter[] all`.
-pub(in crate::semantic_contract) fn injected_field_identity(db: &dyn Db, key: AstNodeKey) -> Option<GenericSourceTypeIdentity> {
+pub(in crate::semantic_contract) fn injected_field_identity(
+    db: &dyn Db,
+    key: AstNodeKey,
+) -> Option<GenericSourceTypeIdentity> {
     let access = super::composition::composition_injected_field_access(db, key).ok().flatten()?;
     let syntax = db.syntax_unit(access.field.unit).filter(|syntax| syntax.accepts_key(db, access.field))?;
     let field = syntax
@@ -623,7 +635,12 @@ pub(in crate::semantic_contract) fn injected_field_identity(db: &dyn Db, key: As
 }
 
 /// Whether `node` is the (normalized) callee of `call`.
-fn is_callee_of(index: &SyntaxIndex, program: &Program, call: AstNodeKey, node: beskid_analysis::syntax::AstNodeId) -> bool {
+fn is_callee_of(
+    index: &SyntaxIndex,
+    program: &Program,
+    call: AstNodeKey,
+    node: beskid_analysis::syntax::AstNodeId,
+) -> bool {
     index
         .node_at(program, call.node)
         .and_then(|node| node.of::<CallExpression>())
@@ -715,7 +732,11 @@ pub fn contract_witness_method_instances(
 ) -> SemanticQueryResult<Arc<[GenericSpecializationInstance]>> {
     let mut instances = Vec::with_capacity(table.methods.len());
     for (_, implementation) in table.methods.iter() {
-        instances.push(super::contracts::implementation_method_instance(db, *implementation, table.environment.clone())?);
+        instances.push(super::contracts::implementation_method_instance(
+            db,
+            *implementation,
+            table.environment.clone(),
+        )?);
     }
     Ok(Some(instances.into()))
 }

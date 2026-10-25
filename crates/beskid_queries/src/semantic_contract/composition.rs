@@ -84,7 +84,8 @@ fn composition_injected_field_access_tracked(
     with_node(db, syntax, key, |program, index, node| {
         // A whole field read (`this.greeter`), or the segment that ends one inside a longer path
         // (`this.greeter` in the call path `this.greeter.Greet`).
-        let (declaration, receiver, field_name) = match field_access_receiver(db, program, index, key, node, None, None) {
+        let (declaration, receiver, field_name) = match field_access_receiver(db, program, index, key, node, None, None)
+        {
             Some(resolved) => {
                 let resolved = resolved.ok()?;
                 (resolved.declaration, resolved.receiver, resolved.field_name.to_owned())
@@ -294,10 +295,11 @@ impl beskid_analysis::composition::CompositionTypeResolver for CompositionTypes<
                     .filter(|contract| contract.generics.len() == arity)
                     .map(|contract| contract.name.span)
             })
-            .or_else(|| declared.of::<beskid_analysis::syntax::EnumDefinition>().map(|definition| definition.name.span))?;
+            .or_else(|| {
+                declared.of::<beskid_analysis::syntax::EnumDefinition>().map(|definition| definition.name.span)
+            })?;
         Some(beskid_analysis::composition::TypeIdentity {
-            unit: (declaration.unit != self.entry)
-                .then(|| std::sync::Arc::from(declaration.unit.path(db).as_path())),
+            unit: (declaration.unit != self.entry).then(|| std::sync::Arc::from(declaration.unit.path(db).as_path())),
             declaration: name,
             arguments: Vec::new(),
         })

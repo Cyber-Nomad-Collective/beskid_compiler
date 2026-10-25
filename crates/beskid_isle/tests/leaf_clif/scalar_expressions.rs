@@ -1,8 +1,8 @@
 use super::support::{
     AbiParam, AstNodeId, AstNodeKey, BeskidDatabase, Function, FunctionBuilder, FunctionBuilderContext, InstBuilder,
     IsleContext, JITBuilder, JITModule, Linkage, LiteralKind, Module, NodeFacts, NodeKind, OperatorFact, PathBuf,
-    SemanticTypeId, Signature, SourceUnitId, SyntaxGenerationId, Triple, default_libcall_names, lower_expression, settings, types,
-    verify_function,
+    SemanticTypeId, Signature, SourceUnitId, SyntaxGenerationId, Triple, default_libcall_names, lower_expression,
+    settings, types, verify_function,
 };
 
 #[test]

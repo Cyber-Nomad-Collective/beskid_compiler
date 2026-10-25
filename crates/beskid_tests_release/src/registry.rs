@@ -60,7 +60,11 @@ impl Registry {
                         }
                         let text = String::from_utf8_lossy(&bytes).into_owned();
                         let path = text.split_whitespace().nth(1).unwrap_or("").to_owned();
-                        let served = { let mut log = q.lock().expect("request log"); log.push(path.clone()); log.len() };
+                        let served = {
+                            let mut log = q.lock().expect("request log");
+                            log.push(path.clone());
+                            log.len()
+                        };
                         if h.lock().expect("hold").as_deref() == Some(path.as_str()) {
                             hd.store(true, Ordering::SeqCst);
                             while !rl.load(Ordering::SeqCst) && !s.load(Ordering::SeqCst) {
@@ -73,10 +77,16 @@ impl Registry {
                         } else {
                             r.lock().expect("routes").get(&path).cloned().unwrap_or((404, b"missing".to_vec()))
                         };
-                        let _ = write!(stream, "HTTP/1.1 {status} Response\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", body.len());
+                        let _ = write!(
+                            stream,
+                            "HTTP/1.1 {status} Response\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                            body.len()
+                        );
                         let _ = stream.write_all(&body);
                     }
-                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => std::thread::sleep(Duration::from_millis(2)),
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                        std::thread::sleep(Duration::from_millis(2))
+                    }
                     Err(error) => panic!("loopback accept: {error}"),
                 }
             }
@@ -95,7 +105,11 @@ impl Registry {
 
     /// Publish one downloadable package archive holding a library with `Value()` returning `value`.
     pub fn package(&self, name: &str, version: &str, value: i32) {
-        self.package_bytes(name, version, archive(name, version, &format!("pub i32 Value() {{ return {value}; }}\n"), &[]));
+        self.package_bytes(
+            name,
+            version,
+            archive(name, version, &format!("pub i32 Value() {{ return {value}; }}\n"), &[]),
+        );
     }
 
     /// Publish a package whose library depends on another registry package.
@@ -157,9 +171,13 @@ pub fn archive(name: &str, version: &str, source: &str, dependencies: &[(&str, &
     let mut writer = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
     let options = zip::write::SimpleFileOptions::default();
     writer.start_file(format!("{name}.bproj"), options).expect("manifest entry");
-    let mut manifest = format!("{name} {{ name = \"{name}\" version = \"{version}\" }}\ntarget \"{name}\" {{ kind = \"Lib\" entry = \"Main.bd\" }}\n");
+    let mut manifest = format!(
+        "{name} {{ name = \"{name}\" version = \"{version}\" }}\ntarget \"{name}\" {{ kind = \"Lib\" entry = \"Main.bd\" }}\n"
+    );
     for (dependency, dependency_version) in dependencies {
-        manifest.push_str(&format!("dependency \"{dependency}\" {{ source = \"registry\" version = \"{dependency_version}\" }}\n"));
+        manifest.push_str(&format!(
+            "dependency \"{dependency}\" {{ source = \"registry\" version = \"{dependency_version}\" }}\n"
+        ));
     }
     writer.write_all(manifest.as_bytes()).expect("manifest bytes");
     writer.start_file("src/Main.bd", options).expect("source entry");

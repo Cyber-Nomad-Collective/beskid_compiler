@@ -227,7 +227,11 @@ fn path_is_call_callee(
         .node_at(program, parent)
         .and_then(|node| node.of::<beskid_analysis::syntax::CallExpression>())
         .and_then(|call| {
-            index.direct_child_id(program, parent, beskid_analysis::syntax_query::DynNodeRef::from(call.callee.as_ref()))
+            index.direct_child_id(
+                program,
+                parent,
+                beskid_analysis::syntax_query::DynNodeRef::from(call.callee.as_ref()),
+            )
         })
         .is_some_and(|callee| normalized_expression_node(index, callee) == path)
 }

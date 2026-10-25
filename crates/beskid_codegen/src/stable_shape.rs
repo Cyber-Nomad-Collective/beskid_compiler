@@ -102,7 +102,12 @@ impl CodegenInput<'_> {
                     edges += 1;
                 }
                 DynamicPackingNode::Record { declaration, arguments, fields, container, .. } => {
-                    writer.token(match container { None => "record", Some(beskid_queries::CanonicalContainerKind::List) => "record.list", Some(beskid_queries::CanonicalContainerKind::Map) => "record.map", _ => return Err("invalid canonical record container".into()) })?;
+                    writer.token(match container {
+                        None => "record",
+                        Some(beskid_queries::CanonicalContainerKind::List) => "record.list",
+                        Some(beskid_queries::CanonicalContainerKind::Map) => "record.map",
+                        _ => return Err("invalid canonical record container".into()),
+                    })?;
                     self.stable_shape_declaration(&mut writer, *declaration)?;
                     writer.number(arguments.len())?;
                     for argument in arguments {
@@ -120,7 +125,11 @@ impl CodegenInput<'_> {
                         .ok_or("shape edge overflow")?;
                 }
                 DynamicPackingNode::Enum { declaration, arguments, variants, container, .. } => {
-                    writer.token(match container { None => "enum", Some(beskid_queries::CanonicalContainerKind::Optional) => "enum.optional", _ => return Err("invalid canonical enum container".into()) })?;
+                    writer.token(match container {
+                        None => "enum",
+                        Some(beskid_queries::CanonicalContainerKind::Optional) => "enum.optional",
+                        _ => return Err("invalid canonical enum container".into()),
+                    })?;
                     self.stable_shape_declaration(&mut writer, *declaration)?;
                     writer.number(arguments.len())?;
                     for argument in arguments {

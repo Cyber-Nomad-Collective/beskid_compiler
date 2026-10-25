@@ -99,11 +99,14 @@ pub(super) fn assert_guarded_stores(clif: &str) -> usize {
         let successor = successor.split('(').next().unwrap_or(successor);
         let (_, store_body) = blocks
             .iter()
-            .find(|(candidate, _)| candidate.starts_with(&format!("{successor}:")) || candidate.starts_with(&format!("{successor}(")))
+            .find(|(candidate, _)| {
+                candidate.starts_with(&format!("{successor}:")) || candidate.starts_with(&format!("{successor}("))
+            })
             .unwrap_or_else(|| panic!("successor {successor}: {clif}"));
         let store = store_body.first().unwrap_or_else(|| panic!("the successor stores: {clif}"));
         assert!(
-            (store.starts_with("store ") || store.starts_with("store.")) && store.ends_with(&format!(" {value}, {slot}")),
+            (store.starts_with("store ") || store.starts_with("store."))
+                && store.ends_with(&format!(" {value}, {slot}")),
             "the store of the barrier's value to its slot follows the barrier: {store}\n{clif}"
         );
         let (_, guard_body) = blocks
@@ -117,7 +120,9 @@ pub(super) fn assert_guarded_stores(clif: &str) -> usize {
         let flag = brif.trim_start_matches("brif ").split(',').next().expect("branch condition").trim().to_owned();
         let load = guard_body
             .iter()
-            .position(|line| line.starts_with(&format!("{flag} = load.i64 ")) || line.starts_with(&format!("{flag} = load.i32 ")))
+            .position(|line| {
+                line.starts_with(&format!("{flag} = load.i64 ")) || line.starts_with(&format!("{flag} = load.i32 "))
+            })
             .unwrap_or_else(|| panic!("the branch tests the loaded barrier-active word: {guard_body:?}"));
         assert!(
             !guard_body[load..].iter().any(|line| line.contains("call ")),
@@ -245,7 +250,9 @@ impl NodeFacts for FieldStoreFacts {
     }
 }
 
-fn emit_field_store(target: Option<ManagedReferenceFact>) -> Result<cranelift_codegen::ir::Function, FunctionEmissionError> {
+fn emit_field_store(
+    target: Option<ManagedReferenceFact>,
+) -> Result<cranelift_codegen::ir::Function, FunctionEmissionError> {
     let isa = isa::lookup(target_lexicon::Triple::host())
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
@@ -259,7 +266,12 @@ fn emit_field_store(target: Option<ManagedReferenceFact>) -> Result<cranelift_co
         target,
     };
     let emitter = FunctionEmitter::new(isa.as_ref());
-    emitter.emit_expression(UserFuncName::user(0, 62), emitter.signature([], [isa.pointer_type()]), &facts, facts.nodes[0])
+    emitter.emit_expression(
+        UserFuncName::user(0, 62),
+        emitter.signature([], [isa.pointer_type()]),
+        &facts,
+        facts.nodes[0],
+    )
 }
 
 #[test]

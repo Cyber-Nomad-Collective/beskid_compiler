@@ -9,7 +9,10 @@ use beskid_analysis::services::semantic_rule_diagnostics_for_program_with_pipeli
 
 use crate::projects::fixture_harness::{resolve_fixture_with_assembly, with_project_test_env};
 
-fn unused_private_items(diagnostics: &[beskid_analysis::SemanticDiagnostic], names: &[&'static str]) -> Vec<&'static str> {
+fn unused_private_items(
+    diagnostics: &[beskid_analysis::SemanticDiagnostic],
+    names: &[&'static str],
+) -> Vec<&'static str> {
     names
         .iter()
         .copied()
@@ -25,8 +28,7 @@ fn unused_private_items(diagnostics: &[beskid_analysis::SemanticDiagnostic], nam
 fn v06_canonical_serialization_factories_are_compiler_issued() {
     let root = super::serialization_root();
     with_project_test_env(&root, || {
-        let resolved =
-            resolve_fixture_with_assembly(&root, "src/Core/Serialization/Compiled.bd", "SerializationLib");
+        let resolved = resolve_fixture_with_assembly(&root, "src/Core/Serialization/Compiled.bd", "SerializationLib");
         let assembly = resolved.assembly.expect("serialization assembly");
         let reader_assembly =
             resolve_fixture_with_assembly(&root, "src/Core/Serialization/Reader.bd", "SerializationLib")

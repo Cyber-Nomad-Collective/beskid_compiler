@@ -25,16 +25,17 @@ mod contracts;
 pub use contracts::{AppliedContractIdentity, applied_contract_argument_is_type, method_receiver_abi_type};
 mod contract_values;
 pub use contract_values::{
-    CONTRACT_BOX_RECEIVER_OFFSET, CONTRACT_BOX_SIZE, CONTRACT_BOX_WITNESS_OFFSET, ContractBoxCoercion, ContractBoxReceiver,
-    ContractDispatch, ContractUpcast, ContractWitnessTable, WITNESS_HEADER_WORDS, WITNESS_RECEIVER_BITS, WITNESS_RECEIVER_F32,
-    WITNESS_RECEIVER_F64, WITNESS_RECEIVER_REFERENCE, contract_box_coercion, contract_dispatch, contract_upcast,
-    contract_value_equality, contract_value_receiver, contract_witness_method_instances, contract_witness_table_for_declaration,
-    array_literal_has_contract_elements, injected_field_contract,
+    CONTRACT_BOX_RECEIVER_OFFSET, CONTRACT_BOX_SIZE, CONTRACT_BOX_WITNESS_OFFSET, ContractBoxCoercion,
+    ContractBoxReceiver, ContractDispatch, ContractUpcast, ContractWitnessTable, WITNESS_HEADER_WORDS,
+    WITNESS_RECEIVER_BITS, WITNESS_RECEIVER_F32, WITNESS_RECEIVER_F64, WITNESS_RECEIVER_REFERENCE,
+    array_literal_has_contract_elements, contract_box_coercion, contract_dispatch, contract_upcast,
+    contract_value_equality, contract_value_receiver, contract_witness_method_instances,
+    contract_witness_table_for_declaration, injected_field_contract,
 };
 mod events;
 mod expected_type;
-pub use expected_type::expected_type_in_environment;
 pub(in crate::semantic_contract) use expected_type::expected_type_in;
+pub use expected_type::expected_type_in_environment;
 use expected_type::{expected_type_tracked, lambda_argument_parameter_identities};
 mod portable_nominal;
 pub(crate) use portable_nominal::serialization_impl_receiver;
@@ -94,12 +95,11 @@ mod syntax_facts;
 mod transfer;
 pub use transfer::{
     TransferClass, TransferMarker, TransferMarkerAttribute, TransferNeverReason, aggregate_literal_transfer_class,
-    enum_constructor_transfer_class, nominal_transfer_class,
-    transfer_class_of_type, transfer_marker_contract,
+    enum_constructor_transfer_class, nominal_transfer_class, transfer_class_of_type, transfer_marker_contract,
 };
 use transfer::{
-    has_recognized_attribute, marker_attributes, marker_bound_reason, never_transferable_cause, recognized_attribute_use,
-    transfer_class,
+    has_recognized_attribute, marker_attributes, marker_bound_reason, never_transferable_cause,
+    recognized_attribute_use, transfer_class,
 };
 mod typed_arrays;
 mod typing;
@@ -113,68 +113,67 @@ pub use typing::{pattern_binding_specialization, specialized_call_result_managed
 
 use abi::{
     abi_signature_from_syntax, abi_type_for_binary_expression, abi_type_for_expression, abi_type_from_syntax,
-    abi_type_tracked, builtin_type_to_semantic,
-    call_abi_signature_for_call, call_abi_signature_tracked,
-    contextual_constant_integer, contextual_constant_literal, contextual_integer_literal_abi_type_tracked, contextual_integer_operand_fits_abi,
-    control_flow_for_node,
-    control_flow_tracked, corelib_service_abi_signature, exact_assembled_nominal_envelope, function_value_specialization,
-    generic_abi_type,
-    generic_parameter_reference_name, generic_specialization_instance_for_call, generic_type_name, infer_source_substitutions,
-    specialized_method_receiver_bindings,
-    integer_has_explicit_abi_suffix, integer_literal_fits_abi, integer_literal_text, integer_literal_u64,
-    item_abi_signature_tracked, item_abi_type_from_syntax, item_signature_for_node, item_signature_tracked,
-    manifest_builtin_abi_signature, signature_from_syntax,
-    type_syntax_mentions_generic_parameter, unsuffixed_integer_literal, value_abi_type_tracked,
-    integer_literals_fit_abi, unsuffixed_integer_array_elements,
+    abi_type_tracked, builtin_type_to_semantic, call_abi_signature_for_call, call_abi_signature_tracked,
+    contextual_constant_integer, contextual_constant_literal, contextual_integer_literal_abi_type_tracked,
+    contextual_integer_operand_fits_abi, control_flow_for_node, control_flow_tracked, corelib_service_abi_signature,
+    exact_assembled_nominal_envelope, function_value_specialization, generic_abi_type,
+    generic_parameter_reference_name, generic_specialization_instance_for_call, generic_type_name,
+    infer_source_substitutions, integer_has_explicit_abi_suffix, integer_literal_fits_abi, integer_literal_text,
+    integer_literal_u64, integer_literals_fit_abi, item_abi_signature_tracked, item_abi_type_from_syntax,
+    item_signature_for_node, item_signature_tracked, manifest_builtin_abi_signature, signature_from_syntax,
+    specialized_method_receiver_bindings, type_syntax_mentions_generic_parameter, unsuffixed_integer_array_elements,
+    unsuffixed_integer_literal, value_abi_type_tracked,
 };
 use bulk::{bulk_call_element_abi_type_for_call, bulk_parameter_tracked};
 use calls::{
-    exchange_call_for_node, is_transfer_class_intrinsic, PathCallResolution, call_arguments_tracked, call_lowering_for_node, call_lowering_tracked,
-    canonical_intrinsic_parameter_type, canonical_result_definition_for_type, canonical_result_variant,
-    canonical_runtime_intrinsic_scope, cast_intents_for_node, cast_intents_tracked, corelib_service_for,
-    expected_cast_type, call_explicit_member_type_arguments, explicit_generic_type_argument_syntax,
+    PathCallResolution, call_arguments_tracked, call_explicit_member_type_arguments, call_lowering_for_node,
+    call_lowering_tracked, canonical_intrinsic_parameter_type, canonical_result_definition_for_type,
+    canonical_result_variant, canonical_runtime_intrinsic_scope, cast_intents_for_node, cast_intents_tracked,
+    corelib_service_for, exchange_call_for_node, expected_cast_type, explicit_generic_type_argument_syntax,
     exported_generic_type_named, expression_fact_target, expression_is_lambda, flatten_member_as_path_declaration,
-    for_iterator_fact_tracked, for_statement_in_generic_context, function_declares_generics,
-    generic_call_instantiation_for_node, specialized_for_element_identity,
-    generic_call_instantiation_tracked, generic_call_specialization_tracked, generic_call_template_tracked,
-    generic_call_uses_parameter_type_arguments, generic_callable_owner_count, generic_callable_parameters, method_own_generic_names, generic_nominal_method_receiver_tracked,
+    for_iterator_element_identity, for_iterator_fact_tracked, for_statement_in_generic_context,
+    function_declares_generics, generic_call_instantiation_for_node, generic_call_instantiation_tracked,
+    generic_call_specialization_tracked, generic_call_template_tracked, generic_call_uses_parameter_type_arguments,
+    generic_callable_owner_count, generic_callable_parameters, generic_nominal_method_receiver_tracked,
     generic_source_expression_identity, generic_source_field_shape_identity, generic_source_local_identity,
     generic_source_type_identity, generic_source_type_identity_with_substitutions, imported_call_receiver_exists,
-    imported_generic_nominal_receiver_requires_instantiation,
-    method_declaration_for_member_receiver, nominal_local_member_receiver, nominal_member_receiver_tracked,
-    path_call_resolution, primitive_integer, primitive_numeric, primitive_numeric_conversion_target,
-    primitive_numeric_conversion_tracked, range_for_fact_tracked, resolve_local_extern_contract_method,
-    result_type_parts, source_expression_unavailable, stable_declaration_identity,
-    try_expression_fact_for_node, try_expression_fact_tracked, try_expression_legality_for_node, try_operand_declaration,
+    imported_generic_nominal_receiver_requires_instantiation, is_transfer_class_intrinsic,
+    method_declaration_for_member_receiver, method_own_generic_names, nominal_local_member_receiver,
+    nominal_member_receiver_tracked, path_call_resolution, primitive_integer, primitive_numeric,
+    primitive_numeric_conversion_target, primitive_numeric_conversion_tracked, range_for_fact_tracked,
+    resolve_local_extern_contract_method, result_type_parts, source_expression_unavailable,
+    specialized_for_element_identity, stable_declaration_identity, try_expression_fact_for_node,
+    try_expression_fact_tracked, try_expression_legality_for_node, try_operand_declaration,
     type_syntax_is_enclosing_generic_parameter_reference, type_syntax_is_generic_parameter_reference,
     unique_nominal_method_declaration, unqualified_enclosing_method_call,
-    for_iterator_element_identity,
 };
 pub use cleanup::{ScopedAcquisition, ScopedCleanup, ScopedCleanupDiagnostic, scoped_cleanup};
-pub use closures_spawn::{SpecializedClosureSignature, function_value_call_specialization, specialized_closure_signature};
-use closures_spawn::{names_generic_function_item, untyped_lambda_parameter_identity, untyped_lambda_parameter_type};
 use closures_spawn::{
-    CapturesBound, call_argument_captures_bound, callable_affine_ownership_tracked, captures_bound,
-    declared_parameters, direct_callee, field_captures_bound, identity_spelling, move_expression_form_for_node,
-    with_declaration,
-    callable_fiber_ownership_tracked, callable_signature_for_node, callable_signature_for_path,
-    callable_signature_tracked, capture_storage_class, capture_storage_for_node, capture_storage_tracked,
-    closure_call_target_tracked, closure_captures, closure_environment_for_node, closure_environment_tracked,
-    closure_signature_for_node, closure_signature_tracked, function_item_value_identity, function_item_value_tracked,
-    function_value_call_tracked, function_value_callee, inferred_spawn_handle, lambda_has_statement_body,
-    lambda_identity, lambda_source_identity, lambda_value_required_tracked, normalized_expression_node,
+    CapturesBound, call_argument_captures_bound, callable_affine_ownership_tracked, callable_fiber_ownership_tracked,
+    callable_signature_for_node, callable_signature_for_path, callable_signature_tracked, capture_storage_class,
+    capture_storage_for_node, capture_storage_tracked, captures_bound, closure_call_target_tracked, closure_captures,
+    closure_environment_for_node, closure_environment_tracked, closure_signature_for_node, closure_signature_tracked,
+    declared_parameters, direct_callee, field_captures_bound, function_item_value_identity,
+    function_item_value_tracked, function_value_call_tracked, function_value_callee, identity_spelling,
+    inferred_spawn_handle, lambda_has_statement_body, lambda_identity, lambda_source_identity,
+    lambda_value_required_tracked, move_expression_form_for_node, normalized_expression_node,
     runtime_intrinsic_name_tracked, runtime_intrinsic_tracked, spawn_entry_operand, spawn_entry_validation_tracked,
-    spawn_handle_type_tracked, spawn_legality_tracked, spawn_stack_capture, spawn_target_tracked,
+    spawn_handle_type_tracked, spawn_legality_tracked, spawn_stack_capture, spawn_target_tracked, with_declaration,
 };
+pub use closures_spawn::{
+    SpecializedClosureSignature, function_value_call_specialization, specialized_closure_signature,
+};
+use closures_spawn::{names_generic_function_item, untyped_lambda_parameter_identity, untyped_lambda_parameter_type};
 pub use composition::{
     CompositionInjectedAccessFact, CompositionInjectionFieldFact, CompositionLaunchFact, CompositionRegistrationFact,
-    CompositionScopeFact, CompositionTypes, composition_injected_field_access, composition_injection_field, composition_launch,
-    composition_registration, composition_scope,
+    CompositionScopeFact, CompositionTypes, composition_injected_field_access, composition_injection_field,
+    composition_launch, composition_registration, composition_scope,
 };
 use contracts::{
     ContractConformanceFailure, contract_conformance_failure, contract_member_call_receiver, contract_member_receiver,
     contract_method_specialization, contract_parameter_declarations, contract_witnesses_for_call,
-    render_signature_syntax, render_type_syntax, resolve_contract, resolve_contract_head, specialized_source_expression_identity,
+    render_signature_syntax, render_type_syntax, resolve_contract, resolve_contract_head,
+    specialized_source_expression_identity,
 };
 use events::{event_handler_lambda_for_local_tracked, event_operation_tracked};
 pub use growth::{DeadCollectionGrowth, dead_collection_growth, is_growth_call_candidate};
@@ -182,36 +181,36 @@ use layouts::{
     FieldAccessReceiver, abi_local_declaration_type, abi_type_for_direct_aggregate_field_projection,
     abi_type_for_local_path, aggregate_field_access_tracked, aggregate_field_layout, aggregate_layout_from_definition,
     aggregate_layout_tracked, aggregate_literal_declaration_tracked, aggregate_literal_layout_tracked,
-    aggregate_shape_from_applied_type, applied_aggregate_shape, array_index_element_abi_type_tracked,
-    array_index_element_template_tracked, applied_enum_constructor_identity, expected_enum_constructor_identity,
-    empty_array_literal_element_abi_type_tracked, enum_constructor_tracked,
-    enum_field_layout, enum_layout_from_definition, enum_layout_substitutions, enum_layout_tracked,
-    enum_match_scrutinee_layout, enum_match_tracked, enum_pattern_targets_declaration, event_field_layout_tracked,
-    scalar_match_tracked,
-    field_access_receiver, inaccessible_literal_fields, instantiated_aggregate_layout_for_path,
-    instantiated_enum_layout_for_path, nominal_aggregate_abi_type, nominal_field_projection,
-    nominal_local_receiver_declaration, resolve_nominal_layout_declaration, resolve_type_declaration,
-    integer_primitive_for_semantic, semantic_type_for_primitive, semantic_type_from_syntax, unique_exported_type_in_unit, unique_public_type_in_unit, unique_type_in_unit,
+    aggregate_shape_from_applied_type, applied_aggregate_shape, applied_enum_constructor_identity,
+    array_index_element_abi_type_tracked, array_index_element_template_tracked,
+    empty_array_literal_element_abi_type_tracked, enum_constructor_tracked, enum_field_layout,
+    enum_layout_from_definition, enum_layout_substitutions, enum_layout_tracked, enum_match_scrutinee_layout,
+    enum_match_tracked, enum_pattern_targets_declaration, event_field_layout_tracked,
+    expected_enum_constructor_identity, field_access_receiver, inaccessible_literal_fields,
+    instantiated_aggregate_layout_for_path, instantiated_enum_layout_for_path, integer_primitive_for_semantic,
+    nominal_aggregate_abi_type, nominal_field_projection, nominal_local_receiver_declaration,
+    resolve_nominal_layout_declaration, resolve_type_declaration, scalar_match_tracked, semantic_type_for_primitive,
+    semantic_type_from_syntax, unique_exported_type_in_unit, unique_public_type_in_unit, unique_type_in_unit,
 };
 pub use legality::{
-    BoundedLambdaCaptures, bounded_lambda_captures, declared_captures_bound, AttributeResolution, CallArgumentTypeMismatch, CallArityMismatch, GateObligation, UnitAttributeDeclaration,
-    UnitAttributeSurface, UnitAttributeUse, attribute_findings, check_attribute_obligations, resolve_attribute_use,
-    unit_attribute_surface, GateObligationKind, GenericParameterConflict,
-    ImmutableLocalAssignment,
-    MemberReferenceFinding, MemberReferenceKind, NonExhaustiveMatch, TypingObligation, TypingObligationKind, UnknownMember,
-    UnitObligation, UnitObligationKind, UnresolvedCallKind, UnresolvedCallTarget, UnresolvedImport,
-    UnresolvedValueArgument, ValueObligation, call_argument_type_mismatch, call_arity_mismatch, check_gate_obligations, check_items,
-    check_typing_obligations,
-    check_unit_obligations, extern_profile_findings, gate_obligations, generic_parameter_conflict,
-    immutable_local_assignment, match_exhaustiveness, member_reference_legality, typing_obligations,
+    AttributeResolution, BoundedLambdaCaptures, CallArgumentTypeMismatch, CallArityMismatch, GateObligation,
+    GateObligationKind, GenericParameterConflict, ImmutableLocalAssignment, MemberReferenceFinding,
+    MemberReferenceKind, NonExhaustiveMatch, TypingObligation, TypingObligationKind, UnitAttributeDeclaration,
+    UnitAttributeSurface, UnitAttributeUse, UnitObligation, UnitObligationKind, UnknownMember, UnresolvedCallKind,
+    UnresolvedCallTarget, UnresolvedImport, UnresolvedValueArgument, ValueObligation, attribute_findings,
+    bounded_lambda_captures, call_argument_type_mismatch, call_arity_mismatch, check_attribute_obligations,
+    check_gate_obligations, check_items, check_typing_obligations, check_unit_obligations, declared_captures_bound,
+    extern_profile_findings, gate_obligations, generic_parameter_conflict, immutable_local_assignment,
+    match_exhaustiveness, member_reference_legality, resolve_attribute_use, typing_obligations, unit_attribute_surface,
     unit_obligations, unresolved_call_target, unresolved_imports, unresolved_value_argument, value_obligations,
 };
 pub use local_type_resolution::{UnresolvedTypeReference, unresolved_type_reference};
 use locals::{
-    ancestor_distance, closest_visible_name, constant_integer_literal_tracked, constant_integer_tracked, implicit_method_receiver_tracked, is_ancestor,
-    local_declaration_is_mutable, local_declaration_owner, local_declaration_scope, local_slot_for_declaration,
-    local_slot_tracked, method_owner_declaration, method_owner_node, method_this_type, mutable_local_assignment_tracked, nearest_ancestor,
-    parent_node, resolve_lexical_declaration, resolved_local_tracked,
+    ancestor_distance, closest_visible_name, constant_integer_literal_tracked, constant_integer_tracked,
+    implicit_method_receiver_tracked, is_ancestor, local_declaration_is_mutable, local_declaration_owner,
+    local_declaration_scope, local_slot_for_declaration, local_slot_tracked, method_owner_declaration,
+    method_owner_node, method_this_type, mutable_local_assignment_tracked, nearest_ancestor, parent_node,
+    resolve_lexical_declaration, resolved_local_tracked,
 };
 use model::ContractParameterWitness;
 use model::GenericSourceTypeIdentity;
@@ -225,21 +224,19 @@ use resolution::{
     unique_function_in_unit, unique_imported_function, unique_inline_module_in_scope, unique_public_function_in_unit,
 };
 use syntax_facts::{
-    binary_operator, block_statement_nodes_tracked, child_nodes_tracked, clif_block_body_tracked, clif_block_parameters_tracked,
-    direct_callees_for_item, direct_callees_tracked, item_body_tracked, item_export_symbol_tracked, item_name_tracked,
-    literal_fact_tracked, node_kind_tracked, node_span_tracked, operator_fact_for_binary, operator_fact_tracked,
-    reachable_items_tracked, test_bool_literal, test_item_tracked, test_statement_nodes_tracked, test_string_literal,
-    unary_operator, with_node,
+    binary_operator, block_statement_nodes_tracked, child_nodes_tracked, clif_block_body_tracked,
+    clif_block_parameters_tracked, direct_callees_for_item, direct_callees_tracked, item_body_tracked,
+    item_export_symbol_tracked, item_name_tracked, literal_fact_tracked, node_kind_tracked, node_span_tracked,
+    operator_fact_for_binary, operator_fact_tracked, reachable_items_tracked, test_bool_literal, test_item_tracked,
+    test_statement_nodes_tracked, test_string_literal, unary_operator, with_node,
 };
 use typed_arrays::typed_array_allocation_tracked;
 use typing::{
-    conditional_result_branch_key, conditional_result_branch_tracked, is_numeric_literal_branch,
-    element_type_for_for_iterable, for_iterable_declared_array_element, match_arms_result_semantic_type,
-    local_declaration_type, range_iterable_bounds,
-    managed_reference_kind_tracked, node_type_tracked, enum_match_pattern_binding, pattern_binding_fact,
-    pattern_binding_fact_in_environment,
-    pattern_binding_semantic_type,
-    integer_literal_semantic_type, semantic_type_for_binary_operands, semantic_type_for_expression, semantic_type_for_literal,
+    conditional_result_branch_key, conditional_result_branch_tracked, element_type_for_for_iterable,
+    enum_match_pattern_binding, for_iterable_declared_array_element, integer_literal_semantic_type,
+    is_numeric_literal_branch, local_declaration_type, managed_reference_kind_tracked, match_arms_result_semantic_type,
+    node_type_tracked, pattern_binding_fact, pattern_binding_fact_in_environment, pattern_binding_semantic_type,
+    range_iterable_bounds, semantic_type_for_binary_operands, semantic_type_for_expression, semantic_type_for_literal,
     semantic_type_for_local_path, semantic_type_for_node,
 };
 
@@ -249,6 +246,10 @@ pub use abi::{
     specialized_builtin_type_argument, specialized_corelib_value_service_result,
 };
 pub use calls::{
+    ExchangeCall, TransferClassIntrinsic, exchange_call, for_iterator_protocol, for_iterator_specialization,
+    for_variable_specialization, transfer_class_code, transfer_class_code_for_substitution, transfer_class_intrinsic,
+};
+pub use calls::{
     ExternContractImport, extern_contract_declarations_in_unit, extern_contract_import_for_declaration,
     optional_extern_contract_members,
 };
@@ -256,60 +257,54 @@ pub use completion::{
     completion_candidates, completion_dependency_surface, completion_dependency_surface_for_assembly,
     completion_dependency_surface_for_program,
 };
-pub use calls::{
-    TransferClassIntrinsic, transfer_class_code, transfer_class_code_for_substitution, transfer_class_intrinsic,
-    ExchangeCall, exchange_call, for_iterator_protocol, for_iterator_specialization, for_variable_specialization};
 pub use layouts::{
-    CanonicalEmptyValue, canonical_empty_value,
-    aggregate_field_access_specialization, aggregate_literal_specialization, array_index_element_managed_reference_specialization,
-    array_index_element_specialization,
+    CanonicalEmptyValue, aggregate_field_access_specialization, aggregate_literal_specialization,
+    array_index_element_managed_reference_specialization, array_index_element_specialization, canonical_empty_value,
     enum_constructor_specialization, enum_match_specialization,
 };
 pub use model::{
-    AggregateFieldAccess, AggregateFieldShape, AggregateLayoutFact, AggregateLiteralFieldValues,
-    ArrayIndexElementTemplate, AstNodeKey, BulkParameterFact, CallLowering, CaptureStorage, CaptureStorageClass,
-    AffineBinding, AffineFinding, AffineFindingKind, AffineOwnership, CanonicalEmpty, MoveExpressionForm,
-    CastIntent, ClosureAllocationStatus, ClosureCallTarget, ClosureCapture, ClosureEnvironment,
-    ClosureEnvironmentAbiShape, ClosureEnvironmentField, ClosureLoweringStatus, ClosurePointerMapRequirement,
-    ClosureSignature, ClifParameterShape, CollectionMutationOwner, CollectionOperation, CompletionCandidate, CompletionContext,
-    CompletionKind, CompletionMemberSurface, ControlFlow, CorelibService, EnumConstructorFact,
-    EnumConstructorSpecialization, EnumLayoutFact,
-    EnumMatchArmFact, EnumMatchBindingFact, EnumMatchFact, EnumMatchPatternFact, EnumMatchScalarLiteralFact, ScalarMatchFact,
-    EnumMatchVariantPatternFact, EnumScalarPayloadObjectLayout, EnumScalarPayloadVariantLayout, EnumVariantLayoutFact,
-    EventFieldLayoutFact, EventHandlerLocalFact, ExpectedType, ExpectedTypeContext, EventOperationFact, EventOperationKind, ExportSymbol, FiberOwnership,
-    ForIterableSource, ForIteratorFact, ForIteratorProtocol, FunctionItemValue, FunctionValueCall, GenericBindingConflict, GenericBoundViolation, GenericCallInstantiation, GenericCallSpecialization,
-    GenericCallTemplate,
-    GenericNominalMethodReceiver, GenericSpecializationInstance, GenericSubstitution, IndexedNodeKind, ItemSignature,
-    CompoundAssignmentOperator, LiteralFact, LocalSlot, ManagedReferenceKind, ManifestBuiltin, MutableLocalAssignment,
-    OperatorFact,
-    PrimitiveNumericConversion, RangeForFact, ResolvedItem, ResolvedLocal, RuntimeIntrinsic, RuntimeIntrinsicName,
-    ScalarAbiLayout, SemanticError, SemanticFinding, SemanticQueryResult, SemanticTypeId, SourceSpan, SourceUnitId,
-    UNAVAILABLE_MESSAGE_MARKER,
-    SpawnDiagnostic, SpawnDiagnosticKind, SpawnEntryValidation, SpawnHandleType, SpawnLegality, SpawnTarget,
-    SyntaxUnitInput, SyntaxUnitRevision, TestItem, TryExpressionFact, TypedArrayAllocation, TypedProgram,
-    format_ast_node_key, format_ast_node_site, format_ast_node_trace, format_source_span_range,
-    generic_specialization_identity,
+    AffineBinding, AffineFinding, AffineFindingKind, AffineOwnership, AggregateFieldAccess, AggregateFieldShape,
+    AggregateLayoutFact, AggregateLiteralFieldValues, ArrayIndexElementTemplate, AstNodeKey, BulkParameterFact,
+    CallLowering, CanonicalEmpty, CaptureStorage, CaptureStorageClass, CastIntent, ClifParameterShape,
+    ClosureAllocationStatus, ClosureCallTarget, ClosureCapture, ClosureEnvironment, ClosureEnvironmentAbiShape,
+    ClosureEnvironmentField, ClosureLoweringStatus, ClosurePointerMapRequirement, ClosureSignature,
+    CollectionMutationOwner, CollectionOperation, CompletionCandidate, CompletionContext, CompletionKind,
+    CompletionMemberSurface, CompoundAssignmentOperator, ControlFlow, CorelibService, EnumConstructorFact,
+    EnumConstructorSpecialization, EnumLayoutFact, EnumMatchArmFact, EnumMatchBindingFact, EnumMatchFact,
+    EnumMatchPatternFact, EnumMatchScalarLiteralFact, EnumMatchVariantPatternFact, EnumScalarPayloadObjectLayout,
+    EnumScalarPayloadVariantLayout, EnumVariantLayoutFact, EventFieldLayoutFact, EventHandlerLocalFact,
+    EventOperationFact, EventOperationKind, ExpectedType, ExpectedTypeContext, ExportSymbol, FiberOwnership,
+    ForIterableSource, ForIteratorFact, ForIteratorProtocol, FunctionItemValue, FunctionValueCall,
+    GenericBindingConflict, GenericBoundViolation, GenericCallInstantiation, GenericCallSpecialization,
+    GenericCallTemplate, GenericNominalMethodReceiver, GenericSpecializationInstance, GenericSubstitution,
+    IndexedNodeKind, ItemSignature, LiteralFact, LocalSlot, ManagedReferenceKind, ManifestBuiltin, MoveExpressionForm,
+    MutableLocalAssignment, OperatorFact, PrimitiveNumericConversion, RangeForFact, ResolvedItem, ResolvedLocal,
+    RuntimeIntrinsic, RuntimeIntrinsicName, ScalarAbiLayout, ScalarMatchFact, SemanticError, SemanticFinding,
+    SemanticQueryResult, SemanticTypeId, SourceSpan, SourceUnitId, SpawnDiagnostic, SpawnDiagnosticKind,
+    SpawnEntryValidation, SpawnHandleType, SpawnLegality, SpawnTarget, SyntaxUnitInput, SyntaxUnitRevision, TestItem,
+    TryExpressionFact, TypedArrayAllocation, TypedProgram, UNAVAILABLE_MESSAGE_MARKER, format_ast_node_key,
+    format_ast_node_site, format_ast_node_trace, format_source_span_range, generic_specialization_identity,
 };
 pub use queries::{
-    abi_type, aggregate_field_access, aggregate_layout, aggregate_literal_declaration, aggregate_literal_field_values,
-    aggregate_literal_layout, array_index_element_abi_type, block_statement_nodes,
+    abi_type, affine_ownership, aggregate_field_access, aggregate_layout, aggregate_literal_declaration,
+    aggregate_literal_field_values, aggregate_literal_layout, array_index_element_abi_type, block_statement_nodes,
     bulk_call_element_abi_type, bulk_parameter, call_abi_signature, call_arguments, call_lowering,
-    affine_ownership, callable_fiber_ownership, callable_signature, capture_storage, cast_intents, child_nodes,
-    clif_block_body, move_expression_form,
+    callable_fiber_ownership, callable_signature, capture_storage, cast_intents, child_nodes, clif_block_body,
     clif_block_parameters, closure_call_target, closure_environment, closure_signature, collection_operation,
-    conditional_result_branch, constant_integer, constant_integer_literal,
-    contextual_integer_literal_abi_type, control_flow, direct_callees, empty_array_literal_element_abi_type,
-    enum_constructor, enum_layout, enum_match, event_field_layout, scalar_match,
-    event_handler_lambda_for_local, event_operation, expected_type, for_iterator_fact, function_item_value,
-    function_value_call, generic_call_instantiation, lambda_value_required,
+    conditional_result_branch, constant_integer, constant_integer_literal, contextual_integer_literal_abi_type,
+    contract_of_method_signature, control_flow, direct_callees, empty_array_literal_element_abi_type, enum_constructor,
+    enum_layout, enum_match, event_field_layout, event_handler_lambda_for_local, event_operation, expected_type,
+    for_iterator_fact, function_item_value, function_value_call, generic_call_instantiation,
     generic_call_specialization, generic_call_template, generic_nominal_method_receiver, implicit_method_receiver,
-    item_abi_signature, item_body, item_export_symbol, item_name, item_signature, literal_fact, local_slot,
-    managed_reference_kind, mutable_local_assignment, node_at_span, node_kind, node_span, node_type, nominal_member_receiver,
-    operator_fact, parameter_generic_reference, primitive_numeric_conversion, range_for_fact, reachable_items,
-    resolved_item, resolved_local, runtime_intrinsic, runtime_intrinsic_name, spawn_entry_validation,
-    spawn_handle_type, spawn_legality, spawn_target, test_item, test_statement_nodes, specialized_try_expression_fact, try_expression_fact, try_expression_judgement, try_expression_legality,
-    type_applied_contract_implementation, type_contract_applications, type_contract_applications_of,
-    type_contract_declarations, type_contract_implementation, contract_of_method_signature, typed_array_allocation, value_abi_type,
+    item_abi_signature, item_body, item_export_symbol, item_name, item_signature, lambda_value_required, literal_fact,
+    local_slot, managed_reference_kind, move_expression_form, mutable_local_assignment, node_at_span, node_kind,
+    node_span, node_type, nominal_member_receiver, operator_fact, parameter_generic_reference,
+    primitive_numeric_conversion, range_for_fact, reachable_items, resolved_item, resolved_local, runtime_intrinsic,
+    runtime_intrinsic_name, scalar_match, spawn_entry_validation, spawn_handle_type, spawn_legality, spawn_target,
+    specialized_try_expression_fact, test_item, test_statement_nodes, try_expression_fact, try_expression_judgement,
+    try_expression_legality, type_applied_contract_implementation, type_contract_applications,
+    type_contract_applications_of, type_contract_declarations, type_contract_implementation, typed_array_allocation,
+    value_abi_type,
 };
 
 pub use native_mod_transport::{native_mod_expression_payload, native_mod_single_array_element};
@@ -322,7 +317,9 @@ pub use checked_provider::{CheckedDynamicResultBridge, checked_dynamic_result_br
 
 pub(crate) use contracts::serialization_encoder_methods;
 
-pub(crate) use contracts::{serialization_contribution_receiver_arguments, serialization_contribution_receiver_arguments_in_environment};
+pub(crate) use contracts::{
+    serialization_contribution_receiver_arguments, serialization_contribution_receiver_arguments_in_environment,
+};
 
 mod serialization_shape;
 pub use serialization_shape::{SerializationShapeBinding, serialization_shape_binding};

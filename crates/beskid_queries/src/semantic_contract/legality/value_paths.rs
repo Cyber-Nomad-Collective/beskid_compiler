@@ -39,8 +39,8 @@ use super::calls::{
 use super::members::is_call_callee;
 use super::*;
 use beskid_analysis::syntax::{
-    AstNodeId, ConstantDefinition, ContractDefinition, EnumDefinition, FunctionDefinition, InlineModule, PathExpression,
-    Program, Spanned, TypeDefinition, Visibility,
+    AstNodeId, ConstantDefinition, ContractDefinition, EnumDefinition, FunctionDefinition, InlineModule,
+    PathExpression, Program, Spanned, TypeDefinition, Visibility,
 };
 
 /// Why one value path names no value, rendered with the legacy code by `check_unit_obligations`.
@@ -144,12 +144,9 @@ enum LexicalItem {
 fn lexical_item(program: &Spanned<Program>, index: &SyntaxIndex, node: AstNodeId, name: &str) -> Option<LexicalItem> {
     let mut scope = module_scope(index, node);
     while let Some(current) = scope {
-        for kind in [
-            NodeKind::TypeDefinition,
-            NodeKind::EnumDefinition,
-            NodeKind::ContractDefinition,
-            NodeKind::InlineModule,
-        ] {
+        for kind in
+            [NodeKind::TypeDefinition, NodeKind::EnumDefinition, NodeKind::ContractDefinition, NodeKind::InlineModule]
+        {
             for candidate in index.ids_of_kind(kind) {
                 let candidate_scope = if kind == NodeKind::InlineModule {
                     outer_module_scope(index, candidate)
@@ -227,7 +224,13 @@ fn names_item(
 
 /// E1201 for a single-segment value path naming an item (`TypeChecker::type_id_for_path`,
 /// `ResolvedValue::Item`).
-fn single_segment_item(db: &dyn Db, program: &Spanned<Program>, index: &SyntaxIndex, site: AstNodeKey, name: &str) -> bool {
+fn single_segment_item(
+    db: &dyn Db,
+    program: &Spanned<Program>,
+    index: &SyntaxIndex,
+    site: AstNodeKey,
+    name: &str,
+) -> bool {
     names_item(db, program, index, site, name).is_some()
 }
 
@@ -311,7 +314,12 @@ enum MemberVisibility {
     Unknown,
 }
 
-fn module_member_visibility(db: &dyn Db, unit: SourceUnitId, generation: SyntaxGenerationId, name: &str) -> MemberVisibility {
+fn module_member_visibility(
+    db: &dyn Db,
+    unit: SourceUnitId,
+    generation: SyntaxGenerationId,
+    name: &str,
+) -> MemberVisibility {
     let Some(syntax) = db.syntax_unit(unit).filter(|syntax| syntax.generation(db) == generation) else {
         return MemberVisibility::Unknown;
     };

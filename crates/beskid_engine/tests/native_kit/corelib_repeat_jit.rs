@@ -45,14 +45,14 @@ fn run_corelib_tests(entry: &str, target_name: &str, test_names: &[&str]) -> Vec
     )
     .expect("resolve corelib test target");
     let plan = resolved.compile_plan.as_ref().expect("corelib test target has a compile plan");
-    let options = PrepareOptions::with_mod_host(mod_host.corelib_mod_host(plan).expect("qualified Corelib native Mods"));
-    let prepared =
-        with_db(|db| prepare_compilation_with_db(db, &resolved, options, None)).expect("prepare executable");
+    let options =
+        PrepareOptions::with_mod_host(mod_host.corelib_mod_host(plan).expect("qualified Corelib native Mods"));
+    let prepared = with_db(|db| prepare_compilation_with_db(db, &resolved, options, None)).expect("prepare executable");
     let front = prepared.into_executable().expect("executable front-end");
 
     let target = beskid_engine::host_runtime_target().expect("supported native host target");
-    let mut engine = Engine::with_runtime_kit(kit_prefix, target, BuildProfile::Debug)
-        .expect("load exact native runtime kit");
+    let mut engine =
+        Engine::with_runtime_kit(kit_prefix, target, BuildProfile::Debug).expect("load exact native runtime kit");
     test_names
         .iter()
         .map(|test_name| {
@@ -76,20 +76,12 @@ fn jit_corelib_repeat_builds_string_entrypoint() {
 
 #[test]
 fn jit_progress_bar_mixed_interpolation_preserves_exact_fill() {
-    run_corelib_test(
-        "src/console/ConsoleSuite.bd",
-        "ConsoleSuite",
-        "ProgressBarRendersBodyWithExactFill",
-    );
+    run_corelib_test("src/console/ConsoleSuite.bd", "ConsoleSuite", "ProgressBarRendersBodyWithExactFill");
 }
 
 #[test]
 fn jit_numeric_interpolation_preserves_value() {
-    run_corelib_test(
-        "src/console/ConsoleSuite.bd",
-        "ConsoleSuite",
-        "ProgressBarFormatsNumericInterpolation",
-    );
+    run_corelib_test("src/console/ConsoleSuite.bd", "ConsoleSuite", "ProgressBarFormatsNumericInterpolation");
 }
 
 #[test]

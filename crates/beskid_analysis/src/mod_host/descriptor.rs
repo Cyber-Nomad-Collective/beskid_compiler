@@ -495,8 +495,11 @@ pub fn native_mod_evidence_is_current(
         .context("non UTF8 Mod source root")?
         .replace(std::path::MAIN_SEPARATOR, "/");
     for (name, digest) in source_inventory {
-        let evidence =
-            if source_relative.is_empty() { format!("sources/{name}") } else { format!("sources/{source_relative}/{name}") };
+        let evidence = if source_relative.is_empty() {
+            format!("sources/{name}")
+        } else {
+            format!("sources/{source_relative}/{name}")
+        };
         if descriptor.source_files.get(&evidence) != Some(&digest) {
             return Ok(false);
         }

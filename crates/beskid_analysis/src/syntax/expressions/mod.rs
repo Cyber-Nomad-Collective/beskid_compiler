@@ -20,10 +20,10 @@ pub mod macro_metavariable;
 pub mod match_arm;
 pub mod match_expression;
 pub mod member_expression;
+pub mod move_expression;
 pub mod path_expression;
 pub mod pattern;
 pub mod span;
-pub mod move_expression;
 pub mod spawn_expression;
 pub mod string_decode;
 pub mod struct_literal_expression;
@@ -55,13 +55,13 @@ pub use macro_metavariable::MacroMetavariable;
 pub use match_arm::MatchArm;
 pub use match_expression::MatchExpression;
 pub use member_expression::MemberExpression;
+pub use move_expression::MoveExpression;
 pub use path_expression::PathExpression;
 pub use pattern::{EnumPattern, Pattern};
-pub use move_expression::MoveExpression;
 pub use spawn_expression::SpawnExpression;
 pub use string_decode::{
-    StringLiteralPart, decode_char_literal_token, decode_string_literal_token, split_string_literal_parts, split_string_literal_token,
-    try_decode_string_literal, try_decode_string_literal_token,
+    StringLiteralPart, decode_char_literal_token, decode_string_literal_token, split_string_literal_parts,
+    split_string_literal_token, try_decode_string_literal, try_decode_string_literal_token,
 };
 pub use struct_literal_expression::StructLiteralExpression;
 pub use struct_literal_field::StructLiteralField;

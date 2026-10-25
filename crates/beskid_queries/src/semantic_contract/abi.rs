@@ -6,11 +6,11 @@ mod specialization;
 mod statements;
 mod types;
 
-pub use statements::{CompoundAssignment, compound_assignment};
 pub use specialization::{
     generic_call_specialization_in_environment, generic_call_specialization_instance, generic_specialization_instance,
     specialized_builtin_type_argument, specialized_corelib_value_service_result,
 };
+pub use statements::{CompoundAssignment, compound_assignment};
 
 pub(in crate::semantic_contract) use control_flow::{control_flow_for_node, control_flow_tracked};
 
@@ -20,14 +20,14 @@ pub(in crate::semantic_contract) use signatures::{
 };
 
 pub(in crate::semantic_contract) use specialization::{
-    abi_signature_from_syntax, builtin_type_to_semantic,
-    contextual_constant_integer, contextual_constant_literal, contextual_integer_operand_fits_abi, corelib_service_abi_signature,
-    exact_assembled_nominal_envelope, function_value_specialization, generic_abi_type, generic_parameter_reference_name,
-    generic_specialization_instance_for_call, generic_type_name, infer_source_substitutions, integer_has_explicit_abi_suffix,
-    specialized_method_receiver_bindings,
-    integer_literal_fits_abi, integer_literal_text, integer_literal_u64, item_abi_type_from_syntax,
-    manifest_builtin_abi_signature, type_syntax_mentions_generic_parameter, unsuffixed_integer_literal,
-    integer_literals_fit_abi, unsuffixed_integer_array_elements,
+    abi_signature_from_syntax, builtin_type_to_semantic, contextual_constant_integer, contextual_constant_literal,
+    contextual_integer_operand_fits_abi, corelib_service_abi_signature, exact_assembled_nominal_envelope,
+    function_value_specialization, generic_abi_type, generic_parameter_reference_name,
+    generic_specialization_instance_for_call, generic_type_name, infer_source_substitutions,
+    integer_has_explicit_abi_suffix, integer_literal_fits_abi, integer_literal_text, integer_literal_u64,
+    integer_literals_fit_abi, item_abi_type_from_syntax, manifest_builtin_abi_signature,
+    specialized_method_receiver_bindings, type_syntax_mentions_generic_parameter, unsuffixed_integer_array_elements,
+    unsuffixed_integer_literal,
 };
 
 pub(in crate::semantic_contract) use statements::statement_abi_type_for_node;

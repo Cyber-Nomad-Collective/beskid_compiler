@@ -51,9 +51,8 @@ pub(super) fn specialization_for_call_in_environment(
         // The owner may live in another unit (`impl<T> List<T>` extending a Foundation type).
         let owner = method_owner_declaration(db, declaration)
             .ok_or_else(|| SemanticError::unavailable_at("call_abi_signature", key))?;
-        let owner_syntax = db
-            .syntax_unit(owner.unit)
-            .ok_or_else(|| SemanticError::unavailable_at("call_abi_signature", key))?;
+        let owner_syntax =
+            db.syntax_unit(owner.unit).ok_or_else(|| SemanticError::unavailable_at("call_abi_signature", key))?;
         let parent = owner_syntax
             .syntax_index(db)
             .node_at(owner_syntax.expanded_program(db), owner.node)
@@ -117,8 +116,8 @@ pub(super) fn specialization_for_call_in_environment(
             && parent_node(declaration_syntax.syntax_index(db), enclosing.declaration.node) == Some(owner.node)
         {
             enclosing.substitutions.clone()
-        } else if let Some(bindings) =
-            enclosing.and_then(|enclosing| specialized_method_receiver_bindings(db, key, arguments[0], owner, enclosing))
+        } else if let Some(bindings) = enclosing
+            .and_then(|enclosing| specialized_method_receiver_bindings(db, key, arguments[0], owner, enclosing))
         {
             bindings
         } else {
@@ -228,8 +227,7 @@ pub(super) fn specialization_for_call_in_environment(
     let mut provisional_integer_substitutions = HashMap::<String, Vec<AstNodeKey>>::new();
     // Bindings fixed before the arguments (the receiver's type arguments, explicit type
     // arguments) never move; a binding an earlier argument made may widen to a contract.
-    let fixed_before_arguments =
-        source_substitutions.keys().cloned().collect::<std::collections::HashSet<_>>();
+    let fixed_before_arguments = source_substitutions.keys().cloned().collect::<std::collections::HashSet<_>>();
     for (position, (parameter_type, argument)) in
         argument_parameter_types.iter().copied().zip(arguments.iter().copied().skip(usize::from(is_method))).enumerate()
     {
@@ -294,11 +292,9 @@ pub(super) fn specialization_for_call_in_environment(
         } else {
             None
         };
-        let known_expected =
-            explicit_substitutions_complete || (parameter_mentions_generic && parameter_already_bound);
-        let explicit_expected = known_expected
-            .then(|| generic_abi_type(db, declaration, parameter_type, &substitutions))
-            .transpose()?;
+        let known_expected = explicit_substitutions_complete || (parameter_mentions_generic && parameter_already_bound);
+        let explicit_expected =
+            known_expected.then(|| generic_abi_type(db, declaration, parameter_type, &substitutions)).transpose()?;
         let actual = if let Some(source) = proven_source_identity.as_ref() {
             Some(source.abi_type())
         } else if contextual_integer.is_some() {
@@ -364,8 +360,10 @@ pub(super) fn specialization_for_call_in_environment(
             {
                 let abi = source_identity.abi_type();
                 substitutions.insert(generic.to_owned(), abi);
-                source_substitutions
-                    .insert(generic.to_owned(), GenericSubstitution::from_source(generic, abi, source_identity.clone()));
+                source_substitutions.insert(
+                    generic.to_owned(),
+                    GenericSubstitution::from_source(generic, abi, source_identity.clone()),
+                );
                 provisional_integer_substitutions.remove(generic);
                 continue;
             }
@@ -533,7 +531,9 @@ fn rebind_provisional_integers(
         abi.remove(generic);
         source.remove(generic);
     }
-    if infer_source_substitutions(db, declaration, parameter_type, actual, generic_names, &mut abi, &mut source).is_err() {
+    if infer_source_substitutions(db, declaration, parameter_type, actual, generic_names, &mut abi, &mut source)
+        .is_err()
+    {
         return Ok(None);
     }
     let mut rebound = Vec::new();
@@ -571,9 +571,8 @@ pub(in crate::semantic_contract) fn specialized_method_receiver_bindings(
     let syntax = db.syntax_unit(receiver.unit).filter(|syntax| syntax.accepts_key(db, receiver))?;
     let index = syntax.syntax_index(db);
     let program = syntax.expanded_program(db);
-    let identity = if let Some(path) = index
-        .node_at(program, receiver.node)
-        .and_then(|node| node.of::<beskid_analysis::syntax::PathExpression>())
+    let identity = if let Some(path) =
+        index.node_at(program, receiver.node).and_then(|node| node.of::<beskid_analysis::syntax::PathExpression>())
         && let [root, _] = path.path.node.segments.as_slice()
         && root.node.type_args.is_empty()
         && let Some(identifier) = resolve_lexical_declaration(program, index, receiver.node, &root.node.name.node.name)
@@ -771,7 +770,8 @@ pub(in crate::semantic_contract) fn function_value_specialization(
         }
     } else {
         let (parameters, result) = expected.ok_or_else(unavailable)?;
-        if parameters.len() != function.parameters.len() || function.parameters.iter().any(|parameter| parameter.node.bulk)
+        if parameters.len() != function.parameters.len()
+            || function.parameters.iter().any(|parameter| parameter.node.bulk)
         {
             return Err(unavailable());
         }
@@ -805,8 +805,8 @@ pub(in crate::semantic_contract) fn function_value_specialization(
         .map(|generic| source_substitutions.get(*generic).map(|binding| binding.rebind(*generic)))
         .collect::<Option<Vec<_>>>()
         .ok_or_else(unavailable)?;
-    let mut instance = generic_specialization_instance(db, declaration, substitutions.clone().into())?
-        .ok_or_else(unavailable)?;
+    let mut instance =
+        generic_specialization_instance(db, declaration, substitutions.clone().into())?.ok_or_else(unavailable)?;
     instance.contract_witnesses = contract_witnesses_for_call(db, declaration, &[], false, None, &substitutions)?;
     Ok(instance)
 }

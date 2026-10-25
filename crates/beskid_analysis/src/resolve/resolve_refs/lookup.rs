@@ -10,10 +10,20 @@ use super::super::tables::ResolvedType;
 pub(super) enum ModulePathLookup {
     Found(ItemId),
     ModuleMissing,
-    NameMissing { module_path: String, name: String },
-    NotVisible { module_path: String, name: String },
+    NameMissing {
+        module_path: String,
+        name: String,
+    },
+    NotVisible {
+        module_path: String,
+        name: String,
+    },
     /// The module reaches `candidates` distinct items of the name at one re-export distance.
-    Ambiguous { module_path: String, name: String, candidates: usize },
+    Ambiguous {
+        module_path: String,
+        name: String,
+        candidates: usize,
+    },
 }
 impl Resolver {
     pub(super) fn resolve_item_in_scope(&self, name: &str) -> Option<ItemId> {
@@ -160,7 +170,10 @@ impl Resolver {
     /// method declared in a `type X { }` body binds to the sibling method before any lexical or
     /// module lookup, and only when exactly one sibling carries the name.
     pub(super) fn is_unique_sibling_method(&self, name: &str) -> bool {
-        self.current_type_sibling_methods.as_ref().and_then(|methods| methods.get(name)).is_some_and(|count| *count == 1)
+        self.current_type_sibling_methods
+            .as_ref()
+            .and_then(|methods| methods.get(name))
+            .is_some_and(|count| *count == 1)
     }
 
     pub(super) fn receiver_has_field(&self, field_name: &str) -> bool {

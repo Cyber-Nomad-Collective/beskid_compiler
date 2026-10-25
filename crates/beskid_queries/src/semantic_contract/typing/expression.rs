@@ -1,7 +1,7 @@
 //! Semantic types for expressions, operands, locals, iterables, and literals.
 
-use super::super::*;
 use super::super::layouts::explicit_local_declaration_type;
+use super::super::*;
 use super::*;
 
 pub(in crate::semantic_contract) fn semantic_type_for_node(

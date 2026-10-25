@@ -1,7 +1,10 @@
 //! An array argument to a generic call inside a generic body (`Parallel.OfArray<T>` forwarding
 //! `values` to `ParallelSeq.OfArray<T>`) lowers in the caller's specialization. Since 0.6.7 the
 //! hand-over needs no `move`: `move` is written only at an isolate crossing.
-use super::support::{SyntaxGenerationId, SyntaxModuleItem, canonical_corelib_project_fixture, find_function_definitions, lower_syntax_program};
+use super::support::{
+    SyntaxGenerationId, SyntaxModuleItem, canonical_corelib_project_fixture, find_function_definitions,
+    lower_syntax_program,
+};
 
 const SOURCE: &str = r#"
 [CompilerDerived] pub contract Transferable { }

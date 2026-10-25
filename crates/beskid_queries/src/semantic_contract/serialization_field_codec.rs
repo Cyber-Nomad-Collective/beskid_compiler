@@ -193,7 +193,9 @@ fn resolved_signature(
     let parameters = function
         .parameters
         .iter()
-        .map(|parameter| generic_source_type_identity_with_substitutions(db, key, &parameter.node.ty.node, &environment))
+        .map(|parameter| {
+            generic_source_type_identity_with_substitutions(db, key, &parameter.node.ty.node, &environment)
+        })
         .collect::<Result<Vec<_>, _>>()?;
     let result = function
         .return_type

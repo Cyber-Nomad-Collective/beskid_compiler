@@ -12,7 +12,8 @@ fn lowers(source: &str) {
     let (input, isa, root) = item_fixture_with_root(&source);
     let db = input.database();
     let mut items = Vec::new();
-    for kind in [beskid_queries::IndexedNodeKind::MethodDefinition, beskid_queries::IndexedNodeKind::FunctionDefinition] {
+    for kind in [beskid_queries::IndexedNodeKind::MethodDefinition, beskid_queries::IndexedNodeKind::FunctionDefinition]
+    {
         for key in find_nodes_of_kind(db, root, kind) {
             let name = item_name(db, key).ok().flatten().expect("item name");
             items.push(SyntaxModuleItem { key, symbol: name.to_string() });
@@ -30,12 +31,16 @@ fn string_index_of_a_local_or_parameter_converts_and_compares() {
 
 #[test]
 fn string_index_of_a_field_converts_and_compares() {
-    lowers("i64 Main(Cursor cursor) { if i64(cursor.text[5]) != 100 { return 1; } return i64(cursor.text[cursor.at]); }");
+    lowers(
+        "i64 Main(Cursor cursor) { if i64(cursor.text[5]) != 100 { return 1; } return i64(cursor.text[cursor.at]); }",
+    );
 }
 
 #[test]
 fn string_index_of_a_field_of_a_field_converts_and_compares() {
-    lowers("i64 Main(Outer outer) { u8 first = outer.cursor.text[0]; if first != 98_u8 { return 1; } return i64(outer.cursor.text[2]) + 1; }");
+    lowers(
+        "i64 Main(Outer outer) { u8 first = outer.cursor.text[0]; if first != 98_u8 { return 1; } return i64(outer.cursor.text[2]) + 1; }",
+    );
 }
 
 #[test]

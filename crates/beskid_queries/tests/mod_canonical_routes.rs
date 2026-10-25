@@ -76,9 +76,7 @@ fn plan_route(
     else {
         return Err("compilation root missing".into());
     };
-    let paths = authority
-        .plan_canonical_paths(issuer, &root, &[selector.into()])
-        .map_err(|error| error.0)?;
+    let paths = authority.plan_canonical_paths(issuer, &root, &[selector.into()]).map_err(|error| error.0)?;
     Ok(paths.into_iter().next().map(|path| path.segments).unwrap_or_default())
 }
 
@@ -163,16 +161,15 @@ fn mod_companion_package_routes_do_not_depend_on_user_imports() {
         "Core.Serialization.Errors.SerializationError",
         "Core.Serialization.Limits.SerializationLimits",
     ] {
-        let segments = plan_route(&db, project, &assembly, selector)
-            .unwrap_or_else(|error| {
-                let units = assembly
-                    .units
-                    .iter()
-                    .filter(|unit| unit.path.to_string_lossy().contains("Serialization/"))
-                    .map(|unit| format!("{} (origin {})", unit.path.display(), unit.origin_path.display()))
-                    .collect::<Vec<_>>();
-                panic!("canonical route `{selector}` must be planned: {error}\nserialization units: {units:#?}")
-            });
+        let segments = plan_route(&db, project, &assembly, selector).unwrap_or_else(|error| {
+            let units = assembly
+                .units
+                .iter()
+                .filter(|unit| unit.path.to_string_lossy().contains("Serialization/"))
+                .map(|unit| format!("{} (origin {})", unit.path.display(), unit.origin_path.display()))
+                .collect::<Vec<_>>();
+            panic!("canonical route `{selector}` must be planned: {error}\nserialization units: {units:#?}")
+        });
         let name = selector.rsplit('.').next().unwrap();
         assert_eq!(segments.last().map(String::as_str), Some(name), "{selector}: {segments:?}");
     }

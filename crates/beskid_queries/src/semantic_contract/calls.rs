@@ -2,10 +2,10 @@
 
 mod casts;
 mod exchange;
-mod transfer_intrinsic;
 mod facts;
 mod generics;
 mod resolution;
+mod transfer_intrinsic;
 
 pub use resolution::{
     ExternContractImport, extern_contract_declarations_in_unit, extern_contract_import_for_declaration,
@@ -13,43 +13,41 @@ pub use resolution::{
 };
 
 pub(in crate::semantic_contract) use casts::{
-    canonical_intrinsic_parameter_type, cast_intents_for_node, cast_intents_tracked,
-    expected_cast_type, expression_fact_target, primitive_integer,
-    primitive_numeric,
+    canonical_intrinsic_parameter_type, cast_intents_for_node, cast_intents_tracked, expected_cast_type,
+    expression_fact_target, primitive_integer, primitive_numeric,
 };
 
+pub(in crate::semantic_contract) use exchange::exchange_call_for_node;
 pub use exchange::{ExchangeCall, exchange_call};
+pub use facts::{for_iterator_protocol, for_iterator_specialization, for_variable_specialization};
+pub(in crate::semantic_contract) use transfer_intrinsic::is_transfer_class_intrinsic;
 pub use transfer_intrinsic::{
     TransferClassIntrinsic, transfer_class_code, transfer_class_code_for_substitution, transfer_class_intrinsic,
 };
-pub(in crate::semantic_contract) use transfer_intrinsic::is_transfer_class_intrinsic;
-pub use facts::{for_iterator_protocol, for_iterator_specialization, for_variable_specialization};
-pub(in crate::semantic_contract) use exchange::exchange_call_for_node;
 
 pub(in crate::semantic_contract) use facts::{
     call_arguments_tracked, call_lowering_tracked, canonical_result_definition_for_type, canonical_result_variant,
-    for_iterator_element_identity, for_iterator_fact_tracked,
-    for_statement_in_generic_context, primitive_numeric_conversion_target, primitive_numeric_conversion_tracked,
-    range_for_fact_tracked, result_type_parts, specialized_for_element_identity, try_expression_fact_for_node, try_expression_fact_tracked, try_expression_legality_for_node,
-    try_operand_declaration,
+    for_iterator_element_identity, for_iterator_fact_tracked, for_statement_in_generic_context,
+    primitive_numeric_conversion_target, primitive_numeric_conversion_tracked, range_for_fact_tracked,
+    result_type_parts, specialized_for_element_identity, try_expression_fact_for_node, try_expression_fact_tracked,
+    try_expression_legality_for_node, try_operand_declaration,
 };
 
 pub(in crate::semantic_contract) use generics::{
     call_explicit_member_type_arguments, explicit_generic_type_argument_syntax, exported_generic_type_named,
     expression_is_lambda, function_declares_generics, generic_call_instantiation_for_node,
     generic_call_instantiation_tracked, generic_call_specialization_tracked, generic_call_template_tracked,
-    generic_call_uses_parameter_type_arguments, generic_callable_owner_count, generic_callable_parameters, method_own_generic_names, generic_nominal_method_receiver_tracked,
-    generic_source_expression_identity, generic_source_field_shape_identity, generic_source_local_identity,
-    generic_source_type_identity,
-    generic_source_type_identity_with_substitutions, imported_call_receiver_exists,
-    imported_generic_nominal_receiver_requires_instantiation, source_expression_unavailable,
-    stable_declaration_identity, type_syntax_is_enclosing_generic_parameter_reference,
+    generic_call_uses_parameter_type_arguments, generic_callable_owner_count, generic_callable_parameters,
+    generic_nominal_method_receiver_tracked, generic_source_expression_identity, generic_source_field_shape_identity,
+    generic_source_local_identity, generic_source_type_identity, generic_source_type_identity_with_substitutions,
+    imported_call_receiver_exists, imported_generic_nominal_receiver_requires_instantiation, method_own_generic_names,
+    source_expression_unavailable, stable_declaration_identity, type_syntax_is_enclosing_generic_parameter_reference,
     type_syntax_is_generic_parameter_reference,
 };
 
 pub(in crate::semantic_contract) use resolution::{
     PathCallResolution, call_lowering_for_node, canonical_runtime_intrinsic_scope, corelib_service_for,
     flatten_member_as_path_declaration, method_declaration_for_member_receiver, nominal_local_member_receiver,
-    nominal_member_receiver_tracked, path_call_resolution, primitive_local_member_receiver, resolve_local_extern_contract_method,
-    unique_nominal_method_declaration, unqualified_enclosing_method_call,
+    nominal_member_receiver_tracked, path_call_resolution, primitive_local_member_receiver,
+    resolve_local_extern_contract_method, unique_nominal_method_declaration, unqualified_enclosing_method_call,
 };

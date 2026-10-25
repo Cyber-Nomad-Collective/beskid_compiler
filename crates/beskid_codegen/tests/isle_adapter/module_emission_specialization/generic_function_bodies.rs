@@ -195,13 +195,25 @@ fn generic_calls_propagated_with_try_inside_a_specialization_have_specialized_fa
     assert_eq!(fact.payload_type, beskid_queries::SemanticTypeId::I64);
     let put = descendants(db, function("Collect"), beskid_queries::IndexedNodeKind::CallExpression)
         .into_iter()
-        .filter_map(|call| beskid_queries::generic_call_specialization_in_environment(db, call, &collect).ok().flatten())
+        .filter_map(|call| {
+            beskid_queries::generic_call_specialization_in_environment(db, call, &collect).ok().flatten()
+        })
         .find(|instance| item_name(db, instance.declaration).ok().flatten().as_deref() == Some("Put"))
         .expect("bag.Put specializes in Collect<i64, Reader> with the try payload as its argument");
     assert_eq!(put.signature.parameters.last(), Some(&beskid_queries::SemanticTypeId::I64));
 
     let names = lower_all(PROPAGATING_GENERICS);
-    for name in ["Collect#generic_", "ReadOne#generic_", "Load#generic_", "Admit#generic_", "Put#generic_", "Complete#generic_", "Measure#generic_", "CountAll#generic_", "Assemble#generic_"] {
+    for name in [
+        "Collect#generic_",
+        "ReadOne#generic_",
+        "Load#generic_",
+        "Admit#generic_",
+        "Put#generic_",
+        "Complete#generic_",
+        "Measure#generic_",
+        "CountAll#generic_",
+        "Assemble#generic_",
+    ] {
         assert!(names.iter().any(|emitted| emitted.starts_with(name)), "{name}: {names:?}");
     }
 }

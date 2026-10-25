@@ -254,7 +254,8 @@ pub(super) fn enum_match_source_environment(
     // A field read inside a specialization (`this.slot`, `h.slot` with `Holder<T> h`) is applied
     // in the specialization's environment; its target-neutral identity cannot name `T`.
     if let Some(enclosing) = enclosing
-        && let Some(identity) = specialized_field_read_scrutinee_identity(program, index, key, expression, enclosing, db)
+        && let Some(identity) =
+            specialized_field_read_scrutinee_identity(program, index, key, expression, enclosing, db)
     {
         return enum_match_environment_for_applied_identity(definition, &identity?);
     }

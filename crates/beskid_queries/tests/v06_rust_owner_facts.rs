@@ -235,7 +235,8 @@ fn malformed_method_attributes_are_rejected_with_spans() {
         ("[RustOwner(Path:\"crate::glue_i32\")]", "must start with `implementation::`"),
         ("[RustOwner(Path:\"implementation::super::glue_i32\")]", "invalid segment `super`"),
     ] {
-        let source = owned_source().replace("    i32 glue_i32(i32 value);", &format!("    {attribute}\n    i32 glue_i32(i32 value);"));
+        let source = owned_source()
+            .replace("    i32 glue_i32(i32 value);", &format!("    {attribute}\n    i32 glue_i32(i32 value);"));
         let fixture = Fixture::new(&source);
         assert_spanned(&fixture.declarations_error(), expected);
         assert_spanned(&fixture.binding_error(fixture.method("glue_i32")), expected);
@@ -246,7 +247,10 @@ fn malformed_method_attributes_are_rejected_with_spans() {
 fn misplaced_rust_owner_is_rejected() {
     let export = "[Export(Abi:\"C\", Symbol:\"exported\")]\n[RustOwner(Path:\"implementation::exported\")]\npub i32 Exported(i32 value) { return value; }\n";
     let fixture = Fixture::new(&format!("{}{export}", owned_source()));
-    assert_spanned(&fixture.declarations_error(), "allowed only on a GlueHandle, GlueRecord or GlueEnum type or an Extern contract method");
+    assert_spanned(
+        &fixture.declarations_error(),
+        "allowed only on a GlueHandle, GlueRecord or GlueEnum type or an Extern contract method",
+    );
     assert_spanned(&fixture.binding_error(fixture.function("Exported")), "not allowed on an Export function");
 
     for misplaced in [
@@ -257,7 +261,10 @@ fn misplaced_rust_owner_is_rejected() {
         "pub type Fielded {\n    [RustOwner(Path:\"implementation::field\")]\n    u64 token;\n}\n",
     ] {
         let fixture = Fixture::new(&format!("{}{misplaced}", owned_source()));
-        assert_spanned(&fixture.declarations_error(), "allowed only on a GlueHandle, GlueRecord or GlueEnum type or an Extern contract method");
+        assert_spanned(
+            &fixture.declarations_error(),
+            "allowed only on a GlueHandle, GlueRecord or GlueEnum type or an Extern contract method",
+        );
     }
 }
 

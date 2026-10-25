@@ -105,7 +105,11 @@ pub(in crate::semantic_contract) fn pattern_binding_fact_in_environment(
     let arms = match query {
         Ok(Some(arms)) => arms,
         Ok(None) => {
-            return Some(Err(pattern_binding_unavailable(db, outer_match, "the enclosing match has no enum match fact")));
+            return Some(Err(pattern_binding_unavailable(
+                db,
+                outer_match,
+                "the enclosing match has no enum match fact",
+            )));
         }
         Err(error) => {
             return Some(Err(pattern_binding_unavailable(
@@ -115,8 +119,7 @@ pub(in crate::semantic_contract) fn pattern_binding_fact_in_environment(
             )));
         }
     };
-    arms
-        .iter()
+    arms.iter()
         .filter_map(|arm| enum_match_pattern_binding(&arm.pattern, declaration))
         .find(|binding| binding.declaration.node == declaration)
         .map(Ok)

@@ -47,7 +47,8 @@ pub(crate) fn use_path_context(text: &str, offset: usize) -> Option<UsePathConte
         return None;
     }
     let replacement_start = offset - partial.len();
-    let tail = text[offset..].chars().take_while(|ch| ch.is_alphanumeric() || *ch == '_').map(char::len_utf8).sum::<usize>();
+    let tail =
+        text[offset..].chars().take_while(|ch| ch.is_alphanumeric() || *ch == '_').map(char::len_utf8).sum::<usize>();
     Some(UsePathContext { prefix: segments, partial, replacement_start, replacement_end: offset + tail })
 }
 

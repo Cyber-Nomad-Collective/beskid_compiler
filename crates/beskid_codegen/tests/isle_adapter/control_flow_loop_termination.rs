@@ -78,8 +78,9 @@ fn for_over_a_scalar_array_reads_the_header_length_and_indexes_by_stride() {
 
 #[test]
 fn for_over_a_byte_array_addresses_elements_without_a_stride_multiply() {
-    let (input, isa, item) =
-        item_fixture("i64 Count(u8[] bytes) { mut i64 total = 0_i64; for byte in bytes { total = total + 1_i64; } return total; }");
+    let (input, isa, item) = item_fixture(
+        "i64 Count(u8[] bytes) { mut i64 total = 0_i64; for byte in bytes { total = total + 1_i64; } return total; }",
+    );
     let function = emit_isle_item(&input, isa.as_ref(), item)
         .unwrap_or_else(|error| panic!("a for over a u8[] parameter lowers: {}", describe(&input, error)));
     let clif = function.display().to_string();

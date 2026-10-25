@@ -256,14 +256,14 @@ mod cancellation {
     }
 
     #[cfg(not(any(unix, windows)))]
-    pub(in super) struct Forwarding;
+    pub(super) struct Forwarding;
     #[cfg(not(any(unix, windows)))]
     impl Forwarding {
-        pub(in super) fn install() -> std::io::Result<Self> {
+        pub(super) fn install() -> std::io::Result<Self> {
             Ok(Self)
         }
-        pub(in super) fn attach(&self, _child: &Child) {}
-        pub(in super) fn cancelled(&self) -> bool {
+        pub(super) fn attach(&self, _child: &Child) {}
+        pub(super) fn cancelled(&self) -> bool {
             false
         }
     }
@@ -325,7 +325,9 @@ mod tests {
 
     #[test]
     fn v06_captured_run_drains_more_than_pipe_capacity_on_both_streams() {
-        let (_root, path) = script("i=0; while [ $i -lt 4096 ]; do echo 0123456789abcdef0123456789abcdef; echo fedcba9876543210fedcba9876543210 >&2; i=$((i+1)); done; exit 3");
+        let (_root, path) = script(
+            "i=0; while [ $i -lt 4096 ]; do echo 0123456789abcdef0123456789abcdef; echo fedcba9876543210fedcba9876543210 >&2; i=$((i+1)); done; exit 3",
+        );
         let (code, stdout, stderr) = run_executable(&path, Duration::from_secs(60)).unwrap();
         assert_eq!(code, 3);
         assert_eq!(stdout.len(), 4096 * 33);
@@ -336,8 +338,10 @@ mod tests {
     fn v06_program_passes_argument_boundaries_and_exit_status() {
         let root = tempfile::tempdir().unwrap();
         let record = root.path().join("args.txt");
-        let (_script_root, path) =
-            script(&format!("for argument in \"$@\"; do printf '[%s]\\n' \"$argument\" >> '{}'; done; exit 7", record.display()));
+        let (_script_root, path) = script(&format!(
+            "for argument in \"$@\"; do printf '[%s]\\n' \"$argument\" >> '{}'; done; exit 7",
+            record.display()
+        ));
         let arguments: Vec<std::ffi::OsString> =
             ["", "two words", "--dash", "caf\u{e9}"].into_iter().map(Into::into).collect();
         assert_eq!(run_program(&path, &arguments).unwrap(), 7);

@@ -40,12 +40,7 @@ fn load_artifact(
 /// Actionable explanation for a missing executable descriptor: where it is expected and how to
 /// produce it. Toolchain-provisioned Corelib Mods ship it; any other Mod is built by the CLI.
 fn missing_artifact_message(discovered: &DiscoveredMod) -> String {
-    let expected = discovered
-        .project_root
-        .join(".beskid")
-        .join("obj")
-        .join("mods")
-        .join(&discovered.project_name);
+    let expected = discovered.project_root.join(".beskid").join("obj").join("mods").join(&discovered.project_name);
     let shipped = beskid_abi::corelib_bundle::verified_corelib_bundle_root(&discovered.manifest_path).is_some();
     let remedy = if shipped {
         "this Mod belongs to the toolchain Corelib bundle, which ships its prebuilt executable descriptor; \
@@ -340,13 +335,11 @@ mod tests {
             .expect("descriptor");
 
         // A debug selection skips the release entry entirely: the Mod has no artifact for its kit.
-        let error = load_artifacts(Some(&root), vec![discovered("ModA", &mod_dir)], &test_runtime(), None)
-            .unwrap_err();
+        let error = load_artifacts(Some(&root), vec![discovered("ModA", &mod_dir)], &test_runtime(), None).unwrap_err();
         assert!(error.to_string().contains("required native Mod artifact is missing"), "{error}");
         // A release selection considers it and rejects it on qualification.
         let release = RuntimeKitSelection::fixture(test_runtime().prefix(), BuildProfile::Release);
-        let error =
-            load_artifacts(Some(&root), vec![discovered("ModA", &mod_dir)], &release, None).unwrap_err();
+        let error = load_artifacts(Some(&root), vec![discovered("ModA", &mod_dir)], &release, None).unwrap_err();
         assert!(error.to_string().contains("no current qualified native Mod artifact"), "{error}");
 
         let _ = fs::remove_dir_all(root); // Discard result: temp dir cleanup

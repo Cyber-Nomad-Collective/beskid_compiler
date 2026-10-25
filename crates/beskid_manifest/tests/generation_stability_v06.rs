@@ -5,7 +5,8 @@ use std::time::{Duration, SystemTime};
 #[test]
 fn v06_unchanged_builtin_generation_preserves_mtime_and_bytes() {
     let directory = std::env::temp_dir().join(format!(
-        "beskid-builtin-generation-{}-{}", std::process::id(),
+        "beskid-builtin-generation-{}-{}",
+        std::process::id(),
         SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_nanos()
     ));
     fs::create_dir(&directory).unwrap();
@@ -15,8 +16,7 @@ fn v06_unchanged_builtin_generation_preserves_mtime_and_bytes() {
     generate_analysis_with_v5_intrinsics_from_source(source, base, &output).unwrap();
     let bytes = fs::read(&output).unwrap();
     let sentinel = SystemTime::UNIX_EPOCH + Duration::from_secs(100);
-    File::options().write(true).open(&output).unwrap()
-        .set_times(FileTimes::new().set_modified(sentinel)).unwrap();
+    File::options().write(true).open(&output).unwrap().set_times(FileTimes::new().set_modified(sentinel)).unwrap();
     let before = fs::metadata(&output).unwrap().modified().unwrap();
     let generated = fs::read_to_string(&output).unwrap();
     generate_analysis_with_v5_intrinsics_from_source(source, &generated, &output).unwrap();
@@ -26,8 +26,7 @@ fn v06_unchanged_builtin_generation_preserves_mtime_and_bytes() {
     // A CRLF checkout of the same generated text is unchanged input: no rewrite, no new mtime.
     let crlf = generated.replace('\n', "\r\n");
     fs::write(&output, &crlf).unwrap();
-    File::options().write(true).open(&output).unwrap()
-        .set_times(FileTimes::new().set_modified(sentinel)).unwrap();
+    File::options().write(true).open(&output).unwrap().set_times(FileTimes::new().set_modified(sentinel)).unwrap();
     generate_analysis_with_v5_intrinsics_from_source(source, &crlf, &output).unwrap();
     assert_eq!(fs::read(&output).unwrap(), crlf.as_bytes(), "line endings alone never rewrite the output");
     assert_eq!(fs::metadata(&output).unwrap().modified().unwrap(), before, "a CRLF checkout keeps its mtime");

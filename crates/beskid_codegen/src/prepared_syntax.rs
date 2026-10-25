@@ -367,7 +367,15 @@ pub fn lower_prepared_syntax_entrypoint(
     isa: &dyn TargetIsa,
 ) -> Result<PreparedSyntaxEntrypoint> {
     let assembly = Arc::new(front.syntax_assembly());
-    lower_syntax_assembly_entrypoint_with_composition(db, assembly, entrypoint, EntrypointKind::Function, target, isa, Some(front))
+    lower_syntax_assembly_entrypoint_with_composition(
+        db,
+        assembly,
+        entrypoint,
+        EntrypointKind::Function,
+        target,
+        isa,
+        Some(front),
+    )
 }
 
 /// Lower one entrypoint from an assembled syntax program through ISLE.
@@ -382,7 +390,15 @@ pub fn lower_syntax_assembly_entrypoint(
     target: TargetMetadata,
     isa: &dyn TargetIsa,
 ) -> Result<PreparedSyntaxEntrypoint> {
-    lower_syntax_assembly_entrypoint_with_composition(db, assembly, entrypoint, EntrypointKind::Function, target, isa, None)
+    lower_syntax_assembly_entrypoint_with_composition(
+        db,
+        assembly,
+        entrypoint,
+        EntrypointKind::Function,
+        target,
+        isa,
+        None,
+    )
 }
 
 /// [`lower_syntax_assembly_entrypoint`] for the `test` definition named `test` (tests have their
@@ -406,16 +422,15 @@ fn lower_syntax_assembly_entrypoint_with_composition(
     isa: &dyn TargetIsa,
     front: Option<&ExecutableFrontEnd>,
 ) -> Result<PreparedSyntaxEntrypoint> {
-    let lowered =
-        lower_syntax_assembly_entrypoints_with_composition(
-            db,
-            assembly,
-            &[entrypoint.to_owned()],
-            kind,
-            target,
-            isa,
-            front,
-        )?;
+    let lowered = lower_syntax_assembly_entrypoints_with_composition(
+        db,
+        assembly,
+        &[entrypoint.to_owned()],
+        kind,
+        target,
+        isa,
+        front,
+    )?;
     let entry = lowered.entries.into_iter().next().expect("one checked selection");
     let mut artifact = lowered.artifact;
     artifact.executable_entry = Some(entry.symbol.clone());
@@ -894,7 +909,8 @@ fn find_entrypoint(
 /// The first item of `kind` named `entrypoint`: a function and a test of one name are distinct
 /// selections, so the name alone never picks between them.
 fn find_item(db: &BeskidDatabase, key: AstNodeKey, entrypoint: &str, kind: EntrypointKind) -> Option<AstNodeKey> {
-    if kind.matches(node_kind(db, key).ok().flatten()) && item_name(db, key).ok().flatten().as_deref() == Some(entrypoint)
+    if kind.matches(node_kind(db, key).ok().flatten())
+        && item_name(db, key).ok().flatten().as_deref() == Some(entrypoint)
     {
         return Some(key);
     }

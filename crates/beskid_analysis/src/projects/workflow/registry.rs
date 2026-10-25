@@ -104,8 +104,10 @@ impl ResolvedRegistryDependency {
     /// hostile archive cannot inflate resolution memory before materialization limits apply.
     pub(super) fn declared_dependencies(&self) -> Result<Vec<Dependency>, ProjectError> {
         let layout = registry_artifact_layout(&self.artifact)?;
-        let reader =
-            self.artifact.reopen().map_err(|_| ProjectError::Validation("failed to reopen registry scratch artifact".into()))?;
+        let reader = self
+            .artifact
+            .reopen()
+            .map_err(|_| ProjectError::Validation("failed to reopen registry scratch artifact".into()))?;
         let mut archive = ZipArchive::new(reader)
             .map_err(|error| ProjectError::Validation(format!("invalid registry artifact ZIP: {error}")))?;
         let entry = archive
@@ -478,7 +480,13 @@ pub(super) fn materialize_registry_dependency(
 /// A registry failure that names the package, the requested version and the registry, with
 /// credential-free recovery guidance (DEP06-02).
 #[allow(non_snake_case)]
-fn RegistryFailure(base_url: &str, package: &str, requested: Option<&str>, cause: &str, guidance: &str) -> ProjectError {
+fn RegistryFailure(
+    base_url: &str,
+    package: &str,
+    requested: Option<&str>,
+    cause: &str,
+    guidance: &str,
+) -> ProjectError {
     let coordinate = match requested {
         Some(version) => format!("`{package}@{version}`"),
         None => format!("`{package}` (greatest stable version)"),
@@ -503,8 +511,7 @@ fn Cause(error: ProjectError) -> String {
     }
 }
 
-const REGISTRY_UNAVAILABLE_GUIDANCE: &str =
-    "check the `registry` URL of the workspace and retry; nothing was changed";
+const REGISTRY_UNAVAILABLE_GUIDANCE: &str = "check the `registry` URL of the workspace and retry; nothing was changed";
 
 fn select_registry_version(
     base_url: &str,
@@ -514,7 +521,8 @@ fn select_registry_version(
     let requested = requested_version.filter(|version| *version != "*");
     let failure = |cause: &str, guidance: &str| RegistryFailure(base_url, package, requested, cause, guidance);
     let versions_url = registry_url(base_url, &["api", "packages", package, "versions"])?;
-    let versions_json = http_get_text(&versions_url).map_err(|error| failure(&Cause(error), REGISTRY_UNAVAILABLE_GUIDANCE))?;
+    let versions_json =
+        http_get_text(&versions_url).map_err(|error| failure(&Cause(error), REGISTRY_UNAVAILABLE_GUIDANCE))?;
     let versions: Vec<Value> = serde_json::from_str(&versions_json).map_err(|error| {
         failure(&format!("registry version response is malformed: {error}"), REGISTRY_UNAVAILABLE_GUIDANCE)
     })?;

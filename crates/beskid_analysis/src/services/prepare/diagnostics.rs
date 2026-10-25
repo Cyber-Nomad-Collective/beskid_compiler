@@ -30,7 +30,10 @@ pub(super) fn fact_findings_to_diagnostics(
             );
             for related in finding.related {
                 let related_unit = assembly.units.get(related.unit).ok_or_else(|| {
-                    anyhow::anyhow!("semantic fact related site names unit {} outside the prepared assembly", related.unit)
+                    anyhow::anyhow!(
+                        "semantic fact related site names unit {} outside the prepared assembly",
+                        related.unit
+                    )
                 })?;
                 diagnostic = diagnostic.with_related_in(
                     related_unit.logical_name.clone(),

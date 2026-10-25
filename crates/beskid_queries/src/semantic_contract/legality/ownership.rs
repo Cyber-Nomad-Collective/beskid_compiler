@@ -7,7 +7,12 @@ fn callables_of(db: &dyn Db, key: AstNodeKey) -> Vec<AstNodeKey> {
     let Some(syntax) = db.syntax_unit(key.unit) else { return Vec::new() };
     match with_node(db, syntax, key, |_program, index, _node| {
         let mut found = Vec::new();
-        for kind in [NodeKind::FunctionDefinition, NodeKind::MethodDefinition, NodeKind::TestDefinition, NodeKind::LambdaExpression] {
+        for kind in [
+            NodeKind::FunctionDefinition,
+            NodeKind::MethodDefinition,
+            NodeKind::TestDefinition,
+            NodeKind::LambdaExpression,
+        ] {
             collect_nodes_of_kind(index, key.node, kind, &mut found);
         }
         found.sort();
@@ -26,10 +31,9 @@ pub(super) fn affine_findings(db: &dyn Db, item: AstNodeKey) -> Vec<SemanticFind
         for finding in ownership.findings.iter() {
             let name = finding.name.clone();
             let (kind, related) = match finding.kind {
-                AffineFindingKind::UseAfterMove => (
-                    SemanticIssueKind::UseAfterMove { name },
-                    finding.related.map(|related| (related, "moved here")),
-                ),
+                AffineFindingKind::UseAfterMove => {
+                    (SemanticIssueKind::UseAfterMove { name }, finding.related.map(|related| (related, "moved here")))
+                }
                 AffineFindingKind::MoveOfNonOwningName => {
                     (SemanticIssueKind::MoveOfNonOwningName { name, class: finding.detail.clone() }, None)
                 }
@@ -40,9 +44,14 @@ pub(super) fn affine_findings(db: &dyn Db, item: AstNodeKey) -> Vec<SemanticFind
                     SemanticIssueKind::BorrowEscapes { name },
                     finding.related.map(|related| (related, "borrowed here")),
                 ),
-                AffineFindingKind::ImplicitAliasOfMovedValue => (SemanticIssueKind::ImplicitAliasOfMovedValue { name }, None),
+                AffineFindingKind::ImplicitAliasOfMovedValue => {
+                    (SemanticIssueKind::ImplicitAliasOfMovedValue { name }, None)
+                }
                 AffineFindingKind::ScopeBorrowedEscapes => (
-                    SemanticIssueKind::ScopeBorrowedEscapes { name, type_name: finding.detail.clone().unwrap_or_default() },
+                    SemanticIssueKind::ScopeBorrowedEscapes {
+                        name,
+                        type_name: finding.detail.clone().unwrap_or_default(),
+                    },
                     finding.related.map(|related| (related, "borrowed here")),
                 ),
                 AffineFindingKind::DestructiveReadWithoutEmpty => (
@@ -62,7 +71,10 @@ pub(super) fn affine_findings(db: &dyn Db, item: AstNodeKey) -> Vec<SemanticFind
             findings.push(SemanticFinding {
                 kind,
                 site: finding.site,
-                related: related.into_iter().map(|(site, label): (AstNodeKey, &'static str)| (site, label.into())).collect(),
+                related: related
+                    .into_iter()
+                    .map(|(site, label): (AstNodeKey, &'static str)| (site, label.into()))
+                    .collect(),
             });
         }
     }

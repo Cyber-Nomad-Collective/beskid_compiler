@@ -36,7 +36,14 @@ fn main_clif_of_program(source: &str) -> String {
         })
         .collect::<Vec<_>>();
     let artifact = lower_syntax_program(&input, isa.as_ref(), &items).expect("program lowers");
-    artifact.functions.iter().find(|function| function.name == "Main").expect("Main lowered").function.display().to_string()
+    artifact
+        .functions
+        .iter()
+        .find(|function| function.name == "Main")
+        .expect("Main lowered")
+        .function
+        .display()
+        .to_string()
 }
 
 #[test]
@@ -65,7 +72,10 @@ fn four_segment_projection_as_a_call_argument_matches_the_let_form() {
     let let_form = offsets_in(&let_clif);
     let argument_form = offsets_in(&argument_clif);
     assert_eq!(let_form.len(), 3, "{let_form:?}\n{let_clif}");
-    assert_eq!(argument_form, let_form, "argument and let spellings of one chain must load identically\n{argument_clif}\n{let_clif}");
+    assert_eq!(
+        argument_form, let_form,
+        "argument and let spellings of one chain must load identically\n{argument_clif}\n{let_clif}"
+    );
 }
 
 /// A unary operator over a nested field read (`!this.state.input.failed`, `-this.state.count`)

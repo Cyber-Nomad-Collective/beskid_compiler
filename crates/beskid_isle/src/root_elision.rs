@@ -87,9 +87,9 @@ pub fn non_collecting_functions<'a>(functions: impl IntoIterator<Item = (&'a str
             .copied()
             .filter(|name| match &targets[name] {
                 None => true,
-                Some(callees) => callees.iter().any(|callee| {
-                    !candidates.contains(callee) && !NON_COLLECTING_IMPORTS.contains(callee)
-                }),
+                Some(callees) => callees
+                    .iter()
+                    .any(|callee| !candidates.contains(callee) && !NON_COLLECTING_IMPORTS.contains(callee)),
             })
             .collect::<Vec<_>>();
         if dropped.is_empty() {
@@ -206,8 +206,11 @@ block0(v0: i64):
         assert_eq!(elide_leaf_function_roots(&mut function), 2);
         let text = function.display().to_string();
         assert!(!text.contains("call fn") && !text.contains("trapz"), "{text}");
-        cranelift_codegen::verify_function(&function, &cranelift_codegen::settings::Flags::new(cranelift_codegen::settings::builder()))
-            .expect("elided leaf verifies");
+        cranelift_codegen::verify_function(
+            &function,
+            &cranelift_codegen::settings::Flags::new(cranelift_codegen::settings::builder()),
+        )
+        .expect("elided leaf verifies");
     }
 
     /// The guarded hybrid barrier is not a safepoint: a leaf whose only other calls are root
@@ -228,17 +231,21 @@ block0(v0: i64):
         let elided = function.display().to_string();
         assert!(!elided.contains("call fn0") && !elided.contains("call fn1"), "{elided}");
         assert_eq!(elided.matches("call fn2(").count(), 1, "{elided}");
-        cranelift_codegen::verify_function(&function, &cranelift_codegen::settings::Flags::new(cranelift_codegen::settings::builder()))
-            .expect("elided leaf with a barrier verifies");
+        cranelift_codegen::verify_function(
+            &function,
+            &cranelift_codegen::settings::Flags::new(cranelift_codegen::settings::builder()),
+        )
+        .expect("elided leaf with a barrier verifies");
     }
 
     #[test]
     fn function_with_another_call_keeps_its_roots() {
-        let text = LEAF.replace(
-            "    fn1 = %gc_unregister_root sig1\n",
-            "    fn1 = %gc_unregister_root sig1\n    fn2 = %beskid_rt_v5_gc_collect sig1\n",
-        )
-        .replace("    v3 = load.i64 v0\n", "    call fn2(v0)\n    v3 = load.i64 v0\n");
+        let text = LEAF
+            .replace(
+                "    fn1 = %gc_unregister_root sig1\n",
+                "    fn1 = %gc_unregister_root sig1\n    fn2 = %beskid_rt_v5_gc_collect sig1\n",
+            )
+            .replace("    v3 = load.i64 v0\n", "    call fn2(v0)\n    v3 = load.i64 v0\n");
         let mut function = parse(&text);
         assert_eq!(elide_leaf_function_roots(&mut function), 0);
         assert_eq!(function.display().to_string().matches("call fn").count(), 3);
@@ -276,8 +283,11 @@ block0(v0: i64):
         assert_eq!(elide_non_collecting_function_roots(&mut caller, &non_collecting), 2);
         let text = caller.display().to_string();
         assert!(!text.contains("call fn0") && !text.contains("call fn1") && text.contains("call fn2"), "{text}");
-        cranelift_codegen::verify_function(&caller, &cranelift_codegen::settings::Flags::new(cranelift_codegen::settings::builder()))
-            .expect("elided caller verifies");
+        cranelift_codegen::verify_function(
+            &caller,
+            &cranelift_codegen::settings::Flags::new(cranelift_codegen::settings::builder()),
+        )
+        .expect("elided caller verifies");
     }
 
     #[test]
@@ -290,11 +300,14 @@ block0(v0: i64):
 
     #[test]
     fn collecting_import_propagates_to_every_caller() {
-        let leaf = parse(&LEAF.replace(
-            "    fn1 = %gc_unregister_root sig1\n",
-            "    fn1 = %gc_unregister_root sig1\n    fn2 = %str_new sig1\n",
-        )
-        .replace("    v3 = load.i64 v0\n", "    call fn2(v0)\n    v3 = load.i64 v0\n"));
+        let leaf = parse(
+            &LEAF
+                .replace(
+                    "    fn1 = %gc_unregister_root sig1\n",
+                    "    fn1 = %gc_unregister_root sig1\n    fn2 = %str_new sig1\n",
+                )
+                .replace("    v3 = load.i64 v0\n", "    call fn2(v0)\n    v3 = load.i64 v0\n"),
+        );
         let mut caller = parse(CALLER);
         let outer = parse(&CALLER.replace("%caller", "%outer").replace("%leaf sig2", "%caller sig2"));
         let non_collecting = non_collecting_functions([("leaf", &leaf), ("caller", &caller), ("outer", &outer)]);
@@ -332,7 +345,9 @@ block0(v0: i64):
     /// the allow-list, can collect: a caller of one keeps its roots.
     #[test]
     fn allocating_and_io_runtime_services_count_as_collecting() {
-        for service in ["str_new", "str_concat", "str_slice", "str_from_i64", "syscall_write", "beskid_trap_message", "unknown"] {
+        for service in
+            ["str_new", "str_concat", "str_slice", "str_from_i64", "syscall_write", "beskid_trap_message", "unknown"]
+        {
             let (leaf, mut caller) = module(&CALLER.replace("%leaf sig2", &format!("%{service} sig2")));
             let non_collecting = non_collecting_functions([("leaf", &leaf), ("caller", &caller)]);
             assert!(!non_collecting.contains("caller"), "{service}: {non_collecting:?}");

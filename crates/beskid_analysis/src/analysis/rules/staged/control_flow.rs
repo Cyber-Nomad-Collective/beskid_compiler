@@ -55,8 +55,10 @@ impl SemanticPipelineRule {
             if !unresolved_value_spans.contains(&call.span) {
                 continue;
             }
-            let issue =
-                SemanticIssueKind::UnqualifiedEnumConstructor { variant_name: call.variant_name, enum_name: call.enum_name };
+            let issue = SemanticIssueKind::UnqualifiedEnumConstructor {
+                variant_name: call.variant_name,
+                enum_name: call.enum_name,
+            };
             ctx.emit_issue(call.span, issue);
         }
     }

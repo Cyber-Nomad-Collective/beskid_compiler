@@ -555,8 +555,7 @@ mod platform {
             allocation_type: u32,
             protect: u32,
         ) -> *mut core::ffi::c_void;
-        fn VirtualProtect(address: *mut core::ffi::c_void, size: usize, protect: u32, old_protect: *mut u32)
-        -> i32;
+        fn VirtualProtect(address: *mut core::ffi::c_void, size: usize, protect: u32, old_protect: *mut u32) -> i32;
         fn VirtualFree(address: *mut core::ffi::c_void, size: usize, free_type: u32) -> i32;
         fn GetSystemInfo(system_info: *mut SystemInfo);
     }

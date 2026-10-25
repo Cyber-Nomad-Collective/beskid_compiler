@@ -52,13 +52,15 @@ pub(super) fn emit_object_stage(req: &AotBuildRequest) -> AotResult<ObjectStageR
                 message: format!("explicit export `{}` collides with the executable bootstrap", export.exported_symbol),
             });
         }
-        if let Some(export) = exports.iter().find(|export| {
-            export.exports(entry.function) && export.exported_symbol != entry.symbol
-        }) {
+        if let Some(export) =
+            exports.iter().find(|export| export.exports(entry.function) && export.exported_symbol != entry.symbol)
+        {
             return Err(crate::error::AotError::InvalidRequest {
                 message: format!(
                     "selected executable entry `{}` cannot export alias `{}`; its host boundary is `{}`",
-                    entry.function.split('#').next().unwrap_or(entry.function), export.exported_symbol, entry.symbol,
+                    entry.function.split('#').next().unwrap_or(entry.function),
+                    export.exported_symbol,
+                    entry.symbol,
                 ),
             });
         }

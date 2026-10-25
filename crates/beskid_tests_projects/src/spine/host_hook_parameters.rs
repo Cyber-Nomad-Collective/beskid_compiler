@@ -265,6 +265,8 @@ fn the_composition_hooks_run_time_fixture_lowers() {
         .join("../beskid_e2e_tests/fixtures/composition_hooks/Src/Main.bd");
     let source = fs::read_to_string(&fixture).expect("read the composition_hooks fixture");
     assert!(source.contains("use Core.Output;"), "the fixture writes through Core.Output");
-    let source = source.replace("use Core.Output;", "unit WriteLine(string text) { return; }").replace("Output.WriteLine(", "WriteLine(");
+    let source = source
+        .replace("use Core.Output;", "unit WriteLine(string text) { return; }")
+        .replace("Output.WriteLine(", "WriteLine(");
     lower_through_spine("host_hooks_e2e_fixture", "App", &source, Lowering::Function("Main"));
 }

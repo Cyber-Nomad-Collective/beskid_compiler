@@ -99,10 +99,16 @@ fn clif_blocks_run_after_aot_build() {
     }
     let project = ClifProject::new(FIXTURE);
     let executable = project.executable("clif_app");
-    let output = project.beskid(&["build", "--target", "ClifApp", "--output", executable.to_str().expect("UTF-8 path")]);
+    let output =
+        project.beskid(&["build", "--target", "ClifApp", "--output", executable.to_str().expect("UTF-8 path")]);
     assert!(output.status.success(), "beskid build failed:\n{}", text(&output));
     let run = Command::new(&executable).output().expect("run AOT executable");
-    assert_eq!(run.status.code(), Some(0), "AOT clif checks failed (exit code names the failing check):\n{}", text(&run));
+    assert_eq!(
+        run.status.code(),
+        Some(0),
+        "AOT clif checks failed (exit code names the failing check):\n{}",
+        text(&run)
+    );
 }
 
 #[test]
@@ -111,7 +117,8 @@ fn clif_block_without_typed_context_fails_with_e1232() {
         "pub i64 Main() {\n    let value = clif {\n        %k = iconst.i64 1\n        return %k\n    };\n    return 0;\n}\n",
     );
     let executable = project.executable("untyped");
-    let output = project.beskid(&["build", "--target", "ClifApp", "--output", executable.to_str().expect("UTF-8 path")]);
+    let output =
+        project.beskid(&["build", "--target", "ClifApp", "--output", executable.to_str().expect("UTF-8 path")]);
     let log = text(&output);
     assert!(!output.status.success(), "an untyped clif block must not build:\n{log}");
     assert!(log.contains("invalid clif block") && log.contains("needs a typed context"), "missing E1232:\n{log}");
@@ -133,7 +140,8 @@ fn clif_payload_handoff_to_native_code_under_jit_and_aot() {
     assert!(log.contains("Result: passed=3, failed=0"), "unexpected test summary:\n{log}");
 
     let executable = project.executable("clif_native");
-    let output = project.beskid(&["build", "--target", "ClifApp", "--output", executable.to_str().expect("UTF-8 path")]);
+    let output =
+        project.beskid(&["build", "--target", "ClifApp", "--output", executable.to_str().expect("UTF-8 path")]);
     assert!(output.status.success(), "beskid build failed:\n{}", text(&output));
     let run = Command::new(&executable).output().expect("run AOT executable");
     assert_eq!(run.status.code(), Some(0), "AOT native handoff failed (exit code names the check):\n{}", text(&run));
@@ -147,7 +155,8 @@ fn clif_payload_handoff_to_non_extern_symbol_is_rejected() {
          Fill(bytes);\n    return 0;\n}\n",
     );
     let executable = project.executable("rejected");
-    let output = project.beskid(&["build", "--target", "ClifApp", "--output", executable.to_str().expect("UTF-8 path")]);
+    let output =
+        project.beskid(&["build", "--target", "ClifApp", "--output", executable.to_str().expect("UTF-8 path")]);
     let log = text(&output);
     assert!(!output.status.success(), "a payload handoff to an undeclared symbol must not build:\n{log}");
     assert!(log.contains("C-ABI `[Extern]` contract"), "missing handoff diagnostic:\n{log}");

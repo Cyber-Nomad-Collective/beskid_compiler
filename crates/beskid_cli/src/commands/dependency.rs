@@ -214,7 +214,9 @@ mod tests {
         assert_eq!(result["operation"], "update");
         assert_eq!(result["dryRun"], true);
         assert!(result.get("effects").is_none(), "effects are emitted as change records, not result fields");
-        assert!(ChangeRecords(&Records::new("update"), serde_json::json!({"effects": [{"package": "X"}]}), false).is_err());
+        assert!(
+            ChangeRecords(&Records::new("update"), serde_json::json!({"effects": [{"package": "X"}]}), false).is_err()
+        );
     }
 }
 
@@ -241,7 +243,11 @@ mod selector_tests {
 
     #[test]
     fn dep06_03_update_scope_is_a_usage_error_naming_package_and_all() {
-        for args in [vec!["beskid", "update"], vec!["beskid", "update", "Numbers", "--all"], vec!["beskid", "update", "--all", "--version", "1.0.0"]] {
+        for args in [
+            vec!["beskid", "update"],
+            vec!["beskid", "update", "Numbers", "--all"],
+            vec!["beskid", "update", "--all", "--version", "1.0.0"],
+        ] {
             let error = ParseInvocation(args.clone()).err().unwrap_or_else(|| panic!("{args:?} parsed"));
             assert_eq!(error.exit_code(), 2, "{args:?}: {error}");
             assert!(error.to_string().contains("--all"), "{args:?} names --all: {error}");

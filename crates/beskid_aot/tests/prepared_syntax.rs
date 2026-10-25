@@ -57,11 +57,7 @@ fn entry_identity_is_the_free_function_even_when_a_type_method_shares_its_name()
     assert_eq!(mains.len(), 2, "both callables named Main are emitted: {mains:?}");
     let entry_name = artifact.executable_entry.as_deref().expect("the lowering issues the entry identity");
     let entry = artifact.functions.iter().find(|function| function.name == entry_name).expect("entry is emitted");
-    assert_eq!(
-        entry.function.signature.returns.len(),
-        1,
-        "the issued entry is the free `i32 Main`, not the method"
-    );
+    assert_eq!(entry.function.signature.returns.len(), 1, "the issued entry is the free `i32 Main`, not the method");
     assert_eq!(entry.function.signature.returns[0].value_type, cranelift_codegen::ir::types::I32);
     assert_eq!(
         mains.iter().filter(|function| function.name == entry_name).count(),
@@ -126,8 +122,8 @@ fn a_test_sharing_its_name_with_a_function_builds_as_a_native_test_object() {
     let test = named.iter().find(|function| function.name == entry.symbol()).expect("the test is emitted");
     assert!(test.function.signature.params.is_empty(), "the test entry takes no arguments");
 
-    let mut object =
-        beskid_aot::object_module::BeskidObjectModule::new(None, beskid_aot::BuildProfile::Debug).expect("object module");
+    let mut object = beskid_aot::object_module::BeskidObjectModule::new(None, beskid_aot::BuildProfile::Debug)
+        .expect("object module");
     object.compile_artifact(tests.artifact(), None).expect("test and function get distinct object symbols");
     object.finalize_to_path(&directory.path().join("tests.o")).expect("write test object");
 

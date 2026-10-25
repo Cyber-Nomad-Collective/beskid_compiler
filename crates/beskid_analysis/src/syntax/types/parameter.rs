@@ -47,7 +47,8 @@ impl crate::parsing::parsable::Parsable for Parameter {
         let mut current = first;
         if current.as_rule() == crate::parser::Rule::BulkKeyword {
             bulk = true;
-            current = inner.next().ok_or(crate::parsing::error::ParseError::missing(crate::parser::Rule::BeskidType))?;
+            current =
+                inner.next().ok_or(crate::parsing::error::ParseError::missing(crate::parser::Rule::BeskidType))?;
         }
         match current.as_rule() {
             crate::parser::Rule::MutKeyword => mutable = true,

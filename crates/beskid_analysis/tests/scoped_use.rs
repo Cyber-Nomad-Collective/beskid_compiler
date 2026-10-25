@@ -3,10 +3,8 @@ use beskid_analysis::syntax::Node;
 
 #[test]
 fn scoped_use_is_a_binding_while_module_use_remains_an_import() {
-    let source =
-        "use Core.Disposable; Result<unit, DisposeError> Run() { use Resource resource = Open(); return Result::Ok(unit); }";
-    let program = parse_program(source)
-    .expect("a scoped use binding must parse alongside an import");
+    let source = "use Core.Disposable; Result<unit, DisposeError> Run() { use Resource resource = Open(); return Result::Ok(unit); }";
+    let program = parse_program(source).expect("a scoped use binding must parse alongside an import");
     assert!(matches!(program.node.items[0].node, Node::UseDeclaration(_)));
     let Node::Function(function) = &program.node.items[1].node else {
         panic!("expected enclosing function");

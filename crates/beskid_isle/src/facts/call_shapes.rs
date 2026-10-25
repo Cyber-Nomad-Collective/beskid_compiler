@@ -42,7 +42,10 @@ pub enum DirectCallee {
     /// The artifact's isolate entry trampoline for one task result shape: it calls a `() => T`
     /// closure record and boxes the result. `result` is the ABI type of `T`; `managed` says the
     /// boxed slot holds a managed reference.
-    IsolateEntryTrampoline { result: beskid_queries::SemanticTypeId, managed: bool },
+    IsolateEntryTrampoline {
+        result: beskid_queries::SemanticTypeId,
+        managed: bool,
+    },
 }
 
 impl DirectCallee {
@@ -70,10 +73,7 @@ impl DirectCallee {
         Self::LambdaTrampoline(lambda)
     }
 
-    pub fn specialized_lambda_trampoline(
-        lambda: AstNodeKey,
-        specialization: impl Into<std::sync::Arc<[u32]>>,
-    ) -> Self {
+    pub fn specialized_lambda_trampoline(lambda: AstNodeKey, specialization: impl Into<std::sync::Arc<[u32]>>) -> Self {
         Self::SpecializedLambdaTrampoline { lambda, specialization: specialization.into() }
     }
 

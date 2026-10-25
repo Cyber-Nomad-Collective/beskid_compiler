@@ -19,9 +19,9 @@ use super::super::members::{declared_member_names, is_call_callee};
 use super::super::typing::{is_numeric, nodes_of_kind};
 use super::*;
 use beskid_analysis::syntax::{
-    ArrayLiteralExpression, CallExpression, ConditionalExpression, EnumConstructorExpression, EnumDefinition, Expression,
-    ExtendTypeDefinition, FunctionDefinition, IndexExpression, LambdaParameter, LetStatement, MemberExpression,
-    Parameter, PathExpression, StructLiteralExpression, Type, TypeDefinition, Visibility,
+    ArrayLiteralExpression, CallExpression, ConditionalExpression, EnumConstructorExpression, EnumDefinition,
+    Expression, ExtendTypeDefinition, FunctionDefinition, IndexExpression, LambdaParameter, LetStatement,
+    MemberExpression, Parameter, PathExpression, StructLiteralExpression, Type, TypeDefinition, Visibility,
 };
 use beskid_analysis::syntax_query::DynNodeRef;
 
@@ -51,7 +51,9 @@ fn collect_conditional_obligations(
                 site: AstNodeKey { node: subject, ..key },
             });
         }
-        if is_numeric_literal_branch(&conditional.then_branch.node) || is_numeric_literal_branch(&conditional.else_branch.node) {
+        if is_numeric_literal_branch(&conditional.then_branch.node)
+            || is_numeric_literal_branch(&conditional.else_branch.node)
+        {
             continue;
         }
         // Target typing: under a contract expectation each branch converts to the contract on
@@ -59,11 +61,13 @@ fn collect_conditional_obligations(
         if super::super::values::contract_expectation(db, AstNodeKey { node, ..key }).is_some() {
             continue;
         }
-        let Some((then_site, then_subject)) = super::super::typing::expression_nodes(program, index, node, &conditional.then_branch)
+        let Some((then_site, then_subject)) =
+            super::super::typing::expression_nodes(program, index, node, &conditional.then_branch)
         else {
             continue;
         };
-        let Some((else_site, else_subject)) = super::super::typing::expression_nodes(program, index, node, &conditional.else_branch)
+        let Some((else_site, else_subject)) =
+            super::super::typing::expression_nodes(program, index, node, &conditional.else_branch)
         else {
             continue;
         };
@@ -110,7 +114,10 @@ pub(super) fn collect_expression_obligations(
             continue;
         };
         if !matches!(target, SemanticTypeId::POINTER | SemanticTypeId::NEVER | SemanticTypeId::STRING) {
-            findings.push(GateObligation { kind: GateObligationKind::UnsupportedExpression, site: AstNodeKey { node, ..key } });
+            findings.push(GateObligation {
+                kind: GateObligationKind::UnsupportedExpression,
+                site: AstNodeKey { node, ..key },
+            });
         }
     }
     for node in nodes_of_kind(index, key.node, NodeKind::ArrayLiteralExpression) {
@@ -129,7 +136,10 @@ pub(super) fn collect_expression_obligations(
         if let Some((first, rest)) = types.split_first()
             && rest.iter().any(|ty| ty != first)
         {
-            findings.push(GateObligation { kind: GateObligationKind::UnsupportedExpression, site: AstNodeKey { node, ..key } });
+            findings.push(GateObligation {
+                kind: GateObligationKind::UnsupportedExpression,
+                site: AstNodeKey { node, ..key },
+            });
         }
     }
     for node in nodes_of_kind(index, key.node, NodeKind::LambdaParameter) {
@@ -152,9 +162,12 @@ pub(super) fn collect_expression_obligations(
         // An annotated local or a declared function-typed return supplies the signature through
         // `expected_type`; only a position proven to declare no function type is a finding.
         let lambda_key = AstNodeKey { node: lambda, ..key };
-        let expected_function = matches!(expected_type(db, lambda_key), Ok(Some(expected)) if expected.function_signature().is_some());
+        let expected_function =
+            matches!(expected_type(db, lambda_key), Ok(Some(expected)) if expected.function_signature().is_some());
         if !expected_function
-            && owner.is_some_and(|owner| matches!(index.kind(owner), Some(NodeKind::LetStatement | NodeKind::ReturnStatement)))
+            && owner.is_some_and(|owner| {
+                matches!(index.kind(owner), Some(NodeKind::LetStatement | NodeKind::ReturnStatement))
+            })
         {
             findings.push(GateObligation {
                 kind: GateObligationKind::MissingTypeAnnotation { name: Arc::from(parameter.name.node.name.as_str()) },
@@ -231,7 +244,8 @@ pub(super) fn collect_member_obligations(
                 };
                 let receiver = AstNodeKey { node: receiver, ..key };
                 let Ok(identity) = generic_source_expression_identity(db, receiver) else { continue };
-                let Some(declaration) = crate::semantic_contract::contracts::concrete_declaration(db, receiver, &identity)
+                let Some(declaration) =
+                    crate::semantic_contract::contracts::concrete_declaration(db, receiver, &identity)
                 else {
                     continue;
                 };
@@ -277,7 +291,8 @@ pub(super) fn collect_member_obligations(
         if segments.len() < 3 {
             continue;
         }
-        if let Some((kind, position)) = field_path_failure(db, program, index, AstNodeKey { node, ..key }, local, segments)
+        if let Some((kind, position)) =
+            field_path_failure(db, program, index, AstNodeKey { node, ..key }, local, segments)
         {
             findings.push(GateObligation { kind, site: segment_site(position) });
         }
@@ -690,7 +705,10 @@ fn enum_receiver_method_obligation(
     {
         return None;
     }
-    let callee = normalized_expression_node(index, index.direct_child_id(program, call_node, DynNodeRef::from(call.callee.as_ref()))?);
+    let callee = normalized_expression_node(
+        index,
+        index.direct_child_id(program, call_node, DynNodeRef::from(call.callee.as_ref()))?,
+    );
     let (receiver, method, site) = match &call.callee.node {
         Expression::Member(member) => {
             let target = index.direct_child_id(program, callee, DynNodeRef::from(member.node.target.as_ref()))?;
@@ -704,7 +722,8 @@ fn enum_receiver_method_obligation(
                 return None;
             }
             let local = resolve_lexical_declaration(program, index, call_node, receiver.node.name.node.name.as_str())?;
-            let identity = generic_source_local_identity(db, program, index, AstNodeKey { node: local, ..key }, local).ok()?;
+            let identity =
+                generic_source_local_identity(db, program, index, AstNodeKey { node: local, ..key }, local).ok()?;
             let site = index
                 .direct_child_id(program, callee, DynNodeRef::from(&path_expression.node.path))
                 .and_then(|path_node| index.direct_child_id(program, path_node, DynNodeRef::from(method)))
@@ -722,9 +741,10 @@ fn enum_receiver_method_obligation(
     (declaration_kind(db, declaration) == Some(NodeKind::EnumDefinition)).then_some(())?;
     // An `extend type` method of this unit may claim the name for any receiver type.
     let extended = index.ids_of_kind(NodeKind::ExtendTypeDefinition).any(|extension| {
-        index.node_at(program, extension).and_then(|node| node.of::<ExtendTypeDefinition>()).is_some_and(|extension| {
-            extension.methods.iter().any(|candidate| candidate.node.name.node.name == method)
-        })
+        index
+            .node_at(program, extension)
+            .and_then(|node| node.of::<ExtendTypeDefinition>())
+            .is_some_and(|extension| extension.methods.iter().any(|candidate| candidate.node.name.node.name == method))
     });
     if extended {
         return None;
@@ -760,7 +780,9 @@ fn generic_receiver_method_obligation(
     let declaration = parent_node(index, local)?;
     let declared = match index.kind(declaration)? {
         NodeKind::Parameter => &index.node_at(program, declaration)?.of::<Parameter>()?.ty.node,
-        NodeKind::LetStatement => &index.node_at(program, declaration)?.of::<LetStatement>()?.type_annotation.as_ref()?.node,
+        NodeKind::LetStatement => {
+            &index.node_at(program, declaration)?.of::<LetStatement>()?.type_annotation.as_ref()?.node
+        }
         _ => return None,
     };
     let parameter = crate::semantic_contract::generic_parameter_reference_name(declared)?;
@@ -876,7 +898,10 @@ fn report_duplicates(
     for (name, node) in declarations {
         match seen.get(&name) {
             Some(previous) => {
-                let previous = index.metadata_for(key.generation, *previous).and_then(|metadata| metadata.span).unwrap_or_default();
+                let previous = index
+                    .metadata_for(key.generation, *previous)
+                    .and_then(|metadata| metadata.span)
+                    .unwrap_or_default();
                 findings.push(GateObligation {
                     kind: GateObligationKind::DuplicateLocal { name: Arc::from(name.as_str()), previous },
                     site: AstNodeKey { node, ..key },
@@ -921,11 +946,14 @@ fn judge_unconstrained_forwarding(
                 continue;
             };
             let [segment] = path.path.node.segments.as_slice() else { continue };
-            let Some(local) = resolve_lexical_declaration(program, index, argument_node, segment.node.name.node.name.as_str())
+            let Some(local) =
+                resolve_lexical_declaration(program, index, argument_node, segment.node.name.node.name.as_str())
             else {
                 continue;
             };
-            let Some(owner) = parent_node(index, local).and_then(|owner| index.node_at(program, owner)) else { continue };
+            let Some(owner) = parent_node(index, local).and_then(|owner| index.node_at(program, owner)) else {
+                continue;
+            };
             let declared = if let Some(parameter) = owner.of::<Parameter>() {
                 parameter.ty.node.clone()
             } else if let Some(statement) = owner.of::<LetStatement>() {
@@ -967,7 +995,9 @@ fn judge_unconstrained_forwarding(
                         kind: GateObligationKind::GenericBoundNotSatisfied {
                             type_name: Arc::from(generic),
                             contract_name: Arc::from(marker.name()),
-                            reason: Some(Arc::from(crate::semantic_contract::transfer::marker_bound_reason(&class, marker))),
+                            reason: Some(Arc::from(crate::semantic_contract::transfer::marker_bound_reason(
+                                &class, marker,
+                            ))),
                         },
                         site: call_key,
                     });
@@ -986,12 +1016,8 @@ fn judge_unconstrained_forwarding(
                 resolve_contract(db, enclosing_key, &contract_path) == Some(bound.contract)
             });
             if !covered {
-                let contract_name = bound
-                    .path
-                    .segments
-                    .last()
-                    .map(|segment| segment.node.name.node.name.clone())
-                    .unwrap_or_default();
+                let contract_name =
+                    bound.path.segments.last().map(|segment| segment.node.name.node.name.clone()).unwrap_or_default();
                 findings.push(GateObligation {
                     kind: GateObligationKind::GenericBoundNotSatisfied {
                         type_name: Arc::from(generic),
@@ -1044,9 +1070,9 @@ fn uninferred_type_parameter(
             !parameters.iter().zip(call.args.iter()).any(|(parameter, argument)| {
                 let lambda = expression_is_lambda(&argument.node);
                 match &parameter.node.ty.node {
-                    Type::Function { parameters, .. } if lambda => parameters
-                        .iter()
-                        .any(|parameter| type_syntax_mentions_generic_parameter(&parameter.node, name)),
+                    Type::Function { parameters, .. } if lambda => {
+                        parameters.iter().any(|parameter| type_syntax_mentions_generic_parameter(&parameter.node, name))
+                    }
                     other => !lambda && type_syntax_mentions_generic_parameter(other, name),
                 }
             })

@@ -3,7 +3,9 @@
 use std::path::PathBuf;
 
 use beskid_analysis::services::{SemanticSnapshot, SessionFingerprint, cached_semantic_snapshot};
-use beskid_analysis::services::{get_or_insert_assembly, invalidate_entry_sessions_for_project, update_semantic_snapshot};
+use beskid_analysis::services::{
+    get_or_insert_assembly, invalidate_entry_sessions_for_project, update_semantic_snapshot,
+};
 use beskid_queries::{
     BeskidDatabase, Db, ProjectSession, fingerprint_key, parse_and_expand_unit, record_query_hit, reset,
     semantic_snapshot, snapshot, unit_content_fingerprint, unit_imports,

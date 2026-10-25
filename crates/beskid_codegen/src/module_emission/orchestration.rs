@@ -15,8 +15,8 @@ use super::imports::{
     ArtifactCallImporter, ArtifactStringInterner, clif_declared_extern_imports, corelib_service_symbols,
     extern_contract_callees, runtime_intrinsic_symbols,
 };
-use super::optional_externs::emit_optional_extern_support;
 use super::items::{ResolvedSyntaxModuleItem, SyntaxModuleItem};
+use super::optional_externs::emit_optional_extern_support;
 use super::specialization::resolve_module_items;
 use super::trampolines::{
     ISOLATE_ENTRY_SYMBOL_PREFIX, SchedulerCompletionTransfer, conservative_fiber_stack_requirement,
@@ -149,7 +149,9 @@ pub fn lower_syntax_program(
     // MOD-06-02: every retained `[Serialize]` target's instantiations carry compiler-issued
     // field codec facts, whether or not the requested items reach them.
     if let Err(error) = beskid_queries::serialization_field_codec_admission(db, input.typed_program()) {
-        crate::isle_trace::event(|| format!("event=isle.missing rule=serialization_field_codec_admission detail={error}"));
+        crate::isle_trace::event(|| {
+            format!("event=isle.missing rule=serialization_field_codec_admission detail={error}")
+        });
         return Err(SyntaxModuleEmissionError::SerializationFacts(error));
     }
     let items = match resolve_module_items(input, items).and_then(|items| expand_direct_spawn_items(input, items)) {
@@ -222,11 +224,7 @@ fn lower_resolved_syntax_program(
     );
 
     let lambda_trampolines = resolve_lambda_trampolines(input, isa, items, &symbols)?;
-    symbols.extend(
-        lambda_trampolines
-            .iter()
-            .map(|trampoline| (trampoline.callee.clone(), trampoline.symbol.clone())),
-    );
+    symbols.extend(lambda_trampolines.iter().map(|trampoline| (trampoline.callee.clone(), trampoline.symbol.clone())));
     let isolate_trampolines = resolve_isolate_entry_trampolines(input, isa, items)?;
     symbols.extend(isolate_trampolines.iter().map(|trampoline| {
         (DirectCallee::isolate_entry_trampoline(trampoline.result, trampoline.managed), trampoline.symbol.clone())
@@ -437,40 +435,56 @@ fn lower_resolved_syntax_program(
             })
         });
         if referenced && !extern_imports.iter().any(|existing| existing.symbol == symbol) {
-            extern_imports.push(ExternImport { symbol: symbol.to_owned(), abi: Some("C".into()), library: None, optional: false });
+            extern_imports.push(ExternImport {
+                symbol: symbol.to_owned(),
+                abi: Some("C".into()),
+                library: None,
+                optional: false,
+            });
         }
     }
     if items.iter().any(|item| {
         item.specialization.as_ref().is_some_and(|instance| {
             beskid_queries::dynamic_packing_shape(input.database(), instance).ok().flatten().is_some()
-                || beskid_queries::dynamic_unpacking_bridge(input.database(),instance).ok().flatten().is_some()
+                || beskid_queries::dynamic_unpacking_bridge(input.database(), instance).ok().flatten().is_some()
         })
     }) {
         for symbol in ["gc_root_handle", "beskid_rt_v5_gc_resolve_handle", "gc_unroot_handle"] {
             if !extern_imports.iter().any(|import| import.symbol == symbol) {
-                extern_imports.push(ExternImport { symbol: symbol.into(), abi: Some("C".into()), library: None, optional: false });
+                extern_imports.push(ExternImport {
+                    symbol: symbol.into(),
+                    abi: Some("C".into()),
+                    library: None,
+                    optional: false,
+                });
             }
         }
     }
 
-    for instance in items.iter().filter_map(|item|item.specialization.as_ref()) {
-        if let Some(binding)=beskid_queries::dynamic_shape_binding(input.database(),instance)
-            .map_err(|error|emission_verification(error.to_string()))? {
-            let shape=input.compiled_dynamic_packing_shape(binding.packing())
-                .map_err(|error|emission_verification(error))?
-                .ok_or_else(||emission_verification("Shape getter has no compiled signature"))?;
-            let symbol=format!("beskid_dynamic_shape_tag_v1_{}",shape.sha256().iter().map(|byte|format!("{byte:02x}")).collect::<String>());
-            if !extern_imports.iter().any(|import|import.symbol==symbol) {
-                extern_imports.push(ExternImport{symbol,abi:Some("C".into()),library:None,optional:false});
+    for instance in items.iter().filter_map(|item| item.specialization.as_ref()) {
+        if let Some(binding) = beskid_queries::dynamic_shape_binding(input.database(), instance)
+            .map_err(|error| emission_verification(error.to_string()))?
+        {
+            let shape = input
+                .compiled_dynamic_packing_shape(binding.packing())
+                .map_err(|error| emission_verification(error))?
+                .ok_or_else(|| emission_verification("Shape getter has no compiled signature"))?;
+            let symbol = format!(
+                "beskid_dynamic_shape_tag_v1_{}",
+                shape.sha256().iter().map(|byte| format!("{byte:02x}")).collect::<String>()
+            );
+            if !extern_imports.iter().any(|import| import.symbol == symbol) {
+                extern_imports.push(ExternImport { symbol, abi: Some("C".into()), library: None, optional: false });
             }
         }
-        if let Some(binding)=beskid_queries::dynamic_mapping_binding(input.database(),instance)
-            .map_err(|error|emission_verification(error.to_string()))? {
-            let compiled=input.compiled_dynamic_mapping(&binding).map_err(emission_verification)?;
-            if let Some(approved)=compiled.approved() {
-                let symbol=approved.token_getter();
-                if !extern_imports.iter().any(|import|import.symbol==symbol) {
-                    extern_imports.push(ExternImport{symbol,abi:Some("C".into()),library:None,optional:false});
+        if let Some(binding) = beskid_queries::dynamic_mapping_binding(input.database(), instance)
+            .map_err(|error| emission_verification(error.to_string()))?
+        {
+            let compiled = input.compiled_dynamic_mapping(&binding).map_err(emission_verification)?;
+            if let Some(approved) = compiled.approved() {
+                let symbol = approved.token_getter();
+                if !extern_imports.iter().any(|import| import.symbol == symbol) {
+                    extern_imports.push(ExternImport { symbol, abi: Some("C".into()), library: None, optional: false });
                 }
             }
         }
@@ -534,32 +548,49 @@ fn lower_resolved_syntax_program(
     }
     let mut aggregate_static_plans = collect_aggregate_static_plans(input, items);
     for binding in input.glue_handle_bindings() {
-        for handle in crate::glue::handles::source_handle_box_plans(input,*binding)
-            .map_err(|error|emission_verification(error.to_string()))? {
-            if let Some(existing)=aggregate_static_plans.iter().find(|plan|
-                plan.allocation_request_symbol==handle.plan.allocation_request_symbol) {
-                if existing!=&handle.plan {return Err(emission_verification("opaque nominal allocation conflict"));}
-            } else {aggregate_static_plans.push(handle.plan);}
+        for handle in crate::glue::handles::source_handle_box_plans(input, *binding)
+            .map_err(|error| emission_verification(error.to_string()))?
+        {
+            if let Some(existing) = aggregate_static_plans
+                .iter()
+                .find(|plan| plan.allocation_request_symbol == handle.plan.allocation_request_symbol)
+            {
+                if existing != &handle.plan {
+                    return Err(emission_verification("opaque nominal allocation conflict"));
+                }
+            } else {
+                aggregate_static_plans.push(handle.plan);
+            }
         }
     }
 
-    for instance in items.iter().filter_map(|item|item.specialization.as_ref()) {
-        let shape=beskid_queries::dynamic_shape_binding(input.database(),instance)
-            .map_err(|error|emission_verification(error.to_string()))?;
-        let unpack=beskid_queries::dynamic_unpacking_bridge(input.database(),instance)
-            .map_err(|error|emission_verification(error.to_string()))?;
-        let mapping=beskid_queries::dynamic_mapping_binding(input.database(),instance)
-            .map_err(|error|emission_verification(error.to_string()))?;
-        let mut packings=shape.as_ref().map(|binding|binding.packing()).or_else(||unpack.as_ref().map(|bridge|bridge.packing()))
-            .into_iter().cloned().collect::<Vec<_>>();
-        if let Some(mapping)=&mapping {packings.extend([mapping.source().clone(),mapping.destination().clone()]);}
+    for instance in items.iter().filter_map(|item| item.specialization.as_ref()) {
+        let shape = beskid_queries::dynamic_shape_binding(input.database(), instance)
+            .map_err(|error| emission_verification(error.to_string()))?;
+        let unpack = beskid_queries::dynamic_unpacking_bridge(input.database(), instance)
+            .map_err(|error| emission_verification(error.to_string()))?;
+        let mapping = beskid_queries::dynamic_mapping_binding(input.database(), instance)
+            .map_err(|error| emission_verification(error.to_string()))?;
+        let mut packings = shape
+            .as_ref()
+            .map(|binding| binding.packing())
+            .or_else(|| unpack.as_ref().map(|bridge| bridge.packing()))
+            .into_iter()
+            .cloned()
+            .collect::<Vec<_>>();
+        if let Some(mapping) = &mapping {
+            packings.extend([mapping.source().clone(), mapping.destination().clone()]);
+        }
         for packing in &packings {
-            let bridge=beskid_queries::dynamic_packing_bridge(input.database(),packing)
-                .map_err(|error|emission_verification(error.to_string()))?
-                .ok_or_else(||emission_verification("Shape lacks canonical Pack box authority"))?;
-            let plan=input.aggregate_static_plan_for_specialization(bridge.box_literal(),Some(packing))
-                .ok_or_else(||emission_verification("Shape lacks concrete source descriptor"))?;
-            if !aggregate_static_plans.iter().any(|existing|existing==&plan){aggregate_static_plans.push(plan);}
+            let bridge = beskid_queries::dynamic_packing_bridge(input.database(), packing)
+                .map_err(|error| emission_verification(error.to_string()))?
+                .ok_or_else(|| emission_verification("Shape lacks canonical Pack box authority"))?;
+            let plan = input
+                .aggregate_static_plan_for_specialization(bridge.box_literal(), Some(packing))
+                .ok_or_else(|| emission_verification("Shape lacks concrete source descriptor"))?;
+            if !aggregate_static_plans.iter().any(|existing| existing == &plan) {
+                aggregate_static_plans.push(plan);
+            }
         }
     }
 
@@ -628,11 +659,7 @@ fn lower_resolved_syntax_program(
     }
     let array_static_plans = collect_array_static_plans(input, items);
     if !array_static_plans.is_empty() {
-        for symbol in [
-            ABI_V5_ARRAY_ALLOCATE_ROOTED,
-            ABI_V5_ARRAY_GROW_ROOTED,
-            ABI_V5_ARRAY_CONSTRUCTION_FINISH,
-        ] {
+        for symbol in [ABI_V5_ARRAY_ALLOCATE_ROOTED, ABI_V5_ARRAY_GROW_ROOTED, ABI_V5_ARRAY_CONSTRUCTION_FINISH] {
             if !extern_imports.iter().any(|existing| existing.symbol == symbol) {
                 extern_imports.push(ExternImport {
                     symbol: symbol.to_owned(),
@@ -645,7 +672,12 @@ fn lower_resolved_syntax_program(
     }
 
     let checked_constructor_exports = super::runtime_checked::emit_checked_runtime_constructors(
-        input, isa, items, &symbols, &mut context, &mut functions,
+        input,
+        isa,
+        items,
+        &symbols,
+        &mut context,
+        &mut functions,
     )?;
     let instances = items.iter().filter_map(|item| item.specialization.clone()).collect::<Vec<_>>();
     // Contract boxes (runtime contract dispatch): the witness tables of every boxing site and

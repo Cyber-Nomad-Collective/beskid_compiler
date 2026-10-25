@@ -130,7 +130,10 @@ fn package_relative_source_path_is_slash_separated_at_the_producer() {
     let relative = package.relative_source_path(&source).unwrap();
     assert_eq!(relative, "Core/Collections/Map.bd");
     assert!(!relative.contains('\\'));
-    assert_eq!(package.relative_source_path(&workspace.materialized_source_root.join("Main.bd")).as_deref(), Some("Main.bd"));
+    assert_eq!(
+        package.relative_source_path(&workspace.materialized_source_root.join("Main.bd")).as_deref(),
+        Some("Main.bd")
+    );
 }
 
 #[test]
@@ -140,8 +143,11 @@ fn materialized_copy_inside_a_project_root_source_validates_against_its_own_root
     std::fs::create_dir_all(&at).unwrap();
     std::fs::write(at.join("Main.bd"), "pub type Item { pub i32 Value; }\n").unwrap();
     let manifest = at.join("Example.bproj");
-    std::fs::write(&manifest, "Example { name = \"Example\" version = \"1.0.0\" }\ntarget \"Example\" { kind = \"Lib\" }\n")
-        .unwrap();
+    std::fs::write(
+        &manifest,
+        "Example { name = \"Example\" version = \"1.0.0\" }\ntarget \"Example\" { kind = \"Lib\" }\n",
+    )
+    .unwrap();
     let workspace = prepare_project_workspace_plan_with_options(
         &ProjectWorkspacePlan {
             project_root: at.clone(),

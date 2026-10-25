@@ -153,7 +153,8 @@ fn wide_module_constants_materialize_their_full_value_in_every_context() {
          if scaled == LIMIT_UNSET || scaled == LIMIT_INVALID { return LIMIT_INVALID; } return scaled; }",
     );
 
-    let function = emit_isle_item(&input, isa.as_ref(), item).expect("wide module constants lower through syntax facts");
+    let function =
+        emit_isle_item(&input, isa.as_ref(), item).expect("wide module constants lower through syntax facts");
     let clif = function.display().to_string();
     assert!(clif.contains("iconst.i64 0xb2d0_5e00"), "{clif}");
     assert!(clif.contains("iconst.i64 -1"), "{clif}");

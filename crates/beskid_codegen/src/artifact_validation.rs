@@ -4,7 +4,6 @@ use std::collections::HashSet;
 
 use cranelift_codegen::ir::ExternalName;
 
-
 use crate::{CodegenArtifact, ExternImport};
 
 /// A named import in generated CLIF with no matching artifact function entry.

@@ -18,9 +18,8 @@ fn emit_items<W: Write>(
     let mut previous: Option<ItemKind> = None;
     for (i, item) in items.iter().enumerate() {
         let kind = item_kind(&item.node);
-        let line = Line::new(item.span)
-            .doc(docs.get(i).and_then(Option::as_ref))
-            .blank(blank_between_items(previous, kind));
+        let line =
+            Line::new(item.span).doc(docs.get(i).and_then(Option::as_ref)).blank(blank_between_items(previous, kind));
         emit_line(w, cx, line, "", |w, cx| item.emit(w, cx))?;
         previous = Some(kind);
     }

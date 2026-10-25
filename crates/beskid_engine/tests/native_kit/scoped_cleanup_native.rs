@@ -4,6 +4,7 @@
     all(target_os = "windows", target_arch = "x86_64", target_env = "msvc"),
 ))]
 
+use crate::shared_kit;
 use beskid_abi::runtime_kit::BuildProfile;
 use beskid_analysis::{
     projects::{AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, ProgramAssembly, RootEntry, SourceUnit},
@@ -14,7 +15,6 @@ use beskid_queries::{BeskidDatabase, SyntaxGenerationId};
 use beskid_tests_support::native_harness::place_shared_runtime;
 use beskid_tests_support::native_harness::{executable_name, native_c_compiler, run_bounded};
 use std::{path::Path, process::Command, sync::Arc, time::Duration};
-use crate::shared_kit;
 
 const ROUTE_LIMIT: Duration = Duration::from_secs(60);
 

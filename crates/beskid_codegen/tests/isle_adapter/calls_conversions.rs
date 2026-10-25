@@ -210,7 +210,9 @@ fn string_concatenation_roots_the_left_operand_while_the_right_one_allocates() {
 /// text so far, and `str_concat` (which roots its operands and fails on a freed one) returned null.
 #[test]
 fn every_intermediate_of_a_five_part_interpolation_is_rooted_while_later_parts_allocate() {
-    let clif = lower_main_clif(r#"string Main(i64 owner, i64 start, string name) { return "item ${owner} ${start} ${name} ${owner}"; }"#);
+    let clif = lower_main_clif(
+        r#"string Main(i64 owner, i64 start, string name) { return "item ${owner} ${start} ${name} ${owner}"; }"#,
+    );
     let callee = |line: &str| line.split("call ").nth(1).and_then(|rest| rest.split('(').next()).map(str::to_owned);
     let calls_to = |symbol: &str| {
         clif.lines()
@@ -229,7 +231,8 @@ fn every_intermediate_of_a_five_part_interpolation_is_rooted_while_later_parts_a
     let registers = calls_to("gc_register_root");
     for pair in concats.windows(2) {
         let (previous, next) = (pair[0], pair[1]);
-        let Some(first_allocation) = allocations.iter().copied().filter(|at| (previous..next).contains(at)).min() else {
+        let Some(first_allocation) = allocations.iter().copied().filter(|at| (previous..next).contains(at)).min()
+        else {
             // `${name}` reads a parameter, which cannot allocate.
             continue;
         };
@@ -533,13 +536,11 @@ fn materialized_foundation_args_through_parent_alias_retains_authorized_imports(
     let physical_root = directory.path().join("physical");
     let alias_root = directory.path().join("alias");
     let physical_source = physical_root.join("obj/beskid/deps/src/foundation/Core/Args/Args.bd");
-    std::fs::create_dir_all(physical_source.parent().expect("Core.Args parent"))
-        .expect("create Core.Args parent");
+    std::fs::create_dir_all(physical_source.parent().expect("Core.Args parent")).expect("create Core.Args parent");
     std::fs::write(&physical_source, &source.source).expect("write copied Core.Args source");
     std::os::unix::fs::symlink(&physical_root, &alias_root).expect("alias materialized parent");
     let lexical_source = alias_root.join("obj/beskid/deps/src/foundation/Core/Args/Args.bd");
-    let (input, isa, root) =
-        core_args_fixture(lexical_source.clone(), source.source, Arc::from([lexical_source]));
+    let (input, isa, root) = core_args_fixture(lexical_source.clone(), source.source, Arc::from([lexical_source]));
 
     let artifact = lower_syntax_program(
         &input,
@@ -622,22 +623,11 @@ fn canonical_foundation_assert_trigger_failure_imports_only_baseline_strings_and
     imports.sort_unstable();
     assert_eq!(
         imports,
-        vec![
-            "beskid_trap_message",
-            "str_cmp",
-            "str_concat",
-            "str_eq",
-            "str_from_f64_bits",
-            "str_from_i64",
-            "str_new"
-        ],
+        vec!["beskid_trap_message", "str_cmp", "str_concat", "str_eq", "str_from_f64_bits", "str_from_i64", "str_new"],
         "canonical Assert may emit the always-admitted string baseline and its reachable panic service, but no other facade service"
     );
-    let trigger = artifact
-        .functions
-        .iter()
-        .find(|function| function.name == "TriggerFailure")
-        .expect("trigger_failure artifact");
+    let trigger =
+        artifact.functions.iter().find(|function| function.name == "TriggerFailure").expect("trigger_failure artifact");
     let clif = trigger.function.display().to_string();
     assert!(!clif.contains("load.i64"), "the managed panic string must cross the adapter boundary intact: {clif}");
 }

@@ -250,10 +250,8 @@ async fn json_body(response: axum::response::Response) -> serde_json::Value {
 #[tokio::test]
 async fn session_identifies_an_active_bearer_key_without_leaking_it() {
     let (config, token) = active_key_config();
-    let response = router(config)
-        .oneshot(session_request(Some(&bearer(&token)), Some("header-attacker")))
-        .await
-        .unwrap();
+    let response =
+        router(config).oneshot(session_request(Some(&bearer(&token)), Some("header-attacker"))).await.unwrap();
 
     assert_eq!(response.status(), StatusCode::OK);
     let body = json_body(response).await;
@@ -268,7 +266,8 @@ async fn session_identifies_an_active_bearer_key_without_leaking_it() {
 async fn session_rejects_an_unknown_bearer_key() {
     let (config, _) = active_key_config();
     let unknown = format!("bpk_{}", "b".repeat(64));
-    let response = router(config).oneshot(session_request(Some(&bearer(&unknown)), Some("header-attacker"))).await.unwrap();
+    let response =
+        router(config).oneshot(session_request(Some(&bearer(&unknown)), Some("header-attacker"))).await.unwrap();
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 }
 

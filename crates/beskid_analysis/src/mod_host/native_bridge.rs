@@ -72,7 +72,9 @@ fn run_worker<'a>(
     // up to the frame budget instead of reading one 8 KiB chunk and declaring the result absent.
     let mut drains = 0usize;
     while !channel.has_completion() {
-        channel.poll().with_context(|| format!("native Mod worker exited {} with stderr: {}", output.status, stderr.trim()))?;
+        channel
+            .poll()
+            .with_context(|| format!("native Mod worker exited {} with stderr: {}", output.status, stderr.trim()))?;
         drains += 1;
         if drains > 8192 {
             bail!("native Mod worker completion frame did not arrive after exit");

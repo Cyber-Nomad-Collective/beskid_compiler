@@ -428,7 +428,9 @@ mod platform_object_tests {
 
     use beskid_abi::generated::abi_v5_contract::GeneratedCoreArgsEntryAdapter;
 
-    use super::{executable_bootstrap_command, executable_bootstrap_source, generated_c_runtime_args, platform_object_plan};
+    use super::{
+        executable_bootstrap_command, executable_bootstrap_source, generated_c_runtime_args, platform_object_plan,
+    };
 
     /// R4 Windows regression: Glue consumer DLLs failed to link with `undefined symbol: _fltused`.
     #[test]

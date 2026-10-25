@@ -300,10 +300,11 @@ pub(in crate::semantic_contract) fn abi_local_declaration_type(
             })
         }
         // A `for` variable has the element ABI of its iterable (`for_iterator_fact`).
-        beskid_analysis::syntax_query::NodeKind::ForStatement => Some(
-            for_iterator_fact(db, AstNodeKey { node: parent, ..key })
-                .and_then(|fact| fact.map(|fact| fact.element_type).ok_or_else(|| SemanticError::unavailable("abi_type"))),
-        ),
+        beskid_analysis::syntax_query::NodeKind::ForStatement => {
+            Some(for_iterator_fact(db, AstNodeKey { node: parent, ..key }).and_then(|fact| {
+                fact.map(|fact| fact.element_type).ok_or_else(|| SemanticError::unavailable("abi_type"))
+            }))
+        }
         _ => None,
     }
 }
@@ -522,12 +523,7 @@ fn lexical_inline_module_type(
 /// The type or enum named `name` declared in the nearest module scope (inline module or program)
 /// enclosing `key` that declares that name at all. `None` when no enclosing scope declares it;
 /// `Some(None)` when the nearest declaring scope is ambiguous.
-fn lexical_type_in_unit(
-    db: &dyn Db,
-    key: AstNodeKey,
-    name: &str,
-    generic_arity: usize,
-) -> Option<Option<AstNodeKey>> {
+fn lexical_type_in_unit(db: &dyn Db, key: AstNodeKey, name: &str, generic_arity: usize) -> Option<Option<AstNodeKey>> {
     use crate::semantic_contract::resolution::{module_scope, outer_module_scope};
     let syntax = db.syntax_unit(key.unit)?;
     if syntax.generation(db) != key.generation {
@@ -722,7 +718,9 @@ pub(in crate::semantic_contract) fn aggregate_shape_for_binding(
         }
         GenericSourceTypeIdentity::Array(_)
         | GenericSourceTypeIdentity::Function { .. }
-        | GenericSourceTypeIdentity::Contract { .. } => Ok(AggregateFieldShape::ManagedReference(SemanticTypeId::POINTER)),
+        | GenericSourceTypeIdentity::Contract { .. } => {
+            Ok(AggregateFieldShape::ManagedReference(SemanticTypeId::POINTER))
+        }
     }
 }
 

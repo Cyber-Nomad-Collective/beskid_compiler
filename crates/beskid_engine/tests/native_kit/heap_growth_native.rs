@@ -11,6 +11,7 @@
 //! regex/pest SIGILL shape), a fiber boundary interacting with span-queued marking, and cap
 //! enforcement producing the typed `out_of_memory` trap instead of a crash.
 
+use crate::shared_kit;
 use beskid_abi::{abi_v5::TRAP_DIAGNOSTIC_PREFIX, runtime_kit::BuildProfile};
 use beskid_analysis::{
     projects::{AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, ProgramAssembly, RootEntry, SourceUnit},
@@ -18,11 +19,10 @@ use beskid_analysis::{
 };
 use beskid_codegen::lower_syntax_assembly_entrypoint;
 use beskid_queries::{BeskidDatabase, SyntaxGenerationId};
-use beskid_tests_support::native_harness::{executable_name, native_c_compiler, run_bounded};
 #[cfg(windows)]
 use beskid_tests_support::native_harness::place_shared_runtime;
+use beskid_tests_support::native_harness::{executable_name, native_c_compiler, run_bounded};
 use std::{collections::HashSet, path::Path, process::Command, sync::Arc, time::Duration};
-use crate::shared_kit;
 
 const ROUTE_LIMIT: Duration = Duration::from_secs(180);
 
@@ -99,11 +99,7 @@ fn run_heap_fixture(label: &str, entry: &str, expected: i64) {
     let prefix = tempfile::tempdir().unwrap();
     let shared = shared_kit::debug();
     let kit = shared.kit();
-    eprintln!(
-        "{label} native kit: target={} source={}",
-        kit.metadata.target.triple.as_str(),
-        kit.metadata.source_hash
-    );
+    eprintln!("{label} native kit: target={} source={}", kit.metadata.target.triple.as_str(), kit.metadata.source_hash);
     #[cfg(unix)]
     let shared_link_library = &kit.shared_library;
     #[cfg(windows)]
@@ -209,11 +205,7 @@ fn span_reuse_across_classes_after_collection_does_not_alias_objects() {
     // freshOne[0] (200) + freshTwo[0] (201) + freshThree[0] (202) + (Array.Len(freshOne) - 1)
     // (23) = 668, PROVIDED every object still reads back its own untouched content (no aliasing)
     // and `gc_heap_verify` passed; either failure mode drives the result negative instead.
-    run_heap_fixture(
-        "span_reuse_across_classes",
-        "RunSpanReuseAcrossClasses",
-        42 + 200 + 201 + 202 + 23,
-    );
+    run_heap_fixture("span_reuse_across_classes", "RunSpanReuseAcrossClasses", 42 + 200 + 201 + 202 + 23);
 }
 
 #[test]
@@ -355,7 +347,10 @@ fn root_stack_growth_failure_is_a_diagnosable_trap_not_a_crash() {
     assert_eq!(output.status.code(), Some(101), "root-stack exhaustion must exit through the trap path, not a signal");
     assert!(stderr.contains(TRAP_DIAGNOSTIC_PREFIX), "{stderr}");
     assert!(stderr.contains("out_of_memory (5)"), "{stderr}");
-    assert!(stderr.contains("R4"), "diagnostic must carry failure reason 4 (root/handle stack growth failed): {stderr}");
+    assert!(
+        stderr.contains("R4"),
+        "diagnostic must carry failure reason 4 (root/handle stack growth failed): {stderr}"
+    );
 }
 
 /// Stress mode (`BESKID_TEST_STRESS_INTERVAL=1`, `Verify.bd`'s `gc_heap_set_stress_interval`)
@@ -431,12 +426,17 @@ fn heap_max_environment_rejects_a_cap_below_the_initial_region() {
 #[test]
 fn fiber_stack_max_environment_is_applied_to_new_fibers() {
     let output = run_with_environment("env-stack-max", "RunFiberHeapInteraction", "BESKID_FIBER_STACK_MAX", "1M");
-    assert!(output.status.success(), "a 1 MiB per-fiber reservation runs the fiber fixture: {}", String::from_utf8_lossy(&output.stderr));
+    assert!(
+        output.status.success(),
+        "a 1 MiB per-fiber reservation runs the fiber fixture: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 #[test]
 fn fiber_stack_max_environment_rejects_a_value_that_is_not_a_whole_initial_commit() {
-    let output = run_with_environment("env-stack-max-bad", "RunFiberHeapInteraction", "BESKID_FIBER_STACK_MAX", "100000");
+    let output =
+        run_with_environment("env-stack-max-bad", "RunFiberHeapInteraction", "BESKID_FIBER_STACK_MAX", "100000");
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert_eq!(output.status.code(), Some(101), "a misaligned stack maximum is a fatal configuration error: {stderr}");
     assert!(stderr.contains("BESKID_FIBER_STACK_MAX"), "the trap names the variable: {stderr}");

@@ -3,8 +3,8 @@
 pub mod abi_types;
 pub mod abi_v5;
 pub mod assembly_sources;
-pub mod corelib_bundle;
 pub mod compiler_driver;
+pub mod corelib_bundle;
 pub mod generated;
 pub mod interop;
 pub mod runtime_kit;

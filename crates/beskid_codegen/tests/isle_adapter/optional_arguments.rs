@@ -43,7 +43,8 @@ fn lowers_with_methods(source: &str) {
     let (input, isa, root) = item_fixture_with_root(source);
     let db = input.database();
     let mut items = Vec::new();
-    for kind in [beskid_queries::IndexedNodeKind::MethodDefinition, beskid_queries::IndexedNodeKind::FunctionDefinition] {
+    for kind in [beskid_queries::IndexedNodeKind::MethodDefinition, beskid_queries::IndexedNodeKind::FunctionDefinition]
+    {
         for key in find_nodes_of_kind(db, root, kind) {
             let name = item_name(db, key).ok().flatten().expect("item name");
             items.push(SyntaxModuleItem { key, symbol: name.to_string() });

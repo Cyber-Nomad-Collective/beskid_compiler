@@ -147,8 +147,7 @@ fn replace_with_embedded_bundle(bundle: &EmbeddedCorelib, target_root: &Path, fi
         return Err(error).with_context(|| format!("install corelib at {}", target_root.display()));
     }
     if had_previous {
-        remove_dir_all_retry(&retired)
-            .with_context(|| format!("remove retired corelib at {}", retired.display()))?;
+        remove_dir_all_retry(&retired).with_context(|| format!("remove retired corelib at {}", retired.display()))?;
     }
     Ok(())
 }
@@ -329,8 +328,8 @@ fn write_embedded_dir(source: &Dir<'_>, destination: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::{
-        BUNDLE_FINGERPRINT_FILE, UnrecognizedCorelibRootError, is_unmanaged_nonempty_root,
-        looks_like_corelib_checkout, replace_with_embedded_bundle, write_bundle_marker,
+        BUNDLE_FINGERPRINT_FILE, UnrecognizedCorelibRootError, is_unmanaged_nonempty_root, looks_like_corelib_checkout,
+        replace_with_embedded_bundle, write_bundle_marker,
     };
     use beskid_corelib_embed::CORELIB_BUNDLE as EMBEDDED_CORELIB;
     use semver::Version;
@@ -363,7 +362,10 @@ mod tests {
             fs::read_to_string(root.join(BUNDLE_FINGERPRINT_FILE)).expect("installed marker").trim(),
             fingerprint
         );
-        assert_eq!(super::installed_fingerprint(&root).expect("fingerprint installed tree").as_deref(), Some(&*fingerprint));
+        assert_eq!(
+            super::installed_fingerprint(&root).expect("fingerprint installed tree").as_deref(),
+            Some(&*fingerprint)
+        );
         assert!(!root.join("stale-only.txt").exists(), "the outdated tree must be replaced, not merged");
         let leftovers = fs::read_dir(parent.path())
             .expect("read install parent")
@@ -508,7 +510,8 @@ mod tests {
         assert_eq!(files, inventory.files, "the embedded bundle must hold exactly its CoreLib.bws member inventory");
 
         let manifest = fs::read_to_string(root.join("CoreLib.bws")).expect("embedded CoreLib.bws");
-        let workspace = beskid_analysis::projects::parse_workspace_manifest(&manifest).expect("parse embedded CoreLib.bws");
+        let workspace =
+            beskid_analysis::projects::parse_workspace_manifest(&manifest).expect("parse embedded CoreLib.bws");
         let mut listed = workspace.members.iter().map(|member| member.path.clone()).collect::<Vec<_>>();
         let mut extracted = beskid_abi::corelib_bundle::parse_corelib_workspace_member_paths(&manifest)
             .expect("strict member extraction");

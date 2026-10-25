@@ -143,7 +143,11 @@ fn check_parameters(ctx: &mut RuleContext, program: &Program, parameters: &[Span
         if caller.is_none() && !default_fits(&value, &parameter.ty.node) {
             ctx.emit_issue(
                 default.span,
-                SemanticIssueKind::DefaultValueTypeMismatch { name, value: value.text(), expected: type_text(&parameter.ty) },
+                SemanticIssueKind::DefaultValueTypeMismatch {
+                    name,
+                    value: value.text(),
+                    expected: type_text(&parameter.ty),
+                },
             );
         }
     }
@@ -197,12 +201,16 @@ mod tests {
     #[test]
     fn a_default_that_is_not_a_constant_is_e1252() {
         let found = findings("pub i64 G() { return 1; }\npub unit F(i64 count = G()) { return; }");
-        assert_eq!(found, [("E1252".to_string(), "default value of `count` is not a compile-time constant".to_string())]);
+        assert_eq!(
+            found,
+            [("E1252".to_string(), "default value of `count` is not a compile-time constant".to_string())]
+        );
     }
 
     #[test]
     fn a_default_of_the_wrong_type_is_e1253() {
-        let found = findings("pub unit F(i64 count = \"x\", u8 small = 300, i64 exact = 1_i32, string text = 0) { return; }");
+        let found =
+            findings("pub unit F(i64 count = \"x\", u8 small = 300, i64 exact = 1_i32, string text = 0) { return; }");
         let codes = found.iter().map(|(code, _)| code.as_str()).collect::<Vec<_>>();
         assert_eq!(codes, ["E1253", "E1253", "E1253", "E1253"], "{found:?}");
         assert_eq!(found[1].1, "default value `300` does not fit parameter `small` of type `u8`");

@@ -41,11 +41,8 @@ fn constructor_fact(
     unavailable: impl Fn() -> SemanticError,
 ) -> Result<EnumConstructorFact, SemanticError> {
     let variant_name = constructor.path.node.variant.node.name.as_str();
-    let variant_index = layout
-        .variants
-        .iter()
-        .position(|variant| variant.name.as_ref() == variant_name)
-        .ok_or_else(&unavailable)?;
+    let variant_index =
+        layout.variants.iter().position(|variant| variant.name.as_ref() == variant_name).ok_or_else(&unavailable)?;
     if layout.variants[variant_index].fields.len() != constructor.args.len() {
         return Err(unavailable());
     }
@@ -81,8 +78,9 @@ pub fn enum_constructor_specialization(
     };
     let program = syntax.expanded_program(db);
     let index = syntax.syntax_index(db);
-    let Some(constructor) =
-        index.node_at(program, key.node).and_then(|node| node.of::<beskid_analysis::syntax::EnumConstructorExpression>())
+    let Some(constructor) = index
+        .node_at(program, key.node)
+        .and_then(|node| node.of::<beskid_analysis::syntax::EnumConstructorExpression>())
     else {
         return Ok(None);
     };
@@ -90,9 +88,8 @@ pub fn enum_constructor_specialization(
         .map_err(|_| SemanticError::unavailable("enum_constructor_specialization"))?;
     let (declaration, layout) = enum_layout_for_source_identity(db, key, &identity)
         .map_err(|_| SemanticError::unavailable("enum_constructor_specialization"))?;
-    let constructor =
-        constructor_fact(program, index, key, constructor, declaration, &layout, || {
-            SemanticError::unavailable("enum_constructor_specialization")
-        })?;
+    let constructor = constructor_fact(program, index, key, constructor, declaration, &layout, || {
+        SemanticError::unavailable("enum_constructor_specialization")
+    })?;
     Ok(Some(EnumConstructorSpecialization { constructor, layout }))
 }

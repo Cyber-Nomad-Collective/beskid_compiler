@@ -240,8 +240,9 @@ fn cross_unit_generic_receiver_match_preserves_a_concrete_nominal_error() {
         find_nodes_of_kind(input.database(), join, beskid_queries::IndexedNodeKind::EnumConstructorExpression)
     {
         let ordinary = enum_constructor(input.database(), constructor).ok().flatten();
-        let specialized = beskid_queries::enum_constructor_specialization(input.database(), constructor, &specialization)
-        .expect("specialized Join constructor query");
+        let specialized =
+            beskid_queries::enum_constructor_specialization(input.database(), constructor, &specialization)
+                .expect("specialized Join constructor query");
         assert!(ordinary.is_some() || specialized.is_some(), "every Join enum constructor must retain a layout");
     }
 

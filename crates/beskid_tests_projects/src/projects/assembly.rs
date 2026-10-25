@@ -93,10 +93,7 @@ fn module_index_known_paths_include_core_output_for_corelib_mvp() {
     with_project_test_env(&corelib_mvp_fixture(), || {
         let assembly = shared_corelib_mvp_assembly();
         let paths = assembly.module_index.known_module_path_strings();
-        assert!(
-            paths.contains("Core::Output"),
-            "expected Core::Output in known module paths, got: {paths:?}"
-        );
+        assert!(paths.contains("Core::Output"), "expected Core::Output in known module paths, got: {paths:?}");
     });
 }
 

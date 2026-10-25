@@ -45,7 +45,11 @@ fn make_isa() -> std::sync::Arc<dyn cranelift_codegen::isa::TargetIsa> {
 }
 
 fn make_key(db: &BeskidDatabase, id: u32) -> AstNodeKey {
-    AstNodeKey { unit: SourceUnitId::new(db, "/tmp/M.bd".into()), generation: SyntaxGenerationId(1), node: AstNodeId(id) }
+    AstNodeKey {
+        unit: SourceUnitId::new(db, "/tmp/M.bd".into()),
+        generation: SyntaxGenerationId(1),
+        node: AstNodeId(id),
+    }
 }
 
 /// Lower `body` as the whole body of `fn(params) -> result`, returning the verified function or
@@ -172,8 +176,9 @@ fn clif_block_typed_call_result_feeds_instructions() {
 
 #[test]
 fn clif_block_xor_runs() {
-    let (func, isa) = lower("%x = bxor %0, %1\nreturn %x", &[types::I64, types::I64], types::I64, Some(vec![SCALAR; 2]))
-        .expect("xor lowers");
+    let (func, isa) =
+        lower("%x = bxor %0, %1\nreturn %x", &[types::I64, types::I64], types::I64, Some(vec![SCALAR; 2]))
+            .expect("xor lowers");
     let (_module, entry) = jit(func, isa);
     let f: extern "C" fn(i64, i64) -> i64 = unsafe { std::mem::transmute(entry) };
     assert_eq!(f(0b1100, 0b1010), 0b0110);
@@ -276,7 +281,8 @@ fn clif_block_rejects_unsafe_memory_access() {
     assert!(error.contains("must derive from `payload"), "{error}");
     let error = lower_err("%p = payload %0\nreturn %p", &[types::I64, types::I64], types::I64, array.clone());
     assert!(error.contains("cannot leave the block"), "{error}");
-    let error = lower_err("%p = payload %0\nstore %p, %p\nreturn %1", &[types::I64, types::I64], types::I64, array.clone());
+    let error =
+        lower_err("%p = payload %0\nstore %p, %p\nreturn %1", &[types::I64, types::I64], types::I64, array.clone());
     assert!(error.contains("cannot be stored"), "{error}");
     let error = lower_err(
         "%p = payload %0\n%m = imul %p, %1\n%v = load.i64 %m\nreturn %v",
@@ -377,7 +383,11 @@ fn clif_block_passes_payload_only_to_foreign_symbols() {
 
     let error = lower_err(body, &[types::I64], types::I64, bytes.clone());
     assert!(error.contains("may only be passed to a symbol of a C-ABI `[Extern]` contract"), "{error}");
-    let error = lower_err("%p = payload %0\n%r = call @labs(%1) -> i64\nreturn %r", &[types::I64, types::I64], types::I64,
-        Some(vec![ClifParameterShape::PayloadArray { element_bytes: 1 }, SCALAR]));
+    let error = lower_err(
+        "%p = payload %0\n%r = call @labs(%1) -> i64\nreturn %r",
+        &[types::I64, types::I64],
+        types::I64,
+        Some(vec![ClifParameterShape::PayloadArray { element_bytes: 1 }, SCALAR]),
+    );
     assert!(error.contains("may only call symbols of a C-ABI `[Extern]` contract"), "{error}");
 }

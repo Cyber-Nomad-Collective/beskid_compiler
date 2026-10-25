@@ -3,8 +3,8 @@
 //! parameters"). The bound is part of the callable signature fact: it is read from the
 //! declaration of the parameter (or field) every time a call or initializer is judged.
 
-use super::super::*;
 use super::super::transfer::{TransferMarker, recognized_attribute_use, transfer_marker_contract};
+use super::super::*;
 
 /// The bound of one `[Captures]` attribute use: a marker contract, or the spelling of a bound
 /// that is not one (`None` when the `Bound` argument is missing).
@@ -21,14 +21,22 @@ pub(in crate::semantic_contract) fn captures_bound<'a>(
     attributes: &'a [beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Attribute>],
 ) -> Option<(CapturesBound, &'a beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Attribute>)> {
     let attribute = recognized_attribute_use(db, key, attributes, "Captures")?;
-    let Some(argument) = attribute.node.arguments.iter().find(|argument| argument.node.name.node.name == "Bound") else {
+    let Some(argument) = attribute.node.arguments.iter().find(|argument| argument.node.name.node.name == "Bound")
+    else {
         return Some((CapturesBound::NotMarker(None), attribute));
     };
     let beskid_analysis::syntax::Expression::Path(path) = &argument.node.value.node else {
         return Some((CapturesBound::NotMarker(Some("<expression>".to_owned())), attribute));
     };
-    let spelling =
-        path.node.path.node.segments.iter().map(|segment| segment.node.name.node.name.as_str()).collect::<Vec<_>>().join(".");
+    let spelling = path
+        .node
+        .path
+        .node
+        .segments
+        .iter()
+        .map(|segment| segment.node.name.node.name.as_str())
+        .collect::<Vec<_>>()
+        .join(".");
     let marker = super::super::contracts::resolve_contract(db, key, &path.node.path.node)
         .and_then(|contract| transfer_marker_contract(db, contract));
     Some((marker.map_or(CapturesBound::NotMarker(Some(spelling)), CapturesBound::Marker), attribute))
@@ -59,7 +67,8 @@ pub(in crate::semantic_contract) fn declared_parameters(
             let owning = method.receiver.as_ref().is_some_and(|receiver| receiver.node.movable);
             return Some((method.parameters.clone(), owning));
         }
-        node.of::<beskid_analysis::syntax::ContractMethodSignature>().map(|signature| (signature.parameters.clone(), false))
+        node.of::<beskid_analysis::syntax::ContractMethodSignature>()
+            .map(|signature| (signature.parameters.clone(), false))
     })
 }
 

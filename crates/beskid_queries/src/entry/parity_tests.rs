@@ -15,28 +15,16 @@ const SHAPE: &str = "enum Shape { Dot, Circle(i64 radius) } ";
 /// One fixture per legacy diagnostic class the query gate covers: (legacy class, code, source).
 const COVERED: &[(&str, &str, &str)] = &[
     ("ResolveError::UnknownValue (call target)", "E1101", "unit Main() { Missing(); return; }"),
-    (
-        "ResolveError::UnknownModulePath / UnknownImportPath",
-        "E1105",
-        "use Missing.Module; unit Main() { return; }",
-    ),
+    ("ResolveError::UnknownModulePath / UnknownImportPath", "E1105", "use Missing.Module; unit Main() { return; }"),
     ("TypeError::UnknownType", "E1201", "unit Main() { Missing m = 1; return; }"),
     (
         "TypeError::CallArityMismatch",
         "E1204",
         "unit Helper(i32 a, i32 b) { return; } unit Main() { Helper(1); return; }",
     ),
-    (
-        "TypeError::TypeMismatch (typed let)",
-        "E1206",
-        "unit Main() { bool flag = 1_i64; return; }",
-    ),
+    ("TypeError::TypeMismatch (typed let)", "E1206", "unit Main() { bool flag = 1_i64; return; }"),
     ("TypeError::TypeMismatch (return value)", "E1206", "i64 Main() { return true; }"),
-    (
-        "TypeError::TypeMismatch (local assignment)",
-        "E1206",
-        "unit Main() { mut i64 n = 0_i64; n = true; return; }",
-    ),
+    ("TypeError::TypeMismatch (local assignment)", "E1206", "unit Main() { mut i64 n = 0_i64; n = true; return; }"),
     (
         "TypeError::TypeMismatch (call argument)",
         "E1206",
@@ -110,7 +98,12 @@ const COVERED_KINDS: &[(&str, &str, &str, &str)] = &[
         "T0905",
         "unit Main() { i32 n = 3000000000_i32; return; }",
     ),
-    ("TypeError::InvalidMemberTarget (field path)", "TypeInvalidMemberTarget", "E1213", "i64 Main(i64 n) { return n.value; }"),
+    (
+        "TypeError::InvalidMemberTarget (field path)",
+        "TypeInvalidMemberTarget",
+        "E1213",
+        "i64 Main(i64 n) { return n.value; }",
+    ),
     (
         "TypeError::InvalidMemberTarget (method path)",
         "TypeInvalidMemberTarget",
@@ -165,7 +158,12 @@ const COVERED_KINDS: &[(&str, &str, &str, &str)] = &[
         "E1201",
         "pub type Box { i64 value; pub i64 Get() { return 1_i64; } } i64 Main(Box b) { i64 f = (b).Get; return f; }",
     ),
-    ("TypeError::UnsupportedExpression (index)", "TypeUnsupportedExpression", "E1202", "i64 Main(i64 n) { return n[0]; }"),
+    (
+        "TypeError::UnsupportedExpression (index)",
+        "TypeUnsupportedExpression",
+        "E1202",
+        "i64 Main(i64 n) { return n[0]; }",
+    ),
     (
         "TypeError::UnsupportedExpression (compound assignment)",
         "TypeInvalidCompoundAssignment",
@@ -327,7 +325,12 @@ const COVERED_KINDS: &[(&str, &str, &str, &str)] = &[
         "T0901",
         "[Extern(Abi:\"Rust\", Library:\"m\")] contract Native { i64 Abs(i64 v); }",
     ),
-    ("TypeError::ExternMissingLibrary", "ExternMissingLibrary", "T0902", "[Extern(Abi:\"C\")] contract Native { i64 Abs(i64 v); }"),
+    (
+        "TypeError::ExternMissingLibrary",
+        "ExternMissingLibrary",
+        "T0902",
+        "[Extern(Abi:\"C\")] contract Native { i64 Abs(i64 v); }",
+    ),
     (
         "TypeError::ExternDisallowedParamType",
         "ExternDisallowedParamType",
@@ -611,7 +614,11 @@ fn transfer_legality_findings_carry_their_attribute_and_member_spans() {
             "E1248",
             "Captures(Bound: Disposable)",
         ),
-        ("pub unit Bad([Captures(Bound: Transferable)] i64 count) { return; }", "E1248", "Captures(Bound: Transferable)"),
+        (
+            "pub unit Bad([Captures(Bound: Transferable)] i64 count) { return; }",
+            "E1248",
+            "Captures(Bound: Transferable)",
+        ),
         ("pub type Job { [Captures(Bound: Transferable)] i64 count; }", "E1248", "Captures(Bound: Transferable)"),
         ("[Immutable] [Isolated] pub type Both { i64 id; }", "E1510", "Isolated"),
         ("[NeverTransferable] [Copyable] pub type Channel { i64 id; }", "E1246", "Copyable"),
@@ -623,14 +630,15 @@ fn transfer_legality_findings_carry_their_attribute_and_member_spans() {
         // Declarations are judged per unit that owns a callable item.
         let source = format!("{markers}{body} unit Touch() {{ return; }}");
         let findings = root_findings(&source, 6990 + offset as u64);
-        let sited = findings
-            .iter()
-            .filter(|finding| finding.kind.code() == *code)
-            .any(|finding| source.get(finding.span.start..finding.span.end).is_some_and(|text| text.contains(spelling)));
+        let sited = findings.iter().filter(|finding| finding.kind.code() == *code).any(|finding| {
+            source.get(finding.span.start..finding.span.end).is_some_and(|text| text.contains(spelling))
+        });
         if !sited {
             let spans = findings
                 .iter()
-                .map(|finding| (finding.kind.code(), source.get(finding.span.start..finding.span.end).unwrap_or("?").to_owned()))
+                .map(|finding| {
+                    (finding.kind.code(), source.get(finding.span.start..finding.span.end).unwrap_or("?").to_owned())
+                })
                 .collect::<Vec<_>>();
             failures.push(format!("{code} at `{spelling}` missing in {spans:?}\n  {body}"));
         }

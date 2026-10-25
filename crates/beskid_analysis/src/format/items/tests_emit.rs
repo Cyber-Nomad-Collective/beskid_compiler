@@ -116,10 +116,16 @@ impl Emit for Spanned<TestDefinition> {
             let blank = previous_was_section.is_some_and(|p| p || is_section);
             previous_was_section = Some(is_section);
             match item {
-                TestItem::Meta(meta) => emit_line(w, cx, Line::new(meta.span).blank(blank), "", |w, cx| meta.emit(w, cx))?,
-                TestItem::Skip(skip) => emit_line(w, cx, Line::new(skip.span).blank(blank), "", |w, cx| skip.emit(w, cx))?,
+                TestItem::Meta(meta) => {
+                    emit_line(w, cx, Line::new(meta.span).blank(blank), "", |w, cx| meta.emit(w, cx))?
+                }
+                TestItem::Skip(skip) => {
+                    emit_line(w, cx, Line::new(skip.span).blank(blank), "", |w, cx| skip.emit(w, cx))?
+                }
                 TestItem::Statement(statement, doc) => {
-                    emit_line(w, cx, Line::new(statement.span).doc(*doc).blank(blank), "", |w, cx| statement.emit(w, cx))?
+                    emit_line(w, cx, Line::new(statement.span).doc(*doc).blank(blank), "", |w, cx| {
+                        statement.emit(w, cx)
+                    })?
                 }
             }
         }

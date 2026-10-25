@@ -82,7 +82,6 @@ const OWNED_LIMIT: usize = 16 * 1024 * 1024;
 const PROVIDER_FOREIGN: i32 = 2;
 const PROVIDER_BUSY: i32 = 4;
 
-
 fn driver_name() -> &'static str {
     if cfg!(windows) { "beskid_native_tool_driver.exe" } else { "beskid_native_tool_driver" }
 }
@@ -267,7 +266,11 @@ fn installed_corelib(qualified: &Path) -> PathBuf {
 /// change to any of them yields a new template; consumers still qualify what they read from it.
 fn template_key(qualified: &Path) -> String {
     let mut digest = Sha256::new();
-    for path in [installed_cli(qualified), qualified.join("bin").join(driver_name()), qualified.join(kit_relative()).join("abi.json")] {
+    for path in [
+        installed_cli(qualified),
+        qualified.join("bin").join(driver_name()),
+        qualified.join(kit_relative()).join("abi.json"),
+    ] {
         digest.update(fs::read(&path).unwrap_or_else(|error| panic!("read {}: {error}", path.display())));
     }
     for (name, text) in OWNED_FIXTURE_FILES {
@@ -296,7 +299,9 @@ fn collect_corelib_sources(directory: &Path, sources: &mut Vec<PathBuf>) {
             if !matches!(name.to_str(), Some("obj" | ".beskid" | ".git" | "target")) {
                 collect_corelib_sources(&path, sources);
             }
-        } else if path.extension().is_some_and(|extension| matches!(extension.to_str(), Some("bd" | "bproj" | "bws" | "bsol")))
+        } else if path
+            .extension()
+            .is_some_and(|extension| matches!(extension.to_str(), Some("bd" | "bproj" | "bws" | "bsol")))
             || name == "Project.lock"
         {
             sources.push(path);
@@ -563,42 +568,65 @@ fn v06_glue_driver_denied_from_build_tree() {
 #[test]
 fn v06_glue_driver_admitted_only_from_private_prefix() {
     let qualified = std::env::var_os(QUALIFIED_PREFIX_ENV).map(PathBuf::from);
-    run_in_private_prefix("v06_glue_driver_admitted_only_from_private_prefix", DriverStaging::Exact, ChildProject::None, |prefix| {
-        let driver = beskid_abi::compiler_driver::installed_compiler_driver().unwrap_or_else(|error| {
-            panic!("qualified driver rejected; build this test with BESKID_COMPILER_DRIVER_BUILD_RECEIPT: {error}")
-        });
-        let expected = fs::canonicalize(prefix.join("bin").join(driver_name())).unwrap();
-        assert_eq!(driver.path(), expected);
-        let qualified = fs::canonicalize(qualified.expect("child inherits the qualified prefix")).unwrap();
-        assert_eq!(driver.sha256(), sha256_file(&qualified.join("bin").join(driver_name())));
-        driver.verify().unwrap();
-    });
+    run_in_private_prefix(
+        "v06_glue_driver_admitted_only_from_private_prefix",
+        DriverStaging::Exact,
+        ChildProject::None,
+        |prefix| {
+            let driver = beskid_abi::compiler_driver::installed_compiler_driver().unwrap_or_else(|error| {
+                panic!("qualified driver rejected; build this test with BESKID_COMPILER_DRIVER_BUILD_RECEIPT: {error}")
+            });
+            let expected = fs::canonicalize(prefix.join("bin").join(driver_name())).unwrap();
+            assert_eq!(driver.path(), expected);
+            let qualified = fs::canonicalize(qualified.expect("child inherits the qualified prefix")).unwrap();
+            assert_eq!(driver.sha256(), sha256_file(&qualified.join("bin").join(driver_name())));
+            driver.verify().unwrap();
+        },
+    );
 }
 
 #[test]
 fn v06_glue_driver_denied_when_sibling_tampered() {
-    run_in_private_prefix("v06_glue_driver_denied_when_sibling_tampered", DriverStaging::Tampered, ChildProject::None, |_| {
-        let error = beskid_abi::compiler_driver::installed_compiler_driver().err().expect("tampered driver admitted");
-        assert!(error.contains("installed compiler driver changed"), "{error}");
-    });
+    run_in_private_prefix(
+        "v06_glue_driver_denied_when_sibling_tampered",
+        DriverStaging::Tampered,
+        ChildProject::None,
+        |_| {
+            let error =
+                beskid_abi::compiler_driver::installed_compiler_driver().err().expect("tampered driver admitted");
+            assert!(error.contains("installed compiler driver changed"), "{error}");
+        },
+    );
 }
 
 #[test]
 fn v06_glue_driver_denied_when_sibling_missing() {
-    run_in_private_prefix("v06_glue_driver_denied_when_sibling_missing", DriverStaging::Missing, ChildProject::None, |_| {
-        let error = beskid_abi::compiler_driver::installed_compiler_driver().err().expect("missing driver admitted");
-        assert!(!error.contains("independently qualified native tool driver"), "unqualified test build: {error}");
-    });
+    run_in_private_prefix(
+        "v06_glue_driver_denied_when_sibling_missing",
+        DriverStaging::Missing,
+        ChildProject::None,
+        |_| {
+            let error =
+                beskid_abi::compiler_driver::installed_compiler_driver().err().expect("missing driver admitted");
+            assert!(!error.contains("independently qualified native tool driver"), "unqualified test build: {error}");
+        },
+    );
 }
 
 #[cfg(unix)]
 #[test]
 fn v06_glue_driver_denied_when_sibling_escapes_prefix() {
-    run_in_private_prefix("v06_glue_driver_denied_when_sibling_escapes_prefix", DriverStaging::Symlinked, ChildProject::None, |_| {
-        let error = beskid_abi::compiler_driver::installed_compiler_driver().err().expect("symlinked driver admitted");
-        // A symlinked sibling is not a regular file, so admission denies it before any prefix resolution.
-        assert!(error.contains("installed compiler driver must be a bounded regular file"), "{error}");
-    });
+    run_in_private_prefix(
+        "v06_glue_driver_denied_when_sibling_escapes_prefix",
+        DriverStaging::Symlinked,
+        ChildProject::None,
+        |_| {
+            let error =
+                beskid_abi::compiler_driver::installed_compiler_driver().err().expect("symlinked driver admitted");
+            // A symlinked sibling is not a regular file, so admission denies it before any prefix resolution.
+            assert!(error.contains("installed compiler driver must be a bounded regular file"), "{error}");
+        },
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -889,8 +917,11 @@ fn build_owned(prefix: &Path, work: &Path, variant: OwnerVariant) -> anyhow::Res
     let sources = manifest_owner_sources(&manifest)?;
     with_owned_glue_input(&manifest, |input, items| {
         let declarations = glue_declarations(input, items, &[OWNER_LIBRARY.to_owned()])?;
-        let imports =
-            declarations.iter().filter(|declaration| declaration.is_import_of(OWNER_LIBRARY)).cloned().collect::<Vec<_>>();
+        let imports = declarations
+            .iter()
+            .filter(|declaration| declaration.is_import_of(OWNER_LIBRARY))
+            .cloned()
+            .collect::<Vec<_>>();
         let selected = declarations.iter().map(|declaration| declaration.item.clone()).collect::<Vec<_>>();
         let consumer_packet = beskid_codegen::glue::emit(input, &selected, CONSUMER_LIBRARY)?;
         let owner = build_owner(
@@ -1169,13 +1200,17 @@ fn assert_owned_roundtrip(process: &GlueProcess, owner: usize, packet: &GlueArti
 
 #[test]
 fn v06_glue_owned_roundtrip_all_representations() {
-    run_in_private_prefix("v06_glue_owned_roundtrip_all_representations", DriverStaging::Exact, ChildProject::Warmed, |prefix| {
-        let build = build_owned(prefix, prefix, OwnerVariant::Complete)
-            .unwrap_or_else(|error| panic!("{error:#}"));
-        let (process, owner, packet) = open_owned(build);
-        assert_owned_roundtrip(&process, owner, &packet);
-        drop(process);
-    });
+    run_in_private_prefix(
+        "v06_glue_owned_roundtrip_all_representations",
+        DriverStaging::Exact,
+        ChildProject::Warmed,
+        |prefix| {
+            let build = build_owned(prefix, prefix, OwnerVariant::Complete).unwrap_or_else(|error| panic!("{error:#}"));
+            let (process, owner, packet) = open_owned(build);
+            assert_owned_roundtrip(&process, owner, &packet);
+            drop(process);
+        },
+    );
 }
 
 /// A live borrow lease survives every release attempt. Owner records are bound to the thread
@@ -1184,14 +1219,18 @@ fn v06_glue_owned_roundtrip_all_representations() {
 /// observe borrow state at all and is denied as foreign. Neither runs the destructor.
 #[test]
 fn v06_glue_owned_opaque_borrow_survives_release() {
-    run_in_private_prefix("v06_glue_owned_opaque_borrow_survives_release", DriverStaging::Exact, ChildProject::Warmed, |prefix| {
-        let gate = PathBuf::from(std::env::var_os(GATE_ENV).expect("parent supplies the borrow gate"));
-        let build = build_owned(prefix, prefix, OwnerVariant::Complete)
-            .unwrap_or_else(|error| panic!("{error:#}"));
-        let (process, _owner, packet) = open_owned(build);
-        assert_borrow_survives_release(&process, &packet, &gate);
-        drop(process);
-    });
+    run_in_private_prefix(
+        "v06_glue_owned_opaque_borrow_survives_release",
+        DriverStaging::Exact,
+        ChildProject::Warmed,
+        |prefix| {
+            let gate = PathBuf::from(std::env::var_os(GATE_ENV).expect("parent supplies the borrow gate"));
+            let build = build_owned(prefix, prefix, OwnerVariant::Complete).unwrap_or_else(|error| panic!("{error:#}"));
+            let (process, _owner, packet) = open_owned(build);
+            assert_borrow_survives_release(&process, &packet, &gate);
+            drop(process);
+        },
+    );
 }
 
 /// The borrow assertions of [`v06_glue_owned_opaque_borrow_survives_release`] over an admitted
@@ -1253,65 +1292,84 @@ fn assert_borrow_survives_release(process: &GlueProcess, packet: &GlueArtifact, 
 
 #[test]
 fn v06_glue_owned_denies_missing_import_row() {
-    run_in_private_prefix("v06_glue_owned_denies_missing_import_row", DriverStaging::Exact, ChildProject::Warmed, |prefix| {
-        let build = build_owned(prefix, prefix, OwnerVariant::MissingRow("glue_unit"))
-            .unwrap_or_else(|error| panic!("{error:#}"));
-        let (process, owner, packet) = open_owned(build);
-        for symbol in ["manual_ImportI8", "manual_ImportUnit", "beskid_i8", "manual_ImportCreate"] {
-            let error = checked_error(&process, &packet, symbol);
-            assert!(error.contains("not privately admitted"), "{symbol}: {error}");
-        }
-        let binding = packet
-            .manifest
-            .bindings
-            .iter()
-            .find(|binding| binding.direction == "import" && binding.symbol == "glue_unit")
-            .unwrap();
-        let missing =
-            unsafe { process.rust_owner_export::<unsafe extern "C" fn() -> i32>(owner, &binding.identity_sha256) };
-        assert!(missing.is_err(), "owner exposed a row outside its issued closure");
-    });
+    run_in_private_prefix(
+        "v06_glue_owned_denies_missing_import_row",
+        DriverStaging::Exact,
+        ChildProject::Warmed,
+        |prefix| {
+            let build = build_owned(prefix, prefix, OwnerVariant::MissingRow("glue_unit"))
+                .unwrap_or_else(|error| panic!("{error:#}"));
+            let (process, owner, packet) = open_owned(build);
+            for symbol in ["manual_ImportI8", "manual_ImportUnit", "beskid_i8", "manual_ImportCreate"] {
+                let error = checked_error(&process, &packet, symbol);
+                assert!(error.contains("not privately admitted"), "{symbol}: {error}");
+            }
+            let binding = packet
+                .manifest
+                .bindings
+                .iter()
+                .find(|binding| binding.direction == "import" && binding.symbol == "glue_unit")
+                .unwrap();
+            let missing =
+                unsafe { process.rust_owner_export::<unsafe extern "C" fn() -> i32>(owner, &binding.identity_sha256) };
+            assert!(missing.is_err(), "owner exposed a row outside its issued closure");
+        },
+    );
 }
 
 #[test]
 fn v06_glue_owned_denies_consumer_without_owner_domain() {
-    run_in_private_prefix("v06_glue_owned_denies_consumer_without_owner_domain", DriverStaging::Exact, ChildProject::Warmed, |prefix| {
-        let OwnedBuild { owner, consumer, packet } = build_owned(prefix, prefix, OwnerVariant::Complete)
-            .unwrap_or_else(|error| panic!("{error:#}"));
-        drop(owner);
-        let process = GlueProcess::open(consumer).unwrap_or_else(|error| panic!("open consumer: {error}"));
-        for symbol in ["manual_ImportCreate", "manual_ImportInspect", "beskid_handle", "beskid_i8"] {
-            let error = checked_error(&process, &packet, symbol);
-            assert!(error.contains("not privately admitted"), "{symbol}: {error}");
-        }
-    });
+    run_in_private_prefix(
+        "v06_glue_owned_denies_consumer_without_owner_domain",
+        DriverStaging::Exact,
+        ChildProject::Warmed,
+        |prefix| {
+            let OwnedBuild { owner, consumer, packet } =
+                build_owned(prefix, prefix, OwnerVariant::Complete).unwrap_or_else(|error| panic!("{error:#}"));
+            drop(owner);
+            let process = GlueProcess::open(consumer).unwrap_or_else(|error| panic!("open consumer: {error}"));
+            for symbol in ["manual_ImportCreate", "manual_ImportInspect", "beskid_handle", "beskid_i8"] {
+                let error = checked_error(&process, &packet, symbol);
+                assert!(error.contains("not privately admitted"), "{symbol}: {error}");
+            }
+        },
+    );
 }
 
 #[test]
 fn v06_glue_owned_denies_duplicate_owner_library() {
-    run_in_private_prefix("v06_glue_owned_denies_duplicate_owner_library", DriverStaging::Exact, ChildProject::Warmed, |prefix| {
-        let build = build_owned(prefix, prefix, OwnerVariant::Complete)
-            .unwrap_or_else(|error| panic!("{error:#}"));
-        let (mut process, _owner, _packet) = open_owned(build);
-        let again = build_owned(prefix, &prefix.join("second"), OwnerVariant::Complete);
-        let OwnedBuild { owner, .. } = match again {
-            Ok(build) => build,
-            Err(error) => panic!("{error:#}"),
-        };
-        let error = process.attach_rust_owner(owner).err().expect("second owner for one library admitted");
-        assert!(error.to_string().contains("already admitted"), "{error}");
-    });
+    run_in_private_prefix(
+        "v06_glue_owned_denies_duplicate_owner_library",
+        DriverStaging::Exact,
+        ChildProject::Warmed,
+        |prefix| {
+            let build = build_owned(prefix, prefix, OwnerVariant::Complete).unwrap_or_else(|error| panic!("{error:#}"));
+            let (mut process, _owner, _packet) = open_owned(build);
+            let again = build_owned(prefix, &prefix.join("second"), OwnerVariant::Complete);
+            let OwnedBuild { owner, .. } = match again {
+                Ok(build) => build,
+                Err(error) => panic!("{error:#}"),
+            };
+            let error = process.attach_rust_owner(owner).err().expect("second owner for one library admitted");
+            assert!(error.to_string().contains("already admitted"), "{error}");
+        },
+    );
 }
 
 #[test]
 fn v06_glue_owned_rejects_foreign_owner_brand() {
-    run_in_private_prefix("v06_glue_owned_rejects_foreign_owner_brand", DriverStaging::Exact, ChildProject::Warmed, |prefix| {
-        let error = match build_owned(prefix, prefix, OwnerVariant::ForeignBrand) {
-            Ok(_) => panic!("owner with a brand outside the source signature was admitted"),
-            Err(error) => format!("{error:#}"),
-        };
-        assert!(error.contains("brand absent from current canonical signature"), "{error}");
-    });
+    run_in_private_prefix(
+        "v06_glue_owned_rejects_foreign_owner_brand",
+        DriverStaging::Exact,
+        ChildProject::Warmed,
+        |prefix| {
+            let error = match build_owned(prefix, prefix, OwnerVariant::ForeignBrand) {
+                Ok(_) => panic!("owner with a brand outside the source signature was admitted"),
+                Err(error) => format!("{error:#}"),
+            };
+            assert!(error.contains("brand absent from current canonical signature"), "{error}");
+        },
+    );
 }
 
 /// From the build tree there is no qualified driver sibling: the private Rust
@@ -1345,8 +1403,8 @@ const STAGE_PREFIX: &str = ".beskid-glue-build-";
 
 fn installed_cli(qualified: &Path) -> PathBuf {
     let cli = qualified.join("bin").join(if cfg!(windows) { "beskid.exe" } else { "beskid" });
-    let metadata =
-        fs::symlink_metadata(&cli).unwrap_or_else(|error| panic!("qualified prefix lacks CLI {}: {error}", cli.display()));
+    let metadata = fs::symlink_metadata(&cli)
+        .unwrap_or_else(|error| panic!("qualified prefix lacks CLI {}: {error}", cli.display()));
     assert!(metadata.is_file(), "qualified CLI {} must be a regular file", cli.display());
     cli
 }
@@ -1520,7 +1578,11 @@ thread_local! {
 }
 
 fn output_text(output: &std::process::Output) -> String {
-    format!("stdout:\n{}\nstderr:\n{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr))
+    format!(
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    )
 }
 
 fn assert_cli_success(output: &std::process::Output) {
@@ -1536,8 +1598,9 @@ fn assert_installed_provider_search_path(image: &[u8], label: &str) {
         return;
     }
     let qualified = require_qualified_prefix();
-    let provider = beskid_abi::runtime_kit::resolve_glue_shared_provider(&qualified, &host_target(), qualified_profile())
-        .unwrap_or_else(|error| panic!("qualified shared provider: {error}"));
+    let provider =
+        beskid_abi::runtime_kit::resolve_glue_shared_provider(&qualified, &host_target(), qualified_profile())
+            .unwrap_or_else(|error| panic!("qualified shared provider: {error}"));
     let directory = provider.shared_library.parent().expect("provider directory").to_owned();
     let canonical = fs::canonicalize(&directory).unwrap();
     let contains = |needle: &Path| {
@@ -1648,7 +1711,12 @@ fn v06_glue_cli_builds_owned_fixture_alone() {
     assert!(native_magic(&owner), "owner is not a native image");
     let stdout = String::from_utf8_lossy(&output.stdout);
     for path in [project.consumer(), project.owner()] {
-        assert!(stdout.contains(&path.display().to_string()), "{} not reported\n{}", path.display(), output_text(&output));
+        assert!(
+            stdout.contains(&path.display().to_string()),
+            "{} not reported\n{}",
+            path.display(),
+            output_text(&output)
+        );
     }
     assert_installed_provider_search_path(&consumer, "consumer");
     assert_installed_provider_search_path(&owner, "owner");
@@ -1744,8 +1812,11 @@ fn v06_glue_cli_rejects_ancestor_cargo_config() {
     let project = CliProject::new();
     let root = tempfile::Builder::new().prefix("beskid-v06-glue-ambient-").tempdir().unwrap();
     fs::create_dir_all(root.path().join(".cargo")).unwrap();
-    fs::write(root.path().join(".cargo/config.toml"), "[build]\nrustflags = [\"-C\", \"link-arg=-beskid-v06-bogus\"]\n")
-        .unwrap();
+    fs::write(
+        root.path().join(".cargo/config.toml"),
+        "[build]\nrustflags = [\"-C\", \"link-arg=-beskid-v06-bogus\"]\n",
+    )
+    .unwrap();
     let temporary = root.path().join("tmp");
     fs::create_dir_all(&temporary).unwrap();
     let output = project.build(&[
@@ -1831,8 +1902,7 @@ fn published_child_body(name: &str, body: impl FnOnce(&PublishedGlue)) -> bool {
     if std::env::var(CHILD_ENV).as_deref() != Ok(test_path(name).as_str()) {
         return false;
     }
-    let variable =
-        |key: &str| PathBuf::from(std::env::var_os(key).unwrap_or_else(|| panic!("parent supplies {key}")));
+    let variable = |key: &str| PathBuf::from(std::env::var_os(key).unwrap_or_else(|| panic!("parent supplies {key}")));
     let pin = std::env::var(PUBLISHED_PIN_ENV).expect("parent supplies the consumer pin");
     let published = admit_published(&variable(PUBLISHED_CONSUMER_ENV), &pin, &[variable(PUBLISHED_OWNER_ENV)])
         .unwrap_or_else(|error| panic!("admit published images: {error}"));
@@ -1896,7 +1966,8 @@ fn assert_manual_generated_equivalence(process: &GlueProcess, owner: usize, pack
         zero: T,
         same: impl Fn(T, T) -> bool,
     ) {
-        let manual: unsafe extern "C" fn(T, *mut T) -> i32 = unsafe { owner_entry(process, owner, packet, owner_symbol) };
+        let manual: unsafe extern "C" fn(T, *mut T) -> i32 =
+            unsafe { owner_entry(process, owner, packet, owner_symbol) };
         let generated: unsafe extern "C" fn(T, *mut T) -> i32 = unsafe { checked(process, packet, generated_symbol) };
         for value in values {
             let (mut left, mut right) = (zero, zero);
@@ -1908,7 +1979,10 @@ fn assert_manual_generated_equivalence(process: &GlueProcess, owner: usize, pack
                 "{owner_symbol}/{generated_symbol}({value:?}): manual status {manual_status}, generated status {generated_status}"
             );
             if manual_status == 0 {
-                assert!(same(left, right), "{owner_symbol}/{generated_symbol}({value:?}): {left:?} differs from {right:?}");
+                assert!(
+                    same(left, right),
+                    "{owner_symbol}/{generated_symbol}({value:?}): {left:?} differs from {right:?}"
+                );
             }
         }
     }
@@ -1936,10 +2010,18 @@ fn assert_manual_generated_equivalence(process: &GlueProcess, owner: usize, pack
             assert!(same(manual, out), "{symbol}({value:?}): manual {manual:?} differs from generated {out:?}");
         }
     }
-    import_row::<i8>(process, owner, packet, "glue_i8", "manual_ImportI8", &[i8::MIN, -1, 0, i8::MAX], 0, |a, b| a == b);
-    import_row::<i16>(process, owner, packet, "glue_i16", "manual_ImportI16", &[i16::MIN, 0, i16::MAX], 0, |a, b| a == b);
-    import_row::<i32>(process, owner, packet, "glue_i32", "manual_ImportI32", &[i32::MIN, 0, i32::MAX], 0, |a, b| a == b);
-    import_row::<i64>(process, owner, packet, "glue_i64", "manual_ImportI64", &[i64::MIN, 0, i64::MAX], 0, |a, b| a == b);
+    import_row::<i8>(process, owner, packet, "glue_i8", "manual_ImportI8", &[i8::MIN, -1, 0, i8::MAX], 0, |a, b| {
+        a == b
+    });
+    import_row::<i16>(process, owner, packet, "glue_i16", "manual_ImportI16", &[i16::MIN, 0, i16::MAX], 0, |a, b| {
+        a == b
+    });
+    import_row::<i32>(process, owner, packet, "glue_i32", "manual_ImportI32", &[i32::MIN, 0, i32::MAX], 0, |a, b| {
+        a == b
+    });
+    import_row::<i64>(process, owner, packet, "glue_i64", "manual_ImportI64", &[i64::MIN, 0, i64::MAX], 0, |a, b| {
+        a == b
+    });
     import_row::<u8>(process, owner, packet, "glue_u8", "manual_ImportU8", &[0, 128, u8::MAX], 0, |a, b| a == b);
     import_row::<u16>(process, owner, packet, "glue_u16", "manual_ImportU16", &[0, u16::MAX], 0, |a, b| a == b);
     import_row::<u32>(process, owner, packet, "glue_u32", "manual_ImportU32", &[0, u32::MAX], 0, |a, b| a == b);
@@ -1947,12 +2029,25 @@ fn assert_manual_generated_equivalence(process: &GlueProcess, owner: usize, pack
     let f32_values = [0.0, -0.0, f32::MIN, f32::MAX, f32::INFINITY, f32::NEG_INFINITY, f32::from_bits(0x7fc0_1234)];
     let f64_values =
         [0.0, -0.0, f64::MIN, f64::MAX, f64::INFINITY, f64::NEG_INFINITY, f64::from_bits(0x7ff8_0000_0000_1234)];
-    import_row::<f32>(process, owner, packet, "glue_f32", "manual_ImportF32", &f32_values, 0.0, |a, b| a.to_bits() == b.to_bits());
-    import_row::<f64>(process, owner, packet, "glue_f64", "manual_ImportF64", &f64_values, 0.0, |a, b| a.to_bits() == b.to_bits());
+    import_row::<f32>(process, owner, packet, "glue_f32", "manual_ImportF32", &f32_values, 0.0, |a, b| {
+        a.to_bits() == b.to_bits()
+    });
+    import_row::<f64>(process, owner, packet, "glue_f64", "manual_ImportF64", &f64_values, 0.0, |a, b| {
+        a.to_bits() == b.to_bits()
+    });
     import_row::<u8>(process, owner, packet, "glue_bool", "manual_ImportBool", &[0, 1, 2, 255], 0, |a, b| a == b);
     let chars = [0, 0x41, 0xd7ff, 0xe000, 0x1f600, 0x10ffff, 0xd800, 0xdfff, 0x110000];
     import_row::<u32>(process, owner, packet, "glue_char", "manual_ImportChar", &chars, 0, |a, b| a == b);
-    import_row::<usize>(process, owner, packet, "glue_native_width", "manual_ImportNativeWidth", &[0, usize::MAX], 0, |a, b| a == b);
+    import_row::<usize>(
+        process,
+        owner,
+        packet,
+        "glue_native_width",
+        "manual_ImportNativeWidth",
+        &[0, usize::MAX],
+        0,
+        |a, b| a == b,
+    );
     let manual_unit: unsafe extern "C" fn() -> i32 = unsafe { owner_entry(process, owner, packet, "glue_unit") };
     let generated_unit: unsafe extern "C" fn() -> i32 = unsafe { checked(process, packet, "manual_ImportUnit") };
     assert_eq!(unsafe { manual_unit() }, 0, "glue_unit manual status");
@@ -1998,8 +2093,11 @@ fn assert_manual_generated_views(process: &GlueProcess, packet: &GlueArtifact) {
         let mut out = GlueOwnedView::empty();
         assert_eq!(unsafe { call(pointer, value.len(), &mut out) }, 0, "{label}({value:?}) status");
         assert_ne!(out.token, 0, "{label}({value:?}) owned result has no release token");
-        let copied =
-            if out.length == 0 { Vec::new() } else { unsafe { std::slice::from_raw_parts(out.pointer, out.length) }.to_vec() };
+        let copied = if out.length == 0 {
+            Vec::new()
+        } else {
+            unsafe { std::slice::from_raw_parts(out.pointer, out.length) }.to_vec()
+        };
         assert_eq!(unsafe { release(out.token) }, 0, "{label}({value:?}) release");
         assert_ne!(unsafe { release(out.token) }, 0, "{label}({value:?}) released twice");
         copied
@@ -2032,7 +2130,11 @@ fn assert_manual_generated_views(process: &GlueProcess, packet: &GlueArtifact) {
         for value in invalid.iter().copied() {
             for (route, call) in [("manual", direct), ("generated", generated)] {
                 let mut out = GlueOwnedView::empty();
-                assert_ne!(unsafe { call(value.as_ptr(), value.len(), &mut out) }, 0, "{symbol} {route} accepted {value:?}");
+                assert_ne!(
+                    unsafe { call(value.as_ptr(), value.len(), &mut out) },
+                    0,
+                    "{symbol} {route} accepted {value:?}"
+                );
                 assert_eq!(out.token, 0, "{symbol} {route} leaked a token on rejection");
             }
         }
@@ -2087,10 +2189,18 @@ fn assert_manual_generated_opaque(process: &GlueProcess, owner: usize, packet: &
         assert_ne!(unsafe { release(*token) }, 0, "{route} token released twice");
         for (reader_route, reader) in [("manual", manual_inspect), ("generated", generated_inspect)] {
             let mut length = 0;
-            assert_ne!(unsafe { reader(*token, &mut length) }, 0, "{reader_route} reader accepted the released {route} token");
+            assert_ne!(
+                unsafe { reader(*token, &mut length) },
+                0,
+                "{reader_route} reader accepted the released {route} token"
+            );
         }
         let mut returned = 0;
-        assert_ne!(unsafe { identity(*token, &mut returned) }, 0, "export transport accepted the released {route} token");
+        assert_ne!(
+            unsafe { identity(*token, &mut returned) },
+            0,
+            "export transport accepted the released {route} token"
+        );
     }
 }
 
@@ -2152,7 +2262,11 @@ fn v06_glue_cli_owner_abort_is_a_terminal_process_failure() {
     assert!(!output.status.success(), "aborting owner call left the process successful\n{}", output_text(&output));
     assert!(stdout.contains(ABORT_MARKER), "child did not reach the aborting call\n{}", output_text(&output));
     assert!(!stdout.contains("test result:"), "abort must end the process, not a test\n{}", output_text(&output));
-    assert!(!output_text(&output).contains("owner abort returned"), "abort returned to the caller\n{}", output_text(&output));
+    assert!(
+        !output_text(&output).contains("owner abort returned"),
+        "abort returned to the caller\n{}",
+        output_text(&output)
+    );
     #[cfg(unix)]
     {
         use std::os::unix::process::ExitStatusExt;
@@ -2268,7 +2382,9 @@ fn v06_glue_cli_equivalent_projects_issue_identical_packets() {
             differences.push(format!("binding {}: {:?} vs {:?}", a.symbol, a.source, b.source));
         }
     }
-    let files = |packet: &GlueArtifact| packet.files.iter().map(|file| (file.path.clone(), file.sha256.clone())).collect::<Vec<_>>();
+    let files = |packet: &GlueArtifact| {
+        packet.files.iter().map(|file| (file.path.clone(), file.sha256.clone())).collect::<Vec<_>>()
+    };
     if files(&left) != files(&right) {
         differences.push(format!("generated files {:?} vs {:?}", files(&left), files(&right)));
     }
@@ -2287,7 +2403,10 @@ fn v06_glue_cli_equivalent_projects_issue_identical_packets() {
 fn v06_glue_cli_rejects_closed_boundary_metadata_violations() {
     const ORIGINAL: &str = "[Export(Abi:\"C\", Symbol:\"beskid_i8\")]";
     for (label, replacement) in [
-        ("two Export attributes", "[Export(Abi:\"C\", Symbol:\"beskid_i8\")]\n[Export(Abi:\"C\", Symbol:\"beskid_i8_again\")]"),
+        (
+            "two Export attributes",
+            "[Export(Abi:\"C\", Symbol:\"beskid_i8\")]\n[Export(Abi:\"C\", Symbol:\"beskid_i8_again\")]",
+        ),
         ("repeated Symbol argument", "[Export(Abi:\"C\", Symbol:\"beskid_i8\", Symbol:\"beskid_i8\")]"),
         ("unknown argument", "[Export(Abi:\"C\", Symbol:\"beskid_i8\", Library:\"glue_manual\")]"),
     ] {
@@ -2343,7 +2462,11 @@ fn v06_glue_cli_tool_selection_names_the_required_form() {
         let output = project.build_with(&cli, &arguments, &[]);
         project.assert_rejected_without_publication(&output, label);
         assert!(mentions(&output, expected), "{label}: expected `{expected}`\n{}", output_text(&output));
-        assert!(mentions(&output, "pass `--rust-toolchain <prefix>`"), "{label}: required form not named\n{}", output_text(&output));
+        assert!(
+            mentions(&output, "pass `--rust-toolchain <prefix>`"),
+            "{label}: required form not named\n{}",
+            output_text(&output)
+        );
     }
 }
 
@@ -2441,7 +2564,8 @@ const RELEASE_FIXTURE_ENV: &str = "BESKID_V06_RELEASE_FIXTURE";
 fn release_fixture() -> PathBuf {
     let raw = std::env::var_os(RELEASE_FIXTURE_ENV)
         .unwrap_or_else(|| panic!("{RELEASE_FIXTURE_ENV} must name the release fixture binary"));
-    fs::canonicalize(&raw).unwrap_or_else(|error| panic!("{RELEASE_FIXTURE_ENV}={}: {error}", PathBuf::from(&raw).display()))
+    fs::canonicalize(&raw)
+        .unwrap_or_else(|error| panic!("{RELEASE_FIXTURE_ENV}={}: {error}", PathBuf::from(&raw).display()))
 }
 
 /// A Rust compiler that runs and reports its version and host but holds no standard library for
@@ -2533,8 +2657,9 @@ struct EmittedUnits(std::sync::Mutex<Vec<String>>);
 
 impl beskid_pipeline::PipelineObserver for EmittedUnits {
     fn on_event(&self, event: beskid_pipeline::PipelineEvent) {
-        if let beskid_pipeline::PipelineEvent::WorkUnit { id: beskid_pipeline::phases::AOT_EMIT_OBJECT, label, .. } =
-            event
+        if let beskid_pipeline::PipelineEvent::WorkUnit {
+            id: beskid_pipeline::phases::AOT_EMIT_OBJECT, label, ..
+        } = event
         {
             self.0.lock().unwrap().push(label.into_owned());
         }
@@ -2560,8 +2685,7 @@ fn v06_native_test_object_compiles_shared_helper_once_and_links_distinct_entries
             let plan = synthetic_compile_plan_for_source(&path);
             let resolved = resolved_input_from_plan(path, source.into(), plan, None, None);
             let front =
-                beskid_queries::compile_mod_free_front_end(&resolved, FrontEndOptions::default(), None)
-                    .unwrap();
+                beskid_queries::compile_mod_free_front_end(&resolved, FrontEndOptions::default(), None).unwrap();
             let profile = match qualified_profile() {
                 beskid_abi::runtime_kit::BuildProfile::Debug => beskid_aot::BuildProfile::Debug,
                 beskid_abi::runtime_kit::BuildProfile::Release => beskid_aot::BuildProfile::Release,

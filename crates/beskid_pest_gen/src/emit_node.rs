@@ -10,7 +10,12 @@ pub(crate) fn emit_node(node: &Expr, rule: &str, rules: &BTreeMap<&str, &Grammar
     emit_node_from_cursor("c", node, rule, rules)
 }
 
-pub(crate) fn emit_node_from_cursor(cursor: &str, node: &Expr, rule: &str, rules: &BTreeMap<&str, &GrammarRule>) -> String {
+pub(crate) fn emit_node_from_cursor(
+    cursor: &str,
+    node: &Expr,
+    rule: &str,
+    rules: &BTreeMap<&str, &GrammarRule>,
+) -> String {
     match node {
         Expr::Literal(value) => emit_literal_expr(value, cursor, rule, "return"),
         Expr::RuleRef(name) => {

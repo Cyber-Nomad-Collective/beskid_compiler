@@ -92,8 +92,8 @@ fn corelib_parse_trees_stay_byte_identical() {
         return;
     }
 
-    let recorded = std::fs::read_to_string(&fixture_path)
-        .unwrap_or_else(|err| panic!("read {}: {err}", fixture_path.display()));
+    let recorded =
+        std::fs::read_to_string(&fixture_path).unwrap_or_else(|err| panic!("read {}: {err}", fixture_path.display()));
     let mut checked = 0usize;
     let mut changed = Vec::new();
     for line in recorded.lines().filter(|line| !line.trim().is_empty()) {

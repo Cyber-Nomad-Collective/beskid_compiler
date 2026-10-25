@@ -32,14 +32,15 @@ mod mod_semantic_scope;
 pub use mod_semantic_scope::build_mod_authority_typed_program;
 mod mod_syntax_authority;
 pub use mod_semantic_authority::{
-    CompiledCatchallBinding, ReboundCatchallBinding, CompiledSerializationTarget, SerializationContributionKind, ModSemanticCatchall, ModSemanticQueryAuthority,
-    CompiledSerializationTemplate, CorrespondingSerializationTarget, RetainedDeclaration, serialization_template_getter_shape,
-    serialization_template_instance_rebind, serialization_field_codec_admission,
+    CompiledCatchallBinding, CompiledSerializationTarget, CompiledSerializationTemplate,
+    CorrespondingSerializationTarget, ModSemanticCatchall, ModSemanticQueryAuthority, ReboundCatchallBinding,
+    RetainedDeclaration, SerializationContributionKind, serialization_field_codec_admission,
+    serialization_template_getter_shape, serialization_template_instance_rebind,
 };
 pub use semantic_contract::{
-    canonical_container_kind, CanonicalContainerKind, DynamicPackingBridge, DynamicPackingField, DynamicPackingNode, DynamicPackingShape, DynamicPackingVariant,
-    DynamicShapeBinding, DynamicUnpackingBridge, dynamic_packing_bridge, dynamic_packing_shape, dynamic_shape_binding,
-    dynamic_unpacking_bridge,
+    CanonicalContainerKind, DynamicPackingBridge, DynamicPackingField, DynamicPackingNode, DynamicPackingShape,
+    DynamicPackingVariant, DynamicShapeBinding, DynamicUnpackingBridge, canonical_container_kind,
+    dynamic_packing_bridge, dynamic_packing_shape, dynamic_shape_binding, dynamic_unpacking_bridge,
 };
 pub use semantic_contract::{
     DynamicMappingBinding, DynamicMappingFieldStep, DynamicMappingOutcome, DynamicMappingPlan, DynamicMappingStep,
@@ -56,19 +57,20 @@ mod output;
 mod persistence;
 mod semantic_contract;
 pub use semantic_contract::{
-    ValueCopyPosition, capture_copy_specialization, for_element_copy_specialization,
-    pattern_binding_copy_specialization, value_copy_position, value_copy_specialization,
-};
-pub use semantic_contract::{
-    CONTRACT_BOX_RECEIVER_OFFSET, CONTRACT_BOX_SIZE, CONTRACT_BOX_WITNESS_OFFSET, ContractBoxCoercion, ContractBoxReceiver,
-    ContractDispatch, ContractUpcast, ContractWitnessTable, WITNESS_HEADER_WORDS, WITNESS_RECEIVER_BITS, WITNESS_RECEIVER_F32,
-    WITNESS_RECEIVER_F64, WITNESS_RECEIVER_REFERENCE, contract_box_coercion, contract_dispatch, contract_upcast,
-    contract_value_equality, contract_value_receiver, contract_witness_method_instances, contract_witness_table_for_declaration,
-    array_literal_has_contract_elements, injected_field_contract,
+    CONTRACT_BOX_RECEIVER_OFFSET, CONTRACT_BOX_SIZE, CONTRACT_BOX_WITNESS_OFFSET, ContractBoxCoercion,
+    ContractBoxReceiver, ContractDispatch, ContractUpcast, ContractWitnessTable, WITNESS_HEADER_WORDS,
+    WITNESS_RECEIVER_BITS, WITNESS_RECEIVER_F32, WITNESS_RECEIVER_F64, WITNESS_RECEIVER_REFERENCE,
+    array_literal_has_contract_elements, contract_box_coercion, contract_dispatch, contract_upcast,
+    contract_value_equality, contract_value_receiver, contract_witness_method_instances,
+    contract_witness_table_for_declaration, injected_field_contract,
 };
 pub use semantic_contract::{
     CheckedFailureDestination, ReservedFailureConstructor, canonical_serialization_encode, checked_failure_destination,
     reserved_failure_constructor, serialization_publication_methods,
+};
+pub use semantic_contract::{
+    ValueCopyPosition, capture_copy_specialization, for_element_copy_specialization,
+    pattern_binding_copy_specialization, value_copy_position, value_copy_specialization,
 };
 mod session;
 mod stats;
@@ -103,95 +105,90 @@ pub use persistence::{
     cache_root_for_project, ensure_salsa_dir, load_db_snapshot, persist_session_snapshot, save_db_snapshot,
 };
 pub use semantic_contract::{
-    AggregateFieldAccess, AggregateFieldShape, AggregateLayoutFact, AggregateLiteralFieldValues,
-    ArrayIndexElementTemplate, AstNodeKey, BulkParameterFact, CallLowering, CaptureStorageClass, CastIntent,
+    AffineBinding, AffineFinding, AffineFindingKind, AffineOwnership, AggregateFieldAccess, AggregateFieldShape,
+    AggregateLayoutFact, AggregateLiteralFieldValues, ArrayIndexElementTemplate, AstNodeKey, BulkParameterFact,
+    CallLowering, CanonicalEmpty, CanonicalEmptyValue, CaptureStorageClass, CastIntent, ClifParameterShape,
     ClosureAllocationStatus, ClosureCallTarget, ClosureCapture, ClosureEnvironment, ClosureEnvironmentField,
-    ClosureLoweringStatus, ClosurePointerMapRequirement, ClifParameterShape, CollectionMutationOwner, CollectionOperation,
-    CompletionCandidate, CompletionContext, CompletionKind, CompletionMemberSurface, ControlFlow, CorelibService,
-    EnumConstructorFact, EnumConstructorSpecialization, EnumLayoutFact,
-    EnumMatchArmFact, EnumMatchBindingFact, EnumMatchFact, EnumMatchPatternFact,
-    EnumMatchScalarLiteralFact, ScalarMatchFact, EnumMatchVariantPatternFact, EnumScalarPayloadObjectLayout,
+    ClosureLoweringStatus, ClosurePointerMapRequirement, CollectionMutationOwner, CollectionOperation,
+    CompletionCandidate, CompletionContext, CompletionKind, CompletionMemberSurface, CompoundAssignment,
+    CompoundAssignmentOperator, ControlFlow, CorelibService, EnumConstructorFact, EnumConstructorSpecialization,
+    EnumLayoutFact, EnumMatchArmFact, EnumMatchBindingFact, EnumMatchFact, EnumMatchPatternFact,
+    EnumMatchScalarLiteralFact, EnumMatchVariantPatternFact, EnumScalarPayloadObjectLayout,
     EnumScalarPayloadVariantLayout, EnumVariantLayoutFact, EventFieldLayoutFact, EventHandlerLocalFact,
-    EventOperationFact, EventOperationKind, ExportSymbol, FiberOwnership, ForIterableSource, ForIteratorFact,
-    ForIteratorProtocol, FunctionItemValue,
-    FunctionValueCall, GenericCallInstantiation,
-    GenericCallSpecialization, GenericCallTemplate, GenericNominalMethodReceiver, GenericSpecializationInstance,
-    GenericSubstitution, IndexedNodeKind, ItemSignature, LiteralFact, LocalSlot, ManagedReferenceKind, ManifestBuiltin,
-    CompoundAssignment, CompoundAssignmentOperator, MutableLocalAssignment, NativeModCallback, compound_assignment, NativeModCallbackOperation, NativeModContractDeclaration,
-    NativeModContractFamily, NativeModRequestConstructor, NativeModRequestFactory, NativeModSyntaxConstructor,
-    NativeModTransportBody, NativeModTransportField, NativeModTransportNominal, NativeModTransportSignature,
-    NativeModTransportType, NativeModTransportVariant, OperatorFact, PrimitiveNumericConversion, RangeForFact,
-    ResolvedItem, ResolvedLocal, RuntimeIntrinsic, RuntimeIntrinsicName, ScalarAbiLayout, ScopedAcquisition,
-    ScopedCleanup, ScopedCleanupDiagnostic, SemanticError, SemanticQueryResult, SemanticTypeId, SourceSpan,
-    UNAVAILABLE_MESSAGE_MARKER,
-    SourceUnitId, SpawnDiagnosticKind, SpawnEntryValidation, SpawnTarget, TestItem, TryExpressionFact,
-    ExpectedType, ExpectedTypeContext,
-    TypedArrayAllocation, TypedProgram, abi_type, aggregate_field_access, aggregate_field_access_specialization,
-    aggregate_layout, aggregate_literal_declaration, aggregate_literal_field_values, aggregate_literal_layout,
-    aggregate_literal_specialization, array_index_element_abi_type, array_index_element_managed_reference_specialization,
-    array_index_element_specialization, for_iterator_protocol, for_iterator_specialization, for_variable_specialization,
-    block_statement_nodes, bulk_call_element_abi_type, bulk_parameter, call_abi_signature,
-    AffineBinding, AffineFinding, AffineFindingKind, AffineOwnership, CanonicalEmpty, ExchangeCall,
-    MoveExpressionForm, affine_ownership, exchange_call, move_expression_form, CanonicalEmptyValue,
-    canonical_empty_value, TransferClassIntrinsic,
-    transfer_class_code, transfer_class_code_for_substitution, transfer_class_intrinsic,
-    call_arguments, call_lowering, callable_fiber_ownership, callable_signature, capture_storage, cast_intents,
-    child_nodes, clif_block_body, clif_block_parameters, closure_call_target, closure_environment, closure_signature, collection_operation,
-    completion_candidates, completion_dependency_surface, completion_dependency_surface_for_assembly,
-    completion_dependency_surface_for_program, conditional_result_branch, constant_integer, contextual_integer_literal_abi_type, control_flow,
-    direct_callees, empty_array_literal_element_abi_type, enum_constructor,
-    enum_constructor_specialization, enum_layout, enum_match, scalar_match, enum_match_specialization,
-    event_field_layout, event_handler_lambda_for_local, event_operation, expected_type, expected_type_in_environment, extern_contract_declarations_in_unit, extern_contract_import_for_declaration,
-    optional_extern_contract_members, ExternContractImport,
-    for_iterator_fact, format_ast_node_key, format_ast_node_site, format_ast_node_trace, format_source_span_range,
-    function_item_value, function_value_call, function_value_call_specialization, lambda_value_required,
-    specialized_closure_signature, SpecializedClosureSignature,
+    EventOperationFact, EventOperationKind, ExchangeCall, ExpectedType, ExpectedTypeContext, ExportSymbol,
+    ExternContractImport, FiberOwnership, ForIterableSource, ForIteratorFact, ForIteratorProtocol, FunctionItemValue,
+    FunctionValueCall, GenericCallInstantiation, GenericCallSpecialization, GenericCallTemplate,
+    GenericNominalMethodReceiver, GenericSpecializationInstance, GenericSubstitution, IndexedNodeKind, ItemSignature,
+    LiteralFact, LocalSlot, ManagedReferenceKind, ManifestBuiltin, MoveExpressionForm, MutableLocalAssignment,
+    NativeModCallback, NativeModCallbackOperation, NativeModContractDeclaration, NativeModContractFamily,
+    NativeModRequestConstructor, NativeModRequestFactory, NativeModSyntaxConstructor, NativeModTransportBody,
+    NativeModTransportField, NativeModTransportNominal, NativeModTransportSignature, NativeModTransportType,
+    NativeModTransportVariant, OperatorFact, PrimitiveNumericConversion, RangeForFact, ResolvedItem, ResolvedLocal,
+    RuntimeIntrinsic, RuntimeIntrinsicName, ScalarAbiLayout, ScalarMatchFact, ScopedAcquisition, ScopedCleanup,
+    ScopedCleanupDiagnostic, SemanticError, SemanticQueryResult, SemanticTypeId, SourceSpan, SourceUnitId,
+    SpawnDiagnosticKind, SpawnEntryValidation, SpawnTarget, SpecializedClosureSignature, TestItem,
+    TransferClassIntrinsic, TryExpressionFact, TypedArrayAllocation, TypedProgram, UNAVAILABLE_MESSAGE_MARKER,
+    abi_type, affine_ownership, aggregate_field_access, aggregate_field_access_specialization, aggregate_layout,
+    aggregate_literal_declaration, aggregate_literal_field_values, aggregate_literal_layout,
+    aggregate_literal_specialization, array_index_element_abi_type,
+    array_index_element_managed_reference_specialization, array_index_element_specialization, block_statement_nodes,
+    bulk_call_element_abi_type, bulk_parameter, call_abi_signature, call_arguments, call_lowering,
+    callable_fiber_ownership, callable_signature, canonical_empty_value, capture_storage, cast_intents, child_nodes,
+    clif_block_body, clif_block_parameters, closure_call_target, closure_environment, closure_signature,
+    collection_operation, completion_candidates, completion_dependency_surface,
+    completion_dependency_surface_for_assembly, completion_dependency_surface_for_program, compound_assignment,
+    conditional_result_branch, constant_integer, contextual_integer_literal_abi_type, control_flow, direct_callees,
+    empty_array_literal_element_abi_type, enum_constructor, enum_constructor_specialization, enum_layout, enum_match,
+    enum_match_specialization, event_field_layout, event_handler_lambda_for_local, event_operation, exchange_call,
+    expected_type, expected_type_in_environment, extern_contract_declarations_in_unit,
+    extern_contract_import_for_declaration, for_iterator_fact, for_iterator_protocol, for_iterator_specialization,
+    for_variable_specialization, format_ast_node_key, format_ast_node_site, format_ast_node_trace,
+    format_source_span_range, function_item_value, function_value_call, function_value_call_specialization,
     generic_call_instantiation, generic_call_specialization, generic_call_specialization_in_environment,
     generic_call_specialization_instance, generic_call_template, generic_nominal_method_receiver,
     generic_specialization_identity, generic_specialization_instance, implicit_method_receiver, item_abi_signature,
-    item_body, item_export_symbol, item_name, item_signature, literal_fact, local_slot, managed_reference_kind,
-    mutable_local_assignment, native_mod_callback_symbol, native_mod_contract_declaration,
-    native_mod_request_constructor, native_mod_syntax_constructor, native_mod_transport_nominal,
-    native_mod_transport_signature, node_at_span, node_kind, node_span, node_type, nominal_member_receiver, operator_fact,
-    parameter_generic_reference, pattern_binding_specialization, primitive_numeric_conversion, range_for_fact,
-    reachable_items, resolved_item, resolved_local, runtime_intrinsic, runtime_intrinsic_name, scoped_cleanup,
-    spawn_entry_validation, spawn_handle_type, spawn_legality, spawn_target,
-    specialized_call_result_managed_reference_kind, specialized_builtin_type_argument, specialized_corelib_value_service_result, test_item,
-    test_statement_nodes, specialized_try_expression_fact, try_expression_fact, try_expression_judgement, try_expression_legality, typed_array_allocation, value_abi_type,
+    item_body, item_export_symbol, item_name, item_signature, lambda_value_required, literal_fact, local_slot,
+    managed_reference_kind, move_expression_form, mutable_local_assignment, native_mod_callback_symbol,
+    native_mod_contract_declaration, native_mod_request_constructor, native_mod_syntax_constructor,
+    native_mod_transport_nominal, native_mod_transport_signature, node_at_span, node_kind, node_span, node_type,
+    nominal_member_receiver, operator_fact, optional_extern_contract_members, parameter_generic_reference,
+    pattern_binding_specialization, primitive_numeric_conversion, range_for_fact, reachable_items, resolved_item,
+    resolved_local, runtime_intrinsic, runtime_intrinsic_name, scalar_match, scoped_cleanup, spawn_entry_validation,
+    spawn_handle_type, spawn_legality, spawn_target, specialized_builtin_type_argument,
+    specialized_call_result_managed_reference_kind, specialized_closure_signature,
+    specialized_corelib_value_service_result, specialized_try_expression_fact, test_item, test_statement_nodes,
+    transfer_class_code, transfer_class_code_for_substitution, transfer_class_intrinsic, try_expression_fact,
+    try_expression_judgement, try_expression_legality, typed_array_allocation, value_abi_type,
 };
 pub use semantic_contract::{
-    AppliedContractIdentity, applied_contract_argument_is_type, method_receiver_abi_type, type_applied_contract_implementation,
-    type_contract_applications, type_contract_applications_of, type_contract_declarations,
-    type_contract_implementation, contract_of_method_signature,
+    AppliedContractIdentity, applied_contract_argument_is_type, contract_of_method_signature, method_receiver_abi_type,
+    type_applied_contract_implementation, type_contract_applications, type_contract_applications_of,
+    type_contract_declarations, type_contract_implementation,
 };
 pub use semantic_contract::{
-    CallArgumentTypeMismatch, CallArityMismatch, GateObligation, GateObligationKind, GenericBindingConflict,
-    GenericBoundViolation,
-    GenericParameterConflict, ImmutableLocalAssignment, MemberReferenceFinding, MemberReferenceKind,
-    NonExhaustiveMatch, SemanticFinding, TypingObligation, TypingObligationKind, UnitObligation, UnitObligationKind,
-    UnknownMember,
+    AttributeResolution, BoundedLambdaCaptures, CallArgumentTypeMismatch, CallArityMismatch, GateObligation,
+    GateObligationKind, GenericBindingConflict, GenericBoundViolation, GenericParameterConflict,
+    ImmutableLocalAssignment, MemberReferenceFinding, MemberReferenceKind, NonExhaustiveMatch, SemanticFinding,
+    TypingObligation, TypingObligationKind, UnitAttributeSurface, UnitObligation, UnitObligationKind, UnknownMember,
     UnresolvedCallKind, UnresolvedCallTarget, UnresolvedImport, UnresolvedValueArgument, ValueObligation,
-    call_argument_type_mismatch, call_arity_mismatch,
-    BoundedLambdaCaptures, bounded_lambda_captures, declared_captures_bound,
-    check_gate_obligations, check_items, check_typing_obligations, check_unit_obligations, extern_profile_findings,
-    AttributeResolution, UnitAttributeSurface, attribute_findings, check_attribute_obligations, resolve_attribute_use,
-    unit_attribute_surface,
-    gate_obligations, generic_parameter_conflict, immutable_local_assignment, match_exhaustiveness,
-    member_reference_legality, typing_obligations, unit_obligations, unresolved_call_target, unresolved_imports,
+    attribute_findings, bounded_lambda_captures, call_argument_type_mismatch, call_arity_mismatch,
+    check_attribute_obligations, check_gate_obligations, check_items, check_typing_obligations, check_unit_obligations,
+    declared_captures_bound, extern_profile_findings, gate_obligations, generic_parameter_conflict,
+    immutable_local_assignment, match_exhaustiveness, member_reference_legality, resolve_attribute_use,
+    typing_obligations, unit_attribute_surface, unit_obligations, unresolved_call_target, unresolved_imports,
     unresolved_value_argument, value_obligations,
 };
 pub use semantic_contract::{
     CompositionInjectedAccessFact, CompositionInjectionFieldFact, CompositionLaunchFact, CompositionRegistrationFact,
-    CompositionScopeFact, CompositionTypes, composition_injected_field_access, composition_injection_field, composition_launch,
-    composition_registration, composition_scope,
+    CompositionScopeFact, CompositionTypes, composition_injected_field_access, composition_injection_field,
+    composition_launch, composition_registration, composition_scope,
 };
 pub use semantic_contract::{DeadCollectionGrowth, dead_collection_growth, is_growth_call_candidate};
-pub use semantic_contract::{UnresolvedTypeReference, unresolved_type_reference};
 pub use semantic_contract::{
     TransferClass, TransferMarker, TransferMarkerAttribute, TransferNeverReason, aggregate_literal_transfer_class,
-    enum_constructor_transfer_class, nominal_transfer_class,
-    transfer_class_of_type, transfer_marker_contract,
+    enum_constructor_transfer_class, nominal_transfer_class, transfer_class_of_type, transfer_marker_contract,
 };
+pub use semantic_contract::{UnresolvedTypeReference, unresolved_type_reference};
 pub use session::{
     compile_front_end_with_mod_host, compile_mod_free_front_end, configure_db_for_project, prepare_compilation,
     prepare_compilation_diagnostics, reset_process_compilation_database, with_db,
@@ -214,7 +211,7 @@ pub use unit::{
     unit_content_fingerprint, unit_imports,
 };
 
-pub use beskid_analysis::services::{FrontEndOptions, ExecutableFrontEnd, PrepareOptions, PreparedCompilation};
+pub use beskid_analysis::services::{ExecutableFrontEnd, FrontEndOptions, PrepareOptions, PreparedCompilation};
 
 pub use semantic_contract::{
     GlueBindingFact, GlueDirection, GlueHandleBrand, GlueLogicalType, GlueOwnerBindingDigest, GlueParameterFact,
@@ -244,10 +241,10 @@ pub use mod_semantic_authority::ReboundSerializationTarget;
 
 pub mod process_source_authority;
 
-pub use semantic_contract::{SerializationShapeBinding, serialization_shape_binding};
 pub use semantic_contract::{
     SerializationFieldCodecBinding, serialization_field_codec_binding, serialization_field_codec_bridge,
 };
+pub use semantic_contract::{SerializationShapeBinding, serialization_shape_binding};
 
 mod serialization_field_policy;
 pub use serialization_field_policy::{

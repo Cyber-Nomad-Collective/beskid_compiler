@@ -13,14 +13,14 @@ use crate::commands::{
     PckgRegistryState, focused_project_from_configuration, focused_project_from_value, handle_project_explorer_command,
     pckg_registry, symbol_documentation,
 };
+use crate::crash::CrashReporter;
 use crate::features::{
     code_actions, completion, definition, document_symbols, formatting, hover, inlay_hints, references, rename,
     semantic_tokens, signature_help, workspace_symbols,
 };
-use crate::crash::CrashReporter;
-use crate::scan_schedule::{InteractiveGuard, ScanCoordinator, ScanRunGuard};
 use crate::logging::{ClientLogFilter, client_log};
 use crate::protocol::request::{snapshot_document, snapshot_lsp_request, snapshot_request};
+use crate::scan_schedule::{InteractiveGuard, ScanCoordinator, ScanRunGuard};
 use crate::server::init::initialize_result;
 use crate::session::db_access::{document_update_gate, parallel_compilation_db, with_compilation_db};
 use crate::session::lifecycle::{
@@ -31,7 +31,8 @@ use crate::session::mod_host::mod_host_from_initialization_options;
 use crate::session::store::State;
 use crate::text_sync::apply_document_changes;
 use crate::workspace_scan::{
-    clear_closed_workspace_under_root, hydrate_disk_after_close, refresh_after_disk_change, scan_workspace_roots, uri_to_path,
+    clear_closed_workspace_under_root, hydrate_disk_after_close, refresh_after_disk_change, scan_workspace_roots,
+    uri_to_path,
 };
 
 /// Tower-LSP [`LanguageServer`] implementation for Beskid (sync, diagnostics, IDE features).
@@ -122,8 +123,13 @@ impl Backend {
                             crate::workspace_scan::RootPhase::Started => "started",
                             crate::workspace_scan::RootPhase::Completed => "completed",
                         };
-                        client_log(&client, filter, MessageType::INFO, format!("workspace scan {what}: {}", root.display()))
-                            .await;
+                        client_log(
+                            &client,
+                            filter,
+                            MessageType::INFO,
+                            format!("workspace scan {what}: {}", root.display()),
+                        )
+                        .await;
                     })
                 });
                 scan_workspace_roots(&client, &state, &current_roots, focused.as_deref(), Some(hook)).await;
@@ -289,7 +295,9 @@ impl LanguageServer for Backend {
                 None => None,
             };
             let items = roots
-                .and_then(|roots| completion::use_path::use_path_items(&snapshot.document.text, snapshot.offset, &roots))
+                .and_then(|roots| {
+                    completion::use_path::use_path_items(&snapshot.document.text, snapshot.offset, &roots)
+                })
                 .unwrap_or_default();
             return Ok(Some(CompletionResponse::Array(items)));
         }

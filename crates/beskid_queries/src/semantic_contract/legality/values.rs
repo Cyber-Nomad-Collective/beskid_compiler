@@ -62,14 +62,13 @@ use super::typing::{compatible, enclosing_callable, expression_nodes, nodes_of_k
 use super::*;
 use crate::semantic_contract::contract_values::upcast_targets;
 use crate::semantic_contract::contracts::{
-    concrete_declaration, concrete_type_or_enum_declaration, contract_declaration_for_identity, is_conformable_primitive,
-    primitive_conforms, type_declaration_conforms_to_contract,
+    concrete_declaration, concrete_type_or_enum_declaration, contract_declaration_for_identity,
+    is_conformable_primitive, primitive_conforms, type_declaration_conforms_to_contract,
 };
 use beskid_analysis::syntax::{
     AssignExpression, AssignOp, AstNodeId, CallExpression, ContractMethodSignature, EnumConstructorExpression,
-    Expression, FieldKind, FunctionDefinition, LambdaExpression, LetStatement, MatchExpression, PathExpression,
-    MethodDefinition, Path, Pattern, ReturnStatement, Spanned, StructLiteralExpression, TestDefinition, Type,
-    TypeDefinition,
+    Expression, FieldKind, FunctionDefinition, LambdaExpression, LetStatement, MatchExpression, MethodDefinition, Path,
+    PathExpression, Pattern, ReturnStatement, Spanned, StructLiteralExpression, TestDefinition, Type, TypeDefinition,
 };
 use beskid_analysis::syntax_query::{DynNodeRef, NodeKind, SyntaxIndex};
 
@@ -169,7 +168,10 @@ pub(super) fn contract_expectation(db: &dyn Db, key: AstNodeKey) -> Option<Desti
 pub(super) enum Destination {
     Identity(Identity),
     /// A contract-typed destination (legacy `is_contract_compatible`), with its source spelling.
-    Contract { contract: AstNodeKey, name: Arc<str> },
+    Contract {
+        contract: AstNodeKey,
+        name: Arc<str>,
+    },
 }
 
 /// Whether `ty` is a primitive other than `pointer`: the destinations `typing_obligations` judges.
@@ -412,7 +414,8 @@ fn judge_value(
         }
         return;
     }
-    if typing_judged && matches!(expected, Destination::Identity(Identity::Abi(_))) && proven_primitive(db, subject_key) {
+    if typing_judged && matches!(expected, Destination::Identity(Identity::Abi(_))) && proven_primitive(db, subject_key)
+    {
         return;
     }
     let Some(actual) = value_identity(db, subject_key) else { return };
@@ -522,7 +525,17 @@ fn collect_let_values(
         let Some(name) = index.direct_child_id(program, statement, DynNodeRef::from(&let_statement.name)) else {
             continue;
         };
-        judge_value(db, program, index, key, &expected, name, subject, primitive_destination(&annotation.node), findings);
+        judge_value(
+            db,
+            program,
+            index,
+            key,
+            &expected,
+            name,
+            subject,
+            primitive_destination(&annotation.node),
+            findings,
+        );
     }
 }
 
@@ -605,7 +618,8 @@ fn collect_assignment_values(
             AssignOp::MulAssign | AssignOp::DivAssign | AssignOp::RemAssign => {}
             AssignOp::AddAssign | AssignOp::SubAssign => {
                 let Ok(Some(fact)) = event_operation(db, assignment_key) else { continue };
-                let Some(field_syntax) = db.syntax_unit(fact.field.unit).filter(|syntax| syntax.accepts_key(db, fact.field))
+                let Some(field_syntax) =
+                    db.syntax_unit(fact.field.unit).filter(|syntax| syntax.accepts_key(db, fact.field))
                 else {
                     continue;
                 };
@@ -673,7 +687,9 @@ fn callee_substitutions(
             .iter()
             .zip(arguments)
             .map(|(generic, argument)| {
-                generic_source_type_identity(db, call_key, &argument.node).ok().map(|identity| ((*generic).to_owned(), identity))
+                generic_source_type_identity(db, call_key, &argument.node)
+                    .ok()
+                    .map(|identity| ((*generic).to_owned(), identity))
             })
             .collect();
     }
@@ -758,21 +774,34 @@ fn collect_call_argument_values(
         let needs_substitution = parameters.iter().any(|parameter| {
             generics.iter().any(|generic| type_syntax_mentions_generic_parameter(&parameter.node.ty.node, generic))
         });
-        let substitutions =
-            needs_substitution.then(|| callee_substitutions(db, call_key, call, declaration, &generics, explicit_generics)).flatten();
-        let substitution_map =
-            substitutions.as_ref().map(|bindings| bindings.iter().map(|(name, identity)| (name.as_str(), identity)).collect::<HashMap<_, _>>());
+        let substitutions = needs_substitution
+            .then(|| callee_substitutions(db, call_key, call, declaration, &generics, explicit_generics))
+            .flatten();
+        let substitution_map = substitutions.as_ref().map(|bindings| {
+            bindings.iter().map(|(name, identity)| (name.as_str(), identity)).collect::<HashMap<_, _>>()
+        });
         for (parameter, (site, subject)) in parameters.iter().zip(sites) {
             let ty = &parameter.node.ty.node;
             // `This` in a contract member is the receiver's own type, fixed only by a witness.
             if contract_member && type_syntax_mentions_this(ty) {
                 continue;
             }
-            let Some(expected) = generic_declared_destination(db, declaration, &generics, ty, substitution_map.as_ref())
+            let Some(expected) =
+                generic_declared_destination(db, declaration, &generics, ty, substitution_map.as_ref())
             else {
                 continue;
             };
-            judge_value(db, program, index, key, &expected, site, subject, typing_judged && primitive_destination(ty), findings);
+            judge_value(
+                db,
+                program,
+                index,
+                key,
+                &expected,
+                site,
+                subject,
+                typing_judged && primitive_destination(ty),
+                findings,
+            );
         }
     }
 }
@@ -814,7 +843,17 @@ fn collect_callable_value_call_values(
             continue;
         }
         for (parameter, (site, subject)) in parameters.iter().zip(sites) {
-            judge_value(db, program, index, key, &Destination::Identity(parameter.clone()), site, subject, false, findings);
+            judge_value(
+                db,
+                program,
+                index,
+                key,
+                &Destination::Identity(parameter.clone()),
+                site,
+                subject,
+                false,
+                findings,
+            );
         }
     }
 }
@@ -863,7 +902,9 @@ fn collect_event_raise_values(
         };
         let Type::Function { parameters, .. } = &field.node.ty.node else { continue };
         if definition.generics.iter().any(|generic| {
-            parameters.iter().any(|parameter| type_syntax_mentions_generic_parameter(&parameter.node, &generic.node.name))
+            parameters
+                .iter()
+                .any(|parameter| type_syntax_mentions_generic_parameter(&parameter.node, &generic.node.name))
         }) {
             continue;
         }
@@ -915,7 +956,9 @@ fn literal_generic_arguments(
     let qualified_name = stable_declaration_identity(db, declaration)?;
     let literal_key = AstNodeKey { node, ..key };
     let applied = |identity: Identity| match identity {
-        Identity::Nominal { qualified_name: name, arguments } if name == qualified_name && arguments.len() == generics.len() => {
+        Identity::Nominal { qualified_name: name, arguments }
+            if name == qualified_name && arguments.len() == generics.len() =>
+        {
             Some(arguments.to_vec())
         }
         _ => None,
@@ -969,9 +1012,13 @@ fn collect_struct_literal_values(
             }
             let Some(field_node) = index.direct_child_id(program, node, DynNodeRef::from(field)) else { continue };
             let Some((site, value)) = expression_nodes(program, index, field_node, &field.node.value) else { continue };
-            let Some(expected) =
-                generic_declared_destination(db, declaration, &generics, &declared.node.ty.node, substitutions.as_ref())
-            else {
+            let Some(expected) = generic_declared_destination(
+                db,
+                declaration,
+                &generics,
+                &declared.node.ty.node,
+                substitutions.as_ref(),
+            ) else {
                 continue;
             };
             judge_value(db, program, index, key, &expected, site, value, false, findings);
@@ -993,7 +1040,8 @@ fn collect_enum_constructor_values(
         };
         let site = AstNodeKey { node, ..key };
         let Ok(applied) = applied_enum_constructor_identity(db, site, constructor, None) else { continue };
-        let Some(declaration) = crate::semantic_contract::contracts::concrete_type_or_enum_declaration(db, site, &applied)
+        let Some(declaration) =
+            crate::semantic_contract::contracts::concrete_type_or_enum_declaration(db, site, &applied)
         else {
             continue;
         };
@@ -1048,7 +1096,8 @@ fn collect_pattern_values(
         // declared syntax also resolves the declaration a generic pattern path names without
         // arguments (`Opt::Some(..)`).
         let declared = scrutinee_declared_identity(db, program, index, scrutinee_key);
-        let Some(expected) = declared.as_ref().map(|(identity, _)| identity.clone()).or_else(|| value_identity(db, scrutinee_key))
+        let Some(expected) =
+            declared.as_ref().map(|(identity, _)| identity.clone()).or_else(|| value_identity(db, scrutinee_key))
         else {
             continue;
         };
@@ -1059,7 +1108,17 @@ fn collect_pattern_values(
             else {
                 continue;
             };
-            judge_pattern(db, program, index, key, &expected, declaration, &arm.node.pattern.node, pattern_node, findings);
+            judge_pattern(
+                db,
+                program,
+                index,
+                key,
+                &expected,
+                declaration,
+                &arm.node.pattern.node,
+                pattern_node,
+                findings,
+            );
         }
     }
 }
@@ -1126,8 +1185,9 @@ fn judge_pattern(
             // scrutinee) resolves through the expected identity's declaration.
             let Some(declaration) = resolve_type_declaration(db, pattern_site, &type_path.node).or_else(|| {
                 let spelled = type_path.node.segments.last()?.node.name.node.name.as_str();
-                let declaration = expected_declaration
-                    .or_else(|| crate::semantic_contract::contracts::concrete_declaration(db, pattern_site, expected))?;
+                let declaration = expected_declaration.or_else(|| {
+                    crate::semantic_contract::contracts::concrete_declaration(db, pattern_site, expected)
+                })?;
                 (enum_definition(db, declaration)?.name.node.name == spelled).then_some(declaration)
             }) else {
                 return;
@@ -1161,12 +1221,19 @@ fn judge_pattern(
             let substitutions = arguments
                 .as_ref()
                 .map(|arguments| generics.iter().copied().zip(arguments.iter()).collect::<HashMap<_, _>>());
-            let enum_node = index.direct_child_id(program, pattern_node, DynNodeRef::from(enum_pattern)).unwrap_or(pattern_node);
+            let enum_node =
+                index.direct_child_id(program, pattern_node, DynNodeRef::from(enum_pattern)).unwrap_or(pattern_node);
             for (field, item) in variant.node.fields.iter().zip(&enum_pattern.node.items) {
-                let Some(item_node) = index.direct_child_id(program, enum_node, DynNodeRef::from(item)) else { continue };
-                let Some(Destination::Identity(expected_item)) =
-                    generic_declared_destination(db, declaration, &generics, &field.node.ty.node, substitutions.as_ref())
-                else {
+                let Some(item_node) = index.direct_child_id(program, enum_node, DynNodeRef::from(item)) else {
+                    continue;
+                };
+                let Some(Destination::Identity(expected_item)) = generic_declared_destination(
+                    db,
+                    declaration,
+                    &generics,
+                    &field.node.ty.node,
+                    substitutions.as_ref(),
+                ) else {
                     continue;
                 };
                 // A nested generic enum field (`Opt<Opt<bool>>`) resolves its declaration from
@@ -1177,7 +1244,17 @@ fn judge_pattern(
                     }
                     _ => None,
                 };
-                judge_pattern(db, program, index, key, &expected_item, item_declaration, &item.node, item_node, findings);
+                judge_pattern(
+                    db,
+                    program,
+                    index,
+                    key,
+                    &expected_item,
+                    item_declaration,
+                    &item.node,
+                    item_node,
+                    findings,
+                );
             }
         }
         Pattern::Identifier(_) | Pattern::Wildcard => {}
@@ -1211,12 +1288,12 @@ mod tests {
         };
         let expected = function(vec![abi(SemanticTypeId::I64)], abi(SemanticTypeId::BOOL));
         assert!(identities_compatible(&expected, &function(vec![abi(SemanticTypeId::I64)], abi(SemanticTypeId::BOOL))));
-        assert!(!identities_compatible(&expected, &function(vec![abi(SemanticTypeId::BOOL)], abi(SemanticTypeId::BOOL))));
+        assert!(!identities_compatible(
+            &expected,
+            &function(vec![abi(SemanticTypeId::BOOL)], abi(SemanticTypeId::BOOL))
+        ));
         assert!(!identities_compatible(&expected, &function(vec![], abi(SemanticTypeId::BOOL))));
         assert!(!identities_compatible(&expected, &function(vec![abi(SemanticTypeId::I64)], nominal("Pair"))));
         assert!(identities_compatible(&expected, &abi(SemanticTypeId::I64)));
     }
 }
-
-
-

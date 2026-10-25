@@ -640,9 +640,7 @@ pub fn load_project_lock_dependencies_for_plan(
     let path_entries = plan
         .dependency_projects
         .iter()
-        .map(|dependency| {
-            super::prepare::portable_entry_for_dependency(plan, dependency, corelib_lock_root.as_deref())
-        })
+        .map(|dependency| super::prepare::portable_entry_for_dependency(plan, dependency, corelib_lock_root.as_deref()))
         .collect::<Result<Vec<_>, _>>()?;
     let registry_names = plan
         .unresolved_dependencies

@@ -176,7 +176,10 @@ pub struct RuntimeIntrinsic {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
-pub enum PlatformImportKind { Function, Data }
+pub enum PlatformImportKind {
+    Function,
+    Data,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -316,8 +319,13 @@ impl AbiManifestV5 {
             }
         }
         validate_named_contracts(self.platform_imports.iter().map(|entry| entry.symbol.as_str()))?;
-        if self.platform_imports.iter().any(|entry| entry.kind == PlatformImportKind::Data &&
-            (!entry.params.is_empty() || !entry.param_names.is_empty() || entry.result == AbiType::Void || entry.noreturn)) {
+        if self.platform_imports.iter().any(|entry| {
+            entry.kind == PlatformImportKind::Data
+                && (!entry.params.is_empty()
+                    || !entry.param_names.is_empty()
+                    || entry.result == AbiType::Void
+                    || entry.noreturn)
+        }) {
             return Err(ManifestValidationError::InvalidPlatformImportSet { actual: self.platform_imports.clone() });
         }
         validate_layouts(&self.layouts)?;

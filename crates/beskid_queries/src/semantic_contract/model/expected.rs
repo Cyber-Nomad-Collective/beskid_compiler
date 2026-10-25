@@ -9,9 +9,9 @@
 
 use std::sync::Arc;
 
+use super::facts::ItemSignature;
 use super::generics::GenericSourceTypeIdentity;
 use super::ids::AstNodeKey;
-use super::facts::ItemSignature;
 use super::types::{ManagedReferenceKind, SemanticTypeId};
 
 /// The typed parent context that supplies an expected type. The variants name the innermost

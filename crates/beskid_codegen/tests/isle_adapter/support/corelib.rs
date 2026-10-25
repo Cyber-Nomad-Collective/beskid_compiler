@@ -226,7 +226,8 @@ pub(in super::super) fn assert_args_module_cannot_emit_imports(
     .expect_err("untrusted Core.Args source must fail module emission before any ABI import is emitted");
     let rendered = error.to_string();
     assert!(
-        rendered.contains("E1107 `__args_count` is a private runtime builtin and cannot be called from this source unit"),
+        rendered
+            .contains("E1107 `__args_count` is a private runtime builtin and cannot be called from this source unit"),
         "untrusted Core.Args must be denied by the legality gate before any ISLE lowering: {error}"
     );
     assert!(!rendered.contains("MissingRuleOrFact"), "the denial must precede lowering: {error}");

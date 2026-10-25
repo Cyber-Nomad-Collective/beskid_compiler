@@ -50,7 +50,8 @@ pub(super) fn attach_runtime_fixture(
     mut assembly: ProgramAssembly,
     plan: &CompilePlan,
 ) -> Result<ProgramAssembly, AssemblyError> {
-    let failure = |message: &str| AssemblyError::RuntimeFixture { path: plan.manifest_path.clone(), message: message.into() };
+    let failure =
+        |message: &str| AssemblyError::RuntimeFixture { path: plan.manifest_path.clone(), message: message.into() };
     let Some(proof) = prove_runtime_fixture(
         &plan.manifest_path,
         &plan.target.name,
@@ -101,7 +102,8 @@ pub(super) fn attach_runtime_fixture(
     // the plan's native dependency units; Foundation support units (`Core/...`) replace the same
     // files the assembled Foundation root already contributed, at that root's paths, so
     // `use Core.Results;` and the private runtime scope name one declaration, not two copies.
-    let foundation_roots = [assembled_foundation_root.clone(), assembled_foundation_root.canonicalize().unwrap_or_default()];
+    let foundation_roots =
+        [assembled_foundation_root.clone(), assembled_foundation_root.canonicalize().unwrap_or_default()];
     let canonical_paths = expected
         .iter()
         .filter(|source| !source.logical_path.starts_with(RUNTIME_ROOT_LOGICAL_PREFIX))
@@ -186,7 +188,8 @@ fn verify_runtime_closure(
         if !fresh {
             return Err(());
         }
-        let root = if source.logical_path.starts_with(RUNTIME_ROOT_LOGICAL_PREFIX) { runtime_root } else { foundation_root };
+        let root =
+            if source.logical_path.starts_with(RUNTIME_ROOT_LOGICAL_PREFIX) { runtime_root } else { foundation_root };
         let path = root.join(&source.logical_path);
         let regular = std::fs::symlink_metadata(&path).is_ok_and(|metadata| metadata.file_type().is_file());
         if !regular || std::fs::read_to_string(&path).ok().as_deref() != Some(proof.source_file_text(source)) {

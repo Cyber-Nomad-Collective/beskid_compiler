@@ -1,8 +1,8 @@
 use std::fs;
 
+use crate::projects::fixture_harness::analyze_file_with_mods;
 use beskid_analysis::CompilationContext;
 use beskid_analysis::projects::TargetKind;
-use crate::projects::fixture_harness::analyze_file_with_mods;
 
 use crate::projects::with_cwd_at_workspace_root;
 use beskid_tests_support::{temp_case_dir, write_project_manifest as write_manifest};

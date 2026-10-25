@@ -143,9 +143,12 @@ mod line_index_tests {
             .map(|(at, _)| at)
             .chain([input.len()])
             .flat_map(|start| {
-                input.char_indices().map(|(at, _)| at).chain([input.len()]).filter(move |end| *end >= start).map(
-                    move |end| pest::Span::new(input, start, end).expect("char-boundary span"),
-                )
+                input
+                    .char_indices()
+                    .map(|(at, _)| at)
+                    .chain([input.len()])
+                    .filter(move |end| *end >= start)
+                    .map(move |end| pest::Span::new(input, start, end).expect("char-boundary span"))
             })
             .collect();
         let scanned: Vec<SpanInfo> = spans.iter().map(SpanInfo::from_span).collect();

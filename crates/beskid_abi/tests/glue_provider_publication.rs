@@ -58,14 +58,17 @@ fn invalid_tool_evidence_never_publishes_partial_kit() {
 fn shared_provider_of_another_kit_is_rejected() {
     let first_prefix = tempfile::tempdir().unwrap();
     let first_inputs = tempfile::tempdir().unwrap();
-    let first = build_runtime_kit_with_glue_provider(&request(first_prefix.path(), first_inputs.path()), tools()).unwrap();
+    let first =
+        build_runtime_kit_with_glue_provider(&request(first_prefix.path(), first_inputs.path()), tools()).unwrap();
 
     let second_prefix = tempfile::tempdir().unwrap();
     let second_inputs = tempfile::tempdir().unwrap();
     let mut second_request = request(second_prefix.path(), second_inputs.path());
     std::fs::write(&second_request.shared_library, b"format-only shared payload of another kit").unwrap();
     let second = beskid_abi::runtime_source::build_canonical_runtime_kit(&second_request).unwrap();
-    assert!(resolve_glue_shared_provider(second_prefix.path(), &second_request.target, second_request.profile).is_err());
+    assert!(
+        resolve_glue_shared_provider(second_prefix.path(), &second_request.target, second_request.profile).is_err()
+    );
 
     std::fs::copy(first.root.join(GLUE_PROVIDER_MANIFEST_V1), second.root.join(GLUE_PROVIDER_MANIFEST_V1)).unwrap();
     let error = resolve_glue_shared_provider(second_prefix.path(), &second_request.target, second_request.profile)

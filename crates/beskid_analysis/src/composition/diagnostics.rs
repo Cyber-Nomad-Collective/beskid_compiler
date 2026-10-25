@@ -5,14 +5,41 @@ use super::model::ScopeId;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CompositionIssue {
-    MissingLaunchHost { span: Option<SpanInfo> },
-    MultipleLaunchHosts { first_span: Option<SpanInfo>, second_span: Option<SpanInfo> },
-    UnknownLaunchHost { host_name: String, span: SpanInfo },
-    HostInheritanceCycle { host_name: String, span: SpanInfo },
-    DuplicateScopeName { scope_name: String, span: SpanInfo, first_scope: ScopeId, second_scope: ScopeId },
-    UnknownParentScope { scope_name: String, parent_scope: ScopeId, span: SpanInfo },
-    UnknownRegistrationId { registration_id: u32, span: Option<SpanInfo> },
-    DependencyCycle { from_id: u32, to_id: u32, span: Option<SpanInfo> },
+    MissingLaunchHost {
+        span: Option<SpanInfo>,
+    },
+    MultipleLaunchHosts {
+        first_span: Option<SpanInfo>,
+        second_span: Option<SpanInfo>,
+    },
+    UnknownLaunchHost {
+        host_name: String,
+        span: SpanInfo,
+    },
+    HostInheritanceCycle {
+        host_name: String,
+        span: SpanInfo,
+    },
+    DuplicateScopeName {
+        scope_name: String,
+        span: SpanInfo,
+        first_scope: ScopeId,
+        second_scope: ScopeId,
+    },
+    UnknownParentScope {
+        scope_name: String,
+        parent_scope: ScopeId,
+        span: SpanInfo,
+    },
+    UnknownRegistrationId {
+        registration_id: u32,
+        span: Option<SpanInfo>,
+    },
+    DependencyCycle {
+        from_id: u32,
+        to_id: u32,
+        span: Option<SpanInfo>,
+    },
     /// A singular inject matched several registrations at one container level.
     AmbiguousInject {
         requested_type: String,
@@ -22,12 +49,29 @@ pub enum CompositionIssue {
         type_span: SpanInfo,
         candidates: Vec<SpanInfo>,
     },
-    UnresolvedInject { requested_type: String, span: SpanInfo },
-    EmptyPluralInject { requested_type: String, span: SpanInfo },
-    WithArgsMismatch { scope_name: String, span: SpanInfo },
-    ScopedOutsideWith { span: SpanInfo },
-    ChildScopeWithoutParent { scope_name: String, span: SpanInfo },
-    InvalidScopeQualifier { qualifier: String, span: SpanInfo },
+    UnresolvedInject {
+        requested_type: String,
+        span: SpanInfo,
+    },
+    EmptyPluralInject {
+        requested_type: String,
+        span: SpanInfo,
+    },
+    WithArgsMismatch {
+        scope_name: String,
+        span: SpanInfo,
+    },
+    ScopedOutsideWith {
+        span: SpanInfo,
+    },
+    ChildScopeWithoutParent {
+        scope_name: String,
+        span: SpanInfo,
+    },
+    InvalidScopeQualifier {
+        qualifier: String,
+        span: SpanInfo,
+    },
     /// A derived host re-registers `binding` with another lifetime than its base host.
     OverrideLifetimeMismatch {
         binding: String,
@@ -38,7 +82,9 @@ pub enum CompositionIssue {
         overridden_lifetime: &'static str,
     },
     /// `startup` runs once per launch at global scope; it cannot be declared inside a scope.
-    StartupInNamedScope { span: SpanInfo },
+    StartupInNamedScope {
+        span: SpanInfo,
+    },
     /// A registry line names a contract as the implementation: a contract cannot be created.
     RegisteredContract {
         contract: String,
@@ -50,22 +96,53 @@ pub enum CompositionIssue {
         candidates: Vec<String>,
     },
     /// The registered implementation is a type the container cannot create.
-    UnconstructibleRegistration { implementation: String, reason: UnconstructibleReason, span: SpanInfo },
+    UnconstructibleRegistration {
+        implementation: String,
+        reason: UnconstructibleReason,
+        span: SpanInfo,
+    },
     /// `single Impl for Contract;` where `Impl` does not conform to `Contract`.
-    NonConformingRegistration { implementation: String, contract: String, span: SpanInfo },
+    NonConformingRegistration {
+        implementation: String,
+        contract: String,
+        span: SpanInfo,
+    },
     /// A `with` that no earlier `launch` of the same function body encloses.
-    WithWithoutLaunch { scope_name: String, span: SpanInfo },
-    InjectOnConstructor { span: SpanInfo },
-    HostInModProject { span: SpanInfo },
+    WithWithoutLaunch {
+        scope_name: String,
+        span: SpanInfo,
+    },
+    InjectOnConstructor {
+        span: SpanInfo,
+    },
+    HostInModProject {
+        span: SpanInfo,
+    },
     /// `launch Host(...)` passes fewer arguments than the host's required parameters or more than
     /// all its parameters (`required..=total`).
     /// `cross_unit`: the host is declared in another unit, which cannot take `launch` arguments.
-    LaunchArgumentCount { host_name: String, required: usize, total: usize, found: usize, cross_unit: bool, span: SpanInfo },
+    LaunchArgumentCount {
+        host_name: String,
+        required: usize,
+        total: usize,
+        found: usize,
+        cross_unit: bool,
+        span: SpanInfo,
+    },
     /// `with Scope(...)` passes a number of arguments outside the scope's `required..=total`.
-    WithArgumentCount { scope_name: String, required: usize, total: usize, found: usize, span: SpanInfo },
+    WithArgumentCount {
+        scope_name: String,
+        required: usize,
+        total: usize,
+        found: usize,
+        span: SpanInfo,
+    },
     /// A host used as a base declares parameters (on itself or on one of its scopes); only the
     /// launched host receives `launch` and `with` arguments.
-    BaseHostParameters { host_name: String, span: SpanInfo },
+    BaseHostParameters {
+        host_name: String,
+        span: SpanInfo,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

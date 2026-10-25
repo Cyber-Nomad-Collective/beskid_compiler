@@ -28,12 +28,20 @@ fn unrelated_v1_exports_remain_closed() {
 fn opaque_borrow_exports_reject_changed_contracts_and_unpinned_resolve() {
     let valid = source();
     for (name, parameters) in [
-        ("begin", "[{ name = arg0, type = u64 }, { name = arg1, type = pointer }, { name = arg2, type = u64 }, { name = arg3, type = pointer }, { name = arg4, type = pointer }]"),
+        (
+            "begin",
+            "[{ name = arg0, type = u64 }, { name = arg1, type = pointer }, { name = arg2, type = u64 }, { name = arg3, type = pointer }, { name = arg4, type = pointer }]",
+        ),
         ("end", "[{ name = arg0, type = u64 }, { name = arg1, type = pointer }, { name = arg2, type = u64 }]"),
     ] {
-        let row = format!("export \"beskid_glue_v1_owner_opaque_borrow_{name}\" {{ params = {parameters} returns = i32 }}");
+        let row =
+            format!("export \"beskid_glue_v1_owner_opaque_borrow_{name}\" {{ params = {parameters} returns = i32 }}");
         assert!(valid.contains(&row), "control must match the real manifest row");
-        for wrong in [row.replace("returns = i32", "returns = pointer"), row.replacen("type = u64", "type = pointer", 1), row.replace(parameters, "[]")] {
+        for wrong in [
+            row.replace("returns = i32", "returns = pointer"),
+            row.replacen("type = u64", "type = pointer", 1),
+            row.replace(parameters, "[]"),
+        ] {
             assert!(load_v5_manifest_source(&valid.replace(&row, &wrong)).is_err());
         }
     }

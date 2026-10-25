@@ -3,7 +3,9 @@ use std::collections::{HashMap, HashSet};
 use crate::runtime_kit::JitRuntimeKit;
 use beskid_abi::abi_v5::TargetMetadata;
 use beskid_abi::runtime_kit::BuildProfile as RuntimeKitProfile;
-use beskid_codegen::cranelift_host::{declare_user_functions, declare_validated_extern_imports, remap_testcase_externals};
+use beskid_codegen::cranelift_host::{
+    declare_user_functions, declare_validated_extern_imports, remap_testcase_externals,
+};
 use beskid_codegen::{CodegenArtifact, emit_string_literals};
 use beskid_pipeline::{
     PipelineObserver, emit_work_unit, observe_phase_result,
@@ -12,7 +14,9 @@ use beskid_pipeline::{
 use cranelift_jit::JITModule;
 use cranelift_module::{FuncId, Linkage, Module};
 
-use super::declare::{declare_exact_runtime_imports, declare_import_allowlist_symbols, validate_exact_symbol_references};
+use super::declare::{
+    declare_exact_runtime_imports, declare_import_allowlist_symbols, validate_exact_symbol_references,
+};
 use super::errors::JitError;
 use super::isa::new_builder;
 

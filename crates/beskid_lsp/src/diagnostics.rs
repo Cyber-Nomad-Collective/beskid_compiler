@@ -13,12 +13,12 @@
 
 use beskid_analysis::AnalysisOptions;
 use beskid_analysis::CompilationContext;
+use beskid_analysis::analysis::diagnostic_codes;
+use beskid_analysis::analysis::diagnostics::source_map::SourceMapper;
 use beskid_analysis::projects::ProgramAssembly;
 use beskid_analysis::projects::{ProjectError, parse_bsol_document, parse_manifest, parse_workspace_manifest};
 use beskid_analysis::services::{self, FrontEndOptions, PrepareOptions, ResolvedInput, resolved_input_from_plan};
 use beskid_analysis::syntax::Program;
-use beskid_analysis::analysis::diagnostic_codes;
-use beskid_analysis::analysis::diagnostics::source_map::SourceMapper;
 use beskid_analysis::{Applicability, DiagnosticTag as BeskidTag, SemanticDiagnostic, Severity, SyntaxFix};
 use beskid_queries::BeskidDatabase;
 use beskid_tools::native_mods::ModHostSelection;
@@ -27,8 +27,8 @@ use tower_lsp_server::ls_types::*;
 use crate::features::project_manifest::api as project_manifest;
 use crate::manifest_uri::{is_manifest_uri, is_standalone_bsol_uri};
 use crate::position::offset_range_to_lsp;
-use crate::workspace_scan::path_to_uri;
 use crate::session::store::{SyntaxDiagnostic, SyntaxDiagnosticSeverity};
+use crate::workspace_scan::path_to_uri;
 
 /// Qualified native Mod execution for editor diagnostics. The editor never builds Mods: it runs
 /// the artifact the CLI cached or the toolchain shipped in the session's Mod host and runtime kit,
@@ -160,9 +160,10 @@ impl BufferNames {
             return true;
         }
         let Some(canonical) = self.canonical.as_deref() else { return false };
-        *self.resolved.entry(name.to_string()).or_insert_with(|| {
-            std::path::Path::new(name).canonicalize().is_ok_and(|resolved| resolved == canonical)
-        })
+        *self
+            .resolved
+            .entry(name.to_string())
+            .or_insert_with(|| std::path::Path::new(name).canonicalize().is_ok_and(|resolved| resolved == canonical))
     }
 }
 
@@ -229,9 +230,9 @@ struct DiagnosticData {
 /// A stable fingerprint of a buffer text (length and 64-bit FNV-1a), so a fix computed for one
 /// revision is never applied to another, whatever the client's version numbering.
 fn text_fingerprint(text: &str) -> String {
-    let hash = text.bytes().fold(0xcbf2_9ce4_8422_2325_u64, |hash, byte| {
-        (hash ^ u64::from(byte)).wrapping_mul(0x0000_0100_0000_01b3)
-    });
+    let hash = text
+        .bytes()
+        .fold(0xcbf2_9ce4_8422_2325_u64, |hash, byte| (hash ^ u64::from(byte)).wrapping_mul(0x0000_0100_0000_01b3));
     format!("{}:{hash:016x}", text.len())
 }
 
@@ -239,8 +240,7 @@ fn text_fingerprint(text: &str) -> String {
 /// attached, preferred only when machine-applicable, with a title that says to check the result
 /// otherwise. Fixes computed for another revision of the buffer than `text` are refused.
 pub(crate) fn quick_fixes_from_data(uri: &Uri, text: &str, diagnostic: &Diagnostic) -> Vec<CodeAction> {
-    let Some(data) =
-        diagnostic.data.clone().and_then(|data| serde_json::from_value::<DiagnosticData>(data).ok())
+    let Some(data) = diagnostic.data.clone().and_then(|data| serde_json::from_value::<DiagnosticData>(data).ok())
     else {
         return Vec::new();
     };
@@ -930,8 +930,17 @@ mod tests {
         )
         .with_related(span(assignment, assignment + 1), "assigned again")
         .with_related_in("/tmp/Other.bd", "i32 X;\n", span(4, 5), "first declared here")
-        .with_fix(Fix::new("Make `n` mutable", Applicability::MachineApplicable, vec![FixEdit::insert(declaration, "mut ")]))
-        .with_fix(Fix::replace("Rename the second `n`", span(assignment, assignment + 1), "m", Applicability::MaybeIncorrect))
+        .with_fix(Fix::new(
+            "Make `n` mutable",
+            Applicability::MachineApplicable,
+            vec![FixEdit::insert(declaration, "mut ")],
+        ))
+        .with_fix(Fix::replace(
+            "Rename the second `n`",
+            span(assignment, assignment + 1),
+            "m",
+            Applicability::MaybeIncorrect,
+        ))
         .with_tag(beskid_analysis::DiagnosticTag::Deprecated);
         super::syntax_diagnostic_from_semantic(diagnostic)
     }
@@ -1008,7 +1017,8 @@ mod tests {
             Some("W1503".into()),
             beskid_analysis::Severity::Warning,
         );
-        let diagnostics = lsp_diagnostics_from_syntax("use A.B;\n", &[super::syntax_diagnostic_from_semantic(diagnostic)]);
+        let diagnostics =
+            lsp_diagnostics_from_syntax("use A.B;\n", &[super::syntax_diagnostic_from_semantic(diagnostic)]);
         assert_eq!(diagnostics[0].tags.as_deref(), Some(&[DiagnosticTag::UNNECESSARY][..]));
         assert_eq!(diagnostics[0].message, "Unused import `A.B`.", "no Help line without help");
     }

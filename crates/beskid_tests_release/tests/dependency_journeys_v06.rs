@@ -71,12 +71,24 @@ fn dep06_01_add_preserves_crlf_unicode_comments_outside_edited_span() {
     write_lib(&home.work(), "Local", "pub i32 Value() { return 1; }\n");
     let manifest = write_app(&home.work(), "App", "i32 Main() { return 0; }\n");
     std::fs::write(&manifest, CRLF_MANIFEST).unwrap();
-    assert_success(&run(cli, &home, &["add", "Local", "--path", "../Local", "--offline", "--project", path_text(&manifest)]), "add");
+    assert_success(
+        &run(cli, &home, &["add", "Local", "--path", "../Local", "--offline", "--project", path_text(&manifest)]),
+        "add",
+    );
     let updated = std::fs::read_to_string(&manifest).unwrap();
-    assert!(updated.starts_with(CRLF_MANIFEST), "bytes before the edited span are preserved byte for byte:\n{updated:?}");
-    assert!(!updated.replace("\r\n", "").contains('\n'), "the manifest keeps CRLF line endings throughout:\n{updated:?}");
+    assert!(
+        updated.starts_with(CRLF_MANIFEST),
+        "bytes before the edited span are preserved byte for byte:\n{updated:?}"
+    );
+    assert!(
+        !updated.replace("\r\n", "").contains('\n'),
+        "the manifest keeps CRLF line endings throughout:\n{updated:?}"
+    );
     assert!(updated.contains("// caf\u{e9}: keep this comment"), "comments and Unicode survive");
-    assert!(updated.contains("dependency \"Local\"") && updated.contains("path = \"../Local\""), "the intent is declared:\n{updated}");
+    assert!(
+        updated.contains("dependency \"Local\"") && updated.contains("path = \"../Local\""),
+        "the intent is declared:\n{updated}"
+    );
 }
 
 #[test]
@@ -86,12 +98,22 @@ fn dep06_01_repeated_add_is_noop_and_conflicting_source_fails_without_rewrite() 
     let registry = Registry::new();
     write_lib(&home.work(), "Local", "pub i32 Value() { return 1; }\n");
     let fixture = Fixture::new(&home, &registry);
-    assert_success(&run(cli, &home, &["add", "Local", "--path", "../Local", "--offline", "--project", fixture.manifest_text()]), "first add");
+    assert_success(
+        &run(cli, &home, &["add", "Local", "--path", "../Local", "--offline", "--project", fixture.manifest_text()]),
+        "first add",
+    );
     let before = fixture.snapshot();
-    assert_success(&run(cli, &home, &["add", "Local", "--path", "../Local", "--offline", "--project", fixture.manifest_text()]), "repeated add");
+    assert_success(
+        &run(cli, &home, &["add", "Local", "--path", "../Local", "--offline", "--project", fixture.manifest_text()]),
+        "repeated add",
+    );
     assert_eq!(fixture.snapshot(), before, "repeated identical intent preserves every project byte");
     let conflict = run(cli, &home, &["add", "Local@1.0.0", "--offline", "--project", fixture.manifest_text()]);
-    assert!(!conflict.status.success(), "a conflicting source for an existing dependency fails:\n{}", transcript(&conflict));
+    assert!(
+        !conflict.status.success(),
+        "a conflicting source for an existing dependency fails:\n{}",
+        transcript(&conflict)
+    );
     assert_eq!(fixture.snapshot(), before, "a rejected conflict rewrites nothing");
     assert_eq!(registry.count(), 0);
 }
@@ -103,13 +125,21 @@ fn dep06_01_git_and_range_selectors_return_usage_guidance() {
     let registry = Registry::new();
     let fixture = Fixture::new(&home, &registry);
     let before = fixture.snapshot();
-    for args in [vec!["add", "Numbers@^1.0"], vec!["add", "Numbers@1.x"], vec!["add", "Numbers@>=1.0.0"], vec!["add", "Numbers", "--git", "https://example.invalid/numbers.git"]] {
+    for args in [
+        vec!["add", "Numbers@^1.0"],
+        vec!["add", "Numbers@1.x"],
+        vec!["add", "Numbers@>=1.0.0"],
+        vec!["add", "Numbers", "--git", "https://example.invalid/numbers.git"],
+    ] {
         let mut full = args.clone();
         full.extend(["--project", fixture.manifest_text()]);
         let output = run(cli, &home, &full);
         assert_eq!(output.status.code(), Some(2), "{args:?} is a usage error:\n{}", transcript(&output));
         let diagnostic = text(&output.stderr).to_ascii_lowercase();
-        assert!(diagnostic.contains("exact") || diagnostic.contains("unsupported") || diagnostic.contains("--help"), "{args:?} explains the exact-version grammar:\n{diagnostic}");
+        assert!(
+            diagnostic.contains("exact") || diagnostic.contains("unsupported") || diagnostic.contains("--help"),
+            "{args:?} explains the exact-version grammar:\n{diagnostic}"
+        );
     }
     assert_eq!(fixture.snapshot(), before, "usage errors write nothing");
     assert_eq!(registry.count(), 0, "usage errors contact no registry");
@@ -151,7 +181,14 @@ fn dep06_01_explicit_member_with_spaced_relative_path_changes_only_that_member()
     write_workspace(&home.work(), &["Zulu", "Alpha"], "default", registry.url());
     let alpha_before = snapshot(&home.work().join("Alpha"));
     let zulu_manifest = home.work().join("Zulu/Zulu.bproj");
-    assert_success(&run(cli, &home, &["add", "Shared", "--path", "../with spaces", "--offline", "--project", path_text(&zulu_manifest)]), "add to the selected member");
+    assert_success(
+        &run(
+            cli,
+            &home,
+            &["add", "Shared", "--path", "../with spaces", "--offline", "--project", path_text(&zulu_manifest)],
+        ),
+        "add to the selected member",
+    );
     let zulu = std::fs::read_to_string(&zulu_manifest).unwrap();
     assert!(zulu.contains("path = \"../with spaces\""), "the relative path with spaces is kept verbatim:\n{zulu}");
     assert!(zulu_manifest.with_file_name("Project.lock").is_file());
@@ -164,15 +201,25 @@ fn dep06_01_path_report_keeps_source_coordinates_without_manufacturing_a_version
     let home = Home::new();
     write_lib(&home.work(), "Local", "pub i32 Value() { return 1; }\n");
     let manifest = write_app(&home.work(), "App", "i32 Main() { return 0; }\n");
-    let added = run(cli, &home, &["add", "Local", "--path", "../Local", "--offline", "--project", path_text(&manifest)]);
+    let added =
+        run(cli, &home, &["add", "Local", "--path", "../Local", "--offline", "--project", path_text(&manifest)]);
     assert_success(&added, "add");
     let report = text(&added.stdout);
-    assert!(report.contains("added Local: path ../Local"), "the add report names the actual path coordinate:\n{report}");
-    assert!(!report.contains("absent -> absent") && !report.contains("0.0.0"), "no version is manufactured for a path dependency:\n{report}");
+    assert!(
+        report.contains("added Local: path ../Local"),
+        "the add report names the actual path coordinate:\n{report}"
+    );
+    assert!(
+        !report.contains("absent -> absent") && !report.contains("0.0.0"),
+        "no version is manufactured for a path dependency:\n{report}"
+    );
     let removed = run(cli, &home, &["remove", "Local", "--offline", "--project", path_text(&manifest)]);
     assert_success(&removed, "remove");
     let report = text(&removed.stdout);
-    assert!(report.contains("removed Local: path ../Local"), "the remove report names the actual path coordinate:\n{report}");
+    assert!(
+        report.contains("removed Local: path ../Local"),
+        "the remove report names the actual path coordinate:\n{report}"
+    );
     assert!(!report.contains("absent -> absent"), "{report}");
 }
 
@@ -189,10 +236,22 @@ fn dep06_02_exact_request_fails_without_substitution_and_pair_unchanged() {
     let fixture = Fixture::new(&home, &registry);
     let before = fixture.snapshot();
     let output = run(cli, &home, &["add", "Numbers@1.2.0", "--project", fixture.manifest_text()]);
-    assert_eq!(output.status.code(), Some(1), "an absent exact version fails without substitution:\n{}", transcript(&output));
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "an absent exact version fails without substitution:\n{}",
+        transcript(&output)
+    );
     let diagnostic = text(&output.stderr);
-    assert!(diagnostic.contains("Numbers") && diagnostic.contains("1.2.0"), "the diagnostic names package and requested version:\n{diagnostic}");
-    assert!(!diagnostic.contains("1.0.0 instead") && !text(&output.stdout).contains("added"), "no other version is substituted:\n{}", transcript(&output));
+    assert!(
+        diagnostic.contains("Numbers") && diagnostic.contains("1.2.0"),
+        "the diagnostic names package and requested version:\n{diagnostic}"
+    );
+    assert!(
+        !diagnostic.contains("1.0.0 instead") && !text(&output.stdout).contains("added"),
+        "no other version is substituted:\n{}",
+        transcript(&output)
+    );
     assert_eq!(fixture.snapshot(), before, "manifest and lock are unchanged");
     assert!(!fixture.lock_path().exists());
 }
@@ -210,9 +269,15 @@ fn dep06_02_malformed_response_and_503_fail_without_warning_success() {
         assert_eq!(output.status.code(), Some(1), "{label} registry response fails the add:\n{}", transcript(&output));
         let combined = format!("{}{}", text(&output.stdout), text(&output.stderr)).to_ascii_lowercase();
         assert!(!combined.contains("added numbers"), "{label}: no success is reported:\n{combined}");
-        assert!(!(combined.contains("warning") && combined.contains("unresolved")), "{label}: no warning-only success:\n{combined}");
+        assert!(
+            !(combined.contains("warning") && combined.contains("unresolved")),
+            "{label}: no warning-only success:\n{combined}"
+        );
         assert!(combined.contains("numbers"), "{label}: the diagnostic names the package:\n{combined}");
-        assert!(!combined.contains("token") && !combined.contains("api_key"), "{label}: credential-free guidance:\n{combined}");
+        assert!(
+            !combined.contains("token") && !combined.contains("api_key"),
+            "{label}: credential-free guidance:\n{combined}"
+        );
         assert_eq!(fixture.snapshot(), before, "{label}: the pair is unchanged");
         assert!(registry.count() >= 1, "{label}: the registry was consulted");
     }
@@ -233,8 +298,16 @@ fn dep06_02_bare_add_selects_greatest_stable_independent_of_response_order() {
         registry.package("Numbers", "2.0.0", 2);
         let fixture = Fixture::new(&home, &registry);
         assert_success(&run(cli, &home, &["add", "Numbers", "--project", fixture.manifest_text()]), "bare add");
-        assert!(fixture.manifest().contains("version = \"2.0.0\""), "exact stable 2.0.0 is recorded regardless of order:\n{}", fixture.manifest());
-        assert!(lock_pin(&fixture.lock(), "Numbers").expect("Numbers pin").contains("resolved_version=2.0.0"), "{}", fixture.lock());
+        assert!(
+            fixture.manifest().contains("version = \"2.0.0\""),
+            "exact stable 2.0.0 is recorded regardless of order:\n{}",
+            fixture.manifest()
+        );
+        assert!(
+            lock_pin(&fixture.lock(), "Numbers").expect("Numbers pin").contains("resolved_version=2.0.0"),
+            "{}",
+            fixture.lock()
+        );
     }
 }
 
@@ -249,7 +322,10 @@ fn two_exact_dependencies(cli: &Cli, home: &Home, registry: &Registry) -> Fixtur
     }
     let fixture = Fixture::new(home, registry);
     for name in ["Numbers", "Other"] {
-        assert_success(&run(cli, home, &["add", &format!("{name}@1.0.0"), "--project", fixture.manifest_text()]), &format!("add {name}"));
+        assert_success(
+            &run(cli, home, &["add", &format!("{name}@1.0.0"), "--project", fixture.manifest_text()]),
+            &format!("add {name}"),
+        );
     }
     for name in ["Numbers", "Other"] {
         registry.versions(name, r#"[{"version":"1.0.0","isYanked":false},{"version":"2.0.0","isYanked":false}]"#);
@@ -270,7 +346,10 @@ fn dep06_03_update_without_scope_exits_2() {
         let output = run(cli, &home, &full);
         assert_eq!(output.status.code(), Some(2), "{args:?} is a usage error:\n{}", transcript(&output));
         let diagnostic = text(&output.stderr);
-        assert!(diagnostic.contains("--all") || diagnostic.contains("package"), "{args:?} shows scope guidance:\n{diagnostic}");
+        assert!(
+            diagnostic.contains("--all") || diagnostic.contains("package"),
+            "{args:?} shows scope guidance:\n{diagnostic}"
+        );
     }
     assert_eq!(fixture.snapshot(), before);
     assert_eq!(registry.count(), 0);
@@ -285,10 +364,17 @@ fn dep06_03_selected_and_all_refresh_preserve_exact_intent_and_unrelated_pins() 
     let manifest_before = fixture.manifest();
     let other_pin = lock_pin(&fixture.lock(), "Other").expect("Other pin");
     let numbers_pin = lock_pin(&fixture.lock(), "Numbers").expect("Numbers pin");
-    assert_success(&run(cli, &home, &["update", "Numbers", "--project", fixture.manifest_text()]), "selected update without version");
+    assert_success(
+        &run(cli, &home, &["update", "Numbers", "--project", fixture.manifest_text()]),
+        "selected update without version",
+    );
     assert_eq!(fixture.manifest(), manifest_before, "selected refresh never rewrites exact intent");
     assert_eq!(lock_pin(&fixture.lock(), "Other").unwrap(), other_pin, "the unselected pin is preserved");
-    assert!(lock_pin(&fixture.lock(), "Numbers").unwrap().contains("resolved_version=1.0.0"), "exact 1.0.0 stays pinned:\n{}", fixture.lock());
+    assert!(
+        lock_pin(&fixture.lock(), "Numbers").unwrap().contains("resolved_version=1.0.0"),
+        "exact 1.0.0 stays pinned:\n{}",
+        fixture.lock()
+    );
     assert_success(&run(cli, &home, &["update", "--all", "--project", fixture.manifest_text()]), "update --all");
     assert_eq!(fixture.manifest(), manifest_before, "--all never rewrites exact intent");
     assert_eq!(lock_pin(&fixture.lock(), "Other").unwrap(), other_pin);
@@ -302,9 +388,15 @@ fn dep06_03_update_version_changes_only_selected_intent_and_reachable_closure() 
     let registry = Registry::new();
     let fixture = two_exact_dependencies(cli, &home, &registry);
     let other_pin = lock_pin(&fixture.lock(), "Other").expect("Other pin");
-    assert_success(&run(cli, &home, &["update", "Numbers", "--version", "2.0.0", "--project", fixture.manifest_text()]), "update --version");
+    assert_success(
+        &run(cli, &home, &["update", "Numbers", "--version", "2.0.0", "--project", fixture.manifest_text()]),
+        "update --version",
+    );
     let manifest = fixture.manifest();
-    assert!(manifest.contains("dependency \"Numbers\"") && manifest.matches("version = \"2.0.0\"").count() == 1, "only the selected intent moves to 2.0.0:\n{manifest}");
+    assert!(
+        manifest.contains("dependency \"Numbers\"") && manifest.matches("version = \"2.0.0\"").count() == 1,
+        "only the selected intent moves to 2.0.0:\n{manifest}"
+    );
     assert!(manifest.matches("version = \"1.0.0\"").count() == 1, "the other exact intent stays 1.0.0:\n{manifest}");
     assert!(lock_pin(&fixture.lock(), "Numbers").unwrap().contains("resolved_version=2.0.0"), "{}", fixture.lock());
     assert_eq!(lock_pin(&fixture.lock(), "Other").unwrap(), other_pin, "the unrelated pin is byte-identical");
@@ -323,14 +415,21 @@ fn dep06_03_removing_one_direct_keeps_shared_transitive_locked() {
     }
     let fixture = Fixture::new(&home, &registry);
     for name in ["Alpha", "Beta"] {
-        assert_success(&run(cli, &home, &["add", &format!("{name}@1.0.0"), "--project", fixture.manifest_text()]), &format!("add {name}"));
+        assert_success(
+            &run(cli, &home, &["add", &format!("{name}@1.0.0"), "--project", fixture.manifest_text()]),
+            &format!("add {name}"),
+        );
     }
     let shared_pin = lock_pin(&fixture.lock(), "Shared").expect("the shared transitive is locked");
     assert_success(&run(cli, &home, &["remove", "Alpha", "--project", fixture.manifest_text()]), "remove Alpha");
     let lock = fixture.lock();
     assert!(lock_pin(&lock, "Alpha").is_none(), "the removed direct is gone:\n{lock}");
     assert!(lock_pin(&lock, "Beta").is_some(), "the remaining direct stays:\n{lock}");
-    assert_eq!(lock_pin(&lock, "Shared").as_deref(), Some(shared_pin.as_str()), "the transitive reachable from Beta stays locked:\n{lock}");
+    assert_eq!(
+        lock_pin(&lock, "Shared").as_deref(),
+        Some(shared_pin.as_str()),
+        "the transitive reachable from Beta stays locked:\n{lock}"
+    );
 }
 
 #[test]
@@ -340,10 +439,17 @@ fn dep06_03_update_dry_run_reports_effects_and_changes_no_bytes() {
     let registry = Registry::new();
     let fixture = two_exact_dependencies(cli, &home, &registry);
     let before = fixture.snapshot();
-    let output = run(cli, &home, &["update", "Numbers", "--version", "2.0.0", "--dry-run", "--project", fixture.manifest_text()]);
+    let output = run(
+        cli,
+        &home,
+        &["update", "Numbers", "--version", "2.0.0", "--dry-run", "--project", fixture.manifest_text()],
+    );
     assert_success(&output, "update --dry-run");
     let report = text(&output.stdout);
-    assert!(report.contains("Numbers") && report.contains("1.0.0") && report.contains("2.0.0"), "the dry run reports old and new coordinates:\n{report}");
+    assert!(
+        report.contains("Numbers") && report.contains("1.0.0") && report.contains("2.0.0"),
+        "the dry run reports old and new coordinates:\n{report}"
+    );
     assert_eq!(fixture.snapshot(), before, "a dry run changes no manifest, lock or materialized byte");
 }
 
@@ -375,7 +481,11 @@ fn dep06_04_build_locked_fetches_exact_pin_without_lock_write() {
     let requests_before = registry.count();
     let output = run(cli, &home, &["build", "--locked", "--plain", "--project", fixture.manifest_text()]);
     assert_success(&output, "build --locked with a cold cache");
-    assert!(registry.requests()[requests_before..].iter().any(|path| path.ends_with("/1.0.0/download")), "the exact pin is fetched:\n{:?}", registry.requests());
+    assert!(
+        registry.requests()[requests_before..].iter().any(|path| path.ends_with("/1.0.0/download")),
+        "the exact pin is fetched:\n{:?}",
+        registry.requests()
+    );
     assert_eq!(fixture.lock(), lock_before, "--locked never writes the lock");
 }
 
@@ -387,9 +497,15 @@ fn dep06_04_build_offline_warm_succeeds_cold_and_tampered_fail_with_zero_request
     let fixture = locked_registry_app(cli, &home, &registry);
     assert_success(&run(cli, &home, &["build", "--plain", "--project", fixture.manifest_text()]), "warm the cache");
     let count = registry.count();
-    assert_success(&run(cli, &home, &["build", "--offline", "--plain", "--project", fixture.manifest_text()]), "warm offline build");
+    assert_success(
+        &run(cli, &home, &["build", "--offline", "--plain", "--project", fixture.manifest_text()]),
+        "warm offline build",
+    );
     assert_eq!(registry.count(), count, "warm offline makes no request");
-    let cached = snapshot(fixture.project()).into_keys().find(|path| path.starts_with("obj") && path.ends_with("Main.bd") && path.to_string_lossy().contains("Numbers")).expect("materialized registry source");
+    let cached = snapshot(fixture.project())
+        .into_keys()
+        .find(|path| path.starts_with("obj") && path.ends_with("Main.bd") && path.to_string_lossy().contains("Numbers"))
+        .expect("materialized registry source");
     std::fs::write(fixture.project().join(&cached), "tampered\n").unwrap();
     let tampered = run(cli, &home, &["build", "--offline", "--plain", "--project", fixture.manifest_text()]);
     assert_eq!(tampered.status.code(), Some(1), "tampered cache fails offline:\n{}", transcript(&tampered));
@@ -398,7 +514,10 @@ fn dep06_04_build_offline_warm_succeeds_cold_and_tampered_fail_with_zero_request
     let cold = run(cli, &home, &["build", "--offline", "--plain", "--project", fixture.manifest_text()]);
     assert_eq!(cold.status.code(), Some(1), "cold cache fails offline:\n{}", transcript(&cold));
     let diagnostic = text(&cold.stderr).to_ascii_lowercase();
-    assert!(diagnostic.contains("offline") && (diagnostic.contains("cache") || diagnostic.contains("pin")), "cold failure names the offline cache condition:\n{diagnostic}");
+    assert!(
+        diagnostic.contains("offline") && (diagnostic.contains("cache") || diagnostic.contains("pin")),
+        "cold failure names the offline cache condition:\n{diagnostic}"
+    );
     assert_eq!(registry.count(), count, "cold offline makes no request");
     assert!(!fixture.project().join("obj").exists(), "cold offline fails before executable preparation");
 }
@@ -430,10 +549,19 @@ fn dep06_04_doc_offline_fails_before_network_or_output() {
     let home = Home::new();
     let registry = Registry::new();
     let fixture = Fixture::new(&home, &registry);
-    std::fs::write(&fixture.manifest, format!("{APP}dependency \"Numbers\" {{ source = \"registry\" version = \"1.0.0\" }}\n")).unwrap();
+    std::fs::write(
+        &fixture.manifest,
+        format!("{APP}dependency \"Numbers\" {{ source = \"registry\" version = \"1.0.0\" }}\n"),
+    )
+    .unwrap();
     let before = fixture.snapshot();
     let output = run(cli, &home, &["doc", "--offline", "--project", fixture.manifest_text()]);
-    assert_eq!(output.status.code(), Some(1), "offline doc with an uncached dependency fails:\n{}", transcript(&output));
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "offline doc with an uncached dependency fails:\n{}",
+        transcript(&output)
+    );
     let diagnostic = text(&output.stderr).to_ascii_lowercase();
     assert!(diagnostic.contains("offline"), "{diagnostic}");
     assert_eq!(registry.count(), 0, "doc shares the offline policy: no request");
@@ -459,7 +587,11 @@ fn dep06_05_registry_failure_during_add_leaves_original_pair() {
     assert_eq!(output.status.code(), Some(1), "a download failure during add exits nonzero:\n{}", transcript(&output));
     assert_eq!(fixture.snapshot(), before, "the original pair is unchanged");
     assert!(!fixture.lock_path().exists(), "the missing-lock state is preserved");
-    assert!(registry.requests().iter().any(|path| path.ends_with("/download")), "the failure happened at download: {:?}", registry.requests());
+    assert!(
+        registry.requests().iter().any(|path| path.ends_with("/download")),
+        "the failure happened at download: {:?}",
+        registry.requests()
+    );
 }
 
 /// Transaction I/O that exits the process after the first visible project replacement (the manifest),
@@ -467,7 +599,8 @@ fn dep06_05_registry_failure_during_add_leaves_original_pair() {
 struct CrashIo;
 impl beskid_analysis::projects::dependency_transaction::DependencyTransactionIo for CrashIo {
     fn Replace(&self, source: &Path, destination: &Path) -> std::io::Result<()> {
-        beskid_analysis::projects::dependency_transaction::NativeDependencyTransactionIo.Replace(source, destination)?;
+        beskid_analysis::projects::dependency_transaction::NativeDependencyTransactionIo
+            .Replace(source, destination)?;
         if destination.components().any(|component| component.as_os_str() == ".beskid") {
             return Ok(());
         }
@@ -492,20 +625,35 @@ fn dep06_05_interrupted_pair_is_recovered_by_next_installed_command_before_reads
         let original = std::fs::read(&manifest).unwrap();
         let original_lock = std::fs::read(manifest.with_file_name("Project.lock")).unwrap();
         let replacement = format!("{}// interrupted replacement\n", String::from_utf8_lossy(&original));
-        CommitDependencyPairWithIo(&manifest, original.as_slice(), Some(original_lock.as_slice()), replacement.as_bytes(), b"lock-replacement\n", &CrashIo).unwrap();
+        CommitDependencyPairWithIo(
+            &manifest,
+            original.as_slice(),
+            Some(original_lock.as_slice()),
+            replacement.as_bytes(),
+            b"lock-replacement\n",
+            &CrashIo,
+        )
+        .unwrap();
         panic!("crash seam did not exit");
     }
     let cli = Cli::qualified();
     let home = Home::new();
     write_lib(&home.work(), "Local", "pub i32 Value() { return 1; }\n");
     let manifest = write_app(&home.work(), "App", "i32 Main() { return 0; }\n");
-    assert_success(&run(cli, &home, &["add", "Local", "--path", "../Local", "--offline", "--project", path_text(&manifest)]), "add path dependency");
+    assert_success(
+        &run(cli, &home, &["add", "Local", "--path", "../Local", "--offline", "--project", path_text(&manifest)]),
+        "add path dependency",
+    );
     let original = std::fs::read(&manifest).unwrap();
     let original_lock = std::fs::read(manifest.with_file_name("Project.lock")).unwrap();
     // The child's libtest streams are captured, never inherited: an inherited run header would land
     // in this harness's stdout and break the single-run libtest output the release case requires.
     let child = std::process::Command::new(std::env::current_exe().unwrap())
-        .args(["--exact", "dependency_journeys_v06::dep06_05_interrupted_pair_is_recovered_by_next_installed_command_before_reads", "--nocapture"])
+        .args([
+            "--exact",
+            "dependency_journeys_v06::dep06_05_interrupted_pair_is_recovered_by_next_installed_command_before_reads",
+            "--nocapture",
+        ])
         .env(CRASH_ENV, &manifest)
         .stdin(std::process::Stdio::null())
         .output()
@@ -516,7 +664,11 @@ fn dep06_05_interrupted_pair_is_recovered_by_next_installed_command_before_reads
     let check = run(cli, &home, &["check", "--plain", "--offline", "--project", path_text(&manifest)]);
     assert_success(&check, "the next installed command");
     assert_eq!(std::fs::read(&manifest).unwrap(), original, "the original manifest is recovered before reads");
-    assert_eq!(std::fs::read(manifest.with_file_name("Project.lock")).unwrap(), original_lock, "the original lock is recovered");
+    assert_eq!(
+        std::fs::read(manifest.with_file_name("Project.lock")).unwrap(),
+        original_lock,
+        "the original lock is recovered"
+    );
 }
 
 #[test]

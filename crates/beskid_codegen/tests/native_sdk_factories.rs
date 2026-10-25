@@ -81,9 +81,11 @@ fn canonical_sdk_request_factories_lower_with_compiler_owned_descriptors() {
         .count();
     assert_eq!(request_units, 1, "the SDK request source must register exactly once");
     let canonical_compilation = std::fs::read_to_string(package.join("src/Beskid/Compiler/Compilation.bd")).unwrap();
-    assert!(assembly.units.iter().any(|unit| unit.path.ends_with("Beskid/Syntax/Nodes/NodeRef.bd")),
+    assert!(
+        assembly.units.iter().any(|unit| unit.path.ends_with("Beskid/Syntax/Nodes/NodeRef.bd")),
         "qualified Compilation.entryRoot dependency NodeRef is absent from production assembly: {:?}",
-        assembly.units.iter().map(|unit| &unit.path).collect::<Vec<_>>());
+        assembly.units.iter().map(|unit| &unit.path).collect::<Vec<_>>()
+    );
     let compilation_units = assembly
         .units
         .iter()
@@ -147,7 +149,10 @@ fn canonical_sdk_request_factories_lower_with_compiler_owned_descriptors() {
             generation: beskid_queries::SyntaxGenerationId(assembly.generation.0 + 1),
             ..constructor_keys[0]
         };
-        assert!(lower_prepared_syntax_selected_callables(db, &front, &[stale_selection], target.clone(), isa.as_ref()).is_err());
+        assert!(
+            lower_prepared_syntax_selected_callables(db, &front, &[stale_selection], target.clone(), isa.as_ref())
+                .is_err()
+        );
         let prepared = lower_prepared_syntax_selected_callables(db, &front, &constructor_keys, target, isa.as_ref())?;
         let mut issued = std::collections::HashSet::new();
         for callable in prepared.callables() {

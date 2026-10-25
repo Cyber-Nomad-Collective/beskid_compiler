@@ -197,7 +197,13 @@ pub enum ClifStatement {
     /// `%result = length %parameter`.
     Length { line: usize, result: String, parameter: usize },
     /// `[%result =] call @symbol(args) [-> type]`.
-    Call { line: usize, result: Option<String>, symbol: String, arguments: Vec<ClifOperand>, result_type: Option<String> },
+    Call {
+        line: usize,
+        result: Option<String>,
+        symbol: String,
+        arguments: Vec<ClifOperand>,
+        result_type: Option<String>,
+    },
     /// `return %value`.
     Return { line: usize, value: ClifOperand },
 }
@@ -350,10 +356,10 @@ pub fn parse_clif_surface_in(body: &str, mode: ClifBlockMode) -> Result<ClifBloc
     for (position, statement) in statements.iter().enumerate() {
         let line = statement.line();
         let (uses, defines): (Vec<&ClifOperand>, Vec<&String>) = match statement {
-            ClifStatement::Instruction { results, operands, .. } => (operands.iter().collect(), results.iter().collect()),
-            ClifStatement::Payload { result, .. } | ClifStatement::Length { result, .. } => {
-                (Vec::new(), vec![result])
+            ClifStatement::Instruction { results, operands, .. } => {
+                (operands.iter().collect(), results.iter().collect())
             }
+            ClifStatement::Payload { result, .. } | ClifStatement::Length { result, .. } => (Vec::new(), vec![result]),
             ClifStatement::Call { result, arguments, .. } => {
                 if result.is_none() && position != final_index && mode == ClifBlockMode::Value {
                     return Err(error(line, "a result-less call is only allowed as the final statement"));
@@ -504,10 +510,8 @@ fn parse_statement(line: usize, text: &str) -> Result<ClifStatement, ClifSurface
 
     let (results, rhs) = match split_definition(text) {
         Some((lhs, rhs)) => {
-            let results = lhs
-                .split(',')
-                .map(|token| parse_local_definition(line, token))
-                .collect::<Result<Vec<_>, _>>()?;
+            let results =
+                lhs.split(',').map(|token| parse_local_definition(line, token)).collect::<Result<Vec<_>, _>>()?;
             (results, rhs.trim())
         }
         None => (Vec::new(), text),
@@ -572,7 +576,8 @@ fn parse_call(line: usize, result: Option<String>, text: &str) -> Result<ClifSta
     let Some(rest) = text.strip_prefix('@') else {
         return Err(error(line, "expected `call @symbol(...)`"));
     };
-    let symbol_end = rest.find(|character: char| !(is_identifier_char(character) || character == '$')).unwrap_or(rest.len());
+    let symbol_end =
+        rest.find(|character: char| !(is_identifier_char(character) || character == '$')).unwrap_or(rest.len());
     let symbol = &rest[..symbol_end];
     if symbol.is_empty() {
         return Err(error(line, "`call` requires a symbol name after `@`"));
@@ -596,7 +601,10 @@ fn parse_call(line: usize, result: Option<String>, text: &str) -> Result<ClifSta
     let tail = rest[close + 1..].trim();
     let result_type = if tail.is_empty() {
         if result.is_some() {
-            return Err(error(line, format!("annotate the result of `@{symbol}`: `%name = call @{symbol}(...) -> i64`")));
+            return Err(error(
+                line,
+                format!("annotate the result of `@{symbol}`: `%name = call @{symbol}(...) -> i64`"),
+            ));
         }
         None
     } else if let Some(annotation) = tail.strip_prefix("->") {
@@ -682,12 +690,14 @@ mod tests {
     #[test]
     fn payload_blocks_may_name_calls() {
         // Whether the callee may receive or outlive a payload address is a lowering decision.
-        parse_clif_surface("%p = payload %0\n%r = call @labs(%1) -> i64\nreturn %r").expect("payload block with a call");
+        parse_clif_surface("%p = payload %0\n%r = call @labs(%1) -> i64\nreturn %r")
+            .expect("payload block with a call");
     }
 
     #[test]
     fn typed_call_parses_result_annotation() {
-        let surface = parse_clif_surface("%r = call @labs(%0) -> i64\n%s = iadd %r, %0\nreturn %s").expect("typed call");
+        let surface =
+            parse_clif_surface("%r = call @labs(%0) -> i64\n%s = iadd %r, %0\nreturn %s").expect("typed call");
         assert!(matches!(
             &surface.statements[0],
             ClifStatement::Call { result: Some(name), result_type: Some(ty), .. } if name == "r" && ty == "i64"

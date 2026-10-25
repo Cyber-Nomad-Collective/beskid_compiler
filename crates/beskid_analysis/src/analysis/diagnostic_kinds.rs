@@ -840,7 +840,11 @@ mod query_gate_kind_tests {
             detail: "Optional takes a boolean literal: Optional:true or Optional:false".to_string(),
         };
         assert_eq!(issue.code(), "T0906");
-        assert_ne!(issue.code(), SemanticIssueKind::NumericLiteralOutOfRange { value: "300".to_string(), primitive: "i8".to_string() }.code());
+        assert_ne!(
+            issue.code(),
+            SemanticIssueKind::NumericLiteralOutOfRange { value: "300".to_string(), primitive: "i8".to_string() }
+                .code()
+        );
         assert_eq!(issue.message(), "invalid optional extern contract");
         assert_eq!(issue.label(), "extern attribute");
         assert_eq!(issue.help().as_deref(), Some("Optional takes a boolean literal: Optional:true or Optional:false"));
@@ -865,7 +869,11 @@ mod query_gate_kind_tests {
         let kinds = [
             SemanticIssueKind::UseAfterMove { name: name() },
             SemanticIssueKind::CapturedLocalAssignedInBoundLambda { name: name() },
-            SemanticIssueKind::CaptureNotTransferable { name: name(), type_name: "Channel<i64>".into(), class: "Never".into() },
+            SemanticIssueKind::CaptureNotTransferable {
+                name: name(),
+                type_name: "Channel<i64>".into(),
+                class: "Never".into(),
+            },
             SemanticIssueKind::MovedCaptureWithoutMove { name: name() },
             SemanticIssueKind::CapturesArgumentNotLiteral,
             SemanticIssueKind::MoveOfNonOwningName { name: name(), class: Some("Shared".into()) },
@@ -873,7 +881,11 @@ mod query_gate_kind_tests {
             SemanticIssueKind::BorrowEscapes { name: name() },
             SemanticIssueKind::ImplicitAliasOfMovedValue { name: name() },
             SemanticIssueKind::DestructiveReadWithoutEmpty { field: "f".into(), type_name: "i64".into() },
-            SemanticIssueKind::ImmutableFieldNotShared { type_name: "T".into(), field: "f".into(), class: "Moved".into() },
+            SemanticIssueKind::ImmutableFieldNotShared {
+                type_name: "T".into(),
+                field: "f".into(),
+                class: "Moved".into(),
+            },
             SemanticIssueKind::ImmutableFieldAssignment { type_name: "T".into(), field: "f".into() },
             SemanticIssueKind::MarkerOnNeverTransferable {
                 marker: "Isolated".into(),
@@ -898,7 +910,10 @@ mod query_gate_kind_tests {
             SemanticIssueKind::MovedCaptureWithoutMove { name: "item".into() }.help().as_deref(),
             Some("write `move item`")
         );
-        assert_eq!(SemanticIssueKind::CapturedLocalAssignedInBoundLambda { name: name() }.help().as_deref(), Some("use a reduction"));
+        assert_eq!(
+            SemanticIssueKind::CapturedLocalAssignedInBoundLambda { name: name() }.help().as_deref(),
+            Some("use a reduction")
+        );
         assert_eq!(SemanticIssueKind::CapturesArgumentNotLiteral.help().as_deref(), Some("pass the lambda literal"));
         assert_eq!(
             SemanticIssueKind::BorrowEscapes { name: "buffer".into() }.help().as_deref(),
@@ -917,7 +932,9 @@ mod query_gate_kind_tests {
             Some("write `move block`")
         );
         assert_eq!(
-            SemanticIssueKind::DestructiveReadWithoutEmpty { field: "f".into(), type_name: "i64".into() }.help().as_deref(),
+            SemanticIssueKind::DestructiveReadWithoutEmpty { field: "f".into(), type_name: "i64".into() }
+                .help()
+                .as_deref(),
             Some("use `exchange(<place>, <value>)`")
         );
         assert_eq!(

@@ -626,7 +626,9 @@ mod tests {
                 let seen = Arc::clone(&seen);
                 let flag = complete.load(std::sync::atomic::Ordering::Acquire);
                 Box::pin(async move {
-                    seen.lock().expect("seen").push((format!("{:?}:{}", phase, root.file_name().unwrap().to_string_lossy()), flag));
+                    seen.lock()
+                        .expect("seen")
+                        .push((format!("{:?}:{}", phase, root.file_name().unwrap().to_string_lossy()), flag));
                 })
             })
         };
@@ -785,7 +787,12 @@ target "App" {
         fs::write(&lock, "# Project.lock v1\n").expect("replace lock with v1");
         refresh_after_disk_change(&client, &state, std::slice::from_ref(&lock)).await;
         let invalid = next_for_uri(&mut notifications, &uri).await;
-        assert!(invalid.diagnostics.iter().any(|d| d.message.contains("v1") && d.message.contains("beskid dev project lock")));
+        assert!(
+            invalid
+                .diagnostics
+                .iter()
+                .any(|d| d.message.contains("v1") && d.message.contains("beskid dev project lock"))
+        );
 
         fs::write(&lock, valid).expect("restore v2");
         refresh_after_disk_change(&client, &state, &[lock]).await;
@@ -807,7 +814,12 @@ target "App" {
         fs::write(&lock, "# Project.lock v1\n").expect("replace lock with v1");
         refresh_after_disk_change(&client, &state, std::slice::from_ref(&lock)).await;
         let invalid = next_for_uri(&mut notifications, &uri).await;
-        assert!(invalid.diagnostics.iter().any(|d| d.message.contains("v1") && d.message.contains("beskid dev project lock")));
+        assert!(
+            invalid
+                .diagnostics
+                .iter()
+                .any(|d| d.message.contains("v1") && d.message.contains("beskid dev project lock"))
+        );
 
         fs::write(&lock, valid).expect("restore v2");
         refresh_after_disk_change(&client, &state, &[lock]).await;
@@ -824,7 +836,12 @@ target "App" {
         fs::write(&lock, "# Project.lock v1\n").expect("replace lock with v1");
         scan_workspace(&client, &state, temp.path(), None).await;
         let invalid = next_for_uri(&mut notifications, &uri).await;
-        assert!(invalid.diagnostics.iter().any(|d| d.message.contains("v1") && d.message.contains("beskid dev project lock")));
+        assert!(
+            invalid
+                .diagnostics
+                .iter()
+                .any(|d| d.message.contains("v1") && d.message.contains("beskid dev project lock"))
+        );
 
         fs::write(&lock, valid).expect("restore v2");
         scan_workspace(&client, &state, temp.path(), None).await;

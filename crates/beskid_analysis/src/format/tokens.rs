@@ -14,8 +14,8 @@
 //! Anything else that differs (a string interpolation printed as `+` concatenation, a lost
 //! operator, a changed literal) makes the formatter refuse the file.
 
-use crate::parser::Rule;
 use crate::format::trivia::{Comment, is_opaque};
+use crate::parser::Rule;
 use pest::iterators::Pair;
 
 /// A token whose text is taken whole (string, character, documentation, code or CLIF literal).
@@ -164,9 +164,11 @@ fn normalize(mut tokens: Vec<String>) -> Vec<String> {
 
 /// The first place where two token lists differ, with a little context, for the error message.
 pub(crate) fn first_difference(before: &[String], after: &[String]) -> Option<String> {
-    let index = before.iter().zip(after.iter()).position(|(a, b)| a != b).or_else(|| {
-        (before.len() != after.len()).then(|| before.len().min(after.len()))
-    })?;
+    let index = before
+        .iter()
+        .zip(after.iter())
+        .position(|(a, b)| a != b)
+        .or_else(|| (before.len() != after.len()).then(|| before.len().min(after.len())))?;
     let window = |tokens: &[String]| {
         let from = index.saturating_sub(3);
         let to = (index + 4).min(tokens.len());

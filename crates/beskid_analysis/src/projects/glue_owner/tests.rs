@@ -1,8 +1,6 @@
 use std::{fs, path::Path};
 
-use super::{
-    GLUE_OWNER_MAX_FILE_BYTES, GLUE_OWNER_MAX_FILES, collect_glue_owner_sources, glue_owner_directory,
-};
+use super::{GLUE_OWNER_MAX_FILE_BYTES, GLUE_OWNER_MAX_FILES, collect_glue_owner_sources, glue_owner_directory};
 use crate::projects::{
     error::ProjectError,
     model::{ProjectGlueBackend, ProjectGlueOwner},

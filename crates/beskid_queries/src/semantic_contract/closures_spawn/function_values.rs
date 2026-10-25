@@ -51,8 +51,7 @@ pub(in crate::semantic_contract) fn function_value_callee(
         if resolve_lexical_declaration(program, index, key.node, first.node.name.node.name.as_str()).is_none() {
             return None;
         }
-        if segments.len() == 1 && function_value_declaration(program, index, key.node, &path.node.path.node).is_some()
-        {
+        if segments.len() == 1 && function_value_declaration(program, index, key.node, &path.node.path.node).is_some() {
             return Some(callee);
         }
     }
@@ -176,13 +175,21 @@ pub fn specialized_closure_signature(
         return Ok(None);
     };
     let body = index
-        .direct_child_id(program, lambda.node, beskid_analysis::syntax_query::DynNodeRef::from(expression.body.as_ref()))
+        .direct_child_id(
+            program,
+            lambda.node,
+            beskid_analysis::syntax_query::DynNodeRef::from(expression.body.as_ref()),
+        )
         .map(|node| AstNodeKey { node: normalized_expression_node(index, node), ..lambda })
         .ok_or_else(|| source_expression_unavailable(db, lambda, "lambda body node is absent"))?;
     let GenericSourceTypeIdentity::Function { parameters, result } =
         lambda_identity(db, program, index, lambda, Some(enclosing))?
     else {
-        return Err(source_expression_unavailable(db, lambda, "lambda has no function identity in this specialization"));
+        return Err(source_expression_unavailable(
+            db,
+            lambda,
+            "lambda has no function identity in this specialization",
+        ));
     };
     let Some(closure) = closure_environment(db, lambda)? else {
         return Ok(None);
@@ -191,7 +198,11 @@ pub fn specialized_closure_signature(
         .captures
         .iter()
         .map(|capture| {
-            let abi_type = match crate::semantic_contract::contracts::specialized_local_declaration_identity(db, capture.declaration, enclosing) {
+            let abi_type = match crate::semantic_contract::contracts::specialized_local_declaration_identity(
+                db,
+                capture.declaration,
+                enclosing,
+            ) {
                 // A value capture of a native pointer has no owner to keep it alive.
                 Some(Ok(identity))
                     if capture.class == CaptureStorageClass::TransferableValue
@@ -212,7 +223,9 @@ pub fn specialized_closure_signature(
             Ok(ClosureEnvironmentField { capture: *capture, abi_type })
         })
         .collect::<Result<Vec<_>, SemanticError>>()?;
-    fields.sort_by_key(|field| (field.capture.slot.owner.node.0, field.capture.slot.index, field.capture.declaration.node.0));
+    fields.sort_by_key(|field| {
+        (field.capture.slot.owner.node.0, field.capture.slot.index, field.capture.declaration.node.0)
+    });
     Ok(Some(SpecializedClosureSignature {
         lambda,
         body,
@@ -257,8 +270,11 @@ pub(in crate::semantic_contract) fn lambda_value_required_tracked(
                 if binding.mutable || lambda_has_statement_body(program, index, key.node) {
                     return Some(true);
                 }
-                let name = index
-                    .direct_child_id(program, parent, beskid_analysis::syntax_query::DynNodeRef::from(&binding.name))?;
+                let name = index.direct_child_id(
+                    program,
+                    parent,
+                    beskid_analysis::syntax_query::DynNodeRef::from(&binding.name),
+                )?;
                 let escapes = index.ids_of_kind(beskid_analysis::syntax_query::NodeKind::PathExpression).any(|path| {
                     let Some(path_syntax) = index
                         .node_at(program, path)
@@ -370,9 +386,8 @@ pub(in crate::semantic_contract) fn names_generic_function_item(
     key: AstNodeKey,
     path: &beskid_analysis::syntax::Path,
 ) -> bool {
-    function_item_declaration(db, program, index, key, path).is_some_and(|declaration| {
-        generic_callable_parameters(db, declaration).is_some()
-    })
+    function_item_declaration(db, program, index, key, path)
+        .is_some_and(|declaration| generic_callable_parameters(db, declaration).is_some())
 }
 
 /// The function type of a named function item used as a value, from its declared signature in
@@ -434,7 +449,11 @@ pub(in crate::semantic_contract) fn lambda_identity(
     let untyped = lambda.parameters.iter().any(|parameter| parameter.node.ty.is_none());
     let environment: HashMap<&str, &GenericSourceTypeIdentity> = enclosing
         .map(|enclosing| {
-            enclosing.substitutions.iter().map(|binding| (binding.parameter.as_ref(), binding.source_identity())).collect()
+            enclosing
+                .substitutions
+                .iter()
+                .map(|binding| (binding.parameter.as_ref(), binding.source_identity()))
+                .collect()
         })
         .unwrap_or_default();
     let expected = if statement_body || untyped {
@@ -459,11 +478,9 @@ pub(in crate::semantic_contract) fn lambda_identity(
             (Some(ty), _, _) => generic_source_type_identity_with_substitutions(db, key, &ty.node, &environment),
             (None, Some((parameters, _)), _) => Ok(parameters[position].clone()),
             (None, None, Some(parameters)) => Ok(parameters[position].clone()),
-            (None, None, None) => Err(source_expression_unavailable(
-                db,
-                key,
-                "untyped lambda parameter has no expected function type",
-            )),
+            (None, None, None) => {
+                Err(source_expression_unavailable(db, key, "untyped lambda parameter has no expected function type"))
+            }
         })
         .collect::<Result<Vec<_>, _>>()?;
     let result = if statement_body {
@@ -476,10 +493,12 @@ pub(in crate::semantic_contract) fn lambda_identity(
         // which checks a bare literal against the expected result through the body's own
         // expected type; a body that synthesizes neither is checked against the expected result.
         match specialized_source_expression_identity(db, body, enclosing) {
-            Ok(identity @ (GenericSourceTypeIdentity::Nominal { .. }
-            | GenericSourceTypeIdentity::Array(_)
-            | GenericSourceTypeIdentity::Function { .. }
-            | GenericSourceTypeIdentity::Contract { .. })) => identity,
+            Ok(
+                identity @ (GenericSourceTypeIdentity::Nominal { .. }
+                | GenericSourceTypeIdentity::Array(_)
+                | GenericSourceTypeIdentity::Function { .. }
+                | GenericSourceTypeIdentity::Contract { .. }),
+            ) => identity,
             synthesized => match value_abi_type(db, body) {
                 Ok(Some(abi)) if abi != SemanticTypeId::POINTER => GenericSourceTypeIdentity::Abi(abi),
                 value => {
@@ -540,10 +559,12 @@ fn block_lambda_result_identity(
     let mut result: Option<GenericSourceTypeIdentity> = None;
     for value in values {
         let identity = match specialized_source_expression_identity(db, value, enclosing) {
-            Ok(identity @ (GenericSourceTypeIdentity::Nominal { .. }
-            | GenericSourceTypeIdentity::Array(_)
-            | GenericSourceTypeIdentity::Function { .. }
-            | GenericSourceTypeIdentity::Contract { .. })) => identity,
+            Ok(
+                identity @ (GenericSourceTypeIdentity::Nominal { .. }
+                | GenericSourceTypeIdentity::Array(_)
+                | GenericSourceTypeIdentity::Function { .. }
+                | GenericSourceTypeIdentity::Contract { .. }),
+            ) => identity,
             Ok(GenericSourceTypeIdentity::Abi(abi)) if enclosing.is_some() => GenericSourceTypeIdentity::Abi(abi),
             Ok(GenericSourceTypeIdentity::Abi(_)) | Err(_) => GenericSourceTypeIdentity::Abi(
                 value_abi_type(db, value)?

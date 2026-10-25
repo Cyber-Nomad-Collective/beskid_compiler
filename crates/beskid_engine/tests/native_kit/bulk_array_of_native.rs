@@ -9,6 +9,7 @@
 //! the resolver-spike frontier loop that crashed when a one-argument `Array.Of` passed its scalar
 //! as the array handle.
 
+use crate::shared_kit;
 use beskid_abi::runtime_kit::BuildProfile;
 use beskid_analysis::{
     projects::{AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, ProgramAssembly, RootEntry, SourceUnit},
@@ -16,7 +17,6 @@ use beskid_analysis::{
 };
 use beskid_queries::{BeskidDatabase, SyntaxGenerationId};
 use std::{path::Path, sync::Arc};
-use crate::shared_kit;
 
 fn bulk_array_of_assembly() -> Arc<ProgramAssembly> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -25,7 +25,9 @@ fn bulk_array_of_assembly() -> Arc<ProgramAssembly> {
     let application_root = root.join("tests/fixtures");
     let fixture_name = "bulk_array_of.bd";
     let mut paths = vec![(application_root.join(fixture_name), fixture_name)];
-    for relative in ["Core/Collections/Collections.bd", "Core/Collections/Array.bd", "Core/Collections/Array/ArrayIter.bd"] {
+    for relative in
+        ["Core/Collections/Collections.bd", "Core/Collections/Array.bd", "Core/Collections/Array/ArrayIter.bd"]
+    {
         paths.push((foundation.join(relative), relative));
     }
     let units = paths

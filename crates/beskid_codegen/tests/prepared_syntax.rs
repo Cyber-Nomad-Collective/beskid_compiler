@@ -393,7 +393,10 @@ fn named_function_values_build_through_the_prepared_front_end() {
          i64 Apply(i64 value, (i64) => i64 operation) { return operation(value); } \
          i64 Main() { return Apply(5_i64, Double); }",
     );
-    assert!(artifact.functions.iter().any(|function| function.name.starts_with("Double#syntax_")), "the named function is emitted as a callee");
+    assert!(
+        artifact.functions.iter().any(|function| function.name.starts_with("Double#syntax_")),
+        "the named function is emitted as a callee"
+    );
 }
 
 #[test]
@@ -425,8 +428,12 @@ fn for_over_arrays_builds_through_the_prepared_front_end() {
         "i64 Sum(i64[] values) { mut i64 total = 0_i64; for value in values { total = total + value; } return total; } \
          i64 Main() { i64[] values = [1_i64, 2_i64, 3_i64]; return Sum(values); }",
     );
-    let sum = artifact.functions.iter().find(|function| function.name.starts_with("Sum#syntax_")).expect("Sum is emitted");
-    assert!(sum.function.display().to_string().contains("icmp ult"), "the array loop compares against the header length");
+    let sum =
+        artifact.functions.iter().find(|function| function.name.starts_with("Sum#syntax_")).expect("Sum is emitted");
+    assert!(
+        sum.function.display().to_string().contains("icmp ult"),
+        "the array loop compares against the header length"
+    );
 }
 
 const ITERATORS: &str = "pub enum Option<T> { Some(T value), None } \
@@ -465,7 +472,8 @@ fn for_over_a_nominal_iterator_builds_through_the_prepared_front_end() {
         artifact.functions.iter().any(|function| function.name.contains("Next#syntax_")),
         "the iterator's Next() is emitted as the loop's callee"
     );
-    let sum = artifact.functions.iter().find(|function| function.name.starts_with("Sum#syntax_")).expect("Sum is emitted");
+    let sum =
+        artifact.functions.iter().find(|function| function.name.starts_with("Sum#syntax_")).expect("Sum is emitted");
     let clif = sum.function.display().to_string();
     assert!(clif.contains("call fn"), "the loop header calls Next():\n{clif}");
     assert!(clif.contains("brif"), "the loop header branches on the Option tag:\n{clif}");

@@ -27,12 +27,7 @@ fn fetch_lock_update_then_build_and_run_project_with_path_dependency() {
     assert_success(&fetch, "fetch dependency workflow fixture");
     assert_output_contains(&fetch, "Dependencies resolved and materialized", "fetch dependency workflow fixture");
 
-    let update = cli.run([
-        "update",
-        "--all",
-        "--project",
-        app_manifest.to_str().expect("app path str"),
-    ]);
+    let update = cli.run(["update", "--all", "--project", app_manifest.to_str().expect("app path str")]);
     assert_success(&update, "update dependency workflow fixture");
 
     let lock = cli.run([

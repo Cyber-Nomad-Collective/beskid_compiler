@@ -15,9 +15,12 @@ pub(crate) fn canonical_sdk_source_authority(unit: &SourceUnit) -> Option<&'stat
     let expected = beskid_abi::sdk_source::canonical_sdk_sources().iter().find(|expected| {
         expected.path().ends_with(".bd")
             && expected.bytes() == unit.source.as_bytes()
-            && unit.path.ends_with(std::path::Path::new(expected.path().strip_prefix("src/").unwrap_or(expected.path())))
+            && unit
+                .path
+                .ends_with(std::path::Path::new(expected.path().strip_prefix("src/").unwrap_or(expected.path())))
     })?;
-    let parsed = crate::services::parse_program_with_source_name_and_diagnostics(&unit.logical_name, &unit.source).ok()?;
+    let parsed =
+        crate::services::parse_program_with_source_name_and_diagnostics(&unit.logical_name, &unit.source).ok()?;
     (!parsed.recovered && parsed.diagnostics.is_empty() && parsed.program == unit.program).then_some(expected.path())
 }
 

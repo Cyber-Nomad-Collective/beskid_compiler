@@ -58,7 +58,8 @@ fn main() {
     hasher.update(b"beskid-grammar-revision:1\0");
     for (name, path) in &relative {
         println!("cargo:rerun-if-changed={}", path.display());
-        let bytes = fs::read(path).unwrap_or_else(|err| panic!("beskid_pipeline build: read {}: {err}", path.display()));
+        let bytes =
+            fs::read(path).unwrap_or_else(|err| panic!("beskid_pipeline build: read {}: {err}", path.display()));
         // Line endings depend on the checkout, not on the grammar; drop CR so every platform
         // derives the same revision from the same sources.
         let normalized: Vec<u8> = bytes.into_iter().filter(|byte| *byte != b'\r').collect();
@@ -78,7 +79,8 @@ fn collect_files(path: &Path, files: &mut Vec<PathBuf>) {
         files.push(path.to_path_buf());
         return;
     }
-    let entries = fs::read_dir(path).unwrap_or_else(|err| panic!("beskid_pipeline build: list {}: {err}", path.display()));
+    let entries =
+        fs::read_dir(path).unwrap_or_else(|err| panic!("beskid_pipeline build: list {}: {err}", path.display()));
     for entry in entries {
         let entry = entry.unwrap_or_else(|err| panic!("beskid_pipeline build: list {}: {err}", path.display()));
         collect_files(&entry.path(), files);
@@ -116,9 +118,7 @@ impl Sha256 {
 
     fn fresh() -> Self {
         Self {
-            state: [
-                0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,
-            ],
+            state: [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19],
             buffer: Vec::with_capacity(64),
             length: 0,
         }
@@ -184,14 +184,17 @@ impl Sha256 {
             let s1 = schedule[index - 2].rotate_right(17)
                 ^ schedule[index - 2].rotate_right(19)
                 ^ (schedule[index - 2] >> 10);
-            schedule[index] =
-                schedule[index - 16].wrapping_add(s0).wrapping_add(schedule[index - 7]).wrapping_add(s1);
+            schedule[index] = schedule[index - 16].wrapping_add(s0).wrapping_add(schedule[index - 7]).wrapping_add(s1);
         }
         let [mut a, mut b, mut c, mut d, mut e, mut f, mut g, mut h] = self.state;
         for index in 0..64 {
             let s1 = e.rotate_right(6) ^ e.rotate_right(11) ^ e.rotate_right(25);
             let choose = (e & f) ^ (!e & g);
-            let t1 = h.wrapping_add(s1).wrapping_add(choose).wrapping_add(ROUND_CONSTANTS[index]).wrapping_add(schedule[index]);
+            let t1 = h
+                .wrapping_add(s1)
+                .wrapping_add(choose)
+                .wrapping_add(ROUND_CONSTANTS[index])
+                .wrapping_add(schedule[index]);
             let s0 = a.rotate_right(2) ^ a.rotate_right(13) ^ a.rotate_right(22);
             let majority = (a & b) ^ (a & c) ^ (b & c);
             let t2 = s0.wrapping_add(majority);
