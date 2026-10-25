@@ -39,31 +39,13 @@ impl IsleContext<'_, '_, '_, '_> {
         Some(array)
     }
 
-    /// The canonical empty value `empty`: `Option::None`, the empty array or the empty list.
+    /// The canonical empty value `empty`: `Option::None` or the empty array.
     fn emit_canonical_empty(&mut self, empty: &CanonicalEmptyPlan) -> Option<Value> {
         match empty {
             CanonicalEmptyPlan::OptionNone { layout, allocation, variant } => {
                 self.allocate_enum_variant(allocation, layout, usize::try_from(*variant).ok()?)
             }
             CanonicalEmptyPlan::EmptyArray { allocation } => self.allocate_empty_array(allocation),
-            CanonicalEmptyPlan::EmptyList { storage, list, storage_offset, count_offset, count_type } => {
-                let pointer = dispatch::pointer_type(self.frontend_config);
-                let array = self.allocate_empty_array(storage)?;
-                let root = self.root_expression_value(array)?;
-                let request = self.symbol_global(list.allocation_request_symbol.as_ref(), pointer)?;
-                let allocate =
-                    self.import_runtime_helper("beskid_rt_v5_managed_object_allocate", &[pointer], Some(pointer))?;
-                let call = self.builder.ins().call(allocate, &[request]);
-                let object = self.builder.inst_results(call).first().copied()?;
-                self.guard_checked_allocation()?;
-                self.builder.ins().trapz(object, TrapCode::unwrap_user(5));
-                // Initialization stores into the list this step allocated: no barrier.
-                self.builder.ins().store(MemFlagsData::new(), array, object, *storage_offset);
-                let zero = self.builder.ins().iconst(*count_type, 0);
-                self.builder.ins().store(MemFlagsData::new(), zero, object, *count_offset);
-                self.release_expression_root(Some(root))?;
-                Some(object)
-            }
         }
     }
 

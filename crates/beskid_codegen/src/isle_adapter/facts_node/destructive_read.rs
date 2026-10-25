@@ -28,22 +28,6 @@ impl SyntaxNodeFacts<'_> {
                         variant: *variant_index,
                     },
                     CanonicalEmptyValue::EmptyArray { .. } => CanonicalEmptyPlan::EmptyArray { allocation: array()? },
-                    CanonicalEmptyValue::EmptyList { declaration, layout, storage_field, count_field, .. } => {
-                        let object_layout = self.input.aggregate_object_layout_from_fact(*declaration, layout)?;
-                        let offset = |field: u32| {
-                            object_layout
-                                .fields
-                                .get(usize::try_from(field).ok()?)
-                                .and_then(|field| i32::try_from(field.field_offset).ok())
-                        };
-                        CanonicalEmptyPlan::EmptyList {
-                            storage: array()?,
-                            list: object()?,
-                            storage_offset: offset(*storage_field)?,
-                            count_offset: offset(*count_field)?,
-                            count_type: map_signature_type(self.isa?, SemanticTypeId::I64)?,
-                        }
-                    }
                 };
                 Some(MoveExpressionPlan::DestructiveRead { place, empty })
             }

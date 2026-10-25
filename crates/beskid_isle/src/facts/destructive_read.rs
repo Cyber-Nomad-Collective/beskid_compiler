@@ -1,8 +1,6 @@
 //! Facts for `move` expressions and the `exchange(place, move value)` builtin
 //! (`language-meta--memory-model--memory-and-references`, "Destructive read of a field").
 
-use cranelift_codegen::ir::Type;
-
 use super::*;
 use crate::layout::{EnumLayout, ManagedArrayAllocation, ManagedStructAllocation};
 
@@ -25,15 +23,6 @@ pub enum CanonicalEmptyPlan {
     OptionNone { layout: EnumLayout, allocation: ManagedStructAllocation, variant: u32 },
     /// A descriptor-backed array of length zero.
     EmptyArray { allocation: ManagedArrayAllocation },
-    /// A `List<T>` object whose storage field (at `storage_offset`) holds an empty array of
-    /// `storage` and whose count field (`count_type` at `count_offset`) holds zero.
-    EmptyList {
-        storage: ManagedArrayAllocation,
-        list: ManagedStructAllocation,
-        storage_offset: i32,
-        count_offset: i32,
-        count_type: Type,
-    },
 }
 
 /// The operands of one `exchange(place, move value)` call: `place` is a field or element

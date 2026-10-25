@@ -250,8 +250,6 @@ pub enum CanonicalEmpty {
     OptionNone,
     /// The empty array of the field's element type.
     EmptyArray,
-    /// The empty `List<T>`.
-    EmptyList,
 }
 
 /// How a `MoveExpression` evaluates. Lowering hook for the integration: `Consume` lowers as its

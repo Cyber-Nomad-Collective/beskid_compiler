@@ -210,16 +210,16 @@ fn rooted_in_type_parameter(reason: &TransferNeverReason) -> bool {
     }
 }
 
-/// The canonical empty value of a field type, for a destructive read.
+/// The canonical empty value of a field type, for a destructive read: an empty array or
+/// `Option::None`. Any other type (a `List<T>` among them, whose empty value carries its
+/// copy-on-write sharing state) is taken out with `exchange(place, value)` instead (E1243).
 fn canonical_empty(identity: &GenericSourceTypeIdentity) -> Option<CanonicalEmpty> {
     match identity {
         GenericSourceTypeIdentity::Array(_) => Some(CanonicalEmpty::EmptyArray),
-        GenericSourceTypeIdentity::Nominal { qualified_name, .. } => {
-            match qualified_name.rsplit(['.', ':']).next().unwrap_or(qualified_name) {
-                "Option" => Some(CanonicalEmpty::OptionNone),
-                "List" => Some(CanonicalEmpty::EmptyList),
-                _ => None,
-            }
+        GenericSourceTypeIdentity::Nominal { qualified_name, .. }
+            if qualified_name.rsplit(['.', ':']).next().unwrap_or(qualified_name) == "Option" =>
+        {
+            Some(CanonicalEmpty::OptionNone)
         }
         _ => None,
     }
@@ -967,11 +967,25 @@ impl<'a> Analysis<'a> {
             };
             let class = match &moved.operand.node {
                 beskid_analysis::syntax::Expression::Path(path) => {
-                    // A destructive read `move x.f` is judged with its root binding.
+                    // A destructive read `move x.f` is judged with its root binding when the root is
+                    // a tracked owner; for any other root the field type is judged here, so `check`
+                    // and `build` agree.
                     let segments = &path.node.path.node.segments;
-                    if segments.len() > 1
-                        || segments.first().is_some_and(|segment| segment.node.name.node.name == "this")
-                    {
+                    if segments.len() > 1 {
+                        let tracked = self
+                            .declaration_of(node, &path.node.path.node)
+                            .is_some_and(|declaration| self.owners.contains_key(&declaration));
+                        if !tracked && containing_fiber_callable(self.index, node) == Some(self.key.node) {
+                            let place = segments
+                                .iter()
+                                .map(|segment| segment.node.name.node.name.as_str())
+                                .collect::<Vec<_>>()
+                                .join(".");
+                            self.judge_untracked_destructive_read(node, &moved.operand, &place);
+                        }
+                        continue;
+                    }
+                    if segments.first().is_some_and(|segment| segment.node.name.node.name == "this") {
                         continue;
                     }
                     let Some(declaration) = self.declaration_of(node, &path.node.path.node) else {
@@ -1151,6 +1165,31 @@ impl<'a> Analysis<'a> {
             && self.owner_type_name(declaration).as_deref() == Some("Port");
         port_send
             && declared_parameters(self.db, declaration)
+    /// `move x.f` whose root is not a tracked owner (a root of a class other than Moved): E1243
+    /// when the field type has no canonical empty value, which the build could not lower.
+    fn judge_untracked_destructive_read(
+        &mut self,
+        node: AstNodeId,
+        operand: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Expression>,
+        place: &str,
+    ) {
+        let Some(operand) = self.child(node, DynNodeRef::from(operand)) else { return };
+        let operand = normalized_expression_node(self.index, operand);
+        if let Ok(identity) = generic_source_expression_identity(self.db, self.at(operand))
+            && canonical_empty(&identity).is_none()
+        {
+            let field = place.rsplit('.').next().unwrap_or(place).to_owned();
+            self.push(
+                AffineFindingKind::DestructiveReadWithoutEmpty,
+                node,
+                &field,
+                Some(identity_spelling(&identity)),
+                None,
+                false,
+            );
+        }
+    }
+
                 .and_then(|(parameters, _)| parameters.get(position).map(|parameter| parameter.node.movable))
                 .unwrap_or(false)
     }
