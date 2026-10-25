@@ -82,8 +82,8 @@ pub(crate) fn compile_plan_from_graph(
     } else if manifest.project.kind == ProjectKind::Bsol {
         return Err(ProjectError::meta_contract(
             "E1888",
-            "`Bsol` projects are schema-only packages and cannot be built or checked as Beskid source; validate \
-             their schema exports with `beskid dev bsol validate <manifest>.bproj` instead",
+            "`Bsol` projects are schema-only packages and cannot be built as Beskid source; check their schema \
+             exports with `beskid check --project <manifest>.bproj` (no `--target`)",
         ));
     } else if manifest.project.kind == ProjectKind::Mod {
         if target_name.is_some() {
