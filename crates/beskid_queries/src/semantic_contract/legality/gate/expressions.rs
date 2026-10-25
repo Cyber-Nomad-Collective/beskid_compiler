@@ -403,6 +403,10 @@ pub(super) fn collect_call_obligations(
         let call_key = AstNodeKey { node, ..key };
         match &call.callee.node {
             Expression::Member(member) => {
+                if let Some(obligation) = enum_receiver_method_obligation(db, program, index, key, node, call) {
+                    findings.push(obligation);
+                    continue;
+                }
                 if let Ok(Some(CallLowering::Direct(declaration))) = call_lowering(db, call_key) {
                     let explicit = member.node.type_args.len();
                     if explicit != 0
@@ -475,6 +479,10 @@ pub(super) fn collect_call_obligations(
             Expression::Path(path) => {
                 let path = &path.node.path.node;
                 let lowering = call_lowering(db, call_key);
+                if let Some(obligation) = enum_receiver_method_obligation(db, program, index, key, node, call) {
+                    findings.push(obligation);
+                    continue;
+                }
                 if lowering.is_err()
                     && let Some(obligation) = generic_receiver_method_obligation(db, program, index, key, node, call)
                 {
@@ -661,6 +669,73 @@ fn local_declares_array_or_function_value(
         };
     }
     false
+}
+
+/// E1257: `value.Method(..)` where `value` is an enum value (a call result such as
+/// `list.Get(0)`, a member chain, or a local such as `option`): an enum declares no methods, so
+/// the payload must be unwrapped with `match` or `?` first. Without this the call passed check and had no lowering rule (E2102).
+fn enum_receiver_method_obligation(
+    db: &dyn Db,
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &SyntaxIndex,
+    key: AstNodeKey,
+    call_node: beskid_analysis::syntax::AstNodeId,
+    call: &CallExpression,
+) -> Option<GateObligation> {
+    let call_key = AstNodeKey { node: call_node, ..key };
+    // Not gated on `call_lowering`: member resolution may name a method of the payload type
+    // (`Greet` of `Hello` for `list.Get(0).Greet()`), which the enum value itself does not have.
+    if matches!(event_operation(db, call_key), Ok(Some(_)))
+        || super::super::calls::claimed_by_another_call_authority(db, call_key, true)
+    {
+        return None;
+    }
+    let callee = normalized_expression_node(index, index.direct_child_id(program, call_node, DynNodeRef::from(call.callee.as_ref()))?);
+    let (receiver, method, site) = match &call.callee.node {
+        Expression::Member(member) => {
+            let target = index.direct_child_id(program, callee, DynNodeRef::from(member.node.target.as_ref()))?;
+            let target = AstNodeKey { node: normalized_expression_node(index, target), ..key };
+            let site = index.direct_child_id(program, callee, DynNodeRef::from(&member.node.member)).unwrap_or(callee);
+            (generic_source_expression_identity(db, target).ok()?, member.node.member.node.name.clone(), site)
+        }
+        Expression::Path(path_expression) => {
+            let [receiver, method] = path_expression.node.path.node.segments.as_slice() else { return None };
+            if !receiver.node.type_args.is_empty() || !method.node.type_args.is_empty() {
+                return None;
+            }
+            let local = resolve_lexical_declaration(program, index, call_node, receiver.node.name.node.name.as_str())?;
+            let identity = generic_source_local_identity(db, program, index, AstNodeKey { node: local, ..key }, local).ok()?;
+            let site = index
+                .direct_child_id(program, callee, DynNodeRef::from(&path_expression.node.path))
+                .and_then(|path_node| index.direct_child_id(program, path_node, DynNodeRef::from(method)))
+                .unwrap_or(callee);
+            (identity, method.node.name.node.name.clone(), site)
+        }
+        _ => return None,
+    };
+    if !matches!(receiver, GenericSourceTypeIdentity::Nominal { .. })
+        || crate::semantic_contract::contracts::concrete_declaration(db, key, &receiver).is_some()
+    {
+        return None;
+    }
+    let declaration = crate::semantic_contract::contracts::concrete_type_or_enum_declaration(db, key, &receiver)?;
+    (declaration_kind(db, declaration) == Some(NodeKind::EnumDefinition)).then_some(())?;
+    // An `extend type` method of this unit may claim the name for any receiver type.
+    let extended = index.ids_of_kind(NodeKind::ExtendTypeDefinition).any(|extension| {
+        index.node_at(program, extension).and_then(|node| node.of::<ExtendTypeDefinition>()).is_some_and(|extension| {
+            extension.methods.iter().any(|candidate| candidate.node.name.node.name == method)
+        })
+    });
+    if extended {
+        return None;
+    }
+    Some(GateObligation {
+        kind: GateObligationKind::EnumValueMethodCall {
+            method: Arc::from(method.as_str()),
+            enum_name: Arc::from(receiver.display_name().as_str()),
+        },
+        site: AstNodeKey { node: site, ..key },
+    })
 }
 
 /// E1250: `value.Method(..)` that `call_lowering` cannot resolve, where `value` is a parameter or

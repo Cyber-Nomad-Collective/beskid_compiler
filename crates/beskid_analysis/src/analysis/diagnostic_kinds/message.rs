@@ -24,6 +24,7 @@ impl SemanticIssueKind {
                 | Self::ResolveAmbiguousItemInModule { .. }
                 | Self::MissingImport { .. }
                 | Self::MissingImportAmbiguous { .. }
+                | Self::EnumValueMethodCall { .. }
         )
     }
 
@@ -377,6 +378,9 @@ impl SemanticIssueKind {
             Self::InjectInsideIsolateBody { .. } => "composition is not available inside an isolate".to_string(),
             Self::GenericReceiverMethodUndeclared { method, parameter } => {
                 format!("no `where` bound of type parameter `{parameter}` declares a method `{method}`")
+            }
+            Self::EnumValueMethodCall { method, enum_name } => {
+                format!("`{enum_name}` is an enum and has no method `{method}`")
             }
             Self::CompilerDerivedConformance { contract } => format!(
                 "`{contract}` is compiler-derived and cannot be listed as a conformance; the compiler proves it from the \

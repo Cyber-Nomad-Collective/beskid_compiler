@@ -695,3 +695,23 @@ i32 Main() {{
         );
     }
 }
+
+/// `c1` as written in the smoke: a method call on the `Result` that `List.Get` returns is a
+/// check error (E1257), not a lowering failure.
+#[test]
+fn the_smoke_method_call_on_a_list_get_result_is_a_check_error() {
+    let errors = check_errors(
+        &format!(
+            "{CORELIB_GREETERS}
+i64 Main() {{
+    mut List<Greeter> list = List.New<Greeter>();
+    list.Push(Hello {{}});
+    Use(list.Get(0).Greet(\"Cy\"));
+    return 0;
+}}"
+        ),
+        6737,
+    );
+    assert!(errors.contains(&"E1257"), "{errors:?}");
+}
+

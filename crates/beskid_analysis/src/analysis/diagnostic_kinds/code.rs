@@ -124,6 +124,7 @@ impl SemanticIssueKind {
             Self::CapturesBoundNotMarker { .. } => "E1248",
             Self::InjectInsideIsolateBody { .. } => "E1249",
             Self::GenericReceiverMethodUndeclared { .. } => "E1250",
+            Self::EnumValueMethodCall { .. } => "E1257",
             Self::CompilerDerivedConformance { .. } | Self::CompilerDerivedNotMarker { .. } => "E1607",
             Self::DerivedContractMember { .. } => "E1003",
             Self::ExclusiveMarkerAttribute { .. } | Self::CorelibOnlyAttribute { .. } => "E1510",

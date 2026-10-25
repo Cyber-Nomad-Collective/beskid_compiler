@@ -120,6 +120,7 @@ impl SemanticIssueKind {
             Self::CapturesBoundNotMarker { .. } => "invalid `[Captures]` bound".to_string(),
             Self::InjectInsideIsolateBody { field } => format!("`{field}` read inside a task body"),
             Self::GenericReceiverMethodUndeclared { method, .. } => format!("`{method}` is not declared by a bound"),
+            Self::EnumValueMethodCall { enum_name, .. } => format!("this is a `{enum_name}` value"),
             Self::CompilerDerivedConformance { contract } => format!("compiler-derived `{contract}`"),
             Self::CompilerDerivedNotMarker { .. } => "not a marker contract".to_string(),
             Self::DerivedContractMember { member, .. } => format!("member `{member}`"),
