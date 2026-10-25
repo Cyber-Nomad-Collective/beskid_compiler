@@ -480,13 +480,14 @@ fn lower_syntax_assembly_entrypoints_with_composition(
     let input = CodegenInput::new(db, typed, Arc::from(roots), target.clone(), manifest)
         .map_err(|error| anyhow::anyhow!("invalid syntax codegen input: {error}"))?;
     let input = if let Some(front) = front {
+        let assembly = Arc::clone(&input.typed_program().assembly);
         input
             .with_composition_authority(
                 generation,
                 Arc::new(front.binding_plan.clone()),
                 Arc::new(front.composition_snapshot.clone()),
             )
-            .map_err(|error| anyhow::anyhow!("invalid composition codegen input: {error}"))?
+            .map_err(|error| error.into_report(&assembly, "invalid composition codegen input"))?
     } else {
         input
     };
@@ -717,13 +718,15 @@ pub(crate) fn with_prepared_module_input<T>(
         })
         .collect::<Vec<_>>();
     let input = CodegenInput::new(db, typed, Arc::from(roots), target.clone(), manifest)
-        .map_err(|error| anyhow::anyhow!("invalid syntax codegen input: {error}"))?
+        .map_err(|error| anyhow::anyhow!("invalid syntax codegen input: {error}"))?;
+    let assembly = Arc::clone(&input.typed_program().assembly);
+    let input = input
         .with_composition_authority(
             generation,
             Arc::new(front.binding_plan.clone()),
             Arc::new(front.composition_snapshot.clone()),
         )
-        .map_err(|error| anyhow::anyhow!("invalid composition codegen input: {error}"))?;
+        .map_err(|error| error.into_report(&assembly, "invalid composition codegen input"))?;
     let items = input
         .roots()
         .iter()
