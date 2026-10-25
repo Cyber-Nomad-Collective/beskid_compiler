@@ -226,6 +226,10 @@ pub(super) fn specialization_for_call_in_environment(
     // Keep that distinction while inferring a generic call: a later exact argument can select
     // the binding and the bare literals that set it inherit it if their magnitudes fit.
     let mut provisional_integer_substitutions = HashMap::<String, Vec<AstNodeKey>>::new();
+    // Bindings fixed before the arguments (the receiver's type arguments, explicit type
+    // arguments) never move; a binding an earlier argument made may widen to a contract.
+    let fixed_before_arguments =
+        source_substitutions.keys().cloned().collect::<std::collections::HashSet<_>>();
     for (position, (parameter_type, argument)) in
         argument_parameter_types.iter().copied().zip(arguments.iter().copied().skip(usize::from(is_method))).enumerate()
     {
@@ -339,6 +343,30 @@ pub(super) fn specialization_for_call_in_environment(
                     bound.source_identity(),
                 )
             {
+                continue;
+            }
+            // The other order (`Pick(Hello {}, greeter)`): `T` bound by an earlier argument to a
+            // value that converts to this argument's contract widens to the contract, and the
+            // earlier argument is boxed at its conversion site. Whichever comes first, the
+            // arguments of one `T` that are a contract value and conforming values bind `T` to
+            // the contract.
+            if let Some(generic) = generic
+                && matches!(source_identity, GenericSourceTypeIdentity::Contract { .. })
+                && !fixed_before_arguments.contains(generic)
+                && let Some(bound) = source_substitutions.get(generic)
+                && !matches!(bound.source_identity(), GenericSourceTypeIdentity::Contract { .. })
+                && super::super::super::contract_values::converts_to_contract_value(
+                    db,
+                    key,
+                    bound.source_identity(),
+                    source_identity,
+                )
+            {
+                let abi = source_identity.abi_type();
+                substitutions.insert(generic.to_owned(), abi);
+                source_substitutions
+                    .insert(generic.to_owned(), GenericSubstitution::from_source(generic, abi, source_identity.clone()));
+                provisional_integer_substitutions.remove(generic);
                 continue;
             }
             // An exact argument (`5_i64`, `[7_i64]`) replaces a binding only bare literals set;

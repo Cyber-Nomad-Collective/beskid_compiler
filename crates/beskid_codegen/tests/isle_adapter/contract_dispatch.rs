@@ -715,3 +715,37 @@ i64 Main() {{
     assert!(errors.contains(&"E1257"), "{errors:?}");
 }
 
+/// The arguments of one `T` that are a contract value and conforming values bind `T` to the
+/// contract whichever comes first: `Pick(Hello {}, greeter)` boxes `Hello {}` like
+/// `Pick(greeter, Hello {})`.
+#[test]
+fn a_contract_argument_after_a_conforming_value_binds_the_contract() {
+    let artifact = build(
+        &format!(
+            "{CORELIB_GREETERS}
+T Pick<T>(T first, T second) {{ return second; }}
+i64 Main() {{
+    mut Greeter g = Bye {{ times: 3 }};
+    Greeter first = Pick(Hello {{}}, g);
+    Greeter second = Pick(g, Hello {{}});
+    Use(first.Greet(\"a\"));
+    Use(second.Greet(\"b\"));
+    return 0;
+}}"
+        ),
+        6736,
+    );
+    let names = function_names(&artifact);
+    assert_eq!(
+        names.iter().filter(|name| name.starts_with("Pick#generic_")).count(),
+        1,
+        "both calls specialize `Pick` at `T = Greeter`: {names:?}"
+    );
+    let main = clif(&artifact, "Main");
+    assert_eq!(
+        main.matches("__beskid_contract_box_reference_request_v5").count(),
+        3,
+        "the local and both `Hello {{}}` arguments are boxed:\n{main}"
+    );
+}
+
