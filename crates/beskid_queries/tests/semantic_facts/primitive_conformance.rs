@@ -124,6 +124,10 @@ fn malformed_primitive_implementations_are_e1611() {
             "impl i64 : Sized { pub i64 Size() { return 8; } } impl i64 : Sized { pub i64 Size() { return 4; } }",
             "E1611 i64: `i64` already implements `Sized` in this source file",
         ),
+        (
+            "impl i64 : Sized { pub i64 Size(mut this) { return 8; } }",
+            "E1611 i64: method `Size` of an implementation for `i64` cannot take `mut this`",
+        ),
         ("impl i64 : Sized { }", "E1601 Size"),
         ("impl i64 : Sized { pub bool Size() { return true; } }", "E1602 Size"),
     ];

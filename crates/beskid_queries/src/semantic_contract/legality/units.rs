@@ -512,6 +512,19 @@ fn collect_primitive_implementation_obligations(
         );
         return;
     }
+    // The receiver of a primitive implementation is a copy of the value (a boxed contract value
+    // passes the bits it holds), so a write to `this` would be lost silently.
+    if let Some(method) =
+        block.methods.iter().find(|method| method.node.receiver.as_ref().is_some_and(|receiver| receiver.node.mutable))
+    {
+        invalid(
+            format!(
+                "method `{}` of an implementation for `{type_name}` cannot take `mut this`: the receiver is a copy of the value",
+                method.node.name.node.name
+            ),
+            findings,
+        );
+    }
     for conformance in &block.conformances {
         let mut contract_path = conformance.node.clone();
         if let Some(last) = contract_path.segments.last_mut() {
