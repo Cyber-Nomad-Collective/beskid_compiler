@@ -252,10 +252,14 @@ test CompositionExitPopUnlinksTheNextHookOfTheCurrentLevel {
     pointer runtime = SystemAllocate(64, 8);
     memory_set(runtime, 0, 64);
     ProcessInit(runtime);
+    pointer owner = CurrentThreadState();
+    // The test host's own launched container may own the thread's exit word; it is set aside
+    // for this test and restored at the end.
+    word hostExit = raw_word_load(pointer_add(owner, 56));
+    raw_word_store(pointer_add(owner, 56), 0);
     pointer container = CompositionContainerCreate(0);
     Assert.True(CompositionLaunch(container), "empty plan activates");
-    pointer owner = CurrentThreadState();
-    Assert.True(NativePointer(raw_word_load(pointer_add(owner, 56))) == container, "launch publishes the exit container");
+    Assert.Equal(raw_word_load(pointer_add(owner, 56)), NativeWord(container), "launch publishes the exit container");
     // Stand-ins for hook addresses: the entries are only unlinked here, never run.
     pointer hook = SystemAllocate(8, 8);
     pointer arguments = SystemAllocate(8, 8);
@@ -275,6 +279,7 @@ test CompositionExitPopUnlinksTheNextHookOfTheCurrentLevel {
     Assert.Equal(raw_word_load(pointer_add(container, 56)), 0, "with no scope open the global hook is popped");
     CompositionShutdown(container);
     Assert.Equal(raw_word_load(pointer_add(owner, 56)), 0, "shutdown withdraws the exit container");
+    raw_word_store(pointer_add(owner, 56), hostExit);
     CompositionContainerDrop(container);
     SystemFree(arguments, 8);
     SystemFree(hook, 8);
