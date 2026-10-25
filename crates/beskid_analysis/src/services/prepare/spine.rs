@@ -403,25 +403,39 @@ fn own_unit_rule_diagnostics(
         .library_unit_indices()
         .ok_or_else(|| anyhow::anyhow!("assembly root set names a source unit outside the prepared assembly"))?;
     let known_module_paths = assembly.module_index.known_module_path_strings();
-    let mut diagnostics = Vec::new();
-    for index in units.into_iter().filter(|index| *index != assembly.entry_index) {
-        let root_assembly = assembly
-            .with_entry_index(index)
-            .ok_or_else(|| anyhow::anyhow!("assembly root unit {index} is outside the prepared assembly"))?;
-        let unit = &assembly.units[index];
-        let mut rule_options = AnalysisOptions::default();
-        rule_options.module_level_meta_items_allowed = options.front_end.module_level_meta_items_allowed;
-        rule_options.known_assembly_module_paths = Some(known_module_paths.clone());
-        rule_options.program_assembly_module_index = Some((*assembly.module_index).clone());
-        rule_options.entry_source_path = Some(unit.path.clone());
-        rule_options.program_assembly = Some(root_assembly);
-        diagnostics.extend(semantic_rule_diagnostics_for_program_with_pipeline(
-            &unit.program.node,
-            unit.logical_name.clone(),
-            &unit.source,
-            rule_options,
-            None,
-        ));
-    }
-    Ok(diagnostics)
+    let units = units.into_iter().filter(|index| *index != assembly.entry_index).collect::<Vec<_>>();
+    // Units are judged independently against the same assembly: run them in parallel on
+    // compiler-sized stacks and keep the unit order of the diagnostics.
+    let threads = std::thread::available_parallelism().map_or(1, std::num::NonZeroUsize::get).min(units.len()).max(1);
+    let pool = rayon::ThreadPoolBuilder::new()
+        .num_threads(threads)
+        .stack_size(beskid_pipeline::compiler_stack_size())
+        .build()
+        .map_err(|error| anyhow::anyhow!("own-unit rule worker pool: {error}"))?;
+    let per_unit = pool.install(|| {
+        use rayon::prelude::*;
+        units
+            .par_iter()
+            .map(|&index| {
+                let root_assembly = assembly
+                    .with_entry_index(index)
+                    .ok_or_else(|| anyhow::anyhow!("assembly root unit {index} is outside the prepared assembly"))?;
+                let unit = &assembly.units[index];
+                let mut rule_options = AnalysisOptions::default();
+                rule_options.module_level_meta_items_allowed = options.front_end.module_level_meta_items_allowed;
+                rule_options.known_assembly_module_paths = Some(known_module_paths.clone());
+                rule_options.program_assembly_module_index = Some((*assembly.module_index).clone());
+                rule_options.entry_source_path = Some(unit.path.clone());
+                rule_options.program_assembly = Some(root_assembly);
+                Ok(semantic_rule_diagnostics_for_program_with_pipeline(
+                    &unit.program.node,
+                    unit.logical_name.clone(),
+                    &unit.source,
+                    rule_options,
+                    None,
+                ))
+            })
+            .collect::<Result<Vec<_>>>()
+    })?;
+    Ok(per_unit.into_iter().flatten().collect())
 }
