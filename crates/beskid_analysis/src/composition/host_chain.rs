@@ -84,6 +84,26 @@ pub fn merge_host_registries(
                 reg.scope_id = *unified;
             }
 
+            // The same implementation for the same key twice in one host and scope is a mistake:
+            // each line creates its own instance (E1724). Distinct implementations are kept.
+            if let Some(first) = merged.iter().enumerate().find_map(|(index, existing)| {
+                (owners[index] == host_index
+                    && existing.scope_id == reg.scope_id
+                    && same_key(existing, &reg)
+                    && existing.implementation_identity.is_some()
+                    && existing.implementation_identity == reg.implementation_identity)
+                    .then_some(existing)
+            }) {
+                issues.push((
+                    reg.unit.clone(),
+                    CompositionIssue::DuplicateRegistration {
+                        implementation: reg.implementation.clone(),
+                        key: reg.key.name().to_string(),
+                        span: reg.span,
+                        first_span: (first.unit == reg.unit).then_some(first.span),
+                    },
+                ));
+            }
             let overridden = merged
                 .iter()
                 .enumerate()
