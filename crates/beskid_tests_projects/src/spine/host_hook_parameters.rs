@@ -202,6 +202,60 @@ test StartupGreets {{ launch AppHost(); }}
     }
 }
 
+/// Stand-in for Corelib's `Testing.Assert.Equal` (this harness has no Corelib) with the same
+/// parameters: `because` and the three caller-information parameters are optional, so typing
+/// fills `file`, `line` and `column` even when a call passes all three explicit arguments.
+const ASSERT_STAND_IN: &str = r#"
+mod Testing
+{
+    pub mod Assert
+    {
+        pub unit Equal<T>(T actual, T expected, string because = "", [CallerFilePath] string file = "", [CallerLineNumber] i64 line = 0, [CallerColumnNumber] i64 column = 0)
+        {
+            return;
+        }
+    }
+}
+"#;
+
+/// The course's host-hooks lesson as it failed on 0.6.7-preview.3 (E4041), verbatim. `Assert.Equal`
+/// passes all three explicit arguments; its caller-information arguments are still filled.
+const COURSE_LESSON: &str = r#"
+pub contract Greeter { string Greet(string name); }
+type PoliteGreeter : Greeter { pub string Greet(string name) { return "Good morning, ${name}."; } }
+type Reception { inject Greeter greeter; pub string Welcome(string name) { return this.greeter.Greet(name); } }
+host AppHost() { registry { single PoliteGreeter for Greeter; single Reception; } startup(Reception reception) { Testing.Assert.Equal(reception.Welcome("Ada"), "Good morning, Ada.", "the host gives Reception the registered Greeter"); } }
+test T { launch AppHost(); }
+"#;
+
+#[test]
+fn the_course_lesson_startup_with_an_assertion_builds() {
+    lower_through_spine(
+        "host_hooks_course_lesson",
+        "Test",
+        &format!("{ASSERT_STAND_IN}\n{COURSE_LESSON}"),
+        Lowering::Tests(&["T"]),
+    );
+}
+
+/// String interpolation (in a service method before the host and in the hook body) adds no
+/// syntax after composition: the plan binds without any filled call.
+#[test]
+fn interpolation_before_and_inside_a_hook_keeps_the_plan_bound() {
+    lower_through_spine(
+        "host_hooks_interpolation",
+        "Test",
+        r#"
+pub contract Greeter { string Greet(string name); }
+type PoliteGreeter : Greeter { pub string Greet(string name) { return "Good morning, ${name}."; } }
+type Reception { inject Greeter greeter; pub string Welcome(string name) { return this.greeter.Greet(name); } }
+host AppHost() { registry { single PoliteGreeter for Greeter; single Reception; } startup(Reception reception) { string text = "${reception.Welcome("Ada")} (${reception.Welcome("Bob")})"; } }
+test T { launch AppHost(); }
+"#,
+        Lowering::Tests(&["T"]),
+    );
+}
+
 /// The run-time fixture `beskid_e2e_tests/fixtures/composition_hooks` prepares and lowers (its
 /// output is checked by `composition_hooks_run_in_order_on_every_exit`). This harness has no
 /// Corelib, so a local `WriteLine` stands in for `Core.Output`.
