@@ -13550,6 +13550,34 @@
       ]
     },
     {
+      "name": "__composition_exit_pop",
+      "adapter": "composition_exit_pop",
+      "params": [
+        {
+          "name": "container",
+          "type": "pointer"
+        }
+      ],
+      "result": "void",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "composition_exit_pop",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "composition_exit_pop",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "composition_exit_pop",
+          "osImports": []
+        }
+      ]
+    },
+    {
       "name": "__composition_exit_register",
       "adapter": "composition_exit_register",
       "params": [

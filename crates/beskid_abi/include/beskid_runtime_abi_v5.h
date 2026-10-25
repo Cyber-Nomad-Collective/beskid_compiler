@@ -714,6 +714,7 @@ int64_t clock_realtime_nanos(void);
 void * composition_container_create(size_t slot_count);
 void composition_container_drop(void * container);
 void composition_exit(int32_t code);
+void composition_exit_pop(void * container);
 void composition_exit_register(void * container, void * function, void * arguments, size_t count);
 uint8_t composition_launch(void * container);
 int32_t composition_scope_depth(void);

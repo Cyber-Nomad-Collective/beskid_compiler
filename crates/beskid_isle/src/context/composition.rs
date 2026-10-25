@@ -44,13 +44,13 @@ impl IsleContext<'_, '_, '_, '_> {
                 CompositionCleanup::ScopeLeave { site } => {
                     // `dispose` runs on every exit of the `with` body, before the frame is left.
                     let plan = self.facts.composition_scope(site)?;
-                    let (_, slots) = self.active_composition_container()?;
-                    self.emit_composition_hook_calls(site, &plan.dispose, &slots)?;
+                    let (container, slots) = self.active_composition_container()?;
+                    self.emit_composition_dispose_calls(site, container, &plan.dispose, &slots)?;
                     self.composition_call(site, "composition_scope_leave", &[], &[], None)?;
                 }
                 CompositionCleanup::Container { site, value, slots } => {
                     let plan = self.facts.composition_launch(site)?;
-                    self.emit_composition_hook_calls(site, &plan.shutdown, &slots)?;
+                    self.emit_composition_dispose_calls(site, value, &plan.shutdown, &slots)?;
                     self.composition_call(site, "composition_shutdown", &[value], &[pointer], None)?;
                     self.composition_call(site, "composition_container_drop", &[value], &[pointer], None)?;
                 }
@@ -109,6 +109,26 @@ impl IsleContext<'_, '_, '_, '_> {
         for call in calls {
             let arguments = self.composition_hook_arguments(call, slots)?;
             let function = self.import_composition_hook(site, call)?;
+            self.builder.ins().call(function, &arguments);
+        }
+        Some(())
+    }
+
+    /// Run the `dispose` hooks of the level being left, in order. Each hook's registration for
+    /// `composition_exit` is withdrawn (`composition_exit_pop`) right before its call, so a
+    /// `CommandLine.Exit` from inside the hook runs the hooks after it and never this one again.
+    fn emit_composition_dispose_calls(
+        &mut self,
+        site: AstNodeKey,
+        container: Value,
+        calls: &[crate::CompositionHookCall],
+        slots: &[Value],
+    ) -> Option<()> {
+        let pointer = dispatch::pointer_type(self.frontend_config);
+        for call in calls {
+            let arguments = self.composition_hook_arguments(call, slots)?;
+            let function = self.import_composition_hook(site, call)?;
+            self.composition_call(site, "composition_exit_pop", &[container], &[pointer], None)?;
             self.builder.ins().call(function, &arguments);
         }
         Some(())

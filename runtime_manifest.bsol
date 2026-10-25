@@ -1403,6 +1403,17 @@ corelib_service "__composition_exit_register" {
   ]
 }
 
+corelib_service "__composition_exit_pop" {
+  adapter = "composition_exit_pop"
+  params = [{ name = container, type = pointer }]
+  returns = void
+  target_bindings = [
+    { target = "x86_64-unknown-linux-gnu", implementation = "composition_exit_pop", os_imports = [] },
+    { target = "aarch64-apple-darwin", implementation = "composition_exit_pop", os_imports = [] },
+    { target = "x86_64-pc-windows-msvc", implementation = "composition_exit_pop", os_imports = [] }
+  ]
+}
+
 corelib_service "__composition_exit" {
   adapter = "composition_exit"
   params = [{ name = code, type = i32 }]

@@ -1,0 +1,51 @@
+// `CommandLine.Exit` called from a `dispose` hook on the ordinary exit of a `with` body runs
+// that hook once, not again, and then the global `dispose` hooks: the launched host's first,
+// then its base host's. The base host declares hooks of its own.
+use Console.Hosting;
+use Core.Output;
+
+host BaseHost() : ConsoleHost
+{
+    startup()
+    {
+        Output.WriteLine("base startup");
+    }
+
+    dispose()
+    {
+        Output.WriteLine("base shutdown");
+    }
+}
+
+host AppHost() : BaseHost
+{
+    startup()
+    {
+        Output.WriteLine("app startup");
+    }
+
+    dispose()
+    {
+        Output.WriteLine("app shutdown");
+    }
+
+    scope Visit()
+    {
+        dispose(Hosting.CommandLine commandLine)
+        {
+            Output.WriteLine("leave");
+            commandLine.Exit(5);
+        }
+    }
+}
+
+i32 Main()
+{
+    launch AppHost();
+    with Visit()
+    {
+        Output.WriteLine("inside");
+    }
+    Output.WriteLine("not reached");
+    return 0;
+}

@@ -2,13 +2,17 @@
 // slot count and emits direct slot writes; the runtime owns storage, rooting, activation,
 // scopes, and reverse-order shutdown. Runtime service lookup is intentionally absent.
 // Container record: owner_runtime(0), status(8), slot_count(16), slots(24), activated_count(32),
-// open_scope_count(40), slots_bytes(48), exit_entries(56). The slot array is sized exactly to the
-// compiler-supplied plan; there is no fixed plan-entry cap.
-const COMPOSITION_CONTAINER_SIZE = 64;
+// open_scope_count(40), slots_bytes(48), exit_entries(56), open_scopes(64). The slot array is sized
+// exactly to the compiler-supplied plan; there is no fixed plan-entry cap. `open_scopes` lists
+// every scope frame of the container that is open, on any fiber, most recently opened first, so
+// `composition_exit` from any fiber reaches them.
+const COMPOSITION_CONTAINER_SIZE = 72;
+const COMPOSITION_CONTAINER_OPEN_SCOPES_OFFSET = 64;
 // Scope record: owner_container(0), parent_scope(8), owned_count(16), owned_values(24), scope_id(32),
-// parent_scope_id(40), owned_capacity(48), exit_entries(56). Owned values grow on demand
-// (`CompositionScopeOwn`).
-const COMPOSITION_SCOPE_SIZE = 64;
+// parent_scope_id(40), owned_capacity(48), exit_entries(56), next_open(64). Owned values grow on
+// demand (`CompositionScopeOwn`).
+const COMPOSITION_SCOPE_SIZE = 72;
+const COMPOSITION_SCOPE_NEXT_OPEN_OFFSET = 64;
 // `exit_entries` of a container (global `dispose` hooks) and of a scope (its `dispose` hooks): a
 // list of exit entries that `composition_exit` runs. Exit entry: next(0), function(8),
 // argument_count(16), arguments(24, rooted, at most COMPOSITION_EXIT_ARGUMENTS_MAX words: a hook
@@ -36,7 +40,8 @@ const COMPOSITION_OPEN_SCOPE_COUNT_OFFSET = 40;
 const COMPOSITION_SLOTS_BYTES_OFFSET = 48;
 const TLS_COMPOSITION_SCOPE_OFFSET = 32;
 const TLS_COMPOSITION_DEPTH_OFFSET = 40;
-// The launched container whose global `dispose` hooks `composition_exit` runs.
+// The launched container whose scopes and global `dispose` hooks `composition_exit` runs. It is
+// per thread, not per fiber: an exit from any fiber of the thread reaches it.
 const TLS_COMPOSITION_EXIT_OFFSET = 56;
 
 pub pointer CompositionScopeOwner() {
@@ -142,6 +147,11 @@ pub bool CompositionLaunch(pointer container) {
         slot = slot + 1;
     }
     raw_word_store(pointer_add(container, COMPOSITION_STATUS_OFFSET), COMPOSITION_ACTIVE);
+    // `composition_exit` reaches the first launched container of the thread from any fiber.
+    pointer owner = CompositionScopeOwner();
+    if owner != NativePointer(0) && raw_word_load(pointer_add(owner, TLS_COMPOSITION_EXIT_OFFSET)) == 0 {
+        raw_word_store(pointer_add(owner, TLS_COMPOSITION_EXIT_OFFSET), NativeWord(container));
+    }
     return true;
 }
 
@@ -174,6 +184,9 @@ pub bool CompositionScopeTryEnter(pointer container, word scopeId, word parentSc
     // Owned values are allocated on first use (`CompositionScopeOwn`), never pre-sized.
     raw_word_store(pointer_add(scopePtr, 32), scopeId);
     raw_word_store(pointer_add(scopePtr, 40), parentScopeId);
+    pointer openScopes = pointer_add(container, COMPOSITION_CONTAINER_OPEN_SCOPES_OFFSET);
+    raw_word_store(pointer_add(scopePtr, COMPOSITION_SCOPE_NEXT_OPEN_OFFSET), raw_word_load(openScopes));
+    raw_word_store(openScopes, NativeWord(scopePtr));
     raw_word_store(pointer_add(owner, scopeOffset), NativeWord(scopePtr));
     raw_word_store(pointer_add(owner, depthOffset), raw_word_load(pointer_add(owner, depthOffset)) + 1);
     raw_word_store(pointer_add(container, COMPOSITION_OPEN_SCOPE_COUNT_OFFSET), raw_word_load(pointer_add(container, COMPOSITION_OPEN_SCOPE_COUNT_OFFSET)) + 1);
@@ -245,10 +258,19 @@ pub unit CompositionScopeLeave() {
     word depthOffset = CompositionDepthOffset();
     pointer scopePtr = NativePointer(raw_word_load(pointer_add(owner, scopeOffset)));
     if scopePtr == NativePointer(0) { Trap(10, NativePointer(0), 0); }
+    raw_word_store(pointer_add(owner, scopeOffset), raw_word_load(pointer_add(scopePtr, 8)));
+    raw_word_store(pointer_add(owner, depthOffset), raw_word_load(pointer_add(owner, depthOffset)) - 1);
+    CompositionScopeRelease(scopePtr);
+    return;
+}
+
+// Closes one open scope frame of its container, on whichever fiber holds it: its remaining exit
+// entries are released without running (compiled code runs `dispose` itself on an ordinary exit),
+// its owned values are unrooted, and it leaves the container's open list. The holder's
+// fiber-local scope chain is the caller's to update.
+pub unit CompositionScopeRelease(pointer scopePtr) {
     pointer container = NativePointer(raw_word_load(scopePtr));
     if CompositionContainerValid(container) == 0 { Trap(10, NativePointer(0), 0); }
-    // Compiled code has already run the `dispose` hooks on this exit path; the registered exit
-    // entries are released without running.
     CompositionExitEntriesDrop(pointer_add(scopePtr, COMPOSITION_SCOPE_EXIT_OFFSET));
     pointer ownedValues = NativePointer(raw_word_load(pointer_add(scopePtr, COMPOSITION_SCOPE_OWNED_VALUES)));
     mut word ownedCount = raw_word_load(pointer_add(scopePtr, COMPOSITION_SCOPE_OWNED_COUNT));
@@ -257,8 +279,12 @@ pub unit CompositionScopeLeave() {
         GcUnregisterRoot(pointer_add(ownedValues, ownedCount * 8));
         raw_word_store(pointer_add(ownedValues, ownedCount * 8), 0);
     }
-    raw_word_store(pointer_add(owner, scopeOffset), raw_word_load(pointer_add(scopePtr, 8)));
-    raw_word_store(pointer_add(owner, depthOffset), raw_word_load(pointer_add(owner, depthOffset)) - 1);
+    mut pointer link = pointer_add(container, COMPOSITION_CONTAINER_OPEN_SCOPES_OFFSET);
+    while NativePointer(raw_word_load(link)) != scopePtr {
+        if raw_word_load(link) == 0 { Trap(10, NativePointer(0), 0); }
+        link = pointer_add(NativePointer(raw_word_load(link)), COMPOSITION_SCOPE_NEXT_OPEN_OFFSET);
+    }
+    raw_word_store(link, raw_word_load(pointer_add(scopePtr, COMPOSITION_SCOPE_NEXT_OPEN_OFFSET)));
     raw_word_store(pointer_add(container, COMPOSITION_OPEN_SCOPE_COUNT_OFFSET), raw_word_load(pointer_add(container, COMPOSITION_OPEN_SCOPE_COUNT_OFFSET)) - 1);
     word ownedCapacity = raw_word_load(pointer_add(scopePtr, COMPOSITION_SCOPE_OWNED_CAPACITY));
     if ownedValues != NativePointer(0) && ownedCapacity != 0 { SystemFree(ownedValues, ownedCapacity * 8); }
@@ -376,6 +402,28 @@ pub unit CompositionExitRegister(pointer container, pointer function, pointer ar
     return;
 }
 
+// Unlinks the next registered `dispose` hook of the current level without running it: the
+// current fiber's innermost scope when it belongs to `container`, else the container's global
+// list. Compiled code calls it right before it runs that hook directly on an ordinary exit, so a
+// `CommandLine.Exit` from inside the hook does not run it a second time, and still runs the hooks
+// after it. A level whose list is empty here is a compiler/runtime mismatch.
+[Export(Abi:"C", Symbol:"composition_exit_pop")]
+pub unit CompositionExitPop(pointer container) {
+    if CompositionContainerValid(container) == 0 { Trap(10, NativePointer(0), 0); }
+    pointer owner = CompositionScopeOwner();
+    if owner == NativePointer(0) { Trap(10, NativePointer(0), 0); }
+    pointer scopePtr = NativePointer(raw_word_load(pointer_add(owner, CompositionScopeOffset())));
+    mut pointer list = pointer_add(container, COMPOSITION_CONTAINER_EXIT_OFFSET);
+    if scopePtr != NativePointer(0) && NativePointer(raw_word_load(scopePtr)) == container {
+        list = pointer_add(scopePtr, COMPOSITION_SCOPE_EXIT_OFFSET);
+    }
+    pointer entry = NativePointer(raw_word_load(list));
+    if entry == NativePointer(0) { Trap(10, NativePointer(0), 0); }
+    raw_word_store(list, raw_word_load(entry));
+    CompositionExitEntryRelease(entry);
+    return;
+}
+
 // Runs the exit list at `list` from its head. Each entry is unlinked before its hook runs, so an
 // exit started inside a `dispose` hook never runs that hook again.
 pub unit CompositionExitRun(pointer list) {
@@ -395,7 +443,9 @@ pub unit CompositionExitRun(pointer list) {
 
 // Ends the program through the host (`CommandLine.Exit`): leaves every open scope innermost
 // first, running its `dispose` hooks, runs the global `dispose` hooks of the launched container,
-// then exits with `code`. `process_exit` is the immediate exit that runs no hooks.
+// then exits with `code`. The scopes are the calling fiber's own first, then those another fiber
+// still holds open (Main inside a `with` while a spawned fiber exits), most recently opened
+// first. `process_exit` is the immediate exit that runs no hooks.
 [Export(Abi:"C", Symbol:"composition_exit")]
 pub never CompositionExit(i32 code) {
     pointer owner = CompositionScopeOwner();
@@ -408,6 +458,13 @@ pub never CompositionExit(i32 code) {
         }
         pointer container = NativePointer(raw_word_load(pointer_add(owner, TLS_COMPOSITION_EXIT_OFFSET)));
         if CompositionContainerValid(container) != 0 {
+            pointer openScopes = pointer_add(container, COMPOSITION_CONTAINER_OPEN_SCOPES_OFFSET);
+            mut pointer open = NativePointer(raw_word_load(openScopes));
+            while open != NativePointer(0) {
+                CompositionExitRun(pointer_add(open, COMPOSITION_SCOPE_EXIT_OFFSET));
+                CompositionScopeRelease(open);
+                open = NativePointer(raw_word_load(openScopes));
+            }
             CompositionExitRun(pointer_add(container, COMPOSITION_CONTAINER_EXIT_OFFSET));
         }
     }

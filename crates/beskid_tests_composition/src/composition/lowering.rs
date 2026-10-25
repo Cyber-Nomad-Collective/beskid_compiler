@@ -11,6 +11,7 @@ fn composition_calls() -> Vec<(&'static str, Vec<CorelibServiceAbiType>, Corelib
         ("composition_container_create", vec![Usize], Pointer),
         ("composition_container_drop", vec![Pointer], Void),
         ("composition_exit_register", vec![Pointer, Pointer, Pointer, Usize], Void),
+        ("composition_exit_pop", vec![Pointer], Void),
         ("composition_launch", vec![Pointer], U8),
         ("composition_scope_enter", vec![Pointer, Usize, Usize], Void),
         ("composition_scope_leave", vec![], Void),

@@ -89,7 +89,7 @@ i32 Main() { launch AppHost(); return 0; }
             Arc::new(result.plan.clone()),
             Arc::new(wrong_source)
         ),
-        Err(CodegenInputError::InvalidCompositionPlan(_))
+        Err(CodegenInputError::InvalidCompositionPlan { .. })
     ));
 
     let mut foreign_registration = result.plan.clone();
@@ -100,7 +100,7 @@ i32 Main() { launch AppHost(); return 0; }
             Arc::new(foreign_registration),
             Arc::clone(&snapshot)
         ),
-        Err(CodegenInputError::InvalidCompositionPlan(_))
+        Err(CodegenInputError::InvalidCompositionPlan { .. })
     ));
 
     let mut duplicate_slot = result.plan;
@@ -112,12 +112,12 @@ i32 Main() { launch AppHost(); return 0; }
             Arc::new(wrong_host),
             Arc::clone(&snapshot)
         ),
-        Err(CodegenInputError::InvalidCompositionPlan(_))
+        Err(CodegenInputError::InvalidCompositionPlan { .. })
     ));
     duplicate_slot.activation[1].slot = duplicate_slot.activation[0].slot;
     assert!(matches!(
         input.with_composition_authority(generation, Arc::new(duplicate_slot), snapshot),
-        Err(CodegenInputError::InvalidCompositionPlan(_))
+        Err(CodegenInputError::InvalidCompositionPlan { .. })
     ));
 }
 
@@ -156,7 +156,7 @@ i32 Main() { launch AppHost(); return 0; }
             Arc::new(wrong_field),
             Arc::clone(&snapshot)
         ),
-        Err(CodegenInputError::InvalidCompositionPlan(_))
+        Err(CodegenInputError::InvalidCompositionPlan { .. })
     ));
 
     let mut wrong_target = result.plan.clone();
@@ -167,15 +167,34 @@ i32 Main() { launch AppHost(); return 0; }
             Arc::new(wrong_target),
             Arc::clone(&snapshot)
         ),
-        Err(CodegenInputError::InvalidCompositionPlan(_))
+        Err(CodegenInputError::InvalidCompositionPlan { .. })
     ));
 
     let mut missing_hook = result.plan;
-    missing_hook.startup_hooks[0].span = Default::default();
-    assert!(matches!(
-        input.with_composition_authority(generation, Arc::new(missing_hook), snapshot),
-        Err(CodegenInputError::InvalidCompositionPlan(_))
-    ));
+    let hook_span = missing_hook.startup_hooks[0].span;
+    missing_hook.startup_hooks[0].span = beskid_analysis::syntax::SpanInfo { start: 0, end: 1, ..hook_span };
+    let assembly = Arc::clone(&input.typed_program().assembly);
+    let root_path = root.unit.path(input.database()).to_path_buf();
+    let Err(error) = input.with_composition_authority(generation, Arc::new(missing_hook), snapshot) else {
+        panic!("a hook that does not bind is rejected");
+    };
+    // The report names the declaration that did not bind, not only the failed check.
+    let CodegenInputError::InvalidCompositionPlan { check, declaration: Some(declaration) } = &error else {
+        panic!("an unbound hook names its declaration: {error}");
+    };
+    assert_eq!(*check, "hook nodes");
+    assert_eq!(declaration.kind, beskid_queries::IndexedNodeKind::ScopeHook);
+    assert_eq!(declaration.found, 0);
+    assert_eq!(declaration.unit, root_path);
+    let report = error.into_report(&assembly, "invalid composition codegen input");
+    let bundle = report
+        .downcast_ref::<beskid_analysis::services::SemanticDiagnosticsError>()
+        .expect("the report carries a structured diagnostic");
+    let [diagnostic] = bundle.diagnostics() else { panic!("one diagnostic: {:?}", bundle.diagnostics()) };
+    assert_eq!(diagnostic.code.as_deref(), Some("E2105"), "{diagnostic:?}");
+    assert_eq!(diagnostic.label, "this declaration does not bind");
+    let help = diagnostic.help.as_deref().unwrap_or_default();
+    assert!(help.contains("hook nodes") && help.contains("0 ScopeHook nodes"), "{help}");
 }
 
 #[test]
@@ -1039,6 +1058,40 @@ i32 Main()
         .to_string();
     // One registration for the global dispose after launch, one for the scope dispose after init.
     assert_eq!(calls_of(&clif, "composition_exit_register"), 2, "{clif}");
+    // Each direct dispose call withdraws its registration first, so `CommandLine.Exit` from inside
+    // the hook does not run it a second time.
+    assert_eq!(calls_of(&clif, "composition_exit_pop"), 2, "{clif}");
+    let pop = callee_ref(&clif, "composition_exit_pop").expect("composition_exit_pop is imported");
+    let disposes = items
+        .iter()
+        .map(|item| item.symbol.as_str())
+        .filter(|name| beskid_analysis::composition::is_hook_item_name(name) && name.contains("_dispose_"))
+        .collect::<Vec<_>>();
+    assert_eq!(disposes.len(), 2, "global and scope dispose functions: {disposes:?}");
+    for dispose in disposes {
+        let callee = callee_ref(&clif, dispose).expect("dispose hook is called");
+        let calls = clif.lines().map(str::trim).filter(|line| line.contains("call ")).collect::<Vec<_>>();
+        let mut seen = 0;
+        for (index, line) in calls.iter().enumerate() {
+            if line.contains(&format!("call {callee}(")) {
+                seen += 1;
+                assert!(
+                    index > 0 && calls[index - 1].contains(&format!("call {pop}(")),
+                    "{dispose} is called right after composition_exit_pop:\n{clif}"
+                );
+            }
+        }
+        assert_eq!(seen, 1, "{dispose} runs once on the ordinary exit:\n{clif}");
+    }
+}
+
+/// The CLIF function reference (`fn3`) that `symbol` is imported as, if any.
+fn callee_ref(clif: &str, symbol: &str) -> Option<String> {
+    clif.lines()
+        .map(str::trim)
+        .find(|line| line.contains(&format!("%{symbol}(")) || line.ends_with(&format!("%{symbol}")) || line.contains(&format!("%{symbol} ")))
+        .and_then(|line| line.split_whitespace().next())
+        .map(str::to_owned)
 }
 
 #[test]
