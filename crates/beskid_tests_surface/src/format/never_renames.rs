@@ -1,6 +1,6 @@
 //! The formatter never renames. Renaming a declaration without its uses produces a program that
-//! no longer resolves, so `beskid fmt` keeps every identifier as written; the naming-style lint
-//! and its quick fix are the way to rename.
+//! no longer resolves, so `beskid fmt` keeps every identifier as written. The naming-style
+//! warnings suggest a name, and Rename Symbol renames a declaration with its uses.
 
 use beskid_analysis::AnalysisOptions;
 use beskid_analysis::format::{format_generated_program, format_source};

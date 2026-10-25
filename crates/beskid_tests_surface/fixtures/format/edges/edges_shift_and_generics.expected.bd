@@ -1,0 +1,5 @@
+i64 Shift(i64 a)
+{
+    List<List<i64>> nested = Make();
+    return (a >> 2) << 1;
+}

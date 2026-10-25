@@ -343,20 +343,70 @@ fn expression_bodied_methods_stay_expression_bodied() {
 #[test]
 fn token_check_rejects_code_changes() {
     use crate::format::tokens::{code_tokens, first_difference};
-    let before = code_tokens("a + b", &[], &[]);
-    let after = code_tokens("a - b", &[], &[]);
+    let tokens = |source: &str| code_tokens(source, &[], &[], &[]);
+    let before = tokens("a + b");
+    let after = tokens("a - b");
     assert!(first_difference(&before, &after).is_some());
-    let written = code_tokens("if (bad_name) { F(x,); }", &[], &[]);
-    assert_eq!(first_difference(&written, &code_tokens("if (bad_name) { F(x); }", &[], &[])), None);
-    let renamed = code_tokens("if (BadName) { F(x); }", &[], &[]);
+    let written = tokens("if (bad_name) { F(x,); }");
+    assert_eq!(first_difference(&written, &tokens("if (bad_name) { F(x); }")), None);
+    let renamed = tokens("if (BadName) { F(x); }");
     assert!(first_difference(&written, &renamed).is_some(), "a renamed identifier is a code change");
-    let respelled = code_tokens("if (badname) { F(x); }", &[], &[]);
+    let respelled = tokens("if (badname) { F(x); }");
     assert!(first_difference(&written, &respelled).is_some(), "a dropped underscore is a code change");
-    let more_arguments = code_tokens("if (bad_name) { F(x, y); }", &[], &[]);
+    let more_arguments = tokens("if (bad_name) { F(x, y); }");
     assert!(first_difference(&written, &more_arguments).is_some(), "an added argument is a code change");
-    let lowered = code_tokens("\"a \" + b", &[], &[]);
-    let written = code_tokens("\"a ${b}\"", &[], &[]);
+    let lowered = tokens("\"a \" + b");
+    let written = tokens("\"a ${b}\"");
     assert!(first_difference(&written, &lowered).is_some(), "lowered interpolation is a code change");
+}
+
+#[test]
+fn token_check_keeps_call_parentheses() {
+    use crate::format::tokens::{code_tokens, first_difference};
+    let tokens = |source: &str| code_tokens(source, &[], &[], &[]);
+    // Only parentheses the parse recorded as omitted may disappear; a call never loses its `()`.
+    assert!(first_difference(&tokens("x.Read();"), &tokens("x.Read;")).is_some());
+    assert!(first_difference(&tokens("let e = E::None();"), &tokens("let e = E::None;")).is_some());
+    let source = "let e = E::None();";
+    let open = source.find('(').unwrap();
+    assert_eq!(first_difference(&code_tokens(source, &[], &[], &[open]), &tokens("let e = E::None;")), None);
+}
+
+#[test]
+fn token_check_strips_only_whole_condition_parentheses() {
+    use crate::format::tokens::{code_tokens, first_difference};
+    let tokens = |source: &str| code_tokens(source, &[], &[], &[]);
+    assert_eq!(first_difference(&tokens("if ((a)) { }"), &tokens("if a { }")), None);
+    assert_eq!(first_difference(&tokens("while (a && b) { }"), &tokens("while a && b { }")), None);
+    // A pair that groups only part of the condition is code: regrouping it changes the program.
+    let partial = tokens("if (a || b) && c { }");
+    assert!(first_difference(&partial, &tokens("if (a || b && c) { }")).is_some());
+    assert!(first_difference(&partial, &tokens("if a || b && c { }")).is_some());
+}
+
+#[test]
+fn token_check_reads_operators_longest_first() {
+    use crate::format::tokens::{code_tokens, first_difference};
+    let tokens = |source: &str| code_tokens(source, &[], &[], &[]);
+    assert_eq!(tokens("a >> b"), ["a", ">>", "b"]);
+    assert_eq!(tokens("(x) => x"), ["x", "=>", "x"]);
+    assert_eq!(tokens("E::A"), ["E", "::", "A"]);
+    for (written, changed) in [("a >> b", "a > > b"), ("x => y", "x = > y"), ("a === b", "a == = b"), ("a::b", "a: :b")]
+    {
+        assert!(first_difference(&tokens(written), &tokens(changed)).is_some(), "`{written}` vs `{changed}`");
+    }
+}
+
+#[test]
+fn omitted_parentheses_are_recorded_only_where_the_printer_drops_them() {
+    let source = "[Mark()] enum E { A, B(i32 x) } i32 F(E e) { let a = E::A(); let n = Make(); let r = match e { E::A() => 1, E::B(x) => x, }; return r; }\n";
+    let formatted = fmt(source);
+    assert!(formatted.contains("[Mark]\n"), "{formatted}");
+    assert!(formatted.contains("let a = E::A;"), "{formatted}");
+    assert!(formatted.contains("let n = Make();"), "{formatted}");
+    assert!(formatted.contains("E::A => "), "{formatted}");
+    assert!(formatted.contains("E::B(x) => "), "{formatted}");
+    assert_eq!(fmt(&formatted), formatted);
 }
 
 #[test]
@@ -369,5 +419,86 @@ fn trailing_commas_may_be_dropped_or_added_by_the_printer() {
     assert!(formatted.contains("[1, 2, 3]"), "{formatted}");
     assert!(formatted.contains("        y: 2,\n"), "{formatted}");
     assert!(formatted.contains("        y: 4,\n"), "{formatted}");
+    assert_eq!(fmt(&formatted), formatted);
+}
+
+#[test]
+fn code_and_clif_literals_are_printed_as_written() {
+    let source = concat!(
+        "string F() { let s = code ```beskid\n",
+        "pub i32 G() {  return @{ 1 + 2 }; }\n",
+        "```\n",
+        "; return s; }\n",
+        "f64 Floor(f64 x) { return clif {  call @floor(%0) }; }\n",
+    );
+    let formatted = fmt(source);
+    let fence = "    let s = code ```beskid\npub i32 G() {  return @{ 1 + 2 }; }\n```;\n";
+    assert!(formatted.contains(fence), "the `;` after a code fence moved:\n{formatted}");
+    assert!(formatted.contains("    return clif {  call @floor(%0) };\n"), "{formatted}");
+    assert_eq!(fmt(&formatted), formatted);
+
+    // A program without source text prints its code literals with the same fence layout.
+    let program = crate::services::parse_program(source).expect("parse");
+    let printed = super::format_generated_program(&program).expect("print");
+    assert!(printed.contains("code ```beskid\npub i32 G() {  return @{1 + 2}; }\n```;"), "{printed}");
+}
+
+#[test]
+fn crlf_files_keep_crlf_line_endings() {
+    let source = "// Header.\r\n/* Block\r\n   comment. */\r\ni32 F() { return 1; }\r\n";
+    let formatted = fmt(source);
+    assert_eq!(formatted, "// Header.\r\n/* Block\r\n   comment. */\r\ni32 F()\r\n{\r\n    return 1;\r\n}\r\n");
+    assert_eq!(fmt(&formatted), formatted, "`--check` passes on a formatted CRLF file");
+    assert!(!formatted.replace("\r\n", "").contains('\n'), "no bare `\\n` line ending:\n{formatted:?}");
+}
+
+#[test]
+fn a_byte_order_mark_is_kept() {
+    let source = "\u{FEFF}i32 F() { return 1; }\n";
+    let formatted = fmt(source);
+    assert_eq!(formatted, "\u{FEFF}i32 F()\n{\n    return 1;\n}\n");
+    assert_eq!(fmt(&formatted), formatted);
+    let crlf = fmt("\u{FEFF}i32 F() { return 1; }\r\n");
+    assert_eq!(crlf, "\u{FEFF}i32 F()\r\n{\r\n    return 1;\r\n}\r\n");
+}
+
+#[test]
+fn a_missing_final_newline_is_added() {
+    assert_eq!(fmt("i32 F() { return 1; }"), "i32 F()\n{\n    return 1;\n}\n");
+    assert_eq!(fmt("i32 F() { return 1; } // last"), "i32 F()\n{\n    return 1;\n} // last\n");
+}
+
+#[test]
+fn documentation_keeps_paragraphs_indentation_and_blank_lines() {
+    let source = "/// Summary.\n///\n/// Example:\n///\n///     let x = F();\n///\nunit F() { return; }\n";
+    let formatted = fmt(source);
+    assert!(formatted.starts_with(source.strip_suffix("unit F() { return; }\n").unwrap()), "{formatted}");
+    assert_eq!(fmt(&formatted), formatted);
+}
+
+#[test]
+fn documentation_check_compares_text_after_the_marker() {
+    use super::source::doc_line_text;
+    assert_eq!(doc_line_text("    /// Text."), "Text.");
+    assert_eq!(doc_line_text("///Text."), "Text.", "the printer adds one space after `///`");
+    assert_ne!(doc_line_text("///     code"), doc_line_text("/// code"), "indentation inside a doc line counts");
+    assert_ne!(doc_line_text("/// a b"), doc_line_text("/// ab"));
+    assert_eq!(doc_line_text("///"), "");
+}
+
+#[test]
+fn comments_between_a_header_and_its_brace_stay_with_the_header() {
+    let source = "i32 F() // returns one\n{ return 1; }\ni32 G()\n// note\n/* more */\n{ return 2; }\nunit H(bool x) { if (x) /* why */ { return; } }\n";
+    let formatted = fmt(source);
+    assert!(formatted.contains("i32 F() // returns one\n{\n    return 1;\n}\n"), "{formatted}");
+    assert!(formatted.contains("i32 G()\n// note\n/* more */\n{\n    return 2;\n}\n"), "{formatted}");
+    assert!(formatted.contains("    if (x) /* why */\n    {\n        return;\n    }\n"), "{formatted}");
+    assert_eq!(fmt(&formatted), formatted);
+}
+
+#[test]
+fn doubled_commas_between_match_arms_are_formatted() {
+    let formatted = fmt("i32 F(i32 x) { return match x { 1 => 10,, _ => 20,, }; }\n");
+    assert!(formatted.contains("        1 => 10,\n        _ => 20,\n"), "{formatted}");
     assert_eq!(fmt(&formatted), formatted);
 }

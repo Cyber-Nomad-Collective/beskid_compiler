@@ -500,14 +500,16 @@ impl Emit for Spanned<ArrayLiteralExpression> {
 
 impl Emit for Spanned<CodeStringLiteral> {
     fn emit<W: Write>(&self, w: &mut W, _cx: &mut EmitCtx) -> Result<(), EmitError> {
-        write!(w, "code ```{}", self.node.language)?;
+        writeln!(w, "code ```{}", self.node.language)?;
         for segment in &self.node.segments {
             match segment {
                 CodeStringSegment::Text(text) => w.write_str(text)?,
                 CodeStringSegment::Hole(source) => write!(w, "@{{{source}}}")?,
             }
         }
-        writeln!(w, "```")?;
+        // The opening fence ends its line; the closing fence ends the literal, so a following `;`
+        // or `)` stays on the fence's line.
+        w.write_str("```")?;
         Ok(())
     }
 }
@@ -566,8 +568,9 @@ impl Emit for Spanned<crate::syntax::SpawnExpression> {
 impl Emit for Spanned<Expression> {
     fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
         // A string literal (interpolated or not) is printed exactly as written: the parser lowers
-        // `"a ${b}"` to `"a " + b`, and its decoded text parts would lose their escapes.
-        if let Some(literal) = cx.string_literal_containing(self.span.start, self.span.end) {
+        // `"a ${b}"` to `"a " + b`, and its decoded text parts would lose their escapes. `code`
+        // and CLIF literals are printed as written too: their text is the program.
+        if let Some(literal) = cx.verbatim_literal_containing(self.span.start, self.span.end) {
             return cx.token(w, &literal);
         }
         self.node.emit(w, cx)

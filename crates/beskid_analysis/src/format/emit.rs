@@ -30,8 +30,8 @@ struct Trivia {
     source: String,
     comments: Vec<Comment>,
     next: usize,
-    /// Byte ranges of string literal tokens, sorted.
-    strings: Vec<(usize, usize)>,
+    /// Byte ranges of the literals printed as written (string, `code` and CLIF literals), sorted.
+    verbatim: Vec<(usize, usize)>,
 }
 
 /// Formatting state: indentation, the source comments still to emit, and blank-line tracking.
@@ -46,21 +46,24 @@ pub struct EmitCtx {
     trivia: Option<Trivia>,
     /// Source offset just after the last emitted element or comment.
     last_end: usize,
+    /// Source offset where the current line-level element (with its documentation) starts.
+    element_anchor: usize,
     /// Nothing was emitted yet in the innermost container (no blank line may follow its `{`).
     fresh: bool,
 }
 
 impl EmitCtx {
     pub fn new() -> Self {
-        Self { indent: 0, trivia: None, last_end: 0, fresh: true }
+        Self { indent: 0, trivia: None, last_end: 0, element_anchor: 0, fresh: true }
     }
 
     /// A context that re-emits the comments of `source` (the text the AST was parsed from).
-    pub(crate) fn with_source(source: &str, comments: Vec<Comment>, strings: Vec<(usize, usize)>) -> Self {
+    pub(crate) fn with_source(source: &str, comments: Vec<Comment>, verbatim: Vec<(usize, usize)>) -> Self {
         Self {
             indent: 0,
-            trivia: Some(Trivia { source: source.to_string(), comments, next: 0, strings }),
+            trivia: Some(Trivia { source: source.to_string(), comments, next: 0, verbatim }),
             last_end: 0,
+            element_anchor: 0,
             fresh: true,
         }
     }
@@ -103,8 +106,68 @@ impl EmitCtx {
     }
 
     /// Separate a declaration header from its opening brace (the house brace style).
+    ///
+    /// Comments between the header and its `{` stay with the header: the first one on the
+    /// header's line when the author wrote it there, the others on their own lines.
     pub fn before_open_brace<W: Write>(&mut self, w: &mut W) -> Result<(), EmitError> {
-        policy::before_open_brace(self, w)
+        let after_line_comment = self.header_comments(w)?;
+        policy::before_open_brace(self, w, after_line_comment)
+    }
+
+    /// Emit the pending comments that lie between a header and the `{` that follows them in the
+    /// source. Returns true when the last thing written is a `//` comment.
+    fn header_comments<W: Write>(&mut self, w: &mut W) -> Result<bool, EmitError> {
+        let indent = self.indent;
+        let anchor = self.element_anchor;
+        let Some(t) = self.trivia.as_mut() else {
+            return Ok(false);
+        };
+        // Only comments of this element's header: no `{` between the element start and them
+        // (otherwise they belong to a body further in, such as an `if` inside a function).
+        let Some(first) = t.comments.get(t.next) else {
+            return Ok(false);
+        };
+        if anchor > first.start || t.source[anchor..first.start].contains('{') {
+            return Ok(false);
+        }
+        // The run of pending comments separated only by whitespace and followed by `{`.
+        let mut end = t.next;
+        loop {
+            let Some(comment) = t.comments.get(end) else {
+                return Ok(false);
+            };
+            let after = &t.source[comment.end..];
+            let rest = after.trim_start();
+            let next_start = comment.end + (after.len() - rest.len());
+            end += 1;
+            if rest.starts_with('{') {
+                break;
+            }
+            if t.comments.get(end).is_none_or(|next| next.start != next_start) {
+                return Ok(false);
+            }
+        }
+        for index in t.next..end {
+            let comment = &t.comments[index];
+            let before = &t.source[..comment.start];
+            let same_line = index == t.next && !before[before.trim_end().len()..].contains('\n');
+            if same_line {
+                w.write_char(' ')?;
+            } else {
+                w.write_char('\n')?;
+                for _ in 0..indent {
+                    w.write_str("    ")?;
+                }
+            }
+            w.write_str(&comment.text)?;
+        }
+        let (last_end, line_comment) = {
+            let last = &t.comments[end - 1];
+            (last.end, last.text.starts_with("//"))
+        };
+        t.next = end;
+        self.last_end = last_end;
+        Ok(line_comment)
     }
 
     /// Write `{`, end the line and indent; the next element is the first of a new container.
@@ -128,15 +191,17 @@ impl EmitCtx {
         Ok(())
     }
 
-    /// The source text of the string literal that contains `start..end`, if any.
+    /// The source text of the string, `code` or CLIF literal that contains `start..end`, if any.
     ///
-    /// The parser lowers an interpolated string (`"a ${b} c"`) to `+` concatenation; the
-    /// formatter prints the literal as written instead.
-    pub(crate) fn string_literal_containing(&self, start: usize, end: usize) -> Option<String> {
+    /// The parser lowers an interpolated string (`"a ${b} c"`) to `+` concatenation and trims
+    /// `code` holes; the formatter prints every such literal as written instead. A `code` fence
+    /// ends at its closing fence: the line ending the grammar takes after it is not part of it.
+    pub(crate) fn verbatim_literal_containing(&self, start: usize, end: usize) -> Option<String> {
         let t = self.trivia.as_ref()?;
-        let index = t.strings.partition_point(|(s, _)| *s <= start);
-        let (s, e) = *t.strings.get(index.checked_sub(1)?)?;
-        (s <= start && end <= e && end > s).then(|| t.source[s..e].to_string())
+        let index = t.verbatim.partition_point(|(s, _)| *s <= start);
+        let (s, e) = *t.verbatim.get(index.checked_sub(1)?)?;
+        (s <= start && end <= e && end > s)
+            .then(|| crate::format::tokens::trim_one_newline(&t.source[s..e]).to_string())
     }
 
     /// The source text of `start..end`, when formatting a source.
@@ -159,6 +224,7 @@ impl EmitCtx {
     /// writes the indentation and the element next.
     pub fn element_start<W: Write>(&mut self, w: &mut W, anchor: usize, policy_blank: bool) -> Result<(), EmitError> {
         let emitted = self.flush_own_line_comments_before(w, anchor, policy_blank)?;
+        self.element_anchor = anchor;
         self.separate(w, anchor, policy_blank && !emitted)?;
         self.fresh = false;
         Ok(())

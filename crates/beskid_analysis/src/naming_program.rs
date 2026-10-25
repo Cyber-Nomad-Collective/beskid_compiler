@@ -1,4 +1,4 @@
-//! Naming-role identifier sites in a [`Program`] syntax tree (the naming-style lint and its quick fix).
+//! Naming-role identifier sites in a [`Program`] syntax tree (the naming-style lint).
 
 use crate::naming_case::NamingProfile;
 use crate::syntax::ContractNode;
