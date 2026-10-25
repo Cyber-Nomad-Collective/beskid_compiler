@@ -419,7 +419,11 @@ static void BeskidWorkerPoolStopLocked(void) {
     BeskidOwnerPostLocked(request->owner, request->tag, 1);
   }
   beskid_work_tail = NULL;
-  for (size_t i = 0; i < beskid_worker_count; ++i) {
+  /* The worker count is read and written only under the transport lock: submit
+   * tests it there. The joins below use this snapshot. */
+  size_t count = beskid_worker_count;
+  beskid_worker_count = 0;
+  for (size_t i = 0; i < count; ++i) {
     struct BeskidWorkerSlot *slot = beskid_workers[i];
     if (slot->running) {
       slot->orphaned = orphaned[i] = 1;
@@ -431,7 +435,7 @@ static void BeskidWorkerPoolStopLocked(void) {
   }
   BeskidConditionSignal(&beskid_work_ready);
   BeskidUnlock();
-  for (size_t i = 0; i < beskid_worker_count; ++i) {
+  for (size_t i = 0; i < count; ++i) {
     struct BeskidWorkerSlot *slot = beskid_workers[i];
     beskid_workers[i] = NULL;
 #ifdef _WIN32
@@ -442,7 +446,6 @@ static void BeskidWorkerPoolStopLocked(void) {
 #endif
     if (!orphaned[i]) beskid_rt_v5_intrinsic_system_free(slot, sizeof(*slot));
   }
-  beskid_worker_count = 0;
   BeskidWorkerReapOrphans();
 }
 int32_t beskid_rt_v5_intrinsic_worker_pool_init(size_t count) {
@@ -471,7 +474,7 @@ int32_t beskid_rt_v5_intrinsic_worker_pool_init(size_t count) {
 #endif
     beskid_workers[created] = slot;
   }
-  beskid_worker_count = created;
+  BeskidLock(); beskid_worker_count = created; BeskidUnlock();
   if (created == count) {
     beskid_worker_holders = 1;
     BeskidPoolUnlock();
@@ -495,7 +498,7 @@ static inline size_t BeskidWorkerPoolHolders(void) {
   return holders;
 }
 int32_t beskid_rt_v5_intrinsic_worker_submit(struct BeskidWorkerRequest *r) {
-  if (!r || !beskid_worker_count) return -1;
+  if (!r) return -1;
 #ifdef BESKID_NETWORK_TRANSPORT
   if (r->operation != BESKID_WORKER_READ && r->operation != BESKID_WORKER_WRITE && r->operation != 3) return -1;
 #else
@@ -506,7 +509,7 @@ int32_t beskid_rt_v5_intrinsic_worker_submit(struct BeskidWorkerRequest *r) {
 #endif
   if (r->operation != 3 && !BeskidWorkerAcquireDescriptor(r)) return -1;
   BeskidLock();
-  if (beskid_workers_stop || beskid_request_count >= BESKID_REQUEST_MAX) {
+  if (!beskid_worker_count || beskid_workers_stop || beskid_request_count >= BESKID_REQUEST_MAX) {
     BeskidWorkerCloseDescriptor(r);
     BeskidUnlock();
     return -1;
