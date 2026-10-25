@@ -432,7 +432,8 @@ mod tests {
         beskid_artifacts::content_fingerprint(&serde_json::to_string(&value).unwrap())
     }
 
-    const BASE: &str = "type Point { i64 x; i64 y; }\ni64 Main() { Point p = Point { x: 1_i64, y: 2_i64 }; return p.x + 42_i64; }";
+    const BASE: &str =
+        "type Point { i64 x; i64 y; }\ni64 Main() { Point p = Point { x: 1_i64, y: 2_i64 }; return p.x + 42_i64; }";
 
     #[test]
     fn equal_trees_have_equal_fingerprints() {

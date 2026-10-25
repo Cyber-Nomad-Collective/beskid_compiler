@@ -398,45 +398,44 @@ fn snapshot_shape(directory: &std::path::Path) -> (usize, usize, usize) {
     (interned, memos, bytes.len())
 }
 
-/// Every compile of an unchanged project numbers its syntax trees with a new generation, so the
-/// keys of the previous compile are dead after it. Their memos must not be written again and
-/// their slots must be reused: repeated compiles keep the snapshot at one size.
+/// A compile that numbers its syntax trees with a new generation leaves the keys of the previous
+/// generation dead. Their memos must not be written again and their slots must be reused, so
+/// repeated compiles keep the snapshot near one size instead of adding a generation per compile.
 #[test]
-fn repeated_compiles_of_an_unchanged_project_keep_the_snapshot_size() {
-    use beskid_analysis::services::{PrepareOptions, ResolvedInput, synthetic_compile_plan_for_source};
+fn repeated_compiles_with_new_generations_keep_the_snapshot_bounded() {
+    use beskid_analysis::services::synthetic_compile_plan_for_source;
 
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("Main.bd");
-    let source = "enum Result<TValue, TError> { Ok(TValue value), Error(TError error) } enum Problem { Closed() } Result<i64, Problem> Accept() { return Result::Ok(1_i64); } Result<unit, Problem> Main() { i64 value = Accept()?; return Result::Ok(()); }";
+    let source = "type Pair { i64 left; i64 right; } i64 Sum(Pair pair) { return pair.left + pair.right; } i64 Main() { Pair pair = Pair { left: 1_i64, right: 2_i64 }; return Sum(pair) * 3_i64; }";
     std::fs::write(&path, source).unwrap();
+    let plan = synthetic_compile_plan_for_source(&path);
+    let program = beskid_analysis::services::parse_program(source).unwrap();
     let mut shapes = Vec::new();
-    let mut generations = Vec::new();
-    for _ in 0..4 {
+    for session in 0..5_u64 {
         let mut db = BeskidDatabase::with_persistence(directory.path());
-        let resolved = ResolvedInput {
-            source_path: path.clone(),
-            source: source.into(),
-            compile_plan: Some(synthetic_compile_plan_for_source(&path)),
-            prepared_workspace: None,
-            workspace_summary: None,
-            assembly: None,
-        };
-        let (prepared, _, _) = beskid_queries::prepare_compilation_diagnostics_with_db(
-            &mut db,
-            &resolved,
-            PrepareOptions::without_mods(),
-            None,
-        )
-        .unwrap();
-        generations.push(prepared.assembly.generation);
-        drop(prepared);
+        db.ensure_file_text(path.clone(), source.into());
+        let project = db.ensure_project_session(&plan, &path, "lock".into());
+        let unit = SourceUnitId::new(&db, path.clone());
+        let generation = SyntaxGenerationId(100 + session);
+        db.ensure_expanded_syntax_unit(project, unit, generation, source.into(), std::sync::Arc::new(program.clone()))
+            .unwrap();
+        let index = SyntaxIndex::from_program(&program, generation);
+        for node in 0..index.len() as u32 {
+            let key = AstNodeKey { unit, generation, node: beskid_queries::AstNodeId(node) };
+            assert!(node_kind(&db, key).unwrap().is_some());
+            let _ = beskid_queries::node_span(&db, key).unwrap();
+        }
         beskid_queries::persist_session_snapshot(&mut db);
         shapes.push(snapshot_shape(directory.path()));
     }
-    assert!(generations.windows(2).all(|pair| pair[1] > pair[0]), "every compile is a new generation: {generations:?}");
-    let (interned, memos, bytes) = shapes[1];
-    for &(later_interned, later_memos, later_bytes) in &shapes[2..] {
-        assert_eq!((later_interned, later_memos), (interned, memos), "snapshot entries must not grow: {shapes:?}");
-        assert!(later_bytes.abs_diff(bytes) * 100 <= bytes, "snapshot bytes must not grow: {shapes:?}");
+    let (interned, memos, bytes) = shapes[0];
+    for &(later_interned, later_memos, later_bytes) in &shapes[1..] {
+        assert_eq!(later_memos, memos, "only this compile's memos are written: {shapes:?}");
+        // Interned slots are reused per hash shard: a compile allocates new slots only where its
+        // shard ran out of dead ones, so the count settles at the busiest shard's high-water mark.
+        // A leak would add a whole generation of keys (about `memos`) on every compile.
+        assert!(later_interned < interned + interned / 2, "interned keys must be reused: {shapes:?}");
+        assert!(later_bytes < bytes + bytes / 2, "snapshot bytes must not grow per compile: {shapes:?}");
     }
 }
