@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Proof harness and telemetry fixes
+
+- The internal-error sweep matches the whole internal diagnostic family (`E21xx`, including E2106 and E2107) and E4041; a requested corpus that is missing exits 2, and `beskid new` output is classified. Harness commands run in their own process group and a timeout kills grandchildren (linker, test executables); captured output is capped.
+- The soak asks for the `beskid.migrateLock` quick fix the way an editor does: it waits for the server's `E3024` diagnostic on the `.bproj` and sends it in the code-action context, and fails when a migration ran but the fix was never offered. The language server now builds diagnostic-driven code actions (such as "Migrate lock file") for project manifests too; the manifest guard had skipped them, so the editor never offered the fix on the `.bproj`.
+- The soak writes to the server through a bounded writer thread (a server that stops reading stdin fails the run after 30 s), runs `beskid dev project lock` with a timeout, checks its status and the migrated `# Project.lock v3` header, measures memory growth after a warm-up window, fails on an `initialize` error, rejects oversized `Content-Length` headers, and no longer follows symlinks while mutating. `scripts/v067-proof.sh` validates every input before the first step and caps each step with `timeout`.
+- OTLP export is opt-in: only `BESKID_TELEMETRY=1` enables it (a generic `OTEL_EXPORTER_OTLP_ENDPOINT` no longer does). The exporter is kept and flushed by `shutdown_otel()`, which `beskid` calls before it exits; a second subscriber no longer panics.
+- pckg: only `Authorization: Bearer bpk_...` is a publisher key. A `Basic` or OIDC `Bearer` header forwarded by the proxy no longer ends the browser session; a malformed `bpk_` key is still 401. The session answer for a key is the `SessionIdentity` type (`keyName` and `keyScopes` are optional fields).
+
 ### Corelib check
 
 - Every Corelib project passes `beskid check` on its own. A Corelib package checked directly from the installed (or `BESKID_CORELIB_ROOT`) bundle has Corelib identity, as it has as a dependency, so the compiler-issued Dynamic and serialization bridges no longer fail the C extern profile (T0903, T0904) and their compiler-referenced helpers are no longer unused (W2101). `Console/Hosting.bd` is a described Corelib service source, so its `__composition_exit` call is admitted (it was E1107).
