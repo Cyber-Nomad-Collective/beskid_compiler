@@ -107,15 +107,21 @@ impl CodegenInputError {
             let unit = assembly.units.get(assembly.entry_index)?;
             let start =
                 beskid_analysis::syntax::SpanInfo { start: 0, end: 0, line_col_start: (1, 1), line_col_end: (1, 1) };
-            let mut diagnostic =
-                beskid_analysis::analysis::diagnostic_kinds::issue_diagnostic(&unit.logical_name, &unit.source, start, &kind);
+            let mut diagnostic = beskid_analysis::analysis::diagnostic_kinds::issue_diagnostic(
+                &unit.logical_name,
+                &unit.source,
+                start,
+                &kind,
+            );
             diagnostic.label = "while compiling this program".to_owned();
             Some(diagnostic)
         });
         match diagnostic {
             Some(diagnostic) => {
-                anyhow::Error::new(beskid_analysis::services::SemanticDiagnosticsError::from_diagnostics(vec![diagnostic]))
-                    .context(message)
+                anyhow::Error::new(beskid_analysis::services::SemanticDiagnosticsError::from_diagnostics(vec![
+                    diagnostic,
+                ]))
+                .context(message)
             }
             None => anyhow::anyhow!(message),
         }
@@ -394,9 +400,9 @@ impl<'db> CodegenInput<'db> {
                 None => entry,
                 Some(path) => SourceUnitId::new(db, path.to_path_buf()),
             };
-            beskid_queries::node_at_span(db, unit, generation, kind, span).map(|key| key.node).map_err(|found| {
-                UnboundCompositionDeclaration { unit: unit.path(db).to_path_buf(), kind, span, found }
-            })
+            beskid_queries::node_at_span(db, unit, generation, kind, span)
+                .map(|key| key.node)
+                .map_err(|found| UnboundCompositionDeclaration { unit: unit.path(db).to_path_buf(), kind, span, found })
         };
         let mut unbound_registration_source = None;
         for registration in &mut snapshot.registrations {

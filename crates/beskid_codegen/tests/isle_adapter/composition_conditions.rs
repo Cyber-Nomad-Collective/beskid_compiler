@@ -1060,38 +1060,46 @@ i32 Main()
     assert_eq!(calls_of(&clif, "composition_exit_register"), 2, "{clif}");
     // Each direct dispose call withdraws its registration first, so `CommandLine.Exit` from inside
     // the hook does not run it a second time.
-    assert_eq!(calls_of(&clif, "composition_exit_pop"), 2, "{clif}");
-    let pop = callee_ref(&clif, "composition_exit_pop").expect("composition_exit_pop is imported");
+    assert!(calls_of(&clif, "composition_exit_pop") >= 2, "{clif}");
+    // Every call imports its callee afresh (`fn23 = %composition_exit_pop`), so a symbol has
+    // several references.
+    let pops = callee_refs(&clif, "composition_exit_pop");
+    assert!(!pops.is_empty(), "composition_exit_pop is imported:\n{clif}");
     let disposes = items
         .iter()
         .map(|item| item.symbol.as_str())
         .filter(|name| beskid_analysis::composition::is_hook_item_name(name) && name.contains("_dispose_"))
         .collect::<Vec<_>>();
     assert_eq!(disposes.len(), 2, "global and scope dispose functions: {disposes:?}");
+    let calls = clif.lines().map(str::trim).filter(|line| line.contains("call ")).collect::<Vec<_>>();
+    let calls_any = |line: &str, refs: &[String]| refs.iter().any(|callee| line.contains(&format!("call {callee}(")));
+    let mut direct_calls = 0;
     for dispose in disposes {
-        let callee = callee_ref(&clif, dispose).expect("dispose hook is called");
-        let calls = clif.lines().map(str::trim).filter(|line| line.contains("call ")).collect::<Vec<_>>();
+        let refs = callee_refs(&clif, dispose);
         let mut seen = 0;
         for (index, line) in calls.iter().enumerate() {
-            if line.contains(&format!("call {callee}(")) {
+            if calls_any(line, &refs) {
                 seen += 1;
                 assert!(
-                    index > 0 && calls[index - 1].contains(&format!("call {pop}(")),
+                    index > 0 && calls_any(calls[index - 1], &pops),
                     "{dispose} is called right after composition_exit_pop:\n{clif}"
                 );
             }
         }
-        assert_eq!(seen, 1, "{dispose} runs once on the ordinary exit:\n{clif}");
+        assert!(seen >= 1, "{dispose} runs on the ordinary exit:\n{clif}");
+        direct_calls += seen;
     }
+    assert_eq!(direct_calls, calls_of(&clif, "composition_exit_pop"), "one pop per direct dispose call:\n{clif}");
 }
 
-/// The CLIF function reference (`fn3`) that `symbol` is imported as, if any.
-fn callee_ref(clif: &str, symbol: &str) -> Option<String> {
+/// Every CLIF function reference (`fn3`) that `symbol` is imported as.
+fn callee_refs(clif: &str, symbol: &str) -> Vec<String> {
     clif.lines()
         .map(str::trim)
-        .find(|line| line.contains(&format!("%{symbol}(")) || line.ends_with(&format!("%{symbol}")) || line.contains(&format!("%{symbol} ")))
-        .and_then(|line| line.split_whitespace().next())
+        .filter(|line| line.contains(&format!("= %{symbol} ")) || line.ends_with(&format!("= %{symbol}")))
+        .filter_map(|line| line.split_whitespace().next())
         .map(str::to_owned)
+        .collect()
 }
 
 #[test]

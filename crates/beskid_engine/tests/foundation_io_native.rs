@@ -310,10 +310,17 @@ fn staged_runtime_kit_emitted_binary_ends_quietly_on_a_closed_stdout() {
         }
         assert_ne!(status.code(), Some(134), "abort status: {stderr}");
         if default_disposition {
-            assert_eq!(status.signal(), Some(libc::SIGPIPE), "ends by SIGPIPE like `head` expects: {status:?} {stderr}");
+            assert_eq!(
+                status.signal(),
+                Some(libc::SIGPIPE),
+                "ends by SIGPIPE like `head` expects: {status:?} {stderr}"
+            );
             assert!(output.stderr.is_empty(), "no message on SIGPIPE: {stderr}");
         } else {
-            assert!(status.code().is_some_and(|code| code != 0), "a failed write is an error status: {status:?} {stderr}");
+            assert!(
+                status.code().is_some_and(|code| code != 0),
+                "a failed write is an error status: {status:?} {stderr}"
+            );
         }
     }
 }
@@ -595,11 +602,11 @@ fn lower_foundation_entry(fixture: &str, entry: &str) -> anyhow::Result<beskid_c
         || matches!(
             fixture,
             "foundation_redirected_streams.bd"
-            | "foundation_redirected_input.bd"
-            | "foundation_redirected_output.bd"
-            | "foundation_redirected_stderr.bd"
-            | "foundation_redirected_args.bd"
-            | "foundation_redirected_unit.bd"
+                | "foundation_redirected_input.bd"
+                | "foundation_redirected_output.bd"
+                | "foundation_redirected_stderr.bd"
+                | "foundation_redirected_args.bd"
+                | "foundation_redirected_unit.bd"
         );
     let redirected_args_fixture = fixture == "foundation_redirected_args.bd";
     if fixture == "foundation_syscall.bd" || redirected_stream_fixture {

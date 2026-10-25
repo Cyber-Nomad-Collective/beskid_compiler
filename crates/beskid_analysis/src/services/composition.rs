@@ -450,7 +450,8 @@ host AppHost()
 i32 Main() { launch AppHost(); return 0; }
 "#;
         let found = diagnostics(source);
-        let duplicates = found.iter().filter(|diagnostic| diagnostic.code.as_deref() == Some("E1724")).collect::<Vec<_>>();
+        let duplicates =
+            found.iter().filter(|diagnostic| diagnostic.code.as_deref() == Some("E1724")).collect::<Vec<_>>();
         let [duplicate] = duplicates.as_slice() else { panic!("one E1724 expected: {found:?}") };
         assert_eq!(duplicate.message, "`Clock` is registered twice in this host");
         assert_eq!(duplicate.related.len(), 1, "the first registration is the related place");
