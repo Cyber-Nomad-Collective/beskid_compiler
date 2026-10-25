@@ -177,14 +177,14 @@ fn is_inside_compiler_corelib_checkout(manifest: &Path) -> bool {
     physical.starts_with(&corelib) || runtime.is_some_and(|root| physical.starts_with(root))
 }
 /// Whether `source_root` is physically `<corelib>/packages/<package>/src` of the installed Corelib
-/// workspace (`installed_corelib_lock_root`).
+/// workspace (the toolchain's shared, sealed Corelib, `SharedCorelib`).
 ///
 /// That workspace is the one whose packages every consumer already locks with the `corelib`
 /// source, so a package of it checked directly carries the identity it has as a dependency.
 /// Unmarked or unresolvable roots and copies elsewhere stay local.
 fn is_installed_corelib_source_root(source_root: &Path) -> bool {
-    super::workflow::installed_corelib_lock_root()
-        .is_some_and(|corelib| is_corelib_workspace_package_source_root(&corelib, source_root))
+    super::workflow::SharedCorelib::resolve()
+        .is_some_and(|corelib| is_corelib_workspace_package_source_root(corelib.root(), source_root))
 }
 /// Whether `source_root` physically is `<corelib>/packages/<package>/src`, with `corelib` the
 /// physical root of a Corelib workspace.
@@ -196,12 +196,9 @@ fn is_corelib_workspace_package_source_root(corelib: &Path, source_root: &Path) 
         && physical.parent().and_then(Path::parent) == Some(corelib.join("packages").as_path())
 }
 /// Whether `manifest` belongs to a project inside the installed Corelib workspace
-/// (`installed_corelib_lock_root`): a package, Mod, aggregate, or test project of it.
+/// (the toolchain's shared Corelib, `SharedCorelib`): a package, Mod, aggregate, or test project of it.
 fn is_inside_installed_corelib(manifest: &Path) -> bool {
-    let Some(corelib) = super::workflow::installed_corelib_lock_root() else {
-        return false;
-    };
-    manifest.canonicalize().is_ok_and(|physical| physical.starts_with(corelib))
+    super::workflow::SharedCorelib::resolve().is_some_and(|corelib| corelib.contains(manifest))
 }
 /// Whether `source_root` is a Corelib package source root: the compiler checkout's own, or the
 /// installed Corelib workspace's.
