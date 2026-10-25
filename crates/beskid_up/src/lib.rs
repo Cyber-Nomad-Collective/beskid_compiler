@@ -9,5 +9,5 @@ pub use commands::{UpArgs, UpCommand, execute};
 pub use install::{DirectInstall, update_configured_toolchain};
 pub use manifest::{Bundle, ReleaseManifest, UpError};
 pub use owner::{
-    current_installation_status, inspect_installation, InstallationOwner, InstallationStatus, write_owner_receipt,
+    InstallationOwner, InstallationStatus, current_installation_status, inspect_installation, write_owner_receipt,
 };

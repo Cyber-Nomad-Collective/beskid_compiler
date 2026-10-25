@@ -1,5 +1,5 @@
 use beskid_analysis::projects::dependency_edit::{
-    commit_dependency_change, DependencyIntent, DependencyIntentSource, DependencyMutation, plan_dependency_change,
+    DependencyIntent, DependencyIntentSource, DependencyMutation, commit_dependency_change, plan_dependency_change,
 };
 use beskid_analysis::projects::workflow::{RefreshScope, ResolutionPolicy};
 use std::collections::{BTreeMap, BTreeSet};
@@ -228,7 +228,8 @@ fn dep06_registry_offline_warm_cache_is_verified_without_http_and_tampering_fail
     std::fs::write(fixture.manifest.parent().unwrap().join(cache_file), "tampered\n").unwrap();
     let tampered = fixture.snapshot();
     assert!(
-        plan_dependency_change(&fixture.manifest, &update("Numbers", None), &policy(true, selected("Numbers"))).is_err()
+        plan_dependency_change(&fixture.manifest, &update("Numbers", None), &policy(true, selected("Numbers")))
+            .is_err()
     );
     assert_eq!(registry.count(), count);
     assert_eq!(fixture.snapshot(), tampered, "failed cache verification must preserve manifest, lock and obj");

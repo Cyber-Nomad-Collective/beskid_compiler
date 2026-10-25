@@ -63,7 +63,9 @@ fn dep06_update_changes_only_selected_version_bytes() {
         DependencyMutation::Update { package: Some("Numbers".into()), version: Some("1.2.4".into()), all: false };
     let updated = edit_manifest(&original, &mutation).unwrap();
     assert_eq!(updated, original.replace("\"1.2.3\"", "\"1.2.4\""));
-    assert!(edit_manifest(&original, &DependencyMutation::Update { package: None, version: None, all: false }).is_err());
+    assert!(
+        edit_manifest(&original, &DependencyMutation::Update { package: None, version: None, all: false }).is_err()
+    );
     assert!(
         edit_manifest(
             &original,
@@ -142,5 +144,8 @@ fn dep06_workspace_selection_does_not_pick_first_member() {
     let error = select_dependency_project(&workspace, None).unwrap_err().to_string();
     assert!(error.contains("--project"));
     assert!(error.find("Alpha.bproj").unwrap() < error.find("Zulu.bproj").unwrap());
-    assert_eq!(select_dependency_project(&temp.path().join("Zulu"), None).unwrap(), temp.path().join("Zulu/Zulu.bproj"));
+    assert_eq!(
+        select_dependency_project(&temp.path().join("Zulu"), None).unwrap(),
+        temp.path().join("Zulu/Zulu.bproj")
+    );
 }

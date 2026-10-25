@@ -149,7 +149,9 @@ pub fn run() -> miette::Result<()> {
         .map_err(|error| miette::miette!("cannot expand argument file: {error}"))?;
     let cli = parse_invocation(args).unwrap_or_else(|error| error.exit());
     let backend_logs = matches!(&cli.command, Commands::Dev(args) if args.log_cranelift);
-    beskid_telemetry::init(InitOptions::cli(backend_logs).with_verbosity(cli.verbosity()).with_log_file(cli.log_file()));
+    beskid_telemetry::init(
+        InitOptions::cli(backend_logs).with_verbosity(cli.verbosity()).with_log_file(cli.log_file()),
+    );
     crate::cli::error_format::apply_error_format(&cli.command);
     if needs_corelib(&cli.command) {
         ensure_corelib_ready().map_err(anyhow_to_miette)?;

@@ -126,7 +126,7 @@ fn v06_failed_active_replace_retains_prior_pointer() {
 
 #[test]
 fn v06_owner_receipts_bind_complete_inventory_and_active_direct_coordinate() {
-    use beskid_up::{inspect_installation, InstallationOwner, write_owner_receipt};
+    use beskid_up::{InstallationOwner, inspect_installation, write_owner_receipt};
     let storage = tempfile::tempdir().unwrap();
     let store = DirectInstall::new(storage.path());
     let (_source, bytes, manifest) = fixture("0.6.0", false);
@@ -144,7 +144,7 @@ fn v06_owner_receipts_bind_complete_inventory_and_active_direct_coordinate() {
 
 #[test]
 fn v06_package_owner_receipt_rejects_tampering_unknown_fields_and_conflicting_direct_receipt() {
-    use beskid_up::{inspect_installation, InstallationOwner, write_owner_receipt};
+    use beskid_up::{InstallationOwner, inspect_installation, write_owner_receipt};
     let (source, _bytes, manifest) = fixture("0.6.0", false);
     let prefix = source.path().join(format!("beskid-0.6.0-{TARGET}"));
     let unrelated = tempfile::tempdir().unwrap();

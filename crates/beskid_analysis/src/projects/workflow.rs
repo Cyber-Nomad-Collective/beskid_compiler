@@ -7,7 +7,7 @@ mod registry;
 mod resolution;
 mod shared_corelib;
 pub use dependency_change::{
-    commit_dependency_change, DependencyChangePlan, DependencyChangeReport, plan_dependency_change,
+    DependencyChangePlan, DependencyChangeReport, commit_dependency_change, plan_dependency_change,
 };
 pub use resolution::{RefreshScope, ResolutionPolicy};
 

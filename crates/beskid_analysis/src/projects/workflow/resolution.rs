@@ -447,8 +447,8 @@ mod tests {
         let installed = tempfile::tempdir().unwrap();
         let explicit = dependency("corelib_foundation", &checkout.path().join("packages/foundation"));
         let implicit = dependency("corelib_foundation", &installed.path().join("packages/foundation"));
-        let error =
-            reject_ambiguous_dependency_names(&[explicit.clone(), implicit.clone()], Some(installed.path())).unwrap_err();
+        let error = reject_ambiguous_dependency_names(&[explicit.clone(), implicit.clone()], Some(installed.path()))
+            .unwrap_err();
         let ProjectError::Validation(message) = error else { panic!("expected a validation error") };
         assert!(message.contains("`corelib_foundation` resolves to two different packages"), "{message}");
         assert!(message.contains(&explicit.manifest_path.display().to_string()), "{message}");

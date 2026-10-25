@@ -223,8 +223,8 @@ impl Emit for ExpressionStatement {
 impl Emit for Spanned<ExpressionStatement> {
     /// A statement-level `match` written without `;` keeps that form.
     fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
-        let bare_match = matches!(self.node.expression.node, Expression::Match(_))
-            && self.span.end == self.node.expression.span.end;
+        let bare_match =
+            matches!(self.node.expression.node, Expression::Match(_)) && self.span.end == self.node.expression.span.end;
         if bare_match { self.node.expression.emit(w, cx) } else { self.node.emit(w, cx) }
     }
 }

@@ -261,8 +261,8 @@ fn recover(guard: &Guard) -> Result<bool, ProjectError> {
     if bytes.len() as u64 > JOURNAL_LIMIT {
         return Err(recovery_guidance(guard, "journal exceeds the recovery size limit"));
     }
-    let journal: Journal =
-        serde_json::from_slice(&bytes).map_err(|error| recovery_guidance(guard, format!("invalid journal: {error}")))?;
+    let journal: Journal = serde_json::from_slice(&bytes)
+        .map_err(|error| recovery_guidance(guard, format!("invalid journal: {error}")))?;
     if journal.schema_version != 1
         || journal.project_directory != guard.directory
         || Some(journal.manifest_name.as_str()) != guard.manifest.file_name().and_then(|name| name.to_str())

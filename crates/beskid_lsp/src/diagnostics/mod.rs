@@ -20,12 +20,12 @@ mod tests;
 
 #[cfg(test)]
 pub(crate) use preparation::analyze_document;
-pub use preparation::{ProjectPreparation, collect_syntax_diagnostics};
 pub(crate) use preparation::{
     EditorPreparePass, prepare_project_diagnostics_from_assembled, prepare_project_syntax_facts,
     project_preparation_failure,
 };
-pub(crate) use to_lsp::quick_fixes_from_data;
+pub use preparation::{ProjectPreparation, collect_syntax_diagnostics};
 #[cfg(test)]
 pub(crate) use to_lsp::FixFact;
+pub(crate) use to_lsp::quick_fixes_from_data;
 pub use to_lsp::{DiagnosticDetail, lsp_diagnostics_from_syntax};

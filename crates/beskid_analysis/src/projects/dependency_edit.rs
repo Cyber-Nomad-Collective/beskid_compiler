@@ -8,7 +8,9 @@ use super::{DependencySource, ProjectError, parse_bsol_document, parse_manifest}
 mod manifest_edit;
 mod selection;
 
-pub use super::workflow::{commit_dependency_change, DependencyChangePlan, DependencyChangeReport, plan_dependency_change};
+pub use super::workflow::{
+    DependencyChangePlan, DependencyChangeReport, commit_dependency_change, plan_dependency_change,
+};
 pub use selection::select_dependency_project;
 
 #[derive(Debug, Clone, PartialEq, Eq)]

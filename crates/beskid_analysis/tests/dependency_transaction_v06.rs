@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use beskid_analysis::projects::dependency_transaction::{
-    commit_dependency_pair, commit_dependency_pair_with_io, DependencyTransactionIo, NativeDependencyTransactionIo,
+    DependencyTransactionIo, NativeDependencyTransactionIo, commit_dependency_pair, commit_dependency_pair_with_io,
     recover_dependency_pair,
 };
 
@@ -302,7 +302,9 @@ fn dep06_rollback_preserves_existing_permissions() {
         sync_file: AtomicUsize::new(0),
         fail_sync: 0,
     };
-    assert!(commit_dependency_pair_with_io(&manifest, OLD_MANIFEST, Some(OLD_LOCK), NEW_MANIFEST, NEW_LOCK, &io).is_err());
+    assert!(
+        commit_dependency_pair_with_io(&manifest, OLD_MANIFEST, Some(OLD_LOCK), NEW_MANIFEST, NEW_LOCK, &io).is_err()
+    );
     assert_pair(&manifest, OLD_MANIFEST, Some(OLD_LOCK));
     assert_eq!(fs::metadata(&manifest).unwrap().permissions().mode() & 0o777, 0o644);
     assert_eq!(fs::metadata(&lock).unwrap().permissions().mode() & 0o777, 0o640);

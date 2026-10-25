@@ -29,7 +29,12 @@ impl DirectInstall {
         Self { root: root.as_ref().to_owned() }
     }
     /// Install exact downloaded archive bytes; neither activation nor old payload mutation occurs here.
-    pub fn install_archive(&self, manifest: &ReleaseManifest, target: &str, archive: &[u8]) -> Result<PathBuf, UpError> {
+    pub fn install_archive(
+        &self,
+        manifest: &ReleaseManifest,
+        target: &str,
+        archive: &[u8],
+    ) -> Result<PathBuf, UpError> {
         let bundle = manifest.select_bundle(target)?;
         if archive.len() as u64 > MAX_ARCHIVE_BYTES || hash(archive) != bundle.sha256.to_ascii_lowercase() {
             return Err(invalid("bundle checksum or compressed-size limit failed"));
@@ -42,8 +47,10 @@ impl DirectInstall {
             }
         }
         fs::create_dir_all(self.root.join("versions")).map_err(io_error)?;
-        let stage =
-            tempfile::Builder::new().prefix(".beskid-install-").tempdir_in(self.root.join("versions")).map_err(io_error)?;
+        let stage = tempfile::Builder::new()
+            .prefix(".beskid-install-")
+            .tempdir_in(self.root.join("versions"))
+            .map_err(io_error)?;
         let prefix_name = format!("beskid-{}-{target}", manifest.version);
         extract(archive, stage.path(), &prefix_name)?;
         validate_prefix(stage.path(), &manifest.version, target)?;
@@ -58,13 +65,15 @@ impl DirectInstall {
         };
         let mut file =
             fs::OpenOptions::new().create_new(true).write(true).open(stage.path().join(RECEIPT)).map_err(io_error)?;
-        file.write_all(&serde_json::to_vec(&receipt).map_err(|error| invalid(&error.to_string()))?).map_err(io_error)?;
+        file.write_all(&serde_json::to_vec(&receipt).map_err(|error| invalid(&error.to_string()))?)
+            .map_err(io_error)?;
         file.sync_all().map_err(io_error)?;
         let destination = self.version_dir(&manifest.version);
         if destination.exists() {
             validate_installed(&destination, &manifest.version)?;
-            let existing: InstallReceipt = serde_json::from_slice(&fs::read(destination.join(RECEIPT)).map_err(io_error)?)
-                .map_err(|error| invalid(&error.to_string()))?;
+            let existing: InstallReceipt =
+                serde_json::from_slice(&fs::read(destination.join(RECEIPT)).map_err(io_error)?)
+                    .map_err(|error| invalid(&error.to_string()))?;
             if existing.commit != receipt.commit
                 || existing.artifact_sha256 != receipt.artifact_sha256
                 || existing.files != receipt.files
@@ -215,7 +224,8 @@ fn extract(bytes: &[u8], destination: &Path, root: &str) -> Result<(), UpError> 
         if kind.is_dir() {
             fs::create_dir_all(output).map_err(io_error)?;
         } else {
-            fs::create_dir_all(output.parent().ok_or_else(|| invalid("bundle entry has no parent"))?).map_err(io_error)?;
+            fs::create_dir_all(output.parent().ok_or_else(|| invalid("bundle entry has no parent"))?)
+                .map_err(io_error)?;
             let mut file = fs::OpenOptions::new().write(true).create_new(true).open(&output).map_err(io_error)?;
             io::copy(&mut entry, &mut file).map_err(io_error)?;
             file.sync_all().map_err(io_error)?;

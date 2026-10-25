@@ -1,5 +1,5 @@
 //! Plan exact dependency intent and commit the manifest/lock pair through the guarded journal.
-use super::resolution::{resolve_workspace_dependencies, ResolvedWorkspaceDependencies};
+use super::resolution::{ResolvedWorkspaceDependencies, resolve_workspace_dependencies};
 use super::{ProjectLockfile, RefreshScope, ResolutionPolicy};
 use crate::projects::dependency_edit::{DependencyIntentSource, DependencyMutation, edit_manifest};
 use crate::projects::dependency_transaction::commit_dependency_pair;

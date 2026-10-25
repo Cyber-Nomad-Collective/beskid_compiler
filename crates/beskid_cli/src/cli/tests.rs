@@ -644,18 +644,19 @@ fn v06_cli_owned_commands_accept_json() {
         vec!["beskid", "update", "Local", "--dry-run", "--json"],
         vec!["beskid", "doctor", "--json"],
     ] {
-        let json =
-            match super::app::parse_invocation(args.clone()).unwrap_or_else(|error| panic!("{args:?}: {error}")).command
-            {
-                Commands::Check(args) => args.json,
-                Commands::Build(args) => args.json,
-                Commands::Test(args) => args.json,
-                Commands::Add(args) => args.policy.json,
-                Commands::Remove(args) => args.policy.json,
-                Commands::Update(args) => args.policy.json,
-                Commands::Doctor(args) => args.json,
-                _ => panic!("{args:?} dispatched elsewhere"),
-            };
+        let json = match super::app::parse_invocation(args.clone())
+            .unwrap_or_else(|error| panic!("{args:?}: {error}"))
+            .command
+        {
+            Commands::Check(args) => args.json,
+            Commands::Build(args) => args.json,
+            Commands::Test(args) => args.json,
+            Commands::Add(args) => args.policy.json,
+            Commands::Remove(args) => args.policy.json,
+            Commands::Update(args) => args.policy.json,
+            Commands::Doctor(args) => args.json,
+            _ => panic!("{args:?} dispatched elsewhere"),
+        };
         assert!(json, "{args:?}");
     }
 }
@@ -782,7 +783,7 @@ fn capability_document_reports_the_runtime_abi() {
 
 #[test]
 fn preview_label_replaces_the_manifest_version() {
-    use super::app::{resolve_version, VERSION};
+    use super::app::{VERSION, resolve_version};
     assert_eq!(resolve_version(Some("0.6.7-preview.3"), "0.6.7"), "0.6.7-preview.3");
     assert_eq!(resolve_version(None, "0.6.7"), "0.6.7");
     assert_eq!(resolve_version(Some(""), "0.6.7"), "0.6.7", "an empty label keeps the manifest version");

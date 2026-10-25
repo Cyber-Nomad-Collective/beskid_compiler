@@ -1,5 +1,5 @@
 use beskid_analysis::projects::dependency_edit::{
-    commit_dependency_change, DependencyIntent, DependencyIntentSource, DependencyMutation, plan_dependency_change,
+    DependencyIntent, DependencyIntentSource, DependencyMutation, commit_dependency_change, plan_dependency_change,
 };
 use beskid_analysis::projects::workflow::{RefreshScope, ResolutionPolicy};
 

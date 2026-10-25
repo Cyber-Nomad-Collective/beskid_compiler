@@ -379,4 +379,3 @@ fn statement_level_match_needs_no_semicolon_and_keeps_the_written_form() {
     assert!(formatted.contains("};"), "{formatted}");
     assert_eq!(fmt(&formatted), formatted, "idempotent");
 }
-

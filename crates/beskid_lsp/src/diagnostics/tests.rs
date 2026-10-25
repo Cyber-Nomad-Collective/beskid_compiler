@@ -67,10 +67,7 @@ fn standalone_bsol_document_uses_the_bsol_parser_for_diagnostics() {
 
     let (diagnostics, fixes) = collect_syntax_diagnostics(None, &uri, source, None);
 
-    assert!(
-        diagnostics.is_empty(),
-        "valid standalone BSOL must not use Beskid source diagnostics: {diagnostics:#?}"
-    );
+    assert!(diagnostics.is_empty(), "valid standalone BSOL must not use Beskid source diagnostics: {diagnostics:#?}");
     assert!(fixes.is_empty(), "standalone BSOL does not synthesize Beskid source fixes");
 }
 
@@ -377,8 +374,8 @@ fn preparation_failure_does_not_repeat_a_cause_the_buffer_already_reports() {
         Some("E1201".into()),
         beskid_analysis::Severity::Error,
     );
-    let error = anyhow::Error::new(beskid_analysis::MietteReportError::new(structured.clone()))
-        .context("project preparation");
+    let error =
+        anyhow::Error::new(beskid_analysis::MietteReportError::new(structured.clone())).context("project preparation");
     let reported = vec![super::to_lsp::syntax_diagnostic_from_semantic(structured)];
     assert!(super::project_preparation_failure(&uri, &error, &reported).is_empty());
     let facts = super::project_preparation_failure(&uri, &error, &[]);

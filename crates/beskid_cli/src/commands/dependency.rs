@@ -3,7 +3,7 @@ use crate::machine_output::Records;
 use crate::project_args::LockfilePolicyArgs;
 use anyhow::Result;
 use beskid_analysis::projects::dependency_edit::{
-    commit_dependency_change, DependencyIntent, DependencyIntentSource, DependencyMutation, plan_dependency_change,
+    DependencyIntent, DependencyIntentSource, DependencyMutation, commit_dependency_change, plan_dependency_change,
     select_dependency_project,
 };
 use beskid_analysis::projects::workflow::{RefreshScope, ResolutionPolicy};
