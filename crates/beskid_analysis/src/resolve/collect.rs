@@ -457,11 +457,36 @@ impl Resolver {
         }
         if self.module_graph.module_id(&module_path).is_none() {
             self.errors.push(ResolveError::UnknownModulePath { path: module_path.join("."), span: def.node.path.span });
+            self.import_item_of_rejected_use(&module_path, def.node.path.span);
             return;
         }
         self.module_imports.insert(alias.clone(), module_path.clone());
         self.module_import_origins.insert(alias, def.node.path.span);
         self.import_public_items_from_module(&module_path, def.node.path.span);
+    }
+
+    /// `use Module.Item` is rejected (E1105: `use` imports modules), but the public item it names
+    /// is still bound, so `Item` and its variants (`Result::Ok(..)` after `use Core.Results.Result;`)
+    /// resolve and the rejected import stays the one diagnostic of that cause.
+    fn import_item_of_rejected_use(&mut self, path: &[String], origin_span: syntax::SpanInfo) {
+        let Some((name, module_path)) = path.split_last() else {
+            return;
+        };
+        let Some(module_id) = self.module_graph.module_id(module_path) else {
+            return;
+        };
+        let Some(item_id) = self.module_graph.module(module_id).and_then(|module| module.scope.get(name).copied())
+        else {
+            return;
+        };
+        let importable = self.items.get(item_id.0).is_some_and(|info| {
+            info.visibility == Visibility::Public
+                && matches!(info.kind, ItemKind::Function | ItemKind::Enum | ItemKind::Type | ItemKind::Contract)
+        });
+        if importable {
+            let declared = !self.imported_scope_entries.contains(&(module_id, name.clone()));
+            self.insert_scope_imports(vec![(name.clone(), item_id, declared)], origin_span);
+        }
     }
 
     /// Bring public items from a used module into the current module scope (types, enums, functions).
@@ -783,6 +808,30 @@ mod tests {
 
         let resolution = resolver.resolve_program(&entry).expect("resolve entry with implicit Core namespace");
         assert_eq!(resolution.module_imports.get("Core"), Some(&vec!["Core".to_owned()]));
+    }
+
+    /// `use Core.Results.Result;` names an item, not a module: the import itself is rejected
+    /// (E1105), and `Result`, its variants in expressions and in patterns still resolve, so the
+    /// rejected `use` is not followed by an unknown type for every use of `Result`.
+    #[test]
+    fn rejected_item_use_still_binds_the_item_and_its_variants() {
+        let results =
+            parse_program("pub enum Result<T, E> { Ok(T value), Error(E error) }").expect("parse Core.Results");
+        let entry = parse_program(
+            "use Core.Results.Result;\n\
+             Result<i32, string> Make() { return Result::Ok(1); }\n\
+             i32 Main() { match Make() { Result::Ok(v) => { return v; }, Result::Error(e) => { return 1; }, }; }",
+        )
+        .expect("parse entry");
+
+        let mut resolver = Resolver::new();
+        resolver.collect_program_in_module(&results, &["Core".to_owned(), "Results".to_owned()], None);
+        let errors = resolver.resolve_program(&entry).expect_err("an item `use` is not a module import");
+        assert!(
+            errors.iter().all(|error| matches!(error, super::ResolveError::UnknownModulePath { path, .. }
+                if path == "Core.Results.Result")),
+            "{errors:?}"
+        );
     }
 
     #[test]
