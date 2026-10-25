@@ -65,8 +65,8 @@ fn sample_mod_materialized_foundation_replays_no_lossy_utf8_append_route() {
             .expect("copy checked-in foundation source into disposable project");
     }
     case.prepare_lock();
-    let lock = fs::read_to_string(&case.lockfile).expect("read generated v2 lockfile");
-    assert!(lock.starts_with("# Project.lock v2\n"), "fixture must replay v2: {lock}");
+    let lock = fs::read_to_string(&case.lockfile).expect("read generated lockfile");
+    assert!(lock.starts_with("# Project.lock v3\n"), "fixture must replay v3: {lock}");
     assert!(case.canonical_entry().contains("source=path"), "generated lock must use current graph");
 
     let replayed = effective_roots_from_lockfile(&case.plan, &case.lockfile);
@@ -167,7 +167,7 @@ impl ReplayLockCase {
         let lockfile = project.join("Project.lock");
         let prepared = prepare_project_workspace(&plan).expect("prepare v2 replay fixture");
         let materialized = prepared.materialized_dependencies[0].materialized_project_root.clone();
-        let lock = fs::read_to_string(&lockfile).expect("read prepared v2 lock");
+        let lock = fs::read_to_string(&lockfile).expect("read prepared lock");
         let canonical_entry = lock
             .lines()
             .find(|line| line.starts_with("- name=foundation;"))
@@ -200,7 +200,7 @@ impl ReplayLockCase {
     }
 
     fn lock_with(&self, entry: &str) -> String {
-        format!("# Project.lock v2\nroot_manifest=App.bproj\nproject_name=App\ndependencies:\n{entry}\n")
+        format!("# Project.lock v3\nroot_manifest=App.bproj\nproject_name=App\ndependencies:\n{entry}\n")
     }
 }
 

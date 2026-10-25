@@ -1,6 +1,6 @@
-//! "Migrate lock file" quick fix for a `Project.lock` in the retired v1 format.
+//! "Migrate lock file" quick fix for a `Project.lock` in a retired format (v1 or v2).
 //!
-//! The diagnostic comes from the lock replay check (`ProjectError::LockfileV1`, code `E3024`).
+//! The diagnostic comes from the lock replay check (`ProjectError::LockfileFormatRetired`, code `E3024`).
 //! The fix runs the client command `beskid.migrateLock` with the URI of the lock file, which the
 //! extension turns into `beskid dev project lock`. The server writes nothing itself.
 
@@ -12,8 +12,8 @@ use crate::session::store::Document;
 
 use super::registry::CodeActionProvider;
 
-/// Diagnostic code of `ProjectError::LockfileV1`.
-pub(super) const LOCK_V1_CODE: &str = "E3024";
+/// Diagnostic code of `ProjectError::LockfileFormatRetired`.
+pub(super) const RETIRED_LOCK_CODE: &str = "E3024";
 /// Client command registered by the VS Code extension.
 pub(super) const MIGRATE_LOCK_COMMAND: &str = "beskid.migrateLock";
 
@@ -21,7 +21,7 @@ pub(super) struct LockMigrationProvider;
 
 impl CodeActionProvider for LockMigrationProvider {
     fn handles(&self, source: &str, code: &str) -> bool {
-        source == "beskid" && code == LOCK_V1_CODE
+        source == "beskid" && code == RETIRED_LOCK_CODE
     }
 
     fn build(&self, uri: &Uri, _doc: &Document, diag: &Diagnostic) -> Option<CodeAction> {
@@ -62,7 +62,7 @@ mod tests {
         Diagnostic {
             range: Range { start: Position::new(0, 0), end: Position::new(0, 1) },
             severity: Some(DiagnosticSeverity::ERROR),
-            code: Some(NumberOrString::String(LOCK_V1_CODE.to_string())),
+            code: Some(NumberOrString::String(RETIRED_LOCK_CODE.to_string())),
             source: Some("beskid".to_string()),
             message: "Project.lock uses the retired v1 format".to_string(),
             ..Diagnostic::default()
@@ -89,7 +89,7 @@ mod tests {
     #[test]
     fn registry_routes_the_v1_lock_code_to_the_migration_provider() {
         let providers = code_action_providers();
-        assert!(providers.iter().any(|p| p.handles("beskid", LOCK_V1_CODE)));
+        assert!(providers.iter().any(|p| p.handles("beskid", RETIRED_LOCK_CODE)));
     }
 
     #[test]

@@ -1,13 +1,13 @@
 use std::fs;
 
 use beskid_analysis::projects::{
-    PortableLockPath, PortableLockPathBaseKind, ProjectError, ProjectLockDependencyEntry, ProjectLockfileV2,
+    PortableLockPath, PortableLockPathBaseKind, ProjectError, ProjectLockDependencyEntry, ProjectLockfile,
 };
 
-const V2_PATH_LOCK: &str = "# Project.lock v2\nroot_manifest=Project.proj\nproject_name=App\ndependencies:\n- name=Shared;source=path;project=../shared;manifest=Project.proj;source_root=Src;materialized_root=obj/beskid/deps/src/shared\n";
+const PATH_LOCK: &str = "# Project.lock v3\nroot_manifest=Project.proj\nproject_name=App\ndependencies:\n- name=Shared;source=path;project=../shared;manifest=Project.proj;source_root=Src;materialized_root=obj/beskid/deps/src/shared\n";
 
-fn parse_v2_rejects(content: &str) {
-    assert!(ProjectLockfileV2::parse_v2(content).is_err(), "malformed v2 lock must be rejected: {content:?}");
+fn parse_rejects(content: &str) {
+    assert!(ProjectLockfile::parse(content).is_err(), "malformed lock must be rejected: {content:?}");
 }
 
 #[test]
@@ -34,60 +34,78 @@ fn lock_entry_parse_rejects_missing_required_fields() {
 }
 
 #[test]
-fn v2_serialization_has_exact_header_and_sorts_dependencies() {
-    let unsorted = "# Project.lock v2\nroot_manifest=Project.proj\nproject_name=App\ndependencies:\n- name=Zulu;source=path;project=../zulu;manifest=Project.proj;source_root=Src;materialized_root=obj/beskid/deps/src/zulu\n- name=Alpha;source=path;project=../alpha;manifest=Project.proj;source_root=Src;materialized_root=obj/beskid/deps/src/alpha\n";
-    let expected = "# Project.lock v2\nroot_manifest=Project.proj\nproject_name=App\ndependencies:\n- name=Alpha;source=path;project=../alpha;manifest=Project.proj;source_root=Src;materialized_root=obj/beskid/deps/src/alpha\n- name=Zulu;source=path;project=../zulu;manifest=Project.proj;source_root=Src;materialized_root=obj/beskid/deps/src/zulu\n";
+fn lock_serialization_has_exact_header_and_sorts_dependencies() {
+    let unsorted = "# Project.lock v3\nroot_manifest=Project.proj\nproject_name=App\ndependencies:\n- name=Zulu;source=path;project=../zulu;manifest=Project.proj;source_root=Src;materialized_root=obj/beskid/deps/src/zulu\n- name=Alpha;source=path;project=../alpha;manifest=Project.proj;source_root=Src;materialized_root=obj/beskid/deps/src/alpha\n";
+    let expected = "# Project.lock v3\nroot_manifest=Project.proj\nproject_name=App\ndependencies:\n- name=Alpha;source=path;project=../alpha;manifest=Project.proj;source_root=Src;materialized_root=obj/beskid/deps/src/alpha\n- name=Zulu;source=path;project=../zulu;manifest=Project.proj;source_root=Src;materialized_root=obj/beskid/deps/src/zulu\n";
 
-    let parsed = ProjectLockfileV2::parse_v2(unsorted).expect("parse unsorted v2 lock");
-    assert_eq!(parsed.to_v2_content(), expected);
+    let parsed = ProjectLockfile::parse(unsorted).expect("parse unsorted lock");
+    assert_eq!(parsed.to_content(), expected);
     assert_eq!(
-        ProjectLockfileV2::parse_v2(&parsed.to_v2_content()).expect("parse serialized v2 lock").to_v2_content(),
+        ProjectLockfile::parse(&parsed.to_content()).expect("parse serialized lock").to_content(),
         expected
     );
 }
 
 #[test]
-fn v2_accepts_corelib_source_with_relative_installed_workspace_identity() {
-    let content = "# Project.lock v2\nroot_manifest=Project.proj\nproject_name=App\ndependencies:\n- name=Core;source=corelib;project=stdlib/core;manifest=Project.proj;source_root=Src;materialized_root=obj/beskid/deps/src/core\n";
-    assert_eq!(ProjectLockfileV2::parse_v2(content).expect("parse portable Corelib identity").to_v2_content(), content);
+fn lock_accepts_corelib_source_with_relative_installed_workspace_identity() {
+    let content = "# Project.lock v3\nroot_manifest=Project.proj\nproject_name=App\ndependencies:\n- name=Core;source=corelib;project=stdlib/core;manifest=Project.proj;source_root=Src\n";
+    let parsed = ProjectLockfile::parse(content).expect("parse portable Corelib identity");
+    assert_eq!(parsed.to_content(), content);
 }
 
 #[test]
-fn v2_uses_dot_only_when_source_root_is_the_project_directory() {
-    let aggregate = V2_PATH_LOCK.replace(";source_root=Src", ";source_root=.");
-    assert_eq!(ProjectLockfileV2::parse_v2(&aggregate).expect("project-root source").to_v2_content(), aggregate);
-    parse_v2_rejects(&V2_PATH_LOCK.replace(";manifest=Project.proj", ";manifest=."));
-    parse_v2_rejects(&V2_PATH_LOCK.replace(";project=../shared", ";project=."));
-    parse_v2_rejects(&V2_PATH_LOCK.replace("root_manifest=Project.proj", "root_manifest=."));
+fn corelib_entries_name_the_shared_corelib_and_have_no_project_local_copy() {
+    // A Corelib entry is read in place from the toolchain's shared Corelib, so a copy destination
+    // is not part of its record; one that names a copy is a retired v2 shape and is rejected.
+    parse_rejects("# Project.lock v3\nroot_manifest=Project.proj\nproject_name=App\ndependencies:\n- name=Core;source=corelib;project=stdlib/core;manifest=Project.proj;source_root=Src;materialized_root=obj/beskid/deps/src/core\n");
+    // Path and registry entries still require their copy destination.
+    parse_rejects(&PATH_LOCK.replace(";materialized_root=obj/beskid/deps/src/shared", ""));
+    // Two Corelib entries never collide on a destination.
+    let two = "# Project.lock v3\nroot_manifest=Project.proj\nproject_name=App\ndependencies:\n- name=Core;source=corelib;project=beskid_corelib;manifest=corelib.bproj;source_root=.\n- name=corelib_text;source=corelib;project=packages/text;manifest=corelib_text.bproj;source_root=src\n";
+    assert_eq!(ProjectLockfile::parse(two).expect("two Corelib entries").to_content(), two);
 }
 
 #[test]
-fn v2_accepts_declared_external_project_at_parent_only_path() {
-    let parent = V2_PATH_LOCK.replace(";project=../shared", ";project=../..");
-    assert_eq!(ProjectLockfileV2::parse_v2(&parent).expect("parent-only external project").to_v2_content(), parent);
-    parse_v2_rejects(&parent.replace("source=path", "source=corelib"));
-    parse_v2_rejects(&parent.replace(";project=../..", ";project=../../inside/.."));
+fn retired_lock_formats_are_not_parsed_as_current() {
+    parse_rejects(&PATH_LOCK.replacen("# Project.lock v3", "# Project.lock v2", 1));
 }
 
 #[test]
-fn v2_requires_exact_header_and_required_top_level_fields() {
+fn lock_uses_dot_only_when_source_root_is_the_project_directory() {
+    let aggregate = PATH_LOCK.replace(";source_root=Src", ";source_root=.");
+    assert_eq!(ProjectLockfile::parse(&aggregate).expect("project-root source").to_content(), aggregate);
+    parse_rejects(&PATH_LOCK.replace(";manifest=Project.proj", ";manifest=."));
+    parse_rejects(&PATH_LOCK.replace(";project=../shared", ";project=."));
+    parse_rejects(&PATH_LOCK.replace("root_manifest=Project.proj", "root_manifest=."));
+}
+
+#[test]
+fn lock_accepts_declared_external_project_at_parent_only_path() {
+    let parent = PATH_LOCK.replace(";project=../shared", ";project=../..");
+    assert_eq!(ProjectLockfile::parse(&parent).expect("parent-only external project").to_content(), parent);
+    parse_rejects(&parent.replace("source=path", "source=corelib"));
+    parse_rejects(&parent.replace(";project=../..", ";project=../../inside/.."));
+}
+
+#[test]
+fn lock_requires_exact_header_and_required_top_level_fields() {
     for content in [
-        V2_PATH_LOCK.replacen("# Project.lock v2", " # Project.lock v2", 1),
-        V2_PATH_LOCK.replacen("# Project.lock v2", "# Project.lock v2 extra", 1),
-        V2_PATH_LOCK.replacen("# Project.lock v2", "# Project.lock v1", 1),
-        V2_PATH_LOCK.replace("root_manifest=Project.proj\n", ""),
-        V2_PATH_LOCK.replace("project_name=App\n", ""),
-        V2_PATH_LOCK.replace("dependencies:\n", ""),
+        PATH_LOCK.replacen("# Project.lock v3", " # Project.lock v3", 1),
+        PATH_LOCK.replacen("# Project.lock v3", "# Project.lock v3 extra", 1),
+        PATH_LOCK.replacen("# Project.lock v3", "# Project.lock v1", 1),
+        PATH_LOCK.replace("root_manifest=Project.proj\n", ""),
+        PATH_LOCK.replace("project_name=App\n", ""),
+        PATH_LOCK.replace("dependencies:\n", ""),
     ] {
-        parse_v2_rejects(&content);
+        parse_rejects(&content);
     }
 }
 
 #[test]
-fn v2_uses_canonical_uppercase_percent_encoding_for_utf8_values() {
-    let encoded = V2_PATH_LOCK.replace("project_name=App", "project_name=Caf%C3%A9%20App%3B1%3D2");
-    let parsed = ProjectLockfileV2::parse_v2(&encoded).expect("parse canonical UTF-8 encoding");
-    assert_eq!(parsed.to_v2_content(), encoded);
+fn lock_uses_canonical_uppercase_percent_encoding_for_utf8_values() {
+    let encoded = PATH_LOCK.replace("project_name=App", "project_name=Caf%C3%A9%20App%3B1%3D2");
+    let parsed = ProjectLockfile::parse(&encoded).expect("parse canonical UTF-8 encoding");
+    assert_eq!(parsed.to_content(), encoded);
 
     for noncanonical in [
         encoded.replace("%C3%A9", "%c3%A9"),
@@ -97,43 +115,43 @@ fn v2_uses_canonical_uppercase_percent_encoding_for_utf8_values() {
         encoded.replace("%C3%A9", "%FF"),
         encoded.replace("%20", "%"),
     ] {
-        parse_v2_rejects(&noncanonical);
+        parse_rejects(&noncanonical);
     }
 }
 
 #[test]
-fn v2_rejects_raw_delimiters_duplicate_and_unknown_fields() {
+fn lock_rejects_raw_delimiters_duplicate_and_unknown_fields() {
     for malformed in [
-        V2_PATH_LOCK.replace("name=Shared", "name=Shared;name=Again"),
-        V2_PATH_LOCK.replace("name=Shared", "name=Shared;future=value"),
-        V2_PATH_LOCK.replace("project_name=App", "project_name=App\nproject_name=Again"),
-        V2_PATH_LOCK.replace("project_name=App", "project_name=App\nfuture=value"),
-        V2_PATH_LOCK.replace("name=Shared", "name=Shared;Other"),
-        V2_PATH_LOCK.replace("name=Shared", "name=Shared=Other"),
+        PATH_LOCK.replace("name=Shared", "name=Shared;name=Again"),
+        PATH_LOCK.replace("name=Shared", "name=Shared;future=value"),
+        PATH_LOCK.replace("project_name=App", "project_name=App\nproject_name=Again"),
+        PATH_LOCK.replace("project_name=App", "project_name=App\nfuture=value"),
+        PATH_LOCK.replace("name=Shared", "name=Shared;Other"),
+        PATH_LOCK.replace("name=Shared", "name=Shared=Other"),
     ] {
-        parse_v2_rejects(&malformed);
+        parse_rejects(&malformed);
     }
 }
 
 #[test]
-fn v2_rejects_duplicate_dependency_names_and_materialized_destinations() {
+fn lock_rejects_duplicate_dependency_names_and_materialized_destinations() {
     let duplicate_name = format!(
-        "{V2_PATH_LOCK}- name=Shared;source=path;project=../other;manifest=Project.proj;source_root=Src;materialized_root=obj/beskid/deps/src/other\n"
+        "{PATH_LOCK}- name=Shared;source=path;project=../other;manifest=Project.proj;source_root=Src;materialized_root=obj/beskid/deps/src/other\n"
     );
     let duplicate_destination = format!(
-        "{V2_PATH_LOCK}- name=Other;source=path;project=../other;manifest=Project.proj;source_root=Src;materialized_root=obj/beskid/deps/src/shared\n"
+        "{PATH_LOCK}- name=Other;source=path;project=../other;manifest=Project.proj;source_root=Src;materialized_root=obj/beskid/deps/src/shared\n"
     );
-    parse_v2_rejects(&duplicate_name);
-    parse_v2_rejects(&duplicate_destination);
+    parse_rejects(&duplicate_name);
+    parse_rejects(&duplicate_destination);
 }
 
 #[test]
-fn v2_registry_entries_require_a_lowercase_sha256_digest() {
+fn lock_registry_entries_require_a_lowercase_sha256_digest() {
     let digest = "0123456789abcdef".repeat(4);
     let valid = format!(
-        "# Project.lock v2\nroot_manifest=Project.proj\nproject_name=App\ndependencies:\n- name=Widget;source=registry;project=deps/widget;manifest=Project.proj;source_root=Src;materialized_root=obj/beskid/deps/src/widget;registry=main;resolved_version=1.2.3;artifact_digest=sha256:{digest}\n"
+        "# Project.lock v3\nroot_manifest=Project.proj\nproject_name=App\ndependencies:\n- name=Widget;source=registry;project=deps/widget;manifest=Project.proj;source_root=Src;materialized_root=obj/beskid/deps/src/widget;registry=main;resolved_version=1.2.3;artifact_digest=sha256:{digest}\n"
     );
-    assert_eq!(ProjectLockfileV2::parse_v2(&valid).expect("parse pinned registry entry").to_v2_content(), valid);
+    assert_eq!(ProjectLockfile::parse(&valid).expect("parse pinned registry entry").to_content(), valid);
 
     for malformed in [
         valid.replace(&digest, &digest[..63]),
@@ -144,12 +162,12 @@ fn v2_registry_entries_require_a_lowercase_sha256_digest() {
         valid.replace(";registry=main", ""),
         valid.replace(";resolved_version=1.2.3", ""),
     ] {
-        parse_v2_rejects(&malformed);
+        parse_rejects(&malformed);
     }
 }
 
 #[test]
-fn v2_rejects_absolute_drive_unc_and_unsafe_relative_paths() {
+fn lock_rejects_absolute_drive_unc_and_unsafe_relative_paths() {
     for (field, original, replacement) in [
         ("root_manifest", "\nroot_manifest=Project.proj", "\nroot_manifest=/tmp/Project.proj"),
         ("root_manifest", "\nroot_manifest=Project.proj", "\nroot_manifest=../Project.proj"),
@@ -172,9 +190,9 @@ fn v2_rejects_absolute_drive_unc_and_unsafe_relative_paths() {
             ";materialized_root=obj/beskid/deps/src/../outside",
         ),
     ] {
-        let malformed = V2_PATH_LOCK.replacen(original, replacement, 1);
-        assert_ne!(malformed, V2_PATH_LOCK, "fixture must replace {field}");
-        parse_v2_rejects(&malformed);
+        let malformed = PATH_LOCK.replacen(original, replacement, 1);
+        assert_ne!(malformed, PATH_LOCK, "fixture must replace {field}");
+        parse_rejects(&malformed);
     }
 }
 

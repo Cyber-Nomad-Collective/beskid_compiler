@@ -3,7 +3,6 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
-use beskid_abi::{corelib_bundle::corelib_bundle_marker_root, runtime_kit::installed_corelib_root};
 use beskid_pipeline::{
     PipelineObserver, observe_phase_result,
     phases::{
@@ -20,6 +19,7 @@ use super::{
         WorkspacePrepareOptions, sync_project_lockfile,
     },
     registry::materialize_registry_dependency,
+    shared_corelib::SharedCorelib,
 };
 use crate::analysis::diagnostics::source_map::{ORIGINS_FILE, SourceOrigins};
 use crate::projects::{
@@ -30,25 +30,37 @@ use crate::projects::{
     },
 };
 
+/// The lock entry of a path-resolved dependency. A dependency inside the toolchain's shared
+/// Corelib is a `source=corelib` entry relative to the shared root and has no project-local copy;
+/// every other path dependency is copied beneath `obj/beskid/deps/src`.
 pub(super) fn portable_entry_for_dependency(
     plan: &ProjectWorkspacePlan,
     dependency: &ResolvedDependencyProject,
-    corelib_lock_root: Option<&Path>,
+    shared_corelib: Option<&SharedCorelib>,
 ) -> Result<ProjectLockDependencyEntry, ProjectError> {
-    let corelib_lock_root = corelib_lock_root
-        .and_then(|root| root.canonicalize().ok())
-        .filter(|root| dependency.project_root.canonicalize().is_ok_and(|project| project.starts_with(root)));
-    let (source, anchor) = match corelib_lock_root.as_deref() {
+    let corelib_root =
+        shared_corelib.filter(|shared| shared.contains(&dependency.project_root)).map(SharedCorelib::root);
+    let (source, anchor) = match corelib_root {
         Some(root) => (ProjectLockSource::Corelib, root),
         None => (ProjectLockSource::Path, plan.project_root.as_path()),
     };
     let project = relative_lock_path(anchor, &dependency.project_root, "project", source == ProjectLockSource::Path)?;
     let manifest = relative_lock_path(&dependency.project_root, &dependency.manifest_path, "manifest", false)?;
     let source_root = relative_lock_path(&dependency.project_root, &dependency.source_root, "source_root", false)?;
-    let materialized_name = materialized_dependency_id(&dependency.dependency_name, source, &project)?;
-    let materialized_root = format!("obj/beskid/deps/src/{materialized_name}");
-    PortableLockPath::parse("materialized_root", &materialized_root, PortableLockPathBaseKind::MaterializedRoot)?
-        .resolve(&plan.project_root)?;
+    let materialized_root = match source {
+        ProjectLockSource::Corelib => None,
+        _ => {
+            let materialized_name = materialized_dependency_id(&dependency.dependency_name, source, &project)?;
+            let materialized_root = format!("obj/beskid/deps/src/{materialized_name}");
+            PortableLockPath::parse(
+                "materialized_root",
+                &materialized_root,
+                PortableLockPathBaseKind::MaterializedRoot,
+            )?
+            .resolve(&plan.project_root)?;
+            Some(materialized_root)
+        }
+    };
     Ok(ProjectLockDependencyEntry {
         name: dependency.dependency_name.clone(),
         source,
@@ -96,20 +108,6 @@ fn relative_lock_path(base: &Path, target: &Path, field: &str, external_project:
     Ok(value)
 }
 
-/// The installed Corelib bundle root used to anchor portable `source=corelib` lock entries.
-///
-/// The marker locates the managed bundle layout; its whole-tree hash is not required here.
-/// Lock entries are replay hints whose identity is re-checked against the resolved graph, and
-/// Corelib service authority is decided per service file, so a bundle with additional files or
-/// packages keeps portable locks.
-pub(crate) fn installed_corelib_lock_root() -> Option<PathBuf> {
-    let installed = installed_corelib_root().ok()?.canonicalize().ok()?;
-    let aggregate =
-        if installed.join("beskid_corelib").is_dir() { installed.join("beskid_corelib") } else { installed.clone() };
-    let marked = corelib_bundle_marker_root(&aggregate)?;
-    (marked.starts_with(&installed) || installed.starts_with(&marked)).then_some(marked)
-}
-
 pub fn prepare_project_workspace(plan: &CompilePlan) -> Result<PreparedProjectWorkspace, ProjectError> {
     prepare_project_workspace_with_options(plan, WorkspacePrepareOptions::default(), None)
 }
@@ -140,6 +138,7 @@ pub fn prepare_project_workspace_plan_with_options(
         },
     };
     let resolved = super::resolution::ResolveWorkspaceDependencies(plan, &policy, options.refresh_lock)?;
+    let shared_corelib = resolved.shared_corelib;
     let mut lock_entries = resolved.entries;
     let resolved_registry = resolved.registry;
     // Parallel processes (test-matrix workers, concurrent builds) prepare the same project; its
@@ -181,10 +180,28 @@ pub fn prepare_project_workspace_plan_with_options(
 
     let mut materialized_dependencies = Vec::with_capacity(plan.dependency_projects.len());
 
+    // Corelib packages are read in place from the toolchain's shared Corelib, which is never
+    // written; a sealed one must still match its fingerprint before any unit of it is used.
+    if lock_entries.iter().any(|entry| entry.source == ProjectLockSource::Corelib)
+        && let Some(shared) = &shared_corelib
+    {
+        shared.verify_seal()?;
+    }
+
     let path_deps_total = plan.dependency_projects.len() as u64;
     observe_phase_result(pipeline, WORKSPACE_MATERIALIZE_PATH_DEPS, || {
         for (index, dependency) in plan.dependency_projects.iter().enumerate() {
-            let materialized_root = plan.project_root.join(&lock_entries[index].materialized_root);
+            let Some(relative) = lock_entries[index].materialized_root.as_deref() else {
+                materialized_dependencies.push(MaterializedDependencyProject {
+                    dependency_name: dependency.dependency_name.clone(),
+                    manifest_path: dependency.manifest_path.clone(),
+                    project_name: dependency.project_name.clone(),
+                    materialized_project_root: canonical_or_given(&dependency.project_root),
+                    materialized_source_root: canonical_or_given(&dependency.source_root),
+                });
+                continue;
+            };
+            let materialized_root = plan.project_root.join(relative);
             copy_directory_when_newer(&dependency.project_root, &materialized_root)?;
             origins.record(&obj_beskid, &materialized_root, &dependency.project_root);
 
@@ -229,6 +246,8 @@ pub fn prepare_project_workspace_plan_with_options(
         Ok::<(), ProjectError>(())
     })?;
 
+    prune_stale_dependency_copies(&deps_root, &lock_entries)?;
+
     // Diagnostics map spans in the mirrored tree back to these authored roots.
     origins
         .write(&obj_beskid)
@@ -254,6 +273,49 @@ pub fn prepare_project_workspace_plan_with_options(
         materialized_source_root,
         materialized_dependencies,
     })
+}
+
+/// The physical path of a shared Corelib root, so its units compare equal across projects.
+fn canonical_or_given(path: &Path) -> PathBuf {
+    path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
+}
+
+/// Remove every entry of `obj/beskid/deps/src` that is not the destination of a current lock
+/// entry: Corelib copies made by older toolchains, and copies of path or registry dependencies the
+/// project no longer has. Only the materialization guard's holder runs this.
+fn prune_stale_dependency_copies(
+    deps_root: &Path,
+    lock_entries: &[ProjectLockDependencyEntry],
+) -> Result<(), ProjectError> {
+    let current = lock_entries
+        .iter()
+        .filter_map(|entry| entry.materialized_root.as_deref())
+        .filter_map(|relative| Path::new(relative).file_name())
+        .collect::<std::collections::HashSet<_>>();
+    let entries = match fs::read_dir(deps_root) {
+        Ok(entries) => entries,
+        Err(source) if source.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(source) => return Err(ProjectError::MaterializationReadDir { path: deps_root.to_path_buf(), source }),
+    };
+    for entry in entries {
+        let entry =
+            entry.map_err(|source| ProjectError::MaterializationReadDir { path: deps_root.to_path_buf(), source })?;
+        if current.contains(entry.file_name().as_os_str()) {
+            continue;
+        }
+        let stale = entry.path();
+        let is_dir = entry
+            .file_type()
+            .map_err(|source| ProjectError::MaterializationMetadata { path: stale.clone(), source })?
+            .is_dir();
+        let removed = if is_dir { fs::remove_dir_all(&stale) } else { fs::remove_file(&stale) };
+        match removed {
+            Ok(()) => {}
+            Err(source) if source.kind() == std::io::ErrorKind::NotFound => {}
+            Err(source) => return Err(ProjectError::MaterializationPrune { path: stale, source }),
+        }
+    }
+    Ok(())
 }
 
 /// Exclusive cross-process ownership of one project's materialized workspace

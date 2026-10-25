@@ -19,6 +19,8 @@ fn full_build_phase_order_includes_program_assemble() {
     assert!(asm < parse);
 }
 
+/// The host is read from its materialized copy; Corelib packages are read in place from the
+/// toolchain's shared Corelib and never from a copy under `obj/beskid/deps`.
 #[test]
 fn effective_roots_prefers_materialized_corelib_mvp_fixture() {
     with_cwd_at_workspace_root(&compiler_workspace_root(), || {
@@ -36,9 +38,19 @@ fn effective_roots_prefers_materialized_corelib_mvp_fixture() {
         let roots = effective_roots_for_plan(&plan, resolved.prepared_workspace.as_ref());
         let module_roots = module_roots_from_effective(&roots);
 
+        assert!(module_roots[0].ends_with("obj/beskid/root/Src"), "materialized host root: {module_roots:?}");
         assert!(
-            module_roots.iter().any(|root| root.ancestors().any(|ancestor| ancestor.ends_with("obj/beskid/deps"))),
-            "expected materialized dependency root in {module_roots:?}"
+            module_roots.iter().all(|root| !root.ancestors().any(|ancestor| ancestor.ends_with("obj/beskid/deps"))),
+            "no Corelib copy under obj/beskid/deps: {module_roots:?}"
+        );
+        let shared = beskid_abi::runtime_kit::installed_corelib_root()
+            .expect("installed Corelib root")
+            .canonicalize()
+            .expect("canonical Corelib root");
+        assert!(
+            module_roots[1..].iter().all(|root| root.starts_with(&shared)),
+            "Corelib roots are the shared Corelib at {}: {module_roots:?}",
+            shared.display()
         );
     });
 }

@@ -5,7 +5,8 @@ use super::lockfile::{
     lock_graph_differs, preflight_existing_lock_for_plan, reject_unreachable_registry_pins,
     validate_existing_lock_graph,
 };
-use super::prepare::{installed_corelib_lock_root, portable_entry_for_dependency};
+use super::prepare::portable_entry_for_dependency;
+use super::shared_corelib::SharedCorelib;
 use super::registry::{ResolvedRegistryDependency, parse_registry_descriptor, resolve_registry_dependency};
 use super::{ProjectLockDependencyEntry, ProjectLockSource, WorkspacePrepareOptions};
 use crate::projects::{
@@ -42,6 +43,8 @@ pub struct ResolutionPolicy {
 pub(super) struct ResolvedWorkspaceDependencies {
     pub entries: Vec<ProjectLockDependencyEntry>,
     pub registry: Vec<ResolvedRegistryDependency>,
+    /// The toolchain's shared Corelib that `source=corelib` entries name.
+    pub shared_corelib: Option<SharedCorelib>,
 }
 
 pub(super) fn ResolveWorkspaceDependencies(
@@ -59,13 +62,15 @@ pub(super) fn ResolveWorkspaceDependencies(
         refresh_lock: allow_graph_change || policy.refresh == RefreshScope::All,
     };
     let existing = preflight_existing_lock_for_plan(plan, options)?;
-    let corelib = installed_corelib_lock_root();
-    RejectAmbiguousDependencyNames(&plan.dependency_projects, corelib.as_deref())?;
+    let shared_corelib = SharedCorelib::resolve();
+    RejectAmbiguousDependencyNames(&plan.dependency_projects, shared_corelib.as_ref().map(SharedCorelib::root))?;
     let mut entries = Vec::new();
     let mut destinations = HashSet::new();
     for dependency in &plan.dependency_projects {
-        let entry = portable_entry_for_dependency(plan, dependency, corelib.as_deref())?;
-        if !destinations.insert(entry.materialized_root.clone()) {
+        let entry = portable_entry_for_dependency(plan, dependency, shared_corelib.as_ref())?;
+        if let Some(destination) = &entry.materialized_root
+            && !destinations.insert(destination.clone())
+        {
             return Err(ProjectError::Validation("lockfile duplicates a materialized destination".into()));
         }
         entries.push(entry);
@@ -202,7 +207,7 @@ pub(super) fn ResolveWorkspaceDependencies(
         }
         registry.push(resolved);
     }
-    Ok(ResolvedWorkspaceDependencies { entries, registry })
+    Ok(ResolvedWorkspaceDependencies { entries, registry, shared_corelib })
 }
 
 /// One registry requirement edge: the requested coordinate and the package that requires it.
@@ -606,7 +611,7 @@ mod tests {
                 manifest: "Shared.bproj".into(),
                 project: "obj/beskid/deps/src/x".into(),
                 source_root: "src".into(),
-                materialized_root: "obj/beskid/deps/src/x".into(),
+                materialized_root: Some("obj/beskid/deps/src/x".into()),
                 resolved_version: Some(version.into()),
                 artifact_digest: Some(format!("sha256:{}", "0".repeat(64))),
                 registry: Some(registry.into()),

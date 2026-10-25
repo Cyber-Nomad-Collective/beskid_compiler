@@ -51,7 +51,7 @@ impl ResolvedRegistryDependency {
             project: self.materialized_relative.clone(),
             manifest: layout.manifest,
             source_root: layout.source_root.into(),
-            materialized_root: self.materialized_relative.clone(),
+            materialized_root: Some(self.materialized_relative.clone()),
             resolved_version: Some(self.selected_version.clone()),
             artifact_digest: Some(self.artifact_digest.clone()),
             registry: Some(self.registry_identity.clone()),
@@ -134,7 +134,7 @@ impl ResolvedRegistryDependency {
         pinned: Option<&ProjectLockDependencyEntry>,
     ) -> Result<(), ProjectError> {
         let Some(pinned) = pinned else { return Ok(()) };
-        if pinned.project != self.materialized_relative || pinned.materialized_root != self.materialized_relative {
+        if pinned.project != self.materialized_relative || pinned.materialized_root.as_deref() != Some(self.materialized_relative.as_str()) {
             return Err(stale_registry_pin(&self.dependency_name));
         }
 
@@ -460,7 +460,7 @@ pub(super) fn materialize_registry_dependency(
         manifest: portable_child_path(&materialized_root, &manifest_path)?,
         project: materialized_relative.clone(),
         source_root: portable_child_path(&materialized_root, &materialized_source_root)?,
-        materialized_root: materialized_relative,
+        materialized_root: Some(materialized_relative),
         resolved_version: Some(selected_version.clone()),
         artifact_digest: Some(artifact_digest),
         registry: Some(registry_identity),

@@ -206,11 +206,13 @@ pub fn path_to_uri(path: &Path) -> String {
     out
 }
 
-/// The v1 form of a lock file: only the header differs, which is what makes the server see a
-/// lock that needs migration. `None` when the content is not a v2 lock.
-pub fn downgrade_lock_to_v1(v2: &str) -> Option<String> {
-    let rest = v2.strip_prefix("# Project.lock v2")?;
-    Some(format!("# Project.lock v1{rest}"))
+/// A v1 lock for the project of a current (v3) lock: the v1 header with the same root manifest
+/// and project name and no dependency lines, which is what makes the server see a lock that needs
+/// migration. `None` when the content is not a current lock.
+pub fn downgrade_lock_to_v1(current: &str) -> Option<String> {
+    let rest = current.strip_prefix("# Project.lock v3\n")?;
+    let header = rest.lines().take_while(|line| !line.starts_with("- ")).collect::<Vec<_>>().join("\n");
+    Some(format!("# Project.lock v1\n{header}\n"))
 }
 
 /// Reply for a server-to-client request; the soak client supports nothing, so it answers neutrally.
@@ -1060,10 +1062,10 @@ mod tests {
     }
 
     #[test]
-    fn lock_downgrade_only_touches_the_header() {
-        let v2 = "# Project.lock v2\nroot_manifest=x.bproj\nproject_name=x\ndependencies:\n";
-        let v1 = downgrade_lock_to_v1(v2).unwrap();
-        assert!(v1.starts_with("# Project.lock v1\nroot_manifest=x.bproj"));
+    fn lock_downgrade_keeps_the_project_and_drops_entries() {
+        let current = "# Project.lock v3\nroot_manifest=x.bproj\nproject_name=x\ndependencies:\n- name=Core;source=corelib;project=beskid_corelib;manifest=corelib.bproj;source_root=.\n";
+        let v1 = downgrade_lock_to_v1(current).unwrap();
+        assert_eq!(v1, "# Project.lock v1\nroot_manifest=x.bproj\nproject_name=x\ndependencies:\n");
         assert_eq!(downgrade_lock_to_v1(&v1), None);
         assert_eq!(downgrade_lock_to_v1("nonsense"), None);
     }

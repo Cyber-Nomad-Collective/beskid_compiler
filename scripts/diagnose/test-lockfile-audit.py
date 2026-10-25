@@ -13,7 +13,7 @@ SCRIPT = Path(__file__).with_name("lockfile-audit.py")
 
 
 class LockfileAuditTests(unittest.TestCase):
-    def test_classifies_tracked_locks_and_rejects_v1_on_request(self):
+    def test_classifies_tracked_locks_and_rejects_retired_formats_on_request(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             subprocess.run(["git", "init", "-q", str(root)], check=True)
@@ -32,7 +32,7 @@ class LockfileAuditTests(unittest.TestCase):
             subprocess.run(["git", "-C", str(root), "add", "App", "Orphan"], check=True)
 
             result = subprocess.run(
-                [sys.executable, str(SCRIPT), "--repo", str(root), "--json", "--require-v2"],
+                [sys.executable, str(SCRIPT), "--repo", str(root), "--json", "--require-current"],
                 text=True,
                 capture_output=True,
                 check=False,
@@ -40,7 +40,7 @@ class LockfileAuditTests(unittest.TestCase):
 
             self.assertEqual(result.returncode, 1, result.stderr)
             report = json.loads(result.stdout)
-            self.assertEqual(report["counts"], {"v1": 2, "v2": 1, "other": 0})
+            self.assertEqual(report["counts"], {"v1": 2, "v2": 1, "v3": 0, "other": 0})
             self.assertEqual(report["categories"], {"source": 1, "generated": 1, "orphan": 1})
             self.assertEqual(
                 [(entry["path"], entry["category"]) for entry in report["entries"]],
@@ -51,16 +51,16 @@ class LockfileAuditTests(unittest.TestCase):
                 ],
             )
 
-            (source / "Project.lock").write_text("# Project.lock v2\n", encoding="utf-8")
-            (orphan / "Project.lock").write_text("# Project.lock v2\n", encoding="utf-8")
+            for lock in (source, generated, orphan):
+                (lock / "Project.lock").write_text("# Project.lock v3\n", encoding="utf-8")
             migrated = subprocess.run(
-                [sys.executable, str(SCRIPT), "--repo", str(root), "--json", "--require-v2"],
+                [sys.executable, str(SCRIPT), "--repo", str(root), "--json", "--require-current"],
                 text=True,
                 capture_output=True,
                 check=False,
             )
             self.assertEqual(migrated.returncode, 0, migrated.stderr)
-            self.assertEqual(json.loads(migrated.stdout)["counts"], {"v1": 0, "v2": 3, "other": 0})
+            self.assertEqual(json.loads(migrated.stdout)["counts"], {"v1": 0, "v2": 0, "v3": 3, "other": 0})
 
 
 if __name__ == "__main__":

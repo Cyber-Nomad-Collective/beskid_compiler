@@ -30,7 +30,7 @@ impl ReplayFixture {
         let manifest_path = write_project(&app, &app_manifest);
         let (plan, materialized_source) = with_cwd_at_workspace_root(&root, || {
             let plan = build_compile_plan(&manifest_path, None).expect("resolve fixture graph");
-            let workspace = prepare_project_workspace(&plan).expect("write genuine v2 lock and materialize graph");
+            let workspace = prepare_project_workspace(&plan).expect("write genuine lock and materialize graph");
             let source = workspace
                 .materialized_dependencies
                 .iter()
@@ -42,7 +42,7 @@ impl ReplayFixture {
         });
         let lock_path = app.join(PROJECT_LOCK_FILE_NAME);
         let lock = fs::read_to_string(&lock_path).expect("read generated lock");
-        assert!(lock.starts_with("# Project.lock v2\n"), "fixture must exercise v2 replay");
+        assert!(lock.starts_with("# Project.lock v3\n"), "fixture must exercise v3 replay");
         Self { root, plan, lock_path, materialized_source }
     }
 
@@ -60,7 +60,7 @@ impl ReplayFixture {
     fn assert_valid_replay(&self) {
         let actual = self.replayed_source().canonicalize().expect("resolve replayed materialized source");
         let expected = self.materialized_source.canonicalize().expect("resolve expected materialized source");
-        assert_eq!(actual, expected, "a genuine v2 lock must replay the current graph's materialized source");
+        assert_eq!(actual, expected, "a genuine lock must replay the current graph's materialized source");
     }
 
     fn assert_fallback(&self) {
@@ -99,14 +99,14 @@ fn materialized_root_from_lock(lock: &str) -> String {
 }
 
 #[test]
-fn v2_replay_uses_current_materialized_graph() {
-    ReplayFixture::new("v2_replay_valid", "Sibling").assert_valid_replay();
+fn lock_replay_uses_current_materialized_graph() {
+    ReplayFixture::new("lock_replay_valid", "Sibling").assert_valid_replay();
 }
 
 #[test]
-fn v2_replay_rejects_copied_same_name_lock_with_different_manifest_graph() {
-    let first = ReplayFixture::new("v2_replay_first_graph", "FirstSibling");
-    let second = ReplayFixture::new("v2_replay_second_graph", "SecondSibling");
+fn lock_replay_rejects_copied_same_name_lock_with_different_manifest_graph() {
+    let first = ReplayFixture::new("lock_replay_first_graph", "FirstSibling");
+    let second = ReplayFixture::new("lock_replay_second_graph", "SecondSibling");
     second.assert_valid_replay();
     let copied = fs::read(&first.lock_path).expect("read first lock");
     fs::write(&second.lock_path, copied).expect("copy lock with same names but different declared paths");
@@ -114,8 +114,8 @@ fn v2_replay_rejects_copied_same_name_lock_with_different_manifest_graph() {
 }
 
 #[test]
-fn v2_replay_rejects_swapped_dependency_manifest() {
-    let fixture = ReplayFixture::new("v2_replay_swapped_manifest", "Sibling");
+fn lock_replay_rejects_swapped_dependency_manifest() {
+    let fixture = ReplayFixture::new("lock_replay_swapped_manifest", "Sibling");
     fixture.assert_valid_replay();
     let dependency = fixture.plan.dependency_projects.iter().find(|entry| entry.dependency_name == "Shared").unwrap();
     let other_manifest = dependency.project_root.join("Other.bproj");
@@ -126,8 +126,8 @@ fn v2_replay_rejects_swapped_dependency_manifest() {
 }
 
 #[test]
-fn v2_replay_falls_back_when_materialized_dependency_is_missing() {
-    let fixture = ReplayFixture::new("v2_replay_missing_materialization", "Sibling");
+fn lock_replay_falls_back_when_materialized_dependency_is_missing() {
+    let fixture = ReplayFixture::new("lock_replay_missing_materialization", "Sibling");
     fixture.assert_valid_replay();
     let parent = fixture.materialized_source.parent().expect("materialized project root");
     fs::remove_dir_all(parent).expect("remove only this disposable test materialization");
@@ -135,8 +135,8 @@ fn v2_replay_falls_back_when_materialized_dependency_is_missing() {
 }
 
 #[test]
-fn v2_replay_rejects_outside_root_materialized_token() {
-    let fixture = ReplayFixture::new("v2_replay_outside_root", "Sibling");
+fn lock_replay_rejects_outside_root_materialized_token() {
+    let fixture = ReplayFixture::new("lock_replay_outside_root", "Sibling");
     fixture.assert_valid_replay();
     fixture.rewrite_lock(|lock| {
         let materialized = materialized_root_from_lock(&lock);
@@ -147,10 +147,10 @@ fn v2_replay_rejects_outside_root_materialized_token() {
 
 #[cfg(unix)]
 #[test]
-fn v2_replay_rejects_materialized_symlink_escape() {
+fn lock_replay_rejects_materialized_symlink_escape() {
     use std::os::unix::fs::symlink;
 
-    let fixture = ReplayFixture::new("v2_replay_symlink_escape", "Sibling");
+    let fixture = ReplayFixture::new("lock_replay_symlink_escape", "Sibling");
     fixture.assert_valid_replay();
     let materialized_root = fixture.materialized_source.parent().expect("materialized project root");
     let outside = fixture.root.join("outside");
@@ -161,10 +161,10 @@ fn v2_replay_rejects_materialized_symlink_escape() {
 
 #[cfg(unix)]
 #[test]
-fn v2_replay_rejects_symlinked_trusted_dependencies_prefix() {
+fn lock_replay_rejects_symlinked_trusted_dependencies_prefix() {
     use std::os::unix::fs::symlink;
 
-    let fixture = ReplayFixture::new("v2_replay_symlink_prefix", "Sibling");
+    let fixture = ReplayFixture::new("lock_replay_symlink_prefix", "Sibling");
     fixture.assert_valid_replay();
     let dependencies_root = fixture.plan.project_root.join("obj/beskid/deps/src");
     let outside = fixture.root.join("outside-deps");
@@ -174,8 +174,8 @@ fn v2_replay_rejects_symlinked_trusted_dependencies_prefix() {
 }
 
 #[test]
-fn v2_replay_rejects_forged_corelib_source() {
-    let fixture = ReplayFixture::new("v2_replay_forged_corelib", "Sibling");
+fn lock_replay_rejects_forged_corelib_source() {
+    let fixture = ReplayFixture::new("lock_replay_forged_corelib", "Sibling");
     fixture.assert_valid_replay();
     fixture.rewrite_lock(|lock| {
         lock.replace(";source=path;project=../Sibling;", ";source=corelib;project=packages/foundation;")
@@ -184,8 +184,8 @@ fn v2_replay_rejects_forged_corelib_source() {
 }
 
 #[test]
-fn v2_replay_rejects_duplicate_materialized_destination() {
-    let fixture = ReplayFixture::new("v2_replay_duplicate_destination", "Sibling");
+fn lock_replay_rejects_duplicate_materialized_destination() {
+    let fixture = ReplayFixture::new("lock_replay_duplicate_destination", "Sibling");
     fixture.assert_valid_replay();
     fixture.rewrite_lock(|lock| {
         let original = lock.lines().find(|line| line.starts_with("- name=Shared;")).expect("Shared lock entry");

@@ -549,7 +549,7 @@ fn strict_preparation_rejects_forged_registry_paths_before_creating_output() {
         for (locked, frozen) in [(true, false), (false, true)] {
             let fixture = RegistryFixture::new();
             fixture.publish(OLD_VERSION, "trusted release");
-            fixture.prepare(false).expect("create a valid digest-pinned v2 lock");
+            fixture.prepare(false).expect("create a valid digest-pinned lock");
             let original_lock = fixture.lock();
             let original_line =
                 original_lock.lines().find(|line| line.starts_with("- name=PkgCore;")).expect("registry lock entry");
@@ -565,7 +565,7 @@ fn strict_preparation_rejects_forged_registry_paths_before_creating_output() {
             let forged_line =
                 original_line.replace(&format!("{field_prefix}{original_value}"), &format!("{field_prefix}{forged}"));
             let forged_lock = original_lock.replace(original_line, &forged_line);
-            fs::write(fixture.lock_path(), &forged_lock).expect("write forged, parseable v2 lock");
+            fs::write(fixture.lock_path(), &forged_lock).expect("write forged, parseable lock");
 
             let output = fixture.app_manifest.parent().unwrap().join("obj");
             fs::remove_dir_all(&output).expect("remove disposable fixture output");
@@ -1541,7 +1541,7 @@ fn explicit_update_selects_new_version_and_writes_its_digest() {
     let updated = fixture.prepare(true).expect("explicit lock refresh");
     assert_eq!(fs::read_to_string(marker_path(&updated).join("Marker.bd")).unwrap(), "new release");
     let lock = fixture.lock();
-    assert!(lock.starts_with("# Project.lock v2\n"));
+    assert!(lock.starts_with("# Project.lock v3\n"));
     assert!(lock.contains("resolved_version=2.0.0"));
     assert!(
         lock.contains("artifact_digest=sha256:d9c00fdc9c24bdc34dce710d7dcfe8d98f783415ee4c4d14bace8eb4d3316681"),

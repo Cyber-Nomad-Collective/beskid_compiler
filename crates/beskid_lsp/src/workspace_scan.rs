@@ -753,7 +753,7 @@ target "App" {
         let source_path = temp.path().join("Src/Main.bd");
         fs::write(&source_path, &source).expect("source");
         let plan = beskid_analysis::projects::build_compile_plan(&manifest, None).expect("plan");
-        beskid_analysis::projects::prepare_project_workspace(&plan).expect("initial valid v2 lock");
+        beskid_analysis::projects::prepare_project_workspace(&plan).expect("initial valid lock");
         let lock = temp.path().join("Project.lock");
         let uri = path_to_uri(&source_path).expect("source URI");
         let state = RwLock::new(State::default());
