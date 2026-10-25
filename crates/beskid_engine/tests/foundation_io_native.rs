@@ -224,6 +224,100 @@ fn staged_runtime_kit_emitted_binary_runs_a_custom_unit_entry() {
     assert!(result.stderr.is_empty());
 }
 
+/// The process exits while a detached fiber is parked in a read of standard input that never
+/// completes (the parent holds the pipe open and writes nothing): shutdown cancels the fiber and
+/// orphans the worker inside `read` instead of joining it.
+#[test]
+fn staged_runtime_kit_emitted_binary_exits_with_a_detached_fiber_blocked_on_stdin() {
+    use std::process::Stdio;
+    let (_output, executable) = build_staged_foundation_executable("foundation_detached_stdin_exit.bd", "Main");
+    let mut child = Command::new(&executable)
+        .env("BESKID_AOT_MAIN", "1")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn the detached-reader program");
+    // Held open until the child is gone: the read never sees end of input.
+    let held_stdin = child.stdin.take().expect("piped stdin");
+    let started = std::time::Instant::now();
+    let status = loop {
+        if let Some(status) = child.try_wait().expect("poll the child") {
+            break status;
+        }
+        if started.elapsed() > Duration::from_secs(20) {
+            let _ = child.kill();
+            let _ = child.wait();
+            panic!("the process did not exit while a detached fiber was blocked on stdin");
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    };
+    drop(held_stdin);
+    let output = child.wait_with_output().expect("collect output");
+    assert_eq!(status.code(), Some(0), "stderr:\n{}", String::from_utf8_lossy(&output.stderr));
+    assert_eq!(output.stdout, b"main done\n");
+    assert!(output.stderr.is_empty(), "stderr:\n{}", String::from_utf8_lossy(&output.stderr));
+}
+
+/// A compiled program writing to a standard output whose reader is gone ends quietly, as in
+/// `program | head`: with the default SIGPIPE disposition it ends by SIGPIPE; with SIGPIPE
+/// ignored (inherited, as under a test runner) the write fails and the program stops with an
+/// error status. Never an abort or a crash signal.
+#[cfg(unix)]
+#[test]
+fn staged_runtime_kit_emitted_binary_ends_quietly_on_a_closed_stdout() {
+    use std::os::unix::process::{CommandExt, ExitStatusExt};
+    use std::process::Stdio;
+    let (_output, executable) = build_staged_foundation_executable("foundation_closed_pipe_write.bd", "Main");
+    for default_disposition in [true, false] {
+        let mut command = Command::new(&executable);
+        command.env("BESKID_AOT_MAIN", "1").stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
+        if default_disposition {
+            // SAFETY: only async-signal-safe `signal` runs between fork and exec.
+            unsafe {
+                command.pre_exec(|| {
+                    libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+                    Ok(())
+                });
+            }
+        } else {
+            // SAFETY: as above.
+            unsafe {
+                command.pre_exec(|| {
+                    libc::signal(libc::SIGPIPE, libc::SIG_IGN);
+                    Ok(())
+                });
+            }
+        }
+        let mut child = command.spawn().expect("spawn the writer");
+        drop(child.stdout.take());
+        let started = std::time::Instant::now();
+        let status = loop {
+            if let Some(status) = child.try_wait().expect("poll the writer") {
+                break status;
+            }
+            if started.elapsed() > Duration::from_secs(20) {
+                let _ = child.kill();
+                let _ = child.wait();
+                panic!("the writer did not end after its reader went away");
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        };
+        let output = child.wait_with_output().expect("collect stderr");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        for crash in [libc::SIGABRT, libc::SIGSEGV, libc::SIGBUS, libc::SIGILL] {
+            assert_ne!(status.signal(), Some(crash), "crash signal (default SIGPIPE: {default_disposition}): {stderr}");
+        }
+        assert_ne!(status.code(), Some(134), "abort status: {stderr}");
+        if default_disposition {
+            assert_eq!(status.signal(), Some(libc::SIGPIPE), "ends by SIGPIPE like `head` expects: {status:?} {stderr}");
+            assert!(output.stderr.is_empty(), "no message on SIGPIPE: {stderr}");
+        } else {
+            assert!(status.code().is_some_and(|code| code != 0), "a failed write is an error status: {status:?} {stderr}");
+        }
+    }
+}
+
 fn run_staged_standard_stream_fixture(fixture: &str, stdin: &[u8], stdout: &[u8], stderr: &[u8]) {
     let (_output, executable) = build_staged_foundation_executable(fixture, "Main");
     let mut command = Command::new(&executable);
@@ -491,15 +585,22 @@ fn lower_foundation_entry(fixture: &str, entry: &str) -> anyhow::Result<beskid_c
             paths.push((foundation.join(relative), relative.to_owned()));
         }
     }
-    let redirected_stream_fixture = matches!(
-        fixture,
-        "foundation_redirected_streams.bd"
+    let lifecycle_fixture = matches!(fixture, "foundation_detached_stdin_exit.bd" | "foundation_closed_pipe_write.bd");
+    if fixture == "foundation_detached_stdin_exit.bd" {
+        for relative in ["Concurrency/Fiber.bd", "Concurrency/FiberError.bd"] {
+            paths.push((concurrency.join(relative), relative.to_owned()));
+        }
+    }
+    let redirected_stream_fixture = lifecycle_fixture
+        || matches!(
+            fixture,
+            "foundation_redirected_streams.bd"
             | "foundation_redirected_input.bd"
             | "foundation_redirected_output.bd"
             | "foundation_redirected_stderr.bd"
             | "foundation_redirected_args.bd"
             | "foundation_redirected_unit.bd"
-    );
+        );
     let redirected_args_fixture = fixture == "foundation_redirected_args.bd";
     if fixture == "foundation_syscall.bd" || redirected_stream_fixture {
         for file in [
