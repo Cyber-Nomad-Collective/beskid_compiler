@@ -749,3 +749,85 @@ i64 Main() {{
     );
 }
 
+/// A host that is never launched (`ManyHost` in the smoke's `c1`): the real build lowers only
+/// the items reachable from `Main`, and the hooks of a host that is never launched are not
+/// among them (their services are never activated). The launched host's hooks are.
+#[test]
+fn hooks_of_a_host_that_is_never_launched_are_not_reachable() {
+    let source = r#"
+use Core.Collections.Array;
+unit Use(string text) { }
+contract Greeter {
+    string Greet(string name);
+}
+type Hello : Greeter {
+    pub string Greet(string name) { return "Hello, " + name; }
+}
+type Bye : Greeter {
+    pub string Greet(string name) { return "Bye, " + name; }
+}
+type Reception {
+    inject Greeter greeter;
+    pub string Welcome(string name) { return this.greeter.Greet(name); }
+}
+type Crowd {
+    inject Greeter[] all;
+    pub i64 Count() { return Array.Len<Greeter>(this.all); }
+    pub string First(string name) { return this.all[0].Greet(name); }
+}
+host AppHost() {
+    registry {
+        single Hello for Greeter;
+        single Reception;
+    }
+    startup(Reception reception) {
+        Use(reception.Welcome("Ada"));
+    }
+}
+host ManyHost() {
+    registry {
+        single Hello for Greeter;
+        single Bye for Greeter;
+        single Crowd;
+    }
+    startup(Crowd crowd) {
+        Use(crowd.First("Bo"));
+    }
+}
+i32 Main() {
+    launch AppHost();
+    return 0;
+}
+"#;
+    use std::sync::Arc;
+
+    use beskid_analysis::composition::{CompositionInput, resolve_composition};
+
+    let (input, isa, root) = canonical_corelib_host_project_fixture(&[("App/Main.bd", source)], SyntaxGenerationId(6738));
+    let all = entry_items(&input, root);
+    let errors = check_findings(input.database(), &all.iter().map(|item| item.key).collect::<Vec<_>>());
+    assert!(errors.is_empty(), "the program checks clean: {errors:?}");
+    let main = all.iter().find(|item| item.symbol == "Main").expect("Main").key;
+    let reachable = beskid_queries::reachable_items(input.database(), root, main)
+        .expect("reachability")
+        .expect("reachable items");
+    let reachable = all.iter().filter(|item| reachable.contains(&item.key)).cloned().collect::<Vec<_>>();
+    let names = reachable.iter().map(|item| item.symbol.as_str()).collect::<Vec<_>>();
+    assert!(names.iter().any(|name| name.starts_with("__BeskidHook_AppHost_startup_")), "{names:?}");
+    assert!(!names.iter().any(|name| name.starts_with("__BeskidHook_ManyHost_")), "{names:?}");
+    let result = resolve_composition(CompositionInput {
+        program: &input.typed_program().assembly.entry_unit().program,
+        is_mod_project: false,
+        types: &beskid_queries::CompositionTypes::new(input.database(), input.typed_program()),
+    });
+    assert!(result.issues.is_empty(), "composition must validate: {:?}", result.issues);
+    let mut snapshot = result.snapshot;
+    snapshot.source_unit_path = Some(root.unit.path(input.database()).to_path_buf());
+    let generation = input.typed_program().generation;
+    let input = input
+        .with_composition_authority(generation, Arc::new(result.plan), Arc::new(snapshot))
+        .expect("attach frozen composition authority");
+    let artifact = lower_syntax_program(&input, isa.as_ref(), &reachable)
+        .unwrap_or_else(|error| panic!("the reachable items lower without an internal error: {error}"));
+    beskid_codegen::validate_artifact(&artifact).expect("reachable artifact");
+}

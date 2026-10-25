@@ -66,6 +66,19 @@ pub fn hook_function_name(host: &str, kind: ScopeHookKind, span: SpanInfo) -> St
     format!("{HOOK_ITEM_PREFIX}_{host}_{}_{}", kind_name(kind), span.start)
 }
 
+/// The host whose hook (or scope hook) a generated hook function holds the body of: `App` for
+/// `__BeskidHook_App_startup_120`. `None` for every other name, including the generated argument
+/// and record types.
+pub fn hook_function_host(name: &str) -> Option<&str> {
+    let rest = name.strip_prefix(HOOK_ITEM_PREFIX)?.strip_prefix('_')?;
+    let (rest, start) = rest.rsplit_once('_')?;
+    if start.is_empty() || !start.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    let (host, kind) = rest.rsplit_once('_')?;
+    (matches!(kind, "startup" | "init" | "dispose") && !host.is_empty()).then_some(host)
+}
+
 /// Name of the argument type that carries the injected parameters of that hook.
 pub fn hook_arguments_name(host: &str, kind: ScopeHookKind, span: SpanInfo) -> String {
     format!("{HOOK_ITEM_PREFIX}Args_{host}_{}_{}", kind_name(kind), span.start)

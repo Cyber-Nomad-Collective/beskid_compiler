@@ -484,13 +484,18 @@ pub(super) fn direct_callees_for_item(
     let mut callees = Vec::new();
     // `launch` (and the `with` blocks of its function) call the generated host-hook functions
     // (`beskid_analysis::composition::hooks`) without a CallExpression node. Which hooks run is
-    // decided by the frozen composition plan at lowering; every generated hook of the unit is
-    // reachable so each planned call has an emitted target.
-    let launches = index
+    // decided by the frozen composition plan at lowering; every generated hook of a host this item
+    // launches is reachable so each planned call has an emitted target. The hooks of a host that
+    // is never launched never run and are not reachable: the plan activates none of their
+    // services, so their bodies have nothing to read their parameters from.
+    let launched = index
         .ids_of_kind(beskid_analysis::syntax_query::NodeKind::LaunchStatement)
         .into_iter()
-        .any(|node| is_ancestor(index, item.node, node));
-    if launches {
+        .filter(|node| is_ancestor(index, item.node, *node))
+        .filter_map(|node| index.node_at(program, node)?.of::<beskid_analysis::syntax::LaunchStatement>())
+        .filter_map(|launch| launch.host_path.node.segments.last().map(|segment| segment.node.name.node.name.clone()))
+        .collect::<Vec<_>>();
+    if !launched.is_empty() {
         for node in index.ids_of_kind(beskid_analysis::syntax_query::NodeKind::FunctionDefinition) {
             let Some(function) = index
                 .node_at(program, node)
@@ -499,7 +504,12 @@ pub(super) fn direct_callees_for_item(
                 continue;
             };
             let key = AstNodeKey { node, ..item };
-            if beskid_analysis::composition::is_hook_item_name(&function.name.node.name) && !callees.contains(&key) {
+            let name = function.name.node.name.as_str();
+            let launched_hook = beskid_analysis::composition::hook_function_host(name)
+                .is_some_and(|host| launched.iter().any(|launched| launched == host));
+            let hook_item = beskid_analysis::composition::is_hook_item_name(name)
+                && beskid_analysis::composition::hook_function_host(name).is_none();
+            if (launched_hook || hook_item) && !callees.contains(&key) {
                 callees.push(key);
             }
         }
