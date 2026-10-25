@@ -455,7 +455,8 @@ WhileStatement = { KwWhile ~ PUSH("") ~ Expression ~ DROP ~ Block }
 ForStatement = { KwFor ~ Identifier ~ KwIn ~ PUSH("") ~ Expression ~ DROP ~ Block }
 RangeExpression = { KwRange ~ PUSH("(") ~ Expression ~ "," ~ Expression ~ DROP ~ ")" }
 
-ExpressionStatement = { Expression ~ ";" }
+// A `match` used as a statement needs no `;` (like a C# `switch` statement); one is still allowed.
+ExpressionStatement = { Expression ~ ";" | &KwMatch ~ Expression }
 
 ////////////////////////////////////////////////////////////
 // 6) EXPRESSIONS
