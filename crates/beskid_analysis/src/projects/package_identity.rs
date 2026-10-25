@@ -176,6 +176,38 @@ fn is_inside_compiler_corelib_checkout(manifest: &Path) -> bool {
         .and_then(|root| root.canonicalize().ok());
     physical.starts_with(&corelib) || runtime.is_some_and(|root| physical.starts_with(root))
 }
+/// Whether `source_root` is physically `<corelib>/packages/<package>/src` of the installed Corelib
+/// workspace (`installed_corelib_lock_root`).
+///
+/// That workspace is the one whose packages every consumer already locks with the `corelib`
+/// source, so a package of it checked directly carries the identity it has as a dependency.
+/// Unmarked or unresolvable roots and copies elsewhere stay local.
+fn is_installed_corelib_source_root(source_root: &Path) -> bool {
+    super::workflow::installed_corelib_lock_root()
+        .is_some_and(|corelib| is_corelib_workspace_package_source_root(&corelib, source_root))
+}
+/// Whether `source_root` physically is `<corelib>/packages/<package>/src`, with `corelib` the
+/// physical root of a Corelib workspace.
+fn is_corelib_workspace_package_source_root(corelib: &Path, source_root: &Path) -> bool {
+    let Ok(physical) = source_root.canonicalize() else {
+        return false;
+    };
+    physical.file_name() == Some(std::ffi::OsStr::new("src"))
+        && physical.parent().and_then(Path::parent) == Some(corelib.join("packages").as_path())
+}
+/// Whether `manifest` belongs to a project inside the installed Corelib workspace
+/// (`installed_corelib_lock_root`): a package, Mod, aggregate, or test project of it.
+fn is_inside_installed_corelib(manifest: &Path) -> bool {
+    let Some(corelib) = super::workflow::installed_corelib_lock_root() else {
+        return false;
+    };
+    manifest.canonicalize().is_ok_and(|physical| physical.starts_with(corelib))
+}
+/// Whether `source_root` is a Corelib package source root: the compiler checkout's own, or the
+/// installed Corelib workspace's.
+fn is_corelib_package_source_root(source_root: &Path) -> bool {
+    is_compiler_corelib_source_root(source_root) || is_installed_corelib_source_root(source_root)
+}
 impl VerifiedPackageIdentities {
     /// The one package that owns `path`. The most specific containing root across all entries
     /// decides; two different packages claiming the same deepest root are ambiguous and own nothing.
@@ -259,9 +291,10 @@ impl VerifiedPackageIdentities {
         lock_path: &Path,
     ) -> Result<Self, ProjectError> {
         let mut result = Self { entries: Vec::new(), lock: Some((lock_path.to_owned(), read(lock_path)?)) };
-        let host_in_compiler_corelib = is_inside_compiler_corelib_checkout(&plan.manifest_path);
+        let host_in_corelib = is_inside_compiler_corelib_checkout(&plan.manifest_path)
+            || is_inside_installed_corelib(&plan.manifest_path);
         if let Some(source) = &plan.source_root {
-            let identity_source = if is_compiler_corelib_source_root(source) {
+            let identity_source = if is_corelib_package_source_root(source) {
                 VerifiedPackageSource::Corelib
             } else {
                 VerifiedPackageSource::Local
@@ -297,7 +330,7 @@ impl VerifiedPackageIdentities {
             // package elsewhere or a checkout package named from outside the checkout, stays local.
             let source = match (pin.source(), original) {
                 (ProjectLockSource::Path, Some(original))
-                    if host_in_compiler_corelib && is_compiler_corelib_source_root(&original.source_root) =>
+                    if host_in_corelib && is_corelib_package_source_root(&original.source_root) =>
                 {
                     VerifiedPackageSource::Corelib
                 }
@@ -362,7 +395,29 @@ impl VerifiedPackageIdentities {
 
 #[cfg(test)]
 mod corelib_host_identity_tests {
-    use super::{is_compiler_corelib_source_root, is_inside_compiler_corelib_checkout};
+    use super::{
+        is_compiler_corelib_source_root, is_corelib_workspace_package_source_root, is_inside_compiler_corelib_checkout,
+    };
+
+    #[test]
+    fn only_package_source_roots_of_the_corelib_workspace_are_corelib_hosts() {
+        let base = std::env::temp_dir().join(format!("beskid_installed_corelib_host_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let corelib = base.join("beskid_corelib");
+        for directory in ["packages/foundation/src", "packages/foundation/lib", "mods/serialization_mod/src"] {
+            std::fs::create_dir_all(corelib.join(directory)).expect("Corelib workspace layout");
+        }
+        let elsewhere = base.join("copy/packages/foundation/src");
+        std::fs::create_dir_all(&elsewhere).expect("copied package source root");
+        let corelib = corelib.canonicalize().expect("physical Corelib root");
+
+        assert!(is_corelib_workspace_package_source_root(&corelib, &corelib.join("packages/foundation/src")));
+        assert!(!is_corelib_workspace_package_source_root(&corelib, &corelib.join("packages/foundation/lib")));
+        assert!(!is_corelib_workspace_package_source_root(&corelib, &corelib.join("mods/serialization_mod/src")));
+        assert!(!is_corelib_workspace_package_source_root(&corelib, &elsewhere), "a copy elsewhere stays local");
+        assert!(!is_corelib_workspace_package_source_root(&corelib, &corelib.join("packages/missing/src")));
+        let _ = std::fs::remove_dir_all(&base);
+    }
 
     #[test]
     fn only_projects_of_the_compiler_checkout_corelib_tree_are_corelib_hosts_for_path_dependencies() {
