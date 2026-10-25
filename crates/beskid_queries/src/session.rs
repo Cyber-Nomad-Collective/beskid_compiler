@@ -10,7 +10,7 @@ use beskid_analysis::services::{
 };
 use beskid_pipeline::PipelineObserver;
 
-use crate::db::{BeskidDatabase, configure_compilation_database_for_project, reset_compilation_database};
+use crate::db::{BeskidDatabase, reset_compilation_database};
 use crate::entry::{prepare_compilation_diagnostics_with_db, prepare_compilation_with_db};
 
 thread_local! {
@@ -34,19 +34,27 @@ pub fn reset_process_compilation_database() {
     });
 }
 
+/// Give each project a fresh in-memory database.
+///
+/// One-shot compiles neither load nor save the Salsa snapshot under `obj/beskid/cache/salsa/`.
+/// Every compile registers its syntax again: restoring writes the rebuilt tree into each unit's
+/// revision input, the source authorities are granted anew, and a Mod rewrite gives the assembly
+/// a new generation. Each of those writes invalidates the memos that read the unit, which is
+/// nearly all of them, so a restored snapshot is verified and recomputed in full and its load
+/// and save only add time (measured on `corelib.bproj`: 10 s load and 5-13 s save for no reuse).
 fn configure_db_in_place(db: &mut BeskidDatabase, project_root: &Path) {
     let canonical = project_root.canonicalize().unwrap_or_else(|_| project_root.to_path_buf());
     let already_configured = CONFIGURED_ROOT.with(|configured| configured.borrow().as_ref() == Some(&canonical));
     if already_configured {
         return;
     }
-    configure_compilation_database_for_project(db, &canonical);
+    reset_compilation_database(db);
     CONFIGURED_ROOT.with(|configured| {
         *configured.borrow_mut() = Some(canonical);
     });
 }
 
-/// Configure on-disk persistence when the project root changes.
+/// Start a fresh in-memory database when the project root changes.
 pub fn configure_db_for_project(project_root: &Path) {
     with_db(|db| configure_db_in_place(db, project_root));
 }
@@ -63,16 +71,10 @@ pub fn prepare_compilation_diagnostics(
     options: PrepareOptions,
     pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<(PreparedCompilation, Vec<SemanticDiagnostic>, Vec<beskid_analysis::SyntaxFix>)> {
-    let result = with_db(|db| {
+    with_db(|db| {
         ensure_db_for_resolved(db, resolved);
         prepare_compilation_diagnostics_with_db(db, resolved, options, pipeline)
-    });
-    // Persist the salsa snapshot after a successful CLI prepare so the next
-    // invocation skips recomputation of unchanged persisted queries.
-    if result.is_ok() {
-        with_db(crate::persistence::persist_session_snapshot);
-    }
-    result
+    })
 }
 
 /// Run executable prepare with the process-scoped database (CLI / one-shot callers).
@@ -81,16 +83,10 @@ pub fn prepare_compilation(
     options: PrepareOptions,
     pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<PreparedCompilation> {
-    let result = with_db(|db| {
+    with_db(|db| {
         ensure_db_for_resolved(db, resolved);
         prepare_compilation_with_db(db, resolved, options, pipeline)
-    });
-    // Persist the salsa snapshot after a successful CLI prepare so the next
-    // invocation skips recomputation of unchanged persisted queries.
-    if result.is_ok() {
-        with_db(crate::persistence::persist_session_snapshot);
-    }
-    result
+    })
 }
 
 /// Build the typed front end of a Mod-free resolved input using the shared DB + entry session

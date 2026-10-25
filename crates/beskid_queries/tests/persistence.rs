@@ -439,3 +439,34 @@ fn repeated_compiles_with_new_generations_keep_the_snapshot_bounded() {
         assert!(later_bytes < bytes + bytes / 2, "snapshot bytes must not grow per compile: {shapes:?}");
     }
 }
+
+/// A one-shot compile through the process database neither writes nor reads the Salsa snapshot:
+/// every compile registers its syntax again, so a restored snapshot would be recomputed in full.
+#[test]
+fn one_shot_compiles_do_not_load_or_save_the_snapshot() {
+    use beskid_analysis::services::{PrepareOptions, ResolvedInput, synthetic_compile_plan_for_source};
+
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("Main.bd");
+    let source = "i64 Main() { return 42_i64; }";
+    std::fs::write(&path, source).unwrap();
+    let cache = beskid_queries::cache_root_for_project(directory.path());
+    std::fs::create_dir_all(&cache).unwrap();
+    // A snapshot left by an older compiler is neither read nor replaced.
+    std::fs::write(cache.join("db.json"), "{\"stale\":true}").unwrap();
+    let resolved = ResolvedInput {
+        source_path: path.clone(),
+        source: source.into(),
+        compile_plan: Some(synthetic_compile_plan_for_source(&path)),
+        prepared_workspace: None,
+        workspace_summary: None,
+        assembly: None,
+    };
+    for _ in 0..2 {
+        let (_, diagnostics, _) =
+            beskid_queries::prepare_compilation_diagnostics(&resolved, PrepareOptions::without_mods(), None).unwrap();
+        assert!(!diagnostics.iter().any(|diagnostic| diagnostic.severity == beskid_analysis::Severity::Error));
+        assert_eq!(std::fs::read_to_string(cache.join("db.json")).unwrap(), "{\"stale\":true}");
+    }
+    beskid_queries::reset_process_compilation_database();
+}
