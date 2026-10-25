@@ -46,7 +46,7 @@ pub i64 SyscallSubmitAndPark(word descriptor, pointer managedBuffer, word len, w
             SystemFree(nativeBuffer, allocation);
             return -1;
         }
-        while !WorkerPoll(request) {}
+        while !WorkerPoll(request) { thread_yield(); }
         i64 result = FinishSyscallRequest(request, managedBuffer);
         worker_release(request);
         return result;

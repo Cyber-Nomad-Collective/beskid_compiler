@@ -358,6 +358,10 @@ static int ChildWideHasDot(const wchar_t *s) {
       return 1;
   return 0;
 }
+static int ChildWideEndsWithExe(const wchar_t *s, size_t length) {
+  return length >= 4 &&
+         CompareStringOrdinal(s + length - 4, 4, L".exe", 4, TRUE) == CSTR_EQUAL;
+}
 static wchar_t *ChildResolveFromPath(const wchar_t *exe,
                                      const wchar_t *environment,
                                      size_t *allocated) {
@@ -373,7 +377,12 @@ static wchar_t *ChildResolveFromPath(const wchar_t *exe,
   if (!search)
     return NULL;
   size_t exe_length = ChildWideLength(exe);
-  int add_extension = !ChildWideHasDot(exe);
+  /* A name without a dot is tried as `name.exe` only. A dotted name
+   * (`python3.11`, `tool.exe`) is tried as written, then with `.exe` unless it
+   * already ends in `.exe`. */
+  int dotted = ChildWideHasDot(exe);
+  int first_variant = dotted ? 0 : 1;
+  int last_variant = dotted && ChildWideEndsWithExe(exe, exe_length) ? 0 : 1;
   for (const wchar_t *at = search;;) {
     const wchar_t *end = at;
     while (*end && *end != L';')
@@ -384,7 +393,8 @@ static wchar_t *ChildResolveFromPath(const wchar_t *exe,
     if (last > first && last[-1] == L'"')
       last--;
     size_t directory = (size_t)(last - first);
-    if (directory) {
+    for (int variant = first_variant; directory && variant <= last_variant;
+         variant++) {
       size_t bytes = (directory + exe_length + 6) * sizeof(wchar_t);
       wchar_t *candidate = ChildAllocate(bytes);
       if (!candidate)
@@ -395,7 +405,7 @@ static wchar_t *ChildResolveFromPath(const wchar_t *exe,
         candidate[n++] = L'\\';
       memcpy(candidate + n, exe, exe_length * sizeof(wchar_t));
       n += exe_length;
-      if (add_extension) {
+      if (variant) {
         memcpy(candidate + n, L".exe", 4 * sizeof(wchar_t));
         n += 4;
       }
