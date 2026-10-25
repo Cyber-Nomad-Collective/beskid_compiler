@@ -43,6 +43,7 @@ pub i64 RunContractDispatch() {
     if Pick(false).Rank() != 15_i64 { return 5_i64; }
     Holder holder = Holder { greeter: Bye { extra: 2_i64 }, tag: 12_i64 };
     if holder.greeter.Rank() != 12_i64 { return 6_i64; }
+    if Through(holder.greeter) != 12_i64 { return 18_i64; }
     Shown s = 21_i32;
     if s.Twice() != 42_i64 { return 7_i64; }
     mut Holder[] holders = [holder, holder, holder, holder];

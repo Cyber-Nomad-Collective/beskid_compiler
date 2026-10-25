@@ -83,6 +83,7 @@ fn contract_values_in_arrays_fields_parameters_and_returns_dispatch() {
             while i < 2_i64 {{ total = total + all[i].Rank(); i = i + 1_i64; }}
             Holder holder = Holder {{ greeter: Bye {{}} }};
             total = total + holder.greeter.Rank();
+            total = total + Through(holder.greeter);
             total = total + Pick(true).Rank();
             total = total + Through(all[0]);
             total = total + Through(Hello {{}});
