@@ -515,3 +515,98 @@ test RootSleepRunsOtherFibersUntilItsDeadline {
     SystemFree(argument, 8);
     ShutdownSchedulerRuntime(runtime);
 }
+
+// ---- Root waits on hubs and mutexes, and Main's fiber-local state across a park (review 2) ----
+
+test RootHubWaitReceiveParksUntilASpawnedFiberSends {
+    pointer runtime = InstallSchedulerRuntime();
+    i64 channel = ChannelCreate(0, 0);
+    i64 hub = HubCreate();
+    Assert.Equal(HubRegister(hub, 7, channel), ChannelStatusOk(), "the hub takes its member");
+    pointer argument = SystemAllocate(24, 8);
+    raw_word_store(argument, word(channel));
+    raw_word_store(pointer_add(argument, 8), 41);
+    raw_word_store(pointer_add(argument, 16), 99);
+    SpawnWordSender(argument);
+    Assert.Equal(HubWaitReceiveStatus(hub), ChannelStatusOk(), "the root hub wait parks until the sender commits");
+    Assert.Equal(raw_word_load(pointer_add(argument, 16)), 0, "the sender ran while the root waited");
+    Assert.Equal(HubWaitReceiveIndex(hub), 7, "the wait names the member that delivered");
+    pointer received = NewAbiValueSlot();
+    Assert.True(HubWaitReceiveValue(hub, received), "the root owns the delivered value");
+    Assert.Equal(ReceivedWord(received), 41, "the root receives the value the fiber sent");
+    Assert.True(AbiValueClear(received), "the receipt slot releases its boxed root");
+    SystemFree(argument, 24);
+    ShutdownSchedulerRuntime(runtime);
+}
+
+test RootHubWaitReceiveOverClosedMembersIsClosed {
+    pointer runtime = InstallSchedulerRuntime();
+    i64 first = ChannelCreate(0, 0);
+    i64 second = ChannelCreate(0, 0);
+    i64 hub = HubCreate();
+    Assert.Equal(HubRegister(hub, 3, first), ChannelStatusOk(), "the hub takes its first member");
+    Assert.Equal(HubRegister(hub, 8, second), ChannelStatusOk(), "the hub takes its second member");
+    ChannelClose(first);
+    ChannelClose(second);
+    // Before review 2 the root treated a closed member as "not ready" and trapped (deadlock).
+    Assert.Equal(HubWaitReceiveStatus(hub), ChannelStatusClosed(), "every member closed: the wait is Closed, not a trap");
+    Assert.Equal(HubWaitReceiveIndex(hub), 3, "the closed wait names the first closed member");
+    ShutdownSchedulerRuntime(runtime);
+}
+
+// argument: word 0 = mutex handle; word 8 is set to 1 just before the fiber unlocks.
+pub unit HoldMutexAcrossYields(pointer argument) {
+    pointer mutex = NativePointer(raw_word_load(argument));
+    if MutexTryLock(mutex) != 0 { return; }
+    FiberYield();
+    FiberYield();
+    raw_word_store(pointer_add(argument, 8), 1);
+    MutexUnlock(mutex);
+    return;
+}
+
+pub unit SpawnMutexHolder(pointer argument) {
+    Fiber<unit> holder = spawn HoldMutexAcrossYields(argument);
+    return;
+}
+
+test RootMutexLockParksUntilTheHolderUnlocks {
+    pointer runtime = InstallSchedulerRuntime();
+    pointer mutex = MutexCreate();
+    pointer argument = SystemAllocate(16, 8);
+    raw_word_store(argument, NativeWord(mutex));
+    raw_word_store(pointer_add(argument, 8), 0);
+    SpawnMutexHolder(argument);
+    Assert.True(SchedStep(), "the holder runs, locks and yields");
+    Assert.Equal(MutexTryLock(mutex), 1, "the fiber holds the mutex");
+    Assert.Equal(MutexLock(mutex), 0, "the root lock parks until the holder unlocks, not cancelled");
+    Assert.Equal(raw_word_load(pointer_add(argument, 8)), 1, "the holder finished its critical section first");
+    MutexUnlock(mutex);
+    SystemFree(argument, 16);
+    ShutdownSchedulerRuntime(runtime);
+}
+
+test RootParkKeepsMainsCompositionScopeAndDepth {
+    pointer runtime = InstallSchedulerRuntime();
+    pointer tls = CurrentThreadState();
+    // A stand-in for the scope frame Main holds open in a `with` body; nothing dereferences it.
+    raw_word_store(pointer_add(tls, 32), 0x5C09E);
+    raw_word_store(pointer_add(tls, 40), 2);
+    i64 channel = ChannelCreate(0, 0);
+    pointer argument = SystemAllocate(24, 8);
+    raw_word_store(argument, word(channel));
+    raw_word_store(pointer_add(argument, 8), 5);
+    raw_word_store(pointer_add(argument, 16), 99);
+    SpawnWordSender(argument);
+    Assert.Equal(ChannelReceiveStatus(channel), ChannelStatusOk(), "the root receive parks while the sender runs");
+    // A fiber switch used to overwrite Main's words with the fiber's and clear them after.
+    Assert.Equal(raw_word_load(pointer_add(tls, 32)), 0x5C09E, "Main's open scope survives the park");
+    Assert.Equal(raw_word_load(pointer_add(tls, 40)), 2, "Main's scope depth survives the park");
+    raw_word_store(pointer_add(tls, 32), 0);
+    raw_word_store(pointer_add(tls, 40), 0);
+    pointer received = NewAbiValueSlot();
+    Assert.True(ChannelReceiveValue(channel, received), "the root owns the claimed value");
+    Assert.True(AbiValueClear(received), "the receipt slot releases its boxed root");
+    SystemFree(argument, 24);
+    ShutdownSchedulerRuntime(runtime);
+}

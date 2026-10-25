@@ -42,8 +42,23 @@ pub bool SchedStep() {
     // A watched Core.Parallel task fiber can observe cancellation from its first run on.
     IsolateObserveFiberStarting(next);
     SchedulerSetCurrentFiber(next);
+    // The caller is the root (Main driving the scheduler while it waits, or the scheduler
+    // itself). Its fiber-local words (composition scope and depth, root frame) are kept here:
+    // the fiber's are installed for the switch and cleared when it switches back.
+    pointer tls = CurrentThreadState();
+    mut word rootScope = 0; mut word rootDepth = 0; mut word rootFrame = 0;
+    if tls != NativePointer(0) {
+        rootScope = raw_word_load(pointer_add(tls, 32));
+        rootDepth = raw_word_load(pointer_add(tls, 40));
+        rootFrame = raw_word_load(pointer_add(tls, 8));
+    }
     RestoreFiberLocalState(next);
     ContextSwitch(SchedulerContext(), NativePointer(raw_word_load(pointer_add(FiberRecord(next), 104))));
+    if tls != NativePointer(0) {
+        raw_word_store(pointer_add(tls, 32), rootScope);
+        raw_word_store(pointer_add(tls, 40), rootDepth);
+        raw_word_store(pointer_add(tls, 8), rootFrame);
+    }
     SchedulerReleaseMutatorToken();
     SchedulerSetCurrentFiber(FIBER_NONE);
     // A local Core.Parallel task's fiber hands its outcome to its task (Runtime/Parallel/Isolates.bd).
