@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Contract values
+
+- An immutable contract-typed local calls its implementation directly only when its initializer is boxed at the `let` with the table of one non-generic nominal type. A conditional, `match`, value block or lambda result initializer dispatches at run time: `Greeter g = c ? Hello {} : Bye {};` no longer calls `Hello.Rank` on a `Bye`.
+- A primitive boxed into a contract-typed argument or field stays rooted while a later argument or field allocates.
+- A contract value takes its transfer class from the transfer markers its contract embeds (`contract Scored { Transferable; i64 Score(); }`): without a marker it cannot cross a heap boundary (`Port<Scored>` is E1610), `Copied` alone makes it Copied, any other marker Moved, and a value whose type does not satisfy the marker is not boxed into the contract (E1206).
+- A contract conversion whose facts are missing fails closed with E2101 instead of storing an unboxed value: a destination declared with a contract type whose expected type is unavailable, and a literal, struct literal, enum constructor, array literal or lambda of unknown type written into a contract.
+- A contract-typed field passes to a contract-typed parameter (`Through(holder.greeter)`, which failed to lower).
+- `mut this` in a method of a primitive implementation is E1611 (the receiver is a copy). Contract boxes need a 64-bit target.
+
 ### Corelib check
 
 - Every Corelib project passes `beskid check` on its own. A Corelib package checked directly from the installed (or `BESKID_CORELIB_ROOT`) bundle has Corelib identity, as it has as a dependency, so the compiler-issued Dynamic and serialization bridges no longer fail the C extern profile (T0903, T0904) and their compiler-referenced helpers are no longer unused (W2101). `Console/Hosting.bd` is a described Corelib service source, so its `__composition_exit` call is admitted (it was E1107).
