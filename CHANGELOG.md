@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Formatter
+
+- `beskid fmt` and editor formatting never rename. Naming normalization renamed declarations but not their uses (`let my_value = 1; return my_value;` became `let myValue = 1; return my_value;`), so formatted code stopped resolving. Identifiers, test names and `use` paths now keep the author's spelling; the naming-style warnings (W1630–W1638) suggest the conventional name, and the editor's Rename Symbol renames a declaration with its uses. The self-check compares identifiers exactly. Programs a Mod generates are printed without renaming too.
+- `beskid fmt` on a project whose manifest has `root = "."` walks the manifest directory once; it recursed through `dir/./././...` and reported 0 files with exit code 0. A missing source root, or a source project whose root holds no `.bd` file, is an error. Symbolic links to directories are not followed, user directories named `target`, `dist` or `vendor` are formatted, and a directory marked with `CACHEDIR.TAG` is skipped.
+- Files are written atomically (temporary file and rename), keep their permissions and are written through a file link.
+- CRLF files keep CRLF line endings and a byte order mark is kept, so `--check` passes on formatted CRLF files and a BOM file no longer fails with a parse error at 1:1.
+- `code` and CLIF literals are printed exactly as written; a `;` after a code fence stays on the fence line.
+- The self-check is stricter: empty `()` may disappear only where the printer drops them (nullary enum constructors and patterns, attributes without arguments), condition parentheses only when they enclose the whole condition, operators are compared as whole tokens (`>>`, `=>`, `::`), and documentation lines are compared after `///` (paragraph breaks, blank lines and indentation count; a trailing blank documentation line is kept).
+- Comments between a declaration or statement header and its `{` stay with the header. Doubled commas between match arms are formatted instead of refused.
+- The language server logs why a document was not formatted and shows a warning when the formatter refuses a document that parses.
+- The internal "expected ..." syntax-tree diagnostic points at the item or statement being built instead of 1:1, and the parse-context scan reads `'\u{41}'` character literals. A test keeps the parse-context keyword list equal to the grammar's `Keyword` rule.
+
 ### Corelib check
 
 - Every Corelib project passes `beskid check` on its own. A Corelib package checked directly from the installed (or `BESKID_CORELIB_ROOT`) bundle has Corelib identity, as it has as a dependency, so the compiler-issued Dynamic and serialization bridges no longer fail the C extern profile (T0903, T0904) and their compiler-referenced helpers are no longer unused (W2101). `Console/Hosting.bd` is a described Corelib service source, so its `__composition_exit` call is admitted (it was E1107).
