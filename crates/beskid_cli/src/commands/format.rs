@@ -5,10 +5,10 @@ use beskid_analysis::MietteReportError;
 use beskid_analysis::format::format_source;
 use beskid_analysis::projects::ProjectKind;
 use clap::Args;
+use std::collections::HashSet;
 use std::ffi::OsStr;
 use std::fs;
 use std::io::Write;
-use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 

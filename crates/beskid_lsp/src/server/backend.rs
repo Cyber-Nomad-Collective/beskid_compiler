@@ -477,7 +477,9 @@ impl LanguageServer for Backend {
         let Some(text) = formatting::open_texts::open_text(&params.text_document.uri) else {
             return Ok(None);
         };
-        Ok(self.formatting_result(&params.text_document.uri, formatting::handler::handle_document_formatting(&text)).await)
+        Ok(self
+            .formatting_result(&params.text_document.uri, formatting::handler::handle_document_formatting(&text))
+            .await)
     }
 
     async fn range_formatting(&self, params: DocumentRangeFormattingParams) -> Result<Option<Vec<TextEdit>>> {
@@ -485,7 +487,10 @@ impl LanguageServer for Backend {
             return Ok(None);
         };
         Ok(self
-            .formatting_result(&params.text_document.uri, formatting::handler::handle_range_formatting(&text, params.range))
+            .formatting_result(
+                &params.text_document.uri,
+                formatting::handler::handle_range_formatting(&text, params.range),
+            )
             .await)
     }
 }
@@ -500,7 +505,8 @@ impl Backend {
         match result {
             Ok(edits) => Some(edits),
             Err(error) => {
-                let document = uri_to_path(uri).map_or_else(|| uri.as_str().to_string(), |path| path.display().to_string());
+                let document =
+                    uri_to_path(uri).map_or_else(|| uri.as_str().to_string(), |path| path.display().to_string());
                 let (kind, message) = formatting::handler::refusal_message(&document, &error);
                 let filter = *self.log_filter.read().await;
                 client_log(&self.client, filter, kind, message.clone()).await;
