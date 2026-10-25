@@ -21,6 +21,7 @@ contract Shown { i64 Twice(); }
 impl i32 : Shown { pub i64 Twice() { return i64(this) * 2_i64; } }
 pub type Holder { Greeter greeter; i64 tag; }
 
+pub type Pair { Shown shown; Greeter greeter; }
 enum Which { First, Second }
 
 i64 Through(Greeter g) { return g.Rank(); }
@@ -36,6 +37,15 @@ i64 LambdaRank(bool c) {
     Greeter g = make();
     return g.Rank();
 }
+// Collects, then allocates boxes of the size a freed scalar box had: an unrooted box of an
+// earlier argument or field would now hold one of these values.
+Greeter Collected() {
+    Probe.gc_collect();
+    Shown[] junk = [5_i32, 6_i32, 7_i32, 8_i32];
+    if junk[0].Twice() != 10_i64 { return Hello {}; }
+    return Bye { extra: 90_i64 };
+}
+i64 Both(Shown shown, Greeter greeter) { return shown.Twice() + greeter.Rank(); }
 Greeter Pick(bool first) { if first { return Hello {}; } return Bye { extra: 5_i64 }; }
 i64 Sum(Greeter[] all) {
     mut i64 total = 0_i64;
@@ -77,5 +87,8 @@ pub i64 RunContractDispatch() {
     if MatchedRank(Which::First) != 14_i64 || MatchedRank(Which::Second) != 1_i64 { return 11_i64; }
     if BlockRank(true) != 16_i64 || BlockRank(false) != 1_i64 { return 12_i64; }
     if LambdaRank(true) != 1_i64 || LambdaRank(false) != 17_i64 { return 13_i64; }
+    if Both(21_i32, Collected()) != 142_i64 { return 14_i64; }
+    Pair pair = Pair { shown: 21_i32, greeter: Collected() };
+    if pair.shown.Twice() + pair.greeter.Rank() != 142_i64 { return 15_i64; }
     return 42_i64;
 }
