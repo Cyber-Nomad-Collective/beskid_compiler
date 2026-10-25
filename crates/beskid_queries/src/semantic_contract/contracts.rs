@@ -1339,6 +1339,18 @@ pub(super) fn specialized_source_expression_identity(
     {
         return identity;
     }
+    // `values[i]` has the element of its target's array identity in this environment (`T` of a
+    // `T[]` parameter is the contract `Greeter` inside `Array.Get<Greeter>`).
+    if let Some(indexed) = node.of::<beskid_analysis::syntax::IndexExpression>()
+        && let Some(target) = index.direct_child_id(program, key.node, DynNodeRef::from(indexed.target.as_ref()))
+        && let Ok(GenericSourceTypeIdentity::Array(element)) = specialized_source_expression_identity(
+            db,
+            AstNodeKey { node: normalized_expression_node(index, target), ..key },
+            Some(enclosing),
+        )
+    {
+        return Ok(element.as_ref().clone());
+    }
     // `operand?` has the payload of its operand read in this environment
     // (`values.Push(ReadField<T, R>(reader, limits)?)` inside a specialization of `ReadList<T, R>`).
     if node.of::<beskid_analysis::syntax::TryExpression>().is_some() {
