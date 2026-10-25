@@ -21,8 +21,8 @@ class Classify(unittest.TestCase):
         self.assertEqual(common.classify("error[E1101]: unknown name `x`", 1, False, self.patterns), [])
 
     def test_internal_codes_and_texts_are_found(self):
-        self.assertIn("E2101", common.classify("error[E2101]: semantic fact unavailable", 1, False, self.patterns))
-        self.assertIn("E2102", common.classify("E2102 lowering rule missing", 1, False, self.patterns))
+        self.assertIn("E21xx internal diagnostic", common.classify("error[E2101]: semantic fact unavailable", 1, False, self.patterns))
+        self.assertIn("E21xx internal diagnostic", common.classify("E2102 lowering rule missing", 1, False, self.patterns))
         self.assertIn("E4041", common.classify("E4041 Invalid build request", 1, False, self.patterns))
         self.assertIn("MissingRuleOrFact", common.classify("MissingRuleOrFact at X", 1, False, self.patterns))
         self.assertIn("rust panic", common.classify("thread 'main' panicked at src/x.rs:1", 101, False, self.patterns))
