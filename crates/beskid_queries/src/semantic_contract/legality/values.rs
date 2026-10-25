@@ -63,7 +63,8 @@ use super::*;
 use crate::semantic_contract::contract_values::upcast_targets;
 use crate::semantic_contract::contracts::{
     concrete_declaration, concrete_type_or_enum_declaration, contract_declaration_for_identity,
-    is_conformable_primitive, primitive_conforms, type_declaration_conforms_to_contract,
+    is_conformable_primitive, primitive_conforms, type_declaration_conforms_to_applied_contract,
+    type_declaration_conforms_to_contract,
 };
 use beskid_analysis::syntax::{
     AssignExpression, AssignOp, AstNodeId, CallExpression, ContractMethodSignature, EnumConstructorExpression,
@@ -335,6 +336,33 @@ fn contract_accepts(db: &dyn Db, scope: AstNodeKey, contract: AstNodeKey, actual
     }
 }
 
+/// Whether a destination of the generic `contract` applied to `arguments` (`Repo<i64>`) accepts
+/// `actual`: a contract value of the same application, or a type that declares a conformance to
+/// exactly that application. `None` when conformance cannot be proven either way.
+fn applied_contract_accepts(
+    db: &dyn Db,
+    scope: AstNodeKey,
+    contract: AstNodeKey,
+    arguments: &[Identity],
+    actual: &Identity,
+) -> Option<bool> {
+    match actual {
+        Identity::Abi(SemanticTypeId::POINTER | SemanticTypeId::NEVER) | Identity::Function { .. } => None,
+        Identity::Contract { qualified_name, arguments: actual_arguments } => Some(
+            stable_declaration_identity(db, contract).as_ref() == Some(qualified_name)
+                && actual_arguments.as_ref() == arguments,
+        ),
+        Identity::Abi(_) | Identity::Array(_) => Some(false),
+        Identity::Nominal { .. } => {
+            let Some(concrete) = concrete_declaration(db, scope, actual) else {
+                return concrete_type_or_enum_declaration(db, scope, actual).map(|_| false);
+            };
+            let definition = type_definition(db, concrete)?;
+            Some(type_declaration_conforms_to_applied_contract(db, concrete, &definition, contract, arguments))
+        }
+    }
+}
+
 fn type_definition(db: &dyn Db, declaration: AstNodeKey) -> Option<TypeDefinition> {
     let syntax = db.syntax_unit(declaration.unit).filter(|syntax| syntax.accepts_key(db, declaration))?;
     syntax.syntax_index(db).node_at(syntax.expanded_program(db), declaration.node)?.of::<TypeDefinition>().cloned()
@@ -370,9 +398,14 @@ fn judge(
     let (accepted, expected_name) = match expected {
         // A contract reached through a forwarded or function-typed destination (a lambda body's
         // result) is judged by conformance like a declared contract destination.
-        Destination::Identity(expected @ Identity::Contract { qualified_name, .. }) => {
+        Destination::Identity(expected @ Identity::Contract { qualified_name, arguments }) => {
             let Some(contract) = contract_declaration_for_identity(db, site, qualified_name) else { return };
-            let Some(accepted) = contract_accepts(db, site, contract, actual) else { return };
+            let accepted = if arguments.is_empty() {
+                contract_accepts(db, site, contract, actual)
+            } else {
+                applied_contract_accepts(db, site, contract, arguments, actual)
+            };
+            let Some(accepted) = accepted else { return };
             (accepted, identity_name(expected))
         }
         Destination::Identity(expected) => (identities_compatible(expected, actual), identity_name(expected)),

@@ -39,6 +39,9 @@ pub struct AnalyzeArgs {
 /// A project without an explicit `--target` is checked through every target of its manifest (App, Lib and
 /// Test), so sources reachable only from a non-default target (per-suite test entries) are never skipped.
 pub fn execute(args: AnalyzeArgs) -> Result<()> {
+    if let Some(manifest_path) = bsol_project_manifest(&args) {
+        return check_bsol_project(&args, &manifest_path);
+    }
     let targets = manifest_targets_to_check(&args);
     if args.json {
         return Records::new("check").Run(|records| run_targets(&args, &targets, Some(records)));
@@ -46,28 +49,62 @@ pub fn execute(args: AnalyzeArgs) -> Result<()> {
     run_targets(&args, &targets, None).map(|_| ())
 }
 
-/// Names of all manifest targets when `check` was pointed at one project manifest without a target selection and
-/// that manifest declares several targets; empty means "check the one default target" as before.
-fn manifest_targets_to_check(args: &AnalyzeArgs) -> Vec<String> {
+/// The manifest `check` was pointed at, when it is one project manifest (a `.bproj` path or a
+/// directory holding exactly one) and no input file, target or workspace member was selected.
+fn selected_project_manifest(args: &AnalyzeArgs) -> Option<PathBuf> {
     if args.input.is_some() || args.project.target.is_some() || args.project.workspace_member.is_some() {
-        return Vec::new();
+        return None;
     }
-    let Some(project) = args.project.project.as_ref() else { return Vec::new() };
-    let manifest_path = if project.is_dir() {
-        let Ok(entries) = std::fs::read_dir(project) else { return Vec::new() };
+    let project = args.project.project.as_ref()?;
+    if project.is_dir() {
+        let entries = std::fs::read_dir(project).ok()?;
         let mut manifests = entries
             .flatten()
             .map(|entry| entry.path())
             .filter(|path| path.extension().is_some_and(|extension| extension == "bproj"));
         match (manifests.next(), manifests.next()) {
-            (Some(only), None) => only,
-            _ => return Vec::new(),
+            (Some(only), None) => Some(only),
+            _ => None,
         }
     } else if project.extension().is_some_and(|extension| extension == "bproj") {
-        project.clone()
+        Some(project.clone())
     } else {
-        return Vec::new();
+        None
+    }
+}
+
+/// The selected manifest when it declares a schema-only `type = Bsol` project.
+fn bsol_project_manifest(args: &AnalyzeArgs) -> Option<PathBuf> {
+    let manifest_path = selected_project_manifest(args)?;
+    let manifest = beskid_analysis::projects::load_manifest_from_path(&manifest_path).ok()?;
+    (manifest.project.kind == beskid_analysis::projects::ProjectKind::Bsol).then_some(manifest_path)
+}
+
+/// A `type = Bsol` project has no Beskid source: checking it validates every schema export, the same
+/// validation `beskid dev bsol validate <manifest>.bproj` runs.
+fn check_bsol_project(args: &AnalyzeArgs, manifest_path: &std::path::Path) -> Result<()> {
+    let manifest = beskid_analysis::projects::load_manifest_from_path(manifest_path)
+        .map_err(|error| anyhow::Error::msg(error.to_string()))?;
+    let run = || -> Result<serde_json::Value> {
+        let profiles = super::validate_bsol::validate_bsol_project(manifest_path, &manifest, None)?;
+        if !args.json {
+            for profile in &profiles {
+                eprintln!("ok: validated exported schema profile `{profile}`");
+            }
+            eprintln!("Check complete: schema-only Bsol project, {} schema export(s) valid", profiles.len());
+        }
+        Ok(serde_json::json!({ "source": manifest_path, "bsol_profiles": profiles, "errors": 0, "warnings": 0, "notes": 0 }))
     };
+    if args.json {
+        return Records::new("check").Run(|_records| run());
+    }
+    run().map(|_| ())
+}
+
+/// Names of all manifest targets when `check` was pointed at one project manifest without a target selection and
+/// that manifest declares several targets; empty means "check the one default target" as before.
+fn manifest_targets_to_check(args: &AnalyzeArgs) -> Vec<String> {
+    let Some(manifest_path) = selected_project_manifest(args) else { return Vec::new() };
     match beskid_analysis::projects::load_manifest_from_path(&manifest_path) {
         Ok(manifest) if manifest.targets.len() > 1 => {
             manifest.targets.iter().map(|target| target.name.clone()).collect()

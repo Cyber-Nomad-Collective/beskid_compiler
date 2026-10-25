@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Corelib check
+
+- Every Corelib project passes `beskid check` on its own. A Corelib package checked directly from the installed (or `BESKID_CORELIB_ROOT`) bundle has Corelib identity, as it has as a dependency, so the compiler-issued Dynamic and serialization bridges no longer fail the C extern profile (T0903, T0904) and their compiler-referenced helpers are no longer unused (W2101). `Console/Hosting.bd` is a described Corelib service source, so its `__composition_exit` call is admitted (it was E1107).
+- `beskid check --project <manifest>.bproj` on a schema-only `type = Bsol` project validates its schema exports, as `beskid dev bsol validate` does, instead of failing with E1888. E1888 stays for `beskid build` and names the check command.
+- Check accepts a type into the generic contract application it declares (`Repo<i64> repo = Numbers {};` for `type Numbers : Repo<i64>`; another application stays E1206) and an array literal of mixed conforming values into a contract-element array (`Formatting[] mixed = [7_i64, false];`, which was E1202).
+- A contract embedding (`contract Stream { Reader; }`) counts as a use of the import that names the embedded contract (it was W1503).
+
 ### Optional parameters
 
 - Optional parameters: a parameter of a function, method, contract method, host or scope may end with `= <constant>` (a literal, a negated number or a `const` of the same file). A call may omit trailing optional arguments; once the callee is known the compiler passes the defaults at the call site. Optional parameters come after required ones (E1251); a default must be a constant (E1252) of the parameter type (E1253); hook and `bulk` parameters cannot be optional (E1254).

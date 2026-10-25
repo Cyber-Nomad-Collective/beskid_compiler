@@ -1503,6 +1503,41 @@ pub(in crate::semantic_contract) fn type_declaration_conforms_to_contract(
     })
 }
 
+/// Whether `definition` (the type declared at `concrete`) declares a conformance to the generic
+/// `contract` applied to exactly `arguments` (`type Numbers : Repo<i64>` for `Repo<i64>`), on the
+/// type itself or in an `impl` block. Each conformance argument is the source identity of its
+/// syntax in the declaring scope; an argument that has no identity never matches.
+pub(in crate::semantic_contract) fn type_declaration_conforms_to_applied_contract(
+    db: &dyn Db,
+    concrete: AstNodeKey,
+    definition: &TypeDefinition,
+    contract: AstNodeKey,
+    arguments: &[GenericSourceTypeIdentity],
+) -> bool {
+    let applies = |scope: AstNodeKey, path: &Path| {
+        resolve_contract_head(db, scope, path) == Some(contract)
+            && path.segments.last().is_some_and(|terminal| {
+                terminal.node.type_args.len() == arguments.len()
+                    && terminal.node.type_args.iter().zip(arguments).all(|(argument, expected)| {
+                        generic_source_type_identity(db, scope, &argument.node).is_ok_and(|actual| actual == *expected)
+                    })
+            })
+    };
+    if definition.conformances.iter().any(|path| applies(concrete, &path.node)) {
+        return true;
+    }
+    impl_blocks_for_type(db, concrete).into_iter().any(|impl_key| {
+        let Some(impl_syntax) = db.syntax_unit(impl_key.unit) else {
+            return false;
+        };
+        impl_syntax
+            .syntax_index(db)
+            .node_at(impl_syntax.expanded_program(db), impl_key.node)
+            .and_then(|node| node.of::<ImplBlock>())
+            .is_some_and(|impl_block| impl_block.conformances.iter().any(|path| applies(impl_key, &path.node)))
+    })
+}
+
 fn contract_includes(
     db: &dyn Db,
     candidate: AstNodeKey,

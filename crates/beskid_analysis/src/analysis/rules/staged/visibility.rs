@@ -907,6 +907,16 @@ mod tests {
         assert_eq!(unused_imports_with_contract_module(unused), vec!["unused import `Sdk.Reader`"]);
     }
 
+    /// A contract embedding names the embedded contract: `use Core.IO.Reader;` followed by
+    /// `contract Stream { Reader; }` uses the import.
+    #[test]
+    fn contract_embedding_marks_its_import_used() {
+        let embedded = "use Sdk.Reader; pub contract Stream { Reader; }";
+        assert!(unused_imports_with_contract_module(embedded).is_empty(), "imported contract embedded");
+        let unused = "use Sdk.Reader; pub contract Stream { }";
+        assert_eq!(unused_imports_with_contract_module(unused), vec!["unused import `Sdk.Reader`"]);
+    }
+
     /// `exchange(place, move value)` is a builtin call, not an unknown value.
     #[test]
     fn exchange_builtin_call_resolves_without_a_declaration() {

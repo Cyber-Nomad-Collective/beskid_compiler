@@ -112,7 +112,7 @@ fn schema_session(args: &ValidateBsolArgs) -> Result<Option<Box<dyn SchemaSource
 /// Validate every schema export of a `type = Bsol` project: each export path must name a
 /// package-local schema document that validates as `schema.v1`, declares exactly the exported
 /// profile name, and resolves all of its imports. Returns the validated profile names.
-fn validate_bsol_project(
+pub(crate) fn validate_bsol_project(
     manifest_path: &Path,
     manifest: &ProjectManifest,
     locked: Option<Box<dyn SchemaSource>>,

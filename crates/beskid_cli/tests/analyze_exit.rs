@@ -76,3 +76,39 @@ fn project_check_covers_every_manifest_target() {
     let (clean_ok, clean_text) = check(&["--target", "Clean"]);
     assert!(clean_ok, "an explicitly selected clean target passes: {clean_text}");
 }
+
+/// A schema-only `type = Bsol` project has no Beskid source: `beskid check` validates its schema
+/// exports and succeeds, and a broken export fails the check.
+#[test]
+fn bsol_project_check_validates_its_schema_exports() {
+    let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../corelib/packages/pest-gen-schema/pest_gen_schema.bproj");
+    let root = tempfile::tempdir().expect("fixture directory");
+    let output = Command::new(env!("CARGO_BIN_EXE_beskid_cli"))
+        .args(["check", "--plain", "--project"])
+        .arg(&manifest)
+        .env("BESKID_CORELIB_ROOT", root.path().join("corelib"))
+        .output()
+        .expect("check the shipped schema package");
+    let text = format!("{}{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
+    assert!(output.status.success(), "a valid Bsol project checks clean: {text}");
+    assert!(!text.contains("E1888"), "check must not treat a Bsol project as Beskid source: {text}");
+    assert!(text.contains("validated exported schema profile `pestGenConfig.v1`"), "{text}");
+
+    let broken = root.path().join("broken");
+    fs::create_dir_all(broken.join("schemas")).expect("schema directory");
+    fs::write(
+        broken.join("broken.bproj"),
+        "broken {\n  name = \"broken\"\n  version = \"0.1.0\"\n  type = Bsol\n  schemas {\n    export \"missing\" {\n      profile = \"missing.v1\"\n      path = \"schemas/missing.v1.bsol\"\n    }\n  }\n}\n",
+    )
+    .expect("broken manifest");
+    let failed = Command::new(env!("CARGO_BIN_EXE_beskid_cli"))
+        .args(["check", "--plain", "--project"])
+        .arg(broken.join("broken.bproj"))
+        .env("BESKID_CORELIB_ROOT", root.path().join("corelib"))
+        .output()
+        .expect("check a Bsol project with a missing export");
+    let failed_text =
+        format!("{}{}", String::from_utf8_lossy(&failed.stdout), String::from_utf8_lossy(&failed.stderr));
+    assert!(!failed.status.success(), "a missing schema export fails the check: {failed_text}");
+}

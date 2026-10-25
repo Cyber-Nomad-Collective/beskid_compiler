@@ -124,6 +124,18 @@ pub(super) fn collect_expression_obligations(
         let Some(literal) = index.node_at(program, node).and_then(|node| node.of::<ArrayLiteralExpression>()) else {
             continue;
         };
+        // A literal written into a contract-element array (`Formatting[] mixed = [7_i64, false]`)
+        // boxes every element into the contract; value legality judges each element's conformance.
+        if matches!(
+            crate::semantic_contract::contract_values::array_literal_has_contract_elements(
+                db,
+                AstNodeKey { node, ..key },
+                None
+            ),
+            Ok(Some(true))
+        ) {
+            continue;
+        }
         let types = literal
             .elements
             .iter()
