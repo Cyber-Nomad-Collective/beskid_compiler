@@ -7,9 +7,20 @@
 // Small-span objects no longer use this word for mark state (marks live in the span's bitmaps,
 // see Span.bd); large objects (their own dedicated span, size class 0) still use it, because they
 // have no span bitmap of their own worth the bookkeeping for a single slot.
-pub word GcMarkWhite() { return 0; }
-pub word GcMarkGrayState() { return 1; }
-pub word GcMarkBlack() { return 2; }
+pub word GcMarkWhite()
+{
+    return 0;
+}
+
+pub word GcMarkGrayState()
+{
+    return 1;
+}
+
+pub word GcMarkBlack()
+{
+    return 2;
+}
 
 // BeskidHeapState (see runtime_manifest.bsol) — the heap is a singly linked chain of
 // independently mapped regions, each carved into spans (see Span.bd). `current_region` (the
@@ -111,25 +122,31 @@ const GC_PHASE_MARKING_STATE = 1;
 const GC_PHASE_SWEEPING = 2;
 const GC_PHASE_FAILED = 3;
 
-pub pointer RuntimeState() {
+pub pointer RuntimeState()
+{
     pointer tls = CurrentThreadState();
-    if tls == NativePointer(0) {
+    if (tls == NativePointer(0))
+    {
         return NativePointer(0);
     }
     return NativePointer(raw_word_load(tls));
 }
 
-pub pointer Heap() {
+pub pointer Heap()
+{
     pointer state = RuntimeState();
-    if state == NativePointer(0) {
+    if (state == NativePointer(0))
+    {
         return NativePointer(0);
     }
     return NativePointer(raw_word_load(pointer_add(state, 16)));
 }
 
-pub pointer StateRootFrame() {
+pub pointer StateRootFrame()
+{
     pointer state = RuntimeState();
-    if state == NativePointer(0) {
+    if (state == NativePointer(0))
+    {
         return NativePointer(0);
     }
     return NativePointer(raw_word_load(pointer_add(state, 40)));
@@ -140,7 +157,8 @@ pub pointer StateRootFrame() {
 // `objects_start` as the first page after that directory. Does not touch the heap state; callers
 // link the region into the chain. `size` MUST be a whole multiple of `PAGE_SIZE` (see Span.bd);
 // growth always requests page-aligned sizes.
-pub pointer RegionInit(pointer region, word size) {
+pub pointer RegionInit(pointer region, word size)
+{
     raw_word_store(pointer_add(region, REGION_NEXT), 0);
     raw_word_store(pointer_add(region, REGION_SIZE), size);
     word totalPages = size / PAGE_SIZE;
@@ -165,23 +183,28 @@ pub pointer RegionInit(pointer region, word size) {
 // does not grow with the number of regions (a joiner adopts one region per completed task). Another
 // thread reading a foreign heap (liveness of a foreign reference) walks the chain: the owner may be
 // growing the index concurrently.
-pub pointer FindHeapRegionContaining(pointer heap, word address) {
-    if heap == NativePointer(0) {
+pub pointer FindHeapRegionContaining(pointer heap, word address)
+{
+    if (heap == NativePointer(0))
+    {
         return NativePointer(0);
     }
-    if heap == Heap() {
+    if (heap == Heap())
+    {
         pointer floor = RegionIndexFloor(heap, address);
-        if floor != NativePointer(0) && address >= raw_word_load(pointer_add(floor, REGION_OBJECTS_START)) &&
-           address < raw_word_load(pointer_add(floor, REGION_BUMP)) {
+        if (floor != NativePointer(0) && address >= raw_word_load(pointer_add(floor, REGION_OBJECTS_START)) && address < raw_word_load(pointer_add(floor, REGION_BUMP)))
+        {
             return floor;
         }
         return NativePointer(0);
     }
     mut pointer region = NativePointer(raw_word_load(pointer_add(heap, HEAP_FIRST_REGION)));
-    while region != NativePointer(0) {
+    while (region != NativePointer(0))
+    {
         word objectsStart = raw_word_load(pointer_add(region, REGION_OBJECTS_START));
         word bump = raw_word_load(pointer_add(region, REGION_BUMP));
-        if address >= objectsStart && address < bump {
+        if (address >= objectsStart && address < bump)
+        {
             return region;
         }
         region = NativePointer(raw_word_load(pointer_add(region, REGION_NEXT)));
@@ -189,12 +212,15 @@ pub pointer FindHeapRegionContaining(pointer heap, word address) {
     return NativePointer(0);
 }
 
-pub bool HeapContains(pointer heap, pointer object) {
-    if heap == NativePointer(0) || object == NativePointer(0) {
+pub bool HeapContains(pointer heap, pointer object)
+{
+    if (heap == NativePointer(0) || object == NativePointer(0))
+    {
         return false;
     }
     word address = NativeWord(object);
-    if address % 8 != 0 {
+    if (address % 8 != 0)
+    {
         return false;
     }
     return FindHeapRegionContaining(heap, address) != NativePointer(0);
@@ -203,26 +229,32 @@ pub bool HeapContains(pointer heap, pointer object) {
 // True when `object` is the exact base address of a currently allocated slot (small span:
 // allocated per the span's `alloc_bits`; large span: the span's sole slot, whose descriptor word
 // is nonzero and whose mark state is not the sentinel used for a freed large span).
-pub bool IsAllocatedObject(pointer heap, pointer object) {
-    if heap == NativePointer(0) || object == NativePointer(0) || NativeWord(object) % 8 != 0 {
+pub bool IsAllocatedObject(pointer heap, pointer object)
+{
+    if (heap == NativePointer(0) || object == NativePointer(0) || NativeWord(object) % 8 != 0)
+    {
         return false;
     }
     pointer region = FindHeapRegionContaining(heap, NativeWord(object));
-    if region == NativePointer(0) {
+    if (region == NativePointer(0))
+    {
         return false;
     }
     pointer entry = SpanEntryInRegion(region, NativeWord(object));
     word sizeClass = raw_word_load(pointer_add(entry, SPAN_SIZE_CLASS));
     word base = raw_word_load(pointer_add(entry, SPAN_BASE));
-    if base == 0 || sizeClass == 0 {
+    if (base == 0 || sizeClass == 0)
+    {
         return false;
     }
-    if sizeClass == SIZE_CLASS_LARGE {
+    if (sizeClass == SIZE_CLASS_LARGE)
+    {
         return NativeWord(object) == base && raw_word_load(object) != 0;
     }
     word classBytes = SizeClassBytes(sizeClass);
     word offset = NativeWord(object) - base;
-    if offset % classBytes != 0 {
+    if (offset % classBytes != 0)
+    {
         return false;
     }
     word idx = offset / classBytes;
@@ -233,21 +265,25 @@ pub bool IsAllocatedObject(pointer heap, pointer object) {
 // leading zeros except for the value 0 itself) and returns the offset immediately after the
 // last digit written. Used only for the fixed-size, allocation-free exhaustion diagnostic
 // (`GcAlloc` cannot allocate a managed string while reporting that allocation itself failed).
-pub word WriteDecimal(pointer buffer, word offset, word value) {
-    if value == 0 {
+pub word WriteDecimal(pointer buffer, word offset, word value)
+{
+    if (value == 0)
+    {
         raw_byte_store(pointer_add(buffer, offset), 48);
         return offset + 1;
     }
     mut word digits = 0;
     mut word probe = value;
-    while probe > 0 {
+    while (probe > 0)
+    {
         digits = digits + 1;
         probe = probe / 10;
     }
     mut word pos = offset + digits;
     word end = pos;
     mut word remaining = value;
-    while remaining > 0 {
+    while (remaining > 0)
+    {
         pos = pos - 1;
         word digit = remaining % 10;
         raw_byte_store(pointer_add(buffer, pos), u8(48 + digit));

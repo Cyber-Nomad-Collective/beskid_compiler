@@ -9,7 +9,8 @@ use Runtime.Mem.Gc.State;
 use Testing.Assert;
 use HostRuntimeSupport;
 
-test LifecycleUsesManifestStateGenerationAnd48ByteTls {
+test LifecycleUsesManifestStateGenerationAnd48ByteTls
+{
     pointer hostRuntime = SuspendHostRuntime();
     pointer runtime = Native.SystemAllocate(64, 8);
     memory_set(runtime, 0, 64);
@@ -37,7 +38,10 @@ test LifecycleUsesManifestStateGenerationAnd48ByteTls {
     word stateAfterShutdown = raw_word_load(pointer_add(runtime, 56)) & 0xFFFFFFFF;
     bool reinitialized = Lifecycle.ProcessInit(runtime) == runtime;
     word generationAfterReinitialization = raw_word_load(pointer_add(runtime, 56)) >> 32;
-    if reinitialized { Lifecycle.ProcessShutdown(runtime); }
+    if (reinitialized)
+    {
+        Lifecycle.ProcessShutdown(runtime);
+    }
     Native.SystemFree(runtime, 64);
     ResumeHostRuntime(hostRuntime);
 
@@ -49,7 +53,8 @@ test LifecycleUsesManifestStateGenerationAnd48ByteTls {
     Assert.Equal(generationAfterReinitialization, 2, "reinitialization advances generation");
 }
 
-test FailedThreadAttachDoesNotPublishPartialState {
+test FailedThreadAttachDoesNotPublishPartialState
+{
     pointer hostRuntime = SuspendHostRuntime();
     pointer runtime = Native.SystemAllocate(64, 8);
     memory_set(runtime, 0, 64);
@@ -66,7 +71,8 @@ test FailedThreadAttachDoesNotPublishPartialState {
 
 // ── Isolate prerequisites (0.6.1): one instance per process, split lifecycle ──
 
-test IsolatePrerequisiteAtomicsFollowTheWordContract {
+test IsolatePrerequisiteAtomicsFollowTheWordContract
+{
     pointer cell = Native.SystemAllocate(8, 8);
     Native.AtomicWordStore(cell, 7, 4);
     Assert.Equal(Native.AtomicWordCompareExchange(cell, 7, 9, 4), 7, "successful exchange returns the expected value");
@@ -82,7 +88,8 @@ test IsolatePrerequisiteAtomicsFollowTheWordContract {
     Assert.True(Native.HostProcessorCount() >= 1, "the host reports at least one logical processor");
 }
 
-test IsolatePrerequisiteDescriptorImmutableFlagIsAPropertyBit {
+test IsolatePrerequisiteDescriptorImmutableFlagIsAPropertyBit
+{
     Assert.Equal(Objects.TypeDescriptorImmutableFlag(), 4, "TYPE_DESCRIPTOR_IMMUTABLE is bit value 4");
     pointer descriptor = Native.SystemAllocate(40, 8);
     memory_set(descriptor, 0, 40);
@@ -100,7 +107,8 @@ test IsolatePrerequisiteDescriptorImmutableFlagIsAPropertyBit {
     Native.SystemFree(descriptor, 40);
 }
 
-test IsolateLifecyclePublishesInstanceRecordRegionOwnerAndPrimary {
+test IsolateLifecyclePublishesInstanceRecordRegionOwnerAndPrimary
+{
     pointer hostRuntime = SuspendHostRuntime();
     pointer runtime = Native.SystemAllocate(64, 8);
     memory_set(runtime, 0, 64);
@@ -146,18 +154,21 @@ test IsolateLifecyclePublishesInstanceRecordRegionOwnerAndPrimary {
     Assert.True(primaryCleared, "the primary name is cleared");
 }
 
-pub unit PanickingMainEntry(pointer message) {
+pub unit PanickingMainEntry(pointer message)
+{
     PanicStr(message);
 }
 
 // Spawns the entry and leaves the GC-rooted `Fiber<unit>` local behind before shutdown. The
 // first fiber spawned on a fresh scheduler is its owned main fiber (scheduler word 8).
-pub unit SpawnPanickingMain(pointer message) {
+pub unit SpawnPanickingMain(pointer message)
+{
     Fiber<unit> mainFiber = spawn PanickingMainEntry(message);
     return;
 }
 
-test IsolateMainFiberPanicMessageIsCopiedOutOfTheHeap {
+test IsolateMainFiberPanicMessageIsCopiedOutOfTheHeap
+{
     pointer hostRuntime = SuspendHostRuntime();
     pointer runtime = Native.SystemAllocate(64, 8);
     memory_set(runtime, 0, 64);
@@ -165,9 +176,15 @@ test IsolateMainFiberPanicMessageIsCopiedOutOfTheHeap {
     pointer message = Native.SystemAllocate(32, 8);
     memory_set(message, 0, 32);
     pointer bytes = pointer_add(message, 16);
-    raw_byte_store(bytes, 100); raw_byte_store(pointer_add(bytes, 1), 105); raw_byte_store(pointer_add(bytes, 2), 115);
-    raw_byte_store(pointer_add(bytes, 3), 107); raw_byte_store(pointer_add(bytes, 4), 32); raw_byte_store(pointer_add(bytes, 5), 102);
-    raw_byte_store(pointer_add(bytes, 6), 117); raw_byte_store(pointer_add(bytes, 7), 108); raw_byte_store(pointer_add(bytes, 8), 108);
+    raw_byte_store(bytes, 100);
+    raw_byte_store(pointer_add(bytes, 1), 105);
+    raw_byte_store(pointer_add(bytes, 2), 115);
+    raw_byte_store(pointer_add(bytes, 3), 107);
+    raw_byte_store(pointer_add(bytes, 4), 32);
+    raw_byte_store(pointer_add(bytes, 5), 102);
+    raw_byte_store(pointer_add(bytes, 6), 117);
+    raw_byte_store(pointer_add(bytes, 7), 108);
+    raw_byte_store(pointer_add(bytes, 8), 108);
     raw_word_store(message, NativeWord(bytes));
     raw_word_store(pointer_add(message, 8), 9);
     pointer outCell = Native.SystemAllocate(16, 8);

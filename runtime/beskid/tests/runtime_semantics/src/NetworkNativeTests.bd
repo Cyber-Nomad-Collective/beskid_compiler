@@ -24,7 +24,8 @@ use HostRuntimeSupport;
 
 // The portable service fixture runs unchanged over epoll, kqueue and IOCP kits.
 // Only ABI-managed array descriptors cross these runtime entrypoints.
-pub pointer NetworkTestArray(word length, word stride) {
+pub pointer NetworkTestArray(word length, word stride)
+{
     pointer allocation = Native.SystemAllocate(16 + length * stride, 8);
     Assert.True(allocation != Native.NativePointer(0), "network fixture allocation");
     memory_set(allocation, 0, 16 + length * stride);
@@ -33,7 +34,8 @@ pub pointer NetworkTestArray(word length, word stride) {
     return allocation;
 }
 
-test NativeNetworkBindAddressCloseAndGenerationArePortable {
+test NativeNetworkBindAddressCloseAndGenerationArePortable
+{
     pointer hostRuntime = SuspendHostRuntime();
     pointer runtime = Native.SystemAllocate(64, 8);
     memory_set(runtime, 0, 64);
@@ -75,7 +77,8 @@ test NativeNetworkBindAddressCloseAndGenerationArePortable {
     ResumeHostRuntime(hostRuntime);
 }
 
-test NativeNetworkShutdownReportsAndClosesLiveSocketIdempotently {
+test NativeNetworkShutdownReportsAndClosesLiveSocketIdempotently
+{
     pointer hostRuntime = SuspendHostRuntime();
     pointer runtime = Native.SystemAllocate(64, 8);
     memory_set(runtime, 0, 64);
@@ -103,7 +106,8 @@ test NativeNetworkShutdownReportsAndClosesLiveSocketIdempotently {
 
 // Table exhaustion and host descriptor exhaustion (EMFILE before the table fills)
 // both report ResourceExhausted (18), never NetworkDown (9).
-test NativeNetworkSocketExhaustionReportsResourceExhausted {
+test NativeNetworkSocketExhaustionReportsResourceExhausted
+{
     pointer hostRuntime = SuspendHostRuntime();
     pointer runtime = Native.SystemAllocate(64, 8);
     memory_set(runtime, 0, 64);
@@ -119,9 +123,13 @@ test NativeNetworkSocketExhaustionReportsResourceExhausted {
 
     mut word count = 0;
     mut i32 status = 0;
-    while count < 257 {
+    while (count < 257)
+    {
         status = Sockets.NetworkOpen(3, address, 0, 0, -1, output);
-        if status != 0 { break; }
+        if (status != 0)
+        {
+            break;
+        }
         raw_word_store(pointer_add(handles, count * 8), raw_word_load(pointer_add(output, 16)));
         count = count + 1;
     }
@@ -132,7 +140,8 @@ test NativeNetworkSocketExhaustionReportsResourceExhausted {
     Assert.Equal(Sockets.NetworkOpen(3, address, 0, 0, -1, output), 0, "the freed slot admits the next bind");
     raw_word_store(pointer_add(handles, (count - 1) * 8), raw_word_load(pointer_add(output, 16)));
     mut word index = 0;
-    while index < count {
+    while (index < count)
+    {
         Assert.Equal(Table.NetworkClose(raw_word_load(pointer_add(handles, index * 8))), 0, "exhaustion fixture closes every socket");
         index = index + 1;
     }
@@ -146,7 +155,8 @@ test NativeNetworkSocketExhaustionReportsResourceExhausted {
     ResumeHostRuntime(hostRuntime);
 }
 
-unit ExpiredReadKeepsTcpStreamOpen() {
+unit ExpiredReadKeepsTcpStreamOpen()
+{
     pointer address = NetworkTestArray(19, 1);
     pointer wire = pointer_add(address, 16);
     raw_byte_store(wire, 4);
@@ -188,15 +198,18 @@ unit ExpiredReadKeepsTcpStreamOpen() {
     return;
 }
 
-test NativeNetworkExpiredTcpReadHasOneTimeoutAndKeepsStreamOpen {
+test NativeNetworkExpiredTcpReadHasOneTimeoutAndKeepsStreamOpen
+{
     Fiber<unit> scenario = spawn ExpiredReadKeepsTcpStreamOpen();
-    match scenario.Join() {
+    match (scenario.Join())
+    {
         Result::Ok(_) => (),
         Result::Error(_) => Assert.Fail("expired-read scenario completes"),
     };
 }
 
-unit ExpiredUdpReceiveKeepsSocketOpen() {
+unit ExpiredUdpReceiveKeepsSocketOpen()
+{
     pointer bindAddress = NetworkTestArray(19, 1);
     pointer wire = pointer_add(bindAddress, 16);
     raw_byte_store(wire, 4);
@@ -235,15 +248,18 @@ unit ExpiredUdpReceiveKeepsSocketOpen() {
     return;
 }
 
-test NativeNetworkExpiredUdpReceiveHasOneTimeoutAndKeepsSocketOpen {
+test NativeNetworkExpiredUdpReceiveHasOneTimeoutAndKeepsSocketOpen
+{
     Fiber<unit> scenario = spawn ExpiredUdpReceiveKeepsSocketOpen();
-    match scenario.Join() {
+    match (scenario.Join())
+    {
         Result::Ok(_) => (),
         Result::Error(_) => Assert.Fail("expired-UDP-receive scenario completes"),
     };
 }
 
-unit ExpiredAcceptKeepsListenerOpen() {
+unit ExpiredAcceptKeepsListenerOpen()
+{
     pointer address = NetworkTestArray(19, 1);
     pointer wire = pointer_add(address, 16);
     raw_byte_store(wire, 4);
@@ -280,22 +296,28 @@ unit ExpiredAcceptKeepsListenerOpen() {
     return;
 }
 
-test NativeNetworkExpiredAcceptHasOneTimeoutAndKeepsListenerOpen {
+test NativeNetworkExpiredAcceptHasOneTimeoutAndKeepsListenerOpen
+{
     Fiber<unit> scenario = spawn ExpiredAcceptKeepsListenerOpen();
-    match scenario.Join() {
+    match (scenario.Join())
+    {
         Result::Ok(_) => (),
         Result::Error(_) => Assert.Fail("expired-accept scenario completes"),
     };
 }
 
-i32 PendingAcceptOne(word listener, i64 deadline) {
+i32 PendingAcceptOne(word listener, i64 deadline)
+{
     pointer acceptedOut = NetworkTestArray(1, 8);
     i32 status = Sockets.NetworkAccept(listener, deadline, acceptedOut);
     word accepted = raw_word_load(pointer_add(acceptedOut, 16));
-    if status == 0 {
+    if (status == 0)
+    {
         Assert.True(accepted != 0, "ready accept owns exactly one socket");
         Assert.Equal(Table.NetworkClose(accepted), 0, "ready accept closes its owned socket");
-    } else {
+    }
+    else
+    {
         Assert.Equal(accepted, 0, "non-ready accept does not expose a socket");
     }
     Native.SystemFree(acceptedOut, 24);
@@ -303,22 +325,27 @@ i32 PendingAcceptOne(word listener, i64 deadline) {
 }
 
 // A peer contends with close and deadline after the accept wait is registered.
-i32 ConnectRacePeer(word addressValue) {
+i32 ConnectRacePeer(word addressValue)
+{
     pointer boundAddress = Native.NativePointer(addressValue);
     pointer clientOut = NetworkTestArray(1, 8);
     i32 status = Sockets.NetworkOpen(2, boundAddress, 0, 0, clock_monotonic_nanos() + 1000000000, clientOut);
     word client = raw_word_load(pointer_add(clientOut, 16));
-    if status == 0 {
+    if (status == 0)
+    {
         Assert.True(client != 0, "ready connect owns exactly one socket");
         Assert.Equal(Table.NetworkClose(client), 0, "ready connect closes its owned socket");
-    } else {
+    }
+    else
+    {
         Assert.Equal(client, 0, "failed connect does not expose a socket");
     }
     Native.SystemFree(clientOut, 24);
     return status;
 }
 
-unit CloseRacesPendingAccept() {
+unit CloseRacesPendingAccept()
+{
     pointer address = NetworkTestArray(19, 1);
     pointer wire = pointer_add(address, 16);
     raw_byte_store(wire, 4);
@@ -332,13 +359,20 @@ unit CloseRacesPendingAccept() {
     Fiber<i32> pendingAccept = spawn (() => PendingAcceptOne(listener, clock_monotonic_nanos() + 1000000000));
     mut word pending = 0;
     mut word attempts = 0;
-    while pending == 0 && attempts < 1000 {
+    while (pending == 0 && attempts < 1000)
+    {
         network_table_lock();
         pointer table = Native.NativePointer(raw_word_load(network_table_root()));
         pointer slot = Table.NetworkFindLocked(table, listener);
-        if slot != Native.NativePointer(0) { pending = raw_word_load(Table.NetworkSlotToken(slot, 0)); }
+        if (slot != Native.NativePointer(0))
+        {
+            pending = raw_word_load(Table.NetworkSlotToken(slot, 0));
+        }
         network_table_unlock();
-        if pending == 0 { Concurrency.Yield(); }
+        if (pending == 0)
+        {
+            Concurrency.Yield();
+        }
         attempts = attempts + 1;
     }
     Assert.True(pending != 0, "accept is pending before close");
@@ -346,11 +380,13 @@ unit CloseRacesPendingAccept() {
     Fiber<i32> connector = spawn (() => ConnectRacePeer(addressValue));
     Concurrency.Yield();
     Assert.Equal(Table.NetworkClose(listener), 0, "close claims pending listener");
-    match pendingAccept.Join() {
+    match (pendingAccept.Join())
+    {
         Result::Ok(status) => Assert.True(status == 0 || status == 14 || status == 12, "readiness, close, or deadline wins exactly once"),
         Result::Error(_) => Assert.Fail("pending accept fiber joins"),
     };
-    match connector.Join() {
+    match (connector.Join())
+    {
         Result::Ok(_) => (),
         Result::Error(_) => Assert.Fail("contending connector fiber joins"),
     };
@@ -363,80 +399,102 @@ unit CloseRacesPendingAccept() {
     return;
 }
 
-test NativeNetworkCloseVsAcceptDeadlineHasOneWinner {
+test NativeNetworkCloseVsAcceptDeadlineHasOneWinner
+{
     Fiber<unit> scenario = spawn CloseRacesPendingAccept();
-    match scenario.Join() {
+    match (scenario.Join())
+    {
         Result::Ok(_) => (),
         Result::Error(_) => Assert.Fail("close/accept race scenario completes"),
     };
 }
 
-unit CheckDnsDeadlineWhileHostJobIsBlocked() {
+unit CheckDnsDeadlineWhileHostJobIsBlocked()
+{
     word activeBefore = External.ExternalActiveCount();
-    match Deadline.After(Time.FromMilliseconds(1000_i64)) {
+    match (Deadline.After(Time.FromMilliseconds(1000_i64)))
+    {
         Result::Error(_) => Assert.Fail("one second creates a typed deadline for blocked resolver work"),
         Result::Ok(deadline) => {
-            Result<SocketAddress[], NetworkError> timed = NetworkDns.Resolve(
-                "beskid-deadline-block.invalid",
-                Network.Types.PortBytes(0_u8, 53_u8),
-                Option::Some(AddressFamily::V4),
-                Option.FromValue<Deadline>(deadline)
-            );
-            Assert.True(match timed { Result::Error(NetworkError::TimedOut) => true, _ => false, }, "deadline wins exactly once");
+            Result<SocketAddress[], NetworkError> timed = NetworkDns.Resolve("beskid-deadline-block.invalid", Network.Types.PortBytes(0_u8, 53_u8), Option::Some(AddressFamily::V4), Option.FromValue<Deadline>(deadline));
+            Assert.True(match (timed)
+            {
+                Result::Error(NetworkError::TimedOut) => true,
+                _ => false,
+            }, "deadline wins exactly once");
         },
     };
 
-    Result<SocketAddress[], NetworkError> observed = NetworkDns.Resolve(
-        "beskid-deadline-observe.invalid",
-        Network.Types.PortBytes(0_u8, 53_u8),
-        Option::Some(AddressFamily::V4),
-        Option.Empty<Deadline>()
-    );
-    Assert.True(match observed { Result::Ok(addresses) => Array.Len<SocketAddress>(addresses) > 0_i64, _ => false, }, "observer confirms blocked resolver entered getaddrinfo");
+    Result<SocketAddress[], NetworkError> observed = NetworkDns.Resolve("beskid-deadline-observe.invalid", Network.Types.PortBytes(0_u8, 53_u8), Option::Some(AddressFamily::V4), Option.Empty<Deadline>());
+    Assert.True(match (observed)
+    {
+        Result::Ok(addresses) => Array.Len<SocketAddress>(addresses) > 0_i64,
+        _ => false,
+    }, "observer confirms blocked resolver entered getaddrinfo");
     Assert.Equal(External.ExternalActiveCount(), activeBefore + 1, "timed-out DNS operation retains its host-work lease while getaddrinfo is blocked");
 
-    Result<SocketAddress[], NetworkError> released = NetworkDns.Resolve(
-        "beskid-deadline-release.invalid",
-        Network.Types.PortBytes(0_u8, 53_u8),
-        Option::Some(AddressFamily::V4),
-        Option.Empty<Deadline>()
-    );
-    Assert.True(match released { Result::Ok(addresses) => Array.Len<SocketAddress>(addresses) > 0_i64, _ => false, }, "release waits for positive completion of the abandoned resolver");
+    Result<SocketAddress[], NetworkError> released = NetworkDns.Resolve("beskid-deadline-release.invalid", Network.Types.PortBytes(0_u8, 53_u8), Option::Some(AddressFamily::V4), Option.Empty<Deadline>());
+    Assert.True(match (released)
+    {
+        Result::Ok(addresses) => Array.Len<SocketAddress>(addresses) > 0_i64,
+        _ => false,
+    }, "release waits for positive completion of the abandoned resolver");
     Assert.Equal(External.ExternalActiveCount(), activeBefore, "late DNS result is discarded and host-work accounting drains");
     return;
 }
 
-unit CheckDnsDeadlineWithoutShim() {
-    Result<SocketAddress[], NetworkError> ordinary = NetworkDns.Resolve(
-        "127.0.0.1",
-        Network.Types.PortBytes(0_u8, 53_u8),
-        Option::Some(AddressFamily::V4),
-        Option.Empty<Deadline>()
-    );
-    Assert.True(match ordinary { Result::Ok(addresses) => Array.Len<SocketAddress>(addresses) > 0_i64, _ => false, }, "ordinary numeric DNS resolution succeeds from a scheduler fiber");
+unit CheckDnsDeadlineWithoutShim()
+{
+    Result<SocketAddress[], NetworkError> ordinary = NetworkDns.Resolve("127.0.0.1", Network.Types.PortBytes(0_u8, 53_u8), Option::Some(AddressFamily::V4), Option.Empty<Deadline>());
+    Assert.True(match (ordinary)
+    {
+        Result::Ok(addresses) => Array.Len<SocketAddress>(addresses) > 0_i64,
+        _ => false,
+    }, "ordinary numeric DNS resolution succeeds from a scheduler fiber");
     return;
 }
 
-test NativeNetworkDnsDeadlineRaceRetainsAndDrainsHostJob {
-    meta { tags = "dns-deadline"; }
-    if Environment.Has("BESKID_DNS_DEADLINE_SHIM") {
+test NativeNetworkDnsDeadlineRaceRetainsAndDrainsHostJob
+{
+    meta
+    {
+        tags = "dns-deadline";
+    }
+
+    if (Environment.Has("BESKID_DNS_DEADLINE_SHIM"))
+    {
         Fiber<unit> scenario = spawn CheckDnsDeadlineWhileHostJobIsBlocked();
-        Assert.True(match scenario.Join() { Result::Ok(_) => true, _ => false, }, "deterministic DNS deadline scenario completes");
-    } else {
+        Assert.True(match (scenario.Join())
+        {
+            Result::Ok(_) => true,
+            _ => false,
+        }, "deterministic DNS deadline scenario completes");
+    }
+    else
+    {
         Fiber<unit> scenario = spawn CheckDnsDeadlineWithoutShim();
-        Assert.True(match scenario.Join() { Result::Ok(_) => true, _ => false, }, "ordinary DNS check runs on a scheduler fiber without the Linux shim");
+        Assert.True(match (scenario.Join())
+        {
+            Result::Ok(_) => true,
+            _ => false,
+        }, "ordinary DNS check runs on a scheduler fiber without the Linux shim");
     }
 }
 
-i64 PendingReadOne(word client) {
+i64 PendingReadOne(word client)
+{
     pointer received = NetworkTestArray(1, 1);
     mut i64 completed = Operations.NetworkRead(client, received, 0, 1, -1);
-    if completed == 1 { completed = 1000 + i64(raw_byte_load(pointer_add(received, 16))); }
+    if (completed == 1)
+    {
+        completed = 1000 + i64(raw_byte_load(pointer_add(received, 16)));
+    }
     Native.SystemFree(received, 17);
     return completed;
 }
 
-unit PendingReadPolicyRekeysItsOwner() {
+unit PendingReadPolicyRekeysItsOwner()
+{
     pointer address = NetworkTestArray(19, 1);
     pointer wire = pointer_add(address, 16);
     raw_byte_store(wire, 4);
@@ -459,18 +517,26 @@ unit PendingReadPolicyRekeysItsOwner() {
     Fiber<i64> timedRead = spawn (() => PendingReadOne(client));
     mut word pending = 0;
     mut word attempts = 0;
-    while pending == 0 && attempts < 1000 {
+    while (pending == 0 && attempts < 1000)
+    {
         network_table_lock();
         pointer table = Native.NativePointer(raw_word_load(network_table_root()));
         pointer slot = Table.NetworkFindLocked(table, client);
-        if slot != Native.NativePointer(0) { pending = raw_word_load(Table.NetworkSlotToken(slot, 0)); }
+        if (slot != Native.NativePointer(0))
+        {
+            pending = raw_word_load(Table.NetworkSlotToken(slot, 0));
+        }
         network_table_unlock();
-        if pending == 0 { Concurrency.Yield(); }
+        if (pending == 0)
+        {
+            Concurrency.Yield();
+        }
         attempts = attempts + 1;
     }
     Assert.True(pending != 0, "first read is pending before deadline replacement");
     Assert.Equal(Operations.NetworkSetDeadlines(client, 0, -1), 0, "expired replacement reaches an already pending read");
-    match timedRead.Join() {
+    match (timedRead.Join())
+    {
         Result::Ok(status) => Assert.Equal(status, -12_i64, "pending read times out once"),
         Result::Error(_) => Assert.Fail("timed-out read fiber joins"),
     };
@@ -480,20 +546,28 @@ unit PendingReadPolicyRekeysItsOwner() {
     Fiber<i64> clearedRead = spawn (() => PendingReadOne(client));
     pending = 0;
     attempts = 0;
-    while pending == 0 && attempts < 1000 {
+    while (pending == 0 && attempts < 1000)
+    {
         network_table_lock();
         pointer table = Native.NativePointer(raw_word_load(network_table_root()));
         pointer slot = Table.NetworkFindLocked(table, client);
-        if slot != Native.NativePointer(0) { pending = raw_word_load(Table.NetworkSlotToken(slot, 0)); }
+        if (slot != Native.NativePointer(0))
+        {
+            pending = raw_word_load(Table.NetworkSlotToken(slot, 0));
+        }
         network_table_unlock();
-        if pending == 0 { Concurrency.Yield(); }
+        if (pending == 0)
+        {
+            Concurrency.Yield();
+        }
         attempts = attempts + 1;
     }
     Assert.True(pending != 0, "second read is pending before its timer is cleared");
     Assert.Equal(Operations.NetworkSetDeadlines(client, -1, -1), 0, "clear removes the pending read timer");
     raw_byte_store(pointer_add(sent, 16), 29);
     Assert.Equal(Operations.NetworkWrite(accepted, sent, 0, 1), 1, "peer readiness completes the cleared read");
-    match clearedRead.Join() {
+    match (clearedRead.Join())
+    {
         Result::Ok(completed) => Assert.Equal(completed, 1029_i64, "cleared pending read receives one peer byte"),
         Result::Error(_) => Assert.Fail("cleared read fiber joins"),
     };
@@ -511,15 +585,18 @@ unit PendingReadPolicyRekeysItsOwner() {
     return;
 }
 
-test NativeNetworkPendingReadPolicyRekeysAndClearsWithoutResurrection {
+test NativeNetworkPendingReadPolicyRekeysAndClearsWithoutResurrection
+{
     Fiber<unit> scenario = spawn PendingReadPolicyRekeysItsOwner();
-    match scenario.Join() {
+    match (scenario.Join())
+    {
         Result::Ok(_) => (),
         Result::Error(_) => Assert.Fail("pending-policy scenario completes"),
     };
 }
 
-i64 PhysicalReadRaceWrite(word peer, WaitGroup prepared, WaitGroup start) {
+i64 PhysicalReadRaceWrite(word peer, WaitGroup prepared, WaitGroup start)
+{
     pointer sent = NetworkTestArray(1, 1);
     raw_byte_store(pointer_add(sent, 16), 31);
     WaitGroup.Done(prepared);
@@ -529,19 +606,30 @@ i64 PhysicalReadRaceWrite(word peer, WaitGroup prepared, WaitGroup start) {
     return status;
 }
 
-i32 PhysicalReadRaceClose(word client, WaitGroup prepared, WaitGroup start) {
+i32 PhysicalReadRaceClose(word client, WaitGroup prepared, WaitGroup start)
+{
     WaitGroup.Done(prepared);
     WaitGroup.Wait(start);
     return Table.NetworkClose(client);
 }
 
-unit PhysicalReadRaceWatchdog(WaitGroup start, Channel<i64> released) {
-    Assert.True(match Time.Sleep(Time.FromMilliseconds(200_i64)) { Result::Ok(_) => true, _ => false, }, "native physical race watchdog sleep completes");
-    Assert.True(match Channel<i64>.Send(released, 1_i64) { Result::Ok(_) => true, _ => false, }, "native physical race watchdog records release first");
+unit PhysicalReadRaceWatchdog(WaitGroup start, Channel<i64> released)
+{
+    Assert.True(match (Time.Sleep(Time.FromMilliseconds(200_i64)))
+    {
+        Result::Ok(_) => true,
+        _ => false,
+    }, "native physical race watchdog sleep completes");
+    Assert.True(match (Channel<i64>.Send(released, 1_i64))
+    {
+        Result::Ok(_) => true,
+        _ => false,
+    }, "native physical race watchdog records release first");
     WaitGroup.Done(start);
 }
 
-unit PhysicalReadRaceLeavesNoNativeLease(bool releaseAfterDeadline) {
+unit PhysicalReadRaceLeavesNoNativeLease(bool releaseAfterDeadline)
+{
     pointer address = NetworkTestArray(19, 1);
     pointer wire = pointer_add(address, 16);
     raw_byte_store(wire, 4);
@@ -561,13 +649,20 @@ unit PhysicalReadRaceLeavesNoNativeLease(bool releaseAfterDeadline) {
     Fiber<i64> pending = spawn (() => PendingReadOne(client));
     mut word token = 0;
     mut word attempts = 0;
-    while token == 0 && attempts < 1000 {
+    while (token == 0 && attempts < 1000)
+    {
         network_table_lock();
         pointer table = Native.NativePointer(raw_word_load(network_table_root()));
         pointer slot = Table.NetworkFindLocked(table, client);
-        if slot != Native.NativePointer(0) { token = raw_word_load(Table.NetworkSlotToken(slot, 0)); }
+        if (slot != Native.NativePointer(0))
+        {
+            token = raw_word_load(Table.NetworkSlotToken(slot, 0));
+        }
         network_table_unlock();
-        if token == 0 { Concurrency.Yield(); }
+        if (token == 0)
+        {
+            Concurrency.Yield();
+        }
         attempts = attempts + 1;
     }
     Assert.True(token != 0, "physical race read is registered before producers start");
@@ -580,28 +675,60 @@ unit PhysicalReadRaceLeavesNoNativeLease(bool releaseAfterDeadline) {
     WaitGroup.Wait(prepared);
     Assert.Equal(Operations.NetworkSetDeadlines(client, clock_monotonic_nanos() + 30000000, -1), 0, "physical race arms a real pending-read timer");
     mut i64 delay = 10;
-    if releaseAfterDeadline { delay = 40; }
-    Assert.True(match Time.Sleep(Time.FromMilliseconds(delay)) { Result::Ok(_) => true, _ => false, }, "physical race reaches native release point");
-    if releaseAfterDeadline {
+    if (releaseAfterDeadline)
+    {
+        delay = 40;
+    }
+    Assert.True(match (Time.Sleep(Time.FromMilliseconds(delay)))
+    {
+        Result::Ok(_) => true,
+        _ => false,
+    }, "physical race reaches native release point");
+    if (releaseAfterDeadline)
+    {
         Channel<i64> released = Channel<i64>.Create();
         Fiber<unit> watchdog = spawn (() => PhysicalReadRaceWatchdog(start, released));
-        match pending.Join() {
+        match (pending.Join())
+        {
             Result::Ok(status) => Assert.Equal(status, -12_i64, "real timer wins while both native producers remain gated"),
             Result::Error(_) => Assert.Fail("physical race reader joins"),
         };
-        Assert.True(match Channel<i64>.TryReceive(released) { TryResult::WouldBlock => true, _ => false, }, "native read completes before watchdog releases the producers");
-        Assert.True(match watchdog.Join() { Result::Ok(_) => true, _ => false, }, "native physical race watchdog releases the producers");
-        Assert.True(match Channel<i64>.TryReceive(released) { TryResult::Ok(value) => value == 1_i64, _ => false, }, "native physical race watchdog marker is consumed once");
+        Assert.True(match (Channel<i64>.TryReceive(released))
+        {
+            TryResult::WouldBlock => true,
+            _ => false,
+        }, "native read completes before watchdog releases the producers");
+        Assert.True(match (watchdog.Join())
+        {
+            Result::Ok(_) => true,
+            _ => false,
+        }, "native physical race watchdog releases the producers");
+        Assert.True(match (Channel<i64>.TryReceive(released))
+        {
+            TryResult::Ok(value) => value == 1_i64,
+            _ => false,
+        }, "native physical race watchdog marker is consumed once");
         Channel<i64>.Close(released);
-    } else {
+    }
+    else
+    {
         WaitGroup.Done(start);
-        match pending.Join() {
+        match (pending.Join())
+        {
             Result::Ok(status) => Assert.True(status == 1031_i64 || status == -12_i64 || status == -14_i64, "one native readiness, timeout, or close outcome wins"),
             Result::Error(_) => Assert.Fail("physical race reader joins"),
         };
     }
-    Assert.True(match writer.Join() { Result::Ok(status) => status == 1_i64 || status < 0_i64, Result::Error(_) => false, }, "native writer returns one byte or a portable close-race error");
-    Assert.True(match closer.Join() { Result::Ok(status) => status == 0, Result::Error(_) => false, }, "native closer joins after release");
+    Assert.True(match (writer.Join())
+    {
+        Result::Ok(status) => status == 1_i64 || status < 0_i64,
+        Result::Error(_) => false,
+    }, "native writer returns one byte or a portable close-race error");
+    Assert.True(match (closer.Join())
+    {
+        Result::Ok(status) => status == 0,
+        Result::Error(_) => false,
+    }, "native closer joins after release");
     Assert.Equal(Table.NetworkClose(client), 0, "physical race client close is idempotent");
     Assert.Equal(Table.NetworkClose(peer), 0, "physical race peer closes");
     Assert.Equal(Table.NetworkClose(listener), 0, "physical race listener closes");
@@ -614,18 +741,29 @@ unit PhysicalReadRaceLeavesNoNativeLease(bool releaseAfterDeadline) {
     Native.SystemFree(address, 35);
 }
 
-unit PhysicalReadRaceAllNativeRounds() {
+unit PhysicalReadRaceAllNativeRounds()
+{
     mut i64 round = 0;
-    while round < 7 {
+    while (round < 7)
+    {
         PhysicalReadRaceLeavesNoNativeLease(round == 6);
         round = round + 1;
     }
 }
 
-test NativeNetworkPhysicalReadinessCloseDeadlineHasNoLeaks {
-    meta { tags = "physical-read-race"; }
+test NativeNetworkPhysicalReadinessCloseDeadlineHasNoLeaks
+{
+    meta
+    {
+        tags = "physical-read-race";
+    }
+
     Fiber<unit> scenario = spawn PhysicalReadRaceAllNativeRounds();
-    Assert.True(match scenario.Join() { Result::Ok(_) => true, _ => false, }, "bounded native physical read race joins");
+    Assert.True(match (scenario.Join())
+    {
+        Result::Ok(_) => true,
+        _ => false,
+    }, "bounded native physical read race joins");
 }
 
 // Deadline-versus-completion race (WEB7). The scenario forces the losing order that a loaded
@@ -636,16 +774,23 @@ test NativeNetworkPhysicalReadinessCloseDeadlineHasNoLeaks {
 const RACE_REQUEST_STATUS_OFFSET = 56;
 const RACE_REQUEST_PENDING = 19;
 
-i64 RaceReceiveOne(word handle, bool datagram, i64 deadline) {
+i64 RaceReceiveOne(word handle, bool datagram, i64 deadline)
+{
     pointer received = NetworkTestArray(1, 1);
     pointer metadata = NetworkTestArray(20, 1);
     mut i64 completed = 0;
-    if datagram {
+    if (datagram)
+    {
         completed = Sockets.NetworkReceive(handle, received, metadata, false, deadline);
-    } else {
+    }
+    else
+    {
         completed = Operations.NetworkRead(handle, received, 0, 1, deadline);
     }
-    if completed == 1 { completed = 1000 + i64(raw_byte_load(pointer_add(received, 16))); }
+    if (completed == 1)
+    {
+        completed = 1000 + i64(raw_byte_load(pointer_add(received, 16)));
+    }
     Native.SystemFree(metadata, 36);
     Native.SystemFree(received, 17);
     return completed;
@@ -653,14 +798,17 @@ i64 RaceReceiveOne(word handle, bool datagram, i64 deadline) {
 
 // Returns the native status of the pending read-direction request on `handle`, or -1 when no
 // request is registered.
-i64 RacePendingStatus(word handle) {
+i64 RacePendingStatus(word handle)
+{
     mut i64 status = -1;
     network_table_lock();
     pointer table = Native.NativePointer(raw_word_load(network_table_root()));
     pointer slot = Table.NetworkFindLocked(table, handle);
-    if slot != Native.NativePointer(0) {
+    if (slot != Native.NativePointer(0))
+    {
         pointer request = Native.NativePointer(raw_word_load(Table.NetworkSlotRequest(slot, 0)));
-        if request != Native.NativePointer(0) {
+        if (request != Native.NativePointer(0))
+        {
             status = i64(raw_word_load(pointer_add(request, RACE_REQUEST_STATUS_OFFSET)) & 0xFFFFFFFF);
         }
     }
@@ -670,35 +818,47 @@ i64 RacePendingStatus(word handle) {
 
 // One forced round: `reader` waits with a 20 ms deadline; the deadline wins; `writer` then sends
 // `value`; the reactor completes the request; the reader must return that byte.
-unit RaceDeadlineThenTransfer(word reader, word writer, pointer peer, bool datagram, u8 value) {
+unit RaceDeadlineThenTransfer(word reader, word writer, pointer peer, bool datagram, u8 value)
+{
     i64 expectedResult = 1000 + i64(value);
     i64 deadline = clock_monotonic_nanos() + 20000000;
     Fiber<i64> pending = spawn (() => RaceReceiveOne(reader, datagram, deadline));
     mut word attempts = 0;
-    while RacePendingStatus(reader) != RACE_REQUEST_PENDING && attempts < 1000 {
+    while (RacePendingStatus(reader) != RACE_REQUEST_PENDING && attempts < 1000)
+    {
         Concurrency.Yield();
         attempts = attempts + 1;
     }
     i64 registered = RacePendingStatus(reader);
     Assert.True(registered == RACE_REQUEST_PENDING, "race receive is pending in the reactor");
     mut bool beforeDeadline = true;
-    while beforeDeadline { beforeDeadline = clock_monotonic_nanos() <= deadline; }
+    while (beforeDeadline)
+    {
+        beforeDeadline = clock_monotonic_nanos() <= deadline;
+    }
     // The timer wins the one-winner wait; the reading fiber becomes runnable but does not run.
     External.ExternalPump(clock_monotonic_nanos());
     pointer payload = NetworkTestArray(1, 1);
     raw_byte_store(pointer_add(payload, 16), value);
-    if datagram {
+    if (datagram)
+    {
         Assert.Equal(Sockets.NetworkSend(writer, payload, peer, false, -1), 1, "race sender transfers one datagram");
-    } else {
+    }
+    else
+    {
         Assert.Equal(Operations.NetworkWrite(writer, payload, 0, 1), 1, "race writer transfers one byte");
     }
     Native.SystemFree(payload, 17);
     i64 limit = clock_monotonic_nanos() + 5000000000;
     mut bool reactorPending = true;
-    while reactorPending { reactorPending = RacePendingStatus(reader) == RACE_REQUEST_PENDING && clock_monotonic_nanos() < limit; }
+    while (reactorPending)
+    {
+        reactorPending = RacePendingStatus(reader) == RACE_REQUEST_PENDING && clock_monotonic_nanos() < limit;
+    }
     i64 completedStatus = RacePendingStatus(reader);
     Assert.True(completedStatus == 0, "reactor completed the timed-out request with data");
-    match pending.Join() {
+    match (pending.Join())
+    {
         Result::Ok(status) => Assert.True(status == expectedResult, "completed transfer wins over the expired deadline"),
         Result::Error(_) => Assert.Fail("race reader joins"),
     };
@@ -706,7 +866,8 @@ unit RaceDeadlineThenTransfer(word reader, word writer, pointer peer, bool datag
     return;
 }
 
-unit DeadlineRaceDeliversDatagrams() {
+unit DeadlineRaceDeliversDatagrams()
+{
     pointer bindAddress = NetworkTestArray(19, 1);
     pointer wire = pointer_add(bindAddress, 16);
     raw_byte_store(wire, 4);
@@ -721,7 +882,8 @@ unit DeadlineRaceDeliversDatagrams() {
     Assert.Equal(Sockets.NetworkOpen(3, bindAddress, 0, 0, -1, senderOut), 0, "race sender binds loopback");
     word sender = raw_word_load(pointer_add(senderOut, 16));
     mut word round = 0;
-    while round < 20 {
+    while (round < 20)
+    {
         u8 marker = u8(round + 1);
         RaceDeadlineThenTransfer(receiver, sender, peer, true, marker);
         round = round + 1;
@@ -737,13 +899,23 @@ unit DeadlineRaceDeliversDatagrams() {
     return;
 }
 
-test NativeNetworkUdpReceiveDeadlineRaceDeliversCompletedDatagram {
-    meta { tags = "deadline-race"; }
+test NativeNetworkUdpReceiveDeadlineRaceDeliversCompletedDatagram
+{
+    meta
+    {
+        tags = "deadline-race";
+    }
+
     Fiber<unit> scenario = spawn DeadlineRaceDeliversDatagrams();
-    Assert.True(match scenario.Join() { Result::Ok(_) => true, _ => false, }, "UDP deadline race scenario completes");
+    Assert.True(match (scenario.Join())
+    {
+        Result::Ok(_) => true,
+        _ => false,
+    }, "UDP deadline race scenario completes");
 }
 
-unit DeadlineRaceDeliversStreamBytes() {
+unit DeadlineRaceDeliversStreamBytes()
+{
     pointer address = NetworkTestArray(19, 1);
     pointer wire = pointer_add(address, 16);
     raw_byte_store(wire, 4);
@@ -761,7 +933,8 @@ unit DeadlineRaceDeliversStreamBytes() {
     Assert.Equal(Sockets.NetworkAccept(listener, -1, acceptedOut), 0, "race server accepts");
     word accepted = raw_word_load(pointer_add(acceptedOut, 16));
     mut word round = 0;
-    while round < 20 {
+    while (round < 20)
+    {
         u8 marker = u8(round + 1);
         RaceDeadlineThenTransfer(client, accepted, boundAddress, false, marker);
         round = round + 1;
@@ -778,26 +951,46 @@ unit DeadlineRaceDeliversStreamBytes() {
     return;
 }
 
-test NativeNetworkTcpReadDeadlineRaceDeliversCompletedBytes {
-    meta { tags = "deadline-race"; }
+test NativeNetworkTcpReadDeadlineRaceDeliversCompletedBytes
+{
+    meta
+    {
+        tags = "deadline-race";
+    }
+
     Fiber<unit> scenario = spawn DeadlineRaceDeliversStreamBytes();
-    Assert.True(match scenario.Join() { Result::Ok(_) => true, _ => false, }, "TCP deadline race scenario completes");
+    Assert.True(match (scenario.Join())
+    {
+        Result::Ok(_) => true,
+        _ => false,
+    }, "TCP deadline race scenario completes");
 }
 
-i64 ShortDeadlineDrain(word receiver, i64 expected) {
+i64 ShortDeadlineDrain(word receiver, i64 expected)
+{
     pointer received = NetworkTestArray(1, 1);
     pointer metadata = NetworkTestArray(20, 1);
     mut i64 next = 1;
     mut i64 timeouts = 0;
     i64 limit = clock_monotonic_nanos() + 10000000000;
-    while next <= expected && clock_monotonic_nanos() < limit {
+    while (next <= expected && clock_monotonic_nanos() < limit)
+    {
         i64 status = Sockets.NetworkReceive(receiver, received, metadata, false, clock_monotonic_nanos() + 200000);
-        if status == 1 {
-            if i64(raw_byte_load(pointer_add(received, 16))) != next { next = -next; break; }
+        if (status == 1)
+        {
+            if (i64(raw_byte_load(pointer_add(received, 16))) != next)
+            {
+                next = -next;
+                break;
+            }
             next = next + 1;
-        } else if status == -12_i64 {
+        }
+        else if (status == -12_i64)
+        {
             timeouts = timeouts + 1;
-        } else {
+        }
+        else
+        {
             next = -1000 - status;
             break;
         }
@@ -807,14 +1000,19 @@ i64 ShortDeadlineDrain(word receiver, i64 expected) {
     return next;
 }
 
-i64 PacedSender(word sender, word peerValue, i64 count) {
+i64 PacedSender(word sender, word peerValue, i64 count)
+{
     pointer peer = Native.NativePointer(peerValue);
     pointer payload = NetworkTestArray(1, 1);
     mut i64 sent = 0;
-    while sent < count {
+    while (sent < count)
+    {
         i64 sequence = sent + 1;
         raw_byte_store(pointer_add(payload, 16), u8(sequence));
-        if Sockets.NetworkSend(sender, payload, peer, false, -1) != 1 { break; }
+        if (Sockets.NetworkSend(sender, payload, peer, false, -1) != 1)
+        {
+            break;
+        }
         sent = sent + 1;
         Concurrency.Yield();
     }
@@ -823,7 +1021,8 @@ i64 PacedSender(word sender, word peerValue, i64 count) {
 }
 
 // Many receives with 0.2 ms deadlines race a paced sender; every datagram arrives in order.
-unit ShortDeadlineReceivesLoseNothing() {
+unit ShortDeadlineReceivesLoseNothing()
+{
     pointer bindAddress = NetworkTestArray(19, 1);
     pointer wire = pointer_add(bindAddress, 16);
     raw_byte_store(wire, 4);
@@ -840,11 +1039,13 @@ unit ShortDeadlineReceivesLoseNothing() {
     Fiber<i64> drain = spawn (() => ShortDeadlineDrain(receiver, 100));
     word peerValue = Native.NativeWord(peer);
     Fiber<i64> producer = spawn (() => PacedSender(sender, peerValue, 100));
-    match producer.Join() {
+    match (producer.Join())
+    {
         Result::Ok(sent) => Assert.Equal(sent, 100_i64, "paced sender sends every datagram"),
         Result::Error(_) => Assert.Fail("paced sender joins"),
     };
-    match drain.Join() {
+    match (drain.Join())
+    {
         Result::Ok(next) => Assert.Equal(next, 101_i64, "short-deadline receives deliver every datagram in order"),
         Result::Error(_) => Assert.Fail("short-deadline drain joins"),
     };
@@ -857,8 +1058,17 @@ unit ShortDeadlineReceivesLoseNothing() {
     return;
 }
 
-test NativeNetworkShortDeadlineUdpReceivesLoseNoDatagram {
-    meta { tags = "deadline-race"; }
+test NativeNetworkShortDeadlineUdpReceivesLoseNoDatagram
+{
+    meta
+    {
+        tags = "deadline-race";
+    }
+
     Fiber<unit> scenario = spawn ShortDeadlineReceivesLoseNothing();
-    Assert.True(match scenario.Join() { Result::Ok(_) => true, _ => false, }, "short-deadline UDP scenario completes");
+    Assert.True(match (scenario.Join())
+    {
+        Result::Ok(_) => true,
+        _ => false,
+    }, "short-deadline UDP scenario completes");
 }

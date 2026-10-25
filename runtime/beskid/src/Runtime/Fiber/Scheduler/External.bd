@@ -30,70 +30,125 @@ const EXTERNAL_TIMEOUT = 4;
 const EXTERNAL_ROOT_WAITER = 0xFFFFFFFFFFFFFFFE;
 
 // The handle an external wait is registered under: the current fiber, or the root waiter.
-pub word ExternalWaiterHandle() {
+pub word ExternalWaiterHandle()
+{
     word current = SchedulerCurrentFiber();
-    if current == FIBER_NONE { return EXTERNAL_ROOT_WAITER; }
+    if (current == FIBER_NONE)
+    {
+        return EXTERNAL_ROOT_WAITER;
+    }
     return FiberHandle(current);
 }
 
-pub pointer ExternalState() { return NativePointer(raw_word_load(pointer_add(SchedTable(), BESKID_SCHEDULER_STATE_EXTERNAL_STATE_OFFSET))); }
+pub pointer ExternalState()
+{
+    return NativePointer(raw_word_load(pointer_add(SchedTable(), BESKID_SCHEDULER_STATE_EXTERNAL_STATE_OFFSET)));
+}
 
-pub unit ExternalInit(pointer scheduler) {
+pub unit ExternalInit(pointer scheduler)
+{
     pointer state = SystemAllocate(EXTERNAL_STATE_SIZE, 8);
-    if state == NativePointer(0) { Trap(5, NativePointer(0), 0); }
+    if (state == NativePointer(0))
+    {
+        Trap(5, NativePointer(0), 0);
+    }
     memory_set(state, 0, EXTERNAL_STATE_SIZE);
     pointer waits = ChunkTableCreate(EXTERNAL_WAIT_SIZE);
-    if waits == NativePointer(0) { Trap(5, NativePointer(0), 0); }
+    if (waits == NativePointer(0))
+    {
+        Trap(5, NativePointer(0), 0);
+    }
     raw_word_store(pointer_add(state, EXTERNAL_WAITS_OFFSET), NativeWord(waits));
     word owner = owner_create();
-    if owner == 0 { Trap(5, NativePointer(0), 0); }
+    if (owner == 0)
+    {
+        Trap(5, NativePointer(0), 0);
+    }
     raw_word_store(state, owner);
     raw_word_store(pointer_add(scheduler, BESKID_SCHEDULER_STATE_EXTERNAL_STATE_OFFSET), NativeWord(state));
     return;
 }
 
-[Export(Abi:"C", Symbol:"beskid_rt_v5_external_owner_id")]
-pub word ExternalOwnerId() { return raw_word_load(ExternalState()); }
-[Export(Abi:"C", Symbol:"beskid_rt_v5_external_active_count")]
-pub word ExternalActiveCount() { return raw_word_load(pointer_add(ExternalState(), 8)); }
+[Export(Abi: "C", Symbol: "beskid_rt_v5_external_owner_id")]
+pub word ExternalOwnerId()
+{
+    return raw_word_load(ExternalState());
+}
+
+[Export(Abi: "C", Symbol: "beskid_rt_v5_external_active_count")]
+pub word ExternalActiveCount()
+{
+    return raw_word_load(pointer_add(ExternalState(), 8));
+}
 
 // One owner-only liveness counter covers independently owned obligations. Each
 // wait retains once until its terminal winner; non-interruptible host work
 // retains separately until the owner observes that the host job has finished.
 // Cancelling the wait cannot release the host job's obligation.
-pub unit ExternalWorkRetain() {
+pub unit ExternalWorkRetain()
+{
     word active = ExternalActiveCount();
-    if active == 0xFFFFFFFFFFFFFFFF { Trap(10, NativePointer(0), 0); }
+    if (active == 0xFFFFFFFFFFFFFFFF)
+    {
+        Trap(10, NativePointer(0), 0);
+    }
     raw_word_store(pointer_add(ExternalState(), 8), active + 1);
     return;
 }
 
-pub unit ExternalWorkRelease() {
+pub unit ExternalWorkRelease()
+{
     word active = ExternalActiveCount();
-    if active == 0 { Trap(10, NativePointer(0), 0); }
+    if (active == 0)
+    {
+        Trap(10, NativePointer(0), 0);
+    }
     raw_word_store(pointer_add(ExternalState(), 8), active - 1);
     return;
 }
 
-pub pointer ExternalWaitTable() { return NativePointer(raw_word_load(pointer_add(ExternalState(), EXTERNAL_WAITS_OFFSET))); }
-pub word ExternalWaitCount() { return ChunkTableCount(ExternalWaitTable()); }
-// Record of 0-based wait `slot`, which must be below `ExternalWaitCount()`.
-pub pointer ExternalWaitSlot(word slot) { return ChunkTableRecord(ExternalWaitTable(), slot); }
+pub pointer ExternalWaitTable()
+{
+    return NativePointer(raw_word_load(pointer_add(ExternalState(), EXTERNAL_WAITS_OFFSET)));
+}
 
-pub pointer ExternalWaitRecord(word token) {
+pub word ExternalWaitCount()
+{
+    return ChunkTableCount(ExternalWaitTable());
+}
+
+// Record of 0-based wait `slot`, which must be below `ExternalWaitCount()`.
+pub pointer ExternalWaitSlot(word slot)
+{
+    return ChunkTableRecord(ExternalWaitTable(), slot);
+}
+
+pub pointer ExternalWaitRecord(word token)
+{
     word slot = token & 0xFFFFFFFF;
-    if slot == 0 || slot > ExternalWaitCount() { return NativePointer(0); }
+    if (slot == 0 || slot > ExternalWaitCount())
+    {
+        return NativePointer(0);
+    }
     pointer record = ExternalWaitSlot(slot - 1);
-    if raw_word_load(pointer_add(record, 56)) == 0 || raw_word_load(pointer_add(record, 16)) != token >> 32 { return NativePointer(0); }
-    if raw_word_load(record) != ExternalOwnerId() { return NativePointer(0); }
+    if (raw_word_load(pointer_add(record, 56)) == 0 || raw_word_load(pointer_add(record, 16)) != token >> 32)
+    {
+        return NativePointer(0);
+    }
+    if (raw_word_load(record) != ExternalOwnerId())
+    {
+        return NativePointer(0);
+    }
     return record;
 }
 
-pub pointer ExternalTimerRecord(word index) {
+pub pointer ExternalTimerRecord(word index)
+{
     return pointer_add(VecData(pointer_add(ExternalState(), EXTERNAL_TIMERS_OFFSET)), index * EXTERNAL_TIMER_SIZE);
 }
 
-pub unit ExternalTimerSwap(word left, word right) {
+pub unit ExternalTimerSwap(word left, word right)
+{
     pointer a = ExternalTimerRecord(left);
     pointer b = ExternalTimerRecord(right);
     word deadline = raw_word_load(a);
@@ -105,18 +160,26 @@ pub unit ExternalTimerSwap(word left, word right) {
     return;
 }
 
-pub unit ExternalTimerPush(word token, word deadline) {
+pub unit ExternalTimerPush(word token, word deadline)
+{
     pointer state = ExternalState();
     pointer timers = pointer_add(state, EXTERNAL_TIMERS_OFFSET);
     mut word index = raw_word_load(pointer_add(state, 24));
     // The timer heap grows on demand; a refused growth is an out-of-memory trap.
-    if !VecReserve(timers, EXTERNAL_TIMER_SIZE, index + 1) { Trap(5, NativePointer(0), 0); }
+    if (!VecReserve(timers, EXTERNAL_TIMER_SIZE, index + 1))
+    {
+        Trap(5, NativePointer(0), 0);
+    }
     raw_word_store(ExternalTimerRecord(index), deadline);
     raw_word_store(pointer_add(ExternalTimerRecord(index), 8), token);
     raw_word_store(pointer_add(state, 24), index + 1);
-    while index != 0 {
+    while (index != 0)
+    {
         word parent = (index - 1) / 2;
-        if raw_word_load(ExternalTimerRecord(parent)) <= raw_word_load(ExternalTimerRecord(index)) { break; }
+        if (raw_word_load(ExternalTimerRecord(parent)) <= raw_word_load(ExternalTimerRecord(index)))
+        {
+            break;
+        }
         ExternalTimerSwap(index, parent);
         index = parent;
     }
@@ -125,53 +188,95 @@ pub unit ExternalTimerPush(word token, word deadline) {
 
 // Cancellation removes only the matching generation. A late inbound timeout
 // still competes at ExternalTryComplete, where its obsolete token is a no-op.
-pub unit ExternalTimerRemove(word token) {
+pub unit ExternalTimerRemove(word token)
+{
     pointer state = ExternalState();
     word count = raw_word_load(pointer_add(state, 24));
     mut word index = 0;
-    while index < count && raw_word_load(pointer_add(ExternalTimerRecord(index), 8)) != token { index = index + 1; }
-    if index == count { return; }
+    while (index < count && raw_word_load(pointer_add(ExternalTimerRecord(index), 8)) != token)
+    {
+        index = index + 1;
+    }
+    if (index == count)
+    {
+        return;
+    }
     word remaining = count - 1;
     ExternalTimerSwap(index, remaining);
     raw_word_store(pointer_add(state, 24), remaining);
-    if index == remaining { return; }
-    while index != 0 {
+    if (index == remaining)
+    {
+        return;
+    }
+    while (index != 0)
+    {
         word parent = (index - 1) / 2;
-        if raw_word_load(ExternalTimerRecord(parent)) <= raw_word_load(ExternalTimerRecord(index)) { break; }
+        if (raw_word_load(ExternalTimerRecord(parent)) <= raw_word_load(ExternalTimerRecord(index)))
+        {
+            break;
+        }
         ExternalTimerSwap(index, parent);
         index = parent;
     }
-    while index * 2 + 1 < remaining {
+    while (index * 2 + 1 < remaining)
+    {
         mut word child = index * 2 + 1;
-        if child + 1 < remaining && raw_word_load(ExternalTimerRecord(child + 1)) < raw_word_load(ExternalTimerRecord(child)) { child = child + 1; }
-        if raw_word_load(ExternalTimerRecord(index)) <= raw_word_load(ExternalTimerRecord(child)) { break; }
+        if (child + 1 < remaining && raw_word_load(ExternalTimerRecord(child + 1)) < raw_word_load(ExternalTimerRecord(child)))
+        {
+            child = child + 1;
+        }
+        if (raw_word_load(ExternalTimerRecord(index)) <= raw_word_load(ExternalTimerRecord(child)))
+        {
+            break;
+        }
         ExternalTimerSwap(index, child);
         index = child;
     }
     return;
 }
 
-[Export(Abi:"C", Symbol:"beskid_rt_v5_external_wait_register")]
-pub word ExternalWaitRegister(word fiberHandle, word operation, i64 deadline) {
-    if (!FiberHandleValid(fiberHandle) && fiberHandle != EXTERNAL_ROOT_WAITER) || operation == 0 || deadline < -1 { return 0; }
+[Export(Abi: "C", Symbol: "beskid_rt_v5_external_wait_register")]
+pub word ExternalWaitRegister(word fiberHandle, word operation, i64 deadline)
+{
+    if ((!FiberHandleValid(fiberHandle) && fiberHandle != EXTERNAL_ROOT_WAITER) || operation == 0 || deadline < -1)
+    {
+        return 0;
+    }
     pointer state = ExternalState();
     pointer waits = ExternalWaitTable();
     word count = ChunkTableCount(waits);
     mut word slot = 0;
     mut word available = count;
-    while slot < count {
+    while (slot < count)
+    {
         pointer candidate = ExternalWaitSlot(slot);
-        if raw_word_load(pointer_add(candidate, 56)) == 0 { available = slot; }
-        else if raw_word_load(pointer_add(candidate, 8)) == fiberHandle { return 0; }
+        if (raw_word_load(pointer_add(candidate, 56)) == 0)
+        {
+            available = slot;
+        }
+        else if (raw_word_load(pointer_add(candidate, 8)) == fiberHandle)
+        {
+            return 0;
+        }
         slot = slot + 1;
     }
-    if available == count {
+    if (available == count)
+    {
         // The wait table grows on demand; 0 reports only an allocator refusal.
-        if count > EXTERNAL_SLOT_MAX { return 0; }
-        if ChunkTableAppend(waits) == 0xFFFFFFFFFFFFFFFF { return 0; }
+        if (count > EXTERNAL_SLOT_MAX)
+        {
+            return 0;
+        }
+        if (ChunkTableAppend(waits) == 0xFFFFFFFFFFFFFFFF)
+        {
+            return 0;
+        }
     }
     word generation = raw_word_load(pointer_add(state, 16)) + 1;
-    if generation > 0xFFFFFFFF || generation == 0 { Trap(10, NativePointer(0), 0); }
+    if (generation > 0xFFFFFFFF || generation == 0)
+    {
+        Trap(10, NativePointer(0), 0);
+    }
     raw_word_store(pointer_add(state, 16), generation);
     pointer record = ExternalWaitSlot(available);
     memory_set(record, 0, EXTERNAL_WAIT_SIZE);
@@ -181,117 +286,182 @@ pub word ExternalWaitRegister(word fiberHandle, word operation, i64 deadline) {
     raw_word_store(pointer_add(record, 24), operation);
     raw_word_store(pointer_add(record, 56), 1);
     word token = generation << 32 | (available + 1);
-    if deadline >= 0 { ExternalTimerPush(token, word(deadline)); }
+    if (deadline >= 0)
+    {
+        ExternalTimerPush(token, word(deadline));
+    }
     // Publication is complete before this increment, and submission follows it.
     ExternalWorkRetain();
     return token;
 }
 
-[Export(Abi:"C", Symbol:"beskid_rt_v5_external_wait_set_deadline")]
-pub bool ExternalWaitSetDeadline(word token, i64 deadline) {
-    if deadline < -1 { return false; }
+[Export(Abi: "C", Symbol: "beskid_rt_v5_external_wait_set_deadline")]
+pub bool ExternalWaitSetDeadline(word token, i64 deadline)
+{
+    if (deadline < -1)
+    {
+        return false;
+    }
     pointer record = ExternalWaitRecord(token);
-    if record == NativePointer(0) || raw_word_load(pointer_add(record, 32)) != 0 { return false; }
+    if (record == NativePointer(0) || raw_word_load(pointer_add(record, 32)) != 0)
+    {
+        return false;
+    }
     ExternalTimerRemove(token);
-    if deadline == -1 { return true; }
-    if deadline <= clock_monotonic_nanos() {
+    if (deadline == -1)
+    {
+        return true;
+    }
+    if (deadline <= clock_monotonic_nanos())
+    {
         return ExternalTryComplete(token & 0xFFFFFFFF, token >> 32, EXTERNAL_TIMEOUT);
     }
     ExternalTimerPush(token, word(deadline));
     return true;
 }
 
-[Export(Abi:"C", Symbol:"beskid_rt_v5_external_try_complete")]
-pub bool ExternalTryComplete(word waitId, word generation, word source) {
-    if waitId == 0 || waitId > ExternalWaitCount() || generation == 0 || generation > 0xFFFFFFFF || source < EXTERNAL_READY || source > EXTERNAL_TIMEOUT { return false; }
+[Export(Abi: "C", Symbol: "beskid_rt_v5_external_try_complete")]
+pub bool ExternalTryComplete(word waitId, word generation, word source)
+{
+    if (waitId == 0 || waitId > ExternalWaitCount() || generation == 0 || generation > 0xFFFFFFFF || source < EXTERNAL_READY || source > EXTERNAL_TIMEOUT)
+    {
+        return false;
+    }
     word token = generation << 32 | waitId;
     pointer record = ExternalWaitRecord(token);
-    if record == NativePointer(0) { return false; }
-    if wait_claim(pointer_add(record, 32), source) == 0 { return false; }
+    if (record == NativePointer(0))
+    {
+        return false;
+    }
+    if (wait_claim(pointer_add(record, 32), source) == 0)
+    {
+        return false;
+    }
     ExternalTimerRemove(token);
     pointer request = NativePointer(raw_word_load(pointer_add(record, 40)));
     // Readiness retains the native result until its owner copies it. Losing
     // paths never read the buffer; release transfers pending cleanup to the worker.
-    if source != EXTERNAL_READY && request != NativePointer(0) {
+    if (source != EXTERNAL_READY && request != NativePointer(0))
+    {
         worker_release(request);
         raw_word_store(pointer_add(record, 40), 0);
     }
     ExternalWorkRelease();
     word handle = raw_word_load(pointer_add(record, 8));
-    if raw_word_load(pointer_add(record, 48)) != 0 && FiberHandleValid(handle) && FiberParked(FiberHandleIndex(handle)) {
+    if (raw_word_load(pointer_add(record, 48)) != 0 && FiberHandleValid(handle) && FiberParked(FiberHandleIndex(handle)))
+    {
         WakeEnqueue(FiberHandleIndex(handle));
     }
     return true;
 }
 
-[Export(Abi:"C", Symbol:"beskid_rt_v5_external_wait_post")]
-pub bool ExternalWaitPost(word owner, word token, word source) { return owner_post(owner, token, source) != 0; }
-[Export(Abi:"C", Symbol:"beskid_rt_v5_external_wait_post_deadline")]
-pub bool ExternalWaitPostDeadline(word owner, word token, i64 deadline) {
-    if deadline < -1 { return false; }
+[Export(Abi: "C", Symbol: "beskid_rt_v5_external_wait_post")]
+pub bool ExternalWaitPost(word owner, word token, word source)
+{
+    return owner_post(owner, token, source) != 0;
+}
+
+[Export(Abi: "C", Symbol: "beskid_rt_v5_external_wait_post_deadline")]
+pub bool ExternalWaitPostDeadline(word owner, word token, i64 deadline)
+{
+    if (deadline < -1)
+    {
+        return false;
+    }
     return owner_post_deadline(owner, token, deadline) != 0;
 }
 
-[Export(Abi:"C", Symbol:"beskid_rt_v5_external_pump")]
-pub unit ExternalPump(i64 now) {
+[Export(Abi: "C", Symbol: "beskid_rt_v5_external_pump")]
+pub unit ExternalPump(i64 now)
+{
     // Reap owner host work on both sides of completion arbitration. A resolver
     // can finish after its wait already lost to cancellation or a deadline.
     NetworkPump();
     pointer command = pointer_add(ExternalState(), EXTERNAL_COMMAND_OFFSET);
-    while owner_pop(ExternalOwnerId(), command) != 0 {
+    while (owner_pop(ExternalOwnerId(), command) != 0)
+    {
         word token = raw_word_load(command);
         word source = raw_word_load(pointer_add(command, 8));
-        if source == 5 {
+        if (source == 5)
+        {
             ExternalWaitSetDeadline(token, i64(raw_word_load(pointer_add(command, 16))));
-        } else {
+        }
+        else
+        {
             ExternalTryComplete(token & 0xFFFFFFFF, token >> 32, source);
         }
     }
-    while raw_word_load(pointer_add(ExternalState(), 24)) != 0 {
+    while (raw_word_load(pointer_add(ExternalState(), 24)) != 0)
+    {
         pointer timer = ExternalTimerRecord(0);
-        if now < 0 || raw_word_load(timer) > word(now) { break; }
+        if (now < 0 || raw_word_load(timer) > word(now))
+        {
+            break;
+        }
         word token = raw_word_load(pointer_add(timer, 8));
-        if !ExternalTryComplete(token & 0xFFFFFFFF, token >> 32, EXTERNAL_TIMEOUT) { ExternalTimerRemove(token); }
+        if (!ExternalTryComplete(token & 0xFFFFFFFF, token >> 32, EXTERNAL_TIMEOUT))
+        {
+            ExternalTimerRemove(token);
+        }
     }
     NetworkPump();
     return;
 }
 
-pub i64 ExternalNextDeadline() {
-    if raw_word_load(pointer_add(ExternalState(), 24)) == 0 { return -1; }
+pub i64 ExternalNextDeadline()
+{
+    if (raw_word_load(pointer_add(ExternalState(), 24)) == 0)
+    {
+        return -1;
+    }
     return i64(raw_word_load(ExternalTimerRecord(0)));
 }
 
-[Export(Abi:"C", Symbol:"beskid_rt_v5_external_wait_park")]
-pub word ExternalWaitPark(word token) {
+[Export(Abi: "C", Symbol: "beskid_rt_v5_external_wait_park")]
+pub word ExternalWaitPark(word token)
+{
     pointer record = ExternalWaitRecord(token);
     word current = SchedulerCurrentFiber();
-    if record == NativePointer(0) { return 0; }
-    if current == FIBER_NONE {
+    if (record == NativePointer(0))
+    {
+        return 0;
+    }
+    if (current == FIBER_NONE)
+    {
         // Main parks as the root fiber: it drives the scheduler until its wait has a winner.
         // The unclaimed wait retains the active count, so the owner wait below always has
         // work that can post to it (a worker, the network reactor, or the wait's own timer).
-        if raw_word_load(pointer_add(record, 8)) != EXTERNAL_ROOT_WAITER { return 0; }
+        if (raw_word_load(pointer_add(record, 8)) != EXTERNAL_ROOT_WAITER)
+        {
+            return 0;
+        }
         ExternalPump(clock_monotonic_nanos());
-        while raw_word_load(pointer_add(record, 32)) == 0 {
-            if SchedStep() == false && raw_word_load(pointer_add(record, 32)) == 0 {
+        while (raw_word_load(pointer_add(record, 32)) == 0)
+        {
+            if (SchedStep() == false && raw_word_load(pointer_add(record, 32)) == 0)
+            {
                 owner_wait(ExternalOwnerId(), ExternalNextDeadline());
             }
         }
         return raw_word_load(pointer_add(record, 32));
     }
-    if raw_word_load(pointer_add(record, 8)) != FiberHandle(current) { return 0; }
+    if (raw_word_load(pointer_add(record, 8)) != FiberHandle(current))
+    {
+        return 0;
+    }
     // Cancellation stays attached to the fiber across operation returns. A
     // repeated Cancel need not enqueue another command, and its slot can be
     // published before ApplyPendingCancels has set the scheduler flag.
     pointer fiber = FiberRecord(current);
     pointer cancel = NativePointer(raw_word_load(pointer_add(fiber, 24)));
-    if raw_byte_load(pointer_add(fiber, 41)) != 0 || (cancel != NativePointer(0) && raw_word_load(cancel) != 0) {
+    if (raw_byte_load(pointer_add(fiber, 41)) != 0 || (cancel != NativePointer(0) && raw_word_load(cancel) != 0))
+    {
         ExternalTryComplete(token & 0xFFFFFFFF, token >> 32, EXTERNAL_CANCELLED);
     }
     // A completion received before park is observed without a context switch.
     ExternalPump(clock_monotonic_nanos());
-    if raw_word_load(pointer_add(record, 32)) == 0 {
+    if (raw_word_load(pointer_add(record, 32)) == 0)
+    {
         raw_word_store(pointer_add(record, 48), 1);
         FiberSetState(current, FIBER_STATE_PARKED);
         SaveFiberLocalState(current);
@@ -304,12 +474,15 @@ pub word ExternalWaitPark(word token) {
     return raw_word_load(pointer_add(record, 32));
 }
 
-pub bool ExternalCancelFiber(word handle) {
+pub bool ExternalCancelFiber(word handle)
+{
     word count = ExternalWaitCount();
     mut word slot = 0;
-    while slot < count {
+    while (slot < count)
+    {
         pointer record = ExternalWaitSlot(slot);
-        if raw_word_load(pointer_add(record, 56)) != 0 && raw_word_load(pointer_add(record, 8)) == handle {
+        if (raw_word_load(pointer_add(record, 56)) != 0 && raw_word_load(pointer_add(record, 8)) == handle)
+        {
             ExternalTryComplete(slot + 1, raw_word_load(pointer_add(record, 16)), EXTERNAL_CANCELLED);
             return true; // even an already-winning operation must resume its stack
         }
@@ -318,34 +491,54 @@ pub bool ExternalCancelFiber(word handle) {
     return false;
 }
 
-[Export(Abi:"C", Symbol:"beskid_rt_v5_external_wait_release")]
-pub bool ExternalRelease(word token) {
+[Export(Abi: "C", Symbol: "beskid_rt_v5_external_wait_release")]
+pub bool ExternalRelease(word token)
+{
     pointer record = ExternalWaitRecord(token);
-    if record == NativePointer(0) || raw_word_load(pointer_add(record, 32)) == 0 { return false; }
+    if (record == NativePointer(0) || raw_word_load(pointer_add(record, 32)) == 0)
+    {
+        return false;
+    }
     pointer request = NativePointer(raw_word_load(pointer_add(record, 40)));
-    if request != NativePointer(0) { worker_release(request); }
+    if (request != NativePointer(0))
+    {
+        worker_release(request);
+    }
     memory_set(record, 0, EXTERNAL_WAIT_SIZE);
     return true;
 }
 
-[Export(Abi:"C", Symbol:"beskid_rt_v5_external_sleep_until")]
-pub word ExternalSleepUntil(i64 deadline) {
-    if deadline < 0 { return 0; }
+[Export(Abi: "C", Symbol: "beskid_rt_v5_external_sleep_until")]
+pub word ExternalSleepUntil(i64 deadline)
+{
+    if (deadline < 0)
+    {
+        return 0;
+    }
     word token = ExternalWaitRegister(ExternalWaiterHandle(), 3, deadline);
-    if token == 0 { return 0; }
+    if (token == 0)
+    {
+        return 0;
+    }
     word outcome = ExternalWaitPark(token);
     ExternalRelease(token);
     return outcome;
 }
 
-pub unit ExternalShutdown(pointer scheduler) {
-    if scheduler != SchedTable() || SchedulerCurrentFiber() != FIBER_NONE { Trap(10, NativePointer(0), 0); }
+pub unit ExternalShutdown(pointer scheduler)
+{
+    if (scheduler != SchedTable() || SchedulerCurrentFiber() != FIBER_NONE)
+    {
+        Trap(10, NativePointer(0), 0);
+    }
     pointer state = ExternalState();
     word count = ExternalWaitCount();
     mut word slot = 0;
-    while slot < count {
+    while (slot < count)
+    {
         pointer record = ExternalWaitSlot(slot);
-        if raw_word_load(pointer_add(record, 56)) != 0 {
+        if (raw_word_load(pointer_add(record, 56)) != 0)
+        {
             word generation = raw_word_load(pointer_add(record, 16));
             ExternalTryComplete(slot + 1, generation, EXTERNAL_CANCELLED);
             ExternalRelease(generation << 32 | (slot + 1));
@@ -354,7 +547,10 @@ pub unit ExternalShutdown(pointer scheduler) {
     }
     // Wait winners have released their own obligations above. Any remaining
     // retain belongs to live host work and forbids destroying its owner mailbox.
-    if ExternalActiveCount() != 0 { Trap(10, NativePointer(0), 0); }
+    if (ExternalActiveCount() != 0)
+    {
+        Trap(10, NativePointer(0), 0);
+    }
     owner_destroy(raw_word_load(state));
     ChunkTableFree(ExternalWaitTable());
     VecFree(pointer_add(state, EXTERNAL_TIMERS_OFFSET), EXTERNAL_TIMER_SIZE);

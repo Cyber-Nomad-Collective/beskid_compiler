@@ -258,7 +258,8 @@ fn canonical_network_deadline_call_and_boolean_facts_preserve_signed_clock() {
             == "effectiveDeadline >= 0 && effectiveDeadline <= clock_monotonic_nanos()"
         {
             conditions += 1;
-            assert_eq!(binary.op.span.line_col_start.0, 83, "actual failing production deadline condition");
+            let line = source.source[..binary.op.span.start].matches('\n').count() + 1;
+            assert_eq!(binary.op.span.line_col_start.0, line, "actual failing production deadline condition");
             let beskid_analysis::syntax::Expression::Binary(left) = &binary.left.node else {
                 panic!("left comparison");
             };

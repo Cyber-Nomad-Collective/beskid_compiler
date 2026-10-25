@@ -103,6 +103,7 @@ const BESKID_WORKER_REQUEST_OWNER_SCHEDULER_ID_OFFSET = 64;
 
 // Service number for the not-live diagnostic; the same numbering as RootsHandles.bd.
 const LIVENESS_ABI_VALUE_INITIALIZE = 3;
+
 // Sole Foundation transport owner. Payloads use the ordinary managed-object descriptor,
 // including boxed scalars and opaque resource fixtures; arrays retain their public reference.
 // Callers provide aligned, stable, zeroed slot storage and an already rooted payload.
@@ -111,52 +112,73 @@ const LIVENESS_ABI_VALUE_INITIALIZE = 3;
 // A live owner_state is this slot's address, not a copyable live flag. Generic root
 // registration alone cannot authorize bytes copied from a different owner slot.
 
-pub bool AbiValueIsVacant(pointer slot) {
-    if slot == NativePointer(0) || NativeWord(slot) % BESKID_ABI_VALUE_ALIGNMENT != 0 { return false; }
-    return raw_word_load(pointer_add(slot, BESKID_ABI_VALUE_OWNER_STATE_OFFSET)) == 0
-        && raw_word_load(pointer_add(slot, BESKID_ABI_VALUE_TAG_OFFSET)) == 0
-        && raw_word_load(pointer_add(slot, BESKID_ABI_VALUE_PAYLOAD_OFFSET)) == 0
-        && raw_word_load(pointer_add(slot, BESKID_ABI_VALUE_DESCRIPTOR_OFFSET)) == 0
-        && raw_word_load(pointer_add(slot, BESKID_ABI_VALUE_OWNER_HEAP_OFFSET)) == 0;
+pub bool AbiValueIsVacant(pointer slot)
+{
+    if (slot == NativePointer(0) || NativeWord(slot) % BESKID_ABI_VALUE_ALIGNMENT != 0)
+    {
+        return false;
+    }
+    return raw_word_load(pointer_add(slot, BESKID_ABI_VALUE_OWNER_STATE_OFFSET)) == 0 && raw_word_load(pointer_add(slot, BESKID_ABI_VALUE_TAG_OFFSET)) == 0 && raw_word_load(pointer_add(slot, BESKID_ABI_VALUE_PAYLOAD_OFFSET)) == 0 && raw_word_load(pointer_add(slot, BESKID_ABI_VALUE_DESCRIPTOR_OFFSET)) == 0 && raw_word_load(pointer_add(slot, BESKID_ABI_VALUE_OWNER_HEAP_OFFSET)) == 0;
 }
 
-pub bool AbiValueIsLive(pointer slot) {
-    if slot == NativePointer(0) || NativeWord(slot) % BESKID_ABI_VALUE_ALIGNMENT != 0 { return false; }
+pub bool AbiValueIsLive(pointer slot)
+{
+    if (slot == NativePointer(0) || NativeWord(slot) % BESKID_ABI_VALUE_ALIGNMENT != 0)
+    {
+        return false;
+    }
     pointer heap = Heap();
-    if heap == NativePointer(0)
-        || raw_word_load(pointer_add(slot, BESKID_ABI_VALUE_OWNER_STATE_OFFSET)) != NativeWord(slot)
-        || raw_word_load(pointer_add(slot, BESKID_ABI_VALUE_OWNER_HEAP_OFFSET)) != NativeWord(heap)
-        || raw_word_load(pointer_add(slot, BESKID_ABI_VALUE_TAG_OFFSET)) == 0 { return false; }
+    if (heap == NativePointer(0) || raw_word_load(pointer_add(slot, BESKID_ABI_VALUE_OWNER_STATE_OFFSET)) != NativeWord(slot) || raw_word_load(pointer_add(slot, BESKID_ABI_VALUE_OWNER_HEAP_OFFSET)) != NativeWord(heap) || raw_word_load(pointer_add(slot, BESKID_ABI_VALUE_TAG_OFFSET)) == 0)
+    {
+        return false;
+    }
     pointer payload = NativePointer(raw_word_load(pointer_add(slot, BESKID_ABI_VALUE_PAYLOAD_OFFSET)));
     pointer object = ManagedObjectForReference(heap, payload);
-    if object == NativePointer(0) { return false; }
+    if (object == NativePointer(0))
+    {
+        return false;
+    }
     pointer descriptor = NativePointer(raw_word_load(pointer_add(slot, BESKID_ABI_VALUE_DESCRIPTOR_OFFSET)));
-    return descriptor != NativePointer(0) && raw_word_load(object) == NativeWord(descriptor)
-        && ValidateTypeDescriptor(descriptor)
-        && GcIsRegisteredRoot(pointer_add(slot, BESKID_ABI_VALUE_PAYLOAD_OFFSET));
+    return descriptor != NativePointer(0) && raw_word_load(object) == NativeWord(descriptor) && ValidateTypeDescriptor(descriptor) && GcIsRegisteredRoot(pointer_add(slot, BESKID_ABI_VALUE_PAYLOAD_OFFSET));
 }
 
-pub bool AbiValueSlotsOverlap(pointer first, pointer second) {
+pub bool AbiValueSlotsOverlap(pointer first, pointer second)
+{
     word left = NativeWord(first);
     word right = NativeWord(second);
-    if left <= right { return right - left < BESKID_ABI_VALUE_SIZE; }
+    if (left <= right)
+    {
+        return right - left < BESKID_ABI_VALUE_SIZE;
+    }
     return left - right < BESKID_ABI_VALUE_SIZE;
 }
 
-[Export(Abi:"C", Symbol:"beskid_rt_v5_abi_value_initialize")]
-pub bool AbiValueInitialize(pointer slot, word tag, pointer payload, pointer descriptor) {
-    if AbiValueIsVacant(slot) == false || tag == 0 || descriptor == NativePointer(0) { return false; }
+[Export(Abi: "C", Symbol: "beskid_rt_v5_abi_value_initialize")]
+pub bool AbiValueInitialize(pointer slot, word tag, pointer payload, pointer descriptor)
+{
+    if (AbiValueIsVacant(slot) == false || tag == 0 || descriptor == NativePointer(0))
+    {
+        return false;
+    }
     pointer heap = Heap();
-    if heap == NativePointer(0) { return false; }
+    if (heap == NativePointer(0))
+    {
+        return false;
+    }
     // Boxing a dead payload is a use after collection, not a rejected request: trap.
     RequireLiveManagedReference(payload, LIVENESS_ABI_VALUE_INITIALIZE);
     pointer object = ManagedObjectForReference(heap, payload);
-    if object == NativePointer(0) || raw_word_load(object) != NativeWord(descriptor)
-        || ValidateTypeDescriptor(descriptor) == false { return false; }
+    if (object == NativePointer(0) || raw_word_load(object) != NativeWord(descriptor) || ValidateTypeDescriptor(descriptor) == false)
+    {
+        return false;
+    }
     pointer root = pointer_add(slot, BESKID_ABI_VALUE_PAYLOAD_OFFSET);
     // `AbiValue` payload slots are registered roots: the root set is shaded at mark start and
     // rescanned at termination, so these stores carry no barrier (v0.6.2).
-    if GcRegisterRoot(root) == false { return false; }
+    if (GcRegisterRoot(root) == false)
+    {
+        return false;
+    }
     raw_word_store(pointer_add(slot, BESKID_ABI_VALUE_TAG_OFFSET), tag);
     raw_word_store(root, NativeWord(payload));
     raw_word_store(pointer_add(slot, BESKID_ABI_VALUE_DESCRIPTOR_OFFSET), NativeWord(descriptor));
@@ -165,34 +187,54 @@ pub bool AbiValueInitialize(pointer slot, word tag, pointer payload, pointer des
     return true;
 }
 
-[Export(Abi:"C", Symbol:"beskid_rt_v5_abi_value_clear")]
-pub bool AbiValueClear(pointer slot) {
-    if AbiValueIsVacant(slot) { return true; }
-    if AbiValueIsLive(slot) == false { return false; }
+[Export(Abi: "C", Symbol: "beskid_rt_v5_abi_value_clear")]
+pub bool AbiValueClear(pointer slot)
+{
+    if (AbiValueIsVacant(slot))
+    {
+        return true;
+    }
+    if (AbiValueIsLive(slot) == false)
+    {
+        return false;
+    }
     pointer root = pointer_add(slot, BESKID_ABI_VALUE_PAYLOAD_OFFSET);
     GcUnregisterRoot(root);
     memory_set(slot, 0, BESKID_ABI_VALUE_SIZE);
     return true;
 }
 
-[Export(Abi:"C", Symbol:"beskid_rt_v5_abi_value_move_out")]
-pub bool AbiValueMoveOut(pointer source, pointer destination) {
-    if AbiValueSlotsOverlap(source, destination) || AbiValueIsLive(source) == false
-        || AbiValueIsVacant(destination) == false { return false; }
+[Export(Abi: "C", Symbol: "beskid_rt_v5_abi_value_move_out")]
+pub bool AbiValueMoveOut(pointer source, pointer destination)
+{
+    if (AbiValueSlotsOverlap(source, destination) || AbiValueIsLive(source) == false || AbiValueIsVacant(destination) == false)
+    {
+        return false;
+    }
     // Acquire the destination root before releasing the source. On capacity failure the
     // source remains the sole owner and destination remains byte-for-byte vacant.
-    if AbiValueInitialize(destination,
-        raw_word_load(pointer_add(source, BESKID_ABI_VALUE_TAG_OFFSET)),
-        NativePointer(raw_word_load(pointer_add(source, BESKID_ABI_VALUE_PAYLOAD_OFFSET))),
-        NativePointer(raw_word_load(pointer_add(source, BESKID_ABI_VALUE_DESCRIPTOR_OFFSET)))) == false { return false; }
+    if (AbiValueInitialize(destination, raw_word_load(pointer_add(source, BESKID_ABI_VALUE_TAG_OFFSET)), NativePointer(raw_word_load(pointer_add(source, BESKID_ABI_VALUE_PAYLOAD_OFFSET))), NativePointer(raw_word_load(pointer_add(source, BESKID_ABI_VALUE_DESCRIPTOR_OFFSET)))) == false)
+    {
+        return false;
+    }
     return AbiValueClear(source);
 }
 
-[Export(Abi:"C", Symbol:"beskid_rt_v5_abi_value_replace_with_barrier")]
-pub bool AbiValueReplaceWithBarrier(pointer destination, pointer source) {
-    if AbiValueSlotsOverlap(source, destination) || AbiValueIsLive(source) == false { return false; }
-    if AbiValueIsVacant(destination) { return AbiValueMoveOut(source, destination); }
-    if AbiValueIsLive(destination) == false { return false; }
+[Export(Abi: "C", Symbol: "beskid_rt_v5_abi_value_replace_with_barrier")]
+pub bool AbiValueReplaceWithBarrier(pointer destination, pointer source)
+{
+    if (AbiValueSlotsOverlap(source, destination) || AbiValueIsLive(source) == false)
+    {
+        return false;
+    }
+    if (AbiValueIsVacant(destination))
+    {
+        return AbiValueMoveOut(source, destination);
+    }
+    if (AbiValueIsLive(destination) == false)
+    {
+        return false;
+    }
     pointer newPayload = NativePointer(raw_word_load(pointer_add(source, BESKID_ABI_VALUE_PAYLOAD_OFFSET)));
     raw_word_store(pointer_add(destination, BESKID_ABI_VALUE_TAG_OFFSET), raw_word_load(pointer_add(source, BESKID_ABI_VALUE_TAG_OFFSET)));
     raw_word_store(pointer_add(destination, BESKID_ABI_VALUE_PAYLOAD_OFFSET), NativeWord(newPayload));

@@ -1,1 +1,4 @@
-pub u16 Main() { return 65536_u16; }
+pub u16 Main()
+{
+    return 65536_u16;
+}

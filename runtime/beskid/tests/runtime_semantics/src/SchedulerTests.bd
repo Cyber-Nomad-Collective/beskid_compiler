@@ -22,7 +22,8 @@ use HostRuntimeSupport;
 
 // Scheduler fixtures host their own runtime. The 64-byte runtime record carries one trailing
 // word holding the suspended engine runtime, restored by `ReleaseSchedulerRuntime`.
-pub pointer InstallSchedulerRuntime() {
+pub pointer InstallSchedulerRuntime()
+{
     pointer hostRuntime = SuspendHostRuntime();
     pointer runtime = SystemAllocate(72, 8);
     memory_set(runtime, 0, 72);
@@ -33,7 +34,8 @@ pub pointer InstallSchedulerRuntime() {
     return runtime;
 }
 
-pub unit YieldingEntry(pointer argument) {
+pub unit YieldingEntry(pointer argument)
+{
     raw_word_store(argument, raw_word_load(argument) + 1);
     FiberYield();
     raw_word_store(argument, raw_word_load(argument) + 1);
@@ -47,21 +49,27 @@ pub unit YieldingEntry(pointer argument) {
 // `Fiber.handle` is private to Concurrency.Fiber (E1211); the scheduler is fresh and no fiber is
 // finished or detached before this spawn, so `FiberAlloc` takes a fresh record and the spawned
 // fiber is the newest one in the scheduler table.
-pub i64 SpawnYieldingEntry(pointer argument) {
+pub i64 SpawnYieldingEntry(pointer argument)
+{
     Fiber<unit> childFiber = spawn YieldingEntry(argument);
     pointer table = SchedTable();
-    if table == NativePointer(0) { return -1; }
+    if (table == NativePointer(0))
+    {
+        return -1;
+    }
     return i64(FiberHandle(raw_word_load(table) - 1));
 }
 
-pub unit ShutdownSchedulerRuntime(pointer runtime) {
+pub unit ShutdownSchedulerRuntime(pointer runtime)
+{
     Assert.True(SchedShutdown(), "idle scheduler tears down all owned storage");
     Assert.True(SchedTable() == NativePointer(0), "scheduler publication is cleared");
     ReleaseSchedulerRuntime(runtime);
     return;
 }
 
-pub unit ReleaseSchedulerRuntime(pointer runtime) {
+pub unit ReleaseSchedulerRuntime(pointer runtime)
+{
     pointer hostRuntime = NativePointer(raw_word_load(pointer_add(runtime, 64)));
     ProcessShutdown(runtime);
     SystemFree(runtime, 72);
@@ -76,7 +84,8 @@ pub unit ReleaseSchedulerRuntime(pointer runtime) {
 // aligned) is generated into `Runtime.Mem.AbiValue`'s own file scope and, like every Beskid
 // `const`, is not visible outside that file — so tests over-allocate a safely larger, aligned
 // block and only touch it through the package's `pub` AbiValue functions.
-pub pointer NewAbiValueSlot() {
+pub pointer NewAbiValueSlot()
+{
     pointer slot = SystemAllocate(64, 8);
     memory_set(slot, 0, 64);
     return slot;
@@ -84,7 +93,8 @@ pub pointer NewAbiValueSlot() {
 
 // Boxes an already GC-tracked, descriptor-owned payload into a fresh, live AbiValue slot
 // ready to hand to `ChannelTrySend` as its `sender` argument.
-pub pointer Sendable(pointer payload) {
+pub pointer Sendable(pointer payload)
+{
     pointer object = ManagedObjectForReference(Heap(), payload);
     word tag = raw_word_load(object);
     pointer slot = NewAbiValueSlot();
@@ -96,7 +106,8 @@ pub pointer Sendable(pointer payload) {
 // descriptor's size covers that header, so a one-word box is 24 bytes with its word at offset 16.
 // `Alloc` rejects any descriptor smaller than the header plus one word (returns null).
 // Descriptors outlive every slot that names them, so this helper never frees them.
-pub pointer BoxedWordDescriptor() {
+pub pointer BoxedWordDescriptor()
+{
     pointer descriptor = SystemAllocate(40, 8);
     memory_set(descriptor, 0, 40);
     raw_word_store(descriptor, 24);
@@ -106,27 +117,34 @@ pub pointer BoxedWordDescriptor() {
 
 // Boxes `value` as a one-word GC-tracked managed payload (not yet wrapped in an AbiValue
 // slot). `FiberDone`'s `value` argument is this raw managed payload directly.
-pub pointer BoxedWord(word value) {
+pub pointer BoxedWord(word value)
+{
     pointer payload = Alloc(24, BoxedWordDescriptor());
     // The payload is not rooted until the caller boxes it: allocate nothing (an assertion message
     // is a managed string) while it is held here, or `BESKID_GC_STRESS=alloc` collects it.
-    if payload == NativePointer(0) { Assert.True(false, "boxed word allocation succeeds"); }
+    if (payload == NativePointer(0))
+    {
+        Assert.True(false, "boxed word allocation succeeds");
+    }
     raw_word_store(pointer_add(payload, 16), value);
     return payload;
 }
 
 // Boxes `value` as a one-word GC-tracked payload and returns a live AbiValue slot for it.
-pub pointer SendableWord(word value) {
+pub pointer SendableWord(word value)
+{
     return Sendable(BoxedWord(value));
 }
 
 // Reads the boxed word payload out of a slot populated by a successful `ChannelReceiveValue`.
-pub word ReceivedWord(pointer slot) {
+pub word ReceivedWord(pointer slot)
+{
     pointer payload = NativePointer(raw_word_load(pointer_add(slot, 8)));
     return raw_word_load(pointer_add(payload, 16));
 }
 
-test SchedulerExecutesArgumentYieldResumeAndReturnTrampoline {
+test SchedulerExecutesArgumentYieldResumeAndReturnTrampoline
+{
     pointer runtime = InstallSchedulerRuntime();
     pointer argument = SystemAllocate(8, 8);
     raw_word_store(argument, 0);
@@ -155,7 +173,8 @@ test SchedulerExecutesArgumentYieldResumeAndReturnTrampoline {
     ShutdownSchedulerRuntime(runtime);
 }
 
-test SynchronizationBoundsHandlesAndTeardownAreDeterministic {
+test SynchronizationBoundsHandlesAndTeardownAreDeterministic
+{
     pointer runtime = InstallSchedulerRuntime();
 
     // Channels are linked cells, not a fixed ring: any non-negative capacity is valid
@@ -214,12 +233,14 @@ test SynchronizationBoundsHandlesAndTeardownAreDeterministic {
     ShutdownSchedulerRuntime(runtime);
 }
 
-test CallbackRegistryRejectsMergedOverflowWithoutPublication {
+test CallbackRegistryRejectsMergedOverflowWithoutPublication
+{
     pointer runtime = InstallSchedulerRuntime();
     pointer first = SystemAllocate(32 * 16, 8);
     pointer overflow = SystemAllocate(16, 8);
     mut word index = 0;
-    while index < 32 {
+    while (index < 32)
+    {
         raw_word_store(pointer_add(first, index * 16), index + 1);
         raw_word_store(pointer_add(first, index * 16 + 8), index + 101);
         index = index + 1;
@@ -235,13 +256,15 @@ test CallbackRegistryRejectsMergedOverflowWithoutPublication {
     ShutdownSchedulerRuntime(runtime);
 }
 
-test PollSlotsReuseWithGenerationAndStaleHandleDenialAcrossLongCycles {
+test PollSlotsReuseWithGenerationAndStaleHandleDenialAcrossLongCycles
+{
     pointer runtime = InstallSchedulerRuntime();
     mut word staleTask = 0;
     mut word staleMonitor = 0;
     mut word staleLink = 0;
     mut word cycle = 0;
-    while cycle < 256 {
+    while (cycle < 256)
+    {
         word taskIndex = PollTaskAllocate();
         Assert.True(taskIndex != 0xFFFF, "bounded task table remains reusable");
         pointer task = PollTaskRecord(taskIndex);
@@ -251,13 +274,13 @@ test PollSlotsReuseWithGenerationAndStaleHandleDenialAcrossLongCycles {
         i64 link = PollReferenceNew(taskHandle, true);
         Assert.True(monitor >= 0 && link >= 0, "bounded reference tables remain reusable");
 
-        if cycle != 0 {
+        if (cycle != 0)
+        {
             Assert.True(taskHandle != staleTask, "reused task advances generation");
             Assert.True(!PollTaskValid(staleTask), "stale task generation fails closed");
             Assert.True(PollReference(staleMonitor, false) == NativePointer(0), "stale monitor generation fails closed");
             Assert.True(PollReference(staleLink, true) == NativePointer(0), "stale link generation fails closed");
         }
-
         Assert.True(PollTaskClaimTerminal(task), "one scheduler transition claims terminal ownership");
         Assert.Equal(raw_word_load(pointer_add(task, PollTaskState())), PollStateTerminalClaimed(), "claimed terminal state is not observable as published");
         Assert.Equal(PollObservation(taskHandle, NativePointer(0)), 0, "outcome remains hidden before publication");
@@ -277,7 +300,8 @@ test PollSlotsReuseWithGenerationAndStaleHandleDenialAcrossLongCycles {
     ShutdownSchedulerRuntime(runtime);
 }
 
-test PollTerminalTransitionHasASingleWinner {
+test PollTerminalTransitionHasASingleWinner
+{
     pointer runtime = InstallSchedulerRuntime();
     word taskIndex = PollTaskAllocate();
     pointer task = PollTaskRecord(taskIndex);
@@ -291,7 +315,8 @@ test PollTerminalTransitionHasASingleWinner {
     ShutdownSchedulerRuntime(runtime);
 }
 
-test ChannelCloseAndShutdownDrainQueuedPointerHandles {
+test ChannelCloseAndShutdownDrainQueuedPointerHandles
+{
     pointer runtime = InstallSchedulerRuntime();
     pointer descriptor = SystemAllocate(40, 8);
     memory_set(descriptor, 0, 40);
@@ -314,7 +339,8 @@ test ChannelCloseAndShutdownDrainQueuedPointerHandles {
     SystemFree(descriptor, 40);
 }
 
-test ChannelCloseReleasesAnUnconsumedPointerReceipt {
+test ChannelCloseReleasesAnUnconsumedPointerReceipt
+{
     pointer runtime = InstallSchedulerRuntime();
     pointer descriptor = SystemAllocate(40, 8);
     memory_set(descriptor, 0, 40);
@@ -335,7 +361,8 @@ test ChannelCloseReleasesAnUnconsumedPointerReceipt {
     SystemFree(descriptor, 40);
 }
 
-test PollTaskPointerRootsReleaseOnTerminalDropAndSlotReuse {
+test PollTaskPointerRootsReleaseOnTerminalDropAndSlotReuse
+{
     pointer runtime = InstallSchedulerRuntime();
     pointer descriptor = SystemAllocate(40, 8);
     memory_set(descriptor, 0, 40);
@@ -363,7 +390,8 @@ test PollTaskPointerRootsReleaseOnTerminalDropAndSlotReuse {
     ShutdownSchedulerRuntime(runtime);
 }
 
-test SchedulerShutdownCancelsActiveFiberAndInvalidatesReusedHandle {
+test SchedulerShutdownCancelsActiveFiberAndInvalidatesReusedHandle
+{
     pointer runtime = InstallSchedulerRuntime();
     pointer argument = SystemAllocate(8, 8);
     raw_word_store(argument, 0);
@@ -392,7 +420,8 @@ test SchedulerShutdownCancelsActiveFiberAndInvalidatesReusedHandle {
 // until another fiber acts, instead of failing with WouldBlock (seen by Corelib as Closed).
 
 // argument: word 0 = channel id, word 8 = value to send.
-pub unit SendWordAfterYields(pointer argument) {
+pub unit SendWordAfterYields(pointer argument)
+{
     FiberYield();
     FiberYield();
     i64 status = ChannelTrySend(i64(raw_word_load(argument)), SendableWord(raw_word_load(pointer_add(argument, 8))));
@@ -401,7 +430,8 @@ pub unit SendWordAfterYields(pointer argument) {
 }
 
 // argument: word 0 = wait group handle.
-pub unit DoneAfterYields(pointer argument) {
+pub unit DoneAfterYields(pointer argument)
+{
     FiberYield();
     FiberYield();
     WaitGroupDone(NativePointer(raw_word_load(argument)));
@@ -409,17 +439,20 @@ pub unit DoneAfterYields(pointer argument) {
 }
 
 // Spawns without keeping the `Fiber<unit>` local alive past the call (see SpawnYieldingEntry).
-pub unit SpawnWordSender(pointer argument) {
+pub unit SpawnWordSender(pointer argument)
+{
     Fiber<unit> sender = spawn SendWordAfterYields(argument);
     return;
 }
 
-pub unit SpawnWaitGroupDone(pointer argument) {
+pub unit SpawnWaitGroupDone(pointer argument)
+{
     Fiber<unit> finisher = spawn DoneAfterYields(argument);
     return;
 }
 
-test RootReceiveParksUntilASpawnedFiberSends {
+test RootReceiveParksUntilASpawnedFiberSends
+{
     pointer runtime = InstallSchedulerRuntime();
     i64 channel = ChannelCreate(0, 0);
     pointer argument = SystemAllocate(24, 8);
@@ -438,7 +471,8 @@ test RootReceiveParksUntilASpawnedFiberSends {
     ShutdownSchedulerRuntime(runtime);
 }
 
-test RootReceiveReportsCloseFromAnotherFiber {
+test RootReceiveReportsCloseFromAnotherFiber
+{
     pointer runtime = InstallSchedulerRuntime();
     i64 channel = ChannelCreate(0, 0);
     // A closed channel with an empty queue is Closed for the root as for any fiber.
@@ -448,27 +482,34 @@ test RootReceiveReportsCloseFromAnotherFiber {
 }
 
 // argument: word 0 = channel id; word 8 receives the claimed word; word 16 the receive status.
-pub unit ReceiveWordAfterYields(pointer argument) {
+pub unit ReceiveWordAfterYields(pointer argument)
+{
     FiberYield();
     FiberYield();
     i64 channel = i64(raw_word_load(argument));
     i64 status = ChannelReceiveStatus(channel);
     raw_word_store(pointer_add(argument, 16), word(status));
-    if status == ChannelStatusOk() {
+    if (status == ChannelStatusOk())
+    {
         pointer slot = NewAbiValueSlot();
-        if ChannelReceiveValue(channel, slot) { raw_word_store(pointer_add(argument, 8), ReceivedWord(slot)); }
+        if (ChannelReceiveValue(channel, slot))
+        {
+            raw_word_store(pointer_add(argument, 8), ReceivedWord(slot));
+        }
         bool cleared = AbiValueClear(slot);
         SystemFree(slot, 64);
     }
     return;
 }
 
-pub unit SpawnWordReceiver(pointer argument) {
+pub unit SpawnWordReceiver(pointer argument)
+{
     Fiber<unit> receiver = spawn ReceiveWordAfterYields(argument);
     return;
 }
 
-test RootSendOnAFullChannelParksUntilAFiberMakesRoom {
+test RootSendOnAFullChannelParksUntilAFiberMakesRoom
+{
     pointer runtime = InstallSchedulerRuntime();
     i64 channel = ChannelCreate(1, 0);
     Assert.Equal(ChannelTrySend(channel, SendableWord(1)), ChannelStatusOk(), "the bounded channel takes its first value");
@@ -489,7 +530,8 @@ test RootSendOnAFullChannelParksUntilAFiberMakesRoom {
     ShutdownSchedulerRuntime(runtime);
 }
 
-test RootWaitGroupWaitParksUntilAFiberCallsDone {
+test RootWaitGroupWaitParksUntilAFiberCallsDone
+{
     pointer runtime = InstallSchedulerRuntime();
     pointer group = WaitGroupCreate();
     WaitGroupAdd(group, 1);
@@ -501,7 +543,8 @@ test RootWaitGroupWaitParksUntilAFiberCallsDone {
     ShutdownSchedulerRuntime(runtime);
 }
 
-test RootSleepRunsOtherFibersUntilItsDeadline {
+test RootSleepRunsOtherFibersUntilItsDeadline
+{
     pointer runtime = InstallSchedulerRuntime();
     pointer argument = SystemAllocate(8, 8);
     raw_word_store(argument, 0);
