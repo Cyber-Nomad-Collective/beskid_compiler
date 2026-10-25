@@ -112,6 +112,22 @@ pub fn handle_code_actions(uri: &Uri, doc: &Document, params: &CodeActionParams)
         );
     }
 
+    // Diagnostic-driven providers run for manifests too: project diagnostics (such as the
+    // retired lock format, E3024) are published on the `.bproj`, and that is where the editor
+    // asks for their fixes.
+    let providers = super::registry::code_action_providers();
+    for diag in &params.context.diagnostics {
+        let source = diag.source.as_deref().unwrap_or("beskid");
+        let Some(NumberOrString::String(code)) = &diag.code else { continue };
+        for provider in &providers {
+            if provider.handles(source, code)
+                && let Some(action) = provider.build(uri, doc, diag)
+            {
+                actions.push(CodeActionOrCommand::CodeAction(action));
+            }
+        }
+    }
+
     if !project_manifest::is_manifest_uri(uri) {
         if let Some(edits) =
             formatting::handler::handle_document_formatting(&doc.text).filter(|edits| !edits.is_empty())
@@ -124,19 +140,6 @@ pub fn handle_code_actions(uri: &Uri, doc: &Document, params: &CodeActionParams)
                 edit: Some(WorkspaceEdit { changes: Some(changes), ..WorkspaceEdit::default() }),
                 ..CodeAction::default()
             }));
-        }
-
-        let providers = super::registry::code_action_providers();
-        for diag in &params.context.diagnostics {
-            let source = diag.source.as_deref().unwrap_or("beskid");
-            let Some(NumberOrString::String(code)) = &diag.code else { continue };
-            for provider in &providers {
-                if provider.handles(source, code)
-                    && let Some(action) = provider.build(uri, doc, diag)
-                {
-                    actions.push(CodeActionOrCommand::CodeAction(action));
-                }
-            }
         }
 
         if let Some(path) = uri.to_file_path()

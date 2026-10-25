@@ -1,8 +1,11 @@
 //! LSP base-protocol framing: `Content-Length: N\r\n\r\n<N bytes of JSON>`.
 
-use std::io::{self, BufRead, Write};
+use std::io::{self, BufRead, Read, Write};
 
 use serde_json::Value;
+
+/// Largest message body accepted from the server (an unvalidated header must not drive allocation).
+pub const MAX_BODY_BYTES: usize = 256 * 1024 * 1024;
 
 /// Encode one JSON-RPC message with its header.
 pub fn encode(message: &Value) -> Vec<u8> {
@@ -47,8 +50,17 @@ pub fn read_message<R: BufRead>(reader: &mut R) -> io::Result<Option<Value>> {
         }
     }
     let length = length.ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "missing Content-Length header"))?;
-    let mut body = vec![0u8; length];
-    reader.read_exact(&mut body)?;
+    if length > MAX_BODY_BYTES {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("Content-Length {length} exceeds the {MAX_BODY_BYTES}-byte limit"),
+        ));
+    }
+    let mut body = Vec::new();
+    reader.by_ref().take(length as u64).read_to_end(&mut body)?;
+    if body.len() != length {
+        return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "stream ended inside a message body"));
+    }
     serde_json::from_slice(&body).map(Some).map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))
 }
 
@@ -57,6 +69,14 @@ mod tests {
     use super::*;
     use serde_json::json;
     use std::io::Cursor;
+
+    #[test]
+    fn oversized_content_length_is_rejected_without_allocating() {
+        let mut reader = Cursor::new(b"Content-Length: 99999999999\r\n\r\n{}".to_vec());
+        let error = read_message(&mut reader).unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+        assert!(error.to_string().contains("limit"), "{error}");
+    }
 
     #[test]
     fn encode_uses_byte_length_not_char_length() {

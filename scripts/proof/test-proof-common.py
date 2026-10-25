@@ -108,6 +108,30 @@ class SweepSetup(unittest.TestCase):
         self.assertIn("rust panic", corpus.first)
 
 
+class RunnerValidation(unittest.TestCase):
+    script = str(Path(__file__).resolve().parents[1] / "v067-proof.sh")
+
+    def invoke(self, *args):
+        return common.run(["bash", self.script, "--out-dir", tempfile.mkdtemp(), *args], timeout=60)
+
+    def test_missing_binaries_fail_before_any_step_runs(self):
+        result = self.invoke("--lsp", "/nonexistent-lsp", "--soak-bin", "/nonexistent-soak")
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("not an executable file", result.output)
+        self.assertNotIn("== soak ==", result.output)
+
+    def test_sweep_inputs_are_checked_even_when_the_soak_would_run_first(self):
+        result = self.invoke("--lsp", "/bin/ls", "--soak-bin", "/bin/ls", "--beskid", "/bin/ls", "--mutate-bin", "/nonexistent-mutate")
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("--mutate-bin", result.output)
+        self.assertNotIn("== soak ==", result.output)
+
+    def test_bundle_without_version_is_rejected_up_front(self):
+        result = self.invoke("--skip", "soak,sweep", "--bundle", tempfile.mkdtemp())
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("--bundle needs --version", result.output)
+
+
 class Discovery(unittest.TestCase):
     def test_projects_skip_build_output_and_templates(self):
         with tempfile.TemporaryDirectory() as tmp:

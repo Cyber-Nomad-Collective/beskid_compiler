@@ -23,11 +23,13 @@ fn walk(root: &Path, dir: &Path, ext: &str, out: &mut Vec<PathBuf>) {
     for entry in entries.filter_map(Result::ok) {
         let path = entry.path();
         let name = entry.file_name().to_string_lossy().into_owned();
-        if path.is_dir() {
+        // `file_type` does not follow symlinks: linked directories and files are never mutated.
+        let Ok(file_type) = entry.file_type() else { continue };
+        if file_type.is_dir() {
             if !matches!(name.as_str(), "obj" | ".git" | "target" | "node_modules" | ".beskid") {
                 walk(root, &path, ext, out);
             }
-        } else if path.extension().is_some_and(|e| e == ext) {
+        } else if file_type.is_file() && path.extension().is_some_and(|e| e == ext) {
             out.push(path);
         }
     }

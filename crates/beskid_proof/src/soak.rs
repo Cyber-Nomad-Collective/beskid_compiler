@@ -1,4 +1,4 @@
-//! Language-server soak client (ticket 15).
+//! Language-server soak client.
 //!
 //! Drives `beskid_lsp` over stdio on copies of one or more corpora for a configurable time:
 //! open files, random edits and undo, saves, queries, workspace refreshes and a v1 lock
@@ -9,10 +9,11 @@
 
 use std::collections::{BTreeSet, HashMap};
 use std::fs::{self, File};
-use std::io::{self, BufReader};
+use std::io::{self, BufReader, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Child, ChildStdin, Command, Stdio};
-use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
+use std::process::{Child, ChildStdin, Command, ExitStatus, Stdio};
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError, SyncSender, TrySendError};
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -24,6 +25,10 @@ use crate::rng::Rng;
 
 pub const CRASH_REPORT_METHOD: &str = "beskid/crashReport";
 const INTERNAL_ERROR_CODE: i64 = -32603;
+const RETIRED_LOCK_CODE: &str = "E3024";
+const MIGRATE_LOCK_COMMAND: &str = "beskid.migrateLock";
+const CURRENT_LOCK_HEADER: &str = "# Project.lock v3\n";
+const MIGRATE_DIAGNOSTIC_WAIT: Duration = Duration::from_secs(15);
 const SKIPPED_DIRECTORIES: [&str; 5] = ["obj", ".git", "target", "node_modules", ".beskid"];
 
 // ---------------------------------------------------------------------------------------------
@@ -42,6 +47,10 @@ pub struct SoakConfig {
     pub max_open: usize,
     pub tick: Duration,
     pub request_timeout: Duration,
+    /// Longest a `beskid dev project lock` run may take before the soak fails.
+    pub cli_timeout: Duration,
+    /// Longest the server may leave its stdin undrained before the soak fails.
+    pub drain_timeout: Duration,
     pub sample_interval: Duration,
     pub memory_growth_limit_percent: f64,
     pub report: Option<PathBuf>,
@@ -63,6 +72,8 @@ usage: beskid-soak --server <beskid_lsp> --corpus <dir> [--corpus <dir> ...] [op
   --max-open <n>         documents open at once (default 8)
   --tick-ms <n>          pause between actions (default 100)
   --request-timeout <t>  unanswered-request limit (default 120s)
+  --cli-timeout <t>      limit for one `beskid dev project lock` run (default 120s)
+  --drain-timeout <t>    fail when the server leaves its stdin unread this long (default 30s)
   --max-memory-growth <percent>  RSS growth limit, first window to last window (default 20)
   --report <file>        also write the JSON report here
 
@@ -96,6 +107,8 @@ impl SoakConfig {
             max_open: 8,
             tick: Duration::from_millis(100),
             request_timeout: Duration::from_secs(120),
+            cli_timeout: Duration::from_secs(120),
+            drain_timeout: Duration::from_secs(30),
             sample_interval: Duration::from_secs(10),
             memory_growth_limit_percent: 20.0,
             report: None,
@@ -121,6 +134,8 @@ impl SoakConfig {
                         Duration::from_millis(value("--tick-ms")?.parse().map_err(|_| "bad --tick-ms".to_string())?)
                 }
                 "--request-timeout" => config.request_timeout = parse_duration(&value("--request-timeout")?)?,
+                "--cli-timeout" => config.cli_timeout = parse_duration(&value("--cli-timeout")?)?,
+                "--drain-timeout" => config.drain_timeout = parse_duration(&value("--drain-timeout")?)?,
                 "--max-memory-growth" => {
                     config.memory_growth_limit_percent =
                         value("--max-memory-growth")?.parse().map_err(|_| "bad --max-memory-growth".to_string())?
@@ -162,13 +177,15 @@ pub struct MemoryVerdict {
 }
 
 /// Mean RSS of the samples inside the first and the last `window` of the run and the growth
-/// between them. `None` when either window holds no sample or the first mean is zero.
+/// between them. The first window starts after a warm-up equal to the window (indexing is still
+/// ramping up at t=0), so it covers `(window, 2 * window)`. `None` when either window holds no
+/// sample or the first mean is zero.
 pub fn memory_growth(samples: &[RssSample], total: Duration, window: Duration) -> Option<MemoryVerdict> {
     let mean = |select: &dyn Fn(&RssSample) -> bool| -> Option<u64> {
         let chosen: Vec<u64> = samples.iter().filter(|s| select(s)).map(|s| s.kib).collect();
         (!chosen.is_empty()).then(|| chosen.iter().sum::<u64>() / chosen.len() as u64)
     };
-    let first = mean(&|s: &RssSample| s.at <= window)?;
+    let first = mean(&|s: &RssSample| s.at > window && s.at < window * 2)?;
     let last = mean(&|s: &RssSample| s.at + window >= total)?;
     if first == 0 {
         return None;
@@ -329,6 +346,7 @@ pub struct Counters {
     pub refreshes: u64,
     pub lock_migrations: u64,
     pub migrate_quickfix_offered: u64,
+    pub migrate_diagnostic_seen: u64,
     pub responses: u64,
     pub error_responses: u64,
     pub diagnostics_published: u64,
@@ -374,6 +392,7 @@ impl SoakReport {
                 "edits": c.edits, "undos": c.undos, "saves": c.saves, "queries": c.queries,
                 "rotations": c.rotations, "refreshes": c.refreshes, "lockMigrations": c.lock_migrations,
                 "migrateQuickFixOffered": c.migrate_quickfix_offered,
+                "migrateDiagnosticSeen": c.migrate_diagnostic_seen,
             },
             "responses": c.responses,
             "errorResponses": c.error_responses,
@@ -433,9 +452,83 @@ enum Incoming {
     Closed(String),
 }
 
+/// Bounded queue in front of a writer thread, so a server that stops reading stdin makes the
+/// soak fail after `drain_timeout` instead of blocking in `write` forever.
+struct Outbox {
+    tx: SyncSender<Vec<u8>>,
+    error: Arc<Mutex<Option<String>>>,
+    drain_timeout: Duration,
+}
+
+impl Outbox {
+    fn new<W: Write + Send + 'static>(mut writer: W, capacity: usize, drain_timeout: Duration) -> Outbox {
+        let (tx, rx) = mpsc::sync_channel::<Vec<u8>>(capacity);
+        let error = Arc::new(Mutex::new(None));
+        let failed = Arc::clone(&error);
+        thread::spawn(move || {
+            while let Ok(bytes) = rx.recv() {
+                if let Err(e) = writer.write_all(&bytes).and_then(|_| writer.flush()) {
+                    if let Ok(mut slot) = failed.lock() {
+                        *slot = Some(e.to_string());
+                    }
+                    return;
+                }
+            }
+        });
+        Outbox { tx, error, drain_timeout }
+    }
+
+    fn send(&self, bytes: Vec<u8>) -> Result<(), String> {
+        let deadline = Instant::now() + self.drain_timeout;
+        let mut item = bytes;
+        loop {
+            if let Some(error) = self.error.lock().ok().and_then(|slot| slot.clone()) {
+                return Err(format!("server stdin write failed: {error}"));
+            }
+            match self.tx.try_send(item) {
+                Ok(()) => return Ok(()),
+                Err(TrySendError::Full(back)) => {
+                    if Instant::now() >= deadline {
+                        return Err(format!(
+                            "server stopped reading its stdin for more than {}s",
+                            self.drain_timeout.as_secs()
+                        ));
+                    }
+                    item = back;
+                    thread::sleep(Duration::from_millis(10));
+                }
+                Err(TrySendError::Disconnected(_)) => {
+                    let error = self.error.lock().ok().and_then(|slot| slot.clone()).unwrap_or_default();
+                    return Err(format!("server stdin writer ended: {error}"));
+                }
+            }
+        }
+    }
+}
+
+/// Run a command to completion, killing it when it outlives `timeout`.
+pub fn run_with_timeout(command: &mut Command, timeout: Duration) -> Result<ExitStatus, String> {
+    let mut child = command.spawn().map_err(|e| format!("cannot start: {e}"))?;
+    let deadline = Instant::now() + timeout;
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => return Ok(status),
+            Ok(None) => {}
+            Err(e) => return Err(format!("wait failed: {e}")),
+        }
+        if Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(format!("still running after {}s, killed", timeout.as_secs()));
+        }
+        thread::sleep(Duration::from_millis(50));
+    }
+}
+
 struct Client {
     child: Child,
-    stdin: ChildStdin,
+    outbox: Outbox,
+    diagnostics: HashMap<String, Vec<Value>>,
     rx: Receiver<Incoming>,
     next_id: i64,
     pending: HashMap<i64, (String, Instant)>,
@@ -452,7 +545,7 @@ impl Client {
             .stdout(Stdio::piped())
             .stderr(Stdio::from(File::create(log)?))
             .spawn()?;
-        let stdin = child.stdin.take().expect("piped stdin");
+        let stdin: ChildStdin = child.stdin.take().expect("piped stdin");
         let stdout = child.stdout.take().expect("piped stdout");
         let (tx, rx) = mpsc::channel();
         thread::spawn(move || {
@@ -477,7 +570,8 @@ impl Client {
         });
         Ok(Client {
             child,
-            stdin,
+            outbox: Outbox::new(stdin, 256, config.drain_timeout),
+            diagnostics: HashMap::new(),
             rx,
             next_id: 1,
             pending: HashMap::new(),
@@ -494,7 +588,7 @@ impl Client {
 
     fn notify(&mut self, method: &str, params: Value) {
         let message = json!({"jsonrpc": "2.0", "method": method, "params": params});
-        if let Err(error) = framing::write_message(&mut self.stdin, &message) {
+        if let Err(error) = self.outbox.send(framing::encode(&message)) {
             self.fail(format!("write of `{method}` failed: {error}"));
         }
     }
@@ -504,7 +598,7 @@ impl Client {
         self.next_id += 1;
         let message = json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params});
         self.pending.insert(id, (method.to_string(), Instant::now()));
-        if let Err(error) = framing::write_message(&mut self.stdin, &message) {
+        if let Err(error) = self.outbox.send(framing::encode(&message)) {
             self.fail(format!("write of `{method}` failed: {error}"));
         }
         id
@@ -513,7 +607,7 @@ impl Client {
     fn handle(&mut self, message: Value) {
         if message.get("method").is_some() && message.get("id").is_some() {
             let reply = answer_server_request(&message);
-            if let Err(error) = framing::write_message(&mut self.stdin, &reply) {
+            if let Err(error) = self.outbox.send(framing::encode(&reply)) {
                 self.fail(format!("write of a server-request reply failed: {error}"));
             }
         } else if message.get("method").is_some() {
@@ -523,18 +617,26 @@ impl Client {
                 self.report.crash_reports.push(format!("{text} [{path}]"));
             } else if message.get("method").and_then(Value::as_str) == Some("textDocument/publishDiagnostics") {
                 self.report.counters.diagnostics_published += 1;
+                if let Some(uri) = message.pointer("/params/uri").and_then(Value::as_str) {
+                    let list = message.pointer("/params/diagnostics").and_then(Value::as_array).cloned().unwrap_or_default();
+                    self.diagnostics.insert(uri.to_string(), list);
+                }
             }
         } else if let Some(id) = message.get("id").and_then(Value::as_i64) {
             let method = self.pending.remove(&id).map(|(m, _)| m).unwrap_or_else(|| "(unknown)".into());
             self.report.counters.responses += 1;
             if message.get("error").is_some() {
                 self.report.counters.error_responses += 1;
+                if method == "initialize" {
+                    let text = message.pointer("/error/message").and_then(Value::as_str).unwrap_or("");
+                    self.fail(format!("`initialize` was answered with an error: {text}"));
+                }
                 if is_internal_error_response(&message) {
                     let text = message.pointer("/error/message").and_then(Value::as_str).unwrap_or("");
                     self.report.internal_errors.push(format!("{method}: {text}"));
                 }
             }
-            if self.quickfix_requests.remove(&id) && message.to_string().contains("beskid.migrateLock") {
+            if self.quickfix_requests.remove(&id) && message.to_string().contains(MIGRATE_LOCK_COMMAND) {
                 self.report.counters.migrate_quickfix_offered += 1;
             }
         }
@@ -575,6 +677,14 @@ impl Client {
         }
     }
 
+    /// Diagnostics with `code` last published for `uri`.
+    fn diagnostics_with_code(&self, uri: &str, code: &str) -> Vec<Value> {
+        self.diagnostics
+            .get(uri)
+            .map(|list| list.iter().filter(|d| diagnostic_code(d) == Some(code)).cloned().collect())
+            .unwrap_or_default()
+    }
+
     fn server_alive(&self) -> bool {
         self.report.failures.is_empty()
     }
@@ -583,6 +693,18 @@ impl Client {
         let output = Command::new("ps").args(["-o", "rss=", "-p", &self.child.id().to_string()]).output().ok()?;
         parse_rss_output(&String::from_utf8_lossy(&output.stdout))
     }
+}
+
+impl Drop for Client {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
+/// The `code` of a diagnostic as a string (servers send strings; numbers are rendered).
+pub fn diagnostic_code(diagnostic: &Value) -> Option<&str> {
+    diagnostic.get("code").and_then(Value::as_str)
 }
 
 fn copy_tree(from: &Path, to: &Path) -> io::Result<()> {
@@ -648,14 +770,14 @@ pub fn run(config: &SoakConfig, smoke: bool) -> Result<SoakReport, String> {
     let work = match &config.work_dir {
         Some(dir) => {
             fs::create_dir_all(dir).map_err(|e| format!("work dir: {e}"))?;
-            dir.clone()
+            fs::canonicalize(dir).map_err(|e| format!("work dir: {e}"))?
         }
         None => unique_temp_dir("work").map_err(|e| format!("work dir: {e}"))?,
     };
     let home = match &config.home {
         Some(dir) => {
             fs::create_dir_all(dir).map_err(|e| format!("home: {e}"))?;
-            dir.clone()
+            fs::canonicalize(dir).map_err(|e| format!("home: {e}"))?
         }
         None => unique_temp_dir("home").map_err(|e| format!("home: {e}"))?,
     };
@@ -802,6 +924,9 @@ pub fn run(config: &SoakConfig, smoke: bool) -> Result<SoakReport, String> {
             report.internal_errors[0]
         ));
     }
+    if let Some(failure) = migrate_probe_failure(&report.counters) {
+        report.failures.push(failure);
+    }
     let window = Duration::from_secs(60).min(ran_for / 3);
     report.memory = memory_growth(&report.samples, ran_for, window);
     // First and last window must be distinct and meaningful: enforce only on full-length runs.
@@ -922,9 +1047,11 @@ fn step(client: &mut Client, rng: &mut Rng, open: &mut Vec<Document>, sources: &
     }
 }
 
-/// The v1-to-v2 lock migration: downgrade the lock header, tell the server, look for the
-/// "Migrate lock file" quick fix on the project manifest, optionally run the CLI migration the
-/// way the editor command would, then notify the server of the migrated lock.
+/// The retired-lock migration: downgrade the lock header, tell the server, wait for the `E3024`
+/// diagnostic it publishes on the project manifest, ask for code actions on the manifest with that
+/// diagnostic in the request context (as an editor does) and look for the `beskid.migrateLock`
+/// quick fix, then run the CLI migration the way the editor command would and check that it
+/// rewrote the lock as the current format.
 fn migrate_lock(client: &mut Client, config: &SoakConfig, lock: &Path, open: &mut [Document]) {
     let Ok(original) = fs::read_to_string(lock) else { return };
     let Some(v1) = downgrade_lock_to_v1(&original) else { return };
@@ -944,16 +1071,28 @@ fn migrate_lock(client: &mut Client, config: &SoakConfig, lock: &Path, open: &mu
         && let Ok(text) = fs::read_to_string(&manifest)
     {
         let uri = path_to_uri(&manifest);
+        client.diagnostics.remove(&uri);
         client.notify(
             "textDocument/didOpen",
             json!({"textDocument": {"uri": uri, "languageId": "beskid-project", "version": 1, "text": text}}),
         );
+        let deadline = Instant::now() + MIGRATE_DIAGNOSTIC_WAIT;
+        while client.diagnostics_with_code(&uri, RETIRED_LOCK_CODE).is_empty()
+            && Instant::now() < deadline
+            && client.server_alive()
+        {
+            client.pump(Duration::from_millis(200), config.request_timeout);
+        }
+        let retired = client.diagnostics_with_code(&uri, RETIRED_LOCK_CODE);
+        if !retired.is_empty() {
+            client.report.counters.migrate_diagnostic_seen += 1;
+        }
         let id = client.request(
             "textDocument/codeAction",
             json!({
                 "textDocument": {"uri": uri},
                 "range": {"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 0}},
-                "context": {"diagnostics": []}
+                "context": {"diagnostics": retired}
             }),
         );
         client.quickfix_requests.insert(id);
@@ -961,14 +1100,29 @@ fn migrate_lock(client: &mut Client, config: &SoakConfig, lock: &Path, open: &mu
         client.notify("textDocument/didClose", json!({"textDocument": {"uri": uri}}));
     }
 
-    // The editor command: `beskid dev project lock` rewrites the lock as v2.
+    // The editor command: `beskid dev project lock` rewrites the lock in the current format.
     if let (Some(cli), Some(dir)) = (&config.beskid_cli, lock.parent()) {
-        let _ = Command::new(cli)
+        let mut command = Command::new(cli);
+        command
             .args(["dev", "project", "lock", "--plain", "--project"])
             .arg(dir)
+            .stdin(Stdio::null())
             .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status();
+            .stderr(Stdio::null());
+        match run_with_timeout(&mut command, config.cli_timeout) {
+            Ok(status) if status.success() => {
+                let migrated = fs::read_to_string(lock).unwrap_or_default();
+                if !migrated.starts_with(CURRENT_LOCK_HEADER) {
+                    client.fail(format!(
+                        "`beskid dev project lock` succeeded but {} does not start with `{}`",
+                        lock.display(),
+                        CURRENT_LOCK_HEADER.trim_end()
+                    ));
+                }
+            }
+            Ok(status) => client.fail(format!("`beskid dev project lock` for {} failed: {status}", dir.display())),
+            Err(error) => client.fail(format!("`beskid dev project lock` for {}: {error}", dir.display())),
+        }
     } else {
         let _ = fs::write(lock, &original);
     }
@@ -978,6 +1132,25 @@ fn migrate_lock(client: &mut Client, config: &SoakConfig, lock: &Path, open: &mu
         if lock.parent().is_some_and(|dir| doc.path.starts_with(dir)) {
             client.notify("textDocument/didSave", json!({"textDocument": {"uri": doc.uri}, "text": doc.text}));
         }
+    }
+}
+
+/// Verdict on the quick-fix probe: a run that downgraded locks must have been offered the fix.
+pub fn migrate_probe_failure(counters: &Counters) -> Option<String> {
+    if counters.lock_migrations > 0 && counters.migrate_quickfix_offered == 0 {
+        Some(if counters.migrate_diagnostic_seen == 0 {
+            format!(
+                "{} lock migration(s) ran but the server never published an `{RETIRED_LOCK_CODE}` diagnostic on the manifest",
+                counters.lock_migrations
+            )
+        } else {
+            format!(
+                "{} lock migration(s) ran and `{RETIRED_LOCK_CODE}` was published, but no `{MIGRATE_LOCK_COMMAND}` quick fix was offered",
+                counters.lock_migrations
+            )
+        })
+    } else {
+        None
     }
 }
 
@@ -1018,9 +1191,12 @@ mod tests {
 
     #[test]
     fn memory_growth_compares_first_and_last_window() {
+        // The first window skips the warm-up: samples at or before the window length do not count.
         let samples = [
-            sample(10, 100_000),
-            sample(50, 100_000),
+            sample(10, 10_000),
+            sample(50, 20_000),
+            sample(70, 100_000),
+            sample(110, 100_000),
             sample(500, 110_000),
             sample(590, 114_000),
             sample(600, 114_000),
@@ -1033,12 +1209,97 @@ mod tests {
 
     #[test]
     fn memory_growth_detects_a_leak_and_handles_missing_windows() {
-        let leak = [sample(5, 100_000), sample(1195, 150_000), sample(1200, 150_000)];
+        let leak = [sample(5, 100_000), sample(90, 100_000), sample(1195, 150_000), sample(1200, 150_000)];
         let verdict = memory_growth(&leak, Duration::from_secs(1200), Duration::from_secs(60)).unwrap();
         assert!(verdict.growth_percent > 20.0);
-        let no_last = [sample(5, 100_000)];
+        let no_last = [sample(90, 100_000)];
+        let only_warmup = [sample(5, 100_000), sample(1195, 150_000)];
+        assert!(memory_growth(&only_warmup, Duration::from_secs(1200), Duration::from_secs(60)).is_none());
         assert!(memory_growth(&no_last, Duration::from_secs(1200), Duration::from_secs(60)).is_none());
         assert!(memory_growth(&[], Duration::from_secs(60), Duration::from_secs(20)).is_none());
+    }
+
+    #[test]
+    fn migrate_probe_fails_when_the_quick_fix_is_never_offered() {
+        let mut counters = Counters::default();
+        assert!(migrate_probe_failure(&counters).is_none(), "no migration, no probe");
+        counters.lock_migrations = 2;
+        assert!(migrate_probe_failure(&counters).unwrap().contains("never published"));
+        counters.migrate_diagnostic_seen = 1;
+        assert!(migrate_probe_failure(&counters).unwrap().contains("no `beskid.migrateLock` quick fix"));
+        counters.migrate_quickfix_offered = 1;
+        assert!(migrate_probe_failure(&counters).is_none());
+    }
+
+    #[test]
+    fn diagnostic_codes_are_read_as_strings() {
+        assert_eq!(diagnostic_code(&json!({"code": "E3024"})), Some("E3024"));
+        assert_eq!(diagnostic_code(&json!({"code": 3024})), None);
+    }
+
+    struct Blocked;
+    impl Write for Blocked {
+        fn write(&mut self, _: &[u8]) -> io::Result<usize> {
+            thread::sleep(Duration::from_secs(30));
+            Ok(0)
+        }
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn a_server_that_never_reads_fails_the_send_instead_of_hanging() {
+        let outbox = Outbox::new(Blocked, 2, Duration::from_millis(200));
+        let started = Instant::now();
+        let mut result = Ok(());
+        for _ in 0..10 {
+            result = outbox.send(vec![0u8; 8]);
+            if result.is_err() {
+                break;
+            }
+        }
+        assert!(result.unwrap_err().contains("stopped reading"));
+        assert!(started.elapsed() < Duration::from_secs(5));
+    }
+
+    struct Broken;
+    impl Write for Broken {
+        fn write(&mut self, _: &[u8]) -> io::Result<usize> {
+            Err(io::Error::new(io::ErrorKind::BrokenPipe, "gone"))
+        }
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn a_broken_pipe_is_reported() {
+        let outbox = Outbox::new(Broken, 4, Duration::from_secs(5));
+        let mut result = outbox.send(vec![1]);
+        for _ in 0..50 {
+            if result.is_err() {
+                break;
+            }
+            thread::sleep(Duration::from_millis(20));
+            result = outbox.send(vec![1]);
+        }
+        assert!(result.unwrap_err().contains("gone"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn cli_runs_are_bounded_by_the_timeout() {
+        let mut slow = Command::new("sleep");
+        slow.arg("30");
+        let started = Instant::now();
+        let error = run_with_timeout(&mut slow, Duration::from_millis(300)).unwrap_err();
+        assert!(error.contains("killed"), "{error}");
+        assert!(started.elapsed() < Duration::from_secs(10));
+        let mut quick = Command::new("true");
+        assert!(run_with_timeout(&mut quick, Duration::from_secs(10)).unwrap().success());
+        let mut failing = Command::new("false");
+        assert!(!run_with_timeout(&mut failing, Duration::from_secs(10)).unwrap().success());
     }
 
     #[test]

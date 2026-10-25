@@ -1,6 +1,6 @@
 //! Deterministic source mutation for the internal-error sweep.
 //!
-//! Three mutations per file, as ticket 01 describes: delete one token, duplicate one line, swap
+//! Three mutations per file: delete one token, duplicate one line, swap
 //! two adjacent tokens. Tokens are lexical (identifier/number runs, string literals, comments,
 //! single punctuation characters); whitespace is preserved so the mutant stays diffable. The
 //! generator never needs to parse Beskid: a mutant that is no longer valid source is the point.
