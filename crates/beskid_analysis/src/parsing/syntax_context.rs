@@ -101,7 +101,8 @@ impl Tok {
     }
 }
 
-const PUNCTS: &[&str] = &[
+/// Punctuation and operators, longest first so a scan takes the longest match.
+pub(crate) const PUNCTS: &[&str] = &[
     "===", "!==", "```", "::", "=>", "==", "!=", "<=", ">=", "&&", "||", "+=", "-=", "*=", "/=", "%=", "++", "--",
     "->", "<<", ">>", "..", "${", "@{", "(", ")", "{", "}", "[", "]", ";", ",", ".", ":", "=", "<", ">", "+", "-", "*",
     "/", "%", "!", "?", "&", "|", "^", "~", "@", "$", "'",
@@ -186,8 +187,15 @@ fn lex_one(source: &str, start: usize) -> Tok {
         return Tok { kind: TokKind::Str, start, end: skip_string(bytes, start) };
     }
     if first == b'\'' {
-        // A one-character literal `'x'` or `'\''`; anything longer is a stray quote.
-        let end = if bytes.get(start + 1) == Some(&b'\\') { start + 3 } else { start + 2 };
+        // A one-character literal `'x'`, an escape `'\''` or a Unicode escape `'\u{41}'`;
+        // anything longer is a stray quote.
+        let end = match (bytes.get(start + 1), bytes.get(start + 2), bytes.get(start + 3)) {
+            (Some(b'\\'), Some(b'u'), Some(b'{')) => {
+                source[start + 4..].find('}').map_or(start + 3, |close| start + 4 + close + 1)
+            }
+            (Some(b'\\'), _, _) => start + 3,
+            _ => start + 1 + source[start + 1..].chars().next().map_or(1, char::len_utf8),
+        };
         if bytes.get(end) == Some(&b'\'') {
             return Tok { kind: TokKind::Char, start, end: end + 1 };
         }
@@ -733,6 +741,38 @@ mod tests {
         let tokens = tokens_before(source, source.len());
         assert_eq!(tokens.iter().filter(|tok| tok.kind == TokKind::Str).count(), 1);
         assert!(tokens.last().unwrap().is_word("y"));
+    }
+
+    #[test]
+    fn lexes_character_literals_with_unicode_escapes() {
+        for literal in ["'a'", "'\\''", "'\\u{41}'", "'\\u{1F600}'", "'é'"] {
+            let source = format!("x = {literal}; y");
+            let tokens = tokens_before(&source, source.len());
+            let chars: Vec<&Tok> = tokens.iter().filter(|tok| tok.kind == TokKind::Char).collect();
+            assert_eq!(chars.len(), 1, "{literal}: {tokens:?}");
+            assert_eq!(&source[chars[0].start..chars[0].end], literal);
+            assert!(tokens.last().unwrap().is_word("y"), "{literal}");
+        }
+    }
+
+    /// `RESERVED_WORDS` is the grammar's `Keyword` rule, word for word and in order.
+    #[test]
+    fn reserved_words_match_the_grammar_keyword_rule() {
+        let grammar = include_str!("../beskid.pest");
+        let rule_start = grammar.find("\nKeyword = {").expect("Keyword rule");
+        let rule = &grammar[rule_start..];
+        let rule = &rule[..rule.find("\n}").expect("end of Keyword rule")];
+        let words: Vec<String> = rule
+            .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+            .filter(|name| name.ends_with("Keyword") && *name != "Keyword")
+            .map(|name| {
+                let definition = format!("\n{name} = @{{ \"");
+                let at = grammar.find(&definition).unwrap_or_else(|| panic!("definition of {name}"));
+                let text = &grammar[at + definition.len()..];
+                text[..text.find('"').expect("closing quote")].to_string()
+            })
+            .collect();
+        assert_eq!(words, RESERVED_WORDS, "update RESERVED_WORDS to the grammar's Keyword rule");
     }
 
     #[test]
