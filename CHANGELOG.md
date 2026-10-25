@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Polish
+
+- A `match` used as a statement needs no trailing `;`, like a C# `switch` statement; a written `;` is still accepted and `beskid fmt` keeps the form the source uses.
+- `use Core.Results.Result;` stays E1105 (`use` imports modules), but the item it names still resolves, so `Result` and `Result::Ok(..)` no longer add one E1201 per use.
+- Diagnostic labels of kinds that name module paths write them with `.` (the E1257 label read `Core::Results::Result`).
+- Internal: the analysis diagnostic model, the language server's editor diagnostics and stdio entry, and the CLI pipeline output policy are split into focused modules; every Rust function is snake_case.
+
 ### Corelib check
 
 - Every Corelib project passes `beskid check` on its own. A Corelib package checked directly from the installed (or `BESKID_CORELIB_ROOT`) bundle has Corelib identity, as it has as a dependency, so the compiler-issued Dynamic and serialization bridges no longer fail the C extern profile (T0903, T0904) and their compiler-referenced helpers are no longer unused (W2101). `Console/Hosting.bd` is a described Corelib service source, so its `__composition_exit` call is admitted (it was E1107).
