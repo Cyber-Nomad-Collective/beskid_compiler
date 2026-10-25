@@ -156,7 +156,9 @@ pub i64 HubUnregister(i64 hubId, i64 index) {
 
 // Poll all channels round-robin until one delivers, then return index and value.
 // A fiber parks on the hub's waiter list; the root caller (Main) parks by driving the
-// scheduler between polls.
+// scheduler between polls. When every member is closed and drained nothing can deliver any
+// more: the wait returns Closed, and `hub_wait_receive_index` names the first closed member
+// of that poll (the cursor is left just after it).
 [Export(Abi:"C", Symbol:"hub_wait_receive_status")]
 pub i64 HubWaitReceiveStatus(i64 hubId) {
     while true {
@@ -166,6 +168,7 @@ pub i64 HubWaitReceiveStatus(i64 hubId) {
         if entryCount == 0 { return HUB_STATUS_HUB_EMPTY; }
         word startPos = raw_word_load(pointer_add(hub, HUB_CURSOR)) % entryCount;
         mut word attempts = 0;
+        mut word closed = 0;
         while attempts < entryCount {
             word pos = (startPos + attempts) % entryCount;
             pointer entry = HubEntry(hub, pos);
@@ -175,7 +178,13 @@ pub i64 HubWaitReceiveStatus(i64 hubId) {
                 raw_word_store(pointer_add(hub, HUB_CURSOR), (pos + 1) % entryCount);
                 return CHANNEL_STATUS_OK;
             }
+            if status == CHANNEL_STATUS_CANCELLED { return CHANNEL_STATUS_CANCELLED; }
+            if status == CHANNEL_STATUS_CLOSED { closed = closed + 1; }
             attempts = attempts + 1;
+        }
+        if closed == entryCount {
+            raw_word_store(pointer_add(hub, HUB_CURSOR), (startPos + 1) % entryCount);
+            return CHANNEL_STATUS_CLOSED;
         }
         word fiberIndex = SchedulerCurrentFiber();
         if fiberIndex == FIBER_NONE {
