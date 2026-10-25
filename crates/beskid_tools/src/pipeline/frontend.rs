@@ -37,7 +37,7 @@ pub fn resolve_input_with_pipeline(
         resolve.project,
         resolve.target,
         resolve.workspace_member,
-        resolve.WorkspaceOptions(),
+        resolve.workspace_options(),
         UnresolvedDependencyPolicy::Error,
         pipeline,
     )
@@ -51,7 +51,7 @@ pub fn resolve_project_with_pipeline(options: FrontendProjectPipelineOptions<'_>
         resolve.project,
         resolve.target,
         resolve.workspace_member,
-        resolve.WorkspaceOptions(),
+        resolve.workspace_options(),
         unresolved_dependency_policy,
         pipeline,
     )

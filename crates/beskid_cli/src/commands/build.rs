@@ -128,7 +128,7 @@ enum SelectedBackend {
 /// Resolve, lower, emit CLIF, and run the AOT/link pipeline according to `args`.
 pub fn execute(args: BuildArgs) -> Result<()> {
     if args.json {
-        return Records::new("build").Run(|records| build_selected(args, Some(records)));
+        return Records::new("build").run(|records| build_selected(args, Some(records)));
     }
     build_selected(args, None).map(|_| ())
 }
@@ -144,7 +144,7 @@ fn build_selected(args: BuildArgs, records: Option<&Records>) -> Result<serde_js
 fn emit_gate_diagnostics(session: &CommandSession, records: Option<&Records>) -> Result<()> {
     if let Some(records) = records {
         for diagnostic in session.gate_diagnostics() {
-            records.Diagnostic(&diagnostic)?;
+            records.diagnostic(&diagnostic)?;
         }
     }
     Ok(())
@@ -227,7 +227,7 @@ fn run_build(args: BuildArgs, records: Option<&Records>) -> Result<serde_json::V
     }
     session.set_mod_host(super::compiler_mod::prepare_native_mod_executor(
         &resolved,
-        args.lockfile.WorkspaceOptions(),
+        args.lockfile.workspace_options(),
         Some(session.observer()),
     )?);
     let gated = session.executable_gate_prepared(

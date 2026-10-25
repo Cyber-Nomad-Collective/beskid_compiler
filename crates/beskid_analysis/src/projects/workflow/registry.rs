@@ -301,11 +301,11 @@ pub(super) fn resolve_registry_dependency(
             Ok(downloaded) => downloaded,
             Err(RegistryArtifactDownloadError::Unavailable(_)) if tolerate_unavailable => return Ok(None),
             Err(error) => {
-                return Err(RegistryFailure(
+                return Err(registry_failure(
                     &base_url,
                     &unresolved.dependency_name,
                     Some(&selected_version),
-                    &format!("artifact download failed: {}", Cause(error.into_project_error())),
+                    &format!("artifact download failed: {}", cause(error.into_project_error())),
                     REGISTRY_UNAVAILABLE_GUIDANCE,
                 ));
             }
@@ -481,8 +481,7 @@ pub(super) fn materialize_registry_dependency(
 
 /// A registry failure that names the package, the requested version and the registry, with
 /// credential-free recovery guidance (DEP06-02).
-#[allow(non_snake_case)]
-fn RegistryFailure(
+fn registry_failure(
     base_url: &str,
     package: &str,
     requested: Option<&str>,
@@ -505,8 +504,7 @@ fn RegistryFailure(
 }
 
 /// The message of a registry failure without the `manifest validation error` prefix.
-#[allow(non_snake_case)]
-fn Cause(error: ProjectError) -> String {
+fn cause(error: ProjectError) -> String {
     match error {
         ProjectError::Validation(message) => message,
         other => other.to_string(),
@@ -521,10 +519,10 @@ fn select_registry_version(
     requested_version: Option<&str>,
 ) -> Result<String, ProjectError> {
     let requested = requested_version.filter(|version| *version != "*");
-    let failure = |cause: &str, guidance: &str| RegistryFailure(base_url, package, requested, cause, guidance);
+    let failure = |cause: &str, guidance: &str| registry_failure(base_url, package, requested, cause, guidance);
     let versions_url = registry_url(base_url, &["api", "packages", package, "versions"])?;
     let versions_json =
-        http_get_text(&versions_url).map_err(|error| failure(&Cause(error), REGISTRY_UNAVAILABLE_GUIDANCE))?;
+        http_get_text(&versions_url).map_err(|error| failure(&cause(error), REGISTRY_UNAVAILABLE_GUIDANCE))?;
     let versions: Vec<Value> = serde_json::from_str(&versions_json).map_err(|error| {
         failure(&format!("registry version response is malformed: {error}"), REGISTRY_UNAVAILABLE_GUIDANCE)
     })?;

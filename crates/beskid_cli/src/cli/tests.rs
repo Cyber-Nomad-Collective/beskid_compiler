@@ -334,16 +334,16 @@ fn v06_read_only_routes_do_not_provision_corelib() {
         vec!["beskid", "dev", "capabilities", "--json"],
     ] {
         let cli = Cli::try_parse_from(args).unwrap();
-        assert!(!super::app::NeedsCorelib(&cli.command));
+        assert!(!super::app::needs_corelib(&cli.command));
     }
     let cli = Cli::try_parse_from(["beskid", "check", "Main.bd"]).unwrap();
-    assert!(super::app::NeedsCorelib(&cli.command));
+    assert!(super::app::needs_corelib(&cli.command));
 }
 
 #[test]
 fn v06_retired_route_diagnostic_names_replacement() {
     for (old, new) in [("analyze", "check"), ("pckg", "package"), ("lsp", "dev lsp"), ("fetch", "dev project fetch")] {
-        let error = match super::app::ParseInvocation(["beskid", old]) {
+        let error = match super::app::parse_invocation(["beskid", old]) {
             Ok(_) => panic!("retired command parsed"),
             Err(error) => error,
         };
@@ -398,11 +398,11 @@ fn v06_ordinary_resolution_preserves_independent_policy_bits() {
             argv.extend(flags);
             let cli = Cli::try_parse_from(&argv).unwrap();
             let policy = match cli.command {
-                Commands::Check(args) => args.lockfile.WorkspaceOptions(),
-                Commands::Build(args) => args.lockfile.WorkspaceOptions(),
-                Commands::Run(args) => args.lockfile.WorkspaceOptions(),
-                Commands::Test(args) => args.lockfile.WorkspaceOptions(),
-                Commands::Doc(args) => args.lockfile.WorkspaceOptions(),
+                Commands::Check(args) => args.lockfile.workspace_options(),
+                Commands::Build(args) => args.lockfile.workspace_options(),
+                Commands::Run(args) => args.lockfile.workspace_options(),
+                Commands::Test(args) => args.lockfile.workspace_options(),
+                Commands::Doc(args) => args.lockfile.workspace_options(),
                 _ => unreachable!(),
             };
             assert_eq!((policy.locked, policy.offline, policy.frozen), (locked, offline, frozen), "{argv:?}");
@@ -597,7 +597,7 @@ fn v06_owner_producer_is_explicit_closed_and_has_no_prefix_override() {
 
 #[test]
 fn v06_run_passes_trailing_program_arguments_unchanged() {
-    let cli = super::app::ParseInvocation([
+    let cli = super::app::parse_invocation([
         "beskid",
         "run",
         "--plain",
@@ -620,7 +620,7 @@ fn v06_run_passes_trailing_program_arguments_unchanged() {
 
 #[test]
 fn v06_run_json_is_a_usage_error_naming_machine_output_commands() {
-    let error = match super::app::ParseInvocation(["beskid", "run", "--json", "--plain"]) {
+    let error = match super::app::parse_invocation(["beskid", "run", "--json", "--plain"]) {
         Ok(_) => panic!("run --json parsed"),
         Err(error) => error,
     };
@@ -645,7 +645,7 @@ fn v06_cli_owned_commands_accept_json() {
         vec!["beskid", "doctor", "--json"],
     ] {
         let json =
-            match super::app::ParseInvocation(args.clone()).unwrap_or_else(|error| panic!("{args:?}: {error}")).command
+            match super::app::parse_invocation(args.clone()).unwrap_or_else(|error| panic!("{args:?}: {error}")).command
             {
                 Commands::Check(args) => args.json,
                 Commands::Build(args) => args.json,
@@ -662,7 +662,7 @@ fn v06_cli_owned_commands_accept_json() {
 
 #[test]
 fn v06_capability_document_lists_version_commands_dev_routes_and_schemas() {
-    let document = super::app::CapabilityDocument();
+    let document = super::app::capability_document();
     assert_eq!(document["schemaVersion"], 1);
     assert_eq!(document["cliVersion"], super::app::VERSION);
     let names = |key: &str| {
@@ -729,7 +729,7 @@ fn native_mod_worker_strips_test_only_runtime_environment() {
         std::env::set_var("BESKID_GC_STRESS", "alloc:1,verify");
         std::env::set_var("BESKID_GC_QUARANTINE", "0");
     }
-    super::app::StripTestOnlyRuntimeEnvironment();
+    super::app::strip_test_only_runtime_environment();
     for name in super::app::TEST_ONLY_RUNTIME_ENVIRONMENT {
         assert_eq!(std::env::var_os(name), None, "{name} reaches the Mod runtime");
     }
@@ -741,7 +741,7 @@ fn v067_output_flags_select_verbosity() {
     let level = |args: &[&str]| {
         let mut argv = vec!["beskid"];
         argv.extend_from_slice(args);
-        super::app::ParseInvocation(argv).expect("parses").Verbosity()
+        super::app::parse_invocation(argv).expect("parses").verbosity()
     };
     assert_eq!(level(&["check"]), Verbosity::Normal);
     assert_eq!(level(&["check", "--plain"]), Verbosity::Normal, "--plain keeps the default verbosity");
@@ -756,7 +756,7 @@ fn v067_output_flags_select_verbosity() {
 #[test]
 fn v067_quiet_and_verbose_conflict() {
     for args in [["beskid", "-q", "-v", "check"], ["beskid", "-q", "-vv", "check"]] {
-        let error = match super::app::ParseInvocation(args) {
+        let error = match super::app::parse_invocation(args) {
             Ok(_) => panic!("{args:?} parsed"),
             Err(error) => error,
         };
@@ -766,30 +766,30 @@ fn v067_quiet_and_verbose_conflict() {
 
 #[test]
 fn v067_log_file_flag_wins_over_the_environment_variable() {
-    let cli = super::app::ParseInvocation(["beskid", "--log-file", "from-flag.log", "check"]).expect("parses");
+    let cli = super::app::parse_invocation(["beskid", "--log-file", "from-flag.log", "check"]).expect("parses");
     assert_eq!(cli.log_file.as_deref(), Some(std::path::Path::new("from-flag.log")));
-    assert_eq!(cli.LogFile().as_deref(), Some(std::path::Path::new("from-flag.log")));
-    let bare = super::app::ParseInvocation(["beskid", "check"]).expect("parses");
+    assert_eq!(cli.log_file().as_deref(), Some(std::path::Path::new("from-flag.log")));
+    let bare = super::app::parse_invocation(["beskid", "check"]).expect("parses");
     assert!(bare.log_file.is_none());
 }
 
 #[test]
 fn v067_capability_document_reports_the_runtime_abi() {
-    let document = super::app::CapabilityDocument();
+    let document = super::app::capability_document();
     assert_eq!(document["runtimeAbi"], u64::from(beskid_abi::BESKID_RUNTIME_ABI_VERSION));
     assert!(document["runtimeAbi"].is_u64(), "runtimeAbi is a number the extension can compare: {document}");
 }
 
 #[test]
 fn v067_preview_label_replaces_the_manifest_version() {
-    use super::app::{ResolveVersion, VERSION};
-    assert_eq!(ResolveVersion(Some("0.6.7-preview.3"), "0.6.7"), "0.6.7-preview.3");
-    assert_eq!(ResolveVersion(None, "0.6.7"), "0.6.7");
-    assert_eq!(ResolveVersion(Some(""), "0.6.7"), "0.6.7", "an empty label keeps the manifest version");
+    use super::app::{resolve_version, VERSION};
+    assert_eq!(resolve_version(Some("0.6.7-preview.3"), "0.6.7"), "0.6.7-preview.3");
+    assert_eq!(resolve_version(None, "0.6.7"), "0.6.7");
+    assert_eq!(resolve_version(Some(""), "0.6.7"), "0.6.7", "an empty label keeps the manifest version");
     let expected =
         option_env!("BESKID_PREVIEW_LABEL").filter(|label| !label.is_empty()).unwrap_or(env!("CARGO_PKG_VERSION"));
     assert_eq!(VERSION, expected);
-    assert_eq!(super::app::CapabilityDocument()["cliVersion"], VERSION);
+    assert_eq!(super::app::capability_document()["cliVersion"], VERSION);
     let rendered = Cli::command().render_version().to_string();
     assert!(rendered.contains(VERSION), "{rendered}");
 }

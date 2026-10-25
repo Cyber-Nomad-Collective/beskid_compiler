@@ -28,7 +28,7 @@ pub fn execute(args: FetchArgs) -> Result<()> {
             args.project.project.as_ref(),
             args.project.target.as_deref(),
             args.project.workspace_member.as_deref(),
-            args.lockfile.WorkspaceOptions(),
+            args.lockfile.workspace_options(),
             args.progress.plain,
         ),
         unresolved_dependency_policy: UnresolvedDependencyPolicy::Warn,

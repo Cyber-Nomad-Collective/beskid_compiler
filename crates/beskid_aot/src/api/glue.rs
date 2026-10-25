@@ -121,7 +121,7 @@ pub fn build_glue_artifact(req: &GlueArtifactBuildRequest<'_>) -> AotResult<Prep
     use crate::{
         api::{BuildOutputKind, BuildProfile, LinkMode},
         linker::{LinkRequest, RuntimeLinkInput, link_with_control},
-        object_module::{BeskidObjectModule, ObjectTargetIsa},
+        object_module::{BeskidObjectModule, object_target_isa},
     };
     use beskid_codegen::glue::GlueTransportKind;
     let packet = beskid_codegen::glue::emit(req.input, req.selected, req.native_library)
@@ -144,7 +144,7 @@ pub fn build_glue_artifact(req: &GlueArtifactBuildRequest<'_>) -> AotResult<Prep
         fs::write(path, &file.bytes).map_err(|error| invalid(error.to_string()))?;
     }
     let target = req.runtime.kit.target.triple.as_str();
-    let isa = ObjectTargetIsa(target)?;
+    let isa = object_target_isa(target)?;
     let mut bodies = beskid_codegen::glue::lower_native_bodies(
         req.input,
         isa.as_ref(),

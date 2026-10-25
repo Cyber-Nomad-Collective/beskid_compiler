@@ -13,7 +13,6 @@
 //!
 //! Nothing here derives a path from the source checkout (no compile-time manifest-directory paths).
 //! Fixtures are embedded in the test sources or built in temporary directories.
-#![allow(non_snake_case)]
 
 pub mod installed;
 pub mod project;

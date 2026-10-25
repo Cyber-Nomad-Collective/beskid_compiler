@@ -5,7 +5,6 @@
 //! whose status is `success` or `failure`. Progress and human diagnostics stay on stderr, so stdout
 //! carries only these records. [`OUTPUT_SCHEMAS`] is the single inventory that `beskid dev
 //! capabilities --json` publishes.
-#![allow(non_snake_case)]
 use anyhow::Result;
 use beskid_analysis::analysis::{SemanticDiagnostic, Severity};
 use serde_json::{Value, json};
@@ -34,7 +33,7 @@ pub const OUTPUT_SCHEMAS: [OutputSchema; 7] = [
 ];
 
 /// Capability-document entries for [`OUTPUT_SCHEMAS`].
-pub fn SchemaDescriptions() -> Vec<Value> {
+pub fn schema_descriptions() -> Vec<Value> {
     OUTPUT_SCHEMAS
         .iter()
         .map(|schema| {
@@ -49,12 +48,12 @@ pub fn SchemaDescriptions() -> Vec<Value> {
 }
 
 /// Names of the commands that support `--json`, for usage guidance.
-pub fn JsonCommandList() -> String {
+pub fn json_command_list() -> String {
     OUTPUT_SCHEMAS.iter().map(|schema| schema.command).collect::<Vec<_>>().join(", ")
 }
 
 /// Build one record. `fields` must be a JSON object and must not reuse a common key.
-pub fn Record(command: &str, event: &str, status: &str, fields: Value) -> Value {
+pub fn record(command: &str, event: &str, status: &str, fields: Value) -> Value {
     let mut record = serde_json::Map::new();
     record.insert("schemaVersion".into(), json!(SCHEMA_VERSION));
     record.insert("command".into(), json!(command));
@@ -74,7 +73,7 @@ pub fn Record(command: &str, event: &str, status: &str, fields: Value) -> Value 
 }
 
 /// Stable severity token of a diagnostic record status.
-pub fn SeverityName(severity: &Severity) -> &'static str {
+pub fn severity_name(severity: &Severity) -> &'static str {
     match severity {
         Severity::Error => "error",
         Severity::Warning => "warning",
@@ -84,7 +83,7 @@ pub fn SeverityName(severity: &Severity) -> &'static str {
 
 /// Diagnostic fields: code, message, help and a span with byte offsets plus 1-based line and
 /// column, where columns count Unicode scalar values.
-pub fn DiagnosticFields(diagnostic: &SemanticDiagnostic) -> Value {
+pub fn diagnostic_fields(diagnostic: &SemanticDiagnostic) -> Value {
     let source = diagnostic.src.inner();
     let offset = diagnostic.span.offset();
     let length = diagnostic.span.len();
@@ -94,14 +93,14 @@ pub fn DiagnosticFields(diagnostic: &SemanticDiagnostic) -> Value {
             "file": diagnostic.src.name(),
             "offset": offset,
             "length": end - offset,
-            "start": LineColumn(source, offset),
-            "end": LineColumn(source, end),
+            "start": line_column(source, offset),
+            "end": line_column(source, end),
         })
     });
     json!({
         "diagnostic": {
             "code": diagnostic.code,
-            "severity": SeverityName(&diagnostic.severity),
+            "severity": severity_name(&diagnostic.severity),
             "message": diagnostic.message,
             "label": diagnostic.label,
             "help": diagnostic.help,
@@ -110,7 +109,7 @@ pub fn DiagnosticFields(diagnostic: &SemanticDiagnostic) -> Value {
     })
 }
 
-fn LineColumn(source: &str, offset: usize) -> Value {
+fn line_column(source: &str, offset: usize) -> Value {
     let mut boundary = offset.min(source.len());
     while !source.is_char_boundary(boundary) {
         boundary -= 1;
@@ -134,30 +133,30 @@ impl Records {
     }
 
     /// Write one record line to stdout and flush it.
-    pub fn Emit(&self, event: &'static str, status: &str, fields: Value) -> Result<()> {
+    pub fn emit(&self, event: &'static str, status: &str, fields: Value) -> Result<()> {
         debug_assert!(
             OUTPUT_SCHEMAS.iter().any(|schema| schema.command == self.command && schema.events.contains(&event)),
             "{} does not declare event {event}",
             self.command
         );
-        let line = serde_json::to_string(&Record(self.command, event, status, fields))?;
+        let line = serde_json::to_string(&record(self.command, event, status, fields))?;
         let mut stdout = std::io::stdout().lock();
         writeln!(stdout, "{line}")?;
         stdout.flush()?;
         Ok(())
     }
 
-    pub fn Diagnostic(&self, diagnostic: &SemanticDiagnostic) -> Result<()> {
-        self.Emit("diagnostic", SeverityName(&diagnostic.severity), DiagnosticFields(diagnostic))
+    pub fn diagnostic(&self, diagnostic: &SemanticDiagnostic) -> Result<()> {
+        self.emit("diagnostic", severity_name(&diagnostic.severity), diagnostic_fields(diagnostic))
     }
 
     /// Run `body` and finish with exactly one `result` record. A failure record carries the error
     /// chain; the error is still returned so the process exits 1 with the human report on stderr.
-    pub fn Run(self, body: impl FnOnce(&Records) -> Result<Value>) -> Result<()> {
+    pub fn run(self, body: impl FnOnce(&Records) -> Result<Value>) -> Result<()> {
         match body(&self) {
-            Ok(fields) => self.Emit("result", "success", fields),
+            Ok(fields) => self.emit("result", "success", fields),
             Err(error) => {
-                self.Emit("result", "failure", json!({ "error": format!("{error:#}") }))?;
+                self.emit("result", "failure", json!({ "error": format!("{error:#}") }))?;
                 Err(error)
             }
         }
@@ -187,7 +186,7 @@ mod tests {
 
     #[test]
     fn v06_records_carry_common_schema_keys() {
-        let record = Record("update", "change", "added", json!({ "package": "Local" }));
+        let record = record("update", "change", "added", json!({ "package": "Local" }));
         let mut keys: Vec<&String> = record.as_object().unwrap().keys().collect();
         keys.sort();
         assert_eq!(keys, ["command", "event", "package", "schemaVersion", "status"]);
@@ -207,7 +206,7 @@ mod tests {
         }
         let commands: Vec<&str> = OUTPUT_SCHEMAS.iter().map(|schema| schema.command).collect();
         assert_eq!(commands, ["check", "build", "test", "add", "remove", "update", "doctor"]);
-        for description in SchemaDescriptions() {
+        for description in schema_descriptions() {
             assert_eq!(description["schemaVersion"], 1);
             assert_eq!(description["format"], "ndjson");
             assert!(description["events"].is_array());
@@ -218,7 +217,7 @@ mod tests {
     fn v06_diagnostic_span_reports_unicode_line_and_column() {
         let source = "i32 Main() {\n    caf\u{e9} x;\n}\n";
         let offset = source.find('x').unwrap();
-        let fields = DiagnosticFields(&diagnostic(source, offset, 1));
+        let fields = diagnostic_fields(&diagnostic(source, offset, 1));
         let record = &fields["diagnostic"];
         assert_eq!(record["code"], "E1001");
         assert_eq!(record["severity"], "error");
@@ -232,13 +231,13 @@ mod tests {
 
     #[test]
     fn v06_diagnostic_span_outside_source_is_null() {
-        let fields = DiagnosticFields(&diagnostic("abc", 10, 1));
+        let fields = diagnostic_fields(&diagnostic("abc", 10, 1));
         assert!(fields["diagnostic"]["span"].is_null());
     }
 
     #[test]
     fn v06_run_finishes_with_failure_result_and_returns_error() {
-        let error = Records::new("check").Run(|_| anyhow::bail!("resolution failed")).unwrap_err();
+        let error = Records::new("check").run(|_| anyhow::bail!("resolution failed")).unwrap_err();
         assert!(error.to_string().contains("resolution failed"));
     }
 }

@@ -1,4 +1,3 @@
-#![allow(non_snake_case)]
 use crate::commands::{
     analyze, build, clif, compiler_mod, corelib, doc, fetch, format, graph, import, lock, lsp, migrate_bsol, new,
     parse, repl, run, runtime_kit, test, tree, validate_bsol,
@@ -18,11 +17,10 @@ use super::docs::{anyhow_to_miette, ensure_corelib_ready, maybe_generate_docs_fo
 /// Version shown by `beskid --version` and `dev capabilities`: the preview label when the build set
 /// `BESKID_PREVIEW_LABEL` (for example `0.6.7-preview.3`), else the manifest version. Read at build
 /// time, never at run time.
-pub const VERSION: &str = ResolveVersion(option_env!("BESKID_PREVIEW_LABEL"), env!("CARGO_PKG_VERSION"));
+pub const VERSION: &str = resolve_version(option_env!("BESKID_PREVIEW_LABEL"), env!("CARGO_PKG_VERSION"));
 
 /// A non-empty `label` replaces the manifest version.
-#[allow(non_snake_case)]
-pub const fn ResolveVersion(label: Option<&'static str>, manifest: &'static str) -> &'static str {
+pub const fn resolve_version(label: Option<&'static str>, manifest: &'static str) -> &'static str {
     match label {
         Some(label) if !label.is_empty() => label,
         _ => manifest,
@@ -51,12 +49,12 @@ pub struct Cli {
 
 impl Cli {
     /// Output verbosity selected by `--quiet` / `-v` / `-vv`.
-    pub fn Verbosity(&self) -> beskid_telemetry::Verbosity {
+    pub fn verbosity(&self) -> beskid_telemetry::Verbosity {
         beskid_telemetry::Verbosity::from_flags(self.quiet, self.verbose)
     }
 
     /// Log destination: `--log-file`, else a non-empty `BESKID_LOG`; `None` logs to stderr.
-    pub fn LogFile(&self) -> Option<std::path::PathBuf> {
+    pub fn log_file(&self) -> Option<std::path::PathBuf> {
         self.log_file.clone().or_else(|| {
             let value = env::var_os("BESKID_LOG")?;
             (!value.is_empty()).then(|| std::path::PathBuf::from(value))
@@ -96,7 +94,7 @@ pub enum Commands {
 }
 
 /// Parse with actionable migration errors and no legacy dispatch.
-pub fn ParseInvocation<I, T>(args: I) -> Result<Cli, clap::Error>
+pub fn parse_invocation<I, T>(args: I) -> Result<Cli, clap::Error>
 where
     I: IntoIterator<Item = T>,
     T: Into<std::ffi::OsString> + Clone,
@@ -104,7 +102,7 @@ where
     let args = args.into_iter().map(Into::into).collect::<Vec<std::ffi::OsString>>();
     match Cli::try_parse_from(&args) {
         Ok(Cli { command: Commands::Run(arguments), .. }) if arguments.json => {
-            Err(clap::Error::raw(clap::error::ErrorKind::ArgumentConflict, format!("{}\n", run::JsonRejection())))
+            Err(clap::Error::raw(clap::error::ErrorKind::ArgumentConflict, format!("{}\n", run::json_rejection())))
         }
         Ok(cli) => Ok(cli),
         Err(error) if error.kind() == clap::error::ErrorKind::InvalidSubcommand => {
@@ -149,11 +147,11 @@ where
 pub fn run() -> miette::Result<()> {
     let args = argfile::expand_args_from(env::args_os(), argfile::parse_fromfile, argfile::PREFIX)
         .map_err(|error| miette::miette!("cannot expand argument file: {error}"))?;
-    let cli = ParseInvocation(args).unwrap_or_else(|error| error.exit());
+    let cli = parse_invocation(args).unwrap_or_else(|error| error.exit());
     let backend_logs = matches!(&cli.command, Commands::Dev(args) if args.log_cranelift);
-    beskid_telemetry::init(InitOptions::cli(backend_logs).with_verbosity(cli.Verbosity()).with_log_file(cli.LogFile()));
-    crate::cli::error_format::ApplyErrorFormat(&cli.command);
-    if NeedsCorelib(&cli.command) {
+    beskid_telemetry::init(InitOptions::cli(backend_logs).with_verbosity(cli.verbosity()).with_log_file(cli.log_file()));
+    crate::cli::error_format::apply_error_format(&cli.command);
+    if needs_corelib(&cli.command) {
         ensure_corelib_ready().map_err(anyhow_to_miette)?;
     }
     let result = match cli.command {
@@ -164,9 +162,9 @@ pub fn run() -> miette::Result<()> {
         Commands::Test(args) => test::execute(args),
         Commands::Fmt(args) => format::execute(args),
         Commands::Doc(args) => doc::execute(args),
-        Commands::Add(args) => crate::commands::dependency::Add(args),
-        Commands::Remove(args) => crate::commands::dependency::Remove(args),
-        Commands::Update(args) => crate::commands::dependency::Update(args),
+        Commands::Add(args) => crate::commands::dependency::add(args),
+        Commands::Remove(args) => crate::commands::dependency::remove(args),
+        Commands::Update(args) => crate::commands::dependency::update(args),
         Commands::Package(args) => crate::commands::package::execute(args),
         Commands::Toolchain(args) => crate::commands::toolchain::execute(args),
         Commands::Doctor(args) => crate::commands::doctor::execute(args),
@@ -175,7 +173,7 @@ pub fn run() -> miette::Result<()> {
     result.map_err(anyhow_to_miette)
 }
 
-pub(super) fn NeedsCorelib(command: &Commands) -> bool {
+pub(super) fn needs_corelib(command: &Commands) -> bool {
     match command {
         Commands::Check(_) | Commands::Build(_) | Commands::Run(_) | Commands::Test(_) | Commands::Doc(_) => true,
         Commands::Dev(args) => matches!(
@@ -216,12 +214,12 @@ fn execute_dev(args: DevArgs) -> anyhow::Result<()> {
             super::dev::DevBsolCommand::Migrate(args) => migrate_bsol::execute(args),
         },
         DevCommand::NativeModWorker(args) => {
-            StripTestOnlyRuntimeEnvironment();
+            strip_test_only_runtime_environment();
             beskid_analysis::mod_host::run_native_mod_worker(&args.endpoint)
         }
         DevCommand::ToolchainOwner(args) => crate::commands::toolchain_owner::execute(args),
         DevCommand::Capabilities(_) => {
-            println!("{}", CapabilityDocument());
+            println!("{}", capability_document());
             Ok(())
         }
     }
@@ -233,7 +231,7 @@ fn execute_dev(args: DevArgs) -> anyhow::Result<()> {
 pub(crate) const TEST_ONLY_RUNTIME_ENVIRONMENT: [&str; 2] = ["BESKID_GC_STRESS", "BESKID_GC_QUARANTINE"];
 
 /// Removes [`TEST_ONLY_RUNTIME_ENVIRONMENT`] from this process before the Mod runtime starts.
-pub(crate) fn StripTestOnlyRuntimeEnvironment() {
+pub(crate) fn strip_test_only_runtime_environment() {
     for name in TEST_ONLY_RUNTIME_ENVIRONMENT {
         // SAFETY: called once at the start of `dev native-mod-worker`, on the dispatch thread,
         // before the worker starts its runtime or any thread of its own; the only other thread
@@ -245,7 +243,7 @@ pub(crate) fn StripTestOnlyRuntimeEnvironment() {
 
 /// Schema-1 capability document: running CLI version, visible root commands, visible `dev` routes
 /// and the `--json` output schemas. Every list derives from the parsed command model.
-pub(crate) fn CapabilityDocument() -> serde_json::Value {
+pub(crate) fn capability_document() -> serde_json::Value {
     use clap::CommandFactory;
     let root = Cli::command();
     let visible = |command: &clap::Command| command.get_name() != "help" && !command.is_hide_set();
@@ -267,7 +265,7 @@ pub(crate) fn CapabilityDocument() -> serde_json::Value {
         "runtimeAbi": beskid_abi::BESKID_RUNTIME_ABI_VERSION,
         "commands": commands,
         "devCommands": dev_commands,
-        "outputSchemas": crate::machine_output::SchemaDescriptions(),
+        "outputSchemas": crate::machine_output::schema_descriptions(),
     })
 }
 

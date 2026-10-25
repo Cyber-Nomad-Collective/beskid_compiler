@@ -37,7 +37,7 @@ pub struct ToolchainOwnerArgs {
 pub fn execute(args: ToolchainOwnerArgs) -> Result<()> {
     let executable = std::fs::canonicalize(std::env::current_exe()?)?;
     let prefix = beskid_abi::runtime_kit::installed_toolchain_prefix_for_executable(Path::new(&executable))?;
-    beskid_up::WriteOwnerReceipt(&prefix, args.owner.into(), &args.version, &args.target)?;
+    beskid_up::write_owner_receipt(&prefix, args.owner.into(), &args.version, &args.target)?;
     println!(
         "Verified {} installation owner at {}",
         beskid_up::InstallationOwner::from(args.owner).name(),

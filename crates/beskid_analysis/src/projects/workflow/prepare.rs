@@ -137,7 +137,7 @@ pub fn prepare_project_workspace_plan_with_options(
             super::resolution::RefreshScope::None
         },
     };
-    let resolved = super::resolution::ResolveWorkspaceDependencies(plan, &policy, options.refresh_lock)?;
+    let resolved = super::resolution::resolve_workspace_dependencies(plan, &policy, options.refresh_lock)?;
     let shared_corelib = resolved.shared_corelib;
     let mut lock_entries = resolved.entries;
     let resolved_registry = resolved.registry;

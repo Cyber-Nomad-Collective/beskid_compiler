@@ -39,7 +39,7 @@ pub fn execute(args: FormatArgs) -> Result<()> {
         collect_bd_files(&args.input, input_is_dir).with_context(|| format!("scan {}", args.input.display()))?;
 
     if paths.is_empty() {
-        Progress(format!("beskid fmt: 0 .bd file(s) in {}", fmt_duration(started.elapsed())));
+        progress(format!("beskid fmt: 0 .bd file(s) in {}", fmt_duration(started.elapsed())));
         return Ok(());
     }
 
@@ -54,7 +54,7 @@ pub fn execute(args: FormatArgs) -> Result<()> {
         let source = fs::read_to_string(&paths[0]).with_context(|| format!("read {}", paths[0].display()))?;
         let formatted = format_file(&paths[0], &source)?;
         fs::write(out, formatted).with_context(|| format!("write {}", out.display()))?;
-        Progress(format!("beskid fmt: 1 file in {}", fmt_duration(started.elapsed())));
+        progress(format!("beskid fmt: 1 file in {}", fmt_duration(started.elapsed())));
         return Ok(());
     }
 
@@ -69,7 +69,7 @@ pub fn execute(args: FormatArgs) -> Result<()> {
     let elapsed = started.elapsed();
     let label = if args.check { "checked" } else { "formatted" };
     if failures.is_empty() {
-        Progress(format!("beskid fmt: {label} {} .bd file(s) in {}", paths.len(), fmt_duration(elapsed)));
+        progress(format!("beskid fmt: {label} {} .bd file(s) in {}", paths.len(), fmt_duration(elapsed)));
         return Ok(());
     }
     let count = failures.len();
@@ -78,7 +78,7 @@ pub fn execute(args: FormatArgs) -> Result<()> {
     for other in failures {
         beskid_tools::print_report(&beskid_tools::diagnostics::report_from_anyhow(&other));
     }
-    Progress(format!("beskid fmt: {count} of {} .bd file(s) failed in {}", paths.len(), fmt_duration(elapsed)));
+    progress(format!("beskid fmt: {count} of {} .bd file(s) failed in {}", paths.len(), fmt_duration(elapsed)));
     Err(first)
 }
 
@@ -295,8 +295,7 @@ mod v06_tests {
 }
 
 /// Summary line on stderr, suppressed by `--quiet`.
-#[allow(non_snake_case)]
-fn Progress(line: String) {
+fn progress(line: String) {
     if beskid_telemetry::verbosity() != beskid_telemetry::Verbosity::Quiet {
         eprintln!("{line}");
     }

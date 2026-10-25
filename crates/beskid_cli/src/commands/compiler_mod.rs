@@ -85,10 +85,10 @@ fn rebuild(args: ModRebuildArgs) -> Result<()> {
     // Dependency Mods are inputs of this Mod: make them executable before its workspace is
     // prepared, so building one never changes a source tree the prepared proof already covers.
     let dependency_mods =
-        native_mod_executor_for_plan(&resolved.plan, args.lockfile.WorkspaceOptions(), &runtime, pipeline)?;
+        native_mod_executor_for_plan(&resolved.plan, args.lockfile.workspace_options(), &runtime, pipeline)?;
     observe_phase(pipeline, WORKSPACE_GRAPH_CHANGED, || {});
     let prepared = observe_phase_result(pipeline, WORKSPACE_MATERIALIZE, || {
-        prepare_project_workspace_with_options(&resolved.plan, args.lockfile.WorkspaceOptions(), pipeline)
+        prepare_project_workspace_with_options(&resolved.plan, args.lockfile.workspace_options(), pipeline)
             .map_err(anyhow::Error::from)
     })?;
 

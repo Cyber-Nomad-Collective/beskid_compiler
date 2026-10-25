@@ -1,11 +1,10 @@
 //! Direct dependency intent commands over the shared analysis transaction.
-#![allow(non_snake_case)]
 use crate::machine_output::Records;
 use crate::project_args::LockfilePolicyArgs;
 use anyhow::Result;
 use beskid_analysis::projects::dependency_edit::{
-    CommitDependencyChange, DependencyIntent, DependencyIntentSource, DependencyMutation, PlanDependencyChange,
-    SelectDependencyProject,
+    commit_dependency_change, DependencyIntent, DependencyIntentSource, DependencyMutation, plan_dependency_change,
+    select_dependency_project,
 };
 use beskid_analysis::projects::workflow::{RefreshScope, ResolutionPolicy};
 use clap::Args;
@@ -25,7 +24,7 @@ pub struct DependencyPolicyArgs {
 #[derive(Args, Debug)]
 pub struct AddArgs {
     /// Package name, optionally @exact-version.
-    #[arg(value_parser = ParsePackageSelector)]
+    #[arg(value_parser = parse_package_selector)]
     pub package: String,
     /// Local project dependency path, relative to the selected project directory.
     #[arg(long)]
@@ -48,7 +47,7 @@ pub struct UpdateArgs {
     #[arg(long, conflicts_with = "version")]
     pub all: bool,
     /// Move the selected dependency to this exact version.
-    #[arg(long, requires = "package", value_parser = ParseExactVersion)]
+    #[arg(long, requires = "package", value_parser = parse_exact_version)]
     pub version: Option<String>,
     #[arg(long)]
     pub dry_run: bool,
@@ -57,25 +56,25 @@ pub struct UpdateArgs {
 }
 
 /// `package[@exact-version]`; a range or other selector is a usage error (exit 2) before any work.
-fn ParsePackageSelector(value: &str) -> std::result::Result<String, String> {
+fn parse_package_selector(value: &str) -> std::result::Result<String, String> {
     let (name, version) = value.split_once('@').map_or((value, None), |(name, version)| (name, Some(version)));
     if name.trim().is_empty() || version == Some("") {
         return Err("expected package[@exact-version], for example `Numbers` or `Numbers@1.2.0`".into());
     }
     if let Some(version) = version {
-        ParseExactVersion(version)?;
+        parse_exact_version(version)?;
     }
     Ok(value.to_owned())
 }
 
 /// An exact SemVer version; ranges, wildcards and Git sources are unsupported in 0.6.
-fn ParseExactVersion(value: &str) -> std::result::Result<String, String> {
+fn parse_exact_version(value: &str) -> std::result::Result<String, String> {
     semver::Version::parse(value).map(|_| value.to_owned()).map_err(|_| {
         format!("`{value}` is not an exact SemVer version; version ranges and Git sources are unsupported, so name one exact version such as `1.2.0`")
     })
 }
 
-pub fn Add(args: AddArgs) -> Result<()> {
+pub fn add(args: AddArgs) -> Result<()> {
     let (name, version) =
         args.package.split_once('@').map_or((args.package.as_str(), None), |(name, version)| (name, Some(version)));
     let source = if let Some(path) = args.path {
@@ -88,7 +87,7 @@ pub fn Add(args: AddArgs) -> Result<()> {
         // selection to the sole resolver.
         DependencyIntentSource::Registry { registry: None, version: version.unwrap_or("").into() }
     };
-    Execute(
+    execute(
         "add",
         args.policy,
         DependencyMutation::Add(DependencyIntent { name: name.into(), source }),
@@ -96,16 +95,16 @@ pub fn Add(args: AddArgs) -> Result<()> {
         false,
     )
 }
-pub fn Remove(args: RemoveArgs) -> Result<()> {
-    Execute("remove", args.policy, DependencyMutation::Remove(args.package), RefreshScope::None, false)
+pub fn remove(args: RemoveArgs) -> Result<()> {
+    execute("remove", args.policy, DependencyMutation::Remove(args.package), RefreshScope::None, false)
 }
-pub fn Update(args: UpdateArgs) -> Result<()> {
+pub fn update(args: UpdateArgs) -> Result<()> {
     let refresh = if args.all {
         RefreshScope::All
     } else {
         RefreshScope::Selected(BTreeSet::from([args.package.clone().expect("Clap requires package or --all")]))
     };
-    Execute(
+    execute(
         "update",
         args.policy,
         DependencyMutation::Update { package: args.package, version: args.version, all: args.all },
@@ -113,7 +112,7 @@ pub fn Update(args: UpdateArgs) -> Result<()> {
         args.dry_run,
     )
 }
-fn Execute(
+fn execute(
     command: &'static str,
     args: DependencyPolicyArgs,
     mutation: DependencyMutation,
@@ -121,42 +120,42 @@ fn Execute(
     dry_run: bool,
 ) -> Result<()> {
     if args.json {
-        return Records::new(command).Run(|records| Apply(args, mutation, refresh, dry_run, Some(records)));
+        return Records::new(command).run(|records| apply(args, mutation, refresh, dry_run, Some(records)));
     }
-    Apply(args, mutation, refresh, dry_run, None).map(|_| ())
+    apply(args, mutation, refresh, dry_run, None).map(|_| ())
 }
 
-fn Apply(
+fn apply(
     args: DependencyPolicyArgs,
     mutation: DependencyMutation,
     refresh: RefreshScope,
     dry_run: bool,
     records: Option<&Records>,
 ) -> Result<serde_json::Value> {
-    let manifest = SelectDependencyProject(&std::env::current_dir()?, args.project.as_deref())?;
+    let manifest = select_dependency_project(&std::env::current_dir()?, args.project.as_deref())?;
     if !dry_run {
-        beskid_analysis::projects::dependency_transaction::RecoverDependencyPair(&manifest)?;
+        beskid_analysis::projects::dependency_transaction::recover_dependency_pair(&manifest)?;
     }
     let policy = ResolutionPolicy {
         locked: args.lockfile.locked || args.lockfile.frozen,
         offline: args.lockfile.offline || args.lockfile.frozen,
         refresh,
     };
-    let plan = PlanDependencyChange(&manifest, &mutation, &policy)?;
+    let plan = plan_dependency_change(&manifest, &mutation, &policy)?;
     let report = if dry_run {
         if records.is_none() {
-            println!("{}", plan.Report());
+            println!("{}", plan.report());
         }
-        serde_json::to_value(plan.Report())?
+        serde_json::to_value(plan.report())?
     } else {
-        let committed = CommitDependencyChange(plan)?;
+        let committed = commit_dependency_change(plan)?;
         if records.is_none() {
             println!("{committed}");
         }
         serde_json::to_value(&committed)?
     };
     match records {
-        Some(records) => ChangeRecords(records, report, dry_run),
+        Some(records) => change_records(records, report, dry_run),
         None => Ok(serde_json::Value::Null),
     }
 }
@@ -164,7 +163,7 @@ fn Apply(
 /// One `change` record per dependency effect, then the `result` fields. Unversioned path and Git
 /// sources keep null version and digest fields and report their actual coordinates; the result
 /// carries the `sha256:` digest of the lock before and after the change (planned, for --dry-run).
-fn ChangeRecords(records: &Records, report: serde_json::Value, dry_run: bool) -> Result<serde_json::Value> {
+fn change_records(records: &Records, report: serde_json::Value, dry_run: bool) -> Result<serde_json::Value> {
     let serde_json::Value::Object(mut report) = report else {
         anyhow::bail!("dependency change report is not a JSON object");
     };
@@ -180,7 +179,7 @@ fn ChangeRecords(records: &Records, report: serde_json::Value, dry_run: bool) ->
             Some(serde_json::Value::String(action)) => action,
             _ => anyhow::bail!("dependency effect has no action"),
         };
-        records.Emit("change", &action, serde_json::Value::Object(effect))?;
+        records.emit("change", &action, serde_json::Value::Object(effect))?;
     }
     Ok(serde_json::json!({
         "manifest": report.remove("path"),
@@ -208,21 +207,21 @@ mod tests {
                 "fromDigest": "sha256:01", "toDigest": "sha256:02",
             }],
         });
-        let result = ChangeRecords(&Records::new("update"), report, true).unwrap();
+        let result = change_records(&Records::new("update"), report, true).unwrap();
         assert_eq!(result["previousLockDigest"], "sha256:aa");
         assert_eq!(result["lockDigest"], "sha256:bb");
         assert_eq!(result["operation"], "update");
         assert_eq!(result["dryRun"], true);
         assert!(result.get("effects").is_none(), "effects are emitted as change records, not result fields");
         assert!(
-            ChangeRecords(&Records::new("update"), serde_json::json!({"effects": [{"package": "X"}]}), false).is_err()
+            change_records(&Records::new("update"), serde_json::json!({"effects": [{"package": "X"}]}), false).is_err()
         );
     }
 }
 
 #[cfg(test)]
 mod selector_tests {
-    use crate::cli::app::ParseInvocation;
+    use crate::cli::app::parse_invocation;
 
     #[test]
     fn dep06_01_range_and_git_selectors_are_usage_errors() {
@@ -234,11 +233,11 @@ mod selector_tests {
             vec!["beskid", "add", "Numbers", "--git", "https://example.invalid/numbers.git"],
             vec!["beskid", "update", "Numbers", "--version", "^2.0"],
         ] {
-            let error = ParseInvocation(args.clone()).err().unwrap_or_else(|| panic!("{args:?} parsed"));
+            let error = parse_invocation(args.clone()).err().unwrap_or_else(|| panic!("{args:?} parsed"));
             assert_eq!(error.exit_code(), 2, "{args:?}: {error}");
         }
-        assert!(ParseInvocation(["beskid", "add", "Numbers@1.2.0"]).is_ok());
-        assert!(ParseInvocation(["beskid", "add", "Numbers"]).is_ok());
+        assert!(parse_invocation(["beskid", "add", "Numbers@1.2.0"]).is_ok());
+        assert!(parse_invocation(["beskid", "add", "Numbers"]).is_ok());
     }
 
     #[test]
@@ -248,11 +247,11 @@ mod selector_tests {
             vec!["beskid", "update", "Numbers", "--all"],
             vec!["beskid", "update", "--all", "--version", "1.0.0"],
         ] {
-            let error = ParseInvocation(args.clone()).err().unwrap_or_else(|| panic!("{args:?} parsed"));
+            let error = parse_invocation(args.clone()).err().unwrap_or_else(|| panic!("{args:?} parsed"));
             assert_eq!(error.exit_code(), 2, "{args:?}: {error}");
             assert!(error.to_string().contains("--all"), "{args:?} names --all: {error}");
         }
-        assert!(ParseInvocation(["beskid", "update", "--all"]).is_ok());
-        assert!(ParseInvocation(["beskid", "update", "Numbers", "--version", "2.0.0"]).is_ok());
+        assert!(parse_invocation(["beskid", "update", "--all"]).is_ok());
+        assert!(parse_invocation(["beskid", "update", "Numbers", "--version", "2.0.0"]).is_ok());
     }
 }

@@ -1,9 +1,8 @@
 //! Plan exact dependency intent and commit the manifest/lock pair through the guarded journal.
-#![allow(non_snake_case)]
-use super::resolution::{ResolveWorkspaceDependencies, ResolvedWorkspaceDependencies};
+use super::resolution::{resolve_workspace_dependencies, ResolvedWorkspaceDependencies};
 use super::{ProjectLockfile, RefreshScope, ResolutionPolicy};
-use crate::projects::dependency_edit::{DependencyIntentSource, DependencyMutation, EditManifest};
-use crate::projects::dependency_transaction::CommitDependencyPair;
+use crate::projects::dependency_edit::{DependencyIntentSource, DependencyMutation, edit_manifest};
+use crate::projects::dependency_transaction::commit_dependency_pair;
 use crate::projects::graph::builder::{build_project_graph_from_manifest, discover_workspace_resolution_rules};
 use crate::projects::{ProjectError, UnresolvedDependencyPolicy, parse_manifest, workspace_plan_from_graph};
 use serde::Serialize;
@@ -42,13 +41,13 @@ struct DependencyEffect {
     transitive: bool,
 }
 
-fn LockDigest(bytes: Option<&[u8]>) -> Option<String> {
+fn lock_digest(bytes: Option<&[u8]>) -> Option<String> {
     use sha2::{Digest, Sha256};
     bytes.map(|bytes| format!("sha256:{:x}", Sha256::digest(bytes)))
 }
 
 /// Locked artifact digest of every dependency in a v2 lock; a v1 or unreadable lock has none.
-fn LockedDigests(entries: &[super::ProjectLockDependencyEntry]) -> std::collections::BTreeMap<String, String> {
+fn locked_digests(entries: &[super::ProjectLockDependencyEntry]) -> std::collections::BTreeMap<String, String> {
     entries
         .iter()
         .filter_map(|entry| entry.artifact_digest.clone().map(|digest| (entry.name.clone(), digest)))
@@ -77,7 +76,7 @@ impl fmt::Display for DependencyChangeReport {
     }
 }
 
-fn DependencyCoordinate(dependency: &crate::projects::Dependency) -> String {
+fn dependency_coordinate(dependency: &crate::projects::Dependency) -> String {
     use crate::projects::DependencySource;
     match dependency.source {
         DependencySource::Path => format!("path {}", dependency.path.as_deref().unwrap_or("<missing path>")),
@@ -95,7 +94,7 @@ fn DependencyCoordinate(dependency: &crate::projects::Dependency) -> String {
 }
 
 /// Lock-level changes of registry packages that no manifest declares directly, ordered by name.
-fn TransitiveEffects(
+fn transitive_effects(
     before: &[super::ProjectLockDependencyEntry],
     after: &[super::ProjectLockDependencyEntry],
     declared: &std::collections::BTreeSet<&str>,
@@ -159,12 +158,12 @@ pub struct DependencyChangePlan {
     report: DependencyChangeReport,
 }
 impl DependencyChangePlan {
-    pub fn Report(&self) -> &DependencyChangeReport {
+    pub fn report(&self) -> &DependencyChangeReport {
         &self.report
     }
 }
 
-fn ReadOptional(path: &Path) -> Result<Option<Vec<u8>>, ProjectError> {
+fn read_optional(path: &Path) -> Result<Option<Vec<u8>>, ProjectError> {
     match fs::symlink_metadata(path) {
         Ok(metadata) if metadata.is_file() && !metadata.file_type().is_symlink() => {
             fs::read(path).map(Some).map_err(|error| ProjectError::Validation(error.to_string()))
@@ -175,13 +174,13 @@ fn ReadOptional(path: &Path) -> Result<Option<Vec<u8>>, ProjectError> {
     }
 }
 
-pub fn PlanDependencyChange(
+pub fn plan_dependency_change(
     manifest: &Path,
     mutation: &DependencyMutation,
     policy: &ResolutionPolicy,
 ) -> Result<DependencyChangePlan, ProjectError> {
     let original =
-        ReadOptional(manifest)?.ok_or_else(|| ProjectError::Validation("project manifest is absent".into()))?;
+        read_optional(manifest)?.ok_or_else(|| ProjectError::Validation("project manifest is absent".into()))?;
     let manifest = manifest.canonicalize().map_err(|error| ProjectError::Validation(error.to_string()))?;
     let root = manifest.parent().unwrap();
     if root.join(".beskid/dependency-transaction/journal.json").exists() {
@@ -191,7 +190,7 @@ pub fn PlanDependencyChange(
     }
     let text = std::str::from_utf8(&original).map_err(|_| ProjectError::Validation("manifest must be UTF-8".into()))?;
     let before = parse_manifest(text)?;
-    let original_lock = ReadOptional(&root.join("Project.lock"))?;
+    let original_lock = read_optional(&root.join("Project.lock"))?;
     let retired = original_lock
         .as_ref()
         .and_then(|bytes| std::str::from_utf8(bytes).ok())
@@ -226,7 +225,7 @@ pub fn PlanDependencyChange(
         semver::Version::parse(version)
             .map_err(|_| ProjectError::Validation("registry intent requires exact SemVer".into()))?;
     }
-    let replacement = EditManifest(text, &mutation)?.into_bytes();
+    let replacement = edit_manifest(text, &mutation)?.into_bytes();
     let changed_intent = replacement != original;
     if policy.locked && (changed_intent || policy.refresh != RefreshScope::None) {
         return Err(ProjectError::Validation("locked policy forbids dependency mutation".into()));
@@ -236,7 +235,7 @@ pub fn PlanDependencyChange(
         && policy.refresh == RefreshScope::None
         && matches!(mutation, DependencyMutation::Remove(_))
     {
-        let digest = LockDigest(original_lock.as_deref());
+        let digest = lock_digest(original_lock.as_deref());
         let report = DependencyChangeReport {
             path: manifest.clone(),
             operation: "remove",
@@ -258,7 +257,7 @@ pub fn PlanDependencyChange(
     let after = parse_manifest(std::str::from_utf8(&replacement).unwrap())?;
     let graph = build_project_graph_from_manifest(&manifest, after.clone())?;
     let workspace = workspace_plan_from_graph(&graph, UnresolvedDependencyPolicy::Error)?;
-    let resolved = ResolveWorkspaceDependencies(&workspace, policy, changed_intent)?;
+    let resolved = resolve_workspace_dependencies(&workspace, policy, changed_intent)?;
     let mut entries = resolved.entries.clone();
     for registry in &resolved.registry {
         entries.push(registry.lock_entry()?);
@@ -269,13 +268,13 @@ pub fn PlanDependencyChange(
         .as_deref()
         .and_then(|bytes| std::str::from_utf8(bytes).ok())
         .and_then(|text| ProjectLockfile::parse(text).ok())
-        .map(|lock| LockedDigests(&lock.dependencies))
+        .map(|lock| locked_digests(&lock.dependencies))
         .unwrap_or_default();
-    let after_digests = LockedDigests(&entries);
+    let after_digests = locked_digests(&entries);
     let mut effects = Vec::new();
     for dependency in &after.dependencies {
         let old = before.dependencies.iter().find(|old| old.name == dependency.name);
-        if old != Some(dependency) || policy.refresh.Includes(&dependency.name) {
+        if old != Some(dependency) || policy.refresh.includes(&dependency.name) {
             effects.push(DependencyEffect {
                 package: dependency.name.clone(),
                 source: format!("{:?}", dependency.source),
@@ -288,8 +287,8 @@ pub fn PlanDependencyChange(
                 } else {
                     "refreshed"
                 },
-                from_coordinate: old.map(DependencyCoordinate),
-                to_coordinate: Some(DependencyCoordinate(dependency)),
+                from_coordinate: old.map(dependency_coordinate),
+                to_coordinate: Some(dependency_coordinate(dependency)),
                 from_digest: old.and_then(|_| before_digests.get(&dependency.name).cloned()),
                 to_digest: after_digests.get(&dependency.name).cloned(),
                 transitive: false,
@@ -304,7 +303,7 @@ pub fn PlanDependencyChange(
                 from_version: dependency.version.clone(),
                 to_version: None,
                 action: "removed",
-                from_coordinate: Some(DependencyCoordinate(dependency)),
+                from_coordinate: Some(dependency_coordinate(dependency)),
                 to_coordinate: None,
                 from_digest: before_digests.get(&dependency.name).cloned(),
                 to_digest: None,
@@ -324,7 +323,7 @@ pub fn PlanDependencyChange(
         .and_then(|text| ProjectLockfile::parse(text).ok())
         .map(|lock| lock.dependencies)
         .unwrap_or_default();
-    effects.extend(TransitiveEffects(&before_registry, &entries, &declared));
+    effects.extend(transitive_effects(&before_registry, &entries, &declared));
     let report = DependencyChangeReport {
         path: manifest.clone(),
         operation: match mutation {
@@ -334,8 +333,8 @@ pub fn PlanDependencyChange(
         },
         changed: changed_intent || replacement_lock != original_lock,
         effects,
-        previous_lock_digest: LockDigest(original_lock.as_deref()),
-        lock_digest: LockDigest(replacement_lock.as_deref()),
+        previous_lock_digest: lock_digest(original_lock.as_deref()),
+        lock_digest: lock_digest(replacement_lock.as_deref()),
     };
     Ok(DependencyChangePlan {
         manifest,
@@ -348,9 +347,9 @@ pub fn PlanDependencyChange(
     })
 }
 
-pub fn CommitDependencyChange(plan: DependencyChangePlan) -> Result<DependencyChangeReport, ProjectError> {
-    if ReadOptional(&plan.manifest)?.as_deref() != Some(plan.original.as_slice())
-        || ReadOptional(&plan.manifest.with_file_name("Project.lock"))? != plan.original_lock
+pub fn commit_dependency_change(plan: DependencyChangePlan) -> Result<DependencyChangeReport, ProjectError> {
+    if read_optional(&plan.manifest)?.as_deref() != Some(plan.original.as_slice())
+        || read_optional(&plan.manifest.with_file_name("Project.lock"))? != plan.original_lock
     {
         return Err(ProjectError::Validation("concurrent dependency edit invalidated the plan".into()));
     }
@@ -365,7 +364,7 @@ pub fn CommitDependencyChange(plan: DependencyChangePlan) -> Result<DependencyCh
             super::registry::materialize_registry_dependency(registry)?;
         }
     }
-    CommitDependencyPair(
+    commit_dependency_pair(
         &plan.manifest,
         &plan.original,
         plan.original_lock.as_deref(),
@@ -397,8 +396,8 @@ mod report_tests {
                 to_digest: None,
                 transitive: false,
             }],
-            previous_lock_digest: LockDigest(Some(b"old")),
-            lock_digest: LockDigest(Some(b"new")),
+            previous_lock_digest: lock_digest(Some(b"old")),
+            lock_digest: lock_digest(Some(b"new")),
         };
         assert!(report.to_string().contains("changed Local: path ../Old -> path ../New"));
         assert!(!report.to_string().contains("absent"));

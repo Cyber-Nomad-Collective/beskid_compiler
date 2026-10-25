@@ -6,8 +6,8 @@ mod manifest;
 mod owner;
 
 pub use commands::{UpArgs, UpCommand, execute};
-pub use install::{DirectInstall, UpdateConfiguredToolchain};
+pub use install::{DirectInstall, update_configured_toolchain};
 pub use manifest::{Bundle, ReleaseManifest, UpError};
 pub use owner::{
-    CurrentInstallationStatus, InspectInstallation, InstallationOwner, InstallationStatus, WriteOwnerReceipt,
+    current_installation_status, inspect_installation, InstallationOwner, InstallationStatus, write_owner_receipt,
 };
