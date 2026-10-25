@@ -260,8 +260,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `[CopyOnAssign]` type; its `Copy` shares the backing array and marks it
   shared, and the first write through any name copies it. This fixes two live
   lists sharing one backing array (0.6.0) at no cost for read-only use.
+- A list that is the sole owner of its array writes in place. An argument of a
+  plain parameter of a direct call is a lent view (the optional hook
+  `This Borrow()`): it is not a holder of the array, the callee copies before it
+  writes, and returning or keeping the parameter copies it. `r?` on a call
+  result and a `let` local returned once as the field or payload of the result
+  (`return Result::Ok(items)`) are owned temporaries and are not copied. The
+  builder pattern (`List<T> xs = Build()?; Helper(xs); xs.Push(x)` in a loop)
+  no longer copies the whole list on every iteration.
+- A list sent through a port leaves with an array of its own when another list
+  shares it (the optional hook `This Detached()`, called on the `move` operand
+  of a port send), so no copy-on-write sharing state is reachable from two
+  isolates. A copied list (`kept = items`) is not another name for the value at
+  a crossing.
+- A plain parameter (neither `mut` nor `move`) of Moved class that the function
+  keeps is E1241 with the help "copy it, or declare the parameter `move`" and a
+  fix that inserts `move`: stored in a field or an element, put into a
+  constructed value, returned, or handed to a parameter that keeps it (`move`,
+  a `spawn` target, the value of `exchange`). `Keep(h, b); p.Send(move b)` no
+  longer shares one array between two isolates. At the call site an argument
+  of a `move` or `mut` parameter gives the caller's binding another name, so it
+  can no longer cross without a copy. A `[ScopeBorrowed]` view passed to a
+  parameter typed by a type parameter, or to a `move` parameter, is E1241.
 
 ### Fixed
+
+- `move x.items` of a `List` field at a port send is E1243 ("use `exchange(<place>, <value>)`"); it passed `check` and failed at build with an internal error because the canonical empty list did not match the copy-on-write `List` layout. The canonical empty value of a destructive read is `Option::None` or an empty array only, and a destructive read of a field of a root that is not Moved is judged too.
+- `u8[] bytes = Read(f)?; p.Send(move bytes)` is accepted: the `?` payload of a call result is owned (it was a false E1241). The body of `__isolate_spawn_local` is a bounded task body like `__isolate_spawn`.
+- A `[CopyOnAssign]` type's optional `Borrow` and `Detached` hooks have the shape of `Copy` (E1512 otherwise).
 
 - `beskid check` on Corelib codec and on the aggregate `corelib.bproj` finishes (codec in seconds; it never finished before). The expected type of an array literal element was quartic in the array length (codec has 4,096-element tables), and the transfer-class walk re-classified a type for every field path that reached it (exponential in the depth of a diamond-shaped type graph). Both are now linear. The structural rules of a project's other own units no longer resolve the declarations of the whole assembly once per unit, and those units are checked in parallel (`corelib.bproj`: 246 s to 121-148 s with a debug build).
 - A contract method called on an injected contract-typed field (`this.greeter.Greet()`, `greeter.Greet()`, `(this).greeter.Greet()`, `host.greeter.Greet()`) calls the implementation the composition plan binds that field to, and on an immutable contract-typed local (`Greeter g = Hello {}; g.Greet()`) the implementation of its initializer's type; both used to pass `check` and fail at build with E2102. A call on a `mut` contract-typed local is rejected, because it has no single implementation.
