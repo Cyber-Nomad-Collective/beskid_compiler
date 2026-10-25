@@ -278,6 +278,11 @@ impl Resolver {
                             }
                         }
                         ContractNode::Embedding(embedding) => {
+                            // The embedded contract's name is a use of the import that brings it
+                            // into scope (`use Core.IO.Reader;` then `contract Stream { Reader; }`).
+                            let name = &embedding.node.name.node.name;
+                            self.mark_imported_scope_name_used(name);
+                            self.mark_module_import_alias_used(name);
                             for type_arg in &embedding.node.type_args {
                                 self.resolve_type(type_arg);
                             }
