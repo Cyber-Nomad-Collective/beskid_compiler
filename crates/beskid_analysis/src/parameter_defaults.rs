@@ -111,7 +111,7 @@ pub fn converted_to(value: DefaultConstant, ty: &Type) -> DefaultConstant {
 /// `constant` looks up a top-level `const` of the declaring file by name.
 pub fn default_constant(
     default: &Spanned<Expression>,
-    constant: &dyn Fn(&str) -> Option<String>,
+    constant: &dyn Fn(&str) -> Option<DefaultConstant>,
 ) -> Option<DefaultConstant> {
     match &default.node {
         Expression::Grouped(grouped) => default_constant(&grouped.node.expr, constant),
@@ -124,9 +124,7 @@ pub fn default_constant(
             }
         }
         Expression::Path(path) => match path.node.path.node.segments.as_slice() {
-            [segment] if segment.node.type_args.is_empty() => {
-                constant(&segment.node.name.node.name).map(DefaultConstant::Integer)
-            }
+            [segment] if segment.node.type_args.is_empty() => constant(&segment.node.name.node.name),
             _ => None,
         },
         _ => None,
@@ -250,13 +248,13 @@ pub fn caller_kind(parameter: &Parameter) -> Option<CallerKind> {
     })
 }
 
-/// The integer value of each top-level `const` of `program`, by name.
-pub fn top_level_constant(program: &Program, name: &str) -> Option<String> {
+/// The value of the top-level `const` of `program` named `name`: any literal a default may be
+/// (boolean, integer, float, character, or a string without interpolation).
+pub fn top_level_constant(program: &Program, name: &str) -> Option<DefaultConstant> {
     program.items.iter().find_map(|item| match &item.node {
-        Node::ConstantDefinition(constant) if constant.node.name.node.name == name => match &constant.node.value.node {
-            Literal::Integer(text) => Some(text.clone()),
-            _ => None,
-        },
+        Node::ConstantDefinition(constant) if constant.node.name.node.name == name => {
+            literal_constant(&constant.node.value.node)
+        }
         _ => None,
     })
 }
@@ -423,6 +421,16 @@ mod tests {
         assert_eq!(constant_of("unit F(bool b = true) { return; }"), Some(DefaultConstant::Bool(true)));
         assert_eq!(constant_of("unit F(i64 b = -1) { return; }"), Some(DefaultConstant::Integer("-1".into())));
         assert_eq!(constant_of("unit F(f64 b = -0.5) { return; }"), Some(DefaultConstant::Float("-0.5".into())));
+        // A `const` of any literal type may be a default, not only an integer one.
+        assert_eq!(
+            constant_of("const Name = \"ada\";\nunit F(string b = Name) { return; }"),
+            Some(DefaultConstant::String("\"ada\"".into()))
+        );
+        assert_eq!(constant_of("const On = true;\nunit F(bool b = On) { return; }"), Some(DefaultConstant::Bool(true)));
+        assert_eq!(
+            constant_of("const Ratio = 0.5;\nunit F(f64 b = -Ratio) { return; }"),
+            Some(DefaultConstant::Float("-0.5".into()))
+        );
         assert_eq!(constant_of("unit F(char c = 'x') { return; }"), Some(DefaultConstant::Char("'x'".into())));
         assert_eq!(
             constant_of("const Limit = 10;\nunit F(i64 b = Limit) { return; }"),
