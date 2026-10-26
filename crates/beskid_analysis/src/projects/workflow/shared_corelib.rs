@@ -4,7 +4,8 @@
 //! bundle that toolchain resolves (`BESKID_CORELIB_ROOT`, the installed `<prefix>/beskid_corelib`,
 //! or the per-user managed root). The bundle is content-addressed by its fingerprint marker; it is
 //! verified before use and a modified bundle fails closed. Nothing is copied into a project and
-//! nothing is ever written below the shared root.
+//! no source below the shared root is ever written; the only files written there are the generated
+//! `Project.lock` and `obj/` of a bundle package checked directly, which the seal excludes.
 //!
 //! An unsealed root (a developer's Corelib checkout named by `BESKID_CORELIB_ROOT`) is neither
 //! read-only nor content-addressed, so it is not shared: its packages stay ordinary path
