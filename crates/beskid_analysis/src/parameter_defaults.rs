@@ -292,22 +292,34 @@ pub fn omitted_arguments(parameters: &[Spanned<Parameter>], program: &Program) -
         .collect()
 }
 
-/// `program` with the omitted arguments appended to each call named in `fills` by the span
-/// (`start`, `end`) of its call expression. Appended nodes carry a zero-width span just before
+/// One call expression of a unit: its span and its position among the calls with that same span
+/// in source order. Macro expansion keeps definition-site spans, so two expanded copies of one
+/// call share a span and are told apart by the ordinal.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct CallSite {
+    pub start: usize,
+    pub end: usize,
+    pub ordinal: usize,
+}
+
+/// `program` with the omitted arguments appended to each call named in `fills` by its
+/// [`CallSite`]. Appended nodes carry a zero-width span just before
 /// the call's closing parenthesis; caller information is `file` (the unit's requested path) and the 1-based line and
 /// column where the callee expression starts.
 pub fn fill_omitted_arguments(
     program: &Spanned<Program>,
     file: &str,
-    fills: &HashMap<(usize, usize), Vec<OmittedArgument>>,
+    fills: &HashMap<CallSite, Vec<OmittedArgument>>,
 ) -> Spanned<Program> {
     let mut program = program.clone();
+    let mut seen = HashMap::<(usize, usize), usize>::new();
     let mut map = |expression: Spanned<Expression>| -> Spanned<Expression> {
         let Expression::Call(call) = &expression.node else { return expression };
-        let Some(arguments) = fills
-            .get(&(call.span.start, call.span.end))
-            .or_else(|| fills.get(&(expression.span.start, expression.span.end)))
-        else {
+        let span = (call.span.start, call.span.end);
+        let ordinal = seen.entry(span).or_default();
+        let site = CallSite { start: span.0, end: span.1, ordinal: *ordinal };
+        *ordinal += 1;
+        let Some(arguments) = fills.get(&site) else {
             return expression;
         };
         // Caller information names where the callee expression starts. The appended nodes have
@@ -508,11 +520,15 @@ mod tests {
         calls
     }
 
-    fn call_spans(program: &Spanned<Program>) -> Vec<(usize, usize)> {
+    fn call_spans(program: &Spanned<Program>) -> Vec<CallSite> {
         let mut spans = Vec::new();
         let mut collect = |expression: Spanned<Expression>| {
             if let Expression::Call(call) = &expression.node {
-                spans.push((call.span.start, call.span.end));
+                let ordinal = spans
+                    .iter()
+                    .filter(|site: &&CallSite| (site.start, site.end) == (call.span.start, call.span.end))
+                    .count();
+                spans.push(CallSite { start: call.span.start, end: call.span.end, ordinal });
             }
             expression
         };
@@ -619,5 +635,25 @@ mod tests {
             assert_eq!(appended.line_col_start, (2, 10), "{appended:?}");
         }
         assert_eq!(emitted_call_arguments(&filled)[0], ["1", "-2", "5_i64"]);
+    }
+
+    /// Macro expansion keeps definition-site spans: two expanded copies of one call share a span
+    /// and may have different callees. Each copy gets its own fill.
+    #[test]
+    fn calls_that_share_a_span_get_their_own_fills() {
+        let mut program = parse_program("unit Run() {\n    Say(1);\n}\n").expect("parse");
+        if let Node::Function(function) = &mut program.node.items[0].node {
+            let statement = function.node.body.node.statements[0].clone();
+            function.node.body.node.statements.push(statement);
+        }
+        let sites = call_spans(&program);
+        assert_eq!(sites.len(), 2);
+        assert_eq!((sites[0].start, sites[0].end), (sites[1].start, sites[1].end), "the copies share a span");
+        let fills = HashMap::from([
+            (sites[0], vec![OmittedArgument::Default(DefaultConstant::Integer("2".into()))]),
+            (sites[1], vec![OmittedArgument::Default(DefaultConstant::Bool(true))]),
+        ]);
+        let filled = fill_omitted_arguments(&program, "/app/Main.bd", &fills);
+        assert_eq!(emitted_call_arguments(&filled), [vec!["1", "2"], vec!["1", "true"]]);
     }
 }
