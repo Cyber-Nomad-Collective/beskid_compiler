@@ -302,7 +302,8 @@ mod catchall_witness_tests {
             .expect("canonical Semantic.bd is embedded");
         let source = std::str::from_utf8(semantic.bytes()).expect("Semantic.bd is UTF-8");
         let wrapper = concat!(
-            "ValidateCatchall(CatchallWitness witness) {\n",
+            "ValidateCatchall(CatchallWitness witness)\n",
+            "{\n",
             "    return __mod_semantic_validate_catchall(witness);\n",
             "}"
         );
