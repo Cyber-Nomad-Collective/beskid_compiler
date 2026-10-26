@@ -35,6 +35,9 @@ fi
 if [[ "${BESKID_LINUX_EVIDENCE_FAIL_ENGINE:-}" == 1 && " $* " == *" -p beskid_engine "* ]]; then
   exit 1
 fi
+if [[ "$1" == "test" ]]; then
+  printf 'test result: ok. %s passed; 0 failed; 0 ignored; 0 measured; 0 filtered out\n' "${BESKID_LINUX_EVIDENCE_TESTS_RUN:-1}"
+fi
 EOF
 cat > "${fixture_root}/bin/uname" <<'EOF'
 #!/usr/bin/env bash
@@ -75,8 +78,8 @@ test "$(grep -F -- '--undefined-only' "${fixture_root}/nm.log" | wc -l | tr -d '
 test "$(grep -E -- '(^| )-u( |$)' "${fixture_root}/nm.log" | wc -l | tr -d '[:space:]')" = 0
 test "$(grep -F -- 'undefined=__tls_get_addr' "${fixture_root}/symbol-lists/shared.symbols" | wc -l | tr -d '[:space:]')" = 1
 test "$(grep -c '^undefined=' "${fixture_root}/symbol-lists/static.symbols" || true)" = 0
-grep -F -- '-p beskid_engine --test native_runtime_kit_smoke staged_runtime_kit_executes_a_canonical_entrypoint -- --ignored --exact' "${fixture_root}/calls.log" >/dev/null
-grep -F -- '-p beskid_repl eval::tests::staged_native_runtime_kit_evaluates_a_snippet -- --ignored --exact' "${fixture_root}/calls.log" >/dev/null
+grep -F -- '-p beskid_engine --test native_runtime_kit_smoke staged_runtime_kit_executes_a_canonical_entrypoint -- --exact' "${fixture_root}/calls.log" >/dev/null
+grep -F -- '-p beskid_repl eval::tests::staged_native_runtime_kit_evaluates_a_snippet -- --exact' "${fixture_root}/calls.log" >/dev/null
 
 if PATH="${fixture_root}/bin:${PATH}" \
   BESKID_RUNTIME_PREFIX="${prefix}" \
@@ -94,5 +97,19 @@ grep -F "file ${kit_root}/shared/libbeskid_runtime.so" "${fixture_root}/failure.
 grep -F 'readelf -d' "${fixture_root}/failure.log" >/dev/null
 grep -F 'readelf -Ws' "${fixture_root}/failure.log" >/dev/null
 grep -F 'ldd' "${fixture_root}/failure.log" >/dev/null
+
+# A test filter that selects no test (cargo reports "0 passed" and exits 0) fails the evidence.
+if PATH="${fixture_root}/bin:${PATH}" \
+  BESKID_RUNTIME_PREFIX="${prefix}" \
+  BESKID_RUNTIME_KIT_PROFILE=debug \
+  BESKID_LINUX_EVIDENCE_LOG="${fixture_root}/calls.log" \
+  BESKID_LINUX_NM_LOG="${fixture_root}/nm.log" \
+  BESKID_LINUX_SYMBOL_LIST_DIR="${fixture_root}/symbol-lists" \
+  BESKID_LINUX_EVIDENCE_TESTS_RUN=0 \
+  "${compiler_root}/scripts/verify-native-runtime-kit-linux.sh" >"${fixture_root}/zero-tests.log" 2>&1; then
+  echo "expected Linux evidence failure when no test ran" >&2
+  exit 1
+fi
+grep -F 'ran 0 tests' "${fixture_root}/zero-tests.log" >/dev/null
 
 echo "Linux native runtime-kit evidence wrapper test passed"

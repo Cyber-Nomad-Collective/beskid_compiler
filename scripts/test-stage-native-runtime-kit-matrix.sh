@@ -64,6 +64,9 @@ if [[ "$1" == "run" ]]; then
   elif [[ "${all_args}" == *" -- run "* ]]; then
     exit 42
   fi
+elif [[ "$1" == "test" ]]; then
+  printf 'running %s test\n' "${BESKID_MATRIX_TESTS_RUN:-1}"
+  printf 'test result: ok. %s passed; 0 failed; 0 ignored; 0 measured; 0 filtered out\n' "${BESKID_MATRIX_TESTS_RUN:-1}"
 fi
 EOF
 chmod +x "${fixture_root}/bin/cargo"
@@ -117,7 +120,7 @@ mkdir -p "${fixture_root}/captured-symbols"
 
 assert_lifecycle_smokes() {
   while IFS=':' read -r consumer test_name; do
-    test "$(grep -Fc -- "test --locked -p beskid_engine --test foundation_io_native ${test_name} -- --ignored --exact" "${fixture_root}/cargo-calls")" = 2
+    test "$(grep -Fc -- "test --locked -p beskid_engine --test foundation_io_native ${test_name} -- --exact" "${fixture_root}/cargo-calls")" = 2
   done <<'EOF'
 native-executable-streams:staged_runtime_kit_emitted_binary_round_trips_redirected_standard_streams
 native-executable-stdin:staged_runtime_kit_emitted_binary_reads_redirected_standard_input
@@ -165,9 +168,9 @@ if grep -E -- '--(debug|release)-provenance-symbol-list' "${fixture_root}/cargo-
   echo 'legacy combined provenance option remains in the matrix invocation' >&2
   exit 1
 fi
-test "$(grep -Fc -- '-p beskid_engine --test native_runtime_kit_smoke staged_runtime_kit_executes_a_canonical_entrypoint -- --ignored --exact' "${fixture_root}/cargo-calls")" = 2
-test "$(grep -Fc -- '-p beskid_aot --test abi_v5_runtime_kit staged_runtime_kit_links_and_executes_with_the_canonical_static_archive -- --ignored --exact' "${fixture_root}/cargo-calls")" = 2
-test "$(grep -Fc -- '-p beskid_repl eval::tests::staged_native_runtime_kit_evaluates_a_snippet -- --ignored --exact' "${fixture_root}/cargo-calls")" = 2
+test "$(grep -Fc -- '-p beskid_engine --test native_runtime_kit_smoke staged_runtime_kit_executes_a_canonical_entrypoint -- --exact' "${fixture_root}/cargo-calls")" = 2
+test "$(grep -Fc -- '-p beskid_aot --test abi_v5_runtime_kit staged_runtime_kit_links_and_executes_with_the_canonical_static_archive -- --exact' "${fixture_root}/cargo-calls")" = 2
+test "$(grep -Fc -- '-p beskid_repl eval::tests::staged_native_runtime_kit_evaluates_a_snippet -- --exact' "${fixture_root}/cargo-calls")" = 2
 test "$(grep -Fc -- 'run -q -p beskid_cli -- run ' "${fixture_root}/cargo-calls")" = 1
 assert_lifecycle_smokes
 
@@ -238,4 +241,29 @@ for profile in debug release; do
   done
 done
 assert_lifecycle_smokes
+
+# A smoke whose filter selects no test (cargo reports "0 passed" and exits 0) fails the matrix.
+rm -rf "${prefix}" "${fixture_root}/captured-symbols"
+mkdir -p "${fixture_root}/captured-symbols"
+if (
+  cd "${fixture_root}"
+  PATH="${fixture_root}/bin:${PATH}" \
+  BESKID_RUNTIME_PREFIX="${prefix}" \
+  BESKID_MATRIX_TESTS_RUN=0 \
+  BESKID_MATRIX_CARGO_CWDS="${fixture_root}/cargo-cwds" \
+  BESKID_MATRIX_CARGO_CALLS="${fixture_root}/cargo-calls" \
+  BESKID_MATRIX_NM_CALLS="${fixture_root}/nm-calls" \
+  BESKID_MATRIX_READOBJ_CALLS="${fixture_root}/readobj-calls" \
+  BESKID_MATRIX_UNAME_S="Darwin" \
+  BESKID_MATRIX_UNAME_M="arm64" \
+  BESKID_MATRIX_TARGET="aarch64-apple-darwin" \
+  BESKID_MATRIX_STATIC_NAME="libbeskid_runtime.a" \
+  BESKID_MATRIX_SHARED_NAME="libbeskid_runtime.dylib" \
+  BESKID_MATRIX_CAPTURE_DIR="${fixture_root}/captured-symbols" \
+    "${compiler_root}/scripts/stage-native-runtime-kit-matrix.sh" >"${fixture_root}/zero-tests.log" 2>&1
+); then
+  echo 'a smoke that ran no test passed the matrix' >&2
+  exit 1
+fi
+grep -F 'ran 0 tests; expected exactly 1' "${fixture_root}/zero-tests.log" >/dev/null
 echo "native runtime-kit matrix workspace test passed"

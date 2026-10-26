@@ -98,8 +98,27 @@ audit_artifact shared "${shared_library}" yes
 
 export BESKID_RUNTIME_PREFIX="${prefix}"
 export BESKID_RUNTIME_KIT_PROFILE="${profile}"
-cargo test -p beskid_engine --test native_runtime_kit_smoke \
-  staged_runtime_kit_executes_a_canonical_entrypoint -- --ignored --exact
-cargo test -p beskid_repl eval::tests::staged_native_runtime_kit_evaluates_a_snippet -- --ignored --exact
+# Runs one named test and fails unless the runner executed exactly that one test: a filter that
+# matches nothing exits 0 with "0 passed", which is not evidence.
+run_exact_test() {
+  local log ran
+  log="$(mktemp)"
+  local status
+  set +e
+  "$@" 2>&1 | tee "${log}"
+  status="${PIPESTATUS[0]}"
+  set -e
+  if [[ "${status}" -ne 0 ]]; then rm -f "${log}"; return "${status}"; fi
+  ran="$(awk '/^test result:/ { total += $4 } END { print total + 0 }' "${log}")"
+  rm -f "${log}"
+  if [[ "${ran}" != 1 ]]; then
+    echo "Linux runtime-kit evidence ran ${ran} tests for: $*; expected exactly 1" >&2
+    return 1
+  fi
+}
+
+run_exact_test cargo test -p beskid_engine --test native_runtime_kit_smoke \
+  staged_runtime_kit_executes_a_canonical_entrypoint -- --exact
+run_exact_test cargo test -p beskid_repl eval::tests::staged_native_runtime_kit_evaluates_a_snippet -- --exact
 
 echo "Linux native runtime-kit provenance and staged Engine/REPL evidence passed"
