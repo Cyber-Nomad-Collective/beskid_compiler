@@ -177,3 +177,29 @@ fn all_members_reports_a_failing_member_and_checks_the_rest() {
     assert!(!rejected.status.success());
     assert!(text(&rejected).contains("`.bws` workspace"), "{}", text(&rejected));
 }
+
+/// A parse error found while a member's active Mods are decided (a detached `///` header on line 1)
+/// is reported with its code at the authored file, exactly as a single-project check reports it,
+/// never as an uncoded failure line naming the member's `obj/beskid/root` copy.
+#[test]
+fn all_members_reports_a_member_parse_error_with_its_code_at_the_authored_file() {
+    let root = tempfile::tempdir().expect("fixture directory");
+    write_workspace(root.path(), None);
+    fs::write(
+        root.path().join("M3/Src/Main.bd"),
+        "/// The member's entry point.\n\nuse Core.Output;\n\ni32 Main() {\n    Output.WriteLine(\"ok\");\n    return 0;\n}\n",
+    )
+    .expect("member source with a detached header");
+    let corelib = root.path().join("corelib");
+    let (single, _) = check(root.path(), &corelib, &["--project", "M3"]);
+    let (output, _) = check(root.path(), &corelib, &["--project", "Many.bws", "--all-members"]);
+    for (mode, output) in [("single", &single), ("all-members", &output)] {
+        let report = text(output);
+        assert!(!output.status.success(), "{mode}: the detached header fails the check: {report}");
+        assert!(report.contains("E0117"), "{mode}: the parse error keeps its code: {report}");
+        assert!(report.contains("M3/Src/Main.bd"), "{mode}: the error names the authored file: {report}");
+        assert!(!report.contains("obj/beskid"), "{mode}: the error never names the materialized copy: {report}");
+        assert!(!report.contains("to decide its active Mods"), "{mode}: no flattened activation context: {report}");
+    }
+    assert!(text(&output).contains("1 of 6 workspace members failed"), "{}", text(&output));
+}

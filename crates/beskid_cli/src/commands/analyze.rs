@@ -233,7 +233,40 @@ fn run_targets(
     Ok(serde_json::json!({ "targets": results }))
 }
 
+/// Analyze one target. A failure that carries structured diagnostics (a parse error found while
+/// the project is resolved or while its active Mods are decided) is reported like any other
+/// diagnostic, with its code and at the authored file, so it is never flattened into a member's or
+/// a target's failure line.
 fn run_analyze(
+    args: &AnalyzeArgs,
+    project: Option<&Path>,
+    target: Option<&str>,
+    records: Option<&Records>,
+) -> Result<serde_json::Value> {
+    analyze_target(args, project, target, records).or_else(|error| {
+        match services::structured_diagnostics(&error) {
+            Some(diagnostics) if !diagnostics.is_empty() => report_failed_preparation(diagnostics, records),
+            _ => Err(error),
+        }
+    })
+}
+
+fn report_failed_preparation(
+    diagnostics: Vec<beskid_analysis::analysis::SemanticDiagnostic>,
+    records: Option<&Records>,
+) -> Result<serde_json::Value> {
+    let diagnostics = beskid_tools::diagnostics::authored_diagnostics(diagnostics);
+    for diagnostic in &diagnostics {
+        beskid_tools::diagnostics::eprint_diagnostic(diagnostic);
+        if let Some(records) = records {
+            records.diagnostic(diagnostic)?;
+        }
+    }
+    let counts = beskid_tools::pipeline::tui::count_severities(&diagnostics);
+    anyhow::bail!("analysis failed with {}", format_severity_summary(counts))
+}
+
+fn analyze_target(
     args: &AnalyzeArgs,
     project: Option<&Path>,
     target: Option<&str>,
