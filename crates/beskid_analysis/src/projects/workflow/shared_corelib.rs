@@ -192,10 +192,9 @@ mod tests {
              - name=core_text;source=corelib;project=packages/core_text;manifest=core_text.bproj;source_root=Src\n",
         )
         .unwrap();
-        let no_corelib = ProjectLockfile::parse(
-            "# Project.lock v3\nroot_manifest=App.bproj\nproject_name=App\ndependencies:\n",
-        )
-        .unwrap();
+        let no_corelib =
+            ProjectLockfile::parse("# Project.lock v3\nroot_manifest=App.bproj\nproject_name=App\ndependencies:\n")
+                .unwrap();
         verify_shared_corelib_for_lock(&corelib_lock.dependencies, Some(&shared)).expect("an intact bundle verifies");
 
         write(&temp.path().join("packages/core_text/Src/Text.bd"), "pub i32 Length() { return 12345; }\n");

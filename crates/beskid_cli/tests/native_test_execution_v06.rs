@@ -48,10 +48,7 @@ fn v06_native_tests_isolate_assertion_failure_and_continue_selected_entries() {
 /// names the line and column where `Assert.True` starts, not the test declaration.
 #[test]
 fn a_failed_assertion_reports_the_caller_information_filled_at_the_call() {
-    let output = execute(
-        "use Testing.Assert;\n\ntest CallerLine {\n      Assert.True(false);\n}\n",
-        &[],
-    );
+    let output = execute("use Testing.Assert;\n\ntest CallerLine {\n      Assert.True(false);\n}\n", &[]);
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(!output.status.success(), "stdout: {stdout}; stderr: {stderr}");

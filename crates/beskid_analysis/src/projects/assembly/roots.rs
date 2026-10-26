@@ -85,15 +85,13 @@ pub fn effective_roots_from_lockfile_checked(
     let shared_corelib = SharedCorelib::resolve();
     verify_shared_corelib_for_lock(&entries, shared_corelib.as_ref())?;
     let trusted_dependencies_root = plan.project_root.join("obj/beskid/deps/src").canonicalize().ok();
-    let Some(replayed_dependencies) =
-        replayed_dependency_roots(
-            plan,
-            lockfile_path,
-            &entries,
-            trusted_dependencies_root.as_deref(),
-            shared_corelib.as_ref(),
-        )
-    else {
+    let Some(replayed_dependencies) = replayed_dependency_roots(
+        plan,
+        lockfile_path,
+        &entries,
+        trusted_dependencies_root.as_deref(),
+        shared_corelib.as_ref(),
+    ) else {
         return Ok(base);
     };
     let mut roots = base;

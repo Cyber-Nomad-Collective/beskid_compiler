@@ -401,8 +401,8 @@ fn write_embedded_dir(source: &Dir<'_>, destination: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::{
-        BUNDLE_FINGERPRINT_FILE, UnrecognizedCorelibRootError, is_unmanaged_nonempty_root, looks_like_corelib_checkout,
-        ensure_bundled_corelib_at, replace_with_embedded_bundle, toolchain_corelib_identity_of, write_bundle_marker,
+        BUNDLE_FINGERPRINT_FILE, UnrecognizedCorelibRootError, ensure_bundled_corelib_at, is_unmanaged_nonempty_root,
+        looks_like_corelib_checkout, replace_with_embedded_bundle, toolchain_corelib_identity_of, write_bundle_marker,
     };
     use beskid_corelib_embed::CORELIB_BUNDLE as EMBEDDED_CORELIB;
     use semver::Version;
@@ -429,7 +429,8 @@ mod tests {
         write_bundle_marker(&root, &"0".repeat(64)).expect("outdated marker");
 
         let fingerprint = super::embedded_fingerprint(&EMBEDDED_CORELIB).expect("embedded fingerprint");
-        replace_with_embedded_bundle(&EMBEDDED_CORELIB, &root, &fingerprint, &|_| Ok(false)).expect("replace outdated bundle");
+        replace_with_embedded_bundle(&EMBEDDED_CORELIB, &root, &fingerprint, &|_| Ok(false))
+            .expect("replace outdated bundle");
 
         assert_eq!(
             fs::read_to_string(root.join(BUNDLE_FINGERPRINT_FILE)).expect("installed marker").trim(),
@@ -558,7 +559,8 @@ mod tests {
         let parent = tempfile::tempdir().expect("install parent");
         let root = parent.path().join("beskid_corelib");
         let fingerprint = super::embedded_fingerprint(&EMBEDDED_CORELIB).expect("embedded fingerprint");
-        replace_with_embedded_bundle(&EMBEDDED_CORELIB, &root, &fingerprint, &|_| Ok(false)).expect("materialize embedded bundle");
+        replace_with_embedded_bundle(&EMBEDDED_CORELIB, &root, &fingerprint, &|_| Ok(false))
+            .expect("materialize embedded bundle");
         (parent, root)
     }
 

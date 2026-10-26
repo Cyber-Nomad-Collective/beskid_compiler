@@ -582,7 +582,13 @@ mod tests {
         let fills = call_spans(&program)
             .into_iter()
             .map(|span| {
-                (span, vec![OmittedArgument::Default(DefaultConstant::Integer("-2".into())), OmittedArgument::Caller(CallerKind::Column)])
+                (
+                    span,
+                    vec![
+                        OmittedArgument::Default(DefaultConstant::Integer("-2".into())),
+                        OmittedArgument::Caller(CallerKind::Column),
+                    ],
+                )
             })
             .collect::<HashMap<_, _>>();
         let filled = fill_omitted_arguments(&program, "/app/Main.bd", &fills);

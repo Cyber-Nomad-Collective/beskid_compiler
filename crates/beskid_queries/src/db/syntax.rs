@@ -182,7 +182,8 @@ impl BeskidDatabase {
         generation: beskid_analysis::syntax::SyntaxGenerationId,
         filled: Arc<beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>>,
     ) -> Result<(), SemanticError> {
-        let input = self.syntax_unit(unit).ok_or_else(|| SemanticError::new("a refilled source unit is not registered"))?;
+        let input =
+            self.syntax_unit(unit).ok_or_else(|| SemanticError::new("a refilled source unit is not registered"))?;
         let revision = input.revision(self);
         if revision.generation != generation {
             return Err(SemanticError::new("omitted arguments are filled only within the registered generation"));
