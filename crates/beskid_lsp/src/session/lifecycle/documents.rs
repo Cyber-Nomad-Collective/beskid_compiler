@@ -12,9 +12,10 @@ use crate::{
         EditorPreparePass, collect_syntax_diagnostics, prepare_project_diagnostics_from_assembled,
         prepare_project_syntax_facts, project_preparation_failure,
     },
+    features::formatting::open_texts::open_text,
     manifest_uri::{is_manifest_uri, is_standalone_bsol_uri},
     session::{
-        db_access::{document_update_gate, with_compilation_db_for_project},
+        db_access::{document_update_gate, with_project_db},
         diagnostics_bridge::collect_syntax_diagnostics_for_state,
         documentation_facts::syntax_documentation_facts_for_source,
         imports::RecoverableCompletionSyntax,
@@ -67,32 +68,34 @@ pub(super) async fn build_full_diagnostic_facts(
     state: &RwLock<State>,
     uri: &Uri,
     text: &str,
-) -> (Vec<crate::session::store::SyntaxDiagnostic>, Vec<beskid_analysis::SyntaxFix>) {
+) -> Option<(Vec<crate::session::store::SyntaxDiagnostic>, Vec<beskid_analysis::SyntaxFix>)> {
     wait_for_initial_scan(state).await;
     if is_manifest_uri(uri) || is_standalone_bsol_uri(uri) {
-        return collect_syntax_diagnostics_for_state(state, uri, text, None).await;
+        return Some(collect_syntax_diagnostics_for_state(state, uri, text, None).await);
     }
     let Some(path) = uri_to_path(uri) else {
-        return collect_syntax_diagnostics_for_state(state, uri, text, None).await;
+        return Some(collect_syntax_diagnostics_for_state(state, uri, text, None).await);
     };
     let Some((resolved, session)) = resolved_input_for_path(state, &path, text).await else {
-        return collect_syntax_diagnostics_for_state(state, uri, text, None).await;
+        return Some(collect_syntax_diagnostics_for_state(state, uri, text, None).await);
     };
     let Some(plan) = session.compile_plan.as_ref() else {
-        return collect_syntax_diagnostics_for_state(state, uri, text, None).await;
+        return Some(collect_syntax_diagnostics_for_state(state, uri, text, None).await);
     };
     if let Some(diagnostic) = lockfile_replay_diagnostic(plan) {
-        return (vec![diagnostic], Vec::new());
+        return Some((vec![diagnostic], Vec::new()));
     }
-    let buffered_sources = {
+    let (buffered_sources, interactive) = {
         let read = state.read().await;
-        read.workspace_index
+        let sources = read
+            .workspace_index
             .iter()
             .chain(read.docs.iter())
             .filter_map(|(buffer_uri, document)| {
                 uri_to_path(buffer_uri).map(|buffer_path| (buffer_path, document.text.clone()))
             })
-            .collect::<Vec<_>>()
+            .collect::<Vec<_>>();
+        (sources, read.docs.contains_key(uri))
     };
     let project_root = plan.project_root.clone();
     let mod_host = state.read().await.mod_host.clone();
@@ -105,19 +108,30 @@ pub(super) async fn build_full_diagnostic_facts(
         },
         native_mod_adapter_sources: false,
     };
-    let assembled = with_compilation_db_for_project(state, &project_root, |db| {
+    // The client sent a newer text of this open document: its own publication follows.
+    let newer_text_sent = || open_text(uri).is_some_and(|newest| newest != text);
+    // Held from the assembly through the preparation: the assembled program is large.
+    let permits = Arc::clone(&state.read().await.diagnostics_permits);
+    let _permit = permits.acquire_owned().await.ok()?;
+    let assembled = with_project_db(state, Some(&project_root), interactive, |db| {
+        if newer_text_sent() {
+            return None;
+        }
         beskid_queries::invalidate_entry_sessions(&project_root);
         for (buffer_path, buffer_text) in buffered_sources {
             db.ensure_file_text(buffer_path, buffer_text);
         }
         db.ensure_file_text(path, text.to_string());
-        beskid_queries::assemble_resolved_input_with_db(db, &resolved, &options)
+        Some(beskid_queries::assemble_resolved_input_with_db(db, &resolved, &options))
     })
-    .await;
+    .await?;
     let assembled = match assembled {
         Ok(assembled) => assembled,
-        Err(error) => return preparation_failure_facts(uri, text, &error),
+        Err(error) => return Some(preparation_failure_facts(uri, text, &error)),
     };
+    if newer_text_sent() {
+        return None;
+    }
     let prepared = tokio::task::spawn_blocking(move || {
         prepare_project_diagnostics_from_assembled(&assembled, EditorPreparePass::Complete, &mod_host)
             .map(|prepared| (prepared.diagnostics, prepared.fixes))
@@ -125,10 +139,10 @@ pub(super) async fn build_full_diagnostic_facts(
     .await
     .map_err(|error| anyhow::anyhow!("project diagnostics task failed: {error}"))
     .and_then(|prepared| prepared);
-    match prepared {
+    Some(match prepared {
         Ok(facts) => facts,
         Err(error) => preparation_failure_facts(uri, text, &error),
-    }
+    })
 }
 
 /// Structural facts for the current buffer plus a visible error fact naming why project
@@ -159,6 +173,7 @@ pub(super) async fn build_syntax_facts_with_policy(
     text: &str,
     pass: EditorPreparePass,
     current_document_only: bool,
+    newest_only: bool,
 ) -> SyntaxFacts {
     wait_for_initial_scan(state).await;
     build_syntax_facts_with_policy_after_startup(
@@ -167,9 +182,15 @@ pub(super) async fn build_syntax_facts_with_policy(
         text,
         pass,
         current_document_only,
+        newest_only,
         StartupFallback::WaitForScan,
     )
     .await
+}
+
+/// Whether the client sent a newer text for `uri` than `text` (or closed it).
+fn superseded(uri: &Uri, text: &str) -> bool {
+    open_text(uri).as_deref() != Some(text)
 }
 
 async fn build_syntax_facts_with_policy_after_startup(
@@ -178,9 +199,14 @@ async fn build_syntax_facts_with_policy_after_startup(
     text: &str,
     pass: EditorPreparePass,
     current_document_only: bool,
+    newest_only: bool,
     fallback: StartupFallback,
 ) -> SyntaxFacts {
-    let mut facts = syntax_facts_for_text(state, uri, text, pass, current_document_only, fallback, &[]).await;
+    let newest = newest_only.then_some(text);
+    let mut facts = syntax_facts_for_text(state, uri, text, pass, current_document_only, newest, fallback, &[]).await;
+    if facts.superseded {
+        return facts;
+    }
     // While a member is being typed (`String.` or `point.` ending its line) the buffer does not
     // parse with the member access in it. Completion takes its facts from the same buffer with a
     // placeholder member written over the following whitespace (byte offsets unchanged); every
@@ -190,7 +216,10 @@ async fn build_syntax_facts_with_policy_after_startup(
         && !is_standalone_bsol_uri(uri)
         && let Some((repaired, offsets)) = crate::session::imports::completion_repaired_text(text)
     {
-        let repaired = syntax_facts_for_text(state, uri, &repaired, pass, false, fallback, &offsets).await;
+        let repaired = syntax_facts_for_text(state, uri, &repaired, pass, false, newest, fallback, &offsets).await;
+        if repaired.superseded {
+            return repaired;
+        }
         if let Some(completion) = repaired.completion
             && completion.entry_anchor.is_some()
         {
@@ -206,6 +235,7 @@ async fn syntax_facts_for_text(
     text: &str,
     pass: EditorPreparePass,
     current_document_only: bool,
+    newest: Option<&str>,
     fallback: StartupFallback,
     member_offsets: &[usize],
 ) -> SyntaxFacts {
@@ -287,22 +317,28 @@ async fn syntax_facts_for_text(
             ..SyntaxFacts::default()
         };
     }
-    let buffered_sources = {
+    let (buffered_sources, interactive) = {
         let read = state.read().await;
-        read.workspace_index
+        let sources = read
+            .workspace_index
             .iter()
             .chain(read.docs.iter())
             .filter_map(|(buffer_uri, document)| {
                 uri_to_path(buffer_uri).map(|buffer_path| (buffer_path, document.text.clone()))
             })
-            .collect::<Vec<_>>()
+            .collect::<Vec<_>>();
+        (sources, pass == EditorPreparePass::Immediate || read.docs.contains_key(uri))
     };
     let project_root = plan.project_root.clone();
     let mod_host = state.read().await.mod_host.clone();
     let resolved_for_prepare = resolved.clone();
     let path_for_prepare = path.clone();
     let text_for_prepare = text.to_string();
-    let prepared_facts = with_compilation_db_for_project(state, &project_root, |db| {
+    let prepared_facts = with_project_db(state, Some(&project_root), interactive, |db| {
+        // The wait for the project's database can be long; a newer text makes this work moot.
+        if newest.is_some_and(|buffer| superseded(uri, buffer)) {
+            return Ok(None);
+        }
         beskid_queries::invalidate_entry_sessions(&project_root);
         for (buffer_path, buffer_text) in buffered_sources {
             db.ensure_file_text(buffer_path, buffer_text);
@@ -359,11 +395,12 @@ async fn syntax_facts_for_text(
         }
         facts.diagnostics = prepared.diagnostics;
         facts.fixes = prepared.fixes;
-        anyhow::Ok(facts)
+        anyhow::Ok(Some(facts))
     })
     .await;
     let mut facts = match prepared_facts {
-        Ok(facts) => facts,
+        Ok(Some(facts)) => facts,
+        Ok(None) => return SyntaxFacts { superseded: true, ..SyntaxFacts::default() },
         Err(error) => {
             let (diagnostics, fixes) = preparation_failure_facts(uri, text, &error);
             SyntaxFacts { diagnostics, fixes, ..SyntaxFacts::default() }
@@ -376,7 +413,7 @@ async fn syntax_facts_for_text(
 }
 
 pub(super) async fn build_syntax_facts(state: &RwLock<State>, uri: &Uri, text: &str) -> SyntaxFacts {
-    build_syntax_facts_with_policy(state, uri, text, EditorPreparePass::Complete, false).await
+    build_syntax_facts_with_policy(state, uri, text, EditorPreparePass::Complete, false, false).await
 }
 
 fn document_from_syntax_facts(version: i32, text: String, syntax_facts: SyntaxFacts) -> Document {
@@ -431,6 +468,7 @@ pub(crate) async fn build_initial_workspace_document(
         &text,
         EditorPreparePass::Complete,
         false,
+        false,
         StartupFallback::StructuralOnly,
     )
     .await;
@@ -452,9 +490,24 @@ pub async fn set_disk_snapshot(state: &RwLock<State>, uri: Uri, doc: Document) {
 /// leave a stale empty or orphaned fact set behind a text-hash fast path.
 ///
 /// Returns `false` when `version` is stale relative to the buffered document (no mutation).
+#[cfg(test)]
 pub async fn set_document(state: &RwLock<State>, uri: Uri, version: i32, text: String) -> bool {
+    store_document(state, uri, version, text, false).await
+}
+
+/// Analyze the text the client sent for an open document and store its facts, unless the client
+/// has sent a newer text or closed the document by then (the newer text's own analysis follows).
+/// Requests that need the newest facts wait for this (see `protocol::request`).
+pub async fn analyze_open_document(state: &RwLock<State>, uri: Uri, version: i32, text: String) -> bool {
+    store_document(state, uri, version, text, true).await
+}
+
+async fn store_document(state: &RwLock<State>, uri: Uri, version: i32, text: String, newest_only: bool) -> bool {
     let update_gate = document_update_gate(state, &uri).await;
     let _update_guard = update_gate.lock().await;
+    if newest_only && superseded(&uri, &text) {
+        return false;
+    }
     let (prior_dependency_surface, prior_attributes) = {
         let mut write_state = state.write().await;
         if let Some(existing) = write_state.docs.get(&uri)
@@ -497,7 +550,10 @@ pub async fn set_document(state: &RwLock<State>, uri: Uri, version: i32, text: S
     // Keep editing responsive: type only the entry unit synchronously. The debounced
     // lifecycle pass upgrades this exact text generation to the full dependency closure.
     let mut syntax_facts =
-        build_syntax_facts_with_policy(state, &uri, &text, EditorPreparePass::Immediate, false).await;
+        build_syntax_facts_with_policy(state, &uri, &text, EditorPreparePass::Immediate, false, newest_only).await;
+    if syntax_facts.superseded || (newest_only && superseded(&uri, &text)) {
+        return false;
+    }
     if !prior_dependency_surface.is_empty()
         && syntax_facts.completion.as_ref().is_none_or(|completion| completion.dependency_surface.is_empty())
     {
@@ -536,15 +592,17 @@ pub async fn set_document(state: &RwLock<State>, uri: Uri, version: i32, text: S
         return false;
     }
     write_state.docs.insert(uri, document_from_syntax_facts(version, text, syntax_facts));
+    write_state.facts_stored.notify_waiters();
     true
 }
 
 /// Drop an open buffer after `didClose` (disk hydration may repopulate the workspace index).
+/// This does not wait for a running analysis of the buffer: that analysis sees the document
+/// closed and does not store its facts.
 pub async fn remove_document(state: &RwLock<State>, uri: &Uri) {
-    let update_gate = document_update_gate(state, uri).await;
-    let _update_guard = update_gate.lock().await;
     let mut write = state.write().await;
     write.docs.remove(uri);
+    write.facts_stored.notify_waiters();
 }
 
 /// Rebuild generation-bound syntax facts (including diagnostics) for open `.bd` buffers after
@@ -560,7 +618,8 @@ pub async fn rebuild_open_document_syntax_facts(state: &RwLock<State>) {
     };
 
     for (uri, version, text) in entries {
-        let syntax_facts = build_syntax_facts_with_policy(state, &uri, &text, EditorPreparePass::Complete, true).await;
+        let syntax_facts =
+            build_syntax_facts_with_policy(state, &uri, &text, EditorPreparePass::Complete, true, false).await;
         let update_gate = document_update_gate(state, &uri).await;
         let _update_guard = update_gate.lock().await;
         let mut write = state.write().await;
@@ -570,6 +629,7 @@ pub async fn rebuild_open_document_syntax_facts(state: &RwLock<State>) {
         {
             apply_syntax_facts(doc, syntax_facts);
         }
+        write.facts_stored.notify_waiters();
     }
 }
 
@@ -619,7 +679,7 @@ target "App" {
             doc.syntax_diagnostics
         );
         state.read().await.mark_initial_scan_complete();
-        let (full_diagnostics, _) = build_full_diagnostic_facts(&state, &uri, source).await;
+        let (full_diagnostics, _) = build_full_diagnostic_facts(&state, &uri, source).await.expect("no newer text");
         assert!(
             full_diagnostics.iter().any(|d| d.message.contains("v1") && d.message.contains("beskid dev project lock"))
         );

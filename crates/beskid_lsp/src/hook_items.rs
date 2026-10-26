@@ -81,7 +81,7 @@ mod tests {
         let uri = crate::workspace_scan::path_to_uri(&std::env::temp_dir().join("Main.bd")).expect("uri");
 
         let DocumentSymbolResponse::Nested(outline) =
-            crate::features::document_symbols::handler::handle_document_symbols(&uri, &doc)
+            crate::features::document_symbols::handler::outline(&doc.text, &doc.syntax_symbols)
         else {
             panic!("nested outline");
         };

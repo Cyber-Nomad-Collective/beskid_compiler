@@ -8,6 +8,7 @@ pub(crate) mod imports;
 pub(crate) mod lifecycle;
 pub(crate) mod mod_host;
 pub(crate) mod project_context;
+pub(crate) mod project_dbs;
 pub(crate) mod startup;
 #[cfg(test)]
 mod startup_tests;

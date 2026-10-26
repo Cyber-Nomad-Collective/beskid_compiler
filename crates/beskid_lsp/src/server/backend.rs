@@ -19,21 +19,25 @@ use crate::features::{
     semantic_tokens, signature_help, workspace_symbols,
 };
 use crate::logging::{ClientLogFilter, client_log};
-use crate::protocol::request::{snapshot_document, snapshot_lsp_request, snapshot_request};
+use crate::protocol::request::{
+    current_document, latest_document, snapshot_document, snapshot_lsp_request, snapshot_request,
+};
 use crate::scan_schedule::{InteractiveGuard, ScanCoordinator, ScanRunGuard};
 use crate::server::init::initialize_result;
-use crate::session::db_access::{document_update_gate, parallel_compilation_db, with_compilation_db};
-use crate::session::lifecycle::{
-    apply_persistence_config, persistence_config_from_configuration, persistence_config_from_value,
-    publish_diagnostics_for_uri, remove_document, save_snapshot_now, schedule_persistence_snapshot_save, set_document,
-};
+use crate::session::db_access::{parallel_project_db, with_project_db};
+use crate::session::lifecycle::{analyze_open_document, publish_diagnostics_for_uri, remove_document};
 use crate::session::mod_host::mod_host_from_initialization_options;
 use crate::session::store::State;
-use crate::text_sync::apply_document_changes;
 use crate::workspace_scan::{
     clear_closed_workspace_under_root, hydrate_disk_after_close, refresh_after_disk_change, scan_workspace_roots,
     uri_to_path,
 };
+
+/// Longest completion waits for the analysis of the newest text before it answers from the
+/// last facts carried over the edit.
+const COMPLETION_FACTS_WAIT: Duration = Duration::from_millis(100);
+/// Longest completion waits for its project's database, busy with another analysis.
+const COMPLETION_DB_WAIT: Duration = Duration::from_millis(100);
 
 /// Tower-LSP [`LanguageServer`] implementation for Beskid (sync, diagnostics, IDE features).
 pub struct Backend {
@@ -72,28 +76,31 @@ impl Backend {
     }
 
     async fn schedule_publish_diagnostics(&self, uri: Uri) {
-        let rev = {
-            let mut map = self.diagnostics_revision.lock().await;
-            let next = map.get(&uri).copied().unwrap_or(0).saturating_add(1);
-            map.insert(uri.clone(), next);
-            next
-        };
+        self.publisher().await.schedule(uri).await;
+    }
 
-        let client = self.client.clone();
-        let state = self.state.clone();
-        let revisions = self.diagnostics_revision.clone();
-        let filter = *self.log_filter.read().await;
-        // A panic while analysing must not silently kill diagnostics for the session.
-        self.reporter.spawn_guarded("textDocument/publishDiagnostics", Some(uri.as_str().to_string()), async move {
-            tokio::time::sleep(Duration::from_millis(120)).await;
-            let should_run = {
-                let map = revisions.lock().await;
-                map.get(&uri).copied() == Some(rev)
-            };
-            if should_run {
-                client_log(&client, filter, MessageType::LOG, format!("publishing diagnostics for {}", uri.as_str()))
-                    .await;
-                publish_diagnostics_for_uri(&client, &state, &uri).await;
+    async fn publisher(&self) -> DiagnosticsPublisher {
+        DiagnosticsPublisher {
+            client: self.client.clone(),
+            state: Arc::clone(&self.state),
+            revisions: Arc::clone(&self.diagnostics_revision),
+            filter: *self.log_filter.read().await,
+            reporter: Arc::clone(&self.reporter),
+        }
+    }
+
+    /// Analyze the newest text of an open document in the background, then publish its
+    /// diagnostics. The notification returns at once, so the transport and requests on other
+    /// documents never wait for the analysis; requests that need this document's newest facts
+    /// wait for them on their own (see `protocol::request`).
+    async fn analyze_in_background(&self, uri: Uri, version: i32, text: String) {
+        let state = Arc::clone(&self.state);
+        let publisher = self.publisher().await;
+        let interactive = Arc::clone(&self.interactive);
+        self.reporter.spawn_guarded("beskid/analyzeDocument", Some(uri.as_str().to_string()), async move {
+            let _active = InteractiveGuard::new(&interactive);
+            if analyze_open_document(&state, uri.clone(), version, text).await {
+                publisher.schedule(uri).await;
             }
         });
     }
@@ -142,6 +149,46 @@ impl Backend {
     }
 }
 
+/// Debounced, per-document diagnostics publication.
+#[derive(Clone)]
+struct DiagnosticsPublisher {
+    client: Client,
+    state: Arc<RwLock<State>>,
+    revisions: Arc<Mutex<HashMap<Uri, u64>>>,
+    filter: ClientLogFilter,
+    reporter: Arc<CrashReporter>,
+}
+
+impl DiagnosticsPublisher {
+    async fn schedule(&self, uri: Uri) {
+        let rev = {
+            let mut map = self.revisions.lock().await;
+            let next = map.get(&uri).copied().unwrap_or(0).saturating_add(1);
+            map.insert(uri.clone(), next);
+            next
+        };
+        let this = self.clone();
+        // A panic while analysing must not silently kill diagnostics for the session.
+        self.reporter.spawn_guarded("textDocument/publishDiagnostics", Some(uri.as_str().to_string()), async move {
+            tokio::time::sleep(Duration::from_millis(120)).await;
+            let should_run = {
+                let map = this.revisions.lock().await;
+                map.get(&uri).copied() == Some(rev)
+            };
+            if should_run {
+                client_log(
+                    &this.client,
+                    this.filter,
+                    MessageType::LOG,
+                    format!("publishing diagnostics for {}", uri.as_str()),
+                )
+                .await;
+                publish_diagnostics_for_uri(&this.client, &this.state, &uri).await;
+            }
+        });
+    }
+}
+
 impl LanguageServer for Backend {
     async fn initialize(&self, params: InitializeParams) -> Result<InitializeResult> {
         let mut roots: Vec<PathBuf> = params
@@ -174,10 +221,6 @@ impl LanguageServer for Backend {
             if let Some(focused) = focused_project_from_value(&options) {
                 self.state.write().await.focused_project = Some(focused);
             }
-            if let Some(cfg) = persistence_config_from_value(&options) {
-                let mut state = self.state.write().await;
-                apply_persistence_config(&mut state, &cfg);
-            }
         }
         Ok(initialize_result())
     }
@@ -191,60 +234,49 @@ impl LanguageServer for Backend {
     }
 
     async fn shutdown(&self) -> Result<()> {
-        // Flush the Salsa DB snapshot before exiting so the session's incremental
-        // work persists for the next session. Failures are logged inside
-        // `save_snapshot_now` / `persist_session_snapshot` and never propagate —
-        // snapshot persistence is a performance optimization, not a correctness gate.
-        save_snapshot_now(&self.state).await;
         Ok(())
     }
 
     async fn did_open(&self, params: DidOpenTextDocumentParams) {
-        let _active = InteractiveGuard::new(&self.interactive);
         let doc = params.text_document;
-        let _ = set_document(&self.state, doc.uri.clone(), doc.version, doc.text).await;
-        self.schedule_publish_diagnostics(doc.uri.clone()).await;
-        schedule_persistence_snapshot_save(self.state.clone(), self.reporter.clone()).await;
+        self.analyze_in_background(doc.uri, doc.version, doc.text).await;
     }
 
     async fn did_change(&self, params: DidChangeTextDocumentParams) {
-        let _active = InteractiveGuard::new(&self.interactive);
-        let uri = params.text_document.uri.clone();
-        let content_changes = params.content_changes;
-        let updated = if let Some(mut doc) = snapshot_document(&self.state, &uri).await {
-            apply_document_changes(&mut doc.text, content_changes);
-            set_document(&self.state, uri.clone(), params.text_document.version, doc.text).await
-        } else if let Some(full_text) =
-            content_changes.into_iter().rev().find(|change| change.range.is_none()).map(|change| change.text)
-        {
-            set_document(&self.state, uri.clone(), params.text_document.version, full_text).await
-        } else {
-            false
+        let uri = params.text_document.uri;
+        // The transport applied the changes to the open text in input order already.
+        let Some(text) = formatting::open_texts::open_text(&uri) else {
+            return;
         };
-        if updated {
-            self.schedule_publish_diagnostics(uri.clone()).await;
-            schedule_persistence_snapshot_save(self.state.clone(), self.reporter.clone()).await;
-        }
+        self.analyze_in_background(uri, params.text_document.version, text).await;
     }
 
     async fn did_save(&self, params: DidSaveTextDocumentParams) {
         self.schedule_publish_diagnostics(params.text_document.uri.clone()).await;
-        // A user-initiated disk save is a natural persistence hint — schedule the
-        // debounced DB snapshot save so the snapshot follows the file save.
-        schedule_persistence_snapshot_save(self.state.clone(), self.reporter.clone()).await;
     }
 
     async fn did_close(&self, params: DidCloseTextDocumentParams) {
         let uri = params.text_document.uri;
         remove_document(&self.state, &uri).await;
-        hydrate_disk_after_close(&self.client, &self.state, &uri).await;
+        // Analyzing the disk text of the closed file is background work: a reopen of the same
+        // document must not wait for it.
+        let client = self.client.clone();
+        let state = Arc::clone(&self.state);
+        self.reporter.spawn_guarded("beskid/hydrateClosedDocument", Some(uri.as_str().to_string()), async move {
+            hydrate_disk_after_close(&client, &state, &uri).await;
+        });
     }
 
+    // Hover answers at once from the last analyzed facts, carried over the edits whose
+    // analysis is still running.
     async fn hover(&self, params: HoverParams) -> Result<Option<Hover>> {
-        let Some(snapshot) = snapshot_lsp_request(&self.state, params).await else {
+        let position = params.text_document_position_params;
+        let uri = position.text_document.uri;
+        let Some(document) = latest_document(&self.state, &uri).await else {
             return Ok(None);
         };
-        Ok(hover::handler::handle_hover(&snapshot.uri, &snapshot.document, snapshot.offset))
+        let offset = crate::position::position_to_offset(&document.text, position.position);
+        Ok(hover::handler::handle_hover(&uri, &document, offset))
     }
 
     async fn goto_definition(&self, params: GotoDefinitionParams) -> Result<Option<GotoDefinitionResponse>> {
@@ -281,32 +313,47 @@ impl LanguageServer for Backend {
 
     async fn completion(&self, params: CompletionParams) -> Result<Option<CompletionResponse>> {
         let _active = InteractiveGuard::new(&self.interactive);
-        let update_gate = document_update_gate(&self.state, &params.text_document_position.text_document.uri).await;
-        let update_guard = update_gate.lock().await;
-        let Some(snapshot) = snapshot_lsp_request(&self.state, params).await else {
-            return Ok(Some(CompletionResponse::Array(Vec::new())));
+        let position = params.text_document_position;
+        let uri = position.text_document.uri;
+        // The facts of the newest text when its analysis finishes within the budget; otherwise
+        // the last facts carried over the edit, answered without database queries.
+        let (document, current) = match current_document(&self.state, &uri, COMPLETION_FACTS_WAIT).await {
+            Ok(Some(document)) => (document, true),
+            Ok(None) => return Ok(Some(CompletionResponse::Array(Vec::new()))),
+            Err(carried) => (carried, false),
         };
+        let offset = crate::position::position_to_offset(&document.text, position.position);
         // `use` paths complete from the module layout of the effective roots, with no analysis
         // facts and no database access, so they answer while a scan or a prepare is running.
-        if completion::use_path::use_path_context(&snapshot.document.text, snapshot.offset).is_some() {
-            drop(update_guard);
-            let roots = match uri_to_path(&snapshot.uri) {
+        if completion::use_path::use_path_context(&document.text, offset).is_some() {
+            let roots = match uri_to_path(&uri) {
                 Some(path) => crate::session::project_context::effective_roots_for_path(&self.state, &path).await,
                 None => None,
             };
             let items = roots
-                .and_then(|roots| {
-                    completion::use_path::use_path_items(&snapshot.document.text, snapshot.offset, &roots)
-                })
+                .and_then(|roots| completion::use_path::use_path_items(&document.text, offset, &roots))
                 .unwrap_or_default();
             return Ok(Some(CompletionResponse::Array(items)));
         }
-        let db = parallel_compilation_db(&self.state).await;
-        drop(update_guard);
+        // The completion anchor belongs to the database of the document's project. While that
+        // database is busy with an analysis, the owned facts answer.
+        let db = if current {
+            let project_root = match uri_to_path(&uri) {
+                Some(path) => crate::session::project_context::cached_compilation_context(&self.state, &path)
+                    .await
+                    .and_then(|context| context.compile_plan.map(|plan| plan.project_root)),
+                None => None,
+            };
+            tokio::time::timeout(COMPLETION_DB_WAIT, parallel_project_db(&self.state, project_root.as_deref()))
+                .await
+                .ok()
+        } else {
+            None
+        };
         let response = tokio::task::spawn_blocking(move || {
             crate::crash::run_blocking_recorded(|| {
                 salsa::Cancelled::catch(AssertUnwindSafe(|| {
-                    completion::handler::handle_completion(&db, &snapshot.uri, &snapshot.document, snapshot.offset)
+                    completion::handler::handle_completion(db.as_ref(), &uri, &document, offset)
                 }))
             })
         })
@@ -324,12 +371,18 @@ impl LanguageServer for Backend {
         Ok(Some(response))
     }
 
+    // The outline is syntax-only: it reads the open text (current in transport order) and does
+    // not wait for the analysis of an earlier edit.
     async fn document_symbol(&self, params: DocumentSymbolParams) -> Result<Option<DocumentSymbolResponse>> {
         let uri = params.text_document.uri;
-        let Some(document) = snapshot_document(&self.state, &uri).await else {
-            return Ok(Some(DocumentSymbolResponse::Nested(Vec::new())));
+        let text = match formatting::open_texts::open_text(&uri) {
+            Some(text) => text,
+            None => match snapshot_document(&self.state, &uri).await {
+                Some(document) => document.text,
+                None => return Ok(Some(DocumentSymbolResponse::Nested(Vec::new()))),
+            },
         };
-        Ok(Some(document_symbols::handler::handle_document_symbols(&uri, &document)))
+        Ok(Some(document_symbols::handler::document_symbols_for_text(&uri, &text)))
     }
 
     async fn semantic_tokens_full(&self, params: SemanticTokensParams) -> Result<Option<SemanticTokensResult>> {
@@ -408,7 +461,7 @@ impl LanguageServer for Backend {
         {
             return Ok(Some(result));
         }
-        let explorer_result = with_compilation_db(&self.state, |db| {
+        let explorer_result = with_project_db(&self.state, None, true, |db| {
             handle_project_explorer_command(&params.command, Some(params.arguments), &roots, Some(db))
         })
         .await?;
@@ -437,10 +490,6 @@ impl LanguageServer for Backend {
                 crate::session::project_context::invalidate_compilation_cache(&self.state).await;
                 crate::session::lifecycle::rebuild_open_document_syntax_facts(&self.state).await;
             }
-        }
-        if let Some(cfg) = persistence_config_from_configuration(&params.settings) {
-            let mut state = self.state.write().await;
-            apply_persistence_config(&mut state, &cfg);
         }
     }
 

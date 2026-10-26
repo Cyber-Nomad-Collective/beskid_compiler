@@ -36,6 +36,9 @@ pub(super) struct SyntaxFacts {
     pub(super) diagnostics: Vec<SyntaxDiagnostic>,
     /// Mod-origin quick-fixes collected from the prepare spine (empty on structural/manifest paths).
     pub(super) fixes: Vec<SyntaxFix>,
+    /// The client sent a newer text before the analysis began; these facts are empty and must
+    /// not be stored.
+    pub(super) superseded: bool,
 }
 
 pub(super) fn syntax_facts_for_assembly(
@@ -195,6 +198,7 @@ pub(super) fn syntax_facts_for_assembly(
         documentation: Vec::new(),
         diagnostics: Vec::new(),
         fixes: Vec::new(),
+        superseded: false,
     }
 }
 
@@ -271,7 +275,7 @@ fn syntax_type_label(ty: SemanticTypeId) -> Option<&'static str> {
     }
 }
 
-pub(super) fn syntax_symbols_for_program(
+pub(crate) fn syntax_symbols_for_program(
     program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
 ) -> Vec<SyntaxSymbol> {
     use beskid_analysis::services::AnalysisSymbolKind as Kind;

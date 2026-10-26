@@ -8,6 +8,13 @@ use super::backend::Backend;
 use super::ordered_service::TextSyncOrderedService;
 use crate::crash::{self, CrashReporter};
 
+/// Messages the transport evaluates at once. A text-sync notification runs the analysis of its
+/// edit inside its slot and may wait for its project's database, so the transport default of
+/// four slots let four slow edits stop the server from reading even syntax-only requests.
+/// Ordering does not depend on this limit (see `TextSyncOrderedService`); each project's
+/// database gate bounds the analysis work.
+const MAX_IN_FLIGHT_MESSAGES: usize = 128;
+
 /// Run the language server on stdio (used by `beskid_lsp` and `beskid dev lsp`).
 pub async fn run_stdio_server() -> anyhow::Result<()> {
     // The LSP may be the first Beskid executable a user runs. Provision the
@@ -26,6 +33,9 @@ pub async fn run_stdio_server() -> anyhow::Result<()> {
         });
         Backend::new(client, Arc::clone(&notifier_reporter))
     });
-    Server::new(stdin, stdout, socket).serve(TextSyncOrderedService::new(service, reporter)).await;
+    Server::new(stdin, stdout, socket)
+        .concurrency_level(MAX_IN_FLIGHT_MESSAGES)
+        .serve(TextSyncOrderedService::new(service, reporter))
+        .await;
     Ok(())
 }

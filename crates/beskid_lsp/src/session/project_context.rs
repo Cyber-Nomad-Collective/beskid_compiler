@@ -1,8 +1,6 @@
-use std::path::PathBuf;
-
 use tokio::sync::RwLock;
 
-use super::{db_access::with_compilation_db_mut_state, store::State};
+use super::store::State;
 
 fn project_graph_options_from_env() -> beskid_analysis::ProjectGraphBuildOptions {
     beskid_analysis::ProjectGraphBuildOptions {
@@ -49,45 +47,29 @@ pub async fn cached_compilation_context(
 
 /// Clear cached [`CompilationContext`] entries (e.g. after manifest or workspace graph changes).
 pub async fn invalidate_compilation_cache(state: &RwLock<State>) {
-    let (project_roots, focused_roots, cold_start) = {
-        let read = state.read().await;
-        let project_roots: Vec<PathBuf> = read
-            .compilation_context_cache
-            .keys()
-            .filter_map(|(manifest, _)| manifest.parent().map(std::path::Path::to_path_buf))
-            .collect();
-        let mut focused_roots = Vec::new();
-        if project_roots.is_empty()
-            && let Some(focused) = read.focused_project.as_ref()
-            && let Some(root) = focused.parent()
-        {
-            focused_roots.push(root.to_path_buf());
+    let mut write = state.write().await;
+    for root in write.compilation_context_cache.keys().filter_map(|(manifest, _)| manifest.parent()) {
+        beskid_queries::invalidate_entry_sessions(root);
+    }
+    if write.compilation_context_cache.is_empty()
+        && let Some(root) = write.focused_project.as_ref().and_then(|focused| focused.parent())
+    {
+        beskid_queries::invalidate_entry_sessions(root);
+    }
+    let cold_start = write.compilation_context_cache.is_empty() && write.databases.is_empty();
+    write.diagnostic_generation = write.diagnostic_generation.wrapping_add(1);
+    write.compilation_context_cache.clear();
+    if !cold_start {
+        let dropped = write.databases.clear();
+        super::db_access::drop_in_background(dropped);
+        // Fail closed: drop bound facts until rebuild_open_document_syntax_facts runs.
+        for doc in write.docs.values_mut() {
+            doc.clear_syntax_facts();
         }
-        let cold_start = read.compilation_context_cache.is_empty() && read.configured_project_root.is_none();
-        (project_roots, focused_roots, cold_start)
-    };
-
-    with_compilation_db_mut_state(state, |db, write| {
-        for root in &project_roots {
-            beskid_queries::invalidate_entry_sessions(root);
+        for doc in write.workspace_index.values_mut() {
+            doc.clear_syntax_facts();
         }
-        for root in &focused_roots {
-            beskid_queries::invalidate_entry_sessions(root);
-        }
-        write.diagnostic_generation = write.diagnostic_generation.wrapping_add(1);
-        write.compilation_context_cache.clear();
-        if !cold_start {
-            write.reset_compilation_db_with_db(db);
-            // Fail closed: drop bound facts until rebuild_open_document_syntax_facts runs.
-            for doc in write.docs.values_mut() {
-                doc.clear_syntax_facts();
-            }
-            for doc in write.workspace_index.values_mut() {
-                doc.clear_syntax_facts();
-            }
-        }
-    })
-    .await;
+    }
 }
 
 /// Effective source roots (host first, then dependency packages) of the project that owns `path`.

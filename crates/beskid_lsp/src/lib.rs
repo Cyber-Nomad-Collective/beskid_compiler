@@ -24,7 +24,7 @@ pub(crate) mod workspace_scan;
 /// `beskid_e2e_tests/fixtures/corelib_mvp` entry. Each test owns a separate
 /// `State`, but concurrent prepares of the same entry race on those registries
 /// ("entry session syntax generation cannot regress"), which a real server
-/// avoids through its single `db_gate`.
+/// avoids through the mutation gate of the project's database.
 #[cfg(test)]
 pub(crate) static SHARED_FIXTURE_LOCK: std::sync::LazyLock<tokio::sync::Mutex<()>> =
     std::sync::LazyLock::new(|| tokio::sync::Mutex::new(()));

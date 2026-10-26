@@ -2,10 +2,9 @@ use std::{
     collections::HashMap,
     path::PathBuf,
     sync::{
-        Arc, Mutex,
+        Arc,
         atomic::{AtomicBool, Ordering},
     },
-    time::Duration,
 };
 
 use beskid_analysis::CompilationContext;
@@ -15,14 +14,12 @@ use beskid_analysis::CompilationContext;
 // returned by the prepare spine. `SyntaxTextEditKind` is consumed only by tests, which
 // import it directly from `beskid_analysis`.
 pub use beskid_analysis::{SyntaxFix, SyntaxTextEdit};
-use beskid_queries::{
-    AstNodeKey, BeskidDatabase, configure_compilation_database_for_project, reset_compilation_database,
-};
+use beskid_queries::AstNodeKey;
 use beskid_tools::native_mods::ModHostSelection;
 use tokio::sync::{Mutex as AsyncMutex, Notify};
 use tower_lsp_server::ls_types::Uri;
 
-use super::{db_access, documentation_facts::SyntaxDocumentationFact};
+use super::{documentation_facts::SyntaxDocumentationFact, project_dbs::ProjectDatabases};
 
 /// One editor buffer or disk snapshot with generation-bound syntax facts.
 #[derive(Debug, Clone)]
@@ -68,6 +65,92 @@ impl Document {
         self.syntax_documentation.clear();
         self.syntax_diagnostics.clear();
         self.syntax_fixes.clear();
+    }
+}
+
+/// The single edit between two texts: the common prefix and suffix, and the length change.
+/// Offsets outside the replaced middle keep their meaning across the edit.
+struct TextEdit {
+    prefix: usize,
+    old_suffix_start: usize,
+    delta: isize,
+}
+
+impl TextEdit {
+    fn between(old: &str, new: &str) -> Self {
+        let mut prefix = old.bytes().zip(new.bytes()).take_while(|(left, right)| left == right).count();
+        while !old.is_char_boundary(prefix) || !new.is_char_boundary(prefix) {
+            prefix -= 1;
+        }
+        let max_suffix = old.len().min(new.len()) - prefix;
+        let mut suffix =
+            old.bytes().rev().zip(new.bytes().rev()).take(max_suffix).take_while(|(left, right)| left == right).count();
+        while !old.is_char_boundary(old.len() - suffix) || !new.is_char_boundary(new.len() - suffix) {
+            suffix -= 1;
+        }
+        Self { prefix, old_suffix_start: old.len() - suffix, delta: new.len() as isize - old.len() as isize }
+    }
+
+    /// The span `[start, end]` of the old text in the new text, when it lies outside the edit.
+    fn span(&self, start: usize, end: usize) -> Option<(usize, usize)> {
+        if end <= self.prefix {
+            Some((start, end))
+        } else if start >= self.old_suffix_start {
+            Some(((start as isize + self.delta) as usize, (end as isize + self.delta) as usize))
+        } else {
+            None
+        }
+    }
+}
+
+impl Document {
+    /// This document's facts carried over to `text`, the newer text of the same buffer whose
+    /// analysis has not finished. Facts outside the edited region move with their text; facts
+    /// inside it, diagnostics and everything bound to the analyzed generation (the completion
+    /// anchor, inlay hints) are dropped. Hover and completion answer from this instead of
+    /// waiting for the analysis of every keystroke.
+    pub(crate) fn carried_over(&self, text: String, path: Option<&std::path::Path>) -> Document {
+        let edit = TextEdit::between(&self.text, &text);
+        let syntax_hovers = self
+            .syntax_hovers
+            .iter()
+            .filter_map(|hover| {
+                let (reference_start, reference_end) = edit.span(hover.reference_start, hover.reference_end)?;
+                let (location_start, location_end) = if path == Some(hover.location_path.as_path()) {
+                    edit.span(hover.location_start, hover.location_end)?
+                } else {
+                    (hover.location_start, hover.location_end)
+                };
+                Some(SyntaxHover { reference_start, reference_end, location_start, location_end, ..hover.clone() })
+            })
+            .collect();
+        let syntax_completion = self.syntax_completion.as_ref().map(|completion| SyntaxCompletion {
+            entry_anchor: None,
+            dependency_surface: Arc::clone(&completion.dependency_surface),
+            attributes: Arc::clone(&completion.attributes),
+            member_access: completion
+                .member_access
+                .iter()
+                .filter_map(|(offset, candidates)| {
+                    edit.span(*offset, *offset).map(|(offset, _)| (offset, Arc::clone(candidates)))
+                })
+                .collect::<Vec<_>>()
+                .into(),
+        });
+        Document {
+            version: self.version,
+            text,
+            syntax_definitions: Vec::new(),
+            syntax_hovers,
+            syntax_symbols: Vec::new(),
+            bsol_semantic_token_candidates: Vec::new(),
+            syntax_attribute_names: Vec::new(),
+            syntax_completion,
+            syntax_inlay_hints: Vec::new(),
+            syntax_documentation: Vec::new(),
+            syntax_diagnostics: Vec::new(),
+            syntax_fixes: Vec::new(),
+        }
     }
 }
 
@@ -181,6 +264,12 @@ pub struct SyntaxAttributeName {
     pub declaration: bool,
 }
 
+/// Full-diagnostics preparations that run at once (see [`State::diagnostics_permits`]).
+pub(crate) const MAX_CONCURRENT_DIAGNOSTICS: usize = 2;
+
+/// Project analyses that run at once (see [`State::analysis_permits`]).
+pub(crate) const MAX_CONCURRENT_ANALYSES: usize = 2;
+
 /// In-memory LSP workspace: open docs, closed-but-indexed files, and compilation context cache.
 pub struct State {
     /// Canonical `.bproj` path from init options or `beskid.focusedProjectUri` configuration.
@@ -194,12 +283,8 @@ pub struct State {
     /// Key: canonical `.bproj` path plus `workspace_member_for_meta_default` (from graph
     /// build options / env), so `attachTo: default` disambiguation cannot reuse a stale slice.
     pub compilation_context_cache: HashMap<(PathBuf, Option<String>), CompilationContext>,
-    /// Salsa incremental database shared by IDE features and diagnostics.
-    pub compilation_db: Arc<Mutex<BeskidDatabase>>,
-    /// Canonical project root the Salsa database was configured for (avoids wholesale resets).
-    pub configured_project_root: Option<PathBuf>,
-    /// Serializes Salsa input mutation while parallel query handles are acquired.
-    pub(crate) db_gate: Arc<AsyncMutex<()>>,
+    /// One in-memory Salsa database per project, each with its own mutation gate.
+    pub(crate) databases: ProjectDatabases,
     /// Preserves notification order per URI without blocking unrelated buffers.
     pub(crate) document_update_gates: HashMap<Uri, Arc<AsyncMutex<()>>>,
     /// Set after the first workspace scan finishes (gates Salsa work during startup).
@@ -212,22 +297,6 @@ pub struct State {
     pub(crate) workspace_index_complete: Arc<AtomicBool>,
     /// Wakes tasks waiting on [`initial_scan_complete`].
     pub(crate) scan_barrier: Arc<Notify>,
-    /// Whether the LSP persists the Salsa DB snapshot to disk on idle/shutdown.
-    ///
-    /// Toggled via `persistenceEnabled` init option or `beskid.lsp.persistence.enabled`
-    /// workspace config. When `false`, the LSP skips snapshot saves entirely (users
-    /// who want only CLI saves). Defaults to `true`.
-    pub persistence_save_enabled: bool,
-    /// Idle debounce window before the LSP persists the Salsa DB snapshot.
-    ///
-    /// Configured via `persistenceSaveDebounceMs` init option or
-    /// `beskid.lsp.persistence.saveDebounceMs` workspace config. Defaults to 5s.
-    pub persistence_save_debounce: Duration,
-    /// Coalesced snapshot-save schedule revision (debounced persistence).
-    ///
-    /// Single global counter (the DB is shared across all URIs) — each document
-    /// change bumps it, and a spawned save only fires when it is still the latest.
-    pub(crate) persistence_save_revision: u64,
     /// Native Mod host that project preparation runs Mods in.
     ///
     /// Defaults to the installed toolchain (the `beskid` CLI next to this server and its runtime
@@ -236,6 +305,15 @@ pub struct State {
     pub mod_host: ModHostSelection,
     /// Interactive requests currently running; background scans yield while this is non-zero.
     pub(crate) interactive_inflight: Arc<crate::scan_schedule::InteractiveGate>,
+    /// Woken whenever an open document's analyzed facts are stored, so requests that need the
+    /// facts of the newest text can wait for them.
+    pub(crate) facts_stored: Arc<Notify>,
+    /// Bounds the full-diagnostics preparations that run at once. Each holds a typed program of
+    /// its project (gigabytes for a large Corelib package) outside the project's database gate.
+    pub(crate) diagnostics_permits: Arc<tokio::sync::Semaphore>,
+    /// Bounds the analyses (database work of any project) that run at once. Each holds a
+    /// project's typed closure, so analyses of many projects at once would hold many of them.
+    pub(crate) analysis_permits: Arc<tokio::sync::Semaphore>,
     /// Content fingerprints of manifests and lockfiles already acted on, so a rewrite with
     /// identical bytes (the server's own `Project.lock` sync) causes no invalidation.
     pub(crate) watched_fingerprints: HashMap<PathBuf, u64>,
@@ -249,19 +327,17 @@ impl Default for State {
             workspace_index: HashMap::new(),
             diagnostic_generation: 0,
             compilation_context_cache: HashMap::new(),
-            compilation_db: Arc::new(Mutex::new(BeskidDatabase::default())),
-            configured_project_root: None,
-            db_gate: db_access::new_db_gate(),
+            databases: ProjectDatabases::default(),
             document_update_gates: HashMap::new(),
             initial_scan_complete: Arc::new(AtomicBool::new(false)),
             workspace_index_complete: Arc::new(AtomicBool::new(false)),
             scan_barrier: Arc::new(Notify::new()),
-            persistence_save_enabled: true,
-            persistence_save_debounce: super::lifecycle::DEFAULT_PERSISTENCE_DEBOUNCE,
-            persistence_save_revision: 0,
             mod_host: ModHostSelection::installed(),
             interactive_inflight: Arc::new(crate::scan_schedule::InteractiveGate::default()),
             watched_fingerprints: HashMap::new(),
+            facts_stored: Arc::new(Notify::new()),
+            diagnostics_permits: Arc::new(tokio::sync::Semaphore::new(MAX_CONCURRENT_DIAGNOSTICS)),
+            analysis_permits: Arc::new(tokio::sync::Semaphore::new(MAX_CONCURRENT_ANALYSES)),
         }
     }
 }
@@ -271,20 +347,6 @@ impl State {
         self.docs.get(uri).cloned().or_else(|| self.workspace_index.get(uri).cloned())
     }
 
-    pub fn configure_db_for_project_with_db(&mut self, db: &mut BeskidDatabase, project_root: &std::path::Path) {
-        let canonical = project_root.canonicalize().unwrap_or_else(|_| project_root.to_path_buf());
-        if self.configured_project_root.as_ref() == Some(&canonical) {
-            return;
-        }
-        configure_compilation_database_for_project(db, &canonical);
-        self.configured_project_root = Some(canonical);
-    }
-
-    pub fn reset_compilation_db_with_db(&mut self, db: &mut BeskidDatabase) {
-        reset_compilation_database(db);
-        self.configured_project_root = None;
-    }
-
     pub(crate) fn mark_workspace_index_complete(&self) {
         self.workspace_index_complete.store(true, Ordering::Release);
     }
@@ -292,5 +354,99 @@ impl State {
     pub(crate) fn mark_initial_scan_complete(&self) {
         self.initial_scan_complete.store(true, Ordering::Release);
         self.scan_barrier.notify_waiters();
+    }
+}
+
+#[cfg(test)]
+mod carry_over_tests {
+    use super::*;
+
+    fn hover(start: usize, end: usize, path: &str) -> SyntaxHover {
+        SyntaxHover {
+            reference_start: start,
+            reference_end: end,
+            markdown: format!("hover {start}"),
+            location_path: PathBuf::from(path),
+            location_start: start,
+            location_end: end,
+        }
+    }
+
+    fn document(text: &str, hovers: Vec<SyntaxHover>, member_access: Vec<usize>) -> Document {
+        Document {
+            version: 1,
+            text: text.to_string(),
+            syntax_definitions: Vec::new(),
+            syntax_hovers: hovers,
+            syntax_symbols: Vec::new(),
+            bsol_semantic_token_candidates: Vec::new(),
+            syntax_attribute_names: Vec::new(),
+            syntax_completion: Some(SyntaxCompletion {
+                entry_anchor: None,
+                dependency_surface: Arc::from([]),
+                attributes: Arc::from([]),
+                member_access: member_access
+                    .into_iter()
+                    .map(|offset| (offset, Arc::from([])))
+                    .collect::<Vec<_>>()
+                    .into(),
+            }),
+            syntax_inlay_hints: Vec::new(),
+            syntax_documentation: Vec::new(),
+            syntax_diagnostics: vec![SyntaxDiagnostic {
+                start: 0,
+                end: 1,
+                severity: SyntaxDiagnosticSeverity::Error,
+                code: None,
+                message: "old".into(),
+                source: "beskid".into(),
+                detail: Default::default(),
+            }],
+            syntax_fixes: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn facts_before_and_after_an_edit_move_with_their_text_and_facts_inside_it_are_dropped() {
+        //          0123456789012345678901
+        let old = "alpha beta gamma delta";
+        let new = "alpha BETA2 gamma delta"; // `beta` (6..10) became `BETA2` (6..11)
+        let path = std::path::Path::new("/w/Main.bd");
+        let doc = document(
+            old,
+            vec![hover(0, 5, "/w/Main.bd"), hover(6, 10, "/w/Main.bd"), hover(11, 16, "/w/Other.bd")],
+            vec![5, 8, 17],
+        );
+        let carried = doc.carried_over(new.to_string(), Some(path));
+        assert_eq!(carried.text, new);
+        let spans: Vec<_> = carried
+            .syntax_hovers
+            .iter()
+            .map(|h| (h.reference_start, h.reference_end, h.location_start, h.location_end))
+            .collect();
+        assert_eq!(spans, vec![(0, 5, 0, 5), (12, 17, 11, 16)], "a location in another file keeps its offsets");
+        assert_eq!(&new[12..17], "gamma");
+        let offsets: Vec<_> =
+            carried.syntax_completion.as_ref().unwrap().member_access.iter().map(|(offset, _)| *offset).collect();
+        assert_eq!(offsets, vec![5, 18]);
+        assert!(carried.syntax_diagnostics.is_empty(), "diagnostics belong to the analyzed text");
+    }
+
+    #[test]
+    fn an_appended_line_keeps_every_fact() {
+        let old = "i32 Main() { return 0; }\n";
+        let new = format!("{old}// edit\n");
+        let doc = document(old, vec![hover(4, 8, "/w/Main.bd")], Vec::new());
+        let carried = doc.carried_over(new, Some(std::path::Path::new("/w/Main.bd")));
+        assert_eq!(carried.syntax_hovers.len(), 1);
+        assert_eq!((carried.syntax_hovers[0].reference_start, carried.syntax_hovers[0].reference_end), (4, 8));
+    }
+
+    #[test]
+    fn multibyte_text_splits_on_character_boundaries() {
+        let doc = document("aé b", vec![hover(4, 5, "/w/x.bd")], Vec::new());
+        let carried = doc.carried_over("aè b".to_string(), None);
+        assert_eq!(carried.syntax_hovers.len(), 1, "the hover after the edit survives");
+        assert_eq!(carried.syntax_hovers[0].reference_start, 4);
     }
 }

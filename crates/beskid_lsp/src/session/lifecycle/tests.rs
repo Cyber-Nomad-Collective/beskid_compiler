@@ -63,11 +63,8 @@ async fn hard_invalidation_clears_syntax_facts_until_rebuild() {
         );
     }
 
-    // Non-cold configured root so invalidate clears bound facts.
-    {
-        let mut write = state.write().await;
-        write.configured_project_root = Some(std::path::PathBuf::from("/tmp/cyb78"));
-    }
+    // A live project database makes this a non-cold invalidation, which clears bound facts.
+    state.write().await.databases.get(Some(std::path::Path::new("/tmp/cyb78")), true);
 
     invalidate_compilation_cache(&state).await;
     {
@@ -161,7 +158,7 @@ async fn set_document_keeps_standalone_bsol_on_the_generic_bsol_path() {
     assert_eq!(&doc.text[key.start..key.end], "retries");
     drop(read);
 
-    state.write().await.configured_project_root = Some(std::path::PathBuf::from("/tmp/bsol-generation"));
+    state.write().await.databases.get(Some(std::path::Path::new("/tmp/bsol-generation")), true);
     invalidate_compilation_cache(&state).await;
     let read = state.read().await;
     let doc = read.docs.get(&file_uri).expect("BSOL document survives compiler-cache invalidation");

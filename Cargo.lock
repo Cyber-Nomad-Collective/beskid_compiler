@@ -689,6 +689,7 @@ dependencies = [
  "beskid_tools",
  "bsol",
  "futures-util",
+ "libc",
  "pest",
  "reqwest 0.12.28",
  "salsa",

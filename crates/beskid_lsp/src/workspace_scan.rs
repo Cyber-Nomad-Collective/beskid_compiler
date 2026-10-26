@@ -508,6 +508,10 @@ pub async fn hydrate_disk_after_close(client: &Client, state: &RwLock<State>, ur
         return;
     };
     let doc = build_document(state, uri, 0, text).await;
+    // Reopened while the disk text was analyzed: the open buffer owns the facts.
+    if crate::features::formatting::open_texts::open_text(uri).is_some() {
+        return;
+    }
     let diagnostics = lsp_diagnostics_from_syntax(&doc.text, &doc.syntax_diagnostics);
     set_disk_snapshot(state, uri.clone(), doc).await;
     client.publish_diagnostics(uri.clone(), diagnostics, Some(0)).await;
