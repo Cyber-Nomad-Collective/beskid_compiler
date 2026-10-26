@@ -170,7 +170,11 @@ fn scan_workspace(label: &str, corelib_root: &Path, shared_root: Option<&Path>) 
         json!({"jsonrpc": "2.0", "method": "textDocument/didOpen", "params": {"textDocument": {
             "uri": completion_uri, "languageId": "beskid", "version": 1, "text": completion_text}}}),
     );
-    diagnostics_for(&messages, &completion_uri);
+    let opened = diagnostics_for(&messages, &completion_uri);
+    assert!(
+        !opened.iter().any(|diagnostic| matches!(diagnostic["code"].as_str(), Some("E3024" | "E3032"))),
+        "{label}: an intact shared Corelib and a current lock report no lock or seal error: {opened:?}"
+    );
     send_message(
         &mut stdin,
         json!({"jsonrpc": "2.0", "id": 2, "method": "textDocument/completion", "params": {

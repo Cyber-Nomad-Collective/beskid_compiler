@@ -19,5 +19,5 @@ pub use lockfile::{
 pub use prepare::{
     prepare_project_workspace, prepare_project_workspace_plan_with_options, prepare_project_workspace_with_options,
 };
-pub(crate) use shared_corelib::SharedCorelib;
+pub(crate) use shared_corelib::{SharedCorelib, verify_shared_corelib_for_lock};
 pub use shared_corelib::shared_corelib_package_of;

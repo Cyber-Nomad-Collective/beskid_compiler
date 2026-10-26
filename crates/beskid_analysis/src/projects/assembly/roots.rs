@@ -10,7 +10,7 @@ use std::{
 use crate::projects::{
     CompilePlan, PROJECT_LOCK_FILE_NAME, PreparedProjectWorkspace, ProjectError, ProjectLockDependencyEntry,
     ProjectLockSource,
-    workflow::{SharedCorelib, load_project_lock_dependencies_for_plan},
+    workflow::{SharedCorelib, load_project_lock_dependencies_for_plan, verify_shared_corelib_for_lock},
 };
 
 /// One searchable source root (host or named dependency).
@@ -82,9 +82,17 @@ pub fn effective_roots_from_lockfile_checked(
         Ok(_) => {}
     }
     let entries = load_project_lock_dependencies_for_plan(lockfile_path, plan)?;
+    let shared_corelib = SharedCorelib::resolve();
+    verify_shared_corelib_for_lock(&entries, shared_corelib.as_ref())?;
     let trusted_dependencies_root = plan.project_root.join("obj/beskid/deps/src").canonicalize().ok();
     let Some(replayed_dependencies) =
-        replayed_dependency_roots(plan, lockfile_path, &entries, trusted_dependencies_root.as_deref())
+        replayed_dependency_roots(
+            plan,
+            lockfile_path,
+            &entries,
+            trusted_dependencies_root.as_deref(),
+            shared_corelib.as_ref(),
+        )
     else {
         return Ok(base);
     };
@@ -109,6 +117,7 @@ fn replayed_dependency_roots(
     lockfile_path: &Path,
     entries: &[ProjectLockDependencyEntry],
     trusted_dependencies_root: Option<&Path>,
+    shared_corelib: Option<&SharedCorelib>,
 ) -> Option<Vec<RootEntry>> {
     let expected_names: HashSet<_> =
         plan.dependency_projects.iter().map(|dependency| dependency.dependency_name.as_str()).collect();
@@ -118,14 +127,13 @@ fn replayed_dependency_roots(
     }
 
     let lock_root = lockfile_path.parent()?;
-    let shared_corelib = SharedCorelib::resolve();
     let mut replayed = Vec::with_capacity(entries.len());
     for entry in entries {
         let dependency =
             plan.dependency_projects.iter().find(|dependency| dependency.dependency_name == entry.name())?;
         let project_base = match entry.source() {
             ProjectLockSource::Path | ProjectLockSource::Registry => lock_root,
-            ProjectLockSource::Corelib => shared_corelib.as_ref()?.root(),
+            ProjectLockSource::Corelib => shared_corelib?.root(),
         };
         let project = project_base.join(entry.project());
         let manifest = project.join(entry.manifest());

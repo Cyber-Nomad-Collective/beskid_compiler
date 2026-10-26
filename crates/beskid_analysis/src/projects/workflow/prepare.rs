@@ -19,7 +19,7 @@ use super::{
         WorkspacePrepareOptions, sync_project_lockfile,
     },
     registry::materialize_registry_dependency,
-    shared_corelib::SharedCorelib,
+    shared_corelib::{SharedCorelib, verify_shared_corelib_for_lock},
 };
 use crate::analysis::diagnostics::source_map::{ORIGINS_FILE, SourceOrigins};
 use crate::projects::{
@@ -182,11 +182,7 @@ pub fn prepare_project_workspace_plan_with_options(
 
     // Corelib packages are read in place from the toolchain's shared Corelib, which is never
     // written; a sealed one must still match its fingerprint before any unit of it is used.
-    if lock_entries.iter().any(|entry| entry.source == ProjectLockSource::Corelib)
-        && let Some(shared) = &shared_corelib
-    {
-        shared.verify_seal()?;
-    }
+    verify_shared_corelib_for_lock(&lock_entries, shared_corelib.as_ref())?;
 
     let path_deps_total = plan.dependency_projects.len() as u64;
     observe_phase_result(pipeline, WORKSPACE_MATERIALIZE_PATH_DEPS, || {
