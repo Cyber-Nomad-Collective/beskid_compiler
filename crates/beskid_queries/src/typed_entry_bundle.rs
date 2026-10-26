@@ -1,7 +1,7 @@
 //! Debounced typed entry bundle: fast resolution vs full executable prepare.
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::Arc;
 
 use anyhow::Result;
 use beskid_analysis::services::{FrontEndOptions, PrepareOptions, ResolvedInput};
@@ -40,47 +40,40 @@ pub struct TypedEntryState {
     pub generation: u64,
 }
 
+/// Typed-entry inputs and side cache of one database storage.
+///
+/// The revision inputs are Salsa inputs of that storage, so they live with it: a database that
+/// replaces another (a reset, another project) starts with none, and databases of several
+/// projects held side by side never read each other's inputs.
 #[derive(Default)]
-struct TypedEntryCache {
+pub struct TypedEntryRegistry {
+    file_revisions: HashMap<String, FileRevision>,
+    typed_prepare_revisions: HashMap<String, TypedPrepareRevision>,
     /// Full executable prepare (keyed by debounced `typed_prepare_revision`).
     full_bundles: HashMap<String, (u64, SharedFrontEnd)>,
     /// EntryOnly gate prepare while file edits are ahead of debounced prepare (keyed by `file_revision`).
     gate_bundles: HashMap<String, (u64, SharedFrontEnd)>,
 }
 
-static FILE_REVISION_REGISTRY: OnceLock<Mutex<HashMap<String, FileRevision>>> = OnceLock::new();
-static TYPED_PREPARE_REVISION_REGISTRY: OnceLock<Mutex<HashMap<String, TypedPrepareRevision>>> = OnceLock::new();
-static TYPED_ENTRY_CACHE: OnceLock<Mutex<TypedEntryCache>> = OnceLock::new();
-
-fn file_revision_registry() -> &'static Mutex<HashMap<String, FileRevision>> {
-    FILE_REVISION_REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
-}
-
-fn typed_prepare_revision_registry() -> &'static Mutex<HashMap<String, TypedPrepareRevision>> {
-    TYPED_PREPARE_REVISION_REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
-}
-
-fn typed_entry_cache() -> &'static Mutex<TypedEntryCache> {
-    TYPED_ENTRY_CACHE.get_or_init(|| Mutex::new(TypedEntryCache::default()))
+fn typed_entry_registry(db: &dyn Db) -> std::sync::MutexGuard<'_, TypedEntryRegistry> {
+    db.typed_entry_registry().lock().expect("typed entry registry")
 }
 
 fn ensure_file_revision(db: &mut BeskidDatabase, entry_key: &str) -> FileRevision {
-    let mut registry = file_revision_registry().lock().expect("file revision registry");
-    if let Some(revision) = registry.get(entry_key) {
+    if let Some(revision) = typed_entry_registry(db).file_revisions.get(entry_key) {
         return *revision;
     }
     let revision = FileRevision::new(db, entry_key.to_string(), 0);
-    registry.insert(entry_key.to_string(), revision);
+    typed_entry_registry(db).file_revisions.insert(entry_key.to_string(), revision);
     revision
 }
 
 fn ensure_typed_prepare_revision(db: &mut BeskidDatabase, entry_key: &str) -> TypedPrepareRevision {
-    let mut registry = typed_prepare_revision_registry().lock().expect("typed prepare revision registry");
-    if let Some(revision) = registry.get(entry_key) {
+    if let Some(revision) = typed_entry_registry(db).typed_prepare_revisions.get(entry_key) {
         return *revision;
     }
     let revision = TypedPrepareRevision::new(db, entry_key.to_string(), 0);
-    registry.insert(entry_key.to_string(), revision);
+    typed_entry_registry(db).typed_prepare_revisions.insert(entry_key.to_string(), revision);
     revision
 }
 
@@ -90,7 +83,7 @@ pub fn bump_file_revision(db: &mut BeskidDatabase, entry_key: &str) -> u64 {
     let next = revision.revision(db).saturating_add(1);
     revision.set_revision(db).to(next);
     record_revision_bump();
-    typed_entry_cache().lock().expect("typed entry cache").gate_bundles.remove(entry_key);
+    typed_entry_registry(db).gate_bundles.remove(entry_key);
     next
 }
 
@@ -100,26 +93,18 @@ pub fn bump_typed_prepare_revision(db: &mut BeskidDatabase, entry_key: &str) -> 
     let next = revision.revision(db).saturating_add(1);
     revision.set_revision(db).to(next);
     record_revision_bump();
-    clear_typed_entry_cache_for_entry(entry_key);
+    clear_typed_entry_cache_for_entry(db, entry_key);
     next
 }
 
 pub fn file_revision_for(db: &dyn Db, entry_key: &str) -> u64 {
-    file_revision_registry()
-        .lock()
-        .expect("file revision registry")
-        .get(entry_key)
-        .map(|revision| revision.revision(db))
-        .unwrap_or(0)
+    let revision = typed_entry_registry(db).file_revisions.get(entry_key).copied();
+    revision.map_or(0, |revision| revision.revision(db))
 }
 
 pub fn typed_prepare_revision_for(db: &dyn Db, entry_key: &str) -> u64 {
-    typed_prepare_revision_registry()
-        .lock()
-        .expect("typed prepare revision registry")
-        .get(entry_key)
-        .map(|revision| revision.revision(db))
-        .unwrap_or(0)
+    let revision = typed_entry_registry(db).typed_prepare_revisions.get(entry_key).copied();
+    revision.map_or(0, |revision| revision.revision(db))
 }
 
 /// True when file edits have not yet been reflected in a typed prepare pass.
@@ -200,9 +185,7 @@ fn run_tracked_typed_prepare(
     pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<SharedFrontEnd> {
     let typed_prepare_revision = typed_prepare_revision_for(db, entry_key);
-    let cache_hit = typed_entry_cache()
-        .lock()
-        .expect("typed entry cache")
+    let cache_hit = typed_entry_registry(db)
         .full_bundles
         .get(entry_key)
         .is_some_and(|(generation, _)| *generation == typed_prepare_revision);
@@ -226,9 +209,7 @@ fn run_tracked_typed_prepare(
         options_fingerprint,
     );
 
-    if let Some((generation, front)) = typed_entry_cache()
-        .lock()
-        .expect("typed entry cache")
+    if let Some((generation, front)) = typed_entry_registry(db)
         .full_bundles
         .get(entry_key)
         .filter(|(generation, _)| *generation == typed_prepare_revision)
@@ -239,11 +220,7 @@ fn run_tracked_typed_prepare(
     }
 
     let front = materialize_typed_bundle(db, resolved, options, pipeline)?;
-    typed_entry_cache()
-        .lock()
-        .expect("typed entry cache")
-        .full_bundles
-        .insert(entry_key.to_string(), (typed_prepare_revision, front.clone()));
+    typed_entry_registry(db).full_bundles.insert(entry_key.to_string(), (typed_prepare_revision, front.clone()));
     Ok(front)
 }
 
@@ -255,17 +232,13 @@ fn run_tracked_entry_gate_prepare(
     pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<SharedFrontEnd> {
     let file_revision = file_revision_for(db, entry_key);
-    let cache_hit = typed_entry_cache()
-        .lock()
-        .expect("typed entry cache")
+    let cache_hit = typed_entry_registry(db)
         .gate_bundles
         .get(entry_key)
         .is_some_and(|(generation, _)| *generation == file_revision);
     trace_query_with_reason("typed_entry_gate_bundle", cache_hit, if cache_hit { Some("file_revision") } else { None });
 
-    if let Some((generation, front)) = typed_entry_cache()
-        .lock()
-        .expect("typed entry cache")
+    if let Some((generation, front)) = typed_entry_registry(db)
         .gate_bundles
         .get(entry_key)
         .filter(|(generation, _)| *generation == file_revision)
@@ -276,11 +249,7 @@ fn run_tracked_entry_gate_prepare(
     }
 
     let front = materialize_typed_bundle(db, resolved, options, pipeline)?;
-    typed_entry_cache()
-        .lock()
-        .expect("typed entry cache")
-        .gate_bundles
-        .insert(entry_key.to_string(), (file_revision, front.clone()));
+    typed_entry_registry(db).gate_bundles.insert(entry_key.to_string(), (file_revision, front.clone()));
     Ok(front)
 }
 
@@ -331,22 +300,8 @@ pub fn typed_entry_bundle_with_db(
     )
 }
 
-pub fn clear_typed_entry_cache_for_entry(entry_key: &str) {
-    let mut cache = typed_entry_cache().lock().expect("typed entry cache");
-    cache.full_bundles.remove(entry_key);
-    cache.gate_bundles.remove(entry_key);
-}
-
-pub fn clear_typed_entry_cache() {
-    let mut cache = typed_entry_cache().lock().expect("typed entry cache");
-    cache.full_bundles.clear();
-    cache.gate_bundles.clear();
-}
-
-/// Clear process-global typed-entry Salsa inputs and side cache before replacing
-/// [`BeskidDatabase`] storage (LSP invalidation, project-root switch, CLI reconfigure).
-pub fn reset_typed_entry_inputs() {
-    file_revision_registry().lock().expect("file revision registry").clear();
-    typed_prepare_revision_registry().lock().expect("typed prepare revision registry").clear();
-    clear_typed_entry_cache();
+pub fn clear_typed_entry_cache_for_entry(db: &dyn Db, entry_key: &str) {
+    let mut registry = typed_entry_registry(db);
+    registry.full_bundles.remove(entry_key);
+    registry.gate_bundles.remove(entry_key);
 }

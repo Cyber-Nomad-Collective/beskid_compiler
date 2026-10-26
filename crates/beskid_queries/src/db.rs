@@ -9,7 +9,7 @@ mod syntax_fingerprint;
 pub(crate) use syntax_fingerprint::expanded_syntax_fingerprint;
 
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, Mutex};
 
@@ -18,7 +18,7 @@ use beskid_analysis::syntax::SyntaxGenerationId;
 
 use crate::inputs::{FileText, GrammarRevision, ProjectSession};
 use crate::semantic_contract::{CorelibService, SourceUnitId, SyntaxUnitInput};
-use crate::typed_entry_bundle::reset_typed_entry_inputs;
+use crate::typed_entry_bundle::TypedEntryRegistry;
 
 type ProjectRegistry = HashMap<(PathBuf, PathBuf, String), ProjectSession>;
 type ModuleIndexCache = HashMap<String, Arc<ModuleIndex>>;
@@ -158,6 +158,8 @@ pub trait Db: salsa::Database {
     fn module_index_cached(&self, fingerprint: &str) -> Option<Arc<ModuleIndex>>;
     fn syntax_unit(&self, unit: SourceUnitId) -> Option<SyntaxUnitInput>;
     fn syntax_dependency_registry(&self) -> &Mutex<SyntaxDependencyRegistry>;
+    /// Typed-entry revision inputs and side cache of this storage.
+    fn typed_entry_registry(&self) -> &Mutex<TypedEntryRegistry>;
     /// Another handle of the same storage and registries for a worker thread. Handles share
     /// every memo and input; a write through any handle waits until the others are dropped, so
     /// read-only parallel work (code emission) observes exactly one revision.
@@ -175,29 +177,16 @@ pub struct BeskidDatabase {
     syntax_dependency_registry: Arc<Mutex<SyntaxDependencyRegistry>>,
     unit_cache: Arc<Mutex<UnitArtifactCache>>,
     module_index_cache: Arc<Mutex<ModuleIndexCache>>,
+    typed_entry_registry: Arc<Mutex<TypedEntryRegistry>>,
     persistence_root: Option<PathBuf>,
     grammar_revision: Option<GrammarRevision>,
     syntax_parse_count: Arc<AtomicU64>,
     syntax_index_build_count: Arc<AtomicU64>,
 }
 
-/// Replace Salsa storage after clearing typed-entry input registries tied to the old storage.
-pub fn replace_compilation_database(target: &mut BeskidDatabase, replacement: BeskidDatabase) {
-    reset_typed_entry_inputs();
-    *target = replacement;
-}
-
 /// Reset to an in-memory database (no on-disk persistence).
 pub fn reset_compilation_database(target: &mut BeskidDatabase) {
-    replace_compilation_database(target, BeskidDatabase::default());
-}
-
-/// Reconfigure persistence for `project_root`, replacing storage when the root changes.
-pub fn configure_compilation_database_for_project(target: &mut BeskidDatabase, project_root: &Path) {
-    replace_compilation_database(target, BeskidDatabase::with_persistence(project_root));
-    // Cross-run salsa snapshot is now loaded inside `BeskidDatabase::new` (before
-    // GrammarRevision allocation) to avoid salsa's allocation-order assertion. See
-    // `lifecycle.rs` for the rationale.
+    *target = BeskidDatabase::default();
 }
 
 #[salsa::db]
@@ -219,6 +208,10 @@ impl Db for BeskidDatabase {
 
     fn syntax_dependency_registry(&self) -> &Mutex<SyntaxDependencyRegistry> {
         &self.syntax_dependency_registry
+    }
+
+    fn typed_entry_registry(&self) -> &Mutex<TypedEntryRegistry> {
+        &self.typed_entry_registry
     }
 
     fn unit_cache(&self) -> &Mutex<UnitArtifactCache> {

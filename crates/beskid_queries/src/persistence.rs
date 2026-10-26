@@ -575,7 +575,7 @@ fn load_db_snapshot_on_stack(db: &mut crate::db::BeskidDatabase, bytes: &[u8]) -
     if let Some(generation) = restored_generation {
         generation.resume_after();
     }
-    crate::db::replace_compilation_database(db, candidate);
+    *db = candidate;
     true
 }
 

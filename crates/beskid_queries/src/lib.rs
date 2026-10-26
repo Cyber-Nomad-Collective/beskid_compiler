@@ -80,10 +80,7 @@ mod unit;
 
 pub use beskid_analysis::syntax::{AstNodeId, SyntaxGenerationId};
 pub use beskid_graph::GraphKind;
-pub use db::{
-    BeskidDatabase, Db, UnitArtifactCache, configure_compilation_database_for_project, replace_compilation_database,
-    reset_compilation_database,
-};
+pub use db::{BeskidDatabase, Db, UnitArtifactCache, reset_compilation_database};
 pub use entry::prepare_compilation_diagnostics_isolated;
 pub use entry::{
     assemble_resolved_input_with_db, cached_semantic_snapshot_for_key, entry_resolution_with_db, fingerprint_key,
@@ -195,9 +192,9 @@ pub use session::{
 };
 pub use stats::{emit_salsa_stats, record_query_hit, record_query_miss, record_revision_bump, reset, snapshot};
 pub use typed_entry_bundle::{
-    FileRevision, TypedEntryState, TypedPrepareRevision, bump_file_revision, bump_typed_prepare_revision,
-    clear_typed_entry_cache, file_revision_for, is_typed_bundle_stale, reset_typed_entry_inputs,
-    typed_entry_bundle_tracked, typed_entry_bundle_with_db, typed_entry_state_with_db, typed_prepare_revision_for,
+    FileRevision, TypedEntryRegistry, TypedEntryState, TypedPrepareRevision, bump_file_revision,
+    bump_typed_prepare_revision, file_revision_for, is_typed_bundle_stale, typed_entry_bundle_tracked,
+    typed_entry_bundle_with_db, typed_entry_state_with_db, typed_prepare_revision_for,
 };
 pub use typed_program::build_canonical_runtime_typed_program;
 pub use typed_program::build_runtime_fixture_typed_program;
