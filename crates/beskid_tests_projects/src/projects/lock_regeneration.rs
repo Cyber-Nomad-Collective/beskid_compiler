@@ -83,7 +83,11 @@ fn v1_lock_is_refused_until_an_explicit_refresh_migrates_it() {
     let root = temp_case_dir("lock_regeneration_v1");
     let project = root.join("app");
     let manifest = write_project(&project, "app");
-    let v1 = format!("# Project.lock v1\nroot_manifest={}\nproject_name=app\ndependencies:\n", manifest.display());
+    // The body is not valid v1 either: a retired lock is recognised by its header alone.
+    let v1 = format!(
+        "# Project.lock v1\nroot_manifest={}\nproject_name=app\nnot-a-dependency\ndependencies:\n- name=x\n",
+        manifest.display()
+    );
     fs::write(project.join(PROJECT_LOCK_FILE_NAME), &v1).expect("v1 lock");
 
     let error = prepare(&root, &manifest, WorkspacePrepareOptions::default()).expect_err("v1 lock must be refused");
