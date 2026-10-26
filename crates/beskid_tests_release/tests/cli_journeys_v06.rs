@@ -284,7 +284,8 @@ fn cli06_02_new_offline_installed_template_checks_bytes_before_output() {
     let tampered = instantiate("tampered");
     assert_eq!(tampered.status.code(), Some(1), "tampered installed template fails:\n{}", transcript(&tampered));
     let diagnostic = stderr(&tampered).to_ascii_lowercase();
-    assert!(diagnostic.contains("checksum") || diagnostic.contains("integrity"), "{diagnostic}");
+    assert!(diagnostic.contains("files no longer match its installation record"), "{diagnostic}");
+    assert!(diagnostic.contains("beskid package template install offline-local"), "{diagnostic}");
     assert!(!home.work().join("tampered").exists(), "no output before verification");
     assert_eq!(registry.count(), 0);
 }
