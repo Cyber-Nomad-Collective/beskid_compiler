@@ -28,13 +28,13 @@ u8[] KeepBytes(move u8[] value)
     return value;
 }
 
-Aggregate KeepAggregate(move Aggregate value)
+Aggregate KeepAggregate(Aggregate value)
 {
     Probe.gc_collect();
     return value;
 }
 
-OwnedResource KeepResource(move OwnedResource value)
+OwnedResource KeepResource(OwnedResource value)
 {
     Probe.gc_collect();
     return value;
