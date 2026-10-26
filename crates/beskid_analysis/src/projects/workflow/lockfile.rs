@@ -216,16 +216,9 @@ impl ProjectLockfile {
             {
                 return Err(ProjectError::Validation("lockfile duplicates a materialized destination".into()));
             }
-            // The writer emits entries sorted by name; a lock in any other order was edited by
-            // hand and is rejected rather than accepted and silently left non-canonical.
-            if dependencies.last().is_some_and(|previous: &ProjectLockDependencyEntry| previous.name > entry.name) {
-                return Err(ProjectError::Validation(format!(
-                    "lockfile dependencies must be sorted by name (`{}` is out of order); run `beskid dev project lock`",
-                    entry.name
-                )));
-            }
             dependencies.push(entry);
         }
+        dependencies.sort_by(|left, right| left.name.cmp(&right.name));
         Ok(Self { root_manifest, project_name, dependencies })
     }
 
