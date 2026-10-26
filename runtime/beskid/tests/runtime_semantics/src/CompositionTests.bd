@@ -243,3 +243,80 @@ test CompositionScopeIdentityIsFiberLocal {
     SystemFree(runtime, 64);
     ResumeHostRuntime(hostRuntime);
 }
+
+// ---- Exit entries and open scopes for `CommandLine.Exit` (review 2: H1, H2) ----
+
+test CompositionExitPopUnlinksTheNextHookOfTheCurrentLevel {
+    meta { tags = "composition-scope"; }
+    pointer hostRuntime = SuspendHostRuntime();
+    pointer runtime = SystemAllocate(64, 8);
+    memory_set(runtime, 0, 64);
+    ProcessInit(runtime);
+    pointer owner = CurrentThreadState();
+    // The test host's own launched container may own the thread's exit word; it is set aside
+    // for this test and restored at the end.
+    word hostExit = raw_word_load(pointer_add(owner, 56));
+    raw_word_store(pointer_add(owner, 56), 0);
+    pointer container = CompositionContainerCreate(0);
+    Assert.True(CompositionLaunch(container), "empty plan activates");
+    Assert.Equal(raw_word_load(pointer_add(owner, 56)), NativeWord(container), "launch publishes the exit container");
+    // Stand-ins for hook addresses: the entries are only unlinked here, never run.
+    pointer hook = SystemAllocate(8, 8);
+    pointer arguments = SystemAllocate(8, 8);
+    CompositionExitRegister(container, hook, arguments, 0);
+    Assert.True(raw_word_load(pointer_add(container, 56)) != 0, "a global dispose hook is registered");
+    CompositionScopeEnter(container, 1, 0);
+    pointer scopePtr = NativePointer(raw_word_load(pointer_add(owner, 32)));
+    CompositionExitRegister(container, hook, arguments, 0);
+    CompositionExitRegister(container, hook, arguments, 0);
+    CompositionExitPop(container);
+    Assert.True(raw_word_load(pointer_add(scopePtr, 56)) != 0, "one pop unlinks one scope hook");
+    CompositionExitPop(container);
+    Assert.Equal(raw_word_load(pointer_add(scopePtr, 56)), 0, "the scope level is popped before the global one");
+    Assert.True(raw_word_load(pointer_add(container, 56)) != 0, "the global hook stays while a scope is open");
+    CompositionScopeLeave();
+    CompositionExitPop(container);
+    Assert.Equal(raw_word_load(pointer_add(container, 56)), 0, "with no scope open the global hook is popped");
+    CompositionShutdown(container);
+    Assert.Equal(raw_word_load(pointer_add(owner, 56)), 0, "shutdown withdraws the exit container");
+    raw_word_store(pointer_add(owner, 56), hostExit);
+    CompositionContainerDrop(container);
+    SystemFree(arguments, 8);
+    SystemFree(hook, 8);
+    ProcessShutdown(runtime);
+    SystemFree(runtime, 64);
+    ResumeHostRuntime(hostRuntime);
+}
+
+test CompositionContainerListsTheOpenScopesOfEveryFiber {
+    meta { tags = "composition-scope"; }
+    pointer hostRuntime = SuspendHostRuntime();
+    pointer runtime = SystemAllocate(64, 8);
+    memory_set(runtime, 0, 64);
+    ProcessInit(runtime);
+    pointer container = CompositionContainerCreate(0);
+    Assert.True(CompositionLaunch(container), "empty plan activates");
+    CompositionScopeEnter(container, 1, 0);
+    pointer mainScope = NativePointer(raw_word_load(pointer_add(CurrentThreadState(), 32)));
+    pointer state = SystemAllocate(40, 8);
+    memory_set(state, 0, 40);
+    raw_word_store(state, NativeWord(container));
+    i64 fiber = SpawnCompositionFiberScopeEntry(state);
+    Assert.True(fiber >= 0, "a scoped fiber is scheduled");
+    Assert.True(SchedStep(), "the fiber enters its own frame and yields");
+    pointer fiberScope = NativePointer(raw_word_load(pointer_add(container, 64)));
+    Assert.True(fiberScope != NativePointer(0) && fiberScope != mainScope, "the newest open frame is the fiber's");
+    Assert.True(NativePointer(raw_word_load(pointer_add(fiberScope, 64))) == mainScope, "Main's frame follows it");
+    Assert.True(NativePointer(raw_word_load(pointer_add(CurrentThreadState(), 32))) == mainScope, "Main keeps its own frame across the step");
+    Assert.True(SchedStep(), "the fiber resumes and leaves");
+    Assert.True(NativePointer(raw_word_load(pointer_add(container, 64))) == mainScope, "only Main's frame is still open");
+    CompositionScopeLeave();
+    Assert.Equal(raw_word_load(pointer_add(container, 64)), 0, "no frame is open");
+    CompositionShutdown(container);
+    CompositionContainerDrop(container);
+    SystemFree(state, 40);
+    Assert.True(SchedShutdown(), "scheduler is idle after the scoped fiber");
+    ProcessShutdown(runtime);
+    SystemFree(runtime, 64);
+    ResumeHostRuntime(hostRuntime);
+}

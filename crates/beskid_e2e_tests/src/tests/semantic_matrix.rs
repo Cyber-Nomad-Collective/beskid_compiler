@@ -161,3 +161,82 @@ fn console_host_base_registers_the_command_line() {
         "the open scope's dispose runs innermost first, then the global dispose"
     );
 }
+
+/// Run `fixture` (`manifest`, target `App`) through JIT and AOT; both exit with `code` and print
+/// exactly `expected` (blank lines dropped).
+fn assert_hook_exit(fixture: &str, manifest: &str, code: i32, expected: &[&str]) {
+    let cli = BeskidCliInvoker::new();
+    let workspace = E2eWorkspace::from_fixture(fixture);
+    let manifest = workspace.join(manifest);
+    let check = |output: &std::process::Output, route: &str| {
+        assert_exit_code(output, code, &format!("{fixture} through {route}"));
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let lines = stdout.lines().map(str::trim_end).filter(|line| !line.is_empty()).collect::<Vec<_>>();
+        assert_eq!(lines, expected, "{fixture} through {route}: hook order");
+    };
+    let jit_run = cli.run(["run", "--project", manifest.to_str().expect("manifest path str"), "--target", "App"]);
+    check(&jit_run, "JIT");
+    let output_binary = workspace.join(format!("out/{fixture}"));
+    let build = cli.run([
+        "build",
+        "--project",
+        manifest.to_str().expect("manifest path str"),
+        "--target",
+        "App",
+        "--output",
+        output_binary.to_str().expect("output path str"),
+    ]);
+    assert_success(&build, &format!("build {fixture}"));
+    let native_run = run_binary(&output_binary, Duration::from_secs(10));
+    check(&native_run, "AOT");
+}
+
+/// `CommandLine.Exit` inside a scope `dispose` hook runs that hook once (not again from the exit
+/// list), then the global `dispose` hooks of the launched host and of its base host.
+#[test]
+fn exit_inside_a_dispose_hook_runs_it_once() {
+    assert_hook_exit(
+        "composition_exit_dispose",
+        "CompositionExitDispose.bproj",
+        5,
+        &["base startup", "app startup", "inside", "leave", "app shutdown", "base shutdown"],
+    );
+}
+
+/// `CommandLine.Exit` from a spawned fiber runs the `dispose` hook of the scope `Main` holds open.
+#[test]
+fn exit_from_a_fiber_runs_mains_open_scope_dispose() {
+    assert_hook_exit(
+        "composition_exit_fiber",
+        "CompositionExitFiber.bproj",
+        9,
+        &["enter 3", "exit from fiber", "leave 3", "shutdown"],
+    );
+}
+
+/// `Process.Exit` is the immediate exit: no `dispose` hook runs.
+#[test]
+fn process_exit_runs_no_hooks() {
+    assert_hook_exit("composition_exit_process", "CompositionExitProcess.bproj", 4, &["inside"]);
+}
+
+/// Each `with` activation creates its own scoped set; a scope's `transient` injects the
+/// activation's own scoped instance, the one its hooks receive.
+#[test]
+fn scoped_registrations_are_created_per_with_activation() {
+    assert_hook_exit(
+        "composition_scoped",
+        "CompositionScoped.bproj",
+        0,
+        &[
+            "init 1 same",
+            "body 1",
+            "dispose 1 same",
+            "init 2 same",
+            "init 3 same",
+            "body 3",
+            "dispose 3 same",
+            "dispose 2 same",
+        ],
+    );
+}

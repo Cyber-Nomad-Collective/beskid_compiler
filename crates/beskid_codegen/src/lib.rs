@@ -54,7 +54,7 @@ pub use closure_static::{
     ClosureLoweringAuthority, ClosureStaticDataHandles, ClosureStaticPlan, RuntimeRootContext,
     emit_closure_static_data,
 };
-pub use codegen_input::{CodegenInput, CodegenInputError, RuntimeCompilerOperation};
+pub use codegen_input::{CodegenInput, CodegenInputError, RuntimeCompilerOperation, UnboundCompositionDeclaration};
 pub use event_handler_static::{
     EVENT_HANDLER_ALLOCATION_REQUEST_SYMBOL, EVENT_HANDLER_CODE_OFFSET, EVENT_HANDLER_DESCRIPTOR_SYMBOL,
     EVENT_HANDLER_ENVIRONMENT_OFFSET, EVENT_HANDLER_POINTER_MAP_SYMBOL, emit_event_handler_static_data,

@@ -162,7 +162,13 @@ pub word ExternalWaitRegister(word fiberHandle, word operation, i64 deadline) {
     while slot < count {
         pointer candidate = ExternalWaitSlot(slot);
         if raw_word_load(pointer_add(candidate, 56)) == 0 { available = slot; }
-        else if raw_word_load(pointer_add(candidate, 8)) == fiberHandle { return 0; }
+        else if raw_word_load(pointer_add(candidate, 8)) == fiberHandle {
+            // Main waits on one thing at a time: it drives the scheduler from inside its one
+            // root wait, and nothing it runs there can wait as the root again. A second root
+            // registration is a runtime invariant failure, not an I/O error.
+            if fiberHandle == EXTERNAL_ROOT_WAITER { Trap(10, NativePointer(0), 0); }
+            return 0;
+        }
         slot = slot + 1;
     }
     if available == count {

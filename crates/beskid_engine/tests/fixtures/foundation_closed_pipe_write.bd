@@ -1,0 +1,11 @@
+use Core.Output;
+
+// Writes far more than a pipe buffer holds to a standard output whose reader is gone.
+pub i64 Main() {
+    mut i64 line = 0;
+    while line < 100000 {
+        Output.WriteLine("a line for a reader that has gone away");
+        line = line + 1;
+    }
+    return 0;
+}

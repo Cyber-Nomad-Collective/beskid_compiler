@@ -255,6 +255,26 @@ fn composition_issue_to_diagnostic(
                     .to_string(),
             ),
         ),
+        CompositionIssue::DuplicateRegistration { implementation, key, span, .. } => (
+            *span,
+            if implementation == key {
+                format!("`{implementation}` is registered twice in this host")
+            } else {
+                format!("`{implementation}` is registered for `{key}` twice in this host")
+            },
+            "duplicate registration",
+            Some(format!(
+                "remove one of the two lines; each registration line creates its own `{implementation}`, so a singular `inject` of `{key}` would be ambiguous"
+            )),
+        ),
+        CompositionIssue::SingleInjectsScoped { single, dependency, span } => (
+            *span,
+            format!("`single {single}` cannot inject `{dependency}`, which its scope creates anew on each `with`"),
+            "per-activation service in a `single`",
+            Some(format!(
+                "a host-level `single` lives as long as the container and would keep one activation's `{dependency}`; declare `{single}` in the scope so each `with` creates it, or inject a host-level service"
+            )),
+        ),
         CompositionIssue::UnknownRegistrationId { registration_id, span } => (
             span.unwrap_or(program_span),
             format!("composition produced unknown registration id `{registration_id}` while building dependency graph"),
@@ -317,6 +337,9 @@ fn with_composition_context(diagnostic: SemanticDiagnostic, issue: &CompositionI
                     "an override keeps the lifetime of the registration it replaces: register `{binding}` as `{overridden_lifetime}`, not `{lifetime}`"
                 ),
             )
+        }
+        CompositionIssue::DuplicateRegistration { implementation, first_span: Some(first), .. } => {
+            diagnostic.with_related(*first, format!("`{implementation}` is first registered here"))
         }
         CompositionIssue::RegisteredContract { contract, target, implementation_span, candidates, .. } => {
             // One conforming type makes the fix exact; several leave the choice to the reader.
@@ -416,6 +439,76 @@ i32 Main() { launch AppHost(); return 0; }
             fixed.replace_range(start..end, &text);
         }
         assert!(fixed.contains("inject Greeter[] greeters;"), "{fixed}");
+    }
+
+    #[test]
+    fn the_same_registration_twice_in_one_host_is_e1724() {
+        let source = r#"
+type Clock { }
+type Worker { }
+host AppHost()
+{
+    registry
+    {
+        single Clock;
+        single Worker;
+        single Clock;
+    }
+}
+i32 Main() { launch AppHost(); return 0; }
+"#;
+        let found = diagnostics(source);
+        let duplicates =
+            found.iter().filter(|diagnostic| diagnostic.code.as_deref() == Some("E1724")).collect::<Vec<_>>();
+        let [duplicate] = duplicates.as_slice() else { panic!("one E1724 expected: {found:?}") };
+        assert_eq!(duplicate.message, "`Clock` is registered twice in this host");
+        assert_eq!(duplicate.related.len(), 1, "the first registration is the related place");
+        let second = source.rfind("single Clock;").expect("second line");
+        assert_eq!(duplicate.span.offset(), second, "the second line is reported");
+    }
+
+    #[test]
+    fn a_scope_single_may_inject_its_scope_services() {
+        let source = r#"
+type Session { }
+type Report { inject Session session; }
+type Cache { inject Report report; inject Session session; }
+host AppHost()
+{
+    scope Visit()
+    {
+        Session;
+        transient Report;
+        single Cache;
+    }
+}
+i32 Main() { launch AppHost(); with Visit() { } return 0; }
+"#;
+        let found = diagnostics(source);
+        // A scope's `single` is one per activation, created with the services it injects.
+        assert!(found.iter().all(|diagnostic| diagnostic.code.as_deref() != Some("E1725")), "{found:?}");
+    }
+
+    #[test]
+    fn distinct_implementations_of_one_contract_are_not_duplicates() {
+        let source = r#"
+contract Greeter { string Greet(); }
+type English : Greeter { pub string Greet() { return "hello"; } }
+type Polish : Greeter { pub string Greet() { return "czesc"; } }
+type Reception { inject Greeter[] greeters; }
+host AppHost()
+{
+    registry
+    {
+        single English for Greeter;
+        single Polish for Greeter;
+        single Reception;
+    }
+}
+i32 Main() { launch AppHost(); return 0; }
+"#;
+        let found = diagnostics(source);
+        assert!(found.iter().all(|diagnostic| diagnostic.code.as_deref() != Some("E1724")), "{found:?}");
     }
 
     #[test]

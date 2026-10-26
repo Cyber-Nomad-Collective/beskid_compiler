@@ -77,15 +77,11 @@ struct LocalRootScope {
 
 #[derive(Clone)]
 enum CompositionCleanup {
-    ScopeLeave {
-        site: AstNodeKey,
-    },
+    /// A `with` activation and the service in each container slot while it is active: the
+    /// enclosing values, with the scope's per-activation registrations replaced.
+    ScopeLeave { site: AstNodeKey, slots: std::rc::Rc<[Value]> },
     /// The launched container and the object installed in each of its slots, in slot order.
-    Container {
-        site: AstNodeKey,
-        value: Value,
-        slots: std::rc::Rc<[Value]>,
-    },
+    Container { site: AstNodeKey, value: Value, slots: std::rc::Rc<[Value]> },
 }
 
 /// Roots owned by an expression until its value has been published or consumed. They

@@ -143,6 +143,22 @@ pub enum CompositionIssue {
         host_name: String,
         span: SpanInfo,
     },
+    /// One host registers the same implementation for the same key twice in one scope
+    /// (`single Clock; single Clock;`). Distinct implementations of one key are allowed.
+    DuplicateRegistration {
+        implementation: String,
+        key: String,
+        span: SpanInfo,
+        /// The first registration, when it is in the same unit.
+        first_span: Option<SpanInfo>,
+    },
+    /// A `single` injects (directly or through a `transient`) a service that a named scope
+    /// creates anew on each `with` activation. `span` is the `inject` field.
+    SingleInjectsScoped {
+        single: String,
+        dependency: String,
+        span: SpanInfo,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -213,7 +229,9 @@ pub fn to_semantic_issue(issue: &CompositionIssue) -> Option<(SpanInfo, Semantic
         | CompositionIssue::WithWithoutLaunch { .. }
         | CompositionIssue::LaunchArgumentCount { .. }
         | CompositionIssue::WithArgumentCount { .. }
-        | CompositionIssue::BaseHostParameters { .. } => None,
+        | CompositionIssue::BaseHostParameters { .. }
+        | CompositionIssue::DuplicateRegistration { .. }
+        | CompositionIssue::SingleInjectsScoped { .. } => None,
     }
 }
 
@@ -245,5 +263,7 @@ pub fn composition_issue_code(issue: &CompositionIssue) -> &'static str {
         CompositionIssue::LaunchArgumentCount { .. } => "E1722",
         CompositionIssue::WithArgumentCount { .. } => "E1708",
         CompositionIssue::BaseHostParameters { .. } => "E1723",
+        CompositionIssue::DuplicateRegistration { .. } => "E1724",
+        CompositionIssue::SingleInjectsScoped { .. } => "E1725",
     }
 }

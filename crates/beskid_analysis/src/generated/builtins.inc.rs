@@ -630,6 +630,12 @@ define_builtins! {
         returns: Unit,
         injected: true,
     },
+    &["__composition_exit_pop"] => {
+        symbol: "composition_exit_pop",
+        params: [Ptr],
+        returns: Unit,
+        injected: true,
+    },
     &["__composition_exit"] => {
         symbol: "composition_exit",
         params: [I32],

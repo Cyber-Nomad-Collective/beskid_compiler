@@ -844,24 +844,29 @@ pub fn node_span(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<SourceSpan
 ///
 /// Facts frozen before typing (the composition plan) name their declarations by kind and span:
 /// node ids are pre-order positions, and typing still adds nodes (filled optional arguments).
+/// The one node of `kind` at exactly `span` in `unit` of `generation`. `Err(found)` is the number
+/// of such nodes when it is not exactly one (0 also for an unregistered unit or another
+/// generation).
 pub fn node_at_span(
     db: &dyn Db,
     unit: SourceUnitId,
     generation: SyntaxGenerationId,
     kind: IndexedNodeKind,
     span: SourceSpan,
-) -> Option<AstNodeKey> {
-    let syntax = db.syntax_unit(unit)?;
+) -> Result<AstNodeKey, usize> {
+    let syntax = db.syntax_unit(unit).ok_or(0_usize)?;
     let index = syntax.syntax_index(db);
     if index.generation() != generation {
-        return None;
+        return Err(0);
     }
     let program = syntax.expanded_program(db);
-    let mut matches =
-        index.ids_of_kind(kind).filter(|id| index.node_at(program, *id).and_then(|node| node.span()) == Some(span));
-    match (matches.next(), matches.next()) {
-        (Some(node), None) => Some(AstNodeKey { unit, generation, node }),
-        _ => None,
+    let matches = index
+        .ids_of_kind(kind)
+        .filter(|id| index.node_at(program, *id).and_then(|node| node.span()) == Some(span))
+        .collect::<Vec<_>>();
+    match matches.as_slice() {
+        [node] => Ok(AstNodeKey { unit, generation, node: *node }),
+        _ => Err(matches.len()),
     }
 }
 

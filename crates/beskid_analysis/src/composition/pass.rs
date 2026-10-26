@@ -211,6 +211,17 @@ pub fn resolve_composition_with_imports(
         }
     }
 
+    // Every registration declared in a named scope is created anew by each `with` activation
+    // (a scope's `single` is one per activation). A host-level `single` lives as long as the
+    // container: injecting such a service, directly or through a `transient`, would keep one
+    // activation's instance forever (E1725, a captive dependency).
+    let injections = singular_registration_ids
+        .iter()
+        .map(|(owner, span, unit, target)| (*owner, *span, unit.clone(), vec![*target]))
+        .chain(plural_registration_ids.iter().cloned())
+        .collect::<Vec<_>>();
+    issues.extend(captive_injections(&merged_registrations, &edges, &injections));
+
     let registration_order = match build_graph(&merged_registrations, &edges) {
         Ok(dag) => topo_registration_order(&dag),
         Err(issue) => {
@@ -346,9 +357,100 @@ pub fn resolve_composition_with_imports(
     CompositionResult { plan, snapshot, issues: entry_issues, foreign_issues, dependency_edges: edges }
 }
 
+/// Injections of a host-level `single` that reach a per-activation service (one declared in a
+/// named scope), directly or through `transient`s: E1725. `edges` are (dependency, dependent).
+pub(super) fn captive_injections(
+    registrations: &[crate::composition::model::Registration],
+    edges: &[(u32, u32)],
+    injections: &[(u32, SpanInfo, crate::composition::model::UnitPath, Vec<u32>)],
+) -> Vec<(crate::composition::model::UnitPath, CompositionIssue)> {
+    use crate::composition::model::{RegistrationLifetime, ScopeId};
+    let by_id = registrations.iter().map(|registration| (registration.id, registration)).collect::<HashMap<_, _>>();
+    let mut per_activation = registrations
+        .iter()
+        .filter(|registration| registration.scope_id != ScopeId::GLOBAL)
+        .map(|registration| registration.id)
+        .collect::<std::collections::HashSet<_>>();
+    loop {
+        let grown = edges
+            .iter()
+            .filter(|(target, owner)| {
+                per_activation.contains(target)
+                    && !per_activation.contains(owner)
+                    && by_id.get(owner).is_some_and(|owner| owner.lifetime == RegistrationLifetime::Transient)
+            })
+            .map(|(_, owner)| *owner)
+            .collect::<Vec<_>>();
+        if grown.is_empty() {
+            break;
+        }
+        per_activation.extend(grown);
+    }
+    let mut issues = Vec::new();
+    for (owner_id, span, unit, targets) in injections {
+        let Some(owner) = by_id.get(owner_id) else { continue };
+        if owner.lifetime != RegistrationLifetime::Single || owner.scope_id != ScopeId::GLOBAL {
+            continue;
+        }
+        if let Some(target) =
+            targets.iter().find(|target| per_activation.contains(target)).and_then(|target| by_id.get(target))
+        {
+            issues.push((
+                unit.clone(),
+                CompositionIssue::SingleInjectsScoped {
+                    single: owner.implementation.clone(),
+                    dependency: target.implementation.clone(),
+                    span: *span,
+                },
+            ));
+        }
+    }
+    issues
+}
+
 #[cfg(test)]
 mod tests {
     use super::{CompositionInput, resolve_composition, resolve_composition_with_imports};
+
+    /// E1725 is a host-level `single` reaching a per-activation service, directly or through a
+    /// `transient`; a scope's own `single` is per activation itself and never captive. Source
+    /// cannot build this graph today (a host-level registration resolves only host-level
+    /// services), so the check is exercised on the dependency graph directly.
+    #[test]
+    fn captive_injections_are_host_singles_reaching_scope_services() {
+        use crate::composition::model::{Registration, RegistrationKey, RegistrationLifetime, ScopeId};
+        use crate::syntax::{AstNodeId, SpanInfo};
+        let registration = |id: u32, name: &str, scope: u32, lifetime: RegistrationLifetime| Registration {
+            id,
+            source_node_id: AstNodeId::INVALID,
+            unit: None,
+            key_identity: None,
+            implementation_identity: None,
+            scope_id: ScopeId(scope),
+            key: RegistrationKey::SelfType(name.into()),
+            implementation: name.into(),
+            lifetime,
+            span: SpanInfo::default(),
+            implementation_span: SpanInfo::default(),
+        };
+        let registrations = [
+            registration(1, "Session", 1, RegistrationLifetime::Scoped),
+            registration(2, "Report", 0, RegistrationLifetime::Transient),
+            registration(3, "Cache", 0, RegistrationLifetime::Single),
+            registration(4, "Book", 1, RegistrationLifetime::Single),
+        ];
+        // Report -> Session, Cache -> Report, Book -> Session.
+        let edges = [(1, 2), (2, 3), (1, 4)];
+        let field = SpanInfo { start: 10, end: 20, ..SpanInfo::default() };
+        let injections = vec![(2, field, None, vec![1]), (3, field, None, vec![2]), (4, field, None, vec![1])];
+        let issues = super::captive_injections(&registrations, &edges, &injections);
+        let [(_, crate::composition::CompositionIssue::SingleInjectsScoped { single, dependency, .. })] =
+            issues.as_slice()
+        else {
+            panic!("one captive injection expected: {issues:?}");
+        };
+        assert_eq!((single.as_str(), dependency.as_str()), ("Cache", "Report"));
+    }
     use crate::services::parse_program;
 
     #[test]

@@ -34,8 +34,98 @@ pub enum CodegenInputError {
     StaleCompositionPlan,
     #[error("composition snapshot belongs to a foreign source unit")]
     ForeignCompositionUnit,
-    #[error("composition plan disagrees with the validated snapshot: {0}")]
-    InvalidCompositionPlan(&'static str),
+    /// The plan does not bind to the syntax this input lowers. `check` names the failed check;
+    /// `declaration` is the first declaration that does not occur exactly once, when the check
+    /// is a binding check. [`CodegenInputError::into_report`] renders it as internal error E2105
+    /// at that declaration.
+    #[error("composition plan disagrees with the validated snapshot: {check}{}", declaration.as_ref().map(|declaration| format!(" ({declaration})")).unwrap_or_default())]
+    InvalidCompositionPlan { check: &'static str, declaration: Option<UnboundCompositionDeclaration> },
+}
+
+/// A composition declaration the plan names by unit, node kind and span that the lowered syntax
+/// does not hold exactly once.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnboundCompositionDeclaration {
+    pub unit: std::path::PathBuf,
+    pub kind: IndexedNodeKind,
+    pub span: beskid_analysis::syntax::SpanInfo,
+    /// How many nodes of `kind` the lowered syntax has at `span` (0, or more than one).
+    pub found: usize,
+}
+
+impl std::fmt::Display for UnboundCompositionDeclaration {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            "{:?} at {}:{}:{} matches {} nodes, expected 1",
+            self.kind,
+            self.unit.display(),
+            self.span.line_col_start.0,
+            self.span.line_col_start.1,
+            self.found
+        )
+    }
+}
+
+impl CodegenInputError {
+    /// Convert into the `anyhow` error a host reports, `"{context}: {self}"`. An unbindable
+    /// composition plan also carries internal error E2105 as a structured diagnostic at the
+    /// declaration that did not bind (at the start of the entry unit when the failed check names
+    /// no declaration), so it renders with its code and source excerpt.
+    pub fn into_report(self, assembly: &beskid_analysis::projects::ProgramAssembly, context: &str) -> anyhow::Error {
+        let message = format!("{context}: {self}");
+        let Self::InvalidCompositionPlan { check, declaration } = self else {
+            return anyhow::anyhow!(message);
+        };
+        let reason = match &declaration {
+            Some(declaration) => format!(
+                "the composition plan does not bind to the lowered syntax ({check}): {} {:?} nodes at this \
+                 declaration, expected exactly 1",
+                declaration.found, declaration.kind
+            ),
+            None => format!("the composition plan disagrees with the validated composition ({check})"),
+        };
+        let kind = beskid_analysis::analysis::SemanticIssueKind::InternalBuildFailure { reason };
+        let located = declaration.as_ref().and_then(|declaration| {
+            let unit = assembly.units.iter().find(|unit| {
+                unit.path == declaration.unit
+                    || std::fs::canonicalize(&unit.path)
+                        .ok()
+                        .zip(std::fs::canonicalize(&declaration.unit).ok())
+                        .is_some_and(|(a, b)| a == b)
+            })?;
+            let mut diagnostic = beskid_analysis::analysis::diagnostic_kinds::issue_diagnostic(
+                &unit.logical_name,
+                &unit.source,
+                declaration.span,
+                &kind,
+            );
+            diagnostic.label = "this declaration does not bind".to_owned();
+            Some(diagnostic)
+        });
+        let diagnostic = located.or_else(|| {
+            let unit = assembly.units.get(assembly.entry_index)?;
+            let start =
+                beskid_analysis::syntax::SpanInfo { start: 0, end: 0, line_col_start: (1, 1), line_col_end: (1, 1) };
+            let mut diagnostic = beskid_analysis::analysis::diagnostic_kinds::issue_diagnostic(
+                &unit.logical_name,
+                &unit.source,
+                start,
+                &kind,
+            );
+            diagnostic.label = "while compiling this program".to_owned();
+            Some(diagnostic)
+        });
+        match diagnostic {
+            Some(diagnostic) => {
+                anyhow::Error::new(beskid_analysis::services::SemanticDiagnosticsError::from_diagnostics(vec![
+                    diagnostic,
+                ]))
+                .context(message)
+            }
+            None => anyhow::anyhow!(message),
+        }
+    }
 }
 
 /// Complete typed input required before generated ISLE selection may begin.
@@ -301,47 +391,67 @@ impl<'db> CodegenInput<'db> {
         let mut plan = Arc::unwrap_or_clone(plan);
         let mut snapshot = Arc::unwrap_or_clone(snapshot);
         let (db, entry) = (self.db, self.typed_program.entry);
-        let bind = |unit: &beskid_analysis::composition::UnitPath, kind: IndexedNodeKind, span| {
+        // The first declaration that does not bind, per check, for the E2105 report.
+        let bind = |unit: &beskid_analysis::composition::UnitPath,
+                    kind: IndexedNodeKind,
+                    span: beskid_analysis::syntax::SpanInfo|
+         -> Result<beskid_queries::AstNodeId, UnboundCompositionDeclaration> {
             let unit = match unit {
                 None => entry,
                 Some(path) => SourceUnitId::new(db, path.to_path_buf()),
             };
-            beskid_queries::node_at_span(db, unit, generation, kind, span).map(|key| key.node)
+            beskid_queries::node_at_span(db, unit, generation, kind, span)
+                .map(|key| key.node)
+                .map_err(|found| UnboundCompositionDeclaration { unit: unit.path(db).to_path_buf(), kind, span, found })
         };
-        let mut bound_registration_sources = true;
+        let mut unbound_registration_source = None;
         for registration in &mut snapshot.registrations {
             match bind(&registration.unit, IndexedNodeKind::RegistryEntry, registration.span) {
-                Some(node) => registration.source_node_id = node,
-                None => bound_registration_sources = false,
+                Ok(node) => registration.source_node_id = node,
+                Err(declaration) => {
+                    unbound_registration_source.get_or_insert(declaration);
+                }
             }
         }
-        let mut bound_singulars = true;
+        let mut unbound_singular = None;
         for singular in &mut plan.singulars {
             match bind(&singular.field_unit, IndexedNodeKind::Field, singular.field_span) {
-                Some(node) => singular.field_node_id = node,
-                None => bound_singulars = false,
+                Ok(node) => singular.field_node_id = node,
+                Err(declaration) => {
+                    unbound_singular.get_or_insert(declaration);
+                }
             }
         }
-        let mut bound_plurals = true;
+        let mut unbound_plural = None;
         for plural in &mut plan.plurals {
             match bind(&plural.field_unit, IndexedNodeKind::Field, plural.field_span) {
-                Some(node) => plural.field_node_id = node,
-                None => bound_plurals = false,
+                Ok(node) => plural.field_node_id = node,
+                Err(declaration) => {
+                    unbound_plural.get_or_insert(declaration);
+                }
             }
         }
-        let mut bound_hooks = true;
+        let mut unbound_hook = None;
         for hook in plan.init_hooks.iter_mut().chain(&mut plan.startup_hooks).chain(&mut plan.disposal_hooks) {
             match (
                 bind(&hook.unit, IndexedNodeKind::ScopeHook, hook.span),
                 bind(&hook.unit, IndexedNodeKind::FunctionDefinition, hook.span),
             ) {
-                (Some(source), Some(function)) => {
+                (Ok(source), Ok(function)) => {
                     hook.source_node_id = source;
                     hook.function_node_id = function;
                 }
-                _ => bound_hooks = false,
+                (Err(declaration), _) | (_, Err(declaration)) => {
+                    unbound_hook.get_or_insert(declaration);
+                }
             }
         }
+        let (bound_registration_sources, bound_singulars, bound_plurals, bound_hooks) = (
+            unbound_registration_source.is_none(),
+            unbound_singular.is_none(),
+            unbound_plural.is_none(),
+            unbound_hook.is_none(),
+        );
 
         let registrations = snapshot.registrations.iter().map(|registration| registration.id).collect::<HashSet<_>>();
         let mut assigned_registrations = HashSet::new();
@@ -372,18 +482,18 @@ impl<'db> CodegenInput<'db> {
                     && hook.arguments_registration_id.is_none_or(|id| registrations.contains(&id))
             });
         let defect = [
-            (plan.launched_host == snapshot.launched_host, "launched host"),
-            (valid_activation, "activation slots"),
-            (bound_registration_sources, "registration source nodes"),
-            (valid_singulars, "singular injection fields"),
-            (valid_plurals, "plural injection fields"),
-            (valid_scopes, "scope parents"),
-            (valid_hooks, "hook nodes"),
+            (plan.launched_host == snapshot.launched_host, "launched host", None),
+            (valid_activation, "activation slots", None),
+            (bound_registration_sources, "registration source nodes", unbound_registration_source),
+            (valid_singulars, "singular injection fields", unbound_singular),
+            (valid_plurals, "plural injection fields", unbound_plural),
+            (valid_scopes, "scope parents", None),
+            (valid_hooks, "hook nodes", unbound_hook),
         ]
         .into_iter()
-        .find_map(|(valid, defect)| (!valid).then_some(defect));
-        if let Some(defect) = defect {
-            return Err(CodegenInputError::InvalidCompositionPlan(defect));
+        .find_map(|(valid, check, declaration)| (!valid).then_some((check, declaration)));
+        if let Some((check, declaration)) = defect {
+            return Err(CodegenInputError::InvalidCompositionPlan { check, declaration });
         }
         let (plan, snapshot) = (Arc::new(plan), Arc::new(snapshot));
         self.composition_plan = Some(plan);

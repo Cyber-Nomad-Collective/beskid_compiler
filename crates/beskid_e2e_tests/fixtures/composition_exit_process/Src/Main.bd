@@ -1,0 +1,32 @@
+// `Process.Exit` is the immediate exit: it runs no `dispose` hook, neither the open scope's nor
+// the global one.
+use Console.Hosting;
+use Core.Output;
+use Core.Process;
+
+host AppHost() : ConsoleHost
+{
+    dispose()
+    {
+        Output.WriteLine("not reached: shutdown");
+    }
+
+    scope Visit()
+    {
+        dispose()
+        {
+            Output.WriteLine("not reached: leave");
+        }
+    }
+}
+
+i32 Main()
+{
+    launch AppHost();
+    with Visit()
+    {
+        Output.WriteLine("inside");
+        Core.Process.Exit(4);
+    }
+    return 0;
+}

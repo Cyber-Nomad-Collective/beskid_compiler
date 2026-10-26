@@ -1,0 +1,52 @@
+// `CommandLine.Exit` from a spawned fiber while `Main` is inside a `with` body runs the dispose
+// hook of the scope Main holds open, then the global `dispose`, then exits with the code.
+use Concurrency.Fiber;
+use Console.Hosting;
+use Core.Output;
+use Core.Results;
+use Core.Time;
+
+unit ExitFromFiber(Hosting.CommandLine commandLine)
+{
+    Output.WriteLine("exit from fiber");
+    commandLine.Exit(9);
+}
+
+host AppHost() : ConsoleHost
+{
+    dispose()
+    {
+        Output.WriteLine("shutdown");
+    }
+
+    scope Visit(i64 id)
+    {
+        init(Hosting.CommandLine commandLine)
+        {
+            Output.WriteLine("enter ${id}");
+            Fiber<unit> exiting = spawn (() => ExitFromFiber(commandLine));
+            exiting.Detach();
+        }
+
+        dispose()
+        {
+            Output.WriteLine("leave ${id}");
+        }
+    }
+}
+
+i32 Main()
+{
+    launch AppHost();
+    with Visit(3)
+    {
+        // Main parks here; the spawned fiber runs and ends the program.
+        match Time.Sleep(Time.FromMilliseconds(2000_i64))
+        {
+            Result::Ok(_) => Output.WriteLine("not reached"),
+            Result::Error(_) => Output.WriteLine("not reached"),
+        };
+    }
+    Output.WriteLine("not reached");
+    return 0;
+}

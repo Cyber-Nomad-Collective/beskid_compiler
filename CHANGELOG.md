@@ -37,6 +37,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A contract conversion whose facts are missing fails closed with E2101 instead of storing an unboxed value: a destination declared with a contract type whose expected type is unavailable, and a literal, struct literal, enum constructor, array literal or lambda of unknown type written into a contract.
 - A contract-typed field passes to a contract-typed parameter (`Through(holder.greeter)`, which failed to lower).
 - `mut this` in a method of a primitive implementation is E1611 (the receiver is a copy). Contract boxes need a 64-bit target.
+### Runtime and host composition (second review)
+
+- `Hub.WaitReceive` over members that are all closed returns `HubError::Closed(member)`, naming the first closed member; in `Main` it trapped as a scheduler deadlock (code 7), and a fiber parked forever.
+- `Main` keeps its open `with` scope across a wait that runs other fibers (`Receive`, `Join`, `Sleep`, `Lock`, ...). The scheduler overwrote and then cleared Main's scope words, so leaving the scope afterwards trapped.
+- A `dispose` hook that calls `CommandLine.Exit` runs once; the exit no longer runs it a second time. An exit inside one `dispose` hook still runs the hooks after it.
+- `CommandLine.Exit` from a spawned fiber runs the `dispose` hooks of the scopes `Main` holds open, then the global `dispose` hooks.
+- A composition plan that does not bind to the lowered syntax is internal error E2105 at the declaration that did not bind (unit, node kind, span, match count), not E4041 "Invalid build request" without a location.
+- E1724: the same implementation registered twice for the same key in one host and scope (`single Clock; single Clock;`). Distinct implementations of one key stay allowed.
+- A held runtime mutex excludes other lockers: its state byte was compared with an enum value that never matched, so `Mutex.Lock` and `TryLock` took a held mutex.
+- The worker pool reads and writes its worker count only under its lock; a syscall made without a scheduler yields while it waits for its worker; a second root wait traps as an invariant failure; Windows `PATH` lookup tries a dotted bare name (`python3.11`) as written, then with `.exe`.
+- Each `with` activation creates every registration declared in its scope anew, before the scope's `init`, and releases them after its `dispose`: a scope's `single` is one per activation, shared within it; a nested `with` of the same scope gets its own set; a scope's `transient` that injects a scoped service sees the activation's instance. A host-level `single` stays one per container. E1725: a host-level `single` that injects a per-activation service, directly or through a `transient` (a captive dependency).
 
 ### Corelib check
 

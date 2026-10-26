@@ -207,6 +207,9 @@ pub struct CompositionScopePlan {
     pub scope_id: u32,
     pub parent_scope_id: u32,
     pub body: AstNodeKey,
+    /// The registrations this scope creates anew on each activation (every one declared in the
+    /// scope, `single` included), in activation order; their slots are the container's.
+    pub registrations: Vec<CompositionRegistrationPlan>,
     /// The scope's `init` hooks, run after the scope is entered and before the body.
     pub init: Vec<CompositionHookCall>,
     /// The scope's `dispose` hooks, run on every exit from the body before the scope is left.

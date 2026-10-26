@@ -134,4 +134,6 @@ pub const CODES: &[CodeInfo] = &[
     CodeInfo { code: "E1721", summary: "with without launch", tags: &[] },
     CodeInfo { code: "E1722", summary: "launch argument count", tags: &[] },
     CodeInfo { code: "E1723", summary: "base host with parameters", tags: &[] },
+    CodeInfo { code: "E1724", summary: "duplicate registration", tags: &[] },
+    CodeInfo { code: "E1725", summary: "single injects a per-activation service", tags: &[] },
 ];
