@@ -346,8 +346,11 @@ async fn syntax_facts_for_text(
             completion.member_access = member_offsets
                 .iter()
                 .filter_map(|&offset| {
-                    let context =
-                        beskid_queries::CompletionContext { cursor: offset, replacement_start: offset, replacement_end: offset };
+                    let context = beskid_queries::CompletionContext {
+                        cursor: offset,
+                        replacement_start: offset,
+                        replacement_end: offset,
+                    };
                     let candidates = beskid_queries::completion_candidates(db, anchor, context).ok().flatten()?;
                     (!candidates.is_empty()).then_some((offset, candidates))
                 })

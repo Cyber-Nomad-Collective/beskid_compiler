@@ -61,8 +61,7 @@ pub(crate) fn completion_repaired_text(text: &str) -> Option<(String, Vec<usize>
         offsets.push(start);
     }
     repaired.extend_from_slice(&appended);
-    (!offsets.is_empty())
-        .then(|| (String::from_utf8(repaired).expect("ASCII written over ASCII whitespace"), offsets))
+    (!offsets.is_empty()).then(|| (String::from_utf8(repaired).expect("ASCII written over ASCII whitespace"), offsets))
 }
 
 impl RecoverableCompletionSyntax {
@@ -138,7 +137,10 @@ mod tests {
         let (partial, offsets) = completion_repaired_text("i32 Main() {\n    String.Le\n    return 0;\n}\n").unwrap();
         assert_eq!(partial, "i32 Main() {\n    String.Le;    return 0;\n}\n");
         assert_eq!(offsets, [24]);
-        assert_eq!(completion_repaired_text("use Core.String;\nString."), Some(("use Core.String;\nString.x;".into(), vec![24])));
+        assert_eq!(
+            completion_repaired_text("use Core.String;\nString."),
+            Some(("use Core.String;\nString.x;".into(), vec![24]))
+        );
         let text = "use Core.String;\ni32 Main() {\n    String.\n    return 0;\n}\n";
         let syntax = RecoverableCompletionSyntax::parse(text).expect("the repaired buffer parses");
         assert!(syntax.imports("String", &["Core".into(), "String".into()]));

@@ -43,6 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The formatter, API signatures, hovers and signature help show default values.
 - Filling omitted arguments no longer registers the whole assembly a second time in a scratch database (about twice the language-server work for any program that calls `Assert.*`): the calling units are refilled in place, and later builds of the same generation reuse them.
 - Filled arguments have no source position of their own, so the editor no longer stacks phantom type hints (`string`, `i64`, ...) on the callee of `Assert.True(x)`.
+- Completion works on a member access that ends its line while its member is typed (`String.` or `point.` above `return 0;`): it lists the module's public functions or the value's fields and methods. The buffer is repaired for completion only (a placeholder member written over the following whitespace, so no offset moves), and the members are kept as owned data, so a later workspace scan cannot take them away.
 - An end-to-end test reads a failed `Assert.True(false)` record at run time and checks the line and column filled at the call.
 - Host and scope parameters may be optional: `launch App("Ada");` for `host App(string name, i64 port = 8080)` builds the host record with the default, and `with Visit()` works for `scope Visit(i64 id = -1)`. E1722 and E1708 name the accepted range. Caller-information attributes on host and scope parameters are E1254 (`launch` and `with` are not calls).
 
