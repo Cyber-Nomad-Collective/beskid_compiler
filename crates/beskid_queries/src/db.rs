@@ -48,6 +48,17 @@ pub struct SyntaxDependencyRegistry {
     /// `contribution_attribution`.
     pub(crate) contribution_attributions:
         HashMap<(SourceUnitId, SyntaxGenerationId), std::sync::Arc<[(crate::AstNodeId, SourceUnitId)]>>,
+    /// Per source unit whose calls had omitted optional arguments filled: the generation and the
+    /// parsed and filled trees. A later typed-program build of that generation that passes the
+    /// same parsed tree gets the filled one, which the unit already holds (`build_typed_program`).
+    pub(crate) filled_units: HashMap<SourceUnitId, FilledUnit>,
+}
+
+/// One unit's parsed tree and the tree with its omitted optional arguments filled.
+pub(crate) struct FilledUnit {
+    pub(crate) generation: SyntaxGenerationId,
+    pub(crate) parsed: beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    pub(crate) filled: beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
 }
 
 impl SyntaxDependencyRegistry {

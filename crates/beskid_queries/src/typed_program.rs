@@ -100,20 +100,64 @@ pub fn build_typed_program(
     if !may_omit_arguments(&assembly) {
         return register_typed_program(db, project, generation, assembly);
     }
+    // Several builds of one generation (diagnostics, facts, lowering, other entries sharing
+    // units) pass the same parsed trees; a unit that was filled already holds its filled tree.
+    let assembly = with_recorded_fills(db, generation, assembly);
     let typed = register_typed_program(db, project, generation, Arc::clone(&assembly))?;
     let Some(programs) = omitted_argument_programs(db, &assembly)? else {
         return Ok(typed);
     };
-    let filled = assembly.with_programs(programs);
+    let filled = Arc::new(assembly.with_programs(programs));
     for (parsed, filled_unit) in assembly.units.iter().zip(filled.units.iter()) {
         if parsed.program != filled_unit.program {
             let unit = SourceUnitId::new(db, filled_unit.path.clone());
             db.refill_expanded_syntax_unit(unit, generation, Arc::new(filled_unit.program.clone()))?;
+            db.syntax_dependency_registry().lock().expect("syntax dependency registry").filled_units.insert(
+                unit,
+                crate::db::FilledUnit {
+                    generation,
+                    parsed: parsed.program.clone(),
+                    filled: filled_unit.program.clone(),
+                },
+            );
         }
     }
     // The entry's contribution table names node ids of the parsed tree; derive it again.
     crate::contribution_attribution::forget_contribution_attributions(db, &filled);
-    register_typed_program(db, project, generation, Arc::new(filled))
+    register_typed_program(db, project, generation, filled)
+}
+
+/// `assembly` with each unit's parsed tree replaced by the filled tree recorded for it in this
+/// generation.
+fn with_recorded_fills(
+    db: &BeskidDatabase,
+    generation: SyntaxGenerationId,
+    assembly: Arc<ProgramAssembly>,
+) -> Arc<ProgramAssembly> {
+    let registry = db.syntax_dependency_registry().lock().expect("syntax dependency registry");
+    if registry.filled_units.is_empty() {
+        return assembly;
+    }
+    let mut replaced = false;
+    let programs = assembly
+        .units
+        .iter()
+        .map(|unit| {
+            let recorded = registry
+                .filled_units
+                .get(&SourceUnitId::new(db, unit.path.clone()))
+                .filter(|recorded| recorded.generation == generation && recorded.parsed == unit.program);
+            match recorded {
+                Some(recorded) => {
+                    replaced = true;
+                    recorded.filled.clone()
+                }
+                None => unit.program.clone(),
+            }
+        })
+        .collect::<Vec<_>>();
+    drop(registry);
+    if replaced { Arc::new(assembly.with_programs(programs)) } else { assembly }
 }
 
 fn register_typed_program(
