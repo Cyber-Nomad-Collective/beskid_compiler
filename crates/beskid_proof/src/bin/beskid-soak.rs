@@ -16,6 +16,7 @@ fn main() {
                     std::fs::write(path, serde_json::to_string_pretty(&report.to_json()).unwrap_or_default())
             {
                 eprintln!("cannot write report {}: {error}", path.display());
+                std::process::exit(2);
             }
             std::process::exit(if report.passed() { 0 } else { 1 });
         }

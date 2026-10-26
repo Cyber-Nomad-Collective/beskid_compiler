@@ -27,6 +27,8 @@
 #   --seed N             seed for soak and mutation (default 1)
 #   --mutation-sample N  mutants per corpus (default 60)
 #   --skip LIST          comma list of soak,sweep,onboarding to skip
+#   --step-timeout T     hard cap per step, in seconds (default: soak duration + 600; sweep 14400; onboarding 3600);
+#                        needs `timeout` or `gtimeout` on PATH, otherwise steps run unbounded with a warning
 #   --out-dir DIR        reports land here (default ./v067-proof-out)
 #   --self-test          only run the unit tests of the python helpers, then exit
 #
@@ -36,7 +38,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 COMPILER="$(cd "$HERE/.." && pwd)"
 
 beskid="" lsp="" soak_bin="" mutate_bin="" lings="" bundle="" version=""
-soak_duration="30m" smoke=0 seed=1 sample=60 skip="" out_dir="./v067-proof-out" self_test=0
+step_timeout="" soak_duration="30m" smoke=0 seed=1 sample=60 skip="" out_dir="./v067-proof-out" self_test=0
 
 die() { echo "v067-proof: $*" >&2; exit 2; }
 while [[ $# -gt 0 ]]; do
@@ -54,6 +56,7 @@ while [[ $# -gt 0 ]]; do
     --seed) seed="${2:?}"; shift 2 ;;
     --mutation-sample) sample="${2:?}"; shift 2 ;;
     --skip) skip="${2:?}"; shift 2 ;;
+    --step-timeout) step_timeout="${2:?}"; shift 2 ;;
     --out-dir) out_dir="${2:?}"; shift 2 ;;
     --self-test) self_test=1; shift ;;
     -h|--help) sed -n '2,/^set -uo/p' "${BASH_SOURCE[0]}" | sed '$d'; exit 0 ;;
@@ -66,6 +69,43 @@ if [[ $self_test -eq 1 ]]; then
 fi
 
 skipped() { [[ ",$skip," == *",$1,"* ]]; }
+
+# Validate every input before anything runs: a missing binary must not surface after the soak.
+need_file() { # flag path
+  [[ -n "$2" ]] || die "$1 is required"
+  [[ -f "$2" && -x "$2" ]] || die "$1 $2 is not an executable file"
+}
+if ! skipped soak; then
+  [[ -n "$lsp" && -n "$soak_bin" ]] || die "soak needs --lsp and --soak-bin (or --skip soak)"
+  need_file --lsp "$lsp"; need_file --soak-bin "$soak_bin"
+  [[ -z "$beskid" ]] || need_file --beskid "$beskid"
+  [[ -d "$COMPILER/corelib" ]] || die "no corelib under --compiler $COMPILER"
+fi
+if ! skipped sweep; then
+  [[ -n "$beskid" && -n "$mutate_bin" ]] || die "sweep needs --beskid and --mutate-bin (or --skip sweep)"
+  need_file --beskid "$beskid"; need_file --mutate-bin "$mutate_bin"
+fi
+if ! skipped onboarding && [[ -n "$bundle" ]]; then
+  [[ -n "$version" ]] || die "--bundle needs --version"
+  [[ -d "$bundle" ]] || die "--bundle $bundle is not a directory"
+fi
+[[ -z "$lings" || -d "$lings" ]] || die "--lings $lings is not a directory"
+
+timeout_cmd=""
+if command -v timeout >/dev/null 2>&1; then timeout_cmd="timeout"
+elif command -v gtimeout >/dev/null 2>&1; then timeout_cmd="gtimeout"
+else echo "v067-proof: warning: no timeout/gtimeout on PATH; steps run without a hard cap" >&2; fi
+
+# Seconds in a duration such as 90s, 30m, 2h.
+duration_seconds() {
+  case "$1" in
+    *h) echo $(( ${1%h} * 3600 )) ;;
+    *m) echo $(( ${1%m} * 60 )) ;;
+    *s) echo "${1%s}" ;;
+    *) echo "$1" ;;
+  esac
+}
+
 mkdir -p "$out_dir"
 out_dir="$(cd "$out_dir" && pwd)"
 if [[ $smoke -eq 1 ]]; then soak_duration="60s"; sample=10; fi
@@ -77,13 +117,26 @@ run_step() { # name command...
   local name="$1"; shift
   if skipped "$name"; then set_status "$name" skipped; return; fi
   echo "== $name ==" >&2
-  "$@" 2>&1 | tee "$out_dir/$name.txt"
+  local cap="${step_timeout}"
+  if [[ -z "$cap" ]]; then
+    case "$name" in
+      soak) cap=$(( $(duration_seconds "$soak_duration") + 600 )) ;;
+      sweep) cap=14400 ;;
+      *) cap=3600 ;;
+    esac
+  fi
+  if [[ -n "$timeout_cmd" ]]; then
+    "$timeout_cmd" --kill-after=60s "$cap" "$@" 2>&1 | tee "$out_dir/$name.txt"
+  else
+    "$@" 2>&1 | tee "$out_dir/$name.txt"
+  fi
   local code=${PIPESTATUS[0]}
-  if [[ $code -eq 0 ]]; then set_status "$name" pass; else set_status "$name" "FAIL (exit $code)"; fi
+  if [[ $code -eq 0 ]]; then set_status "$name" pass
+  elif [[ $code -eq 124 ]]; then set_status "$name" "FAIL (timed out after ${cap}s)"
+  else set_status "$name" "FAIL (exit $code)"; fi
 }
 
 if ! skipped soak; then
-  [[ -n "$lsp" && -n "$soak_bin" ]] || die "soak needs --lsp and --soak-bin (or --skip soak)"
   soak_args=(--server "$lsp" --corpus "$COMPILER/corelib" --duration "$soak_duration" --seed "$seed" --report "$out_dir/soak.json")
   [[ -z "$lings" ]] || soak_args+=(--corpus "$lings")
   [[ -z "$beskid" ]] || soak_args+=(--beskid "$beskid")
@@ -92,7 +145,6 @@ if ! skipped soak; then
 fi
 
 if ! skipped sweep; then
-  [[ -n "$beskid" && -n "$mutate_bin" ]] || die "sweep needs --beskid and --mutate-bin (or --skip sweep)"
   sweep_args=(--beskid "$beskid" --mutate "$mutate_bin" --compiler "$COMPILER" --seed "$seed" --mutation-sample "$sample" --out "$out_dir/sweep.json")
   [[ -z "$lings" ]] || sweep_args+=(--lings "$lings")
   run_step sweep python3 -I "$HERE/proof/ice_sweep.py" "${sweep_args[@]}"
@@ -102,7 +154,6 @@ if ! skipped onboarding; then
   if [[ -z "$bundle" ]]; then
     set_status onboarding "skipped (no --bundle)"
   else
-    [[ -n "$version" ]] || die "--bundle needs --version"
     onboarding_args=(--bundle "$bundle" --version "$version" --out "$out_dir/onboarding.json")
     if [[ $smoke -eq 0 && -n "$soak_bin" ]]; then onboarding_args+=(--soak "$soak_bin"); fi
     run_step onboarding python3 -I "$HERE/proof/onboarding_check.py" "${onboarding_args[@]}"

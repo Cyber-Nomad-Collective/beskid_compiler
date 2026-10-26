@@ -126,6 +126,28 @@ mod tests {
     }
 
     #[test]
+    fn v1_lock_diagnostic_on_the_manifest_offers_the_migrate_command() {
+        let temp = tempfile::TempDir::new().expect("temp project");
+        std::fs::write(temp.path().join("Project.lock"), "# Project.lock v1\n").expect("lock");
+        let manifest = temp.path().join("App.bproj");
+        std::fs::write(&manifest, "").expect("manifest");
+        let uri = Uri::from_str(&crate::workspace_scan::path_to_uri_string(&manifest)).expect("uri");
+        let params = CodeActionParams {
+            text_document: TextDocumentIdentifier { uri: uri.clone() },
+            range: Range { start: Position::new(0, 0), end: Position::new(0, 0) },
+            context: CodeActionContext { diagnostics: vec![lock_diag()], only: None, trigger_kind: None },
+            work_done_progress_params: WorkDoneProgressParams::default(),
+            partial_result_params: Default::default(),
+        };
+        let actions = crate::features::code_actions::handler::handle_code_actions(&uri, &document(""), &params);
+        assert!(
+            actions.iter().any(|a| matches!(a,
+                CodeActionOrCommand::CodeAction(a) if a.command.as_ref().is_some_and(|c| c.command == "beskid.migrateLock"))),
+            "manifest must offer the migrate fix: {actions:?}"
+        );
+    }
+
+    #[test]
     fn without_a_lock_file_no_action_is_offered() {
         let temp = tempfile::TempDir::new().expect("temp project");
         let source = temp.path().join("Main.bd");

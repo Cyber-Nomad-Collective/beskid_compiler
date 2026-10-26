@@ -6,7 +6,8 @@ fn cli_and_lsp_initialization_emit_ordinary_line_logs() {
         let output = std::process::Command::new(std::env::current_exe().expect("test executable"))
             .args(["--exact", "initialization_fixture", "--ignored", "--nocapture"])
             .env("BESKID_TELEMETRY_TEST_SCOPE", scope)
-            .env_remove("RUST_LOG")
+            // The default filter is `warn` (v0.6.7 verbosity); the fixture logs at info.
+            .env("RUST_LOG", "info")
             .env("OTEL_SDK_DISABLED", "true")
             .output()
             .expect("subscriber child process");

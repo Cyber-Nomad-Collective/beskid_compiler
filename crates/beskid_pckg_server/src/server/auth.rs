@@ -92,14 +92,14 @@ pub(crate) async fn read_session(State(state): State<AppState>, headers: HeaderM
             let Some(key) = active_api_key(&state, token).await else {
                 return unauthorized_response();
             };
-            return Json(serde_json::json!({
-                "subject": key.subject,
-                "email": null,
-                "displayName": key.subject,
-                "groups": [],
-                "keyName": key.label,
-                "keyScopes": key.scopes,
-            }))
+            return Json(SessionIdentity {
+                display_name: Some(key.subject.clone()),
+                subject: key.subject,
+                email: None,
+                groups: Vec::new(),
+                key_name: Some(key.label),
+                key_scopes: Some(key.scopes),
+            })
             .into_response();
         }
     }
@@ -127,6 +127,8 @@ pub(crate) async fn read_session(State(state): State<AppState>, headers: HeaderM
         email: identity.email,
         display_name: identity.display_name,
         groups: identity.groups,
+        key_name: None,
+        key_scopes: None,
     })
     .into_response()
 }
@@ -184,20 +186,24 @@ enum BearerApiKey<'a> {
     Token(&'a str),
 }
 
+/// Reads a publisher key from `Authorization`. Only `Bearer bpk_...` is a key (and a malformed
+/// one is rejected, never downgraded to session headers). Any other `Authorization` value, such
+/// as the `Basic` or OIDC `Bearer` header a browser behind the proxy forwards, is not a publisher
+/// credential: it is `Absent`, so the session headers decide as they do without it.
 fn bearer_api_key(headers: &HeaderMap) -> BearerApiKey<'_> {
     let Some(value) = headers.get(HEADER_AUTHORIZATION) else {
         return BearerApiKey::Absent;
     };
     let Ok(value) = value.to_str() else {
-        return BearerApiKey::Invalid;
+        return BearerApiKey::Absent;
     };
-    let Some(token) = value.strip_prefix("Bearer ") else {
-        return BearerApiKey::Invalid;
+    let Some((scheme, token)) = value.split_once(' ') else {
+        return BearerApiKey::Absent;
     };
-    if token.len() != API_KEY_LENGTH
-        || !token.starts_with("bpk_")
-        || !token[4..].bytes().all(|byte| byte.is_ascii_hexdigit())
-    {
+    if !scheme.eq_ignore_ascii_case("bearer") || !token.starts_with("bpk_") {
+        return BearerApiKey::Absent;
+    }
+    if token.len() != API_KEY_LENGTH || !token[4..].bytes().all(|byte| byte.is_ascii_hexdigit()) {
         return BearerApiKey::Invalid;
     }
     BearerApiKey::Token(token)

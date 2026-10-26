@@ -149,6 +149,7 @@ fn run_build_and_execute(args: RunArgs) -> Result<()> {
         );
     }
     if exit_code != 0 {
+        beskid_telemetry::shutdown_otel();
         std::process::exit(exit_code);
     }
     Ok(())

@@ -3,7 +3,8 @@
 //! Installs a global [`tracing`] subscriber with:
 //! - [`EnvFilter`] (respects `RUST_LOG`)
 //! - [`BufferLayer`] — in-memory ring buffer of captured spans and events
-//! - optional OTLP export when `OTEL_EXPORTER_OTLP_ENDPOINT` is set
+//! - optional OTLP export, only when `BESKID_TELEMETRY=1` (the endpoint comes from
+//!   `OTEL_EXPORTER_OTLP_ENDPOINT`); call [`shutdown_otel`] before the process exits to flush it
 //! - stderr formatting coordinated with bounded, line-oriented progress
 
 mod buffer;

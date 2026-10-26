@@ -28,7 +28,10 @@ fn restore_default_sigpipe() {}
 fn main() {
     restore_default_sigpipe();
     beskid_tools::run_on_compiler_stack(|| {
-        if let Err(report) = cli::run() {
+        let result = cli::run();
+        // `process::exit` runs no destructors: flush OTLP export (if on) first.
+        beskid_telemetry::shutdown_otel();
+        if let Err(report) = result {
             beskid_tools::print_report(&report);
             std::process::exit(1);
         }

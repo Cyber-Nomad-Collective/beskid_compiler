@@ -284,6 +284,12 @@ pub struct SessionIdentity {
     #[serde(rename = "displayName")]
     pub display_name: Option<String>,
     pub groups: Vec<String>,
+    /// Name of the publisher key, only in the answer to a bearer-key request.
+    #[serde(rename = "keyName", default, skip_serializing_if = "Option::is_none")]
+    pub key_name: Option<String>,
+    /// Scopes of the publisher key, only in the answer to a bearer-key request.
+    #[serde(rename = "keyScopes", default, skip_serializing_if = "Option::is_none")]
+    pub key_scopes: Option<Vec<String>>,
 }
 
 /// Validates that a subject is a non-empty, trimmed identifier suitable for

@@ -3,7 +3,7 @@
 use std::fs::File;
 use std::io::{self, Write};
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::fmt::writer::MakeWriter;
@@ -225,7 +225,7 @@ impl<'a> MakeWriter<'a> for LogSink {
 }
 
 /// Open `path` for appending, creating parent directories. A path that cannot be opened is an error
-/// the caller reports; logs never silently fall back to stderr.
+/// the caller reports (and [`init`] then logs to stderr, saying so).
 fn open_log_file(path: &std::path::Path) -> io::Result<LogSink> {
     if let Some(parent) = path.parent().filter(|parent| !parent.as_os_str().is_empty()) {
         std::fs::create_dir_all(parent)?;
@@ -246,19 +246,36 @@ macro_rules! log_fmt_layer {
 }
 
 fn install_local(filter: EnvFilter, buffer_layer: BufferLayer, sink: LogSink) {
-    tracing_subscriber::registry().with(filter).with(buffer_layer).with(log_fmt_layer!(sink)).init();
+    // A second subscriber in one process (tests, embedding) is not an error worth a panic.
+    let _ = tracing_subscriber::registry().with(filter).with(buffer_layer).with(log_fmt_layer!(sink)).try_init();
 }
 
 fn install_otel(filter: EnvFilter, buffer_layer: BufferLayer, sink: LogSink, guard: &OtelGuard) {
     let otel_layer = tracing_opentelemetry::layer().with_tracer(otel_tracer(guard));
-    tracing_subscriber::registry().with(filter).with(buffer_layer).with(log_fmt_layer!(sink)).with(otel_layer).init();
+    let _ = tracing_subscriber::registry()
+        .with(filter)
+        .with(buffer_layer)
+        .with(log_fmt_layer!(sink))
+        .with(otel_layer)
+        .try_init();
+}
+
+/// The live OTLP guard. It is kept (not leaked) so [`shutdown_otel`] can drop it and flush the
+/// batch exporter before the process exits.
+static OTEL_GUARD: OnceLock<Mutex<Option<OtelGuard>>> = OnceLock::new();
+
+fn store_otel_guard(guard: OtelGuard) {
+    let slot = OTEL_GUARD.get_or_init(|| Mutex::new(None));
+    if let Ok(mut held) = slot.lock() {
+        *held = Some(guard);
+    }
 }
 
 fn install_for_scope(filter: EnvFilter, buffer_layer: BufferLayer, sink: LogSink, otel_guard: Option<OtelGuard>) {
     match otel_guard {
         Some(guard) => {
             install_otel(filter, buffer_layer, sink, &guard);
-            let _leaked = Box::leak(Box::new(guard));
+            store_otel_guard(guard);
         }
         None => {
             install_local(filter, buffer_layer, sink);
@@ -312,11 +329,34 @@ pub fn init_lsp() {
     init(InitOptions::lsp());
 }
 
-pub fn shutdown_otel() {}
+/// Flush and shut down OTLP export. Call before the process exits (including before
+/// `std::process::exit`, which runs no destructors). Safe to call more than once and when export
+/// is off.
+pub fn shutdown_otel() {
+    let guard = OTEL_GUARD.get().and_then(|slot| slot.lock().ok().and_then(|mut held| held.take()));
+    drop(guard);
+}
+
+/// Whether an OTLP guard is currently held (export is live).
+#[cfg(test)]
+fn otel_guard_held() -> bool {
+    OTEL_GUARD.get().is_some_and(|slot| slot.lock().is_ok_and(|held| held.is_some()))
+}
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn shutdown_drops_the_held_guard_so_the_exporter_flushes() {
+        // Building the exporter does no network I/O; only a recorded span would be sent.
+        let guard = install_otel_guard("beskid-test").expect("exporter builds without a network");
+        store_otel_guard(guard);
+        assert!(otel_guard_held());
+        shutdown_otel();
+        assert!(!otel_guard_held(), "the guard is dropped (and so flushed), not leaked");
+        shutdown_otel();
+    }
 
     #[test]
     fn verbosity_selects_the_default_filter() {
