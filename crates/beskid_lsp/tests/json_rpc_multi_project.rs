@@ -198,5 +198,51 @@ fn member_completion_answers_within_a_second_while_a_multi_project_scan_runs() {
         }
         assert!(latency < Duration::from_secs(1), "use-path completion took {latency:?}");
     }
+
+    // A member access being typed: `Module.` or `value.` ends its line above the next statement,
+    // so the buffer does not parse with it. Completion still lists the module's public functions
+    // and the value's fields and methods.
+    for (project, text, line, character, expected, id) in [
+        (
+            "P03",
+            "use Core.String;\n\ni32 Main() {\n    String.\n    return 0;\n}\n",
+            3,
+            11,
+            &["Contains", "Split", "Trim"][..],
+            5,
+        ),
+        (
+            "P04",
+            "type Point { i32 raw;\ni32 Sum(i32 first) { return first + raw; }\n}\n\ni32 Main() {\n    Point point = Point { raw: 1 };\n    point.\n    return 0;\n}\n",
+            6,
+            10,
+            &["Sum", "raw"][..],
+            6,
+        ),
+    ] {
+        let path = folder.path().join(format!("{project}/Src/Main.bd"));
+        let uri = url::Url::from_file_path(&path).expect("member-access URI").to_string();
+        send_message(
+            &mut stdin,
+            json!({"jsonrpc": "2.0", "method": "textDocument/didOpen", "params": {"textDocument": {
+                "uri": uri, "languageId": "beskid", "version": 1, "text": text}}}),
+        );
+        wait_for_document_diagnostics(&messages, &uri, &mut idle);
+        let running = !idle;
+        let asked = Instant::now();
+        send_message(
+            &mut stdin,
+            json!({"jsonrpc": "2.0", "id": id, "method": "textDocument/completion", "params": {
+                "textDocument": {"uri": uri}, "position": {"line": line, "character": character}}}),
+        );
+        let response = response_with_id(&messages, id, &mut idle);
+        let latency = asked.elapsed();
+        let got = labels(&response);
+        eprintln!("incomplete member completion {project}: {latency:?}, scan running: {running}, {} items", got.len());
+        for label in expected {
+            assert!(got.contains(label), "`{text}` must offer {label}: {got:?}");
+        }
+        assert!(latency < Duration::from_secs(1), "incomplete member completion took {latency:?}");
+    }
     let _ = child.kill();
 }

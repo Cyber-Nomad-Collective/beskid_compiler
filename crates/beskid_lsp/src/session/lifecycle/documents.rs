@@ -180,6 +180,34 @@ async fn build_syntax_facts_with_policy_after_startup(
     current_document_only: bool,
     fallback: StartupFallback,
 ) -> SyntaxFacts {
+    let mut facts = syntax_facts_for_text(state, uri, text, pass, current_document_only, fallback).await;
+    // While a member is being typed (`String.` or `point.` ending its line) the buffer does not
+    // parse with the member access in it. Completion takes its facts from the same buffer with a
+    // placeholder member written over the following whitespace (byte offsets unchanged); every
+    // other fact (diagnostics, hovers, outline) stays the buffer's own. The repaired facts are
+    // built last, so the registered generation is the one the completion anchor names.
+    if !is_manifest_uri(uri)
+        && !is_standalone_bsol_uri(uri)
+        && let Some(repaired) = crate::session::imports::completion_repaired_text(text)
+    {
+        let repaired = syntax_facts_for_text(state, uri, &repaired, pass, false, fallback).await;
+        if let Some(completion) = repaired.completion
+            && completion.entry_anchor.is_some()
+        {
+            facts.completion = Some(completion);
+        }
+    }
+    facts
+}
+
+async fn syntax_facts_for_text(
+    state: &RwLock<State>,
+    uri: &Uri,
+    text: &str,
+    pass: EditorPreparePass,
+    current_document_only: bool,
+    fallback: StartupFallback,
+) -> SyntaxFacts {
     let documentation = if is_manifest_uri(uri) || is_standalone_bsol_uri(uri) {
         Vec::new()
     } else {
