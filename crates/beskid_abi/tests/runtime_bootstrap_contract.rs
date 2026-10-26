@@ -1145,12 +1145,16 @@ fn network_status_manifest_c_enum_runtime_constants_and_corelib_errors_agree() {
         .collect::<Vec<_>>();
     assert_eq!(variants, public, "NetworkError declaration order is the status order");
 
-    let internal = workspace_source("corelib/packages/network/src/Network/Internal.bd");
+    // `beskid fmt` output, compared with whitespace collapsed.
+    let internal = workspace_source("corelib/packages/network/src/Network/Internal.bd")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
     for (name, status) in statuses.iter().filter(|(name, _)| public.contains(&name.as_str())) {
-        let line = format!("if status == {status}_i64 {{ return NetworkError::{name}; }}");
+        let line = format!("if (status == {status}_i64) {{ return NetworkError::{name}; }}");
         assert!(internal.contains(&line), "Network.Internal.Error maps status {status} to {name}");
     }
-    assert!(!internal.contains(&format!("if status == {}_i64 {{ return NetworkError::", value("Pending"))));
+    assert!(!internal.contains(&format!("if (status == {}_i64) {{ return NetworkError::", value("Pending"))));
 
     let table = workspace_source("runtime/beskid/src/Runtime/Network/Table.bd");
     let mut checked = 0;
