@@ -18,7 +18,7 @@ use crate::{
     protocol::status::{idle_status, send_beskid_status, workspace_scan_status},
     session::{
         lifecycle::{
-            build_document, build_initial_workspace_document, publish_diagnostics_for_uri,
+            build_document, build_initial_workspace_document, index_project_documents, publish_diagnostics_for_uri,
             rebuild_open_document_syntax_facts, set_disk_snapshot,
         },
         project_context::invalidate_compilation_cache,
@@ -144,11 +144,26 @@ pub async fn scan_workspace_root(client: &Client, state: &RwLock<State>, root: &
         maybe_emit_scan_progress(client, &mut last_emit, 0, total, Some(root.display().to_string())).await;
     }
 
+    // Closed sources are indexed one project at a time: the project is typed once and every
+    // file's facts come from that typing (see `index_project_documents`).
+    let owners: std::collections::HashMap<PathBuf, PathBuf> = paths
+        .iter()
+        .filter(|path| !is_manifest(path) && path.extension().and_then(|e| e.to_str()) == Some("bd"))
+        .filter_map(|path| {
+            beskid_analysis::resolve_project_manifest_for_source_path(path, None)
+                .ok()
+                .flatten()
+                .map(|(manifest, _)| (path.clone(), manifest))
+        })
+        .collect();
+    let mut indexed_projects: HashSet<PathBuf> = HashSet::new();
+    let mut indexed_files: HashSet<PathBuf> = HashSet::new();
+
     let sem = Semaphore::new(MAX_CONCURRENT_READS);
     let interactive = state.read().await.interactive_inflight.clone();
     let mut processed: u32 = 0;
     let mut startup_signalled = false;
-    for path in paths {
+    for path in paths.clone() {
         // Manifests are structural and cheap. Once they are indexed, document requests no
         // longer wait for the closed-source analysis that follows.
         if !startup_signalled && !is_manifest(&path) {
@@ -157,6 +172,60 @@ pub async fn scan_workspace_root(client: &Client, state: &RwLock<State>, root: &
         }
         if !is_manifest(&path) {
             crate::scan_schedule::yield_to_interactive(&interactive).await;
+        }
+        if let Some(manifest) = owners.get(&path)
+            && indexed_projects.insert(manifest.clone())
+        {
+            let mut group = Vec::new();
+            for member in paths.iter().filter(|member| owners.get(*member) == Some(manifest)) {
+                let Some(uri) = uri_from_path(member) else { continue };
+                if state.read().await.docs.contains_key(&uri) {
+                    continue;
+                }
+                let Ok(text) = tokio::fs::read_to_string(member).await else { continue };
+                if !refresh && state.read().await.workspace_index.get(&uri).is_some_and(|known| known.text == text) {
+                    indexed_files.insert(member.clone());
+                    continue;
+                }
+                group.push((uri, member.clone(), text));
+            }
+            let started = Instant::now();
+            let mut documents = match index_project_documents(state, &group).await {
+                Ok(documents) => documents,
+                Err(reason) => {
+                    client
+                        .log_message(
+                            tower_lsp_server::ls_types::MessageType::WARNING,
+                            format!("indexing {} file by file: {reason}", manifest.display()),
+                        )
+                        .await;
+                    Default::default()
+                }
+            };
+            client
+                .log_message(
+                    tower_lsp_server::ls_types::MessageType::LOG,
+                    format!(
+                        "indexed {}: {} of {} files in {} ms",
+                        manifest.display(),
+                        documents.len(),
+                        group.len(),
+                        started.elapsed().as_millis()
+                    ),
+                )
+                .await;
+            for (uri, member, _) in group {
+                let Some(doc) = documents.remove(&uri) else { continue };
+                let diagnostics = lsp_diagnostics_from_syntax(&doc.text, &doc.syntax_diagnostics);
+                set_disk_snapshot(state, uri.clone(), doc).await;
+                client.publish_diagnostics(uri, diagnostics, Some(0)).await;
+                indexed_files.insert(member);
+            }
+        }
+        if indexed_files.contains(&path) {
+            processed = processed.saturating_add(1);
+            maybe_emit_scan_progress(client, &mut last_emit, processed, total, None).await;
+            continue;
         }
         let _permit = match sem.acquire().await {
             Ok(p) => p,
@@ -579,6 +648,34 @@ mod tests {
         assert_eq!(gone.paths, vec![lock.clone()]);
         commit_observed(&state, &gone).await;
         assert!(observe_changes(&state, &[lock]).await.paths.is_empty());
+    }
+
+    #[tokio::test]
+    async fn the_index_types_a_project_once_for_all_its_closed_files() {
+        let (client, _notifications) = initialized_client().await;
+        let root = TempDir::new().expect("root");
+        write_project(root.path(), "Indexed");
+        fs::write(root.path().join("Src/Util.bd"), "i32 Twice(i32 value) { return value + value; }\n")
+            .expect("second source");
+        fs::write(root.path().join("Src/Broken.bd"), "i32 Broken() { return missing_name; }\n").expect("third source");
+        let state = Arc::new(RwLock::new(State::default()));
+        scan_workspace_roots(&client, &state, &[root.path().to_path_buf()], None, None).await;
+
+        let read = state.read().await;
+        let document = |name: &str| {
+            read.workspace_index
+                .iter()
+                .find(|(uri, _)| uri.as_str().ends_with(name))
+                .map(|(_, document)| document.clone())
+                .unwrap_or_else(|| panic!("{name} is indexed"))
+        };
+        assert!(document("Util.bd").syntax_documentation.iter().any(|fact| fact.name == "Twice"));
+        assert!(document("Main.bd").syntax_diagnostics.is_empty(), "{:?}", document("Main.bd").syntax_diagnostics);
+        assert!(
+            !document("Broken.bd").syntax_diagnostics.is_empty(),
+            "the error of one file is reported against that file"
+        );
+        assert_eq!(read.databases.analyses(root.path()), 1, "one typing of the project serves all three files");
     }
 
     #[tokio::test]

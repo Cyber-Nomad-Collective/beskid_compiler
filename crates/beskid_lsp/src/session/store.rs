@@ -311,9 +311,14 @@ pub struct State {
     /// Bounds the full-diagnostics preparations that run at once. Each holds a typed program of
     /// its project (gigabytes for a large Corelib package) outside the project's database gate.
     pub(crate) diagnostics_permits: Arc<tokio::sync::Semaphore>,
-    /// Bounds the analyses (database work of any project) that run at once. Each holds a
-    /// project's typed closure, so analyses of many projects at once would hold many of them.
+    /// Bounds the analyses of open documents (database work of any project) that run at once.
+    /// Each holds a project's typed closure, so analyses of many projects at once would hold
+    /// many of them.
     pub(crate) analysis_permits: Arc<tokio::sync::Semaphore>,
+    /// The background work (workspace index, closed files) runs one analysis at a time on its
+    /// own permit, so a stream of edits cannot starve the index and the index cannot delay an
+    /// edit's analysis.
+    pub(crate) background_permits: Arc<tokio::sync::Semaphore>,
     /// Content fingerprints of manifests and lockfiles already acted on, so a rewrite with
     /// identical bytes (the server's own `Project.lock` sync) causes no invalidation.
     pub(crate) watched_fingerprints: HashMap<PathBuf, u64>,
@@ -338,6 +343,7 @@ impl Default for State {
             facts_stored: Arc::new(Notify::new()),
             diagnostics_permits: Arc::new(tokio::sync::Semaphore::new(MAX_CONCURRENT_DIAGNOSTICS)),
             analysis_permits: Arc::new(tokio::sync::Semaphore::new(MAX_CONCURRENT_ANALYSES)),
+            background_permits: Arc::new(tokio::sync::Semaphore::new(1)),
         }
     }
 }

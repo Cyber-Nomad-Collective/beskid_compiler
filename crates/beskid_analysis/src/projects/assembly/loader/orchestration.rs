@@ -84,7 +84,7 @@ pub fn assemble_program_with_materializer(
     };
 
     match options.discovery {
-        AssemblyDiscovery::ImportClosure => {
+        AssemblyDiscovery::ImportClosure | AssemblyDiscovery::HostImportClosure => {
             // One assembly sees one filesystem state, so each module path resolves once and each
             // discovered path is canonicalized once, however many units import it.
             let mut module_files: HashMap<String, Option<PathBuf>> = HashMap::new();
@@ -99,6 +99,12 @@ pub fn assemble_program_with_materializer(
             let mut canonical_keys: HashMap<PathBuf, PathBuf> = HashMap::new();
             let mut queue = VecDeque::new();
             queue.push_back(entry_path.to_path_buf());
+            if options.discovery == AssemblyDiscovery::HostImportClosure {
+                let mut host_sources = Vec::new();
+                collect_bd_files(&roots.host.source_root, &mut host_sources);
+                host_sources.sort();
+                queue.extend(host_sources);
+            }
             queue.extend(adapter_seeds.iter().cloned());
             let mut seeded_companions: HashSet<String> = HashSet::new();
 

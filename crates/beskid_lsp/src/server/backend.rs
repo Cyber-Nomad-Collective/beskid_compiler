@@ -24,7 +24,7 @@ use crate::protocol::request::{
 };
 use crate::scan_schedule::{InteractiveGuard, ScanCoordinator, ScanRunGuard};
 use crate::server::init::initialize_result;
-use crate::session::db_access::{parallel_project_db, with_project_db};
+use crate::session::db_access::{parallel_project_db, with_shared_project_db};
 use crate::session::lifecycle::{analyze_open_document, publish_diagnostics_for_uri, remove_document};
 use crate::session::mod_host::mod_host_from_initialization_options;
 use crate::session::store::State;
@@ -38,6 +38,8 @@ use crate::workspace_scan::{
 const COMPLETION_FACTS_WAIT: Duration = Duration::from_millis(100);
 /// Longest completion waits for its project's database, busy with another analysis.
 const COMPLETION_DB_WAIT: Duration = Duration::from_millis(100);
+/// Longest completion's database queries run before the owned facts answer instead.
+const COMPLETION_QUERY_LIMIT: Duration = Duration::from_millis(1000);
 
 /// Tower-LSP [`LanguageServer`] implementation for Beskid (sync, diagnostics, IDE features).
 pub struct Backend {
@@ -347,27 +349,45 @@ impl LanguageServer for Backend {
             tokio::time::timeout(COMPLETION_DB_WAIT, parallel_project_db(&self.state, project_root.as_deref()))
                 .await
                 .ok()
+                .flatten()
         } else {
             None
         };
-        let response = tokio::task::spawn_blocking(move || {
+        let owned_document = db.is_some().then(|| document.clone());
+        let cancel = db.as_ref().map(|db| salsa::Database::cancellation_token(db));
+        let query_uri = uri.clone();
+        let query = tokio::task::spawn_blocking(move || {
             crate::crash::run_blocking_recorded(|| {
                 salsa::Cancelled::catch(AssertUnwindSafe(|| {
-                    completion::handler::handle_completion(db.as_ref(), &uri, &document, offset)
+                    completion::handler::handle_completion(db.as_ref(), &query_uri, &document, offset)
                 }))
             })
-        })
-        .await
-        .map_err(|error| {
-            tracing::error!(%error, "parallel Salsa completion task failed");
-            tower_lsp_server::jsonrpc::Error::internal_error()
-        })?
-        // Re-raise a worker panic on the request task so the service-level guard reports it.
-        .unwrap_or_else(|panic| panic.resume())
-        .map_err(|cancelled| {
-            tracing::debug!(%cancelled, "parallel Salsa completion invalidated by a newer input revision");
-            tower_lsp_server::jsonrpc::Error::content_modified()
-        })?;
+        });
+        // A database query that runs long (a large module's members) is cancelled and the owned
+        // facts answer; the cancelled query releases its handle on the project's storage.
+        let outcome = match owned_document {
+            Some(owned) => match tokio::time::timeout(COMPLETION_QUERY_LIMIT, query).await {
+                Ok(outcome) => outcome,
+                Err(_) => {
+                    if let Some(cancel) = cancel {
+                        cancel.cancel();
+                    }
+                    return Ok(Some(completion::handler::handle_completion(None, &uri, &owned, offset)));
+                }
+            },
+            None => query.await,
+        };
+        let response = outcome
+            .map_err(|error| {
+                tracing::error!(%error, "parallel Salsa completion task failed");
+                tower_lsp_server::jsonrpc::Error::internal_error()
+            })?
+            // Re-raise a worker panic on the request task so the service-level guard reports it.
+            .unwrap_or_else(|panic| panic.resume())
+            .map_err(|cancelled| {
+                tracing::debug!(%cancelled, "parallel Salsa completion invalidated by a newer input revision");
+                tower_lsp_server::jsonrpc::Error::content_modified()
+            })?;
         Ok(Some(response))
     }
 
@@ -461,7 +481,7 @@ impl LanguageServer for Backend {
         {
             return Ok(Some(result));
         }
-        let explorer_result = with_project_db(&self.state, None, true, |db| {
+        let explorer_result = with_shared_project_db(&self.state, None, true, |db| {
             handle_project_explorer_command(&params.command, Some(params.arguments), &roots, Some(db))
         })
         .await?;

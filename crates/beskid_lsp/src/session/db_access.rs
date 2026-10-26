@@ -20,7 +20,9 @@ fn run_blocking_section<R>(work: impl FnOnce() -> R) -> R {
     }
 }
 
-/// Mutate and query the database of `project_root` (the detached database for `None`).
+/// Analyze in the database of `project_root` (the detached database for `None`): the analysis
+/// whose facts documents keep. Each such analysis starts from a fresh storage (see
+/// [`super::project_dbs::ANALYSES_PER_DATABASE`]).
 ///
 /// Only that project's gate is held, so work on another project does not wait. The LSP state
 /// lock is held just long enough to look the database up. `interactive` marks work for an
@@ -31,29 +33,56 @@ pub async fn with_project_db<R>(
     interactive: bool,
     f: impl FnOnce(&mut BeskidDatabase) -> R,
 ) -> R {
-    let (database, evicted, permits) = {
-        let mut write = state.write().await;
-        let (database, evicted) = write.databases.get(project_root, interactive);
-        (database, evicted, Arc::clone(&write.analysis_permits))
-    };
-    drop_in_background(evicted);
-    let _gate = database.gate().lock().await;
-    let _permit = permits.acquire_owned().await.expect("analysis permits are never closed");
-    let mut db = database.lock_for_analysis();
-    run_blocking_section(|| f(&mut db))
+    run_in_project_db(state, project_root, interactive, true, f).await
 }
 
-/// Acquire a Salsa parallel-query handle on the database of `project_root`.
+/// Work in the database of `project_root` that keeps no facts of its own (diagnostics
+/// assembly, explorer graphs): it shares the storage of the last analysis.
+pub async fn with_shared_project_db<R>(
+    state: &RwLock<State>,
+    project_root: Option<&Path>,
+    interactive: bool,
+    f: impl FnOnce(&mut BeskidDatabase) -> R,
+) -> R {
+    run_in_project_db(state, project_root, interactive, false, f).await
+}
+
+/// [`with_project_db`] (`analysis`) or [`with_shared_project_db`].
+pub(crate) async fn run_in_project_db<R>(
+    state: &RwLock<State>,
+    project_root: Option<&Path>,
+    interactive: bool,
+    analysis: bool,
+    f: impl FnOnce(&mut BeskidDatabase) -> R,
+) -> R {
+    // The permit comes first: work waiting for its turn holds no database, so the databases
+    // alive are bounded by the permits and the pool, however long the queue of edits grows.
+    let permits = {
+        let read = state.read().await;
+        Arc::clone(if interactive { &read.analysis_permits } else { &read.background_permits })
+    };
+    let _permit = permits.acquire_owned().await.expect("analysis permits are never closed");
+    let (database, evicted) = state.write().await.databases.get(project_root, interactive);
+    drop_in_background(evicted);
+    let _gate = database.gate().lock().await;
+    // Starting a fresh storage drops the previous one, which takes a while for a large project.
+    run_blocking_section(|| {
+        let mut db = if analysis { database.lock_for_analysis() } else { database.lock() };
+        f(&mut db)
+    })
+}
+
+/// Acquire a Salsa parallel-query handle on the database of `project_root`, if the pool holds
+/// one (the facts of the project's documents come from it; a new database could answer nothing).
 ///
 /// Cloning a Salsa database clones only its handle; the memoized storage and Beskid registries
 /// remain shared. The project's gate is held only while the handle is acquired. Salsa then
 /// lets query handles run concurrently, and a later input write cancels them and waits until
 /// they are dropped.
-pub async fn parallel_project_db(state: &RwLock<State>, project_root: Option<&Path>) -> BeskidDatabase {
-    let (database, evicted) = state.write().await.databases.get(project_root, true);
-    drop_in_background(evicted);
+pub async fn parallel_project_db(state: &RwLock<State>, project_root: Option<&Path>) -> Option<BeskidDatabase> {
+    let database = state.read().await.databases.existing(project_root)?;
     let _gate = database.gate().lock().await;
-    database.lock().clone()
+    Some(database.lock().clone())
 }
 
 /// Drop databases on a blocking thread: freeing a large storage takes a while, and it must not
@@ -113,8 +142,8 @@ mod tests {
     async fn immutable_salsa_handles_can_query_concurrently() {
         let state = Arc::new(RwLock::new(State::default()));
         let rendezvous = Arc::new(Barrier::new(2));
-        let first = parallel_project_db(&state, None).await;
-        let second = parallel_project_db(&state, None).await;
+        let first = parallel_project_db(&state, None).await.expect("detached database");
+        let second = parallel_project_db(&state, None).await.expect("detached database");
 
         std::thread::scope(|scope| {
             let first_rendezvous = Arc::clone(&rendezvous);

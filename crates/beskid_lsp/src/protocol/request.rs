@@ -30,8 +30,7 @@ pub async fn snapshot_document(state: &RwLock<State>, uri: &Uri) -> Option<Docum
 /// The document with the facts of its newest text if they arrive within `wait`; otherwise
 /// `Err` with the last analyzed facts carried over to the newest text.
 ///
-/// A buffer without any facts yet (just opened, not indexed) waits up to
-/// [`CURRENT_FACTS_WAIT`] like [`snapshot_document`].
+/// `Ok(None)` when the buffer has no facts at all within `wait`.
 pub async fn current_document(state: &RwLock<State>, uri: &Uri, wait: Duration) -> Result<Option<Document>, Document> {
     let started = tokio::time::Instant::now();
     loop {
@@ -45,7 +44,7 @@ pub async fn current_document(state: &RwLock<State>, uri: &Uri, wait: Duration) 
             (document, None) => return Ok(document),
             (Some(document), Some(newest)) if document.text == newest => return Ok(Some(document)),
             (document, Some(newest)) => {
-                let deadline = started + if document.is_some() { wait } else { CURRENT_FACTS_WAIT };
+                let deadline = started + wait;
                 if tokio::time::timeout_at(deadline, notified).await.is_err() {
                     return match document {
                         Some(document) => Err(document.carried_over(newest, uri_to_path(uri).as_deref())),

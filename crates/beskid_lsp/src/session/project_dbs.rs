@@ -1,10 +1,11 @@
 //! One in-memory Salsa database per project, kept across requests.
 //!
 //! A workspace often holds many projects (Corelib holds more than fifty). Each project is
-//! prepared in its own database, as the CLI does, but the server keeps the database of each
-//! project it works on: switching between two open documents of different projects must not
-//! throw away the typed closure of either. Work on one project never waits for work on
-//! another, because each database has its own mutation gate.
+//! prepared in its own database, as the CLI does. The server keeps the database of the last
+//! analysis of each project it works on: the completion anchors of that project's documents
+//! point into it, and switching between documents of different projects must not throw it away.
+//! Work on one project never waits for work on another, because each database has its own
+//! mutation gate.
 //!
 //! The databases live only in memory. A restored Salsa snapshot is verified and recomputed in
 //! full on every prepare (see `configure_db_in_place` in `beskid_queries::session`), so loading
@@ -22,12 +23,14 @@ use tokio::sync::Mutex as AsyncMutex;
 /// included (about 0.5-1 GB for a Corelib package), so the pool stays small. Databases of
 /// projects that only the background scan touched are dropped first; among the others the least
 /// recently edited one goes.
-pub(crate) const MAX_PROJECT_DATABASES: usize = 4;
+pub(crate) const MAX_PROJECT_DATABASES: usize = 3;
 
 /// Analyses a database serves before it starts afresh. Every analysis registers a new syntax
-/// generation whose typed facts stay in the storage (measured at roughly 50-100 MB for a Corelib
-/// package), so a database kept for a whole session would grow without bound.
-pub(crate) const ANALYSES_PER_DATABASE: usize = 8;
+/// generation, typed again from the start, whose facts stay in the storage until it is dropped
+/// (about 65 MB per analysis in a Corelib soak); a database kept for a session grows without
+/// bound. The completion anchor of a document's facts needs the database of the analysis that
+/// produced them, so one storage serves exactly one analysis.
+pub(crate) const ANALYSES_PER_DATABASE: usize = 1;
 
 /// The database of one project and the gate that serializes its mutation.
 #[derive(Clone)]
@@ -137,6 +140,15 @@ impl ProjectDatabases {
         (database, evicted)
     }
 
+    /// The database of `project_root` if the pool holds one; never creates or evicts.
+    pub(crate) fn existing(&self, project_root: Option<&Path>) -> Option<ProjectDatabase> {
+        let Some(root) = project_root else {
+            return Some(self.detached.clone());
+        };
+        let root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
+        self.projects.get(&root).map(|entry| entry.database.clone())
+    }
+
     fn evict_beyond_capacity(&mut self, keep: &Path) -> Vec<ProjectDatabase> {
         let mut evicted = Vec::new();
         while self.projects.len() > self.capacity {
@@ -165,6 +177,13 @@ impl ProjectDatabases {
     /// Whether no project database exists yet.
     pub(crate) fn is_empty(&self) -> bool {
         self.projects.is_empty()
+    }
+
+    /// Analyses the database of `project_root` served (test observation).
+    #[cfg(test)]
+    pub(crate) fn analyses(&self, project_root: &Path) -> usize {
+        let root = project_root.canonicalize().unwrap_or_else(|_| project_root.to_path_buf());
+        self.projects.get(&root).map_or(0, |entry| entry.database.analyses.load(Ordering::Acquire))
     }
 
     #[cfg(test)]

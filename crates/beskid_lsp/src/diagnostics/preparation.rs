@@ -187,6 +187,50 @@ pub(crate) fn prepare_project_syntax_facts(
     })
 }
 
+/// One complete preparation of every source under a project's host root (with the dependency
+/// modules they import), for the workspace index.
+/// The diagnostics keep the file each belongs to, so one typing of the project yields the
+/// diagnostics of all its closed files.
+pub(crate) struct PreparedProjectIndex {
+    pub(crate) assembly: ProgramAssembly,
+    pub(crate) diagnostics: Vec<(String, SyntaxDiagnostic)>,
+}
+
+pub(crate) fn prepare_project_index(
+    db: &mut BeskidDatabase,
+    resolved: &ResolvedInput,
+    mod_host: &ModHostSelection,
+) -> anyhow::Result<PreparedProjectIndex> {
+    let front_end = FrontEndOptions {
+        assembly_discovery: beskid_analysis::projects::AssemblyDiscovery::HostImportClosure,
+        ..editor_front_end(EditorPreparePass::Complete)
+    };
+    let (prepared, diagnostics, _fixes) = beskid_queries::prepare_compilation_diagnostics_with_db(
+        db,
+        resolved,
+        PrepareOptions {
+            mod_host: editor_mod_host(resolved, &front_end, mod_host)?,
+            front_end,
+            native_mod_adapter_sources: false,
+        },
+        None,
+    )?;
+    Ok(PreparedProjectIndex {
+        assembly: prepared.syntax_assembly(),
+        diagnostics: diagnostics
+            .into_iter()
+            .map(|diagnostic| (diagnostic.file_name().to_string(), syntax_diagnostic_from_semantic(diagnostic)))
+            .collect(),
+    })
+}
+
+/// The names diagnostics use for a unit: its logical name and its authored file name.
+pub(crate) fn unit_diagnostic_names(unit: &beskid_analysis::projects::SourceUnit) -> Vec<String> {
+    let mut mapper = SourceMapper::new();
+    let authored = mapper.authored_name(&unit.logical_name);
+    std::iter::once(unit.logical_name.clone()).chain(authored).collect()
+}
+
 /// Run downstream diagnostics from an already assembled, owned input.
 ///
 /// The owned job uses an isolated generation-bound query database, so the LSP can

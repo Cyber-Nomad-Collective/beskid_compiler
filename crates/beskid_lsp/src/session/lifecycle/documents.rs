@@ -10,12 +10,12 @@ use tower_lsp_server::ls_types::Uri;
 use crate::{
     diagnostics::{
         EditorPreparePass, collect_syntax_diagnostics, prepare_project_diagnostics_from_assembled,
-        prepare_project_syntax_facts, project_preparation_failure,
+        prepare_project_index, prepare_project_syntax_facts, project_preparation_failure, unit_diagnostic_names,
     },
     features::formatting::open_texts::open_text,
     manifest_uri::{is_manifest_uri, is_standalone_bsol_uri},
     session::{
-        db_access::{document_update_gate, with_project_db},
+        db_access::{document_update_gate, run_in_project_db, with_project_db, with_shared_project_db},
         diagnostics_bridge::collect_syntax_diagnostics_for_state,
         documentation_facts::syntax_documentation_facts_for_source,
         imports::RecoverableCompletionSyntax,
@@ -113,7 +113,7 @@ pub(super) async fn build_full_diagnostic_facts(
     // Held from the assembly through the preparation: the assembled program is large.
     let permits = Arc::clone(&state.read().await.diagnostics_permits);
     let _permit = permits.acquire_owned().await.ok()?;
-    let assembled = with_project_db(state, Some(&project_root), interactive, |db| {
+    let assembled = with_shared_project_db(state, Some(&project_root), interactive, |db| {
         if newer_text_sent() {
             return None;
         }
@@ -163,7 +163,10 @@ fn preparation_failure_facts(
 use crate::session::attribute_facts::attribute_names_for_program;
 
 use super::{
-    facts::{SyntaxFacts, bsol_semantic_token_candidates, syntax_facts_for_assembly, syntax_symbols_for_program},
+    facts::{
+        SyntaxFacts, bsol_semantic_token_candidates, syntax_facts_for_assembly, syntax_symbols_for_program,
+        typed_program_for_assembly, unit_syntax_facts,
+    },
     revisions_resolution::resolved_input_for_path,
 };
 
@@ -334,7 +337,9 @@ async fn syntax_facts_for_text(
     let resolved_for_prepare = resolved.clone();
     let path_for_prepare = path.clone();
     let text_for_prepare = text.to_string();
-    let prepared_facts = with_project_db(state, Some(&project_root), interactive, |db| {
+    // The completion repair of a buffer analyzes in the storage of the buffer's own analysis.
+    let analysis = member_offsets.is_empty();
+    let prepared_facts = run_in_project_db(state, Some(&project_root), interactive, analysis, |db| {
         // The wait for the project's database can be long; a newer text makes this work moot.
         if newest.is_some_and(|buffer| superseded(uri, buffer)) {
             return Ok(None);
@@ -473,6 +478,124 @@ pub(crate) async fn build_initial_workspace_document(
     )
     .await;
     document_from_syntax_facts(version, text, syntax_facts)
+}
+
+/// Documents for the closed files of one project from one typing of the whole project.
+///
+/// The workspace index used to prepare and type the project once per closed file, which made
+/// the index of a large project take hours. Here every source under the project's roots is
+/// assembled and typed once, and each file's facts and diagnostics come from that typed program.
+/// A project whose preparation fails gives every file that failure, as preparing the file alone
+/// would. Files the preparation does not cover are missing from the result, and `Err` names why
+/// a project could not be indexed as a whole; the caller analyzes those files one by one.
+pub(crate) async fn index_project_documents(
+    state: &RwLock<State>,
+    files: &[(Uri, std::path::PathBuf, String)],
+) -> Result<std::collections::HashMap<Uri, Document>, String> {
+    let Some((_, first_path, first_text)) = files.first() else {
+        return Ok(Default::default());
+    };
+    let Some((resolved, session)) = resolved_input_for_path(state, first_path, first_text).await else {
+        return Err("no project resolves the file".into());
+    };
+    // The target's entry file is the assembly entry when it is closed: its entry point is used.
+    let entry = session
+        .compile_plan
+        .as_ref()
+        .and_then(|plan| plan.target.entry.as_deref())
+        .and_then(|entry| files.iter().find(|(_, path, _)| path.ends_with(entry) && path != first_path));
+    let (resolved, session) = match entry {
+        Some((_, path, text)) => resolved_input_for_path(state, path, text)
+            .await
+            .ok_or_else(|| "no project resolves the entry file".to_string())?,
+        None => (resolved, session),
+    };
+    let Some(plan) = session.compile_plan.as_ref() else {
+        return Err("the project has no compile plan".into());
+    };
+    // A lock that cannot be replayed is reported file by file.
+    if let Some(diagnostic) = lockfile_replay_diagnostic(plan) {
+        return Err(diagnostic.message);
+    }
+    let buffered_sources = {
+        let read = state.read().await;
+        read.workspace_index
+            .iter()
+            .chain(read.docs.iter())
+            .filter_map(|(buffer_uri, document)| {
+                uri_to_path(buffer_uri).map(|buffer_path| (buffer_path, document.text.clone()))
+            })
+            .collect::<Vec<_>>()
+    };
+    let wanted: std::collections::HashMap<std::path::PathBuf, (&Uri, &str)> = files
+        .iter()
+        .map(|(uri, path, text)| (path.canonicalize().unwrap_or_else(|_| path.clone()), (uri, text.as_str())))
+        .collect();
+    let project_root = plan.project_root.clone();
+    let mod_host = state.read().await.mod_host.clone();
+    let derived = with_project_db(state, Some(&project_root), false, |db| {
+        beskid_queries::invalidate_entry_sessions(&project_root);
+        for (buffer_path, buffer_text) in buffered_sources {
+            db.ensure_file_text(buffer_path, buffer_text);
+        }
+        for (path, (_, text)) in &wanted {
+            db.ensure_file_text(path.clone(), (*text).to_string());
+        }
+        let prepared = match prepare_project_index(db, &resolved, &mod_host) {
+            Ok(prepared) => prepared,
+            // A project-level failure (a Mod without an artifact, an unreadable dependency) is
+            // what preparing any one of its files would report: every file gets that fact
+            // instead of repeating the failing preparation per file.
+            Err(error) => {
+                return Ok(wanted
+                    .values()
+                    .map(|(uri, text)| {
+                        let (diagnostics, fixes) = preparation_failure_facts(uri, text, &error);
+                        ((*uri).clone(), text.to_string(), SyntaxFacts { diagnostics, fixes, ..SyntaxFacts::default() })
+                    })
+                    .collect());
+            }
+        };
+        let assembly = Arc::new(prepared.assembly);
+        let typed = typed_program_for_assembly(db, &resolved, Arc::clone(&assembly))
+            .ok_or_else(|| "the project's program could not be typed".to_string())?;
+        let mut derived = Vec::new();
+        for unit in assembly.units.iter() {
+            let canonical = unit.path.canonicalize().unwrap_or_else(|_| unit.path.clone());
+            let Some((uri, text)) = wanted.get(&canonical) else {
+                continue;
+            };
+            // Facts are offsets into the text the unit was assembled from.
+            if unit.source != *text {
+                continue;
+            }
+            let names = unit_diagnostic_names(unit);
+            let mut facts = unit_syntax_facts(db, Some(&typed), &assembly, &unit.path, &unit.path, text);
+            facts.diagnostics = prepared
+                .diagnostics
+                .iter()
+                .filter(|(name, _)| names.contains(name))
+                .map(|(_, diagnostic)| diagnostic.clone())
+                .collect();
+            derived.push(((*uri).clone(), text.to_string(), facts));
+        }
+        Ok::<_, String>(derived)
+    })
+    .await?;
+    Ok(derived
+        .into_iter()
+        .map(|(uri, text, mut facts)| {
+            facts.documentation = syntax_documentation_facts_for_source(uri.as_str(), &text);
+            let (symbols, attribute_names) =
+                beskid_analysis::services::parse_program_with_source_name(uri.as_str(), &text)
+                    .map(|program| (syntax_symbols_for_program(&program), attribute_names_for_program(&program)))
+                    .unwrap_or_default();
+            facts.symbols = symbols;
+            facts.attribute_names = attribute_names;
+            let document = document_from_syntax_facts(0, text, facts);
+            (uri, document)
+        })
+        .collect())
 }
 
 /// Store a disk-backed snapshot when the URI is not already an open buffer.
