@@ -272,7 +272,7 @@ fn composition_issue_to_diagnostic(
             format!("`single {single}` cannot inject `{dependency}`, which its scope creates anew on each `with`"),
             "per-activation service in a `single`",
             Some(format!(
-                "a `single` lives as long as the container and would keep one activation's `{dependency}`; register `{single}` without `single` so each `with` creates it, or inject a service that is not per activation"
+                "a host-level `single` lives as long as the container and would keep one activation's `{dependency}`; declare `{single}` in the scope so each `with` creates it, or inject a host-level service"
             )),
         ),
         CompositionIssue::UnknownRegistrationId { registration_id, span } => (
@@ -468,11 +468,11 @@ i32 Main() { launch AppHost(); return 0; }
     }
 
     #[test]
-    fn a_single_that_injects_a_per_activation_service_is_e1725() {
+    fn a_scope_single_may_inject_its_scope_services() {
         let source = r#"
 type Session { }
 type Report { inject Session session; }
-type Cache { inject Report report; }
+type Cache { inject Report report; inject Session session; }
 host AppHost()
 {
     scope Visit()
@@ -485,9 +485,8 @@ host AppHost()
 i32 Main() { launch AppHost(); with Visit() { } return 0; }
 "#;
         let found = diagnostics(source);
-        let captive = found.iter().filter(|diagnostic| diagnostic.code.as_deref() == Some("E1725")).collect::<Vec<_>>();
-        let [captive] = captive.as_slice() else { panic!("one E1725 expected (through the transient): {found:?}") };
-        assert!(captive.message.contains("`single Cache` cannot inject `Report`"), "{}", captive.message);
+        // A scope's `single` is one per activation, created with the services it injects.
+        assert!(found.iter().all(|diagnostic| diagnostic.code.as_deref() != Some("E1725")), "{found:?}");
     }
 
     #[test]

@@ -179,16 +179,15 @@ impl SyntaxNodeFacts<'_> {
         };
         let init = calls(&plan.init_hooks)?;
         let dispose = calls(&plan.disposal_hooks)?;
-        // Each `with` creates the scope's own non-`single` registrations anew (in activation
-        // order, so a service follows what it injects); a `single` stays the container's.
+        // Each `with` creates every registration declared in the scope anew (scoped, `single`
+        // and `transient` alike: a scope's `single` is one per activation), in activation order,
+        // so a service follows what it injects. Host-level registrations stay the container's.
         let registrations = plan
             .activation
             .iter()
             .filter(|activation| {
                 snapshot.registrations.iter().any(|registration| {
-                    registration.id == activation.registration_id
-                        && registration.scope_id == *scope_id
-                        && registration.lifetime != beskid_analysis::composition::RegistrationLifetime::Single
+                    registration.id == activation.registration_id && registration.scope_id == *scope_id
                 })
             })
             .map(|activation| self.composition_registration_plan(plan, snapshot, activation))

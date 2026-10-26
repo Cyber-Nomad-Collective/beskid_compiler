@@ -1354,10 +1354,11 @@ fn contract_call_on_a_mutable_contract_local_dispatches_through_the_witness_tabl
     assert_eq!(dispatch.slot, 0);
 }
 
-/// A named scope's per-activation registrations (`DbSession for Session;`, `transient Report;`
-/// that injects it, and the hooks' argument objects) are created anew by every `with`: two
-/// sequential activations and a nested activation of the same scope each allocate their own
-/// set between entering the scope and running its `init`. The `single` stays the container's.
+/// A named scope's registrations (`DbSession for Session;`, the scope's `single Book;`,
+/// `transient Report;` that injects both, and the hooks' argument objects) are created anew by
+/// every `with`: two sequential activations and a nested activation of the same scope each
+/// allocate their own set between entering the scope and running its `init`. The host-level
+/// `single` stays the container's.
 #[test]
 fn every_with_activation_creates_its_own_scoped_instances() {
     use std::sync::Arc;
@@ -1367,7 +1368,8 @@ fn every_with_activation_creates_its_own_scoped_instances() {
     let source = r#"
 contract Session { i64 Id(); }
 type DbSession : Session { pub i64 Id() { return 7; } }
-type Report { inject Session session; }
+type Book {}
+type Report { inject Session session; inject Book book; }
 type Clock {}
 host AppHost()
 {
@@ -1375,6 +1377,7 @@ host AppHost()
     scope Visit()
     {
         DbSession for Session;
+        single Book;
         transient Report;
         init(Session session, Report report) { }
     }
@@ -1442,9 +1445,10 @@ i32 Main()
         per_activation.push(calls[index + 1..end].iter().filter(|line| calls_any(line, &allocations)).count());
     }
     assert_eq!(per_activation.len(), 3, "three activations:\n{clif}");
-    // DbSession, Report and the init hook's argument object, for each activation.
+    // DbSession, the scope's `single` Book, Report and the init hook's argument object, for
+    // each activation; the host-level `single` Clock is not among them.
     assert!(
-        per_activation.iter().all(|count| *count == per_activation[0] && *count >= 3),
+        per_activation.iter().all(|count| *count == per_activation[0] && *count >= 4),
         "every activation allocates its own scoped set {per_activation:?}:\n{clif}"
     );
 }

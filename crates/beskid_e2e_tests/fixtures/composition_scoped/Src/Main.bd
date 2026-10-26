@@ -1,12 +1,26 @@
-// A named scope's registrations without `single` are created anew on each `with` activation:
+// Every registration declared in a named scope is created anew on each `with` activation:
 // sequential activations and a nested activation of the same scope each get their own set. A
-// `transient` of the scope that injects the scoped `Session` sees the activation's own instance,
-// the same one the scope's hooks receive.
+// `transient` of the scope that injects the scoped `Session` and the scope's `single` `Ledger`
+// sees the activation's own instances, the ones the scope's hooks receive: a scope `single` is
+// one per activation, shared within it.
 use Core.Output;
 
 contract Session
 {
     i64 Id();
+}
+
+contract Ledger
+{
+    i64 Entries();
+}
+
+type Book : Ledger
+{
+    pub i64 Entries()
+    {
+        return 0;
+    }
 }
 
 type DbSession : Session
@@ -20,10 +34,11 @@ type DbSession : Session
 type Report
 {
     inject Session session;
+    inject Ledger ledger;
 
-    pub string Matches(Session other)
+    pub string Matches(Session other, Ledger book)
     {
-        if this.session == other
+        if this.session == other && this.ledger == book
         {
             return "same";
         }
@@ -36,16 +51,17 @@ host AppHost()
     scope Visit(i64 visit)
     {
         DbSession for Session;
+        single Book for Ledger;
         transient Report;
 
-        init(Session session, Report report)
+        init(Session session, Ledger ledger, Report report)
         {
-            Output.WriteLine("init ${visit} ${report.Matches(session)}");
+            Output.WriteLine("init ${visit} ${report.Matches(session, ledger)}");
         }
 
-        dispose(Session session, Report report)
+        dispose(Session session, Ledger ledger, Report report)
         {
-            Output.WriteLine("dispose ${visit} ${report.Matches(session)}");
+            Output.WriteLine("dispose ${visit} ${report.Matches(session, ledger)}");
         }
     }
 }
