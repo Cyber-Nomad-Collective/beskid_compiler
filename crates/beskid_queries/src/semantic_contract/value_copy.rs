@@ -381,25 +381,26 @@ fn nested_in(db: &dyn Db, shape: &Shape, top: bool, visiting: &mut Vec<AstNodeKe
             };
             let program = syntax.expanded_program(db);
             let node = syntax.syntax_index(db).node_at(program, declaration.node)?;
-            let (name, generics, fields) = if let Some(definition) = node.of::<beskid_analysis::syntax::TypeDefinition>() {
-                (
-                    definition.name.node.name.clone(),
-                    definition.generics.iter().map(|generic| generic.node.name.clone()).collect::<Vec<_>>(),
-                    definition.fields.iter().map(|field| field.node.ty.node.clone()).collect::<Vec<_>>(),
-                )
-            } else if let Some(definition) = node.of::<beskid_analysis::syntax::EnumDefinition>() {
-                (
-                    definition.name.node.name.clone(),
-                    definition.generics.iter().map(|generic| generic.node.name.clone()).collect::<Vec<_>>(),
-                    definition
-                        .variants
-                        .iter()
-                        .flat_map(|variant| variant.node.fields.iter().map(|field| field.node.ty.node.clone()))
-                        .collect::<Vec<_>>(),
-                )
-            } else {
-                return None;
-            };
+            let (name, generics, fields) =
+                if let Some(definition) = node.of::<beskid_analysis::syntax::TypeDefinition>() {
+                    (
+                        definition.name.node.name.clone(),
+                        definition.generics.iter().map(|generic| generic.node.name.clone()).collect::<Vec<_>>(),
+                        definition.fields.iter().map(|field| field.node.ty.node.clone()).collect::<Vec<_>>(),
+                    )
+                } else if let Some(definition) = node.of::<beskid_analysis::syntax::EnumDefinition>() {
+                    (
+                        definition.name.node.name.clone(),
+                        definition.generics.iter().map(|generic| generic.node.name.clone()).collect::<Vec<_>>(),
+                        definition
+                            .variants
+                            .iter()
+                            .flat_map(|variant| variant.node.fields.iter().map(|field| field.node.ty.node.clone()))
+                            .collect::<Vec<_>>(),
+                    )
+                } else {
+                    return None;
+                };
             if marked {
                 if !top {
                     return Some(name);
@@ -604,19 +605,24 @@ fn crossing_operand(db: &dyn Db, program: &Program, index: &SyntaxIndex, key: As
         match index.kind(parent) {
             Some(NodeKind::Expression | NodeKind::GroupedExpression) => child = parent,
             Some(NodeKind::CallExpression) => {
-                let Some(call) =
-                    index.node_at(program, parent).and_then(|node| node.of::<beskid_analysis::syntax::CallExpression>())
+                let Some(call) = index
+                    .node_at(program, parent)
+                    .and_then(|node| node.of::<beskid_analysis::syntax::CallExpression>())
                 else {
                     return false;
                 };
-                let Some(position) = call
-                    .args
-                    .iter()
-                    .position(|argument| index.direct_child_id(program, parent, DynNodeRef::from(argument)) == Some(child))
-                else {
+                let Some(position) = call.args.iter().position(|argument| {
+                    index.direct_child_id(program, parent, DynNodeRef::from(argument)) == Some(child)
+                }) else {
                     return false;
                 };
-                return super::closures_spawn::port_send_argument(db, program, index, AstNodeKey { node: parent, ..key }, position);
+                return super::closures_spawn::port_send_argument(
+                    db,
+                    program,
+                    index,
+                    AstNodeKey { node: parent, ..key },
+                    position,
+                );
             }
             _ => return false,
         }
@@ -633,7 +639,8 @@ fn returned_once_as_part(
     place: beskid_analysis::syntax::AstNodeId,
     construction: beskid_analysis::syntax::AstNodeId,
 ) -> bool {
-    let Some(path) = index.node_at(program, place).and_then(|node| node.of::<beskid_analysis::syntax::PathExpression>())
+    let Some(path) =
+        index.node_at(program, place).and_then(|node| node.of::<beskid_analysis::syntax::PathExpression>())
     else {
         return false;
     };
@@ -664,9 +671,10 @@ fn returned_once_as_part(
     index
         .ids_of_kind(NodeKind::PathExpression)
         .filter(|node| {
-            index.node_at(program, *node).and_then(|node| node.span()).is_some_and(|inner| {
-                inner.start >= span.start && inner.end <= span.end
-            })
+            index
+                .node_at(program, *node)
+                .and_then(|node| node.span())
+                .is_some_and(|inner| inner.start >= span.start && inner.end <= span.end)
         })
         .filter(|node| {
             index
@@ -1020,8 +1028,7 @@ mod tests {
         }
         let mut found = Vec::new();
         tries(&db, root, &mut found);
-        let positions =
-            found.iter().map(|key| value_copy_position(&db, *key).expect("position")).collect::<Vec<_>>();
+        let positions = found.iter().map(|key| value_copy_position(&db, *key).expect("position")).collect::<Vec<_>>();
         assert_eq!(positions, [None, Some(ValueCopyPosition::Binding)], "`Make(a)?` is owned, `held?` is a new name");
     }
 }

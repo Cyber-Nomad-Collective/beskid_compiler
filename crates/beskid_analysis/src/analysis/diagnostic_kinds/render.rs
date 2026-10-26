@@ -81,7 +81,9 @@ pub fn issue_diagnostic(
             )),
             DiscardedGrowthRepair::Bind { declaration: None, .. } => diagnostic,
         },
-        SemanticIssueKind::BorrowedParameterKept { parameter, move_at: Some(at), .. } if source.get(..*at).is_some() => {
+        SemanticIssueKind::BorrowedParameterKept { parameter, move_at: Some(at), .. }
+            if source.get(..*at).is_some() =>
+        {
             diagnostic.with_fix(Fix::new(
                 format!("Declare `{parameter}` `move`"),
                 Applicability::MachineApplicable,

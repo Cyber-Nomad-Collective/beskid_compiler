@@ -462,8 +462,7 @@ impl<'a> Analysis<'a> {
                     .as_ref()
                     .filter(|receiver| !receiver.node.mutable)
                     .map(|receiver| receiver.span.start);
-                owner.kept_parameter =
-                    Some(BorrowedParameter { declaration, name: "this".to_owned(), move_at });
+                owner.kept_parameter = Some(BorrowedParameter { declaration, name: "this".to_owned(), move_at });
             }
         }
         let native_constructor = matches!(super::super::native_mod_syntax_constructor(db, key), Ok(Some(_)))
@@ -523,9 +522,9 @@ impl<'a> Analysis<'a> {
                     Some(annotation) => self.type_class(node, &annotation.node),
                     None => self.local_class(name),
                 };
-                let held = self.bare_path_owner(node, &statement.value).and_then(|source| {
-                    self.owners.get(&source).and_then(|owner| owner.kept_parameter.clone())
-                });
+                let held = self
+                    .bare_path_owner(node, &statement.value)
+                    .and_then(|source| self.owners.get(&source).and_then(|owner| owner.kept_parameter.clone()));
                 if class == Some(TransferClass::Moved) {
                     let owning = self.initializer_is_owned(node, &statement.value);
                     self.insert(name, statement.name.node.name.clone(), false, owning);
@@ -622,7 +621,8 @@ impl<'a> Analysis<'a> {
     fn assigned_local(&self, node: AstNodeId) -> Option<AstNodeId> {
         let assignment = self.enclosing_assignment(node)?;
         let syntax = self.index.node_at(self.program, assignment)?.of::<beskid_analysis::syntax::AssignExpression>()?;
-        let target = normalized_expression_node(self.index, self.child(assignment, DynNodeRef::from(syntax.target.as_ref()))?);
+        let target =
+            normalized_expression_node(self.index, self.child(assignment, DynNodeRef::from(syntax.target.as_ref()))?);
         self.bare_path_owner_at(target)
     }
 
@@ -1414,7 +1414,9 @@ impl<'a> Analysis<'a> {
                         .node_at(self.program, literal)
                         .and_then(|node| node.of::<beskid_analysis::syntax::StructLiteralExpression>())
                         .and_then(|syntax| resolve_type_declaration(self.db, self.at(literal), &syntax.path.node))
-                        .is_some_and(|declaration| super::super::transfer::corelib_scope_borrowed(self.db, declaration));
+                        .is_some_and(|declaration| {
+                            super::super::transfer::corelib_scope_borrowed(self.db, declaration)
+                        });
                 }
                 _ => return false,
             }
@@ -1446,7 +1448,11 @@ impl<'a> Analysis<'a> {
 
     fn push_kept(&mut self, site: AstNodeId, name: &str, kept: &BorrowedParameter) {
         let Some(span) = self.span(site) else { return };
-        if self.findings.iter().any(|finding| finding.kind == AffineFindingKind::BorrowedParameterKept && finding.site.node == site) {
+        if self
+            .findings
+            .iter()
+            .any(|finding| finding.kind == AffineFindingKind::BorrowedParameterKept && finding.site.node == site)
+        {
             return;
         }
         self.findings.push(AffineFinding {

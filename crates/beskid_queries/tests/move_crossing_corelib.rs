@@ -22,7 +22,8 @@ use beskid_queries::{
 use std::path::Path;
 use std::sync::Arc;
 
-const PRELUDE: &str = "use Core.Collections.List;\nuse Core.Collections.Array;\nuse Core.Optional.Option;\nuse Core.Parallel.Port;\n";
+const PRELUDE: &str =
+    "use Core.Collections.List;\nuse Core.Collections.Array;\nuse Core.Optional.Option;\nuse Core.Parallel.Port;\n";
 
 fn package(name: &str) -> ResolvedDependencyProject {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corelib/packages").join(name).canonicalize().unwrap();
@@ -84,7 +85,9 @@ fn findings(main: &str) -> Vec<(String, String, String)> {
         .err()
         .unwrap_or_default()
         .into_iter()
-        .map(|finding| (finding.kind.code().to_string(), finding.kind.message(), finding.kind.help().unwrap_or_default()))
+        .map(|finding| {
+            (finding.kind.code().to_string(), finding.kind.message(), finding.kind.help().unwrap_or_default())
+        })
         .collect()
 }
 
@@ -132,7 +135,10 @@ fn a_kept_borrowed_parameter_is_rejected_and_the_review_repro_does_not_compile()
                     pub unit Main(Port<u8[]> p, Holder h) { u8[] b = Array.Empty<u8>(); Keep(h, b); p.Send(move b); return; }\n";
     let report = findings(declared);
     assert!(!report.iter().any(|(_, message, _)| message.contains("parameter `b` is borrowed")), "{report:?}");
-    assert!(report.iter().any(|(code, message, _)| code == "E1241" && message.contains("not the only name")), "{report:?}");
+    assert!(
+        report.iter().any(|(code, message, _)| code == "E1241" && message.contains("not the only name")),
+        "{report:?}"
+    );
     // Storing a `move` parameter and returning a fresh value are accepted.
     let accepted = "pub type Holder { u8[] buf; }\n\
                     pub unit Keep(Holder h, move u8[] b) { h.buf = b; return; }\n\
@@ -172,7 +178,11 @@ fn a_nested_list_cannot_cross_but_a_top_level_list_can() {
     assert!(help.starts_with("copy it first"), "{help}");
     let lists = "pub unit Main(Port<List<List<i64>>> p) { List<List<i64>> outer = List.New<List<i64>>(); \
                  p.Send(move outer); return; }\n";
-    assert!(findings(lists).iter().any(|(code, message, _)| code == "E1241" && message.contains("nested")), "{:?}", findings(lists));
+    assert!(
+        findings(lists).iter().any(|(code, message, _)| code == "E1241" && message.contains("nested")),
+        "{:?}",
+        findings(lists)
+    );
     let flat = "pub unit Main(Port<List<i64>> p) { List<i64> items = List.New<i64>(); p.Send(move items); return; }\n";
     assert_eq!(move_codes(flat), Vec::<String>::new(), "{:?}", findings(flat));
 }

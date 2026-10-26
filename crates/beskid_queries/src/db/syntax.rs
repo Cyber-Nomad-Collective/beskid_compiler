@@ -192,7 +192,7 @@ impl BeskidDatabase {
         if revision.runtime_source_authority.is_some() || revision.sdk_source_authority.is_some() {
             return Err(SemanticError::new("canonical SDK and Dynamic sources must pass every argument"));
         }
-        let tree_fingerprint = Arc::<str>::from(expanded_syntax_fingerprint(&filled)?);
+        let tree_fingerprint = Arc::<str>::from(expanded_syntax_fingerprint(&filled));
         let syntax_index = Arc::new(beskid_analysis::syntax_query::SyntaxIndex::from_program(&filled, generation));
         self.syntax_index_build_count.fetch_add(1, Ordering::Relaxed);
         let mut next = revision.as_ref().clone();

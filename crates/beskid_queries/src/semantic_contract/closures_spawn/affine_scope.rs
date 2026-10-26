@@ -339,11 +339,9 @@ impl ScopeCheck<'_> {
     /// Whether a function value held by the local `declaration` escapes through one of its uses.
     fn local_escapes(&self, declaration: AstNodeId, depth: u8) -> bool {
         let Some(depth) = depth.checked_sub(1) else { return true };
-        let Some(name) = self
-            .index
-            .node_at(self.program, declaration)
-            .and_then(|node| node.of::<beskid_analysis::syntax::Identifier>().map(|identifier| identifier.name.clone()))
-        else {
+        let Some(name) = self.index.node_at(self.program, declaration).and_then(|node| {
+            node.of::<beskid_analysis::syntax::Identifier>().map(|identifier| identifier.name.clone())
+        }) else {
             return true;
         };
         let uses = self

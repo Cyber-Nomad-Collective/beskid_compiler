@@ -187,9 +187,7 @@ impl CodegenInput<'_> {
         // managed references whatever the elements' own types are.
         // A literal of a declared contract array whose element destination is unavailable gets
         // no plan: its elements would otherwise be stored unboxed.
-        if beskid_queries::array_literal_has_contract_elements(self.database(), literal, None).ok()?
-            == Some(true)
-        {
+        if beskid_queries::array_literal_has_contract_elements(self.database(), literal, None).ok()? == Some(true) {
             let length = u64::try_from(elements.len()).ok()?;
             return self.build_array_static_plan(literal, SemanticTypeId::POINTER, length, None);
         }

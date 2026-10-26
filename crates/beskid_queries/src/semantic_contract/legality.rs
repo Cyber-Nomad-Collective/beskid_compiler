@@ -1698,7 +1698,8 @@ mod tests {
         for (offset, (body, expected)) in cases.iter().enumerate() {
             assert_crossing(body, 6800 + offset as u64, expected);
         }
-        let source = format!("{MARKERS}{AFFINE_PRELUDE}{CROSSING_TYPES}unit Keep(Holder h, u8[] b) {{ h.bytes = b; return; }}");
+        let source =
+            format!("{MARKERS}{AFFINE_PRELUDE}{CROSSING_TYPES}unit Keep(Holder h, u8[] b) {{ h.bytes = b; return; }}");
         let report = transfer_report_at(&source, 6830, "Core/Parallel/Port.bd");
         let (_, message, help) = report.iter().find(|(code, ..)| code == "E1241").expect("E1241");
         assert_eq!(help, "copy it, or declare the parameter `move`");
@@ -1712,16 +1713,31 @@ mod tests {
         let cases: &[(&str, &[&str])] = &[
             ("[Isolated] pub type Cell { u8[] bytes; pub Cell Back() { return this; } }", &["E1241"]),
             ("[Isolated] pub type Cell { u8[] bytes; pub Cell Back(mut this) { return this; } }", &["E1241"]),
-            ("[Isolated] pub type Cell { u8[] bytes; pub unit Into(Cell[] all) { all[0] = this; return; } }", &["E1241"]),
+            (
+                "[Isolated] pub type Cell { u8[] bytes; pub unit Into(Cell[] all) { all[0] = this; return; } }",
+                &["E1241"],
+            ),
             ("[Isolated] pub type Cell { u8[] bytes; pub Cell Take(move this) { return this; } }", &[]),
             ("[Isolated] pub type Cell { u8[] bytes; pub i64 Size() { return Len(this.bytes); } }", &[]),
-            ("pub type Thunk { () => i64 run; } Thunk Later(u8[] b) { return Thunk { run: () => Len(b) }; }", &["E1241"]),
+            (
+                "pub type Thunk { () => i64 run; } Thunk Later(u8[] b) { return Thunk { run: () => Len(b) }; }",
+                &["E1241"],
+            ),
             ("i64 Now(u8[] b) { let f = () => Len(b); return f(); }", &[]),
             // A lambda bound to a local escapes when the local does: stored, returned, through
             // another local or a reassignment, or captured by a lambda that escapes.
-            ("pub type Thunk { () => i64 run; } unit Keep(Thunk t, u8[] b) { let f = () => Len(b); t.run = f; return; }", &["E1241"]),
-            ("pub type Thunk { () => i64 run; } Thunk Make(u8[] b) { let f = () => Len(b); return Thunk { run: f }; }", &["E1241"]),
-            ("pub type Thunk { () => i64 run; } unit Keep(Thunk t, u8[] b) { let f = () => Len(b); let g = f; t.run = g; return; }", &["E1241"]),
+            (
+                "pub type Thunk { () => i64 run; } unit Keep(Thunk t, u8[] b) { let f = () => Len(b); t.run = f; return; }",
+                &["E1241"],
+            ),
+            (
+                "pub type Thunk { () => i64 run; } Thunk Make(u8[] b) { let f = () => Len(b); return Thunk { run: f }; }",
+                &["E1241"],
+            ),
+            (
+                "pub type Thunk { () => i64 run; } unit Keep(Thunk t, u8[] b) { let f = () => Len(b); let g = f; t.run = g; return; }",
+                &["E1241"],
+            ),
             (
                 "pub type Thunk { () => i64 run; } unit Keep(Thunk t, u8[] b, mut () => i64 g) { let f = () => Len(b); g = f; t.run = g; return; }",
                 &["E1241"],
@@ -1872,7 +1888,6 @@ mod tests {
                 "[Isolated] pub type Owner { u8[] bytes; pub unit Flush(move this, Port<u8[]> p) { p.Send(move this.bytes); return; } }",
                 &[],
             ),
-
         ];
         for (offset, (body, expected)) in cases.iter().enumerate() {
             assert_crossing(body, 6660 + offset as u64, expected);
@@ -1957,7 +1972,10 @@ mod tests {
             ("unit Run(Bytes b) { let child = spawn (() => Use(b)); child.Cancel(); return; }", 1),
             ("Loose Nest(Bytes b) { let make = () => Loose { element: (i64 i) => At(b, i) }; return make(); }", 1),
             // Handed to a parameter that may keep it: a generic `T` or a `move` parameter.
-            ("pub type Cell<T> { T v; } unit Put<T>(Cell<T> c, T v) { c.v = v; return; } i64 Keep(Cell<Bytes> c, Bytes b) { Put<Bytes>(c, b); return 0; }", 1),
+            (
+                "pub type Cell<T> { T v; } unit Put<T>(Cell<T> c, T v) { c.v = v; return; } i64 Keep(Cell<Bytes> c, Bytes b) { Put<Bytes>(c, b); return 0; }",
+                1,
+            ),
             ("unit Take(move Bytes view) { return; } i64 Keep(Bytes b) { Take(b); return 0; }", 1),
             // A lambda bound to a local escapes when the local does.
             ("Loose Later(Bytes b) { let f = (i64 i) => At(b, i); return Loose { element: f }; }", 1),

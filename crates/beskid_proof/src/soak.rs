@@ -618,7 +618,8 @@ impl Client {
             } else if message.get("method").and_then(Value::as_str) == Some("textDocument/publishDiagnostics") {
                 self.report.counters.diagnostics_published += 1;
                 if let Some(uri) = message.pointer("/params/uri").and_then(Value::as_str) {
-                    let list = message.pointer("/params/diagnostics").and_then(Value::as_array).cloned().unwrap_or_default();
+                    let list =
+                        message.pointer("/params/diagnostics").and_then(Value::as_array).cloned().unwrap_or_default();
                     self.diagnostics.insert(uri.to_string(), list);
                 }
             }

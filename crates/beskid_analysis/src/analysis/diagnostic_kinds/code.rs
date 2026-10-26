@@ -117,9 +117,7 @@ impl SemanticIssueKind {
             Self::BorrowEscapes { .. }
             | Self::ScopeBorrowedEscapes { .. }
             | Self::BorrowedParameterKept { .. }
-            | Self::NestedCopyOnAssignCrossing { .. } => {
-                "E1241"
-            }
+            | Self::NestedCopyOnAssignCrossing { .. } => "E1241",
             Self::ImplicitAliasOfMovedValue { .. } => "E1242",
             Self::DestructiveReadWithoutEmpty { .. } => "E1243",
             Self::ImmutableFieldNotShared { .. } => "E1244",
