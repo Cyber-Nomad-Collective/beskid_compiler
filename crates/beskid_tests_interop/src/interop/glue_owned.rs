@@ -539,6 +539,9 @@ fn run_in_private_prefix(name: &str, staging: DriverStaging, project: ChildProje
         .env(CODEGEN_THREADS_ENV, codegen_threads())
         .env(GATE_ENV, staged.path().join("borrow.gate"))
         .env(beskid_abi::runtime_kit::ENV_CORELIB_ROOT, corelib)
+        // The child runs from `<prefix>/bin`, outside a Cargo build tree: its native Mod host is
+        // the qualified installation's CLI, not one built for a `deps` directory.
+        .env("BESKID_CLI_BIN", qualified.join("bin").join(format!("beskid{}", std::env::consts::EXE_SUFFIX)))
         .env_remove(beskid_abi::runtime_kit::ENV_RUNTIME_PREFIX)
         // Native Mods are qualified and loaded for the profile of the kit the child runs on.
         .env("BESKID_RUNTIME_KIT_PROFILE", beskid_abi::runtime_kit::profile_directory_name(qualified_profile()))
