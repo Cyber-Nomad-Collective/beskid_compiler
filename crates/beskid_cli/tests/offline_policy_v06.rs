@@ -252,7 +252,8 @@ fn v06_new_offline_installed_template_checks_bytes_before_output() {
     let tampered = instantiate("tampered");
     assert_eq!(tampered.status.code(), Some(1));
     let diagnostic = String::from_utf8_lossy(&tampered.stderr).to_ascii_lowercase();
-    assert!(diagnostic.contains("checksum") || diagnostic.contains("integrity"), "{diagnostic}");
+    assert!(diagnostic.contains("files no longer match its installation record"), "{diagnostic}");
+    assert!(diagnostic.contains("beskid package template install offline-local"), "{diagnostic}");
     assert!(!root.path().join("tampered").exists());
     assert_eq!(registry.requests.load(Ordering::SeqCst), 0);
 }
@@ -344,7 +345,7 @@ fn v06_new_offline_old_cache_digest_requires_explicit_reinstallation() {
         .unwrap();
     assert_eq!(output.status.code(), Some(1));
     let diagnostic = String::from_utf8_lossy(&output.stderr).to_ascii_lowercase();
-    assert!(diagnostic.contains("digest") && diagnostic.contains("reinstall"), "{diagnostic}");
+    assert!(diagnostic.contains("an older toolchain installed it") && diagnostic.contains("reinstall"), "{diagnostic}");
     assert!(!root.path().join("old-cache").exists());
 }
 
