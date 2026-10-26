@@ -116,7 +116,10 @@ fn windows_descriptor_primitives_use_application_ucrt_import_authority() {
 #[test]
 fn raw_descriptor_abi_rejects_before_allocation_or_native_admission() {
     // The runtime source is `beskid fmt` output: it is searched with whitespace collapsed.
-    let source = include_str!("../../../runtime/beskid/src/Runtime/Io/Syscalls.bd").split_whitespace().collect::<Vec<_>>().join(" ");
+    let source = include_str!("../../../runtime/beskid/src/Runtime/Io/Syscalls.bd")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
     let source = source.as_str();
     let submit = source.find("pub i64 SyscallSubmitAndPark").unwrap();
     let reject = source[submit..].find("if (descriptor > 2147483647) { return -1; }").unwrap() + submit;
