@@ -270,7 +270,8 @@ ItemList = { ItemWithDocs* }
 Program = { SOI ~ ItemList ~ EOI }
 
 DocLineContent = { "///" ~ !("/") ~ (!(NEWLINE) ~ ANY)* ~ NEWLINE? }
-DocRun = @{ DocLineContent ~ ((" " | "\t")* ~ DocLineContent)* }
+// A run documents the item right below it: a blank line after the run detaches it (E0117).
+DocRun = @{ DocLineContent ~ ((" " | "\t")* ~ DocLineContent)* ~ !((" " | "\t")* ~ NEWLINE) }
 InnerItem = _{ HostDefinition | MacroDefinition | FunctionDefinition | ConstantDefinition | ImplBlock | ExtendTypeDefinition | TypeDefinition | EnumDefinition | ContractDefinition | TestDefinition | AttributeDeclaration | InlineModule | ModuleDeclaration | UseDeclaration }
 
 AttributeList = { Attribute+ }
