@@ -187,7 +187,7 @@ pub(in crate::semantic_contract) fn contextual_constant_literal(
 pub(in crate::semantic_contract) fn integer_has_explicit_abi_suffix(text: &str) -> bool {
     matches!(
         text.rsplit_once('_').map(|(_, suffix)| suffix),
-        Some("i8" | "i16" | "i32" | "i64" | "u8" | "u16" | "u32" | "u64")
+        Some("i8" | "i16" | "i32" | "i64" | "u8" | "u16" | "u32" | "u64" | "word")
     )
 }
 

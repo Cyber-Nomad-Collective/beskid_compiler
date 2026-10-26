@@ -227,7 +227,7 @@ KwWhen = _{ !(!KwWhenWord) ~ "when" }
 
 DecimalIntegerBody = { ASCII_DIGIT+ ~ ("_" ~ ASCII_DIGIT+)* }
 HexIntegerBody = { ASCII_HEX_DIGIT+ ~ ("_" ~ ASCII_HEX_DIGIT+)* }
-IntegerLiteral = @{ "-"? ~ (("0x" ~ HexIntegerBody) | DecimalIntegerBody) ~ ("_i8" | "_i16" | "_i32" | "_i64" | "_u8" | "_u16" | "_u32" | "_u64")? }
+IntegerLiteral = @{ "-"? ~ (("0x" ~ HexIntegerBody) | DecimalIntegerBody) ~ ("_i8" | "_i16" | "_i32" | "_i64" | "_u8" | "_u16" | "_u32" | "_u64" | "_word")? }
 FloatLiteral = @{ "-"? ~ ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT+ ~ (("e" | "E") ~ ("+" | "-")? ~ ASCII_DIGIT+)? ~ ("_f32" | "_f64")? }
 StringLiteral = @{ "\"" ~ StringContent* ~ "\"" }
 StringLiteralValueBody = ${ (StringContent)* }

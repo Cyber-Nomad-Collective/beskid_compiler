@@ -408,7 +408,9 @@ fn generic_source_array_literal_identity(
 fn contextual_numeric_literal(literal: &beskid_analysis::syntax::Literal) -> bool {
     match literal {
         beskid_analysis::syntax::Literal::Integer(value) => {
-            !["_i8", "_i16", "_i32", "_i64", "_u8", "_u16", "_u32", "_u64"].iter().any(|suffix| value.ends_with(suffix))
+            !["_i8", "_i16", "_i32", "_i64", "_u8", "_u16", "_u32", "_u64", "_word"]
+                .iter()
+                .any(|suffix| value.ends_with(suffix))
         }
         beskid_analysis::syntax::Literal::Float(value) => !value.ends_with("_f32") && !value.ends_with("_f64"),
         _ => false,
