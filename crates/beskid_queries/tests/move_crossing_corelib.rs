@@ -155,3 +155,24 @@ fn a_try_payload_of_a_call_result_is_owned_at_a_crossing() {
                 pub Option<i64> Main(Port<u8[]> p) { u8[] bytes = Read()?; p.Send(move bytes); return Option::Some(0); }\n";
     assert_eq!(move_codes(main), Vec::<String>::new(), "{:?}", findings(main));
 }
+
+#[test]
+fn a_nested_list_cannot_cross_but_a_top_level_list_can() {
+    // A list in a field (or a list of lists) may share its array with a list this isolate keeps;
+    // the send detaches only a top-level list, so a nested one is E1241 "copy it first".
+    let nested = "[Isolated]\npub type Bag { List<i64> items; }\n\
+                  pub unit Main(Port<Bag> p) { List<i64> kept = List.New<i64>(); Bag bag = Bag { items: kept }; \
+                  p.Send(move bag); return; }\n";
+    let report = findings(nested);
+    let (_, message, help) = report
+        .iter()
+        .find(|(code, message, _)| code == "E1241" && message.contains("nested `List`"))
+        .unwrap_or_else(|| panic!("nested list E1241: {report:?}"));
+    assert!(message.contains("`bag`"), "{message}");
+    assert!(help.starts_with("copy it first"), "{help}");
+    let lists = "pub unit Main(Port<List<List<i64>>> p) { List<List<i64>> outer = List.New<List<i64>>(); \
+                 p.Send(move outer); return; }\n";
+    assert!(findings(lists).iter().any(|(code, message, _)| code == "E1241" && message.contains("nested")), "{:?}", findings(lists));
+    let flat = "pub unit Main(Port<List<i64>> p) { List<i64> items = List.New<i64>(); p.Send(move items); return; }\n";
+    assert_eq!(move_codes(flat), Vec::<String>::new(), "{:?}", findings(flat));
+}

@@ -457,6 +457,13 @@ pub enum SemanticIssueKind {
         parameter: String,
         move_at: Option<usize>,
     },
+    /// E1241: a crossing operand whose value holds a `[CopyOnAssign]` value below its top level
+    /// (a `List` in a field or an element): the nested list may share its array with a list the
+    /// sending isolate keeps, so the send cannot detach it. `type_name` names the nested type.
+    NestedCopyOnAssignCrossing {
+        name: String,
+        type_name: String,
+    },
     /// E1242: a crossing operand of Moved class written without `move`.
     ImplicitAliasOfMovedValue {
         name: String,

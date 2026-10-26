@@ -114,7 +114,10 @@ impl SemanticIssueKind {
             Self::CapturesArgumentNotLiteral => "E1238",
             Self::MoveOfNonOwningName { .. } => "E1239",
             Self::MoveInLoopWithoutReassignment { .. } => "E1240",
-            Self::BorrowEscapes { .. } | Self::ScopeBorrowedEscapes { .. } | Self::BorrowedParameterKept { .. } => {
+            Self::BorrowEscapes { .. }
+            | Self::ScopeBorrowedEscapes { .. }
+            | Self::BorrowedParameterKept { .. }
+            | Self::NestedCopyOnAssignCrossing { .. } => {
                 "E1241"
             }
             Self::ImplicitAliasOfMovedValue { .. } => "E1242",

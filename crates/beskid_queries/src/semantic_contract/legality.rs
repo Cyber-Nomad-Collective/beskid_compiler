@@ -1705,6 +1705,25 @@ mod tests {
         assert!(message.contains("the parameter `b` is borrowed"), "{message}");
     }
 
+    /// RB5 for `this` and captures: `this` without `move this` is lent by the caller, and a
+    /// borrowed parameter captured by an escaping lambda is kept by that lambda.
+    #[test]
+    fn kept_this_and_escaping_captures_are_e1241() {
+        let cases: &[(&str, &[&str])] = &[
+            ("[Isolated] pub type Cell { u8[] bytes; pub Cell Back() { return this; } }", &["E1241"]),
+            ("[Isolated] pub type Cell { u8[] bytes; pub Cell Back(mut this) { return this; } }", &["E1241"]),
+            ("[Isolated] pub type Cell { u8[] bytes; pub unit Into(Cell[] all) { all[0] = this; return; } }", &["E1241"]),
+            ("[Isolated] pub type Cell { u8[] bytes; pub Cell Take(move this) { return this; } }", &[]),
+            ("[Isolated] pub type Cell { u8[] bytes; pub i64 Size() { return Len(this.bytes); } }", &[]),
+            ("pub type Thunk { () => i64 run; } Thunk Later(u8[] b) { return Thunk { run: () => Len(b) }; }", &["E1241"]),
+            ("i64 Now(u8[] b) { let f = () => Len(b); return f(); }", &[]),
+            ("pub type Thunk { () => i64 run; } Thunk Later(move u8[] b) { return Thunk { run: () => Len(b) }; }", &[]),
+        ];
+        for (offset, (body, expected)) in cases.iter().enumerate() {
+            assert_crossing(body, 6860 + offset as u64, expected);
+        }
+    }
+
     /// Call-site rule (RB5): handing an owning local to a parameter that may keep it (`move`,
     /// `mut`, a `spawn` target, the value of `exchange`) gives the value another name, so the
     /// local can no longer cross (E1241, copy it first). A plain argument does not: a plain
@@ -1721,6 +1740,16 @@ mod tests {
                 &["E1241"],
             ),
             ("unit Keep(Holder h, mut u8[] b) { h.bytes = b; return; }", &[]),
+            // Owner ruling: an argument of a parameter typed by a type parameter may be kept by the
+            // generic body, so the binding must be fresh or copied to cross.
+            (
+                "unit Put<T>(T v) { return; } unit Main(Port<u8[]> p) { u8[] b = Make(); Put<u8[]>(b); p.Send(move b); return; }",
+                &["E1241"],
+            ),
+            (
+                "unit Put<T>(T[] v) { return; } unit Main(Port<u8[]> p) { u8[] b = Make(); Put<u8>(b); p.Send(move b); return; }",
+                &[],
+            ),
         ];
         for (offset, (body, expected)) in cases.iter().enumerate() {
             assert_crossing(body, 6840 + offset as u64, expected);

@@ -393,6 +393,9 @@ impl SemanticIssueKind {
             }
             Self::CapturesArgumentNotLiteral => Some("pass the lambda literal".to_string()),
             Self::BorrowedParameterKept { .. } => Some("copy it, or declare the parameter `move`".to_string()),
+            Self::NestedCopyOnAssignCrossing { type_name, .. } => Some(format!(
+                "copy it first: build the value from fresh `{type_name}` values, or send the `{type_name}` on its own"
+            )),
             Self::ScopeBorrowedEscapes { .. } => {
                 Some("use the value inside the scope that created it: read it or pass it to a call".to_string())
             }

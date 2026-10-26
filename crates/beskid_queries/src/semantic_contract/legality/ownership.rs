@@ -63,6 +63,13 @@ pub(super) fn affine_findings(db: &dyn Db, item: AstNodeKey) -> Vec<SemanticFind
                     },
                     finding.related.map(|related| (related, "borrowed here")),
                 ),
+                AffineFindingKind::NestedCopyOnAssignCrossing => (
+                    SemanticIssueKind::NestedCopyOnAssignCrossing {
+                        name,
+                        type_name: finding.detail.clone().unwrap_or_default(),
+                    },
+                    None,
+                ),
                 AffineFindingKind::DestructiveReadWithoutEmpty => (
                     SemanticIssueKind::DestructiveReadWithoutEmpty {
                         field: name,

@@ -215,6 +215,9 @@ pub enum AffineFindingKind {
     /// constructed into a value, returned, or handed to a parameter that keeps it; `detail` is
     /// the parameter's name, `related` its declaration and `fix_at` where `move ` goes.
     BorrowedParameterKept,
+    /// E1241: a crossing operand holds a `[CopyOnAssign]` value below its top level; `detail`
+    /// names the nested type.
+    NestedCopyOnAssignCrossing,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]

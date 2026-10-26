@@ -282,6 +282,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   of a `move` or `mut` parameter gives the caller's binding another name, so it
   can no longer cross without a copy. A `[ScopeBorrowed]` view passed to a
   parameter typed by a type parameter, or to a `move` parameter, is E1241.
+  The same rule covers `this` in a method without `move this` (`return this`,
+  `all[0] = this`) and a plain parameter captured by a lambda that escapes
+  (returned, stored, put into a value or spawned).
+- An argument of a parameter typed by a type parameter (`list.Push(b)`,
+  `Put<T>(T v)`) may be kept by the generic body, so the caller's binding is no
+  longer the only name for its value: sending it afterwards is E1241 "copy it
+  first".
+- A port send of a value that holds a `List` below its top level (a field, an
+  element, a `List<List<T>>`) is E1241 "copy it first": a nested list may share
+  its array with a list the sending isolate keeps, and the send detaches only a
+  top-level list.
 
 ### Fixed
 

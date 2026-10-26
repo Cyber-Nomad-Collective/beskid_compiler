@@ -55,8 +55,10 @@ struct Owner {
 struct BorrowedParameter {
     declaration: AstNodeId,
     name: String,
-    /// Where `move ` goes in the parameter declaration (the start of its type).
-    move_at: usize,
+    /// Where `move ` goes in the parameter declaration (the start of its type, or of a plain
+    /// explicit `this` receiver); `None` when there is no single insertion (`mut this`, an
+    /// implicit receiver).
+    move_at: Option<usize>,
 }
 
 /// One consuming use: its branch path, its site, and the source ranges it does not reach.
@@ -453,6 +455,16 @@ impl<'a> Analysis<'a> {
             let owning = method.receiver.as_ref().is_some_and(|receiver| receiver.node.movable);
             self.this_declaration = Some(declaration);
             self.insert(declaration, "this".to_owned(), false, owning);
+            // `this` without `move this` is lent by the caller like a plain parameter (RB5).
+            if !owning && let Some(owner) = self.owners.get_mut(&declaration) {
+                let move_at = method
+                    .receiver
+                    .as_ref()
+                    .filter(|receiver| !receiver.node.mutable)
+                    .map(|receiver| receiver.span.start);
+                owner.kept_parameter =
+                    Some(BorrowedParameter { declaration, name: "this".to_owned(), move_at });
+            }
         }
         let native_constructor = matches!(super::super::native_mod_syntax_constructor(db, key), Ok(Some(_)))
             || matches!(super::super::native_mod_request_constructor(db, key), Ok(Some(_)));
@@ -499,7 +511,7 @@ impl<'a> Analysis<'a> {
                     let kept = BorrowedParameter {
                         declaration: name,
                         name: parameter.name.node.name.clone(),
-                        move_at: parameter.ty.span.start,
+                        move_at: Some(parameter.ty.span.start),
                     };
                     if let Some(owner) = self.owners.get_mut(&name) {
                         owner.kept_parameter = Some(kept);
@@ -575,7 +587,9 @@ impl<'a> Analysis<'a> {
                 UseContext::LetValue(_) | UseContext::AssignValue { .. } | UseContext::Construction => true,
                 // The callee may keep the value: another name holds it after the call.
                 UseContext::Argument(call, position) => {
-                    self.keeping_argument(call, position) || self.shared_argument(call, position)
+                    self.keeping_argument(call, position)
+                        || self.shared_argument(call, position)
+                        || (!self.crossing_argument(context) && self.generic_argument(call, position))
                 }
                 UseContext::Move(_) => false,
                 // A capture by a `[Captures]`-bounded lambda is itself a crossing operand
@@ -1219,8 +1233,9 @@ impl<'a> Analysis<'a> {
         if let Some(kept) = kept
             && !explicit
             && segments.len() == 1
-            && crossing == LambdaCrossing::None
-            && self.keeps_value(node, destination)
+            && ((crossing == LambdaCrossing::None && self.keeps_value(node, destination))
+                || (matches!(crossing, LambdaCrossing::Ordinary | LambdaCrossing::OneShot)
+                    && self.captured_by_escaping_lambda(node, declaration)))
         {
             self.push_kept(node, &name, &kept);
             return;
@@ -1308,7 +1323,50 @@ impl<'a> Analysis<'a> {
             self.push(AffineFindingKind::BorrowEscapes, site, &name, None, Some(declaration), false);
             return;
         }
+        // A port send detaches only a top-level `[CopyOnAssign]` value; a nested one may share
+        // its storage with a list this isolate keeps.
+        if sent
+            && let Ok(identity) = generic_source_expression_identity(self.db, self.at(node))
+            && let Some(type_name) = super::super::value_copy::nested_copy_on_assign(self.db, self.at(node), &identity)
+        {
+            self.push(AffineFindingKind::NestedCopyOnAssignCrossing, site, &name, Some(type_name), None, false);
+            return;
+        }
         self.consume(declaration, site, &name, branches, &loops);
+    }
+
+    /// A lambda between the use `node` and the binding `declaration` escapes the callable (it is
+    /// returned, stored, put into a value or spawned): its capture keeps the value.
+    fn captured_by_escaping_lambda(&self, node: AstNodeId, declaration: AstNodeId) -> bool {
+        let mut current = node;
+        while let Some(parent) = parent_node(self.index, current) {
+            if parent == self.key.node {
+                break;
+            }
+            if self.index.kind(parent) == Some(NodeKind::LambdaExpression)
+                && !is_ancestor(self.index, parent, declaration)
+                && super::affine_scope::lambda_escapes(self.db, self.program, self.index, self.key, parent)
+            {
+                return true;
+            }
+            current = parent;
+        }
+        false
+    }
+
+    /// An argument of a parameter whose type is a type parameter of the callee: the generic body
+    /// may keep it (owner ruling: the caller treats it as another name, so the binding must be
+    /// fresh or copied to cross).
+    fn generic_argument(&self, call: AstNodeId, position: usize) -> bool {
+        let Some(declaration) = direct_callee(self.db, self.at(call)) else { return false };
+        let Some((parameters, _)) = declared_parameters(self.db, declaration) else { return false };
+        let Some(parameter) = parameters.get(position) else { return false };
+        let beskid_analysis::syntax::Type::Complex(path) = &parameter.node.ty.node else { return false };
+        let [segment] = path.node.segments.as_slice() else { return false };
+        segment.node.type_args.is_empty()
+            && super::affine_scope::callee_type_parameters(self.db, declaration)
+                .iter()
+                .any(|name| *name == segment.node.name.node.name)
     }
 
     /// Whether a use in `context` keeps the value beyond the call: a store into a field or an
@@ -1399,7 +1457,7 @@ impl<'a> Analysis<'a> {
             detail: Some(kept.name.clone()),
             related: Some(self.at(kept.declaration)),
             fiber: false,
-            fix_at: Some(kept.move_at),
+            fix_at: kept.move_at,
         });
     }
 

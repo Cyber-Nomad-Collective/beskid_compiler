@@ -346,6 +346,9 @@ impl SemanticIssueKind {
             Self::BorrowEscapes { name } => {
                 format!("`{name}` is not the only name for its Moved value, so it cannot cross to another isolate")
             }
+            Self::NestedCopyOnAssignCrossing { name, type_name } => format!(
+                "`{name}` holds a nested `{type_name}` that may share its storage with a list this isolate keeps, so it cannot cross to another isolate"
+            ),
             Self::BorrowedParameterKept { name, parameter, .. } if name == parameter => format!(
                 "the parameter `{name}` is borrowed, so it cannot be stored, returned or kept: the caller still owns its value"
             ),

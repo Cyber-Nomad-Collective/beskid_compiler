@@ -114,6 +114,7 @@ impl SemanticIssueKind {
             Self::BorrowEscapes { name } => format!("`{name}` is shared here"),
             Self::ScopeBorrowedEscapes { name, .. } => format!("scope-borrowed `{name}` escapes here"),
             Self::BorrowedParameterKept { name, .. } => format!("`{name}` is kept here"),
+            Self::NestedCopyOnAssignCrossing { type_name, .. } => format!("holds a nested `{type_name}`"),
             Self::ImplicitAliasOfMovedValue { name } => format!("`{name}` crosses here"),
             Self::DestructiveReadWithoutEmpty { field, .. } => format!("`move` of field `{field}`"),
             Self::ImmutableFieldNotShared { field, .. } => format!("field `{field}` is not Shared"),

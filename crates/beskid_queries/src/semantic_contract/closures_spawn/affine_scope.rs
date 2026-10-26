@@ -59,9 +59,21 @@ pub(super) fn scope_borrowed_findings(
     check.findings
 }
 
+/// Whether the lambda `lambda` of the callable `key` escapes it (see the module documentation):
+/// the kept-parameter rule of `affine.rs` uses the same notion for a captured borrowed parameter.
+pub(super) fn lambda_escapes(
+    db: &dyn Db,
+    program: &Program,
+    index: &SyntaxIndex,
+    key: AstNodeKey,
+    lambda: AstNodeId,
+) -> bool {
+    ScopeCheck { db, program, index, key, findings: Vec::new() }.lambda_escapes(lambda)
+}
+
 /// The type parameters a callable's parameter types may name: its own and those of the type
 /// that declares it.
-fn callee_type_parameters(db: &dyn Db, declaration: AstNodeKey) -> Vec<String> {
+pub(super) fn callee_type_parameters(db: &dyn Db, declaration: AstNodeKey) -> Vec<String> {
     let mut names = with_declaration(db, declaration, |node| {
         if let Some(function) = node.of::<beskid_analysis::syntax::FunctionDefinition>() {
             return Some(function.generics.iter().map(|generic| generic.node.name.clone()).collect::<Vec<_>>());

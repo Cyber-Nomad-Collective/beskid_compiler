@@ -297,6 +297,130 @@ pub(in crate::semantic_contract) fn is_copy_on_assign(
     !matches!(copy_hook(db, declaration), Ok(None))
 }
 
+/// The type shape a crossing hands over, as far as nested `[CopyOnAssign]` values matter.
+#[derive(Clone)]
+enum Shape {
+    Declaration(AstNodeKey, Vec<Shape>),
+    Array(Box<Shape>),
+    Leaf,
+}
+
+/// The name of a `[CopyOnAssign]` type reachable from a value of `identity` below its top level
+/// (a field, an element, an enum payload, or the element type of a top-level `List`), or `None`.
+/// A crossing detaches only the top-level list (`Detached`); a nested list may share its array
+/// with a list the sending isolate keeps, and its holder is reachable from the sender's other
+/// names too, so the send cannot detach it in place.
+pub(in crate::semantic_contract) fn nested_copy_on_assign(
+    db: &dyn Db,
+    site: AstNodeKey,
+    identity: &GenericSourceTypeIdentity,
+) -> Option<String> {
+    let shape = identity_shape(db, site, identity);
+    nested_in(db, &shape, true, &mut Vec::new())
+}
+
+fn identity_shape(db: &dyn Db, site: AstNodeKey, identity: &GenericSourceTypeIdentity) -> Shape {
+    match identity {
+        GenericSourceTypeIdentity::Array(element) => Shape::Array(Box::new(identity_shape(db, site, element))),
+        GenericSourceTypeIdentity::Nominal { arguments, .. } => {
+            match super::contracts::concrete_type_or_enum_declaration(db, site, identity) {
+                Some(declaration) => Shape::Declaration(
+                    declaration,
+                    arguments.iter().map(|argument| identity_shape(db, site, argument)).collect(),
+                ),
+                None => Shape::Leaf,
+            }
+        }
+        _ => Shape::Leaf,
+    }
+}
+
+fn syntax_shape(
+    db: &dyn Db,
+    context: AstNodeKey,
+    ty: &beskid_analysis::syntax::Type,
+    environment: &[(String, Shape)],
+) -> Shape {
+    match ty {
+        beskid_analysis::syntax::Type::Array(element) => {
+            Shape::Array(Box::new(syntax_shape(db, context, &element.node, environment)))
+        }
+        beskid_analysis::syntax::Type::Complex(path) => {
+            if let [segment] = path.node.segments.as_slice()
+                && segment.node.type_args.is_empty()
+                && let Some((_, shape)) = environment.iter().find(|(name, _)| *name == segment.node.name.node.name)
+            {
+                return shape.clone();
+            }
+            match resolve_type_declaration(db, context, &path.node) {
+                Some(declaration) => Shape::Declaration(
+                    declaration,
+                    path.node
+                        .segments
+                        .iter()
+                        .flat_map(|segment| segment.node.type_args.iter())
+                        .map(|argument| syntax_shape(db, context, &argument.node, environment))
+                        .collect(),
+                ),
+                None => Shape::Leaf,
+            }
+        }
+        _ => Shape::Leaf,
+    }
+}
+
+fn nested_in(db: &dyn Db, shape: &Shape, top: bool, visiting: &mut Vec<AstNodeKey>) -> Option<String> {
+    match shape {
+        Shape::Leaf => None,
+        Shape::Array(element) => nested_in(db, element, false, visiting),
+        Shape::Declaration(declaration, arguments) => {
+            let marked = !matches!(copy_hook(db, *declaration), Ok(None));
+            let Some(syntax) = db.syntax_unit(declaration.unit).filter(|syntax| syntax.accepts_key(db, *declaration))
+            else {
+                return None;
+            };
+            let program = syntax.expanded_program(db);
+            let node = syntax.syntax_index(db).node_at(program, declaration.node)?;
+            let (name, generics, fields) = if let Some(definition) = node.of::<beskid_analysis::syntax::TypeDefinition>() {
+                (
+                    definition.name.node.name.clone(),
+                    definition.generics.iter().map(|generic| generic.node.name.clone()).collect::<Vec<_>>(),
+                    definition.fields.iter().map(|field| field.node.ty.node.clone()).collect::<Vec<_>>(),
+                )
+            } else if let Some(definition) = node.of::<beskid_analysis::syntax::EnumDefinition>() {
+                (
+                    definition.name.node.name.clone(),
+                    definition.generics.iter().map(|generic| generic.node.name.clone()).collect::<Vec<_>>(),
+                    definition
+                        .variants
+                        .iter()
+                        .flat_map(|variant| variant.node.fields.iter().map(|field| field.node.ty.node.clone()))
+                        .collect::<Vec<_>>(),
+                )
+            } else {
+                return None;
+            };
+            if marked {
+                if !top {
+                    return Some(name);
+                }
+                // The top-level list is detached; its elements are not.
+                return arguments.iter().find_map(|argument| nested_in(db, argument, false, visiting));
+            }
+            if visiting.contains(declaration) || visiting.len() > 32 {
+                return None;
+            }
+            visiting.push(*declaration);
+            let environment = generics.into_iter().zip(arguments.iter().cloned()).collect::<Vec<_>>();
+            let found = fields
+                .iter()
+                .find_map(|field| nested_in(db, &syntax_shape(db, *declaration, field, &environment), false, visiting));
+            visiting.pop();
+            found
+        }
+    }
+}
+
 /// The `Copy` method and the owner's generic parameter names of a `[CopyOnAssign]` type, or
 /// `None` for any other type.
 fn copy_hook(db: &dyn Db, declaration: AstNodeKey) -> Result<Option<(AstNodeKey, Vec<Arc<str>>)>, SemanticError> {
