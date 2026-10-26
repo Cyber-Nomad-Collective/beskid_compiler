@@ -97,14 +97,14 @@ pub fn build_typed_program(
     assembly: Arc<ProgramAssembly>,
 ) -> Result<TypedProgram, SemanticError> {
     use crate::semantic_contract::optional_arguments::{may_omit_arguments, omitted_argument_programs};
-    if !may_omit_arguments(&assembly) {
+    let Some(names) = may_omit_arguments(&assembly) else {
         return register_typed_program(db, project, generation, assembly);
-    }
+    };
     // Several builds of one generation (diagnostics, facts, lowering, other entries sharing
     // units) pass the same parsed trees; a unit that was filled already holds its filled tree.
     let assembly = with_recorded_fills(db, generation, assembly);
     let typed = register_typed_program(db, project, generation, Arc::clone(&assembly))?;
-    let Some(programs) = omitted_argument_programs(db, &assembly)? else {
+    let Some(programs) = omitted_argument_programs(db, &assembly, &names)? else {
         return Ok(typed);
     };
     let filled = Arc::new(assembly.with_programs(programs));
