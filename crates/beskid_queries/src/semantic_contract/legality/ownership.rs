@@ -1,4 +1,5 @@
-//! Affine ownership findings (E1234, E1239-E1243, and E1241 for `[ScopeBorrowed]` escapes) of
+//! Affine ownership findings (E1234, E1239-E1243, and E1241 for `[ScopeBorrowed]` escapes and kept
+//! borrowed parameters) of
 //! `affine_ownership`, reported per callable of the item, including the lambdas it contains.
 
 use super::*;
@@ -53,6 +54,21 @@ pub(super) fn affine_findings(db: &dyn Db, item: AstNodeKey) -> Vec<SemanticFind
                         type_name: finding.detail.clone().unwrap_or_default(),
                     },
                     finding.related.map(|related| (related, "borrowed here")),
+                ),
+                AffineFindingKind::BorrowedParameterKept => (
+                    SemanticIssueKind::BorrowedParameterKept {
+                        name,
+                        parameter: finding.detail.clone().unwrap_or_default(),
+                        move_at: finding.fix_at,
+                    },
+                    finding.related.map(|related| (related, "borrowed here")),
+                ),
+                AffineFindingKind::NestedCopyOnAssignCrossing => (
+                    SemanticIssueKind::NestedCopyOnAssignCrossing {
+                        name,
+                        type_name: finding.detail.clone().unwrap_or_default(),
+                    },
+                    None,
                 ),
                 AffineFindingKind::DestructiveReadWithoutEmpty => (
                     SemanticIssueKind::DestructiveReadWithoutEmpty {

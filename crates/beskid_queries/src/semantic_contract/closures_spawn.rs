@@ -17,7 +17,7 @@ fn fiber_declaration_in_scope(db: &dyn Db, key: AstNodeKey) -> Option<AstNodeKey
         .or_else(|| unique_type_in_unit(db, key.unit, key.generation, "Fiber", 1))
 }
 
-pub(in crate::semantic_contract) use affine::{identity_spelling, move_expression_form_for_node};
+pub(in crate::semantic_contract) use affine::{identity_spelling, move_expression_form_for_node, port_send_argument};
 pub(in crate::semantic_contract) use affine_ownership::{
     callable_affine_ownership_tracked, callable_fiber_ownership_tracked, spawn_legality_tracked,
 };

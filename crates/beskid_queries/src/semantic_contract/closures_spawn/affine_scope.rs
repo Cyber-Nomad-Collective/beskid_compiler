@@ -8,11 +8,15 @@
 //! - it is stored: the value of an assignment to a field or an element, a field initializer of a
 //!   struct literal whose type is not itself `[ScopeBorrowed]`, an array literal element or an
 //!   enum constructor payload;
-//! - it is an argument of a `spawn` target call;
+//! - it is an argument of a `spawn` target call, or of a parameter that may keep it: a `move`
+//!   parameter, or a parameter whose type is a type parameter of the callee (a generic body
+//!   `Store<T>(T v)` cannot know that it holds a borrowed view);
 //! - an escaping lambda captures it. A lambda escapes when it is returned, is the value of an
 //!   assignment to a field or an element, is an array literal element or an enum constructor
 //!   payload, initializes a struct literal field without a `[Captures]` bound, or is the operand
-//!   of `spawn`. A lambda that is called in place, bound to a local or passed as a call argument
+//!   of `spawn`; a lambda bound to a local (by `let` or an assignment) escapes when a use of
+//!   that local does, followed through further locals and captures (a flow deeper than eight
+//!   locals counts as escaping). A lambda that is called in place or passed as a call argument
 //!   stays in the scope; so does a lambda that initializes a `[Captures]`-bounded field of a
 //!   struct literal, which is how a plan carries its borrowed source to the terminal that runs it.
 //!
@@ -27,12 +31,15 @@ use super::super::transfer::corelib_scope_borrowed;
 use super::super::*;
 use super::affine::expression_spelling;
 use super::affine_ownership::containing_fiber_callable;
-use super::capture_bounds::{field_captures_bound, with_declaration};
+use super::capture_bounds::{declared_parameters, direct_callee, field_captures_bound, with_declaration};
 
 type Program = beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>;
 
 /// How far an unannotated `let` chain is followed to its initializer.
 const ALIAS_DEPTH: u8 = 8;
+
+/// How many locals a function value is followed through before it counts as escaping.
+const LAMBDA_FLOW_DEPTH: u8 = 8;
 
 struct ScopeCheck<'a> {
     db: &'a dyn Db,
@@ -52,8 +59,45 @@ pub(super) fn scope_borrowed_findings(
     let mut check = ScopeCheck { db, program, index, key, findings: Vec::new() };
     check.values();
     check.spawn_arguments();
+    check.kept_arguments();
     check.captures();
     check.findings
+}
+
+/// Whether the lambda `lambda` of the callable `key` escapes it (see the module documentation):
+/// the kept-parameter rule of `affine.rs` uses the same notion for a captured borrowed parameter.
+pub(super) fn lambda_escapes(
+    db: &dyn Db,
+    program: &Program,
+    index: &SyntaxIndex,
+    key: AstNodeKey,
+    lambda: AstNodeId,
+) -> bool {
+    ScopeCheck { db, program, index, key, findings: Vec::new() }.lambda_escapes(lambda)
+}
+
+/// The type parameters a callable's parameter types may name: its own and those of the type
+/// that declares it.
+pub(super) fn callee_type_parameters(db: &dyn Db, declaration: AstNodeKey) -> Vec<String> {
+    let mut names = with_declaration(db, declaration, |node| {
+        if let Some(function) = node.of::<beskid_analysis::syntax::FunctionDefinition>() {
+            return Some(function.generics.iter().map(|generic| generic.node.name.clone()).collect::<Vec<_>>());
+        }
+        node.of::<beskid_analysis::syntax::MethodDefinition>()
+            .map(|method| method.generics.iter().map(|generic| generic.node.name.clone()).collect::<Vec<_>>())
+    })
+    .unwrap_or_default();
+    if let Some(syntax) = db.syntax_unit(declaration.unit).filter(|syntax| syntax.accepts_key(db, declaration)) {
+        let index = syntax.syntax_index(db);
+        if let Some(owner) = nearest_ancestor(index, declaration.node, |kind| kind == NodeKind::TypeDefinition)
+            && let Some(definition) = index
+                .node_at(syntax.expanded_program(db), owner)
+                .and_then(|node| node.of::<beskid_analysis::syntax::TypeDefinition>())
+        {
+            names.extend(definition.generics.iter().map(|generic| generic.node.name.clone()));
+        }
+    }
+    names
 }
 
 impl ScopeCheck<'_> {
@@ -82,6 +126,7 @@ impl ScopeCheck<'_> {
             detail: Some(type_name),
             related: related.map(|related| self.at(related)),
             fiber: false,
+            fix_at: None,
         });
     }
 
@@ -166,6 +211,40 @@ impl ScopeCheck<'_> {
         }
     }
 
+    /// Arguments of a parameter that may keep its value: a `move` parameter, or one typed by a
+    /// type parameter of the callee (its generic body stores a `T` like any other value).
+    fn kept_arguments(&mut self) {
+        let calls =
+            self.index.ids_of_kind(NodeKind::CallExpression).filter(|node| self.owned_here(*node)).collect::<Vec<_>>();
+        for call in calls {
+            let Some(syntax) = self
+                .index
+                .node_at(self.program, call)
+                .and_then(|node| node.of::<beskid_analysis::syntax::CallExpression>())
+            else {
+                continue;
+            };
+            let Some(declaration) = direct_callee(self.db, self.at(call)) else { continue };
+            let Some((parameters, _)) = declared_parameters(self.db, declaration) else { continue };
+            let generics = callee_type_parameters(self.db, declaration);
+            for (position, argument) in syntax.args.iter().enumerate() {
+                let Some(parameter) = parameters.get(position) else { continue };
+                let generic = matches!(&parameter.node.ty.node, beskid_analysis::syntax::Type::Complex(path)
+                    if path.node.segments.len() == 1
+                        && generics.iter().any(|name| *name == path.node.segments[0].node.name.node.name));
+                if !parameter.node.movable && !generic {
+                    continue;
+                }
+                let Some(argument) = self.child(call, DynNodeRef::from(argument)) else { continue };
+                let value = normalized_expression_node(self.index, argument);
+                if let Some((type_name, related)) = self.view_of_expression(value, ALIAS_DEPTH) {
+                    let name = self.spelling(value);
+                    self.push(value, name, type_name, related);
+                }
+            }
+        }
+    }
+
     /// Uses inside an escaping lambda of this callable of a scope-borrowed binding declared
     /// outside that lambda.
     fn captures(&mut self) {
@@ -214,26 +293,122 @@ impl ScopeCheck<'_> {
 
     /// Whether the lambda leaves the scope of this callable (see the module documentation).
     fn lambda_escapes(&self, lambda: AstNodeId) -> bool {
-        if let Some(spawn) = nearest_ancestor(self.index, lambda, |kind| kind == NodeKind::SpawnExpression)
-            && spawn_target(self.db, self.at(spawn)).ok().flatten().is_some_and(|target| target.callee.node == lambda)
+        self.value_escapes(lambda, LAMBDA_FLOW_DEPTH)
+    }
+
+    /// Whether the function value at `node` (a lambda, or a read of a local that holds one)
+    /// leaves the callable: it is the operand of `spawn`, returned, the value of an assignment to
+    /// a field or an element, an array literal element or an enum payload, or a struct literal
+    /// field without a `[Captures]` bound. A value bound to a local (by `let` or an assignment)
+    /// escapes when any use of that local does, including a capture by a lambda that escapes.
+    /// The flow is followed `depth` locals deep; beyond that it counts as escaping (fail closed).
+    fn value_escapes(&self, node: AstNodeId, depth: u8) -> bool {
+        if let Some(spawn) = nearest_ancestor(self.index, node, |kind| kind == NodeKind::SpawnExpression)
+            && spawn_target(self.db, self.at(spawn)).ok().flatten().is_some_and(|target| target.callee.node == node)
         {
             return true;
         }
-        let mut child = lambda;
+        let mut child = node;
         while let Some(parent) = parent_node(self.index, child) {
             return match self.index.kind(parent) {
                 Some(NodeKind::Expression | NodeKind::GroupedExpression) => {
                     child = parent;
                     continue;
                 }
+                Some(NodeKind::SpawnExpression) => true,
                 Some(NodeKind::ReturnStatement | NodeKind::LambdaExpression) => true,
-                Some(NodeKind::AssignExpression) => self.stored_assignment_value(parent) == Some(child),
+                Some(NodeKind::AssignExpression) => match self.assignment_parts(parent) {
+                    Some((target, value)) if value == child => match self.local_target(target) {
+                        Some(local) => self.local_escapes(local, depth),
+                        None => true,
+                    },
+                    _ => false,
+                },
+                Some(NodeKind::LetStatement) => match self.let_binding(parent) {
+                    Some(local) => self.local_escapes(local, depth),
+                    None => true,
+                },
                 Some(NodeKind::ArrayLiteralExpression | NodeKind::EnumConstructorExpression) => true,
                 Some(NodeKind::StructLiteralField) => !self.bounded_field(parent),
                 _ => false,
             };
         }
         false
+    }
+
+    /// Whether a function value held by the local `declaration` escapes through one of its uses.
+    fn local_escapes(&self, declaration: AstNodeId, depth: u8) -> bool {
+        let Some(depth) = depth.checked_sub(1) else { return true };
+        let Some(name) = self
+            .index
+            .node_at(self.program, declaration)
+            .and_then(|node| node.of::<beskid_analysis::syntax::Identifier>().map(|identifier| identifier.name.clone()))
+        else {
+            return true;
+        };
+        let uses = self
+            .index
+            .ids_of_kind(NodeKind::PathExpression)
+            .filter(|node| is_ancestor(self.index, self.key.node, *node))
+            .filter(|node| {
+                self.index
+                    .node_at(self.program, *node)
+                    .and_then(|syntax| syntax.of::<beskid_analysis::syntax::PathExpression>())
+                    .is_some_and(|path| {
+                        matches!(path.path.node.segments.as_slice(), [segment] if segment.node.name.node.name == name)
+                    })
+                    && resolve_lexical_declaration(self.program, self.index, *node, &name) == Some(declaration)
+            })
+            .collect::<Vec<_>>();
+        uses.into_iter().any(|use_node| {
+            if self.value_escapes(use_node, depth) {
+                return true;
+            }
+            // A capture by a lambda that escapes takes the value along.
+            let mut current = use_node;
+            while let Some(parent) = parent_node(self.index, current) {
+                if parent == self.key.node {
+                    break;
+                }
+                if self.index.kind(parent) == Some(NodeKind::LambdaExpression)
+                    && !is_ancestor(self.index, parent, declaration)
+                    && self.value_escapes(parent, depth)
+                {
+                    return true;
+                }
+                current = parent;
+            }
+            false
+        })
+    }
+
+    /// The target and value of an assignment expression.
+    fn assignment_parts(&self, assignment: AstNodeId) -> Option<(AstNodeId, AstNodeId)> {
+        let syntax = self
+            .index
+            .node_at(self.program, assignment)
+            .and_then(|node| node.of::<beskid_analysis::syntax::AssignExpression>())?;
+        Some((
+            self.child(assignment, DynNodeRef::from(syntax.target.as_ref()))?,
+            self.child(assignment, DynNodeRef::from(syntax.value.as_ref()))?,
+        ))
+    }
+
+    /// The declaration of the local an assignment target names, when it is a plain local.
+    fn local_target(&self, target: AstNodeId) -> Option<AstNodeId> {
+        let target = normalized_expression_node(self.index, target);
+        let path = self.index.node_at(self.program, target)?.of::<beskid_analysis::syntax::PathExpression>()?;
+        let [segment] = path.path.node.segments.as_slice() else { return None };
+        resolve_lexical_declaration(self.program, self.index, target, &segment.node.name.node.name)
+    }
+
+    /// The declaring identifier of a `let` statement.
+    fn let_binding(&self, statement: AstNodeId) -> Option<AstNodeId> {
+        let syntax = self
+            .index
+            .node_at(self.program, statement)
+            .and_then(|node| node.of::<beskid_analysis::syntax::LetStatement>())?;
+        self.child(statement, DynNodeRef::from(&syntax.name))
     }
 
     /// The value of an assignment whose target is a field or an element (not a local).

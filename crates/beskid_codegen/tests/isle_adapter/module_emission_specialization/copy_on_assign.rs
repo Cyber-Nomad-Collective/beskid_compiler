@@ -56,7 +56,7 @@ fn binding_assignment_argument_and_construction_reads_call_the_copy_hook() {
 #[test]
 fn receivers_mut_parameters_and_owned_returns_do_not_copy() {
     let functions = lower(&format!(
-        "{BAG} unit Grow(mut Bag<i64> b) {{ b.Put(9); return; }} Bag<i64> Own(Bag<i64> b) {{ return b; }} \
+        "{BAG} unit Grow(mut Bag<i64> b) {{ b.Put(9); return; }} Bag<i64> Own() {{ Bag<i64> made = Empty<i64>(); return made; }} \
          i64 Main(Bag<i64> a) {{ a.Put(1); Grow(a); return a.count; }}"
     ));
     let names = functions.iter().map(|(name, _)| name.as_str()).collect::<Vec<_>>();
@@ -107,4 +107,21 @@ fn a_match_pattern_binding_calls_the_copy_hook() {
         "the pattern binding calls the Bag<i64> Copy instance: {names:?}"
     );
     assert!(calls_in(&functions, "Held") >= 1, "{:?}", functions.iter().find(|(name, _)| name == "Held"));
+}
+
+/// A plain parameter is lent by its caller: the argument calls `Borrow` (a lent view, no
+/// holder), and returning the parameter copies it (`Copy`), since the caller still owns it.
+#[test]
+fn a_plain_parameter_argument_borrows_and_its_return_copies() {
+    let bag = "[CopyOnAssign] type Bag<T> { T[] values; i64 count; \
+        Bag<T> Copy() { return Bag<T> { values: this.values, count: this.count }; } \
+        Bag<T> Borrow() { return Bag<T> { values: this.values, count: this.count }; } } ";
+    let functions = lower(&format!(
+        "{bag} i64 Read(Bag<i64> b) {{ return b.count; }} Bag<i64> Back(Bag<i64> b) {{ return b; }} \
+         i64 Main(Bag<i64> a) {{ i64 n = Read(a); Bag<i64> c = Back(a); return n + c.count; }}"
+    ));
+    let names = functions.iter().map(|(name, _)| name.as_str()).collect::<Vec<_>>();
+    assert_eq!(names.iter().filter(|name| name.starts_with("Borrow#generic_")).count(), 1, "{names:?}");
+    assert_eq!(names.iter().filter(|name| name.starts_with("Copy#generic_")).count(), 1, "{names:?}");
+    assert!(calls_in(&functions, "Back") >= 1, "the returned parameter is copied");
 }

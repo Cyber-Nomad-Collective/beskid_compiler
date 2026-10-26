@@ -447,6 +447,23 @@ pub enum SemanticIssueKind {
         name: String,
         type_name: String,
     },
+    /// E1241: a plain (not `move`) parameter of Moved class, or a local that holds one, is
+    /// stored in a field or an element, put into a constructed value, returned, or handed to a
+    /// parameter that keeps it (`move`, or a `spawn` target). The caller still owns the value, so
+    /// keeping it would give it a second owner. `parameter` names the parameter; `move_at` is
+    /// where `move ` goes in its declaration. Related label "borrowed here".
+    BorrowedParameterKept {
+        name: String,
+        parameter: String,
+        move_at: Option<usize>,
+    },
+    /// E1241: a crossing operand whose value holds a `[CopyOnAssign]` value below its top level
+    /// (a `List` in a field or an element): the nested list may share its array with a list the
+    /// sending isolate keeps, so the send cannot detach it. `type_name` names the nested type.
+    NestedCopyOnAssignCrossing {
+        name: String,
+        type_name: String,
+    },
     /// E1242: a crossing operand of Moved class written without `move`.
     ImplicitAliasOfMovedValue {
         name: String,

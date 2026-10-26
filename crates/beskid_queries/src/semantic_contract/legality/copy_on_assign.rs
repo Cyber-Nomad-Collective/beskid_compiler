@@ -1,6 +1,8 @@
 //! E1512: a `[CopyOnAssign]` type must declare the copy hook `This Copy()` -- a borrowed
 //! receiver, no parameters, returning the type itself. Without it a copy-position read of the
-//! type has no hook to call, which lowering would otherwise meet as an internal error.
+//! type has no hook to call, which lowering would otherwise meet as an internal error. The
+//! optional hooks `This Borrow()` (a lent view for a borrowing call) and `This Detached()` (the
+//! operand of a port send) have the same shape when they are declared.
 
 use super::typing::nodes_of_kind;
 use super::*;
@@ -38,22 +40,39 @@ pub fn copy_on_assign_findings(db: &dyn Db, root: AstNodeKey) -> Vec<SemanticFin
     findings
 }
 
-/// What is wrong with the `Copy` hook of `definition`, or `None` when it is valid.
+/// What is wrong with the hooks of `definition`, or `None` when they are valid.
 fn copy_hook_problem(definition: &TypeDefinition) -> Option<&'static str> {
+    hook_problem(definition, "Copy", true)
+        .or_else(|| hook_problem(definition, "Borrow", false))
+        .or_else(|| hook_problem(definition, "Detached", false))
+}
+
+/// What is wrong with the hook `name` of `definition`; a missing optional hook is valid.
+fn hook_problem(definition: &TypeDefinition, name: &str, required: bool) -> Option<&'static str> {
     let methods: Vec<&MethodDefinition> =
-        definition.methods.iter().map(|method| &method.node).filter(|method| method.name.node.name == "Copy").collect();
+        definition.methods.iter().map(|method| &method.node).filter(|method| method.name.node.name == name).collect();
     let [method] = methods.as_slice() else {
-        return Some(if methods.is_empty() {
-            "it declares no `Copy` method"
-        } else {
-            "it declares more than one `Copy`"
-        });
+        return match (methods.is_empty(), name) {
+            (true, _) if !required => None,
+            (true, _) => Some("it declares no `Copy` method"),
+            (false, "Copy") => Some("it declares more than one `Copy`"),
+            (false, "Borrow") => Some("it declares more than one `Borrow`"),
+            (false, _) => Some("it declares more than one `Detached`"),
+        };
     };
     if method.receiver.as_ref().is_some_and(|receiver| receiver.node.mutable || receiver.node.movable) {
-        return Some("`Copy` must take a borrowed receiver, not `mut this` or `move this`");
+        return Some(match name {
+            "Copy" => "`Copy` must take a borrowed receiver, not `mut this` or `move this`",
+            "Borrow" => "`Borrow` must take a borrowed receiver, not `mut this` or `move this`",
+            _ => "`Detached` must take a borrowed receiver, not `mut this` or `move this`",
+        });
     }
-    if !method.parameters.is_empty() {
-        return Some("`Copy` must take no parameters");
+    if !method.parameters.is_empty() || !method.generics.is_empty() {
+        return Some(match name {
+            "Copy" => "`Copy` must take no parameters",
+            "Borrow" => "`Borrow` must take no parameters",
+            _ => "`Detached` must take no parameters",
+        });
     }
     let returns_own_type = match method.return_type.as_ref().map(|ty| &ty.node) {
         Some(Type::This) => true,
@@ -62,5 +81,9 @@ fn copy_hook_problem(definition: &TypeDefinition) -> Option<&'static str> {
         }
         _ => false,
     };
-    (!returns_own_type).then_some("`Copy` must return the type itself")
+    (!returns_own_type).then_some(match name {
+        "Copy" => "`Copy` must return the type itself",
+        "Borrow" => "`Borrow` must return the type itself",
+        _ => "`Detached` must return the type itself",
+    })
 }

@@ -1194,6 +1194,16 @@ mod tests {
                 "[CopyOnAssign] pub type Bag { i64 n; pub i64 Copy() { return this.n; } } unit Main() { return; }",
                 "`Copy` must return the type itself",
             ),
+            (
+                "[CopyOnAssign] pub type Bag { i64 n; pub This Copy() { return Bag { n: this.n }; } \
+                 pub i64 Borrow() { return this.n; } } unit Main() { return; }",
+                "`Borrow` must return the type itself",
+            ),
+            (
+                "[CopyOnAssign] pub type Bag { i64 n; pub This Copy() { return Bag { n: this.n }; } \
+                 pub This Detached(mut this) { return Bag { n: this.n }; } } unit Main() { return; }",
+                "`Detached` must take a borrowed receiver, not `mut this` or `move this`",
+            ),
         ];
         for (offset, (source, problem)) in cases.iter().enumerate() {
             let (db, root) = one_unit_assembly(source, SyntaxGenerationId(150 + offset as u64));
@@ -1212,7 +1222,8 @@ mod tests {
             let span = crate::node_span(&db, finding.site).expect("span").expect("site span");
             assert!(source[span.start..span.end].contains("CopyOnAssign"), "anchored at the attribute");
         }
-        let valid = "[CopyOnAssign] pub type Bag { i64 n; pub This Copy() { return Bag { n: this.n }; } } \
+        let valid = "[CopyOnAssign] pub type Bag { i64 n; pub This Copy() { return Bag { n: this.n }; } \
+                     pub This Borrow() { return Bag { n: this.n }; } pub This Detached() { return Bag { n: this.n }; } } \
                      unit Main() { return; }";
         let (db, root) = one_unit_assembly(valid, SyntaxGenerationId(160));
         let main = function_definitions(&db, root)[0];
@@ -1615,7 +1626,7 @@ mod tests {
     const CROSSING_TYPES: &str = "[Immutable] pub type Port<T> { i64 id; \
         pub i64 Send(move T value) where T: Transferable { return 0; } } \
         [Isolated] pub type Node { u8[] bytes; } [Isolated] pub type Holder { u8[] bytes; u8[] cache; \
-        pub unit Put(mut this, u8[] data) { this.cache = data; return; } } \
+        pub unit Put(mut this, move u8[] data) { this.cache = data; return; } } \
         [Isolated] pub type Block { u8[] bytes; } ";
 
     /// Affine findings of `body` in a `Core.Parallel` unit, so `Port.Send` is the corelib crossing.
@@ -1636,20 +1647,126 @@ mod tests {
         let cases: &[&str] = &[
             "unit Main(move u8[] buffer) { Store(buffer); i64 n = Len(buffer); return; }",
             "unit Main() { u8[] a = Make(); u8[] b = a; i64 n = Len(a); Store(b); Store(a); return; }",
-            "unit Main(u8[] data) { Store(data); i64 n = Len(data); return; }",
-            "u8[] Main(u8[] data) { return data; }",
-            "Node Wrap(u8[] state) { return Node { bytes: state }; }",
+            "unit Main(u8[] data) { i64 n = Len(data); u8[] alias = data; i64 m = Len(alias); return; }",
+            "u8[] Main(move u8[] data) { return data; }",
+            "Node Wrap(move u8[] state) { return Node { bytes: state }; }",
             "Node Wrap(Holder h) { return Node { bytes: h.bytes }; }",
-            "u8[][] Wrap(u8[] state) { return [state]; }",
+            "u8[][] Wrap(move u8[] state) { return [state]; }",
             "unit Fill(Holder h, u8[][] xs) { h.bytes = xs[0]; return; }",
             "unit Keep(u8[][] xs) { Store(xs[0]); return; }",
             "Block First(Block[] blocks) { return blocks[0]; }",
             "unit Main(u8[] data) { let wrap = () => Node { bytes: data }; Node n = wrap(); return; }",
-            "u8[] Swap(Holder h, u8[] next) { return exchange(h.bytes, next); }",
+            "u8[] Swap(Holder h, move u8[] next) { return exchange(h.bytes, next); }",
             "unit Main(Holder h) { u8[] bytes = Make(); h.Put(bytes); i64 n = Len(bytes); return; }",
+            "u8[] Fresh(u8[] seed) { u8[] made = Make(); return made; }",
         ];
         for (offset, body) in cases.iter().enumerate() {
             assert_crossing(body, 6600 + offset as u64, &[]);
+        }
+    }
+
+    /// RB5 owner ruling: a plain (not `move`) parameter of Moved class is lent by its caller. It
+    /// may be read and passed on, but storing it (field, element), putting it into a new value,
+    /// returning it, or handing it to a parameter that keeps it (`move`, `exchange`, a `spawn`
+    /// target) is E1241 with the help "copy it, or declare the parameter `move`". A local that
+    /// holds the parameter is judged the same way.
+    #[test]
+    fn a_kept_borrowed_parameter_is_e1241() {
+        let cases: &[(&str, &[&str])] = &[
+            // The review repro: the callee keeps `b`, the caller still owns and sends it.
+            ("unit Keep(Holder h, u8[] b) { h.bytes = b; return; }", &["E1241"]),
+            ("unit Fill(u8[][] xs, u8[] b) { xs[0] = b; return; }", &["E1241"]),
+            ("Node Wrap(u8[] state) { return Node { bytes: state }; }", &["E1241"]),
+            ("u8[][] Wrap(u8[] state) { return [state]; }", &["E1241"]),
+            ("u8[] Main(u8[] data) { return data; }", &["E1241"]),
+            ("unit Main(u8[] data) { Store(data); return; }", &["E1241"]),
+            ("u8[] Swap(Holder h, u8[] next) { return exchange(h.bytes, next); }", &["E1241"]),
+            ("unit Keep(Holder h, u8[] b) { u8[] held = b; h.bytes = held; return; }", &["E1241"]),
+            ("unit Keep(Holder h, u8[] b) { mut u8[] held = Make(); held = b; h.Put(held); return; }", &["E1241"]),
+            ("unit Keep(Holder h, u8[] b) { h.Put(b); return; }", &["E1241"]),
+            // A `move` parameter is owned by the callee and may be kept.
+            ("unit Keep(Holder h, move u8[] b) { h.bytes = b; return; }", &[]),
+            ("unit Keep(Holder h, move u8[] b) { h.Put(b); return; }", &[]),
+            // A fresh value is owned by the callee.
+            ("u8[] Fresh(u8[] seed) { u8[] made = Make(); return made; }", &[]),
+            ("Node Fresh() { return Node { bytes: Make() }; }", &[]),
+            // A plain parameter of a type parameter is not of Moved class in the generic body.
+            ("pub type Cell<T> { T value; } unit Put<T>(Cell<T> c, T v) { c.value = v; return; }", &[]),
+            // A `bulk` parameter receives the array its call packs: the callee owns it.
+            ("u8[] Pack(bulk u8[] bytes) { return bytes; }", &[]),
+        ];
+        for (offset, (body, expected)) in cases.iter().enumerate() {
+            assert_crossing(body, 6800 + offset as u64, expected);
+        }
+        let source = format!("{MARKERS}{AFFINE_PRELUDE}{CROSSING_TYPES}unit Keep(Holder h, u8[] b) {{ h.bytes = b; return; }}");
+        let report = transfer_report_at(&source, 6830, "Core/Parallel/Port.bd");
+        let (_, message, help) = report.iter().find(|(code, ..)| code == "E1241").expect("E1241");
+        assert_eq!(help, "copy it, or declare the parameter `move`");
+        assert!(message.contains("the parameter `b` is borrowed"), "{message}");
+    }
+
+    /// RB5 for `this` and captures: `this` without `move this` is lent by the caller, and a
+    /// borrowed parameter captured by an escaping lambda is kept by that lambda.
+    #[test]
+    fn kept_this_and_escaping_captures_are_e1241() {
+        let cases: &[(&str, &[&str])] = &[
+            ("[Isolated] pub type Cell { u8[] bytes; pub Cell Back() { return this; } }", &["E1241"]),
+            ("[Isolated] pub type Cell { u8[] bytes; pub Cell Back(mut this) { return this; } }", &["E1241"]),
+            ("[Isolated] pub type Cell { u8[] bytes; pub unit Into(Cell[] all) { all[0] = this; return; } }", &["E1241"]),
+            ("[Isolated] pub type Cell { u8[] bytes; pub Cell Take(move this) { return this; } }", &[]),
+            ("[Isolated] pub type Cell { u8[] bytes; pub i64 Size() { return Len(this.bytes); } }", &[]),
+            ("pub type Thunk { () => i64 run; } Thunk Later(u8[] b) { return Thunk { run: () => Len(b) }; }", &["E1241"]),
+            ("i64 Now(u8[] b) { let f = () => Len(b); return f(); }", &[]),
+            // A lambda bound to a local escapes when the local does: stored, returned, through
+            // another local or a reassignment, or captured by a lambda that escapes.
+            ("pub type Thunk { () => i64 run; } unit Keep(Thunk t, u8[] b) { let f = () => Len(b); t.run = f; return; }", &["E1241"]),
+            ("pub type Thunk { () => i64 run; } Thunk Make(u8[] b) { let f = () => Len(b); return Thunk { run: f }; }", &["E1241"]),
+            ("pub type Thunk { () => i64 run; } unit Keep(Thunk t, u8[] b) { let f = () => Len(b); let g = f; t.run = g; return; }", &["E1241"]),
+            (
+                "pub type Thunk { () => i64 run; } unit Keep(Thunk t, u8[] b, mut () => i64 g) { let f = () => Len(b); g = f; t.run = g; return; }",
+                &["E1241"],
+            ),
+            (
+                "pub type Thunk { () => i64 run; } Thunk Make(u8[] b) { let f = () => Len(b); return Thunk { run: () => f() }; }",
+                &["E1241"],
+            ),
+            ("i64 Now(u8[] b) { let f = () => Len(b); let g = f; return g(); }", &[]),
+            ("pub type Thunk { () => i64 run; } Thunk Later(move u8[] b) { return Thunk { run: () => Len(b) }; }", &[]),
+        ];
+        for (offset, (body, expected)) in cases.iter().enumerate() {
+            assert_crossing(body, 6860 + offset as u64, expected);
+        }
+    }
+
+    /// Call-site rule (RB5): handing an owning local to a parameter that may keep it (`move`,
+    /// `mut`, a `spawn` target, the value of `exchange`) gives the value another name, so the
+    /// local can no longer cross (E1241, copy it first). A plain argument does not: a plain
+    /// parameter cannot be kept by the callee.
+    #[test]
+    fn a_kept_argument_is_another_name_at_a_crossing() {
+        let cases: &[(&str, &[&str])] = &[
+            ("unit Main(Port<u8[]> p, Holder h) { u8[] b = Make(); h.Put(b); p.Send(move b); return; }", &["E1241"]),
+            ("unit Main(Port<u8[]> p) { u8[] b = Make(); Store(b); p.Send(move b); return; }", &["E1241"]),
+            ("unit Main(Port<u8[]> p) { u8[] b = Make(); i64 n = Len(b); p.Send(move b); return; }", &[]),
+            // A `mut` parameter shares the caller's binding and may keep it.
+            (
+                "unit Grow(mut u8[] b) { return; } unit Main(Port<u8[]> p) { u8[] b = Make(); Grow(b); p.Send(move b); return; }",
+                &["E1241"],
+            ),
+            ("unit Keep(Holder h, mut u8[] b) { h.bytes = b; return; }", &[]),
+            // Owner ruling: an argument of a parameter typed by a type parameter may be kept by the
+            // generic body, so the binding must be fresh or copied to cross.
+            (
+                "unit Put<T>(T v) { return; } unit Main(Port<u8[]> p) { u8[] b = Make(); Put<u8[]>(b); p.Send(move b); return; }",
+                &["E1241"],
+            ),
+            (
+                "unit Put<T>(T[] v) { return; } unit Main(Port<u8[]> p) { u8[] b = Make(); Put<u8>(b); p.Send(move b); return; }",
+                &[],
+            ),
+        ];
+        for (offset, (body, expected)) in cases.iter().enumerate() {
+            assert_crossing(body, 6840 + offset as u64, expected);
         }
     }
 
@@ -1731,6 +1848,31 @@ mod tests {
             ("unit Main(Port<u8[]> p, move u8[][] xs) { p.Send(exchange(xs[0], Make())); return; }", &[]),
             // Shared values cross without `move`.
             ("unit Main(Port<string> p, string name) { p.Send(name); i64 n = 0; return; }", &[]),
+            // Moved in `else`, used in `then`: alternatives.
+            (
+                "unit Main(Port<u8[]> p, move u8[] data, bool keep) { if keep { i64 n = Len(data); } else { p.Send(move data); } return; }",
+                &[],
+            ),
+            // A `for` loop without reassignment, and one that rebinds before the next iteration.
+            (
+                "unit Main(Port<u8[]> p, move u8[] data, i64[] rounds) { for r in rounds { p.Send(move data); } return; }",
+                &["E1240"],
+            ),
+            (
+                "unit Main(Port<u8[]> p, i64[] rounds) { mut u8[] data = Make(); for r in rounds { p.Send(move data); data = Make(); } return; }",
+                &[],
+            ),
+            // A send that `break`s out of the loop does not reach the next iteration.
+            (
+                "unit Main(Port<u8[]> p, move u8[] data, i64 rounds) { mut i64 i = 0; while i < rounds { p.Send(move data); break; } return; }",
+                &[],
+            ),
+            // `move this.f` at a crossing through an owning receiver.
+            (
+                "[Isolated] pub type Owner { u8[] bytes; pub unit Flush(move this, Port<u8[]> p) { p.Send(move this.bytes); return; } }",
+                &[],
+            ),
+
         ];
         for (offset, (body, expected)) in cases.iter().enumerate() {
             assert_crossing(body, 6660 + offset as u64, expected);
@@ -1755,7 +1897,7 @@ mod tests {
         let bodies = "pub i64 Over<T>(T[] values) where T: Transferable { View<T> view = View<T> { items: values }; return 0; } \
             i64 OverBytes(u8[] values) { Bytes view = Bytes { items: values }; return 0; } \
             i64 Owned(move u8[] values) { Bytes view = Bytes { items: values }; Store(values); return 0; } \
-            Plain Wrap(u8[] bytes) { return Plain { bytes: bytes }; } ";
+            Plain Wrap(move u8[] bytes) { return Plain { bytes: bytes }; } ";
         let affine = |relative: &str, generation: u64| {
             transfer_report_at(&format!("{MARKERS}{AFFINE_PRELUDE}{view}{bodies}"), generation, relative)
                 .into_iter()
@@ -1767,14 +1909,16 @@ mod tests {
         // nothing is consumed or reported (0.6.7 owner ruling).
         let core = affine("Core/Parallel/Seq.bd", 6940);
         assert!(core.is_empty(), "local construction is not a crossing: {core:?}");
-        // Outside the corelib `[ScopeBorrowed]` (and `[ImmutableStorage]`) is E1510 and grants nothing.
-        let outside = affine("Main.bd", 6941);
+        // Outside the corelib `[ScopeBorrowed]` (and `[ImmutableStorage]`) is E1510 and grants
+        // nothing: the view is an ordinary value, so storing a plain parameter in it is E1241
+        // (RB5), but no scope-borrowed escape is reported.
+        let outside = transfer_report_at(&format!("{MARKERS}{AFFINE_PRELUDE}{view}{bodies}"), 6941, "Main.bd");
         let scope_borrowed = transfer_report_at(&format!("{MARKERS}{AFFINE_PRELUDE}{view}{bodies}"), 6942, "Main.bd")
             .into_iter()
             .filter(|(code, message, _)| code == "E1510" && message.contains("ScopeBorrowed"))
             .count();
         assert!(scope_borrowed > 0, "{outside:?}");
-        assert!(!outside.iter().any(|code| code == "E1241"), "{outside:?}");
+        assert!(!outside.iter().any(|(_, message, _)| message.contains("scope-borrowed")), "{outside:?}");
     }
 
     /// v0.6.7 ruling "Scope-borrowed values do not escape": a value of a corelib `[ScopeBorrowed]`
@@ -1812,7 +1956,14 @@ mod tests {
             ("Loose Build(Bytes b) { return Loose { element: (i64 i) => At(b, i) }; }", 1),
             ("unit Run(Bytes b) { let child = spawn (() => Use(b)); child.Cancel(); return; }", 1),
             ("Loose Nest(Bytes b) { let make = () => Loose { element: (i64 i) => At(b, i) }; return make(); }", 1),
+            // Handed to a parameter that may keep it: a generic `T` or a `move` parameter.
+            ("pub type Cell<T> { T v; } unit Put<T>(Cell<T> c, T v) { c.v = v; return; } i64 Keep(Cell<Bytes> c, Bytes b) { Put<Bytes>(c, b); return 0; }", 1),
+            ("unit Take(move Bytes view) { return; } i64 Keep(Bytes b) { Take(b); return 0; }", 1),
+            // A lambda bound to a local escapes when the local does.
+            ("Loose Later(Bytes b) { let f = (i64 i) => At(b, i); return Loose { element: f }; }", 1),
+            ("Loose Later(Bytes b) { let f = (i64 i) => At(b, i); let g = f; return Loose { element: g }; }", 1),
             // Uses inside the scope stay legal.
+            ("u8 Bound(Bytes b) { let f = (i64 i) => At(b, i); return f(0); }", 0),
             ("i64 Count(Bytes b) { return Use(b); }", 0),
             ("i64 Local(u8[] v) { Bytes view = Bytes { items: v }; return Use(view); }", 0),
             ("u8 Inner(Bytes b) { let f = (i64 i) => At(b, i); return f(0); }", 0),
@@ -1853,7 +2004,7 @@ mod tests {
         let cases: &[(&str, &[&str])] = &[
             ("unit Flush(Port<u8[]> p, Pair s) { p.Send(move s.left); return; }", &[]),
             ("unit Flush(Port<Index> p, Pair s) { p.Send(move s.right); return; }", &["E1243"]),
-            ("u8[] Swap(Holder h, u8[] next) { return exchange(h.bytes, next); }", &[]),
+            ("u8[] Swap(Holder h, move u8[] next) { return exchange(h.bytes, next); }", &[]),
             (
                 "pub type Named { string name; pub string Rename(mut this, string next) { return exchange(this.name, next); } }",
                 &["E1239"],

@@ -20,8 +20,8 @@ use crate::{
     array_static::ArrayStaticPlan,
 };
 
-/// The static metadata of one canonical empty value: the empty array of the array and list forms
-/// and the managed object of the `Option::None` and `List<T>` forms.
+/// The static metadata of one canonical empty value: the empty array of the array form and the
+/// managed object of the `Option::None` form.
 pub(crate) struct CanonicalEmptyStatics {
     pub(crate) value: CanonicalEmptyValue,
     pub(crate) array: Option<ArrayStaticPlan>,
@@ -77,28 +77,6 @@ impl CodegenInput<'_> {
                         object_alignment: physical.object_alignment,
                         pointer_map_offsets: physical.pointer_map_offsets,
                         fields: fields.into(),
-                    }),
-                )
-            }
-            CanonicalEmptyValue::EmptyList { declaration, layout, element, element_managed, .. } => {
-                let object = self.aggregate_object_layout_from_fact(*declaration, layout)?;
-                if !object.injected_fields.is_empty() {
-                    return None;
-                }
-                let symbol = self.canonical_empty_identity(key, "list", identity.as_deref())?;
-                (
-                    Some(empty_array(*element, *element_managed)?),
-                    Some(AggregateStaticPlan {
-                        descriptor_flags: 0,
-                        descriptor_getter: None,
-                        literal: key,
-                        descriptor_symbol: format!("__beskid_canonical_descriptor_{symbol}"),
-                        pointer_map_symbol: format!("__beskid_canonical_pointer_map_{symbol}"),
-                        allocation_request_symbol: format!("__beskid_canonical_request_{symbol}"),
-                        object_size: object.object_size,
-                        object_alignment: object.object_alignment,
-                        pointer_map_offsets: object.pointer_map_offsets,
-                        fields: object.fields,
                     }),
                 )
             }

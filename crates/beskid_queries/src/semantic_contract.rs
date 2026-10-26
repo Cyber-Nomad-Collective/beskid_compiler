@@ -156,7 +156,7 @@ use closures_spawn::{
     declared_parameters, direct_callee, field_captures_bound, function_item_value_identity,
     function_item_value_tracked, function_value_call_tracked, function_value_callee, identity_spelling,
     inferred_spawn_handle, lambda_has_statement_body, lambda_identity, lambda_source_identity,
-    lambda_value_required_tracked, move_expression_form_for_node, normalized_expression_node,
+    lambda_value_required_tracked, move_expression_form_for_node, normalized_expression_node, port_send_argument,
     runtime_intrinsic_name_tracked, runtime_intrinsic_tracked, spawn_entry_operand, spawn_entry_validation_tracked,
     spawn_handle_type_tracked, spawn_legality_tracked, spawn_stack_capture, spawn_target_tracked, with_declaration,
 };
