@@ -243,11 +243,9 @@ fn run_analyze(
     target: Option<&str>,
     records: Option<&Records>,
 ) -> Result<serde_json::Value> {
-    analyze_target(args, project, target, records).or_else(|error| {
-        match services::structured_diagnostics(&error) {
-            Some(diagnostics) if !diagnostics.is_empty() => report_failed_preparation(diagnostics, records),
-            _ => Err(error),
-        }
+    analyze_target(args, project, target, records).or_else(|error| match services::structured_diagnostics(&error) {
+        Some(diagnostics) if !diagnostics.is_empty() => report_failed_preparation(diagnostics, records),
+        _ => Err(error),
     })
 }
 

@@ -1922,7 +1922,9 @@ mod tests {
         };
         let missing = codes("pub unit Demo(Pair pair) { return; }", 7953);
         assert!(
-            missing.iter().any(|(code, message)| code == "E1203" && message == "missing type arguments for generic type"),
+            missing
+                .iter()
+                .any(|(code, message)| code == "E1203" && message == "missing type arguments for generic type"),
             "{missing:?}"
         );
         assert!(missing.iter().all(|(code, _)| code != "E1201"), "{missing:?}");
@@ -1950,12 +1952,19 @@ mod tests {
         assert_eq!(help, "copy it, or declare the parameter `move`");
         assert!(message.contains("the parameter `block` is borrowed"), "{message}");
         let held = "unit Hand(Port<u8[]> output, u8[] block) { u8[] b = block; output.Send(move b); return; }";
-        let report =
-            transfer_report_at(&format!("{MARKERS}{AFFINE_PRELUDE}{CROSSING_TYPES}{held}"), 7951, "Core/Parallel/Port.bd");
+        let report = transfer_report_at(
+            &format!("{MARKERS}{AFFINE_PRELUDE}{CROSSING_TYPES}{held}"),
+            7951,
+            "Core/Parallel/Port.bd",
+        );
         let (_, message, help) = report.iter().find(|(code, ..)| code == "E1241").expect("E1241");
         assert_eq!(help, "copy it, or declare the parameter `move`");
         assert!(message.contains("`b` holds the borrowed parameter `block`"), "{message}");
-        assert_crossing("unit Hand(Port<u8[]> output, move u8[] block) { output.Send(move block); return; }", 7952, &[]);
+        assert_crossing(
+            "unit Hand(Port<u8[]> output, move u8[] block) { output.Send(move block); return; }",
+            7952,
+            &[],
+        );
     }
 
     #[test]
