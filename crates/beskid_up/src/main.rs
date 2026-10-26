@@ -1,8 +1,8 @@
-use beskid_up::{UpArgs, UpCommand, execute};
+use beskid_up::{UpArgs, UpCommand, VERSION, execute};
 use clap::Parser;
 
 #[derive(Parser)]
-#[command(name = "beskid-up", version)]
+#[command(name = "beskid-up", version = VERSION)]
 struct Cli {
     #[command(subcommand)]
     command: UpCommand,

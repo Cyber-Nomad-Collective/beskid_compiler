@@ -28,15 +28,16 @@ pub struct AggregateLayoutFact {
     pub fields: Arc<[(Arc<str>, AggregateFieldShape)]>,
 }
 
-/// Physical object slot reserved for one event field. Event slots are deliberately separate from
-/// [`AggregateLayoutFact::fields`], which remains the logical value-field projection layout.
+/// Physical state of one event field inside its owner: at `slot_offset` the handler count word,
+/// then `capacity` handler words that the owner's pointer map lists. Event states are deliberately
+/// separate from [`AggregateLayoutFact::fields`], which remains the logical value-field
+/// projection layout.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct EventFieldLayoutFact {
     pub owner_type: AstNodeKey,
     pub field: AstNodeKey,
     pub slot_offset: u32,
-    /// Zero means the declaration omitted its capacity hint; event operation lowering must not
-    /// consume this fact until the v0.5 default-capacity ruling resolves that case.
+    /// The declared capacity, or the default capacity 16 when the declaration omits it.
     pub capacity: u32,
 }
 

@@ -16,6 +16,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The Corelib and the compiler's Beskid sources and fixtures are formatted with the 0.6.7 `beskid fmt` (the formatter's own input fixtures excepted). `beskid_ast_reflect_gen --emit-query-facade` prints `Query.bd` through the formatter like the other generated SDK sources, so regeneration keeps `fmt --check` clean.
 - `beskid test` on a project without a Test or Lib target (an App alone, as the console, host and fiber-demo templates create) prints "No tests found." and passes, as a library without `test` items does; it failed with "no Test or Lib target selected". `--target <name>` naming a target that is not a Test or Lib target says so.
 
+### Stability proof fixes
+
+- An event's handlers live in the object that declares the event (a count word and one handler word per capacity, listed in the owner's pointer map) and are traced through it. A subscribed handler is no longer an external GC root: a program that exits with a handler still subscribed exits cleanly (it trapped with `runtime_internal_corruption (10)` at shutdown), and an owner that becomes unreachable takes its handlers and their captures with it.
+- An event declared without a capacity (`event Changed(i64 value);`) has the default capacity 16; it failed to lower (E2102). In a method of the declaring type the bare name raises the event (`Changed(value);`, the spelling the events specification shows), which was E1101.
+- An event declared after a value field is raised and subscribed again (`this.OnResize(size)` in Corelib Console was E2102). The event operation counted the event's position among all fields and then picked among event fields only.
+- A call to a callable with a contract-typed parameter passes an argument whose type only its parameter proves, such as a unit enum variant (`H1Wire.ReadMessage(buffer, transport, limits, MessageRole::Request)` in Corelib Web was E2102): a parameter that names no generic is the argument's expected type.
+- A generic enum constructor written without type arguments, passed to a generic parameter that an earlier argument binds (`Channel.TrySend(command.issued, Result::Error(..))` in Corelib Glue), expects the bound application instead of failing to lower (E2102). Sibling arguments that read a value (a local, a parameter, a field, an element) bind the callee's generics for the expected type.
+- A library output leaves out the items of its own units that reach a compiler-SDK host callback or Core.Args: they run only inside a native Mod invocation or an executable. Standalone `beskid build` of the Corelib compiler SDK (E2103), Foundation and Console (E4041 "Core.Args requires executable arguments") succeeds. An `[Export]` item that reaches one still fails.
+- The offline template cache and online `beskid new` verify an installed template the same way. An installation that this toolchain cannot verify (an older toolchain wrote an unversioned digest, or its files changed) is fetched again online when it came from the registry; offline, the error names the exact `beskid package template install` command.
+- `beskid_lsp --version`, `beskid-up --version` and LSP crash reports print the release version the build sets in `BESKID_RELEASE_VERSION`, like `beskid --version` (the CLI read `BESKID_PREVIEW_LABEL`, the others always printed the manifest version).
+- Proof harness: the ICE sweep instantiates templates under a private template configuration, installs `--templates-dir` templates with the toolchain under test, and counts a failed template install or `beskid new` as a failure instead of skipping it; onboarding reads the "No tests found." line of a passing run.
+
 ### Polish
 
 - A `match` used as a statement needs no trailing `;`, like a C# `switch` statement; a written `;` is still accepted and `beskid fmt` keeps the form the source uses.
@@ -157,7 +169,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Pipeline progress draws only on an interactive stderr and only for steps longer than about one second; `beskid run` prints at most one status line before the program's output.
 - Logs go to stderr, or to a file with `--log-file <path>` or `BESKID_LOG`.
 - `beskid` restores the default `SIGPIPE` action, so `beskid ... | head` ends quietly instead of aborting.
-- `beskid dev capabilities` reports `runtimeAbi`; `--version` and `cliVersion` show the build-time `BESKID_PREVIEW_LABEL` when set.
+- `beskid dev capabilities` reports `runtimeAbi`; `--version` and `cliVersion` show the build-time `BESKID_RELEASE_VERSION` when set.
 - Tests have their own namespace. A test cannot be called or named as a value,
   so `test SumOfSquares` may share its name with a function, type or other
   item, and a call to the name resolves to that item. Two tests of one name in

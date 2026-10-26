@@ -217,18 +217,21 @@ test SynchronizationBoundsHandlesAndTeardownAreDeterministic
     Assert.Equal(HubRegister(hub, 7, channel), ChannelStatusOk(), "hub accepts a live channel");
     Assert.Equal(HubRegister(15, 7, channel), HubStatusHubNotFound(), "uncreated hub handle fails closed");
 
-    pointer eventSlot = SystemAllocate(8, 8);
+    // Event state as it lies in its owner: a count word and one handler word per capacity.
+    pointer event = SystemAllocate(16, 8);
+    memory_set(event, 0, 16);
     pointer firstHandler = SystemAllocate(8, 8);
     pointer secondHandler = SystemAllocate(8, 8);
-    raw_word_store(eventSlot, 0);
-    Assert.Equal(EventSubscribe(eventSlot, firstHandler, 1), 1, "event publishes its first rooted handler");
-    Assert.Equal(EventSubscribe(eventSlot, secondHandler, 1), 1, "full event reports length without overwrite");
-    Assert.True(EventGetHandler(NativePointer(raw_word_load(eventSlot)), 0) == firstHandler, "overflow preserves subscription order");
-    EventDrop(eventSlot);
-    Assert.Equal(raw_word_load(eventSlot), 0, "event teardown clears field ownership");
+    Assert.Equal(EventSubscribe(event, firstHandler, 1), 1, "event publishes its first handler");
+    Assert.Equal(EventSubscribe(event, secondHandler, 1), 1, "full event reports length without overwrite");
+    Assert.True(EventGetHandler(event, 0) == firstHandler, "overflow preserves subscription order");
+    Assert.Equal(GcExternalRootCount(), 0, "a subscribed handler is no external root");
+    Assert.Equal(EventUnsubscribeFirst(event, firstHandler), 1, "unsubscribe removes the handler");
+    Assert.Equal(EventLen(event), 0, "the event is empty again");
+    Assert.Equal(raw_word_load(pointer_add(event, 8)), 0, "the removed handler word is cleared");
     SystemFree(secondHandler, 8);
     SystemFree(firstHandler, 8);
-    SystemFree(eventSlot, 8);
+    SystemFree(event, 16);
 
     ShutdownSchedulerRuntime(runtime);
 }

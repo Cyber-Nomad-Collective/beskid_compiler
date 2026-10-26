@@ -14,10 +14,11 @@ use std::env;
 use super::dev::{DevArgs, DevCommand, DevProjectCommand, DevSyntaxCommand};
 use super::docs::{anyhow_to_miette, ensure_corelib_ready, maybe_generate_docs_for_pack};
 
-/// Version shown by `beskid --version` and `dev capabilities`: the preview label when the build set
-/// `BESKID_PREVIEW_LABEL` (for example `0.6.7-preview.3`), else the manifest version. Read at build
-/// time, never at run time.
-pub const VERSION: &str = resolve_version(option_env!("BESKID_PREVIEW_LABEL"), env!("CARGO_PKG_VERSION"));
+/// Version shown by `beskid --version` and `dev capabilities`: the release version the release build
+/// set in `BESKID_RELEASE_VERSION` (for example `0.6.7-preview.3`), else the manifest version. Read at
+/// build time, never at run time. `beskid_lsp` and `beskid-up` read the same variable, so one build
+/// stamps all three binaries with one version.
+pub const VERSION: &str = resolve_version(option_env!("BESKID_RELEASE_VERSION"), env!("CARGO_PKG_VERSION"));
 
 /// A non-empty `label` replaces the manifest version.
 pub const fn resolve_version(label: Option<&'static str>, manifest: &'static str) -> &'static str {

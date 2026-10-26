@@ -1,0 +1,34 @@
+use Core.Output;
+
+// An event declared without a capacity, after a value field, raised from methods of its type
+// with the bare spelling and with `this.`. The program exits with its handler still subscribed.
+type Meter
+{
+    i64 total;
+    event Changed(i64 value);
+
+    unit Report(i64 value)
+    {
+        Changed(value);
+    }
+
+    unit ReportAgain(i64 value)
+    {
+        this.Changed(value);
+    }
+}
+
+i32 Main()
+{
+    mut Meter meter = Meter
+    {
+        total: 0_i64,
+    };
+    unit(i64) print = (i64 value) => {
+        Output.WriteLine("received ${value}");
+    };
+    meter.Changed += print;
+    meter.Report(7_i64);
+    meter.ReportAgain(8_i64);
+    return 0;
+}

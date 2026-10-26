@@ -20,6 +20,7 @@
 #   --mutate-bin PATH    beskid-mutate binary (step 2)
 #   --compiler DIR       compiler checkout holding corelib, mods, fixtures (default: this checkout)
 #   --lings DIR          beskid-lings checkout (soak corpus and sweep corpus; default none)
+#   --templates-dir DIR  template packages the sweep installs before `beskid new` (beskid_templates/packages)
 #   --bundle DIR         release bundle for step 3; step 3 is skipped when omitted
 #   --version X.Y.Z      release version of the bundle (required with --bundle)
 #   --soak-duration T    soak length: 90s, 30m, 2h (default 30m)
@@ -37,7 +38,7 @@ set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 COMPILER="$(cd "$HERE/.." && pwd)"
 
-beskid="" lsp="" soak_bin="" mutate_bin="" lings="" bundle="" version=""
+beskid="" lsp="" soak_bin="" mutate_bin="" lings="" templates_dir="" bundle="" version=""
 step_timeout="" soak_duration="30m" smoke=0 seed=1 sample=60 skip="" out_dir="./v067-proof-out" self_test=0
 
 die() { echo "v067-proof: $*" >&2; exit 2; }
@@ -49,6 +50,7 @@ while [[ $# -gt 0 ]]; do
     --mutate-bin) mutate_bin="${2:?}"; shift 2 ;;
     --compiler) COMPILER="${2:?}"; shift 2 ;;
     --lings) lings="${2:?}"; shift 2 ;;
+    --templates-dir) templates_dir="${2:?}"; shift 2 ;;
     --bundle) bundle="${2:?}"; shift 2 ;;
     --version) version="${2:?}"; shift 2 ;;
     --soak-duration) soak_duration="${2:?}"; shift 2 ;;
@@ -90,6 +92,7 @@ if ! skipped onboarding && [[ -n "$bundle" ]]; then
   [[ -d "$bundle" ]] || die "--bundle $bundle is not a directory"
 fi
 [[ -z "$lings" || -d "$lings" ]] || die "--lings $lings is not a directory"
+[[ -z "$templates_dir" || -d "$templates_dir" ]] || die "--templates-dir $templates_dir is not a directory"
 
 timeout_cmd=""
 if command -v timeout >/dev/null 2>&1; then timeout_cmd="timeout"
@@ -147,6 +150,7 @@ fi
 if ! skipped sweep; then
   sweep_args=(--beskid "$beskid" --mutate "$mutate_bin" --compiler "$COMPILER" --seed "$seed" --mutation-sample "$sample" --out "$out_dir/sweep.json")
   [[ -z "$lings" ]] || sweep_args+=(--lings "$lings")
+  [[ -z "$templates_dir" ]] || sweep_args+=(--templates-dir "$templates_dir")
   run_step sweep python3 -I "$HERE/proof/ice_sweep.py" "${sweep_args[@]}"
 fi
 

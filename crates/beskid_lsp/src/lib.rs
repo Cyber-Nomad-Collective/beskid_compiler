@@ -30,3 +30,11 @@ pub(crate) static SHARED_FIXTURE_LOCK: std::sync::LazyLock<tokio::sync::Mutex<()
     std::sync::LazyLock::new(|| tokio::sync::Mutex::new(()));
 
 pub use server::stdio::run_stdio_server;
+
+/// Version shown by `beskid_lsp --version` and written into crash reports: the release version the
+/// release build set in `BESKID_RELEASE_VERSION` (the same variable stamps `beskid` and `beskid-up`),
+/// else the manifest version. Read at build time.
+pub const VERSION: &str = match option_env!("BESKID_RELEASE_VERSION") {
+    Some(version) if !version.is_empty() => version,
+    _ => env!("CARGO_PKG_VERSION"),
+};

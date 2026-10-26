@@ -140,7 +140,7 @@ impl CrashReporter {
     /// Reporter writing to `dir` (`None` disables report files and the notification).
     pub fn new(dir: Option<PathBuf>) -> Self {
         install_panic_hook();
-        Self { dir, version: env!("CARGO_PKG_VERSION"), seen: Mutex::new(HashSet::new()), notifier: Mutex::new(None) }
+        Self { dir, version: crate::VERSION, seen: Mutex::new(HashSet::new()), notifier: Mutex::new(None) }
     }
 
     /// Reporter writing to `~/.beskid/crash`.
@@ -311,7 +311,7 @@ pub(crate) mod tests {
         let text = std::fs::read_to_string(&files[0]).unwrap();
         assert!(text.contains("method: textDocument/hover"));
         assert!(text.contains("file: /p/A.bd"));
-        assert!(text.contains(env!("CARGO_PKG_VERSION")));
+        assert!(text.contains(crate::VERSION));
         assert!(!text.contains("secret source text"), "report must not quote panic messages");
         let sent = sent.lock().unwrap();
         assert_eq!(sent.len(), 1);

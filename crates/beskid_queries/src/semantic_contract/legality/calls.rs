@@ -119,6 +119,9 @@ fn unresolved_call_target_for_call(
 /// rejects with its own diagnostic) is not an unknown callee.
 pub(super) fn claimed_by_another_call_authority(db: &dyn Db, call: AstNodeKey, runtime_intrinsic_claims: bool) -> bool {
     matches!(exchange_call(db, call), Ok(Some(_)))
+        // Raising an event of the enclosing type (`Changed(value);` or `this.Changed(value);` in
+        // one of its methods) is no call of a function; the event operation owns it.
+        || matches!(event_operation(db, call), Ok(Some(fact)) if fact.operation == EventOperationKind::Raise)
         || matches!(transfer_class_intrinsic(db, call), Ok(Some(_)))
         || !matches!(primitive_numeric_conversion(db, call), Ok(None))
         || !matches!(typed_array_allocation(db, call), Ok(None))

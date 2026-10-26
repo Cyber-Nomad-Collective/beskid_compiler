@@ -20,6 +20,16 @@ pub(in crate::semantic_contract) fn aggregate_layout_tracked(
     .transpose()
 }
 
+/// The handler capacity of an event declared without one (`event Changed();`): the same bound
+/// Corelib declares for its own events (`event{16} OnResize(..)` in Console). The runtime stores
+/// at most this many handlers; a subscription to a full event keeps the earlier handlers.
+pub const DEFAULT_EVENT_CAPACITY: usize = 16;
+
+/// Bytes of one event's inline state in its owner: the handler count and `capacity` handler words.
+pub fn event_state_size(capacity: u64) -> Option<u64> {
+    capacity.checked_mul(8)?.checked_add(8)
+}
+
 #[salsa::tracked(persist)]
 pub(in crate::semantic_contract) fn event_field_layout_tracked(
     db: &dyn Db,
@@ -67,23 +77,23 @@ pub(in crate::semantic_contract) fn event_field_layout_tracked(
             .filter(|field| field.node.kind == beskid_analysis::syntax::FieldKind::Injected)
             .count();
         size = size.checked_add(u64::try_from(injected_count).ok()?.checked_mul(8)?)?;
-        let event_index = field_ids
+        // Each event's state lies inline after the earlier events' states: a count word and one
+        // handler word per capacity (`Runtime/PubSub/Events.bd`).
+        let mut slot_offset = size;
+        for earlier in definition
+            .fields
             .iter()
-            .copied()
-            .take_while(|id| *id != matching_field)
-            .filter(|id| {
-                index
-                    .node_at(program, *id)
-                    .and_then(|node| node.of::<beskid_analysis::syntax::Field>())
-                    .is_some_and(|candidate| candidate.kind == beskid_analysis::syntax::FieldKind::Event)
-            })
-            .count();
-        let slot_offset = size.checked_add(u64::try_from(event_index).ok()?.checked_mul(8)?)?;
+            .filter(|candidate| candidate.node.kind == beskid_analysis::syntax::FieldKind::Event)
+            .take_while(|candidate| candidate.node.name.node.name != field.name.node.name)
+        {
+            let capacity = u64::try_from(earlier.node.event_capacity.unwrap_or(DEFAULT_EVENT_CAPACITY)).ok()?;
+            slot_offset = slot_offset.checked_add(event_state_size(capacity)?)?;
+        }
         Some(Ok(EventFieldLayoutFact {
             owner_type: owner_key,
             field: AstNodeKey { node: matching_field, ..key },
             slot_offset: u32::try_from(slot_offset).ok()?,
-            capacity: u32::try_from(field.event_capacity.unwrap_or_default()).ok()?,
+            capacity: u32::try_from(field.event_capacity.unwrap_or(DEFAULT_EVENT_CAPACITY)).ok()?,
         }))
     })?
     .transpose()

@@ -788,7 +788,7 @@ fn preview_label_replaces_the_manifest_version() {
     assert_eq!(resolve_version(None, "0.6.7"), "0.6.7");
     assert_eq!(resolve_version(Some(""), "0.6.7"), "0.6.7", "an empty label keeps the manifest version");
     let expected =
-        option_env!("BESKID_PREVIEW_LABEL").filter(|label| !label.is_empty()).unwrap_or(env!("CARGO_PKG_VERSION"));
+        option_env!("BESKID_RELEASE_VERSION").filter(|label| !label.is_empty()).unwrap_or(env!("CARGO_PKG_VERSION"));
     assert_eq!(VERSION, expected);
     assert_eq!(super::app::capability_document()["cliVersion"], VERSION);
     let rendered = Cli::command().render_version().to_string();

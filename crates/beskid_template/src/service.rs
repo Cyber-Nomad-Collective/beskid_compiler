@@ -14,9 +14,8 @@ use beskid_tools::registry::{
 use crate::{
     GitTemplateRef, InstallSnapshot, InstallSource, InstantiateOptions, InstantiateResult, RegistryIndexEntry,
     SymbolCollectOptions, TemplateManifest, TemplateOutputKind, clone_or_update, collect_symbol_values,
-    extract_bpk_to_dir, find_installed_by_short_name, install_from_tree, list_installed,
-    load_manifest_from_template_root, load_registry_index, resolve_package_id, save_registry_index,
-    stdin_is_interactive, uninstall_by_short_name,
+    extract_bpk_to_dir, install_from_tree, list_installed, load_manifest_from_template_root, load_registry_index,
+    resolve_package_id, save_registry_index, stdin_is_interactive, uninstall_by_short_name,
 };
 
 /// How a template is selected for install or instantiate.
@@ -312,44 +311,19 @@ fn resolve_template_for_instantiate(
     registry: &RegistryConnectConfig,
     offline: bool,
 ) -> Result<ResolvedTemplateForInstantiate> {
-    if offline && !matches!(selector, TemplateSelector::Path(_)) {
-        let candidates = crate::cache::list_installed()
-            .map_err(|e| anyhow!("{e}"))?
-            .into_iter()
-            .filter(|(snapshot, _)| match selector {
-                TemplateSelector::ShortName(name) => snapshot.short_name == *name,
-                TemplateSelector::Package { id, version } => {
-                    snapshot.package_id.as_ref() == Some(id)
-                        && version.as_ref().is_none_or(|version| snapshot.resolved_version.as_ref() == Some(version))
-                }
-                _ => false,
-            })
-            .collect::<Vec<_>>();
-        if candidates.len() != 1 {
-            anyhow::bail!(
-                "offline template cache requires one verified installed match; install online with `beskid package template install`, then select its short name"
-            );
+    let consults_cache = match selector {
+        TemplateSelector::ShortName(_) => true,
+        TemplateSelector::Package { .. } | TemplateSelector::Git { .. } => offline,
+        TemplateSelector::Path(_) => false,
+    };
+    let mut refetch = None;
+    if consults_cache {
+        let installed = list_installed().map_err(|e| anyhow!("{e}"))?;
+        match installed_for_selector(installed, selector, offline)? {
+            InstalledLookup::Use(path, manifest, meta) => return Ok((path, manifest, meta)),
+            InstalledLookup::Refetch(package_id) => refetch = Some(package_id),
+            InstalledLookup::NotInstalled => {}
         }
-        let (snapshot, path) = candidates.into_iter().next().expect("one candidate");
-        if !snapshot
-            .checksum
-            .as_deref()
-            .is_some_and(|digest| digest.starts_with(crate::cache::TEMPLATE_CHECKSUM_PREFIX))
-        {
-            anyhow::bail!("offline cache digest version is unsupported; reinstall the selected template online");
-        }
-        let manifest = load_manifest_from_template_root(&path).map_err(|e| anyhow!("{e}"))?;
-        if snapshot.identity != manifest.identity
-            || snapshot.short_name != manifest.short_name
-            || snapshot.checksum.as_deref() != Some(crate::checksum_dir(&path).map_err(|e| anyhow!("{e}"))?.as_str())
-        {
-            anyhow::bail!(
-                "offline installed template integrity/checksum mismatch; reinstall the selected template online"
-            );
-        }
-        let meta =
-            snapshot.package_id.zip(snapshot.resolved_version).map(|(id, version)| (id, version, snapshot.yanked));
-        return Ok((path, manifest, meta));
     }
     match selector {
         TemplateSelector::Path(path) => {
@@ -372,15 +346,12 @@ fn resolve_template_for_instantiate(
             Ok((root, manifest, Some((id.clone(), resolved, yanked))))
         }
         TemplateSelector::ShortName(short) => {
-            if let Some((snap, path)) = find_installed_by_short_name(short).map_err(|e| anyhow!("{e}"))? {
-                let manifest = load_manifest_from_template_root(&path).map_err(|e| anyhow!("{e}"))?;
-                let meta =
-                    snap.package_id.clone().zip(snap.resolved_version.clone()).map(|(id, ver)| (id, ver, snap.yanked));
-                return Ok((path, manifest, meta));
-            }
-
-            let package_id =
-                resolve_package_id(short).map(str::to_string).ok_or_else(|| anyhow!("unknown short name `{short}`"))?;
+            let package_id = match refetch {
+                Some(package_id) => package_id,
+                None => resolve_package_id(short)
+                    .map(str::to_string)
+                    .ok_or_else(|| anyhow!("unknown short name `{short}`"))?,
+            };
             match fetch_registry_template(registry, &package_id, None) {
                 Ok((root, version, yanked)) => {
                     let manifest = load_manifest_from_template_root(&root).map_err(|e| anyhow!("{e}"))?;
@@ -404,6 +375,100 @@ fn resolve_template_for_instantiate(
                 Err(e) => Err(e),
             }
         }
+    }
+}
+
+/// What the installed template cache offers for one selector.
+enum InstalledLookup {
+    /// A verified installation: its files match the record this toolchain wrote.
+    Use(PathBuf, TemplateManifest, Option<(String, String, bool)>),
+    /// A registry installation that cannot be verified (an older toolchain installed it, or its
+    /// files changed): fetch this package again and reinstall it.
+    Refetch(String),
+    NotInstalled,
+}
+
+/// Whether an installed template can be used as recorded.
+enum InstalledState {
+    Verified(TemplateManifest),
+    Stale(&'static str),
+}
+
+/// Verify an installation against the record this toolchain writes: a versioned tree digest
+/// (`sha256-template-tree-v1:`) that matches the installed files, and the same identity.
+fn installed_state(snapshot: &InstallSnapshot, path: &Path) -> Result<InstalledState> {
+    if !snapshot.checksum.as_deref().is_some_and(|digest| digest.starts_with(crate::cache::TEMPLATE_CHECKSUM_PREFIX)) {
+        return Ok(InstalledState::Stale("an older toolchain installed it"));
+    }
+    let manifest = load_manifest_from_template_root(path).map_err(|e| anyhow!("{e}"))?;
+    if snapshot.identity != manifest.identity
+        || snapshot.short_name != manifest.short_name
+        || snapshot.checksum.as_deref() != Some(crate::checksum_dir(path).map_err(|e| anyhow!("{e}"))?.as_str())
+    {
+        return Ok(InstalledState::Stale("its files no longer match its installation record"));
+    }
+    Ok(InstalledState::Verified(manifest))
+}
+
+/// The command that reinstalls `snapshot` with this toolchain.
+fn reinstall_command(snapshot: &InstallSnapshot) -> String {
+    let short = &snapshot.short_name;
+    match snapshot.source {
+        InstallSource::Registry => {
+            format!("beskid package template install {}", snapshot.package_id.as_deref().unwrap_or(short))
+        }
+        InstallSource::Path => format!("beskid package template install {short} --path <template directory>"),
+        InstallSource::Git => format!("beskid package template install {short} --git <repository url>"),
+        InstallSource::Bundled => format!("beskid package template install {short}"),
+    }
+}
+
+/// Look `selector` up in the installed template cache. Offline, the selector must name exactly one
+/// verified installation. Online, a verified installation of the short name is used as it is and
+/// an unverifiable registry installation is fetched again; other selectors go to their source.
+fn installed_for_selector(
+    installed: Vec<(InstallSnapshot, PathBuf)>,
+    selector: &TemplateSelector,
+    offline: bool,
+) -> Result<InstalledLookup> {
+    let candidates = installed
+        .into_iter()
+        .filter(|(snapshot, _)| match selector {
+            TemplateSelector::ShortName(name) => snapshot.short_name == *name,
+            TemplateSelector::Package { id, version } => {
+                snapshot.package_id.as_ref() == Some(id)
+                    && version.as_ref().is_none_or(|version| snapshot.resolved_version.as_ref() == Some(version))
+            }
+            _ => false,
+        })
+        .collect::<Vec<_>>();
+    if offline && candidates.len() != 1 {
+        anyhow::bail!(
+            "offline template cache requires one verified installed match; install online with `beskid package template install`, then select its short name"
+        );
+    }
+    let Some((snapshot, path)) = candidates.into_iter().next() else {
+        return Ok(InstalledLookup::NotInstalled);
+    };
+    match installed_state(&snapshot, &path)? {
+        InstalledState::Verified(manifest) => {
+            let meta =
+                snapshot.package_id.zip(snapshot.resolved_version).map(|(id, version)| (id, version, snapshot.yanked));
+            Ok(InstalledLookup::Use(path, manifest, meta))
+        }
+        InstalledState::Stale(reason) if offline => anyhow::bail!(
+            "installed template `{}` cannot be used offline: {reason}; run `{}` online once to reinstall it",
+            snapshot.short_name,
+            reinstall_command(&snapshot)
+        ),
+        InstalledState::Stale(_) if snapshot.source == InstallSource::Registry => {
+            Ok(InstalledLookup::Refetch(snapshot.package_id.unwrap_or(snapshot.short_name)))
+        }
+        InstalledState::Stale(reason) => anyhow::bail!(
+            "installed template `{}` cannot be used: {reason}; run `{}` to reinstall it",
+            snapshot.short_name,
+            reinstall_command(&snapshot)
+        ),
     }
 }
 
@@ -705,6 +770,89 @@ mod tests {
         assert!(instantiate_template(request).is_err());
         assert_eq!(std::fs::read(output.join("README.md")).unwrap(), b"existing");
         assert_eq!(std::fs::read(output.join("unplanned.txt")).unwrap(), b"keep me\n");
+    }
+
+    /// An installation record as `install_from_tree` writes it, or with an older digest.
+    fn installed(fixture: &Fixture, source: InstallSource, checksum: String) -> (InstallSnapshot, PathBuf) {
+        let snapshot = InstallSnapshot {
+            identity: "test.overwrite".into(),
+            short_name: "overwrite-test".into(),
+            package_id: (source == InstallSource::Registry).then(|| "test.templates.overwrite".into()),
+            resolved_version: (source == InstallSource::Registry).then(|| "0.1.0".into()),
+            checksum: Some(checksum),
+            installed_at: "0".into(),
+            source,
+            yanked: false,
+        };
+        (snapshot, fixture.template_root.clone())
+    }
+
+    fn short_name() -> TemplateSelector {
+        TemplateSelector::ShortName("overwrite-test".into())
+    }
+
+    #[test]
+    fn verified_installation_is_used_offline_and_online() {
+        let fixture = Fixture::new();
+        let digest = crate::checksum_dir(&fixture.template_root).unwrap();
+        for offline in [true, false] {
+            let lookup = installed_for_selector(
+                vec![installed(&fixture, InstallSource::Registry, digest.clone())],
+                &short_name(),
+                offline,
+            )
+            .unwrap();
+            assert!(matches!(lookup, InstalledLookup::Use(..)), "offline={offline}");
+        }
+    }
+
+    /// A registry installation an older toolchain wrote has an unversioned digest. Offline it
+    /// names the reinstall command; online it is fetched again instead of being used unverified.
+    #[test]
+    fn installation_from_an_older_toolchain_is_reinstalled_online_and_named_offline() {
+        let fixture = Fixture::new();
+        let legacy = "3d149b03ecefe41e3a6cebe33cc311af6c7ff4a0292de324e3d4bd87155dc51e".to_string();
+        let error = installed_for_selector(
+            vec![installed(&fixture, InstallSource::Registry, legacy.clone())],
+            &short_name(),
+            true,
+        )
+        .err()
+        .expect("an unverifiable installation is not used offline")
+        .to_string();
+        assert!(
+            error.contains("an older toolchain installed it")
+                && error.contains("`beskid package template install test.templates.overwrite`"),
+            "{error}"
+        );
+        let online = installed_for_selector(
+            vec![installed(&fixture, InstallSource::Registry, legacy.clone())],
+            &short_name(),
+            false,
+        )
+        .unwrap();
+        assert!(
+            matches!(&online, InstalledLookup::Refetch(id) if id == "test.templates.overwrite"),
+            "an unverifiable registry installation is fetched again online"
+        );
+        let path = installed_for_selector(vec![installed(&fixture, InstallSource::Path, legacy)], &short_name(), false)
+            .err()
+            .expect("an unverifiable path installation is not used online either")
+            .to_string();
+        assert!(path.contains("--path <template directory>"), "{path}");
+    }
+
+    #[test]
+    fn installation_whose_files_changed_is_not_used() {
+        let fixture = Fixture::new();
+        let digest = crate::checksum_dir(&fixture.template_root).unwrap();
+        std::fs::write(fixture.template_root.join("README.md"), "edited after installation\n").unwrap();
+        let error =
+            installed_for_selector(vec![installed(&fixture, InstallSource::Registry, digest)], &short_name(), true)
+                .err()
+                .expect("a changed installation is not used offline")
+                .to_string();
+        assert!(error.contains("no longer match"), "{error}");
     }
 
     #[test]

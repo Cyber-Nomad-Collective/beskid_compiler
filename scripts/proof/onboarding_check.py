@@ -9,7 +9,7 @@ Runs in a fresh temporary HOME so nothing from the developer machine leaks in:
   4. optionally (--soak PATH) a short language-server pass over the generated projects, with the
      installed `beskid_lsp`, failing on any crash report: "no editor errors"
 
-A step fails on a nonzero exit (except `test` reporting that the template has no tests), a timeout,
+A step fails on a nonzero exit, a timeout,
 a signal, or an internal-error signature (an E21xx internal diagnostic, E4041, panic text, ...).
 The editor extension install itself is the one manual step on a fresh macOS user; this script covers
 everything the extension relies on.
@@ -40,7 +40,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _proof_common as common  # noqa: E402
 
-NO_TESTS = re.compile(r"no tests? (were )?(found|discovered|selected)|(?<![\d.,])0 tests?\b(?! (failed|passed))", re.IGNORECASE)
+# `beskid test` on a project without tests prints exactly this line and exits 0 (like `cargo test`).
+NO_TESTS = re.compile(r"^No tests found\.$", re.MULTILINE)
 
 
 def tool_dirs():
@@ -63,8 +64,8 @@ def restricted_path(prefix):
 
 def step_status(name, result, patterns):
     signatures = common.classify(result.output, result.returncode, result.timed_out, patterns)
-    if name == "test" and result.returncode != 0 and not signatures and NO_TESTS.search(result.output):
-        return "skipped (no tests)", []
+    if name == "test" and result.returncode == 0 and not signatures and NO_TESTS.search(result.output):
+        return "ok (no tests)", []
     if signatures:
         return "FAIL", signatures
     return ("ok" if result.returncode == 0 else "FAIL"), []

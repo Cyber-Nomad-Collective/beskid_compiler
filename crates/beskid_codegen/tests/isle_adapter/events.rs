@@ -22,14 +22,18 @@ unit Main() {
     let event_only_layout = input.aggregate_object_layout(event_only).expect("physical EventOnly layout");
     let mixed_layout = input.aggregate_object_layout(mixed).expect("physical Mixed layout");
 
-    // The managed allocator clears the whole object before publishing it; the event slots need
-    // only be reserved and included in the descriptor's pointer map, not explicitly stored.
-    assert_eq!(event_only_layout.object_size, 32, "two null-initialized event slots follow the 16-byte header");
-    assert_eq!(event_only_layout.pointer_map_offsets.as_ref(), &[16, 24]);
+    // The managed allocator clears the whole object before publishing it, so each inline event
+    // state (a handler count word, then one handler word per capacity) starts empty. Only the
+    // handler words are in the pointer map: the collector traces handlers through the owner.
+    let handler_words = |state: u64, capacity: u64| (0..capacity).map(move |index| state + 8 + 8 * index);
+    let event_only_map = handler_words(16, 2).chain(handler_words(40, 16)).collect::<Vec<_>>();
+    assert_eq!(event_only_layout.object_size, 176, "First (2 handlers) and Removed (default 16) follow the header");
+    assert_eq!(event_only_layout.pointer_map_offsets.as_ref(), event_only_map.as_slice());
     assert_eq!(event_only_layout.fields.len(), 0, "events are not readable value fields");
     assert_eq!(mixed_layout.fields.iter().map(|field| field.field_offset).collect::<Vec<_>>(), [16, 24]);
-    assert_eq!(mixed_layout.object_size, 48, "event slots append after ordinary value storage");
-    assert_eq!(mixed_layout.pointer_map_offsets.as_ref(), &[32, 40]);
+    assert_eq!(mixed_layout.object_size, 208, "event states append after ordinary value storage");
+    let mixed_map = handler_words(32, 4).chain(handler_words(72, 16)).collect::<Vec<_>>();
+    assert_eq!(mixed_layout.pointer_map_offsets.as_ref(), mixed_map.as_slice());
 
     let event_layouts = find_nodes_of_kind(db, root, beskid_queries::IndexedNodeKind::Field)
         .into_iter()
@@ -37,10 +41,14 @@ unit Main() {
         .collect::<Vec<_>>();
     assert_eq!(
         event_layouts.iter().map(|event| event.slot_offset).collect::<Vec<_>>(),
-        [16, 24, 32, 40],
-        "the generation-bound fact owns each source event slot"
+        [16, 40, 32, 72],
+        "the generation-bound fact owns each inline event state"
     );
-    assert_eq!(event_layouts.iter().map(|event| event.capacity).collect::<Vec<_>>(), [2, 0, 4, 0]);
+    assert_eq!(
+        event_layouts.iter().map(|event| event.capacity).collect::<Vec<_>>(),
+        [2, 16, 4, 16],
+        "an event without a capacity takes the default capacity 16"
+    );
     assert!(event_layouts.iter().all(|event| event.owner_type == event_only || event.owner_type == mixed));
 
     let literals = find_nodes_of_kind(db, root, beskid_queries::IndexedNodeKind::StructLiteralExpression);
@@ -58,7 +66,7 @@ unit Main() {
         .collect::<Vec<_>>();
     assert_eq!(plans[0].object_size, plans[1].object_size);
     assert_ne!(plans[0].allocation_request_symbol, plans[1].allocation_request_symbol);
-    assert_eq!(plans[0].pointer_map_offsets.as_ref(), &[16, 24]);
+    assert_eq!(plans[0].pointer_map_offsets.as_ref(), event_only_map.as_slice());
 }
 
 #[test]
@@ -217,7 +225,7 @@ unit Main() {
 }
 
 #[test]
-fn event_selector_rejects_stale_keys_and_does_not_lower_unbounded_declarations_as_capacity_zero() {
+fn event_selector_rejects_stale_keys_and_lowers_events_without_a_capacity_at_the_default() {
     let (input, _isa, root) = item_fixture_with_root(EVENT_SOURCE);
     let db = input.database();
     let operation = find_nodes_of_kind(db, root, beskid_queries::IndexedNodeKind::AssignExpression)
@@ -229,24 +237,44 @@ fn event_selector_rejects_stale_keys_and_does_not_lower_unbounded_declarations_a
         beskid_queries::AstNodeKey { generation: beskid_analysis::syntax::SyntaxGenerationId(u64::MAX), ..operation };
     assert!(facts.event_operation(stale).is_none(), "stale generations do not select the event rule");
 
-    let (unbounded_input, _isa, unbounded_root) = item_fixture_with_root(
-        "type User { event Changed(); } unit Main(User u) { unit() handler = () => { return; }; u.Changed += handler; return; }",
+    let (default_input, isa, default_root) = item_fixture_with_root(
+        "type User { i64 count; event Changed(i64 value); unit Raise(i64 value) { Changed(value); this.Changed(value); } }\n\
+         unit Main(User u) { unit(i64) handler = (i64 value) => { return; }; u.Changed += handler; u.Raise(3_i64); return; }",
     );
-    let unbounded_db = unbounded_input.database();
-    let unbounded_operation =
-        find_nodes_of_kind(unbounded_db, unbounded_root, beskid_queries::IndexedNodeKind::AssignExpression)
-            .into_iter()
-            .next()
-            .expect("unbounded subscription syntax");
-    let fact = beskid_queries::event_operation(unbounded_db, unbounded_operation)
+    let default_db = default_input.database();
+    let subscribe = find_nodes_of_kind(default_db, default_root, beskid_queries::IndexedNodeKind::AssignExpression)
+        .into_iter()
+        .next()
+        .expect("subscription syntax");
+    let fact = beskid_queries::event_operation(default_db, subscribe)
         .expect("event query")
         .expect("declaration and handler are semantically resolved");
-    assert_eq!(fact.capacity, 0, "zero is only the query's absent-capacity sentinel");
-    let unbounded_facts = beskid_codegen::isle_adapter::SyntaxNodeFacts::new(&unbounded_input);
-    assert!(
-        unbounded_facts.event_operation(unbounded_operation).is_none(),
-        "the unresolved v0.5 default must not be encoded as an invalid capacity-zero ABI call"
-    );
+    assert_eq!(fact.capacity, 16, "an event without a capacity takes the default capacity");
+    let default_facts = beskid_codegen::isle_adapter::SyntaxNodeFacts::new(&default_input);
+    assert!(default_facts.event_operation(subscribe).is_some(), "the subscription lowers at the default capacity");
+    let raises = find_nodes_of_kind(default_db, default_root, beskid_queries::IndexedNodeKind::CallExpression)
+        .into_iter()
+        .filter(|call| {
+            beskid_queries::event_operation(default_db, *call)
+                .expect("event raise query")
+                .is_some_and(|fact| fact.operation == beskid_queries::EventOperationKind::Raise)
+        })
+        .count();
+    assert_eq!(raises, 2, "the bare and the `this.` spelling both raise the event");
+    let items = find_function_definitions(default_db, default_root)
+        .into_iter()
+        .chain(find_nodes_of_kind(default_db, default_root, beskid_queries::IndexedNodeKind::MethodDefinition))
+        .filter_map(|key| {
+            beskid_queries::item_name(default_db, key)
+                .ok()
+                .flatten()
+                .map(|name| SyntaxModuleItem { key, symbol: name.to_string() })
+        })
+        .collect::<Vec<_>>();
+    let artifact = lower_syntax_program(&default_input, isa.as_ref(), &items)
+        .unwrap_or_else(|error| panic!("events without a capacity lower: {error}"));
+    let main = artifact.functions.iter().find(|function| function.name == "Main").expect("lowered Main");
+    assert!(main.function.display().to_string().contains("iconst.i64 16"), "subscribe passes the default capacity");
 }
 
 #[test]
