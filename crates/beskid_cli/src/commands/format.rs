@@ -446,6 +446,20 @@ mod v06_tests {
         assert_eq!(leftovers, 2, "no temporary file is left behind");
     }
 
+    /// Projects without a source directory (an aggregate such as `corelib.bproj`, a schema-only
+    /// package such as `pest_gen_schema.bproj`) once recursed until the stack overflowed.
+    #[test]
+    fn fmt_walks_projects_without_a_source_directory() {
+        let corelib = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corelib");
+        for project in ["beskid_corelib", "packages/pest-gen-schema"] {
+            let dir = corelib.join(project);
+            let paths = collect_bd_files(&dir, true).unwrap_or_else(|error| panic!("{project}: {error:#}"));
+            assert!(paths.iter().all(|path| path.starts_with(&dir)), "{project}: {paths:?}");
+        }
+        let schema_only = collect_bd_files(&corelib.join("packages/pest-gen-schema"), true).unwrap();
+        assert_eq!(schema_only, Vec::<PathBuf>::new(), "a schema-only package has no sources to format");
+    }
+
     #[test]
     fn v067_fmt_fails_on_a_parse_error_and_leaves_the_file_unchanged() {
         let root = temp_root("broken");

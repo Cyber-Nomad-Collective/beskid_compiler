@@ -502,3 +502,25 @@ fn doubled_commas_between_match_arms_are_formatted() {
     assert!(formatted.contains("        1 => 10,\n        _ => 20,\n"), "{formatted}");
     assert_eq!(fmt(&formatted), formatted);
 }
+
+#[test]
+fn enum_variants_declared_with_empty_parentheses_are_formatted() {
+    let formatted = fmt("pub enum DisposeError { Failed(), Busy(i64 code), }\n");
+    assert_eq!(formatted, "pub enum DisposeError\n{\n    Failed,\n    Busy(i64 code),\n}\n");
+}
+
+#[test]
+fn events_keep_their_parameter_names_and_a_space_after_the_keyword() {
+    let source = "pub type OnResize { pub i32 lastSize; event{16} OnResize(ConsoleSize  size , i32 n); }\ntype User { event{4} created(string payload); event changed(); }\n";
+    let formatted = fmt(source);
+    assert!(formatted.contains("    event{16} OnResize(ConsoleSize size, i32 n);\n"), "{formatted}");
+    assert!(formatted.contains("    event{4} created(string payload);\n"), "{formatted}");
+    assert!(formatted.contains("    event changed();\n"), "{formatted}");
+    assert_eq!(fmt(&formatted), formatted);
+}
+
+#[test]
+fn word_suffixed_literals_format_inside_calls() {
+    let formatted = fmt("u64 F() { return Foreign.glue_allocate(4_word); }\n");
+    assert!(formatted.contains("    return Foreign.glue_allocate(4_word);\n"), "{formatted}");
+}
