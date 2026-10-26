@@ -72,8 +72,11 @@ class NoTestsDetection(unittest.TestCase):
         patterns = common.ice_patterns()
         failing = common.RunResult(["t"], 1, "ran 10 tests, 3 failed", 0.1, False)
         self.assertEqual(onboarding_check.step_status("test", failing, patterns)[0], "FAIL")
-        zero = common.RunResult(["t"], 1, "0 tests", 0.1, False)
-        self.assertEqual(onboarding_check.step_status("test", zero, patterns)[0], "skipped (no tests)")
+        none = common.RunResult(["t"], 0, "No tests found.\n", 0.1, False)
+        self.assertEqual(onboarding_check.step_status("test", none, patterns)[0], "ok (no tests)")
+        # A failing run is a failure even when it mentions that no tests were found.
+        refused = common.RunResult(["t"], 1, "No tests found.\n", 0.1, False)
+        self.assertEqual(onboarding_check.step_status("test", refused, patterns)[0], "FAIL")
 
     def test_restricted_path_keeps_bash_dir(self):
         path = onboarding_check.restricted_path(Path("/p"))
@@ -106,6 +109,47 @@ class SweepSetup(unittest.TestCase):
             common.run = orig_run
         self.assertEqual(corpus.new_ice, 1)
         self.assertIn("rust panic", corpus.first)
+
+
+class SweepTemplates(unittest.TestCase):
+    """Templates run under a private configuration; a template that fails to install or to
+    instantiate fails the sweep instead of being skipped."""
+
+    def test_templates_install_into_a_private_config_and_failures_count(self):
+        calls = []
+
+        def fake_run(cmd, **kw):
+            calls.append((list(map(str, cmd)), (kw.get("env") or {}).get("BESKID_CONFIG_DIR")))
+            if "new" in map(str, cmd):
+                return common.RunResult(cmd, 1, "offline cache digest version is unsupported", 0.1, False)
+            return common.RunResult(cmd, 0, "", 0.1, False)
+
+        class Args:
+            beskid = "/bin/beskid"
+            timeout = 5
+
+        with tempfile.TemporaryDirectory() as tmp:
+            packages = Path(tmp) / "packages"
+            (packages / "console" / ".beskid").mkdir(parents=True)
+            (packages / "console" / ".beskid" / "template.json").write_text('{"shortName": "console"}')
+            Args.templates_dir = str(packages)
+            corpus = ice_sweep.Corpus("templates")
+            original_discover, original_run = common.discover_templates, common.run
+            common.discover_templates = lambda beskid, env=None: (
+                [("console", "Project")],
+                common.RunResult(["l"], 0, "", 0, False),
+            )
+            common.run = fake_run
+            try:
+                roots = ice_sweep.generate_templates(Args, Path(tmp) / "work", corpus, common.ice_patterns())
+            finally:
+                common.discover_templates, common.run = original_discover, original_run
+        private = str(Path(tmp) / "work" / "template-config")
+        self.assertEqual(roots, [])
+        self.assertEqual(calls[0][0][1:5], ["package", "template", "install", "console"])
+        self.assertTrue(all(config == private for _, config in calls), calls)
+        self.assertEqual(corpus.new_failed, 1)
+        self.assertEqual(ice_sweep.summarize([corpus])[1], 1)
 
 
 class RunnerValidation(unittest.TestCase):

@@ -10,7 +10,10 @@ Corpora (each is copied to a work directory first; the originals are never touch
   corelib    <compiler>/corelib, without mods
   mods       <compiler>/corelib/mods
   fixtures   <compiler>/crates/*/fixtures (Beskid fixtures; many are deliberately broken)
-  templates  every project/workspace template from `beskid new --list`, instantiated with `beskid new`
+  templates  every project/workspace template from `beskid new --list`, instantiated with `beskid new
+             --offline` under a private template configuration (BESKID_CONFIG_DIR in the work
+             directory), so templates that another toolchain installed never take part;
+             --templates-dir installs a template checkout into it first, with this toolchain
   lings      the beskid-lings exercises and solutions (--lings)
 Mutation: `beskid-mutate plan` picks (file, kind) pairs from every corpus (delete a token,
 duplicate a line, swap two tokens; deterministic per --seed); each mutant is written into the
@@ -21,6 +24,8 @@ usage: ice_sweep.py --beskid PATH --mutate PATH [--compiler DIR] [--lings DIR] [
   --mutate PATH          beskid-mutate binary (cargo build -p beskid_proof) (required)
   --compiler DIR         compiler checkout (default: this script's checkout)
   --lings DIR            beskid-lings checkout (default: none, corpus skipped)
+  --templates-dir DIR    template packages to install first (`<dir>/*/.beskid/template.json`, e.g.
+                         beskid_templates/packages); default: only the templates bundled in the CLI
   --corpora LIST         comma list of corelib,mods,fixtures,templates,lings (default all available)
   --commands LIST        clean-run commands (default check,build,test)
   --seed N               mutation seed (default 1)
@@ -29,12 +34,14 @@ usage: ice_sweep.py --beskid PATH --mutate PATH [--compiler DIR] [--lings DIR] [
   --work-dir DIR         default: fresh temporary directory (kept on failure)
   --ice-pattern REGEX    extra internal-error signature, repeatable
   --out FILE             JSON report path
-Exit status: 0 no internal error, 1 internal errors found, 2 usage/setup error.
+Exit status: 0 no internal error, 1 internal errors found (or a template that does not install or
+instantiate), 2 usage/setup error.
 """
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import sys
 import tempfile
@@ -55,6 +62,7 @@ class Corpus:
         self.mutation = {"planned": 0, "run": 0, "check_accepted": 0, "ice": 0, "timeouts": 0, "skipped": 0}
         self.first = {}  # signature -> example
         self.new_ice = 0  # `beskid new` runs that showed an internal error or timed out
+        self.new_failed = 0  # template installs and `beskid new` runs that failed without one
 
 
 def record(corpus, signature, example):
@@ -95,7 +103,7 @@ def build_corpora(args, work, patterns=()):
     if wanted is None or "templates" in wanted:
         corpus = Corpus("templates")
         templates = generate_templates(args, work, corpus, patterns)
-        if templates or corpus.new_ice:
+        if templates or corpus.new_ice or corpus.new_failed:
             corpus.roots = templates
             corpora.append(corpus)
         elif wanted is not None:
@@ -103,8 +111,53 @@ def build_corpora(args, work, patterns=()):
     return corpora, missing
 
 
+def template_env(work):
+    """A private template configuration: only templates this toolchain installs take part."""
+    env = dict(os.environ)
+    env["BESKID_CONFIG_DIR"] = str(work / "template-config")
+    return env
+
+
+def template_step(corpus, patterns, result, phase, command, project):
+    """Record one template install or `beskid new` run; True when it succeeded."""
+    signatures = common.classify(result.output, result.returncode, result.timed_out, patterns)
+    example = {
+        "phase": phase, "command": command, "project": project,
+        "returncode": result.returncode, "excerpt": common.excerpt(result.output, patterns),
+    }
+    if signatures:
+        corpus.new_ice += 1
+        for signature in signatures:
+            record(corpus, signature, example)
+        return False
+    if result.returncode != 0:
+        corpus.new_failed += 1
+        record(corpus, f"{phase} failed", example)
+        print(f"[sweep] {command}: failed (rc={result.returncode})", file=sys.stderr)
+        return False
+    return True
+
+
+def install_templates(args, env, corpus, patterns):
+    """Install every template package of --templates-dir with this toolchain (a path install)."""
+    templates_dir = getattr(args, "templates_dir", None)
+    if not templates_dir:
+        return
+    for manifest in sorted(Path(templates_dir).glob("*/.beskid/template.json")):
+        package = manifest.parent.parent
+        short = json.loads(manifest.read_text()).get("shortName") or package.name
+        result = common.run(
+            [args.beskid, "package", "template", "install", short, "--path", package],
+            timeout=args.timeout,
+            env=env,
+        )
+        template_step(corpus, patterns, result, "install", f"package template install {short}", str(package))
+
+
 def generate_templates(args, work, corpus, patterns):
-    names, listing = common.discover_templates(args.beskid)
+    env = template_env(work)
+    install_templates(args, env, corpus, patterns)
+    names, listing = common.discover_templates(args.beskid, env=env)
     listing_signatures = common.classify(listing.output, listing.returncode, listing.timed_out, patterns)
     if listing_signatures:
         corpus.new_ice += 1
@@ -125,19 +178,10 @@ def generate_templates(args, work, corpus, patterns):
             [args.beskid, "new", f"proof_{short.replace('-', '_')}", "--template", short, "--offline", "--no-interactive", "-o", out],
             cwd=base,
             timeout=args.timeout,
+            env=env,
         )
-        signatures = common.classify(result.output, result.returncode, result.timed_out, patterns)
-        if signatures:
-            corpus.new_ice += 1
-            for signature in signatures:
-                record(corpus, signature, {
-                    "phase": "new", "command": f"new --template {short}", "project": str(out),
-                    "returncode": result.returncode, "excerpt": common.excerpt(result.output, patterns),
-                })
-        if result.returncode == 0 and out.is_dir():
+        if template_step(corpus, patterns, result, "new", f"new --template {short}", str(out)) and out.is_dir():
             roots.append(out)
-        else:
-            print(f"[sweep] template {short}: `beskid new` failed (rc={result.returncode}); skipped", file=sys.stderr)
     return roots
 
 
@@ -221,7 +265,7 @@ def summarize(corpora):
     for corpus in corpora:
         clean_ice = sum(s["ice"] + s["timeouts"] for s in corpus.stats.values())
         mutation_ice = corpus.mutation["ice"] + corpus.mutation["timeouts"]
-        failures += clean_ice + mutation_ice + corpus.new_ice
+        failures += clean_ice + mutation_ice + corpus.new_ice + corpus.new_failed
         runs = ", ".join(
             f"{c}: {s['runs']} runs/{s['nonzero']} user errors/{s['ice']} internal" for c, s in corpus.stats.items() if s["runs"]
         )
@@ -229,6 +273,8 @@ def summarize(corpora):
         lines.append(f"{corpus.name}: {len(corpus.projects)} projects; {runs or 'no clean runs'}")
         if corpus.new_ice:
             lines.append(f"  `beskid new`: {corpus.new_ice} internal-error or timeout runs")
+        if corpus.new_failed:
+            lines.append(f"  templates: {corpus.new_failed} install or `beskid new` runs failed")
         lines.append(
             f"  mutation: {m['planned']} planned, {m['run']} run, {m['check_accepted']} accepted by check, "
             f"{m['ice']} internal, {m['timeouts']} timeouts, {m['skipped']} skipped"
@@ -237,7 +283,7 @@ def summarize(corpora):
             where = example.get("project") or example.get("file")
             lines.append(f"  FIRST {signature}: {example['phase']} {example['command']} {where}")
             lines.append("    " + example["excerpt"].replace("\n", "\n    "))
-    lines.append(f"RESULT: {'FAIL' if failures else 'PASS'} ({failures} internal-error or timeout runs)")
+    lines.append(f"RESULT: {'FAIL' if failures else 'PASS'} ({failures} internal-error, timeout or template runs)")
     return lines, failures
 
 
@@ -247,6 +293,7 @@ def main(argv=None):
     parser.add_argument("--mutate", required=True)
     parser.add_argument("--compiler", default=str(Path(__file__).resolve().parents[2]))
     parser.add_argument("--lings")
+    parser.add_argument("--templates-dir")
     parser.add_argument("--corpora")
     parser.add_argument("--commands", default=",".join(CLEAN_COMMANDS))
     parser.add_argument("--seed", type=int, default=1)
