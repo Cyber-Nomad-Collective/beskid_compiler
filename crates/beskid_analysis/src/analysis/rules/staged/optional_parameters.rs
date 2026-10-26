@@ -14,8 +14,9 @@ use crate::syntax::{ContractNode, HostBodyItem, MethodDefinition, Node, Paramete
 
 const HOOK: &str = "a parameter of an `init`, `dispose` or `startup` hook";
 const BULK: &str = "a `bulk` parameter";
-const HOST_CALLER: &str =
-    "a caller-information parameter of a host or scope (`launch` and `with` are statements, not calls)";
+/// A caller-information attribute on a host or scope parameter: the attribute is what is rejected
+/// (the parameter may still have a default value), so the message says so.
+const HOST_CALLER: &str = "a host or scope parameter (`launch` and `with` are statements, not calls)";
 
 impl SemanticPipelineRule {
     pub(super) fn stage_optional_parameters(&self, ctx: &mut RuleContext, program: &Program) {
@@ -266,11 +267,11 @@ mod tests {
             [
                 (
                     "E1254".to_string(),
-                    "a caller-information parameter of a host or scope (`launch` and `with` are statements, not calls) cannot be optional".to_string()
+                    "caller information is not allowed on a host or scope parameter (`launch` and `with` are statements, not calls)".to_string()
                 ),
                 (
                     "E1254".to_string(),
-                    "a caller-information parameter of a host or scope (`launch` and `with` are statements, not calls) cannot be optional".to_string()
+                    "caller information is not allowed on a host or scope parameter (`launch` and `with` are statements, not calls)".to_string()
                 ),
             ]
         );
