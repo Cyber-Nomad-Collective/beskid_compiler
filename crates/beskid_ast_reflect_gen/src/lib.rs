@@ -298,7 +298,8 @@ pub fn write_formatted_bd(path: &Path, text: &str) -> std::io::Result<()> {
     fs::write(path, format_bd(path, text)?)
 }
 
-fn format_bd(path: &Path, text: &str) -> std::io::Result<String> {
+/// `text` printed by the formatter, as [`write_formatted_bd`] writes it; `path` names it in errors.
+pub fn format_bd(path: &Path, text: &str) -> std::io::Result<String> {
     beskid_analysis::format::format_source(&path.display().to_string(), text)
         .map_err(|error| std::io::Error::other(format!("generated {} does not format: {error}", path.display())))
 }

@@ -27,10 +27,20 @@ impl SyntaxNodeFacts<'_> {
         }
     }
 
+    /// A `bool` literal at `key`, looking through grouping parentheses: `beskid fmt` writes a
+    /// loop condition as `while (true)`, which must stay a statically-true condition.
     pub(super) fn boolean_literal_impl(&self, key: AstNodeKey) -> Option<bool> {
-        match self.literal(key)? {
-            LiteralFact::Bool(value) => Some(value),
-            _ => None,
+        let mut node = key;
+        loop {
+            if let Some(LiteralFact::Bool(value)) = self.literal(node) {
+                return Some(value);
+            }
+            match self.query(node_kind(self.db, node))? {
+                beskid_queries::IndexedNodeKind::Expression | beskid_queries::IndexedNodeKind::GroupedExpression => {
+                    node = *self.raw_children(node).first()?;
+                }
+                _ => return None,
+            }
         }
     }
 
