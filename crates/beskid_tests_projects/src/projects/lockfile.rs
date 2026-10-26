@@ -1,7 +1,7 @@
 use std::fs;
 
 use beskid_analysis::projects::{
-    PortableLockPath, PortableLockPathBaseKind, ProjectError, ProjectLockfile,
+    PortableLockPath, PortableLockPathBaseKind, ProjectLockfile,
 };
 
 const PATH_LOCK: &str = "# Project.lock v3\nroot_manifest=Project.proj\nproject_name=App\ndependencies:\n- name=Shared;source=path;project=../shared;manifest=Project.proj;source_root=Src;materialized_root=obj/beskid/deps/src/shared\n";
