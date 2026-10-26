@@ -10,8 +10,8 @@
 //! - trailing commas before `}`, `)` or `]` (the printer writes none in argument, parameter and
 //!   array lists, and one after every member of a braced list), and an optional `;` before `}`
 //!   (a contract embedding); repeated commas between match arms collapse to one;
-//! - empty `()` at the places the parse recorded (a nullary enum constructor or enum pattern, an
-//!   attribute without arguments), in the input only;
+//! - empty `()` at the places the parse recorded (a nullary enum constructor, pattern or variant
+//!   declaration, an attribute without arguments), in the input only;
 //! - parentheses around a single lambda parameter.
 //!
 //! Anything else that differs (a string interpolation printed as `+` concatenation, a lost
@@ -43,14 +43,15 @@ pub(crate) fn opaque_tokens<'i>(pairs: impl Iterator<Item = Pair<'i, Rule>>, out
 }
 
 /// Source offsets of the `(` of empty parentheses the printer omits: a nullary enum constructor
-/// (`E::None()`), an enum pattern without fields (`E::A()`) and an attribute without arguments
-/// (`[Mark()]`). Parentheses that hold a comment are not recorded (the file is then refused).
+/// (`E::None()`), an enum pattern without fields (`E::A()`), an enum variant declared without
+/// fields (`enum E { A() }`) and an attribute without arguments (`[Mark()]`). Parentheses that hold a comment are not recorded (the file is then refused).
 pub(crate) fn omitted_empty_parens<'i>(pairs: impl Iterator<Item = Pair<'i, Rule>>, out: &mut Vec<usize>) {
     for pair in pairs {
         let (head, list) = match pair.as_rule() {
             Rule::enum_constructor_with_args => (Rule::EnumPath, Rule::ArgumentList),
             Rule::EnumPattern => (Rule::EnumPath, Rule::PatternList),
             Rule::Attribute => (Rule::Identifier, Rule::AttributeArgumentList),
+            Rule::EnumVariant => (Rule::Identifier, Rule::FieldList),
             _ => {
                 omitted_empty_parens(pair.into_inner(), out);
                 continue;
