@@ -9,11 +9,13 @@ fn parse_rejects(content: &str) {
 }
 
 #[test]
-fn lock_serialization_has_exact_header_and_sorts_dependencies() {
+fn lock_rejects_out_of_order_entries_and_serializes_sorted() {
     let unsorted = "# Project.lock v3\nroot_manifest=Project.proj\nproject_name=App\ndependencies:\n- name=Zulu;source=path;project=../zulu;manifest=Project.proj;source_root=Src;materialized_root=obj/beskid/deps/src/zulu\n- name=Alpha;source=path;project=../alpha;manifest=Project.proj;source_root=Src;materialized_root=obj/beskid/deps/src/alpha\n";
     let expected = "# Project.lock v3\nroot_manifest=Project.proj\nproject_name=App\ndependencies:\n- name=Alpha;source=path;project=../alpha;manifest=Project.proj;source_root=Src;materialized_root=obj/beskid/deps/src/alpha\n- name=Zulu;source=path;project=../zulu;manifest=Project.proj;source_root=Src;materialized_root=obj/beskid/deps/src/zulu\n";
 
-    let parsed = ProjectLockfile::parse(unsorted).expect("parse unsorted lock");
+    let error = ProjectLockfile::parse(unsorted).expect_err("an out-of-order lock is not canonical");
+    assert!(error.to_string().contains("sorted by name"), "{error}");
+    let parsed = ProjectLockfile::parse(expected).expect("parse sorted lock");
     assert_eq!(parsed.to_content(), expected);
     assert_eq!(ProjectLockfile::parse(&parsed.to_content()).expect("parse serialized lock").to_content(), expected);
 }
