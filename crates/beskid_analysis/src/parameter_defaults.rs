@@ -248,8 +248,9 @@ pub fn caller_kind(parameter: &Parameter) -> Option<CallerKind> {
     })
 }
 
-/// The value of the top-level `const` of `program` named `name`: any literal a default may be
-/// (boolean, integer, float, character, or a string without interpolation).
+/// The value of the top-level `const` of `program` named `name`, as the literal it holds. The
+/// grammar admits integer `const`s only; the value is read through the same literal rules as a
+/// written default, so a wider `const` grammar needs no change here.
 pub fn top_level_constant(program: &Program, name: &str) -> Option<DefaultConstant> {
     program.items.iter().find_map(|item| match &item.node {
         Node::ConstantDefinition(constant) if constant.node.name.node.name == name => {
@@ -433,15 +434,10 @@ mod tests {
         assert_eq!(constant_of("unit F(bool b = true) { return; }"), Some(DefaultConstant::Bool(true)));
         assert_eq!(constant_of("unit F(i64 b = -1) { return; }"), Some(DefaultConstant::Integer("-1".into())));
         assert_eq!(constant_of("unit F(f64 b = -0.5) { return; }"), Some(DefaultConstant::Float("-0.5".into())));
-        // A `const` of any literal type may be a default, not only an integer one.
+        // A negated `const` is a constant too (the grammar admits integer `const`s only).
         assert_eq!(
-            constant_of("const Name = \"ada\";\nunit F(string b = Name) { return; }"),
-            Some(DefaultConstant::String("\"ada\"".into()))
-        );
-        assert_eq!(constant_of("const On = true;\nunit F(bool b = On) { return; }"), Some(DefaultConstant::Bool(true)));
-        assert_eq!(
-            constant_of("const Ratio = 0.5;\nunit F(f64 b = -Ratio) { return; }"),
-            Some(DefaultConstant::Float("-0.5".into()))
+            constant_of("const Limit = 10;\nunit F(i64 b = -Limit) { return; }"),
+            Some(DefaultConstant::Integer("-10".into()))
         );
         assert_eq!(constant_of("unit F(char c = 'x') { return; }"), Some(DefaultConstant::Char("'x'".into())));
         assert_eq!(

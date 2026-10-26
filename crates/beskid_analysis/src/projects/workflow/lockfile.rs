@@ -696,19 +696,22 @@ pub(super) fn sync_project_lockfile(
             ProjectLockfile::parse(&existing).map(|parsed| parsed == expected_lockfile).unwrap_or(false)
         };
 
-        if existing_matches {
+        // A lock that says the same in another order (entries edited by hand) is accepted, and
+        // an ordinary run writes it back in the canonical order; `--locked` and `--frozen` never
+        // rewrite a lock.
+        if existing_matches && (existing == expected_content || options.locked || options.frozen) {
             return Ok(lock_path);
         }
 
-        if options.frozen {
+        if options.frozen && !existing_matches {
             return Err(ProjectError::LockfileFrozenMode);
         }
 
-        if options.locked {
+        if options.locked && !existing_matches {
             return Err(ProjectError::LockfileOutOfDate { project: plan.project_name.clone() });
         }
         let pin_free = ProjectLockfile::parse(&existing).is_ok_and(|parsed| parsed.is_pin_free());
-        if !options.refresh_lock && !pin_free && existing.starts_with(PROJECT_LOCK_HEADER_V3) {
+        if !existing_matches && !options.refresh_lock && !pin_free && existing.starts_with(PROJECT_LOCK_HEADER_V3) {
             return Err(ProjectError::Validation(
                 "Project.lock is stale: dependency graph changed; run `beskid update`".into(),
             ));

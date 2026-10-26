@@ -144,8 +144,8 @@ impl<'a> UnitBuilder<'a> {
 mod shared_corelib_tests {
     use super::UnitBuilder;
     use crate::projects::assembly::disk_cache_stats;
-    use beskid_artifacts::content_fingerprint;
     use crate::syntax::SyntaxGenerationId;
+    use beskid_artifacts::content_fingerprint;
 
     #[test]
     fn a_shared_corelib_unit_is_built_once_per_process_and_reused_by_other_projects() {
