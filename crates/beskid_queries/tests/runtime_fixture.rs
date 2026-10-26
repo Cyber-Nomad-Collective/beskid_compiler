@@ -262,7 +262,9 @@ fn canonical_network_deadline_call_and_boolean_facts_preserve_signed_clock() {
             let condition_line = source
                 .source
                 .lines()
-                .position(|line| line.contains("effectiveDeadline >= 0 && effectiveDeadline <= clock_monotonic_nanos()"))
+                .position(|line| {
+                    line.contains("effectiveDeadline >= 0 && effectiveDeadline <= clock_monotonic_nanos()")
+                })
                 .expect("production deadline condition line")
                 + 1;
             assert_eq!(binary.op.span.line_col_start.0, condition_line, "actual failing production deadline condition");
