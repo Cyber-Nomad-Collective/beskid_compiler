@@ -15,8 +15,8 @@ from pathlib import Path
 
 SKIP_DIRS = {"obj", ".git", "target", "node_modules", ".beskid"}
 
-# Signatures of an internal compiler error (ticket 01 inventory). Until the ICE-floor slice routes
-# every internal failure to one coded diagnostic, the codes E2101/E2102/E4041 and the raw texts
+# Signatures of an internal compiler error. Until every internal failure is routed to one coded
+# diagnostic, the codes E2101/E2102/E4041 and the raw texts
 # below are the evidence. Extra patterns (for the floor's code) come from --ice-pattern or
 # BESKID_PROOF_ICE_PATTERNS (regexes separated by `|||`).
 _BASE_PATTERNS = [

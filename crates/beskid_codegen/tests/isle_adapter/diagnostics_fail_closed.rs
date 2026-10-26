@@ -396,7 +396,7 @@ fn unknown_import_in_the_unit_of_a_lowered_item_is_rejected_as_e1105() {
     assert!(!rendered.contains("MissingRuleOrFact"), "{rendered}");
 }
 
-/// Design slice 7: an invalid scoped `use` is judged by the legality gate for the items a
+/// An invalid scoped `use` is judged by the legality gate for the items a
 /// lowering request lowers (E1230), not while the typed program is admitted. An item nothing
 /// requested may carry one without poisoning an unrelated request.
 #[test]
@@ -423,7 +423,7 @@ fn invalid_scoped_use_is_rejected_as_e1230_only_when_its_item_is_lowered() {
     assert!(!rendered.contains("MissingRuleOrFact"), "{rendered}");
 }
 
-/// Design slice 2 (E1229): a generic parameter bound to two types by one call is rejected at the
+/// E1229: a generic parameter bound to two types by one call is rejected at the
 /// call only when its item is lowered. An unrelated item lowers alone; requesting both reports
 /// exactly one E1229 and no opaque specialization failure.
 #[test]
@@ -452,7 +452,7 @@ fn generic_parameter_conflict_is_rejected_as_e1229_only_for_the_misusing_item() 
     assert!(!rendered.contains("MissingRuleOrFact"), "{rendered}");
 }
 
-/// Design slice 8: after a clean legality gate, a construct no ISLE rule lowers is a compiler gap.
+/// After a clean legality gate, a construct no ISLE rule lowers is a compiler gap.
 /// It is reported as internal error E2102 carrying the construct and its site, never with a
 /// user-facing code, and converts into a source-excerpt diagnostic at the codegen boundary.
 #[test]
@@ -487,7 +487,7 @@ fn missing_rule_after_a_clean_gate_is_internal_error_e2102_at_its_site() {
     assert!(excerpt.starts_with("code ```beskid"), "the diagnostic points at the construct: `{excerpt}`");
 }
 
-/// Design slice 8: a legality rejection converts into one structured diagnostic per finding with
+/// A legality rejection converts into one structured diagnostic per finding with
 /// the offending unit's source excerpt, so `beskid test` FAIL lines and `beskid build` render
 /// code, label, help and source instead of only `code message at site`.
 #[test]
@@ -763,8 +763,7 @@ fn conditional_expression_branch_mismatch_renders_both_branches_as_related() {
     assert_eq!(labels, ["this branch is `i32`", "this branch is `i64`"]);
 }
 
-/// The ICE floor for growth (beskid-lings preview.2, E2103 "the owner of a collection is not
-/// proven"): a program that checks clean and grows an array that a parameter names, or that a
+/// The ICE floor for growth (E2103 "the owner of a collection is not proven"): a program that checks clean and grows an array that a parameter names, or that a
 /// fresh local names inside a loop, lowers without an internal error.
 #[test]
 fn growth_of_an_array_without_a_proven_owner_is_never_an_internal_error() {
@@ -793,7 +792,7 @@ fn growth_of_an_array_without_a_proven_owner_is_never_an_internal_error() {
     }
 }
 
-/// The ICE floor for method calls on enum values (0.6.7-preview.3 smoke): `list.Get(0).Greet()`
+/// The ICE floor for method calls on enum values: `list.Get(0).Greet()`
 /// on a `Result<Hello, string>` and `option.Count()` on an `Option<i64>` passed check and had no
 /// lowering rule (E2102). Check rejects both with E1257 and tells how to unwrap the payload.
 #[test]

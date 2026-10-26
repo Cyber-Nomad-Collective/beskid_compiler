@@ -1401,7 +1401,7 @@ fn provider_link_flags(link_path: &Path) -> Vec<String> {
 mod tests {
     use super::*;
     #[test]
-    fn v061_owner_provider_link_is_not_dropped_as_unneeded() {
+    fn owner_provider_link_is_not_dropped_as_unneeded() {
         // The exported initializer references a provider export, so no linker (MSVC link.exe,
         // ELF --as-needed, ld64 -dead_strip_dylibs) can drop the provider of an owner whose
         // functions call no provider entry point.

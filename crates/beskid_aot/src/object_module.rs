@@ -206,7 +206,7 @@ impl BeskidObjectModule {
 
     /// Construct a profiled module for `target_triple` or the host ISA when `None`.
     pub fn new(target_triple: Option<&str>, profile: BuildProfile) -> AotResult<Self> {
-        let flags = ObjectCodegenFlags(profile)?;
+        let flags = object_codegen_flags(profile)?;
 
         let isa_builder = if let Some(triple) = target_triple {
             cranelift_codegen::isa::lookup_by_name(triple)
@@ -481,21 +481,17 @@ fn referenced_platform_imports(
     Ok(admitted)
 }
 
-// Matches the external Cranelift settings builder convention used across the AOT pipeline.
-#[allow(non_snake_case)]
-fn ObjectCodegenFlags(profile: BuildProfile) -> AotResult<settings::Flags> {
-    #[allow(non_snake_case)]
-    let mut flagBuilder = beskid_codegen::cranelift_host::production_isa_settings_builder()
+fn object_codegen_flags(profile: BuildProfile) -> AotResult<settings::Flags> {
+    let mut flag_builder = beskid_codegen::cranelift_host::production_isa_settings_builder()
         .map_err(|err| AotError::IsaInit { message: err.to_string() })?;
-    flagBuilder.set("is_pic", "true").map_err(|err| AotError::IsaInit { message: err.to_string() })?;
-    flagBuilder.set("enable_verifier", "true").map_err(|err| AotError::IsaInit { message: err.to_string() })?;
-    #[allow(non_snake_case)]
-    let optimizationLevel = match profile {
+    flag_builder.set("is_pic", "true").map_err(|err| AotError::IsaInit { message: err.to_string() })?;
+    flag_builder.set("enable_verifier", "true").map_err(|err| AotError::IsaInit { message: err.to_string() })?;
+    let optimization_level = match profile {
         BuildProfile::Debug => "none",
         BuildProfile::Release => "speed",
     };
-    flagBuilder.set("opt_level", optimizationLevel).map_err(|err| AotError::IsaInit { message: err.to_string() })?;
-    Ok(settings::Flags::new(flagBuilder))
+    flag_builder.set("opt_level", optimization_level).map_err(|err| AotError::IsaInit { message: err.to_string() })?;
+    Ok(settings::Flags::new(flag_builder))
 }
 
 #[cfg(test)]
@@ -532,16 +528,13 @@ mod tests {
 }
 
 /// Construct the exact ISA used by AOT object emission for a validated ABI target.
-// Matches the external Cranelift settings builder convention used across the AOT pipeline.
-#[allow(non_snake_case)]
-pub(crate) fn ObjectTargetIsa(target: &str) -> AotResult<std::sync::Arc<dyn TargetIsa>> {
-    #[allow(non_snake_case)]
-    let mut flagBuilder = beskid_codegen::cranelift_host::production_isa_settings_builder()
+pub(crate) fn object_target_isa(target: &str) -> AotResult<std::sync::Arc<dyn TargetIsa>> {
+    let mut flag_builder = beskid_codegen::cranelift_host::production_isa_settings_builder()
         .map_err(|err| AotError::IsaInit { message: err.to_string() })?;
-    flagBuilder.set("is_pic", "true").map_err(|err| AotError::IsaInit { message: err.to_string() })?;
+    flag_builder.set("is_pic", "true").map_err(|err| AotError::IsaInit { message: err.to_string() })?;
     cranelift_codegen::isa::lookup_by_name(target)
         .map_err(|err| AotError::IsaInit { message: err.to_string() })?
-        .finish(settings::Flags::new(flagBuilder))
+        .finish(settings::Flags::new(flag_builder))
         .map_err(|err| AotError::IsaInit { message: err.to_string() })
 }
 
@@ -549,13 +542,12 @@ pub(crate) fn ObjectTargetIsa(target: &str) -> AotResult<std::sync::Arc<dyn Targ
 mod profile_tests {
     use cranelift_codegen::settings::OptLevel;
 
-    use super::{BuildProfile, ObjectCodegenFlags};
+    use super::{BuildProfile, object_codegen_flags};
 
     // Test names follow the CamelCase convention used by the AOT profile suite.
-    #[allow(non_snake_case)]
     #[test]
-    fn DebugProfileUsesUnoptimizedVerifiedPicCodegen() {
-        let flags = ObjectCodegenFlags(BuildProfile::Debug).expect("debug codegen flags");
+    fn debug_profile_uses_unoptimized_verified_pic_codegen() {
+        let flags = object_codegen_flags(BuildProfile::Debug).expect("debug codegen flags");
 
         assert_eq!(flags.opt_level(), OptLevel::None);
         assert!(flags.enable_verifier());
@@ -564,10 +556,9 @@ mod profile_tests {
     }
 
     // Test names follow the CamelCase convention used by the AOT profile suite.
-    #[allow(non_snake_case)]
     #[test]
-    fn ReleaseProfileUsesOptimizedVerifiedPicCodegen() {
-        let flags = ObjectCodegenFlags(BuildProfile::Release).expect("release codegen flags");
+    fn release_profile_uses_optimized_verified_pic_codegen() {
+        let flags = object_codegen_flags(BuildProfile::Release).expect("release codegen flags");
 
         assert_eq!(flags.opt_level(), OptLevel::Speed);
         assert!(flags.enable_verifier());

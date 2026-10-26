@@ -1,5 +1,4 @@
 //! Source-range helpers used exclusively by the dependency intent editor.
-#![allow(non_snake_case)]
 use super::{DependencyIntent, DependencyIntentSource};
 use crate::projects::ProjectError;
 use bsol::{BsolBlock, BsolDocument, BsolItem, BsolQuotedString, BsolSpan, BsolValue, write_bsol_value};
@@ -11,7 +10,7 @@ pub(super) struct Edit {
     pub replacement: String,
 }
 
-pub(super) fn Nonempty(value: &str, field: &str) -> Result<(), ProjectError> {
+pub(super) fn nonempty(value: &str, field: &str) -> Result<(), ProjectError> {
     if value.trim().is_empty() {
         return Err(ProjectError::Validation(format!(
             "{field} must not be empty; resolve registry intent before editing"
@@ -19,20 +18,20 @@ pub(super) fn Nonempty(value: &str, field: &str) -> Result<(), ProjectError> {
     }
     Ok(())
 }
-pub(super) fn ValidateIntent(intent: &DependencyIntent) -> Result<(), ProjectError> {
-    Nonempty(&intent.name, "dependency name")?;
+pub(super) fn validate_intent(intent: &DependencyIntent) -> Result<(), ProjectError> {
+    nonempty(&intent.name, "dependency name")?;
     match &intent.source {
         DependencyIntentSource::Registry { registry, version } => {
-            Nonempty(version, "resolved dependency version")?;
+            nonempty(version, "resolved dependency version")?;
             if let Some(registry) = registry {
-                Nonempty(registry, "registry name")?;
+                nonempty(registry, "registry name")?;
             }
         }
         DependencyIntentSource::Path(path) => {
             let value = path
                 .to_str()
                 .ok_or_else(|| ProjectError::Validation("dependency path must be valid Unicode".into()))?;
-            Nonempty(value, "dependency path")?;
+            nonempty(value, "dependency path")?;
             if path.is_absolute() {
                 return Err(ProjectError::Validation(
                     "dependency path intent must remain relative to the selected project".into(),
@@ -42,36 +41,36 @@ pub(super) fn ValidateIntent(intent: &DependencyIntent) -> Result<(), ProjectErr
     }
     Ok(())
 }
-pub(super) fn Quoted(text: &str) -> Result<String, ProjectError> {
+pub(super) fn quoted(text: &str) -> Result<String, ProjectError> {
     write_bsol_value(&BsolValue::QuotedString(BsolQuotedString { span: BsolSpan::default(), value: text.to_owned() }))
         .map_err(|error| ProjectError::Parse(error.to_string()))
 }
-pub(super) fn Newline(original: &str) -> &'static str {
+pub(super) fn newline(original: &str) -> &'static str {
     match original.find('\n') {
         Some(position) if position > 0 && original.as_bytes()[position - 1] == b'\r' => "\r\n",
         _ => "\n",
     }
 }
-pub(super) fn RenderIntent(intent: &DependencyIntent, newline: &str) -> Result<String, ProjectError> {
-    let mut text = format!("dependency {} {{{newline}", Quoted(&intent.name)?);
+pub(super) fn render_intent(intent: &DependencyIntent, newline: &str) -> Result<String, ProjectError> {
+    let mut text = format!("dependency {} {{{newline}", quoted(&intent.name)?);
     match &intent.source {
         DependencyIntentSource::Registry { registry, version } => {
-            text.push_str(&format!("  source = \"registry\"{newline}  version = {}{newline}", Quoted(version)?));
+            text.push_str(&format!("  source = \"registry\"{newline}  version = {}{newline}", quoted(version)?));
             if let Some(registry) = registry {
-                text.push_str(&format!("  registry = {}{newline}", Quoted(registry)?));
+                text.push_str(&format!("  registry = {}{newline}", quoted(registry)?));
             }
         }
         DependencyIntentSource::Path(path) => {
             let path = path
                 .to_str()
                 .ok_or_else(|| ProjectError::Validation("dependency path must be valid Unicode".into()))?;
-            text.push_str(&format!("  source = \"path\"{newline}  path = {}{newline}", Quoted(path)?));
+            text.push_str(&format!("  source = \"path\"{newline}  path = {}{newline}", quoted(path)?));
         }
     }
     text.push_str(&format!("}}{newline}"));
     Ok(text)
 }
-pub(super) fn DependencyBlocks(document: &BsolDocument) -> Result<BTreeMap<&str, &BsolBlock>, ProjectError> {
+pub(super) fn dependency_blocks(document: &BsolDocument) -> Result<BTreeMap<&str, &BsolBlock>, ProjectError> {
     let mut blocks = BTreeMap::new();
     for block in document.blocks.iter().filter(|block| block.kind == "dependency") {
         let name = block
@@ -86,7 +85,7 @@ pub(super) fn DependencyBlocks(document: &BsolDocument) -> Result<BTreeMap<&str,
     }
     Ok(blocks)
 }
-pub(super) fn VersionSpan(block: &BsolBlock) -> Result<BsolSpan, ProjectError> {
+pub(super) fn version_span(block: &BsolBlock) -> Result<BsolSpan, ProjectError> {
     let mut values = block.items.iter().filter_map(|item| match item {
         BsolItem::Assignment(a) if a.key == "version" => Some(a),
         _ => None,
@@ -102,7 +101,7 @@ pub(super) fn VersionSpan(block: &BsolBlock) -> Result<BsolSpan, ProjectError> {
         _ => Err(ProjectError::Validation("dependency version must be explicitly quoted to edit safely".into())),
     }
 }
-pub(super) fn Apply(original: &str, mut edits: Vec<Edit>) -> Result<String, ProjectError> {
+pub(super) fn apply(original: &str, mut edits: Vec<Edit>) -> Result<String, ProjectError> {
     edits.sort_by_key(|edit| edit.start);
     let mut previous = 0;
     for edit in &edits {

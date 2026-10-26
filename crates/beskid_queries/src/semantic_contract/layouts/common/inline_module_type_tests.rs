@@ -1,5 +1,5 @@
 //! Qualified type paths into inline modules (`A.Clock` for `mod A { pub type Clock { .. } }`):
-//! slice host keys composition services by full type identity, so two same-named types in two
+//! composition keys its services by full type identity, so two same-named types in two
 //! inline modules must resolve to two declarations.
 
 use super::*;

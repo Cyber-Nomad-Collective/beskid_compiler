@@ -42,8 +42,7 @@ impl<'a> CliResolveOptions<'a> {
         }
     }
 
-    #[allow(non_snake_case)]
-    pub fn WorkspaceOptions(&self) -> WorkspacePrepareOptions {
+    pub fn workspace_options(&self) -> WorkspacePrepareOptions {
         WorkspacePrepareOptions {
             frozen: self.frozen,
             locked: self.locked,

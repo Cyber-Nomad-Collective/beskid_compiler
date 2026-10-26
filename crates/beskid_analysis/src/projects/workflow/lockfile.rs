@@ -109,107 +109,6 @@ impl ProjectLockDependencyEntry {
     pub fn registry(&self) -> Option<&str> {
         self.registry.as_deref()
     }
-
-    pub fn to_v1_line(&self) -> String {
-        let mut line = format!(
-            "name={};manifest={};project={};source_root={};materialized_root={}",
-            self.name,
-            self.manifest,
-            self.project,
-            self.source_root,
-            self.materialized_root.as_deref().unwrap_or_default()
-        );
-
-        if let Some(version) = &self.resolved_version {
-            line.push_str(";resolved_version=");
-            line.push_str(version);
-        }
-        if let Some(digest) = &self.artifact_digest {
-            line.push_str(";artifact_digest=");
-            line.push_str(digest);
-        }
-        if let Some(registry) = &self.registry {
-            line.push_str(";registry=");
-            line.push_str(registry);
-        }
-
-        line
-    }
-
-    pub fn parse_v1_line(line: &str) -> Result<Self, ProjectError> {
-        let mut name = None;
-        let mut manifest = None;
-        let mut project = None;
-        let mut source_root = None;
-        let mut materialized_root = None;
-        let mut resolved_version = None;
-        let mut artifact_digest = None;
-        let mut registry = None;
-
-        for part in line.split(';') {
-            let (key, value) = part
-                .split_once('=')
-                .ok_or_else(|| ProjectError::Validation(format!("invalid lockfile dependency field `{part}`")))?;
-            match key {
-                "name" if name.replace(value.to_string()).is_some() => {
-                    return Err(ProjectError::Validation("lockfile dependency duplicates `name`".to_string()));
-                }
-                "manifest" if manifest.replace(value.to_string()).is_some() => {
-                    return Err(ProjectError::Validation("lockfile dependency duplicates `manifest`".to_string()));
-                }
-                "project" if project.replace(value.to_string()).is_some() => {
-                    return Err(ProjectError::Validation("lockfile dependency duplicates `project`".to_string()));
-                }
-                "source_root" if source_root.replace(value.to_string()).is_some() => {
-                    return Err(ProjectError::Validation("lockfile dependency duplicates `source_root`".to_string()));
-                }
-                "materialized_root" if materialized_root.replace(value.to_string()).is_some() => {
-                    return Err(ProjectError::Validation(
-                        "lockfile dependency duplicates `materialized_root`".to_string(),
-                    ));
-                }
-                "resolved_version" if resolved_version.replace(value.to_string()).is_some() => {
-                    return Err(ProjectError::Validation(
-                        "lockfile dependency duplicates `resolved_version`".to_string(),
-                    ));
-                }
-                "artifact_digest" if artifact_digest.replace(value.to_string()).is_some() => {
-                    return Err(ProjectError::Validation(
-                        "lockfile dependency duplicates `artifact_digest`".to_string(),
-                    ));
-                }
-                "registry" if registry.replace(value.to_string()).is_some() => {
-                    return Err(ProjectError::Validation("lockfile dependency duplicates `registry`".to_string()));
-                }
-                "name" | "manifest" | "project" | "source_root" | "materialized_root" | "resolved_version"
-                | "artifact_digest" | "registry" => {}
-                _ => {}
-            }
-        }
-
-        Ok(Self {
-            name: name
-                .ok_or_else(|| ProjectError::Validation("lockfile dependency entry missing `name`".to_string()))?,
-            source: if registry.is_some() || resolved_version.is_some() {
-                ProjectLockSource::Registry
-            } else {
-                ProjectLockSource::Path
-            },
-            manifest: manifest
-                .ok_or_else(|| ProjectError::Validation("lockfile dependency entry missing `manifest`".to_string()))?,
-            project: project
-                .ok_or_else(|| ProjectError::Validation("lockfile dependency entry missing `project`".to_string()))?,
-            source_root: source_root.ok_or_else(|| {
-                ProjectError::Validation("lockfile dependency entry missing `source_root`".to_string())
-            })?,
-            materialized_root: Some(materialized_root.ok_or_else(|| {
-                ProjectError::Validation("lockfile dependency entry missing `materialized_root`".to_string())
-            })?),
-            resolved_version,
-            artifact_digest,
-            registry,
-        })
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -317,9 +216,16 @@ impl ProjectLockfile {
             {
                 return Err(ProjectError::Validation("lockfile duplicates a materialized destination".into()));
             }
+            // The writer emits entries sorted by name; a lock in any other order was edited by
+            // hand and is rejected rather than accepted and silently left non-canonical.
+            if dependencies.last().is_some_and(|previous: &ProjectLockDependencyEntry| previous.name > entry.name) {
+                return Err(ProjectError::Validation(format!(
+                    "lockfile dependencies must be sorted by name (`{}` is out of order); run `beskid dev project lock`",
+                    entry.name
+                )));
+            }
             dependencies.push(entry);
         }
-        dependencies.sort_by(|left, right| left.name.cmp(&right.name));
         Ok(Self { root_manifest, project_name, dependencies })
     }
 
@@ -526,81 +432,6 @@ fn encode_value(value: &str) -> String {
     encoded
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct ProjectLockfileV1 {
-    root_manifest: String,
-    project_name: String,
-    dependencies: Vec<ProjectLockDependencyEntry>,
-}
-
-impl ProjectLockfileV1 {
-    fn parse_v1(content: &str) -> Result<Self, ProjectError> {
-        let mut lines = content.lines();
-        let header = lines.next().unwrap_or_default();
-        if header.trim() != PROJECT_LOCK_HEADER_V1 {
-            return Err(ProjectError::Validation("lockfile header must be `# Project.lock v1`".to_string()));
-        }
-
-        let mut root_manifest = None;
-        let mut project_name = None;
-        let mut dependencies = Vec::new();
-        let mut in_dependencies = false;
-
-        for raw in lines {
-            let line = raw.trim();
-            if line.is_empty() {
-                continue;
-            }
-
-            if let Some(value) = line.strip_prefix("root_manifest=") {
-                if root_manifest.is_some() {
-                    return Err(ProjectError::Validation("lockfile duplicates `root_manifest`".to_string()));
-                }
-                root_manifest = Some(value.to_string());
-                continue;
-            }
-            if let Some(value) = line.strip_prefix("project_name=") {
-                if project_name.is_some() {
-                    return Err(ProjectError::Validation("lockfile duplicates `project_name`".to_string()));
-                }
-                project_name = Some(value.to_string());
-                continue;
-            }
-            if line == "dependencies:" {
-                if in_dependencies {
-                    return Err(ProjectError::Validation("lockfile duplicates `dependencies:`".to_string()));
-                }
-                in_dependencies = true;
-                continue;
-            }
-            if in_dependencies {
-                if let Some(entry) = line.strip_prefix("- ") {
-                    dependencies.push(ProjectLockDependencyEntry::parse_v1_line(entry)?);
-                    continue;
-                }
-                return Err(ProjectError::Validation(format!("invalid lockfile dependency line `{line}`")));
-            }
-
-            return Err(ProjectError::Validation(format!("invalid lockfile line `{line}`")));
-        }
-
-        let dependency_names: HashSet<_> = dependencies.iter().map(ProjectLockDependencyEntry::name).collect();
-        if dependency_names.len() != dependencies.len() {
-            return Err(ProjectError::Validation("lockfile duplicates a dependency name".to_string()));
-        }
-
-        let mut parsed = Self {
-            root_manifest: root_manifest
-                .ok_or_else(|| ProjectError::Validation("lockfile missing `root_manifest`".to_string()))?,
-            project_name: project_name
-                .ok_or_else(|| ProjectError::Validation("lockfile missing `project_name`".to_string()))?,
-            dependencies,
-        };
-        parsed.dependencies.sort_by_key(ProjectLockDependencyEntry::to_v1_line);
-        Ok(parsed)
-    }
-}
-
 /// Load dependency lines from `project_root/Project.lock` when the file exists.
 pub fn load_project_lock_dependencies(project_root: &Path) -> Result<Vec<ProjectLockDependencyEntry>, ProjectError> {
     load_project_lock_dependencies_from_path(&project_root.join(PROJECT_LOCK_FILE_NAME))
@@ -675,6 +506,12 @@ pub fn load_project_lock_dependencies_for_plan(
         _ => false,
     };
     if !same_manifest || parsed.project_name != plan.project_name {
+        // A lock that pins nothing beyond Corelib, copied from another project, is regenerated
+        // by the next preparation without a word (`preflight_existing_lock_for_plan`); readers
+        // agree and use the declared roots until then instead of reporting it.
+        if parsed.is_pin_free() {
+            return Ok(Vec::new());
+        }
         return Err(parsed.foreign_lock_error(&plan.project_name));
     }
     let shared_corelib = super::shared_corelib::SharedCorelib::resolve();
@@ -721,10 +558,8 @@ pub(super) fn preflight_existing_lock_for_plan(
     if let Some(retired) = retired_lock(&content) {
         // A retired lock is never replayed. An explicit migration rewrites it; a lock that pins
         // nothing beyond Corelib is regenerated like any other pin-free lock.
+        // The header alone identifies a retired lock; its body is never parsed.
         if options.refresh_lock {
-            if retired.version == 1 {
-                ProjectLockfileV1::parse_v1(&content)?;
-            }
             return Ok(None);
         }
         if retired.pin_free && !options.locked && !options.frozen {

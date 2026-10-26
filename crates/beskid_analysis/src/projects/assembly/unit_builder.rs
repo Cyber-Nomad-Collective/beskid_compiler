@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::{LazyLock, Mutex};
+use std::sync::{Arc, LazyLock, Mutex};
 
 use beskid_artifacts::{ArtifactStore, content_fingerprint};
 
@@ -15,12 +15,16 @@ use super::loader::expand_syntax_for_assembly;
 use crate::syntax::SyntaxGenerationId;
 use crate::syntax_query::SyntaxIndex;
 
-/// Expanded units of the toolchain's shared Corelib, keyed by canonical path and content
-/// fingerprint. Every project of one process reads the same shared files, so a unit built for one
-/// project is reused by the next instead of being parsed and expanded again. A unit is a pure
-/// function of its path and bytes (the on-disk artifact store is content keyed for the same
-/// reason), and the shared Corelib is sealed, so the map holds at most one entry per file.
-static SHARED_CORELIB_UNITS: LazyLock<Mutex<HashMap<(PathBuf, String), SourceUnit>>> = LazyLock::new(Default::default);
+/// Expanded units of the toolchain's shared Corelib, keyed by canonical path, each with the
+/// content fingerprint it was built from. Every project of one process reads the same shared
+/// files, so a unit built for one project is reused by the next instead of being parsed and
+/// expanded again. A unit is a pure function of its path and bytes (the on-disk artifact store is
+/// content keyed for the same reason). The map holds one entry per file: a unit built from other
+/// bytes (the bundle was replaced while a language server ran) evicts the stale one, so a long
+/// session never accumulates versions. Units are shared behind `Arc`; the lock is held only to
+/// clone the handle.
+static SHARED_CORELIB_UNITS: LazyLock<Mutex<HashMap<PathBuf, (String, Arc<SourceUnit>)>>> =
+    LazyLock::new(Default::default);
 
 /// Builds expanded source and generation-bound syntax-index facts with artifact persistence.
 pub struct UnitBuilder<'a> {
@@ -67,23 +71,25 @@ impl<'a> UnitBuilder<'a> {
         generation: SyntaxGenerationId,
     ) -> Result<(SourceUnit, SyntaxIndex), AssemblyError> {
         let fp = content_fingerprint(source);
-        let shared_key = self
-            .shared_corelib_root
-            .as_deref()
-            .filter(|root| path.starts_with(root))
-            .map(|_| (path.to_path_buf(), fp.clone()));
-        let Some(shared_key) = shared_key else {
+        if !self.shared_corelib_root.as_deref().is_some_and(|root| path.starts_with(root)) {
             return self.build_unit_uncached(path, source, &fp, generation);
-        };
-        let reused =
-            SHARED_CORELIB_UNITS.lock().unwrap_or_else(std::sync::PoisonError::into_inner).get(&shared_key).cloned();
+        }
+        let reused = SHARED_CORELIB_UNITS
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get(path)
+            .filter(|(built_from, _)| *built_from == fp)
+            .map(|(_, unit)| Arc::clone(unit));
         if let Some(unit) = reused {
             crate::projects::assembly::unit_cache::record_shared_corelib_hit();
             let syntax_index = SyntaxIndex::from_program(&unit.program, generation);
-            return Ok((unit, syntax_index));
+            return Ok((SourceUnit::clone(&unit), syntax_index));
         }
         let (unit, syntax_index) = self.build_unit_uncached(path, source, &fp, generation)?;
-        SHARED_CORELIB_UNITS.lock().unwrap_or_else(std::sync::PoisonError::into_inner).insert(shared_key, unit.clone());
+        SHARED_CORELIB_UNITS
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .insert(path.to_path_buf(), (fp, Arc::new(unit.clone())));
         Ok((unit, syntax_index))
     }
 
@@ -138,6 +144,7 @@ impl<'a> UnitBuilder<'a> {
 mod shared_corelib_tests {
     use super::UnitBuilder;
     use crate::projects::assembly::disk_cache_stats;
+    use beskid_artifacts::content_fingerprint;
     use crate::syntax::SyntaxGenerationId;
 
     #[test]
@@ -171,8 +178,22 @@ mod shared_corelib_tests {
             .with_shared_corelib(Some(toolchain.path().canonicalize().unwrap()))
             .build_unit(&local, source, SyntaxGenerationId(1))
             .expect("local unit");
+        {
+            let memo = super::SHARED_CORELIB_UNITS.lock().unwrap();
+            assert!(memo.contains_key(&shared));
+            assert!(!memo.contains_key(&local), "a project unit is never shared");
+        }
+
+        // Other bytes for the same shared file (a replaced bundle) evict the stale unit.
+        let edited = "pub i32 Length() { return 2; }\n";
+        let (rebuilt, _) = UnitBuilder::new(second_project.path())
+            .with_shared_corelib(Some(toolchain.path().canonicalize().unwrap()))
+            .build_unit(&shared, edited, SyntaxGenerationId(2))
+            .expect("rebuilt unit");
+        assert_eq!(&*rebuilt.source, edited);
         let memo = super::SHARED_CORELIB_UNITS.lock().unwrap();
-        assert!(memo.keys().any(|(path, _)| path == &shared));
-        assert!(memo.keys().all(|(path, _)| path != &local), "a project unit is never shared");
+        let (built_from, unit) = memo.get(&shared).expect("one entry per shared file");
+        assert_eq!(built_from, &content_fingerprint(edited));
+        assert_eq!(&*unit.source, edited);
     }
 }

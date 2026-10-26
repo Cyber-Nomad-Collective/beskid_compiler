@@ -83,44 +83,81 @@ fn registered_syntax_owner(
 /// Register an expanded syntax assembly as one generation-safe typed-program identity.
 ///
 /// Calls that omit trailing optional arguments are filled once their callees are known
-/// (`semantic_contract::optional_arguments`). A node handle names its generation and one
-/// generation describes one tree, so the callees are found in a scratch database that registers
-/// the parsed assembly, and only the filled assembly is registered here under `generation`. The
+/// (`semantic_contract::optional_arguments`). The parsed assembly is registered under
+/// `generation` first; when some call omits an argument, the callees are found in that same
+/// registration, and only the units whose calls were filled get their filled tree within the same
+/// generation (`refill_expanded_syntax_unit`). Every other unit, and every fact that does not read
+/// a filled unit, stays registered and memoized, so the front end is not run a second time. The
 /// returned typed program carries the filled assembly; later queries and lowering see ordinary
-/// explicit arguments. The scratch pass runs only when some call may omit an argument.
+/// explicit arguments.
 pub fn build_typed_program(
     db: &mut BeskidDatabase,
     project: ProjectSession,
     generation: SyntaxGenerationId,
     assembly: Arc<ProgramAssembly>,
 ) -> Result<TypedProgram, SemanticError> {
-    let assembly = match filled_assembly(db, project, generation, &assembly)? {
-        Some(filled) => Arc::new(filled),
-        None => assembly,
+    use crate::semantic_contract::optional_arguments::{may_omit_arguments, omitted_argument_programs};
+    if !may_omit_arguments(&assembly) {
+        return register_typed_program(db, project, generation, assembly);
+    }
+    // Several builds of one generation (diagnostics, facts, lowering, other entries sharing
+    // units) pass the same parsed trees; a unit that was filled already holds its filled tree.
+    let assembly = with_recorded_fills(db, generation, assembly);
+    let typed = register_typed_program(db, project, generation, Arc::clone(&assembly))?;
+    let Some(programs) = omitted_argument_programs(db, &assembly)? else {
+        return Ok(typed);
     };
-    register_typed_program(db, project, generation, assembly)
+    let filled = Arc::new(assembly.with_programs(programs));
+    for (parsed, filled_unit) in assembly.units.iter().zip(filled.units.iter()) {
+        if parsed.program != filled_unit.program {
+            let unit = SourceUnitId::new(db, filled_unit.path.clone());
+            db.refill_expanded_syntax_unit(unit, generation, Arc::new(filled_unit.program.clone()))?;
+            db.syntax_dependency_registry().lock().expect("syntax dependency registry").filled_units.insert(
+                unit,
+                crate::db::FilledUnit {
+                    generation,
+                    parsed: parsed.program.clone(),
+                    filled: filled_unit.program.clone(),
+                },
+            );
+        }
+    }
+    // The entry's contribution table names node ids of the parsed tree; derive it again.
+    crate::contribution_attribution::forget_contribution_attributions(db, &filled);
+    register_typed_program(db, project, generation, filled)
 }
 
-fn filled_assembly(
+/// `assembly` with each unit's parsed tree replaced by the filled tree recorded for it in this
+/// generation.
+fn with_recorded_fills(
     db: &BeskidDatabase,
-    project: ProjectSession,
     generation: SyntaxGenerationId,
-    assembly: &Arc<ProgramAssembly>,
-) -> Result<Option<ProgramAssembly>, SemanticError> {
-    use crate::semantic_contract::optional_arguments::{may_omit_arguments, omitted_argument_programs};
-    if !may_omit_arguments(assembly) {
-        return Ok(None);
+    assembly: Arc<ProgramAssembly>,
+) -> Arc<ProgramAssembly> {
+    let registry = db.syntax_dependency_registry().lock().expect("syntax dependency registry");
+    if registry.filled_units.is_empty() {
+        return assembly;
     }
-    let mut scratch = BeskidDatabase::default();
-    let scratch_project = ProjectSession::new(
-        &scratch,
-        project.project_root(db),
-        project.entry_path(db),
-        project.target_name(db),
-        project.lockfile_digest(db).clone(),
-    );
-    register_typed_program(&mut scratch, scratch_project, generation, Arc::clone(assembly))?;
-    Ok(omitted_argument_programs(&scratch, assembly)?.map(|programs| assembly.with_programs(programs)))
+    let mut replaced = false;
+    let programs = assembly
+        .units
+        .iter()
+        .map(|unit| {
+            let recorded = registry
+                .filled_units
+                .get(&SourceUnitId::new(db, unit.path.clone()))
+                .filter(|recorded| recorded.generation == generation && recorded.parsed == unit.program);
+            match recorded {
+                Some(recorded) => {
+                    replaced = true;
+                    recorded.filled.clone()
+                }
+                None => unit.program.clone(),
+            }
+        })
+        .collect::<Vec<_>>();
+    drop(registry);
+    if replaced { Arc::new(assembly.with_programs(programs)) } else { assembly }
 }
 
 fn register_typed_program(

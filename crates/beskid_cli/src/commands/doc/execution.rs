@@ -21,7 +21,7 @@ pub fn execute(args: DocArgs) -> Result<()> {
         args.project.project.as_ref(),
         args.project.target.as_deref(),
         args.project.workspace_member.as_deref(),
-        args.lockfile.WorkspaceOptions(),
+        args.lockfile.workspace_options(),
     )?;
     let program =
         services::parse_program_with_source_name(&resolved.source_path.display().to_string(), &resolved.source)

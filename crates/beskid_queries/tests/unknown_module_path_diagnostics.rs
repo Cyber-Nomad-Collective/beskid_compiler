@@ -1,5 +1,5 @@
-//! An unresolved module path is reported once, with `.` paths (preview.1 smoke test: E1108 printed
-//! twice, as `Core::Text` and `Core.Text`).
+//! An unresolved module path is reported once, with `.` paths (E1108 once, as `Core.Text`, never
+//! also as `Core::Text`).
 use beskid_analysis::projects::{AssemblyOptions, CompilePlan, Target, TargetKind, assemble_program_with_materializer};
 use beskid_analysis::services::{PrepareOptions, ResolvedInput};
 use beskid_queries::{

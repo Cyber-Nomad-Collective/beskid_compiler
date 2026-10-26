@@ -30,7 +30,7 @@ pub fn execute(args: LockArgs) -> Result<()> {
                 args.project.project.as_ref(),
                 args.project.target.as_deref(),
                 args.project.workspace_member.as_deref(),
-                args.lockfile.WorkspaceOptions(),
+                args.lockfile.workspace_options(),
                 args.progress.plain,
             )
         },

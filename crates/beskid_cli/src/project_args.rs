@@ -44,8 +44,7 @@ pub struct LockfilePolicyArgs {
 }
 
 impl LockfilePolicyArgs {
-    #[allow(non_snake_case)]
-    pub fn WorkspaceOptions(&self) -> beskid_analysis::projects::WorkspacePrepareOptions {
+    pub fn workspace_options(&self) -> beskid_analysis::projects::WorkspacePrepareOptions {
         beskid_analysis::projects::WorkspacePrepareOptions {
             frozen: self.frozen,
             locked: self.locked,

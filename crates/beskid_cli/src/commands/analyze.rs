@@ -57,7 +57,7 @@ pub fn execute(args: AnalyzeArgs) -> Result<()> {
             .ok_or_else(|| anyhow::anyhow!("`--all-members` needs `--project <workspace.bws or its directory>`"))?;
         let members = workspace_member_manifests(project)?;
         if args.json {
-            return Records::new("check").Run(|records| run_members(&args, &members, Some(records)));
+            return Records::new("check").run(|records| run_members(&args, &members, Some(records)));
         }
         return run_members(&args, &members, None).map(|_| ());
     }
@@ -67,7 +67,7 @@ pub fn execute(args: AnalyzeArgs) -> Result<()> {
     let targets = manifest_targets_to_check(&args);
     let project = args.project.project.as_deref();
     if args.json {
-        return Records::new("check").Run(|records| run_targets(&args, project, &targets, Some(records)));
+        return Records::new("check").run(|records| run_targets(&args, project, &targets, Some(records)));
     }
     run_targets(&args, project, &targets, None).map(|_| ())
 }
@@ -173,7 +173,7 @@ fn is_bsol_manifest(manifest_path: &Path) -> bool {
 /// validation `beskid dev bsol validate <manifest>.bproj` runs.
 fn check_bsol_project(args: &AnalyzeArgs, manifest_path: &Path) -> Result<()> {
     if args.json {
-        return Records::new("check").Run(|_records| validate_bsol_manifest(args, manifest_path));
+        return Records::new("check").run(|_records| validate_bsol_manifest(args, manifest_path));
     }
     validate_bsol_manifest(args, manifest_path).map(|_| ())
 }
@@ -245,12 +245,12 @@ fn run_analyze(
         project.as_ref(),
         target,
         args.project.workspace_member.as_deref(),
-        args.lockfile.WorkspaceOptions(),
+        args.lockfile.workspace_options(),
         args.plain,
     ))?;
     let mod_host = super::compiler_mod::prepare_native_mod_executor(
         &resolved,
-        args.lockfile.WorkspaceOptions(),
+        args.lockfile.workspace_options(),
         Some(pipeline_ui.as_ref()),
     )?;
     let prepare_options = PrepareOptions {
@@ -280,7 +280,7 @@ fn run_analyze(
     let counts = pipeline_ui.report_semantic_diagnostics(&diagnostics);
     if let Some(records) = records {
         for diagnostic in &diagnostics {
-            records.Diagnostic(diagnostic)?;
+            records.diagnostic(diagnostic)?;
         }
     }
     let severity_line = format_severity_summary(counts);

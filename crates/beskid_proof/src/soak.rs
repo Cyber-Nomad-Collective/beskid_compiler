@@ -1,4 +1,4 @@
-//! Language-server soak client (ticket 15).
+//! Language-server soak client.
 //!
 //! Drives `beskid_lsp` over stdio on copies of one or more corpora for a configurable time:
 //! open files, random edits and undo, saves, queries, workspace refreshes and a v1 lock

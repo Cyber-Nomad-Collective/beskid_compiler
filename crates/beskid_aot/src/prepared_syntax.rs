@@ -13,7 +13,7 @@ pub fn lower_prepared_syntax_entrypoint(
     entrypoint: &str,
     target: TargetMetadata,
 ) -> AotResult<beskid_codegen::CodegenArtifact> {
-    let isa = crate::object_module::ObjectTargetIsa(target.triple.as_str())?;
+    let isa = crate::object_module::object_target_isa(target.triple.as_str())?;
     beskid_queries::with_db(|db| {
         beskid_codegen::lower_prepared_syntax_entrypoint(db, front, entrypoint, target, isa.as_ref())
             .map(|lowered| lowered.into_artifact())
@@ -27,7 +27,7 @@ pub fn lower_prepared_syntax_module(
     front: &ExecutableFrontEnd,
     target: TargetMetadata,
 ) -> AotResult<beskid_codegen::CodegenArtifact> {
-    let isa = crate::object_module::ObjectTargetIsa(target.triple.as_str())?;
+    let isa = crate::object_module::object_target_isa(target.triple.as_str())?;
     beskid_queries::with_db(|db| {
         beskid_codegen::lower_prepared_syntax_module(db, front, target, isa.as_ref())
             .map_err(crate::error::AotError::from_lowering)
@@ -41,7 +41,7 @@ pub fn lower_prepared_syntax_library(
     front: &ExecutableFrontEnd,
     target: TargetMetadata,
 ) -> AotResult<beskid_codegen::CodegenArtifact> {
-    let isa = crate::object_module::ObjectTargetIsa(target.triple.as_str())?;
+    let isa = crate::object_module::object_target_isa(target.triple.as_str())?;
     beskid_queries::with_db(|db| {
         beskid_codegen::lower_prepared_syntax_library(db, front, target, isa.as_ref())
             .map_err(crate::error::AotError::from_lowering)
@@ -63,7 +63,7 @@ pub fn lower_canonical_runtime_prepared_syntax(target: TargetMetadata) -> AotRes
     if let Some((_, artifact)) = lowered.iter().find(|(cached, _)| *cached == target) {
         return Ok(artifact.clone());
     }
-    let isa = crate::object_module::ObjectTargetIsa(target.triple.as_str())?;
+    let isa = crate::object_module::object_target_isa(target.triple.as_str())?;
     let artifact = beskid_queries::with_db(|db| {
         beskid_codegen::lower_canonical_runtime_prepared_syntax(db, target.clone(), isa.as_ref())
             .map_err(crate::error::AotError::from_lowering)
@@ -78,7 +78,7 @@ pub fn lower_prepared_syntax_entrypoints(
     entrypoints: &[String],
     target: TargetMetadata,
 ) -> AotResult<beskid_codegen::PreparedSyntaxEntrypoints> {
-    let isa = crate::object_module::ObjectTargetIsa(target.triple.as_str())?;
+    let isa = crate::object_module::object_target_isa(target.triple.as_str())?;
     beskid_queries::with_db(|db| {
         beskid_codegen::lower_prepared_syntax_entrypoints(
             db,
@@ -103,7 +103,7 @@ pub fn lower_frozen_syntax_entrypoints(
     entrypoints: &[String],
     target: TargetMetadata,
 ) -> AotResult<beskid_codegen::PreparedSyntaxEntrypoints> {
-    let isa = crate::object_module::ObjectTargetIsa(target.triple.as_str())?;
+    let isa = crate::object_module::object_target_isa(target.triple.as_str())?;
     let mut db = beskid_queries::BeskidDatabase::default();
     beskid_codegen::lower_prepared_syntax_entrypoints(
         &mut db,
@@ -121,7 +121,7 @@ pub fn lower_prepared_native_mod(
     front: &ExecutableFrontEnd,
     target: TargetMetadata,
 ) -> AotResult<beskid_codegen::PreparedNativeMod> {
-    let isa = crate::object_module::ObjectTargetIsa(target.triple.as_str())?;
+    let isa = crate::object_module::object_target_isa(target.triple.as_str())?;
     beskid_queries::with_db(|db| {
         beskid_codegen::lower_prepared_native_mod(db, front, target, isa.as_ref())
             // Alternate formatting keeps the whole anyhow context chain (phase, site, original
@@ -149,7 +149,7 @@ pub fn with_prepared_glue_input<T, E: From<crate::error::AotError>>(
         &[beskid_codegen::module_emission::SyntaxModuleItem],
     ) -> Result<T, E>,
 ) -> Result<T, E> {
-    crate::object_module::ObjectTargetIsa(target.triple.as_str()).map_err(E::from)?;
+    crate::object_module::object_target_isa(target.triple.as_str()).map_err(E::from)?;
     beskid_queries::with_db(|db| {
         let mut produced = None;
         beskid_codegen::with_prepared_glue_input(db, front, target, |input, items| {

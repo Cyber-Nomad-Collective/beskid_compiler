@@ -1,6 +1,5 @@
 //! `beskid run` — AOT-compile the resolved program and execute it in a subprocess.
 
-#![allow(non_snake_case)]
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -50,12 +49,12 @@ pub struct RunArgs {
 }
 
 /// Usage guidance for `beskid run --json`: the program owns stdout.
-pub fn JsonRejection() -> String {
+pub fn json_rejection() -> String {
     format!(
         "`beskid run` does not support `--json`: stdout carries only the program's output. \
          Machine-readable output is available from: {}. Pass program arguments after `--`, \
          for example `beskid run -- --json`.",
-        crate::machine_output::JsonCommandList()
+        crate::machine_output::json_command_list()
     )
 }
 
@@ -80,7 +79,7 @@ fn run_build_and_execute(args: RunArgs) -> Result<()> {
         CommandSession::open_and_resolve(args.plain, PipelineProgressKind::PrepareAndRun, &resolve_args)?;
     session.set_mod_host(super::compiler_mod::prepare_native_mod_executor(
         &resolved,
-        args.lockfile.WorkspaceOptions(),
+        args.lockfile.workspace_options(),
         Some(session.observer()),
     )?);
     let prepared = session.executable_gate_prepared(&resolved, SemanticGateOptions::default())?;

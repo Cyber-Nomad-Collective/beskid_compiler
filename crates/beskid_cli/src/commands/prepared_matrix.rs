@@ -208,7 +208,7 @@ impl PreparedWorkspace {
         let inputs = targets.iter().map(|name| self.target_input(name)).collect::<Result<Vec<_>>>()?;
         let mod_host = super::compiler_mod::prepare_native_mod_executor_for_inputs(
             &inputs,
-            args.lockfile.WorkspaceOptions(),
+            args.lockfile.workspace_options(),
             Some(self.session.observer()),
         )?;
         self.session.set_mod_host(mod_host);

@@ -706,7 +706,7 @@ fn present_report(args: &TestArgs, report: &MatrixReport) -> Result<()> {
     let failed = report.targets.iter().filter(|target| target.result != TargetResult::Passed).count();
     if args.json {
         let complete = passed == report.selected && !report.timed_out && !report.cancelled;
-        crate::machine_output::Records::new("test").Emit(
+        crate::machine_output::Records::new("test").emit(
             "result",
             if complete { "success" } else { "failure" },
             serde_json::to_value(report)?,

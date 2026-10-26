@@ -295,8 +295,8 @@ pub fn omitted_arguments(parameters: &[Spanned<Parameter>], program: &Program) -
 }
 
 /// `program` with the omitted arguments appended to each call named in `fills` by the span
-/// (`start`, `end`) of its call expression. Appended nodes carry the span of the call's callee
-/// expression; caller information is `file` (the unit's requested path) and the 1-based line and
+/// (`start`, `end`) of its call expression. Appended nodes carry a zero-width span just before
+/// the call's closing parenthesis; caller information is `file` (the unit's requested path) and the 1-based line and
 /// column where the callee expression starts.
 pub fn fill_omitted_arguments(
     program: &Spanned<Program>,
@@ -312,8 +312,11 @@ pub fn fill_omitted_arguments(
         else {
             return expression;
         };
-        let span = call.node.callee.span;
-        let (line, column) = span.line_col_start;
+        // Caller information names where the callee expression starts. The appended nodes have
+        // no source text of their own: they carry a zero-width span just before the closing
+        // parenthesis, which editors skip (no inlay hint, hover or definition lands on them).
+        let (line, column) = call.node.callee.span.line_col_start;
+        let span = synthetic_argument_span(expression.span);
         let mut call = call.clone();
         for argument in arguments {
             call.node.args.push(match argument {
@@ -335,6 +338,14 @@ pub fn fill_omitted_arguments(
         rewrite_item(item, &mut map);
     }
     program
+}
+
+/// A zero-width span just before the closing parenthesis of the call spanned by `call`.
+fn synthetic_argument_span(call: SpanInfo) -> SpanInfo {
+    let at = call.end.saturating_sub(1).max(call.start);
+    let (line, column) = call.line_col_end;
+    let position = (line, column.saturating_sub(1).max(1));
+    SpanInfo { start: at, end: at, line_col_start: position, line_col_end: position }
 }
 
 fn escape(text: &str) -> String {
@@ -560,5 +571,45 @@ mod tests {
             .collect::<HashMap<_, _>>();
         let filled = fill_omitted_arguments(&program, "C:\\a\"b", &fills);
         assert_eq!(emitted_call_arguments(&filled)[0], ["\"C:\\\\a\\\"b\""]);
+    }
+
+    /// Appended arguments have no source text: a zero-width span just before `)`, so no editor
+    /// hint stacks on the callee; caller information still names where the callee starts.
+    #[test]
+    fn appended_arguments_have_a_zero_width_span_before_the_closing_parenthesis() {
+        let source = "unit Run() {\n    Say(1);\n}\n";
+        let program = parse_program(source).expect("parse");
+        let fills = call_spans(&program)
+            .into_iter()
+            .map(|span| {
+                (
+                    span,
+                    vec![
+                        OmittedArgument::Default(DefaultConstant::Integer("-2".into())),
+                        OmittedArgument::Caller(CallerKind::Column),
+                    ],
+                )
+            })
+            .collect::<HashMap<_, _>>();
+        let filled = fill_omitted_arguments(&program, "/app/Main.bd", &fills);
+        let mut arguments = Vec::new();
+        let mut collect = |expression: Spanned<Expression>| {
+            if let Expression::Call(call) = &expression.node {
+                arguments.extend(call.node.args.iter().map(|argument| argument.span));
+            }
+            expression
+        };
+        let mut items = filled.node.items.clone();
+        for item in &mut items {
+            rewrite_item(item, &mut collect);
+        }
+        let close = source.find(");").expect("closing parenthesis");
+        assert_eq!(arguments.len(), 3, "{arguments:?}");
+        assert!(arguments[0].start < arguments[0].end, "the written argument keeps its span");
+        for appended in &arguments[1..] {
+            assert_eq!((appended.start, appended.end), (close, close), "{appended:?}");
+            assert_eq!(appended.line_col_start, (2, 10), "{appended:?}");
+        }
+        assert_eq!(emitted_call_arguments(&filled)[0], ["1", "-2", "5_i64"]);
     }
 }

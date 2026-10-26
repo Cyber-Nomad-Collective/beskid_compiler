@@ -1,8 +1,6 @@
 use std::fs;
 
-use beskid_analysis::projects::{
-    PortableLockPath, PortableLockPathBaseKind, ProjectError, ProjectLockDependencyEntry, ProjectLockfile,
-};
+use beskid_analysis::projects::{PortableLockPath, PortableLockPathBaseKind, ProjectLockfile};
 
 const PATH_LOCK: &str = "# Project.lock v3\nroot_manifest=Project.proj\nproject_name=App\ndependencies:\n- name=Shared;source=path;project=../shared;manifest=Project.proj;source_root=Src;materialized_root=obj/beskid/deps/src/shared\n";
 
@@ -11,34 +9,13 @@ fn parse_rejects(content: &str) {
 }
 
 #[test]
-fn lock_entry_roundtrips_with_optional_fields() {
-    let line = "name=PkgCore;manifest=/tmp/Pkg/Project.proj;project=/tmp/Pkg;source_root=/tmp/Pkg/Src;materialized_root=/tmp/App/obj/beskid/deps/src/pkg;resolved_version=1.2.3;artifact_digest=sha256:abc;registry=default";
-
-    let parsed = ProjectLockDependencyEntry::parse_v1_line(line).expect("parse v1 lock line");
-    assert_eq!(parsed.to_v1_line(), line);
-}
-
-#[test]
-fn lock_entry_roundtrips_without_optional_fields() {
-    let line = "name=Core;manifest=/tmp/Core/Project.proj;project=/tmp/Core;source_root=/tmp/Core/Src;materialized_root=/tmp/App/obj/beskid/deps/src/core";
-
-    let parsed = ProjectLockDependencyEntry::parse_v1_line(line).expect("parse v1 lock line");
-    assert_eq!(parsed.to_v1_line(), line);
-}
-
-#[test]
-fn lock_entry_parse_rejects_missing_required_fields() {
-    let error = ProjectLockDependencyEntry::parse_v1_line("name=Core;manifest=/tmp/Core/Project.proj")
-        .expect_err("missing required fields should fail");
-    assert!(matches!(error, ProjectError::Validation(_)));
-}
-
-#[test]
-fn lock_serialization_has_exact_header_and_sorts_dependencies() {
+fn lock_rejects_out_of_order_entries_and_serializes_sorted() {
     let unsorted = "# Project.lock v3\nroot_manifest=Project.proj\nproject_name=App\ndependencies:\n- name=Zulu;source=path;project=../zulu;manifest=Project.proj;source_root=Src;materialized_root=obj/beskid/deps/src/zulu\n- name=Alpha;source=path;project=../alpha;manifest=Project.proj;source_root=Src;materialized_root=obj/beskid/deps/src/alpha\n";
     let expected = "# Project.lock v3\nroot_manifest=Project.proj\nproject_name=App\ndependencies:\n- name=Alpha;source=path;project=../alpha;manifest=Project.proj;source_root=Src;materialized_root=obj/beskid/deps/src/alpha\n- name=Zulu;source=path;project=../zulu;manifest=Project.proj;source_root=Src;materialized_root=obj/beskid/deps/src/zulu\n";
 
-    let parsed = ProjectLockfile::parse(unsorted).expect("parse unsorted lock");
+    let error = ProjectLockfile::parse(unsorted).expect_err("an out-of-order lock is not canonical");
+    assert!(error.to_string().contains("sorted by name"), "{error}");
+    let parsed = ProjectLockfile::parse(expected).expect("parse sorted lock");
     assert_eq!(parsed.to_content(), expected);
     assert_eq!(ProjectLockfile::parse(&parsed.to_content()).expect("parse serialized lock").to_content(), expected);
 }

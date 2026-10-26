@@ -4,7 +4,8 @@
 //! bundle that toolchain resolves (`BESKID_CORELIB_ROOT`, the installed `<prefix>/beskid_corelib`,
 //! or the per-user managed root). The bundle is content-addressed by its fingerprint marker; it is
 //! verified before use and a modified bundle fails closed. Nothing is copied into a project and
-//! nothing is ever written below the shared root.
+//! no source below the shared root is ever written; the only files written there are the generated
+//! `Project.lock` and `obj/` of a bundle package checked directly, which the seal excludes.
 //!
 //! An unsealed root (a developer's Corelib checkout named by `BESKID_CORELIB_ROOT`) is neither
 //! read-only nor content-addressed, so it is not shared: its packages stay ordinary path
@@ -17,7 +18,10 @@ use beskid_abi::{
     runtime_kit::installed_corelib_root,
 };
 
-use crate::projects::error::ProjectError;
+use crate::projects::{
+    error::ProjectError,
+    workflow::lockfile::{ProjectLockDependencyEntry, ProjectLockSource},
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SharedCorelib {
@@ -25,9 +29,20 @@ pub(crate) struct SharedCorelib {
 }
 
 impl SharedCorelib {
-    /// The shared Corelib of the running toolchain, when a sealed bundle is installed.
+    /// The shared Corelib of the running toolchain, when a sealed bundle is installed. A found
+    /// bundle is remembered per install root, so the canonicalization and marker lookup run once
+    /// per process; an install root without a sealed bundle is looked up again on the next call.
     pub(crate) fn resolve() -> Option<Self> {
-        Self::from_installed_root(&installed_corelib_root().ok()?)
+        static RESOLVED: std::sync::LazyLock<std::sync::Mutex<std::collections::HashMap<PathBuf, SharedCorelib>>> =
+            std::sync::LazyLock::new(Default::default);
+        let installed = installed_corelib_root().ok()?;
+        let mut resolved = RESOLVED.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(shared) = resolved.get(&installed) {
+            return Some(shared.clone());
+        }
+        let shared = Self::from_installed_root(&installed)?;
+        resolved.insert(installed, shared.clone());
+        Some(shared)
     }
 
     /// The shared Corelib whose install root (a bundle holding `beskid_corelib/`, or the
@@ -61,6 +76,21 @@ impl SharedCorelib {
     }
 }
 
+/// Every reader of a lock that names the shared Corelib (CLI preparation, language-server replay,
+/// project explorer) checks its seal first, so an edited bundle is E3032 everywhere and is never
+/// analysed silently.
+pub(crate) fn verify_shared_corelib_for_lock(
+    entries: &[ProjectLockDependencyEntry],
+    shared_corelib: Option<&SharedCorelib>,
+) -> Result<(), ProjectError> {
+    match shared_corelib {
+        Some(shared) if entries.iter().any(|entry| entry.source() == ProjectLockSource::Corelib) => {
+            shared.verify_seal()
+        }
+        _ => Ok(()),
+    }
+}
+
 /// The Corelib package that owns `path` (its manifest's file stem, for example
 /// `corelib_console`) when `path` lies in the running toolchain's shared Corelib.
 pub fn shared_corelib_package_of(path: &Path) -> Option<String> {
@@ -81,7 +111,8 @@ pub fn shared_corelib_package_of(path: &Path) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::SharedCorelib;
+    use super::{SharedCorelib, verify_shared_corelib_for_lock};
+    use crate::projects::workflow::lockfile::ProjectLockfile;
     use beskid_abi::corelib_bundle::{CORELIB_BUNDLE_FINGERPRINT_FILE, fingerprint_corelib_bundle_dir};
     use std::fs;
     use std::path::Path;
@@ -160,5 +191,30 @@ mod tests {
         write(&second.join("packages/core_text/Src/Extra.bd"), "pub i32 Extra() { return 2; }\n");
         a.verify_seal().expect("the untouched toolchain still verifies");
         assert!(b.verify_seal().is_err());
+    }
+
+    #[test]
+    fn every_lock_reader_fails_closed_on_an_edited_shared_corelib() {
+        let temp = tempfile::tempdir().unwrap();
+        corelib_workspace(temp.path());
+        seal(temp.path());
+        let shared = SharedCorelib::from_installed_root(temp.path()).unwrap();
+        let corelib_lock = ProjectLockfile::parse(
+            "# Project.lock v3\nroot_manifest=App.bproj\nproject_name=App\ndependencies:\n\
+             - name=core_text;source=corelib;project=packages/core_text;manifest=core_text.bproj;source_root=Src\n",
+        )
+        .unwrap();
+        let no_corelib =
+            ProjectLockfile::parse("# Project.lock v3\nroot_manifest=App.bproj\nproject_name=App\ndependencies:\n")
+                .unwrap();
+        verify_shared_corelib_for_lock(&corelib_lock.dependencies, Some(&shared)).expect("an intact bundle verifies");
+
+        write(&temp.path().join("packages/core_text/Src/Text.bd"), "pub i32 Length() { return 12345; }\n");
+        let error = verify_shared_corelib_for_lock(&corelib_lock.dependencies, Some(&shared))
+            .expect_err("the language-server replay must see E3032, not analyse the edited bundle");
+        assert_eq!(error.code(), "E3032");
+        // A lock that names no Corelib package, or no shared Corelib at all, has nothing to verify.
+        verify_shared_corelib_for_lock(&no_corelib.dependencies, Some(&shared)).unwrap();
+        verify_shared_corelib_for_lock(&corelib_lock.dependencies, None).unwrap();
     }
 }

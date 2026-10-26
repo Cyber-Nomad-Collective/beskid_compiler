@@ -1,7 +1,7 @@
 //! v0.6.1 Glue extensions: records by value, fieldless enums, call-scoped callbacks and the
 //! generated `beskid` consumer module of a Rust owner.
 //!
-//! Manual first: `v061_glue_extensions_manual_c_abi` builds the hand-written C ABI fixture
+//! Manual first: `glue_extensions_manual_c_abi` builds the hand-written C ABI fixture
 //! (`fixtures/glue/manual/extensions`: a C header with the profile layout, a Rust library and a
 //! Rust consumer that plays the generated adapters' role) with the explicit `rustc`. The
 //! generated case then runs the same behaviour through the owner build, the consumer image and
@@ -33,7 +33,7 @@ fn run_tool(command: &mut Command, label: &str) -> std::process::Output {
 }
 
 #[test]
-fn v061_glue_extensions_manual_c_abi() {
+fn glue_extensions_manual_c_abi() {
     let rustc = require_tool(RUSTC_ENV);
     let work = harness_tempdir("glue-extensions-manual-");
     let root = work.path();
@@ -234,9 +234,9 @@ fn assert_extensions(process: &GlueProcess, packet: &GlueArtifact) {
 }
 
 #[test]
-fn v061_glue_extensions_owned_roundtrip() {
+fn glue_extensions_owned_roundtrip() {
     run_in_private_prefix(
-        "extensions::v061_glue_extensions_owned_roundtrip",
+        "extensions::glue_extensions_owned_roundtrip",
         DriverStaging::Exact,
         ChildProject::Warmed,
         |prefix| {
@@ -253,7 +253,7 @@ fn v061_glue_extensions_owned_roundtrip() {
 /// consumer digest the CLI printed, carry records by value, fieldless enums, call-scoped
 /// callbacks and owner re-entry exactly as the in-process route does.
 #[test]
-fn v066_glue_cli_extensions_records_enums_callbacks_roundtrip() {
+fn glue_cli_extensions_records_enums_callbacks_roundtrip() {
     let work = harness_tempdir("beskid-v066-glue-extensions-cli-");
     let manifest = with_template_project(template_project(), || materialize_extension_project(work.path()));
     let out = work.path().join("out");

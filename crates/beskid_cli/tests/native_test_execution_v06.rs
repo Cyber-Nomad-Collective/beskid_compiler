@@ -43,6 +43,39 @@ fn v06_native_tests_isolate_assertion_failure_and_continue_selected_entries() {
     assert!(!String::from_utf8_lossy(&output.stderr).contains("JIT"));
 }
 
+/// Caller information end to end: `Assert.True(false)` omits `because` and the three caller
+/// parameters; the compiler fills them at the call and the failure record read back at run time
+/// names the line and column where `Assert.True` starts, not the test declaration.
+#[test]
+fn a_failed_assertion_reports_the_caller_information_filled_at_the_call() {
+    // Runs on its own: the staged debug runtime kit stands in for an installed prefix.
+    let root = tempfile::tempdir().unwrap();
+    let input = root.path().join("Main.bd");
+    std::fs::write(&input, "use Testing.Assert;\n\ntest CallerLine {\n      Assert.True(false);\n}\n").unwrap();
+    let prefix = beskid_tests_mod_host::shared_runtime_prefix().expect("staged runtime kit");
+    let output = Command::new(env!("CARGO_BIN_EXE_beskid_cli"))
+        .args(["test", "--plain", "--json"])
+        .arg(&input)
+        .env("BESKID_CONFIG_DIR", root.path().join("config"))
+        .env("BESKID_HOME", root.path().join("toolchain-home"))
+        .env("BESKID_RUNTIME_PREFIX", &prefix)
+        .env("BESKID_RUNTIME_KIT_PROFILE", "debug")
+        .env("OTEL_SDK_DISABLED", "true")
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!output.status.success(), "stdout: {stdout}; stderr: {stderr}");
+    let record: serde_json::Value = serde_json::from_str(stdout.trim())
+        .unwrap_or_else(|error| panic!("stdout is one JSON record ({error}): {stdout}; stderr: {stderr}"));
+    let failure = &record["tests"][0]["failure"];
+    assert_eq!(failure["kind"], "assertion", "{record}");
+    assert!(failure.get("because").is_none(), "an omitted because adds nothing: {record}");
+    let location = &failure["location"];
+    assert!(location["file"].as_str().is_some_and(|file| file.ends_with("Main.bd")), "{record}");
+    assert_eq!((location["line"].as_u64(), location["column"].as_u64()), (Some(4), Some(7)), "{record}");
+}
+
 #[test]
 fn v06_native_tests_budget_terminates_active_process() {
     let started = std::time::Instant::now();

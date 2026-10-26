@@ -249,7 +249,7 @@ pub(super) fn run(args: BuildArgs, tools: RustGlueTools, records: Option<&Record
 
     session.set_mod_host(super::super::compiler_mod::prepare_native_mod_executor(
         &resolved,
-        args.lockfile.WorkspaceOptions(),
+        args.lockfile.workspace_options(),
         Some(session.observer()),
     )?);
     let gated = session.executable_gate_prepared(

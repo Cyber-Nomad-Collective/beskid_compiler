@@ -157,6 +157,11 @@ pub struct SyntaxCompletion {
     /// (`resolve_attribute_use`). Declarations in the current buffer take precedence at
     /// request time, matching resolution step 1.
     pub attributes: Arc<[AttributeCompletionEntry]>,
+    /// Owned member candidates of each member access that ends its line in the buffer (`String.`
+    /// or `point.` while the member is typed), keyed by the offset just after the dot. Captured
+    /// from the buffer's completion repair when its facts were built, so a later registration of
+    /// the same unit (the workspace scan, another buffer) cannot take them away.
+    pub member_access: Arc<[(usize, Arc<[beskid_queries::CompletionCandidate]>)]>,
 }
 
 /// One attribute visible from the entry unit with the target list E1510 checks against.

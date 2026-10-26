@@ -56,13 +56,29 @@ pub fn handle_completion(
             if !current.is_empty() {
                 return current;
             }
+            let completion_prefix = &doc.text[context.replacement_start..context.replacement_end];
+            // A member access that ends its line (`String.`, `point.`): members captured when the
+            // buffer's facts were built.
+            if let Some((_, candidates)) =
+                completion.member_access.iter().find(|(offset, _)| *offset == context.replacement_start)
+            {
+                return candidates
+                    .iter()
+                    .filter(|candidate| candidate.label.starts_with(completion_prefix))
+                    .cloned()
+                    .map(|mut candidate| {
+                        candidate.replacement_start = context.replacement_start;
+                        candidate.replacement_end = context.replacement_end;
+                        candidate
+                    })
+                    .collect();
+            }
             let before = doc.text[..context.replacement_start].trim_end();
             let Some(before_dot) = before.strip_suffix('.') else {
                 return current;
             };
             let receiver =
                 before_dot.rsplit(|ch: char| !ch.is_ascii_alphanumeric() && ch != '_').next().unwrap_or_default();
-            let completion_prefix = &doc.text[context.replacement_start..context.replacement_end];
             completion
                 .dependency_surface
                 .iter()
@@ -242,6 +258,7 @@ mod tests {
                 entry_anchor: Some(anchor),
                 dependency_surface: Arc::from([]),
                 attributes: Arc::from([]),
+                member_access: Arc::from([]),
             }),
             syntax_inlay_hints: Vec::new(),
             syntax_documentation: Vec::new(),
@@ -370,6 +387,7 @@ mod tests {
                 entry_anchor: Some(anchor),
                 dependency_surface: Arc::from([]),
                 attributes: Arc::from([]),
+                member_access: Arc::from([]),
             }),
             syntax_inlay_hints: Vec::new(),
             syntax_documentation: Vec::new(),

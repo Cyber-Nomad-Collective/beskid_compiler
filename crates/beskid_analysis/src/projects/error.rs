@@ -44,10 +44,13 @@ pub enum ProjectError {
         "Project.lock uses the retired v{version} format; migrate it with `beskid dev project lock` or `beskid update --all`"
     )]
     LockfileFormatRetired { version: u32 },
-    /// The toolchain's shared Corelib bundle no longer matches its fingerprint marker.
+    /// The toolchain's shared Corelib bundle no longer matches its fingerprint marker. Its sources
+    /// are read-only; the only files written below it are the generated `Project.lock` and `obj/`
+    /// of a bundle package checked directly, which the seal excludes.
     #[error(
-        "the shared Corelib at {root} does not match its seal (a file was changed, added or removed); the shared \
-         Corelib is read-only, reinstall the toolchain or run `beskid dev corelib`"
+        "the shared Corelib at {root} does not match its seal (a source file was changed, added or removed); \
+         its sources are read-only; run any `beskid` command (for example `beskid check`) to restore it from \
+         the toolchain, then restart the language server"
     )]
     SharedCorelibModified { root: PathBuf },
     /// The block that opens the project manifest is named differently from `name`.

@@ -1,5 +1,4 @@
 //! Read-only installation observations.
-#![allow(non_snake_case)]
 use crate::machine_output::Records;
 use anyhow::Result;
 use clap::Args;
@@ -31,14 +30,14 @@ impl Finding {
     fn problem(component: impl Into<String>, status: &'static str, detail: impl Into<String>) -> Self {
         Self { component: component.into(), status, detail: detail.into(), next: Some(REPAIR) }
     }
-    pub fn IsProblem(&self) -> bool {
+    pub fn is_problem(&self) -> bool {
         self.status != "ok"
     }
 }
 
 /// Observe the host target, installed prefix, both runtime kit profiles and the Corelib bundle
 /// without installing, provisioning or touching credentials.
-pub fn Observe() -> Result<Vec<Finding>> {
+pub fn observe() -> Result<Vec<Finding>> {
     let target = beskid_abi::runtime_kit::host_runtime_target()?;
     let mut findings = vec![Finding::ok("host", target.triple.as_str())];
     let prefix = match beskid_abi::runtime_kit::installed_toolchain_prefix() {
@@ -77,10 +76,10 @@ pub fn Observe() -> Result<Vec<Finding>> {
 
 pub fn execute(args: DoctorArgs) -> Result<()> {
     if args.json {
-        return Records::new("doctor").Run(|records| {
-            let findings = Observe()?;
+        return Records::new("doctor").run(|records| {
+            let findings = observe()?;
             for finding in &findings {
-                records.Emit(
+                records.emit(
                     "finding",
                     finding.status,
                     serde_json::json!({
@@ -90,23 +89,23 @@ pub fn execute(args: DoctorArgs) -> Result<()> {
                     }),
                 )?;
             }
-            Verdict(&findings)?;
+            verdict(&findings)?;
             Ok(serde_json::json!({ "findings": findings.len() }))
         });
     }
-    let findings = Observe()?;
+    let findings = observe()?;
     for finding in &findings {
-        if finding.IsProblem() {
+        if finding.is_problem() {
             eprintln!("doctor: {} {}: {}; {}", finding.component, finding.status, finding.detail, REPAIR);
         } else {
             println!("{}: {}", finding.component, finding.detail);
         }
     }
-    Verdict(&findings)
+    verdict(&findings)
 }
 
-fn Verdict(findings: &[Finding]) -> Result<()> {
-    let problems = findings.iter().filter(|finding| finding.IsProblem()).count();
+fn verdict(findings: &[Finding]) -> Result<()> {
+    let problems = findings.iter().filter(|finding| finding.is_problem()).count();
     if problems != 0 {
         anyhow::bail!("doctor: {problems} installation problem(s) found; {REPAIR}");
     }
@@ -120,12 +119,12 @@ mod tests {
     #[test]
     fn v06_doctor_problem_findings_name_next_action() {
         let finding = Finding::problem("Corelib", "missing", "Corelib bundle missing at /x");
-        assert!(finding.IsProblem());
+        assert!(finding.is_problem());
         assert_eq!(finding.next, Some(REPAIR));
         assert!(REPAIR.contains("beskid toolchain update"));
-        assert!(!Finding::ok("host", "x86_64-unknown-linux-gnu").IsProblem());
-        let error = Verdict(&[finding]).unwrap_err().to_string();
+        assert!(!Finding::ok("host", "x86_64-unknown-linux-gnu").is_problem());
+        let error = verdict(&[finding]).unwrap_err().to_string();
         assert!(error.contains("1 installation problem") && error.contains("toolchain update"), "{error}");
-        assert!(Verdict(&[Finding::ok("host", "t")]).is_ok());
+        assert!(verdict(&[Finding::ok("host", "t")]).is_ok());
     }
 }

@@ -1,5 +1,4 @@
 //! `--error-format`, accepted by the commands that report compiler diagnostics.
-#![allow(non_snake_case)]
 
 use beskid_tools::diagnostics::{ErrorFormat, set_error_format};
 use clap::{Args, ValueEnum};
@@ -24,7 +23,7 @@ pub struct ErrorFormatArgs {
 }
 
 impl ErrorFormatArgs {
-    pub fn Format(self) -> ErrorFormat {
+    pub fn format(self) -> ErrorFormat {
         match self.error_format {
             ErrorFormatArg::Human => ErrorFormat::Human,
             ErrorFormatArg::Json => ErrorFormat::Json,
@@ -33,7 +32,7 @@ impl ErrorFormatArgs {
 }
 
 /// The `--error-format` of `command`, for the commands that accept it.
-pub fn ErrorFormatOf(command: &Commands) -> Option<ErrorFormatArgs> {
+pub fn error_format_of(command: &Commands) -> Option<ErrorFormatArgs> {
     match command {
         Commands::Check(args) => Some(args.diagnostics),
         Commands::Build(args) => Some(args.diagnostics),
@@ -49,8 +48,8 @@ pub fn ErrorFormatOf(command: &Commands) -> Option<ErrorFormatArgs> {
 }
 
 /// Apply the invocation's `--error-format` to every diagnostic this process writes.
-pub fn ApplyErrorFormat(command: &Commands) {
-    set_error_format(ErrorFormatOf(command).map(ErrorFormatArgs::Format).unwrap_or_default());
+pub fn apply_error_format(command: &Commands) {
+    set_error_format(error_format_of(command).map(ErrorFormatArgs::format).unwrap_or_default());
 }
 
 #[cfg(test)]
@@ -61,7 +60,7 @@ mod tests {
 
     fn format_of(arguments: &[&str]) -> Option<ErrorFormat> {
         let cli = Cli::try_parse_from(arguments).expect("arguments parse");
-        ErrorFormatOf(&cli.command).map(ErrorFormatArgs::Format)
+        error_format_of(&cli.command).map(ErrorFormatArgs::format)
     }
 
     #[test]

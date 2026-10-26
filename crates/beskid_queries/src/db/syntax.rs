@@ -170,6 +170,38 @@ impl BeskidDatabase {
         Ok(input)
     }
 
+    /// Replace the expanded tree of `unit` within its current `generation` by `filled`: the same
+    /// tree with omitted optional arguments appended to its calls. Only `build_typed_program`
+    /// calls this, between registering the parsed assembly and returning the typed program, so no
+    /// node handle of the parsed tree escapes; Salsa re-derives every fact that read this unit.
+    /// A canonical SDK or Dynamic unit is proven against a fresh parse and must pass every
+    /// argument, so it is never refilled.
+    pub(crate) fn refill_expanded_syntax_unit(
+        &mut self,
+        unit: SourceUnitId,
+        generation: beskid_analysis::syntax::SyntaxGenerationId,
+        filled: Arc<beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>>,
+    ) -> Result<(), SemanticError> {
+        let input =
+            self.syntax_unit(unit).ok_or_else(|| SemanticError::new("a refilled source unit is not registered"))?;
+        let revision = input.revision(self);
+        if revision.generation != generation {
+            return Err(SemanticError::new("omitted arguments are filled only within the registered generation"));
+        }
+        if revision.runtime_source_authority.is_some() || revision.sdk_source_authority.is_some() {
+            return Err(SemanticError::new("canonical SDK and Dynamic sources must pass every argument"));
+        }
+        let tree_fingerprint = Arc::<str>::from(expanded_syntax_fingerprint(&filled)?);
+        let syntax_index = Arc::new(beskid_analysis::syntax_query::SyntaxIndex::from_program(&filled, generation));
+        self.syntax_index_build_count.fetch_add(1, Ordering::Relaxed);
+        let mut next = revision.as_ref().clone();
+        next.expanded_program = filled;
+        next.syntax_index = syntax_index;
+        next.tree_fingerprint = tree_fingerprint;
+        input.set_revision(self).to(Arc::new(next));
+        Ok(())
+    }
+
     fn register_expanded_syntax(
         &mut self,
         project: ProjectSession,

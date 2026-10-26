@@ -1,4 +1,3 @@
-#![allow(non_snake_case)]
 use beskid_abi::abi_v5::{ABI_V5, AbiManifestV5, RuntimeAuditMetadata, TargetMetadata};
 use beskid_abi::runtime_kit::{BuildProfile, RuntimeArtifact, RuntimeArtifacts, RuntimeKitMetadata};
 use beskid_up::{DirectInstall, ReleaseManifest};
@@ -92,21 +91,21 @@ fn v06_verified_complete_install_switches_and_rejects_tampering() {
     let storage = tempfile::tempdir().unwrap();
     let store = DirectInstall::new(storage.path());
     let (_source, bytes, manifest) = fixture("0.6.0", false);
-    let prefix = store.InstallArchive(&manifest, TARGET, &bytes).unwrap();
+    let prefix = store.install_archive(&manifest, TARGET, &bytes).unwrap();
     store.activate(&manifest.version).unwrap();
-    assert_eq!(store.ActivePrefix().unwrap(), Some(prefix.clone()));
+    assert_eq!(store.active_prefix().unwrap(), Some(prefix.clone()));
     let original_active = fs::read(storage.path().join("active")).unwrap();
     let (_source2, bytes2, manifest2) = fixture("0.6.1", true);
-    assert!(store.InstallArchive(&manifest2, TARGET, &bytes2).is_err());
+    assert!(store.install_archive(&manifest2, TARGET, &bytes2).is_err());
     assert_eq!(fs::read(storage.path().join("active")).unwrap(), original_active);
     let mut changed = bytes.clone();
     changed[0] ^= 1;
-    assert!(store.InstallArchive(&manifest, TARGET, &changed).is_err());
+    assert!(store.install_archive(&manifest, TARGET, &changed).is_err());
     assert_eq!(fs::read(storage.path().join("active")).unwrap(), original_active);
     let (_source3, bytes3, manifest3) = fixture("0.6.1", false);
-    let second_prefix = store.InstallArchive(&manifest3, TARGET, &bytes3).unwrap();
+    let second_prefix = store.install_archive(&manifest3, TARGET, &bytes3).unwrap();
     store.activate(&manifest3.version).unwrap();
-    assert_eq!(store.ActivePrefix().unwrap(), Some(second_prefix));
+    assert_eq!(store.active_prefix().unwrap(), Some(second_prefix));
     assert!(prefix.join("bin/beskid").is_file(), "previous immutable toolchain remains installed");
     let second_active = fs::read(storage.path().join("active")).unwrap();
     fs::write(prefix.join("bin/beskid"), b"tampered").unwrap();
@@ -118,7 +117,7 @@ fn v06_failed_active_replace_retains_prior_pointer() {
     let storage = tempfile::tempdir().unwrap();
     let store = DirectInstall::new(storage.path());
     let (_source, bytes, manifest) = fixture("0.6.0", false);
-    store.InstallArchive(&manifest, TARGET, &bytes).unwrap();
+    store.install_archive(&manifest, TARGET, &bytes).unwrap();
     fs::create_dir(storage.path().join("active")).unwrap();
     fs::write(storage.path().join("active/keep"), b"prior pointer conflict").unwrap();
     assert!(store.activate(&manifest.version).is_err());
@@ -127,32 +126,32 @@ fn v06_failed_active_replace_retains_prior_pointer() {
 
 #[test]
 fn v06_owner_receipts_bind_complete_inventory_and_active_direct_coordinate() {
-    use beskid_up::{InspectInstallation, InstallationOwner, WriteOwnerReceipt};
+    use beskid_up::{InstallationOwner, inspect_installation, write_owner_receipt};
     let storage = tempfile::tempdir().unwrap();
     let store = DirectInstall::new(storage.path());
     let (_source, bytes, manifest) = fixture("0.6.0", false);
-    let prefix = store.InstallArchive(&manifest, TARGET, &bytes).unwrap();
+    let prefix = store.install_archive(&manifest, TARGET, &bytes).unwrap();
     let executable = prefix.join("bin/beskid");
-    let inactive = InspectInstallation(&executable, &store).unwrap();
+    let inactive = inspect_installation(&executable, &store).unwrap();
     assert_eq!(inactive.owner, Some(InstallationOwner::Direct));
     assert!(!inactive.direct_update_allowed);
     store.activate(&manifest.version).unwrap();
-    assert!(InspectInstallation(&executable, &store).unwrap().direct_update_allowed);
-    assert!(WriteOwnerReceipt(&prefix, InstallationOwner::Debian, &manifest.version, TARGET).is_err());
+    assert!(inspect_installation(&executable, &store).unwrap().direct_update_allowed);
+    assert!(write_owner_receipt(&prefix, InstallationOwner::Debian, &manifest.version, TARGET).is_err());
     fs::write(prefix.join("unlisted-payload"), b"foreign").unwrap();
-    assert!(InspectInstallation(&executable, &store).is_err());
+    assert!(inspect_installation(&executable, &store).is_err());
 }
 
 #[test]
 fn v06_package_owner_receipt_rejects_tampering_unknown_fields_and_conflicting_direct_receipt() {
-    use beskid_up::{InspectInstallation, InstallationOwner, WriteOwnerReceipt};
+    use beskid_up::{InstallationOwner, inspect_installation, write_owner_receipt};
     let (source, _bytes, manifest) = fixture("0.6.0", false);
     let prefix = source.path().join(format!("beskid-0.6.0-{TARGET}"));
     let unrelated = tempfile::tempdir().unwrap();
     let store = DirectInstall::new(unrelated.path());
-    WriteOwnerReceipt(&prefix, InstallationOwner::Debian, &manifest.version, TARGET).unwrap();
+    write_owner_receipt(&prefix, InstallationOwner::Debian, &manifest.version, TARGET).unwrap();
     let executable = prefix.join("bin/beskid");
-    let status = InspectInstallation(&executable, &store).unwrap();
+    let status = inspect_installation(&executable, &store).unwrap();
     assert_eq!(status.owner, Some(InstallationOwner::Debian));
     assert!(!status.direct_update_allowed);
     assert!(status.update_guidance.contains("apt install ./beskid-"));
@@ -161,11 +160,11 @@ fn v06_package_owner_receipt_rejects_tampering_unknown_fields_and_conflicting_di
     let mut receipt: serde_json::Value = serde_json::from_slice(&original).unwrap();
     receipt["untrusted-command"] = serde_json::json!("run me");
     fs::write(&receipt_path, serde_json::to_vec(&receipt).unwrap()).unwrap();
-    assert!(InspectInstallation(&executable, &store).is_err());
+    assert!(inspect_installation(&executable, &store).is_err());
     fs::write(&receipt_path, &original).unwrap();
     fs::write(prefix.join(".beskid-install.json"), b"{}").unwrap();
-    assert!(InspectInstallation(&executable, &store).is_err());
+    assert!(inspect_installation(&executable, &store).is_err());
     fs::remove_file(prefix.join(".beskid-install.json")).unwrap();
     fs::write(executable, b"tampered").unwrap();
-    assert!(InspectInstallation(&prefix.join("bin/beskid"), &store).is_err());
+    assert!(inspect_installation(&prefix.join("bin/beskid"), &store).is_err());
 }

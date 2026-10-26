@@ -2,6 +2,11 @@ use super::SemanticIssueKind;
 
 impl SemanticIssueKind {
     pub fn label(&self) -> String {
+        let text = self.label_text();
+        if self.names_module_path() { text.replace("::", ".") } else { text }
+    }
+
+    fn label_text(&self) -> String {
         match self {
             Self::DuplicateDefinitionName { .. } => "duplicate definition name".to_string(),
             Self::DuplicateEnumVariant { .. } => "duplicate enum variant".to_string(),
@@ -209,5 +214,21 @@ impl SemanticIssueKind {
             Self::ExternInvalidOptional { .. } => "extern attribute".to_string(),
             Self::InvalidClifBlock { .. } => "clif block".to_string(),
         }
+    }
+}
+
+#[cfg(test)]
+mod module_path_label_tests {
+    use super::super::SemanticIssueKind;
+
+    #[test]
+    fn enum_value_method_call_names_the_enum_with_dot_paths() {
+        let issue = SemanticIssueKind::EnumValueMethodCall {
+            method: "Greet".into(),
+            enum_name: "Core::Results::Result<Hello, string>".into(),
+        };
+        assert_eq!(issue.code(), "E1257");
+        assert_eq!(issue.message(), "`Core.Results.Result<Hello, string>` is an enum and has no method `Greet`");
+        assert_eq!(issue.label(), "this is a `Core.Results.Result<Hello, string>` value");
     }
 }

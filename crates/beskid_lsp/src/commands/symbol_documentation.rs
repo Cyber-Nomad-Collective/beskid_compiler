@@ -117,7 +117,7 @@ fn extract_symbol_name(markdown: &str) -> Option<String> {
 }
 
 /// Package id and version of a dependency source: a Corelib package read in place from the
-/// toolchain's shared Corelib, or a project-local copy like
+/// toolchain's shared Corelib, or the project-local copy of a registry or path dependency like
 /// `.../obj/beskid/deps/src/<package>-abc123/src/...`.
 fn package_from_materialized_path(path: &Path) -> Option<(String, String)> {
     if let Some(package) = beskid_analysis::projects::shared_corelib_package_of(path) {
@@ -158,9 +158,11 @@ mod tests {
 
     #[test]
     fn package_from_deps_path() {
-        let path = Path::new("/proj/obj/beskid/deps/src/corelib_console-bd3c8b5fe48c6cc8/src/Console/Style.bd");
+        // Registry and path dependencies are copied below `obj/beskid/deps/src`; Corelib is read
+        // in place from the shared bundle and never appears there.
+        let path = Path::new("/proj/obj/beskid/deps/src/json_tools-bd3c8b5fe48c6cc8/src/Json/Reader.bd");
         let (pkg, ver) = package_from_materialized_path(path).expect("parsed");
-        assert_eq!(pkg, "corelib_console");
+        assert_eq!(pkg, "json_tools");
         assert_eq!(ver, "latest");
     }
 

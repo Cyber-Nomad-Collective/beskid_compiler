@@ -46,6 +46,14 @@ pub fn contribution_attributed_unit(db: &dyn Db, key: AstNodeKey) -> SourceUnitI
 /// Register the attribution table of `assembly`'s entry unit for its generation, derived from
 /// every retained serialization payload. A registered generation keeps one table: a second
 /// registration must derive the same table or the assembly is rejected.
+/// Drop the registered contribution table of `assembly`'s entry for its generation, so the next
+/// registration derives it from a refilled entry tree.
+pub(crate) fn forget_contribution_attributions(db: &dyn Db, assembly: &ProgramAssembly) {
+    let entry_id = SourceUnitId::new(db, assembly.entry_unit().path.clone());
+    let mut registry = db.syntax_dependency_registry().lock().expect("syntax dependency registry");
+    registry.contribution_attributions.remove(&(entry_id, assembly.generation));
+}
+
 pub(crate) fn register_contribution_attributions(db: &dyn Db, assembly: &ProgramAssembly) -> Result<(), SemanticError> {
     let entry = assembly.entry_unit();
     let entry_id = SourceUnitId::new(db, entry.path.clone());

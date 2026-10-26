@@ -76,6 +76,7 @@ pub(super) fn syntax_facts_for_assembly(
                 entry_anchor: None,
                 dependency_surface,
                 attributes: Arc::from([]),
+                member_access: Arc::from([]),
             }),
             ..SyntaxFacts::default()
         };
@@ -97,6 +98,9 @@ pub(super) fn syntax_facts_for_assembly(
                 | beskid_analysis::syntax_query::NodeKind::PathExpression
         ) && let Some(type_label) = node_type(db, reference).ok().flatten().and_then(syntax_type_label)
             && let Some(span) = node_span(db, reference).ok().flatten()
+            // Arguments the compiler filled for omitted optional parameters have a zero-width
+            // span and no source text: they get no hint.
+            && span.start < span.end
         {
             inlay_hints.push(SyntaxInlayHint { start: span.start, end: span.end, type_label: type_label.to_string() });
         }
@@ -174,7 +178,12 @@ pub(super) fn syntax_facts_for_assembly(
         .ids_of_kind(beskid_analysis::syntax_query::NodeKind::Program)
         .next()
         .map(|node| AstNodeKey { unit, generation, node })
-        .map(|entry_anchor| SyntaxCompletion { entry_anchor: Some(entry_anchor), dependency_surface, attributes });
+        .map(|entry_anchor| SyntaxCompletion {
+            entry_anchor: Some(entry_anchor),
+            dependency_surface,
+            attributes,
+            member_access: Arc::from([]),
+        });
     SyntaxFacts {
         definitions,
         hovers,

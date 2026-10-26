@@ -7,7 +7,7 @@ mod registry;
 mod resolution;
 mod shared_corelib;
 pub use dependency_change::{
-    CommitDependencyChange, DependencyChangePlan, DependencyChangeReport, PlanDependencyChange,
+    DependencyChangePlan, DependencyChangeReport, commit_dependency_change, plan_dependency_change,
 };
 pub use resolution::{RefreshScope, ResolutionPolicy};
 
@@ -19,5 +19,5 @@ pub use lockfile::{
 pub use prepare::{
     prepare_project_workspace, prepare_project_workspace_plan_with_options, prepare_project_workspace_with_options,
 };
-pub(crate) use shared_corelib::SharedCorelib;
 pub use shared_corelib::shared_corelib_package_of;
+pub(crate) use shared_corelib::{SharedCorelib, verify_shared_corelib_for_lock};

@@ -129,6 +129,7 @@ mod tests {
                 entry_anchor: Some(anchor),
                 dependency_surface: Arc::from([]),
                 attributes: Arc::from([]),
+                member_access: Arc::from([]),
             }),
             syntax_inlay_hints: Vec::new(),
             syntax_documentation: Vec::new(),

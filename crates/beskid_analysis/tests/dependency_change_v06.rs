@@ -1,5 +1,5 @@
 use beskid_analysis::projects::dependency_edit::{
-    CommitDependencyChange, DependencyIntent, DependencyIntentSource, DependencyMutation, PlanDependencyChange,
+    DependencyIntent, DependencyIntentSource, DependencyMutation, commit_dependency_change, plan_dependency_change,
 };
 use beskid_analysis::projects::workflow::{RefreshScope, ResolutionPolicy};
 
@@ -32,12 +32,12 @@ fn policy() -> ResolutionPolicy {
 #[test]
 fn dep06_plan_is_read_only_and_commit_writes_consistent_pair() {
     let (_directory, manifest, mutation) = fixture();
-    let plan = PlanDependencyChange(&manifest, &mutation, &policy()).unwrap();
+    let plan = plan_dependency_change(&manifest, &mutation, &policy()).unwrap();
     assert_eq!(std::fs::read_to_string(&manifest).unwrap(), APP);
     assert!(!manifest.with_file_name("Project.lock").exists());
     assert!(!manifest.parent().unwrap().join("obj").exists());
-    assert!(plan.Report().to_string().contains("Local"));
-    let report = CommitDependencyChange(plan).unwrap();
+    assert!(plan.report().to_string().contains("Local"));
+    let report = commit_dependency_change(plan).unwrap();
     assert!(report.to_string().contains("Local"));
     let updated = std::fs::read_to_string(&manifest).unwrap();
     let parsed = beskid_analysis::projects::parse_manifest(&updated).unwrap();
@@ -51,9 +51,9 @@ fn dep06_plan_is_read_only_and_commit_writes_consistent_pair() {
 #[test]
 fn dep06_commit_rejects_concurrent_manifest_edit() {
     let (_directory, manifest, mutation) = fixture();
-    let plan = PlanDependencyChange(&manifest, &mutation, &policy()).unwrap();
+    let plan = plan_dependency_change(&manifest, &mutation, &policy()).unwrap();
     std::fs::write(&manifest, format!("{APP}// concurrent user edit\n")).unwrap();
-    assert!(CommitDependencyChange(plan).is_err());
+    assert!(commit_dependency_change(plan).is_err());
     assert!(std::fs::read_to_string(&manifest).unwrap().ends_with("// concurrent user edit\n"));
     assert!(!manifest.with_file_name("Project.lock").exists());
 }
@@ -62,7 +62,7 @@ fn dep06_commit_rejects_concurrent_manifest_edit() {
 fn dep06_locked_mutation_does_not_create_manifest_or_lock_changes() {
     let (_directory, manifest, mutation) = fixture();
     let locked = ResolutionPolicy { locked: true, ..policy() };
-    assert!(PlanDependencyChange(&manifest, &mutation, &locked).is_err());
+    assert!(plan_dependency_change(&manifest, &mutation, &locked).is_err());
     assert_eq!(std::fs::read_to_string(&manifest).unwrap(), APP);
     assert!(!manifest.with_file_name("Project.lock").exists());
 }
@@ -70,9 +70,9 @@ fn dep06_locked_mutation_does_not_create_manifest_or_lock_changes() {
 #[test]
 fn dep06_removing_absent_dependency_is_a_read_only_noop_without_a_lock() {
     let (_directory, manifest, _) = fixture();
-    let plan = PlanDependencyChange(&manifest, &DependencyMutation::Remove("Absent".into()), &policy()).unwrap();
-    assert!(plan.Report().to_string().contains("unchanged"));
-    CommitDependencyChange(plan).unwrap();
+    let plan = plan_dependency_change(&manifest, &DependencyMutation::Remove("Absent".into()), &policy()).unwrap();
+    assert!(plan.report().to_string().contains("unchanged"));
+    commit_dependency_change(plan).unwrap();
     assert_eq!(std::fs::read_to_string(&manifest).unwrap(), APP);
     assert!(!manifest.with_file_name("Project.lock").exists());
     assert!(!manifest.parent().unwrap().join(".beskid").exists());
@@ -82,7 +82,7 @@ fn dep06_removing_absent_dependency_is_a_read_only_noop_without_a_lock() {
 #[test]
 fn dep06_refresh_rejects_a_lock_owned_by_another_project_without_writes() {
     let (_directory, manifest, mutation) = fixture();
-    CommitDependencyChange(PlanDependencyChange(&manifest, &mutation, &policy()).unwrap()).unwrap();
+    commit_dependency_change(plan_dependency_change(&manifest, &mutation, &policy()).unwrap()).unwrap();
     let lock_path = manifest.with_file_name("Project.lock");
     let foreign = std::fs::read_to_string(&lock_path).unwrap().replace("project_name=App", "project_name=Other");
     assert!(foreign.contains("project_name=Other"));
@@ -90,7 +90,7 @@ fn dep06_refresh_rejects_a_lock_owned_by_another_project_without_writes() {
     let original = std::fs::read(&manifest).unwrap();
     let update = DependencyMutation::Update { package: None, version: None, all: true };
     let refresh = ResolutionPolicy { refresh: RefreshScope::All, ..policy() };
-    assert!(PlanDependencyChange(&manifest, &update, &refresh).is_err());
+    assert!(plan_dependency_change(&manifest, &update, &refresh).is_err());
     assert_eq!(std::fs::read(&manifest).unwrap(), original);
     assert_eq!(std::fs::read_to_string(&lock_path).unwrap(), foreign);
 }
@@ -98,9 +98,9 @@ fn dep06_refresh_rejects_a_lock_owned_by_another_project_without_writes() {
 #[test]
 fn dep06_path_report_describes_actual_added_and_removed_coordinate() {
     let (_directory, manifest, mutation) = fixture();
-    let plan = PlanDependencyChange(&manifest, &mutation, &policy()).unwrap();
-    assert!(plan.Report().to_string().contains("added Local: path ../Local"));
-    let report = CommitDependencyChange(plan).unwrap();
+    let plan = plan_dependency_change(&manifest, &mutation, &policy()).unwrap();
+    assert!(plan.report().to_string().contains("added Local: path ../Local"));
+    let report = commit_dependency_change(plan).unwrap();
     let json = serde_json::to_value(&report).unwrap();
     assert!(json["effects"][0]["fromVersion"].is_null());
     assert!(json["effects"][0]["toVersion"].is_null());
@@ -108,7 +108,7 @@ fn dep06_path_report_describes_actual_added_and_removed_coordinate() {
     assert!(json["effects"][0]["fromCoordinate"].is_null());
     assert_eq!(json["effects"][0]["toCoordinate"], "path ../Local");
     let removal = DependencyMutation::Remove("Local".into());
-    let plan = PlanDependencyChange(&manifest, &removal, &policy()).unwrap();
-    assert!(plan.Report().to_string().contains("removed Local: path ../Local"));
-    assert!(!plan.Report().to_string().contains("absent -> absent"));
+    let plan = plan_dependency_change(&manifest, &removal, &policy()).unwrap();
+    assert!(plan.report().to_string().contains("removed Local: path ../Local"));
+    assert!(!plan.report().to_string().contains("absent -> absent"));
 }

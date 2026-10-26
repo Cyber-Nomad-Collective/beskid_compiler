@@ -1,4 +1,3 @@
-#![allow(non_snake_case)]
 use super::new::{InstallArgs, ListArgs, UninstallArgs};
 use anyhow::Result;
 use beskid_pckg::cli::{ConfigureArgs, DetailsArgs, PackArgs, PckgArgs, PckgCommand, PublishArgs, SearchArgs};
@@ -59,7 +58,7 @@ pub fn execute(args: PackageArgs) -> Result<()> {
         PackageCommand::Login(value) => {
             PckgCommand::Configure(ConfigureArgs { repository_url: None, api_key: value.key })
         }
-        PackageCommand::Logout => return LogoutRepository(&args.config_file, &args.base_url),
+        PackageCommand::Logout => return logout_repository(&args.config_file, &args.base_url),
         PackageCommand::Template(value) => {
             return match value.command {
                 TemplateCommand::List(value) => super::new::execute_list(value),
@@ -79,7 +78,7 @@ pub fn execute(args: PackageArgs) -> Result<()> {
     })
 }
 
-fn LogoutRepository(path: &std::path::Path, base_url: &str) -> Result<()> {
+fn logout_repository(path: &std::path::Path, base_url: &str) -> Result<()> {
     if !path.exists() {
         println!("No saved repository authentication.");
         return Ok(());
@@ -124,7 +123,7 @@ mod tests {
         std::fs::create_dir_all(&root).unwrap();
         let path = root.join("repositories.json");
         std::fs::write(&path, br#"{"repositories":{"https://one.invalid/":{"api_key":"fixture-one"},"https://two.invalid/":{"api_key":"fixture-two"}}}"#).unwrap();
-        LogoutRepository(&path, "https://one.invalid").unwrap();
+        logout_repository(&path, "https://one.invalid").unwrap();
         let saved: serde_json::Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
         assert!(saved["repositories"].get("https://one.invalid/").is_none());
         assert_eq!(saved["repositories"]["https://two.invalid/"]["api_key"], "fixture-two");

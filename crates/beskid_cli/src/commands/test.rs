@@ -409,7 +409,7 @@ pub(crate) fn execute_prepared_target(
     phases.push(phase_record("execute_tests", execute_unix_ms, execute_started, result));
     if emit {
         if args.json {
-            crate::machine_output::Records::new("test").Emit(
+            crate::machine_output::Records::new("test").emit(
                 "result",
                 if result == TargetResult::Passed { "success" } else { "failure" },
                 serde_json::json!({ "target": target.name, "summary": summary, "tests": executions }),

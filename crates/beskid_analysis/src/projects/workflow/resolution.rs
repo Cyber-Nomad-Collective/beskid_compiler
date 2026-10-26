@@ -1,5 +1,4 @@
 //! One target-free dependency resolution authority for preparation and mutations.
-#![allow(non_snake_case)]
 
 use super::lockfile::{
     lock_graph_differs, preflight_existing_lock_for_plan, reject_unreachable_registry_pins,
@@ -24,7 +23,7 @@ pub enum RefreshScope {
     All,
 }
 impl RefreshScope {
-    pub(crate) fn Includes(&self, name: &str) -> bool {
+    pub(crate) fn includes(&self, name: &str) -> bool {
         match self {
             Self::None => false,
             Self::Selected(names) => names.contains(name),
@@ -47,7 +46,7 @@ pub(super) struct ResolvedWorkspaceDependencies {
     pub shared_corelib: Option<SharedCorelib>,
 }
 
-pub(super) fn ResolveWorkspaceDependencies(
+pub(super) fn resolve_workspace_dependencies(
     plan: &ProjectWorkspacePlan,
     policy: &ResolutionPolicy,
     allow_graph_change: bool,
@@ -63,7 +62,7 @@ pub(super) fn ResolveWorkspaceDependencies(
     };
     let existing = preflight_existing_lock_for_plan(plan, options)?;
     let shared_corelib = SharedCorelib::resolve();
-    RejectAmbiguousDependencyNames(&plan.dependency_projects, shared_corelib.as_ref().map(SharedCorelib::root))?;
+    reject_ambiguous_dependency_names(&plan.dependency_projects, shared_corelib.as_ref().map(SharedCorelib::root))?;
     let mut entries = Vec::new();
     let mut destinations = HashSet::new();
     for dependency in &plan.dependency_projects {
@@ -87,17 +86,17 @@ pub(super) fn ResolveWorkspaceDependencies(
         .unresolved_dependencies
         .iter()
         .filter(|dependency| dependency.source == DependencySource::Registry)
-        .map(|note| RegistryRequest::New(note.clone(), true))
+        .map(|note| RegistryRequest::new(note.clone(), true))
         .collect::<Vec<_>>();
-    let closure = ResolveRegistryClosure(roots, |request| {
+    let closure = resolve_registry_closure(roots, |request| {
         let note = &request.note;
         let pin = existing.as_ref().and_then(|lock| {
             lock.dependencies
                 .iter()
                 .find(|entry| entry.source == ProjectLockSource::Registry && entry.name == note.dependency_name)
         });
-        let stale = pin.is_some_and(|pin| request.PinIsStale(pin));
-        let refresh = policy.refresh.Includes(&note.dependency_name)
+        let stale = pin.is_some_and(|pin| request.pin_is_stale(pin));
+        let refresh = policy.refresh.includes(&note.dependency_name)
             || (mutable && (stale || (!request.direct && pin.is_none())));
         let unpinned_in_existing_lock = existing.is_some() && pin.is_none() && !allow_graph_change && !refresh;
         let recovery = if request.direct {
@@ -152,7 +151,7 @@ pub(super) fn ResolveWorkspaceDependencies(
                         Some(alias) => format!("{alias}@{version}"),
                         None => version,
                     };
-                    requires.push(RegistryRequest::New(
+                    requires.push(RegistryRequest::new(
                         UnresolvedDependencyNote {
                             dependency_name: dependency.name.clone(),
                             source: DependencySource::Registry,
@@ -222,7 +221,7 @@ pub(super) struct RegistryRequest {
 }
 
 impl RegistryRequest {
-    fn New(note: UnresolvedDependencyNote, direct: bool) -> Self {
+    fn new(note: UnresolvedDependencyNote, direct: bool) -> Self {
         let (alias, version) = parse_registry_descriptor(&note.descriptor);
         Self {
             registry: alias.as_deref().unwrap_or("default").to_ascii_lowercase(),
@@ -232,22 +231,22 @@ impl RegistryRequest {
         }
     }
 
-    fn Name(&self) -> &str {
+    fn name(&self) -> &str {
         &self.note.dependency_name
     }
 
     /// A pin no longer satisfies this request when the registry or the exact version differs.
-    fn PinIsStale(&self, pin: &ProjectLockDependencyEntry) -> bool {
+    fn pin_is_stale(&self, pin: &ProjectLockDependencyEntry) -> bool {
         pin.registry.as_deref() != Some(self.registry.as_str())
             || (self.version != "*" && pin.resolved_version.as_deref() != Some(self.version.as_str()))
     }
 
     /// The quoted coordinate for diagnostics, with a non-default registry named after it.
-    fn Coordinate(&self) -> String {
+    fn coordinate(&self) -> String {
         if self.registry == "default" {
-            format!("`{}@{}`", self.Name(), self.version)
+            format!("`{}@{}`", self.name(), self.version)
         } else {
-            format!("`{}@{}` from registry `{}`", self.Name(), self.version, self.registry)
+            format!("`{}@{}` from registry `{}`", self.name(), self.version, self.registry)
         }
     }
 }
@@ -273,7 +272,7 @@ pub(super) struct RegistryClosure<T> {
 /// both requesters and both coordinates; a workspace `override` aligns them. One requester that
 /// requests the same package twice is two declarations for one materialized destination and fails
 /// closed. Requirement cycles between registry packages are rejected like path dependency cycles.
-pub(super) fn ResolveRegistryClosure<T>(
+pub(super) fn resolve_registry_closure<T>(
     roots: Vec<RegistryRequest>,
     mut resolve: impl FnMut(&RegistryRequest) -> Result<Option<(T, Vec<RegistryRequest>)>, ProjectError>,
 ) -> Result<RegistryClosure<T>, ProjectError> {
@@ -286,32 +285,32 @@ pub(super) fn ResolveRegistryClosure<T>(
     let mut declarations: HashSet<(String, String)> = HashSet::new();
     let mut queue = VecDeque::from(roots);
     while let Some(request) = queue.pop_front() {
-        if !declarations.insert((request.note.requester.clone(), request.Name().to_owned())) {
+        if !declarations.insert((request.note.requester.clone(), request.name().to_owned())) {
             return Err(ProjectError::Validation(format!(
                 "`{}` declares registry package `{}` twice; two declarations cannot share one materialized \
                  destination",
                 request.note.requester,
-                request.Name()
+                request.name()
             )));
         }
-        if let Some(first) = nodes.get(request.Name()) {
+        if let Some(first) = nodes.get(request.name()) {
             if first.request.registry != request.registry || first.request.version != request.version {
                 return Err(ProjectError::Validation(format!(
                     "registry package `{}` is requested at two coordinates: `{}` requires {} and `{}` requires {}; \
                      one version per package is allowed, so align both requirements or add a workspace `override` \
                      for `{}`",
-                    request.Name(),
+                    request.name(),
                     first.request.note.requester,
-                    first.request.Coordinate(),
+                    first.request.coordinate(),
                     request.note.requester,
-                    request.Coordinate(),
-                    request.Name()
+                    request.coordinate(),
+                    request.name()
                 )));
             }
             if first.resolved.is_none() && !request.direct {
                 return Err(ProjectError::Validation(format!(
                     "registry package {} required by `{}` is unavailable from the registry",
-                    request.Coordinate(),
+                    request.coordinate(),
                     request.note.requester
                 )));
             }
@@ -319,15 +318,15 @@ pub(super) fn ResolveRegistryClosure<T>(
         }
         let (resolved, requires) = match resolve(&request)? {
             Some((resolved, requires)) => {
-                let names = requires.iter().map(|required| required.Name().to_owned()).collect::<Vec<_>>();
+                let names = requires.iter().map(|required| required.name().to_owned()).collect::<Vec<_>>();
                 queue.extend(requires);
                 (Some(resolved), names)
             }
             None => (None, Vec::new()),
         };
-        nodes.insert(request.Name().to_owned(), Node { request, resolved, requires });
+        nodes.insert(request.name().to_owned(), Node { request, resolved, requires });
     }
-    RejectRegistryCycles(&nodes.iter().map(|(name, node)| (name.as_str(), node.requires.as_slice())).collect())?;
+    reject_registry_cycles(&nodes.iter().map(|(name, node)| (name.as_str(), node.requires.as_slice())).collect())?;
     Ok(RegistryClosure {
         names: nodes.keys().cloned().collect(),
         resolved: nodes.into_iter().filter_map(|(name, node)| node.resolved.map(|resolved| (name, resolved))).collect(),
@@ -335,13 +334,13 @@ pub(super) fn ResolveRegistryClosure<T>(
 }
 
 /// Reject a requirement cycle among registry packages, naming the cycle in order.
-fn RejectRegistryCycles(requires: &BTreeMap<&str, &[String]>) -> Result<(), ProjectError> {
+fn reject_registry_cycles(requires: &BTreeMap<&str, &[String]>) -> Result<(), ProjectError> {
     #[derive(Clone, Copy, PartialEq, Eq)]
     enum Mark {
         Active,
         Done,
     }
-    fn Visit<'a>(
+    fn visit<'a>(
         name: &'a str,
         requires: &BTreeMap<&'a str, &'a [String]>,
         marks: &mut HashMap<&'a str, Mark>,
@@ -361,7 +360,7 @@ fn RejectRegistryCycles(requires: &BTreeMap<&str, &[String]>) -> Result<(), Proj
         path.push(name);
         for required in requires.get(name).copied().unwrap_or_default() {
             if let Some((required, _)) = requires.get_key_value(required.as_str()) {
-                Visit(*required, requires, marks, path)?;
+                visit(*required, requires, marks, path)?;
             }
         }
         path.pop();
@@ -370,7 +369,7 @@ fn RejectRegistryCycles(requires: &BTreeMap<&str, &[String]>) -> Result<(), Proj
     }
     let mut marks = HashMap::new();
     for name in requires.keys() {
-        Visit(*name, requires, &mut marks, &mut Vec::new())?;
+        visit(*name, requires, &mut marks, &mut Vec::new())?;
     }
     Ok(())
 }
@@ -381,23 +380,23 @@ fn RejectRegistryCycles(requires: &BTreeMap<&str, &[String]>) -> Result<(), Proj
 /// (one package identity, as Cargo keeps one `Cargo.lock` entry per package id). Two resolved
 /// dependency projects that share a name therefore live in different package roots: they are
 /// different packages, and the lock cannot record both. Fail closed and name both roots.
-fn RejectAmbiguousDependencyNames(
+fn reject_ambiguous_dependency_names(
     dependencies: &[ResolvedDependencyProject],
-    corelibRoot: Option<&Path>,
+    corelib_root: Option<&Path>,
 ) -> Result<(), ProjectError> {
-    let canonicalCorelib = corelibRoot.and_then(|root| root.canonicalize().ok());
+    let canonical_corelib = corelib_root.and_then(|root| root.canonicalize().ok());
     let mut seen: HashMap<&str, (&ResolvedDependencyProject, PathBuf)> = HashMap::new();
     for dependency in dependencies {
         let root = dependency.project_root.canonicalize().unwrap_or_else(|_| dependency.project_root.clone());
-        let Some((first, firstRoot)) = seen.get(dependency.dependency_name.as_str()) else {
+        let Some((first, first_root)) = seen.get(dependency.dependency_name.as_str()) else {
             seen.insert(dependency.dependency_name.as_str(), (dependency, root));
             continue;
         };
-        if *firstRoot == root {
+        if *first_root == root {
             continue;
         }
-        let inCorelib = |path: &Path| canonicalCorelib.as_deref().is_some_and(|corelib| path.starts_with(corelib));
-        let hint = if inCorelib(firstRoot) != inCorelib(&root) {
+        let in_corelib = |path: &Path| canonical_corelib.as_deref().is_some_and(|corelib| path.starts_with(corelib));
+        let hint = if in_corelib(first_root) != in_corelib(&root) {
             "; one copy comes from the installed Corelib closure that is attached implicitly as `Core`. \
              Declare the Corelib aggregate that owns the explicit path (for example \
              `dependency \"corelib\" { source = path path = \"<workspace>/beskid_corelib\" }`) \
@@ -417,7 +416,7 @@ fn RejectAmbiguousDependencyNames(
 
 #[cfg(test)]
 mod tests {
-    use super::RejectAmbiguousDependencyNames;
+    use super::reject_ambiguous_dependency_names;
     use crate::projects::{ProjectError, ResolvedDependencyProject};
     use std::fs;
     use std::path::Path;
@@ -438,8 +437,8 @@ mod tests {
         let workspace = tempfile::tempdir().unwrap();
         let foundation = workspace.path().join("packages/foundation");
         let direct = dependency("corelib_foundation", &foundation);
-        let viaAlias = dependency("corelib_foundation", &workspace.path().join("packages/../packages/foundation"));
-        RejectAmbiguousDependencyNames(&[direct, viaAlias], None).unwrap();
+        let via_alias = dependency("corelib_foundation", &workspace.path().join("packages/../packages/foundation"));
+        reject_ambiguous_dependency_names(&[direct, via_alias], None).unwrap();
     }
 
     #[test]
@@ -448,8 +447,8 @@ mod tests {
         let installed = tempfile::tempdir().unwrap();
         let explicit = dependency("corelib_foundation", &checkout.path().join("packages/foundation"));
         let implicit = dependency("corelib_foundation", &installed.path().join("packages/foundation"));
-        let error =
-            RejectAmbiguousDependencyNames(&[explicit.clone(), implicit.clone()], Some(installed.path())).unwrap_err();
+        let error = reject_ambiguous_dependency_names(&[explicit.clone(), implicit.clone()], Some(installed.path()))
+            .unwrap_err();
         let ProjectError::Validation(message) = error else { panic!("expected a validation error") };
         assert!(message.contains("`corelib_foundation` resolves to two different packages"), "{message}");
         assert!(message.contains(&explicit.manifest_path.display().to_string()), "{message}");
@@ -458,7 +457,7 @@ mod tests {
     }
 
     mod registry_closure {
-        use super::super::{RegistryRequest, ResolveRegistryClosure};
+        use super::super::{RegistryRequest, resolve_registry_closure};
         use crate::projects::{DependencySource, ProjectError, UnresolvedDependencyNote};
         use std::collections::BTreeMap;
 
@@ -466,7 +465,7 @@ mod tests {
         type Packages = BTreeMap<&'static str, Vec<(&'static str, &'static str)>>;
 
         fn request(name: &str, version: &str, requester: &str, direct: bool) -> RegistryRequest {
-            RegistryRequest::New(
+            RegistryRequest::new(
                 UnresolvedDependencyNote {
                     dependency_name: name.to_owned(),
                     source: DependencySource::Registry,
@@ -483,8 +482,8 @@ mod tests {
             resolved: &mut Vec<String>,
         ) -> Result<Vec<String>, ProjectError> {
             let roots = roots.iter().map(|(name, version)| request(name, version, "App", true)).collect();
-            let closure = ResolveRegistryClosure(roots, |request| {
-                let coordinate = format!("{}@{}", request.Name(), request.version);
+            let closure = resolve_registry_closure(roots, |request| {
+                let coordinate = format!("{}@{}", request.name(), request.version);
                 resolved.push(coordinate.clone());
                 let Some(requires) = packages.get(coordinate.as_str()) else { return Ok(None) };
                 Ok(Some((
@@ -533,7 +532,7 @@ mod tests {
         fn identical_requests_from_two_requesters_share_one_package() {
             let mut calls = Vec::new();
             let roots = vec![request("Shared", "1.0.0", "App", true), request("Shared", "1.0.0", "Lib", true)];
-            let closure = ResolveRegistryClosure(roots, |request| {
+            let closure = resolve_registry_closure(roots, |request| {
                 calls.push(request.note.requester.clone());
                 Ok(Some(((), Vec::new())))
             })
@@ -545,7 +544,7 @@ mod tests {
         #[test]
         fn one_requester_declaring_a_package_twice_fails_closed_before_unifying() {
             let roots = vec![request("Shared", "1.0.0", "App", true), request("Shared", "1.0.0", "App", true)];
-            let Err(error) = ResolveRegistryClosure(roots, |_| Ok(Some(((), Vec::new())))) else {
+            let Err(error) = resolve_registry_closure(roots, |_| Ok(Some(((), Vec::new())))) else {
                 panic!("a requester declaring one package twice must fail closed");
             };
             let message = error.to_string();
@@ -617,10 +616,10 @@ mod tests {
                 registry: Some(registry.into()),
             };
             let exact = request("Shared", "1.0.0", "App", true);
-            assert!(!exact.PinIsStale(&pin("default", "1.0.0")));
-            assert!(exact.PinIsStale(&pin("default", "2.0.0")));
-            assert!(exact.PinIsStale(&pin("mirror", "1.0.0")));
-            assert!(!request("Shared", "*", "App", true).PinIsStale(&pin("default", "2.0.0")));
+            assert!(!exact.pin_is_stale(&pin("default", "1.0.0")));
+            assert!(exact.pin_is_stale(&pin("default", "2.0.0")));
+            assert!(exact.pin_is_stale(&pin("mirror", "1.0.0")));
+            assert!(!request("Shared", "*", "App", true).pin_is_stale(&pin("default", "2.0.0")));
         }
     }
 }

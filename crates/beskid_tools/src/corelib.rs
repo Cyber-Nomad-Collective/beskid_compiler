@@ -7,7 +7,7 @@ use std::thread;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
-use beskid_abi::runtime_kit::installed_corelib_root;
+use beskid_abi::runtime_kit::{installed_corelib_root, register_toolchain_corelib_identity};
 use include_dir::Dir;
 use semver::Version;
 
@@ -61,8 +61,33 @@ impl std::error::Error for UnrecognizedCorelibRootError {}
 /// - a managed bundle (carries `.beskid-bundle.sha256`): replace it on a fingerprint/version mismatch.
 /// - anything else non-empty: never deleted. Used as-is if it looks like a valid corelib checkout
 ///   (a developer-provided root), otherwise this fails closed with [`UnrecognizedCorelibRootError`].
+///
+/// The bundle's identity (`<version>-<fingerprint prefix>`) is registered first, so a toolchain
+/// outside an installed prefix provisions its own per-user root and never replaces another
+/// toolchain's. Concurrent first runs (the language server and a CLI started together) are
+/// serialized by an exclusive lock file beside the root; the fingerprint is read again once the
+/// lock is held, so the second process finds the first one's sealed bundle and keeps it.
 pub fn ensure_bundled_corelib(bundle: &EmbeddedCorelib) -> Result<CorelibProvisioning> {
+    let bundled_version = embedded_version(bundle)?;
+    let bundled_fingerprint = embedded_fingerprint(bundle)?;
+    register_toolchain_corelib_identity(&toolchain_corelib_identity_of(&bundled_version, &bundled_fingerprint))
+        .map_err(|message| anyhow::anyhow!(message))?;
     let target_root = corelib_install_root()?;
+    ensure_bundled_corelib_at(bundle, &target_root, &bundled_version, &bundled_fingerprint)
+}
+
+/// `<version>-<first 16 hex digits of the fingerprint>`: names this toolchain's per-user root.
+fn toolchain_corelib_identity_of(version: &Version, fingerprint: &str) -> String {
+    format!("{version}-{}", &fingerprint[..16])
+}
+
+fn ensure_bundled_corelib_at(
+    bundle: &EmbeddedCorelib,
+    target_root: &Path,
+    bundled_version: &Version,
+    bundled_fingerprint: &str,
+) -> Result<CorelibProvisioning> {
+    let target_root = target_root.to_path_buf();
 
     if is_unmanaged_nonempty_root(&target_root)? {
         if !looks_like_corelib_checkout(&target_root) {
@@ -74,23 +99,25 @@ pub fn ensure_bundled_corelib(bundle: &EmbeddedCorelib) -> Result<CorelibProvisi
         return Ok(CorelibProvisioning { root: target_root, version: version.to_string(), updated: false });
     }
 
-    let bundled_version = embedded_version(bundle)?;
-    let installed_version = installed_version(&target_root)?;
-    let bundled_fingerprint = embedded_fingerprint(bundle)?;
-    let installed_fingerprint = installed_fingerprint(&target_root)?;
+    let is_current = |root: &Path| -> Result<bool> {
+        Ok(!should_install_corelib(
+            bundled_version,
+            installed_version(root)?.as_ref(),
+            bundled_fingerprint,
+            installed_fingerprint(root)?.as_deref(),
+        ))
+    };
 
-    let should_install = should_install_corelib(
-        &bundled_version,
-        installed_version.as_ref(),
-        &bundled_fingerprint,
-        installed_fingerprint.as_deref(),
-    );
-
+    let mut should_install = !is_current(&target_root)?;
     if should_install {
-        replace_with_embedded_bundle(bundle, &target_root, &bundled_fingerprint)?;
-    } else {
-        fs::create_dir_all(&target_root).with_context(|| format!("create corelib root {}", target_root.display()))?;
+        let _lock = ProvisioningLock::acquire(&target_root)?;
+        // Another process may have provisioned the root while this one waited for the lock.
+        should_install = !is_current(&target_root)?;
+        if should_install {
+            replace_with_embedded_bundle(bundle, &target_root, bundled_fingerprint, &is_current)?;
+        }
     }
+    fs::create_dir_all(&target_root).with_context(|| format!("create corelib root {}", target_root.display()))?;
 
     Ok(CorelibProvisioning { root: target_root, version: bundled_version.to_string(), updated: should_install })
 }
@@ -103,7 +130,12 @@ pub fn ensure_bundled_corelib(bundle: &EmbeddedCorelib) -> Result<CorelibProvisi
 /// concurrent reader or an interrupted install observes the old sealed bundle, a briefly missing
 /// root, or the new sealed bundle, never a partial tree. A partial markerless tree at the install
 /// root would otherwise be classified as a developer checkout and used without refresh.
-fn replace_with_embedded_bundle(bundle: &EmbeddedCorelib, target_root: &Path, fingerprint: &str) -> Result<()> {
+fn replace_with_embedded_bundle(
+    bundle: &EmbeddedCorelib,
+    target_root: &Path,
+    fingerprint: &str,
+    is_current: &dyn Fn(&Path) -> Result<bool>,
+) -> Result<()> {
     let parent = target_root
         .parent()
         .ok_or_else(|| anyhow::anyhow!("corelib root {} has no parent directory", target_root.display()))?;
@@ -139,6 +171,15 @@ fn replace_with_embedded_bundle(bundle: &EmbeddedCorelib, target_root: &Path, fi
         }
     }
     if let Err(error) = fs::rename(&staging, target_root) {
+        // A process that does not take the lock (an older toolchain build) may have installed the
+        // same sealed bundle first: a current target is success, not an install failure.
+        if is_current(target_root).unwrap_or(false) {
+            let _ = remove_dir_all_retry(&staging);
+            if had_previous {
+                let _ = remove_dir_all_retry(&retired);
+            }
+            return Ok(());
+        }
         if had_previous {
             // Put the sealed previous bundle back so the root is never left missing.
             let _ = fs::rename(&retired, target_root);
@@ -150,6 +191,38 @@ fn replace_with_embedded_bundle(bundle: &EmbeddedCorelib, target_root: &Path, fi
         remove_dir_all_retry(&retired).with_context(|| format!("remove retired corelib at {}", retired.display()))?;
     }
     Ok(())
+}
+
+/// Exclusive advisory lock on `.<root name>.lock` beside a Corelib root, held while the root is
+/// checked and replaced. The operating system releases it when the holder exits, so a crashed
+/// installer never blocks the next run.
+struct ProvisioningLock {
+    file: fs::File,
+}
+
+impl ProvisioningLock {
+    fn acquire(target_root: &Path) -> Result<Self> {
+        let parent = target_root
+            .parent()
+            .ok_or_else(|| anyhow::anyhow!("corelib root {} has no parent directory", target_root.display()))?;
+        fs::create_dir_all(parent).with_context(|| format!("create corelib parent {}", parent.display()))?;
+        let name = target_root.file_name().map(|name| name.to_string_lossy().into_owned()).unwrap_or_default();
+        let path = parent.join(format!(".{name}.lock"));
+        let file = fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .write(true)
+            .open(&path)
+            .with_context(|| format!("open corelib provisioning lock {}", path.display()))?;
+        file.lock().with_context(|| format!("lock corelib provisioning lock {}", path.display()))?;
+        Ok(Self { file })
+    }
+}
+
+impl Drop for ProvisioningLock {
+    fn drop(&mut self) {
+        let _ = self.file.unlock();
+    }
 }
 
 /// True when `root` exists, has at least one entry, and carries no bundle marker — i.e. it is
@@ -328,8 +401,8 @@ fn write_embedded_dir(source: &Dir<'_>, destination: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::{
-        BUNDLE_FINGERPRINT_FILE, UnrecognizedCorelibRootError, is_unmanaged_nonempty_root, looks_like_corelib_checkout,
-        replace_with_embedded_bundle, write_bundle_marker,
+        BUNDLE_FINGERPRINT_FILE, UnrecognizedCorelibRootError, ensure_bundled_corelib_at, is_unmanaged_nonempty_root,
+        looks_like_corelib_checkout, replace_with_embedded_bundle, toolchain_corelib_identity_of, write_bundle_marker,
     };
     use beskid_corelib_embed::CORELIB_BUNDLE as EMBEDDED_CORELIB;
     use semver::Version;
@@ -356,7 +429,8 @@ mod tests {
         write_bundle_marker(&root, &"0".repeat(64)).expect("outdated marker");
 
         let fingerprint = super::embedded_fingerprint(&EMBEDDED_CORELIB).expect("embedded fingerprint");
-        replace_with_embedded_bundle(&EMBEDDED_CORELIB, &root, &fingerprint).expect("replace outdated bundle");
+        replace_with_embedded_bundle(&EMBEDDED_CORELIB, &root, &fingerprint, &|_| Ok(false))
+            .expect("replace outdated bundle");
 
         assert_eq!(
             fs::read_to_string(root.join(BUNDLE_FINGERPRINT_FILE)).expect("installed marker").trim(),
@@ -485,7 +559,8 @@ mod tests {
         let parent = tempfile::tempdir().expect("install parent");
         let root = parent.path().join("beskid_corelib");
         let fingerprint = super::embedded_fingerprint(&EMBEDDED_CORELIB).expect("embedded fingerprint");
-        replace_with_embedded_bundle(&EMBEDDED_CORELIB, &root, &fingerprint).expect("materialize embedded bundle");
+        replace_with_embedded_bundle(&EMBEDDED_CORELIB, &root, &fingerprint, &|_| Ok(false))
+            .expect("materialize embedded bundle");
         (parent, root)
     }
 
@@ -562,5 +637,42 @@ mod tests {
 
         let tmp_path = dir.path().join(format!("{BUNDLE_FINGERPRINT_FILE}.tmp"));
         assert!(!tmp_path.exists(), "temp marker file must be renamed away, not left behind");
+    }
+
+    /// The language server and a CLI started together on a fresh machine both find no Corelib.
+    /// Both must succeed, neither may retire the other's fresh bundle, and the result is sealed.
+    #[test]
+    fn concurrent_first_runs_both_succeed_and_leave_one_sealed_bundle() {
+        let parent = tempfile::tempdir().expect("install parent");
+        let root = parent.path().join("corelib").join("first-run");
+        let version = super::embedded_version(&EMBEDDED_CORELIB).expect("embedded version");
+        let fingerprint = super::embedded_fingerprint(&EMBEDDED_CORELIB).expect("embedded fingerprint");
+        let results = std::thread::scope(|scope| {
+            let handles: Vec<_> = (0..4)
+                .map(|_| scope.spawn(|| ensure_bundled_corelib_at(&EMBEDDED_CORELIB, &root, &version, &fingerprint)))
+                .collect();
+            handles.into_iter().map(|handle| handle.join().expect("provisioning thread")).collect::<Vec<_>>()
+        });
+        let installs = results
+            .into_iter()
+            .map(|result| result.expect("every concurrent first run succeeds").updated)
+            .filter(|updated| *updated)
+            .count();
+        assert_eq!(installs, 1, "exactly one process installs; the others find its sealed bundle");
+        assert_eq!(super::installed_fingerprint(&root).unwrap().as_deref(), Some(fingerprint.as_str()));
+        let leftovers: Vec<_> = fs::read_dir(root.parent().unwrap())
+            .unwrap()
+            .filter_map(Result::ok)
+            .map(|entry| entry.file_name().to_string_lossy().into_owned())
+            .filter(|name| name.contains(".staging-") || name.contains(".retired-"))
+            .collect();
+        assert!(leftovers.is_empty(), "no staging or retired trees remain: {leftovers:?}");
+    }
+
+    #[test]
+    fn the_toolchain_identity_names_version_and_fingerprint() {
+        let version = Version::parse("0.6.7").unwrap();
+        let fingerprint = "0123456789abcdef".repeat(4);
+        assert_eq!(toolchain_corelib_identity_of(&version, &fingerprint), "0.6.7-0123456789abcdef");
     }
 }

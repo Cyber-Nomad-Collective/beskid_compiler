@@ -529,7 +529,7 @@ fn cli06_04_redirected_build_and_test_complete_without_cursor_controls() {
 }
 
 #[test]
-fn v067_failed_assertion_is_a_test_failure_with_values_and_call_site() {
+fn failed_assertion_is_a_test_failure_with_values_and_call_site() {
     let cli = Cli::qualified();
     let home = Home::new();
     let project = home.work().join("Failing");

@@ -367,3 +367,15 @@ fn trailing_commas_may_be_dropped_or_added_by_the_printer() {
     assert!(formatted.contains("        y: 4,\n"), "{formatted}");
     assert_eq!(fmt(&formatted), formatted);
 }
+
+#[test]
+fn statement_level_match_needs_no_semicolon_and_keeps_the_written_form() {
+    let bare = "i32 Main(i32 x) {\n    match x { 1 => 2, _ => 3, }\n    return 0;\n}\n";
+    let formatted = fmt(bare);
+    assert!(!formatted.contains("};"), "{formatted}");
+    assert_eq!(fmt(&formatted), formatted, "idempotent");
+    let terminated = "i32 Main(i32 x) {\n    match x { 1 => 2, _ => 3, };\n    return 0;\n}\n";
+    let formatted = fmt(terminated);
+    assert!(formatted.contains("};"), "{formatted}");
+    assert_eq!(fmt(&formatted), formatted, "idempotent");
+}

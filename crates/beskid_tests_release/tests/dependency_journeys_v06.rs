@@ -598,19 +598,19 @@ fn dep06_05_registry_failure_during_add_leaves_original_pair() {
 /// as process death would. Private journal publications under `.beskid` complete normally first.
 struct CrashIo;
 impl beskid_analysis::projects::dependency_transaction::DependencyTransactionIo for CrashIo {
-    fn Replace(&self, source: &Path, destination: &Path) -> std::io::Result<()> {
+    fn replace(&self, source: &Path, destination: &Path) -> std::io::Result<()> {
         beskid_analysis::projects::dependency_transaction::NativeDependencyTransactionIo
-            .Replace(source, destination)?;
+            .replace(source, destination)?;
         if destination.components().any(|component| component.as_os_str() == ".beskid") {
             return Ok(());
         }
         std::process::exit(91);
     }
-    fn SyncFile(&self, file: &std::fs::File) -> std::io::Result<()> {
-        beskid_analysis::projects::dependency_transaction::NativeDependencyTransactionIo.SyncFile(file)
+    fn sync_file(&self, file: &std::fs::File) -> std::io::Result<()> {
+        beskid_analysis::projects::dependency_transaction::NativeDependencyTransactionIo.sync_file(file)
     }
-    fn SyncDirectory(&self, path: &Path) -> std::io::Result<()> {
-        beskid_analysis::projects::dependency_transaction::NativeDependencyTransactionIo.SyncDirectory(path)
+    fn sync_directory(&self, path: &Path) -> std::io::Result<()> {
+        beskid_analysis::projects::dependency_transaction::NativeDependencyTransactionIo.sync_directory(path)
     }
 }
 
@@ -618,14 +618,14 @@ const CRASH_ENV: &str = "BESKID_RELEASE_DEPENDENCY_CRASH_MANIFEST";
 
 #[test]
 fn dep06_05_interrupted_pair_is_recovered_by_next_installed_command_before_reads() {
-    use beskid_analysis::projects::dependency_transaction::CommitDependencyPairWithIo;
+    use beskid_analysis::projects::dependency_transaction::commit_dependency_pair_with_io;
     if let Some(path) = std::env::var_os(CRASH_ENV) {
         // Child role: die after the first replacement of the pinned transaction, leaving its journal.
         let manifest = PathBuf::from(path);
         let original = std::fs::read(&manifest).unwrap();
         let original_lock = std::fs::read(manifest.with_file_name("Project.lock")).unwrap();
         let replacement = format!("{}// interrupted replacement\n", String::from_utf8_lossy(&original));
-        CommitDependencyPairWithIo(
+        commit_dependency_pair_with_io(
             &manifest,
             original.as_slice(),
             Some(original_lock.as_slice()),

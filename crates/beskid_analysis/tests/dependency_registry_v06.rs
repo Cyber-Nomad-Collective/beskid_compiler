@@ -1,5 +1,5 @@
 use beskid_analysis::projects::dependency_edit::{
-    CommitDependencyChange, DependencyIntent, DependencyIntentSource, DependencyMutation, PlanDependencyChange,
+    DependencyIntent, DependencyIntentSource, DependencyMutation, commit_dependency_change, plan_dependency_change,
 };
 use beskid_analysis::projects::workflow::{RefreshScope, ResolutionPolicy};
 use std::collections::{BTreeMap, BTreeSet};
@@ -133,8 +133,8 @@ impl Fixture {
         snapshot(self.manifest.parent().unwrap())
     }
     fn commit(&self, mutation: DependencyMutation, policy: ResolutionPolicy) {
-        let plan = PlanDependencyChange(&self.manifest, &mutation, &policy).unwrap();
-        CommitDependencyChange(plan).unwrap();
+        let plan = plan_dependency_change(&self.manifest, &mutation, &policy).unwrap();
+        commit_dependency_change(plan).unwrap();
     }
     fn lock(&self) -> String {
         std::fs::read_to_string(self.manifest.with_file_name("Project.lock")).unwrap()
@@ -228,7 +228,8 @@ fn dep06_registry_offline_warm_cache_is_verified_without_http_and_tampering_fail
     std::fs::write(fixture.manifest.parent().unwrap().join(cache_file), "tampered\n").unwrap();
     let tampered = fixture.snapshot();
     assert!(
-        PlanDependencyChange(&fixture.manifest, &update("Numbers", None), &policy(true, selected("Numbers"))).is_err()
+        plan_dependency_change(&fixture.manifest, &update("Numbers", None), &policy(true, selected("Numbers")))
+            .is_err()
     );
     assert_eq!(registry.count(), count);
     assert_eq!(fixture.snapshot(), tampered, "failed cache verification must preserve manifest, lock and obj");
@@ -240,7 +241,7 @@ fn dep06_registry_offline_cold_cache_fails_without_http_or_project_writes() {
     let fixture = Fixture::new(&registry);
     let before = fixture.snapshot();
     assert!(
-        PlanDependencyChange(&fixture.manifest, &add("Numbers", "1.0.0"), &policy(true, RefreshScope::None)).is_err()
+        plan_dependency_change(&fixture.manifest, &add("Numbers", "1.0.0"), &policy(true, RefreshScope::None)).is_err()
     );
     assert_eq!(registry.count(), 0);
     assert_eq!(fixture.snapshot(), before);
@@ -263,7 +264,7 @@ fn dep06_registry_unavailable_malformed_and_yanked_selection_fail_before_project
         let fixture = Fixture::new(&registry);
         let before = fixture.snapshot();
         assert!(
-            PlanDependencyChange(&fixture.manifest, &add("Numbers", ""), &policy(false, RefreshScope::None)).is_err(),
+            plan_dependency_change(&fixture.manifest, &add("Numbers", ""), &policy(false, RefreshScope::None)).is_err(),
             "selection must fail for {body:?}"
         );
         assert_eq!(fixture.snapshot(), before);
@@ -308,7 +309,7 @@ fn dep06_ordinary_prepare_offline_cold_cache_is_read_only_and_never_contacts_reg
     let fixture = Fixture::new(&registry);
     let original = std::fs::read_to_string(&fixture.manifest).unwrap();
     let proposed =
-        beskid_analysis::projects::dependency_edit::EditManifest(&original, &add("Numbers", "1.0.0")).unwrap();
+        beskid_analysis::projects::dependency_edit::edit_manifest(&original, &add("Numbers", "1.0.0")).unwrap();
     std::fs::write(&fixture.manifest, proposed).unwrap();
     let plan = ordinary_workspace_plan(&fixture);
     let before = fixture.snapshot();
@@ -480,7 +481,7 @@ fn dep06_registry_conflicting_transitive_versions_fail_closed_without_project_wr
     let fixture = Fixture::new(&registry);
     fixture.commit(add("Alpha", "1.0.0"), policy(false, RefreshScope::None));
     let before = fixture.snapshot();
-    let error = PlanDependencyChange(&fixture.manifest, &add("Beta", "1.0.0"), &policy(false, RefreshScope::None))
+    let error = plan_dependency_change(&fixture.manifest, &add("Beta", "1.0.0"), &policy(false, RefreshScope::None))
         .err()
         .expect("two versions of one package fail closed");
     let message = error.to_string();
@@ -499,7 +500,7 @@ fn dep06_registry_published_package_path_dependency_is_rejected() {
     );
     let fixture = Fixture::new(&registry);
     let before = fixture.snapshot();
-    let error = PlanDependencyChange(&fixture.manifest, &add("Alpha", "1.0.0"), &policy(false, RefreshScope::None))
+    let error = plan_dependency_change(&fixture.manifest, &add("Alpha", "1.0.0"), &policy(false, RefreshScope::None))
         .err()
         .expect("a published path dependency fails closed");
     assert!(error.to_string().contains("`Alpha@1.0.0` declares path dependency `Local`"), "{error}");
@@ -512,8 +513,8 @@ fn dep06_registry_change_reports_list_transitive_coordinate_changes() {
     diamond(&registry);
     let fixture = Fixture::new(&registry);
     let change = |mutation: DependencyMutation| {
-        let plan = PlanDependencyChange(&fixture.manifest, &mutation, &policy(false, RefreshScope::None)).unwrap();
-        let report = CommitDependencyChange(plan).unwrap();
+        let plan = plan_dependency_change(&fixture.manifest, &mutation, &policy(false, RefreshScope::None)).unwrap();
+        let report = commit_dependency_change(plan).unwrap();
         let json = serde_json::to_value(&report).unwrap();
         json["effects"]
             .as_array()
@@ -555,13 +556,13 @@ fn dep06_registry_change_reports_list_transitive_coordinate_changes() {
         ],
         "removal reports transitives that become unreachable and keeps the shared one silent"
     );
-    let text = PlanDependencyChange(
+    let text = plan_dependency_change(
         &fixture.manifest,
         &DependencyMutation::Remove("Beta".into()),
         &policy(false, RefreshScope::None),
     )
     .unwrap()
-    .Report()
+    .report()
     .to_string();
     assert!(text.contains("removed Shared (transitive): registry test @ 1.0.0"), "{text}");
 }

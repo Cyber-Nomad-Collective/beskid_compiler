@@ -13,9 +13,9 @@ pub enum ToolchainCommand {
 pub fn execute(args: ToolchainArgs) -> Result<()> {
     match args.command {
         ToolchainCommand::Status => {
-            println!("{}", beskid_up::CurrentInstallationStatus()?);
+            println!("{}", beskid_up::current_installation_status()?);
             Ok(())
         }
-        ToolchainCommand::Update => beskid_up::UpdateConfiguredToolchain().map(|_| ()).map_err(Into::into),
+        ToolchainCommand::Update => beskid_up::update_configured_toolchain().map(|_| ()).map_err(Into::into),
     }
 }

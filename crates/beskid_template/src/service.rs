@@ -192,7 +192,8 @@ where
     F: FnOnce(&Path) -> Result<bool>,
 {
     let bundled = matches!(&request.selector, TemplateSelector::ShortName(name) if name == "app");
-    let bundled_root = if bundled { Some(crate::bundled::ApplicationTemplate(request.name.as_deref())?) } else { None };
+    let bundled_root =
+        if bundled { Some(crate::bundled::application_template(request.name.as_deref())?) } else { None };
     let selector = bundled_root.as_ref().map(|root| TemplateSelector::Path(root.path().to_path_buf()));
     let (template_root, manifest, registry_meta) = resolve_template_for_instantiate(
         selector.as_ref().unwrap_or(&request.selector),

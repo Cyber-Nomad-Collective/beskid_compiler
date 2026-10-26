@@ -1,6 +1,6 @@
 //! Inventory of every `SemanticError::unavailable` query name (design
-//! `docs/superpowers/specs/2026-09-23-production-semantic-diagnostics-design.md`, section 3 and
-//! section 4 slice 8).
+//! `docs/superpowers/specs/2026-09-23-production-semantic-diagnostics-design.md`, sections 3
+//! and 4).
 //!
 //! `unavailable(name)` means a compiler gap: a fact that cannot be decided because its port is
 //! incomplete. After the reachability-scoped legality gate has passed, any such gap that reaches

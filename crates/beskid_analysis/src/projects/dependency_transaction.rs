@@ -1,5 +1,4 @@
 //! Durable, guarded manifest/lock commits. This module does not resolve dependencies.
-#![allow(non_snake_case)]
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Write};
@@ -15,20 +14,20 @@ const JOURNAL_LIMIT: u64 = 256 * 1024 * 1024;
 
 /// Actual filesystem boundary used by both native commits and fault-injection consumers.
 pub trait DependencyTransactionIo {
-    fn Replace(&self, source: &Path, destination: &Path) -> io::Result<()>;
-    fn SyncFile(&self, file: &File) -> io::Result<()>;
-    fn SyncDirectory(&self, directory: &Path) -> io::Result<()>;
+    fn replace(&self, source: &Path, destination: &Path) -> io::Result<()>;
+    fn sync_file(&self, file: &File) -> io::Result<()>;
+    fn sync_directory(&self, directory: &Path) -> io::Result<()>;
 }
 
 pub struct NativeDependencyTransactionIo;
 impl DependencyTransactionIo for NativeDependencyTransactionIo {
-    fn Replace(&self, source: &Path, destination: &Path) -> io::Result<()> {
+    fn replace(&self, source: &Path, destination: &Path) -> io::Result<()> {
         fs::rename(source, destination)
     }
-    fn SyncFile(&self, file: &File) -> io::Result<()> {
+    fn sync_file(&self, file: &File) -> io::Result<()> {
         file.sync_all()
     }
-    fn SyncDirectory(&self, directory: &Path) -> io::Result<()> {
+    fn sync_directory(&self, directory: &Path) -> io::Result<()> {
         // FlushFileBuffers requires a handle with GENERIC_WRITE access; a read-only directory
         // handle fails with ERROR_ACCESS_DENIED. FILE_FLAG_BACKUP_SEMANTICS opens the directory.
         #[cfg(windows)]
@@ -77,7 +76,7 @@ struct FileIdentity {
     length: u64,
 }
 impl FileIdentity {
-    fn Read(path: &Path) -> io::Result<Self> {
+    fn read(path: &Path) -> io::Result<Self> {
         let metadata = fs::symlink_metadata(path)?;
         #[cfg(unix)]
         use std::os::unix::fs::MetadataExt;
@@ -106,32 +105,32 @@ struct Guard {
     journal: PathBuf,
 }
 impl Guard {
-    fn Acquire(manifest_path: &Path) -> Result<Self, ProjectError> {
+    fn acquire(manifest_path: &Path) -> Result<Self, ProjectError> {
         let parent = manifest_path.parent().filter(|path| !path.as_os_str().is_empty()).unwrap_or(Path::new("."));
-        RejectSymlink(parent)?;
-        let directory = fs::canonicalize(parent).map_err(Io)?;
+        reject_symlink(parent)?;
+        let directory = fs::canonicalize(parent).map_err(io_error)?;
         let name = manifest_path
             .file_name()
             .and_then(|name| name.to_str())
-            .ok_or_else(|| Failure("manifest filename must be valid Unicode"))?;
+            .ok_or_else(|| failure("manifest filename must be valid Unicode"))?;
         if name == "Project.lock" {
-            return Err(Failure("manifest and Project.lock destinations must differ"));
+            return Err(failure("manifest and Project.lock destinations must differ"));
         }
         let manifest = directory.join(name);
         let lock = directory.join("Project.lock");
         let internal = directory.join(".beskid");
-        SecureDirectory(&internal)?;
+        secure_directory(&internal)?;
         let private = internal.join("dependency-transaction");
-        SecureDirectory(&private)?;
+        secure_directory(&private)?;
         #[cfg(unix)]
         {
             use std::os::unix::fs::MetadataExt;
-            if fs::metadata(&private).map_err(Io)?.dev() != fs::metadata(&directory).map_err(Io)?.dev() {
-                return Err(Failure("transaction staging must be on the project filesystem"));
+            if fs::metadata(&private).map_err(io_error)?.dev() != fs::metadata(&directory).map_err(io_error)?.dev() {
+                return Err(failure("transaction staging must be on the project filesystem"));
             }
         }
         let guard_path = private.join("guard");
-        CheckFile(&guard_path, true)?;
+        check_file(&guard_path, true)?;
         let mut options = OpenOptions::new();
         options.read(true).write(true).create(true).truncate(false);
         #[cfg(unix)]
@@ -139,14 +138,14 @@ impl Guard {
             use std::os::unix::fs::OpenOptionsExt;
             options.mode(0o600);
         }
-        let file = options.open(&guard_path).map_err(Io)?;
-        CheckFile(&guard_path, false)?;
+        let file = options.open(&guard_path).map_err(io_error)?;
+        check_file(&guard_path, false)?;
         file.try_lock_exclusive()
-            .map_err(|error| Failure(format!("dependency transaction busy at {}: {error}", guard_path.display())))?;
+            .map_err(|error| failure(format!("dependency transaction busy at {}: {error}", guard_path.display())))?;
         let guard =
             Self { file, directory, private: private.clone(), manifest, lock, journal: private.join("journal.json") };
-        CheckFile(&guard.manifest, false)?;
-        CheckFile(&guard.lock, true)?;
+        check_file(&guard.manifest, false)?;
+        check_file(&guard.lock, true)?;
         Ok(guard)
     }
 }
@@ -156,14 +155,14 @@ impl Drop for Guard {
     }
 }
 
-pub fn CommitDependencyPair(
+pub fn commit_dependency_pair(
     manifest_path: &Path,
     original_manifest: &[u8],
     original_lock: Option<&[u8]>,
     replacement_manifest: &[u8],
     replacement_lock: &[u8],
 ) -> Result<(), ProjectError> {
-    CommitDependencyPairWithIo(
+    commit_dependency_pair_with_io(
         manifest_path,
         original_manifest,
         original_lock,
@@ -173,7 +172,7 @@ pub fn CommitDependencyPair(
     )
 }
 
-pub fn CommitDependencyPairWithIo(
+pub fn commit_dependency_pair_with_io(
     manifest_path: &Path,
     original_manifest: &[u8],
     original_lock: Option<&[u8]>,
@@ -181,12 +180,12 @@ pub fn CommitDependencyPairWithIo(
     replacement_lock: &[u8],
     io: &dyn DependencyTransactionIo,
 ) -> Result<(), ProjectError> {
-    let guard = Guard::Acquire(manifest_path)?;
-    Recover(&guard)?;
-    Expected(&guard.manifest, Some(original_manifest))?;
-    Expected(&guard.lock, original_lock)?;
-    let manifest_stage = StagePublished(&guard.private, &guard.manifest, replacement_manifest, io)?;
-    let lock_stage = StagePublished(&guard.private, &guard.lock, replacement_lock, io)?;
+    let guard = Guard::acquire(manifest_path)?;
+    recover(&guard)?;
+    expected(&guard.manifest, Some(original_manifest))?;
+    expected(&guard.lock, original_lock)?;
+    let manifest_stage = stage_published(&guard.private, &guard.manifest, replacement_manifest, io)?;
+    let lock_stage = stage_published(&guard.private, &guard.lock, replacement_lock, io)?;
     let mut journal = Journal {
         schema_version: 1,
         project_directory: guard.directory.clone(),
@@ -196,38 +195,38 @@ pub fn CommitDependencyPairWithIo(
         original_lock: original_lock.map(<[u8]>::to_vec),
         replacement_manifest: replacement_manifest.to_vec(),
         replacement_lock: replacement_lock.to_vec(),
-        replacement_manifest_identity: FileIdentity::Read(&manifest_stage).map_err(Io)?,
-        replacement_lock_identity: FileIdentity::Read(&lock_stage).map_err(Io)?,
+        replacement_manifest_identity: FileIdentity::read(&manifest_stage).map_err(io_error)?,
+        replacement_lock_identity: FileIdentity::read(&lock_stage).map_err(io_error)?,
     };
     // A complete durable original/staged pair precedes any visible replacement.
-    SaveJournal(&guard, &journal, io)?;
+    save_journal(&guard, &journal, io)?;
     let result: Result<(), ProjectError> = (|| {
-        Expected(&guard.manifest, Some(original_manifest))?;
-        Expected(&guard.lock, original_lock)?;
-        io.Replace(&manifest_stage, &guard.manifest).map_err(Io)?;
-        io.SyncDirectory(&guard.directory).map_err(Io)?;
-        Expected(&guard.manifest, Some(replacement_manifest))?;
-        Expected(&guard.lock, original_lock)?;
-        io.Replace(&lock_stage, &guard.lock).map_err(Io)?;
-        io.SyncDirectory(&guard.directory).map_err(Io)?;
-        Expected(&guard.manifest, Some(replacement_manifest))?;
-        Expected(&guard.lock, Some(replacement_lock))?;
+        expected(&guard.manifest, Some(original_manifest))?;
+        expected(&guard.lock, original_lock)?;
+        io.replace(&manifest_stage, &guard.manifest).map_err(io_error)?;
+        io.sync_directory(&guard.directory).map_err(io_error)?;
+        expected(&guard.manifest, Some(replacement_manifest))?;
+        expected(&guard.lock, original_lock)?;
+        io.replace(&lock_stage, &guard.lock).map_err(io_error)?;
+        io.sync_directory(&guard.directory).map_err(io_error)?;
+        expected(&guard.manifest, Some(replacement_manifest))?;
+        expected(&guard.lock, Some(replacement_lock))?;
         journal.state = CommitState::Committed;
-        SaveJournal(&guard, &journal, io)?;
-        ClearJournal(&guard)?;
+        save_journal(&guard, &journal, io)?;
+        clear_journal(&guard)?;
         Ok(())
     })();
     if let Err(error) = result {
         journal.state = CommitState::Prepared;
         // Retain rollback intent durably even if failure happened during final journal cleanup.
-        if let Err(journal_error) = SaveJournal(&guard, &journal, &NativeDependencyTransactionIo) {
-            return Err(RecoveryGuidance(
+        if let Err(journal_error) = save_journal(&guard, &journal, &NativeDependencyTransactionIo) {
+            return Err(recovery_guidance(
                 &guard,
                 format!("{error}; could not retain rollback journal: {journal_error}"),
             ));
         }
-        if let Err(rollback_error) = Restore(&guard, &journal) {
-            return Err(RecoveryGuidance(&guard, format!("{error}; rollback failed: {rollback_error}")));
+        if let Err(rollback_error) = restore(&guard, &journal) {
+            return Err(recovery_guidance(&guard, format!("{error}; rollback failed: {rollback_error}")));
         }
         return Err(error);
     }
@@ -236,139 +235,139 @@ pub fn CommitDependencyPairWithIo(
 
 /// Recover an interrupted commit of `manifest_path` before any project read (DEP06-05). Only a project
 /// that has a commit journal is touched: no private state is created for an ordinary read.
-pub fn RecoverInterruptedDependencyPair(manifest_path: &Path) -> Result<bool, ProjectError> {
+pub fn recover_interrupted_dependency_pair(manifest_path: &Path) -> Result<bool, ProjectError> {
     let parent = manifest_path.parent().filter(|path| !path.as_os_str().is_empty()).unwrap_or(Path::new("."));
     let journal = parent.join(".beskid").join("dependency-transaction").join("journal.json");
     match fs::symlink_metadata(&journal) {
-        Ok(_) => RecoverDependencyPair(manifest_path),
+        Ok(_) => recover_dependency_pair(manifest_path),
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(false),
-        Err(error) => Err(Io(error)),
+        Err(error) => Err(io_error(error)),
     }
 }
 
 /// Recover before project reads; never overwrite bytes outside the recorded original/staged pair.
-pub fn RecoverDependencyPair(manifest_path: &Path) -> Result<bool, ProjectError> {
-    let guard = Guard::Acquire(manifest_path)?;
-    Recover(&guard)
+pub fn recover_dependency_pair(manifest_path: &Path) -> Result<bool, ProjectError> {
+    let guard = Guard::acquire(manifest_path)?;
+    recover(&guard)
 }
 
-fn Recover(guard: &Guard) -> Result<bool, ProjectError> {
-    if !guard.journal.try_exists().map_err(Io)? {
+fn recover(guard: &Guard) -> Result<bool, ProjectError> {
+    if !guard.journal.try_exists().map_err(io_error)? {
         return Ok(false);
     }
-    CheckFile(&guard.journal, false)?;
+    check_file(&guard.journal, false)?;
     let mut bytes = Vec::new();
-    File::open(&guard.journal).map_err(Io)?.take(JOURNAL_LIMIT + 1).read_to_end(&mut bytes).map_err(Io)?;
+    File::open(&guard.journal).map_err(io_error)?.take(JOURNAL_LIMIT + 1).read_to_end(&mut bytes).map_err(io_error)?;
     if bytes.len() as u64 > JOURNAL_LIMIT {
-        return Err(RecoveryGuidance(guard, "journal exceeds the recovery size limit"));
+        return Err(recovery_guidance(guard, "journal exceeds the recovery size limit"));
     }
-    let journal: Journal =
-        serde_json::from_slice(&bytes).map_err(|error| RecoveryGuidance(guard, format!("invalid journal: {error}")))?;
+    let journal: Journal = serde_json::from_slice(&bytes)
+        .map_err(|error| recovery_guidance(guard, format!("invalid journal: {error}")))?;
     if journal.schema_version != 1
         || journal.project_directory != guard.directory
         || Some(journal.manifest_name.as_str()) != guard.manifest.file_name().and_then(|name| name.to_str())
     {
-        return Err(RecoveryGuidance(guard, "journal project identity/version mismatch"));
+        return Err(recovery_guidance(guard, "journal project identity/version mismatch"));
     }
     if journal.state == CommitState::Committed {
-        Expected(&guard.manifest, Some(&journal.replacement_manifest))
-            .map_err(|error| RecoveryGuidance(guard, error))?;
-        Expected(&guard.lock, Some(&journal.replacement_lock)).map_err(|error| RecoveryGuidance(guard, error))?;
-        ClearJournal(guard)?;
+        expected(&guard.manifest, Some(&journal.replacement_manifest))
+            .map_err(|error| recovery_guidance(guard, error))?;
+        expected(&guard.lock, Some(&journal.replacement_lock)).map_err(|error| recovery_guidance(guard, error))?;
+        clear_journal(guard)?;
     } else {
-        Restore(guard, &journal).map_err(|error| RecoveryGuidance(guard, error))?;
+        restore(guard, &journal).map_err(|error| recovery_guidance(guard, error))?;
     }
     Ok(true)
 }
 
-fn Restore(guard: &Guard, journal: &Journal) -> Result<(), ProjectError> {
+fn restore(guard: &Guard, journal: &Journal) -> Result<(), ProjectError> {
     // Check BOTH before changing either; an external editor owns any unrecognized bytes.
-    Recoverable(
+    recoverable(
         &guard.manifest,
         Some(&journal.original_manifest),
         &journal.replacement_manifest,
         &journal.replacement_manifest_identity,
     )?;
-    Recoverable(
+    recoverable(
         &guard.lock,
         journal.original_lock.as_deref(),
         &journal.replacement_lock,
         &journal.replacement_lock_identity,
     )?;
-    RestoreOne(
+    restore_one(
         guard,
         &guard.manifest,
         Some(&journal.original_manifest),
         &journal.replacement_manifest,
         &journal.replacement_manifest_identity,
     )?;
-    RestoreOne(
+    restore_one(
         guard,
         &guard.lock,
         journal.original_lock.as_deref(),
         &journal.replacement_lock,
         &journal.replacement_lock_identity,
     )?;
-    ClearJournal(guard)
+    clear_journal(guard)
 }
-fn RestoreOne(
+fn restore_one(
     guard: &Guard,
     path: &Path,
     original: Option<&[u8]>,
     replacement: &[u8],
     identity: &FileIdentity,
 ) -> Result<(), ProjectError> {
-    Recoverable(path, original, replacement, identity)?;
-    if ReadOptional(path)?.as_deref() == original {
+    recoverable(path, original, replacement, identity)?;
+    if read_optional(path)?.as_deref() == original {
         return Ok(());
     }
     match original {
         Some(bytes) => {
-            let stage = StagePublished(&guard.private, path, bytes, &NativeDependencyTransactionIo)?;
-            Recoverable(path, original, replacement, identity)?;
-            NativeDependencyTransactionIo.Replace(&stage, path).map_err(Io)?;
+            let stage = stage_published(&guard.private, path, bytes, &NativeDependencyTransactionIo)?;
+            recoverable(path, original, replacement, identity)?;
+            NativeDependencyTransactionIo.replace(&stage, path).map_err(io_error)?;
         }
         None => {
-            Recoverable(path, original, replacement, identity)?;
-            fs::remove_file(path).map_err(Io)?;
+            recoverable(path, original, replacement, identity)?;
+            fs::remove_file(path).map_err(io_error)?;
         }
     }
-    NativeDependencyTransactionIo.SyncDirectory(&guard.directory).map_err(Io)
+    NativeDependencyTransactionIo.sync_directory(&guard.directory).map_err(io_error)
 }
-fn Recoverable(
+fn recoverable(
     path: &Path,
     original: Option<&[u8]>,
     replacement: &[u8],
     identity: &FileIdentity,
 ) -> Result<(), ProjectError> {
-    let current = ReadOptional(path)?;
+    let current = read_optional(path)?;
     if current.as_deref() == original {
         return Ok(());
     }
-    if current.as_deref() == Some(replacement) && FileIdentity::Read(path).map_err(Io)? == *identity {
+    if current.as_deref() == Some(replacement) && FileIdentity::read(path).map_err(io_error)? == *identity {
         return Ok(());
     }
-    Err(Failure(format!("external bytes or file identity changed at {}; refusing recovery overwrite", path.display())))
+    Err(failure(format!("external bytes or file identity changed at {}; refusing recovery overwrite", path.display())))
 }
-fn Expected(path: &Path, bytes: Option<&[u8]>) -> Result<(), ProjectError> {
-    if ReadOptional(path)?.as_deref() != bytes {
-        return Err(Failure(format!(
+fn expected(path: &Path, bytes: Option<&[u8]>) -> Result<(), ProjectError> {
+    if read_optional(path)?.as_deref() != bytes {
+        return Err(failure(format!(
             "concurrent dependency edit at {}; planned bytes no longer match",
             path.display()
         )));
     }
     Ok(())
 }
-fn ReadOptional(path: &Path) -> Result<Option<Vec<u8>>, ProjectError> {
-    CheckFile(path, true)?;
+fn read_optional(path: &Path) -> Result<Option<Vec<u8>>, ProjectError> {
+    check_file(path, true)?;
     match fs::read(path) {
         Ok(bytes) => Ok(Some(bytes)),
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
-        Err(error) => Err(Io(error)),
+        Err(error) => Err(io_error(error)),
     }
 }
-fn Stage(directory: &Path, bytes: &[u8], io: &dyn DependencyTransactionIo) -> Result<TempPath, ProjectError> {
-    StageFile(directory, bytes, StageAccess::Private, io)
+fn stage(directory: &Path, bytes: &[u8], io: &dyn DependencyTransactionIo) -> Result<TempPath, ProjectError> {
+    stage_file(directory, bytes, StageAccess::Private, io)
 }
 /// Access of a staged file once it is renamed into place.
 enum StageAccess {
@@ -385,7 +384,7 @@ enum StageAccess {
 // On Windows a published file takes the ordinary attributes and inherited ACL of a new project file:
 // `Permissions` there is the whole attribute set, so copying it would also copy attributes such as
 // FILE_ATTRIBUTE_TEMPORARY from the destination.
-fn StagePublished(
+fn stage_published(
     directory: &Path,
     destination: &Path,
     bytes: &[u8],
@@ -397,9 +396,9 @@ fn StagePublished(
         #[cfg(not(unix))]
         Ok(_) => StageAccess::NewPublic,
         Err(error) if error.kind() == io::ErrorKind::NotFound => StageAccess::NewPublic,
-        Err(error) => return Err(Io(error)),
+        Err(error) => return Err(io_error(error)),
     };
-    StageFile(directory, bytes, access, io)
+    stage_file(directory, bytes, access, io)
 }
 /// Write and durably sync a staged file, then close its handle.
 ///
@@ -408,7 +407,7 @@ fn StagePublished(
 /// the published manifest and lock would stay marked temporary. The returned `TempPath` holds no
 /// open handle, so the rename never runs while this process holds a handle to the staged file (or,
 /// after the rename, to the destination), and an unpublished stage is still removed on drop.
-fn StageFile(
+fn stage_file(
     directory: &Path,
     bytes: &[u8],
     access: StageAccess,
@@ -428,69 +427,69 @@ fn StageFile(
             }
             options.open(path)
         })
-        .map_err(Io)?;
+        .map_err(io_error)?;
     #[cfg(unix)]
     if let StageAccess::Existing(permissions) = access {
-        file.as_file().set_permissions(permissions).map_err(Io)?;
+        file.as_file().set_permissions(permissions).map_err(io_error)?;
     }
-    file.write_all(bytes).map_err(Io)?;
-    io.SyncFile(file.as_file()).map_err(Io)?;
+    file.write_all(bytes).map_err(io_error)?;
+    io.sync_file(file.as_file()).map_err(io_error)?;
     Ok(file.into_temp_path())
 }
-fn SaveJournal(guard: &Guard, journal: &Journal, io: &dyn DependencyTransactionIo) -> Result<(), ProjectError> {
+fn save_journal(guard: &Guard, journal: &Journal, io: &dyn DependencyTransactionIo) -> Result<(), ProjectError> {
     let bytes =
-        serde_json::to_vec(journal).map_err(|error| Failure(format!("journal serialization failed: {error}")))?;
+        serde_json::to_vec(journal).map_err(|error| failure(format!("journal serialization failed: {error}")))?;
     if bytes.len() as u64 > JOURNAL_LIMIT {
-        return Err(Failure("transaction journal exceeds size limit"));
+        return Err(failure("transaction journal exceeds size limit"));
     }
-    let stage = Stage(&guard.private, &bytes, io)?;
-    CheckFile(&guard.journal, true)?;
-    io.Replace(&stage, &guard.journal).map_err(Io)?;
-    io.SyncDirectory(&guard.private).map_err(Io)?;
+    let stage = stage(&guard.private, &bytes, io)?;
+    check_file(&guard.journal, true)?;
+    io.replace(&stage, &guard.journal).map_err(io_error)?;
+    io.sync_directory(&guard.private).map_err(io_error)?;
     // Ensure discovery of the journal directory is also durable on first use.
-    io.SyncDirectory(guard.private.parent().unwrap()).map_err(Io)?;
-    io.SyncDirectory(&guard.directory).map_err(Io)
+    io.sync_directory(guard.private.parent().unwrap()).map_err(io_error)?;
+    io.sync_directory(&guard.directory).map_err(io_error)
 }
-fn ClearJournal(guard: &Guard) -> Result<(), ProjectError> {
-    fs::remove_file(&guard.journal).map_err(Io)?;
-    NativeDependencyTransactionIo.SyncDirectory(&guard.private).map_err(Io)
+fn clear_journal(guard: &Guard) -> Result<(), ProjectError> {
+    fs::remove_file(&guard.journal).map_err(io_error)?;
+    NativeDependencyTransactionIo.sync_directory(&guard.private).map_err(io_error)
 }
-fn RejectSymlink(path: &Path) -> Result<(), ProjectError> {
-    let metadata = fs::symlink_metadata(path).map_err(Io)?;
+fn reject_symlink(path: &Path) -> Result<(), ProjectError> {
+    let metadata = fs::symlink_metadata(path).map_err(io_error)?;
     if metadata.file_type().is_symlink() {
-        return Err(Failure(format!("symlink transaction destination rejected: {}", path.display())));
+        return Err(failure(format!("symlink transaction destination rejected: {}", path.display())));
     }
     Ok(())
 }
-fn CheckFile(path: &Path, missing_allowed: bool) -> Result<(), ProjectError> {
+fn check_file(path: &Path, missing_allowed: bool) -> Result<(), ProjectError> {
     match fs::symlink_metadata(path) {
         Ok(metadata) => {
             if !metadata.is_file() || metadata.file_type().is_symlink() {
-                return Err(Failure(format!(
+                return Err(failure(format!(
                     "non-regular or symlink transaction destination rejected: {}",
                     path.display()
                 )));
             }
-            CheckOwner(path, &metadata)?;
+            check_owner(path, &metadata)?;
             Ok(())
         }
         Err(error) if missing_allowed && error.kind() == io::ErrorKind::NotFound => Ok(()),
-        Err(error) => Err(Io(error)),
+        Err(error) => Err(io_error(error)),
     }
 }
-fn SecureDirectory(path: &Path) -> Result<(), ProjectError> {
+fn secure_directory(path: &Path) -> Result<(), ProjectError> {
     match fs::symlink_metadata(path) {
         Ok(metadata) => {
             if !metadata.is_dir() || metadata.file_type().is_symlink() {
-                return Err(Failure(format!("unsafe transaction directory: {}", path.display())));
+                return Err(failure(format!("unsafe transaction directory: {}", path.display())));
             }
-            CheckOwner(path, &metadata)?;
+            check_owner(path, &metadata)?;
             #[cfg(unix)]
             {
                 use std::os::unix::fs::MetadataExt;
                 if path.file_name().is_some_and(|name| name == "dependency-transaction") && metadata.mode() & 0o077 != 0
                 {
-                    return Err(Failure(format!("transaction directory must be private (0700): {}", path.display())));
+                    return Err(failure(format!("transaction directory must be private (0700): {}", path.display())));
                 }
             }
         }
@@ -501,20 +500,20 @@ fn SecureDirectory(path: &Path) -> Result<(), ProjectError> {
                 use std::os::unix::fs::DirBuilderExt;
                 builder.mode(0o700);
             }
-            builder.create(path).map_err(Io)?;
+            builder.create(path).map_err(io_error)?;
         }
-        Err(error) => return Err(Io(error)),
+        Err(error) => return Err(io_error(error)),
     }
     Ok(())
 }
-fn CheckOwner(path: &Path, metadata: &fs::Metadata) -> Result<(), ProjectError> {
+fn check_owner(path: &Path, metadata: &fs::Metadata) -> Result<(), ProjectError> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;
         // Creator-owned anonymous file supplies the effective filesystem UID without unsafe FFI.
-        let creator = tempfile::tempfile().map_err(Io)?.metadata().map_err(Io)?.uid();
+        let creator = tempfile::tempfile().map_err(io_error)?.metadata().map_err(io_error)?.uid();
         if metadata.uid() != creator {
-            return Err(Failure(format!("foreign-owned transaction destination rejected: {}", path.display())));
+            return Err(failure(format!("foreign-owned transaction destination rejected: {}", path.display())));
         }
     }
     #[cfg(not(unix))]
@@ -523,14 +522,14 @@ fn CheckOwner(path: &Path, metadata: &fs::Metadata) -> Result<(), ProjectError> 
     }
     Ok(())
 }
-fn Failure(message: impl std::fmt::Display) -> ProjectError {
+fn failure(message: impl std::fmt::Display) -> ProjectError {
     ProjectError::Validation(message.to_string())
 }
-fn Io(error: io::Error) -> ProjectError {
-    Failure(format!("dependency transaction I/O failure: {error}"))
+fn io_error(error: io::Error) -> ProjectError {
+    failure(format!("dependency transaction I/O failure: {error}"))
 }
-fn RecoveryGuidance(guard: &Guard, message: impl std::fmt::Display) -> ProjectError {
-    Failure(format!(
+fn recovery_guidance(guard: &Guard, message: impl std::fmt::Display) -> ProjectError {
+    failure(format!(
         "dependency transaction recovery required at {}: {message}; preserve journal and both files, resolve external edits, then rerun recovery before project reads",
         guard.journal.display()
     ))
