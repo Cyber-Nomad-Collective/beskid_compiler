@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The language server logs why a document was not formatted and shows a warning when the formatter refuses a document that parses.
 - Event fields format correctly: an event without a capacity keeps the space after `event`, and event parameters keep their names (they were printed as bare types, so the output did not parse).
 - An enum variant declared with empty parentheses (`Failed()`) formats to `Failed` instead of being refused.
+- A `///` run separated from the next item by a blank line is E0117, "documentation comment is not attached to an item", with the fixes "Remove the blank line" and "Turn it into `//` comments". Before, the parser attached it across the blank line. 32 Corelib files had such runs; their blank lines are removed, so what they document is unchanged.
 - Integer literals accept the `_word` suffix (`4_word`), typed as `word`.
 - `beskid_ast_reflect_gen` writes every generated `.bd` file through the formatter, so regenerated Mod SDK sources pass `beskid fmt --check`.
 - The internal "expected ..." syntax-tree diagnostic points at the item or statement being built instead of 1:1, and the parse-context scan reads `'\u{41}'` character literals. A test keeps the parse-context keyword list equal to the grammar's `Keyword` rule.
