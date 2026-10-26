@@ -1,8 +1,10 @@
-//! Release gate: member completion in a many-project folder answers quickly while the
-//! workspace scan is still running.
+//! Release gates for a many-project folder: member completion answers quickly while the
+//! workspace scan is still running, and edits that alternate between projects keep hover,
+//! completion and the outline within their latency budgets.
 
 use std::io::{BufRead, BufReader, Read, Write};
-use std::process::{ChildStdin, Command, Stdio};
+use std::path::Path;
+use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::mpsc::{self, Receiver};
 use std::time::{Duration, Instant};
 
@@ -38,6 +40,8 @@ fn response_with_id(messages: &Receiver<Value>, id: i64, scan_idle: &mut bool) -
     }
 }
 
+/// Wait for the diagnostics of the opened buffer (version 1), not those the workspace scan
+/// publishes for the file on disk.
 fn wait_for_document_diagnostics(messages: &Receiver<Value>, uri: &str, scan_idle: &mut bool) {
     loop {
         let message = messages.recv_timeout(Duration::from_secs(120)).expect("diagnostics before timeout");
@@ -46,6 +50,7 @@ fn wait_for_document_diagnostics(messages: &Receiver<Value>, uri: &str, scan_idl
         }
         if message.get("method").and_then(Value::as_str) == Some("textDocument/publishDiagnostics")
             && message["params"]["uri"].as_str() == Some(uri)
+            && message["params"]["version"].as_i64() == Some(1)
         {
             return;
         }
@@ -56,12 +61,9 @@ fn labels(response: &Value) -> Vec<&str> {
     response["result"].as_array().expect("completion array").iter().filter_map(|item| item["label"].as_str()).collect()
 }
 
-#[test]
-fn member_completion_answers_within_a_second_while_a_multi_project_scan_runs() {
-    let compiler_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .and_then(std::path::Path::parent)
-        .expect("compiler root");
+/// A folder of [`PROJECTS`] small App projects under the compiler's `target` directory.
+fn write_projects() -> (tempfile::TempDir, &'static Path) {
+    let compiler_root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().and_then(Path::parent).expect("compiler root");
     let parent = compiler_root.join("target");
     std::fs::create_dir_all(&parent).expect("temporary parent");
     let folder = tempfile::tempdir_in(&parent).expect("workspace folder");
@@ -82,12 +84,13 @@ fn member_completion_answers_within_a_second_while_a_multi_project_scan_runs() {
         )
         .expect("source");
     }
-    let source = "use Core.String;\n\ni32 Main() {\n    String.Sea;\n    return 0;\n}\n";
-    let source_path = folder.path().join("P00/Src/Main.bd");
-    std::fs::write(&source_path, source).expect("target source");
+    (folder, compiler_root)
+}
 
-    let folder_uri = url::Url::from_directory_path(folder.path()).expect("folder URI").to_string();
-    let source_uri = url::Url::from_file_path(&source_path).expect("source URI").to_string();
+/// Start the server on `folder` (initialized, Mod host from the workspace) and return it with
+/// its stdin and a channel of every message it sends.
+fn start_server(folder: &Path, compiler_root: &Path, idle: &mut bool) -> (Child, ChildStdin, Receiver<Value>) {
+    let folder_uri = url::Url::from_directory_path(folder).expect("folder URI").to_string();
     let mod_host = beskid_tests_mod_host::provisioned_cli().expect("workspace Mod host CLI");
     let runtime_prefix = beskid_tests_mod_host::shared_runtime_prefix().expect("shared runtime kit");
     let corelib_root = beskid_tests_mod_host::shared_corelib_root().expect("shared provisioned Corelib");
@@ -125,8 +128,6 @@ fn member_completion_answers_within_a_second_while_a_multi_project_scan_runs() {
             sender.send(serde_json::from_slice(&body).ok()?).ok()?;
         }
     });
-
-    let mut idle = false;
     send_message(
         &mut stdin,
         json!({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
@@ -136,8 +137,20 @@ fn member_completion_answers_within_a_second_while_a_multi_project_scan_runs() {
             "initializationOptions": {"modHost": {
                 "path": mod_host, "runtimePrefix": runtime_prefix, "runtimeProfile": "debug"}}}}),
     );
-    assert!(response_with_id(&messages, 1, &mut idle).get("error").is_none());
+    assert!(response_with_id(&messages, 1, idle).get("error").is_none());
     send_message(&mut stdin, json!({"jsonrpc": "2.0", "method": "initialized", "params": {}}));
+    (child, stdin, messages)
+}
+
+#[test]
+fn member_completion_answers_within_a_second_while_a_multi_project_scan_runs() {
+    let (folder, compiler_root) = write_projects();
+    let source = "use Core.String;\n\ni32 Main() {\n    String.Sea;\n    return 0;\n}\n";
+    let source_path = folder.path().join("P00/Src/Main.bd");
+    std::fs::write(&source_path, source).expect("target source");
+    let source_uri = url::Url::from_file_path(&source_path).expect("source URI").to_string();
+    let mut idle = false;
+    let (mut child, mut stdin, messages) = start_server(folder.path(), compiler_root, &mut idle);
     send_message(
         &mut stdin,
         json!({"jsonrpc": "2.0", "method": "textDocument/didOpen", "params": {"textDocument": {
@@ -243,6 +256,96 @@ fn member_completion_answers_within_a_second_while_a_multi_project_scan_runs() {
             assert!(got.contains(label), "`{text}` must offer {label}: {got:?}");
         }
         assert!(latency < Duration::from_secs(1), "incomplete member completion took {latency:?}");
+    }
+    let _ = child.kill();
+}
+
+/// Edits that alternate between documents of several projects. Each project keeps its analysis
+/// between edits, so the outline (syntax only) answers at once and hover and completion wait only
+/// for the edit's own fast pass, never for a project to be analyzed again from the start.
+#[test]
+fn edits_alternating_between_projects_keep_requests_within_budget() {
+    const EDITED: [&str; 4] = ["P10", "P11", "P12", "P13"];
+    const ROUNDS: usize = 16;
+    // Debug builds on a loaded builder: generous, but far below a re-analysis of the project.
+    const OUTLINE_LIMIT: Duration = Duration::from_millis(500);
+    const REQUEST_LIMIT: Duration = Duration::from_secs(5);
+    const REQUEST_MEDIAN_LIMIT: Duration = Duration::from_secs(1);
+
+    let (folder, compiler_root) = write_projects();
+    let base = "use Core.String;\n\ni32 Main() {\n    String.Sea;\n    return 0;\n}\n";
+    let mut idle = false;
+    let (mut child, mut stdin, messages) = start_server(folder.path(), compiler_root, &mut idle);
+    let uris: Vec<String> = EDITED
+        .iter()
+        .map(|project| {
+            let path = folder.path().join(format!("{project}/Src/Main.bd"));
+            std::fs::write(&path, base).expect("edited source");
+            url::Url::from_file_path(&path).expect("edited URI").to_string()
+        })
+        .collect();
+    for uri in &uris {
+        send_message(
+            &mut stdin,
+            json!({"jsonrpc": "2.0", "method": "textDocument/didOpen", "params": {"textDocument": {
+                "uri": uri, "languageId": "beskid", "version": 1, "text": base}}}),
+        );
+        wait_for_document_diagnostics(&messages, uri, &mut idle);
+    }
+
+    let mut next_id = 100;
+    let mut request = |stdin: &mut ChildStdin, method: &str, params: Value, idle: &mut bool| {
+        next_id += 1;
+        let asked = Instant::now();
+        send_message(stdin, json!({"jsonrpc": "2.0", "id": next_id, "method": method, "params": params}));
+        let response = response_with_id(&messages, next_id, idle);
+        (response, asked.elapsed())
+    };
+    let mut hovers = Vec::new();
+    let mut completions = Vec::new();
+    for round in 0..ROUNDS {
+        let uri = &uris[round % EDITED.len()];
+        let text = format!("{base}// edit {round}\n");
+        send_message(
+            &mut stdin,
+            json!({"jsonrpc": "2.0", "method": "textDocument/didChange", "params": {
+                "textDocument": {"uri": uri, "version": round + 2},
+                "contentChanges": [{"text": text}]}}),
+        );
+        let (outline, outline_latency) =
+            request(&mut stdin, "textDocument/documentSymbol", json!({"textDocument": {"uri": uri}}), &mut idle);
+        assert!(
+            outline["result"].as_array().is_some_and(|symbols| symbols.iter().any(|s| s["name"] == "Main")),
+            "outline of round {round}: {outline}"
+        );
+        assert!(outline_latency < OUTLINE_LIMIT, "outline of round {round} took {outline_latency:?}");
+        let (hover, hover_latency) = request(
+            &mut stdin,
+            "textDocument/hover",
+            json!({"textDocument": {"uri": uri}, "position": {"line": 3, "character": 6}}),
+            &mut idle,
+        );
+        assert!(hover.get("error").is_none(), "hover of round {round}: {hover}");
+        let (completion, completion_latency) = request(
+            &mut stdin,
+            "textDocument/completion",
+            json!({"textDocument": {"uri": uri}, "position": {"line": 3, "character": 14}}),
+            &mut idle,
+        );
+        let got = labels(&completion);
+        assert!(got.contains(&"Search"), "completion of round {round}: {got:?}");
+        eprintln!(
+            "round {round}: outline {outline_latency:?}, hover {hover_latency:?}, completion {completion_latency:?}"
+        );
+        hovers.push(hover_latency);
+        completions.push(completion_latency);
+    }
+    for (name, mut latencies) in [("hover", hovers), ("completion", completions)] {
+        latencies.sort();
+        let median = latencies[latencies.len() / 2];
+        let max = *latencies.last().expect("rounds");
+        assert!(max < REQUEST_LIMIT, "{name} took {max:?} after an edit in another project");
+        assert!(median < REQUEST_MEDIAN_LIMIT, "{name} median {median:?} over {REQUEST_MEDIAN_LIMIT:?}");
     }
     let _ = child.kill();
 }

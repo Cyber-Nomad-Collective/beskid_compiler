@@ -4,10 +4,11 @@
 //! open files, random edits and undo, saves, queries, workspace refreshes and a v1 lock
 //! migration. The run passes when the server never exits, never sends `beskid/crashReport`,
 //! writes no new file into the crash directory, answers no request with an internal error, never
-//! leaves a request unanswered past the timeout, and its RSS grows less than the limit between
-//! the first and the last window.
+//! leaves a request unanswered past the timeout, its RSS grows less than the limit between
+//! the first and the last window, and the interactive requests sent after the initial workspace
+//! index answer within their latency budgets.
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs::{self, File};
 use std::io::{self, BufReader, Write};
 use std::path::{Path, PathBuf};
@@ -53,7 +54,41 @@ pub struct SoakConfig {
     pub drain_timeout: Duration,
     pub sample_interval: Duration,
     pub memory_growth_limit_percent: f64,
+    pub latency_budgets: Vec<LatencyBudget>,
     pub report: Option<PathBuf>,
+}
+
+/// Latency limits for one request method, measured on requests sent after the initial workspace
+/// index finished (the server reports `beskid/status` idle).
+#[derive(Debug, Clone, PartialEq)]
+pub struct LatencyBudget {
+    pub method: String,
+    pub p95: Duration,
+    pub max: Duration,
+}
+
+/// Interactive requests and their default budgets: p95 under 500 ms, none over 5 s.
+pub fn default_latency_budgets() -> Vec<LatencyBudget> {
+    ["textDocument/hover", "textDocument/completion", "textDocument/documentSymbol", "textDocument/definition"]
+        .into_iter()
+        .map(|method| LatencyBudget {
+            method: method.to_string(),
+            p95: Duration::from_millis(500),
+            max: Duration::from_secs(5),
+        })
+        .collect()
+}
+
+/// Parse `<method>=<p95>,<max>`, e.g. `textDocument/hover=500ms,5s`.
+pub fn parse_latency_budget(text: &str) -> Result<LatencyBudget, String> {
+    let (method, limits) = text.split_once('=').ok_or_else(|| format!("bad latency budget `{text}`"))?;
+    let (p95, max) = limits.split_once(',').ok_or_else(|| format!("bad latency budget `{text}` (need p95,max)"))?;
+    let budget =
+        LatencyBudget { method: method.trim().to_string(), p95: parse_duration(p95)?, max: parse_duration(max)? };
+    if budget.method.is_empty() || budget.p95 > budget.max {
+        return Err(format!("bad latency budget `{text}`"));
+    }
+    Ok(budget)
 }
 
 pub const USAGE: &str = "\
@@ -75,6 +110,10 @@ usage: beskid-soak --server <beskid_lsp> --corpus <dir> [--corpus <dir> ...] [op
   --cli-timeout <t>      limit for one `beskid dev project lock` run (default 120s)
   --drain-timeout <t>    fail when the server leaves its stdin unread this long (default 30s)
   --max-memory-growth <percent>  RSS growth limit, first window to last window (default 20)
+  --latency-budget <method>=<p95>,<max>
+                         latency limits for requests sent after the initial index, repeatable;
+                         replaces the default for that method (default: hover, completion,
+                         documentSymbol and definition each 500ms,5s; not enforced with --smoke)
   --report <file>        also write the JSON report here
 
 exit status: 0 pass, 1 soak failure, 2 usage or setup error";
@@ -85,10 +124,11 @@ pub fn parse_duration(text: &str) -> Result<Duration, String> {
     let (digits, unit) = text.split_at(split);
     let value: u64 = digits.parse().map_err(|_| format!("bad duration `{text}`"))?;
     let seconds = match unit {
+        "ms" => return Ok(Duration::from_millis(value)),
         "" | "s" => value,
         "m" => value * 60,
         "h" => value * 3600,
-        _ => return Err(format!("bad duration unit in `{text}` (use s, m or h)")),
+        _ => return Err(format!("bad duration unit in `{text}` (use ms, s, m or h)")),
     };
     Ok(Duration::from_secs(seconds))
 }
@@ -111,6 +151,7 @@ impl SoakConfig {
             drain_timeout: Duration::from_secs(30),
             sample_interval: Duration::from_secs(10),
             memory_growth_limit_percent: 20.0,
+            latency_budgets: default_latency_budgets(),
             report: None,
         };
         let mut smoke = false;
@@ -139,6 +180,11 @@ impl SoakConfig {
                 "--max-memory-growth" => {
                     config.memory_growth_limit_percent =
                         value("--max-memory-growth")?.parse().map_err(|_| "bad --max-memory-growth".to_string())?
+                }
+                "--latency-budget" => {
+                    let budget = parse_latency_budget(&value("--latency-budget")?)?;
+                    config.latency_budgets.retain(|known| known.method != budget.method);
+                    config.latency_budgets.push(budget);
                 }
                 "--report" => config.report = Some(value("--report")?.into()),
                 "-h" | "--help" => return Err(USAGE.to_string()),
@@ -201,6 +247,64 @@ pub fn parse_rss_output(output: &str) -> Option<u64> {
     output.trim().parse().ok()
 }
 
+/// Count, median, 95th percentile and maximum of one method's latencies (nearest rank).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct LatencySummary {
+    pub count: usize,
+    pub p50: Duration,
+    pub p95: Duration,
+    pub max: Duration,
+}
+
+pub fn latency_summary(samples: &[Duration]) -> Option<LatencySummary> {
+    let mut sorted = samples.to_vec();
+    sorted.sort();
+    let rank = |q: f64| sorted[((q * sorted.len() as f64).ceil() as usize).clamp(1, sorted.len()) - 1];
+    (!sorted.is_empty()).then(|| LatencySummary {
+        count: sorted.len(),
+        p50: rank(0.5),
+        p95: rank(0.95),
+        max: *sorted.last().expect("non-empty"),
+    })
+}
+
+/// Failures of the latency budgets against the latencies measured after the initial index.
+pub fn latency_failures(
+    budgets: &[LatencyBudget],
+    measured: &BTreeMap<String, Vec<Duration>>,
+    index_finished: bool,
+) -> Vec<String> {
+    let mut failures = Vec::new();
+    for budget in budgets {
+        let Some(summary) = measured.get(&budget.method).and_then(|samples| latency_summary(samples)) else {
+            failures.push(if index_finished {
+                format!("no `{}` request was measured after the initial index", budget.method)
+            } else {
+                format!("the initial index did not finish, so `{}` latency was not measured", budget.method)
+            });
+            continue;
+        };
+        if summary.p95 > budget.p95 {
+            failures.push(format!(
+                "`{}` p95 {} ms over the {} ms budget ({} requests)",
+                budget.method,
+                summary.p95.as_millis(),
+                budget.p95.as_millis(),
+                summary.count
+            ));
+        }
+        if summary.max > budget.max {
+            failures.push(format!(
+                "`{}` took {} ms, over the {} ms limit",
+                budget.method,
+                summary.max.as_millis(),
+                budget.max.as_millis()
+            ));
+        }
+    }
+    failures
+}
+
 /// Files in `after` that were not in `before`.
 pub fn new_entries(before: &BTreeSet<String>, after: &BTreeSet<String>) -> Vec<String> {
     after.difference(before).cloned().collect()
@@ -245,6 +349,13 @@ pub fn answer_server_request(request: &Value) -> Value {
         _ => Value::Null,
     };
     json!({"jsonrpc": "2.0", "id": id, "result": result})
+}
+
+/// `beskid/status` idle: the server finished its workspace scan.
+pub fn is_index_idle(message: &Value) -> bool {
+    message.get("method").and_then(Value::as_str) == Some("beskid/status")
+        && message.pointer("/params/phase").and_then(Value::as_str) == Some("idle")
+        && message.pointer("/params/active").and_then(Value::as_bool) == Some(false)
 }
 
 pub fn is_crash_report(message: &Value) -> bool {
@@ -364,6 +475,11 @@ pub struct SoakReport {
     pub memory_enforced: bool,
     pub samples: Vec<RssSample>,
     pub server_log: Option<PathBuf>,
+    /// Seconds from the start of the run until the initial workspace index finished.
+    pub index_finished_after: Option<Duration>,
+    /// Response latencies of requests sent after the initial index, by method.
+    pub latencies: BTreeMap<String, Vec<Duration>>,
+    pub latency_enforced: bool,
 }
 
 impl SoakReport {
@@ -387,6 +503,17 @@ impl SoakReport {
                 "enforced": self.memory_enforced,
             })),
             "rssSamples": self.samples.iter().map(|s| json!([s.at.as_secs(), s.kib])).collect::<Vec<_>>(),
+            "indexFinishedAfterSeconds": self.index_finished_after.map(|at| at.as_secs_f64()),
+            "latencyEnforced": self.latency_enforced,
+            "latencyMs": self.latencies.iter().filter_map(|(method, samples)| {
+                let summary = latency_summary(samples)?;
+                Some((method.clone(), json!({
+                    "count": summary.count,
+                    "p50": summary.p50.as_secs_f64() * 1000.0,
+                    "p95": summary.p95.as_secs_f64() * 1000.0,
+                    "max": summary.max.as_secs_f64() * 1000.0,
+                })))
+            }).collect::<serde_json::Map<String, Value>>(),
             "serverLog": self.server_log.as_ref().map(|p| p.display().to_string()),
             "actions": {
                 "edits": c.edits, "undos": c.undos, "saves": c.saves, "queries": c.queries,
@@ -427,6 +554,22 @@ impl SoakReport {
                 if self.memory_enforced { "" } else { " (not enforced in this run length)" }
             )),
             None => out.push_str("  memory: not enough samples\n"),
+        }
+        match self.index_finished_after {
+            Some(at) => out.push_str(&format!("  initial index finished after {}s\n", at.as_secs())),
+            None => out.push_str("  initial index did not finish\n"),
+        }
+        for (method, samples) in &self.latencies {
+            if let Some(summary) = latency_summary(samples) {
+                out.push_str(&format!(
+                    "  latency {method}: {} requests, p50 {} ms, p95 {} ms, max {} ms{}\n",
+                    summary.count,
+                    summary.p50.as_millis(),
+                    summary.p95.as_millis(),
+                    summary.max.as_millis(),
+                    if self.latency_enforced { "" } else { " (not enforced in this run)" }
+                ));
+            }
         }
         out.push_str(&format!(
             "  crash reports: {} notifications, {} new files\n",
@@ -534,6 +677,8 @@ struct Client {
     pending: HashMap<i64, (String, Instant)>,
     report: SoakReport,
     quickfix_requests: BTreeSet<i64>,
+    spawned: Instant,
+    index_finished: Option<Instant>,
 }
 
 impl Client {
@@ -577,6 +722,8 @@ impl Client {
             pending: HashMap::new(),
             report: SoakReport::default(),
             quickfix_requests: BTreeSet::new(),
+            spawned: Instant::now(),
+            index_finished: None,
         })
     }
 
@@ -615,6 +762,12 @@ impl Client {
                 let text = message.pointer("/params/summary").and_then(Value::as_str).unwrap_or("(no summary)");
                 let path = message.pointer("/params/reportPath").and_then(Value::as_str).unwrap_or("(no path)");
                 self.report.crash_reports.push(format!("{text} [{path}]"));
+            } else if is_index_idle(&message) {
+                if self.index_finished.is_none() {
+                    let now = Instant::now();
+                    self.index_finished = Some(now);
+                    self.report.index_finished_after = Some(now - self.spawned);
+                }
             } else if message.get("method").and_then(Value::as_str) == Some("textDocument/publishDiagnostics") {
                 self.report.counters.diagnostics_published += 1;
                 if let Some(uri) = message.pointer("/params/uri").and_then(Value::as_str) {
@@ -624,8 +777,11 @@ impl Client {
                 }
             }
         } else if let Some(id) = message.get("id").and_then(Value::as_i64) {
-            let method = self.pending.remove(&id).map(|(m, _)| m).unwrap_or_else(|| "(unknown)".into());
+            let (method, sent) = self.pending.remove(&id).unwrap_or_else(|| ("(unknown)".into(), Instant::now()));
             self.report.counters.responses += 1;
+            if self.index_finished.is_some_and(|finished| sent >= finished) && message.get("error").is_none() {
+                self.report.latencies.entry(method.clone()).or_default().push(sent.elapsed());
+            }
             if message.get("error").is_some() {
                 self.report.counters.error_responses += 1;
                 if method == "initialize" {
@@ -944,6 +1100,13 @@ pub fn run(config: &SoakConfig, smoke: bool) -> Result<SoakReport, String> {
     if report.memory.is_none() && report.memory_enforced {
         report.failures.push("no RSS samples: cannot judge memory growth (is `ps` available?)".into());
     }
+    // The initial index of a large corpus can outlast a smoke run; budgets hold on full runs.
+    report.latency_enforced = !smoke;
+    if report.latency_enforced {
+        let index_finished = report.index_finished_after.is_some();
+        let failures = latency_failures(&config.latency_budgets, &report.latencies, index_finished);
+        report.failures.extend(failures);
+    }
     Ok(report)
 }
 
@@ -1164,7 +1327,61 @@ mod tests {
     }
 
     #[test]
+    fn latency_budgets_parse_and_replace_the_default_for_their_method() {
+        let budget = parse_latency_budget("textDocument/hover=250ms,2s").unwrap();
+        assert_eq!(budget.p95, Duration::from_millis(250));
+        assert_eq!(budget.max, Duration::from_secs(2));
+        assert!(parse_latency_budget("textDocument/hover=2s,250ms").is_err(), "p95 above max");
+        assert!(parse_latency_budget("textDocument/hover=250ms").is_err());
+        assert!(parse_latency_budget("=1s,2s").is_err());
+        let to_args = |items: &[&str]| items.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        let (config, _) =
+            SoakConfig::from_args(to_args(&["--corpus", "/a", "--latency-budget", "textDocument/completion=1s,3s"]))
+                .unwrap();
+        let completion: Vec<_> =
+            config.latency_budgets.iter().filter(|b| b.method == "textDocument/completion").collect();
+        assert_eq!(completion.len(), 1);
+        assert_eq!(completion[0].p95, Duration::from_secs(1));
+        assert_eq!(config.latency_budgets.len(), default_latency_budgets().len());
+    }
+
+    #[test]
+    fn latency_summary_uses_nearest_rank() {
+        let samples: Vec<Duration> = (1..=20).map(Duration::from_millis).collect();
+        let summary = latency_summary(&samples).unwrap();
+        assert_eq!(
+            (summary.count, summary.p50, summary.p95, summary.max),
+            (20, Duration::from_millis(10), Duration::from_millis(19), Duration::from_millis(20))
+        );
+        assert!(latency_summary(&[]).is_none());
+    }
+
+    #[test]
+    fn latency_verdict_fails_slow_tails_and_unmeasured_methods() {
+        let budgets = vec![
+            LatencyBudget { method: "a".into(), p95: Duration::from_millis(500), max: Duration::from_secs(5) },
+            LatencyBudget { method: "b".into(), p95: Duration::from_millis(500), max: Duration::from_secs(5) },
+        ];
+        let mut measured = BTreeMap::new();
+        measured.insert("a".to_string(), vec![Duration::from_millis(10); 40]);
+        measured.insert("b".to_string(), vec![Duration::from_millis(10); 40]);
+        assert!(latency_failures(&budgets, &measured, true).is_empty());
+
+        measured.get_mut("a").unwrap().extend([Duration::from_secs(6), Duration::from_millis(600)]);
+        measured.get_mut("b").unwrap().extend(vec![Duration::from_millis(900); 10]);
+        let failures = latency_failures(&budgets, &measured, true);
+        assert_eq!(failures.len(), 2, "{failures:?}");
+        assert!(failures[0].contains("`a` took 6000 ms"), "{failures:?}");
+        assert!(failures[1].contains("`b` p95 900 ms"), "{failures:?}");
+
+        measured.remove("b");
+        let unfinished = latency_failures(&budgets, &measured, false);
+        assert!(unfinished.iter().any(|failure| failure.contains("`b` latency was not measured")), "{unfinished:?}");
+    }
+
+    #[test]
     fn durations_parse_with_units() {
+        assert_eq!(parse_duration("250ms").unwrap(), Duration::from_millis(250));
         assert_eq!(parse_duration("90").unwrap(), Duration::from_secs(90));
         assert_eq!(parse_duration("90s").unwrap(), Duration::from_secs(90));
         assert_eq!(parse_duration("30m").unwrap(), Duration::from_secs(1800));
