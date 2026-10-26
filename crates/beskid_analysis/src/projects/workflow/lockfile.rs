@@ -506,6 +506,12 @@ pub fn load_project_lock_dependencies_for_plan(
         _ => false,
     };
     if !same_manifest || parsed.project_name != plan.project_name {
+        // A lock that pins nothing beyond Corelib, copied from another project, is regenerated
+        // by the next preparation without a word (`preflight_existing_lock_for_plan`); readers
+        // agree and use the declared roots until then instead of reporting it.
+        if parsed.is_pin_free() {
+            return Ok(Vec::new());
+        }
         return Err(parsed.foreign_lock_error(&plan.project_name));
     }
     let shared_corelib = super::shared_corelib::SharedCorelib::resolve();
