@@ -628,6 +628,7 @@ pub fn lower_prepared_syntax_library(
             .map(|index| SourceUnitId::new(db, assembly.units[index].path.clone()))
             .collect::<HashSet<_>>();
         let mut selected = HashSet::new();
+        let mut capability_bodies = HashMap::new();
         for item in items.iter().filter(|item| owned_units.contains(&item.key.unit)) {
             let root = input
                 .roots()
@@ -638,6 +639,19 @@ pub fn lower_prepared_syntax_library(
             let reachable = reachable_items(db, root, item.key)
                 .map_err(|error| anyhow::anyhow!("library reachability query failed for `{}`: {error}", item.symbol))?
                 .ok_or_else(|| anyhow::anyhow!("incomplete direct-call facts for library item `{}`", item.symbol))?;
+            // Two capabilities have no executable form in an ordinary library: a compiler-SDK host
+            // callback (`__mod_semantic_*`, `__mod_query_*`) runs only inside a prepared native Mod
+            // invocation, and Core.Args (`__args_*`) reads the arguments an executable entry
+            // captures. An owned item that reaches either is not part of the library output; a
+            // native Mod or an application compiles it from source with that capability. An
+            // `[Export]` item stays: exporting one fails closed at the capability.
+            let exported = item_export_symbol(db, item.key)
+                .map_err(|error| anyhow::anyhow!("library export validation failed for `{}`: {error}", item.symbol))?
+                .is_some();
+            let mut closure = reachable.iter().copied().chain(std::iter::once(item.key));
+            if !exported && closure.any(|key| needs_host_capability(db, key, &mut capability_bodies)) {
+                continue;
+            }
             selected.extend(reachable.iter().copied());
             selected.insert(item.key);
         }
@@ -649,6 +663,31 @@ pub fn lower_prepared_syntax_library(
         artifact.exports = syntax_export_entries(db, &owned)?;
         Ok(artifact)
     })
+}
+
+/// Whether the body of `item` calls a compiler-SDK host callback or a Core.Args service, which an
+/// ordinary library output cannot hold (memoized per item).
+fn needs_host_capability(db: &dyn beskid_queries::Db, item: AstNodeKey, memo: &mut HashMap<AstNodeKey, bool>) -> bool {
+    if let Some(known) = memo.get(&item) {
+        return *known;
+    }
+    let mut pending = vec![item];
+    let mut found = false;
+    while let Some(key) = pending.pop() {
+        found = match beskid_queries::call_lowering(db, key) {
+            Ok(Some(beskid_queries::CallLowering::NativeModCallback(_))) => true,
+            Ok(Some(beskid_queries::CallLowering::CorelibService(service))) => service.name.starts_with("__args_"),
+            _ => false,
+        };
+        if found {
+            break;
+        }
+        if let Ok(Some(children)) = child_nodes(db, key) {
+            pending.extend(children.iter().copied());
+        }
+    }
+    memo.insert(item, found);
+    found
 }
 
 fn lower_registered_module_callables(
