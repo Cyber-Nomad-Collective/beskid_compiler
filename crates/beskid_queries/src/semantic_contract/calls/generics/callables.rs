@@ -33,7 +33,35 @@ pub(in crate::semantic_contract) fn imported_generic_nominal_receiver_requires_i
     let [target] = targets.as_slice() else {
         return false;
     };
+    // `use Concurrency.Channel;` binds both the generic type `Channel<T>` and its module: a
+    // module-level function of that name (`Channel.MapChannelError(..)`) is an ordinary call.
+    let method_name = method.node.name.node.name.as_str();
     exported_generic_type_named(db, *target, key.generation, receiver_name)
+        && !module_function_named(db, *target, key.generation, method_name)
+}
+
+/// Whether `unit`, or a unit it publicly re-exports, declares a module-level function `name`.
+fn module_function_named(db: &dyn Db, unit: SourceUnitId, generation: SyntaxGenerationId, name: &str) -> bool {
+    let mut pending = vec![unit];
+    let mut visited = std::collections::HashSet::new();
+    while let Some(current) = pending.pop() {
+        if !visited.insert(current) {
+            continue;
+        }
+        let Some(syntax) = db.syntax_unit(current) else {
+            continue;
+        };
+        if syntax.generation(db) != generation {
+            continue;
+        }
+        if syntax.expanded_program(db).node.items.iter().any(|item| {
+            matches!(&item.node, beskid_analysis::syntax::Node::Function(function) if function.node.name.node.name == name)
+        }) {
+            return true;
+        }
+        pending.extend(public_reexport_units(db, current, generation));
+    }
+    false
 }
 
 pub(in crate::semantic_contract) fn exported_generic_type_named(
