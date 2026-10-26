@@ -17,7 +17,7 @@ use beskid_abi::runtime_source::runtime_fixture_project_root;
 use beskid_analysis::projects::{
     ProgramAssembly, assemble_program_with_materializer, assembly_options_for_plan, build_compile_plan, plan_entry_path,
 };
-use beskid_codegen::lower_syntax_assembly_entrypoint;
+use beskid_codegen::lower_syntax_assembly_test_entrypoint;
 use beskid_queries::BeskidDatabase;
 use cranelift_codegen::isa;
 use cranelift_codegen::settings;
@@ -60,7 +60,7 @@ fn external_work_tests_fixture_entrypoint_resolves_the_full_scheduler_entry_help
     let assembly = Arc::new(fixture("ExternalWorkTests"));
     let (target, isa) = x86_64_target_and_isa();
     let mut db = BeskidDatabase::default();
-    let lowered = lower_syntax_assembly_entrypoint(
+    let lowered = lower_syntax_assembly_test_entrypoint(
         &mut db,
         assembly,
         "CancelledWaitRetainsHostWorkUntilHostExit",
@@ -83,7 +83,7 @@ fn lifecycle_tests_fixture_entrypoint_resolves_the_full_scheduler_entry_helper_s
     let assembly = Arc::new(fixture("LifecycleTests"));
     let (target, isa) = x86_64_target_and_isa();
     let mut db = BeskidDatabase::default();
-    let lowered = lower_syntax_assembly_entrypoint(
+    let lowered = lower_syntax_assembly_test_entrypoint(
         &mut db,
         assembly,
         "LifecycleUsesManifestStateGenerationAnd48ByteTls",
