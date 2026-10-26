@@ -477,6 +477,12 @@ pub fn check_items(db: &dyn Db, items: &[AstNodeKey]) -> Result<(), Vec<Semantic
                 UnresolvedTypeKind::UnknownModulePath { path } => {
                     SemanticIssueKind::ResolveUnknownModulePath { path: path.to_string() }
                 }
+                UnresolvedTypeKind::MissingTypeArguments => {
+                    SemanticIssueKind::TypeMissingTypeArguments { parameter: None }
+                }
+                UnresolvedTypeKind::GenericArityMismatch { expected, actual } => {
+                    SemanticIssueKind::TypeGenericArgumentMismatch { expected, actual }
+                }
                 UnresolvedTypeKind::AmbiguousModulePath { path, candidates } => {
                     SemanticIssueKind::ResolveAmbiguousModulePath { path: path.to_string(), candidates }
                 }
@@ -1901,6 +1907,55 @@ mod tests {
         .map(|(_, _, help)| help)
         .unwrap_or_default();
         assert!(help.contains("copy `xs[0]` first") && help.contains("exchange(xs[0], <value>)"), "{help}");
+    }
+
+    /// A generic type written without its type arguments is E1203 and with the wrong number of
+    /// them E1204 (the Book's "Common errors"), never E1201 "unknown type": the name is known.
+    #[test]
+    fn a_generic_type_at_the_wrong_arity_is_e1203_or_e1204() {
+        let pair = "pub type Pair<A, B> { A first; B second; } ";
+        let codes = |body: &str, generation: u64| {
+            transfer_report_at(&format!("{pair}{body}"), generation, "Demo/Lib.bd")
+                .into_iter()
+                .map(|(code, message, _)| (code, message))
+                .collect::<Vec<_>>()
+        };
+        let missing = codes("pub unit Demo(Pair pair) { return; }", 7953);
+        assert!(
+            missing.iter().any(|(code, message)| code == "E1203" && message == "missing type arguments for generic type"),
+            "{missing:?}"
+        );
+        assert!(missing.iter().all(|(code, _)| code != "E1201"), "{missing:?}");
+        let arity = codes("pub unit Demo(Pair<i64> pair) { return; }", 7954);
+        assert!(
+            arity.iter().any(|(code, message)| code == "E1204" && message.contains("expected 2, got 1")),
+            "{arity:?}"
+        );
+        assert!(arity.iter().all(|(code, _)| code != "E1201"), "{arity:?}");
+        let unknown = codes("pub unit Demo(Missing value) { return; }", 7955);
+        assert!(unknown.iter().any(|(code, _)| code == "E1201"), "{unknown:?}");
+        let written = codes("pub unit Demo(Pair<i64, string> pair) { return; }", 7956);
+        assert!(written.iter().all(|(code, _)| !["E1201", "E1203", "E1204"].contains(&code.as_str())), "{written:?}");
+    }
+
+    /// A plain parameter sent with `move` is lent by its caller (RB5): E1241 offers the same two
+    /// repairs as any other kept parameter, copy it or declare the parameter `move`, never only
+    /// "copy it first".
+    #[test]
+    fn a_sent_borrowed_parameter_offers_to_declare_it_move() {
+        let body = "unit Hand(Port<u8[]> output, u8[] block) { output.Send(move block); return; }";
+        let source = format!("{MARKERS}{AFFINE_PRELUDE}{CROSSING_TYPES}{body}");
+        let report = transfer_report_at(&source, 7950, "Core/Parallel/Port.bd");
+        let (_, message, help) = report.iter().find(|(code, ..)| code == "E1241").expect("E1241");
+        assert_eq!(help, "copy it, or declare the parameter `move`");
+        assert!(message.contains("the parameter `block` is borrowed"), "{message}");
+        let held = "unit Hand(Port<u8[]> output, u8[] block) { u8[] b = block; output.Send(move b); return; }";
+        let report =
+            transfer_report_at(&format!("{MARKERS}{AFFINE_PRELUDE}{CROSSING_TYPES}{held}"), 7951, "Core/Parallel/Port.bd");
+        let (_, message, help) = report.iter().find(|(code, ..)| code == "E1241").expect("E1241");
+        assert_eq!(help, "copy it, or declare the parameter `move`");
+        assert!(message.contains("`b` holds the borrowed parameter `block`"), "{message}");
+        assert_crossing("unit Hand(Port<u8[]> output, move u8[] block) { output.Send(move block); return; }", 7952, &[]);
     }
 
     #[test]

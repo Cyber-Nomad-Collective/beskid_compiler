@@ -62,6 +62,12 @@ pub enum UnresolvedTypeKind {
     UnknownModulePath { path: Arc<str> },
     /// E1104: the qualifier names more than one assembled module.
     AmbiguousModulePath { path: Arc<str>, candidates: usize },
+    /// E1203: the path names a generic type, written without type arguments (`Pair pair` for
+    /// `type Pair<A, B>`).
+    MissingTypeArguments,
+    /// E1204: the path names a generic type with `expected` type parameters, written with
+    /// `actual` type arguments (`Pair<i64>`).
+    GenericArityMismatch { expected: usize, actual: usize },
     /// E1107 `ResolveError::PrivateItemInModule`: the module declares the type without `pub`.
     PrivateItemInModule { module_path: Arc<str>, name: Arc<str> },
     /// E1201 `ResolveError::UnknownTypeInModule`: the module declares no type of the name.
@@ -206,7 +212,13 @@ fn first_unresolved_nominal_reference(db: &dyn Db, key: AstNodeKey, ty: &Type) -
                 && resolve_contract_head(db, key, &path.node).is_none()
             {
                 return path.node.segments.last().map(|segment| {
-                    (segment.node.name.node.name.clone(), classify_unresolved_type_path(db, key, &path.node))
+                    let kind = declared_generic_arity(db, key, &path.node)
+                        .map(|expected| match segment.node.type_args.len() {
+                            0 => UnresolvedTypeKind::MissingTypeArguments,
+                            actual => UnresolvedTypeKind::GenericArityMismatch { expected, actual },
+                        })
+                        .unwrap_or_else(|| classify_unresolved_type_path(db, key, &path.node));
+                    (segment.node.name.node.name.clone(), kind)
                 });
             }
             path.node.segments.iter().find_map(|segment| {
@@ -218,6 +230,27 @@ fn first_unresolved_nominal_reference(db: &dyn Db, key: AstNodeKey, ty: &Type) -
             })
         }
     }
+}
+
+/// The largest generic arity a declaration is looked up at when a type path does not resolve at
+/// its written arity.
+const MAX_PROBED_GENERIC_ARITY: usize = 8;
+
+/// The generic arity of the type `path` names when it resolves at another arity than written:
+/// `Pair` or `Pair<i64>` for `type Pair<A, B>` is 2. The lookup is `resolve_type_declaration`
+/// itself, so the arity found is the one a correctly written path would resolve at. `None` when
+/// no arity resolves (the name is unknown) or more than one does (the arity cannot be named).
+fn declared_generic_arity(db: &dyn Db, key: AstNodeKey, path: &Path) -> Option<usize> {
+    let (terminal, _) = path.segments.split_last()?;
+    let written = terminal.node.type_args.len();
+    let mut found = (0..=MAX_PROBED_GENERIC_ARITY).filter(|&arity| arity != written).filter(|&arity| {
+        let mut probe = path.clone();
+        let last = probe.segments.last_mut().expect("the path has a terminal segment");
+        last.node.type_args = (0..arity).map(|_| Spanned::new(Type::This, last.span)).collect();
+        resolve_type_declaration(db, key, &probe).is_some()
+    });
+    let arity = found.next()?;
+    found.next().is_none().then_some(arity)
 }
 
 /// Classify an unresolved type path at `key` (see [`UnresolvedTypeKind`]).

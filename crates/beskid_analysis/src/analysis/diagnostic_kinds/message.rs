@@ -362,10 +362,10 @@ impl SemanticIssueKind {
                 "`{name}` holds a nested `{type_name}` that may share its storage with a list this isolate keeps, so it cannot cross to another isolate"
             ),
             Self::BorrowedParameterKept { name, parameter, .. } if name == parameter => format!(
-                "the parameter `{name}` is borrowed, so it cannot be stored, returned or kept: the caller still owns its value"
+                "the parameter `{name}` is borrowed, so it cannot be stored, returned, sent to another isolate or kept: the caller still owns its value"
             ),
             Self::BorrowedParameterKept { name, parameter, .. } => format!(
-                "`{name}` holds the borrowed parameter `{parameter}`, so it cannot be stored, returned or kept: the caller still owns its value"
+                "`{name}` holds the borrowed parameter `{parameter}`, so it cannot be stored, returned, sent to another isolate or kept: the caller still owns its value"
             ),
             Self::ScopeBorrowedEscapes { name, type_name } => format!(
                 "`{name}` of the scope-borrowed type `{type_name}` cannot be stored, returned, passed to `spawn` or captured by an escaping closure"
