@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Stability proof fixes
 
+- An event's handlers live in the object that declares the event (a count word and one handler word per capacity, listed in the owner's pointer map) and are traced through it. A subscribed handler is no longer an external GC root: a program that exits with a handler still subscribed exits cleanly (it trapped with `runtime_internal_corruption (10)` at shutdown), and an owner that becomes unreachable takes its handlers and their captures with it.
 - An event declared without a capacity (`event Changed(i64 value);`) has the default capacity 16; it failed to lower (E2102). In a method of the declaring type the bare name raises the event (`Changed(value);`, the spelling the events specification shows), which was E1101.
 - An event declared after a value field is raised and subscribed again (`this.OnResize(size)` in Corelib Console was E2102). The event operation counted the event's position among all fields and then picked among event fields only.
 - A call to a callable with a contract-typed parameter passes an argument whose type only its parameter proves, such as a unit enum variant (`H1Wire.ReadMessage(buffer, transport, limits, MessageRole::Request)` in Corelib Web was E2102): a parameter that names no generic is the argument's expected type.
