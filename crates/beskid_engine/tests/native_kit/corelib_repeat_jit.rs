@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use beskid_abi::runtime_kit::BuildProfile;
 use beskid_analysis::services::{PrepareOptions, resolve_input};
 use beskid_engine::Engine;
-use beskid_engine::services::run_test_from_front_end_with_engine;
+use beskid_engine::services::{run_entrypoint_from_front_end_with_engine, run_test_from_front_end_with_engine};
 use beskid_queries::{configure_db_for_project, prepare_compilation_with_db, with_db};
 
 use beskid_tests_mod_host::ModHostScope;
@@ -16,14 +16,22 @@ fn corelib_tests_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../corelib/beskid_corelib/tests/corelib_tests")
 }
 
+/// What the requested names select: `test` definitions or `pub` functions (tests have their own
+/// namespace).
+#[derive(Clone, Copy)]
+enum Entries {
+    Tests,
+    Functions,
+}
+
 fn run_corelib_test(entry: &str, target_name: &str, test_name: &str) -> String {
-    run_corelib_tests(entry, target_name, &[test_name])
+    run_corelib_entries(entry, target_name, &[test_name], Entries::Tests)
         .into_iter()
         .next()
         .expect("one requested corelib entrypoint result")
 }
 
-fn run_corelib_tests(entry: &str, target_name: &str, test_names: &[&str]) -> Vec<String> {
+fn run_corelib_entries(entry: &str, target_name: &str, test_names: &[&str], entries: Entries) -> Vec<String> {
     // The shared-kit lease serializes the cases of this binary: every case prepares an entry of
     // the same corelib test project (one process-wide query database project and entry-session
     // fingerprint) and activates an engine over the one kit image this binary loads, which only
@@ -56,8 +64,17 @@ fn run_corelib_tests(entry: &str, target_name: &str, test_names: &[&str]) -> Vec
     test_names
         .iter()
         .map(|test_name| {
-            // The names are `test` definitions: tests have their own namespace.
-            run_test_from_front_end_with_engine(&mut engine, &front, test_name, None)
+            match entries {
+                Entries::Tests => run_test_from_front_end_with_engine(&mut engine, &front, test_name, None),
+                Entries::Functions => run_entrypoint_from_front_end_with_engine(
+                    &mut engine,
+                    &front,
+                    &resolved.source_path.display().to_string(),
+                    &resolved.source,
+                    test_name,
+                    None,
+                ),
+            }
             .unwrap_or_else(|error| panic!("{test_name} should pass: {error}"))
         })
         .collect()
@@ -82,10 +99,11 @@ fn jit_numeric_interpolation_preserves_value() {
 fn jit_numeric_interpolation_has_decimal_bytes() {
     let entry = "src/console/ConsoleSuite.bd";
     let target = "ConsoleSuite";
-    let actual = run_corelib_tests(
+    let actual = run_corelib_entries(
         entry,
         target,
         &["NumericInterpolationLength", "NumericInterpolationFirstByte", "NumericInterpolationSecondByte"],
+        Entries::Functions,
     );
     assert_eq!(actual, ["2", "53", "48"]);
 }

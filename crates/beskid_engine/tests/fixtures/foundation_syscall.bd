@@ -250,7 +250,7 @@ pub i64 RunBinaryCorpusFixture()
     };
 }
 
-i64 CheckBinaryCorpus(u8[] bytes)
+i64 CheckBinaryCorpus(move u8[] bytes)
 {
     if (Slice.Len(bytes) != 9_i64)
     {

@@ -388,7 +388,15 @@ pub fn lower_prepared_syntax_test_entrypoint(
     isa: &dyn TargetIsa,
 ) -> Result<PreparedSyntaxEntrypoint> {
     let assembly = Arc::new(front.syntax_assembly());
-    lower_syntax_assembly_entrypoint_with_composition(db, assembly, test, EntrypointKind::Test, target, isa, Some(front))
+    lower_syntax_assembly_entrypoint_with_composition(
+        db,
+        assembly,
+        test,
+        EntrypointKind::Test,
+        target,
+        isa,
+        Some(front),
+    )
 }
 
 /// Lower one entrypoint from an assembled syntax program through ISLE.
