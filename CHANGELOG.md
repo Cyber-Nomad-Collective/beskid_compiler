@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Language server latency and memory
+
+- Each message runs as its own task. The transport polled every handler inside one task, so a handler that computed (an edit's analysis) stopped reading, writing and every other request; a soak on a Corelib copy saw 18 s for the outline and 91 s for a hover.
+- Edits are analyzed in the background, coalesced to the newest text. Hover answers at once from the last analyzed facts, carried over the edit (facts inside the edited region are dropped); completion waits at most 100 ms for the newest facts and 100 ms for its project's database, and a database query that runs over 1 s is cancelled; then the carried facts answer. Requests that need exact facts (definition, references, rename, code actions, inlay hints, semantic tokens) wait for the newest analysis as before. A document closed during its analysis keeps no facts, and the disk text of a closed file is analyzed in the background.
+- The outline (`textDocument/documentSymbol`) parses the open text and never waits for analysis.
+- The workspace index types each project once: every source under the project's host root and the dependency modules they import are assembled together (`AssemblyDiscovery::HostImportClosure`), and each closed file's facts and diagnostics come from that typing. The index used to prepare the project again for every closed file and did not finish on the Corelib; it now takes about four to six minutes. A project whose preparation fails gives every file that failure instead of repeating it per file. The server logs `indexed <manifest>: n of m files in t ms`.
+- Each project has its own in-memory Salsa database and mutation gate (at most three kept; databases of projects only the scan touched go first). One storage serves one analysis: every analysis registers a new syntax generation whose typed facts stay until the storage is dropped (about 65 MB each in the soak). An analysis takes its permit before its database, so queued edits hold no storage; two analyses of open documents, one background analysis and two full-diagnostics preparations run at once.
+- After each analysis the server drops the project's cached entry sessions (process-wide, about 100 MB each for a Corelib package): it never reads them again, and the index left one per project.
+- The server no longer loads or saves Salsa snapshots (`obj/beskid/cache/salsa`): a restored snapshot is recomputed in full, and the save after every 5 s idle held the state lock, blocking every request. The `persistenceEnabled`, `persistenceSaveDebounceMs` and `beskid.lsp.persistence.*` options are gone.
+- Typed-entry revision inputs belong to their database (`TypedEntryRegistry`), not to process-wide registries; `reset_typed_entry_inputs`, `clear_typed_entry_cache`, `replace_compilation_database` and `configure_compilation_database_for_project` are removed.
+- On Linux with glibc the server limits malloc to two arenas (resident memory halved at the same latency).
+- Soak on a Corelib copy (Linux builder, 480 s of requests after the initial index): before, the index never finished and hover p95 was 1.8 s (max 91 s), completion p95 19.7 s (max 24.6 s), outline p95 2.1 s (max 18 s); after, the index takes 277 s, hover p95 12 ms (max 1.3 s), completion p95 116 ms (max 1.6 s), outline p95 111 ms (max 1.7 s), and resident memory stays under 4 GB (2.0 GB when the index finishes).
+- Gates: `beskid-soak` fails when hover, completion, outline or definition requests sent after the initial index exceed their budget (default p95 500 ms, none over 5 s; `--latency-budget <method>=<p95>,<max>`); `json_rpc_multi_project` checks edits that alternate between four projects; a scan test checks that one typing serves all closed files of a project.
+
 ### Polish
 
 - A `match` used as a statement needs no trailing `;`, like a C# `switch` statement; a written `;` is still accepted and `beskid fmt` keeps the form the source uses.

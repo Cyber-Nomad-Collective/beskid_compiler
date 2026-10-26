@@ -68,7 +68,15 @@ pub(crate) async fn run_in_project_db<R>(
     // Starting a fresh storage drops the previous one, which takes a while for a large project.
     run_blocking_section(|| {
         let mut db = if analysis { database.lock_for_analysis() } else { database.lock() };
-        f(&mut db)
+        let result = f(&mut db);
+        // The prepare spine caches each entry's compilation session process-wide (about 100 MB
+        // for a Corelib package). The server keeps the facts it derived and starts every analysis
+        // by invalidating the project's sessions, so a cached session is never read again; drop
+        // it now instead of keeping one per project indexed.
+        if let Some(root) = project_root {
+            beskid_queries::invalidate_entry_sessions(root);
+        }
+        result
     })
 }
 
