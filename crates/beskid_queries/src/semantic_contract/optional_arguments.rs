@@ -16,7 +16,7 @@
 use std::collections::{HashMap, HashSet};
 
 use super::*;
-use beskid_analysis::parameter_defaults::{OmittedArgument, fill_omitted_arguments, omitted_arguments};
+use beskid_analysis::parameter_defaults::{CallSite, OmittedArgument, fill_omitted_arguments, omitted_arguments};
 use beskid_analysis::projects::ProgramAssembly;
 use beskid_analysis::syntax::{
     CallExpression, ContractMethodSignature, Expression, FunctionDefinition, ImplBlock, MethodDefinition, Program,
@@ -100,7 +100,9 @@ fn implemented_contract_method(
 
 /// For every callable name that declares an optional parameter, the largest parameter count
 /// declared under that name (a contract method's name also covers the methods that implement it).
-fn optional_callable_names(assembly: &ProgramAssembly) -> HashMap<String, usize> {
+pub(crate) type OptionalCallableNames = HashMap<String, usize>;
+
+fn optional_callable_names(assembly: &ProgramAssembly) -> OptionalCallableNames {
     let mut names = HashMap::<String, usize>::new();
     let mut record = |name: &str, parameters: &[Spanned<beskid_analysis::syntax::Parameter>]| {
         if parameters.iter().any(|parameter| parameter.node.default.is_some()) {
@@ -123,17 +125,19 @@ fn optional_callable_names(assembly: &ProgramAssembly) -> HashMap<String, usize>
     names
 }
 
-/// Whether some call of `assembly` may omit an optional argument: it names a callable with
-/// optional parameters and passes fewer arguments than that name declares. A cheap syntax check
-/// that decides whether the typed filling pass runs at all.
-pub(crate) fn may_omit_arguments(assembly: &ProgramAssembly) -> bool {
+/// The callable names with optional parameters when some call of `assembly` may omit an optional
+/// argument (it names such a callable and passes fewer arguments than that name declares), else
+/// `None`. A cheap syntax check that decides whether the typed filling pass runs at all; the pass
+/// reuses the names.
+pub(crate) fn may_omit_arguments(assembly: &ProgramAssembly) -> Option<OptionalCallableNames> {
     let names = optional_callable_names(assembly);
-    !names.is_empty()
+    let may_omit = !names.is_empty()
         && assembly.units.iter().any(|unit| {
             Query::from(&unit.program.node).of::<CallExpression>().any(|call| {
                 callee_name(call).and_then(|name| names.get(name)).is_some_and(|count| call.args.len() < *count)
             })
-        })
+        });
+    may_omit.then_some(names)
 }
 
 fn callee_name(call: &CallExpression) -> Option<&str> {
@@ -151,11 +155,8 @@ fn callee_name(call: &CallExpression) -> Option<&str> {
 pub(crate) fn omitted_argument_programs(
     db: &dyn Db,
     assembly: &ProgramAssembly,
+    names: &OptionalCallableNames,
 ) -> Result<Option<Vec<Spanned<Program>>>, SemanticError> {
-    let names = optional_callable_names(assembly);
-    if names.is_empty() {
-        return Ok(None);
-    }
     let mut programs = Vec::with_capacity(assembly.units.len());
     let mut changed = false;
     for unit in assembly.units.iter() {
@@ -167,9 +168,16 @@ pub(crate) fn omitted_argument_programs(
         let program = syntax.expanded_program(db);
         let index = syntax.syntax_index(db);
         let mut fills = HashMap::new();
+        // The ordinal of each call among the calls with its span, in source order, as
+        // `fill_omitted_arguments` counts them (expanded macro copies share a span).
+        let mut ordinals = HashMap::<(usize, usize), usize>::new();
         for node in index.ids_of_kind(NodeKind::CallExpression) {
             let Some(reference) = index.node_at(program, node) else { continue };
             let Some(call) = reference.of::<CallExpression>() else { continue };
+            let Some(span) = reference.span() else { continue };
+            let ordinal = ordinals.entry((span.start, span.end)).or_default();
+            let site = CallSite { start: span.start, end: span.end, ordinal: *ordinal };
+            *ordinal += 1;
             if !callee_name(call).and_then(|name| names.get(name)).is_some_and(|count| call.args.len() < *count) {
                 continue;
             }
@@ -183,8 +191,7 @@ pub(crate) fn omitted_argument_programs(
             if passed < required || passed >= parameter_count {
                 continue;
             }
-            let Some(span) = reference.span() else { continue };
-            fills.insert((span.start, span.end), omitted[passed - required..].to_vec());
+            fills.insert(site, omitted[passed - required..].to_vec());
         }
         if fills.is_empty() {
             programs.push(unit.program.clone());

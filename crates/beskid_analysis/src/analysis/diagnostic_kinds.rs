@@ -335,7 +335,8 @@ pub enum SemanticIssueKind {
         expected: String,
     },
     /// E1254: a default value or caller-information attribute on a parameter no call passes
-    /// (a hook parameter) or that takes every remaining argument (`bulk`); `place` names it.
+    /// (a hook parameter) or that takes every remaining argument (`bulk`), or a caller-information
+    /// attribute on a host or scope parameter (the attribute alone is rejected); `place` names it.
     OptionalParameterNotAllowed {
         place: String,
     },
@@ -850,6 +851,16 @@ impl ImmutableBinding {
 mod query_gate_kind_tests {
     use super::SemanticIssueKind;
     use crate::analysis::Severity;
+
+    #[test]
+    fn an_arity_mismatch_within_the_range_says_the_omitted_arguments_were_not_filled() {
+        let short = SemanticIssueKind::TypeCallArityMismatch { required: 2, total: 3, actual: 1 };
+        assert_eq!(short.message(), "call arity mismatch: expected 2\u{2013}3 arguments, got 1");
+        let unfilled = SemanticIssueKind::TypeCallArityMismatch { required: 2, total: 3, actual: 2 };
+        let message = unfilled.message();
+        assert!(message.starts_with("call arity mismatch: expected 2\u{2013}3 arguments, got 2;"), "{message}");
+        assert!(message.contains("could not be filled"), "{message}");
+    }
 
     #[test]
     fn extern_invalid_optional_has_its_own_code_and_carries_the_rule_as_help() {

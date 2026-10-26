@@ -250,7 +250,16 @@ impl SemanticIssueKind {
                 } else {
                     format!("{required}\u{2013}{total} arguments")
                 };
-                format!("call arity mismatch: expected {expected}, got {actual}")
+                // Within the range the call only omitted optional arguments, which the compiler fills
+                // once the callee is known; reaching here means it could not fill them.
+                if (*required..*total).contains(actual) {
+                    format!(
+                        "call arity mismatch: expected {expected}, got {actual}; the omitted optional arguments \
+                         could not be filled for this call, pass them explicitly"
+                    )
+                } else {
+                    format!("call arity mismatch: expected {expected}, got {actual}")
+                }
             }
             Self::RequiredParameterAfterOptional { name } => {
                 format!("required parameter `{name}` follows an optional parameter")
@@ -260,6 +269,9 @@ impl SemanticIssueKind {
             }
             Self::DefaultValueTypeMismatch { name, value, expected } => {
                 format!("default value `{value}` does not fit parameter `{name}` of type `{expected}`")
+            }
+            Self::OptionalParameterNotAllowed { place } if place.contains("host or scope") => {
+                format!("caller information is not allowed on {place}")
             }
             Self::OptionalParameterNotAllowed { place } => format!("{place} cannot be optional"),
             Self::CallerInformationWithoutDefault { name, attribute, .. } => {

@@ -88,6 +88,9 @@ impl SemanticIssueKind {
             Self::RequiredParameterAfterOptional { .. } => "required parameter after an optional one".to_string(),
             Self::DefaultValueNotConstant { .. } => "not a compile-time constant".to_string(),
             Self::DefaultValueTypeMismatch { expected, .. } => format!("not a constant of type `{expected}`"),
+            Self::OptionalParameterNotAllowed { place } if place.contains("host or scope") => {
+                "caller information not allowed here".to_string()
+            }
             Self::OptionalParameterNotAllowed { .. } => "optional parameter not allowed here".to_string(),
             Self::CallerInformationWithoutDefault { .. } => {
                 "caller-information parameter without a default".to_string()

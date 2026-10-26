@@ -111,7 +111,7 @@ pub fn converted_to(value: DefaultConstant, ty: &Type) -> DefaultConstant {
 /// `constant` looks up a top-level `const` of the declaring file by name.
 pub fn default_constant(
     default: &Spanned<Expression>,
-    constant: &dyn Fn(&str) -> Option<String>,
+    constant: &dyn Fn(&str) -> Option<DefaultConstant>,
 ) -> Option<DefaultConstant> {
     match &default.node {
         Expression::Grouped(grouped) => default_constant(&grouped.node.expr, constant),
@@ -124,9 +124,7 @@ pub fn default_constant(
             }
         }
         Expression::Path(path) => match path.node.path.node.segments.as_slice() {
-            [segment] if segment.node.type_args.is_empty() => {
-                constant(&segment.node.name.node.name).map(DefaultConstant::Integer)
-            }
+            [segment] if segment.node.type_args.is_empty() => constant(&segment.node.name.node.name),
             _ => None,
         },
         _ => None,
@@ -250,13 +248,14 @@ pub fn caller_kind(parameter: &Parameter) -> Option<CallerKind> {
     })
 }
 
-/// The integer value of each top-level `const` of `program`, by name.
-pub fn top_level_constant(program: &Program, name: &str) -> Option<String> {
+/// The value of the top-level `const` of `program` named `name`, as the literal it holds. The
+/// grammar admits integer `const`s only; the value is read through the same literal rules as a
+/// written default, so a wider `const` grammar needs no change here.
+pub fn top_level_constant(program: &Program, name: &str) -> Option<DefaultConstant> {
     program.items.iter().find_map(|item| match &item.node {
-        Node::ConstantDefinition(constant) if constant.node.name.node.name == name => match &constant.node.value.node {
-            Literal::Integer(text) => Some(text.clone()),
-            _ => None,
-        },
+        Node::ConstantDefinition(constant) if constant.node.name.node.name == name => {
+            literal_constant(&constant.node.value.node)
+        }
         _ => None,
     })
 }
@@ -294,22 +293,34 @@ pub fn omitted_arguments(parameters: &[Spanned<Parameter>], program: &Program) -
         .collect()
 }
 
-/// `program` with the omitted arguments appended to each call named in `fills` by the span
-/// (`start`, `end`) of its call expression. Appended nodes carry a zero-width span just before
+/// One call expression of a unit: its span and its position among the calls with that same span
+/// in source order. Macro expansion keeps definition-site spans, so two expanded copies of one
+/// call share a span and are told apart by the ordinal.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct CallSite {
+    pub start: usize,
+    pub end: usize,
+    pub ordinal: usize,
+}
+
+/// `program` with the omitted arguments appended to each call named in `fills` by its
+/// [`CallSite`]. Appended nodes carry a zero-width span just before
 /// the call's closing parenthesis; caller information is `file` (the unit's requested path) and the 1-based line and
 /// column where the callee expression starts.
 pub fn fill_omitted_arguments(
     program: &Spanned<Program>,
     file: &str,
-    fills: &HashMap<(usize, usize), Vec<OmittedArgument>>,
+    fills: &HashMap<CallSite, Vec<OmittedArgument>>,
 ) -> Spanned<Program> {
     let mut program = program.clone();
+    let mut seen = HashMap::<(usize, usize), usize>::new();
     let mut map = |expression: Spanned<Expression>| -> Spanned<Expression> {
         let Expression::Call(call) = &expression.node else { return expression };
-        let Some(arguments) = fills
-            .get(&(call.span.start, call.span.end))
-            .or_else(|| fills.get(&(expression.span.start, expression.span.end)))
-        else {
+        let span = (call.span.start, call.span.end);
+        let ordinal = seen.entry(span).or_default();
+        let site = CallSite { start: span.0, end: span.1, ordinal: *ordinal };
+        *ordinal += 1;
+        let Some(arguments) = fills.get(&site) else {
             return expression;
         };
         // Caller information names where the callee expression starts. The appended nodes have
@@ -423,6 +434,11 @@ mod tests {
         assert_eq!(constant_of("unit F(bool b = true) { return; }"), Some(DefaultConstant::Bool(true)));
         assert_eq!(constant_of("unit F(i64 b = -1) { return; }"), Some(DefaultConstant::Integer("-1".into())));
         assert_eq!(constant_of("unit F(f64 b = -0.5) { return; }"), Some(DefaultConstant::Float("-0.5".into())));
+        // A negated `const` is a constant too (the grammar admits integer `const`s only).
+        assert_eq!(
+            constant_of("const Limit = 10;\nunit F(i64 b = -Limit) { return; }"),
+            Some(DefaultConstant::Integer("-10".into()))
+        );
         assert_eq!(constant_of("unit F(char c = 'x') { return; }"), Some(DefaultConstant::Char("'x'".into())));
         assert_eq!(
             constant_of("const Limit = 10;\nunit F(i64 b = Limit) { return; }"),
@@ -500,11 +516,15 @@ mod tests {
         calls
     }
 
-    fn call_spans(program: &Spanned<Program>) -> Vec<(usize, usize)> {
+    fn call_spans(program: &Spanned<Program>) -> Vec<CallSite> {
         let mut spans = Vec::new();
         let mut collect = |expression: Spanned<Expression>| {
             if let Expression::Call(call) = &expression.node {
-                spans.push((call.span.start, call.span.end));
+                let ordinal = spans
+                    .iter()
+                    .filter(|site: &&CallSite| (site.start, site.end) == (call.span.start, call.span.end))
+                    .count();
+                spans.push(CallSite { start: call.span.start, end: call.span.end, ordinal });
             }
             expression
         };
@@ -611,5 +631,25 @@ mod tests {
             assert_eq!(appended.line_col_start, (2, 10), "{appended:?}");
         }
         assert_eq!(emitted_call_arguments(&filled)[0], ["1", "-2", "5_i64"]);
+    }
+
+    /// Macro expansion keeps definition-site spans: two expanded copies of one call share a span
+    /// and may have different callees. Each copy gets its own fill.
+    #[test]
+    fn calls_that_share_a_span_get_their_own_fills() {
+        let mut program = parse_program("unit Run() {\n    Say(1);\n}\n").expect("parse");
+        if let Node::Function(function) = &mut program.node.items[0].node {
+            let statement = function.node.body.node.statements[0].clone();
+            function.node.body.node.statements.push(statement);
+        }
+        let sites = call_spans(&program);
+        assert_eq!(sites.len(), 2);
+        assert_eq!((sites[0].start, sites[0].end), (sites[1].start, sites[1].end), "the copies share a span");
+        let fills = HashMap::from([
+            (sites[0], vec![OmittedArgument::Default(DefaultConstant::Integer("2".into()))]),
+            (sites[1], vec![OmittedArgument::Default(DefaultConstant::Bool(true))]),
+        ]);
+        let filled = fill_omitted_arguments(&program, "/app/Main.bd", &fills);
+        assert_eq!(emitted_call_arguments(&filled), [vec!["1", "2"], vec!["1", "true"]]);
     }
 }

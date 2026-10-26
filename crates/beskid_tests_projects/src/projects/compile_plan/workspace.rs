@@ -333,7 +333,8 @@ dependency "Util" {
             reordered.push_str(&line);
             reordered.push('\n');
         }
-        fs::write(&lockfile_path, reordered).expect("write reordered lockfile");
+        assert_ne!(reordered, original, "the fixture lock has entries to reorder");
+        fs::write(&lockfile_path, &reordered).expect("write reordered lockfile");
 
         let locked_result = prepare_project_workspace_with_options(
             &plan,
@@ -341,6 +342,11 @@ dependency "Util" {
             None,
         );
         assert!(locked_result.is_ok());
+        assert_eq!(fs::read_to_string(&lockfile_path).expect("read lockfile"), reordered, "locked keeps it");
+
+        // An ordinary run writes the equivalent lock back in the canonical order.
+        prepare_project_workspace(&plan).expect("ordinary prepare");
+        assert_eq!(fs::read_to_string(&lockfile_path).expect("read lockfile"), original, "canonicalized");
     });
 
     let _ = fs::remove_dir_all(root);
