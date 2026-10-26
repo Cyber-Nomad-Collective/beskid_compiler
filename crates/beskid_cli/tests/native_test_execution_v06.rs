@@ -48,7 +48,21 @@ fn v06_native_tests_isolate_assertion_failure_and_continue_selected_entries() {
 /// names the line and column where `Assert.True` starts, not the test declaration.
 #[test]
 fn a_failed_assertion_reports_the_caller_information_filled_at_the_call() {
-    let output = execute("use Testing.Assert;\n\ntest CallerLine {\n      Assert.True(false);\n}\n", &[]);
+    // Runs on its own: the staged debug runtime kit stands in for an installed prefix.
+    let root = tempfile::tempdir().unwrap();
+    let input = root.path().join("Main.bd");
+    std::fs::write(&input, "use Testing.Assert;\n\ntest CallerLine {\n      Assert.True(false);\n}\n").unwrap();
+    let prefix = beskid_tests_mod_host::shared_runtime_prefix().expect("staged runtime kit");
+    let output = Command::new(env!("CARGO_BIN_EXE_beskid_cli"))
+        .args(["test", "--plain", "--json"])
+        .arg(&input)
+        .env("BESKID_CONFIG_DIR", root.path().join("config"))
+        .env("BESKID_HOME", root.path().join("toolchain-home"))
+        .env("BESKID_RUNTIME_PREFIX", &prefix)
+        .env("BESKID_RUNTIME_KIT_PROFILE", "debug")
+        .env("OTEL_SDK_DISABLED", "true")
+        .output()
+        .unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(!output.status.success(), "stdout: {stdout}; stderr: {stderr}");
