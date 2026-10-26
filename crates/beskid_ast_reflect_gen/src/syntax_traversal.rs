@@ -1,7 +1,6 @@
 //! Emit contract-first syntax traversal surfaces (`Node`, `NodeRef`, `NodeKind`, manifest).
 
 use std::collections::BTreeSet;
-use std::fs;
 use std::path::Path;
 
 use syn::{Attribute, Fields, Item, Meta};
@@ -323,14 +322,14 @@ pub fn emit_traversal_sdk(
             .map(str::to_string)
             .collect();
 
-    fs::write(nodes_dir.join("Node.bd"), emit_node_contract_bd())?;
-    fs::write(nodes_dir.join("NodeRef.bd"), emit_node_ref_bd())?;
-    fs::write(nodes_dir.join("NodeSpan.bd"), emit_node_span_bd())?;
-    fs::write(nodes_dir.join("NodeKind.bd"), emit_node_kind_bd(reflect_rs)?)?;
-    fs::write(nodes_dir.join("NodeList.bd"), emit_node_list_bd())?;
-    fs::write(nodes_dir.join("TraversalManifest.bd"), emit_traversal_manifest_bd(&entries))?;
-    fs::write(nodes_dir.join("Descendants.bd"), emit_descendants_contract_bd())?;
-    fs::write(nodes_dir.join("Visit.bd"), emit_visit_contract_bd())?;
+    crate::write_formatted_bd(&nodes_dir.join("Node.bd"), &emit_node_contract_bd())?;
+    crate::write_formatted_bd(&nodes_dir.join("NodeRef.bd"), &emit_node_ref_bd())?;
+    crate::write_formatted_bd(&nodes_dir.join("NodeSpan.bd"), &emit_node_span_bd())?;
+    crate::write_formatted_bd(&nodes_dir.join("NodeKind.bd"), &emit_node_kind_bd(reflect_rs)?)?;
+    crate::write_formatted_bd(&nodes_dir.join("NodeList.bd"), &emit_node_list_bd())?;
+    crate::write_formatted_bd(&nodes_dir.join("TraversalManifest.bd"), &emit_traversal_manifest_bd(&entries))?;
+    crate::write_formatted_bd(&nodes_dir.join("Descendants.bd"), &emit_descendants_contract_bd())?;
+    crate::write_formatted_bd(&nodes_dir.join("Visit.bd"), &emit_visit_contract_bd())?;
 
     Ok(names)
 }

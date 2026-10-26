@@ -197,13 +197,20 @@ fn v06_native_syntax_factories_preserve_concrete_fields_variants_and_wrappers() 
     let source = std::fs::read_to_string(root.join("Syntax/NativeFactories.bd"))
         .expect("native syntax construction must use generated real source factories");
     assert!(source.contains("IdentifierValue(string name)"));
-    assert!(source.contains("return Beskid.Syntax.Nodes.Identifier { name: name }"));
+    // Generated sources are written through the formatter (Allman braces, one field per line).
+    assert!(source.contains("return Beskid.Syntax.Nodes.Identifier\n"), "{source}");
+    assert!(source.contains("name: name,\n"));
+    assert_eq!(
+        beskid_analysis::format::format_source("NativeFactories.bd", &source).expect("formats"),
+        source,
+        "generated sources pass `beskid fmt --check`"
+    );
     assert!(source.contains("FunctionDefinitionValue("));
     assert!(source.contains("whereBounds"), "factory must not erase generic constraints");
     assert!(source.contains("PrimitiveTypeU64Value()"));
     // A reserved-word escaped variant keeps its spelling in the expression only; the callable
     // itself is PascalCase.
-    assert!(source.contains("pub Beskid.Syntax.Nodes.Type TypeThisValue() {"));
+    assert!(source.contains("pub Beskid.Syntax.Nodes.Type TypeThisValue()\n{\n"));
     assert!(source.contains("return Beskid.Syntax.Nodes.Type::_This;"));
     assert!(!source.contains("Type_ThisValue"));
     assert!(

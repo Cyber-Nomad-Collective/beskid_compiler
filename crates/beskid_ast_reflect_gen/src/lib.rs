@@ -291,6 +291,18 @@ pub struct CliInvocation {
     pub paths: Vec<PathBuf>,
 }
 
+/// Write a generated Beskid source through the formatter, so regenerated files keep the house
+/// style that `beskid fmt --check` expects. Fails, writing nothing, when the formatter refuses
+/// the text (it does not parse, or formatting would change its code).
+pub fn write_formatted_bd(path: &Path, text: &str) -> std::io::Result<()> {
+    fs::write(path, format_bd(path, text)?)
+}
+
+fn format_bd(path: &Path, text: &str) -> std::io::Result<String> {
+    beskid_analysis::format::format_source(&path.display().to_string(), text)
+        .map_err(|error| std::io::Error::other(format!("generated {} does not format: {error}", path.display())))
+}
+
 /// Write generated output to `inv.out_path`, `OUT_DIR/ast_reflect/generated.bd`, or stdout.
 pub fn run_cli(inv: CliInvocation) -> Result<(), GenError> {
     let generated = generate_from_paths(&inv.paths, &inv.options)?;
@@ -308,10 +320,10 @@ pub fn run_cli(inv: CliInvocation) -> Result<(), GenError> {
             if let Some(parent) = p.parent() {
                 fs::create_dir_all(parent)?;
             }
-            fs::write(p, generated)?;
+            write_formatted_bd(p, &generated)?;
         }
         None => {
-            print!("{generated}");
+            print!("{}", format_bd(Path::new("<stdout>"), &generated)?);
         }
     }
     Ok(())
