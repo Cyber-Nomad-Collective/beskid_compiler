@@ -65,7 +65,8 @@ fn assert_private_growth_only(source: &str) {
         assert!(!target.is_empty(), "Array.Append must grow a named mutable local");
         if target.starts_with("this.") {
             // The collection's own storage: only a `mut this` method may grow it in place.
-            let receiver = ["(mut this", "(this", "(move this"]
+            // Receivers of method declarations; `(this.` is a call argument, not a receiver.
+            let receiver = ["(mut this", "(this,", "(this)", "(move this"]
                 .iter()
                 .filter_map(|receiver| source[..at].rfind(receiver).map(|position| (position, *receiver)))
                 .max_by_key(|(position, _)| *position)
