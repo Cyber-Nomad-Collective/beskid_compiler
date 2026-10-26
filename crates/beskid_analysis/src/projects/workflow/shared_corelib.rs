@@ -28,9 +28,20 @@ pub(crate) struct SharedCorelib {
 }
 
 impl SharedCorelib {
-    /// The shared Corelib of the running toolchain, when a sealed bundle is installed.
+    /// The shared Corelib of the running toolchain, when a sealed bundle is installed. A found
+    /// bundle is remembered per install root, so the canonicalization and marker lookup run once
+    /// per process; an install root without a sealed bundle is looked up again on the next call.
     pub(crate) fn resolve() -> Option<Self> {
-        Self::from_installed_root(&installed_corelib_root().ok()?)
+        static RESOLVED: std::sync::LazyLock<std::sync::Mutex<std::collections::HashMap<PathBuf, SharedCorelib>>> =
+            std::sync::LazyLock::new(Default::default);
+        let installed = installed_corelib_root().ok()?;
+        let mut resolved = RESOLVED.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(shared) = resolved.get(&installed) {
+            return Some(shared.clone());
+        }
+        let shared = Self::from_installed_root(&installed)?;
+        resolved.insert(installed, shared.clone());
+        Some(shared)
     }
 
     /// The shared Corelib whose install root (a bundle holding `beskid_corelib/`, or the
