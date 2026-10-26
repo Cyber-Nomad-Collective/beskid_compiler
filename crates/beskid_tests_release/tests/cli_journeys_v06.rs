@@ -567,15 +567,20 @@ fn failed_assertion_is_a_test_failure_with_values_and_call_site() {
     let output = stderr(&kinds);
     let lines = output.lines().map(str::trim_end).collect::<Vec<_>>();
     for (headline, rest, call_line) in [
-        ("assertion failed: the values are not equal", vec!["  Answer() should return 42"], 4),
+        // 0.6.7 report: the failure is indented under `FAIL <test>`, with the values of Equal<T>.
         (
-            "assertion failed: expected true, found false",
-            vec!["  must hold", "  expected: true", "  actual:   false"],
+            "  assertion failed: expected 42, found 41",
+            vec!["    Answer() should return 42", "    expected: 42", "    actual:   41"],
+            4,
+        ),
+        (
+            "  assertion failed: expected true, found false",
+            vec!["    must hold", "    expected: true", "    actual:   false"],
             8,
         ),
         (
-            "assertion failed: expected false, found true",
-            vec!["  must not hold", "  expected: false", "  actual:   true"],
+            "  assertion failed: expected false, found true",
+            vec!["    must not hold", "    expected: false", "    actual:   true"],
             12,
         ),
     ] {
@@ -584,7 +589,7 @@ fn failed_assertion_is_a_test_failure_with_values_and_call_site() {
         assert_eq!(&lines[at + 1..at + 1 + rest.len()], rest.as_slice(), "lines after `{headline}`:\n{output}");
         let location = lines[at + 1 + rest.len()];
         assert!(
-            location.starts_with("  at ") && location.ends_with(&format!("Kinds.bd:{call_line}:5")),
+            location.starts_with("    at ") && location.ends_with(&format!("Kinds.bd:{call_line}:5")),
             "the exact call site follows `{headline}`: {location}\n{output}"
         );
     }

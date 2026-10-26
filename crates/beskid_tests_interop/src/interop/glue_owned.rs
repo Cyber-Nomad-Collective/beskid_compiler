@@ -2401,14 +2401,15 @@ fn v06_glue_cli_equivalent_projects_issue_identical_packets() {
 /// unknown argument on a boundary function are rejected before generation, without publication.
 #[test]
 fn v06_glue_cli_rejects_closed_boundary_metadata_violations() {
-    const ORIGINAL: &str = "[Export(Abi:\"C\", Symbol:\"beskid_i8\")]";
+    // The fixture is `beskid fmt` output.
+    const ORIGINAL: &str = "[Export(Abi: \"C\", Symbol: \"beskid_i8\")]";
     for (label, replacement) in [
         (
             "two Export attributes",
-            "[Export(Abi:\"C\", Symbol:\"beskid_i8\")]\n[Export(Abi:\"C\", Symbol:\"beskid_i8_again\")]",
+            "[Export(Abi: \"C\", Symbol: \"beskid_i8\")]\n[Export(Abi: \"C\", Symbol: \"beskid_i8_again\")]",
         ),
-        ("repeated Symbol argument", "[Export(Abi:\"C\", Symbol:\"beskid_i8\", Symbol:\"beskid_i8\")]"),
-        ("unknown argument", "[Export(Abi:\"C\", Symbol:\"beskid_i8\", Library:\"glue_manual\")]"),
+        ("repeated Symbol argument", "[Export(Abi: \"C\", Symbol: \"beskid_i8\", Symbol: \"beskid_i8\")]"),
+        ("unknown argument", "[Export(Abi: \"C\", Symbol: \"beskid_i8\", Library: \"glue_manual\")]"),
     ] {
         let project = CliProject::new();
         let source = project.export_source();
