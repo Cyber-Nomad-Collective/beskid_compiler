@@ -170,6 +170,12 @@ pub async fn scan_workspace_root(client: &Client, state: &RwLock<State>, root: &
             startup_signalled = true;
             signal_initial_scan_complete(state).await;
         }
+        // Files of an indexed project are done: only real analysis yields to interactive work.
+        if indexed_files.contains(&path) {
+            processed = processed.saturating_add(1);
+            maybe_emit_scan_progress(client, &mut last_emit, processed, total, None).await;
+            continue;
+        }
         if !is_manifest(&path) {
             crate::scan_schedule::yield_to_interactive(&interactive).await;
         }
