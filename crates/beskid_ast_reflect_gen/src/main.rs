@@ -2,10 +2,10 @@
 
 use std::env;
 use std::ffi::OsString;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use beskid_ast_reflect_gen::{
-    default_allowlist_paths, parse_cli_args, run_cli, syntax_nodes::emit_syntax_sdk,
+    default_allowlist_paths, format_bd, parse_cli_args, run_cli, syntax_nodes::emit_syntax_sdk,
     syntax_nodes::inventory_syntax_type_names, syntax_traversal::emit_query_facade_body,
 };
 
@@ -154,10 +154,18 @@ fn run_emit_query_facade(raw: &[OsString]) -> std::process::ExitCode {
     };
     let analysis_src = ws.join("crates/beskid_analysis/src");
     match inventory_syntax_type_names(&analysis_src) {
-        Ok(inv) => {
-            print!("{}", emit_query_facade_body(&inv));
-            std::process::ExitCode::SUCCESS
-        }
+        // The facade is printed through the formatter, like every other generated SDK source,
+        // so the checked-in `Query.bd` stays `beskid fmt --check` clean.
+        Ok(inv) => match format_bd(Path::new("Beskid/Compiler/Query.bd"), &emit_query_facade_body(&inv)) {
+            Ok(text) => {
+                print!("{text}");
+                std::process::ExitCode::SUCCESS
+            }
+            Err(e) => {
+                eprintln!("error: {e}");
+                std::process::ExitCode::from(1)
+            }
+        },
         Err(e) => {
             eprintln!("error: {e}");
             std::process::ExitCode::from(1)

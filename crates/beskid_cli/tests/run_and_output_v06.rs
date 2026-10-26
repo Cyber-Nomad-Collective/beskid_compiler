@@ -95,8 +95,10 @@ fn v06_run_interrupt_reaches_program_and_exits_130() {
         "Wait.bd",
         "use Core.Output;\ni32 Main() {\n    Output.WriteLine(\"ready\");\n    while (true) { }\n    return 0;\n}\n",
     );
+    // The program status is part of the verbose run summary (0.6.7 output policy: the default is
+    // one status line).
     let mut cli = beskid(root.path())
-        .args(["run", "--plain"])
+        .args(["run", "--plain", "-v"])
         .arg(&program)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

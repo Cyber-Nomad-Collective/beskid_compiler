@@ -1,3 +1,4 @@
-i64 Main() {
+i64 Main()
+{
     return 0;
 }

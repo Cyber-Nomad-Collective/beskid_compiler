@@ -539,6 +539,9 @@ fn run_in_private_prefix(name: &str, staging: DriverStaging, project: ChildProje
         .env(CODEGEN_THREADS_ENV, codegen_threads())
         .env(GATE_ENV, staged.path().join("borrow.gate"))
         .env(beskid_abi::runtime_kit::ENV_CORELIB_ROOT, corelib)
+        // The child runs from `<prefix>/bin`, outside a Cargo build tree: its native Mod host is
+        // the qualified installation's CLI, not one built for a `deps` directory.
+        .env("BESKID_CLI_BIN", qualified.join("bin").join(format!("beskid{}", std::env::consts::EXE_SUFFIX)))
         .env_remove(beskid_abi::runtime_kit::ENV_RUNTIME_PREFIX)
         // Native Mods are qualified and loaded for the profile of the kit the child runs on.
         .env("BESKID_RUNTIME_KIT_PROFILE", beskid_abi::runtime_kit::profile_directory_name(qualified_profile()))
@@ -2401,14 +2404,15 @@ fn v06_glue_cli_equivalent_projects_issue_identical_packets() {
 /// unknown argument on a boundary function are rejected before generation, without publication.
 #[test]
 fn v06_glue_cli_rejects_closed_boundary_metadata_violations() {
-    const ORIGINAL: &str = "[Export(Abi:\"C\", Symbol:\"beskid_i8\")]";
+    // The fixture is `beskid fmt` output.
+    const ORIGINAL: &str = "[Export(Abi: \"C\", Symbol: \"beskid_i8\")]";
     for (label, replacement) in [
         (
             "two Export attributes",
-            "[Export(Abi:\"C\", Symbol:\"beskid_i8\")]\n[Export(Abi:\"C\", Symbol:\"beskid_i8_again\")]",
+            "[Export(Abi: \"C\", Symbol: \"beskid_i8\")]\n[Export(Abi: \"C\", Symbol: \"beskid_i8_again\")]",
         ),
-        ("repeated Symbol argument", "[Export(Abi:\"C\", Symbol:\"beskid_i8\", Symbol:\"beskid_i8\")]"),
-        ("unknown argument", "[Export(Abi:\"C\", Symbol:\"beskid_i8\", Library:\"glue_manual\")]"),
+        ("repeated Symbol argument", "[Export(Abi: \"C\", Symbol: \"beskid_i8\", Symbol: \"beskid_i8\")]"),
+        ("unknown argument", "[Export(Abi: \"C\", Symbol: \"beskid_i8\", Library: \"glue_manual\")]"),
     ] {
         let project = CliProject::new();
         let source = project.export_source();

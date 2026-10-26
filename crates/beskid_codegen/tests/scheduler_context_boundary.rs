@@ -77,11 +77,15 @@ fn canonical_scheduler_uses_manifest_guarded_stacks_with_bounded_usable_storage(
     // `SchedulerSetFiberStackMax`), defaulting to `FIBER_STACK_MAX_SIZE`; every fiber reads it once
     // and the same bound flows into the guarded allocation, the record and the context top.
     assert!(scheduler.contains("pub word SchedulerFiberStackMax()"));
-    assert!(scheduler.contains("if table == NativePointer(0) { return FIBER_STACK_MAX_SIZE; }"));
-    assert!(scheduler.contains("if configured == 0 { return FIBER_STACK_MAX_SIZE; }"));
+    // Statement shapes are compared with whitespace collapsed: the source is `beskid fmt` output.
+    let flat = |text: &str| text.split_whitespace().collect::<Vec<_>>().join(" ");
+    let scheduler_flat = flat(scheduler);
+    let has = |text: &str| scheduler_flat.contains(&flat(text));
+    assert!(has("if (table == NativePointer(0)) { return FIBER_STACK_MAX_SIZE; }"));
+    assert!(has("if (configured == 0) { return FIBER_STACK_MAX_SIZE; }"));
     assert!(scheduler.contains("pub bool SchedulerSetFiberStackMax(word maximumSize)"));
-    assert!(scheduler.contains(
-        "if maximumSize < FIBER_STACK_INITIAL_SIZE || maximumSize % FIBER_STACK_INITIAL_SIZE != 0 { return false; }"
+    assert!(has(
+        "if (maximumSize < FIBER_STACK_INITIAL_SIZE || maximumSize % FIBER_STACK_INITIAL_SIZE != 0) { return false; }"
     ));
     assert!(scheduler.contains("word stackMaximumSize = SchedulerFiberStackMax();"));
     assert!(scheduler.contains("pointer stack = GuardedStackAllocate(FIBER_STACK_INITIAL_SIZE, stackMaximumSize);"));
@@ -90,8 +94,8 @@ fn canonical_scheduler_uses_manifest_guarded_stacks_with_bounded_usable_storage(
     assert!(scheduler.contains("ContextInit(context, pointer_add(stack, stackMaximumSize)"));
     assert!(scheduler.contains("GuardedStackFree(stack, stackMaximumSize);"));
     assert!(scheduler.contains("pub bool SchedulerStackCheck(word requiredUsableSize)"));
-    assert!(scheduler.contains("if requiredUsableSize <= committedSize { return true; }"));
-    assert!(scheduler.contains("if requiredUsableSize > maximumSize"));
+    assert!(has("if (requiredUsableSize <= committedSize) { return true; }"));
+    assert!(has("if (requiredUsableSize > maximumSize)"));
     assert!(scheduler.contains("GuardedStackGrow(stack, committedSize, requestedSize, maximumSize)"));
     assert!(scheduler.contains("pub unit SchedulerStackOverflowObserved()"));
     assert!(scheduler.contains("raw_word_store(pointer_add(fib, 48), FIBER_JOIN_STACK_OVERFLOW);"));

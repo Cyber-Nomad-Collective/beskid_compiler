@@ -93,6 +93,23 @@ pub(super) fn lower_syntax_entrypoint_from_front_end(
     Ok(SyntaxEntrypointArtifact { artifact: lowered.into_artifact(), symbol, return_type })
 }
 
+/// [`lower_syntax_entrypoint_from_front_end`] for the `test` definition named `test`.
+pub(super) fn lower_syntax_test_entrypoint_from_front_end(
+    db: &mut BeskidDatabase,
+    front: &beskid_analysis::services::ExecutableFrontEnd,
+    test: &str,
+    target: beskid_abi::abi_v5::TargetMetadata,
+    pipeline: Option<&dyn PipelineObserver>,
+) -> Result<SyntaxEntrypointArtifact> {
+    let isa = native_isa()?;
+    let lowered = beskid_pipeline::observe_phase_result(pipeline, beskid_pipeline::phases::CODEGEN_CLIF, || {
+        beskid_codegen::lower_prepared_syntax_test_entrypoint(db, front, test, target, isa.as_ref())
+    })?;
+    let symbol = lowered.symbol().to_owned();
+    let return_type = lowered.return_type();
+    Ok(SyntaxEntrypointArtifact { artifact: lowered.into_artifact(), symbol, return_type })
+}
+
 #[cfg(test)]
 fn lower_syntax_entrypoint(
     db: &mut BeskidDatabase,

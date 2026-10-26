@@ -298,7 +298,8 @@ pub fn write_formatted_bd(path: &Path, text: &str) -> std::io::Result<()> {
     fs::write(path, format_bd(path, text)?)
 }
 
-fn format_bd(path: &Path, text: &str) -> std::io::Result<String> {
+/// `text` printed by the formatter, as [`write_formatted_bd`] writes it; `path` names it in errors.
+pub fn format_bd(path: &Path, text: &str) -> std::io::Result<String> {
     beskid_analysis::format::format_source(&path.display().to_string(), text)
         .map_err(|error| std::io::Error::other(format!("generated {} does not format: {error}", path.display())))
 }
@@ -338,6 +339,8 @@ mod tests {
         let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mirror_reflect.rs");
         let options = GenOptions { only_annotated: true, ..Default::default() };
         let got = generate_from_paths(&[fixture], &options).expect("generate");
+        // The checked-in golden is what the generator writes: its output printed by the formatter.
+        let got = format_bd(Path::new("mirror_reflect.generated.bd"), &got).expect("format generated stubs");
         let expected = include_str!("../tests/expected/mirror_reflect.generated.bd");
         assert_eq!(got, expected);
     }

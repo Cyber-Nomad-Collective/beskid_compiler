@@ -137,7 +137,12 @@ fn source_exports(root: &Path) -> BTreeMap<String, Signature> {
             if !line.trim_start().starts_with("[Export(") {
                 continue;
             }
-            let Some(symbol_start) = line.find("Symbol:\"").map(|index| index + "Symbol:\"".len()) else {
+            // `beskid fmt` writes attribute arguments as `Symbol: "..."`.
+            let Some(symbol_start) = line.find("Symbol:").and_then(|index| {
+                let value = &line[index + "Symbol:".len()..];
+                let quoted = value.trim_start();
+                quoted.starts_with('"').then(|| line.len() - quoted.len() + 1)
+            }) else {
                 continue;
             };
             let symbol_end = line[symbol_start..].find('"').unwrap() + symbol_start;
@@ -269,7 +274,11 @@ fn dynamic_descriptor_exports(root: &Path, source: &BTreeMap<String, Signature>)
     }
     let records = fs::read_to_string(root.join("runtime/beskid/src/Runtime/Dynamic/Records.bd")).unwrap();
     assert!(
-        records.lines().any(|line| line.trim_start().starts_with("pub type DynamicErasedCellV1 ")),
+        records.lines().any(|line| {
+            line.trim_start()
+                .strip_prefix("pub type DynamicErasedCellV1")
+                .is_some_and(|rest| rest.is_empty() || rest.starts_with(char::is_whitespace))
+        }),
         "canonical erased Dynamic cell declaration absent"
     );
     exports.insert("beskid_dynamic_v1_erased_cell_descriptor".to_owned(), getter());

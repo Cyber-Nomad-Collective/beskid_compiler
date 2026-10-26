@@ -8,11 +8,18 @@ use Runtime.Fiber.Scheduler.Core;
 use Runtime.Fiber.Scheduler.Loop;
 use Runtime.Mem.Gc.RootsHandles;
 
-pub unit CompositionFiberScopeEntry(pointer state) {
+pub unit CompositionFiberScopeEntry(pointer state)
+{
     pointer container = NativePointer(raw_word_load(state));
     bool entered = CompositionScopeTryEnter(container, 1, 0);
-    if entered { raw_word_store(pointer_add(state, 32), 1); }
-    if !entered { return; }
+    if (entered)
+    {
+        raw_word_store(pointer_add(state, 32), 1);
+    }
+    if (!entered)
+    {
+        return;
+    }
     raw_word_store(pointer_add(state, 8), word(CompositionScopeDepth()));
     FiberYield();
     raw_word_store(pointer_add(state, 16), word(CompositionScopeDepth()));
@@ -24,14 +31,19 @@ pub unit CompositionFiberScopeEntry(pointer state) {
 // `Fiber.handle` is private to Concurrency.Fiber (E1211). Nothing in these tests finishes or
 // detaches a fiber before the next spawn, so `FiberAlloc` takes a fresh record and the spawned
 // fiber is the newest one in the scheduler table.
-pub i64 SpawnCompositionFiberScopeEntry(pointer state) {
+pub i64 SpawnCompositionFiberScopeEntry(pointer state)
+{
     Fiber<unit> child = spawn CompositionFiberScopeEntry(state);
     pointer table = SchedTable();
-    if table == NativePointer(0) { return -1; }
+    if (table == NativePointer(0))
+    {
+        return -1;
+    }
     return i64(FiberHandle(raw_word_load(table) - 1));
 }
 
-test CompositionActivatesScopesAndDisposesCompilerMaterializedSlots {
+test CompositionActivatesScopesAndDisposesCompilerMaterializedSlots
+{
     pointer hostRuntime = SuspendHostRuntime();
     pointer runtime = SystemAllocate(64, 8);
     memory_set(runtime, 0, 64);
@@ -62,7 +74,8 @@ test CompositionActivatesScopesAndDisposesCompilerMaterializedSlots {
     ResumeHostRuntime(hostRuntime);
 }
 
-test CompositionRejectsUnmaterializedDuplicateAndOutOfRangeSlots {
+test CompositionRejectsUnmaterializedDuplicateAndOutOfRangeSlots
+{
     pointer hostRuntime = SuspendHostRuntime();
     pointer runtime = SystemAllocate(64, 8);
     memory_set(runtime, 0, 64);
@@ -87,7 +100,8 @@ test CompositionRejectsUnmaterializedDuplicateAndOutOfRangeSlots {
     ResumeHostRuntime(hostRuntime);
 }
 
-test CompositionFailedMaterializationReleasesRootsWithoutAScopeFrame {
+test CompositionFailedMaterializationReleasesRootsWithoutAScopeFrame
+{
     pointer hostRuntime = SuspendHostRuntime();
     pointer runtime = SystemAllocate(64, 8);
     memory_set(runtime, 0, 64);
@@ -109,7 +123,8 @@ test CompositionFailedMaterializationReleasesRootsWithoutAScopeFrame {
     ResumeHostRuntime(hostRuntime);
 }
 
-test CompositionShutdownHasOneWinnerForActiveServices {
+test CompositionShutdownHasOneWinnerForActiveServices
+{
     pointer hostRuntime = SuspendHostRuntime();
     pointer runtime = SystemAllocate(64, 8);
     memory_set(runtime, 0, 64);
@@ -129,7 +144,8 @@ test CompositionShutdownHasOneWinnerForActiveServices {
     ResumeHostRuntime(hostRuntime);
 }
 
-test CompositionRejectsPlanSizesOutsideTheCompilerRuntimeContract {
+test CompositionRejectsPlanSizesOutsideTheCompilerRuntimeContract
+{
     pointer hostRuntime = SuspendHostRuntime();
     pointer runtime = SystemAllocate(64, 8);
     memory_set(runtime, 0, 64);
@@ -145,7 +161,8 @@ test CompositionRejectsPlanSizesOutsideTheCompilerRuntimeContract {
     ResumeHostRuntime(hostRuntime);
 }
 
-test CompositionContainersKeepSlotsAndActivationIndependent {
+test CompositionContainersKeepSlotsAndActivationIndependent
+{
     pointer hostRuntime = SuspendHostRuntime();
     pointer runtime = SystemAllocate(64, 8);
     memory_set(runtime, 0, 64);
@@ -177,7 +194,8 @@ test CompositionContainersKeepSlotsAndActivationIndependent {
     ResumeHostRuntime(hostRuntime);
 }
 
-test CompositionScopeRejectsWrongFrozenParentWithoutPublishingAFrame {
+test CompositionScopeRejectsWrongFrozenParentWithoutPublishingAFrame
+{
     pointer hostRuntime = SuspendHostRuntime();
     pointer runtime = SystemAllocate(64, 8);
     memory_set(runtime, 0, 64);
@@ -204,8 +222,13 @@ test CompositionScopeRejectsWrongFrozenParentWithoutPublishingAFrame {
     ResumeHostRuntime(hostRuntime);
 }
 
-test CompositionScopeIdentityIsFiberLocal {
-    meta { tags = "composition-scope"; }
+test CompositionScopeIdentityIsFiberLocal
+{
+    meta
+    {
+        tags = "composition-scope";
+    }
+
     pointer hostRuntime = SuspendHostRuntime();
     pointer runtime = SystemAllocate(64, 8);
     memory_set(runtime, 0, 64);
@@ -246,8 +269,13 @@ test CompositionScopeIdentityIsFiberLocal {
 
 // ---- Exit entries and open scopes for `CommandLine.Exit` (review 2: H1, H2) ----
 
-test CompositionExitPopUnlinksTheNextHookOfTheCurrentLevel {
-    meta { tags = "composition-scope"; }
+test CompositionExitPopUnlinksTheNextHookOfTheCurrentLevel
+{
+    meta
+    {
+        tags = "composition-scope";
+    }
+
     pointer hostRuntime = SuspendHostRuntime();
     pointer runtime = SystemAllocate(64, 8);
     memory_set(runtime, 0, 64);
@@ -288,8 +316,13 @@ test CompositionExitPopUnlinksTheNextHookOfTheCurrentLevel {
     ResumeHostRuntime(hostRuntime);
 }
 
-test CompositionContainerListsTheOpenScopesOfEveryFiber {
-    meta { tags = "composition-scope"; }
+test CompositionContainerListsTheOpenScopesOfEveryFiber
+{
+    meta
+    {
+        tags = "composition-scope";
+    }
+
     pointer hostRuntime = SuspendHostRuntime();
     pointer runtime = SystemAllocate(64, 8);
     memory_set(runtime, 0, 64);

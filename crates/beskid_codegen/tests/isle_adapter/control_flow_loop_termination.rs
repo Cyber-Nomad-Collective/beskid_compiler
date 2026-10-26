@@ -122,3 +122,30 @@ fn for_over_an_array_with_a_break_in_its_body_lowers() {
     let clif = function.display().to_string();
     assert!(clif.contains("icmp ult"), "{clif}");
 }
+
+/// `beskid fmt` prints a loop condition in parentheses (`while (true)`); the grouped literal is
+/// still statically true, so the dead exit block is trapped exactly as for `while true`.
+#[test]
+fn while_true_in_parentheses_terminates_its_final_block() {
+    let (input, isa, item) = item_fixture(
+        r#"
+i32 Wait(i32 limit)
+{
+    mut i32 count = 0;
+    while (true)
+    {
+        if (count >= limit)
+        {
+            return count;
+        }
+        count = count + 1;
+    }
+}
+"#,
+    );
+    let function = emit_isle_item(&input, isa.as_ref(), item)
+        .map_err(|error| describe(&input, error))
+        .expect("a parenthesized while-true loop whose body always returns must terminate its final block");
+    let clif = function.display().to_string();
+    assert!(clif.contains("trap"), "the dead loop-exit block must be trapped as unreachable: {clif}");
+}

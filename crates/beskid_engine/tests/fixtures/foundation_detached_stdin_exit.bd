@@ -4,27 +4,34 @@ use Core.Output;
 use Core.Results;
 
 // Blocks in a read of standard input that never completes: the parent keeps the pipe open.
-unit ReadStandardInput() {
-    match Input.ReadLine() {
+unit ReadStandardInput()
+{
+    match (Input.ReadLine())
+    {
         Result::Ok(line) => Output.WriteLine("read ${line}"),
         Result::Error(_) => Output.WriteLine("read failed"),
     };
 }
 
-unit Ping() {
+unit Ping()
+{
     return;
 }
 
 // The process exits while a detached fiber is parked in a read of standard input: shutdown
 // cancels the fiber and does not wait for the worker inside `read`.
-pub i64 Main() {
+pub i64 Main()
+{
     Fiber<unit> reader = spawn (() => ReadStandardInput());
     reader.Detach();
     // Joining a second fiber drives the scheduler: the reader runs first and parks in its read.
     Fiber<unit> ping = spawn (() => Ping());
-    match ping.Join() {
+    match (ping.Join())
+    {
         Result::Ok(_) => Output.WriteLine("main done"),
-        Result::Error(_) => { return 1; },
+        Result::Error(_) => {
+            return 1;
+        },
     };
     return 0;
 }

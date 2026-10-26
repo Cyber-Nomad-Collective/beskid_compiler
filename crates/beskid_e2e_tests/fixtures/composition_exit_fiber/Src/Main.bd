@@ -41,7 +41,7 @@ i32 Main()
     with Visit(3)
     {
         // Main parks here; the spawned fiber runs and ends the program.
-        match Time.Sleep(Time.FromMilliseconds(2000_i64))
+        match (Time.Sleep(Time.FromMilliseconds(2000_i64)))
         {
             Result::Ok(_) => Output.WriteLine("not reached"),
             Result::Error(_) => Output.WriteLine("not reached"),

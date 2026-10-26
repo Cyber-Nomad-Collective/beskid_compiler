@@ -1320,6 +1320,15 @@ impl<'a> Analysis<'a> {
         // External uniqueness: the operand is the only name for its value in this callable. A
         // borrowed parameter, an aliased local or a capture of a repeatable closure is not.
         if !owning || crossing == LambdaCrossing::Ordinary || crossing == LambdaCrossing::OneShot {
+            // A plain parameter (or a local that holds one) handed straight to the crossing is
+            // lent by its caller: RB5 gives both repairs, copy it or declare the parameter `move`.
+            let repeatable = crossing == LambdaCrossing::Ordinary || crossing == LambdaCrossing::OneShot;
+            if !repeatable
+                && let Some(kept) = self.owners.get(&declaration).and_then(|owner| owner.kept_parameter.clone())
+            {
+                self.push_kept(site, &name, &kept);
+                return;
+            }
             self.push(AffineFindingKind::BorrowEscapes, site, &name, None, Some(declaration), false);
             return;
         }

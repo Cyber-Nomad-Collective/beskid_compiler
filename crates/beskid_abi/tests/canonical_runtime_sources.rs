@@ -47,10 +47,14 @@ fn managed_aggregate_allocator_uses_the_canonical_gc_heap() {
         .and_then(|tail| tail.split("// Allocates a closure capture environment").next())
         .expect("managed object allocator body");
 
+    // The runtime source is `beskid fmt` output: statement shapes are compared with whitespace
+    // collapsed.
+    let flat = |text: &str| text.split_whitespace().collect::<Vec<_>>().join(" ");
+    let allocator_flat = flat(allocator);
     assert!(
-        allocator.contains("return AllocateObjectWithPolicy(request, false);")
-            && allocator.contains("if checked { object = GcTryAlloc(size, alignment); }")
-            && allocator.contains("else { object = GcAlloc(size, alignment); }"),
+        allocator_flat.contains("return AllocateObjectWithPolicy(request, false);")
+            && allocator_flat.contains("if (checked) { object = GcTryAlloc(size, alignment); }")
+            && allocator_flat.contains("else { object = GcAlloc(size, alignment); }"),
         "ordinary and checked managed allocations must enter the traced heap"
     );
     assert!(

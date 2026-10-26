@@ -390,7 +390,8 @@ fn deadline_literal_allows_constructor_inside_canonical_declaring_unit() {
     let program = parse_program(&source).expect("parse canonical Deadline source");
     let generation = SyntaxGenerationId(122);
     let index = SyntaxIndex::from_program(&program, generation);
-    let marker = source.find("Deadline { monotonicNanos").expect("canonical Deadline constructor");
+    let marker =
+        source.find("Result::Ok(Deadline").map(|at| at + "Result::Ok(".len()).expect("canonical Deadline constructor");
     let node = index
         .metadata()
         .iter()

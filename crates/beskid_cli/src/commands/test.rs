@@ -140,11 +140,18 @@ pub fn execute(args: TestArgs) -> Result<()> {
 fn execute_single_target(args: TestArgs) -> Result<()> {
     let budgets = args.execution_budgets();
     let mut workspace = PreparedWorkspace::prepare(&args, budgets, Cancellation::default())?;
-    let target_name = workspace
-        .test_targets()
-        .into_iter()
-        .find(|name| args.project.target.as_deref().is_none_or(|selected| selected == name))
-        .ok_or_else(|| anyhow!("no Test or Lib target selected"))?;
+    let test_targets = workspace.test_targets();
+    let target_name = match args.project.target.as_deref() {
+        Some(selected) => test_targets.into_iter().find(|name| name == selected).ok_or_else(|| {
+            anyhow!("target `{selected}` is not a Test or Lib target of {}", workspace.manifest_path().display())
+        })?,
+        // A project without a Test or Lib target (an App alone) has no tests to run: the run
+        // passes with none, as a library without `test` items does.
+        None => match test_targets.into_iter().next() {
+            Some(name) => name,
+            None => return report_no_test_targets(&args),
+        },
+    };
     workspace.activate_mods(std::slice::from_ref(&target_name), &args)?;
     let target = workspace
         .prepare_targets(std::slice::from_ref(&target_name), |_| Ok(()))?
@@ -156,6 +163,19 @@ fn execute_single_target(args: TestArgs) -> Result<()> {
     } else {
         Err(anyhow!(report.error.unwrap_or_else(|| format!("target `{target_name}` failed"))))
     }
+}
+
+fn report_no_test_targets(args: &TestArgs) -> Result<()> {
+    if args.json {
+        crate::machine_output::Records::new("test").emit(
+            "result",
+            "success",
+            serde_json::json!({ "target": null, "summary": TestSummary::default(), "tests": [] }),
+        )?;
+    } else {
+        println!("No tests found.");
+    }
+    Ok(())
 }
 
 pub(crate) fn execute_prepared_target(

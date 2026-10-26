@@ -12,7 +12,8 @@ use Runtime.Data.Collections;
 use Testing.Assert;
 use HostRuntimeSupport;
 
-pub pointer TestDescriptor(word size, word alignment) {
+pub pointer TestDescriptor(word size, word alignment)
+{
     pointer descriptor = SystemAllocate(40, 8);
     memory_set(descriptor, 0, 40);
     raw_word_store(descriptor, size);
@@ -20,7 +21,8 @@ pub pointer TestDescriptor(word size, word alignment) {
     return descriptor;
 }
 
-pub pointer InstallTestHeap(pointer runtime, pointer heap, pointer region, word regionSize) {
+pub pointer InstallTestHeap(pointer runtime, pointer heap, pointer region, word regionSize)
+{
     memory_set(runtime, 0, 64);
     Assert.True(ProcessInit(runtime) == runtime, "runtime initialized before installing heap");
     pointer thread = CurrentThreadState();
@@ -34,7 +36,8 @@ pub pointer InstallTestHeap(pointer runtime, pointer heap, pointer region, word 
     return thread;
 }
 
-pub unit DropTestHeap(pointer runtime, pointer thread, pointer heap, pointer region, word regionSize) {
+pub unit DropTestHeap(pointer runtime, pointer thread, pointer heap, pointer region, word regionSize)
+{
     ProcessShutdown(runtime);
     SystemFree(region, regionSize);
     SystemFree(heap, 720);
@@ -42,7 +45,8 @@ pub unit DropTestHeap(pointer runtime, pointer thread, pointer heap, pointer reg
     return;
 }
 
-test GcFailsClosedBeforeRuntimeInitialization {
+test GcFailsClosedBeforeRuntimeInitialization
+{
     // No runtime is attached while the host runtime is suspended, and assertion messages need
     // one: record the observations and assert them after the host runtime is restored.
     pointer hostRuntime = SuspendHostRuntime();
@@ -59,7 +63,8 @@ test GcFailsClosedBeforeRuntimeInitialization {
 // reads) and every assertion message allocate on the heap under test, and a message evaluated in
 // this frame stays rooted by it. Heap statistics are therefore measured against a collected
 // baseline with no assertion inside the measured section, and asserted afterwards.
-test GcReclaimsReusesAndInvalidatesStaleHandles {
+test GcReclaimsReusesAndInvalidatesStaleHandles
+{
     pointer hostRuntime = SuspendHostRuntime();
     pointer runtime = SystemAllocate(64, 8);
     pointer heap = SystemAllocate(720, 8);
@@ -116,7 +121,8 @@ test GcReclaimsReusesAndInvalidatesStaleHandles {
     ResumeHostRuntime(hostRuntime);
 }
 
-test GcArrayUsesDistinctDescriptorsAndTracesVariablePointerElements {
+test GcArrayUsesDistinctDescriptorsAndTracesVariablePointerElements
+{
     pointer hostRuntime = SuspendHostRuntime();
     pointer runtime = SystemAllocate(64, 8);
     pointer heap = SystemAllocate(720, 8);
@@ -159,7 +165,8 @@ test GcArrayUsesDistinctDescriptorsAndTracesVariablePointerElements {
     ResumeHostRuntime(hostRuntime);
 }
 
-test GcExternalRootAcceptsPublicArrayReference {
+test GcExternalRootAcceptsPublicArrayReference
+{
     pointer hostRuntime = SuspendHostRuntime();
     pointer runtime = SystemAllocate(64, 8);
     pointer heap = SystemAllocate(720, 8);
@@ -203,7 +210,8 @@ test GcExternalRootAcceptsPublicArrayReference {
     ResumeHostRuntime(hostRuntime);
 }
 
-test GcNestedArrayReferenceKeepsChildAlive {
+test GcNestedArrayReferenceKeepsChildAlive
+{
     pointer hostRuntime = SuspendHostRuntime();
     pointer runtime = SystemAllocate(64, 8);
     pointer heap = SystemAllocate(720, 8);
@@ -240,7 +248,10 @@ test GcNestedArrayReferenceKeepsChildAlive {
     pointer child = AllocateArrayRooted(childRequest, childHandleOut);
     pointer parent = AllocateArrayRooted(parentRequest, parentHandleOut);
     bool allocated = child != NativePointer(0) && parent != NativePointer(0);
-    if allocated { raw_word_store(NativePointer(raw_word_load(parent)), NativeWord(child)); }
+    if (allocated)
+    {
+        raw_word_store(NativePointer(raw_word_load(parent)), NativeWord(child));
+    }
     word childFinished = ArrayConstructionFinish(NativePointer(raw_word_load(childHandleOut)));
     word liveBytes = GcCollect();
     word objects = GcObjectCount();
@@ -262,7 +273,8 @@ test GcNestedArrayReferenceKeepsChildAlive {
     ResumeHostRuntime(hostRuntime);
 }
 
-test GcHeapWideMarkingHandlesBroadRootsFanoutAndCycles {
+test GcHeapWideMarkingHandlesBroadRootsFanoutAndCycles
+{
     pointer hostRuntime = SuspendHostRuntime();
     pointer runtime = SystemAllocate(64, 8);
     pointer heap = SystemAllocate(720, 8);
@@ -272,7 +284,8 @@ test GcHeapWideMarkingHandlesBroadRootsFanoutAndCycles {
     pointer leafDescriptor = TestDescriptor(24, 8);
     pointer fanoutMap = SystemAllocate(64, 8);
     mut word index = 0;
-    while index < 8 {
+    while (index < 8)
+    {
         raw_word_store(pointer_add(fanoutMap, index * 8), 16 + index * 8);
         index = index + 1;
     }
@@ -283,9 +296,13 @@ test GcHeapWideMarkingHandlesBroadRootsFanoutAndCycles {
     pointer fanout = Alloc(80, fanoutDescriptor);
     mut bool leavesAllocated = true;
     index = 0;
-    while index < 8 {
+    while (index < 8)
+    {
         pointer leaf = Alloc(24, leafDescriptor);
-        if leaf == NativePointer(0) { leavesAllocated = false; }
+        if (leaf == NativePointer(0))
+        {
+            leavesAllocated = false;
+        }
         raw_word_store(pointer_add(fanout, 16 + index * 8), NativeWord(leaf));
         index = index + 1;
     }
@@ -299,7 +316,8 @@ test GcHeapWideMarkingHandlesBroadRootsFanoutAndCycles {
     pointer firstNode = Alloc(24, nodeDescriptor);
     mut pointer previousNode = firstNode;
     index = 1;
-    while index < 10 {
+    while (index < 10)
+    {
         pointer node = Alloc(24, nodeDescriptor);
         raw_word_store(pointer_add(previousNode, 16), NativeWord(node));
         previousNode = node;
@@ -311,11 +329,15 @@ test GcHeapWideMarkingHandlesBroadRootsFanoutAndCycles {
     pointer rootSlots = SystemAllocate(96, 8);
     mut bool rootsRegistered = true;
     index = 0;
-    while index < 12 {
+    while (index < 12)
+    {
         pointer root = Alloc(24, leafDescriptor);
         pointer slot = pointer_add(rootSlots, index * 8);
         raw_word_store(slot, NativeWord(root));
-        if !GcRegisterRoot(slot) { rootsRegistered = false; }
+        if (!GcRegisterRoot(slot))
+        {
+            rootsRegistered = false;
+        }
         index = index + 1;
     }
 
@@ -330,7 +352,8 @@ test GcHeapWideMarkingHandlesBroadRootsFanoutAndCycles {
     Assert.Equal(objects, 31, "all broad roots, fanout children, and cycle nodes survive");
 
     index = 0;
-    while index < 12 {
+    while (index < 12)
+    {
         GcUnregisterRoot(pointer_add(rootSlots, index * 8));
         index = index + 1;
     }
@@ -346,7 +369,8 @@ test GcHeapWideMarkingHandlesBroadRootsFanoutAndCycles {
     ResumeHostRuntime(hostRuntime);
 }
 
-test GcValidatesDescriptorAlignment {
+test GcValidatesDescriptorAlignment
+{
     pointer hostRuntime = SuspendHostRuntime();
     pointer runtime = SystemAllocate(64, 8);
     pointer heap = SystemAllocate(720, 8);
@@ -378,7 +402,8 @@ test GcValidatesDescriptorAlignment {
 // resolves to its object regardless of which block it landed in, release them out of order (not
 // LIFO), and confirm the handle stack is back to empty — its baseline before this test rooted
 // anything.
-test GcHandleStackGrowsAcrossBlockBoundaries {
+test GcHandleStackGrowsAcrossBlockBoundaries
+{
     pointer hostRuntime = SuspendHostRuntime();
     pointer runtime = SystemAllocate(64, 8);
     pointer heap = SystemAllocate(720, 8);
@@ -393,7 +418,8 @@ test GcHandleStackGrowsAcrossBlockBoundaries {
     word handleCount = 150;
     pointer handles = SystemAllocate(handleCount * 8, 8);
     mut word index = 0;
-    while index < handleCount {
+    while (index < handleCount)
+    {
         word handle = GcRootHandle(object);
         Assert.True(handle != 0, "handle stack grows a new block past capacity instead of failing");
         raw_word_store(pointer_add(handles, index * 8), handle);
@@ -401,7 +427,8 @@ test GcHandleStackGrowsAcrossBlockBoundaries {
     }
 
     index = 0;
-    while index < handleCount {
+    while (index < handleCount)
+    {
         word handle = raw_word_load(pointer_add(handles, index * 8));
         Assert.True(GcResolveHandle(handle) == object, "every handle across block boundaries resolves to its object");
         index = index + 1;
@@ -410,12 +437,14 @@ test GcHandleStackGrowsAcrossBlockBoundaries {
     // Out-of-order release: every odd-indexed handle first, then every even-indexed handle,
     // instead of the LIFO order scope exit normally produces.
     index = 1;
-    while index < handleCount {
+    while (index < handleCount)
+    {
         GcUnrootHandle(raw_word_load(pointer_add(handles, index * 8)));
         index = index + 2;
     }
     index = 0;
-    while index < handleCount {
+    while (index < handleCount)
+    {
         GcUnrootHandle(raw_word_load(pointer_add(handles, index * 8)));
         index = index + 2;
     }
@@ -429,7 +458,8 @@ test GcHandleStackGrowsAcrossBlockBoundaries {
 }
 
 // Checked operations leave no half-published allocation or root on failure.
-test GcCheckedIdentityAndAllocationFailurePreserveHeap {
+test GcCheckedIdentityAndAllocationFailurePreserveHeap
+{
     pointer descriptor = TestDescriptor(24, 8);
     // Each object is rooted before the next allocation, which collects first under
     // `BESKID_GC_STRESS=alloc`.
@@ -456,7 +486,8 @@ test GcCheckedIdentityAndAllocationFailurePreserveHeap {
     bool rootsPreserved = GcResolveHandle(firstHandle) == first;
     pointer recovered = GcTryAlloc(24, 8);
     word recoveredReason = GcAllocationFailureReason();
-    if recovered != NativePointer(0) {
+    if (recovered != NativePointer(0))
+    {
         memory_set(recovered, 0, 24);
         raw_word_store(recovered, NativeWord(descriptor));
     }
@@ -474,7 +505,8 @@ test GcCheckedIdentityAndAllocationFailurePreserveHeap {
     SystemFree(descriptor, 40);
 }
 
-test GcCheckedHandleGrowthFailureIsRecoverable {
+test GcCheckedHandleGrowthFailureIsRecoverable
+{
     pointer descriptor = TestDescriptor(24, 8);
     pointer value = Alloc(24, descriptor);
     word keeper = GcRootHandle(value);
@@ -482,10 +514,18 @@ test GcCheckedHandleGrowthFailureIsRecoverable {
     mut word count = 0;
     mut bool rejected = false;
     GcHeapForceRootStackFailure(1);
-    while count < 128 && !rejected {
+    while (count < 128 && !rejected)
+    {
         word handle = GcTryRootHandle(value);
-        if handle == 0 { rejected = true; }
-        else { raw_word_store(pointer_add(handles, count * 8), handle); count = count + 1; }
+        if (handle == 0)
+        {
+            rejected = true;
+        }
+        else
+        {
+            raw_word_store(pointer_add(handles, count * 8), handle);
+            count = count + 1;
+        }
     }
     word reason = GcAllocationFailureReason();
     bool alive = GcResolveHandle(keeper) == value;
@@ -496,22 +536,35 @@ test GcCheckedHandleGrowthFailureIsRecoverable {
     word recovered = GcTryRootHandle(value);
     Assert.True(recovered != 0, "handle growth succeeds when allocation fault removed");
     GcUnrootHandle(recovered);
-    while count > 0 { count = count - 1; GcUnrootHandle(raw_word_load(pointer_add(handles, count * 8))); }
+    while (count > 0)
+    {
+        count = count - 1;
+        GcUnrootHandle(raw_word_load(pointer_add(handles, count * 8)));
+    }
     GcUnrootHandle(keeper);
     SystemFree(handles, 1024);
     GcCollect();
     SystemFree(descriptor, 40);
 }
 
-test GcCheckedRootGrowthFailureIsRecoverable {
+test GcCheckedRootGrowthFailureIsRecoverable
+{
     pointer slots = SystemAllocate(1024, 8);
     memory_set(slots, 0, 1024);
     mut word count = 0;
     mut bool rejected = false;
     GcHeapForceRootStackFailure(1);
-    while count < 128 && !rejected {
+    while (count < 128 && !rejected)
+    {
         bool registered = GcTryRegisterRoot(pointer_add(slots, count * 8));
-        if !registered { rejected = true; } else { count = count + 1; }
+        if (!registered)
+        {
+            rejected = true;
+        }
+        else
+        {
+            count = count + 1;
+        }
     }
     word reason = GcAllocationFailureReason();
     bool unpublished = !GcIsRegisteredRoot(pointer_add(slots, count * 8));
@@ -521,11 +574,16 @@ test GcCheckedRootGrowthFailureIsRecoverable {
     Assert.True(unpublished, "failed slot is never published");
     Assert.True(GcTryRegisterRoot(pointer_add(slots, count * 8)), "root block grows after fault removed");
     GcUnregisterRoot(pointer_add(slots, count * 8));
-    while count > 0 { count = count - 1; GcUnregisterRoot(pointer_add(slots, count * 8)); }
+    while (count > 0)
+    {
+        count = count - 1;
+        GcUnregisterRoot(pointer_add(slots, count * 8));
+    }
     SystemFree(slots, 1024);
 }
 
-test GcCheckedArrayGrowthPreservesSourceOnRealExhaustion {
+test GcCheckedArrayGrowthPreservesSourceOnRealExhaustion
+{
     pointer element = SystemAllocate(32, 8);
     memory_set(element, 0, 32);
     raw_word_store(element, 8);
@@ -573,8 +631,8 @@ test GcCheckedArrayGrowthPreservesSourceOnRealExhaustion {
     SystemFree(element, 32);
 }
 
-
-test GcCheckedScopeKeepsFirstFailureAndRestoresNestedLinks {
+test GcCheckedScopeKeepsFirstFailureAndRestoresNestedLinks
+{
     pointer descriptor = TestDescriptor(24, 8);
     pointer failure = Alloc(24, descriptor);
     word failureHandle = GcRootHandle(failure);

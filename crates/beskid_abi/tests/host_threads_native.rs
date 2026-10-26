@@ -95,8 +95,8 @@ fn run_host_threads_fixture(define: Option<&str>) -> String {
 fn host_processor_count_is_a_separate_corelib_service() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let facade = std::fs::read_to_string(root.join("../../corelib/packages/concurrency/src/Concurrency.bd")).unwrap();
-    assert!(facade.contains("pub i64 HostProcessorCount() {\n    return __host_processor_count();\n}"));
-    assert!(facade.contains("pub i64 ProcessorCount() {\n    return __fiber_processor_count();\n}"));
+    assert!(facade.contains("pub i64 HostProcessorCount()\n{\n    return __host_processor_count();\n}"));
+    assert!(facade.contains("pub i64 ProcessorCount()\n{\n    return __fiber_processor_count();\n}"));
     let source = std::fs::read_to_string(root.join("assembly/common/host_threads.h")).unwrap();
     assert!(source.contains("sysconf(_SC_NPROCESSORS_ONLN)"));
     assert!(source.contains("GetActiveProcessorCount(ALL_PROCESSOR_GROUPS)"));

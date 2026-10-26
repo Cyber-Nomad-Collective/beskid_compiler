@@ -212,7 +212,8 @@ pub enum AffineFindingKind {
     /// `related` the binding it reads.
     ScopeBorrowedEscapes,
     /// E1241: a plain (not `move`) parameter of Moved class, or a local holding one, is stored,
-    /// constructed into a value, returned, or handed to a parameter that keeps it; `detail` is
+    /// constructed into a value, returned, handed to a parameter that keeps it, or sent to
+    /// another isolate; `detail` is
     /// the parameter's name, `related` its declaration and `fix_at` where `move ` goes.
     BorrowedParameterKept,
     /// E1241: a crossing operand holds a `[CopyOnAssign]` value below its top level; `detail`
