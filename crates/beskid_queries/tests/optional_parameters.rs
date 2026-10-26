@@ -18,6 +18,11 @@ use beskid_queries::{BeskidDatabase, prepare_compilation_diagnostics_with_db};
 /// Error diagnostics of `units[0]` prepared as the entry of an import-closure assembly, as
 /// `<code> <message> @<span>`.
 fn errors(units: &[(&str, &str)]) -> Vec<String> {
+    prepared(units).0
+}
+
+/// [`errors`] and the database's syntax-index build count after preparation.
+fn prepared(units: &[(&str, &str)]) -> (Vec<String>, u64) {
     let directory = tempfile::tempdir().unwrap();
     let generation = SyntaxGenerationId(611);
     let units = units
@@ -62,11 +67,12 @@ fn errors(units: &[(&str, &str)]) -> Vec<String> {
     let (_, diagnostics, _) =
         prepare_compilation_diagnostics_with_db(&mut db, &resolved, PrepareOptions::without_mods(), None)
             .expect("prepare diagnostics");
-    diagnostics
+    let errors = diagnostics
         .iter()
         .filter(|diagnostic| diagnostic.severity == Severity::Error)
         .map(|diagnostic| format!("{:?} {} @{:?}", diagnostic.code, diagnostic.message, diagnostic.span))
-        .collect()
+        .collect();
+    (errors, db.syntax_authority_counts().1)
 }
 
 const ASSERT: (&str, &str) = (
@@ -213,4 +219,20 @@ fn a_function_in_an_inline_module_takes_defaults() {
         "mod Inner { pub i64 Go(i64 x = 1) { return x; } }\npub i64 Run() { return Inner.Go() + Inner.Go(2); }",
     )]);
     assert!(found.is_empty(), "{found:#?}");
+}
+
+/// Filling omitted arguments refills only the unit whose calls changed, in the same database and
+/// generation: no second registration of the whole assembly (one extra syntax index, for `Main`).
+#[test]
+fn filling_omitted_arguments_refills_only_the_calling_unit() {
+    const OTHER: (&str, &str) = ("Other.bd", "pub i64 Twice(i64 x) { return x * 2; }");
+    let (explicit_errors, explicit_indexes) = prepared(&[
+        ("Main.bd", "use Testing.Assert;\nunit Run() { Assert.Check(true, \"\", \"f\", 1_i64, 1_i64); }"),
+        ASSERT,
+        OTHER,
+    ]);
+    let (omitted_errors, omitted_indexes) =
+        prepared(&[("Main.bd", "use Testing.Assert;\nunit Run() { Assert.Check(true); }"), ASSERT, OTHER]);
+    assert!(explicit_errors.is_empty() && omitted_errors.is_empty(), "{explicit_errors:?} {omitted_errors:?}");
+    assert_eq!(omitted_indexes, explicit_indexes + 1, "only the calling unit is indexed again");
 }

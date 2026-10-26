@@ -4,10 +4,9 @@
 //! calls need the receiver's type to find their callee, so the filling runs after the assembly is
 //! registered and typed: [`omitted_argument_programs`] asks `call_lowering` for the callee of
 //! every call that may omit arguments, and returns the unit programs with the omitted arguments
-//! appended. `build_typed_program` runs it on a scratch registration of the parsed assembly and
-//! registers only the filled programs, so every later query and lowering sees ordinary explicit
-//! arguments. This is the
-//! only filling mechanism; functions, methods, contract methods and functions in inline modules
+//! appended. `build_typed_program` runs it on the registration of the parsed assembly and then
+//! refills only the units whose calls changed, within the same generation, so every later query
+//! and lowering sees ordinary explicit arguments. This is the only filling mechanism; functions, methods, contract methods and functions in inline modules
 //! all go through it.
 //!
 //! A method that implements a contract method and declares no optional parameter of its own
