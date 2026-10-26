@@ -97,6 +97,9 @@ pub(super) fn syntax_facts_for_assembly(
                 | beskid_analysis::syntax_query::NodeKind::PathExpression
         ) && let Some(type_label) = node_type(db, reference).ok().flatten().and_then(syntax_type_label)
             && let Some(span) = node_span(db, reference).ok().flatten()
+            // Arguments the compiler filled for omitted optional parameters have a zero-width
+            // span and no source text: they get no hint.
+            && span.start < span.end
         {
             inlay_hints.push(SyntaxInlayHint { start: span.start, end: span.end, type_label: type_label.to_string() });
         }
