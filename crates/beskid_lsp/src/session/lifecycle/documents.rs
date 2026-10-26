@@ -180,7 +180,7 @@ async fn build_syntax_facts_with_policy_after_startup(
     current_document_only: bool,
     fallback: StartupFallback,
 ) -> SyntaxFacts {
-    let mut facts = syntax_facts_for_text(state, uri, text, pass, current_document_only, fallback).await;
+    let mut facts = syntax_facts_for_text(state, uri, text, pass, current_document_only, fallback, &[]).await;
     // While a member is being typed (`String.` or `point.` ending its line) the buffer does not
     // parse with the member access in it. Completion takes its facts from the same buffer with a
     // placeholder member written over the following whitespace (byte offsets unchanged); every
@@ -188,9 +188,9 @@ async fn build_syntax_facts_with_policy_after_startup(
     // built last, so the registered generation is the one the completion anchor names.
     if !is_manifest_uri(uri)
         && !is_standalone_bsol_uri(uri)
-        && let Some(repaired) = crate::session::imports::completion_repaired_text(text)
+        && let Some((repaired, offsets)) = crate::session::imports::completion_repaired_text(text)
     {
-        let repaired = syntax_facts_for_text(state, uri, &repaired, pass, false, fallback).await;
+        let repaired = syntax_facts_for_text(state, uri, &repaired, pass, false, fallback, &offsets).await;
         if let Some(completion) = repaired.completion
             && completion.entry_anchor.is_some()
         {
@@ -207,6 +207,7 @@ async fn syntax_facts_for_text(
     pass: EditorPreparePass,
     current_document_only: bool,
     fallback: StartupFallback,
+    member_offsets: &[usize],
 ) -> SyntaxFacts {
     let documentation = if is_manifest_uri(uri) || is_standalone_bsol_uri(uri) {
         Vec::new()
@@ -336,6 +337,23 @@ async fn syntax_facts_for_text(
             prepare_project_syntax_facts(db, &resolved_for_prepare, pass, &mod_host)?
         };
         let mut facts = syntax_facts_for_assembly(db, &resolved_for_prepare, Arc::new(prepared.assembly));
+        // Capture the members of each repaired member access as owned data while this generation
+        // is the registered one.
+        if let Some(completion) = facts.completion.as_mut()
+            && let Some(anchor) = completion.entry_anchor
+            && !member_offsets.is_empty()
+        {
+            completion.member_access = member_offsets
+                .iter()
+                .filter_map(|&offset| {
+                    let context =
+                        beskid_queries::CompletionContext { cursor: offset, replacement_start: offset, replacement_end: offset };
+                    let candidates = beskid_queries::completion_candidates(db, anchor, context).ok().flatten()?;
+                    (!candidates.is_empty()).then_some((offset, candidates))
+                })
+                .collect::<Vec<_>>()
+                .into();
+        }
         facts.diagnostics = prepared.diagnostics;
         facts.fixes = prepared.fixes;
         anyhow::Ok(facts)
@@ -488,6 +506,7 @@ pub async fn set_document(state: &RwLock<State>, uri: Uri, version: i32, text: S
                     entry_anchor: None,
                     dependency_surface,
                     attributes: std::sync::Arc::from([]),
+                    member_access: std::sync::Arc::from([]),
                 });
             }
         }
@@ -501,6 +520,7 @@ pub async fn set_document(state: &RwLock<State>, uri: Uri, version: i32, text: S
                     entry_anchor: None,
                     dependency_surface: std::sync::Arc::from([]),
                     attributes: prior_attributes,
+                    member_access: std::sync::Arc::from([]),
                 });
             }
         }

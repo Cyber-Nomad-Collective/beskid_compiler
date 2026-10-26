@@ -76,6 +76,7 @@ pub(super) fn syntax_facts_for_assembly(
                 entry_anchor: None,
                 dependency_surface,
                 attributes: Arc::from([]),
+                member_access: Arc::from([]),
             }),
             ..SyntaxFacts::default()
         };
@@ -177,7 +178,12 @@ pub(super) fn syntax_facts_for_assembly(
         .ids_of_kind(beskid_analysis::syntax_query::NodeKind::Program)
         .next()
         .map(|node| AstNodeKey { unit, generation, node })
-        .map(|entry_anchor| SyntaxCompletion { entry_anchor: Some(entry_anchor), dependency_surface, attributes });
+        .map(|entry_anchor| SyntaxCompletion {
+            entry_anchor: Some(entry_anchor),
+            dependency_surface,
+            attributes,
+            member_access: Arc::from([]),
+        });
     SyntaxFacts {
         definitions,
         hovers,
