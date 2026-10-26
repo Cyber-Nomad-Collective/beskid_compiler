@@ -49,7 +49,7 @@ fn v06_native_tests_isolate_assertion_failure_and_continue_selected_entries() {
 #[test]
 fn a_failed_assertion_reports_the_caller_information_filled_at_the_call() {
     let output = execute(
-        "use Testing.Assert;\n\ntest CallerLine {\n    let unused = 1;\n      Assert.True(false);\n}\n",
+        "use Testing.Assert;\n\ntest CallerLine {\n      Assert.True(false);\n}\n",
         &[],
     );
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -62,7 +62,7 @@ fn a_failed_assertion_reports_the_caller_information_filled_at_the_call() {
     assert!(failure.get("because").is_none(), "an omitted because adds nothing: {record}");
     let location = &failure["location"];
     assert!(location["file"].as_str().is_some_and(|file| file.ends_with("Main.bd")), "{record}");
-    assert_eq!((location["line"].as_u64(), location["column"].as_u64()), (Some(5), Some(7)), "{record}");
+    assert_eq!((location["line"].as_u64(), location["column"].as_u64()), (Some(4), Some(7)), "{record}");
 }
 
 #[test]
