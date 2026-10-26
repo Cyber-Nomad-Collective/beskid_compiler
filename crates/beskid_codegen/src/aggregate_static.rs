@@ -383,9 +383,11 @@ impl CodegenInput<'_> {
             }
         }
         size = size.checked_add(u64::try_from(injected_fields.len()).ok()?.checked_mul(8)?)?;
-        // Event fields have dedicated physical slots but remain absent from the logical
-        // value-field projection layout. Their slots are appended after all value fields,
-        // and the managed allocator's object-zeroing makes each initially null.
+        // Event fields have dedicated physical state but remain absent from the logical
+        // value-field projection layout. Each event's state (a handler count word, then one
+        // handler word per capacity) is appended after all value fields; the handler words are in
+        // the pointer map, so the collector traces subscribed handlers through their owner. The
+        // managed allocator's object-zeroing makes each event initially empty.
         for member in child_nodes(self.database(), declaration).ok().flatten()?.iter().copied() {
             if node_kind(self.database(), member).ok().flatten() != Some(IndexedNodeKind::Field) {
                 continue;
@@ -395,9 +397,12 @@ impl CodegenInput<'_> {
                     return None;
                 }
                 let offset = u64::from(event.slot_offset);
-                size = size.max(offset.checked_add(8)?);
+                let capacity = u64::from(event.capacity);
+                size = size.max(offset.checked_add(beskid_queries::event_state_size(capacity)?)?);
                 alignment = alignment.max(8);
-                pointer_map_offsets.push(offset);
+                for handler in 0..capacity {
+                    pointer_map_offsets.push(offset.checked_add(8)?.checked_add(handler.checked_mul(8)?)?);
+                }
             }
         }
         let object_size = align_to(size, alignment)?;

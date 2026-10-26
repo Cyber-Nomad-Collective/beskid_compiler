@@ -39,8 +39,8 @@ impl IsleContext<'_, '_, '_, '_> {
         } else {
             self.root_expression_value_if_needed(plan.receiver, receiver)?
         };
-        let event_slot = self.builder.ins().iadd_imm_s(receiver, i64::from(plan.slot_offset));
-        let event = self.builder.ins().load(pointer, MemFlagsData::new(), event_slot, 0);
+        // The event's state lies inline in the receiver at its slot offset.
+        let event = self.builder.ins().iadd_imm_s(receiver, i64::from(plan.slot_offset));
         let length = self.emit_corelib_service_call(key, "event_len", &[event], &[pointer], Some(pointer))?;
 
         let mut arguments = Vec::with_capacity(plan.arguments.len());

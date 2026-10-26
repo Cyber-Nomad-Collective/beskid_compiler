@@ -9,6 +9,7 @@ use Runtime.Mem.Gc.RootsHandles;
 use Runtime.Mem.Gc.Sweep;
 use Runtime.Mem.Gc.Verify;
 use Runtime.Data.Collections;
+use Runtime.PubSub.Events;
 use Testing.Assert;
 use HostRuntimeSupport;
 
@@ -613,4 +614,54 @@ test GcCheckedScopeKeepsFirstFailureAndRestoresNestedLinks {
     SystemFree(outer, 64);
     SystemFree(inner, 64);
     SystemFree(descriptor, 40);
+}
+
+// An event's handlers live in its owner (Runtime/PubSub/Events.bd): the owner's pointer map lists
+// the handler words, so a subscribed handler survives exactly as long as its owner and is never an
+// external root. Owner layout: header (16), handler count (16), two handler words (24, 32).
+test GcTracesEventHandlersThroughTheirOwner {
+    pointer hostRuntime = SuspendHostRuntime();
+    pointer runtime = SystemAllocate(64, 8);
+    pointer heap = SystemAllocate(720, 8);
+    pointer region = SystemAllocate(2048, 8);
+    pointer thread = InstallTestHeap(runtime, heap, region, 2048);
+    GcHeapSetQuarantineBudget(0);
+    pointer handlerDescriptor = TestDescriptor(24, 8);
+    pointer ownerMap = SystemAllocate(16, 8);
+    raw_word_store(ownerMap, 24);
+    raw_word_store(pointer_add(ownerMap, 8), 32);
+    pointer ownerDescriptor = TestDescriptor(40, 8);
+    raw_word_store(pointer_add(ownerDescriptor, 16), NativeWord(ownerMap));
+    raw_word_store(pointer_add(ownerDescriptor, 24), 2);
+
+    // No assertion message is evaluated inside the measured section (see the note above).
+    GcCollect();
+    word baseObjects = GcObjectCount();
+    pointer owner = Alloc(40, ownerDescriptor);
+    word ownerHandle = GcRootHandle(owner);
+    pointer event = pointer_add(owner, 16);
+    word first = EventSubscribe(event, Alloc(24, handlerDescriptor), 2);
+    word second = EventSubscribe(event, Alloc(24, handlerDescriptor), 2);
+    word roots = GcExternalRootCount();
+    GcCollect();
+    word objectsWhileOwned = GcObjectCount() - baseObjects;
+    word length = EventLen(event);
+    GcUnrootHandle(ownerHandle);
+    GcCollect();
+    word objectsAfterOwner = GcObjectCount() - baseObjects;
+    word rootsAfterOwner = GcExternalRootCount();
+
+    Assert.Equal(first, 1, "the first handler subscribes");
+    Assert.Equal(second, 2, "the second handler subscribes");
+    Assert.Equal(roots, 0, "a subscribed handler is no external root");
+    Assert.Equal(objectsWhileOwned, 3, "the owner keeps both handlers alive through its pointer map");
+    Assert.Equal(length, 2, "both handlers stay subscribed across a collection");
+    Assert.Equal(objectsAfterOwner, 0, "an unreachable owner takes its handlers with it");
+    Assert.Equal(rootsAfterOwner, 0, "collecting the owner leaves no external root behind");
+
+    SystemFree(ownerDescriptor, 40);
+    SystemFree(ownerMap, 16);
+    SystemFree(handlerDescriptor, 40);
+    DropTestHeap(runtime, thread, heap, region, 2048);
+    ResumeHostRuntime(hostRuntime);
 }

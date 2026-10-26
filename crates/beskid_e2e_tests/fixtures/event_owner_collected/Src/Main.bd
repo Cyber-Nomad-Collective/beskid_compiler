@@ -1,0 +1,34 @@
+use Core.Output;
+use Testing.Assert;
+
+// Owners with a subscribed, capturing handler become unreachable while subscribed. A forced
+// collection reclaims them with their handlers, and the program exits cleanly.
+type Meter {
+    i64 total;
+    event{4} Changed(i64 value);
+
+    unit Report(i64 value) {
+        Changed(value);
+    }
+}
+
+unit SubscribeAndDrop(i64 round) {
+    mut Meter meter = Meter { total: round };
+    string marker = "captured ${round}";
+    unit(i64) print = (i64 value) => {
+        Output.WriteLine(marker);
+    };
+    meter.Changed += print;
+    meter.Report(round);
+}
+
+i32 Main() {
+    mut i64 round = 0_i64;
+    while round < 50_i64 {
+        SubscribeAndDrop(round);
+        round = round + 1_i64;
+    }
+    Assert.CollectGarbage();
+    Output.WriteLine("collected");
+    return 0;
+}

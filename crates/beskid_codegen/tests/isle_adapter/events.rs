@@ -22,14 +22,18 @@ unit Main() {
     let event_only_layout = input.aggregate_object_layout(event_only).expect("physical EventOnly layout");
     let mixed_layout = input.aggregate_object_layout(mixed).expect("physical Mixed layout");
 
-    // The managed allocator clears the whole object before publishing it; the event slots need
-    // only be reserved and included in the descriptor's pointer map, not explicitly stored.
-    assert_eq!(event_only_layout.object_size, 32, "two null-initialized event slots follow the 16-byte header");
-    assert_eq!(event_only_layout.pointer_map_offsets.as_ref(), &[16, 24]);
+    // The managed allocator clears the whole object before publishing it, so each inline event
+    // state (a handler count word, then one handler word per capacity) starts empty. Only the
+    // handler words are in the pointer map: the collector traces handlers through the owner.
+    let handler_words = |state: u64, capacity: u64| (0..capacity).map(move |index| state + 8 + 8 * index);
+    let event_only_map = handler_words(16, 2).chain(handler_words(40, 16)).collect::<Vec<_>>();
+    assert_eq!(event_only_layout.object_size, 176, "First (2 handlers) and Removed (default 16) follow the header");
+    assert_eq!(event_only_layout.pointer_map_offsets.as_ref(), event_only_map.as_slice());
     assert_eq!(event_only_layout.fields.len(), 0, "events are not readable value fields");
     assert_eq!(mixed_layout.fields.iter().map(|field| field.field_offset).collect::<Vec<_>>(), [16, 24]);
-    assert_eq!(mixed_layout.object_size, 48, "event slots append after ordinary value storage");
-    assert_eq!(mixed_layout.pointer_map_offsets.as_ref(), &[32, 40]);
+    assert_eq!(mixed_layout.object_size, 208, "event states append after ordinary value storage");
+    let mixed_map = handler_words(32, 4).chain(handler_words(72, 16)).collect::<Vec<_>>();
+    assert_eq!(mixed_layout.pointer_map_offsets.as_ref(), mixed_map.as_slice());
 
     let event_layouts = find_nodes_of_kind(db, root, beskid_queries::IndexedNodeKind::Field)
         .into_iter()
@@ -37,8 +41,8 @@ unit Main() {
         .collect::<Vec<_>>();
     assert_eq!(
         event_layouts.iter().map(|event| event.slot_offset).collect::<Vec<_>>(),
-        [16, 24, 32, 40],
-        "the generation-bound fact owns each source event slot"
+        [16, 40, 32, 72],
+        "the generation-bound fact owns each inline event state"
     );
     assert_eq!(
         event_layouts.iter().map(|event| event.capacity).collect::<Vec<_>>(),
@@ -62,7 +66,7 @@ unit Main() {
         .collect::<Vec<_>>();
     assert_eq!(plans[0].object_size, plans[1].object_size);
     assert_ne!(plans[0].allocation_request_symbol, plans[1].allocation_request_symbol);
-    assert_eq!(plans[0].pointer_map_offsets.as_ref(), &[16, 24]);
+    assert_eq!(plans[0].pointer_map_offsets.as_ref(), event_only_map.as_slice());
 }
 
 #[test]

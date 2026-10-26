@@ -14,7 +14,7 @@ pub(in crate::semantic_contract) use aggregate::{
 };
 pub use aggregate::{
     aggregate_literal_specialization, array_index_element_managed_reference_specialization,
-    array_index_element_specialization,
+    array_index_element_specialization, event_state_size,
 };
 
 pub(in crate::semantic_contract) use common::{
