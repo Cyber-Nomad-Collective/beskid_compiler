@@ -128,7 +128,11 @@ fn calling_an_absent_optional_symbol_traps_under_jit_and_aot() {
     let output = project.beskid(&["test", "--target", "Tests"]);
     let log = text(&output);
     assert!(!output.status.success(), "the call must trap:\n{log}");
-    assert!(log.contains(TRAP_DIAGNOSTIC), "missing extern_unavailable trap:\n{log}");
+    // `beskid test` reports a trap in a test body as a crash with the trap's reason (0.6.7).
+    assert!(
+        log.contains("test crashed: optional extern `beskid_missing_symbol`") && log.contains("is unavailable"),
+        "missing extern_unavailable crash report:\n{log}"
+    );
 
     let (output, executable) = project.build("optional_trap");
     assert!(output.status.success(), "beskid build failed:\n{}", text(&output));

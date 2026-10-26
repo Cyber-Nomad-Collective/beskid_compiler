@@ -258,7 +258,14 @@ fn canonical_network_deadline_call_and_boolean_facts_preserve_signed_clock() {
             == "effectiveDeadline >= 0 && effectiveDeadline <= clock_monotonic_nanos()"
         {
             conditions += 1;
-            assert_eq!(binary.op.span.line_col_start.0, 83, "actual failing production deadline condition");
+            // The line of the production condition in the canonical source (formatted with `beskid fmt`).
+            let condition_line = source
+                .source
+                .lines()
+                .position(|line| line.contains("effectiveDeadline >= 0 && effectiveDeadline <= clock_monotonic_nanos()"))
+                .expect("production deadline condition line")
+                + 1;
+            assert_eq!(binary.op.span.line_col_start.0, condition_line, "actual failing production deadline condition");
             let beskid_analysis::syntax::Expression::Binary(left) = &binary.left.node else {
                 panic!("left comparison");
             };

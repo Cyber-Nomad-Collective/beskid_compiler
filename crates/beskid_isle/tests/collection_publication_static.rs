@@ -30,11 +30,10 @@ fn append_publicates_the_proven_owner_before_exactly_one_finish() {
 
 #[test]
 fn canonical_collection_growth_uses_mutable_owner_slots_in_every_storage_adapter() {
-    // Array.Append grows storage in place since 0.5.3, so persistent adapters route every growth
-    // through Core.Collections.Storage.AppendAt, which appends in place only when the version owns
-    // the storage tip and copies the prefix otherwise. Building a fresh, version-private array
-    // (copy, merge, filter, insert) is not growth of shared storage: such locals start from
-    // `Array.Empty` or from a `CopyPrefix` copy, and only they may be grown with `Array.Append`.
+    // 0.6.7 (sole owner writes in place): a collection grows its own storage with `Array.Append`
+    // only inside a `mut this` method, which owns (or first detaches) that storage. Building a
+    // fresh, version-private array (copy, merge, filter, insert) starts from `Array.Empty` or from
+    // a `CopyPrefix` copy, and only such locals may be grown otherwise.
     for source in [
         include_str!("../../../corelib/packages/foundation/src/Core/Collections/List.bd"),
         include_str!("../../../corelib/packages/foundation/src/Core/Collections/Map.bd"),
@@ -42,8 +41,7 @@ fn canonical_collection_growth_uses_mutable_owner_slots_in_every_storage_adapter
         include_str!("../../../corelib/packages/foundation/src/Core/Collections/Queue.bd"),
         include_str!("../../../corelib/packages/foundation/src/Core/Collections/Stack.bd"),
     ] {
-        assert!(source.contains("mut "), "collection growth must establish a mutable owner slot");
-        assert!(source.contains("Storage.AppendAt<"), "collection adapter must use the shared storage growth");
+        assert!(source.contains("(mut this"), "collection growth must run in a `mut this` method");
         assert_private_growth_only(source);
     }
     let storage = include_str!("../../../corelib/packages/foundation/src/Core/Collections/Storage.bd");
@@ -62,8 +60,19 @@ fn assert_private_growth_only(source: &str) {
         offset = at + APPEND.len();
         let after_type = &source[offset..];
         let open = after_type.find(">(").expect("Array.Append type argument list") + 2;
-        let target: String = after_type[open..].chars().take_while(|c| c.is_alphanumeric() || *c == '_').collect();
+        let target: String =
+            after_type[open..].chars().take_while(|c| c.is_alphanumeric() || *c == '_' || *c == '.').collect();
         assert!(!target.is_empty(), "Array.Append must grow a named mutable local");
+        if target.starts_with("this.") {
+            // The collection's own storage: only a `mut this` method may grow it in place.
+            let receiver = ["(mut this", "(this", "(move this"]
+                .iter()
+                .filter_map(|receiver| source[..at].rfind(receiver).map(|position| (position, *receiver)))
+                .max_by_key(|(position, _)| *position)
+                .map(|(_, receiver)| receiver);
+            assert_eq!(receiver, Some("(mut this"), "`{target}` grows in place outside a `mut this` method");
+            continue;
+        }
         let binding = format!("[] {target} = ");
         let declared = source[..at]
             .rfind(&binding)

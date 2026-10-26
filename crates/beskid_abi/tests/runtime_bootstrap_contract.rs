@@ -115,15 +115,17 @@ fn windows_descriptor_primitives_use_application_ucrt_import_authority() {
 
 #[test]
 fn raw_descriptor_abi_rejects_before_allocation_or_native_admission() {
-    let source = include_str!("../../../runtime/beskid/src/Runtime/Io/Syscalls.bd");
+    // The runtime source is `beskid fmt` output: it is searched with whitespace collapsed.
+    let source = include_str!("../../../runtime/beskid/src/Runtime/Io/Syscalls.bd").split_whitespace().collect::<Vec<_>>().join(" ");
+    let source = source.as_str();
     let submit = source.find("pub i64 SyscallSubmitAndPark").unwrap();
-    let reject = source[submit..].find("if descriptor > 2147483647 { return -1; }").unwrap() + submit;
+    let reject = source[submit..].find("if (descriptor > 2147483647) { return -1; }").unwrap() + submit;
     let allocation = source[submit..].find("pointer nativeBuffer = SystemAllocate").unwrap() + submit;
     assert!(reject < allocation, "raw descriptor admission must precede native allocation");
 
     let write = source.find("pub i64 SyscallWrite(i64 descriptor, pointer value)").unwrap();
     let write_reject =
-        source[write..].find("if descriptor < 0 || descriptor > 2147483647 { return -1; }").unwrap() + write;
+        source[write..].find("if (descriptor < 0 || descriptor > 2147483647) { return -1; }").unwrap() + write;
     let native_admission = source[write..].find("SyscallSubmitAndPark(word(descriptor)").unwrap() + write;
     assert!(write_reject < native_admission, "the i64 raw ABI must not narrow/admit an invalid descriptor");
 }
@@ -143,7 +145,9 @@ fn descriptor_worker_ownership_is_disjoint_from_the_existing_abandoned_protocol(
         "every request free releases its owned duplicate"
     );
     assert!(
-        source.contains("if (beskid_workers_stop || beskid_request_count >= BESKID_REQUEST_MAX) {\n    BeskidWorkerCloseDescriptor(r);"),
+        source.contains(
+            "if (!beskid_worker_count || beskid_workers_stop || beskid_request_count >= BESKID_REQUEST_MAX) {\n    BeskidWorkerCloseDescriptor(r);"
+        ),
         "queue rejection must release its duplicate before returning"
     );
 }
@@ -1129,7 +1133,7 @@ fn network_status_manifest_c_enum_runtime_constants_and_corelib_errors_agree() {
 
     let public = &names[1..names.len() - 1];
     let errors = workspace_source("corelib/packages/network/src/Network/Errors.bd");
-    let body = &errors[errors.find("pub enum NetworkError {").unwrap()..];
+    let body = &errors[errors.find("pub enum NetworkError").unwrap()..];
     let body = &body[body.find('{').unwrap() + 1..body.find('}').unwrap()];
     let variants = body
         .split(',')

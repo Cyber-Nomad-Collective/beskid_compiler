@@ -339,6 +339,8 @@ mod tests {
         let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mirror_reflect.rs");
         let options = GenOptions { only_annotated: true, ..Default::default() };
         let got = generate_from_paths(&[fixture], &options).expect("generate");
+        // The checked-in golden is what the generator writes: its output printed by the formatter.
+        let got = format_bd(Path::new("mirror_reflect.generated.bd"), &got).expect("format generated stubs");
         let expected = include_str!("../tests/expected/mirror_reflect.generated.bd");
         assert_eq!(got, expected);
     }
