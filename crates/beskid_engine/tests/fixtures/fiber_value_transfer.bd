@@ -22,19 +22,19 @@ pub type OwnedResource
     i64 token;
 }
 
-u8[] KeepBytes(u8[] value)
+u8[] KeepBytes(move u8[] value)
 {
     Probe.gc_collect();
     return value;
 }
 
-Aggregate KeepAggregate(Aggregate value)
+Aggregate KeepAggregate(move Aggregate value)
 {
     Probe.gc_collect();
     return value;
 }
 
-OwnedResource KeepResource(OwnedResource value)
+OwnedResource KeepResource(move OwnedResource value)
 {
     Probe.gc_collect();
     return value;
