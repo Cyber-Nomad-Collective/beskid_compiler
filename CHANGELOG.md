@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Close
+
+- `beskid check --all-members` (and a project checked through several targets) reports a parse error found while a member's active Mods are decided, such as E0117 for a detached `///` header, with its code at the authored file, as a single-project check does. It was flattened into an uncoded failure line that named the member's `obj/beskid/root` copy.
+- A plain parameter sent to another isolate (`unit Hand(Port<u8[]> output, u8[] block) { output.Send(move block); }`) is E1241 with the RB5 help "copy it, or declare the parameter `move`" and the machine-applicable fix that declares it `move`; the help read only "copy `block` first".
+- A generic type written without its type arguments in a type position (`unit Demo(Pair pair)` for `type Pair<A, B>`) is E1203 "missing type arguments for generic type", and with the wrong number of them E1204 "generic argument mismatch: expected 2, got 1", as the Book's common errors say; both were E1201 "unknown type `Pair`".
+- `beskid test` on a project without a Test or Lib target (an App alone, as the console, host and fiber-demo templates create) prints "No tests found." and passes, as a library without `test` items does; it failed with "no Test or Lib target selected". `--target <name>` naming a target that is not a Test or Lib target says so.
+
 ### Polish
 
 - A `match` used as a statement needs no trailing `;`, like a C# `switch` statement; a written `;` is still accepted and `beskid fmt` keeps the form the source uses.
