@@ -813,10 +813,13 @@ pub(super) fn injected_contract_field_receiver(
     Some(contract_member_named(db, contract, &member.node.name.node.name).map(|method| (method, receiver)))
 }
 
-/// A member call on an immutable local whose declared type is a contract (`Greeter g = Hello {};
-/// g.Greet()`): the concrete type of the initializer selects the implementation statically, the
-/// same conformance proof a contract-typed parameter's argument gets. A `mut` local, or an
-/// initializer without a concrete type, has no single implementation and is an error.
+/// A member call on a local whose declared type is a contract (`Greeter g = Hello {}; g.Greet()`):
+/// the contract method, or the implementation when the call has a static target. The target is
+/// static only when the local is immutable and its initializer is itself boxed at the `let` with
+/// the witness table of one non-generic nominal type: that box is the only value the local ever
+/// holds. Every other initializer dispatches at run time, in particular one that forwards the
+/// expected type (`c ? Hello {} : Bye {}`, a `match`, a block): its branches box on their own, so
+/// the value may hold any of them, whatever the identity of the first branch is.
 fn contract_local_member(
     db: &dyn Db,
     program: &Spanned<beskid_analysis::syntax::Program>,
@@ -841,10 +844,11 @@ fn contract_local_member(
             .and_then(|call| index.direct_child_id(program, key.node, DynNodeRef::from(call.callee.as_ref())))
             .map(|callee| AstNodeKey { node: normalized_expression_node(index, callee), ..key })
             .unwrap_or(AstNodeKey { node: identifier, ..key });
-        // Static selection (the fast path): an immutable local initialized with a value of one
-        // non-generic nominal type calls that type's implementation directly, with the receiver
-        // read out of the box. Everything else (`mut`, a contract-typed or primitive initializer,
-        // a generic implementation) dispatches through the box's witness table at run time.
+        // Static selection (the fast path): an immutable local whose initializer is boxed at the
+        // `let` with the table of one non-generic nominal type calls that type's implementation
+        // directly, with the receiver read out of the box. Everything else (`mut`, a forwarding,
+        // contract-typed or primitive initializer, a generic implementation) dispatches through
+        // the box's witness table at run time.
         if statement.mutable {
             return Ok((signature, receiver));
         }
@@ -852,25 +856,36 @@ fn contract_local_member(
             .direct_child_id(program, statement_node, DynNodeRef::from(&statement.value))
             .ok_or_else(|| SemanticError::unavailable("contract_local_member"))?;
         let value = AstNodeKey { node: normalized_expression_node(index, value), ..key };
-        let Ok(identity @ GenericSourceTypeIdentity::Nominal { .. }) = generic_source_expression_identity(db, value)
-        else {
-            return Ok((signature, receiver));
-        };
-        let Ok(proven) = prove_applied_conformance(db, value, &identity, contract, &[], &|_| {
-            SemanticError::unavailable("conformance")
-        }) else {
-            return Ok((signature, receiver));
-        };
-        if !proven.environment.is_empty() {
-            return Ok((signature, receiver));
-        }
-        let implementation = proven
-            .methods
-            .iter()
-            .find_map(|(candidate, implementation)| (*candidate == signature).then_some(*implementation))
-            .ok_or_else(|| SemanticError::new(format!("missing contract method implementation: {member}")))?;
-        Ok((implementation, receiver))
+        Ok((static_local_implementation(db, value, contract, signature).unwrap_or(signature), receiver))
     })())
+}
+
+/// The implementation of `signature` a contract-typed immutable local initialized by `value`
+/// calls statically: `Some` only when `value` is itself the conversion site of the `let` (no
+/// conditional, `match` or block forwarding the expected type to branches that box on their
+/// own), its own identity is a non-generic nominal type, and the box it is written into carries
+/// that type's witness table for `contract`.
+fn static_local_implementation(
+    db: &dyn Db,
+    value: AstNodeKey,
+    contract: AstNodeKey,
+    signature: AstNodeKey,
+) -> Option<AstNodeKey> {
+    if super::contract_values::forwards_expected_type(db, value) {
+        return None;
+    }
+    if !matches!(generic_source_expression_identity(db, value), Ok(GenericSourceTypeIdentity::Nominal { .. })) {
+        return None;
+    }
+    let coercion = super::contract_values::contract_box_coercion(db, value, None).ok()??;
+    let witness = &coercion.witness;
+    if witness.contract != contract
+        || !witness.environment.is_empty()
+        || witness.receiver != super::contract_values::ContractBoxReceiver::Reference
+    {
+        return None;
+    }
+    witness.methods.iter().find_map(|(candidate, implementation)| (*candidate == signature).then_some(*implementation))
 }
 
 /// The contract a type annotation names, applied arguments ignored (`Reader<Error>` resolves
@@ -1323,6 +1338,18 @@ pub(super) fn specialized_source_expression_identity(
         && let Some(identity) = specialized_field_read_identity(db, program, index, key, enclosing)
     {
         return identity;
+    }
+    // `values[i]` has the element of its target's array identity in this environment (`T` of a
+    // `T[]` parameter is the contract `Greeter` inside `Array.Get<Greeter>`).
+    if let Some(indexed) = node.of::<beskid_analysis::syntax::IndexExpression>()
+        && let Some(target) = index.direct_child_id(program, key.node, DynNodeRef::from(indexed.target.as_ref()))
+        && let Ok(GenericSourceTypeIdentity::Array(element)) = specialized_source_expression_identity(
+            db,
+            AstNodeKey { node: normalized_expression_node(index, target), ..key },
+            Some(enclosing),
+        )
+    {
+        return Ok(element.as_ref().clone());
     }
     // `operand?` has the payload of its operand read in this environment
     // (`values.Push(ReadField<T, R>(reader, limits)?)` inside a specialization of `ReadList<T, R>`).
@@ -2535,6 +2562,13 @@ fn prove_applied_conformance(
     applied_arguments: &[GenericSourceTypeIdentity],
     unsatisfied: &dyn Fn(Option<&str>) -> SemanticError,
 ) -> Result<ProvenConformance, SemanticError> {
+    // An implementing type satisfies every transfer marker the contract embeds (a contract value
+    // takes its transfer class from them); a contract value already did when it was boxed.
+    if !matches!(source_identity, GenericSourceTypeIdentity::Contract { .. })
+        && !super::transfer::satisfies_contract_markers(db, context, source_identity, contract)?
+    {
+        return Err(unsatisfied(Some(&source_identity.display_name())));
+    }
     if let Some(primitive) = conformable_primitive_identity(source_identity) {
         return prove_primitive_conformance(db, context, primitive, contract, applied_arguments)?
             .ok_or_else(|| unsatisfied(Some(primitive.as_str())));

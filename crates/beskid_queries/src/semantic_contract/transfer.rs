@@ -4,7 +4,10 @@
 //! A type parameter inside its generic definition takes the class of its marker bound, where
 //! `Transferable` gives "some Transferable". The marker contracts `Transferable`, `Shared`,
 //! `Moved` and `Copied` are proven through this query, never by declaration.
-use super::contracts::{concrete_type_or_enum_declaration, declared_where_bounds};
+use super::contracts::{
+    concrete_type_or_enum_declaration, contract_declaration_for_identity, contract_embedded_contracts,
+    declared_where_bounds,
+};
 use super::*;
 use std::fmt;
 
@@ -41,6 +44,9 @@ pub enum TransferNeverReason {
     MixedEnum { type_name: String },
     /// A type parameter without a marker bound.
     UnboundedTypeParameter { name: String },
+    /// A contract that embeds no transfer marker contract: its values may hold any implementing
+    /// type, transferable or not.
+    UnmarkedContract { contract: String },
 }
 
 /// The four compiler-derived marker contracts.
@@ -114,6 +120,10 @@ impl fmt::Display for TransferNeverReason {
             Self::NoMarker { .. } => f.write_str("no marker attribute"),
             Self::MixedEnum { type_name } => write!(f, "enum `{type_name}` mixes Moved and Copied fields"),
             Self::UnboundedTypeParameter { name } => write!(f, "type parameter `{name}` has no marker bound"),
+            Self::UnmarkedContract { contract } => write!(
+                f,
+                "contract `{contract}` embeds no transfer marker (`Transferable`, `Shared`, `Moved` or `Copied`)"
+            ),
         }
     }
 }
@@ -274,6 +284,58 @@ pub fn transfer_marker_contract(db: &dyn Db, contract: AstNodeKey) -> Option<Tra
     has_recognized_attribute(db, contract, &definition.attributes, "CompilerDerived").then_some(marker)
 }
 
+/// The transfer marker contracts `contract` embeds, directly or through the contracts it embeds
+/// (`contract Scored { Transferable; i64 Score(); }`). Every implementing type of `contract` must
+/// satisfy each of them; empty when an embedding does not resolve.
+pub(in crate::semantic_contract) fn contract_transfer_markers(
+    db: &dyn Db,
+    contract: AstNodeKey,
+) -> Vec<TransferMarker> {
+    contract_embedded_contracts(db, contract)
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|embedded| transfer_marker_contract(db, embedded))
+        .collect()
+}
+
+/// The transfer class of a contract value of `contract` (a contract box, v0.6.7).
+///
+/// A box holds a value of any implementing type, so its class comes from the markers the
+/// contract embeds, which every implementing type satisfies: `Copied` alone makes the box
+/// Copied (the box and its graph are copied into the destination heap); any other marker makes
+/// it Moved (the graph is handed over and the sender gives up the box). A contract without a
+/// marker is Never: its values could launder a non-transferable implementing type across a
+/// heap boundary.
+pub(in crate::semantic_contract) fn contract_value_class(db: &dyn Db, contract: AstNodeKey) -> TransferClass {
+    let markers = contract_transfer_markers(db, contract);
+    if markers.is_empty() {
+        let contract = stable_declaration_identity(db, contract).map_or_else(String::new, |name| name.to_string());
+        return TransferClass::Never(TransferNeverReason::UnmarkedContract { contract });
+    }
+    if markers.contains(&TransferMarker::Copied)
+        && markers.iter().all(|marker| matches!(marker, TransferMarker::Copied | TransferMarker::Transferable))
+    {
+        return TransferClass::Copied;
+    }
+    TransferClass::Moved
+}
+
+/// Whether a value of `source` satisfies every transfer marker `contract` embeds, so it may be
+/// boxed into a contract value of `contract`.
+pub(in crate::semantic_contract) fn satisfies_contract_markers(
+    db: &dyn Db,
+    context: AstNodeKey,
+    source: &GenericSourceTypeIdentity,
+    contract: AstNodeKey,
+) -> Result<bool, SemanticError> {
+    let markers = contract_transfer_markers(db, contract);
+    if markers.is_empty() {
+        return Ok(true);
+    }
+    let class = transfer_class(db, context, source)?;
+    Ok(markers.into_iter().all(|marker| class.satisfies(marker)))
+}
+
 /// One generic environment of the class computation: type parameter name to class.
 type ClassEnvironment = HashMap<String, TransferClass>;
 
@@ -424,9 +486,9 @@ impl<'db> ClassWalker<'db> {
             Type::Associated { .. } => Err(SemanticError::unavailable_at("transfer_class", context)),
             Type::Complex(path) => {
                 let Some(declaration) = resolve_type_declaration(self.db, context, &path.node) else {
-                    // A contract box crosses an isolate boundary as the graph it holds.
-                    return match super::contracts::resolve_contract(self.db, context, &path.node) {
-                        Some(_) => Ok(TransferClass::Moved),
+                    // A contract box takes the class of the markers its contract embeds.
+                    return match super::contracts::resolve_contract_head(self.db, context, &path.node) {
+                        Some(contract) => Ok(contract_value_class(self.db, contract)),
                         None => Err(SemanticError::unavailable_at("transfer_class", context)),
                     };
                 };
@@ -452,8 +514,12 @@ impl<'db> ClassWalker<'db> {
             GenericSourceTypeIdentity::Abi(ty) => Ok(abi_class(*ty)),
             GenericSourceTypeIdentity::Array(element) => Ok(array_class(self.identity_class(context, element)?)),
             GenericSourceTypeIdentity::Function { .. } => Ok(TransferClass::Never(TransferNeverReason::FunctionType)),
-            // A contract box crosses an isolate boundary as the graph it holds.
-            GenericSourceTypeIdentity::Contract { .. } => Ok(TransferClass::Moved),
+            // A contract box takes the class of the markers its contract embeds.
+            GenericSourceTypeIdentity::Contract { qualified_name, .. } => {
+                contract_declaration_for_identity(self.db, context, qualified_name)
+                    .map(|contract| contract_value_class(self.db, contract))
+                    .ok_or_else(|| SemanticError::unavailable_at("transfer_class", context))
+            }
             GenericSourceTypeIdentity::Nominal { arguments, .. } => {
                 let declaration = concrete_type_or_enum_declaration(self.db, context, identity)
                     .ok_or_else(|| SemanticError::unavailable_at("transfer_class", context))?;

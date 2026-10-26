@@ -196,6 +196,12 @@ impl IsleContext<'_, '_, '_, '_> {
         key: AstNodeKey,
         value: Value,
     ) -> Option<Option<ScopedTemporaryRoot>> {
+        // A value boxed into a contract-typed destination is its contract box, a fresh managed
+        // object whatever the category of `key` itself is (`1_i32` into a `Shown` parameter): a
+        // later allocating argument or field may collect before the box is consumed.
+        if self.converts_to_contract_box(key) {
+            return self.root_expression_value(value).map(Some);
+        }
         // Value blocks preserve the managed category of their source-proven result;
         // their block node need not have an independently inferred semantic type.
         if let Some(result) = self.facts.block_result(key) {

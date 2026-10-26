@@ -9,7 +9,7 @@ use beskid_queries::{
 };
 use cranelift_codegen::isa::TargetIsa;
 
-use super::contracts::{SyntaxModuleEmissionError, emission_verification};
+use super::contracts::{SyntaxModuleEmissionError, emission_verification, semantic_fact_error};
 use super::items::ResolvedSyntaxModuleItem;
 use super::trace::format_declaration_for_trace;
 use crate::CodegenInput;
@@ -38,15 +38,23 @@ pub(super) fn collect_contract_witnesses(
         let mut nodes = Vec::new();
         super::data::collect_ast_nodes(db, item.key, &mut visited, &mut nodes);
         for key in nodes {
-            if let Some(coercion) = beskid_queries::contract_box_coercion(db, key, item.specialization.as_ref())
-                .map_err(|error| emission_verification(error.to_string()))?
+            // An unavailable fact at a contract destination is internal error E2101 at that site.
+            let failed = |error| {
+                semantic_fact_error(
+                    db,
+                    key,
+                    format_args!("contract conversion failed at {}", beskid_queries::format_ast_node_site(db, key)),
+                    error,
+                )
+            };
+            if let Some(coercion) =
+                beskid_queries::contract_box_coercion(db, key, item.specialization.as_ref()).map_err(failed)?
             {
                 tables.entry(coercion.witness.symbol.to_string()).or_insert(coercion.witness);
             }
             // A conversion to an embedded contract allocates a box without naming a table.
-            upcasts |= beskid_queries::contract_upcast(db, key, item.specialization.as_ref())
-                .map_err(|error| emission_verification(error.to_string()))?
-                .is_some();
+            upcasts |=
+                beskid_queries::contract_upcast(db, key, item.specialization.as_ref()).map_err(failed)?.is_some();
         }
     }
     for (field, declaration, contract) in composition_contract_injections(input) {

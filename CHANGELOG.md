@@ -29,6 +29,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Integer literals accept the `_word` suffix (`4_word`), typed as `word`.
 - `beskid_ast_reflect_gen` writes every generated `.bd` file through the formatter, so regenerated Mod SDK sources pass `beskid fmt --check`.
 - The internal "expected ..." syntax-tree diagnostic points at the item or statement being built instead of 1:1, and the parse-context scan reads `'\u{41}'` character literals. A test keeps the parse-context keyword list equal to the grammar's `Keyword` rule.
+### Contract values
+
+- An immutable contract-typed local calls its implementation directly only when its initializer is boxed at the `let` with the table of one non-generic nominal type. A conditional, `match`, value block or lambda result initializer dispatches at run time: `Greeter g = c ? Hello {} : Bye {};` no longer calls `Hello.Rank` on a `Bye`.
+- A primitive boxed into a contract-typed argument or field stays rooted while a later argument or field allocates.
+- A contract value takes its transfer class from the transfer markers its contract embeds (`contract Scored { Transferable; i64 Score(); }`): without a marker it cannot cross a heap boundary (`Port<Scored>` is E1610), `Copied` alone makes it Copied, any other marker Moved, and a value whose type does not satisfy the marker is not boxed into the contract (E1206).
+- A contract conversion whose facts are missing fails closed with E2101 instead of storing an unboxed value: a destination declared with a contract type whose expected type is unavailable, and a literal, struct literal, enum constructor, array literal or lambda of unknown type written into a contract.
+- A contract-typed field passes to a contract-typed parameter (`Through(holder.greeter)`, which failed to lower).
+- `mut this` in a method of a primitive implementation is E1611 (the receiver is a copy). Contract boxes need a 64-bit target.
 
 ### Corelib check
 

@@ -1,8 +1,12 @@
 // Runtime contract dispatch (v0.6.7), end to end: contract values in a mutable local, an array
 // read in a loop, a plain field, a parameter, a return value and a boxed primitive dispatch
 // through their witness tables; conf2's immutable local keeps its direct call; contract values
-// held in fields survive forced collections. Each check returns its own failure code; 42 is
-// success.
+// held in fields survive forced collections; an immutable local whose initializer forwards the
+// expected type (conditional, `match`, value block, lambda result) dispatches on the branch that
+// ran; a boxed primitive stays rooted while a later argument or field collects and allocates;
+// primitive receivers of every width reach methods with parameters through their thunks; a
+// method recurses through a contract value of its own contract.
+// Each check returns its own failure code; 42 is success.
 
 [Extern(Abi:"C")]
 pub contract Probe { unit gc_collect(); }
@@ -21,7 +25,48 @@ contract Shown { i64 Twice(); }
 impl i32 : Shown { pub i64 Twice() { return i64(this) * 2_i64; } }
 pub type Holder { Greeter greeter; i64 tag; }
 
+contract Offset { i64 Add(i64 k, i32 j); }
+impl i32 : Offset { pub i64 Add(i64 k, i32 j) { return i64(this) + k + i64(j); } }
+impl u8 : Offset { pub i64 Add(i64 k, i32 j) { return i64(this) * k + i64(j); } }
+impl f64 : Offset {
+    pub i64 Add(i64 k, i32 j) {
+        if this > 1.0_f64 { return k + i64(j); }
+        return 0_i64 - 1_i64;
+    }
+}
+contract Countdown { i64 Down(i64 n); }
+type Rec : Countdown {
+    pub i64 Down(i64 n) {
+        if n == 0_i64 { return 0_i64; }
+        mut Countdown next = Rec {};
+        return 1_i64 + next.Down(n - 1_i64);
+    }
+}
+pub type Pair { Shown shown; Greeter greeter; }
+enum Which { First, Second }
+
 i64 Through(Greeter g) { return g.Rank(); }
+i64 ConditionalRank(bool c) { Greeter g = c ? Hello {} : Bye { extra: 3_i64 }; return g.Rank(); }
+i64 SwappedRank(bool c) { Greeter g = c ? Bye { extra: 5_i64 } : Hello {}; return g.Rank(); }
+i64 MatchedRank(Which w) {
+    Greeter g = match w { Which::First => Bye { extra: 4_i64 }, Which::Second => Hello {}, };
+    return g.Rank();
+}
+i64 BlockRank(bool c) { Greeter g = { c ? Bye { extra: 6_i64 } : Hello {}; }; return g.Rank(); }
+i64 LambdaRank(bool c) {
+    Greeter() make = () => c ? Hello {} : Bye { extra: 7_i64 };
+    Greeter g = make();
+    return g.Rank();
+}
+// Collects, then allocates boxes of the size a freed scalar box had: an unrooted box of an
+// earlier argument or field would now hold one of these values.
+Greeter Collected() {
+    Probe.gc_collect();
+    Shown[] junk = [5_i32, 6_i32, 7_i32, 8_i32];
+    if junk[0].Twice() != 10_i64 { return Hello {}; }
+    return Bye { extra: 90_i64 };
+}
+i64 Both(Shown shown, Greeter greeter) { return shown.Twice() + greeter.Rank(); }
 Greeter Pick(bool first) { if first { return Hello {}; } return Bye { extra: 5_i64 }; }
 i64 Sum(Greeter[] all) {
     mut i64 total = 0_i64;
@@ -43,6 +88,7 @@ pub i64 RunContractDispatch() {
     if Pick(false).Rank() != 15_i64 { return 5_i64; }
     Holder holder = Holder { greeter: Bye { extra: 2_i64 }, tag: 12_i64 };
     if holder.greeter.Rank() != 12_i64 { return 6_i64; }
+    if Through(holder.greeter) != 12_i64 { return 18_i64; }
     Shown s = 21_i32;
     if s.Twice() != 42_i64 { return 7_i64; }
     mut Holder[] holders = [holder, holder, holder, holder];
@@ -57,5 +103,21 @@ pub i64 RunContractDispatch() {
         if read.greeter.Rank() != read.tag { return 8_i64; }
         i = i + 1_i64;
     }
+    if ConditionalRank(true) != 1_i64 || ConditionalRank(false) != 13_i64 { return 9_i64; }
+    if SwappedRank(true) != 15_i64 || SwappedRank(false) != 1_i64 { return 10_i64; }
+    if MatchedRank(Which::First) != 14_i64 || MatchedRank(Which::Second) != 1_i64 { return 11_i64; }
+    if BlockRank(true) != 16_i64 || BlockRank(false) != 1_i64 { return 12_i64; }
+    if LambdaRank(true) != 1_i64 || LambdaRank(false) != 17_i64 { return 13_i64; }
+    if Both(21_i32, Collected()) != 142_i64 { return 14_i64; }
+    Pair pair = Pair { shown: 21_i32, greeter: Collected() };
+    if pair.shown.Twice() + pair.greeter.Rank() != 142_i64 { return 15_i64; }
+    Offset narrow = 5_i32;
+    Offset byte = 4_u8;
+    Offset wide = 2.5_f64;
+    if narrow.Add(10_i64, 3_i32) != 18_i64 || byte.Add(10_i64, 3_i32) != 43_i64 || wide.Add(10_i64, 3_i32) != 13_i64 {
+        return 16_i64;
+    }
+    mut Countdown counter = Rec {};
+    if counter.Down(20_i64) != 20_i64 { return 17_i64; }
     return 42_i64;
 }

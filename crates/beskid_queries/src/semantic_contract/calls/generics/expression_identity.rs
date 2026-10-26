@@ -227,7 +227,12 @@ fn generic_source_aggregate_field_identity(
         .ok_or_else(|| gap("field owner is not a type definition"))?;
     let index = usize::try_from(access.index).map_err(|_| gap("field index exceeds the host range"))?;
     let field = definition.fields.get(index).ok_or_else(|| gap("field index is outside the declaration"))?;
-    if generic_parameter_reference_name(&field.node.ty.node).is_none() {
+    // Only a field typed by one of the declaration's own type parameters takes its identity from
+    // the applied layout; any other single-name type (a contract, `Greeter greeter;`) has its
+    // declared identity.
+    let names_type_parameter = generic_parameter_reference_name(&field.node.ty.node)
+        .is_some_and(|name| definition.generics.iter().any(|generic| generic.node.name == name));
+    if !names_type_parameter {
         return generic_source_type_identity(db, access.declaration, &field.node.ty.node);
     }
     let (_, shape) = access.layout.fields.get(index).ok_or_else(|| gap("field index is outside the applied layout"))?;

@@ -321,7 +321,7 @@ fn contract_accepts(db: &dyn Db, scope: AstNodeKey, contract: AstNodeKey, actual
         }
         // A primitive conforms through its `impl P : C` block; it is boxed into the destination.
         Identity::Abi(primitive) if is_conformable_primitive(*primitive) => {
-            Some(primitive_conforms(db, scope, *primitive, contract))
+            Some(primitive_conforms(db, scope, *primitive, contract) && markers_accept(db, scope, contract, actual)?)
         }
         Identity::Abi(_) | Identity::Array(_) => Some(false),
         Identity::Nominal { .. } => {
@@ -331,9 +331,19 @@ fn contract_accepts(db: &dyn Db, scope: AstNodeKey, contract: AstNodeKey, actual
                 return concrete_type_or_enum_declaration(db, scope, actual).map(|_| false);
             };
             let definition = type_definition(db, concrete)?;
-            Some(type_declaration_conforms_to_contract(db, concrete, &definition, contract))
+            Some(
+                type_declaration_conforms_to_contract(db, concrete, &definition, contract)
+                    && markers_accept(db, scope, contract, actual)?,
+            )
         }
     }
+}
+
+/// Whether `actual` satisfies every transfer marker `contract` embeds (`contract Scored {
+/// Transferable; ... }` admits only transferable implementing types); `None` when its transfer
+/// class is unavailable.
+fn markers_accept(db: &dyn Db, scope: AstNodeKey, contract: AstNodeKey, actual: &Identity) -> Option<bool> {
+    crate::semantic_contract::transfer::satisfies_contract_markers(db, scope, actual, contract).ok()
 }
 
 /// Whether a destination of the generic `contract` applied to `arguments` (`Repo<i64>`) accepts
@@ -358,7 +368,10 @@ fn applied_contract_accepts(
                 return concrete_type_or_enum_declaration(db, scope, actual).map(|_| false);
             };
             let definition = type_definition(db, concrete)?;
-            Some(type_declaration_conforms_to_applied_contract(db, concrete, &definition, contract, arguments))
+            Some(
+                type_declaration_conforms_to_applied_contract(db, concrete, &definition, contract, arguments)
+                    && markers_accept(db, scope, contract, actual)?,
+            )
         }
     }
 }

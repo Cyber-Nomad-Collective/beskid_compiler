@@ -192,7 +192,17 @@ pub fn contract_upcast(
 /// order their tables follow the method entries of every witness table of `contract`.
 pub(in crate::semantic_contract) fn upcast_targets(db: &dyn Db, contract: AstNodeKey) -> Option<Vec<AstNodeKey>> {
     let embedded = contract_embedded_contracts(db, contract)?;
-    Some(embedded.into_iter().filter(|embedded| contract_generic_count(db, *embedded) == Some(0)).collect())
+    // A transfer marker (`Transferable`, ...) is proven from the transfer class, never by an
+    // implementation: it has no witness table and no contract values.
+    Some(
+        embedded
+            .into_iter()
+            .filter(|embedded| {
+                contract_generic_count(db, *embedded) == Some(0)
+                    && super::transfer::transfer_marker_contract(db, *embedded).is_none()
+            })
+            .collect(),
+    )
 }
 
 /// Whether a value of `source` converts to the contract value type `target` at a conversion
@@ -274,6 +284,11 @@ fn conversion_site(
     let expected = match expected_type_in(db, key, enclosing) {
         Ok(Some(expected)) => expected,
         Ok(None) => return Ok(None),
+        // A destination declared with a contract type whose expectation is unavailable fails
+        // closed: storing the raw value would make a later dispatch call through garbage.
+        Err(error) if error.is_unavailable() && declared_contract_destination(db, key, false) => {
+            return Err(SemanticError::unavailable_at("contract_destination", key));
+        }
         Err(error) if error.is_unavailable() => return Ok(None),
         Err(error) => return Err(error),
     };
@@ -300,12 +315,109 @@ fn conversion_site(
             return Ok(None);
         }
     }
+    // The destination is a contract. A value the expression creates (a literal, a struct
+    // literal, an enum constructor, an array literal, a lambda) always has a type of its own and
+    // would have to be boxed: when that type is unknown, the conversion fails closed. A read
+    // (a local, a field, an element, a call result) passes through when its identity is unknown:
+    // its declared storage type is what the checker accepted at the store that wrote it.
     let source = match specialized_source_expression_identity(db, key, enclosing) {
         Ok(source) => source,
+        Err(error) if error.is_unavailable() && creates_value(index, key.node) => {
+            return Err(SemanticError::unavailable_at("contract_value_source", key));
+        }
         Err(error) if error.is_unavailable() => return Ok(None),
         Err(error) => return Err(error),
     };
     Ok(Some((qualified_name.clone(), arguments.clone(), source)))
+}
+
+/// Whether the expression at `node` creates a new value of a type of its own (rather than reading
+/// one from storage or a call).
+fn creates_value(index: &SyntaxIndex, node: beskid_analysis::syntax::AstNodeId) -> bool {
+    matches!(
+        index.kind(node),
+        Some(
+            NodeKind::LiteralExpression
+                | NodeKind::StructLiteralExpression
+                | NodeKind::EnumConstructorExpression
+                | NodeKind::ArrayLiteralExpression
+                | NodeKind::LambdaExpression
+        )
+    )
+}
+
+/// Whether the value at `key` is written into a destination declared with a contract type in
+/// source, read from syntax alone: the annotation of a `let` (`Greeter g = ...`) or the declared
+/// result of the function or method a `return` leaves. With `element`, whether that declared type
+/// is an array of a contract (`Greeter[] all = [...]`). Used only where the expected type is
+/// unavailable, so a contract destination fails closed instead of receiving a raw value.
+fn declared_contract_destination(db: &dyn Db, key: AstNodeKey, element: bool) -> bool {
+    let Some(syntax) = db.syntax_unit(key.unit).filter(|syntax| syntax.accepts_key(db, key)) else {
+        return false;
+    };
+    let index = syntax.syntax_index(db);
+    let program = syntax.expanded_program(db);
+    let mut child = key.node;
+    let mut parent = parent_node(index, child);
+    while let Some(node) =
+        parent.filter(|node| matches!(index.kind(*node), Some(NodeKind::Expression | NodeKind::GroupedExpression)))
+    {
+        child = node;
+        parent = parent_node(index, node);
+    }
+    let Some(parent) = parent else {
+        return false;
+    };
+    let Some(node) = index.node_at(program, parent) else {
+        return false;
+    };
+    // Only the value a statement writes has the declared destination (not the annotation's own
+    // type node, nor any other child).
+    let is_value = |value: &Spanned<beskid_analysis::syntax::Expression>| {
+        index.direct_child_id(program, parent, DynNodeRef::from(value)) == Some(child)
+    };
+    let (owner, declared) = if let Some(statement) = node.of::<beskid_analysis::syntax::LetStatement>() {
+        if !is_value(&statement.value) {
+            return false;
+        }
+        (parent, statement.type_annotation.as_ref().map(|annotation| annotation.node.clone()))
+    } else if let Some(statement) = node.of::<beskid_analysis::syntax::ReturnStatement>() {
+        if !statement.value.as_ref().is_some_and(is_value) {
+            return false;
+        }
+        let Some(item) = nearest_ancestor(index, parent, |kind| {
+            matches!(kind, NodeKind::FunctionDefinition | NodeKind::MethodDefinition | NodeKind::LambdaExpression)
+        }) else {
+            return false;
+        };
+        let Some(item_node) = index.node_at(program, item) else {
+            return false;
+        };
+        let declared = item_node
+            .of::<beskid_analysis::syntax::FunctionDefinition>()
+            .and_then(|function| function.return_type.as_ref())
+            .or_else(|| {
+                item_node
+                    .of::<beskid_analysis::syntax::MethodDefinition>()
+                    .and_then(|method| method.return_type.as_ref())
+            })
+            .map(|declared| declared.node.clone());
+        (item, declared)
+    } else {
+        return false;
+    };
+    let Some(declared) = declared else {
+        return false;
+    };
+    let declared = match (element, declared) {
+        (false, declared) => declared,
+        (true, beskid_analysis::syntax::Type::Array(element)) => element.node,
+        (true, _) => return false,
+    };
+    let beskid_analysis::syntax::Type::Complex(path) = &declared else {
+        return false;
+    };
+    super::contracts::resolve_contract_head(db, AstNodeKey { node: owner, ..key }, &path.node).is_some()
 }
 
 /// Whether the binary expression at `key` is `==` or `!=` on two contract values: equal exactly
@@ -781,6 +893,11 @@ pub fn array_literal_has_contract_elements(
     let expected = match expected_type_in(db, key, enclosing) {
         Ok(Some(expected)) => expected,
         Ok(None) => return Ok(None),
+        // A literal written into a declared contract array whose expectation is unavailable fails
+        // closed: unboxed elements in a contract array would be dispatched through as boxes.
+        Err(error) if error.is_unavailable() && declared_contract_destination(db, key, true) => {
+            return Err(SemanticError::unavailable_at("contract_array_elements", key));
+        }
         Err(error) if error.is_unavailable() => return Ok(Some(false)),
         Err(error) => return Err(error),
     };

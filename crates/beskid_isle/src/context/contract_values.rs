@@ -168,7 +168,8 @@ impl IsleContext<'_, '_, '_, '_> {
     /// word, floats keep their bit pattern; the witness thunk narrows the word back.
     fn widen_receiver_word(&mut self, value: Value, ty: Type, pointer: Type) -> Option<Value> {
         let actual = self.builder.func.dfg.value_type(value);
-        (actual == ty).then_some(())?;
+        // The box's receiver word is 8 bytes: `i64` and `f64` receivers need a 64-bit target.
+        (actual == ty && pointer == types::I64 && ty.bits() <= pointer.bits()).then_some(())?;
         if ty == pointer {
             return Some(value);
         }

@@ -203,6 +203,11 @@ fn narrow_receiver(
     receiver: Type,
     pointer: Type,
 ) -> Option<cranelift_codegen::ir::Value> {
+    // Contract boxes and witness tables are laid out in 8-byte words: every primitive receiver,
+    // `i64` and `f64` included, fits the word only on a 64-bit target.
+    if pointer != types::I64 {
+        return None;
+    }
     if receiver == pointer {
         return Some(word);
     }
@@ -211,10 +216,7 @@ fn narrow_receiver(
         let bits = if int == pointer { word } else { builder.ins().ireduce(int, word) };
         return Some(builder.ins().bitcast(receiver, MemFlagsData::new(), bits));
     }
-    if receiver.is_int() && receiver.bits() < pointer.bits() {
-        return Some(builder.ins().ireduce(receiver, word));
-    }
-    (receiver == pointer || receiver == types::I64).then_some(word)
+    (receiver.is_int() && receiver.bits() < pointer.bits()).then(|| builder.ins().ireduce(receiver, word))
 }
 
 /// The Cranelift type of a scalar receiver's primitive, for the box's receiver fact.

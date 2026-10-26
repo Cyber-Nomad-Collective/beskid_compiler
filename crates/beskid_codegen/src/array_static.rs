@@ -185,7 +185,9 @@ impl CodegenInput<'_> {
         // A literal written into a contract-typed element destination (`Greeter[] all = [Hello
         // {}, Bye {}]`) boxes every element (runtime contract dispatch, v0.6.7): the array holds
         // managed references whatever the elements' own types are.
-        if beskid_queries::array_literal_has_contract_elements(self.database(), literal, None).ok().flatten()
+        // A literal of a declared contract array whose element destination is unavailable gets
+        // no plan: its elements would otherwise be stored unboxed.
+        if beskid_queries::array_literal_has_contract_elements(self.database(), literal, None).ok()?
             == Some(true)
         {
             let length = u64::try_from(elements.len()).ok()?;
@@ -262,9 +264,7 @@ impl CodegenInput<'_> {
         let specialization = specialization?;
         let elements = child_nodes(self.database(), literal).ok().flatten()?;
         let identity = generic_specialization_identity(specialization);
-        if beskid_queries::array_literal_has_contract_elements(self.database(), literal, Some(specialization))
-            .ok()
-            .flatten()
+        if beskid_queries::array_literal_has_contract_elements(self.database(), literal, Some(specialization)).ok()?
             == Some(true)
         {
             let length = u64::try_from(elements.len()).ok()?;

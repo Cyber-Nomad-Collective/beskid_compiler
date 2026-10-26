@@ -83,6 +83,7 @@ fn contract_values_in_arrays_fields_parameters_and_returns_dispatch() {
             while i < 2_i64 {{ total = total + all[i].Rank(); i = i + 1_i64; }}
             Holder holder = Holder {{ greeter: Bye {{}} }};
             total = total + holder.greeter.Rank();
+            total = total + Through(holder.greeter);
             total = total + Pick(true).Rank();
             total = total + Through(all[0]);
             total = total + Through(Hello {{}});
@@ -269,6 +270,32 @@ fn target_typed_conditionals_match_arms_block_results_and_lambdas_convert_each_b
         "the lambda body is boxed into its contract result: {:?}",
         artifact.functions.iter().map(|function| function.name.as_str()).collect::<Vec<_>>()
     );
+}
+
+#[test]
+fn an_immutable_local_whose_initializer_forwards_the_expected_type_dispatches_at_run_time() {
+    // The identity of `c ? Hello {} : Bye {}` is its then-branch, but either branch may be boxed
+    // into the local: a static `Hello.Rank` would run on a `Bye`. Every forwarding initializer
+    // (conditional, grouped conditional, `match`, value block, lambda result) dispatches.
+    let artifact = lower(&format!(
+        "{GREETERS}
+        enum Pick {{ First, Second }}
+        i64 Conditional(bool c) {{ Greeter g = c ? Hello {{}} : Bye {{}}; return g.Rank(); }}
+        i64 Grouped(bool c) {{ Greeter g = (c ? Hello {{}} : Bye {{}}); return g.Rank(); }}
+        i64 Matched(Pick p) {{
+            Greeter g = match p {{ Pick::First => Hello {{}}, Pick::Second => Bye {{}}, }};
+            return g.Rank();
+        }}
+        i64 Blocked(bool c) {{ Greeter g = {{ c ? Hello {{}} : Bye {{}}; }}; return g.Rank(); }}
+        i64 Lambda(bool c) {{ Greeter() make = () => c ? Hello {{}} : Bye {{}}; Greeter g = make(); return g.Rank(); }}
+        i64 Static() {{ Greeter g = Hello {{}}; return g.Rank(); }}"
+    ));
+    for function in ["Conditional", "Grouped", "Matched", "Blocked", "Lambda"] {
+        let clif = clif(&artifact, function);
+        assert!(clif.contains("call_indirect"), "`g` in `{function}` dispatches through its witness table:\n{clif}");
+    }
+    let main = clif(&artifact, "Static");
+    assert!(!main.contains("call_indirect"), "a plain nominal initializer keeps the static selection:\n{main}");
 }
 
 #[test]
@@ -847,4 +874,100 @@ i32 Main() {
     let artifact = lower_syntax_program(&input, isa.as_ref(), &reachable)
         .unwrap_or_else(|error| panic!("the reachable items lower without an internal error: {error}"));
     beskid_codegen::validate_artifact(&artifact).expect("reachable artifact");
+}
+
+/// `==` between a contract value and a concrete value is no contract-value comparison: the
+/// operand is not boxed for an operator, so the comparison is E1209 in either order.
+#[test]
+fn a_contract_value_compared_with_a_concrete_value_is_a_check_error() {
+    for comparison in ["g == h", "h == g", "g != Hello {}"] {
+        let errors = check_errors(
+            &format!(
+                "{CORELIB_GREETERS}
+bool Main() {{
+    Greeter g = Hello {{}};
+    Hello h = Hello {{}};
+    return {comparison};
+}}"
+            ),
+            6740,
+        );
+        assert!(errors.contains(&"E1209"), "`{comparison}`: {errors:?}");
+    }
+}
+
+const MARKED_SCORES: &str = r#"
+use Core.Results;
+use Core.Parallel;
+use Core.Parallel.Scopes;
+use Core.Parallel.Port;
+contract Scored { Transferable; i64 Score(); }
+contract Loose { i64 Score(); }
+[Isolated]
+type Low : Scored, Loose { pub i64 Score() { return 1_i64; } }
+type Plain : Scored, Loose { pub i64 Score() { return 2_i64; } }
+"#;
+
+/// A contract value takes its transfer class from the markers its contract embeds: a contract
+/// without one is not Transferable (a `Port<Loose>` is E1610), and a type that does not satisfy
+/// the marker cannot be boxed into the contract (E1206), so a box never carries a
+/// non-transferable value across a heap boundary.
+#[test]
+fn contract_values_cross_a_heap_boundary_only_through_a_marked_contract() {
+    let port_of = |contract: &str, value: &str, generation: u64| {
+        check_errors(
+            &format!(
+                "{MARKED_SCORES}
+i64 Main() {{
+    Result<i64, ParallelError> result = Parallel.Scope<i64>((Core.Parallel.Scopes.Scope s) => {{
+        Port<{contract}> scores = s.PortWith<{contract}>(1_i64);
+        {contract} value = {value};
+        scores.Send(move value);
+        return Result::Ok(0_i64);
+    }});
+    return 0_i64;
+}}"
+            ),
+            generation,
+        )
+    };
+    let marked = port_of("Scored", "Low {}", 6741);
+    assert!(marked.is_empty(), "a marked contract with a Moved implementation crosses: {marked:?}");
+    let unmarked = port_of("Loose", "Low {}", 6742);
+    assert!(unmarked.contains(&"E1610"), "an unmarked contract is not Transferable: {unmarked:?}");
+    let laundered = port_of("Scored", "Plain {}", 6743);
+    assert!(laundered.contains(&"E1206"), "a type without a marker is not boxed into `Scored`: {laundered:?}");
+    // A task captures the port and sends contract values of two implementations through it.
+    let captured = check_errors(
+        &format!(
+            "{MARKED_SCORES}
+[Isolated]
+type High : Scored {{ i64 bonus; pub i64 Score() {{ return 100_i64 + this.bonus; }} }}
+i64 Main() {{
+    Result<i64, ParallelError> result = Parallel.Scope<i64>((Core.Parallel.Scopes.Scope s) => {{
+        Port<Scored> scores = s.PortWith<Scored>(2_i64);
+        Task<unit> producer = s.Spawn(() => {{
+            Scored low = Low {{}};
+            scores.Send(move low);
+            Scored high = High {{ bonus: 5_i64 }};
+            scores.Send(move high);
+            scores.Close();
+            return;
+        }});
+        mut i64 total = 0_i64;
+        mut bool open = true;
+        while open {{
+            match scores.Receive() {{
+                Result::Ok(v) => {{ total = total + v.Score(); }},
+                Result::Error(_) => {{ open = false; }},
+            }};
+        }}
+        return Result::Ok(total);
+    }});
+    return 0_i64;
+}}"
+        ),
+        6744,
+    );
+    assert!(captured.is_empty(), "a captured port of a marked contract crosses: {captured:?}");
 }
