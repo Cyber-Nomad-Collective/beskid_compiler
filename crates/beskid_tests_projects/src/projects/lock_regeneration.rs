@@ -63,6 +63,24 @@ fn pin_free_lock_of_a_copied_project_is_regenerated() {
     assert!(!regenerated.contains("intro1"), "{regenerated}");
 }
 
+/// Readers (the language server's lock replay, the project explorer) agree with preparation: a
+/// copied lock that pins only Corelib is not an error, it is read as absent until regenerated.
+#[test]
+fn readers_do_not_report_a_copied_pin_free_lock() {
+    let _env = super::core_dependency_env_lock();
+    let (root, _first, second, second_manifest, first_lock) = copied_project();
+    with_cwd_at_workspace_root(&root, || {
+        let plan = build_compile_plan(&second_manifest, None).expect("plan");
+        let lock_path = second.join(PROJECT_LOCK_FILE_NAME);
+        let entries = beskid_analysis::projects::load_project_lock_dependencies_for_plan(&lock_path, &plan)
+            .expect("a copied pin-free lock is not an error for readers");
+        assert!(entries.is_empty(), "{entries:?}");
+        beskid_analysis::projects::effective_roots_from_lockfile_checked(&plan, &lock_path)
+            .expect("lock replay falls back to the declared roots");
+    });
+    assert_eq!(lock(&second), first_lock, "readers never rewrite a lock");
+}
+
 #[test]
 fn locked_and_frozen_runs_never_rewrite_a_foreign_lock() {
     let _env = super::core_dependency_env_lock();
