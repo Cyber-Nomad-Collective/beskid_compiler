@@ -13,7 +13,8 @@ pub use build::{build_runtime_kit, build_runtime_kit_with_glue_provider};
 pub use discovery::{
     HostRuntimeTargetError, InstalledToolchainPrefixError, host_runtime_target, host_runtime_triple,
     installed_corelib_root, installed_corelib_root_for_executable, installed_runtime_prefix,
-    installed_toolchain_prefix, installed_toolchain_prefix_for_executable,
+    installed_toolchain_prefix, installed_toolchain_prefix_for_executable, register_toolchain_corelib_identity,
+    toolchain_corelib_identity, user_corelib_root,
 };
 pub use model::{
     BuildProfile, InvalidBuildProfile, ResolvedRuntimeKit, RuntimeArtifact, RuntimeArtifacts, RuntimeKitBuildError,

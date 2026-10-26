@@ -1,4 +1,5 @@
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 use crate::abi_v5::TargetMetadata;
 
@@ -51,41 +52,71 @@ pub fn installed_runtime_prefix() -> Result<PathBuf, InstalledToolchainPrefixErr
     installed_toolchain_prefix()
 }
 
+/// Identity of the Corelib bundle embedded in the running toolchain binary (`<version>-<fingerprint
+/// prefix>`), registered once by the binary before it resolves Corelib.
+static TOOLCHAIN_CORELIB_IDENTITY: OnceLock<String> = OnceLock::new();
+
+/// Register the identity of the Corelib embedded in this toolchain. It names the per-user Corelib
+/// root of this toolchain, so two toolchains outside an installed prefix never share or replace
+/// each other's Corelib. Registering the same identity again is a no-op; a different one is an
+/// error (one process runs one toolchain).
+pub fn register_toolchain_corelib_identity(identity: &str) -> Result<(), String> {
+    if identity.is_empty()
+        || !identity.bytes().all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-' | b'+' | b'_'))
+    {
+        return Err(format!("invalid toolchain Corelib identity `{identity}`"));
+    }
+    let registered = TOOLCHAIN_CORELIB_IDENTITY.get_or_init(|| identity.to_owned());
+    if registered != identity {
+        return Err(format!("toolchain Corelib identity already registered as `{registered}`, not `{identity}`"));
+    }
+    Ok(())
+}
+
+/// The registered identity of this toolchain's embedded Corelib, if any.
+pub fn toolchain_corelib_identity() -> Option<&'static str> {
+    TOOLCHAIN_CORELIB_IDENTITY.get().map(String::as_str)
+}
+
 /// Resolve the corelib workspace root from an optional override or the installed toolchain layout.
 ///
 /// A corelib shipped beside the executable wins. Standalone executables materialize their embedded
-/// snapshot in the per-user Beskid directory instead, so a normal installation needs no environment
-/// variables.
+/// snapshot in a per-user, per-toolchain directory (`~/.beskid/corelib/<identity>`) instead, so a
+/// normal installation needs no environment variables and two toolchains never share one root.
+/// Without a registered identity there is no per-user root.
 pub fn installed_corelib_root() -> Result<PathBuf, InstalledToolchainPrefixError> {
     if let Some(root) = non_empty_environment_path(ENV_CORELIB_ROOT) {
         return Ok(root);
     }
 
-    let home = user_home_directory();
+    let user_root = user_home_directory()
+        .zip(toolchain_corelib_identity())
+        .map(|(home, identity)| user_corelib_root(&home, identity));
     match std::env::current_exe() {
-        Ok(executable) => installed_corelib_root_for_executable(&executable, home.as_deref()),
-        Err(_) if home.is_some() => Ok(user_corelib_root(home.as_deref().expect("home checked above"))),
+        Ok(executable) => installed_corelib_root_for_executable(&executable, user_root.as_deref()),
+        Err(_) if user_root.is_some() => Ok(user_root.expect("user root checked above")),
         Err(error) => Err(InstalledToolchainPrefixError::CurrentExe(error)),
     }
 }
 
-/// Resolve corelib for a known executable, preferring a bundled workspace at `<prefix>/beskid_corelib`.
+/// Resolve corelib for a known executable, preferring a bundled workspace at `<prefix>/beskid_corelib`
+/// over this toolchain's per-user root `user_root` (see [`user_corelib_root`]).
 pub fn installed_corelib_root_for_executable(
     executable: &Path,
-    home: Option<&Path>,
+    user_root: Option<&Path>,
 ) -> Result<PathBuf, InstalledToolchainPrefixError> {
     match installed_toolchain_prefix_for_executable(executable) {
         Ok(prefix) => {
             let bundled = prefix.join("beskid_corelib");
-            if bundled.is_dir() || home.is_none() {
+            if bundled.is_dir() || user_root.is_none() {
                 return Ok(bundled);
             }
         }
-        Err(error) if home.is_none() => return Err(error),
+        Err(error) if user_root.is_none() => return Err(error),
         Err(_) => {}
     }
 
-    Ok(user_corelib_root(home.expect("missing home returned above")))
+    Ok(user_root.expect("missing user root returned above").to_path_buf())
 }
 
 fn non_empty_environment_path(name: &str) -> Option<PathBuf> {
@@ -99,8 +130,9 @@ fn user_home_directory() -> Option<PathBuf> {
         .map(PathBuf::from)
 }
 
-fn user_corelib_root(home: &Path) -> PathBuf {
-    home.join(".beskid").join("beskid_corelib")
+/// The per-user Corelib root of the toolchain whose embedded Corelib has `identity`.
+pub fn user_corelib_root(home: &Path, identity: &str) -> PathBuf {
+    home.join(".beskid").join("corelib").join(identity)
 }
 
 /// Derive the install prefix for a known executable path (`<prefix>/bin/<tool>`).

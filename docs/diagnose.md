@@ -197,13 +197,14 @@ purposes until a dedicated check is written.
 
 ### The shared-corelib-root race (`BESKID_CORELIB_ROOT` per slice)
 
-Symptom: `fingerprint installed corelib at $HOME/.beskid/beskid_corelib: No such file or
+Symptom: `fingerprint installed corelib at $HOME/.beskid/corelib/<identity>: No such file or
 directory`, intermittent and not reproducible from source alone.
 
-Cause: every slice's `beskid_cli`, unless installed under a proper `<prefix>/bin` layout, falls
-back to the *same* `$HOME/.beskid/beskid_corelib` path inside the shared build container. When
-more than one slice's `beskid_cli` runs at once, one process's remove-then-recreate races another
-process's directory walk.
+Cause: a `beskid_cli` outside a proper `<prefix>/bin` layout provisions its Corelib in the per-user
+root `$HOME/.beskid/corelib/<version>-<fingerprint>`. Since 0.6.7 each toolchain build has its own
+root and provisioning is serialized by `.<identity>.lock`, so two different builds never replace
+each other's Corelib. The error remains possible only when something outside the toolchain (a
+manual `rm`, a cleanup script) deletes the root while another process reads it.
 
 1. `envcheck.sh <slice>` -- preflights the corelib fingerprint path, the runtime kit (via
    `kitcheck.sh`), the built binary, and the `obj/beskid` cache in one pass, and lists concurrent
@@ -280,9 +281,8 @@ python3 scripts/diagnose/network-shutdown-leak.py \
 - **One cargo/beskid_cli process per slice at a time.** Concurrent invocations from the same
   slice race the same output paths and logs; `status.sh` and `stalled.sh` exist specifically to
   catch when this has gone wrong (a stale-looking dead run, or two writers to one log).
-- **~4 slices max concurrently on the shared builder.** Beyond that, load average and the shared
-  `$HOME/.beskid/beskid_corelib` fallback path (see the corelib-root race above) both degrade;
-  give each concurrent slice its own `BESKID_CORELIB_ROOT` if you must exceed this informally.
+- **~4 slices max concurrently on the shared builder.** Beyond that, load average degrades; give
+  each concurrent slice its own `BESKID_CORELIB_ROOT` if you must exceed this informally.
 - **Check `status.sh` before starting new work** -- it is one ssh round trip and shows every
   slice's newest log, its age, and its last result/EXIT line, so you don't duplicate a run that's
   already in flight or already finished.

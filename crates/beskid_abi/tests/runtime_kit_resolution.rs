@@ -6,7 +6,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use beskid_abi::abi_v5::{ABI_V5, AbiManifestV5, RuntimeAuditMetadata, TargetMetadata};
 use beskid_abi::runtime_kit::{
     BuildProfile, RuntimeArtifact, RuntimeArtifacts, RuntimeKitMetadata, RuntimeKitResolutionError,
-    exact_kit_metadata_path, host_runtime_triple, installed_corelib_root_for_executable, installed_runtime_root,
+    exact_kit_metadata_path, host_runtime_triple, installed_corelib_root_for_executable, installed_runtime_root, register_toolchain_corelib_identity,
+    toolchain_corelib_identity, user_corelib_root,
     installed_toolchain_prefix_for_executable, profile_directory_name, resolve_installed_runtime_kit,
 };
 use sha2::{Digest, Sha256};
@@ -266,12 +267,34 @@ fn installed_corelib_needs_no_override_and_prefers_the_bundled_workspace() {
     let executable = installed.0.join("bin/beskid");
     fs::create_dir_all(executable.parent().unwrap()).unwrap();
 
-    assert_eq!(
-        installed_corelib_root_for_executable(&executable, Some(&home.0)).unwrap(),
-        home.0.join(".beskid/beskid_corelib"),
-    );
+    let user_root = user_corelib_root(&home.0, "0.6.7-0123456789abcdef");
+    assert_eq!(user_root, home.0.join(".beskid/corelib/0.6.7-0123456789abcdef"));
+    assert_eq!(installed_corelib_root_for_executable(&executable, Some(&user_root)).unwrap(), user_root);
 
     let bundled = installed.0.join("beskid_corelib");
     fs::create_dir_all(&bundled).unwrap();
-    assert_eq!(installed_corelib_root_for_executable(&executable, Some(&home.0)).unwrap(), bundled);
+    assert_eq!(installed_corelib_root_for_executable(&executable, Some(&user_root)).unwrap(), bundled);
+}
+
+#[test]
+fn two_toolchains_outside_a_prefix_get_separate_user_corelib_roots() {
+    let home = TempPrefix::new();
+    let executable = PathBuf::from("/opt/beskid/tools/beskid_cli");
+    let older = user_corelib_root(&home.0, "0.6.6-aaaaaaaaaaaaaaaa");
+    let newer = user_corelib_root(&home.0, "0.6.7-bbbbbbbbbbbbbbbb");
+    assert_ne!(older, newer);
+    assert_eq!(installed_corelib_root_for_executable(&executable, Some(&older)).unwrap(), older);
+    assert_eq!(installed_corelib_root_for_executable(&executable, Some(&newer)).unwrap(), newer);
+    // Without a registered toolchain identity there is no shared per-user fallback at all.
+    assert!(installed_corelib_root_for_executable(&executable, None).is_err());
+}
+
+#[test]
+fn the_toolchain_corelib_identity_is_registered_once() {
+    assert!(register_toolchain_corelib_identity("").is_err());
+    assert!(register_toolchain_corelib_identity("../escape").is_err());
+    register_toolchain_corelib_identity("0.6.7-0123456789abcdef").unwrap();
+    register_toolchain_corelib_identity("0.6.7-0123456789abcdef").unwrap();
+    assert!(register_toolchain_corelib_identity("0.6.8-0123456789abcdef").is_err());
+    assert_eq!(toolchain_corelib_identity(), Some("0.6.7-0123456789abcdef"));
 }
