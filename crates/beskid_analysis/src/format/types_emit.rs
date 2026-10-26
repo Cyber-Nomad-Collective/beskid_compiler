@@ -208,12 +208,16 @@ impl Emit for Field {
             FieldKind::Event => {
                 cx.token(w, "event")?;
                 if let Some(n) = self.event_capacity {
-                    w.write_char('{')?;
-                    write!(w, "{n}")?;
-                    w.write_char('}')?;
-                    cx.space(w)?;
+                    write!(w, "{{{n}}}")?;
                 }
+                cx.space(w)?;
                 self.name.emit(w, cx)?;
+                // The syntax tree keeps only the parameter types of an event; the names come from
+                // the source. A program without source text names them `arg0`, `arg1`, ...
+                if let Some(parameters) = cx.parenthesized_source_after(self.name.span.end) {
+                    w.write_str(&parameters)?;
+                    return Ok(());
+                }
                 w.write_char('(')?;
                 if let Type::Function { parameters, .. } = &self.ty.node {
                     for (i, p) in parameters.iter().enumerate() {
@@ -221,6 +225,7 @@ impl Emit for Field {
                             cx.token(w, ", ")?;
                         }
                         p.emit(w, cx)?;
+                        write!(w, " arg{i}")?;
                     }
                 }
                 w.write_char(')')?;

@@ -204,6 +204,36 @@ impl EmitCtx {
             .then(|| crate::format::tokens::trim_one_newline(&t.source[s..e]).to_string())
     }
 
+    /// The parenthesized list that follows `start` in the source (`(ConsoleSize size)`), with each
+    /// run of whitespace written as one space and none inside the parentheses or before a comma.
+    /// `None` without source text, or when a comment or string lies inside.
+    pub(crate) fn parenthesized_source_after(&self, start: usize) -> Option<String> {
+        let source = self.trivia.as_ref()?.source.get(start..)?;
+        let open = source.find(|c: char| !c.is_whitespace())?;
+        if !source[open..].starts_with('(') {
+            return None;
+        }
+        let mut depth = 0usize;
+        let mut close = None;
+        for (index, ch) in source[open..].char_indices() {
+            match ch {
+                '(' => depth += 1,
+                ')' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        close = Some(open + index);
+                        break;
+                    }
+                }
+                '"' | '/' => return None,
+                _ => {}
+            }
+        }
+        let inner = &source[open + 1..close?];
+        let words = inner.split_whitespace().collect::<Vec<_>>().join(" ");
+        Some(format!("({})", words.replace(" ,", ",").replace("( ", "(").replace(" )", ")")))
+    }
+
     /// The source text of `start..end`, when formatting a source.
     pub(crate) fn source_text(&self, start: usize, end: usize) -> Option<String> {
         self.trivia.as_ref().and_then(|t| t.source.get(start..end)).map(str::to_string)
