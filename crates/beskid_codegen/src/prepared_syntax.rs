@@ -378,6 +378,19 @@ pub fn lower_prepared_syntax_entrypoint(
     )
 }
 
+/// [`lower_prepared_syntax_entrypoint`] for the `test` definition named `test` (tests have their
+/// own namespace, so a function of the same name is not selected).
+pub fn lower_prepared_syntax_test_entrypoint(
+    db: &mut BeskidDatabase,
+    front: &ExecutableFrontEnd,
+    test: &str,
+    target: TargetMetadata,
+    isa: &dyn TargetIsa,
+) -> Result<PreparedSyntaxEntrypoint> {
+    let assembly = Arc::new(front.syntax_assembly());
+    lower_syntax_assembly_entrypoint_with_composition(db, assembly, test, EntrypointKind::Test, target, isa, Some(front))
+}
+
 /// Lower one entrypoint from an assembled syntax program through ISLE.
 ///
 /// This is the executable boundary for callers which already own a

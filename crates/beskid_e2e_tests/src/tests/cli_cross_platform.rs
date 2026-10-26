@@ -8,9 +8,13 @@ fn analyze_reports_no_diagnostics_for_minimal_file() {
     let source = workspace.join("Src/Minimal.bd");
     let cli = BeskidCliInvoker::new();
 
+    // The 0.6.7 default output is one status line; `-v` adds the pipeline detail.
     let output = cli.run(["check", source.to_str().expect("source path str")]);
     assert_success(&output, "analyze minimal file");
-    assert_output_contains(&output, "No diagnostics.", "analyze minimal file");
+    assert_output_contains(&output, "Analyze complete (no issues)", "analyze minimal file");
+    let verbose = cli.run(["check", "-v", source.to_str().expect("source path str")]);
+    assert_success(&verbose, "analyze minimal file verbosely");
+    assert_output_contains(&verbose, "No diagnostics.", "analyze minimal file verbosely");
 }
 
 #[test]

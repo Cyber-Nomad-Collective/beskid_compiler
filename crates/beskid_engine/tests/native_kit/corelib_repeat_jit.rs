@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use beskid_abi::runtime_kit::BuildProfile;
 use beskid_analysis::services::{PrepareOptions, resolve_input};
 use beskid_engine::Engine;
-use beskid_engine::services::run_entrypoint_from_front_end_with_engine;
+use beskid_engine::services::run_test_from_front_end_with_engine;
 use beskid_queries::{configure_db_for_project, prepare_compilation_with_db, with_db};
 
 use beskid_tests_mod_host::ModHostScope;
@@ -56,14 +56,8 @@ fn run_corelib_tests(entry: &str, target_name: &str, test_names: &[&str]) -> Vec
     test_names
         .iter()
         .map(|test_name| {
-            run_entrypoint_from_front_end_with_engine(
-                &mut engine,
-                &front,
-                &resolved.source_path.display().to_string(),
-                &resolved.source,
-                test_name,
-                None,
-            )
+            // The names are `test` definitions: tests have their own namespace.
+            run_test_from_front_end_with_engine(&mut engine, &front, test_name, None)
             .unwrap_or_else(|error| panic!("{test_name} should pass: {error}"))
         })
         .collect()

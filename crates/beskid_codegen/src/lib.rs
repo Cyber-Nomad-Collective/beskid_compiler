@@ -73,6 +73,7 @@ pub use prepared_syntax::{
     EntrypointKind, PreparedSyntaxCallable, PreparedSyntaxEntry, PreparedSyntaxEntrypoint, PreparedSyntaxEntrypoints,
     PreparedSyntaxModule, lower_canonical_runtime_prepared_syntax, lower_prepared_syntax_entrypoint,
     lower_prepared_syntax_entrypoints, lower_prepared_syntax_library, lower_prepared_syntax_module,
+    lower_prepared_syntax_test_entrypoint,
     lower_prepared_syntax_module_with_callables, lower_prepared_syntax_selected_callables,
     lower_syntax_assembly_entrypoint, lower_syntax_assembly_test_entrypoint, with_prepared_glue_input,
 };

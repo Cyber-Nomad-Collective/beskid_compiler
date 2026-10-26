@@ -93,6 +93,9 @@ with tempfile.TemporaryDirectory(prefix='beskid-pipeline-output-') as root:
         args += ['--kind', 'object', '--output', os.path.join(root, 'Smoke.o')]
     if mode.endswith('plain'):
         args += ['--plain']
+    verbose = '-verbose' in mode
+    if verbose:
+        args += ['-v']
     env = dict(os.environ, TERM='xterm-256color')
     env.pop('RUST_LOG', None)
     env.pop('NO_COLOR', None)
@@ -148,21 +151,26 @@ with tempfile.TemporaryDirectory(prefix='beskid-pipeline-output-') as root:
         for code in (b'\x1b[?1049', b'\x1b[?1000', b'\x1b[?1002', b'\x1b[?1003', b'\x1b[?1006'):
             assert code not in data, 'ordinary command entered terminal UI: ' + repr(text[-2000:])
         if terminal and not mode.endswith('plain'):
+            # 0.6.7 output policy: progress appears on a terminal only once a phase runs longer
+            # than a second, so a smoke command may finish without one; any bar drawn fits.
             bars = [line for line in re.findall(rb'\x1b\[2K([^\r\n\x1b]*)', data) if line.startswith(b'[')]
-            assert bars, 'TTY progress bar missing: ' + text
             assert all(len(line) <= 79 for line in bars), 'progress exceeds terminal width: ' + repr(bars)
             assert all(b' INFO ' not in line for line in bars), 'tracing appended to progress line: ' + repr(bars)
         if not terminal or mode.endswith('plain'):
             assert not any(byte < 32 and byte not in (10, 13) for byte in data), 'control bytes in plain/pipe output: ' + repr(text)
-        assert 'Resolve' in text, 'resolve phase tree missing: ' + text
-        assert ('|- ' if not terminal or mode.endswith('plain') else '├─ ') in text, 'nested phase tree missing: ' + text
-        summary = {'build': 'Build complete', 'run': 'Run complete', 'analyze': 'Analyze complete', 'test': 'Result: passed=1, failed=0'}[command]
+        # 0.6.7 output policy: the pipeline phase tree is detail, printed only with `-v`.
+        if verbose:
+            assert 'Resolve manifest' in text, 'resolve phase tree missing with -v: ' + text
+            assert ('|- ' if not terminal or mode.endswith('plain') else '├─ ') in text, 'nested phase tree missing with -v: ' + text
+        else:
+            assert 'Resolve manifest' not in text, 'phase tree printed without -v: ' + text
+        summary = {'build': 'Build complete', 'run': 'Build complete', 'analyze': 'Analyze complete', 'test': 'Result: passed=1, failed=0'}[command]
         assert summary in text, 'completion summary missing: ' + text
         if command == 'build':
-            assert 'output:' in text, 'build output path missing from final summary: ' + text
+            assert os.path.join(root, 'Smoke.o') in text, 'build output path missing from final summary: ' + text
             assert os.path.getsize(os.path.join(root, 'Smoke.o')) > 0
-        if command == 'run':
-            assert 'exit: ' + str(expected_exit) in text, 'child exit status missing from final summary: ' + text
+        if command == 'run' and verbose:
+            assert 'Run complete' in text and 'exit: ' + str(expected_exit) in text, 'run summary missing with -v: ' + text
     finally:
         if process.poll() is None:
             os.killpg(process.pid, signal.SIGKILL)
@@ -200,4 +208,9 @@ output_cases! {
     run_pty_completion_without_input: "run", "pty";
     run_plain_pty_completion_without_input: "run", "pty-plain";
     run_plain_pipe_preserves_child_exit_status: "run", "pipe-exit7-plain";
+    build_verbose_pipe_shows_the_phase_tree: "build", "pipe-verbose-plain";
+    analyze_verbose_pipe_shows_the_phase_tree: "analyze", "pipe-verbose-plain";
+    test_verbose_pipe_shows_the_phase_tree: "test", "pipe-verbose-plain";
+    run_verbose_pipe_shows_the_phase_tree_and_exit_status: "run", "pipe-exit7-verbose-plain";
+    analyze_verbose_pty_shows_the_phase_tree: "analyze", "pty-verbose";
 }

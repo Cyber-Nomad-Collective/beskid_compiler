@@ -5,7 +5,7 @@ use beskid_pipeline::PipelineObserver;
 use beskid_queries::BeskidDatabase;
 
 use super::SyntaxEntrypointArtifact;
-use super::jit_preparation::lower_syntax_entrypoint_from_front_end;
+use super::jit_preparation::{lower_syntax_entrypoint_from_front_end, lower_syntax_test_entrypoint_from_front_end};
 use crate::Engine;
 use crate::jit_callable::{EntryReturnKind, JitCallable};
 
@@ -87,6 +87,20 @@ pub fn run_entrypoint_from_front_end_with_engine(
     // consumes the already prepared expanded syntax assembly.
     let _ = (source_name, source);
     run_syntax_jitted_entrypoint(engine, &syntax_entrypoint, entrypoint, pipeline)
+}
+
+/// Like [`run_entrypoint_from_front_end_with_engine`] for the `test` definition named `test`
+/// (tests have their own namespace, so a function of the same name is not selected).
+pub fn run_test_from_front_end_with_engine(
+    engine: &mut Engine,
+    front: &beskid_analysis::services::ExecutableFrontEnd,
+    test: &str,
+    pipeline: Option<&dyn PipelineObserver>,
+) -> Result<String> {
+    let mut db = BeskidDatabase::default();
+    let syntax_entrypoint =
+        lower_syntax_test_entrypoint_from_front_end(&mut db, front, test, engine.target_metadata().clone(), pipeline)?;
+    run_syntax_jitted_entrypoint(engine, &syntax_entrypoint, test, pipeline)
 }
 
 fn run_syntax_jitted_entrypoint(
