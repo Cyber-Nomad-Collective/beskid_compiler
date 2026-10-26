@@ -2,23 +2,24 @@ use Core.Syscall;
 use Core.String;
 use Core.Collections.Array;
 
-i32 Main() {
+i32 Main()
+{
     Syscall.Write(1_i64, "ok");
     Syscall.Read(99_i64, 8_i64);
     i64 len = String.Len("hello");
-    if len != 5 {
+    if (len != 5)
+    {
         return 21;
     }
-
     i64[] values = Array.Empty<i64>();
-    if Array.Len<i64>(values) != 0 {
+    if (Array.Len<i64>(values) != 0)
+    {
         return 22;
     }
-
     i32 sum = 20 + 22;
-    if sum != 42 {
+    if (sum != 42)
+    {
         return 23;
     }
-
     return 0;
 }

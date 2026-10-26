@@ -38,7 +38,7 @@ type Report
 
     pub string Matches(Session other, Ledger book)
     {
-        if this.session == other && this.ledger == book
+        if (this.session == other && this.ledger == book)
         {
             return "same";
         }

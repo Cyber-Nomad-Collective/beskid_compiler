@@ -1,9 +1,11 @@
 use Core.Output;
 
-unit Main() {
+unit Main()
+{
     Output.WriteLine("unit-start");
 }
 
-pub unit Start() {
+pub unit Start()
+{
     Main();
 }

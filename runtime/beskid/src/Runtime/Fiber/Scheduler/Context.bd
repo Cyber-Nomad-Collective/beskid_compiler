@@ -3,51 +3,60 @@
 // Returns the selected target's BeskidArchContext record size. This compiler-owned
 // intrinsic is available only to the canonical runtime corpus and is materialized
 // from runtime_manifest.bsol, never from a source-level target switch.
-pub word ArchContextSize() {
+pub word ArchContextSize()
+{
     return arch_context_size();
 }
 
 // Returns the selected target's BeskidArchContext record alignment.
-pub word ArchContextAlignment() {
+pub word ArchContextAlignment()
+{
     return arch_context_alignment();
 }
 
 // Reserves a fixed target-native guarded stack. The returned address is the
 // lowest usable address above the guard; only the high initial suffix is writable.
-pub pointer GuardedStackAllocate(word initialSize, word maximumSize) {
+pub pointer GuardedStackAllocate(word initialSize, word maximumSize)
+{
     return guarded_stack_allocate(initialSize, maximumSize);
 }
 
 // Commits the additional high suffix needed by a downward-growing stack.
-pub bool GuardedStackGrow(pointer usableBase, word committedSize, word requestedSize, word maximumSize) {
+pub bool GuardedStackGrow(pointer usableBase, word committedSize, word requestedSize, word maximumSize)
+{
     return guarded_stack_grow(usableBase, committedSize, requestedSize, maximumSize) != 0;
 }
 
 // Releases the exact original guard plus maximum-size reservation.
-pub unit GuardedStackFree(pointer usableBase, word maximumSize) {
+pub unit GuardedStackFree(pointer usableBase, word maximumSize)
+{
     guarded_stack_free(usableBase, maximumSize);
     return;
 }
 
 // These addresses are compiler-minted only for this exact embedded Scheduler unit.
 // They are local lowering artifacts, never ABI imports or source-defined symbols.
-pub pointer SchedulerFiberEntryAddress() {
+pub pointer SchedulerFiberEntryAddress()
+{
     return scheduler_fiber_entry_address();
 }
 
-pub pointer SchedulerReturnTrampolineAddress() {
+pub pointer SchedulerReturnTrampolineAddress()
+{
     return scheduler_return_trampoline_address();
 }
 
 // The sole assembly boundary for preparing a canonical fiber context. Its symbol,
 // signature, and target calling convention are all manifest-owned.
-pub unit ContextInit(pointer context, pointer stackTop, pointer entry, pointer argument, pointer returnTrampoline) {
+pub unit ContextInit(pointer context, pointer stackTop, pointer entry, pointer argument, pointer returnTrampoline)
+{
     context_init(context, stackTop, entry, argument, returnTrampoline);
     return;
 }
 
 // The sole assembly boundary for saving and resuming a canonical fiber context.
-pub unit ContextSwitch(pointer from, pointer to) {
+pub unit ContextSwitch(pointer from, pointer to)
+{
     context_switch(from, to);
     return;
 }

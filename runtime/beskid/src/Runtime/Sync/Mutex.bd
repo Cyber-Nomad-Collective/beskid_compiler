@@ -20,34 +20,50 @@ const MUTEX_LOCKED = 1;
 const MUTEX_WAITERS = 16;
 const MUTEX_SLOT_SIZE = 40;
 
-pub word MutexSlotSize() { return MUTEX_SLOT_SIZE; }
+pub word MutexSlotSize()
+{
+    return MUTEX_SLOT_SIZE;
+}
 
 // Returns the chunked mutex table owned by the active scheduler.
 // Mutex storage must never be derived from an undeclared RuntimeState offset.
-pub pointer MutexTable() {
+pub pointer MutexTable()
+{
     return SchedulerMutexTable();
 }
 
 // Resolves an opaque mutex ID (slot index + 1) to its record, or null.
-pub pointer MutexSlot(pointer id) {
+pub pointer MutexSlot(pointer id)
+{
     word encoded = NativeWord(id);
-    if encoded == 0 { return NativePointer(0); }
+    if (encoded == 0)
+    {
+        return NativePointer(0);
+    }
     word slotIndex = encoded - 1;
     pointer table = MutexTable();
-    if table == NativePointer(0) || slotIndex >= ChunkTableCount(table) { return NativePointer(0); }
+    if (table == NativePointer(0) || slotIndex >= ChunkTableCount(table))
+    {
+        return NativePointer(0);
+    }
     return ChunkTableRecord(table, slotIndex);
 }
 
 // Creates a mutex and returns its opaque ID (slot index + 1). The table grows on
 // demand; a null return means the system allocator refused the growth.
-[Export(Abi:"C", Symbol:"mutex_create")]
-pub pointer MutexCreate() {
+[Export(Abi: "C", Symbol: "mutex_create")]
+pub pointer MutexCreate()
+{
     pointer table = MutexTable();
-    if table == NativePointer(0) {
+    if (table == NativePointer(0))
+    {
         return NativePointer(0);
     }
     word index = ChunkTableAppend(table);
-    if index == 0xFFFFFFFFFFFFFFFF { return NativePointer(0); }
+    if (index == 0xFFFFFFFFFFFFFFFF)
+    {
+        return NativePointer(0);
+    }
     pointer slot = ChunkTableRecord(table, index);
     raw_byte_store(slot, MUTEX_UNLOCKED);
     raw_word_store(pointer_add(slot, 8), 0);
@@ -55,27 +71,34 @@ pub pointer MutexCreate() {
 }
 
 // Shutdown only: releases the waiter vector of one record.
-pub unit MutexRelease(pointer slot) {
+pub unit MutexRelease(pointer slot)
+{
     VecFree(pointer_add(slot, MUTEX_WAITERS), 8);
     return;
 }
 
-pub bool MutexWaiterAdd(pointer slot, word waiterHandle) {
+pub bool MutexWaiterAdd(pointer slot, word waiterHandle)
+{
     return VecPushWordUnique(pointer_add(slot, MUTEX_WAITERS), waiterHandle);
 }
 
-pub unit MutexWaiterRemove(pointer slot, word waiterHandle) {
+pub unit MutexWaiterRemove(pointer slot, word waiterHandle)
+{
     VecRemoveWord(pointer_add(slot, MUTEX_WAITERS), waiterHandle);
     return;
 }
 
-pub unit MutexWakeFirst(pointer slot) {
+pub unit MutexWakeFirst(pointer slot)
+{
     pointer waiters = pointer_add(slot, MUTEX_WAITERS);
-    while VecCount(waiters) != 0 {
+    while (VecCount(waiters) != 0)
+    {
         mut word waiterHandle = VecShiftWord(waiters, 0);
-        if FiberHandleValid(waiterHandle) {
+        if (FiberHandleValid(waiterHandle))
+        {
             word waiterIndex = FiberHandleIndex(waiterHandle);
-            if FiberParked(waiterIndex) {
+            if (FiberParked(waiterIndex))
+            {
                 WakeEnqueue(waiterIndex);
                 return;
             }
@@ -86,58 +109,108 @@ pub unit MutexWakeFirst(pointer slot) {
 
 // Locks the mutex, blocking the current fiber if already held.
 // Returns 0 on success, 1 on cancellation.
-[Export(Abi:"C", Symbol:"mutex_lock")]
-pub i32 MutexLock(pointer id) {
+[Export(Abi: "C", Symbol: "mutex_lock")]
+pub i32 MutexLock(pointer id)
+{
     pointer slot = MutexSlot(id);
-    if slot == NativePointer(0) { return 1; }
+    if (slot == NativePointer(0))
+    {
+        return 1;
+    }
     word fiberIndex = SchedulerCurrentFiber();
     mut word waiterHandle = 0;
-    if fiberIndex != FIBER_NONE { waiterHandle = FiberHandle(fiberIndex); }
-    while raw_byte_load(slot) == MUTEX_LOCKED {
-        if fiberIndex == FIBER_NONE {
+    if (fiberIndex != FIBER_NONE)
+    {
+        waiterHandle = FiberHandle(fiberIndex);
+    }
+    while (raw_byte_load(slot) == MUTEX_LOCKED)
+    {
+        if (fiberIndex == FIBER_NONE)
+        {
             // Main parks as the root fiber: it drives the scheduler until the holder unlocks.
             SchedulerRootWait();
             continue;
         }
-        if waiterHandle == 0 || !FiberHandleValid(waiterHandle) { return 1; }
+        if (waiterHandle == 0 || !FiberHandleValid(waiterHandle))
+        {
+            return 1;
+        }
         pointer fiber = FiberRecord(fiberIndex);
-        if raw_byte_load(pointer_add(fiber, 41)) != 0 { return 1; }
-        if !MutexWaiterAdd(slot, waiterHandle) { return 1; }
+        if (raw_byte_load(pointer_add(fiber, 41)) != 0)
+        {
+            return 1;
+        }
+        if (!MutexWaiterAdd(slot, waiterHandle))
+        {
+            return 1;
+        }
         FiberSetState(fiberIndex, FIBER_STATE_PARKED);
         SaveFiberLocalState(fiberIndex);
         SchedulerSetCurrentFiber(FIBER_NONE);
         ContextSwitch(NativePointer(raw_word_load(pointer_add(fiber, 104))), SchedulerContext());
         MutexWaiterRemove(slot, waiterHandle);
-        if !FiberHandleValid(waiterHandle) || raw_byte_load(pointer_add(fiber, 41)) != 0 { return 1; }
+        if (!FiberHandleValid(waiterHandle) || raw_byte_load(pointer_add(fiber, 41)) != 0)
+        {
+            return 1;
+        }
     }
     raw_byte_store(slot, MUTEX_LOCKED);
-    if fiberIndex == FIBER_NONE { raw_word_store(pointer_add(slot, 8), 0); }
-    else { raw_word_store(pointer_add(slot, 8), FiberHandle(fiberIndex)); }
+    if (fiberIndex == FIBER_NONE)
+    {
+        raw_word_store(pointer_add(slot, 8), 0);
+    }
+    else
+    {
+        raw_word_store(pointer_add(slot, 8), FiberHandle(fiberIndex));
+    }
     return 0;
 }
 
 // Tries to lock the mutex without blocking. Returns 0 on success.
-[Export(Abi:"C", Symbol:"mutex_try_lock")]
-pub i32 MutexTryLock(pointer id) {
+[Export(Abi: "C", Symbol: "mutex_try_lock")]
+pub i32 MutexTryLock(pointer id)
+{
     pointer slot = MutexSlot(id);
-    if slot == NativePointer(0) { return 1; }
-    if raw_byte_load(slot) == MUTEX_LOCKED { return 1; }
+    if (slot == NativePointer(0))
+    {
+        return 1;
+    }
+    if (raw_byte_load(slot) == MUTEX_LOCKED)
+    {
+        return 1;
+    }
     raw_byte_store(slot, MUTEX_LOCKED);
     word fiberIndex = SchedulerCurrentFiber();
-    if fiberIndex == FIBER_NONE { raw_word_store(pointer_add(slot, 8), 0); }
-    else { raw_word_store(pointer_add(slot, 8), FiberHandle(fiberIndex)); }
+    if (fiberIndex == FIBER_NONE)
+    {
+        raw_word_store(pointer_add(slot, 8), 0);
+    }
+    else
+    {
+        raw_word_store(pointer_add(slot, 8), FiberHandle(fiberIndex));
+    }
     return 0;
 }
 
 // Unlocks the mutex. Wake the first waiter if any.
-[Export(Abi:"C", Symbol:"mutex_unlock")]
-pub unit MutexUnlock(pointer id) {
+[Export(Abi: "C", Symbol: "mutex_unlock")]
+pub unit MutexUnlock(pointer id)
+{
     pointer slot = MutexSlot(id);
-    if slot == NativePointer(0) { return; }
+    if (slot == NativePointer(0))
+    {
+        return;
+    }
     word current = SchedulerCurrentFiber();
     word owner = raw_word_load(pointer_add(slot, 8));
-    if raw_byte_load(slot) != MUTEX_LOCKED { return; }
-    if owner != 0 && (current == FIBER_NONE || owner != FiberHandle(current)) { return; }
+    if (raw_byte_load(slot) != MUTEX_LOCKED)
+    {
+        return;
+    }
+    if (owner != 0 && (current == FIBER_NONE || owner != FiberHandle(current)))
+    {
+        return;
+    }
     raw_byte_store(slot, MUTEX_UNLOCKED);
     raw_word_store(pointer_add(slot, 8), 0);
     MutexWakeFirst(slot);

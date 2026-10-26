@@ -5,54 +5,76 @@ use Testing.Assert;
 
 // Low-level negative probes deliberately provide foreign pointers; these are not
 // logical managed Dynamic values and cannot acquire the sealed representation.
-[Extern(Abi:"C", Library:"beskid_runtime")]
-contract DynamicTransportV1 {
+[Extern(Abi: "C", Library: "beskid_runtime")]
+contract DynamicTransportV1
+{
     i32 beskid_dynamic_v1_create(pointer value, u64 shape, pointer output);
     i32 beskid_dynamic_v1_cast(pointer value, u64 shape, pointer output);
     i32 beskid_dynamic_v1_map(pointer value, u64 mapping, pointer output);
     pointer beskid_rt_v5_dynamic_i64_box(i64 value);
 }
 
-bool DynamicRejectedV1(pointer input, u64 token, word operation) {
+bool DynamicRejectedV1(pointer input, u64 token, word operation)
+{
     pointer output = SystemAllocate(8, 8);
     raw_word_store(output, 73);
     mut i32 status = 1;
-    if operation == 0 { status = DynamicTransportV1.beskid_dynamic_v1_create(input, token, output); }
-    if operation == 1 { status = DynamicTransportV1.beskid_dynamic_v1_cast(input, token, output); }
-    if operation == 2 { status = DynamicTransportV1.beskid_dynamic_v1_map(input, token, output); }
+    if (operation == 0)
+    {
+        status = DynamicTransportV1.beskid_dynamic_v1_create(input, token, output);
+    }
+    if (operation == 1)
+    {
+        status = DynamicTransportV1.beskid_dynamic_v1_cast(input, token, output);
+    }
+    if (operation == 2)
+    {
+        status = DynamicTransportV1.beskid_dynamic_v1_map(input, token, output);
+    }
     bool rejected = status != 0 && raw_word_load(output) == 0;
     SystemFree(output, 8);
     return rejected;
 }
 
-test DynamicZeroShapeIsRejected {
+test DynamicZeroShapeIsRejected
+{
     Assert.True(DynamicRejectedV1(NativePointer(0), 0_u64, 0), "zero shape rejects without publishing output");
 }
-test DynamicUnknownSourceShapeIsChecked {
+
+test DynamicUnknownSourceShapeIsChecked
+{
     pointer foreign = SystemAllocate(40, 8);
     memory_set(foreign, 0, 40);
     Assert.True(DynamicRejectedV1(foreign, 37_u64, 1), "unregistered foreign cell rejects before dereference");
     SystemFree(foreign, 40);
 }
-test DynamicMappingRejectsZeroTokenWithoutSourceAlias {
+
+test DynamicMappingRejectsZeroTokenWithoutSourceAlias
+{
     pointer foreign = SystemAllocate(40, 8);
     memory_set(foreign, 0, 40);
     Assert.True(DynamicRejectedV1(foreign, 0_u64, 2), "zero mapping token has no passthrough path");
     SystemFree(foreign, 40);
 }
-test DynamicMappingRejectsUnknownTokenWithoutSourceAlias {
+
+test DynamicMappingRejectsUnknownTokenWithoutSourceAlias
+{
     pointer foreign = SystemAllocate(40, 8);
     memory_set(foreign, 0, 40);
     Assert.True(DynamicRejectedV1(foreign, 83_u64, 2), "unknown mapping does not return source address");
     SystemFree(foreign, 40);
 }
-test DynamicCellRejectsUnregisteredPayload {
+
+test DynamicCellRejectsUnregisteredPayload
+{
     pointer foreign = SystemAllocate(24, 8);
     memory_set(foreign, 0, 24);
     Assert.True(DynamicRejectedV1(foreign, 71_u64, 0), "native allocation is not registered typed payload");
     SystemFree(foreign, 24);
 }
-test DynamicBoxPreservesCanonicalDescriptorAcrossCollection {
+
+test DynamicBoxPreservesCanonicalDescriptorAcrossCollection
+{
     pointer payload = DynamicTransportV1.beskid_rt_v5_dynamic_i64_box(101_i64);
     // Root the box before anything else allocates (an assertion message is a managed string):
     // under `BESKID_GC_STRESS=alloc` that allocation collects first.
@@ -66,7 +88,9 @@ test DynamicBoxPreservesCanonicalDescriptorAcrossCollection {
     Assert.Equal(raw_word_load(pointer_add(payload, 16)), word(101), "canonical primitive box retains value");
     GcUnrootHandle(root);
 }
-test DynamicNullInputFailsClosed {
+
+test DynamicNullInputFailsClosed
+{
     Assert.True(DynamicRejectedV1(NativePointer(0), 37_u64, 0), "null create rejects");
     Assert.True(DynamicRejectedV1(NativePointer(0), 37_u64, 1), "null cast rejects");
     Assert.True(DynamicRejectedV1(NativePointer(0), 37_u64, 2), "null map rejects");

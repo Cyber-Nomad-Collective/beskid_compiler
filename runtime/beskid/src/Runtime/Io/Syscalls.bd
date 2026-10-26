@@ -5,55 +5,89 @@
 const SYSCALL_READ = 1;
 const SYSCALL_WRITE = 2;
 
-pointer StringViewData(pointer value) {
-    if value == NativePointer(0) { return NativePointer(0); }
+pointer StringViewData(pointer value)
+{
+    if (value == NativePointer(0))
+    {
+        return NativePointer(0);
+    }
     return NativePointer(raw_word_load(value));
 }
 
-word StringViewLength(pointer value) {
-    if value == NativePointer(0) { return 0; }
+word StringViewLength(pointer value)
+{
+    if (value == NativePointer(0))
+    {
+        return 0;
+    }
     return raw_word_load(pointer_add(value, 8));
 }
 
-i64 FinishSyscallRequest(pointer request, pointer managedBuffer) {
+i64 FinishSyscallRequest(pointer request, pointer managedBuffer)
+{
     i64 result = i64(raw_word_load(pointer_add(request, 48)));
     pointer nativeBuffer = NativePointer(raw_word_load(pointer_add(request, 32)));
     word operation = raw_word_load(pointer_add(request, 16)) & 0xFFFFFFFF;
-    if operation == SYSCALL_READ && result > 0 { memory_copy(managedBuffer, nativeBuffer, word(result)); }
+    if (operation == SYSCALL_READ && result > 0)
+    {
+        memory_copy(managedBuffer, nativeBuffer, word(result));
+    }
     return result;
 }
 
-pub i64 SyscallSubmitAndPark(word descriptor, pointer managedBuffer, word len, word operation) {
-    if descriptor > 2147483647 { return -1; }
+pub i64 SyscallSubmitAndPark(word descriptor, pointer managedBuffer, word len, word operation)
+{
+    if (descriptor > 2147483647)
+    {
+        return -1;
+    }
     mut word allocation = len;
-    if allocation == 0 { allocation = 1; }
+    if (allocation == 0)
+    {
+        allocation = 1;
+    }
     pointer nativeBuffer = SystemAllocate(allocation, 8);
-    if nativeBuffer == NativePointer(0) { return -1; }
-    if operation == SYSCALL_WRITE && len != 0 { memory_copy(nativeBuffer, managedBuffer, len); }
-
+    if (nativeBuffer == NativePointer(0))
+    {
+        return -1;
+    }
+    if (operation == SYSCALL_WRITE && len != 0)
+    {
+        memory_copy(nativeBuffer, managedBuffer, len);
+    }
     pointer request = SystemAllocate(BESKID_WORKER_REQUEST_SIZE, 8);
-    if request == NativePointer(0) { SystemFree(nativeBuffer, allocation); return -1; }
+    if (request == NativePointer(0))
+    {
+        SystemFree(nativeBuffer, allocation);
+        return -1;
+    }
     memory_set(request, 0, BESKID_WORKER_REQUEST_SIZE);
     raw_word_store(pointer_add(request, 16), operation);
     raw_word_store(pointer_add(request, 24), descriptor);
     raw_word_store(pointer_add(request, 32), NativeWord(nativeBuffer));
     raw_word_store(pointer_add(request, 40), len);
 
-    if SchedTable() == NativePointer(0) {
+    if (SchedTable() == NativePointer(0))
+    {
         // No scheduler yet or any more (process start or teardown): wait on the worker in place.
-        if WorkerSubmit(request) != 0 {
+        if (WorkerSubmit(request) != 0)
+        {
             SystemFree(request, BESKID_WORKER_REQUEST_SIZE);
             SystemFree(nativeBuffer, allocation);
             return -1;
         }
-        while !WorkerPoll(request) { thread_yield(); }
+        while (!WorkerPoll(request))
+        {
+            thread_yield();
+        }
         i64 result = FinishSyscallRequest(request, managedBuffer);
         worker_release(request);
         return result;
     }
     // A fiber parks; the root caller (Main) drives the scheduler until the worker posts.
     word token = ExternalWaitRegister(ExternalWaiterHandle(), operation, -1);
-    if token == 0 {
+    if (token == 0)
+    {
         SystemFree(request, BESKID_WORKER_REQUEST_SIZE);
         SystemFree(nativeBuffer, allocation);
         return -1;
@@ -62,74 +96,103 @@ pub i64 SyscallSubmitAndPark(word descriptor, pointer managedBuffer, word len, w
     raw_word_store(pointer_add(request, 64), ExternalOwnerId());
     pointer wait = ExternalWaitRecord(token);
     raw_word_store(pointer_add(wait, 40), NativeWord(request));
-    if WorkerSubmit(request) != 0 {
+    if (WorkerSubmit(request) != 0)
+    {
         ExternalTryComplete(token & 0xFFFFFFFF, token >> 32, EXTERNAL_CLOSED);
         ExternalRelease(token);
         return -1;
     }
     word source = ExternalWaitPark(token);
     mut i64 result = -1;
-    if source == EXTERNAL_READY {
+    if (source == EXTERNAL_READY)
+    {
         result = FinishSyscallRequest(request, managedBuffer);
     }
     ExternalRelease(token);
     return result;
 }
 
-[Export(Abi:"C", Symbol:"syscall_read")]
-pub i64 SyscallRead(i32 descriptor, pointer buffer, word len) {
+[Export(Abi: "C", Symbol: "syscall_read")]
+pub i64 SyscallRead(i32 descriptor, pointer buffer, word len)
+{
     return SyscallSubmitAndPark(word(descriptor), buffer, len, SYSCALL_READ);
 }
 
-[Export(Abi:"C", Symbol:"syscall_read_bytes")]
-pub i64 SyscallReadBytes(i32 descriptor, pointer data, word len) { return SyscallRead(descriptor, data, len); }
+[Export(Abi: "C", Symbol: "syscall_read_bytes")]
+pub i64 SyscallReadBytes(i32 descriptor, pointer data, word len)
+{
+    return SyscallRead(descriptor, data, len);
+}
 
-[Export(Abi:"C", Symbol:"syscall_write")]
-pub i64 SyscallWrite(i64 descriptor, pointer value) {
-    if value == NativePointer(0) { return -1; }
-    if descriptor < 0 || descriptor > 2147483647 { return -1; }
+[Export(Abi: "C", Symbol: "syscall_write")]
+pub i64 SyscallWrite(i64 descriptor, pointer value)
+{
+    if (value == NativePointer(0))
+    {
+        return -1;
+    }
+    if (descriptor < 0 || descriptor > 2147483647)
+    {
+        return -1;
+    }
     return SyscallSubmitAndPark(word(descriptor), StringViewData(value), StringViewLength(value), SYSCALL_WRITE);
 }
 
-[Export(Abi:"C", Symbol:"syscall_write_bytes")]
-pub i64 SyscallWriteBytes(i32 descriptor, pointer data, word len) {
+[Export(Abi: "C", Symbol: "syscall_write_bytes")]
+pub i64 SyscallWriteBytes(i32 descriptor, pointer data, word len)
+{
     return SyscallSubmitAndPark(word(descriptor), data, len, SYSCALL_WRITE);
 }
 
-[Export(Abi:"C", Symbol:"beskid_trap_code")]
-pub never Panic(i64 code) {
+[Export(Abi: "C", Symbol: "beskid_trap_code")]
+pub never Panic(i64 code)
+{
     word index = SchedulerCurrentFiber();
-    if index == FIBER_NONE || !FiberExists(index) {
-        if code < 1 || code > 10 { Trap(9, NativePointer(0), 0); }
+    if (index == FIBER_NONE || !FiberExists(index))
+    {
+        if (code < 1 || code > 10)
+        {
+            Trap(9, NativePointer(0), 0);
+        }
         Trap(u8(code), NativePointer(0), 0);
     }
     FiberPanic(NativePointer(0));
 }
 
-[Export(Abi:"C", Symbol:"beskid_trap_message")]
-pub never PanicStr(pointer message) {
+[Export(Abi: "C", Symbol: "beskid_trap_message")]
+pub never PanicStr(pointer message)
+{
     FiberPanic(message);
 }
 
 // A child panic unwinds by transferring its native context back to the scheduler.
 // The terminal stack is never resumed. A panic outside a fiber, or in a detached
 // fiber, retains process-fatal behavior. Panic codes exposed by Join are always 2.
-pub never FiberPanic(pointer message) {
+pub never FiberPanic(pointer message)
+{
     word index = SchedulerCurrentFiber();
-    if index == FIBER_NONE || !FiberExists(index) {
+    if (index == FIBER_NONE || !FiberExists(index))
+    {
         Trap(9, StringViewData(message), StringViewLength(message));
     }
     pointer fiber = FiberRecord(index);
-    if raw_byte_load(pointer_add(fiber, 40)) != 0 {
+    if (raw_byte_load(pointer_add(fiber, 40)) != 0)
+    {
         Trap(9, StringViewData(message), StringViewLength(message));
     }
     pointer ownedMessage = StrNew(StringViewData(message), StringViewLength(message));
-    if ownedMessage == NativePointer(0) { Trap(5, NativePointer(0), 0); }
+    if (ownedMessage == NativePointer(0))
+    {
+        Trap(5, NativePointer(0), 0);
+    }
     raw_word_store(pointer_add(fiber, 56), NativeWord(ownedMessage));
     raw_word_store(pointer_add(fiber, FIBER_OUTCOME_REASON_OFFSET), 2);
     raw_word_store(pointer_add(fiber, 48), FIBER_JOIN_PANICKED);
     raw_word_store(fiber, FIBER_STATE_DONE);
-    if AbiValueClear(pointer_add(fiber, BESKID_FIBER_RECORD_CAPTURE_OFFSET)) == false { Trap(10, NativePointer(0), 0); }
+    if (AbiValueClear(pointer_add(fiber, BESKID_FIBER_RECORD_CAPTURE_OFFSET)) == false)
+    {
+        Trap(10, NativePointer(0), 0);
+    }
     raw_word_store(pointer_add(fiber, 16), 0);
     FiberReleaseStackRoots(index);
     SaveFiberLocalState(index);

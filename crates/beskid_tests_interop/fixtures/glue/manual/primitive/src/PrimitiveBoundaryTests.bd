@@ -1,6 +1,7 @@
 use Testing.Assert;
 
-test SignedNarrowBoundaries {
+test SignedNarrowBoundaries
+{
     i8 low = -128_i8;
     i8 high = 127_i8;
     i16 shortLow = -32768_i16;
@@ -11,7 +12,8 @@ test SignedNarrowBoundaries {
     Assert.Equal(-64_i8, low / 2_i8, "signed narrow division");
 }
 
-test UnsignedHighBitsAndWidths {
+test UnsignedHighBitsAndWidths
+{
     u16 shortHigh = 65535_u16;
     u64 high = 18446744073709551615_u64;
     u64 signBit = 9223372036854775808_u64;
@@ -21,7 +23,8 @@ test UnsignedHighBitsAndWidths {
     Assert.Equal(1_u64, high % 2_u64, "u64 unsigned remainder");
 }
 
-test Float32ArithmeticUsesItsOwnWidth {
+test Float32ArithmeticUsesItsOwnWidth
+{
     f32 value = 16777216.0_f32;
     Assert.Equal(value, value + 1.0_f32, "f32 rounding distinct from f64");
     f32 fraction = 1.5_f32;

@@ -1,4 +1,5 @@
-i64 Main() {
+i64 Main()
+{
     i64 x = this_identifier_does_not_exist;
     return 0;
 }

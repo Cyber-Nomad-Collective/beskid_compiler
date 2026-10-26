@@ -9,12 +9,19 @@ const SCHEDULER_PENDING_WAKES_OFFSET = 96;
 const PENDING_SPAWN_ENTRY_SIZE = 40;
 
 // Enqueue a pending spawn (applied at next scheduling step).
-pub bool PendingSpawnEnqueue(word entry, word arg, word cancelSlot, word parent) {
+pub bool PendingSpawnEnqueue(word entry, word arg, word cancelSlot, word parent)
+{
     pointer table = SchedTable();
-    if table == NativePointer(0) { return false; }
+    if (table == NativePointer(0))
+    {
+        return false;
+    }
     pointer spawns = pointer_add(table, SCHEDULER_PENDING_SPAWNS_OFFSET);
     word count = VecCount(spawns);
-    if !VecReserve(spawns, PENDING_SPAWN_ENTRY_SIZE, count + 1) { return false; }
+    if (!VecReserve(spawns, PENDING_SPAWN_ENTRY_SIZE, count + 1))
+    {
+        return false;
+    }
     pointer slot = pointer_add(VecData(spawns), count * PENDING_SPAWN_ENTRY_SIZE);
     raw_word_store(slot, entry);
     raw_word_store(pointer_add(slot, 8), arg);
@@ -26,20 +33,26 @@ pub bool PendingSpawnEnqueue(word entry, word arg, word cancelSlot, word parent)
 }
 
 // Apply all pending spawns.
-pub unit ApplyPendingSpawns() {
+pub unit ApplyPendingSpawns()
+{
     pointer table = SchedTable();
-    if table == NativePointer(0) { return; }
+    if (table == NativePointer(0))
+    {
+        return;
+    }
     pointer spawns = pointer_add(table, SCHEDULER_PENDING_SPAWNS_OFFSET);
     word count = VecCount(spawns);
     mut word i = 0;
-    while i < count {
+    while (i < count)
+    {
         pointer slot = pointer_add(VecData(spawns), i * PENDING_SPAWN_ENTRY_SIZE);
         word entry = raw_word_load(slot);
         word arg = raw_word_load(pointer_add(slot, 8));
         word cancelSlot = raw_word_load(pointer_add(slot, 16));
         word parent = raw_word_load(pointer_add(slot, 24));
         word idx = FiberAlloc(entry, arg, cancelSlot, parent);
-        if idx != FIBER_NONE {
+        if (idx != FIBER_NONE)
+        {
             RunQueuePush(idx);
         }
         i = i + 1;
@@ -49,27 +62,43 @@ pub unit ApplyPendingSpawns() {
 }
 
 // Enqueue a pending cancel.
-pub unit PendingCancelEnqueue(word fiberIndex) {
-    if !FiberExists(fiberIndex) { return; }
+pub unit PendingCancelEnqueue(word fiberIndex)
+{
+    if (!FiberExists(fiberIndex))
+    {
+        return;
+    }
     word handle = FiberHandle(fiberIndex);
     pointer table = SchedTable();
-    if table == NativePointer(0) { return; }
-    if !VecPushWordUnique(pointer_add(table, SCHEDULER_PENDING_CANCELS_OFFSET), handle) { Trap(5, NativePointer(0), 0); }
+    if (table == NativePointer(0))
+    {
+        return;
+    }
+    if (!VecPushWordUnique(pointer_add(table, SCHEDULER_PENDING_CANCELS_OFFSET), handle))
+    {
+        Trap(5, NativePointer(0), 0);
+    }
     return;
 }
 
 // Apply all pending cancels.
-pub unit ApplyPendingCancels() {
+pub unit ApplyPendingCancels()
+{
     pointer table = SchedTable();
-    if table == NativePointer(0) { return; }
+    if (table == NativePointer(0))
+    {
+        return;
+    }
     pointer cancels = pointer_add(table, SCHEDULER_PENDING_CANCELS_OFFSET);
     word count = VecCount(cancels);
     mut word i = 0;
-    while i < count {
+    while (i < count)
+    {
         word handle = VecWordAt(cancels, i);
         // A completed/consumed operation may leave a cancellation queued until
         // the next scheduler step. Never apply it to a reused record generation.
-        if FiberHandleValid(handle) {
+        if (FiberHandleValid(handle))
+        {
             word idx = FiberHandleIndex(handle);
             pointer fib = FiberRecord(idx);
             word state = FiberState(idx);
@@ -77,13 +106,21 @@ pub unit ApplyPendingCancels() {
             // Queued and parked fibers reach a cancellation point at this
             // scheduler step. A running fiber observes the same flag when it
             // next yields or returns through its real target context path.
-            if ExternalCancelFiber(handle) {
+            if (ExternalCancelFiber(handle))
+            {
                 // The operation's single winner owns wake and native cleanup.
-            } else if ChannelHasOperation(idx) {
+            }
+            else if (ChannelHasOperation(idx))
+            {
                 // An in-flight channel call must resolve its commit ownership and
                 // report Cancelled on its original stack before fiber completion.
-                if state == FIBER_STATE_PARKED { WakeEnqueue(idx); }
-            } else if state == FIBER_STATE_RUNNABLE || state == FIBER_STATE_PARKED {
+                if (state == FIBER_STATE_PARKED)
+                {
+                    WakeEnqueue(idx);
+                }
+            }
+            else if (state == FIBER_STATE_RUNNABLE || state == FIBER_STATE_PARKED)
+            {
                 raw_word_store(fib, FIBER_STATE_CANCELLED);
                 raw_word_store(pointer_add(fib, 48), FIBER_JOIN_CANCELLED);
                 raw_word_store(pointer_add(fib, 56), 0);
@@ -91,7 +128,10 @@ pub unit ApplyPendingCancels() {
                 // a local Core.Parallel task's fiber hands its cancellation to its task now
                 // (Runtime/Parallel/Isolates.bd), or the task would never become terminal.
                 IsolateObserveFiberFinished(idx);
-                if FiberExists(idx) && raw_byte_load(pointer_add(FiberRecord(idx), 40)) != 0 { FiberCleanup(idx); }
+                if (FiberExists(idx) && raw_byte_load(pointer_add(FiberRecord(idx), 40)) != 0)
+                {
+                    FiberCleanup(idx);
+                }
             }
         }
         i = i + 1;
@@ -102,23 +142,36 @@ pub unit ApplyPendingCancels() {
 
 // Enqueue a wake (fiber is ready to run again). A wake is never dropped: losing one would
 // park its fiber forever, so allocation failure here is a fatal out-of-memory trap.
-pub unit WakeEnqueue(word fiberIndex) {
+pub unit WakeEnqueue(word fiberIndex)
+{
     pointer table = SchedTable();
-    if table == NativePointer(0) { return; }
-    if !VecPushWordUnique(pointer_add(table, SCHEDULER_PENDING_WAKES_OFFSET), fiberIndex) { Trap(5, NativePointer(0), 0); }
+    if (table == NativePointer(0))
+    {
+        return;
+    }
+    if (!VecPushWordUnique(pointer_add(table, SCHEDULER_PENDING_WAKES_OFFSET), fiberIndex))
+    {
+        Trap(5, NativePointer(0), 0);
+    }
     return;
 }
 
 // Apply all pending wakes.
-pub unit ApplyPendingWakes() {
+pub unit ApplyPendingWakes()
+{
     pointer table = SchedTable();
-    if table == NativePointer(0) { return; }
+    if (table == NativePointer(0))
+    {
+        return;
+    }
     pointer wakes = pointer_add(table, SCHEDULER_PENDING_WAKES_OFFSET);
     word count = VecCount(wakes);
     mut word i = 0;
-    while i < count {
+    while (i < count)
+    {
         word idx = VecWordAt(wakes, i);
-        if FiberExists(idx) && FiberParked(idx) {
+        if (FiberExists(idx) && FiberParked(idx))
+        {
             FiberSetState(idx, FIBER_STATE_RUNNABLE);
             RunQueuePush(idx);
         }
@@ -129,7 +182,8 @@ pub unit ApplyPendingWakes() {
 }
 
 // Releases the deferred-operation vectors at scheduler shutdown.
-pub unit PendingQueuesShutdown(pointer table) {
+pub unit PendingQueuesShutdown(pointer table)
+{
     VecFree(pointer_add(table, SCHEDULER_PENDING_SPAWNS_OFFSET), PENDING_SPAWN_ENTRY_SIZE);
     VecFree(pointer_add(table, SCHEDULER_PENDING_CANCELS_OFFSET), 8);
     VecFree(pointer_add(table, SCHEDULER_PENDING_WAKES_OFFSET), 8);

@@ -71,36 +71,59 @@ const VISITED_ENTRY_SIZE = 16;
 // Walks the graph of `value` in the current heap into a new native record. Returns the record, or
 // null when an object is refused; then `refusedOut` (when not null) receives the descriptor
 // address that was refused. A null `value` produces a record whose root is null.
-pub pointer TransitCapture(pointer value, bool shareImmutable, pointer refusedOut) {
+pub pointer TransitCapture(pointer value, bool shareImmutable, pointer refusedOut)
+{
     pointer scratch = SystemAllocate(CAPTURE_SCRATCH_SIZE, 8);
-    if scratch == NativePointer(0) { Trap(5, NativePointer(0), 0); }
+    if (scratch == NativePointer(0))
+    {
+        Trap(5, NativePointer(0), 0);
+    }
     memory_set(scratch, 0, CAPTURE_SCRATCH_SIZE);
     raw_word_store(pointer_add(scratch, CAPTURE_HEAP), NativeWord(Heap()));
-    if shareImmutable { raw_word_store(pointer_add(scratch, CAPTURE_SHARE_IMMUTABLE), 1); }
+    if (shareImmutable)
+    {
+        raw_word_store(pointer_add(scratch, CAPTURE_SHARE_IMMUTABLE), 1);
+    }
     pointer record = SystemAllocate(TRANSIT_INITIAL_SIZE, 8);
-    if record == NativePointer(0) { Trap(5, NativePointer(0), 0); }
+    if (record == NativePointer(0))
+    {
+        Trap(5, NativePointer(0), 0);
+    }
     memory_set(record, 0, TRANSIT_HEADER);
     raw_word_store(pointer_add(record, TRANSIT_SIZE), TRANSIT_INITIAL_SIZE);
     raw_word_store(pointer_add(record, TRANSIT_USED), TRANSIT_HEADER);
     raw_word_store(pointer_add(scratch, CAPTURE_RECORD), NativeWord(record));
     raw_word_store(pointer_add(scratch, CAPTURE_VISITED_CAPACITY), 64);
     pointer visited = SystemAllocate(64 * VISITED_ENTRY_SIZE, 8);
-    if visited == NativePointer(0) { Trap(5, NativePointer(0), 0); }
+    if (visited == NativePointer(0))
+    {
+        Trap(5, NativePointer(0), 0);
+    }
     memory_set(visited, 0, 64 * VISITED_ENTRY_SIZE);
     raw_word_store(pointer_add(scratch, CAPTURE_VISITED), NativeWord(visited));
     word root = TransitEncode(scratch, value);
     mut word next = 0;
     mut bool refused = root == TRANSIT_REFUSED;
-    while !refused && next < raw_word_load(pointer_add(scratch, CAPTURE_OBJECT_COUNT)) {
-        if TransitWriteImage(scratch, next) == false { refused = true; }
+    while (!refused && next < raw_word_load(pointer_add(scratch, CAPTURE_OBJECT_COUNT)))
+    {
+        if (TransitWriteImage(scratch, next) == false)
+        {
+            refused = true;
+        }
         next = next + 1;
     }
     mut pointer result = NativePointer(raw_word_load(pointer_add(scratch, CAPTURE_RECORD)));
-    if refused {
-        if refusedOut != NativePointer(0) { raw_word_store(refusedOut, raw_word_load(pointer_add(scratch, CAPTURE_REFUSED))); }
+    if (refused)
+    {
+        if (refusedOut != NativePointer(0))
+        {
+            raw_word_store(refusedOut, raw_word_load(pointer_add(scratch, CAPTURE_REFUSED)));
+        }
         TransitFree(result);
         result = NativePointer(0);
-    } else {
+    }
+    else
+    {
         raw_word_store(pointer_add(result, TRANSIT_COUNT), raw_word_load(pointer_add(scratch, CAPTURE_OBJECT_COUNT)));
         raw_word_store(pointer_add(result, TRANSIT_ROOT), root);
     }
@@ -108,48 +131,72 @@ pub pointer TransitCapture(pointer value, bool shareImmutable, pointer refusedOu
     return result;
 }
 
-pub unit TransitCaptureScratchFree(pointer scratch) {
+pub unit TransitCaptureScratchFree(pointer scratch)
+{
     word objectCapacity = raw_word_load(pointer_add(scratch, CAPTURE_OBJECT_CAPACITY));
-    if objectCapacity != 0 { SystemFree(NativePointer(raw_word_load(pointer_add(scratch, CAPTURE_OBJECTS))), objectCapacity * 8); }
-    SystemFree(NativePointer(raw_word_load(pointer_add(scratch, CAPTURE_VISITED))),
-        raw_word_load(pointer_add(scratch, CAPTURE_VISITED_CAPACITY)) * VISITED_ENTRY_SIZE);
+    if (objectCapacity != 0)
+    {
+        SystemFree(NativePointer(raw_word_load(pointer_add(scratch, CAPTURE_OBJECTS))), objectCapacity * 8);
+    }
+    SystemFree(NativePointer(raw_word_load(pointer_add(scratch, CAPTURE_VISITED))), raw_word_load(pointer_add(scratch, CAPTURE_VISITED_CAPACITY)) * VISITED_ENTRY_SIZE);
     SystemFree(scratch, CAPTURE_SCRATCH_SIZE);
     return;
 }
 
 // Frees a record produced by `TransitCapture`.
-pub unit TransitFree(pointer record) {
-    if record == NativePointer(0) { return; }
+pub unit TransitFree(pointer record)
+{
+    if (record == NativePointer(0))
+    {
+        return;
+    }
     SystemFree(record, raw_word_load(pointer_add(record, TRANSIT_SIZE)));
     return;
 }
 
-pub word TransitVisitedSlot(pointer visited, word capacity, word object) {
+pub word TransitVisitedSlot(pointer visited, word capacity, word object)
+{
     mut word index = (((object >> 3) * 0x9E3779B97F4A7C15) >> 20) & (capacity - 1);
-    while true {
+    while (true)
+    {
         word key = raw_word_load(pointer_add(visited, index * VISITED_ENTRY_SIZE));
-        if key == 0 || key == object { return index; }
+        if (key == 0 || key == object)
+        {
+            return index;
+        }
         index = (index + 1) & (capacity - 1);
     }
     return 0;
 }
 
 // Record index of `object`, appending it to the walk when it is new.
-pub word TransitIntern(pointer scratch, word object) {
+pub word TransitIntern(pointer scratch, word object)
+{
     mut pointer visited = NativePointer(raw_word_load(pointer_add(scratch, CAPTURE_VISITED)));
     mut word capacity = raw_word_load(pointer_add(scratch, CAPTURE_VISITED_CAPACITY));
     word slot = TransitVisitedSlot(visited, capacity, object);
     pointer entry = pointer_add(visited, slot * VISITED_ENTRY_SIZE);
-    if raw_word_load(entry) == object { return raw_word_load(pointer_add(entry, 8)) - 1; }
+    if (raw_word_load(entry) == object)
+    {
+        return raw_word_load(pointer_add(entry, 8)) - 1;
+    }
     word count = raw_word_load(pointer_add(scratch, CAPTURE_OBJECT_COUNT));
     // Objects vector growth.
     word objectCapacity = raw_word_load(pointer_add(scratch, CAPTURE_OBJECT_CAPACITY));
-    if count == objectCapacity {
+    if (count == objectCapacity)
+    {
         mut word grown = objectCapacity * 2;
-        if grown == 0 { grown = 32; }
+        if (grown == 0)
+        {
+            grown = 32;
+        }
         pointer objects = SystemAllocate(grown * 8, 8);
-        if objects == NativePointer(0) { Trap(5, NativePointer(0), 0); }
-        if objectCapacity != 0 {
+        if (objects == NativePointer(0))
+        {
+            Trap(5, NativePointer(0), 0);
+        }
+        if (objectCapacity != 0)
+        {
             pointer old = NativePointer(raw_word_load(pointer_add(scratch, CAPTURE_OBJECTS)));
             memory_copy(objects, old, objectCapacity * 8);
             SystemFree(old, objectCapacity * 8);
@@ -162,16 +209,22 @@ pub word TransitIntern(pointer scratch, word object) {
     raw_word_store(entry, object);
     raw_word_store(pointer_add(entry, 8), count + 1);
     // Visited table growth at half occupancy.
-    if (count + 1) * 2 > capacity {
+    if ((count + 1) * 2 > capacity)
+    {
         word grownCapacity = capacity * 2;
         pointer grownTable = SystemAllocate(grownCapacity * VISITED_ENTRY_SIZE, 8);
-        if grownTable == NativePointer(0) { Trap(5, NativePointer(0), 0); }
+        if (grownTable == NativePointer(0))
+        {
+            Trap(5, NativePointer(0), 0);
+        }
         memory_set(grownTable, 0, grownCapacity * VISITED_ENTRY_SIZE);
         mut word index = 0;
-        while index < capacity {
+        while (index < capacity)
+        {
             pointer old = pointer_add(visited, index * VISITED_ENTRY_SIZE);
             word key = raw_word_load(old);
-            if key != 0 {
+            if (key != 0)
+            {
                 word target = TransitVisitedSlot(grownTable, grownCapacity, key);
                 raw_word_store(pointer_add(grownTable, target * VISITED_ENTRY_SIZE), key);
                 raw_word_store(pointer_add(grownTable, target * VISITED_ENTRY_SIZE + 8), raw_word_load(pointer_add(old, 8)));
@@ -187,27 +240,36 @@ pub word TransitIntern(pointer scratch, word object) {
 
 // Encodes one reference of the source graph. Returns `TRANSIT_REFUSED` for a refused
 // object, after recording its descriptor.
-pub word TransitEncode(pointer scratch, pointer value) {
-    if value == NativePointer(0) { return 0; }
+pub word TransitEncode(pointer scratch, pointer value)
+{
+    if (value == NativePointer(0))
+    {
+        return 0;
+    }
     pointer heap = NativePointer(raw_word_load(pointer_add(scratch, CAPTURE_HEAP)));
     pointer object = ManagedObjectForReference(heap, value);
-    if object == NativePointer(0) {
-        if NativeWord(value) % 8 != 0 {
+    if (object == NativePointer(0))
+    {
+        if (NativeWord(value) % 8 != 0)
+        {
             raw_word_store(pointer_add(scratch, CAPTURE_REFUSED), 0);
             return TRANSIT_REFUSED;
         }
         return NativeWord(value);
     }
     pointer descriptor = NativePointer(raw_word_load(object));
-    if ValidateTypeDescriptor(descriptor) == false {
+    if (ValidateTypeDescriptor(descriptor) == false)
+    {
         raw_word_store(pointer_add(scratch, CAPTURE_REFUSED), NativeWord(descriptor));
         return TRANSIT_REFUSED;
     }
-    if raw_word_load(pointer_add(scratch, CAPTURE_SHARE_IMMUTABLE)) != 0 && TypeDescriptorIsImmutable(descriptor) {
+    if (raw_word_load(pointer_add(scratch, CAPTURE_SHARE_IMMUTABLE)) != 0 && TypeDescriptorIsImmutable(descriptor))
+    {
         return NativeWord(value);
     }
     word delta = NativeWord(value) - NativeWord(object);
-    if delta != 0 && delta != 24 {
+    if (delta != 0 && delta != 24)
+    {
         raw_word_store(pointer_add(scratch, CAPTURE_REFUSED), NativeWord(descriptor));
         return TRANSIT_REFUSED;
     }
@@ -216,15 +278,25 @@ pub word TransitEncode(pointer scratch, pointer value) {
 }
 
 // Ensures `extra` more bytes in the record, which may move; returns the record.
-pub pointer TransitReserve(pointer scratch, word extra) {
+pub pointer TransitReserve(pointer scratch, word extra)
+{
     pointer record = NativePointer(raw_word_load(pointer_add(scratch, CAPTURE_RECORD)));
     word size = raw_word_load(pointer_add(record, TRANSIT_SIZE));
     word used = raw_word_load(pointer_add(record, TRANSIT_USED));
-    if used + extra <= size { return record; }
+    if (used + extra <= size)
+    {
+        return record;
+    }
     mut word grown = size * 2;
-    while grown < used + extra { grown = grown * 2; }
+    while (grown < used + extra)
+    {
+        grown = grown * 2;
+    }
     pointer moved = SystemAllocate(grown, 8);
-    if moved == NativePointer(0) { Trap(5, NativePointer(0), 0); }
+    if (moved == NativePointer(0))
+    {
+        Trap(5, NativePointer(0), 0);
+    }
     memory_copy(moved, record, used);
     raw_word_store(pointer_add(moved, TRANSIT_SIZE), grown);
     SystemFree(record, size);
@@ -233,11 +305,13 @@ pub pointer TransitReserve(pointer scratch, word extra) {
 }
 
 // Writes the image of walk entry `index`. Returns false on a refusal.
-pub bool TransitWriteImage(pointer scratch, word index) {
+pub bool TransitWriteImage(pointer scratch, word index)
+{
     pointer object = NativePointer(raw_word_load(pointer_add(NativePointer(raw_word_load(pointer_add(scratch, CAPTURE_OBJECTS))), index * 8)));
     pointer descriptor = NativePointer(raw_word_load(object));
     word size = ManagedObjectSize(object, descriptor);
-    if size < 16 || size % 8 != 0 {
+    if (size < 16 || size % 8 != 0)
+    {
         raw_word_store(pointer_add(scratch, CAPTURE_REFUSED), NativeWord(descriptor));
         return false;
     }
@@ -246,20 +320,24 @@ pub bool TransitWriteImage(pointer scratch, word index) {
     mut word stride = 0;
     mut pointer elementMap = NativePointer(0);
     mut word elementPointers = 0;
-    if kind == TYPE_DESCRIPTOR_ARRAY {
+    if (kind == TYPE_DESCRIPTOR_ARRAY)
+    {
         pointer element = NativePointer(raw_word_load(pointer_add(object, 16)));
         length = raw_word_load(pointer_add(object, 32));
         stride = raw_word_load(element);
         elementMap = NativePointer(raw_word_load(pointer_add(element, 16)));
         elementPointers = raw_word_load(pointer_add(element, 24));
-        if length > raw_word_load(pointer_add(object, 40)) {
+        if (length > raw_word_load(pointer_add(object, 40)))
+        {
             raw_word_store(pointer_add(scratch, CAPTURE_REFUSED), NativeWord(descriptor));
             return false;
         }
         mut word mapIndex = 0;
-        while mapIndex < elementPointers {
+        while (mapIndex < elementPointers)
+        {
             word offset = raw_word_load(pointer_add(elementMap, mapIndex * 8));
-            if offset % 8 != 0 || offset + 8 < offset || offset + 8 > stride {
+            if (offset % 8 != 0 || offset + 8 < offset || offset + 8 > stride)
+            {
                 raw_word_store(pointer_add(scratch, CAPTURE_REFUSED), NativeWord(descriptor));
                 return false;
             }
@@ -276,18 +354,27 @@ pub bool TransitWriteImage(pointer scratch, word index) {
     memory_copy(pointer_add(image, IMAGE_HEADER), pointer_add(object, 16), size - 16);
     // `TransitEncode` may grow the record; image addresses are re-derived after each call. Field
     // `f` of the object lives at image + IMAGE_HEADER + f - 16.
-    if kind == TYPE_DESCRIPTOR_ARRAY {
+    if (kind == TYPE_DESCRIPTOR_ARRAY)
+    {
         raw_word_store(pointer_add(image, IMAGE_HEADER + 24 - 16), 0);
         // Slots past `length` are never traced; they are not copied.
         word liveEnd = 48 + length * stride;
-        if size > liveEnd { memory_set(pointer_add(image, IMAGE_HEADER + liveEnd - 16), 0, size - liveEnd); }
+        if (size > liveEnd)
+        {
+            memory_set(pointer_add(image, IMAGE_HEADER + liveEnd - 16), 0, size - liveEnd);
+        }
         mut word element = 0;
-        while element < length {
+        while (element < length)
+        {
             mut word mapIndex = 0;
-            while mapIndex < elementPointers {
+            while (mapIndex < elementPointers)
+            {
                 word field = 48 + element * stride + raw_word_load(pointer_add(elementMap, mapIndex * 8));
                 word encoded = TransitEncode(scratch, NativePointer(raw_word_load(pointer_add(object, field))));
-                if encoded == TRANSIT_REFUSED { return false; }
+                if (encoded == TRANSIT_REFUSED)
+                {
+                    return false;
+                }
                 record = NativePointer(raw_word_load(pointer_add(scratch, CAPTURE_RECORD)));
                 raw_word_store(pointer_add(record, imageOffset + IMAGE_HEADER + field - 16), encoded);
                 mapIndex = mapIndex + 1;
@@ -296,16 +383,21 @@ pub bool TransitWriteImage(pointer scratch, word index) {
         }
         return true;
     }
-    if kind == TYPE_DESCRIPTOR_UTF8_VIEW {
+    if (kind == TYPE_DESCRIPTOR_UTF8_VIEW)
+    {
         raw_word_store(pointer_add(image, IMAGE_HEADER + 24 - 16), 0);
     }
     pointer pointerMap = TypeDescriptorPointerMap(descriptor);
     word pointerCount = TypeDescriptorPointerCount(descriptor);
     mut word mapIndex = 0;
-    while mapIndex < pointerCount {
+    while (mapIndex < pointerCount)
+    {
         word field = raw_word_load(pointer_add(pointerMap, mapIndex * 8));
         word encoded = TransitEncode(scratch, NativePointer(raw_word_load(pointer_add(object, field))));
-        if encoded == TRANSIT_REFUSED { return false; }
+        if (encoded == TRANSIT_REFUSED)
+        {
+            return false;
+        }
         record = NativePointer(raw_word_load(pointer_add(scratch, CAPTURE_RECORD)));
         raw_word_store(pointer_add(record, imageOffset + IMAGE_HEADER + field - 16), encoded);
         mapIndex = mapIndex + 1;
@@ -319,37 +411,54 @@ pub bool TransitWriteImage(pointer scratch, word index) {
 // `rootSlot`, a native word that this function registers as a GC root; the caller unregisters it
 // (`GcUnregisterRoot(rootSlot)`) once the root is reachable otherwise. Returns false only when a
 // root could not be registered. The record is not freed.
-pub bool TransitMaterialize(pointer record, pointer rootSlot) {
+pub bool TransitMaterialize(pointer record, pointer rootSlot)
+{
     raw_word_store(rootSlot, 0);
-    if GcRegisterRoot(rootSlot) == false { return false; }
+    if (GcRegisterRoot(rootSlot) == false)
+    {
+        return false;
+    }
     word count = raw_word_load(pointer_add(record, TRANSIT_COUNT));
-    if count == 0 {
+    if (count == 0)
+    {
         raw_word_store(rootSlot, raw_word_load(pointer_add(record, TRANSIT_ROOT)));
         return true;
     }
     pointer slots = SystemAllocate(count * 16, 8);
-    if slots == NativePointer(0) { Trap(5, NativePointer(0), 0); }
+    if (slots == NativePointer(0))
+    {
+        Trap(5, NativePointer(0), 0);
+    }
     memory_set(slots, 0, count * 16);
     // Word `2i` holds object `i` (a registered root), word `2i + 1` its image offset.
     mut word index = 0;
     mut word cursor = TRANSIT_HEADER;
-    while index < count {
+    while (index < count)
+    {
         raw_word_store(pointer_add(slots, index * 16 + 8), cursor);
         cursor = cursor + IMAGE_HEADER + raw_word_load(pointer_add(record, cursor + IMAGE_SIZE)) - 16;
-        if GcRegisterRoot(pointer_add(slots, index * 16)) == false { Trap(5, NativePointer(0), 0); }
+        if (GcRegisterRoot(pointer_add(slots, index * 16)) == false)
+        {
+            Trap(5, NativePointer(0), 0);
+        }
         index = index + 1;
     }
     // Pass 1: allocate. Each allocation may collect; every object allocated so far is rooted and
     // traceable (zeroed fields; an array has its element descriptor and an empty length).
     index = 0;
-    while index < count {
+    while (index < count)
+    {
         pointer image = pointer_add(record, raw_word_load(pointer_add(slots, index * 16 + 8)));
         pointer descriptor = NativePointer(raw_word_load(pointer_add(image, IMAGE_DESCRIPTOR)));
         word size = raw_word_load(pointer_add(image, IMAGE_SIZE));
         pointer object = GcAlloc(size, raw_word_load(pointer_add(image, IMAGE_ALIGNMENT)));
-        if object == NativePointer(0) { Trap(5, NativePointer(0), 0); }
+        if (object == NativePointer(0))
+        {
+            Trap(5, NativePointer(0), 0);
+        }
         InitializeObjectHeader(object, descriptor);
-        if (TypeDescriptorFlags(descriptor) & TYPE_DESCRIPTOR_KIND_MASK) == TYPE_DESCRIPTOR_ARRAY {
+        if ((TypeDescriptorFlags(descriptor) & TYPE_DESCRIPTOR_KIND_MASK) == TYPE_DESCRIPTOR_ARRAY)
+        {
             raw_word_store(pointer_add(object, 16), raw_word_load(pointer_add(image, IMAGE_HEADER + 16 - 16)));
             raw_word_store(pointer_add(object, 24), NativeWord(object) + 48);
             raw_word_store(pointer_add(object, 40), raw_word_load(pointer_add(image, IMAGE_HEADER + 40 - 16)));
@@ -361,19 +470,23 @@ pub bool TransitMaterialize(pointer record, pointer rootSlot) {
     // goes through the hybrid barrier because a black object may receive a white target while the
     // heap is marking.
     index = 0;
-    while index < count {
+    while (index < count)
+    {
         pointer image = pointer_add(record, raw_word_load(pointer_add(slots, index * 16 + 8)));
         pointer object = NativePointer(raw_word_load(pointer_add(slots, index * 16)));
         pointer descriptor = NativePointer(raw_word_load(object));
         word size = raw_word_load(pointer_add(image, IMAGE_SIZE));
         word kind = TypeDescriptorFlags(descriptor) & TYPE_DESCRIPTOR_KIND_MASK;
-        if kind == TYPE_DESCRIPTOR_ARRAY {
+        if (kind == TYPE_DESCRIPTOR_ARRAY)
+        {
             // Element descriptor, data word and capacity are already in place; length and the
             // elements follow, then the element pointers are decoded.
             memory_copy(pointer_add(object, 48), pointer_add(image, IMAGE_HEADER + 48 - 16), size - 48);
             raw_word_store(pointer_add(object, 32), raw_word_load(pointer_add(image, IMAGE_HEADER + 32 - 16)));
             TransitDecodeArray(slots, image, object);
-        } else {
+        }
+        else
+        {
             memory_copy(pointer_add(object, 16), pointer_add(image, IMAGE_HEADER), size - 16);
             TransitDecodeAggregate(slots, image, object, descriptor);
         }
@@ -381,18 +494,24 @@ pub bool TransitMaterialize(pointer record, pointer rootSlot) {
     }
     // Pass 3: a view's data word is its (now copied) backing array's data word.
     index = 0;
-    while index < count {
+    while (index < count)
+    {
         pointer object = NativePointer(raw_word_load(pointer_add(slots, index * 16)));
         pointer descriptor = NativePointer(raw_word_load(object));
-        if (TypeDescriptorFlags(descriptor) & TYPE_DESCRIPTOR_KIND_MASK) == TYPE_DESCRIPTOR_UTF8_VIEW {
+        if ((TypeDescriptorFlags(descriptor) & TYPE_DESCRIPTOR_KIND_MASK) == TYPE_DESCRIPTOR_UTF8_VIEW)
+        {
             pointer payload = NativePointer(raw_word_load(pointer_add(object, 16)));
-            if payload != NativePointer(0) { raw_word_store(pointer_add(object, 24), raw_word_load(payload)); }
+            if (payload != NativePointer(0))
+            {
+                raw_word_store(pointer_add(object, 24), raw_word_load(payload));
+            }
         }
         index = index + 1;
     }
     raw_word_store(rootSlot, TransitDecode(slots, raw_word_load(pointer_add(record, TRANSIT_ROOT))));
     index = count;
-    while index > 0 {
+    while (index > 0)
+    {
         index = index - 1;
         GcUnregisterRoot(pointer_add(slots, index * 16));
     }
@@ -400,30 +519,41 @@ pub bool TransitMaterialize(pointer record, pointer rootSlot) {
     return true;
 }
 
-pub word TransitDecode(pointer slots, word encoded) {
-    if (encoded & 1) == 0 { return encoded; }
+pub word TransitDecode(pointer slots, word encoded)
+{
+    if ((encoded & 1) == 0)
+    {
+        return encoded;
+    }
     return raw_word_load(pointer_add(slots, (encoded >> 6) * 16)) + (encoded & 0x3E);
 }
 
 // Stores one decoded pointer field: the slot is cleared first so the barrier never shades an
 // encoded word.
-pub unit TransitStoreField(pointer field, word value) {
+pub unit TransitStoreField(pointer field, word value)
+{
     raw_word_store(field, 0);
-    if value != 0 { GcHybridWriteBarrier(field, NativePointer(value)); }
+    if (value != 0)
+    {
+        GcHybridWriteBarrier(field, NativePointer(value));
+    }
     raw_word_store(field, value);
     return;
 }
 
-pub unit TransitDecodeArray(pointer slots, pointer image, pointer object) {
+pub unit TransitDecodeArray(pointer slots, pointer image, pointer object)
+{
     pointer element = NativePointer(raw_word_load(pointer_add(object, 16)));
     word stride = raw_word_load(element);
     pointer elementMap = NativePointer(raw_word_load(pointer_add(element, 16)));
     word elementPointers = raw_word_load(pointer_add(element, 24));
     word length = raw_word_load(pointer_add(object, 32));
     mut word index = 0;
-    while index < length {
+    while (index < length)
+    {
         mut word mapIndex = 0;
-        while mapIndex < elementPointers {
+        while (mapIndex < elementPointers)
+        {
             word field = 48 + index * stride + raw_word_load(pointer_add(elementMap, mapIndex * 8));
             TransitStoreField(pointer_add(object, field), TransitDecode(slots, raw_word_load(pointer_add(image, IMAGE_HEADER + field - 16))));
             mapIndex = mapIndex + 1;
@@ -433,11 +563,13 @@ pub unit TransitDecodeArray(pointer slots, pointer image, pointer object) {
     return;
 }
 
-pub unit TransitDecodeAggregate(pointer slots, pointer image, pointer object, pointer descriptor) {
+pub unit TransitDecodeAggregate(pointer slots, pointer image, pointer object, pointer descriptor)
+{
     pointer pointerMap = TypeDescriptorPointerMap(descriptor);
     word pointerCount = TypeDescriptorPointerCount(descriptor);
     mut word mapIndex = 0;
-    while mapIndex < pointerCount {
+    while (mapIndex < pointerCount)
+    {
         word field = raw_word_load(pointer_add(pointerMap, mapIndex * 8));
         TransitStoreField(pointer_add(object, field), TransitDecode(slots, raw_word_load(pointer_add(image, IMAGE_HEADER + field - 16))));
         mapIndex = mapIndex + 1;
@@ -448,10 +580,17 @@ pub unit TransitDecodeAggregate(pointer slots, pointer image, pointer object, po
 // Allocates the graph of `record` in the current heap and returns its root reference, which is
 // unrooted on return: the caller stores it into a rooted location before its next allocation.
 // Used where the result is published immediately (an ABI value slot).
-pub pointer TransitMaterializeValue(pointer record) {
+pub pointer TransitMaterializeValue(pointer record)
+{
     pointer cell = SystemAllocate(8, 8);
-    if cell == NativePointer(0) { Trap(5, NativePointer(0), 0); }
-    if TransitMaterialize(record, cell) == false { Trap(5, NativePointer(0), 0); }
+    if (cell == NativePointer(0))
+    {
+        Trap(5, NativePointer(0), 0);
+    }
+    if (TransitMaterialize(record, cell) == false)
+    {
+        Trap(5, NativePointer(0), 0);
+    }
     pointer value = NativePointer(raw_word_load(cell));
     GcUnregisterRoot(cell);
     SystemFree(cell, 8);

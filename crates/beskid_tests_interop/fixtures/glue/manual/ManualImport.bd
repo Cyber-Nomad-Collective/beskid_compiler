@@ -1,6 +1,7 @@
 // Manual local C ABI calls; bridge wire values never contain these pointers.
-[Extern(Abi:"C", Library:"glue_manual")]
-pub contract Foreign {
+[Extern(Abi: "C", Library: "glue_manual")]
+pub contract Foreign
+{
     i8 glue_i8(i8 value);
     i16 glue_i16(i16 value);
     i32 glue_i32(i32 value);
@@ -22,20 +23,89 @@ pub contract Foreign {
     u32 glue_release(u64 token);
     u32 glue_failure(u32 mode);
 }
-pub i8 ImportI8(i8 value) { return Foreign.glue_i8(value); }
-pub i16 ImportI16(i16 value) { return Foreign.glue_i16(value); }
-pub i32 ImportI32(i32 value) { return Foreign.glue_i32(value); }
-pub i64 ImportI64(i64 value) { return Foreign.glue_i64(value); }
-pub u8 ImportU8(u8 value) { return Foreign.glue_u8(value); }
-pub u16 ImportU16(u16 value) { return Foreign.glue_u16(value); }
-pub u32 ImportU32(u32 value) { return Foreign.glue_u32(value); }
-pub u64 ImportU64(u64 value) { return Foreign.glue_u64(value); }
-pub f32 ImportF32(f32 value) { return Foreign.glue_f32(value); }
-pub f64 ImportF64(f64 value) { return Foreign.glue_f64(value); }
-pub u32 ImportBool(u8 value) { return Foreign.glue_bool(value); }
-pub u32 ImportChar(u32 value) { return Foreign.glue_char(value); }
-pub u32 ImportUtf8(pointer data, word length) { return Foreign.glue_utf8(data, length); }
-pub u32 ImportBytes(pointer data, word length) { return Foreign.glue_bytes(data, length); }
-pub unit ImportUnit() { Foreign.glue_unit(); return; }
-pub u32 ImportHandle(u64 token, u64 session, u64 shape) { return Foreign.glue_handle(token, session, shape); }
-pub u32 ImportNativeWidth(word value, u32 bits) { return Foreign.glue_native_width(value, bits); }
+
+pub i8 ImportI8(i8 value)
+{
+    return Foreign.glue_i8(value);
+}
+
+pub i16 ImportI16(i16 value)
+{
+    return Foreign.glue_i16(value);
+}
+
+pub i32 ImportI32(i32 value)
+{
+    return Foreign.glue_i32(value);
+}
+
+pub i64 ImportI64(i64 value)
+{
+    return Foreign.glue_i64(value);
+}
+
+pub u8 ImportU8(u8 value)
+{
+    return Foreign.glue_u8(value);
+}
+
+pub u16 ImportU16(u16 value)
+{
+    return Foreign.glue_u16(value);
+}
+
+pub u32 ImportU32(u32 value)
+{
+    return Foreign.glue_u32(value);
+}
+
+pub u64 ImportU64(u64 value)
+{
+    return Foreign.glue_u64(value);
+}
+
+pub f32 ImportF32(f32 value)
+{
+    return Foreign.glue_f32(value);
+}
+
+pub f64 ImportF64(f64 value)
+{
+    return Foreign.glue_f64(value);
+}
+
+pub u32 ImportBool(u8 value)
+{
+    return Foreign.glue_bool(value);
+}
+
+pub u32 ImportChar(u32 value)
+{
+    return Foreign.glue_char(value);
+}
+
+pub u32 ImportUtf8(pointer data, word length)
+{
+    return Foreign.glue_utf8(data, length);
+}
+
+pub u32 ImportBytes(pointer data, word length)
+{
+    return Foreign.glue_bytes(data, length);
+}
+
+pub unit ImportUnit()
+{
+    Foreign.glue_unit();
+    return;
+}
+
+pub u32 ImportHandle(u64 token, u64 session, u64 shape)
+{
+    return Foreign.glue_handle(token, session, shape);
+}
+
+pub u32 ImportNativeWidth(word value, u32 bits)
+{
+    return Foreign.glue_native_width(value, bits);
+}
