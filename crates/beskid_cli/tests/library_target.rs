@@ -257,3 +257,79 @@ fn entry_less_library_exports_declarations_from_every_own_unit() {
     require_staged_runtime_prefix();
     assert_entry_less_library_builds(&entry_less_library_case(), &[None, Some("static")]);
 }
+
+/// An event declared after a value field is raised and subscribed from its own type. The event
+/// operation selects the event among the type's event fields only; counting the value field
+/// before it found no event and the raise reached ordinary call lowering (E2102).
+#[test]
+fn library_raises_an_event_declared_after_a_value_field() {
+    let case = LibraryCase::new(
+        "pub type Size { pub i32 columns; }\n\
+         pub type Resizer {\n\
+         \x20   pub Size lastSize;\n\
+         \x20   pub i32 count;\n\
+         \x20   event{16} Resized(Size size);\n\
+         \x20   event{4} Counted(i32 value);\n\
+         \x20   pub unit Raise(Size size) {\n\
+         \x20       this.Resized(size);\n\
+         \x20       this.Counted(this.count);\n\
+         \x20       return;\n\
+         \x20   }\n\
+         }\n\
+         pub unit Subscribe(mut Resizer hub, unit(Size) handler) {\n\
+         \x20   hub.Resized += handler;\n\
+         \x20   return;\n\
+         }\n",
+    );
+    let (output, artifact) = case.build(Some("object"));
+    assert!(output.status.success(), "event raise after a value field failed: {}", text(&output));
+    assert!(artifact.is_file(), "library object was not emitted: {}", text(&output));
+}
+
+/// A call to a callable with a contract-typed parameter infers its specialization from every
+/// argument; an argument of a non-generic parameter whose type only the parameter proves (a
+/// unit enum variant path) takes the declared parameter type instead of failing (E2102).
+#[test]
+fn library_passes_an_enum_variant_beside_a_contract_parameter() {
+    let case = LibraryCase::new(
+        "pub enum Role { Request, Response, }\n\
+         pub enum Mode { Plain(), Framed(), }\n\
+         pub contract Sink { i64 Put(i64 value); }\n\
+         i64 Read(Sink sink, Role role, Mode mode) { return 1_i64; }\n\
+         pub i64 Serve(Sink sink) {\n\
+         \x20   i64 first = Read(sink, Role::Request, Mode::Framed());\n\
+         \x20   return first + Read(sink, Role::Response, Mode::Plain);\n\
+         }\n",
+    );
+    let (output, artifact) = case.build(Some("object"));
+    assert!(output.status.success(), "enum variant beside a contract argument failed: {}", text(&output));
+    assert!(artifact.is_file(), "library object was not emitted: {}", text(&output));
+}
+
+/// A generic enum constructor written without type arguments, passed to a generic `T` parameter
+/// that an earlier argument binds (`Put(issued, Outcome::Failed(..))`, as Corelib Glue calls
+/// `Channel.TrySend(command.issued, Result::Error(..))`), expects the bound application. Its
+/// expected type read no sibling argument, so the constructor had no applied enum (E2102).
+#[test]
+fn library_passes_a_generic_enum_constructor_to_a_parameter_a_sibling_binds() {
+    let case = LibraryCase::new(
+        "pub enum Fault { Protocol(), Busy(), }\n\
+         pub enum Outcome<T, E> { Done(T value), Failed(E error), }\n\
+         pub type Box<T> { i64 handle; }\n\
+         type Begin { i64 index; Box<Outcome<i64, Fault>> issued; }\n\
+         pub i64 Put<T>(Box<T> self, T value) { return 1_i64; }\n\
+         pub i64 Local(Box<Outcome<i64, Fault>> issued) {\n\
+         \x20   return Put(issued, Outcome::Failed(Fault::Protocol)) + Put(issued, Outcome::Done(5_i64));\n\
+         }\n\
+         i64 Field(Begin command) {\n\
+         \x20   return Put(command.issued, Outcome::Failed(Fault::Busy));\n\
+         }\n\
+         pub i64 Both(Box<Outcome<i64, Fault>> issued) {\n\
+         \x20   Begin command = Begin { index: 0_i64, issued: issued };\n\
+         \x20   return Field(command);\n\
+         }\n",
+    );
+    let (output, artifact) = case.build(Some("object"));
+    assert!(output.status.success(), "generic enum constructor argument failed: {}", text(&output));
+    assert!(artifact.is_file(), "library object was not emitted: {}", text(&output));
+}

@@ -292,7 +292,10 @@ pub(super) fn specialization_for_call_in_environment(
         } else {
             None
         };
-        let known_expected = explicit_substitutions_complete || (parameter_mentions_generic && parameter_already_bound);
+        // A parameter that names no generic (`Role role` beside a contract-typed `Sink sink`) has
+        // its declared type as the expected type, like a parameter whose generics are all bound:
+        // an argument whose type only its context proves (`Role::Request`) takes it.
+        let known_expected = explicit_substitutions_complete || parameter_already_bound;
         let explicit_expected =
             known_expected.then(|| generic_abi_type(db, declaration, parameter_type, &substitutions)).transpose()?;
         let actual = if let Some(source) = proven_source_identity.as_ref() {

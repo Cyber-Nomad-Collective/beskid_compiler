@@ -653,6 +653,19 @@ fn direct_parameter_identity(
             callee_generic_bindings(db, call_key, call, declaration, &generic_names, environment, enclosing)?;
         contract_sibling_bindings(db, call_key, call, callee, position, &mentioned, &mut bindings, enclosing);
         if mentioned.iter().any(|name| !bindings.iter().any(|(bound, _)| bound == name)) {
+            read_sibling_bindings(
+                db,
+                call_key,
+                call,
+                callee,
+                declaration,
+                position,
+                &generic_names,
+                &mut bindings,
+                enclosing,
+            );
+        }
+        if mentioned.iter().any(|name| !bindings.iter().any(|(bound, _)| bound == name)) {
             return Err(unavailable());
         }
         bindings
@@ -660,6 +673,92 @@ fn direct_parameter_identity(
     let callee_environment =
         bindings.iter().map(|(name, identity)| (name.as_str(), identity)).collect::<Environment<'_>>();
     generic_source_type_identity_with_substitutions(db, declaration, parameter_type, &callee_environment)
+}
+
+/// Bind the generic parameters still unbound after the receiver, explicit type arguments and
+/// contract siblings from the sibling arguments that read a value: a local or parameter path (a
+/// field path through it included), a member access or an element read. `Put(issued,
+/// Outcome::Failed(error))` with `i64 Put<T>(Box<T> self, T value)` binds `T` from `issued`, so
+/// the constructor expects `Outcome<i64, Fault>`, as the call's own specialization does. A read's
+/// identity never depends on an expected type, so typing one argument cannot cycle through
+/// another; a sibling whose type only its context proves contributes nothing here.
+#[expect(clippy::too_many_arguments, reason = "one call walk with its callee and bindings")]
+fn read_sibling_bindings(
+    db: &dyn Db,
+    call_key: AstNodeKey,
+    call: &syntax::CallExpression,
+    callee: DynNodeRef<'_>,
+    declaration: AstNodeKey,
+    position: usize,
+    generic_names: &[&str],
+    bindings: &mut Vec<(String, GenericSourceTypeIdentity)>,
+    enclosing: Option<&GenericSpecializationInstance>,
+) {
+    let Some(syntax) = db.syntax_unit(call_key.unit).filter(|syntax| syntax.accepts_key(db, call_key)) else { return };
+    let program = syntax.expanded_program(db);
+    let index = syntax.syntax_index(db);
+    let mut abi =
+        bindings.iter().map(|(name, identity)| (name.clone(), identity.abi_type())).collect::<HashMap<_, _>>();
+    let mut sources = bindings
+        .iter()
+        .map(|(name, identity)| {
+            (name.clone(), GenericSubstitution::from_source(name.as_str(), identity.abi_type(), identity.clone()))
+        })
+        .collect::<HashMap<_, _>>();
+    for candidate in (0..call.args.len()).filter(|candidate| *candidate != position) {
+        let Ok(parameter_type) = declared_parameter_type(callee, call, candidate) else { continue };
+        if !generic_names
+            .iter()
+            .any(|name| type_syntax_mentions_generic_parameter(parameter_type, name) && !abi.contains_key(*name))
+        {
+            continue;
+        }
+        let Some(argument) = index.direct_child_id(program, call_key.node, DynNodeRef::from(&call.args[candidate]))
+        else {
+            continue;
+        };
+        let argument = AstNodeKey { node: normalized_expression_node(index, argument), ..call_key };
+        let reads_value = match index.node_at(program, argument.node) {
+            Some(node) => match node.of::<syntax::PathExpression>() {
+                Some(path) => path.path.node.segments.first().is_some_and(|root| {
+                    let name = root.node.name.node.name.as_str();
+                    root.node.type_args.is_empty()
+                        && (resolve_lexical_declaration(program, index, argument.node, name).is_some()
+                            || crate::semantic_contract::layouts::is_implicit_receiver_name(
+                                program, index, argument, name,
+                            ))
+                }),
+                None => {
+                    matches!(index.kind(argument.node), Some(NodeKind::MemberExpression | NodeKind::IndexExpression))
+                }
+            },
+            None => false,
+        };
+        if !reads_value {
+            continue;
+        }
+        let Ok(identity) = specialized_source_expression_identity(db, argument, enclosing) else { continue };
+        let (mut next_abi, mut next_sources) = (abi.clone(), sources.clone());
+        if infer_source_substitutions(
+            db,
+            declaration,
+            parameter_type,
+            &identity,
+            generic_names,
+            &mut next_abi,
+            &mut next_sources,
+        )
+        .is_ok()
+        {
+            abi = next_abi;
+            sources = next_sources;
+        }
+    }
+    for (name, binding) in sources {
+        if !bindings.iter().any(|(bound, _)| *bound == name) {
+            bindings.push((name, binding.source_identity().clone()));
+        }
+    }
 }
 
 /// Bind a still-unbound generic parameter `T` the argument at `position` is written into, when

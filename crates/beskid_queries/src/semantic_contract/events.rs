@@ -160,9 +160,13 @@ fn event_fact_for_target(
     let definition = declaration_index
         .node_at(declaration_program, receiver.declaration.node)?
         .of::<beskid_analysis::syntax::TypeDefinition>()?;
-    let field_position = definition.fields.iter().position(|field| {
-        field.node.kind == beskid_analysis::syntax::FieldKind::Event && field.node.name.node.name == receiver.field_name
-    })?;
+    // The position counts event fields only: it selects among the type's event field nodes
+    // below, so value and injected fields declared before the event must not shift it.
+    let field_position = definition
+        .fields
+        .iter()
+        .filter(|field| field.node.kind == beskid_analysis::syntax::FieldKind::Event)
+        .position(|field| field.node.name.node.name == receiver.field_name)?;
     let field_node = declaration_index
         .children(receiver.declaration.node)?
         .iter()
