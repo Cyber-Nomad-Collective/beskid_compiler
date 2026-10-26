@@ -17,7 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - E1724: the same implementation registered twice for the same key in one host and scope (`single Clock; single Clock;`). Distinct implementations of one key stay allowed.
 - A held runtime mutex excludes other lockers: its state byte was compared with an enum value that never matched, so `Mutex.Lock` and `TryLock` took a held mutex.
 - The worker pool reads and writes its worker count only under its lock; a syscall made without a scheduler yields while it waits for its worker; a second root wait traps as an invariant failure; Windows `PATH` lookup tries a dotted bare name (`python3.11`) as written, then with `.exe`.
-- Known limitation: a `scoped` registration is created once per launch, not once per `with` activation.
+- Each `with` activation creates its scope's registrations without `single` anew, before the scope's `init`, and releases them after its `dispose`; a nested `with` of the same scope gets its own set, and a scope's `transient` that injects a scoped service sees the activation's instance. A `single` stays the container's. E1725: a `single` that injects such a per-activation service, directly or through a `transient`.
 
 ### Corelib check
 

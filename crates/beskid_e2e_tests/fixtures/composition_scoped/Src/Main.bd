@@ -1,0 +1,68 @@
+// A named scope's registrations without `single` are created anew on each `with` activation:
+// sequential activations and a nested activation of the same scope each get their own set. A
+// `transient` of the scope that injects the scoped `Session` sees the activation's own instance,
+// the same one the scope's hooks receive.
+use Core.Output;
+
+contract Session
+{
+    i64 Id();
+}
+
+type DbSession : Session
+{
+    pub i64 Id()
+    {
+        return 7;
+    }
+}
+
+type Report
+{
+    inject Session session;
+
+    pub string Matches(Session other)
+    {
+        if this.session == other
+        {
+            return "same";
+        }
+        return "different";
+    }
+}
+
+host AppHost()
+{
+    scope Visit(i64 visit)
+    {
+        DbSession for Session;
+        transient Report;
+
+        init(Session session, Report report)
+        {
+            Output.WriteLine("init ${visit} ${report.Matches(session)}");
+        }
+
+        dispose(Session session, Report report)
+        {
+            Output.WriteLine("dispose ${visit} ${report.Matches(session)}");
+        }
+    }
+}
+
+i32 Main()
+{
+    launch AppHost();
+    with Visit(1)
+    {
+        Output.WriteLine("body 1");
+    }
+    with Visit(2)
+    {
+        with Visit(3)
+        {
+            Output.WriteLine("body 3");
+        }
+    }
+    return 0;
+}

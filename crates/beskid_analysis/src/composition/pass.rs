@@ -211,6 +211,59 @@ pub fn resolve_composition_with_imports(
         }
     }
 
+    // A named scope creates its non-`single` registrations anew on each `with` activation; a
+    // `single` lives as long as the container. A `single` that injects such a service, directly
+    // or through a `transient`, would keep one activation's instance forever (E1725).
+    {
+        use crate::composition::model::{RegistrationLifetime, ScopeId};
+        let by_id =
+            merged_registrations.iter().map(|registration| (registration.id, registration)).collect::<HashMap<_, _>>();
+        let mut per_activation = merged_registrations
+            .iter()
+            .filter(|registration| {
+                registration.scope_id != ScopeId::GLOBAL && registration.lifetime != RegistrationLifetime::Single
+            })
+            .map(|registration| registration.id)
+            .collect::<std::collections::HashSet<_>>();
+        loop {
+            let grown = edges
+                .iter()
+                .filter(|(target, owner)| {
+                    per_activation.contains(target)
+                        && !per_activation.contains(owner)
+                        && by_id.get(owner).is_some_and(|owner| owner.lifetime != RegistrationLifetime::Single)
+                })
+                .map(|(_, owner)| *owner)
+                .collect::<Vec<_>>();
+            if grown.is_empty() {
+                break;
+            }
+            per_activation.extend(grown);
+        }
+        let injections = singular_registration_ids
+            .iter()
+            .map(|(owner, span, unit, target)| (*owner, *span, unit.clone(), vec![*target]))
+            .chain(plural_registration_ids.iter().cloned());
+        for (owner_id, span, unit, targets) in injections {
+            let Some(owner) = by_id.get(&owner_id) else { continue };
+            if owner.lifetime != RegistrationLifetime::Single {
+                continue;
+            }
+            if let Some(target) =
+                targets.iter().find(|target| per_activation.contains(target)).and_then(|target| by_id.get(target))
+            {
+                issues.push((
+                    unit,
+                    CompositionIssue::SingleInjectsScoped {
+                        single: owner.implementation.clone(),
+                        dependency: target.implementation.clone(),
+                        span,
+                    },
+                ));
+            }
+        }
+    }
+
     let registration_order = match build_graph(&merged_registrations, &edges) {
         Ok(dag) => topo_registration_order(&dag),
         Err(issue) => {

@@ -152,6 +152,13 @@ pub enum CompositionIssue {
         /// The first registration, when it is in the same unit.
         first_span: Option<SpanInfo>,
     },
+    /// A `single` injects (directly or through a `transient`) a service that a named scope
+    /// creates anew on each `with` activation. `span` is the `inject` field.
+    SingleInjectsScoped {
+        single: String,
+        dependency: String,
+        span: SpanInfo,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -223,7 +230,8 @@ pub fn to_semantic_issue(issue: &CompositionIssue) -> Option<(SpanInfo, Semantic
         | CompositionIssue::LaunchArgumentCount { .. }
         | CompositionIssue::WithArgumentCount { .. }
         | CompositionIssue::BaseHostParameters { .. }
-        | CompositionIssue::DuplicateRegistration { .. } => None,
+        | CompositionIssue::DuplicateRegistration { .. }
+        | CompositionIssue::SingleInjectsScoped { .. } => None,
     }
 }
 
@@ -256,5 +264,6 @@ pub fn composition_issue_code(issue: &CompositionIssue) -> &'static str {
         CompositionIssue::WithArgumentCount { .. } => "E1708",
         CompositionIssue::BaseHostParameters { .. } => "E1723",
         CompositionIssue::DuplicateRegistration { .. } => "E1724",
+        CompositionIssue::SingleInjectsScoped { .. } => "E1725",
     }
 }

@@ -267,6 +267,14 @@ fn composition_issue_to_diagnostic(
                 "remove one of the two lines; each registration line creates its own `{implementation}`, so a singular `inject` of `{key}` would be ambiguous"
             )),
         ),
+        CompositionIssue::SingleInjectsScoped { single, dependency, span } => (
+            *span,
+            format!("`single {single}` cannot inject `{dependency}`, which its scope creates anew on each `with`"),
+            "per-activation service in a `single`",
+            Some(format!(
+                "a `single` lives as long as the container and would keep one activation's `{dependency}`; register `{single}` without `single` so each `with` creates it, or inject a service that is not per activation"
+            )),
+        ),
         CompositionIssue::UnknownRegistrationId { registration_id, span } => (
             span.unwrap_or(program_span),
             format!("composition produced unknown registration id `{registration_id}` while building dependency graph"),
@@ -457,6 +465,29 @@ i32 Main() { launch AppHost(); return 0; }
         assert_eq!(duplicate.related.len(), 1, "the first registration is the related place");
         let second = source.rfind("single Clock;").expect("second line");
         assert_eq!(duplicate.span.offset(), second, "the second line is reported");
+    }
+
+    #[test]
+    fn a_single_that_injects_a_per_activation_service_is_e1725() {
+        let source = r#"
+type Session { }
+type Report { inject Session session; }
+type Cache { inject Report report; }
+host AppHost()
+{
+    scope Visit()
+    {
+        Session;
+        transient Report;
+        single Cache;
+    }
+}
+i32 Main() { launch AppHost(); with Visit() { } return 0; }
+"#;
+        let found = diagnostics(source);
+        let captive = found.iter().filter(|diagnostic| diagnostic.code.as_deref() == Some("E1725")).collect::<Vec<_>>();
+        let [captive] = captive.as_slice() else { panic!("one E1725 expected (through the transient): {found:?}") };
+        assert!(captive.message.contains("`single Cache` cannot inject `Report`"), "{}", captive.message);
     }
 
     #[test]

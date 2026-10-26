@@ -1353,3 +1353,98 @@ fn contract_call_on_a_mutable_contract_local_dispatches_through_the_witness_tabl
         .expect("a mut contract local dispatches at run time");
     assert_eq!(dispatch.slot, 0);
 }
+
+/// A named scope's per-activation registrations (`DbSession for Session;`, `transient Report;`
+/// that injects it, and the hooks' argument objects) are created anew by every `with`: two
+/// sequential activations and a nested activation of the same scope each allocate their own
+/// set between entering the scope and running its `init`. The `single` stays the container's.
+#[test]
+fn every_with_activation_creates_its_own_scoped_instances() {
+    use std::sync::Arc;
+
+    use beskid_analysis::composition::{CompositionInput, is_hook_item_name, resolve_composition};
+
+    let source = r#"
+contract Session { i64 Id(); }
+type DbSession : Session { pub i64 Id() { return 7; } }
+type Report { inject Session session; }
+type Clock {}
+host AppHost()
+{
+    registry { single Clock; }
+    scope Visit()
+    {
+        DbSession for Session;
+        transient Report;
+        init(Session session, Report report) { }
+    }
+}
+i32 Main()
+{
+    launch AppHost();
+    with Visit() { }
+    with Visit()
+    {
+        with Visit() { }
+    }
+    return 0;
+}
+"#;
+    let (input, isa, root) = item_fixture_with_root(source);
+    let result = resolve_composition(CompositionInput {
+        program: &input.typed_program().assembly.entry_unit().program,
+        is_mod_project: false,
+        types: &beskid_queries::CompositionTypes::new(input.database(), input.typed_program()),
+    });
+    assert!(result.issues.is_empty(), "composition must validate: {:?}", result.issues);
+    let mut snapshot = result.snapshot;
+    snapshot.source_unit_path = Some(root.unit.path(input.database()).to_path_buf());
+    let generation = input.typed_program().generation;
+    let input = input
+        .with_composition_authority(generation, Arc::new(result.plan), Arc::new(snapshot))
+        .expect("composition authority");
+    let items = find_function_definitions(input.database(), root)
+        .into_iter()
+        .map(|key| SyntaxModuleItem {
+            symbol: item_name(input.database(), key).expect("item query").expect("item name").to_string(),
+            key,
+        })
+        .collect::<Vec<_>>();
+    let artifact = lower_syntax_program(&input, isa.as_ref(), &items).expect("scoped activations lower");
+    let clif = artifact
+        .functions
+        .iter()
+        .find(|function| function.name == "Main")
+        .expect("lowered Main")
+        .function
+        .display()
+        .to_string();
+    let init = items
+        .iter()
+        .map(|item| item.symbol.as_str())
+        .find(|name| is_hook_item_name(name) && name.contains("_init_"))
+        .expect("scope init function");
+    let enters = callee_refs(&clif, "composition_scope_enter");
+    let allocations = callee_refs(&clif, "beskid_rt_v5_managed_object_allocate");
+    let inits = callee_refs(&clif, init);
+    let calls = clif.lines().map(str::trim).filter(|line| line.contains("call ")).collect::<Vec<_>>();
+    let calls_any = |line: &str, refs: &[String]| refs.iter().any(|callee| line.contains(&format!("call {callee}(")));
+    let mut per_activation = Vec::new();
+    for (index, line) in calls.iter().enumerate() {
+        if !calls_any(line, &enters) {
+            continue;
+        }
+        let end = calls[index + 1..]
+            .iter()
+            .position(|line| calls_any(line, &inits))
+            .map(|offset| index + 1 + offset)
+            .unwrap_or_else(|| panic!("each activation runs init:\n{clif}"));
+        per_activation.push(calls[index + 1..end].iter().filter(|line| calls_any(line, &allocations)).count());
+    }
+    assert_eq!(per_activation.len(), 3, "three activations:\n{clif}");
+    // DbSession, Report and the init hook's argument object, for each activation.
+    assert!(
+        per_activation.iter().all(|count| *count == per_activation[0] && *count >= 3),
+        "every activation allocates its own scoped set {per_activation:?}:\n{clif}"
+    );
+}

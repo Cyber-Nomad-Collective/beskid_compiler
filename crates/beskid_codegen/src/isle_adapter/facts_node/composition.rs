@@ -67,60 +67,11 @@ impl SyntaxNodeFacts<'_> {
         {
             return None;
         }
-        let mut registrations = Vec::with_capacity(plan.activation.len());
-        for activation in &plan.activation {
-            let registration = snapshot.registrations.iter().find(|entry| entry.id == activation.registration_id)?;
-            let source = self.input.composition_unit_key(&registration.unit, registration.source_node_id);
-            let fact = self.query(beskid_queries::composition_registration(self.db, source))?;
-            (fact.site == source && fact.implementation.as_ref() == registration.implementation).then_some(())?;
-            let allocation = self.input.composition_registration_static_plan(registration.id)?;
-            let layout = self.input.aggregate_object_layout(fact.declaration)?;
-            let mut injections = Vec::new();
-            for singular in plan.singulars.iter().filter(|entry| entry.owner_registration_id == registration.id) {
-                let field = self.input.composition_unit_key(&singular.field_unit, singular.field_node_id);
-                let field_fact = self.query(beskid_queries::composition_injection_field(self.db, field))?;
-                (field_fact.owner_type == fact.declaration && !field_fact.is_plural).then_some(())?;
-                let (_, offset) = layout.injected_fields.iter().find(|(source, _)| *source == field)?;
-                (singular.target_slot.0 < activation.slot.0).then_some(())?;
-                let boxes = vec![self.injection_box(plan, snapshot, field, singular.target_slot.0)?];
-                injections.push(CompositionInjectionPlan {
-                    field,
-                    field_offset: u32::try_from(*offset).ok()?,
-                    target_slots: vec![singular.target_slot.0],
-                    plural_allocation_request_symbol: None,
-                    boxes,
-                });
-            }
-            for plural in plan.plurals.iter().filter(|entry| entry.owner_registration_id == registration.id) {
-                let field = self.input.composition_unit_key(&plural.field_unit, plural.field_node_id);
-                let field_fact = self.query(beskid_queries::composition_injection_field(self.db, field))?;
-                (field_fact.owner_type == fact.declaration && field_fact.is_plural).then_some(())?;
-                let (_, offset) = layout.injected_fields.iter().find(|(source, _)| *source == field)?;
-                plural.target_slots.iter().all(|slot| slot.0 < activation.slot.0).then_some(())?;
-                let array = self.input.composition_plural_static_plan(field, plural.target_slots.len())?;
-                let boxes = plural
-                    .target_slots
-                    .iter()
-                    .map(|slot| self.injection_box(plan, snapshot, field, slot.0))
-                    .collect::<Option<Vec<_>>>()?;
-                injections.push(CompositionInjectionPlan {
-                    field,
-                    field_offset: u32::try_from(*offset).ok()?,
-                    target_slots: plural.target_slots.iter().map(|slot| slot.0).collect(),
-                    plural_allocation_request_symbol: Some(array.allocation_request_symbol.into()),
-                    boxes,
-                });
-            }
-            (injections.len() == layout.injected_fields.len()).then_some(())?;
-            let unique_fields =
-                injections.iter().map(|injection| injection.field).collect::<std::collections::HashSet<_>>();
-            (unique_fields.len() == injections.len()).then_some(())?;
-            registrations.push(CompositionRegistrationPlan {
-                slot: activation.slot.0,
-                allocation_request_symbol: allocation.allocation_request_symbol.into(),
-                injections,
-            });
-        }
+        let registrations = plan
+            .activation
+            .iter()
+            .map(|activation| self.composition_registration_plan(plan, snapshot, activation))
+            .collect::<Option<Vec<_>>>()?;
         let global = |hook: &&CompositionHookPlan| hook.scope_id == ScopeId::GLOBAL;
         let startup = plan
             .init_hooks
@@ -146,6 +97,67 @@ impl SyntaxNodeFacts<'_> {
         })
     }
 
+    /// How one registration of the plan is created: its allocation and its injected fields, each
+    /// filled from the slots of the services it injects.
+    fn composition_registration_plan(
+        &self,
+        plan: &BindingPlan,
+        snapshot: &CompositionSnapshot,
+        activation: &beskid_analysis::composition::ActivationPlanEntry,
+    ) -> Option<CompositionRegistrationPlan> {
+        let registration = snapshot.registrations.iter().find(|entry| entry.id == activation.registration_id)?;
+        let source = self.input.composition_unit_key(&registration.unit, registration.source_node_id);
+        let fact = self.query(beskid_queries::composition_registration(self.db, source))?;
+        (fact.site == source && fact.implementation.as_ref() == registration.implementation).then_some(())?;
+        let allocation = self.input.composition_registration_static_plan(registration.id)?;
+        let layout = self.input.aggregate_object_layout(fact.declaration)?;
+        let mut injections = Vec::new();
+        for singular in plan.singulars.iter().filter(|entry| entry.owner_registration_id == registration.id) {
+            let field = self.input.composition_unit_key(&singular.field_unit, singular.field_node_id);
+            let field_fact = self.query(beskid_queries::composition_injection_field(self.db, field))?;
+            (field_fact.owner_type == fact.declaration && !field_fact.is_plural).then_some(())?;
+            let (_, offset) = layout.injected_fields.iter().find(|(source, _)| *source == field)?;
+            (singular.target_slot.0 < activation.slot.0).then_some(())?;
+            let boxes = vec![self.injection_box(plan, snapshot, field, singular.target_slot.0)?];
+            injections.push(CompositionInjectionPlan {
+                field,
+                field_offset: u32::try_from(*offset).ok()?,
+                target_slots: vec![singular.target_slot.0],
+                plural_allocation_request_symbol: None,
+                boxes,
+            });
+        }
+        for plural in plan.plurals.iter().filter(|entry| entry.owner_registration_id == registration.id) {
+            let field = self.input.composition_unit_key(&plural.field_unit, plural.field_node_id);
+            let field_fact = self.query(beskid_queries::composition_injection_field(self.db, field))?;
+            (field_fact.owner_type == fact.declaration && field_fact.is_plural).then_some(())?;
+            let (_, offset) = layout.injected_fields.iter().find(|(source, _)| *source == field)?;
+            plural.target_slots.iter().all(|slot| slot.0 < activation.slot.0).then_some(())?;
+            let array = self.input.composition_plural_static_plan(field, plural.target_slots.len())?;
+            let boxes = plural
+                .target_slots
+                .iter()
+                .map(|slot| self.injection_box(plan, snapshot, field, slot.0))
+                .collect::<Option<Vec<_>>>()?;
+            injections.push(CompositionInjectionPlan {
+                field,
+                field_offset: u32::try_from(*offset).ok()?,
+                target_slots: plural.target_slots.iter().map(|slot| slot.0).collect(),
+                plural_allocation_request_symbol: Some(array.allocation_request_symbol.into()),
+                boxes,
+            });
+        }
+        (injections.len() == layout.injected_fields.len()).then_some(())?;
+        let unique_fields =
+            injections.iter().map(|injection| injection.field).collect::<std::collections::HashSet<_>>();
+        (unique_fields.len() == injections.len()).then_some(())?;
+        Some(CompositionRegistrationPlan {
+            slot: activation.slot.0,
+            allocation_request_symbol: allocation.allocation_request_symbol.into(),
+            injections,
+        })
+    }
+
     pub(super) fn composition_scope_impl(&self, key: AstNodeKey) -> Option<CompositionScopePlan> {
         let (plan, snapshot) = self.input.composition_authority()?;
         let fact = self.query(beskid_queries::composition_scope(self.db, key))?;
@@ -167,7 +179,29 @@ impl SyntaxNodeFacts<'_> {
         };
         let init = calls(&plan.init_hooks)?;
         let dispose = calls(&plan.disposal_hooks)?;
-        Some(CompositionScopePlan { site: key, scope_id: scope_id.0, parent_scope_id, body: fact.body, init, dispose })
+        // Each `with` creates the scope's own non-`single` registrations anew (in activation
+        // order, so a service follows what it injects); a `single` stays the container's.
+        let registrations = plan
+            .activation
+            .iter()
+            .filter(|activation| {
+                snapshot.registrations.iter().any(|registration| {
+                    registration.id == activation.registration_id
+                        && registration.scope_id == *scope_id
+                        && registration.lifetime != beskid_analysis::composition::RegistrationLifetime::Single
+                })
+            })
+            .map(|activation| self.composition_registration_plan(plan, snapshot, activation))
+            .collect::<Option<Vec<_>>>()?;
+        Some(CompositionScopePlan {
+            site: key,
+            scope_id: scope_id.0,
+            parent_scope_id,
+            body: fact.body,
+            registrations,
+            init,
+            dispose,
+        })
     }
 
     /// One planned hook call: the generated hook function, the site's record local when the hook
