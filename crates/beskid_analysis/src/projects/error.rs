@@ -47,7 +47,8 @@ pub enum ProjectError {
     /// The toolchain's shared Corelib bundle no longer matches its fingerprint marker.
     #[error(
         "the shared Corelib at {root} does not match its seal (a file was changed, added or removed); the shared \
-         Corelib is read-only, reinstall the toolchain or run `beskid dev corelib`"
+         Corelib is read-only; run any `beskid` command (for example `beskid check`) to restore it from the \
+         toolchain, then restart the language server"
     )]
     SharedCorelibModified { root: PathBuf },
     /// The block that opens the project manifest is named differently from `name`.
