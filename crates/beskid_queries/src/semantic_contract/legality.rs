@@ -1717,6 +1717,20 @@ mod tests {
             ("[Isolated] pub type Cell { u8[] bytes; pub i64 Size() { return Len(this.bytes); } }", &[]),
             ("pub type Thunk { () => i64 run; } Thunk Later(u8[] b) { return Thunk { run: () => Len(b) }; }", &["E1241"]),
             ("i64 Now(u8[] b) { let f = () => Len(b); return f(); }", &[]),
+            // A lambda bound to a local escapes when the local does: stored, returned, through
+            // another local or a reassignment, or captured by a lambda that escapes.
+            ("pub type Thunk { () => i64 run; } unit Keep(Thunk t, u8[] b) { let f = () => Len(b); t.run = f; return; }", &["E1241"]),
+            ("pub type Thunk { () => i64 run; } Thunk Make(u8[] b) { let f = () => Len(b); return Thunk { run: f }; }", &["E1241"]),
+            ("pub type Thunk { () => i64 run; } unit Keep(Thunk t, u8[] b) { let f = () => Len(b); let g = f; t.run = g; return; }", &["E1241"]),
+            (
+                "pub type Thunk { () => i64 run; } unit Keep(Thunk t, u8[] b, mut () => i64 g) { let f = () => Len(b); g = f; t.run = g; return; }",
+                &["E1241"],
+            ),
+            (
+                "pub type Thunk { () => i64 run; } Thunk Make(u8[] b) { let f = () => Len(b); return Thunk { run: () => f() }; }",
+                &["E1241"],
+            ),
+            ("i64 Now(u8[] b) { let f = () => Len(b); let g = f; return g(); }", &[]),
             ("pub type Thunk { () => i64 run; } Thunk Later(move u8[] b) { return Thunk { run: () => Len(b) }; }", &[]),
         ];
         for (offset, (body, expected)) in cases.iter().enumerate() {
@@ -1945,7 +1959,11 @@ mod tests {
             // Handed to a parameter that may keep it: a generic `T` or a `move` parameter.
             ("pub type Cell<T> { T v; } unit Put<T>(Cell<T> c, T v) { c.v = v; return; } i64 Keep(Cell<Bytes> c, Bytes b) { Put<Bytes>(c, b); return 0; }", 1),
             ("unit Take(move Bytes view) { return; } i64 Keep(Bytes b) { Take(b); return 0; }", 1),
+            // A lambda bound to a local escapes when the local does.
+            ("Loose Later(Bytes b) { let f = (i64 i) => At(b, i); return Loose { element: f }; }", 1),
+            ("Loose Later(Bytes b) { let f = (i64 i) => At(b, i); let g = f; return Loose { element: g }; }", 1),
             // Uses inside the scope stay legal.
+            ("u8 Bound(Bytes b) { let f = (i64 i) => At(b, i); return f(0); }", 0),
             ("i64 Count(Bytes b) { return Use(b); }", 0),
             ("i64 Local(u8[] v) { Bytes view = Bytes { items: v }; return Use(view); }", 0),
             ("u8 Inner(Bytes b) { let f = (i64 i) => At(b, i); return f(0); }", 0),

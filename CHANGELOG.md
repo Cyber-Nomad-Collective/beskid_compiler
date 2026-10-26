@@ -284,7 +284,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   parameter typed by a type parameter, or to a `move` parameter, is E1241.
   The same rule covers `this` in a method without `move this` (`return this`,
   `all[0] = this`) and a plain parameter captured by a lambda that escapes
-  (returned, stored, put into a value or spawned).
+  (returned, stored, put into a value or spawned). A lambda bound to a local
+  escapes when the local does (stored, returned, spawned, bound to another
+  local or reassigned, or captured by a lambda that escapes); a flow deeper
+  than eight locals counts as escaping. The `[ScopeBorrowed]` check uses the
+  same rule.
 - An argument of a parameter typed by a type parameter (`list.Push(b)`,
   `Put<T>(T v)`) may be kept by the generic body, so the caller's binding is no
   longer the only name for its value: sending it afterwards is E1241 "copy it
