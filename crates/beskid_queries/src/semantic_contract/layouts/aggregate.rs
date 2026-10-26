@@ -20,6 +20,11 @@ pub(in crate::semantic_contract) fn aggregate_layout_tracked(
     .transpose()
 }
 
+/// The handler capacity of an event declared without one (`event Changed();`): the same bound
+/// Corelib declares for its own events (`event{16} OnResize(..)` in Console). The runtime stores
+/// at most this many handlers; a subscription to a full event keeps the earlier handlers.
+pub const DEFAULT_EVENT_CAPACITY: usize = 16;
+
 #[salsa::tracked(persist)]
 pub(in crate::semantic_contract) fn event_field_layout_tracked(
     db: &dyn Db,
@@ -83,7 +88,7 @@ pub(in crate::semantic_contract) fn event_field_layout_tracked(
             owner_type: owner_key,
             field: AstNodeKey { node: matching_field, ..key },
             slot_offset: u32::try_from(slot_offset).ok()?,
-            capacity: u32::try_from(field.event_capacity.unwrap_or_default()).ok()?,
+            capacity: u32::try_from(field.event_capacity.unwrap_or(DEFAULT_EVENT_CAPACITY)).ok()?,
         }))
     })?
     .transpose()

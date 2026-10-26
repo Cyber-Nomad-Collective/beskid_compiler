@@ -89,6 +89,21 @@ fn event_unsubscribe_fixture_aot_runs_and_object_contains_event_symbols() {
     }
 }
 
+/// An event declared without a capacity takes the default capacity, and a method of its type
+/// raises it with the bare spelling (`Changed(value);`) and with `this.Changed(value);`.
+#[test]
+fn event_without_capacity_raised_by_bare_name_reaches_its_handler() {
+    let workspace = E2eWorkspace::from_fixture("event_default_capacity");
+    let manifest = workspace.join("EventDefaultCapacity.bproj");
+    let cli = BeskidCliInvoker::new();
+
+    let run = cli.run(["run", "--project", manifest.to_str().expect("manifest path str"), "--target", "App"]);
+    assert_success(&run, "run event-default-capacity fixture through AOT subprocess");
+    assert_exit_code(&run, 0, "run event-default-capacity fixture through AOT subprocess");
+    assert_output_contains(&run, "received 7", "the bare raise reaches the handler");
+    assert_output_contains(&run, "received 8", "the `this.` raise reaches the handler");
+}
+
 #[test]
 fn smoke_fixture_build_graph_includes_corelib_dependency() {
     let workspace = E2eWorkspace::from_fixture("smoke_project");
