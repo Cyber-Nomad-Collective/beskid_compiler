@@ -83,6 +83,12 @@ impl<'a> QueryModSemanticScope<'a> {
         current.generation.resume_after();
         let generation =
             SyntaxGenerationId::allocate().ok_or_else(|| anyhow::anyhow!("syntax generation exhausted"))?;
+        tracing::debug!(
+            target: crate::stats::SALSA_TRACE_TARGET,
+            from = %current.generation,
+            to = %generation,
+            "Mod rewrite of the entry program allocates a syntax generation"
+        );
         let next = current.with_entry_program(program.clone(), generation);
         *current = next;
         Ok(())

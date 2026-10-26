@@ -155,34 +155,47 @@ fn rebase_onto_registered_generation(
     session: ProjectSession,
     assembly: ProgramAssembly,
 ) -> ProgramAssembly {
+    let keep = |reason: &str, assembly: ProgramAssembly| {
+        tracing::debug!(
+            target: SALSA_TRACE_TARGET,
+            units = assembly.units.len(),
+            generation = %assembly.generation,
+            reason,
+            "assembly keeps its fresh syntax generation"
+        );
+        assembly
+    };
     let registered_units = {
         let registry = db.syntax_unit_registry().lock().expect("syntax unit registry");
         registry.values().filter(|input| input.project(db) == session).count()
     };
     if registered_units != assembly.units.len() {
-        return assembly;
+        return keep(&format!("{registered_units} registered units"), assembly);
     }
     let mut registered_generation = None;
     for unit in assembly.units.iter() {
         let identity = SourceUnitId::new(db, unit.path.clone());
-        let Some(input) = db.syntax_unit(identity) else { return assembly };
+        let Some(input) = db.syntax_unit(identity) else {
+            return keep(&format!("{} is not registered", unit.path.display()), assembly);
+        };
         if input.project(db) != session {
-            return assembly;
+            return keep(&format!("{} belongs to another session", unit.path.display()), assembly);
         }
         let revision = input.revision(db);
         if registered_generation.is_some_and(|generation| generation != revision.generation) {
-            return assembly;
+            return keep(&format!("{} is registered at {}", unit.path.display(), revision.generation), assembly);
         }
         registered_generation = Some(revision.generation);
-        if *revision.source_fingerprint != *beskid_artifacts::content_fingerprint(&unit.source)
-            || *revision.expanded_program.as_ref() != unit.program
-        {
-            return assembly;
+        if *revision.source_fingerprint != *beskid_artifacts::content_fingerprint(&unit.source) {
+            return keep(&format!("{} source changed", unit.path.display()), assembly);
+        }
+        if *revision.expanded_program.as_ref() != unit.program {
+            return keep(&format!("{} expanded tree changed", unit.path.display()), assembly);
         }
     }
     let Some(generation) = registered_generation else { return assembly };
     if generation >= assembly.generation {
-        return assembly;
+        return keep("the registered generation is not older", assembly);
     }
     tracing::debug!(
         target: SALSA_TRACE_TARGET,

@@ -688,7 +688,7 @@ fn rehydrate_syntax_units(
     let mut published = Vec::with_capacity(sources.len());
     for (unit, input, path, text, revision) in sources {
         let Some((fingerprint, program)) = build(&path, &text, unit, db) else { continue };
-        let Ok(tree_fingerprint) = crate::db::expanded_syntax_fingerprint(&program) else { continue };
+        let tree_fingerprint = crate::db::expanded_syntax_fingerprint(&program);
         if *revision.tree_fingerprint != *tree_fingerprint {
             continue;
         }

@@ -182,6 +182,15 @@ struct ValueShared {
     /// inputs changes, then the creator query may create this struct
     /// with different values.
     durability: Durability,
+
+    /// A value interned outside of any query by an earlier process, restored from a snapshot.
+    ///
+    /// Interning outside a query pins a value (`Durability::MAX`, `Revision::max()`) because no
+    /// query records a dependency on it; the pin only protects the handles of the process that
+    /// interned it. A restored pinned value is therefore detached: low durability, stale, and
+    /// reusable like any value nobody read, until this process interns it again. Interning it
+    /// outside a query pins it again; interning it inside a query validates it as usual.
+    detached: bool,
 }
 
 impl ValueShared {
@@ -385,6 +394,21 @@ where
             // SAFETY: We hold the lock for the shard containing the value.
             let value_shared = unsafe { &mut *value.shared.get() };
 
+            // A detached value (see `ValueShared::detached`) interned outside of any query is
+            // pinned again, exactly like a value first interned there.
+            if value_shared.detached {
+                value_shared.detached = false;
+                if zalsa_local.active_query().is_none() {
+                    if value_shared.is_reusable::<C>() {
+                        // SAFETY: We hold the lock for the shard containing the value, and a
+                        // reusable restored value is in the list.
+                        unsafe { shard.lru.cursor_mut_from_ptr(value).remove() };
+                    }
+                    value_shared.durability = Durability::MAX;
+                    value_shared.last_interned_at = Revision::max();
+                }
+            }
+
             // Validate the value in this revision to avoid reuse.
             if { value_shared.last_interned_at } < current_revision {
                 value_shared.last_interned_at = current_revision;
@@ -499,6 +523,7 @@ where
                 id: new_id,
                 durability,
                 last_interned_at,
+                detached: false,
             };
 
             let index = self.database_key_index(value_shared.id);
@@ -621,6 +646,7 @@ where
                 id,
                 durability,
                 last_interned_at,
+                detached: false,
             }),
         });
 
@@ -1021,6 +1047,32 @@ where
         })
     }
 
+    /// Make restored values that nobody has read yet collectable right away: every revision
+    /// queue slot holds the restore revision, so a value last interned before it is stale, and
+    /// each LRU list is ordered by `last_interned_at` with the oldest value at the back.
+    #[cfg(feature = "persistence")]
+    fn finish_restore(&mut self, restored: Revision) {
+        if C::REVISIONS == IMMORTAL {
+            return;
+        }
+        for slot in self.revision_queue.revisions.iter() {
+            slot.store(restored);
+        }
+        for shard in self.shards.iter_mut() {
+            let shard = shard.get_mut();
+            let mut values = Vec::new();
+            while let Some(value) = shard.lru.pop_back() {
+                values.push(value);
+            }
+            // SAFETY: We have exclusive access to the ingredient, and every value in the list
+            // is a live slot of it.
+            values.sort_by_key(|value| unsafe { (*value.shared.get()).last_interned_at });
+            for value in values {
+                shard.lru.push_front(value);
+            }
+        }
+    }
+
     #[cfg(feature = "persistence")]
     fn deserialize(
         &mut self,
@@ -1083,6 +1135,32 @@ struct RevisionQueue<C> {
 
 // `#[salsa::interned(revisions = usize::MAX)]` disables garbage collection.
 const IMMORTAL: NonZeroUsize = NonZeroUsize::MAX;
+
+/// Shared state of a value restored from a snapshot. A value pinned by the process that wrote
+/// the snapshot comes back detached (see `ValueShared::detached`) unless garbage collection is
+/// disabled for its ingredient.
+#[cfg(feature = "persistence")]
+fn restored_value_shared<C: Configuration>(
+    id: Id,
+    durability: Durability,
+    last_interned_at: Revision,
+) -> ValueShared {
+    if C::REVISIONS != IMMORTAL && last_interned_at == Revision::max() {
+        ValueShared {
+            id,
+            durability: Durability::LOW,
+            last_interned_at: Revision::start(),
+            detached: true,
+        }
+    } else {
+        ValueShared {
+            id,
+            durability,
+            last_interned_at,
+            detached: false,
+        }
+    }
+}
 
 impl<C: Configuration> Default for RevisionQueue<C> {
     fn default() -> RevisionQueue<C> {
@@ -1480,7 +1558,7 @@ mod persistence {
     use serde::ser::{SerializeMap, SerializeStruct};
     use serde::{Deserialize, de};
 
-    use super::{Configuration, IngredientImpl, Value, ValueShared};
+    use super::{Configuration, IngredientImpl, Value, ValueShared, restored_value_shared};
     use crate::plumbing::Ingredient;
     use crate::table::memo::MemoTable;
     use crate::zalsa::Zalsa;
@@ -1552,6 +1630,7 @@ mod persistence {
                 durability,
                 last_interned_at,
                 id: _,
+                detached: _,
             } = unsafe { *shared.get() };
 
             value.serialize_field("durability", &durability)?;
@@ -1634,11 +1713,11 @@ mod persistence {
                         MemoTable::new(ingredient.memo_table_types())
                     }),
                     fields: UnsafeCell::new(value.fields.0),
-                    shared: UnsafeCell::new(ValueShared {
+                    shared: UnsafeCell::new(restored_value_shared::<C>(
                         id,
-                        durability: value.durability,
-                        last_interned_at: value.last_interned_at,
-                    }),
+                        value.durability,
+                        value.last_interned_at,
+                    )),
                 };
 
                 // Force initialize the relevant page.

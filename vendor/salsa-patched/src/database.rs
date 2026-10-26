@@ -293,6 +293,7 @@ mod persistence {
                 .ok_or_else(|| de::Error::invalid_length(1, &self))?;
 
             self.0.runtime_mut().deserialize_from(&mut runtime);
+            self.0.finish_restore();
             Ok(())
         }
 
@@ -326,6 +327,7 @@ mod persistence {
             let () = ingredients.ok_or_else(|| serde::de::Error::missing_field("ingredients"))?;
 
             self.0.runtime_mut().deserialize_from(&mut runtime);
+            self.0.finish_restore();
 
             Ok(())
         }

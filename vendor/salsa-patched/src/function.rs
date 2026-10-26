@@ -589,7 +589,7 @@ where
             let memo =
                 self.get_memo_from_table_for(zalsa, entry.key_index(), memo_ingredient_index);
 
-            if memo.is_some_and(|memo| memo.should_serialize()) {
+            if memo.is_some_and(|memo| memo.should_serialize(zalsa)) {
                 return true;
             }
         }
@@ -679,7 +679,7 @@ mod persistence {
                         memo_ingredient_index,
                     );
 
-                    memo.is_some_and(|memo| memo.should_serialize())
+                    memo.is_some_and(|memo| memo.should_serialize(zalsa))
                 })
                 .count();
 
@@ -699,7 +699,7 @@ mod persistence {
                     memo_ingredient_index,
                 );
 
-                if let Some(memo) = memo.filter(|memo| memo.should_serialize()) {
+                if let Some(memo) = memo.filter(|memo| memo.should_serialize(zalsa)) {
                     // Flatten the dependencies of this query down to the base inputs.
                     let flattened_origin = match memo.revisions.origin.as_ref() {
                         QueryOriginRef::Derived(edges) => {

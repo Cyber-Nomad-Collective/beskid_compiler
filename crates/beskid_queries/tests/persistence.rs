@@ -379,3 +379,94 @@ fn legacy_owned_value_snapshot_is_rejected_without_touching_the_database() {
     std::fs::write(snapshot, serde_json::to_vec(&legacy).unwrap()).unwrap();
     assert_rejected_and_usable(directory.path(), &path);
 }
+
+/// Interned and memo entry counts and byte size of a project's snapshot.
+fn snapshot_shape(directory: &std::path::Path) -> (usize, usize, usize) {
+    let bytes = std::fs::read(beskid_queries::cache_root_for_project(directory).join("db.json")).unwrap();
+    let envelope: Envelope = serde_json::from_slice(&bytes).unwrap();
+    let payload: serde_json::Value = serde_json::from_str(envelope.db.get()).unwrap();
+    let (mut interned, mut memos) = (0, 0);
+    for entries in payload["ingredients"].as_object().unwrap().values() {
+        for (key, entry) in entries.as_object().unwrap() {
+            if key.contains(':') {
+                memos += 1;
+            } else if entry.get("last_interned_at").is_some() {
+                interned += 1;
+            }
+        }
+    }
+    (interned, memos, bytes.len())
+}
+
+/// A compile that numbers its syntax trees with a new generation leaves the keys of the previous
+/// generation dead. Their memos must not be written again and their slots must be reused, so
+/// repeated compiles keep the snapshot near one size instead of adding a generation per compile.
+#[test]
+fn repeated_compiles_with_new_generations_keep_the_snapshot_bounded() {
+    use beskid_analysis::services::synthetic_compile_plan_for_source;
+
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("Main.bd");
+    let source = "type Pair { i64 left; i64 right; } i64 Sum(Pair pair) { return pair.left + pair.right; } i64 Main() { Pair pair = Pair { left: 1_i64, right: 2_i64 }; return Sum(pair) * 3_i64; }";
+    std::fs::write(&path, source).unwrap();
+    let plan = synthetic_compile_plan_for_source(&path);
+    let program = beskid_analysis::services::parse_program(source).unwrap();
+    let mut shapes = Vec::new();
+    for session in 0..5_u64 {
+        let mut db = BeskidDatabase::with_persistence(directory.path());
+        db.ensure_file_text(path.clone(), source.into());
+        let project = db.ensure_project_session(&plan, &path, "lock".into());
+        let unit = SourceUnitId::new(&db, path.clone());
+        let generation = SyntaxGenerationId(100 + session);
+        db.ensure_expanded_syntax_unit(project, unit, generation, source.into(), std::sync::Arc::new(program.clone()))
+            .unwrap();
+        let index = SyntaxIndex::from_program(&program, generation);
+        for node in 0..index.len() as u32 {
+            let key = AstNodeKey { unit, generation, node: beskid_queries::AstNodeId(node) };
+            assert!(node_kind(&db, key).unwrap().is_some());
+            let _ = beskid_queries::node_span(&db, key).unwrap();
+        }
+        beskid_queries::persist_session_snapshot(&mut db);
+        shapes.push(snapshot_shape(directory.path()));
+    }
+    let (interned, memos, bytes) = shapes[0];
+    for &(later_interned, later_memos, later_bytes) in &shapes[1..] {
+        assert_eq!(later_memos, memos, "only this compile's memos are written: {shapes:?}");
+        // Interned slots are reused per hash shard: a compile allocates new slots only where its
+        // shard ran out of dead ones, so the count settles at the busiest shard's high-water mark.
+        // A leak would add a whole generation of keys (about `memos`) on every compile.
+        assert!(later_interned < interned + interned / 2, "interned keys must be reused: {shapes:?}");
+        assert!(later_bytes < bytes + bytes / 2, "snapshot bytes must not grow per compile: {shapes:?}");
+    }
+}
+
+/// A one-shot compile through the process database neither writes nor reads the Salsa snapshot:
+/// every compile registers its syntax again, so a restored snapshot would be recomputed in full.
+#[test]
+fn one_shot_compiles_do_not_load_or_save_the_snapshot() {
+    use beskid_analysis::services::{PrepareOptions, ResolvedInput, synthetic_compile_plan_for_source};
+
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("Main.bd");
+    let source = "i64 Main() { return 42_i64; }";
+    std::fs::write(&path, source).unwrap();
+    let cache = beskid_queries::cache_root_for_project(directory.path());
+    std::fs::create_dir_all(&cache).unwrap();
+    // A snapshot left by an older compiler is neither read nor replaced.
+    std::fs::write(cache.join("db.json"), "{\"stale\":true}").unwrap();
+    let resolved = ResolvedInput {
+        source_path: path.clone(),
+        source: source.into(),
+        compile_plan: Some(synthetic_compile_plan_for_source(&path)),
+        prepared_workspace: None,
+        workspace_summary: None,
+        assembly: None,
+    };
+    for _ in 0..2 {
+        let (_, diagnostics, _) =
+            beskid_queries::prepare_compilation_diagnostics(&resolved, PrepareOptions::without_mods(), None).unwrap();
+        assert!(!diagnostics.iter().any(|diagnostic| diagnostic.severity == beskid_analysis::Severity::Error));
+        assert_eq!(std::fs::read_to_string(cache.join("db.json")).unwrap(), "{\"stale\":true}");
+    }
+    beskid_queries::reset_process_compilation_database();
+}
