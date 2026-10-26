@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Stability proof fixes
 
+- An event declared without a capacity (`event Changed(i64 value);`) has the default capacity 16; it failed to lower (E2102). In a method of the declaring type the bare name raises the event (`Changed(value);`, the spelling the events specification shows), which was E1101.
 - An event declared after a value field is raised and subscribed again (`this.OnResize(size)` in Corelib Console was E2102). The event operation counted the event's position among all fields and then picked among event fields only.
 - A call to a callable with a contract-typed parameter passes an argument whose type only its parameter proves, such as a unit enum variant (`H1Wire.ReadMessage(buffer, transport, limits, MessageRole::Request)` in Corelib Web was E2102): a parameter that names no generic is the argument's expected type.
 - A generic enum constructor written without type arguments, passed to a generic parameter that an earlier argument binds (`Channel.TrySend(command.issued, Result::Error(..))` in Corelib Glue), expects the bound application instead of failing to lower (E2102). Sibling arguments that read a value (a local, a parameter, a field, an element) bind the callee's generics for the expected type.
