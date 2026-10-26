@@ -13,8 +13,11 @@ pub enum ParseError {
         found: Rule,
         span: SpanInfo,
     },
+    /// A child rule is missing. `span` is the innermost item or statement that was being built,
+    /// once known (see [`ParseError::located`]).
     MissingPair {
         expected: Rule,
+        span: Option<SpanInfo>,
     },
     ForbiddenImplSelfParameter {
         span: SpanInfo,
@@ -40,7 +43,15 @@ impl ParseError {
 
     /// Expected a child rule `expected` but the pair iterator ended.
     pub fn missing(expected: Rule) -> Self {
-        Self::MissingPair { expected }
+        Self::MissingPair { expected, span: None }
+    }
+
+    /// Give an error without a position the span of the item or statement being built.
+    pub fn located(self, at: SpanInfo) -> Self {
+        match self {
+            Self::MissingPair { expected, span: None } => Self::MissingPair { expected, span: Some(at) },
+            other => other,
+        }
     }
 
     /// `self` used where the grammar forbids it (impl receiver contract).

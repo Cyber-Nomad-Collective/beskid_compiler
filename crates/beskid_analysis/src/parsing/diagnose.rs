@@ -44,6 +44,8 @@ struct Mistake {
     help: String,
     related: Vec<(usize, usize, String)>,
     fix: Option<(String, Vec<FixEdit>)>,
+    /// Further fixes, each with its own applicability, offered after `fix`.
+    alternatives: Vec<(String, Vec<FixEdit>, Applicability)>,
     /// How safe the fix is; most mistake fixes have one meaning.
     applicability: Applicability,
     /// Where the fixed source must get past (default: the failure position).
@@ -61,6 +63,7 @@ impl Mistake {
             help: help.into(),
             related: Vec::new(),
             fix: None,
+            alternatives: Vec::new(),
             applicability: Applicability::MachineApplicable,
             fix_anchor: None,
         }
@@ -124,12 +127,16 @@ pub fn diagnose_parse_failure(
         for (start, end, label) in mistake.related {
             diagnostic = diagnostic.with_related(SpanInfo::from_byte_range_in_source(source, start, end), label);
         }
-        let applicability = mistake.applicability;
         let anchor = mistake.fix_anchor.unwrap_or(failure.position);
-        if let Some((title, edits)) = mistake.fix {
+        let fixes = mistake
+            .fix
+            .map(|(title, edits)| (title, edits, mistake.applicability))
+            .into_iter()
+            .chain(mistake.alternatives);
+        for (title, edits, applicability) in fixes {
             match check_fix(rule, source, &edits, anchor) {
                 FixCheck::Parses(repaired) => {
-                    repaired_source = Some(repaired);
+                    repaired_source.get_or_insert(repaired);
                     diagnostic = diagnostic.with_fix(Fix::new(title, applicability, edits));
                 }
                 FixCheck::GetsPast => {
@@ -291,7 +298,8 @@ const ITEM_WORDS: &[&str] = &[
 ];
 
 fn detect_mistake(source: &str, failure: &ParseFailure, construct: Option<&Construct>) -> Option<Mistake> {
-    reserved_word(source, failure)
+    detached_documentation(source, failure)
+        .or_else(|| reserved_word(source, failure))
         .or_else(|| long_character_literal(source, failure))
         .or_else(|| comma_between_fields(failure))
         .or_else(|| host_without_parameters(failure))
@@ -328,6 +336,114 @@ fn reserved_word(source: &str, failure: &ParseFailure) -> Option<Mistake> {
         Mistake::new(codes::RESERVED_WORD, "reserved words cannot name bindings, parameters, fields or items");
     mistake.message = Some(format!("`{word}` is a reserved word; choose another name"));
     mistake.label = Some("reserved word".to_string());
+    Some(mistake)
+}
+
+/// The byte range of the line that holds `position` (without its line ending).
+fn line_at(source: &str, position: usize) -> (usize, usize) {
+    let position = position.min(source.len());
+    let start = source[..position].rfind('\n').map_or(0, |index| index + 1);
+    let end = source[start..].find('\n').map_or(source.len(), |index| start + index);
+    (start, end)
+}
+
+fn is_doc_line(line: &str) -> bool {
+    let line = line.trim_start_matches([' ', '\t']);
+    line.starts_with("///") && !line.starts_with("////")
+}
+
+/// A `///` run that does not document an item: a blank line separates it from what follows, or
+/// nothing that can be documented follows. The parse fails at the run or at the blank line.
+fn detached_documentation(source: &str, failure: &ParseFailure) -> Option<Mistake> {
+    // The parser stops at the run, at the blank line after it, or at the first token below (it
+    // expected more documentation). Above the failure, the lines up to the run are documentation
+    // or blank; the detached run is the nearest one with a blank line right below it.
+    let (failure_start, failure_end) = line_at(source, failure.position);
+    let failure_line = &source[failure_start..failure_end];
+    let mut lines = Vec::new();
+    if is_doc_line(failure_line) || failure_line.trim().is_empty() {
+        lines.push((failure_start, failure_end));
+    }
+    let mut cursor = failure_start;
+    while cursor > 0 {
+        let (start, end) = line_at(source, cursor - 1);
+        let text = &source[start..end];
+        if !is_doc_line(text) && !text.trim().is_empty() {
+            break;
+        }
+        lines.push((start, end));
+        cursor = start;
+    }
+    // `lines` runs upward. A run's last line is a doc line whose next line (one entry earlier)
+    // is blank; a doc line at the failure with nothing documentable after it counts too.
+    let blank = |&(start, end): &(usize, usize)| source[start..end].trim().is_empty();
+    let doc = |&(start, end): &(usize, usize)| is_doc_line(&source[start..end]);
+    let (line_start, line_end) = (1..lines.len())
+        .find(|&index| doc(&lines[index]) && blank(&lines[index - 1]))
+        .map(|index| lines[index])
+        .or_else(|| is_doc_line(failure_line).then_some((failure_start, failure_end)))?;
+    // Extend to the whole run.
+    let mut run_start = line_start;
+    while run_start > 0 {
+        let (start, end) = line_at(source, run_start - 1);
+        if !is_doc_line(&source[start..end]) {
+            break;
+        }
+        run_start = start;
+    }
+    let mut run_end = line_end;
+    loop {
+        if run_end >= source.len() {
+            break;
+        }
+        let (start, end) = line_at(source, run_end + 1);
+        if !is_doc_line(&source[start..end]) {
+            break;
+        }
+        run_end = end;
+    }
+    let indent = source[run_start..].len() - source[run_start..].trim_start_matches([' ', '\t']).len();
+    let span_start = run_start + indent;
+
+    let mut mistake = Mistake::new(
+        codes::DETACHED_DOCUMENTATION,
+        "a `///` comment documents the item right below it; remove the blank line, or write `//` for a plain comment",
+    );
+    mistake.message = Some("documentation comment is not attached to an item".to_string());
+    mistake.span = Some((span_start, run_end));
+    mistake.label = Some("not attached to an item".to_string());
+    mistake.fix_anchor = Some(span_start);
+
+    // Blank lines after the run, then what follows them.
+    let after_run = (run_end + 1).min(source.len());
+    let mut next_start = after_run;
+    while next_start < source.len() {
+        let (start, end) = line_at(source, next_start);
+        if !source[start..end].trim().is_empty() {
+            break;
+        }
+        next_start = (end + 1).min(source.len());
+    }
+    if next_start > after_run && next_start < source.len() {
+        let next = source[next_start..].trim_start();
+        let item_follows = !next.starts_with('}') && !next.starts_with("///");
+        mistake.fix = Some((
+            "Remove the blank line".to_string(),
+            vec![FixEdit::new(SpanInfo::from_byte_range_in_source(source, after_run, next_start), "")],
+        ));
+        // Without an item below, joining the run documents whatever follows instead.
+        mistake.applicability =
+            if item_follows { Applicability::MachineApplicable } else { Applicability::MaybeIncorrect };
+    }
+    let mut to_comments = Vec::new();
+    let mut cursor = run_start;
+    while cursor <= run_end && cursor < source.len() {
+        let (start, end) = line_at(source, cursor);
+        let marker = start + source[start..end].find("///")?;
+        to_comments.push(FixEdit::new(SpanInfo::from_byte_range_in_source(source, marker, marker + 3), "//"));
+        cursor = end + 1;
+    }
+    mistake.alternatives.push(("Turn it into `//` comments".to_string(), to_comments, Applicability::MaybeIncorrect));
     Some(mistake)
 }
 
@@ -698,5 +814,81 @@ mod tests {
     fn applies_edits_in_order() {
         let edits = vec![FixEdit::insert(3, "!"), FixEdit::insert(0, "<")];
         assert_eq!(apply_edits("abcdef", &edits).as_deref(), Some("<abc!def"));
+    }
+
+    fn diagnose(source: &str) -> ParseDiagnosis {
+        use pest::Parser;
+        let error = crate::parser::BeskidParser::parse(Rule::Program, source).expect_err("source must not parse");
+        diagnose_parse_failure("Doc.bd", source, Rule::Program, &error)
+    }
+
+    fn spanned<'a>(source: &'a str, span: miette::SourceSpan) -> &'a str {
+        &source[span.offset()..span.offset() + span.len()]
+    }
+
+    #[test]
+    fn a_documentation_run_before_a_blank_line_is_e0117_with_two_fixes() {
+        let source = "use Core.Io;\n\n    /// Adds one.\n    /// Twice.\n\n    i32 AddOne(i32 x) { return x + 1; }\n";
+        let diagnosis = diagnose(source);
+        let diagnostic = &diagnosis.diagnostic;
+        assert_eq!(diagnostic.code.as_deref(), Some(codes::DETACHED_DOCUMENTATION), "{}", diagnostic.message);
+        assert_eq!(diagnostic.message, "documentation comment is not attached to an item");
+        assert_eq!(spanned(source, diagnostic.span), "/// Adds one.\n    /// Twice.");
+        assert_eq!(diagnostic.fixes.len(), 2, "{:?}", diagnostic.fixes);
+
+        let remove = &diagnostic.fixes[0];
+        assert_eq!(remove.title, "Remove the blank line");
+        assert_eq!(remove.applicability, Applicability::MachineApplicable);
+        let attached = apply_edits(source, &remove.edits).unwrap();
+        assert_eq!(
+            attached,
+            "use Core.Io;\n\n    /// Adds one.\n    /// Twice.\n    i32 AddOne(i32 x) { return x + 1; }\n"
+        );
+        assert_eq!(diagnosis.repaired_source.as_deref(), Some(attached.as_str()));
+
+        let comments = &diagnostic.fixes[1];
+        assert_eq!(comments.title, "Turn it into `//` comments");
+        assert_eq!(comments.applicability, Applicability::MaybeIncorrect);
+        assert_eq!(
+            apply_edits(source, &comments.edits).unwrap(),
+            "use Core.Io;\n\n    // Adds one.\n    // Twice.\n\n    i32 AddOne(i32 x) { return x + 1; }\n"
+        );
+    }
+
+    #[test]
+    fn a_file_header_run_before_documented_items_joins_them_only_maybe() {
+        let source = "/// File header.\n\n/// Documents F.\ni32 F() { return 1; }\n";
+        let diagnostic = diagnose(source).diagnostic;
+        assert_eq!(diagnostic.code.as_deref(), Some(codes::DETACHED_DOCUMENTATION));
+        assert_eq!(spanned(source, diagnostic.span), "/// File header.");
+        assert_eq!(diagnostic.fixes[0].applicability, Applicability::MaybeIncorrect, "it would merge two runs");
+    }
+
+    #[test]
+    fn a_documentation_run_at_the_end_offers_only_comments() {
+        let source = "i32 F() { return 1; }\n/// Nothing below.\n";
+        let diagnostic = diagnose(source).diagnostic;
+        assert_eq!(diagnostic.code.as_deref(), Some(codes::DETACHED_DOCUMENTATION));
+        assert_eq!(diagnostic.fixes.len(), 1);
+        assert_eq!(diagnostic.fixes[0].title, "Turn it into `//` comments");
+    }
+
+    #[test]
+    fn an_error_in_a_documented_item_is_not_e0117() {
+        let diagnostic = diagnose("/// Doc.\ni32 F( { return 1; }\n").diagnostic;
+        assert_ne!(diagnostic.code.as_deref(), Some(codes::DETACHED_DOCUMENTATION), "{}", diagnostic.message);
+    }
+
+    #[test]
+    fn attached_documentation_still_parses() {
+        use pest::Parser;
+        for source in [
+            "/// Doc.\ni32 F() { return 1; }\n",
+            "/// Doc.\n// A plain comment.\ni32 F() { return 1; }\n",
+            "/// Doc.   \r\ni32 F() { return 1; }\r\n",
+            "type T {\n    /// Field doc.\n    i32 x;\n}\n",
+        ] {
+            assert!(crate::parser::BeskidParser::parse(Rule::Program, source).is_ok(), "{source:?}");
+        }
     }
 }

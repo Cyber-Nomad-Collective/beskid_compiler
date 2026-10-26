@@ -28,8 +28,8 @@ pub fn parse_error_diagnostic(source_name: &str, source: &str, err: &ParseError)
             };
             diagnostic(*span, message, "unexpected here", None, crate::analysis::diagnostic_codes::internal::UNEXPECTED_TREE)
         }
-        ParseError::MissingPair { expected } => diagnostic(
-            SpanInfo { start: 0, end: 0, line_col_start: (1, 1), line_col_end: (1, 1) },
+        ParseError::MissingPair { expected, span } => diagnostic(
+            span.unwrap_or(SpanInfo { start: 0, end: 0, line_col_start: (1, 1), line_col_end: (1, 1) }),
             format!("expected {}", rule_words(*expected).render()),
             "missing here",
             None,
@@ -249,5 +249,27 @@ mod project_error_tests {
             assert_ne!(diagnostic.label, "manifest errmsg", "{error}");
             assert!(!diagnostic.label.is_empty());
         }
+    }
+}
+
+#[cfg(test)]
+mod parse_error_tests {
+    use super::parse_error_diagnostic;
+    use crate::parser::Rule;
+    use crate::parsing::error::ParseError;
+    use crate::syntax::SpanInfo;
+
+    #[test]
+    fn a_missing_child_is_reported_at_the_item_or_statement_being_built() {
+        let source = "i32 F()\n{\n    return 1;\n}\n";
+        let statement = SpanInfo { start: 14, end: 23, line_col_start: (3, 5), line_col_end: (3, 14) };
+        let item = SpanInfo { start: 0, end: source.len(), line_col_start: (1, 1), line_col_end: (5, 1) };
+        // The innermost location wins: a statement span is not replaced by its item's span.
+        let error = ParseError::missing(Rule::Expression).located(statement).located(item);
+        let diagnostic = parse_error_diagnostic("F.bd", source, &error);
+        assert_eq!(&source[diagnostic.span.offset()..diagnostic.span.offset() + diagnostic.span.len()], "return 1;");
+
+        let unlocated = parse_error_diagnostic("F.bd", source, &ParseError::missing(Rule::Expression));
+        assert_eq!(unlocated.span.offset(), 0);
     }
 }

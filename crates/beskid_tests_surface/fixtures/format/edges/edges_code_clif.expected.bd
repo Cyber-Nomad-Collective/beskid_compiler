@@ -1,0 +1,12 @@
+string Gen()
+{
+    let s = code ```beskid
+pub i32 G() {  return @{ 1 + 2 }; }
+```;
+    return s;
+}
+
+f64 Floor(f64 x)
+{
+    return clif {  call @floor(%0) };
+}

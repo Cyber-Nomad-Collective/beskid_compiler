@@ -1,4 +1,4 @@
-pub unit Lit()
+pub unit lit()
 {
     let a = -1;
     let b = !false;

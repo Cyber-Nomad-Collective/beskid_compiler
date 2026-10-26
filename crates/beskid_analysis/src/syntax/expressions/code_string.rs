@@ -59,7 +59,7 @@ pub fn parse_plain_code_body(source: &str) -> Result<Vec<CodeStringSegment>, Par
         found: Rule::CodePlainBody,
         span: SpanInfo::default(),
     })?;
-    let root = pairs.next().ok_or(ParseError::MissingPair { expected: Rule::CodePlainBody })?;
+    let root = pairs.next().ok_or(ParseError::MissingPair { expected: Rule::CodePlainBody, span: None })?;
 
     let mut segments = Vec::new();
     for child in root.into_inner() {
@@ -135,7 +135,9 @@ fn parse_code_fence(pair: Pair<Rule>) -> Result<(String, Vec<CodeStringSegment>)
 fn code_fence_body_segments<'i>(pair: Pair<'i, Rule>) -> Vec<Pair<'i, Rule>> {
     match pair.as_rule() {
         Rule::CodeHole | Rule::CodeFenceChar => vec![pair],
-        Rule::CodeFenceBodyContents => pair.into_inner().collect(),
+        Rule::CodeFenceBody | Rule::CodeFenceBodyContents => {
+            pair.into_inner().flat_map(code_fence_body_segments).collect()
+        }
         _ => Vec::new(),
     }
 }

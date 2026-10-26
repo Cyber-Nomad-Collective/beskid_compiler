@@ -15,6 +15,7 @@ name = "beskid_ast_reflect_gen"
 path = "src/main.rs"
 
 [dependencies]
+beskid_analysis = { path = "../beskid_analysis" }
 syn = { workspace = true, features = ["full", "extra-traits"] }
 
 serde_json = "1"

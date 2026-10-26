@@ -79,7 +79,8 @@ pub(crate) fn emit_leading_doc_lines<W: Write>(
     let Some(d) = doc else {
         return Ok(());
     };
-    for line in d.normalized_source.lines() {
+    // `split`, not `lines`: a blank last documentation line is a line too.
+    for line in d.normalized_source.split('\n') {
         cx.write_indent(w)?;
         w.write_str("///")?;
         if !line.is_empty() {

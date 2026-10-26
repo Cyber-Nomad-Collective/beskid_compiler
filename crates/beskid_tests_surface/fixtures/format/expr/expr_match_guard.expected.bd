@@ -3,7 +3,7 @@ pub enum Foo
     Bar,
 }
 
-pub unit Mg()
+pub unit mg()
 {
     let x = Foo::Bar;
     let v = match (x)

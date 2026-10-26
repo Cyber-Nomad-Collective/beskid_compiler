@@ -517,6 +517,7 @@ dependencies = [
 name = "beskid_ast_reflect_gen"
 version = "0.1.0"
 dependencies = [
+ "beskid_analysis",
  "serde_json",
  "syn 2.0.119",
 ]

@@ -203,7 +203,7 @@ pub fn default_fits(value: &DefaultConstant, ty: &Type) -> bool {
 }
 
 fn has_integer_suffix(text: &str) -> bool {
-    ["_i8", "_i16", "_i32", "_i64", "_u8", "_u16", "_u32", "_u64"].iter().any(|suffix| text.ends_with(suffix))
+    ["_i8", "_i16", "_i32", "_i64", "_u8", "_u16", "_u32", "_u64", "_word"].iter().any(|suffix| text.ends_with(suffix))
 }
 
 fn float_is_finite(text: &str, single: bool) -> bool {

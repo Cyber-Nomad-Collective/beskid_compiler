@@ -7,7 +7,7 @@ pub type DocT
 
 /// Between items
 /// Second line
-pub unit DocFn()
+pub unit doc_fn()
 {
     return;
 }

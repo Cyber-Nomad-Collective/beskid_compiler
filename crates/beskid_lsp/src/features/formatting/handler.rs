@@ -1,22 +1,35 @@
-use tower_lsp_server::ls_types::{Range, TextEdit};
+use beskid_analysis::format::FormatError;
+use tower_lsp_server::ls_types::{MessageType, Range, TextEdit};
 
 use crate::position::offset_range_to_lsp;
 
 /// Full-document format of `text` with the one formatter `beskid fmt` uses.
 ///
-/// Returns `None` (no edits) when the text does not parse or cannot be formatted safely; the
-/// document is never changed in that case. An already formatted text gives an empty edit list.
-pub fn handle_document_formatting(text: &str) -> Option<Vec<TextEdit>> {
-    let formatted = beskid_analysis::format::format_source("<editor>", text).ok()?;
+/// Returns the reason when the text does not parse or cannot be formatted safely; the document
+/// is never changed in that case. An already formatted text gives an empty edit list.
+pub fn handle_document_formatting(text: &str) -> Result<Vec<TextEdit>, FormatError> {
+    let formatted = beskid_analysis::format::format_source("<editor>", text)?;
     if formatted == text {
-        return Some(Vec::new());
+        return Ok(Vec::new());
     }
-    Some(vec![full_document_edit(text, formatted)])
+    Ok(vec![full_document_edit(text, formatted)])
 }
 
 /// Range formatting formats the whole document (the formatter has one canonical output).
-pub fn handle_range_formatting(text: &str, _range: Range) -> Option<Vec<TextEdit>> {
+pub fn handle_range_formatting(text: &str, _range: Range) -> Result<Vec<TextEdit>, FormatError> {
     handle_document_formatting(text)
+}
+
+/// How the editor is told that a document was not formatted, and why.
+///
+/// A parse error is already a diagnostic in the editor, so it goes to the log only. Any other
+/// refusal is a formatter defect the user would not see otherwise: it is shown as a warning.
+pub fn refusal_message(document: &str, error: &FormatError) -> (MessageType, String) {
+    let message = format!("Beskid did not format {document}: {error}");
+    match error {
+        FormatError::Parse(_) => (MessageType::INFO, message),
+        FormatError::Internal(_) => (MessageType::WARNING, message),
+    }
 }
 
 fn full_document_edit(original: &str, replacement: String) -> TextEdit {
@@ -84,12 +97,16 @@ mod tests {
         assert_eq!(edits.len(), 1);
         assert_eq!(edits[0].new_text, from_api, "LSP document format must match format_source output");
         assert_eq!(from_api, CANON, "fixture drift: update golden or formatter");
-        assert_eq!(handle_document_formatting(CANON), Some(Vec::new()), "formatted text needs 0 edits");
+        assert_eq!(handle_document_formatting(CANON).expect("format"), Vec::new(), "formatted text needs 0 edits");
     }
 
     #[test]
-    fn formatting_an_unparsable_document_returns_no_edits() {
-        assert_eq!(handle_document_formatting("i32 Main() { let x = 5 return x; }\n"), None);
+    fn formatting_an_unparsable_document_returns_the_reason() {
+        let error = handle_document_formatting("i32 Main() { let x = 5 return x; }\n").expect_err("parse error");
+        assert!(matches!(error, FormatError::Parse(_)), "{error}");
+        let (kind, message) = refusal_message("Main.bd", &error);
+        assert_eq!(kind, MessageType::INFO, "a parse error is already a diagnostic");
+        assert!(message.starts_with("Beskid did not format Main.bd: "), "{message}");
     }
 
     #[test]

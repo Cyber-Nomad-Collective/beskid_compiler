@@ -9,12 +9,12 @@ pub enum Opt
     None,
 }
 
-pub i32 G()
+pub i32 g()
 {
     return 0;
 }
 
-pub unit Combos()
+pub unit combos()
 {
     let o = Opt::Some(1);
     let n = Opt::None;

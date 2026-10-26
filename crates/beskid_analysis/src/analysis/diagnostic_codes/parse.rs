@@ -19,6 +19,7 @@ pub const EMPTY_SOURCE: &str = "E0113";
 pub const LONG_CHARACTER_LITERAL: &str = "E0114";
 pub const COMMA_BETWEEN_FIELDS: &str = "E0115";
 pub const CONDITIONAL_WITHOUT_COLON: &str = "E0116";
+pub const DETACHED_DOCUMENTATION: &str = "E0117";
 
 pub const FAMILY: CodeFamily = CodeFamily { name: "parse", first: "E0101", last: "E0199", codes: CODES };
 
@@ -38,4 +39,5 @@ pub const CODES: &[CodeInfo] = &[
     CodeInfo { code: LONG_CHARACTER_LITERAL, summary: "character literal with more than one character", tags: &[] },
     CodeInfo { code: COMMA_BETWEEN_FIELDS, summary: "comma between fields", tags: &[] },
     CodeInfo { code: CONDITIONAL_WITHOUT_COLON, summary: "conditional expression without `:`", tags: &[] },
+    CodeInfo { code: DETACHED_DOCUMENTATION, summary: "documentation comment not attached to an item", tags: &[] },
 ];

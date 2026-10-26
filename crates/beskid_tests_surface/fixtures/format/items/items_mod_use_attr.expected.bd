@@ -1,12 +1,12 @@
-pub mod Remote;
+pub mod remote;
 
-use Core.Io;
+use core.io;
 
-pub mod Nest
+pub mod nest
 {
-    pub use Core.Io;
+    pub use core.io;
 
-    pub unit Inner()
+    pub unit inner()
     {
         return;
     }

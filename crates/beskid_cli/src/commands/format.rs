@@ -3,9 +3,12 @@
 use anyhow::{Context, Result, bail};
 use beskid_analysis::MietteReportError;
 use beskid_analysis::format::format_source;
+use beskid_analysis::projects::ProjectKind;
 use clap::Args;
+use std::collections::HashSet;
 use std::ffi::OsStr;
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
@@ -53,7 +56,7 @@ pub fn execute(args: FormatArgs) -> Result<()> {
     {
         let source = fs::read_to_string(&paths[0]).with_context(|| format!("read {}", paths[0].display()))?;
         let formatted = format_file(&paths[0], &source)?;
-        fs::write(out, formatted).with_context(|| format!("write {}", out.display()))?;
+        write_atomically(out, &formatted)?;
         progress(format!("beskid fmt: 1 file in {}", fmt_duration(started.elapsed())));
         return Ok(());
     }
@@ -100,15 +103,37 @@ fn format_one(path: &Path, check: bool) -> Result<()> {
     }
 
     if formatted != source {
-        fs::write(path, formatted).with_context(|| format!("write {}", path.display()))?;
+        write_atomically(path, &formatted)?;
     }
+    Ok(())
+}
+
+/// Replace `path` with `contents` in one step: the text is written to a temporary file in the
+/// same directory and renamed over the target, so an interrupted run never leaves a half-written
+/// source. The target keeps its permissions; a symbolic link is written through, not replaced.
+fn write_atomically(path: &Path, contents: &str) -> Result<()> {
+    let target = fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    let dir = target.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or(Path::new("."));
+    let mut file = tempfile::Builder::new()
+        .prefix(".beskid-fmt-")
+        .suffix(".tmp")
+        .tempfile_in(dir)
+        .with_context(|| format!("create a temporary file in {}", dir.display()))?;
+    file.write_all(contents.as_bytes()).with_context(|| format!("write {}", file.path().display()))?;
+    file.as_file().sync_all().with_context(|| format!("write {}", file.path().display()))?;
+    if let Ok(metadata) = fs::metadata(&target) {
+        fs::set_permissions(file.path(), metadata.permissions())
+            .with_context(|| format!("set permissions of {}", file.path().display()))?;
+    }
+    file.persist(&target).map_err(|error| error.error).with_context(|| format!("write {}", path.display()))?;
     Ok(())
 }
 
 fn collect_bd_files(path: &Path, input_is_dir: bool) -> Result<Vec<PathBuf>> {
     if input_is_dir {
-        let mut paths = Vec::new();
-        collect_dir(path, &mut paths)?;
+        let mut walk = SourceWalk::default();
+        walk.directory(path)?;
+        let mut paths = walk.files;
         paths.sort();
         Ok(paths)
     } else if is_bd_path(path) {
@@ -118,72 +143,113 @@ fn collect_bd_files(path: &Path, input_is_dir: bool) -> Result<Vec<PathBuf>> {
     }
 }
 
-/// Collect the `.bd` sources under `dir` that belong to the user.
+/// The `.bd` sources under a directory that belong to the user.
 ///
 /// A directory with a project manifest (`*.bproj`) contributes only its source root (the
 /// manifest's `root`), so build output (`obj/`, with the dependency and Corelib copies in
-/// `obj/beskid/deps`), `target/` and `.beskid/` are never formatted. Other directories are walked,
-/// skipping build, tool and VCS directories.
-fn collect_dir(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
-    let mut entries: Vec<PathBuf> = fs::read_dir(dir)
-        .with_context(|| format!("read directory {}", dir.display()))?
-        .map(|entry| entry.map(|e| e.path()))
-        .collect::<std::io::Result<_>>()
-        .with_context(|| format!("read directory {}", dir.display()))?;
-    entries.sort();
+/// `obj/beskid/deps`) and `.beskid/` are never formatted. A source root equal to the manifest
+/// directory (`root = "."`) is walked as the directory itself. Other directories are walked,
+/// skipping build, tool and VCS directories. Symbolic links are not followed, and every directory
+/// is walked at most once (by canonical path), so the walk always ends.
+#[derive(Default)]
+struct SourceWalk {
+    visited: HashSet<PathBuf>,
+    files: Vec<PathBuf>,
+}
 
-    let manifests: Vec<&PathBuf> =
-        entries.iter().filter(|p| p.is_file() && p.extension().and_then(OsStr::to_str) == Some("bproj")).collect();
-    if !manifests.is_empty() {
-        let mut roots: Vec<PathBuf> = Vec::new();
+impl SourceWalk {
+    /// Walk `dir` unless it was walked already. Returns false when it was.
+    fn directory(&mut self, dir: &Path) -> Result<bool> {
+        let canonical = fs::canonicalize(dir).with_context(|| format!("resolve directory {}", dir.display()))?;
+        if !self.visited.insert(canonical.clone()) {
+            return Ok(false);
+        }
+        let entries = directory_entries(dir)?;
+        let manifests: Vec<&PathBuf> = entries
+            .iter()
+            .filter(|(p, kind)| kind.is_file() && p.extension().and_then(OsStr::to_str) == Some("bproj"))
+            .map(|(p, _)| p)
+            .collect();
+        if manifests.is_empty() {
+            self.entries(&entries)?;
+            return Ok(true);
+        }
+
+        let mut roots: Vec<(PathBuf, PathBuf, PathBuf, bool)> = Vec::new();
         for manifest_path in manifests {
             let manifest = beskid_analysis::projects::load_manifest_from_path(manifest_path)
                 .with_context(|| format!("read project manifest {}", manifest_path.display()))?;
             let root = dir.join(&manifest.project.root);
-            if !roots.contains(&root) {
-                roots.push(root);
+            let canonical_root = fs::canonicalize(&root).with_context(|| {
+                format!("source root `{}` of {} does not exist", manifest.project.root, manifest_path.display())
+            })?;
+            if !canonical_root.is_dir() {
+                bail!("source root `{}` of {} is not a directory", manifest.project.root, manifest_path.display());
+            }
+            if roots.iter().any(|(_, known, _, _)| *known == canonical_root) {
+                continue;
+            }
+            let needs_sources = !matches!(manifest.project.kind, ProjectKind::Aggregate | ProjectKind::Bsol);
+            roots.push((root, canonical_root, manifest_path.clone(), needs_sources));
+        }
+        for (root, canonical_root, manifest_path, needs_sources) in roots {
+            let before = self.files.len();
+            let walked = if canonical_root == canonical {
+                self.entries(&entries)?;
+                true
+            } else {
+                self.directory(&root)?
+            };
+            if walked && needs_sources && self.files.len() == before {
+                bail!(
+                    "project {} has no `.bd` source files under its source root {}",
+                    manifest_path.display(),
+                    root.display()
+                );
             }
         }
-        for root in roots {
-            if root.is_dir() {
-                collect_dir(&root, out)?;
-            }
-        }
-        return Ok(());
+        Ok(true)
     }
 
-    for entry in entries {
-        if entry.is_dir() {
-            if !entry.file_name().is_some_and(is_skipped_dir) {
-                collect_dir(&entry, out)?;
+    fn entries(&mut self, entries: &[(PathBuf, fs::FileType)]) -> Result<()> {
+        for (entry, kind) in entries {
+            if kind.is_dir() {
+                if !entry.file_name().is_some_and(is_skipped_dir) && !entry.join("CACHEDIR.TAG").is_file() {
+                    self.directory(entry)?;
+                }
+            } else if kind.is_file() && is_bd_path(entry) {
+                self.files.push(entry.clone());
             }
-        } else if is_bd_path(&entry) {
-            out.push(entry);
         }
+        Ok(())
     }
-    Ok(())
+}
+
+/// The entries of `dir`, sorted, with their own type (a symbolic link is neither a file nor a
+/// directory here, so it is never followed).
+fn directory_entries(dir: &Path) -> Result<Vec<(PathBuf, fs::FileType)>> {
+    let mut entries = Vec::new();
+    for entry in fs::read_dir(dir).with_context(|| format!("read directory {}", dir.display()))? {
+        let entry = entry.with_context(|| format!("read directory {}", dir.display()))?;
+        let kind = entry.file_type().with_context(|| format!("read {}", entry.path().display()))?;
+        entries.push((entry.path(), kind));
+    }
+    entries.sort_by(|a, b| a.0.cmp(&b.0));
+    Ok(entries)
 }
 
 fn is_bd_path(path: &Path) -> bool {
     path.extension().and_then(OsStr::to_str).is_some_and(|ext| ext.eq_ignore_ascii_case("bd"))
 }
 
+/// Directories never walked outside a project's source root: Beskid build output and tool state,
+/// version control, and third-party package and environment directories. A directory that marks
+/// itself as a cache (`CACHEDIR.TAG`, as Cargo's `target/` does) is skipped too. Other names
+/// (`target`, `dist`, `vendor`) can be user source directories and are walked.
 fn is_skipped_dir(name: &OsStr) -> bool {
     matches!(
         name.to_str(),
-        Some(
-            ".git"
-                | "obj"
-                | ".beskid"
-                | ".svn"
-                | ".hg"
-                | "target"
-                | "node_modules"
-                | "dist"
-                | ".venv"
-                | "vendor"
-                | "__pycache__"
-        )
+        Some(".git" | "obj" | ".beskid" | ".svn" | ".hg" | "node_modules" | ".venv" | "__pycache__")
     )
 }
 
@@ -260,6 +326,138 @@ mod v06_tests {
         assert_eq!(paths, vec![root.join("Src/Main.bd")], "only the source root is formatted");
         result.expect("files outside the source root are not read");
         assert!(formatted.contains("i32 Main()\n{\n"), "{formatted}");
+    }
+
+    fn write_file(path: &std::path::Path, text: &str) {
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, text).unwrap();
+    }
+
+    const BROKEN: &str = "this is not Beskid\n";
+
+    #[test]
+    fn fmt_with_root_dot_walks_the_manifest_directory_once() {
+        let root = temp_root("root-dot");
+        write_file(
+            &root.join("App.bproj"),
+            "App { name = \"App\" version = \"0.1.0\" root = \".\" }\ntarget \"Main\" { kind = \"Lib\" entry = \"Main.bd\" }\n",
+        );
+        write_file(&root.join("Main.bd"), "i32 Main() { return 0; }\n");
+        write_file(&root.join("Lib/Util.bd"), "i32 Util() { return 1; }\n");
+        for other in ["obj/beskid/deps/Core/Src/Generated.bd", ".beskid/Cache.bd"] {
+            write_file(&root.join(other), BROKEN);
+        }
+        let paths = collect_bd_files(&root, true);
+        let result =
+            execute(FormatArgs { diagnostics: Default::default(), input: root.clone(), output: None, check: false });
+        let formatted = std::fs::read_to_string(root.join("Lib/Util.bd")).unwrap();
+        let check =
+            execute(FormatArgs { diagnostics: Default::default(), input: root.clone(), output: None, check: true });
+        std::fs::remove_dir_all(&root).unwrap();
+        assert_eq!(paths.unwrap(), vec![root.join("Lib/Util.bd"), root.join("Main.bd")]);
+        result.expect("`obj/` and `.beskid/` are not formatted");
+        assert!(formatted.contains("i32 Util()\n{\n"), "{formatted}");
+        check.expect("`--check` passes on the formatted project");
+    }
+
+    #[test]
+    fn fmt_check_with_root_dot_fails_on_an_unformatted_file() {
+        let root = temp_root("root-dot-check");
+        write_file(
+            &root.join("App.bproj"),
+            "App { name = \"App\" version = \"0.1.0\" root = \".\" }\ntarget \"Main\" { kind = \"Lib\" entry = \"Main.bd\" }\n",
+        );
+        write_file(&root.join("Main.bd"), "i32 Main() { return 0; }\n");
+        let check =
+            execute(FormatArgs { diagnostics: Default::default(), input: root.clone(), output: None, check: true });
+        std::fs::remove_dir_all(&root).unwrap();
+        assert!(check.is_err(), "`--check` must see the project's sources");
+    }
+
+    #[test]
+    fn fmt_fails_when_a_project_root_has_no_sources() {
+        let root = temp_root("empty-root");
+        write_file(
+            &root.join("App.bproj"),
+            "App { name = \"App\" version = \"0.1.0\" root = \"Src\" }\ntarget \"Main\" { kind = \"Lib\" entry = \"Main.bd\" }\n",
+        );
+        std::fs::create_dir_all(root.join("Src")).unwrap();
+        write_file(&root.join("Loose.bd"), "i32 Main() { return 0; }\n");
+        let result =
+            execute(FormatArgs { diagnostics: Default::default(), input: root.clone(), output: None, check: true });
+        let missing = {
+            std::fs::remove_dir_all(root.join("Src")).unwrap();
+            execute(FormatArgs { diagnostics: Default::default(), input: root.clone(), output: None, check: true })
+        };
+        std::fs::remove_dir_all(&root).unwrap();
+        let error = result.expect_err("a project without sources must fail");
+        assert!(format!("{error:#}").contains("no `.bd` source files"), "{error:#}");
+        let error = missing.expect_err("a missing source root must fail");
+        assert!(format!("{error:#}").contains("does not exist"), "{error:#}");
+    }
+
+    #[test]
+    fn fmt_walks_user_directories_named_like_tool_output() {
+        let root = temp_root("user-dirs");
+        for dir in ["target", "dist", "vendor"] {
+            write_file(&root.join(dir).join("Main.bd"), "i32 Main() { return 0; }\n");
+        }
+        write_file(&root.join("cache/CACHEDIR.TAG"), "Signature: 8a477f597d28d172789f06886806bc55\n");
+        write_file(&root.join("cache/Out.bd"), BROKEN);
+        let paths = collect_bd_files(&root, true).unwrap();
+        std::fs::remove_dir_all(&root).unwrap();
+        let expected: Vec<_> = ["dist", "target", "vendor"].iter().map(|d| root.join(d).join("Main.bd")).collect();
+        assert_eq!(paths, expected);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn fmt_does_not_follow_directory_links() {
+        let root = temp_root("links");
+        write_file(&root.join("Src/Main.bd"), "i32 Main() { return 0; }\n");
+        std::os::unix::fs::symlink(root.join("Src"), root.join("Src/Again")).unwrap();
+        std::os::unix::fs::symlink(&root, root.join("Src/Up")).unwrap();
+        let paths = collect_bd_files(&root, true).unwrap();
+        std::fs::remove_dir_all(&root).unwrap();
+        assert_eq!(paths, vec![root.join("Src/Main.bd")]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn fmt_writes_through_a_file_link_and_keeps_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = temp_root("write");
+        let real = root.join("Real.bd");
+        write_file(&real, "i32 Main() { return 0; }\n");
+        std::fs::set_permissions(&real, std::fs::Permissions::from_mode(0o640)).unwrap();
+        let link = root.join("Link.bd");
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+        let result =
+            execute(FormatArgs { diagnostics: Default::default(), input: link.clone(), output: None, check: false });
+        let is_link = std::fs::symlink_metadata(&link).unwrap().file_type().is_symlink();
+        let text = std::fs::read_to_string(&real).unwrap();
+        let mode = std::fs::metadata(&real).unwrap().permissions().mode() & 0o777;
+        let leftovers = std::fs::read_dir(&root).unwrap().count();
+        std::fs::remove_dir_all(&root).unwrap();
+        result.unwrap();
+        assert!(is_link, "the link stays a link");
+        assert!(text.contains("i32 Main()\n{\n"), "{text}");
+        assert_eq!(mode, 0o640);
+        assert_eq!(leftovers, 2, "no temporary file is left behind");
+    }
+
+    /// Projects without a source directory (an aggregate such as `corelib.bproj`, a schema-only
+    /// package such as `pest_gen_schema.bproj`) once recursed until the stack overflowed.
+    #[test]
+    fn fmt_walks_projects_without_a_source_directory() {
+        let corelib = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corelib");
+        for project in ["beskid_corelib", "packages/pest-gen-schema"] {
+            let dir = corelib.join(project);
+            let paths = collect_bd_files(&dir, true).unwrap_or_else(|error| panic!("{project}: {error:#}"));
+            assert!(paths.iter().all(|path| path.starts_with(&dir)), "{project}: {paths:?}");
+        }
+        let schema_only = collect_bd_files(&corelib.join("packages/pest-gen-schema"), true).unwrap();
+        assert_eq!(schema_only, Vec::<PathBuf>::new(), "a schema-only package has no sources to format");
     }
 
     #[test]

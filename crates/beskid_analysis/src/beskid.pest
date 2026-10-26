@@ -227,7 +227,7 @@ KwWhen = _{ !(!KwWhenWord) ~ "when" }
 
 DecimalIntegerBody = { ASCII_DIGIT+ ~ ("_" ~ ASCII_DIGIT+)* }
 HexIntegerBody = { ASCII_HEX_DIGIT+ ~ ("_" ~ ASCII_HEX_DIGIT+)* }
-IntegerLiteral = @{ "-"? ~ (("0x" ~ HexIntegerBody) | DecimalIntegerBody) ~ ("_i8" | "_i16" | "_i32" | "_i64" | "_u8" | "_u16" | "_u32" | "_u64")? }
+IntegerLiteral = @{ "-"? ~ (("0x" ~ HexIntegerBody) | DecimalIntegerBody) ~ ("_i8" | "_i16" | "_i32" | "_i64" | "_u8" | "_u16" | "_u32" | "_u64" | "_word")? }
 FloatLiteral = @{ "-"? ~ ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT+ ~ (("e" | "E") ~ ("+" | "-")? ~ ASCII_DIGIT+)? ~ ("_f32" | "_f64")? }
 StringLiteral = @{ "\"" ~ StringContent* ~ "\"" }
 StringLiteralValueBody = ${ (StringContent)* }
@@ -270,7 +270,8 @@ ItemList = { ItemWithDocs* }
 Program = { SOI ~ ItemList ~ EOI }
 
 DocLineContent = { "///" ~ !("/") ~ (!(NEWLINE) ~ ANY)* ~ NEWLINE? }
-DocRun = @{ DocLineContent ~ ((" " | "\t")* ~ DocLineContent)* }
+// A run documents the item right below it: a blank line after the run detaches it (E0117).
+DocRun = @{ DocLineContent ~ ((" " | "\t")* ~ DocLineContent)* ~ !((" " | "\t")* ~ NEWLINE) }
 InnerItem = _{ HostDefinition | MacroDefinition | FunctionDefinition | ConstantDefinition | ImplBlock | ExtendTypeDefinition | TypeDefinition | EnumDefinition | ContractDefinition | TestDefinition | AttributeDeclaration | InlineModule | ModuleDeclaration | UseDeclaration }
 
 AttributeList = { Attribute+ }

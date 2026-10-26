@@ -23,9 +23,14 @@ const BRACE_ON_OWN_LINE: bool = true;
 /// Conditions of `if`, `while` and `match` are written in parentheses.
 pub(crate) const PARENTHESIZE_CONDITIONS: bool = true;
 
-/// Write what separates a header from the `{` of its body.
-pub(crate) fn before_open_brace<W: Write>(cx: &mut EmitCtx, w: &mut W) -> Result<(), EmitError> {
-    if BRACE_ON_OWN_LINE {
+/// Write what separates a header from the `{` of its body. After a `//` comment on the header
+/// line the brace always starts a new line.
+pub(crate) fn before_open_brace<W: Write>(
+    cx: &mut EmitCtx,
+    w: &mut W,
+    after_line_comment: bool,
+) -> Result<(), EmitError> {
+    if BRACE_ON_OWN_LINE || after_line_comment {
         cx.nl(w)?;
         cx.write_indent(w)
     } else {

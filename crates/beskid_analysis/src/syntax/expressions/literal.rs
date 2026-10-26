@@ -24,7 +24,11 @@ pub enum Literal {
 /// Strip the type suffix from an integer literal text (e.g. "42_i32" → "42").
 pub fn integer_literal_magnitude(text: &str) -> &str {
     match text.rsplit_once('_') {
-        Some((value, suffix)) if matches!(suffix, "i8" | "i16" | "i32" | "i64" | "u8" | "u16" | "u32" | "u64") => value,
+        Some((value, suffix))
+            if matches!(suffix, "i8" | "i16" | "i32" | "i64" | "u8" | "u16" | "u32" | "u64" | "word") =>
+        {
+            value
+        }
         _ => text,
     }
 }
@@ -39,6 +43,7 @@ pub fn integer_literal_primitive_type(text: &str) -> PrimitiveType {
         ("_u16", PrimitiveType::U16),
         ("_u32", PrimitiveType::U32),
         ("_u64", PrimitiveType::U64),
+        ("_word", PrimitiveType::Word),
     ] {
         if text.ends_with(suffix) {
             return primitive;
@@ -170,6 +175,8 @@ mod v06_primitive_tests {
             ("65535_u16", PrimitiveType::U16),
             ("18446744073709551615_u64", PrimitiveType::U64),
             ("18_446_744_073_709_551_615_u64", PrimitiveType::U64),
+            ("18446744073709551615_word", PrimitiveType::Word),
+            ("4_word", PrimitiveType::Word),
         ] {
             assert_eq!(integer_literal_primitive_type(source), ty);
             assert!(integer_literal_fits_primitive(source, ty));
@@ -185,6 +192,8 @@ mod v06_primitive_tests {
             assert!(!integer_literal_fits_primitive(source, ty), "{source}");
         }
         assert_eq!(integer_literal_magnitude("18_446_u64"), "18_446");
+        assert_eq!(integer_literal_magnitude("4_word"), "4");
+        assert!(crate::services::parse_program("u64 F() { return G(4_word); }").is_ok(), "`_word` is a suffix");
         assert_eq!(float_literal_primitive_type("1.5_f32"), PrimitiveType::F32);
         assert_eq!(float_literal_magnitude("3.4028235e38_f32"), "3.4028235e38");
     }

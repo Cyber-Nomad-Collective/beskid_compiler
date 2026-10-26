@@ -1,7 +1,7 @@
 //! Formatter (`Emit`) integration tests.
 
 mod macro_roundtrip;
-mod naming_normalize;
+mod never_renames;
 
 use beskid_analysis::format::Emitter;
 use beskid_analysis::format::format_source;
@@ -63,7 +63,7 @@ fn format_conditional_expression_round_trips_on_one_line() {
 fn format_golden_use_and_function() {
     let src = "use a.b;\npub i32 Main() { return 42; }\n";
     let out = fmt(src);
-    let expected = concat!("use A.B;\n", "\n", "pub i32 Main()\n", "{\n", "    return 42;\n", "}\n",);
+    let expected = concat!("use a.b;\n", "\n", "pub i32 Main()\n", "{\n", "    return 42;\n", "}\n",);
     assert_eq!(out, expected);
 }
 
@@ -108,7 +108,7 @@ let x = 1;
 }"#;
     let out = fmt(src);
     let expected = concat!(
-        "pub unit F()\n",
+        "pub unit f()\n",
         "{\n",
         "    if (cond)\n",
         "    {\n",
@@ -170,7 +170,7 @@ let v = match 0 { _ => 1, };
 }"#;
     let out = fmt(src);
     let expected = concat!(
-        "use Core.Io;\n",
+        "use core.io;\n",
         "\n",
         "pub type Point\n",
         "{\n",
@@ -186,11 +186,11 @@ let v = match 0 { _ => 1, };
         "\n",
         "pub contract C\n",
         "{\n",
-        "    i32 M();\n",
+        "    i32 m();\n",
         "    Other;\n",
         "}\n",
         "\n",
-        "pub unit Demo()\n",
+        "pub unit demo()\n",
         "{\n",
         "    let v = match (0)\n",
         "    {\n",
