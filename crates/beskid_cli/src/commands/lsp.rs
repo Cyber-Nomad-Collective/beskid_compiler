@@ -45,7 +45,7 @@ fn run_stdio_server() -> Result<()> {
         return Ok(());
     }
 
-    tokio::runtime::Builder::new_multi_thread().enable_all().build()?.block_on(beskid_lsp::run_stdio_server())
+    beskid_lsp::serve_stdio()
 }
 
 trait WithContextSpawn {

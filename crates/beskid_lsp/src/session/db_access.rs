@@ -20,51 +20,83 @@ fn run_blocking_section<R>(work: impl FnOnce() -> R) -> R {
     }
 }
 
-/// Analyze in the database of `project_root` (the detached database for `None`): the analysis
-/// whose facts documents keep. Each such analysis starts from a fresh storage (see
-/// [`super::project_dbs::ANALYSES_PER_DATABASE`]).
-///
-/// Only that project's gate is held, so work on another project does not wait. The LSP state
-/// lock is held just long enough to look the database up. `interactive` marks work for an
-/// open document, which keeps the project's database alive longer than scanned-only ones.
-pub async fn with_project_db<R>(
-    state: &RwLock<State>,
-    project_root: Option<&Path>,
-    interactive: bool,
-    f: impl FnOnce(&mut BeskidDatabase) -> R,
-) -> R {
-    run_in_project_db(state, project_root, interactive, true, f).await
+/// Which work an analysis serves; each kind has its own permits.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Lane {
+    /// An open document (its edit, its diagnostics, a command).
+    Interactive,
+    /// The workspace index typing a project. It gets a fair turn against interactive work
+    /// (see [`crate::scan_schedule::BackgroundTurn`]) and never queues behind closed files.
+    Index,
+    /// A closed file analyzed on its own (closing a document, a file changed on disk).
+    ClosedFile,
 }
 
-/// Work in the database of `project_root` that keeps no facts of its own (diagnostics
-/// assembly, explorer graphs): it shares the storage of the last analysis.
+impl Lane {
+    fn from_interactive(interactive: bool) -> Self {
+        if interactive { Self::Interactive } else { Self::ClosedFile }
+    }
+}
+
+/// The workspace index's analysis of one project (see [`Lane::Index`]).
+pub async fn with_index_db<R>(
+    state: &RwLock<State>,
+    project_root: &Path,
+    f: impl FnOnce(&mut BeskidDatabase) -> R,
+) -> R {
+    run_in_project_db(state, Some(project_root), Lane::Index, true, f).await
+}
+
+/// Work in the database of `project_root` (the detached database for `None`) that keeps no facts
+/// of its own (diagnostics assembly, explorer graphs): it shares the storage of the last
+/// analysis. Only that project's gate is held, so work on another project does not wait; the
+/// LSP state lock is held just long enough to look the database up. `interactive` marks work
+/// for an open document, which keeps the project's database alive longer than scanned-only ones.
 pub async fn with_shared_project_db<R>(
     state: &RwLock<State>,
     project_root: Option<&Path>,
     interactive: bool,
     f: impl FnOnce(&mut BeskidDatabase) -> R,
 ) -> R {
-    run_in_project_db(state, project_root, interactive, false, f).await
+    run_in_project_db(state, project_root, Lane::from_interactive(interactive), false, f).await
 }
 
-/// [`with_project_db`] (`analysis`) or [`with_shared_project_db`].
+/// Work in the database of `project_root` on `lane`. An `analysis` keeps its facts in documents
+/// and starts from a fresh storage (see [`super::project_dbs::ANALYSES_PER_DATABASE`]);
+/// otherwise the work shares the storage of the last analysis.
 pub(crate) async fn run_in_project_db<R>(
     state: &RwLock<State>,
     project_root: Option<&Path>,
-    interactive: bool,
+    lane: Lane,
     analysis: bool,
     f: impl FnOnce(&mut BeskidDatabase) -> R,
 ) -> R {
     // The permit comes first: work waiting for its turn holds no database, so the databases
     // alive are bounded by the permits and the pool, however long the queue of edits grows.
-    let permits = {
+    let (permits, turn) = {
         let read = state.read().await;
-        Arc::clone(if interactive { &read.analysis_permits } else { &read.background_permits })
+        let permits = match lane {
+            Lane::Interactive => &read.analysis_permits,
+            Lane::Index => &read.index_permits,
+            Lane::ClosedFile => &read.background_permits,
+        };
+        (Arc::clone(permits), Arc::clone(&read.background_turn))
+    };
+    let mut index_wait = match lane {
+        Lane::Interactive => {
+            turn.interactive_turn().await;
+            None
+        }
+        Lane::Index => Some(turn.background_waiting()),
+        Lane::ClosedFile => None,
     };
     let _permit = permits.acquire_owned().await.expect("analysis permits are never closed");
-    let (database, evicted) = state.write().await.databases.get(project_root, interactive);
+    let (database, evicted) = state.write().await.databases.get(project_root, lane == Lane::Interactive);
     drop_in_background(evicted);
     let _gate = database.gate().lock().await;
+    if let Some(wait) = index_wait.as_mut() {
+        wait.started();
+    }
     // Starting a fresh storage drops the previous one, which takes a while for a large project.
     run_blocking_section(|| {
         let mut db = if analysis { database.lock_for_analysis() } else { database.lock() };
@@ -121,7 +153,7 @@ mod tests {
 
     use tokio::sync::RwLock;
 
-    use super::{document_update_gate, parallel_project_db, with_project_db};
+    use super::{document_update_gate, parallel_project_db, with_shared_project_db};
     use crate::session::store::State;
 
     #[tokio::test]
@@ -134,13 +166,13 @@ mod tests {
         let _held = busy.gate().lock().await;
         let other = tokio::time::timeout(
             Duration::from_millis(500),
-            with_project_db(&state, Some(Path::new("/w/other")), true, |_| 7),
+            with_shared_project_db(&state, Some(Path::new("/w/other")), true, |_| 7),
         )
         .await;
         assert_eq!(other.ok(), Some(7), "another project's database is free");
         let same = tokio::time::timeout(
             Duration::from_millis(100),
-            with_project_db(&state, Some(Path::new("/w/busy")), true, |_| ()),
+            with_shared_project_db(&state, Some(Path::new("/w/busy")), true, |_| ()),
         )
         .await;
         assert!(same.is_err(), "the busy project's mutation gate is held");

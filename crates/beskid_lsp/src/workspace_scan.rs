@@ -4,6 +4,7 @@ use std::{
     collections::HashSet,
     path::{Path, PathBuf},
     str::FromStr,
+    sync::Arc,
     time::{Duration, Instant},
 };
 
@@ -28,6 +29,8 @@ use crate::{
 };
 
 const MAX_CONCURRENT_READS: usize = 24;
+/// Projects the workspace index types at once (see `State::index_permits`).
+const MAX_CONCURRENT_INDEX: usize = 3;
 const STATUS_EMIT_INTERVAL: Duration = Duration::from_millis(200);
 
 fn uri_from_path(path: &Path) -> Option<Uri> {
@@ -73,7 +76,12 @@ async fn emit_scan_idle(client: &Client) {
 }
 
 /// Recursively index `root` for Beskid sources, publish diagnostics for closed files, then emit idle status.
-pub async fn scan_workspace_root(client: &Client, state: &RwLock<State>, root: &Path, focused_project: Option<&Path>) {
+pub async fn scan_workspace_root(
+    client: &Client,
+    state: &Arc<RwLock<State>>,
+    root: &Path,
+    focused_project: Option<&Path>,
+) {
     let mut paths: Vec<PathBuf> = Vec::new();
     for entry in WalkDir::new(root)
         .into_iter()
@@ -156,148 +164,189 @@ pub async fn scan_workspace_root(client: &Client, state: &RwLock<State>, root: &
                 .map(|(manifest, _)| (path.clone(), manifest))
         })
         .collect();
-    let mut indexed_projects: HashSet<PathBuf> = HashSet::new();
-    let mut indexed_files: HashSet<PathBuf> = HashSet::new();
-
-    let sem = Semaphore::new(MAX_CONCURRENT_READS);
     let interactive = state.read().await.interactive_inflight.clone();
     let mut processed: u32 = 0;
-    let mut startup_signalled = false;
-    for path in paths.clone() {
-        // Manifests are structural and cheap. Once they are indexed, document requests no
-        // longer wait for the closed-source analysis that follows.
-        if !startup_signalled && !is_manifest(&path) {
-            startup_signalled = true;
+    let sem = Semaphore::new(MAX_CONCURRENT_READS);
+    let mut indexed_files: HashSet<PathBuf> = HashSet::new();
+    for manifests_pass in [true, false] {
+        if !manifests_pass {
+            // Manifests are indexed: document requests stop waiting for the scan here, and the
+            // closed-source analysis follows.
             signal_initial_scan_complete(state).await;
-        }
-        // Files of an indexed project are done: only real analysis yields to interactive work.
-        if indexed_files.contains(&path) {
-            processed = processed.saturating_add(1);
-            maybe_emit_scan_progress(client, &mut last_emit, processed, total, None).await;
-            continue;
-        }
-        if !is_manifest(&path) {
-            crate::scan_schedule::yield_to_interactive(&interactive).await;
-        }
-        if let Some(manifest) = owners.get(&path)
-            && indexed_projects.insert(manifest.clone())
-        {
-            let mut group = Vec::new();
-            for member in paths.iter().filter(|member| owners.get(*member) == Some(manifest)) {
-                let Some(uri) = uri_from_path(member) else { continue };
-                if state.read().await.docs.contains_key(&uri) {
-                    continue;
-                }
-                let Ok(text) = tokio::fs::read_to_string(member).await else { continue };
-                if !refresh && state.read().await.workspace_index.get(&uri).is_some_and(|known| known.text == text) {
-                    indexed_files.insert(member.clone());
-                    continue;
-                }
-                group.push((uri, member.clone(), text));
-            }
-            let started = Instant::now();
-            let mut documents = match index_project_documents(state, &group).await {
-                Ok(documents) => documents,
-                Err(reason) => {
-                    client
-                        .log_message(
-                            tower_lsp_server::ls_types::MessageType::WARNING,
-                            format!("indexing {} file by file: {reason}", manifest.display()),
-                        )
-                        .await;
-                    Default::default()
-                }
-            };
-            client
-                .log_message(
-                    tower_lsp_server::ls_types::MessageType::LOG,
-                    format!(
-                        "indexed {}: {} of {} files in {} ms",
-                        manifest.display(),
-                        documents.len(),
-                        group.len(),
-                        started.elapsed().as_millis()
-                    ),
-                )
-                .await;
-            for (uri, member, _) in group {
-                let Some(doc) = documents.remove(&uri) else { continue };
-                let diagnostics = lsp_diagnostics_from_syntax(&doc.text, &doc.syntax_diagnostics);
-                set_disk_snapshot(state, uri.clone(), doc).await;
-                client.publish_diagnostics(uri, diagnostics, Some(0)).await;
-                indexed_files.insert(member);
-            }
-        }
-        if indexed_files.contains(&path) {
-            processed = processed.saturating_add(1);
-            maybe_emit_scan_progress(client, &mut last_emit, processed, total, None).await;
-            continue;
-        }
-        let _permit = match sem.acquire().await {
-            Ok(p) => p,
-            Err(_) => continue,
-        };
-        processed = processed.saturating_add(1);
-        let detail = path
-            .file_name()
-            .map(|n| n.to_string_lossy().into_owned())
-            .or_else(|| path.to_str().map(ToString::to_string));
-        maybe_emit_scan_progress(client, &mut last_emit, processed, total, detail).await;
 
-        let Some(uri) = uri_from_path(&path) else {
-            continue;
-        };
-        let skip = {
-            let s = state.read().await;
-            s.docs.contains_key(&uri)
-        };
-        if skip {
-            continue;
+            // Projects in scan order (open documents' projects first), indexed a few at a time.
+            let mut projects: Vec<PathBuf> = Vec::new();
+            for path in &paths {
+                if let Some(manifest) = owners.get(path)
+                    && !projects.contains(manifest)
+                {
+                    projects.push(manifest.clone());
+                }
+            }
+            // Each step is its own task: a step holds the database and blocking threads for a
+            // whole project's typing, and must not stall the other steps or the state lock.
+            let mut members_of: std::collections::HashMap<PathBuf, Vec<PathBuf>> = std::collections::HashMap::new();
+            for path in &paths {
+                if let Some(manifest) = owners.get(path) {
+                    members_of.entry(manifest.clone()).or_default().push(path.clone());
+                }
+            }
+            let mut steps = tokio::task::JoinSet::new();
+            let mut pending = projects.into_iter();
+            loop {
+                while steps.len() < MAX_CONCURRENT_INDEX
+                    && let Some(manifest) = pending.next()
+                {
+                    let members = members_of.remove(&manifest).unwrap_or_default();
+                    let state = Arc::clone(state);
+                    let client = client.clone();
+                    steps.spawn(async move {
+                        let mut group = Vec::new();
+                        let mut unchanged = Vec::new();
+                        let mut handled_on_close = Vec::new();
+                        for member in &members {
+                            let Some(uri) = uri_from_path(member) else { continue };
+                            // An open document is analyzed as a buffer; closing it analyzes its disk text.
+                            if state.read().await.docs.contains_key(&uri) {
+                                handled_on_close.push(member.clone());
+                                continue;
+                            }
+                            let Ok(text) = tokio::fs::read_to_string(member).await else { continue };
+                            if !refresh
+                                && state.read().await.workspace_index.get(&uri).is_some_and(|known| known.text == text)
+                            {
+                                unchanged.push(member.clone());
+                                continue;
+                            }
+                            group.push((uri, member.clone(), text));
+                        }
+                        let started = Instant::now();
+                        let mut documents = match index_project_documents(&state, &group).await {
+                            Ok(documents) => documents,
+                            Err(reason) => {
+                                client
+                                    .log_message(
+                                        tower_lsp_server::ls_types::MessageType::WARNING,
+                                        format!("indexing {} file by file: {reason}", manifest.display()),
+                                    )
+                                    .await;
+                                Default::default()
+                            }
+                        };
+                        client
+                            .log_message(
+                                tower_lsp_server::ls_types::MessageType::LOG,
+                                format!(
+                                    "indexed {}: {} of {} files in {} ms",
+                                    manifest.display(),
+                                    documents.len(),
+                                    group.len(),
+                                    started.elapsed().as_millis()
+                                ),
+                            )
+                            .await;
+                        let mut indexed = Vec::new();
+                        for (uri, member, _) in group {
+                            let Some(doc) = documents.remove(&uri) else { continue };
+                            let diagnostics = lsp_diagnostics_from_syntax(&doc.text, &doc.syntax_diagnostics);
+                            set_disk_snapshot(&state, uri.clone(), doc).await;
+                            client.publish_diagnostics(uri, diagnostics, Some(0)).await;
+                            indexed.push(member);
+                        }
+                        (indexed, unchanged, handled_on_close)
+                    });
+                }
+                let Some(finished) = steps.join_next().await else {
+                    break;
+                };
+                // A step that panicked indexed nothing; its files are analyzed one by one below.
+                let Ok((indexed, unchanged, handled_on_close)) = finished else {
+                    continue;
+                };
+                indexed_files.extend(unchanged);
+                indexed_files.extend(handled_on_close);
+                processed = processed.saturating_add(indexed.len() as u32);
+                indexed_files.extend(indexed);
+                maybe_emit_scan_progress(client, &mut last_emit, processed, total, None).await;
+            }
         }
-        let Ok(text) = tokio::fs::read_to_string(&path).await else {
-            continue;
-        };
-        if !refresh {
-            let unchanged = state.read().await.workspace_index.get(&uri).is_some_and(|known| known.text == text);
-            if unchanged {
+        for path in paths.clone() {
+            // Manifests first (structural and cheap); files of an indexed project are done; the
+            // rest are analyzed one by one.
+            if is_manifest(&path) != manifests_pass || indexed_files.contains(&path) {
                 continue;
             }
-        }
-        let doc =
-            if is_manifest_extension(path.extension().and_then(|extension| extension.to_str()).unwrap_or_default())
-                || path.extension().and_then(|extension| extension.to_str()) == Some("bsol")
-            {
-                let (diagnostics, fixes) = collect_syntax_diagnostics(None, &uri, &text, None);
-                let bsol_semantic_token_candidates = crate::session::lifecycle::bsol_semantic_token_candidates(&text);
-                Document {
-                    version: 0,
-                    text,
-                    syntax_definitions: Vec::new(),
-                    syntax_hovers: Vec::new(),
-                    syntax_symbols: Vec::new(),
-                    bsol_semantic_token_candidates,
-                    syntax_attribute_names: Vec::new(),
-                    syntax_completion: None,
-                    syntax_inlay_hints: Vec::new(),
-                    syntax_documentation: Vec::new(),
-                    syntax_diagnostics: diagnostics,
-                    syntax_fixes: fixes,
-                }
-            } else {
-                // Closed Beskid sources must use the same project-backed, full-closure
-                // diagnostic path as open buffers. The structural helper deliberately
-                // excludes lower-spine type checking, which made valid syntax with a
-                // type error appear clean until the user opened the file.
-                build_initial_workspace_document(state, &uri, 0, text).await
+            if !is_manifest(&path) {
+                crate::scan_schedule::yield_to_interactive(&interactive).await;
+            }
+            let _permit = match sem.acquire().await {
+                Ok(p) => p,
+                Err(_) => continue,
             };
-        let diagnostics = lsp_diagnostics_from_syntax(&doc.text, &doc.syntax_diagnostics);
-        set_disk_snapshot(state, uri.clone(), doc).await;
-        client.publish_diagnostics(uri, diagnostics, Some(0)).await;
-    }
+            processed = processed.saturating_add(1);
+            let detail = path
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .or_else(|| path.to_str().map(ToString::to_string));
+            maybe_emit_scan_progress(client, &mut last_emit, processed, total, detail).await;
 
+            let Some(uri) = uri_from_path(&path) else {
+                continue;
+            };
+            let skip = {
+                let s = state.read().await;
+                s.docs.contains_key(&uri)
+            };
+            if skip {
+                continue;
+            }
+            let Ok(text) = tokio::fs::read_to_string(&path).await else {
+                continue;
+            };
+            if !refresh {
+                let unchanged = state.read().await.workspace_index.get(&uri).is_some_and(|known| known.text == text);
+                if unchanged {
+                    continue;
+                }
+            }
+            let doc =
+                if is_manifest_extension(path.extension().and_then(|extension| extension.to_str()).unwrap_or_default())
+                    || path.extension().and_then(|extension| extension.to_str()) == Some("bsol")
+                {
+                    let (diagnostics, fixes) = collect_syntax_diagnostics(None, &uri, &text, None);
+                    let bsol_semantic_token_candidates =
+                        crate::session::lifecycle::bsol_semantic_token_candidates(&text);
+                    Document {
+                        version: 0,
+                        text,
+                        syntax_definitions: Vec::new(),
+                        syntax_hovers: Vec::new(),
+                        syntax_symbols: Vec::new(),
+                        bsol_semantic_token_candidates,
+                        syntax_attribute_names: Vec::new(),
+                        syntax_completion: None,
+                        syntax_inlay_hints: Vec::new(),
+                        syntax_documentation: Vec::new(),
+                        syntax_diagnostics: diagnostics,
+                        syntax_fixes: fixes,
+                    }
+                } else {
+                    // Closed Beskid sources must use the same project-backed, full-closure
+                    // diagnostic path as open buffers. The structural helper deliberately
+                    // excludes lower-spine type checking, which made valid syntax with a
+                    // type error appear clean until the user opened the file.
+                    build_initial_workspace_document(state, &uri, 0, text).await
+                };
+            let diagnostics = lsp_diagnostics_from_syntax(&doc.text, &doc.syntax_diagnostics);
+            set_disk_snapshot(state, uri.clone(), doc).await;
+            client.publish_diagnostics(uri, diagnostics, Some(0)).await;
+        }
+    }
     signal_initial_scan_complete(state).await;
 
-    if refresh {
+    // A changed manifest or lock dropped the open documents' facts: analyze them again. The
+    // first scan dropped nothing, and each open document's own analysis follows its open.
+    if refresh && !first_scan {
         rebuild_open_document_syntax_facts(state).await;
 
         let open_uris = {
@@ -352,7 +401,7 @@ pub type RootHook = std::sync::Arc<
 /// root's closed sources have been analyzed, never between roots.
 pub async fn scan_workspace_roots(
     client: &Client,
-    state: &RwLock<State>,
+    state: &Arc<RwLock<State>>,
     roots: &[PathBuf],
     focused_project: Option<&Path>,
     hook: Option<RootHook>,
@@ -370,7 +419,7 @@ pub async fn scan_workspace_roots(
 }
 
 /// Scan a single root as a complete workspace.
-pub async fn scan_workspace(client: &Client, state: &RwLock<State>, root: &Path, focused_project: Option<&Path>) {
+pub async fn scan_workspace(client: &Client, state: &Arc<RwLock<State>>, root: &Path, focused_project: Option<&Path>) {
     scan_workspace_roots(client, state, std::slice::from_ref(&root.to_path_buf()), focused_project, None).await;
 }
 
@@ -838,7 +887,7 @@ mod tests {
         (client, rx)
     }
 
-    async fn open_lock_fixture() -> (TempDir, RwLock<State>, Uri, PathBuf, String) {
+    async fn open_lock_fixture() -> (TempDir, Arc<RwLock<State>>, Uri, PathBuf, String) {
         let temp = TempDir::new().expect("project");
         fs::create_dir_all(temp.path().join("Src")).expect("source directory");
         let manifest = temp.path().join("App.bproj");
@@ -863,7 +912,7 @@ target "App" {
         beskid_analysis::projects::prepare_project_workspace(&plan).expect("initial valid lock");
         let lock = temp.path().join("Project.lock");
         let uri = path_to_uri(&source_path).expect("source URI");
-        let state = RwLock::new(State::default());
+        let state = Arc::new(RwLock::new(State::default()));
         state.read().await.mark_initial_scan_complete();
         set_document(&state, uri.clone(), 1, source.clone()).await;
         (temp, state, uri, lock, source)

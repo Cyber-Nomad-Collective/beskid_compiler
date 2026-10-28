@@ -1,4 +1,4 @@
-//! [`run_stdio_server`]: the language server on stdin and stdout.
+//! [`serve_stdio`]: the language server on stdin and stdout.
 
 use std::sync::Arc;
 
@@ -15,8 +15,32 @@ use crate::crash::{self, CrashReporter};
 /// database gate bounds the analysis work.
 const MAX_IN_FLIGHT_MESSAGES: usize = 128;
 
-/// Run the language server on stdio (used by `beskid_lsp` and `beskid dev lsp`).
-pub async fn run_stdio_server() -> anyhow::Result<()> {
+/// Run the language server on stdio until the client exits: the start-up shared by `beskid_lsp`
+/// and `beskid dev lsp`. Call it from a plain thread with no async runtime running; it limits the
+/// allocator before it starts the runtime's threads.
+pub fn serve_stdio() -> anyhow::Result<()> {
+    limit_malloc_arenas();
+    let runtime = tokio::runtime::Builder::new_multi_thread().enable_all().build()?;
+    runtime.block_on(run_stdio_server())
+}
+
+/// glibc gives each thread that allocates concurrently its own malloc arena (up to eight per
+/// core) and returns little of their freed memory. The server allocates and frees whole typed
+/// programs on many threads, so its resident size grew to twice what it used (measured in a
+/// Corelib soak: 12 GB with the default arenas, 5.6 GB with two, at the same latency).
+#[cfg(all(target_os = "linux", target_env = "gnu"))]
+fn limit_malloc_arenas() {
+    // SAFETY: `mallopt` only adjusts allocator tuning, and it runs before the runtime starts any
+    // other thread.
+    unsafe {
+        libc::mallopt(libc::M_ARENA_MAX, 2);
+    }
+}
+
+#[cfg(not(all(target_os = "linux", target_env = "gnu")))]
+fn limit_malloc_arenas() {}
+
+async fn run_stdio_server() -> anyhow::Result<()> {
     // The LSP may be the first Beskid executable a user runs. Provision the
     // Corelib embedded in this binary before workspace resolution begins, so
     // editor diagnostics use the release bundle rather than a source checkout.

@@ -29,4 +29,4 @@ pub(crate) mod workspace_scan;
 pub(crate) static SHARED_FIXTURE_LOCK: std::sync::LazyLock<tokio::sync::Mutex<()>> =
     std::sync::LazyLock::new(|| tokio::sync::Mutex::new(()));
 
-pub use server::stdio::run_stdio_server;
+pub use server::stdio::serve_stdio;

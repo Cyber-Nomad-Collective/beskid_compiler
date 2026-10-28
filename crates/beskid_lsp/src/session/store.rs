@@ -315,10 +315,14 @@ pub struct State {
     /// Each holds a project's typed closure, so analyses of many projects at once would hold
     /// many of them.
     pub(crate) analysis_permits: Arc<tokio::sync::Semaphore>,
-    /// The background work (workspace index, closed files) runs one analysis at a time on its
-    /// own permit, so a stream of edits cannot starve the index and the index cannot delay an
-    /// edit's analysis.
+    /// Closed files analyzed one by one (a closed document, a file changed on disk) run one at a
+    /// time on their own permit, so they cannot delay an edit's analysis.
     pub(crate) background_permits: Arc<tokio::sync::Semaphore>,
+    /// The workspace index types three projects at a time on its own permits, so neither edits
+    /// nor closed files queue in front of it.
+    pub(crate) index_permits: Arc<tokio::sync::Semaphore>,
+    /// The workspace index's fair share against interactive analyses.
+    pub(crate) background_turn: Arc<crate::scan_schedule::BackgroundTurn>,
     /// Content fingerprints of manifests and lockfiles already acted on, so a rewrite with
     /// identical bytes (the server's own `Project.lock` sync) causes no invalidation.
     pub(crate) watched_fingerprints: HashMap<PathBuf, u64>,
@@ -344,6 +348,8 @@ impl Default for State {
             diagnostics_permits: Arc::new(tokio::sync::Semaphore::new(MAX_CONCURRENT_DIAGNOSTICS)),
             analysis_permits: Arc::new(tokio::sync::Semaphore::new(MAX_CONCURRENT_ANALYSES)),
             background_permits: Arc::new(tokio::sync::Semaphore::new(1)),
+            index_permits: Arc::new(tokio::sync::Semaphore::new(3)),
+            background_turn: Arc::default(),
         }
     }
 }

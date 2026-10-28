@@ -15,7 +15,7 @@ use crate::{
     features::formatting::open_texts::open_text,
     manifest_uri::{is_manifest_uri, is_standalone_bsol_uri},
     session::{
-        db_access::{document_update_gate, run_in_project_db, with_project_db, with_shared_project_db},
+        db_access::{Lane, document_update_gate, run_in_project_db, with_index_db, with_shared_project_db},
         diagnostics_bridge::collect_syntax_diagnostics_for_state,
         documentation_facts::syntax_documentation_facts_for_source,
         imports::RecoverableCompletionSyntax,
@@ -339,7 +339,8 @@ async fn syntax_facts_for_text(
     let text_for_prepare = text.to_string();
     // The completion repair of a buffer analyzes in the storage of the buffer's own analysis.
     let analysis = member_offsets.is_empty();
-    let prepared_facts = run_in_project_db(state, Some(&project_root), interactive, analysis, |db| {
+    let lane = if interactive { Lane::Interactive } else { Lane::ClosedFile };
+    let prepared_facts = run_in_project_db(state, Some(&project_root), lane, analysis, |db| {
         // The wait for the project's database can be long; a newer text makes this work moot.
         if newest.is_some_and(|buffer| superseded(uri, buffer)) {
             return Ok(None);
@@ -533,7 +534,7 @@ pub(crate) async fn index_project_documents(
         .collect();
     let project_root = plan.project_root.clone();
     let mod_host = state.read().await.mod_host.clone();
-    let derived = with_project_db(state, Some(&project_root), false, |db| {
+    let derived = with_index_db(state, &project_root, |db| {
         beskid_queries::invalidate_entry_sessions(&project_root);
         for (buffer_path, buffer_text) in buffered_sources {
             db.ensure_file_text(buffer_path, buffer_text);
