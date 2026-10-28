@@ -21,8 +21,8 @@ mod tests;
 #[cfg(test)]
 pub(crate) use preparation::analyze_document;
 pub(crate) use preparation::{
-    EditorPreparePass, prepare_project_diagnostics_from_assembled, prepare_project_syntax_facts,
-    project_preparation_failure,
+    EditorPreparePass, prepare_project_diagnostics_from_assembled, prepare_project_index, prepare_project_syntax_facts,
+    project_preparation_failure, unit_diagnostic_names,
 };
 pub use preparation::{ProjectPreparation, collect_syntax_diagnostics};
 #[cfg(test)]

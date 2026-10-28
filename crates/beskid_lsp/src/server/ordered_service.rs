@@ -17,10 +17,12 @@ use crate::features;
 
 /// Preserve LSP text-sync order without serializing independent requests.
 ///
-/// `tower-lsp-server` intentionally evaluates inbound messages with
-/// `buffer_unordered`. Tickets are assigned here, synchronously in transport
-/// input order. A request waits only for earlier text-sync notifications; once
-/// that fence clears, peer requests can execute concurrently.
+/// `tower-lsp-server` evaluates inbound messages with `buffer_unordered` inside its one
+/// transport task, so a handler that computes synchronously would stop every other message,
+/// reading and writing included. Each message therefore runs as its own runtime task. Tickets
+/// are assigned here, synchronously in transport input order. A request waits only for earlier
+/// text-sync notifications of its document; once that fence clears, peer requests execute
+/// concurrently.
 pub(crate) struct TextSyncOrderedService<S> {
     inner: Arc<tokio::sync::Mutex<S>>,
     next_text_sync: HashMap<String, u64>,
@@ -125,9 +127,10 @@ where
         let reporter = Arc::clone(&self.reporter);
         let method = request.method().to_string();
         let request_id = request.id().cloned();
+        let reply_id = request_id.clone();
         let path = request_path(&request);
 
-        Box::pin(async move {
+        let task = tokio::spawn(async move {
             while ordering_key.as_ref().is_some_and(|key| {
                 completed.lock().expect("text sync completion map").get(key).copied().unwrap_or(0) < required
             }) {
@@ -160,6 +163,17 @@ where
                 notify.notify_waiters();
             }
             result
+        });
+        Box::pin(async move {
+            match task.await {
+                Ok(result) => result,
+                // The handler's own crash guard reports panics; this covers a task the runtime
+                // dropped (shutdown) so a request still gets an answer.
+                Err(error) => {
+                    tracing::error!(%error, "LSP message task ended without a result");
+                    Ok(reply_id.map(|id| Response::from_parts(id, Err(Error::internal_error()))))
+                }
+            }
         })
     }
 }
@@ -204,6 +218,9 @@ mod text_sync_ordering_tests {
             let release_change = Arc::clone(&self.release_change);
             let is_change = request.method() == "textDocument/didChange";
             Box::pin(async move {
+                if request.method() == "test/computeSynchronously" {
+                    std::thread::sleep(std::time::Duration::from_millis(600));
+                }
                 events.lock().expect("event log").push(if is_change { "change-start" } else { "request-start" });
                 if is_change {
                     change_started.notify_one();
@@ -241,6 +258,70 @@ mod text_sync_ordering_tests {
         change_task.await.expect("change task").expect("change response");
         completion_task.await.expect("completion task").expect("completion response");
         assert_eq!(*events.lock().expect("event log"), vec!["change-start", "change-done", "request-start"]);
+    }
+
+    /// The transport polls every message future in one task; a handler that computes without
+    /// yielding must not stop the other messages.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_handler_computing_synchronously_does_not_stall_other_requests() {
+        use futures_util::StreamExt;
+
+        let inner = RecordingService {
+            events: Arc::new(Mutex::new(Vec::new())),
+            change_started: Arc::new(Notify::new()),
+            release_change: Arc::new(Notify::new()),
+        };
+        let mut service = ordered(inner);
+        let started = std::time::Instant::now();
+        let mut in_flight = futures_util::stream::FuturesUnordered::new();
+        in_flight.push(
+            service.call(
+                Request::build("test/computeSynchronously")
+                    .params(serde_json::json!({"textDocument": {"uri": "file:///tmp/Slow.bd"}}))
+                    .id(1)
+                    .finish(),
+            ),
+        );
+        in_flight.push(
+            service.call(
+                Request::build("textDocument/hover")
+                    .params(serde_json::json!({"textDocument": {"uri": "file:///tmp/Quick.bd"}}))
+                    .id(2)
+                    .finish(),
+            ),
+        );
+        in_flight.next().await.expect("first message").expect("service");
+        let first_done = started.elapsed();
+        assert!(first_done < std::time::Duration::from_millis(400), "the quick request waited {first_done:?}");
+        in_flight.next().await.expect("second message").expect("service");
+    }
+
+    #[tokio::test]
+    async fn document_outline_does_not_wait_for_the_analysis_of_an_edit() {
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let change_started = Arc::new(Notify::new());
+        let release_change = Arc::new(Notify::new());
+        let inner = RecordingService {
+            events: Arc::clone(&events),
+            change_started: Arc::clone(&change_started),
+            release_change: Arc::clone(&release_change),
+        };
+        let mut service = ordered(inner);
+        let document = serde_json::json!({"textDocument": {"uri": "file:///tmp/Outline.bd"}});
+
+        let change = service.call(Request::build("textDocument/didChange").params(document.clone()).finish());
+        let outline = service.call(Request::build("textDocument/documentSymbol").params(document).id(1).finish());
+        let change_task = tokio::spawn(change);
+        let outline_task = tokio::spawn(outline);
+
+        change_started.notified().await;
+        tokio::time::timeout(std::time::Duration::from_millis(500), outline_task)
+            .await
+            .expect("the outline answers while the edit is still being analyzed")
+            .expect("outline task")
+            .expect("outline response");
+        release_change.notify_waiters();
+        change_task.await.expect("change task").expect("change response");
     }
 
     #[tokio::test]

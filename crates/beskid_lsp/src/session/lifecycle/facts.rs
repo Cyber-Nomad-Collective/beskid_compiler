@@ -36,6 +36,9 @@ pub(super) struct SyntaxFacts {
     pub(super) diagnostics: Vec<SyntaxDiagnostic>,
     /// Mod-origin quick-fixes collected from the prepare spine (empty on structural/manifest paths).
     pub(super) fixes: Vec<SyntaxFix>,
+    /// The client sent a newer text before the analysis began; these facts are empty and must
+    /// not be stored.
+    pub(super) superseded: bool,
 }
 
 pub(super) fn syntax_facts_for_assembly(
@@ -43,33 +46,56 @@ pub(super) fn syntax_facts_for_assembly(
     resolved: &ResolvedInput,
     assembly: Arc<ProgramAssembly>,
 ) -> SyntaxFacts {
-    let Some(plan) = resolved.compile_plan.as_ref() else {
-        return SyntaxFacts::default();
-    };
-    let dependency_surface =
-        parse_program_with_source_name(&resolved.source_path.display().to_string(), &resolved.source)
-            .map(|program| beskid_queries::completion_dependency_surface_for_program(&assembly, &program))
-            .unwrap_or_else(|_| beskid_queries::completion_dependency_surface_for_assembly(&assembly));
-    let recoverable_symbols = assembly
-        .units
-        .get(assembly.entry_index)
-        .map(|entry| syntax_symbols_for_program(&entry.program))
-        .unwrap_or_default();
-    // Fail closed to prepare-spine syntax authority: post-mod-rewrite entry program, never the
-    // pre-rewrite ProgramAssembly units that still carry HIR compatibility state.
+    let typed = typed_program_for_assembly(db, resolved, Arc::clone(&assembly));
+    let entry_path = assembly.units.get(assembly.entry_index).map(|entry| entry.path.clone()).unwrap_or_default();
+    unit_syntax_facts(db, typed.as_ref(), &assembly, &entry_path, &resolved.source_path, &resolved.source)
+}
+
+/// Type `assembly` once in the project session that owns its registered syntax (the prepare spine
+/// registered it moments ago; a second session would be rejected as a source-unit reassignment).
+/// `None` without a compile plan or when typing fails.
+pub(super) fn typed_program_for_assembly(
+    db: &mut beskid_queries::BeskidDatabase,
+    resolved: &ResolvedInput,
+    assembly: Arc<ProgramAssembly>,
+) -> Option<beskid_queries::TypedProgram> {
+    let plan = resolved.compile_plan.as_ref()?;
     let generation = SyntaxGenerationId(assembly.generation.0);
-    // Reuse the session that owns this assembly's registered syntax (the prepare
-    // spine registered it moments ago); a second session would be rejected as a
-    // source-unit reassignment and leave the editor without semantic facts.
-    let typed = beskid_queries::project_session_for_planned_syntax_assembly(
+    beskid_queries::project_session_for_planned_syntax_assembly(
         db,
         &assembly,
         plan,
         &resolved.source_path,
         lockfile_digest_for_plan(plan),
     )
-    .and_then(|project| build_typed_program(db, project, generation, assembly));
-    let Ok(typed) = typed else {
+    .and_then(|project| build_typed_program(db, project, generation, assembly))
+    .ok()
+}
+
+/// Facts for the unit at `unit_path` of a typed assembly: the entry for an open buffer, or any
+/// unit when the workspace index types a whole project once. `source_name`/`source` are the
+/// unit's file and text.
+pub(super) fn unit_syntax_facts(
+    db: &mut beskid_queries::BeskidDatabase,
+    typed: Option<&beskid_queries::TypedProgram>,
+    assembly: &Arc<ProgramAssembly>,
+    unit_path: &std::path::Path,
+    source_name: &std::path::Path,
+    source: &str,
+) -> SyntaxFacts {
+    let dependency_surface = parse_program_with_source_name(&source_name.display().to_string(), source)
+        .map(|program| beskid_queries::completion_dependency_surface_for_program(assembly, &program))
+        .unwrap_or_else(|_| beskid_queries::completion_dependency_surface_for_assembly(assembly));
+    let recoverable_symbols = assembly
+        .units
+        .iter()
+        .find(|unit| unit.path == unit_path)
+        .map(|unit| syntax_symbols_for_program(&unit.program))
+        .unwrap_or_default();
+    // Fail closed to prepare-spine syntax authority: post-mod-rewrite programs, never the
+    // pre-rewrite ProgramAssembly units that still carry HIR compatibility state.
+    let generation = SyntaxGenerationId(assembly.generation.0);
+    let Some(typed) = typed else {
         return SyntaxFacts {
             symbols: recoverable_symbols,
             completion: (!dependency_surface.is_empty()).then_some(SyntaxCompletion {
@@ -81,9 +107,13 @@ pub(super) fn syntax_facts_for_assembly(
             ..SyntaxFacts::default()
         };
     };
-    let unit = typed.entry;
-    let Some(entry) = typed.assembly.units.get(typed.assembly.entry_index) else {
+    let Some(entry) = typed.assembly.units.iter().find(|unit| unit.path == unit_path) else {
         return SyntaxFacts::default();
+    };
+    let unit = if typed.assembly.units.get(typed.assembly.entry_index).is_some_and(|e| e.path == unit_path) {
+        typed.entry
+    } else {
+        beskid_queries::SourceUnitId::new(db, entry.path.clone())
     };
     let index = beskid_analysis::syntax_query::SyntaxIndex::from_program(&entry.program, generation);
 
@@ -195,6 +225,7 @@ pub(super) fn syntax_facts_for_assembly(
         documentation: Vec::new(),
         diagnostics: Vec::new(),
         fixes: Vec::new(),
+        superseded: false,
     }
 }
 
@@ -271,7 +302,7 @@ fn syntax_type_label(ty: SemanticTypeId) -> Option<&'static str> {
     }
 }
 
-pub(super) fn syntax_symbols_for_program(
+pub(crate) fn syntax_symbols_for_program(
     program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
 ) -> Vec<SyntaxSymbol> {
     use beskid_analysis::services::AnalysisSymbolKind as Kind;

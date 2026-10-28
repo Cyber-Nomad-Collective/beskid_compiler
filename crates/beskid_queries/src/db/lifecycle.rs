@@ -36,6 +36,7 @@ impl BeskidDatabase {
             syntax_dependency_registry: Arc::new(Mutex::new(SyntaxDependencyRegistry::default())),
             unit_cache: Arc::new(Mutex::new(UnitArtifactCache::default())),
             module_index_cache: Arc::new(Mutex::new(ModuleIndexCache::new())),
+            typed_entry_registry: Arc::default(),
             persistence_root: persistence_root.clone(),
             grammar_revision: None,
             syntax_parse_count: Arc::new(AtomicU64::new(0)),

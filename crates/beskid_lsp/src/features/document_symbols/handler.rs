@@ -3,8 +3,9 @@ use tower_lsp_server::ls_types::{DocumentSymbol, DocumentSymbolResponse, Range, 
 
 use crate::adapters::symbol::analysis_symbol_kind_to_lsp;
 use crate::features::project_manifest::api as project_manifest;
+use crate::manifest_uri::is_standalone_bsol_uri;
 use crate::position::offset_range_to_lsp;
-use crate::session::store::Document;
+use crate::session::store::SyntaxSymbol;
 
 fn build_document_symbol(
     name: String,
@@ -26,18 +27,28 @@ fn build_document_symbol(
     .expect("valid DocumentSymbol payload")
 }
 
-/// Document outline symbols for Beskid AST or structured manifest fields.
-pub fn handle_document_symbols(uri: &Uri, doc: &Document) -> DocumentSymbolResponse {
+/// The outline of `text`, parsed on request. The outline is syntax only, so it never waits for
+/// the analysis of an earlier edit.
+pub fn document_symbols_for_text(uri: &Uri, text: &str) -> DocumentSymbolResponse {
     if project_manifest::is_manifest_uri(uri) {
-        return DocumentSymbolResponse::Nested(project_manifest::document_symbols(uri, &doc.text));
+        return DocumentSymbolResponse::Nested(project_manifest::document_symbols(uri, text));
     }
+    if is_standalone_bsol_uri(uri) {
+        return DocumentSymbolResponse::Nested(Vec::new());
+    }
+    let symbols = beskid_analysis::services::parse_program_with_source_name(uri.as_str(), text)
+        .map(|program| crate::session::lifecycle::syntax_symbols_for_program(&program))
+        .unwrap_or_default();
+    outline(text, &symbols)
+}
 
-    let mapped = doc
-        .syntax_symbols
+/// Outline entries for `symbols` of `text`; compiler-generated hook items are left out.
+pub(crate) fn outline(text: &str, symbols: &[SyntaxSymbol]) -> DocumentSymbolResponse {
+    let mapped = symbols
         .iter()
         .filter(|symbol| !crate::hook_items::is_hook_item_name(&symbol.name))
         .map(|symbol| {
-            let range = offset_range_to_lsp(&doc.text, symbol.start, symbol.end);
+            let range = offset_range_to_lsp(text, symbol.start, symbol.end);
             build_document_symbol(
                 symbol.name.clone(),
                 Some(beskid_analysis::services::symbol_kind_name(symbol.kind).to_string()),

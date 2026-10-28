@@ -138,7 +138,7 @@ mod tests {
         };
         let offset = main_source.find("Output.Write").expect("member prefix") + "Output.Write".len();
         let response = completion::handler::handle_completion(
-            &db,
+            Some(&db),
             &Uri::from_str("file:///tmp/intellisense-completion/src/Main.bd").expect("uri"),
             &doc,
             offset,

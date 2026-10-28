@@ -8,8 +8,9 @@ use crate::session::imports::RecoverableCompletionSyntax;
 use crate::session::store::Document;
 
 /// Completion items at `offset`, including manifest-aware suggestions for `.bproj`/`.bws` buffers.
+/// Without `db` (the project's database is busy) only the owned facts of `doc` answer.
 pub fn handle_completion(
-    db: &beskid_queries::BeskidDatabase,
+    db: Option<&beskid_queries::BeskidDatabase>,
     uri: &Uri,
     doc: &Document,
     offset: usize,
@@ -50,7 +51,8 @@ pub fn handle_completion(
         context.map(|context| {
             let current = completion
                 .entry_anchor
-                .and_then(|anchor| completion_candidates(db, anchor, context).ok().flatten())
+                .zip(db)
+                .and_then(|(anchor, db)| completion_candidates(db, anchor, context).ok().flatten())
                 .map(|candidates| candidates.to_vec())
                 .unwrap_or_default();
             if !current.is_empty() {
@@ -267,7 +269,7 @@ mod tests {
         };
         let offset = source.find("Zeb;").expect("completion prefix") + 3;
         let response =
-            handle_completion(&db, &Uri::from_str("file:///tmp/completion/Main.bd").expect("uri"), &doc, offset);
+            handle_completion(Some(&db), &Uri::from_str("file:///tmp/completion/Main.bd").expect("uri"), &doc, offset);
         let tower_lsp_server::ls_types::CompletionResponse::Array(items) = response else {
             panic!("expected completion array");
         };
@@ -292,7 +294,7 @@ mod tests {
             syntax_fixes: Vec::new(),
         };
         let response = handle_completion(
-            &BeskidDatabase::default(),
+            Some(&BeskidDatabase::default()),
             &crate::workspace_scan::path_to_uri(&std::env::temp_dir().join("schema.bsol")).expect("uri"),
             &doc,
             source.len(),
@@ -396,7 +398,7 @@ mod tests {
         };
         let offset = main_source.find("Hel;").expect("completion prefix") + 3;
         let response = handle_completion(
-            &db,
+            Some(&db),
             &Uri::from_str("file:///tmp/completion-import/src/Main.bd").expect("uri"),
             &doc,
             offset,

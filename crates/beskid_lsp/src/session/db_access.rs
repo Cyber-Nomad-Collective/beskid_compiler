@@ -1,109 +1,140 @@
-//! Serialize access to the shared Salsa [`BeskidDatabase`] across concurrent LSP tasks.
+//! Access to the per-project Salsa databases from concurrent LSP tasks.
 
 use std::path::Path;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
-use beskid_queries::{BeskidDatabase, configure_compilation_database_for_project, reset_compilation_database};
+use beskid_queries::BeskidDatabase;
 use tokio::sync::{Mutex as AsyncMutex, RwLock};
 use tower_lsp_server::ls_types::Uri;
-use tracing::error;
 
+use super::project_dbs::ProjectDatabase;
 use super::store::State;
 
-fn recover_poisoned_database(
-    poison: std::sync::PoisonError<std::sync::MutexGuard<'_, BeskidDatabase>>,
-) -> BeskidDatabase {
-    error!("compilation db lock poisoned; resetting Salsa database");
-    let mut inner = poison.into_inner().clone();
-    reset_compilation_database(&mut inner);
-    inner
-}
-
-pub async fn with_compilation_db<R>(state: &RwLock<State>, f: impl FnOnce(&mut BeskidDatabase) -> R) -> R {
-    with_compilation_db_mut_state(state, |db, _write| f(db)).await
-}
-
-/// Acquire a Salsa parallel-query handle.
-///
-/// Cloning a Salsa database clones only its thread-local handle; the memoized
-/// storage and Beskid registries remain shared. The mutation gate is held only
-/// while the handle is acquired. Salsa then permits multiple query handles to
-/// execute concurrently and makes a later input write wait until they finish.
-pub async fn parallel_compilation_db(state: &RwLock<State>) -> BeskidDatabase {
-    let gate = state.read().await.db_gate.clone();
-    let guard = gate.lock().await;
-    let mut write = state.write().await;
-    let db_arc = Arc::clone(&write.compilation_db);
-    if db_arc.is_poisoned() {
-        let inner = match db_arc.lock() {
-            Err(poison) => recover_poisoned_database(poison),
-            Ok(_) => unreachable!("compilation db reported poisoned"),
-        };
-        write.configured_project_root = None;
-        write.compilation_db = Arc::new(Mutex::new(inner));
+/// Run synchronous compiler work without stalling the async runtime: on the multi-threaded
+/// server runtime the worker hands its other tasks (transport, other requests) to the rest of
+/// the pool first.
+fn run_blocking_section<R>(work: impl FnOnce() -> R) -> R {
+    match tokio::runtime::Handle::try_current().map(|handle| handle.runtime_flavor()) {
+        Ok(tokio::runtime::RuntimeFlavor::MultiThread) => tokio::task::block_in_place(work),
+        _ => work(),
     }
-    let snapshot = write.compilation_db.lock().expect("compilation db lock").clone();
-    drop(write);
-    drop(guard);
-    snapshot
 }
 
-/// Mutate the shared Salsa writer configured for one project.
-///
-/// The LSP state write lock is held only for configuration bookkeeping. Salsa
-/// writer exclusivity remains explicit, while unrelated document state stays
-/// available during the mutation/query phase.
-pub async fn with_compilation_db_for_project<R>(
+/// Which work an analysis serves; each kind has its own permits.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Lane {
+    /// An open document (its edit, its diagnostics, a command).
+    Interactive,
+    /// The workspace index typing a project. It gets a fair turn against interactive work
+    /// (see [`crate::scan_schedule::BackgroundTurn`]) and never queues behind closed files.
+    Index,
+    /// A closed file analyzed on its own (closing a document, a file changed on disk).
+    ClosedFile,
+}
+
+impl Lane {
+    fn from_interactive(interactive: bool) -> Self {
+        if interactive { Self::Interactive } else { Self::ClosedFile }
+    }
+}
+
+/// The workspace index's analysis of one project (see [`Lane::Index`]).
+pub async fn with_index_db<R>(
     state: &RwLock<State>,
     project_root: &Path,
     f: impl FnOnce(&mut BeskidDatabase) -> R,
 ) -> R {
-    let canonical = project_root.canonicalize().unwrap_or_else(|_| project_root.to_path_buf());
-    let gate = state.read().await.db_gate.clone();
-    let guard = gate.lock().await;
-    let mut write = state.write().await;
-    let db_arc = Arc::clone(&write.compilation_db);
-    if db_arc.is_poisoned() {
-        let inner = match db_arc.lock() {
-            Err(poison) => recover_poisoned_database(poison),
-            Ok(_) => unreachable!("compilation db reported poisoned"),
-        };
-        write.configured_project_root = None;
-        write.compilation_db = Arc::new(Mutex::new(inner));
-    }
-    if write.configured_project_root.as_ref() != Some(&canonical) {
-        let db_arc = Arc::clone(&write.compilation_db);
-        configure_compilation_database_for_project(&mut db_arc.lock().expect("compilation db lock"), &canonical);
-        write.configured_project_root = Some(canonical);
-    }
-    let db_arc = Arc::clone(&write.compilation_db);
-    drop(write);
-    let mut db = db_arc.lock().expect("compilation db lock");
-    let result = f(&mut db);
-    drop(db);
-    drop(guard);
-    result
+    run_in_project_db(state, Some(project_root), Lane::Index, true, f).await
 }
 
-pub async fn with_compilation_db_mut_state<R>(
+/// Work in the database of `project_root` (the detached database for `None`) that keeps no facts
+/// of its own (diagnostics assembly, explorer graphs): it shares the storage of the last
+/// analysis. Only that project's gate is held, so work on another project does not wait; the
+/// LSP state lock is held just long enough to look the database up. `interactive` marks work
+/// for an open document, which keeps the project's database alive longer than scanned-only ones.
+pub async fn with_shared_project_db<R>(
     state: &RwLock<State>,
-    f: impl FnOnce(&mut BeskidDatabase, &mut State) -> R,
+    project_root: Option<&Path>,
+    interactive: bool,
+    f: impl FnOnce(&mut BeskidDatabase) -> R,
 ) -> R {
-    let gate = state.read().await.db_gate.clone();
-    let _guard = gate.lock().await;
-    let mut write = state.write().await;
-    let db_arc = Arc::clone(&write.compilation_db);
-    if db_arc.is_poisoned() {
-        let inner = match db_arc.lock() {
-            Err(poison) => recover_poisoned_database(poison),
-            Ok(_) => unreachable!("compilation db reported poisoned"),
+    run_in_project_db(state, project_root, Lane::from_interactive(interactive), false, f).await
+}
+
+/// Work in the database of `project_root` on `lane`. An `analysis` keeps its facts in documents
+/// and starts from a fresh storage (see [`super::project_dbs::ANALYSES_PER_DATABASE`]);
+/// otherwise the work shares the storage of the last analysis.
+pub(crate) async fn run_in_project_db<R>(
+    state: &RwLock<State>,
+    project_root: Option<&Path>,
+    lane: Lane,
+    analysis: bool,
+    f: impl FnOnce(&mut BeskidDatabase) -> R,
+) -> R {
+    // The permit comes first: work waiting for its turn holds no database, so the databases
+    // alive are bounded by the permits and the pool, however long the queue of edits grows.
+    let (permits, turn) = {
+        let read = state.read().await;
+        let permits = match lane {
+            Lane::Interactive => &read.analysis_permits,
+            Lane::Index => &read.index_permits,
+            Lane::ClosedFile => &read.background_permits,
         };
-        write.configured_project_root = None;
-        write.compilation_db = Arc::new(Mutex::new(inner));
+        (Arc::clone(permits), Arc::clone(&read.background_turn))
+    };
+    let mut index_wait = match lane {
+        Lane::Interactive => {
+            turn.interactive_turn().await;
+            None
+        }
+        Lane::Index => Some(turn.background_waiting()),
+        Lane::ClosedFile => None,
+    };
+    let _permit = permits.acquire_owned().await.expect("analysis permits are never closed");
+    let (database, evicted) = state.write().await.databases.get(project_root, lane == Lane::Interactive);
+    drop_in_background(evicted);
+    let _gate = database.gate().lock().await;
+    if let Some(wait) = index_wait.as_mut() {
+        wait.started();
     }
-    let db_arc = Arc::clone(&write.compilation_db);
-    let mut db = db_arc.lock().expect("compilation db lock");
-    f(&mut db, &mut write)
+    // Starting a fresh storage drops the previous one, which takes a while for a large project.
+    run_blocking_section(|| {
+        let mut db = if analysis { database.lock_for_analysis() } else { database.lock() };
+        let result = f(&mut db);
+        // The prepare spine caches each entry's compilation session process-wide (about 100 MB
+        // for a Corelib package). The server keeps the facts it derived and starts every analysis
+        // by invalidating the project's sessions, so a cached session is never read again; drop
+        // it now instead of keeping one per project indexed.
+        if let Some(root) = project_root {
+            beskid_queries::invalidate_entry_sessions(root);
+        }
+        result
+    })
+}
+
+/// Acquire a Salsa parallel-query handle on the database of `project_root`, if the pool holds
+/// one (the facts of the project's documents come from it; a new database could answer nothing).
+///
+/// Cloning a Salsa database clones only its handle; the memoized storage and Beskid registries
+/// remain shared. The project's gate is held only while the handle is acquired. Salsa then
+/// lets query handles run concurrently, and a later input write cancels them and waits until
+/// they are dropped.
+pub async fn parallel_project_db(state: &RwLock<State>, project_root: Option<&Path>) -> Option<BeskidDatabase> {
+    let database = state.read().await.databases.existing(project_root)?;
+    let _gate = database.gate().lock().await;
+    Some(database.lock().clone())
+}
+
+/// Drop databases on a blocking thread: freeing a large storage takes a while, and it must not
+/// happen under the state lock or on an async worker.
+pub(crate) fn drop_in_background(databases: Vec<ProjectDatabase>) {
+    if databases.is_empty() {
+        return;
+    }
+    match tokio::runtime::Handle::try_current() {
+        Ok(handle) => drop(handle.spawn_blocking(move || drop(databases))),
+        Err(_) => drop(databases),
+    }
 }
 
 pub(crate) fn new_db_gate() -> Arc<AsyncMutex<()>> {
@@ -122,15 +153,37 @@ mod tests {
 
     use tokio::sync::RwLock;
 
-    use super::{document_update_gate, parallel_compilation_db};
+    use super::{document_update_gate, parallel_project_db, with_shared_project_db};
     use crate::session::store::State;
+
+    #[tokio::test]
+    async fn work_on_one_project_does_not_wait_for_another_project() {
+        use std::path::Path;
+        use std::time::Duration;
+
+        let state = RwLock::new(State::default());
+        let busy = state.write().await.databases.get(Some(Path::new("/w/busy")), true).0;
+        let _held = busy.gate().lock().await;
+        let other = tokio::time::timeout(
+            Duration::from_millis(500),
+            with_shared_project_db(&state, Some(Path::new("/w/other")), true, |_| 7),
+        )
+        .await;
+        assert_eq!(other.ok(), Some(7), "another project's database is free");
+        let same = tokio::time::timeout(
+            Duration::from_millis(100),
+            with_shared_project_db(&state, Some(Path::new("/w/busy")), true, |_| ()),
+        )
+        .await;
+        assert!(same.is_err(), "the busy project's mutation gate is held");
+    }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn immutable_salsa_handles_can_query_concurrently() {
         let state = Arc::new(RwLock::new(State::default()));
         let rendezvous = Arc::new(Barrier::new(2));
-        let first = parallel_compilation_db(&state).await;
-        let second = parallel_compilation_db(&state).await;
+        let first = parallel_project_db(&state, None).await.expect("detached database");
+        let second = parallel_project_db(&state, None).await.expect("detached database");
 
         std::thread::scope(|scope| {
             let first_rendezvous = Arc::clone(&rendezvous);

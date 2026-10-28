@@ -24,12 +24,12 @@ pub(crate) mod workspace_scan;
 /// `beskid_e2e_tests/fixtures/corelib_mvp` entry. Each test owns a separate
 /// `State`, but concurrent prepares of the same entry race on those registries
 /// ("entry session syntax generation cannot regress"), which a real server
-/// avoids through its single `db_gate`.
+/// avoids through the mutation gate of the project's database.
 #[cfg(test)]
 pub(crate) static SHARED_FIXTURE_LOCK: std::sync::LazyLock<tokio::sync::Mutex<()>> =
     std::sync::LazyLock::new(|| tokio::sync::Mutex::new(()));
 
-pub use server::stdio::run_stdio_server;
+pub use server::stdio::serve_stdio;
 
 /// Version shown by `beskid_lsp --version` and written into crash reports: the release version the
 /// release build set in `BESKID_RELEASE_VERSION` (the same variable stamps `beskid` and `beskid-up`),

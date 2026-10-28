@@ -1,9 +1,9 @@
 //! The text of every open document, kept apart from the analysis state.
 //!
-//! Formatting is syntax-only, so it must not wait for workspace discovery, the analysis state
-//! lock or a slow `didOpen`. The transport service feeds every text-sync notification here
+//! Formatting and the document outline are syntax-only, so they must not wait for workspace
+//! discovery, the analysis state lock or a slow `didOpen`. The transport service feeds every text-sync notification here
 //! synchronously, in the order the client sent it (see `TextSyncOrderedService::call`), and the
-//! formatting handlers read the text from here.
+//! formatting and outline handlers read the text from here.
 
 use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex};
@@ -21,7 +21,7 @@ static OPEN_TEXTS: LazyLock<Mutex<HashMap<String, String>>> = LazyLock::new(|| M
 
 /// Requests answered from the open text alone; they do not wait for earlier text-sync work.
 pub(crate) fn is_syntax_only_request(method: &str) -> bool {
-    matches!(method, "textDocument/formatting" | "textDocument/rangeFormatting")
+    matches!(method, "textDocument/formatting" | "textDocument/rangeFormatting" | "textDocument/documentSymbol")
 }
 
 fn params<T: DeserializeOwned>(request: &Request) -> Option<T> {
@@ -101,9 +101,10 @@ mod tests {
     }
 
     #[test]
-    fn only_formatting_requests_skip_the_text_sync_fence() {
+    fn only_syntax_only_requests_skip_the_text_sync_fence() {
         assert!(is_syntax_only_request("textDocument/formatting"));
         assert!(is_syntax_only_request("textDocument/rangeFormatting"));
+        assert!(is_syntax_only_request("textDocument/documentSymbol"));
         assert!(!is_syntax_only_request("textDocument/hover"));
         assert!(!is_syntax_only_request("textDocument/didChange"));
     }

@@ -334,6 +334,10 @@ pub enum AssemblyDiscovery {
     ImportClosure,
     /// All `*.bd` files under each root (IDE / project analyze), capped by `max_units`.
     WorkspaceScan,
+    /// Every `*.bd` file under the host root plus the transitive `use` paths of all of them:
+    /// a whole project with only the dependency modules it imports (the editor's workspace
+    /// index types each project once this way).
+    HostImportClosure,
 }
 
 /// Recovery is an explicit tooling policy; repaired nodes never authorize dependency discovery.
