@@ -275,9 +275,11 @@ mod tests {
         let mut databases = ProjectDatabases::with_capacity(1);
         let database = databases.get(Some(Path::new("/w/a")), true).0;
         bump_file_revision(&mut database.lock_for_analysis(), "entry");
-        for _ in 1..ANALYSES_PER_DATABASE {
+        let mut analyses = 1;
+        while analyses < ANALYSES_PER_DATABASE {
             let db = database.lock_for_analysis();
             assert_eq!(file_revision_for(&*db, "entry"), 1, "the storage is kept within the budget");
+            analyses += 1;
         }
         let db = database.lock_for_analysis();
         assert_eq!(file_revision_for(&*db, "entry"), 0, "the storage started afresh");

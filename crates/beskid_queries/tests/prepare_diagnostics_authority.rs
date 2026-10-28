@@ -866,7 +866,9 @@ fn single_entry_app_judges_every_own_unit() {
         &[],
     );
     use beskid_analysis::projects::AssemblyDiscovery;
-    for discovery in [AssemblyDiscovery::ImportClosure, AssemblyDiscovery::WorkspaceScan] {
+    for discovery in
+        [AssemblyDiscovery::ImportClosure, AssemblyDiscovery::WorkspaceScan, AssemblyDiscovery::HostImportClosure]
+    {
         let options = PrepareOptions {
             front_end: FrontEndOptions { assembly_discovery: discovery, ..Default::default() },
             ..PrepareOptions::without_mods()
@@ -897,8 +899,9 @@ fn single_entry_app_judges_every_own_unit() {
                 );
                 assert!(sibling_errors.is_empty(), "{diagnostics:?}");
             }
-            // `beskid check` scans the workspace: every own unit is assembled and judged.
-            AssemblyDiscovery::WorkspaceScan => {
+            // `beskid check` scans the workspace, and the editor's index takes every file under the
+            // host root: every own unit is assembled and judged.
+            AssemblyDiscovery::WorkspaceScan | AssemblyDiscovery::HostImportClosure => {
                 assert!(sibling_assembled, "the workspace scan assembles every own unit");
                 assert!(
                     sibling_errors.iter().any(|diagnostic| diagnostic.code.as_deref() == Some("E1206")),
