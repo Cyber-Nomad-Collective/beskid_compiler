@@ -1,7 +1,6 @@
 use std::str::FromStr;
 
 use beskid_lsp::server::backend::Backend;
-use tower_lsp_server::LanguageServer;
 use tower_lsp_server::ls_types::*;
 
 pub fn uri(path: &str) -> Uri {
@@ -24,7 +23,7 @@ pub fn semantic_tokens_params(uri: Uri) -> SemanticTokensParams {
 pub async fn open_document(server: &Backend, uri: Uri, language_id: &str, text: String) {
     server.signal_workspace_ready_for_tests().await;
     server
-        .did_open(DidOpenTextDocumentParams {
+        .did_open_for_tests(DidOpenTextDocumentParams {
             text_document: TextDocumentItem { uri, language_id: language_id.to_string(), version: 1, text },
         })
         .await;

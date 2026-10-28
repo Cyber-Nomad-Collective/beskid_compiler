@@ -77,6 +77,20 @@ impl Backend {
         crate::session::startup::signal_initial_scan_complete(&self.state).await;
     }
 
+    /// Opens a document as the stdio transport does: the transport records the open text, which
+    /// analysis and requests compare against, before `did_open` runs (integration tests that call
+    /// the backend directly only).
+    pub async fn did_open_for_tests(&self, params: DidOpenTextDocumentParams) {
+        observe_text_sync_for_tests("textDocument/didOpen", &params);
+        self.did_open(params).await;
+    }
+
+    /// Closes a document as the stdio transport does (integration tests only).
+    pub async fn did_close_for_tests(&self, params: DidCloseTextDocumentParams) {
+        observe_text_sync_for_tests("textDocument/didClose", &params);
+        self.did_close(params).await;
+    }
+
     async fn schedule_publish_diagnostics(&self, uri: Uri) {
         self.publisher().await.schedule(uri).await;
     }
@@ -189,6 +203,12 @@ impl DiagnosticsPublisher {
             }
         });
     }
+}
+
+fn observe_text_sync_for_tests(method: &'static str, params: &impl serde::Serialize) {
+    let params = serde_json::to_value(params).expect("text sync parameters serialize");
+    let request = tower_lsp_server::jsonrpc::Request::build(method).params(params).finish();
+    formatting::open_texts::observe(&request);
 }
 
 impl LanguageServer for Backend {
