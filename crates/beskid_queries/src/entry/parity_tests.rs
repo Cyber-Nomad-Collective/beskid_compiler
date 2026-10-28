@@ -129,6 +129,20 @@ const COVERED_KINDS: &[(&str, &str, &str, &str)] = &[
         "i64 Main(i64(i64) f) { return f.Apply(1_i64); }",
     ),
     (
+        "TypeError::InvalidMemberTarget (method call on a unit call result)",
+        "TypeInvalidMemberTarget",
+        "E1213",
+        "pub type Box { i64 value; pub unit Set(i64 v) { return; } pub i64 Get() { return 1_i64; } } \
+         i64 Main(Box b) { return b.Set(1_i64).Get(); }",
+    ),
+    (
+        "TypeError::InvalidMemberTarget (field read on a unit call result)",
+        "TypeInvalidMemberTarget",
+        "E1213",
+        "pub type Box { i64 value; pub unit Set(i64 v) { return; } } \
+         i64 Main(Box b) { return b.Set(1_i64).value; }",
+    ),
+    (
         "TypeError::UnknownCallTarget (non-callable field)",
         "TypeUnknownCallTarget",
         "E1606",

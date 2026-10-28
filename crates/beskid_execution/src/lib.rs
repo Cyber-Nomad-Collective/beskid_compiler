@@ -54,9 +54,13 @@ impl NativeExecutionControl {
     pub fn new(deadline: Instant, cancelled: Arc<dyn Fn() -> bool + Send + Sync>) -> Self {
         Self { deadline, cancelled, output_limit: 16 * 1024 * 1024, inherited_enclosure: false }
     }
-    /// Reuse the enclosing producer's containment for a nested compiler driver.
-    /// Safety: the caller must retain the owned parent enclosure until this tool
-    /// and all of its descendants have settled. No new Unix group is created.
+    /// Reuse the enclosing producer's containment for a nested compiler driver. No new Unix
+    /// group is created.
+    ///
+    /// # Safety
+    ///
+    /// The caller must retain the owned parent enclosure until this tool and all of its
+    /// descendants have settled.
     pub unsafe fn with_inherited_enclosure(mut self) -> Self {
         self.inherited_enclosure = true;
         self

@@ -12,7 +12,8 @@
 //! type-argument count check of `type_call_expression` (E1204 at the call), the non-callable
 //! field call (E1606 at the call), a method call through a local or `this` receiver path that no
 //! method claims (`type_struct_field_path` then no signature: E1213 or E1211 at the member
-//! segment, E1606 at the call), `check_generic_function_bounds` (E1610 at the call) and the
+//! segment, E1606 at the call), a method call on a receiver of proven type `unit` (E1213 at the
+//! member segment, E1606 at the call), `check_generic_function_bounds` (E1610 at the call) and the
 //! resolver's `declare_local` (E1102 at the second declaration).
 
 use super::super::members::{declared_member_names, is_call_callee};
@@ -430,6 +431,9 @@ pub(super) fn collect_call_obligations(
         let call_key = AstNodeKey { node, ..key };
         match &call.callee.node {
             Expression::Member(member) => {
+                if unit_receiver_method_call(db, program, index, key, node, call, member, findings) {
+                    continue;
+                }
                 if let Some(obligation) = enum_receiver_method_obligation(db, program, index, key, node, call) {
                     findings.push(obligation);
                     continue;
@@ -571,6 +575,42 @@ pub(super) fn collect_call_obligations(
             _ => {}
         }
     }
+}
+
+/// A method call on a receiver of proven type `unit` (`Make().Push(5).Count()` where `Push`
+/// returns `unit`): `unit` has no members and no `extend` can add any, so the call is E1213 at
+/// the member segment and E1606 at the call. Returns `true` when the call is judged here.
+#[allow(clippy::too_many_arguments)]
+fn unit_receiver_method_call(
+    db: &dyn Db,
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &SyntaxIndex,
+    key: AstNodeKey,
+    call_node: beskid_analysis::syntax::AstNodeId,
+    call: &CallExpression,
+    member: &beskid_analysis::syntax::Spanned<MemberExpression>,
+    findings: &mut Vec<GateObligation>,
+) -> bool {
+    let Some(callee) = index.direct_child_id(program, call_node, DynNodeRef::from(call.callee.as_ref())) else {
+        return false;
+    };
+    let callee = normalized_expression_node(index, callee);
+    let Some((_, _, receiver)) = proven_operand(db, program, index, key, callee, member.node.target.as_ref()) else {
+        return false;
+    };
+    if receiver != SemanticTypeId::UNIT {
+        return false;
+    }
+    let segment = index.direct_child_id(program, callee, DynNodeRef::from(&member.node.member)).unwrap_or(callee);
+    findings.push(GateObligation {
+        kind: GateObligationKind::InvalidMemberTarget,
+        site: AstNodeKey { node: segment, ..key },
+    });
+    findings.push(GateObligation {
+        kind: GateObligationKind::UnknownCallTarget,
+        site: AstNodeKey { node: call_node, ..key },
+    });
+    true
 }
 
 /// A method call through a local or implicit receiver path (`local.Name(..)`, `this.Name(..)`)

@@ -412,7 +412,9 @@ fn resolve_type_qualified_local_function(
     // A bare qualifier names the type whatever its arity (`Crate.Make<T>` on `Crate<T>`); written
     // type arguments must match the declared arity exactly.
     let arity = (!type_segment.node.type_args.is_empty()).then_some(type_segment.node.type_args.len());
-    super::layouts::unique_nominal_type_in_unit(db, key.unit, key.generation, type_name, arity)?;
+    // The qualifier must be declared in a module scope enclosing the call: a type of a nested
+    // `mod` is not visible here by its bare name.
+    super::layouts::lexical_type_in_unit(db, key, type_name, arity)??;
     unique_function_in_unit(db, key.unit, key.generation, &function.node.name.node.name)
 }
 

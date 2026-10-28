@@ -341,11 +341,11 @@ pub(in crate::semantic_contract) fn resolve_type_declaration(
         // Inline modules are lexical scopes: the nearest enclosing module that declares the
         // name decides it, so a same-named declaration in a sibling `mod` never makes a local
         // name ambiguous. An ambiguous nearest scope stays unresolved.
-        if let Some(lexical) = lexical_type_in_unit(db, key, name, generic_arity) {
+        // A type declared in a nested `mod` is not in any scope enclosing `key`: outside that
+        // module it is reachable only as `Module.Name` or through a `use`, never as a bare name,
+        // and it never shadows an import of the enclosing scope.
+        if let Some(lexical) = lexical_type_in_unit(db, key, name, Some(generic_arity)) {
             return lexical;
-        }
-        if let Some(local) = unique_type_in_unit(db, key.unit, key.generation, name, generic_arity) {
-            return Some(local);
         }
         let mut candidates = Vec::new();
         let import_targets = {
@@ -522,8 +522,15 @@ fn lexical_inline_module_type(
 
 /// The type or enum named `name` declared in the nearest module scope (inline module or program)
 /// enclosing `key` that declares that name at all. `None` when no enclosing scope declares it;
-/// `Some(None)` when the nearest declaring scope is ambiguous.
-fn lexical_type_in_unit(db: &dyn Db, key: AstNodeKey, name: &str, generic_arity: usize) -> Option<Option<AstNodeKey>> {
+/// `Some(None)` when the nearest declaring scope is ambiguous. `generic_arity` restricts the
+/// match to that declared arity; `None` accepts any arity.
+pub(in crate::semantic_contract) fn lexical_type_in_unit(
+    db: &dyn Db,
+    key: AstNodeKey,
+    name: &str,
+    generic_arity: Option<usize>,
+) -> Option<Option<AstNodeKey>> {
+    let arity_matches = |declared: usize| generic_arity.is_none_or(|arity| arity == declared);
     use crate::semantic_contract::resolution::{module_scope, outer_module_scope};
     let syntax = db.syntax_unit(key.unit)?;
     if syntax.generation(db) != key.generation {
@@ -540,9 +547,9 @@ fn lexical_type_in_unit(db: &dyn Db, key: AstNodeKey, name: &str, generic_arity:
                 module_scope(index, *candidate) == Some(current)
                     && index.node_at(program, *candidate).is_some_and(|node| {
                         node.of::<beskid_analysis::syntax::TypeDefinition>().is_some_and(|definition| {
-                            definition.name.node.name == name && definition.generics.len() == generic_arity
+                            definition.name.node.name == name && arity_matches(definition.generics.len())
                         }) || node.of::<beskid_analysis::syntax::EnumDefinition>().is_some_and(|definition| {
-                            definition.name.node.name == name && definition.generics.len() == generic_arity
+                            definition.name.node.name == name && arity_matches(definition.generics.len())
                         })
                     })
             })
@@ -563,19 +570,7 @@ pub(in crate::semantic_contract) fn unique_type_in_unit(
     name: &str,
     generic_arity: usize,
 ) -> Option<AstNodeKey> {
-    unique_nominal_type_in_unit(db, unit, generation, name, Some(generic_arity))
-}
-
-/// The one `type` or `enum` of this unit with `name`; `generic_arity` restricts the match to that
-/// declared arity, `None` accepts any arity (an unparameterized qualifier such as `Crate.Make<T>`).
-pub(in crate::semantic_contract) fn unique_nominal_type_in_unit(
-    db: &dyn Db,
-    unit: SourceUnitId,
-    generation: SyntaxGenerationId,
-    name: &str,
-    generic_arity: Option<usize>,
-) -> Option<AstNodeKey> {
-    let arity_matches = |declared: usize| generic_arity.is_none_or(|arity| arity == declared);
+    let arity_matches = |declared: usize| declared == generic_arity;
     let syntax = db.syntax_unit(unit)?;
     if syntax.generation(db) != generation {
         return None;

@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Scope fixes
+
+- A method call on a `unit` result (`return Stack.New<i64>().Push(5).Count();` where `Push` returns `unit`) is E1213 "invalid member access target" at the member and E1606 at the call in `beskid check`. Check accepted it and codegen failed with the internal error E2101 "semantic fact abi_type is unavailable".
+- A type declared in a nested module is visible outside that module only as `Lesson.Stack` or through a `use`. A bare type name resolves through the enclosing module scopes and then the imports, so `mod Lesson { pub type Stack<T> ... }` no longer captures `Stack<i64>` at file scope and no longer shadows the imported Corelib `Stack` (E1206). A `Type.Function` qualifier follows the same rule.
+- Native Mods run on the compiler's host runtime kit (`BESKID_RUNTIME_KIT_PROFILE`, default debug). A prefix without that kit now fails before any Mod is built, and the error names the exact `abi.json`, profile and target and how to select an installed profile. It failed late with E4041 while a Mod was built.
+- Report-only clippy lints the whole workspace: the `beskid_pipeline` build script no longer stops it (`chunks_exact` with a constant size).
+
 ### Close
 
 - `beskid check --all-members` (and a project checked through several targets) reports a parse error found while a member's active Mods are decided, such as E0117 for a detached `///` header, with its code at the authored file, as a single-project check does. It was flattened into an uncoded failure line that named the member's `obj/beskid/root` copy.

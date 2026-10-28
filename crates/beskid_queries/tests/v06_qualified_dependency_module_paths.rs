@@ -19,6 +19,7 @@ const FOUNDATION_FILES: &[(&str, &str)] = &[("Base/Output/Output.bd", FOUNDATION
 const AGGREGATE_FILES: &[(&str, &str)] = &[("Aggregate/Aggregate.bd", "pub i64 Version() { return 1; }\n")];
 const FORK_FILES: &[(&str, &str)] = &[("Base/Output/Output.bd", "pub i64 Answer() { return 7; }\n")];
 const BASE_FILES: &[(&str, &str)] = &[("Base/Base.bd", "pub i64 Answer() { return 42; }\n")];
+const GAUGE_FILES: &[(&str, &str)] = &[("Gauges/Gauge.bd", "pub type Gauge { pub i64 outer; }\n")];
 
 struct Fixture {
     _temporary: tempfile::TempDir,
@@ -157,5 +158,34 @@ fn lexical_inline_module_shadows_dependency_module_of_the_same_root() {
         call_lowering(&fixture.db, call),
         Ok(Some(CallLowering::Direct(local))),
         "the lexical inline module owns the root; the absolute namespace is not consulted"
+    );
+}
+
+#[test]
+fn nested_module_type_never_shadows_an_imported_type_of_the_same_name() {
+    let fixture = Fixture::new(
+        "use Gauges.Gauge;\nmod Lesson { pub type Gauge { i64 inner; } }\n\
+         pub i64 Read(Gauge gauge) { return gauge.outer; }\n",
+        &[("gauges", GAUGE_FILES)],
+        AssemblyDiscovery::WorkspaceScan,
+    );
+    let items = fixture.entry_keys(NodeKind::FunctionDefinition);
+    let checked = check_items(&fixture.db, &items);
+    assert!(checked.is_ok(), "bare `Gauge` is the imported type, not `Lesson.Gauge`: {checked:?}");
+}
+
+#[test]
+fn nested_module_type_is_no_qualifier_for_a_static_call_outside_its_module() {
+    let fixture = Fixture::new(
+        "mod Lesson { pub type Gauge { i64 inner; } }\npub i64 Make() { return 1; }\n\
+         pub i64 Main() { return Gauge.Make(); }\n",
+        &[],
+        AssemblyDiscovery::WorkspaceScan,
+    );
+    let [call] = fixture.entry_keys(NodeKind::CallExpression)[..] else { panic!("one call") };
+    assert!(
+        !matches!(call_lowering(&fixture.db, call), Ok(Some(_))),
+        "`Gauge` outside `mod Lesson` names no type: {:?}",
+        call_lowering(&fixture.db, call)
     );
 }
