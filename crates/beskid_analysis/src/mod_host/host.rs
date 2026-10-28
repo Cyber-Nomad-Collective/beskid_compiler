@@ -28,11 +28,16 @@ pub struct RuntimeKitSelection {
 impl RuntimeKitSelection {
     /// The kit this process resolves for itself: `BESKID_RUNTIME_PREFIX`, else the installation
     /// prefix of the running executable, with `BESKID_RUNTIME_KIT_PROFILE` (default `debug`).
+    ///
+    /// Native Mods run inside the compiler, so this is the compiler's host kit, not the profile of
+    /// the program being built: `beskid build --release` still hosts its Mods on this kit (installed
+    /// toolchains ship their Corelib Mods prebuilt for the debug kit). The kit must exist; a prefix
+    /// without it fails here, naming the exact kit, before any Mod is built or loaded.
     pub fn installed() -> Result<Self> {
         let prefix = beskid_abi::runtime_kit::installed_runtime_prefix()
             .map_err(|error| anyhow::anyhow!("native Mod runtime prefix: {error}"))?;
         let profile = super::descriptor::native_mod_runtime_profile()?;
-        Ok(Self { prefix, profile })
+        Self::explicit(&prefix, profile)
     }
 
     /// An explicit kit. `prefix` must be an absolute path to an installation prefix that holds an
@@ -49,10 +54,14 @@ impl RuntimeKitSelection {
         let target = beskid_abi::runtime_kit::host_runtime_target()
             .map_err(|error| anyhow::anyhow!("native Mod host target: {error}"))?;
         beskid_abi::runtime_kit::resolve_installed_runtime_kit(&canonical, &target, profile).map_err(|error| {
+            let profile_name = beskid_abi::runtime_kit::profile_directory_name(profile);
             anyhow::anyhow!(
-                "native Mod runtime prefix {} holds no exact {profile:?} runtime kit for {}: {error:?}",
+                "native Mod runtime prefix {} holds no exact {profile_name} runtime kit for {} (expected {}): \
+                 {error:?}; native Mods run inside the compiler on this kit, so install the {profile_name} \
+                 runtime kit into this prefix or set BESKID_RUNTIME_KIT_PROFILE to a profile it holds",
                 canonical.display(),
-                target.triple.as_str()
+                target.triple.as_str(),
+                beskid_abi::runtime_kit::exact_kit_metadata_path(&canonical, &target, profile).display()
             )
         })?;
         Ok(Self { prefix: canonical, profile })
@@ -195,5 +204,18 @@ mod tests {
         let empty = tempfile::tempdir().expect("empty prefix");
         let error = RuntimeKitSelection::explicit(empty.path(), BuildProfile::Debug).expect_err("no kit");
         assert!(error.to_string().contains("holds no exact"), "{error}");
+    }
+
+    #[test]
+    fn a_prefix_without_the_selected_kit_names_that_exact_kit() {
+        let release_only = tempfile::tempdir().expect("prefix");
+        let error = RuntimeKitSelection::explicit(release_only.path(), BuildProfile::Debug).expect_err("no debug kit");
+        let message = error.to_string();
+        let target = beskid_abi::runtime_kit::host_runtime_target().expect("host target");
+        let canonical = release_only.path().canonicalize().expect("canonical prefix");
+        let expected = beskid_abi::runtime_kit::exact_kit_metadata_path(&canonical, &target, BuildProfile::Debug);
+        assert!(message.contains("no exact debug runtime kit"), "{message}");
+        assert!(message.contains(&expected.display().to_string()), "{message}");
+        assert!(message.contains("BESKID_RUNTIME_KIT_PROFILE"), "{message}");
     }
 }
