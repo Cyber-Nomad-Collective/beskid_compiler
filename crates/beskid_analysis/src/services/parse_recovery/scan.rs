@@ -415,7 +415,9 @@ pub(crate) fn token_len_at_raw(source: &str, start: usize) -> Option<usize> {
         }
         if cursor == start.saturating_add(1) { start + 1 } else { cursor }
     } else {
-        start + 1
+        // Any other character is a token of its own, whole: a non-ASCII character (an em dash in
+        // a comment or string recovered as text) spans several bytes.
+        start + source[start..].chars().next().map_or(1, char::len_utf8)
     };
     Some(end.saturating_sub(start).min(source.len().saturating_sub(start)))
 }
@@ -512,6 +514,13 @@ mod tests {
     fn token_head_includes_interpolated_identifier_prefix() {
         assert!(is_token_head_byte(b'$'));
         assert!(is_token_head_byte(b'x'));
+    }
+
+    #[test]
+    fn token_len_covers_a_whole_non_ascii_character() {
+        let source = "a \u{2014}\u{2014} b";
+        let start = source.find('\u{2014}').expect("missing dash");
+        assert_eq!(token_len_at_raw(source, start), Some('\u{2014}'.len_utf8()));
     }
 
     #[test]

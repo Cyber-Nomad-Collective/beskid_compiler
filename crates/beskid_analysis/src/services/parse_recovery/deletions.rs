@@ -116,4 +116,12 @@ mod v06_tests {
     fn v06_deletion_span_uses_length_at_nonzero_offset() {
         assert_eq!(super::token_span_at_error("  + next", 2), Some((2, 1)));
     }
+
+    /// Recovery scans the whole source token by token; a non-ASCII character outside a string
+    /// (an em dash in a comment) is one token of several bytes, never a slice inside it.
+    #[test]
+    fn recovery_scans_past_a_non_ascii_character() {
+        let source = "i32 Main() { return 0; }\n// a note \u{2014}\u{2014} here\nunit Broken( {\n";
+        let _ = crate::services::parse::parse_program_with_source_name_and_diagnostics("Dash.bd", source);
+    }
 }
