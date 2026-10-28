@@ -45,6 +45,21 @@ fn lockfile_replay_diagnostic(plan: &CompilePlan) -> Option<SyntaxDiagnostic> {
     })
 }
 
+/// The lock replay diagnostic of a project manifest (`E3024` for a retired lock, a malformed or
+/// a stale lock). The source files of the project report it too, but the editor asks for its
+/// quick fix (`beskid.migrateLock`) on the `.bproj`, so the manifest publishes it as well.
+fn manifest_lock_diagnostic(uri: &Uri) -> Option<SyntaxDiagnostic> {
+    if !is_manifest_uri(uri) {
+        return None;
+    }
+    let path = uri_to_path(uri)?;
+    if path.extension()? != "bproj" {
+        return None;
+    }
+    let plan = beskid_analysis::projects::build_compile_plan(&path, None).ok()?;
+    lockfile_replay_diagnostic(&plan)
+}
+
 async fn fallback_diagnostics(
     state: &RwLock<State>,
     uri: &Uri,
@@ -71,7 +86,9 @@ pub(super) async fn build_full_diagnostic_facts(
 ) -> Option<(Vec<crate::session::store::SyntaxDiagnostic>, Vec<beskid_analysis::SyntaxFix>)> {
     wait_for_initial_scan(state).await;
     if is_manifest_uri(uri) || is_standalone_bsol_uri(uri) {
-        return Some(collect_syntax_diagnostics_for_state(state, uri, text, None).await);
+        let (mut diagnostics, fixes) = collect_syntax_diagnostics_for_state(state, uri, text, None).await;
+        diagnostics.extend(manifest_lock_diagnostic(uri));
+        return Some((diagnostics, fixes));
     }
     let Some(path) = uri_to_path(uri) else {
         return Some(collect_syntax_diagnostics_for_state(state, uri, text, None).await);
@@ -806,6 +823,16 @@ target "App" {
         let (full_diagnostics, _) = build_full_diagnostic_facts(&state, &uri, source).await.expect("no newer text");
         assert!(
             full_diagnostics.iter().any(|d| d.message.contains("v1") && d.message.contains("beskid dev project lock"))
+        );
+        // The manifest publishes it too: the editor asks for the migrate quick fix on the `.bproj`.
+        let manifest_uri =
+            Uri::from_str(&crate::workspace_scan::path_to_uri_string(&manifest_path)).expect("manifest URI");
+        let manifest_text = fs::read_to_string(&manifest_path).expect("manifest text");
+        let (manifest_diagnostics, _) =
+            build_full_diagnostic_facts(&state, &manifest_uri, &manifest_text).await.expect("manifest facts");
+        assert!(
+            manifest_diagnostics.iter().any(|d| d.code.as_deref() == Some("E3024")),
+            "manifest diagnostics: {manifest_diagnostics:?}"
         );
 
         fs::write(&lock_path, "# Project.lock v3\nnot-a-lock\n").expect("malformed lock");
