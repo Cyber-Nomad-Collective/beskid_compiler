@@ -133,7 +133,8 @@ pub fn run_compiler_driver(arguments: Vec<OsString>) -> io::Result<i32> {
         return Err(error("compiler driver argument count bound"));
     }
     let rustc = verify(&config.rustc)?;
-    let linker = verify(&config.linker)?;
+    // Both configured tools are verified before either runs.
+    verify(&config.linker)?;
     let (phase, tool, args) = if arguments.first().is_some_and(|arg| Path::new(arg) == rustc) {
         ("rustc", &config.rustc, &arguments[1..])
     } else {
@@ -180,10 +181,10 @@ pub fn run_compiler_driver(arguments: Vec<OsString>) -> io::Result<i32> {
     file.write_all(&receipt_bytes)?;
     file.as_file().sync_all()?;
     file.persist_noclobber(directory.join(format!(
-        "{}-{}-{}.json",
+        "{}-{}-{:x}.json",
         phase,
         std::process::id(),
-        format!("{:x}", Sha256::digest(&receipt_bytes))
+        Sha256::digest(&receipt_bytes)
     )))
     .map_err(|error| error.error)?;
     io::stdout().write_all(&output.stdout)?;
