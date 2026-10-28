@@ -38,7 +38,9 @@ fn fixture(source: &str) -> (tempfile::TempDir, BeskidDatabase, Arc<ProgramAssem
 const SOURCE: &str = "mod A { pub type Clock { i64 now; } mod Inner { pub type Clock { i64 deep; } } }\n\
     mod B { pub type Clock { i64 tick; } type Hidden { i64 secret; } }\n\
     pub i64 Read(A.Clock first, B.Clock second, A.Inner.Clock nested) { return 0_i64; }\n\
-    pub i64 Leak(B.Hidden hidden) { return 0_i64; }";
+    pub i64 Leak(B.Hidden hidden) { return 0_i64; }\n\
+    mod C { pub type Gauge { i64 level; } pub i64 Inside(Gauge inside) { return 0_i64; } }\n\
+    pub i64 Outside(Gauge outside) { return 0_i64; }";
 
 /// The declaration each parameter's written type path resolves to, by parameter name.
 fn parameter_types() -> (tempfile::TempDir, BeskidDatabase, Vec<(String, Option<AstNodeKey>)>) {
@@ -97,4 +99,17 @@ fn a_private_type_of_an_inline_module_is_not_visible_outside_it() {
     let (_directory, _db, resolved) = parameter_types();
     let hidden = resolved.iter().find(|(name, _)| name == "hidden").expect("hidden parameter");
     assert_eq!(hidden.1, None);
+}
+
+#[test]
+fn a_bare_name_resolves_a_type_of_an_enclosing_inline_module() {
+    let (_directory, db, resolved) = parameter_types();
+    assert!(identity(&db, &resolved, "inside").is_some_and(|identity| identity.ends_with("C::Gauge")), "{resolved:?}");
+}
+
+#[test]
+fn a_type_of_a_nested_inline_module_does_not_leak_into_the_enclosing_scope_by_its_bare_name() {
+    let (_directory, _db, resolved) = parameter_types();
+    let outside = resolved.iter().find(|(name, _)| name == "outside").expect("outside parameter");
+    assert_eq!(outside.1, None, "`Gauge` outside `mod C` must be written `C.Gauge`");
 }
