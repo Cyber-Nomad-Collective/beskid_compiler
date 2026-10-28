@@ -138,25 +138,42 @@ def template_step(corpus, patterns, result, phase, command, project):
     return True
 
 
+def required_symbols(template):
+    """`--symbol` arguments for the required string symbols of a template manifest other than
+    `name` (the positional project name): a non-interactive `beskid new` needs a value for each."""
+    arguments = []
+    for symbol, spec in sorted((template.get("symbols") or {}).items()):
+        if symbol == "name" or not isinstance(spec, dict) or not spec.get("isRequired"):
+            continue
+        if spec.get("type", "string") == "string" and spec.get("default") is None:
+            arguments += ["--symbol", f"{symbol}=proof{symbol[:1].upper()}{symbol[1:]}"]
+    return arguments
+
+
 def install_templates(args, env, corpus, patterns):
-    """Install every template package of --templates-dir with this toolchain (a path install)."""
+    """Install every template package of --templates-dir with this toolchain (a path install).
+    Returns the extra `beskid new` arguments each installed template needs, by short name."""
     templates_dir = getattr(args, "templates_dir", None)
+    symbols = {}
     if not templates_dir:
-        return
+        return symbols
     for manifest in sorted(Path(templates_dir).glob("*/.beskid/template.json")):
         package = manifest.parent.parent
-        short = json.loads(manifest.read_text()).get("shortName") or package.name
+        template = json.loads(manifest.read_text())
+        short = template.get("shortName") or package.name
+        symbols[short] = required_symbols(template)
         result = common.run(
             [args.beskid, "package", "template", "install", short, "--path", package],
             timeout=args.timeout,
             env=env,
         )
         template_step(corpus, patterns, result, "install", f"package template install {short}", str(package))
+    return symbols
 
 
 def generate_templates(args, work, corpus, patterns):
     env = template_env(work)
-    install_templates(args, env, corpus, patterns)
+    symbols = install_templates(args, env, corpus, patterns)
     names, listing = common.discover_templates(args.beskid, env=env)
     listing_signatures = common.classify(listing.output, listing.returncode, listing.timed_out, patterns)
     if listing_signatures:
@@ -175,7 +192,8 @@ def generate_templates(args, work, corpus, patterns):
     for short, _kind in names:
         out = base / short
         result = common.run(
-            [args.beskid, "new", f"proof_{short.replace('-', '_')}", "--template", short, "--offline", "--no-interactive", "-o", out],
+            [args.beskid, "new", f"proof_{short.replace('-', '_')}", "--template", short, "--offline", "--no-interactive",
+             *symbols.get(short, []), "-o", out],
             cwd=base,
             timeout=args.timeout,
             env=env,

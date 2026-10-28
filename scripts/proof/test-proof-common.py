@@ -152,6 +152,18 @@ class SweepTemplates(unittest.TestCase):
         self.assertEqual(ice_sweep.summarize([corpus])[1], 1)
 
 
+class SweepTemplateSymbols(unittest.TestCase):
+    def test_required_symbols_other_than_name_get_a_value(self):
+        template = {"symbols": {
+            "name": {"type": "string", "isRequired": True},
+            "shortName": {"type": "string", "isRequired": True},
+            "author": {"type": "string", "isRequired": False},
+            "kind": {"type": "string", "isRequired": True, "default": "lib"},
+        }}
+        self.assertEqual(ice_sweep.required_symbols(template), ["--symbol", "shortName=proofShortName"])
+        self.assertEqual(ice_sweep.required_symbols({}), [])
+
+
 class RunnerValidation(unittest.TestCase):
     script = str(Path(__file__).resolve().parents[1] / "v067-proof.sh")
 
