@@ -102,3 +102,23 @@ fn literal_next_to_a_narrower_operand_is_a_range_error_not_a_promotion() {
     let text = format!("{}{}", String::from_utf8_lossy(&run.stdout), String::from_utf8_lossy(&run.stderr));
     assert!(!text.contains("internal compiler error"), "the range error must not be an ICE:\n{text}");
 }
+
+/// The preview.8 repro: `s = Size { ... }` on a `mut` parameter that the caller never sees is
+/// E1259 in `beskid run`, not a silent no-op.
+#[test]
+fn dead_assignment_to_a_mut_parameter_is_rejected() {
+    let workspace = E2eWorkspace::from_fixture("mut_parameter_dead");
+    let manifest = workspace.join("MutParameterDead.bproj");
+    let cli = BeskidCliInvoker::new();
+
+    let run = cli.run(["run", "--project", manifest.to_str().expect("manifest path str"), "--target", "App"]);
+    assert_failure(&run, "run mut-parameter-dead fixture");
+    assert_output_contains(&run, "E1259", "run mut-parameter-dead fixture");
+    assert_output_contains(
+        &run,
+        "the value assigned to the `mut` parameter `s` is never read",
+        "run mut-parameter-dead fixture",
+    );
+    let text = format!("{}{}", String::from_utf8_lossy(&run.stdout), String::from_utf8_lossy(&run.stderr));
+    assert!(!text.contains("internal compiler error"), "E1259 must not be an ICE:\n{text}");
+}

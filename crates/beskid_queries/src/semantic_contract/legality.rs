@@ -21,6 +21,8 @@
 //! `check_typing_obligations` (`typing_obligations` and `value_obligations`, E1206-E1208),
 //! `check_gate_obligations`, `check_unit_obligations`, and `extern_profile_findings`: the legacy
 //! `TypeChecker` and resolver classes that have no lowering fact of their own.
+//! `dead_parameter_assignments` (E1259) rejects an assignment to a `mut` parameter that no later
+//! read observes: parameters pass by value, so the caller never sees it.
 //! `missing_return` (E1258) rejects a valued function or method whose body can reach its end,
 //! which lowering cannot terminate.
 //! `check_items` collects every finding of the pass rather than stopping at the first, so
@@ -44,6 +46,7 @@ mod generics;
 mod imports;
 mod members;
 mod ownership;
+mod parameters;
 mod returns;
 mod transfer;
 mod typing;
@@ -472,6 +475,16 @@ pub fn check_items(db: &dyn Db, items: &[AstNodeKey]) -> Result<(), Vec<Semantic
                 site: missing.body,
                 related: vec![(missing.name, note.into())],
             });
+        }
+        if let Ok(Some(dead)) = parameters::dead_parameter_assignments(db, item) {
+            findings.extend(dead.into_iter().map(|dead| {
+                let note = format!("`{}` is passed by value", dead.parameter);
+                SemanticFinding {
+                    kind: SemanticIssueKind::DeadParameterAssignment { parameter: dead.parameter },
+                    site: dead.assignment,
+                    related: vec![(dead.declaration, note.into())],
+                }
+            }));
         }
         if let Ok(Some(finding)) = unresolved_value_argument(db, item) {
             findings.push(SemanticFinding {

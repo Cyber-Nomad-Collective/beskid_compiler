@@ -128,3 +128,11 @@ fn argument_strings_are_written_and_used_as_paths() {
     );
     assert_eq!(std::fs::read_to_string(&target).expect("file written at the argument path"), "hello-args");
 }
+
+/// `mut` parameters pass by value: field writes through a struct parameter (also passed on to a
+/// nested call) and through a `mut this` receiver reach the caller, and a whole assignment of a
+/// struct, enum or primitive reaches it as the returned value (the preview.8 `PollResize` defect).
+#[test]
+fn mut_parameter_field_writes_reach_the_caller() {
+    assert_runs("mut_parameter_assignment", "MutParameterAssignment.bproj");
+}

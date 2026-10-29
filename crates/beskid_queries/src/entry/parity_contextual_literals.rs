@@ -72,7 +72,7 @@ fn unsuffixed_literals_that_fit_their_context_need_no_suffix() {
         ("method argument", source("unit Main(Sink sink) { sink.Put(0); return; }")),
         ("enum variant constructor", source("unit Main() { Ip address = Ip::V4(127, 1); return; }")),
         ("type literal fields", source("unit Main() { Port port = Port { high: 0, low: 80 }; return; }")),
-        ("declared local and assignment", source("unit Main(mut u8 b) { u8 x = 7; b = 255; return; }")),
+        ("declared local and assignment", source("unit Main(mut u8 b) { u8 x = 7; b = 255; Take(b); return; }")),
         ("return value", source("u8 F() { return 200; }")),
         ("array elements", source("unit Main() { u8[] bytes = [1, 2, 255]; return; }")),
         ("binary operand", source("bool F(u8 b) { return b + 1 == 255; }")),

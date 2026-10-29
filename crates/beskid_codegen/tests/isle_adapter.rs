@@ -58,6 +58,8 @@ mod module_emission_specialization;
 mod move_exchange;
 #[path = "isle_adapter/move_generic_arguments.rs"]
 mod move_generic_arguments;
+#[path = "isle_adapter/mut_parameter_assignment.rs"]
+mod mut_parameter_assignment;
 #[path = "isle_adapter/optional_arguments.rs"]
 mod optional_arguments;
 #[path = "isle_adapter/parallel_runtime_builtins.rs"]

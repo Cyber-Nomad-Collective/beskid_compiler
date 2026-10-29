@@ -1,0 +1,20 @@
+// The 0.6.7 preview.8 repro: a whole assignment to a `mut` parameter that the caller never sees.
+// It is E1259, not a silent no-op.
+
+type Size
+{
+    i32 columns;
+    i32 rows;
+}
+
+unit AssignWhole(mut Size s)
+{
+    s = Size { columns: 80, rows: 24, };
+}
+
+i32 Main()
+{
+    mut Size s = Size { columns: 0, rows: 0, };
+    AssignWhole(s);
+    return s.columns;
+}

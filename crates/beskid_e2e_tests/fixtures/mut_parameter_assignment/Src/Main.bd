@@ -1,0 +1,128 @@
+// `mut` parameters pass by value. An assignment through the parameter to a field writes the
+// object the caller also references; an assignment to the parameter itself changes only the
+// callee's binding, so it reaches the caller only as a return value. Exits 42 when every case
+// holds, else the number of the failing case.
+
+type Size
+{
+    i32 columns;
+    i32 rows;
+}
+
+enum Color
+{
+    Red(),
+    Green(),
+}
+
+type Counter
+{
+    i32 value;
+
+    pub unit Bump(mut this)
+    {
+        this.value = this.value + 1;
+        return;
+    }
+}
+
+// Struct: the fields of the caller's object.
+unit AssignFields(mut Size s)
+{
+    s.columns = 80;
+    s.rows = 24;
+}
+
+// Nested call: the parameter is passed on, and the callee writes its fields.
+unit PassOn(mut Size s)
+{
+    AssignFields(s);
+}
+
+// Whole assignment that is read: the new value reaches the caller as the result.
+Size Replaced(mut Size s)
+{
+    s = Size { columns: 80, rows: 24, };
+    return s;
+}
+
+// Enum.
+Color Next(mut Color c)
+{
+    c = Color::Green();
+    return c;
+}
+
+// Primitive.
+i64 Clamp(mut i64 v)
+{
+    if (v < 0)
+    {
+        v = 0;
+    }
+    return v;
+}
+
+i64 Twice(mut i64 v)
+{
+    v = v * 2;
+    return v;
+}
+
+// A rebinding is local: the field write after it goes to the new object, not the caller's.
+unit Rebind(mut Size s)
+{
+    s = Size { columns: 1, rows: 1, };
+    s.columns = 99;
+}
+
+i32 Main()
+{
+    mut Size s = Size { columns: 0, rows: 0, };
+    AssignFields(s);
+    if (s.columns != 80 || s.rows != 24)
+    {
+        return 1;
+    }
+    mut Size t = Size { columns: 0, rows: 0, };
+    PassOn(t);
+    if (t.columns != 80 || t.rows != 24)
+    {
+        return 2;
+    }
+    mut Size u = Size { columns: 0, rows: 0, };
+    u = Replaced(u);
+    if (u.columns != 80)
+    {
+        return 3;
+    }
+    mut Color c = Color::Red();
+    c = Next(c);
+    match c
+    {
+        Color::Green() => { },
+        Color::Red() => { return 4; },
+    };
+    if (Clamp(0 - 5) != 0)
+    {
+        return 5;
+    }
+    mut i64 x = 5;
+    if (Twice(x) != 10 || x != 5)
+    {
+        return 6;
+    }
+    mut Size r = Size { columns: 0, rows: 0, };
+    Rebind(r);
+    if (r.columns != 0)
+    {
+        return 7;
+    }
+    mut Counter counter = Counter { value: 41, };
+    counter.Bump();
+    if (counter.value != 42)
+    {
+        return 8;
+    }
+    return 42;
+}
