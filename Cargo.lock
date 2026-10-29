@@ -984,6 +984,9 @@ dependencies = [
 [[package]]
 name = "beskid_tests_support"
 version = "0.1.0"
+dependencies = [
+ "beskid_analysis",
+]
 
 [[package]]
 name = "beskid_tests_surface"

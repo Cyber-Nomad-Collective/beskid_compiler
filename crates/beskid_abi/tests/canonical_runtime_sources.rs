@@ -11,6 +11,7 @@ use beskid_abi::runtime_source::{
     canonical_corelib_service_capability, canonical_corelib_service_source_path,
     canonical_runtime_intrinsic_capability, canonical_runtime_sources, prove_canonical_runtime_corpus,
 };
+use beskid_tests_support::source_facts::SourceFacts;
 
 fn linux_manifest() -> AbiManifestV5 {
     let target = TargetMetadata::supported()
@@ -34,33 +35,25 @@ fn canonical_bootstrap_sources_exist() {
     }
 }
 
+/// Ordinary and checked managed allocations enter the traced heap, never raw system allocation
+/// (which bypasses root and descriptor tracing). `GcTests` in
+/// `runtime/beskid/tests/runtime_semantics` proves the allocations are traced.
 #[test]
 fn managed_aggregate_allocator_uses_the_canonical_gc_heap() {
     let objects = canonical_runtime_sources()
         .into_iter()
         .find(|unit| unit.logical_path == CANONICAL_BOOTSTRAP_OBJECTS_SOURCE_PATH)
         .expect("canonical objects source");
-    let allocator = objects
-        .source
-        .split("pub pointer AllocateObject(pointer request)")
-        .nth(1)
-        .and_then(|tail| tail.split("// Allocates a closure capture environment").next())
-        .expect("managed object allocator body");
-
-    // The runtime source is `beskid fmt` output: statement shapes are compared with whitespace
-    // collapsed.
-    let flat = |text: &str| text.split_whitespace().collect::<Vec<_>>().join(" ");
-    let allocator_flat = flat(allocator);
-    assert!(
-        allocator_flat.contains("return AllocateObjectWithPolicy(request, false);")
-            && allocator_flat.contains("if (checked) { object = GcTryAlloc(size, alignment); }")
-            && allocator_flat.contains("else { object = GcAlloc(size, alignment); }"),
-        "ordinary and checked managed allocations must enter the traced heap"
+    let objects = SourceFacts::parse(CANONICAL_BOOTSTRAP_OBJECTS_SOURCE_PATH, objects.source);
+    assert_eq!(
+        objects.function("AllocateObject").call_arguments("AllocateObjectWithPolicy"),
+        [vec!["request".to_owned(), "false".to_owned()]]
     );
-    assert!(
-        !allocator.contains("SystemAllocate(size, alignment)"),
-        "raw system allocation bypasses root and descriptor tracing"
-    );
+    let allocator = objects.function("AllocateObjectWithPolicy");
+    assert_eq!(allocator.signature(), "pub pointer AllocateObjectWithPolicy(pointer request, bool checked)");
+    let callees = allocator.callees();
+    assert!(callees.contains("GcTryAlloc") && callees.contains("GcAlloc"), "callees: {callees:?}");
+    assert!(!callees.contains("SystemAllocate"), "raw system allocation bypasses root and descriptor tracing");
 }
 
 #[test]

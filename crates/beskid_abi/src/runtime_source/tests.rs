@@ -1,5 +1,27 @@
+use std::collections::BTreeSet;
+
+use beskid_tests_support::source_facts::SourceFacts;
+
 use super::*;
 use crate::abi_v5::AbiManifestV5;
+
+/// Parsed facts of one embedded Corelib service source.
+fn service_source_facts(logical_path: &str) -> SourceFacts {
+    let source = canonical_corelib_service_sources()
+        .into_iter()
+        .find(|source| source.logical_path == logical_path)
+        .unwrap_or_else(|| panic!("compiler embeds canonical Corelib source {logical_path}"));
+    SourceFacts::parse(logical_path, source.source)
+}
+
+/// Raw (`__`-prefixed) runtime calls of one embedded Corelib service source.
+fn raw_callees(logical_path: &str) -> BTreeSet<String> {
+    service_source_facts(logical_path).callees().into_iter().filter(|name| name.starts_with("__")).collect()
+}
+
+fn names(names: &[&str]) -> BTreeSet<String> {
+    names.iter().map(|name| (*name).to_owned()).collect()
+}
 
 #[test]
 fn canonical_bytes_copy_owns_only_the_numeric_bounds_trap_service() {
@@ -32,14 +54,14 @@ fn canonical_bytes_copy_owns_only_the_numeric_bounds_trap_service() {
 
 #[test]
 fn canonical_concurrency_facade_exposes_its_exact_scheduler_services() {
-    let source = canonical_corelib_service_sources()
-        .into_iter()
-        .find(|source| source.logical_path == CANONICAL_CORELIB_CONCURRENCY_SOURCE_PATH)
-        .expect("compiler embeds canonical Concurrency facade");
-    assert!(source.source.contains("__fiber_yield()"));
-    assert!(source.source.contains("__fiber_now_millis()"));
-    assert!(source.source.contains("__fiber_processor_count()"));
-    assert!(source.source.contains("__host_processor_count()"));
+    assert_eq!(
+        raw_callees(CANONICAL_CORELIB_CONCURRENCY_SOURCE_PATH),
+        names(&["__fiber_now_millis", "__fiber_processor_count", "__fiber_yield", "__host_processor_count"])
+    );
+    // The host count and the scheduler mutator count stay two queries.
+    let facade = service_source_facts(CANONICAL_CORELIB_CONCURRENCY_SOURCE_PATH);
+    assert_eq!(facade.function("HostProcessorCount").callees(), names(&["__host_processor_count"]));
+    assert_eq!(facade.function("ProcessorCount").callees(), names(&["__fiber_processor_count"]));
 
     let target = crate::abi_v5::TargetMetadata::supported()
         .into_iter()
@@ -68,12 +90,9 @@ fn canonical_concurrency_facade_exposes_its_exact_scheduler_services() {
 #[test]
 fn canonical_thread_yield_is_source_authorized_and_platform_neutral() {
     const THREAD_FACADE: &str = "Core/Threading/Thread.bd";
-    let source = canonical_corelib_service_sources()
-        .into_iter()
-        .find(|source| source.logical_path == THREAD_FACADE)
-        .expect("compiler embeds canonical Thread facade");
-    assert!(source.source.contains("__thread_yield()"));
-    assert!(!source.source.contains("sched_yield"));
+    let facts = service_source_facts(THREAD_FACADE);
+    assert!(facts.callees().contains("__thread_yield"));
+    assert!(!facts.callees().contains("sched_yield"), "the facade yields only through the runtime service");
 
     let target = crate::abi_v5::TargetMetadata::supported()
         .into_iter()
@@ -95,13 +114,10 @@ fn canonical_thread_yield_is_source_authorized_and_platform_neutral() {
 #[test]
 fn canonical_fiber_facade_exposes_one_exact_join_and_cancel_contract() {
     const FIBER_FACADE: &str = "Concurrency/Fiber.bd";
-    let source = canonical_corelib_service_sources()
-        .into_iter()
-        .find(|source| source.logical_path == FIBER_FACADE)
-        .expect("compiler embeds canonical Fiber facade");
-    assert!(source.source.contains("__fiber_join_status(this.handle)"));
-    assert!(!source.source.contains("__fiber_join(handle)"));
-    assert!(source.source.contains("__fiber_cancel(this.handle, 0_i64)"));
+    let fiber = service_source_facts(FIBER_FACADE);
+    assert!(!fiber.callees().contains("__fiber_join"), "join goes through the status and value services");
+    assert_eq!(fiber.call_arguments("__fiber_join_status"), [vec!["this.handle".to_owned()]]);
+    assert_eq!(fiber.call_arguments("__fiber_cancel"), [vec!["this.handle".to_owned(), "0_i64".to_owned()]]);
 
     let target = crate::abi_v5::TargetMetadata::supported()
         .into_iter()
@@ -143,12 +159,9 @@ fn canonical_fiber_facade_exposes_one_exact_join_and_cancel_contract() {
 
 #[test]
 fn canonical_channel_facade_uses_one_atomic_try_receive_claim_before_value_selection() {
-    let source = canonical_corelib_service_sources()
-        .into_iter()
-        .find(|source| source.logical_path == CANONICAL_CORELIB_CHANNEL_SOURCE_PATH)
-        .expect("compiler embeds canonical Channel facade");
-    assert!(source.source.contains("__channel_try_receive(self.handle)"));
-    assert!(!source.source.contains("__channel_try_receive_status"));
+    let channel = service_source_facts(CANONICAL_CORELIB_CHANNEL_SOURCE_PATH);
+    assert_eq!(channel.call_arguments("__channel_try_receive"), [vec!["self.handle".to_owned()]]);
+    assert!(!channel.callees().contains("__channel_try_receive_status"));
 
     let target = crate::abi_v5::TargetMetadata::supported()
         .into_iter()
@@ -180,12 +193,7 @@ fn canonical_channel_facade_uses_one_atomic_try_receive_claim_before_value_selec
 
 #[test]
 fn canonical_args_source_exposes_exactly_count_and_get_services() {
-    let source = canonical_corelib_service_sources()
-        .into_iter()
-        .find(|source| source.logical_path == CANONICAL_CORELIB_ARGS_SOURCE_PATH)
-        .expect("compiler embeds canonical Core.Args source");
-    assert!(source.source.contains("__args_count()"));
-    assert!(source.source.contains("__args_get(i)"));
+    assert_eq!(raw_callees(CANONICAL_CORELIB_ARGS_SOURCE_PATH), names(&["__args_count", "__args_get"]));
 
     let target = crate::abi_v5::TargetMetadata::supported()
         .into_iter()
@@ -213,17 +221,23 @@ fn canonical_console_platform_facades_each_own_terminal_size_service() {
         CANONICAL_CORELIB_CONSOLE_WINDOWS_SOURCE_PATH,
     ];
     for logical_path in platform_paths {
-        let source = sources
-            .iter()
-            .find(|source| source.logical_path == logical_path)
-            .unwrap_or_else(|| panic!("compiler embeds canonical Console platform facade {logical_path}"));
-        assert!(source.source.contains("__tty_winsize(fd)"));
+        // Terminal detection goes through the exact ABI-v5 runtime kit, never a direct extern.
+        let facade = service_source_facts(logical_path);
+        assert!(facade.call_arguments("__tty_winsize").contains(&vec!["fd".to_owned()]));
+        assert!(!facade.callees().contains("isatty"), "{logical_path} must not bypass the runtime adapter");
+        for function in facade.functions() {
+            assert!(
+                !function.attribute_names().contains("Extern"),
+                "{logical_path} {} must not bind a native extern",
+                function.name()
+            );
+        }
     }
-    let terminal = sources
-        .iter()
-        .find(|source| source.logical_path == CANONICAL_CORELIB_CONSOLE_TERMINAL_SOURCE_PATH)
-        .expect("compiler embeds canonical Console terminal facade");
-    assert!(terminal.source.contains("__env_get(name)"));
+    assert!(
+        service_source_facts(CANONICAL_CORELIB_CONSOLE_TERMINAL_SOURCE_PATH)
+            .call_arguments("__env_get")
+            .contains(&vec!["name".to_owned()])
+    );
 
     let target = crate::abi_v5::TargetMetadata::supported()
         .into_iter()
@@ -347,13 +361,7 @@ fn canonical_foundation_service_table_covers_every_implemented_raw_call_and_noth
     let sources = canonical_corelib_service_sources();
 
     for source in &sources {
-        let raw_names = source
-            .source
-            .lines()
-            .filter(|line| !line.trim_start().starts_with("//"))
-            .flat_map(|line| line.split(|character: char| !(character.is_ascii_alphanumeric() || character == '_')))
-            .filter(|token| token.starts_with("__"))
-            .collect::<std::collections::BTreeSet<_>>();
+        let raw_names = raw_callees(&source.logical_path);
 
         for name in &raw_names {
             // `__array_new` is a compiler-owned typed allocation; `__transfer_class<T>()` folds to
@@ -490,26 +498,29 @@ fn foundation_sources_do_not_directly_bind_raw_byte_buffer_services() {
                 .expect("Foundation source path")
                 .to_string_lossy()
                 .replace('\\', "/");
-            let raw_names = source
-                .lines()
-                .filter(|line| !line.trim_start().starts_with("//"))
-                .flat_map(|line| line.split(|character: char| !(character.is_ascii_alphanumeric() || character == '_')))
-                .filter(|token| token.starts_with("__"))
-                .collect::<std::collections::BTreeSet<_>>();
+            let raw_names = SourceFacts::parse(path.display().to_string(), source)
+                .callees()
+                .into_iter()
+                .filter(|name| name.starts_with("__"))
+                .collect::<BTreeSet<_>>();
             for forbidden in ["__bytes_get", "__bytes_set", "__bytes_copy", "__bytes_compare"] {
-                assert!(!source.contains(forbidden), "{} must not call raw-buffer service {forbidden}", path.display());
+                assert!(
+                    !raw_names.contains(forbidden),
+                    "{} must not call raw-buffer service {forbidden}",
+                    path.display()
+                );
             }
             for name in raw_names {
                 if name == "__array_new" {
                     assert!(
-                        logical_path == CANONICAL_FOUNDATION_ARRAY_SOURCE_PATH && source.contains("__array_new<T>(0)"),
+                        logical_path == CANONICAL_FOUNDATION_ARRAY_SOURCE_PATH,
                         "{} must allocate arrays only through descriptor-backed compiler lowering",
                         path.display()
                     );
                     continue;
                 }
                 assert!(
-                    capability.service_for_source(&logical_path, name).is_some(),
+                    capability.service_for_source(&logical_path, &name).is_some(),
                     "raw Foundation call {name} in {logical_path} lacks exact source-scoped service authority"
                 );
             }
@@ -712,19 +723,11 @@ fn heap_source_constants_match_the_manifest_heap_layouts() {
     // name -> (value, first source path that declared it)
     let mut declared: BTreeMap<String, (i64, &str)> = BTreeMap::new();
     for (path, source) in sources {
-        for line in source.lines() {
-            let trimmed = line.trim();
-            let Some(rest) = trimmed.strip_prefix("const ") else { continue };
-            let Some((name, rest)) = rest.split_once('=') else { continue };
-            let name = name.trim();
-            if !(name.starts_with("HEAP_") || name.starts_with("REGION_")) {
-                continue;
-            }
-            let Some(value_text) = rest.trim().strip_suffix(';') else { continue };
-            let Ok(value) = value_text.trim().parse::<i64>() else { continue };
-            match declared.get(name) {
+        let facts = SourceFacts::parse(path, source);
+        for (name, value) in facts.integer_constants("HEAP_").into_iter().chain(facts.integer_constants("REGION_")) {
+            match declared.get(&name) {
                 None => {
-                    declared.insert(name.to_string(), (value, path));
+                    declared.insert(name, (value, path));
                 }
                 Some((existing, first_path)) => assert_eq!(
                     *existing, value,

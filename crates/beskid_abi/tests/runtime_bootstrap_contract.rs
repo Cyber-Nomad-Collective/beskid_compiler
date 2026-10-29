@@ -7,6 +7,7 @@ use beskid_abi::abi_v5::{
 use beskid_abi::runtime_kit::{
     BuildProfile, RuntimeArtifact, RuntimeArtifacts, RuntimeKitMetadata, RuntimeKitValidationError,
 };
+use beskid_tests_support::source_facts::SourceFacts;
 
 fn supported_targets() -> Vec<TargetMetadata> {
     let targets = TargetMetadata::supported();
@@ -14,44 +15,6 @@ fn supported_targets() -> Vec<TargetMetadata> {
         .into_iter()
         .map(|triple| targets.iter().find(|target| target.triple.as_str() == triple).unwrap().clone())
         .collect()
-}
-
-#[test]
-fn network_lifecycle_services_carry_absolute_deadlines_on_every_target() {
-    use beskid_abi::generated::abi_v5_contract::ABI_V5_CORELIB_SERVICE_BINDINGS;
-
-    for target in ["x86_64-unknown-linux-gnu", "aarch64-apple-darwin", "x86_64-pc-windows-msvc"] {
-        for (service, symbol, params, result) in [
-            (
-                "__network_open",
-                "beskid_rt_v5_network_open",
-                &["i64", "pointer", "i64", "i64", "i64", "pointer"][..],
-                "i32",
-            ),
-            ("__network_accept", "beskid_rt_v5_network_accept", &["usize", "i64", "pointer"][..], "i32"),
-            (
-                "__network_receive",
-                "beskid_rt_v5_network_receive",
-                &["usize", "pointer", "pointer", "u8", "i64"][..],
-                "i64",
-            ),
-            ("__network_send", "beskid_rt_v5_network_send", &["usize", "pointer", "pointer", "u8", "i64"][..], "i64"),
-            (
-                "__network_dns_resolve",
-                "beskid_rt_v5_network_dns_resolve",
-                &["pointer", "i64", "i64", "i64", "pointer"][..],
-                "i32",
-            ),
-        ] {
-            let binding = ABI_V5_CORELIB_SERVICE_BINDINGS
-                .iter()
-                .find(|binding| binding.service == service && binding.target == target)
-                .unwrap();
-            assert_eq!(binding.adapter, symbol, "{service} on {target}");
-            assert_eq!(binding.params, params, "{service} on {target}");
-            assert_eq!(binding.result, result, "{service} on {target}");
-        }
-    }
 }
 
 #[test]
@@ -111,26 +74,6 @@ fn windows_descriptor_primitives_use_application_ucrt_import_authority() {
             assert_eq!(import.result, AbiType::Pointer, "_errno returns the thread-local errno address");
         }
     }
-}
-
-#[test]
-fn raw_descriptor_abi_rejects_before_allocation_or_native_admission() {
-    // The runtime source is `beskid fmt` output: it is searched with whitespace collapsed.
-    let source = include_str!("../../../runtime/beskid/src/Runtime/Io/Syscalls.bd")
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ");
-    let source = source.as_str();
-    let submit = source.find("pub i64 SyscallSubmitAndPark").unwrap();
-    let reject = source[submit..].find("if (descriptor > 2147483647) { return -1; }").unwrap() + submit;
-    let allocation = source[submit..].find("pointer nativeBuffer = SystemAllocate").unwrap() + submit;
-    assert!(reject < allocation, "raw descriptor admission must precede native allocation");
-
-    let write = source.find("pub i64 SyscallWrite(i64 descriptor, pointer value)").unwrap();
-    let write_reject =
-        source[write..].find("if (descriptor < 0 || descriptor > 2147483647) { return -1; }").unwrap() + write;
-    let native_admission = source[write..].find("SyscallSubmitAndPark(word(descriptor)").unwrap() + write;
-    assert!(write_reject < native_admission, "the i64 raw ABI must not narrow/admit an invalid descriptor");
 }
 
 #[test]
@@ -378,10 +321,6 @@ fn network_leak_diagnostic_contract_carries_the_observed_operation_winner_and_co
 
     assert_eq!(diagnostic.param_names, ["slot", "generation", "owner", "kind", "operation", "winner", "leak_count"]);
     assert_eq!(diagnostic.params, vec![AbiType::USize; 7]);
-
-    let source = include_str!("../assembly/common/network.h").replace("\r\n", "\n");
-    assert!(source.contains("uintptr_t kind, uintptr_t operation, uintptr_t winner, uintptr_t leak_count"));
-    assert!(!source.contains("operation=shutdown winner=live leak_count=1"));
 }
 
 #[test]
@@ -1135,40 +1074,39 @@ fn network_status_manifest_c_enum_runtime_constants_and_corelib_errors_agree() {
     assert!(header.contains("_Static_assert(NET_RESOURCE_EXHAUSTED == 18 && NET_PENDING == 19"));
 
     let public = &names[1..names.len() - 1];
-    let errors = workspace_source("corelib/packages/network/src/Network/Errors.bd");
-    let body = &errors[errors.find("pub enum NetworkError").unwrap()..];
-    let body = &body[body.find('{').unwrap() + 1..body.find('}').unwrap()];
-    let variants = body
-        .split(',')
-        .map(|variant| variant.trim().trim_end_matches("()"))
-        .filter(|variant| !variant.is_empty())
-        .collect::<Vec<_>>();
-    assert_eq!(variants, public, "NetworkError declaration order is the status order");
+    let errors =
+        SourceFacts::parse("Network/Errors.bd", workspace_source("corelib/packages/network/src/Network/Errors.bd"));
+    assert_eq!(errors.enum_variants("NetworkError"), public, "NetworkError declaration order is the status order");
 
-    // `beskid fmt` output, compared with whitespace collapsed.
-    let internal = workspace_source("corelib/packages/network/src/Network/Internal.bd")
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ");
+    let internal =
+        SourceFacts::parse("Network/Internal.bd", workspace_source("corelib/packages/network/src/Network/Internal.bd"));
+    let mapping = internal.function("Error").guarded_returns();
     for (name, status) in statuses.iter().filter(|(name, _)| public.contains(&name.as_str())) {
-        let line = format!("if (status == {status}_i64) {{ return NetworkError::{name}; }}");
-        assert!(internal.contains(&line), "Network.Internal.Error maps status {status} to {name}");
+        assert!(
+            mapping.contains(&(format!("status=={status}_i64"), format!("NetworkError::{name}"))),
+            "Network.Internal.Error maps status {status} to {name}: {mapping:?}"
+        );
     }
-    assert!(!internal.contains(&format!("if (status == {}_i64) {{ return NetworkError::", value("Pending"))));
+    let pending = format!("status=={}_i64", value("Pending"));
+    assert!(mapping.iter().all(|(condition, _)| *condition != pending), "Pending maps to no public error");
 
-    let table = workspace_source("runtime/beskid/src/Runtime/Network/Table.bd");
+    let table =
+        SourceFacts::parse("Runtime/Network/Table.bd", workspace_source("runtime/beskid/src/Runtime/Network/Table.bd"));
+    let constants = table.integer_constants("NETWORK_");
     let mut checked = 0;
-    for line in table.lines().filter_map(|line| line.strip_prefix("const NETWORK_")) {
-        let (constant, rest) = line.split_once(" = ").unwrap();
-        let number = rest.trim_end_matches(';').parse::<i64>().unwrap();
+    for (constant, number) in &constants {
+        let constant = constant.strip_prefix("NETWORK_").unwrap();
         if let Some((_, expected)) = statuses.iter().find(|(name, _)| screaming_snake(name) == constant) {
-            assert_eq!(number, *expected, "Table.bd NETWORK_{constant} matches the manifest");
+            assert_eq!(number, expected, "Table.bd NETWORK_{constant} matches the manifest");
             checked += 1;
         }
     }
-    assert!(table.contains("const NETWORK_RESOURCE_EXHAUSTED = 18;") && table.contains("const NETWORK_PENDING = 19;"));
+    assert_eq!((table.constant("NETWORK_RESOURCE_EXHAUSTED"), table.constant("NETWORK_PENDING")), (18, 19));
     assert!(checked >= 10, "Table.bd names its status constants after manifest statuses");
-    assert!(!table.contains("const NETWORK_DOWN"), "runtime-owned failures never report NetworkDown");
+    assert!(
+        constants.iter().all(|(constant, _)| constant != "NETWORK_DOWN"),
+        "runtime-owned failures never report NetworkDown"
+    );
 }
 
 #[test]

@@ -26,7 +26,7 @@ libc = "0.2"
 extern_dlopen = []
 
 [dev-dependencies]
-beskid_tests_support = { path = "../beskid_tests_support" }
+beskid_tests_support = { path = "../beskid_tests_support", features = ["source-facts"] }
 beskid_tests_mod_host = { path = "../beskid_tests_mod_host" }
 beskid_aot = { path = "../beskid_aot" }
 beskid_tools = { path = "../beskid_tools" }

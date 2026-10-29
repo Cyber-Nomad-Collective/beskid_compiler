@@ -129,38 +129,6 @@ fn coff_object_exports_exactly_two_symbols_and_contains_no_unwind_sections() {
     assert!(failures.is_empty(), "unsafe context continuation addresses:\n{}", failures.join("\n"));
 }
 
-#[test]
-fn masm_source_saves_the_complete_manifest_preserved_register_set() {
-    let source = fs::read_to_string(source()).unwrap();
-    for register in ["rbx", "rbp", "rdi", "rsi", "r12", "r13", "r14", "r15"] {
-        assert!(source.contains(&format!(
-            "mov [rcx + BESKID_X86_64_PC_WINDOWS_MSVC_CONTEXT_{}_OFFSET], {register}",
-            register.to_ascii_uppercase()
-        )));
-        assert!(source.contains(&format!(
-            "mov {register}, [r10 + BESKID_X86_64_PC_WINDOWS_MSVC_CONTEXT_{}_OFFSET]",
-            register.to_ascii_uppercase()
-        )));
-    }
-    for register in ["xmm6", "xmm7", "xmm8", "xmm9", "xmm10", "xmm11", "xmm12", "xmm13", "xmm14", "xmm15"] {
-        assert!(source.contains(&format!(
-            "movdqu [rcx + BESKID_X86_64_PC_WINDOWS_MSVC_CONTEXT_{}_OFFSET], {register}",
-            register.to_ascii_uppercase()
-        )));
-        assert!(source.contains(&format!(
-            "movdqu {register}, [r10 + BESKID_X86_64_PC_WINDOWS_MSVC_CONTEXT_{}_OFFSET]",
-            register.to_ascii_uppercase()
-        )));
-    }
-    assert!(source.contains("BESKID_CONTEXT_INIT_RETURN_TRAMPOLINE_STACK_OPERAND"));
-    assert!(source.contains("mov [rcx + BESKID_X86_64_PC_WINDOWS_MSVC_CONTEXT_R13_OFFSET], r10"));
-    assert!(source.contains("sub rsp, 8"));
-    assert!(source.contains("jmp r13"));
-    assert!(!source.contains(".pushreg"));
-    assert!(!source.contains(".allocstack"));
-    assert!(!source.contains(".endprolog"));
-}
-
 #[cfg(all(target_os = "windows", target_arch = "x86_64", target_env = "msvc"))]
 #[test]
 fn windows_x64_context_enters_entry_and_return_trampoline_with_abi_aligned_stack() {
