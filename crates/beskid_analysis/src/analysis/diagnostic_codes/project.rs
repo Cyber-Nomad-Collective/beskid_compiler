@@ -27,7 +27,7 @@ pub const CODES: &[CodeInfo] = &[
     CodeInfo { code: "E1855", summary: "scheduling failure", tags: &[] },
     CodeInfo { code: "E1860", summary: "invalid glue label", tags: &[] },
     CodeInfo { code: "E1861", summary: "duplicate glue label", tags: &[] },
-    CodeInfo { code: "E1862", summary: "unavailable glue backend", tags: &[] },
+    CodeInfo { code: "E1862", summary: "unsupported glue backend", tags: &[] },
     CodeInfo { code: "E1863", summary: "invalid glue owner directory", tags: &[] },
     CodeInfo { code: "E1864", summary: "glue library also linked", tags: &[] },
     CodeInfo { code: "E1865", summary: "glue owner content not closed", tags: &[] },

@@ -426,7 +426,7 @@ fn changed_manifest_requested_version_rejects_stale_registry_pin_before_material
         .collect::<Vec<_>>();
     final_destinations.sort();
     assert_eq!(final_destinations, original_destinations, "stale pin must not materialize another package");
-    let error = result.expect_err("a v2 pin must not override the manifest's exact requested version");
+    let error = result.expect_err("a lock pin must not override the manifest's exact requested version");
     assert!(error.to_string().contains("version") || error.to_string().contains("pin"), "unexpected error: {error}");
 }
 
@@ -495,7 +495,7 @@ fn unavailable_unpinned_registry_remains_warning_only() {
 }
 
 #[test]
-fn unavailable_unpinned_registry_can_retry_without_rewriting_v2_lock() {
+fn unavailable_unpinned_registry_can_retry_without_rewriting_the_lock() {
     let fixture = RegistryFixture::new();
     fixture.prepare(false).expect("initial unavailable registry warning");
     let original_lock = fixture.lock();

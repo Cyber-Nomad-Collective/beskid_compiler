@@ -365,18 +365,14 @@ fn incompatible_or_damaged_snapshot_preserves_the_live_database() {
         });
         assert_rejected_and_usable(directory.path(), &path);
     }
-}
-
-#[test]
-fn legacy_owned_value_snapshot_is_rejected_without_touching_the_database() {
+    // An envelope without its compiler and digest fields is incompatible too.
     let (directory, path, _) = snapshot_fixture();
     let snapshot = beskid_queries::cache_root_for_project(directory.path()).join("db.json");
-    let mut legacy: serde_json::Value = serde_json::from_slice(&std::fs::read(&snapshot).unwrap()).unwrap();
-    let object = legacy.as_object_mut().unwrap();
+    let mut envelope: serde_json::Value = serde_json::from_slice(&std::fs::read(&snapshot).unwrap()).unwrap();
+    let object = envelope.as_object_mut().unwrap();
     object.remove("compiler");
     object.remove("digest");
-    object.insert("version".into(), "beskid-queries:0.1.0:grammar:0.1.0".into());
-    std::fs::write(snapshot, serde_json::to_vec(&legacy).unwrap()).unwrap();
+    std::fs::write(snapshot, serde_json::to_vec(&envelope).unwrap()).unwrap();
     assert_rejected_and_usable(directory.path(), &path);
 }
 

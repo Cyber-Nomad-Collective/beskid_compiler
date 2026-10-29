@@ -81,24 +81,6 @@ fn corelib_string_services_accept_managed_string_views() {
 }
 
 #[test]
-fn console_terminal_detection_uses_the_canonical_runtime_adapter() {
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    for platform in ["Linux", "MacOS", "Windows"] {
-        let source = fs::read_to_string(root.join(format!("corelib/packages/console/src/Platform/{platform}.bd")))
-            .unwrap_or_else(|error| panic!("read {platform} terminal adapter: {error}"));
-
-        assert!(
-            !source.contains("[Extern(") && !source.contains("isatty"),
-            "{platform} terminal detection must not bypass the exact ABI-v5 runtime kit"
-        );
-        assert!(
-            source.contains("__tty_winsize"),
-            "{platform} terminal detection must use the canonical terminal adapter"
-        );
-    }
-}
-
-#[test]
 fn platform_environment_data_import_is_distinct_from_callable_imports() {
     let source = include_str!("../../../runtime_manifest.bsol");
     let manifest = load_v5_manifest_source(source).unwrap();

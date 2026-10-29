@@ -28,7 +28,7 @@ fn lock_accepts_corelib_source_with_relative_installed_workspace_identity() {
 #[test]
 fn corelib_entries_name_the_shared_corelib_and_have_no_project_local_copy() {
     // A Corelib entry is read in place from the toolchain's shared Corelib, so a copy destination
-    // is not part of its record; one that names a copy is a retired v2 shape and is rejected.
+    // is not part of its record; one that names a copy is rejected.
     parse_rejects(
         "# Project.lock v3\nroot_manifest=Project.proj\nproject_name=App\ndependencies:\n- name=Core;source=corelib;project=stdlib/core;manifest=Project.proj;source_root=Src;materialized_root=obj/beskid/deps/src/core\n",
     );
@@ -37,11 +37,6 @@ fn corelib_entries_name_the_shared_corelib_and_have_no_project_local_copy() {
     // Two Corelib entries never collide on a destination.
     let two = "# Project.lock v3\nroot_manifest=Project.proj\nproject_name=App\ndependencies:\n- name=Core;source=corelib;project=beskid_corelib;manifest=corelib.bproj;source_root=.\n- name=corelib_text;source=corelib;project=packages/text;manifest=corelib_text.bproj;source_root=src\n";
     assert_eq!(ProjectLockfile::parse(two).expect("two Corelib entries").to_content(), two);
-}
-
-#[test]
-fn retired_lock_formats_are_not_parsed_as_current() {
-    parse_rejects(&PATH_LOCK.replacen("# Project.lock v3", "# Project.lock v2", 1));
 }
 
 #[test]
@@ -66,7 +61,7 @@ fn lock_requires_exact_header_and_required_top_level_fields() {
     for content in [
         PATH_LOCK.replacen("# Project.lock v3", " # Project.lock v3", 1),
         PATH_LOCK.replacen("# Project.lock v3", "# Project.lock v3 extra", 1),
-        PATH_LOCK.replacen("# Project.lock v3", "# Project.lock v1", 1),
+        PATH_LOCK.replacen("# Project.lock v3", "# Project.lock v4", 1),
         PATH_LOCK.replace("root_manifest=Project.proj\n", ""),
         PATH_LOCK.replace("project_name=App\n", ""),
         PATH_LOCK.replace("dependencies:\n", ""),

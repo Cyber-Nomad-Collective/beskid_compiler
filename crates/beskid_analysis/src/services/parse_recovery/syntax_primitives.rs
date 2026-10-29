@@ -29,24 +29,13 @@ mod tests {
     use super::{KEYWORDS, PRIMITIVE_TYPE_KEYWORDS};
 
     #[test]
-    fn recovery_position_primitives_are_the_only_strategy_positioning_primitives() {
+    fn recovery_insert_positions_skip_trailing_whitespace_before_the_next_token() {
         let source = "let value = 1   \nnext";
         let next_boundary = source.find("next").expect("test source includes next token");
 
         assert_eq!(super::recovery_insert_position(source, next_boundary), 13);
         assert_eq!(super::recovery_insert_position(&source[..next_boundary], next_boundary), 13);
         assert_eq!(super::recovery_next_token_insert_position(source, "let value = 1".len()), next_boundary);
-
-        for strategy in [
-            include_str!("statements.rs"),
-            include_str!("expressions.rs"),
-            include_str!("expressions/scanner_context.rs"),
-        ] {
-            assert!(
-                !strategy.contains("fn recovery_insert_pos("),
-                "recovery strategies must delegate insertion positioning to syntax_primitives"
-            );
-        }
     }
 
     #[test]

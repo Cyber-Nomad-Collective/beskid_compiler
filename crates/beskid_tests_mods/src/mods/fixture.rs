@@ -1,4 +1,4 @@
-//! Lockfile replay fixtures and the checked-in `sample_mod` foundation snapshot.
+//! Lockfile replay fixtures over disposable projects (one copies the Corelib `Core.String` sources).
 //!
 //! Each test gets an isolated workspace that copies (or synthesizes) the fixture
 //! tree under a unique temp dir so descriptors and registrations can be tweaked
@@ -42,27 +42,15 @@ target "main" {
 "#;
 
 #[test]
-fn sample_mod_materialized_foundation_replays_no_lossy_utf8_append_route() {
-    let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fixtures/mods/sample_mod");
-    let snapshots = fixture.join("obj/beskid/deps/src");
-    let mut foundation_snapshots = fs::read_dir(&snapshots)
-        .expect("read checked-in foundation snapshots")
-        .map(|entry| entry.expect("read foundation snapshot").path())
-        .filter(|path| {
-            path.file_name().is_some_and(|name| name.to_string_lossy().starts_with("corelib_foundation-"))
-                && path.join("src/Core/String/String.bd").is_file()
-                && path.join("src/Core/String/Utf8.bd").is_file()
-        })
-        .collect::<Vec<_>>();
-    foundation_snapshots.sort();
-    let snapshot = foundation_snapshots.first().expect("checked-in foundation source snapshot");
-
-    let case = ReplayLockCase::new("sample_mod_foundation_v2_replay");
+fn materialized_corelib_foundation_replays_no_lossy_utf8_append_route() {
+    let corelib_string =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../corelib/packages/foundation/src/Core/String");
+    let case = ReplayLockCase::new("materialized_foundation_replay");
     let source_dir = case.plan.dependency_projects[0].source_root.join("Core/String");
     fs::create_dir_all(&source_dir).expect("create disposable foundation source");
     for source in ["String.bd", "Utf8.bd"] {
-        fs::copy(snapshot.join("src/Core/String").join(source), source_dir.join(source))
-            .expect("copy checked-in foundation source into disposable project");
+        fs::copy(corelib_string.join(source), source_dir.join(source))
+            .expect("copy the Corelib Core.String source into the disposable project");
     }
     case.prepare_lock();
     let lock = fs::read_to_string(&case.lockfile).expect("read generated lockfile");
@@ -79,7 +67,7 @@ fn sample_mod_materialized_foundation_replays_no_lossy_utf8_append_route() {
             .find(|dependency| dependency.dependency_name.as_deref() == Some("foundation"))
             .map(|dependency| dependency.source_root.as_path()),
         Some(expected_source_root.as_path()),
-        "LSP lockfile replay must resolve the exact materialized v2 root"
+        "LSP lockfile replay must resolve the exact materialized root"
     );
 
     for source in ["String.bd", "Utf8.bd"] {
@@ -99,8 +87,8 @@ fn lockfile_replay_fails_closed_for_invalid_or_untrusted_entries() {
     let valid = case.canonical_entry().to_string();
     let invalid_lockfiles = vec![
         "# Project.lock v0\n".to_string(),
-        format!("# Project.lock v1\nroot_manifest=x\nproject_name=x\nnot-a-dependency\ndependencies:\n{valid}\n"),
-        "# Project.lock v1\nroot_manifest=x\nproject_name=x\ndependencies:\n- name=foundation;manifest=x\n".to_string(),
+        format!("# Project.lock v3\nroot_manifest=x\nproject_name=x\nnot-a-dependency\ndependencies:\n{valid}\n"),
+        "# Project.lock v3\nroot_manifest=x\nproject_name=x\ndependencies:\n- name=foundation;manifest=x\n".to_string(),
         format!("{}{}", case.lock_with(&valid), valid),
         case.lock_with(&format!("{};source_root=/tampered", valid.trim_end())),
         case.lock_with(&format!("{};registry=one;registry=two", valid.trim_end())),

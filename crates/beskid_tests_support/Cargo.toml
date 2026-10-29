@@ -4,4 +4,11 @@ version = "0.1.0"
 edition = "2024"
 license.workspace = true
 
+[features]
+default = []
+# Parsed facts of Beskid sources (functions, signatures, call targets, constants) for tests that
+# check runtime or Corelib sources structurally instead of by substring.
+source-facts = ["dep:beskid_analysis"]
+
 [dependencies]
+beskid_analysis = { path = "../beskid_analysis", optional = true }

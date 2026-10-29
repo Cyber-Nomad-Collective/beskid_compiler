@@ -17,9 +17,5 @@ pub mod services;
 pub use beskid_analysis::mod_host::ModHost;
 pub use engine::Engine;
 pub use engine::host_runtime_target;
-#[cfg(feature = "extern_dlopen")]
-pub use engine::resolve_for_tests;
-#[cfg(feature = "extern_dlopen")]
-pub use engine::set_security_policies_for_tests;
 pub use jit_module::{BeskidJitModule, JitError};
 pub use runtime_kit::JitRuntimeKit;

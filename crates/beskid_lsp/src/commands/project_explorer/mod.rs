@@ -158,15 +158,6 @@ target "Lib" {
 }
 "#,
         );
-        write(
-            &root.join("apps/demo/Project.lock"),
-            r#"# Project.lock v1
-root_manifest=demo.bproj
-project_name=demo
-dependencies:
-- name=lib;manifest=lib.bproj;project=lib;source_root=Src;materialized_root=obj/beskid/deps/src/lib;resolved_version=1.0.0;registry=default
-"#,
-        );
         (temp, root)
     }
 
@@ -330,7 +321,6 @@ target "Ext" {
     fn get_project_dependencies_reports_unresolved_when_lock_missing_entry() {
         let (_temp, root) = workspace_fixture();
         let project = root.join("apps/demo/demo.bproj");
-        fs::remove_file(root.join("apps/demo/Project.lock")).expect("fixture has no lock");
         write(
             &project,
             r#"
@@ -367,7 +357,7 @@ dependency "missing" {
     }
 
     #[test]
-    fn get_project_dependencies_rejects_present_v1_malformed_and_stale_locks() {
+    fn get_project_dependencies_rejects_unsupported_malformed_and_stale_locks() {
         let (_temp, root) = workspace_fixture();
         let project = root.join("apps/demo/demo.bproj");
         write(&root.join("apps/demo/Src/Main.bd"), "Fn Main() { }\n");
@@ -375,8 +365,13 @@ dependency "missing" {
         let lock_path = root.join("apps/demo/Project.lock");
         let uri = path_to_uri_string(&project);
 
-        let error = graph::get_project_dependencies(&uri).expect_err("v1 lock must not disappear from tooling");
-        assert!(error.message.contains("v1") && error.message.contains("beskid dev project lock"), "{error:?}");
+        write(&lock_path, "# Project.lock v1\nroot_manifest=demo.bproj\nproject_name=demo\ndependencies:\n");
+        let error =
+            graph::get_project_dependencies(&uri).expect_err("an unsupported lock must not disappear from tooling");
+        assert!(
+            error.message.contains("unsupported format") && error.message.contains("beskid dev project lock"),
+            "{error:?}"
+        );
 
         write(&lock_path, "# Project.lock v3\nnot-a-lock\n");
         let error = graph::get_project_dependencies(&uri).expect_err("malformed lock must not disappear");
@@ -439,8 +434,8 @@ dependency "missing" {
 
         write(&template.with_file_name("Project.lock"), "# Project.lock v1\n");
         let error = graph::get_project_dependencies(&path_to_uri_string(&template))
-            .expect_err("present v1 lock must not be hidden on Template roots");
-        assert!(error.message.contains("v1"), "{error:?}");
+            .expect_err("an unsupported lock must not be hidden on Template roots");
+        assert!(error.message.contains("unsupported format"), "{error:?}");
     }
 
     /// Locate the VS Code extension's command snapshot.

@@ -93,7 +93,6 @@ pub struct BuildArgs {
 
     /// Codegen backend: `clif` (default) or `glue-rust`. `glue-rust` builds a Lib target as a shared
     /// Glue consumer plus one Rust owner image for each referenced manifest `glue` block.
-    /// `glue-dotnet` is unavailable in 0.6.
     #[arg(long)]
     pub backend: Option<String>,
 
@@ -165,9 +164,6 @@ fn select_backend(args: &BuildArgs) -> Result<SelectedBackend> {
             }
             Ok(SelectedBackend::Clif)
         }
-        BackendKind::DotNetProject => Err(anyhow::anyhow!(
-            "backend `glue-dotnet` is unavailable in 0.6; use the default `clif` backend or `--backend glue-rust`"
-        )),
         BackendKind::RustSource => {
             glue_rust::reject_inapplicable_flags(args)?;
             Ok(SelectedBackend::GlueRust(glue_rust::select_tools(
@@ -416,13 +412,6 @@ mod tests {
     fn default_backend_is_clif() {
         assert!(matches!(select_backend(&parse(&[])), Ok(SelectedBackend::Clif)));
         assert!(matches!(select_backend(&parse(&["--backend", "clif"])), Ok(SelectedBackend::Clif)));
-    }
-
-    #[test]
-    fn glue_dotnet_fails_closed() {
-        let error = rejection(&["--backend", "glue-dotnet"]);
-        assert!(error.contains("`glue-dotnet` is unavailable in 0.6"), "{error}");
-        assert!(!error.contains("0.5"), "{error}");
     }
 
     #[test]

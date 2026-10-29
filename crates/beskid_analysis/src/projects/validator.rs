@@ -4,8 +4,8 @@ use std::path::{Component, Path};
 use crate::projects::error::ProjectError;
 use crate::projects::graph::resolver::{CORE_DEPENDENCY_NAME, is_core_dependency_name};
 use crate::projects::model::{
-    DependencySource, ProjectGlueBackend, ProjectGlueOwner, ProjectKind, ProjectLinkSection, ProjectManifest,
-    TargetKind, WorkspaceManifest, project_root_block_matches_package_name,
+    DependencySource, ProjectGlueOwner, ProjectKind, ProjectLinkSection, ProjectManifest, TargetKind,
+    WorkspaceManifest, project_root_block_matches_package_name,
 };
 
 /// Closed capability names accepted in `project.mod.capabilities` (compiler-mod host bridge).
@@ -249,7 +249,7 @@ pub const GLUE_LIBRARY_LABEL_MAX_LEN: usize = 256;
 /// Diagnostic codes (E1801-E1899 manifest band):
 /// - **E1860**: label is empty, longer than 256 bytes, or contains a byte outside `[A-Za-z0-9_-]`.
 /// - **E1861**: duplicate glue label.
-/// - **E1862**: backend unavailable (`dotnet` in 0.6).
+/// - **E1862** (raised while lowering): backend other than `rust`.
 /// - **E1863**: `path` is empty, absolute, or escapes the project root.
 /// - **E1864**: glue label also listed in `link.libraries`.
 /// - **E1867** (raised while lowering): unknown `glue` key; tool paths are never manifest keys.
@@ -262,15 +262,6 @@ fn validate_glue_owners(owners: &[ProjectGlueOwner], link: Option<&ProjectLinkSe
         validate_glue_library_label(&owner.library)?;
         if !labels.insert(owner.library.as_str()) {
             return Err(ProjectError::meta_contract("E1861", format!("duplicate glue label `{}`", owner.library)));
-        }
-        if owner.backend == ProjectGlueBackend::Dotnet {
-            return Err(ProjectError::meta_contract(
-                "E1862",
-                format!(
-                    "glue `{}` selects backend `dotnet`, which is unavailable in this release (use `backend = rust`)",
-                    owner.library
-                ),
-            ));
         }
         validate_glue_owner_path(owner)?;
         if let Some(link) = link

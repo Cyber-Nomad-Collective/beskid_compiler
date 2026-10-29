@@ -296,18 +296,36 @@ mod catchall_witness_tests {
 
     #[test]
     fn v06_canonical_sdk_passes_the_witness_record_to_validate_catchall() {
+        use crate::syntax::{CallExpression, Expression, FunctionDefinition};
+        use crate::syntax_query::Query;
+
         let semantic = beskid_abi::sdk_source::canonical_sdk_sources()
             .iter()
             .find(|source| source.path() == "src/Beskid/Compiler/Semantic.bd")
             .expect("canonical Semantic.bd is embedded");
         let source = std::str::from_utf8(semantic.bytes()).expect("Semantic.bd is UTF-8");
-        let wrapper = concat!(
-            "ValidateCatchall(CatchallWitness witness)\n",
-            "{\n",
-            "    return __mod_semantic_validate_catchall(witness);\n",
-            "}"
+        let program = crate::services::parse_program(source).expect("Semantic.bd parses");
+        let wrapper = Query::from(&program.node)
+            .of::<FunctionDefinition>()
+            .find(|function| function.name.node.name == "ValidateCatchall")
+            .expect("the SDK declares ValidateCatchall");
+        let [parameter] = wrapper.parameters.as_slice() else { panic!("ValidateCatchall takes one witness") };
+        assert_eq!(source[parameter.node.ty.span.start..parameter.node.ty.span.end].trim(), "CatchallWitness");
+        let calls = Query::from(&wrapper.body.node)
+            .of::<CallExpression>()
+            .filter(|call| {
+                matches!(&call.callee.node, Expression::Path(path)
+                    if path.node.path.node.segments.last().is_some_and(|segment| segment.node.name.node.name == "__mod_semantic_validate_catchall"))
+            })
+            .map(|call| {
+                call.args.iter().map(|arg| source[arg.span.start..arg.span.end].trim().to_owned()).collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            calls,
+            [vec![parameter.node.name.node.name.clone()]],
+            "the SDK wrapper must pass the witness record itself"
         );
-        assert!(source.contains(wrapper), "the SDK wrapper must pass the witness record itself");
     }
 
     #[test]

@@ -24,7 +24,8 @@ pub const CODES: &[CodeInfo] = &[
     CodeInfo { code: "E3021", summary: "lock file cannot be written", tags: &[] },
     CodeInfo { code: "E3022", summary: "lock file out of date", tags: &[] },
     CodeInfo { code: "E3023", summary: "lock file change in frozen mode", tags: &[] },
-    CodeInfo { code: "E3024", summary: "retired lock file format", tags: &[] },
+    // E3024 is retired (lock migration removed): an older lock format is E3025.
+    CodeInfo { code: "E3025", summary: "unsupported lock file format", tags: &[] },
     CodeInfo { code: "E3030", summary: "materialized directory cannot be created", tags: &[] },
     CodeInfo { code: "E3031", summary: "materialized source cannot be copied", tags: &[] },
     CodeInfo { code: "E3032", summary: "shared Corelib does not match its seal", tags: &[] },

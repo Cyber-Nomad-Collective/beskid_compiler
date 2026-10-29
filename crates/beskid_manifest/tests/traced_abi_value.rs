@@ -1,4 +1,5 @@
 use beskid_manifest::{generate_v5_artifacts, load_v5_manifest_source};
+use beskid_tests_support::source_facts::SourceFacts;
 
 #[test]
 fn fiber_scheduler_layout_has_disjoint_traced_slots_and_one_runtime_authority() {
@@ -20,11 +21,15 @@ fn fiber_scheduler_layout_has_disjoint_traced_slots_and_one_runtime_authority() 
     assert!(scheduler.fields.iter().all(|field| !field.ty.contains('[')), "scheduler header has no fixed arrays");
     assert_eq!(record.project_to_runtime.as_deref(), Some("constants"));
     assert_eq!(scheduler.project_to_runtime.as_deref(), Some("constants"));
-    let source = include_str!("../../../runtime/beskid/src/Runtime/Fiber/Scheduler/Core.bd");
-    assert!(source.contains("SystemAllocate(BESKID_SCHEDULER_STATE_SIZE, 8)"));
-    assert!(source.contains("ChunkTableCreate(BESKID_FIBER_RECORD_SIZE)"));
-    assert!(source.contains("ChunkTableRecord(fibers, index)"));
-    assert!(!source.contains("FIBER_TABLE_MAX"));
+    // The scheduler allocates its header and the chunked record table from the manifest sizes.
+    let core = SourceFacts::parse(
+        "Scheduler/Core.bd",
+        include_str!("../../../runtime/beskid/src/Runtime/Fiber/Scheduler/Core.bd"),
+    );
+    let arguments = |callee: &str| core.call_arguments(callee);
+    assert!(arguments("SystemAllocate").contains(&vec!["BESKID_SCHEDULER_STATE_SIZE".to_owned(), "8".to_owned()]));
+    assert!(arguments("ChunkTableCreate").contains(&vec!["BESKID_FIBER_RECORD_SIZE".to_owned()]));
+    assert!(arguments("ChunkTableRecord").contains(&vec!["fibers".to_owned(), "index".to_owned()]));
 }
 
 #[test]

@@ -50,17 +50,28 @@ fn scoped_use_block_header_unambiguously_separates_a_struct_initializer() {
 
 #[test]
 fn foundation_publishes_the_canonical_disposable_contract() {
+    use beskid_analysis::syntax::{ContractNode, Node, Visibility};
+
     let source = std::fs::read_to_string(
         std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../corelib/packages/foundation/src/Core/Disposable.bd"),
     )
     .expect("foundation must publish Core.Disposable");
     let program = parse_program(&source).unwrap();
-    assert!(source.contains("Core.Results.Result<unit, DisposeError> Dispose();"));
-    assert!(source.contains("pub contract Disposable"));
-    assert!(source.contains("pub enum DisposeError"));
-    assert!(source.contains("Failed,"));
     assert_eq!(program.node.items.len(), 2, "two public declarations with a fully qualified Result type");
-    assert!(matches!(program.node.items[0].node, beskid_analysis::syntax::Node::ContractDefinition(_)));
-    assert!(matches!(program.node.items[1].node, beskid_analysis::syntax::Node::EnumDefinition(_)));
+    let Node::ContractDefinition(contract) = &program.node.items[0].node else { panic!("Disposable contract") };
+    assert_eq!(contract.node.name.node.name, "Disposable");
+    assert!(matches!(contract.node.visibility.node, Visibility::Public));
+    let [method] = contract.node.items.as_slice() else { panic!("one Disposable member") };
+    let ContractNode::MethodSignature(dispose) = &method.node else { panic!("Dispose signature") };
+    assert_eq!(dispose.node.name.node.name, "Dispose");
+    assert!(dispose.node.parameters.is_empty());
+    let result = dispose.node.return_type.as_ref().expect("Dispose returns a Result");
+    let result_text: String = source[result.span.start..result.span.end].split_whitespace().collect();
+    assert_eq!(result_text, "Core.Results.Result<unit,DisposeError>");
+    let Node::EnumDefinition(error) = &program.node.items[1].node else { panic!("DisposeError enum") };
+    assert_eq!(error.node.name.node.name, "DisposeError");
+    assert!(matches!(error.node.visibility.node, Visibility::Public));
+    let variants = error.node.variants.iter().map(|variant| variant.node.name.node.name.as_str()).collect::<Vec<_>>();
+    assert_eq!(variants, ["Failed"]);
 }

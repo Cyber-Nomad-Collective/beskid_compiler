@@ -1,4 +1,4 @@
-//! HTTP client tests against a local pckg instance (optional; failures are environment-specific).
+//! HTTP client tests against an in-process pckg router.
 
 #[cfg(test)]
 mod client;

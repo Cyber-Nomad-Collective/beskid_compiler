@@ -384,9 +384,9 @@ fn glue_invalid_label_characters_or_length_are_rejected() {
 }
 
 #[test]
-fn glue_dotnet_backend_is_unavailable() {
+fn glue_backend_other_than_rust_is_rejected() {
     let src = glue_project("glue \"net_owner\" { backend = dotnet path = \"dotnet\" }\n");
-    expect_meta_code(&src, "E1862", "net_owner");
+    expect_meta_code(&src, "E1862", "unsupported backend `dotnet`");
 }
 
 #[test]
@@ -403,18 +403,4 @@ fn glue_label_also_in_link_libraries_is_rejected() {
         "link {\n  libraries = [\"libc\", \"glue_manual\"]\n}\nglue \"glue_manual\" { backend = rust path = \"rust\" }\n",
     );
     expect_meta_code(&src, "E1864", "glue_manual");
-}
-
-#[test]
-fn validator_rejects_glue_owner_built_without_parser() {
-    let mut manifest = parse_manifest(&glue_project("")).expect("parse");
-    manifest.glue.push(ProjectGlueOwner {
-        library: "owner".to_string(),
-        backend: ProjectGlueBackend::Dotnet,
-        path: "rust".to_string(),
-    });
-    match validate_manifest(&manifest).expect_err("dotnet owner must be rejected") {
-        ProjectError::MetaContractViolation { code, .. } => assert_eq!(code, "E1862"),
-        other => panic!("expected E1862, got {other:?}"),
-    }
 }

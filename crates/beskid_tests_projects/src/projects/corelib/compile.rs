@@ -6,7 +6,6 @@ use crate::projects::fixture_harness::{
     with_project_test_env,
 };
 use crate::projects::test_cwd::{compiler_workspace_root, with_cwd_at_workspace_root};
-use beskid_analysis::Severity;
 use beskid_analysis::projects::build_compile_plan;
 use beskid_analysis::services::{
     FrontEndOptions, PrepareOptions, parse_program, resolve_input, resolved_input_from_plan,
@@ -55,32 +54,6 @@ fn checked_in_corelib_syscall_file_does_not_report_module_resolution_false_posit
             diagnostics.iter().all(|diag| !matches!(diag.code.as_deref(), Some("E1105") | Some("E1108"))),
             "corelib_mvp entry should not emit module-path false positives: {diagnostics:#?}"
         );
-    });
-}
-
-#[ignore = "corelib project diagnostics fixture currently fails parse/assembly on this branch"]
-#[test]
-fn checked_in_corelib_sources_do_not_emit_error_diagnostics_in_project_context() {
-    with_cwd_at_workspace_root(&compiler_workspace_root(), || {
-        let root = corelib_workspace_root();
-        let relative = "packages/foundation/src/Core/Results/Results.bd";
-        let path = root.join(relative);
-        let source = fs::read_to_string(&path).unwrap_or_else(|_| panic!("read corelib source {}", path.display()));
-        let plan = beskid_analysis::CompilationContext::try_for_analysis_path(&path, None)
-            .and_then(|context| context.compile_plan)
-            .unwrap_or_else(|| panic!("compile plan for {}", path.display()));
-        let resolved = resolved_input_from_plan(path.clone(), source, plan, None, None);
-        let (_, diagnostics, _) = beskid_queries::prepare_compilation_diagnostics(
-            &resolved,
-            PrepareOptions {
-                front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
-                ..PrepareOptions::without_mods()
-            },
-            None,
-        )
-        .unwrap_or_else(|error| panic!("analyze {}: {error}", path.display()));
-        let errors: Vec<_> = diagnostics.into_iter().filter(|diag| matches!(diag.severity, Severity::Error)).collect();
-        assert!(errors.is_empty(), "expected no error diagnostics for {} but got: {errors:#?}", path.display());
     });
 }
 

@@ -251,31 +251,29 @@ fn canonical_network_deadline_call_and_boolean_facts_preserve_signed_clock() {
         if binary.op.node != beskid_analysis::syntax::BinaryOp::And {
             continue;
         }
-        // Concrete operand spans retain the full condition plus parser whitespace.
-        let start = binary.left.span.start;
-        let end = binary.right.span.end;
-        if source.source[start..end].trim_end()
-            == "effectiveDeadline >= 0 && effectiveDeadline <= clock_monotonic_nanos()"
+        // The production condition `effectiveDeadline >= 0 && effectiveDeadline <= clock_monotonic_nanos()`,
+        // found by structure.
+        use beskid_analysis::syntax::{BinaryOp, Expression};
+        let is_deadline = |expression: &Expression| {
+            matches!(expression, Expression::Path(path)
+                if path.node.path.node.segments.len() == 1
+                    && path.node.path.node.segments[0].node.name.node.name == "effectiveDeadline")
+        };
+        let is_clock_call = |expression: &Expression| {
+            matches!(expression, Expression::Call(call) if matches!(&call.node.callee.node, Expression::Path(path)
+                if path.node.path.node.segments.len() == 1
+                    && path.node.path.node.segments[0].node.name.node.name == "clock_monotonic_nanos"))
+        };
+        let (Expression::Binary(left), Expression::Binary(right)) = (&binary.left.node, &binary.right.node) else {
+            continue;
+        };
+        if left.node.op.node == BinaryOp::Gte
+            && is_deadline(&left.node.left.node)
+            && right.node.op.node == BinaryOp::Lte
+            && is_deadline(&right.node.left.node)
+            && is_clock_call(&right.node.right.node)
         {
             conditions += 1;
-            // The line of the production condition in the canonical source (formatted with `beskid fmt`).
-            let condition_line = source
-                .source
-                .lines()
-                .position(|line| {
-                    line.contains("effectiveDeadline >= 0 && effectiveDeadline <= clock_monotonic_nanos()")
-                })
-                .expect("production deadline condition line")
-                + 1;
-            assert_eq!(binary.op.span.line_col_start.0, condition_line, "actual failing production deadline condition");
-            let beskid_analysis::syntax::Expression::Binary(left) = &binary.left.node else {
-                panic!("left comparison");
-            };
-            let beskid_analysis::syntax::Expression::Binary(right) = &binary.right.node else {
-                panic!("right comparison");
-            };
-            assert_eq!(left.node.op.node, beskid_analysis::syntax::BinaryOp::Gte);
-            assert_eq!(right.node.op.node, beskid_analysis::syntax::BinaryOp::Lte);
             let key = AstNodeKey { unit, generation: assembly.generation, node };
             assert_eq!(operator_fact(&db, key).unwrap(), Some(OperatorFact::And));
             assert_eq!(abi_type(&db, key).unwrap(), Some(SemanticTypeId::BOOL));

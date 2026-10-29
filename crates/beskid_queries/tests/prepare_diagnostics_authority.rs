@@ -10,9 +10,9 @@ use beskid_queries::BeskidDatabase;
 static TEST_ID: AtomicU64 = AtomicU64::new(0);
 
 #[test]
-fn prepare_diagnostics_collect_without_legacy_document_snapshot() {
+fn prepare_diagnostics_come_from_the_query_database() {
     let test_id = TEST_ID.fetch_add(1, Ordering::Relaxed);
-    let root = std::env::temp_dir().join(format!("beskid_prepare_diags_no_snapshot_{test_id}"));
+    let root = std::env::temp_dir().join(format!("beskid_prepare_diags_query_db_{test_id}"));
     std::fs::create_dir_all(&root).expect("test source root");
     let entry_path = root.join("Main.bd");
     // Intentional unresolved name so prepare-spine emits a diagnostic.
@@ -36,7 +36,7 @@ fn prepare_diagnostics_collect_without_legacy_document_snapshot() {
     let expected = entry_path.canonicalize().unwrap_or(entry_path.clone());
     let actual = syntax.entry_unit().path.canonicalize().unwrap_or_else(|_| syntax.entry_unit().path.clone());
     assert_eq!(actual, expected);
-    assert!(!diags.is_empty(), "prepare-spine diagnostics must surface without DocumentAnalysisSnapshot");
+    assert!(!diags.is_empty(), "prepare-spine diagnostics come from the query database");
 
     let _ = std::fs::remove_dir_all(root);
 }

@@ -27,6 +27,7 @@
 mod contribution_attribution;
 pub use contribution_attribution::contribution_attributed_unit;
 mod db;
+mod documentation;
 mod mod_semantic_authority;
 mod mod_semantic_scope;
 pub use mod_semantic_scope::build_mod_authority_typed_program;
@@ -81,6 +82,7 @@ mod unit;
 pub use beskid_analysis::syntax::{AstNodeId, SyntaxGenerationId};
 pub use beskid_graph::GraphKind;
 pub use db::{BeskidDatabase, Db, UnitArtifactCache, reset_compilation_database};
+pub use documentation::api_documentation_snapshot;
 pub use entry::prepare_compilation_diagnostics_isolated;
 pub use entry::{
     assemble_resolved_input_with_db, cached_semantic_snapshot_for_key, entry_resolution_with_db, fingerprint_key,

@@ -177,11 +177,7 @@ mod tests {
     fn resolve_input_directory_with_compile_plan_uses_entry_file() {
         let root = compiler_workspace_root();
         let workspace_root = root.join("corelib");
-        let manifest = workspace_root.join("CoreLib.bws");
-        if !manifest.is_file() {
-            eprintln!("skip resolve_input_directory_with_compile_plan_uses_entry_file: {manifest:?} missing");
-            return;
-        }
+        assert!(workspace_root.join("CoreLib.bws").is_file(), "the Corelib submodule must be checked out");
         let previous = std::env::current_dir().expect("cwd");
         std::env::set_current_dir(&workspace_root).expect("chdir");
         let resolved = resolve_input(Some(&workspace_root), None, None, None, WorkspacePrepareOptions::default())

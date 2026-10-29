@@ -31,14 +31,10 @@ pub fn execute(args: DocArgs) -> Result<()> {
 
     let source_path_str = resolved.source_path.to_string_lossy().into_owned();
     let syntax_by_path = assembly
-        .as_ref()
-        .map(|asm| {
-            asm.units
-                .iter()
-                .map(|unit| (unit.path.clone(), unit.program.clone()))
-                .collect::<std::collections::HashMap<_, _>>()
-        })
-        .unwrap_or_default();
+        .units
+        .iter()
+        .map(|unit| (unit.path.clone(), unit.program.clone()))
+        .collect::<std::collections::HashMap<_, _>>();
     let qualified_names = snap.resolution.as_ref().map(qualified_names_for_items);
 
     fs::create_dir_all(&args.out).with_context(|| format!("create {}", args.out.display()))?;
@@ -50,7 +46,7 @@ pub fn execute(args: DocArgs) -> Result<()> {
             let slot = snap.item_docs.get(item.id.0).and_then(|x| x.as_ref());
             let doc_markdown = slot.map(|d| d.markdown.clone()).filter(|s| !s.trim().is_empty());
             let doc = slot.and_then(|d| d.structured.clone());
-            let loc = location_for_item(item, assembly.as_ref(), &resolved.source, &source_path_str);
+            let loc = location_for_item(item, &assembly, &resolved.source, &source_path_str);
             let qualified_name = qualified_names
                 .as_ref()
                 .and_then(|names| names.get(&item.id.0).cloned())

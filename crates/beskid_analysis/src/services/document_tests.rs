@@ -7,7 +7,7 @@ mod tests {
         prepare_project_workspace_with_options,
     };
     use crate::services::{
-        build_document_analysis, build_document_analysis_from_resolution, completion_candidates, definition_at_offset,
+        build_document_analysis_from_resolution, completion_candidates, definition_at_offset,
         parse_program_with_source_name, references_at_offset_workspace, resolve_input,
     };
 
@@ -307,21 +307,5 @@ mod tests {
             "expected WriteLine member completion after Output., got {:?}",
             candidates.iter().map(|c| &c.label).collect::<Vec<_>>()
         );
-    }
-
-    #[test]
-    fn corelib_mvp_document_analysis_without_context_has_no_resolution() {
-        let root = compiler_workspace_root();
-        with_cwd_at_workspace_root(&root, || {
-            let fixture = corelib_mvp_paths();
-            let program =
-                parse_program_with_source_name(&fixture.main_path.to_string_lossy(), &fixture.source).expect("parse");
-            let snapshot =
-                build_document_analysis(&program, fixture.main_path.to_string_lossy(), &fixture.source, None);
-            assert!(
-                snapshot.resolution.is_none(),
-                "without query-backed entry resolution, snapshot should not resolve"
-            );
-        });
     }
 }

@@ -372,7 +372,6 @@ pub fn manifest_enum_completion_items(text: &str, offset: usize) -> Option<Vec<C
             ("Aggregate", "Aggregate project"),
             ("Bsol", "BSOL schema project"),
         ],
-        // `dotnet` is admitted by the schema but rejected as unavailable, so it is not offered.
         EnumFieldAtCursor::GlueBackend => &[("rust", "Rust Glue owner backend")],
     };
 
@@ -418,7 +417,7 @@ pub fn hover_markdown(token: &str) -> Option<&'static str> {
         "glue" => Some(
             "`glue \"<library>\" { backend = rust path = \"<dir>\" }` declares a Rust Glue owner library. The label is the owner native library identity and must not also appear in `link.libraries`.",
         ),
-        "backend" => Some("`backend` selects the Glue owner backend. Only `rust` is available; `dotnet` is rejected."),
+        "backend" => Some("`backend` selects the Glue owner backend. The only backend is `rust`."),
         "url" => Some("`url` is required when `source = git`."),
         "rev" => Some("`rev` is required when `source = git`."),
         _ => None,
@@ -488,7 +487,6 @@ mod glue_tests {
         for expected in ["glue", "backend", "rust"] {
             assert!(labels.contains(&expected), "missing `{expected}` completion");
         }
-        assert!(!labels.contains(&"dotnet"));
     }
 
     #[test]

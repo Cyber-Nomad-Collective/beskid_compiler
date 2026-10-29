@@ -17,5 +17,5 @@ sha2 = "0.10"
 beskid_manifest = { path = "../beskid_manifest" }
 
 [dev-dependencies]
-beskid_tests_support = { path = "../beskid_tests_support" }
+beskid_tests_support = { path = "../beskid_tests_support", features = ["source-facts"] }
 tempfile = "3"

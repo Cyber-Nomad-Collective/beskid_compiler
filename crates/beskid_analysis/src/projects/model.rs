@@ -14,19 +14,16 @@ pub struct ProjectManifest {
 
 /// Backend selected by a manifest `glue` owner block.
 ///
-/// The manifest schema admits `rust` and `dotnet`; [`super::validator::validate_manifest`] rejects
-/// [`ProjectGlueBackend::Dotnet`] because the .NET backend is unavailable in 0.6.
+/// `rust` is the only backend; the parser rejects any other value with E1862.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProjectGlueBackend {
     Rust,
-    Dotnet,
 }
 
 impl ProjectGlueBackend {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Rust => "rust",
-            Self::Dotnet => "dotnet",
         }
     }
 }

@@ -1,8 +1,8 @@
 //! Language-server soak client.
 //!
 //! Drives `beskid_lsp` over stdio on copies of one or more corpora for a configurable time:
-//! open files, random edits and undo, saves, queries, workspace refreshes and a v1 lock
-//! migration. The run passes when the server never exits, never sends `beskid/crashReport`,
+//! open files, random edits and undo, saves, queries, workspace refreshes and old-format locks
+//! that must fail closed. The run passes when the server never exits, never sends `beskid/crashReport`,
 //! writes no new file into the crash directory, answers no request with an internal error, never
 //! leaves a request unanswered past the timeout, its RSS grows less than the limit between
 //! the first and the last window, and the interactive requests sent after the initial workspace
@@ -26,10 +26,9 @@ use crate::rng::Rng;
 
 pub const CRASH_REPORT_METHOD: &str = "beskid/crashReport";
 const INTERNAL_ERROR_CODE: i64 = -32603;
-const RETIRED_LOCK_CODE: &str = "E3024";
-const MIGRATE_LOCK_COMMAND: &str = "beskid.migrateLock";
+const UNSUPPORTED_LOCK_CODE: &str = "E3025";
 const CURRENT_LOCK_HEADER: &str = "# Project.lock v3\n";
-const MIGRATE_DIAGNOSTIC_WAIT: Duration = Duration::from_secs(15);
+const OLD_LOCK_DIAGNOSTIC_WAIT: Duration = Duration::from_secs(15);
 const SKIPPED_DIRECTORIES: [&str; 5] = ["obj", ".git", "target", "node_modules", ".beskid"];
 
 // ---------------------------------------------------------------------------------------------
@@ -102,7 +101,8 @@ usage: beskid-soak --server <beskid_lsp> --corpus <dir> [--corpus <dir> ...] [op
   --smoke                60-second CI mode (memory growth is reported but not enforced)
   --home <dir>           HOME for the server; crash directory is <dir>/.beskid/crash (default: fresh temp dir)
   --work-dir <dir>       where corpus copies and the server log go (default: fresh temp dir)
-  --beskid <path>        beskid CLI; when given, the lock migration also runs `beskid dev project lock`
+  --beskid <path>        beskid CLI; when given, each old-format lock is also refused by
+                         `beskid dev project lock`, then deleted and written again
   --seed <n>             random seed (default 1)
   --max-open <n>         documents open at once (default 8)
   --tick-ms <n>          pause between actions (default 100)
@@ -327,9 +327,9 @@ pub fn path_to_uri(path: &Path) -> String {
     out
 }
 
-/// A v1 lock for the project of a current (v3) lock: the v1 header with the same root manifest
-/// and project name and no dependency lines, which is what makes the server see a lock that needs
-/// migration. `None` when the content is not a current lock.
+/// An old-format lock for the project of a current (v3) lock: the v1 header with the same root
+/// manifest and project name and no dependency lines, which the server and the CLI must refuse
+/// with `E3025`. `None` when the content is not a current lock.
 pub fn downgrade_lock_to_v1(current: &str) -> Option<String> {
     let rest = current.strip_prefix("# Project.lock v3\n")?;
     let header = rest.lines().take_while(|line| !line.starts_with("- ")).collect::<Vec<_>>().join("\n");
@@ -455,9 +455,8 @@ pub struct Counters {
     pub queries: u64,
     pub rotations: u64,
     pub refreshes: u64,
-    pub lock_migrations: u64,
-    pub migrate_quickfix_offered: u64,
-    pub migrate_diagnostic_seen: u64,
+    pub old_locks: u64,
+    pub old_lock_errors_seen: u64,
     pub responses: u64,
     pub error_responses: u64,
     pub diagnostics_published: u64,
@@ -517,9 +516,8 @@ impl SoakReport {
             "serverLog": self.server_log.as_ref().map(|p| p.display().to_string()),
             "actions": {
                 "edits": c.edits, "undos": c.undos, "saves": c.saves, "queries": c.queries,
-                "rotations": c.rotations, "refreshes": c.refreshes, "lockMigrations": c.lock_migrations,
-                "migrateQuickFixOffered": c.migrate_quickfix_offered,
-                "migrateDiagnosticSeen": c.migrate_diagnostic_seen,
+                "rotations": c.rotations, "refreshes": c.refreshes, "oldLocks": c.old_locks,
+                "oldLockErrorsSeen": c.old_lock_errors_seen,
             },
             "responses": c.responses,
             "errorResponses": c.error_responses,
@@ -530,7 +528,7 @@ impl SoakReport {
     pub fn render(&self) -> String {
         let c = &self.counters;
         let mut out = format!(
-            "soak {} after {}s\n  actions: {} edits, {} undos, {} saves, {} queries, {} file rotations, {} refreshes, {} lock migrations ({} quick fixes seen)\n  responses: {} ({} errors), diagnostics published: {}\n",
+            "soak {} after {}s\n  actions: {} edits, {} undos, {} saves, {} queries, {} file rotations, {} refreshes, {} old locks ({} {UNSUPPORTED_LOCK_CODE} seen)\n  responses: {} ({} errors), diagnostics published: {}\n",
             if self.passed() { "PASS" } else { "FAIL" },
             self.duration.as_secs(),
             c.edits,
@@ -539,8 +537,8 @@ impl SoakReport {
             c.queries,
             c.rotations,
             c.refreshes,
-            c.lock_migrations,
-            c.migrate_quickfix_offered,
+            c.old_locks,
+            c.old_lock_errors_seen,
             c.responses,
             c.error_responses,
             c.diagnostics_published,
@@ -676,7 +674,6 @@ struct Client {
     next_id: i64,
     pending: HashMap<i64, (String, Instant)>,
     report: SoakReport,
-    quickfix_requests: BTreeSet<i64>,
     spawned: Instant,
     index_finished: Option<Instant>,
 }
@@ -721,7 +718,6 @@ impl Client {
             next_id: 1,
             pending: HashMap::new(),
             report: SoakReport::default(),
-            quickfix_requests: BTreeSet::new(),
             spawned: Instant::now(),
             index_finished: None,
         })
@@ -792,9 +788,6 @@ impl Client {
                     let text = message.pointer("/error/message").and_then(Value::as_str).unwrap_or("");
                     self.report.internal_errors.push(format!("{method}: {text}"));
                 }
-            }
-            if self.quickfix_requests.remove(&id) && message.to_string().contains(MIGRATE_LOCK_COMMAND) {
-                self.report.counters.migrate_quickfix_offered += 1;
             }
         }
     }
@@ -940,7 +933,7 @@ pub fn run(config: &SoakConfig, smoke: bool) -> Result<SoakReport, String> {
     };
     let crash_dir = home.join(".beskid").join("crash");
 
-    // Copy the corpora so saves and lock migrations never touch the originals.
+    // Copy the corpora so saves and old-format locks never touch the originals.
     let mut folders = Vec::new();
     for (index, corpus) in config.corpora.iter().enumerate() {
         let name = corpus.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "corpus".into());
@@ -1011,9 +1004,9 @@ pub fn run(config: &SoakConfig, smoke: bool) -> Result<SoakReport, String> {
     }
 
     let mut next_sample = Duration::ZERO;
-    let migration_interval = (config.duration / 4).max(Duration::from_secs(15));
-    let mut next_migration = migration_interval.min(config.duration / 2);
-    let mut migrations_done = 0usize;
+    let old_lock_interval = (config.duration / 4).max(Duration::from_secs(15));
+    let mut next_old_lock = old_lock_interval.min(config.duration / 2);
+    let mut old_locks_done = 0usize;
 
     while started.elapsed() < config.duration && client.server_alive() {
         let elapsed = started.elapsed();
@@ -1023,11 +1016,11 @@ pub fn run(config: &SoakConfig, smoke: bool) -> Result<SoakReport, String> {
             }
             next_sample = elapsed + config.sample_interval;
         }
-        if elapsed >= next_migration && !locks.is_empty() {
-            let lock = locks[migrations_done % locks.len()].clone();
-            migrations_done += 1;
-            next_migration = elapsed + migration_interval;
-            migrate_lock(&mut client, config, &lock, &mut open);
+        if elapsed >= next_old_lock && !locks.is_empty() {
+            let lock = locks[old_locks_done % locks.len()].clone();
+            old_locks_done += 1;
+            next_old_lock = elapsed + old_lock_interval;
+            old_lock_fails_closed(&mut client, config, &lock, &mut open);
         } else {
             step(&mut client, &mut rng, &mut open, &sources, &folders);
         }
@@ -1081,7 +1074,7 @@ pub fn run(config: &SoakConfig, smoke: bool) -> Result<SoakReport, String> {
             report.internal_errors[0]
         ));
     }
-    if let Some(failure) = migrate_probe_failure(&report.counters) {
+    if let Some(failure) = old_lock_probe_failure(&report.counters) {
         report.failures.push(failure);
     }
     let window = Duration::from_secs(60).min(ran_for / 3);
@@ -1211,23 +1204,22 @@ fn step(client: &mut Client, rng: &mut Rng, open: &mut Vec<Document>, sources: &
     }
 }
 
-/// The retired-lock migration: downgrade the lock header, tell the server, wait for the `E3024`
-/// diagnostic it publishes on the project manifest, ask for code actions on the manifest with that
-/// diagnostic in the request context (as an editor does) and look for the `beskid.migrateLock`
-/// quick fix, then run the CLI migration the way the editor command would and check that it
-/// rewrote the lock as the current format.
-fn migrate_lock(client: &mut Client, config: &SoakConfig, lock: &Path, open: &mut [Document]) {
+/// An old-format lock fails closed: downgrade the lock header, tell the server and wait for the
+/// `E3025` diagnostic it publishes on the project manifest. With the CLI, `beskid dev project lock`
+/// must refuse the lock and leave its bytes; then the lock is deleted, as the message tells the
+/// user, and `beskid dev project lock` must write the current format again.
+fn old_lock_fails_closed(client: &mut Client, config: &SoakConfig, lock: &Path, open: &mut [Document]) {
     let Ok(original) = fs::read_to_string(lock) else { return };
-    let Some(v1) = downgrade_lock_to_v1(&original) else { return };
-    if fs::write(lock, &v1).is_err() {
+    let Some(old) = downgrade_lock_to_v1(&original) else { return };
+    if fs::write(lock, &old).is_err() {
         return;
     }
-    client.report.counters.lock_migrations += 1;
+    client.report.counters.old_locks += 1;
     let lock_uri = path_to_uri(lock);
     client.notify("workspace/didChangeWatchedFiles", json!({"changes": [{"uri": lock_uri, "type": 2}]}));
     client.pump(Duration::from_secs(2), config.request_timeout);
 
-    // The quick fix is offered on the manifest next to the lock.
+    // The manifest next to the lock reports the error.
     if let Some(dir) = lock.parent()
         && let Ok(entries) = fs::read_dir(dir)
         && let Some(manifest) =
@@ -1240,43 +1232,48 @@ fn migrate_lock(client: &mut Client, config: &SoakConfig, lock: &Path, open: &mu
             "textDocument/didOpen",
             json!({"textDocument": {"uri": uri, "languageId": "beskid-project", "version": 1, "text": text}}),
         );
-        let deadline = Instant::now() + MIGRATE_DIAGNOSTIC_WAIT;
-        while client.diagnostics_with_code(&uri, RETIRED_LOCK_CODE).is_empty()
+        let deadline = Instant::now() + OLD_LOCK_DIAGNOSTIC_WAIT;
+        while client.diagnostics_with_code(&uri, UNSUPPORTED_LOCK_CODE).is_empty()
             && Instant::now() < deadline
             && client.server_alive()
         {
             client.pump(Duration::from_millis(200), config.request_timeout);
         }
-        let retired = client.diagnostics_with_code(&uri, RETIRED_LOCK_CODE);
-        if !retired.is_empty() {
-            client.report.counters.migrate_diagnostic_seen += 1;
+        if !client.diagnostics_with_code(&uri, UNSUPPORTED_LOCK_CODE).is_empty() {
+            client.report.counters.old_lock_errors_seen += 1;
         }
-        let id = client.request(
-            "textDocument/codeAction",
-            json!({
-                "textDocument": {"uri": uri},
-                "range": {"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 0}},
-                "context": {"diagnostics": retired}
-            }),
-        );
-        client.quickfix_requests.insert(id);
-        client.pump(Duration::from_secs(2), config.request_timeout);
         client.notify("textDocument/didClose", json!({"textDocument": {"uri": uri}}));
     }
 
-    // The editor command: `beskid dev project lock` rewrites the lock in the current format.
     if let (Some(cli), Some(dir)) = (&config.beskid_cli, lock.parent()) {
-        let mut command = Command::new(cli);
-        command
-            .args(["dev", "project", "lock", "--plain", "--project"])
-            .arg(dir)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null());
-        match run_with_timeout(&mut command, config.cli_timeout) {
+        let lock_command = || {
+            let mut command = Command::new(cli);
+            command
+                .args(["dev", "project", "lock", "--plain", "--project"])
+                .arg(dir)
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null());
+            command
+        };
+        // The old lock is refused and its bytes stay.
+        match run_with_timeout(&mut lock_command(), config.cli_timeout) {
             Ok(status) if status.success() => {
-                let migrated = fs::read_to_string(lock).unwrap_or_default();
-                if !migrated.starts_with(CURRENT_LOCK_HEADER) {
+                client.fail(format!("`beskid dev project lock` accepted the old-format lock {}", lock.display()))
+            }
+            Ok(_) => {
+                if fs::read_to_string(lock).ok().as_deref() != Some(old.as_str()) {
+                    client.fail(format!("`beskid dev project lock` changed the refused lock {}", lock.display()));
+                }
+            }
+            Err(error) => client.fail(format!("`beskid dev project lock` for {}: {error}", dir.display())),
+        }
+        // Deleted, the lock is written again in the current format.
+        let _ = fs::remove_file(lock);
+        match run_with_timeout(&mut lock_command(), config.cli_timeout) {
+            Ok(status) if status.success() => {
+                let written = fs::read_to_string(lock).unwrap_or_default();
+                if !written.starts_with(CURRENT_LOCK_HEADER) {
                     client.fail(format!(
                         "`beskid dev project lock` succeeded but {} does not start with `{}`",
                         lock.display(),
@@ -1284,8 +1281,14 @@ fn migrate_lock(client: &mut Client, config: &SoakConfig, lock: &Path, open: &mu
                     ));
                 }
             }
-            Ok(status) => client.fail(format!("`beskid dev project lock` for {} failed: {status}", dir.display())),
+            Ok(status) => client.fail(format!(
+                "`beskid dev project lock` for {} failed after the old lock was deleted: {status}",
+                dir.display()
+            )),
             Err(error) => client.fail(format!("`beskid dev project lock` for {}: {error}", dir.display())),
+        }
+        if !lock.exists() {
+            let _ = fs::write(lock, &original);
         }
     } else {
         let _ = fs::write(lock, &original);
@@ -1299,23 +1302,15 @@ fn migrate_lock(client: &mut Client, config: &SoakConfig, lock: &Path, open: &mu
     }
 }
 
-/// Verdict on the quick-fix probe: a run that downgraded locks must have been offered the fix.
-pub fn migrate_probe_failure(counters: &Counters) -> Option<String> {
-    if counters.lock_migrations > 0 && counters.migrate_quickfix_offered == 0 {
-        Some(if counters.migrate_diagnostic_seen == 0 {
-            format!(
-                "{} lock migration(s) ran but the server never published an `{RETIRED_LOCK_CODE}` diagnostic on the manifest",
-                counters.lock_migrations
-            )
-        } else {
-            format!(
-                "{} lock migration(s) ran and `{RETIRED_LOCK_CODE}` was published, but no `{MIGRATE_LOCK_COMMAND}` quick fix was offered",
-                counters.lock_migrations
-            )
-        })
-    } else {
-        None
-    }
+/// Verdict on the old-lock probe: a run that wrote old-format locks must have seen the server
+/// report `E3025` for at least one of them.
+pub fn old_lock_probe_failure(counters: &Counters) -> Option<String> {
+    (counters.old_locks > 0 && counters.old_lock_errors_seen == 0).then(|| {
+        format!(
+            "{} old-format lock(s) written but the server never published an `{UNSUPPORTED_LOCK_CODE}` diagnostic on the manifest",
+            counters.old_locks
+        )
+    })
 }
 
 #[cfg(test)]
@@ -1438,20 +1433,18 @@ mod tests {
     }
 
     #[test]
-    fn migrate_probe_fails_when_the_quick_fix_is_never_offered() {
+    fn old_lock_probe_fails_when_the_error_is_never_published() {
         let mut counters = Counters::default();
-        assert!(migrate_probe_failure(&counters).is_none(), "no migration, no probe");
-        counters.lock_migrations = 2;
-        assert!(migrate_probe_failure(&counters).unwrap().contains("never published"));
-        counters.migrate_diagnostic_seen = 1;
-        assert!(migrate_probe_failure(&counters).unwrap().contains("no `beskid.migrateLock` quick fix"));
-        counters.migrate_quickfix_offered = 1;
-        assert!(migrate_probe_failure(&counters).is_none());
+        assert!(old_lock_probe_failure(&counters).is_none(), "no old lock, no probe");
+        counters.old_locks = 2;
+        assert!(old_lock_probe_failure(&counters).unwrap().contains("never published an `E3025`"));
+        counters.old_lock_errors_seen = 1;
+        assert!(old_lock_probe_failure(&counters).is_none());
     }
 
     #[test]
     fn diagnostic_codes_are_read_as_strings() {
-        assert_eq!(diagnostic_code(&json!({"code": "E3024"})), Some("E3024"));
+        assert_eq!(diagnostic_code(&json!({"code": "E3025"})), Some("E3025"));
         assert_eq!(diagnostic_code(&json!({"code": 3024})), None);
     }
 

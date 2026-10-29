@@ -110,7 +110,7 @@ fn project_error_label(error: &ProjectError) -> &'static str {
         | ProjectError::DependencyCycle(_)
         | ProjectError::UnresolvedExternalDependencies(_)
         | ProjectError::UnsupportedDependencySourceV1 { .. } => "dependency problem",
-        ProjectError::LockfileFormatRetired { .. } => "Project.lock needs migration",
+        ProjectError::LockfileFormatUnsupported { .. } => "unsupported Project.lock format",
         ProjectError::SharedCorelibModified { .. } => "shared Corelib was modified",
         ProjectError::LockfileOutOfDate { .. }
         | ProjectError::LockfileFrozenMode
@@ -240,7 +240,7 @@ mod project_error_tests {
         let errors = [
             ProjectError::Validation("`version` is required in the project root block".into()),
             ProjectError::Parse("bad".into()),
-            ProjectError::LockfileFormatRetired { version: 1 },
+            ProjectError::LockfileFormatUnsupported { path: "Project.lock".into() },
             ProjectError::LockfileFrozenMode,
             ProjectError::TargetNotFound("x".into()),
         ];

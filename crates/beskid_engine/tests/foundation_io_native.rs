@@ -18,6 +18,7 @@ use beskid_queries::{BeskidDatabase, SyntaxGenerationId};
 use beskid_tests_support::native_harness::{
     executable_name, native_c_compiler, place_shared_runtime, run_bounded, run_bounded_with_stdin, shared_library_name,
 };
+use beskid_tests_support::source_facts::SourceFacts;
 use std::{
     path::Path,
     process::Command,
@@ -75,13 +76,13 @@ fn foundation_utf8_materializes_every_accepted_code_unit() {
 
 #[test]
 fn foundation_utf8_does_not_expose_lossy_append_route() {
-    let result = lower_foundation_fixture("foundation_utf8_legacy_append.bd");
+    let result = lower_foundation_fixture("foundation_utf8_removed_append_route.bd");
     assert!(result.is_err(), "the deprecated UTF-8 append route must not be a public callable");
 }
 
 #[test]
 fn foundation_string_does_not_expose_lossy_utf8_append_route() {
-    let result = lower_foundation_fixture("foundation_string_legacy_append.bd");
+    let result = lower_foundation_fixture("foundation_string_removed_append_route.bd");
     assert!(result.is_err(), "the Core.String forwarding append route must not be a public callable");
 }
 
@@ -446,12 +447,14 @@ fn foundation_syscall_descriptor_zero_is_admitted_before_later_read_validation()
 fn foundation_syscall_descriptor_narrowing_is_confined_to_the_private_guard() {
     let path =
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corelib/packages/foundation/src/Core/Syscall/Syscall.bd");
-    let source = std::fs::read_to_string(path).unwrap();
-    assert!(source.contains("i32 CheckedDescriptor(i64 descriptor)"));
-    assert!(!source.contains("pub i32 CheckedDescriptor"));
-    assert_eq!(source.matches("i32(").count(), 1, "CheckedDescriptor must be the only i64-to-i32 narrowing");
-    assert!(source.contains("return -1_i32;"), "only invalid source descriptors produce the sentinel");
-    assert!(source.contains("return i32(descriptor);"));
+    let syscall = SourceFacts::parse(path.display().to_string(), std::fs::read_to_string(&path).unwrap());
+    assert_eq!(syscall.function("CheckedDescriptor").signature(), "i32 CheckedDescriptor(i64 descriptor)");
+    assert_eq!(
+        syscall.call_arguments("i32"),
+        [vec!["descriptor".to_owned()]],
+        "CheckedDescriptor must be the only i64-to-i32 narrowing"
+    );
+    assert!(syscall.function("CheckedDescriptor").callees().contains("i32"));
 }
 
 #[test]

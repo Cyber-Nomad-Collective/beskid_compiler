@@ -13,6 +13,8 @@ use std::sync::Arc;
 
 const MAIN: &str = "use Core.Collections.Array;\npub type Profile { pub i64[] roots; } pub type Loader { pub Profile profile; } pub unit Main(Loader loader) { Array.Append<i64>(loader.profile.roots, 7_i64); return; }";
 
+const TRY_APPEND_MAIN: &str = "use Core.Collections.Array;\npub type Profile { pub i64[] roots; } pub type Loader { pub Profile profile; } pub unit Main(Loader loader) { Array.TryAppend<i64>(loader.profile.roots, 7_i64); return; }";
+
 fn fixture(
     copied_source: Option<&str>,
 ) -> (tempfile::TempDir, BeskidDatabase, Arc<beskid_analysis::projects::ProgramAssembly>, AstNodeKey) {
@@ -205,4 +207,27 @@ fn receiver_field_collection_owner_is_the_method_receiver() {
         );
         assert_eq!(receiver == method, !nested, "the terminal receiver is the method only for a direct field");
     }
+}
+
+#[test]
+fn checked_append_retains_exact_nested_mutable_owner() {
+    let (_root, db, assembly, call) = fixture_with_main(TRY_APPEND_MAIN, None);
+    let Some(CollectionOperation::TryAppend { owner: CollectionMutationOwner::AggregateField { receiver, root, .. } }) =
+        collection_operation(&db, call).unwrap()
+    else {
+        panic!("checked owner proof missing");
+    };
+    let projection = aggregate_field_access(&db, receiver).unwrap().unwrap();
+    assert_ne!(receiver, projection.receiver);
+    assert_eq!(beskid_queries::local_slot(&db, projection.receiver).unwrap(), Some(root));
+    let stale = AstNodeKey { generation: beskid_queries::SyntaxGenerationId(assembly.generation.0 + 1), ..call };
+    assert!(collection_operation(&db, stale).unwrap().is_none());
+}
+
+#[test]
+fn copied_checked_array_source_cannot_issue_owner_transaction() {
+    let source = include_str!("../../../corelib/packages/foundation/src/Core/Collections/Array.bd");
+    let (_root, db, _assembly, call) = fixture_with_main(TRY_APPEND_MAIN, Some(source));
+    assert!(matches!(beskid_queries::call_lowering(&db, call).unwrap(), Some(beskid_queries::CallLowering::Direct(_))));
+    assert!(collection_operation(&db, call).unwrap().is_none());
 }

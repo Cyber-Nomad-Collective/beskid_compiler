@@ -73,31 +73,6 @@ impl Resolver {
         if self.errors.is_empty() { Ok(self.take_resolution()) } else { Err(std::mem::take(&mut self.errors)) }
     }
 
-    /// Resolve a pre-collected program under its own import scope while retaining partial facts.
-    pub(crate) fn resolve_collected_program_tolerating_errors(
-        &mut self,
-        program: &Spanned<Program>,
-        logical_module_path: Option<&[String]>,
-    ) -> Resolution {
-        self.prepare_collected_program(program, logical_module_path);
-        let file_scoped_module_index = resolver::file_scoped_module_index(program);
-        for (index, item) in program.node.items.iter().enumerate() {
-            if Some(index) == file_scoped_module_index {
-                continue;
-            }
-            self.resolve_item(item);
-        }
-        self.take_resolution()
-    }
-
-    pub fn resolve_collected_program_for_api_documentation(
-        &mut self,
-        program: &Spanned<Program>,
-        logical_module_path: Option<&[String]>,
-    ) -> Resolution {
-        self.resolve_collected_program_tolerating_errors(program, logical_module_path)
-    }
-
     /// Resolve only declaration annotations for one pre-collected unit.
     pub(crate) fn resolve_collected_program_declarations(
         &mut self,
