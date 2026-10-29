@@ -147,25 +147,6 @@ impl ModuleIndex {
         resolver.current_source_path = source_path;
     }
 
-    /// Full-project resolution for `api.json`: resolve entry plus every assembled unit, merging tables.
-    pub fn resolve_for_api_documentation(
-        &self,
-        entry_program: &Spanned<Program>,
-        assembly: &ProgramAssembly,
-    ) -> Option<Resolution> {
-        let entry_source_path = assembly.entry_unit().path.clone();
-        let entry_module_path = infer_logical_module_path(assembly.entry_unit(), &assembly.roots);
-
-        let mut resolver = Resolver::new();
-        resolver.set_current_source_path(Some(entry_source_path.clone()));
-        self.seed_resolver_from_assembly(&mut resolver, assembly);
-        let mut resolution =
-            resolver.resolve_collected_program_for_api_documentation(entry_program, entry_module_path.as_deref());
-
-        self.merge_dependency_declaration_tables(&mut resolution, assembly);
-        Some(resolution)
-    }
-
     /// Merge source-scoped reference facts for every dependency unit into an entry resolution.
     ///
     /// Dependency declarations are collected while seeding the entry resolver, but their type
