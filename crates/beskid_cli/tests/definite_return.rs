@@ -76,6 +76,11 @@ fn build_rejects_the_body_before_lowering() {
     let report = text(&output);
     assert!(!output.status.success(), "build must fail: {report}");
     assert!(report.contains("E1258"), "build reports E1258: {report}");
+    assert_eq!(
+        report.matches("`Main` can reach the end of its body without returning a value").count(),
+        1,
+        "build prints the error once: {report}"
+    );
     assert!(!report.contains("E2103"), "build must not reach lowering: {report}");
     assert!(!report.contains("internal compiler error"), "{report}");
 }

@@ -12,6 +12,7 @@ use beskid_analysis::analysis::SemanticDiagnostic;
 use beskid_analysis::services::{self, PreparedCompilation, ResolvedInput};
 use beskid_pipeline::PipelineObserver;
 
+use crate::pipeline::tui::format_severity_summary;
 use crate::pipeline::{CliPipeline, CliResolveOptions, PipelineProgressKind, frontend, use_cli_spinner};
 
 /// Project / lockfile inputs for [`CommandSession::resolve_input`].
@@ -158,8 +159,12 @@ impl CommandSession {
 
     fn finish_gate(&self, gate_diagnostics: &[SemanticDiagnostic], options: SemanticGateOptions) -> Result<()> {
         *self.gate_diagnostics.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = gate_diagnostics.to_vec();
-        self.pipeline.report_semantic_diagnostics(gate_diagnostics);
-        services::require_no_semantic_errors(gate_diagnostics).map_err(anyhow::Error::from)?;
+        let counts = self.pipeline.report_semantic_diagnostics(gate_diagnostics);
+        if services::require_no_semantic_errors(gate_diagnostics).is_err() {
+            // The diagnostics are on stderr now. The error carries only the summary, as in `beskid
+            // check`, so the command's failure report does not render each of them a second time.
+            anyhow::bail!("analysis failed with {}", format_severity_summary(counts));
+        }
 
         if options.finish_prepare_ui {
             self.pipeline.finish_prepare_ui(options.prepare_message);

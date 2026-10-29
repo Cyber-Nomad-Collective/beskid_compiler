@@ -81,6 +81,22 @@ fn v06_check_json_emits_diagnostic_and_result_records() {
     assert_eq!(result["errors"], 0);
 }
 
+/// `build` and `run` print each semantic error of the executable gate once, like `check`: the gate
+/// prints it and the failure report carries only the summary.
+#[test]
+fn compile_commands_print_each_semantic_error_once() {
+    let root = tempfile::tempdir().unwrap();
+    let invalid = source(root.path(), "Invalid.bd", "pub i32 Main() { return UnknownValue; }\n");
+    for command in ["check", "build", "run"] {
+        let output = beskid(root.path()).args([command, "--plain"]).arg(&invalid).output().unwrap();
+        let (stdout, stderr) = text(&output);
+        let report = format!("{stdout}{stderr}");
+        assert_eq!(output.status.code(), Some(1), "{command}: {report}");
+        assert_eq!(report.matches("unknown value `UnknownValue`").count(), 1, "{command} prints E1101 once: {report}");
+        assert!(report.contains("analysis failed with 1 error(s)"), "{command} ends with the summary: {report}");
+    }
+}
+
 /// SIGINT sent to the CLI alone reaches the running program, the CLI survives to reap it, and the
 /// CLI exits 130 (128 + SIGINT) because the program died of the signal.
 #[cfg(unix)]
