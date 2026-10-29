@@ -41,7 +41,7 @@ fn make_isa() -> std::sync::Arc<dyn cranelift_codegen::isa::TargetIsa> {
     let mut flags = settings::builder();
     use cranelift_codegen::settings::Configurable;
     flags.set("is_pic", "false").expect("is_pic flag");
-    cranelift_native::builder().expect("host ISA").finish(settings::Flags::new(flags)).unwrap()
+    beskid_isle::target_isa::host_isa_builder().expect("host ISA").finish(settings::Flags::new(flags)).unwrap()
 }
 
 fn make_key(db: &BeskidDatabase, id: u32) -> AstNodeKey {

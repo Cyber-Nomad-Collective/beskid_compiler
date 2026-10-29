@@ -92,7 +92,10 @@ fn run_heap_fixture(label: &str, entry: &str, expected: i64) {
     let assembly = heap_growth_assembly();
     let target = beskid_engine::host_runtime_target().unwrap();
     let settings = beskid_codegen::cranelift_host::production_isa_settings_builder().unwrap();
-    let isa = cranelift_native::builder().unwrap().finish(cranelift_codegen::settings::Flags::new(settings)).unwrap();
+    let isa = beskid_codegen::target_isa::host_isa_builder()
+        .unwrap()
+        .finish(cranelift_codegen::settings::Flags::new(settings))
+        .unwrap();
     let mut db = BeskidDatabase::default();
     let lowered = lower_syntax_assembly_entrypoint(&mut db, assembly, entry, target.clone(), isa.as_ref())
         .unwrap_or_else(|error| panic!("{label}: heap-growth source lowering failed: {error:?}"));
@@ -249,7 +252,10 @@ fn missing_fiber_error_import_is_rejected_by_the_legality_gate_not_a_missing_low
     let assembly = heap_growth_assembly_with_fixture_source(Some(&without_fiber_error_import));
     let target = beskid_engine::host_runtime_target().unwrap();
     let settings = beskid_codegen::cranelift_host::production_isa_settings_builder().unwrap();
-    let isa = cranelift_native::builder().unwrap().finish(cranelift_codegen::settings::Flags::new(settings)).unwrap();
+    let isa = beskid_codegen::target_isa::host_isa_builder()
+        .unwrap()
+        .finish(cranelift_codegen::settings::Flags::new(settings))
+        .unwrap();
     let mut db = BeskidDatabase::default();
 
     let result = lower_syntax_assembly_entrypoint(&mut db, assembly, "RunFiberHeapInteraction", target, isa.as_ref());
@@ -276,7 +282,10 @@ fn build_heap_executable(label: &str, entry: &str) -> (tempfile::TempDir, std::p
     let assembly = heap_growth_assembly();
     let target = beskid_engine::host_runtime_target().unwrap();
     let settings = beskid_codegen::cranelift_host::production_isa_settings_builder().unwrap();
-    let isa = cranelift_native::builder().unwrap().finish(cranelift_codegen::settings::Flags::new(settings)).unwrap();
+    let isa = beskid_codegen::target_isa::host_isa_builder()
+        .unwrap()
+        .finish(cranelift_codegen::settings::Flags::new(settings))
+        .unwrap();
     let mut db = BeskidDatabase::default();
     let lowered = lower_syntax_assembly_entrypoint(&mut db, assembly, entry, target.clone(), isa.as_ref())
         .unwrap_or_else(|error| panic!("{label}: {entry} source lowering failed: {error:?}"));

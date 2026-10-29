@@ -5,7 +5,7 @@ use super::support::{
     RootEntry, SourceUnit, SourceUnitId, SyntaxGenerationId, SyntaxModuleItem, TargetMetadata,
     build_canonical_runtime_typed_program, build_typed_program, canonical_runtime_intrinsic_capability,
     canonical_runtime_test_assembly, default_libcall_names, emit_isle_item, find_function_definition,
-    find_function_definitions, find_node, find_nodes_of_kind, find_test_definition, isa, item_fixture,
+    find_function_definitions, find_node, find_nodes_of_kind, find_test_definition, item_fixture,
     item_fixture_with_root, item_name, lower_syntax_program, mutable_local_assignment, named_function, node_kind,
     parse_program_with_source_name, settings, test_statement_nodes,
 };
@@ -54,7 +54,8 @@ fn parsed_function_body_emits_verified_isle_clif_without_lowerable() {
         CodegenInput::new(&db, typed, Arc::from([root]), target.clone(), AbiManifestV5::canonical_runtime(target))
             .expect("generation-safe input");
     let flags = settings::Flags::new(settings::builder());
-    let isa = isa::lookup_by_name("x86_64").expect("host ISA").finish(flags).expect("host flags");
+    let isa =
+        beskid_codegen::target_isa::target_isa_builder("x86_64").expect("host ISA").finish(flags).expect("host flags");
 
     let function =
         emit_isle_item(&input, isa.as_ref(), item).expect("parsed function body lowers through generated ISLE");
@@ -245,7 +246,8 @@ fn parsed_local_read_emits_verified_isle_clif_without_lowerable() {
         CodegenInput::new(&db, typed, Arc::from([root]), target.clone(), AbiManifestV5::canonical_runtime(target))
             .expect("generation-safe input");
     let flags = settings::Flags::new(settings::builder());
-    let isa = isa::lookup_by_name("x86_64").expect("host ISA").finish(flags).expect("host flags");
+    let isa =
+        beskid_codegen::target_isa::target_isa_builder("x86_64").expect("host ISA").finish(flags).expect("host flags");
 
     let function = emit_isle_item(&input, isa.as_ref(), item).expect("parsed local read lowers through generated ISLE");
 
@@ -512,7 +514,7 @@ fn native_pointer_identity_comparison_lowers_against_a_pointer_parameter() {
     let leaked: &'static BeskidDatabase = Box::leak(db);
     let input = CodegenInput::new(leaked, typed, Arc::from([dynamic_root, native_root]), target, manifest)
         .expect("canonical runtime codegen input");
-    let isa = isa::lookup_by_name("x86_64")
+    let isa = beskid_codegen::target_isa::target_isa_builder("x86_64")
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags");

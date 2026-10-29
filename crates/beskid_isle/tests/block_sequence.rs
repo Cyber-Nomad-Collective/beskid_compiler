@@ -7,7 +7,6 @@ use cranelift_codegen::ir::{UserFuncName, types};
 use cranelift_codegen::settings;
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{Linkage, Module, default_libcall_names};
-use target_lexicon::Triple;
 
 struct BlockFacts {
     nodes: [AstNodeKey; 7],
@@ -62,7 +61,7 @@ impl NodeFacts for BlockFacts {
 #[test]
 fn block_rule_sequences_statements_and_returns_last_value() {
     let flags = settings::Flags::new(settings::builder());
-    let isa = cranelift_codegen::isa::lookup(Triple::host()).expect("host ISA").finish(flags).expect("host flags");
+    let isa = beskid_isle::target_isa::host_isa_builder().expect("host ISA").finish(flags).expect("host flags");
     let db = BeskidDatabase::default();
     let unit = SourceUnitId::new(&db, PathBuf::from("/tmp/Block.bd"));
     let generation = SyntaxGenerationId(11);

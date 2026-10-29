@@ -5,7 +5,7 @@ use super::super::support::{
     EffectiveCompilationRoots, JITBuilder, JITModule, Linkage, Module, ModuleIndex, NodeFacts, ProgramAssembly,
     ProjectSession, RootEntry, SourceUnit, SourceUnitId, SyntaxGenerationId, SyntaxIndex, SyntaxModuleItem,
     TargetMetadata, build_typed_program, default_libcall_names, emit_syntax_program, find_call_expression,
-    find_function_definition, find_function_definitions, isa, item_fixture_with_root, lower_syntax_program,
+    find_function_definition, find_function_definitions, item_fixture_with_root, lower_syntax_program,
     parse_program_with_source_name, settings,
 };
 
@@ -76,7 +76,7 @@ fn nested_module_static_call_results_are_valid_comparison_operands() {
     let leaked: &'static BeskidDatabase = Box::leak(db);
     let program = AstNodeKey { unit: main_unit, generation, node: AstNodeId(0) };
     let input = CodegenInput::new(leaked, typed, Arc::from([program]), target, manifest).expect("codegen input");
-    let isa = isa::lookup_by_name("x86_64")
+    let isa = beskid_codegen::target_isa::target_isa_builder("x86_64")
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags");
@@ -165,7 +165,7 @@ fn nested_direct_call_adapts_scalars_at_the_exact_inner_parameter_boundary() {
     let leaked: &'static BeskidDatabase = Box::leak(db);
     let program = AstNodeKey { unit: main_unit, generation, node: AstNodeId(0) };
     let input = CodegenInput::new(leaked, typed, Arc::from([program]), target, manifest).expect("codegen input");
-    let isa = isa::lookup_by_name("x86_64")
+    let isa = beskid_codegen::target_isa::target_isa_builder("x86_64")
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags");

@@ -21,6 +21,7 @@ pub mod closure_static;
 pub mod codegen_input;
 pub mod contract_static;
 pub mod cranelift_host;
+pub use beskid_isle::target_isa;
 pub mod dynamic_initialization;
 pub mod dynamic_mapping;
 pub mod dynamic_shape;

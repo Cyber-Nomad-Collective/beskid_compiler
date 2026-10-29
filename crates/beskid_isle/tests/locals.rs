@@ -7,7 +7,6 @@ use cranelift_codegen::ir::{UserFuncName, types};
 use cranelift_codegen::settings;
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{Linkage, Module, default_libcall_names};
-use target_lexicon::Triple;
 
 struct LocalFacts {
     nodes: [AstNodeKey; 9],
@@ -91,7 +90,7 @@ impl NodeFacts for LocalFacts {
 
 #[test]
 fn let_assign_and_path_rules_share_one_ssa_local() {
-    let isa = cranelift_codegen::isa::lookup(Triple::host())
+    let isa = beskid_isle::target_isa::host_isa_builder()
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags");

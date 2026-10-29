@@ -19,7 +19,6 @@ use cranelift_codegen::settings;
 use cranelift_frontend::FunctionBuilder;
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{Linkage, Module, default_libcall_names};
-use target_lexicon::Triple;
 
 /// Iterator state the JIT-compiled loop receives as its iterable value.
 #[repr(C)]
@@ -256,7 +255,7 @@ impl CallImporter for NextImporter {
 }
 
 fn host_isa() -> std::sync::Arc<dyn TargetIsa> {
-    cranelift_codegen::isa::lookup(Triple::host())
+    beskid_isle::target_isa::host_isa_builder()
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags")

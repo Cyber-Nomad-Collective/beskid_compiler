@@ -338,7 +338,7 @@ mod seal_tests {
         let input =
             CodegenInput::new(&db, typed, Arc::from([root]), target.clone(), AbiManifestV5::canonical_runtime(target))
                 .unwrap();
-        let isa = cranelift_codegen::isa::lookup_by_name("x86_64")
+        let isa = crate::target_isa::target_isa_builder("x86_64")
             .unwrap()
             .finish(cranelift_codegen::settings::Flags::new(cranelift_codegen::settings::builder()))
             .unwrap();

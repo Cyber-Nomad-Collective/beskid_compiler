@@ -6,8 +6,8 @@ use super::super::support::{
     ProjectSession, RootEntry, SourceUnit, SourceUnitId, SyntaxGenerationId, SyntaxModuleItem, TargetMetadata,
     build_typed_program_with_corelib_services, call_abi_signature, call_lowering, canonical_corelib_service_capability,
     canonical_corelib_service_source_path, canonical_corelib_service_sources, find_call_expression,
-    find_corelib_service_call, find_function_definition, find_function_definitions, isa, item_fixture_with_root,
-    item_name, lower_syntax_program, parse_program_with_source_name, settings, typed_array_allocation,
+    find_corelib_service_call, find_function_definition, find_function_definitions, item_fixture_with_root, item_name,
+    lower_syntax_program, parse_program_with_source_name, settings, typed_array_allocation,
 };
 
 #[test]
@@ -110,7 +110,7 @@ fn canonical_generic_array_operations_preserve_concrete_types_through_nested_cal
     let leaked: &'static BeskidDatabase = Box::leak(db);
     let input = CodegenInput::new(leaked, typed, Arc::from([application_root]), target, manifest)
         .expect("generation-safe typed-array input");
-    let isa = isa::lookup_by_name("x86_64")
+    let isa = beskid_codegen::target_isa::target_isa_builder("x86_64")
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags");

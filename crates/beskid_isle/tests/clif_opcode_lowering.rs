@@ -3,11 +3,11 @@
 //! type checking and fail only at JIT or AOT compile time (C53-3).
 //!
 //! Each allowlisted opcode has one representative function below; the test compiles it for
-//! x86-64 (x86-64-v2 features) and aarch64 without running it. Opcodes that import emulates
+//! x86-64 (the x86-64-v2 production baseline) and aarch64 without running it. Opcodes that import emulates
 //! (`*_overflow_cin`, `*_overflow_bin`) are represented by their emulated sequence.
 
 use beskid_analysis::clif_surface::CLIF_ALLOWED_OPCODES;
-use cranelift_codegen::isa::{self, TargetIsa};
+use cranelift_codegen::isa::TargetIsa;
 use cranelift_codegen::settings::{self, Configurable};
 use std::sync::Arc;
 
@@ -177,12 +177,8 @@ fn representative(opcode: &str) -> Option<String> {
 }
 
 fn target_isa(triple: &str) -> Arc<dyn TargetIsa> {
-    let mut builder = isa::lookup(triple.parse().expect("valid triple")).expect("target compiled in");
-    if triple.starts_with("x86_64") {
-        for feature in ["has_sse3", "has_ssse3", "has_sse41", "has_sse42", "has_popcnt"] {
-            builder.enable(feature).expect("x86-64-v2 feature");
-        }
-    }
+    // The production baseline of the target (x86-64-v2 on x86_64), not a test-only feature set.
+    let builder = beskid_isle::target_isa::target_isa_builder(triple).expect("target compiled in");
     let mut shared = settings::builder();
     shared.set("opt_level", "speed").expect("opt_level");
     builder.finish(settings::Flags::new(shared)).expect("target ISA")
@@ -197,7 +193,9 @@ fn every_allowlisted_clif_opcode_has_a_representative() {
 #[test]
 fn every_allowlisted_clif_opcode_lowers_on_x86_64_and_aarch64() {
     let mut failures = Vec::new();
-    for triple in ["x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu"] {
+    for triple in
+        ["x86_64-unknown-linux-gnu", "x86_64-pc-windows-msvc", "aarch64-apple-darwin", "aarch64-unknown-linux-gnu"]
+    {
         let isa = target_isa(triple);
         for opcode in CLIF_ALLOWED_OPCODES {
             let Some(text) = representative(opcode) else { continue };
@@ -211,8 +209,20 @@ fn every_allowlisted_clif_opcode_lowers_on_x86_64_and_aarch64() {
             let mut context = cranelift_codegen::Context::for_function(function);
             if let Err(error) = context.compile(isa.as_ref(), &mut Default::default()) {
                 failures.push(format!("{triple} {opcode}: {:?}", error.inner));
+                continue;
+            }
+            // No runtime kit defines a Cranelift helper: the baseline must lower the opcode inline.
+            let compiled = context.compiled_code().expect("compiled code");
+            let helper = beskid_isle::target_isa::first_runtime_helper_call(
+                compiled.buffer.relocs().iter().filter_map(|reloc| match &reloc.target {
+                    cranelift_codegen::FinalizedRelocTarget::ExternalName(name) => Some(name),
+                    cranelift_codegen::FinalizedRelocTarget::Func(_) => None,
+                }),
+            );
+            if let Some(helper) = helper {
+                failures.push(format!("{triple} {opcode}: calls the Cranelift runtime helper {helper}"));
             }
         }
     }
-    assert!(failures.is_empty(), "allowlisted opcodes without lowering:\n{}", failures.join("\n"));
+    assert!(failures.is_empty(), "allowlisted opcodes without inline lowering:\n{}", failures.join("\n"));
 }

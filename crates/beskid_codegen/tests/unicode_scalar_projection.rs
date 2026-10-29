@@ -2,7 +2,7 @@
 use beskid_analysis::services::{FrontEndOptions, resolved_input_from_plan, synthetic_compile_plan_for_source};
 use beskid_codegen::lower_prepared_syntax_module;
 use beskid_queries::{compile_mod_free_front_end, with_db};
-use cranelift_codegen::{isa, settings};
+use cranelift_codegen::settings;
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{Linkage, Module, default_libcall_names};
 #[test]
@@ -20,8 +20,10 @@ fn checked_unicode_projection_preserves_scalars_and_rejects_invalid_ranges() {
     )
     .unwrap();
     let target = beskid_abi::runtime_kit::host_runtime_target().unwrap();
-    let isa =
-        isa::lookup(target_lexicon::Triple::host()).unwrap().finish(settings::Flags::new(settings::builder())).unwrap();
+    let isa = beskid_codegen::target_isa::host_isa_builder()
+        .unwrap()
+        .finish(settings::Flags::new(settings::builder()))
+        .unwrap();
     let artifact = with_db(|db| lower_prepared_syntax_module(db, &front, target, isa.as_ref())).unwrap();
     assert_eq!(artifact.functions.len(), 1);
     let function = &artifact.functions[0];

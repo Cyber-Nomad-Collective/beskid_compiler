@@ -5,7 +5,7 @@ use super::prelude::{
     EffectiveCompilationRoots, ModuleIndex, ProgramAssembly, ProjectSession, RootEntry, SourceUnit, SourceUnitId,
     SyntaxGenerationId, SyntaxIndex, SyntaxModuleItem, TargetMetadata, build_typed_program_with_corelib_services,
     canonical_corelib_service_capability, canonical_corelib_service_source_path, canonical_corelib_syscall_sources,
-    isa, item_name, lower_syntax_program, parse_program_with_source_name, settings,
+    item_name, lower_syntax_program, parse_program_with_source_name, settings,
 };
 
 pub(in super::super) fn canonical_corelib_syscall_fixture()
@@ -58,7 +58,7 @@ pub(in super::super) fn canonical_corelib_syscall_fixture()
     let leaked: &'static BeskidDatabase = Box::leak(db);
     let input =
         CodegenInput::new(leaked, typed, Arc::from([root]), target, manifest).expect("generation-safe Corelib input");
-    let isa = isa::lookup_by_name("x86_64")
+    let isa = beskid_codegen::target_isa::target_isa_builder("x86_64")
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags");
@@ -131,7 +131,7 @@ pub(in super::super) fn materialized_corelib_syscall_fixture()
     let leaked: &'static BeskidDatabase = Box::leak(db);
     let input = CodegenInput::new(leaked, typed, Arc::from([root]), target, manifest)
         .expect("generation-safe materialized Corelib input");
-    let isa = isa::lookup_by_name("x86_64")
+    let isa = beskid_codegen::target_isa::target_isa_builder("x86_64")
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags");
@@ -199,7 +199,7 @@ pub(in super::super) fn core_args_fixture(
     let leaked: &'static BeskidDatabase = Box::leak(db);
     let input =
         CodegenInput::new(leaked, typed, Arc::from([root]), target, manifest).expect("generation-safe Core.Args input");
-    let isa = isa::lookup_by_name("x86_64")
+    let isa = beskid_codegen::target_isa::target_isa_builder("x86_64")
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags");
@@ -290,7 +290,7 @@ pub(in super::super) fn canonical_foundation_assert_fixture()
     let leaked: &'static BeskidDatabase = Box::leak(db);
     let input = CodegenInput::new(leaked, typed, Arc::from([root]), target, manifest)
         .expect("generation-safe Foundation Assert input");
-    let isa = isa::lookup_by_name("x86_64")
+    let isa = beskid_codegen::target_isa::target_isa_builder("x86_64")
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags");
@@ -360,7 +360,7 @@ pub(in super::super) fn canonical_foundation_service_fixture(
     let leaked: &'static BeskidDatabase = Box::leak(db);
     let input = CodegenInput::new(leaked, typed, Arc::from([root]), target, manifest)
         .expect("generation-safe Foundation service input");
-    let isa = isa::lookup_by_name("x86_64")
+    let isa = beskid_codegen::target_isa::target_isa_builder("x86_64")
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags");
@@ -540,7 +540,7 @@ fn canonical_corelib_fixture(
     let leaked: &'static BeskidDatabase = Box::leak(db);
     let input = CodegenInput::new(leaked, typed, Arc::from([root]), target, manifest)
         .expect("generation-safe canonical Corelib project input");
-    let isa = isa::lookup_by_name("x86_64")
+    let isa = beskid_codegen::target_isa::target_isa_builder("x86_64")
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags");

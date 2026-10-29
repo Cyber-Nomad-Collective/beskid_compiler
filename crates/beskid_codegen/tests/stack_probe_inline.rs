@@ -46,7 +46,7 @@ use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
 const LARGE_FRAME_SLOT_BYTES: u32 = 20 * 1024;
 
 fn x86_64_isa(flags: settings::Flags) -> std::sync::Arc<dyn isa::TargetIsa> {
-    isa::lookup_by_name("x86_64")
+    beskid_codegen::target_isa::target_isa_builder("x86_64")
         .expect("x86_64 ISA is always available for cross-compilation")
         .finish(flags)
         .expect("ISA settings are valid")

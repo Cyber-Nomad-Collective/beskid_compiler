@@ -26,6 +26,12 @@ impl BeskidCliInvoker {
         Self { binary, corelib_root, runtime_prefix }
     }
 
+    /// The provisioned Corelib root (`BESKID_CORELIB_ROOT`) of this test process.
+    #[cfg(target_os = "linux")]
+    pub fn corelib_root(&self) -> &Path {
+        &self.corelib_root
+    }
+
     pub fn command_in<I, S>(&self, working_dir: &Path, args: I) -> Command
     where
         I: IntoIterator<Item = S>,

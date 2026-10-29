@@ -4,7 +4,7 @@ use super::super::support::{
     AbiManifestV5, Arc, AssemblyDiscovery, AstNodeId, AstNodeKey, BeskidDatabase, CodegenInput,
     EffectiveCompilationRoots, ModuleIndex, ProgramAssembly, ProjectSession, RootEntry, SourceUnit, SourceUnitId,
     SyntaxGenerationId, SyntaxModuleItem, TargetMetadata, build_typed_program, find_function_definition,
-    find_function_definitions, find_node, find_test_definition, isa, item_fixture_with_root, lower_syntax_program,
+    find_function_definitions, find_node, find_test_definition, item_fixture_with_root, lower_syntax_program,
     parse_program_with_source_name, settings,
 };
 use super::{StringComparison, assert_string_content_comparison};
@@ -99,7 +99,7 @@ fn parsed_program_specializes_a_qualified_imported_generic_call_without_hir() {
         AbiManifestV5::canonical_runtime(target),
     )
     .expect("generation-safe input");
-    let isa = isa::lookup_by_name("x86_64")
+    let isa = beskid_codegen::target_isa::target_isa_builder("x86_64")
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags");

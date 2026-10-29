@@ -208,12 +208,12 @@ impl BeskidObjectModule {
     pub fn new(target_triple: Option<&str>, profile: BuildProfile) -> AotResult<Self> {
         let flags = object_codegen_flags(profile)?;
 
-        let isa_builder = if let Some(triple) = target_triple {
-            cranelift_codegen::isa::lookup_by_name(triple)
-                .map_err(|err| AotError::IsaInit { message: err.to_string() })?
-        } else {
-            cranelift_native::builder().map_err(|err| AotError::IsaInit { message: err.to_string() })?
-        };
+        // One CPU baseline per target (beskid_isle::target_isa); the host never adds a feature.
+        let isa_builder = match target_triple {
+            Some(triple) => beskid_codegen::target_isa::target_isa_builder(triple),
+            None => beskid_codegen::target_isa::host_isa_builder(),
+        }
+        .map_err(|err| AotError::IsaInit { message: err.to_string() })?;
 
         let isa = isa_builder.finish(flags).map_err(|err| AotError::IsaInit { message: err.to_string() })?;
 
@@ -365,6 +365,13 @@ impl BeskidObjectModule {
         for (index, (function, compiled)) in artifact.functions.iter().zip(compiled).enumerate() {
             if let Some(control) = control {
                 control.check("compile_function")?;
+            }
+            if let Some(symbol) = compiled.runtime_helper {
+                return Err(AotError::RuntimeHelperCall {
+                    function: function.name.clone(),
+                    symbol: symbol.to_owned(),
+                    target: module.isa().triple().to_string(),
+                });
             }
             module.define_function_bytes(compiled.func_id, compiled.alignment, &compiled.bytes, &compiled.relocs)?;
             emit_work_unit(pipeline, AOT_EMIT_OBJECT, (index as u64) + 1, total, function.name.clone());
@@ -532,7 +539,7 @@ pub(crate) fn object_target_isa(target: &str) -> AotResult<std::sync::Arc<dyn Ta
     let mut flag_builder = beskid_codegen::cranelift_host::production_isa_settings_builder()
         .map_err(|err| AotError::IsaInit { message: err.to_string() })?;
     flag_builder.set("is_pic", "true").map_err(|err| AotError::IsaInit { message: err.to_string() })?;
-    cranelift_codegen::isa::lookup_by_name(target)
+    beskid_codegen::target_isa::target_isa_builder(target)
         .map_err(|err| AotError::IsaInit { message: err.to_string() })?
         .finish(settings::Flags::new(flag_builder))
         .map_err(|err| AotError::IsaInit { message: err.to_string() })
@@ -573,6 +580,8 @@ struct CompiledFunction {
     alignment: u64,
     bytes: Vec<u8>,
     relocs: Vec<cranelift_module::ModuleReloc>,
+    /// A Cranelift runtime helper that the code calls; no runtime kit defines one (E4004).
+    runtime_helper: Option<&'static str>,
 }
 
 /// Fewer functions than this are compiled on the calling thread.
@@ -601,7 +610,13 @@ fn compile_functions(
             .iter()
             .map(|reloc| cranelift_module::ModuleReloc::from_mach_reloc(reloc, &ctx.func, func_id))
             .collect();
-        Ok(CompiledFunction { func_id, alignment, bytes, relocs })
+        let runtime_helper = beskid_codegen::target_isa::first_runtime_helper_call(
+            compiled.buffer.relocs().iter().filter_map(|reloc| match &reloc.target {
+                cranelift_codegen::FinalizedRelocTarget::ExternalName(name) => Some(name),
+                cranelift_codegen::FinalizedRelocTarget::Func(_) => None,
+            }),
+        );
+        Ok(CompiledFunction { func_id, alignment, bytes, relocs, runtime_helper })
     };
     let count = functions.len();
     let requested = std::env::var("BESKID_CODEGEN_THREADS").ok().and_then(|value| value.parse::<usize>().ok());
@@ -680,7 +695,10 @@ mod platform_import_tests {
     use super::referenced_platform_imports;
 
     fn host_isa() -> std::sync::Arc<dyn cranelift_codegen::isa::TargetIsa> {
-        cranelift_native::builder().expect("host ISA").finish(settings::Flags::new(settings::builder())).expect("ISA")
+        beskid_codegen::target_isa::host_isa_builder()
+            .expect("host ISA")
+            .finish(settings::Flags::new(settings::builder()))
+            .expect("ISA")
     }
 
     fn calling(symbol: &str, param: types::Type, result: types::Type) -> CodegenArtifact {
@@ -728,5 +746,93 @@ mod platform_import_tests {
             referenced_platform_imports(isa.as_ref(), &calling("not_a_platform_symbol", types::F64, types::F64))
                 .expect("unknown symbols are left to the undefined-callee check");
         assert!(admitted.is_empty());
+    }
+}
+
+/// The x86_64 CPU baseline reaches every object (OpenSpec `compiler--build-pipeline--backends-jit-aot`).
+#[cfg(test)]
+mod baseline_tests {
+    use std::collections::HashMap;
+
+    use beskid_codegen::{CodegenArtifact, LoweredFunction};
+    use cranelift_codegen::cursor::{Cursor, FuncCursor};
+    use cranelift_codegen::ir::{AbiParam, Function, InstBuilder, Signature, UserFuncName, types};
+    use cranelift_codegen::isa::CallConv;
+    use cranelift_module::default_libcall_names;
+    use cranelift_object::{ObjectBuilder, ObjectModule};
+    use object::{Object, ObjectSymbol};
+
+    use super::{BeskidObjectModule, BuildProfile, object_codegen_flags};
+    use crate::error::AotError;
+
+    /// Every x86_64 target of ABI v5.
+    const X86_64_TARGETS: [&str; 2] = ["x86_64-unknown-linux-gnu", "x86_64-pc-windows-msvc"];
+
+    /// The shapes of the Corelib AES and ChaCha20 kernels: a `swizzle` and a two-input byte `shuffle`.
+    /// Without SSSE3 Cranelift lowers both to `__cranelift_x86_pshufb`.
+    fn vector_permute_artifact(triple: &str) -> CodegenArtifact {
+        let call_conv = if triple.contains("windows") { CallConv::WindowsFastcall } else { CallConv::SystemV };
+        let mut signature = Signature::new(call_conv);
+        signature.params.push(AbiParam::new(types::I8X16));
+        signature.params.push(AbiParam::new(types::I8X16));
+        signature.returns.push(AbiParam::new(types::I8X16));
+        let mut function = Function::with_name_signature(UserFuncName::testcase("Permute"), signature);
+        let block = function.dfg.make_block();
+        let table = function.dfg.append_block_param(block, types::I8X16);
+        let index = function.dfg.append_block_param(block, types::I8X16);
+        let mask = function.dfg.immediates.push((0..16_u8).map(|lane| (lane * 7) % 32).collect::<Vec<_>>().into());
+        let mut cursor = FuncCursor::new(&mut function);
+        cursor.insert_block(block);
+        let swizzled = cursor.ins().swizzle(table, index);
+        let shuffled = cursor.ins().shuffle(swizzled, table, mask);
+        cursor.ins().return_(&[shuffled]);
+        CodegenArtifact { functions: vec![LoweredFunction { name: "Permute".into(), function }], ..Default::default() }
+    }
+
+    fn undefined_cranelift_helpers(bytes: &[u8]) -> Vec<String> {
+        let file = object::File::parse(bytes).expect("parse object");
+        file.symbols()
+            .filter(|symbol| symbol.is_undefined())
+            .filter_map(|symbol| symbol.name().ok().map(str::to_owned))
+            .filter(|name| name.trim_start_matches('_').starts_with("cranelift_"))
+            .collect()
+    }
+
+    #[test]
+    fn every_x86_64_object_has_no_undefined_cranelift_helper() {
+        for triple in X86_64_TARGETS {
+            for profile in [BuildProfile::Debug, BuildProfile::Release] {
+                let mut module = BeskidObjectModule::new(Some(triple), profile).expect("object module");
+                module.compile_artifact(&vector_permute_artifact(triple), None).expect("vector permutes compile");
+                let dir = tempfile::tempdir().expect("temp dir");
+                let path = dir.path().join("permute.o");
+                module.finalize_to_path(&path).expect("write object");
+                let helpers = undefined_cranelift_helpers(&std::fs::read(&path).expect("read object"));
+                assert!(helpers.is_empty(), "{triple} {profile:?}: undefined Cranelift helpers {helpers:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_cranelift_helper_call_is_e4004_before_the_link_step() {
+        // An ISA without the baseline, as `BeskidObjectModule::new` built before the baseline existed.
+        let isa = cranelift_codegen::isa::lookup_by_name("x86_64-unknown-linux-gnu")
+            .expect("x86_64 backend")
+            .finish(object_codegen_flags(BuildProfile::Debug).expect("flags"))
+            .expect("ISA without baseline");
+        let builder = ObjectBuilder::new(isa, "beskid", default_libcall_names()).expect("object builder");
+        let mut module = BeskidObjectModule {
+            module: Some(ObjectModule::new(builder)),
+            func_ids: HashMap::new(),
+            data_ids: HashMap::new(),
+            declared_symbols: Vec::new(),
+        };
+        let error = module
+            .compile_artifact(&vector_permute_artifact("x86_64-unknown-linux-gnu"), None)
+            .expect_err("a helper call must fail closed");
+        assert!(matches!(error, AotError::RuntimeHelperCall { .. }), "{error:?}");
+        let text = error.to_string();
+        assert!(text.starts_with("[E4004] "), "{text}");
+        assert!(text.contains("Permute") && text.contains("__cranelift_x86_pshufb"), "{text}");
     }
 }

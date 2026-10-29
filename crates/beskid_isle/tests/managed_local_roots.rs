@@ -4,7 +4,6 @@ use beskid_isle::{AstNodeKey, FunctionEmitter, LocalSlotId, ManagedReferenceFact
 use beskid_queries::{AstNodeId, BeskidDatabase, SourceUnitId, SyntaxGenerationId};
 use cranelift_codegen::ir::UserFuncName;
 use cranelift_codegen::settings;
-use target_lexicon::Triple;
 
 struct ManagedParameterFacts {
     item: AstNodeKey,
@@ -50,7 +49,7 @@ impl NodeFacts for ManagedParameterFacts {
 
 #[test]
 fn managed_parameter_uses_one_root_slot_until_explicit_return() {
-    let isa = cranelift_codegen::isa::lookup(Triple::host())
+    let isa = beskid_isle::target_isa::host_isa_builder()
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags");

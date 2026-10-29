@@ -21,12 +21,16 @@ pub(super) fn new_builder(extras: &[(String, *const u8)]) -> Result<JITBuilder, 
 
 /// Construct the native ISA shared by JIT lowering and final emission.
 ///
+/// The ISA has the host target baseline (`beskid_codegen::target_isa`, x86-64-v2 on x86_64), the same as an
+/// AOT build for the host target; host CPU detection never adds a feature. A host CPU below the baseline
+/// fails here, before any code is generated.
+///
 /// This is the sole owner of JIT-only relocation and optimization policy. The shared codegen
 /// settings retain frame pointers for the tail-call invariant; JIT then selects x86_64 PIC from
 /// the target ISA, disables colocated libcalls for every native target, and always optimizes
 /// (`opt_level=speed`): the JIT emits no debug info that unoptimized code would preserve.
 pub(crate) fn native_jit_isa() -> Result<Arc<dyn TargetIsa>, JitError> {
-    let builder = cranelift_native::builder().map_err(|error| JitError::Isa(error.to_string()))?;
+    let builder = beskid_codegen::target_isa::host_isa_builder().map_err(|error| JitError::Isa(error.to_string()))?;
     native_jit_isa_from_builder(builder)
 }
 
@@ -49,10 +53,9 @@ pub(super) fn native_jit_isa_from_builder(builder: isa::Builder) -> Result<Arc<d
 #[cfg(test)]
 mod native_jit_settings_tests {
     use super::*;
-    use cranelift_codegen::isa;
 
     fn policy_isa(triple: &str) -> std::sync::Arc<dyn isa::TargetIsa> {
-        let builder = isa::lookup(triple.parse().expect("valid target triple")).expect("supported target ISA");
+        let builder = beskid_codegen::target_isa::target_isa_builder(triple).expect("supported target ISA");
         native_jit_isa_from_builder(builder).expect("construct target-derived native JIT ISA")
     }
 
@@ -69,5 +72,25 @@ mod native_jit_settings_tests {
         assert!(!aarch64.flags().use_colocated_libcalls(), "native JIT must use range-independent libcalls");
         assert!(aarch64.flags().preserve_frame_pointers(), "native JIT preserves the shared frame-pointer invariant");
         assert_eq!(aarch64.flags().opt_level(), settings::OptLevel::Speed, "native JIT optimizes generated code");
+    }
+
+    #[test]
+    fn native_jit_isa_has_the_host_target_baseline_and_nothing_above_it() {
+        let jit = native_jit_isa().expect("the builder host supports its baseline");
+        let target = beskid_codegen::target_isa::host_isa_builder()
+            .expect("host baseline")
+            .finish(settings::Flags::new(settings::builder()))
+            .expect("host ISA");
+        let flags = |isa: &dyn TargetIsa| {
+            isa.isa_flags().into_iter().map(|value| (value.name, value.as_bool())).collect::<Vec<_>>()
+        };
+        assert_eq!(flags(jit.as_ref()), flags(target.as_ref()), "JIT and AOT host ISA features differ");
+        if jit.triple().architecture == Architecture::X86_64 {
+            let enabled = flags(jit.as_ref());
+            for setting in beskid_codegen::target_isa::x86_64_baseline_settings() {
+                assert!(enabled.contains(&(setting, Some(true))), "{setting} is part of x86-64-v2");
+            }
+            assert!(enabled.contains(&("has_avx2", Some(false))), "AVX2 is above x86-64-v2");
+        }
     }
 }

@@ -57,7 +57,10 @@ fn run_cleanup_fixture(fixture: &str) {
     ));
     let target = beskid_engine::host_runtime_target().unwrap();
     let settings = beskid_codegen::cranelift_host::production_isa_settings_builder().unwrap();
-    let isa = cranelift_native::builder().unwrap().finish(cranelift_codegen::settings::Flags::new(settings)).unwrap();
+    let isa = beskid_codegen::target_isa::host_isa_builder()
+        .unwrap()
+        .finish(cranelift_codegen::settings::Flags::new(settings))
+        .unwrap();
     let mut db = BeskidDatabase::default();
     let lowered = beskid_codegen::lower_syntax_assembly_entrypoint(
         &mut db,

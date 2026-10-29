@@ -2,7 +2,7 @@ use super::lookup::find_function_definition;
 use super::prelude::{
     AbiManifestV5, Arc, AssemblyDiscovery, AstNodeId, AstNodeKey, BeskidDatabase, CANONICAL_BOOTSTRAP_SOURCE_PATH,
     CodegenInput, EffectiveCompilationRoots, ModuleIndex, ProgramAssembly, ProjectSession, RootEntry, SourceUnit,
-    SourceUnitId, SyntaxGenerationId, TargetMetadata, build_typed_program, canonical_runtime_sources, isa,
+    SourceUnitId, SyntaxGenerationId, TargetMetadata, build_typed_program, canonical_runtime_sources,
     parse_program_with_source_name, settings,
 };
 #[cfg(any(all(target_os = "linux", target_arch = "x86_64"), all(target_os = "macos", target_arch = "aarch64"),))]
@@ -81,7 +81,7 @@ pub(in super::super) fn item_fixture_with_root(
     let input =
         CodegenInput::new(leaked, typed, Arc::from([root]), target.clone(), AbiManifestV5::canonical_runtime(target))
             .expect("generation-safe input");
-    let isa = isa::lookup_by_name("x86_64")
+    let isa = beskid_codegen::target_isa::target_isa_builder("x86_64")
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags");

@@ -6,7 +6,7 @@ use super::super::support::{
     NodeFacts, ProgramAssembly, ProjectSession, RootEntry, SourceUnit, SourceUnitId, SyntaxGenerationId,
     SyntaxModuleItem, TargetMetadata, build_typed_program, default_libcall_names, emit_isle_item,
     emit_isle_item_with_call_importer, enum_constructor, enum_match, find_call_expression, find_function_definition,
-    find_function_definitions, find_node, find_nodes_of_kind, isa, item_fixture, item_fixture_with_root, item_name,
+    find_function_definitions, find_node, find_nodes_of_kind, item_fixture, item_fixture_with_root, item_name,
     lower_syntax_program, node_type, parse_program_with_source_name, settings,
 };
 
@@ -217,7 +217,7 @@ fn cross_unit_generic_receiver_match_preserves_a_concrete_nominal_error() {
     let input =
         CodegenInput::new(leaked, typed, Arc::from([root]), target.clone(), AbiManifestV5::canonical_runtime(target))
             .expect("cross-unit codegen input");
-    let isa = isa::lookup_by_name("x86_64")
+    let isa = beskid_codegen::target_isa::target_isa_builder("x86_64")
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags");

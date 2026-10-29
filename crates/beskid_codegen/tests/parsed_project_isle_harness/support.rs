@@ -40,8 +40,10 @@ pub(super) fn x86_64_target_and_isa() -> (TargetMetadata, std::sync::Arc<dyn cra
         .find(|target| target.triple.as_str() == "x86_64-unknown-linux-gnu")
         .expect("Linux x86_64 ABI target");
     let settings = beskid_codegen::cranelift_host::production_isa_settings_builder().expect("production ISA settings");
-    let isa =
-        isa::lookup_by_name("x86_64").expect("x86 ISA").finish(settings::Flags::new(settings)).expect("finish ISA");
+    let isa = beskid_codegen::target_isa::target_isa_builder("x86_64")
+        .expect("x86 ISA")
+        .finish(settings::Flags::new(settings))
+        .expect("finish ISA");
     (target, isa)
 }
 

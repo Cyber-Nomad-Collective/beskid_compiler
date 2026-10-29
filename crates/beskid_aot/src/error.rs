@@ -19,6 +19,11 @@ pub enum AotError {
     #[error("[E4003] Missing function during object finalize: {name}")]
     MissingFunction { name: String },
 
+    /// Compiled code calls a Cranelift runtime helper (`__cranelift_*`), which no runtime kit defines.
+    /// Raised before the link step (OpenSpec `compiler--build-pipeline--backends-jit-aot`).
+    #[error("{}", beskid_codegen::target_isa::runtime_helper_message(function, symbol, target))]
+    RuntimeHelperCall { function: String, symbol: String, target: String },
+
     #[error("[E4010] Runtime build failed: {message}")]
     RuntimeBuild { message: String },
 

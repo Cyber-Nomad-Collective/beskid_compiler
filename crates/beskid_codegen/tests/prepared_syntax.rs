@@ -7,7 +7,7 @@ use beskid_codegen::{
     object_link_symbol,
 };
 use beskid_queries::{compile_mod_free_front_end, with_db};
-use cranelift_codegen::{isa, settings};
+use cranelift_codegen::settings;
 use std::process::Command;
 
 #[test]
@@ -29,7 +29,7 @@ fn prepared_syntax_entrypoint_lowers_without_hir_host_authority() {
         .into_iter()
         .find(|target| target.triple.as_str().starts_with("x86_64-"))
         .expect("x86_64 ABI target");
-    let isa = isa::lookup_by_name("x86_64")
+    let isa = beskid_codegen::target_isa::target_isa_builder("x86_64")
         .expect("x86 ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("finish ISA");
@@ -76,7 +76,7 @@ fn prepared_syntax_entrypoint_rejects_foreign_composition_snapshot_before_loweri
         .into_iter()
         .find(|target| target.triple.as_str().starts_with("x86_64-"))
         .expect("x86_64 ABI target");
-    let isa = isa::lookup_by_name("x86_64")
+    let isa = beskid_codegen::target_isa::target_isa_builder("x86_64")
         .expect("x86 ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("finish ISA");
@@ -144,7 +144,7 @@ fn compiler_trace_child_lowers_a_syntax_entrypoint() {
         .into_iter()
         .find(|target| target.triple.as_str().starts_with("x86_64-"))
         .expect("x86_64 ABI target");
-    let isa = isa::lookup_by_name("x86_64")
+    let isa = beskid_codegen::target_isa::target_isa_builder("x86_64")
         .expect("x86 ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("finish ISA");
@@ -173,7 +173,7 @@ fn prepared_syntax_module_lowers_functions_and_methods_without_hir() {
         .into_iter()
         .find(|target| target.triple.as_str().starts_with("x86_64-"))
         .expect("x86_64 ABI target");
-    let isa = isa::lookup_by_name("x86_64")
+    let isa = beskid_codegen::target_isa::target_isa_builder("x86_64")
         .expect("x86 ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("finish ISA");
@@ -208,7 +208,7 @@ pub unit plugin_init() { return; }
         .into_iter()
         .find(|target| target.triple.as_str().starts_with("x86_64-"))
         .expect("x86_64 ABI target");
-    let isa = isa::lookup_by_name("x86_64")
+    let isa = beskid_codegen::target_isa::target_isa_builder("x86_64")
         .expect("x86 ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("finish ISA");
@@ -251,7 +251,7 @@ pub i64 Main() { return Helper() + 1; }
         .into_iter()
         .find(|target| target.triple.as_str().starts_with("x86_64-"))
         .expect("x86_64 ABI target");
-    let isa = isa::lookup_by_name("x86_64")
+    let isa = beskid_codegen::target_isa::target_isa_builder("x86_64")
         .expect("x86 ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("finish ISA");
@@ -293,7 +293,7 @@ fn prepared_syntax_module_lowers_sample_mod_nominal_contract_methods() {
         .into_iter()
         .find(|target| target.triple.as_str().starts_with("x86_64-"))
         .expect("x86_64 ABI target");
-    let isa = isa::lookup_by_name("x86_64")
+    let isa = beskid_codegen::target_isa::target_isa_builder("x86_64")
         .expect("x86 ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("finish ISA");
@@ -319,7 +319,10 @@ fn selected_entrypoints_share_one_reachable_artifact() {
     )
     .unwrap();
     let target = TargetMetadata::for_triple("x86_64-unknown-linux-gnu").unwrap();
-    let isa = isa::lookup_by_name("x86_64").unwrap().finish(settings::Flags::new(settings::builder())).unwrap();
+    let isa = beskid_codegen::target_isa::target_isa_builder("x86_64")
+        .unwrap()
+        .finish(settings::Flags::new(settings::builder()))
+        .unwrap();
     let names = vec!["Second".to_owned(), "First".to_owned()];
     let lowered = with_db(|db| {
         beskid_codegen::lower_prepared_syntax_entrypoints(
@@ -376,7 +379,10 @@ fn lower_main(label: &str, source: &str) -> beskid_codegen::CodegenArtifact {
     )
     .unwrap_or_else(|error| panic!("{label}: the query gate must accept the program: {error:#}"));
     let target = TargetMetadata::for_triple("x86_64-unknown-linux-gnu").unwrap();
-    let isa = isa::lookup_by_name("x86_64").unwrap().finish(settings::Flags::new(settings::builder())).unwrap();
+    let isa = beskid_codegen::target_isa::target_isa_builder("x86_64")
+        .unwrap()
+        .finish(settings::Flags::new(settings::builder()))
+        .unwrap();
     let lowered = with_db(|db| lower_prepared_syntax_entrypoint(db, &front, "Main", target.clone(), isa.as_ref()))
         .unwrap_or_else(|error| panic!("{label}: a program the gate accepted must lower: {error:#}"));
     std::fs::remove_dir_all(directory).expect("remove project");
@@ -525,7 +531,10 @@ fn a_function_and_a_test_of_one_name_are_distinct_entrypoint_selections() {
     )
     .unwrap();
     let target = TargetMetadata::for_triple("x86_64-unknown-linux-gnu").unwrap();
-    let isa = isa::lookup_by_name("x86_64").unwrap().finish(settings::Flags::new(settings::builder())).unwrap();
+    let isa = beskid_codegen::target_isa::target_isa_builder("x86_64")
+        .unwrap()
+        .finish(settings::Flags::new(settings::builder()))
+        .unwrap();
     let names = vec!["SumOfSquares".to_owned()];
     let select = |kind| {
         with_db(|db| {

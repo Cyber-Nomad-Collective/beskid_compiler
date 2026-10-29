@@ -1,8 +1,8 @@
 use super::support::{
     AbiParam, AstNodeId, AstNodeKey, BeskidDatabase, Function, FunctionBuilder, FunctionBuilderContext, InstBuilder,
     IsleContext, JITBuilder, JITModule, Linkage, LiteralKind, Module, NodeFacts, NodeKind, OperatorFact, PathBuf,
-    SemanticTypeId, Signature, SourceUnitId, SyntaxGenerationId, Triple, default_libcall_names, lower_expression,
-    settings, types, verify_function,
+    SemanticTypeId, Signature, SourceUnitId, SyntaxGenerationId, default_libcall_names, lower_expression, settings,
+    types, verify_function,
 };
 
 #[test]
@@ -45,7 +45,7 @@ fn grouped_expression_unwraps_child_and_emits_verified_stock_clif() {
     let node = |id| AstNodeKey { unit, generation, node: AstNodeId(id) };
     let facts = GroupedFacts { group: node(1), inner: node(2) };
     let flags = settings::Flags::new(settings::builder());
-    let isa = cranelift_codegen::isa::lookup(Triple::host()).expect("host ISA").finish(flags).expect("host flags");
+    let isa = beskid_isle::target_isa::host_isa_builder().expect("host ISA").finish(flags).expect("host flags");
     let mut function = Function::with_name_signature(
         cranelift_codegen::ir::UserFuncName::user(0, 0),
         Signature { params: vec![], returns: vec![AbiParam::new(types::I32)], call_conv: isa.default_call_conv() },
@@ -347,7 +347,7 @@ fn sdiv_traps_on_zero_divisor() {
     let node = |id| AstNodeKey { unit, generation, node: AstNodeId(id) };
     let facts = DivFacts { root: node(1), left: node(2), right: node(3) };
     let flags = settings::Flags::new(settings::builder());
-    let isa = cranelift_codegen::isa::lookup(Triple::host()).expect("host ISA").finish(flags).expect("host flags");
+    let isa = beskid_isle::target_isa::host_isa_builder().expect("host ISA").finish(flags).expect("host flags");
     let emitter = beskid_isle::FunctionEmitter::new(isa.as_ref());
     let function = emitter
         .emit_expression(

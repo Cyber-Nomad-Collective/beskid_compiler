@@ -16,7 +16,6 @@ beskid_queries = { path = "../beskid_queries", features = ["persistence"] }
 beskid_pipeline = { path = "../beskid_pipeline" }
 cranelift-codegen = { workspace = true }
 cranelift-module = { workspace = true }
-cranelift-native = { workspace = true }
 cranelift-object = { workspace = true }
 thiserror = "2"
 tempfile = "3"

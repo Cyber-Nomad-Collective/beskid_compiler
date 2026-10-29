@@ -477,7 +477,6 @@ dependencies = [
  "cc",
  "cranelift-codegen",
  "cranelift-module",
- "cranelift-native",
  "cranelift-object",
  "libc",
  "object 0.37.3",
@@ -621,7 +620,6 @@ dependencies = [
  "cranelift-frontend",
  "cranelift-jit",
  "cranelift-module",
- "cranelift-native",
  "cranelift-object",
  "libc",
  "target-lexicon",
@@ -671,7 +669,6 @@ dependencies = [
  "cranelift-isle",
  "cranelift-jit",
  "cranelift-module",
- "cranelift-native",
  "cranelift-reader",
  "target-lexicon",
 ]
