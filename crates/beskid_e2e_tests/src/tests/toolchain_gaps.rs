@@ -136,3 +136,11 @@ fn argument_strings_are_written_and_used_as_paths() {
 fn mut_parameter_field_writes_reach_the_caller() {
     assert_runs("mut_parameter_assignment", "MutParameterAssignment.bproj");
 }
+
+/// Growth of a `mut T[]` parameter never reaches the caller's array, whatever its capacity
+/// (preview.8 leaked the new length up to the old capacity); element writes before the growth
+/// and a growth published by return do.
+#[test]
+fn mut_array_parameter_growth_never_reaches_the_callers_array() {
+    assert_runs("mut_array_parameter_growth", "MutArrayParameterGrowth.bproj");
+}

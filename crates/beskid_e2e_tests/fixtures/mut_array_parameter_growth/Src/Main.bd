@@ -1,0 +1,84 @@
+use Core.Collections.Array;
+
+// Parameters pass by value: growth of a `mut T[]` parameter changes only the callee's copy and
+// never the caller's array, whatever its capacity. Element writes before the growth reach the
+// caller. Exit code 42 means every check passed.
+
+i64[] AppendOne(mut i64[] xs)
+{
+    Array.Append<i64>(xs, 9);
+    return xs;
+}
+
+i64[] AppendHundred(mut i64[] xs)
+{
+    mut i64 i = 0;
+    while (i < 100)
+    {
+        Array.Append<i64>(xs, i);
+        i = i + 1;
+    }
+    return xs;
+}
+
+i64[] WriteThenGrow(mut i64[] xs)
+{
+    xs[0] = 7;
+    Array.Append<i64>(xs, 9);
+    xs[0] = 8;
+    return xs;
+}
+
+i64[] Filled(i64 count)
+{
+    mut i64[] xs = Array.Empty<i64>();
+    mut i64 i = 0;
+    while (i < count)
+    {
+        Array.Append<i64>(xs, i);
+        i = i + 1;
+    }
+    return xs;
+}
+
+i32 Main()
+{
+    i64[] spare = Filled(1);
+    i64[] spareGrown = AppendOne(spare);
+    if (Array.Len<i64>(spare) != 1 || Array.Len<i64>(spareGrown) != 2)
+    {
+        return 1;
+    }
+    i64[] full = Filled(4);
+    i64[] fullGrown = AppendOne(full);
+    if (Array.Len<i64>(full) != 4 || Array.Len<i64>(fullGrown) != 5)
+    {
+        return 2;
+    }
+    i64[] empty = Array.Empty<i64>();
+    i64[] emptyGrown = AppendOne(empty);
+    if (Array.Len<i64>(empty) != 0 || Array.Len<i64>(emptyGrown) != 1)
+    {
+        return 3;
+    }
+    i64[] many = Filled(1);
+    i64[] manyGrown = AppendHundred(many);
+    if (Array.Len<i64>(many) != 1 || Array.Len<i64>(manyGrown) != 101)
+    {
+        return 4;
+    }
+    i64[] written = Filled(1);
+    i64[] writtenGrown = WriteThenGrow(written);
+    if (written[0] != 7 || writtenGrown[0] != 8 || Array.Len<i64>(written) != 1)
+    {
+        return 5;
+    }
+    mut i64[] published = Filled(1);
+    published = AppendOne(published);
+    published = AppendHundred(published);
+    if (Array.Len<i64>(published) != 102)
+    {
+        return 6;
+    }
+    return 42;
+}

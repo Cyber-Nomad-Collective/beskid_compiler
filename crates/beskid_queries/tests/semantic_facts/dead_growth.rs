@@ -166,7 +166,9 @@ fn discarded_growth_of_an_unpublished_mut_array_parameter_is_dead() {
 #[test]
 fn every_discarded_growth_of_the_same_dead_parameter_is_reported() {
     // The pre-fix corelib `AppendCrlf` shape: two appends, nothing returned.
-    let fixture = fixture("unit Crlf(mut u8[] destination) { Array.Append<u8>(destination, u8(13)); Array.Append<u8>(destination, u8(10)); }");
+    let fixture = fixture(
+        "unit Crlf(mut u8[] destination) { Array.Append<u8>(destination, u8(13)); Array.Append<u8>(destination, u8(10)); }",
+    );
     let calls = fixture
         .index
         .ids_of_kind(NodeKind::CallExpression)
@@ -196,6 +198,42 @@ fn index_reads_and_self_assignment_do_not_publish_the_parameter() {
 }
 
 #[test]
+fn local_reads_through_canonical_array_functions_do_not_publish_the_parameter() {
+    // The preview.8 leak shapes: the body reads the grown parameter, but the grown handle never
+    // reaches the caller.
+    for body in [
+        "i64 AppendMutAndRead(mut i64[] xs) { Array.Append<i64>(xs, 9); return Array.Len<i64>(xs); }",
+        "i64 AppendManyMutAndRead(mut i64[] xs) { mut i64 i = 0; while (i < 100) { Array.Append<i64>(xs, i); i = i + 1; } return Array.Len<i64>(xs); }",
+        "unit Push(mut u8[] buffer, u8 value) { if Array.Len<u8>(buffer) > 4_i64 { return; } Array.Append<u8>(buffer, value); }",
+        "u8 Push(mut u8[] buffer, u8 value) { Array.Append<u8>(buffer, value); return Array.Get<u8>(buffer, 0_i64); }",
+        "bool Push(mut u8[] buffer, u8 value) { Array.Append<u8>(buffer, value); return Array.IsEmpty<u8>(buffer) || Array.Capacity<u8>(buffer) > 0_i64; }",
+        "u8[] Push(mut u8[] buffer, u8 value) { Array.Append<u8>(buffer, value); return Array.Copy<u8>(buffer); }",
+        "i64 Push(mut i64[] xs) { xs = Array.Append<i64>(xs, 9); return Array.Len<i64>(xs); }",
+    ] {
+        let fixture = fixture(body);
+        let dead = fixture
+            .index
+            .ids_of_kind(NodeKind::CallExpression)
+            .map(|node| AstNodeKey { unit: fixture.unit, generation: fixture.generation, node })
+            .filter(|call| dead_collection_growth(&fixture.db, *call).expect("dead growth query").is_some())
+            .count();
+        assert!(dead >= 1, "{body}");
+        assert!(fixture.typed.is_ok(), "{body}: {:?}", fixture.typed);
+        assert!(
+            fixture.gate.iter().all(|code| code == "E1231") && !fixture.gate.is_empty(),
+            "{body}: {:?}",
+            fixture.gate
+        );
+    }
+}
+
+#[test]
+fn a_growth_assigned_back_and_never_read_is_one_e1231_and_no_e1259() {
+    let fixture = fixture("unit Push(mut i64[] xs) { xs = Array.Append<i64>(xs, 9); }");
+    assert_eq!(fixture.gate, vec!["E1231".to_string()], "E1231 alone names the dead growth");
+}
+
+#[test]
 fn fixed_corelib_shapes_and_published_handles_are_not_dead() {
     for body in [
         // corelib Http/Codec.bd AppendCrlf: the `mut` parameter is returned after growth.
@@ -218,10 +256,14 @@ fn fixed_corelib_shapes_and_published_handles_are_not_dead() {
         "i64 Push(mut u8[] buffer, u8 value) { u8[] before = buffer; Array.Append<u8>(buffer, value); return Array.Len<u8>(before); }",
         // The parameter is captured by a nested lambda.
         "unit Push(mut u8[] buffer, u8 value) { Array.Append<u8>(buffer, value); let capture = () => Array.Len<u8>(buffer); return; }",
-        // Length is read through a call argument.
-        "unit Push(mut u8[] buffer, u8 value) { if Array.Len<u8>(buffer) > 4_i64 { return; } Array.Append<u8>(buffer, value); }",
         // A user-declared Append lookalike is not a canonical growth operation.
         "unit Append<T>(mut T[] values, T value) { return; } unit Push(mut u8[] buffer, u8 value) { Append<u8>(buffer, value); }",
+        // The grown parameter is returned after a local read of its length.
+        "i64[] Push(mut i64[] xs) { Array.Append<i64>(xs, 9); if Array.Len<i64>(xs) > 4_i64 { return xs; } return xs; }",
+        // `Set` returns its array argument: a publishing read.
+        "u8[] Push(mut u8[] buffer, u8 value) { Array.Append<u8>(buffer, value); return Array.Set<u8>(buffer, 0_i64, value); }",
+        // A compound or foreign assignment is not the assignment-back form.
+        "u8[] Push(mut u8[] buffer, mut u8[] other, u8 value) { other = Array.Append<u8>(buffer, value); return other; }",
         // A non-`mut` parameter is the existing unproven-owner lowering error, not dead growth.
         "unit Push(u8[] buffer, u8 value) { Array.Append<u8>(buffer, value); }",
     ] {

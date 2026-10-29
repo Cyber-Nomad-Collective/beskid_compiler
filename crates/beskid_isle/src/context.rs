@@ -151,6 +151,10 @@ pub struct IsleContext<'builder, 'function, 'facts, 'interner> {
     pub(crate) unit_locals: HashSet<LocalSlotId>,
     local_root_scopes: Vec<LocalRootScope>,
     pub function_param_values: Vec<Value>,
+    /// The incoming handle of each managed item parameter, by slot. Growth of a `mut T[]`
+    /// parameter compares its slot with this value: while the slot still holds the caller's
+    /// handle, growth must not write the shared array header.
+    parameter_entries: HashMap<LocalSlotId, Value>,
     pending_error: Option<LoweringError>,
 }
 
@@ -171,6 +175,7 @@ impl<'builder, 'function, 'facts, 'interner> IsleContext<'builder, 'function, 'f
             unit_locals: HashSet::new(),
             local_root_scopes: vec![LocalRootScope::default()],
             function_param_values: Vec::new(),
+            parameter_entries: HashMap::new(),
             pending_error: None,
         }
     }
@@ -192,6 +197,7 @@ impl<'builder, 'function, 'facts, 'interner> IsleContext<'builder, 'function, 'f
             unit_locals: HashSet::new(),
             local_root_scopes: vec![LocalRootScope::default()],
             function_param_values: Vec::new(),
+            parameter_entries: HashMap::new(),
             pending_error: None,
         }
     }
@@ -213,6 +219,7 @@ impl<'builder, 'function, 'facts, 'interner> IsleContext<'builder, 'function, 'f
             unit_locals: HashSet::new(),
             local_root_scopes: vec![LocalRootScope::default()],
             function_param_values: Vec::new(),
+            parameter_entries: HashMap::new(),
             pending_error: None,
         }
     }
@@ -235,6 +242,7 @@ impl<'builder, 'function, 'facts, 'interner> IsleContext<'builder, 'function, 'f
             unit_locals: HashSet::new(),
             local_root_scopes: vec![LocalRootScope::default()],
             function_param_values: Vec::new(),
+            parameter_entries: HashMap::new(),
             pending_error: None,
         }
     }
@@ -275,6 +283,9 @@ pub(crate) fn materialize_parameters(
         context.bind_local(parameter.slot, value, parameter.value_type, parameter.managed_reference).ok_or_else(
             || FunctionEmissionError::verification(item, "item parameter root binding is invalid".to_owned()),
         )?;
+        if parameter.managed_reference == ManagedReferenceFact::GcManaged {
+            context.parameter_entries.insert(parameter.slot, value);
+        }
         context.function_param_values.push(value);
     }
     Ok(())

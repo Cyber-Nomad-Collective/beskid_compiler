@@ -476,15 +476,23 @@ pub fn check_items(db: &dyn Db, items: &[AstNodeKey]) -> Result<(), Vec<Semantic
                 related: vec![(missing.name, note.into())],
             });
         }
+        let dead_growth = cleanup::dead_growth_findings(db, item);
         if let Ok(Some(dead)) = parameters::dead_parameter_assignments(db, item) {
-            findings.extend(dead.into_iter().map(|dead| {
-                let note = format!("`{}` is passed by value", dead.parameter);
-                SemanticFinding {
-                    kind: SemanticIssueKind::DeadParameterAssignment { parameter: dead.parameter },
-                    site: dead.assignment,
-                    related: vec![(dead.declaration, note.into())],
-                }
-            }));
+            // `p = Array.Append<T>(p, v);` is one dead growth: E1231 names it at the call, so the
+            // assignment that only stores the grown handle back is not E1259 as well.
+            let growth_sites = dead_growth.iter().map(|finding| finding.site).collect::<Vec<_>>();
+            findings.extend(
+                dead.into_iter().filter(|dead| !cleanup::contains_any(db, dead.assignment, &growth_sites)).map(
+                    |dead| {
+                        let note = format!("`{}` is passed by value", dead.parameter);
+                        SemanticFinding {
+                            kind: SemanticIssueKind::DeadParameterAssignment { parameter: dead.parameter },
+                            site: dead.assignment,
+                            related: vec![(dead.declaration, note.into())],
+                        }
+                    },
+                ),
+            );
         }
         if let Ok(Some(finding)) = unresolved_value_argument(db, item) {
             findings.push(SemanticFinding {
@@ -630,7 +638,7 @@ pub fn check_items(db: &dyn Db, items: &[AstNodeKey]) -> Result<(), Vec<Semantic
             });
         }
         findings.extend(cleanup::scoped_cleanup_findings(db, item));
-        findings.extend(cleanup::dead_growth_findings(db, item));
+        findings.extend(dead_growth);
         findings.extend(captures::lambda_capture_findings(db, item));
         findings.extend(ownership::affine_findings(db, item));
         findings.extend(captures::captures_argument_findings(db, item));

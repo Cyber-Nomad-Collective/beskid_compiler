@@ -228,7 +228,8 @@ impl IsleContext<'_, '_, '_, '_> {
                     &[pointer, word, pointer],
                     Some(pointer),
                 )?;
-                let grow_call = self.builder.ins().call(grow, &[owner, next_length, root_out]);
+                let minimum = self.growth_minimum_capacity(mutation_owner, owner, next_length)?;
+                let grow_call = self.builder.ins().call(grow, &[owner, minimum, root_out]);
                 let array = self.builder.inst_results(grow_call).first().copied()?;
                 self.guard_checked_allocation()?;
                 self.builder.ins().trapz(array, TrapCode::unwrap_user(5));
@@ -323,6 +324,38 @@ impl IsleContext<'_, '_, '_, '_> {
 }
 
 impl IsleContext<'_, '_, '_, '_> {
+    /// The minimum capacity a growth of `owner` requests from the runtime.
+    ///
+    /// Parameters pass by value: growth of a `mut T[]` parameter changes only the callee's copy
+    /// of the handle. While the parameter slot still holds the caller's handle, the array header
+    /// (data, length, capacity) is shared with the caller, so an in-place growth would make the
+    /// new length visible to the caller up to the old capacity. The first growth through the
+    /// caller's handle therefore requests one element more than the current capacity, which makes
+    /// the runtime copy into a new array; later growths of the callee's own copy grow in place.
+    /// Every other owner requests `next_length` and grows in place while capacity remains.
+    ///
+    /// `capacity + 1` cannot overflow: a live array's backing store holds `capacity` elements of
+    /// at least one byte.
+    pub(in crate::context) fn growth_minimum_capacity(
+        &mut self,
+        owner_fact: CollectionMutationOwner,
+        owner: Value,
+        next_length: Value,
+    ) -> Option<Value> {
+        let CollectionMutationOwner::Local(slot) = owner_fact else {
+            return Some(next_length);
+        };
+        let Some(entry) = self.parameter_entries.get(&slot).copied() else {
+            return Some(next_length);
+        };
+        let pointer = dispatch::pointer_type(self.frontend_config);
+        let capacity_offset = i32::try_from(pointer.bytes() * 2).ok()?;
+        let capacity = self.builder.ins().load(pointer, MemFlagsData::new(), owner, capacity_offset);
+        let detach = self.builder.ins().iadd_imm_s(capacity, 1);
+        let shared = self.builder.ins().icmp(IntCC::Equal, owner, entry);
+        Some(self.builder.ins().select(shared, detach, next_length))
+    }
+
     /// Clear the element at `address` of an existing array. Clearing a managed element deletes a
     /// reference, so it is barriered like an element assignment of null.
     fn emit_element_clear(&mut self, key: AstNodeKey, element_type: Type, address: Value) -> Option<()> {
