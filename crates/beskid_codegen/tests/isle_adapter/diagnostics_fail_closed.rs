@@ -2,7 +2,7 @@ use super::support::{
     AbiManifestV5, Arc, AssemblyDiscovery, AstNodeId, AstNodeKey, BeskidDatabase, CastIntent, CodegenInput,
     EffectiveCompilationRoots, FunctionEmitter, ModuleIndex, ProgramAssembly, ProjectSession, RootEntry, SourceUnit,
     SourceUnitId, SyntaxGenerationId, SyntaxModuleItem, TargetMetadata, UserFuncName, build_typed_program,
-    closure_environment, emit_isle_expression, find_function_definition, find_function_definitions,
+    closure_environment, emit_isle_expression, emit_isle_item, find_function_definition, find_function_definitions,
     find_integer_literal, find_node, format_ast_node_site, isa, item_body, item_fixture_with_root,
     lower_syntax_program, node_kind, parse_program_with_source_name, settings, spawn_target, types,
 };
@@ -54,8 +54,10 @@ fn parsed_syntax_root_emits_verified_isle_clif_without_hir() {
 
     assert!(function.display().to_string().contains("iconst.i32 42"));
 }
+/// A body that falls off its end is a user error now (E1258): module emission rejects exactly the
+/// failing item at the legality gate, before lowering, and the report is the user diagnostic.
 #[test]
-fn parsed_multi_function_assembly_verification_error_identifies_the_originating_item_site() {
+fn parsed_multi_function_assembly_rejects_only_the_item_that_falls_off_its_end() {
     let (input, isa, root) = item_fixture_with_root("i32 Sibling() { return 1; } i32 Failing() { 2; }");
     let db = input.database();
     let items = find_function_definitions(db, root);
@@ -72,24 +74,29 @@ fn parsed_multi_function_assembly_verification_error_identifies_the_originating_
     )
     .expect_err("the failing item must be rejected through module emission");
     let first = error.to_string();
-    let repeated = error.to_string();
-    let failing_site = format_ast_node_site(db, failing);
-    let sibling_site = format_ast_node_site(db, sibling);
-
-    assert_eq!(first, repeated);
-    assert!(first.contains(&failing_site), "{first}");
-    assert!(!first.contains(&sibling_site), "{first}");
-    // A verification failure with a site is the internal error E2103 at that construct.
-    assert!(first.contains("syntax ISLE emission failed: E2103 internal compiler error: "), "{first}");
-    assert!(first.contains("FunctionDefinition@"), "{first}");
+    assert_eq!(first, error.to_string());
+    assert!(first.contains("E1258 `Failing` can reach the end of its body"), "{first}");
+    assert!(!first.contains("Sibling"), "{first}");
+    assert!(!first.contains("E2103"), "{first}");
     let report = error.into_report(&input, "syntax ISLE lowering failed");
     let bundle = report
         .downcast_ref::<beskid_analysis::services::SemanticDiagnosticsError>()
-        .expect("the internal error keeps its structured diagnostic");
+        .expect("the legality finding keeps its structured diagnostic");
     let diagnostic = &bundle.diagnostics()[0];
-    assert_eq!(diagnostic.code.as_deref(), Some("E2103"));
-    assert!(diagnostic.message.ends_with("please report this"), "{}", diagnostic.message);
-    assert!(!diagnostic.message.contains("Verification("), "{}", diagnostic.message);
+    assert_eq!(diagnostic.code.as_deref(), Some("E1258"));
+    assert_eq!(diagnostic.span.offset(), "i32 Sibling() { return 1; } i32 Failing() { 2; ".len(), "at the brace");
+}
+
+/// Emission without the legality gate still reports an unterminated body as a verification
+/// failure, never as a raw Cranelift error.
+#[test]
+fn an_ungated_unterminated_body_is_a_sited_verification_failure() {
+    let (input, isa, root) = item_fixture_with_root("i32 Sibling() { return 1; } i32 Failing() { 2; }");
+    let db = input.database();
+    let failing = find_function_definitions(db, root)[1];
+    let error = emit_isle_item(&input, isa.as_ref(), failing).expect_err("the body does not terminate");
+    let rendered = error.to_string();
+    assert!(rendered.contains("did not terminate its final block"), "{rendered}");
 }
 
 /// The ICE floor: a failure without any construct (here, two items claiming one symbol) still

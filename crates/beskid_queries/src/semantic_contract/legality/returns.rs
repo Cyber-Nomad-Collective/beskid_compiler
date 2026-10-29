@@ -202,8 +202,10 @@ impl Walker<'_> {
         if let Some(match_expression) = node.of::<MatchExpression>() {
             return self.match_expression(id, match_expression);
         }
-        if node.of::<beskid_analysis::syntax::CallExpression>().is_some()
-            && super::typing::proven_type(self.db, AstNodeKey { node: id, ..self.key }) == Some(SemanticTypeId::NEVER)
+        if let Some(call) = node.of::<beskid_analysis::syntax::CallExpression>()
+            && (calls_never_builtin(call)
+                || super::typing::proven_type(self.db, AstNodeKey { node: id, ..self.key })
+                    == Some(SemanticTypeId::NEVER))
         {
             return Flow::STOPS;
         }
@@ -228,6 +230,17 @@ impl Walker<'_> {
         }
         flow
     }
+}
+
+/// A call of a compiler builtin whose result is `never` (`__panic`, `__panic_str`). The builtin
+/// table is the authority: such a call has no typing fact of its own outside lowering, and
+/// lowering traps after it like after any call that returns `never`.
+fn calls_never_builtin(call: &beskid_analysis::syntax::CallExpression) -> bool {
+    let Expression::Path(path) = &call.callee.node else { return false };
+    let segments =
+        path.node.path.node.segments.iter().map(|segment| segment.node.name.node.name.clone()).collect::<Vec<_>>();
+    beskid_analysis::builtins::builtin_for_path(&segments)
+        .is_some_and(|(_, spec)| spec.returns == beskid_analysis::builtins::BuiltinType::Never)
 }
 
 /// The literal `true`, also inside grouping parentheses.
@@ -331,6 +344,7 @@ mod tests {
             ("i32 F() { { return 1; }; }", "a nested block"),
             ("i32 F() { { { return 1; }; }; }", "nested blocks"),
             ("i32 F() { Stop(); } never Stop() { while (true) { } }", "a call that returns `never`"),
+            ("i32 F() { __panic_str(\"stop\"); }", "a builtin that returns `never`"),
             ("unit F() { }", "a unit function"),
             ("type Counter { i32 value; } impl Counter { pub i32 Get() => 1; }", "an expression-bodied method"),
             ("never F() { }", "a never function is not judged by this rule"),
