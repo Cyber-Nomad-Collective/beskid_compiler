@@ -20,6 +20,8 @@ mod contract_dispatch;
 mod contract_method_bodies;
 #[path = "isle_adapter/control_flow_closures_spawn.rs"]
 mod control_flow_closures_spawn;
+#[path = "isle_adapter/control_flow_definite_return.rs"]
+mod control_flow_definite_return;
 #[path = "isle_adapter/control_flow_loop_termination.rs"]
 mod control_flow_loop_termination;
 #[path = "isle_adapter/corelib_services.rs"]

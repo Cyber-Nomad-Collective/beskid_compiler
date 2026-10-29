@@ -182,6 +182,7 @@ impl SemanticIssueKind {
             Self::CompositionInvalidScopeQualifier { .. } => "invalid scope qualifier".to_string(),
 
             Self::TypeReturnMismatch { .. } => "return type mismatch".to_string(),
+            Self::TypeMissingReturn { .. } => "the body can end here without a value".to_string(),
             Self::TypeNonIterableForTarget => "non-iterable for target".to_string(),
             Self::TypeIterableNextArityMismatch { .. } => "iterable Next arity mismatch".to_string(),
             Self::TypeIterableNextReturnNotOption => "iterable Next return must be Option<T>".to_string(),
