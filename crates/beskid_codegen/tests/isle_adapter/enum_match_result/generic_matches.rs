@@ -3,7 +3,7 @@
 use super::super::support::{
     Arc, AssemblyDiscovery, BeskidDatabase, EffectiveCompilationRoots, ModuleIndex, ProgramAssembly, RootEntry,
     SourceUnit, SyntaxGenerationId, SyntaxModuleItem, TargetMetadata, emit_isle_expression, emit_isle_item, enum_match,
-    find_function_definitions, find_node, isa, item_fixture, item_fixture_with_root, item_name, lower_syntax_program,
+    find_function_definitions, find_node, item_fixture, item_fixture_with_root, item_name, lower_syntax_program,
     node_type, parse_program_with_source_name, settings, types,
 };
 use super::assert_imported_result_lowering;
@@ -213,7 +213,10 @@ fn cross_unit_generic_receiver_direct_match_preserves_nominal_value() {
             .into_iter()
             .find(|target| target.triple.as_str() == "x86_64-unknown-linux-gnu")
             .unwrap();
-        let isa = isa::lookup_by_name("x86_64").unwrap().finish(settings::Flags::new(settings::builder())).unwrap();
+        let isa = beskid_codegen::target_isa::target_isa_builder("x86_64")
+            .unwrap()
+            .finish(settings::Flags::new(settings::builder()))
+            .unwrap();
         beskid_codegen::lower_syntax_assembly_entrypoint(
             &mut BeskidDatabase::default(),
             assembly,

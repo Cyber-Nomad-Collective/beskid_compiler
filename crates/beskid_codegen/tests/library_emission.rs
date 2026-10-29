@@ -9,7 +9,7 @@ use beskid_analysis::projects::{
 use beskid_analysis::services::{ExecutableFrontEnd, FrontEndOptions, resolved_input_from_plan};
 use beskid_codegen::{CodegenArtifact, lower_prepared_syntax_library};
 use beskid_queries::{compile_mod_free_front_end, with_db};
-use cranelift_codegen::{isa, settings};
+use cranelift_codegen::settings;
 
 const ALPHA: &str = "use Shared;\n\
     [Export(Abi:\"C\", Symbol:\"alpha_answer\")]\n\
@@ -74,7 +74,7 @@ fn lower_library(front: &ExecutableFrontEnd) -> CodegenArtifact {
         .into_iter()
         .find(|target| target.triple.as_str().starts_with("x86_64-"))
         .expect("x86_64 ABI target");
-    let isa = isa::lookup_by_name("x86_64")
+    let isa = beskid_codegen::target_isa::target_isa_builder("x86_64")
         .expect("x86 ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("finish ISA");

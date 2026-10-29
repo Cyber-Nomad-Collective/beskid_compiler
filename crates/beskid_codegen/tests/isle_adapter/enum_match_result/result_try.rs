@@ -4,7 +4,7 @@ use super::super::support::{
     AbiManifestV5, Arc, AssemblyDiscovery, AstNodeId, AstNodeKey, BeskidDatabase, CodegenInput,
     EffectiveCompilationRoots, ModuleIndex, ProgramAssembly, ProjectSession, RootEntry, SourceUnit, SourceUnitId,
     SyntaxGenerationId, SyntaxModuleItem, TargetMetadata, build_typed_program, emit_isle_item,
-    find_function_definition, find_function_definitions, find_node, find_nodes_of_kind, isa, item_fixture_with_root,
+    find_function_definition, find_function_definitions, find_node, find_nodes_of_kind, item_fixture_with_root,
     item_name, lower_syntax_program, parse_program_with_source_name, settings,
 };
 
@@ -166,7 +166,10 @@ pub(super) fn assert_imported_result_lowering(sources: &[(&str, &str)]) {
     let input =
         CodegenInput::new(&db, typed, roots.clone().into(), target.clone(), AbiManifestV5::canonical_runtime(target))
             .expect("input");
-    let isa = isa::lookup_by_name("x86_64").unwrap().finish(settings::Flags::new(settings::builder())).unwrap();
+    let isa = beskid_codegen::target_isa::target_isa_builder("x86_64")
+        .unwrap()
+        .finish(settings::Flags::new(settings::builder()))
+        .unwrap();
     let items = roots
         .iter()
         .flat_map(|root| {

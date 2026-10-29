@@ -4,7 +4,7 @@ use super::support::{
     SourceUnitId, SyntaxGenerationId, SyntaxModuleItem, TargetMetadata, build_canonical_runtime_typed_program,
     canonical_runtime_intrinsic_capability, canonical_runtime_test_assembly, default_libcall_names,
     emit_closure_static_data, emit_isle_item, emit_syntax_program, find_definition_of_kind, find_function_definition,
-    find_function_definitions, find_node, find_nodes_of_kind, isa, item_fixture, item_fixture_with_root, item_name,
+    find_function_definitions, find_node, find_nodes_of_kind, item_fixture, item_fixture_with_root, item_name,
     lower_syntax_program, settings,
 };
 #[cfg(any(all(target_os = "linux", target_arch = "x86_64"), all(target_os = "macos", target_arch = "aarch64"),))]
@@ -292,7 +292,7 @@ fn canonical_runtime_allocation_and_root_frame_helpers_emit_verified_clif_with_m
     let leaked: &'static BeskidDatabase = Box::leak(db);
     let input = CodegenInput::new(leaked, typed, Arc::from([native_root, roots_root]), target, manifest)
         .expect("canonical runtime codegen input");
-    let isa = isa::lookup_by_name("x86_64")
+    let isa = beskid_codegen::target_isa::target_isa_builder("x86_64")
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags");
@@ -404,7 +404,7 @@ fn canonical_runtime_closure_descriptor_validation_and_rooting_execute_fail_clos
         .expect("canonical runtime codegen input");
     let production_settings =
         beskid_codegen::cranelift_host::production_isa_settings_builder().expect("production ISA settings");
-    let isa = isa::lookup_by_name(host_isa_name)
+    let isa = beskid_codegen::target_isa::target_isa_builder(host_isa_name)
         .expect("host ISA")
         .finish(settings::Flags::new(production_settings))
         .expect("host flags");

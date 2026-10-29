@@ -269,7 +269,7 @@ fn corelib_syscall_write_links_from_the_process_builtin_registry() {
     builder.ins().call(syscall, &[fd, value]);
     builder.ins().return_(&[]);
     builder.seal_all_blocks();
-    let isa = cranelift_codegen::isa::lookup(target.triple.as_str().parse().expect("kit target triple"))
+    let isa = beskid_codegen::target_isa::target_isa_builder(target.triple.as_str())
         .expect("kit target ISA")
         .finish(cranelift_codegen::settings::Flags::new(cranelift_codegen::settings::builder()))
         .expect("kit target flags");

@@ -3,6 +3,9 @@ mod cli_cross_platform;
 #[cfg(target_os = "linux")]
 mod aot_smoke;
 
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+mod crypto_baseline;
+
 #[cfg(target_os = "linux")]
 mod dependency_workflow;
 

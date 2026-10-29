@@ -43,7 +43,7 @@ fn primitives_function(isa: &dyn TargetIsa) -> Function {
 #[test]
 fn clif_primitives_extending_loads_and_unsigned_compare_verify() {
     for target in ["x86_64-unknown-linux-gnu", "x86_64-pc-windows-msvc", "aarch64-apple-darwin"] {
-        let isa = cranelift_codegen::isa::lookup(target.parse().expect("test target"))
+        let isa = beskid_isle::target_isa::target_isa_builder(target)
             .expect("target ISA")
             .finish(cranelift_codegen::settings::Flags::new(cranelift_codegen::settings::builder()))
             .expect("test flags");

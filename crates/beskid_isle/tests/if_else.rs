@@ -7,7 +7,6 @@ use cranelift_codegen::ir::{UserFuncName, types};
 use cranelift_codegen::settings;
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{Linkage, Module, default_libcall_names};
-use target_lexicon::Triple;
 
 struct IfElseFacts {
     nodes: [AstNodeKey; 6],
@@ -114,7 +113,7 @@ impl NodeFacts for IfElseFacts {
 #[test]
 fn if_else_rule_emits_verified_multi_block_clif() {
     let flags = settings::Flags::new(settings::builder());
-    let isa = cranelift_codegen::isa::lookup(Triple::host()).expect("host ISA").finish(flags).expect("host flags");
+    let isa = beskid_isle::target_isa::host_isa_builder().expect("host ISA").finish(flags).expect("host flags");
     let db = BeskidDatabase::default();
     let unit = SourceUnitId::new(&db, PathBuf::from("/tmp/IfElse.bd"));
     let generation = SyntaxGenerationId(10);
@@ -227,7 +226,7 @@ fn return_after_if_without_else_reaches_merge() {
     }
 
     let flags = settings::Flags::new(settings::builder());
-    let isa = cranelift_codegen::isa::lookup(Triple::host()).expect("host ISA").finish(flags).expect("host flags");
+    let isa = beskid_isle::target_isa::host_isa_builder().expect("host ISA").finish(flags).expect("host flags");
     let db = BeskidDatabase::default();
     let unit = SourceUnitId::new(&db, PathBuf::from("/tmp/IfThenReturn.bd"));
     let facts = IfThenReturnFacts {
@@ -261,7 +260,7 @@ fn return_after_if_without_else_reaches_merge() {
 #[test]
 fn if_without_else_terminates_reachable_fallthrough() {
     let flags = settings::Flags::new(settings::builder());
-    let isa = cranelift_codegen::isa::lookup(Triple::host()).expect("host ISA").finish(flags).expect("host flags");
+    let isa = beskid_isle::target_isa::host_isa_builder().expect("host ISA").finish(flags).expect("host flags");
     let db = BeskidDatabase::default();
     let unit = SourceUnitId::new(&db, PathBuf::from("/tmp/IfWithoutElse.bd"));
     let facts = IfElseFacts {
@@ -284,7 +283,7 @@ fn if_without_else_terminates_reachable_fallthrough() {
 #[test]
 fn statement_cursor_stops_after_a_terminator() {
     let flags = settings::Flags::new(settings::builder());
-    let isa = cranelift_codegen::isa::lookup(Triple::host()).expect("host ISA").finish(flags).expect("host flags");
+    let isa = beskid_isle::target_isa::host_isa_builder().expect("host ISA").finish(flags).expect("host flags");
     let db = BeskidDatabase::default();
     let unit = SourceUnitId::new(&db, PathBuf::from("/tmp/ReturnSequence.bd"));
     let facts = ReturnSequenceFacts {

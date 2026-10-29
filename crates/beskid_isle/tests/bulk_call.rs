@@ -24,7 +24,6 @@ use cranelift_codegen::settings;
 use cranelift_frontend::FunctionBuilder;
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{Linkage, Module, default_libcall_names};
-use target_lexicon::Triple;
 
 // The element count the fake allocator backs. The bulk call stores exactly three i32 scalars, so
 // the backing buffer is sized to match; the callee sums them to prove every store landed.
@@ -254,7 +253,7 @@ fn execute_bulk_call(importer: &mut KnownCallImporter, name: &str, mut function:
 
 #[test]
 fn bulk_call_packs_scalars_into_a_rooted_array_and_direct_calls_the_callee() {
-    let isa = cranelift_codegen::isa::lookup(Triple::host())
+    let isa = beskid_isle::target_isa::host_isa_builder()
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags");
@@ -288,7 +287,7 @@ fn bulk_call_packs_scalars_into_a_rooted_array_and_direct_calls_the_callee() {
 
 #[test]
 fn bulk_call_rejects_an_arity_mismatch_between_layout_and_arguments() {
-    let isa = cranelift_codegen::isa::lookup(Triple::host())
+    let isa = beskid_isle::target_isa::host_isa_builder()
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags");

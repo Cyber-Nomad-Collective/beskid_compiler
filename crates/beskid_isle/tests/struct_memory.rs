@@ -8,7 +8,6 @@ use beskid_isle::{
 use beskid_queries::{AstNodeId, BeskidDatabase, SourceUnitId, SyntaxGenerationId};
 use cranelift_codegen::ir::{Type, UserFuncName, types};
 use cranelift_codegen::settings;
-use target_lexicon::Triple;
 
 #[derive(Clone, Copy)]
 enum Root {
@@ -168,7 +167,7 @@ fn valid_layout() -> StructLayout {
 }
 
 fn emit(root: Root, field_index: u32, function_index: u32) -> cranelift_codegen::ir::Function {
-    let isa = cranelift_codegen::isa::lookup(Triple::host())
+    let isa = beskid_isle::target_isa::host_isa_builder()
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags");
@@ -213,7 +212,7 @@ fn field_assignment_emits_managed_clif_store() {
 
 #[test]
 fn field_assignment_without_a_managed_reference_fact_is_an_exact_keyed_error() {
-    let isa = cranelift_codegen::isa::lookup(Triple::host())
+    let isa = beskid_isle::target_isa::host_isa_builder()
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags");
@@ -232,7 +231,7 @@ fn field_assignment_without_a_managed_reference_fact_is_an_exact_keyed_error() {
 
 #[test]
 fn invalid_struct_layout_is_an_exact_keyed_error() {
-    let isa = cranelift_codegen::isa::lookup(Triple::host())
+    let isa = beskid_isle::target_isa::host_isa_builder()
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags");
@@ -251,7 +250,7 @@ fn invalid_struct_layout_is_an_exact_keyed_error() {
 
 #[test]
 fn missing_struct_field_is_an_exact_keyed_error() {
-    let isa = cranelift_codegen::isa::lookup(Triple::host())
+    let isa = beskid_isle::target_isa::host_isa_builder()
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags");
@@ -269,10 +268,8 @@ fn missing_struct_field_is_an_exact_keyed_error() {
 
 #[test]
 fn unit_field_keeps_logical_indices_without_a_physical_store() {
-    let isa = cranelift_codegen::isa::lookup(Triple::host())
-        .unwrap()
-        .finish(settings::Flags::new(settings::builder()))
-        .unwrap();
+    let isa =
+        beskid_isle::target_isa::host_isa_builder().unwrap().finish(settings::Flags::new(settings::builder())).unwrap();
     let layout = StructLayout::from_logical_fields(
         24,
         3,
@@ -291,10 +288,8 @@ fn unit_field_keeps_logical_indices_without_a_physical_store() {
 
 #[test]
 fn no_storage_field_rejects_nonunit_initializer() {
-    let isa = cranelift_codegen::isa::lookup(Triple::host())
-        .unwrap()
-        .finish(settings::Flags::new(settings::builder()))
-        .unwrap();
+    let isa =
+        beskid_isle::target_isa::host_isa_builder().unwrap().finish(settings::Flags::new(settings::builder())).unwrap();
     let layout = StructLayout::from_logical_fields(
         24,
         3,
@@ -335,10 +330,8 @@ impl beskid_isle::CallImporter for UnitEffectImporter {
 
 #[test]
 fn unit_initializer_call_is_emitted_once_before_allocation_without_storage() {
-    let isa = cranelift_codegen::isa::lookup(Triple::host())
-        .unwrap()
-        .finish(settings::Flags::new(settings::builder()))
-        .unwrap();
+    let isa =
+        beskid_isle::target_isa::host_isa_builder().unwrap().finish(settings::Flags::new(settings::builder())).unwrap();
     let layout = StructLayout::from_logical_fields(
         24,
         3,
@@ -371,10 +364,8 @@ fn unit_initializer_call_is_emitted_once_before_allocation_without_storage() {
 
 #[test]
 fn unit_field_read_and_assignment_evaluate_receiver_without_payload_access() {
-    let isa = cranelift_codegen::isa::lookup(Triple::host())
-        .unwrap()
-        .finish(settings::Flags::new(settings::builder()))
-        .unwrap();
+    let isa =
+        beskid_isle::target_isa::host_isa_builder().unwrap().finish(settings::Flags::new(settings::builder())).unwrap();
     for (index, root) in [Root::Read, Root::Write].into_iter().enumerate() {
         let layout = StructLayout::from_logical_fields(
             24,

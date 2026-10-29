@@ -3,7 +3,7 @@ use beskid_abi::abi_v5::TargetMetadata;
 use beskid_analysis::services::{FrontEndOptions, resolved_input_from_plan};
 use beskid_codegen::lower_prepared_syntax_selected_callables;
 use beskid_queries::{compile_mod_free_front_end, with_db};
-use cranelift_codegen::{isa, settings};
+use cranelift_codegen::settings;
 use std::path::PathBuf;
 
 #[test]
@@ -121,7 +121,10 @@ fn canonical_sdk_request_factories_lower_with_compiler_owned_descriptors() {
         .into_iter()
         .find(|target| target.triple.as_str() == "x86_64-unknown-linux-gnu")
         .unwrap();
-    let isa = isa::lookup_by_name("x86_64").unwrap().finish(settings::Flags::new(settings::builder())).unwrap();
+    let isa = beskid_codegen::target_isa::target_isa_builder("x86_64")
+        .unwrap()
+        .finish(settings::Flags::new(settings::builder()))
+        .unwrap();
     let prepared = with_db(|db| {
         let assembly = front.syntax_assembly();
         let mut constructor_keys = Vec::new();

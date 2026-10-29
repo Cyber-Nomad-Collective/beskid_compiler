@@ -8,7 +8,6 @@ use beskid_isle::{
 use beskid_queries::{AstNodeId, BeskidDatabase, SourceUnitId, SyntaxGenerationId};
 use cranelift_codegen::ir::{Type, UserFuncName, types};
 use cranelift_codegen::settings;
-use target_lexicon::Triple;
 
 #[derive(Clone, Copy)]
 enum Arms {
@@ -226,7 +225,7 @@ fn facts(pointer_type: Type, arms: Arms, variant_index: u32, layout: EnumLayout)
 }
 
 fn emit(arms: Arms, function_index: u32) -> String {
-    let isa = cranelift_codegen::isa::lookup(Triple::host())
+    let isa = beskid_isle::target_isa::host_isa_builder()
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags");
@@ -257,7 +256,7 @@ fn wildcard_arm_makes_match_exhaustive_with_managed_storage() {
 
 #[test]
 fn non_exhaustive_match_is_an_exact_keyed_error() {
-    let isa = cranelift_codegen::isa::lookup(Triple::host())
+    let isa = beskid_isle::target_isa::host_isa_builder()
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags");
@@ -279,7 +278,7 @@ fn non_exhaustive_match_is_an_exact_keyed_error() {
 
 #[test]
 fn repeated_variant_arms_preserve_source_order() {
-    let isa = cranelift_codegen::isa::lookup(Triple::host())
+    let isa = beskid_isle::target_isa::host_isa_builder()
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags");
@@ -296,7 +295,7 @@ fn repeated_variant_arms_preserve_source_order() {
 
 #[test]
 fn collectively_exhaustive_nested_enum_variants_cover_the_outer_payload() {
-    let isa = cranelift_codegen::isa::lookup(Triple::host())
+    let isa = beskid_isle::target_isa::host_isa_builder()
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags");
@@ -309,7 +308,7 @@ fn collectively_exhaustive_nested_enum_variants_cover_the_outer_payload() {
 
 #[test]
 fn missing_nested_enum_variant_keeps_the_outer_match_non_exhaustive() {
-    let isa = cranelift_codegen::isa::lookup(Triple::host())
+    let isa = beskid_isle::target_isa::host_isa_builder()
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags");
@@ -391,7 +390,7 @@ impl NodeFacts for UnitMatchFacts {
 
 #[test]
 fn statement_context_enum_match_lowers_unit_arm_blocks() {
-    let isa = cranelift_codegen::isa::lookup(Triple::host())
+    let isa = beskid_isle::target_isa::host_isa_builder()
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags");
@@ -415,7 +414,7 @@ fn statement_context_enum_match_lowers_unit_arm_blocks() {
 
 #[test]
 fn duplicate_enum_discriminant_is_an_exact_layout_error() {
-    let isa = cranelift_codegen::isa::lookup(Triple::host())
+    let isa = beskid_isle::target_isa::host_isa_builder()
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags");
@@ -439,7 +438,7 @@ fn duplicate_enum_discriminant_is_an_exact_layout_error() {
 
 #[test]
 fn unknown_enum_variant_is_an_exact_keyed_error() {
-    let isa = cranelift_codegen::isa::lookup(Triple::host())
+    let isa = beskid_isle::target_isa::host_isa_builder()
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags");
@@ -470,7 +469,7 @@ fn guarded_arm_falls_through_to_the_next_arm_in_source_order() {
 
 #[test]
 fn guarded_catch_all_does_not_make_a_match_exhaustive() {
-    let isa = cranelift_codegen::isa::lookup(Triple::host())
+    let isa = beskid_isle::target_isa::host_isa_builder()
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags");
@@ -559,7 +558,7 @@ fn scalar_facts(catch_all: bool) -> ScalarMatchFacts {
 
 #[test]
 fn primitive_scrutinee_match_compares_each_literal_by_value() {
-    let isa = cranelift_codegen::isa::lookup(Triple::host())
+    let isa = beskid_isle::target_isa::host_isa_builder()
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags");
@@ -576,7 +575,7 @@ fn primitive_scrutinee_match_compares_each_literal_by_value() {
 
 #[test]
 fn non_exhaustive_primitive_statement_match_continues_after_the_match() {
-    let isa = cranelift_codegen::isa::lookup(Triple::host())
+    let isa = beskid_isle::target_isa::host_isa_builder()
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags");

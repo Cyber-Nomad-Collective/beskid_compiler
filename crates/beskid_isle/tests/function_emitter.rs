@@ -12,7 +12,7 @@ use target_lexicon::Triple;
 fn signatures_and_pointer_types_come_from_each_supported_isa() {
     for triple in ["x86_64-unknown-linux-gnu", "aarch64-apple-darwin", "x86_64-pc-windows-msvc"] {
         let triple = Triple::from_str(triple).expect("supported triple syntax");
-        let isa = cranelift_codegen::isa::lookup(triple.clone())
+        let isa = beskid_isle::target_isa::target_isa_builder(&triple.to_string())
             .unwrap_or_else(|error| panic!("lookup {triple}: {error}"))
             .finish(settings::Flags::new(settings::builder()))
             .unwrap_or_else(|error| panic!("finish {triple}: {error}"));
@@ -46,7 +46,7 @@ fn emitter_finalizes_and_verifies_each_selected_body() {
     }
 
     let triple = Triple::from_str("x86_64-unknown-linux-gnu").expect("triple");
-    let isa = cranelift_codegen::isa::lookup(triple)
+    let isa = beskid_isle::target_isa::target_isa_builder(&triple.to_string())
         .expect("x64 backend")
         .finish(settings::Flags::new(settings::builder()))
         .expect("x64 ISA");

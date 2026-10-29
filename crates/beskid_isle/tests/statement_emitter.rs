@@ -5,7 +5,6 @@ use beskid_isle::{AstNodeKey, FunctionEmissionError, FunctionEmitter, NodeFacts,
 use beskid_queries::{AstNodeId, BeskidDatabase, SourceUnitId, SyntaxGenerationId};
 use cranelift_codegen::ir::{UserFuncName, types};
 use cranelift_codegen::settings;
-use target_lexicon::Triple;
 
 struct ReturnFacts {
     statement: AstNodeKey,
@@ -43,7 +42,7 @@ impl NodeFacts for ReturnFacts {
 #[test]
 fn return_statement_recurses_through_isle_and_emits_verified_clif() {
     let flags = settings::Flags::new(settings::builder());
-    let isa = cranelift_codegen::isa::lookup(Triple::host()).expect("host ISA").finish(flags).expect("host flags");
+    let isa = beskid_isle::target_isa::host_isa_builder().expect("host ISA").finish(flags).expect("host flags");
     let db = BeskidDatabase::default();
     let unit = SourceUnitId::new(&db, PathBuf::from("/tmp/Return.bd"));
     let generation = SyntaxGenerationId(8);
@@ -93,7 +92,7 @@ fn unterminated_statement_is_rejected_by_mandatory_verification() {
     }
 
     let flags = settings::Flags::new(settings::builder());
-    let isa = cranelift_codegen::isa::lookup(Triple::host()).expect("host ISA").finish(flags).expect("host flags");
+    let isa = beskid_isle::target_isa::host_isa_builder().expect("host ISA").finish(flags).expect("host flags");
     let db = BeskidDatabase::default();
     let unit = SourceUnitId::new(&db, PathBuf::from("/tmp/Expression.bd"));
     let generation = SyntaxGenerationId(9);

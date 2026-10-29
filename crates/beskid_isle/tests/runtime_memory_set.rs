@@ -6,7 +6,6 @@ use beskid_queries::{AstNodeId, BeskidDatabase, SourceUnitId, SyntaxGenerationId
 use cranelift_codegen::ir::{AbiParam, Signature, UserFuncName, types};
 use cranelift_codegen::isa::CallConv;
 use cranelift_codegen::settings;
-use target_lexicon::Triple;
 
 struct MemorySetFacts {
     nodes: [AstNodeKey; 5],
@@ -366,7 +365,7 @@ fn intrinsic_signature(params: &[cranelift_codegen::ir::Type]) -> Signature {
 
 #[test]
 fn runtime_memory_set_reduces_word_byte_to_verified_i8_store() {
-    let isa = cranelift_codegen::isa::lookup(Triple::host())
+    let isa = beskid_isle::target_isa::host_isa_builder()
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags");
@@ -383,7 +382,7 @@ fn runtime_memory_set_reduces_word_byte_to_verified_i8_store() {
 
 #[test]
 fn runtime_memory_set_call_statement_reduces_word_byte_without_an_abi_import() {
-    let isa = cranelift_codegen::isa::lookup(Triple::host())
+    let isa = beskid_isle::target_isa::host_isa_builder()
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags");
@@ -400,7 +399,7 @@ fn runtime_memory_set_call_statement_reduces_word_byte_without_an_abi_import() {
 
 #[test]
 fn runtime_memory_set_materializes_a_canonical_constant_length_at_pointer_width() {
-    let isa = cranelift_codegen::isa::lookup(Triple::host())
+    let isa = beskid_isle::target_isa::host_isa_builder()
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags");
@@ -417,7 +416,7 @@ fn runtime_memory_set_materializes_a_canonical_constant_length_at_pointer_width(
 
 #[test]
 fn runtime_memory_set_does_not_materialize_a_literal_length_as_a_runtime_constant() {
-    let isa = cranelift_codegen::isa::lookup(Triple::host())
+    let isa = beskid_isle::target_isa::host_isa_builder()
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags");
@@ -439,7 +438,7 @@ fn runtime_memory_set_does_not_materialize_a_literal_length_as_a_runtime_constan
 
 #[test]
 fn runtime_raw_word_store_expression_statement_lowers_inline_without_an_abi_import() {
-    let isa = cranelift_codegen::isa::lookup(Triple::host())
+    let isa = beskid_isle::target_isa::host_isa_builder()
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags");
@@ -458,7 +457,7 @@ fn runtime_raw_word_store_expression_statement_lowers_inline_without_an_abi_impo
 
 #[test]
 fn runtime_raw_byte_store_reduces_wide_value_to_one_byte() {
-    let isa = cranelift_codegen::isa::lookup(Triple::host())
+    let isa = beskid_isle::target_isa::host_isa_builder()
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags");
@@ -474,7 +473,7 @@ fn runtime_raw_byte_store_reduces_wide_value_to_one_byte() {
 
 #[test]
 fn runtime_raw_word_store_materializes_a_nested_canonical_offset_at_pointer_width() {
-    let isa = cranelift_codegen::isa::lookup(Triple::host())
+    let isa = beskid_isle::target_isa::host_isa_builder()
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags");
@@ -491,7 +490,7 @@ fn runtime_raw_word_store_materializes_a_nested_canonical_offset_at_pointer_widt
 
 #[test]
 fn runtime_raw_word_store_does_not_materialize_a_nested_literal_offset() {
-    let isa = cranelift_codegen::isa::lookup(Triple::host())
+    let isa = beskid_isle::target_isa::host_isa_builder()
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags");

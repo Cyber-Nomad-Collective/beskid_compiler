@@ -9,7 +9,6 @@ use cranelift_codegen::ir::{Type, UserFuncName, types};
 use cranelift_codegen::settings;
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{Linkage, Module, default_libcall_names};
-use target_lexicon::Triple;
 
 struct BlockFacts {
     nodes: [AstNodeKey; 4],
@@ -88,7 +87,7 @@ fn keys<const N: usize>(path: &str, generation: u64) -> [AstNodeKey; N] {
 
 #[test]
 fn block_expression_sequences_statements_and_returns_typed_tail() {
-    let isa = cranelift_codegen::isa::lookup(Triple::host())
+    let isa = beskid_isle::target_isa::host_isa_builder()
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags");
@@ -111,7 +110,7 @@ fn block_expression_sequences_statements_and_returns_typed_tail() {
 
 #[test]
 fn mismatched_block_tail_is_an_exact_keyed_error() {
-    let isa = cranelift_codegen::isa::lookup(Triple::host())
+    let isa = beskid_isle::target_isa::host_isa_builder()
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags");
@@ -250,7 +249,7 @@ fn range_facts(start: i64, end: i64, step: i64, inclusive: bool) -> RangeForFact
 }
 
 fn run_range(start: i64, end: i64, step: i64, inclusive: bool, index: u32) -> (i32, cranelift_codegen::ir::Function) {
-    let isa = cranelift_codegen::isa::lookup(Triple::host())
+    let isa = beskid_isle::target_isa::host_isa_builder()
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags");
@@ -297,7 +296,7 @@ fn descending_inclusive_range_for_executes() {
 
 #[test]
 fn zero_step_range_is_an_exact_keyed_error() {
-    let isa = cranelift_codegen::isa::lookup(Triple::host())
+    let isa = beskid_isle::target_isa::host_isa_builder()
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags");
@@ -359,7 +358,7 @@ impl NodeFacts for UnclassifiedForFacts {
 
 #[test]
 fn for_without_an_iterable_fact_is_a_missing_fact() {
-    let isa = cranelift_codegen::isa::lookup(Triple::host())
+    let isa = beskid_isle::target_isa::host_isa_builder()
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags");

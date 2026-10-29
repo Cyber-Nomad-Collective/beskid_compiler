@@ -3,8 +3,8 @@
 use super::super::support::{
     AbiManifestV5, Arc, AssemblyDiscovery, AstNodeId, AstNodeKey, BeskidDatabase, CodegenInput,
     EffectiveCompilationRoots, ModuleIndex, ProgramAssembly, ProjectSession, RootEntry, SourceUnit, SourceUnitId,
-    SyntaxGenerationId, SyntaxIndex, SyntaxModuleItem, TargetMetadata, build_typed_program, call_lowering, isa,
-    item_name, lower_syntax_program, parse_program_with_source_name, settings,
+    SyntaxGenerationId, SyntaxIndex, SyntaxModuleItem, TargetMetadata, build_typed_program, call_lowering, item_name,
+    lower_syntax_program, parse_program_with_source_name, settings,
 };
 
 #[derive(Clone, Copy)]
@@ -228,7 +228,10 @@ fn assert_imported_argument_program(model: &str, main_source: &str, supported: b
         .into_iter()
         .find(|target| target.triple.as_str() == "x86_64-unknown-linux-gnu")
         .unwrap();
-    let isa = isa::lookup_by_name("x86_64").unwrap().finish(settings::Flags::new(settings::builder())).unwrap();
+    let isa = beskid_codegen::target_isa::target_isa_builder("x86_64")
+        .unwrap()
+        .finish(settings::Flags::new(settings::builder()))
+        .unwrap();
     let roots = units
         .iter()
         .map(|unit| AstNodeKey { unit: SourceUnitId::new(&db, unit.path.clone()), generation, node: AstNodeId(0) })

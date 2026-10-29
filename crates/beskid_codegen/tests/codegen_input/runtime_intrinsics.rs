@@ -522,7 +522,7 @@ fn exact_canonical_runtime_corpus_resolves_bootstrap_helpers_but_ordinary_assemb
 
 #[test]
 fn canonical_float_bits_roundtrip_preserves_ieee_payloads() {
-    use cranelift_codegen::{isa, settings};
+    use cranelift_codegen::settings;
     use cranelift_jit::{JITBuilder, JITModule};
     use cranelift_module::{Linkage, Module, default_libcall_names};
     let mut db = BeskidDatabase::default();
@@ -548,8 +548,10 @@ fn canonical_float_bits_roundtrip_preserves_ieee_payloads() {
             beskid_codegen::SyntaxModuleItem { key, symbol: name.to_string() }
         })
         .collect::<Vec<_>>();
-    let isa =
-        isa::lookup(target_lexicon::Triple::host()).unwrap().finish(settings::Flags::new(settings::builder())).unwrap();
+    let isa = beskid_codegen::target_isa::host_isa_builder()
+        .unwrap()
+        .finish(settings::Flags::new(settings::builder()))
+        .unwrap();
     let artifact = beskid_codegen::lower_syntax_program(&input, isa.as_ref(), &items).unwrap();
     let mut module = JITModule::new(JITBuilder::new(default_libcall_names()).unwrap());
     let mut ids = Vec::new();

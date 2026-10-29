@@ -12,7 +12,6 @@ use cranelift_codegen::settings;
 use cranelift_frontend::FunctionBuilder;
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{DataDescription, Linkage, Module, default_libcall_names};
-use target_lexicon::Triple;
 
 struct StringFacts {
     key: AstNodeKey,
@@ -85,7 +84,7 @@ impl StringInterner for FailingStringInterner {
 #[test]
 fn string_rule_interns_data_and_emits_verified_stock_clif() {
     let flags = settings::Flags::new(settings::builder());
-    let isa = cranelift_codegen::isa::lookup(Triple::host()).expect("host ISA").finish(flags).expect("host flags");
+    let isa = beskid_isle::target_isa::host_isa_builder().expect("host ISA").finish(flags).expect("host flags");
     let mut interner = ModuleStringInterner {
         module: JITModule::new(JITBuilder::with_isa(isa.clone(), default_libcall_names())),
         interned: Vec::new(),
@@ -123,7 +122,7 @@ fn string_rule_interns_data_and_emits_verified_stock_clif() {
 #[test]
 fn string_materialization_failure_is_a_specific_lowering_error() {
     let flags = settings::Flags::new(settings::builder());
-    let isa = cranelift_codegen::isa::lookup(Triple::host()).expect("host ISA").finish(flags).expect("host flags");
+    let isa = beskid_isle::target_isa::host_isa_builder().expect("host ISA").finish(flags).expect("host flags");
     let db = BeskidDatabase::default();
     let key = AstNodeKey {
         unit: SourceUnitId::new(&db, PathBuf::from("/tmp/StringFailure.bd")),

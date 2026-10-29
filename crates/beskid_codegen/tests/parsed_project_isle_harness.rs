@@ -10,7 +10,7 @@ use beskid_codegen::{lower_canonical_runtime_prepared_syntax, lower_syntax_assem
 use beskid_queries::{
     AstNodeId, AstNodeKey, SourceUnitId, SyntaxGenerationId, child_nodes, closure_environment, node_kind, with_db,
 };
-use cranelift_codegen::{Context, control::ControlPlane, ir::ExternalName, isa, settings, verify_function};
+use cranelift_codegen::{Context, control::ControlPlane, ir::ExternalName, settings, verify_function};
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::default_libcall_names;
 

@@ -122,6 +122,21 @@ impl BeskidJitModule {
             ctx.func = function.function.clone();
             remap_testcase_externals(&self.module, &mut ctx, &self.func_ids)?;
             self.module.define_function(func_id, &mut ctx)?;
+            // Fail closed before finalization: no runtime kit defines a Cranelift helper (E4004).
+            let compiled = ctx.compiled_code().expect("compiled code after a successful definition");
+            let helper = beskid_codegen::target_isa::first_runtime_helper_call(
+                compiled.buffer.relocs().iter().filter_map(|reloc| match &reloc.target {
+                    cranelift_codegen::FinalizedRelocTarget::ExternalName(name) => Some(name),
+                    cranelift_codegen::FinalizedRelocTarget::Func(_) => None,
+                }),
+            );
+            if let Some(symbol) = helper {
+                return Err(JitError::Isa(beskid_codegen::target_isa::runtime_helper_message(
+                    &function.name,
+                    symbol,
+                    &self.module.isa().triple().to_string(),
+                )));
+            }
             self.module.clear_context(&mut ctx);
             emit_work_unit(pipeline, JIT_EMIT, (index as u64) + 1, total, function.name.clone());
         }

@@ -55,8 +55,8 @@ pub(super) fn append_external_libraries(req: &LinkRequest, target: &str, cmd: &m
 /// Link each optional `[Extern]` library the linker can find; leave the rest unlinked so their
 /// weak undefined symbols resolve to null.
 ///
-/// ELF has no weak `DT_NEEDED`: a library found at link time becomes a load-time dependency, and
-/// one not found is not referenced at all. Mach-O links a found library with `-weak-l`, so the
+/// ELF has no weak `DT_NEEDED`: a library found at link time becomes a load-time dependency (also
+/// under a default `--as-needed`), and one not found is not referenced at all. Mach-O links a found library with `-weak-l`, so the
 /// executable also loads where it is absent, and marks the symbols of a missing library as
 /// allowed to stay undefined. COFF weak externals are not supported, so a Windows target with an
 /// optional contract fails closed.
@@ -100,7 +100,12 @@ pub(super) fn append_optional_libraries(
                 }
             }
             (false, true) => {
+                // Generated code references the library only through weak symbols, and GNU ld
+                // `--as-needed` (the default of Debian and Ubuntu `gcc`) drops a library that
+                // satisfies only weak references. Force the `DT_NEEDED` entry for this library.
+                cmd.arg("-Wl,--push-state,--no-as-needed");
                 cmd.arg(format!("-l{name}"));
+                cmd.arg("-Wl,--pop-state");
             }
             (false, false) => {}
         }
@@ -179,4 +184,43 @@ pub(super) fn append_export_policy_flags(req: &LinkRequest, target: &str, cmd: &
         target: target.to_owned(),
         message: "shared export policy flags are not implemented for this target".to_owned(),
     })
+}
+
+#[cfg(test)]
+mod optional_library_tests {
+    use std::path::PathBuf;
+    use std::process::Command;
+
+    use super::append_optional_libraries;
+    use crate::api::{BuildOutputKind, LinkMode};
+    use crate::linker::{LinkRequest, OptionalLinkLibrary};
+
+    #[test]
+    fn a_found_elf_optional_library_is_needed_also_under_as_needed() {
+        let search = tempfile::tempdir().expect("temp dir");
+        std::fs::write(search.path().join("libcrypto.so"), b"").expect("library stub");
+        let req = LinkRequest {
+            target_triple: Some("x86_64-unknown-linux-gnu".into()),
+            output_kind: BuildOutputKind::Exe,
+            output_path: PathBuf::from("out/app"),
+            object_path: PathBuf::from("app.o"),
+            additional_object_paths: Vec::new(),
+            runtime: None,
+            host_staticlib: None,
+            entrypoint_symbol: String::new(),
+            exported_symbols: Vec::new(),
+            link_mode: LinkMode::PreferDynamic,
+            verbose: false,
+            external_libraries: Vec::new(),
+            optional_libraries: vec![OptionalLinkLibrary {
+                library: "libcrypto.so.3".into(),
+                symbols: vec!["EVP_CIPHER_CTX_new".into()],
+            }],
+            library_search_paths: vec![search.path().to_path_buf()],
+        };
+        let mut command = Command::new("cc");
+        append_optional_libraries(&req, "x86_64-unknown-linux-gnu", "cc", &mut command).expect("optional libraries");
+        let args = command.get_args().map(|arg| arg.to_string_lossy().into_owned()).collect::<Vec<_>>();
+        assert_eq!(args, ["-Wl,--push-state,--no-as-needed", "-lcrypto", "-Wl,--pop-state"]);
+    }
 }

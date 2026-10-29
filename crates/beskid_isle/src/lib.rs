@@ -21,6 +21,7 @@ mod errors;
 mod facts;
 mod layout;
 mod root_elision;
+pub mod target_isa;
 mod write_barrier;
 
 pub use clif_primitives::ClifPrimitives;

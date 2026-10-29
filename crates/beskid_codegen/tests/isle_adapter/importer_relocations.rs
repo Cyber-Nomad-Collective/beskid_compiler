@@ -8,7 +8,7 @@ use cranelift_codegen::{
     binemit::Reloc,
     control::ControlPlane,
     ir::{AbiParam, Function, InstBuilder, Signature, UserFuncName},
-    isa, settings,
+    settings,
 };
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
 
@@ -41,7 +41,7 @@ fn item_importer_never_assumes_direct_callees_are_colocated() {
 
 #[test]
 fn aarch64_materialized_item_address_uses_an_unbounded_absolute_relocation() {
-    let isa = isa::lookup_by_name("aarch64")
+    let isa = beskid_codegen::target_isa::target_isa_builder("aarch64")
         .expect("AArch64 backend")
         .finish(settings::Flags::new(settings::builder()))
         .expect("AArch64 flags");

@@ -189,7 +189,7 @@ fn timer_validation_metadata(artifact: &TimerValidationArtifact<'_>) -> anyhow::
     anyhow::ensure!(bytes(SemanticTypeId::I64)? == size_of::<i64>());
     anyhow::ensure!(bytes(SemanticTypeId::I32)? == size_of::<u32>());
     let settings = beskid_codegen::cranelift_host::production_isa_settings_builder()?;
-    let isa = cranelift_native::builder()
+    let isa = beskid_codegen::target_isa::host_isa_builder()
         .map_err(anyhow::Error::msg)?
         .finish(cranelift_codegen::settings::Flags::new(settings))?;
     use cranelift_codegen::ir::{AbiParam, Signature, types};
@@ -646,7 +646,7 @@ fn timer_validation_artifact(db: &mut BeskidDatabase) -> anyhow::Result<TimerVal
         }
     }
     let settings = beskid_codegen::cranelift_host::production_isa_settings_builder()?;
-    let isa = cranelift_native::builder()
+    let isa = beskid_codegen::target_isa::host_isa_builder()
         .map_err(anyhow::Error::msg)?
         .finish(cranelift_codegen::settings::Flags::new(settings))?;
     let artifact = lower_syntax_program(&input, isa.as_ref(), &items)?;
@@ -782,7 +782,10 @@ fn source_transfer_fixture(kind: &str, entry: &str, expected: i64) {
     let assembly = source_transfer_assembly(kind);
     let target = beskid_engine::host_runtime_target().unwrap();
     let settings = beskid_codegen::cranelift_host::production_isa_settings_builder().unwrap();
-    let isa = cranelift_native::builder().unwrap().finish(cranelift_codegen::settings::Flags::new(settings)).unwrap();
+    let isa = beskid_codegen::target_isa::host_isa_builder()
+        .unwrap()
+        .finish(cranelift_codegen::settings::Flags::new(settings))
+        .unwrap();
     let mut db = BeskidDatabase::default();
     let lowered = lower_syntax_assembly_entrypoint(&mut db, assembly, entry, target.clone(), isa.as_ref())
         .expect("typed Fiber source lowering");

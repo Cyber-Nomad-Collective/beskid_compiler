@@ -4,7 +4,7 @@ use super::super::support::{
     AbiManifestV5, Arc, AssemblyDiscovery, AstNodeId, AstNodeKey, BeskidDatabase, CodegenInput,
     EffectiveCompilationRoots, ModuleIndex, ProgramAssembly, ProjectSession, RootEntry, SourceUnit, SourceUnitId,
     SyntaxGenerationId, SyntaxModuleItem, TargetMetadata, build_typed_program, call_lowering, emit_isle_item,
-    enum_layout, find_call_expression, find_function_definition, find_nodes_of_kind, isa, lower_syntax_program,
+    enum_layout, find_call_expression, find_function_definition, find_nodes_of_kind, lower_syntax_program,
     parse_program_with_source_name, settings,
 };
 use super::assert_imported_result_lowering;
@@ -109,7 +109,7 @@ fn imported_nullary_enum_constructor_lowers_from_an_ordinary_function_block() {
     let input =
         CodegenInput::new(leaked, typed, Arc::from([root]), target.clone(), AbiManifestV5::canonical_runtime(target))
             .expect("generation-safe imported enum input");
-    let isa = isa::lookup_by_name("x86_64")
+    let isa = beskid_codegen::target_isa::target_isa_builder("x86_64")
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags");
@@ -170,7 +170,7 @@ fn imported_result_write_with_lowers_through_an_ordinary_function_block_match() 
     let input =
         CodegenInput::new(leaked, typed, Arc::from([root]), target.clone(), AbiManifestV5::canonical_runtime(target))
             .expect("generation-safe imported enum input");
-    let isa = isa::lookup_by_name("x86_64")
+    let isa = beskid_codegen::target_isa::target_isa_builder("x86_64")
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags");

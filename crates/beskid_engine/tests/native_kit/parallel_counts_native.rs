@@ -87,7 +87,10 @@ fn build(entry: &str) -> (tempfile::TempDir, std::path::PathBuf, std::path::Path
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let target = beskid_engine::host_runtime_target().unwrap();
     let settings = beskid_codegen::cranelift_host::production_isa_settings_builder().unwrap();
-    let isa = cranelift_native::builder().unwrap().finish(cranelift_codegen::settings::Flags::new(settings)).unwrap();
+    let isa = beskid_codegen::target_isa::host_isa_builder()
+        .unwrap()
+        .finish(cranelift_codegen::settings::Flags::new(settings))
+        .unwrap();
     let mut db = BeskidDatabase::default();
     let lowered = lower_syntax_assembly_entrypoint(&mut db, assembly(), entry, target, isa.as_ref())
         .unwrap_or_else(|error| panic!("{entry}: lowering failed: {error:?}"));

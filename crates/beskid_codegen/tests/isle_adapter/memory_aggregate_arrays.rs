@@ -2,7 +2,7 @@ use super::support::{
     AbiManifestV5, Arc, AssemblyDiscovery, AstNodeId, AstNodeKey, BeskidDatabase, CodegenInput,
     EffectiveCompilationRoots, ModuleIndex, ProgramAssembly, ProjectSession, RootEntry, SourceUnit, SourceUnitId,
     SyntaxGenerationId, TargetMetadata, aggregate_field_access, build_typed_program, emit_isle_expression,
-    emit_isle_item, empty_array_literal_element_abi_type, find_function_definition, find_node, find_nodes_of_kind, isa,
+    emit_isle_item, empty_array_literal_element_abi_type, find_function_definition, find_node, find_nodes_of_kind,
     item_fixture_with_root, parse_program_with_source_name, settings,
 };
 use super::support::{
@@ -200,7 +200,7 @@ fn parsed_struct_literal_uses_source_aggregate_layout_without_hir() {
     let input =
         CodegenInput::new(&db, typed, Arc::from([root]), target.clone(), AbiManifestV5::canonical_runtime(target))
             .expect("input");
-    let isa = isa::lookup_by_name("x86_64")
+    let isa = beskid_codegen::target_isa::target_isa_builder("x86_64")
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags");

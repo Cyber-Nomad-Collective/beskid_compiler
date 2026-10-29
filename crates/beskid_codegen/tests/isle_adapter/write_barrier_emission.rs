@@ -253,7 +253,7 @@ impl NodeFacts for FieldStoreFacts {
 fn emit_field_store(
     target: Option<ManagedReferenceFact>,
 ) -> Result<cranelift_codegen::ir::Function, FunctionEmissionError> {
-    let isa = isa::lookup(target_lexicon::Triple::host())
+    let isa = beskid_codegen::target_isa::host_isa_builder()
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags");

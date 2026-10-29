@@ -1,7 +1,7 @@
 use super::support::{
     AbiParam, AstNodeId, AstNodeKey, BeskidDatabase, CallConv, Function, FunctionBuilder, FunctionBuilderContext,
     InstBuilder, IsleContext, LiteralKind, LoweringErrorKind, NodeFacts, NodeKind, PathBuf, Signature, SourceUnitId,
-    SyntaxGenerationId, Triple, lower_expression, settings, types, verify_function,
+    SyntaxGenerationId, lower_expression, settings, types, verify_function,
 };
 
 struct IntegerFacts {
@@ -36,7 +36,7 @@ fn integer_rule_emits_verified_stock_clif() {
     };
     let facts = IntegerFacts { key };
     let flags = settings::Flags::new(settings::builder());
-    let isa = cranelift_codegen::isa::lookup(Triple::host()).expect("host ISA").finish(flags).expect("host flags");
+    let isa = beskid_isle::target_isa::host_isa_builder().expect("host ISA").finish(flags).expect("host flags");
     let mut function = Function::with_name_signature(
         cranelift_codegen::ir::UserFuncName::user(0, 0),
         Signature { params: vec![], returns: vec![AbiParam::new(types::I32)], call_conv: isa.default_call_conv() },
@@ -90,7 +90,7 @@ fn float_rule_emits_verified_stock_clif() {
         node: AstNodeId(1),
     };
     let flags = settings::Flags::new(settings::builder());
-    let isa = cranelift_codegen::isa::lookup(Triple::host()).expect("host ISA").finish(flags).expect("host flags");
+    let isa = beskid_isle::target_isa::host_isa_builder().expect("host ISA").finish(flags).expect("host flags");
     let emitter = beskid_isle::FunctionEmitter::new(isa.as_ref());
     let function = emitter
         .emit_expression(
@@ -136,7 +136,7 @@ fn char_rule_emits_verified_stock_clif() {
         node: AstNodeId(1),
     };
     let flags = settings::Flags::new(settings::builder());
-    let isa = cranelift_codegen::isa::lookup(Triple::host()).expect("host ISA").finish(flags).expect("host flags");
+    let isa = beskid_isle::target_isa::host_isa_builder().expect("host ISA").finish(flags).expect("host flags");
     let emitter = beskid_isle::FunctionEmitter::new(isa.as_ref());
     let function = emitter
         .emit_expression(

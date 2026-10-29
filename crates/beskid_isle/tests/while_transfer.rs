@@ -8,7 +8,6 @@ use cranelift_codegen::isa::TargetIsa;
 use cranelift_codegen::settings;
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{Linkage, Module, default_libcall_names};
-use target_lexicon::Triple;
 
 #[derive(Clone, Copy)]
 enum Transfer {
@@ -131,7 +130,7 @@ fn execute(isa: std::sync::Arc<dyn TargetIsa>, name: &str, function: Function) -
 
 #[test]
 fn while_true_breaks_to_following_statement() {
-    let isa = cranelift_codegen::isa::lookup(Triple::host())
+    let isa = beskid_isle::target_isa::host_isa_builder()
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags");
@@ -144,7 +143,7 @@ fn while_true_breaks_to_following_statement() {
 
 #[test]
 fn while_false_contains_verified_continue_backedge() {
-    let isa = cranelift_codegen::isa::lookup(Triple::host())
+    let isa = beskid_isle::target_isa::host_isa_builder()
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags");

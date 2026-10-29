@@ -13,7 +13,6 @@ use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{Linkage, Module, default_libcall_names};
 use std::collections::BTreeMap;
 use std::sync::Arc;
-use target_lexicon::Triple;
 
 // Static request symbol used by the source-only typed-array lowering acceptance fixture. The
 // fake allocator below owns test backing storage; production requests are emitted by codegen.
@@ -245,7 +244,7 @@ fn facts(pointer_type: cranelift_codegen::ir::Type, length: u32, root: Root) -> 
 
 #[test]
 fn array_literal_and_index_emit_checked_stock_clif_and_execute() {
-    let isa = cranelift_codegen::isa::lookup(Triple::host())
+    let isa = beskid_isle::target_isa::host_isa_builder()
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags");
@@ -279,7 +278,7 @@ fn array_literal_and_index_emit_checked_stock_clif_and_execute() {
 
 #[test]
 fn array_index_assignment_emits_checked_stock_clif_store_and_executes() {
-    let isa = cranelift_codegen::isa::lookup(Triple::host())
+    let isa = beskid_isle::target_isa::host_isa_builder()
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags");
@@ -299,7 +298,7 @@ fn array_index_assignment_emits_checked_stock_clif_store_and_executes() {
 
 #[test]
 fn mismatched_array_layout_is_an_exact_keyed_error() {
-    let isa = cranelift_codegen::isa::lookup(Triple::host())
+    let isa = beskid_isle::target_isa::host_isa_builder()
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags");

@@ -3,7 +3,7 @@ use beskid_abi::abi_v5::TargetMetadata;
 use beskid_analysis::services::{FrontEndOptions, resolved_input_from_plan, synthetic_compile_plan_for_source};
 use beskid_codegen::lower_prepared_syntax_module_with_callables;
 use beskid_queries::{AstNodeKey, SemanticTypeId, SyntaxGenerationId, compile_mod_free_front_end, with_db};
-use cranelift_codegen::{isa, settings};
+use cranelift_codegen::settings;
 
 #[test]
 fn prepared_module_issues_distinct_exact_callables_and_rejects_stale_keys() {
@@ -24,7 +24,10 @@ fn prepared_module_issues_distinct_exact_callables_and_rejects_stale_keys() {
         .into_iter()
         .find(|target| target.triple.as_str() == "x86_64-unknown-linux-gnu")
         .unwrap();
-    let isa = isa::lookup_by_name("x86_64").unwrap().finish(settings::Flags::new(settings::builder())).unwrap();
+    let isa = beskid_codegen::target_isa::target_isa_builder("x86_64")
+        .unwrap()
+        .finish(settings::Flags::new(settings::builder()))
+        .unwrap();
     let prepared =
         with_db(|db| lower_prepared_syntax_module_with_callables(db, &front, target.clone(), isa.as_ref())).unwrap();
     assert_eq!(prepared.target(), &target);

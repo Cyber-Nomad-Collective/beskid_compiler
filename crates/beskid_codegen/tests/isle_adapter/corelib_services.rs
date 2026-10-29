@@ -6,7 +6,7 @@ use super::support::{
     call_abi_signature, call_lowering, canonical_corelib_service_capability, canonical_corelib_service_source_path,
     canonical_foundation_assert_fixture, enum_layout, find_call_expression, find_corelib_service_call,
     find_definition_of_kind, find_function_definitions, find_nodes_of_kind, include_imported_corelib_modules,
-    include_imported_corelib_modules_to_fixpoint, isa, item_fixture_with_root, item_name, lower_syntax_program,
+    include_imported_corelib_modules_to_fixpoint, item_fixture_with_root, item_name, lower_syntax_program,
     parse_program_with_source_name, settings,
 };
 
@@ -83,8 +83,10 @@ fn network_internal_panic_fixture(
     .expect("typed Network source");
     let input =
         CodegenInput::new(Box::leak(db), typed, codegen_roots, target, manifest).expect("Network codegen input");
-    let isa =
-        isa::lookup_by_name("x86_64").expect("ISA").finish(settings::Flags::new(settings::builder())).expect("flags");
+    let isa = beskid_codegen::target_isa::target_isa_builder("x86_64")
+        .expect("ISA")
+        .finish(settings::Flags::new(settings::builder()))
+        .expect("flags");
     (input, isa, root)
 }
 
@@ -394,7 +396,7 @@ fn canonical_foundation_assert_equal_specialization_lowers_through_syntax_isle()
     let leaked: &'static BeskidDatabase = Box::leak(db);
     let input = CodegenInput::new(leaked, typed, Arc::from([main_root, assert_root]), target, manifest)
         .expect("generation-safe input");
-    let isa = isa::lookup_by_name("x86_64")
+    let isa = beskid_codegen::target_isa::target_isa_builder("x86_64")
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags");
@@ -478,7 +480,7 @@ fn canonical_foundation_string_len_lowers_through_syntax_isle() {
     let leaked: &'static BeskidDatabase = Box::leak(db);
     let input = CodegenInput::new(leaked, typed, Arc::from([root]), target, manifest)
         .expect("generation-safe Core.String.Core input");
-    let isa = isa::lookup_by_name("x86_64")
+    let isa = beskid_codegen::target_isa::target_isa_builder("x86_64")
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags");

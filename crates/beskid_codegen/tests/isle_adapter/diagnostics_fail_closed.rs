@@ -3,8 +3,8 @@ use super::support::{
     EffectiveCompilationRoots, FunctionEmitter, ModuleIndex, ProgramAssembly, ProjectSession, RootEntry, SourceUnit,
     SourceUnitId, SyntaxGenerationId, SyntaxModuleItem, TargetMetadata, UserFuncName, build_typed_program,
     closure_environment, emit_isle_expression, emit_isle_item, find_function_definition, find_function_definitions,
-    find_integer_literal, find_node, format_ast_node_site, isa, item_body, item_fixture_with_root,
-    lower_syntax_program, node_kind, parse_program_with_source_name, settings, spawn_target, types,
+    find_integer_literal, find_node, format_ast_node_site, item_body, item_fixture_with_root, lower_syntax_program,
+    node_kind, parse_program_with_source_name, settings, spawn_target, types,
 };
 
 #[test]
@@ -47,7 +47,8 @@ fn parsed_syntax_root_emits_verified_isle_clif_without_hir() {
         CodegenInput::new(&db, typed, Arc::from([root]), target.clone(), AbiManifestV5::canonical_runtime(target))
             .expect("generation-safe input");
     let flags = settings::Flags::new(settings::builder());
-    let isa = isa::lookup_by_name("x86_64").expect("host ISA").finish(flags).expect("host flags");
+    let isa =
+        beskid_codegen::target_isa::target_isa_builder("x86_64").expect("host ISA").finish(flags).expect("host flags");
 
     let function = emit_isle_expression(&input, isa.as_ref(), literal, types::I32)
         .expect("parsed expression lowers through generated ISLE");

@@ -5,7 +5,7 @@ use super::super::support::{
     EffectiveCompilationRoots, ModuleIndex, ProgramAssembly, ProjectSession, RootEntry, SourceUnit, SourceUnitId,
     SyntaxGenerationId, SyntaxModuleItem, TargetMetadata, build_typed_program, call_abi_signature,
     emit_isle_expression, emit_isle_item, enum_constructor, enum_match, find_call_expression, find_function_definition,
-    find_function_definitions, find_node, find_nodes_of_kind, isa, item_fixture, item_fixture_with_root, item_name,
+    find_function_definitions, find_node, find_nodes_of_kind, item_fixture, item_fixture_with_root, item_name,
     lower_syntax_program, parse_program_with_source_name, settings,
 };
 
@@ -49,7 +49,7 @@ fn parsed_enum_constructor_uses_source_layout_without_hir() {
     let input =
         CodegenInput::new(&db, typed, Arc::from([root]), target.clone(), AbiManifestV5::canonical_runtime(target))
             .expect("input");
-    let isa = isa::lookup_by_name("x86_64")
+    let isa = beskid_codegen::target_isa::target_isa_builder("x86_64")
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags");
@@ -354,7 +354,10 @@ fn assert_ordinary_enum_argument_context(dns: &str, main: &str, supported: bool)
     let input =
         CodegenInput::new(&db, typed, roots.clone().into(), target.clone(), AbiManifestV5::canonical_runtime(target))
             .expect("input");
-    let isa = isa::lookup_by_name("x86_64").unwrap().finish(settings::Flags::new(settings::builder())).unwrap();
+    let isa = beskid_codegen::target_isa::target_isa_builder("x86_64")
+        .unwrap()
+        .finish(settings::Flags::new(settings::builder()))
+        .unwrap();
     let items = roots
         .iter()
         .flat_map(|root| find_function_definitions(&db, *root))

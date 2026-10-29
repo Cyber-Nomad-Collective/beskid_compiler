@@ -21,7 +21,10 @@ fn canonical() -> (CodegenInput<'static>, Arc<dyn cranelift_codegen::isa::Target
         .collect::<Vec<_>>();
     let db = Box::leak(db);
     let input = CodegenInput::new(db, typed, roots.into(), target, manifest).unwrap();
-    let isa = isa::lookup_by_name("x86_64").unwrap().finish(settings::Flags::new(settings::builder())).unwrap();
+    let isa = beskid_codegen::target_isa::target_isa_builder("x86_64")
+        .unwrap()
+        .finish(settings::Flags::new(settings::builder()))
+        .unwrap();
     (input, isa)
 }
 fn function(input: &CodegenInput<'_>, path: &str, name: &str) -> AstNodeKey {

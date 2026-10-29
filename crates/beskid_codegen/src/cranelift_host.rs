@@ -413,7 +413,6 @@ mod tests {
     use std::collections::HashMap;
 
     use cranelift_codegen::ir::Function;
-    use cranelift_codegen::isa;
     use cranelift_codegen::settings;
     use cranelift_jit::{JITBuilder, JITModule};
     use cranelift_module::{Linkage, default_libcall_names};
@@ -422,7 +421,7 @@ mod tests {
     use crate::{CodegenArtifact, LoweredFunction};
 
     fn jit_module() -> JITModule {
-        let isa = isa::lookup_by_name("x86_64")
+        let isa = crate::target_isa::target_isa_builder("x86_64")
             .expect("x86_64 target supported")
             .finish(settings::Flags::new(settings::builder()))
             .expect("isa build");

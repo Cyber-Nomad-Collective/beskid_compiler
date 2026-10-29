@@ -4,7 +4,7 @@
 use super::support::{
     AbiManifestV5, Arc, AssemblyDiscovery, AstNodeId, AstNodeKey, BeskidDatabase, CodegenInput,
     EffectiveCompilationRoots, ModuleIndex, ProgramAssembly, ProjectSession, RootEntry, SourceUnit, SourceUnitId,
-    SyntaxGenerationId, SyntaxModuleItem, TargetMetadata, build_typed_program, find_nodes_of_kind, isa,
+    SyntaxGenerationId, SyntaxModuleItem, TargetMetadata, build_typed_program, find_nodes_of_kind,
     item_fixture_with_root, item_name, lower_syntax_program, parse_program_with_source_name, settings,
 };
 
@@ -83,7 +83,7 @@ fn multi_unit_fixture(
         AbiManifestV5::canonical_runtime(target),
     )
     .expect("generation-safe multi-unit input");
-    let isa = isa::lookup_by_name("x86_64")
+    let isa = beskid_codegen::target_isa::target_isa_builder("x86_64")
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags");

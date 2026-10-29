@@ -14,7 +14,6 @@ use cranelift_codegen::settings;
 use cranelift_frontend::FunctionBuilder;
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{Linkage, Module, default_libcall_names};
-use target_lexicon::Triple;
 
 extern "C" fn add_one(value: i32) -> i32 {
     value + 1
@@ -169,7 +168,7 @@ fn call_facts(isa: &dyn TargetIsa, callee: DirectCallee) -> CallFacts {
 
 #[test]
 fn primitive_numeric_conversion_rejects_a_fact_whose_semantic_type_does_not_match_the_syntax_type() {
-    let isa = cranelift_codegen::isa::lookup(Triple::host())
+    let isa = beskid_isle::target_isa::host_isa_builder()
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags");
@@ -202,7 +201,7 @@ fn importer(isa: std::sync::Arc<dyn TargetIsa>, expected: DirectCallee) -> Known
 
 #[test]
 fn direct_call_imports_semantic_callee_and_executes() {
-    let isa = cranelift_codegen::isa::lookup(Triple::host())
+    let isa = beskid_isle::target_isa::host_isa_builder()
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags");
@@ -233,7 +232,7 @@ fn direct_call_imports_semantic_callee_and_executes() {
 
 #[test]
 fn canonical_runtime_constant_materializes_at_direct_word_parameter_width() {
-    let isa = cranelift_codegen::isa::lookup(Triple::host())
+    let isa = beskid_isle::target_isa::host_isa_builder()
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags");
@@ -264,7 +263,7 @@ fn canonical_runtime_constant_materializes_at_direct_word_parameter_width() {
 
 #[test]
 fn canonical_runtime_constant_direct_abi_materialization_rejects_negative_values() {
-    let isa = cranelift_codegen::isa::lookup(Triple::host())
+    let isa = beskid_isle::target_isa::host_isa_builder()
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags");
@@ -298,7 +297,7 @@ fn canonical_runtime_constant_direct_abi_materialization_rejects_negative_values
 
 #[test]
 fn canonical_runtime_literal_is_not_re_materialized_as_a_direct_word_argument() {
-    let isa = cranelift_codegen::isa::lookup(Triple::host())
+    let isa = beskid_isle::target_isa::host_isa_builder()
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags");
@@ -333,7 +332,7 @@ fn canonical_runtime_literal_is_not_re_materialized_as_a_direct_word_argument() 
 
 #[test]
 fn unknown_direct_callee_is_an_exact_keyed_error() {
-    let isa = cranelift_codegen::isa::lookup(Triple::host())
+    let isa = beskid_isle::target_isa::host_isa_builder()
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags");
