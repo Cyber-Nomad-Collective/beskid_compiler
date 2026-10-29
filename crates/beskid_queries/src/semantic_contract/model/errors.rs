@@ -225,3 +225,23 @@ pub struct SemanticFinding {
     pub site: AstNodeKey,
     pub related: Vec<(AstNodeKey, std::borrow::Cow<'static, str>)>,
 }
+
+impl SemanticFinding {
+    /// The source span the diagnostic points at: the site node's span, except for a missing
+    /// return (E1258), which points at the closing brace of the body block (its last character).
+    pub fn site_span(&self, db: &dyn Db) -> Option<beskid_analysis::syntax::SpanInfo> {
+        let span = crate::node_span(db, self.site).ok().flatten()?;
+        if !matches!(self.kind, beskid_analysis::analysis::SemanticIssueKind::TypeMissingReturn { .. })
+            || span.end <= span.start
+            || span.line_col_end.1 <= 1
+        {
+            return Some(span);
+        }
+        Some(beskid_analysis::syntax::SpanInfo {
+            start: span.end - 1,
+            end: span.end,
+            line_col_start: (span.line_col_end.0, span.line_col_end.1 - 1),
+            line_col_end: span.line_col_end,
+        })
+    }
+}

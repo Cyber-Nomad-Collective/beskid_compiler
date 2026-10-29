@@ -122,7 +122,7 @@ fn finding_diagnostic(
 ) -> Option<beskid_analysis::analysis::SemanticDiagnostic> {
     let db = input.database();
     let unit = site_unit(input, finding.site)?;
-    let span = beskid_queries::node_span(db, finding.site).ok().flatten()?;
+    let span = finding.site_span(db)?;
     let mut diagnostic = issue_diagnostic(&unit.logical_name, &unit.source, span, &finding.kind);
     for (site, label) in &finding.related {
         let (Some(related_unit), Some(related_span)) =

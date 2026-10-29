@@ -21,6 +21,8 @@
 //! `check_typing_obligations` (`typing_obligations` and `value_obligations`, E1206-E1208),
 //! `check_gate_obligations`, `check_unit_obligations`, and `extern_profile_findings`: the legacy
 //! `TypeChecker` and resolver classes that have no lowering fact of their own.
+//! `missing_return` (E1258) rejects a valued function or method whose body can reach its end,
+//! which lowering cannot terminate.
 //! `check_items` collects every finding of the pass rather than stopping at the first, so
 //! `beskid test` and `beskid build` report every violation the requested items carry in one run.
 
@@ -42,6 +44,7 @@ mod generics;
 mod imports;
 mod members;
 mod ownership;
+mod returns;
 mod transfer;
 mod typing;
 mod units;
@@ -459,6 +462,17 @@ pub fn check_items(db: &dyn Db, items: &[AstNodeKey]) -> Result<(), Vec<Semantic
     let mut findings = import_findings(db, items);
     for &item in items {
         findings.extend(transfer::immutable_field_findings(db, item));
+        if let Ok(Some(missing)) = returns::missing_return(db, item) {
+            let note = format!("`{}` returns `{}`", missing.callable, missing.result_name);
+            findings.push(SemanticFinding {
+                kind: SemanticIssueKind::TypeMissingReturn {
+                    callable: missing.callable,
+                    result_name: missing.result_name,
+                },
+                site: missing.body,
+                related: vec![(missing.name, note.into())],
+            });
+        }
         if let Ok(Some(finding)) = unresolved_value_argument(db, item) {
             findings.push(SemanticFinding {
                 kind: SemanticIssueKind::ResolveUnknownValue {

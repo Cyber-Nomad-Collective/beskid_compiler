@@ -591,6 +591,12 @@ pub enum SemanticIssueKind {
         expected_name: String,
         actual_name: String,
     },
+    /// E1258: the end of the body of a callable whose declared result is not `unit` or `never`
+    /// is reachable, so a path can leave the callable without a value.
+    TypeMissingReturn {
+        callable: String,
+        result_name: String,
+    },
     TypeNonIterableForTarget,
     TypeIterableNextArityMismatch {
         expected: usize,

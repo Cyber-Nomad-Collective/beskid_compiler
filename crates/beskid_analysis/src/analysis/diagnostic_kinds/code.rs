@@ -146,6 +146,7 @@ impl SemanticIssueKind {
             Self::AsyncKeywordReserved => "E1226",
             Self::AwaitKeywordReserved => "E1227",
             Self::TypeReturnMismatch { .. } => "E1207",
+            Self::TypeMissingReturn { .. } => "E1258",
             Self::TypeNonIterableForTarget => "E1215",
             Self::TypeIterableNextArityMismatch { .. } => "E1216",
             Self::TypeIterableNextReturnNotOption => "E1217",

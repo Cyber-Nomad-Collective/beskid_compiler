@@ -451,6 +451,9 @@ impl SemanticIssueKind {
                 let (expected, actual) = super::display_type_pair(expected_name, actual_name);
                 format!("return type mismatch: expected `{expected}`, got `{actual}`")
             }
+            Self::TypeMissingReturn { callable, .. } => {
+                format!("`{callable}` can reach the end of its body without returning a value")
+            }
             Self::TypeNonIterableForTarget => {
                 "for-in target does not satisfy iterable contract (missing Next())".to_string()
             }

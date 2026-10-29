@@ -336,7 +336,7 @@ pub fn semantic_diagnostics_for_roots(
             let unit = *units
                 .get(&finding.site.unit)
                 .ok_or_else(|| anyhow::anyhow!("semantic finding site is outside the prepared assembly"))?;
-            let span = crate::node_span(db, finding.site).ok().flatten().ok_or_else(|| {
+            let span = finding.site_span(db).ok_or_else(|| {
                 anyhow::anyhow!(
                     "semantic finding {} at {} requires its exact source span",
                     finding.kind.code(),

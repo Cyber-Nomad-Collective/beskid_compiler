@@ -338,6 +338,11 @@ impl SemanticIssueKind {
                 "the unary operator is not valid for this operand type".to_string()
             ),
             Self::TypeNonBoolCondition => Some("the condition must evaluate to `bool`".to_string()),
+            Self::TypeMissingReturn { result_name, .. } => Some(format!(
+                "end every path with `return <value>;` of type `{}`, or with a statement that does not continue \
+                 (`while (true)` without `break`, or a call that returns `never`)",
+                super::display_type(result_name)
+            )),
             Self::TypeUnsupportedExpression => Some(
                 "this expression form is not supported in the current context".to_string()
             ),

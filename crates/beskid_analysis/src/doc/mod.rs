@@ -36,6 +36,7 @@ pub use path_rel::{build_api_doc_link_context, path_looks_absolute, relativize_a
 pub use qualified_names::{display_name_for_item, module_path_for_item, qualified_names_for_items};
 pub use refs::{DocRefLinkContext, ref_path_resolves, resolve_ref_markdown};
 pub use render::ResolvedDoc;
+pub use type_format::format_type;
 pub use validate::collect_doc_diagnostics;
 
 use crate::doc_comment_parser::DocSyntaxParser;
