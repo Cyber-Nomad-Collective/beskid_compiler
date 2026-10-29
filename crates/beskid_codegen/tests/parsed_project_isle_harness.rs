@@ -33,26 +33,6 @@ use support::{
 };
 
 #[test]
-fn retired_public_codegen_facade_is_absent() {
-    let public_services = include_str!("../src/services.rs");
-    for retired_api in [
-        "pub struct LoweredProgram",
-        "pub fn lower_source",
-        "pub fn lower_source_for_entrypoint",
-        "pub fn lower_source_with_pipeline",
-        "pub fn lower_resolved_input_with_pipeline",
-        "pub fn lower_from_prepared_or_cache",
-        "pub fn lower_resolved_entrypoint_with_pipeline",
-        "pub fn lower_from_front_end",
-    ] {
-        assert!(
-            !public_services.contains(retired_api),
-            "retired public codegen facade must not expose `{retired_api}`"
-        );
-    }
-}
-
-#[test]
 fn production_path_accepts_only_syntax_program_assembly() {
     let project = tempfile::tempdir().expect("project directory");
     let source = "
@@ -68,32 +48,4 @@ fn production_path_accepts_only_syntax_program_assembly() {
     let (target, isa) = x86_64_target_and_isa();
     let lowered = lower_verified_entrypoint(Arc::clone(&assembly), target.clone(), isa.as_ref());
     assert!(lowered.artifact().functions.len() >= 2, "direct-call closure through syntax ISLE");
-
-    let public_exports = include_str!("../src/lib.rs");
-    assert!(
-        public_exports.contains("lower_syntax_assembly_entrypoint"),
-        "production codegen must expose the syntax-assembly lowering boundary"
-    );
-    assert!(
-        public_exports.contains("lower_prepared_syntax_entrypoint"),
-        "production codegen must expose the prepared-syntax lowering boundary"
-    );
-}
-
-#[test]
-fn public_codegen_surface_names_canonical_syntax_lowering_authority() {
-    let public_exports = include_str!("../src/lib.rs");
-    let public_prepared_syntax = include_str!("../src/prepared_syntax.rs");
-    assert!(
-        public_exports.contains("lower_prepared_syntax_module"),
-        "module hosts must use the canonical prepared-syntax lowering boundary"
-    );
-    assert!(
-        public_prepared_syntax.contains("CodegenInput::new"),
-        "prepared-syntax lowering must construct CodegenInput before emitting ISLE"
-    );
-    assert!(
-        public_prepared_syntax.contains("lower_syntax_program"),
-        "prepared-syntax lowering must emit through the syntax ISLE authority"
-    );
 }

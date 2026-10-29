@@ -66,3 +66,45 @@ fn append_to_a_fresh_local_in_a_loop_grows_the_local_in_place() {
         assert!(gather.contains(GROW), "a let local owns the array it grows ({binding}): {gather}");
     }
 }
+
+const FINISH: &str = "beskid_rt_v5_array_construction_finish";
+
+/// Line index of every `call` in `clif` whose callee is declared with `symbol`.
+fn call_lines(clif: &str, symbol: &str) -> Vec<usize> {
+    let references = clif
+        .lines()
+        .filter(|line| line.contains(symbol) && line.contains(" = "))
+        .filter_map(|line| line.trim().split(" = ").next().map(str::to_owned))
+        .filter(|reference| reference.starts_with("fn"))
+        .collect::<Vec<_>>();
+    assert!(!references.is_empty(), "{symbol} is declared: {clif}");
+    clif.lines()
+        .enumerate()
+        .filter(|(_, line)| references.iter().any(|reference| line.contains(&format!("call {reference}("))))
+        .map(|(index, _)| index)
+        .collect()
+}
+
+/// An in-place append grows the rooted array, stores the element into the grown storage, and only
+/// then finishes construction, exactly once, with no array write barrier in the emitted code.
+#[test]
+fn append_to_an_owned_local_grows_then_stores_then_finishes_once() {
+    let functions = lower(
+        "use Core.Collections.Array; i64[] Push(i64 value) { mut i64[] out = Array.Empty<i64>(); \
+         Array.Append<i64>(out, value); return out; }",
+        6820,
+    );
+    let push = clif(&functions, "Push");
+    let grow = call_lines(push, GROW);
+    let finish = call_lines(push, FINISH);
+    assert_eq!(grow.len(), 1, "one rooted growth: {push}");
+    assert_eq!(finish.len(), 1, "exactly one construction finish: {push}");
+    let element_store = push
+        .lines()
+        .enumerate()
+        .skip(grow[0] + 1)
+        .take_while(|(index, _)| *index < finish[0])
+        .any(|(_, line)| line.trim_start().split(' ').any(|token| token.starts_with("store")));
+    assert!(element_store, "the element is stored between the growth and the finish: {push}");
+    assert!(!push.contains("beskid_rt_v5_array_write_barrier"), "no array write barrier in an append: {push}");
+}

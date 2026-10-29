@@ -519,7 +519,24 @@ fn selected_run_passed(report: &MatrixReport) -> bool {
 }
 
 fn spawn_worker(args: &TestArgs, index: usize, count: usize) -> Result<MatrixWorker> {
-    let executable = env::current_exe()?;
+    let mut command = worker_command(args, env::current_exe()?);
+    let cancel = CancelChannel::create()?;
+    let lock_path = cancel.path().map(std::path::Path::to_path_buf).ok_or_else(|| anyhow!("cancel channel missing"))?;
+    command
+        .env(MATRIX_WORKER_ENV, "1")
+        .env(MATRIX_SHARD_ENV, format!("{index}/{count}"))
+        .env(MATRIX_CANCEL_LOCK_ENV, lock_path)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit())
+        .spawn()
+        .map(|child| MatrixWorker { child, cancel })
+        .map_err(Into::into)
+}
+
+/// The `beskid test` command line of one shard worker: the supervisor's selection, lock policy,
+/// filters and budgets, run as one `--all-targets` process.
+fn worker_command(args: &TestArgs, executable: std::path::PathBuf) -> Command {
     let mut command = Command::new(executable);
     command.arg("test");
     if let Some(input) = &args.input {
@@ -559,18 +576,7 @@ fn spawn_worker(args: &TestArgs, index: usize, count: usize) -> Result<MatrixWor
         command.arg("--matrix-timeout").arg(matrix_timeout.to_string());
     }
     command.arg("--all-targets").arg("--plain");
-    let cancel = CancelChannel::create()?;
-    let lock_path = cancel.path().map(std::path::Path::to_path_buf).ok_or_else(|| anyhow!("cancel channel missing"))?;
     command
-        .env(MATRIX_WORKER_ENV, "1")
-        .env(MATRIX_SHARD_ENV, format!("{index}/{count}"))
-        .env(MATRIX_CANCEL_LOCK_ENV, lock_path)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::inherit())
-        .spawn()
-        .map(|child| MatrixWorker { child, cancel })
-        .map_err(Into::into)
 }
 
 fn emit_event(event: &WorkerEvent) -> Result<()> {
@@ -745,9 +751,9 @@ mod tests {
     use std::time::{Duration, Instant};
 
     use super::{
-        ActiveTarget, CancelChannel, ShardState, WORKER_EVENT_PREFIX, WorkerEvent, assemble_targets,
+        ActiveTarget, CancelChannel, ShardState, TestArgs, WORKER_EVENT_PREFIX, WorkerEvent, assemble_targets,
         decode_worker_line, filter_targets_by_env, merged_exit_cause, selected_run_passed, shard_of,
-        wait_for_supervisor_release,
+        wait_for_supervisor_release, worker_command,
     };
     use crate::commands::prepared_matrix::{MatrixReport, RevisionSnapshot, TargetResult, WorkerExitCause};
 
@@ -984,24 +990,47 @@ mod tests {
         assert!(matches!(event, WorkerEvent::TargetFinished { report } if report.duration_ms == 2));
     }
 
+    fn worker_args(flags: &[&str]) -> Vec<String> {
+        #[derive(clap::Parser)]
+        struct Cli {
+            #[command(flatten)]
+            args: TestArgs,
+        }
+        let args = <Cli as clap::Parser>::try_parse_from(std::iter::once("beskid").chain(flags.iter().copied()))
+            .expect("test arguments")
+            .args;
+        worker_command(&args, "beskid".into())
+            .get_args()
+            .map(|argument| argument.to_string_lossy().into_owned())
+            .collect()
+    }
+
+    fn has_pair(arguments: &[String], flag: &str, value: &str) -> bool {
+        arguments.windows(2).any(|pair| pair[0] == flag && pair[1] == value)
+    }
+
     #[test]
     fn spawn_worker_forwards_target_timeout_to_the_child() {
-        let source = include_str!("matrix_test.rs");
-        assert!(
-            source.contains("if let Some(target_timeout) = args.target_timeout"),
-            "spawn_worker must forward --target-timeout to the isolated matrix worker"
-        );
-        assert!(
-            source.contains("command.arg(\"--target-timeout\").arg(target_timeout.to_string())"),
-            "spawn_worker must pass the resolved timeout as `--target-timeout <secs>`"
-        );
+        let arguments = worker_args(&["--target-timeout", "30"]);
+        assert!(has_pair(&arguments, "--target-timeout", "30"), "{arguments:?}");
     }
 
     #[test]
     fn spawn_worker_forwards_matrix_timeout_to_the_child() {
-        let source = include_str!("matrix_test.rs");
-        assert!(source.contains("if let Some(matrix_timeout) = args.matrix_timeout"));
-        assert!(source.contains("command.arg(\"--matrix-timeout\").arg(matrix_timeout.to_string())"));
+        let arguments = worker_args(&["--matrix-timeout", "600"]);
+        assert!(has_pair(&arguments, "--matrix-timeout", "600"), "{arguments:?}");
+    }
+
+    /// Each shard worker is one `beskid test --all-targets` process that runs its whole shard;
+    /// the supervisor never spawns a child per target.
+    #[test]
+    fn worker_runs_its_whole_shard_in_one_all_targets_process() {
+        let arguments = worker_args(&["--include-tag", "fast", "--group", "Net", "--locked"]);
+        assert_eq!(arguments.first().map(String::as_str), Some("test"));
+        assert!(arguments.ends_with(&["--all-targets".to_owned(), "--plain".to_owned()]), "{arguments:?}");
+        assert!(has_pair(&arguments, "--include-tag", "fast") && has_pair(&arguments, "--group", "Net"));
+        assert!(arguments.contains(&"--locked".to_owned()));
+        assert!(!arguments.contains(&"--target".to_owned()), "no per-target selection: {arguments:?}");
     }
 
     #[test]
