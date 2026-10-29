@@ -166,7 +166,8 @@ fn non_shared_kind_is_rejected() {
 fn app_and_test_targets_are_rejected() {
     for kind in ["App", "Test"] {
         let case = GlueCase::new(kind, &["glue_a"], GLUE_IMPORT_SOURCE);
-        let output = case.glue_rust(&[]);
+        // A plain `build` never selects a Test target, so the target is named.
+        let output = case.glue_rust(&["--target", "GlueConsumer"]);
         case.assert_rejected(&output, "`--backend glue-rust` requires a Lib target");
     }
 }

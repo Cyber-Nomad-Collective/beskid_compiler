@@ -19,6 +19,26 @@ pub struct ProjectResolveArgs {
     pub workspace_member: Option<String>,
 }
 
+impl ProjectResolveArgs {
+    /// Sets `target` to the target `command` selects when no `--target` was given. Fails when the
+    /// manifest has no candidate or more than one candidate of the selected kind.
+    pub fn select_default_target(
+        &mut self,
+        input: Option<&PathBuf>,
+        command: beskid_analysis::projects::DefaultTargetCommand,
+    ) -> anyhow::Result<()> {
+        if self.target.is_none() {
+            self.target = beskid_analysis::services::default_target_for_input(
+                input,
+                self.project.as_ref(),
+                self.workspace_member.as_deref(),
+                command,
+            )?;
+        }
+        Ok(())
+    }
+}
+
 // Shared animated-progress preference; nonempty NO_COLOR also disables animation.
 #[derive(Args, Debug, Clone, Copy, Default)]
 pub struct PlainProgressArgs {

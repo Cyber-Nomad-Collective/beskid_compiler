@@ -140,28 +140,124 @@ pub fn execute(args: TestArgs) -> Result<()> {
 fn execute_single_target(args: TestArgs) -> Result<()> {
     let budgets = args.execution_budgets();
     let mut workspace = PreparedWorkspace::prepare(&args, budgets, Cancellation::default())?;
-    let test_targets = workspace.test_targets();
-    let target_name = match args.project.target.as_deref() {
-        Some(selected) => test_targets.into_iter().find(|name| name == selected).ok_or_else(|| {
-            anyhow!("target `{selected}` is not a Test or Lib target of {}", workspace.manifest_path().display())
-        })?,
+    let target_names = match args.project.target.as_deref() {
+        Some(selected) => {
+            vec![workspace.test_targets().into_iter().find(|name| name == selected).ok_or_else(|| {
+                anyhow!("target `{selected}` is not a Test or Lib target of {}", workspace.manifest_path().display())
+            })?]
+        }
+        // Every Test target in manifest order, or the one Lib target when there is none.
+        None => workspace.default_test_targets()?,
+    };
+    match target_names.as_slice() {
         // A project without a Test or Lib target (an App alone) has no tests to run: the run
         // passes with none, as a library without `test` items does.
-        None => match test_targets.into_iter().next() {
-            Some(name) => name,
-            None => return report_no_test_targets(&args),
-        },
-    };
-    workspace.activate_mods(std::slice::from_ref(&target_name), &args)?;
+        [] => report_no_test_targets(&args),
+        [target_name] => run_one_target(&mut workspace, target_name.clone(), &args),
+        _ => run_default_test_targets(&mut workspace, &target_names, &args),
+    }
+}
+
+fn run_one_target(workspace: &mut PreparedWorkspace, target_name: String, args: &TestArgs) -> Result<()> {
+    workspace.activate_mods(std::slice::from_ref(&target_name), args)?;
     let target = workspace
         .prepare_targets(std::slice::from_ref(&target_name), |_| Ok(()))?
         .pop()
         .ok_or_else(|| anyhow!("prepared target inventory was empty"))?;
-    let report = execute_prepared_target(&mut workspace, target, &args, true, &mut |_| Ok(()))?;
+    let report = execute_prepared_target(workspace, target, args, true, &mut |_| Ok(()))?;
     if report.result == TargetResult::Passed {
         Ok(())
     } else {
         Err(anyhow!(report.error.unwrap_or_else(|| format!("target `{target_name}` failed"))))
+    }
+}
+
+/// Runs the Test targets of a project without `--target`, in manifest order, in one prepared
+/// workspace, and ends with a combined summary. A target that fails to prepare or run is reported
+/// as failed and the next target still runs; the command fails when any target failed.
+fn run_default_test_targets(workspace: &mut PreparedWorkspace, target_names: &[String], args: &TestArgs) -> Result<()> {
+    workspace.activate_mods(target_names, args)?;
+    let mut total = TestSummary::default();
+    let mut records = Vec::with_capacity(target_names.len());
+    let mut failed_targets = Vec::new();
+    for target_name in target_names {
+        if !args.json {
+            beskid_telemetry::clear_stderr_progress()?;
+            println!("Target `{target_name}`");
+        }
+        let prepared = workspace
+            .prepare_targets(std::slice::from_ref(target_name), |_| Ok(()))
+            .and_then(|mut targets| targets.pop().ok_or_else(|| anyhow!("prepared target inventory was empty")));
+        let outcome = match prepared {
+            Ok(target) => run_prepared_target(workspace, target, args, true, false, &mut |_| Ok(())),
+            Err(error) => Err(error),
+        };
+        match outcome {
+            Ok((report, executions)) => {
+                total.passed += report.tests.passed;
+                total.failed += report.tests.failed;
+                total.skipped += report.tests.skipped;
+                total.filtered_out += report.tests.filtered_out;
+                total.timed_out += report.tests.timed_out;
+                if report.result != TargetResult::Passed {
+                    failed_targets.push(target_name.clone());
+                }
+                records.push(serde_json::json!({
+                    "target": report.target,
+                    "result": report.result,
+                    "summary": report.tests,
+                    "tests": executions,
+                    "error": report.error,
+                }));
+            }
+            Err(error) => {
+                workspace.reject_mutation("execute_target")?;
+                let reason = if args.json {
+                    format!("{error:#}")
+                } else {
+                    diagnostics::format_report(&diagnostics::report_from_anyhow(&error)).to_string()
+                };
+                if !args.json {
+                    eprintln!("FAIL target `{target_name}`");
+                    for line in reason.trim().lines() {
+                        eprintln!("  {line}");
+                    }
+                }
+                failed_targets.push(target_name.clone());
+                records.push(serde_json::json!({
+                    "target": target_name,
+                    "result": TargetResult::Failed,
+                    "summary": TestSummary::default(),
+                    "tests": [],
+                    "error": reason,
+                }));
+            }
+        }
+    }
+    if args.json {
+        crate::machine_output::Records::new("test").emit(
+            "result",
+            if failed_targets.is_empty() { "success" } else { "failure" },
+            serde_json::json!({ "targets": records, "summary": total }),
+        )?;
+    } else {
+        beskid_telemetry::clear_stderr_progress()?;
+        println!(
+            "Total: targets={}, failed_targets={}, passed={}, failed={}, skipped={}, filtered_out={}, timed_out={}",
+            target_names.len(),
+            failed_targets.len(),
+            total.passed,
+            total.failed,
+            total.skipped,
+            total.filtered_out,
+            total.timed_out
+        );
+    }
+    if failed_targets.is_empty() {
+        Ok(())
+    } else {
+        let names = failed_targets.iter().map(|name| format!("`{name}`")).collect::<Vec<_>>().join(", ");
+        Err(anyhow!("{} of {} test targets failed: {names}", failed_targets.len(), target_names.len()))
     }
 }
 
@@ -185,6 +281,19 @@ pub(crate) fn execute_prepared_target(
     emit: bool,
     on_test_started: &mut dyn FnMut(&str) -> Result<()>,
 ) -> Result<TargetReport> {
+    run_prepared_target(workspace, target, args, emit, emit, on_test_started).map(|(report, _)| report)
+}
+
+/// Runs one prepared target. `emit` prints its rows and summary; `emit_json_result` also writes
+/// its `--json` `result` record (a combined run writes one record for all targets instead).
+fn run_prepared_target(
+    workspace: &mut PreparedWorkspace,
+    target: PreparedTarget,
+    args: &TestArgs,
+    emit: bool,
+    emit_json_result: bool,
+    on_test_started: &mut dyn FnMut(&str) -> Result<()>,
+) -> Result<(TargetReport, Vec<TestExecution>)> {
     let target_started = Instant::now();
     let started_unix_ms = unix_ms();
     workspace.reject_mutation("execute_target")?;
@@ -429,11 +538,13 @@ pub(crate) fn execute_prepared_target(
     phases.push(phase_record("execute_tests", execute_unix_ms, execute_started, result));
     if emit {
         if args.json {
-            crate::machine_output::Records::new("test").emit(
-                "result",
-                if result == TargetResult::Passed { "success" } else { "failure" },
-                serde_json::json!({ "target": target.name, "summary": summary, "tests": executions }),
-            )?;
+            if emit_json_result {
+                crate::machine_output::Records::new("test").emit(
+                    "result",
+                    if result == TargetResult::Passed { "success" } else { "failure" },
+                    serde_json::json!({ "target": target.name, "summary": summary, "tests": executions }),
+                )?;
+            }
         } else if tests.is_empty() {
             if compile_fail_target_without_tests {
                 eprintln!(
@@ -478,7 +589,7 @@ pub(crate) fn execute_prepared_target(
         workspace.session().pipeline().finish_session("Tests failed");
     }
     workspace.reject_mutation("execute_target")?;
-    Ok(TargetReport {
+    let report = TargetReport {
         target: target.name,
         started_unix_ms,
         ended_unix_ms: unix_ms(),
@@ -489,7 +600,8 @@ pub(crate) fn execute_prepared_target(
         tests: summary,
         phases,
         error,
-    })
+    };
+    Ok((report, executions))
 }
 
 /// The declaration of `test`, in the authored file.

@@ -54,7 +54,8 @@ pub use prepare::{
     prepare_compilation_with_fact_authority, resolved_input_from_plan,
 };
 pub use project::{
-    ResolvedProject, resolve_project, resolve_project_dependencies_with_policy, resolve_project_with_policy,
+    ResolvedProject, default_target_for_input, resolve_project, resolve_project_dependencies_with_policy,
+    resolve_project_with_policy,
 };
 pub use render::render_program_tree;
 pub use semantic::{

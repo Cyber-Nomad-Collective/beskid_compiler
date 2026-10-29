@@ -13,13 +13,13 @@ use super::diagnostics_emit::project_error_diagnostic;
 use crate::{
     analysis::diagnostics::MietteReportError,
     projects::{
-        CompilePlan, PreparedProjectWorkspace, ProjectGraphBuildOptions, ProjectKind, ProjectWorkspacePlan,
-        UnresolvedDependencyPolicy, WorkspacePrepareOptions, WorkspaceResolutionSummary,
+        CompilePlan, DefaultTargetCommand, PreparedProjectWorkspace, ProjectGraphBuildOptions, ProjectKind,
+        ProjectWorkspacePlan, UnresolvedDependencyPolicy, WorkspacePrepareOptions, WorkspaceResolutionSummary,
         build_project_graph_with_options, compile_plan::compile_plan_from_graph,
         discover_project_manifest_from_input_or_cwd, discover_project_manifest_in_dir,
         discover_workspace_manifest_in_dir, is_project_manifest_path, is_workspace_manifest_path,
-        prepare_project_workspace_plan_with_options, reject_legacy_manifest_path,
-        resolve_workspace_candidate_with_summary, workspace_plan_from_graph,
+        load_manifest_from_path, prepare_project_workspace_plan_with_options, reject_legacy_manifest_path,
+        resolve_workspace_candidate_with_summary, select_default_target, workspace_plan_from_graph,
     },
 };
 
@@ -101,31 +101,13 @@ fn resolve_project_with_mode(
     pipeline: Option<&dyn PipelineObserver>,
     dependencies_only: bool,
 ) -> Result<ResolvedProject> {
-    let mut workspace_summary: Option<WorkspaceResolutionSummary> = None;
-
-    let manifest_path =
-        observe_phase_result(pipeline, RESOLVE_MANIFEST, || -> Result<Option<PathBuf>, anyhow::Error> {
-            let explicit_manifest = project
-                .map(|path| resolve_project_manifest_path(path))
-                .or_else(|| input.and_then(|path| infer_manifest_from_input(path)));
-            let discovered_manifest = if explicit_manifest.is_none() {
-                discover_project_manifest_from_input_or_cwd(input, workspace_member)?
-            } else {
-                None
-            };
-
-            if let Some(explicit) = explicit_manifest {
-                let (path, summary) =
-                    resolve_workspace_candidate_with_summary(&explicit, input.map(|p| p.as_path()), workspace_member)?;
-                workspace_summary = summary;
-                Ok(Some(path))
-            } else if let Some((path, summary)) = discovered_manifest {
-                workspace_summary = summary;
-                Ok(Some(path))
-            } else {
-                Ok(None)
-            }
-        })?;
+    let selected = observe_phase_result(pipeline, RESOLVE_MANIFEST, || {
+        selected_project_manifest(input, project, workspace_member)
+    })?;
+    let (manifest_path, workspace_summary) = match selected {
+        Some((path, summary)) => (Some(path), summary),
+        None => (None, None),
+    };
 
     let (compile_plan, prepared_workspace) = match &manifest_path {
         Some(manifest) => {
@@ -175,6 +157,50 @@ fn resolve_project_with_mode(
     };
 
     Ok(ResolvedProject { compile_plan, prepared_workspace, workspace_summary })
+}
+
+/// The project manifest a command resolves: `--project`, a manifest given as input, or the manifest
+/// discovered from the input or the working directory.
+fn selected_project_manifest(
+    input: Option<&PathBuf>,
+    project: Option<&PathBuf>,
+    workspace_member: Option<&str>,
+) -> Result<Option<(PathBuf, Option<WorkspaceResolutionSummary>)>> {
+    let explicit_manifest = project
+        .map(|path| resolve_project_manifest_path(path))
+        .or_else(|| input.and_then(|path| infer_manifest_from_input(path)));
+    match explicit_manifest {
+        Some(explicit) => {
+            Ok(Some(resolve_workspace_candidate_with_summary(&explicit, input.map(|p| p.as_path()), workspace_member)?))
+        }
+        None => discover_project_manifest_from_input_or_cwd(input, workspace_member),
+    }
+}
+
+/// The target `command` selects when no `--target` is given (see
+/// [`crate::projects::select_default_target`]), or `None` when the command names a source file
+/// (that file is the entry) or resolves no host project manifest. A manifest that cannot be found
+/// or read is left to the resolver, which reports it; only an ambiguous or missing default target
+/// fails here.
+pub fn default_target_for_input(
+    input: Option<&PathBuf>,
+    project: Option<&PathBuf>,
+    workspace_member: Option<&str>,
+    command: DefaultTargetCommand,
+) -> Result<Option<String>> {
+    if input.is_some_and(|path| path.is_file() && infer_manifest_from_input(path).is_none()) {
+        return Ok(None);
+    }
+    let Ok(Some((manifest_path, _))) = selected_project_manifest(input, project, workspace_member) else {
+        return Ok(None);
+    };
+    let Ok(manifest) = load_manifest_from_path(&manifest_path) else { return Ok(None) };
+    if manifest.project.kind != ProjectKind::Host || manifest.targets.is_empty() {
+        return Ok(None);
+    }
+    select_default_target(&manifest.targets, command)
+        .map(|target| Some(target.name.clone()))
+        .map_err(|error| anyhow::anyhow!("{}: {error}", manifest_path.display()))
 }
 
 fn resolve_project_manifest_path(project: &Path) -> PathBuf {

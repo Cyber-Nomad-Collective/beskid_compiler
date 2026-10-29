@@ -19,6 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The `.NET` Glue placeholder is removed: `--backend glue-dotnet` is an unknown backend, a manifest `glue` block with `backend = dotnet` fails in the parser with E1862 ("unsupported backend"), and the unused `.NET` toolchain capabilities are gone. The `extern_dlopen` engine feature, which no lane enabled, is removed with its three test binaries; the engine always resolves `[Extern]` symbols from the process and the declared library, and `extern_tests.rs` covers a missing library on that path.
 - Legacy-only tests are removed or renamed for their behaviour: the artifact store's HIR payload purge and its two tests (a store of another schema version is still replaced), the legacy query snapshot fixture (folded into the incompatible-snapshot test), the retired composition and pckg route absence tests, and `v1`/`v2`/`legacy` test names in the lock, pack and package-artifact tests.
 
+### Default targets
+
+- Without `--target`, `beskid build` and `beskid run` never select a Test target: `run` selects the App target and `build` the App target, or the Lib target when there is no App target. A project with a `lib` and a `tests` target built the Test target and failed with `Missing entrypoint Main`. `beskid test` without `--target` runs every Test target in manifest order and ends with a combined `Total:` summary (one `--json` `result` record with a `targets` list), or the Lib target when there is no Test target; it took the first Test or Lib target and printed "No tests found." for a `lib` listed first. Two candidates of one kind, or none, fail with one error that names the targets and says to pass `--target` (OpenSpec change `v067-default-target-selection`).
+
 ### Scope fixes
 
 - A method call on a `unit` result (`return Stack.New<i64>().Push(5).Count();` where `Push` returns `unit`) is E1213 "invalid member access target" at the member and E1606 at the call in `beskid check`. Check accepted it and codegen failed with the internal error E2101 "semantic fact abi_type is unavailable".
