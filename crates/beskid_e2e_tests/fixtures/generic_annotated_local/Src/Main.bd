@@ -1,5 +1,5 @@
 // A local annotated with a type parameter (`T held = value;`) takes its type from the
-// specialization, for a scalar and a string (0.5.4 regression b2ea9586).
+// specialization, for a scalar and a string.
 T Same<T>(T value)
 {
     T held = value;

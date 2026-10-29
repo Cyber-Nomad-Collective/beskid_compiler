@@ -418,7 +418,7 @@ test SchedulerShutdownCancelsActiveFiberAndInvalidatesReusedHandle
     ReleaseSchedulerRuntime(runtime);
 }
 
-// ---- Main parks as the root fiber (v0.6.7) ----
+// ---- Main parks as the root fiber ----
 // A root caller (no current fiber, as `Main` is) that must wait drives the scheduler in place
 // until another fiber acts, instead of failing with WouldBlock (seen by Corelib as Closed).
 

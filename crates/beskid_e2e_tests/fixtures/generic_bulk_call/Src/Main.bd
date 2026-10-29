@@ -1,5 +1,5 @@
 // A generic `bulk T[]` call packs its trailing arguments as the specialized element type, with
-// explicit and inferred type arguments (0.5.4 regression e9664e4e).
+// explicit and inferred type arguments.
 T First<T>(bulk T[] values)
 {
     return values[0];

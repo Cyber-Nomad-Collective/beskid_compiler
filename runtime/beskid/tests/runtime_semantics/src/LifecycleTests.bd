@@ -69,7 +69,7 @@ test FailedThreadAttachDoesNotPublishPartialState
     Assert.True(threadStateUnchanged, "failed attach leaves TLS unchanged");
 }
 
-// ── Isolate prerequisites (0.6.1): one instance per process, split lifecycle ──
+// ── Isolate prerequisites: one instance per process, split lifecycle ──
 
 test IsolatePrerequisiteAtomicsFollowTheWordContract
 {

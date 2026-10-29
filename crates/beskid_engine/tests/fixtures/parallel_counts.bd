@@ -9,8 +9,8 @@ use Core.Collections.List;
 use Core.Optional.Option;
 use Concurrency.TryResult;
 
-// Isolate, port and ORCA count evidence (v063-isolates-and-scope, v064-ports-and-pipelines 2.x
-// and 3.x, v065-parallel-sequences 2.x and 3.x). Every entry returns a non-negative value on
+// Isolate, port and ORCA count evidence for fork-join scopes, ports and pipelines, and
+// parallel sequences. Every entry returns a non-negative value on
 // success and a distinct negative code on the first failed check; the `heap_growth.c` host then
 // requires a clean `gc_heap_verify`. Entries collect after each scope so that DECs, adoption and
 // retained heaps are exercised by a real cycle on every side.
@@ -64,7 +64,7 @@ i64 Received(Result<i64, PortError> result)
     };
 }
 
-// ---- Fork-join: two isolates, results adopted at join (v0.6.3) ----
+// ---- Fork-join: two isolates, results adopted at join ----
 [Export(Abi: "C", Symbol: "RunTwoIsolates")]
 pub i64 RunTwoIsolates()
 {
@@ -105,7 +105,7 @@ pub i64 RunTwoIsolates()
     return Collected();
 }
 
-// ---- Port FIFO and close-then-drain (v0.6.4 2.1-2.3) ----
+// ---- Port FIFO and close-then-drain ----
 [Export(Abi: "C", Symbol: "RunPortFifo")]
 pub i64 RunPortFifo()
 {
@@ -149,7 +149,7 @@ pub i64 RunPortFifo()
     return Collected();
 }
 
-// ---- Shared values cross by pointer (v0.6.4 4.5, ORCA step 2) ----
+// ---- Shared values cross by pointer ----
 // The isolate echoes the Config it received: the address that comes back is the original one.
 [Export(Abi: "C", Symbol: "RunSharedByPointer")]
 pub i64 RunSharedByPointer()
@@ -254,7 +254,7 @@ pub i64 RunSharedOutlivesSender()
     return Collected();
 }
 
-// ---- Moved graphs are handed over by pointer (v0.6.5 2.1-2.3) ----
+// ---- Moved graphs are handed over by pointer ----
 // A linked list of 1,000 nodes travels from a child to the parent; the child keeps allocating
 // and collecting while the parent walks the list, so shallow marking on the owner and tracing
 // through foreign mutable objects on the receiver are both exercised.
@@ -407,7 +407,7 @@ pub i64 RunUndeliveredReleased()
     return Collected();
 }
 
-// ---- One spawned value at a real isolate (v0.6.3 regression) ----
+// ---- One spawned value at a real isolate ----
 string DiagDigit(i64 d)
 {
     if (d == 0_i64)
@@ -505,7 +505,7 @@ pub i64 RunSpawnValue()
     return Collected();
 }
 
-// ---- A tolerated Error value is a task value, not a failure (v0.6.3) ----
+// ---- A tolerated Error value is a task value, not a failure ----
 [Export(Abi: "C", Symbol: "RunToleratedValue")]
 pub i64 RunToleratedValue()
 {
@@ -543,7 +543,7 @@ pub i64 RunToleratedValue()
     return Collected();
 }
 
-// ---- Strings cross a port by pointer and stay readable in the receiver (v0.6.4) ----
+// ---- Strings cross a port by pointer and stay readable in the receiver ----
 [Export(Abi: "C", Symbol: "RunStringPort")]
 pub i64 RunStringPort()
 {
@@ -588,7 +588,7 @@ pub i64 RunStringPort()
     return Collected();
 }
 
-// ---- Collect keeps every element across real isolates (v0.6.5) ----
+// ---- Collect keeps every element across real isolates ----
 [Export(Abi: "C", Symbol: "RunCollect")]
 pub i64 RunCollect()
 {
@@ -626,7 +626,7 @@ pub i64 RunCollect()
     return Collected();
 }
 
-// ---- A port handle crosses a port (v0.6.4) ----
+// ---- A port handle crosses a port ----
 [Export(Abi: "C", Symbol: "RunPortHandle")]
 pub i64 RunPortHandle()
 {
@@ -657,7 +657,7 @@ pub i64 RunPortHandle()
     return Collected();
 }
 
-// ---- A three-stage pipeline keeps input order (v0.6.4) ----
+// ---- A three-stage pipeline keeps input order ----
 [Export(Abi: "C", Symbol: "RunPipeline")]
 pub i64 RunPipeline()
 {
@@ -708,7 +708,7 @@ pub i64 RunPipeline()
     return Collected();
 }
 
-// ---- A payload kept after its Shared wrapper is dropped (0.6.6, gate-2 F6) ----
+// ---- A payload kept after its Shared wrapper is dropped ----
 // A `Shared` send stakes only the message's root object. The keeper extracts the text of each
 // wrapper (a pipeline's `Sequenced::Item`), drops the wrappers and collects, so their DECs reach
 // the producer; the producer then collects twice before the keeper forwards the texts. Only the

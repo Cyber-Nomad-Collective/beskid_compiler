@@ -72,7 +72,7 @@ test GcReclaimsReusesAndInvalidatesStaleHandles
     pointer region = SystemAllocate(128, 8);
     pointer thread = InstallTestHeap(runtime, heap, region, 128);
     pointer descriptor = TestDescriptor(24, 8);
-    // The debug kit holds freed slots in quarantine (v0.6.1 `v061-gc-stress-and-poison`), which
+    // The debug kit holds freed slots in quarantine (GC stress and poisoning), which
     // delays their reuse on purpose. A zero budget (the `BESKID_GC_QUARANTINE=0` setting) keeps the
     // poisoning and returns each freed slot to its span at once, so the reuse below holds for both
     // kit profiles; the release kit ignores the call.
