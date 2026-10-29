@@ -3,6 +3,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use beskid_manifest::load_v5_manifest_source;
+use beskid_tests_support::source_facts::{FunctionFacts, SourceFacts};
 
 fn runtime_sources(root: &Path) -> Vec<PathBuf> {
     fn collect(directory: &Path, files: &mut Vec<PathBuf>) {
@@ -78,79 +79,43 @@ fn source_nominals(root: &Path) -> BTreeSet<String> {
     // These are the two exact public nominal dependencies of runtime exports.
     paths.push(root.join("corelib/packages/foundation/src/Core/Dynamic/Dynamic.bd"));
     paths.push(root.join("corelib/packages/foundation/src/Core/Results/Results.bd"));
-    let mut nominals = BTreeSet::new();
-    for path in paths {
-        let source = fs::read_to_string(path).unwrap();
-        for line in source.lines() {
-            let line = line.trim().strip_prefix("pub ").unwrap_or(line.trim());
-            let declaration = line.strip_prefix("type ").or_else(|| line.strip_prefix("enum "));
-            if let Some(declaration) = declaration {
-                let name = declaration.split(|ch: char| ch.is_whitespace() || ch == '<' || ch == '{').next().unwrap();
-                if !name.is_empty() {
-                    nominals.insert(name.to_owned());
-                }
-            }
-        }
-    }
-    nominals
+    paths.iter().flat_map(|path| parsed(path).type_names()).collect()
+}
+
+fn parsed(path: &Path) -> SourceFacts {
+    SourceFacts::parse(path.display().to_string(), fs::read_to_string(path).unwrap())
 }
 
 type Signature = (Vec<String>, String);
 
-/// Consume one Beskid function signature, joining a wrapped parameter list but never the body.
-fn read_signature<'a>(
-    first: &str,
-    lines: &mut impl Iterator<Item = &'a str>,
-    path: &Path,
-    nominals: &BTreeSet<String>,
-) -> (String, Signature) {
-    let mut declaration = first.trim().to_owned();
-    while !declaration.contains(')') {
-        let continuation = lines.next().expect("source parameter list must terminate");
-        assert!(!continuation.contains("[Export("), "unterminated source signature in {}", path.display());
-        declaration.push(' ');
-        declaration.push_str(continuation.trim());
-    }
-    let declaration = declaration.strip_prefix("pub ").unwrap_or(&declaration);
-    let params_start = declaration.find('(').expect("source parameter list") + 1;
-    let params_end = declaration[params_start..].find(')').expect("source parameter list end") + params_start;
-    let (result, name) =
-        declaration[..params_start - 1].trim().rsplit_once(char::is_whitespace).expect("source result type and name");
-    let params = split_parameters(&declaration[params_start..params_end])
-        .into_iter()
-        .map(|parameter| {
-            let parameter = parameter.strip_prefix("mut ").unwrap_or(parameter);
-            let (ty, _name) = parameter.rsplit_once(char::is_whitespace).expect("source parameter type and name");
-            source_type(ty, nominals)
-        })
-        .collect::<Vec<_>>();
-    (name.trim().to_owned(), (params, source_type(result, nominals)))
+fn signature(function: &FunctionFacts<'_>, nominals: &BTreeSet<String>) -> Signature {
+    (
+        function.parameter_types().iter().map(|ty| source_type(ty, nominals)).collect(),
+        source_type(&function.return_type(), nominals),
+    )
 }
 
+/// `[Export(Symbol: "...")]` functions of the runtime sources, by exported symbol.
 fn source_exports(root: &Path) -> BTreeMap<String, Signature> {
     let mut exports = BTreeMap::new();
     let nominals = source_nominals(root);
     for path in runtime_sources(root) {
-        let source = fs::read_to_string(&path).unwrap();
-        let mut lines = source.lines();
-        while let Some(line) = lines.next() {
-            if !line.trim_start().starts_with("[Export(") {
+        let source = parsed(&path);
+        for function in source.functions() {
+            if !function.attribute_names().contains("Export") {
                 continue;
             }
-            // `beskid fmt` writes attribute arguments as `Symbol: "..."`.
-            let Some(symbol_start) = line.find("Symbol:").and_then(|index| {
-                let value = &line[index + "Symbol:".len()..];
-                let quoted = value.trim_start();
-                quoted.starts_with('"').then(|| line.len() - quoted.len() + 1)
-            }) else {
-                continue;
-            };
-            let symbol_end = line[symbol_start..].find('"').unwrap() + symbol_start;
-            let symbol = &line[symbol_start..symbol_end];
-            let first = lines.next().expect("Export attribute must be followed by a declaration");
-            assert!(first.trim().starts_with("pub "), "Export must own a public function");
-            let (_name, signature) = read_signature(first, &mut lines, &path, &nominals);
-            assert!(exports.insert(symbol.to_owned(), signature).is_none(), "duplicate source export {symbol}");
+            let Some(symbol) = function.attribute_argument("Export", "Symbol") else { continue };
+            assert!(
+                function.is_public(),
+                "Export must own a public function: {} in {}",
+                function.name(),
+                path.display()
+            );
+            assert!(
+                exports.insert(symbol.clone(), signature(&function, &nominals)).is_none(),
+                "duplicate source export {symbol}"
+            );
         }
     }
     exports
@@ -161,29 +126,13 @@ fn checked_clone_exports(root: &Path) -> BTreeMap<String, Signature> {
     let nominals = source_nominals(root);
     let mut exports = BTreeMap::new();
     for clone in beskid_manifest::CHECKED_RUNTIME_CLONES {
-        let path = root.join("runtime/beskid").join(clone.source_path);
-        let source = fs::read_to_string(&path).unwrap();
-        let mut lines = source.lines();
-        let mut found = Vec::new();
-        while let Some(line) = lines.next() {
-            // Only top-level declarations; indented call sites and assignments are not owners.
-            if line.starts_with(char::is_whitespace) {
-                continue;
-            }
-            let declaration = line.strip_prefix("pub ").unwrap_or(line);
-            let Some(head) = declaration.split_once('(').map(|(head, _)| head.trim()) else {
-                continue;
-            };
-            if !head.contains('=')
-                && head.rsplit_once(char::is_whitespace).is_some_and(|(_, name)| name == clone.function)
-            {
-                found.push(read_signature(line, &mut lines, &path, &nominals).1);
-            }
-        }
-        let [signature] = found.as_slice() else {
-            panic!("checked clone {} needs exactly one source function {} in {}", clone.export, clone.function, clone.source_path);
-        };
-        assert!(exports.insert(clone.export.to_owned(), signature.clone()).is_none(), "duplicate checked clone {}", clone.export);
+        let source = parsed(&root.join("runtime/beskid").join(clone.source_path));
+        let signature = signature(&source.function(clone.function), &nominals);
+        assert!(
+            exports.insert(clone.export.to_owned(), signature).is_none(),
+            "duplicate checked clone {}",
+            clone.export
+        );
     }
     exports
 }
@@ -205,7 +154,9 @@ fn c_provider_exports(root: &Path) -> BTreeMap<String, Signature> {
     for path in &files {
         for line in fs::read_to_string(path).unwrap().lines() {
             if let Some(rest) = line.trim().strip_prefix("typedef ") {
-                if let Some(name) = rest.split_once("(*").and_then(|(_, tail)| tail.split_once(')')).map(|(name, _)| name) {
+                if let Some(name) =
+                    rest.split_once("(*").and_then(|(_, tail)| tail.split_once(')')).map(|(name, _)| name)
+                {
                     function_pointers.insert(name.trim().to_owned());
                 }
             }
@@ -241,7 +192,8 @@ fn c_provider_exports(root: &Path) -> BTreeMap<String, Signature> {
             let declaration = &declaration[..declaration.find(')').expect("C provider parameter list end")];
             let (head, params) = declaration.split_once('(').expect("C provider parameter list");
             let head = head.trim();
-            let name_start = head.rfind(|ch: char| !(ch.is_ascii_alphanumeric() || ch == '_')).map_or(0, |index| index + 1);
+            let name_start =
+                head.rfind(|ch: char| !(ch.is_ascii_alphanumeric() || ch == '_')).map_or(0, |index| index + 1);
             let (result, name) = head.split_at(name_start);
             let params = params.trim();
             let params = if params.is_empty() || params == "void" {
@@ -251,7 +203,12 @@ fn c_provider_exports(root: &Path) -> BTreeMap<String, Signature> {
             };
             let signature = (params, c_type(result));
             if let Some(previous) = exports.insert(name.to_owned(), signature.clone()) {
-                assert_eq!(previous, signature, "{name}: C provider declaration and definition disagree in {}", path.display());
+                assert_eq!(
+                    previous,
+                    signature,
+                    "{name}: C provider declaration and definition disagree in {}",
+                    path.display()
+                );
             }
         }
     }
@@ -272,13 +229,10 @@ fn dynamic_descriptor_exports(root: &Path, source: &BTreeMap<String, Signature>)
             }
         }
     }
-    let records = fs::read_to_string(root.join("runtime/beskid/src/Runtime/Dynamic/Records.bd")).unwrap();
     assert!(
-        records.lines().any(|line| {
-            line.trim_start()
-                .strip_prefix("pub type DynamicErasedCellV1")
-                .is_some_and(|rest| rest.is_empty() || rest.starts_with(char::is_whitespace))
-        }),
+        parsed(&root.join("runtime/beskid/src/Runtime/Dynamic/Records.bd"))
+            .type_names()
+            .contains("DynamicErasedCellV1"),
         "canonical erased Dynamic cell declaration absent"
     );
     exports.insert("beskid_dynamic_v1_erased_cell_descriptor".to_owned(), getter());
@@ -300,7 +254,8 @@ fn canonical_runtime_source_exports_exactly_match_manifest_provenance() {
         );
     }
     for service in &manifest.corelib_services {
-        if matches!(service.name.as_str(), "__args_count" | "__args_get" | "__thread_yield" | "__host_processor_count") {
+        if matches!(service.name.as_str(), "__args_count" | "__args_get" | "__thread_yield" | "__host_processor_count")
+        {
             continue;
         }
         let signature =
@@ -347,7 +302,12 @@ fn canonical_runtime_source_exports_exactly_match_manifest_provenance() {
         manifest
             .corelib_services
             .iter()
-            .filter(|service| matches!(service.name.as_str(), "__args_count" | "__args_get" | "__thread_yield" | "__host_processor_count"))
+            .filter(|service| {
+                matches!(
+                    service.name.as_str(),
+                    "__args_count" | "__args_get" | "__thread_yield" | "__host_processor_count"
+                )
+            })
             .map(|service| service.adapter.clone()),
     );
     for assembly in &manifest.assembly {

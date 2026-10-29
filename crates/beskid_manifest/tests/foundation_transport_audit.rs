@@ -1,3 +1,4 @@
+use beskid_analysis::builtins::{BuiltinType, builtin_specs};
 use beskid_manifest::load_v5_manifest_source;
 
 // Mandatory after the F2/F3 Fiber/Channel cutover. All value routes, including
@@ -88,20 +89,19 @@ fn public_foundation_transport_has_no_scalar_or_pointer_side_channel() {
     // Source-authorized typed adapters must never regain an injected scalar route
     // through the analysis builtin table: value services are generic over the
     // received value and take only the handle; sends carry the traced owner slot.
-    let baseline = include_str!("../../beskid_analysis/src/generated/builtins.inc.rs");
-    fn entry(baseline: &'static str, name: &str) -> &'static str {
-        let start = baseline.find(&format!("&[\"{name}\"] =>")).unwrap_or_else(|| panic!("{name} declared"));
-        let end = baseline[start..].find("    },").map(|end| start + end).expect("entry closes");
-        &baseline[start..end]
-    }
+    let builtin = |name: &str| {
+        builtin_specs()
+            .iter()
+            .find(|spec| spec.beskid_path == [name])
+            .unwrap_or_else(|| panic!("{name} declared in the analysis builtin table"))
+    };
     for name in ["__fiber_join_value", "__channel_receive_value", "__hub_wait_receive_value"] {
-        let declaration = entry(baseline, name);
-        assert!(declaration.contains("type_parameters: [\"T\"],"), "{name} must be generic: {declaration}");
-        assert!(declaration.contains("params: [I64],"), "{name} must take only the handle: {declaration}");
-        assert!(declaration.contains("returns: TypeParameter,"), "{name} must return the value: {declaration}");
+        let spec = builtin(name);
+        assert_eq!(spec.type_parameters, ["T"], "{name} must be generic");
+        assert_eq!(spec.params, [BuiltinType::I64], "{name} must take only the handle");
+        assert_eq!(spec.returns, BuiltinType::TypeParameter, "{name} must return the value");
     }
     for name in ["__channel_send", "__channel_try_send"] {
-        let declaration = entry(baseline, name);
-        assert!(declaration.contains("params: [I64, Ptr],"), "retired scalar builtin {name}: {declaration}");
+        assert_eq!(builtin(name).params, [BuiltinType::I64, BuiltinType::Ptr], "retired scalar builtin {name}");
     }
 }

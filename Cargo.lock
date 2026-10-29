@@ -659,6 +659,8 @@ dependencies = [
 name = "beskid_manifest"
 version = "0.1.0"
 dependencies = [
+ "beskid_analysis",
+ "beskid_tests_support",
  "bsol",
  "serde",
  "serde_json",
