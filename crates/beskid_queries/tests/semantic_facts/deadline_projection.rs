@@ -28,11 +28,17 @@ pub(super) fn fact_result<T>(
     let owner_program = parse_program(&owner_source).expect("parse projection owner");
     let deadline_program = parse_program(&deadline_source).expect("parse Deadline declaration");
     let index = SyntaxIndex::from_program(&owner_program, generation);
-    let marker = owner_source.find(marker).expect("fact fixture");
+    // The first `kind` node whose own source starts with `marker`, compared without whitespace so
+    // the lookup follows the syntax tree, not the layout of the owner source.
+    let compact = |text: &str| text.split_whitespace().collect::<String>();
+    let marker = compact(marker);
     let node = index
         .metadata()
         .iter()
-        .find(|metadata| metadata.kind == kind && metadata.span.is_some_and(|span| span.start == marker))
+        .find(|metadata| {
+            metadata.kind == kind
+                && metadata.span.is_some_and(|span| compact(&owner_source[span.start..span.end]).starts_with(&marker))
+        })
         .expect("fact node")
         .id;
     let owner_root = owner_path.parent().expect("owner root").to_path_buf();
