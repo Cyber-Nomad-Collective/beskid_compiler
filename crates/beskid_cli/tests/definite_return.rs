@@ -46,8 +46,15 @@ fn check_reports_a_body_that_can_reach_its_end() {
 #[test]
 fn build_rejects_the_body_before_lowering() {
     let root = tempfile::tempdir().expect("fixture directory");
-    let source = root.path().join("Main.bd");
-    fs::write(&source, FALLS_OFF).expect("source");
+    fs::create_dir(root.path().join("Src")).expect("source directory");
+    fs::write(root.path().join("Src/Main.bd"), FALLS_OFF).expect("source");
+    let manifest = root.path().join("Falls.bproj");
+    fs::write(
+        &manifest,
+        "Falls { name = \"Falls\" version = \"0.1.0\" root = \"Src\" }\n\
+         target \"App\" { kind = App entry = \"Main.bd\" }\n",
+    )
+    .expect("manifest");
     let object = root.path().join("Main.o");
     let object = object.to_str().expect("UTF-8 path");
     let output = beskid(
@@ -56,13 +63,14 @@ fn build_rejects_the_body_before_lowering() {
             "build",
             "--plain",
             "--offline",
+            "--project",
+            manifest.to_str().expect("UTF-8 path"),
             "--kind",
             "object",
             "--output",
             object,
             "--object-output",
             object,
-            source.to_str().expect("UTF-8 path"),
         ],
     );
     let report = text(&output);
