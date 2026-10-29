@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Default targets
+
+- Without `--target`, `beskid build` and `beskid run` never select a Test target: `run` selects the App target and `build` the App target, or the Lib target when there is no App target. A project with a `lib` and a `tests` target built the Test target and failed with `Missing entrypoint Main`. `beskid test` without `--target` runs every Test target in manifest order and ends with a combined `Total:` summary (one `--json` `result` record with a `targets` list), or the Lib target when there is no Test target; it took the first Test or Lib target and printed "No tests found." for a `lib` listed first. Two candidates of one kind, or none, fail with one error that names the targets and says to pass `--target` (OpenSpec change `v067-default-target-selection`).
+
 ### Scope fixes
 
 - A method call on a `unit` result (`return Stack.New<i64>().Push(5).Count();` where `Push` returns `unit`) is E1213 "invalid member access target" at the member and E1606 at the call in `beskid check`. Check accepted it and codegen failed with the internal error E2101 "semantic fact abi_type is unavailable".

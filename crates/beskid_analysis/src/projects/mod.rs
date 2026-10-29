@@ -2,6 +2,7 @@
 
 pub mod assembly;
 pub mod compile_plan;
+pub mod default_target;
 pub mod dependency_edit;
 pub mod dependency_transaction;
 pub mod discovery;
@@ -34,6 +35,9 @@ pub use bsol::{BsolBlock, BsolDocument, BsolError, BsolItem, BsolSpan, BsolValue
 pub use compile_plan::{
     build_compile_plan, build_compile_plan_with_policy, build_compile_plan_with_policy_and_graph,
     load_manifest_from_path, plan_entry_path,
+};
+pub use default_target::{
+    DefaultTargetCommand, DefaultTargetError, select_default_target, select_default_test_targets,
 };
 pub use discovery::{
     DEFAULT_DESCENDANT_SEARCH_DEPTH, LEGACY_PROJECT_FILE_NAME, LEGACY_WORKSPACE_FILE_NAME, PROJECT_MANIFEST_EXTENSION,

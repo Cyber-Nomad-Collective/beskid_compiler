@@ -65,7 +65,8 @@ pub fn execute(args: RunArgs) -> Result<()> {
     run_build_and_execute(args)
 }
 
-fn run_build_and_execute(args: RunArgs) -> Result<()> {
+fn run_build_and_execute(mut args: RunArgs) -> Result<()> {
+    args.project.select_default_target(args.input.as_ref(), beskid_analysis::projects::DefaultTargetCommand::Run)?;
     let resolve_args = ResolveInputArgs {
         input: args.input.as_ref(),
         project: args.project.project.as_ref(),

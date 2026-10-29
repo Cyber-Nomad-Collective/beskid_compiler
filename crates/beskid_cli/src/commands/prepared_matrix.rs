@@ -228,6 +228,17 @@ impl PreparedWorkspace {
         }
     }
 
+    /// The targets `beskid test` runs without `--target`: every Test target in manifest order, or
+    /// the one Lib target when there is none. Empty means the manifest has neither.
+    pub fn default_test_targets(&self) -> Result<Vec<String>> {
+        match &self.manifest {
+            Some(manifest) => beskid_analysis::projects::select_default_test_targets(&manifest.targets)
+                .map(|targets| targets.into_iter().map(|target| target.name.clone()).collect())
+                .map_err(|error| anyhow!("{}: {error}", self.manifest_path().display())),
+            None => Ok(vec!["direct-file".to_string()]),
+        }
+    }
+
     pub fn prepare_targets(
         &self,
         names: &[String],

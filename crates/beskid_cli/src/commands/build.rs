@@ -133,7 +133,8 @@ pub fn execute(args: BuildArgs) -> Result<()> {
     build_selected(args, None).map(|_| ())
 }
 
-fn build_selected(args: BuildArgs, records: Option<&Records>) -> Result<serde_json::Value> {
+fn build_selected(mut args: BuildArgs, records: Option<&Records>) -> Result<serde_json::Value> {
+    args.project.select_default_target(args.input.as_ref(), beskid_analysis::projects::DefaultTargetCommand::Build)?;
     match select_backend(&args)? {
         SelectedBackend::Clif => run_build(args, records),
         SelectedBackend::GlueRust(tools) => glue_rust::run(args, tools, records),
