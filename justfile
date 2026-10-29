@@ -96,7 +96,6 @@ check:
         --exclude beskid_tests_interop \
         --exclude beskid_tests_cli \
         --exclude beskid_tests_composition \
-        --exclude beskid_tests_abi \
         --exclude beskid_tests_support
 
 # Type-check one crate + its direct deps only.

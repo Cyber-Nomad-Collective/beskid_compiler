@@ -486,44 +486,4 @@ mod tests {
             }
         }
     }
-
-    /// Throughput of both fingerprints over every `.bd` file beneath `BESKID_FINGERPRINT_BENCH_ROOT`
-    /// (for example a Corelib checkout). Run with `--ignored --nocapture`.
-    #[test]
-    #[ignore = "measurement; needs BESKID_FINGERPRINT_BENCH_ROOT"]
-    fn fingerprint_throughput_over_a_source_tree() {
-        fn sources(directory: &std::path::Path, found: &mut Vec<std::path::PathBuf>) {
-            for entry in std::fs::read_dir(directory).unwrap().flatten() {
-                let path = entry.path();
-                if path.is_dir() && path.file_name().is_some_and(|name| name != "obj" && name != ".beskid") {
-                    sources(&path, found);
-                } else if path.extension().is_some_and(|extension| extension == "bd") {
-                    found.push(path);
-                }
-            }
-        }
-        let root = std::env::var("BESKID_FINGERPRINT_BENCH_ROOT").expect("BESKID_FINGERPRINT_BENCH_ROOT");
-        let mut paths = Vec::new();
-        sources(std::path::Path::new(&root), &mut paths);
-        let programs: Vec<_> = paths
-            .iter()
-            .filter_map(|path| beskid_analysis::services::parse_program(&std::fs::read_to_string(path).ok()?).ok())
-            .collect();
-        let started = std::time::Instant::now();
-        let structural: Vec<_> = programs.iter().map(expanded_syntax_fingerprint).collect();
-        let structural_time = started.elapsed();
-        let started = std::time::Instant::now();
-        let json: Vec<_> = programs.iter().map(json_fingerprint).collect();
-        let json_time = started.elapsed();
-        for (left, right) in (0..programs.len()).zip(1..programs.len()) {
-            assert_eq!(structural[left] == structural[right], json[left] == json[right]);
-        }
-        eprintln!(
-            "fingerprint bench: {} of {} files parsed; structural {:?}, span-stripped JSON {:?}",
-            programs.len(),
-            paths.len(),
-            structural_time,
-            json_time
-        );
-    }
 }

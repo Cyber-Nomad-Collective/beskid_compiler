@@ -75,13 +75,13 @@ fn foundation_utf8_materializes_every_accepted_code_unit() {
 
 #[test]
 fn foundation_utf8_does_not_expose_lossy_append_route() {
-    let result = lower_foundation_fixture("foundation_utf8_legacy_append.bd");
+    let result = lower_foundation_fixture("foundation_utf8_removed_append_route.bd");
     assert!(result.is_err(), "the deprecated UTF-8 append route must not be a public callable");
 }
 
 #[test]
 fn foundation_string_does_not_expose_lossy_utf8_append_route() {
-    let result = lower_foundation_fixture("foundation_string_legacy_append.bd");
+    let result = lower_foundation_fixture("foundation_string_removed_append_route.bd");
     assert!(result.is_err(), "the Core.String forwarding append route must not be a public callable");
 }
 

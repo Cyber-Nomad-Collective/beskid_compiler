@@ -349,9 +349,6 @@ mod tests {
     fn parses_allowlisted_analysis_node_rs() {
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
         let node_rs = root.join("crates/beskid_analysis/src/syntax/items/node.rs");
-        if !node_rs.is_file() {
-            return;
-        }
         let options = GenOptions::default();
         let got = generate_from_paths(&[node_rs], &options).expect("parse node.rs");
         assert!(got.contains("pub enum Node"));

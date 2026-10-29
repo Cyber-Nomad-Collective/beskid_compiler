@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Test cleanup
+
+- The compiler tree no longer carries dead test weight: the empty `beskid_tests_abi` crate, the v0.2 `meta_manifest` project fixtures, the unused `pest_gen_mod` fixture, seven glue C/JSON files no gate runs, tracked `obj/` caches and the generated `Project.lock` files of the e2e and Mod fixtures (about 1,900 files) are removed, and `.gitignore` keeps fixture `obj/` and `Project.lock` out of the tree. The vendored Salsa is excluded from the workspace, so `cargo test --workspace` no longer runs its test suite. The duplicate Corelib parse-tree golden, a measurement inside a unit test, a stale ignored Corelib diagnostics test and three silent skip guards are gone; the lockfile replay test reads the Corelib `Core.String` sources instead of a stale snapshot.
+
 ### Scope fixes
 
 - A method call on a `unit` result (`return Stack.New<i64>().Push(5).Count();` where `Push` returns `unit`) is E1213 "invalid member access target" at the member and E1606 at the call in `beskid check`. Check accepted it and codegen failed with the internal error E2101 "semantic fact abi_type is unavailable".

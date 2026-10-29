@@ -1,4 +1,0 @@
-/// Core.Bytes hub — byte buffer primitives (`u8[]`).
-/// @tier(standard)
-pub mod Core.Bytes.Errors;
-pub mod Core.Bytes.Slice;
