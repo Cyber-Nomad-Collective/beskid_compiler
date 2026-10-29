@@ -191,11 +191,6 @@ pub fn plan_dependency_change(
     let text = std::str::from_utf8(&original).map_err(|_| ProjectError::Validation("manifest must be UTF-8".into()))?;
     let before = parse_manifest(text)?;
     let original_lock = read_optional(&root.join("Project.lock"))?;
-    if let Some(bytes) = &original_lock {
-        // Every mutation, `update` included, fails closed on a lock in an unsupported format.
-        let content = std::str::from_utf8(bytes).unwrap_or("");
-        super::lockfile::reject_unsupported_lock_format(&root.join("Project.lock"), content)?;
-    }
     let mut mutation = mutation.clone();
     if let DependencyMutation::Add(intent) = &mut mutation
         && let DependencyIntentSource::Registry { registry, version } = &mut intent.source
@@ -224,6 +219,11 @@ pub fn plan_dependency_change(
     let changed_intent = replacement != original;
     if policy.locked && (changed_intent || policy.refresh != RefreshScope::None) {
         return Err(ProjectError::Validation("locked policy forbids dependency mutation".into()));
+    }
+    if let Some(bytes) = &original_lock {
+        // After the policy checks: every mutation, `update` included, fails closed on an unsupported lock.
+        let content = std::str::from_utf8(bytes).unwrap_or("");
+        super::lockfile::reject_unsupported_lock_format(&root.join("Project.lock"), content)?;
     }
     if !changed_intent
         && !policy.locked
