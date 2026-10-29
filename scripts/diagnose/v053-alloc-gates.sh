@@ -24,7 +24,8 @@ case "$1" in
       smoke corelib/beskid_corelib/tests/corelib_tests $t $t
     done
     for t in NetworkNativeTests GcTests; do smoke runtime/beskid/tests/runtime_semantics $t rt-$t; done
-    for p in uri:UriSmokeTests codec:CodecSmokeTests connect:ConnectSmokeTests crypto:CryptoSmokeTests x509:X509SmokeTests tls:TlsSmokeTests http2:Http2SmokeTests websocket:WebSocketSmokeTests websocket:WsLargeTests quic:QuicSmokeTests quic:QuicCreditLoss http3:Http3SmokeTests web:WebSmokeTests; do
+    # The per-package SmokeTests targets are gone; one behaviour target per package stands in for them.
+    for p in uri:UriParseTests codec:CodecCursorTests connect:ConnectLoopbackTests crypto:SymSha x509:Der tls:Messages http2:Http2FrameTests websocket:WsFrameTests websocket:WsEchoTests quic:QuicFrames quic:QuicCreditLoss http3:H3FrameTests web:WebConfig; do
       smoke corelib/packages/${p%%:*}/tests ${p##*:} pkg-${p##*:}
     done
     echo DONE >> $out ;;
@@ -42,10 +43,11 @@ case "$1" in
     echo DONE >> $out ;;
   bench)
     out=$L-bench.log; : > $out
-    for p in tls:TlsBench tls:TlsMicroBench http2:Http2Bench quic:QuicBench; do
-      t=${p##*:}; root=$L-root-$t; rm -rf $root
+    # Benchmarks live in their own project, corelib/beskid_corelib/bench.
+    for t in TlsBench TlsRecordBench Http2Bench QuicBench; do
+      root=$L-root-$t; rm -rf $root
       start=$(date +%s)
-      BESKID_CORELIB_ROOT=$root timeout 5400 $CLI test --plain --project corelib/packages/${p%%:*}/tests --target $t --target-timeout 5000 --matrix-timeout 5400 > $L-bench-$t.log 2>&1
+      BESKID_CORELIB_ROOT=$root timeout 5400 $CLI test --plain --project corelib/beskid_corelib/bench --target $t --target-timeout 5000 --matrix-timeout 5400 > $L-bench-$t.log 2>&1
       echo "$t EXIT=$? wall=$(( $(date +%s) - start ))s $(grep '^Result' $L-bench-$t.log)" >> $out
       grep BENCH $L-bench-$t.log >> $out
     done
@@ -88,7 +90,7 @@ PY
   long)
     # Targets whose CLIF generation alone exceeds the default 1800 s matrix budget.
     out=$L-x.log; : > $out
-    for p in websocket:WsLargeTests quic:QuicCreditLoss; do
+    for p in websocket:WsEchoTests quic:QuicCreditLoss; do
       t=${p##*:}; rm -rf $L-root-x-$t
       BESKID_CORELIB_ROOT=$L-root-x-$t timeout 7000 $CLI test --plain --project corelib/packages/${p%%:*}/tests --target $t --target-timeout 6000 --matrix-timeout 6900 > $L-x-$t.log 2>&1
       echo "$t EXIT=$? $(grep '^Result' $L-x-$t.log)" >> $out
