@@ -14,6 +14,7 @@ use tower_service::Service;
 
 use crate::crash::{Caught, CrashReporter};
 use crate::features;
+use crate::server::lifetime::{ExitHook, ExitState, watch_parent};
 
 /// Preserve LSP text-sync order without serializing independent requests.
 ///
@@ -29,6 +30,10 @@ pub(crate) struct TextSyncOrderedService<S> {
     completed_text_sync: Arc<Mutex<HashMap<String, u64>>>,
     text_sync_completed: Arc<Mutex<HashMap<String, Arc<Notify>>>>,
     reporter: Arc<CrashReporter>,
+    /// Ends the process on `exit` and when the client process named by `initialize` is gone
+    /// (see [`crate::server::lifetime`]); `None` in tests that drive the service in-process.
+    exit: Option<ExitHook>,
+    exit_state: Arc<ExitState>,
 }
 
 impl<S> TextSyncOrderedService<S> {
@@ -39,7 +44,37 @@ impl<S> TextSyncOrderedService<S> {
             next_text_sync: HashMap::new(),
             completed_text_sync: Arc::new(Mutex::new(HashMap::new())),
             text_sync_completed: Arc::new(Mutex::new(HashMap::new())),
+            exit: None,
+            exit_state: Arc::new(ExitState::default()),
         }
+    }
+
+    /// End the process through `exit` on the client's `exit` notification (code 0 after a
+    /// `shutdown` request, else 1) and once the client process named by `initialize`'s
+    /// `processId` is gone. In-flight work is dropped with the process.
+    pub(crate) fn ending_the_process_with(mut self, exit: ExitHook) -> Self {
+        self.exit = Some(exit);
+        self
+    }
+
+    /// The protocol-level lifetime events of `request`: a `shutdown` request, the client's
+    /// process id in `initialize`, and `exit`, which ends the process after the inner service
+    /// saw it.
+    fn observe_lifetime(&self, request: &Request) -> bool {
+        match request.method() {
+            "shutdown" => self.exit_state.shutdown_requested(),
+            "initialize" => {
+                if let (Some(exit), Some(pid)) = (
+                    &self.exit,
+                    request.params().and_then(|params| params.get("processId")).and_then(|pid| pid.as_u64()),
+                ) {
+                    watch_parent(pid as u32, Arc::clone(exit));
+                }
+            }
+            "exit" => return true,
+            _ => {}
+        }
+        false
     }
 }
 
@@ -93,6 +128,7 @@ where
     }
 
     fn call(&mut self, request: Request) -> Self::Future {
+        let exiting = self.observe_lifetime(&request);
         // Keep the open texts current in transport order before any handler runs.
         features::formatting::open_texts::observe(&request);
         let is_text_sync =
@@ -125,6 +161,8 @@ where
         });
         let inner = Arc::clone(&self.inner);
         let reporter = Arc::clone(&self.reporter);
+        let exit = exiting.then(|| self.exit.clone()).flatten();
+        let exit_code = self.exit_state.exit_code();
         let method = request.method().to_string();
         let request_id = request.id().cloned();
         let reply_id = request_id.clone();
@@ -164,6 +202,10 @@ where
             if let (Some(key), Some(ticket), Some(notify)) = (ordering_key, ticket, notify) {
                 completed.lock().expect("text sync completion map").insert(key, ticket);
                 notify.notify_waiters();
+            }
+            if let Some(exit) = exit {
+                // `exit` was dispatched: the process ends now, whatever is still running.
+                exit(exit_code);
             }
             crate::trace::event("done", || {
                 format!(

@@ -5,6 +5,7 @@ use std::sync::Arc;
 use tower_lsp_server::{LspService, Server};
 
 use super::backend::Backend;
+use super::lifetime::{ExitHook, ExitOnEof};
 use super::ordered_service::TextSyncOrderedService;
 use crate::crash::{self, CrashReporter};
 
@@ -21,7 +22,10 @@ const MAX_IN_FLIGHT_MESSAGES: usize = 128;
 pub fn serve_stdio() -> anyhow::Result<()> {
     limit_malloc_arenas();
     let runtime = tokio::runtime::Builder::new_multi_thread().enable_all().build()?;
-    runtime.block_on(run_stdio_server())
+    let served = runtime.block_on(run_stdio_server());
+    // Dropping the runtime would wait for blocking work in flight (an analysis, an index step).
+    runtime.shutdown_background();
+    served
 }
 
 /// glibc gives each thread that allocates concurrently its own malloc arena (up to eight per
@@ -45,7 +49,10 @@ async fn run_stdio_server() -> anyhow::Result<()> {
     // Corelib embedded in this binary before workspace resolution begins, so
     // editor diagnostics use the release bundle rather than a source checkout.
     beskid_tools::ensure_bundled_corelib(&beskid_corelib_embed::CORELIB_BUNDLE)?;
-    let stdin = tokio::io::stdin();
+    // The process ends at once on `exit`, at the end of stdin and when the client process is
+    // gone (see `server::lifetime`); nothing waits for in-flight analyses or the index.
+    let exit: ExitHook = Arc::new(|code| std::process::exit(code));
+    let stdin = ExitOnEof::new(tokio::io::stdin(), Arc::clone(&exit));
     let stdout = tokio::io::stdout();
     let reporter = Arc::new(CrashReporter::for_home());
     let notifier_reporter = Arc::clone(&reporter);
@@ -59,7 +66,7 @@ async fn run_stdio_server() -> anyhow::Result<()> {
     });
     Server::new(stdin, stdout, socket)
         .concurrency_level(MAX_IN_FLIGHT_MESSAGES)
-        .serve(TextSyncOrderedService::new(service, reporter))
+        .serve(TextSyncOrderedService::new(service, reporter).ending_the_process_with(exit))
         .await;
     Ok(())
 }

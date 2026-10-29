@@ -3,6 +3,7 @@
 
 pub mod backend;
 pub(crate) mod init;
+pub(crate) mod lifetime;
 pub(crate) mod ordered_service;
 pub mod stdio;
 
