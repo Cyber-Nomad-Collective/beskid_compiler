@@ -18,15 +18,16 @@
 //! * An expression statement completes normally unless its expression is a block that does not
 //!   complete normally, a `match` that cannot fall through, or a call whose proven result is
 //!   `never`. A `match` cannot fall through when every arm body does not complete normally and
-//!   the match cannot end without taking an arm: an enum match (its variants are exhaustive,
-//!   E1304), or a primitive match with an unguarded `_` or binding arm.
+//!   the match cannot end without taking an arm: a match with an enum pattern (its variants are
+//!   exhaustive, E1304), or a match with an unguarded `_` or binding arm. The patterns decide
+//!   this, so a generic body whose match facts need a specialization is judged the same way.
 //!
 //! Statements after one that does not complete normally are unreachable and are not judged here.
 
 use super::*;
 use beskid_analysis::syntax::{
-    AstNodeId, Block, ElseBranch, Expression, FunctionDefinition, IfStatement, Literal, MethodDefinition,
-    PrimitiveType, Spanned, Statement, Type,
+    AstNodeId, Block, ElseBranch, Expression, FunctionDefinition, IfStatement, Literal, MatchExpression,
+    MethodDefinition, Pattern, PrimitiveType, Spanned, Statement, Type,
 };
 use beskid_analysis::syntax_query::{DynNodeRef, SyntaxIndex};
 
@@ -198,33 +199,30 @@ impl Walker<'_> {
         if let Some(block) = node.of::<beskid_analysis::syntax::BlockExpression>() {
             return self.block(self.child(Some(id), DynNodeRef::from(&block.block)), &block.block.node);
         }
-        let key = AstNodeKey { node: id, ..self.key };
-        if node.of::<beskid_analysis::syntax::MatchExpression>().is_some() {
-            return self.match_expression(key);
+        if let Some(match_expression) = node.of::<MatchExpression>() {
+            return self.match_expression(id, match_expression);
         }
         if node.of::<beskid_analysis::syntax::CallExpression>().is_some()
-            && super::typing::proven_type(self.db, key) == Some(SemanticTypeId::NEVER)
+            && super::typing::proven_type(self.db, AstNodeKey { node: id, ..self.key }) == Some(SemanticTypeId::NEVER)
         {
             return Flow::STOPS;
         }
         Flow::CONTINUES
     }
 
-    fn match_expression(&self, key: AstNodeKey) -> Flow {
-        let (arms, ends_without_arm) = if let Ok(Some(fact)) = enum_match(self.db, key) {
-            (fact.arms, false)
-        } else if let Ok(Some(fact)) = scalar_match(self.db, key) {
-            let catch_all = fact.arms.iter().any(|arm| {
-                arm.guard.is_none()
-                    && matches!(arm.pattern, EnumMatchPatternFact::Wildcard | EnumMatchPatternFact::Binding(_))
-            });
-            (fact.arms, !catch_all)
-        } else {
-            return Flow::CONTINUES;
-        };
-        let mut flow = Flow { completes: ends_without_arm, breaks: false };
-        for arm in arms.iter() {
-            let arm_flow = self.expression(Some(arm.body.node));
+    /// The patterns decide whether a match can end without taking an arm, as in lowering: an
+    /// unguarded `_` or binding arm always matches, and a match with an enum pattern is an enum
+    /// match (its variants are exhaustive, E1304; lowering traps when no arm matches). A match
+    /// whose patterns are all literals is a primitive match that can match no arm.
+    fn match_expression(&self, id: AstNodeId, match_expression: &MatchExpression) -> Flow {
+        let catch_all = match_expression.arms.iter().any(|arm| {
+            arm.node.guard.is_none() && matches!(arm.node.pattern.node, Pattern::Wildcard | Pattern::Identifier(_))
+        });
+        let enum_match = match_expression.arms.iter().any(|arm| matches!(arm.node.pattern.node, Pattern::Enum(_)));
+        let mut flow = Flow { completes: !(catch_all || enum_match), breaks: false };
+        for arm in &match_expression.arms {
+            let arm_id = self.child(Some(id), DynNodeRef::from(arm));
+            let arm_flow = self.expression(self.child(arm_id, DynNodeRef::from(&arm.node.value)));
             flow.completes |= arm_flow.completes;
             flow.breaks |= arm_flow.breaks;
         }
@@ -323,6 +321,10 @@ mod tests {
             (
                 "enum Step { Stop(), Go(i32 value) } i32 F(Step s) { match s { Step::Stop() => { return 0; }, Step::Go(v) => { return v; }, } }",
                 "an enum match whose arms return",
+            ),
+            (
+                "enum Maybe<T> { Some(T value), Empty } i32 F<T>(Maybe<T> m) { match m { Maybe::Some(v) => { return 1; }, Maybe::Empty => { return 0; }, } }",
+                "a generic enum match whose arms return",
             ),
             ("i32 F(i32 x) { match x { 1 => { return 1; }, _ => { return 0; }, } }", "a primitive match with `_`"),
             ("i32 F(i32 x) { match x { 1 => { return 1; }, other => { return other; }, } }", "a binding catch-all"),
