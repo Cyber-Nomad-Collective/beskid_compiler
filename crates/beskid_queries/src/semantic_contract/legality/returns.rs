@@ -49,11 +49,7 @@ pub fn missing_return(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<Missi
 }
 
 #[salsa::tracked(persist)]
-fn missing_return_tracked(
-    db: &dyn Db,
-    syntax: SyntaxUnitInput,
-    key: AstNodeKey,
-) -> SemanticQueryResult<MissingReturn> {
+fn missing_return_tracked(db: &dyn Db, syntax: SyntaxUnitInput, key: AstNodeKey) -> SemanticQueryResult<MissingReturn> {
     with_node(db, syntax, key, |program, index, node| {
         let (name, result, body) = if let Some(function) = node.of::<FunctionDefinition>() {
             (&function.name, function.return_type.as_ref()?, &function.body)
@@ -156,7 +152,9 @@ impl Walker<'_> {
                 let infinite = is_literal_true(&while_statement.node.condition) && !body_flow.breaks;
                 if infinite { Flow::STOPS } else { Flow::CONTINUES }
             }
-            Statement::If(if_statement) => self.if_statement(self.child(id, DynNodeRef::from(if_statement)), if_statement),
+            Statement::If(if_statement) => {
+                self.if_statement(self.child(id, DynNodeRef::from(if_statement)), if_statement)
+            }
             Statement::With(with_statement) => {
                 let with_id = self.child(id, DynNodeRef::from(with_statement));
                 let body = &with_statement.node.body;
@@ -304,7 +302,10 @@ mod tests {
             ("i32 F(bool c) { while (true) { if (c) { break; } return 1; } }", "a conditional break"),
             ("i32 F(bool c) { while (c) { return 1; } }", "a non-literal condition"),
             ("i32 F(i32[] xs) { for x in xs { return x; } }", "for can run zero times"),
-            ("i32 F(i32 x) { match x { 1 => { return 1; }, 2 => { return 2; }, } }", "a primitive match without a catch-all"),
+            (
+                "i32 F(i32 x) { match x { 1 => { return 1; }, 2 => { return 2; }, } }",
+                "a primitive match without a catch-all",
+            ),
             ("i32 F(i32 x) { match x { 1 => { return 1; }, _ => { }, } }", "a falling arm"),
             ("i32 F(i32 x) { match x { v when v > 0 => { return v; }, _ => { }, } }", "a guarded catch-all"),
             ("i32 F() { { 0; }; }", "a nested block that falls through"),
@@ -323,7 +324,10 @@ mod tests {
             ("i32 Main() { return 0; }", "a final return"),
             ("i32 F() { return 1; 0; }", "unreachable code after a return"),
             ("i32 F(bool c) { if (c) { return 1; } else { return 2; } }", "if-else whose branches return"),
-            ("i32 F(bool c, bool d) { if (c) { return 1; } else if (d) { return 2; } else { return 3; } }", "else-if chain"),
+            (
+                "i32 F(bool c, bool d) { if (c) { return 1; } else if (d) { return 2; } else { return 3; } }",
+                "else-if chain",
+            ),
             ("i32 F() { while (true) { } }", "while (true) without break"),
             ("i32 F() { while true { } }", "while true without break"),
             ("i32 F() { while ((true)) { } }", "nested parentheses"),

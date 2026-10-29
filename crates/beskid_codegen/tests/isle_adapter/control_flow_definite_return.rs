@@ -4,8 +4,8 @@
 
 use super::support::{
     HashMap, ItemModuleImporter, JITBuilder, JITModule, Linkage, Module, call_lowering, default_libcall_names,
-    emit_isle_item, emit_isle_item_with_call_importer, find_call_expression, find_function_definitions,
-    item_fixture, item_fixture_with_root,
+    emit_isle_item, emit_isle_item_with_call_importer, find_call_expression, find_function_definitions, item_fixture,
+    item_fixture_with_root,
 };
 
 fn assert_accepted_body_lowers(source: &str) {
