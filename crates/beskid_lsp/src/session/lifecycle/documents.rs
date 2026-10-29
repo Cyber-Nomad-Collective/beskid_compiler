@@ -15,7 +15,9 @@ use crate::{
     features::formatting::open_texts::open_text,
     manifest_uri::{is_manifest_uri, is_standalone_bsol_uri},
     session::{
-        db_access::{Lane, document_update_gate, run_in_project_db, with_index_db, with_shared_project_db},
+        db_access::{
+            Lane, document_update_gate, run_blocking_section, run_in_project_db, with_index_db, with_shared_project_db,
+        },
         diagnostics_bridge::collect_syntax_diagnostics_for_state,
         documentation_facts::syntax_documentation_facts_for_source,
         imports::RecoverableCompletionSyntax,
@@ -259,21 +261,23 @@ async fn syntax_facts_for_text(
     fallback: StartupFallback,
     member_offsets: &[usize],
 ) -> SyntaxFacts {
-    let documentation = if is_manifest_uri(uri) || is_standalone_bsol_uri(uri) {
-        Vec::new()
-    } else {
-        syntax_documentation_facts_for_source(uri.as_str(), text)
-    };
-    // Outline symbols belong to the current buffer's recoverable syntax, not to
-    // the last successfully typed project closure. Keep this independent of
-    // resolution so an incomplete expression cannot erase or stale the outline.
-    let (current_symbols, current_attribute_names) = if is_manifest_uri(uri) || is_standalone_bsol_uri(uri) {
-        (Vec::new(), Vec::new())
-    } else {
-        beskid_analysis::services::parse_program_with_source_name(uri.as_str(), text)
-            .map(|program| (syntax_symbols_for_program(&program), attribute_names_for_program(&program)))
-            .unwrap_or_default()
-    };
+    // The recoverable parse of a broken buffer takes a while (the first time for a text; later
+    // parses reuse the remembered repair), so it runs off the async workers.
+    let (documentation, (current_symbols, current_attribute_names)) =
+        if is_manifest_uri(uri) || is_standalone_bsol_uri(uri) {
+            (Vec::new(), (Vec::new(), Vec::new()))
+        } else {
+            run_blocking_section(|| {
+                let documentation = syntax_documentation_facts_for_source(uri.as_str(), text);
+                // Outline symbols belong to the current buffer's recoverable syntax, not to
+                // the last successfully typed project closure. Keep this independent of
+                // resolution so an incomplete expression cannot erase or stale the outline.
+                let symbols = beskid_analysis::services::parse_program_with_source_name(uri.as_str(), text)
+                    .map(|program| (syntax_symbols_for_program(&program), attribute_names_for_program(&program)))
+                    .unwrap_or_default();
+                (documentation, symbols)
+            })
+        };
     if is_manifest_uri(uri) || is_standalone_bsol_uri(uri) {
         let (diagnostics, fixes) = fallback_diagnostics(state, uri, text, None, fallback).await;
         return SyntaxFacts {
@@ -644,11 +648,15 @@ pub async fn analyze_open_document(state: &RwLock<State>, uri: Uri, version: i32
 }
 
 async fn store_document(state: &RwLock<State>, uri: Uri, version: i32, text: String, newest_only: bool) -> bool {
+    let _span = crate::trace::Span::start("analyze", || format!("uri={} version={version}", uri.as_str()));
     let update_gate = document_update_gate(state, &uri).await;
     let _update_guard = update_gate.lock().await;
     if newest_only && superseded(&uri, &text) {
         return false;
     }
+    // The recoverable parse of a broken buffer can take a while; it runs before the state
+    // lock is taken, so requests on other documents never wait for it.
+    let current_syntax = run_blocking_section(|| RecoverableCompletionSyntax::parse(&text));
     let (prior_dependency_surface, prior_attributes) = {
         let mut write_state = state.write().await;
         if let Some(existing) = write_state.docs.get(&uri)
@@ -656,7 +664,6 @@ async fn store_document(state: &RwLock<State>, uri: Uri, version: i32, text: Str
         {
             return false;
         }
-        let current_syntax = RecoverableCompletionSyntax::parse(&text);
         let prior_dependency_surface = write_state
             .docs
             .get(&uri)

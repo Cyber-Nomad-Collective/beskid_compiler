@@ -24,13 +24,13 @@ use crate::protocol::request::{
 };
 use crate::scan_schedule::{InteractiveGuard, ScanCoordinator, ScanRunGuard};
 use crate::server::init::initialize_result;
-use crate::session::db_access::{parallel_project_db, with_shared_project_db};
+use crate::session::db_access::{parallel_project_db, run_blocking_section, with_shared_project_db};
 use crate::session::lifecycle::{analyze_open_document, publish_diagnostics_for_uri, remove_document};
 use crate::session::mod_host::mod_host_from_initialization_options;
 use crate::session::store::State;
 use crate::workspace_scan::{
-    clear_closed_workspace_under_root, hydrate_disk_after_close, refresh_after_disk_change, scan_workspace_roots,
-    uri_to_path,
+    DiskRefresh, clear_closed_workspace_under_root, hydrate_disk_after_close, refresh_after_disk_change,
+    scan_workspace_roots, uri_to_path,
 };
 
 /// Longest completion waits for the analysis of the newest text before it answers from the
@@ -301,21 +301,29 @@ impl LanguageServer for Backend {
         Ok(hover::handler::handle_hover(&uri, &document, offset))
     }
 
+    // Definition answers at once, like hover, from the last analyzed facts carried over the
+    // edits whose analysis is still running.
     async fn goto_definition(&self, params: GotoDefinitionParams) -> Result<Option<GotoDefinitionResponse>> {
-        let Some(snapshot) = snapshot_lsp_request(&self.state, params).await else {
+        let position = params.text_document_position_params;
+        let uri = position.text_document.uri;
+        let Some(document) = latest_document(&self.state, &uri).await else {
             return Ok(None);
         };
-        Ok(definition::handler::handle_definition(&snapshot.uri, &snapshot.document, snapshot.offset))
+        let offset = crate::position::position_to_offset(&document.text, position.position);
+        Ok(definition::handler::handle_definition(&uri, &document, offset))
     }
 
     async fn goto_declaration(
         &self,
         params: request::GotoDeclarationParams,
     ) -> Result<Option<request::GotoDeclarationResponse>> {
-        let Some(snapshot) = snapshot_lsp_request(&self.state, params).await else {
+        let position = params.text_document_position_params;
+        let uri = position.text_document.uri;
+        let Some(document) = latest_document(&self.state, &uri).await else {
             return Ok(None);
         };
-        Ok(definition::handler::handle_definition(&snapshot.uri, &snapshot.document, snapshot.offset))
+        let offset = crate::position::position_to_offset(&document.text, position.position);
+        Ok(definition::handler::handle_definition(&uri, &document, offset))
     }
 
     async fn references(&self, params: ReferenceParams) -> Result<Option<Vec<Location>>> {
@@ -412,7 +420,8 @@ impl LanguageServer for Backend {
     }
 
     // The outline is syntax-only: it reads the open text (current in transport order) and does
-    // not wait for the analysis of an earlier edit.
+    // not wait for the analysis of an earlier edit. A text that does not parse is outlined from
+    // the last analyzed symbols carried over the edit, so the outline never runs a recovery.
     async fn document_symbol(&self, params: DocumentSymbolParams) -> Result<Option<DocumentSymbolResponse>> {
         let uri = params.text_document.uri;
         let text = match formatting::open_texts::open_text(&uri) {
@@ -422,7 +431,14 @@ impl LanguageServer for Backend {
                 None => return Ok(Some(DocumentSymbolResponse::Nested(Vec::new()))),
             },
         };
-        Ok(Some(document_symbols::handler::document_symbols_for_text(&uri, &text)))
+        let parsed = run_blocking_section(|| document_symbols::handler::document_symbols_for_text(&uri, &text));
+        if let Some(outline) = parsed {
+            return Ok(Some(outline));
+        }
+        let Some(document) = latest_document(&self.state, &uri).await else {
+            return Ok(Some(DocumentSymbolResponse::Nested(Vec::new())));
+        };
+        Ok(Some(document_symbols::handler::outline(&document.text, &document.syntax_symbols)))
     }
 
     async fn semantic_tokens_full(&self, params: SemanticTokensParams) -> Result<Option<SemanticTokensResult>> {
@@ -533,6 +549,8 @@ impl LanguageServer for Backend {
         }
     }
 
+    // The scan runs again only when the set of roots changed: an event that adds and removes
+    // nothing (clients send them) must not cost a walk of the workspace.
     async fn did_change_workspace_folders(&self, params: DidChangeWorkspaceFoldersParams) {
         let DidChangeWorkspaceFoldersParams { event } = params;
         for removed in &event.removed {
@@ -541,8 +559,11 @@ impl LanguageServer for Backend {
             }
         }
         let mut roots = self.workspace_roots.write().await;
+        let before = roots.clone();
         for added in event.added {
-            if let Some(path) = uri_to_path(&added.uri) {
+            if let Some(path) = uri_to_path(&added.uri)
+                && !roots.contains(&path)
+            {
                 roots.push(path);
             }
         }
@@ -551,13 +572,21 @@ impl LanguageServer for Backend {
                 roots.retain(|item| item != &path);
             }
         }
+        let changed = *roots != before;
         drop(roots);
-        self.refresh_workspace_scan().await;
+        if changed {
+            self.refresh_workspace_scan().await;
+        }
     }
 
+    // A changed manifest or lock is answered by one workspace scan, which types each project
+    // once for all its closed files and republishes the open documents; it never prepares the
+    // whole workspace file by file.
     async fn did_change_watched_files(&self, params: DidChangeWatchedFilesParams) {
         let changed: Vec<PathBuf> = params.changes.into_iter().filter_map(|change| uri_to_path(&change.uri)).collect();
-        refresh_after_disk_change(&self.client, &self.state, &changed).await;
+        if refresh_after_disk_change(&self.client, &self.state, &changed).await == DiskRefresh::ScanWorkspace {
+            self.refresh_workspace_scan().await;
+        }
     }
 
     // Formatting is syntax-only: it reads the open text, never the analysis state, so it does

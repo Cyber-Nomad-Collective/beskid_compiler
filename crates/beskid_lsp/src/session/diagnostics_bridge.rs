@@ -7,6 +7,7 @@ use tokio::sync::RwLock;
 use tower_lsp_server::ls_types::Uri;
 
 use crate::diagnostics::{ProjectPreparation, collect_syntax_diagnostics, lsp_diagnostics_from_syntax};
+use crate::manifest_uri::{is_manifest_uri, is_standalone_bsol_uri};
 use crate::session::db_access::with_shared_project_db;
 use crate::session::startup::wait_for_initial_scan;
 use crate::session::store::{State, SyntaxDiagnostic};
@@ -22,6 +23,11 @@ pub async fn collect_syntax_diagnostics_for_state(
     compilation_context: Option<&CompilationContext>,
 ) -> (Vec<SyntaxDiagnostic>, Vec<SyntaxFix>) {
     wait_for_initial_scan(state).await;
+    // A manifest or a standalone BSOL document is analyzed on its own, without a project
+    // database: its diagnostics never queue behind the analyses of the open sources.
+    if is_manifest_uri(uri) || is_standalone_bsol_uri(uri) {
+        return collect_syntax_diagnostics(None, uri, source, compilation_context);
+    }
 
     let (mod_host, interactive) = {
         let read = state.read().await;

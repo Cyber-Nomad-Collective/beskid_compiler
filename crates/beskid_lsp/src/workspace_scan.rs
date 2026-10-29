@@ -568,19 +568,41 @@ pub(crate) async fn commit_observed(state: &RwLock<State>, observed: &ObservedCh
     }
 }
 
-/// Re-read changed paths on disk when buffers are closed; may invalidate compilation cache on manifest edits.
-pub async fn refresh_after_disk_change(client: &Client, state: &RwLock<State>, changed_paths: &[PathBuf]) {
+/// What a watched-file event leaves for the caller to do.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DiskRefresh {
+    /// The changed files were handled here.
+    Done,
+    /// A manifest or lock changed: the caller runs a workspace scan, which observes the change
+    /// again, types every project once for its closed files and republishes the open documents.
+    ScanWorkspace,
+}
+
+/// React to files changed on disk. A closed source is analyzed again from its disk text. A
+/// changed manifest or lock drops every fact derived under the old project authority at once
+/// (requests fail closed until the scan rebuilds them) and asks for a workspace scan: the index
+/// is the one path that types a project once for all its files, so a lock change costs one index
+/// of the workspace, never one preparation per indexed file.
+pub async fn refresh_after_disk_change(
+    client: &Client,
+    state: &RwLock<State>,
+    changed_paths: &[PathBuf],
+) -> DiskRefresh {
     let observed = observe_changes(state, changed_paths).await;
     let changed_paths = &observed.paths;
     let project_authority_changed = changed_paths
         .iter()
         .any(|p| p.extension().and_then(|e| e.to_str()).is_some_and(is_manifest_extension) || is_lockfile_path(p));
     if changed_paths.is_empty() {
-        return;
+        return DiskRefresh::Done;
     }
+    let _span = crate::trace::Span::start("disk-refresh", || {
+        format!("paths={} authority={project_authority_changed}", changed_paths.len())
+    });
     if project_authority_changed {
         invalidate_compilation_cache(state).await;
-        rebuild_open_document_syntax_facts(state).await;
+        // The fingerprints stay uncommitted: the scan observes the same change and refreshes.
+        return DiskRefresh::ScanWorkspace;
     }
     for path in changed_paths {
         if !path.extension().and_then(|ext| ext.to_str()).is_some_and(is_scannable_extension) {
@@ -605,16 +627,8 @@ pub async fn refresh_after_disk_change(client: &Client, state: &RwLock<State>, c
         set_disk_snapshot(state, uri.clone(), doc).await;
         client.publish_diagnostics(uri, diagnostics, Some(0)).await;
     }
-    if project_authority_changed {
-        let affected_uris = {
-            let read = state.read().await;
-            read.docs.keys().chain(read.workspace_index.keys()).cloned().collect::<Vec<_>>()
-        };
-        for uri in affected_uris {
-            publish_diagnostics_for_uri(client, state, &uri).await;
-        }
-    }
     commit_observed(state, &observed).await;
+    DiskRefresh::Done
 }
 
 /// After `didClose`, reload disk contents into the workspace index when the file still exists.
@@ -631,7 +645,9 @@ pub async fn hydrate_disk_after_close(client: &Client, state: &RwLock<State>, ur
         clear_disk_snapshot(client, state, uri).await;
         return;
     };
+    let span = crate::trace::Span::start("hydrate", || format!("uri={}", uri.as_str()));
     let doc = build_document(state, uri, 0, text).await;
+    drop(span);
     // Reopened while the disk text was analyzed: the open buffer owns the facts.
     if crate::features::formatting::open_texts::open_text(uri).is_some() {
         return;
@@ -934,14 +950,42 @@ target "App" {
         .expect("open source must receive publishDiagnostics without an edit")
     }
 
+    /// A watched-file event as the backend handles it: the disk refresh, then the workspace
+    /// scan it asks for after a manifest or lock change.
+    async fn watched_change(client: &Client, state: &Arc<RwLock<State>>, root: &Path, path: &Path) {
+        if refresh_after_disk_change(client, state, std::slice::from_ref(&path.to_path_buf())).await
+            == DiskRefresh::ScanWorkspace
+        {
+            scan_workspace(client, state, root, None).await;
+        }
+    }
+
+    #[tokio::test]
+    async fn a_changed_lock_asks_for_one_workspace_scan_and_drops_the_old_facts_at_once() {
+        let (client, _notifications) = initialized_client().await;
+        let (_temp, state, uri, lock, _source) = open_lock_fixture().await;
+        assert!(!state.read().await.docs[&uri].syntax_documentation.is_empty(), "the open source has facts");
+        let source_path = uri_to_path(&uri).expect("path");
+        assert_eq!(refresh_after_disk_change(&client, &state, &[source_path]).await, DiskRefresh::Done);
+
+        fs::write(&lock, "# Project.lock v1\n").expect("replace lock with v1");
+        assert_eq!(
+            refresh_after_disk_change(&client, &state, std::slice::from_ref(&lock)).await,
+            DiskRefresh::ScanWorkspace
+        );
+        assert!(state.read().await.docs[&uri].syntax_documentation.is_empty(), "facts of the old authority are gone");
+        // The change is left for the scan to observe, so the scan refreshes every project.
+        assert_eq!(observe_changes(&state, std::slice::from_ref(&lock)).await.paths, vec![lock]);
+    }
+
     #[tokio::test]
     async fn watched_lock_change_republishes_open_source_diagnostics_both_directions() {
         let (client, mut notifications) = initialized_client().await;
-        let (_temp, state, uri, lock, _source) = open_lock_fixture().await;
+        let (temp, state, uri, lock, _source) = open_lock_fixture().await;
         let valid = fs::read_to_string(&lock).expect("valid lock");
 
         fs::write(&lock, "# Project.lock v1\n").expect("replace lock with v1");
-        refresh_after_disk_change(&client, &state, std::slice::from_ref(&lock)).await;
+        watched_change(&client, &state, temp.path(), &lock).await;
         let invalid = next_for_uri(&mut notifications, &uri).await;
         assert!(
             invalid
@@ -951,7 +995,7 @@ target "App" {
         );
 
         fs::write(&lock, valid).expect("restore v2");
-        refresh_after_disk_change(&client, &state, &[lock]).await;
+        watched_change(&client, &state, temp.path(), &lock).await;
         let valid = next_for_uri(&mut notifications, &uri).await;
         assert!(!valid.diagnostics.iter().any(|d| d.message.contains("Project.lock")));
     }
@@ -968,7 +1012,7 @@ target "App" {
         let valid = fs::read_to_string(&lock).expect("valid lock");
 
         fs::write(&lock, "# Project.lock v1\n").expect("replace lock with v1");
-        refresh_after_disk_change(&client, &state, std::slice::from_ref(&lock)).await;
+        watched_change(&client, &state, temp.path(), &lock).await;
         let invalid = next_for_uri(&mut notifications, &uri).await;
         assert!(
             invalid
@@ -978,7 +1022,7 @@ target "App" {
         );
 
         fs::write(&lock, valid).expect("restore v2");
-        refresh_after_disk_change(&client, &state, &[lock]).await;
+        watched_change(&client, &state, temp.path(), &lock).await;
         let valid = next_for_uri(&mut notifications, &uri).await;
         assert!(!valid.diagnostics.iter().any(|d| d.message.contains("Project.lock")));
     }

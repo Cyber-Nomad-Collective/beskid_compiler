@@ -13,7 +13,7 @@ use super::store::State;
 /// Run synchronous compiler work without stalling the async runtime: on the multi-threaded
 /// server runtime the worker hands its other tasks (transport, other requests) to the rest of
 /// the pool first.
-fn run_blocking_section<R>(work: impl FnOnce() -> R) -> R {
+pub(crate) fn run_blocking_section<R>(work: impl FnOnce() -> R) -> R {
     match tokio::runtime::Handle::try_current().map(|handle| handle.runtime_flavor()) {
         Ok(tokio::runtime::RuntimeFlavor::MultiThread) => tokio::task::block_in_place(work),
         _ => work(),
@@ -82,6 +82,12 @@ pub(crate) async fn run_in_project_db<R>(
         };
         (Arc::clone(permits), Arc::clone(&read.background_turn))
     };
+    let waiting = std::time::Instant::now();
+    let lane_name = match lane {
+        Lane::Interactive => "interactive",
+        Lane::Index => "index",
+        Lane::ClosedFile => "closed",
+    };
     let mut index_wait = match lane {
         Lane::Interactive => {
             turn.interactive_turn().await;
@@ -91,12 +97,20 @@ pub(crate) async fn run_in_project_db<R>(
         Lane::ClosedFile => None,
     };
     let _permit = permits.acquire_owned().await.expect("analysis permits are never closed");
+    let permit_ms = waiting.elapsed().as_millis();
     let (database, evicted) = state.write().await.databases.get(project_root, lane == Lane::Interactive);
     drop_in_background(evicted);
     let _gate = database.gate().lock().await;
     if let Some(wait) = index_wait.as_mut() {
         wait.started();
     }
+    let gate_ms = waiting.elapsed().as_millis() - permit_ms;
+    let _span = crate::trace::Span::start("db", || {
+        format!(
+            "lane={lane_name} analysis={analysis} permit_ms={permit_ms} gate_ms={gate_ms} project={}",
+            project_root.map_or("-".to_string(), |root| root.display().to_string())
+        )
+    });
     // Starting a fresh storage drops the previous one, which takes a while for a large project.
     run_blocking_section(|| {
         let mut db = if analysis { database.lock_for_analysis() } else { database.lock() };

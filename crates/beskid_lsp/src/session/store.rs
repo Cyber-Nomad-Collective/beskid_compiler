@@ -107,8 +107,8 @@ impl Document {
     /// This document's facts carried over to `text`, the newer text of the same buffer whose
     /// analysis has not finished. Facts outside the edited region move with their text; facts
     /// inside it, diagnostics and everything bound to the analyzed generation (the completion
-    /// anchor, inlay hints) are dropped. Hover and completion answer from this instead of
-    /// waiting for the analysis of every keystroke.
+    /// anchor, inlay hints) are dropped. Hover, definition and completion answer from this
+    /// instead of waiting for the analysis of every keystroke.
     pub(crate) fn carried_over(&self, text: String, path: Option<&std::path::Path>) -> Document {
         let edit = TextEdit::between(&self.text, &text);
         let syntax_hovers = self
@@ -137,12 +137,40 @@ impl Document {
                 .collect::<Vec<_>>()
                 .into(),
         });
+        let syntax_definitions = self
+            .syntax_definitions
+            .iter()
+            .filter_map(|definition| {
+                let (reference_start, reference_end) =
+                    edit.span(definition.reference_start, definition.reference_end)?;
+                let (declaration_start, declaration_end) = if path == Some(definition.declaration_path.as_path()) {
+                    edit.span(definition.declaration_start, definition.declaration_end)?
+                } else {
+                    (definition.declaration_start, definition.declaration_end)
+                };
+                Some(SyntaxDefinition {
+                    reference_start,
+                    reference_end,
+                    declaration_start,
+                    declaration_end,
+                    ..definition.clone()
+                })
+            })
+            .collect();
+        let syntax_symbols = self
+            .syntax_symbols
+            .iter()
+            .filter_map(|symbol| {
+                let (start, end) = edit.span(symbol.start, symbol.end)?;
+                Some(SyntaxSymbol { start, end, ..symbol.clone() })
+            })
+            .collect();
         Document {
             version: self.version,
             text,
-            syntax_definitions: Vec::new(),
+            syntax_definitions,
             syntax_hovers,
-            syntax_symbols: Vec::new(),
+            syntax_symbols,
             bsol_semantic_token_candidates: Vec::new(),
             syntax_attribute_names: Vec::new(),
             syntax_completion,
@@ -442,6 +470,48 @@ mod carry_over_tests {
             carried.syntax_completion.as_ref().unwrap().member_access.iter().map(|(offset, _)| *offset).collect();
         assert_eq!(offsets, vec![5, 18]);
         assert!(carried.syntax_diagnostics.is_empty(), "diagnostics belong to the analyzed text");
+    }
+
+    #[test]
+    fn definitions_move_with_their_text_like_hovers() {
+        //          0123456789012345678901
+        let old = "alpha beta gamma delta";
+        let new = "alpha BETA2 gamma delta";
+        let path = std::path::Path::new("/w/Main.bd");
+        let definition = |start: usize, end: usize, declaration: &str| SyntaxDefinition {
+            reference_start: start,
+            reference_end: end,
+            declaration_path: PathBuf::from(declaration),
+            declaration_start: start,
+            declaration_end: end,
+        };
+        let mut doc = document(old, Vec::new(), Vec::new());
+        doc.syntax_definitions =
+            vec![definition(0, 5, "/w/Main.bd"), definition(6, 10, "/w/Main.bd"), definition(11, 16, "/w/Other.bd")];
+        let carried = doc.carried_over(new.to_string(), Some(path));
+        let spans: Vec<_> = carried
+            .syntax_definitions
+            .iter()
+            .map(|d| (d.reference_start, d.reference_end, d.declaration_start, d.declaration_end))
+            .collect();
+        assert_eq!(spans, vec![(0, 5, 0, 5), (12, 17, 11, 16)], "a declaration in another file keeps its offsets");
+    }
+
+    #[test]
+    fn outline_symbols_move_with_their_text() {
+        let old = "alpha beta gamma delta";
+        let new = "alpha BETA2 gamma delta";
+        let symbol = |name: &str, start: usize, end: usize| SyntaxSymbol {
+            name: name.to_string(),
+            kind: beskid_analysis::services::AnalysisSymbolKind::Function,
+            start,
+            end,
+        };
+        let mut doc = document(old, Vec::new(), Vec::new());
+        doc.syntax_symbols = vec![symbol("alpha", 0, 5), symbol("beta", 6, 10), symbol("gamma", 11, 16)];
+        let carried = doc.carried_over(new.to_string(), None);
+        let spans: Vec<_> = carried.syntax_symbols.iter().map(|s| (s.name.as_str(), s.start, s.end)).collect();
+        assert_eq!(spans, vec![("alpha", 0, 5), ("gamma", 12, 17)]);
     }
 
     #[test]

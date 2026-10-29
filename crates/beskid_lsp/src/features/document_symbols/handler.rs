@@ -28,18 +28,19 @@ fn build_document_symbol(
 }
 
 /// The outline of `text`, parsed on request. The outline is syntax only, so it never waits for
-/// the analysis of an earlier edit.
-pub fn document_symbols_for_text(uri: &Uri, text: &str) -> DocumentSymbolResponse {
+/// the analysis of an earlier edit. `None` when the text does not parse and no recovery of it
+/// is remembered yet: the outline never starts a parse recovery (a large broken buffer costs
+/// seconds of candidate parses), the caller answers from the last analyzed symbols instead.
+pub fn document_symbols_for_text(uri: &Uri, text: &str) -> Option<DocumentSymbolResponse> {
     if project_manifest::is_manifest_uri(uri) {
-        return DocumentSymbolResponse::Nested(project_manifest::document_symbols(uri, text));
+        return Some(DocumentSymbolResponse::Nested(project_manifest::document_symbols(uri, text)));
     }
     if is_standalone_bsol_uri(uri) {
-        return DocumentSymbolResponse::Nested(Vec::new());
+        return Some(DocumentSymbolResponse::Nested(Vec::new()));
     }
-    let symbols = beskid_analysis::services::parse_program_with_source_name(uri.as_str(), text)
-        .map(|program| crate::session::lifecycle::syntax_symbols_for_program(&program))
-        .unwrap_or_default();
-    outline(text, &symbols)
+    let parsed = beskid_analysis::services::parse_program_without_recovery(uri.as_str(), text)?;
+    let symbols = crate::session::lifecycle::syntax_symbols_for_program(&parsed.program);
+    Some(outline(text, &symbols))
 }
 
 /// Outline entries for `symbols` of `text`; compiler-generated hook items are left out.

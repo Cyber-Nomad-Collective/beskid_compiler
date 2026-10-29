@@ -130,6 +130,8 @@ where
         let reply_id = request_id.clone();
         let path = request_path(&request);
 
+        let received = std::time::Instant::now();
+        crate::trace::event("recv", || format!("{method} id={request_id:?} uri={}", path.as_deref().unwrap_or("-")));
         let task = tokio::spawn(async move {
             while ordering_key.as_ref().is_some_and(|key| {
                 completed.lock().expect("text sync completion map").get(key).copied().unwrap_or(0) < required
@@ -143,6 +145,7 @@ where
                 }
                 notified.await;
             }
+            let fence_ms = received.elapsed().as_millis();
             let result: Result<Option<Response>, S::Error> = async {
                 let future = {
                     let mut inner = inner.lock().await;
@@ -162,6 +165,13 @@ where
                 completed.lock().expect("text sync completion map").insert(key, ticket);
                 notify.notify_waiters();
             }
+            crate::trace::event("done", || {
+                format!(
+                    "{method} id={request_id:?} fence_ms={fence_ms} total_ms={} uri={}",
+                    received.elapsed().as_millis(),
+                    path.as_deref().unwrap_or("-")
+                )
+            });
             result
         });
         Box::pin(async move {
@@ -218,8 +228,10 @@ mod text_sync_ordering_tests {
             let release_change = Arc::clone(&self.release_change);
             let is_change = request.method() == "textDocument/didChange";
             Box::pin(async move {
-                if request.method() == "test/computeSynchronously" {
-                    std::thread::sleep(std::time::Duration::from_millis(600));
+                if request.method() == "test/computeBlocking" {
+                    // As the server's compiler work does (`db_access::run_blocking_section`):
+                    // the worker hands its other tasks to the pool before it blocks.
+                    tokio::task::block_in_place(|| std::thread::sleep(std::time::Duration::from_millis(600)));
                 }
                 events.lock().expect("event log").push(if is_change { "change-start" } else { "request-start" });
                 if is_change {
@@ -260,10 +272,14 @@ mod text_sync_ordering_tests {
         assert_eq!(*events.lock().expect("event log"), vec!["change-start", "change-done", "request-start"]);
     }
 
-    /// The transport polls every message future in one task; a handler that computes without
-    /// yielding must not stop the other messages.
+    /// The transport polls every message future in one task; each message runs as its own
+    /// task here, so a handler that blocks its worker in a blocking section (as the server's
+    /// compiler work does) stops neither the transport nor the other messages. A handler that
+    /// blocks a worker without a blocking section is a bug in that handler, not something
+    /// this service can cure: with two workers the quick request may sit in the blocked
+    /// worker's queue, which is why the former version of this test was flaky.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn a_handler_computing_synchronously_does_not_stall_other_requests() {
+    async fn a_handler_computing_in_a_blocking_section_does_not_stall_other_requests() {
         use futures_util::StreamExt;
 
         let inner = RecordingService {
@@ -276,7 +292,7 @@ mod text_sync_ordering_tests {
         let mut in_flight = futures_util::stream::FuturesUnordered::new();
         in_flight.push(
             service.call(
-                Request::build("test/computeSynchronously")
+                Request::build("test/computeBlocking")
                     .params(serde_json::json!({"textDocument": {"uri": "file:///tmp/Slow.bd"}}))
                     .id(1)
                     .finish(),

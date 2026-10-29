@@ -17,6 +17,7 @@ pub(crate) mod standalone_bsol;
 #[cfg(test)]
 pub(crate) mod test_mod_host;
 pub(crate) mod text_sync;
+pub(crate) mod trace;
 pub(crate) mod workspace_scan;
 
 /// Serializes unit tests that share process-global state: the working directory
