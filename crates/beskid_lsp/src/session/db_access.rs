@@ -13,7 +13,7 @@ use super::store::State;
 /// Run synchronous compiler work without stalling the async runtime: on the multi-threaded
 /// server runtime the worker hands its other tasks (transport, other requests) to the rest of
 /// the pool first.
-fn run_blocking_section<R>(work: impl FnOnce() -> R) -> R {
+pub(crate) fn run_blocking_section<R>(work: impl FnOnce() -> R) -> R {
     match tokio::runtime::Handle::try_current().map(|handle| handle.runtime_flavor()) {
         Ok(tokio::runtime::RuntimeFlavor::MultiThread) => tokio::task::block_in_place(work),
         _ => work(),
@@ -42,9 +42,9 @@ impl Lane {
 pub async fn with_index_db<R>(
     state: &RwLock<State>,
     project_root: &Path,
-    f: impl FnOnce(&mut BeskidDatabase) -> R,
+    f: impl FnOnce(BufferedSources, &mut BeskidDatabase) -> R,
 ) -> R {
-    run_in_project_db(state, Some(project_root), Lane::Index, true, f).await
+    run_in_project_db_with(state, Some(project_root), Lane::Index, true, buffered_sources, f).await
 }
 
 /// Work in the database of `project_root` (the detached database for `None`) that keeps no facts
@@ -71,6 +71,37 @@ pub(crate) async fn run_in_project_db<R>(
     analysis: bool,
     f: impl FnOnce(&mut BeskidDatabase) -> R,
 ) -> R {
+    run_in_project_db_with(state, project_root, lane, analysis, |_| (), |(), db| f(db)).await
+}
+
+/// The texts every project preparation feeds the database: the open documents and the
+/// indexed files (about 10 MB on the Corelib).
+pub(crate) type BufferedSources = Vec<(std::path::PathBuf, String)>;
+
+/// The texts of the open documents and the indexed files, as the database must see them.
+pub(crate) fn buffered_sources(state: &State) -> BufferedSources {
+    state
+        .workspace_index
+        .iter()
+        .chain(state.docs.iter())
+        .filter_map(|(buffer_uri, document)| {
+            crate::workspace_scan::uri_to_path(buffer_uri).map(|buffer_path| (buffer_path, document.text.clone()))
+        })
+        .collect()
+}
+
+/// [`run_in_project_db`] with an input taken from the state only once the work holds its permit
+/// and the project's database. Work queued for a permit must hold nothing large: a preparation
+/// that took its copy of every text before the wait held about 10 MB per queued edit or
+/// publication, and under load the queue grew by a gigabyte a minute.
+pub(crate) async fn run_in_project_db_with<P, R>(
+    state: &RwLock<State>,
+    project_root: Option<&Path>,
+    lane: Lane,
+    analysis: bool,
+    prepare: impl FnOnce(&State) -> P,
+    f: impl FnOnce(P, &mut BeskidDatabase) -> R,
+) -> R {
     // The permit comes first: work waiting for its turn holds no database, so the databases
     // alive are bounded by the permits and the pool, however long the queue of edits grows.
     let (permits, turn) = {
@@ -82,6 +113,12 @@ pub(crate) async fn run_in_project_db<R>(
         };
         (Arc::clone(permits), Arc::clone(&read.background_turn))
     };
+    let waiting = std::time::Instant::now();
+    let lane_name = match lane {
+        Lane::Interactive => "interactive",
+        Lane::Index => "index",
+        Lane::ClosedFile => "closed",
+    };
     let mut index_wait = match lane {
         Lane::Interactive => {
             turn.interactive_turn().await;
@@ -91,16 +128,25 @@ pub(crate) async fn run_in_project_db<R>(
         Lane::ClosedFile => None,
     };
     let _permit = permits.acquire_owned().await.expect("analysis permits are never closed");
+    let permit_ms = waiting.elapsed().as_millis();
     let (database, evicted) = state.write().await.databases.get(project_root, lane == Lane::Interactive);
     drop_in_background(evicted);
     let _gate = database.gate().lock().await;
     if let Some(wait) = index_wait.as_mut() {
         wait.started();
     }
+    let gate_ms = waiting.elapsed().as_millis() - permit_ms;
+    let _span = crate::trace::Span::start("db", || {
+        format!(
+            "lane={lane_name} analysis={analysis} permit_ms={permit_ms} gate_ms={gate_ms} project={}",
+            project_root.map_or("-".to_string(), |root| root.display().to_string())
+        )
+    });
+    let input = prepare(&*state.read().await);
     // Starting a fresh storage drops the previous one, which takes a while for a large project.
     run_blocking_section(|| {
         let mut db = if analysis { database.lock_for_analysis() } else { database.lock() };
-        let result = f(&mut db);
+        let result = f(input, &mut db);
         // The prepare spine caches each entry's compilation session process-wide (about 100 MB
         // for a Corelib package). The server keeps the facts it derived and starts every analysis
         // by invalidating the project's sessions, so a cached session is never read again; drop

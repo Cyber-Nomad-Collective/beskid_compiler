@@ -58,7 +58,7 @@ pub(crate) fn collect_repair_candidates_with_policy(
             continue;
         }
         out.push((repaired, Some(repair)));
-        if out.len() >= policy::MAX_RECOVERY_CANDIDATES {
+        if out.len() >= policy::candidate_budget(source.len()) {
             break;
         }
     }

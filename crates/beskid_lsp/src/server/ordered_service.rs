@@ -14,6 +14,7 @@ use tower_service::Service;
 
 use crate::crash::{Caught, CrashReporter};
 use crate::features;
+use crate::server::lifetime::{ExitHook, ExitState, watch_parent};
 
 /// Preserve LSP text-sync order without serializing independent requests.
 ///
@@ -29,6 +30,10 @@ pub(crate) struct TextSyncOrderedService<S> {
     completed_text_sync: Arc<Mutex<HashMap<String, u64>>>,
     text_sync_completed: Arc<Mutex<HashMap<String, Arc<Notify>>>>,
     reporter: Arc<CrashReporter>,
+    /// Ends the process on `exit` and when the client process named by `initialize` is gone
+    /// (see [`crate::server::lifetime`]); `None` in tests that drive the service in-process.
+    exit: Option<ExitHook>,
+    exit_state: Arc<ExitState>,
 }
 
 impl<S> TextSyncOrderedService<S> {
@@ -39,7 +44,37 @@ impl<S> TextSyncOrderedService<S> {
             next_text_sync: HashMap::new(),
             completed_text_sync: Arc::new(Mutex::new(HashMap::new())),
             text_sync_completed: Arc::new(Mutex::new(HashMap::new())),
+            exit: None,
+            exit_state: Arc::new(ExitState::default()),
         }
+    }
+
+    /// End the process through `exit` on the client's `exit` notification (code 0 after a
+    /// `shutdown` request, else 1) and once the client process named by `initialize`'s
+    /// `processId` is gone. In-flight work is dropped with the process.
+    pub(crate) fn ending_the_process_with(mut self, exit: ExitHook) -> Self {
+        self.exit = Some(exit);
+        self
+    }
+
+    /// The protocol-level lifetime events of `request`: a `shutdown` request, the client's
+    /// process id in `initialize`, and `exit`, which ends the process after the inner service
+    /// saw it.
+    fn observe_lifetime(&self, request: &Request) -> bool {
+        match request.method() {
+            "shutdown" => self.exit_state.shutdown_requested(),
+            "initialize" => {
+                if let (Some(exit), Some(pid)) = (
+                    &self.exit,
+                    request.params().and_then(|params| params.get("processId")).and_then(|pid| pid.as_u64()),
+                ) {
+                    watch_parent(pid as u32, Arc::clone(exit));
+                }
+            }
+            "exit" => return true,
+            _ => {}
+        }
+        false
     }
 }
 
@@ -93,6 +128,7 @@ where
     }
 
     fn call(&mut self, request: Request) -> Self::Future {
+        let exiting = self.observe_lifetime(&request);
         // Keep the open texts current in transport order before any handler runs.
         features::formatting::open_texts::observe(&request);
         let is_text_sync =
@@ -125,11 +161,15 @@ where
         });
         let inner = Arc::clone(&self.inner);
         let reporter = Arc::clone(&self.reporter);
+        let exit = exiting.then(|| self.exit.clone()).flatten();
+        let exit_code = self.exit_state.exit_code();
         let method = request.method().to_string();
         let request_id = request.id().cloned();
         let reply_id = request_id.clone();
         let path = request_path(&request);
 
+        let received = std::time::Instant::now();
+        crate::trace::event("recv", || format!("{method} id={request_id:?} uri={}", path.as_deref().unwrap_or("-")));
         let task = tokio::spawn(async move {
             while ordering_key.as_ref().is_some_and(|key| {
                 completed.lock().expect("text sync completion map").get(key).copied().unwrap_or(0) < required
@@ -143,6 +183,7 @@ where
                 }
                 notified.await;
             }
+            let fence_ms = received.elapsed().as_millis();
             let result: Result<Option<Response>, S::Error> = async {
                 let future = {
                     let mut inner = inner.lock().await;
@@ -162,6 +203,17 @@ where
                 completed.lock().expect("text sync completion map").insert(key, ticket);
                 notify.notify_waiters();
             }
+            if let Some(exit) = exit {
+                // `exit` was dispatched: the process ends now, whatever is still running.
+                exit(exit_code);
+            }
+            crate::trace::event("done", || {
+                format!(
+                    "{method} id={request_id:?} fence_ms={fence_ms} total_ms={} uri={}",
+                    received.elapsed().as_millis(),
+                    path.as_deref().unwrap_or("-")
+                )
+            });
             result
         });
         Box::pin(async move {
@@ -218,8 +270,10 @@ mod text_sync_ordering_tests {
             let release_change = Arc::clone(&self.release_change);
             let is_change = request.method() == "textDocument/didChange";
             Box::pin(async move {
-                if request.method() == "test/computeSynchronously" {
-                    std::thread::sleep(std::time::Duration::from_millis(600));
+                if request.method() == "test/computeBlocking" {
+                    // As the server's compiler work does (`db_access::run_blocking_section`):
+                    // the worker hands its other tasks to the pool before it blocks.
+                    tokio::task::block_in_place(|| std::thread::sleep(std::time::Duration::from_millis(600)));
                 }
                 events.lock().expect("event log").push(if is_change { "change-start" } else { "request-start" });
                 if is_change {
@@ -260,10 +314,14 @@ mod text_sync_ordering_tests {
         assert_eq!(*events.lock().expect("event log"), vec!["change-start", "change-done", "request-start"]);
     }
 
-    /// The transport polls every message future in one task; a handler that computes without
-    /// yielding must not stop the other messages.
+    /// The transport polls every message future in one task; each message runs as its own
+    /// task here, so a handler that blocks its worker in a blocking section (as the server's
+    /// compiler work does) stops neither the transport nor the other messages. A handler that
+    /// blocks a worker without a blocking section is a bug in that handler, not something
+    /// this service can cure: with two workers the quick request may sit in the blocked
+    /// worker's queue, which is why the former version of this test was flaky.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn a_handler_computing_synchronously_does_not_stall_other_requests() {
+    async fn a_handler_computing_in_a_blocking_section_does_not_stall_other_requests() {
         use futures_util::StreamExt;
 
         let inner = RecordingService {
@@ -276,7 +334,7 @@ mod text_sync_ordering_tests {
         let mut in_flight = futures_util::stream::FuturesUnordered::new();
         in_flight.push(
             service.call(
-                Request::build("test/computeSynchronously")
+                Request::build("test/computeBlocking")
                     .params(serde_json::json!({"textDocument": {"uri": "file:///tmp/Slow.bd"}}))
                     .id(1)
                     .finish(),

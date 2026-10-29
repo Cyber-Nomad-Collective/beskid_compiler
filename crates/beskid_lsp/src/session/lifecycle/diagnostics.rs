@@ -52,9 +52,12 @@ pub async fn publish_diagnostics_for_uri(client: &Client, state: &RwLock<State>,
 
     let text = doc.text.clone();
     let version = doc.version;
+    let span = crate::trace::Span::start("publish", || format!("uri={} version={version}", uri.as_str()));
     let Some((diagnostic_facts, fixes)) = build_full_diagnostic_facts(state, uri, &text).await else {
+        drop(span);
         return;
     };
+    drop(span);
     let diagnostics = lsp_diagnostics_from_syntax(&text, &diagnostic_facts);
     // Serialize the final identity check with this document's mutation only.
     // Hold this URI's publication fence through client enqueue. Otherwise an older

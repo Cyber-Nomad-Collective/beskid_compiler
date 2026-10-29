@@ -6,7 +6,28 @@ use crate::analysis::diagnostics::{MietteReportError, SemanticDiagnostic};
 use crate::analysis::{Applicability, Severity};
 use crate::parser::Rule;
 
+use super::parse::{parse_program_without_recovery, recoveries_run_for};
 use super::parse_program_with_source_name_and_diagnostics;
+
+/// Recovery runs once per distinct source: parsing the same broken text again (an editor does,
+/// several times per keystroke) reuses the remembered repair, and a parse that must not start a
+/// recovery gets that repair too.
+#[test]
+fn a_remembered_recovery_is_reused_and_served_without_a_new_recovery() {
+    // The missing parameter list of a host is repaired (see `host_without_parameter_list_inserts_parentheses`).
+    let source = "use Core.Env;\n\nhost MyHost {\n}\n// memo test\n";
+    assert!(parse_program_without_recovery("memo.bd", source).is_none(), "nothing is remembered yet");
+    let first = parse_program_with_source_name_and_diagnostics("memo.bd", source).expect("recovers");
+    assert!(first.recovered);
+    assert_eq!(recoveries_run_for("memo.bd", source), 1);
+    let second = parse_program_with_source_name_and_diagnostics("memo.bd", source).expect("recovers again");
+    assert_eq!(recoveries_run_for("memo.bd", source), 1, "the second parse reuses the remembered repair");
+    assert_eq!(second.diagnostics[0].message, first.diagnostics[0].message);
+    let without = parse_program_without_recovery("memo.bd", source).expect("served from the memo");
+    assert!(without.recovered);
+    assert_eq!(recoveries_run_for("memo.bd", source), 1);
+    assert!(parse_program_without_recovery("memo.bd", "i32 Main() { return 0; }\n").is_some(), "a clean parse");
+}
 
 /// The parse diagnostic for `source`, and whether the parser continued with a repaired tree.
 fn diagnose(source: &str) -> (SemanticDiagnostic, bool) {

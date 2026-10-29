@@ -15,7 +15,9 @@ use crate::{
     features::formatting::open_texts::open_text,
     manifest_uri::{is_manifest_uri, is_standalone_bsol_uri},
     session::{
-        db_access::{Lane, document_update_gate, run_in_project_db, with_index_db, with_shared_project_db},
+        db_access::{
+            Lane, buffered_sources, document_update_gate, run_blocking_section, run_in_project_db_with, with_index_db,
+        },
         diagnostics_bridge::collect_syntax_diagnostics_for_state,
         documentation_facts::syntax_documentation_facts_for_source,
         imports::RecoverableCompletionSyntax,
@@ -102,18 +104,7 @@ pub(super) async fn build_full_diagnostic_facts(
     if let Some(diagnostic) = lockfile_replay_diagnostic(plan) {
         return Some((vec![diagnostic], Vec::new()));
     }
-    let (buffered_sources, interactive) = {
-        let read = state.read().await;
-        let sources = read
-            .workspace_index
-            .iter()
-            .chain(read.docs.iter())
-            .filter_map(|(buffer_uri, document)| {
-                uri_to_path(buffer_uri).map(|buffer_path| (buffer_path, document.text.clone()))
-            })
-            .collect::<Vec<_>>();
-        (sources, read.docs.contains_key(uri))
-    };
+    let interactive = state.read().await.docs.contains_key(uri);
     let project_root = plan.project_root.clone();
     let mod_host = state.read().await.mod_host.clone();
     let options = PrepareOptions {
@@ -130,12 +121,16 @@ pub(super) async fn build_full_diagnostic_facts(
     // Held from the assembly through the preparation: the assembled program is large.
     let permits = Arc::clone(&state.read().await.diagnostics_permits);
     let _permit = permits.acquire_owned().await.ok()?;
-    let assembled = with_shared_project_db(state, Some(&project_root), interactive, |db| {
+    if newer_text_sent() {
+        return None;
+    }
+    let lane = if interactive { Lane::Interactive } else { Lane::ClosedFile };
+    let assembled = run_in_project_db_with(state, Some(&project_root), lane, false, buffered_sources, |sources, db| {
         if newer_text_sent() {
             return None;
         }
         beskid_queries::invalidate_entry_sessions(&project_root);
-        for (buffer_path, buffer_text) in buffered_sources {
+        for (buffer_path, buffer_text) in sources {
             db.ensure_file_text(buffer_path, buffer_text);
         }
         db.ensure_file_text(path, text.to_string());
@@ -259,21 +254,23 @@ async fn syntax_facts_for_text(
     fallback: StartupFallback,
     member_offsets: &[usize],
 ) -> SyntaxFacts {
-    let documentation = if is_manifest_uri(uri) || is_standalone_bsol_uri(uri) {
-        Vec::new()
-    } else {
-        syntax_documentation_facts_for_source(uri.as_str(), text)
-    };
-    // Outline symbols belong to the current buffer's recoverable syntax, not to
-    // the last successfully typed project closure. Keep this independent of
-    // resolution so an incomplete expression cannot erase or stale the outline.
-    let (current_symbols, current_attribute_names) = if is_manifest_uri(uri) || is_standalone_bsol_uri(uri) {
-        (Vec::new(), Vec::new())
-    } else {
-        beskid_analysis::services::parse_program_with_source_name(uri.as_str(), text)
-            .map(|program| (syntax_symbols_for_program(&program), attribute_names_for_program(&program)))
-            .unwrap_or_default()
-    };
+    // The recoverable parse of a broken buffer takes a while (the first time for a text; later
+    // parses reuse the remembered repair), so it runs off the async workers.
+    let (documentation, (current_symbols, current_attribute_names)) =
+        if is_manifest_uri(uri) || is_standalone_bsol_uri(uri) {
+            (Vec::new(), (Vec::new(), Vec::new()))
+        } else {
+            run_blocking_section(|| {
+                let documentation = syntax_documentation_facts_for_source(uri.as_str(), text);
+                // Outline symbols belong to the current buffer's recoverable syntax, not to
+                // the last successfully typed project closure. Keep this independent of
+                // resolution so an incomplete expression cannot erase or stale the outline.
+                let symbols = beskid_analysis::services::parse_program_with_source_name(uri.as_str(), text)
+                    .map(|program| (syntax_symbols_for_program(&program), attribute_names_for_program(&program)))
+                    .unwrap_or_default();
+                (documentation, symbols)
+            })
+        };
     if is_manifest_uri(uri) || is_standalone_bsol_uri(uri) {
         let (diagnostics, fixes) = fallback_diagnostics(state, uri, text, None, fallback).await;
         return SyntaxFacts {
@@ -337,18 +334,7 @@ async fn syntax_facts_for_text(
             ..SyntaxFacts::default()
         };
     }
-    let (buffered_sources, interactive) = {
-        let read = state.read().await;
-        let sources = read
-            .workspace_index
-            .iter()
-            .chain(read.docs.iter())
-            .filter_map(|(buffer_uri, document)| {
-                uri_to_path(buffer_uri).map(|buffer_path| (buffer_path, document.text.clone()))
-            })
-            .collect::<Vec<_>>();
-        (sources, pass == EditorPreparePass::Immediate || read.docs.contains_key(uri))
-    };
+    let interactive = pass == EditorPreparePass::Immediate || state.read().await.docs.contains_key(uri);
     let project_root = plan.project_root.clone();
     let mod_host = state.read().await.mod_host.clone();
     let resolved_for_prepare = resolved.clone();
@@ -357,70 +343,71 @@ async fn syntax_facts_for_text(
     // The completion repair of a buffer analyzes in the storage of the buffer's own analysis.
     let analysis = member_offsets.is_empty();
     let lane = if interactive { Lane::Interactive } else { Lane::ClosedFile };
-    let prepared_facts = run_in_project_db(state, Some(&project_root), lane, analysis, |db| {
-        // The wait for the project's database can be long; a newer text makes this work moot.
-        if newest.is_some_and(|buffer| superseded(uri, buffer)) {
-            return Ok(None);
-        }
-        beskid_queries::invalidate_entry_sessions(&project_root);
-        for (buffer_path, buffer_text) in buffered_sources {
-            db.ensure_file_text(buffer_path, buffer_text);
-        }
-        db.ensure_file_text(path_for_prepare.clone(), text_for_prepare);
-        let entry_key = beskid_queries::session_fingerprint(&resolved_for_prepare)
-            .map(|fingerprint| beskid_queries::fingerprint_key(&fingerprint))
-            .unwrap_or_else(|| path_for_prepare.display().to_string());
+    let prepared_facts =
+        run_in_project_db_with(state, Some(&project_root), lane, analysis, buffered_sources, |sources, db| {
+            // The wait for the project's database can be long; a newer text makes this work moot.
+            if newest.is_some_and(|buffer| superseded(uri, buffer)) {
+                return Ok(None);
+            }
+            beskid_queries::invalidate_entry_sessions(&project_root);
+            for (buffer_path, buffer_text) in sources {
+                db.ensure_file_text(buffer_path, buffer_text);
+            }
+            db.ensure_file_text(path_for_prepare.clone(), text_for_prepare);
+            let entry_key = beskid_queries::session_fingerprint(&resolved_for_prepare)
+                .map(|fingerprint| beskid_queries::fingerprint_key(&fingerprint))
+                .unwrap_or_else(|| path_for_prepare.display().to_string());
 
-        let prepared = if pass == EditorPreparePass::Immediate {
-            beskid_queries::bump_file_revision(db, &entry_key);
-            let options = PrepareOptions {
-                mod_host: beskid_analysis::mod_host::ModHost::NoMods,
-                front_end: FrontEndOptions {
-                    assembly_recovery: beskid_analysis::projects::AssemblyRecoveryPolicy::EditorRetainRecovered,
-                    with_semantic_diagnostics: false,
-                    ..Default::default()
-                },
-                native_mod_adapter_sources: false,
+            let prepared = if pass == EditorPreparePass::Immediate {
+                beskid_queries::bump_file_revision(db, &entry_key);
+                let options = PrepareOptions {
+                    mod_host: beskid_analysis::mod_host::ModHost::NoMods,
+                    front_end: FrontEndOptions {
+                        assembly_recovery: beskid_analysis::projects::AssemblyRecoveryPolicy::EditorRetainRecovered,
+                        with_semantic_diagnostics: false,
+                        ..Default::default()
+                    },
+                    native_mod_adapter_sources: false,
+                };
+                let prepared = prepare_project_syntax_facts(db, &resolved_for_prepare, pass, &mod_host)?;
+                // Resolve registry-backed identity immediately, without waiting for the
+                // full executable dependency closure, against the same post-mod-rewrite
+                // assembly that owns the generated syntax facts.
+                let resolved_generation = resolved_for_prepare.with_assembly(prepared.assembly.clone());
+                // Semantic resolution enriches the fast snapshot when the edit is
+                // complete enough, but a transient type error must not discard the
+                // recoverable import/member surface needed to finish that edit.
+                let _ = beskid_queries::entry_resolution_with_db(db, &resolved_generation, &options);
+                prepared
+            } else {
+                prepare_project_syntax_facts(db, &resolved_for_prepare, pass, &mod_host)?
             };
-            let prepared = prepare_project_syntax_facts(db, &resolved_for_prepare, pass, &mod_host)?;
-            // Resolve registry-backed identity immediately, without waiting for the
-            // full executable dependency closure, against the same post-mod-rewrite
-            // assembly that owns the generated syntax facts.
-            let resolved_generation = resolved_for_prepare.with_assembly(prepared.assembly.clone());
-            // Semantic resolution enriches the fast snapshot when the edit is
-            // complete enough, but a transient type error must not discard the
-            // recoverable import/member surface needed to finish that edit.
-            let _ = beskid_queries::entry_resolution_with_db(db, &resolved_generation, &options);
-            prepared
-        } else {
-            prepare_project_syntax_facts(db, &resolved_for_prepare, pass, &mod_host)?
-        };
-        let mut facts = syntax_facts_for_assembly(db, &resolved_for_prepare, Arc::new(prepared.assembly));
-        // Capture the members of each repaired member access as owned data while this generation
-        // is the registered one.
-        if let Some(completion) = facts.completion.as_mut()
-            && let Some(anchor) = completion.entry_anchor
-            && !member_offsets.is_empty()
-        {
-            completion.member_access = member_offsets
-                .iter()
-                .filter_map(|&offset| {
-                    let context = beskid_queries::CompletionContext {
-                        cursor: offset,
-                        replacement_start: offset,
-                        replacement_end: offset,
-                    };
-                    let candidates = beskid_queries::completion_candidates(db, anchor, context).ok().flatten()?;
-                    (!candidates.is_empty()).then_some((offset, candidates))
-                })
-                .collect::<Vec<_>>()
-                .into();
-        }
-        facts.diagnostics = prepared.diagnostics;
-        facts.fixes = prepared.fixes;
-        anyhow::Ok(Some(facts))
-    })
-    .await;
+            let mut facts = syntax_facts_for_assembly(db, &resolved_for_prepare, Arc::new(prepared.assembly));
+            // Capture the members of each repaired member access as owned data while this generation
+            // is the registered one.
+            if let Some(completion) = facts.completion.as_mut()
+                && let Some(anchor) = completion.entry_anchor
+                && !member_offsets.is_empty()
+            {
+                completion.member_access = member_offsets
+                    .iter()
+                    .filter_map(|&offset| {
+                        let context = beskid_queries::CompletionContext {
+                            cursor: offset,
+                            replacement_start: offset,
+                            replacement_end: offset,
+                        };
+                        let candidates = beskid_queries::completion_candidates(db, anchor, context).ok().flatten()?;
+                        (!candidates.is_empty()).then_some((offset, candidates))
+                    })
+                    .collect::<Vec<_>>()
+                    .into();
+            }
+            facts.diagnostics = prepared.diagnostics;
+            facts.fixes = prepared.fixes;
+            anyhow::Ok(Some(facts))
+        })
+        .await;
     let mut facts = match prepared_facts {
         Ok(Some(facts)) => facts,
         Ok(None) => return SyntaxFacts { superseded: true, ..SyntaxFacts::default() },
@@ -535,25 +522,15 @@ pub(crate) async fn index_project_documents(
     if let Some(diagnostic) = lockfile_replay_diagnostic(plan) {
         return Err(diagnostic.message);
     }
-    let buffered_sources = {
-        let read = state.read().await;
-        read.workspace_index
-            .iter()
-            .chain(read.docs.iter())
-            .filter_map(|(buffer_uri, document)| {
-                uri_to_path(buffer_uri).map(|buffer_path| (buffer_path, document.text.clone()))
-            })
-            .collect::<Vec<_>>()
-    };
     let wanted: std::collections::HashMap<std::path::PathBuf, (&Uri, &str)> = files
         .iter()
         .map(|(uri, path, text)| (path.canonicalize().unwrap_or_else(|_| path.clone()), (uri, text.as_str())))
         .collect();
     let project_root = plan.project_root.clone();
     let mod_host = state.read().await.mod_host.clone();
-    let derived = with_index_db(state, &project_root, |db| {
+    let derived = with_index_db(state, &project_root, |sources, db| {
         beskid_queries::invalidate_entry_sessions(&project_root);
-        for (buffer_path, buffer_text) in buffered_sources {
+        for (buffer_path, buffer_text) in sources {
             db.ensure_file_text(buffer_path, buffer_text);
         }
         for (path, (_, text)) in &wanted {
@@ -644,11 +621,15 @@ pub async fn analyze_open_document(state: &RwLock<State>, uri: Uri, version: i32
 }
 
 async fn store_document(state: &RwLock<State>, uri: Uri, version: i32, text: String, newest_only: bool) -> bool {
+    let _span = crate::trace::Span::start("analyze", || format!("uri={} version={version}", uri.as_str()));
     let update_gate = document_update_gate(state, &uri).await;
     let _update_guard = update_gate.lock().await;
     if newest_only && superseded(&uri, &text) {
         return false;
     }
+    // The recoverable parse of a broken buffer can take a while; it runs before the state
+    // lock is taken, so requests on other documents never wait for it.
+    let current_syntax = run_blocking_section(|| RecoverableCompletionSyntax::parse(&text));
     let (prior_dependency_surface, prior_attributes) = {
         let mut write_state = state.write().await;
         if let Some(existing) = write_state.docs.get(&uri)
@@ -656,7 +637,6 @@ async fn store_document(state: &RwLock<State>, uri: Uri, version: i32, text: Str
         {
             return false;
         }
-        let current_syntax = RecoverableCompletionSyntax::parse(&text);
         let prior_dependency_surface = write_state
             .docs
             .get(&uri)

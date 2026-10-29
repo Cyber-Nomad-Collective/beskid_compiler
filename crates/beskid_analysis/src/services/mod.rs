@@ -48,7 +48,7 @@ pub use front_end::{ExecutableFrontEnd, FrontEndOptions};
 pub use input::{ResolvedInput, resolve_input, resolve_input_with_pipeline, resolve_input_with_policy};
 pub use parse::{
     ParsedProgram, parse_expression_source, parse_program, parse_program_with_source_name,
-    parse_program_with_source_name_and_diagnostics,
+    parse_program_with_source_name_and_diagnostics, parse_program_without_recovery,
 };
 pub use prepare::{
     PrepareOptions, PreparedCompilation, SemanticFactAuthority, SemanticFactFinding, SemanticFactRelated,
