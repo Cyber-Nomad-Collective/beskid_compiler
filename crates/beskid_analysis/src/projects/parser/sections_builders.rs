@@ -97,7 +97,6 @@ fn build_glue_owner(block: ParsedGlueBlock) -> Result<ProjectGlueOwner, ProjectE
     }
     let backend = match block.fields.get("backend").map(String::as_str) {
         Some("rust") => ProjectGlueBackend::Rust,
-        Some("dotnet") => ProjectGlueBackend::Dotnet,
         Some(other) => {
             return Err(ProjectError::meta_contract(
                 "E1862",

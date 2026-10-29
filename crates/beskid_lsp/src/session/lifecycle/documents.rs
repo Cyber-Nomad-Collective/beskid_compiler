@@ -47,9 +47,9 @@ fn lockfile_replay_diagnostic(plan: &CompilePlan) -> Option<SyntaxDiagnostic> {
     })
 }
 
-/// The lock replay diagnostic of a project manifest (`E3024` for a retired lock, a malformed or
-/// a stale lock). The source files of the project report it too, but the editor asks for its
-/// quick fix (`beskid.migrateLock`) on the `.bproj`, so the manifest publishes it as well.
+/// The lock replay diagnostic of a project manifest (`E3025` for a lock in an unsupported format,
+/// a malformed or a stale lock). The source files of the project report it too; the manifest
+/// publishes it as well, because the lock belongs to the project the `.bproj` declares.
 fn manifest_lock_diagnostic(uri: &Uri) -> Option<SyntaxDiagnostic> {
     if !is_manifest_uri(uri) {
         return None;
@@ -763,7 +763,7 @@ mod portable_lock_diagnostic_tests {
     use super::*;
 
     #[tokio::test]
-    async fn lsp_document_reports_present_v1_malformed_and_stale_locks() {
+    async fn lsp_document_reports_unsupported_malformed_and_stale_locks() {
         let temp = TempDir::new().expect("temp project");
         let root = temp.path();
         fs::create_dir_all(root.join("Src")).expect("source directory");
@@ -789,44 +789,38 @@ target "App" {
         let uri = Uri::from_str(&crate::workspace_scan::path_to_uri_string(&source_path)).expect("URI");
         let state = RwLock::new(State::default());
 
-        fs::write(&lock_path, "# Project.lock v1\nroot_manifest=App.bproj\nproject_name=App\ndependencies:\n")
-            .expect("v1 lock");
+        let unsupported = "# Project.lock v1\nroot_manifest=App.bproj\nproject_name=App\ndependencies:\n";
+        fs::write(&lock_path, unsupported).expect("unsupported lock");
+        let reports_unsupported = |d: &SyntaxDiagnostic| {
+            d.code.as_deref() == Some("E3025")
+                && d.message.contains("unsupported format")
+                && d.message.contains("beskid dev project lock")
+        };
         let doc = build_initial_workspace_document(&state, &uri, 1, source.to_string()).await;
-        assert!(
-            doc.syntax_diagnostics
-                .iter()
-                .any(|d| d.message.contains("v1") && d.message.contains("beskid dev project lock")),
-            "diagnostics: {:?}",
-            doc.syntax_diagnostics
-        );
+        assert!(doc.syntax_diagnostics.iter().any(reports_unsupported), "diagnostics: {:?}", doc.syntax_diagnostics);
         state.read().await.mark_initial_scan_complete();
         let (full_diagnostics, _) = build_full_diagnostic_facts(&state, &uri, source).await.expect("no newer text");
-        assert!(
-            full_diagnostics.iter().any(|d| d.message.contains("v1") && d.message.contains("beskid dev project lock"))
-        );
-        // The manifest publishes it too: the editor asks for the migrate quick fix on the `.bproj`.
+        assert!(full_diagnostics.iter().any(reports_unsupported), "diagnostics: {full_diagnostics:?}");
+        // The manifest publishes it too.
         let manifest_uri =
             Uri::from_str(&crate::workspace_scan::path_to_uri_string(&manifest_path)).expect("manifest URI");
         let manifest_text = fs::read_to_string(&manifest_path).expect("manifest text");
         let (manifest_diagnostics, _) =
             build_full_diagnostic_facts(&state, &manifest_uri, &manifest_text).await.expect("manifest facts");
-        assert!(
-            manifest_diagnostics.iter().any(|d| d.code.as_deref() == Some("E3024")),
-            "manifest diagnostics: {manifest_diagnostics:?}"
-        );
+        assert!(manifest_diagnostics.iter().any(reports_unsupported), "manifest diagnostics: {manifest_diagnostics:?}");
 
         fs::write(&lock_path, "# Project.lock v3\nnot-a-lock\n").expect("malformed lock");
         let doc = build_initial_workspace_document(&state, &uri, 2, source.to_string()).await;
         assert!(doc.syntax_diagnostics.iter().any(|d| d.message.contains("lockfile")));
 
-        fs::remove_file(&lock_path).expect("remove malformed fixture lock before generating valid v2");
+        fs::remove_file(&lock_path).expect("remove malformed fixture lock before generating a valid lock");
         let plan = beskid_analysis::projects::build_compile_plan(&manifest_path, None).expect("plan");
         beskid_analysis::projects::prepare_project_workspace_with_options(
             &plan,
             beskid_analysis::projects::WorkspacePrepareOptions { refresh_lock: true, ..Default::default() },
             None,
         )
-        .expect("generate v2");
+        .expect("generate the lock");
         let valid = fs::read_to_string(&lock_path).expect("lock");
         fs::write(&lock_path, valid.replace("project_name=App", "project_name=Other")).expect("stale lock");
         let doc = build_initial_workspace_document(&state, &uri, 3, source.to_string()).await;

@@ -14,7 +14,7 @@
 #   scripts/v067-proof.sh --beskid PATH --lsp PATH --soak-bin PATH --mutate-bin PATH \
 #       [--lings DIR] [--bundle DIR --version X.Y.Z] [options]
 #
-#   --beskid PATH        installed beskid CLI (steps 2, soak lock migration)
+#   --beskid PATH        installed beskid CLI (step 2, and the soak old-lock check)
 #   --lsp PATH           beskid_lsp binary (step 1)
 #   --soak-bin PATH      beskid-soak binary (step 1)
 #   --mutate-bin PATH    beskid-mutate binary (step 2)

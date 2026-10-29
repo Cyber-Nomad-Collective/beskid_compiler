@@ -218,20 +218,6 @@ async fn publisher_client_uses_canonical_multipart_versions_contract() {
 }
 
 #[tokio::test]
-async fn obsolete_package_publish_route_is_not_exposed_by_the_rust_server() {
-    let response = router(PckgServerConfig::default())
-        .oneshot(
-            Request::post("/api/packages/Client.Contract/publish")
-                .body(Body::empty())
-                .expect("build obsolete route request"),
-        )
-        .await
-        .expect("route response");
-
-    assert_eq!(response.status(), StatusCode::NOT_FOUND);
-}
-
-#[tokio::test]
 async fn list_versions_without_auth_returns_error() {
     let config = PckgClientConfig::new("http://localhost:5195").expect("valid URL");
     let client = PckgClient::new(config).expect("client should build");

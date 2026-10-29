@@ -2,10 +2,10 @@
 //!
 //! This module mirrors the ABI-v5 runtime-kit validation discipline
 //! (`runtime_kit`) but targets external toolchain tools (rustc, cargo,
-//! dotnet, linkers) rather than the runtime ABI. It is the host-side
+//! linkers) rather than the runtime ABI. It is the host-side
 //! scaffold for the `Beskid.Glue.ToolchainProbe` contract: it declares the
 //! typed `ToolSpec`/`ResolvedTool`/`ToolchainError` model and a fail-closed
-//! validation surface. Full implementation for rustc/cargo/dotnet/linkers
+//! validation surface. Full implementation for rustc/cargo/linkers
 //! lands in the 0.5 delivery; the 0.4 delivery ships only the contract
 //! scaffold and the typed model.
 //!
@@ -27,12 +27,8 @@ pub enum ToolCapability {
     Rustc,
     /// Build a Rust crate from a manifest (`cargo`).
     Cargo,
-    /// Compile .NET source / build a .NET project (`dotnet`).
-    Dotnet,
     /// Link native objects into a shared library or executable (`cc`/`cl`).
     Linker,
-    /// Read .NET ECMA-335 signatures (`dotscope`).
-    Dotscope,
 }
 
 /// A tool specification: what the glue layer is looking for. The probe

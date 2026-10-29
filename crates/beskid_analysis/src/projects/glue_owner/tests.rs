@@ -152,13 +152,6 @@ fn missing_or_non_directory_path_is_rejected() {
 }
 
 #[test]
-fn dotnet_backend_is_unavailable() {
-    let temp = project_with_entry();
-    let dotnet = ProjectGlueOwner { backend: ProjectGlueBackend::Dotnet, ..owner("rust") };
-    expect_code(collect_glue_owner_sources(temp.path(), &dotnet), "E1862", "dotnet");
-}
-
-#[test]
 fn oversized_source_file_is_rejected() {
     let temp = project_with_entry();
     write(temp.path(), "rust/large.rs", &vec![b' '; GLUE_OWNER_MAX_FILE_BYTES as usize + 1]);

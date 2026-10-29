@@ -968,7 +968,7 @@ target "App" {
         let source_path = uri_to_path(&uri).expect("path");
         assert_eq!(refresh_after_disk_change(&client, &state, &[source_path]).await, DiskRefresh::Done);
 
-        fs::write(&lock, "# Project.lock v1\n").expect("replace lock with v1");
+        fs::write(&lock, "# Project.lock v1\n").expect("replace the lock with an older format");
         assert_eq!(
             refresh_after_disk_change(&client, &state, std::slice::from_ref(&lock)).await,
             DiskRefresh::ScanWorkspace
@@ -984,17 +984,17 @@ target "App" {
         let (temp, state, uri, lock, _source) = open_lock_fixture().await;
         let valid = fs::read_to_string(&lock).expect("valid lock");
 
-        fs::write(&lock, "# Project.lock v1\n").expect("replace lock with v1");
+        fs::write(&lock, "# Project.lock v1\n").expect("replace the lock with an older format");
         watched_change(&client, &state, temp.path(), &lock).await;
         let invalid = next_for_uri(&mut notifications, &uri).await;
         assert!(
             invalid
                 .diagnostics
                 .iter()
-                .any(|d| d.message.contains("v1") && d.message.contains("beskid dev project lock"))
+                .any(|d| d.message.contains("unsupported format") && d.message.contains("beskid dev project lock"))
         );
 
-        fs::write(&lock, valid).expect("restore v2");
+        fs::write(&lock, valid).expect("restore the valid lock");
         watched_change(&client, &state, temp.path(), &lock).await;
         let valid = next_for_uri(&mut notifications, &uri).await;
         assert!(!valid.diagnostics.iter().any(|d| d.message.contains("Project.lock")));
@@ -1011,17 +1011,17 @@ target "App" {
         assert!(state.read().await.workspace_index.contains_key(&uri));
         let valid = fs::read_to_string(&lock).expect("valid lock");
 
-        fs::write(&lock, "# Project.lock v1\n").expect("replace lock with v1");
+        fs::write(&lock, "# Project.lock v1\n").expect("replace the lock with an older format");
         watched_change(&client, &state, temp.path(), &lock).await;
         let invalid = next_for_uri(&mut notifications, &uri).await;
         assert!(
             invalid
                 .diagnostics
                 .iter()
-                .any(|d| d.message.contains("v1") && d.message.contains("beskid dev project lock"))
+                .any(|d| d.message.contains("unsupported format") && d.message.contains("beskid dev project lock"))
         );
 
-        fs::write(&lock, valid).expect("restore v2");
+        fs::write(&lock, valid).expect("restore the valid lock");
         watched_change(&client, &state, temp.path(), &lock).await;
         let valid = next_for_uri(&mut notifications, &uri).await;
         assert!(!valid.diagnostics.iter().any(|d| d.message.contains("Project.lock")));
@@ -1033,17 +1033,17 @@ target "App" {
         let (temp, state, uri, lock, _source) = open_lock_fixture().await;
         let valid = fs::read_to_string(&lock).expect("valid lock");
 
-        fs::write(&lock, "# Project.lock v1\n").expect("replace lock with v1");
+        fs::write(&lock, "# Project.lock v1\n").expect("replace the lock with an older format");
         scan_workspace(&client, &state, temp.path(), None).await;
         let invalid = next_for_uri(&mut notifications, &uri).await;
         assert!(
             invalid
                 .diagnostics
                 .iter()
-                .any(|d| d.message.contains("v1") && d.message.contains("beskid dev project lock"))
+                .any(|d| d.message.contains("unsupported format") && d.message.contains("beskid dev project lock"))
         );
 
-        fs::write(&lock, valid).expect("restore v2");
+        fs::write(&lock, valid).expect("restore the valid lock");
         scan_workspace(&client, &state, temp.path(), None).await;
         let valid = next_for_uri(&mut notifications, &uri).await;
         assert!(!valid.diagnostics.iter().any(|d| d.message.contains("Project.lock")));

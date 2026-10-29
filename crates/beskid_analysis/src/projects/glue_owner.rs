@@ -7,7 +7,6 @@
 //! entry is rejected, never ignored, and a failure returns no partial inventory.
 //!
 //! Diagnostic codes (E1801-E1899 manifest band):
-//! - **E1862**: owner backend unavailable (`dotnet` in 0.6).
 //! - **E1863**: owner directory is missing, not a directory, or not confined to the project root.
 //! - **E1865**: owner directory content is not closed (missing `implementation.rs`, a reserved or
 //!   non-`.rs` file, a symbolic link, a non-regular entry, a non-UTF-8 name or source).
@@ -19,11 +18,7 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
-use crate::projects::{
-    error::ProjectError,
-    model::{ProjectGlueBackend, ProjectGlueOwner},
-    validator::validate_glue_owner_path,
-};
+use crate::projects::{error::ProjectError, model::ProjectGlueOwner, validator::validate_glue_owner_path};
 
 /// Entry source file every Rust Glue owner directory must contain at its top level.
 pub const GLUE_OWNER_ENTRY_FILE: &str = "implementation.rs";
@@ -94,21 +89,11 @@ pub fn glue_owner_directory(project_root: &Path, owner: &ProjectGlueOwner) -> Re
 ///
 /// `project_root` is the directory that contains the project manifest. The owner declaration must
 /// come from a manifest accepted by [`super::validator::validate_manifest`]; this function re-checks
-/// the backend and the lexical path so that it cannot admit an unvalidated owner.
+/// the lexical path so that it cannot admit an unvalidated owner.
 pub fn collect_glue_owner_sources(
     project_root: &Path,
     owner: &ProjectGlueOwner,
 ) -> Result<GlueOwnerSources, ProjectError> {
-    if owner.backend != ProjectGlueBackend::Rust {
-        return Err(ProjectError::meta_contract(
-            "E1862",
-            format!(
-                "glue `{}` selects backend `{}`, which is unavailable in this release",
-                owner.library,
-                owner.backend.as_str()
-            ),
-        ));
-    }
     let directory = glue_owner_directory(project_root, owner)?;
     let mut collector = Collector { owner, files: Vec::new(), directories: 0, total_bytes: 0 };
     collector.walk(&directory, "")?;

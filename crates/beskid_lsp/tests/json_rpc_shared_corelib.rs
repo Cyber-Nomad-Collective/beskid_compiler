@@ -172,7 +172,7 @@ fn scan_workspace(label: &str, corelib_root: &Path, shared_root: Option<&Path>) 
     );
     let opened = diagnostics_for(&messages, &completion_uri);
     assert!(
-        !opened.iter().any(|diagnostic| matches!(diagnostic["code"].as_str(), Some("E3024" | "E3032"))),
+        !opened.iter().any(|diagnostic| matches!(diagnostic["code"].as_str(), Some("E3025" | "E3032"))),
         "{label}: an intact shared Corelib and a current lock report no lock or seal error: {opened:?}"
     );
     send_message(

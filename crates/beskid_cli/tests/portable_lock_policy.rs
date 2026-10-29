@@ -56,13 +56,12 @@ impl ProjectCase {
         .expect("app manifest");
     }
 
-    fn write_legacy_lock(&self) -> Vec<u8> {
-        // Deliberately stale v1 source paths: migration must resolve the current manifest.
+    /// A lock whose first line is not the format 3 header.
+    fn write_unsupported_lock(&self, header: &str) -> Vec<u8> {
         let content = format!(
-            "# Project.lock v1\nroot_manifest={}\nproject_name=App\ndependencies:\n- name=Kernel;manifest=/obsolete/Kernel/Kernel.bproj;project=/obsolete/Kernel;source_root=/obsolete/Kernel/Src;materialized_root=obj/beskid/deps/src/Kernel-old\n",
-            self.app.join("App.bproj").display()
+            "{header}\nroot_manifest=App.bproj\nproject_name=App\ndependencies:\n- name=Kernel;source=path;project=../Kernel;manifest=Kernel.bproj;source_root=Src;materialized_root=obj/beskid/deps/src/Kernel\n"
         );
-        fs::write(&self.lock, content.as_bytes()).expect("legacy lock");
+        fs::write(&self.lock, content.as_bytes()).expect("unsupported lock");
         content.into_bytes()
     }
 
@@ -149,14 +148,34 @@ fn tree_snapshot(root: &Path) -> Vec<(PathBuf, Option<Vec<u8>>)> {
     entries
 }
 
+/// An older lock format or an unknown header fails closed (E3025) in every command, the explicit
+/// `dev project lock` and `update --all` included: the message says to delete the file, the lock
+/// bytes stay and nothing is prepared.
 #[test]
-fn normal_build_run_and_test_reject_v1_with_migration_command() {
-    for command in ["build", "run", "test"] {
+fn unsupported_lock_format_fails_closed_for_every_command() {
+    let mut runs = Vec::new();
+    for header in ["# Project.lock v1", "# Project.lock v2", "# Project.lock v999"] {
+        runs.extend([(header, "build", None), (header, "lock", None), (header, "update", None)]);
+    }
+    runs.extend([
+        ("# Project.lock v1", "run", None),
+        ("# Project.lock v1", "test", None),
+        ("# Project.lock v1", "build", Some("--locked")),
+        ("# Project.lock v1", "build", Some("--frozen")),
+    ]);
+    for (header, command, policy) in runs {
         let case = ProjectCase::new();
-        let legacy = case.write_legacy_lock();
-        let output = case.invoke(command, None);
-        assert_failed_with(&output, "beskid dev project lock");
-        assert_eq!(fs::read(&case.lock).expect("legacy lock retained"), legacy);
+        let original = case.write_unsupported_lock(header);
+        let output = case.invoke(command, policy);
+        let text = output_text(&output);
+        assert!(!output.status.success(), "{header} {command} {policy:?} accepted the lock: {text}");
+        assert!(
+            text.contains("unsupported format")
+                && text.contains("delete the file")
+                && text.contains("beskid dev project lock"),
+            "{header} {command} {policy:?}: {text}"
+        );
+        assert_eq!(fs::read(&case.lock).expect("lock retained"), original, "{header} {command} {policy:?}");
         case.assert_no_obj();
     }
 }
@@ -178,57 +197,7 @@ fn removed_root_lock_command_names_its_dev_project_replacement() {
     case.assert_no_obj();
 }
 
-#[test]
-fn locked_and_frozen_reject_v1_without_writing_or_creating_obj() {
-    for command in ["build", "run", "test"] {
-        for policy in ["--locked", "--frozen"] {
-            let case = ProjectCase::new();
-            let legacy = case.write_legacy_lock();
-            let output = case.invoke(command, Some(policy));
-            assert_failed_with(&output, "beskid dev project lock");
-            assert_eq!(fs::read(&case.lock).expect("legacy lock retained"), legacy);
-            case.assert_no_obj();
-        }
-    }
-}
-
-#[test]
-fn lock_and_update_explicitly_migrate_v1_from_current_manifest() {
-    for command in ["lock", "update"] {
-        let case = ProjectCase::new();
-        case.write_legacy_lock();
-        let output = case.invoke(command, None);
-        assert!(output.status.success(), "{command} failed: {}", output_text(&output));
-        let lock = assert_current_lock(&case.lock);
-        assert!(lock.contains("name=Kernel"), "current dependency missing: {lock}");
-        assert!(lock.contains("project=../Kernel"), "current relative project missing: {lock}");
-        assert!(!lock.contains("/obsolete/"), "v1 path reused: {lock}");
-    }
-}
-
-fn unknown_header_case(command: &str) {
-    let case = ProjectCase::new();
-    let unknown = b"# Project.lock v999\nroot_manifest=App.bproj\nproject_name=App\ndependencies:\n";
-    fs::write(&case.lock, unknown).expect("write unknown-version lock");
-    assert_invalid_lock_rejected_without_mutation(&case, command, unknown);
-}
-
-#[test]
-fn unknown_lock_header_fails_for_build_without_preparation_writes() {
-    unknown_header_case("build");
-}
-
-#[test]
-fn unknown_lock_header_fails_for_lock_without_preparation_writes() {
-    unknown_header_case("lock");
-}
-
-#[test]
-fn unknown_lock_header_fails_for_update_without_preparation_writes() {
-    unknown_header_case("update");
-}
-
-fn malformed_v2_case(command: &str) {
+fn malformed_lock_case(command: &str) {
     let case = ProjectCase::new();
     let malformed = b"# Project.lock v3\nroot_manifest=App.bproj\nproject_name=App\ndependencies:\n- name=Kernel;source=path;project=../Kernel;manifest=Kernel.bproj;source_root=Src;materialized_root=obj/beskid/deps/src/Kernel-old;unexpected=1\n";
     fs::write(&case.lock, malformed).expect("write malformed lock");
@@ -236,18 +205,18 @@ fn malformed_v2_case(command: &str) {
 }
 
 #[test]
-fn malformed_v2_lock_fails_for_build_without_preparation_writes() {
-    malformed_v2_case("build");
+fn malformed_lock_fails_for_build_without_preparation_writes() {
+    malformed_lock_case("build");
 }
 
 #[test]
-fn malformed_v2_lock_fails_for_lock_without_preparation_writes() {
-    malformed_v2_case("lock");
+fn malformed_lock_fails_for_lock_without_preparation_writes() {
+    malformed_lock_case("lock");
 }
 
 #[test]
-fn malformed_v2_lock_fails_for_update_without_preparation_writes() {
-    malformed_v2_case("update");
+fn malformed_lock_fails_for_update_without_preparation_writes() {
+    malformed_lock_case("update");
 }
 
 #[test]
@@ -262,7 +231,7 @@ fn missing_lock_in_strict_modes_fails_before_creating_obj() {
 }
 
 #[test]
-fn ordinary_build_creates_missing_v2_lock() {
+fn ordinary_build_creates_missing_lock() {
     let case = ProjectCase::new();
     // A later compiler/runtime-kit failure is outside this policy check; preparation must
     // already have written the lock before the build can reach those stages.
@@ -277,8 +246,8 @@ fn lock_rejects_symlink_to_external_file_without_reading_or_rewriting_it() {
 
     let case = ProjectCase::new();
     let external = case.root.join("external.lock");
-    let original = case.write_legacy_lock();
-    fs::rename(&case.lock, &external).expect("move legacy lock outside project");
+    let original = case.write_unsupported_lock("# Project.lock v1");
+    fs::rename(&case.lock, &external).expect("move the lock outside project");
     symlink(&external, &case.lock).expect("symlink lockfile");
 
     let output = case.invoke("lock", None);
@@ -305,7 +274,7 @@ fn lock_rejects_dangling_symlink_without_creating_external_file() {
 }
 
 #[test]
-fn stale_v2_lock_is_rejected_without_rewrite() {
+fn stale_lock_is_rejected_without_rewrite() {
     let case = ProjectCase::new();
     let lock_output = case.invoke("lock", None);
     assert!(lock_output.status.success(), "lock failed: {}", output_text(&lock_output));

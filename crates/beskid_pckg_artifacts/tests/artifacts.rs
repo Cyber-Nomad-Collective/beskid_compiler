@@ -85,7 +85,7 @@ fn rejects_manifest_without_required_package_kind() {
 }
 
 #[test]
-fn validates_canonical_template_artifact_without_legacy_project_or_src_paths() {
+fn validates_canonical_template_artifact_without_project_or_src_paths() {
     let package = "beskid.templates.console";
     let version = "0.1.1";
     let manifest = format!(
@@ -215,7 +215,7 @@ fn validates_canonical_aggregate_without_sources() {
 }
 
 #[test]
-fn rejects_legacy_project_manifest() {
+fn rejects_a_package_without_a_bproj_manifest() {
     let package = "acme.math";
     let version = "1.2.3";
     let artifact = archive_from_files(vec![

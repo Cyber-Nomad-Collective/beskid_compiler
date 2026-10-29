@@ -1,8 +1,8 @@
-//! `Project.lock` regeneration and retired-format (v1, v2) migration policy (0.6.7).
+//! `Project.lock` regeneration policy.
 //!
 //! A lock that pins nothing beyond the toolchain's Corelib is rewritten when it no longer matches
-//! the project (a copied folder); `--locked` and `--frozen` never rewrite. A v1 lock is refused
-//! until an explicit refresh (`beskid dev project lock`) migrates it.
+//! the project (a copied folder); `--locked` and `--frozen` never rewrite. A lock in an unsupported
+//! format (any first line other than `# Project.lock v3`) fails closed with E3025 in every mode.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -95,71 +95,42 @@ fn locked_and_frozen_runs_never_rewrite_a_foreign_lock() {
     }
 }
 
+/// A lock whose first line is not the format 3 header (an older format or an unknown one) fails
+/// closed with E3025 in every mode, the explicit refresh of `beskid dev project lock` included:
+/// nothing reads, regenerates or rewrites it, and preparation writes nothing. Once the user deletes
+/// it, the next preparation writes format 3.
 #[test]
-fn v1_lock_is_refused_until_an_explicit_refresh_migrates_it() {
+fn lock_in_an_unsupported_format_fails_closed_until_deleted() {
     let _env = super::core_dependency_env_lock();
-    let root = temp_case_dir("lock_regeneration_v1");
+    let root = temp_case_dir("lock_regeneration_unsupported");
     let project = root.join("app");
     let manifest = write_project(&project, "app");
-    // The body is not valid v1 either: a retired lock is recognised by its header alone.
-    let v1 = format!(
-        "# Project.lock v1\nroot_manifest={}\nproject_name=app\nnot-a-dependency\ndependencies:\n- name=x\n",
-        manifest.display()
-    );
-    fs::write(project.join(PROJECT_LOCK_FILE_NAME), &v1).expect("v1 lock");
+    let corelib_only = "root_manifest=app.bproj\nproject_name=app\ndependencies:\n- name=Core;source=corelib;project=beskid_corelib;manifest=corelib.bproj;source_root=.\n";
+    let headers = ["# Project.lock v1", "# Project.lock v2", "# Project.lock v9", "Project.lock v3"];
+    let modes = [
+        WorkspacePrepareOptions::default(),
+        WorkspacePrepareOptions { refresh_lock: true, ..Default::default() },
+        WorkspacePrepareOptions { locked: true, ..Default::default() },
+        WorkspacePrepareOptions { frozen: true, locked: true, offline: true, ..Default::default() },
+    ];
+    for header in headers {
+        let old = format!("{header}\n{corelib_only}");
+        fs::write(project.join(PROJECT_LOCK_FILE_NAME), &old).expect("old lock");
+        for options in modes {
+            let error = prepare(&root, &manifest, options).expect_err("an unsupported lock must be refused");
+            assert!(
+                matches!(&error, ProjectError::LockfileFormatUnsupported { path } if path.ends_with(PROJECT_LOCK_FILE_NAME)),
+                "{header} {options:?}: unexpected error: {error:?}"
+            );
+            assert_eq!(error.code(), "E3025");
+            let message = error.to_string();
+            assert!(message.contains("delete the file") && message.contains("beskid dev project lock"), "{message}");
+            assert_eq!(lock(&project), old, "{header} {options:?}: the refused lock was rewritten");
+            assert!(!project.join("obj").exists(), "{header} {options:?}: preparation wrote output");
+        }
+    }
 
-    let error = prepare(&root, &manifest, WorkspacePrepareOptions::default()).expect_err("v1 lock must be refused");
-    assert!(matches!(error, ProjectError::LockfileFormatRetired { version: 1 }), "unexpected error: {error:?}");
-    assert_eq!(error.code(), "E3024");
-    let message = error.to_string();
-    assert!(message.contains("v1") && message.contains("beskid dev project lock"), "{message}");
-    assert_eq!(lock(&project), v1, "the refused lock was rewritten");
-
-    prepare(&root, &manifest, WorkspacePrepareOptions { refresh_lock: true, ..Default::default() })
-        .expect("refresh migrates the v1 lock");
-    assert!(lock(&project).starts_with("# Project.lock v3"), "{}", lock(&project));
-    prepare(&root, &manifest, WorkspacePrepareOptions::default()).expect("migrated lock is accepted");
-}
-
-/// A v2 lock (Corelib copied into `obj/beskid/deps`) that pins nothing beyond Corelib is
-/// regenerated as v3 by ordinary preparation; `--locked` refuses it with the retired-format code.
-#[test]
-fn retired_v2_corelib_only_lock_is_regenerated_unless_locked() {
-    let _env = super::core_dependency_env_lock();
-    let root = temp_case_dir("lock_regeneration_v2_corelib");
-    let project = root.join("app");
-    let manifest = write_project(&project, "app");
-    let v2 = "# Project.lock v2\nroot_manifest=app.bproj\nproject_name=app\ndependencies:\n- name=Core;source=corelib;project=beskid_corelib;manifest=corelib.bproj;source_root=.;materialized_root=obj/beskid/deps/src/Core-81dbe9b059abfcd73535c29e5d790e42\n";
-    fs::write(project.join(PROJECT_LOCK_FILE_NAME), v2).expect("v2 lock");
-
-    let error = prepare(&root, &manifest, WorkspacePrepareOptions { locked: true, ..Default::default() })
-        .expect_err("a locked run never rewrites a retired lock");
-    assert!(matches!(error, ProjectError::LockfileFormatRetired { version: 2 }), "unexpected error: {error:?}");
-    assert_eq!(error.code(), "E3024");
-    assert_eq!(lock(&project), v2, "the refused lock was rewritten");
-
-    prepare(&root, &manifest, WorkspacePrepareOptions::default()).expect("a Corelib-only v2 lock regenerates");
-    let regenerated = lock(&project);
-    assert!(regenerated.starts_with("# Project.lock v3\n"), "{regenerated}");
-    assert!(!regenerated.contains("materialized_root=obj/beskid/deps/src/Core"), "{regenerated}");
-}
-
-/// A v2 lock with a path pin is a user choice: it is refused until an explicit migration.
-#[test]
-fn retired_v2_lock_with_a_path_pin_needs_migration() {
-    let _env = super::core_dependency_env_lock();
-    let root = temp_case_dir("lock_regeneration_v2_path");
-    let project = root.join("app");
-    let manifest = write_project(&project, "app");
-    let v2 = "# Project.lock v2\nroot_manifest=app.bproj\nproject_name=app\ndependencies:\n- name=Lib;source=path;project=../lib;manifest=lib.bproj;source_root=Src;materialized_root=obj/beskid/deps/src/Lib-0\n";
-    fs::write(project.join(PROJECT_LOCK_FILE_NAME), v2).expect("v2 lock");
-
-    let error = prepare(&root, &manifest, WorkspacePrepareOptions::default()).expect_err("v2 path pin is refused");
-    assert!(matches!(error, ProjectError::LockfileFormatRetired { version: 2 }), "unexpected error: {error:?}");
-    assert!(error.to_string().contains("retired v2 format"), "{error}");
-    assert_eq!(lock(&project), v2);
-
-    prepare(&root, &manifest, WorkspacePrepareOptions { refresh_lock: true, ..Default::default() })
-        .expect("refresh migrates the v2 lock");
+    fs::remove_file(project.join(PROJECT_LOCK_FILE_NAME)).expect("delete the old lock");
+    prepare(&root, &manifest, WorkspacePrepareOptions::default()).expect("a deleted lock is written again");
     assert!(lock(&project).starts_with("# Project.lock v3\n"), "{}", lock(&project));
 }

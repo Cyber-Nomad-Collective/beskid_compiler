@@ -2,9 +2,7 @@
 //!
 //! The compiler lowers typed syntax through one backend. The Cranelift CLIF
 //! path is the `CraneliftClif` backend. `RustSource` emits the generated Rust
-//! Glue packet that `beskid build --backend glue-rust` links. `DotNetProject`
-//! is a reserved selection that is unavailable in 0.6 and always fails closed.
-//! Backends are selected by the `beskid build --backend` flag, not by a mod
+//! Glue packet that `beskid build --backend glue-rust` links. Backends are selected by the `beskid build --backend` flag, not by a mod
 //! contract kind.
 //!
 
@@ -24,8 +22,6 @@ pub enum BackendKind {
     /// Rust Glue (`glue-rust`): the generated Rust Glue packet for a shared
     /// consumer and its Rust owners.
     RustSource,
-    /// .NET Glue (`glue-dotnet`): unavailable in 0.6; every use fails closed.
-    DotNetProject,
 }
 
 impl std::fmt::Display for BackendKind {
@@ -39,7 +35,6 @@ impl BackendKind {
         match self {
             Self::CraneliftClif => "clif",
             Self::RustSource => "glue-rust",
-            Self::DotNetProject => "glue-dotnet",
         }
     }
 
@@ -47,7 +42,6 @@ impl BackendKind {
         match value {
             "clif" => Ok(Self::CraneliftClif),
             "glue-rust" => Ok(Self::RustSource),
-            "glue-dotnet" => Ok(Self::DotNetProject),
             _ => Err(BackendKindParseError(value.to_owned())),
         }
     }
@@ -65,7 +59,7 @@ pub struct BackendKindParseError(pub String);
 
 impl std::fmt::Display for BackendKindParseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "unknown backend `{}`, expected clif|glue-rust|glue-dotnet", self.0)
+        write!(f, "unknown backend `{}`, expected clif|glue-rust", self.0)
     }
 }
 
@@ -85,8 +79,6 @@ pub enum BackendArtifact {
 pub enum BackendError {
     #[error("CLIF backend lowering failed: {0}")]
     Clif(#[from] SyntaxModuleEmissionError),
-    #[error("backend `{kind}` is unavailable in 0.6")]
-    Unavailable { kind: BackendKind },
     #[error("unsupported Rust Glue logical type: {0}")]
     UnsupportedRustGlueType(String),
     #[error("invalid Rust Glue native library: {0}")]
@@ -147,20 +139,6 @@ impl Backend for RustSourceBackend {
     }
 }
 
-/// The .NET Glue backend. Unavailable in 0.6; it always fails closed.
-#[derive(Debug, Clone, Copy)]
-pub struct DotNetProjectBackend;
-
-impl Backend for DotNetProjectBackend {
-    fn kind(&self) -> BackendKind {
-        BackendKind::DotNetProject
-    }
-
-    fn lower(&self, _input: &CodegenInput<'_>, _items: &[SyntaxModuleItem]) -> Result<BackendArtifact, BackendError> {
-        Err(BackendError::Unavailable { kind: BackendKind::DotNetProject })
-    }
-}
-
 /// Lower typed syntax through the selected backend.
 pub fn lower_with_backend(
     backend: &dyn Backend,
@@ -187,7 +165,7 @@ mod tests {
 
     #[test]
     fn backend_kind_round_trips() {
-        for kind in [BackendKind::CraneliftClif, BackendKind::RustSource, BackendKind::DotNetProject] {
+        for kind in [BackendKind::CraneliftClif, BackendKind::RustSource] {
             assert_eq!(BackendKind::parse(kind.as_str()).unwrap(), kind);
         }
     }
@@ -195,13 +173,9 @@ mod tests {
     #[test]
     fn unknown_backend_kind_is_rejected() {
         assert!(BackendKind::parse("wat").is_err());
-    }
-
-    #[test]
-    fn dotnet_backend_is_unavailable() {
         assert_eq!(
-            BackendError::Unavailable { kind: BackendKind::DotNetProject }.to_string(),
-            "backend `glue-dotnet` is unavailable in 0.6"
+            BackendKind::parse("glue-dotnet").unwrap_err().to_string(),
+            "unknown backend `glue-dotnet`, expected clif|glue-rust"
         );
     }
 

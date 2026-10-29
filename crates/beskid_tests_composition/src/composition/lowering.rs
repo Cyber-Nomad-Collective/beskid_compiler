@@ -37,13 +37,3 @@ fn composition_runtime_calls_are_canonical_runtime_imports() {
         assert_eq!(abi.result, result, "{symbol} result");
     }
 }
-
-#[test]
-fn retired_composition_entry_points_are_not_runtime_imports() {
-    for symbol in
-        ["composition_register", "composition_bind_plural", "composition_resolve", "composition_resolve_plural"]
-    {
-        assert!(!beskid_abi::is_runtime_import_symbol(symbol), "{symbol} has no ABI-v5 manifest authority");
-        assert!(beskid_abi::is_runtime_owned_ffi_symbol(symbol), "{symbol} stays reserved from user FFI");
-    }
-}

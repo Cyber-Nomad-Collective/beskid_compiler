@@ -51,7 +51,7 @@ and 0.6.0 sections of [CHANGELOG.md](CHANGELOG.md).
 - **Rust Glue.** `beskid build --backend glue-rust` builds a `Lib` target as a shared Glue consumer
   plus one Rust owner image for each manifest `glue "<library>"` block. It needs `--linker` and either
   `--rust-toolchain` or `--cargo` with `--rustc`. Images carry admission records that pin each other by
-  digest. `glue-dotnet` is unavailable.
+  digest.
 - **Runtime limits.** Runtime tables grow on demand. `BESKID_HEAP_MAX` caps the managed heap (no cap
   by default) and `BESKID_FIBER_STACK_MAX` sets the per-fiber stack reservation (default 8 MiB). The
   runtime reads both at process init.

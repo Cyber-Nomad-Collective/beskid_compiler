@@ -17,8 +17,6 @@ mod portable_path;
 pub use portable_path::{PortableLockPath, PortableLockPathBaseKind};
 
 pub const PROJECT_LOCK_FILE_NAME: &str = "Project.lock";
-const PROJECT_LOCK_HEADER_V1: &str = "# Project.lock v1";
-const PROJECT_LOCK_HEADER_V2: &str = "# Project.lock v2";
 const PROJECT_LOCK_HEADER_V3: &str = "# Project.lock v3";
 
 fn regular_lockfile_exists(lock_path: &Path) -> Result<bool, ProjectError> {
@@ -443,39 +441,18 @@ pub fn load_project_lock_dependencies_from_path(
     }
     let content = fs::read_to_string(lock_path)
         .map_err(|e| ProjectError::Validation(format!("failed to read {}: {e}", lock_path.display())))?;
-    reject_retired_lock_for_replay(&content)?;
+    reject_unsupported_lock_format(lock_path, &content)?;
     Ok(ProjectLockfile::parse(&content)?.dependencies)
 }
 
-/// A lock in a retired format (v1, or v2 with project-local Corelib copies).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) struct RetiredLock {
-    pub(super) version: u32,
-    /// A v2 lock whose every dependency is a Corelib entry records only what the toolchain
-    /// re-derives, so ordinary preparation regenerates it. A v1 lock always needs migration.
-    pub(super) pin_free: bool,
-}
-
-pub(super) fn retired_lock(content: &str) -> Option<RetiredLock> {
-    let version = match content.lines().next()? {
-        PROJECT_LOCK_HEADER_V1 => 1,
-        PROJECT_LOCK_HEADER_V2 => 2,
-        _ => return None,
-    };
-    let pin_free = version == 2
-        && content
-            .lines()
-            .map(str::trim)
-            .filter(|line| line.starts_with("- "))
-            .all(|line| line.contains(";source=corelib;"));
-    Some(RetiredLock { version, pin_free })
-}
-
-fn reject_retired_lock_for_replay(content: &str) -> Result<(), ProjectError> {
-    match retired_lock(content) {
-        Some(retired) => Err(ProjectError::LockfileFormatRetired { version: retired.version }),
-        None => Ok(()),
+/// A lock whose first line is not the format 3 header (an older format or an unknown one) fails
+/// closed: no consumer reads its body, and no command regenerates or rewrites it. The user deletes
+/// the file and writes a new lock.
+pub(super) fn reject_unsupported_lock_format(lock_path: &Path, content: &str) -> Result<(), ProjectError> {
+    if content.split('\n').next() == Some(PROJECT_LOCK_HEADER_V3) {
+        return Ok(());
     }
+    Err(ProjectError::LockfileFormatUnsupported { path: lock_path.to_path_buf() })
 }
 
 /// Replay only a lockfile issued for this exact project. Other callers may inspect
@@ -489,7 +466,7 @@ pub fn load_project_lock_dependencies_for_plan(
     regular_lockfile_exists(lock_path)?;
     let content = fs::read_to_string(lock_path)
         .map_err(|e| ProjectError::Validation(format!("failed to read {}: {e}", lock_path.display())))?;
-    reject_retired_lock_for_replay(&content)?;
+    reject_unsupported_lock_format(lock_path, &content)?;
     let parsed = ProjectLockfile::parse(&content)?;
     let lock_root = lock_path.parent().ok_or_else(|| ProjectError::Validation("lockfile has no parent".into()))?;
     let root_manifest = lock_root.join(&parsed.root_manifest);
@@ -546,36 +523,22 @@ pub(super) fn preflight_existing_lock_for_plan(
         }
         return Ok(None);
     }
-    let content =
-        fs::read_to_string(&lock_path).map_err(|source| ProjectError::LockfileRead { path: lock_path, source })?;
-    if let Some(retired) = retired_lock(&content) {
-        // A retired lock is never replayed. An explicit migration rewrites it; a lock that pins
-        // nothing beyond Corelib is regenerated like any other pin-free lock.
-        // The header alone identifies a retired lock; its body is never parsed.
-        if options.refresh_lock {
+    let content = fs::read_to_string(&lock_path)
+        .map_err(|source| ProjectError::LockfileRead { path: lock_path.clone(), source })?;
+    // Checked before every other option, `refresh_lock` included: no command rewrites a lock in
+    // an unsupported format.
+    reject_unsupported_lock_format(&lock_path, &content)?;
+    let existing = ProjectLockfile::parse(&content)?;
+    let current = ProjectLockfile::from_plan(plan, &[])?;
+    if !existing.belongs_to(&current) {
+        // A pin-free lock from another project (a copied folder) is regenerated unless the
+        // run must not write the lock; pins are never replaced silently.
+        if existing.is_pin_free() && !options.locked && !options.frozen {
             return Ok(None);
         }
-        if retired.pin_free && !options.locked && !options.frozen {
-            return Ok(None);
-        }
-        return Err(ProjectError::LockfileFormatRetired { version: retired.version });
+        return Err(existing.foreign_lock_error(&plan.project_name));
     }
-    match content.lines().next() {
-        Some(PROJECT_LOCK_HEADER_V3) => {
-            let existing = ProjectLockfile::parse(&content)?;
-            let current = ProjectLockfile::from_plan(plan, &[])?;
-            if !existing.belongs_to(&current) {
-                // A pin-free lock from another project (a copied folder) is regenerated unless the
-                // run must not write the lock; pins are never replaced silently.
-                if existing.is_pin_free() && !options.locked && !options.frozen {
-                    return Ok(None);
-                }
-                return Err(existing.foreign_lock_error(&plan.project_name));
-            }
-            Ok(Some(existing))
-        }
-        _ => Err(ProjectError::Validation("unknown Project.lock format".into())),
-    }
+    Ok(Some(existing))
 }
 
 /// Whether the path and Corelib entries of `existing` differ from the current project graph.
@@ -690,6 +653,7 @@ pub(super) fn sync_project_lockfile(
     if lock_exists {
         let existing = fs::read_to_string(&lock_path)
             .map_err(|source| ProjectError::LockfileRead { path: lock_path.clone(), source })?;
+        reject_unsupported_lock_format(&lock_path, &existing)?;
         let existing_matches = if existing == expected_content {
             true
         } else {
@@ -711,7 +675,7 @@ pub(super) fn sync_project_lockfile(
             return Err(ProjectError::LockfileOutOfDate { project: plan.project_name.clone() });
         }
         let pin_free = ProjectLockfile::parse(&existing).is_ok_and(|parsed| parsed.is_pin_free());
-        if !existing_matches && !options.refresh_lock && !pin_free && existing.starts_with(PROJECT_LOCK_HEADER_V3) {
+        if !existing_matches && !options.refresh_lock && !pin_free {
             return Err(ProjectError::Validation(
                 "Project.lock is stale: dependency graph changed; run `beskid update`".into(),
             ));

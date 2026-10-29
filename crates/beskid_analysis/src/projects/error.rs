@@ -37,13 +37,13 @@ pub enum ProjectError {
     UnsupportedDependencySourceV1 { dependency_source: String },
     #[error("lockfile is out of date for project '{project}'")]
     LockfileOutOfDate { project: String },
-    /// `Project.lock` in a retired format (v1, or v2 with project-local Corelib copies). Only an
-    /// explicit migration rewrites it, except a v2 lock that pins nothing beyond Corelib, which
-    /// ordinary preparation regenerates.
+    /// `Project.lock` whose first line is not `# Project.lock v3` (an older format or an unknown
+    /// header). No command reads, regenerates or rewrites it.
     #[error(
-        "Project.lock uses the retired v{version} format; migrate it with `beskid dev project lock` or `beskid update --all`"
+        "Project.lock at {path} has an unsupported format (the first line must be `# Project.lock v3`); \
+         delete the file and run `beskid dev project lock` to write a new one"
     )]
-    LockfileFormatRetired { version: u32 },
+    LockfileFormatUnsupported { path: PathBuf },
     /// The toolchain's shared Corelib bundle no longer matches its fingerprint marker. Its sources
     /// are read-only; the only files written below it are the generated `Project.lock` and `obj/`
     /// of a bundle package checked directly, which the seal excludes.
@@ -169,7 +169,7 @@ impl ProjectError {
             Self::LockfileWrite { .. } => "E3021",
             Self::LockfileOutOfDate { .. } => "E3022",
             Self::LockfileFrozenMode => "E3023",
-            Self::LockfileFormatRetired { .. } => "E3024",
+            Self::LockfileFormatUnsupported { .. } => "E3025",
             Self::SharedCorelibModified { .. } => "E3032",
             Self::RootBlockNameMismatch { .. } => "E1896",
             Self::LockfileRequired { .. } => "E3023",

@@ -87,8 +87,8 @@ fn lockfile_replay_fails_closed_for_invalid_or_untrusted_entries() {
     let valid = case.canonical_entry().to_string();
     let invalid_lockfiles = vec![
         "# Project.lock v0\n".to_string(),
-        format!("# Project.lock v1\nroot_manifest=x\nproject_name=x\nnot-a-dependency\ndependencies:\n{valid}\n"),
-        "# Project.lock v1\nroot_manifest=x\nproject_name=x\ndependencies:\n- name=foundation;manifest=x\n".to_string(),
+        format!("# Project.lock v3\nroot_manifest=x\nproject_name=x\nnot-a-dependency\ndependencies:\n{valid}\n"),
+        "# Project.lock v3\nroot_manifest=x\nproject_name=x\ndependencies:\n- name=foundation;manifest=x\n".to_string(),
         format!("{}{}", case.lock_with(&valid), valid),
         case.lock_with(&format!("{};source_root=/tampered", valid.trim_end())),
         case.lock_with(&format!("{};registry=one;registry=two", valid.trim_end())),

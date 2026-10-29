@@ -112,9 +112,8 @@ pub fn handle_code_actions(uri: &Uri, doc: &Document, params: &CodeActionParams)
         );
     }
 
-    // Diagnostic-driven providers run for manifests too: project diagnostics (such as the
-    // retired lock format, E3024) are published on the `.bproj`, and that is where the editor
-    // asks for their fixes.
+    // Diagnostic-driven providers run for manifests too: project diagnostics are published on
+    // the `.bproj`, and that is where the editor asks for their fixes.
     let providers = super::registry::code_action_providers();
     for diag in &params.context.diagnostics {
         let source = diag.source.as_deref().unwrap_or("beskid");

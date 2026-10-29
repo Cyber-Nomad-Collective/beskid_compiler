@@ -122,10 +122,6 @@ impl ArtifactStore {
         fs::create_dir_all(&paths.unit_dir)?;
         write_atomically(&paths.meta, serde_json::to_string_pretty(&ast.meta)?.as_bytes())?;
         write_atomically(&paths.ast, &encode_ast(ast).map_err(io_err)?)?;
-        let legacy_hir = paths.unit_dir.join("hir.bin");
-        if legacy_hir.exists() {
-            fs::remove_file(legacy_hir)?;
-        }
         Ok(())
     }
 

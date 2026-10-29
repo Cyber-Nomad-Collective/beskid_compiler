@@ -102,21 +102,12 @@ impl GlueCase {
 }
 
 #[test]
-fn glue_dotnet_is_unavailable() {
-    let case = GlueCase::new("Lib", &["glue_a"], GLUE_IMPORT_SOURCE);
-    let output = case.build(&["--backend", "glue-dotnet"]);
-    case.assert_rejected(&output, "backend `glue-dotnet` is unavailable in 0.6");
-}
-
-#[test]
 fn stale_backend_message_is_gone() {
     let case = GlueCase::new("Lib", &["glue_a"], GLUE_IMPORT_SOURCE);
-    for backend in ["glue-rust", "glue-dotnet"] {
-        let output = case.build(&["--backend", backend]);
-        let text = format!("{}{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
-        assert!(!text.contains("declared for 0.4"), "{backend}: {text}");
-        assert!(!text.contains("lands in 0.5"), "{backend}: {text}");
-    }
+    let output = case.build(&["--backend", "glue-rust"]);
+    let text = format!("{}{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
+    assert!(!text.contains("declared for 0.4"), "{text}");
+    assert!(!text.contains("lands in 0.5"), "{text}");
 }
 
 #[test]

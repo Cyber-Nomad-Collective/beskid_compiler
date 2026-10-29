@@ -504,7 +504,7 @@ dependency "corelib_foundation" {
     }
 
     #[test]
-    fn load_template_package_summary_requires_v1_schema() {
+    fn load_template_package_summary_rejects_an_unknown_schema() {
         let dir = std::env::temp_dir().join(format!("beskid_pckg_template_test_{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(dir.join(".beskid")).expect("mkdir");
@@ -599,7 +599,7 @@ dependency "corelib_foundation" {
     }
 
     #[test]
-    fn detect_pack_profile_auto_matches_legacy_behavior() {
+    fn detect_pack_profile_auto_without_manifest_is_library() {
         let dir = std::env::temp_dir().join(format!("beskid_pckg_auto_no_manifest_{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).expect("mkdir");
