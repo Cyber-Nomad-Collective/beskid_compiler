@@ -293,7 +293,9 @@ pub fn call_lowering(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<CallLo
 
 /// Select a collection operation only when this call resolves to the canonical Array source unit.
 /// A user declaration with the same function name or an unresolved/stale call receives no authority.
-pub fn collection_operation(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<CollectionOperation> {
+/// The name of the canonical `Core.Collections.Array` function that the call `key` resolves to,
+/// or `None` for any other callee (a lookalike in another module is not canonical).
+pub(super) fn canonical_array_function(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<String> {
     let Some(CallLowering::Direct(declaration)) = call_lowering(db, key)? else {
         return Ok(None);
     };
@@ -313,14 +315,18 @@ pub fn collection_operation(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult
     if syntax.generation(db) != declaration.generation {
         return Ok(None);
     }
-    let Some(function) = syntax
+    Ok(syntax
         .syntax_index(db)
         .node_at(syntax.expanded_program(db), declaration.node)
         .and_then(|node| node.of::<beskid_analysis::syntax::FunctionDefinition>())
-    else {
+        .map(|function| function.name.node.name.clone()))
+}
+
+pub fn collection_operation(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<CollectionOperation> {
+    let Some(name) = canonical_array_function(db, key)? else {
         return Ok(None);
     };
-    Ok(Some(match function.name.node.name.as_str() {
+    Ok(Some(match name.as_str() {
         "Append" | "TryAppend" => {
             let arguments =
                 call_arguments(db, key)?.ok_or_else(|| SemanticError::unavailable("collection_operation"))?;
@@ -402,7 +408,7 @@ pub fn collection_operation(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult
                     }
                 }
             };
-            if function.name.node.name == "TryAppend" {
+            if name == "TryAppend" {
                 CollectionOperation::TryAppend { owner }
             } else {
                 CollectionOperation::Append { owner }

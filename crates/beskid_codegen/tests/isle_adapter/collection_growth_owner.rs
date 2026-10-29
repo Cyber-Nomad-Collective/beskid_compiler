@@ -108,3 +108,30 @@ fn append_to_an_owned_local_grows_then_stores_then_finishes_once() {
     assert!(element_store, "the element is stored between the growth and the finish: {push}");
     assert!(!push.contains("beskid_rt_v5_array_write_barrier"), "no array write barrier in an append: {push}");
 }
+
+/// Parameters pass by value: growth of a `mut T[]` parameter never writes the header the caller
+/// shares. While the parameter holds the caller's handle, growth requests `capacity + 1`, so the
+/// runtime copies; every later growth of the callee's copy and every local owner requests only
+/// `length + 1`.
+#[test]
+fn growth_of_a_mut_parameter_detaches_from_the_callers_handle() {
+    let functions = lower(
+        "use Core.Collections.Array; \
+         i64[] Param(mut i64[] xs) { Array.Append<i64>(xs, 9); return xs; } \
+         bool Checked(mut i64[] xs) { bool ok = Array.TryAppend<i64>(xs, 9); return ok && Array.Len<i64>(xs) > 0; } \
+         i64[] Local() { mut i64[] xs = Array.Empty<i64>(); Array.Append<i64>(xs, 9); return xs; }",
+        6820,
+    );
+    for name in ["Param", "Checked"] {
+        let body = clif(&functions, name);
+        assert!(body.contains("grow_rooted"), "{name} grows the parameter through the runtime: {body}");
+        assert!(
+            body.lines().any(|line| line.contains("icmp") && line.contains(" eq ")),
+            "{name} compares the slot with the incoming handle: {body}"
+        );
+        assert!(body.contains("select"), "{name} selects the detaching minimum capacity: {body}");
+    }
+    let local = clif(&functions, "Local");
+    assert!(local.contains(GROW), "a local grows in place: {local}");
+    assert!(!local.contains("select"), "a local owner never detaches: {local}");
+}

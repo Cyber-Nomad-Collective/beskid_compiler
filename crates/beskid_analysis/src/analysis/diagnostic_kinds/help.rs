@@ -378,6 +378,10 @@ impl SemanticIssueKind {
                     "use the result: bind it to a new local".to_string()
                 }
             }),
+            Self::DeadParameterAssignment { parameter } => Some(format!(
+                "parameters pass by value, so the caller does not see this assignment: return the new value, or \
+                 assign the fields of the caller's object (`{parameter}.<field> = ...`)"
+            )),
             Self::DeadCollectionGrowth => {
                 Some("return the parameter or rebind the grown handle so the caller sees the growth".to_string())
             }

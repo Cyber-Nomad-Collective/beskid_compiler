@@ -103,7 +103,8 @@ impl IsleContext<'_, '_, '_, '_> {
             &[pointer, pointer, pointer],
             Some(pointer),
         )?;
-        let grow_call = self.builder.ins().call(grow, &[owner, next_length, root_out]);
+        let minimum = self.growth_minimum_capacity(mutation_owner, owner, next_length)?;
+        let grow_call = self.builder.ins().call(grow, &[owner, minimum, root_out]);
         let array = self.builder.inst_results(grow_call).first().copied()?;
         let succeeded = self.builder.ins().icmp_imm_u(IntCC::NotEqual, array, 0);
         let publish = self.builder.create_block();

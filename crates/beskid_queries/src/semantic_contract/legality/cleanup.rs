@@ -43,6 +43,24 @@ pub(super) fn dead_growth_findings(db: &dyn Db, key: AstNodeKey) -> Vec<Semantic
         .collect()
 }
 
+/// Whether one of `nodes` lies inside the syntax node `container` (same unit and generation).
+pub(super) fn contains_any(db: &dyn Db, container: AstNodeKey, nodes: &[AstNodeKey]) -> bool {
+    if nodes.is_empty() {
+        return false;
+    }
+    let Some(syntax) = db.syntax_unit(container.unit) else { return false };
+    matches!(
+        with_node(db, syntax, container, |_program, index, _node| {
+            Some(nodes.iter().any(|node| {
+                node.unit == container.unit
+                    && node.generation == container.generation
+                    && is_ancestor(index, container.node, node.node)
+            }))
+        }),
+        Ok(Some(true))
+    )
+}
+
 fn item_nodes_of_kind(db: &dyn Db, key: AstNodeKey, kind: NodeKind) -> Vec<AstNodeKey> {
     let Some(syntax) = db.syntax_unit(key.unit) else { return Vec::new() };
     match with_node(db, syntax, key, |_program, index, _node| {

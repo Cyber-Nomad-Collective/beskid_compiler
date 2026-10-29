@@ -83,6 +83,7 @@ pub const CODES: &[CodeInfo] = &[
     CodeInfo { code: "E1256", summary: "caller-information parameter type mismatch", tags: &[] },
     CodeInfo { code: "E1257", summary: "method call on an enum value", tags: &[] },
     CodeInfo { code: "E1258", summary: "missing return at end of body", tags: &[] },
+    CodeInfo { code: "E1259", summary: "dead assignment to a mutable parameter", tags: &[] },
     CodeInfo { code: "E1301", summary: "unknown enum path", tags: &[] },
     CodeInfo { code: "E1302", summary: "enum constructor arity mismatch", tags: &[] },
     CodeInfo { code: "E1303", summary: "unqualified enum constructor", tags: &[] },

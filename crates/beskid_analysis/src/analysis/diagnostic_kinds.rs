@@ -391,6 +391,11 @@ pub enum SemanticIssueKind {
     /// `BSP-REQ-35580A7D7B75`: a discarded canonical growth of a `mut T[]` parameter whose body
     /// never publishes the parameter, so the caller keeps the ungrown array.
     DeadCollectionGrowth,
+    /// E1259: an assignment to a `mut` parameter that no later read of the parameter can
+    /// observe. Parameters pass by value, so the caller never sees the assigned value.
+    DeadParameterAssignment {
+        parameter: String,
+    },
     /// W1240: `Array.Append` used as a statement on an array its caller does not own (a parameter
     /// that is not `mut`, a loop or pattern variable, a call result, an element). The call copies
     /// the array and appends to the copy, so discarding the result changes nothing. `owner` is the

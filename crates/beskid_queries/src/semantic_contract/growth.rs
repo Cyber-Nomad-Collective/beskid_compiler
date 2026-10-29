@@ -3,10 +3,12 @@
 //! Parameters pass by value. A canonical growth operation (`Core.Collections.Array.Append`)
 //! publishes the grown handle into its owner slot, so growth on a `mut T[]` *local* is visible to
 //! every later read of that local. Growth on a `mut T[]` *parameter* updates only the callee's
-//! copy: unless the body publishes the parameter handle again (returns it, passes it on, stores
-//! it), the caller silently keeps the ungrown array. This fact identifies exactly that shape and
-//! nothing else; every unclear read of the parameter counts as publication so the fact never
-//! fires on legal code.
+//! copy (lowering copies the array on the first growth through the caller's handle, so the
+//! caller's array never changes, whatever its capacity): unless the body publishes the parameter
+//! handle again (returns it, passes it on, stores it), the grown array is lost. This fact
+//! identifies exactly that shape and nothing else. A read through a canonical array function that
+//! neither returns nor stores its array argument (`Len`, `Get`, ...) is a local read; every other
+//! unclear read of the parameter counts as publication so the fact never fires on legal code.
 
 use super::*;
 use beskid_analysis::syntax_query::{NodeKind, SyntaxIndex};
@@ -23,6 +25,13 @@ pub struct DeadCollectionGrowth {
 /// Canonical `Core.Collections.Array` function names whose lowering can reallocate their first
 /// argument and that return the grown handle.
 const GROWTH_OPERATIONS: &[&str] = &["Append", "TryAppend"];
+
+/// Canonical `Core.Collections.Array` functions that read their array arguments and never return
+/// or store them: a read of the parameter as one of their arguments stays inside the body.
+/// (`Copy` returns a new array, not its argument.) `Set`, `Clear` and `RemoveLast` return their
+/// argument, so they are not in this list.
+const LOCAL_READ_OPERATIONS: &[&str] =
+    &["Len", "IsEmpty", "Capacity", "Get", "Current", "Iterate", "Copy", "CopyRange"];
 
 /// Cheap syntactic pre-filter: does this call name a growth operation by its last path segment?
 /// Authority still comes from [`collection_operation`]; this only avoids querying every call.
@@ -57,11 +66,14 @@ pub fn is_growth_call_candidate(
 /// The fact exists only when all of the following hold:
 /// - the call is a canonical growth operation with a local mutation owner;
 /// - that owner declaration is a `Parameter` of the same function or method body as the call;
-/// - the call is an expression statement (its returned handle is discarded);
+/// - the call is an expression statement, or the whole source of an expression-statement
+///   assignment `p = Array.Append<T>(p, v);` back to the same parameter (its returned handle is
+///   discarded or only replaces the callee copy);
 /// - no read of the parameter in the body is in a publishing position. Only the owner argument
-///   of a growth operation, the target of an index expression, and the target of an assignment
-///   are non-publishing; everything else (call arguments, `return`, binding or assignment
-///   sources, field initializers, member access, captures) suppresses the fact.
+///   of a growth operation, the target of an index expression, the target of an assignment, and
+///   an argument of a canonical array function in [`LOCAL_READ_OPERATIONS`] are non-publishing;
+///   everything else (other call arguments, `return`, binding or assignment sources, field
+///   initializers, member access, captures) suppresses the fact.
 ///
 /// Non-call nodes, non-canonical lookalikes, local or aggregate-field owners, stale generations,
 /// and calls the existing lowering already rejects for an unproven owner contain no fact.
@@ -123,13 +135,15 @@ fn dead_collection_growth_for_call(
     {
         return None;
     }
-    if !call_result_is_discarded(index, key.node) {
-        return None;
-    }
     let name = index
         .node_at(program, declaration.node)
         .and_then(|node| node.of::<beskid_analysis::syntax::Identifier>())
         .map(|identifier| identifier.name.clone())?;
+    if !call_result_is_discarded(index, key.node)
+        && !call_result_replaces_parameter(program, index, key.node, &name, declaration.node)
+    {
+        return None;
+    }
     for path_node in index
         .ids_of_kind(NodeKind::PathExpression)
         .filter(|node| *node != callable && is_ancestor(index, callable, *node))
@@ -148,6 +162,13 @@ fn dead_collection_growth_for_call(
             continue;
         }
         if path.path.node.segments.len() != 1 {
+            return None;
+        }
+        // A capture in a nested lambda can outlive the body: always a publication.
+        if index
+            .ids_of_kind(NodeKind::LambdaExpression)
+            .any(|lambda| is_ancestor(index, callable, lambda) && is_ancestor(index, lambda, path_node))
+        {
             return None;
         }
         match parameter_read_publishes(db, index, key, path_node) {
@@ -171,6 +192,53 @@ fn call_result_is_discarded(index: &SyntaxIndex, call: beskid_analysis::syntax::
         }
     }
     false
+}
+
+/// Whether the call is the whole source of `p = <call>;`, an expression-statement plain
+/// assignment whose target is the single-segment path of the parameter `declaration`. The
+/// assignment stores the grown handle into the same callee slot the growth already updated.
+fn call_result_replaces_parameter(
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &SyntaxIndex,
+    call: beskid_analysis::syntax::AstNodeId,
+    name: &str,
+    declaration: beskid_analysis::syntax::AstNodeId,
+) -> bool {
+    let mut node = call;
+    let assignment = loop {
+        let Some(parent) = parent_node(index, node) else { return false };
+        match index.kind(parent) {
+            Some(NodeKind::Expression | NodeKind::GroupedExpression) => node = parent,
+            Some(NodeKind::AssignExpression) => break parent,
+            _ => return false,
+        }
+    };
+    let Some(children) = index.children(assignment) else { return false };
+    let [target, source] = children else { return false };
+    if *source != node {
+        return false;
+    }
+    let Some(assign) =
+        index.node_at(program, assignment).and_then(|node| node.of::<beskid_analysis::syntax::AssignExpression>())
+    else {
+        return false;
+    };
+    if assign.op.node != beskid_analysis::syntax::AssignOp::Assign {
+        return false;
+    }
+    let target = normalized_expression_node(index, *target);
+    let Some(path) =
+        index.node_at(program, target).and_then(|node| node.of::<beskid_analysis::syntax::PathExpression>())
+    else {
+        return false;
+    };
+    if path.path.node.segments.len() != 1
+        || path.path.node.segments[0].node.name.node.name != name
+        || resolve_lexical_declaration(program, index, target, name) != Some(declaration)
+    {
+        return false;
+    }
+    call_result_is_discarded(index, assignment)
 }
 
 /// Classify one single-segment read of the parameter. `false` means the read cannot make the
@@ -202,6 +270,15 @@ fn parameter_read_publishes(
         // same callee slot. Any other argument position hands the handle to a callee.
         Some(NodeKind::CallExpression) => {
             let call = AstNodeKey { node: parent, ..key };
+            // The callee position itself (a function-typed parameter) is not an array read.
+            if first_child == Some(node) {
+                return Ok(true);
+            }
+            if super::queries::canonical_array_function(db, call)?
+                .is_some_and(|function| LOCAL_READ_OPERATIONS.contains(&function.as_str()))
+            {
+                return Ok(false);
+            }
             if !matches!(
                 collection_operation(db, call),
                 Ok(Some(CollectionOperation::Append { owner: CollectionMutationOwner::Local(_) }))
