@@ -86,9 +86,17 @@ fn v06_check_json_emits_diagnostic_and_result_records() {
 #[test]
 fn compile_commands_print_each_semantic_error_once() {
     let root = tempfile::tempdir().unwrap();
-    let invalid = source(root.path(), "Invalid.bd", "pub i32 Main() { return UnknownValue; }\n");
+    std::fs::create_dir(root.path().join("Src")).unwrap();
+    source(root.path(), "Src/Main.bd", "pub i32 Main() { return UnknownValue; }\n");
+    let manifest = source(
+        root.path(),
+        "Invalid.bproj",
+        "Invalid { name = \"Invalid\" version = \"0.1.0\" root = \"Src\" }\n\
+         target \"App\" { kind = App entry = \"Main.bd\" }\n",
+    );
     for command in ["check", "build", "run"] {
-        let output = beskid(root.path()).args([command, "--plain"]).arg(&invalid).output().unwrap();
+        let output =
+            beskid(root.path()).args([command, "--plain", "--offline", "--project"]).arg(&manifest).output().unwrap();
         let (stdout, stderr) = text(&output);
         let report = format!("{stdout}{stderr}");
         assert_eq!(output.status.code(), Some(1), "{command}: {report}");
