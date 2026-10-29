@@ -1,5 +1,5 @@
 // A specialized generic body calls a method on a local typed by its own type parameter, and a
-// type-qualified call names a function of the declaring unit (0.5.4 regression 708bbe72).
+// type-qualified call names a function of the declaring unit.
 use Bag;
 
 Bag<T> Single<T>(T value)

@@ -1,5 +1,5 @@
 // A receiver typed by a where-bounded type parameter calls the bound contract's methods and
-// dispatches to each instantiation (0.5.4 regression 570fdd56).
+// dispatches to each instantiation.
 contract Sized
 {
     i64 Size();

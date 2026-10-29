@@ -1,5 +1,5 @@
 // An unapplied generic enum constructor passed to a method takes its type application from the
-// method parameter (0.5.4 regression 8e230afe).
+// method parameter.
 enum Maybe<T>
 {
     None,

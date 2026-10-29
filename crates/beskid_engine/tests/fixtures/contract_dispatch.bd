@@ -1,4 +1,4 @@
-// Runtime contract dispatch (v0.6.7), end to end: contract values in a mutable local, an array
+// Runtime contract dispatch, end to end: contract values in a mutable local, an array
 // read in a loop, a plain field, a parameter, a return value and a boxed primitive dispatch
 // through their witness tables; conf2's immutable local keeps its direct call; contract values
 // held in fields survive forced collections; an immutable local whose initializer forwards the
