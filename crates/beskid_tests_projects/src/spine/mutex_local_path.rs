@@ -33,9 +33,9 @@ fn typed_let_mutex_name_is_not_split_on_mut_keyword() {
                 let Node::TestDefinition(test) = &item.node else {
                     return None;
                 };
-                (test.node.name.node.name == "MutexCreateReturnsHandle").then_some(test)
+                (test.node.name.node.name == "MutexTryLockIsExclusiveUntilUnlock").then_some(test)
             })
-            .expect("expected the MutexCreateReturnsHandle test");
+            .expect("expected the MutexTryLockIsExclusiveUntilUnlock test");
         let Statement::Let(let_stmt) = &test.node.statements[0].node else {
             panic!("expected let");
         };

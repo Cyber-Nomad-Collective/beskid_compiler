@@ -254,10 +254,10 @@ mod tests {
         assert!(errors.is_empty(), "{suite} must pass the production semantic gate: {errors:#?}");
     }
 
-    /// Byte range of one former target's section in a merged `corelib_tests` suite entry.
-    fn suite_section(source: &str, former_file: &str) -> std::ops::Range<usize> {
-        let marker = format!("// ---- {former_file} ");
-        let start = source.find(&marker).unwrap_or_else(|| panic!("suite has no section for {former_file}"));
+    /// Byte range of one topic section (`// ---- <heading> ----`) in a merged `corelib_tests` suite entry.
+    fn suite_section(source: &str, heading: &str) -> std::ops::Range<usize> {
+        let marker = format!("// ---- {heading} ----\n");
+        let start = source.find(&marker).unwrap_or_else(|| panic!("suite has no section `{heading}`"));
         let end = source[start + marker.len()..]
             .find("\n// ---- ")
             .map_or(source.len(), |offset| start + marker.len() + offset);
@@ -293,7 +293,7 @@ mod tests {
                 dependency_locals.is_empty(),
                 "dependency declaration resolution must not retain body locals: {dependency_locals:?}"
             );
-            let section = suite_section(&resolved.source, "TextParserTests.bd");
+            let section = suite_section(&resolved.source, "Text Parser");
             let parser_targets = resolution
                 .tables
                 .resolved_values
@@ -393,7 +393,7 @@ mod tests {
             let resolved = resolve_corelib_tests_entry_with_assembly("query/QuerySuite.bd");
             let assembly = resolved.assembly.as_ref().expect("query assembly");
             let resolution = resolve_entry(assembly);
-            let section = suite_section(&resolved.source, "QueryTests.bd");
+            let section = suite_section(&resolved.source, "Query");
             let current_targets = resolution
                 .tables
                 .resolved_values
