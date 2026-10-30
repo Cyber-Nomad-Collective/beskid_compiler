@@ -317,21 +317,57 @@ pub(super) fn item_name_tracked(
     syntax: SyntaxUnitInput,
     key: AstNodeKey,
 ) -> SemanticQueryResult<Arc<str>> {
-    with_node(db, syntax, key, |_program, _index, node| {
-        node.of::<beskid_analysis::syntax::FunctionDefinition>()
-            .map(|definition| Arc::from(definition.name.node.name.as_str()))
-            .or_else(|| {
-                node.of::<beskid_analysis::syntax::MethodDefinition>()
-                    .map(|definition| Arc::from(definition.name.node.name.as_str()))
-            })
-            .or_else(|| {
-                node.of::<beskid_analysis::syntax::TestDefinition>()
-                    .map(|definition| Arc::from(definition.name.node.name.as_str()))
-            })
-            .or_else(|| {
-                node.of::<beskid_analysis::syntax::ContractMethodSignature>()
-                    .map(|definition| Arc::from(definition.name.node.name.as_str()))
-            })
+    with_node(db, syntax, key, |_program, _index, node| declared_item_name(node).map(Arc::from))
+}
+
+/// The declared name of a function, method, test or contract method signature node.
+fn declared_item_name<'a>(node: beskid_analysis::syntax_query::DynNodeRef<'a>) -> Option<&'a str> {
+    node.of::<beskid_analysis::syntax::FunctionDefinition>()
+        .map(|definition| definition.name.node.name.as_str())
+        .or_else(|| {
+            node.of::<beskid_analysis::syntax::MethodDefinition>().map(|definition| definition.name.node.name.as_str())
+        })
+        .or_else(|| {
+            node.of::<beskid_analysis::syntax::TestDefinition>().map(|definition| definition.name.node.name.as_str())
+        })
+        .or_else(|| {
+            node.of::<beskid_analysis::syntax::ContractMethodSignature>()
+                .map(|definition| definition.name.node.name.as_str())
+        })
+}
+
+/// `name` prefixed by the names of the inline modules that enclose `node` in its source unit,
+/// outermost first and joined by `::` (`Outer::Inner::name`); `name` alone at the unit root.
+fn inline_module_qualified_name(
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    node: beskid_analysis::syntax::AstNodeId,
+    name: &str,
+) -> String {
+    let mut module_path = Vec::new();
+    let mut parent = parent_node(index, node);
+    while let Some(current) = parent {
+        if let Some(module) =
+            index.node_at(program, current).and_then(|node| node.of::<beskid_analysis::syntax::InlineModule>())
+        {
+            module_path.push(module.name.node.name.as_str());
+        }
+        parent = parent_node(index, current);
+    }
+    module_path.reverse();
+    module_path.push(name);
+    module_path.join("::")
+}
+
+#[salsa::tracked(persist)]
+pub(super) fn item_qualified_name_tracked(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+) -> SemanticQueryResult<Arc<str>> {
+    with_node(db, syntax, key, |program, index, node| {
+        let name = declared_item_name(node)?;
+        Some(Arc::from(inline_module_qualified_name(program, index, key.node, name)))
     })
 }
 
@@ -374,22 +410,7 @@ pub(super) fn test_item_tracked(
 ) -> SemanticQueryResult<TestItem> {
     with_node(db, syntax, key, |_program, _index, node| {
         let definition = node.of::<beskid_analysis::syntax::TestDefinition>()?;
-        let mut module_path = Vec::new();
-        let mut parent = parent_node(_index, key.node);
-        while let Some(current) = parent {
-            if let Some(module) =
-                _index.node_at(_program, current).and_then(|node| node.of::<beskid_analysis::syntax::InlineModule>())
-            {
-                module_path.push(module.name.node.name.clone());
-            }
-            parent = parent_node(_index, current);
-        }
-        module_path.reverse();
-        let qualified_name = if module_path.is_empty() {
-            definition.name.node.name.clone()
-        } else {
-            format!("{}::{}", module_path.join("::"), definition.name.node.name)
-        };
+        let qualified_name = inline_module_qualified_name(_program, _index, key.node, &definition.name.node.name);
         let mut tags = Vec::new();
         let mut group = None;
         if let Some(meta) = &definition.meta {

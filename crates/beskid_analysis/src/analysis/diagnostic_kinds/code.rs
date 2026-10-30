@@ -8,9 +8,7 @@ impl SemanticIssueKind {
             Self::DuplicateContractMethod { .. } => "E1003",
             Self::ConflictingEmbeddedContractMethod { .. } => "E1004",
             Self::UnknownTypeInDefinition { .. } => "E1005",
-            Self::DuplicateItemName { .. } => "E1006",
 
-            Self::AmbiguousImport { .. } => "E1104",
             Self::UnknownImportPath { .. } => "E1105",
             Self::UseBeforeDeclaration { .. } => "E1106",
             Self::InvalidSyntaxSpan { .. } => "E1151",
@@ -64,6 +62,7 @@ impl SemanticIssueKind {
             Self::ResolvePrivateItemInModule { .. } => "E1107",
             Self::ResolveAmbiguousModulePath { .. } => "E1104",
             Self::ResolveAmbiguousItemInModule { .. } => "E1104",
+            Self::ResolveAmbiguousModuleQualifier { .. } => "E1104",
             Self::ResolvePrivateRuntimeBuiltin { .. } => "E1107",
             Self::ResolveShadowedLocal { .. } => "W1103",
             Self::MissingImport { .. } => "E1109",

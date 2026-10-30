@@ -12,11 +12,9 @@ impl SemanticIssueKind {
             Self::DuplicateDefinitionName { previous, .. }
             | Self::DuplicateEnumVariant { previous, .. }
             | Self::DuplicateContractMethod { previous, .. }
-            | Self::DuplicateItemName { previous, .. }
             | Self::ResolveDuplicateItem { previous, .. }
             | Self::ResolveDuplicateLocal { previous, .. }
-            | Self::ResolveShadowedLocal { previous, .. }
-            | Self::AmbiguousImport { previous, .. } => Some(format!(
+            | Self::ResolveShadowedLocal { previous, .. } => Some(format!(
                 "previously defined at line {}, column {}",
                 previous.line_col_start.0, previous.line_col_start.1
             )),
@@ -200,6 +198,9 @@ impl SemanticIssueKind {
             )),
             Self::ResolveAmbiguousItemInModule { module_path, name, .. } => Some(format!(
                 "qualify `{name}` through the child module that declares it; `{module_path}` re-exports more than one"
+            )),
+            Self::ResolveAmbiguousModuleQualifier { import_path, .. } => Some(format!(
+                "rename the inline module, or import the module under another name: `use {import_path} as <Name>;`"
             )),
             Self::MissingImport { name, module_path } => {
                 Some(format!("add `use {module_path}.{name};` at the top of the file"))

@@ -548,3 +548,59 @@ fn a_function_and_a_test_of_one_name_are_distinct_entrypoint_selections() {
     assert_eq!(function.entries()[0].return_type(), beskid_queries::SemanticTypeId::I32);
     assert_ne!(test.entries()[0].symbol(), function.entries()[0].symbol());
 }
+
+/// A test is selected by the qualified name discovery reports (`Topic::Inner` for a test in
+/// `mod Topic { ... }`). Same-named tests of different modules are distinct selections, a bare
+/// name selects only the root test, and a missing selection fails closed. (Two tests of one
+/// qualified name are rejected by the resolver before lowering, so the lowering's own ambiguity
+/// error is not reachable from a prepared front end.)
+#[test]
+fn tests_in_inline_modules_are_selected_by_qualified_name() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("Main.bd");
+    let source = "mod Topic { test Inner { return; } }\n\
+                  mod Alpha { test Shared { return; } }\n\
+                  mod Beta { test Shared { return; } mod Deep { test Shared { return; } } }\n\
+                  test Shared { return; }";
+    std::fs::write(&path, source).unwrap();
+    let plan = synthetic_compile_plan_for_source(&path);
+    let resolved = resolved_input_from_plan(path, source.into(), plan, None, None);
+    let front = compile_mod_free_front_end(
+        &resolved,
+        FrontEndOptions { with_semantic_diagnostics: false, ..Default::default() },
+        None,
+    )
+    .unwrap();
+    let target = TargetMetadata::for_triple("x86_64-unknown-linux-gnu").unwrap();
+    let isa = beskid_codegen::target_isa::target_isa_builder("x86_64")
+        .unwrap()
+        .finish(settings::Flags::new(settings::builder()))
+        .unwrap();
+    let select = |names: &[&str]| {
+        let names = names.iter().map(|name| (*name).to_owned()).collect::<Vec<_>>();
+        with_db(|db| {
+            beskid_codegen::lower_prepared_syntax_entrypoints(
+                db,
+                &front,
+                &names,
+                beskid_codegen::EntrypointKind::Test,
+                target.clone(),
+                isa.as_ref(),
+            )
+        })
+    };
+
+    let selected = select(&["Topic::Inner", "Alpha::Shared", "Beta::Shared", "Beta::Deep::Shared", "Shared"])
+        .expect("every qualified test name resolves");
+    let names = selected.entries().iter().map(|entry| entry.name().to_owned()).collect::<Vec<_>>();
+    assert_eq!(names, ["Topic::Inner", "Alpha::Shared", "Beta::Shared", "Beta::Deep::Shared", "Shared"]);
+    let mut symbols = selected.entries().iter().map(|entry| entry.symbol().to_owned()).collect::<Vec<_>>();
+    symbols.sort();
+    symbols.dedup();
+    assert_eq!(symbols.len(), 5, "five distinct tests are selected: {symbols:?}");
+
+    for missing in ["Inner", "Gamma::Shared", "Topic::", "::Inner", "Topic::Inner::Extra"] {
+        let error = select(&[missing]).map(|_| ()).expect_err(missing);
+        assert!(format!("{error:#}").contains(&format!("Missing test `{missing}`")), "{missing}: {error:#}");
+    }
+}

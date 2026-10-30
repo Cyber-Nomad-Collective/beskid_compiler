@@ -1,0 +1,9 @@
+NestedTests {
+  name = "NestedTests"
+  version = "0.1.0"
+}
+
+target "Nested" {
+  kind = Test
+  entry = "Nested.bd"
+}

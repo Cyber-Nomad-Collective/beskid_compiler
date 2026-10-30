@@ -348,16 +348,8 @@ pub(in crate::semantic_contract) fn resolve_type_declaration(
             return lexical;
         }
         let mut candidates = Vec::new();
-        let import_targets = {
-            let registry = db.syntax_dependency_registry().lock().expect("syntax dependency registry");
-            registry
-                .imports
-                .get(&(key.unit, key.generation))
-                .into_iter()
-                .flatten()
-                .map(|import| import.target)
-                .collect::<Vec<_>>()
-        };
+        let import_targets =
+            with_visible_imports(db, key, |imports| imports.iter().map(|import| import.target).collect::<Vec<_>>());
         candidates.extend(
             import_targets
                 .into_iter()
@@ -374,12 +366,17 @@ pub(in crate::semantic_contract) fn resolve_type_declaration(
         module_path.iter().map(|segment| segment.node.name.node.name.as_str()).map(str::to_owned).collect::<Vec<_>>();
     // `A.Clock` for a type declared in an inline `mod A { ... }` of this unit: the nearest
     // enclosing module scope that declares the module chain decides it, as for bare names.
+    // An import of the same name may qualify the path too: when both reach a type and the types
+    // differ, the path is ambiguous and names nothing (the resolver reports E1104).
+    let imported = resolve_qualified_module_unit(db, key, &module_path)
+        .and_then(|unit| unique_exported_type_in_unit(db, unit, key.generation, name, generic_arity));
     if let Some(lexical) = lexical_inline_module_type(db, key, &module_path, name, generic_arity) {
-        return Some(lexical);
+        return match imported {
+            Some(imported) if imported != lexical => None,
+            _ => Some(lexical),
+        };
     }
-    if let Some(unit) = resolve_qualified_module_unit(db, key, &module_path)
-        && let Some(declaration) = unique_exported_type_in_unit(db, unit, key.generation, name, generic_arity)
-    {
+    if let Some(declaration) = imported {
         return Some(declaration);
     }
     if let Some(declaration) = unique_assembled_type_in_module(db, key, &module_path, name, generic_arity) {

@@ -108,7 +108,12 @@ impl Resolver {
             span_index,
             warnings: std::mem::take(&mut self.warnings),
             builtin_items: std::mem::take(&mut self.builtin_items),
-            module_imports: std::mem::take(&mut self.module_imports),
+            // The file scope's aliases; aliases of inline modules stay internal to resolution.
+            module_imports: std::mem::take(&mut self.module_imports)
+                .into_iter()
+                .filter(|((scope, _), _)| !self.inline_modules.contains(scope))
+                .map(|((_, alias), path)| (alias, path))
+                .collect(),
             symbols: std::mem::take(&mut self.symbols),
             by_symbol: std::mem::take(&mut self.by_symbol),
         }

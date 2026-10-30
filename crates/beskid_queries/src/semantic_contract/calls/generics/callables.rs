@@ -19,17 +19,9 @@ pub(in crate::semantic_contract) fn imported_generic_nominal_receiver_requires_i
         return false;
     }
     let receiver_name = receiver.node.name.node.name.as_str();
-    let targets = db
-        .syntax_dependency_registry()
-        .lock()
-        .expect("syntax dependency registry")
-        .imports
-        .get(&(key.unit, key.generation))
-        .into_iter()
-        .flatten()
-        .filter(|import| import.binding == receiver_name)
-        .map(|import| import.target)
-        .collect::<Vec<_>>();
+    let targets = with_visible_imports(db, key, |imports| {
+        imports.iter().filter(|import| import.binding == receiver_name).map(|import| import.target).collect::<Vec<_>>()
+    });
     let [target] = targets.as_slice() else {
         return false;
     };
@@ -221,26 +213,21 @@ pub(in crate::semantic_contract) fn imported_call_receiver_exists(
         return false;
     }
     let receiver = receiver.iter().map(|segment| segment.node.name.node.name.as_str()).collect::<Vec<_>>();
-    db.syntax_dependency_registry()
-        .lock()
-        .expect("syntax dependency registry")
-        .imports
-        .get(&(key.unit, key.generation))
-        .is_some_and(|imports| {
-            imports
-                .iter()
-                .filter(|import| {
-                    (receiver.len() == 1 && import.binding == receiver[0])
-                        || (import.path.len() >= receiver.len()
-                            && import.path[import.path.len() - receiver.len()..]
-                                .iter()
-                                .map(String::as_str)
-                                .eq(receiver.iter().copied()))
-                })
-                .take(2)
-                .count()
-                == 1
-        })
+    with_visible_imports(db, key, |imports| {
+        imports
+            .iter()
+            .filter(|import| {
+                (receiver.len() == 1 && import.binding == receiver[0])
+                    || (import.path.len() >= receiver.len()
+                        && import.path[import.path.len() - receiver.len()..]
+                            .iter()
+                            .map(String::as_str)
+                            .eq(receiver.iter().copied()))
+            })
+            .take(2)
+            .count()
+            == 1
+    })
 }
 
 pub(in crate::semantic_contract) fn expression_is_lambda(expression: &beskid_analysis::syntax::Expression) -> bool {

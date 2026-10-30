@@ -199,13 +199,11 @@ pub fn resolve_attribute_use(db: &dyn Db, root: AstNodeKey, name: &str) -> Attri
     if !own.is_empty() {
         return declared(own, &recognized_units, name);
     }
+    let imported = super::super::resolution::with_visible_imports(db, root, |imports| {
+        imports.iter().map(|import| import.target).collect::<Vec<_>>()
+    });
     let (imported, all_units) = {
         let registry = db.syntax_dependency_registry().lock().expect("syntax dependency registry");
-        let imported = registry
-            .imports
-            .get(&(root.unit, generation))
-            .map(|imports| imports.iter().map(|import| import.target).collect::<Vec<_>>())
-            .unwrap_or_default();
         let all_units = registry
             .modules
             .iter()

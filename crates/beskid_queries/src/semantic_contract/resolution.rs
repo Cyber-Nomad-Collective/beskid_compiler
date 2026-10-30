@@ -52,18 +52,29 @@ pub(super) fn resolve_item_declaration_candidate(
             .or_else(|| unique_imported_function(db, key, name));
     }
     let module_path = module_path.iter().map(|segment| segment.node.name.node.name.clone()).collect::<Vec<_>>();
+    // An inline module visible here and an import of the same name may both qualify the path.
+    // When both reach a function and the functions differ, the path is ambiguous and names
+    // nothing (the resolver reports E1104); when one reaches it, that one is the target.
+    let inline = path.segments[..path.segments.len() - 1]
+        .iter()
+        .all(|segment| segment.node.type_args.is_empty())
+        .then(|| resolve_inline_module_item_declaration(program, index, key, path))
+        .flatten();
     let Some(target_unit) = resolve_qualified_module_unit(db, key, &module_path) else {
-        if path.segments[..path.segments.len() - 1].iter().all(|segment| segment.node.type_args.is_empty())
-            && let Some(declaration) = resolve_inline_module_item_declaration(program, index, key, path)
-        {
-            return Some(declaration);
+        if inline.is_some() {
+            return inline;
         }
         if let Some(declaration) = resolve_type_qualified_local_function(db, program, index, key, path) {
             return Some(declaration);
         }
         return resolve_type_qualified_imported_function(db, key, path);
     };
-    unique_exported_function_in_unit(db, target_unit, key.generation, &name.node.name.node.name)
+    let imported = unique_exported_function_in_unit(db, target_unit, key.generation, &name.node.name.node.name);
+    match (inline, imported) {
+        (Some(inline), Some(imported)) if inline != imported => None,
+        (Some(inline), _) => Some(inline),
+        (None, imported) => imported,
+    }
 }
 
 /// Resolve a qualified function below a lexical inline-module path in the current syntax unit.
@@ -192,9 +203,7 @@ pub(super) fn qualified_module_resolution(
     let Some(root) = module_path.first() else {
         return QualifiedModuleResolution::Missing;
     };
-    let (initial, use_expansions) = {
-        let registry = db.syntax_dependency_registry().lock().expect("syntax dependency registry");
-        let imports = registry.imports.get(&(key.unit, key.generation)).map(Vec::as_slice).unwrap_or_default();
+    let (initial, use_expansions) = with_visible_imports(db, key, |imports| {
         let initial = imports
             .iter()
             .filter_map(|import| import_path_prefix_len(import, module_path).map(|consumed| (import.target, consumed)))
@@ -206,7 +215,7 @@ pub(super) fn qualified_module_resolution(
             .map(|import| import.path.iter().chain(&module_path[1..]).cloned().collect::<Vec<_>>())
             .collect::<Vec<_>>();
         (initial, use_expansions)
-    };
+    });
     match import_routed_module_units(db, key, module_path, initial).as_slice() {
         [unit] => return QualifiedModuleResolution::Unit(*unit),
         [] => {}
@@ -358,6 +367,61 @@ fn import_routed_module_units(
     resolved
 }
 
+/// Run `visit` over the import edges of `key.unit` visible at `key.node`: the file scope's edges
+/// and those of each inline module that encloses the node. For one binding name, the edges of the
+/// nearest scope that binds it shadow those of outer scopes, as lexical declarations do. A unit
+/// with no `use` inside an inline module visits its edges unchanged, under the registry lock, so
+/// `visit` must not lock the registry again.
+pub(in crate::semantic_contract) fn with_visible_imports<R>(
+    db: &dyn Db,
+    key: AstNodeKey,
+    visit: impl FnOnce(&[crate::db::SyntaxImport]) -> R,
+) -> R {
+    let scoped = {
+        let registry = db.syntax_dependency_registry().lock().expect("syntax dependency registry");
+        let imports = registry.imports.get(&(key.unit, key.generation)).map(Vec::as_slice).unwrap_or_default();
+        if imports.iter().all(|import| import.scope.is_empty()) {
+            return visit(imports);
+        }
+        imports.to_vec()
+    };
+    let site = site_inline_module_path(db, key);
+    let visible = scoped.into_iter().filter(|import| site.starts_with(&import.scope)).collect::<Vec<_>>();
+    let mut nearest = std::collections::HashMap::<&str, usize>::new();
+    for import in &visible {
+        let depth = nearest.entry(import.binding.as_str()).or_default();
+        *depth = (*depth).max(import.scope.len());
+    }
+    let visible = visible
+        .iter()
+        .filter(|import| nearest.get(import.binding.as_str()) == Some(&import.scope.len()))
+        .cloned()
+        .collect::<Vec<_>>();
+    visit(&visible)
+}
+
+/// The names of the inline modules that enclose `key.node` in its unit, outermost first.
+fn site_inline_module_path(db: &dyn Db, key: AstNodeKey) -> Vec<String> {
+    let Some(syntax) = db.syntax_unit(key.unit).filter(|syntax| syntax.generation(db) == key.generation) else {
+        return Vec::new();
+    };
+    let program = syntax.expanded_program(db);
+    let index = syntax.syntax_index(db);
+    let mut path = Vec::new();
+    let mut scope = module_scope(index, key.node);
+    while let Some(current) = scope {
+        let Some(module) =
+            index.node_at(program, current).and_then(|node| node.of::<beskid_analysis::syntax::InlineModule>())
+        else {
+            break;
+        };
+        path.push(module.name.node.name.clone());
+        scope = outer_module_scope(index, current);
+    }
+    path.reverse();
+    path
+}
+
 pub(super) fn import_path_prefix_len(import: &crate::db::SyntaxImport, module_path: &[String]) -> Option<usize> {
     // A source unit owns only the names bound by its own `use` declarations. Original import
     // paths may be used only for an unaliased import, where the terminal path segment is that
@@ -382,7 +446,8 @@ pub(super) fn public_module_routes(
         .get(&(unit, generation))
         .into_iter()
         .flatten()
-        .filter(|import| import.public)
+        // A `pub use` inside an inline module re-exports into that module, not the unit's API.
+        .filter(|import| import.public && import.scope.is_empty())
         .map(|import| (import.binding.clone(), import.target))
         .collect()
 }
@@ -524,7 +589,13 @@ pub(super) fn public_reexport_units(
 ) -> Vec<SourceUnitId> {
     let registry = db.syntax_dependency_registry().lock().expect("syntax dependency registry");
     let mut targets = Vec::new();
-    for import in registry.imports.get(&(unit, generation)).into_iter().flatten().filter(|import| import.public) {
+    for import in registry
+        .imports
+        .get(&(unit, generation))
+        .into_iter()
+        .flatten()
+        .filter(|import| import.public && import.scope.is_empty())
+    {
         if !targets.contains(&import.target) {
             targets.push(import.target);
         }
@@ -599,22 +670,19 @@ pub(super) fn unique_imported_function(db: &dyn Db, key: AstNodeKey, name: &str)
         .syntax_unit(key.unit)
         .filter(|syntax| syntax.accepts_key(db, key))
         .is_some_and(|syntax| syntax.revision(db).runtime_source_authority.is_some());
-    let targets = db
-        .syntax_dependency_registry()
-        .lock()
-        .expect("syntax dependency registry")
-        .imports
-        .get(&(key.unit, key.generation))?
-        .iter()
-        .map(|import| {
-            (
-                import.target,
-                owner_is_runtime
-                    && import.binding == crate::typed_program::CANONICAL_RUNTIME_CORPUS_BINDING
-                    && import.has_explicit_alias,
-            )
-        })
-        .collect::<Vec<_>>();
+    let targets = with_visible_imports(db, key, |imports| {
+        imports
+            .iter()
+            .map(|import| {
+                (
+                    import.target,
+                    owner_is_runtime
+                        && import.binding == crate::typed_program::CANONICAL_RUNTIME_CORPUS_BINDING
+                        && import.has_explicit_alias,
+                )
+            })
+            .collect::<Vec<_>>()
+    });
     let candidates = targets
         .into_iter()
         .filter_map(|(target, private_scope)| {
@@ -700,3 +768,6 @@ pub(super) fn outer_module_scope(
 ) -> Option<beskid_analysis::syntax::AstNodeId> {
     module_scope(index, parent_node(index, scope)?)
 }
+
+#[cfg(test)]
+mod inline_scope_tests;

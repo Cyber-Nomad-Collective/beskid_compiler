@@ -28,10 +28,6 @@ pub enum SemanticIssueKind {
         name: String,
         previous: SpanInfo,
     },
-    DuplicateItemName {
-        name: String,
-        previous: SpanInfo,
-    },
     UnknownTypeInDefinition {
         type_name: String,
     },
@@ -41,10 +37,6 @@ pub enum SemanticIssueKind {
     },
 
     // ── Import / visibility / naming diagnostics ──
-    AmbiguousImport {
-        name: String,
-        previous: SpanInfo,
-    },
     UnknownImportPath {
         path: String,
         /// The module the path's prefix names when the last segment is an item of it
@@ -243,6 +235,13 @@ pub enum SemanticIssueKind {
         module_path: String,
         name: String,
         candidates: usize,
+    },
+    /// The first segment of a qualified path names both an inline module and a module-import
+    /// alias visible at the path, and each of them reaches an item for the rest of the path.
+    ResolveAmbiguousModuleQualifier {
+        name: String,
+        member: String,
+        import_path: String,
     },
     ResolveShadowedLocal {
         name: String,

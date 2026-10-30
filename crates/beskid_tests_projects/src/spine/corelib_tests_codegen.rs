@@ -49,11 +49,7 @@ fn syscall_result_predicates_have_call_derived_pointer_specializations() {
                     .filter(|key| {
                         matches!(
                             item_name(db, *key).ok().flatten().as_deref(),
-                            Some(
-                                "SyscallWriteEmptyStringReturnsNonNegative"
-                                    | "SyscallWriteStdoutSmoke"
-                                    | "SyscallWritePrintsNewline"
-                            )
+                            Some("WriteEmptyStringReturnsNonNegative" | "WriteStdoutSmoke" | "WritePrintsNewline")
                         )
                     })
                     .collect::<Vec<_>>();
@@ -79,8 +75,7 @@ fn syscall_result_predicates_have_call_derived_pointer_specializations() {
                     .ids_of_kind(NodeKind::TestDefinition)
                     .map(|node| AstNodeKey { unit, generation, node })
                     .find(|key| {
-                        item_name(db, *key).ok().flatten().as_deref()
-                            == Some("SyscallWriteEmptyStringReturnsNonNegative")
+                        item_name(db, *key).ok().flatten().as_deref() == Some("WriteEmptyStringReturnsNonNegative")
                     })
                     .expect("syscall test entrypoint");
                 let root = AstNodeKey { unit, generation, node: AstNodeId(0) };

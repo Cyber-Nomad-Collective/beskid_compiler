@@ -283,12 +283,9 @@ fn register_typed_program(
     let mut registry = db.syntax_dependency_registry().lock().expect("syntax dependency registry");
     for unit in assembly.units.iter() {
         let unit_id = SourceUnitId::new(db, unit.path.clone());
-        let imports = unit
-            .program
-            .node
-            .items
-            .iter()
-            .filter_map(|item| match &item.node {
+        let imports = unit_import_declarations(&unit.program.node.items)
+            .into_iter()
+            .filter_map(|(scope, item)| match &item.node {
                 beskid_analysis::syntax::Node::UseDeclaration(declaration) => {
                     let path = declaration
                         .node
@@ -310,6 +307,7 @@ fn register_typed_program(
                         declaration.node.alias.is_some(),
                         declaration.node.visibility.node == beskid_analysis::syntax::Visibility::Public,
                         crate::db::SyntaxImportOrigin::Use,
+                        scope,
                     ))
                 }
                 // An out-of-line `pub mod A.B;` is an assembled syntax dependency and a
@@ -331,18 +329,27 @@ fn register_typed_program(
                         false,
                         declaration.node.visibility.node == beskid_analysis::syntax::Visibility::Public,
                         crate::db::SyntaxImportOrigin::ModuleDeclaration,
+                        scope,
                     ))
                 }
                 _ => None,
             })
-            .filter_map(|(path, binding, has_explicit_alias, public, origin)| {
+            .filter_map(|(path, binding, has_explicit_alias, public, origin, scope)| {
                 registry
                     .visible_module_units(generation, &path)
                     .and_then(|targets| match targets {
                         [target] => Some(*target),
                         _ => None,
                     })
-                    .map(|target| crate::db::SyntaxImport { path, binding, has_explicit_alias, target, public, origin })
+                    .map(|target| crate::db::SyntaxImport {
+                        path,
+                        binding,
+                        has_explicit_alias,
+                        target,
+                        public,
+                        origin,
+                        scope,
+                    })
             })
             .collect();
         registry.imports.insert((unit_id, generation), imports);
@@ -585,6 +592,35 @@ fn attach_canonical_runtime_cross_unit_scope(db: &BeskidDatabase, typed: &TypedP
     attach_private_runtime_scope(db, typed.generation, &units);
 }
 
+/// The `use` and out-of-line `mod` declarations of a unit, each with the inline-module path of
+/// its scope (empty for the file scope). A `use` inside `mod A { ... }` belongs to the scope of
+/// `A`; out-of-line module declarations are file-scope items only.
+fn unit_import_declarations(
+    items: &[beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Node>],
+) -> Vec<(Vec<String>, &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Node>)> {
+    fn collect<'a>(
+        items: &'a [beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Node>],
+        scope: &mut Vec<String>,
+        out: &mut Vec<(Vec<String>, &'a beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Node>)>,
+    ) {
+        for item in items {
+            match &item.node {
+                beskid_analysis::syntax::Node::UseDeclaration(_) => out.push((scope.clone(), item)),
+                beskid_analysis::syntax::Node::ModuleDeclaration(_) if scope.is_empty() => out.push((Vec::new(), item)),
+                beskid_analysis::syntax::Node::InlineModule(module) => {
+                    scope.push(module.node.name.node.name.clone());
+                    collect(&module.node.items, scope, out);
+                    scope.pop();
+                }
+                _ => {}
+            }
+        }
+    }
+    let mut out = Vec::new();
+    collect(items, &mut Vec::new(), &mut out);
+    out
+}
+
 fn attach_private_runtime_scope(db: &BeskidDatabase, generation: SyntaxGenerationId, units: &[SourceUnitId]) {
     let mut registry = db.syntax_dependency_registry().lock().expect("syntax dependency registry");
     for owner in units {
@@ -604,6 +640,7 @@ fn attach_private_runtime_scope(db: &BeskidDatabase, generation: SyntaxGeneratio
                 target,
                 public: false,
                 origin: crate::db::SyntaxImportOrigin::CanonicalRuntimeScope,
+                scope: Vec::new(),
             });
         }
     }

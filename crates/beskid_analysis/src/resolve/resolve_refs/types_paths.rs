@@ -5,7 +5,7 @@ use super::super::errors::ResolveError;
 use super::super::items::ItemKind;
 use super::super::resolver::{self, Resolver};
 use super::super::tables::{ResolvedType, ResolvedValue};
-use super::lookup::ModulePathLookup;
+use super::lookup::{InlineQualifier, ModulePathLookup};
 
 impl Resolver {
     pub(super) fn resolve_path_type_arguments(&mut self, path: &Spanned<Path>) {
@@ -56,10 +56,8 @@ impl Resolver {
                 self.tables.insert_value(path.span, ResolvedValue::Local(local));
                 return;
             }
-            if let Some(value) = self
-                .constants
-                .get(&(self.current_module, name.clone()))
-                .or_else(|| self.shared_constants.get(name).and_then(Option::as_ref))
+            if let Some(value) =
+                self.constant_in_scope(name).or_else(|| self.shared_constants.get(name).and_then(Option::as_ref))
             {
                 self.tables.integer_constants.insert((self.current_source_path.clone(), path.span), value.clone());
                 return;
@@ -86,7 +84,7 @@ impl Resolver {
             }
             if self.resolve_item_in_scope(&segments[0]).is_none()
                 && self.module_graph.module_id(std::slice::from_ref(&segments[0])).is_none()
-                && !self.module_imports.contains_key(&segments[0])
+                && self.module_import(&segments[0]).is_none()
             {
                 let suggestion = self.closest_value_name(&segments[0]);
                 self.errors.push(ResolveError::UnknownValue { name: segments[0].clone(), span: path.span, suggestion });
@@ -94,7 +92,24 @@ impl Resolver {
             }
         }
         let lookup_segments = self.expand_import_alias(&segments);
-        match self.resolve_item_in_module_path(&segments, &lookup_segments) {
+        let lookup = self.resolve_item_in_module_path(&segments, &lookup_segments);
+        match self.inline_module_qualifier(&segments, &lookup, false) {
+            InlineQualifier::Absent => {}
+            InlineQualifier::Found(item) => {
+                self.tables.insert_value(path.span, ResolvedValue::Item(item));
+                return;
+            }
+            InlineQualifier::Ambiguous { import_path } => {
+                self.errors.push(ResolveError::AmbiguousModuleQualifier {
+                    name: segments[0].clone(),
+                    member: segments[1..].join("."),
+                    import_path,
+                    span: path.span,
+                });
+                return;
+            }
+        }
+        match lookup {
             ModulePathLookup::Found(item) => {
                 self.tables.insert_value(path.span, ResolvedValue::Item(item));
                 if let Some(root) = segments.first() {
@@ -151,14 +166,17 @@ impl Resolver {
                 self.tables.insert_type(path.span, ResolvedType::Generic(name.clone()));
                 return;
             }
-            if let Some(item) = self.resolve_item_in_scope(name)
-                && is_type_item(item)
-            {
+            if let Some((item, import_origin)) = self.resolve_type_item_in_scope(name) {
                 self.tables.insert_type(path.span, ResolvedType::Item(item));
-                self.mark_imported_scope_name_used(name);
+                match import_origin {
+                    Some(origin) => {
+                        self.tables.used_import_spans.insert(origin);
+                    }
+                    None => self.mark_imported_scope_name_used(name),
+                }
                 return;
             }
-            if let Some(module_path) = self.module_imports.get(name)
+            if let Some(module_path) = self.module_import(name)
                 && let ModulePathLookup::Found(item) = self.lookup_homonymous_module_item(module_path)
                 && is_type_item(item)
             {
@@ -170,7 +188,24 @@ impl Resolver {
             return;
         }
         let lookup_segments = self.expand_import_alias(&segments);
-        match self.resolve_type_item_in_module_path(&segments, &lookup_segments) {
+        let lookup = self.resolve_type_item_in_module_path(&segments, &lookup_segments);
+        match self.inline_module_qualifier(&segments, &lookup, true) {
+            InlineQualifier::Absent => {}
+            InlineQualifier::Found(item) => {
+                self.tables.insert_type(path.span, ResolvedType::Item(item));
+                return;
+            }
+            InlineQualifier::Ambiguous { import_path } => {
+                self.errors.push(ResolveError::AmbiguousModuleQualifier {
+                    name: segments[0].clone(),
+                    member: segments[1..].join("."),
+                    import_path,
+                    span: path.span,
+                });
+                return;
+            }
+        }
+        match lookup {
             ModulePathLookup::Found(item) => {
                 self.tables.insert_type(path.span, ResolvedType::Item(item));
                 if let Some(root) = segments.first() {

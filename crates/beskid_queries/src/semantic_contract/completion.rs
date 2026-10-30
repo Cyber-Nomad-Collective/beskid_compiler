@@ -35,14 +35,9 @@ pub fn completion_candidates(
     let mut candidates = Vec::new();
     if let Some(before_dot) = before.strip_suffix('.') {
         let alias = before_dot.rsplit(|ch: char| !ch.is_ascii_alphanumeric() && ch != '_').next().unwrap_or_default();
-        let import_target = {
-            let registry = db.syntax_dependency_registry().lock().expect("syntax dependency registry");
-            registry
-                .imports
-                .get(&(key.unit, key.generation))
-                .and_then(|imports| imports.iter().find(|import| import.binding == alias))
-                .map(|import| import.target)
-        };
+        let import_target = with_visible_imports(db, key, |imports| {
+            imports.iter().find(|import| import.binding == alias).map(|import| import.target)
+        });
         if let Some(target) = import_target {
             let Some(target_syntax) = db.syntax_unit(target) else {
                 return Ok(None);
@@ -104,14 +99,7 @@ pub fn completion_dependency_surface(
     if !syntax.accepts_key(db, key) {
         return Ok(None);
     }
-    let imports = db
-        .syntax_dependency_registry()
-        .lock()
-        .expect("syntax dependency registry")
-        .imports
-        .get(&(key.unit, key.generation))
-        .cloned()
-        .unwrap_or_default();
+    let imports = with_visible_imports(db, key, <[crate::db::SyntaxImport]>::to_vec);
     let context = CompletionContext { cursor: 0, replacement_start: 0, replacement_end: 0 };
     let mut surfaces = Vec::new();
     for import in imports {

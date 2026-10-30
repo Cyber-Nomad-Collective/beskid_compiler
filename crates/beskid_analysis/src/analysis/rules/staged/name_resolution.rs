@@ -5,7 +5,7 @@ use crate::resolve::{Resolution, ResolveError, Resolver};
 use crate::syntax::{Block, Expression, ForStatement, LetStatement, Node, Path, Program, Statement, UseDeclaration};
 use crate::syntax::{SpanInfo, Spanned};
 use crate::syntax_query::{AstWalker, NodeKind, NodeRef, Visit};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 impl SemanticPipelineRule {
     /// Resolves the program. On failure, the spans of unresolved single values are added to
@@ -16,7 +16,6 @@ impl SemanticPipelineRule {
         program: &Spanned<Program>,
         unresolved_value_spans: &mut HashSet<SpanInfo>,
     ) -> Option<Resolution> {
-        self.check_ambiguous_imports(ctx, program);
         self.check_unknown_import_paths(ctx, program);
         self.check_use_before_declaration(ctx, program);
 
@@ -59,26 +58,6 @@ impl SemanticPipelineRule {
         Some(resolution)
     }
 
-    fn check_ambiguous_imports(&self, ctx: &mut RuleContext, program: &Spanned<Program>) {
-        let mut seen: HashMap<String, SpanInfo> = HashMap::new();
-
-        for item in &program.node.items {
-            let Node::UseDeclaration(use_decl) = &item.node else {
-                continue;
-            };
-            let imported_name = self.imported_name_local(&use_decl.node);
-            let imported_span = use_decl.node.alias.as_ref().map(|alias| alias.span).unwrap_or(use_decl.node.path.span);
-            let Some(previous_span) = seen.insert(imported_name.clone(), imported_span) else {
-                continue;
-            };
-
-            ctx.emit_issue(
-                imported_span,
-                SemanticIssueKind::AmbiguousImport { name: imported_name, previous: previous_span },
-            );
-        }
-    }
-
     fn import_path_known_in_assembly(use_path: &str, known_paths: &HashSet<String>) -> bool {
         if known_paths.contains(use_path) {
             return true;
@@ -93,10 +72,8 @@ impl SemanticPipelineRule {
 
     fn check_unknown_import_paths(&self, ctx: &mut RuleContext, program: &Spanned<Program>) {
         if let Some(known_paths) = ctx.options.known_assembly_module_paths.clone() {
-            for item in &program.node.items {
-                let Node::UseDeclaration(use_decl) = &item.node else {
-                    continue;
-                };
+            // Every scope's `use`: the file scope's and those inside inline modules.
+            for use_decl in Self::scope_use_declarations(&program.node.items) {
                 let path = self.path_to_string_local(&use_decl.node.path);
                 if Self::import_path_known_in_assembly(&path, &known_paths) {
                     continue;
@@ -172,20 +149,25 @@ impl SemanticPipelineRule {
         }
     }
 
+    /// The `use` declarations of `items` and of the inline modules among them, in source order.
+    fn scope_use_declarations(items: &[Spanned<Node>]) -> Vec<&Spanned<UseDeclaration>> {
+        let mut found = Vec::new();
+        for item in items {
+            match &item.node {
+                Node::UseDeclaration(use_decl) => found.push(use_decl),
+                Node::InlineModule(module) => found.extend(Self::scope_use_declarations(&module.node.items)),
+                _ => {}
+            }
+        }
+        found
+    }
+
     fn path_tail_local(&self, path: &Spanned<Path>) -> String {
         path.node.segments.last().map(|segment| segment.node.name.node.name.clone()).unwrap_or_default()
     }
 
     fn path_to_string_local(&self, path: &Spanned<Path>) -> String {
         path.node.segments.iter().map(|segment| segment.node.name.node.name.clone()).collect::<Vec<_>>().join(".")
-    }
-
-    fn imported_name_local(&self, use_decl: &UseDeclaration) -> String {
-        use_decl
-            .alias
-            .as_ref()
-            .map(|alias| alias.node.name.clone())
-            .unwrap_or_else(|| self.path_tail_local(&use_decl.path))
     }
 }
 

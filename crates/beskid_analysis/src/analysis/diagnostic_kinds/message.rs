@@ -22,6 +22,7 @@ impl SemanticIssueKind {
                 | Self::ResolvePrivateItemInModule { .. }
                 | Self::ResolveAmbiguousModulePath { .. }
                 | Self::ResolveAmbiguousItemInModule { .. }
+                | Self::ResolveAmbiguousModuleQualifier { .. }
                 | Self::MissingImport { .. }
                 | Self::MissingImportAmbiguous { .. }
                 | Self::EnumValueMethodCall { .. }
@@ -37,7 +38,6 @@ impl SemanticIssueKind {
             Self::DuplicateContractMethod { name, .. } => {
                 format!("duplicate contract method `{name}`")
             }
-            Self::DuplicateItemName { name, .. } => format!("duplicate item name `{name}`"),
             Self::UnknownTypeInDefinition { type_name } => {
                 format!("unknown type `{type_name}` in definition")
             }
@@ -47,7 +47,6 @@ impl SemanticIssueKind {
             } => format!(
                 "embedded contract `{contract_name}` introduces conflicting method `{method_name}`"
             ),
-            Self::AmbiguousImport { name, .. } => format!("ambiguous import for `{name}`"),
             Self::UnknownImportPath { path, .. } => format!("unknown import path `{path}`"),
             Self::UseBeforeDeclaration { name } => {
                 format!("use of `{name}` before declaration")
@@ -185,6 +184,9 @@ impl SemanticIssueKind {
             }
             Self::ResolveAmbiguousItemInModule { module_path, name, candidates } => format!(
                 "ambiguous item `{name}` in module `{module_path}`: {candidates} re-exported items share the name"
+            ),
+            Self::ResolveAmbiguousModuleQualifier { name, member, import_path } => format!(
+                "ambiguous module `{name}`: both the inline module `{name}` and the import `{import_path}` declare `{member}`"
             ),
             Self::ResolveShadowedLocal { name, .. } => format!("shadowed local `{name}`"),
             Self::MissingImport { name, module_path } => {

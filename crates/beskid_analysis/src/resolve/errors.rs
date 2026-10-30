@@ -67,6 +67,14 @@ pub enum ResolveError {
         candidates: usize,
         span: SpanInfo,
     },
+    /// `name.member` where `name` is both an inline module and a module-import alias (of
+    /// `import_path`) visible here, and both reach an item `member`.
+    AmbiguousModuleQualifier {
+        name: String,
+        member: String,
+        import_path: String,
+        span: SpanInfo,
+    },
 }
 
 impl fmt::Display for ResolveError {
@@ -103,6 +111,13 @@ impl fmt::Display for ResolveError {
                 write!(
                     f,
                     "ambiguous item `{name}` in module `{module_path}`: {candidates} re-exported items share the name at {}",
+                    span_loc(*span)
+                )
+            }
+            ResolveError::AmbiguousModuleQualifier { name, member, import_path, span } => {
+                write!(
+                    f,
+                    "ambiguous module `{name}`: inline module `{name}` and import `{import_path}` both declare `{member}` at {}",
                     span_loc(*span)
                 )
             }

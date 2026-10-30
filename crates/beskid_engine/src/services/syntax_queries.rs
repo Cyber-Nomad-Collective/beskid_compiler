@@ -5,7 +5,7 @@ use beskid_analysis::syntax::AstNodeId;
 #[cfg(test)]
 use beskid_analysis::syntax::SyntaxGenerationId;
 use beskid_queries::{
-    AstNodeKey, BeskidDatabase, SemanticTypeId, build_typed_program, child_nodes, item_name, item_signature,
+    AstNodeKey, BeskidDatabase, SemanticTypeId, build_typed_program, child_nodes, item_signature,
     project_session_for_syntax_assembly, test_item,
 };
 
@@ -50,8 +50,8 @@ pub fn syntax_entrypoint_return_type_from_front_end(
     build_typed_program(&mut db, project, generation, Arc::clone(&assembly))
         .map_err(|error| anyhow::anyhow!("syntax REPL preparation failed: {error}"))?;
     let root = AstNodeKey { unit: beskid_queries::SourceUnitId::new(&db, entry_path), generation, node: AstNodeId(0) };
-    let entry =
-        find_syntax_item(&db, root, entrypoint).ok_or_else(|| anyhow::anyhow!("Missing entrypoint `{entrypoint}`"))?;
+    let entry = find_syntax_function(&db, [root], entrypoint)
+        .ok_or_else(|| anyhow::anyhow!("Missing entrypoint `{entrypoint}`"))?;
     let signature = item_signature(&db, entry)
         .map_err(|error| anyhow::anyhow!("entrypoint signature query failed: {error}"))?
         .ok_or_else(|| anyhow::anyhow!("Missing signature for `{entrypoint}`"))?;
@@ -99,15 +99,22 @@ fn collect_syntax_test_items(db: &dyn beskid_queries::Db, key: AstNodeKey) -> Re
     Ok(out)
 }
 
-pub(super) fn find_syntax_item(db: &dyn beskid_queries::Db, key: AstNodeKey, entrypoint: &str) -> Option<AstNodeKey> {
-    if syntax_item_name(db, key).as_deref() == Some(entrypoint) {
-        return Some(key);
-    }
-    child_nodes(db, key).ok().flatten()?.iter().copied().find_map(|child| find_syntax_item(db, child, entrypoint))
+/// Resolve a function entry selection (`Main`, or `Module::Name` inside an inline module) across
+/// `roots` in order; missing and ambiguous selections both yield `None`.
+pub(super) fn find_syntax_function(
+    db: &dyn beskid_queries::Db,
+    roots: impl IntoIterator<Item = AstNodeKey>,
+    entrypoint: &str,
+) -> Option<AstNodeKey> {
+    beskid_queries::resolve_entry_item(db, roots, entrypoint, |kind| {
+        kind == Some(beskid_queries::IndexedNodeKind::FunctionDefinition)
+    })
+    .ok()
 }
 
+#[cfg(test)]
 pub(super) fn syntax_item_name(db: &dyn beskid_queries::Db, key: AstNodeKey) -> Option<String> {
-    item_name(db, key).ok().flatten().map(|name| name.as_ref().to_owned())
+    beskid_queries::item_name(db, key).ok().flatten().map(|name| name.as_ref().to_owned())
 }
 
 #[cfg(test)]

@@ -518,8 +518,7 @@ fn lower_syntax_assembly_entrypoints_with_composition(
     let mut items = Vec::new();
     let mut entries = Vec::with_capacity(entrypoints.len());
     for entrypoint in entrypoints {
-        let entry = find_entrypoint(db, &input, entry_root, entrypoint, kind)
-            .ok_or_else(|| anyhow::anyhow!("Missing {} `{entrypoint}`", kind.label()))?;
+        let entry = find_entrypoint(db, &input, entry_root, entrypoint, kind)?;
         let entry_label = assembly
             .units
             .iter()
@@ -955,29 +954,28 @@ fn contains_spawn(db: &dyn beskid_queries::Db, key: AstNodeKey) -> bool {
     child_nodes(db, key).ok().flatten().is_some_and(|children| children.iter().any(|child| contains_spawn(db, *child)))
 }
 
-/// Resolve an entry name to its item: only free functions and tests can be program entries
+/// Resolve an entry selection to its item: only free functions and tests can be program entries
 /// (never a method or contract signature of the same name), and the entry unit is searched first.
+///
+/// The selection is the item's unit-relative qualified name (`Name`, or `Topic::Name` for an item
+/// in `mod Topic { ... }`), the same name test discovery reports. A function and a test of one
+/// name are distinct selections. A missing or ambiguous selection fails closed.
 fn find_entrypoint(
     db: &BeskidDatabase,
     input: &CodegenInput<'_>,
     entry_root: AstNodeKey,
     entrypoint: &str,
     kind: EntrypointKind,
-) -> Option<AstNodeKey> {
-    std::iter::once(entry_root)
-        .chain(input.roots().iter().copied().filter(|root| *root != entry_root))
-        .find_map(|root| find_item(db, root, entrypoint, kind))
-}
-
-/// The first item of `kind` named `entrypoint`: a function and a test of one name are distinct
-/// selections, so the name alone never picks between them.
-fn find_item(db: &BeskidDatabase, key: AstNodeKey, entrypoint: &str, kind: EntrypointKind) -> Option<AstNodeKey> {
-    if kind.matches(node_kind(db, key).ok().flatten())
-        && item_name(db, key).ok().flatten().as_deref() == Some(entrypoint)
-    {
-        return Some(key);
-    }
-    child_nodes(db, key).ok().flatten()?.iter().copied().find_map(|child| find_item(db, child, entrypoint, kind))
+) -> anyhow::Result<AstNodeKey> {
+    let roots = std::iter::once(entry_root).chain(input.roots().iter().copied().filter(|root| *root != entry_root));
+    beskid_queries::resolve_entry_item(db, roots, entrypoint, |node| kind.matches(node)).map_err(|error| match error {
+        beskid_queries::EntryItemResolutionError::Missing => anyhow::anyhow!("Missing {} `{entrypoint}`", kind.label()),
+        beskid_queries::EntryItemResolutionError::Ambiguous(found) => anyhow::anyhow!(
+            "Ambiguous {} `{entrypoint}`: {} definitions have this qualified name",
+            kind.label(),
+            found.len()
+        ),
+    })
 }
 
 fn syntax_item_symbol(db: &dyn beskid_queries::Db, input: &CodegenInput<'_>, key: AstNodeKey) -> Option<String> {

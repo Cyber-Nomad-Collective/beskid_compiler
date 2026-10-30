@@ -25,7 +25,7 @@ case "$1" in
     done
     for t in NetworkNativeTests GcTests; do smoke runtime/beskid/tests/runtime_semantics $t rt-$t; done
     # The per-package SmokeTests targets are gone; one behaviour target per package stands in for them.
-    for p in uri:UriParseTests codec:CodecCursorTests connect:ConnectLoopbackTests crypto:SymSha x509:Der tls:Messages http2:Http2FrameTests websocket:WsFrameTests websocket:WsEchoTests quic:QuicFrames quic:QuicCreditLoss http3:H3FrameTests web:WebConfig; do
+    for p in uri:UriParseTests codec:CodecCursorTests connect:ConnectLoopbackTests crypto:SymSha x509:Encoding tls:Messages http2:Http2FrameTests websocket:WsFrameTests websocket:WsEchoTests quic:QuicFrames quic:QuicConnection http3:H3FrameTests web:WebConfig; do
       smoke corelib/packages/${p%%:*}/tests ${p##*:} pkg-${p##*:}
     done
     echo DONE >> $out ;;
@@ -90,7 +90,7 @@ PY
   long)
     # Targets whose CLIF generation alone exceeds the default 1800 s matrix budget.
     out=$L-x.log; : > $out
-    for p in websocket:WsEchoTests quic:QuicCreditLoss; do
+    for p in websocket:WsEchoTests quic:QuicConnection; do
       t=${p##*:}; rm -rf $L-root-x-$t
       BESKID_CORELIB_ROOT=$L-root-x-$t timeout 7000 $CLI test --plain --project corelib/packages/${p%%:*}/tests --target $t --target-timeout 6000 --matrix-timeout 6900 > $L-x-$t.log 2>&1
       echo "$t EXIT=$? $(grep '^Result' $L-x-$t.log)" >> $out

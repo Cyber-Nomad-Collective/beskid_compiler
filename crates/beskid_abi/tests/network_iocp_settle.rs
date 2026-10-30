@@ -2,7 +2,8 @@
 //!
 //! The decision rules live in `assembly/common/network_settle.h`, which has no Windows
 //! dependency, so the state-machine fixture runs on every supported native host. The
-//! Windows fixture witnesses the completion-port behavior those rules depend on.
+//! Windows fixture witnesses the completion-port behavior those rules depend on. The DNS
+//! failure classification (`assembly/common/network_dns.h`) is checked the same way.
 #![cfg(any(
     all(target_os = "linux", target_arch = "x86_64"),
     all(target_os = "macos", target_arch = "aarch64"),
@@ -70,6 +71,13 @@ fn compile_and_run(fixture: &str, extra_args: &[&str], marker: &str) {
 #[test]
 fn iocp_settlement_lets_a_queued_completion_win_over_its_deadline() {
     compile_and_run("network_settle.c", &[], "settle=ok");
+}
+
+/// A name with no usable address (EAI_NONAME, EAI_NODATA, EAI_ADDRFAMILY, Windows WSANO_DATA)
+/// is HostNotFound; a resolver failure (EAI_AGAIN, EAI_FAIL) stays NetworkDown. No lookup runs.
+#[test]
+fn dns_failures_without_an_address_are_host_not_found() {
+    compile_and_run("network_dns.c", &[], "dns=ok");
 }
 
 // Windows only; runs in the Woodpecker windows pipeline (`cargo test --workspace`), or by
