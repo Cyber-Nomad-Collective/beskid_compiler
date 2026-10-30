@@ -297,8 +297,14 @@ impl BeskidDatabase {
     ) -> Result<beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>, SemanticError> {
         self.syntax_parse_count.fetch_add(1, Ordering::Relaxed);
         let source_name = unit.path(self).display().to_string();
-        let program = beskid_analysis::services::parse_program_with_source_name(&source_name, source)
-            .map_err(|error| SemanticError::new(format!("failed to parse {source_name}: {error}")))?;
+        // A repaired tree is never registered as the tree of these bytes (fail closed).
+        let program = beskid_analysis::projects::assembly::parse_program_for_unit(
+            &unit.path(self),
+            source,
+            beskid_analysis::projects::AssemblyRecoveryPolicy::Strict,
+        )
+        .map_err(|error| SemanticError::new(error.to_string()))?
+        .program;
         let expanded = beskid_analysis::macros::expand_program_with_diagnostics(
             program,
             beskid_analysis::macros::DEFAULT_MAX_MACRO_EXPANSION_DEPTH,

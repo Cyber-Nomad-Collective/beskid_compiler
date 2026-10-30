@@ -56,6 +56,7 @@ fn semantic_snapshot_query_hits_registry() {
             root_set: beskid_analysis::projects::AssemblyRootSet::Entry,
             discovery: beskid_analysis::projects::AssemblyDiscovery::ImportClosure,
             recovery_policy: beskid_analysis::projects::AssemblyRecoveryPolicy::Strict,
+            recovered_units: std::sync::Arc::from([]),
             module_index: std::sync::Arc::new(beskid_analysis::projects::ModuleIndex::empty()),
             has_core_dependency: false,
             trusted_corelib_service_paths: std::sync::Arc::from([]),

@@ -71,7 +71,10 @@ fn builder_rebinds_disk_snapshot_origin_in_both_request_orders() {
             assert_eq!(&first_unit.origin_path, first);
             assert!(ArtifactStore::new(&root.0).read_ast(&content_fingerprint(SOURCE)).is_some());
 
-            let unexpected_parse = |_: &Path, _: &str, _: SyntaxGenerationId| panic!("expected a disk snapshot hit");
+            let unexpected_parse =
+                |_: &Path, _: &str, _: SyntaxGenerationId, _: beskid_analysis::projects::AssemblyRecoveryPolicy| {
+                    panic!("expected a disk snapshot hit")
+                };
             let cached_builder = UnitBuilder::new(&root.0).with_salsa_build(&unexpected_parse);
             let (second_unit, _) = cached_builder.build_unit(second, SOURCE, SyntaxGenerationId(2)).unwrap();
             assert_eq!(&second_unit.origin_path, second);

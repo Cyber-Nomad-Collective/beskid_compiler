@@ -26,6 +26,29 @@ pub(crate) fn parse_program_for_discovery(
     Ok(parsed.program)
 }
 
+/// The tree one assembly unit is built from.
+pub struct UnitParse {
+    pub program: crate::syntax::Spanned<crate::syntax::Program>,
+    /// The tree is the parser's repair of a source that does not parse. No cache keeps it.
+    pub recovered: bool,
+}
+
+/// Parse one unit for an assembly, whatever discovery found it. A strict assembly fails closed on
+/// the first parse diagnostic, so check, build and test report a recovered parse error and never
+/// analyze or lower the repaired tree. Only the editor policy keeps the repaired tree.
+pub fn parse_program_for_unit(
+    path: &Path,
+    source: &str,
+    policy: crate::projects::AssemblyRecoveryPolicy,
+) -> Result<UnitParse, super::AssemblyError> {
+    if policy == crate::projects::AssemblyRecoveryPolicy::Strict {
+        return parse_program_for_discovery(path, source).map(|program| UnitParse { program, recovered: false });
+    }
+    let parsed = crate::services::parse_program_with_source_name_and_diagnostics(&path.display().to_string(), source)
+        .map_err(|error| super::AssemblyError::from_parse_failure(path.to_path_buf(), source, error))?;
+    Ok(UnitParse { recovered: parsed.recovered || !parsed.diagnostics.is_empty(), program: parsed.program })
+}
+
 pub(crate) fn import_paths_from_program(program: &crate::syntax::Program) -> Vec<String> {
     declaration_paths(program, DeclarationKind::Use)
 }

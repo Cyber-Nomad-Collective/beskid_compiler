@@ -4,8 +4,10 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-/// Bump when the syntax snapshot wire layout changes.
-pub const ARTIFACT_SCHEMA_VERSION: u32 = 2;
+/// Bump when the syntax snapshot wire layout or the meaning of a stored snapshot changes.
+/// Version 3: a snapshot is only ever the tree of a source that parses (earlier stores could hold
+/// a parser repair of a source with a parse error).
+pub const ARTIFACT_SCHEMA_VERSION: u32 = 3;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ArtifactManifest {

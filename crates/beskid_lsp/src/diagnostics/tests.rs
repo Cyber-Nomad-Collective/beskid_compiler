@@ -387,3 +387,68 @@ fn unstructured_preparation_failure_is_one_line_and_yields_to_file_errors() {
     let file_error = SyntaxDiagnostic { start: 1, end: 2, ..facts[0].clone() };
     assert!(super::project_preparation_failure(&uri, &error, &[file_error]).is_empty());
 }
+
+/// An editor assembly keeps the repaired tree of a buffer whose parse error is recoverable (so
+/// completion keeps working), and the publish carries that parse error: before 0.6.7 a
+/// project-backed buffer with `[1, 2 3]` (a package unit or an application entry alike) published
+/// no diagnostic at all, while `beskid check` reported E0101.
+#[test]
+fn recovered_parse_error_of_a_project_buffer_is_published() {
+    use beskid_analysis::projects::{
+        AssemblyDiscovery, AssemblyRecoveryPolicy, EffectiveCompilationRoots, ModuleIndex, ProgramAssembly, RootEntry,
+        SourceUnit,
+    };
+    use beskid_analysis::services::{
+        parse_program_with_source_name_and_diagnostics, synthetic_compile_plan_for_source,
+    };
+    use beskid_analysis::syntax::SyntaxGenerationId;
+    use beskid_analysis::syntax_query::SyntaxIndex;
+    use std::sync::Arc;
+    let directory = tempfile::tempdir().expect("project");
+    let generation = SyntaxGenerationId(513);
+    let source = "pub i32[] Values()\n{\n    return [1, 2 3];\n}\n";
+    let path = directory.path().join("Values.bd");
+    std::fs::write(&path, source).expect("source");
+    let logical_name = path.display().to_string();
+    let parsed = parse_program_with_source_name_and_diagnostics(&logical_name, source).expect("recoverable");
+    assert!(parsed.recovered, "the fixture must exercise parser recovery");
+    let units = vec![SourceUnit {
+        logical_name,
+        origin_path: path.clone(),
+        program: parsed.program,
+        path: path.clone(),
+        source: source.into(),
+    }];
+    let plan = synthetic_compile_plan_for_source(&path);
+    let roots = EffectiveCompilationRoots {
+        host: RootEntry { dependency_name: None, source_root: directory.path().into() },
+        dependencies: vec![],
+    };
+    let indexes = units.iter().map(|unit| SyntaxIndex::from_program(&unit.program, generation)).collect::<Vec<_>>();
+    let index = Arc::new(ModuleIndex::build(&units, &indexes, &roots, &plan));
+    let mut assembly =
+        ProgramAssembly::new(roots, Arc::new(units), 0, AssemblyDiscovery::ImportClosure, index, false, generation)
+            .with_recovery_policy(AssemblyRecoveryPolicy::EditorRetainRecovered);
+    assembly.recovered_units = Arc::from([path.clone()]);
+    let resolved = beskid_analysis::services::ResolvedInput {
+        source_path: path,
+        source: source.into(),
+        compile_plan: Some(plan),
+        prepared_workspace: None,
+        workspace_summary: None,
+        assembly: Some(assembly),
+    };
+    let prepared = super::prepare_project_diagnostics_from_assembled(
+        &resolved,
+        super::EditorPreparePass::Complete,
+        &beskid_tools::native_mods::ModHostSelection::installed(),
+    )
+    .expect("editor diagnostics");
+    let parse_errors = prepared
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code.as_deref() == Some("E0101"))
+        .collect::<Vec<_>>();
+    assert_eq!(parse_errors.len(), 1, "the parse error is published once: {:#?}", prepared.diagnostics);
+    assert_eq!(parse_errors[0].start, source.find("3]").unwrap(), "{:#?}", parse_errors[0]);
+}

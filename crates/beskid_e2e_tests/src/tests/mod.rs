@@ -13,6 +13,9 @@ mod dependency_workflow;
 mod failure_contracts;
 
 #[cfg(target_os = "linux")]
+mod package_parse_recovery;
+
+#[cfg(target_os = "linux")]
 mod performance;
 
 #[cfg(target_os = "linux")]

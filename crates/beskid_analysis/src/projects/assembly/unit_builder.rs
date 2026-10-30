@@ -10,8 +10,9 @@ use crate::artifacts::{source_unit_from_ast_snapshot, source_unit_snapshot};
 use crate::projects::assembly::loader::import_paths_from_program;
 
 use super::SourceUnit;
-use super::loader::AssemblyError;
 use super::loader::expand_syntax_for_assembly;
+use super::loader::{AssemblyError, MaterializedUnit, parse_program_for_unit};
+use crate::projects::AssemblyRecoveryPolicy;
 use crate::syntax::SyntaxGenerationId;
 use crate::syntax_query::SyntaxIndex;
 
@@ -26,14 +27,24 @@ use crate::syntax_query::SyntaxIndex;
 static SHARED_CORELIB_UNITS: LazyLock<Mutex<HashMap<PathBuf, (String, Arc<SourceUnit>)>>> =
     LazyLock::new(Default::default);
 
+/// A Salsa unit build (see [`super::loader::UnitMaterializer`]).
+type SalsaBuild<'a> = &'a (
+        dyn Fn(&Path, &str, SyntaxGenerationId, AssemblyRecoveryPolicy) -> Result<MaterializedUnit, AssemblyError>
+            + Send
+            + Sync
+    );
+
 /// Builds expanded source and generation-bound syntax-index facts with artifact persistence.
+///
+/// Every cache it fills (the on-disk artifact store and the shared Corelib memo) holds only trees
+/// of sources that parse, so a cache hit never needs a parse to prove the source is clean. Under
+/// the strict policy a source that does not parse fails with its parse diagnostic.
 pub struct UnitBuilder<'a> {
     _project_root: PathBuf,
     store: ArtifactStore,
     shared_corelib_root: Option<PathBuf>,
-    salsa_build: Option<
-        &'a (dyn Fn(&Path, &str, SyntaxGenerationId) -> Result<(SourceUnit, SyntaxIndex), AssemblyError> + Send + Sync),
-    >,
+    recovery_policy: AssemblyRecoveryPolicy,
+    salsa_build: Option<SalsaBuild<'a>>,
 }
 
 impl<'a> UnitBuilder<'a> {
@@ -42,8 +53,15 @@ impl<'a> UnitBuilder<'a> {
             _project_root: project_root.to_path_buf(),
             store: ArtifactStore::new(project_root),
             shared_corelib_root: None,
+            recovery_policy: AssemblyRecoveryPolicy::Strict,
             salsa_build: None,
         }
+    }
+
+    /// Keep the parser's repaired tree of a source that does not parse (editor tooling only).
+    pub fn with_recovery_policy(mut self, policy: AssemblyRecoveryPolicy) -> Self {
+        self.recovery_policy = policy;
+        self
     }
 
     /// Reuse units below `root`, the canonical root of the shared Corelib, across assemblies.
@@ -52,14 +70,7 @@ impl<'a> UnitBuilder<'a> {
         self
     }
 
-    pub fn with_salsa_build(
-        mut self,
-        build: &'a (
-                dyn Fn(&Path, &str, SyntaxGenerationId) -> Result<(SourceUnit, SyntaxIndex), AssemblyError>
-                    + Send
-                    + Sync
-            ),
-    ) -> Self {
+    pub fn with_salsa_build(mut self, build: SalsaBuild<'a>) -> Self {
         self.salsa_build = Some(build);
         self
     }
@@ -70,6 +81,16 @@ impl<'a> UnitBuilder<'a> {
         source: &str,
         generation: SyntaxGenerationId,
     ) -> Result<(SourceUnit, SyntaxIndex), AssemblyError> {
+        self.build_assembly_unit(path, source, generation).map(|built| (built.unit, built.syntax_index))
+    }
+
+    /// Like [`Self::build_unit`], and says whether the tree is a parser repair (editor policy).
+    pub fn build_assembly_unit(
+        &self,
+        path: &Path,
+        source: &str,
+        generation: SyntaxGenerationId,
+    ) -> Result<MaterializedUnit, AssemblyError> {
         let fp = content_fingerprint(source);
         if !self.shared_corelib_root.as_deref().is_some_and(|root| path.starts_with(root)) {
             return self.build_unit_uncached(path, source, &fp, generation);
@@ -83,14 +104,16 @@ impl<'a> UnitBuilder<'a> {
         if let Some(unit) = reused {
             crate::projects::assembly::unit_cache::record_shared_corelib_hit();
             let syntax_index = SyntaxIndex::from_program(&unit.program, generation);
-            return Ok((SourceUnit::clone(&unit), syntax_index));
+            return Ok(MaterializedUnit { unit: SourceUnit::clone(&unit), syntax_index, recovered: false });
         }
-        let (unit, syntax_index) = self.build_unit_uncached(path, source, &fp, generation)?;
-        SHARED_CORELIB_UNITS
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .insert(path.to_path_buf(), (fp, Arc::new(unit.clone())));
-        Ok((unit, syntax_index))
+        let built = self.build_unit_uncached(path, source, &fp, generation)?;
+        if !built.recovered {
+            SHARED_CORELIB_UNITS
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .insert(path.to_path_buf(), (fp, Arc::new(built.unit.clone())));
+        }
+        Ok(built)
     }
 
     fn build_unit_uncached(
@@ -99,34 +122,35 @@ impl<'a> UnitBuilder<'a> {
         source: &str,
         fp: &str,
         generation: SyntaxGenerationId,
-    ) -> Result<(SourceUnit, SyntaxIndex), AssemblyError> {
+    ) -> Result<MaterializedUnit, AssemblyError> {
         if let Some(ast_snap) = self.store.read_ast(fp)
             && ast_snap.meta.source_len == source.len()
             && let Ok(unit) = source_unit_from_ast_snapshot(&ast_snap, path, source)
         {
             let syntax_index = SyntaxIndex::from_program(&unit.program, generation);
             crate::projects::assembly::unit_cache::record_disk_hit();
-            return Ok((unit, syntax_index));
-        }
-
-        if let Some(build) = self.salsa_build {
-            crate::projects::assembly::unit_cache::record_disk_miss();
-            let (unit, syntax_index) = build(path, source, generation)?;
-            // The store is content keyed, so a unit built through the Salsa cache is the same
-            // artifact a plain build publishes; the next process reads it instead of parsing.
-            self.write_artifacts(&unit)?;
-            return Ok((unit, syntax_index));
+            return Ok(MaterializedUnit { unit, syntax_index, recovered: false });
         }
 
         crate::projects::assembly::unit_cache::record_disk_miss();
-        let logical_name = path.display().to_string();
-        let program = crate::services::parse_program_with_source_name(&logical_name, source)
-            .map(expand_syntax_for_assembly)
-            .map_err(|err| AssemblyError::from_parse_failure(path.to_path_buf(), source, err))?;
-        let unit = SourceUnit::bind_request(path.to_path_buf(), logical_name, source.to_string(), program);
-        let syntax_index = SyntaxIndex::from_program(&unit.program, generation);
-        self.write_artifacts(&unit)?;
-        Ok((unit, syntax_index))
+        let built = match self.salsa_build {
+            Some(build) => build(path, source, generation, self.recovery_policy)?,
+            None => {
+                let logical_name = path.display().to_string();
+                let parsed = parse_program_for_unit(path, source, self.recovery_policy)?;
+                let program = expand_syntax_for_assembly(parsed.program);
+                let unit = SourceUnit::bind_request(path.to_path_buf(), logical_name, source.to_string(), program);
+                let syntax_index = SyntaxIndex::from_program(&unit.program, generation);
+                MaterializedUnit { unit, syntax_index, recovered: parsed.recovered }
+            }
+        };
+        // The store is content keyed, so a unit built through the Salsa cache is the same artifact
+        // a plain build publishes; the next process reads it instead of parsing. A repaired tree
+        // is never published: a later strict build would read it as the source's own tree.
+        if !built.recovered {
+            self.write_artifacts(&built.unit)?;
+        }
+        Ok(built)
     }
 
     fn write_artifacts(&self, unit: &SourceUnit) -> Result<(), AssemblyError> {

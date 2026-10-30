@@ -3,8 +3,8 @@
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-use beskid_analysis::projects::assembly::{SourceUnit, UnitMaterializer};
-use beskid_analysis::services::parse_program_with_source_name;
+use beskid_analysis::projects::AssemblyRecoveryPolicy;
+use beskid_analysis::projects::assembly::{MaterializedUnit, SourceUnit, UnitMaterializer, parse_program_for_unit};
 use beskid_analysis::syntax::SyntaxGenerationId;
 use beskid_analysis::syntax_query::SyntaxIndex;
 use beskid_artifacts::content_fingerprint;
@@ -15,7 +15,7 @@ use crate::inputs::ProjectSession;
 use crate::stats::{record_query_hit, record_query_miss};
 
 pub fn unit_materializer_for(db: Arc<Mutex<BeskidDatabase>>, session: ProjectSession) -> UnitMaterializer {
-    Arc::new(move |path: &Path, source: &str, generation: SyntaxGenerationId| {
+    Arc::new(move |path: &Path, source: &str, generation: SyntaxGenerationId, policy: AssemblyRecoveryPolicy| {
         let _ = session;
         let fp = content_fingerprint(source);
         if let Some(unit) = cached_unit(&db, &fp) {
@@ -27,14 +27,17 @@ pub fn unit_materializer_for(db: Arc<Mutex<BeskidDatabase>>, session: ProjectSes
                 unit.program,
             );
             let syntax_index = SyntaxIndex::from_program(&unit.program, generation);
-            return Ok((unit, syntax_index));
+            return Ok(MaterializedUnit { unit, syntax_index, recovered: false });
         }
 
         record_query_miss();
-        let unit = parse_unit(path.to_path_buf(), source)?;
+        let (unit, recovered) = parse_unit(path.to_path_buf(), source, policy)?;
         let syntax_index = SyntaxIndex::from_program(&unit.program, generation);
-        insert_cache(&db, fp, &unit);
-        Ok((unit, syntax_index))
+        // The unit cache holds only trees of sources that parse (a hit is never re-checked).
+        if !recovered {
+            insert_cache(&db, fp, &unit);
+        }
+        Ok(MaterializedUnit { unit, syntax_index, recovered })
     })
 }
 
@@ -53,12 +56,12 @@ fn insert_cache(db: &Arc<Mutex<BeskidDatabase>>, fp: String, unit: &beskid_analy
 fn parse_unit(
     path: PathBuf,
     source: &str,
-) -> Result<beskid_analysis::projects::assembly::SourceUnit, beskid_analysis::projects::AssemblyError> {
+    policy: AssemblyRecoveryPolicy,
+) -> Result<(SourceUnit, bool), beskid_analysis::projects::AssemblyError> {
     let logical_name = path.display().to_string();
-    let program = parse_program_with_source_name(&logical_name, source)
-        .map(expand_syntax_for_assembly)
-        .map_err(|err| beskid_analysis::projects::AssemblyError::from_parse_failure(path.clone(), source, err))?;
-    Ok(SourceUnit::bind_request(path, logical_name, source.to_string(), program))
+    let parsed = parse_program_for_unit(&path, source, policy)?;
+    let program = expand_syntax_for_assembly(parsed.program);
+    Ok((SourceUnit::bind_request(path, logical_name, source.to_string(), program), parsed.recovered))
 }
 
 #[cfg(test)]
@@ -82,7 +85,8 @@ mod tests {
             let materialize = unit_materializer_for(db.clone(), session);
             for (index, path) in paths.into_iter().enumerate() {
                 let generation = SyntaxGenerationId(index as u64 + 1);
-                let (unit, syntax) = materialize(path, source, generation).unwrap();
+                let built = materialize(path, source, generation, AssemblyRecoveryPolicy::Strict).unwrap();
+                let (unit, syntax) = (built.unit, built.syntax_index);
                 assert_eq!(&unit.origin_path, path);
                 assert_eq!(&unit.path, path);
                 assert_eq!(unit.logical_name, path.display().to_string());
@@ -113,7 +117,11 @@ mod tests {
                 let materialize = unit_materializer_for(db.clone(), session);
                 for path in paths {
                     let unit = match route {
-                        0 => materialize(path, source, SyntaxGenerationId(1)).unwrap().0,
+                        0 => {
+                            materialize(path, source, SyntaxGenerationId(1), AssemblyRecoveryPolicy::Strict)
+                                .unwrap()
+                                .unit
+                        }
                         1 => crate::parse_and_expand_unit(&*db.lock().unwrap(), session, path.clone()),
                         _ => crate::parse_and_expand_unit_with_source(
                             &*db.lock().unwrap(),

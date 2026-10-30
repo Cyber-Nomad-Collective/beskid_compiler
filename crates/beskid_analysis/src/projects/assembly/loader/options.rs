@@ -11,8 +11,23 @@ use crate::syntax_query::SyntaxIndex;
 
 /// Optional Salsa-backed unit builder (set by `beskid_queries` during assembly).
 pub type UnitMaterializer = std::sync::Arc<
-    dyn Fn(&Path, &str, SyntaxGenerationId) -> Result<(SourceUnit, SyntaxIndex), AssemblyError> + Send + Sync,
+    dyn Fn(
+            &Path,
+            &str,
+            SyntaxGenerationId,
+            crate::projects::AssemblyRecoveryPolicy,
+        ) -> Result<MaterializedUnit, AssemblyError>
+        + Send
+        + Sync,
 >;
+
+/// A unit a [`UnitMaterializer`] built. `recovered` marks a tree built from a parser repair (only
+/// under [`crate::projects::AssemblyRecoveryPolicy::EditorRetainRecovered`]); no cache keeps it.
+pub struct MaterializedUnit {
+    pub unit: SourceUnit,
+    pub syntax_index: SyntaxIndex,
+    pub recovered: bool,
+}
 
 #[derive(Debug, Error)]
 pub enum AssemblyError {

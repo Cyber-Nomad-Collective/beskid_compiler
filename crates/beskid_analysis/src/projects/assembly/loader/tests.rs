@@ -1484,13 +1484,13 @@ fn assert_v06_materializer_recovery_policy(policy: crate::projects::AssemblyReco
     };
     let calls = Arc::new(AtomicUsize::new(0));
     let observed = Arc::clone(&calls);
-    let materializer: crate::projects::UnitMaterializer = Arc::new(move |path, source, generation| {
+    let materializer: crate::projects::UnitMaterializer = Arc::new(move |path, source, generation, policy| {
         observed.fetch_add(1, Ordering::SeqCst);
-        let program = parse_program_with_source_name(&path.display().to_string(), source)
-            .map_err(|error| AssemblyError::from_parse_failure(path.to_owned(), source, error))?;
-        let unit = SourceUnit::bind_request(path.to_owned(), path.display().to_string(), source.to_owned(), program);
-        let index = crate::syntax_query::SyntaxIndex::from_program(&unit.program, generation);
-        Ok((unit, index))
+        let parsed = super::scanner::parse_program_for_unit(path, source, policy)?;
+        let unit =
+            SourceUnit::bind_request(path.to_owned(), path.display().to_string(), source.to_owned(), parsed.program);
+        let syntax_index = crate::syntax_query::SyntaxIndex::from_program(&unit.program, generation);
+        Ok(super::MaterializedUnit { unit, syntax_index, recovered: parsed.recovered })
     });
     let options = AssemblyOptions { recovery_policy: policy, ..assembly_options_for_plan(&plan) };
     let result = crate::projects::assemble_program_with_materializer(
@@ -1507,6 +1507,7 @@ fn assert_v06_materializer_recovery_policy(policy: crate::projects::AssemblyReco
         assert_eq!(calls.load(Ordering::SeqCst), 1);
         assert_eq!(assembly.units.len(), 1, "repaired use cannot authorize Lib.A dependency");
         assert!(assembly.units[0].path.ends_with("Entry.bd"));
+        assert_eq!(&*assembly.recovered_units, [assembly.units[0].path.clone()], "the repaired entry is marked");
     } else {
         assert!(matches!(result, Err(AssemblyError::ParseDiagnostic { .. })));
         assert_eq!(calls.load(Ordering::SeqCst), 0, "materializer presence cannot silently change strict policy");
@@ -1523,6 +1524,78 @@ fn v06_import_strict_default_rejects_recovery_before_materializer() {
 #[test]
 fn v06_import_editor_policy_retains_recovery_without_dependency_authority() {
     assert_v06_materializer_recovery_policy(crate::projects::AssemblyRecoveryPolicy::EditorRetainRecovered, true);
+}
+
+/// An entry-less `Lib` package (every Corelib member) is assembled by a workspace scan, which does
+/// not parse units for discovery. Its units must still fail closed on a recovered parse: before
+/// 0.6.7 the unit build kept the repaired tree and dropped the diagnostic, so `check` said "no
+/// issues" and `build` lowered the repair (E2102).
+fn assert_workspace_scan_recovery(policy: crate::projects::AssemblyRecoveryPolicy, with_materializer: bool) {
+    let project_root = temp_project_root("v067_workspace_scan_recovery");
+    let source_root = project_root.join("src");
+    let broken = "pub i32[] Values()\n{\n    return [1, 2 3];\n}\n";
+    write_bd(&source_root, "Pkg/Values.bd", broken);
+    write_bd(&source_root, "Pkg/Clean.bd", "pub i32 One() { return 1; }\n");
+    let plan = CompilePlan {
+        source_root: source_root.clone(),
+        project_root: project_root.clone(),
+        manifest_path: project_root.join("project.bproj"),
+        project_name: "fixture".to_owned(),
+        target: Target { name: "PkgLib".to_owned(), kind: TargetKind::Lib, entry: None },
+        dependency_projects: vec![],
+        unresolved_dependencies: vec![],
+        has_core_dependency: false,
+    };
+    let options = AssemblyOptions { recovery_policy: policy, ..assembly_options_for_plan(&plan) };
+    assert_eq!(options.discovery, crate::projects::AssemblyDiscovery::WorkspaceScan);
+    let materializer: Option<crate::projects::UnitMaterializer> = with_materializer.then(|| {
+        let materializer: crate::projects::UnitMaterializer = Arc::new(|path, source, generation, policy| {
+            let parsed = super::scanner::parse_program_for_unit(path, source, policy)?;
+            let unit = SourceUnit::bind_request(
+                path.to_owned(),
+                path.display().to_string(),
+                source.to_owned(),
+                parsed.program,
+            );
+            let syntax_index = crate::syntax_query::SyntaxIndex::from_program(&unit.program, generation);
+            Ok(super::MaterializedUnit { unit, syntax_index, recovered: parsed.recovered })
+        });
+        materializer
+    });
+    let entry = source_root.join("Pkg/Values.bd");
+    let result =
+        crate::projects::assemble_program_with_materializer(&plan, None, &entry, None, &options, materializer, None);
+    let broken_path = fs::canonicalize(&entry).unwrap();
+    if policy == crate::projects::AssemblyRecoveryPolicy::Strict {
+        let Err(AssemblyError::ParseDiagnostic { path, report }) = result else {
+            panic!("a recovered parse in a package unit must fail the strict assembly: {result:?}")
+        };
+        assert_eq!(fs::canonicalize(path).unwrap(), broken_path);
+        let diagnostic = report.diagnostic();
+        assert_eq!(diagnostic.code.as_deref(), Some("E0101"), "{diagnostic:?}");
+        let found = broken.find("3]").unwrap();
+        assert_eq!(diagnostic.span.offset(), found, "the parse error is reported at `3`: {diagnostic:?}");
+    } else {
+        let assembly = result.expect("the editor policy keeps the repaired tree");
+        assert_eq!(assembly.units.len(), 2);
+        assert_eq!(&*assembly.recovered_units, [broken_path], "only the repaired unit is marked");
+    }
+    // A repaired tree is never published to the content-keyed artifact store.
+    let store = beskid_artifacts::ArtifactStore::new(&project_root);
+    assert!(store.read_ast(&beskid_artifacts::content_fingerprint(broken)).is_none(), "repaired tree was cached");
+    fs::remove_dir_all(project_root).unwrap();
+}
+
+#[test]
+fn v067_workspace_scan_strict_rejects_a_recovered_package_unit() {
+    assert_workspace_scan_recovery(crate::projects::AssemblyRecoveryPolicy::Strict, false);
+    assert_workspace_scan_recovery(crate::projects::AssemblyRecoveryPolicy::Strict, true);
+}
+
+#[test]
+fn v067_workspace_scan_editor_keeps_and_marks_a_recovered_package_unit() {
+    assert_workspace_scan_recovery(crate::projects::AssemblyRecoveryPolicy::EditorRetainRecovered, false);
+    assert_workspace_scan_recovery(crate::projects::AssemblyRecoveryPolicy::EditorRetainRecovered, true);
 }
 
 #[test]

@@ -66,6 +66,7 @@ fn empty_assembly(plan: &CompilePlan) -> ProgramAssembly {
         root_set: crate::projects::AssemblyRootSet::Entry,
         discovery: AssemblyDiscovery::ImportClosure,
         recovery_policy: crate::projects::AssemblyRecoveryPolicy::Strict,
+        recovered_units: std::sync::Arc::from([]),
         module_index: std::sync::Arc::new(ModuleIndex::empty()),
         has_core_dependency: false,
         trusted_corelib_service_paths: std::sync::Arc::from([]),

@@ -1,0 +1,5 @@
+pub type Spanned
+{
+    pub Shapes.Span.Span span;
+    pub u32 id;
+}

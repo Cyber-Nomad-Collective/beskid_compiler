@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Parse recovery
+
+- A recoverable parse error in a library package's own source (an entry-less `Lib` package, as every Corelib member is) is E0101 at its span in `beskid check`, `build` and `test`, as in an application, and the language server publishes it. Examples are `Beskid.SyntaxNodes..NodeSpan` in a field type, a missing comma in an array literal, `info[9_i64  i]` and a duplicated `if (...)` line. `check` said "no issues" and `build` lowered the parser's repaired tree (internal error E2102, or a silently compiled repair), because the workspace scan of a library parses no unit for discovery and the unit build dropped the recovery diagnostic. Every assembly unit now parses through one strict rule; only the editor keeps a repaired tree, which no cache stores (the artifact schema is 3, so stores of earlier toolchains are rebuilt). The language server published no parse error for a recovered project buffer, application or library; it now does.
+
 ### Test cleanup
 
 - The compiler tree no longer carries dead test weight: the empty `beskid_tests_abi` crate, the v0.2 `meta_manifest` project fixtures, the unused `pest_gen_mod` fixture, seven glue C/JSON files no gate runs, tracked `obj/` caches and the generated `Project.lock` files of the e2e and Mod fixtures (about 1,900 files) are removed, and `.gitignore` keeps fixture `obj/` and `Project.lock` out of the tree. The vendored Salsa is excluded from the workspace, so `cargo test --workspace` no longer runs its test suite. The duplicate Corelib parse-tree golden, a measurement inside a unit test, a stale ignored Corelib diagnostics test and three silent skip guards are gone; the lockfile replay test reads the Corelib `Core.String` sources instead of a stale snapshot.

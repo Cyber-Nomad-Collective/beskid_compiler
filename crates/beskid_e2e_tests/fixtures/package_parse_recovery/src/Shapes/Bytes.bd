@@ -1,0 +1,31 @@
+pub u8[] Header()
+{
+    return [1_u8, 2_u8, 3_u8, 4_u8];
+}
+
+pub u8[] Label(u8[] label)
+{
+    mut u8[] info = [0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8];
+    mut i64 i = 0_i64;
+    while (i < 4_i64)
+    {
+        info[4_i64 + i] = label[i];
+        i = i + 1_i64;
+    }
+    return info;
+}
+
+pub i64 Count(u8[] bytes)
+{
+    mut i64 n = 0_i64;
+    mut i64 i = 0_i64;
+    while (i < 4_i64)
+    {
+        if (bytes[i] == 37_u8 && i + 1_i64 < 4_i64)
+        {
+            n = n + 1_i64;
+        }
+        i = i + 1_i64;
+    }
+    return n;
+}
