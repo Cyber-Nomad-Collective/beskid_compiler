@@ -170,45 +170,7 @@ impl IsleContext<'_, '_, '_, '_> {
                 (self.builder.func.dfg.value_type(owner) == pointer).then_some(())?;
                 self.builder.ins().trapz(owner, TrapCode::unwrap_user(1));
                 let owner_root = self.root_temporary(owner)?;
-                let mut aggregate_root = None;
-                let aggregate_base = match mutation_owner {
-                    CollectionMutationOwner::Local(slot) => {
-                        let binding = self.locals.get(&slot).copied()?;
-                        if binding.value_type != pointer
-                            || binding.managed_reference != ManagedReferenceFact::GcManaged
-                            || binding.root_slot.is_none()
-                            || self.facts.local_slot(*array_key) != Some(slot)
-                        {
-                            self.pending_error =
-                                Some(LoweringError { key, kind: LoweringErrorKind::UnprovenCollectionOwner });
-                            return None;
-                        }
-                        None
-                    }
-                    CollectionMutationOwner::AggregateField { root, receiver, .. } => {
-                        let binding = self.locals.get(&root).copied()?;
-                        if binding.value_type != pointer
-                            || binding.managed_reference != ManagedReferenceFact::GcManaged
-                            || binding.root_slot.is_none()
-                        {
-                            self.pending_error =
-                                Some(LoweringError { key, kind: LoweringErrorKind::UnprovenCollectionOwner });
-                            return None;
-                        }
-                        let base = if self.facts.local_slot(receiver) == Some(root) {
-                            self.builder.use_var(binding.variable)
-                        } else {
-                            generated::constructor_lower_expression(self, receiver)?
-                        };
-                        (self.builder.func.dfg.value_type(base) == pointer).then_some(())?;
-                        self.builder.ins().trapz(base, TrapCode::unwrap_user(1));
-                        // Snapshot the actual terminal receiver before evaluating the value.
-                        // A later call can change a containing field, so rooting the lexical
-                        // ancestor alone is insufficient to retain this publication target.
-                        aggregate_root = Some(self.root_temporary(base)?);
-                        Some(base)
-                    }
-                };
+                let (aggregate_base, aggregate_root) = self.collection_owner_base(key, *array_key, mutation_owner)?;
                 let value = generated::constructor_lower_expression(self, *value_key)?;
                 (self.builder.func.dfg.value_type(value) == element_type).then_some(())?;
                 let value_root = self.root_temporary_if_needed(*value_key, value)?;
@@ -241,34 +203,7 @@ impl IsleContext<'_, '_, '_, '_> {
                 // store deletes no reference and needs no barrier.
                 self.builder.ins().store(MemFlagsData::new(), value, address, 0);
                 self.builder.ins().store(MemFlagsData::new(), next_length, array, length_offset);
-                match mutation_owner {
-                    CollectionMutationOwner::Local(slot) => {
-                        self.publish_managed_local(slot, array)?;
-                    }
-                    CollectionMutationOwner::AggregateField { root, field_index, .. } => {
-                        let layout = self.facts.struct_layout(*array_key)?;
-                        let Some(field) = usize::try_from(field_index)
-                            .ok()
-                            .and_then(|index| layout.fields.get(index))
-                            .copied()
-                            .flatten()
-                        else {
-                            self.pending_error =
-                                Some(LoweringError { key, kind: LoweringErrorKind::UnprovenCollectionOwner });
-                            return None;
-                        };
-                        let base = aggregate_base?;
-                        if self.locals.get(&root)?.value_type != pointer || field.value_type != pointer {
-                            self.pending_error =
-                                Some(LoweringError { key, kind: LoweringErrorKind::UnprovenCollectionOwner });
-                            return None;
-                        }
-                        // The owner field of an existing object is overwritten (the grown array
-                        // may replace the old one), so the store is barriered while a heap marks.
-                        let slot = self.builder.ins().iadd_imm_s(base, i64::from(field.offset));
-                        self.emit_barriered_store(slot, array)?;
-                    }
-                }
+                self.publish_collection_owner(key, *array_key, mutation_owner, aggregate_base, array)?;
                 let root_handle = self.builder.ins().stack_load(pointer, pointer, root_slot, 0);
                 let finish =
                     self.import_runtime_helper("beskid_rt_v5_array_construction_finish", &[pointer], Some(types::I8))?;
@@ -298,26 +233,8 @@ impl IsleContext<'_, '_, '_, '_> {
                 self.emit_element_clear(key, element_type, address)?;
                 Some(array)
             }
-            CollectionOperation::RemoveLast => {
-                let [array_key] = arguments.as_slice() else { return None };
-                let array = generated::constructor_lower_expression(self, *array_key)?;
-                (self.builder.func.dfg.value_type(array) == pointer).then_some(())?;
-                self.builder.ins().trapz(array, TrapCode::unwrap_user(1));
-                let length_offset = i32::try_from(pointer.bytes()).ok()?;
-                let length = self.builder.ins().load(word, MemFlagsData::new(), array, length_offset);
-                let empty = self.builder.ins().icmp_imm_s(IntCC::Equal, length, 0);
-                self.builder.ins().trapnz(empty, TrapCode::HEAP_OUT_OF_BOUNDS);
-                let next_length = self.builder.ins().iadd_imm_s(length, -1);
-                let data = self.builder.ins().load(pointer, MemFlagsData::new(), array, 0);
-                let offset = if stride == 1 {
-                    next_length
-                } else {
-                    self.builder.ins().imul_imm_s(next_length, i64::from(stride))
-                };
-                let address = self.builder.ins().iadd(data, offset);
-                self.emit_element_clear(key, element_type, address)?;
-                self.builder.ins().store(MemFlagsData::new(), next_length, array, length_offset);
-                Some(array)
+            CollectionOperation::RemoveLast { owner: mutation_owner } => {
+                self.emit_array_remove_last(key, mutation_owner, element_type)
             }
         }
     }
@@ -351,9 +268,22 @@ impl IsleContext<'_, '_, '_, '_> {
     ) -> Option<Value> {
         let pointer = dispatch::pointer_type(self.frontend_config);
         let capacity_offset = i32::try_from(pointer.bytes() * 2).ok()?;
-        let descriptor_offset = -i32::try_from(pointer.bytes()).ok()?;
         let capacity = self.builder.ins().load(pointer, MemFlagsData::new(), owner, capacity_offset);
         let detach = self.builder.ins().iadd_imm_s(capacity, 1);
+        let shared = self.array_shared_flag(Some(owner_fact), owner)?;
+        Some(self.builder.ins().select(shared, detach, next_length))
+    }
+
+    /// Nonzero when a mutation of `owner` through `owner_fact` must not change the header in place:
+    /// the array carries the sharing mark (bit 0 of the hidden element-descriptor word before the
+    /// header), or the owner is a `mut T[]` parameter slot that still holds the caller's handle, or
+    /// there is no owner to write a replacement back to (the mutation then always copies).
+    fn array_shared_flag(&mut self, owner_fact: Option<CollectionMutationOwner>, owner: Value) -> Option<Value> {
+        let pointer = dispatch::pointer_type(self.frontend_config);
+        let Some(owner_fact) = owner_fact else {
+            return Some(self.builder.ins().iconst(pointer, 1));
+        };
+        let descriptor_offset = -i32::try_from(pointer.bytes()).ok()?;
         let descriptor_word = self.builder.ins().load(pointer, MemFlagsData::new(), owner, descriptor_offset);
         let mark = self.builder.ins().iconst(pointer, 1);
         let mut shared = self.builder.ins().band(descriptor_word, mark);
@@ -364,7 +294,172 @@ impl IsleContext<'_, '_, '_, '_> {
             let incoming = self.builder.ins().uextend(pointer, incoming);
             shared = self.builder.ins().bor(shared, incoming);
         }
-        Some(self.builder.ins().select(shared, detach, next_length))
+        Some(shared)
+    }
+
+    /// Validate the owner of a canonical array mutation and, for an aggregate field, lower and root
+    /// the object that holds the field (the publication target). A later call can change a
+    /// containing field, so the terminal receiver is snapshotted, not only its lexical root.
+    fn collection_owner_base(
+        &mut self,
+        key: AstNodeKey,
+        array_key: AstNodeKey,
+        mutation_owner: CollectionMutationOwner,
+    ) -> Option<(Option<Value>, Option<StackSlot>)> {
+        let pointer = dispatch::pointer_type(self.frontend_config);
+        match mutation_owner {
+            CollectionMutationOwner::Local(slot) => {
+                let binding = self.locals.get(&slot).copied()?;
+                if binding.value_type != pointer
+                    || binding.managed_reference != ManagedReferenceFact::GcManaged
+                    || binding.root_slot.is_none()
+                    || self.facts.local_slot(array_key) != Some(slot)
+                {
+                    self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::UnprovenCollectionOwner });
+                    return None;
+                }
+                Some((None, None))
+            }
+            CollectionMutationOwner::AggregateField { root, receiver, .. } => {
+                let binding = self.locals.get(&root).copied()?;
+                if binding.value_type != pointer
+                    || binding.managed_reference != ManagedReferenceFact::GcManaged
+                    || binding.root_slot.is_none()
+                {
+                    self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::UnprovenCollectionOwner });
+                    return None;
+                }
+                let base = if self.facts.local_slot(receiver) == Some(root) {
+                    self.builder.use_var(binding.variable)
+                } else {
+                    generated::constructor_lower_expression(self, receiver)?
+                };
+                (self.builder.func.dfg.value_type(base) == pointer).then_some(())?;
+                self.builder.ins().trapz(base, TrapCode::unwrap_user(1));
+                let root = self.root_temporary(base)?;
+                Some((Some(base), Some(root)))
+            }
+        }
+    }
+
+    /// Write the array a canonical mutation produced back to its owner: the local slot, or the
+    /// field of `base`. The owner field of an existing object is overwritten (the result may
+    /// replace the old array), so that store is barriered while a heap marks.
+    fn publish_collection_owner(
+        &mut self,
+        key: AstNodeKey,
+        array_key: AstNodeKey,
+        mutation_owner: CollectionMutationOwner,
+        base: Option<Value>,
+        array: Value,
+    ) -> Option<()> {
+        let pointer = dispatch::pointer_type(self.frontend_config);
+        match mutation_owner {
+            CollectionMutationOwner::Local(slot) => self.publish_managed_local(slot, array),
+            CollectionMutationOwner::AggregateField { root, field_index, .. } => {
+                let layout = self.facts.struct_layout(array_key)?;
+                let Some(field) =
+                    usize::try_from(field_index).ok().and_then(|index| layout.fields.get(index)).copied().flatten()
+                else {
+                    self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::UnprovenCollectionOwner });
+                    return None;
+                };
+                let base = base?;
+                if self.locals.get(&root)?.value_type != pointer || field.value_type != pointer {
+                    self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::UnprovenCollectionOwner });
+                    return None;
+                }
+                let slot = self.builder.ins().iadd_imm_s(base, i64::from(field.offset));
+                self.emit_barriered_store(slot, array)
+            }
+        }
+    }
+
+    /// `Array.RemoveLast`: clear the final live slot and shorten the array by one.
+    ///
+    /// Shrinking one handle never changes what another handle to the same array sees. An array no
+    /// other handle can see is shortened in place (its header's length). A shared array (see
+    /// [`Self::array_shared_flag`]) is first copied into a new, unmarked array (the runtime growth
+    /// with `capacity + 1` copies every live element), and the copy is shortened and written back
+    /// to the owner, so the other handles keep the old length and the old last element. Without an
+    /// owner the shrink always copies, and only the call result is shortened.
+    fn emit_array_remove_last(
+        &mut self,
+        key: AstNodeKey,
+        mutation_owner: Option<CollectionMutationOwner>,
+        element_type: Type,
+    ) -> Option<Value> {
+        let arguments = self.facts.call_arguments(key)?;
+        let [array_key] = arguments.as_slice() else { return None };
+        let pointer = dispatch::pointer_type(self.frontend_config);
+        let stride = element_type.bytes();
+        let array = generated::constructor_lower_expression(self, *array_key)?;
+        (self.builder.func.dfg.value_type(array) == pointer).then_some(())?;
+        self.builder.ins().trapz(array, TrapCode::unwrap_user(1));
+        let (aggregate_base, aggregate_root) = match mutation_owner {
+            Some(owner) => self.collection_owner_base(key, *array_key, owner)?,
+            None => (None, None),
+        };
+        let length_offset = i32::try_from(pointer.bytes()).ok()?;
+        let length = self.builder.ins().load(pointer, MemFlagsData::new(), array, length_offset);
+        let empty = self.builder.ins().icmp_imm_s(IntCC::Equal, length, 0);
+        self.builder.ins().trapnz(empty, TrapCode::HEAP_OUT_OF_BOUNDS);
+        let next_length = self.builder.ins().iadd_imm_s(length, -1);
+        // The construction root of a copy; zero while the array is shortened in place.
+        let root_slot = self.builder.create_sized_stack_slot(StackSlotData::new(
+            StackSlotKind::ExplicitSlot,
+            pointer.bytes(),
+            pointer.bytes().ilog2() as u8,
+        ));
+        let zero = self.builder.ins().iconst(pointer, 0);
+        self.builder.ins().stack_store(pointer, zero, root_slot, 0);
+        let shared = self.array_shared_flag(mutation_owner, array)?;
+        let copy_block = self.builder.create_block();
+        let shorten = self.builder.create_block();
+        self.builder.append_block_param(shorten, pointer);
+        self.builder.ins().brif(shared, copy_block, &[], shorten, &[array.into()]);
+        self.builder.switch_to_block(copy_block);
+        self.builder.seal_block(copy_block);
+        let capacity_offset = i32::try_from(pointer.bytes() * 2).ok()?;
+        let capacity = self.builder.ins().load(pointer, MemFlagsData::new(), array, capacity_offset);
+        let detach = self.builder.ins().iadd_imm_s(capacity, 1);
+        let root_out = self.builder.ins().stack_addr(pointer, root_slot, 0);
+        let grow =
+            self.import_runtime_helper("beskid_rt_v5_array_grow_rooted", &[pointer, pointer, pointer], Some(pointer))?;
+        let grow_call = self.builder.ins().call(grow, &[array, detach, root_out]);
+        let copy = self.builder.inst_results(grow_call).first().copied()?;
+        self.guard_checked_allocation()?;
+        self.builder.ins().trapz(copy, TrapCode::unwrap_user(5));
+        self.builder.ins().jump(shorten, &[copy.into()]);
+        self.builder.switch_to_block(shorten);
+        self.builder.seal_block(shorten);
+        let shortened = self.builder.block_params(shorten).first().copied()?;
+        let data = self.builder.ins().load(pointer, MemFlagsData::new(), shortened, 0);
+        let offset =
+            if stride == 1 { next_length } else { self.builder.ins().imul_imm_s(next_length, i64::from(stride)) };
+        let address = self.builder.ins().iadd(data, offset);
+        self.emit_element_clear(key, element_type, address)?;
+        self.builder.ins().store(MemFlagsData::new(), next_length, shortened, length_offset);
+        if let Some(owner) = mutation_owner {
+            self.publish_collection_owner(key, *array_key, owner, aggregate_base, shortened)?;
+        }
+        // Release the construction root of a copy once its owner holds it.
+        let root_handle = self.builder.ins().stack_load(pointer, pointer, root_slot, 0);
+        let finish_block = self.builder.create_block();
+        let done = self.builder.create_block();
+        self.builder.ins().brif(root_handle, finish_block, &[], done, &[]);
+        self.builder.switch_to_block(finish_block);
+        self.builder.seal_block(finish_block);
+        let finish =
+            self.import_runtime_helper("beskid_rt_v5_array_construction_finish", &[pointer], Some(types::I8))?;
+        let finish_call = self.builder.ins().call(finish, &[root_handle]);
+        let released = self.builder.inst_results(finish_call).first().copied()?;
+        self.builder.ins().trapz(released, TrapCode::unwrap_user(10));
+        self.builder.ins().jump(done, &[]);
+        self.builder.switch_to_block(done);
+        self.builder.seal_block(done);
+        self.release_temporary_root(aggregate_root)?;
+        Some(shortened)
     }
 
     /// Clear the element at `address` of an existing array. Clearing a managed element deletes a

@@ -606,17 +606,14 @@ impl CodegenInput<'_> {
                 if matches!(facts.call_kind(site), Some(CallKind::TypedArrayAllocation | CallKind::Bulk)) {
                     return Err(reject(site, "publication allocates an array"));
                 }
+                // `RemoveLast` copies a shared array before shortening it, so it can allocate too.
                 if facts.call_kind(site) == Some(CallKind::CollectionOperation)
                     && !matches!(
                         facts.collection_operation(site),
-                        Some(
-                            CollectionOperation::Capacity
-                                | CollectionOperation::Clear
-                                | CollectionOperation::RemoveLast
-                        )
+                        Some(CollectionOperation::Capacity | CollectionOperation::Clear)
                     )
                 {
-                    return Err(reject(site, "publication can grow a collection"));
+                    return Err(reject(site, "publication can grow or copy a collection"));
                 }
                 if facts.call_kind(site) == Some(CallKind::RuntimeIntrinsic) {
                     // Raw memory writes and allocation/GC hooks are not publication capabilities.

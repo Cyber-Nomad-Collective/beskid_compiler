@@ -17,9 +17,9 @@
 //!   parameter is not a new handle here: the caller that receives it decides (below);
 //! - a read of a field or element as an argument of a plain or `mut` parameter when the call can
 //!   reach the object that holds it (another argument or the receiver is an object, enum,
-//!   closure or contract value): the callee could then grow the field while it holds the
-//!   argument;
-//! - a call result (an ordinary call, or the canonical `Append`, `Clear`, `RemoveLast`) in a copy
+//!   closure or contract value, or an array whose elements can lead to one, such as `Holder[]`):
+//!   the callee could then grow or shrink the field while it holds the argument;
+//! - a call result (an ordinary call, or the canonical `Append`, `Set`, `Clear`, `RemoveLast`) in a copy
 //!   position when the call takes an array argument, because the result may be that argument.
 //!   `xs = F(xs, ..)` that only stores the result back into the place every array argument reads
 //!   makes no second handle, and neither does a returned result whose array arguments are all
@@ -162,11 +162,18 @@ fn lent_place_shares(
     Ok(false)
 }
 
-/// Whether a value of `identity` is or directly holds a reference that can lead to an object:
-/// an object, struct or enum value, a closure, a contract value. Primitives, strings and arrays
-/// (whose elements are reached only by reading them) do not.
+/// Whether a value of `identity` can lead the callee to the holder of a lent field or element:
+/// an object, struct or enum value, a closure, a contract value, or an array whose elements can
+/// (`Holder[]`: the callee can grow `holders[0].items`). Primitives and strings cannot, and neither
+/// can an array of them, or an array of such arrays: the callee reaches an inner array only as an
+/// element, and an element is no growth owner (a growth or shrink of it copies) and a binding of
+/// it marks it.
 fn reaches_objects(identity: &GenericSourceTypeIdentity) -> bool {
-    !matches!(identity, GenericSourceTypeIdentity::Abi(_) | GenericSourceTypeIdentity::Array(_))
+    match identity {
+        GenericSourceTypeIdentity::Abi(_) => false,
+        GenericSourceTypeIdentity::Array(element) => reaches_objects(element),
+        _ => true,
+    }
 }
 
 fn call_result_shares(

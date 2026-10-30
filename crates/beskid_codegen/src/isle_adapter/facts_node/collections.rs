@@ -10,37 +10,17 @@ impl SyntaxNodeFacts<'_> {
             Ok(None) => return None,
         };
         Some(match operation {
-            beskid_queries::CollectionOperation::Append { owner }
-            | beskid_queries::CollectionOperation::TryAppend { owner } => {
-                let owner = match owner {
-                    beskid_queries::CollectionMutationOwner::Local(slot) => {
-                        CollectionMutationOwner::Local(LocalSlotId { owner_node: slot.owner.node.0, index: slot.index })
-                    }
-                    beskid_queries::CollectionMutationOwner::AggregateField { root, receiver, index, .. } => {
-                        CollectionMutationOwner::AggregateField {
-                            root: LocalSlotId { owner_node: root.owner.node.0, index: root.index },
-                            receiver,
-                            field_index: index,
-                        }
-                    }
-                    // The implicit receiver is the method's rooted receiver parameter.
-                    beskid_queries::CollectionMutationOwner::ReceiverField { receiver, index, .. } => {
-                        CollectionMutationOwner::AggregateField {
-                            root: super::super::context::IMPLICIT_METHOD_RECEIVER_SLOT,
-                            receiver,
-                            field_index: index,
-                        }
-                    }
-                };
-                if matches!(operation, beskid_queries::CollectionOperation::TryAppend { .. }) {
-                    CollectionOperation::TryAppend { owner }
-                } else {
-                    CollectionOperation::Append { owner }
-                }
+            beskid_queries::CollectionOperation::Append { owner } => {
+                CollectionOperation::Append { owner: collection_mutation_owner(owner) }
+            }
+            beskid_queries::CollectionOperation::TryAppend { owner } => {
+                CollectionOperation::TryAppend { owner: collection_mutation_owner(owner) }
             }
             beskid_queries::CollectionOperation::Capacity => CollectionOperation::Capacity,
             beskid_queries::CollectionOperation::Clear => CollectionOperation::Clear,
-            beskid_queries::CollectionOperation::RemoveLast => CollectionOperation::RemoveLast,
+            beskid_queries::CollectionOperation::RemoveLast { owner } => {
+                CollectionOperation::RemoveLast { owner: owner.map(collection_mutation_owner) }
+            }
         })
     }
 
@@ -55,5 +35,28 @@ impl SyntaxNodeFacts<'_> {
             ManagedReferenceKind::GcManaged => ManagedReferenceFact::GcManaged,
             ManagedReferenceKind::NativeOrScalar => ManagedReferenceFact::NativeOrScalar,
         })
+    }
+}
+
+fn collection_mutation_owner(owner: beskid_queries::CollectionMutationOwner) -> CollectionMutationOwner {
+    match owner {
+        beskid_queries::CollectionMutationOwner::Local(slot) => {
+            CollectionMutationOwner::Local(LocalSlotId { owner_node: slot.owner.node.0, index: slot.index })
+        }
+        beskid_queries::CollectionMutationOwner::AggregateField { root, receiver, index, .. } => {
+            CollectionMutationOwner::AggregateField {
+                root: LocalSlotId { owner_node: root.owner.node.0, index: root.index },
+                receiver,
+                field_index: index,
+            }
+        }
+        // The implicit receiver is the method's rooted receiver parameter.
+        beskid_queries::CollectionMutationOwner::ReceiverField { receiver, index, .. } => {
+            CollectionMutationOwner::AggregateField {
+                root: super::super::context::IMPLICIT_METHOD_RECEIVER_SLOT,
+                receiver,
+                field_index: index,
+            }
+        }
     }
 }

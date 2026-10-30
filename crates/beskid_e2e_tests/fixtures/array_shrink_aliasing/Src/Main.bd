@@ -1,0 +1,298 @@
+use Core.Collections.Array;
+use Core.Collections.List;
+use Core.Results;
+
+// Shrinking one handle to an array never changes what another handle sees: not its length, not
+// its last element. `Array.RemoveLast` is the only length-reducing array operation (`Array.Clear`
+// clears one slot and keeps the length, like any element write). An array that no other handle
+// can see shrinks in place. A field or element lent to a free function stays unchanged even when
+// the callee reaches its holder through an element of an array argument. Exit code 42 means every
+// check passed; any other code names the first failing check.
+
+type Holder
+{
+    i64[] items;
+}
+
+// `count` elements 0, 1, ... in an array with spare capacity.
+i64[] Filled(i64 count)
+{
+    mut i64[] xs = Array.Empty<i64>();
+    mut i64 i = 0;
+    while (i < count)
+    {
+        Array.Append<i64>(xs, i + 1);
+        i = i + 1;
+    }
+    return xs;
+}
+
+i64[] ItemsOf(Holder h)
+{
+    return h.items;
+}
+
+// Hands the caller's array back unchanged.
+i64[] Same(mut i64[] xs)
+{
+    return xs;
+}
+
+i64 ShrinkCopy(i64[] xs)
+{
+    mut i64[] local = xs;
+    Array.RemoveLast<i64>(local);
+    return Array.Len<i64>(local);
+}
+
+i64[] ShrinkParameter(mut i64[] xs)
+{
+    Array.RemoveLast<i64>(xs);
+    return xs;
+}
+
+i64[] ShrinkPlainParameter(i64[] xs)
+{
+    return Array.RemoveLast<i64>(xs);
+}
+
+i32 LocalCopy()
+{
+    mut i64[] xs = Filled(3);
+    mut i64[] ys = xs;
+    Array.RemoveLast<i64>(xs);
+    if (Array.Len<i64>(ys) != 3 || Array.Len<i64>(xs) != 2 || ys[2] != 3)
+    {
+        return 10;
+    }
+    Array.RemoveLast<i64>(ys);
+    Array.RemoveLast<i64>(ys);
+    if (Array.Len<i64>(xs) != 2 || xs[1] != 2 || Array.Len<i64>(ys) != 1)
+    {
+        return 11;
+    }
+    // A growth after the shrink stays with the grower.
+    Array.Append<i64>(xs, 7);
+    if (xs[2] != 7 || Array.Len<i64>(ys) != 1)
+    {
+        return 12;
+    }
+    return 0;
+}
+
+i32 FieldAndLocal()
+{
+    mut i64[] xs = Filled(2);
+    mut Holder h = Holder
+    {
+        items: xs,
+    };
+    Array.RemoveLast<i64>(h.items);
+    if (Array.Len<i64>(xs) != 2 || Array.Len<i64>(h.items) != 1 || xs[1] != 2)
+    {
+        return 20;
+    }
+    Array.RemoveLast<i64>(xs);
+    Array.RemoveLast<i64>(xs);
+    if (Array.Len<i64>(h.items) != 1 || h.items[0] != 1)
+    {
+        return 21;
+    }
+    return 0;
+}
+
+i32 Capture()
+{
+    mut i64[] xs = Filled(2);
+    i64[] snapshot = xs;
+    i64() count = () => Array.Len<i64>(snapshot);
+    Array.RemoveLast<i64>(xs);
+    if (count() != 2 || snapshot[1] != 2)
+    {
+        return 30;
+    }
+    return 0;
+}
+
+i32 CollectionElement()
+{
+    mut i64[] xs = Filled(2);
+    mut List<i64[]> l = List.New<i64[]>();
+    l.Push(xs);
+    Array.RemoveLast<i64>(xs);
+    i64 n = match (l.Get(0))
+    {
+        Result::Ok(back) => Array.Len<i64>(back),
+        _ => -1,
+    };
+    if (n != 2)
+    {
+        return 40;
+    }
+    mut i64[][] nested = Array.Empty<i64[]>();
+    Array.Append<i64[]>(nested, Filled(2));
+    mut i64[] inner = nested[0];
+    Array.RemoveLast<i64>(inner);
+    if (Array.Len<i64>(nested[0]) != 2 || Array.Len<i64>(inner) != 1)
+    {
+        return 41;
+    }
+    // An element is no owner: the call returns a shortened copy and the element is unchanged.
+    i64[] shorter = Array.RemoveLast<i64>(nested[0]);
+    if (Array.Len<i64>(nested[0]) != 2 || Array.Len<i64>(shorter) != 1)
+    {
+        return 43;
+    }
+    return 0;
+}
+
+i32 ByValueParameter()
+{
+    i64[] xs = Filled(2);
+    if (ShrinkCopy(xs) != 1 || Array.Len<i64>(xs) != 2)
+    {
+        return 50;
+    }
+    i64[] shrunk = ShrinkParameter(xs);
+    if (Array.Len<i64>(shrunk) != 1 || Array.Len<i64>(xs) != 2)
+    {
+        return 51;
+    }
+    i64[] plain = ShrinkPlainParameter(xs);
+    if (Array.Len<i64>(plain) != 1 || Array.Len<i64>(xs) != 2 || xs[1] != 2)
+    {
+        return 52;
+    }
+    return 0;
+}
+
+i32 ReturnValue()
+{
+    mut Holder h = Holder
+    {
+        items: Filled(2),
+    };
+    mut i64[] r = ItemsOf(h);
+    Array.RemoveLast<i64>(h.items);
+    if (Array.Len<i64>(r) != 2)
+    {
+        return 60;
+    }
+    Array.RemoveLast<i64>(r);
+    Array.RemoveLast<i64>(r);
+    if (Array.Len<i64>(h.items) != 1)
+    {
+        return 61;
+    }
+    mut i64[] xs = Filled(2);
+    mut i64[] same = Same(xs);
+    Array.RemoveLast<i64>(same);
+    if (Array.Len<i64>(xs) != 2)
+    {
+        return 62;
+    }
+    mut i64[] removed = Array.RemoveLast<i64>(xs);
+    Array.RemoveLast<i64>(xs);
+    if (Array.Len<i64>(removed) != 1 || removed[0] != 1 || Array.Len<i64>(xs) != 0)
+    {
+        return 63;
+    }
+    return 0;
+}
+
+// Clear keeps the length and, as an element write, is seen through every handle.
+i32 ClearIsAnElementWrite()
+{
+    mut i64[] xs = Filled(2);
+    i64[] ys = xs;
+    Array.Clear<i64>(xs, 1);
+    if (Array.Len<i64>(xs) != 2 || Array.Len<i64>(ys) != 2 || ys[1] != 0)
+    {
+        return 70;
+    }
+    return 0;
+}
+
+// An array no other handle sees shrinks in place: its capacity stays put, and the freed slot
+// takes the next append in place.
+i32 InPlace()
+{
+    mut i64[] xs = Filled(4);
+    Array.RemoveLast<i64>(xs);
+    xs = Array.RemoveLast<i64>(xs);
+    if (Array.Capacity<i64>(xs) != 4 || Array.Len<i64>(xs) != 2)
+    {
+        return 80;
+    }
+    Array.Append<i64>(xs, 9);
+    if (Array.Capacity<i64>(xs) != 4 || xs[2] != 9)
+    {
+        return 81;
+    }
+    mut Holder h = Holder
+    {
+        items: Filled(4),
+    };
+    while (Array.Len<i64>(h.items) > 0)
+    {
+        Array.RemoveLast<i64>(h.items);
+    }
+    if (Array.Capacity<i64>(h.items) != 4)
+    {
+        return 82;
+    }
+    return 0;
+}
+
+// The callee reaches the holder of its lent argument through an element of an array argument.
+i64 ShrinkThroughElement(i64[] lent, Holder[] holders)
+{
+    mut Holder h = holders[0];
+    Array.RemoveLast<i64>(h.items);
+    return Array.Len<i64>(lent);
+}
+
+i64 GrowThroughElement(i64[] lent, Holder[] holders)
+{
+    mut Holder h = holders[0];
+    Array.Append<i64>(h.items, 9);
+    return Array.Len<i64>(lent);
+}
+
+i32 ReachThroughElement()
+{
+    mut Holder h = Holder
+    {
+        items: Filled(2),
+    };
+    Holder[] holders = [h];
+    if (ShrinkThroughElement(h.items, holders) != 2)
+    {
+        return 90;
+    }
+    mut Holder g = Holder
+    {
+        items: Filled(1),
+    };
+    Holder[] others = [g];
+    if (GrowThroughElement(g.items, others) != 1)
+    {
+        return 91;
+    }
+    return 0;
+}
+
+i32 Main()
+{
+    i32[] codes = [LocalCopy(), FieldAndLocal(), Capture(), CollectionElement(), ByValueParameter(), ReturnValue(), ClearIsAnElementWrite(), InPlace(), ReachThroughElement()];
+    mut i64 i = 0;
+    while (i < Array.Len<i32>(codes))
+    {
+        if (codes[i] != 0)
+        {
+            return codes[i];
+        }
+        i = i + 1;
+    }
+    return 42;
+}

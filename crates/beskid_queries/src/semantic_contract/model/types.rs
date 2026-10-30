@@ -141,11 +141,19 @@ pub enum CollectionMutationOwner {
 /// Compiler-owned operation selected only from the resolved canonical Core.Collections.Array declaration.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum CollectionOperation {
-    Append { owner: CollectionMutationOwner },
-    TryAppend { owner: CollectionMutationOwner },
+    Append {
+        owner: CollectionMutationOwner,
+    },
+    TryAppend {
+        owner: CollectionMutationOwner,
+    },
     Capacity,
     Clear,
-    RemoveLast,
+    /// `owner` is the place the shortened array is written back to; `None` when the argument names
+    /// no owner, so the shrink always copies and only the result is shortened.
+    RemoveLast {
+        owner: Option<CollectionMutationOwner>,
+    },
 }
 
 /// Compiler-owned generic managed-array allocation encoded by canonical Foundation syntax.
