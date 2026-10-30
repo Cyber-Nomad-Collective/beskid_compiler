@@ -31,7 +31,7 @@ fn items(db: &dyn beskid_queries::Db, root: AstNodeKey) -> Vec<SyntaxModuleItem>
 
 #[test]
 fn production_rust_backend_emits_from_registered_manual_export_inputs() {
-    let source = include_str!("../../beskid_tests_interop/fixtures/glue/manual/src/ManualExport.bd");
+    let source = include_str!("fixtures/glue/ManualExport.bd");
     let (db, typed, root, target) = support::input_fixture_with_source(source);
     let selected = items(&db, root);
     assert_eq!(

@@ -19,7 +19,7 @@ fn fact(source: &str, name: &str) -> Result<beskid_queries::GlueBindingFact, Str
 }
 #[test]
 fn canonical_glue_facts_preserve_logical_managed_and_scalar_identity() {
-    let source = include_str!("../../beskid_tests_interop/fixtures/glue/manual/src/ManualExport.bd");
+    let source = include_str!("fixtures/glue/ManualExport.bd");
     let (db, _typed, root, _target) = support::input_fixture_with_source(source);
     for (name, expected) in [
         ("ExportBOOL", GlueLogicalType::Primitive(PrimitiveType::Bool)),

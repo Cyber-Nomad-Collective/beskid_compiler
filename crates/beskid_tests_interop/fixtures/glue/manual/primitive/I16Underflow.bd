@@ -1,4 +1,0 @@
-pub i16 Main()
-{
-    return -32769_i16;
-}

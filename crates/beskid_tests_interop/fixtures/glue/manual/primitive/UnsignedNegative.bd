@@ -1,4 +1,0 @@
-pub u64 Main()
-{
-    return -1_u64;
-}

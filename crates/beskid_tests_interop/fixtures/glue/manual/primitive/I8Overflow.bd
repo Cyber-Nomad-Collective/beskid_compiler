@@ -1,4 +1,0 @@
-pub i8 Main()
-{
-    return 128_i8;
-}
