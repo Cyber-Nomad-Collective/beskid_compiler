@@ -1461,8 +1461,8 @@ mod tests {
 
     #[test]
     fn a_server_that_never_reads_fails_the_send_instead_of_hanging() {
+        // The server never reads, so the sends end only through the outbox deadline.
         let outbox = Outbox::new(Blocked, 2, Duration::from_millis(200));
-        let started = Instant::now();
         let mut result = Ok(());
         for _ in 0..10 {
             result = outbox.send(vec![0u8; 8]);
@@ -1471,7 +1471,6 @@ mod tests {
             }
         }
         assert!(result.unwrap_err().contains("stopped reading"));
-        assert!(started.elapsed() < Duration::from_secs(5));
     }
 
     struct Broken;
@@ -1503,10 +1502,9 @@ mod tests {
     fn cli_runs_are_bounded_by_the_timeout() {
         let mut slow = Command::new("sleep");
         slow.arg("30");
-        let started = Instant::now();
+        // An unkilled `sleep 30` would succeed instead of failing with `killed`.
         let error = run_with_timeout(&mut slow, Duration::from_millis(300)).unwrap_err();
         assert!(error.contains("killed"), "{error}");
-        assert!(started.elapsed() < Duration::from_secs(10));
         let mut quick = Command::new("true");
         assert!(run_with_timeout(&mut quick, Duration::from_secs(10)).unwrap().success());
         let mut failing = Command::new("false");

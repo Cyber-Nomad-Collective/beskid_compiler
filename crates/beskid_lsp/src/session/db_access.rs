@@ -202,7 +202,8 @@ mod tests {
     use super::{document_update_gate, parallel_project_db, with_shared_project_db};
     use crate::session::store::State;
 
-    #[tokio::test]
+    // Paused virtual time: a timeout expires only while the awaited future is truly blocked.
+    #[tokio::test(start_paused = true)]
     async fn work_on_one_project_does_not_wait_for_another_project() {
         use std::path::Path;
         use std::time::Duration;
@@ -244,7 +245,8 @@ mod tests {
         });
     }
 
-    #[tokio::test]
+    // Paused virtual time: a timeout expires only while the awaited future is truly blocked.
+    #[tokio::test(start_paused = true)]
     async fn document_mutation_fences_do_not_block_unrelated_uris() {
         use std::str::FromStr;
 

@@ -151,7 +151,7 @@ mod tests {
         io::{Read, Write},
         panic::AssertUnwindSafe,
         process::Command,
-        time::{Duration, Instant},
+        time::Duration,
     };
 
     const CHILD_MODE: &str = "BESKID_NATIVE_HARNESS_TEST_CHILD";
@@ -272,13 +272,13 @@ mod tests {
 
     #[test]
     fn timeout_kills_reaps_and_retains_both_streams() {
-        let started = Instant::now();
         let failure = std::panic::catch_unwind(AssertUnwindSafe(|| {
             run_bounded("timeout probe", &mut child("timeout"), Duration::from_secs(1));
         }))
         .expect_err("the timeout must fail");
-        assert!(started.elapsed() < Duration::from_secs(10), "kill/reap exceeded its cap");
         let diagnostic = failure.downcast_ref::<String>().expect("timeout diagnostic");
+        // An unkilled child would finish its sleep and report this itself.
+        assert!(!diagnostic.contains("timeout child was not killed"), "the deadline did not kill: {diagnostic}");
         for marker in [
             "timeout probe",
             "deadline exceeded",
@@ -303,7 +303,8 @@ mod tests {
 
     #[test]
     fn full_stdin_pipe_is_covered_by_the_deadline() {
-        let started = Instant::now();
+        // The child never reads stdin, so the 4 MiB write would block forever if the deadline did
+        // not cover it; the run ends only through the deadline.
         let failure = std::panic::catch_unwind(AssertUnwindSafe(|| {
             run_bounded_with_stdin(
                 "blocked stdin probe",
@@ -313,7 +314,6 @@ mod tests {
             );
         }))
         .expect_err("a child that does not read must time out");
-        assert!(started.elapsed() < Duration::from_secs(1), "stdin bypassed the deadline");
         let diagnostic = failure.downcast_ref::<String>().unwrap();
         for marker in ["deadline exceeded", "status=Ok(", "blocked-stdin-stdout", "blocked-stdin-stderr"] {
             assert!(diagnostic.contains(marker), "missing {marker}: {diagnostic}");

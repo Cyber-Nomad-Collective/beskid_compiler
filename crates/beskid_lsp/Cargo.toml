@@ -36,3 +36,5 @@ libc = "0.2"
 [dev-dependencies]
 beskid_tests_mod_host = { path = "../beskid_tests_mod_host" }
 tempfile = "3"
+# Paused virtual time for the scan-schedule tests (no wall-clock assertions).
+tokio = { version = "1.48", features = ["test-util"] }

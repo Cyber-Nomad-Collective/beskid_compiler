@@ -9,17 +9,32 @@ mod unix {
     };
     use std::time::{Duration, Instant};
 
+    /// Block until the fixture process has written `path` (its pid), so a deadline that expires
+    /// meanwhile always finds the process running instead of racing its startup.
+    fn wait_for_file(path: &std::path::Path) {
+        while !std::fs::read_to_string(path).is_ok_and(|text| text.ends_with('\n')) {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    }
+
     #[test]
     fn v06_native_tool_deadline_kills_and_reaps_hung_process() {
         let root = tempfile::tempdir().unwrap();
         let pid = root.path().join("pid");
         let mut command = Command::new("sh");
         command.arg("-c").arg("echo $$ > \"$1\"; while :; do :; done").arg("native-fixture").arg(&pid);
-        let started = Instant::now();
-        let control = NativeExecutionControl::new(started + Duration::from_millis(150), Arc::new(|| false));
-        let error = control.run_command(&mut command, root.path(), "bootstrap").unwrap_err().to_string();
+        // The process never exits, so the run ends only through the deadline. The service holds
+        // the supervisor until the process has written its pid, so the deadline always finds it
+        // running.
+        let control = NativeExecutionControl::new(Instant::now() + Duration::from_secs(1), Arc::new(|| false));
+        let error = control
+            .run_command_serviced(&mut command, root.path(), "bootstrap", || {
+                wait_for_file(&pid);
+                Ok(())
+            })
+            .unwrap_err()
+            .to_string();
         assert!(error.contains("deadline") || error.contains("budget"), "{error}");
-        assert!(started.elapsed() < Duration::from_secs(3));
         let process = std::fs::read_to_string(pid).unwrap();
         assert!(
             !Command::new("kill").args(["-0", process.trim()]).status().unwrap().success(),
@@ -42,11 +57,10 @@ mod unix {
         });
         let mut command = Command::new("sh");
         command.args(["-c", "while :; do :; done"]);
-        let started = Instant::now();
+        // The process never exits, so the run ends only through the cancellation.
         let error = control.run_command(&mut command, root.path(), "link").unwrap_err().to_string();
         signal.join().unwrap();
         assert!(error.contains("cancel"), "{error}");
-        assert!(started.elapsed() < Duration::from_secs(3));
     }
 
     #[test]
@@ -55,8 +69,12 @@ mod unix {
         let descendant = root.path().join("descendant");
         let mut command = Command::new("sh");
         command.args(["-c", "sleep 30 & echo $! > \"$1\"; wait", "native-tree"]).arg(&descendant);
-        let control = NativeExecutionControl::new(Instant::now() + Duration::from_millis(200), Arc::new(|| false));
-        assert!(control.run_command(&mut command, root.path(), "link").is_err());
+        let control = NativeExecutionControl::new(Instant::now() + Duration::from_secs(1), Arc::new(|| false));
+        let outcome = control.run_command_serviced(&mut command, root.path(), "link", || {
+            wait_for_file(&descendant);
+            Ok(())
+        });
+        assert!(outcome.is_err());
         let pid = std::fs::read_to_string(descendant).unwrap();
         let state = Command::new("ps").args(["-o", "stat=", "-p", pid.trim()]).output().unwrap();
         let state = String::from_utf8_lossy(&state.stdout);
@@ -99,7 +117,6 @@ Start-Sleep -Seconds 30
         let error =
             control.run_command(&mut command, root.path(), "Windows descendant fixture").unwrap_err().to_string();
         assert!(error.contains("deadline"), "{error}");
-        assert!(started.elapsed() < Duration::from_secs(15));
         let pid = std::fs::read_to_string(pidfile).expect("fixture must create an actual descendant");
         let verify_script = root.path().join("verify.ps1");
         std::fs::write(

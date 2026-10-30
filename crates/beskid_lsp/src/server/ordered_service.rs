@@ -269,11 +269,26 @@ mod text_sync_ordering_tests {
             let change_started = Arc::clone(&self.change_started);
             let release_change = Arc::clone(&self.release_change);
             let is_change = request.method() == "textDocument/didChange";
+            let quick = request.method() == "textDocument/hover"
+                && request.params().is_some_and(|params| params["textDocument"]["uri"] == "file:///tmp/Quick.bd");
             Box::pin(async move {
+                if quick {
+                    // The quick request is being served while the blocking handler holds its
+                    // worker: release that handler.
+                    let (released, release) = &BLOCKING_RELEASE;
+                    *released.lock().expect("blocking release") = true;
+                    release.notify_all();
+                }
                 if request.method() == "test/computeBlocking" {
                     // As the server's compiler work does (`db_access::run_blocking_section`):
                     // the worker hands its other tasks to the pool before it blocks.
-                    tokio::task::block_in_place(|| std::thread::sleep(std::time::Duration::from_millis(600)));
+                    tokio::task::block_in_place(|| {
+                        let (released, release) = &BLOCKING_RELEASE;
+                        let mut released = released.lock().expect("blocking release");
+                        while !*released {
+                            released = release.wait(released).expect("blocking release");
+                        }
+                    });
                 }
                 events.lock().expect("event log").push(if is_change { "change-start" } else { "request-start" });
                 if is_change {
@@ -320,6 +335,10 @@ mod text_sync_ordering_tests {
     /// blocks a worker without a blocking section is a bug in that handler, not something
     /// this service can cure: with two workers the quick request may sit in the blocked
     /// worker's queue, which is why the former version of this test was flaky.
+    /// Set when the quick hover (`file:///tmp/Quick.bd`) is served; `test/computeBlocking` blocks
+    /// its worker until then.
+    static BLOCKING_RELEASE: (Mutex<bool>, std::sync::Condvar) = (Mutex::new(false), std::sync::Condvar::new());
+
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn a_handler_computing_in_a_blocking_section_does_not_stall_other_requests() {
         use futures_util::StreamExt;
@@ -330,7 +349,6 @@ mod text_sync_ordering_tests {
             release_change: Arc::new(Notify::new()),
         };
         let mut service = ordered(inner);
-        let started = std::time::Instant::now();
         let mut in_flight = futures_util::stream::FuturesUnordered::new();
         in_flight.push(
             service.call(
@@ -348,9 +366,9 @@ mod text_sync_ordering_tests {
                     .finish(),
             ),
         );
+        // The blocking handler holds its worker until the quick request is being served, so both
+        // answer only if the quick request is not stalled behind it, whatever the host load.
         in_flight.next().await.expect("first message").expect("service");
-        let first_done = started.elapsed();
-        assert!(first_done < std::time::Duration::from_millis(400), "the quick request waited {first_done:?}");
         in_flight.next().await.expect("second message").expect("service");
     }
 

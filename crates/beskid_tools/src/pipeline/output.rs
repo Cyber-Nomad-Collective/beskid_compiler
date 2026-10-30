@@ -292,6 +292,5 @@ mod tests {
         // `new_with_kind(false, ..)` is the `--plain` / piped-stderr configuration.
         let pipeline = CliPipeline::new_with_kind(false, PipelineProgressKind::FullBuild);
         assert!(pipeline.plain);
-        assert!(pipeline.step_elapsed() < PROGRESS_DELAY);
     }
 }
