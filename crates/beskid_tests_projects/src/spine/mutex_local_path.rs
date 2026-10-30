@@ -30,12 +30,22 @@ fn typed_let_mutex_name_is_not_split_on_mut_keyword() {
             .items
             .iter()
             .find_map(|item| {
+                let Node::InlineModule(module) = &item.node else {
+                    return None;
+                };
+                (module.node.name.node.name == "MutexTests").then_some(module)
+            })
+            .expect("expected the MutexTests test module")
+            .node
+            .items
+            .iter()
+            .find_map(|item| {
                 let Node::TestDefinition(test) = &item.node else {
                     return None;
                 };
-                (test.node.name.node.name == "MutexTryLockIsExclusiveUntilUnlock").then_some(test)
+                (test.node.name.node.name == "TryLockIsExclusiveUntilUnlock").then_some(test)
             })
-            .expect("expected the MutexTryLockIsExclusiveUntilUnlock test");
+            .expect("expected the MutexTests::TryLockIsExclusiveUntilUnlock test");
         let Statement::Let(let_stmt) = &test.node.statements[0].node else {
             panic!("expected let");
         };

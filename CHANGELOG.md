@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Corelib test namespaces
+
+- The Corelib gitlink moves to the s8b test cleanup: every Corelib test sits in a topic module (`mod TopicTests { ... }`) and its identity is `TopicTests::Name`; the domain prefix that the module names is gone from the test name; the remaining one-test package targets merged. Compiler tests that select Corelib tests by name use the new ids (`ControlsTests::RepeatBuildsString` and the progress-bar tests in `corelib_repeat_jit`, `EnvTests::GetEmptyNameReturnsInvalidNameError`/`SetEmptyNameReturnsInvalidNameError`, `AnsiTests::CursorBuilderHome`/`CsiBoldRed`, the `SyscallTests` write tests); `mutex_local_path` finds `TryLockIsExclusiveUntilUnlock` inside `MutexTests`.
+- The parse-tree golden is re-blessed for the moved and merged Corelib test files (this also covers the S8 merges of x509, connect, crypto and corelib_tests files).
+- `scripts/diagnose/v053-alloc-gates.sh` runs quic `QuicConnection`, which absorbed `QuicCreditLoss`.
+
 ### Qualified test selection
 
 - A test inside an inline module runs by its qualified name. `beskid test` reported `mod Topic { test Inner { } }` as `Topic::Inner` but its native build looked up the bare name and failed with E4041 "Missing test `Topic::Inner`". Entry selection now resolves the unit-relative qualified name through the query layer (`beskid_queries::resolve_entry_item`, `item_qualified_name`): a bare name selects only an item at the unit root, and a missing or ambiguous selection fails the build instead of taking the first item of that name. The REPL `Main` lookup uses the same resolution.

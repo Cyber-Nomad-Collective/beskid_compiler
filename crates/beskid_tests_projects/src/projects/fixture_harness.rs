@@ -389,8 +389,8 @@ mod tests {
     fn system_environment_error_constructors_lower_from_their_dependency_unit() {
         let root = corelib_tests_project_root();
         with_project_test_env(&root, || {
-            lower_corelib_tests_entrypoint("system/SystemSuite.bd", "EnvGetEmptyNameReturnsInvalidNameError");
-            lower_corelib_tests_entrypoint("system/SystemSuite.bd", "EnvSetEmptyNameReturnsInvalidNameError");
+            lower_corelib_tests_entrypoint("system/SystemSuite.bd", "EnvTests::GetEmptyNameReturnsInvalidNameError");
+            lower_corelib_tests_entrypoint("system/SystemSuite.bd", "EnvTests::SetEmptyNameReturnsInvalidNameError");
         });
     }
 
