@@ -382,6 +382,8 @@ pub struct State {
     /// Content fingerprints of manifests and lockfiles already acted on, so a rewrite with
     /// identical bytes (the server's own `Project.lock` sync) causes no invalidation.
     pub(crate) watched_fingerprints: HashMap<PathBuf, u64>,
+    /// The analyses of open documents running now; a newer text of a document cancels its own.
+    pub(crate) running_analyses: Arc<super::analysis_cancel::RunningAnalyses>,
 }
 
 impl Default for State {
@@ -406,6 +408,7 @@ impl Default for State {
             background_permits: Arc::new(tokio::sync::Semaphore::new(1)),
             index_permits: Arc::new(tokio::sync::Semaphore::new(3)),
             background_turn: Arc::default(),
+            running_analyses: Arc::default(),
         }
     }
 }

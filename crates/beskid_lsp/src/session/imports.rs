@@ -14,7 +14,9 @@ const PLACEHOLDER_MEMBER: &[u8] = b"x;";
 /// The buffer with every dangling member access completed, for completion only, or `None` when
 /// it has none. A dangling member access is a `receiver.` or `receiver.Partial` that ends its
 /// line (or the buffer) outside a comment or string: the state of a statement while its member
-/// is being typed (`String.` above `return 0;`). Without repair the parser reads the next line
+/// is being typed (`String.` above `return 0;`). A whole member is repaired only when a new
+/// statement, the end of the block or the end of the buffer follows; before any other text
+/// (`Syntax.Span` above `{`) the line ends a complete expression and the buffer is left alone. Without repair the parser reads the next line
 /// as the member (`String.return`) and the receiver is lost. The repair writes a placeholder
 /// member and `;` (`x;`), or only `;` after a partial member, over the whitespace that follows,
 /// so every byte offset of the buffer is unchanged and the completion context of the original
@@ -43,6 +45,15 @@ pub(crate) fn completion_repaired_text(text: &str) -> Option<(String, Vec<usize>
         let rest = &after[member..];
         let line_rest = &rest[..rest.find('\n').unwrap_or(rest.len())];
         if !line_rest.trim().is_empty() {
+            continue;
+        }
+        // A whole member followed by a line that continues the expression (`Syntax.Span` above
+        // the `{` of its struct literal, `items.First` above `.Value`, `x.IsEmpty` above the `{`
+        // of an `if`) is no member being typed: it ends the line of a complete expression.
+        // Only a new statement, the end of the block or the end of the buffer follows a member
+        // being typed.
+        let continues = |next: char| !(next == '}' || next == '_' || next.is_alphabetic());
+        if member > 0 && rest.trim_start().chars().next().is_some_and(continues) {
             continue;
         }
         let whitespace = rest.len() - rest.trim_start().len();
@@ -84,12 +95,28 @@ impl RecoverableCompletionSyntax {
         })
     }
 
+    /// The facts of `text` from `program`, its tree from a parse without recovery. A buffer with a
+    /// member being typed is parsed with its repair, as [`Self::parse`] does.
+    pub(crate) fn from_parsed(
+        text: &str,
+        program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    ) -> Option<Self> {
+        if completion_repaired_text(text).is_some() {
+            return Self::parse(text);
+        }
+        Some(Self::from_program(program))
+    }
+
     fn parse_with(
         text: &str,
         parse: impl Fn(&str) -> Option<beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>>,
     ) -> Option<Self> {
         let program =
             completion_repaired_text(text).and_then(|(repaired, _)| parse(&repaired)).or_else(|| parse(text))?;
+        Some(Self::from_program(&program))
+    }
+
+    fn from_program(program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>) -> Self {
         let imported_bindings = program
             .node
             .items
@@ -116,7 +143,7 @@ impl RecoverableCompletionSyntax {
             })
             .collect();
         let index = beskid_analysis::syntax_query::SyntaxIndex::from_program(
-            &program,
+            program,
             beskid_analysis::syntax::SyntaxGenerationId(0),
         );
         let path_expression_spans = index
@@ -125,7 +152,7 @@ impl RecoverableCompletionSyntax {
             .filter(|metadata| metadata.kind == beskid_analysis::syntax_query::NodeKind::PathExpression)
             .filter_map(|metadata| metadata.span)
             .collect();
-        Some(Self { imported_bindings, path_expression_spans })
+        Self { imported_bindings, path_expression_spans }
     }
 
     pub(crate) fn imports(&self, receiver: &str, import_path: &[std::sync::Arc<str>]) -> bool {
@@ -157,6 +184,16 @@ mod tests {
         let (partial, offsets) = completion_repaired_text("i32 Main() {\n    String.Le\n    return 0;\n}\n").unwrap();
         assert_eq!(partial, "i32 Main() {\n    String.Le;    return 0;\n}\n");
         assert_eq!(offsets, [24]);
+        // A whole member whose expression continues on the next line is no member being typed.
+        for complete in [
+            "i32 Main() {\n    Point p = Geometry.Point\n    {\n        x: 1,\n    };\n    return 0;\n}\n",
+            "i32 Main() {\n    i32 n = items.First\n        .Value;\n    return n;\n}\n",
+            "i32 Main() {\n    if list.IsEmpty\n    {\n        return 1;\n    }\n    return Call(a.Left\n        , 0);\n}\n",
+        ] {
+            assert_eq!(completion_repaired_text(complete), None, "{complete}");
+        }
+        let (block_end, _) = completion_repaired_text("i32 Main() {\n    String.Le\n}\n").expect("member before `}`");
+        assert_eq!(block_end, "i32 Main() {\n    String.Le;}\n");
         assert_eq!(
             completion_repaired_text("use Core.String;\nString."),
             Some(("use Core.String;\nString.x;".into(), vec![24]))

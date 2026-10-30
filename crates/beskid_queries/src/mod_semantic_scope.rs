@@ -4,7 +4,7 @@ use anyhow::{Result, bail};
 use beskid_analysis::{
     mod_host::{ModSemanticAuthority, ModSemanticScope},
     projects::ProgramAssembly,
-    services::ResolvedInput,
+    services::{JudgedUnits, ResolvedInput},
     syntax::{Program, Spanned, SyntaxGenerationId},
 };
 use std::cell::RefCell;
@@ -37,14 +37,17 @@ pub(crate) struct QueryModSemanticScope<'a> {
     db: RefCell<&'a mut BeskidDatabase>,
     planned: Option<&'a ResolvedInput>,
     assembly: RefCell<ProgramAssembly>,
+    /// The units the gate judges (the preparation's `FrontEndOptions::judged_units`).
+    judged: JudgedUnits,
 }
 impl<'a> QueryModSemanticScope<'a> {
     pub(crate) fn new(
         db: &'a mut BeskidDatabase,
         planned: Option<&'a ResolvedInput>,
         assembly: ProgramAssembly,
+        judged: JudgedUnits,
     ) -> Self {
-        Self { db: RefCell::new(db), planned, assembly: RefCell::new(assembly) }
+        Self { db: RefCell::new(db), planned, assembly: RefCell::new(assembly), judged }
     }
     pub(crate) fn assembly(&self) -> ProgramAssembly {
         self.assembly.borrow().clone()
@@ -156,7 +159,16 @@ impl beskid_analysis::services::SemanticFactAuthority for QueryModSemanticScope<
         if current.generation != assembly.generation {
             bail!("semantic findings assembly differs from current Mod generation");
         }
-        self.with_db(|db| crate::entry::semantic_diagnostics_for_roots(db, self.planned, &current, program, pipeline))
+        self.with_db(|db| {
+            crate::entry::semantic_diagnostics_for_judged_units(
+                db,
+                self.planned,
+                &current,
+                program,
+                self.judged,
+                pipeline,
+            )
+        })
     }
     fn mod_scope(&self) -> Option<&dyn ModSemanticScope> {
         Some(self)

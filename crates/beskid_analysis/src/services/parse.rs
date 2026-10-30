@@ -101,9 +101,10 @@ fn parsed_from_outcome(source_name: &str, outcome: RecoveryOutcome) -> Result<Pa
 
 /// Parse, and on a grammar error report it and try to continue with a repaired source.
 pub fn parse_program_with_source_name_and_diagnostics(source_name: &str, source: &str) -> Result<ParsedProgram> {
+    // One grammar pass: the pairs of a source that parses build its tree directly.
     let parse_error = match BeskidParser::parse(Rule::Program, source) {
-        Ok(_) => {
-            let program = parse_program_strict(source_name, source)?;
+        Ok(pairs) => {
+            let program = program_from_pairs(source_name, source, pairs)?;
             return Ok(ParsedProgram { program, diagnostics: Vec::new(), recovered: false });
         }
         Err(err) => err,
@@ -122,8 +123,8 @@ pub fn parse_program_with_source_name_and_diagnostics(source_name: &str, source:
 /// costs it one strict parse, never the candidate parses of a recovery.
 pub fn parse_program_without_recovery(source_name: &str, source: &str) -> Option<ParsedProgram> {
     match BeskidParser::parse(Rule::Program, source) {
-        Ok(_) => {
-            let program = parse_program_strict(source_name, source).ok()?;
+        Ok(pairs) => {
+            let program = program_from_pairs(source_name, source, pairs).ok()?;
             Some(ParsedProgram { program, diagnostics: Vec::new(), recovered: false })
         }
         Err(_) => {
@@ -167,10 +168,19 @@ fn parse_program_strict_undiagnosed(source: &str) -> Result<Spanned<Program>, ()
 }
 
 fn parse_program_strict(source_name: &str, source: &str) -> Result<Spanned<Program>> {
-    let mut pairs = BeskidParser::parse(Rule::Program, source).map_err(|err| {
+    let pairs = BeskidParser::parse(Rule::Program, source).map_err(|err| {
         let diagnostic = diagnose_parse_failure(source_name, source, Rule::Program, &err).diagnostic;
         anyhow!(MietteReportError::new(diagnostic))
     })?;
+    program_from_pairs(source_name, source, pairs)
+}
+
+/// The tree of `source` from the pairs of its successful grammar pass.
+fn program_from_pairs(
+    source_name: &str,
+    source: &str,
+    mut pairs: pest::iterators::Pairs<'_, Rule>,
+) -> Result<Spanned<Program>> {
     let pair = pairs.next().ok_or_else(|| anyhow!(MietteReportError::new(empty_source(source_name, source))))?;
     crate::syntax::common::span::with_line_index(source, || Program::parse(pair)).map_err(|err| {
         let diagnostic = parse_error_diagnostic(source_name, source, &err);

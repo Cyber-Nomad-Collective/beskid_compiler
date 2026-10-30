@@ -141,6 +141,15 @@ fn dependency_assembly_input(
     entry: usize,
     generation: u64,
 ) -> (tempfile::TempDir, beskid_analysis::services::ResolvedInput) {
+    assembly_input(entry, generation, "use Lib.Helper;\ni64 Main() { return Helper.Run(); }")
+}
+
+/// [`dependency_assembly_input`] with `main` as the source of `Main.bd`.
+fn assembly_input(
+    entry: usize,
+    generation: u64,
+    main: &str,
+) -> (tempfile::TempDir, beskid_analysis::services::ResolvedInput) {
     use beskid_analysis::projects::{
         AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, ProgramAssembly, RootEntry, SourceUnit,
     };
@@ -151,7 +160,7 @@ fn dependency_assembly_input(
     let directory = tempfile::tempdir().expect("project");
     let generation = SyntaxGenerationId(generation);
     let sources = [
-        ("Main.bd", "use Lib.Helper;\ni64 Main() { return Helper.Run(); }"),
+        ("Main.bd", main),
         (
             "Lib/Helper.bd",
             "pub enum Slot<T> { Filled(T value), Empty() }\npub i64 Run() { Slot<Missing> slot = Slot::Empty(); return 0_i64; }",
@@ -229,6 +238,35 @@ fn dependency_legality_finding_is_published_only_for_its_own_unit() {
     .expect("helper diagnostics");
     let found = helper.diagnostics.iter().filter(|diagnostic| diagnostic.code.as_deref() == Some("E1201")).count();
     assert_eq!(found, 1, "the dependency's own publish carries its E1201 once: {:#?}", helper.diagnostics);
+}
+
+/// An editor preparation judges its open document alone: an error in another own unit the
+/// document never reaches is not judged, while the judgement of every own unit (`beskid check`,
+/// the workspace index) still finds it.
+#[test]
+fn editor_preparation_judges_the_open_document_alone() {
+    use beskid_analysis::services::{FrontEndOptions, JudgedUnits, PrepareOptions};
+    let (_directory, main_entry) = assembly_input(0, 513, "i64 Main() { return 0_i64; }");
+    let reports_helper_error = |judged_units| {
+        let front_end = FrontEndOptions {
+            assembly_recovery: beskid_analysis::projects::AssemblyRecoveryPolicy::EditorRetainRecovered,
+            with_semantic_diagnostics: true,
+            judged_units,
+            ..FrontEndOptions::default()
+        };
+        let options = PrepareOptions {
+            mod_host: beskid_analysis::mod_host::ModHost::NoMods,
+            front_end,
+            native_mod_adapter_sources: false,
+        };
+        let (_, diagnostics, _) =
+            beskid_queries::prepare_compilation_diagnostics_isolated(&main_entry, options, None).expect("prepare");
+        diagnostics.iter().any(|diagnostic| {
+            diagnostic.code.as_deref() == Some("E1201") && diagnostic.file_name().ends_with("Helper.bd")
+        })
+    };
+    assert!(reports_helper_error(JudgedUnits::OwnUnits), "every own unit is judged: the unreached helper's E1201");
+    assert!(!reports_helper_error(JudgedUnits::Entry), "the open document alone is judged");
 }
 
 fn span(start: usize, end: usize) -> beskid_analysis::syntax::SpanInfo {

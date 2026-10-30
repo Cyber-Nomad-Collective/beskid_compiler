@@ -189,8 +189,13 @@ pub fn syntax_documentation_facts_for_source(source_name: &str, source: &str) ->
     let Ok(program) = beskid_analysis::services::parse_program_with_source_name(source_name, source) else {
         return Vec::new();
     };
-    let mut facts = syntax_documentation_facts_for_program(&program.node);
-    complete_shape_from_program(&program.node, &mut facts);
+    syntax_documentation_facts_for_parsed(&program.node)
+}
+
+/// Build facts for the tree of a source buffer that is already parsed.
+pub fn syntax_documentation_facts_for_parsed(program: &Program) -> Vec<SyntaxDocumentationFact> {
+    let mut facts = syntax_documentation_facts_for_program(program);
+    complete_shape_from_program(program, &mut facts);
     facts
 }
 

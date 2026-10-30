@@ -49,10 +49,14 @@ pub(crate) enum EditorPreparePass {
     Complete,
 }
 
+/// The front end of an open document's preparation. Its facts and diagnostics belong to that one
+/// buffer (see `entry_buffer_diagnostics`), so it judges that unit alone: the other units of the
+/// project get their diagnostics from their own preparations and the workspace index.
 fn editor_front_end(pass: EditorPreparePass) -> FrontEndOptions {
     FrontEndOptions {
         assembly_recovery: beskid_analysis::projects::AssemblyRecoveryPolicy::EditorRetainRecovered,
         with_semantic_diagnostics: pass == EditorPreparePass::Complete,
+        judged_units: beskid_analysis::services::JudgedUnits::Entry,
         ..Default::default()
     }
 }
@@ -204,6 +208,8 @@ pub(crate) fn prepare_project_index(
 ) -> anyhow::Result<PreparedProjectIndex> {
     let front_end = FrontEndOptions {
         assembly_discovery: beskid_analysis::projects::AssemblyDiscovery::HostImportClosure,
+        // The index reports the diagnostics of every file it types.
+        judged_units: beskid_analysis::services::JudgedUnits::OwnUnits,
         ..editor_front_end(EditorPreparePass::Complete)
     };
     let (prepared, diagnostics, _fixes) = beskid_queries::prepare_compilation_diagnostics_with_db(

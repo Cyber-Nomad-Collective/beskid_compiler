@@ -1,5 +1,6 @@
 //! Open buffers, on-disk snapshots, compilation cache, and diagnostics refresh helpers.
 
+pub(crate) mod analysis_cancel;
 pub(crate) mod attribute_facts;
 pub(crate) mod db_access;
 pub(crate) mod diagnostics_bridge;

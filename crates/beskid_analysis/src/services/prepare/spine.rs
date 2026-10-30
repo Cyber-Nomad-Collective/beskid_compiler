@@ -390,13 +390,14 @@ pub(super) fn run_prepare_spine(
 /// units under an App's own source root ([`ProgramAssembly::library_unit_indices`]). Each unit is
 /// judged as its own entry against the same assembly, so its diagnostics render in its own
 /// source. Typing and legality of these units are the query gate's obligations, never judged
-/// here. Fails closed when the root set names a unit outside the assembly.
+/// here. Fails closed when the root set names a unit outside the assembly. Nothing runs when the
+/// front end judges the entry unit alone (`JudgedUnits::Entry`).
 fn own_unit_rule_diagnostics(
     assembly: &ProgramAssembly,
     options: &PrepareOptions,
     run_rules: bool,
 ) -> Result<Vec<SemanticDiagnostic>> {
-    if !run_rules {
+    if !run_rules || options.front_end.judged_units == super::super::JudgedUnits::Entry {
         return Ok(Vec::new());
     }
     let units = assembly

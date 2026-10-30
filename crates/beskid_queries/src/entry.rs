@@ -81,6 +81,7 @@ pub fn prepare_compilation_with_db(
         db,
         Some(&resolved),
         resolved.assembly.as_ref().ok_or_else(|| anyhow::anyhow!("prepared Mod authority requires assembly"))?.clone(),
+        options.front_end.judged_units,
     );
     let (result, _, _) = beskid_analysis::services::prepare_compilation_with_fact_authority(
         &resolved,
@@ -107,6 +108,7 @@ pub fn prepare_compilation_diagnostics_with_db(
         db,
         Some(&resolved),
         resolved.assembly.as_ref().ok_or_else(|| anyhow::anyhow!("prepared Mod authority requires assembly"))?.clone(),
+        options.front_end.judged_units,
     );
     let result = beskid_analysis::services::prepare_compilation_with_fact_authority(
         &resolved,
@@ -139,6 +141,7 @@ pub fn prepare_compilation_diagnostics_isolated(
         &mut db,
         None,
         resolved.assembly.as_ref().ok_or_else(|| anyhow::anyhow!("isolated Mod authority requires assembly"))?.clone(),
+        options.front_end.judged_units,
     );
     beskid_analysis::services::prepare_compilation_with_fact_authority(
         resolved,
@@ -192,6 +195,26 @@ pub fn semantic_diagnostics_for_roots(
     program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
     pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<Vec<beskid_analysis::services::SemanticFactFinding>> {
+    semantic_diagnostics_for_judged_units(
+        db,
+        planned,
+        assembly,
+        program,
+        beskid_analysis::services::JudgedUnits::OwnUnits,
+        pipeline,
+    )
+}
+
+/// [`semantic_diagnostics_for_roots`] over the units `judged` names: every own unit, or the entry
+/// unit alone (an editor preparation of one open document, which reports only its diagnostics).
+pub fn semantic_diagnostics_for_judged_units(
+    db: &mut BeskidDatabase,
+    planned: Option<&ResolvedInput>,
+    assembly: &beskid_analysis::projects::ProgramAssembly,
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    judged: beskid_analysis::services::JudgedUnits,
+    pipeline: Option<&dyn PipelineObserver>,
+) -> Result<Vec<beskid_analysis::services::SemanticFactFinding>> {
     use crate::{
         AstNodeKey, IndexedNodeKind, build_runtime_fixture_typed_program,
         build_typed_program_with_corelib_syscall_services, project_session_for_syntax_assembly,
@@ -240,10 +263,13 @@ pub fn semantic_diagnostics_for_roots(
     let syntax = Arc::clone(&typed.assembly);
     // Every own unit is judged: the entry plus every other unit of the host project's own source
     // root (`library_unit_indices`), whether the target has an entry or not. Dependency units are
-    // judged by their own project.
-    let root_indices = syntax
-        .library_unit_indices()
-        .ok_or_else(|| anyhow::anyhow!("assembly root set names a source unit outside the prepared assembly"))?;
+    // judged by their own project. An editor preparation judges its entry unit alone.
+    let root_indices = match judged {
+        beskid_analysis::services::JudgedUnits::OwnUnits => syntax
+            .library_unit_indices()
+            .ok_or_else(|| anyhow::anyhow!("assembly root set names a source unit outside the prepared assembly"))?,
+        beskid_analysis::services::JudgedUnits::Entry => vec![syntax.entry_index],
+    };
     let mut findings = Vec::new();
     // Every item of every root unit, in root order: the typing-obligation subjects.
     let mut root_items = Vec::new();

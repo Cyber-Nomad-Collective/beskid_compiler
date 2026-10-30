@@ -54,6 +54,10 @@ pub struct Backend {
     reporter: Arc<CrashReporter>,
     scan: Arc<ScanCoordinator>,
     interactive: Arc<crate::scan_schedule::InteractiveGate>,
+    /// The running analyses of open documents (the state's own registry). A text change cancels
+    /// through it without the state lock: a document request waits for the text-sync
+    /// notifications before it, so a notification must never wait for that lock.
+    running_analyses: Arc<crate::session::analysis_cancel::RunningAnalyses>,
     token_refresh: Arc<FactsRefresh>,
     hint_refresh: Arc<FactsRefresh>,
 }
@@ -63,6 +67,7 @@ impl Backend {
     pub fn new(client: Client, reporter: Arc<CrashReporter>) -> Self {
         let state = State::default();
         let interactive = Arc::clone(&state.interactive_inflight);
+        let running_analyses = Arc::clone(&state.running_analyses);
         Self {
             client,
             state: Arc::new(RwLock::new(state)),
@@ -73,6 +78,7 @@ impl Backend {
             reporter,
             scan: Arc::new(ScanCoordinator::default()),
             interactive,
+            running_analyses,
             token_refresh: Arc::new(FactsRefresh::new(RefreshKind::SemanticTokens)),
             hint_refresh: Arc::new(FactsRefresh::new(RefreshKind::InlayHints)),
         }
@@ -116,6 +122,9 @@ impl Backend {
     /// documents never wait for the analysis; requests that need this document's newest facts
     /// wait for them on their own (see `protocol::request`).
     async fn analyze_in_background(&self, uri: Uri, version: i32, text: String) {
+        // The analysis of an older text of this document is moot now: stop it, so the project's
+        // database is free for this text at once.
+        self.running_analyses.cancel(&uri);
         let state = Arc::clone(&self.state);
         let publisher = self.publisher().await;
         let interactive = Arc::clone(&self.interactive);
@@ -1063,6 +1072,26 @@ mod scan_tests {
 
     fn backend_for_tests() -> (LspService<Backend>, tower_lsp_server::ClientSocket) {
         LspService::new(|client| Backend::new(client, Arc::new(CrashReporter::new(None))))
+    }
+
+    /// A document request waits for the text-sync notifications before it, so a text change
+    /// returns at once even while other work holds the state lock.
+    #[tokio::test]
+    async fn a_text_change_never_waits_for_the_state_lock() {
+        let (service, _socket) = backend_for_tests();
+        let backend = service.inner();
+        let uri = Uri::from_str("file:///tmp/beskid-lspcatch-change/Main.bd").expect("uri");
+        open_text_for_tests(&uri, 1, &burst_text(1));
+        change_text_for_tests(&uri, 2, &burst_text(2));
+        let held = backend.state.write().await;
+        let params = DidChangeTextDocumentParams {
+            text_document: VersionedTextDocumentIdentifier { uri: uri.clone(), version: 2 },
+            content_changes: Vec::new(),
+        };
+        let returned = tokio::time::timeout(Duration::from_millis(500), backend.did_change(params)).await;
+        drop(held);
+        close_text_for_tests(&uri);
+        assert!(returned.is_ok(), "didChange waited for the state lock");
     }
 
     #[tokio::test]
