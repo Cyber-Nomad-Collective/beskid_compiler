@@ -119,23 +119,51 @@ fn in_attribute_target_list(text: &str, offset: usize) -> bool {
     head.chars().next_back().is_none_or(|ch| !is_ident(ch))
 }
 
+/// Longest stretch of text before the cursor searched for the `[` that opens its attribute list.
+const ATTRIBUTE_LIST_SCAN_LIMIT: usize = 4096;
+
+/// Whether `offset` is inside a `[` that is not closed before it: walking back over balanced
+/// `( ... )` groups (attribute arguments), a `[` comes first, before a `]`, `;`, `{`, `}`, an
+/// unbalanced `(` or [`ATTRIBUTE_LIST_SCAN_LIMIT`] bytes. Only such a position can be in an
+/// attribute list, so the parse that names the site runs for nothing else (a `,` that ends a
+/// field, a variant or an argument is not an attribute site).
+fn inside_unclosed_bracket(text: &str, offset: usize) -> bool {
+    let bytes = &text.as_bytes()[..offset];
+    let mut depth = 0usize;
+    for &byte in bytes.iter().rev().take(ATTRIBUTE_LIST_SCAN_LIMIT) {
+        match byte {
+            b')' => depth += 1,
+            b'(' if depth == 0 => return false,
+            b'(' => depth -= 1,
+            b'[' if depth == 0 => return true,
+            b']' if depth == 0 => return false,
+            b';' | b'{' | b'}' => return false,
+            _ => {}
+        }
+    }
+    false
+}
+
 /// The catalogue target of the declaration site whose attribute list holds the cursor, plus the
 /// attribute declarations of the current buffer (they win over every other declaration).
 fn attribute_site_at(text: &str, context: CompletionContext) -> Option<(&'static str, Vec<AttributeCompletionEntry>)> {
-    let head = &text[..context.replacement_start];
-    let tail = &text[context.replacement_end..];
-    if !matches!(head.trim_end().chars().next_back(), Some('[' | ',')) {
+    if !inside_unclosed_bracket(text, context.replacement_start) {
         return None;
     }
+    let head = &text[..context.replacement_start];
+    let tail = &text[context.replacement_end..];
     let closes = matches!(tail.trim_start().chars().next(), Some(']' | ',' | '('));
     let mut candidates = vec![format!("{head}{PLACEHOLDER}{tail}")];
     if !closes {
         candidates.push(format!("{head}{PLACEHOLDER}]{tail}"));
     }
     for candidate in candidates {
-        let Ok(program) = beskid_analysis::services::parse_program_with_source_name("<completion>", &candidate) else {
+        // Never a recovering parse: completion runs on the request path, and recovery of a large
+        // buffer costs seconds. A buffer broken elsewhere gets the ordinary completion instead.
+        let Some(parsed) = beskid_analysis::services::parse_program_without_recovery("<completion>", &candidate) else {
             continue;
         };
+        let program = parsed.program;
         let index = SyntaxIndex::from_program(&program, SyntaxGenerationId(0));
         let site = index.ids_of_kind(NodeKind::Attribute).find_map(|node| {
             let attribute = index.node_at(&program, node)?.of::<Attribute>()?;
@@ -184,7 +212,7 @@ fn attribute_site_at(text: &str, context: CompletionContext) -> Option<(&'static
 mod tests {
     use beskid_queries::CompletionContext;
 
-    use super::{attribute_completion_items, in_attribute_target_list};
+    use super::{attribute_completion_items, in_attribute_target_list, inside_unclosed_bracket};
 
     fn context_at(text: &str, offset: usize) -> CompletionContext {
         let is_ident = |ch: char| ch.is_alphanumeric() || ch == '_';
@@ -241,6 +269,52 @@ mod tests {
         let source = "i64 Run(i64[] values) { return values[0]; }\n";
         let offset = source.find("[0]").expect("index") + 1;
         assert!(labels(source, offset).is_none_or(|labels| labels.is_empty()));
+    }
+
+    #[test]
+    fn commas_outside_an_attribute_list_are_not_attribute_sites() {
+        let cases = [
+            ("type Point { i64 a; }\ni64 Run() { let p = Point { a: b,", " };\n    return 0;\n}\n"),
+            ("i64 Run() {\n    f(a,", ");\n    return 0;\n}\n"),
+            ("enum E {\n    A,\n    B", "\n}\n"),
+        ];
+        for (before, after) in cases {
+            let source = format!("{before}{after}");
+            let offset = before.len();
+            assert!(!inside_unclosed_bracket(&source, context_at(&source, offset).replacement_start), "{source:?}");
+            assert!(labels(&source, offset).is_none(), "{source:?}");
+        }
+    }
+
+    #[test]
+    fn positions_inside_an_open_bracket_reach_the_site_parse() {
+        let declarations = "pub attribute Attr(TypeDefinition) { }\npub attribute Mark(TypeDefinition) { }\n";
+        let after = "]\npub type Job { i64 size; }\n";
+        // An attribute list holds one attribute (`[Name(args)]`), so a later entry after a `,`
+        // passes the bracket scan but is no site: the strict parse rejects it.
+        for before in ["[Pure, ", "[Attr(x: y), "] {
+            let source = format!("{declarations}{before}{after}");
+            let offset = declarations.len() + before.len();
+            assert!(inside_unclosed_bracket(&source, offset), "{source:?}");
+            assert!(labels(&source, offset).is_none(), "{source:?}");
+        }
+        for (before, after) in [("[", after), ("[", "\npub type Job { i64 size; }\n")] {
+            let source = format!("{declarations}{before}{after}");
+            let offset = declarations.len() + before.len();
+            assert!(inside_unclosed_bracket(&source, offset), "{source:?}");
+            let offered = labels(&source, offset).unwrap_or_else(|| panic!("attribute list completion: {source:?}"));
+            assert!(offered.contains(&"Mark".to_string()), "{source:?}: {offered:?}");
+            assert!(offered.contains(&"Attr".to_string()), "{source:?}: {offered:?}");
+        }
+    }
+
+    #[test]
+    fn the_bracket_scan_is_bounded() {
+        let source = format!("[{}", " ".repeat(super::ATTRIBUTE_LIST_SCAN_LIMIT));
+        assert!(!inside_unclosed_bracket(&source, source.len()));
+        assert!(inside_unclosed_bracket("[Attr(xs[0]), ", 14));
+        assert!(!inside_unclosed_bracket("[Attr(x, ", 9));
+        assert!(!inside_unclosed_bracket("[Pure] ", 7));
     }
 
     #[test]

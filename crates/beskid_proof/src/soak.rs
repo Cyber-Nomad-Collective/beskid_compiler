@@ -4,9 +4,9 @@
 //! open files, random edits and undo, saves, queries, workspace refreshes and old-format locks
 //! that must fail closed. The run passes when the server never exits, never sends `beskid/crashReport`,
 //! writes no new file into the crash directory, answers no request with an internal error, never
-//! leaves a request unanswered past the timeout, its RSS grows less than the limit between
-//! the first and the last window, and the interactive requests sent after the initial workspace
-//! index answer within their latency budgets.
+//! leaves a request unanswered past the timeout, its RSS grows less than the limit from the
+//! median of the first windows after the initial workspace index to the median of the last
+//! windows, and the interactive requests sent after that index answer within their latency budgets.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs::{self, File};
@@ -109,7 +109,8 @@ usage: beskid-soak --server <beskid_lsp> --corpus <dir> [--corpus <dir> ...] [op
   --request-timeout <t>  unanswered-request limit (default 120s)
   --cli-timeout <t>      limit for one `beskid dev project lock` run (default 120s)
   --drain-timeout <t>    fail when the server leaves its stdin unread this long (default 30s)
-  --max-memory-growth <percent>  RSS growth limit, first window to last window (default 20)
+  --max-memory-growth <percent>  RSS growth limit, median of the first windows after the index to
+                         median of the last windows (default 20)
   --latency-budget <method>=<p95>,<max>
                          latency limits for requests sent after the initial index, repeatable;
                          replaces the default for that method (default: hover, completion,
@@ -217,29 +218,69 @@ pub struct RssSample {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct MemoryVerdict {
-    pub first_window_kib: u64,
-    pub last_window_kib: u64,
+    /// Median of the window RSS values at the start of the measured span.
+    pub baseline_kib: u64,
+    /// Median of the window RSS values at the end of the run.
+    pub final_kib: u64,
     pub growth_percent: f64,
+    /// Start of the measured span: the end of the initial index (or the warm-up).
+    pub span_start: Duration,
+    pub window: Duration,
+    /// Windows each median is taken over.
+    pub windows: usize,
 }
 
-/// Mean RSS of the samples inside the first and the last `window` of the run and the growth
-/// between them. The first window starts after a warm-up equal to the window (indexing is still
-/// ramping up at t=0), so it covers `(window, 2 * window)`. `None` when either window holds no
-/// sample or the first mean is zero.
-pub fn memory_growth(samples: &[RssSample], total: Duration, window: Duration) -> Option<MemoryVerdict> {
-    let mean = |select: &dyn Fn(&RssSample) -> bool| -> Option<u64> {
-        let chosen: Vec<u64> = samples.iter().filter(|s| select(s)).map(|s| s.kib).collect();
-        (!chosen.is_empty()).then(|| chosen.iter().sum::<u64>() / chosen.len() as u64)
-    };
-    let first = mean(&|s: &RssSample| s.at > window && s.at < window * 2)?;
-    let last = mean(&|s: &RssSample| s.at + window >= total)?;
-    if first == 0 {
+/// Windows at each end of the measured span whose RSS values give the baseline and final medians.
+pub const MEMORY_WINDOWS_PER_END: usize = 3;
+/// Longest memory window.
+pub const MEMORY_WINDOW_MAX: Duration = Duration::from_secs(60);
+
+fn median(values: &mut [u64]) -> Option<u64> {
+    values.sort_unstable();
+    let middle = values.len() / 2;
+    match values.len() {
+        0 => None,
+        len if len % 2 == 1 => Some(values[middle]),
+        _ => Some((values[middle - 1] + values[middle]) / 2),
+    }
+}
+
+/// RSS growth over the span from `span_start` (the end of the initial index: memory still ramps
+/// up while it runs) to `total`. The span is cut into equal windows (at most
+/// [`MEMORY_WINDOW_MAX`], at least `2 * MEMORY_WINDOWS_PER_END` of them); each window's value is
+/// the median of its samples. The baseline is the median of the first [`MEMORY_WINDOWS_PER_END`]
+/// window values, the final the median of the last ones, so one burst of activity (the server's
+/// RSS swings with the analyses alive at once) moves neither. `None` when the span holds fewer
+/// than two non-empty windows or the baseline is zero.
+pub fn memory_growth(samples: &[RssSample], total: Duration, span_start: Duration) -> Option<MemoryVerdict> {
+    let span = total.checked_sub(span_start)?;
+    let window = MEMORY_WINDOW_MAX.min(span / (2 * MEMORY_WINDOWS_PER_END) as u32);
+    if window.is_zero() {
+        return None;
+    }
+    let count = (span.as_nanos() / window.as_nanos()) as usize;
+    let mut buckets = vec![Vec::new(); count];
+    for sample in samples.iter().filter(|sample| sample.at >= span_start && sample.at <= total) {
+        let index = (((sample.at - span_start).as_nanos() / window.as_nanos()) as usize).min(count - 1);
+        buckets[index].push(sample.kib);
+    }
+    let values: Vec<u64> = buckets.iter_mut().filter_map(|bucket| median(bucket)).collect();
+    let windows = MEMORY_WINDOWS_PER_END.min(values.len() / 2);
+    if windows == 0 {
+        return None;
+    }
+    let baseline = median(&mut values[..windows].to_vec())?;
+    let last = median(&mut values[values.len() - windows..].to_vec())?;
+    if baseline == 0 {
         return None;
     }
     Some(MemoryVerdict {
-        first_window_kib: first,
-        last_window_kib: last,
-        growth_percent: (last as f64 - first as f64) * 100.0 / first as f64,
+        baseline_kib: baseline,
+        final_kib: last,
+        growth_percent: (last as f64 - baseline as f64) * 100.0 / baseline as f64,
+        span_start,
+        window,
+        windows,
     })
 }
 
@@ -496,9 +537,12 @@ impl SoakReport {
             "newCrashFiles": self.new_crash_files,
             "internalErrorResponses": self.internal_errors,
             "memory": self.memory.as_ref().map(|m| json!({
-                "firstWindowKiB": m.first_window_kib,
-                "lastWindowKiB": m.last_window_kib,
+                "baselineKiB": m.baseline_kib,
+                "finalKiB": m.final_kib,
                 "growthPercent": m.growth_percent,
+                "spanStartSeconds": m.span_start.as_secs_f64(),
+                "windowSeconds": m.window.as_secs_f64(),
+                "windowsPerMedian": m.windows,
                 "enforced": self.memory_enforced,
             })),
             "rssSamples": self.samples.iter().map(|s| json!([s.at.as_secs(), s.kib])).collect::<Vec<_>>(),
@@ -545,9 +589,12 @@ impl SoakReport {
         );
         match &self.memory {
             Some(m) => out.push_str(&format!(
-                "  memory: first window {} KiB, last window {} KiB, growth {:.1}%{}\n",
-                m.first_window_kib,
-                m.last_window_kib,
+                "  memory: median {} KiB after {}s, median {} KiB at the end ({} windows of {}s each), growth {:.1}%{}\n",
+                m.baseline_kib,
+                m.span_start.as_secs(),
+                m.final_kib,
+                m.windows,
+                m.window.as_secs(),
                 m.growth_percent,
                 if self.memory_enforced { "" } else { " (not enforced in this run length)" }
             )),
@@ -1077,8 +1124,10 @@ pub fn run(config: &SoakConfig, smoke: bool) -> Result<SoakReport, String> {
     if let Some(failure) = old_lock_probe_failure(&report.counters) {
         report.failures.push(failure);
     }
-    let window = Duration::from_secs(60).min(ran_for / 3);
-    report.memory = memory_growth(&report.samples, ran_for, window);
+    // Measure from the end of the initial index (memory ramps up while it runs); a run whose
+    // index never finished skips a warm-up instead.
+    let span_start = report.index_finished_after.unwrap_or_else(|| MEMORY_WINDOW_MAX.min(ran_for / 3));
+    report.memory = memory_growth(&report.samples, ran_for, span_start);
     // First and last window must be distinct and meaningful: enforce only on full-length runs.
     report.memory_enforced = !smoke && ran_for >= Duration::from_secs(180);
     if let Some(m) = &report.memory
@@ -1086,8 +1135,8 @@ pub fn run(config: &SoakConfig, smoke: bool) -> Result<SoakReport, String> {
         && m.growth_percent >= config.memory_growth_limit_percent
     {
         report.failures.push(format!(
-            "memory grew {:.1}% (limit {:.0}%): {} KiB to {} KiB",
-            m.growth_percent, config.memory_growth_limit_percent, m.first_window_kib, m.last_window_kib
+            "memory grew {:.1}% (limit {:.0}%): median {} KiB after the index to median {} KiB at the end",
+            m.growth_percent, config.memory_growth_limit_percent, m.baseline_kib, m.final_kib
         ));
     }
     if report.memory.is_none() && report.memory_enforced {
@@ -1403,33 +1452,46 @@ mod tests {
     }
 
     #[test]
-    fn memory_growth_compares_first_and_last_window() {
-        // The first window skips the warm-up: samples at or before the window length do not count.
-        let samples = [
-            sample(10, 10_000),
-            sample(50, 20_000),
-            sample(70, 100_000),
-            sample(110, 100_000),
-            sample(500, 110_000),
-            sample(590, 114_000),
-            sample(600, 114_000),
-        ];
+    fn memory_growth_compares_medians_after_the_index() {
+        // Index until 60 s (ramp-up ignored), then 9 windows of 60 s sampled every 20 s.
+        let mut samples = vec![sample(10, 10_000), sample(50, 20_000)];
+        for at in (60..=600).step_by(20) {
+            let kib = if at < 240 { 100_000 } else { 114_000 };
+            samples.push(sample(at, kib));
+        }
         let verdict = memory_growth(&samples, Duration::from_secs(600), Duration::from_secs(60)).unwrap();
-        assert_eq!(verdict.first_window_kib, 100_000);
-        assert_eq!(verdict.last_window_kib, 114_000);
+        assert_eq!(verdict.window, Duration::from_secs(60));
+        assert_eq!(verdict.windows, 3);
+        assert_eq!(verdict.baseline_kib, 100_000);
+        assert_eq!(verdict.final_kib, 114_000);
         assert!((verdict.growth_percent - 14.0).abs() < 0.001);
     }
 
     #[test]
+    fn memory_growth_ignores_one_burst_at_either_end() {
+        // A steady 1 GB server with a 1.6 GB burst in the first and in the last window.
+        let mut samples = Vec::new();
+        for at in (30..=630).step_by(10) {
+            let burst = (30..90).contains(&at) || at >= 570;
+            samples.push(sample(at, if burst { 1_600_000 } else { 1_000_000 }));
+        }
+        let verdict = memory_growth(&samples, Duration::from_secs(630), Duration::from_secs(30)).unwrap();
+        assert_eq!(verdict.baseline_kib, 1_000_000);
+        assert_eq!(verdict.final_kib, 1_000_000);
+        assert!(verdict.growth_percent.abs() < 0.001);
+    }
+
+    #[test]
     fn memory_growth_detects_a_leak_and_handles_missing_windows() {
-        let leak = [sample(5, 100_000), sample(90, 100_000), sample(1195, 150_000), sample(1200, 150_000)];
+        let leak: Vec<_> = (0..=1200).step_by(30).map(|at| sample(at, 100_000 + at * 50)).collect();
         let verdict = memory_growth(&leak, Duration::from_secs(1200), Duration::from_secs(60)).unwrap();
-        assert!(verdict.growth_percent > 20.0);
-        let no_last = [sample(90, 100_000)];
-        let only_warmup = [sample(5, 100_000), sample(1195, 150_000)];
-        assert!(memory_growth(&only_warmup, Duration::from_secs(1200), Duration::from_secs(60)).is_none());
-        assert!(memory_growth(&no_last, Duration::from_secs(1200), Duration::from_secs(60)).is_none());
+        assert!(verdict.growth_percent > 20.0, "{verdict:?}");
+        let only_index = [sample(5, 100_000), sample(30, 150_000)];
+        assert!(memory_growth(&only_index, Duration::from_secs(1200), Duration::from_secs(60)).is_none());
+        let one_window = [sample(90, 100_000)];
+        assert!(memory_growth(&one_window, Duration::from_secs(1200), Duration::from_secs(60)).is_none());
         assert!(memory_growth(&[], Duration::from_secs(60), Duration::from_secs(20)).is_none());
+        assert!(memory_growth(&leak, Duration::from_secs(60), Duration::from_secs(90)).is_none());
     }
 
     #[test]

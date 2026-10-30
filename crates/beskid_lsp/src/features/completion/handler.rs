@@ -145,7 +145,9 @@ fn recoverable_imported_member_access(
     if text.get(receiver_start..context.replacement_start) != Some(&format!("{receiver}.")) {
         return false;
     }
-    let Some(syntax) = RecoverableCompletionSyntax::parse(text) else {
+    // Never a recovering parse on the request path; the document analysis already recovered
+    // (and remembered) a broken text, which the strict parse reuses.
+    let Some(syntax) = RecoverableCompletionSyntax::parse_without_recovery(text) else {
         return false;
     };
     syntax.imports(receiver, import_path) && syntax.contains_member_access(receiver_start, context.replacement_end)
