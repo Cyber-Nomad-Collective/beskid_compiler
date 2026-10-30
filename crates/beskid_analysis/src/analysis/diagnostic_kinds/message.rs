@@ -38,7 +38,6 @@ impl SemanticIssueKind {
             Self::DuplicateContractMethod { name, .. } => {
                 format!("duplicate contract method `{name}`")
             }
-            Self::DuplicateItemName { name, .. } => format!("duplicate item name `{name}`"),
             Self::UnknownTypeInDefinition { type_name } => {
                 format!("unknown type `{type_name}` in definition")
             }
@@ -48,7 +47,6 @@ impl SemanticIssueKind {
             } => format!(
                 "embedded contract `{contract_name}` introduces conflicting method `{method_name}`"
             ),
-            Self::AmbiguousImport { name, .. } => format!("ambiguous import for `{name}`"),
             Self::UnknownImportPath { path, .. } => format!("unknown import path `{path}`"),
             Self::UseBeforeDeclaration { name } => {
                 format!("use of `{name}` before declaration")

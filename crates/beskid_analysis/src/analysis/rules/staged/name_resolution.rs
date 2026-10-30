@@ -5,7 +5,7 @@ use crate::resolve::{Resolution, ResolveError, Resolver};
 use crate::syntax::{Block, Expression, ForStatement, LetStatement, Node, Path, Program, Statement, UseDeclaration};
 use crate::syntax::{SpanInfo, Spanned};
 use crate::syntax_query::{AstWalker, NodeKind, NodeRef, Visit};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 impl SemanticPipelineRule {
     /// Resolves the program. On failure, the spans of unresolved single values are added to
@@ -16,7 +16,6 @@ impl SemanticPipelineRule {
         program: &Spanned<Program>,
         unresolved_value_spans: &mut HashSet<SpanInfo>,
     ) -> Option<Resolution> {
-        self.check_ambiguous_imports(ctx, program);
         self.check_unknown_import_paths(ctx, program);
         self.check_use_before_declaration(ctx, program);
 
@@ -57,26 +56,6 @@ impl SemanticPipelineRule {
         }
 
         Some(resolution)
-    }
-
-    fn check_ambiguous_imports(&self, ctx: &mut RuleContext, program: &Spanned<Program>) {
-        let mut seen: HashMap<String, SpanInfo> = HashMap::new();
-
-        for item in &program.node.items {
-            let Node::UseDeclaration(use_decl) = &item.node else {
-                continue;
-            };
-            let imported_name = self.imported_name_local(&use_decl.node);
-            let imported_span = use_decl.node.alias.as_ref().map(|alias| alias.span).unwrap_or(use_decl.node.path.span);
-            let Some(previous_span) = seen.insert(imported_name.clone(), imported_span) else {
-                continue;
-            };
-
-            ctx.emit_issue(
-                imported_span,
-                SemanticIssueKind::AmbiguousImport { name: imported_name, previous: previous_span },
-            );
-        }
     }
 
     fn import_path_known_in_assembly(use_path: &str, known_paths: &HashSet<String>) -> bool {
@@ -189,14 +168,6 @@ impl SemanticPipelineRule {
 
     fn path_to_string_local(&self, path: &Spanned<Path>) -> String {
         path.node.segments.iter().map(|segment| segment.node.name.node.name.clone()).collect::<Vec<_>>().join(".")
-    }
-
-    fn imported_name_local(&self, use_decl: &UseDeclaration) -> String {
-        use_decl
-            .alias
-            .as_ref()
-            .map(|alias| alias.node.name.clone())
-            .unwrap_or_else(|| self.path_tail_local(&use_decl.path))
     }
 }
 

@@ -468,11 +468,20 @@ impl Resolver {
     fn collect_use_declaration(&mut self, item: &Spanned<Node>, def: &Spanned<UseDeclaration>) {
         let alias = use_imported_name(&def.node);
         let module_path = resolver::path_segments(&def.node.path);
-        if self.module_imports.contains_key(&(self.current_module, alias.clone())) {
+        // A `use` alias and another `use` alias, or a function, of the same scope are one duplicate
+        // (E1102). A module or type of the scope may share the name: a type position sees only
+        // types, and a qualifier that both reach is reported at the path (E1104).
+        let key = (self.current_module, alias.clone());
+        let previous = self.module_import_origins.get(&key).copied().or_else(|| {
+            let item = self.module_graph.module(self.current_module)?.scope.get(&alias).copied()?;
+            let info = self.items.get(item.0)?;
+            (info.kind == ItemKind::Function && !self.imported_scope_entries.contains(&key)).then_some(info.span)
+        });
+        if self.module_imports.contains_key(&key) || previous.is_some() {
             self.errors.push(ResolveError::DuplicateItem {
                 name: alias.clone(),
                 span: item.span,
-                previous: def.node.path.span,
+                previous: previous.unwrap_or(def.node.path.span),
             });
             return;
         }

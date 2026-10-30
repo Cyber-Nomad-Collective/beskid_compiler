@@ -18,6 +18,7 @@ fn resolve(dependencies: &[(&[&str], &str)], entry: &str) -> ResolveResult<Resol
 }
 
 const RANDOM: &[&str] = &["Core", "Random"];
+const RAND: &[&str] = &["Core", "Rand"];
 const RANDOM_SOURCE: &str = "pub type Random { i64 state; } pub i64 New() { return 1; }";
 
 #[test]
@@ -65,8 +66,8 @@ fn a_module_named_like_an_imported_type_does_not_hide_the_type() {
 
 #[test]
 fn a_function_named_like_an_imported_type_does_not_hide_the_type() {
-    let entry = "use Core.Random; i64 Random() { return 1; } i64 Size(Random value) { return Random(); }";
-    resolve(&[(RANDOM, RANDOM_SOURCE)], entry).expect("type position sees the imported type");
+    let entry = "use Core.Rand; i64 Random() { return 1; } i64 Size(Random value) { return Random(); }";
+    resolve(&[(RAND, RANDOM_SOURCE)], entry).expect("type position sees the imported type");
 }
 
 /// `Random.New()` with `mod Random { pub i64 New() }` and `use Core.Random;` (which has `New`)
@@ -136,4 +137,12 @@ fn the_same_use_twice_in_one_inline_module_is_a_duplicate() {
 fn functions_of_one_name_in_different_scopes_are_no_duplicate() {
     let entry = "i64 Helper() { return 1; } mod A { i64 Helper() { return 2; } i64 F() { return Helper(); } mod B { i64 G() { return Helper(); } } }";
     resolve(&[], entry).expect("one `Helper` per scope");
+}
+
+#[test]
+fn a_use_alias_and_a_function_of_one_scope_are_a_duplicate() {
+    let errors = resolve(&[(RANDOM, RANDOM_SOURCE)], "mod A { i64 Random() { return 1; } use Core.Random; }")
+        .expect_err("duplicate");
+    let duplicates = errors.iter().filter(|error| matches!(error, ResolveError::DuplicateItem { .. })).count();
+    assert_eq!(duplicates, 1, "{errors:?}");
 }

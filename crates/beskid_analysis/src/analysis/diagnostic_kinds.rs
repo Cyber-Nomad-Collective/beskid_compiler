@@ -28,10 +28,6 @@ pub enum SemanticIssueKind {
         name: String,
         previous: SpanInfo,
     },
-    DuplicateItemName {
-        name: String,
-        previous: SpanInfo,
-    },
     UnknownTypeInDefinition {
         type_name: String,
     },
@@ -41,10 +37,6 @@ pub enum SemanticIssueKind {
     },
 
     // ── Import / visibility / naming diagnostics ──
-    AmbiguousImport {
-        name: String,
-        previous: SpanInfo,
-    },
     UnknownImportPath {
         path: String,
         /// The module the path's prefix names when the last segment is an item of it

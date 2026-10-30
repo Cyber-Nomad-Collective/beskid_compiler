@@ -12,11 +12,9 @@ impl SemanticIssueKind {
             Self::DuplicateDefinitionName { previous, .. }
             | Self::DuplicateEnumVariant { previous, .. }
             | Self::DuplicateContractMethod { previous, .. }
-            | Self::DuplicateItemName { previous, .. }
             | Self::ResolveDuplicateItem { previous, .. }
             | Self::ResolveDuplicateLocal { previous, .. }
-            | Self::ResolveShadowedLocal { previous, .. }
-            | Self::AmbiguousImport { previous, .. } => Some(format!(
+            | Self::ResolveShadowedLocal { previous, .. } => Some(format!(
                 "previously defined at line {}, column {}",
                 previous.line_col_start.0, previous.line_col_start.1
             )),

@@ -114,3 +114,41 @@ fn a_qualifier_that_names_an_inline_module_and_an_import_is_e1104() {
     assert_eq!(report.matches("E1104").count(), 1, "E1104 once: {report}");
     assert!(report.contains("both the inline module `Random` and the import `Core.Random` declare `New`"), "{report}");
 }
+
+/// Every duplicate in one scope is exactly one diagnostic, E1102.
+fn assert_one_e1102(source: &str, name: &str) {
+    let (output, report) = check(source);
+    assert_eq!(output.status.code(), Some(1), "check must fail: {report}");
+    assert_eq!(report.matches("E1102").count(), 1, "E1102 once: {report}");
+    assert!(report.contains(&format!("duplicate item `{name}`")), "{report}");
+    for other in ["E1006", "E1104", "E1001"] {
+        assert!(!report.contains(other), "no {other} next to E1102: {report}");
+    }
+}
+
+#[test]
+fn a_duplicate_function_in_one_module_is_one_e1102() {
+    assert_one_e1102(
+        "mod Topic\n{\n    i64 Twice()\n    {\n        return 1;\n    }\n\n    i64 Twice()\n    {\n        return 2;\n    }\n}\n\npub i32 Main()\n{\n    return 0;\n}\n",
+        "Twice",
+    );
+}
+
+#[test]
+fn a_duplicate_use_alias_in_one_scope_is_one_e1102() {
+    assert_one_e1102("use Core.Random;\nuse Core.Random;\n\npub i32 Main()\n{\n    return 0;\n}\n", "Random");
+    assert_one_e1102(
+        "mod Topic\n{\n    use Core.Random;\n    use Core.Random;\n}\n\npub i32 Main()\n{\n    return 0;\n}\n",
+        "Random",
+    );
+}
+
+#[test]
+fn same_function_and_use_names_in_sibling_scopes_are_no_error() {
+    let (output, report) = check(
+        "mod Alpha\n{\n    use Core.Random;\n\n    i64 Twice()\n    {\n        return 1;\n    }\n}\n\n\
+         mod Beta\n{\n    use Core.Random;\n\n    i64 Twice()\n    {\n        return 2;\n    }\n}\n\npub i32 Main()\n{\n    return 0;\n}\n",
+    );
+    assert!(output.status.success(), "{report}");
+    assert!(!report.contains("E1102") && !report.contains("E1006"), "{report}");
+}
