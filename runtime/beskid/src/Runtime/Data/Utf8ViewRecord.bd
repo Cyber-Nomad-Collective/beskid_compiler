@@ -106,7 +106,7 @@ pub u64 ManagedViewKind(pointer value)
     }
     if (TypeDescriptorKind(descriptor) == TypeDescriptorArrayFlag())
     {
-        pointer element = NativePointer(raw_word_load(pointer_add(object, 16)));
+        pointer element = ArrayElementDescriptor(object);
         if (ValidateArrayElementDescriptor(element) && raw_word_load(element) == 1 && raw_word_load(pointer_add(element, 24)) == 0)
         {
             return 2;

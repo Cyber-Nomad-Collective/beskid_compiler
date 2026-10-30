@@ -120,7 +120,8 @@ pub pointer TryAllocateArrayRooted(pointer request, pointer rootHandleOut)
 // each of the first few elements.
 const ARRAY_MINIMUM_GROWN_CAPACITY = 4;
 
-// Grows a descriptor-backed array into a distinct rooted object. The ABI-visible array starts
+// Grows a descriptor-backed array into a distinct rooted object. The replacement is unmarked
+// (see `ArrayElementDescriptor`): only the grower holds it. The ABI-visible array starts
 // after the GC header and hidden element descriptor; the construction handle roots the object.
 // Failure never mutates the source array and leaves the output token at zero.
 pub pointer GrowArrayRootedWithPolicy(pointer array, word minimumCapacity, pointer rootHandleOut, bool checked)
@@ -171,7 +172,7 @@ pub pointer GrowArrayRootedWithPolicy(pointer array, word minimumCapacity, point
         raw_word_store(rootHandleOut, existingHandle);
         return array;
     }
-    pointer element = NativePointer(raw_word_load(pointer_add(object, 16)));
+    pointer element = ArrayElementDescriptor(object);
     if (TypeDescriptorKind(descriptor) != TYPE_DESCRIPTOR_ARRAY || ValidateArrayElementDescriptor(element) == false)
     {
         return NativePointer(0);
@@ -187,13 +188,16 @@ pub pointer GrowArrayRootedWithPolicy(pointer array, word minimumCapacity, point
     {
         return NativePointer(0);
     }
-    // Geometric growth: the replacement doubles the current capacity (at least
+    // Geometric growth: the replacement doubles the current length (at least
     // ARRAY_MINIMUM_GROWN_CAPACITY elements), so repeated appends copy each element O(1) times
-    // amortized instead of once per append. When the doubled size overflows, fall back to the
-    // exact requested capacity, whose own overflow checks follow.
+    // amortized instead of once per append. A full array doubles its capacity. A growth of a
+    // shared array asks for one element more than its capacity to force this copy whatever the
+    // spare capacity; doubling the length, not the capacity, keeps repeated forced copies from
+    // inflating the capacity. When the doubled size overflows, fall back to the exact requested
+    // capacity, whose own overflow checks follow.
     mut word targetCapacity = minimumCapacity;
-    word doubled = capacity * 2;
-    if (doubled / 2 == capacity && doubled > targetCapacity)
+    word doubled = length * 2;
+    if (doubled / 2 == length && doubled > targetCapacity)
     {
         targetCapacity = doubled;
     }

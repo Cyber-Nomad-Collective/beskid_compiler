@@ -37,7 +37,7 @@ use beskid_analysis::syntax_query::{DynNodeRef, NodeKind, SyntaxIndex};
 use super::contracts::concrete_declaration;
 use super::*;
 
-type Program = beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>;
+pub(super) type Program = beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>;
 
 /// The position that makes a place read store a copy.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
@@ -257,7 +257,7 @@ fn hook_instance(
 /// The source identity of the place `key` in `enclosing`. An element read takes the element of
 /// its array target's identity in the same environment, so `values[index]` in `Get<T>` is
 /// `List<i64>` inside `Get<List<i64>>`.
-fn place_identity(
+pub(super) fn place_identity(
     db: &dyn Db,
     key: AstNodeKey,
     enclosing: Option<&GenericSpecializationInstance>,
@@ -496,6 +496,19 @@ fn copy_position(db: &dyn Db, key: AstNodeKey, program: &Program, index: &Syntax
         NodeKind::TryExpression if try_reads_a_place(index, place) => {}
         _ => return None,
     }
+    value_position(db, key, program, index, place)
+}
+
+/// The copy position of the value the expression `place` produces: the walk out of transparent
+/// wrappers to the construct that stores, hands over or returns it. `place` is a place read for
+/// copy on assignment; array sharing (`array_share`) also asks it for call results.
+pub(super) fn value_position(
+    db: &dyn Db,
+    key: AstNodeKey,
+    program: &Program,
+    index: &SyntaxIndex,
+    place: beskid_analysis::syntax::AstNodeId,
+) -> Option<ValueCopyPosition> {
     let child_of = |parent, target: DynNodeRef<'_>| index.direct_child_id(program, parent, target);
     let mut child = place;
     loop {
@@ -689,7 +702,7 @@ fn returned_once_as_part(
 
 /// The single-segment name `name` read at `place` is a `let` local or a `move` parameter of the
 /// callable that holds the read (no lambda between the read and the declaration).
-fn owned_by_callable(
+pub(super) fn owned_by_callable(
     program: &Program,
     index: &SyntaxIndex,
     place: beskid_analysis::syntax::AstNodeId,
@@ -712,7 +725,7 @@ fn owned_by_callable(
 }
 
 /// A lambda encloses `place` but not `declaration`: the read is of a captured binding.
-fn crosses_lambda(
+pub(super) fn crosses_lambda(
     index: &SyntaxIndex,
     place: beskid_analysis::syntax::AstNodeId,
     declaration: beskid_analysis::syntax::AstNodeId,

@@ -144,3 +144,12 @@ fn mut_parameter_field_writes_reach_the_caller() {
 fn mut_array_parameter_growth_never_reaches_the_callers_array() {
     assert_runs("mut_array_parameter_growth", "MutArrayParameterGrowth.bproj");
 }
+
+/// Growing one handle to an array never changes what another handle sees (preview.10 showed the
+/// growth through a local copy, a field, a closure capture, a list element, a copied parameter, a
+/// returned field and an `Append` result, up to the old capacity); an array no other handle sees
+/// keeps growing in place.
+#[test]
+fn array_growth_never_reaches_another_handle() {
+    assert_runs("array_growth_aliasing", "ArrayGrowthAliasing.bproj");
+}

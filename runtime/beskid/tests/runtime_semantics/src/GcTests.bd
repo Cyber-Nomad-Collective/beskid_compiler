@@ -632,6 +632,64 @@ test GcCheckedArrayGrowthPreservesSourceOnRealExhaustion
     SystemFree(element, 32);
 }
 
+// Growing one handle never changes what another handle sees. Bit 0 of the hidden element
+// descriptor word is the sharing mark that generated code sets on a second handle: a growth of a
+// marked array asks for more than its capacity, so the runtime copies into a new unmarked array
+// and the source keeps its length, capacity and elements. Every runtime reader (growth, marking,
+// verification) clears the mark.
+test GcMarkedArrayGrowsIntoUnmarkedCopy
+{
+    pointer element = SystemAllocate(32, 8);
+    memory_set(element, 0, 32);
+    raw_word_store(element, 8);
+    raw_word_store(pointer_add(element, 8), 8);
+    pointer descriptor = TestDescriptor(48, 8);
+    raw_word_store(pointer_add(descriptor, 32), TypeDescriptorArrayFlag());
+    pointer request = SystemAllocate(32, 8);
+    memory_set(request, 0, 32);
+    raw_word_store(request, NativeWord(element));
+    raw_word_store(pointer_add(request, 8), 1);
+    raw_word_store(pointer_add(request, 16), NativeWord(descriptor));
+    pointer rootOut = SystemAllocate(8, 8);
+    pointer one = AllocateArrayRooted(request, rootOut);
+    word oneRoot = raw_word_load(rootOut);
+    Assert.True(one != NativePointer(0) && oneRoot != 0, "the source array is allocated and rooted");
+    raw_word_store(NativePointer(raw_word_load(one)), 91);
+    pointer spare = GrowArrayRooted(one, 2, rootOut);
+    word spareRoot = raw_word_load(rootOut);
+    Assert.True(spare != NativePointer(0), "a full array grows into a copy");
+    Assert.Equal(raw_word_load(pointer_add(spare, 16)), 4, "the copy holds at least 4 elements");
+    Assert.Equal(raw_word_load(pointer_add(spare, 8)), 1, "growth keeps the logical length");
+    pointer spareObject = NativePointer(NativeWord(spare) - 24);
+    pointer word16 = NativePointer(NativeWord(spare) - 8);
+    Assert.Equal(raw_word_load(word16) & 1, 0, "a new array is unmarked");
+    raw_word_store(word16, raw_word_load(word16) + 1);
+    Assert.True(ArrayElementDescriptor(spareObject) == element, "the mark never changes the element descriptor");
+    GcCollect();
+    pointer copy = GrowArrayRooted(spare, 5, rootOut);
+    word copyRoot = raw_word_load(rootOut);
+    Assert.True(copy != NativePointer(0) && copy != spare, "a marked array grows into a new array");
+    Assert.Equal(raw_word_load(NativePointer(NativeWord(copy) - 8)) & 1, 0, "the copy is unmarked");
+    Assert.Equal(raw_word_load(pointer_add(copy, 16)), 5, "a forced copy doubles the length, not the capacity");
+    Assert.Equal(raw_word_load(NativePointer(raw_word_load(copy))), 91, "the copy holds the elements");
+    Assert.Equal(raw_word_load(pointer_add(spare, 8)), 1, "the source keeps its length");
+    Assert.Equal(raw_word_load(pointer_add(spare, 16)), 4, "the source keeps its capacity");
+    Assert.Equal(raw_word_load(word16) & 1, 1, "the source keeps its mark");
+    pointer same = GrowArrayRooted(copy, 2, rootOut);
+    word sameRoot = raw_word_load(rootOut);
+    Assert.True(same == copy, "an unmarked array with spare capacity grows in place");
+    GcCollect();
+    Assert.Equal(ArrayConstructionFinish(NativePointer(sameRoot)), 1, "the in-place root is released");
+    Assert.Equal(ArrayConstructionFinish(NativePointer(copyRoot)), 1, "the copy root is released");
+    Assert.Equal(ArrayConstructionFinish(NativePointer(spareRoot)), 1, "the spare root is released");
+    Assert.Equal(ArrayConstructionFinish(NativePointer(oneRoot)), 1, "the source root is released");
+    GcCollect();
+    SystemFree(rootOut, 8);
+    SystemFree(request, 32);
+    SystemFree(descriptor, 40);
+    SystemFree(element, 32);
+}
+
 test GcCheckedScopeKeepsFirstFailureAndRestoresNestedLinks
 {
     pointer descriptor = TestDescriptor(24, 8);

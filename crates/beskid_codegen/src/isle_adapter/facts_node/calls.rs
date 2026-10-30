@@ -144,6 +144,18 @@ impl SyntaxNodeFacts<'_> {
         value_copy_plan(self.isa?, &instance)
     }
 
+    /// Whether the place read or call at `key` makes a second handle to an existing array, so
+    /// the lowered value is marked shared (array growth never reaches another handle, v0.6.7).
+    pub(super) fn array_share_impl(&self, key: AstNodeKey) -> bool {
+        match beskid_queries::array_share(self.db, key, self.current_item_specialization()) {
+            Ok(shares) => shares,
+            Err(error) => {
+                crate::isle_trace::event(|| format!("event=fact.unavailable detail={error}"));
+                false
+            }
+        }
+    }
+
     /// The `Copy` hook an array `for` loop at `key` calls on each element (copy on assignment).
     pub(super) fn for_element_copy_impl(&self, key: AstNodeKey) -> Option<beskid_isle::ValueCopyPlan> {
         let instance = self.query(beskid_queries::for_element_copy_specialization(

@@ -326,13 +326,20 @@ impl IsleContext<'_, '_, '_, '_> {
 impl IsleContext<'_, '_, '_, '_> {
     /// The minimum capacity a growth of `owner` requests from the runtime.
     ///
-    /// Parameters pass by value: growth of a `mut T[]` parameter changes only the callee's copy
-    /// of the handle. While the parameter slot still holds the caller's handle, the array header
-    /// (data, length, capacity) is shared with the caller, so an in-place growth would make the
-    /// new length visible to the caller up to the old capacity. The first growth through the
-    /// caller's handle therefore requests one element more than the current capacity, which makes
-    /// the runtime copy into a new array; later growths of the callee's own copy grow in place.
-    /// Every other owner requests `next_length` and grows in place while capacity remains.
+    /// Growing one handle never changes what another handle to the same array sees. While
+    /// capacity remains, the runtime grows in place: it returns the same header, and the new
+    /// length and element land in the header every handle reads. That is sound only when no other
+    /// handle exists, so the growth copies (it requests one element more than the current
+    /// capacity, which makes the runtime copy into a new array only the grower holds) when:
+    /// - the array carries the sharing mark (bit 0 of the hidden element-descriptor word before
+    ///   the header), which lowering sets wherever a second handle to it is made
+    ///   (`mark_array_shared`); or
+    /// - the owner is a `mut T[]` parameter slot that still holds the caller's handle: parameters
+    ///   pass by value, and the caller's own handle is not marked by the call.
+    ///
+    /// Otherwise the old handle is provably unused elsewhere and the growth requests
+    /// `next_length`, growing in place while capacity remains. The copy is unmarked, so later
+    /// growths of it are in place again.
     ///
     /// `capacity + 1` cannot overflow: a live array's backing store holds `capacity` elements of
     /// at least one byte.
@@ -342,17 +349,21 @@ impl IsleContext<'_, '_, '_, '_> {
         owner: Value,
         next_length: Value,
     ) -> Option<Value> {
-        let CollectionMutationOwner::Local(slot) = owner_fact else {
-            return Some(next_length);
-        };
-        let Some(entry) = self.parameter_entries.get(&slot).copied() else {
-            return Some(next_length);
-        };
         let pointer = dispatch::pointer_type(self.frontend_config);
         let capacity_offset = i32::try_from(pointer.bytes() * 2).ok()?;
+        let descriptor_offset = -i32::try_from(pointer.bytes()).ok()?;
         let capacity = self.builder.ins().load(pointer, MemFlagsData::new(), owner, capacity_offset);
         let detach = self.builder.ins().iadd_imm_s(capacity, 1);
-        let shared = self.builder.ins().icmp(IntCC::Equal, owner, entry);
+        let descriptor_word = self.builder.ins().load(pointer, MemFlagsData::new(), owner, descriptor_offset);
+        let mark = self.builder.ins().iconst(pointer, 1);
+        let mut shared = self.builder.ins().band(descriptor_word, mark);
+        if let CollectionMutationOwner::Local(slot) = owner_fact
+            && let Some(entry) = self.parameter_entries.get(&slot).copied()
+        {
+            let incoming = self.builder.ins().icmp(IntCC::Equal, owner, entry);
+            let incoming = self.builder.ins().uextend(pointer, incoming);
+            shared = self.builder.ins().bor(shared, incoming);
+        }
         Some(self.builder.ins().select(shared, detach, next_length))
     }
 
