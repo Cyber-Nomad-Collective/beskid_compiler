@@ -68,14 +68,20 @@ pub struct LatencyBudget {
 
 /// Interactive requests and their default budgets: p95 under 500 ms, none over 5 s.
 pub fn default_latency_budgets() -> Vec<LatencyBudget> {
-    ["textDocument/hover", "textDocument/completion", "textDocument/documentSymbol", "textDocument/definition"]
-        .into_iter()
-        .map(|method| LatencyBudget {
-            method: method.to_string(),
-            p95: Duration::from_millis(500),
-            max: Duration::from_secs(5),
-        })
-        .collect()
+    [
+        "textDocument/hover",
+        "textDocument/completion",
+        "textDocument/documentSymbol",
+        "textDocument/definition",
+        "textDocument/semanticTokens/full",
+    ]
+    .into_iter()
+    .map(|method| LatencyBudget {
+        method: method.to_string(),
+        p95: Duration::from_millis(500),
+        max: Duration::from_secs(5),
+    })
+    .collect()
 }
 
 /// Parse `<method>=<p95>,<max>`, e.g. `textDocument/hover=500ms,5s`.
@@ -114,7 +120,8 @@ usage: beskid-soak --server <beskid_lsp> --corpus <dir> [--corpus <dir> ...] [op
   --latency-budget <method>=<p95>,<max>
                          latency limits for requests sent after the initial index, repeatable;
                          replaces the default for that method (default: hover, completion,
-                         documentSymbol and definition each 500ms,5s; not enforced with --smoke)
+                         documentSymbol, definition and semanticTokens/full each 500ms,5s;
+                         not enforced with --smoke)
   --report <file>        also write the JSON report here
 
 exit status: 0 pass, 1 soak failure, 2 usage or setup error";

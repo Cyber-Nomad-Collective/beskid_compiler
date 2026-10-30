@@ -17,6 +17,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A completion without its project's database has the same 1 s limit as one with it, and the owned-facts answer after a database timeout runs on a blocking thread instead of the async worker. Past the limit the answer is an empty incomplete list, so the editor asks again.
 - The stability-proof soak judges memory growth from the end of the initial index: the baseline is the median of the first three windows after the index and the final value the median of the last three (windows of at most 60 s, each the median of its samples). It compared the means of two single 60 s windows, so one burst of analyses at either end moved the verdict. The limit stays 20%.
 
+### Language server semantic tokens latency
+
+- Semantic tokens answer within 100 ms during a burst of edits. The request waited for the analysis of the newest text, and every edit during the wait made a newer text to wait for: 16 s in the 30-minute soak and 26-45 s for a request during 10 s of typing in a 52-141 KB file. Past 100 ms the tokens now come from the last analyzed facts, moved over the edit (declaration and attribute-name tokens of `.bd` files, BSOL tokens of manifests); a document without analyzed facts gets no tokens. When the facts of the newest text are stored, the server sends one `workspace/semanticTokens/refresh` to a client that supports it.
+- The stability-proof soak has a default latency budget for `textDocument/semanticTokens/full` (p95 500 ms, none over 5 s), as for hover, completion, outline and definition.
+
 ### Test cleanup
 
 - The compiler tree no longer carries dead test weight: the empty `beskid_tests_abi` crate, the v0.2 `meta_manifest` project fixtures, the unused `pest_gen_mod` fixture, seven glue C/JSON files no gate runs, tracked `obj/` caches and the generated `Project.lock` files of the e2e and Mod fixtures (about 1,900 files) are removed, and `.gitignore` keeps fixture `obj/` and `Project.lock` out of the tree. The vendored Salsa is excluded from the workspace, so `cargo test --workspace` no longer runs its test suite. The duplicate Corelib parse-tree golden, a measurement inside a unit test, a stale ignored Corelib diagnostics test and three silent skip guards are gone; the lockfile replay test reads the Corelib `Core.String` sources instead of a stale snapshot.

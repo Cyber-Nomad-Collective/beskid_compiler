@@ -14,6 +14,7 @@ use crate::commands::{
     pckg_registry, symbol_documentation,
 };
 use crate::crash::CrashReporter;
+use crate::features::semantic_tokens::refresh::{SEMANTIC_TOKENS_FACTS_WAIT, TokenRefresh};
 use crate::features::{
     code_actions, completion, definition, document_symbols, formatting, hover, inlay_hints, references, rename,
     semantic_tokens, signature_help, workspace_symbols,
@@ -52,6 +53,7 @@ pub struct Backend {
     reporter: Arc<CrashReporter>,
     scan: Arc<ScanCoordinator>,
     interactive: Arc<crate::scan_schedule::InteractiveGate>,
+    token_refresh: Arc<TokenRefresh>,
 }
 
 impl Backend {
@@ -69,6 +71,7 @@ impl Backend {
             reporter,
             scan: Arc::new(ScanCoordinator::default()),
             interactive,
+            token_refresh: Arc::new(TokenRefresh::default()),
         }
     }
 
@@ -117,6 +120,26 @@ impl Backend {
             let _active = InteractiveGuard::new(&interactive);
             if analyze_open_document(&state, uri.clone(), version, text).await {
                 publisher.schedule(uri).await;
+            }
+        });
+    }
+
+    /// After a stale semantic-tokens answer: wait in the background for the facts of the newest
+    /// text of `uri`, then send one `workspace/semanticTokens/refresh` (only to a client that
+    /// supports it; one waiting refresh per document).
+    fn refresh_tokens_when_current(&self, uri: &Uri) {
+        if !self.token_refresh.claim(uri) {
+            return;
+        }
+        let state = Arc::clone(&self.state);
+        let refresh = Arc::clone(&self.token_refresh);
+        let client = self.client.clone();
+        let uri = uri.clone();
+        self.reporter.spawn_guarded("beskid/semanticTokensRefresh", Some(uri.as_str().to_string()), async move {
+            let current = snapshot_document(&state, &uri).await.is_some();
+            refresh.release(&uri);
+            if current && let Err(error) = client.semantic_tokens_refresh().await {
+                tracing::debug!(%error, "semantic tokens refresh request failed");
             }
         });
     }
@@ -218,6 +241,7 @@ fn observe_text_sync_for_tests(method: &'static str, params: &impl serde::Serial
 
 impl LanguageServer for Backend {
     async fn initialize(&self, params: InitializeParams) -> Result<InitializeResult> {
+        self.token_refresh.configure(&params.capabilities);
         let mut roots: Vec<PathBuf> = params
             .workspace_folders
             .unwrap_or_default()
@@ -463,10 +487,22 @@ impl LanguageServer for Backend {
         Ok(Some(document_symbols::handler::outline(&document.text, &document.syntax_symbols)))
     }
 
+    // Tokens never wait for the analysis of a burst of edits: past a short budget they come
+    // from the last analyzed facts carried over to the newest text (no tokens when the buffer
+    // has no facts yet), and a client that supports it is asked to refresh once the current
+    // facts are stored.
     async fn semantic_tokens_full(&self, params: SemanticTokensParams) -> Result<Option<SemanticTokensResult>> {
         let uri = params.text_document.uri;
-        let Some(document) = snapshot_document(&self.state, &uri).await else {
-            return Ok(None);
+        let document = match current_document(&self.state, &uri, SEMANTIC_TOKENS_FACTS_WAIT).await {
+            Ok(Some(document)) => document,
+            Ok(None) => {
+                self.refresh_tokens_when_current(&uri);
+                return Ok(None);
+            }
+            Err(carried) => {
+                self.refresh_tokens_when_current(&uri);
+                carried
+            }
         };
         Ok(Some(semantic_tokens::handler::handle_semantic_tokens(&uri, &document)))
     }
@@ -693,6 +729,149 @@ mod scan_tests {
                 .expect("completion result");
         assert!(answer.is_some());
         assert_eq!(backend.interactive.active(), 0, "guard released");
+    }
+
+    fn semantic_tokens_params(uri: &Uri) -> SemanticTokensParams {
+        SemanticTokensParams {
+            work_done_progress_params: Default::default(),
+            partial_result_params: Default::default(),
+            text_document: TextDocumentIdentifier { uri: uri.clone() },
+        }
+    }
+
+    fn open_text_for_tests(uri: &Uri, version: i32, text: &str) {
+        observe_text_sync_for_tests(
+            "textDocument/didOpen",
+            &DidOpenTextDocumentParams {
+                text_document: TextDocumentItem {
+                    uri: uri.clone(),
+                    language_id: "beskid".into(),
+                    version,
+                    text: text.into(),
+                },
+            },
+        );
+    }
+
+    fn close_text_for_tests(uri: &Uri) {
+        observe_text_sync_for_tests(
+            "textDocument/didClose",
+            &DidCloseTextDocumentParams { text_document: TextDocumentIdentifier { uri: uri.clone() } },
+        );
+    }
+
+    fn analyzed_main(text: &str, start: usize) -> crate::session::store::Document {
+        crate::session::store::Document {
+            version: 1,
+            text: text.into(),
+            syntax_definitions: Vec::new(),
+            syntax_hovers: Vec::new(),
+            syntax_symbols: vec![crate::session::store::SyntaxSymbol {
+                name: "main".into(),
+                kind: beskid_analysis::services::AnalysisSymbolKind::Function,
+                start,
+                end: start + 4,
+            }],
+            bsol_semantic_token_candidates: Vec::new(),
+            syntax_attribute_names: Vec::new(),
+            syntax_completion: None,
+            syntax_inlay_hints: Vec::new(),
+            syntax_documentation: Vec::new(),
+            syntax_diagnostics: Vec::new(),
+            syntax_fixes: Vec::new(),
+        }
+    }
+
+    // A request during a burst of edits used to wait for the analysis of the newest text, and
+    // every further edit moved that target (16 s in the preview.10 soak).
+    #[tokio::test]
+    async fn semantic_tokens_answer_from_carried_facts_while_the_newest_text_is_analyzed() {
+        let (service, _socket) = LspService::new(|client| Backend::new(client, Arc::new(CrashReporter::new(None))));
+        let backend = service.inner();
+        let uri = Uri::from_str("file:///tmp/beskid-semtok-stale/Main.bd").expect("uri");
+        backend.state.write().await.docs.insert(uri.clone(), analyzed_main("fn main() {}", 3));
+        // The client sent a newer text; its analysis has not finished.
+        open_text_for_tests(&uri, 2, "// edit\nfn main() {}");
+        let started = std::time::Instant::now();
+        let answer =
+            tokio::time::timeout(Duration::from_secs(2), backend.semantic_tokens_full(semantic_tokens_params(&uri)))
+                .await
+                .expect("semantic tokens must not wait for the analysis of the newest text")
+                .expect("semantic tokens result");
+        close_text_for_tests(&uri);
+        assert!(started.elapsed() < Duration::from_secs(1), "answered within the facts budget");
+        let Some(SemanticTokensResult::Tokens(tokens)) = answer else { panic!("expected full tokens") };
+        assert_eq!(tokens.data.len(), 1, "the carried declaration token");
+        assert_eq!((tokens.data[0].delta_line, tokens.data[0].delta_start, tokens.data[0].length), (1, 3, 4));
+    }
+
+    #[tokio::test]
+    async fn a_stale_token_answer_asks_a_refreshing_client_to_refresh_once_the_facts_are_current() {
+        use futures_util::StreamExt;
+        use tower_service::Service;
+
+        let (mut service, mut socket) =
+            LspService::new(|client| Backend::new(client, Arc::new(CrashReporter::new(None))));
+        let (refreshes, mut refreshed) = tokio::sync::mpsc::unbounded_channel();
+        tokio::spawn(async move {
+            while let Some(request) = socket.next().await {
+                if request.method() == "workspace/semanticTokens/refresh" {
+                    let _ = refreshes.send(());
+                }
+            }
+        });
+        let init = tower_lsp_server::jsonrpc::Request::build("initialize")
+            .params(serde_json::json!({
+                "processId": null,
+                "capabilities": {"workspace": {"semanticTokens": {"refreshSupport": true}}}
+            }))
+            .id(1)
+            .finish();
+        let response = service.call(init).await.expect("initialize service").expect("initialize response");
+        assert!(response.error().is_none(), "{response:?}");
+        let backend = service.inner();
+        let uri = Uri::from_str("file:///tmp/beskid-semtok-refresh/Main.bd").expect("uri");
+        backend.state.write().await.docs.insert(uri.clone(), analyzed_main("fn main() {}", 3));
+        let newest = "// edit\nfn main() {}";
+        open_text_for_tests(&uri, 2, newest);
+        let stale = backend.semantic_tokens_full(semantic_tokens_params(&uri)).await.expect("result");
+        assert!(stale.is_some(), "the carried tokens answer");
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert!(refreshed.try_recv().is_err(), "no refresh before the newest facts are stored");
+        // The analysis of the newest text stores its facts.
+        backend.state.write().await.docs.insert(uri.clone(), analyzed_main(newest, 11));
+        backend.state.read().await.facts_stored.notify_waiters();
+        let refresh = tokio::time::timeout(Duration::from_secs(2), refreshed.recv()).await;
+        close_text_for_tests(&uri);
+        assert!(matches!(refresh, Ok(Some(()))), "one refresh once the facts are current");
+    }
+
+    #[tokio::test]
+    async fn semantic_tokens_of_a_buffer_without_facts_answer_null_at_once() {
+        let (service, _socket) = LspService::new(|client| Backend::new(client, Arc::new(CrashReporter::new(None))));
+        let backend = service.inner();
+        let uri = Uri::from_str("file:///tmp/beskid-semtok-unanalyzed/Main.bd").expect("uri");
+        open_text_for_tests(&uri, 1, "fn main() {}");
+        let answer =
+            tokio::time::timeout(Duration::from_secs(2), backend.semantic_tokens_full(semantic_tokens_params(&uri)))
+                .await
+                .expect("semantic tokens must not wait for the first analysis")
+                .expect("semantic tokens result");
+        close_text_for_tests(&uri);
+        assert!(answer.is_none());
+    }
+
+    #[tokio::test]
+    async fn semantic_tokens_of_current_facts_answer_from_them() {
+        let (service, _socket) = LspService::new(|client| Backend::new(client, Arc::new(CrashReporter::new(None))));
+        let backend = service.inner();
+        let uri = Uri::from_str("file:///tmp/beskid-semtok-current/Main.bd").expect("uri");
+        backend.state.write().await.docs.insert(uri.clone(), analyzed_main("fn main() {}", 3));
+        open_text_for_tests(&uri, 1, "fn main() {}");
+        let answer = backend.semantic_tokens_full(semantic_tokens_params(&uri)).await.expect("result");
+        close_text_for_tests(&uri);
+        let Some(SemanticTokensResult::Tokens(tokens)) = answer else { panic!("expected full tokens") };
+        assert_eq!((tokens.data[0].delta_line, tokens.data[0].delta_start, tokens.data[0].length), (0, 3, 4));
     }
 
     #[tokio::test]

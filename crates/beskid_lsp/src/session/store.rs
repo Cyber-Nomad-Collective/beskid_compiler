@@ -107,8 +107,8 @@ impl Document {
     /// This document's facts carried over to `text`, the newer text of the same buffer whose
     /// analysis has not finished. Facts outside the edited region move with their text; facts
     /// inside it, diagnostics and everything bound to the analyzed generation (the completion
-    /// anchor, inlay hints) are dropped. Hover, definition and completion answer from this
-    /// instead of waiting for the analysis of every keystroke.
+    /// anchor, inlay hints) are dropped. Hover, definition, completion and semantic tokens
+    /// answer from this instead of waiting for the analysis of every keystroke.
     pub(crate) fn carried_over(&self, text: String, path: Option<&std::path::Path>) -> Document {
         let edit = TextEdit::between(&self.text, &text);
         let syntax_hovers = self
@@ -165,14 +165,32 @@ impl Document {
                 Some(SyntaxSymbol { start, end, ..symbol.clone() })
             })
             .collect();
+        // Semantic tokens answer from the carried facts while the analysis of the newest text
+        // runs, so the token spans move with their text like the symbols.
+        let bsol_semantic_token_candidates = self
+            .bsol_semantic_token_candidates
+            .iter()
+            .filter_map(|candidate| {
+                let (start, end) = edit.span(candidate.start, candidate.end)?;
+                Some(BsolSemanticTokenCandidate { start, end, ..*candidate })
+            })
+            .collect();
+        let syntax_attribute_names = self
+            .syntax_attribute_names
+            .iter()
+            .filter_map(|name| {
+                let (start, end) = edit.span(name.start, name.end)?;
+                Some(SyntaxAttributeName { start, end, ..*name })
+            })
+            .collect();
         Document {
             version: self.version,
             text,
             syntax_definitions,
             syntax_hovers,
             syntax_symbols,
-            bsol_semantic_token_candidates: Vec::new(),
-            syntax_attribute_names: Vec::new(),
+            bsol_semantic_token_candidates,
+            syntax_attribute_names,
             syntax_completion,
             syntax_inlay_hints: Vec::new(),
             syntax_documentation: Vec::new(),
@@ -511,6 +529,36 @@ mod carry_over_tests {
         let carried = doc.carried_over(new.to_string(), None);
         let spans: Vec<_> = carried.syntax_symbols.iter().map(|s| (s.name.as_str(), s.start, s.end)).collect();
         assert_eq!(spans, vec![("alpha", 0, 5), ("gamma", 12, 17)]);
+    }
+
+    #[test]
+    fn semantic_token_facts_move_with_their_text() {
+        let old = "alpha beta gamma delta";
+        let new = "alpha BETA2 gamma delta";
+        let mut doc = document(old, Vec::new(), Vec::new());
+        doc.syntax_attribute_names = vec![
+            SyntaxAttributeName { start: 0, end: 5, declaration: true },
+            SyntaxAttributeName { start: 6, end: 10, declaration: false },
+            SyntaxAttributeName { start: 11, end: 16, declaration: false },
+        ];
+        doc.bsol_semantic_token_candidates = vec![
+            BsolSemanticTokenCandidate { start: 6, end: 10, kind: BsolSemanticTokenKind::Namespace },
+            BsolSemanticTokenCandidate { start: 17, end: 22, kind: BsolSemanticTokenKind::Property },
+        ];
+        let carried = doc.carried_over(new.to_string(), None);
+        assert_eq!(
+            carried.syntax_attribute_names,
+            vec![
+                SyntaxAttributeName { start: 0, end: 5, declaration: true },
+                SyntaxAttributeName { start: 12, end: 17, declaration: false },
+            ],
+            "a name inside the edit is dropped; a name after it moves"
+        );
+        assert_eq!(
+            carried.bsol_semantic_token_candidates,
+            vec![BsolSemanticTokenCandidate { start: 18, end: 23, kind: BsolSemanticTokenKind::Property }]
+        );
+        assert_eq!(&new[18..23], "delta");
     }
 
     #[test]
