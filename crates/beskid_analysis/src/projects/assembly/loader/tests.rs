@@ -1545,6 +1545,7 @@ fn assert_workspace_scan_recovery(policy: crate::projects::AssemblyRecoveryPolic
         dependency_projects: vec![],
         unresolved_dependencies: vec![],
         has_core_dependency: false,
+        corelib_root: None,
     };
     let options = AssemblyOptions { recovery_policy: policy, ..assembly_options_for_plan(&plan) };
     assert_eq!(options.discovery, crate::projects::AssemblyDiscovery::WorkspaceScan);
