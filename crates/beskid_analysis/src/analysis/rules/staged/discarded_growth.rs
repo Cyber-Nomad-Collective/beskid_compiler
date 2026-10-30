@@ -1,9 +1,11 @@
-//! W1240: `Array.Append` used as a statement on an array its caller does not own.
+//! W1240: `Array.Append` or `Array.RemoveLast` used as a statement on an array its caller does not
+//! own.
 //!
-//! Since 0.6.7 a growth call grows in place only when its first argument owns the array (a `let`
-//! local, a `mut` parameter, a field); any other array (a parameter that is not `mut`, a loop or
-//! pattern variable, a lambda parameter, a call result, an element) is copied into a fresh array
-//! and the copy is the call's result. A statement that discards that result changes nothing.
+//! Since 0.6.7 a growth or a shrink changes its first argument only when that argument owns the
+//! array (a `let` local, a `mut` or `move` parameter, a field); any other array (a parameter that
+//! is not `mut`, a loop or pattern variable, a lambda parameter, a call result, an element) is
+//! copied into a fresh array and the changed copy is the call's result. A statement that discards
+//! that result changes nothing.
 
 use super::SemanticPipelineRule;
 use crate::analysis::diagnostic_kinds::{DiscardedGrowthRepair, ImmutableBinding, SemanticIssueKind, issue_diagnostic};
@@ -138,7 +140,8 @@ impl<'s, 'f> GrowthVisitor<'s, 'f> {
         let Expression::Path(callee) = &call.node.callee.node else { return };
         let segments = &callee.node.path.node.segments;
         let [.., array, append] = segments.as_slice() else { return };
-        if array.node.name.node.name != "Array" || append.node.name.node.name != "Append" {
+        let operation = append.node.name.node.name.as_str();
+        if array.node.name.node.name != "Array" || !matches!(operation, "Append" | "RemoveLast") {
             return;
         }
         let Some(first) = call.node.args.first() else { return };
@@ -159,6 +162,7 @@ impl<'s, 'f> GrowthVisitor<'s, 'f> {
             _ => self.bind(append, expression.span),
         };
         let kind = SemanticIssueKind::DiscardedArrayGrowth {
+            operation: append.node.name.node.name.clone(),
             owner: self.text(first.span),
             call: self.text(expression.span),
             repair,
@@ -271,7 +275,10 @@ mod tests {
         let found = discarded(source);
         assert_eq!(found.len(), 1, "{found:?}");
         assert_eq!(found[0].severity, Severity::Warning);
-        assert_eq!(found[0].message, "the result of `Array.Append` is discarded; `xs` is not changed");
+        assert_eq!(
+            found[0].message,
+            "the result of `Array.Append` is discarded; the call works on a copy, so `xs` is not changed"
+        );
         assert!(found[0].help.as_deref().is_some_and(|help| help.contains("declare the parameter `mut`")), "{found:?}");
         assert_eq!(
             apply(source, &found[0]),
@@ -310,6 +317,40 @@ mod tests {
             "string[] C(string[] xs) { return Array.Append<string>(xs, \"n\"); }",
             "pub type Holder { string[] items; } unit D(Holder h) { Array.Append<string>(h.items, \"n\"); return; }",
             "string[] E(string[] xs) { string[] ys = Array.Append<string>(xs, \"n\"); return ys; }",
+        ] {
+            assert!(discarded(source).is_empty(), "{source}");
+        }
+    }
+
+    #[test]
+    fn a_discarded_remove_last_on_a_parameter_or_element_warns() {
+        let source =
+            "unit Trim(i64[] xs, i64[][] rows) { Array.RemoveLast<i64>(xs); Array.RemoveLast<i64>(rows[0]); return; }";
+        let found = discarded(source);
+        assert_eq!(found.len(), 2, "{found:?}");
+        assert!(found.iter().all(|diagnostic| diagnostic.severity == Severity::Warning));
+        assert_eq!(
+            found[0].message,
+            "the result of `Array.RemoveLast` is discarded; the call works on a copy, so `xs` is not changed"
+        );
+        assert!(found[0].help.as_deref().is_some_and(|help| help.contains("use the result")), "{found:?}");
+        assert_eq!(
+            found[1].message,
+            "the result of `Array.RemoveLast` is discarded; the call works on a copy, so `rows[0]` is not changed"
+        );
+        assert!(apply(source, &found[1]).contains("i64[] shortened = Array.RemoveLast<i64>(rows[0]);"), "{found:?}");
+    }
+
+    #[test]
+    fn remove_last_on_an_owner_or_with_its_result_used_does_not_warn() {
+        for source in [
+            "unit A(mut i64[] xs) { Array.RemoveLast<i64>(xs); return; }",
+            "unit B(move i64[] xs) { Array.RemoveLast<i64>(xs); return; }",
+            "i64[] C() { mut i64[] out = [1, 2]; Array.RemoveLast<i64>(out); return out; }",
+            "i64[] D(i64[] xs) { return Array.RemoveLast<i64>(xs); }",
+            "pub type Holder { i64[] items; } unit E(Holder h) { Array.RemoveLast<i64>(h.items); return; }",
+            "i64[] F(i64[][] rows) { i64[] ys = Array.RemoveLast<i64>(rows[0]); return ys; }",
+            "unit G(i64[] xs) { mut i64[] local = xs; local = Array.RemoveLast<i64>(local); return; }",
         ] {
             assert!(discarded(source).is_empty(), "{source}");
         }

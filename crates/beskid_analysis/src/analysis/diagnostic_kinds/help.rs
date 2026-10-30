@@ -366,14 +366,16 @@ impl SemanticIssueKind {
                 "declare `pub This Copy() {{ ... }}` in `{type_name}`: a borrowed receiver, no parameters, returning \
                  a `{type_name}` with its own storage"
             )),
-            Self::DiscardedArrayGrowth { call, repair, .. } => Some(match repair {
-                DiscardedGrowthRepair::MutParameter { name, .. } => {
-                    format!("declare the parameter `mut` (`mut ... {name}`) so the call grows the caller's array")
-                }
+            Self::DiscardedArrayGrowth { operation, call, repair, .. } => Some(match repair {
+                DiscardedGrowthRepair::MutParameter { name, .. } => format!(
+                    "use the result, or pass an owner: declare the parameter `mut` (`mut ... {name}`) so the call \
+                     changes the parameter, and return it if the caller needs the change"
+                ),
                 DiscardedGrowthRepair::Assign { name, .. } => format!("assign the result: `{name} = {call};`"),
-                DiscardedGrowthRepair::Bind { declaration: Some(declaration), .. } => {
-                    format!("use the result: `{declaration} grown = {call};`")
-                }
+                DiscardedGrowthRepair::Bind { declaration: Some(declaration), .. } => format!(
+                    "use the result: `{declaration} {} = {call};`",
+                    super::discarded_result_local(operation)
+                ),
                 DiscardedGrowthRepair::Bind { declaration: None, .. } => {
                     "use the result: bind it to a new local".to_string()
                 }

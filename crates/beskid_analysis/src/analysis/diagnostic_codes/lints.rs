@@ -10,7 +10,7 @@ pub const CODES: &[CodeInfo] = &[
     CodeInfo { code: "W1103", summary: "shadowed local", tags: &[] },
     CodeInfo { code: "W1110", summary: "ambiguous import candidate", tags: &[] },
     CodeInfo { code: "W1203", summary: "implicit numeric cast", tags: &[] },
-    CodeInfo { code: "W1240", summary: "discarded array growth", tags: &[] },
+    CodeInfo { code: "W1240", summary: "discarded array growth or shrink", tags: &[] },
     CodeInfo { code: "W1610", summary: "unknown @arg parameter", tags: &[] },
     CodeInfo { code: "W1611", summary: "duplicate @arg", tags: &[] },
     CodeInfo { code: "W1612", summary: "invalid @arg/@returns placement", tags: &[] },

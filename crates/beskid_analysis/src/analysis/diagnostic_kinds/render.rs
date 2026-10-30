@@ -63,7 +63,7 @@ pub fn issue_diagnostic(
                 diagnostic
             }
         }
-        SemanticIssueKind::DiscardedArrayGrowth { repair, .. } => match repair {
+        SemanticIssueKind::DiscardedArrayGrowth { operation, repair, .. } => match repair {
             DiscardedGrowthRepair::MutParameter { name, insert_at } => diagnostic.with_fix(Fix::new(
                 format!("Declare `{name}` `mut`"),
                 Applicability::MachineApplicable,
@@ -77,7 +77,10 @@ pub fn issue_diagnostic(
             DiscardedGrowthRepair::Bind { declaration: Some(declaration), insert_at } => diagnostic.with_fix(Fix::new(
                 "Bind the result to a new local",
                 Applicability::MaybeIncorrect,
-                vec![FixEdit::insert(*insert_at, format!("{declaration} grown = "))],
+                vec![FixEdit::insert(
+                    *insert_at,
+                    format!("{declaration} {} = ", super::discarded_result_local(operation)),
+                )],
             )),
             DiscardedGrowthRepair::Bind { declaration: None, .. } => diagnostic,
         },
