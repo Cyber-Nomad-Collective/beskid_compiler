@@ -26,6 +26,8 @@ use crate::rng::Rng;
 
 pub const CRASH_REPORT_METHOD: &str = "beskid/crashReport";
 const INTERNAL_ERROR_CODE: i64 = -32603;
+/// LSP 3.17 `ContentModified`: an edit-producing request whose document changed under it.
+const CONTENT_MODIFIED_CODE: i64 = -32801;
 const UNSUPPORTED_LOCK_CODE: &str = "E3025";
 const CURRENT_LOCK_HEADER: &str = "# Project.lock v3\n";
 const OLD_LOCK_DIAGNOSTIC_WAIT: Duration = Duration::from_secs(15);
@@ -66,15 +68,27 @@ pub struct LatencyBudget {
     pub max: Duration,
 }
 
-/// Interactive requests and their default budgets: p95 under 500 ms, none over 5 s.
+/// Interactive requests and their default budgets: none over 5 s; p95 under 500 ms, and under
+/// 1 s for the edit-producing requests (rename, prepare rename, code actions), which wait up to
+/// 500 ms for the analysis of the newest text before they answer `ContentModified`.
 pub fn default_latency_budgets() -> Vec<LatencyBudget> {
-    ["textDocument/hover", "textDocument/completion", "textDocument/documentSymbol", "textDocument/definition"]
+    let read_only = [
+        "textDocument/hover",
+        "textDocument/completion",
+        "textDocument/documentSymbol",
+        "textDocument/definition",
+        "textDocument/semanticTokens/full",
+        "textDocument/references",
+        "textDocument/signatureHelp",
+        "textDocument/inlayHint",
+    ]
+    .map(|method| (method, Duration::from_millis(500)));
+    let edits = ["textDocument/codeAction", "textDocument/prepareRename", "textDocument/rename"]
+        .map(|method| (method, Duration::from_secs(1)));
+    read_only
         .into_iter()
-        .map(|method| LatencyBudget {
-            method: method.to_string(),
-            p95: Duration::from_millis(500),
-            max: Duration::from_secs(5),
-        })
+        .chain(edits)
+        .map(|(method, p95)| LatencyBudget { method: method.to_string(), p95, max: Duration::from_secs(5) })
         .collect()
 }
 
@@ -114,7 +128,9 @@ usage: beskid-soak --server <beskid_lsp> --corpus <dir> [--corpus <dir> ...] [op
   --latency-budget <method>=<p95>,<max>
                          latency limits for requests sent after the initial index, repeatable;
                          replaces the default for that method (default: hover, completion,
-                         documentSymbol and definition each 500ms,5s; not enforced with --smoke)
+                         documentSymbol, definition, semanticTokens/full, references,
+                         signatureHelp and inlayHint each 500ms,5s; codeAction, prepareRename
+                         and rename each 1s,5s; not enforced with --smoke)
   --report <file>        also write the JSON report here
 
 exit status: 0 pass, 1 soak failure, 2 usage or setup error";
@@ -404,6 +420,11 @@ pub fn is_crash_report(message: &Value) -> bool {
 }
 
 /// A response is an internal server error when it carries JSON-RPC code -32603.
+pub fn is_content_modified_response(message: &Value) -> bool {
+    message.get("method").is_none()
+        && message.pointer("/error/code").and_then(Value::as_i64) == Some(CONTENT_MODIFIED_CODE)
+}
+
 pub fn is_internal_error_response(message: &Value) -> bool {
     message.get("method").is_none()
         && message.pointer("/error/code").and_then(Value::as_i64) == Some(INTERNAL_ERROR_CODE)
@@ -500,6 +521,8 @@ pub struct Counters {
     pub old_lock_errors_seen: u64,
     pub responses: u64,
     pub error_responses: u64,
+    /// Error responses that are `ContentModified` (part of `error_responses`).
+    pub content_modified: u64,
     pub diagnostics_published: u64,
 }
 
@@ -565,6 +588,7 @@ impl SoakReport {
             },
             "responses": c.responses,
             "errorResponses": c.error_responses,
+            "contentModifiedResponses": c.content_modified,
             "diagnosticsPublished": c.diagnostics_published,
         })
     }
@@ -572,7 +596,7 @@ impl SoakReport {
     pub fn render(&self) -> String {
         let c = &self.counters;
         let mut out = format!(
-            "soak {} after {}s\n  actions: {} edits, {} undos, {} saves, {} queries, {} file rotations, {} refreshes, {} old locks ({} {UNSUPPORTED_LOCK_CODE} seen)\n  responses: {} ({} errors), diagnostics published: {}\n",
+            "soak {} after {}s\n  actions: {} edits, {} undos, {} saves, {} queries, {} file rotations, {} refreshes, {} old locks ({} {UNSUPPORTED_LOCK_CODE} seen)\n  responses: {} ({} errors, {} ContentModified), diagnostics published: {}\n",
             if self.passed() { "PASS" } else { "FAIL" },
             self.duration.as_secs(),
             c.edits,
@@ -585,6 +609,7 @@ impl SoakReport {
             c.old_lock_errors_seen,
             c.responses,
             c.error_responses,
+            c.content_modified,
             c.diagnostics_published,
         );
         match &self.memory {
@@ -822,11 +847,19 @@ impl Client {
         } else if let Some(id) = message.get("id").and_then(Value::as_i64) {
             let (method, sent) = self.pending.remove(&id).unwrap_or_else(|| ("(unknown)".into(), Instant::now()));
             self.report.counters.responses += 1;
-            if self.index_finished.is_some_and(|finished| sent >= finished) && message.get("error").is_none() {
+            // A `ContentModified` error is the answer of an edit-producing request whose document
+            // changed under it; its latency counts like a result's.
+            let content_modified = is_content_modified_response(&message);
+            if self.index_finished.is_some_and(|finished| sent >= finished)
+                && (message.get("error").is_none() || content_modified)
+            {
                 self.report.latencies.entry(method.clone()).or_default().push(sent.elapsed());
             }
             if message.get("error").is_some() {
                 self.report.counters.error_responses += 1;
+                if content_modified {
+                    self.report.counters.content_modified += 1;
+                }
                 if method == "initialize" {
                     let text = message.pointer("/error/message").and_then(Value::as_str).unwrap_or("");
                     self.fail(format!("`initialize` was answered with an error: {text}"));
@@ -1160,6 +1193,11 @@ fn did_change(doc: &Document) -> Value {
     json!({"textDocument": {"uri": doc.uri, "version": doc.version}, "contentChanges": [{"text": doc.text}]})
 }
 
+fn whole_document(doc: &Document) -> Value {
+    let lines = doc.text.split('\n').count().max(1);
+    json!({"start": {"line": 0, "character": 0}, "end": {"line": lines, "character": 0}})
+}
+
 fn text_position(doc: &Document, rng: &mut Rng) -> Value {
     let (line, character) = doc.random_position(rng);
     json!({"textDocument": {"uri": doc.uri}, "position": {"line": line, "character": character}})
@@ -1194,7 +1232,7 @@ fn step(client: &mut Client, rng: &mut Rng, open: &mut Vec<Document>, sources: &
         55..=79 => {
             client.report.counters.queries += 1;
             let doc = open[index].clone();
-            match rng.below(6) {
+            match rng.below(12) {
                 0 => {
                     client.request("textDocument/hover", text_position(&doc, rng));
                 }
@@ -1210,7 +1248,7 @@ fn step(client: &mut Client, rng: &mut Rng, open: &mut Vec<Document>, sources: &
                 4 => {
                     client.request("textDocument/semanticTokens/full", json!({"textDocument": {"uri": doc.uri}}));
                 }
-                _ => {
+                5 => {
                     client.request(
                         "textDocument/formatting",
                         json!({
@@ -1218,6 +1256,40 @@ fn step(client: &mut Client, rng: &mut Rng, open: &mut Vec<Document>, sources: &
                             "options": {"tabSize": 4, "insertSpaces": true}
                         }),
                     );
+                }
+                6 => {
+                    let mut params = text_position(&doc, rng);
+                    params["context"] = json!({"includeDeclaration": true});
+                    client.request("textDocument/references", params);
+                }
+                7 => {
+                    client.request("textDocument/signatureHelp", text_position(&doc, rng));
+                }
+                8 => {
+                    client.request(
+                        "textDocument/inlayHint",
+                        json!({"textDocument": {"uri": doc.uri}, "range": whole_document(&doc)}),
+                    );
+                }
+                9 => {
+                    let at = text_position(&doc, rng)["position"].clone();
+                    client.request(
+                        "textDocument/codeAction",
+                        json!({
+                            "textDocument": {"uri": doc.uri},
+                            "range": {"start": at, "end": at},
+                            "context": {"diagnostics": []}
+                        }),
+                    );
+                }
+                10 => {
+                    client.request("textDocument/prepareRename", text_position(&doc, rng));
+                }
+                _ => {
+                    // The soak never applies the edits; it measures the answer.
+                    let mut params = text_position(&doc, rng);
+                    params["newName"] = json!("soakRenamed");
+                    client.request("textDocument/rename", params);
                 }
             }
         }
@@ -1368,6 +1440,37 @@ mod tests {
 
     fn sample(secs: u64, kib: u64) -> RssSample {
         RssSample { at: Duration::from_secs(secs), kib }
+    }
+
+    #[test]
+    fn every_request_the_soak_sends_has_a_default_budget() {
+        let budgets = default_latency_budgets();
+        let budget = |method: &str| budgets.iter().find(|budget| budget.method == method).cloned();
+        for method in [
+            "textDocument/hover",
+            "textDocument/definition",
+            "textDocument/completion",
+            "textDocument/documentSymbol",
+            "textDocument/semanticTokens/full",
+            "textDocument/references",
+            "textDocument/signatureHelp",
+            "textDocument/inlayHint",
+        ] {
+            let budget = budget(method).unwrap_or_else(|| panic!("no budget for {method}"));
+            assert_eq!((budget.p95, budget.max), (Duration::from_millis(500), Duration::from_secs(5)), "{method}");
+        }
+        for method in ["textDocument/codeAction", "textDocument/prepareRename", "textDocument/rename"] {
+            let budget = budget(method).unwrap_or_else(|| panic!("no budget for {method}"));
+            assert_eq!((budget.p95, budget.max), (Duration::from_secs(1), Duration::from_secs(5)), "{method}");
+        }
+    }
+
+    #[test]
+    fn content_modified_is_an_answer_not_an_internal_error() {
+        let modified = json!({"id": 3, "error": {"code": -32801, "message": "content modified"}});
+        assert!(is_content_modified_response(&modified));
+        assert!(!is_internal_error_response(&modified));
+        assert!(!is_content_modified_response(&json!({"id": 3, "result": null})));
     }
 
     #[test]
