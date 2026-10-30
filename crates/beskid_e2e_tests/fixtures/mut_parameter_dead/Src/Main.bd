@@ -9,12 +9,20 @@ type Size
 
 unit AssignWhole(mut Size s)
 {
-    s = Size { columns: 80, rows: 24, };
+    s = Size
+    {
+        columns: 80,
+        rows: 24,
+    };
 }
 
 i32 Main()
 {
-    mut Size s = Size { columns: 0, rows: 0, };
+    mut Size s = Size
+    {
+        columns: 0,
+        rows: 0,
+    };
     AssignWhole(s);
     return s.columns;
 }
