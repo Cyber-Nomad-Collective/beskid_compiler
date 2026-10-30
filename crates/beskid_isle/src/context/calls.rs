@@ -10,7 +10,8 @@ mod traced;
 macro_rules! generated_call_methods {
     () => {
         fn emit_direct_call(&mut self, key: AstNodeKey) -> Option<Value> {
-            self.direct_call(key)
+            let value = self.direct_call(key)?;
+            self.mark_array_shared(key, value)
         }
 
         fn emit_bulk_call(&mut self, key: AstNodeKey) -> Option<Value> {
@@ -18,7 +19,8 @@ macro_rules! generated_call_methods {
         }
 
         fn emit_collection_operation(&mut self, key: AstNodeKey) -> Option<Value> {
-            self.emit_collection_operation_value(key)
+            let value = self.emit_collection_operation_value(key)?;
+            self.mark_array_shared(key, value)
         }
 
         fn emit_direct_call_statement(&mut self, key: AstNodeKey) -> Option<()> {
@@ -97,11 +99,13 @@ macro_rules! generated_call_methods {
         }
 
         fn emit_function_value_call(&mut self, key: AstNodeKey) -> Option<Value> {
-            self.function_value_call(key, true)?
+            let value = self.function_value_call(key, true)??;
+            self.mark_array_shared(key, value)
         }
 
         fn emit_contract_dispatch_call(&mut self, key: AstNodeKey) -> Option<Value> {
-            self.contract_dispatch_call(key, true)?
+            let value = self.contract_dispatch_call(key, true)??;
+            self.mark_array_shared(key, value)
         }
 
         /// A dispatched call in statement position discards any result.
@@ -115,7 +119,8 @@ macro_rules! generated_call_methods {
         }
 
         fn emit_inline_lambda_call(&mut self, key: AstNodeKey) -> Option<Value> {
-            self.inline_lambda_call(key)
+            let value = self.inline_lambda_call(key)?;
+            self.mark_array_shared(key, value)
         }
     };
 }

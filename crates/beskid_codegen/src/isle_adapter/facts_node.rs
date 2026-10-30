@@ -190,6 +190,10 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
         self.contract_value_receiver_impl(key)
     }
 
+    fn array_share(&self, key: AstNodeKey) -> bool {
+        self.array_share_impl(key)
+    }
+
     fn for_element_copy(&self, key: AstNodeKey) -> Option<beskid_isle::ValueCopyPlan> {
         self.for_element_copy_impl(key)
     }

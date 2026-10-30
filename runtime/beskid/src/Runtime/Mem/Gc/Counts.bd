@@ -884,7 +884,7 @@ pub bool WalkPushFields(pointer walk, pointer object, pointer descriptor)
 {
     if ((TypeDescriptorFlags(descriptor) & TYPE_DESCRIPTOR_KIND_MASK) == TYPE_DESCRIPTOR_ARRAY)
     {
-        pointer element = NativePointer(raw_word_load(pointer_add(object, 16)));
+        pointer element = ArrayElementDescriptor(object);
         word stride = raw_word_load(element);
         pointer elementMap = NativePointer(raw_word_load(pointer_add(element, 16)));
         word elementPointers = raw_word_load(pointer_add(element, 24));

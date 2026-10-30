@@ -321,8 +321,8 @@ impl SemanticIssueKind {
             Self::CopyOnAssignWithoutCopy { type_name, problem } => {
                 format!("`[CopyOnAssign]` type `{type_name}` has no valid `Copy` method: {problem}")
             }
-            Self::DiscardedArrayGrowth { owner, .. } => {
-                format!("the result of `Array.Append` is discarded; `{owner}` is not changed")
+            Self::DiscardedArrayGrowth { operation, owner, .. } => {
+                format!("the result of `Array.{operation}` is discarded; the call works on a copy, so `{owner}` is not changed")
             }
             Self::DeadParameterAssignment { parameter } => {
                 format!("the value assigned to the `mut` parameter `{parameter}` is never read")

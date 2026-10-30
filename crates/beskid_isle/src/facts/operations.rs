@@ -48,12 +48,20 @@ pub enum CollectionMutationOwner {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CollectionOperation {
-    Append { owner: CollectionMutationOwner },
-    TryAppend { owner: CollectionMutationOwner },
+    Append {
+        owner: CollectionMutationOwner,
+    },
+    TryAppend {
+        owner: CollectionMutationOwner,
+    },
     UnprovenMutationOwner,
     Capacity,
     Clear,
-    RemoveLast,
+    /// `owner` receives the shortened array; `None` when the argument names no owner (the shrink
+    /// then always copies and only the result is shortened).
+    RemoveLast {
+        owner: Option<CollectionMutationOwner>,
+    },
 }
 
 /// Source-authoritative GC classification kept distinct from the physical pointer ABI.

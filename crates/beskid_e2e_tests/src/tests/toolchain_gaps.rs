@@ -144,3 +144,24 @@ fn mut_parameter_field_writes_reach_the_caller() {
 fn mut_array_parameter_growth_never_reaches_the_callers_array() {
     assert_runs("mut_array_parameter_growth", "MutArrayParameterGrowth.bproj");
 }
+
+/// Growing one handle to an array never changes what another handle sees (preview.10 showed the
+/// growth through a local copy, a field, a closure capture, a list element, a copied parameter, a
+/// returned field and an `Append` result, up to the old capacity); an array no other handle sees
+/// keeps growing in place.
+#[test]
+fn array_growth_never_reaches_another_handle() {
+    assert_runs("array_growth_aliasing", "ArrayGrowthAliasing.bproj");
+}
+
+/// Shrinking one handle to an array never changes what another handle sees (v0.6.7): a
+/// `RemoveLast` through a local copy, a field and a local, a closure capture, a list element or
+/// a nested array element, a parameter (plain, `mut`, or copied into a local), an array returned
+/// from a field and a `RemoveLast` result leaves the other handle's length and last element
+/// unchanged. A field lent to a free function whose callee reaches the holder through an element
+/// of an array argument is unchanged by a shrink or a growth inside the call. `Array.Clear` keeps
+/// the length; an array no other handle sees shrinks in place.
+#[test]
+fn array_shrink_never_reaches_another_handle() {
+    assert_runs("array_shrink_aliasing", "ArrayShrinkAliasing.bproj");
+}

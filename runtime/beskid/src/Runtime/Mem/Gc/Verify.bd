@@ -574,7 +574,7 @@ pub bool ClosureCheckObject(pointer heap, pointer object)
     }
     if (TypeDescriptorKind(descriptor) == TYPE_DESCRIPTOR_ARRAY_VERIFY)
     {
-        pointer element = NativePointer(raw_word_load(pointer_add(object, 16)));
+        pointer element = ArrayElementDescriptor(object);
         word stride = raw_word_load(element);
         pointer pointerMap = NativePointer(raw_word_load(pointer_add(element, 16)));
         word pointerCount = raw_word_load(pointer_add(element, 24));

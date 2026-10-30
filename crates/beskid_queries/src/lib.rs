@@ -70,7 +70,7 @@ pub use semantic_contract::{
     reserved_failure_constructor, serialization_publication_methods,
 };
 pub use semantic_contract::{
-    ValueCopyPosition, capture_copy_specialization, for_element_copy_specialization,
+    ValueCopyPosition, array_share, capture_copy_specialization, for_element_copy_specialization,
     pattern_binding_copy_specialization, value_copy_position, value_copy_specialization,
 };
 mod session;

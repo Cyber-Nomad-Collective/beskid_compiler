@@ -322,7 +322,7 @@ pub bool TransitWriteImage(pointer scratch, word index)
     mut word elementPointers = 0;
     if (kind == TYPE_DESCRIPTOR_ARRAY)
     {
-        pointer element = NativePointer(raw_word_load(pointer_add(object, 16)));
+        pointer element = ArrayElementDescriptor(object);
         length = raw_word_load(pointer_add(object, 32));
         stride = raw_word_load(element);
         elementMap = NativePointer(raw_word_load(pointer_add(element, 16)));
@@ -543,7 +543,7 @@ pub unit TransitStoreField(pointer field, word value)
 
 pub unit TransitDecodeArray(pointer slots, pointer image, pointer object)
 {
-    pointer element = NativePointer(raw_word_load(pointer_add(object, 16)));
+    pointer element = ArrayElementDescriptor(object);
     word stride = raw_word_load(element);
     pointer elementMap = NativePointer(raw_word_load(pointer_add(element, 16)));
     word elementPointers = raw_word_load(pointer_add(element, 24));

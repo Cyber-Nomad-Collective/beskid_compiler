@@ -87,7 +87,7 @@ pub pointer ManagedObjectForReference(pointer heap, pointer value)
         {
             return NativePointer(0);
         }
-        pointer element = NativePointer(raw_word_load(pointer_add(backing, 16)));
+        pointer element = ArrayElementDescriptor(backing);
         if (ValidateArrayElementDescriptor(element) == false || raw_word_load(element) != 1 || raw_word_load(pointer_add(element, 24)) != 0)
         {
             return NativePointer(0);
@@ -225,7 +225,7 @@ pub bool TraceObjectFields(pointer object, pointer descriptor)
 // offsets leave the element stride or on a length above the capacity.
 pub bool TraceArrayElements(pointer object, word first, word end)
 {
-    pointer element = NativePointer(raw_word_load(pointer_add(object, 16)));
+    pointer element = ArrayElementDescriptor(object);
     word stride = raw_word_load(element);
     pointer pointerMap = NativePointer(raw_word_load(pointer_add(element, 16)));
     word pointerCount = raw_word_load(pointer_add(element, 24));
@@ -364,7 +364,7 @@ pub word DrainLargeChunk(pointer heap, pointer entry, word base)
     mut word traced = 0;
     if (TypeDescriptorKind(descriptor) == TYPE_DESCRIPTOR_ARRAY)
     {
-        pointer element = NativePointer(raw_word_load(pointer_add(object, 16)));
+        pointer element = ArrayElementDescriptor(object);
         word stride = raw_word_load(element);
         if (stride == 0)
         {

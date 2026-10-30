@@ -328,85 +328,10 @@ pub fn collection_operation(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult
     };
     Ok(Some(match name.as_str() {
         "Append" | "TryAppend" => {
-            let arguments =
-                call_arguments(db, key)?.ok_or_else(|| SemanticError::unavailable("collection_operation"))?;
-            let array = *arguments.first().ok_or_else(|| SemanticError::unavailable("collection_operation"))?;
-            let call_syntax = db
-                .syntax_unit(key.unit)
-                .filter(|syntax| syntax.generation(db) == key.generation)
-                .ok_or_else(|| SemanticError::unavailable("collection_operation"))?;
-            let array =
-                AstNodeKey { node: normalized_expression_node(call_syntax.syntax_index(db), array.node), ..array };
-            let owner = if let Some(resolved) = resolved_local(db, array)? {
-                let syntax = db
-                    .syntax_unit(resolved.declaration.unit)
-                    .filter(|syntax| syntax.generation(db) == resolved.declaration.generation)
-                    .ok_or_else(|| SemanticError::unavailable("collection_operation"))?;
-                // A `let` local, mutable or not, owns the array it names: growth replaces the handle
-                // in its own slot. A `mut` parameter owns the caller's array (it shares it). Any
-                // other name (a parameter that is not `mut`, a loop or pattern variable) does not
-                // own the array: the call is an ordinary call of the Corelib `Append`, which copies
-                // into a fresh array (v0.6.7, no `move` outside isolate crossings).
-                let owns = with_node(db, syntax, resolved.declaration, |program, index, _| {
-                    Some(local_owns_its_array(program, index, resolved.declaration.node))
-                })?
-                .unwrap_or(false);
-                if !owns {
-                    return Ok(None);
-                }
-                let slot = local_slot(db, resolved.declaration)?
-                    .ok_or_else(|| SemanticError::unavailable("collection_operation"))?;
-                CollectionMutationOwner::Local(slot)
-            } else {
-                // Neither a local nor a field (a call result, an element): no owner to update, so
-                // the ordinary Corelib `Append` copies into a fresh array.
-                let Some(access) = aggregate_field_access(db, array)? else {
-                    return Ok(None);
-                };
-                // A dotted value path already names its declaration identifier; a member
-                // expression names the receiver expression, which must resolve lexically first.
-                // Keep the terminal receiver identity separate from the lexical root.
-                // Each intermediate projection is already proven by the canonical field query.
-                let mut current = access.receiver;
-                let mut root = None;
-                let mut method_receiver = None;
-                let mut seen = HashSet::new();
-                for _ in 0..128 {
-                    if current.generation != key.generation || !seen.insert(current) {
-                        return Err(SemanticError::unavailable("collection_operation.owner_cycle"));
-                    }
-                    if node_kind(db, current)? == Some(IndexedNodeKind::MethodDefinition) {
-                        method_receiver = Some(current);
-                        break;
-                    }
-                    if let Some(slot) = local_slot(db, current)? {
-                        root = Some(slot);
-                        break;
-                    }
-                    if let Some(resolved) = resolved_local(db, current)? {
-                        root = local_slot(db, resolved.declaration)?;
-                        break;
-                    }
-                    let projection = aggregate_field_access(db, current)?
-                        .ok_or_else(|| SemanticError::unavailable("collection_operation.owner_projection"))?;
-                    current = projection.receiver;
-                }
-                if let Some(method) = method_receiver {
-                    CollectionMutationOwner::ReceiverField {
-                        method,
-                        receiver: access.receiver,
-                        declaration: access.declaration,
-                        index: access.index,
-                    }
-                } else {
-                    let root = root.ok_or_else(|| SemanticError::unavailable("collection_operation.owner_root"))?;
-                    CollectionMutationOwner::AggregateField {
-                        root,
-                        receiver: access.receiver,
-                        declaration: access.declaration,
-                        index: access.index,
-                    }
-                }
+            // An array without a proven owner is an ordinary call of the Corelib `Append`, which
+            // copies into a fresh array.
+            let Some(owner) = array_mutation_owner(db, key)? else {
+                return Ok(None);
             };
             if name == "TryAppend" {
                 CollectionOperation::TryAppend { owner }
@@ -416,13 +341,101 @@ pub fn collection_operation(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult
         }
         "Capacity" => CollectionOperation::Capacity,
         "Clear" => CollectionOperation::Clear,
-        "RemoveLast" => CollectionOperation::RemoveLast,
+        // A shrink never changes another handle: lowering copies a shared array (or one it cannot
+        // publish back to an owner) before shortening it, so it needs the owner too.
+        "RemoveLast" => CollectionOperation::RemoveLast { owner: array_mutation_owner(db, key)? },
         _ => return Ok(None),
     }))
 }
 
 /// Whether the local `declaration` owns the array it names for in-place growth: a `let` local
 /// (mutable or not) or a `mut` parameter.
+/// The place a canonical array mutation (`Append`, `TryAppend`, `RemoveLast`) at `key` writes the
+/// resulting array back to: a `let` local, a `mut` parameter, or an aggregate field. `None` when
+/// the first argument names no owner (a parameter that is not `mut`, a loop or pattern variable, a
+/// call result, an element).
+fn array_mutation_owner(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<CollectionMutationOwner> {
+    let arguments = call_arguments(db, key)?.ok_or_else(|| SemanticError::unavailable("collection_operation"))?;
+    let array = *arguments.first().ok_or_else(|| SemanticError::unavailable("collection_operation"))?;
+    let call_syntax = db
+        .syntax_unit(key.unit)
+        .filter(|syntax| syntax.generation(db) == key.generation)
+        .ok_or_else(|| SemanticError::unavailable("collection_operation"))?;
+    let array = AstNodeKey { node: normalized_expression_node(call_syntax.syntax_index(db), array.node), ..array };
+    let owner = if let Some(resolved) = resolved_local(db, array)? {
+        let syntax = db
+            .syntax_unit(resolved.declaration.unit)
+            .filter(|syntax| syntax.generation(db) == resolved.declaration.generation)
+            .ok_or_else(|| SemanticError::unavailable("collection_operation"))?;
+        // A `let` local, mutable or not, owns the array it names: growth replaces the handle
+        // in its own slot. A `mut` parameter owns the caller's array (it shares it). Any
+        // other name (a parameter that is not `mut`, a loop or pattern variable) does not
+        // own the array: the call is an ordinary call of the Corelib `Append`, which copies
+        // into a fresh array (v0.6.7, no `move` outside isolate crossings).
+        let owns = with_node(db, syntax, resolved.declaration, |program, index, _| {
+            Some(local_owns_its_array(program, index, resolved.declaration.node))
+        })?
+        .unwrap_or(false);
+        if !owns {
+            return Ok(None);
+        }
+        let slot =
+            local_slot(db, resolved.declaration)?.ok_or_else(|| SemanticError::unavailable("collection_operation"))?;
+        CollectionMutationOwner::Local(slot)
+    } else {
+        // Neither a local nor a field (a call result, an element): no owner to update, so
+        // the ordinary Corelib `Append` copies into a fresh array.
+        let Some(access) = aggregate_field_access(db, array)? else {
+            return Ok(None);
+        };
+        // A dotted value path already names its declaration identifier; a member
+        // expression names the receiver expression, which must resolve lexically first.
+        // Keep the terminal receiver identity separate from the lexical root.
+        // Each intermediate projection is already proven by the canonical field query.
+        let mut current = access.receiver;
+        let mut root = None;
+        let mut method_receiver = None;
+        let mut seen = HashSet::new();
+        for _ in 0..128 {
+            if current.generation != key.generation || !seen.insert(current) {
+                return Err(SemanticError::unavailable("collection_operation.owner_cycle"));
+            }
+            if node_kind(db, current)? == Some(IndexedNodeKind::MethodDefinition) {
+                method_receiver = Some(current);
+                break;
+            }
+            if let Some(slot) = local_slot(db, current)? {
+                root = Some(slot);
+                break;
+            }
+            if let Some(resolved) = resolved_local(db, current)? {
+                root = local_slot(db, resolved.declaration)?;
+                break;
+            }
+            let projection = aggregate_field_access(db, current)?
+                .ok_or_else(|| SemanticError::unavailable("collection_operation.owner_projection"))?;
+            current = projection.receiver;
+        }
+        if let Some(method) = method_receiver {
+            CollectionMutationOwner::ReceiverField {
+                method,
+                receiver: access.receiver,
+                declaration: access.declaration,
+                index: access.index,
+            }
+        } else {
+            let root = root.ok_or_else(|| SemanticError::unavailable("collection_operation.owner_root"))?;
+            CollectionMutationOwner::AggregateField {
+                root,
+                receiver: access.receiver,
+                declaration: access.declaration,
+                index: access.index,
+            }
+        }
+    };
+    Ok(Some(owner))
+}
+
 fn local_owns_its_array(
     program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
     index: &beskid_analysis::syntax_query::SyntaxIndex,

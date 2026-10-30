@@ -1,0 +1,236 @@
+use Core.Collections.Array;
+use Core.Collections.List;
+use Core.Results;
+
+// Growing one handle to an array never changes what another handle sees: not its length, not
+// the elements written into spare capacity after the growth. An array that no other handle can
+// see keeps growing in place. Exit code 42 means every check passed; any other code names the
+// first failing check.
+
+type Holder
+{
+    i64[] items;
+}
+
+// One element in an array with spare capacity (capacity 4).
+i64[] Filled(i64 count)
+{
+    mut i64[] xs = Array.Empty<i64>();
+    mut i64 i = 0;
+    while (i < count)
+    {
+        Array.Append<i64>(xs, i);
+        i = i + 1;
+    }
+    return xs;
+}
+
+i64[] ItemsOf(Holder h)
+{
+    return h.items;
+}
+
+// Hands the caller's array back unchanged.
+i64[] Same(mut i64[] xs)
+{
+    return xs;
+}
+
+i64 GrowCopy(i64[] xs)
+{
+    mut i64[] local = xs;
+    Array.Append<i64>(local, 7);
+    return Array.Len<i64>(local);
+}
+
+i64[] GrowParameter(mut i64[] xs)
+{
+    Array.Append<i64>(xs, 7);
+    return xs;
+}
+
+i32 LocalCopy()
+{
+    mut i64[] xs = Filled(1);
+    mut i64[] ys = xs;
+    Array.Append<i64>(xs, 9);
+    if (Array.Len<i64>(ys) != 1 || Array.Len<i64>(xs) != 2)
+    {
+        return 10;
+    }
+    Array.Append<i64>(ys, 8);
+    if (xs[1] != 9 || ys[1] != 8)
+    {
+        return 11;
+    }
+    return 0;
+}
+
+// Both handles grow into the same spare slot, and a write after the growth stays with the grower.
+i32 SpareSlot()
+{
+    mut i64[] xs = Filled(1);
+    mut i64[] ys = xs;
+    Array.Append<i64>(xs, 5);
+    Array.Append<i64>(ys, 6);
+    if (xs[1] != 5 || ys[1] != 6)
+    {
+        return 20;
+    }
+    xs[0] = 3;
+    if (ys[0] != 0)
+    {
+        return 21;
+    }
+    return 0;
+}
+
+i32 FieldAndLocal()
+{
+    mut i64[] xs = Filled(1);
+    mut Holder h = Holder
+    {
+        items: xs,
+    };
+    Array.Append<i64>(h.items, 9);
+    if (Array.Len<i64>(xs) != 1 || Array.Len<i64>(h.items) != 2)
+    {
+        return 30;
+    }
+    Array.Append<i64>(xs, 8);
+    if (h.items[1] != 9 || Array.Len<i64>(h.items) != 2)
+    {
+        return 31;
+    }
+    return 0;
+}
+
+i32 Capture()
+{
+    mut i64[] xs = Filled(1);
+    i64[] snapshot = xs;
+    i64() count = () => Array.Len<i64>(snapshot);
+    Array.Append<i64>(xs, 9);
+    if (count() != 1)
+    {
+        return 40;
+    }
+    return 0;
+}
+
+i32 CollectionElement()
+{
+    mut i64[] xs = Filled(1);
+    mut List<i64[]> l = List.New<i64[]>();
+    l.Push(xs);
+    Array.Append<i64>(xs, 9);
+    i64 n = match (l.Get(0))
+    {
+        Result::Ok(back) => Array.Len<i64>(back),
+        _ => -1,
+    };
+    if (n != 1)
+    {
+        return 50;
+    }
+    mut i64[][] nested = Array.Empty<i64[]>();
+    Array.Append<i64[]>(nested, Filled(1));
+    mut i64[] inner = nested[0];
+    Array.Append<i64>(inner, 9);
+    if (Array.Len<i64>(nested[0]) != 1)
+    {
+        return 51;
+    }
+    return 0;
+}
+
+i32 ByValueParameter()
+{
+    i64[] xs = Filled(1);
+    if (GrowCopy(xs) != 2 || Array.Len<i64>(xs) != 1)
+    {
+        return 60;
+    }
+    i64[] grown = GrowParameter(xs);
+    if (Array.Len<i64>(grown) != 2 || Array.Len<i64>(xs) != 1)
+    {
+        return 61;
+    }
+    return 0;
+}
+
+i32 ReturnValue()
+{
+    mut Holder h = Holder
+    {
+        items: Filled(1),
+    };
+    mut i64[] r = ItemsOf(h);
+    Array.Append<i64>(h.items, 9);
+    if (Array.Len<i64>(r) != 1)
+    {
+        return 70;
+    }
+    Array.Append<i64>(r, 8);
+    if (h.items[1] != 9)
+    {
+        return 71;
+    }
+    mut i64[] xs = Filled(1);
+    mut i64[] same = Same(xs);
+    Array.Append<i64>(same, 9);
+    if (Array.Len<i64>(xs) != 1)
+    {
+        return 72;
+    }
+    mut i64[] appended = Array.Append<i64>(xs, 5);
+    Array.Append<i64>(xs, 6);
+    if (Array.Len<i64>(appended) != 2 || appended[1] != 5)
+    {
+        return 73;
+    }
+    return 0;
+}
+
+// An array no other handle sees grows in place: its capacity stays put while it has room.
+i32 InPlace()
+{
+    mut i64[] xs = Filled(1);
+    Array.Append<i64>(xs, 1);
+    xs = Array.Append<i64>(xs, 2);
+    Array.Append<i64>(xs, 3);
+    if (Array.Capacity<i64>(xs) != 4 || Array.Len<i64>(xs) != 4)
+    {
+        return 80;
+    }
+    mut Holder h = Holder
+    {
+        items: Array.Empty<i64>(),
+    };
+    mut i64 i = 0;
+    while (i < 4)
+    {
+        Array.Append<i64>(h.items, i);
+        i = i + 1;
+    }
+    if (Array.Capacity<i64>(h.items) != 4 || Array.Len<i64>(h.items) != 4)
+    {
+        return 81;
+    }
+    return 0;
+}
+
+i32 Main()
+{
+    i32[] codes = [LocalCopy(), SpareSlot(), FieldAndLocal(), Capture(), CollectionElement(), ByValueParameter(), ReturnValue(), InPlace()];
+    mut i64 i = 0;
+    while (i < Array.Len<i32>(codes))
+    {
+        if (codes[i] != 0)
+        {
+            return codes[i];
+        }
+        i = i + 1;
+    }
+    return 42;
+}

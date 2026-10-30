@@ -48,6 +48,11 @@ pub trait NodeFacts {
     fn value_copy(&self, _key: AstNodeKey) -> Option<ValueCopyPlan> {
         None
     }
+    /// Whether the place read or call at `key` makes a second handle to an existing array: the
+    /// lowered array is marked shared, so a later growth through any handle copies it.
+    fn array_share(&self, _key: AstNodeKey) -> bool {
+        false
+    }
     /// The `Copy` hook an array `for` loop calls on each element before binding its variable.
     fn for_element_copy(&self, _key: AstNodeKey) -> Option<ValueCopyPlan> {
         None

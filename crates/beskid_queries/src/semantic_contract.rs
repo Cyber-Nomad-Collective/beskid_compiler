@@ -101,9 +101,11 @@ use transfer::{
     has_recognized_attribute, marker_attributes, marker_bound_reason, never_transferable_cause,
     recognized_attribute_use, transfer_class,
 };
+mod array_share;
 mod typed_arrays;
 mod typing;
 mod value_copy;
+pub use array_share::array_share;
 pub use value_copy::{
     ValueCopyPosition, capture_copy_specialization, for_element_copy_specialization,
     pattern_binding_copy_specialization, value_copy_position, value_copy_specialization,

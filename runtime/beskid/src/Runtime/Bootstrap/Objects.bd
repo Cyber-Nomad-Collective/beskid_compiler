@@ -108,6 +108,17 @@ pub word TypeDescriptorArrayFlag()
     return TYPE_DESCRIPTOR_ARRAY;
 }
 
+// The element descriptor of the array object `object` (the hidden word at object + 16, just
+// before the public header). Bit 0 of that word is the array's sharing mark: generated code sets
+// it wherever a second handle to the array is made, and a growth of a marked array copies it
+// instead of growing in place, so growth never changes what another handle sees. Descriptors are
+// at least 8-byte aligned, so the mark never changes the descriptor; read it only through here.
+pub pointer ArrayElementDescriptor(pointer object)
+{
+    word stored = raw_word_load(pointer_add(object, 16));
+    return NativePointer(stored - (stored & 1));
+}
+
 pub bool ValidateArrayElementDescriptor(pointer descriptor)
 {
     if (descriptor == NativePointer(0))
@@ -169,7 +180,7 @@ pub word ManagedObjectSize(pointer object, pointer descriptor)
     {
         return 0;
     }
-    pointer element = NativePointer(raw_word_load(pointer_add(object, 16)));
+    pointer element = ArrayElementDescriptor(object);
     if (ValidateArrayElementDescriptor(element) == false)
     {
         return 0;

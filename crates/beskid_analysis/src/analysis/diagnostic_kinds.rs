@@ -395,11 +395,13 @@ pub enum SemanticIssueKind {
     DeadParameterAssignment {
         parameter: String,
     },
-    /// W1240: `Array.Append` used as a statement on an array its caller does not own (a parameter
-    /// that is not `mut`, a loop or pattern variable, a call result, an element). The call copies
-    /// the array and appends to the copy, so discarding the result changes nothing. `owner` is the
-    /// source text of the first argument and `call` the source text of the call.
+    /// W1240: `Array.Append` or `Array.RemoveLast` used as a statement on an array its caller does
+    /// not own (a parameter that is not `mut`, a loop or pattern variable, a call result, an
+    /// element). The call works on a copy of the array, so discarding the result changes nothing.
+    /// `operation` is `Append` or `RemoveLast`, `owner` the source text of the first argument and
+    /// `call` the source text of the call.
     DiscardedArrayGrowth {
+        operation: String,
         owner: String,
         call: String,
         repair: DiscardedGrowthRepair,
@@ -816,17 +818,18 @@ pub struct ImmutableBinding {
     pub mut_at: usize,
 }
 
-/// How a discarded `Array.Append` (W1240) is repaired.
+/// How a discarded `Array.Append` or `Array.RemoveLast` (W1240) is repaired.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum DiscardedGrowthRepair {
-    /// The first argument is a parameter that is not `mut`: declaring it `mut` makes the call grow
-    /// the caller's array in place. `insert_at` is the byte offset of the parameter declaration.
+    /// The first argument is a parameter that is not `mut`: declaring it `mut` makes the parameter
+    /// the owner, so the call changes the parameter (the caller's array never changes). `insert_at` is the byte offset of the parameter declaration.
     MutParameter { name: String, insert_at: usize },
     /// The first argument is an assignable name: assigning the result keeps the growth.
     /// `insert_at` is the byte offset of the call.
     Assign { name: String, insert_at: usize },
     /// No name to assign (a loop variable, a call result, an element): bind the result to a new
-    /// local. `declaration` is the written type when the call names its element type.
+    /// local (`grown` for `Append`, `shortened` for `RemoveLast`). `declaration` is the written
+    /// type when the call names its element type.
     Bind { declaration: Option<String>, insert_at: usize },
 }
 
@@ -981,4 +984,9 @@ mod query_gate_kind_tests {
             "composition is not available inside an isolate"
         );
     }
+}
+
+/// The name W1240 suggests for a new local that keeps the result of a discarded `operation`.
+pub fn discarded_result_local(operation: &str) -> &'static str {
+    if operation == "RemoveLast" { "shortened" } else { "grown" }
 }
