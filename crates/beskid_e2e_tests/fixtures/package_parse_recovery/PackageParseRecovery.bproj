@@ -1,0 +1,7 @@
+package_parse_recovery {
+  name = "package_parse_recovery"
+  version = "0.1.0"
+  root = "src"
+}
+
+target "PackageParseRecoveryLib" { kind = Lib }

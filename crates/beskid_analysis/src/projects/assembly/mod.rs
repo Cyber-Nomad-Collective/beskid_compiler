@@ -19,8 +19,8 @@ pub use discovery::{
 };
 pub(crate) use loader::assemble_program;
 pub use loader::{
-    AssemblyError, UnitMaterializer, assemble_program_with_materializer, assembly_options_for_plan,
-    assembly_options_for_prepare,
+    AssemblyError, MaterializedUnit, UnitMaterializer, UnitParse, assemble_program_with_materializer,
+    assembly_options_for_plan, assembly_options_for_prepare, parse_program_for_unit,
 };
 pub use module_index::{AssemblyModule, ModuleGraph, ModuleIndex, infer_logical_module_path};
 pub use roots::{
@@ -110,6 +110,10 @@ pub struct ProgramAssembly {
     pub root_set: AssemblyRootSet,
     pub discovery: AssemblyDiscovery,
     pub recovery_policy: crate::projects::AssemblyRecoveryPolicy,
+    /// Canonical paths of the units whose tree is the parser's repair of a source that does not
+    /// parse. Only an editor-policy assembly has any; its parse diagnostics are the editor's to
+    /// report (a strict assembly fails on the parse error instead).
+    pub recovered_units: Arc<[PathBuf]>,
     pub module_index: Arc<ModuleIndex>,
     pub has_core_dependency: bool,
     /// Physical units copied from compiler-owned Foundation sources by workspace materialization.
@@ -130,6 +134,7 @@ impl std::fmt::Debug for ProgramAssembly {
             .field("root_set", &self.root_set)
             .field("discovery", &self.discovery)
             .field("recovery_policy", &self.recovery_policy)
+            .field("recovered_units", &self.recovered_units)
             .field("has_core_dependency", &self.has_core_dependency)
             .field("trusted_corelib_service_paths", &self.trusted_corelib_service_paths.len())
             .field("glue_libraries", &self.glue_libraries)
@@ -161,6 +166,7 @@ impl ProgramAssembly {
             root_set: AssemblyRootSet::Entry,
             discovery,
             recovery_policy: crate::projects::AssemblyRecoveryPolicy::Strict,
+            recovered_units: Arc::from([]),
             module_index,
             has_core_dependency,
             trusted_corelib_service_paths: Arc::from([]),
@@ -199,6 +205,7 @@ impl ProgramAssembly {
         .with_root_set(self.root_set.clone());
         next.verified_package_identities = self.verified_package_identities.clone();
         next.compiled_mod_metadata = self.compiled_mod_metadata.clone();
+        next.recovered_units = Arc::clone(&self.recovered_units);
         next
     }
 
@@ -227,6 +234,7 @@ impl ProgramAssembly {
         .with_root_set(self.root_set.clone());
         next.verified_package_identities = self.verified_package_identities.clone();
         next.compiled_mod_metadata = self.compiled_mod_metadata.clone();
+        next.recovered_units = Arc::clone(&self.recovered_units);
         next
     }
 

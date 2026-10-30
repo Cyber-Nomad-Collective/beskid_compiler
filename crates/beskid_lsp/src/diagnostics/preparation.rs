@@ -180,6 +180,7 @@ pub(crate) fn prepare_project_syntax_facts(
         None,
     )?;
     let assembly = prepared.syntax_assembly();
+    let diagnostics = with_recovered_parse_diagnostics(&assembly, diagnostics);
     Ok(PreparedSyntaxFacts {
         diagnostics: entry_buffer_diagnostics(&assembly, diagnostics).map(syntax_diagnostic_from_semantic).collect(),
         assembly,
@@ -215,8 +216,10 @@ pub(crate) fn prepare_project_index(
         },
         None,
     )?;
+    let assembly = prepared.syntax_assembly();
+    let diagnostics = with_recovered_parse_diagnostics(&assembly, diagnostics);
     Ok(PreparedProjectIndex {
-        assembly: prepared.syntax_assembly(),
+        assembly,
         diagnostics: diagnostics
             .into_iter()
             .map(|diagnostic| (diagnostic.file_name().to_string(), syntax_diagnostic_from_semantic(diagnostic)))
@@ -250,11 +253,35 @@ pub(crate) fn prepare_project_diagnostics_from_assembled(
         None,
     )?;
     let assembly = prepared.syntax_assembly();
+    let diagnostics = with_recovered_parse_diagnostics(&assembly, diagnostics);
     Ok(PreparedSyntaxFacts {
         diagnostics: entry_buffer_diagnostics(&assembly, diagnostics).map(syntax_diagnostic_from_semantic).collect(),
         assembly,
         fixes,
     })
+}
+
+/// The parse diagnostics of the assembly's recovered units, then `diagnostics`. An editor assembly
+/// keeps the repaired tree of a source that does not parse, so completion and navigation still
+/// work; the parse error itself is published here, the same one `beskid check` reports. The
+/// recovery is remembered per source, so this parse does not run the recovery again.
+fn with_recovered_parse_diagnostics(
+    assembly: &ProgramAssembly,
+    diagnostics: Vec<SemanticDiagnostic>,
+) -> Vec<SemanticDiagnostic> {
+    let mut all = assembly
+        .units
+        .iter()
+        .filter(|unit| assembly.recovered_units.contains(&unit.path))
+        .flat_map(|unit| {
+            match services::parse_program_with_source_name_and_diagnostics(&unit.logical_name, &unit.source) {
+                Ok(parsed) => parsed.diagnostics,
+                Err(error) => services::structured_diagnostics(&error).unwrap_or_default(),
+            }
+        })
+        .collect::<Vec<_>>();
+    all.extend(diagnostics);
+    all
 }
 
 /// Keep only the diagnostics located in the entry buffer. The prepare spine also reports a

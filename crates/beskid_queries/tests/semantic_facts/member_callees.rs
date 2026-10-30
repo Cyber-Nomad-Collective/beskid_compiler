@@ -154,7 +154,7 @@ fn a_bound_member_called_on_a_generic_field_of_the_implicit_receiver_is_a_method
 #[test]
 fn a_function_typed_field_of_a_member_receiver_stays_a_function_value_call() {
     let source = format!(
-        "{PRELUDE}type Handler {{ (i64) => i64 op }} \
+        "{PRELUDE}type Handler {{ (i64) => i64 op; }} \
          Handler MakeHandler() {{ return Handler {{ op: (i64 x) => x + 1 }}; }} \
          i64 Run(Handler handler) {{ return MakeHandler().op(1) + (handler).op(2); }}"
     );

@@ -12,9 +12,9 @@ use super::super::module_index::{ModuleIndex, package_for_path};
 use super::super::roots::EffectiveCompilationRoots;
 use super::super::unit_builder::UnitBuilder;
 use super::super::unit_cache::{disk_cache_stats, ensure_manifest};
-use super::super::{AssemblyRootSet, ProgramAssembly, SourceUnit, own_unit_paths_under};
+use super::super::{AssemblyRootSet, ProgramAssembly, own_unit_paths_under};
 use super::discovery::{collect_bd_files, unit_progress_label};
-use super::options::{AssemblyError, UnitMaterializer};
+use super::options::{AssemblyError, MaterializedUnit, UnitMaterializer};
 use super::scanner::{
     import_paths_from_program, module_declaration_paths_from_program, module_paths_from_qualified_references,
     parent_module_import_path, parse_program_for_discovery,
@@ -26,7 +26,6 @@ use crate::projects::model::{
 };
 use crate::projects::{CompilePlan, PreparedProjectWorkspace};
 use crate::syntax::SyntaxGenerationId;
-use crate::syntax_query::SyntaxIndex;
 
 /// Build a [`ProgramAssembly`] for `entry_path` using effective roots and discovery options.
 ///
@@ -288,7 +287,7 @@ pub fn assemble_program_with_materializer(
     let build_total = build_inputs.len() as u64;
     let build_done = AtomicU64::new(0);
     let discovery_elapsed = assembly_started.elapsed();
-    let built_units: Result<Vec<(usize, bool, SourceUnit, SyntaxIndex)>, AssemblyError> = pool.install(|| {
+    let built_units: Result<Vec<(usize, bool, MaterializedUnit)>, AssemblyError> = pool.install(|| {
         build_inputs
             .par_iter()
             .enumerate()
@@ -305,14 +304,16 @@ pub fn assemble_program_with_materializer(
                 );
                 let _unit_guard = unit_span.enter();
 
-                let builder = UnitBuilder::new(&project_root_for_pool).with_shared_corelib(shared_corelib_root.clone());
+                let builder = UnitBuilder::new(&project_root_for_pool)
+                    .with_shared_corelib(shared_corelib_root.clone())
+                    .with_recovery_policy(options.recovery_policy);
                 let builder = if let Some(build) = salsa_build { builder.with_salsa_build(build) } else { builder };
                 let label = unit_progress_label(&input.path);
-                let result = match builder.build_unit(&input.path, &input.source, generation) {
-                    Ok((unit, syntax_index)) => {
+                let result = match builder.build_assembly_unit(&input.path, &input.source, generation) {
+                    Ok(built) => {
                         let done = build_done.fetch_add(1, Ordering::Relaxed) + 1;
                         report_progress(pipeline, PROGRAM_ASSEMBLE, done, build_total.max(1), label);
-                        Ok((discovered_index, input.is_entry, unit, syntax_index))
+                        Ok((discovered_index, input.is_entry, built))
                     }
                     Err(AssemblyError::ParseDiagnostic { path, report })
                         if options.skip_parse_errors && !input.is_entry =>
@@ -345,13 +346,17 @@ pub fn assemble_program_with_materializer(
         build_units_ms = (assembly_started.elapsed() - discovery_elapsed).as_millis() as u64,
         "assembly timing"
     );
-    built_units.sort_by_key(|(index, _, _, _)| *index);
+    built_units.sort_by_key(|(index, _, _)| *index);
     let mut units = Vec::with_capacity(built_units.len());
     let mut syntax_indexes = Vec::with_capacity(built_units.len());
+    let mut recovered_units = Vec::new();
     let mut entry_position = None;
-    for (_, is_entry, unit, syntax_index) in built_units {
+    for (_, is_entry, MaterializedUnit { unit, syntax_index, recovered }) in built_units {
         if is_entry {
             entry_position = Some(units.len());
+        }
+        if recovered {
+            recovered_units.push(unit.path.clone());
         }
         units.push(unit);
         syntax_indexes.push(syntax_index);
@@ -421,6 +426,7 @@ pub fn assemble_program_with_materializer(
             root_set,
             discovery: options.discovery,
             recovery_policy: options.recovery_policy,
+            recovered_units: Arc::from(recovered_units),
             module_index,
             has_core_dependency: plan.has_core_dependency,
             trusted_corelib_service_paths,

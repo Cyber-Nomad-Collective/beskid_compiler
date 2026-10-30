@@ -1,0 +1,5 @@
+pub type Span
+{
+    pub i64 start;
+    pub i64 end;
+}
