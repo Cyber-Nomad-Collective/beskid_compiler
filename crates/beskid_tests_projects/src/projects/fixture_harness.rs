@@ -262,13 +262,15 @@ mod tests {
         assert!(errors.is_empty(), "{suite} must pass the production semantic gate: {errors:#?}");
     }
 
-    /// Byte range of one topic section (`// ---- <heading> ----`) in a merged `corelib_tests` suite entry.
-    fn suite_section(source: &str, heading: &str) -> std::ops::Range<usize> {
-        let marker = format!("// ---- {heading} ----\n");
-        let start = source.find(&marker).unwrap_or_else(|| panic!("suite has no section `{heading}`"));
-        let end = source[start + marker.len()..]
-            .find("\n// ---- ")
-            .map_or(source.len(), |offset| start + marker.len() + offset);
+    /// Byte range of one file-level topic module (`mod <name>` up to the next file-level `mod`) in a
+    /// `corelib_tests` suite entry.
+    fn suite_module(source: &str, name: &str) -> std::ops::Range<usize> {
+        let marker = format!("\nmod {name}\n{{");
+        let start =
+            source.find(&marker).map(|offset| offset + 1).unwrap_or_else(|| panic!("suite has no module `{name}`"));
+        let end = source[start + marker.len() - 1..]
+            .find("\nmod ")
+            .map_or(source.len(), |offset| start + marker.len() - 1 + offset);
         start..end
     }
 
@@ -301,7 +303,7 @@ mod tests {
                 dependency_locals.is_empty(),
                 "dependency declaration resolution must not retain body locals: {dependency_locals:?}"
             );
-            let section = suite_section(&resolved.source, "Text Parser");
+            let section = suite_module(&resolved.source, "ParserTests");
             let parser_targets = resolution
                 .tables
                 .resolved_values
@@ -320,9 +322,9 @@ mod tests {
                     Some((expected_name, target))
                 })
                 .collect::<Vec<_>>();
-            assert_eq!(parser_targets.iter().filter(|(name, _)| *name == "Literal").count(), 3);
-            assert_eq!(parser_targets.iter().filter(|(name, _)| *name == "IsOk").count(), 4);
-            assert_eq!(parser_targets.iter().filter(|(name, _)| *name == "Choice2").count(), 1);
+            assert_eq!(parser_targets.iter().filter(|(name, _)| *name == "Literal").count(), 6);
+            assert_eq!(parser_targets.iter().filter(|(name, _)| *name == "IsOk").count(), 7);
+            assert_eq!(parser_targets.iter().filter(|(name, _)| *name == "Choice2").count(), 2);
             assert!(
                 parser_targets.iter().all(|(name, target)| target.ends_with(&format!("::Core::Text::Parser::{name}"))),
                 "Parser calls resolved to {parser_targets:?}"
@@ -401,7 +403,7 @@ mod tests {
             let resolved = resolve_corelib_tests_entry_with_assembly("query/QuerySuite.bd");
             let assembly = resolved.assembly.as_ref().expect("query assembly");
             let resolution = resolve_entry(assembly);
-            let section = suite_section(&resolved.source, "Query");
+            let section = suite_module(&resolved.source, "ArrayIteratorTests");
             let current_targets = resolution
                 .tables
                 .resolved_values

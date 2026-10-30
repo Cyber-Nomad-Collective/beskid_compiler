@@ -21,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The Corelib gitlink moves to the s8b test cleanup: every Corelib test sits in a topic module (`mod TopicTests { ... }`) and its identity is `TopicTests::Name`; the domain prefix that the module names is gone from the test name; the remaining one-test package targets merged. Compiler tests that select Corelib tests by name use the new ids (`ControlsTests::RepeatBuildsString` and the progress-bar tests in `corelib_repeat_jit`, `EnvTests::GetEmptyNameReturnsInvalidNameError`/`SetEmptyNameReturnsInvalidNameError`, `AnsiTests::CursorBuilderHome`/`CsiBoldRed`, the `SyscallTests` write tests); `mutex_local_path` finds `TryLockIsExclusiveUntilUnlock` inside `MutexTests`.
 - The parse-tree golden is re-blessed for the moved and merged Corelib test files (this also covers the S8 merges of x509, connect, crypto and corelib_tests files).
 - `scripts/diagnose/v053-alloc-gates.sh` runs quic `QuicConnection`, which absorbed `QuicCreditLoss`.
+- The `beskid_tests_projects` fixture-harness tests find a suite area by its topic module (`ParserTests`, `ArrayIteratorTests`) instead of the removed `// ---- <heading> ----` banners; `ParserTests` holds the former Parser and Parser Combinator sections, so it checks 6 `Parser.Literal`, 7 `Parser.IsOk` and 2 `Parser.Choice2` calls.
+- `corelib_checkout_locks_v06` is removed: it required a committed `Project.lock` for every Corelib Mod, and the Corelib no longer commits generated lock files (they are ignored, so a build that writes one leaves the tracked tree unchanged).
 
 ### Qualified test selection
 
