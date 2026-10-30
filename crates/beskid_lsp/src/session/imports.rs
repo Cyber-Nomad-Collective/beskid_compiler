@@ -64,10 +64,30 @@ pub(crate) fn completion_repaired_text(text: &str) -> Option<(String, Vec<usize>
     (!offsets.is_empty()).then(|| (String::from_utf8(repaired).expect("ASCII written over ASCII whitespace"), offsets))
 }
 
+/// Source name of the completion-buffer parses; [`RecoverableCompletionSyntax::parse`] and
+/// [`RecoverableCompletionSyntax::parse_without_recovery`] share it so the recovery the document
+/// analysis ran for a text is remembered for the request on that text.
+const SOURCE_NAME: &str = "completion buffer";
+
 impl RecoverableCompletionSyntax {
+    /// The facts of `text`, recovering a buffer that does not parse. Document analysis only:
+    /// recovery of a large buffer costs seconds.
     pub(crate) fn parse(text: &str) -> Option<Self> {
-        let parse =
-            |text: &str| beskid_analysis::services::parse_program_with_source_name("completion buffer", text).ok();
+        Self::parse_with(text, |text| beskid_analysis::services::parse_program_with_source_name(SOURCE_NAME, text).ok())
+    }
+
+    /// The facts of `text` without starting a recovery: a buffer that does not parse answers
+    /// only when the document analysis already recovered that exact text. For request paths.
+    pub(crate) fn parse_without_recovery(text: &str) -> Option<Self> {
+        Self::parse_with(text, |text| {
+            beskid_analysis::services::parse_program_without_recovery(SOURCE_NAME, text).map(|parsed| parsed.program)
+        })
+    }
+
+    fn parse_with(
+        text: &str,
+        parse: impl Fn(&str) -> Option<beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>>,
+    ) -> Option<Self> {
         let program =
             completion_repaired_text(text).and_then(|(repaired, _)| parse(&repaired)).or_else(|| parse(text))?;
         let imported_bindings = program
@@ -146,6 +166,15 @@ mod tests {
         assert!(syntax.imports("String", &["Core".into(), "String".into()]));
         let receiver = text.find("String.\n").unwrap();
         assert!(syntax.contains_member_access(receiver, receiver + "String.".len()));
+    }
+
+    #[test]
+    fn the_request_parse_never_recovers() {
+        let broken = "use Core.String;\ni32 Main() {\n    String.\n    let = ;\n}\n";
+        assert!(RecoverableCompletionSyntax::parse_without_recovery(broken).is_none());
+        let text = "use Core.String;\ni32 Main() {\n    String.\n    return 0;\n}\n";
+        let syntax = RecoverableCompletionSyntax::parse_without_recovery(text).expect("the repaired buffer parses");
+        assert!(syntax.imports("String", &["Core".into(), "String".into()]));
     }
 
     #[test]

@@ -205,6 +205,11 @@ impl DiagnosticsPublisher {
     }
 }
 
+/// An empty completion list the client must request again (the answer ran past its limit).
+fn incomplete_completion() -> CompletionResponse {
+    CompletionResponse::List(CompletionList { is_incomplete: true, items: Vec::new() })
+}
+
 fn observe_text_sync_for_tests(method: &'static str, params: &impl serde::Serialize) {
     let params = serde_json::to_value(params).expect("text sync parameters serialize");
     let request = tower_lsp_server::jsonrpc::Request::build(method).params(params).finish();
@@ -392,18 +397,35 @@ impl LanguageServer for Backend {
             })
         });
         // A database query that runs long (a large module's members) is cancelled and the owned
-        // facts answer; the cancelled query releases its handle on the project's storage.
-        let outcome = match owned_document {
-            Some(owned) => match tokio::time::timeout(COMPLETION_QUERY_LIMIT, query).await {
-                Ok(outcome) => outcome,
-                Err(_) => {
-                    if let Some(cancel) = cancel {
-                        cancel.cancel();
-                    }
-                    return Ok(Some(completion::handler::handle_completion(None, &uri, &owned, offset)));
+        // facts answer; the cancelled query releases its handle on the project's storage. The
+        // owned-facts answer runs on a blocking thread too, never inline on the async worker, and
+        // has the same limit; past it (and past the limit of a request without a database) the
+        // answer is an empty incomplete list, so the client asks again on the next keystroke.
+        let outcome = match tokio::time::timeout(COMPLETION_QUERY_LIMIT, query).await {
+            Ok(outcome) => outcome,
+            Err(_) => {
+                if let Some(cancel) = cancel {
+                    cancel.cancel();
                 }
-            },
-            None => query.await,
+                let Some(owned) = owned_document else {
+                    tracing::debug!(uri = uri.as_str(), "completion without a database exceeded its limit");
+                    return Ok(Some(incomplete_completion()));
+                };
+                let fallback = tokio::task::spawn_blocking(move || {
+                    crate::crash::run_blocking_recorded(|| {
+                        completion::handler::handle_completion(None, &uri, &owned, offset)
+                    })
+                });
+                return match tokio::time::timeout(COMPLETION_QUERY_LIMIT, fallback).await {
+                    // Re-raise a worker panic on the request task so the service-level guard reports it.
+                    Ok(Ok(response)) => Ok(Some(response.unwrap_or_else(|panic| panic.resume()))),
+                    Ok(Err(error)) => {
+                        tracing::error!(%error, "owned-facts completion task failed");
+                        Err(tower_lsp_server::jsonrpc::Error::internal_error())
+                    }
+                    Err(_) => Ok(Some(incomplete_completion())),
+                };
+            }
         };
         let response = outcome
             .map_err(|error| {

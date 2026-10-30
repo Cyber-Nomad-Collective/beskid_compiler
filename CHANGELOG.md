@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Language server completion latency
+
+- Completion in a large file answers in milliseconds after a `,`. Attribute completion parsed the whole buffer with a placeholder after any `,` (a struct-literal field, an enum variant, an argument) and started a whole-file parse recovery when that buffer did not parse: 4-7 s in an 86 KB file and 18 s in a 141 KB file. It now runs only when a bounded backward scan (4096 bytes, balanced `( )` groups) finds an unclosed `[` before the cursor, and it parses without recovery. The imported-member completion (`Tools.`) parses without recovery too and reuses the recovery the document analysis already ran for that text, so no completion request starts a recovery.
+- A completion without its project's database has the same 1 s limit as one with it, and the owned-facts answer after a database timeout runs on a blocking thread instead of the async worker. Past the limit the answer is an empty incomplete list, so the editor asks again.
+- The stability-proof soak judges memory growth from the end of the initial index: the baseline is the median of the first three windows after the index and the final value the median of the last three (windows of at most 60 s, each the median of its samples). It compared the means of two single 60 s windows, so one burst of analyses at either end moved the verdict. The limit stays 20%.
+
 ### Test cleanup
 
 - The compiler tree no longer carries dead test weight: the empty `beskid_tests_abi` crate, the v0.2 `meta_manifest` project fixtures, the unused `pest_gen_mod` fixture, seven glue C/JSON files no gate runs, tracked `obj/` caches and the generated `Project.lock` files of the e2e and Mod fixtures (about 1,900 files) are removed, and `.gitignore` keeps fixture `obj/` and `Project.lock` out of the tree. The vendored Salsa is excluded from the workspace, so `cargo test --workspace` no longer runs its test suite. The duplicate Corelib parse-tree golden, a measurement inside a unit test, a stale ignored Corelib diagnostics test and three silent skip guards are gone; the lockfile replay test reads the Corelib `Core.String` sources instead of a stale snapshot.
