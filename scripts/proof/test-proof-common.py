@@ -19,6 +19,9 @@ class Classify(unittest.TestCase):
 
     def test_clean_output_has_no_signature(self):
         self.assertEqual(common.classify("error[E1101]: unknown name `x`", 1, False, self.patterns), [])
+        quoted = "  × expected a name\n   ╭─[Main.bd:3:7]\n 2 │ // not an internal compiler error.\n 3 │ const = X 1;\n"
+        self.assertEqual(common.classify(quoted, 1, False, self.patterns), [], "quoted source is not a signature")
+        self.assertIn("internal compiler error", common.classify("internal compiler error: x", 1, False, self.patterns))
 
     def test_internal_codes_and_texts_are_found(self):
         self.assertIn("E21xx internal diagnostic", common.classify("error[E2101]: semantic fact unavailable", 1, False, self.patterns))

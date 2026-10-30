@@ -43,9 +43,20 @@ def ice_patterns(extra=()):
     return [(name, re.compile(regex)) for name, regex in patterns]
 
 
+# A diagnostic's source frame quotes the user's code (`  3 │ // ... internal compiler error`), so a
+# signature is matched only against the tool's own lines, never against quoted source lines.
+_SOURCE_FRAME_LINE = re.compile(r"^\s*\d+\s*│")
+
+
+def tool_text(output: str) -> str:
+    """The output without the source lines that diagnostics quote."""
+    return "\n".join(line for line in output.splitlines() if not _SOURCE_FRAME_LINE.match(line))
+
+
 def classify(output: str, returncode: int | None, timed_out: bool, patterns) -> list[str]:
     """Return the failure signatures for one command result (empty list means no internal error)."""
     found = []
+    output = tool_text(output)
     if timed_out:
         found.append("timeout")
     if returncode is not None and returncode < 0:
