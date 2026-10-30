@@ -82,7 +82,7 @@ pub fn effective_roots_from_lockfile_checked(
         Ok(_) => {}
     }
     let entries = load_project_lock_dependencies_for_plan(lockfile_path, plan)?;
-    let shared_corelib = SharedCorelib::resolve();
+    let shared_corelib = SharedCorelib::at(plan.corelib_root.as_deref());
     verify_shared_corelib_for_lock(&entries, shared_corelib.as_ref())?;
     let trusted_dependencies_root = plan.project_root.join("obj/beskid/deps/src").canonicalize().ok();
     let Some(replayed_dependencies) = replayed_dependency_roots(

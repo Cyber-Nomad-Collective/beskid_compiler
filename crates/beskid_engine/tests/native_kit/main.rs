@@ -9,8 +9,8 @@
 //! `external_wait_native`), or that release scripts call by binary name (`foundation_io_native`,
 //! `native_runtime_kit_smoke`), stay separate binaries.
 
-#[path = "../support/runtime_prefix.rs"]
-mod runtime_prefix;
+#[path = "../support/explicit_kit.rs"]
+mod explicit_kit;
 #[path = "../support/shared_kit.rs"]
 mod shared_kit;
 

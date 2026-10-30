@@ -64,4 +64,6 @@ pub struct ProjectGraph {
     pub root_manifest: ProjectManifest,
     pub node_by_manifest: HashMap<PathBuf, NodeIndex>,
     pub has_core_dependency: bool,
+    /// Corelib install root the graph was resolved against ([`super::ProjectGraphBuildOptions`]).
+    pub corelib_root: Option<PathBuf>,
 }

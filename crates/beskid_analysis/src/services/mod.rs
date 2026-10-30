@@ -22,8 +22,6 @@ mod session;
 #[cfg(test)]
 mod session_tests;
 mod synthetic_plan;
-#[cfg(test)]
-mod test_support;
 
 pub use analyze::{compile_plan_for_input_path, compile_plan_for_input_path_with_member, reserved_keyword_diagnostic};
 pub use composition::{

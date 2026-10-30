@@ -1,50 +1,12 @@
 //! Execution proof for a runtime kit published by the production native-host builder.
 
 use std::path::Path;
-use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use beskid_abi::runtime_kit::BuildProfile;
 use beskid_analysis::services::{FrontEndOptions, resolved_input_from_plan, synthetic_compile_plan_for_source};
 use beskid_engine::services::run_entrypoint_from_front_end_with_engine;
 use beskid_engine::{Engine, host_runtime_target};
 use beskid_tools::toolchain::runtime_kit::{RuntimeKitProfile, build_native_host};
-
-/// Serializes every read and write of the process-global runtime-kit environment in this binary.
-static RUNTIME_ENVIRONMENT: Mutex<()> = Mutex::new(());
-
-fn runtime_environment() -> MutexGuard<'static, ()> {
-    RUNTIME_ENVIRONMENT.lock().unwrap_or_else(PoisonError::into_inner)
-}
-
-struct EnvironmentVariableGuard {
-    key: &'static str,
-    previous: Option<std::ffi::OsString>,
-    _environment: MutexGuard<'static, ()>,
-}
-
-impl EnvironmentVariableGuard {
-    fn set(key: &'static str, value: &Path) -> Self {
-        let environment = runtime_environment();
-        let previous = std::env::var_os(key);
-        // SAFETY: every environment access in this binary holds `RUNTIME_ENVIRONMENT`, and Drop
-        // restores the process environment before the lock is released.
-        unsafe { std::env::set_var(key, value) };
-        Self { key, previous, _environment: environment }
-    }
-}
-
-impl Drop for EnvironmentVariableGuard {
-    fn drop(&mut self) {
-        // SAFETY: restores the exact pre-test state established by `EnvironmentVariableGuard::set`.
-        unsafe {
-            if let Some(value) = &self.previous {
-                std::env::set_var(self.key, value);
-            } else {
-                std::env::remove_var(self.key);
-            }
-        }
-    }
-}
 
 #[test]
 fn fresh_native_runtime_kit_executes_a_canonical_entrypoint() {
@@ -104,9 +66,12 @@ fn public_run_entrypoint_uses_the_syntax_isle_path() {
     let prefix = tempfile::tempdir().expect("fresh runtime-kit prefix");
     build_native_host(prefix.path().to_path_buf(), RuntimeKitProfile::Debug)
         .expect("publish canonical native runtime kit");
-    let _runtime_prefix = EnvironmentVariableGuard::set("BESKID_RUNTIME_PREFIX", prefix.path());
+    let target = host_runtime_target().expect("supported native host target");
+    let mut engine =
+        Engine::with_runtime_kit(prefix.path(), target, BuildProfile::Debug).expect("load the exact fresh runtime kit");
 
-    let output = beskid_engine::services::run_entrypoint(
+    let output = beskid_engine::services::run_entrypoint_with_engine(
+        &mut engine,
         Path::new("public-syntax-entrypoint.bd"),
         "i64 Main() { return 41 + 1; }",
         "Main",
@@ -118,7 +83,6 @@ fn public_run_entrypoint_uses_the_syntax_isle_path() {
 
 #[test]
 fn staged_runtime_kit_executes_a_canonical_entrypoint() {
-    let _environment = runtime_environment();
     let prefix = std::env::var_os("BESKID_RUNTIME_PREFIX")
         .map(std::path::PathBuf::from)
         .expect("native runtime-kit evidence must set BESKID_RUNTIME_PREFIX");

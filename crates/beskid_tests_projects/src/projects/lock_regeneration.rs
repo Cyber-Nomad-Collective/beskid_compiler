@@ -13,8 +13,6 @@ use beskid_analysis::projects::{
 };
 use beskid_tests_support::{temp_case_dir, write_project_manifest as write_manifest};
 
-use super::test_cwd::with_cwd_at_workspace_root;
-
 fn write_project(dir: &Path, name: &str) -> PathBuf {
     fs::create_dir_all(dir.join("Src")).expect("source directory");
     fs::write(dir.join("Src/Main.bd"), "Fn Main() { }\n").expect("source");
@@ -26,11 +24,9 @@ fn write_project(dir: &Path, name: &str) -> PathBuf {
     )
 }
 
-fn prepare(root: &Path, manifest: &Path, options: WorkspacePrepareOptions) -> Result<(), ProjectError> {
-    with_cwd_at_workspace_root(root, || {
-        let plan = build_compile_plan(manifest, None)?;
-        prepare_project_workspace_with_options(&plan, options, None).map(|_| ())
-    })
+fn prepare(manifest: &Path, options: WorkspacePrepareOptions) -> Result<(), ProjectError> {
+    let plan = build_compile_plan(manifest, None)?;
+    prepare_project_workspace_with_options(&plan, options, None).map(|_| ())
 }
 
 fn lock(dir: &Path) -> String {
@@ -42,7 +38,7 @@ fn copied_project() -> (PathBuf, PathBuf, PathBuf, PathBuf, String) {
     let root = temp_case_dir("lock_regeneration_copy");
     let first = root.join("intro1");
     let first_manifest = write_project(&first, "intro1");
-    prepare(&root, &first_manifest, WorkspacePrepareOptions::default()).expect("first project lock");
+    prepare(&first_manifest, WorkspacePrepareOptions::default()).expect("first project lock");
     let first_lock = lock(&first);
     let second = root.join("intro2");
     let second_manifest = write_project(&second, "intro2");
@@ -52,11 +48,11 @@ fn copied_project() -> (PathBuf, PathBuf, PathBuf, PathBuf, String) {
 
 #[test]
 fn pin_free_lock_of_a_copied_project_is_regenerated() {
-    let _env = super::core_dependency_env_lock();
-    let (root, _first, second, second_manifest, first_lock) = copied_project();
+    beskid_tests_mod_host::configure_shared_corelib().expect("shared Corelib");
+    let (_root, _first, second, second_manifest, first_lock) = copied_project();
     assert!(first_lock.contains("project_name=intro1"), "{first_lock}");
 
-    prepare(&root, &second_manifest, WorkspacePrepareOptions::default()).expect("copied pin-free lock regenerates");
+    prepare(&second_manifest, WorkspacePrepareOptions::default()).expect("copied pin-free lock regenerates");
 
     let regenerated = lock(&second);
     assert!(regenerated.contains("project_name=intro2"), "{regenerated}");
@@ -67,9 +63,9 @@ fn pin_free_lock_of_a_copied_project_is_regenerated() {
 /// copied lock that pins only Corelib is not an error, it is read as absent until regenerated.
 #[test]
 fn readers_do_not_report_a_copied_pin_free_lock() {
-    let _env = super::core_dependency_env_lock();
-    let (root, _first, second, second_manifest, first_lock) = copied_project();
-    with_cwd_at_workspace_root(&root, || {
+    beskid_tests_mod_host::configure_shared_corelib().expect("shared Corelib");
+    let (_root, _first, second, second_manifest, first_lock) = copied_project();
+    {
         let plan = build_compile_plan(&second_manifest, None).expect("plan");
         let lock_path = second.join(PROJECT_LOCK_FILE_NAME);
         let entries = beskid_analysis::projects::load_project_lock_dependencies_for_plan(&lock_path, &plan)
@@ -77,19 +73,19 @@ fn readers_do_not_report_a_copied_pin_free_lock() {
         assert!(entries.is_empty(), "{entries:?}");
         beskid_analysis::projects::effective_roots_from_lockfile_checked(&plan, &lock_path)
             .expect("lock replay falls back to the declared roots");
-    });
+    };
     assert_eq!(lock(&second), first_lock, "readers never rewrite a lock");
 }
 
 #[test]
 fn locked_and_frozen_runs_never_rewrite_a_foreign_lock() {
-    let _env = super::core_dependency_env_lock();
-    let (root, _first, second, second_manifest, first_lock) = copied_project();
+    beskid_tests_mod_host::configure_shared_corelib().expect("shared Corelib");
+    let (_root, _first, second, second_manifest, first_lock) = copied_project();
     for options in [
         WorkspacePrepareOptions { locked: true, ..Default::default() },
         WorkspacePrepareOptions { frozen: true, locked: true, offline: true, ..Default::default() },
     ] {
-        let error = prepare(&root, &second_manifest, options).expect_err("a locked run must keep the foreign lock");
+        let error = prepare(&second_manifest, options).expect_err("a locked run must keep the foreign lock");
         assert!(error.to_string().contains("different project"), "unexpected error: {error}");
         assert_eq!(lock(&second), first_lock, "a locked run rewrote the lock");
     }
@@ -101,7 +97,7 @@ fn locked_and_frozen_runs_never_rewrite_a_foreign_lock() {
 /// it, the next preparation writes format 3.
 #[test]
 fn lock_in_an_unsupported_format_fails_closed_until_deleted() {
-    let _env = super::core_dependency_env_lock();
+    beskid_tests_mod_host::configure_shared_corelib().expect("shared Corelib");
     let root = temp_case_dir("lock_regeneration_unsupported");
     let project = root.join("app");
     let manifest = write_project(&project, "app");
@@ -117,7 +113,7 @@ fn lock_in_an_unsupported_format_fails_closed_until_deleted() {
         let old = format!("{header}\n{corelib_only}");
         fs::write(project.join(PROJECT_LOCK_FILE_NAME), &old).expect("old lock");
         for options in modes {
-            let error = prepare(&root, &manifest, options).expect_err("an unsupported lock must be refused");
+            let error = prepare(&manifest, options).expect_err("an unsupported lock must be refused");
             assert!(
                 matches!(&error, ProjectError::LockfileFormatUnsupported { path } if path.ends_with(PROJECT_LOCK_FILE_NAME)),
                 "{header} {options:?}: unexpected error: {error:?}"
@@ -131,6 +127,6 @@ fn lock_in_an_unsupported_format_fails_closed_until_deleted() {
     }
 
     fs::remove_file(project.join(PROJECT_LOCK_FILE_NAME)).expect("delete the old lock");
-    prepare(&root, &manifest, WorkspacePrepareOptions::default()).expect("a deleted lock is written again");
+    prepare(&manifest, WorkspacePrepareOptions::default()).expect("a deleted lock is written again");
     assert!(lock(&project).starts_with("# Project.lock v3\n"), "{}", lock(&project));
 }

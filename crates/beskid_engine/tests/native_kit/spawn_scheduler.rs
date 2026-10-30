@@ -2,9 +2,9 @@ use crate::shared_kit;
 
 use std::path::Path;
 
-use crate::runtime_prefix::RuntimePrefixContext;
+use crate::explicit_kit::run_entrypoint_with_kit;
 use beskid_abi::runtime_kit::BuildProfile;
-use beskid_engine::services::{prepare_jit_entrypoint, run_entrypoint};
+use beskid_engine::services::prepare_jit_entrypoint;
 use beskid_engine::{Engine, host_runtime_target};
 
 #[test]
@@ -29,10 +29,10 @@ fn jit_runs_zero_capture_lambda_spawn_under_fiber_scheduler() {
 fn jit_child_value_returns_42() {
     let kit_lease = shared_kit::debug();
     let prefix = kit_lease.prefix();
-    let _runtime_prefix = RuntimePrefixContext::install(prefix);
 
     let source = "i64 child_value() { return 42; } i64 Main() { return child_value(); }";
-    let output = run_entrypoint(Path::new("child_value.bd"), source, "Main", &beskid_engine::ModHost::NoMods)
-        .expect("main should run");
+    let output =
+        run_entrypoint_with_kit(prefix, Path::new("child_value.bd"), source, "Main", &beskid_engine::ModHost::NoMods)
+            .expect("main should run");
     assert_eq!(output, "42", "expected child_value return to round-trip through JIT");
 }

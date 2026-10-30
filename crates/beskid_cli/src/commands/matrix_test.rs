@@ -725,8 +725,13 @@ fn present_report(args: &TestArgs, report: &MatrixReport) -> Result<()> {
 }
 
 fn filter_targets_by_env(targets: Vec<String>) -> Result<(Vec<String>, bool)> {
-    let raw = env::var("BESKID_CORELIB_TEST_TARGETS").unwrap_or_default();
-    let raw = raw.trim();
+    filter_targets(targets, &env::var("BESKID_CORELIB_TEST_TARGETS").unwrap_or_default())
+}
+
+/// Keep the targets named in `filter` (a `BESKID_CORELIB_TEST_TARGETS` value: comma-separated
+/// names); an empty filter keeps every target. The flag says whether a filter applied.
+fn filter_targets(targets: Vec<String>, filter: &str) -> Result<(Vec<String>, bool)> {
+    let raw = filter.trim();
     if raw.is_empty() {
         return Ok((targets, false));
     }
@@ -752,16 +757,15 @@ mod tests {
 
     use super::{
         ActiveTarget, CancelChannel, ShardState, TestArgs, WORKER_EVENT_PREFIX, WorkerEvent, assemble_targets,
-        decode_worker_line, filter_targets_by_env, merged_exit_cause, selected_run_passed, shard_of,
+        decode_worker_line, filter_targets, merged_exit_cause, selected_run_passed, shard_of,
         wait_for_supervisor_release, worker_command,
     };
     use crate::commands::prepared_matrix::{MatrixReport, RevisionSnapshot, TargetResult, WorkerExitCause};
 
     #[test]
     fn empty_filter_preserves_manifest_denominator() {
-        unsafe { std::env::remove_var("BESKID_CORELIB_TEST_TARGETS") };
         let targets = vec!["One".to_string(), "Two".to_string()];
-        let (selected, filtered) = filter_targets_by_env(targets.clone()).expect("filter");
+        let (selected, filtered) = filter_targets(targets.clone(), "").expect("filter");
         assert_eq!(selected, targets);
         assert!(!filtered);
     }

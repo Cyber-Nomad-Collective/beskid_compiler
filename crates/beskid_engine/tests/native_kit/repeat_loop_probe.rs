@@ -1,9 +1,9 @@
 use std::path::Path;
 
-use crate::runtime_prefix::RuntimePrefixContext;
+use crate::explicit_kit::run_entrypoint_with_kit;
 use crate::shared_kit;
 use beskid_abi::runtime_kit::BuildProfile;
-use beskid_engine::services::{prepare_jit_entrypoint, run_entrypoint};
+use beskid_engine::services::prepare_jit_entrypoint;
 use beskid_engine::{Engine, host_runtime_target};
 
 /// Loop / mut probes for ABI-v5 JIT. Integer accumulation avoids the ABI-v4
@@ -13,7 +13,6 @@ use beskid_engine::{Engine, host_runtime_target};
 fn jit_repeat_string_accumulation_with_mut() {
     let kit_lease = shared_kit::debug();
     let prefix = kit_lease.prefix();
-    let _runtime_prefix = RuntimePrefixContext::install(prefix);
 
     let source = r#"
 pub i64 Repeat(i64 unit, i64 count) {
@@ -27,8 +26,9 @@ pub i64 Repeat(i64 unit, i64 count) {
 }
 pub i64 Main() { return Repeat(1, 4); }
 "#;
-    let output = run_entrypoint(Path::new("repeat.bd"), source, "Main", &beskid_engine::ModHost::NoMods)
-        .expect("main should run");
+    let output =
+        run_entrypoint_with_kit(prefix, Path::new("repeat.bd"), source, "Main", &beskid_engine::ModHost::NoMods)
+            .expect("main should run");
     assert_eq!(output, "4", "expected accumulated sum 4, got {output}");
 }
 
@@ -64,7 +64,6 @@ pub i64 Main() { return Repeat(1, 4); }
 fn jit_repeat_cross_module_string_len_without_mut() {
     let kit_lease = shared_kit::debug();
     let prefix = kit_lease.prefix();
-    let _runtime_prefix = RuntimePrefixContext::install(prefix);
 
     let source = r#"
 mod Frame {
@@ -80,7 +79,8 @@ mod Frame {
 }
 pub i64 Main() { return Frame.Repeat(1, 4); }
 "#;
-    let output = run_entrypoint(Path::new("repeat.bd"), source, "Main", &beskid_engine::ModHost::NoMods)
-        .expect("main should run");
+    let output =
+        run_entrypoint_with_kit(prefix, Path::new("repeat.bd"), source, "Main", &beskid_engine::ModHost::NoMods)
+            .expect("main should run");
     assert_eq!(output, "4", "expected cross-module repeat sum 4, got {output}");
 }

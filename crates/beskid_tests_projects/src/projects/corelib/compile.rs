@@ -5,7 +5,6 @@ use crate::projects::fixture_harness::{
     resolve_corelib_tests_entry, resolve_fixture_with_assembly, shared_corelib_mvp_assembly, with_large_test_stack,
     with_project_test_env,
 };
-use crate::projects::test_cwd::{compiler_workspace_root, with_cwd_at_workspace_root};
 use beskid_analysis::projects::build_compile_plan;
 use beskid_analysis::services::{
     FrontEndOptions, PrepareOptions, parse_program, resolve_input, resolved_input_from_plan,
@@ -19,14 +18,14 @@ use super::{compiler_sdk_src, corelib_root, corelib_workspace_root, foundation_s
 
 #[test]
 fn checked_in_corelib_template_builds_compile_plan() {
-    with_cwd_at_workspace_root(&compiler_workspace_root(), || {
+    {
         let manifest_path = corelib_root().join("corelib.bproj");
         let plan = build_compile_plan(&manifest_path, None).expect("corelib plan should build");
 
         assert_eq!(plan.project_name, "corelib");
         assert_eq!(plan.target.name, "__aggregate__");
         assert_eq!(plan.target.entry, None);
-    });
+    };
 }
 
 #[test]
@@ -62,7 +61,7 @@ fn checked_in_corelib_syscall_file_does_not_report_module_resolution_false_posit
 /// The files are every foundation unit that declares a generic type or function.
 #[test]
 fn checked_in_corelib_generic_declarations_have_no_generic_body_type_mismatches() {
-    with_cwd_at_workspace_root(&compiler_workspace_root(), || {
+    {
         let core = corelib_workspace_root().join("packages/foundation/src/Core");
         let paths = [
             "Collections/Array.bd",
@@ -120,7 +119,7 @@ fn checked_in_corelib_generic_declarations_have_no_generic_body_type_mismatches(
             );
         }
         assert!(mismatches.is_empty(), "generic Corelib bodies report E1206:\n{}", mismatches.join("\n"));
-    });
+    };
 }
 
 #[test]
@@ -218,7 +217,7 @@ fn corelib_mvp_fixture_entry_does_not_emit_module_resolution_false_positives() {
 
 #[test]
 fn checked_in_corelib_aggregate_entry_is_workspace_placeholder() {
-    with_cwd_at_workspace_root(&compiler_workspace_root(), || {
+    {
         let project = corelib_root();
         let resolved = resolve_input(
             None,
@@ -231,7 +230,7 @@ fn checked_in_corelib_aggregate_entry_is_workspace_placeholder() {
         let plan = resolved.compile_plan.expect("compile plan");
         assert_eq!(plan.target.name, "__aggregate__");
         assert!(plan.target.entry.is_none());
-    });
+    };
 }
 
 #[test]

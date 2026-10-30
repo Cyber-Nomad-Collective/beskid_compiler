@@ -13,7 +13,6 @@ use beskid_pipeline::{PipelineEvent, PipelineObserver, phases};
 use beskid_queries::{configure_db_for_project, prepare_compilation_diagnostics};
 
 use crate::projects::fixture_harness::{enter_mod_host, mod_host_for};
-use crate::projects::with_cwd;
 use beskid_tests_support::{temp_case_dir, write_project_manifest as write_manifest};
 
 /// Records [`PipelineEvent::PhaseStart`] counts keyed by stable phase id.
@@ -106,9 +105,10 @@ fn run_single_prepare_path(resolved: &ResolvedInput, observer: &PhaseStartRecord
 /// Wave 1: one prepare spine per compile command on the run path.
 #[test]
 fn run_path_single_prepare_after_wave1() {
+    let _shared = crate::projects::fixture_harness::shared_query_state_lock();
     let (root, entry) = minimal_run_fixture();
 
-    with_cwd(&root, || {
+    {
         let resolved = resolve_input(
             Some(&entry),
             Some(&root),
@@ -132,7 +132,7 @@ fn run_path_single_prepare_after_wave1() {
         for id in SEMANTIC_SUB_PHASE_IDS {
             assert!(recorder.saw(id), "semantic sub-phase {id} should appear when observer is wired");
         }
-    });
+    };
 
     let _ = fs::remove_dir_all(root);
 }
@@ -156,9 +156,11 @@ i32 Main() {
 /// Corelib closure included); `standalone_compile_plan_for_source` names the plan after that project.
 #[test]
 fn orphan_bd_single_prepare_without_bproj() {
+    let _shared = crate::projects::fixture_harness::shared_query_state_lock();
+    beskid_tests_mod_host::configure_shared_corelib().expect("shared Corelib");
     let (root, entry) = orphan_bd_fixture();
 
-    with_cwd(&root, || {
+    {
         let resolved = resolve_input(
             Some(&entry),
             None,
@@ -178,7 +180,7 @@ fn orphan_bd_single_prepare_without_bproj() {
         assert_eq!(recorder.count(phases::PARSE), 1, "orphan .bd run path must invoke prepare once");
         assert_eq!(recorder.count(phases::SEMANTIC), 1);
         assert_eq!(recorder.count(phases::LOWER), 1);
-    });
+    };
 
     let _ = fs::remove_dir_all(root);
 }

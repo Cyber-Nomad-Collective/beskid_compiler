@@ -16,9 +16,6 @@ use beskid_analysis::services::{
 use beskid_queries::{configure_db_for_project, program_assembly, with_db};
 use beskid_tests_mod_host::ModHostScope;
 
-use super::core_env_lock::core_dependency_env_lock;
-use super::test_cwd::{compiler_workspace_root, with_cwd_at_workspace_root};
-
 /// Linux CI runners use a smaller default thread stack than macOS; corelib lowering needs more headroom.
 pub fn with_large_test_stack(f: impl FnOnce() + Send + 'static) {
     std::thread::Builder::new()
@@ -72,13 +69,25 @@ pub fn try_expression_fixture() -> PathBuf {
     fixture_path("try_expression")
 }
 
-/// Compose cwd lock, optional std env lock, and Salsa persistence for a project fixture.
+/// Serializes tests that use the process-scoped query database (`beskid_queries::with_db`,
+/// `configure_db_for_project`, `prepare_compilation_diagnostics`) or prepare a shared on-disk
+/// fixture (`beskid_e2e_tests/fixtures/*`): both are shared by every test of this binary, and
+/// concurrent prepares of one entry race on its entry-session registry. Other tests run in
+/// parallel. Poisoning from a failed test is ignored so one failure cannot cascade.
+pub(crate) fn shared_query_state_lock() -> std::sync::MutexGuard<'static, ()> {
+    static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+/// Configure the shared Corelib and Salsa persistence for a project fixture, holding
+/// [`shared_query_state_lock`].
 pub fn with_project_test_env<F: FnOnce()>(project_root: &Path, f: F) {
-    let _env = core_dependency_env_lock();
-    with_cwd_at_workspace_root(&compiler_workspace_root(), || {
+    let _shared = shared_query_state_lock();
+    beskid_tests_mod_host::configure_shared_corelib().expect("shared Corelib");
+    {
         configure_db_for_project(project_root);
         f();
-    });
+    };
 }
 
 /// Resolve a fixture through the analysis spine (no assembly yet).
@@ -212,10 +221,9 @@ pub fn shared_corelib_mvp_assembly() -> Arc<ProgramAssembly> {
         .clone()
 }
 
-/// Like [`with_project_test_env`], but returns a value. Caller must already hold the cwd lock
-/// (e.g. via `with_project_test_env`); this helper must not re-enter `with_cwd_at_workspace_root`
-/// or tests deadlock on `PROJECT_TEST_CWD_LOCK`.
+/// Like [`with_project_test_env`], but returns a value.
 fn with_project_test_env_return<T>(project_root: &Path, f: impl FnOnce(&Path) -> T) -> T {
+    beskid_tests_mod_host::configure_shared_corelib().expect("shared Corelib");
     configure_db_for_project(project_root);
     f(project_root)
 }

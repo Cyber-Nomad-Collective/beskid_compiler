@@ -18,7 +18,9 @@ pub mod session;
 pub mod toolchain;
 
 pub use beskid_pipeline::{COMPILER_STACK_SIZE, compiler_stack_size};
-pub use corelib::{CorelibProvisioning, EmbeddedCorelib, ensure_bundled_corelib};
+pub use corelib::{
+    CorelibProvisioning, EmbeddedCorelib, configure_corelib_root_from_environment, ensure_bundled_corelib,
+};
 pub use diagnostics::{
     format_diagnostic, format_report, print_pretty_parse_error, print_pretty_pest_error, print_report,
     print_semantic_diagnostics, report_from_anyhow,

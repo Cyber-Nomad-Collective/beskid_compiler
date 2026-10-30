@@ -90,6 +90,7 @@ fn fixture_with(main_body: &str, array: ArraySource) -> Fixture {
         },
         unresolved_dependencies: Vec::new(),
         has_core_dependency: false,
+        corelib_root: None,
     };
     let assembly = Arc::new(
         assemble_program_with_materializer(&plan, None, &main_path, None, &AssemblyOptions::default(), None, None)
@@ -166,7 +167,9 @@ fn discarded_growth_of_an_unpublished_mut_array_parameter_is_dead() {
 #[test]
 fn every_discarded_growth_of_the_same_dead_parameter_is_reported() {
     // The pre-fix corelib `AppendCrlf` shape: two appends, nothing returned.
-    let fixture = fixture("unit Crlf(mut u8[] destination) { Array.Append<u8>(destination, u8(13)); Array.Append<u8>(destination, u8(10)); }");
+    let fixture = fixture(
+        "unit Crlf(mut u8[] destination) { Array.Append<u8>(destination, u8(13)); Array.Append<u8>(destination, u8(10)); }",
+    );
     let calls = fixture
         .index
         .ids_of_kind(NodeKind::CallExpression)

@@ -32,20 +32,23 @@ pub fn synthetic_compile_plan_for_source(path: &Path) -> CompilePlan {
         dependency_projects: Vec::new(),
         unresolved_dependencies: Vec::new(),
         has_core_dependency: false,
+        corelib_root: None,
     }
 }
 
 /// Resolve standalone source through the canonical in-memory project graph, including the implicit `Core` dependency.
 /// The host manifest is an identity descriptor only and is never written to disk.
 pub fn standalone_compile_plan_for_source(path: &Path) -> Result<CompilePlan, crate::projects::ProjectError> {
-    use crate::projects::{UnresolvedDependencyPolicy, parser::parse_manifest};
-    crate::projects::graph::resolver::require_default_corelib_dependency_path()?;
+    use crate::projects::{UnresolvedDependencyPolicy, graph::ProjectGraphBuildOptions, parser::parse_manifest};
+    let options = ProjectGraphBuildOptions::toolchain();
+    crate::projects::graph::resolver::require_corelib_dependency_path(options.corelib_root.as_deref())?;
     let source = synthetic_compile_plan_for_source(path);
     let mut manifest = parse_manifest(
         "Standalone { name = \"Standalone\" version = \"0.1.0\" }\ntarget \"main\" { kind = \"App\" entry = \"Main.bd\" }\n",
     )?;
     manifest.project.root = ".".into();
     manifest.targets = vec![source.target];
-    let graph = crate::projects::graph::builder::build_project_graph_from_manifest(&source.manifest_path, manifest)?;
+    let graph =
+        crate::projects::graph::builder::build_project_graph_from_manifest(&source.manifest_path, manifest, &options)?;
     crate::projects::compile_plan::compile_plan_from_graph(graph, Some("main"), UnresolvedDependencyPolicy::Error)
 }

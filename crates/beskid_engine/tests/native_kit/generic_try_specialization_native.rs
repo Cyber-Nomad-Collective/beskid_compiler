@@ -5,9 +5,7 @@
 
 use std::path::Path;
 
-use beskid_engine::services::run_entrypoint;
-
-use crate::runtime_prefix::RuntimePrefixContext;
+use crate::explicit_kit::run_entrypoint_with_kit;
 use crate::shared_kit;
 
 const SOURCE: &str = r#"
@@ -66,9 +64,13 @@ i64 Main() {
 #[test]
 fn propagated_generic_calls_run_inside_their_specializations() {
     let kit = shared_kit::debug();
-    let _runtime_prefix = RuntimePrefixContext::install(kit.prefix());
-    let output =
-        run_entrypoint(Path::new("generic-try-specialization.bd"), SOURCE, "Main", &beskid_engine::ModHost::NoMods)
-            .expect("propagated generic calls lower and run in their specializations");
+    let output = run_entrypoint_with_kit(
+        kit.prefix(),
+        Path::new("generic-try-specialization.bd"),
+        SOURCE,
+        "Main",
+        &beskid_engine::ModHost::NoMods,
+    )
+    .expect("propagated generic calls lower and run in their specializations");
     assert_eq!(output, "42", "one collected value, the loaded value and the propagated error");
 }

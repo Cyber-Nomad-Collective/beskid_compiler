@@ -272,9 +272,8 @@ pub fn assemble_program_with_materializer(
 
     // A unit materializer only guards its cache behind a lock; parsing and expansion run outside
     // it, so a materialized assembly builds its units in parallel like a plain one.
-    let default_threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4);
     let thread_cap =
-        std::env::var("BESKID_ASSEMBLY_THREADS").ok().and_then(|value| value.parse().ok()).unwrap_or(default_threads);
+        options.worker_threads.unwrap_or_else(|| std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4));
     let pool = rayon::ThreadPoolBuilder::new()
         .num_threads(thread_cap.max(1))
         .stack_size(compiler_stack_size())
@@ -283,8 +282,8 @@ pub fn assemble_program_with_materializer(
 
     let project_root_for_pool = project_root.clone();
     let salsa_build = materializer.as_ref().map(|build| build.as_ref() as _);
-    let shared_corelib_root =
-        crate::projects::workflow::SharedCorelib::resolve().map(|shared| shared.root().to_path_buf());
+    let shared_corelib_root = crate::projects::workflow::SharedCorelib::at(plan.corelib_root.as_deref())
+        .map(|shared| shared.root().to_path_buf());
     let build_total = build_inputs.len() as u64;
     let build_done = AtomicU64::new(0);
     let discovery_elapsed = assembly_started.elapsed();

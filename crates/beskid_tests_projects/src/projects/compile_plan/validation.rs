@@ -1,11 +1,10 @@
 use std::fs;
 
-use beskid_tests_support::{temp_case_dir, write_project_manifest as write_manifest};
 use beskid_analysis::projects::{
-    DependencySource, ProjectError, UnresolvedDependencyPolicy, build_compile_plan, build_compile_plan_with_policy,
+    DependencySource, ProjectError, ProjectGraphBuildOptions, UnresolvedDependencyPolicy, build_compile_plan,
+    build_compile_plan_with_policy, build_compile_plan_with_policy_and_graph,
 };
-
-use super::super::test_cwd::with_cwd_at_workspace_root;
+use beskid_tests_support::{temp_case_dir, write_project_manifest as write_manifest};
 
 #[test]
 fn compile_plan_errors_when_dependency_manifest_missing() {
@@ -33,8 +32,7 @@ dependency "Kernel" {
 "#;
     let app_manifest_path = write_manifest(&app_dir, app_manifest);
 
-    let error =
-        with_cwd_at_workspace_root(&root, || build_compile_plan(&app_manifest_path, None).expect_err("must fail"));
+    let error = { build_compile_plan(&app_manifest_path, None).expect_err("must fail") };
     assert!(matches!(error, ProjectError::DependencyManifestNotFound { .. }));
 
     let _ = fs::remove_dir_all(root);
@@ -84,8 +82,7 @@ dependency "App" {
 "#;
     write_manifest(&core_dir, core_manifest);
 
-    let error =
-        with_cwd_at_workspace_root(&root, || build_compile_plan(&app_manifest_path, None).expect_err("must fail"));
+    let error = { build_compile_plan(&app_manifest_path, None).expect_err("must fail") };
     assert!(matches!(error, ProjectError::DependencyCycle(_)));
 
     let _ = fs::remove_dir_all(root);
@@ -141,7 +138,7 @@ fn compile_plan_detects_core_dependency_when_present() {
         "\ndependency \"Core\" {\n  source = \"path\"\n  path = \"../CorelibCheckout\"\n}\n",
     );
 
-    with_cwd_at_workspace_root(&root, || {
+    {
         let plan = build_compile_plan(&app_manifest_path, None).expect("plan should build");
         assert!(plan.has_core_dependency);
         assert_eq!(
@@ -149,7 +146,7 @@ fn compile_plan_detects_core_dependency_when_present() {
             1,
             "an explicit `Core` dependency replaces the implicit one"
         );
-    });
+    };
 
     let _ = fs::remove_dir_all(root);
 }
@@ -165,14 +162,11 @@ fn compile_plan_rejects_core_label_for_a_non_corelib_project() {
         &shared_dir,
         "project {\n  name = \"Shared\"\n  version = \"0.1.0\"\n}\n\ntarget \"SharedLib\" {\n  kind = \"Lib\"\n  entry = \"Shared.bd\"\n}\n",
     );
-    let app_manifest_path = write_app_manifest(
-        &app_dir,
-        "\ndependency \"Core\" {\n  source = \"path\"\n  path = \"../Shared\"\n}\n",
-    );
+    let app_manifest_path =
+        write_app_manifest(&app_dir, "\ndependency \"Core\" {\n  source = \"path\"\n  path = \"../Shared\"\n}\n");
 
-    let error = with_cwd_at_workspace_root(&root, || {
-        build_compile_plan(&app_manifest_path, None).expect_err("`Core` is reserved for the Corelib aggregate")
-    });
+    let error =
+        { build_compile_plan(&app_manifest_path, None).expect_err("`Core` is reserved for the Corelib aggregate") };
     assert!(
         matches!(&error, ProjectError::Validation(message) if message.contains("reserved for the Corelib aggregate")),
         "{error}"
@@ -190,14 +184,18 @@ fn compile_plan_injects_core_dependency_when_not_declared() {
     write_corelib_aggregate(&corelib_dir);
     let app_manifest_path = write_app_manifest(&app_dir, "");
 
-    let _core_root = super::super::scoped_core_dependency_root(&corelib_dir);
-    with_cwd_at_workspace_root(&root, || {
-        let plan = build_compile_plan(&app_manifest_path, None).expect("plan should build");
+    {
+        let plan = build_compile_plan_with_policy_and_graph(
+            &app_manifest_path,
+            None,
+            UnresolvedDependencyPolicy::Error,
+            ProjectGraphBuildOptions::with_corelib_root(&corelib_dir),
+        )
+        .expect("plan should build");
         assert!(plan.has_core_dependency);
         assert!(plan.dependency_projects.iter().any(|dependency| dependency.dependency_name == "Core"));
         assert!(plan.dependency_projects.iter().all(|dependency| dependency.dependency_name != "Std"));
-    });
-    drop(_core_root);
+    };
     let _ = fs::remove_dir_all(root);
 }
 
@@ -223,13 +221,13 @@ dependency "RemoteShared" {
 "#;
     let manifest_path = write_manifest(&dir, source);
 
-    with_cwd_at_workspace_root(&dir, || {
+    {
         let plan = build_compile_plan_with_policy(&manifest_path, None, UnresolvedDependencyPolicy::Warn)
             .expect("warn policy should collect unresolved deps");
         assert_eq!(plan.unresolved_dependencies.len(), 1);
         assert_eq!(plan.unresolved_dependencies[0].dependency_name, "RemoteShared");
         assert_eq!(plan.unresolved_dependencies[0].descriptor, "git@example.com/std.git@abc123");
-    });
+    };
 
     let _ = fs::remove_dir_all(dir);
 }
@@ -256,10 +254,10 @@ dependency "PkgCore" {
 "#;
     let manifest_path = write_manifest(&dir, source);
 
-    let error = with_cwd_at_workspace_root(&dir, || {
+    let error = {
         build_compile_plan_with_policy(&manifest_path, None, UnresolvedDependencyPolicy::Error)
             .expect_err("strict mode must fail")
-    });
+    };
     assert!(matches!(error, ProjectError::UnresolvedExternalDependencies(_)));
     let message = error.to_string();
     assert!(message.contains("PkgCore"));
@@ -290,13 +288,13 @@ dependency "PkgCore" {
 "#;
     let manifest_path = write_manifest(&dir, source);
 
-    with_cwd_at_workspace_root(&dir, || {
+    {
         let plan = build_compile_plan_with_policy(&manifest_path, None, UnresolvedDependencyPolicy::Error)
             .expect("registry dependencies should be kept for workspace materialization");
         assert_eq!(plan.unresolved_dependencies.len(), 1);
         assert_eq!(plan.unresolved_dependencies[0].dependency_name, "PkgCore");
         assert_eq!(plan.unresolved_dependencies[0].source, DependencySource::Registry);
-    });
+    };
 
     let _ = fs::remove_dir_all(dir);
 }
@@ -345,8 +343,7 @@ dependency "App" {
 "#;
     write_manifest(&core_dir, core_manifest);
 
-    let error =
-        with_cwd_at_workspace_root(&root, || build_compile_plan(&app_manifest_path, None).expect_err("must fail"));
+    let error = { build_compile_plan(&app_manifest_path, None).expect_err("must fail") };
     let message = error.to_string();
     assert!(message.contains(" -> "));
 

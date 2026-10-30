@@ -52,6 +52,7 @@ fn entry_less_library_front(root: &std::path::Path) -> ExecutableFrontEnd {
         }],
         unresolved_dependencies: Vec::new(),
         has_core_dependency: false,
+        corelib_root: None,
     };
     let entry_path = plan_entry_path(&plan, &source_root);
     let resolved = resolved_input_from_plan(entry_path, String::new(), plan, None, None);

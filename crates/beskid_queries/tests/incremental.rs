@@ -11,32 +11,6 @@ use beskid_queries::{
     semantic_snapshot, snapshot, unit_content_fingerprint, unit_imports,
 };
 
-/// Point every Corelib-resolving test at the Corelib under test and a process-private toolchain
-/// home, so these tests never read the developer's `~/.beskid` (or a shared install that an older
-/// toolchain left behind).
-///
-/// The Corelib is the target directory's shared sealed installation of the bundle this compiler
-/// embeds (`beskid_tests_mod_host::shared_corelib_root`), with its native Mods provisioned against
-/// the shared test runtime kit. It is a verified installed Corelib (lock replay and service-source
-/// admission both require one), reused by every test process until its sources or the CLI change,
-/// so no test run rebuilds the Serialization Mod for a fresh copy. Runs once per process.
-fn isolated_corelib_toolchain() -> &'static std::path::Path {
-    static HOME: std::sync::OnceLock<tempfile::TempDir> = std::sync::OnceLock::new();
-    HOME.get_or_init(|| {
-        let home = tempfile::tempdir().expect("create isolated BESKID_HOME");
-        let corelib = beskid_tests_mod_host::shared_corelib_root().expect("provision the shared Corelib under test");
-        // SAFETY: runs exactly once, before any test in this binary resolves a Corelib project, so
-        // no test observes the environment mid-update.
-        unsafe {
-            std::env::set_var("BESKID_HOME", home.path().join("home"));
-            std::env::set_var("BESKID_CONFIG_DIR", home.path().join("config"));
-            std::env::set_var("BESKID_CORELIB_ROOT", &corelib);
-        }
-        home
-    })
-    .path()
-}
-
 /// The Salsa hit/miss counters are process-global production statistics, so every test in this
 /// binary that runs a query holds this lock; counter-reading tests then observe only their own
 /// work. Poisoning from a failed test is ignored so one failure cannot cascade.
@@ -188,24 +162,18 @@ fn warm_second_parse_reuses_unit_cache() {
 #[test]
 fn entry_resolution_with_db_populates_symbol_registry() {
     let _counters = counters_guard();
-    isolated_corelib_toolchain();
+    beskid_tests_mod_host::configure_shared_corelib().expect("shared Corelib under test");
     use std::path::PathBuf;
 
     use beskid_analysis::projects::AssemblyDiscovery;
     use beskid_analysis::services::{PrepareOptions, resolve_input};
     use beskid_queries::{BeskidDatabase, configure_db_for_project, entry_resolution_with_db};
 
-    let compiler_root = {
-        let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        manifest.parent().and_then(|p| p.parent()).expect("compiler root").to_path_buf()
-    };
     let fixture_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../beskid_e2e_tests/fixtures/corelib_mvp");
     let main_path = fixture_root.join("Src/Main.bd");
     let _source = std::fs::read_to_string(&main_path).expect("read Main.bd");
     let project_root = fixture_root.canonicalize().unwrap_or(fixture_root.clone());
 
-    let previous = std::env::current_dir().expect("cwd");
-    std::env::set_current_dir(&compiler_root).expect("chdir");
     let result = {
         configure_db_for_project(&project_root);
         let resolved = resolve_input(
@@ -221,7 +189,6 @@ fn entry_resolution_with_db_populates_symbol_registry() {
         options.front_end.assembly_discovery = AssemblyDiscovery::ImportClosure;
         entry_resolution_with_db(&mut db, &resolved, &options)
     };
-    std::env::set_current_dir(previous).expect("restore cwd");
 
     let shared = result.expect("entry resolution");
     assert!(!shared.by_symbol().is_empty(), "expected prefetch symbols in by_symbol");
@@ -235,7 +202,7 @@ fn entry_resolution_with_db_populates_symbol_registry() {
 #[test]
 fn typed_entry_state_uses_fast_resolution_when_stale() {
     let _counters = counters_guard();
-    isolated_corelib_toolchain();
+    beskid_tests_mod_host::configure_shared_corelib().expect("shared Corelib under test");
     use beskid_analysis::projects::AssemblyDiscovery;
     use beskid_analysis::services::{PrepareOptions, resolve_input};
     use beskid_queries::{
@@ -243,16 +210,10 @@ fn typed_entry_state_uses_fast_resolution_when_stale() {
         fingerprint_key, is_typed_bundle_stale, typed_entry_state_with_db,
     };
 
-    let compiler_root = {
-        let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        manifest.parent().and_then(|p| p.parent()).expect("compiler root").to_path_buf()
-    };
     let fixture_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../beskid_e2e_tests/fixtures/corelib_mvp");
     let main_path = fixture_root.join("Src/Main.bd");
     let project_root = fixture_root.canonicalize().unwrap_or(fixture_root.clone());
 
-    let previous = std::env::current_dir().expect("cwd");
-    std::env::set_current_dir(&compiler_root).expect("chdir");
     let result = {
         configure_db_for_project(&project_root);
         let resolved = resolve_input(
@@ -296,7 +257,6 @@ fn typed_entry_state_uses_fast_resolution_when_stale() {
 
         typed_entry_state_with_db(&mut db, &resolved, &options, None).expect("typed entry state")
     };
-    std::env::set_current_dir(previous).expect("restore cwd");
 
     let state = result;
     assert!(state.executable.is_some(), "caught-up typed prepare revision should produce executable bundle");
@@ -335,7 +295,7 @@ fn manifest_digest_changes_when_manifest_or_lock_changes() {
 #[test]
 fn diagnostics_prepare_and_facts_share_one_session_for_noncanonical_root() {
     let _counters = counters_guard();
-    isolated_corelib_toolchain();
+    beskid_tests_mod_host::configure_shared_corelib().expect("shared Corelib under test");
     use std::sync::Arc;
 
     use beskid_analysis::projects::AssemblyDiscovery;

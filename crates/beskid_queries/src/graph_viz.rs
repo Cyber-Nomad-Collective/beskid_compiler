@@ -75,7 +75,8 @@ pub fn get_graph_document(
 pub fn get_graph_document_simple(request: &GraphFetchRequest) -> Result<GraphDocument, GraphQueryError> {
     match request.kind {
         GraphKind::ProjectDeps => {
-            let graph = build_project_graph_with_options(&request.manifest_path, ProjectGraphBuildOptions::default())?;
+            let graph =
+                build_project_graph_with_options(&request.manifest_path, ProjectGraphBuildOptions::toolchain())?;
             from_project_graph(&graph).map_err(GraphQueryError::from)
         }
         GraphKind::Workspace => workspace_graph(request),
@@ -162,7 +163,7 @@ fn workspace_graph(request: &GraphFetchRequest) -> Result<GraphDocument, GraphQu
         let Ok(member_manifest) = project_manifest_for_member_dir(&member_dir) else {
             continue;
         };
-        let graph = build_project_graph_with_options(&member_manifest, ProjectGraphBuildOptions::default())?;
+        let graph = build_project_graph_with_options(&member_manifest, ProjectGraphBuildOptions::toolchain())?;
         members.push((member.name.clone(), graph));
     }
     from_workspace(&manifest.workspace.name, &members).map_err(GraphQueryError::from)
@@ -189,7 +190,8 @@ pub fn graph_mermaid_project_deps(
 ) -> Arc<GraphDocument> {
     let _ = graph_fingerprint_project_deps(db, session, manifest_gen, manifest_path.clone());
     record_query_hit();
-    let graph = match build_project_graph_with_options(Path::new(&manifest_path), ProjectGraphBuildOptions::default()) {
+    let graph = match build_project_graph_with_options(Path::new(&manifest_path), ProjectGraphBuildOptions::toolchain())
+    {
         Ok(g) => g,
         Err(e) => {
             return Arc::new(GraphDocument::empty(GraphKind::ProjectDeps, &e.to_string()));
@@ -225,7 +227,7 @@ pub fn graph_mermaid_workspace(
         let Ok(member_manifest) = project_manifest_for_member_dir(&member_dir) else {
             continue;
         };
-        let graph = match build_project_graph_with_options(&member_manifest, ProjectGraphBuildOptions::default()) {
+        let graph = match build_project_graph_with_options(&member_manifest, ProjectGraphBuildOptions::toolchain()) {
             Ok(g) => g,
             Err(_) => continue,
         };
@@ -271,6 +273,7 @@ fn minimal_session(db: &mut BeskidDatabase, manifest_path: &Path) -> ProjectSess
             dependency_projects: Vec::new(),
             unresolved_dependencies: Vec::new(),
             has_core_dependency: false,
+            corelib_root: None,
         },
         manifest_path,
         manifest_digest(manifest_path),

@@ -5,16 +5,17 @@ use std::fs;
 use beskid_analysis::services::resolve_input;
 use beskid_queries::{configure_db_for_project, program_assembly, with_db};
 
-use crate::projects::{compiler_workspace_root, with_cwd_at_workspace_root};
+use crate::projects::compiler_workspace_root;
 
 #[test]
 fn ansi_escape_resolves_under_corelib_test_assembly() {
+    let _shared = crate::projects::fixture_harness::shared_query_state_lock();
     let root = compiler_workspace_root();
     let entry = root.join("corelib/beskid_corelib/tests/corelib_tests/src/console/ConsoleSuite.bd");
     let project_root = entry.parent().unwrap().parent().unwrap().parent().unwrap().to_path_buf();
     let source = fs::read_to_string(&entry).expect("read ConsoleSuite.bd");
 
-    let resolved = with_cwd_at_workspace_root(&root, || {
+    let resolved = {
         resolve_input(
             Some(&entry),
             Some(&project_root),
@@ -23,7 +24,7 @@ fn ansi_escape_resolves_under_corelib_test_assembly() {
             beskid_analysis::projects::WorkspacePrepareOptions::default(),
         )
         .expect("resolve")
-    });
+    };
 
     let plan = resolved.compile_plan.expect("compile plan");
     configure_db_for_project(&project_root);

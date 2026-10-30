@@ -131,10 +131,7 @@ fn resolve_project_with_mode(
         Some(manifest) => {
             let (compile_plan, plan) = observe_phase_result(pipeline, RESOLVE_GRAPH, || {
                 let manifest_src = fs::read_to_string(manifest).unwrap_or_default();
-                let graph_options = ProjectGraphBuildOptions {
-                    workspace_member_for_meta_default: workspace_member.map(str::to_string),
-                };
-                build_project_graph_with_options(manifest, graph_options)
+                build_project_graph_with_options(manifest, ProjectGraphBuildOptions::toolchain())
                     .and_then(|graph| {
                         if dependencies_only
                             && target.is_none()

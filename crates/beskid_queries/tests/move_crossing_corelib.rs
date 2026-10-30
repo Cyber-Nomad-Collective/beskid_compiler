@@ -53,6 +53,7 @@ fn findings(main: &str) -> Vec<(String, String, String)> {
         dependency_projects: vec![package("foundation"), package("concurrency")],
         unresolved_dependencies: vec![],
         has_core_dependency: false,
+        corelib_root: None,
     };
     let assembly = Arc::new(
         assemble_program_with_materializer(&plan, None, &path, None, &AssemblyOptions::default(), None, None).unwrap(),

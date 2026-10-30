@@ -61,7 +61,7 @@ pub(super) fn resolve_workspace_dependencies(
         refresh_lock: allow_graph_change || policy.refresh == RefreshScope::All,
     };
     let existing = preflight_existing_lock_for_plan(plan, options)?;
-    let shared_corelib = SharedCorelib::resolve();
+    let shared_corelib = SharedCorelib::at(plan.corelib_root.as_deref());
     reject_ambiguous_dependency_names(&plan.dependency_projects, shared_corelib.as_ref().map(SharedCorelib::root))?;
     let mut entries = Vec::new();
     let mut destinations = HashSet::new();

@@ -2,17 +2,6 @@ use tokio::sync::RwLock;
 
 use super::store::State;
 
-fn project_graph_options_from_env() -> beskid_analysis::ProjectGraphBuildOptions {
-    beskid_analysis::ProjectGraphBuildOptions {
-        workspace_member_for_meta_default: std::env::var("BESKID_WORKSPACE_MEMBER_FOR_META_DEFAULT").ok().and_then(
-            |value| {
-                let trimmed = value.trim();
-                (!trimmed.is_empty()).then(|| trimmed.to_string())
-            },
-        ),
-    }
-}
-
 /// Returns a cached [`CompilationContext`] for `path`, or builds and inserts one keyed by the
 /// resolved `.bproj` path.
 pub async fn cached_compilation_context(
@@ -32,23 +21,21 @@ pub async fn cached_compilation_context(
             }
         }
     };
-    let graph_options = project_graph_options_from_env();
-    let cache_key = (manifest.clone(), graph_options.workspace_member_for_meta_default.clone());
     {
         let s = state.read().await;
-        if let Some(ctx) = s.compilation_context_cache.get(&cache_key) {
+        if let Some(ctx) = s.compilation_context_cache.get(&manifest) {
             return Some(ctx.clone());
         }
     }
-    let ctx = beskid_analysis::CompilationContext::try_for_analysis_path_with_graph_options(path, None, graph_options)?;
-    state.write().await.compilation_context_cache.insert(cache_key, ctx.clone());
+    let ctx = beskid_analysis::CompilationContext::try_for_analysis_path(path, None)?;
+    state.write().await.compilation_context_cache.insert(manifest, ctx.clone());
     Some(ctx)
 }
 
 /// Clear cached [`CompilationContext`] entries (e.g. after manifest or workspace graph changes).
 pub async fn invalidate_compilation_cache(state: &RwLock<State>) {
     let mut write = state.write().await;
-    for root in write.compilation_context_cache.keys().filter_map(|(manifest, _)| manifest.parent()) {
+    for root in write.compilation_context_cache.keys().filter_map(|manifest| manifest.parent()) {
         beskid_queries::invalidate_entry_sessions(root);
     }
     if write.compilation_context_cache.is_empty()

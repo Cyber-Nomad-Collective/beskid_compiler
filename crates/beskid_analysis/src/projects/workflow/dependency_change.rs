@@ -3,7 +3,9 @@ use super::resolution::{ResolvedWorkspaceDependencies, resolve_workspace_depende
 use super::{ProjectLockfile, RefreshScope, ResolutionPolicy};
 use crate::projects::dependency_edit::{DependencyIntentSource, DependencyMutation, edit_manifest};
 use crate::projects::dependency_transaction::commit_dependency_pair;
-use crate::projects::graph::builder::{build_project_graph_from_manifest, discover_workspace_resolution_rules};
+use crate::projects::graph::builder::{
+    ProjectGraphBuildOptions, build_project_graph_from_manifest, discover_workspace_resolution_rules,
+};
 use crate::projects::{ProjectError, UnresolvedDependencyPolicy, parse_manifest, workspace_plan_from_graph};
 use serde::Serialize;
 use std::{
@@ -250,7 +252,7 @@ pub fn plan_dependency_change(
         });
     }
     let after = parse_manifest(std::str::from_utf8(&replacement).unwrap())?;
-    let graph = build_project_graph_from_manifest(&manifest, after.clone())?;
+    let graph = build_project_graph_from_manifest(&manifest, after.clone(), &ProjectGraphBuildOptions::toolchain())?;
     let workspace = workspace_plan_from_graph(&graph, UnresolvedDependencyPolicy::Error)?;
     let resolved = resolve_workspace_dependencies(&workspace, policy, changed_intent)?;
     let mut entries = resolved.entries.clone();

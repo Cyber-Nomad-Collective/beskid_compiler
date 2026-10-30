@@ -178,11 +178,8 @@ mod tests {
         let root = compiler_workspace_root();
         let workspace_root = root.join("corelib");
         assert!(workspace_root.join("CoreLib.bws").is_file(), "the Corelib submodule must be checked out");
-        let previous = std::env::current_dir().expect("cwd");
-        std::env::set_current_dir(&workspace_root).expect("chdir");
         let resolved = resolve_input(Some(&workspace_root), None, None, None, WorkspacePrepareOptions::default())
             .expect("resolve directory input");
-        std::env::set_current_dir(previous).expect("restore cwd");
         assert!(resolved.source_path.is_file(), "expected entry file, got {}", resolved.source_path.display());
         assert!(resolved.compile_plan.is_some());
     }

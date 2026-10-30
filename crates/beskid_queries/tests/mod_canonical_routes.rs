@@ -8,23 +8,6 @@ use beskid_queries::{
     build_typed_program, configure_db_for_project, project_session_for_planned_syntax_assembly,
 };
 
-/// Resolve Corelib from the shared sealed installation under test, never the developer's home.
-fn isolated_corelib_toolchain() -> &'static std::path::Path {
-    static HOME: std::sync::OnceLock<tempfile::TempDir> = std::sync::OnceLock::new();
-    HOME.get_or_init(|| {
-        let home = tempfile::tempdir().expect("create isolated BESKID_HOME");
-        let corelib = beskid_tests_mod_host::shared_corelib_root().expect("provision the shared Corelib under test");
-        // SAFETY: runs exactly once, before any test in this binary resolves a Corelib project.
-        unsafe {
-            std::env::set_var("BESKID_HOME", home.path().join("home"));
-            std::env::set_var("BESKID_CONFIG_DIR", home.path().join("config"));
-            std::env::set_var("BESKID_CORELIB_ROOT", &corelib);
-        }
-        home
-    })
-    .path()
-}
-
 fn resolved_app(root: &std::path::Path, db: &mut BeskidDatabase) -> ResolvedInput {
     resolved_app_with_main(
         root,
@@ -85,7 +68,7 @@ fn plan_route(
 /// and the same request finds no declaration.
 #[test]
 fn mod_authority_plans_the_canonical_core_results_route() {
-    isolated_corelib_toolchain();
+    beskid_tests_mod_host::configure_shared_corelib().expect("shared Corelib under test");
     let temp = tempfile::tempdir().unwrap();
 
     let mut db = BeskidDatabase::default();
@@ -127,7 +110,7 @@ fn mod_authority_plans_the_canonical_core_results_route() {
 /// although the program never imports `Core.Serialization.Reader`.
 #[test]
 fn mod_companion_package_routes_do_not_depend_on_user_imports() {
-    isolated_corelib_toolchain();
+    beskid_tests_mod_host::configure_shared_corelib().expect("shared Corelib under test");
     let temp = tempfile::tempdir().unwrap();
     let mut db = BeskidDatabase::default();
     let resolved = resolved_app_with_main(
@@ -179,7 +162,7 @@ fn mod_companion_package_routes_do_not_depend_on_user_imports() {
 /// so its assembly gains none of that package's units.
 #[test]
 fn unreached_mod_companion_package_stays_out_of_the_assembly() {
-    isolated_corelib_toolchain();
+    beskid_tests_mod_host::configure_shared_corelib().expect("shared Corelib under test");
     let temp = tempfile::tempdir().unwrap();
     let mut db = BeskidDatabase::default();
     let resolved = resolved_app(temp.path(), &mut db);

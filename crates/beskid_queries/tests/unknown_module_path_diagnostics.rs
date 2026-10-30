@@ -32,6 +32,7 @@ fn diagnostics_with_modules(
         dependency_projects: vec![],
         unresolved_dependencies: vec![],
         has_core_dependency: false,
+        corelib_root: None,
     };
     let assembly =
         assemble_program_with_materializer(&plan, None, &path, None, &AssemblyOptions::default(), None, None).unwrap();

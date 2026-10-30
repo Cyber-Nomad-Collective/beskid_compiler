@@ -21,24 +21,14 @@ mod tests {
         uri: Uri,
     }
 
-    fn compiler_workspace_root() -> PathBuf {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .and_then(|p| p.parent())
-            .expect("beskid_lsp crate layout")
-            .to_path_buf()
-    }
-
-    fn with_cwd_at_workspace_root<R>(root: &PathBuf, f: impl FnOnce() -> R) -> R {
+    /// Holds the lock of the shared on-disk `corelib_mvp` fixture, which preparation writes into.
+    fn with_shared_fixture<R>(f: impl FnOnce() -> R) -> R {
         let _fixture = crate::SHARED_FIXTURE_LOCK.blocking_lock();
-        let previous = std::env::current_dir().expect("cwd");
-        std::env::set_current_dir(root).expect("chdir");
-        let out = f();
-        std::env::set_current_dir(previous).expect("restore cwd");
-        out
+        f()
     }
 
     fn corelib_mvp_paths() -> CorelibMvpFixture {
+        beskid_tests_mod_host::configure_shared_corelib().expect("shared Corelib");
         let main_path =
             PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../beskid_e2e_tests/fixtures/corelib_mvp/Src/Main.bd");
         let source = std::fs::read_to_string(&main_path).expect("read Main.bd");
@@ -156,16 +146,12 @@ mod tests {
     #[tokio::test]
     async fn definition_on_printline_targets_dependency_file() {
         let _fixture = crate::SHARED_FIXTURE_LOCK.lock().await;
-        let root = compiler_workspace_root();
-        let previous = std::env::current_dir().expect("cwd");
-        std::env::set_current_dir(&root).expect("chdir");
         let fixture = corelib_mvp_paths();
         let uri = fixture.uri.clone();
         let mod_host = ProvisionedModHost::for_source(&fixture.main_path);
         let state = tokio::sync::RwLock::new(mod_host.state());
         state.read().await.mark_initial_scan_complete();
         let doc = build_document(&state, &uri, 1, fixture.source.clone()).await;
-        std::env::set_current_dir(previous).expect("restore cwd");
         let offset = fixture.source.find("WriteLine").expect("WriteLine");
         let response = definition::handler::handle_definition(&uri, &doc, offset).expect("syntax definition");
         let GotoDefinitionResponse::Scalar(location) = response else {
@@ -309,16 +295,12 @@ mod tests {
     #[tokio::test]
     async fn lifecycle_build_document_corelib_mvp_has_resolution() {
         let _fixture = crate::SHARED_FIXTURE_LOCK.lock().await;
-        let root = compiler_workspace_root();
-        let previous = std::env::current_dir().expect("cwd");
-        std::env::set_current_dir(&root).expect("chdir");
         let fixture = corelib_mvp_paths();
         let uri = fixture.uri.clone();
         let mod_host = ProvisionedModHost::for_source(&fixture.main_path);
         let state = tokio::sync::RwLock::new(mod_host.state());
         state.read().await.mark_initial_scan_complete();
         let doc = build_document(&state, &uri, 1, fixture.source.clone()).await;
-        std::env::set_current_dir(previous).expect("restore cwd");
         assert!(
             doc.syntax_hovers.iter().any(|hover| hover.markdown.contains("WriteLine"))
                 || doc
@@ -336,9 +318,6 @@ mod tests {
     #[tokio::test]
     async fn comment_only_edit_and_undo_keep_typed_facts_in_one_database() {
         let _fixture = crate::SHARED_FIXTURE_LOCK.lock().await;
-        let root = compiler_workspace_root();
-        let previous = std::env::current_dir().expect("cwd");
-        std::env::set_current_dir(&root).expect("chdir");
         let fixture = corelib_mvp_paths();
         let uri = fixture.uri.clone();
         let mod_host = ProvisionedModHost::for_source(&fixture.main_path);
@@ -353,7 +332,6 @@ mod tests {
             let full = build_document(&state, &uri, version, text.clone()).await;
             checked.push((version, text, entry_only, full));
         }
-        std::env::set_current_dir(previous).expect("restore cwd");
         for (version, text, entry_only, full) in checked {
             for (policy, doc) in [("entry-only", &entry_only), ("full-closure", &full)] {
                 let failures = doc
@@ -384,12 +362,8 @@ mod tests {
     #[tokio::test]
     async fn lifecycle_build_document_parses_corelib_mvp() {
         let _fixture = crate::SHARED_FIXTURE_LOCK.lock().await;
-        let root = compiler_workspace_root();
-        let previous = std::env::current_dir().expect("cwd");
-        std::env::set_current_dir(&root).expect("chdir");
         let fixture = corelib_mvp_paths();
         let uri = fixture.uri.clone();
-        std::env::set_current_dir(previous).expect("restore cwd");
         let state = tokio::sync::RwLock::new(State::default());
         state.read().await.mark_initial_scan_complete();
         let doc = build_document(&state, &uri, 1, fixture.source.clone()).await;
@@ -401,8 +375,7 @@ mod tests {
 
     #[test]
     fn entry_resolution_with_db_populates_writeline_for_intellisense() {
-        let root = compiler_workspace_root();
-        with_cwd_at_workspace_root(&root, || {
+        with_shared_fixture(|| {
             let fixture = corelib_mvp_paths();
             let resolved = resolve_input(
                 Some(&fixture.main_path),
@@ -428,16 +401,12 @@ mod tests {
     #[tokio::test]
     async fn references_on_printline_includes_dependency() {
         let _fixture = crate::SHARED_FIXTURE_LOCK.lock().await;
-        let root = compiler_workspace_root();
-        let previous = std::env::current_dir().expect("cwd");
-        std::env::set_current_dir(&root).expect("chdir");
         let fixture = corelib_mvp_paths();
         let uri = fixture.uri.clone();
         let mod_host = ProvisionedModHost::for_source(&fixture.main_path);
         let state = tokio::sync::RwLock::new(mod_host.state());
         state.read().await.mark_initial_scan_complete();
         let doc = build_document(&state, &uri, 1, fixture.source.clone()).await;
-        std::env::set_current_dir(previous).expect("restore cwd");
         let offset = fixture.source.find("WriteLine").expect("WriteLine");
         let locations =
             references::handler::handle_references(&uri, &doc, offset, true, Some(fixture.main_path.as_path()));
@@ -456,16 +425,12 @@ mod tests {
     #[tokio::test]
     async fn hover_on_printline_range_in_dependency_file() {
         let _fixture = crate::SHARED_FIXTURE_LOCK.lock().await;
-        let root = compiler_workspace_root();
-        let previous = std::env::current_dir().expect("cwd");
-        std::env::set_current_dir(&root).expect("chdir");
         let fixture = corelib_mvp_paths();
         let uri = fixture.uri.clone();
         let mod_host = ProvisionedModHost::for_source(&fixture.main_path);
         let state = tokio::sync::RwLock::new(mod_host.state());
         state.read().await.mark_initial_scan_complete();
         let doc = build_document(&state, &uri, 1, fixture.source.clone()).await;
-        std::env::set_current_dir(previous).expect("restore cwd");
         let offset = fixture.source.find("WriteLine").expect("WriteLine");
         let syntax_hover = doc
             .syntax_hovers

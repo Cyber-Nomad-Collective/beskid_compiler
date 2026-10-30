@@ -1,16 +1,10 @@
 //! Project and workspace manifest tests: compile plans, corelib layout, resolution, lockfiles.
 
 #[cfg(test)]
-mod test_cwd;
+mod compiler_root;
 
 #[cfg(test)]
-pub(crate) use test_cwd::{compiler_workspace_root, with_cwd, with_cwd_at_workspace_root};
-
-#[cfg(test)]
-mod core_env_lock;
-
-#[cfg(test)]
-pub(crate) use core_env_lock::{core_dependency_env_lock, scoped_core_dependency_root};
+pub(crate) use compiler_root::compiler_workspace_root;
 
 #[cfg(test)]
 pub(crate) mod fixture_harness;

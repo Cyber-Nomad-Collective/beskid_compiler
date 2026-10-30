@@ -12,11 +12,11 @@ use beskid_analysis::services::{FrontEndOptions, PrepareOptions, resolved_input_
 use beskid_queries::BeskidDatabase;
 
 use crate::projects::fixture_harness::enter_mod_host;
-use crate::projects::with_cwd;
 use beskid_tests_support::{temp_case_dir, write_project_manifest as write_manifest};
 
 #[test]
 fn analyze_matches_prepare_for_temp_project() {
+    let _shared = crate::projects::fixture_harness::shared_query_state_lock();
     let root = temp_case_dir("spine_diagnostics_parity");
     let src_dir = root.join("Src");
     fs::create_dir_all(&src_dir).expect("source root");
@@ -47,7 +47,7 @@ i32 Main() {
     let entry = src_dir.join("Main.bd");
     fs::write(&entry, source).expect("write source");
 
-    with_cwd(&root, || {
+    {
         let ctx = CompilationContext::try_for_analysis_path(&entry, None).expect("context");
         let plan = ctx.compile_plan.clone().expect("plan");
         let mod_host = enter_mod_host();
@@ -75,7 +75,7 @@ i32 Main() {
             diagnostic_codes(&prepare),
             "analyze gate and prepare spine must emit the same diagnostic codes"
         );
-    });
+    };
 
     let _ = fs::remove_dir_all(root);
 }
@@ -91,6 +91,7 @@ fn diagnostic_codes(diagnostics: &[beskid_analysis::SemanticDiagnostic]) -> Vec<
 /// by the command gate and by the editor database alike. The legacy checker discarded it.
 #[test]
 fn check_reports_type_error_in_uncalled_sibling_unit_of_an_app() {
+    let _shared = crate::projects::fixture_harness::shared_query_state_lock();
     let root = temp_case_dir("spine_diagnostics_sibling_unit");
     let src_dir = root.join("Src");
     fs::create_dir_all(&src_dir).expect("source root");
@@ -113,7 +114,7 @@ target "app" {
     fs::write(&entry, source).expect("write entry");
     fs::write(src_dir.join("Driver.bd"), "pub i64 Broken() {\n    return true;\n}\n").expect("write sibling");
 
-    with_cwd(&root, || {
+    {
         let ctx = CompilationContext::try_for_analysis_path(&entry, None).expect("context");
         let plan = ctx.compile_plan.clone().expect("plan");
         let resolved = resolved_input_from_plan(entry.clone(), source.to_string(), plan, None, None);
@@ -166,7 +167,7 @@ target "app" {
             );
         }
         assert_eq!(diagnostic_codes(&gate), diagnostic_codes(&editor), "both databases report the same codes");
-    });
+    };
 
     let _ = fs::remove_dir_all(root);
 }

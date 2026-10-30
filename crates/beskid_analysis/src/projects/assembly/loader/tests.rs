@@ -111,6 +111,7 @@ fn materialized_compiler_foundation_path_retains_service_provenance_but_a_copy_d
         }],
         unresolved_dependencies: Vec::new(),
         has_core_dependency: false,
+        corelib_root: None,
     };
     let workspace = PreparedProjectWorkspace {
         verified_package_identities: Default::default(),
@@ -188,6 +189,7 @@ fn resolved_foundation_source_root_still_trusts_materialized_assert() {
         }],
         unresolved_dependencies: Vec::new(),
         has_core_dependency: false,
+        corelib_root: None,
     };
     let workspace = PreparedProjectWorkspace {
         verified_package_identities: Default::default(),
@@ -259,6 +261,7 @@ fn installed_corelib_slice_keeps_service_provenance_per_file() {
         }],
         unresolved_dependencies: Vec::new(),
         has_core_dependency: true,
+        corelib_root: None,
     };
     let roots = EffectiveCompilationRoots {
         host: RootEntry { dependency_name: None, source_root: project_root.join("obj/beskid/root/src") },
@@ -380,6 +383,7 @@ fn installed_corelib_assert_keeps_service_provenance_per_file() {
         }],
         unresolved_dependencies: Vec::new(),
         has_core_dependency: true,
+        corelib_root: None,
     };
     let roots = EffectiveCompilationRoots {
         host: RootEntry { dependency_name: None, source_root: project_root.join("obj/beskid/root/src") },
@@ -454,6 +458,7 @@ impl InstalledFiberAuthorityFixture {
             }],
             unresolved_dependencies: Vec::new(),
             has_core_dependency: true,
+            corelib_root: None,
         };
         let roots = EffectiveCompilationRoots {
             host: RootEntry { dependency_name: None, source_root: project_root.join("obj/beskid/root/src") },
@@ -703,6 +708,7 @@ fn lock_replayed_foundation_syscall_fixture(label: &str) -> (CompilePlan, PathBu
         }],
         unresolved_dependencies: Vec::new(),
         has_core_dependency: false,
+        corelib_root: None,
     };
     // Use the production workspace writer so this is a real, graph-derived v2
     // lock, including its portable source identity and stable destination ID.
@@ -868,6 +874,7 @@ fn no_entry_plan_with_source(source: &str) -> (CompilePlan, PathBuf) {
         dependency_projects: Vec::new(),
         unresolved_dependencies: Vec::new(),
         has_core_dependency: false,
+        corelib_root: None,
     };
     let entry_path = plan_entry_path(&plan, &source_root);
     (plan, entry_path)
@@ -932,6 +939,7 @@ fn materialized_entry_less_library_roots_only_its_obj_root_units() {
         dependency_projects: Vec::new(),
         unresolved_dependencies: Vec::new(),
         has_core_dependency: false,
+        corelib_root: None,
     };
     let workspace = PreparedProjectWorkspace {
         lockfile_path: workspace_root.join("Project.lock"),
@@ -1012,6 +1020,7 @@ fn import_closure_assembles_entry_without_sibling_units() {
         dependency_projects: Vec::new(),
         unresolved_dependencies: Vec::new(),
         has_core_dependency: false,
+        corelib_root: None,
     };
     let entry_path = source_root.join("Entry.bd");
     let options = assembly_options_for_plan(&plan);
@@ -1046,6 +1055,7 @@ fn import_closure_follows_qualified_nominal_references() {
         dependency_projects: Vec::new(),
         unresolved_dependencies: Vec::new(),
         has_core_dependency: false,
+        corelib_root: None,
     };
     let entry_path = source_root.join("Entry.bd");
     let options = assembly_options_for_plan(&plan);
@@ -1074,6 +1084,7 @@ fn import_closure_follows_complete_homonymous_nominal_path() {
         dependency_projects: vec![],
         unresolved_dependencies: vec![],
         has_core_dependency: false,
+        corelib_root: None,
     };
     let assembly =
         assemble_program(&plan, None, &source_root.join("Entry.bd"), None, &assembly_options_for_plan(&plan), None)
@@ -1103,6 +1114,7 @@ fn import_closure_follows_transitive_use_imports() {
         dependency_projects: Vec::new(),
         unresolved_dependencies: Vec::new(),
         has_core_dependency: false,
+        corelib_root: None,
     };
     let entry_path = source_root.join("Entry.bd");
     let options = assembly_options_for_plan(&plan);
@@ -1138,6 +1150,7 @@ fn import_closure_follows_public_module_declarations() {
         dependency_projects: Vec::new(),
         unresolved_dependencies: Vec::new(),
         has_core_dependency: false,
+        corelib_root: None,
     };
     let assembly =
         assemble_program(&plan, None, &source_root.join("Entry.bd"), None, &assembly_options_for_plan(&plan), None)
@@ -1175,6 +1188,7 @@ fn import_closure_follows_public_module_declarations_into_generated_sources() {
         dependency_projects: Vec::new(),
         unresolved_dependencies: Vec::new(),
         has_core_dependency: false,
+        corelib_root: None,
     };
     let assembly =
         assemble_program(&plan, None, &source_root.join("Entry.bd"), None, &assembly_options_for_plan(&plan), None)
@@ -1201,6 +1215,7 @@ fn import_closure_ignores_missing_public_module_declarations() {
         dependency_projects: Vec::new(),
         unresolved_dependencies: Vec::new(),
         has_core_dependency: false,
+        corelib_root: None,
     };
     let assembly =
         assemble_program(&plan, None, &source_root.join("Entry.bd"), None, &assembly_options_for_plan(&plan), None)
@@ -1225,6 +1240,7 @@ fn import_closure_terminates_public_module_declaration_cycles() {
         dependency_projects: Vec::new(),
         unresolved_dependencies: Vec::new(),
         has_core_dependency: false,
+        corelib_root: None,
     };
     let assembly =
         assemble_program(&plan, None, &source_root.join("Entry.bd"), None, &assembly_options_for_plan(&plan), None)
@@ -1250,6 +1266,7 @@ fn workspace_scan_assembles_all_host_sources() {
         dependency_projects: Vec::new(),
         unresolved_dependencies: Vec::new(),
         has_core_dependency: false,
+        corelib_root: None,
     };
     let entry_path = plan_entry_path(&plan, &source_root);
     let options = assembly_options_for_plan(&plan);
@@ -1285,6 +1302,7 @@ fn import_closure_module_index_skips_unimported_dependency_tree() {
         }],
         unresolved_dependencies: Vec::new(),
         has_core_dependency: false,
+        corelib_root: None,
     };
     let entry_path = source_root.join("Entry.bd");
     let options = AssemblyOptions { discovery: AssemblyDiscovery::ImportClosure, ..AssemblyOptions::default() };
@@ -1364,6 +1382,7 @@ fn v06_import_closure_preserves_same_line_transitive_declarations() {
         dependency_projects: Vec::new(),
         unresolved_dependencies: Vec::new(),
         has_core_dependency: false,
+        corelib_root: None,
     };
     let assembly =
         assemble_program(&plan, None, &source_root.join("Entry.bd"), None, &assembly_options_for_plan(&plan), None)
@@ -1433,6 +1452,7 @@ fn v06_import_closure_skip_parse_errors_skips_invalid_nonentry_authority() {
         dependency_projects: vec![],
         unresolved_dependencies: vec![],
         has_core_dependency: false,
+        corelib_root: None,
     };
     let options = AssemblyOptions { skip_parse_errors: true, ..assembly_options_for_plan(&plan) };
     let assembly = assemble_program(&plan, None, &source_root.join("Entry.bd"), None, &options, None)
@@ -1460,6 +1480,7 @@ fn assert_v06_materializer_recovery_policy(policy: crate::projects::AssemblyReco
         dependency_projects: vec![],
         unresolved_dependencies: vec![],
         has_core_dependency: false,
+        corelib_root: None,
     };
     let calls = Arc::new(AtomicUsize::new(0));
     let observed = Arc::clone(&calls);
@@ -1563,6 +1584,7 @@ fn v06_qualified_reference_closure_follows_transitive_calls_and_types_without_lo
         dependency_projects: vec![],
         unresolved_dependencies: vec![],
         has_core_dependency: false,
+        corelib_root: None,
     };
     let assembly =
         assemble_program(&plan, None, &source_root.join("Entry.bd"), None, &assembly_options_for_plan(&plan), None)
@@ -1602,6 +1624,7 @@ fn entry_less_lib_plan(label: &str, host: &[(&str, &str)], dependency: &[(&str, 
         }],
         unresolved_dependencies: Vec::new(),
         has_core_dependency: false,
+        corelib_root: None,
     }
 }
 
@@ -1708,6 +1731,7 @@ fn aggregate_plan(label: &str, alpha: &[(&str, &str)], beta: &[(&str, &str)]) ->
         dependency_projects: vec![shared, alpha, beta],
         unresolved_dependencies: Vec::new(),
         has_core_dependency: false,
+        corelib_root: None,
     }
 }
 
@@ -1797,6 +1821,7 @@ fn checking_the_compiler_foundation_package_directly_trusts_its_materialized_ser
         dependency_projects: Vec::new(),
         unresolved_dependencies: Vec::new(),
         has_core_dependency: false,
+        corelib_root: None,
     };
     let roots = EffectiveCompilationRoots {
         host: RootEntry { dependency_name: None, source_root: materialized_source_root.clone() },
@@ -1862,6 +1887,7 @@ fn native_mod_adapter_plan(label: &str, with_sdk: bool) -> (CompilePlan, PathBuf
         dependency_projects,
         unresolved_dependencies: Vec::new(),
         has_core_dependency: false,
+        corelib_root: None,
     };
     let entry = root.join("mod/Src/Mod.bd");
     (plan, entry, guard)
@@ -1977,6 +2003,7 @@ fn two_package_closure_plan(label: &str, entry: &str) -> (CompilePlan, PathBuf, 
         dependency_projects: vec![alpha, beta],
         unresolved_dependencies: Vec::new(),
         has_core_dependency: false,
+        corelib_root: None,
     };
     (plan, source_root.join("Entry.bd"), guard)
 }

@@ -3,13 +3,12 @@
 use std::fs;
 
 use beskid_analysis::projects::{
-    ProjectKind, build_compile_plan, build_project_graph, collect_dependency_projects,
-    discover_project_manifest_in_dir, parse_manifest,
+    ProjectGraphBuildOptions, ProjectKind, build_compile_plan, build_project_graph, build_project_graph_with_options,
+    collect_dependency_projects, discover_project_manifest_in_dir, parse_manifest,
 };
 use beskid_tests_support::{temp_case_dir, write_project_manifest as write_manifest};
 
 use super::fixture_harness::{enter_mod_host, mod_host_for};
-use super::{core_dependency_env_lock, scoped_core_dependency_root, test_cwd::with_cwd_at_workspace_root};
 
 #[test]
 fn parses_template_type_and_nested_block() {
@@ -97,7 +96,6 @@ fn graph_includes_implicit_core_for_template_authoring_lock() {
         &corelib_dir,
         "corelib {\n name = \"corelib\"\n version = \"0.1.0\"\n}\ntarget \"CoreLib\" {\n kind = Lib\n entry = \"Core.bd\"\n}\n",
     );
-    let _core_root = scoped_core_dependency_root(&corelib_dir);
 
     let manifest_path = write_manifest(
         &template_dir,
@@ -112,8 +110,10 @@ Tpl {
 }
 "#,
     );
-    with_cwd_at_workspace_root(&root, || {
-        let graph = build_project_graph(&manifest_path).expect("graph");
+    {
+        let graph =
+            build_project_graph_with_options(&manifest_path, ProjectGraphBuildOptions::with_corelib_root(&corelib_dir))
+                .expect("graph");
         assert!(
             graph.has_core_dependency,
             "template authoring locks must include implicit Corelib without acquiring a compile target"
@@ -137,7 +137,7 @@ Tpl {
         assert!(resolved.compile_plan.is_none(), "authoring dependency operations must not fabricate a compile plan");
         assert!(resolved.prepared_workspace.is_some(), "authoring dependencies were not materialized");
         assert!(!template_dir.join("obj/beskid/root").exists(), "authoring dependencies materialized compile sources");
-    });
+    };
 
     let _ = fs::remove_dir_all(root);
 }
@@ -158,10 +158,10 @@ Tpl {
 }
 "#,
     );
-    with_cwd_at_workspace_root(&root, || {
+    {
         let err = build_compile_plan(&manifest_path, None).expect_err("template build");
         assert_eq!(err.code(), "E1877");
-    });
+    };
 
     let _ = fs::remove_dir_all(root);
 }
@@ -204,14 +204,14 @@ Tpl {
 }
 "#,
     );
-    with_cwd_at_workspace_root(&root, || {
+    {
         let graph = build_project_graph(&manifest_path).expect("graph");
         let deps = collect_dependency_projects(&graph);
         assert!(
             deps.iter().all(|dep| dep.project_name != "Tpl"),
             "template path dependencies must be excluded from compile-plan dependency projection: {deps:#?}"
         );
-    });
+    };
 
     let _ = fs::remove_dir_all(root);
 }
@@ -264,7 +264,7 @@ target "app" {
         template_dir
     }
 
-    let _env = core_dependency_env_lock();
+    beskid_tests_mod_host::configure_shared_corelib().expect("shared Corelib");
     let temp = tempfile::tempdir().expect("tempdir");
     let template_root = write_inline_fixture(temp.path());
     let manifest = load_manifest_from_template_root(&template_root).expect("load template manifest");

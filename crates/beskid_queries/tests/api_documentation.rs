@@ -25,6 +25,7 @@ fn documentation_snapshot(source: &str, docs_ref_links: Option<&DocRefLinkContex
         dependency_projects: vec![],
         unresolved_dependencies: vec![],
         has_core_dependency: false,
+        corelib_root: None,
     };
     let resolved = ResolvedInput {
         source_path: path.clone(),

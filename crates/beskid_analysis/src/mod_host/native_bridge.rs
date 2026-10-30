@@ -44,8 +44,7 @@ fn run_worker<'a>(
     file.write_all(&serde_json::to_vec(&json!({"address":channel.address()?,"token":token}))?)?;
     file.sync_all()?;
     drop(file);
-    let mut command = Command::new(worker.canonicalize()?);
-    command.args(["dev", "native-mod-worker", "--endpoint"]).arg(&endpoint);
+    let mut command = native_mod_worker_command(&worker.canonicalize()?, &endpoint);
     // A channel failure (most often EOF because the worker exited before its completion frame)
     // is recorded, not raised, so the worker's exit status and stderr are still collected: they
     // name the actual worker-side error, which the bare channel symptom cannot.
@@ -341,4 +340,38 @@ pub fn invoke_qualified_native_rewriter(
         session.syntax_query(&ModSyntaxRequest::Apply { root, bounds })?;
     }
     Ok(super::RewriterOutcome { type_id: registration.type_id.clone(), applied_fix_count: applied, edits: Vec::new() })
+}
+
+/// Runtime settings that apply to test processes only. A native Mod worker is a compile-time
+/// step: under `BESKID_GC_STRESS=alloc:1,verify` (inherited from `beskid test`) the Mod would run
+/// on a stressed heap and exceed its invocation deadline, so the worker never inherits them.
+pub(crate) const TEST_ONLY_RUNTIME_ENVIRONMENT: [&str; 2] = ["BESKID_GC_STRESS", "BESKID_GC_QUARANTINE"];
+
+/// The worker process for one invocation: `<worker> dev native-mod-worker --endpoint <endpoint>`
+/// without [`TEST_ONLY_RUNTIME_ENVIRONMENT`].
+fn native_mod_worker_command(worker: &std::path::Path, endpoint: &std::path::Path) -> Command {
+    let mut command = Command::new(worker);
+    command.args(["dev", "native-mod-worker", "--endpoint"]).arg(endpoint);
+    for name in TEST_ONLY_RUNTIME_ENVIRONMENT {
+        command.env_remove(name);
+    }
+    command
+}
+
+#[cfg(test)]
+mod worker_command_tests {
+    use super::{TEST_ONLY_RUNTIME_ENVIRONMENT, native_mod_worker_command};
+
+    #[test]
+    fn native_mod_worker_never_inherits_test_only_runtime_environment() {
+        let command =
+            native_mod_worker_command(std::path::Path::new("/bin/beskid"), std::path::Path::new("/tmp/endpoint.json"));
+        let removed: Vec<_> =
+            command.get_envs().filter(|(_, value)| value.is_none()).map(|(name, _)| name.to_owned()).collect();
+        for name in TEST_ONLY_RUNTIME_ENVIRONMENT {
+            assert!(removed.iter().any(|removed| removed == name), "{name} reaches the Mod runtime: {removed:?}");
+        }
+        let args: Vec<_> = command.get_args().collect();
+        assert_eq!(args, ["dev", "native-mod-worker", "--endpoint", "/tmp/endpoint.json"]);
+    }
 }

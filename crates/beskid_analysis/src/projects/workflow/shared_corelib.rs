@@ -1,13 +1,13 @@
 //! The toolchain's shared, read-only Corelib.
 //!
-//! Every project prepared by one toolchain reads Corelib packages in place from the sealed Corelib
-//! bundle that toolchain resolves (`BESKID_CORELIB_ROOT`, the installed `<prefix>/beskid_corelib`,
-//! or the per-user managed root). The bundle is content-addressed by its fingerprint marker; it is
+//! Every project reads Corelib packages in place from the sealed Corelib bundle its plan was
+//! resolved against (`CompilePlan::corelib_root`: the toolchain's configured root, the installed
+//! `<prefix>/beskid_corelib`, the per-user managed root, or an explicit root). The bundle is content-addressed by its fingerprint marker; it is
 //! verified before use and a modified bundle fails closed. Nothing is copied into a project and
 //! no source below the shared root is ever written; the only files written there are the generated
 //! `Project.lock` and `obj/` of a bundle package checked directly, which the seal excludes.
 //!
-//! An unsealed root (a developer's Corelib checkout named by `BESKID_CORELIB_ROOT`) is neither
+//! An unsealed root (a developer's Corelib checkout configured as the Corelib root) is neither
 //! read-only nor content-addressed, so it is not shared: its packages stay ordinary path
 //! dependencies that preparation copies like any other user-owned tree.
 
@@ -29,19 +29,22 @@ pub(crate) struct SharedCorelib {
 }
 
 impl SharedCorelib {
-    /// The shared Corelib of the running toolchain, when a sealed bundle is installed. A found
-    /// bundle is remembered per install root, so the canonicalization and marker lookup run once
-    /// per process; an install root without a sealed bundle is looked up again on the next call.
-    pub(crate) fn resolve() -> Option<Self> {
+    /// The shared Corelib installed at `installed` (a plan's [`corelib_root`]), when it is a sealed
+    /// bundle. A found bundle is remembered per install root, so the canonicalization and marker
+    /// lookup run once per process; an install root without a sealed bundle is looked up again on
+    /// the next call.
+    ///
+    /// [`corelib_root`]: crate::projects::CompilePlan::corelib_root
+    pub(crate) fn at(installed: Option<&Path>) -> Option<Self> {
         static RESOLVED: std::sync::LazyLock<std::sync::Mutex<std::collections::HashMap<PathBuf, SharedCorelib>>> =
             std::sync::LazyLock::new(Default::default);
-        let installed = installed_corelib_root().ok()?;
+        let installed = installed?;
         let mut resolved = RESOLVED.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-        if let Some(shared) = resolved.get(&installed) {
+        if let Some(shared) = resolved.get(installed) {
             return Some(shared.clone());
         }
-        let shared = Self::from_installed_root(&installed)?;
-        resolved.insert(installed, shared.clone());
+        let shared = Self::from_installed_root(installed)?;
+        resolved.insert(installed.to_path_buf(), shared.clone());
         Some(shared)
     }
 
@@ -94,7 +97,7 @@ pub(crate) fn verify_shared_corelib_for_lock(
 /// The Corelib package that owns `path` (its manifest's file stem, for example
 /// `corelib_console`) when `path` lies in the running toolchain's shared Corelib.
 pub fn shared_corelib_package_of(path: &Path) -> Option<String> {
-    let shared = SharedCorelib::resolve()?;
+    let shared = SharedCorelib::at(installed_corelib_root().ok().as_deref())?;
     let physical = path.canonicalize().ok()?;
     if !physical.starts_with(shared.root()) {
         return None;

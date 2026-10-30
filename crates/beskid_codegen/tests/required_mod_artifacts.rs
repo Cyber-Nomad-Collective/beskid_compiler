@@ -28,6 +28,7 @@ fn discovered_mod_without_descriptor_cannot_be_silently_skipped() {
         }],
         unresolved_dependencies: vec![],
         has_core_dependency: false,
+        corelib_root: None,
     };
     let input = ModHostInput {
         semantic_scope: None,

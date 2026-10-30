@@ -4,9 +4,9 @@
 //!
 //! - [`build_compile_plan`]: convenience for normal builds — forwards to
 //!   [`build_compile_plan_with_policy`] with [`UnresolvedDependencyPolicy::Error`]
-//!   and default graph build options.
+//!   and the toolchain's graph build options.
 //! - [`build_compile_plan_with_policy`]: same as the full builder, but fixes
-//!   [`ProjectGraphBuildOptions::default`]. Use this when you need a custom
+//!   [`ProjectGraphBuildOptions::toolchain`]. Use this when you need a custom
 //!   [`UnresolvedDependencyPolicy`] but not custom graph resolution.
 //! - [`build_compile_plan_with_policy_and_graph`]: full control — supplies both unresolved-dependency
 //!   handling and [`ProjectGraphBuildOptions`] passed into the project graph builder.
@@ -31,12 +31,12 @@ pub fn load_manifest_from_path(path: &Path) -> Result<ProjectManifest, ProjectEr
     parse_manifest(&source)
 }
 
-/// Build a compile plan with strict unresolved-dependency policy and default graph options.
+/// Build a compile plan with strict unresolved-dependency policy and the toolchain's graph options.
 pub fn build_compile_plan(manifest_path: &Path, target_name: Option<&str>) -> Result<CompilePlan, ProjectError> {
     build_compile_plan_with_policy(manifest_path, target_name, UnresolvedDependencyPolicy::Error)
 }
 
-/// Build a compile plan with caller-controlled unresolved-dependency policy and default graph options.
+/// Build a compile plan with caller-controlled unresolved-dependency policy and the toolchain's graph options.
 pub fn build_compile_plan_with_policy(
     manifest_path: &Path,
     target_name: Option<&str>,
@@ -46,7 +46,7 @@ pub fn build_compile_plan_with_policy(
         manifest_path,
         target_name,
         unresolved_dependency_policy,
-        ProjectGraphBuildOptions::default(),
+        ProjectGraphBuildOptions::toolchain(),
     )
 }
 
@@ -69,6 +69,7 @@ pub(crate) fn compile_plan_from_graph(
     let workspace_plan = workspace_plan_from_graph(&graph, unresolved_dependency_policy)?;
 
     let has_core_dependency = graph.has_core_dependency;
+    let corelib_root = graph.corelib_root;
     let manifest = graph.root_manifest;
     let project_root = graph.root_project_root;
     let normalized_manifest_path = graph.root_manifest_path;
@@ -124,6 +125,7 @@ pub(crate) fn compile_plan_from_graph(
         dependency_projects: workspace_plan.dependency_projects,
         unresolved_dependencies: workspace_plan.unresolved_dependencies,
         has_core_dependency,
+        corelib_root,
     })
 }
 

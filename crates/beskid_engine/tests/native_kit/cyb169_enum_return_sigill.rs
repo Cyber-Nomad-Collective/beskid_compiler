@@ -5,10 +5,9 @@
 
 use std::path::Path;
 
-use beskid_engine::services::run_entrypoint;
 use beskid_tools::toolchain::runtime_kit::{RuntimeKitProfile, build_native_host};
 
-use crate::runtime_prefix::RuntimePrefixContext;
+use crate::explicit_kit::run_entrypoint_with_kit;
 use crate::shared_kit;
 
 #[test]
@@ -35,7 +34,6 @@ fn returned_enum_survives_match_across_call_boundary() {
             release_prefix.path()
         }
     };
-    let _runtime_prefix = RuntimePrefixContext::install(prefix);
 
     let source = r#"
 enum Result { Ok(i64 value), Error(i64 error) }
@@ -48,7 +46,13 @@ i64 Main() {
     };
 }
 "#;
-    let output = run_entrypoint(Path::new("cyb169-enum-return.bd"), source, "Main", &beskid_engine::ModHost::NoMods)
-        .expect("enum return across call boundary must execute without SIGILL");
+    let output = run_entrypoint_with_kit(
+        prefix,
+        Path::new("cyb169-enum-return.bd"),
+        source,
+        "Main",
+        &beskid_engine::ModHost::NoMods,
+    )
+    .expect("enum return across call boundary must execute without SIGILL");
     assert_eq!(output, "7", "expected Ok payload 7, got {output}");
 }

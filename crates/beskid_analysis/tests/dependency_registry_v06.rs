@@ -297,6 +297,7 @@ fn ordinary_workspace_plan(fixture: &Fixture) -> beskid_analysis::projects::Proj
                 requester: dependency.requester,
             })
             .collect(),
+        corelib_root: graph.corelib_root.clone(),
     }
 }
 

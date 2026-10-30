@@ -32,6 +32,7 @@ fn fixture_with_service_origins(output: &str, owned_origins: bool) -> Result<(),
         dependency_projects: vec![],
         unresolved_dependencies: vec![],
         has_core_dependency: false,
+        corelib_root: None,
     };
     let prepared = prepare_project_workspace(&plan).unwrap();
     let generation = SyntaxGenerationId(120);
@@ -236,6 +237,7 @@ fn cross_unit(generation: SyntaxGenerationId) -> CrossUnit {
         dependency_projects: vec![],
         unresolved_dependencies: vec![],
         has_core_dependency: false,
+        corelib_root: None,
     };
     let prepared = prepare_project_workspace(&plan).unwrap();
     let (base, _) = canonical_runtime_test_assembly(&mut db, directory.path(), generation);
@@ -705,6 +707,7 @@ fn field_decoder_fixture(factory_output: &str) -> Result<String, String> {
         dependency_projects: vec![],
         unresolved_dependencies: vec![],
         has_core_dependency: false,
+        corelib_root: None,
     };
     let prepared = prepare_project_workspace(&plan).unwrap();
     let generation = SyntaxGenerationId(130);

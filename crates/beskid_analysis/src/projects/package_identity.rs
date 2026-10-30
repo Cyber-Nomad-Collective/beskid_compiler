@@ -182,8 +182,8 @@ fn is_inside_compiler_corelib_checkout(manifest: &Path) -> bool {
 /// That workspace is the one whose packages every consumer already locks with the `corelib`
 /// source, so a package of it checked directly carries the identity it has as a dependency.
 /// Unmarked or unresolvable roots and copies elsewhere stay local.
-fn is_installed_corelib_source_root(source_root: &Path) -> bool {
-    super::workflow::SharedCorelib::resolve()
+fn is_installed_corelib_source_root(corelib_root: Option<&Path>, source_root: &Path) -> bool {
+    super::workflow::SharedCorelib::at(corelib_root)
         .is_some_and(|corelib| is_corelib_workspace_package_source_root(corelib.root(), source_root))
 }
 /// Whether `source_root` physically is `<corelib>/packages/<package>/src`, with `corelib` the
@@ -197,13 +197,13 @@ fn is_corelib_workspace_package_source_root(corelib: &Path, source_root: &Path) 
 }
 /// Whether `manifest` belongs to a project inside the installed Corelib workspace
 /// (the toolchain's shared Corelib, `SharedCorelib`): a package, Mod, aggregate, or test project of it.
-fn is_inside_installed_corelib(manifest: &Path) -> bool {
-    super::workflow::SharedCorelib::resolve().is_some_and(|corelib| corelib.contains(manifest))
+fn is_inside_installed_corelib(corelib_root: Option<&Path>, manifest: &Path) -> bool {
+    super::workflow::SharedCorelib::at(corelib_root).is_some_and(|corelib| corelib.contains(manifest))
 }
 /// Whether `source_root` is a Corelib package source root: the compiler checkout's own, or the
 /// installed Corelib workspace's.
-fn is_corelib_package_source_root(source_root: &Path) -> bool {
-    is_compiler_corelib_source_root(source_root) || is_installed_corelib_source_root(source_root)
+fn is_corelib_package_source_root(corelib_root: Option<&Path>, source_root: &Path) -> bool {
+    is_compiler_corelib_source_root(source_root) || is_installed_corelib_source_root(corelib_root, source_root)
 }
 impl VerifiedPackageIdentities {
     /// The one package that owns `path`. The most specific containing root across all entries
@@ -289,9 +289,9 @@ impl VerifiedPackageIdentities {
     ) -> Result<Self, ProjectError> {
         let mut result = Self { entries: Vec::new(), lock: Some((lock_path.to_owned(), read(lock_path)?)) };
         let host_in_corelib = is_inside_compiler_corelib_checkout(&plan.manifest_path)
-            || is_inside_installed_corelib(&plan.manifest_path);
+            || is_inside_installed_corelib(plan.corelib_root.as_deref(), &plan.manifest_path);
         if let Some(source) = &plan.source_root {
-            let identity_source = if is_corelib_package_source_root(source) {
+            let identity_source = if is_corelib_package_source_root(plan.corelib_root.as_deref(), source) {
                 VerifiedPackageSource::Corelib
             } else {
                 VerifiedPackageSource::Local
@@ -327,7 +327,8 @@ impl VerifiedPackageIdentities {
             // package elsewhere or a checkout package named from outside the checkout, stays local.
             let source = match (pin.source(), original) {
                 (ProjectLockSource::Path, Some(original))
-                    if host_in_corelib && is_corelib_package_source_root(&original.source_root) =>
+                    if host_in_corelib
+                        && is_corelib_package_source_root(plan.corelib_root.as_deref(), &original.source_root) =>
                 {
                     VerifiedPackageSource::Corelib
                 }

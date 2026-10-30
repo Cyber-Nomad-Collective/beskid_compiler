@@ -4,7 +4,7 @@ use beskid_analysis::projects::AssemblyDiscovery;
 use beskid_analysis::services::parse_program_with_source_name;
 use beskid_analysis::services::resolve_input;
 
-use crate::projects::{compiler_workspace_root, with_cwd_at_workspace_root};
+use crate::projects::compiler_workspace_root;
 
 #[test]
 fn concurrency_source_and_materialized_parse_equally() {
@@ -18,7 +18,7 @@ fn concurrency_source_and_materialized_parse_equally() {
     let project_root = entry.parent().unwrap().parent().unwrap().parent().unwrap().to_path_buf();
     let entry_source = std::fs::read_to_string(&entry).expect("read test entry");
 
-    let resolved = with_cwd_at_workspace_root(&root, || {
+    let resolved = {
         resolve_input(
             Some(&entry),
             Some(&project_root),
@@ -27,7 +27,7 @@ fn concurrency_source_and_materialized_parse_equally() {
             beskid_analysis::projects::WorkspacePrepareOptions::default(),
         )
         .expect("resolve with materialization")
-    });
+    };
 
     let materialized = resolved
         .prepared_workspace

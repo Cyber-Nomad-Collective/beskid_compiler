@@ -308,9 +308,8 @@ pub struct State {
     /// Advances whenever project/lock authority is invalidated, even when an editor
     /// buffer's text and LSP version do not change.
     pub(crate) diagnostic_generation: u64,
-    /// Key: canonical `.bproj` path plus `workspace_member_for_meta_default` (from graph
-    /// build options / env), so `attachTo: default` disambiguation cannot reuse a stale slice.
-    pub compilation_context_cache: HashMap<(PathBuf, Option<String>), CompilationContext>,
+    /// Key: canonical `.bproj` path.
+    pub compilation_context_cache: HashMap<PathBuf, CompilationContext>,
     /// One in-memory Salsa database per project, each with its own mutation gate.
     pub(crate) databases: ProjectDatabases,
     /// Preserves notification order per URI without blocking unrelated buffers.

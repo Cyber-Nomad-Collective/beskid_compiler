@@ -1,7 +1,6 @@
 use std::path::PathBuf;
 
 use crate::projects::fixture_harness::{corelib_mvp_fixture, shared_corelib_mvp_assembly, with_project_test_env};
-use crate::projects::test_cwd::{compiler_workspace_root, with_cwd_at_workspace_root};
 use beskid_analysis::projects::{
     AssemblyDiscovery, AssemblyOptions, ProgramAssembly, effective_roots_for_plan, module_roots_from_effective,
 };
@@ -23,7 +22,9 @@ fn full_build_phase_order_includes_program_assemble() {
 /// toolchain's shared Corelib and never from a copy under `obj/beskid/deps`.
 #[test]
 fn effective_roots_prefers_materialized_corelib_mvp_fixture() {
-    with_cwd_at_workspace_root(&compiler_workspace_root(), || {
+    let _shared = crate::projects::fixture_harness::shared_query_state_lock();
+    let shared_corelib = beskid_tests_mod_host::configure_shared_corelib().expect("shared Corelib");
+    {
         let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../beskid_e2e_tests/fixtures/corelib_mvp");
         let resolved = resolve_input(
             Some(&fixture.join("Src/Main.bd")),
@@ -43,16 +44,14 @@ fn effective_roots_prefers_materialized_corelib_mvp_fixture() {
             module_roots.iter().all(|root| !root.ancestors().any(|ancestor| ancestor.ends_with("obj/beskid/deps"))),
             "no Corelib copy under obj/beskid/deps: {module_roots:?}"
         );
-        let shared = beskid_abi::runtime_kit::installed_corelib_root()
-            .expect("installed Corelib root")
-            .canonicalize()
-            .expect("canonical Corelib root");
+        let shared = shared_corelib.canonicalize().expect("canonical Corelib root");
+        assert!(module_roots.len() > 1, "the fixture resolves Corelib dependency roots: {module_roots:?}");
         assert!(
             module_roots[1..].iter().all(|root| root.starts_with(&shared)),
             "Corelib roots are the shared Corelib at {}: {module_roots:?}",
             shared.display()
         );
-    });
+    };
 }
 
 #[test]
@@ -70,7 +69,9 @@ fn assembly_closure_loads_std_units_for_corelib_mvp() {
 
 #[test]
 fn workspace_scan_respects_max_units() {
-    with_cwd_at_workspace_root(&compiler_workspace_root(), || {
+    let _shared = crate::projects::fixture_harness::shared_query_state_lock();
+    beskid_tests_mod_host::configure_shared_corelib().expect("shared Corelib");
+    {
         let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../beskid_e2e_tests/fixtures/corelib_mvp");
         let resolved = resolve_input(
             Some(&fixture.join("Src/Main.bd")),
@@ -97,7 +98,7 @@ fn workspace_scan_respects_max_units() {
         })
         .expect_err("should hit max_units");
         assert!(err.to_string().contains("max_units"));
-    });
+    };
 }
 
 #[test]
@@ -134,9 +135,10 @@ fn module_index_resolve_entry_succeeds_for_corelib_mvp_main() {
 
 #[test]
 fn corelib_syscall_tests_prefetch_includes_testing_assert_true() {
+    let _shared = crate::projects::fixture_harness::shared_query_state_lock();
     use crate::projects::corelib::corelib_root;
 
-    with_cwd_at_workspace_root(&compiler_workspace_root(), || {
+    {
         let project = corelib_root().join("tests/corelib_tests");
         let entry = project.join("src/console/ConsoleSuite.bd");
         let resolved = resolve_input(
@@ -172,15 +174,14 @@ fn corelib_syscall_tests_prefetch_includes_testing_assert_true() {
             loaded.iter().any(|p| p.ends_with("ConsoleSuite.bd")),
             "expected entry unit in assembly, got: {loaded:?}"
         );
-    });
+    };
 }
 
 #[test]
 fn parallel_unit_build_matches_serial_assembly_order() {
-    use crate::projects::core_dependency_env_lock;
-
-    let _guard = core_dependency_env_lock();
-    with_cwd_at_workspace_root(&compiler_workspace_root(), || {
+    let _shared = crate::projects::fixture_harness::shared_query_state_lock();
+    beskid_tests_mod_host::configure_shared_corelib().expect("shared Corelib");
+    {
         let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../beskid_e2e_tests/fixtures/corelib_mvp");
         let resolved = resolve_input(
             Some(&fixture.join("Src/Main.bd")),
@@ -221,7 +222,7 @@ fn parallel_unit_build_matches_serial_assembly_order() {
             parallel.units.len(),
             "unit count must match between serial and parallel builds"
         );
-    });
+    };
 }
 
 fn assemble_with_thread_cap(
@@ -232,10 +233,7 @@ fn assemble_with_thread_cap(
     options: &AssemblyOptions,
     threads: usize,
 ) -> ProgramAssembly {
-    // SAFETY: test runs single-threaded under `core_dependency_env_lock`.
-    unsafe {
-        std::env::set_var("BESKID_ASSEMBLY_THREADS", threads.to_string());
-    }
-    with_db(|db| program_assembly(db, plan, workspace, entry_path, Some(entry_source), options))
+    let options = AssemblyOptions { worker_threads: Some(threads), ..options.clone() };
+    with_db(|db| program_assembly(db, plan, workspace, entry_path, Some(entry_source), &options))
         .expect("assemble with thread cap")
 }

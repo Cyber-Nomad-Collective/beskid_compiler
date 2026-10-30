@@ -3,9 +3,7 @@
 
 use std::path::Path;
 
-use beskid_engine::services::run_entrypoint;
-
-use crate::runtime_prefix::RuntimePrefixContext;
+use crate::explicit_kit::run_entrypoint_with_kit;
 use crate::shared_kit;
 
 const SOURCE: &str = r#"
@@ -29,8 +27,13 @@ i64 Main() {
 #[test]
 fn unary_operators_over_nested_field_reads_run_as_field_write_values() {
     let kit = shared_kit::debug();
-    let _runtime_prefix = RuntimePrefixContext::install(kit.prefix());
-    let output = run_entrypoint(Path::new("unary-field-write.bd"), SOURCE, "Main", &beskid_engine::ModHost::NoMods)
-        .expect("unary field write values lower and run");
+    let output = run_entrypoint_with_kit(
+        kit.prefix(),
+        Path::new("unary-field-write.bd"),
+        SOURCE,
+        "Main",
+        &beskid_engine::ModHost::NoMods,
+    )
+    .expect("unary field write values lower and run");
     assert_eq!(output, "42", "the negated flag selects the branch and the negated count is restored");
 }

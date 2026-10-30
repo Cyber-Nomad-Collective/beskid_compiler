@@ -9,8 +9,6 @@ use beskid_analysis::projects::{
 
 use beskid_tests_support::{temp_case_dir, write_project_manifest as write_manifest};
 
-use super::test_cwd::with_cwd_at_workspace_root;
-
 #[test]
 fn parses_mod_nested_block() {
     let src = r#"
@@ -135,7 +133,7 @@ MyMod {
 }
 "#,
     );
-    with_cwd_at_workspace_root(&root, || {
+    {
         let graph = build_project_graph(&manifest_path).expect("graph");
         let mut mod_nodes = 0usize;
         for node in graph.dag.graph().node_weights() {
@@ -147,7 +145,7 @@ MyMod {
             }
         }
         assert_eq!(mod_nodes, 1, "expected MyMod dependency node");
-    });
+    };
 
     let _ = fs::remove_dir_all(root);
 }
@@ -171,12 +169,12 @@ MyMod {
 }
 "#,
     );
-    with_cwd_at_workspace_root(&root, || {
+    {
         let plan = build_compile_plan(&manifest_path, None).expect("mod compile plan");
         assert_eq!(plan.project_name, "MyMod");
         assert_eq!(plan.target.name, "__mod__");
         assert_eq!(plan.target.kind, TargetKind::Lib);
-    });
+    };
 
     let _ = fs::remove_dir_all(root);
 }

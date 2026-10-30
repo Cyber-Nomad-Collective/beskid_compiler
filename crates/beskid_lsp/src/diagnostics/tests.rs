@@ -73,14 +73,8 @@ fn standalone_bsol_document_uses_the_bsol_parser_for_diagnostics() {
 
 #[test]
 fn stale_typed_generation_fails_closed_to_structural_diagnostics() {
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .and_then(|p| p.parent())
-        .expect("compiler workspace root")
-        .to_path_buf();
     let _fixture = crate::SHARED_FIXTURE_LOCK.blocking_lock();
-    let previous = std::env::current_dir().expect("cwd");
-    std::env::set_current_dir(&root).expect("chdir");
+    beskid_tests_mod_host::configure_shared_corelib().expect("shared Corelib");
 
     let main_path =
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../beskid_e2e_tests/fixtures/corelib_mvp/Src/Main.bd");
@@ -111,7 +105,6 @@ fn stale_typed_generation_fails_closed_to_structural_diagnostics() {
         &source,
         Some(&ctx),
     );
-    std::env::set_current_dir(previous).expect("restore cwd");
 
     assert_eq!(
         collected, expected,

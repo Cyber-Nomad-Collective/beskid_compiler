@@ -46,6 +46,7 @@ fn test_plan(lock_bytes: Option<&[u8]>) -> (CompilePlan, SessionFingerprint, Pat
         dependency_projects: Vec::new(),
         unresolved_dependencies: Vec::new(),
         has_core_dependency: false,
+        corelib_root: None,
     };
     let fp = SessionFingerprint::for_entry(&plan, &entry_path);
     (plan, fp, root, entry_path)

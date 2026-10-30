@@ -19,15 +19,12 @@ use beskid_analysis::projects::{
 };
 use tempfile::TempDir;
 
-use super::with_cwd_at_workspace_root;
-
 const OLD_VERSION: &str = "1.0.0";
 const NEW_VERSION: &str = "2.0.0";
 const OVER_LIMIT_BYTES: usize = 64 * 1024 * 1024 + 1;
 const PACKAGE_MANIFEST: &[u8] = b"PkgCore {\n  name = \"PkgCore\"\n  version = \"1.0.0\"\n}\n\ntarget \"PkgCore\" {\n  kind = \"Lib\"\n  entry = \"Marker.bd\"\n}\n";
 
 struct RegistryFixture {
-    _env_guard: std::sync::MutexGuard<'static, ()>,
     root: TempDir,
     app_manifest: PathBuf,
     packages: Arc<Mutex<BTreeMap<String, Vec<u8>>>>,
@@ -39,7 +36,7 @@ struct RegistryFixture {
 
 impl RegistryFixture {
     fn new() -> Self {
-        let env_guard = super::core_dependency_env_lock();
+        beskid_tests_mod_host::configure_shared_corelib().expect("shared Corelib");
         assert!(
             std::env::var_os("BESKID_PCKG_URL").is_none(),
             "unset BESKID_PCKG_URL so registry fixture requests stay on loopback"
@@ -87,16 +84,7 @@ impl RegistryFixture {
         )
         .expect("write app manifest");
 
-        Self {
-            _env_guard: env_guard,
-            root,
-            app_manifest,
-            packages,
-            requests,
-            oversized_download,
-            stop,
-            server: Some(server),
-        }
+        Self { root, app_manifest, packages, requests, oversized_download, stop, server: Some(server) }
     }
 
     fn publish(&self, version: &str, marker: &str) {
@@ -127,14 +115,14 @@ impl RegistryFixture {
     }
 
     fn prepare(&self, refresh_lock: bool) -> Result<beskid_analysis::projects::PreparedProjectWorkspace, ProjectError> {
-        with_cwd_at_workspace_root(self.root.path(), || {
+        {
             let plan = build_compile_plan_with_policy(&self.app_manifest, None, UnresolvedDependencyPolicy::Warn)?;
             prepare_project_workspace_with_options(
                 &plan,
                 WorkspacePrepareOptions { offline: false, frozen: false, locked: false, refresh_lock },
                 None,
             )
-        })
+        }
     }
 
     fn lock(&self) -> String {
@@ -523,14 +511,14 @@ fn strict_preparation_rejects_unpinned_registry_without_mutation() {
     let original_obj = snapshot_tree(&obj);
 
     for (locked, frozen) in [(true, false), (false, true)] {
-        let error = with_cwd_at_workspace_root(fixture.root.path(), || {
+        let error = (|| {
             let plan = build_compile_plan_with_policy(&fixture.app_manifest, None, UnresolvedDependencyPolicy::Warn)?;
             prepare_project_workspace_with_options(
                 &plan,
                 WorkspacePrepareOptions { offline: false, locked, frozen, refresh_lock: false },
                 None,
             )
-        })
+        })()
         .expect_err("strict mode must require every declared registry pin");
         assert!(error.to_string().contains("pin"), "unexpected error: {error}");
         assert_eq!(fixture.lock(), original_lock);
@@ -569,7 +557,7 @@ fn strict_preparation_rejects_forged_registry_paths_before_creating_output() {
 
             let output = fixture.app_manifest.parent().unwrap().join("obj");
             fs::remove_dir_all(&output).expect("remove disposable fixture output");
-            let error = with_cwd_at_workspace_root(fixture.root.path(), || {
+            let error = (|| {
                 let plan =
                     build_compile_plan_with_policy(&fixture.app_manifest, None, UnresolvedDependencyPolicy::Warn)?;
                 prepare_project_workspace_with_options(
@@ -577,7 +565,7 @@ fn strict_preparation_rejects_forged_registry_paths_before_creating_output() {
                     WorkspacePrepareOptions { offline: false, locked, frozen, refresh_lock: false },
                     None,
                 )
-            })
+            })()
             .expect_err("forged registry identity must be rejected");
 
             assert!(!output.exists(), "forged {field} must fail before any obj output");
@@ -1589,7 +1577,7 @@ fn refresh_rejects_a_stale_lock_project_identity_without_rewriting_it() {
 fn duplicate_registry_destination_fails_before_any_materialization() {
     let fixture = RegistryFixture::new();
     fixture.publish(OLD_VERSION, "old release");
-    let error = with_cwd_at_workspace_root(fixture.root.path(), || {
+    let error = (|| {
         let mut plan = build_compile_plan_with_policy(&fixture.app_manifest, None, UnresolvedDependencyPolicy::Warn)?;
         let duplicate = plan
             .unresolved_dependencies
@@ -1599,7 +1587,7 @@ fn duplicate_registry_destination_fails_before_any_materialization() {
             .clone();
         plan.unresolved_dependencies.push(duplicate);
         prepare_project_workspace_with_options(&plan, WorkspacePrepareOptions::default(), None)
-    })
+    })()
     .expect_err("duplicate registry destination must fail");
 
     assert!(error.to_string().contains("materialized destination"), "unexpected error: {error}");
