@@ -92,7 +92,7 @@ pub fn make_manual_owned(length: usize) -> Result<ManualOwned, i32> {
 /// harness attempts release from another thread while this borrow is live.
 pub const BORROW_GATE_LENGTH: usize = 4093;
 fn borrow_gate() -> Result<(), i32> {
-    let Some(gate) = std::env::var_os("BESKID_V06_GLUE_BORROW_GATE") else {
+    let Some(gate) = std::env::var_os("BESKID_GLUE_BORROW_GATE") else {
         return Err(5);
     };
     let gate = std::path::PathBuf::from(gate);
@@ -111,7 +111,7 @@ fn borrow_gate() -> Result<(), i32> {
 /// Each release must report busy (4); another status `s` returns `Err(100 + s)`.
 pub const REENTRANT_RELEASE_LENGTH: usize = 4091;
 fn reentrant_release() -> Result<(), i32> {
-    let Some(gate) = std::env::var_os("BESKID_V06_GLUE_BORROW_GATE") else {
+    let Some(gate) = std::env::var_os("BESKID_GLUE_BORROW_GATE") else {
         return Err(5);
     };
     let request = std::fs::read_to_string(std::path::PathBuf::from(gate).with_extension("reentrant")).map_err(|_| 5)?;

@@ -82,14 +82,13 @@ fn public_run_entrypoint_uses_the_syntax_isle_path() {
 }
 
 #[test]
+#[ignore = "staged evidence: needs BESKID_RUNTIME_PREFIX and BESKID_RUNTIME_KIT_PROFILE"]
 fn staged_runtime_kit_executes_a_canonical_entrypoint() {
-    let prefix = std::env::var_os("BESKID_RUNTIME_PREFIX")
-        .map(std::path::PathBuf::from)
-        .expect("native runtime-kit evidence must set BESKID_RUNTIME_PREFIX");
-    let profile = match std::env::var("BESKID_RUNTIME_KIT_PROFILE").as_deref() {
-        Ok("debug") => BuildProfile::Debug,
-        Ok("release") => BuildProfile::Release,
-        value => panic!("unsupported staged runtime profile: {value:?}"),
+    let staged = beskid_tests_support::evidence::staged_kit();
+    let prefix = staged.prefix;
+    let profile = match staged.profile {
+        beskid_tests_support::evidence::StagedProfile::Debug => BuildProfile::Debug,
+        beskid_tests_support::evidence::StagedProfile::Release => BuildProfile::Release,
     };
     let target = host_runtime_target().expect("supported native host target");
     let mut engine = Engine::with_runtime_kit(&prefix, target, profile).expect("load the staged Linux runtime kit");

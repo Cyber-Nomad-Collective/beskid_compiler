@@ -147,15 +147,14 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "staged evidence: needs BESKID_RUNTIME_PREFIX and BESKID_RUNTIME_KIT_PROFILE"]
     fn staged_native_runtime_kit_evaluates_a_snippet() {
+        let staged = beskid_tests_support::evidence::staged_kit();
         let _serial = serial();
-        let prefix = std::env::var_os("BESKID_RUNTIME_PREFIX")
-            .map(std::path::PathBuf::from)
-            .expect("native evidence must set BESKID_RUNTIME_PREFIX");
-        let profile = match std::env::var("BESKID_RUNTIME_KIT_PROFILE").as_deref() {
-            Ok("debug") => BuildProfile::Debug,
-            Ok("release") => BuildProfile::Release,
-            value => panic!("unsupported staged runtime profile: {value:?}"),
+        let prefix = staged.prefix;
+        let profile = match staged.profile {
+            beskid_tests_support::evidence::StagedProfile::Debug => BuildProfile::Debug,
+            beskid_tests_support::evidence::StagedProfile::Release => BuildProfile::Release,
         };
         let target = host_runtime_target().expect("supported native host target");
         let mut engine =

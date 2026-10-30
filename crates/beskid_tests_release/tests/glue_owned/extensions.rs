@@ -8,16 +8,16 @@
 //! `GlueProcess` (`fixtures/glue/extensions/owned`).
 use super::*;
 
-const MANUAL_HEADER: &str = include_str!("../../../fixtures/glue/manual/extensions/extensions.h");
-const MANUAL_LIBRARY: &str = include_str!("../../../fixtures/glue/manual/extensions/extensions.rs");
-const MANUAL_CALLER: &str = include_str!("../../../fixtures/glue/manual/extensions/extensions_caller.rs");
+const MANUAL_HEADER: &str = include_str!("../../fixtures/glue/manual/extensions/extensions.h");
+const MANUAL_LIBRARY: &str = include_str!("../../fixtures/glue/manual/extensions/extensions.rs");
+const MANUAL_CALLER: &str = include_str!("../../fixtures/glue/manual/extensions/extensions_caller.rs");
 
 const EXTENSION_FIXTURE_FILES: [(&str, &str); 3] = [
-    ("ExtensionTypes.bd", include_str!("../../../fixtures/glue/extensions/owned/ExtensionTypes.bd")),
-    ("ExtensionImport.bd", include_str!("../../../fixtures/glue/extensions/owned/ExtensionImport.bd")),
-    ("rust/implementation.rs", include_str!("../../../fixtures/glue/extensions/owned/rust/implementation.rs")),
+    ("ExtensionTypes.bd", include_str!("../../fixtures/glue/extensions/owned/ExtensionTypes.bd")),
+    ("ExtensionImport.bd", include_str!("../../fixtures/glue/extensions/owned/ExtensionImport.bd")),
+    ("rust/implementation.rs", include_str!("../../fixtures/glue/extensions/owned/rust/implementation.rs")),
 ];
-const EXTENSION_FIXTURE_MANIFEST: &str = include_str!("../../../fixtures/glue/extensions/owned/glue_extensions.bproj");
+const EXTENSION_FIXTURE_MANIFEST: &str = include_str!("../../fixtures/glue/extensions/owned/glue_extensions.bproj");
 const EXTENSION_PROJECT: &str = "glue_extensions";
 const EXTENSION_CONSUMER: &str = "GlueExtensions";
 

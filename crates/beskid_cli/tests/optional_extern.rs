@@ -6,12 +6,13 @@
 //! raises the ABI-v5 `extern_unavailable` trap (code 11, exit status 101). A non-optional
 //! contract over a missing library still fails to load.
 //!
-//! The native test-runner and AOT cases need an installed exact runtime kit with debug and
-//! release profiles; they run when `BESKID_RUNTIME_PREFIX` names one and are skipped otherwise. The fixtures name
-//! `libc.so.6`, so the runtime cases are Linux-only.
+//! The native test-runner and AOT cases run on the debug runtime kit that
+//! `beskid_tests_mod_host::shared_runtime_prefix` stages once per target directory; the CLI child
+//! receives it as `BESKID_RUNTIME_PREFIX`, and no case is skipped. The fixtures name `libc.so.6`,
+//! so the runtime cases are Linux-only.
 
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
 const FIXTURE: &str = include_str!("fixtures/optional_extern/Main.bd");
@@ -57,6 +58,9 @@ impl Project {
             .env("BESKID_CONFIG_DIR", root.join("config"))
             // A per-project managed Corelib keeps parallel cases from provisioning one shared root.
             .env("BESKID_CORELIB_ROOT", root.join("installed-corelib"))
+            // `beskid build` and `beskid test` select the debug profile of this exact kit.
+            .env("BESKID_RUNTIME_PREFIX", shared_runtime_prefix())
+            .env("BESKID_RUNTIME_KIT_PROFILE", "debug")
             .env("OTEL_SDK_DISABLED", "true")
             .current_dir(root)
             .output()
@@ -75,13 +79,10 @@ fn text(output: &Output) -> String {
     format!("{}{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr))
 }
 
-#[cfg(target_os = "linux")]
-fn runtime_kit_available() -> bool {
-    let available = std::env::var_os("BESKID_RUNTIME_PREFIX").is_some_and(|prefix| !prefix.is_empty());
-    if !available {
-        eprintln!("skipping: BESKID_RUNTIME_PREFIX does not name an installed exact runtime kit");
-    }
-    available
+/// The debug runtime kit shared by every test of this target directory, staged on first use.
+fn shared_runtime_prefix() -> &'static Path {
+    static PREFIX: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+    PREFIX.get_or_init(|| beskid_tests_mod_host::shared_runtime_prefix().expect("stage the shared debug runtime kit"))
 }
 
 #[cfg(target_os = "linux")]
@@ -90,9 +91,6 @@ const TRAP_DIAGNOSTIC: &str = "beskid runtime trap v5: extern_unavailable (11)";
 #[cfg(target_os = "linux")]
 #[test]
 fn optional_extern_loads_and_selects_path_under_jit() {
-    if !runtime_kit_available() {
-        return;
-    }
     let project = Project::new(FIXTURE);
     let output = project.beskid(&["test", "--target", "Tests"]);
     let log = text(&output);
@@ -103,9 +101,6 @@ fn optional_extern_loads_and_selects_path_under_jit() {
 #[cfg(target_os = "linux")]
 #[test]
 fn optional_extern_loads_and_selects_path_after_aot_build() {
-    if !runtime_kit_available() {
-        return;
-    }
     let project = Project::new(FIXTURE);
     let (output, executable) = project.build("optional_app");
     assert!(output.status.success(), "beskid build failed:\n{}", text(&output));
@@ -121,9 +116,6 @@ fn optional_extern_loads_and_selects_path_after_aot_build() {
 #[cfg(target_os = "linux")]
 #[test]
 fn calling_an_absent_optional_symbol_traps_under_jit_and_aot() {
-    if !runtime_kit_available() {
-        return;
-    }
     let project = Project::new(TRAP_FIXTURE);
     let output = project.beskid(&["test", "--target", "Tests"]);
     let log = text(&output);
@@ -145,9 +137,6 @@ fn calling_an_absent_optional_symbol_traps_under_jit_and_aot() {
 #[cfg(target_os = "linux")]
 #[test]
 fn required_extern_with_missing_library_still_fails_to_load() {
-    if !runtime_kit_available() {
-        return;
-    }
     let project = Project::new(REQUIRED_FIXTURE);
     let output = project.beskid(&["test", "--target", "Tests"]);
     let log = text(&output);

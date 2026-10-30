@@ -113,6 +113,7 @@ fn foundation_io_closer_stream_and_scoped_cleanup_are_native_safe() {
 }
 
 #[test]
+#[ignore = "staged evidence: needs BESKID_RUNTIME_PREFIX and BESKID_RUNTIME_KIT_PROFILE"]
 fn staged_runtime_kit_emitted_binary_round_trips_redirected_standard_streams() {
     run_staged_standard_stream_fixture(
         "foundation_redirected_streams.bd",
@@ -123,6 +124,7 @@ fn staged_runtime_kit_emitted_binary_round_trips_redirected_standard_streams() {
 }
 
 #[test]
+#[ignore = "staged evidence: needs BESKID_RUNTIME_PREFIX and BESKID_RUNTIME_KIT_PROFILE"]
 fn staged_runtime_kit_emitted_binary_reads_redirected_standard_input() {
     run_staged_standard_stream_fixture(
         "foundation_redirected_input.bd",
@@ -133,16 +135,19 @@ fn staged_runtime_kit_emitted_binary_reads_redirected_standard_input() {
 }
 
 #[test]
+#[ignore = "staged evidence: needs BESKID_RUNTIME_PREFIX and BESKID_RUNTIME_KIT_PROFILE"]
 fn staged_runtime_kit_emitted_binary_writes_redirected_standard_output() {
     run_staged_standard_stream_fixture("foundation_redirected_output.bd", b"", b"redirected-stdout\n", b"");
 }
 
 #[test]
+#[ignore = "staged evidence: needs BESKID_RUNTIME_PREFIX and BESKID_RUNTIME_KIT_PROFILE"]
 fn staged_runtime_kit_emitted_binary_writes_redirected_standard_error() {
     run_staged_standard_stream_fixture("foundation_redirected_stderr.bd", b"", b"", b"redirected-stderr\n");
 }
 
 #[test]
+#[ignore = "staged evidence: needs BESKID_RUNTIME_PREFIX and BESKID_RUNTIME_KIT_PROFILE"]
 fn staged_runtime_kit_emitted_binary_handoffs_core_args_through_the_executable_host() {
     let (output_dir, executable) = build_staged_foundation_executable("foundation_redirected_args.bd", "Main");
     #[cfg(all(target_os = "windows", target_arch = "x86_64", target_env = "msvc"))]
@@ -217,6 +222,7 @@ fn staged_runtime_kit_emitted_binary_handoffs_core_args_through_the_executable_h
 }
 
 #[test]
+#[ignore = "staged evidence: needs BESKID_RUNTIME_PREFIX and BESKID_RUNTIME_KIT_PROFILE"]
 fn staged_runtime_kit_emitted_binary_runs_a_custom_unit_entry() {
     let (_output, executable) = build_staged_foundation_executable("foundation_redirected_unit.bd", "Start");
     let result = run_bounded("custom unit executable", &mut Command::new(&executable), ROUTE_LIMIT);
@@ -229,6 +235,7 @@ fn staged_runtime_kit_emitted_binary_runs_a_custom_unit_entry() {
 /// completes (the parent holds the pipe open and writes nothing): shutdown cancels the fiber and
 /// orphans the worker inside `read` instead of joining it.
 #[test]
+#[ignore = "staged evidence: needs BESKID_RUNTIME_PREFIX and BESKID_RUNTIME_KIT_PROFILE"]
 fn staged_runtime_kit_emitted_binary_exits_with_a_detached_fiber_blocked_on_stdin() {
     use std::process::Stdio;
     let (_output, executable) = build_staged_foundation_executable("foundation_detached_stdin_exit.bd", "Main");
@@ -266,6 +273,7 @@ fn staged_runtime_kit_emitted_binary_exits_with_a_detached_fiber_blocked_on_stdi
 /// error status. Never an abort or a crash signal.
 #[cfg(unix)]
 #[test]
+#[ignore = "staged evidence: needs BESKID_RUNTIME_PREFIX and BESKID_RUNTIME_KIT_PROFILE"]
 fn staged_runtime_kit_emitted_binary_ends_quietly_on_a_closed_stdout() {
     use std::os::unix::process::{CommandExt, ExitStatusExt};
     use std::process::Stdio;
@@ -344,13 +352,11 @@ fn run_staged_standard_stream_fixture(fixture: &str, stdin: &[u8], stdout: &[u8]
 }
 
 fn build_staged_foundation_executable(fixture: &str, entry: &str) -> (tempfile::TempDir, std::path::PathBuf) {
-    let prefix = std::env::var_os("BESKID_RUNTIME_PREFIX")
-        .map(std::path::PathBuf::from)
-        .expect("native runtime-kit evidence must set BESKID_RUNTIME_PREFIX");
-    let profile = match std::env::var("BESKID_RUNTIME_KIT_PROFILE").as_deref() {
-        Ok("debug") => beskid_aot::BuildProfile::Debug,
-        Ok("release") => beskid_aot::BuildProfile::Release,
-        value => panic!("unsupported staged runtime profile: {value:?}"),
+    let staged = beskid_tests_support::evidence::staged_kit();
+    let prefix = staged.prefix;
+    let profile = match staged.profile {
+        beskid_tests_support::evidence::StagedProfile::Debug => beskid_aot::BuildProfile::Debug,
+        beskid_tests_support::evidence::StagedProfile::Release => beskid_aot::BuildProfile::Release,
     };
     let target = beskid_engine::host_runtime_target().expect("supported native host target");
     let lowered = lower_foundation_entry(fixture, entry).expect("redirected standard-stream source lowering");

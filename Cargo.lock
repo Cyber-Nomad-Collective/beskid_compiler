@@ -424,6 +424,7 @@ dependencies = [
  "beskid_pest_gen",
  "beskid_pipeline",
  "beskid_queries",
+ "beskid_tests_support",
  "cargo-cross",
  "cc",
  "cranelift-codegen",
@@ -818,6 +819,7 @@ dependencies = [
  "beskid_engine",
  "beskid_pipeline",
  "beskid_queries",
+ "beskid_tests_support",
  "beskid_tools",
  "tempfile",
 ]
@@ -892,17 +894,9 @@ dependencies = [
 name = "beskid_tests_interop"
 version = "0.1.0"
 dependencies = [
- "anyhow",
  "beskid_abi",
- "beskid_analysis",
  "beskid_aot",
- "beskid_codegen",
  "beskid_engine",
- "beskid_pipeline",
- "beskid_queries",
- "beskid_tests_mod_host",
- "sha2",
- "tempfile",
 ]
 
 [[package]]
@@ -975,7 +969,14 @@ dependencies = [
 name = "beskid_tests_release"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
+ "beskid_abi",
  "beskid_analysis",
+ "beskid_aot",
+ "beskid_codegen",
+ "beskid_pipeline",
+ "beskid_queries",
+ "beskid_tests_mod_host",
  "bsol",
  "serde_json",
  "sha2",

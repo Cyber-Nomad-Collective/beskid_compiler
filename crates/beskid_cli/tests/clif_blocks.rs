@@ -6,10 +6,10 @@
 //! assignment, and call-argument contexts, an expression-statement block, and an emulated
 //! carry-in add. The native fixture hands payload pointers to libc and OpenSSL (Linux).
 //!
-//! The native test-runner (`beskid test`) and AOT (`beskid build` + run) cases need an installed
-//! exact runtime kit with debug and release profiles; they run when `BESKID_RUNTIME_PREFIX` names
-//! one and are skipped otherwise. Build one with
-//! `beskid dev runtime-kit build-native-host --prefix <prefix> --profile debug` (and `release`).
+//! The native test-runner (`beskid test`) and AOT (`beskid build` + run) cases run on the debug
+//! runtime kit that `beskid_tests_mod_host::shared_runtime_prefix` stages once per target
+//! directory; the CLI child receives it as `BESKID_RUNTIME_PREFIX`. No case reads the kit from the
+//! test process environment, and none is skipped.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -57,6 +57,9 @@ impl ClifProject {
             .env("BESKID_CONFIG_DIR", root.join("config"))
             // A per-project managed Corelib keeps parallel cases from provisioning one shared root.
             .env("BESKID_CORELIB_ROOT", root.join("installed-corelib"))
+            // `beskid build` and `beskid test` select the debug profile of this exact kit.
+            .env("BESKID_RUNTIME_PREFIX", shared_runtime_prefix())
+            .env("BESKID_RUNTIME_KIT_PROFILE", "debug")
             .env("OTEL_SDK_DISABLED", "true")
             .current_dir(root)
             .output()
@@ -72,19 +75,14 @@ fn text(output: &Output) -> String {
     format!("{}{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr))
 }
 
-fn runtime_kit_available() -> bool {
-    let available = std::env::var_os("BESKID_RUNTIME_PREFIX").is_some_and(|prefix| !prefix.is_empty());
-    if !available {
-        eprintln!("skipping: BESKID_RUNTIME_PREFIX does not name an installed exact runtime kit");
-    }
-    available
+/// The debug runtime kit shared by every test of this target directory, staged on first use.
+fn shared_runtime_prefix() -> &'static Path {
+    static PREFIX: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+    PREFIX.get_or_init(|| beskid_tests_mod_host::shared_runtime_prefix().expect("stage the shared debug runtime kit"))
 }
 
 #[test]
 fn clif_blocks_pass_under_jit_test() {
-    if !runtime_kit_available() {
-        return;
-    }
     let project = ClifProject::new(FIXTURE);
     let output = project.beskid(&["test", "--target", "ClifTests"]);
     let log = text(&output);
@@ -94,9 +92,6 @@ fn clif_blocks_pass_under_jit_test() {
 
 #[test]
 fn clif_blocks_run_after_aot_build() {
-    if !runtime_kit_available() {
-        return;
-    }
     let project = ClifProject::new(FIXTURE);
     let executable = project.executable("clif_app");
     let output =
@@ -130,9 +125,6 @@ fn clif_block_without_typed_context_fails_with_e1232() {
 #[cfg(target_os = "linux")]
 #[test]
 fn clif_payload_handoff_to_native_code_under_jit_and_aot() {
-    if !runtime_kit_available() {
-        return;
-    }
     let project = ClifProject::new(NATIVE_FIXTURE);
     let output = project.beskid(&["test", "--target", "ClifTests"]);
     let log = text(&output);
