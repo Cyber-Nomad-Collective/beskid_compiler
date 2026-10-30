@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Qualified test selection
+
+- A test inside an inline module runs by its qualified name. `beskid test` reported `mod Topic { test Inner { } }` as `Topic::Inner` but its native build looked up the bare name and failed with E4041 "Missing test `Topic::Inner`". Entry selection now resolves the unit-relative qualified name through the query layer (`beskid_queries::resolve_entry_item`, `item_qualified_name`): a bare name selects only an item at the unit root, and a missing or ambiguous selection fails the build instead of taking the first item of that name. The REPL `Main` lookup uses the same resolution.
+- Same-named tests in different inline modules are distinct tests: `beskid check` reported E1006 for `mod Alpha { test Shared { } }` next to `mod Beta { test Shared { } }`, because the staged duplicate rule compared test names over the whole file. It compares them per module, as the resolver does; two tests of one name in one module still collide.
+- Name resolution reports `HostNotFound` for every resolver answer that gives a name no usable address. The runtime mapped only `EAI_NONAME`; `EAI_NODATA` (a name without address records) and `EAI_ADDRFAMILY` became `NetworkDown`, and the Linux runtime, built with `_POSIX_C_SOURCE` only, did not see their glibc declarations. The classification lives in `assembly/common/network_dns.h` (Windows also maps `WSANO_DATA`) and a host C fixture checks it without a lookup.
+- `scripts/diagnose/v053-alloc-gates.sh` names the current x509 test target (`Encoding`, which merged `Der` and `Pem`).
+
 ### Parse recovery
 
 - A recoverable parse error in a library package's own source (an entry-less `Lib` package, as every Corelib member is) is E0101 at its span in `beskid check`, `build` and `test`, as in an application, and the language server publishes it. Examples are `Beskid.SyntaxNodes..NodeSpan` in a field type, a missing comma in an array literal, `info[9_i64  i]` and a duplicated `if (...)` line. `check` said "no issues" and `build` lowered the parser's repaired tree (internal error E2102, or a silently compiled repair), because the workspace scan of a library parses no unit for discovery and the unit build dropped the recovery diagnostic. Every assembly unit now parses through one strict rule; only the editor keeps a repaired tree, which no cache stores (the artifact schema is 3, so stores of earlier toolchains are rebuilt). The language server published no parse error for a recovered project buffer, application or library; it now does.

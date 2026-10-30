@@ -1,0 +1,35 @@
+use Testing.Assert;
+
+mod Topic
+{
+    test Inner
+    {
+        Assert.True(true, "a nested test passes");
+    }
+
+    test Broken
+    {
+        Assert.Fail("a nested test fails");
+    }
+}
+
+mod Alpha
+{
+    test Shared
+    {
+        return;
+    }
+}
+
+mod Beta
+{
+    test Shared
+    {
+        Assert.Fail("Beta::Shared fails on its own");
+    }
+}
+
+test Shared
+{
+    return;
+}

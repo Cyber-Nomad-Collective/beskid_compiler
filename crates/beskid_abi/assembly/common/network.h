@@ -22,6 +22,7 @@ typedef socklen_t BeskidSocklen;
 #define BeskidSocketError() errno
 #define BeskidSocketClose(s) close(s)
 #endif
+#include "network_dns.h"
 
 enum { NET_OK, NET_ADDRESS_IN_USE, NET_ADDRESS_NOT_AVAILABLE,
   NET_CONNECTION_ABORTED, NET_CONNECTION_REFUSED, NET_CONNECTION_RESET,
@@ -133,8 +134,10 @@ static void BeskidNetworkDnsPerform(struct BeskidWorkerRequest *request) {
   hints.ai_socktype = SOCK_STREAM;
   int error = getaddrinfo(job->host, NULL, &hints, &results);
   if (error) {
-    request->error = error == EAI_NONAME ? NET_HOST_NOT_FOUND : error == EAI_FAMILY ? NET_UNSUPPORTED
-      : error == EAI_MEMORY ? NET_RESOURCE_EXHAUSTED : NET_NETWORK_DOWN;
+    enum BeskidNetworkDnsFailure failure = BeskidNetworkDnsClassify(error);
+    request->error = failure == BESKID_DNS_HOST_NOT_FOUND ? NET_HOST_NOT_FOUND
+      : failure == BESKID_DNS_UNSUPPORTED ? NET_UNSUPPORTED
+      : failure == BESKID_DNS_RESOURCE_EXHAUSTED ? NET_RESOURCE_EXHAUSTED : NET_NETWORK_DOWN;
     request->result = -1; return;
   }
   size_t count = 0;

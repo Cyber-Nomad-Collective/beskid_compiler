@@ -101,3 +101,23 @@ fn test_command_runs_and_filters_test_items() {
         "run filtered test harness fixture",
     );
 }
+
+/// Tests inside inline modules run by their qualified names (`Topic::Inner`), and same-named
+/// tests of two modules and the root are three distinct tests with their own outcomes.
+#[test]
+fn test_command_runs_nested_tests_by_qualified_name() {
+    let workspace = E2eWorkspace::from_fixture("nested_tests");
+    let project_root = workspace.join(".");
+    let cli = BeskidCliInvoker::new();
+
+    let manifest = project_root.join("NestedTests.bproj");
+    let output =
+        cli.run_in(&project_root, ["test", "--plain", "--project", manifest.to_str().expect("manifest path str")]);
+    assert_eq!(output.status.code(), Some(1), "two nested tests fail");
+    for row in ["PASS Topic::Inner", "FAIL Topic::Broken", "PASS Alpha::Shared", "FAIL Beta::Shared", "PASS Shared"] {
+        assert_output_contains(&output, row, "run nested test fixture");
+    }
+    assert_output_contains(&output, "Result: passed=3, failed=2, skipped=0, filtered_out=0", "run nested test fixture");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!stderr.contains("E4041"), "every qualified test is found:\n{stderr}");
+}

@@ -36,16 +36,10 @@ impl SemanticPipelineRule {
             DuplicateKind::ItemName,
             |definition| (definition.name.node.name.clone(), definition.name.span),
         );
-        // Tests have their own namespace: a test may share its name with a function or any
-        // other item, and only two tests of one name collide.
-        let mut seen_tests: HashMap<String, SpanInfo> = HashMap::new();
-        self.check_duplicate_query_entries::<crate::syntax::TestDefinition>(
-            ctx,
-            program,
-            &mut seen_tests,
-            DuplicateKind::ItemName,
-            |definition| (definition.name.node.name.clone(), definition.name.span),
-        );
+        // Tests have their own namespace keyed by module and name: a test may share its name
+        // with a function or any other item, and only two tests of one name in one module
+        // collide (`Alpha::Shared` and `Beta::Shared` are distinct tests).
+        self.check_duplicate_test_names_in_scope(ctx, &program.node.items);
         self.check_duplicate_query_entries::<crate::syntax::ModuleDeclaration>(
             ctx,
             program,
@@ -487,6 +481,23 @@ impl SemanticPipelineRule {
         path.node.segments.iter().map(|segment| segment.node.name.node.name.as_str()).collect::<Vec<_>>().join(".")
     }
 
+    fn check_duplicate_test_names_in_scope(&self, ctx: &mut RuleContext, items: &[Spanned<Node>]) {
+        let mut seen: HashMap<String, SpanInfo> = HashMap::new();
+        for item in items {
+            match &item.node {
+                Node::TestDefinition(definition) => self.emit_duplicate_if_any(
+                    ctx,
+                    &mut seen,
+                    definition.node.name.node.name.clone(),
+                    definition.node.name.span,
+                    DuplicateKind::ItemName,
+                ),
+                Node::InlineModule(module) => self.check_duplicate_test_names_in_scope(ctx, &module.node.items),
+                _ => {}
+            }
+        }
+    }
+
     fn check_duplicate_definition_names(&self, ctx: &mut RuleContext, program: &Spanned<Program>) {
         self.check_duplicate_definition_names_in_scope(ctx, &program.node.items);
     }
@@ -627,6 +638,36 @@ mod tests {
             .filter(|diag| diag.code.as_deref() == Some("E1005"))
             .map(|diag| diag.message.clone())
             .collect()
+    }
+
+    fn duplicate_item_names(source: &str) -> Vec<String> {
+        let pair =
+            BeskidParser::parse(Rule::Program, source).expect("source should parse").next().expect("program pair");
+        let program = Program::parse(pair).expect("source should build AST");
+        let result = run_rules(&program.node, "test.bd", source, &builtin_rules(), AnalysisOptions::default());
+        result
+            .diagnostics
+            .iter()
+            .filter(|diag| diag.code.as_deref() == Some("E1006"))
+            .map(|diag| diag.message.clone())
+            .collect()
+    }
+
+    /// Tests are keyed by module and name: `Alpha::Shared`, `Beta::Shared` and the root
+    /// `Shared` are three distinct tests, and only a second `Shared` in one module collides.
+    #[test]
+    fn same_named_tests_in_different_inline_modules_do_not_collide() {
+        let source = r#"
+            mod Alpha { test Shared { return; } }
+            mod Beta { test Shared { return; } mod Inner { test Shared { return; } } }
+            test Shared { return; }
+        "#;
+        assert!(duplicate_item_names(source).is_empty(), "{:?}", duplicate_item_names(source));
+        let duplicate = r#"
+            mod Alpha { test Shared { return; } test Shared { return; } }
+            test Shared { return; }
+        "#;
+        assert_eq!(duplicate_item_names(duplicate), vec!["duplicate item name `Shared`".to_string()]);
     }
 
     #[test]

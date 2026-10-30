@@ -20,7 +20,7 @@ use cranelift_codegen::isa::TargetIsa;
 
 use super::SyntaxEntrypointArtifact;
 #[cfg(test)]
-use super::syntax_queries::{find_syntax_item, syntax_item_name};
+use super::syntax_queries::{find_syntax_function, syntax_item_name};
 
 /// CodegenInput → ISLE artifact prepared for exact-kit JIT compilation.
 #[derive(Debug)]
@@ -230,7 +230,7 @@ fn find_syntax_entrypoint(
     input: &beskid_codegen::CodegenInput<'_>,
     entrypoint: &str,
 ) -> Option<AstNodeKey> {
-    input.roots().iter().copied().find_map(|root| find_syntax_item(db, root, entrypoint))
+    find_syntax_function(db, input.roots().iter().copied(), entrypoint)
 }
 
 #[cfg(test)]

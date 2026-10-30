@@ -899,6 +899,67 @@ pub fn item_name(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<Arc<str>> 
     with_registered_syntax(db, key, item_name_tracked)
 }
 
+/// Return the source-unit-relative qualified name of a current syntax function, method, or test
+/// item: the names of its enclosing inline modules and its own name, joined by `::`.
+pub fn item_qualified_name(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<Arc<str>> {
+    with_registered_syntax(db, key, item_qualified_name_tracked)
+}
+
+/// Why [`resolve_entry_item`] selected no item.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EntryItemResolutionError {
+    /// No accepted item has the requested qualified name.
+    Missing,
+    /// More than one accepted item has the requested qualified name in the same source unit.
+    Ambiguous(Vec<AstNodeKey>),
+}
+
+/// Resolve an entry selection (`Name` or `Module::Name`) to exactly one accepted item.
+///
+/// The selection is a source-unit-relative qualified name, as reported by [`test_item`] and
+/// [`item_qualified_name`]: a bare name selects only an item at the unit root, never a
+/// same-named item inside an inline module. Roots are searched in order; the first root that
+/// holds a match decides, and two matches there are an ambiguity, never a silent first pick.
+pub fn resolve_entry_item(
+    db: &dyn Db,
+    roots: impl IntoIterator<Item = AstNodeKey>,
+    selection: &str,
+    accepts: impl Fn(Option<IndexedNodeKind>) -> bool,
+) -> Result<AstNodeKey, EntryItemResolutionError> {
+    fn collect(
+        db: &dyn Db,
+        key: AstNodeKey,
+        selection: &str,
+        leaf: &str,
+        accepts: &dyn Fn(Option<IndexedNodeKind>) -> bool,
+        out: &mut Vec<AstNodeKey>,
+    ) {
+        if accepts(node_kind(db, key).ok().flatten())
+            && item_name(db, key).ok().flatten().as_deref() == Some(leaf)
+            && item_qualified_name(db, key).ok().flatten().as_deref() == Some(selection)
+        {
+            out.push(key);
+        }
+        for child in child_nodes(db, key).ok().flatten().iter().flat_map(|children| children.iter().copied()) {
+            collect(db, child, selection, leaf, accepts, out);
+        }
+    }
+    let leaf = selection.rsplit("::").next().unwrap_or(selection);
+    if leaf.is_empty() || selection.split("::").any(str::is_empty) {
+        return Err(EntryItemResolutionError::Missing);
+    }
+    for root in roots {
+        let mut found = Vec::new();
+        collect(db, root, selection, leaf, &accepts, &mut found);
+        match found.len() {
+            0 => continue,
+            1 => return Ok(found[0]),
+            _ => return Err(EntryItemResolutionError::Ambiguous(found)),
+        }
+    }
+    Err(EntryItemResolutionError::Missing)
+}
+
 /// Return the explicitly declared linker symbol for a current syntax function.
 pub fn item_export_symbol(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<ExportSymbol> {
     with_registered_syntax(db, key, item_export_symbol_tracked)

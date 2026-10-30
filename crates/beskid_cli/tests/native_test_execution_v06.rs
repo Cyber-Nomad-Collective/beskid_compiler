@@ -43,6 +43,64 @@ fn v06_native_tests_isolate_assertion_failure_and_continue_selected_entries() {
     assert!(!String::from_utf8_lossy(&output.stderr).contains("JIT"));
 }
 
+fn outcomes(record: &serde_json::Value) -> Vec<(String, String)> {
+    record["tests"]
+        .as_array()
+        .expect("tests array")
+        .iter()
+        .map(|test| (test["qualified_name"].as_str().unwrap().to_owned(), test["outcome"].as_str().unwrap().to_owned()))
+        .collect()
+}
+
+/// A test inside `mod Topic { ... }` is discovered as `Topic::Name`, and the runner builds and
+/// runs it by that qualified name: a passing nested test passes, a failing one fails, and the
+/// same-named tests of two modules (and of the root) run as distinct tests with their own outcome.
+#[test]
+fn tests_in_inline_modules_run_by_qualified_name() {
+    let output = execute(
+        "use Testing.Assert;\n\
+         mod Topic { test Inner { Assert.True(true, \"nested passes\"); } test Broken { Assert.Fail(\"nested fails\"); } }\n\
+         mod Alpha { test Shared { return; } }\n\
+         mod Beta { test Shared { Assert.Fail(\"beta shared fails\"); } mod Deep { test Shared { return; } } }\n\
+         test Shared { return; }\n",
+        &[],
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!output.status.success(), "two tests fail: {stdout}; stderr: {stderr}");
+    assert!(!stderr.contains("E4041"), "every qualified test is found: {stderr}");
+    let record: serde_json::Value = serde_json::from_str(stdout.trim())
+        .unwrap_or_else(|error| panic!("stdout is one JSON record ({error}): {stdout}; stderr: {stderr}"));
+    let pairs = |rows: &[(&str, &str)]| rows.iter().map(|(a, b)| (a.to_string(), b.to_string())).collect::<Vec<_>>();
+    assert_eq!(
+        outcomes(&record),
+        pairs(&[
+            ("Topic::Inner", "passed"),
+            ("Topic::Broken", "failed"),
+            ("Alpha::Shared", "passed"),
+            ("Beta::Shared", "failed"),
+            ("Beta::Deep::Shared", "passed"),
+            ("Shared", "passed"),
+        ]),
+        "{record}"
+    );
+    assert!(record["summary"]["passed"] == 4 && record["summary"]["failed"] == 2, "{record}");
+    let beta = &record["tests"][3];
+    assert_eq!(beta["name"], "Shared", "{record}");
+    assert_eq!(beta["failure"]["kind"], "assertion", "{record}");
+}
+
+/// Only nested tests, all passing: the run succeeds.
+#[test]
+fn a_passing_nested_test_runs_by_qualified_name() {
+    let output = execute("mod Topic { test Inner { return; } }\n", &[]);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "stdout: {stdout}; stderr: {stderr}");
+    let record: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
+    assert_eq!(outcomes(&record), vec![("Topic::Inner".to_owned(), "passed".to_owned())], "{record}");
+}
+
 /// Caller information end to end: `Assert.True(false)` omits `because` and the three caller
 /// parameters; the compiler fills them at the call and the failure record read back at run time
 /// names the line and column where `Assert.True` starts, not the test declaration.

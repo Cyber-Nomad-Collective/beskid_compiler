@@ -99,6 +99,10 @@ const SILENT: &[(&str, &str)] = &[
         "test sharing the name of the function it calls",
         "i32 SumOfSquares(i32 n) { return n * n; } test SumOfSquares { i32 value = SumOfSquares(2); return; }",
     ),
+    (
+        "same-named tests in different inline modules",
+        "mod Alpha { test Shared { return; } } mod Beta { test Shared { return; } } test Shared { return; }",
+    ),
     ("local read", "i64 Main(i64 n) { i64 m = n; return m; }"),
     (
         "three-segment field path",

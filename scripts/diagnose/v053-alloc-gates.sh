@@ -25,7 +25,7 @@ case "$1" in
     done
     for t in NetworkNativeTests GcTests; do smoke runtime/beskid/tests/runtime_semantics $t rt-$t; done
     # The per-package SmokeTests targets are gone; one behaviour target per package stands in for them.
-    for p in uri:UriParseTests codec:CodecCursorTests connect:ConnectLoopbackTests crypto:SymSha x509:Der tls:Messages http2:Http2FrameTests websocket:WsFrameTests websocket:WsEchoTests quic:QuicFrames quic:QuicCreditLoss http3:H3FrameTests web:WebConfig; do
+    for p in uri:UriParseTests codec:CodecCursorTests connect:ConnectLoopbackTests crypto:SymSha x509:Encoding tls:Messages http2:Http2FrameTests websocket:WsFrameTests websocket:WsEchoTests quic:QuicFrames quic:QuicCreditLoss http3:H3FrameTests web:WebConfig; do
       smoke corelib/packages/${p%%:*}/tests ${p##*:} pkg-${p##*:}
     done
     echo DONE >> $out ;;
