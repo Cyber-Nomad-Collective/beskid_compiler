@@ -20,7 +20,8 @@ fn standalone_bsol_uri() -> Uri {
     crate::workspace_scan::path_to_uri(&std::env::temp_dir().join("cache_test.bsol")).expect("valid uri")
 }
 
-#[tokio::test]
+// Paused virtual time: the timeout expires only if the build truly waits.
+#[tokio::test(start_paused = true)]
 async fn initial_workspace_document_does_not_wait_on_its_own_scan_without_a_project() {
     let state = tokio::sync::RwLock::new(State::default());
     let file_uri = Uri::from_str("file:///standalone-scan.bd").expect("valid URI");

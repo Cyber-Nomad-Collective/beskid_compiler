@@ -757,6 +757,7 @@ impl RootUnitFixture {
             dependency_projects,
             unresolved_dependencies: Vec::new(),
             has_core_dependency: false,
+            corelib_root: None,
         };
         Self { root, plan }
     }

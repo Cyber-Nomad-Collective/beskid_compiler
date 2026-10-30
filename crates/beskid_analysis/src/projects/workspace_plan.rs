@@ -48,5 +48,6 @@ pub(crate) fn workspace_plan_from_graph(
             .then(|| graph.root_project_root.join(&graph.root_manifest.project.root)),
         dependency_projects: collect_dependency_projects(graph),
         unresolved_dependencies,
+        corelib_root: graph.corelib_root.clone(),
     })
 }

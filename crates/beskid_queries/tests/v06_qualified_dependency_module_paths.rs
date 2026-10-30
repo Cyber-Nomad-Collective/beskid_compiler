@@ -60,6 +60,7 @@ impl Fixture {
             dependency_projects,
             unresolved_dependencies: vec![],
             has_core_dependency: false,
+            corelib_root: None,
         };
         let options = AssemblyOptions { discovery, ..AssemblyOptions::default() };
         let assembly =

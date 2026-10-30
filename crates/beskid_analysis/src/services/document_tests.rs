@@ -23,27 +23,14 @@ mod tests {
     fn isolated_toolchain_home() -> &'static Path {
         static HOME: std::sync::OnceLock<tempfile::TempDir> = std::sync::OnceLock::new();
         HOME.get_or_init(|| {
-            let home = tempfile::tempdir().expect("create isolated BESKID_HOME");
-            // SAFETY: runs exactly once, before any document test resolves a project, so no test
-            // observes the environment mid-update.
-            unsafe {
-                std::env::set_var("BESKID_HOME", home.path().join("home"));
-                std::env::set_var("BESKID_CONFIG_DIR", home.path().join("config"));
-                std::env::set_var("BESKID_CORELIB_ROOT", home.path().join("corelib"));
-            }
+            let home = tempfile::tempdir().expect("create isolated toolchain home");
+            beskid_abi::runtime_kit::configure_corelib_root(&home.path().join("corelib"))
+                .expect("configure the private Corelib root");
             beskid_tools::ensure_bundled_corelib(&beskid_corelib_embed::CORELIB_BUNDLE)
                 .expect("provision corelib_mvp fixture Corelib");
             home
         })
         .path()
-    }
-
-    fn compiler_workspace_root() -> PathBuf {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .and_then(|p| p.parent())
-            .expect("beskid_analysis crate layout")
-            .to_path_buf()
     }
 
     fn corelib_mvp_paths() -> CorelibMvpFixture {
@@ -76,10 +63,6 @@ mod tests {
         }
         std::fs::write(first.project_root.join("Project.lock"), "unrelated private state").unwrap();
         assert!(!second.project_root.join("Project.lock").exists());
-    }
-
-    fn with_cwd_at_workspace_root<R>(root: &Path, f: impl FnOnce() -> R) -> R {
-        super::super::test_support::with_cwd(root, f)
     }
 
     fn assemble_corelib_mvp(path: &Path, source: &str, project_root: &Path) -> ProgramAssembly {
@@ -139,13 +122,12 @@ mod tests {
 
     fn snapshot_with_entry_resolution()
     -> (crate::services::DocumentAnalysisSnapshot, CorelibMvpFixture, ProgramAssembly) {
-        let root = compiler_workspace_root();
-        with_cwd_at_workspace_root(&root, || {
+        {
             let fixture = corelib_mvp_paths();
             let assembly = assemble_corelib_mvp(&fixture.main_path, &fixture.source, &fixture.project_root);
             let snapshot = snapshot_from_entry_resolution(&assembly, &fixture);
             (snapshot, fixture, assembly)
-        })
+        }
     }
 
     /// Dependency declaration type facts merged into an entry resolution name items of that
@@ -156,8 +138,7 @@ mod tests {
     #[test]
     fn dependency_declaration_type_facts_name_items_of_the_entry_resolution_for_every_entry_position() {
         use crate::resolve::{ItemKind, ResolvedType};
-        let root = compiler_workspace_root();
-        with_cwd_at_workspace_root(&root, || {
+        {
             let fixture = corelib_mvp_paths();
             let assembly = assemble_corelib_mvp(&fixture.main_path, &fixture.source, &fixture.project_root);
             let last = assembly.units.len() - 1;
@@ -203,7 +184,7 @@ mod tests {
             }
             assert!(checked > 0, "dependency declaration type facts were merged");
             assert!(mismatches.is_empty(), "misattributed dependency declaration types: {mismatches:#?}");
-        });
+        };
     }
 
     #[test]

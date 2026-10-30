@@ -31,11 +31,11 @@ pub type CompilationContext = ProjectSessionHandle;
 impl ProjectSessionHandle {
     /// Build a session handle for IDE/analysis paths (module roots from lockfile when present).
     pub fn try_for_analysis_path(path: &Path, workspace_member: Option<&str>) -> Option<Self> {
-        Self::try_for_analysis_path_with_graph_options(path, workspace_member, ProjectGraphBuildOptions::default())
+        Self::try_for_analysis_path_with_graph_options(path, workspace_member, ProjectGraphBuildOptions::toolchain())
     }
 
     /// Like [`Self::try_for_analysis_path`], but forwards [`ProjectGraphBuildOptions`] (for example
-    /// `workspace_member_for_meta_default`) into graph / compile-plan construction.
+    /// an explicit Corelib root) into graph / compile-plan construction.
     pub fn try_for_analysis_path_with_graph_options(
         path: &Path,
         workspace_member: Option<&str>,

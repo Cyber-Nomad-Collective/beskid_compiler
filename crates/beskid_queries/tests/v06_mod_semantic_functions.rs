@@ -66,6 +66,7 @@ impl Fixture {
             }],
             unresolved_dependencies: vec![],
             has_core_dependency: false,
+            corelib_root: None,
         };
         Self::assemble(root, plan, &path, false)
     }
@@ -85,6 +86,7 @@ impl Fixture {
             dependency_projects: vec![],
             unresolved_dependencies: vec![],
             has_core_dependency: false,
+            corelib_root: None,
         };
         std::fs::write(
             &plan.manifest_path,

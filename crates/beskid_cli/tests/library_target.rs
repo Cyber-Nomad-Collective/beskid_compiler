@@ -70,6 +70,8 @@ impl LibraryCase {
             .arg("--output")
             .arg(&artifact)
             .env("BESKID_CORELIB_ROOT", shared_installed_corelib())
+            .env("BESKID_RUNTIME_PREFIX", shared_runtime_prefix())
+            .env("BESKID_RUNTIME_KIT_PROFILE", "debug")
             .current_dir(&self.root);
         if let Some(kind) = kind {
             command.args(["--kind", kind]);
@@ -91,14 +93,14 @@ fn text(output: &Output) -> String {
     format!("{}{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr))
 }
 
-/// Linked library outputs (shared and static) link the exact installed ABI-v5 runtime kit, which a
-/// `target/<profile>` CLI binary does not have. Tests that build them run with `--ignored` against
-/// the staged native runtime-kit matrix prefix; object output needs no kit and always runs.
-fn require_staged_runtime_prefix() {
-    assert!(
-        std::env::var_os("BESKID_RUNTIME_PREFIX").is_some_and(|prefix| !prefix.is_empty()),
-        "linked library outputs require BESKID_RUNTIME_PREFIX to name the staged native runtime-kit matrix prefix"
-    );
+/// The debug runtime kit shared by every test of this target directory, staged on first use.
+///
+/// A `target/<profile>` CLI binary has no installed kit. Linked library outputs (shared and static)
+/// link this exact kit, and the native Mods that an entry-less library activates run on it, so every
+/// case hands it to the CLI child.
+fn shared_runtime_prefix() -> &'static std::path::Path {
+    static PREFIX: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+    PREFIX.get_or_init(|| beskid_tests_mod_host::shared_runtime_prefix().expect("stage the shared debug runtime kit"))
 }
 
 /// Global symbols of a native artifact, without the platform's leading underscore.
@@ -119,9 +121,7 @@ fn type_only_library_builds_object_without_main() {
 }
 
 #[test]
-#[ignore = "requires the staged native runtime-kit matrix prefix"]
 fn type_only_library_builds_without_main() {
-    require_staged_runtime_prefix();
     let case = LibraryCase::new("pub type Placeholder { i32 value; }\n");
     let (output, artifact) = case.build(None);
     assert!(output.status.success(), "library build failed: {}", text(&output));
@@ -147,9 +147,7 @@ fn library_functions_build_object_without_main() {
 }
 
 #[test]
-#[ignore = "requires the staged native runtime-kit matrix prefix"]
 fn library_functions_build_without_main_for_all_non_executable_outputs() {
-    require_staged_runtime_prefix();
     for kind in [None, Some("shared"), Some("static")] {
         let case = LibraryCase::new(
             "i32 Value() { return 41; }\n\
@@ -170,9 +168,7 @@ fn library_functions_build_without_main_for_all_non_executable_outputs() {
 
 /// User exports are exactly the `[Export]` items: `pub` functions alone export no user symbol.
 #[test]
-#[ignore = "requires the staged native runtime-kit matrix prefix"]
 fn library_without_export_attributes_exports_no_user_symbols() {
-    require_staged_runtime_prefix();
     for kind in [None, Some("static")] {
         let case = LibraryCase::new("pub i32 Answer() { return 41; }\npub i32 Other() { return 2; }\n");
         let (output, artifact) = case.build(kind);
@@ -252,9 +248,7 @@ fn entry_less_library_object_defines_declarations_from_every_own_unit() {
 }
 
 #[test]
-#[ignore = "requires the staged native runtime-kit matrix prefix"]
 fn entry_less_library_exports_declarations_from_every_own_unit() {
-    require_staged_runtime_prefix();
     assert_entry_less_library_builds(&entry_less_library_case(), &[None, Some("static")]);
 }
 

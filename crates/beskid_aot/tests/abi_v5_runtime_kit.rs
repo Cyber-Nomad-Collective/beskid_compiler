@@ -58,14 +58,13 @@ fn aot_preparation_resolves_only_the_validated_static_artifact_and_allowlist() {
 }
 
 #[test]
+#[ignore = "staged evidence: needs BESKID_RUNTIME_PREFIX and BESKID_RUNTIME_KIT_PROFILE"]
 fn staged_runtime_kit_resolves_the_canonical_static_archive() {
-    let prefix = std::env::var_os("BESKID_RUNTIME_PREFIX")
-        .map(std::path::PathBuf::from)
-        .expect("native runtime-kit evidence must set BESKID_RUNTIME_PREFIX");
-    let profile = match std::env::var("BESKID_RUNTIME_KIT_PROFILE").as_deref() {
-        Ok("debug") => BuildProfile::Debug,
-        Ok("release") => BuildProfile::Release,
-        value => panic!("unsupported staged runtime profile: {value:?}"),
+    let staged = beskid_tests_support::evidence::staged_kit();
+    let prefix = staged.prefix;
+    let profile = match staged.profile {
+        beskid_tests_support::evidence::StagedProfile::Debug => BuildProfile::Debug,
+        beskid_tests_support::evidence::StagedProfile::Release => BuildProfile::Release,
     };
     let strategy =
         installed_runtime_strategy(&prefix, profile, None).expect("resolve the exact staged ABI-v5 runtime kit");
@@ -75,14 +74,13 @@ fn staged_runtime_kit_resolves_the_canonical_static_archive() {
 }
 
 #[test]
+#[ignore = "staged evidence: needs BESKID_RUNTIME_PREFIX and BESKID_RUNTIME_KIT_PROFILE"]
 fn staged_runtime_kit_links_and_executes_with_the_canonical_static_archive() {
-    let prefix = std::env::var_os("BESKID_RUNTIME_PREFIX")
-        .map(std::path::PathBuf::from)
-        .expect("native runtime-kit evidence must set BESKID_RUNTIME_PREFIX");
-    let profile = match std::env::var("BESKID_RUNTIME_KIT_PROFILE").as_deref() {
-        Ok("debug") => BuildProfile::Debug,
-        Ok("release") => BuildProfile::Release,
-        value => panic!("unsupported staged runtime profile: {value:?}"),
+    let staged = beskid_tests_support::evidence::staged_kit();
+    let prefix = staged.prefix;
+    let profile = match staged.profile {
+        beskid_tests_support::evidence::StagedProfile::Debug => BuildProfile::Debug,
+        beskid_tests_support::evidence::StagedProfile::Release => BuildProfile::Release,
     };
     let target = beskid_abi::runtime_kit::host_runtime_target().expect("supported native host target");
     let source = "i64 Main() { return 41 + 1; }";

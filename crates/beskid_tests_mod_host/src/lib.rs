@@ -80,14 +80,25 @@ pub fn provisioned_cli() -> Result<PathBuf> {
 /// Mods provisioned: `<target>/<profile>/beskid-test-mod-host/corelib/<fingerprint>`.
 ///
 /// The bundle is the one [`provisioned_cli`] embeds (`beskid dev corelib`), which is the bundle
-/// every binary of this target directory embeds. Tests that need an installed Corelib point
-/// `BESKID_CORELIB_ROOT` at this root instead of materializing a fresh copy: the copy, its
+/// every binary of this target directory embeds. Tests that need an installed Corelib use this
+/// root (in-process through [`configure_shared_corelib`], child processes through
+/// `BESKID_CORELIB_ROOT`) instead of materializing a fresh copy: the copy, its
 /// `Project.lock` files and its Mod artifacts are reused by every later test process until the
 /// Corelib sources or the CLI change. A changed bundle gets a new fingerprint and a new root; a
 /// changed CLI or runtime kit fails Mod qualification and rebuilds the Mods in place.
 /// Materialization and provisioning are serialized across processes.
 pub fn shared_corelib_root() -> Result<PathBuf> {
     cached(&SHARED_CORELIB, stage_shared_corelib)
+}
+
+/// [`shared_corelib_root`], configured as this test process's toolchain Corelib
+/// ([`beskid_abi::runtime_kit::configure_corelib_root`]), so in-process project resolution
+/// attaches it as the implicit `Core`. A test process configures only this root; a test that needs
+/// another Corelib passes it explicitly (`ProjectGraphBuildOptions::with_corelib_root`).
+pub fn configure_shared_corelib() -> Result<PathBuf> {
+    let root = shared_corelib_root()?;
+    beskid_abi::runtime_kit::configure_corelib_root(&root).map_err(|message| anyhow::anyhow!(message))?;
+    Ok(root)
 }
 
 fn stage_shared_corelib() -> Result<PathBuf> {

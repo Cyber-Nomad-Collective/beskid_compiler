@@ -3,7 +3,7 @@ use std::sync::OnceLock;
 
 use crate::abi_v5::TargetMetadata;
 
-use super::paths::{ENV_CORELIB_ROOT, ENV_RUNTIME_PREFIX};
+use super::paths::ENV_RUNTIME_PREFIX;
 
 #[derive(Debug)]
 pub enum InstalledToolchainPrefixError {
@@ -78,15 +78,44 @@ pub fn toolchain_corelib_identity() -> Option<&'static str> {
     TOOLCHAIN_CORELIB_IDENTITY.get().map(String::as_str)
 }
 
-/// Resolve the corelib workspace root from an optional override or the installed toolchain layout.
+/// Corelib root this process was configured with by its entry point (see [`configure_corelib_root`]).
+static CONFIGURED_CORELIB_ROOT: OnceLock<PathBuf> = OnceLock::new();
+
+/// Name the Corelib workspace this process resolves as its toolchain Corelib. Binaries call it
+/// once at startup with the value of [`ENV_CORELIB_ROOT`](super::ENV_CORELIB_ROOT) when the user
+/// set one; test harnesses call it with the Corelib they provisioned. The library never reads the
+/// environment for it. Configuring the same root again is a no-op; a different root is an error
+/// (one process resolves one toolchain Corelib).
+pub fn configure_corelib_root(root: &Path) -> Result<(), String> {
+    if root.as_os_str().is_empty() {
+        return Err("the configured Corelib root is empty".into());
+    }
+    let configured = CONFIGURED_CORELIB_ROOT.get_or_init(|| root.to_path_buf());
+    if configured != root {
+        return Err(format!(
+            "toolchain Corelib root already configured as `{}`, not `{}`",
+            configured.display(),
+            root.display()
+        ));
+    }
+    Ok(())
+}
+
+/// The Corelib root configured by [`configure_corelib_root`], if any.
+pub fn configured_corelib_root() -> Option<&'static Path> {
+    CONFIGURED_CORELIB_ROOT.get().map(PathBuf::as_path)
+}
+
+/// Resolve the toolchain Corelib workspace root: the root configured by the process entry point
+/// ([`configure_corelib_root`]), otherwise the installed toolchain layout.
 ///
 /// A corelib shipped beside the executable wins. Standalone executables materialize their embedded
 /// snapshot in a per-user, per-toolchain directory (`~/.beskid/corelib/<identity>`) instead, so a
-/// normal installation needs no environment variables and two toolchains never share one root.
+/// normal installation needs no configuration and two toolchains never share one root.
 /// Without a registered identity there is no per-user root.
 pub fn installed_corelib_root() -> Result<PathBuf, InstalledToolchainPrefixError> {
-    if let Some(root) = non_empty_environment_path(ENV_CORELIB_ROOT) {
-        return Ok(root);
+    if let Some(root) = configured_corelib_root() {
+        return Ok(root.to_path_buf());
     }
 
     let user_root = user_home_directory()

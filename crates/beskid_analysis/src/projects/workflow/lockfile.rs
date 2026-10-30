@@ -484,7 +484,7 @@ pub fn load_project_lock_dependencies_for_plan(
         }
         return Err(parsed.foreign_lock_error(&plan.project_name));
     }
-    let shared_corelib = super::shared_corelib::SharedCorelib::resolve();
+    let shared_corelib = super::shared_corelib::SharedCorelib::at(plan.corelib_root.as_deref());
     let path_entries = plan
         .dependency_projects
         .iter()

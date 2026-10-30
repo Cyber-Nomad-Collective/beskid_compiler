@@ -7,7 +7,9 @@ use std::thread;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
-use beskid_abi::runtime_kit::{installed_corelib_root, register_toolchain_corelib_identity};
+use beskid_abi::runtime_kit::{
+    ENV_CORELIB_ROOT, configure_corelib_root, installed_corelib_root, register_toolchain_corelib_identity,
+};
 use include_dir::Dir;
 use semver::Version;
 
@@ -19,6 +21,16 @@ use beskid_abi::corelib_bundle::{
 /// the workspace manifest, root legal files, and every CoreLib.bws member, with its fingerprint
 /// marker. The binary passes it in, so this crate does not relink when a Corelib source changes.
 pub type EmbeddedCorelib = Dir<'static>;
+
+/// Configure this process's toolchain Corelib root from `BESKID_CORELIB_ROOT` when the user set
+/// it. Binary entry points call this once before they resolve a project; libraries never read the
+/// variable. An unset or empty variable leaves the installed toolchain layout in charge.
+pub fn configure_corelib_root_from_environment() -> Result<()> {
+    let Some(root) = std::env::var_os(ENV_CORELIB_ROOT).filter(|value| !value.is_empty()) else {
+        return Ok(());
+    };
+    configure_corelib_root(Path::new(&root)).map_err(|message| anyhow::anyhow!(message))
+}
 
 /// Outcome of [`ensure_bundled_corelib`]: install root, embedded version string, and whether files were refreshed.
 pub struct CorelibProvisioning {

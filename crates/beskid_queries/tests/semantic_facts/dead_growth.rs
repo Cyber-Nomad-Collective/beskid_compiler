@@ -90,6 +90,7 @@ fn fixture_with(main_body: &str, array: ArraySource) -> Fixture {
         },
         unresolved_dependencies: Vec::new(),
         has_core_dependency: false,
+        corelib_root: None,
     };
     let assembly = Arc::new(
         assemble_program_with_materializer(&plan, None, &main_path, None, &AssemblyOptions::default(), None, None)

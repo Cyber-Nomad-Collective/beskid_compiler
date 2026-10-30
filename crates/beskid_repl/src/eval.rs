@@ -147,15 +147,14 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "staged evidence: needs BESKID_RUNTIME_PREFIX and BESKID_RUNTIME_KIT_PROFILE"]
     fn staged_native_runtime_kit_evaluates_a_snippet() {
+        let staged = beskid_tests_support::evidence::staged_kit();
         let _serial = serial();
-        let prefix = std::env::var_os("BESKID_RUNTIME_PREFIX")
-            .map(std::path::PathBuf::from)
-            .expect("native evidence must set BESKID_RUNTIME_PREFIX");
-        let profile = match std::env::var("BESKID_RUNTIME_KIT_PROFILE").as_deref() {
-            Ok("debug") => BuildProfile::Debug,
-            Ok("release") => BuildProfile::Release,
-            value => panic!("unsupported staged runtime profile: {value:?}"),
+        let prefix = staged.prefix;
+        let profile = match staged.profile {
+            beskid_tests_support::evidence::StagedProfile::Debug => BuildProfile::Debug,
+            beskid_tests_support::evidence::StagedProfile::Release => BuildProfile::Release,
         };
         let target = host_runtime_target().expect("supported native host target");
         let mut engine =
@@ -201,24 +200,14 @@ mod tests {
     }
 
     #[test]
-    fn repl_session_fails_closed_when_exact_kit_manifest_is_missing() {
+    fn repl_engine_fails_closed_when_exact_kit_manifest_is_missing() {
         let _serial = serial();
         let empty = tempfile::tempdir().expect("empty prefix");
-        let previous = std::env::var_os("BESKID_RUNTIME_PREFIX");
-        // SAFETY: `serial` excludes every other case in this binary while the variable is replaced,
-        // and the previous value is restored before the guard is released.
-        unsafe { std::env::set_var("BESKID_RUNTIME_PREFIX", empty.path()) };
-        let error = match crate::session::ReplSession::try_new() {
+        let target = host_runtime_target().expect("supported native host target");
+        let error = match Engine::with_runtime_kit(empty.path(), target, BuildProfile::Debug) {
             Ok(_) => panic!("missing exact kit must fail closed for REPL"),
             Err(error) => error,
         };
-        unsafe {
-            if let Some(value) = previous {
-                std::env::set_var("BESKID_RUNTIME_PREFIX", value);
-            } else {
-                std::env::remove_var("BESKID_RUNTIME_PREFIX");
-            }
-        }
         let message = error.to_string();
         assert!(
             message.contains("abi.json") || message.contains("MetadataRead") || message.contains("runtime kit"),

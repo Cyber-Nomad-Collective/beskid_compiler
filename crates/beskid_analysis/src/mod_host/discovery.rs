@@ -100,6 +100,7 @@ target "lib" {
             dependency_projects: vec![dependency("Lib", &lib), dependency("ModA", &mod_a), dependency("ModA", &mod_a)],
             unresolved_dependencies: Vec::new(),
             has_core_dependency: false,
+            corelib_root: None,
         };
 
         let discovered = discover_mod_dependencies(Some(&plan)).expect("discover mods");

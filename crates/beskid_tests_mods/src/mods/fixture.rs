@@ -151,6 +151,7 @@ impl ReplayLockCase {
             }],
             unresolved_dependencies: Vec::new(),
             has_core_dependency: false,
+            corelib_root: None,
         };
         let lockfile = project.join("Project.lock");
         let prepared = prepare_project_workspace(&plan).expect("prepare v2 replay fixture");

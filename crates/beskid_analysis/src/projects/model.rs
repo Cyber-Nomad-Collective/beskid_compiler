@@ -276,6 +276,9 @@ pub struct CompilePlan {
     pub dependency_projects: Vec<ResolvedDependencyProject>,
     pub unresolved_dependencies: Vec<UnresolvedDependencyNote>,
     pub has_core_dependency: bool,
+    /// Corelib install root the plan was resolved against; preparation reads this Corelib (and
+    /// only this one) as the shared Corelib. `None` for plans without a toolchain Corelib.
+    pub corelib_root: Option<PathBuf>,
 }
 
 /// Lock ownership and dependency materialization, independent of a compile target.
@@ -288,6 +291,8 @@ pub struct ProjectWorkspacePlan {
     pub source_root: Option<PathBuf>,
     pub dependency_projects: Vec<ResolvedDependencyProject>,
     pub unresolved_dependencies: Vec<UnresolvedDependencyNote>,
+    /// Corelib install root the plan was resolved against (see [`CompilePlan::corelib_root`]).
+    pub corelib_root: Option<PathBuf>,
 }
 
 impl From<&CompilePlan> for ProjectWorkspacePlan {
@@ -299,6 +304,7 @@ impl From<&CompilePlan> for ProjectWorkspacePlan {
             source_root: Some(plan.source_root.clone()),
             dependency_projects: plan.dependency_projects.clone(),
             unresolved_dependencies: plan.unresolved_dependencies.clone(),
+            corelib_root: plan.corelib_root.clone(),
         }
     }
 }
@@ -359,6 +365,9 @@ pub struct AssemblyOptions {
     /// proc-macro crates. Seeding grants no authority: codegen still requires exact embedded SDK
     /// bytes and Corelib package identity. Missing seeds fail the assembly.
     pub native_mod_adapter_sources: bool,
+    /// Worker threads that parse and expand units; `None` uses the available parallelism. The
+    /// unit order of the assembly does not depend on it.
+    pub worker_threads: Option<usize>,
 }
 
 impl Default for AssemblyOptions {
@@ -369,6 +378,7 @@ impl Default for AssemblyOptions {
             max_units: 4096,
             skip_parse_errors: false,
             native_mod_adapter_sources: false,
+            worker_threads: None,
         }
     }
 }

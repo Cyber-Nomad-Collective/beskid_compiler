@@ -16,14 +16,23 @@ path = "src/lib.rs"
 name = "beskid_tests_release"
 path = "tests/main.rs"
 
-# No `beskid_cli` dependency: the harness must never see `CARGO_BIN_EXE_beskid_cli`. The only compiler
-# it may run is `<BESKID_V06_QUALIFIED_PREFIX>/bin/beskid`.
+# No `beskid_cli` dependency: the harness must never see `CARGO_BIN_EXE_beskid_cli`. The only CLI it
+# may run is `<BESKID_QUALIFIED_PREFIX>/bin/beskid`. The Glue cases (`glue_owned`) also link the
+# compiler crates: they build Rust owners and consumers in process, but only from a private copy of
+# that installation, whose driver and runtime kit they admit.
 [dependencies]
 sha2 = "0.10"
 tempfile = "3"
 zip = "2"
 
 [dev-dependencies]
+anyhow = "1"
+beskid_abi = { path = "../beskid_abi" }
 beskid_analysis = { path = "../beskid_analysis" }
+beskid_aot = { path = "../beskid_aot" }
+beskid_codegen = { path = "../beskid_codegen" }
+beskid_pipeline = { path = "../beskid_pipeline" }
+beskid_queries = { path = "../beskid_queries" }
+beskid_tests_mod_host = { path = "../beskid_tests_mod_host" }
 bsol = { workspace = true }
 serde_json = "1"

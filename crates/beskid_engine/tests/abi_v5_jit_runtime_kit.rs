@@ -6,7 +6,6 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use beskid_abi::abi_v5::{AbiManifestV5, RuntimeAuditMetadata, TargetMetadata, canonical_source_hash};
@@ -16,10 +15,9 @@ use beskid_codegen::{CodegenArtifact, ExternImport, LoweredFunction};
 use beskid_engine::{BeskidJitModule, Engine, JitRuntimeKit};
 use cranelift_codegen::ir::{AbiParam, ExternalName, Function, InstBuilder, Signature, types};
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
-use support::runtime_prefix::RuntimePrefixContext;
+use support::explicit_kit::run_entrypoint_with_kit;
 
 static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
-static RUNTIME_PREFIX_ENV: Mutex<()> = Mutex::new(());
 
 struct TestDir(PathBuf);
 
@@ -326,14 +324,12 @@ fn engine_uses_only_the_configured_exact_runtime_kit() {
 }
 
 #[test]
-fn engine_try_new_fails_closed_when_exact_debug_manifest_is_missing() {
-    let _environment = RUNTIME_PREFIX_ENV.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+fn engine_fails_closed_when_exact_debug_manifest_is_missing() {
     let Some(target) = host_target() else {
         return;
     };
     let empty = TestDir::new();
-    let _runtime_prefix = RuntimePrefixContext::install(empty.path());
-    let error = match Engine::try_new() {
+    let error = match Engine::with_runtime_kit(empty.path(), target.clone(), BuildProfile::Debug) {
         Ok(_) => panic!("missing exact kit must fail closed"),
         Err(error) => error,
     };
@@ -349,13 +345,12 @@ fn engine_try_new_fails_closed_when_exact_debug_manifest_is_missing() {
 
 #[test]
 fn codegen_input_route_fails_closed_when_exact_kit_manifest_is_missing() {
-    let _environment = RUNTIME_PREFIX_ENV.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     let Some(target) = host_target() else {
         return;
     };
     let empty = TestDir::new();
-    let _runtime_prefix = RuntimePrefixContext::install(empty.path());
-    let error = beskid_engine::services::run_entrypoint(
+    let error = run_entrypoint_with_kit(
+        empty.path(),
         Path::new("missing-kit.bd"),
         "i64 Main() { return 1; }",
         "Main",
@@ -376,7 +371,6 @@ fn codegen_input_route_fails_closed_when_exact_kit_manifest_is_missing() {
 
 #[test]
 fn codegen_input_route_fails_closed_when_exact_kit_is_tampered() {
-    let _environment = RUNTIME_PREFIX_ENV.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     let Some(target) = host_target() else {
         return;
     };
@@ -384,8 +378,8 @@ fn codegen_input_route_fails_closed_when_exact_kit_is_tampered() {
     let shared = install_kit(tampered.path(), &target, true, false, canonical_hash());
     fs::write(shared, b"tampered shared runtime").unwrap();
 
-    let _runtime_prefix = RuntimePrefixContext::install(tampered.path());
-    let error = beskid_engine::services::run_entrypoint(
+    let error = run_entrypoint_with_kit(
+        tampered.path(),
         Path::new("tampered-kit.bd"),
         "i64 Main() { return 1; }",
         "Main",

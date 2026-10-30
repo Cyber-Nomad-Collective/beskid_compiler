@@ -9,8 +9,8 @@
 //! `external_wait_native`), or that release scripts call by binary name (`foundation_io_native`,
 //! `native_runtime_kit_smoke`), stay separate binaries.
 
-#[path = "../support/runtime_prefix.rs"]
-mod runtime_prefix;
+#[path = "../support/explicit_kit.rs"]
+mod explicit_kit;
 #[path = "../support/shared_kit.rs"]
 mod shared_kit;
 
@@ -18,8 +18,8 @@ mod artifact_runtime_reset;
 mod bulk_array_of_native;
 mod contract_dispatch_native;
 mod corelib_repeat_jit;
-mod cyb169_enum_return_sigill;
 mod descriptor_smoke;
+mod enum_return_across_call;
 mod gc_stress_native;
 mod generic_field_match_native;
 mod generic_for_values_native;

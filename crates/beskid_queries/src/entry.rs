@@ -580,6 +580,7 @@ mod tests {
             dependency_projects: Vec::new(),
             unresolved_dependencies: Vec::new(),
             has_core_dependency: false,
+            corelib_root: None,
         };
         let entry_path = plan_entry_path(&plan, &source_root);
         let resolved = beskid_analysis::services::resolved_input_from_plan(entry_path, String::new(), plan, None, None);

@@ -196,6 +196,7 @@ mod tests {
             }],
             unresolved_dependencies: Vec::new(),
             has_core_dependency: false,
+            corelib_root: None,
         };
         let loaded = vec![LoadedModArtifact {
             discovered: DiscoveredMod {
@@ -250,6 +251,7 @@ mod tests {
             dependency_projects: Vec::new(),
             unresolved_dependencies: Vec::new(),
             has_core_dependency: false,
+            corelib_root: None,
         };
         let source = "unit Main() { return; }\n";
         let input = ModHostInput {
@@ -302,6 +304,7 @@ mod generation_authority_tests {
             dependency_projects: vec![],
             unresolved_dependencies: vec![],
             has_core_dependency: false,
+            corelib_root: None,
         };
         let assembly =
             assemble_program_with_materializer(&plan, None, &path, None, &AssemblyOptions::default(), None, None)

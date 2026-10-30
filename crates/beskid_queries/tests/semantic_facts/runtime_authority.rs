@@ -90,6 +90,7 @@ fn syscall_origin_plan(root: &std::path::Path) -> beskid_analysis::projects::Com
         dependency_projects: Vec::new(),
         unresolved_dependencies: Vec::new(),
         has_core_dependency: false,
+        corelib_root: None,
     }
 }
 
@@ -661,7 +662,8 @@ fn admitted_string_core() -> (BeskidDatabase, SourceUnitId, SyntaxGenerationId, 
     let manifest = AbiManifestV5::canonical_runtime(target);
     let mut db = BeskidDatabase::default();
     let source_root = path.ancestors().nth(3).expect("Foundation source root").to_path_buf();
-    let project = ProjectSession::new(&db, source_root.clone(), path.clone(), "corelib_foundation".into(), "test".into());
+    let project =
+        ProjectSession::new(&db, source_root.clone(), path.clone(), "corelib_foundation".into(), "test".into());
     let assembly = Arc::new(ProgramAssembly::new(
         EffectiveCompilationRoots { host: RootEntry { dependency_name: None, source_root }, dependencies: Vec::new() },
         Arc::new(vec![SourceUnit {

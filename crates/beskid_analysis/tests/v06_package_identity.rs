@@ -20,6 +20,7 @@ fn prepare(at: &Path, version: &str, body: &str) -> beskid_analysis::projects::P
             source_root: Some(at.join("src")),
             dependency_projects: vec![],
             unresolved_dependencies: vec![],
+            corelib_root: None,
         },
         WorkspacePrepareOptions::default(),
         None,
@@ -156,6 +157,7 @@ fn materialized_copy_inside_a_project_root_source_validates_against_its_own_root
             source_root: Some(at.clone()),
             dependency_projects: vec![],
             unresolved_dependencies: vec![],
+            corelib_root: None,
         },
         WorkspacePrepareOptions::default(),
         None,
@@ -197,6 +199,7 @@ fn glue_host_at_project_root_owns_its_nominal_sources_through_the_nested_materia
             source_root: Some(at.clone()),
             dependency_projects: vec![],
             unresolved_dependencies: vec![],
+            corelib_root: None,
         },
         WorkspacePrepareOptions::default(),
         None,
@@ -252,6 +255,7 @@ fn parallel_preparations_of_one_project_never_observe_a_partial_mirror() {
             source_root: Some(at.join("src")),
             dependency_projects: vec![],
             unresolved_dependencies: vec![],
+            corelib_root: None,
         };
         std::thread::scope(|scope| {
             let workers = (0..6)

@@ -1,5 +1,8 @@
 use beskid_analysis::projects::graph::builder::build_project_graph_from_manifest;
-use beskid_analysis::projects::{collect_dependency_projects, parse_manifest};
+use beskid_analysis::projects::{ProjectGraphBuildOptions, collect_dependency_projects, parse_manifest};
+
+/// No implicit `Core`: these tests plan path dependencies only.
+const NO_CORELIB: ProjectGraphBuildOptions = ProjectGraphBuildOptions { corelib_root: None };
 
 const ORIGINAL: &str =
     "App { name = \"App\" version = \"0.1.0\" }\ntarget \"App\" { kind = \"App\" entry = \"Main.bd\" }\n";
@@ -19,7 +22,7 @@ fn dep06_planning_uses_edited_intent_without_writing_or_rebasing_paths() {
     )
     .unwrap();
     let edited = format!("{ORIGINAL}dependency \"Local\" {{ source = \"path\" path = \"../café package\" }}\n");
-    let graph = build_project_graph_from_manifest(&manifest, parse_manifest(&edited).unwrap()).unwrap();
+    let graph = build_project_graph_from_manifest(&manifest, parse_manifest(&edited).unwrap(), &NO_CORELIB).unwrap();
     assert_eq!(std::fs::read_to_string(&manifest).unwrap(), ORIGINAL);
     assert!(!app.join("Project.lock").exists());
     assert!(!app.join("obj").exists());
@@ -38,6 +41,6 @@ fn dep06_proposed_graph_rejects_invalid_root_intent() {
     std::fs::write(&manifest, ORIGINAL).unwrap();
     let mut proposed = parse_manifest(ORIGINAL).unwrap();
     proposed.project.name.clear();
-    assert!(build_project_graph_from_manifest(&manifest, proposed).is_err());
+    assert!(build_project_graph_from_manifest(&manifest, proposed, &NO_CORELIB).is_err());
     assert_eq!(std::fs::read_to_string(manifest).unwrap(), ORIGINAL);
 }

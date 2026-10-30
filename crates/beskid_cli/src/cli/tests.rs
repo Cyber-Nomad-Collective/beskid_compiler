@@ -2,25 +2,33 @@ use super::app::{Cli, Commands};
 use clap::{CommandFactory, Parser};
 use std::path::{Path, PathBuf};
 
+/// The `beskid test` argument `long`, as the parser declares it.
+fn test_argument(long: &str) -> clap::Arg {
+    let test = Cli::command().find_subcommand("test").expect("test command").clone();
+    test.get_arguments().find(|argument| argument.get_long() == Some(long)).expect("test argument").clone()
+}
+
+/// Both budgets read their environment variable and have no parser default: without the flag or
+/// the variable the budget falls back to `ExecutionBudgets::default` (120 s per target, 1800 s per
+/// matrix). The values come from the parser, never from this test process's environment.
 #[test]
-fn test_target_timeout_defaults_to_none() {
-    // The default only holds when `BESKID_TARGET_TIMEOUT_SECS` is unset. Hold the env lock so the
-    // env-var tests below cannot set it mid-parse, and clear any value inherited from the caller's
-    // environment (restored afterwards) so the test does not depend on the shell it runs in.
-    let _guard = TARGET_TIMEOUT_ENV_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    let inherited = std::env::var_os("BESKID_TARGET_TIMEOUT_SECS");
-    // SAFETY: serialized by TARGET_TIMEOUT_ENV_LOCK; no other test reads/writes this key.
-    unsafe { std::env::remove_var("BESKID_TARGET_TIMEOUT_SECS") };
-    let result = Cli::try_parse_from(["beskid", "test", "Main.bd"]);
-    if let Some(value) = inherited {
-        unsafe { std::env::set_var("BESKID_TARGET_TIMEOUT_SECS", value) };
+fn test_timeouts_read_their_environment_variables_without_parser_defaults() {
+    for (long, variable) in
+        [("target-timeout", "BESKID_TARGET_TIMEOUT_SECS"), ("matrix-timeout", "BESKID_MATRIX_TIMEOUT_SECS")]
+    {
+        let argument = test_argument(long);
+        assert_eq!(argument.get_env().and_then(|name| name.to_str()), Some(variable), "{long}");
+        assert!(argument.get_default_values().is_empty(), "{long} has a parser default");
     }
-    let cli = result.expect("parse cli");
-    let Commands::Test(args) = cli.command else {
+    let cli = Cli::try_parse_from(["beskid", "test", "--target-timeout", "1", "--matrix-timeout", "1", "Main.bd"])
+        .expect("parse cli");
+    let Commands::Test(mut args) = cli.command else {
         panic!("expected test command");
     };
-    assert_eq!(args.target_timeout, None);
+    args.target_timeout = None;
+    args.matrix_timeout = None;
     assert_eq!(args.execution_budgets().target, std::time::Duration::from_secs(120));
+    assert_eq!(args.execution_budgets().matrix, std::time::Duration::from_secs(1800));
 }
 
 #[test]
@@ -31,55 +39,6 @@ fn test_target_timeout_flag_sets_budget() {
     };
     assert_eq!(args.target_timeout, Some(5));
     assert_eq!(args.execution_budgets().target, std::time::Duration::from_secs(5));
-}
-
-// Guards the two env-var tests below, which mutate a process-wide env var, against
-// cargo's default multi-threaded test runner racing on the same key.
-static TARGET_TIMEOUT_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
-#[test]
-fn test_target_timeout_env_var_sets_budget() {
-    let _guard = TARGET_TIMEOUT_ENV_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    // SAFETY: serialized by TARGET_TIMEOUT_ENV_LOCK; no other test reads/writes this key.
-    unsafe { std::env::set_var("BESKID_TARGET_TIMEOUT_SECS", "42") };
-    let result = Cli::try_parse_from(["beskid", "test", "Main.bd"]);
-    unsafe { std::env::remove_var("BESKID_TARGET_TIMEOUT_SECS") };
-    let cli = result.expect("parse cli");
-    let Commands::Test(args) = cli.command else {
-        panic!("expected test command");
-    };
-    assert_eq!(args.target_timeout, Some(42));
-}
-
-#[test]
-fn test_target_timeout_flag_wins_over_env_var() {
-    let _guard = TARGET_TIMEOUT_ENV_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    // SAFETY: serialized by TARGET_TIMEOUT_ENV_LOCK; no other test reads/writes this key.
-    unsafe { std::env::set_var("BESKID_TARGET_TIMEOUT_SECS", "42") };
-    let result = Cli::try_parse_from(["beskid", "test", "--target-timeout", "7", "Main.bd"]);
-    unsafe { std::env::remove_var("BESKID_TARGET_TIMEOUT_SECS") };
-    let cli = result.expect("parse cli");
-    let Commands::Test(args) = cli.command else {
-        panic!("expected test command");
-    };
-    assert_eq!(args.target_timeout, Some(7));
-}
-
-#[test]
-fn test_matrix_timeout_defaults_to_thirty_minutes() {
-    let _guard = MATRIX_TIMEOUT_ENV_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    let inherited = std::env::var_os("BESKID_MATRIX_TIMEOUT_SECS");
-    // SAFETY: serialized by MATRIX_TIMEOUT_ENV_LOCK; no other test mutates this key.
-    unsafe { std::env::remove_var("BESKID_MATRIX_TIMEOUT_SECS") };
-    let parsed = Cli::try_parse_from(["beskid", "test", "--all-targets", "Main.bd"]);
-    if let Some(value) = inherited {
-        unsafe { std::env::set_var("BESKID_MATRIX_TIMEOUT_SECS", value) };
-    }
-    let cli = parsed.expect("parse cli");
-    let Commands::Test(args) = cli.command else {
-        panic!("expected test command");
-    };
-    assert_eq!(args.execution_budgets().matrix, std::time::Duration::from_secs(1800));
 }
 
 #[test]
@@ -99,31 +58,6 @@ fn test_help_documents_matrix_timeout_default_and_env() {
     assert!(help.contains("--matrix-timeout"));
     assert!(help.contains("default: 1800"));
     assert!(help.contains("BESKID_MATRIX_TIMEOUT_SECS"));
-}
-
-static MATRIX_TIMEOUT_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
-#[test]
-fn test_matrix_timeout_env_var_sets_budget_and_flag_wins() {
-    let _guard = MATRIX_TIMEOUT_ENV_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    let inherited = std::env::var_os("BESKID_MATRIX_TIMEOUT_SECS");
-    // SAFETY: serialized by MATRIX_TIMEOUT_ENV_LOCK; no other test mutates this key.
-    unsafe { std::env::set_var("BESKID_MATRIX_TIMEOUT_SECS", "2400") };
-    let from_env = Cli::try_parse_from(["beskid", "test", "--all-targets", "Main.bd"]);
-    let from_flag = Cli::try_parse_from(["beskid", "test", "--all-targets", "--matrix-timeout", "3600", "Main.bd"]);
-    if let Some(value) = inherited {
-        unsafe { std::env::set_var("BESKID_MATRIX_TIMEOUT_SECS", value) };
-    } else {
-        unsafe { std::env::remove_var("BESKID_MATRIX_TIMEOUT_SECS") };
-    }
-    let Commands::Test(env_args) = from_env.expect("parse env timeout").command else {
-        panic!("expected test command");
-    };
-    let Commands::Test(flag_args) = from_flag.expect("parse flag timeout").command else {
-        panic!("expected test command");
-    };
-    assert_eq!(env_args.execution_budgets().matrix, std::time::Duration::from_secs(2400));
-    assert_eq!(flag_args.execution_budgets().matrix, std::time::Duration::from_secs(3600));
 }
 
 #[test]
@@ -721,19 +655,6 @@ fn v06_capability_document_lists_version_commands_dev_routes_and_schemas() {
     assert!(!schemas.iter().any(|schema| schema["command"] == "run"), "run has no machine output");
     let line = document.to_string();
     assert!(!line.contains('\n'), "the document is one line");
-}
-
-#[test]
-fn native_mod_worker_strips_test_only_runtime_environment() {
-    // SAFETY: no other test of this crate reads or writes these keys.
-    unsafe {
-        std::env::set_var("BESKID_GC_STRESS", "alloc:1,verify");
-        std::env::set_var("BESKID_GC_QUARANTINE", "0");
-    }
-    super::app::strip_test_only_runtime_environment();
-    for name in super::app::TEST_ONLY_RUNTIME_ENVIRONMENT {
-        assert_eq!(std::env::var_os(name), None, "{name} reaches the Mod runtime");
-    }
 }
 
 #[test]

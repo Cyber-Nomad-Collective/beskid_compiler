@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 
 /// Names the complete installed candidate prefix (`<prefix>/bin/beskid`, `<prefix>/lib/beskid-runtime`,
 /// `<prefix>/beskid_corelib`). Absence is a test failure, never a skip.
-pub const QUALIFIED_PREFIX_ENV: &str = "BESKID_V06_QUALIFIED_PREFIX";
+pub const QUALIFIED_PREFIX_ENV: &str = "BESKID_QUALIFIED_PREFIX";
 /// Developer overrides that would let the installed CLI reach a source checkout or a development kit.
 pub const FORBIDDEN_OVERRIDES: [&str; 3] =
     ["BESKID_CORELIB_ROOT", "BESKID_RUNTIME_PREFIX", "BESKID_RUNTIME_KIT_PROFILE"];

@@ -10,7 +10,6 @@ use beskid_analysis::services::{FrontEndOptions, PrepareOptions, resolve_input};
 use beskid_queries::{configure_db_for_project, prepare_compilation_diagnostics};
 
 use crate::projects::fixture_harness::{enter_mod_host, mod_host_for};
-use crate::projects::with_cwd;
 use beskid_tests_support::{temp_case_dir, write_project_manifest as write_manifest};
 
 /// `Note` has a caller-information parameter: typing fills it at every call, which adds syntax
@@ -41,6 +40,7 @@ enum Lowering<'a> {
 }
 
 fn lower_through_spine(case: &str, kind: &str, source: &str, lowering: Lowering<'_>) {
+    let _shared = crate::projects::fixture_harness::shared_query_state_lock();
     let root = temp_case_dir(case);
     let src_dir = root.join("Src");
     fs::create_dir_all(&src_dir).expect("source root");
@@ -62,7 +62,7 @@ target "main" {{
     );
     let entry = src_dir.join("Main.bd");
     fs::write(&entry, source).expect("write entry");
-    with_cwd(&root, || {
+    {
         let resolved = resolve_input(
             Some(&entry),
             Some(&root),
@@ -108,7 +108,7 @@ target "main" {{
             functions.iter().any(|name| name.contains("__BeskidHook_AppHost_")),
             "{case}: the generated hook functions are emitted: {functions:?}"
         );
-    });
+    };
     let _ = fs::remove_dir_all(root);
 }
 

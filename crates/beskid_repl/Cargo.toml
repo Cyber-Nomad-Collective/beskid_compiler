@@ -14,5 +14,6 @@ beskid_queries = { path = "../beskid_queries" }
 
 [dev-dependencies]
 beskid_abi = { path = "../beskid_abi" }
+beskid_tests_support = { path = "../beskid_tests_support" }
 beskid_tools = { path = "../beskid_tools" }
 tempfile = "3"

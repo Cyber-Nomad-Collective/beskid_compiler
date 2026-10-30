@@ -259,7 +259,7 @@ mod tests {
         }
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn scan_wakes_the_moment_the_last_interactive_request_ends() {
         let gate = Arc::new(InteractiveGate::default());
         let first = InteractiveGuard::new(&gate);
@@ -273,23 +273,23 @@ mod tests {
         drop(first);
         tokio::time::sleep(Duration::from_millis(30)).await;
         assert!(!waiting.is_finished(), "one request is still running");
-        let released = std::time::Instant::now();
+        let released = tokio::time::Instant::now();
         drop(second);
         tokio::time::timeout(Duration::from_secs(1), waiting).await.expect("woken").expect("task");
         assert!(released.elapsed() < Duration::from_millis(100), "woken by notification, not by a poll interval");
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn a_steady_stream_of_requests_cannot_starve_the_scan() {
         let gate = Arc::new(InteractiveGate::default());
         let _held = InteractiveGuard::new(&gate);
-        let started = std::time::Instant::now();
+        let started = tokio::time::Instant::now();
         yield_to_interactive_for(&gate, Duration::from_millis(80)).await;
         assert!(started.elapsed() >= Duration::from_millis(70) && started.elapsed() < Duration::from_secs(1));
         assert_eq!(gate.active(), 1, "the request is still running; the scan proceeded after the bound");
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn interactive_analyses_give_a_waiting_background_step_its_turn() {
         let turn = Arc::new(BackgroundTurn::default());
         for _ in 0..10 {
@@ -313,7 +313,7 @@ mod tests {
         tokio::time::timeout(Duration::from_secs(1), held).await.expect("released").expect("task");
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn a_dropped_background_wait_releases_its_turn() {
         let turn = BackgroundTurn::default();
         drop(turn.background_waiting());
@@ -322,7 +322,7 @@ mod tests {
         }
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn an_idle_gate_does_not_wait() {
         let gate = InteractiveGate::default();
         tokio::time::timeout(Duration::from_millis(20), yield_to_interactive(&gate)).await.expect("no wait");

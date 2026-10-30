@@ -12,7 +12,8 @@ pub const RUNTIME_KIT_SCHEMA_VERSION: u32 = 1;
 /// (`<prefix>/bin/<tool>` → `<prefix>`). There is no search-path or nearest-kit fallback.
 pub const ENV_RUNTIME_PREFIX: &str = "BESKID_RUNTIME_PREFIX";
 
-/// Optional override for the directory where the embedded corelib workspace is materialized.
+/// User override for the directory where the embedded corelib workspace is materialized. Only
+/// binary entry points read it, and pass it to [`super::configure_corelib_root`].
 pub const ENV_CORELIB_ROOT: &str = "BESKID_CORELIB_ROOT";
 
 pub(super) const INSTALLED_RUNTIME_ROOT: &str = "lib/beskid-runtime/abi-5";

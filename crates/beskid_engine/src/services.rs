@@ -7,7 +7,7 @@ use beskid_queries::SemanticTypeId;
 
 pub use entrypoint_execution::{
     run_entrypoint, run_entrypoint_from_front_end_with_engine, run_entrypoint_from_front_end_with_pipeline,
-    run_entrypoint_with_pipeline, run_test_from_front_end_with_engine,
+    run_entrypoint_with_engine, run_entrypoint_with_pipeline, run_test_from_front_end_with_engine,
 };
 pub use jit_preparation::{
     PreparedJitEntrypoint, lower_prepared_syntax_entrypoint, lower_syntax_assembly_entrypoint,

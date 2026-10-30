@@ -61,30 +61,27 @@ fn wait_for_document_diagnostics(messages: &Receiver<Value>, uri: &str, version:
 
 #[test]
 fn json_rpc_completion_and_hover_use_dependency_syntax_facts() {
-    let compiler_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .and_then(std::path::Path::parent)
-        .expect("compiler root");
-    // The project stays inside the compiler tree so the LSP discovers the in-tree corelib.
-    // `<compiler>/target` is absent when `CARGO_TARGET_DIR` points elsewhere, so create it.
-    let project_parent = compiler_root.join("target");
-    std::fs::create_dir_all(&project_parent).expect("temporary project parent");
-    let project = tempfile::tempdir_in(&project_parent).expect("temporary project");
-    std::fs::create_dir(project.path().join("Src")).expect("source directory");
+    // The Corelib reaches the server only through `BESKID_CORELIB_ROOT`, so the project can live
+    // anywhere; it stays outside the source tree.
+    let project = tempfile::tempdir().expect("temporary project");
+    // URIs name the canonical path, as the server reports it (the system temporary directory may be
+    // a symbolic link).
+    let project_root = project.path().canonicalize().expect("canonical project directory");
+    std::fs::create_dir(project_root.join("Src")).expect("source directory");
     std::fs::write(
-        project.path().join("ProtocolSmoke.bproj"),
+        project_root.join("ProtocolSmoke.bproj"),
         "ProtocolSmoke {\n  name = \"ProtocolSmoke\"\n  version = \"0.1.0\"\n}\n\ntarget \"App\" {\n  kind = App\n  entry = \"Main.bd\"\n}\n",
     )
     .expect("project manifest");
     let source = "use Core.Output;\n\ni32 Main() {\n    Output.WriteLine(\"ok\");\n    return 0;\n}\n";
-    let source_path = project.path().join("Src/Main.bd");
+    let source_path = project_root.join("Src/Main.bd");
     std::fs::write(&source_path, source).expect("source file");
     let sibling_source =
         "use Core.Output;\n\ni32 Sibling() {\n    Output.WriteLine(\"ok\");\n    return \"wrong\";\n}\n";
-    let sibling_path = project.path().join("Src/Sibling.bd");
+    let sibling_path = project_root.join("Src/Sibling.bd");
     std::fs::write(&sibling_path, sibling_source).expect("sibling source file");
 
-    let project_uri = url::Url::from_directory_path(project.path()).expect("project URI").to_string();
+    let project_uri = url::Url::from_directory_path(&project_root).expect("project URI").to_string();
     let source_uri = url::Url::from_file_path(&source_path).expect("source URI").to_string();
     let sibling_uri = url::Url::from_file_path(&sibling_path).expect("sibling URI").to_string();
     // `beskid_lsp` provisions its embedded Corelib into the resolved Corelib root on startup and
@@ -99,7 +96,7 @@ fn json_rpc_completion_and_hover_use_dependency_syntax_facts() {
     let runtime_prefix = beskid_tests_mod_host::shared_runtime_prefix().expect("shared runtime kit");
     let corelib_root = beskid_tests_mod_host::shared_corelib_root().expect("shared provisioned Corelib");
     let mut child = Command::new(env!("CARGO_BIN_EXE_beskid_lsp"))
-        .current_dir(compiler_root)
+        .current_dir(&project_root)
         .env("BESKID_CORELIB_ROOT", &corelib_root)
         // The runtime kit reaches the server only through `modHost.runtimePrefix`.
         .env_remove("BESKID_RUNTIME_PREFIX")

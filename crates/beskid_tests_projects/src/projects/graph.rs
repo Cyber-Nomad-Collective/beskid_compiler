@@ -1,11 +1,12 @@
 use std::fs;
 
 use beskid_analysis::projects::{
-    UnresolvedDependencyKind, build_project_graph, collect_dependency_projects, collect_unresolved_dependencies,
+    ProjectGraphBuildOptions, UnresolvedDependencyKind, build_project_graph, build_project_graph_with_options,
+    collect_dependency_projects, collect_unresolved_dependencies,
 };
 use beskid_tests_support::{temp_case_dir, write_project_manifest as write_manifest};
 
-use super::test_cwd::{compiler_workspace_root, with_cwd_at_workspace_root};
+use super::compiler_root::compiler_workspace_root;
 
 #[test]
 fn collect_unresolved_dependencies_reports_git_and_registry_nodes() {
@@ -34,7 +35,7 @@ dependency "PkgCore" {
 "#;
     let manifest_path = write_manifest(&dir, source);
 
-    with_cwd_at_workspace_root(&dir, || {
+    {
         let graph = build_project_graph(&manifest_path).expect("graph should build");
         let unresolved = collect_unresolved_dependencies(&graph);
         assert_eq!(unresolved.len(), 2);
@@ -50,7 +51,7 @@ dependency "PkgCore" {
             .expect("registry unresolved dep");
         assert_eq!(registry.dependency_name, "PkgCore");
         assert_eq!(registry.descriptor, "1.2.3");
-    });
+    };
 
     let _ = fs::remove_dir_all(dir);
 }
@@ -147,9 +148,12 @@ dependency "Feature" {
 "#,
     );
 
-    let _core_root = super::scoped_core_dependency_root(&compiler_workspace_root().join("corelib"));
-    with_cwd_at_workspace_root(&compiler_workspace_root(), || {
-        let graph = build_project_graph(&app_manifest_path).expect("graph should build");
+    {
+        let graph = build_project_graph_with_options(
+            &app_manifest_path,
+            ProjectGraphBuildOptions::with_corelib_root(compiler_workspace_root().join("corelib")),
+        )
+        .expect("graph should build");
         let deps = collect_dependency_projects(&graph);
         let names: Vec<_> = deps.iter().map(|d| d.dependency_name.as_str()).collect();
         assert_eq!(
@@ -187,7 +191,7 @@ dependency "Feature" {
             ],
             "dependency order: {names:?}"
         );
-    });
+    };
 
     let _ = fs::remove_dir_all(root);
 }

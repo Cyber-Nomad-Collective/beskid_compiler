@@ -6,9 +6,7 @@
 
 use std::path::Path;
 
-use beskid_engine::services::run_entrypoint;
-
-use crate::runtime_prefix::RuntimePrefixContext;
+use crate::explicit_kit::run_entrypoint_with_kit;
 use crate::shared_kit;
 
 const SOURCE: &str = r#"
@@ -50,9 +48,14 @@ i64 Main() {
 #[test]
 fn matches_on_generic_record_fields_run_inside_their_specializations() {
     let kit = shared_kit::debug();
-    let _runtime_prefix = RuntimePrefixContext::install(kit.prefix());
-    let output = run_entrypoint(Path::new("generic-field-match.bd"), SOURCE, "Main", &beskid_engine::ModHost::NoMods)
-        .expect("matches on generic record fields lower and run in their specializations");
+    let output = run_entrypoint_with_kit(
+        kit.prefix(),
+        Path::new("generic-field-match.bd"),
+        SOURCE,
+        "Main",
+        &beskid_engine::ModHost::NoMods,
+    )
+    .expect("matches on generic record fields lower and run in their specializations");
     // has 1 + 0 + 10 + 10, values 3 + 7 + 4 + 5 + 6, nested 100 + 200 + 300.
     assert_eq!(output, "646");
 }

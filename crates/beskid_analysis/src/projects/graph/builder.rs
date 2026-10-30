@@ -10,8 +10,9 @@ use crate::projects::graph::resolver::{WorkspaceResolutionRules, resolve_depende
 use crate::projects::parser::parse_workspace_manifest;
 use crate::projects::validator::validate_workspace_manifest;
 
+/// Build the project graph with the running toolchain's Corelib ([`ProjectGraphBuildOptions::toolchain`]).
 pub fn build_project_graph(manifest_path: &Path) -> Result<ProjectGraph, ProjectError> {
-    build_project_graph_with_options(manifest_path, ProjectGraphBuildOptions::default())
+    build_project_graph_with_options(manifest_path, ProjectGraphBuildOptions::toolchain())
 }
 
 /// Load workspace policy (overrides, registry aliases and URLs) for a root `Project.proj`.
@@ -58,20 +59,36 @@ pub fn discover_workspace_resolution_rules(
 }
 
 /// Build options for [`build_project_graph_with_options`].
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ProjectGraphBuildOptions {
-    /// Legacy field retained for callers that still pass workspace member hints; ignored for mod discovery.
-    pub workspace_member_for_meta_default: Option<String>,
+    /// Install root of the Corelib that supplies the implicit `Core` dependency: a Corelib
+    /// workspace (holding `beskid_corelib/`) or the aggregate package itself. `None` resolves no
+    /// implicit `Core`. The graph and every plan built from it carry this root, so preparation reads
+    /// the same Corelib the graph was resolved against.
+    pub corelib_root: Option<PathBuf>,
+}
+
+impl ProjectGraphBuildOptions {
+    /// The running toolchain's Corelib ([`beskid_abi::runtime_kit::installed_corelib_root`]); no
+    /// implicit `Core` when the toolchain has none.
+    pub fn toolchain() -> Self {
+        Self { corelib_root: beskid_abi::runtime_kit::installed_corelib_root().ok() }
+    }
+
+    /// An explicit Corelib install root.
+    pub fn with_corelib_root(root: impl Into<PathBuf>) -> Self {
+        Self { corelib_root: Some(root.into()) }
+    }
 }
 
 pub fn build_project_graph_with_options(
     manifest_path: &Path,
-    _options: ProjectGraphBuildOptions,
+    options: ProjectGraphBuildOptions,
 ) -> Result<ProjectGraph, ProjectError> {
     // An interrupted dependency commit is recovered before the root manifest is read.
     crate::projects::dependency_transaction::recover_interrupted_dependency_pair(manifest_path)?;
     let root_manifest = load_manifest_from_path(manifest_path)?;
-    build_project_graph_from_manifest(manifest_path, root_manifest)
+    build_project_graph_from_manifest(manifest_path, root_manifest, &options)
 }
 
 /// Resolve proposed root intent against its original physical directory without
@@ -79,6 +96,7 @@ pub fn build_project_graph_with_options(
 pub fn build_project_graph_from_manifest(
     manifest_path: &Path,
     root_manifest: crate::projects::model::ProjectManifest,
+    options: &ProjectGraphBuildOptions,
 ) -> Result<ProjectGraph, ProjectError> {
     crate::projects::validator::validate_manifest(&root_manifest)?;
     let root_manifest_path = normalize_existing_path(manifest_path);
@@ -109,6 +127,7 @@ pub fn build_project_graph_from_manifest(
         &mut node_by_manifest,
         &mut visiting,
         &mut has_core_dependency,
+        options.corelib_root.as_deref(),
     )?;
 
     Ok(ProjectGraph {
@@ -119,5 +138,6 @@ pub fn build_project_graph_from_manifest(
         root_manifest,
         node_by_manifest,
         has_core_dependency,
+        corelib_root: options.corelib_root.clone(),
     })
 }

@@ -28,6 +28,42 @@ pub fn run_entrypoint_with_pipeline(
     mod_host: &ModHost,
     pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<String> {
+    let (front, resolved) = entrypoint_front_end(source_path, source, mod_host, pipeline)?;
+    run_entrypoint_from_front_end_with_pipeline(
+        &front,
+        &resolved.source_path.display().to_string(),
+        &resolved.source,
+        entrypoint,
+        pipeline,
+    )
+}
+
+/// Same as [`run_entrypoint`] on an existing [`Engine`] (its explicit runtime kit) instead of the
+/// installed one.
+pub fn run_entrypoint_with_engine(
+    engine: &mut Engine,
+    source_path: &std::path::Path,
+    source: &str,
+    entrypoint: &str,
+    mod_host: &ModHost,
+) -> Result<String> {
+    let (front, resolved) = entrypoint_front_end(source_path, source, mod_host, None)?;
+    run_entrypoint_from_front_end_with_engine(
+        engine,
+        &front,
+        &resolved.source_path.display().to_string(),
+        &resolved.source,
+        entrypoint,
+        None,
+    )
+}
+
+fn entrypoint_front_end(
+    source_path: &std::path::Path,
+    source: &str,
+    mod_host: &ModHost,
+    pipeline: Option<&dyn PipelineObserver>,
+) -> Result<(beskid_analysis::services::ExecutableFrontEnd, ResolvedInput)> {
     let source_path = beskid_codegen::materialize_source_path_for_lowering(source_path, source)?;
     let compile_plan = beskid_analysis::services::compile_plan_for_input_path(&source_path)
         .or_else(|| Some(beskid_analysis::services::synthetic_compile_plan_for_source(&source_path)));
@@ -45,13 +81,7 @@ pub fn run_entrypoint_with_pipeline(
         mod_host.clone(),
         pipeline,
     )?;
-    run_entrypoint_from_front_end_with_pipeline(
-        &front,
-        &resolved.source_path.display().to_string(),
-        &resolved.source,
-        entrypoint,
-        pipeline,
-    )
+    Ok((front, resolved))
 }
 
 /// JIT-compile and run using a pre-built front-end (avoids re-running semantic analysis).

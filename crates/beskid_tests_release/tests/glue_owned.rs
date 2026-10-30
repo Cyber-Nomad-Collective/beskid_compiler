@@ -1,4 +1,4 @@
-//! v0.6 Rust Glue owned end-to-end harness.
+//! Rust Glue owned end-to-end release harness.
 //!
 //! Route: actual project manifest -> CompilePlan/prepared front end -> registered
 //! codegen input -> private `build_rust_owner` and `build_glue_artifact` ->
@@ -11,13 +11,13 @@
 //! test executable; the runtime provider comes from the same prefix). It never
 //! runs from `target/*/deps`.
 //!
-//! `BESKID_V06_QUALIFIED_PREFIX` must name the qualified installation prefix.
-//! Absence is a test failure, never a skip. The test binary itself must be built
-//! with `BESKID_COMPILER_DRIVER_BUILD_RECEIPT` for the same driver bytes that the
-//! prefix ships; otherwise the driver selector fails closed and these tests fail.
-//!
-//! The old manual `native.rs`/`native_gate.py` registry route is not ownership
-//! evidence and is not used here.
+//! `BESKID_QUALIFIED_PREFIX` must name the qualified installation prefix. Absence is a test
+//! failure, never a skip, so these tests live in the release harness, which only the release lane
+//! runs against the candidate installation; the source-tree workspace run excludes this crate. The
+//! test binary itself must be built with `BESKID_COMPILER_DRIVER_BUILD_RECEIPT` for the same
+//! driver bytes that the prefix ships; otherwise the driver selector fails closed and these tests
+//! fail. The build-tree denial of the driver needs no installation and stays a workspace test
+//! (`beskid_tests_interop`, `interop::driver_selector`).
 use beskid_aot::{
     api::{
         NativeExecutionControl, RuntimeKitRequest,
@@ -49,19 +49,19 @@ use std::{
     time::{Duration, Instant},
 };
 
-const QUALIFIED_PREFIX_ENV: &str = "BESKID_V06_QUALIFIED_PREFIX";
-const QUALIFIED_PROFILE_ENV: &str = "BESKID_V06_QUALIFIED_PROFILE";
-const CARGO_ENV: &str = "BESKID_V06_GLUE_CARGO";
-const RUSTC_ENV: &str = "BESKID_V06_GLUE_RUSTC";
-const LINKER_ENV: &str = "BESKID_V06_GLUE_LINKER";
-const CHILD_ENV: &str = "BESKID_V06_GLUE_CHILD";
-const GATE_ENV: &str = "BESKID_V06_GLUE_BORROW_GATE";
+const QUALIFIED_PREFIX_ENV: &str = "BESKID_QUALIFIED_PREFIX";
+const QUALIFIED_PROFILE_ENV: &str = "BESKID_QUALIFIED_PROFILE";
+const CARGO_ENV: &str = "BESKID_GLUE_CARGO";
+const RUSTC_ENV: &str = "BESKID_GLUE_RUSTC";
+const LINKER_ENV: &str = "BESKID_GLUE_LINKER";
+const CHILD_ENV: &str = "BESKID_GLUE_CHILD";
+const GATE_ENV: &str = "BESKID_GLUE_BORROW_GATE";
 /// Warmed owned project of this test-binary run, handed to private-prefix children.
-const TEMPLATE_PROJECT_ENV: &str = "BESKID_V06_GLUE_TEMPLATE_PROJECT";
+const TEMPLATE_PROJECT_ENV: &str = "BESKID_GLUE_TEMPLATE_PROJECT";
 /// Owner image cache (`build_rust_owner` `image_cache`) handed to the private-prefix children of
 /// the owned cases. They assert owner admission and the owned ABI, not a cold tool chain; the
 /// cases that assert tool isolation run the installed CLI, which never uses a cache.
-const OWNER_IMAGE_CACHE_ENV: &str = "BESKID_V06_GLUE_OWNER_IMAGE_CACHE";
+const OWNER_IMAGE_CACHE_ENV: &str = "BESKID_GLUE_OWNER_IMAGE_CACHE";
 /// Codegen worker bound (item emission and machine-code compilation) for every compiler this
 /// harness runs. Inherited when the caller sets it; otherwise [`DEFAULT_CODEGEN_THREADS`].
 const CODEGEN_THREADS_ENV: &str = "BESKID_CODEGEN_THREADS";
@@ -80,7 +80,6 @@ const BORROW_GATE_LENGTH: usize = 4093;
 const REENTRANT_RELEASE_LENGTH: usize = 4091;
 const OWNED_LIMIT: usize = 16 * 1024 * 1024;
 const PROVIDER_FOREIGN: i32 = 2;
-const PROVIDER_BUSY: i32 = 4;
 
 fn driver_name() -> &'static str {
     if cfg!(windows) { "beskid_native_tool_driver.exe" } else { "beskid_native_tool_driver" }
@@ -193,10 +192,10 @@ fn codegen_threads() -> std::ffi::OsString {
     std::env::var_os(CODEGEN_THREADS_ENV).unwrap_or_else(|| DEFAULT_CODEGEN_THREADS.into())
 }
 
-/// Work root of this run. Under Cargo it is `<target>/<profile>/beskid-v06-glue`, beside the
+/// Work root of this run. Under Cargo it is `<target>/<profile>/beskid-glue-harness`, beside the
 /// `deps/` directory this test executable runs from (the layout `beskid_tests_mod_host` uses). The
 /// release producer runs a retained copy of the executable outside any build tree; its root is
-/// `beskid-v06-glue` in the system temporary directory. Private prefixes, projects and the
+/// `beskid-glue-harness` in the system temporary directory. Private prefixes, projects and the
 /// template live under one root, on one file system, so per-test copies are hard links.
 fn harness_root() -> PathBuf {
     let executable = std::env::current_exe().unwrap();
@@ -206,7 +205,7 @@ fn harness_root() -> PathBuf {
     } else {
         std::env::temp_dir()
     };
-    let root = base.join("beskid-v06-glue");
+    let root = base.join("beskid-glue-harness");
     fs::create_dir_all(&root).unwrap();
     root
 }
@@ -237,12 +236,12 @@ impl Drop for FileLock {
 /// compiled. No test reads the source checkout at run time: the release producer runs a retained
 /// copy of this executable against the installed candidate alone.
 const OWNED_FIXTURE_FILES: [(&str, &str); 4] = [
-    ("ManualTypes.bd", include_str!("../../fixtures/glue/manual/owned/ManualTypes.bd")),
-    ("ManualImport.bd", include_str!("../../fixtures/glue/manual/owned/ManualImport.bd")),
-    ("ManualExport.bd", include_str!("../../fixtures/glue/manual/owned/ManualExport.bd")),
-    ("rust/implementation.rs", include_str!("../../fixtures/glue/manual/owned/rust/implementation.rs")),
+    ("ManualTypes.bd", include_str!("../fixtures/glue/manual/owned/ManualTypes.bd")),
+    ("ManualImport.bd", include_str!("../fixtures/glue/manual/owned/ManualImport.bd")),
+    ("ManualExport.bd", include_str!("../fixtures/glue/manual/owned/ManualExport.bd")),
+    ("rust/implementation.rs", include_str!("../fixtures/glue/manual/owned/rust/implementation.rs")),
 ];
-const OWNED_FIXTURE_MANIFEST: &str = include_str!("../../fixtures/glue/manual/owned/manual_owned.bproj");
+const OWNED_FIXTURE_MANIFEST: &str = include_str!("../fixtures/glue/manual/owned/manual_owned.bproj");
 /// The fixture manifest's Corelib path dependency, rebound to the installed Corelib.
 const OWNED_FIXTURE_CORELIB: &str = "\"../../../../../../corelib/beskid_corelib\"";
 /// Digest of the installed Corelib bundle, written by the bundle assembly.
@@ -558,15 +557,6 @@ fn run_in_private_prefix(name: &str, staging: DriverStaging, project: ChildProje
 
 // ---------------------------------------------------------------------------
 // Driver selector: immutable embedded digest + actual running executable prefix.
-
-#[test]
-fn v06_glue_driver_denied_from_build_tree() {
-    let error = match beskid_abi::compiler_driver::installed_compiler_driver() {
-        Ok(driver) => panic!("driver admitted from build tree: {}", driver.path().display()),
-        Err(error) => error,
-    };
-    assert!(!error.is_empty());
-}
 
 #[test]
 fn v06_glue_driver_admitted_only_from_private_prefix() {
@@ -1237,7 +1227,7 @@ fn v06_glue_owned_opaque_borrow_survives_release() {
 }
 
 /// The borrow assertions of [`v06_glue_owned_opaque_borrow_survives_release`] over an admitted
-/// process. `gate` is the path the owner fixture reads from `BESKID_V06_GLUE_BORROW_GATE` of this
+/// process. `gate` is the path the owner fixture reads from `BESKID_GLUE_BORROW_GATE` of this
 /// process (R4-OWN-14 same-thread busy, R4-OWN-19 foreign-thread denial, borrowed call).
 fn assert_borrow_survives_release(process: &GlueProcess, packet: &GlueArtifact, gate: &Path) {
     let create: Create = unsafe { checked(process, packet, "manual_ImportCreate") };
@@ -1874,9 +1864,9 @@ fn v06_glue_cli_rebuild_replaces_and_failed_rebuild_preserves() {
 // published images in ways that need process-wide state (the owner's borrow gate) or that end the
 // process (an owner abort) run those calls in a child copy of this executable.
 
-const PUBLISHED_CONSUMER_ENV: &str = "BESKID_V06_GLUE_PUBLISHED_CONSUMER";
-const PUBLISHED_OWNER_ENV: &str = "BESKID_V06_GLUE_PUBLISHED_OWNER";
-const PUBLISHED_PIN_ENV: &str = "BESKID_V06_GLUE_PUBLISHED_PIN";
+const PUBLISHED_CONSUMER_ENV: &str = "BESKID_GLUE_PUBLISHED_CONSUMER";
+const PUBLISHED_OWNER_ENV: &str = "BESKID_GLUE_PUBLISHED_OWNER";
+const PUBLISHED_PIN_ENV: &str = "BESKID_GLUE_PUBLISHED_PIN";
 /// Printed by the abort child immediately before the aborting owner call.
 const ABORT_MARKER: &str = "beskid-v06-glue-owner-abort-call";
 
@@ -2671,7 +2661,7 @@ impl beskid_pipeline::PipelineObserver for EmittedUnits {
 }
 
 /// A native test object needs the exact installed runtime kit, so it runs from a private qualified
-/// prefix (absence of `BESKID_V06_QUALIFIED_PREFIX` fails loudly in the parent).
+/// prefix (absence of `BESKID_QUALIFIED_PREFIX` fails loudly in the parent).
 #[test]
 fn v06_native_test_object_compiles_shared_helper_once_and_links_distinct_entries() {
     run_in_private_prefix(

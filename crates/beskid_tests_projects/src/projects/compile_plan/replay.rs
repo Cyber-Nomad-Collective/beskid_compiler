@@ -6,8 +6,6 @@ use beskid_analysis::projects::{
 };
 use beskid_tests_support::{temp_case_dir, write_project_manifest};
 
-use super::super::test_cwd::with_cwd_at_workspace_root;
-
 struct ReplayFixture {
     root: PathBuf,
     plan: CompilePlan,
@@ -28,7 +26,7 @@ impl ReplayFixture {
             "project {{\n  name = \"App\"\n  version = \"0.1.0\"\n}}\n\ntarget \"App\" {{\n  kind = \"App\"\n  entry = \"Main.bd\"\n}}\n\ndependency \"Shared\" {{\n  source = \"path\"\n  path = \"../{dependency_dir}\"\n}}\n"
         );
         let manifest_path = write_project(&app, &app_manifest);
-        let (plan, materialized_source) = with_cwd_at_workspace_root(&root, || {
+        let (plan, materialized_source) = {
             let plan = build_compile_plan(&manifest_path, None).expect("resolve fixture graph");
             let workspace = prepare_project_workspace(&plan).expect("write genuine lock and materialize graph");
             let source = workspace
@@ -39,7 +37,7 @@ impl ReplayFixture {
                 .materialized_source_root
                 .clone();
             (plan, source)
-        });
+        };
         let lock_path = app.join(PROJECT_LOCK_FILE_NAME);
         let lock = fs::read_to_string(&lock_path).expect("read generated lock");
         assert!(lock.starts_with("# Project.lock v3\n"), "fixture must exercise v3 replay");

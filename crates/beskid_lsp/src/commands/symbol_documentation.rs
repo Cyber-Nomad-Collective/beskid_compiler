@@ -72,6 +72,11 @@ fn documentation_uri_for_offset(document: &Document, offset: usize) -> Option<St
 
 fn absolute_spec_url(spec_path: &str) -> String {
     let spec_base = std::env::var("BESKID_SPEC_BASE_URL").unwrap_or_else(|_| DEFAULT_SPEC_BASE.to_string());
+    absolute_spec_url_at(&spec_base, spec_path)
+}
+
+/// `spec_path` joined to the documentation base URL `spec_base`.
+fn absolute_spec_url_at(spec_base: &str, spec_path: &str) -> String {
     let spec_base = spec_base.trim_end_matches('/');
     if spec_path.starts_with("/platform-spec/") {
         let site_root = spec_base.strip_suffix("/platform-spec").unwrap_or(spec_base).trim_end_matches('/');
@@ -168,22 +173,10 @@ mod tests {
 
     #[test]
     fn absolute_spec_url_joins_default_site_root() {
-        // Uses DEFAULT_SPEC_BASE when BESKID_SPEC_BASE_URL is unset.
-        let prior = std::env::var("BESKID_SPEC_BASE_URL").ok();
-        // SAFETY: test-only env mutation; restored before return.
-        unsafe {
-            std::env::remove_var("BESKID_SPEC_BASE_URL");
-        }
         assert_eq!(
-            absolute_spec_url(CORELIB_SPEC_PATH),
+            absolute_spec_url_at(DEFAULT_SPEC_BASE, CORELIB_SPEC_PATH),
             "https://spec.beskid-lang.org/platform-spec/core-library/stability-and-api-shape/corelib-api-shape/"
         );
-        if let Some(value) = prior {
-            // SAFETY: test-only env restore.
-            unsafe {
-                std::env::set_var("BESKID_SPEC_BASE_URL", value);
-            }
-        }
     }
 
     #[test]

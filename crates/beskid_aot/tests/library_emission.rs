@@ -33,6 +33,7 @@ fn library_with_entry_exports_its_own_imported_units() {
         dependency_projects: Vec::new(),
         unresolved_dependencies: Vec::new(),
         has_core_dependency: false,
+        corelib_root: None,
     };
     let resolved = resolved_input_from_plan(source_root.join("Lib.bd"), entry_source.into(), plan, None, None);
     let front = compile_mod_free_front_end(

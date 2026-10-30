@@ -179,6 +179,7 @@ impl TestWorkspace {
             dependency_projects: Vec::new(),
             unresolved_dependencies: Vec::new(),
             has_core_dependency: false,
+            corelib_root: None,
         }
     }
 }

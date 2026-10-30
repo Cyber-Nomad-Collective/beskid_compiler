@@ -120,7 +120,7 @@ mkdir -p "${fixture_root}/captured-symbols"
 
 assert_lifecycle_smokes() {
   while IFS=':' read -r consumer test_name; do
-    test "$(grep -Fc -- "test --locked -p beskid_engine --test foundation_io_native ${test_name} -- --exact" "${fixture_root}/cargo-calls")" = 2
+    test "$(grep -Fc -- "test --locked -p beskid_engine --test foundation_io_native ${test_name} -- --exact --include-ignored" "${fixture_root}/cargo-calls")" = 2
   done <<'EOF'
 native-executable-streams:staged_runtime_kit_emitted_binary_round_trips_redirected_standard_streams
 native-executable-stdin:staged_runtime_kit_emitted_binary_reads_redirected_standard_input
@@ -168,9 +168,9 @@ if grep -E -- '--(debug|release)-provenance-symbol-list' "${fixture_root}/cargo-
   echo 'legacy combined provenance option remains in the matrix invocation' >&2
   exit 1
 fi
-test "$(grep -Fc -- '-p beskid_engine --test native_runtime_kit_smoke staged_runtime_kit_executes_a_canonical_entrypoint -- --exact' "${fixture_root}/cargo-calls")" = 2
-test "$(grep -Fc -- '-p beskid_aot --test abi_v5_runtime_kit staged_runtime_kit_links_and_executes_with_the_canonical_static_archive -- --exact' "${fixture_root}/cargo-calls")" = 2
-test "$(grep -Fc -- '-p beskid_repl eval::tests::staged_native_runtime_kit_evaluates_a_snippet -- --exact' "${fixture_root}/cargo-calls")" = 2
+test "$(grep -Fc -- '-p beskid_engine --test native_runtime_kit_smoke staged_runtime_kit_executes_a_canonical_entrypoint -- --exact --include-ignored' "${fixture_root}/cargo-calls")" = 2
+test "$(grep -Fc -- '-p beskid_aot --test abi_v5_runtime_kit staged_runtime_kit_links_and_executes_with_the_canonical_static_archive -- --exact --include-ignored' "${fixture_root}/cargo-calls")" = 2
+test "$(grep -Fc -- '-p beskid_repl eval::tests::staged_native_runtime_kit_evaluates_a_snippet -- --exact --include-ignored' "${fixture_root}/cargo-calls")" = 2
 test "$(grep -Fc -- 'run -q -p beskid_cli -- run ' "${fixture_root}/cargo-calls")" = 1
 assert_lifecycle_smokes
 

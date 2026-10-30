@@ -4,7 +4,6 @@ use crate::projects::fixture_harness::analyze_file_with_mods;
 use beskid_analysis::CompilationContext;
 use beskid_analysis::projects::TargetKind;
 
-use crate::projects::with_cwd_at_workspace_root;
 use beskid_tests_support::{temp_case_dir, write_project_manifest as write_manifest};
 
 #[test]
@@ -42,7 +41,7 @@ i32 Main() {
     let entry = src_dir.join("Main.bd");
     fs::write(&entry, source).expect("write source");
 
-    with_cwd_at_workspace_root(&root, || {
+    {
         let context = CompilationContext::try_for_analysis_path(&entry, None).expect("compilation context for project");
         assert_eq!(context.compile_plan.as_ref().expect("compile plan").target.kind, TargetKind::App);
         let diagnostics = analyze_file_with_mods(&entry).expect("analyze project source");
@@ -51,7 +50,7 @@ i32 Main() {
             codes.iter().any(|code| code == "E1701"),
             "expected E1701 for app project without launch, got {codes:?}"
         );
-    });
+    };
 
     let _ = fs::remove_dir_all(root);
 }
@@ -92,13 +91,13 @@ i32 marker() {
     let entry = src_dir.join("Lib.bd");
     fs::write(&entry, source).expect("write source");
 
-    with_cwd_at_workspace_root(&root, || {
+    {
         let context = CompilationContext::try_for_analysis_path(&entry, None).expect("compilation context for project");
         assert_eq!(context.compile_plan.as_ref().expect("compile plan").target.kind, TargetKind::Lib);
         let diagnostics = analyze_file_with_mods(&entry).expect("analyze lib project source");
         let codes: Vec<String> = diagnostics.into_iter().filter_map(|diagnostic| diagnostic.code).collect();
         assert!(codes.iter().any(|code| code == "E1711"), "expected E1711 for launch in lib project, got {codes:?}");
-    });
+    };
 
     let _ = fs::remove_dir_all(root);
 }
@@ -126,11 +125,8 @@ target "app" {
     );
     let entry = src_dir.join("Main.bd");
     fs::write(&entry, source).expect("write source");
-    let mut codes = Vec::new();
-    with_cwd_at_workspace_root(&root, || {
-        let diagnostics = analyze_file_with_mods(&entry).expect("analyze project source");
-        codes = diagnostics.into_iter().filter_map(|diagnostic| diagnostic.code).collect();
-    });
+    let diagnostics = analyze_file_with_mods(&entry).expect("analyze project source");
+    let codes = diagnostics.into_iter().filter_map(|diagnostic| diagnostic.code).collect();
     let _ = fs::remove_dir_all(root);
     codes
 }
