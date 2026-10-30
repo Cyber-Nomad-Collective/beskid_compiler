@@ -107,8 +107,8 @@ pub(super) fn constant_integer_tracked(
 ) -> SemanticQueryResult<i64> {
     with_node(db, syntax, key, |program, index, node| {
         let name = unshadowed_constant_name(program, index, key, node)?;
-        if let Some(value) = unit_constant_literal(program, name).and_then(constant_literal_value) {
-            return Some(value);
+        if let Some(text) = lexical_constant_literal(program, index, key.node, name) {
+            return constant_literal_value(text);
         }
         imported_constant(db, key, |program| unit_constant_literal(program, name).and_then(constant_literal_value))
     })
@@ -127,7 +127,7 @@ pub(super) fn constant_integer_literal_tracked(
 ) -> SemanticQueryResult<Arc<str>> {
     with_node(db, syntax, key, |program, index, node| {
         let name = unshadowed_constant_name(program, index, key, node)?;
-        if let Some(text) = unit_constant_literal(program, name) {
+        if let Some(text) = lexical_constant_literal(program, index, key.node, name) {
             return constant_literal_value(text).map(|_| Arc::from(text));
         }
         imported_constant(db, key, |program| {
@@ -187,6 +187,41 @@ fn unshadowed_constant_name<'a>(
     Some(name)
 }
 
+/// The integer literal of the constant `name` declared by the nearest module scope enclosing
+/// `site`: the enclosing inline modules, innermost first, then the file scope. A constant of an
+/// inline module is visible only inside that module, and shadows an outer one of the same name
+/// there. Two declarations of the name in one scope resolve to nothing (the duplicate is a
+/// definition error).
+fn lexical_constant_literal<'a>(
+    program: &'a beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    site: beskid_analysis::syntax::AstNodeId,
+    name: &str,
+) -> Option<&'a str> {
+    let mut scope = module_scope(index, site)?;
+    loop {
+        let mut declared =
+            index.ids_of_kind(beskid_analysis::syntax_query::NodeKind::ConstantDefinition).filter_map(|candidate| {
+                if module_scope(index, candidate) != Some(scope) {
+                    return None;
+                }
+                let constant =
+                    index.node_at(program, candidate)?.of::<beskid_analysis::syntax::ConstantDefinition>()?;
+                (constant.name.node.name == name).then_some(constant)
+            });
+        if let Some(constant) = declared.next() {
+            if declared.next().is_some() {
+                return None;
+            }
+            return match &constant.value.node {
+                beskid_analysis::syntax::Literal::Integer(value) => Some(value.as_str()),
+                _ => None,
+            };
+        }
+        scope = outer_module_scope(index, scope)?;
+    }
+}
+
 /// Search one unit's top-level items for an integer constant matching `name`.
 fn unit_constant_literal<'a>(
     program: &'a beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
@@ -233,13 +268,13 @@ fn imported_constant<T: Ord>(
     key: AstNodeKey,
     candidate: impl Fn(&beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>) -> Option<T>,
 ) -> Option<T> {
-    let registry = db.syntax_dependency_registry().lock().expect("syntax dependency registry");
-    let imports = registry.imports.get(&(key.unit, key.generation))?;
-    let targets = imports.iter().map(|import| import.target).fold(Vec::new(), |mut targets, target| {
-        if !targets.contains(&target) {
-            targets.push(target);
-        }
-        targets
+    let targets = with_visible_imports(db, key, |imports| {
+        imports.iter().map(|import| import.target).fold(Vec::new(), |mut targets, target| {
+            if !targets.contains(&target) {
+                targets.push(target);
+            }
+            targets
+        })
     });
     let mut candidates = targets
         .into_iter()

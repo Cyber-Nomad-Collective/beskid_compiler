@@ -244,6 +244,13 @@ pub enum SemanticIssueKind {
         name: String,
         candidates: usize,
     },
+    /// The first segment of a qualified path names both an inline module and a module-import
+    /// alias visible at the path, and each of them reaches an item for the rest of the path.
+    ResolveAmbiguousModuleQualifier {
+        name: String,
+        member: String,
+        import_path: String,
+    },
     ResolveShadowedLocal {
         name: String,
         previous: SpanInfo,

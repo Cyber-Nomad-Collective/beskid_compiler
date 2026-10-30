@@ -127,6 +127,10 @@ pub struct SyntaxImport {
     pub(crate) public: bool,
     /// The declaration that created this edge.
     pub(crate) origin: SyntaxImportOrigin,
+    /// The names of the inline modules whose scope holds the declaration, outermost first; empty
+    /// for the file scope. The edge is visible in that scope and in the inline modules nested in
+    /// it, and there a binding of the same name from a nearer scope shadows it.
+    pub(crate) scope: Vec<String>,
 }
 
 /// The source construct that created one [`SyntaxImport`] edge.

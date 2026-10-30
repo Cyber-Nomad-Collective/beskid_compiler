@@ -162,8 +162,14 @@ impl Resolver {
                 resolver::file_scoped_module_path(program).map(|path| self.module_graph.ensure_module_path(&path))
             })
             .unwrap_or(self.module_graph.root());
-        for (index, item) in program.node.items.iter().enumerate() {
-            if Some(index) == file_scoped_module_index {
+        self.prepare_scope_imports(&program.node.items, file_scoped_module_index);
+    }
+
+    /// Bind the `use` declarations of one scope, then those of each inline module in it under
+    /// that module's scope.
+    fn prepare_scope_imports(&mut self, items: &[Spanned<Node>], excluded_index: Option<usize>) {
+        for (index, item) in items.iter().enumerate() {
+            if Some(index) == excluded_index {
                 continue;
             }
             if let Node::UseDeclaration(def) = &item.node {
@@ -172,6 +178,16 @@ impl Resolver {
         }
         self.apply_pending_reexport_imports();
         self.add_implicit_core_import();
+        for item in items {
+            if let Node::InlineModule(def) = &item.node {
+                let previous_module = self.current_module;
+                let mut module_path = self.current_module_path();
+                module_path.push(def.node.name.node.name.clone());
+                self.current_module = self.module_graph.ensure_module_path(&module_path);
+                self.prepare_scope_imports(&def.node.items, None);
+                self.current_module = previous_module;
+            }
+        }
     }
 
     /// Collect local declarations before applying imports so declaration identity is independent
@@ -198,8 +214,12 @@ impl Resolver {
         }
 
         let core = vec!["Core".to_owned()];
+        // The file scope imports `Core`; inline modules see it through the file scope.
+        if self.inline_modules.contains(&self.current_module) {
+            return;
+        }
         if self.module_graph.module_id(&core).is_some() {
-            self.module_imports.entry("Core".to_owned()).or_insert(core);
+            self.module_imports.entry((self.current_module, "Core".to_owned())).or_insert(core);
         }
     }
 
@@ -438,6 +458,7 @@ impl Resolver {
                 self.module_graph.module(self.current_module).map(|module| module.path.clone()).unwrap_or_default();
             module_path.push(def.node.name.node.name.clone());
             let child_module = self.module_graph.ensure_module_path(&module_path);
+            self.inline_modules.insert(child_module);
             self.current_module = child_module;
             self.collect_items(&def.node.items, None);
             self.current_module = previous_module;
@@ -447,7 +468,7 @@ impl Resolver {
     fn collect_use_declaration(&mut self, item: &Spanned<Node>, def: &Spanned<UseDeclaration>) {
         let alias = use_imported_name(&def.node);
         let module_path = resolver::path_segments(&def.node.path);
-        if self.module_imports.contains_key(&alias) {
+        if self.module_imports.contains_key(&(self.current_module, alias.clone())) {
             self.errors.push(ResolveError::DuplicateItem {
                 name: alias.clone(),
                 span: item.span,
@@ -460,8 +481,8 @@ impl Resolver {
             self.import_item_of_rejected_use(&module_path, def.node.path.span);
             return;
         }
-        self.module_imports.insert(alias.clone(), module_path.clone());
-        self.module_import_origins.insert(alias, def.node.path.span);
+        self.module_imports.insert((self.current_module, alias.clone()), module_path.clone());
+        self.module_import_origins.insert((self.current_module, alias), def.node.path.span);
         self.import_public_items_from_module(&module_path, def.node.path.span);
     }
 
@@ -535,29 +556,33 @@ impl Resolver {
     fn insert_scope_imports(&mut self, mut imports: Vec<(String, ItemId, bool)>, origin_span: syntax::SpanInfo) {
         imports.sort_by(|left, right| left.0.cmp(&right.0).then(left.1.0.cmp(&right.1.0)));
         for (name, item_id, declared) in imports {
+            let key = (self.current_module, name.clone());
             if let Some(previous) = self.module_graph.insert_item(self.current_module, name.clone(), item_id) {
-                let same_import =
-                    previous == item_id && self.imported_scope_entries.contains(&(self.current_module, name.clone()));
+                let previous_is_import = self.imported_scope_entries.contains(&key);
+                let same_import = previous == item_id && previous_is_import;
                 if !same_import {
+                    if !previous_is_import && self.is_type_item(item_id) && !self.is_type_item(previous) {
+                        self.type_imports_beside_declarations.entry(key).or_insert((item_id, origin_span));
+                    }
                     continue;
                 }
-                let replace = match self.imported_scope_origins.contains_key(&name) {
+                let replace = match self.imported_scope_origins.contains_key(&key) {
                     false => true,
-                    true => declared && !self.declaring_scope_origins.contains(&name),
+                    true => declared && !self.declaring_scope_origins.contains(&key),
                 };
                 if replace {
                     if declared {
-                        self.declaring_scope_origins.insert(name.clone());
+                        self.declaring_scope_origins.insert(key.clone());
                     }
-                    self.imported_scope_origins.insert(name, origin_span);
+                    self.imported_scope_origins.insert(key, origin_span);
                 }
                 continue;
             }
-            self.imported_scope_entries.insert((self.current_module, name.clone()));
+            self.imported_scope_entries.insert(key.clone());
             if declared {
-                self.declaring_scope_origins.insert(name.clone());
+                self.declaring_scope_origins.insert(key.clone());
             }
-            self.imported_scope_origins.insert(name, origin_span);
+            self.imported_scope_origins.insert(key, origin_span);
         }
     }
 
@@ -667,14 +692,29 @@ impl Resolver {
         levels
     }
 
+    /// Credit the `use` that bound `name` in the nearest enclosing scope that binds it.
     pub(crate) fn mark_imported_scope_name_used(&mut self, name: &str) {
-        if let Some(span) = self.imported_scope_origins.get(name) {
+        let binding_scope = self
+            .lexical_scopes()
+            .into_iter()
+            .find(|scope| self.module_graph.module(*scope).is_some_and(|module| module.scope.contains_key(name)));
+        if let Some(scope) = binding_scope
+            && let Some(span) = self.imported_scope_origins.get(&(scope, name.to_string()))
+        {
             self.tables.used_import_spans.insert(*span);
         }
     }
 
+    pub(crate) fn is_type_item(&self, item: ItemId) -> bool {
+        self.items
+            .get(item.0)
+            .is_some_and(|info| matches!(info.kind, ItemKind::Type | ItemKind::Enum | ItemKind::Contract))
+    }
+
     pub(crate) fn mark_module_import_alias_used(&mut self, alias: &str) {
-        if let Some(span) = self.module_import_origins.get(alias) {
+        if let Some(scope) = self.module_import_scope(alias)
+            && let Some(span) = self.module_import_origins.get(&(scope, alias.to_string()))
+        {
             self.tables.used_import_spans.insert(*span);
         }
     }
@@ -687,14 +727,16 @@ impl Resolver {
     /// `use Beskid.Compiler.Workspace;`, in type or value position) names the module's homonymous
     /// item and goes through `M` too.
     pub(crate) fn mark_module_imports_covering(&mut self, segments: &[String]) {
+        let scopes = self.lexical_scopes();
         let covering = self
             .module_imports
             .iter()
-            .filter(|(_, module_path)| {
-                segments.starts_with(module_path)
+            .filter(|((scope, _), module_path)| {
+                scopes.contains(scope)
+                    && segments.starts_with(module_path)
                     && (segments.len() > module_path.len() || self.module_declares_homonymous_item(module_path))
             })
-            .filter_map(|(alias, _)| self.module_import_origins.get(alias).copied())
+            .filter_map(|(key, _)| self.module_import_origins.get(key).copied())
             .collect::<Vec<_>>();
         self.tables.used_import_spans.extend(covering);
     }

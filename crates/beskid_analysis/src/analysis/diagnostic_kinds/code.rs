@@ -64,6 +64,7 @@ impl SemanticIssueKind {
             Self::ResolvePrivateItemInModule { .. } => "E1107",
             Self::ResolveAmbiguousModulePath { .. } => "E1104",
             Self::ResolveAmbiguousItemInModule { .. } => "E1104",
+            Self::ResolveAmbiguousModuleQualifier { .. } => "E1104",
             Self::ResolvePrivateRuntimeBuiltin { .. } => "E1107",
             Self::ResolveShadowedLocal { .. } => "W1103",
             Self::MissingImport { .. } => "E1109",

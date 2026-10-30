@@ -27,18 +27,26 @@ pub struct Resolver {
     pub(crate) errors: Vec<ResolveError>,
     pub(crate) warnings: Vec<ResolveWarning>,
     pub(crate) builtin_items: HashMap<ItemId, usize>,
-    pub(crate) module_imports: HashMap<String, Vec<String>>,
+    /// Module-import aliases (`use A.B;` binds `B`, `use A.B as C;` binds `C`), keyed by the module
+    /// scope of the `use` declaration: the file scope or an inline module. An alias is visible in
+    /// its scope and in the inline modules nested in it; an inner alias shadows an outer one.
+    pub(crate) module_imports: HashMap<(ModuleId, String), Vec<String>>,
     /// Successful public-item scope imports, keyed by the imported item name.
-    pub(crate) imported_scope_origins: HashMap<String, SpanInfo>,
+    pub(crate) imported_scope_origins: HashMap<(ModuleId, String), SpanInfo>,
     /// Names in [`Self::imported_scope_origins`] whose origin `use` names the declaring module.
-    pub(crate) declaring_scope_origins: HashSet<String>,
+    pub(crate) declaring_scope_origins: HashSet<(ModuleId, String)>,
+    /// An imported type, enum or contract whose name a local declaration of another kind (an
+    /// inline module or a function) of the same scope already binds, with the `use` that brought
+    /// it. A type position sees only types, so there the import is still the binding: a module
+    /// never hides a type.
+    pub(crate) type_imports_beside_declarations: HashMap<(ModuleId, String), (ItemId, SpanInfo)>,
     /// Module scope entries that arrived through a `use` import rather than a declaration.
     pub(crate) imported_scope_entries: HashSet<(ModuleId, String)>,
     /// Modules the unit being collected used, whose public re-exports (`pub mod` children) are
     /// bound after all of the unit's direct imports.
     pub(crate) pending_reexport_imports: Vec<(ModuleId, SpanInfo)>,
     /// Successful module-import aliases, keyed by the usable module alias.
-    pub(crate) module_import_origins: HashMap<String, SpanInfo>,
+    pub(crate) module_import_origins: HashMap<(ModuleId, String), SpanInfo>,
     pub(crate) current_source_path: Option<PathBuf>,
     pub(crate) symbols: SymbolRegistry,
     pub(crate) by_symbol: HashMap<SymbolId, ItemId>,
@@ -60,6 +68,8 @@ pub struct Resolver {
     /// `test SumOfSquares` may share its name with a function, type or other item. Test names
     /// are unique per module only among tests.
     pub(crate) test_names: HashMap<(ModuleId, String), ItemId>,
+    /// Modules declared by an inline `mod Name { ... }`: lexical scopes nested in a file scope.
+    pub(crate) inline_modules: HashSet<ModuleId>,
 }
 
 impl Resolver {

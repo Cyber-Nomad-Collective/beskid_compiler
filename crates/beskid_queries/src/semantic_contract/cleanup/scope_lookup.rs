@@ -10,10 +10,11 @@ use beskid_analysis::syntax_query::{DynNodeRef, NodeKind, SyntaxIndex};
 
 fn cleanup_visible_units(db: &dyn Db, key: AstNodeKey) -> Vec<SourceUnitId> {
     let mut units = vec![key.unit];
-    let registry = db.syntax_dependency_registry().lock().expect("syntax dependency registry");
-    for import in registry.imports.get(&(key.unit, key.generation)).into_iter().flatten() {
-        if !units.contains(&import.target) {
-            units.push(import.target);
+    for target in
+        with_visible_imports(db, key, |imports| imports.iter().map(|import| import.target).collect::<Vec<_>>())
+    {
+        if !units.contains(&target) {
+            units.push(target);
         }
     }
     units

@@ -445,10 +445,9 @@ pub(in crate::semantic_contract) fn resolve_contract(db: &dyn Db, key: AstNodeKe
             }
             scope = outer_module_scope(index, current);
         }
-        let registry = db.syntax_dependency_registry().lock().expect("syntax dependency registry");
-        units.extend(
-            registry.imports.get(&(key.unit, key.generation)).into_iter().flatten().map(|import| import.target),
-        );
+        units.extend(with_visible_imports(db, key, |imports| {
+            imports.iter().map(|import| import.target).collect::<Vec<_>>()
+        }));
     } else {
         let modules = prefix.iter().map(|segment| segment.node.name.node.name.clone()).collect::<Vec<_>>();
         units.extend(resolve_qualified_module_unit(db, key, &modules));

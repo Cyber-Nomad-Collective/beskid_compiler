@@ -26,3 +26,6 @@ pub use symbol::{
 };
 pub use symbol_lookup::{canonical_item_id, item_id_for_symbol, qualified_name, symbol_for_item};
 pub use tables::{LocalInfo, ResolutionTables, ResolvedType, ResolvedValue};
+
+#[cfg(test)]
+mod inline_scope_tests;

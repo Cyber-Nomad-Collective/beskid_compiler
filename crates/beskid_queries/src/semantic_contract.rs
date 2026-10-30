@@ -222,6 +222,7 @@ use resolution::{
     resolve_item_declaration_candidate, resolve_qualified_module_unit, resolve_type_qualified_imported_function,
     resolve_unqualified_item_declaration, resolved_item_tracked, unique_exported_function_in_unit,
     unique_function_in_unit, unique_imported_function, unique_inline_module_in_scope, unique_public_function_in_unit,
+    with_visible_imports,
 };
 use syntax_facts::{
     binary_operator, block_statement_nodes_tracked, child_nodes_tracked, clif_block_body_tracked,

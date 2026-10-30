@@ -22,6 +22,7 @@ impl SemanticIssueKind {
                 | Self::ResolvePrivateItemInModule { .. }
                 | Self::ResolveAmbiguousModulePath { .. }
                 | Self::ResolveAmbiguousItemInModule { .. }
+                | Self::ResolveAmbiguousModuleQualifier { .. }
                 | Self::MissingImport { .. }
                 | Self::MissingImportAmbiguous { .. }
                 | Self::EnumValueMethodCall { .. }
@@ -185,6 +186,9 @@ impl SemanticIssueKind {
             }
             Self::ResolveAmbiguousItemInModule { module_path, name, candidates } => format!(
                 "ambiguous item `{name}` in module `{module_path}`: {candidates} re-exported items share the name"
+            ),
+            Self::ResolveAmbiguousModuleQualifier { name, member, import_path } => format!(
+                "ambiguous module `{name}`: both the inline module `{name}` and the import `{import_path}` declare `{member}`"
             ),
             Self::ResolveShadowedLocal { name, .. } => format!("shadowed local `{name}`"),
             Self::MissingImport { name, module_path } => {

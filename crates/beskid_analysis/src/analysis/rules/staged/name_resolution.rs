@@ -93,10 +93,8 @@ impl SemanticPipelineRule {
 
     fn check_unknown_import_paths(&self, ctx: &mut RuleContext, program: &Spanned<Program>) {
         if let Some(known_paths) = ctx.options.known_assembly_module_paths.clone() {
-            for item in &program.node.items {
-                let Node::UseDeclaration(use_decl) = &item.node else {
-                    continue;
-                };
+            // Every scope's `use`: the file scope's and those inside inline modules.
+            for use_decl in Self::scope_use_declarations(&program.node.items) {
                 let path = self.path_to_string_local(&use_decl.node.path);
                 if Self::import_path_known_in_assembly(&path, &known_paths) {
                     continue;
@@ -170,6 +168,19 @@ impl SemanticPipelineRule {
                 _ => {}
             }
         }
+    }
+
+    /// The `use` declarations of `items` and of the inline modules among them, in source order.
+    fn scope_use_declarations(items: &[Spanned<Node>]) -> Vec<&Spanned<UseDeclaration>> {
+        let mut found = Vec::new();
+        for item in items {
+            match &item.node {
+                Node::UseDeclaration(use_decl) => found.push(use_decl),
+                Node::InlineModule(module) => found.extend(Self::scope_use_declarations(&module.node.items)),
+                _ => {}
+            }
+        }
+        found
     }
 
     fn path_tail_local(&self, path: &Spanned<Path>) -> String {

@@ -255,14 +255,9 @@ pub(in crate::semantic_contract) fn unit_declares_function_name(
 }
 
 pub(in crate::semantic_contract) fn import_binds_name(db: &dyn Db, key: AstNodeKey, name: &str) -> bool {
-    db.syntax_dependency_registry()
-        .lock()
-        .expect("syntax dependency registry")
-        .imports
-        .get(&(key.unit, key.generation))
-        .is_some_and(|imports| {
-            imports.iter().any(|import| import.binding == name || import.path.iter().any(|segment| segment == name))
-        })
+    with_visible_imports(db, key, |imports| {
+        imports.iter().any(|import| import.binding == name || import.path.iter().any(|segment| segment == name))
+    })
 }
 
 /// What the longest visible module prefix of an unresolved qualifier says about it.

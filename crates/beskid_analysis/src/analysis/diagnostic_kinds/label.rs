@@ -65,6 +65,7 @@ impl SemanticIssueKind {
             Self::ResolvePrivateItemInModule { .. } => "private item access".to_string(),
             Self::ResolveAmbiguousModulePath { .. } => "ambiguous module path".to_string(),
             Self::ResolveAmbiguousItemInModule { .. } => "ambiguous re-exported item".to_string(),
+            Self::ResolveAmbiguousModuleQualifier { .. } => "ambiguous module qualifier".to_string(),
             Self::ResolvePrivateRuntimeBuiltin { .. } => "private runtime builtin".to_string(),
             Self::ResolveShadowedLocal { .. } => "shadowed local".to_string(),
             Self::MissingImport { .. } => "missing import".to_string(),

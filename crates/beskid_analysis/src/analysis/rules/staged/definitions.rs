@@ -5,7 +5,7 @@ use crate::syntax::{
     ContractDefinition, InlineModule, ModuleDeclaration, Node, Path, PrimitiveType, Program, Type, Visibility,
 };
 use crate::syntax::{SpanInfo, Spanned};
-use crate::syntax_query::{AstNode, Query};
+use crate::syntax_query::Query;
 use std::collections::{HashMap, HashSet};
 
 impl SemanticPipelineRule {
@@ -26,48 +26,56 @@ impl SemanticPipelineRule {
         }
     }
 
+    /// Functions, out-of-line module declarations and `use` bindings share one name space per
+    /// scope: the file scope and each inline module are separate scopes, so `Helper` in the file
+    /// and `Helper` in `mod A { }` do not collide. Tests are not checked here: they have their own
+    /// namespace keyed by module and name, and the resolver reports two tests of one name in one
+    /// module (E1102), once.
     fn check_duplicate_non_type_item_names(&self, ctx: &mut RuleContext, program: &Spanned<Program>) {
-        let mut seen: HashMap<String, SpanInfo> = HashMap::new();
+        let file_scope = self.file_scoped_module_declaration(program).map(|(index, _)| index);
+        self.check_duplicate_item_names_in_scope(ctx, &program.node.items, file_scope);
+    }
 
-        self.check_duplicate_query_entries::<crate::syntax::FunctionDefinition>(
-            ctx,
-            program,
-            &mut seen,
-            DuplicateKind::ItemName,
-            |definition| (definition.name.node.name.clone(), definition.name.span),
-        );
-        // Tests have their own namespace keyed by module and name: a test may share its name
-        // with a function or any other item, and only two tests of one name in one module
-        // collide (`Alpha::Shared` and `Beta::Shared` are distinct tests).
-        self.check_duplicate_test_names_in_scope(ctx, &program.node.items);
-        self.check_duplicate_query_entries::<crate::syntax::ModuleDeclaration>(
-            ctx,
-            program,
-            &mut seen,
-            DuplicateKind::ItemName,
-            |definition| {
-                if self.is_file_scoped_module_declaration(program, definition) {
-                    ("<file-scope>".to_string(), definition.path.span)
+    fn check_duplicate_item_names_in_scope(
+        &self,
+        ctx: &mut RuleContext,
+        items: &[Spanned<Node>],
+        file_scope: Option<usize>,
+    ) {
+        let mut seen: HashMap<String, SpanInfo> = HashMap::new();
+        for item in items {
+            if let Node::Function(definition) = &item.node {
+                let name = &definition.node.name;
+                self.emit_duplicate_if_any(ctx, &mut seen, name.node.name.clone(), name.span, DuplicateKind::ItemName);
+            }
+        }
+        for (index, item) in items.iter().enumerate() {
+            if let Node::ModuleDeclaration(definition) = &item.node {
+                let name = if Some(index) == file_scope {
+                    "<file-scope>".to_string()
                 } else {
-                    (self.path_dotted(&definition.path), definition.path.span)
-                }
-            },
-        );
-        self.check_duplicate_query_entries::<crate::syntax::UseDeclaration>(
-            ctx,
-            program,
-            &mut seen,
-            DuplicateKind::ItemName,
-            |definition| {
+                    self.path_dotted(&definition.node.path)
+                };
+                self.emit_duplicate_if_any(ctx, &mut seen, name, definition.node.path.span, DuplicateKind::ItemName);
+            }
+        }
+        for item in items {
+            if let Node::UseDeclaration(definition) = &item.node {
+                let definition = &definition.node;
                 let name = definition
                     .alias
                     .as_ref()
                     .map(|alias| alias.node.name.clone())
                     .unwrap_or_else(|| self.path_tail(&definition.path));
                 let span = definition.alias.as_ref().map(|alias| alias.span).unwrap_or(definition.path.span);
-                (name, span)
-            },
-        );
+                self.emit_duplicate_if_any(ctx, &mut seen, name, span, DuplicateKind::ItemName);
+            }
+        }
+        for item in items {
+            if let Node::InlineModule(module) = &item.node {
+                self.check_duplicate_item_names_in_scope(ctx, &module.node.items, None);
+            }
+        }
     }
 
     fn check_file_scoped_module_structure(&self, ctx: &mut RuleContext, program: &Spanned<Program>) {
@@ -340,12 +348,6 @@ impl SemanticPipelineRule {
         })
     }
 
-    fn is_file_scoped_module_declaration(&self, program: &Spanned<Program>, definition: &ModuleDeclaration) -> bool {
-        self.file_scoped_module_declaration(program)
-            .map(|(_, file_scope)| file_scope.span == definition.path.span)
-            .unwrap_or(false)
-    }
-
     fn path_to_string(&self, path: &Spanned<Path>) -> String {
         path.node.segments.iter().map(|segment| segment.node.name.node.name.clone()).collect::<Vec<_>>().join(".")
     }
@@ -481,23 +483,6 @@ impl SemanticPipelineRule {
         path.node.segments.iter().map(|segment| segment.node.name.node.name.as_str()).collect::<Vec<_>>().join(".")
     }
 
-    fn check_duplicate_test_names_in_scope(&self, ctx: &mut RuleContext, items: &[Spanned<Node>]) {
-        let mut seen: HashMap<String, SpanInfo> = HashMap::new();
-        for item in items {
-            match &item.node {
-                Node::TestDefinition(definition) => self.emit_duplicate_if_any(
-                    ctx,
-                    &mut seen,
-                    definition.node.name.node.name.clone(),
-                    definition.node.name.span,
-                    DuplicateKind::ItemName,
-                ),
-                Node::InlineModule(module) => self.check_duplicate_test_names_in_scope(ctx, &module.node.items),
-                _ => {}
-            }
-        }
-    }
-
     fn check_duplicate_definition_names(&self, ctx: &mut RuleContext, program: &Spanned<Program>) {
         self.check_duplicate_definition_names_in_scope(ctx, &program.node.items);
     }
@@ -550,20 +535,6 @@ impl SemanticPipelineRule {
                 signature.name.span,
                 DuplicateKind::ContractMethod,
             );
-        }
-    }
-
-    fn check_duplicate_query_entries<T: AstNode + 'static>(
-        &self,
-        ctx: &mut RuleContext,
-        program: &Spanned<Program>,
-        seen: &mut HashMap<String, SpanInfo>,
-        kind: DuplicateKind,
-        name_and_span: impl Fn(&T) -> (String, SpanInfo),
-    ) {
-        for node in Query::from(&program.node).of::<T>() {
-            let (name, span) = name_and_span(node);
-            self.emit_duplicate_if_any(ctx, seen, name, span, kind);
         }
     }
 
@@ -640,7 +611,7 @@ mod tests {
             .collect()
     }
 
-    fn duplicate_item_names(source: &str) -> Vec<String> {
+    fn messages_with_code(source: &str, code: &str) -> Vec<String> {
         let pair =
             BeskidParser::parse(Rule::Program, source).expect("source should parse").next().expect("program pair");
         let program = Program::parse(pair).expect("source should build AST");
@@ -648,9 +619,13 @@ mod tests {
         result
             .diagnostics
             .iter()
-            .filter(|diag| diag.code.as_deref() == Some("E1006"))
+            .filter(|diag| diag.code.as_deref() == Some(code))
             .map(|diag| diag.message.clone())
             .collect()
+    }
+
+    fn duplicate_item_names(source: &str) -> Vec<String> {
+        messages_with_code(source, "E1006")
     }
 
     /// Tests are keyed by module and name: `Alpha::Shared`, `Beta::Shared` and the root
@@ -663,11 +638,42 @@ mod tests {
             test Shared { return; }
         "#;
         assert!(duplicate_item_names(source).is_empty(), "{:?}", duplicate_item_names(source));
+        assert!(messages_with_code(source, "E1102").is_empty(), "{:?}", messages_with_code(source, "E1102"));
+    }
+
+    /// Two tests of one name in one module are one diagnostic: E1102 from the resolver, never
+    /// E1006 next to it.
+    #[test]
+    fn two_tests_of_one_name_in_one_module_are_one_e1102() {
         let duplicate = r#"
             mod Alpha { test Shared { return; } test Shared { return; } }
             test Shared { return; }
         "#;
-        assert_eq!(duplicate_item_names(duplicate), vec!["duplicate item name `Shared`".to_string()]);
+        assert!(duplicate_item_names(duplicate).is_empty(), "{:?}", duplicate_item_names(duplicate));
+        let e1102 = messages_with_code(duplicate, "E1102");
+        assert_eq!(e1102.len(), 1, "{e1102:?}");
+        assert!(e1102[0].contains("Shared"), "{e1102:?}");
+    }
+
+    /// Function, `use` and module names are checked per scope: the file scope and each inline
+    /// module are separate scopes.
+    #[test]
+    fn same_names_in_different_scopes_do_not_collide() {
+        let source = r#"
+            i32 Helper() { return 1; }
+            mod A { i32 Helper() { return 2; } mod Inner { i32 Helper() { return 3; } } }
+            mod B { i32 Helper() { return 4; } }
+        "#;
+        assert!(duplicate_item_names(source).is_empty(), "{:?}", duplicate_item_names(source));
+    }
+
+    #[test]
+    fn same_names_in_one_inline_module_still_collide() {
+        let source = r#"
+            i32 Helper() { return 1; }
+            mod A { i32 Twice() { return 1; } i32 Twice() { return 2; } }
+        "#;
+        assert_eq!(duplicate_item_names(source), vec!["duplicate item name `Twice`".to_string()]);
     }
 
     #[test]
