@@ -1,0 +1,606 @@
+use beskid_abi::abi_v5::TargetMetadata;
+use beskid_analysis::services::{
+    FrontEndOptions, ResolvedInput, resolved_input_from_plan, synthetic_compile_plan_for_source,
+};
+use beskid_codegen::{
+    lower_prepared_syntax_entrypoint, lower_prepared_syntax_module, lower_syntax_assembly_entrypoint,
+    object_link_symbol,
+};
+use beskid_queries::{compile_mod_free_front_end, with_db};
+use cranelift_codegen::settings;
+use std::process::Command;
+
+#[test]
+fn prepared_syntax_entrypoint_lowers_like_the_syntax_assembly() {
+    let directory = std::env::temp_dir().join(format!("beskid_codegen_prepared_syntax_{}", std::process::id()));
+    std::fs::create_dir_all(&directory).expect("create project");
+    let path = directory.join("Main.bd");
+    let source = "i32 Echo(i32 value) { return value; } i32 Main() { return Echo(41); }";
+    std::fs::write(&path, source).expect("write source");
+    let plan = synthetic_compile_plan_for_source(&path);
+    let resolved: ResolvedInput = resolved_input_from_plan(path, source.into(), plan, None, None);
+    let front = compile_mod_free_front_end(
+        &resolved,
+        FrontEndOptions { with_semantic_diagnostics: false, ..Default::default() },
+        None,
+    )
+    .expect("prepare frontend");
+    let target = TargetMetadata::supported()
+        .into_iter()
+        .find(|target| target.triple.as_str().starts_with("x86_64-"))
+        .expect("x86_64 ABI target");
+    let isa = beskid_codegen::target_isa::target_isa_builder("x86_64")
+        .expect("x86 ISA")
+        .finish(settings::Flags::new(settings::builder()))
+        .expect("finish ISA");
+    let lowered = with_db(|db| lower_prepared_syntax_entrypoint(db, &front, "Main", target.clone(), isa.as_ref()))
+        .expect("prepared syntax lowering");
+    let lowered_again =
+        with_db(|db| lower_prepared_syntax_entrypoint(db, &front, "Main", target.clone(), isa.as_ref()))
+            .expect("repeated prepared syntax lowering");
+    let lowered_from_assembly = with_db(|db| {
+        lower_syntax_assembly_entrypoint(
+            db,
+            std::sync::Arc::new(front.syntax_assembly()),
+            "Main",
+            target.clone(),
+            isa.as_ref(),
+        )
+    })
+    .expect("syntax assembly lowering");
+
+    assert_eq!(lowered.artifact().functions.len(), 2);
+    assert!(lowered.symbol().starts_with("Main#syntax_"));
+    assert_eq!(lowered_again.symbol(), lowered.symbol());
+    assert_eq!(lowered_from_assembly.symbol(), lowered.symbol());
+    std::fs::remove_dir_all(directory).expect("remove project");
+}
+
+#[test]
+fn prepared_syntax_entrypoint_rejects_foreign_composition_snapshot_before_lowering() {
+    let directory = std::env::temp_dir().join(format!("beskid_codegen_foreign_composition_{}", std::process::id()));
+    std::fs::create_dir_all(&directory).expect("create project");
+    let path = directory.join("Main.bd");
+    let source = "i32 Main() { return 7; }";
+    std::fs::write(&path, source).expect("write source");
+    let plan = synthetic_compile_plan_for_source(&path);
+    let resolved = resolved_input_from_plan(path, source.into(), plan, None, None);
+    let mut front = compile_mod_free_front_end(
+        &resolved,
+        FrontEndOptions { with_semantic_diagnostics: false, ..Default::default() },
+        None,
+    )
+    .expect("prepare frontend");
+    front.composition_snapshot.source_unit_path = Some(directory.join("Foreign.bd"));
+    let target = TargetMetadata::supported()
+        .into_iter()
+        .find(|target| target.triple.as_str().starts_with("x86_64-"))
+        .expect("x86_64 ABI target");
+    let isa = beskid_codegen::target_isa::target_isa_builder("x86_64")
+        .expect("x86 ISA")
+        .finish(settings::Flags::new(settings::builder()))
+        .expect("finish ISA");
+
+    let error = with_db(|db| lower_prepared_syntax_entrypoint(db, &front, "Main", target, isa.as_ref()))
+        .err()
+        .expect("foreign composition source must be rejected before function lowering");
+    assert!(format!("{error:#}").contains("foreign source unit"), "{error:#}");
+    std::fs::remove_dir_all(directory).expect("remove project");
+}
+
+#[test]
+fn compiler_trace_reports_syntax_facts_without_source_literal_payloads() {
+    let output = Command::new(std::env::current_exe().expect("current test executable"))
+        .args(["--ignored", "--exact", "prepared_syntax::compiler_trace_child_lowers_a_syntax_entrypoint", "--nocapture"])
+        .env("BESKID_COMPILER_TRACE", "1")
+        .output()
+        .expect("run trace child process");
+    assert!(output.status.success(), "trace child failed:\n{}", String::from_utf8_lossy(&output.stderr));
+
+    let trace = String::from_utf8(output.stderr).expect("UTF-8 trace output");
+    assert!(trace.contains("beskid-isle-trace event=entry.selected"));
+    assert!(
+        trace.contains("at ") && trace.contains(".bd:"),
+        "ast.node traces must use `at <file>:<line>:<col> (<Construct>)` format, got:\n{trace}"
+    );
+    assert!(trace.contains("event=call.fact key="));
+    assert!(trace.contains("lowering=Direct"));
+    assert!(
+        trace.contains("callee=Item("),
+        "call.fact should render DirectCallee with Item(name@path#gN:nN), got:\n{trace}"
+    );
+    assert!(!trace.contains("AstNodeKey {"), "call.fact must not Debug-dump AstNodeKey: {trace}");
+    assert!(!trace.contains("abi_identity:"), "call.fact must not Debug-dump abi_identity numbers: {trace}");
+    assert!(!trace.contains("SourceUnitId(Id("), "traces must not Debug-dump salsa SourceUnitId handles: {trace}");
+    assert!(
+        !trace.contains("AstNodeId(") && !trace.contains("SyntaxGenerationId("),
+        "traces must use #gN:nN cursors, not Debug id wrappers: {trace}"
+    );
+    assert!(trace.contains("event=isle.selected"));
+    assert!(trace.contains("elapsed_ms="));
+    assert!(
+        !trace.contains("trace-literal-payload-must-not-appear"),
+        "trace must identify syntax through keys and facts, never source literal payloads: {trace}"
+    );
+}
+
+#[test]
+#[ignore = "run only as the isolated child process that captures compiler trace stderr"]
+fn compiler_trace_child_lowers_a_syntax_entrypoint() {
+    let directory = std::env::temp_dir().join(format!("beskid_codegen_trace_{}", std::process::id()));
+    std::fs::create_dir_all(&directory).expect("create project");
+    let path = directory.join("Main.bd");
+    let source = "unit WriteLine(string text) { return; } unit Main() { WriteLine(\"trace-literal-payload-must-not-appear\"); return; }";
+    std::fs::write(&path, source).expect("write source");
+    let plan = synthetic_compile_plan_for_source(&path);
+    let resolved: ResolvedInput = resolved_input_from_plan(path, source.into(), plan, None, None);
+    let front = compile_mod_free_front_end(
+        &resolved,
+        FrontEndOptions { with_semantic_diagnostics: false, ..Default::default() },
+        None,
+    )
+    .expect("prepare frontend");
+    let target = TargetMetadata::supported()
+        .into_iter()
+        .find(|target| target.triple.as_str().starts_with("x86_64-"))
+        .expect("x86_64 ABI target");
+    let isa = beskid_codegen::target_isa::target_isa_builder("x86_64")
+        .expect("x86 ISA")
+        .finish(settings::Flags::new(settings::builder()))
+        .expect("finish ISA");
+
+    with_db(|db| lower_prepared_syntax_entrypoint(db, &front, "Main", target, isa.as_ref()))
+        .expect("trace fixture lowering");
+    std::fs::remove_dir_all(directory).expect("remove project");
+}
+
+#[test]
+fn prepared_syntax_module_lowers_functions_and_methods() {
+    let directory = std::env::temp_dir().join(format!("beskid_codegen_prepared_syntax_module_{}", std::process::id()));
+    std::fs::create_dir_all(&directory).expect("create project");
+    let path = directory.join("Mod.bd");
+    let source = "i32 Echo(i32 value) { return value; } type Worker { i32 Run(i32 value) { return value; } }";
+    std::fs::write(&path, source).expect("write source");
+    let plan = synthetic_compile_plan_for_source(&path);
+    let resolved: ResolvedInput = resolved_input_from_plan(path, source.into(), plan, None, None);
+    let front = compile_mod_free_front_end(
+        &resolved,
+        FrontEndOptions { with_semantic_diagnostics: false, ..Default::default() },
+        None,
+    )
+    .expect("prepare frontend");
+    let target = TargetMetadata::supported()
+        .into_iter()
+        .find(|target| target.triple.as_str().starts_with("x86_64-"))
+        .expect("x86_64 ABI target");
+    let isa = beskid_codegen::target_isa::target_isa_builder("x86_64")
+        .expect("x86 ISA")
+        .finish(settings::Flags::new(settings::builder()))
+        .expect("finish ISA");
+    let artifact = with_db(|db| lower_prepared_syntax_module(db, &front, target, isa.as_ref()))
+        .expect("prepared syntax module lowering");
+
+    assert_eq!(artifact.functions.len(), 2);
+    assert!(artifact.functions.iter().any(|function| function.name.starts_with("Echo#syntax_")));
+    assert!(artifact.functions.iter().any(|function| function.name.starts_with("Run#syntax_")));
+    std::fs::remove_dir_all(directory).expect("remove project");
+}
+
+#[test]
+fn prepared_syntax_module_preserves_interop_export_metadata() {
+    let directory = std::env::temp_dir().join(format!("beskid_codegen_prepared_syntax_exports_{}", std::process::id()));
+    std::fs::create_dir_all(&directory).expect("create project");
+    let path = directory.join("Plugin.bd");
+    let source = r#"
+[Export(Abi:"C", Symbol:"beskid_plugin_init")]
+pub unit plugin_init() { return; }
+"#;
+    std::fs::write(&path, source).expect("write source");
+    let plan = synthetic_compile_plan_for_source(&path);
+    let resolved: ResolvedInput = resolved_input_from_plan(path, source.into(), plan, None, None);
+    let front = compile_mod_free_front_end(
+        &resolved,
+        FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
+        None,
+    )
+    .expect("prepare frontend");
+    let target = TargetMetadata::supported()
+        .into_iter()
+        .find(|target| target.triple.as_str().starts_with("x86_64-"))
+        .expect("x86_64 ABI target");
+    let isa = beskid_codegen::target_isa::target_isa_builder("x86_64")
+        .expect("x86 ISA")
+        .finish(settings::Flags::new(settings::builder()))
+        .expect("finish ISA");
+
+    let artifact = with_db(|db| lower_prepared_syntax_module(db, &front, target, isa.as_ref()))
+        .expect("prepared syntax module lowering");
+
+    assert!(
+        artifact.exports.iter().any(|entry| {
+            entry.function.starts_with("plugin_init#syntax_")
+                && entry.exported_symbol == "beskid_plugin_init"
+                && entry.abi == "C"
+        }),
+        "syntax lowering must retain [Export] metadata for AOT/JIT interop"
+    );
+    std::fs::remove_dir_all(directory).expect("remove project");
+}
+
+#[test]
+fn syntax_assembly_entrypoint_preserves_explicit_interop_export_metadata() {
+    let directory =
+        std::env::temp_dir().join(format!("beskid_codegen_prepared_syntax_entrypoint_exports_{}", std::process::id()));
+    std::fs::create_dir_all(&directory).expect("create project");
+    let path = directory.join("Plugin.bd");
+    let source = r#"
+pub i64 Helper() { return 41; }
+[Export(Abi:"C", Symbol:"beskid_entry")]
+pub i64 Main() { return Helper() + 1; }
+"#;
+    std::fs::write(&path, source).expect("write source");
+    let plan = synthetic_compile_plan_for_source(&path);
+    let resolved: ResolvedInput = resolved_input_from_plan(path, source.into(), plan, None, None);
+    let front = compile_mod_free_front_end(
+        &resolved,
+        FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
+        None,
+    )
+    .expect("prepare frontend");
+    let target = TargetMetadata::supported()
+        .into_iter()
+        .find(|target| target.triple.as_str().starts_with("x86_64-"))
+        .expect("x86_64 ABI target");
+    let isa = beskid_codegen::target_isa::target_isa_builder("x86_64")
+        .expect("x86 ISA")
+        .finish(settings::Flags::new(settings::builder()))
+        .expect("finish ISA");
+
+    let lowered = with_db(|db| {
+        lower_syntax_assembly_entrypoint(db, std::sync::Arc::new(front.syntax_assembly()), "Main", target, isa.as_ref())
+    })
+    .expect("syntax assembly entrypoint lowering");
+
+    assert_eq!(
+        lowered.artifact().exports,
+        vec![beskid_codegen::ExportEntry {
+            function: lowered.symbol().to_owned(),
+            exported_symbol: "beskid_entry".into(),
+            abi: "C".into(),
+        }]
+    );
+    assert_eq!(object_link_symbol(&lowered.symbol(), &lowered.artifact().exports), "beskid_entry");
+    std::fs::remove_dir_all(directory).expect("remove project");
+}
+
+#[test]
+fn prepared_syntax_module_lowers_sample_mod_nominal_contract_methods() {
+    let directory =
+        std::env::temp_dir().join(format!("beskid_codegen_prepared_syntax_sample_mod_{}", std::process::id()));
+    std::fs::create_dir_all(&directory).expect("create project");
+    let path = directory.join("Mod.bd");
+    let source = include_str!("../../../beskid_tests_mods/fixtures/mods/sample_mod/Src/Mod.bd");
+    std::fs::write(&path, source).expect("write source");
+    let plan = synthetic_compile_plan_for_source(&path);
+    let resolved: ResolvedInput = resolved_input_from_plan(path, source.into(), plan, None, None);
+    let front = compile_mod_free_front_end(
+        &resolved,
+        FrontEndOptions { with_semantic_diagnostics: false, ..Default::default() },
+        None,
+    )
+    .expect("prepare frontend");
+    let target = TargetMetadata::supported()
+        .into_iter()
+        .find(|target| target.triple.as_str().starts_with("x86_64-"))
+        .expect("x86_64 ABI target");
+    let isa = beskid_codegen::target_isa::target_isa_builder("x86_64")
+        .expect("x86 ISA")
+        .finish(settings::Flags::new(settings::builder()))
+        .expect("finish ISA");
+    let artifact = with_db(|db| lower_prepared_syntax_module(db, &front, target, isa.as_ref()))
+        .expect("prepared syntax sample Mod lowering");
+
+    assert_eq!(artifact.functions.len(), 5);
+    std::fs::remove_dir_all(directory).expect("remove project");
+}
+
+#[test]
+fn selected_entrypoints_share_one_reachable_artifact() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("Main.bd");
+    let source = "i32 Shared() { return 9; } i32 First() { return Shared(); } i32 Second() { return Shared() + 1; } i32 Unselected() { return 77; } i32 WithArg(i32 value) { return value; }";
+    std::fs::write(&path, source).unwrap();
+    let plan = synthetic_compile_plan_for_source(&path);
+    let resolved = resolved_input_from_plan(path, source.into(), plan, None, None);
+    let front = compile_mod_free_front_end(
+        &resolved,
+        FrontEndOptions { with_semantic_diagnostics: false, ..Default::default() },
+        None,
+    )
+    .unwrap();
+    let target = TargetMetadata::for_triple("x86_64-unknown-linux-gnu").unwrap();
+    let isa = beskid_codegen::target_isa::target_isa_builder("x86_64")
+        .unwrap()
+        .finish(settings::Flags::new(settings::builder()))
+        .unwrap();
+    let names = vec!["Second".to_owned(), "First".to_owned()];
+    let lowered = with_db(|db| {
+        beskid_codegen::lower_prepared_syntax_entrypoints(
+            db,
+            &front,
+            &names,
+            beskid_codegen::EntrypointKind::Function,
+            target.clone(),
+            isa.as_ref(),
+        )
+    })
+    .unwrap();
+    assert_eq!(lowered.entries().iter().map(|entry| entry.name()).collect::<Vec<_>>(), ["Second", "First"]);
+    assert_eq!(lowered.artifact().functions.len(), 3);
+    assert_eq!(
+        lowered.artifact().functions.iter().filter(|function| function.name.starts_with("Shared#syntax_")).count(),
+        1
+    );
+    assert!(!lowered.artifact().functions.iter().any(|function| function.name.starts_with("Unselected#syntax_")));
+    for entry in lowered.entries() {
+        assert!(lowered.artifact().functions.iter().any(|function| function.name == entry.symbol()));
+        assert_eq!(entry.return_type(), beskid_queries::SemanticTypeId::I32);
+    }
+    for invalid in
+        [vec![], vec!["First".to_owned(), "First".to_owned()], vec!["Missing".to_owned()], vec!["WithArg".to_owned()]]
+    {
+        assert!(
+            with_db(|db| beskid_codegen::lower_prepared_syntax_entrypoints(
+                db,
+                &front,
+                &invalid,
+                beskid_codegen::EntrypointKind::Function,
+                target.clone(),
+                isa.as_ref()
+            ))
+            .is_err()
+        );
+    }
+}
+
+/// Prepare `source` as a Mod-free project entry (the query gate judges it) and lower `Main`.
+fn lower_main(label: &str, source: &str) -> beskid_codegen::CodegenArtifact {
+    let directory = std::env::temp_dir().join(format!("beskid_codegen_front_end_{label}_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&directory);
+    std::fs::create_dir_all(&directory).expect("create project");
+    let path = directory.join("Main.bd");
+    std::fs::write(&path, source).expect("write source");
+    let plan = synthetic_compile_plan_for_source(&path);
+    let resolved: ResolvedInput = resolved_input_from_plan(path, source.into(), plan, None, None);
+    let front = compile_mod_free_front_end(
+        &resolved,
+        FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
+        None,
+    )
+    .unwrap_or_else(|error| panic!("{label}: the query gate must accept the program: {error:#}"));
+    let target = TargetMetadata::for_triple("x86_64-unknown-linux-gnu").unwrap();
+    let isa = beskid_codegen::target_isa::target_isa_builder("x86_64")
+        .unwrap()
+        .finish(settings::Flags::new(settings::builder()))
+        .unwrap();
+    let lowered = with_db(|db| lower_prepared_syntax_entrypoint(db, &front, "Main", target.clone(), isa.as_ref()))
+        .unwrap_or_else(|error| panic!("{label}: a program the gate accepted must lower: {error:#}"));
+    std::fs::remove_dir_all(directory).expect("remove project");
+    lowered.into_artifact()
+}
+
+/// Constructs the retired legacy checker rejected after the query gate had accepted them
+/// (`docs/design/2026-10-12-query-front-end.md`, section 3): they now build end to end.
+#[test]
+fn named_function_values_build_through_the_prepared_front_end() {
+    let artifact = lower_main(
+        "named_function_value",
+        "i64 Double(i64 value) { return value * 2_i64; } \
+         i64 Apply(i64 value, (i64) => i64 operation) { return operation(value); } \
+         i64 Main() { return Apply(5_i64, Double); }",
+    );
+    assert!(
+        artifact.functions.iter().any(|function| function.name.starts_with("Double#syntax_")),
+        "the named function is emitted as a callee"
+    );
+}
+
+#[test]
+fn function_typed_fields_build_through_the_prepared_front_end() {
+    let artifact = lower_main(
+        "function_typed_field",
+        "type Holder { (i64) => i64 op; } \
+         i64 Increment(i64 value) { return value + 1_i64; } \
+         i64 Main() { Holder holder = Holder { op: Increment }; return holder.op(41_i64); }",
+    );
+    assert!(artifact.functions.iter().any(|function| function.name.starts_with("Main#syntax_")));
+}
+
+#[test]
+fn calls_on_call_results_build_through_the_prepared_front_end() {
+    let artifact = lower_main(
+        "call_on_call_result",
+        "i64 Increment(i64 value) { return value + 1_i64; } \
+         (i64) => i64 Make() { return Increment; } \
+         i64 Main() { return Make()(41_i64); }",
+    );
+    assert!(artifact.functions.iter().any(|function| function.name.starts_with("Make#syntax_")));
+}
+
+#[test]
+fn for_over_arrays_builds_through_the_prepared_front_end() {
+    let artifact = lower_main(
+        "for_over_array",
+        "i64 Sum(i64[] values) { mut i64 total = 0_i64; for value in values { total = total + value; } return total; } \
+         i64 Main() { i64[] values = [1_i64, 2_i64, 3_i64]; return Sum(values); }",
+    );
+    let sum =
+        artifact.functions.iter().find(|function| function.name.starts_with("Sum#syntax_")).expect("Sum is emitted");
+    assert!(
+        sum.function.display().to_string().contains("icmp ult"),
+        "the array loop compares against the header length"
+    );
+}
+
+const ITERATORS: &str = "pub enum Option<T> { Some(T value), None } \
+     pub type Counter { i64 current; i64 limit; \
+         pub Option<i64> Next() { \
+             if this.current >= this.limit { return Option::None; } \
+             this.current = this.current + 1_i64; \
+             return Option::Some(this.current); \
+         } \
+     } \
+     pub type Repeat<T> { T value; i64 left; \
+         pub Option<T> Next() { \
+             if this.left <= 0_i64 { return Option::None; } \
+             this.left = this.left - 1_i64; \
+             return Option::Some(this.value); \
+         } \
+     } ";
+
+#[test]
+fn for_over_a_nominal_iterator_builds_through_the_prepared_front_end() {
+    let source = format!(
+        "{ITERATORS} \
+         i64 Sum(Counter counter) {{ \
+             mut i64 total = 0_i64; \
+             for value in counter {{ \
+                 if value == 2_i64 {{ continue; }} \
+                 if value == 5_i64 {{ break; }} \
+                 total = total + value; \
+             }} \
+             return total; \
+         }} \
+         i64 Main() {{ return Sum(Counter {{ current: 0_i64, limit: 9_i64 }}); }}"
+    );
+    let artifact = lower_main("for_over_nominal_iterator", &source);
+    assert!(
+        artifact.functions.iter().any(|function| function.name.contains("Next#syntax_")),
+        "the iterator's Next() is emitted as the loop's callee"
+    );
+    let sum =
+        artifact.functions.iter().find(|function| function.name.starts_with("Sum#syntax_")).expect("Sum is emitted");
+    let clif = sum.function.display().to_string();
+    assert!(clif.contains("call fn"), "the loop header calls Next():\n{clif}");
+    assert!(clif.contains("brif"), "the loop header branches on the Option tag:\n{clif}");
+}
+
+#[test]
+fn for_over_generic_iterators_builds_specialized_next_callees() {
+    let source = format!(
+        "{ITERATORS} \
+         i64 Count<T>(Repeat<T> source) {{ mut i64 count = 0_i64; for item in source {{ count = count + 1_i64; }} return count; }} \
+         i64 Lengths(Repeat<string> names) {{ mut i64 total = 0_i64; for name in names {{ total = total + 1_i64; }} return total; }} \
+         i64 Main() {{ \
+             Repeat<i64> numbers = Repeat<i64> {{ value: 7_i64, left: 3_i64 }}; \
+             Repeat<string> names = Repeat<string> {{ value: \"x\", left: 2_i64 }}; \
+             return Count(numbers) + Lengths(names); \
+         }}"
+    );
+    let artifact = lower_main("for_over_generic_iterator", &source);
+    let specialized_next = artifact
+        .functions
+        .iter()
+        .filter(|function| function.name.contains("Next#syntax_") && function.name.contains("#generic_"))
+        .count();
+    assert_eq!(specialized_next, 2, "Repeat<i64>.Next and Repeat<string>.Next are distinct specializations");
+    assert!(
+        artifact
+            .functions
+            .iter()
+            .any(|function| function.name.starts_with("Count#syntax_") && function.name.contains("#generic_")),
+        "the generic loop body is emitted through its specialization"
+    );
+}
+
+/// Tests have their own namespace: a function and a test of one name are distinct entrypoint
+/// selections, and the name alone never picks between them.
+#[test]
+fn a_function_and_a_test_of_one_name_are_distinct_entrypoint_selections() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("Main.bd");
+    // An entrypoint takes no parameters, so the function here takes none either.
+    let source = "i32 SumOfSquares() { return 4; }\ntest SumOfSquares { i32 value = SumOfSquares(); }";
+    std::fs::write(&path, source).unwrap();
+    let plan = synthetic_compile_plan_for_source(&path);
+    let resolved = resolved_input_from_plan(path, source.into(), plan, None, None);
+    let front = compile_mod_free_front_end(
+        &resolved,
+        FrontEndOptions { with_semantic_diagnostics: false, ..Default::default() },
+        None,
+    )
+    .unwrap();
+    let target = TargetMetadata::for_triple("x86_64-unknown-linux-gnu").unwrap();
+    let isa = beskid_codegen::target_isa::target_isa_builder("x86_64")
+        .unwrap()
+        .finish(settings::Flags::new(settings::builder()))
+        .unwrap();
+    let names = vec!["SumOfSquares".to_owned()];
+    let select = |kind| {
+        with_db(|db| {
+            beskid_codegen::lower_prepared_syntax_entrypoints(db, &front, &names, kind, target.clone(), isa.as_ref())
+        })
+        .unwrap()
+    };
+    let test = select(beskid_codegen::EntrypointKind::Test);
+    let function = select(beskid_codegen::EntrypointKind::Function);
+    assert_eq!(test.entries()[0].return_type(), beskid_queries::SemanticTypeId::UNIT);
+    assert_eq!(function.entries()[0].return_type(), beskid_queries::SemanticTypeId::I32);
+    assert_ne!(test.entries()[0].symbol(), function.entries()[0].symbol());
+}
+
+/// A test is selected by the qualified name discovery reports (`Topic::Inner` for a test in
+/// `mod Topic { ... }`). Same-named tests of different modules are distinct selections, a bare
+/// name selects only the root test, and a missing selection fails closed. (Two tests of one
+/// qualified name are rejected by the resolver before lowering, so the lowering's own ambiguity
+/// error is not reachable from a prepared front end.)
+#[test]
+fn tests_in_inline_modules_are_selected_by_qualified_name() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("Main.bd");
+    let source = "mod Topic { test Inner { return; } }\n\
+                  mod Alpha { test Shared { return; } }\n\
+                  mod Beta { test Shared { return; } mod Deep { test Shared { return; } } }\n\
+                  test Shared { return; }";
+    std::fs::write(&path, source).unwrap();
+    let plan = synthetic_compile_plan_for_source(&path);
+    let resolved = resolved_input_from_plan(path, source.into(), plan, None, None);
+    let front = compile_mod_free_front_end(
+        &resolved,
+        FrontEndOptions { with_semantic_diagnostics: false, ..Default::default() },
+        None,
+    )
+    .unwrap();
+    let target = TargetMetadata::for_triple("x86_64-unknown-linux-gnu").unwrap();
+    let isa = beskid_codegen::target_isa::target_isa_builder("x86_64")
+        .unwrap()
+        .finish(settings::Flags::new(settings::builder()))
+        .unwrap();
+    let select = |names: &[&str]| {
+        let names = names.iter().map(|name| (*name).to_owned()).collect::<Vec<_>>();
+        with_db(|db| {
+            beskid_codegen::lower_prepared_syntax_entrypoints(
+                db,
+                &front,
+                &names,
+                beskid_codegen::EntrypointKind::Test,
+                target.clone(),
+                isa.as_ref(),
+            )
+        })
+    };
+
+    let selected = select(&["Topic::Inner", "Alpha::Shared", "Beta::Shared", "Beta::Deep::Shared", "Shared"])
+        .expect("every qualified test name resolves");
+    let names = selected.entries().iter().map(|entry| entry.name().to_owned()).collect::<Vec<_>>();
+    assert_eq!(names, ["Topic::Inner", "Alpha::Shared", "Beta::Shared", "Beta::Deep::Shared", "Shared"]);
+    let mut symbols = selected.entries().iter().map(|entry| entry.symbol().to_owned()).collect::<Vec<_>>();
+    symbols.sort();
+    symbols.dedup();
+    assert_eq!(symbols.len(), 5, "five distinct tests are selected: {symbols:?}");
+
+    for missing in ["Inner", "Gamma::Shared", "Topic::", "::Inner", "Topic::Inner::Extra"] {
+        let error = select(&[missing]).map(|_| ()).expect_err(missing);
+        assert!(format!("{error:#}").contains(&format!("Missing test `{missing}`")), "{missing}: {error:#}");
+    }
+}

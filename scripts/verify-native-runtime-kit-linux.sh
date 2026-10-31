@@ -117,8 +117,8 @@ run_exact_test() {
   fi
 }
 
-run_exact_test cargo test -p beskid_engine --test native_runtime_kit_smoke \
-  staged_runtime_kit_executes_a_canonical_entrypoint -- --exact --include-ignored
+run_exact_test cargo test -p beskid_engine --test engine \
+  native_runtime_kit_smoke::staged_runtime_kit_executes_a_canonical_entrypoint -- --exact --include-ignored
 run_exact_test cargo test -p beskid_repl eval::tests::staged_native_runtime_kit_evaluates_a_snippet -- --exact --include-ignored
 
 echo "Linux native runtime-kit provenance and staged Engine/REPL evidence passed"
