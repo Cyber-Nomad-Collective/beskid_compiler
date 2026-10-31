@@ -3,7 +3,7 @@ use beskid_tests_support::source_facts::SourceFacts;
 
 #[test]
 fn fiber_scheduler_layout_has_disjoint_traced_slots_and_one_runtime_authority() {
-    let manifest = load_v5_manifest_source(include_str!("../../../runtime_manifest.bsol")).unwrap();
+    let manifest = load_v5_manifest_source(include_str!("../../../../runtime_manifest.bsol")).unwrap();
     let record = manifest.layouts.iter().find(|layout| layout.name == "BeskidFiberRecord").unwrap();
     let scheduler = manifest.layouts.iter().find(|layout| layout.name == "BeskidSchedulerState").unwrap();
     let offset = |name: &str| record.fields.iter().find(|field| field.name == name).unwrap().offset;
@@ -24,7 +24,7 @@ fn fiber_scheduler_layout_has_disjoint_traced_slots_and_one_runtime_authority() 
     // The scheduler allocates its header and the chunked record table from the manifest sizes.
     let core = SourceFacts::parse(
         "Scheduler/Core.bd",
-        include_str!("../../../runtime/beskid/src/Runtime/Fiber/Scheduler/Core.bd"),
+        include_str!("../../../../runtime/beskid/src/Runtime/Fiber/Scheduler/Core.bd"),
     );
     let arguments = |callee: &str| core.call_arguments(callee);
     assert!(arguments("SystemAllocate").contains(&vec!["BESKID_SCHEDULER_STATE_SIZE".to_owned(), "8".to_owned()]));
@@ -34,7 +34,7 @@ fn fiber_scheduler_layout_has_disjoint_traced_slots_and_one_runtime_authority() 
 
 #[test]
 fn fiber_result_transfer_requires_a_caller_owned_traced_destination() {
-    let manifest = load_v5_manifest_source(include_str!("../../../runtime_manifest.bsol")).unwrap();
+    let manifest = load_v5_manifest_source(include_str!("../../../../runtime_manifest.bsol")).unwrap();
     let join = manifest.corelib_services.iter().find(|service| service.name == "__fiber_join_value").unwrap();
     assert_eq!(join.params.iter().map(|parameter| parameter.ty.as_str()).collect::<Vec<_>>(), ["i64", "pointer"]);
     assert_eq!(join.result, "u8");
@@ -42,7 +42,7 @@ fn fiber_result_transfer_requires_a_caller_owned_traced_destination() {
 
 #[test]
 fn traced_value_layout_and_owner_operations_cross_every_generated_boundary() {
-    let manifest = load_v5_manifest_source(include_str!("../../../runtime_manifest.bsol")).unwrap();
+    let manifest = load_v5_manifest_source(include_str!("../../../../runtime_manifest.bsol")).unwrap();
     let layout = manifest
         .layouts
         .iter()

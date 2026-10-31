@@ -169,7 +169,7 @@ if grep -E -- '--(debug|release)-provenance-symbol-list' "${fixture_root}/cargo-
   exit 1
 fi
 test "$(grep -Fc -- '-p beskid_engine --test native_runtime_kit_smoke staged_runtime_kit_executes_a_canonical_entrypoint -- --exact --include-ignored' "${fixture_root}/cargo-calls")" = 2
-test "$(grep -Fc -- '-p beskid_aot --test abi_v5_runtime_kit staged_runtime_kit_links_and_executes_with_the_canonical_static_archive -- --exact --include-ignored' "${fixture_root}/cargo-calls")" = 2
+test "$(grep -Fc -- '-p beskid_aot --test aot abi_v5_runtime_kit::staged_runtime_kit_links_and_executes_with_the_canonical_static_archive -- --exact --include-ignored' "${fixture_root}/cargo-calls")" = 2
 test "$(grep -Fc -- '-p beskid_repl eval::tests::staged_native_runtime_kit_evaluates_a_snippet -- --exact --include-ignored' "${fixture_root}/cargo-calls")" = 2
 test "$(grep -Fc -- 'run -q -p beskid_cli -- run ' "${fixture_root}/cargo-calls")" = 1
 assert_lifecycle_smokes

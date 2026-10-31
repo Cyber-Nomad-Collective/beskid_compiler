@@ -1,10 +1,8 @@
-mod support;
-
+use crate::support::{artifact, isolated_artifact_root, multipart_publish_request};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use beskid_pckg_server::{PckgServerConfig, router};
 use http_body_util::BodyExt;
-use support::{artifact, isolated_artifact_root, multipart_publish_request};
 use tower::ServiceExt;
 
 fn admin_config() -> PckgServerConfig {

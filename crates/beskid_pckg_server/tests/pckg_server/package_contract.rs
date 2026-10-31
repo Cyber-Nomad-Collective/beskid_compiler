@@ -141,7 +141,7 @@ fn yank_and_unyank_lifecycle_responses_keep_the_version_payload() {
 }
 
 #[test]
-fn upsert_request_uses_the_legacy_camel_case_names() {
+fn upsert_request_serializes_camel_case_field_names() {
     let request = UpsertPackageRequest {
         name: "Managed.Demo".to_owned(),
         description: Some("updated".to_owned()),

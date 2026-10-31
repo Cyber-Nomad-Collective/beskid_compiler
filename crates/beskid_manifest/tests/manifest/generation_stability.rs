@@ -3,7 +3,7 @@ use std::fs::{self, File, FileTimes};
 use std::time::{Duration, SystemTime};
 
 #[test]
-fn v06_unchanged_builtin_generation_preserves_mtime_and_bytes() {
+fn unchanged_builtin_generation_preserves_mtime_and_bytes() {
     let directory = std::env::temp_dir().join(format!(
         "beskid-builtin-generation-{}-{}",
         std::process::id(),
@@ -11,8 +11,8 @@ fn v06_unchanged_builtin_generation_preserves_mtime_and_bytes() {
     ));
     fs::create_dir(&directory).unwrap();
     let output = directory.join("builtins.inc.rs");
-    let source = include_str!("../../../runtime_manifest.bsol");
-    let base = include_str!("../../beskid_analysis/src/generated/builtins.inc.rs");
+    let source = include_str!("../../../../runtime_manifest.bsol");
+    let base = include_str!("../../../beskid_analysis/src/generated/builtins.inc.rs");
     generate_analysis_with_v5_intrinsics_from_source(source, base, &output).unwrap();
     let bytes = fs::read(&output).unwrap();
     let sentinel = SystemTime::UNIX_EPOCH + Duration::from_secs(100);

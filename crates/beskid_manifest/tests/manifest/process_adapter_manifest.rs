@@ -82,7 +82,7 @@ fn corelib_string_services_accept_managed_string_views() {
 
 #[test]
 fn platform_environment_data_import_is_distinct_from_callable_imports() {
-    let source = include_str!("../../../runtime_manifest.bsol");
+    let source = include_str!("../../../../runtime_manifest.bsol");
     let manifest = load_v5_manifest_source(source).unwrap();
     // Darwin exports `environ`; glibc's canonical data symbol is `__environ` (`environ` is a weak
     // alias that a linked shared runtime does not reference).
@@ -116,14 +116,14 @@ fn platform_environment_data_import_is_distinct_from_callable_imports() {
             || (entry.target == "aarch64-apple-darwin" && entry.symbol == "__environ")
     }));
     // The runtime source must reference the same symbol the manifest declares per target.
-    let transport = include_str!("../../beskid_abi/assembly/common/process_transport.h");
+    let transport = include_str!("../../../beskid_abi/assembly/common/process_transport.h");
     assert!(transport.contains("#if defined(__GLIBC__)\n"));
     assert!(transport.contains("extern char **__environ;\n#define BESKID_PROCESS_ENVIRON __environ\n#else\nextern char **environ;\n#define BESKID_PROCESS_ENVIRON environ\n#endif"));
 }
 
 #[test]
 fn linux_signal_set_imports_are_exact_glibc_functions_for_linux_only() {
-    let source = include_str!("../../../runtime_manifest.bsol");
+    let source = include_str!("../../../../runtime_manifest.bsol");
     let manifest = load_v5_manifest_source(source).unwrap();
     let linux = "x86_64-unknown-linux-gnu";
     for (symbol, params) in [
@@ -149,8 +149,8 @@ fn linux_signal_set_imports_are_exact_glibc_functions_for_linux_only() {
 /// a declared Windows platform import, or the import audit rejects the archive.
 #[test]
 fn windows_process_transport_avoids_ucrt_inline_helpers_and_declares_its_imports() {
-    let transport = include_str!("../../beskid_abi/assembly/common/process_transport.h");
-    let windows_host = include_str!("../../beskid_abi/assembly/x86_64-pc-windows-msvc/platform_host.c");
+    let transport = include_str!("../../../beskid_abi/assembly/common/process_transport.h");
+    let windows_host = include_str!("../../../beskid_abi/assembly/x86_64-pc-windows-msvc/platform_host.c");
     for (name, source) in [("process_transport.h", transport), ("windows platform_host.c", windows_host)] {
         for forbidden in [
             "<wchar.h>",
@@ -166,7 +166,7 @@ fn windows_process_transport_avoids_ucrt_inline_helpers_and_declares_its_imports
             assert!(!source.contains(forbidden), "{name} uses UCRT inline-helper surface `{forbidden}`");
         }
     }
-    let source = include_str!("../../../runtime_manifest.bsol");
+    let source = include_str!("../../../../runtime_manifest.bsol");
     let manifest = load_v5_manifest_source(source).unwrap();
     let windows = "x86_64-pc-windows-msvc";
     for (symbol, library) in [

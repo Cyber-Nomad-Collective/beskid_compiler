@@ -1,7 +1,6 @@
-mod support;
-
 use std::sync::Arc;
 
+use crate::support::{artifact, multipart_publish_request};
 use async_trait::async_trait;
 use axum::{
     body::Body,
@@ -9,7 +8,6 @@ use axum::{
 };
 use beskid_pckg_server::{PckgServerConfig, router};
 use beskid_pckg_store::{ApiKey, ApiKeyStoreError, AsyncApiKeyRepository, NewApiKey};
-use support::{artifact, multipart_publish_request};
 use tower::ServiceExt;
 
 struct ActiveKeyRepository {
@@ -115,8 +113,8 @@ async fn no_session_auth_rejects_absent_or_non_bearer_credentials() {
         package_create_request("Key.NoCredentials"),
         with_authorization(package_create_request("Key.Basic"), "Basic ignored", Some("attacker")),
         {
-            let mut request = package_create_request("Key.LegacyHeader");
-            request.headers_mut().insert("x-api-key", HeaderValue::from_static("bpk_legacy"));
+            let mut request = package_create_request("Key.XApiKeyHeader");
+            request.headers_mut().insert("x-api-key", HeaderValue::from_static("bpk_x_api_key"));
             request.headers_mut().insert("remote-user", HeaderValue::from_static("attacker"));
             request
         },

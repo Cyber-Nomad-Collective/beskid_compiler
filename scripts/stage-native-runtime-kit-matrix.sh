@@ -144,7 +144,7 @@ export BESKID_RUNTIME_PREFIX="${prefix}"
 for profile in debug release; do
   export BESKID_RUNTIME_KIT_PROFILE="${profile}"
   run_smoke "${profile}" jit shared cargo test -p beskid_engine --test native_runtime_kit_smoke staged_runtime_kit_executes_a_canonical_entrypoint -- --exact --include-ignored
-  run_smoke "${profile}" aot static cargo test -p beskid_aot --test abi_v5_runtime_kit staged_runtime_kit_links_and_executes_with_the_canonical_static_archive -- --exact --include-ignored
+  run_smoke "${profile}" aot static cargo test -p beskid_aot --test aot abi_v5_runtime_kit::staged_runtime_kit_links_and_executes_with_the_canonical_static_archive -- --exact --include-ignored
   run_smoke "${profile}" repl shared cargo test -p beskid_repl eval::tests::staged_native_runtime_kit_evaluates_a_snippet -- --exact --include-ignored
   run_smoke "${profile}" native-executable-streams static cargo test --locked -p beskid_engine --test foundation_io_native staged_runtime_kit_emitted_binary_round_trips_redirected_standard_streams -- --exact --include-ignored
   run_smoke "${profile}" native-executable-stdin static cargo test --locked -p beskid_engine --test foundation_io_native staged_runtime_kit_emitted_binary_reads_redirected_standard_input -- --exact --include-ignored

@@ -11,7 +11,7 @@ fn activation_rejects_a_missing_payload() {
 }
 
 #[test]
-fn v06_activation_rejects_empty_payload_without_switching() {
+fn activation_rejects_empty_payload_without_switching() {
     let temp = tempdir().unwrap();
     let store = DirectInstall::new(temp.path());
     let version = Version::parse("0.6.0").unwrap();
