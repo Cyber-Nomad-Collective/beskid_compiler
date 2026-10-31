@@ -45,6 +45,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The canonical runtime reads the element descriptor only through `ArrayElementDescriptor`, which clears the mark (growth, marking, verification, transit, counts, object size, view kind). Geometric growth doubles the length instead of the capacity, so repeated forced copies do not inflate the capacity; a full array still doubles its capacity. The runtime kit source hash changes.
 - Tests: e2e `array_growth_aliasing` (local copy, spare slot, field, capture, list and nested element, copied and `mut` parameter, returned field, `Append` result, in-place growth), codegen `collection_growth_owner` (mark emission, no mark in an unaliased append loop), runtime_semantics `GcMarkedArrayGrowsIntoUnmarkedCopy`. Spec: change `v067-array-growth-aliasing`.
 
+### Compiler SDK surfaces
+
+- The Corelib compiler-sdk `Beskid/Compiler/Diagnostics.bd` mirror is generated again: `regen_mod_sdk_surfaces.sh` stopped writing it at the 0.6.0 snapshot, so it kept removed kinds (`DuplicateDefinitionName`, `AmbiguousImport`, `DuplicateItemName`) and lacked every kind added since. `beskid_ast_reflect_gen --emit-diagnostics-sdk` writes it from `SemanticIssueKind` and `Severity`, and the `sdk_surfaces` tests fail while the checked-in syntax, query or diagnostics surface differs from a fresh generation.
+- The Corelib gitlink moves to `v067/corelib-int12` (the regenerated mirror and the regen script).
+- Test executables consolidated by S9: the `beskid_codegen` and `beskid_engine` files that the rename made longer than the line width are formatted, and test-path comments name the moved files.
+
 ### Language server analysis catch-up
 
 - After a burst of edits in a large file, the facts of the newest text are stored 1-2.4 s after the last edit instead of 14-41 s (10 s of edits every 150 ms on a loaded builder: `TraversalManifest.bd` 52 KB 13.6-18.3 s -> 1.0-1.1 s, `Bsol/Schema.bd` 141 KB 40.8-41.3 s -> 2.0-2.4 s), so rename, prepare rename and code actions stop failing with `ContentModified` and stale-safe requests answer from current facts almost at once. Diagnostics of the newest text are published 2-4 s after the last edit instead of 25-42 s.

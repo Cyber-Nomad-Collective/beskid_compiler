@@ -110,8 +110,8 @@ mod tests {
     fn checked_in_query_facade_matches_the_syntax_inventory() {
         let analysis = workspace_root().join("crates/beskid_analysis/src");
         let inventory = inventory_syntax_type_names(&analysis).expect("syntax inventory");
-        let generated =
-            crate::format_bd(Path::new("Beskid/Compiler/Query.bd"), &emit_query_facade_body(&inventory)).expect("format");
+        let generated = crate::format_bd(Path::new("Beskid/Compiler/Query.bd"), &emit_query_facade_body(&inventory))
+            .expect("format");
         assert!(
             checked_in("Compiler/Query.bd") == generated,
             "corelib compiler-sdk Beskid/Compiler/Query.bd is stale against the beskid_analysis syntax inventory; {REGEN}"
@@ -134,7 +134,10 @@ mod tests {
         let checked_in_root = workspace_root().join(COMPILER_SDK_BESKID_DIR);
         let generated = files_under(&root.join("Syntax"));
         let committed = files_under(&checked_in_root.join("Syntax"));
-        assert_eq!(committed, generated, "corelib compiler-sdk Beskid/Syntax holds other files than the generator writes; {REGEN}");
+        assert_eq!(
+            committed, generated,
+            "corelib compiler-sdk Beskid/Syntax holds other files than the generator writes; {REGEN}"
+        );
         let stale: Vec<_> = std::iter::once(PathBuf::from("Syntax.bd"))
             .chain(generated.iter().map(|rel| Path::new("Syntax").join(rel)))
             .filter(|rel| fs::read(root.join(rel)).ok() != fs::read(checked_in_root.join(rel)).ok())

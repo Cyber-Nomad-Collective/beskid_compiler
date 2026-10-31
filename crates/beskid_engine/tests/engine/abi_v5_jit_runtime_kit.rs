@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use crate::support::explicit_kit::run_entrypoint_with_kit;
 use beskid_abi::abi_v5::{AbiManifestV5, RuntimeAuditMetadata, TargetMetadata, canonical_source_hash};
 use beskid_abi::runtime_kit::{BuildProfile, RuntimeKitBuildRequest, build_runtime_kit};
 use beskid_abi::runtime_source::canonical_runtime_sources;
@@ -11,7 +12,6 @@ use beskid_codegen::{CodegenArtifact, ExternImport, LoweredFunction};
 use beskid_engine::{BeskidJitModule, Engine, JitRuntimeKit};
 use cranelift_codegen::ir::{AbiParam, ExternalName, Function, InstBuilder, Signature, types};
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
-use crate::support::explicit_kit::run_entrypoint_with_kit;
 
 static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 

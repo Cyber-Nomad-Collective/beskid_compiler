@@ -56,7 +56,12 @@ fn compile_fixture_library(root: &Path, output: &Path, import_library: &Path) ->
 fn child_command(mode: &str) -> Command {
     let mut command = Command::new(std::env::current_exe().unwrap());
     command
-        .args(["external_wait_native::owner_routed_waits_and_deadlines_have_one_winner", "--exact", "--nocapture", "--test-threads=1"])
+        .args([
+            "external_wait_native::owner_routed_waits_and_deadlines_have_one_winner",
+            "--exact",
+            "--nocapture",
+            "--test-threads=1",
+        ])
         .env(CHILD_MODE, mode);
     command
 }

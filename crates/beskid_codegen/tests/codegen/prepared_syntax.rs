@@ -91,7 +91,12 @@ fn prepared_syntax_entrypoint_rejects_foreign_composition_snapshot_before_loweri
 #[test]
 fn compiler_trace_reports_syntax_facts_without_source_literal_payloads() {
     let output = Command::new(std::env::current_exe().expect("current test executable"))
-        .args(["--ignored", "--exact", "prepared_syntax::compiler_trace_child_lowers_a_syntax_entrypoint", "--nocapture"])
+        .args([
+            "--ignored",
+            "--exact",
+            "prepared_syntax::compiler_trace_child_lowers_a_syntax_entrypoint",
+            "--nocapture",
+        ])
         .env("BESKID_COMPILER_TRACE", "1")
         .output()
         .expect("run trace child process");

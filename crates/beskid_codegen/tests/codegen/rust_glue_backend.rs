@@ -113,7 +113,10 @@ fn checked_exports_validate_scalars_and_resolve_managed_inputs_before_effects() 
     for (path, expected) in [
         ("vendor/beskid_glue/src/peer.rs", include_bytes!("../../../beskid_glue/src/peer.rs").as_slice()),
         ("vendor/beskid_glue/src/codec.rs", include_bytes!("../../../beskid_glue/src/codec.rs").as_slice()),
-        ("vendor/beskid_serialization/src/lib.rs", include_bytes!("../../../beskid_serialization/src/lib.rs").as_slice()),
+        (
+            "vendor/beskid_serialization/src/lib.rs",
+            include_bytes!("../../../beskid_serialization/src/lib.rs").as_slice(),
+        ),
     ] {
         assert_eq!(
             artifact.files.iter().find(|file| file.path == path).unwrap().bytes,

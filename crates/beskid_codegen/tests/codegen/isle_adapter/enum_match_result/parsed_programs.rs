@@ -260,7 +260,10 @@ fn bound_result_payload_compares_with_an_unsuffixed_integer_literal() {
     );
     let function = match emit_isle_item(&input, isa.as_ref(), item) {
         Ok(function) => function,
-        Err(error) => panic!("a bound payload compared with an unsuffixed literal must lower: {}", error.display_with_db(input.database())),
+        Err(error) => panic!(
+            "a bound payload compared with an unsuffixed literal must lower: {}",
+            error.display_with_db(input.database())
+        ),
     };
     let clif = function.display().to_string();
     assert!(clif.contains("icmp"), "{clif}");

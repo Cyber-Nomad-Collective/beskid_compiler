@@ -6,8 +6,7 @@ use std::path::{Path, PathBuf};
 
 use beskid_ast_reflect_gen::{
     default_allowlist_paths, format_bd, parse_cli_args, run_cli, sdk_surfaces::emit_diagnostics_sdk,
-    syntax_nodes::emit_syntax_sdk,
-    syntax_nodes::inventory_syntax_type_names, syntax_traversal::emit_query_facade_body,
+    syntax_nodes::emit_syntax_sdk, syntax_nodes::inventory_syntax_type_names, syntax_traversal::emit_query_facade_body,
 };
 
 fn run_dump_syntax_inventory(raw: &[OsString]) -> std::process::ExitCode {
@@ -182,7 +181,9 @@ fn run_emit_query_facade(raw: &[OsString]) -> std::process::ExitCode {
 /// `Beskid/Compiler/Diagnostics.bd` (the `SemanticIssueKind` and `Severity` mirrors).
 fn run_emit_diagnostics_sdk(raw: &[OsString], flag_idx: usize) -> std::process::ExitCode {
     let Some(out) = raw.get(flag_idx + 1).filter(|a| !a.is_empty() && !a.to_string_lossy().starts_with('-')) else {
-        eprintln!("error: --emit-diagnostics-sdk requires a file path (…/compiler-sdk/src/Beskid/Compiler/Diagnostics.bd)");
+        eprintln!(
+            "error: --emit-diagnostics-sdk requires a file path (…/compiler-sdk/src/Beskid/Compiler/Diagnostics.bd)"
+        );
         return std::process::ExitCode::from(2);
     };
     let (workspace, _) = extract_workspace_flag(raw.to_vec());
