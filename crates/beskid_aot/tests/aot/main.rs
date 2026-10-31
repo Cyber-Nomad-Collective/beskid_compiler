@@ -2,6 +2,7 @@
 //! inputs that `src/object_symbols.rs` also reads, so it stays beside this directory.
 
 mod abi_v5_runtime_kit;
+mod end_to_end;
 mod glue_admission;
 mod glue_declarations;
 mod library_emission;

@@ -59,11 +59,6 @@ crates/beskid_up/
 crates/beskid_tests_surface/
 crates/beskid_tests_projects/
 crates/beskid_tests_mods/
-crates/beskid_tests_lsp/
-crates/beskid_tests_aot/
 crates/beskid_tests_pckg/
 crates/beskid_tests_interop/
-crates/beskid_tests_cli/
-crates/beskid_tests_composition/
-crates/beskid_tests_abi/
 crates/beskid_tests_support/

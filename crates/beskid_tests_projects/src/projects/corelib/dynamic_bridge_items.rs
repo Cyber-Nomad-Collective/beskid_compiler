@@ -22,7 +22,7 @@ fn unused_private_items(diagnostics: &[beskid_analysis::SemanticDiagnostic]) -> 
 }
 
 #[test]
-fn v06_canonical_dynamic_bridge_items_are_not_unused_private_items() {
+fn canonical_dynamic_bridge_items_are_not_unused_private_items() {
     let root = super::foundation_root();
     with_project_test_env(&root, || {
         let resolved = resolve_fixture_with_assembly(&root, "src/Core/Dynamic/Dynamic.bd", "FoundationLib");

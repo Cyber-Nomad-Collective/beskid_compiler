@@ -1,4 +1,4 @@
-//! Conformance for single prepare on the `beskid run` path (Wave 1).
+//! Conformance for single prepare on the `beskid run` path.
 //!
 //! Compile commands call [`beskid_queries::prepare_compilation_diagnostics`] once, then
 //! generation-safe syntax lowering on the returned front-end bundle.
@@ -80,7 +80,7 @@ i32 Main() {
     (root, entry)
 }
 
-/// Mirrors Wave 1 `beskid run`: one executable prepare, then syntax lowering from cached front-end.
+/// Mirrors `beskid run`: one executable prepare, then syntax lowering from cached front-end.
 fn run_single_prepare_path(resolved: &ResolvedInput, observer: &PhaseStartRecorder) {
     let mod_host = enter_mod_host();
     let (prepared, _gate_diagnostics, _fixes) = prepare_compilation_diagnostics(
@@ -102,9 +102,9 @@ fn run_single_prepare_path(resolved: &ResolvedInput, observer: &PhaseStartRecord
     .expect("lower from prepared syntax front-end");
 }
 
-/// Wave 1: one prepare spine per compile command on the run path.
+/// One prepare spine per compile command on the run path.
 #[test]
-fn run_path_single_prepare_after_wave1() {
+fn run_path_prepares_once_per_compile_command() {
     let _shared = crate::projects::fixture_harness::shared_query_state_lock();
     let (root, entry) = minimal_run_fixture();
 
@@ -122,12 +122,12 @@ fn run_path_single_prepare_after_wave1() {
         let recorder = PhaseStartRecorder::default();
         run_single_prepare_path(&resolved, &recorder);
 
-        assert_eq!(recorder.count(phases::PARSE), 1, "Wave 1 run path must invoke prepare once (executable gate only)");
+        assert_eq!(recorder.count(phases::PARSE), 1, "The run path must invoke prepare once (executable gate only)");
 
         assert_eq!(
             recorder.count(phases::SEMANTIC),
             1,
-            "Wave 1 run path must run semantic parent phase exactly once per command"
+            "The run path must run semantic parent phase exactly once per command"
         );
         for id in SEMANTIC_SUB_PHASE_IDS {
             assert!(recorder.saw(id), "semantic sub-phase {id} should appear when observer is wired");

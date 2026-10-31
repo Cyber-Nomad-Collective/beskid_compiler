@@ -25,7 +25,7 @@ fn unused_private_items(
 }
 
 #[test]
-fn v06_canonical_serialization_factories_are_compiler_issued() {
+fn canonical_serialization_factories_are_compiler_issued() {
     let root = super::serialization_root();
     with_project_test_env(&root, || {
         let resolved = resolve_fixture_with_assembly(&root, "src/Core/Serialization/Compiled.bd", "SerializationLib");
