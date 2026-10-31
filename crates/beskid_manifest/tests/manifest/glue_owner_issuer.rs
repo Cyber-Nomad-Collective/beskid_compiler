@@ -1,6 +1,6 @@
 use beskid_manifest::load_v5_manifest_source;
 fn source() -> String {
-    include_str!("../../../runtime_manifest.bsol").to_owned()
+    include_str!("../../../../runtime_manifest.bsol").to_owned()
 }
 #[test]
 fn versioned_glue_identity_export_has_exact_signature() {

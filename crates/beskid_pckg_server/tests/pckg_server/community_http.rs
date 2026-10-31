@@ -4,8 +4,6 @@
 //! are served to the package page, and administrators can reconcile missing
 //! threads.
 
-mod support;
-
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
@@ -17,8 +15,8 @@ use beskid_pckg_server::{
 };
 
 const BOT_UID: i64 = 7;
+use crate::support::{artifact, multipart_publish_request};
 use http_body_util::BodyExt;
-use support::{artifact, multipart_publish_request};
 use tower::ServiceExt;
 
 #[derive(Default)]

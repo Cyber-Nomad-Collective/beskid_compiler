@@ -62,7 +62,7 @@ fn audit_rejects_scalar_and_pointer_side_channels_but_accepts_one_slot_protocol(
 
 #[test]
 fn public_foundation_transport_has_no_scalar_or_pointer_side_channel() {
-    let manifest = load_v5_manifest_source(include_str!("../../../runtime_manifest.bsol")).unwrap();
+    let manifest = load_v5_manifest_source(include_str!("../../../../runtime_manifest.bsol")).unwrap();
     let entries = manifest
         .exports
         .iter()

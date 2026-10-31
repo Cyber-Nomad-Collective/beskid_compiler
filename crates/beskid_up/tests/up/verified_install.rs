@@ -87,7 +87,7 @@ fn fixture(version: &str, omit_release_kit: bool) -> (tempfile::TempDir, Vec<u8>
     (stage, bytes, manifest)
 }
 #[test]
-fn v06_verified_complete_install_switches_and_rejects_tampering() {
+fn verified_complete_install_switches_and_rejects_tampering() {
     let storage = tempfile::tempdir().unwrap();
     let store = DirectInstall::new(storage.path());
     let (_source, bytes, manifest) = fixture("0.6.0", false);
@@ -113,7 +113,7 @@ fn v06_verified_complete_install_switches_and_rejects_tampering() {
     assert_eq!(fs::read(storage.path().join("active")).unwrap(), second_active);
 }
 #[test]
-fn v06_failed_active_replace_retains_prior_pointer() {
+fn failed_active_replace_retains_prior_pointer() {
     let storage = tempfile::tempdir().unwrap();
     let store = DirectInstall::new(storage.path());
     let (_source, bytes, manifest) = fixture("0.6.0", false);
@@ -125,7 +125,7 @@ fn v06_failed_active_replace_retains_prior_pointer() {
 }
 
 #[test]
-fn v06_owner_receipts_bind_complete_inventory_and_active_direct_coordinate() {
+fn owner_receipts_bind_complete_inventory_and_active_direct_coordinate() {
     use beskid_up::{InstallationOwner, inspect_installation, write_owner_receipt};
     let storage = tempfile::tempdir().unwrap();
     let store = DirectInstall::new(storage.path());
@@ -143,7 +143,7 @@ fn v06_owner_receipts_bind_complete_inventory_and_active_direct_coordinate() {
 }
 
 #[test]
-fn v06_package_owner_receipt_rejects_tampering_unknown_fields_and_conflicting_direct_receipt() {
+fn package_owner_receipt_rejects_tampering_unknown_fields_and_conflicting_direct_receipt() {
     use beskid_up::{InstallationOwner, inspect_installation, write_owner_receipt};
     let (source, _bytes, manifest) = fixture("0.6.0", false);
     let prefix = source.path().join(format!("beskid-0.6.0-{TARGET}"));

@@ -1,14 +1,12 @@
 use std::io::Write;
 
-mod support;
-
+use crate::support::{
+    artifact, hex_sha256, multipart_publish_request, template_artifact, tool_artifact_with_conflicting_template,
+};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use beskid_pckg_server::{PckgServerConfig, router};
 use http_body_util::BodyExt;
-use support::{
-    artifact, hex_sha256, multipart_publish_request, template_artifact, tool_artifact_with_conflicting_template,
-};
 use tower::ServiceExt;
 use zip::write::SimpleFileOptions;
 

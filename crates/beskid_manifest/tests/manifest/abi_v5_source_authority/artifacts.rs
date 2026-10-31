@@ -35,7 +35,7 @@ fn v5_manifest_is_the_only_input_to_every_generated_artifact() {
 }
 
 #[test]
-fn v06_private_adapters_do_not_grant_global_source_builtin_authority() {
+fn private_adapters_do_not_grant_global_source_builtin_authority() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let source = fs::read_to_string(root.join("runtime_manifest.bsol")).unwrap();
     let manifest = load_v5_manifest_source(&source).unwrap();

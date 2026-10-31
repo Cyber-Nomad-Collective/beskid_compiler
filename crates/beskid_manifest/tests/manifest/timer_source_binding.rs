@@ -1,5 +1,5 @@
 fn manifest() -> beskid_manifest::RuntimeManifestV5 {
-    beskid_manifest::load_v5_manifest_source(include_str!("../../../runtime_manifest.bsol")).unwrap()
+    beskid_manifest::load_v5_manifest_source(include_str!("../../../../runtime_manifest.bsol")).unwrap()
 }
 
 #[test]
