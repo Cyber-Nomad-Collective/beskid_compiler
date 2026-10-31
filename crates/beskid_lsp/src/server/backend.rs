@@ -21,8 +21,9 @@ use crate::features::{
 use crate::logging::{ClientLogFilter, client_log};
 use crate::protocol::refresh::{FactsRefresh, RefreshKind};
 use crate::protocol::request::{
-    CurrentDocument, EDIT_FACTS_WAIT, REFRESH_FACTS_WAIT, RequestFacts, STALE_SAFE_FACTS_WAIT, content_modified,
-    document_facts, latest_document, wait_for_current_facts,
+    CODE_ACTION_COMPUTE_WAIT, CurrentDocument, EDIT_FACTS_WAIT, REFRESH_FACTS_WAIT, RequestFacts,
+    STALE_SAFE_FACTS_WAIT, content_modified, document_facts, edit_document_facts, latest_document,
+    wait_for_current_facts,
 };
 use crate::scan_schedule::{InteractiveGuard, ScanCoordinator, ScanRunGuard};
 use crate::server::init::initialize_result;
@@ -170,7 +171,7 @@ impl Backend {
     /// The facts of the newest text for an edit-producing request, within [`EDIT_FACTS_WAIT`];
     /// `ContentModified` when the analysis of the newest text has not finished by then.
     async fn edit_facts(&self, uri: &Uri) -> Result<Option<CurrentDocument>> {
-        let facts = document_facts(&self.state, uri, EDIT_FACTS_WAIT).await.edits(uri);
+        let facts = edit_document_facts(&self.state, uri, EDIT_FACTS_WAIT).await;
         if facts.is_err() {
             tracing::debug!(uri = uri.as_str(), "edit request answered ContentModified: newest text not analyzed");
         }
@@ -263,6 +264,53 @@ impl DiagnosticsPublisher {
 
 /// `ContentModified` when the client sent an edit while an edit-producing request computed its
 /// answer from `current`: the edits would apply to a text the client no longer has.
+/// The code actions of `document`, computed on a blocking thread, as far as they are computed
+/// within `wait`.
+async fn code_actions_within(
+    uri: Uri,
+    document: crate::session::store::Document,
+    params: CodeActionParams,
+    wait: std::time::Duration,
+) -> CodeActionResponse {
+    let (actions, complete) = computed_within(wait, move |emit| {
+        code_actions::handler::code_actions_into(&uri, &document, &params, emit);
+    })
+    .await;
+    if !complete {
+        crate::trace::event("code-action-budget", || format!("answered with {} action(s)", actions.len()));
+    }
+    actions
+}
+
+/// Run `compute` on a blocking thread and collect what it emits within `wait`; `true` when it
+/// finished in time. Past `wait` the items emitted so far are the answer, and the next `emit`
+/// returns `false` so the computation stops. A panic of the computation is raised again here,
+/// so the request's crash guard reports it.
+async fn computed_within<T: Send + 'static>(
+    wait: std::time::Duration,
+    compute: impl FnOnce(&mut dyn FnMut(T) -> bool) + Send + 'static,
+) -> (Vec<T>, bool) {
+    let deadline = tokio::time::Instant::now() + wait;
+    let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+    let worker = tokio::task::spawn_blocking(move || compute(&mut |item| sender.send(item).is_ok()));
+    let mut items = Vec::new();
+    loop {
+        match tokio::time::timeout_at(deadline, receiver.recv()).await {
+            Ok(Some(item)) => items.push(item),
+            Ok(None) => {
+                if let Err(error) = worker.await
+                    && error.is_panic()
+                {
+                    std::panic::resume_unwind(error.into_panic());
+                }
+                return (items, true);
+            }
+            // Dropping the receiver makes the next `emit` return `false`.
+            Err(_) => return (items, false),
+        }
+    }
+}
+
 fn unchanged_since(uri: &Uri, current: &CurrentDocument) -> Result<()> {
     if current.still_current(uri) { Ok(()) } else { Err(content_modified()) }
 }
@@ -585,13 +633,20 @@ impl LanguageServer for Backend {
     // Code actions carry edits: they come only from the facts of the newest text. Past a short
     // budget, or when the client edits while they are computed, the answer is `ContentModified`
     // and the client asks again.
+    //
+    // The actions are computed on a blocking thread and the request waits for them at most
+    // `CODE_ACTION_COMPUTE_WAIT`: past it, the answer holds the actions computed by then (the
+    // quick fixes first) and the computation stops.
     async fn code_action(&self, params: CodeActionParams) -> Result<Option<CodeActionResponse>> {
         let uri = params.text_document.uri.clone();
         let Some(current) = self.edit_facts(&uri).await? else {
             return Ok(Some(Vec::new()));
         };
-        let actions = code_actions::handler::handle_code_actions(&uri, &current.document, &params);
-        unchanged_since(&uri, &current)?;
+        let CurrentDocument { document, open_version } = current;
+        let actions = code_actions_within(uri.clone(), document, params, CODE_ACTION_COMPUTE_WAIT).await;
+        if crate::features::formatting::open_texts::open_version(&uri) != open_version {
+            return Err(content_modified());
+        }
         Ok(Some(actions))
     }
 
@@ -1198,6 +1253,91 @@ mod scan_tests {
         };
         let (answer, _) = during_an_edit_burst(backend, &uri, backend.code_action(params)).await;
         assert_content_modified(answer);
+    }
+
+    fn code_action_params(uri: &Uri) -> CodeActionParams {
+        CodeActionParams {
+            text_document: TextDocumentIdentifier { uri: uri.clone() },
+            range: Range { start: Position { line: 1, character: 3 }, end: Position { line: 1, character: 3 } },
+            context: CodeActionContext::default(),
+            work_done_progress_params: Default::default(),
+            partial_result_params: Default::default(),
+        }
+    }
+
+    /// The edit budget covers the reads of the server state too: a request queued behind a
+    /// writer that holds the state fails closed within the budget instead of waiting for it.
+    #[tokio::test]
+    async fn edit_requests_fail_content_modified_while_a_writer_holds_the_state() {
+        let (service, _socket) = backend_for_tests();
+        let backend = service.inner();
+        let uri = Uri::from_str("file:///tmp/beskid-soakfix2-held/Main.bd").expect("uri");
+        store_facts_for_tests(backend, &uri, burst_facts(&uri, 1)).await;
+        open_text_for_tests(&uri, 1, &burst_text(1));
+        let held = backend.state.write().await;
+        let started = std::time::Instant::now();
+        let actions = tokio::time::timeout(Duration::from_secs(3), backend.code_action(code_action_params(&uri))).await;
+        let prepare =
+            tokio::time::timeout(Duration::from_secs(3), backend.prepare_rename(position_params(&uri, 2, 10))).await;
+        let elapsed = started.elapsed();
+        drop(held);
+        close_text_for_tests(&uri);
+        assert_content_modified(actions.expect("code actions waited for the state past their budget"));
+        assert_content_modified(prepare.expect("prepare rename waited for the state past its budget"));
+        assert!(elapsed < 2 * EDIT_FACTS_WAIT + Duration::from_millis(400), "two edit requests took {elapsed:?}");
+    }
+
+    #[tokio::test]
+    async fn code_actions_of_current_facts_answer_once_the_state_is_free() {
+        let (service, _socket) = backend_for_tests();
+        let backend = service.inner();
+        let uri = Uri::from_str("file:///tmp/beskid-soakfix2-free/Main.bd").expect("uri");
+        store_facts_for_tests(backend, &uri, burst_facts(&uri, 1)).await;
+        open_text_for_tests(&uri, 1, &burst_text(1));
+        let answer = backend.code_action(code_action_params(&uri)).await;
+        close_text_for_tests(&uri);
+        // The facts match the newest text: the bounded reads and the bounded computation answer.
+        answer.expect("code actions of current facts").expect("a list");
+    }
+
+    /// A slow action computation never holds the answer past its budget: the answer has the
+    /// actions computed by then, and the computation stops at its next action.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_slow_action_computation_answers_with_what_it_has_within_the_budget() {
+        let emitted_after_budget = Arc::new(std::sync::atomic::AtomicBool::new(true));
+        let stopped = Arc::clone(&emitted_after_budget);
+        let started = std::time::Instant::now();
+        let (items, complete) = computed_within(Duration::from_millis(200), move |emit| {
+            assert!(emit("quick fix"));
+            std::thread::sleep(Duration::from_millis(600));
+            stopped.store(emit("format document"), std::sync::atomic::Ordering::SeqCst);
+        })
+        .await;
+        let elapsed = started.elapsed();
+        assert_eq!(items, vec!["quick fix"]);
+        assert!(!complete);
+        assert!(elapsed < Duration::from_millis(500), "waited {elapsed:?}");
+        tokio::time::sleep(Duration::from_millis(800)).await;
+        assert!(
+            !emitted_after_budget.load(std::sync::atomic::Ordering::SeqCst),
+            "the computation was not told to stop"
+        );
+
+        let (items, complete) = computed_within(Duration::from_secs(2), |emit| {
+            emit(1);
+            emit(2);
+        })
+        .await;
+        assert_eq!((items, complete), (vec![1, 2], true));
+    }
+
+    #[tokio::test]
+    #[should_panic(expected = "action provider failed")]
+    async fn a_panicking_action_computation_reaches_the_request_crash_guard() {
+        let _ = computed_within(Duration::from_secs(2), |_emit: &mut dyn FnMut(u8) -> bool| {
+            panic!("action provider failed");
+        })
+        .await;
     }
 
     #[tokio::test]

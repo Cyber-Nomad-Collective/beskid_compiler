@@ -100,17 +100,63 @@ pub(super) fn doc_comment_quickfix(
 /// mod-origin fixes (`source.starts_with("beskid:mod:")`) are handled by
 /// `ModQuickFixProvider`, which reads generation-bound `Document.syntax_fixes`.
 pub fn handle_code_actions(uri: &Uri, doc: &Document, params: &CodeActionParams) -> CodeActionResponse {
-    let mut actions: Vec<CodeActionOrCommand> = Vec::new();
+    let mut actions = Vec::new();
+    code_actions_into(uri, doc, params, &mut |action| {
+        actions.push(action);
+        true
+    });
+    CodeActionResponse::from(actions)
+}
 
+/// Compute the actions of [`handle_code_actions`] one by one, cheapest first: the fixes the
+/// compiler attached to a diagnostic, the providers' quick fixes, then the source actions
+/// (whole-document formatting, the documentation comment). Each action goes to `emit` as soon as
+/// it is computed; when `emit` returns `false` the caller no longer waits, and no further action
+/// is computed.
+pub fn code_actions_into(
+    uri: &Uri,
+    doc: &Document,
+    params: &CodeActionParams,
+    emit: &mut dyn FnMut(CodeActionOrCommand) -> bool,
+) {
+    let started = std::time::Instant::now();
+    let mut phases: Vec<(&str, u128)> = Vec::new();
+    let finished = code_action_phases(uri, doc, params, emit, &mut |phase, at| {
+        phases.push((phase, at.elapsed().as_millis()));
+        *at = std::time::Instant::now();
+    });
+    crate::trace::event("code-action-compute", || {
+        let phases: Vec<String> = phases.iter().map(|(phase, ms)| format!("{phase}={ms}")).collect();
+        format!(
+            "uri={} len={} doc_facts_stored={} finished={finished} total_ms={} {}",
+            uri.as_str(),
+            doc.text.len(),
+            !doc.syntax_documentation.is_empty(),
+            started.elapsed().as_millis(),
+            phases.join(" ")
+        )
+    });
+}
+
+/// `false` when `emit` stopped the computation.
+fn code_action_phases(
+    uri: &Uri,
+    doc: &Document,
+    params: &CodeActionParams,
+    emit: &mut dyn FnMut(CodeActionOrCommand) -> bool,
+    mark: &mut dyn FnMut(&'static str, &mut std::time::Instant),
+) -> bool {
+    let mut at = std::time::Instant::now();
     // Fixes the compiler attached to a diagnostic travel in its `data`, for source files and
     // project manifests alike.
     for diag in &params.context.diagnostics {
-        actions.extend(
-            crate::diagnostics::quick_fixes_from_data(uri, &doc.text, diag)
-                .into_iter()
-                .map(CodeActionOrCommand::CodeAction),
-        );
+        for action in crate::diagnostics::quick_fixes_from_data(uri, &doc.text, diag) {
+            if !emit(CodeActionOrCommand::CodeAction(action)) {
+                return false;
+            }
+        }
     }
+    mark("quick_ms", &mut at);
 
     // Diagnostic-driven providers run for manifests too: project diagnostics are published on
     // the `.bproj`, and that is where the editor asks for their fixes.
@@ -121,39 +167,47 @@ pub fn handle_code_actions(uri: &Uri, doc: &Document, params: &CodeActionParams)
         for provider in &providers {
             if provider.handles(source, code)
                 && let Some(action) = provider.build(uri, doc, diag)
+                && !emit(CodeActionOrCommand::CodeAction(action))
             {
-                actions.push(CodeActionOrCommand::CodeAction(action));
+                return false;
             }
         }
     }
+    mark("providers_ms", &mut at);
 
-    if !project_manifest::is_manifest_uri(uri) {
-        if let Some(edits) =
-            formatting::handler::handle_document_formatting(&doc.text).ok().filter(|edits| !edits.is_empty())
-        {
-            let mut changes = HashMap::new();
-            changes.insert(uri.clone(), edits);
-            actions.push(CodeActionOrCommand::CodeAction(CodeAction {
-                title: "Format document".to_string(),
-                kind: Some(CodeActionKind::SOURCE),
-                edit: Some(WorkspaceEdit { changes: Some(changes), ..WorkspaceEdit::default() }),
-                ..CodeAction::default()
-            }));
-        }
-
-        if let Some(path) = uri.to_file_path()
-            && path.extension().and_then(|e| e.to_str()) == Some("bd")
-        {
-            let offset = position_to_offset(&doc.text, params.range.start);
-            if let Some(action) =
-                doc_comment_code_action(uri, doc, offset, "Generate or update documentation comment", None)
-            {
-                actions.push(CodeActionOrCommand::CodeAction(action));
-            }
+    if project_manifest::is_manifest_uri(uri) {
+        return true;
+    }
+    if let Some(edits) =
+        formatting::handler::handle_document_formatting(&doc.text).ok().filter(|edits| !edits.is_empty())
+    {
+        let mut changes = HashMap::new();
+        changes.insert(uri.clone(), edits);
+        let format = CodeAction {
+            title: "Format document".to_string(),
+            kind: Some(CodeActionKind::SOURCE),
+            edit: Some(WorkspaceEdit { changes: Some(changes), ..WorkspaceEdit::default() }),
+            ..CodeAction::default()
+        };
+        if !emit(CodeActionOrCommand::CodeAction(format)) {
+            return false;
         }
     }
+    mark("format_ms", &mut at);
 
-    CodeActionResponse::from(actions)
+    if let Some(path) = uri.to_file_path()
+        && path.extension().and_then(|e| e.to_str()) == Some("bd")
+    {
+        let offset = position_to_offset(&doc.text, params.range.start);
+        if let Some(action) =
+            doc_comment_code_action(uri, doc, offset, "Generate or update documentation comment", None)
+            && !emit(CodeActionOrCommand::CodeAction(action))
+        {
+            return false;
+        }
+    }
+    mark("doc_ms", &mut at);
+    true
 }
 
 #[cfg(test)]

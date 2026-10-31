@@ -32,6 +32,11 @@ pub const STALE_SAFE_FACTS_WAIT: Duration = Duration::from_millis(100);
 /// analysis of the newest text before it fails with `ContentModified`.
 pub const EDIT_FACTS_WAIT: Duration = Duration::from_millis(500);
 
+/// Longest a code-action request waits for its actions once it has the facts of the newest
+/// text. Past it the answer holds the actions computed by then (diagnostic quick fixes first,
+/// then the source actions such as "Format document"), and the rest are not computed.
+pub const CODE_ACTION_COMPUTE_WAIT: Duration = Duration::from_millis(500);
+
 /// Longest a background refresh task waits for the facts of the newest text before it asks the
 /// client to refresh anyway (the client then gets the best facts stored by that time).
 pub const REFRESH_FACTS_WAIT: Duration = Duration::from_secs(30);
@@ -64,6 +69,14 @@ pub enum RequestFacts {
 }
 
 impl RequestFacts {
+    fn outcome(&self) -> &'static str {
+        match self {
+            RequestFacts::Current(_) => "current",
+            RequestFacts::Carried(_) => "carried",
+            RequestFacts::Missing => "missing",
+        }
+    }
+
     /// The facts a stale-safe request answers from: current or carried.
     pub fn stale_safe(self) -> Option<Document> {
         match self {
@@ -98,29 +111,128 @@ pub fn content_modified() -> tower_lsp_server::jsonrpc::Error {
 /// Each stored analysis wakes the request. The stored facts are compared with the open text in
 /// place; the document is copied once, when the request has its answer.
 pub async fn document_facts(state: &RwLock<State>, uri: &Uri, wait: Duration) -> RequestFacts {
+    let started = tokio::time::Instant::now();
+    let mut lock_wait = Duration::ZERO;
+    let facts = newest_facts(state, uri, wait, StateWait::Unbounded, &mut lock_wait)
+        .await
+        .expect("an unbounded state wait always gets the state");
+    trace_facts(uri, wait, lock_wait, started, facts.outcome());
+    facts
+}
+
+/// The facts of the newest text for an edit-producing request (rename, prepare rename, code
+/// actions), when they are stored within `wait`. The budget covers every wait of the request:
+/// the analysis, and also each read of the server state, which waits behind a queued writer.
+/// Past the budget the answer is `ContentModified`; `Ok(None)` for a closed document the server
+/// has no facts for.
+pub async fn edit_document_facts(
+    state: &RwLock<State>,
+    uri: &Uri,
+    wait: Duration,
+) -> Result<Option<CurrentDocument>, tower_lsp_server::jsonrpc::Error> {
+    let started = tokio::time::Instant::now();
+    let mut lock_wait = Duration::ZERO;
+    let facts = newest_facts(state, uri, wait, StateWait::WithinBudget, &mut lock_wait).await;
+    trace_facts(uri, wait, lock_wait, started, facts.as_ref().map_or("state-busy", RequestFacts::outcome));
+    match facts {
+        Some(facts) => facts.edits(uri),
+        None => Err(content_modified()),
+    }
+}
+
+fn trace_facts(uri: &Uri, wait: Duration, lock_wait: Duration, started: tokio::time::Instant, outcome: &str) {
+    crate::trace::event("facts", || {
+        format!(
+            "uri={} budget_ms={} lock_ms={} total_ms={} outcome={outcome}",
+            uri.as_str(),
+            wait.as_millis(),
+            lock_wait.as_millis(),
+            started.elapsed().as_millis(),
+        )
+    });
+}
+
+/// How a request waits for a read of the server state.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum StateWait {
+    /// As long as a queued writer holds it (a read-only request then answers late, not wrong).
+    Unbounded,
+    /// Only within the request's budget: an edit-producing request fails closed instead.
+    WithinBudget,
+}
+
+/// A read guard of the state, or `None` when `mode` is [`StateWait::WithinBudget`] and the
+/// state is not free by `deadline`. The time spent waiting is added to `lock_wait`.
+async fn read_state<'a>(
+    state: &'a RwLock<State>,
+    mode: StateWait,
+    deadline: tokio::time::Instant,
+    lock_wait: &mut Duration,
+) -> Option<tokio::sync::RwLockReadGuard<'a, State>> {
+    let asked = tokio::time::Instant::now();
+    let guard = match mode {
+        StateWait::Unbounded => Some(state.read().await),
+        StateWait::WithinBudget => tokio::time::timeout_at(deadline, state.read()).await.ok(),
+    };
+    *lock_wait += asked.elapsed();
+    guard
+}
+
+/// `None` only for [`StateWait::WithinBudget`], when a read of the state did not get it within
+/// `wait`.
+async fn newest_facts(
+    state: &RwLock<State>,
+    uri: &Uri,
+    wait: Duration,
+    mode: StateWait,
+    lock_wait: &mut Duration,
+) -> Option<RequestFacts> {
     let deadline = tokio::time::Instant::now() + wait;
     loop {
-        let stored = Arc::clone(&state.read().await.facts_stored);
+        let stored = Arc::clone(&read_state(state, mode, deadline, lock_wait).await?.facts_stored);
         let notified = stored.notified();
         tokio::pin!(notified);
         notified.as_mut().enable();
         {
-            let state = state.read().await;
+            let state = read_state(state, mode, deadline, lock_wait).await?;
             let document = stored_document(&state, uri);
             match (document, match_open_text(uri, document.map(|document| document.text.as_str()))) {
-                (None, OpenMatch::Closed) => return RequestFacts::Missing,
+                (None, OpenMatch::Closed) => return Some(RequestFacts::Missing),
                 (Some(document), OpenMatch::Closed) => {
-                    return RequestFacts::Current(CurrentDocument { document: document.clone(), open_version: None });
+                    return Some(RequestFacts::Current(CurrentDocument {
+                        document: document.clone(),
+                        open_version: None,
+                    }));
                 }
                 (Some(document), OpenMatch::Current(version)) => {
                     let document = document.clone();
-                    return RequestFacts::Current(CurrentDocument { document, open_version: Some(version) });
+                    return Some(RequestFacts::Current(CurrentDocument { document, open_version: Some(version) }));
                 }
                 (_, OpenMatch::Current(_) | OpenMatch::Behind) => {}
             }
         }
         if tokio::time::timeout_at(deadline, notified).await.is_err() {
-            return carried_facts(state, uri).await;
+            return match mode {
+                StateWait::Unbounded => {
+                    let state = read_state(state, mode, deadline, lock_wait).await?;
+                    Some(carried_from(&state, uri))
+                }
+                // Facts of an older text are no answer for an edit: the budget is spent, so the
+                // request fails closed without carrying them over the edit (or waiting again).
+                StateWait::WithinBudget => match open_version(uri) {
+                    Some(_) => Some(RequestFacts::Missing),
+                    None => {
+                        let state = state.try_read().ok()?;
+                        Some(match stored_document(&state, uri) {
+                            Some(document) => RequestFacts::Current(CurrentDocument {
+                                document: document.clone(),
+                                open_version: None,
+                            }),
+                            None => RequestFacts::Missing,
+                        })
+                    }
+                },
+            };
         }
     }
 }
@@ -138,8 +250,11 @@ pub async fn wait_for_current_facts(state: &RwLock<State>, uri: &Uri, limit: Dur
 }
 
 async fn carried_facts(state: &RwLock<State>, uri: &Uri) -> RequestFacts {
-    let state = state.read().await;
-    let Some(document) = stored_document(&state, uri) else {
+    carried_from(&*state.read().await, uri)
+}
+
+fn carried_from(state: &State, uri: &Uri) -> RequestFacts {
+    let Some(document) = stored_document(state, uri) else {
         return RequestFacts::Missing;
     };
     match match_open_text(uri, Some(document.text.as_str())) {
