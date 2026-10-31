@@ -32,9 +32,17 @@ if [[ "$1" == "run" ]]; then
   debug_shared_symbols=""
   release_static_symbols=""
   release_shared_symbols=""
+  debug_static_library="" debug_shared_library="" debug_import_library=""
+  release_static_library="" release_shared_library="" release_import_library=""
   while (($#)); do
     case "$1" in
       --prefix) prefix="$2"; shift 2 ;;
+      --debug-static-library) debug_static_library="$2"; shift 2 ;;
+      --debug-shared-library) debug_shared_library="$2"; shift 2 ;;
+      --release-static-library) release_static_library="$2"; shift 2 ;;
+      --release-shared-library) release_shared_library="$2"; shift 2 ;;
+      --debug-shared-import-library) debug_import_library="$2"; shift 2 ;;
+      --release-shared-import-library) release_import_library="$2"; shift 2 ;;
       --profile) profile="$2"; shift 2 ;;
       --debug-static-provenance-symbol-list) debug_static_symbols="$2"; shift 2 ;;
       --debug-shared-provenance-symbol-list) debug_shared_symbols="$2"; shift 2 ;;
@@ -61,6 +69,34 @@ if [[ "$1" == "run" ]]; then
     cp "${debug_shared_symbols}" "${BESKID_MATRIX_CAPTURE_DIR}/debug-shared.symbols"
     cp "${release_static_symbols}" "${BESKID_MATRIX_CAPTURE_DIR}/release-static.symbols"
     cp "${release_shared_symbols}" "${BESKID_MATRIX_CAPTURE_DIR}/release-shared.symbols"
+    # Publish the kit as the real build-matrix does: each profile's libraries and the ABI-v5
+    # metadata (abi.json) that evidence finalization verifies against them.
+    for profile in debug release; do
+      root="${prefix}/lib/beskid-runtime/abi-5/${BESKID_MATRIX_TARGET}/${profile}"
+      mkdir -p "${root}/static" "${root}/shared"
+      static_library="${profile}_static_library" shared_library="${profile}_shared_library"
+      import_library="${profile}_import_library"
+      cp "${!static_library}" "${root}/static/${BESKID_MATRIX_STATIC_NAME}"
+      cp "${!shared_library}" "${root}/shared/${BESKID_MATRIX_SHARED_NAME}"
+      if [[ -n "${!import_library}" ]]; then
+        cp "${!import_library}" "${root}/shared/beskid_runtime_import.lib"
+      fi
+      python3 - "${root}" "${BESKID_MATRIX_TARGET}" "${profile}" <<'PY'
+import hashlib, json, pathlib, sys
+root, target, profile = pathlib.Path(sys.argv[1]), sys.argv[2], sys.argv[3]
+def artifact(relative):
+    return {"relative_path": relative, "sha256": hashlib.sha256((root / relative).read_bytes()).hexdigest()}
+artifacts = {}
+for key, directory in (("static_library", "static"), ("shared_library", "shared")):
+    library = next(path for path in sorted((root / directory).iterdir()) if path.name != "beskid_runtime_import.lib")
+    artifacts[key] = artifact(f"{directory}/{library.name}")
+if (root / "shared" / "beskid_runtime_import.lib").is_file():
+    artifacts["shared_import_library"] = artifact("shared/beskid_runtime_import.lib")
+metadata = {"schema_version": 1, "abi_version": 5, "target": {"triple": target}, "profile": profile,
+            "layout_hash": "0" * 64, "source_hash": "1" * 64, "artifacts": artifacts}
+(root / "abi.json").write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
+PY
+    done
   elif [[ "${all_args}" == *" -- run "* ]]; then
     exit 42
   fi
@@ -74,21 +110,23 @@ chmod +x "${fixture_root}/bin/cargo"
 cat >"${fixture_root}/bin/llvm-nm" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >>"${BESKID_MATRIX_NM_CALLS}"
-if [[ " $* " == *" .dll " ]]; then
+if [[ " $* " == *".dll "* ]]; then
+  # The raw report of a DLL may come from llvm-nm; its provenance list must not.
+  printf 'nm_dll_symbol T 0\n'
   exit 0
 fi
 if [[ " $* " == *" --undefined-only "* ]]; then
-  if [[ "${BESKID_MATRIX_TARGET}" == "x86_64-pc-windows-msvc" ]]; then
-    printf 'TlsAlloc U 0\n'
-  else
-    printf '_clock_gettime U 0\n'
-  fi
+  case "${BESKID_MATRIX_TARGET}" in
+    x86_64-pc-windows-msvc) printf 'TlsAlloc U 0\n' ;;
+    # Only Mach-O spells C symbols with a leading underscore.
+    aarch64-apple-darwin) printf '_clock_gettime U 0\n' ;;
+    *) printf 'clock_gettime U 0\n' ;;
+  esac
 else
-  if [[ "${BESKID_MATRIX_TARGET}" == "x86_64-pc-windows-msvc" ]]; then
-    printf 'beskid_rt_v5_entrypoint T 0\n'
-  else
-    printf '_beskid_rt_v5_entrypoint T 0\n'
-  fi
+  case "${BESKID_MATRIX_TARGET}" in
+    aarch64-apple-darwin) printf '_beskid_rt_v5_entrypoint T 0\n' ;;
+    *) printf 'beskid_rt_v5_entrypoint T 0\n' ;;
+  esac
 fi
 EOF
 chmod +x "${fixture_root}/bin/llvm-nm"
@@ -206,7 +244,7 @@ done
 test "$(grep -c -- '--coff-exports' "${fixture_root}/readobj-calls")" = 2
 test "$(grep -c -- '--coff-imports' "${fixture_root}/readobj-calls")" = 2
 assert_lifecycle_smokes
-if grep -F -- '.dll' "${fixture_root}/nm-calls" >/dev/null; then
+if cat "${fixture_root}"/captured-symbols/*-shared.symbols | grep -F 'nm_dll_symbol' >/dev/null; then
   echo 'Windows DLL provenance still uses llvm-nm' >&2
   exit 1
 fi
