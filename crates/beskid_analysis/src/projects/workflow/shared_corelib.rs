@@ -177,6 +177,54 @@ mod tests {
         assert!(error.to_string().contains("read-only"), "{error}");
     }
 
+    /// A build that writes the `Project.lock` of a shared Corelib package (6 parallel release
+    /// package builds share one sealed Corelib) must not change what a concurrent build's seal
+    /// check sees, at any moment of the write.
+    #[test]
+    fn writing_a_package_lock_never_breaks_the_seal_for_a_concurrent_build() {
+        let temp = tempfile::tempdir().unwrap();
+        corelib_workspace(temp.path());
+        seal(temp.path());
+        let shared = SharedCorelib::from_installed_root(temp.path()).unwrap();
+        shared.verify_seal().expect("an intact bundle verifies");
+
+        let package = temp.path().join("packages/core_text");
+        let staged = crate::projects::workflow::lockfile::stage_lockfile(&package, "# Project.lock v3\n").unwrap();
+        // The lock is staged, not yet renamed into place: the moment a concurrent build may check.
+        shared.verify_seal().expect("a staged lock is not a source file of the sealed bundle");
+        staged.persist(package.join("Project.lock")).unwrap();
+        shared.verify_seal().expect("the written lock is excluded from the seal");
+        let leftovers: Vec<_> = fs::read_dir(&package)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+            .filter(|name| !matches!(name.as_str(), "core_text.bproj" | "Src" | "Project.lock" | "obj"))
+            .collect();
+        assert!(leftovers.is_empty(), "the lock write left files in the package: {leftovers:?}");
+
+        // The same, concurrently: one thread rewrites the lock while another checks the seal.
+        let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let writer = {
+            let stop = std::sync::Arc::clone(&stop);
+            let package = package.clone();
+            std::thread::spawn(move || {
+                let mut round = 0u64;
+                while !stop.load(std::sync::atomic::Ordering::Relaxed) {
+                    round += 1;
+                    let staged = crate::projects::workflow::lockfile::stage_lockfile(
+                        &package,
+                        &format!("# Project.lock v3\n# {round}\n"),
+                    )
+                    .unwrap();
+                    staged.persist(package.join("Project.lock")).unwrap();
+                }
+            })
+        };
+        let checks = (0..400).map(|_| shared.verify_seal().is_ok()).filter(|ok| !ok).count();
+        stop.store(true, std::sync::atomic::Ordering::Relaxed);
+        writer.join().unwrap();
+        assert_eq!(checks, 0, "seal checks that failed while the lock was rewritten");
+    }
+
     #[test]
     fn two_toolchains_side_by_side_each_have_their_own_shared_corelib() {
         let temp = tempfile::tempdir().unwrap();
