@@ -169,10 +169,7 @@ fn assert_only_one_e1102(source: &str, name: &str) {
 #[test]
 fn a_duplicate_type_enum_or_contract_at_file_level_is_one_e1102() {
     let main = "\n\npub i32 Main()\n{\n    return 0;\n}\n";
-    assert_only_one_e1102(
-        &format!("type Point\n{{\n    i64 x;\n}}\n\ntype Point\n{{\n    i64 y;\n}}{main}"),
-        "Point",
-    );
+    assert_only_one_e1102(&format!("type Point\n{{\n    i64 x;\n}}\n\ntype Point\n{{\n    i64 y;\n}}{main}"), "Point");
     assert_only_one_e1102(&format!("enum Kind\n{{\n    Dot,\n}}\n\nenum Kind\n{{\n    Line,\n}}{main}"), "Kind");
     assert_only_one_e1102(
         &format!("contract Reader\n{{\n    i64 Read();\n}}\n\ncontract Reader\n{{\n    i64 Read();\n}}{main}"),
@@ -184,19 +181,27 @@ fn a_duplicate_type_enum_or_contract_at_file_level_is_one_e1102() {
 fn a_duplicate_type_enum_or_contract_in_one_module_is_one_e1102() {
     let main = "\n\npub i32 Main()\n{\n    return 0;\n}\n";
     assert_only_one_e1102(
-        &format!("mod Shapes\n{{\n    type Point\n    {{\n        i64 x;\n    }}\n\n    type Point\n    {{\n        i64 y;\n    }}\n}}{main}"),
+        &format!(
+            "mod Shapes\n{{\n    type Point\n    {{\n        i64 x;\n    }}\n\n    type Point\n    {{\n        i64 y;\n    }}\n}}{main}"
+        ),
         "Point",
     );
     assert_only_one_e1102(
-        &format!("mod Shapes\n{{\n    mod Inner\n    {{\n        enum Kind\n        {{\n            Dot,\n        }}\n\n        enum Kind\n        {{\n            Line,\n        }}\n    }}\n}}{main}"),
+        &format!(
+            "mod Shapes\n{{\n    mod Inner\n    {{\n        enum Kind\n        {{\n            Dot,\n        }}\n\n        enum Kind\n        {{\n            Line,\n        }}\n    }}\n}}{main}"
+        ),
         "Kind",
     );
     assert_only_one_e1102(
-        &format!("mod Io\n{{\n    contract Reader\n    {{\n        i64 Read();\n    }}\n\n    contract Reader\n    {{\n        i64 Read();\n    }}\n}}{main}"),
+        &format!(
+            "mod Io\n{{\n    contract Reader\n    {{\n        i64 Read();\n    }}\n\n    contract Reader\n    {{\n        i64 Read();\n    }}\n}}{main}"
+        ),
         "Reader",
     );
     assert_only_one_e1102(
-        &format!("mod Boxes\n{{\n    type Box<T>\n    {{\n        T value;\n    }}\n\n    type Box<U>\n    {{\n        U value;\n    }}\n}}{main}"),
+        &format!(
+            "mod Boxes\n{{\n    type Box<T>\n    {{\n        T value;\n    }}\n\n    type Box<U>\n    {{\n        U value;\n    }}\n}}{main}"
+        ),
         "Box",
     );
 }
