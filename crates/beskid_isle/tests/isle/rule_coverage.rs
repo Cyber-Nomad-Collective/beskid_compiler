@@ -124,7 +124,7 @@ fn unsupported_kinds_are_intentionally_release_rejected_for_0_4() {
 /// Every IsleLowered node kind must name an on-disk verified CLIF (or item-emission) regression.
 #[test]
 fn every_isle_lowered_kind_has_verified_clif_evidence() {
-    let isle_tests = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests");
+    let isle_tests = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests").join("isle");
     let codegen_tests = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("beskid_codegen").join("tests");
     let engine_tests = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("beskid_engine").join("tests");
     let evidence: &[(NodeKind, PathBuf)] = &[
