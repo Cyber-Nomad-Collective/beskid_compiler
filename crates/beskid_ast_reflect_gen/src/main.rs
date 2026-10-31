@@ -5,7 +5,8 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
 use beskid_ast_reflect_gen::{
-    default_allowlist_paths, format_bd, parse_cli_args, run_cli, syntax_nodes::emit_syntax_sdk,
+    default_allowlist_paths, format_bd, parse_cli_args, run_cli, sdk_surfaces::emit_diagnostics_sdk,
+    syntax_nodes::emit_syntax_sdk,
     syntax_nodes::inventory_syntax_type_names, syntax_traversal::emit_query_facade_body,
 };
 
@@ -48,6 +49,10 @@ fn main() -> std::process::ExitCode {
 
     if raw.iter().any(|a| a == "--emit-query-facade") {
         return run_emit_query_facade(&raw);
+    }
+
+    if let Some(idx) = raw.iter().position(|a| a == "--emit-diagnostics-sdk") {
+        return run_emit_diagnostics_sdk(&raw, idx);
     }
 
     let (workspace, rest) = extract_workspace_flag(raw);
@@ -173,6 +178,27 @@ fn run_emit_query_facade(raw: &[OsString]) -> std::process::ExitCode {
     }
 }
 
+/// `beskid_ast_reflect_gen --emit-diagnostics-sdk <FILE> --workspace <ROOT>`: write
+/// `Beskid/Compiler/Diagnostics.bd` (the `SemanticIssueKind` and `Severity` mirrors).
+fn run_emit_diagnostics_sdk(raw: &[OsString], flag_idx: usize) -> std::process::ExitCode {
+    let Some(out) = raw.get(flag_idx + 1).filter(|a| !a.is_empty() && !a.to_string_lossy().starts_with('-')) else {
+        eprintln!("error: --emit-diagnostics-sdk requires a file path (…/compiler-sdk/src/Beskid/Compiler/Diagnostics.bd)");
+        return std::process::ExitCode::from(2);
+    };
+    let (workspace, _) = extract_workspace_flag(raw.to_vec());
+    let Some(ws) = workspace else {
+        eprintln!("error: --emit-diagnostics-sdk requires --workspace <COMPILER_ROOT>");
+        return std::process::ExitCode::from(2);
+    };
+    match emit_diagnostics_sdk(&ws).and_then(|text| std::fs::write(out, text).map_err(Into::into)) {
+        Ok(()) => std::process::ExitCode::SUCCESS,
+        Err(e) => {
+            eprintln!("error: {e}");
+            std::process::ExitCode::from(1)
+        }
+    }
+}
+
 /// Strip `--workspace <DIR>` from args for `parse_cli_args` while remembering the workspace root.
 fn extract_workspace_flag(args: Vec<OsString>) -> (Option<PathBuf>, Vec<OsString>) {
     let mut workspace = None;
@@ -206,6 +232,8 @@ USAGE:
 
 OPTIONS:
     --emit-syntax-sdk <DIR>  Write per-node .bd files under <DIR>/Syntax/Nodes/ (requires --workspace)
+    --emit-query-facade      Print the Beskid.Compiler.Query facade (requires --workspace)
+    --emit-diagnostics-sdk <FILE>  Write Beskid/Compiler/Diagnostics.bd (requires --workspace)
     --workspace <DIR>   Use built-in allowlist under DIR (compiler repo root)
     --out <PATH>        Write output instead of stdout (overrides OUT_DIR)
     --only-annotated    Only emit items marked with #[beskid_reflect]

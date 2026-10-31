@@ -8,6 +8,7 @@
 mod emit_idents;
 mod syntax_helpers;
 
+pub mod sdk_surfaces;
 pub mod syntax_nodes;
 pub mod syntax_traversal;
 

@@ -34,7 +34,7 @@ cargo run -p beskid_ast_reflect_gen -- --no-banner --no-reflect-stub -- ...
 
 Optional: if `OUT_DIR` is set and `--out` is omitted, the tool writes `$(OUT_DIR)/ast_reflect/generated.bd` (useful from build scripts).
 
-Checked-in Mod SDK `.bd` regeneration for corelib is scripted at `corelib/packages/compiler-sdk/regen_mod_sdk_surfaces.sh` (run from the compiler workspace root).
+Checked-in Mod SDK `.bd` regeneration for corelib is scripted at `corelib/packages/compiler-sdk/regen_mod_sdk_surfaces.sh` (run from the compiler workspace root). The `sdk_surfaces` tests fail while a generated surface (syntax nodes, `Query.bd`, `Diagnostics.bd`) differs from a fresh generation.
 
 ## Annotation
 
