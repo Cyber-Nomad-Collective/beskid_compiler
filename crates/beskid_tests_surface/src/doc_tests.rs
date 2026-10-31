@@ -1,7 +1,7 @@
 //! Documentation comment parsing (doc-comment grammar and item docs in the main grammar).
 //!
 //! Doc diagnostics, doc markdown and hover run through the query layer:
-//! `beskid_queries/tests/api_documentation.rs`.
+//! `beskid_queries/tests/queries/api_documentation.rs`.
 
 use beskid_analysis::doc_comment_parser::DocSyntaxParser;
 use beskid_analysis::doc_comment_parser::Rule as DocRule;

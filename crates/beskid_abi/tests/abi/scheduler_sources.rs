@@ -3,7 +3,7 @@
 //!
 //! Statement order and control flow are not checked here. Behaviour tests prove them:
 //! the `Root*` tests in `runtime/beskid/tests/runtime_semantics/src/SchedulerTests.bd` (root
-//! waits), `crates/beskid_engine/tests/native_kit/heap_growth_native.rs` (fiber stack limits and
+//! waits), `crates/beskid_engine/tests/engine/native_kit/heap_growth_native.rs` (fiber stack limits and
 //! `BESKID_FIBER_STACK_MAX`), and the `NativeNetwork*` tests in
 //! `runtime/beskid/tests/runtime_semantics/src/NetworkNativeTests.bd` (root network waits).
 
