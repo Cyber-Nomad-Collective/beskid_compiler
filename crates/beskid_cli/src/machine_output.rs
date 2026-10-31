@@ -175,7 +175,7 @@ mod tests {
             message: "unknown name `x`".into(),
             label: "here".into(),
             help: Some("declare `x`".into()),
-            code: Some("E1001".into()),
+            code: Some("E1101".into()),
             origin: None,
             severity: Severity::Error,
             related: Vec::new(),
@@ -219,7 +219,7 @@ mod tests {
         let offset = source.find('x').unwrap();
         let fields = diagnostic_fields(&diagnostic(source, offset, 1));
         let record = &fields["diagnostic"];
-        assert_eq!(record["code"], "E1001");
+        assert_eq!(record["code"], "E1101");
         assert_eq!(record["severity"], "error");
         assert_eq!(record["message"], "unknown name `x`");
         assert_eq!(record["span"]["file"], "Src/Main.bd");

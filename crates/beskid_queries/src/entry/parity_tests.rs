@@ -219,6 +219,18 @@ const COVERED_KINDS: &[(&str, &str, &str, &str)] = &[
     ),
     ("ResolveError::DuplicateItem (constant)", "ResolveDuplicateItem", "E1102", "const N = 1; const N = 2;"),
     (
+        "ResolveError::DuplicateItem (type and enum of one name)",
+        "ResolveDuplicateItem",
+        "E1102",
+        "pub type Shape { i64 v; } pub enum Shape { Dot } unit Main() { return; }",
+    ),
+    (
+        "ResolveError::DuplicateItem (generic type in an inline module)",
+        "ResolveDuplicateItem",
+        "E1102",
+        "mod A { pub type Box<T> { T value; } pub type Box<U> { U value; } } unit Main() { return; }",
+    ),
+    (
         "ResolveError::DuplicateItem (method named like a field)",
         "ResolveDuplicateItem",
         "E1102",

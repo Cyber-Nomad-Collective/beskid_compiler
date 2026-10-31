@@ -469,9 +469,14 @@ fn prepare_diagnostics_keeps_duplicate_contract_error_within_one_inline_module()
         None,
     )
     .expect("prepare diagnostics");
+    assert_eq!(
+        diagnostics.iter().filter(|diagnostic| diagnostic.code.as_deref() == Some("E1102")).count(),
+        1,
+        "same lexical module must still reject duplicate contracts, once: {diagnostics:?}"
+    );
     assert!(
-        diagnostics.iter().any(|diagnostic| diagnostic.code.as_deref() == Some("E1001")),
-        "same lexical module must still reject duplicate contracts: {diagnostics:?}"
+        !diagnostics.iter().any(|diagnostic| diagnostic.code.as_deref() == Some("E1001")),
+        "a duplicate contract is E1102 only: {diagnostics:?}"
     );
 
     let _ = std::fs::remove_dir_all(root);

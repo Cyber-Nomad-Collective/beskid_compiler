@@ -9,8 +9,7 @@ impl SemanticIssueKind {
     fn help_text(&self) -> Option<String> {
         match self {
             // ── Definition / duplicate-name diagnostics ──
-            Self::DuplicateDefinitionName { previous, .. }
-            | Self::DuplicateEnumVariant { previous, .. }
+            Self::DuplicateEnumVariant { previous, .. }
             | Self::DuplicateContractMethod { previous, .. }
             | Self::ResolveDuplicateItem { previous, .. }
             | Self::ResolveDuplicateLocal { previous, .. }
