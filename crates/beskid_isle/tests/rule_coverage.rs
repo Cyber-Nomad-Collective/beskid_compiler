@@ -125,8 +125,10 @@ fn unsupported_kinds_are_intentionally_release_rejected_for_0_4() {
 #[test]
 fn every_isle_lowered_kind_has_verified_clif_evidence() {
     let isle_tests = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests");
-    let codegen_tests = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("beskid_codegen").join("tests");
-    let engine_tests = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("beskid_engine").join("tests");
+    let codegen_tests =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("beskid_codegen").join("tests").join("codegen");
+    let engine_tests =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("beskid_engine").join("tests").join("engine");
     let evidence: &[(NodeKind, PathBuf)] = &[
         (NodeKind::Program, isle_tests.join("rule_coverage.rs")),
         (NodeKind::FunctionDefinition, isle_tests.join("function_emitter.rs")),
@@ -209,7 +211,8 @@ fn every_unsupported_kind_has_rejection_evidence_or_codex_blocker() {
         assert!(evidence.iter().any(|(covered, _)| covered == kind), "missing rejection evidence row for {kind:?}");
     }
 
-    let codegen_tests = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("beskid_codegen").join("tests");
+    let codegen_tests =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("beskid_codegen").join("tests").join("codegen");
 
     for (kind, status) in evidence {
         assert_eq!(classify_syntax_node_kind(*kind), SyntaxNodeClassification::UnsupportedTypedOperation, "{kind:?}");

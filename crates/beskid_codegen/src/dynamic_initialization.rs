@@ -324,7 +324,7 @@ pub(crate) fn issue_dynamic_initialization(
 #[cfg(test)]
 mod seal_tests {
     mod support {
-        include!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/codegen_input/support.rs"));
+        include!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/codegen/codegen_input/support.rs"));
     }
     use super::*;
     use crate::module_emission::{SyntaxModuleItem, lower_syntax_program};

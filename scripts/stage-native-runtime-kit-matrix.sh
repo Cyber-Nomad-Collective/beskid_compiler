@@ -143,15 +143,15 @@ fi
 export BESKID_RUNTIME_PREFIX="${prefix}"
 for profile in debug release; do
   export BESKID_RUNTIME_KIT_PROFILE="${profile}"
-  run_smoke "${profile}" jit shared cargo test -p beskid_engine --test native_runtime_kit_smoke staged_runtime_kit_executes_a_canonical_entrypoint -- --exact --include-ignored
+  run_smoke "${profile}" jit shared cargo test -p beskid_engine --test engine native_runtime_kit_smoke::staged_runtime_kit_executes_a_canonical_entrypoint -- --exact --include-ignored
   run_smoke "${profile}" aot static cargo test -p beskid_aot --test abi_v5_runtime_kit staged_runtime_kit_links_and_executes_with_the_canonical_static_archive -- --exact --include-ignored
   run_smoke "${profile}" repl shared cargo test -p beskid_repl eval::tests::staged_native_runtime_kit_evaluates_a_snippet -- --exact --include-ignored
-  run_smoke "${profile}" native-executable-streams static cargo test --locked -p beskid_engine --test foundation_io_native staged_runtime_kit_emitted_binary_round_trips_redirected_standard_streams -- --exact --include-ignored
-  run_smoke "${profile}" native-executable-stdin static cargo test --locked -p beskid_engine --test foundation_io_native staged_runtime_kit_emitted_binary_reads_redirected_standard_input -- --exact --include-ignored
-  run_smoke "${profile}" native-executable-stdout static cargo test --locked -p beskid_engine --test foundation_io_native staged_runtime_kit_emitted_binary_writes_redirected_standard_output -- --exact --include-ignored
-  run_smoke "${profile}" native-executable-stderr static cargo test --locked -p beskid_engine --test foundation_io_native staged_runtime_kit_emitted_binary_writes_redirected_standard_error -- --exact --include-ignored
-  run_smoke "${profile}" native-executable-args static cargo test --locked -p beskid_engine --test foundation_io_native staged_runtime_kit_emitted_binary_handoffs_core_args_through_the_executable_host -- --exact --include-ignored
-  run_smoke "${profile}" native-executable-unit-entry static cargo test --locked -p beskid_engine --test foundation_io_native staged_runtime_kit_emitted_binary_runs_a_custom_unit_entry -- --exact --include-ignored
+  run_smoke "${profile}" native-executable-streams static cargo test --locked -p beskid_engine --test engine foundation_io_native::staged_runtime_kit_emitted_binary_round_trips_redirected_standard_streams -- --exact --include-ignored
+  run_smoke "${profile}" native-executable-stdin static cargo test --locked -p beskid_engine --test engine foundation_io_native::staged_runtime_kit_emitted_binary_reads_redirected_standard_input -- --exact --include-ignored
+  run_smoke "${profile}" native-executable-stdout static cargo test --locked -p beskid_engine --test engine foundation_io_native::staged_runtime_kit_emitted_binary_writes_redirected_standard_output -- --exact --include-ignored
+  run_smoke "${profile}" native-executable-stderr static cargo test --locked -p beskid_engine --test engine foundation_io_native::staged_runtime_kit_emitted_binary_writes_redirected_standard_error -- --exact --include-ignored
+  run_smoke "${profile}" native-executable-args static cargo test --locked -p beskid_engine --test engine foundation_io_native::staged_runtime_kit_emitted_binary_handoffs_core_args_through_the_executable_host -- --exact --include-ignored
+  run_smoke "${profile}" native-executable-unit-entry static cargo test --locked -p beskid_engine --test engine foundation_io_native::staged_runtime_kit_emitted_binary_runs_a_custom_unit_entry -- --exact --include-ignored
 done
 
 smoke_source="${work}/runtime-kit-cli-smoke.bd"

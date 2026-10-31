@@ -1,0 +1,29 @@
+//! Integration tests for `beskid_codegen`: one module per lowering surface.
+
+mod checked_dynamic;
+mod checked_effect;
+mod codegen_input;
+mod dynamic_packing_authority;
+mod glue_binding_facts;
+mod glue_owner_record_shape;
+mod isle_adapter;
+mod library_emission;
+mod managed_enum_array_static;
+mod materialized_source_isolation;
+mod native_mod_applied_contracts;
+mod native_sdk_factories;
+mod native_sdk_schema;
+mod native_sdk_source_authority;
+mod parsed_project_isle_harness;
+mod prepared_module_callables;
+mod prepared_syntax;
+mod required_mod_artifacts;
+mod reserved_failure_admission;
+mod runtime_corpus_registration;
+mod runtime_fixture_scheduler_entry;
+mod rust_glue_backend;
+mod serialization_compiled_shape;
+mod serialization_sealed_extras;
+mod stack_probe_inline;
+mod type_contract_discovery;
+mod unicode_scalar_projection;
