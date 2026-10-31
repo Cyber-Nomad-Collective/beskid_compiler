@@ -318,7 +318,7 @@ fn syscall_origin_materialized_loader_accepts_destination_but_denies_user_alias(
 }
 
 #[test]
-fn materialized_slice_bundle_path_authorizes_its_canonical_panic_call() {
+fn materialized_bytes_slice_bundle_path_authorizes_its_canonical_panic_call() {
     let source = canonical_corelib_service_sources()
         .into_iter()
         .find(|source| source.logical_path == "Core/Bytes/Slice.bd")
@@ -788,7 +788,7 @@ fn dynamic_string_length_builtin_proves_explicit_i64_return_conversion() {
 }
 
 #[test]
-fn stale_legacy_builtin_shape_cannot_acquire_manifest_dispatch_authority() {
+fn unregistered_builtin_shape_cannot_acquire_manifest_dispatch_authority() {
     let source = "unit Main(ptr bytes) { __bytes_set(bytes, 0, 1); return; }";
     let (db, _project, unit, generation, index) = setup(source);
     let call = key(unit, generation, &index, NodeKind::CallExpression, 0);

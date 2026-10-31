@@ -251,7 +251,7 @@ i32 Main() {
 }
 
 #[test]
-fn reachable_items_includes_inline_method_callees_without_hir() {
+fn reachable_items_includes_inline_method_callees() {
     let source = "type Point { i32 x; i32 Ping() { return 7; } } i32 Main() { return Point { x: 1 }.Ping(); }";
     let (db, _project, unit, generation, index) = setup(source);
     let program = key(unit, generation, &index, NodeKind::Program, 0);

@@ -4,12 +4,6 @@
 //! dependency, so the state-machine fixture runs on every supported native host. The
 //! Windows fixture witnesses the completion-port behavior those rules depend on. The DNS
 //! failure classification (`assembly/common/network_dns.h`) is checked the same way.
-#![cfg(any(
-    all(target_os = "linux", target_arch = "x86_64"),
-    all(target_os = "macos", target_arch = "aarch64"),
-    all(target_os = "windows", target_arch = "x86_64", target_env = "msvc"),
-))]
-
 use std::{
     path::{Path, PathBuf},
     process::Command,
@@ -81,7 +75,7 @@ fn dns_failures_without_an_address_are_host_not_found() {
 }
 
 // Windows only; runs in the Woodpecker windows pipeline (`cargo test --workspace`), or by
-// hand: `cd compiler && cargo test --locked -p beskid_abi --test network_iocp_settle`.
+// hand: `cd compiler && cargo test --locked -p beskid_abi --test abi network_iocp_settle::`.
 #[cfg(windows)]
 #[test]
 fn iocp_cancel_leaves_a_completed_packet_queued_and_aborts_an_idle_receive() {

@@ -1,5 +1,3 @@
-#![cfg(any(target_os = "macos", target_os = "linux", all(target_os = "windows", target_env = "msvc")))]
-
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;

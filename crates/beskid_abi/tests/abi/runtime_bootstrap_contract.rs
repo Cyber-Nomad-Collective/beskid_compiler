@@ -24,7 +24,7 @@ fn windows_static_kit_archive_names_every_manifest_platform_import_library() {
     // `/DEFAULTLIB` directive of the platform host object (a missing ws2_32 left WSAStartup and
     // the other IOCP reactor imports unresolved for every direct static-kit link on Windows).
     let windows = supported_targets().into_iter().find(|target| target.triple.as_str() == "x86_64-pc-windows-msvc");
-    let source = include_str!("../assembly/x86_64-pc-windows-msvc/platform_host.c");
+    let source = include_str!("../../assembly/x86_64-pc-windows-msvc/platform_host.c");
     let mut libraries = AbiManifestV5::canonical_runtime(windows.unwrap())
         .platform_imports
         .into_iter()
@@ -80,7 +80,7 @@ fn windows_descriptor_primitives_use_application_ucrt_import_authority() {
 fn descriptor_worker_ownership_is_disjoint_from_the_existing_abandoned_protocol() {
     // A Windows checkout with `core.autocrlf=true` materializes CRLF; the contract is about the
     // statement sequence, not the checkout's line terminator.
-    let source = include_str!("../assembly/common/external_wait.h").replace("\r\n", "\n");
+    let source = include_str!("../../assembly/common/external_wait.h").replace("\r\n", "\n");
     assert!(source.contains("BESKID_WORKER_ABANDONED = 1u"));
     assert!(source.contains("BESKID_WORKER_OWNS_DESCRIPTOR = UINT32_C(0x80000000)"));
     assert!(source.contains("request->abandoned |= BESKID_WORKER_OWNS_DESCRIPTOR"));

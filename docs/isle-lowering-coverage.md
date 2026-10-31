@@ -80,7 +80,7 @@ in `crates/beskid_isle/src/context.rs` and `src/context/` (`IsleContext`), with 
 | `crates/beskid_isle/src/dispatch.rs` | Emits dispatch-route calls (`emit_dispatch_call`, `emit_str_from_i64_dispatch`) used by dynamic + string rules. |
 | `crates/beskid_isle/build.rs` | Compiles `isle/*.isle` into the generated selector consumed by `IsleContext`. |
 | `crates/beskid_codegen/src/isle_adapter/` | `SyntaxNodeFacts` (query-backed `NodeFacts`) plus `emit_isle_expression` / `emit_isle_item*` production entrypoints and ABI/layout derivation. |
-| `crates/beskid_isle/src/isle` tests (`crates/beskid_isle/tests/*`) | Rule/emitter coverage (`rule_coverage.rs` asserts each owned group has a real rule and every operator fact has a rule). |
+| `crates/beskid_isle/src/isle` tests (`crates/beskid_isle/tests/isle/*`, one `isle` test executable) | Rule/emitter coverage (`rule_coverage.rs` asserts each owned group has a real rule and every operator fact has a rule). |
 
 ### Match coverage
 
@@ -148,7 +148,7 @@ lowering targets:
 2. Add the `(rule ...)` to the appropriate rule file and the emitter to
    `crates/beskid_isle/src/context/` (`IsleContext`).
 3. Supply the facts in `crates/beskid_codegen/src/isle_adapter/` (`SyntaxNodeFacts`).
-4. Extend `crates/beskid_isle/tests/rule_coverage.rs` and add a focused emitter test under
-   `crates/beskid_isle/tests/` mirroring the existing per-construct tests.
+4. Extend `crates/beskid_isle/tests/isle/rule_coverage.rs` and add a focused emitter test module under
+   `crates/beskid_isle/tests/isle/` (declared in its `main.rs`) mirroring the existing per-construct tests.
 5. Trace failures with `BESKID_COMPILER_TRACE=1`, which records selection failures and CLIF
    emission per source key.

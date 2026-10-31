@@ -13,7 +13,7 @@
  *   D. closesocket on a socket with a pending receive forces its packet, which is what
  *      the bounded shutdown drain relies on.
  * Run on Windows (Woodpecker windows pipeline runs `cargo test --workspace`):
- *   cd compiler && cargo test --locked -p beskid_abi --test network_iocp_settle */
+ *   cd compiler && cargo test --locked -p beskid_abi --test abi network_iocp_settle:: */
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <windows.h>

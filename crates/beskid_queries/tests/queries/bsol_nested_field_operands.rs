@@ -19,7 +19,7 @@ fn bsol_nested_span_arithmetic_preserves_canonical_operand_abi_facts() {
     std::fs::create_dir_all(source_root.join("Core/Bsol")).unwrap();
     std::fs::write(
         source_root.join("Core/Bsol/Syntax.bd"),
-        include_str!("../../../corelib/packages/bsol/src/Core/Bsol/Syntax.bd"),
+        include_str!("../../../../corelib/packages/bsol/src/Core/Bsol/Syntax.bd"),
     )
     .unwrap();
     let path = source_root.join("Main.bd");
