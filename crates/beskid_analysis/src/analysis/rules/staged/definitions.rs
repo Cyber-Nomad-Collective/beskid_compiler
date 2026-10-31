@@ -10,7 +10,6 @@ use std::collections::{HashMap, HashSet};
 
 impl SemanticPipelineRule {
     pub(super) fn stage0_collect_definitions(&self, ctx: &mut RuleContext, program: &Spanned<Program>) {
-        self.check_duplicate_definition_names(ctx, program);
         self.check_file_scoped_module_structure(ctx, program);
         self.check_test_metadata_schema(ctx, program);
         self.check_unknown_types_in_definitions(ctx, program);
@@ -422,35 +421,6 @@ impl SemanticPipelineRule {
         }
     }
 
-    fn check_duplicate_definition_names(&self, ctx: &mut RuleContext, program: &Spanned<Program>) {
-        self.check_duplicate_definition_names_in_scope(ctx, &program.node.items);
-    }
-
-    fn check_duplicate_definition_names_in_scope(&self, ctx: &mut RuleContext, items: &[Spanned<Node>]) {
-        let mut seen: HashMap<String, SpanInfo> = HashMap::new();
-        for item in items {
-            let name = match &item.node {
-                Node::TypeDefinition(definition) => Some(&definition.node.name),
-                Node::EnumDefinition(definition) => Some(&definition.node.name),
-                Node::ContractDefinition(definition) => Some(&definition.node.name),
-                Node::InlineModule(module) => {
-                    self.check_duplicate_definition_names_in_scope(ctx, &module.node.items);
-                    None
-                }
-                _ => None,
-            };
-            if let Some(name) = name {
-                self.emit_duplicate_if_any(
-                    ctx,
-                    &mut seen,
-                    name.node.name.clone(),
-                    name.span,
-                    DuplicateKind::DefinitionName,
-                );
-            }
-        }
-    }
-
     fn check_duplicate_enum_variants(&self, ctx: &mut RuleContext, definition: &crate::syntax::EnumDefinition) {
         let mut seen: HashMap<String, SpanInfo> = HashMap::new();
         for variant in Query::from(definition).of::<crate::syntax::EnumVariant>() {
@@ -490,9 +460,6 @@ impl SemanticPipelineRule {
         };
 
         let issue = match kind {
-            DuplicateKind::DefinitionName => {
-                SemanticIssueKind::DuplicateDefinitionName { name, previous: previous_span }
-            }
             DuplicateKind::EnumVariant => SemanticIssueKind::DuplicateEnumVariant { name, previous: previous_span },
             DuplicateKind::ContractMethod => {
                 SemanticIssueKind::DuplicateContractMethod { name, previous: previous_span }
@@ -522,7 +489,6 @@ impl SemanticPipelineRule {
 
 #[derive(Clone, Copy)]
 enum DuplicateKind {
-    DefinitionName,
     EnumVariant,
     ContractMethod,
 }
@@ -548,7 +514,8 @@ mod tests {
             .collect()
     }
 
-    /// `(code, message)` of every duplicate-name or import-ambiguity diagnostic of `source`.
+    /// `(code, message)` of every duplicate-name or import-ambiguity diagnostic of `source`, retired
+    /// codes (E1001, E1006) included.
     fn duplicates(source: &str) -> Vec<(String, String)> {
         let pair =
             BeskidParser::parse(Rule::Program, source).expect("source should parse").next().expect("program pair");
@@ -557,7 +524,7 @@ mod tests {
         result
             .diagnostics
             .iter()
-            .filter(|diag| matches!(diag.code.as_deref(), Some("E1006" | "E1102" | "E1104")))
+            .filter(|diag| matches!(diag.code.as_deref(), Some("E1001" | "E1006" | "E1102" | "E1104")))
             .map(|diag| (diag.code.clone().unwrap_or_default(), diag.message.clone()))
             .collect()
     }
@@ -595,6 +562,31 @@ mod tests {
             "Twice",
         );
         assert_one_e1102("i32 Twice() { return 1; } i32 Twice() { return 2; }", "Twice");
+    }
+
+    /// A duplicate type, enum or contract name in one scope is one E1102 from the resolver, never
+    /// E1001 next to it: at file level, in an inline module, nested, and for generic types.
+    #[test]
+    fn a_duplicate_type_enum_or_contract_in_one_scope_is_one_e1102() {
+        assert_one_e1102("type Point { i64 x; } type Point { i64 y; }", "Point");
+        assert_one_e1102("mod Shapes { enum Kind { Dot } enum Kind { Line } }", "Kind");
+        assert_one_e1102("contract Reader { i64 Read(); } contract Reader { i64 Read(); }", "Reader");
+        assert_one_e1102("mod A { mod Inner { type Box<T> { T value; } type Box<U> { U value; } } }", "Box");
+        assert_one_e1102("type Shared { i64 x; } enum Shared { One }", "Shared");
+    }
+
+    /// Type, enum and contract names in different scopes, or a type named like a generic
+    /// parameter, are no duplicates.
+    #[test]
+    fn same_type_names_in_different_scopes_do_not_collide() {
+        let source = r#"
+            type Point { i64 x; }
+            mod A { type Point { i64 y; } mod Inner { enum Point { Dot } } }
+            mod B { contract Point { i64 X(); } }
+            type T { i64 v; }
+            type Holder<T> { T value; }
+        "#;
+        assert!(duplicates(source).is_empty(), "{:?}", duplicates(source));
     }
 
     /// Function and module names are checked per scope: the file scope and each inline module

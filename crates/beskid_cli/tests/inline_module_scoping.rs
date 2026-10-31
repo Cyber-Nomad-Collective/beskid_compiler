@@ -152,3 +152,62 @@ fn same_function_and_use_names_in_sibling_scopes_are_no_error() {
     assert!(output.status.success(), "{report}");
     assert!(!report.contains("E1102") && !report.contains("E1006"), "{report}");
 }
+
+/// A duplicate type, enum or contract name in one scope is exactly one diagnostic, E1102, and no
+/// other error code (E1001 is retired). Warnings, such as an unused item, are not counted.
+fn assert_only_one_e1102(source: &str, name: &str) {
+    assert_one_e1102(source, name);
+    let (_, report) = check(source);
+    let codes: Vec<&str> = report
+        .match_indices(|c: char| c == 'E' || c == 'T')
+        .filter_map(|(at, _)| report.get(at..at + 5))
+        .filter(|code| code[1..].chars().all(|c| c.is_ascii_digit()))
+        .collect();
+    assert_eq!(codes, ["E1102"], "only error E1102: {report}");
+}
+
+#[test]
+fn a_duplicate_type_enum_or_contract_at_file_level_is_one_e1102() {
+    let main = "\n\npub i32 Main()\n{\n    return 0;\n}\n";
+    assert_only_one_e1102(
+        &format!("type Point\n{{\n    i64 x;\n}}\n\ntype Point\n{{\n    i64 y;\n}}{main}"),
+        "Point",
+    );
+    assert_only_one_e1102(&format!("enum Kind\n{{\n    Dot,\n}}\n\nenum Kind\n{{\n    Line,\n}}{main}"), "Kind");
+    assert_only_one_e1102(
+        &format!("contract Reader\n{{\n    i64 Read();\n}}\n\ncontract Reader\n{{\n    i64 Read();\n}}{main}"),
+        "Reader",
+    );
+}
+
+#[test]
+fn a_duplicate_type_enum_or_contract_in_one_module_is_one_e1102() {
+    let main = "\n\npub i32 Main()\n{\n    return 0;\n}\n";
+    assert_only_one_e1102(
+        &format!("mod Shapes\n{{\n    type Point\n    {{\n        i64 x;\n    }}\n\n    type Point\n    {{\n        i64 y;\n    }}\n}}{main}"),
+        "Point",
+    );
+    assert_only_one_e1102(
+        &format!("mod Shapes\n{{\n    mod Inner\n    {{\n        enum Kind\n        {{\n            Dot,\n        }}\n\n        enum Kind\n        {{\n            Line,\n        }}\n    }}\n}}{main}"),
+        "Kind",
+    );
+    assert_only_one_e1102(
+        &format!("mod Io\n{{\n    contract Reader\n    {{\n        i64 Read();\n    }}\n\n    contract Reader\n    {{\n        i64 Read();\n    }}\n}}{main}"),
+        "Reader",
+    );
+    assert_only_one_e1102(
+        &format!("mod Boxes\n{{\n    type Box<T>\n    {{\n        T value;\n    }}\n\n    type Box<U>\n    {{\n        U value;\n    }}\n}}{main}"),
+        "Box",
+    );
+}
+
+#[test]
+fn same_type_enum_and_contract_names_in_sibling_scopes_are_no_error() {
+    let (output, report) = check(
+        "type Point\n{\n    i64 x;\n}\n\n\
+         mod Alpha\n{\n    type Point\n    {\n        i64 y;\n    }\n\n    enum Kind\n    {\n        Dot,\n    }\n\n    contract Reader\n    {\n        i64 Read();\n    }\n\n    mod Inner\n    {\n        enum Kind\n        {\n            Line,\n        }\n    }\n}\n\n\
+         mod Beta\n{\n    enum Kind\n    {\n        Dot,\n    }\n\n    contract Reader\n    {\n        i64 Read();\n    }\n}\n\npub i32 Main()\n{\n    return 0;\n}\n",
+    );
+    assert!(output.status.success(), "{report}");
+    assert!(!report.contains("E1102") && !report.contains("E1001"), "{report}");
+}

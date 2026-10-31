@@ -16,10 +16,6 @@ use crate::syntax::SpanInfo;
 #[derive(Debug, Clone)]
 pub enum SemanticIssueKind {
     // ── Definition / duplicate-name diagnostics ──
-    DuplicateDefinitionName {
-        name: String,
-        previous: SpanInfo,
-    },
     DuplicateEnumVariant {
         name: String,
         previous: SpanInfo,

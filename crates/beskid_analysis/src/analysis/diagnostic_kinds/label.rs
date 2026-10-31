@@ -8,7 +8,6 @@ impl SemanticIssueKind {
 
     fn label_text(&self) -> String {
         match self {
-            Self::DuplicateDefinitionName { .. } => "duplicate definition name".to_string(),
             Self::DuplicateEnumVariant { .. } => "duplicate enum variant".to_string(),
             Self::DuplicateContractMethod { .. } => "duplicate contract method".to_string(),
             Self::UnknownTypeInDefinition { .. } => "unknown type in definition".to_string(),

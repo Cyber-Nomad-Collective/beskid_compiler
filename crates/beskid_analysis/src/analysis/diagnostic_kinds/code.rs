@@ -3,7 +3,6 @@ use super::SemanticIssueKind;
 impl SemanticIssueKind {
     pub fn code(&self) -> &'static str {
         match self {
-            Self::DuplicateDefinitionName { .. } => "E1001",
             Self::DuplicateEnumVariant { .. } => "E1002",
             Self::DuplicateContractMethod { .. } => "E1003",
             Self::ConflictingEmbeddedContractMethod { .. } => "E1004",

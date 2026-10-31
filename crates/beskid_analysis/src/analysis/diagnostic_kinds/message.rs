@@ -31,9 +31,6 @@ impl SemanticIssueKind {
 
     fn message_text(&self) -> String {
         match self {
-            Self::DuplicateDefinitionName { name, .. } => {
-                format!("duplicate definition name `{name}`")
-            }
             Self::DuplicateEnumVariant { name, .. } => format!("duplicate enum variant `{name}`"),
             Self::DuplicateContractMethod { name, .. } => {
                 format!("duplicate contract method `{name}`")

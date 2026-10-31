@@ -7,7 +7,8 @@ use super::{CodeFamily, CodeInfo};
 pub const FAMILY: CodeFamily = CodeFamily { name: "semantic", first: "E1001", last: "E1799", codes: CODES };
 
 pub const CODES: &[CodeInfo] = &[
-    CodeInfo { code: "E1001", summary: "duplicate definition name", tags: &[] },
+    // E1001 is retired: a duplicate type, enum or contract name is E1102, like every duplicate in one
+    // scope. E1006 is retired for the same reason. Neither is reused.
     CodeInfo { code: "E1002", summary: "duplicate enum variant", tags: &[] },
     CodeInfo { code: "E1003", summary: "duplicate contract method", tags: &[] },
     CodeInfo { code: "E1004", summary: "conflicting embedded contract method", tags: &[] },
