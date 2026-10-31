@@ -41,6 +41,23 @@ pub struct FrontEndOptions {
     pub assembly_discovery: crate::projects::AssemblyDiscovery,
     pub assembly_recovery: crate::projects::AssemblyRecoveryPolicy,
     pub module_level_meta_items_allowed: Option<bool>,
+    /// The units the preparation judges (structural rules and the query gate).
+    pub judged_units: JudgedUnits,
+}
+
+/// The units a preparation judges: the structural rules and the query gate's typing and legality
+/// obligations run on them, and their diagnostics are reported.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum JudgedUnits {
+    /// Every own unit of the project the assembly holds next to the entry (see
+    /// `ProgramAssembly::library_unit_indices`): `beskid check`, codegen and the editor's
+    /// workspace index.
+    #[default]
+    OwnUnits,
+    /// The entry unit alone. An editor preparation of one open document reports only that
+    /// document's diagnostics; judging every other unit of the project on each edit made the
+    /// analysis of a file of a large project take seconds, and its findings were dropped.
+    Entry,
 }
 
 impl Default for FrontEndOptions {
@@ -50,6 +67,7 @@ impl Default for FrontEndOptions {
             assembly_discovery: crate::projects::AssemblyDiscovery::ImportClosure,
             assembly_recovery: crate::projects::AssemblyRecoveryPolicy::Strict,
             module_level_meta_items_allowed: None,
+            judged_units: JudgedUnits::OwnUnits,
         }
     }
 }

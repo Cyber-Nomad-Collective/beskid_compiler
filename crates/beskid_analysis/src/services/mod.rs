@@ -41,7 +41,7 @@ pub use entry_session::{
     invalidate_all as invalidate_entry_sessions, invalidate_project as invalidate_entry_sessions_for_project,
     next_syntax_generation_id, update_semantic_snapshot,
 };
-pub use front_end::{ExecutableFrontEnd, FrontEndOptions};
+pub use front_end::{ExecutableFrontEnd, FrontEndOptions, JudgedUnits};
 pub use input::{ResolvedInput, resolve_input, resolve_input_with_pipeline, resolve_input_with_policy};
 pub use parse::{
     ParsedProgram, parse_expression_source, parse_program, parse_program_with_source_name,

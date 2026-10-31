@@ -120,6 +120,9 @@ pub(super) fn unit_syntax_facts(
     let mut definitions = Vec::new();
     let mut hovers = Vec::new();
     let mut inlay_hints = Vec::new();
+    // The syntax index of each unit a reference resolves into, built once per unit (not once per
+    // reference: a file with many references into a large unit built that unit's index each time).
+    let mut target_indices = std::collections::HashMap::<std::path::PathBuf, _>::new();
     for metadata in index.metadata() {
         let reference = AstNodeKey { unit, generation, node: metadata.id };
         if matches!(
@@ -158,7 +161,9 @@ pub(super) fn unit_syntax_facts(
         let Some(target_unit) = typed.assembly.units.iter().find(|candidate| candidate.path == declaration_path) else {
             continue;
         };
-        let target_index = beskid_analysis::syntax_query::SyntaxIndex::from_program(&target_unit.program, generation);
+        let target_index = target_indices.entry(declaration_path.clone()).or_insert_with(|| {
+            beskid_analysis::syntax_query::SyntaxIndex::from_program(&target_unit.program, generation)
+        });
         // A function shows its signature (with default values), which signature help reuses as
         // its label.
         let (location_start, location_end, name, kind) = target_index
