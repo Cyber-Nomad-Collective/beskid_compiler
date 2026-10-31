@@ -2,12 +2,6 @@
 //! and the reference-counted worker pool in `assembly/common/external_wait.h`): thread create and
 //! join, the five atomic word intrinsics, the host logical processor count with its failure
 //! fallback, the process state block, and pool sharing between holders.
-#![cfg(any(
-    all(target_os = "linux", target_arch = "x86_64"),
-    all(target_os = "macos", target_arch = "aarch64"),
-    all(target_os = "windows", target_arch = "x86_64", target_env = "msvc"),
-))]
-
 use std::{
     path::{Path, PathBuf},
     process::Command,

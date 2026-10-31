@@ -34,7 +34,7 @@ fn fixture_with_main(
         std::fs::write(source_root.join("Core/Collections/Array.bd"), source).unwrap();
         std::fs::write(
             source_root.join("Core/Collections/Array/ArrayIter.bd"),
-            include_str!("../../../corelib/packages/foundation/src/Core/Collections/Array/ArrayIter.bd"),
+            include_str!("../../../../corelib/packages/foundation/src/Core/Collections/Array/ArrayIter.bd"),
         )
         .unwrap();
     }
@@ -178,7 +178,7 @@ fn user_array_path_collision_does_not_gain_intrinsic_authority() {
 
 #[test]
 fn exact_copied_canonical_array_without_physical_authority_is_ordinary_source() {
-    reject_untrusted_source(include_str!("../../../corelib/packages/foundation/src/Core/Collections/Array.bd"));
+    reject_untrusted_source(include_str!("../../../../corelib/packages/foundation/src/Core/Collections/Array.bd"));
 }
 
 /// A method appending to a field of its own implicit receiver (`this.items`, or a field nested
@@ -227,7 +227,7 @@ fn checked_append_retains_exact_nested_mutable_owner() {
 
 #[test]
 fn copied_checked_array_source_cannot_issue_owner_transaction() {
-    let source = include_str!("../../../corelib/packages/foundation/src/Core/Collections/Array.bd");
+    let source = include_str!("../../../../corelib/packages/foundation/src/Core/Collections/Array.bd");
     let (_root, db, _assembly, call) = fixture_with_main(TRY_APPEND_MAIN, Some(source));
     assert!(matches!(beskid_queries::call_lowering(&db, call).unwrap(), Some(beskid_queries::CallLowering::Direct(_))));
     assert!(collection_operation(&db, call).unwrap().is_none());

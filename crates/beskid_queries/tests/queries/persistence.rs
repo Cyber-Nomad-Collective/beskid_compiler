@@ -1,5 +1,3 @@
-#![cfg(feature = "persistence")]
-
 use beskid_analysis::syntax_query::{NodeKind, SyntaxIndex};
 use beskid_queries::{
     AstNodeKey, BeskidDatabase, IndexedNodeKind, ProjectSession, SourceUnitId, SyntaxGenerationId, node_kind,
@@ -249,7 +247,11 @@ fn warm_snapshot_source_edit_resumes_assembly_generation_in_a_fresh_process() {
     save_db_snapshot(&mut db, &beskid_queries::cache_root_for_project(directory.path())).unwrap();
     std::fs::write(&path, source.replace("return Result::Ok(1_i64)", "return Result::Ok(2_i64)")).unwrap();
     let output = std::process::Command::new(std::env::current_exe().unwrap())
-        .args(["--exact", "warm_snapshot_source_edit_resumes_assembly_generation_in_a_fresh_process", "--nocapture"])
+        .args([
+            "--exact",
+            "persistence::warm_snapshot_source_edit_resumes_assembly_generation_in_a_fresh_process",
+            "--nocapture",
+        ])
         .env("BESKID_GENERATION_REPLAY_FIXTURE", directory.path())
         .env("BESKID_GENERATION_REPLAY_PREVIOUS", previous.0.to_string())
         .output()

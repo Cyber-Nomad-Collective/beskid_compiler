@@ -52,7 +52,7 @@ Run from the root workspace:
 
 ```sh
 cargo test -p salsa --features persistence --test persistence_replay --test persistence --test accumulate-chain --test interned-revisions
-cargo test -p beskid_queries --features persistence --test persistence
+cargo test -p beskid_queries --features persistence --test queries persistence::
 ```
 
 Retain this small delta until an upstream release provides equivalent typed

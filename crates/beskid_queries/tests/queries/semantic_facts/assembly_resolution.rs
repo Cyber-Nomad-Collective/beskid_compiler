@@ -379,7 +379,7 @@ fn imported_type_qualified_static_call_resolves_to_its_exact_syntax_item() {
 }
 
 #[test]
-fn syntax_facts_resolve_core_output_writeline_without_hir() {
+fn syntax_facts_resolve_core_output_writeline() {
     let mut db = BeskidDatabase::default();
     let root = PathBuf::from("/tmp/core-output-writeline/project/src");
     let main_path = root.join("Main.bd");

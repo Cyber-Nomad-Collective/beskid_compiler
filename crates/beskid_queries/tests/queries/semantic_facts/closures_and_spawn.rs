@@ -430,7 +430,7 @@ fn closure_call_target_and_spawn_entry_validation_use_only_current_syntax_facts(
 }
 
 #[test]
-fn stored_lambda_call_resolves_its_lexical_initializer_without_hir() {
+fn stored_lambda_call_resolves_its_lexical_initializer() {
     let source = "i32 Main() { let add = (i32 value) => value + 1; return add(7); }";
     let (db, _project, unit, generation, index) = setup(source);
     let call = key(unit, generation, &index, NodeKind::CallExpression, 0);

@@ -1,5 +1,3 @@
-#![cfg(all(target_os = "macos", target_arch = "aarch64"))]
-
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;

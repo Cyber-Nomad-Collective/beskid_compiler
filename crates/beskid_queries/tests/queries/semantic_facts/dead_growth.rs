@@ -62,7 +62,7 @@ fn fixture_with(main_body: &str, array: ArraySource) -> Fixture {
         std::fs::create_dir_all(source_root.join("Core/Collections/Array")).expect("look-alike module directory");
         std::fs::write(
             source_root.join("Core/Collections/Array/ArrayIter.bd"),
-            include_str!("../../../../corelib/packages/foundation/src/Core/Collections/Array/ArrayIter.bd"),
+            include_str!("../../../../../corelib/packages/foundation/src/Core/Collections/Array/ArrayIter.bd"),
         )
         .expect("look-alike ArrayIter.bd");
     }
@@ -284,7 +284,7 @@ fn fixed_corelib_shapes_and_published_handles_are_not_dead() {
 #[test]
 fn lookalike_host_array_source_has_no_collection_or_dead_growth_authority() {
     let body = "unit Push(mut u8[] buffer, u8 value) { Array.Append<u8>(buffer, value); }";
-    let canonical_bytes = include_str!("../../../../corelib/packages/foundation/src/Core/Collections/Array.bd");
+    let canonical_bytes = include_str!("../../../../../corelib/packages/foundation/src/Core/Collections/Array.bd");
     // Both a hand-written look-alike and a byte-exact copy outside the compiler-owned Foundation
     // root are ordinary host units: the call stays a direct call without collection authority.
     for array in [ArraySource::HostLocal(LOOKALIKE_ARRAY_SOURCE), ArraySource::HostLocal(canonical_bytes)] {
