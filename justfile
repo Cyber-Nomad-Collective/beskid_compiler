@@ -90,12 +90,8 @@ check:
         --exclude beskid_tests_surface \
         --exclude beskid_tests_projects \
         --exclude beskid_tests_mods \
-        --exclude beskid_tests_lsp \
-        --exclude beskid_tests_aot \
         --exclude beskid_tests_pckg \
         --exclude beskid_tests_interop \
-        --exclude beskid_tests_cli \
-        --exclude beskid_tests_composition \
         --exclude beskid_tests_support
 
 # Type-check one crate + its direct deps only.

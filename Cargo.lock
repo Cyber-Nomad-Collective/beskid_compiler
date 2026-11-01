@@ -862,47 +862,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "beskid_tests_aot"
-version = "0.1.0"
-dependencies = [
- "beskid_abi",
- "beskid_analysis",
- "beskid_aot",
- "beskid_codegen",
- "beskid_queries",
-]
-
-[[package]]
-name = "beskid_tests_cli"
-version = "0.1.0"
-dependencies = [
- "beskid_analysis",
- "tempfile",
-]
-
-[[package]]
-name = "beskid_tests_composition"
-version = "0.1.0"
-dependencies = [
- "beskid_abi",
-]
-
-[[package]]
 name = "beskid_tests_interop"
 version = "0.1.0"
 dependencies = [
  "beskid_abi",
  "beskid_aot",
  "beskid_engine",
-]
-
-[[package]]
-name = "beskid_tests_lsp"
-version = "0.1.0"
-dependencies = [
- "beskid_lsp",
- "tokio",
- "tower-lsp-server",
 ]
 
 [[package]]

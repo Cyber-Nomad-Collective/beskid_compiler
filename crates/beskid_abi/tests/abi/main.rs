@@ -11,6 +11,7 @@ mod canonical_event_sources;
 mod canonical_hub_sources;
 mod canonical_runtime_sources;
 mod canonical_waitgroup_sources;
+mod composition_runtime_imports;
 #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 mod core_args_native_behavior;
 #[cfg(any(
