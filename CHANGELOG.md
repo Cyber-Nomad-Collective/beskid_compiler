@@ -598,6 +598,16 @@ version 0.6.7.
   required, are E1206 type mismatches at the literal instead of silent
   conversions. Binary operands keep numeric promotion.
 
+### Documentation generator
+
+- doc: `@ref` links to items in a dependency's `.generated` units point at that dependency
+  package instead of the published one, and a path outside a package's source and generated
+  roots fails with an error that names both roots. Regression tests cover the 0.6.0 Corelib
+  publication failures (fixed by the 0.6.6 generated-root mapping): corelib_foundation's own
+  `obj/beskid/root/.generated` unit maps to `.generated/<rel>`, and corelib_foundation units
+  materialized under `obj/beskid/deps/src/<pkg>-<hash>/` for corelib_runtime keep their
+  `declaringPackage` and map to `src/<rel>` or `.generated/<rel>`.
+
 ## [0.6.6] - 2026-10-16
 
 This release carries the v0.6.1-v0.6.5 program as one release (OpenSpec changes
