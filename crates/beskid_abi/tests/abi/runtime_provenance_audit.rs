@@ -111,6 +111,8 @@ fn windows_static_archive_ignores_only_coff_compiler_metadata_definitions() {
         "??_C@_0BN@DEMBGLIA@Core?4Args?5handoff?5is?5invalid?$AA@".into(),
         "??_C@_0CE@MKNJCKMH@Core?4Args?5storage?5allocation?5fai@".into(),
         "??_C@_0CJ@KFDPFJCM@Core?4Args?5argument?5index?5is?5out?5@".into(),
+        // The trap name literal "panic" spells a forbidden family word.
+        "??_C@_05DDGCEFJL@panic?$AA@".into(),
         "@feat.00".into(),
     ]);
 
