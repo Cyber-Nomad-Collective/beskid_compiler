@@ -251,6 +251,20 @@ pub const MEMORY_WINDOWS_PER_END: usize = 3;
 /// Longest memory window.
 pub const MEMORY_WINDOW_MAX: Duration = Duration::from_secs(60);
 
+/// Time the server's RSS still rises after the start of a soak, whatever the initial index
+/// reports. In the 0.6.7 preview.11 and preview.12 30-minute soaks (corelib + lings, seed 1) the
+/// index went idle after 33-46 s, but the RSS rose until 300 s in each run (641 -> 1259 MB,
+/// 883 -> 1246 MB, 844 -> 1290 MB) and was flat or fell from there to the end. The warm-up is
+/// that last rise plus one [`MEMORY_WINDOW_MAX`] window.
+pub const MEMORY_WARM_UP: Duration = Duration::from_secs(360);
+
+/// Start of the span the memory verdict measures: after the initial index and after the
+/// [`MEMORY_WARM_UP`], so the baseline windows lie on the plateau and not on the ramp up to it.
+/// A short run waits at most a third of its length for the warm-up, so two thirds stay measured.
+pub fn memory_span_start(index_finished_after: Option<Duration>, ran_for: Duration) -> Duration {
+    index_finished_after.unwrap_or_default().max(MEMORY_WARM_UP.min(ran_for / 3))
+}
+
 fn median(values: &mut [u64]) -> Option<u64> {
     values.sort_unstable();
     let middle = values.len() / 2;
@@ -1157,9 +1171,9 @@ pub fn run(config: &SoakConfig, smoke: bool) -> Result<SoakReport, String> {
     if let Some(failure) = old_lock_probe_failure(&report.counters) {
         report.failures.push(failure);
     }
-    // Measure from the end of the initial index (memory ramps up while it runs); a run whose
-    // index never finished skips a warm-up instead.
-    let span_start = report.index_finished_after.unwrap_or_else(|| MEMORY_WINDOW_MAX.min(ran_for / 3));
+    // Measure from the end of the warm-up: memory ramps up while the index runs and for minutes
+    // after it, while the soak opens files the server has not analyzed yet.
+    let span_start = memory_span_start(report.index_finished_after, ran_for);
     report.memory = memory_growth(&report.samples, ran_for, span_start);
     // First and last window must be distinct and meaningful: enforce only on full-length runs.
     report.memory_enforced = !smoke && ran_for >= Duration::from_secs(180);
@@ -1568,6 +1582,52 @@ mod tests {
         assert_eq!(verdict.baseline_kib, 100_000);
         assert_eq!(verdict.final_kib, 114_000);
         assert!((verdict.growth_percent - 14.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn memory_baseline_starts_after_the_warm_up_not_at_the_index_end() {
+        // preview.12 soak rerun (int12 soak2-out): 30-s RSS medians in MB. The index went idle at
+        // 35 s while the RSS still rose to its plateau at 300 s; it never grew after that.
+        let medians_mb = [
+            883, 897, 953, 953, 1013, 1094, 1094, 1095, 1095, 1095, 1246, 1245, 1246, 1245, 1245, 1246, 1234, 1233,
+            1233, 1233, 1233, 1233, 1233, 1233, 1233, 1233, 1233, 1233, 1233, 1233, 1234, 1232, 1231, 1231, 1231, 1231,
+            1231, 1231, 1231, 1231, 1231, 1231, 1231, 1231, 1231, 1231, 1237, 1231, 1231, 1231, 1231, 1231, 1231, 1231,
+            1231, 1231, 1231, 1102, 1102, 1103, 1103,
+        ];
+        let samples: Vec<_> = medians_mb
+            .iter()
+            .enumerate()
+            .flat_map(|(slot, mb)| (0..3).map(move |step| sample(slot as u64 * 30 + step * 10, mb * 1024)))
+            .collect();
+        let ran_for = Duration::from_secs(1800);
+        let index = Some(Duration::from_secs(35));
+        let at_index = memory_growth(&samples, ran_for, index.unwrap()).unwrap();
+        assert!(at_index.growth_percent > 20.0, "the old baseline reports the ramp as growth: {at_index:?}");
+        let start = memory_span_start(index, ran_for);
+        assert_eq!(start, MEMORY_WARM_UP);
+        let verdict = memory_growth(&samples, ran_for, start).unwrap();
+        assert!(verdict.growth_percent < 1.0, "{verdict:?}");
+        assert!(verdict.baseline_kib >= 1_230 * 1024, "baseline on the plateau: {verdict:?}");
+    }
+
+    #[test]
+    fn memory_span_start_waits_for_the_later_of_index_and_warm_up() {
+        let thirty_minutes = Duration::from_secs(1800);
+        assert_eq!(memory_span_start(Some(Duration::from_secs(35)), thirty_minutes), MEMORY_WARM_UP);
+        assert_eq!(memory_span_start(None, thirty_minutes), MEMORY_WARM_UP);
+        // An index that outlasts the warm-up starts the span itself.
+        assert_eq!(memory_span_start(Some(Duration::from_secs(500)), thirty_minutes), Duration::from_secs(500));
+        // A short run keeps two thirds of its length measured.
+        assert_eq!(
+            memory_span_start(Some(Duration::from_secs(20)), Duration::from_secs(600)),
+            Duration::from_secs(200)
+        );
+        // A leak that keeps growing after the warm-up still fails the verdict.
+        let leak: Vec<_> = (0..=1800).step_by(10).map(|at| sample(at, 1_000_000 + at * 400)).collect();
+        let verdict =
+            memory_growth(&leak, thirty_minutes, memory_span_start(Some(Duration::from_secs(35)), thirty_minutes))
+                .unwrap();
+        assert!(verdict.growth_percent > 20.0, "{verdict:?}");
     }
 
     #[test]

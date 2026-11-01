@@ -684,14 +684,26 @@ pub(super) fn sync_project_lockfile(
         return Err(ProjectError::LockfileFrozenMode);
     }
 
-    let mut staged = NamedTempFile::new_in(&plan.project_root)
-        .map_err(|source| ProjectError::LockfileWrite { path: lock_path.clone(), source })?;
-    staged
-        .write_all(expected_content.as_bytes())
+    let staged = stage_lockfile(&plan.project_root, &expected_content)
         .map_err(|source| ProjectError::LockfileWrite { path: lock_path.clone(), source })?;
     staged
         .persist(&lock_path)
         .map_err(|error| ProjectError::LockfileWrite { path: lock_path.clone(), source: error.error })?;
 
     Ok(lock_path)
+}
+
+/// Write `content` to a temporary file that a rename then moves to `Project.lock`.
+///
+/// The temporary file lives in the project's `obj/beskid/` directory, never next to the lock:
+/// a package of the shared Corelib gets its `Project.lock` written in place, and a concurrent
+/// build verifies that bundle's seal by walking every file except `Project.lock` and `obj/`. A
+/// temporary file in the package directory is a new source file to that walk (E3032 in the
+/// other build). `obj/beskid/` is on the same file system, so the rename stays atomic.
+pub(super) fn stage_lockfile(project_root: &Path, content: &str) -> std::io::Result<NamedTempFile> {
+    let staging = project_root.join("obj").join("beskid");
+    fs::create_dir_all(&staging)?;
+    let mut staged = tempfile::Builder::new().prefix("Project.lock.").tempfile_in(&staging)?;
+    staged.write_all(content.as_bytes())?;
+    Ok(staged)
 }
