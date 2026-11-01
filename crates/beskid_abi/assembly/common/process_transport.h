@@ -1085,7 +1085,9 @@ static int ChildTerminate(struct ChildTransport *c) {
   return 0;
 #else
   if (kill(-c->pid, SIGKILL) != 0) {
-    if (errno != ESRCH)
+    /* Darwin reports EPERM for a group whose only member is an unreaped
+       zombie; Linux reports success. */
+    if (errno != ESRCH && errno != EPERM)
       return -1;
     /* Setup cancellation may precede setpgid. The unreaped direct child still
        owns this PID; kill it before it can establish or escape the group. */
