@@ -1,18 +1,49 @@
+use std::sync::Arc;
+
 use beskid_analysis::format::FormatError;
 use tower_lsp_server::ls_types::{MessageType, Range, TextEdit};
 
 use crate::position::offset_range_to_lsp;
+use crate::text_memo::TextMemo;
 
 /// Full-document format of `text` with the one formatter `beskid fmt` uses.
 ///
 /// Returns the reason when the text does not parse or cannot be formatted safely; the document
 /// is never changed in that case. An already formatted text gives an empty edit list.
 pub fn handle_document_formatting(text: &str) -> Result<Vec<TextEdit>, FormatError> {
-    let formatted = beskid_analysis::format::format_source("<editor>", text)?;
-    if formatted == text {
-        return Ok(Vec::new());
+    if let Some(Ok(formatted)) = FORMATTED.get(text) {
+        return Ok(edits_to(text, formatted.as_deref()));
     }
-    Ok(vec![full_document_edit(text, formatted)])
+    let outcome = beskid_analysis::format::format_source("<editor>", text);
+    let remembered = match &outcome {
+        Ok(formatted) => Ok((formatted != text).then(|| Arc::<str>::from(formatted.as_str()))),
+        Err(_) => Err(()),
+    };
+    FORMATTED.insert(text, remembered);
+    let formatted = outcome?;
+    Ok(if formatted == text { Vec::new() } else { vec![full_document_edit(text, formatted)] })
+}
+
+/// The "Format document" edits of `text` for a code action: `None` when the text is formatted
+/// already or does not parse. A text formatted once (by a code action or a formatting request) is
+/// not formatted again.
+pub fn document_formatting_for_action(text: &str) -> Option<Vec<TextEdit>> {
+    let formatted = FORMATTED.get_or_compute(text, || match beskid_analysis::format::format_source("<editor>", text) {
+        Ok(formatted) => Ok((formatted != text).then(|| Arc::<str>::from(formatted.as_str()))),
+        Err(_) => Err(()),
+    });
+    formatted.ok().flatten().map(|formatted| edits_to(text, Some(&formatted)))
+}
+
+/// The formatted text of the last few texts: `Ok(None)` when a text is formatted already,
+/// `Err(())` when it could not be formatted (a formatting request computes the reason again).
+static FORMATTED: TextMemo<Result<Option<Arc<str>>, ()>> = TextMemo::new(8);
+
+fn edits_to(text: &str, formatted: Option<&str>) -> Vec<TextEdit> {
+    match formatted {
+        Some(formatted) => vec![full_document_edit(text, formatted.to_string())],
+        None => Vec::new(),
+    }
 }
 
 /// Range formatting formats the whole document (the formatter has one canonical output).
@@ -107,6 +138,20 @@ mod tests {
         let (kind, message) = refusal_message("Main.bd", &error);
         assert_eq!(kind, MessageType::INFO, "a parse error is already a diagnostic");
         assert!(message.starts_with("Beskid did not format Main.bd: "), "{message}");
+    }
+
+    /// A code action and a formatting request of one text share one formatting, and the action
+    /// offers no edit for a formatted or unparsable text.
+    #[test]
+    fn the_format_action_reuses_the_formatting_of_its_text() {
+        let text = "pub i32 MemoMain() { return 42; }\n";
+        let action = document_formatting_for_action(text).expect("an edit");
+        assert!(super::FORMATTED.get(text).is_some(), "remembered for the text");
+        assert_eq!(handle_document_formatting(text).expect("formats"), action);
+        assert_eq!(document_formatting_for_action("pub i32 Main()\n{\n    return 42;\n}\n"), None);
+        assert_eq!(document_formatting_for_action("i32 Main() { let x = 5 return x; }\n"), None);
+        let error = handle_document_formatting("i32 Main() { let x = 5 return x; }\n").expect_err("still the reason");
+        assert!(matches!(error, FormatError::Parse(_)), "{error}");
     }
 
     #[test]

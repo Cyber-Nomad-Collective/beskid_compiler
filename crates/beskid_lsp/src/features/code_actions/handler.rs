@@ -9,7 +9,7 @@ use tower_lsp_server::ls_types::{
 use crate::features::formatting;
 use crate::features::project_manifest::api as project_manifest;
 use crate::position::{offset_range_to_lsp, position_to_offset};
-use crate::session::documentation_facts::{doc_comment_edit_from_syntax_facts, syntax_documentation_facts_for_source};
+use crate::session::documentation_facts::{doc_comment_edit_from_syntax_facts, documentation_facts_without_recovery};
 use crate::session::store::Document;
 
 fn doc_comment_code_action(
@@ -20,14 +20,17 @@ fn doc_comment_code_action(
     diagnostics: Option<Vec<Diagnostic>>,
 ) -> Option<CodeAction> {
     // Prefer generation-bound facts attached to this buffer revision. When facts are
-    // missing (disk snapshot before refresh), rebuild them from the current text only —
-    // never from a legacy HIR/analysis snapshot.
+    // missing (disk snapshot before refresh, or a text the analysis has not stored yet), build
+    // them from the current text only, without a parse recovery, never from a legacy
+    // HIR/analysis snapshot.
+    let built;
     let facts = if doc.syntax_documentation.is_empty() {
-        syntax_documentation_facts_for_source(uri.as_str(), &doc.text)
+        built = documentation_facts_without_recovery(uri.as_str(), &doc.text);
+        built.as_slice()
     } else {
-        doc.syntax_documentation.clone()
+        doc.syntax_documentation.as_slice()
     };
-    let edit = doc_comment_edit_from_syntax_facts(&facts, offset)?;
+    let edit = doc_comment_edit_from_syntax_facts(facts, offset)?;
     let (range, new_text) = match edit {
         DocCommentEdit::Insert { at, text } => (offset_range_to_lsp(&doc.text, at, at), text),
         DocCommentEdit::Replace { start, end, text } => (offset_range_to_lsp(&doc.text, start, end), text),
@@ -178,9 +181,7 @@ fn code_action_phases(
     if project_manifest::is_manifest_uri(uri) {
         return true;
     }
-    if let Some(edits) =
-        formatting::handler::handle_document_formatting(&doc.text).ok().filter(|edits| !edits.is_empty())
-    {
+    if let Some(edits) = formatting::handler::document_formatting_for_action(&doc.text) {
         let mut changes = HashMap::new();
         changes.insert(uri.clone(), edits);
         let format = CodeAction {
@@ -306,6 +307,31 @@ mod tests {
         assert!(
             edits.iter().any(|edit| edit.new_text.contains("@arg(value)")),
             "expected stub from syntax documentation facts, got {edits:?}"
+        );
+    }
+
+    /// The code actions of a text without stored documentation facts never start a parse
+    /// recovery: a broken text gets no documentation action, and the recovery (seconds for a
+    /// large file) is left to the text's analysis.
+    #[test]
+    fn code_actions_of_a_broken_text_start_no_parse_recovery() {
+        let uri = Uri::from_str("file:///tmp/code-actions/Broken.bd").expect("uri");
+        let source = "use Core.Env;\n\nhost MyHost {\n}\n// code action recovery test\n";
+        let doc = Document::text_only(1, source.to_string());
+        let params = CodeActionParams {
+            text_document: TextDocumentIdentifier { uri: uri.clone() },
+            range: Range { start: Position::new(2, 6), end: Position::new(2, 6) },
+            context: CodeActionContext { diagnostics: Vec::new(), only: None, trigger_kind: None },
+            work_done_progress_params: WorkDoneProgressParams::default(),
+            partial_result_params: Default::default(),
+        };
+
+        let actions = handle_code_actions(&uri, &doc, &params);
+
+        assert!(actions.is_empty(), "no format or documentation edit for a text that does not parse: {actions:?}");
+        assert!(
+            beskid_analysis::services::parse_program_without_recovery(uri.as_str(), source).is_none(),
+            "no recovery of the text was run (it would be remembered)"
         );
     }
 

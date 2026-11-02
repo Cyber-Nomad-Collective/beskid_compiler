@@ -211,6 +211,39 @@ impl Document {
     }
 }
 
+impl Document {
+    /// A document of `text` with no analyzed facts: what a request computed from the text alone
+    /// (code actions) sees before the text's analysis is stored.
+    pub fn text_only(version: i32, text: String) -> Self {
+        Document {
+            version,
+            text,
+            syntax_definitions: Vec::new(),
+            syntax_hovers: Vec::new(),
+            syntax_symbols: Vec::new(),
+            bsol_semantic_token_candidates: Vec::new(),
+            syntax_attribute_names: Vec::new(),
+            syntax_completion: None,
+            syntax_inlay_hints: Vec::new(),
+            syntax_documentation: Vec::new(),
+            syntax_diagnostics: Vec::new(),
+            syntax_fixes: Vec::new(),
+        }
+    }
+}
+
+/// The diagnostics last published for an open document.
+#[derive(Debug, Clone)]
+pub(crate) struct PublishedDiagnostics {
+    pub(crate) version: i32,
+    pub(crate) diagnostics: Vec<tower_lsp_server::ls_types::Diagnostic>,
+    /// The compilation-context generation when they were published.
+    pub(crate) generation: u64,
+    /// The open-text edit count when the analysis that computed them started (`None` for a
+    /// publication of the full preparation).
+    pub(crate) edits_at_analysis: Option<u64>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BsolSemanticTokenCandidate {
     pub start: usize,
@@ -384,6 +417,26 @@ pub struct State {
     pub(crate) watched_fingerprints: HashMap<PathBuf, u64>,
     /// The analyses of open documents running now; a newer text of a document cancels its own.
     pub(crate) running_analyses: Arc<super::analysis_cancel::RunningAnalyses>,
+    /// The diagnostics last published for each open document, with the version they belong to.
+    /// The preparation that follows an analysis publishes only when its diagnostics differ.
+    pub(crate) published_diagnostics: HashMap<Uri, PublishedDiagnostics>,
+    /// The version of each open document whose last stored analysis prepared its project (its
+    /// diagnostics are judged, not a fallback or a preparation failure).
+    pub(crate) prepared_analyses: HashMap<Uri, i32>,
+}
+
+/// How many disk events (saves, watched-file changes) the client reported so far.
+static DISK_EVENTS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Count a save or a watched-file change reported by the client.
+pub(crate) fn note_disk_event() {
+    DISK_EVENTS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+}
+
+/// The number of disk events so far: two equal counts mean no file changed on disk in between,
+/// as far as the client reported.
+pub(crate) fn disk_event_count() -> u64 {
+    DISK_EVENTS.load(std::sync::atomic::Ordering::SeqCst)
 }
 
 impl Default for State {
@@ -409,6 +462,8 @@ impl Default for State {
             index_permits: Arc::new(tokio::sync::Semaphore::new(3)),
             background_turn: Arc::default(),
             running_analyses: Arc::default(),
+            published_diagnostics: HashMap::new(),
+            prepared_analyses: HashMap::new(),
         }
     }
 }

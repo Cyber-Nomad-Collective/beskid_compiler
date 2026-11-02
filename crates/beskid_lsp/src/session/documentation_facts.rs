@@ -1,10 +1,14 @@
 //! Generation-bound documentation facts derived from expanded syntax (no HIR / Resolution).
 
+use std::sync::Arc;
+
 use beskid_analysis::doc::{
     DocCommentEdit, LeadingDocComment, callable_signatures_for_span, enum_variant_names_for_span, flatten_leading_docs,
     generic_param_names_for_span,
 };
 use beskid_analysis::syntax::{Node, Program, SpanInfo, Spanned};
+
+use crate::text_memo::TextMemo;
 
 /// Declaration kinds that documentation actions can generate stubs for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -185,12 +189,29 @@ pub fn complete_shape_from_program(program: &Program, facts: &mut [SyntaxDocumen
 }
 
 /// Build facts for a source buffer (parse must succeed).
+#[cfg(test)]
 pub fn syntax_documentation_facts_for_source(source_name: &str, source: &str) -> Vec<SyntaxDocumentationFact> {
     let Ok(program) = beskid_analysis::services::parse_program_with_source_name(source_name, source) else {
         return Vec::new();
     };
     syntax_documentation_facts_for_parsed(&program.node)
 }
+
+/// The documentation facts of `source` for a request (the documentation code action), when the
+/// analysis stored none for it. Built from a parse that never starts a recovery: a source that
+/// does not parse has no facts here (a recovery of a large broken file takes seconds, and the
+/// analysis of the text runs it already). Remembered per text, so the code actions of every
+/// cursor position in one text parse it once.
+pub fn documentation_facts_without_recovery(source_name: &str, source: &str) -> Arc<Vec<SyntaxDocumentationFact>> {
+    DOCUMENTATION.get_or_compute(source, || {
+        Arc::new(match beskid_analysis::services::parse_program_without_recovery(source_name, source) {
+            Some(parsed) if !parsed.recovered => syntax_documentation_facts_for_parsed(&parsed.program.node),
+            _ => Vec::new(),
+        })
+    })
+}
+
+static DOCUMENTATION: TextMemo<Arc<Vec<SyntaxDocumentationFact>>> = TextMemo::new(8);
 
 /// Build facts for the tree of a source buffer that is already parsed.
 pub fn syntax_documentation_facts_for_parsed(program: &Program) -> Vec<SyntaxDocumentationFact> {

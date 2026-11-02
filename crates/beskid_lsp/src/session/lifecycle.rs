@@ -3,7 +3,7 @@ mod documents;
 mod facts;
 mod revisions_resolution;
 
-pub use diagnostics::publish_diagnostics_for_uri;
+pub use diagnostics::{AnalysisBaseline, publish_analyzed_diagnostics, publish_diagnostics_for_uri};
 #[cfg(test)]
 pub use documents::set_document;
 pub use documents::{

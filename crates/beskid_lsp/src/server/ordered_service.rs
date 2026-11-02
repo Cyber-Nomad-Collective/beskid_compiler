@@ -400,6 +400,36 @@ mod text_sync_ordering_tests {
         change_task.await.expect("change task").expect("change response");
     }
 
+    /// Code actions read the newest open text, current in transport order: they do not wait for
+    /// the handler of an earlier edit of their document.
+    #[tokio::test]
+    async fn code_actions_do_not_wait_for_the_handler_of_an_edit() {
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let change_started = Arc::new(Notify::new());
+        let release_change = Arc::new(Notify::new());
+        let inner = RecordingService {
+            events: Arc::clone(&events),
+            change_started: Arc::clone(&change_started),
+            release_change: Arc::clone(&release_change),
+        };
+        let mut service = ordered(inner);
+        let document = serde_json::json!({"textDocument": {"uri": "file:///tmp/Actions.bd"}});
+
+        let change = service.call(Request::build("textDocument/didChange").params(document.clone()).finish());
+        let actions = service.call(Request::build("textDocument/codeAction").params(document).id(1).finish());
+        let change_task = tokio::spawn(change);
+        let actions_task = tokio::spawn(actions);
+
+        change_started.notified().await;
+        tokio::time::timeout(std::time::Duration::from_millis(500), actions_task)
+            .await
+            .expect("the code actions answer while the edit's handler still runs")
+            .expect("code action task")
+            .expect("code action response");
+        release_change.notify_waiters();
+        change_task.await.expect("change task").expect("change response");
+    }
+
     #[tokio::test]
     async fn unrelated_document_request_does_not_wait_for_text_sync() {
         let events = Arc::new(Mutex::new(Vec::new()));

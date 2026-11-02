@@ -212,6 +212,19 @@ pub(crate) fn superseded(uri: &Uri, text: &str) -> bool {
     open_text(uri).as_deref() != Some(text)
 }
 
+/// The recovery cancellation check of the analysis of `text`, an open document's text: `true`
+/// once the client sent a newer text of `uri` (or closed it).
+fn newer_text_cancels(uri: &Uri, text: &str) -> Arc<dyn Fn() -> bool + Send + Sync> {
+    let uri = uri.clone();
+    let text: Arc<str> = Arc::from(text);
+    Arc::new(move || {
+        !matches!(
+            crate::features::formatting::open_texts::match_open_text(&uri, Some(&text)),
+            crate::features::formatting::open_texts::OpenMatch::Current(_)
+        )
+    })
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn build_syntax_facts_with_policy_after_startup(
     state: &RwLock<State>,
@@ -278,7 +291,17 @@ async fn syntax_facts_for_text(
                 let program = match parsed {
                     Some(program) => Some(program),
                     None => {
-                        parse = beskid_analysis::services::parse_program_with_source_name(uri.as_str(), text).ok();
+                        // The recovery of a large broken text takes seconds; once the client
+                        // sends a newer text it stops (and is not remembered).
+                        let recover = || beskid_analysis::services::parse_program_with_source_name(uri.as_str(), text);
+                        parse = match newest {
+                            Some(buffer) => beskid_analysis::services::with_recovery_cancellation(
+                                newer_text_cancels(uri, buffer),
+                                recover,
+                            ),
+                            None => recover(),
+                        }
+                        .ok();
                         parse.as_ref()
                     }
                 };
@@ -442,7 +465,10 @@ async fn syntax_facts_for_text(
         })
         .await;
     let mut facts = match prepared_facts {
-        Ok(Some(facts)) => facts,
+        Ok(Some(mut facts)) => {
+            facts.prepared = true;
+            facts
+        }
         Ok(None) => return SyntaxFacts { superseded: true, ..SyntaxFacts::default() },
         Err(error) => {
             let (diagnostics, fixes) = preparation_failure_facts(uri, text, &error);
@@ -770,6 +796,11 @@ async fn store_document(state: &RwLock<State>, uri: Uri, version: i32, text: Str
     {
         return false;
     }
+    if syntax_facts.prepared {
+        write_state.prepared_analyses.insert(uri.clone(), version);
+    } else {
+        write_state.prepared_analyses.remove(&uri);
+    }
     write_state.docs.insert(uri, document_from_syntax_facts(version, text, syntax_facts));
     write_state.facts_stored.notify_waiters();
     true
@@ -782,6 +813,8 @@ pub async fn remove_document(state: &RwLock<State>, uri: &Uri) {
     let mut write = state.write().await;
     write.running_analyses.cancel(uri);
     write.docs.remove(uri);
+    write.published_diagnostics.remove(uri);
+    write.prepared_analyses.remove(uri);
     write.facts_stored.notify_waiters();
 }
 

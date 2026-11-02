@@ -23,12 +23,14 @@ use crate::protocol::refresh::{FactsRefresh, RefreshKind};
 use crate::protocol::request::{
     CODE_ACTION_COMPUTE_WAIT, CurrentDocument, EDIT_FACTS_WAIT, REFRESH_FACTS_WAIT, RequestFacts,
     STALE_SAFE_FACTS_WAIT, content_modified, document_facts, edit_document_facts, latest_document,
-    wait_for_current_facts,
+    newest_text_for_code_actions, wait_for_current_facts,
 };
 use crate::scan_schedule::{InteractiveGuard, ScanCoordinator, ScanRunGuard};
 use crate::server::init::initialize_result;
 use crate::session::db_access::{parallel_project_db, run_blocking_section, with_shared_project_db};
-use crate::session::lifecycle::{analyze_open_document, publish_diagnostics_for_uri, remove_document};
+use crate::session::lifecycle::{
+    AnalysisBaseline, analyze_open_document, publish_analyzed_diagnostics, publish_diagnostics_for_uri, remove_document,
+};
 use crate::session::mod_host::mod_host_from_initialization_options;
 use crate::session::store::State;
 use crate::workspace_scan::{
@@ -122,7 +124,12 @@ impl Backend {
     /// diagnostics. The notification returns at once, so the transport and requests on other
     /// documents never wait for the analysis; requests that need this document's newest facts
     /// wait for them on their own (see `protocol::request`).
-    async fn analyze_in_background(&self, uri: Uri, version: i32, text: String) {
+    ///
+    /// After an edit (`edit`), the diagnostics come from the analysis alone when it prepared its
+    /// project and nothing else it reads changed while it ran (no other open text, no file on
+    /// disk, no compilation context): the debounced full preparation of the document would only
+    /// repeat them. Otherwise, and after an open, the full preparation follows.
+    async fn analyze_in_background(&self, uri: Uri, version: i32, text: String, edit: bool) {
         // The analysis of an older text of this document is moot now: stop it, so the project's
         // database is free for this text at once.
         self.running_analyses.cancel(&uri);
@@ -131,8 +138,16 @@ impl Backend {
         let interactive = Arc::clone(&self.interactive);
         self.reporter.spawn_guarded("beskid/analyzeDocument", Some(uri.as_str().to_string()), async move {
             let _active = InteractiveGuard::new(&interactive);
+            let baseline = AnalysisBaseline::now(&state).await;
             if analyze_open_document(&state, uri.clone(), version, text).await {
-                publisher.schedule(uri).await;
+                // The document's diagnostics come from its analysis at once.
+                let published = publish_analyzed_diagnostics(&publisher.client, &state, &uri, baseline).await;
+                if edit && published && baseline.unchanged(&state).await {
+                    crate::trace::event("full-pass-skipped", || format!("uri={} version={version}", uri.as_str()));
+                } else {
+                    // Fail closed: the full preparation publishes what the analysis could not.
+                    publisher.schedule(uri).await;
+                }
             }
         });
     }
@@ -378,7 +393,7 @@ impl LanguageServer for Backend {
 
     async fn did_open(&self, params: DidOpenTextDocumentParams) {
         let doc = params.text_document;
-        self.analyze_in_background(doc.uri, doc.version, doc.text).await;
+        self.analyze_in_background(doc.uri, doc.version, doc.text, false).await;
     }
 
     async fn did_change(&self, params: DidChangeTextDocumentParams) {
@@ -387,10 +402,11 @@ impl LanguageServer for Backend {
         let Some(text) = formatting::open_texts::open_text(&uri) else {
             return;
         };
-        self.analyze_in_background(uri, params.text_document.version, text).await;
+        self.analyze_in_background(uri, params.text_document.version, text, true).await;
     }
 
     async fn did_save(&self, params: DidSaveTextDocumentParams) {
+        crate::session::store::note_disk_event();
         self.schedule_publish_diagnostics(params.text_document.uri.clone()).await;
     }
 
@@ -630,17 +646,25 @@ impl LanguageServer for Backend {
         Ok(signature_help::handler::handle_signature_help(&uri, &document, offset))
     }
 
-    // Code actions carry edits: they come only from the facts of the newest text. Past a short
-    // budget, or when the client edits while they are computed, the answer is `ContentModified`
-    // and the client asks again.
+    // Code actions carry edits: they come only from the newest text. Most of them need that
+    // text alone (the compiler's fixes in the diagnostics, formatting, the documentation
+    // comment), so they are computed from the newest open text at once, without waiting for its
+    // analysis or for the server state. A Mod quick fix comes from the analysis of the text: such
+    // a request waits for the facts of the newest text, and past a short budget the answer is
+    // `ContentModified`. When the client edits while the actions are computed, the answer is
+    // `ContentModified` too, and the client asks again.
     //
     // The actions are computed on a blocking thread and the request waits for them at most
     // `CODE_ACTION_COMPUTE_WAIT`: past it, the answer holds the actions computed by then (the
     // quick fixes first) and the computation stops.
     async fn code_action(&self, params: CodeActionParams) -> Result<Option<CodeActionResponse>> {
         let uri = params.text_document.uri.clone();
-        let Some(current) = self.edit_facts(&uri).await? else {
-            return Ok(Some(Vec::new()));
+        let current = match newest_text_for_code_actions(&self.state, &uri, &params.context.diagnostics) {
+            Some(current) => current,
+            None => match self.edit_facts(&uri).await? {
+                Some(current) => current,
+                None => return Ok(Some(Vec::new())),
+            },
         };
         let CurrentDocument { document, open_version } = current;
         let actions = code_actions_within(uri.clone(), document, params, CODE_ACTION_COMPUTE_WAIT).await;
@@ -773,6 +797,7 @@ impl LanguageServer for Backend {
     // once for all its closed files and republishes the open documents; it never prepares the
     // whole workspace file by file.
     async fn did_change_watched_files(&self, params: DidChangeWatchedFilesParams) {
+        crate::session::store::note_disk_event();
         let changed: Vec<PathBuf> = params.changes.into_iter().filter_map(|change| uri_to_path(&change.uri)).collect();
         if refresh_after_disk_change(&self.client, &self.state, &changed).await == DiskRefresh::ScanWorkspace {
             self.refresh_workspace_scan().await;
@@ -1239,20 +1264,57 @@ mod scan_tests {
         assert_content_modified(answer);
     }
 
+    /// A Mod quick fix comes from the analysis of the newest text: during an edit burst, whose
+    /// analyses always finish one edit late, such a request fails with `ContentModified`.
     #[tokio::test]
-    async fn code_actions_fail_content_modified_during_an_edit_burst() {
+    async fn mod_quick_fixes_fail_content_modified_during_an_edit_burst() {
         let (service, _socket) = backend_for_tests();
         let backend = service.inner();
         let uri = Uri::from_str("file:///tmp/beskid-lspwait-actions/Main.bd").expect("uri");
-        let params = CodeActionParams {
-            text_document: TextDocumentIdentifier { uri: uri.clone() },
-            range: Range { start: Position { line: 1, character: 3 }, end: Position { line: 1, character: 3 } },
-            context: CodeActionContext::default(),
-            work_done_progress_params: Default::default(),
-            partial_result_params: Default::default(),
-        };
+        let mut params = code_action_params(&uri);
+        params.context.diagnostics = vec![Diagnostic {
+            range: Range { start: Position { line: 1, character: 0 }, end: Position { line: 1, character: 3 } },
+            source: Some("beskid:mod:Lint".into()),
+            code: Some(NumberOrString::String("M0001".into())),
+            message: "mod issue".into(),
+            ..Diagnostic::default()
+        }];
         let (answer, _) = during_an_edit_burst(backend, &uri, backend.code_action(params)).await;
         assert_content_modified(answer);
+    }
+
+    /// Code actions that need the text alone are computed from the newest open text at once:
+    /// they wait neither for its analysis (the stored facts are of an older text) nor for a
+    /// writer holding the server state, and their edits are those of the newest text.
+    #[tokio::test]
+    async fn code_actions_answer_from_the_newest_text_without_waiting_for_its_analysis() {
+        let (service, _socket) = backend_for_tests();
+        let backend = service.inner();
+        let uri = Uri::from_str("file:///tmp/beskid-lspfast-actions/Main.bd").expect("uri");
+        let analyzed = "pub i32 Main() { return 42; }\n";
+        let newest = "// edit 2\npub i32 Main() { return 42; }\n";
+        store_facts_for_tests(backend, &uri, crate::session::store::Document::text_only(1, analyzed.into())).await;
+        open_text_for_tests(&uri, 1, analyzed);
+        change_text_for_tests(&uri, 2, newest);
+        let held = backend.state.write().await;
+        let started = std::time::Instant::now();
+        let answer = tokio::time::timeout(Duration::from_secs(3), backend.code_action(code_action_params(&uri))).await;
+        let elapsed = started.elapsed();
+        drop(held);
+        close_text_for_tests(&uri);
+        let actions = answer.expect("code actions waited").expect("code actions").expect("a list");
+        assert!(elapsed < Duration::from_millis(400), "code actions took {elapsed:?}");
+        let format = actions
+            .iter()
+            .find_map(|action| match action {
+                CodeActionOrCommand::CodeAction(action) if action.title == "Format document" => Some(action),
+                _ => None,
+            })
+            .expect("a format action");
+        let edits = &format.edit.as_ref().unwrap().changes.as_ref().unwrap()[&uri];
+        let expected = beskid_analysis::format::format_source("<editor>", newest).expect("formats");
+        assert_eq!(edits[0].new_text, expected, "the edit formats the newest text");
+        assert_eq!(edits[0].range, crate::position::offset_range_to_lsp(newest, 0, newest.len()));
     }
 
     fn code_action_params(uri: &Uri) -> CodeActionParams {
@@ -1276,14 +1338,19 @@ mod scan_tests {
         open_text_for_tests(&uri, 1, &burst_text(1));
         let held = backend.state.write().await;
         let started = std::time::Instant::now();
-        let actions = tokio::time::timeout(Duration::from_secs(3), backend.code_action(code_action_params(&uri))).await;
         let prepare =
             tokio::time::timeout(Duration::from_secs(3), backend.prepare_rename(position_params(&uri, 2, 10))).await;
+        let rename_params = RenameParams {
+            text_document_position: position_params(&uri, 2, 10),
+            new_name: "start".into(),
+            work_done_progress_params: Default::default(),
+        };
+        let rename = tokio::time::timeout(Duration::from_secs(3), backend.rename(rename_params)).await;
         let elapsed = started.elapsed();
         drop(held);
         close_text_for_tests(&uri);
-        assert_content_modified(actions.expect("code actions waited for the state past their budget"));
         assert_content_modified(prepare.expect("prepare rename waited for the state past its budget"));
+        assert_content_modified(rename.expect("rename waited for the state past its budget"));
         assert!(elapsed < 2 * EDIT_FACTS_WAIT + Duration::from_millis(400), "two edit requests took {elapsed:?}");
     }
 

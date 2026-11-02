@@ -16,6 +16,7 @@ pub(crate) mod session;
 pub(crate) mod standalone_bsol;
 #[cfg(test)]
 pub(crate) mod test_mod_host;
+pub(crate) mod text_memo;
 pub(crate) mod text_sync;
 pub(crate) mod trace;
 pub(crate) mod workspace_scan;
