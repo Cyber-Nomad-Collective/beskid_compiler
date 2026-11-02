@@ -26,16 +26,39 @@ struct OpenText {
 static OPEN_TEXTS: LazyLock<Mutex<HashMap<String, OpenText>>> = LazyLock::new(|| Mutex::new(HashMap::new()));
 
 /// Requests answered from the open text alone; they do not wait for earlier text-sync work.
+///
+/// Code actions are computed from the newest open text (current here, in transport order) or,
+/// for a Mod quick fix, wait for the stored facts of that text on their own (bounded); neither
+/// needs the earlier `didChange` handlers to have run. Behind those handlers they waited for
+/// the runtime to schedule each of them in turn (up to 250 ms under load).
 pub(crate) fn is_syntax_only_request(method: &str) -> bool {
-    matches!(method, "textDocument/formatting" | "textDocument/rangeFormatting" | "textDocument/documentSymbol")
+    matches!(
+        method,
+        "textDocument/formatting"
+            | "textDocument/rangeFormatting"
+            | "textDocument/documentSymbol"
+            | "textDocument/codeAction"
+    )
 }
 
 fn params<T: DeserializeOwned>(request: &Request) -> Option<T> {
     request.params().and_then(|value| serde_json::from_value(value.clone()).ok())
 }
 
+/// How many text-sync notifications changed the open texts so far (any document).
+static EDITS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// The number of open-text changes so far, of every document: two equal counts mean no open
+/// text changed in between.
+pub(crate) fn edit_count() -> u64 {
+    EDITS.load(std::sync::atomic::Ordering::SeqCst)
+}
+
 /// Apply a `didOpen`, `didChange` or `didClose` notification to the open texts.
 pub(crate) fn observe(request: &Request) {
+    if matches!(request.method(), "textDocument/didOpen" | "textDocument/didChange" | "textDocument/didClose") {
+        EDITS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    }
     match request.method() {
         "textDocument/didOpen" => {
             if let Some(p) = params::<DidOpenTextDocumentParams>(request) {

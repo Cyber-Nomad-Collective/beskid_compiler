@@ -29,7 +29,7 @@ use crate::scan_schedule::{InteractiveGuard, ScanCoordinator, ScanRunGuard};
 use crate::server::init::initialize_result;
 use crate::session::db_access::{parallel_project_db, run_blocking_section, with_shared_project_db};
 use crate::session::lifecycle::{
-    analyze_open_document, publish_analyzed_diagnostics, publish_diagnostics_for_uri, remove_document,
+    AnalysisBaseline, analyze_open_document, publish_analyzed_diagnostics, publish_diagnostics_for_uri, remove_document,
 };
 use crate::session::mod_host::mod_host_from_initialization_options;
 use crate::session::store::State;
@@ -124,7 +124,12 @@ impl Backend {
     /// diagnostics. The notification returns at once, so the transport and requests on other
     /// documents never wait for the analysis; requests that need this document's newest facts
     /// wait for them on their own (see `protocol::request`).
-    async fn analyze_in_background(&self, uri: Uri, version: i32, text: String) {
+    ///
+    /// After an edit (`edit`), the diagnostics come from the analysis alone when it prepared its
+    /// project and nothing else it reads changed while it ran (no other open text, no file on
+    /// disk, no compilation context): the debounced full preparation of the document would only
+    /// repeat them. Otherwise, and after an open, the full preparation follows.
+    async fn analyze_in_background(&self, uri: Uri, version: i32, text: String, edit: bool) {
         // The analysis of an older text of this document is moot now: stop it, so the project's
         // database is free for this text at once.
         self.running_analyses.cancel(&uri);
@@ -133,11 +138,16 @@ impl Backend {
         let interactive = Arc::clone(&self.interactive);
         self.reporter.spawn_guarded("beskid/analyzeDocument", Some(uri.as_str().to_string()), async move {
             let _active = InteractiveGuard::new(&interactive);
+            let baseline = AnalysisBaseline::now(&state).await;
             if analyze_open_document(&state, uri.clone(), version, text).await {
-                // The edited document's diagnostics come from its analysis at once; the debounced
-                // preparation follows and publishes only what differs.
-                publish_analyzed_diagnostics(&publisher.client, &state, &uri).await;
-                publisher.schedule(uri).await;
+                // The document's diagnostics come from its analysis at once.
+                let published = publish_analyzed_diagnostics(&publisher.client, &state, &uri, baseline).await;
+                if edit && published && baseline.unchanged(&state).await {
+                    crate::trace::event("full-pass-skipped", || format!("uri={} version={version}", uri.as_str()));
+                } else {
+                    // Fail closed: the full preparation publishes what the analysis could not.
+                    publisher.schedule(uri).await;
+                }
             }
         });
     }
@@ -383,7 +393,7 @@ impl LanguageServer for Backend {
 
     async fn did_open(&self, params: DidOpenTextDocumentParams) {
         let doc = params.text_document;
-        self.analyze_in_background(doc.uri, doc.version, doc.text).await;
+        self.analyze_in_background(doc.uri, doc.version, doc.text, false).await;
     }
 
     async fn did_change(&self, params: DidChangeTextDocumentParams) {
@@ -392,10 +402,11 @@ impl LanguageServer for Backend {
         let Some(text) = formatting::open_texts::open_text(&uri) else {
             return;
         };
-        self.analyze_in_background(uri, params.text_document.version, text).await;
+        self.analyze_in_background(uri, params.text_document.version, text, true).await;
     }
 
     async fn did_save(&self, params: DidSaveTextDocumentParams) {
+        crate::session::store::note_disk_event();
         self.schedule_publish_diagnostics(params.text_document.uri.clone()).await;
     }
 
@@ -786,6 +797,7 @@ impl LanguageServer for Backend {
     // once for all its closed files and republishes the open documents; it never prepares the
     // whole workspace file by file.
     async fn did_change_watched_files(&self, params: DidChangeWatchedFilesParams) {
+        crate::session::store::note_disk_event();
         let changed: Vec<PathBuf> = params.changes.into_iter().filter_map(|change| uri_to_path(&change.uri)).collect();
         if refresh_after_disk_change(&self.client, &self.state, &changed).await == DiskRefresh::ScanWorkspace {
             self.refresh_workspace_scan().await;

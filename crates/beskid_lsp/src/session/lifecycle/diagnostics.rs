@@ -41,6 +41,7 @@ fn apply_if_current(
 /// Refresh generation-bound diagnostic facts for the open buffer or workspace snapshot and push
 /// to the client. Never reads `Document.analysis` / HIR snapshots.
 pub async fn publish_diagnostics_for_uri(client: &Client, state: &RwLock<State>, uri: &Uri) {
+    let edits_at_start = crate::features::formatting::open_texts::edit_count();
     let snapshot = {
         let state = state.read().await;
         (state.document_union(uri), state.diagnostic_generation)
@@ -70,15 +71,16 @@ pub async fn publish_diagnostics_for_uri(client: &Client, state: &RwLock<State>,
         if !apply_if_current(&mut write, uri, version, &text, generation, diagnostic_facts, fixes) {
             return;
         }
-        if write
-            .published_diagnostics
-            .get(uri)
-            .is_some_and(|(known, published)| *known == version && *published != diagnostics)
+        if let Some(published) = write.published_diagnostics.get(uri)
+            && published.version == version
+            && published.diagnostics != diagnostics
         {
-            crate::trace::event("publish-corrects", || format!("uri={} version={version}", uri.as_str()));
+            crate::trace::event("publish-corrects", || {
+                correction_trace(uri, published, &diagnostics, generation, edits_at_start)
+            });
         }
         // The analysis of this text published the same diagnostics already.
-        if !record_publication(&mut write, uri, version, &diagnostics) {
+        if !record_publication(&mut write, uri, version, &diagnostics, None) {
             crate::trace::event("publish-same", || format!("uri={} version={version}", uri.as_str()));
             return;
         }
@@ -93,6 +95,7 @@ fn record_publication(
     uri: &Uri,
     version: i32,
     diagnostics: &[tower_lsp_server::ls_types::Diagnostic],
+    edits_at_analysis: Option<u64>,
 ) -> bool {
     if !state.docs.contains_key(uri) {
         return true;
@@ -100,19 +103,101 @@ fn record_publication(
     if state
         .published_diagnostics
         .get(uri)
-        .is_some_and(|(known, published)| *known == version && published == diagnostics)
+        .is_some_and(|published| published.version == version && published.diagnostics == diagnostics)
     {
         return false;
     }
-    state.published_diagnostics.insert(uri.clone(), (version, diagnostics.to_vec()));
+    let generation = state.diagnostic_generation;
+    state.published_diagnostics.insert(
+        uri.clone(),
+        crate::session::store::PublishedDiagnostics {
+            version,
+            diagnostics: diagnostics.to_vec(),
+            generation,
+            edits_at_analysis,
+        },
+    );
     true
+}
+
+/// What a correction of published diagnostics changed, and what changed in between: whether the
+/// compilation context was invalidated, how many open-text changes (of other documents) came
+/// between the analysis and the start of the full preparation, and up to three diagnostics on
+/// each side.
+fn correction_trace(
+    uri: &Uri,
+    published: &crate::session::store::PublishedDiagnostics,
+    full: &[tower_lsp_server::ls_types::Diagnostic],
+    full_generation: u64,
+    full_edits: u64,
+) -> String {
+    let show = |diagnostic: &tower_lsp_server::ls_types::Diagnostic| {
+        let code = match &diagnostic.code {
+            Some(tower_lsp_server::ls_types::NumberOrString::String(code)) => code.clone(),
+            Some(tower_lsp_server::ls_types::NumberOrString::Number(code)) => code.to_string(),
+            None => "-".into(),
+        };
+        let message: String = diagnostic.message.chars().take(60).collect::<String>().replace(' ', "_");
+        format!("{code}@{}:{message}", diagnostic.range.start.line)
+    };
+    let only = |a: &[tower_lsp_server::ls_types::Diagnostic], b: &[tower_lsp_server::ls_types::Diagnostic]| {
+        a.iter().filter(|d| !b.contains(d)).take(3).map(show).collect::<Vec<_>>().join(",")
+    };
+    format!(
+        "uri={} version={} from_analysis={} gen_changed={} other_edits={} early={} full={} only_early=[{}] only_full=[{}]",
+        uri.as_str(),
+        published.version,
+        published.edits_at_analysis.is_some(),
+        published.generation != full_generation,
+        published.edits_at_analysis.map_or(-1, |edits| full_edits as i64 - edits as i64),
+        published.diagnostics.len(),
+        full.len(),
+        only(&published.diagnostics, full),
+        only(full, &published.diagnostics),
+    )
+}
+
+/// What changed the inputs of an open document's analysis while it ran: the open texts of every
+/// document, the files on disk (as the client reports them) and the compilation context.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AnalysisBaseline {
+    edits: u64,
+    disk_events: u64,
+    generation: u64,
+}
+
+impl AnalysisBaseline {
+    /// The baseline now, taken when an analysis starts.
+    pub async fn now(state: &RwLock<State>) -> Self {
+        let edits = crate::features::formatting::open_texts::edit_count();
+        let disk_events = crate::session::store::disk_event_count();
+        AnalysisBaseline { edits, disk_events, generation: state.read().await.diagnostic_generation }
+    }
+
+    /// Whether the files and the compilation context are as they were at the baseline: no file
+    /// changed on disk and the context was not invalidated.
+    fn same_files(&self, generation: u64) -> bool {
+        crate::session::store::disk_event_count() == self.disk_events && generation == self.generation
+    }
+
+    /// Whether nothing an analysis reads changed since the baseline: no open text of any document
+    /// (a cross-file effect on this document), no file on disk and no compilation context.
+    pub async fn unchanged(&self, state: &RwLock<State>) -> bool {
+        let generation = state.read().await.diagnostic_generation;
+        crate::features::formatting::open_texts::edit_count() == self.edits && self.same_files(generation)
+    }
 }
 
 /// The diagnostics the analysis of the newest text of an open document stored with its facts,
 /// with that text's version: `None` when the stored facts are not those of the newest open text
-/// (a newer edit is being analyzed, or the document was closed).
+/// (a newer edit is being analyzed, or the document was closed), or when that analysis did not
+/// prepare its project (a structural fallback or a preparation failure: the full preparation
+/// publishes those).
 fn analyzed_diagnostics(state: &State, uri: &Uri) -> Option<(i32, Vec<tower_lsp_server::ls_types::Diagnostic>)> {
     let doc = state.docs.get(uri)?;
+    if state.prepared_analyses.get(uri) != Some(&doc.version) {
+        return None;
+    }
     match crate::features::formatting::open_texts::match_open_text(uri, Some(&doc.text)) {
         crate::features::formatting::open_texts::OpenMatch::Current(version) if version == doc.version => {
             Some((doc.version, lsp_diagnostics_from_syntax(&doc.text, &doc.syntax_diagnostics)))
@@ -121,24 +206,34 @@ fn analyzed_diagnostics(state: &State, uri: &Uri) -> Option<(i32, Vec<tower_lsp_
     }
 }
 
-/// Publish the diagnostics the analysis of an open document's newest text stored, at once.
+/// Publish the diagnostics the analysis of an open document's newest text stored, at once;
+/// `true` when the document's published diagnostics are now those of that analysis.
 ///
-/// An analysis judges the edited document's own unit in the project's database, with the rules
-/// and the query gate a publication runs, so its diagnostics are the document's diagnostics; the
-/// edited file's diagnostics no longer wait for the debounce and a second preparation of the
-/// whole assembly (`publish_diagnostics_for_uri`, which follows and publishes again only when its
-/// diagnostics differ). Nothing is published when a newer text was sent meanwhile: its own
-/// analysis publishes.
-pub async fn publish_analyzed_diagnostics(client: &Client, state: &RwLock<State>, uri: &Uri) {
+/// An analysis that prepared its project judges the edited document's own unit in the project's
+/// database, with the rules and the query gate a publication runs, so its diagnostics are the
+/// document's diagnostics; the edited file's diagnostics do not wait for the debounce and a
+/// second preparation of the whole assembly. Nothing is published (`false`, the full preparation
+/// publishes) when a newer text was sent meanwhile, when the analysis did not prepare its project
+/// (a preparation failure names a file the full preparation may name differently), or when a
+/// file changed on disk or the compilation context was invalidated since the analysis started.
+pub async fn publish_analyzed_diagnostics(
+    client: &Client,
+    state: &RwLock<State>,
+    uri: &Uri,
+    baseline: AnalysisBaseline,
+) -> bool {
     let update_gate = document_update_gate(state, uri).await;
     let _update_guard = update_gate.lock().await;
     let (version, diagnostics) = {
         let mut write = state.write().await;
+        if !baseline.same_files(write.diagnostic_generation) {
+            return false;
+        }
         let Some((version, diagnostics)) = analyzed_diagnostics(&write, uri) else {
-            return;
+            return false;
         };
-        if !record_publication(&mut write, uri, version, &diagnostics) {
-            return;
+        if !record_publication(&mut write, uri, version, &diagnostics, Some(baseline.edits)) {
+            return true;
         }
         (version, diagnostics)
     };
@@ -146,6 +241,7 @@ pub async fn publish_analyzed_diagnostics(client: &Client, state: &RwLock<State>
         format!("uri={} version={version} count={}", uri.as_str(), diagnostics.len())
     });
     client.publish_diagnostics(uri.clone(), diagnostics, Some(version)).await;
+    true
 }
 
 #[cfg(test)]
@@ -214,6 +310,8 @@ mod tests {
             detail: Default::default(),
         }];
         state.docs.insert(uri.clone(), doc);
+        assert!(analyzed_diagnostics(&state, &uri).is_none(), "an analysis that did not prepare its project");
+        state.prepared_analyses.insert(uri.clone(), 1);
         let sync = |method: &'static str, params: serde_json::Value| {
             let request = tower_lsp_server::jsonrpc::Request::build(method).params(params).finish();
             crate::features::formatting::open_texts::observe(&request);
@@ -232,9 +330,12 @@ mod tests {
         );
         let (version, diagnostics) = analyzed_diagnostics(&state, &uri).expect("the newest text's diagnostics");
         assert_eq!((version, diagnostics.len()), (1, 1));
-        assert!(record_publication(&mut state, &uri, 1, &diagnostics), "first publication sends");
-        assert!(!record_publication(&mut state, &uri, 1, &diagnostics), "the same diagnostics again send nothing");
-        assert!(record_publication(&mut state, &uri, 1, &[]), "different diagnostics send");
+        assert!(record_publication(&mut state, &uri, 1, &diagnostics, Some(0)), "first publication sends");
+        assert!(
+            !record_publication(&mut state, &uri, 1, &diagnostics, Some(0)),
+            "the same diagnostics again send nothing"
+        );
+        assert!(record_publication(&mut state, &uri, 1, &[], None), "different diagnostics send");
         sync(
             "textDocument/didChange",
             serde_json::to_value(DidChangeTextDocumentParams {
@@ -249,6 +350,33 @@ mod tests {
         );
         assert!(analyzed_diagnostics(&state, &uri).is_none(), "facts of an older text are not published");
         sync("textDocument/didClose", serde_json::json!({"textDocument": {"uri": uri.as_str()}}));
+    }
+
+    /// The full preparation is skipped only when nothing an analysis reads changed while it ran:
+    /// an edit of any open text, a disk event or an invalidated compilation context each keep it.
+    #[tokio::test]
+    async fn an_analysis_baseline_sees_every_input_change() {
+        let state = RwLock::new(State::default());
+        let observe = |method: &'static str, params: serde_json::Value| {
+            let request = tower_lsp_server::jsonrpc::Request::build(method).params(params).finish();
+            crate::features::formatting::open_texts::observe(&request);
+        };
+        let other = "file:///tmp/beskid-lspfast-baseline/Other.bd";
+        let baseline = super::AnalysisBaseline::now(&state).await;
+        observe(
+            "textDocument/didOpen",
+            serde_json::json!({"textDocument": {"uri": other, "languageId": "beskid", "version": 1, "text": "x"}}),
+        );
+        assert!(!baseline.unchanged(&state).await, "another open text changed");
+        observe("textDocument/didClose", serde_json::json!({"textDocument": {"uri": other}}));
+
+        let baseline = super::AnalysisBaseline::now(&state).await;
+        crate::session::store::note_disk_event();
+        assert!(!baseline.unchanged(&state).await, "a file changed on disk");
+
+        let baseline = super::AnalysisBaseline::now(&state).await;
+        invalidate_compilation_cache(&state).await;
+        assert!(!baseline.unchanged(&state).await, "the compilation context was invalidated");
     }
 
     #[tokio::test]

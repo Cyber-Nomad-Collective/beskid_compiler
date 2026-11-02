@@ -465,7 +465,10 @@ async fn syntax_facts_for_text(
         })
         .await;
     let mut facts = match prepared_facts {
-        Ok(Some(facts)) => facts,
+        Ok(Some(mut facts)) => {
+            facts.prepared = true;
+            facts
+        }
         Ok(None) => return SyntaxFacts { superseded: true, ..SyntaxFacts::default() },
         Err(error) => {
             let (diagnostics, fixes) = preparation_failure_facts(uri, text, &error);
@@ -793,6 +796,11 @@ async fn store_document(state: &RwLock<State>, uri: Uri, version: i32, text: Str
     {
         return false;
     }
+    if syntax_facts.prepared {
+        write_state.prepared_analyses.insert(uri.clone(), version);
+    } else {
+        write_state.prepared_analyses.remove(&uri);
+    }
     write_state.docs.insert(uri, document_from_syntax_facts(version, text, syntax_facts));
     write_state.facts_stored.notify_waiters();
     true
@@ -806,6 +814,7 @@ pub async fn remove_document(state: &RwLock<State>, uri: &Uri) {
     write.running_analyses.cancel(uri);
     write.docs.remove(uri);
     write.published_diagnostics.remove(uri);
+    write.prepared_analyses.remove(uri);
     write.facts_stored.notify_waiters();
 }
 

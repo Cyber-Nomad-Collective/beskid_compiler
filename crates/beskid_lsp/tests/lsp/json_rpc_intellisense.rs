@@ -305,3 +305,180 @@ fn json_rpc_completion_and_hover_use_dependency_syntax_facts() {
     drop(stdin);
     assert!(child.wait().expect("wait for server").success());
 }
+
+/// The next `publishDiagnostics` for `uri` within `wait`, with its version.
+fn next_document_diagnostics(messages: &Receiver<Value>, uri: &str, wait: Duration) -> Option<Value> {
+    let deadline = std::time::Instant::now() + wait;
+    while let Some(left) = deadline.checked_duration_since(std::time::Instant::now()) {
+        let Ok(message) = messages.recv_timeout(left) else { return None };
+        if message.get("method").and_then(Value::as_str) == Some("textDocument/publishDiagnostics")
+            && message["params"]["uri"].as_str() == Some(uri)
+        {
+            return Some(message);
+        }
+    }
+    None
+}
+
+/// Wait (at most 30 s) until the server's trace holds a line containing `needle`.
+fn wait_for_trace(trace: &std::sync::Mutex<Vec<String>>, needle: &str) -> bool {
+    let deadline = std::time::Instant::now() + Duration::from_secs(30);
+    while std::time::Instant::now() < deadline {
+        if trace.lock().expect("trace lines").iter().any(|line| line.contains(needle)) {
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    false
+}
+
+/// An edit of an open document is analyzed once and its diagnostics are published once, from
+/// that analysis: the debounced full preparation of the document, which repeated the analysis's
+/// diagnostics in a second typing of the whole assembly, does not run. Opening the document still
+/// runs it (the fallback for a document without an edit analysis).
+#[test]
+fn an_edit_publishes_its_diagnostics_once_without_a_full_preparation() {
+    let project = tempfile::tempdir().expect("temporary project");
+    let project_root = project.path().canonicalize().expect("canonical project directory");
+    std::fs::create_dir(project_root.join("Src")).expect("source directory");
+    std::fs::write(
+        project_root.join("EditPublish.bproj"),
+        "EditPublish {\n  name = \"EditPublish\"\n  version = \"0.1.0\"\n}\n\ntarget \"App\" {\n  kind = App\n  entry = \"Main.bd\"\n}\n",
+    )
+    .expect("project manifest");
+    let source = "i32 Main() {\n    return 0;\n}\n";
+    let source_path = project_root.join("Src/Main.bd");
+    std::fs::write(&source_path, source).expect("source file");
+    let project_uri = url::Url::from_directory_path(&project_root).expect("project URI").to_string();
+    let source_uri = url::Url::from_file_path(&source_path).expect("source URI").to_string();
+    let mod_host = beskid_tests_mod_host::provisioned_cli().expect("workspace Mod host CLI");
+    let runtime_prefix = beskid_tests_mod_host::shared_runtime_prefix().expect("shared runtime kit");
+    let corelib_root = beskid_tests_mod_host::shared_corelib_root().expect("shared provisioned Corelib");
+    let mut child = Command::new(env!("CARGO_BIN_EXE_beskid_lsp"))
+        .current_dir(&project_root)
+        .env("BESKID_CORELIB_ROOT", &corelib_root)
+        .env("BESKID_LSP_TRACE", "1")
+        .env_remove("BESKID_RUNTIME_PREFIX")
+        .env_remove("BESKID_RUNTIME_KIT_PROFILE")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn beskid_lsp");
+    let mut stdin = child.stdin.take().expect("server stdin");
+    let stdout = child.stdout.take().expect("server stdout");
+    let stderr = child.stderr.take().expect("server stderr");
+    let trace = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+    let trace_lines = std::sync::Arc::clone(&trace);
+    std::thread::spawn(move || {
+        for line in BufReader::new(stderr).lines().map_while(Result::ok) {
+            trace_lines.lock().expect("trace lines").push(line);
+        }
+    });
+    let (sender, messages) = mpsc::channel();
+    std::thread::spawn(move || {
+        let mut reader = BufReader::new(stdout);
+        loop {
+            let mut content_length = None;
+            loop {
+                let mut header = String::new();
+                if reader.read_line(&mut header).ok()? == 0 {
+                    return Some(());
+                }
+                if header == "\r\n" {
+                    break;
+                }
+                if let Some(value) = header.strip_prefix("Content-Length:") {
+                    content_length = value.trim().parse::<usize>().ok();
+                }
+            }
+            let mut body = vec![0; content_length?];
+            reader.read_exact(&mut body).ok()?;
+            sender.send(serde_json::from_slice(&body).ok()?).ok()?;
+        }
+    });
+    send_message(
+        &mut stdin,
+        json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "processId": null,
+                "rootUri": project_uri,
+                "workspaceFolders": [{"uri": project_uri, "name": "EditPublish"}],
+                "capabilities": {},
+                "initializationOptions": {"modHost": {
+                    "path": mod_host,
+                    "runtimePrefix": runtime_prefix,
+                    "runtimeProfile": "debug"
+                }}
+            }
+        }),
+    );
+    assert!(response_with_id(&messages, 1).get("error").is_none());
+    send_message(&mut stdin, json!({"jsonrpc": "2.0", "method": "initialized", "params": {}}));
+    // The workspace index finishes first, so no compilation-context change meets the edit.
+    loop {
+        let message = messages.recv_timeout(Duration::from_secs(60)).expect("LSP status before timeout");
+        if message.get("method").and_then(Value::as_str) == Some("beskid/status")
+            && message["params"]["phase"].as_str() == Some("idle")
+            && message["params"]["active"].as_bool() == Some(false)
+        {
+            break;
+        }
+    }
+    send_message(
+        &mut stdin,
+        json!({
+            "jsonrpc": "2.0",
+            "method": "textDocument/didOpen",
+            "params": {"textDocument": {"uri": source_uri, "languageId": "beskid", "version": 1, "text": source}}
+        }),
+    );
+    wait_for_document_diagnostics(&messages, &source_uri, 1);
+    assert!(
+        wait_for_trace(&trace, &format!(" publish uri={source_uri} version=1 ")),
+        "opening a document runs the full preparation"
+    );
+
+    let broken = "i32 Main() {\n    return \"wrong\";\n}\n";
+    send_message(
+        &mut stdin,
+        json!({
+            "jsonrpc": "2.0",
+            "method": "textDocument/didChange",
+            "params": {"textDocument": {"uri": source_uri, "version": 2}, "contentChanges": [{"text": broken}]}
+        }),
+    );
+    let mut published = Vec::new();
+    while let Some(message) = next_document_diagnostics(&messages, &source_uri, Duration::from_secs(5)) {
+        if message["params"]["version"].as_i64() == Some(2) {
+            published.push(message);
+        }
+    }
+    assert_eq!(published.len(), 1, "one publication for the edit: {published:#?}");
+    assert!(
+        published[0]["params"]["diagnostics"].as_array().is_some_and(|diagnostics| !diagnostics.is_empty()),
+        "the edit's error is published: {:#}",
+        published[0]
+    );
+    assert!(
+        wait_for_trace(&trace, &format!("full-pass-skipped uri={source_uri} version=2")),
+        "the edit's analysis made the full preparation redundant"
+    );
+    assert!(
+        !trace
+            .lock()
+            .expect("trace lines")
+            .iter()
+            .any(|line| line.contains(&format!(" publish uri={source_uri} version=2 "))),
+        "no full preparation ran for the edit"
+    );
+
+    send_message(&mut stdin, json!({"jsonrpc": "2.0", "id": 9, "method": "shutdown", "params": null}));
+    let _ = response_with_id(&messages, 9);
+    send_message(&mut stdin, json!({"jsonrpc": "2.0", "method": "exit", "params": null}));
+    drop(stdin);
+    assert!(child.wait().expect("wait for server").success());
+}

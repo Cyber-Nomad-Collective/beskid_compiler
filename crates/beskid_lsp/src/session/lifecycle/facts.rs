@@ -39,6 +39,9 @@ pub(super) struct SyntaxFacts {
     /// The client sent a newer text before the analysis began; these facts are empty and must
     /// not be stored.
     pub(super) superseded: bool,
+    /// The project preparation of the text succeeded, so `diagnostics` are the document's
+    /// judged diagnostics (not a structural fallback or a preparation failure).
+    pub(super) prepared: bool,
 }
 
 pub(super) fn syntax_facts_for_assembly(
@@ -231,6 +234,7 @@ pub(super) fn unit_syntax_facts(
         diagnostics: Vec::new(),
         fixes: Vec::new(),
         superseded: false,
+        prepared: false,
     }
 }
 
