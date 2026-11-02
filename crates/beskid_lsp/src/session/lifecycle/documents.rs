@@ -805,6 +805,7 @@ pub async fn remove_document(state: &RwLock<State>, uri: &Uri) {
     let mut write = state.write().await;
     write.running_analyses.cancel(uri);
     write.docs.remove(uri);
+    write.published_diagnostics.remove(uri);
     write.facts_stored.notify_waiters();
 }
 

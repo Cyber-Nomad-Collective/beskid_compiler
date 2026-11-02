@@ -28,7 +28,9 @@ use crate::protocol::request::{
 use crate::scan_schedule::{InteractiveGuard, ScanCoordinator, ScanRunGuard};
 use crate::server::init::initialize_result;
 use crate::session::db_access::{parallel_project_db, run_blocking_section, with_shared_project_db};
-use crate::session::lifecycle::{analyze_open_document, publish_diagnostics_for_uri, remove_document};
+use crate::session::lifecycle::{
+    analyze_open_document, publish_analyzed_diagnostics, publish_diagnostics_for_uri, remove_document,
+};
 use crate::session::mod_host::mod_host_from_initialization_options;
 use crate::session::store::State;
 use crate::workspace_scan::{
@@ -132,6 +134,9 @@ impl Backend {
         self.reporter.spawn_guarded("beskid/analyzeDocument", Some(uri.as_str().to_string()), async move {
             let _active = InteractiveGuard::new(&interactive);
             if analyze_open_document(&state, uri.clone(), version, text).await {
+                // The edited document's diagnostics come from its analysis at once; the debounced
+                // preparation follows and publishes only what differs.
+                publish_analyzed_diagnostics(&publisher.client, &state, &uri).await;
                 publisher.schedule(uri).await;
             }
         });

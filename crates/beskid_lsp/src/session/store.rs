@@ -405,6 +405,9 @@ pub struct State {
     pub(crate) watched_fingerprints: HashMap<PathBuf, u64>,
     /// The analyses of open documents running now; a newer text of a document cancels its own.
     pub(crate) running_analyses: Arc<super::analysis_cancel::RunningAnalyses>,
+    /// The diagnostics last published for each open document, with the version they belong to.
+    /// The preparation that follows an analysis publishes only when its diagnostics differ.
+    pub(crate) published_diagnostics: HashMap<Uri, (i32, Vec<tower_lsp_server::ls_types::Diagnostic>)>,
 }
 
 impl Default for State {
@@ -430,6 +433,7 @@ impl Default for State {
             index_permits: Arc::new(tokio::sync::Semaphore::new(3)),
             background_turn: Arc::default(),
             running_analyses: Arc::default(),
+            published_diagnostics: HashMap::new(),
         }
     }
 }
