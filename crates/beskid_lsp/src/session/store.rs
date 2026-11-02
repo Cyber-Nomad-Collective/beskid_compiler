@@ -211,6 +211,27 @@ impl Document {
     }
 }
 
+impl Document {
+    /// A document of `text` with no analyzed facts: what a request computed from the text alone
+    /// (code actions) sees before the text's analysis is stored.
+    pub fn text_only(version: i32, text: String) -> Self {
+        Document {
+            version,
+            text,
+            syntax_definitions: Vec::new(),
+            syntax_hovers: Vec::new(),
+            syntax_symbols: Vec::new(),
+            bsol_semantic_token_candidates: Vec::new(),
+            syntax_attribute_names: Vec::new(),
+            syntax_completion: None,
+            syntax_inlay_hints: Vec::new(),
+            syntax_documentation: Vec::new(),
+            syntax_diagnostics: Vec::new(),
+            syntax_fixes: Vec::new(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BsolSemanticTokenCandidate {
     pub start: usize,

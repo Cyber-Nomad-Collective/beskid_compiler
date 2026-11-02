@@ -19,14 +19,47 @@ fn a_remembered_recovery_is_reused_and_served_without_a_new_recovery() {
     assert!(parse_program_without_recovery("memo.bd", source).is_none(), "nothing is remembered yet");
     let first = parse_program_with_source_name_and_diagnostics("memo.bd", source).expect("recovers");
     assert!(first.recovered);
-    assert_eq!(recoveries_run_for("memo.bd", source), 1);
+    assert_eq!(recoveries_run_for(source), 1);
     let second = parse_program_with_source_name_and_diagnostics("memo.bd", source).expect("recovers again");
-    assert_eq!(recoveries_run_for("memo.bd", source), 1, "the second parse reuses the remembered repair");
+    assert_eq!(recoveries_run_for(source), 1, "the second parse reuses the remembered repair");
     assert_eq!(second.diagnostics[0].message, first.diagnostics[0].message);
     let without = parse_program_without_recovery("memo.bd", source).expect("served from the memo");
     assert!(without.recovered);
-    assert_eq!(recoveries_run_for("memo.bd", source), 1);
+    assert_eq!(recoveries_run_for(source), 1);
     assert!(parse_program_without_recovery("memo.bd", "i32 Main() { return 0; }\n").is_some(), "a clean parse");
+}
+
+/// One text is parsed under several names (the editor's URI, the assembly's path): its recovery
+/// runs once, and the remembered diagnostic names the file each caller asked for.
+#[test]
+fn a_recovery_is_shared_by_every_name_of_one_text() {
+    let source = "use Core.Env;\n\nhost MyHost {\n}\n// shared memo test\n";
+    let by_uri = parse_program_with_source_name_and_diagnostics("file:///p/Shared.bd", source).expect("recovers");
+    assert_eq!(recoveries_run_for(source), 1);
+    assert_eq!(by_uri.diagnostics[0].file_name(), "file:///p/Shared.bd");
+    let by_path = parse_program_with_source_name_and_diagnostics("/p/Shared.bd", source).expect("recovers again");
+    assert_eq!(recoveries_run_for(source), 1, "the second name reuses the remembered repair");
+    assert_eq!(by_path.diagnostics[0].file_name(), "/p/Shared.bd");
+    assert_eq!(by_path.diagnostics[0].message, by_uri.diagnostics[0].message);
+    assert_eq!(by_path.diagnostics[0].range(), by_uri.diagnostics[0].range());
+}
+
+/// A cancelled recovery fails at once and is not remembered: the next parse of the text recovers
+/// it in full.
+#[test]
+fn a_cancelled_recovery_is_not_remembered() {
+    let source = "use Core.Env;\n\nhost MyHost {\n}\n// cancelled memo test\n";
+    let cancelled = super::with_recovery_cancellation(std::sync::Arc::new(|| true), || {
+        parse_program_with_source_name_and_diagnostics("cancel.bd", source)
+    });
+    assert!(cancelled.is_err(), "a cancelled recovery has no repaired tree");
+    assert!(parse_program_without_recovery("cancel.bd", source).is_none(), "nothing is remembered");
+    let recovered = super::with_recovery_cancellation(std::sync::Arc::new(|| false), || {
+        parse_program_with_source_name_and_diagnostics("cancel.bd", source)
+    })
+    .expect("recovers once not cancelled");
+    assert!(recovered.recovered);
+    assert!(parse_program_without_recovery("cancel.bd", source).is_some(), "remembered now");
 }
 
 /// The parse diagnostic for `source`, and whether the parser continued with a repaired tree.

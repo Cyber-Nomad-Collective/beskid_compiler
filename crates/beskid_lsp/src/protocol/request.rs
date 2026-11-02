@@ -11,15 +11,18 @@
 //! - A request that produces edits (rename, prepare rename, code actions) never answers from
 //!   facts of an older text. Past [`EDIT_FACTS_WAIT`] it fails with `ContentModified`
 //!   (LSP 3.17 `-32801`), and it fails the same way when the client sends an edit while it
-//!   computes its answer ([`CurrentDocument::still_current`]).
+//!   computes its answer ([`CurrentDocument::still_current`]). Code actions that need the
+//!   newest text alone do not wait at all ([`newest_text_for_code_actions`]).
 
 use std::sync::Arc;
 use std::time::Duration;
 
 use tokio::sync::RwLock;
-use tower_lsp_server::ls_types::Uri;
+use tower_lsp_server::ls_types::{Diagnostic, Uri};
 
-use crate::features::formatting::open_texts::{OpenMatch, match_open_text, open_text, open_version};
+use crate::features::formatting::open_texts::{
+    OpenMatch, match_open_text, open_text, open_text_and_version, open_version,
+};
 use crate::session::store::{Document, State};
 use crate::workspace_scan::uri_to_path;
 
@@ -235,6 +238,41 @@ async fn newest_facts(
             };
         }
     }
+}
+
+/// The document code actions are computed from when they need the newest text alone: the open
+/// text and its version, with the documentation facts and fixes the server stored for exactly
+/// that text when the state is free at once. Never waits for the analysis or the state.
+///
+/// `None` when the document is not open, or when `diagnostics` (the request's context) holds a
+/// Mod diagnostic: its quick fix comes from the analysis of the text (`Document::syntax_fixes`),
+/// so that request waits for the facts of the newest text.
+pub fn newest_text_for_code_actions(
+    state: &RwLock<State>,
+    uri: &Uri,
+    diagnostics: &[Diagnostic],
+) -> Option<CurrentDocument> {
+    if diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.source.as_deref().is_some_and(|source| source.starts_with("beskid:mod:")))
+    {
+        return None;
+    }
+    let (text, version) = open_text_and_version(uri)?;
+    let stored = state.try_read().ok().and_then(|state| {
+        stored_document(&state, uri)
+            .filter(|document| document.text == text)
+            .map(|document| (document.syntax_documentation.clone(), document.syntax_fixes.clone()))
+    });
+    let mut document = Document::text_only(version, text);
+    if let Some((documentation, fixes)) = stored {
+        document.syntax_documentation = documentation;
+        document.syntax_fixes = fixes;
+    }
+    crate::trace::event("facts", || {
+        format!("uri={} budget_ms=0 lock_ms=0 total_ms=0 outcome=newest-text", uri.as_str())
+    });
+    Some(CurrentDocument { document, open_version: Some(version) })
 }
 
 /// The last analyzed facts, carried over to the newest text when its analysis is still

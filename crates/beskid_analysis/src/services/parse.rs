@@ -61,11 +61,45 @@ fn recovery_memo() -> &'static Mutex<VecDeque<(u64, RecoveryOutcome)>> {
     RECOVERY_MEMO.get_or_init(|| Mutex::new(VecDeque::with_capacity(RECOVERY_MEMO_CAPACITY)))
 }
 
-fn recovery_key(source_name: &str, source: &str) -> u64 {
+/// The memo key of a recovery: the source text alone. One text is parsed under several names
+/// (the editor names a buffer by its URI, the assembly by its path); the repair does not depend
+/// on the name, and the remembered diagnostic is given the asking name (see
+/// [`parsed_from_outcome`]).
+fn recovery_key(source: &str) -> u64 {
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    source_name.hash(&mut hasher);
     source.hash(&mut hasher);
     hasher.finish()
+}
+
+std::thread_local! {
+    /// The cancellation check of the recoveries run on this thread (see
+    /// [`with_recovery_cancellation`]).
+    static RECOVERY_CANCELLED: std::cell::RefCell<Option<std::sync::Arc<dyn Fn() -> bool + Send + Sync>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Run `parse` with `cancelled` as the cancellation check of every recovery it starts on this
+/// thread. A recovery whose check says `true` stops before its next candidate parse, fails with
+/// the parse diagnostic and is not remembered, so a later parse of the same text recovers it in
+/// full. An editor uses this for the text of a buffer: once the client sends a newer text, the
+/// seconds a large broken file's recovery takes are no longer spent on the old one.
+pub fn with_recovery_cancellation<R>(
+    cancelled: std::sync::Arc<dyn Fn() -> bool + Send + Sync>,
+    parse: impl FnOnce() -> R,
+) -> R {
+    struct Restore(Option<std::sync::Arc<dyn Fn() -> bool + Send + Sync>>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            let previous = self.0.take();
+            RECOVERY_CANCELLED.with(|slot| *slot.borrow_mut() = previous);
+        }
+    }
+    let _restore = Restore(RECOVERY_CANCELLED.with(|slot| slot.borrow_mut().replace(cancelled)));
+    parse()
+}
+
+fn recovery_cancelled() -> bool {
+    RECOVERY_CANCELLED.with(|slot| slot.borrow().as_ref().is_some_and(|cancelled| cancelled()))
 }
 
 fn remembered_recovery(key: u64) -> Option<RecoveryOutcome> {
@@ -84,12 +118,15 @@ fn remember_recovery(key: u64, outcome: RecoveryOutcome) {
 
 /// How many recoveries of exactly this source ran from scratch (test observation).
 #[cfg(test)]
-pub(crate) fn recoveries_run_for(source_name: &str, source: &str) -> usize {
-    let key = recovery_key(source_name, source);
+pub(crate) fn recoveries_run_for(source: &str) -> usize {
+    let key = recovery_key(source);
     RECOVERED_KEYS.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).iter().filter(|known| **known == key).count()
 }
 
-fn parsed_from_outcome(source_name: &str, outcome: RecoveryOutcome) -> Result<ParsedProgram> {
+fn parsed_from_outcome(source_name: &str, source: &str, mut outcome: RecoveryOutcome) -> Result<ParsedProgram> {
+    if outcome.diagnostic.file_name() != source_name {
+        outcome.diagnostic.src = miette::NamedSource::new(source_name, source.to_string());
+    }
     match outcome.repaired_source {
         Some(repaired) => {
             let program = parse_program_strict(source_name, &repaired)?;
@@ -109,13 +146,15 @@ pub fn parse_program_with_source_name_and_diagnostics(source_name: &str, source:
         }
         Err(err) => err,
     };
-    let key = recovery_key(source_name, source);
+    let key = recovery_key(source);
     if let Some(outcome) = remembered_recovery(key) {
-        return parsed_from_outcome(source_name, outcome);
+        return parsed_from_outcome(source_name, source, outcome);
     }
-    let outcome = recover(source_name, source, &parse_error);
-    remember_recovery(key, outcome.clone());
-    parsed_from_outcome(source_name, outcome)
+    let (outcome, complete) = recover(source_name, source, &parse_error);
+    if complete {
+        remember_recovery(key, outcome.clone());
+    }
+    parsed_from_outcome(source_name, source, outcome)
 }
 
 /// Parse without starting a recovery: the tree of a source that parses, or of one whose
@@ -128,25 +167,37 @@ pub fn parse_program_without_recovery(source_name: &str, source: &str) -> Option
             Some(ParsedProgram { program, diagnostics: Vec::new(), recovered: false })
         }
         Err(_) => {
-            let outcome = remembered_recovery(recovery_key(source_name, source))?;
-            parsed_from_outcome(source_name, outcome).ok()
+            let outcome = remembered_recovery(recovery_key(source))?;
+            parsed_from_outcome(source_name, source, outcome).ok()
         }
     }
 }
 
-fn recover(source_name: &str, source: &str, parse_error: &pest::error::Error<Rule>) -> RecoveryOutcome {
+/// The outcome of recovering `source`, and `false` when the recovery was cancelled (see
+/// [`with_recovery_cancellation`]) before it tried every candidate: such an outcome has no repair
+/// and is not remembered.
+fn recover(source_name: &str, source: &str, parse_error: &pest::error::Error<Rule>) -> (RecoveryOutcome, bool) {
     #[cfg(test)]
-    RECOVERED_KEYS.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).push(recovery_key(source_name, source));
+    RECOVERED_KEYS.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).push(recovery_key(source));
     let diagnosis = diagnose_parse_failure(source_name, source, Rule::Program, parse_error);
+    if recovery_cancelled() {
+        return (RecoveryOutcome { repaired_source: None, diagnostic: diagnosis.diagnostic }, false);
+    }
     if let Some(repaired) = &diagnosis.repaired_source
         && parse_program_strict_undiagnosed(repaired).is_ok()
     {
-        return RecoveryOutcome { repaired_source: Some(repaired.clone()), diagnostic: diagnosis.diagnostic };
+        return (RecoveryOutcome { repaired_source: Some(repaired.clone()), diagnostic: diagnosis.diagnostic }, true);
     }
 
     // Candidates are parsed without a diagnosis of their own failure: diagnosing a candidate
     // costs further parses of the file, and only the repair that parses needs to be understood.
+    // A cancelled recovery stops before the next candidate parse.
+    let mut cancelled = false;
     if let Some((candidate_source, repair)) = recover_with_repair_candidates(source, parse_error, |candidate_source| {
+        if cancelled || recovery_cancelled() {
+            cancelled = true;
+            return Err(());
+        }
         parse_program_strict_undiagnosed(candidate_source).map(|_| candidate_source.to_string())
     }) {
         let repair = match &repair {
@@ -154,10 +205,10 @@ fn recover(source_name: &str, source: &str, parse_error: &pest::error::Error<Rul
             None => EngineRepair::Other,
         };
         let diagnosis = refine_with_engine_repair(diagnosis, source, Rule::Program, repair);
-        return RecoveryOutcome { repaired_source: Some(candidate_source), diagnostic: diagnosis.diagnostic };
+        return (RecoveryOutcome { repaired_source: Some(candidate_source), diagnostic: diagnosis.diagnostic }, true);
     }
 
-    RecoveryOutcome { repaired_source: None, diagnostic: diagnosis.diagnostic }
+    (RecoveryOutcome { repaired_source: None, diagnostic: diagnosis.diagnostic }, !cancelled)
 }
 
 /// A strict parse whose failure carries no diagnosis (for candidate sources during recovery).

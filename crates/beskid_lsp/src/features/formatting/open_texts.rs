@@ -76,6 +76,11 @@ pub(crate) fn open_text(uri: &Uri) -> Option<String> {
     texts().get(uri.as_str()).map(|open| open.text.clone())
 }
 
+/// The current text of an open document and its version, read together.
+pub(crate) fn open_text_and_version(uri: &Uri) -> Option<(String, i32)> {
+    texts().get(uri.as_str()).map(|open| (open.text.clone(), open.version))
+}
+
 /// The version of the current text of an open document. It changes with every edit the
 /// client sends, so a request that saw one version can tell that the text changed under it.
 pub(crate) fn open_version(uri: &Uri) -> Option<i32> {
