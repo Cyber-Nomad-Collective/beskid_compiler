@@ -424,12 +424,13 @@ fn platform_object_plan(target: &str) -> AotResult<PlatformObjectPlan> {
 
 #[cfg(test)]
 mod platform_object_tests {
-    use std::path::Path;
+    use std::path::{Path, PathBuf};
 
     use beskid_abi::generated::abi_v5_contract::GeneratedCoreArgsEntryAdapter;
 
     use super::{
-        executable_bootstrap_command, executable_bootstrap_source, generated_c_runtime_args, platform_object_plan,
+        executable_bootstrap_command, executable_bootstrap_source, generated_c_object_command,
+        generated_c_runtime_args, platform_object_plan,
     };
 
     /// R4 Windows regression: Glue consumer DLLs failed to link with `undefined symbol: _fltused`.
@@ -472,6 +473,24 @@ mod platform_object_tests {
         let args = command.get_args().map(|arg| arg.to_string_lossy().into_owned()).collect::<Vec<_>>();
         assert!(args.iter().any(|arg| arg.contains(r"C:\project\obj\beskid-bootstrap\assembly")));
         assert!(!args.iter().any(|arg| arg.contains(r"\\?\")), "MSVC cannot open verbatim paths: {command:?}");
+    }
+
+    #[test]
+    fn windows_generated_c_object_does_not_pass_verbatim_paths_to_clang() {
+        let command = generated_c_object_command(
+            "x86_64-pc-windows-msvc",
+            Path::new(r"\\?\C:\stage\native\adapters.c"),
+            Path::new(r"\\?\C:\stage\adapters.o"),
+            &[PathBuf::from(r"\\?\C:\stage\include")],
+        )
+        .expect("Windows adapter command");
+        let args = command.get_args().map(|arg| arg.to_string_lossy().into_owned()).collect::<Vec<_>>();
+        assert!(args.iter().any(|arg| arg == r"C:\stage\native\adapters.c"), "{args:?}");
+        assert!(args.iter().any(|arg| arg == r"C:\stage\include"), "{args:?}");
+        assert!(
+            !args.iter().any(|arg| arg.contains(r"\\?\")),
+            "clang cannot resolve ../ from verbatim paths: {args:?}"
+        );
     }
 
     #[test]
@@ -641,6 +660,28 @@ fn generated_c_runtime_args(target: &str) -> &'static [&'static str] {
     if target.contains("windows-msvc") { &["-fms-runtime-lib=dll"] } else { &[] }
 }
 
+/// Clang on Windows does not resolve the adapter's `#include "../include/..."` from a verbatim
+/// (`\\?\`) source path, where `..` is taken literally, so the tool receives plain drive paths.
+fn generated_c_object_command(
+    target: &str,
+    source: &std::path::Path,
+    object: &std::path::Path,
+    includes: &[PathBuf],
+) -> AotResult<Command> {
+    let plan = platform_object_plan(target)?;
+    let tool_path = |path: &std::path::Path| -> std::ffi::OsString {
+        if target.contains("windows") { msvc_compatible_path(path).into() } else { path.as_os_str().to_owned() }
+    };
+    let mut command = Command::new(plan.tls_program);
+    command.args(&plan.tls_args);
+    command.args(generated_c_runtime_args(target));
+    for include in includes {
+        command.arg("-I").arg(tool_path(include));
+    }
+    command.arg(tool_path(source)).arg("-o").arg(tool_path(object));
+    Ok(command)
+}
+
 /// Compile compiler-issued adapter source with the existing target C tool policy and
 /// the same absolute execution budget/provenance authority as native links.
 pub(crate) fn compile_generated_c_object(
@@ -651,14 +692,7 @@ pub(crate) fn compile_generated_c_object(
     control: &crate::api::NativeExecutionControl,
 ) -> AotResult<crate::linker::LinkToolReceipt> {
     control.check("native adapter compilation")?;
-    let plan = platform_object_plan(target)?;
-    let mut command = Command::new(plan.tls_program);
-    command.args(&plan.tls_args);
-    command.args(generated_c_runtime_args(target));
-    for include in includes {
-        command.arg("-I").arg(include);
-    }
-    command.arg(source).arg("-o").arg(object);
+    let mut command = generated_c_object_command(target, source, object, includes)?;
     if target.contains("windows") {
         crate::windows_toolchain::configure_windows_native_command_with_control(&mut command, Some(control))?;
     }
