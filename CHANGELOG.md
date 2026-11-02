@@ -17,6 +17,8 @@ version 0.6.7.
 ### Release-candidate fixes
 
 - On macOS, `Close` and `Terminate` succeed for a child that has exited but is not reaped yet. Darwin answers `kill(-pgid, SIGKILL)` with EPERM when the only member of the group is a zombie (Linux answers success), and the runtime accepted only ESRCH there, so `Close` failed. The runtime now treats EPERM like ESRCH and kills the direct child; if that fails too, `Close` still fails. The macOS rc3 build failed on this in `LifecycleTests::CloseIsIdempotentThroughAliases` and `DeadlinesTests::StderrAndStderrUntilReadOnlyTheErrorStream` (release cases R4-PROC-01 to R4-PROC-06).
+- The Windows runtime-kit provenance audit accepts the MSVC string-literal COMDAT for the trap name "panic" (`??_C@_05DDGCEFJL@panic?$AA@`). MSVC names a literal after its bytes, so the trap name spelled the forbidden family word `panic` and the Windows rc3 build failed with E4002. The audit skips family words only for COFF `??_C@` literals; a literal that demangles as a Rust symbol is still rejected.
+- The CLI surface gate runs `beskid run` with `-v`. Since 0.6.7, `run` prints only "Build complete" by default, and the closing "Run complete" summary that proves the program ran needs `-v`; the gate waited for it without `-v` and failed the Linux rc4 build.
 
 ### Stability-proof follow-ups
 

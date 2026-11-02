@@ -337,7 +337,8 @@ def smoke_args(path, source, project, test_project, migration_project, root, reg
     if tail in {"build", "compile"}:
         return ["--project", str(project), "--kind", "object", "--output", str(case_root / "Smoke.o"), "--plain"], None, "Build complete"
     if tail == "run":
-        return ["--project", str(project), "--plain"], None, "Run complete"
+        # Without -v, `beskid run` prints only "Build complete"; the closing summary proves the program ran.
+        return ["--project", str(project), "--plain", "-v"], None, "Run complete"
     if tail == "test":
         return ["--project", str(test_project), "--plain"], None, "Result: passed=1, failed=0"
     if tail == "corelib":
