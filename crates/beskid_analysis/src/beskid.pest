@@ -168,6 +168,8 @@ KwMacroWord = @{ "macro" ~ !IdentTail }
 KwMacro = _{ !(!KwMacroWord) ~ "macro" }
 KwEventWord = @{ "event" ~ !IdentTail }
 KwEvent = _{ !(!KwEventWord) ~ "event" }
+KwObserveWord = @{ "observe" ~ !IdentTail }
+KwObserve = _{ !(!KwObserveWord) ~ "observe" }
 KwGlobalWord = @{ "global" ~ !IdentTail }
 KwGlobal = _{ !(!KwGlobalWord) ~ "global" }
 KwParentWord = @{ "parent" ~ !IdentTail }
@@ -380,7 +382,8 @@ TypeConformanceList = { ":" ~ PathList }
 // `prop` introduces a stored property only in a type body.
 KwPropWord = @{ "prop" ~ !IdentTail }
 KwProp = _{ !(!KwPropWord) ~ "prop" }
-AutomaticProperty = { AttributeList? ~ Visibility? ~ KwProp ~ ValueField ~ "=" ~ Expression }
+AlwaysPropertyModifier = @{ "always" ~ !IdentTail }
+AutomaticProperty = { AttributeList? ~ Visibility? ~ AlwaysPropertyModifier? ~ KwProp ~ ValueField ~ "=" ~ Expression }
 AutomaticPropertyWithDocs = { DocRun? ~ AutomaticProperty }
 DerivedProperty = { AttributeList? ~ Visibility? ~ BeskidType ~ Identifier ~ ExpressionBody ~ ";" }
 DerivedPropertyWithDocs = { DocRun? ~ DerivedProperty ~ DocGap* }
@@ -391,7 +394,7 @@ KwSet = _{ !(!KwSetWord) ~ "set" }
 PropertyGet = { KwGet ~ (";" | Block) }
 PropertySet = { KwSet ~ (";" | Block) }
 PropertyAccessorBlock = { "{" ~ DocGap* ~ (PropertyGet ~ DocGap* ~ PropertySet? | PropertySet ~ DocGap* ~ PropertyGet?) ~ DocGap* ~ "}" }
-BlockProperty = { AttributeList? ~ Visibility? ~ ValueField ~ PropertyAccessorBlock ~ ("=" ~ Expression ~ ";")? }
+BlockProperty = { AttributeList? ~ Visibility? ~ AlwaysPropertyModifier? ~ ValueField ~ PropertyAccessorBlock ~ ("=" ~ Expression ~ ";")? }
 BlockPropertyWithDocs = { DocRun? ~ BlockProperty ~ DocGap* }
 // Keep contiguous field runs grouped and allow each run anywhere in the body.
 TypeFieldList = { ((AutomaticPropertyWithDocs | FieldWithDocs) ~ ";" ~ DocGap*)+ }
@@ -405,7 +408,10 @@ EnumVariant = { AttributeList? ~ Identifier ~ ("(" ~ FieldList? ~ ")")? }
 
 ContractDefinition = { AttributeList? ~ Visibility? ~ KwContract ~ Identifier ~ GenericParameters? ~ "{" ~ ContractItemWithDocs* ~ "}" }
 ContractItemWithDocs = { ((DocRun ~ ContractItem) | ContractItem) ~ DocGap* }
-ContractItem = _{ ContractAssociatedType | ContractMethodSignature | ContractEmbedding }
+ContractItem = _{ ContractAssociatedType | ContractPropertyRequirement | ContractMethodSignature | ContractEmbedding }
+ContractPropertyRequirement = { AttributeList? ~ BeskidType ~ Identifier ~ "{" ~ (ContractGet ~ ContractSet? | ContractSet ~ ContractGet?) ~ "}" }
+ContractGet = { KwGet ~ ";" }
+ContractSet = { KwSet ~ ";" }
 ContractMethodSignature = { AttributeList? ~ BeskidType ~ Identifier ~ "(" ~ ParameterList? ~ ")" ~ ";" }
 ContractEmbedding = { AttributeList? ~ Identifier ~ GenericArguments? ~ ";"? }
 ContractAssociatedType = { AttributeList? ~ KwType ~ Identifier ~ ("=" ~ BeskidType)? ~ ";" }
@@ -443,7 +449,13 @@ Block = { PUSH("{") ~ Statement* ~ DROP ~ "}" }
 
 WithStatement = { KwWith ~ Identifier ~ "(" ~ ArgumentList? ~ ")" ~ Block }
 LaunchStatement = { KwLaunch ~ Path ~ "(" ~ ArgumentList? ~ ")" ~ ";" }
-Statement = _{ ScopedUseStatement | LetStatement | ReturnStatement | BreakStatement | ContinueStatement | WhileStatement | ForStatement | IfStatement | WithStatement | LaunchStatement | ExpressionStatement }
+Statement = _{ ScopedUseStatement | ObserveStatement | LetStatement | ReturnStatement | BreakStatement | ContinueStatement | WhileStatement | ForStatement | IfStatement | WithStatement | LaunchStatement | ExpressionStatement }
+
+ObserveStatement = { KwObserve ~ ObserveTarget ~ &ObserveCallbackHeader ~ LambdaExpression ~ ";" }
+// The callback begins with parentheses just like a call. Stop at the complete callback header
+// so calls and indexing within the observed receiver still use ordinary postfix syntax.
+ObserveTarget = { PrimaryExpression ~ (!ObserveCallbackHeader ~ PostfixOperator)* }
+ObserveCallbackHeader = _{ "(" ~ Identifier ~ "," ~ Identifier ~ ")" ~ "=>" ~ &"{" }
 
 ScopedUseStatement = { KwUse ~ ("(" ~ ScopedUseBinding ~ ")" ~ Block | ScopedUseBinding ~ ";") }
 ScopedUseBinding = { BeskidType ~ Identifier ~ "=" ~ Expression }

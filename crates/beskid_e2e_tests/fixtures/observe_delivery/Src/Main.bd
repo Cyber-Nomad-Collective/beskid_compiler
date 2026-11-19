@@ -1,0 +1,97 @@
+use Testing.Assert;
+
+type Payload { i32 code; }
+
+type Counter
+{
+    prop i32 Count = 0;
+    prop i32 Limit = 0;
+    always prop i32 Pulse = 0;
+    prop f64 Reading = 0.0_f64;
+    string Caption { get; set; }
+    always Payload Current { get; set; }
+}
+
+type Trace
+{
+    i32 sequence;
+    i32 pulses;
+    i32 readings;
+    i32 captions;
+    i32 payloads;
+}
+
+unit Attach(Counter counter, Trace trace)
+{
+    observe counter.Count (old, new) => {
+        trace.sequence = trace.sequence * 10 + 1;
+        if new == 3 {
+            observe counter.Count (previous, current) => {
+                trace.sequence = trace.sequence * 10 + 3;
+            };
+        }
+    };
+    observe counter.Count (old, new) => {
+        trace.sequence = trace.sequence * 10 + 2;
+    };
+    observe counter.Limit (old, new) => {
+        trace.sequence = trace.sequence * 10 + 4;
+    };
+    observe counter.Pulse (old, new) => {
+        trace.pulses += 1;
+    };
+    observe counter.Reading (old, new) => {
+        trace.readings += 1;
+    };
+    observe counter.Caption (old, new) => {
+        if old == "ready" && new == "paused" {
+            trace.captions += 1;
+        } else {
+            trace.captions += 100;
+        }
+    };
+    observe counter.Current (old, new) => {
+        Assert.CollectGarbage();
+        trace.payloads += old.code * 10 + new.code;
+    };
+}
+
+string Ready(string suffix)
+{
+    return "re" + suffix;
+}
+
+i32 Main()
+{
+    Counter counter = Counter { Caption: "ready", Current: Payload { code: 7 } };
+    Trace trace = Trace { sequence: 0, pulses: 0, readings: 0, captions: 0, payloads: 0 };
+    Attach(counter, trace);
+    Assert.CollectGarbage();
+
+    counter.Count = 3;
+    if trace.sequence != 12 { return 1; }
+    counter.Count = 4;
+    if trace.sequence != 12123 { return 2; }
+    counter.Limit = 8;
+    if trace.sequence != 121234 { return 3; }
+
+    counter.Pulse = 0;
+    counter.Pulse = 0;
+    if trace.pulses != 2 { return 4; }
+
+    counter.Reading = -0.0_f64;
+    if trace.readings != 0 { return 5; }
+    counter.Reading = 1.0_f64;
+    if trace.readings != 1 { return 6; }
+
+    counter.Caption = Ready("ady");
+    if trace.captions != 0 { return 7; }
+    counter.Caption = "paused";
+    if trace.captions != 1 { return 8; }
+
+    Payload next = Payload { code: 8 };
+    counter.Current = next;
+    counter.Current = next;
+    if trace.payloads != 166 { return 9; }
+    return 42;
+}

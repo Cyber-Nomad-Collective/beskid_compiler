@@ -1,0 +1,90 @@
+use Testing.Assert;
+
+contract Counter { i32 Count { get; set; } }
+
+type Simple : Counter { pub prop i32 Count = 0; }
+type Limited : Counter
+{
+    i32 padding;
+    pub i32 Count { get; set { field = value < 0 ? 0 : value; } } = 4;
+}
+
+contract Reading { i32 Value { get; } }
+type Derived : Reading
+{
+    pub prop i32 Input = 3;
+    pub i32 Value => Input + Input;
+}
+
+type Holder { Counter counter; Reading reading; }
+
+contract Cell<T> { T Value { get; set; } }
+type Box<T> : Cell<T> { T padding; pub T Value { get; set; } }
+
+type Log { i32 calls; i32 oldValue; i32 newValue; }
+
+unit AttachCell(Cell<i32> cell, Log log)
+{
+    observe cell.Value (old, new) => { log.newValue = old + new; };
+}
+
+unit Attach(Counter counter, Log log)
+{
+    observe counter.Count (old, new) => {
+        log.calls += 1;
+        log.oldValue = old;
+        log.newValue = new;
+    };
+}
+
+i32 Add(Counter counter, i32 amount)
+{
+    counter.Count += amount;
+    return counter.Count;
+}
+
+i32 Main()
+{
+    Simple simple = Simple {};
+    Limited limited = Limited { padding: 8 };
+    Log log = Log { calls: 0, oldValue: 0, newValue: 0 };
+    Attach(simple, log);
+    Attach(limited, log);
+    Assert.CollectGarbage();
+    simple.Count = 8;
+    if log.calls != 1 || log.oldValue != 0 || log.newValue != 8 { return 1; }
+    limited.Count = -9;
+    if log.calls != 2 || log.oldValue != 4 || log.newValue != 0 { return 2; }
+    limited.Count = -1;
+    if log.calls != 2 { return 3; }
+    if Add(limited, 7) != 7 || log.calls != 3 || log.oldValue != 0 || log.newValue != 7 { return 4; }
+
+    Counter counter = limited;
+    Derived derived = Derived {};
+    Reading reading = derived;
+    Holder holder = Holder { counter: counter, reading: reading };
+    if holder.counter.Count != 7 || holder.reading.Value != 6 { return 5; }
+    observe holder.counter.Count (old, new) => {
+        log.calls += 1;
+        log.oldValue = old;
+        log.newValue = new;
+    };
+    observe holder.reading.Value (old, new) => {
+        log.calls += 1;
+        log.oldValue = old;
+        log.newValue = new;
+    };
+    Assert.CollectGarbage();
+    holder.counter.Count = -5;
+    if log.calls != 5 || log.oldValue != 7 || log.newValue != 0 { return 6; }
+    holder.counter.Count += 9;
+    if log.calls != 7 || log.oldValue != 0 || log.newValue != 9 { return 7; }
+    derived.Input = 5;
+    if log.calls != 8 || log.oldValue != 6 || log.newValue != 10 { return 8; }
+
+    Box<i32> box = Box<i32> { padding: 9, Value: 12 };
+    Cell<i32> cell = box;
+    AttachCell(cell, log);
+    box.Value = 30;
+    return log.newValue;
+}

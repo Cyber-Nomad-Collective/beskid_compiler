@@ -7,7 +7,7 @@ use crate::syntax::{
     FunctionDefinition, ImplBlock, InlineModule, MethodDefinition, Node, Parameter, Pattern, Program, Statement,
     TestDefinition, TypeDefinition,
 };
-use crate::syntax::{Identifier, Spanned, TypeParameter};
+use crate::syntax::{Identifier, PropertyAccessorKind, Spanned, TypeParameter};
 
 /// Syntactic role that carries a case profile from code-style-and-naming.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -112,10 +112,24 @@ fn walk_contract_definition(def: &ContractDefinition, visit: &mut impl FnMut(Nam
         visit(NamingRole::GenericParameter, &TypeParameter::identifier(generic));
     }
     let foreign_symbols = is_extern_contract(def);
+    let mut previous_property_span = None;
     for item in &def.items {
         if let ContractNode::MethodSignature(sig) = &item.node {
+            let name = &sig.node.name;
+            let property_name = [PropertyAccessorKind::Get, PropertyAccessorKind::Set]
+                .into_iter()
+                .find_map(|kind| kind.property_name(&name.node.name));
+            if let Some(property_name) = property_name {
+                if !foreign_symbols && previous_property_span != Some(name.span) {
+                    let mut property = name.clone();
+                    property.node.name = property_name.to_owned();
+                    visit(NamingRole::Callable, &property);
+                }
+                previous_property_span = Some(name.span);
+                continue;
+            }
             if !foreign_symbols {
-                visit(NamingRole::Callable, &sig.node.name);
+                visit(NamingRole::Callable, name);
             }
             for param in &sig.node.parameters {
                 walk_parameter(&param.node, visit);
@@ -236,6 +250,10 @@ fn walk_statement(stmt: &Statement, visit: &mut impl FnMut(NamingRole, &Spanned<
             walk_block(&w.node.body.node, visit);
         }
         Statement::Expression(e) => walk_expression(&e.node.expression.node, visit),
+        Statement::Observe(observe) => {
+            walk_expression(&observe.node.target.node, visit);
+            walk_expression(&observe.node.callback.node, visit);
+        }
         Statement::Break(_) | Statement::Continue(_) | Statement::Launch(_) => {}
     }
 }

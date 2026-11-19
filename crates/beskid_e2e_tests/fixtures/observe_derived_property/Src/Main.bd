@@ -1,0 +1,180 @@
+use Core.Equatable;
+use Testing.Assert;
+
+type Counter
+{
+    i32 Count { get; set { field = value < 0 ? 0 : value; } } = 0;
+    i32 Extra { get; set; } = 1;
+    i32 Double => Count + Count;
+    i32 Total => Double + Extra;
+    i32 Denominator { get; set; } = 1;
+    i32 Ratio => 10 / Denominator;
+}
+
+type Trace
+{
+    i32 order;
+    i32 totalCalls;
+    i32 doubleCalls;
+    bool mismatch;
+}
+
+unit Attach(Counter counter, Trace trace)
+{
+    observe counter.Total (old, new) => {
+        Assert.CollectGarbage();
+        trace.order = trace.order * 10 + 1;
+        trace.totalCalls += 1;
+        i32 call = trace.totalCalls;
+        if call == 1 && (old != 5 || new != 6) {
+            trace.mismatch = true;
+        }
+        if call == 2 {
+            if old != 6 || new != 2 { trace.mismatch = true; }
+            counter.Count = 1;
+        }
+        if call == 3 && (old != 2 || new != 4) {
+            trace.mismatch = true;
+        }
+    };
+    observe counter.Double (old, new) => {
+        trace.order = trace.order * 10 + 2;
+        trace.doubleCalls += 1;
+        if trace.doubleCalls == 1 && (old != 0 || new != 2) {
+            trace.mismatch = true;
+        }
+        if trace.doubleCalls == 2 && (old != 4 || new != 0) {
+            trace.mismatch = true;
+        }
+    };
+}
+
+type Box<T>
+{
+    T payload;
+    i32 Score { get; set { field = value < 0 ? 0 : value; } } = 0;
+    i32 Double => Score + Score;
+}
+type GenericTrace
+{
+    i32 delta;
+}
+unit SetScore<T>(Box<T> box, i32 score)
+{
+    box.Score = score;
+}
+unit AttachGeneric<T>(Box<T> box, GenericTrace trace)
+{
+    observe box.Double (old, new) => { trace.delta += new - old; };
+}
+bool GenericGetterSpecializations()
+{
+    Box<i32> number = Box<i32> { payload: 1, Score: 3 };
+    Box<string> text = Box<string> { payload: "text", Score: 4 };
+    GenericTrace trace = GenericTrace { delta: 0 };
+    AttachGeneric<i32>(number, trace);
+    AttachGeneric<string>(text, trace);
+    SetScore<i32>(number, 11);
+    SetScore<string>(text, 17);
+    return trace.delta == 42;
+}
+
+type Selection
+{
+    string First { get; set; }
+    string Second { get; set; }
+    bool UseFirst { get; set; } = true;
+    string Selected => UseFirst ? First : Second;
+}
+type TextTrace
+{
+    i32 calls;
+    bool mismatch;
+}
+string Render(i32 number)
+{
+    return "number ${number}";
+}
+bool ManagedGetterValues()
+{
+    Selection selection = Selection { First: Render(1), Second: Render(2) };
+    TextTrace trace = TextTrace { calls: 0, mismatch: false };
+    observe selection.Selected (old, new) => {
+        Assert.CollectGarbage();
+        trace.calls += 1;
+        if old != "number 1" || new != "number 3" { trace.mismatch = true; }
+    };
+    selection.First = Render(1);
+    selection.Second = Render(4);
+    selection.First = Render(3);
+    return !trace.mismatch && trace.calls == 1;
+}
+
+type ComparingValue : Equatable<ComparingValue>
+{
+    i32 id;
+    unit() onCompare;
+    pub bool Equals(ComparingValue other)
+    {
+        Assert.CollectGarbage();
+        unit() compare = this.onCompare;
+        compare();
+        return id == other.id;
+    }
+}
+
+type Choice
+{
+    ComparingValue Left { get; set; }
+    ComparingValue Right { get; set; }
+    bool PickRight { get; set; } = false;
+    i32 Marker { get; set; } = 0;
+    ComparingValue Value => PickRight ? Right : Left;
+    i32 Number => PickRight ? Marker + 1 : Marker;
+}
+
+type Order
+{
+    i32 calls;
+    i32 nested;
+    i32 outer;
+}
+
+bool EqualitySnapshots()
+{
+    ComparingValue inactive = ComparingValue { id: 2, onCompare: () => {} };
+    Choice choice = Choice { Left: inactive, Right: inactive };
+    choice.Left = ComparingValue { id: 1, onCompare: () => { choice.Marker = 9; } };
+    Order order = Order { calls: 0, nested: 0, outer: 0 };
+    observe choice.Value (previous, next) => {};
+    observe choice.Number (previous, next) => {
+        order.calls += 1;
+        if order.calls == 1 { order.nested = previous * 100 + next; }
+        if order.calls == 2 { order.outer = previous * 100 + next; }
+    };
+    choice.PickRight = true;
+    return order.calls == 2 && order.nested == 110 && order.outer == 1;
+}
+
+i32 Main()
+{
+    Counter counter = Counter { Count: 2 };
+    Counter other = Counter {};
+    Trace trace = Trace { order: 0, totalCalls: 0, doubleCalls: 0, mismatch: false };
+    Attach(counter, trace);
+    Assert.CollectGarbage();
+    other.Count = 8;
+    observe other.Ratio (old, new) => { trace.mismatch = true; };
+    // Only other observes Ratio. This write must not evaluate counter's getter.
+    counter.Denominator = 0;
+    counter.Extra = 2;
+    counter.Count = -4;
+    counter.Count = 1;
+    if trace.mismatch { return 1; }
+    if trace.order != 11122 { return 2; }
+    if trace.totalCalls != 3 || trace.doubleCalls != 2 { return 3; }
+    if !GenericGetterSpecializations() { return 4; }
+    if !ManagedGetterValues() { return 5; }
+    if !EqualitySnapshots() { return 6; }
+    return 42;
+}

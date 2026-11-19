@@ -170,3 +170,104 @@ i32 Main() {{
         assert_eq!(instructions(&field), instructions(&property));
     }
 }
+
+#[test]
+fn observed_properties_share_one_traced_slot_without_allocating_during_construction() {
+    let compile = |subscriptions: &str| {
+        let directory = tempfile::tempdir().expect("project");
+        let path = directory.path().join("Main.bd");
+        let source = format!(
+            "type Counter {{ prop i64 Count = 0_i64; prop i64 Limit = 0_i64; }}
+Counter NewCounter() {{ return Counter {{}}; }}
+i32 Main() {{
+    Counter counter = NewCounter();
+    {subscriptions}
+    counter.Count = 1_i64;
+    counter.Limit = 2_i64;
+    return i32(counter.Count + counter.Limit);
+}}"
+        );
+        std::fs::write(&path, &source).expect("write source");
+        let plan = synthetic_compile_plan_for_source(&path);
+        let input = resolved_input_from_plan(path, source, plan, None, None);
+        let front = compile_mod_free_front_end(&input, FrontEndOptions::default(), None).expect("prepare frontend");
+        lower_prepared_syntax_entrypoint(&front, "Main", host_target()).expect("lower Main")
+    };
+    let unobserved = compile("");
+    let one = compile("observe counter.Count (old, new) => {};");
+    let two = compile(
+        "observe counter.Count (old, new) => {};
+         observe counter.Limit (old, new) => {};",
+    );
+
+    let [base] = unobserved.aggregate_static_plans.as_slice() else { panic!("expected one Counter layout") };
+    assert!(base.pointer_map_offsets.is_empty(), "Counter without observers has only scalar fields");
+    let handle_size = u64::from(host_target().pointer_width) / 8;
+    let constructor_instructions = |artifact: &beskid_codegen::CodegenArtifact| {
+        let constructor = artifact
+            .functions
+            .iter()
+            .find(|item| item.name.starts_with("NewCounter#"))
+            .expect("constructor is reachable");
+        let clif = constructor.function.display().to_string();
+        assert!(!clif.contains("observer_"), "construction does not call observer services");
+        clif[clif.find("block0").expect("entry block")..].to_owned()
+    };
+    let construction = constructor_instructions(&unobserved);
+    for artifact in [&one, &two] {
+        let [observed] = artifact.aggregate_static_plans.as_slice() else { panic!("expected one Counter layout") };
+        assert_eq!(observed.object_size, base.object_size + handle_size);
+        assert_eq!(observed.object_alignment, base.object_alignment);
+        assert_eq!(observed.pointer_map_offsets.as_ref(), &[base.object_size]);
+        assert_eq!(observed.fields, base.fields);
+        assert_eq!(constructor_instructions(artifact), construction);
+    }
+}
+
+#[test]
+fn observation_only_instruments_the_subscribed_generic_specialization() {
+    let compile = |subscription: &str| {
+        let directory = tempfile::tempdir().expect("project");
+        let path = directory.path().join("Main.bd");
+        let source = format!(
+            "type Box<T> {{ prop i32 Value = 0; }}
+unit WriteTracked(Box<i32> box) {{ box.Value = 7; }}
+unit WriteQuiet(Box<string> box) {{ box.Value = 9; }}
+i32 Main() {{
+    Box<i32> tracked = Box<i32> {{}};
+    Box<string> quiet = Box<string> {{}};
+    {subscription}
+    WriteTracked(tracked);
+    WriteQuiet(quiet);
+    return tracked.Value + quiet.Value;
+}}"
+        );
+        std::fs::write(&path, &source).expect("write source");
+        let plan = synthetic_compile_plan_for_source(&path);
+        let input = resolved_input_from_plan(path, source, plan, None, None);
+        let front = compile_mod_free_front_end(&input, FrontEndOptions::default(), None).expect("prepare frontend");
+        lower_prepared_syntax_entrypoint(&front, "Main", host_target()).expect("lower Main")
+    };
+    let baseline = compile("");
+    let observed = compile("observe tracked.Value (old, new) => {};");
+    let [first, second] = baseline.aggregate_static_plans.as_slice() else {
+        panic!("expected two literals with the same physical field shapes")
+    };
+    assert_eq!(first.object_size, second.object_size);
+    assert!(first.pointer_map_offsets.is_empty() && second.pointer_map_offsets.is_empty());
+    let mut plans = observed.aggregate_static_plans.iter().collect::<Vec<_>>();
+    plans.sort_by_key(|plan| plan.object_size);
+    let [quiet, tracked] = plans.as_slice() else { panic!("expected two specialized literals") };
+    assert_eq!(quiet.object_size, first.object_size);
+    assert!(quiet.pointer_map_offsets.is_empty());
+    assert_eq!(tracked.object_size, first.object_size + u64::from(host_target().pointer_width) / 8);
+    assert_eq!(tracked.pointer_map_offsets.as_ref(), &[first.object_size]);
+
+    let write_body = |artifact: &beskid_codegen::CodegenArtifact, name: &str| {
+        let function = artifact.functions.iter().find(|item| item.name.starts_with(name)).expect("reachable writer");
+        let clif = function.function.display().to_string();
+        clif[clif.find("block0").expect("entry block")..].to_owned()
+    };
+    assert_eq!(write_body(&baseline, "WriteQuiet#"), write_body(&observed, "WriteQuiet#"));
+    assert_ne!(write_body(&baseline, "WriteTracked#"), write_body(&observed, "WriteTracked#"));
+}

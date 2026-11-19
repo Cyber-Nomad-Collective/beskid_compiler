@@ -74,7 +74,7 @@ fn double_dot_in_a_field_type_path_is_a_parse_error() {
         clean: "pub Shapes.Span.Span span;",
         broken: "pub Shapes.SpanSpan..Span span;",
         location: "Spanned.bd:3:25",
-        message: "expected a type while parsing field `SpanSpan`, found `.`",
+        message: "expected a type member while parsing field `SpanSpan`, found `.`",
     });
 }
 

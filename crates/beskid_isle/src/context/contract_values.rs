@@ -201,7 +201,8 @@ impl IsleContext<'_, '_, '_, '_> {
     pub(in crate::context) fn contract_dispatch_call(&mut self, key: AstNodeKey, value: bool) -> Option<Option<Value>> {
         let plan = self.facts.contract_dispatch(key)?;
         let returns = plan.signature.returns.first().map(|result| result.value_type);
-        (!value || returns.is_some()).then_some(())?;
+        let assignment = self.facts.contract_property_assignment(key);
+        (!value || returns.is_some() || assignment.is_some()).then_some(())?;
         let pointer = dispatch::pointer_type(self.frontend_config);
         let argument_keys = self.facts.call_arguments(key)?;
         let (receiver_key, argument_keys) = argument_keys.split_first()?;
@@ -217,7 +218,16 @@ impl IsleContext<'_, '_, '_, '_> {
                 continue;
             }
             let parameter = parameters.next()?.value_type;
-            let value = self.lower_coerced_expression(argument)?;
+            let value = if let Some((storage, Some((operator, getter)))) = assignment {
+                // The receiver expression ran once. Read and write through the same live box.
+                let mut signature = plan.signature.clone();
+                signature.params.truncate(1);
+                signature.returns = vec![cranelift_codegen::ir::AbiParam::new(parameter)];
+                let current = self.call_boxed_method(record, getter, signature, &[])??;
+                self.compound_assignment_value(key, operator, storage, current, argument, parameter)?
+            } else {
+                self.lower_coerced_expression(argument)?
+            };
             let value = if self.builder.func.dfg.value_type(value) == parameter {
                 value
             } else {
@@ -229,22 +239,35 @@ impl IsleContext<'_, '_, '_, '_> {
         if parameters.next().is_some() {
             return None;
         }
-        self.builder.ins().trapz(record, TrapCode::unwrap_user(5));
-        let receiver = self.builder.ins().load(pointer, MemFlagsData::new(), record, CONTRACT_BOX_RECEIVER_OFFSET);
-        let witness = self.builder.ins().load(pointer, MemFlagsData::new(), record, CONTRACT_BOX_WITNESS_OFFSET);
-        let entry_offset = i32::try_from((u64::from(plan.slot) + WITNESS_HEADER_WORDS as u64) * 8).ok()?;
-        let entry = self.builder.ins().load(pointer, MemFlagsData::new(), witness, entry_offset);
-        let signature = self.builder.func.import_signature(plan.signature.clone());
-        let mut call_arguments = Vec::with_capacity(arguments.len() + 1);
-        call_arguments.push(receiver);
-        call_arguments.extend(arguments);
-        let call = self.builder.ins().call_indirect(signature, entry, &call_arguments);
-        let result = self.builder.inst_results(call).first().copied();
-        self.guard_checked_allocation()?;
+        let result = self.call_boxed_method(record, plan.slot, plan.signature, &arguments)?;
+        let result = if assignment.is_some() { arguments.first().copied() } else { result };
         for root in roots.into_iter().rev() {
             self.release_expression_root(root)?;
         }
         self.release_expression_root(record_root)?;
+        Some(result)
+    }
+
+    fn call_boxed_method(
+        &mut self,
+        record: Value,
+        slot: u32,
+        signature: cranelift_codegen::ir::Signature,
+        arguments: &[Value],
+    ) -> Option<Option<Value>> {
+        let pointer = dispatch::pointer_type(self.frontend_config);
+        self.builder.ins().trapz(record, TrapCode::unwrap_user(5));
+        let receiver = self.builder.ins().load(pointer, MemFlagsData::new(), record, CONTRACT_BOX_RECEIVER_OFFSET);
+        let witness = self.builder.ins().load(pointer, MemFlagsData::new(), record, CONTRACT_BOX_WITNESS_OFFSET);
+        let entry_offset = i32::try_from((u64::from(slot) + WITNESS_HEADER_WORDS as u64) * 8).ok()?;
+        let entry = self.builder.ins().load(pointer, MemFlagsData::new(), witness, entry_offset);
+        let signature = self.builder.func.import_signature(signature);
+        let mut call_arguments = Vec::with_capacity(arguments.len() + 1);
+        call_arguments.push(receiver);
+        call_arguments.extend_from_slice(arguments);
+        let call = self.builder.ins().call_indirect(signature, entry, &call_arguments);
+        let result = self.builder.inst_results(call).first().copied();
+        self.guard_checked_allocation()?;
         Some(result)
     }
 }

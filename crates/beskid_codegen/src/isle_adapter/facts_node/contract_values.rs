@@ -57,6 +57,18 @@ impl SyntaxNodeFacts<'_> {
     /// The witness-table dispatch of the contract method call at `key`, when no static target
     /// (a specialization witness, conf2's local or injected-field selection) applies.
     pub(super) fn contract_dispatch_impl(&self, key: AstNodeKey) -> Option<ContractDispatchCall> {
+        if let Some(property) = self.query(beskid_queries::contract_property_access(self.db, key)) {
+            let mut parameters = vec![SemanticTypeId::POINTER];
+            let result = if property.value.is_some() {
+                parameters.push(property.abi);
+                SemanticTypeId::UNIT
+            } else {
+                property.abi
+            };
+            let signature =
+                signature_for_item(self.isa?, beskid_queries::ItemSignature { parameters: parameters.into(), result })?;
+            return Some(ContractDispatchCall { slot: property.slot, signature });
+        }
         let dispatch =
             self.query(beskid_queries::contract_dispatch(self.db, key, self.current_item_specialization()))?;
         // An injected field bound to one implementation keeps conf2's direct call.

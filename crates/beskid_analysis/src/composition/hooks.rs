@@ -305,6 +305,7 @@ fn record_type(record: &Record, span: SpanInfo) -> Spanned<Node> {
                     ty: parameter.node.ty.clone(),
                     property_default: None,
                     property_accessors: None,
+                    property_always: false,
                 },
                 parameter.span,
             )
@@ -438,6 +439,7 @@ fn lower_hook(
                     ty: parameter.node.ty.clone(),
                     property_default: None,
                     property_accessors: None,
+                    property_always: false,
                 },
                 parameter.span,
             )
@@ -618,7 +620,8 @@ fn rewrite_statements(
             | Statement::Return(_)
             | Statement::Break(_)
             | Statement::Continue(_)
-            | Statement::Expression(_) => {}
+            | Statement::Expression(_)
+            | Statement::Observe(_) => {}
         }
         match inserted {
             Some(statement) => {

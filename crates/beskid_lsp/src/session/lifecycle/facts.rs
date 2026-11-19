@@ -2,11 +2,13 @@ use std::sync::Arc;
 
 use beskid_analysis::projects::ProgramAssembly;
 use beskid_analysis::services::{ResolvedInput, parse_program_with_source_name};
-use beskid_analysis::syntax::{Field, Identifier, MethodDefinition, Spanned};
+use beskid_analysis::syntax::{
+    ContractMethodSignature, Field, Identifier, MemberExpression, MethodDefinition, PathExpression, Spanned,
+};
 use beskid_analysis::syntax_query::{NodeKind, SyntaxIndex};
 use beskid_queries::{
-    AstNodeKey, SemanticTypeId, SyntaxGenerationId, build_typed_program, node_span, node_type, property_reference,
-    property_type_display, resolved_item, resolved_local,
+    AstNodeKey, SemanticTypeId, SyntaxGenerationId, build_typed_program, contract_property_access,
+    expression_type_display, node_span, node_type, property_reference, resolved_item, resolved_local,
 };
 use pest::Parser;
 
@@ -194,13 +196,27 @@ pub(super) fn unit_syntax_facts(
             })
             .unwrap_or_else(|| {
                 let name = entry.source.get(reference_span.start..reference_span.end).unwrap_or_default().to_string();
-                (declaration_span.start, declaration_span.end, name, "local")
+                let parameter = target_index
+                    .metadata_for(declaration.generation, declaration.node)
+                    .and_then(|metadata| metadata.parent)
+                    .is_some_and(|parent| target_index.kind(parent) == Some(NodeKind::LambdaParameter));
+                if parameter {
+                    (reference_span.start, reference_span.end, name, "parameter")
+                } else {
+                    (declaration_span.start, declaration_span.end, name, "local")
+                }
             });
         if !name.is_empty() {
+            let mut markdown = format!("**{kind}** `{name}`");
+            if kind == "parameter"
+                && let Ok(Some(ty)) = expression_type_display(db, reference)
+            {
+                markdown.push_str(&format!("\n\nType `{ty}`"));
+            }
             hovers.push(SyntaxHover {
                 reference_start: reference_span.start,
                 reference_end: reference_span.end,
-                markdown: format!("**{kind}** `{name}`"),
+                markdown,
                 location_path: declaration_path,
                 location_start,
                 location_end,
@@ -256,9 +272,24 @@ fn property_reference_facts(
     reference: AstNodeKey,
     target_indices: &mut std::collections::HashMap<std::path::PathBuf, SyntaxIndex>,
 ) -> Option<(SyntaxDefinition, SyntaxHover)> {
-    let property = property_reference(db, reference).ok().flatten()?;
-    let name = node_span(db, property.name).ok().flatten()?;
-    let declaration = property.declaration;
+    let (name, declaration, authored_name, is_backing_field) =
+        if let Some(property) = property_reference(db, reference).ok().flatten() {
+            (node_span(db, property.name).ok().flatten()?, property.declaration, None, property.is_backing_field)
+        } else {
+            let property = contract_property_access(db, reference).ok().flatten()?;
+            let path = reference.unit.path(db);
+            let unit = typed.assembly.units.iter().find(|candidate| candidate.path == *path)?;
+            let index = target_indices
+                .entry(path.clone())
+                .or_insert_with(|| SyntaxIndex::from_program(&unit.program, reference.generation));
+            let node = index.node_at(&unit.program, reference.node)?;
+            let name = if let Some(member) = node.of::<MemberExpression>() {
+                member.member.span
+            } else {
+                node.of::<PathExpression>()?.path.node.segments.last()?.node.name.span
+            };
+            (name, property.signature, Some(property.name), false)
+        };
     let declaration_path = declaration.unit.path(db).clone();
     let target_unit = typed.assembly.units.iter().find(|candidate| candidate.path == declaration_path)?;
     let target_index = target_indices
@@ -267,19 +298,22 @@ fn property_reference_facts(
     let target = target_index.node_at(&target_unit.program, declaration.node)?;
     let (target_name, declared_type): (&Spanned<Identifier>, _) = if let Some(field) = target.of::<Field>() {
         (&field.name, Some(&field.ty))
-    } else {
-        let method = target.of::<MethodDefinition>()?;
+    } else if let Some(method) = target.of::<MethodDefinition>() {
         (&method.name, method.return_type.as_ref())
+    } else {
+        let property = target.of::<ContractMethodSignature>()?;
+        (&property.name, property.return_type.as_ref())
     };
-    let mut markdown = format!("{PROPERTY_HOVER_LABEL} `{}`", target_name.node.name);
-    let displayed_type = property_type_display(db, reference)
+    let display_name = authored_name.as_deref().unwrap_or(&target_name.node.name);
+    let mut markdown = format!("{PROPERTY_HOVER_LABEL} `{display_name}`");
+    let displayed_type = expression_type_display(db, reference)
         .ok()
         .flatten()
         .or_else(|| declared_type.map(beskid_analysis::doc::format_type));
     if let Some(ty) = displayed_type {
         markdown.push_str(&format!("\n\nType `{ty}`"));
     }
-    if property.is_backing_field {
+    if is_backing_field {
         markdown.push_str("\n\n`field` accesses this property's backing storage.");
     }
     Some((

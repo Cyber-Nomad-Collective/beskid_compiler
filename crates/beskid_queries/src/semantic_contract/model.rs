@@ -43,10 +43,11 @@ pub use ids::{
     format_source_span_range,
 };
 pub use layouts::{
-    AggregateFieldAccess, AggregateFieldShape, AggregateLayoutFact, AggregateLiteralFieldValues, EnumConstructorFact,
-    EnumConstructorSpecialization, EnumLayoutFact, EnumMatchArmFact, EnumMatchBindingFact, EnumMatchFact,
-    EnumMatchPatternFact, EnumMatchScalarLiteralFact, EnumMatchVariantPatternFact, EnumScalarPayloadObjectLayout,
-    EnumScalarPayloadVariantLayout, EnumVariantLayoutFact, EventFieldLayoutFact, ScalarAbiLayout, ScalarMatchFact,
+    AggregateFieldAccess, AggregateFieldShape, AggregateLayoutFact, AggregateLiteralFieldValues,
+    AggregateSpecialization, EnumConstructorFact, EnumConstructorSpecialization, EnumLayoutFact, EnumMatchArmFact,
+    EnumMatchBindingFact, EnumMatchFact, EnumMatchPatternFact, EnumMatchScalarLiteralFact, EnumMatchVariantPatternFact,
+    EnumScalarPayloadObjectLayout, EnumScalarPayloadVariantLayout, EnumVariantLayoutFact, EventFieldLayoutFact,
+    ScalarAbiLayout, ScalarMatchFact,
 };
 pub use resolution::{CompoundAssignmentOperator, LocalSlot, MutableLocalAssignment, ResolvedItem, ResolvedLocal};
 pub use syntax::{

@@ -110,6 +110,10 @@ fn scan_statement_residuals(
     }
     match &stmt.node {
         Statement::Expression(es) => scan_expression_residuals(source_name, source, &es.node.expression, out),
+        Statement::Observe(observe) => {
+            scan_expression_residuals(source_name, source, &observe.node.target, out);
+            scan_expression_residuals(source_name, source, &observe.node.callback, out);
+        }
         Statement::Let(ls)
         | Statement::Use(Spanned { node: crate::syntax::ScopedUseStatement { binding: ls, .. }, .. }) => {
             scan_expression_residuals(source_name, source, &ls.node.value, out)

@@ -9,6 +9,41 @@ use beskid_queries::{
 };
 
 #[test]
+fn native_transport_and_literals_share_the_exact_applied_record_identity() {
+    let (db, typed, root, _) = support::input_fixture_with_source(
+        "pub type Payload<T> { i32 value; } \
+         pub type Holder<T> { prop i32 Value = 0; } \
+         pub Holder<Payload<i32>> First() { return Holder<Payload<i32>> {}; } \
+         pub Holder<Payload<string>> Second() { return Holder<Payload<string>> {}; }",
+    );
+    let index = typed.assembly.entry_syntax_index();
+    let mut identities = Vec::new();
+    for function in index.ids_of_kind(NodeKind::FunctionDefinition) {
+        let function = AstNodeKey { node: function, ..root };
+        let signature = beskid_queries::native_mod_transport_signature(&db, function)
+            .expect("transport signature")
+            .expect("source function");
+        let nominal = beskid_queries::native_mod_transport_nominal(&db, function, signature.result())
+            .expect("transport layout")
+            .expect("nominal result");
+        let mut pending = vec![function];
+        let literal = loop {
+            let key = pending.pop().expect("function returns a literal");
+            if beskid_queries::node_kind(&db, key).unwrap() == Some(NodeKind::StructLiteralExpression) {
+                break key;
+            }
+            pending.extend(beskid_queries::child_nodes(&db, key).unwrap().unwrap_or_default().iter().copied());
+        };
+        let literal = beskid_queries::aggregate_literal_layout(&db, literal).unwrap().expect("literal layout");
+        let specialization = nominal.specialization().expect("transport retains the applied source arguments");
+        assert_eq!(literal.specialization.as_ref(), Some(specialization));
+        identities.push(specialization.clone());
+    }
+    assert_eq!(identities.len(), 2);
+    assert_ne!(identities[0], identities[1]);
+}
+
+#[test]
 fn applied_contract_witness_substitutes_exact_source_types_and_rejects_stale_owner() {
     let (db, typed, root, _) = support::input_fixture_with_source(
         "pub contract Applied<T> { T Rewrite(T value); } \

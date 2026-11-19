@@ -59,3 +59,11 @@ fn item_attributes_keep_round_tripping() {
         &["[Shape]\npub type Box", "[Kind]\npub enum Mode", "[Api]\npub contract Shown"],
     );
 }
+
+#[test]
+fn contract_properties_preserve_accessor_order_and_round_trip() {
+    assert_round_trip(
+        "contract State { i32 Count { set; get; } string Name { get; } }",
+        &["i32 Count { set; get; }", "string Name { get; }"],
+    );
+}

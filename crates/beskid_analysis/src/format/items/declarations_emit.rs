@@ -129,6 +129,10 @@ fn emit_property_block<W: Write>(
 ) -> Result<(), EmitError> {
     crate::format::attribute_lists::emit_attribute_block(&field.attributes, w, cx)?;
     field.visibility.emit(w, cx)?;
+    if field.property_always {
+        cx.token(w, "always")?;
+        cx.space(w)?;
+    }
     field.ty.emit(w, cx)?;
     cx.space(w)?;
     field.name.emit(w, cx)?;
@@ -349,6 +353,12 @@ impl Emit for Spanned<ContractNode> {
     }
 }
 
+fn required_property_accessor(sig: &ContractMethodSignature) -> Option<(PropertyAccessorKind, &str)> {
+    [PropertyAccessorKind::Get, PropertyAccessorKind::Set]
+        .into_iter()
+        .find_map(|kind| kind.property_name(&sig.name.node.name).map(|name| (kind, name)))
+}
+
 impl Emit for Spanned<ContractDefinition> {
     fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
         let this = &self.node;
@@ -364,9 +374,34 @@ impl Emit for Spanned<ContractDefinition> {
             return Ok(());
         }
         open_body(w, cx)?;
-        for (i, it) in this.items.iter().enumerate() {
+        let mut items = this.items.iter().enumerate().peekable();
+        while let Some((i, it)) = items.next() {
             let line = Line::new(it.span).doc(this.item_docs.get(i).and_then(Option::as_ref));
-            emit_line(w, cx, line, "", |w, cx| it.emit(w, cx))?;
+            if let ContractNode::MethodSignature(sig) = &it.node
+                && let Some((kind, name)) = required_property_accessor(&sig.node)
+            {
+                let other = items.next_if(|(_, next)| next.span == it.span);
+                let ty = match kind {
+                    PropertyAccessorKind::Get => sig.node.return_type.as_ref(),
+                    PropertyAccessorKind::Set => sig.node.parameters.first().map(|p| &p.node.ty),
+                }
+                .ok_or(EmitError(std::fmt::Error))?;
+                emit_line(w, cx, line, "", |w, cx| {
+                    crate::format::attribute_lists::emit_attribute_block(&sig.node.attributes, w, cx)?;
+                    ty.emit(w, cx)?;
+                    write!(w, " {name} {{ {};", kind.keyword())?;
+                    if let Some((_, second)) = other
+                        && let ContractNode::MethodSignature(second) = &second.node
+                        && let Some((second, _)) = required_property_accessor(&second.node)
+                    {
+                        write!(w, " {};", second.keyword())?;
+                    }
+                    w.write_str(" }")?;
+                    Ok(())
+                })?;
+            } else {
+                emit_line(w, cx, line, "", |w, cx| it.emit(w, cx))?;
+            }
         }
         cx.close_brace(w, self.span.end)
     }

@@ -37,11 +37,19 @@ mod expected_type;
 pub(in crate::semantic_contract) use expected_type::expected_type_in;
 pub use expected_type::expected_type_in_environment;
 use expected_type::{expected_type_tracked, lambda_argument_parameter_identities};
+mod contract_observation;
+pub use contract_observation::{
+    ContractObservedProperty, concrete_observation_property, contract_getter_property_name, contract_observation,
+    contract_property_access,
+};
 mod properties;
 pub use properties::{
-    PropertyGetter, PropertyReference, PropertySetter, property_accessor_specialization, property_getter,
-    property_getter_in_environment, property_reference, property_setter, property_setter_in_environment,
-    property_type_display,
+    ObservedPropertyInstance, PropertyGetter, PropertyReference, PropertySetter, observation_getter_specialization,
+    observation_property_equality_instance, observation_property_name, observation_receiver_layout,
+    observation_stored_dependencies, observation_target, observation_target_in_environment,
+    observed_property_instances, property_accessor_specialization, property_always, property_getter,
+    property_getter_in_environment, property_reference, property_reference_in_environment, property_setter,
+    property_setter_in_environment, property_type_display,
 };
 mod portable_nominal;
 pub(crate) use portable_nominal::serialization_impl_receiver;
@@ -59,6 +67,8 @@ pub use dynamic_pack::{
     dynamic_packing_bridge, dynamic_packing_shape, dynamic_shape_binding, dynamic_unpacking_bridge,
 };
 mod glue;
+mod foreign_export;
+pub use foreign_export::validate_raw_c_export_signature;
 mod growth;
 pub use glue::{
     GlueBindingFact, GlueDirection, GlueHandleBrand, GlueLogicalType, GlueOwnerBindingDigest, GlueParameterFact,
@@ -274,17 +284,17 @@ pub use layouts::{
 };
 pub use model::{
     AffineBinding, AffineFinding, AffineFindingKind, AffineOwnership, AggregateFieldAccess, AggregateFieldShape,
-    AggregateLayoutFact, AggregateLiteralFieldValues, ArrayIndexElementTemplate, AstNodeKey, BulkParameterFact,
-    CallLowering, CanonicalEmpty, CaptureStorage, CaptureStorageClass, CastIntent, ClifParameterShape,
-    ClosureAllocationStatus, ClosureCallTarget, ClosureCapture, ClosureEnvironment, ClosureEnvironmentAbiShape,
-    ClosureEnvironmentField, ClosureLoweringStatus, ClosurePointerMapRequirement, ClosureSignature,
-    CollectionMutationOwner, CollectionOperation, CompletionCandidate, CompletionContext, CompletionKind,
-    CompletionMemberSurface, CompoundAssignmentOperator, ControlFlow, CorelibService, EnumConstructorFact,
-    EnumConstructorSpecialization, EnumLayoutFact, EnumMatchArmFact, EnumMatchBindingFact, EnumMatchFact,
-    EnumMatchPatternFact, EnumMatchScalarLiteralFact, EnumMatchVariantPatternFact, EnumScalarPayloadObjectLayout,
-    EnumScalarPayloadVariantLayout, EnumVariantLayoutFact, EventFieldLayoutFact, EventHandlerLocalFact,
-    EventOperationFact, EventOperationKind, ExpectedType, ExpectedTypeContext, ExportSymbol, FiberOwnership,
-    ForIterableSource, ForIteratorFact, ForIteratorProtocol, FunctionItemValue, FunctionValueCall,
+    AggregateLayoutFact, AggregateLiteralFieldValues, AggregateSpecialization, ArrayIndexElementTemplate, AstNodeKey,
+    BulkParameterFact, CallLowering, CanonicalEmpty, CaptureStorage, CaptureStorageClass, CastIntent,
+    ClifParameterShape, ClosureAllocationStatus, ClosureCallTarget, ClosureCapture, ClosureEnvironment,
+    ClosureEnvironmentAbiShape, ClosureEnvironmentField, ClosureLoweringStatus, ClosurePointerMapRequirement,
+    ClosureSignature, CollectionMutationOwner, CollectionOperation, CompletionCandidate, CompletionContext,
+    CompletionKind, CompletionMemberSurface, CompoundAssignmentOperator, ControlFlow, CorelibService,
+    EnumConstructorFact, EnumConstructorSpecialization, EnumLayoutFact, EnumMatchArmFact, EnumMatchBindingFact,
+    EnumMatchFact, EnumMatchPatternFact, EnumMatchScalarLiteralFact, EnumMatchVariantPatternFact,
+    EnumScalarPayloadObjectLayout, EnumScalarPayloadVariantLayout, EnumVariantLayoutFact, EventFieldLayoutFact,
+    EventHandlerLocalFact, EventOperationFact, EventOperationKind, ExpectedType, ExpectedTypeContext, ExportSymbol,
+    FiberOwnership, ForIterableSource, ForIteratorFact, ForIteratorProtocol, FunctionItemValue, FunctionValueCall,
     GenericBindingConflict, GenericBoundViolation, GenericCallInstantiation, GenericCallSpecialization,
     GenericCallTemplate, GenericNominalMethodReceiver, GenericSpecializationInstance, GenericSubstitution,
     IndexedNodeKind, ItemSignature, LiteralFact, LocalSlot, ManagedReferenceKind, ManifestBuiltin, MoveExpressionForm,
@@ -304,18 +314,18 @@ pub use queries::{
     closure_signature, collection_operation, conditional_result_branch, constant_integer, constant_integer_literal,
     contextual_integer_literal_abi_type, contract_of_method_signature, control_flow, direct_callees,
     empty_array_literal_element_abi_type, enum_constructor, enum_layout, enum_match, event_field_layout,
-    event_handler_lambda_for_local, event_operation, expected_type, for_iterator_fact, function_item_value,
-    function_value_call, generic_call_instantiation, generic_call_specialization, generic_call_template,
-    generic_nominal_method_receiver, implicit_method_receiver, item_abi_signature, item_body, item_export_symbol,
-    item_name, item_qualified_name, item_signature, lambda_value_required, literal_fact, local_slot,
-    managed_reference_kind, move_expression_form, mutable_local_assignment, node_at_span, node_kind, node_span,
-    node_type, nominal_member_receiver, operator_fact, parameter_generic_reference, primitive_numeric_conversion,
-    range_for_fact, reachable_items, resolve_entry_item, resolved_item, resolved_local, runtime_intrinsic,
-    runtime_intrinsic_name, scalar_match, spawn_entry_validation, spawn_handle_type, spawn_legality, spawn_target,
-    specialized_try_expression_fact, test_item, test_statement_nodes, try_expression_fact, try_expression_judgement,
-    try_expression_legality, type_applied_contract_implementation, type_contract_applications,
-    type_contract_applications_of, type_contract_declarations, type_contract_implementation, typed_array_allocation,
-    value_abi_type,
+    event_handler_lambda_for_local, event_operation, expected_type, expression_type_display, for_iterator_fact,
+    function_item_value, function_value_call, generic_call_instantiation, generic_call_specialization,
+    generic_call_template, generic_nominal_method_receiver, implicit_method_receiver, item_abi_signature, item_body,
+    item_export_symbol, item_name, item_qualified_name, item_signature, lambda_value_required, literal_fact,
+    local_slot, managed_reference_kind, move_expression_form, mutable_local_assignment, node_at_span, node_kind,
+    node_span, node_type, nominal_member_receiver, operator_fact, parameter_generic_reference,
+    primitive_numeric_conversion, range_for_fact, reachable_items, resolve_entry_item, resolved_item, resolved_local,
+    runtime_intrinsic, runtime_intrinsic_name, scalar_match, spawn_entry_validation, spawn_handle_type, spawn_legality,
+    spawn_target, specialized_try_expression_fact, test_item, test_statement_nodes, try_expression_fact,
+    try_expression_judgement, try_expression_legality, type_applied_contract_implementation,
+    type_contract_applications, type_contract_applications_of, type_contract_declarations,
+    type_contract_implementation, typed_array_allocation, value_abi_type,
 };
 
 pub use native_mod_transport::{native_mod_expression_payload, native_mod_single_array_element};

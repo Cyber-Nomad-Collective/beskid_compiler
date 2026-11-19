@@ -81,6 +81,7 @@ impl VerifiedPackageRoot {
 pub struct VerifiedPackageIdentities {
     entries: Vec<VerifiedPackageRoot>,
     lock: Option<(PathBuf, Vec<u8>)>,
+    configured_corelib_workspace: Option<PathBuf>,
 }
 fn error(message: impl Into<String>) -> ProjectError {
     ProjectError::Validation(message.into())
@@ -206,6 +207,18 @@ fn is_corelib_package_source_root(corelib_root: Option<&Path>, source_root: &Pat
     is_compiler_corelib_source_root(source_root) || is_installed_corelib_source_root(corelib_root, source_root)
 }
 impl VerifiedPackageIdentities {
+    /// Resolve a package source within the Corelib workspace selected by preparation.
+    /// This also recognizes unsealed workspace sources without changing their ABI provenance.
+    pub fn for_configured_corelib_source(&self, path: &Path) -> Option<&VerifiedPackageRoot> {
+        let package = self.for_source(path)?;
+        let workspace = self.configured_corelib_workspace.as_ref()?;
+        package
+            .roots
+            .iter()
+            .any(|root| is_corelib_workspace_package_source_root(workspace, root))
+            .then_some(package)
+    }
+
     /// The one package that owns `path`. The most specific containing root across all entries
     /// decides; two different packages claiming the same deepest root are ambiguous and own nothing.
     pub fn for_source(&self, path: &Path) -> Option<&VerifiedPackageRoot> {
@@ -287,7 +300,17 @@ impl VerifiedPackageIdentities {
         locks: &[ProjectLockDependencyEntry],
         lock_path: &Path,
     ) -> Result<Self, ProjectError> {
-        let mut result = Self { entries: Vec::new(), lock: Some((lock_path.to_owned(), read(lock_path)?)) };
+        let configured_corelib_workspace = super::graph::resolver::require_corelib_dependency_path(
+            plan.corelib_root.as_deref(),
+        )
+        .ok()
+        .and_then(|aggregate| aggregate.canonicalize().ok())
+        .and_then(|aggregate| aggregate.parent().map(Path::to_path_buf));
+        let mut result = Self {
+            entries: Vec::new(),
+            lock: Some((lock_path.to_owned(), read(lock_path)?)),
+            configured_corelib_workspace,
+        };
         let host_in_corelib = is_inside_compiler_corelib_checkout(&plan.manifest_path)
             || is_inside_installed_corelib(plan.corelib_root.as_deref(), &plan.manifest_path);
         if let Some(source) = &plan.source_root {

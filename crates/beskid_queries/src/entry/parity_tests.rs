@@ -618,6 +618,82 @@ fn missing_method_against_a_same_named_local_contract_is_reported_once() {
     assert_eq!(missing, 1, "{findings:?}");
 }
 
+#[test]
+fn read_write_contract_property_requires_a_setter() {
+    for property in ["pub i64 Value { get { return field; } } = 0_i64;", "pub i64 Value => 42_i64;"] {
+        let source =
+            format!("pub contract Meter {{ i64 Value {{ get; set; }} }} pub type Gauge : Meter {{ {property} }}");
+        let findings = root_findings(&source, 611);
+        assert_eq!(findings.len(), 1, "{source}: {findings:?}");
+        assert!(
+            matches!(
+                &findings[0].kind,
+                beskid_analysis::analysis::SemanticIssueKind::ContractMethodMissingImplementation {
+                    contract_name, method_name, ..
+                } if contract_name == "Meter" && method_name == "Value.set"
+            ),
+            "{source}: {findings:?}"
+        );
+    }
+}
+
+#[test]
+fn derived_property_conforms_to_a_getter_only_contract_property() {
+    let source = "pub contract Meter { i64 Value { get; } } pub type Gauge : Meter { pub i64 Value => 42_i64; }";
+    let findings = root_findings(source, 612);
+    assert!(findings.is_empty(), "{findings:?}");
+}
+
+#[test]
+fn generic_receiver_does_not_obscure_concrete_property_types() {
+    let source = "type Meter<T> { T payload; prop i32 Count = 0; i32 Double => Count + Count; }
+                  unit Log(i32 value) {}
+                  unit Attach<T>(Meter<T> meter) {
+                      observe meter.Count (old, new) => { Log(new - old); };
+                      observe meter.Double (old, new) => { Log(new - old); };
+                  }";
+    let findings = root_findings(source, 613);
+    assert!(findings.is_empty(), "{findings:?}");
+}
+
+#[test]
+fn observation_requires_the_canonical_equality_conformance_or_always() {
+    let cases = [("", ""), ("contract Equatable<T> { bool Equals(T other); }", ": Equatable<Label>")];
+    for (index, (contract, conformance)) in cases.into_iter().enumerate() {
+        let source = format!(
+            "{contract}
+             type Label {conformance} {{ pub bool Equals(Label other) {{ return true; }} }}
+             type Model {{ Label Current {{ get; set; }} }}
+             unit Attach(Model model) {{ observe model.Current (old, new) => {{}}; }}"
+        );
+        let generation = 614 + index as u64 * 2;
+        let findings = root_findings(&source, generation);
+        assert_eq!(codes(&findings), ["E1266"], "{source}: {findings:?}");
+        let always = source.replace("Label Current", "always Label Current");
+        let findings = root_findings(&always, generation + 1);
+        assert!(findings.is_empty(), "{always}: {findings:?}");
+    }
+}
+
+#[test]
+fn an_open_observed_value_requires_a_canonical_self_equality_bound() {
+    for (index, (contract, bound)) in [
+        ("", ""),
+        ("contract Equatable<T> { bool Equals(T other); }", "where T: Equatable<T>"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let source = format!(
+            "{contract}
+             type Box<T> {{ T Value {{ get; set; }} }}
+             unit Attach<T>(Box<T> box) {bound} {{ observe box.Value (old, new) => {{}}; }}"
+        );
+        let findings = root_findings(&source, 618 + index as u64);
+        assert_eq!(codes(&findings), ["E1266"], "{source}: {findings:?}");
+    }
+}
+
 /// A local function whose name matches an enum variant resolves as the function at a call.
 #[test]
 fn local_function_named_like_an_enum_variant_is_not_a_finding() {

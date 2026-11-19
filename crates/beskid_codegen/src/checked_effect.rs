@@ -423,6 +423,11 @@ impl CodegenInput<'_> {
                     .ok()
                     .flatten()
                     .ok_or_else(|| reject(site, "missing generation-bound node"))?;
+                if kind == IndexedNodeKind::ObserveStatement
+                    || (kind == IndexedNodeKind::AssignExpression && !matches!(facts.observed_store(site), Ok(None)))
+                {
+                    return Err(reject(site, "property observation may invoke an allocating callback"));
+                }
                 if facts.event_operation(site).is_some()
                     || matches!(
                         facts.assignment_kind(site),

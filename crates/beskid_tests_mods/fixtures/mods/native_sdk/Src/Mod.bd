@@ -106,6 +106,9 @@ pub type ExactGenerator : Generator
             injectQualifier: OptionalInjectQualifier::None,
             name: EmitterNodes.PubIdentifier("Value", origin, 6),
             ty: fieldType,
+            propertyDefault: OptionalSpannedExpression::None,
+            propertyAccessors: OptionalPropertyAccessors::None,
+            propertyAlways: false,
         };
         TypeDefinition record = TypeDefinition
         {

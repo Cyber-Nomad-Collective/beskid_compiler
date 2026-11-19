@@ -257,6 +257,19 @@ impl SemanticIssueKind {
             | Self::TypeDestructivePropertyAccess { .. }
             | Self::TypeWriteOnlyProperty { .. }
             | Self::TypePropertyNotCallable { .. } => None,
+            Self::TypeInvalidObservationTarget { .. } => {
+                Some("select a stored or derived property".to_string())
+            }
+            Self::TypeObservationEqualityUnavailable { .. } => {
+                Some("add `always` to notify after each backing-store write".to_string())
+            }
+            Self::TypeInvalidObservationCallback => Some("use `return;` to leave the callback".to_string()),
+            Self::TypeOpaqueObservationDependency { .. } => {
+                Some("use a pure expression over properties of this same instance".to_string())
+            }
+            Self::TypeObservationDependencyCycle { .. } => {
+                Some("remove the dependency on a property that already depends on this one".to_string())
+            }
             Self::TypeMissingStructField { name } => {
                 Some(format!("add `{name}: <value>` to the type literal"))
             }

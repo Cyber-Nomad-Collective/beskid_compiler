@@ -788,7 +788,14 @@ pub(in crate::semantic_contract) fn unique_nominal_method_declaration(
             declaration_index
                 .node_at(declaration_program, *candidate)
                 .and_then(|node| node.of::<beskid_analysis::syntax::MethodDefinition>())
-                .is_some_and(|method| !method.is_property_getter && method.name.node.name == method_name)
+                .is_some_and(|method| {
+                    if method.is_property_getter {
+                        beskid_analysis::syntax::PropertyAccessorKind::Get.property_name(method_name)
+                            == Some(&method.name.node.name)
+                    } else {
+                        method.name.node.name == method_name
+                    }
+                })
         })
         .map(|node| AstNodeKey { unit: declaration.unit, generation: declaration.generation, node })
         .collect::<Vec<_>>();

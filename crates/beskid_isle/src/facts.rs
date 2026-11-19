@@ -28,5 +28,6 @@ pub use operations::{
     ArrayForFact, CollectionMutationOwner, CollectionOperation, CompositionHookCall, CompositionInjectionPlan,
     CompositionLaunchPlan, CompositionRegistrationPlan, CompositionScopePlan, ContractBoxPlan, ContractBoxReceiverFact,
     ContractDispatchCall, ContractUpcastPlan, EventHandlerLocalPlan, EventOperationPlan, IteratorForFact, LocalSlotId,
-    ManagedReferenceFact, ParameterSlot, ScopedCleanupPlan, ValueCopyPlan,
+    ManagedReferenceFact, ObservationEquality, ObservationPlan, ObservedDerived, ObservedProperty, ObservedStore,
+    ParameterSlot, ScopedCleanupPlan, ValueCopyPlan,
 };

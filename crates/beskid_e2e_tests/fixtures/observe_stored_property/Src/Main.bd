@@ -1,0 +1,65 @@
+use Testing.Assert;
+
+type Counter
+{
+    i32 Count { get; set { field = value < 0 ? 0 : value; } } = 0;
+}
+
+type Staged
+{
+    i32 Value {
+        get;
+        set {
+            if value > 0 {
+                field = value;
+                field = value + 1;
+            }
+        }
+    } = 2;
+}
+
+type Trace
+{
+    i32 calls;
+    i32 before;
+    i32 after;
+}
+
+unit Attach(Counter counter, Trace trace)
+{
+    observe counter.Count (old, new) => {
+        trace.calls += 1;
+        trace.before = old;
+        trace.after = new;
+    };
+}
+
+i32 Main()
+{
+    Counter counter = Counter { Count: 2 };
+    Counter other = Counter {};
+    Trace trace = Trace { calls: 0, before: 0, after: 0 };
+    Attach(counter, trace);
+    Assert.CollectGarbage();
+    other.Count = 9;
+    if trace.calls != 0 { return 1; }
+    counter.Count = -4;
+    if trace.calls != 1 || trace.before != 2 || trace.after != 0 { return 2; }
+    counter.Count = -5;
+    if trace.calls != 1 { return 3; }
+    counter.Count += 3;
+    if trace.calls != 2 || trace.before != 0 || trace.after != 3 { return 4; }
+    Staged staged = Staged {};
+    observe staged.Value (old, new) => {
+        trace.calls += 1;
+        trace.before = trace.before * 10 + old;
+        trace.after = trace.after * 10 + new;
+    };
+    trace.before = 0;
+    trace.after = 0;
+    staged.Value = -1;
+    if trace.calls != 2 || staged.Value != 2 { return 5; }
+    staged.Value = 7;
+    if trace.calls != 4 || trace.before != 27 || trace.after != 78 { return 6; }
+    return 42;
+}

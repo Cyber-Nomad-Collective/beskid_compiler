@@ -17,6 +17,22 @@ impl NativeModTransportType {
             _ => SemanticTypeId::POINTER,
         }
     }
+
+    fn source_identity(&self, db: &dyn Db) -> Result<GenericSourceTypeIdentity, SemanticError> {
+        Ok(match self {
+            Self::Scalar(ty) => GenericSourceTypeIdentity::Abi(*ty),
+            Self::Array(element) => GenericSourceTypeIdentity::Array(Box::new(element.source_identity(db)?)),
+            Self::Nominal { declaration, arguments } => GenericSourceTypeIdentity::Nominal {
+                qualified_name: stable_declaration_identity(db, *declaration)
+                    .ok_or_else(|| SemanticError::unavailable("native_mod_transport.nominal_identity"))?,
+                arguments: arguments.iter().map(|arg| arg.source_identity(db)).collect::<Result<Arc<[_]>, _>>()?,
+            },
+            Self::Function { parameters, result } => GenericSourceTypeIdentity::Function {
+                parameters: parameters.iter().map(|arg| arg.source_identity(db)).collect::<Result<Arc<[_]>, _>>()?,
+                result: Box::new(result.source_identity(db)?),
+            },
+        })
+    }
 }
 #[derive(Debug, Clone)]
 pub struct NativeModTransportSignature {
@@ -177,6 +193,7 @@ pub enum NativeModTransportBody {
 pub struct NativeModTransportNominal {
     declaration: AstNodeKey,
     name: String,
+    specialization: Option<AggregateSpecialization>,
     body: NativeModTransportBody,
 }
 impl NativeModTransportNominal {
@@ -188,6 +205,10 @@ impl NativeModTransportNominal {
     }
     pub fn body(&self) -> &NativeModTransportBody {
         &self.body
+    }
+
+    pub fn specialization(&self) -> Option<&AggregateSpecialization> {
+        self.specialization.as_ref()
     }
 }
 /// Concrete field/variant projection retains applied argument identities, not ABI pointers.
@@ -251,7 +272,13 @@ pub fn native_mod_transport_nominal(
                 .collect::<Result<Vec<_>, SemanticError>>()?,
         )
     };
-    Ok(Some(NativeModTransportNominal { declaration: *declaration, name: name.node.name.clone(), body }))
+    let arguments = arguments.iter().map(|arg| arg.source_identity(db)).collect::<Result<Arc<[_]>, _>>()?;
+    Ok(Some(NativeModTransportNominal {
+        declaration: *declaration,
+        name: name.node.name.clone(),
+        specialization: AggregateSpecialization::from_arguments(arguments),
+        body,
+    }))
 }
 
 /// Exact sole array-literal element; source nodes remain behind the query boundary.

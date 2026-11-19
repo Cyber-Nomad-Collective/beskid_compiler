@@ -41,6 +41,7 @@ pub enum DynamicPackingNode {
         declaration: AstNodeKey,
         identity: Arc<str>,
         arguments: Vec<u32>,
+        specialization: Option<AggregateSpecialization>,
         fields: Vec<DynamicPackingField>,
     },
     Enum {
@@ -637,6 +638,7 @@ impl Projection<'_> {
                         declaration,
                         identity: qualified_name.clone(),
                         arguments: application,
+                        specialization: AggregateSpecialization::from_identity(identity),
                         fields: self.fields(fields, depth, false)?,
                     },
                     ShapeBodyProjection::Enum(variants) => {

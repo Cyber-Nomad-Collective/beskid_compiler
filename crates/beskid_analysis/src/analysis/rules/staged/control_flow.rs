@@ -379,7 +379,8 @@ impl<'a> ControlFlowVisitor<'a> {
             | Statement::If(_)
             | Statement::With(_)
             | Statement::Launch(_)
-            | Statement::Expression(_) => false,
+            | Statement::Expression(_)
+            | Statement::Observe(_) => false,
         }
     }
 

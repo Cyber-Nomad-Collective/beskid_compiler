@@ -399,6 +399,17 @@ fn logical_type(
             {
                 return Err(invalid("GlueHandle requires exactly one u64 token field"));
             }
+            let token = &definition.fields[0];
+            if token.node.is_property() {
+                return Err(spanned(
+                    &token.span,
+                    format!(
+                        "GlueHandle token field `{}` is a property. Use an ordinary u64 field.",
+                        token.node.name.node.name
+                    ),
+                ));
+            }
+            reject_derived_glue_properties(definition, GLUE_HANDLE)?;
             let count = path.node.segments.iter().map(|s| s.node.type_args.len()).sum::<usize>();
             if count > *remaining {
                 return Err(invalid("Glue generic argument closure exceeds nodes1024"));
@@ -484,6 +495,7 @@ fn glue_record(
     {
         return Err(spanned(&marker.span, "GlueRecord types have 1..=64 fields"));
     }
+    reject_derived_glue_properties(definition, GLUE_RECORD)?;
     let mut names = std::collections::HashSet::new();
     let fields = definition
         .fields
@@ -495,6 +507,14 @@ fn glue_record(
             }
             if field.node.kind != beskid_analysis::syntax::FieldKind::Value {
                 return Err(spanned(&field.span, "GlueRecord fields are value fields"));
+            }
+            if field.node.is_property() {
+                return Err(spanned(
+                    &field.span,
+                    format!(
+                        "GlueRecord field `{name}` is a property. By-value Glue records require ordinary value fields."
+                    ),
+                ));
             }
             match &field.node.ty.node {
                 Type::Primitive(primitive) if record_field_primitive(primitive.node) => {
@@ -514,6 +534,20 @@ fn glue_record(
         return Err(spanned(&marker.span, "RustOwner on a GlueRecord type requires GlueRecord Library"));
     }
     Ok(GlueRecordBrand { declaration, qualified_identity, library, fields: fields.into(), rust_owner })
+}
+/// These transports reconstruct objects with a fixed layout. A derived getter can be
+/// observed even when the declaration contains no stored properties.
+fn reject_derived_glue_properties(definition: &TypeDefinition, brand: &str) -> Result<(), SemanticError> {
+    if let Some(method) = definition.methods.iter().find(|method| method.node.is_property_getter) {
+        return Err(spanned(
+            &method.span,
+            format!(
+                "{brand} type `{}` declares derived property `{}`. Glue transports require a fixed object layout.",
+                definition.name.node.name, method.node.name.node.name,
+            ),
+        ));
+    }
+    Ok(())
 }
 /// Admit a `[GlueEnum]` declaration: non-generic, 1..=4096 variants, none with fields.
 fn glue_enum(

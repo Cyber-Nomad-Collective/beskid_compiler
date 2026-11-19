@@ -252,6 +252,8 @@ pub(super) fn validate(manifest: &RuntimeManifestV5) -> Result<(), String> {
         "__gc_allocation_failure_reason",
         "__gc_try_register_root",
         "__gc_try_root_handle",
+        "__observer_subscribe",
+        "__observer_tail",
         "__event_get_handler",
         "__event_len",
         "__event_subscribe",

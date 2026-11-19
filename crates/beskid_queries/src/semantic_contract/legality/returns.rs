@@ -146,7 +146,7 @@ impl Walker<'_> {
         match statement {
             Statement::Return(_) | Statement::Continue(_) => Flow::STOPS,
             Statement::Break(_) => Flow { completes: false, breaks: true },
-            Statement::Let(_) | Statement::Launch(_) | Statement::For(_) => Flow::CONTINUES,
+            Statement::Let(_) | Statement::Launch(_) | Statement::For(_) | Statement::Observe(_) => Flow::CONTINUES,
             Statement::While(while_statement) => {
                 let while_id = self.child(id, DynNodeRef::from(while_statement));
                 let body = &while_statement.node.body;

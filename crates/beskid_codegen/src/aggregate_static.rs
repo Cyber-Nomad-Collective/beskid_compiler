@@ -44,6 +44,7 @@ pub struct AggregateObjectLayout {
     pub object_alignment: u64,
     pub pointer_map_offsets: Arc<[u64]>,
     pub fields: Arc<[AggregateStaticField]>,
+    pub observer_slot: Option<u32>,
     /// Physical managed pointer slots for compiler-resolved injected fields.
     pub injected_fields: Arc<[(AstNodeKey, u64)]>,
 }
@@ -405,6 +406,18 @@ impl CodegenInput<'_> {
                 }
             }
         }
+        let observer_slot = if self.observed_properties.has_slot(declaration, &aggregate.specialization) {
+            if self.target().pointer_width != 64 {
+                return None;
+            }
+            alignment = alignment.max(8);
+            let slot = align_to(size, 8)?;
+            pointer_map_offsets.push(slot);
+            size = slot.checked_add(8)?;
+            Some(u32::try_from(slot).ok()?)
+        } else {
+            None
+        };
         let object_size = align_to(size, alignment)?;
         Some(AggregateObjectLayout {
             declaration,
@@ -413,6 +426,7 @@ impl CodegenInput<'_> {
             pointer_map_offsets: pointer_map_offsets.into(),
             fields: fields.into(),
             injected_fields: injected_fields.into(),
+            observer_slot,
         })
     }
 

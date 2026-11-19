@@ -150,7 +150,7 @@ pub(in crate::semantic_contract) fn aggregate_layout_from_definition(
                 .unwrap_or_else(|| aggregate_field_layout(db, program, index, declaration, field))
         })
         .collect::<Result<Vec<_>, SemanticError>>()
-        .map(|fields| AggregateLayoutFact { fields: fields.into() })
+        .map(|fields| AggregateLayoutFact { fields: fields.into(), specialization: None })
 }
 
 pub(in crate::semantic_contract) fn instantiated_aggregate_layout_for_path(
@@ -208,8 +208,21 @@ pub(in crate::semantic_contract) fn instantiated_aggregate_layout_for_path(
             }
         })
         .collect::<Result<HashMap<_, _>, SemanticError>>()?;
-    aggregate_layout_from_definition(db, program, index, declaration, definition, Some(&substitutions))
-        .map(|layout| (declaration, layout))
+    aggregate_layout_from_definition(db, program, index, declaration, definition, Some(&substitutions)).map(
+        |mut layout| {
+            if ambient.is_none() {
+                layout.specialization = terminal
+                    .node
+                    .type_args
+                    .iter()
+                    .map(|argument| generic_source_type_identity(db, use_key, &argument.node))
+                    .collect::<Result<Arc<[_]>, _>>()
+                    .ok()
+                    .and_then(AggregateSpecialization::from_arguments);
+            }
+            (declaration, layout)
+        },
+    )
 }
 
 pub(in crate::semantic_contract) fn applied_aggregate_shape(
@@ -267,8 +280,31 @@ pub fn aggregate_literal_specialization(
             Err(error) => return Some(Err(error)),
         };
         Some(instantiated_aggregate_layout_for_path(db, key, &literal.path.node, Some(&ambient)).and_then(
-            |(declaration, layout)| {
+            |(declaration, mut layout)| {
                 validate_aggregate_literal_visibility(db, key, declaration)?;
+                if let Some(terminal) =
+                    literal.path.node.segments.last().filter(|segment| !segment.node.type_args.is_empty())
+                {
+                    let source_environment = enclosing
+                        .iter()
+                        .map(|binding| (binding.parameter.as_ref(), binding.source_identity()))
+                        .collect();
+                    layout.specialization = terminal
+                        .node
+                        .type_args
+                        .iter()
+                        .map(|argument| {
+                            generic_source_type_identity_with_substitutions(
+                                db,
+                                key,
+                                &argument.node,
+                                &source_environment,
+                            )
+                        })
+                        .collect::<Result<Arc<[_]>, _>>()
+                        .ok()
+                        .and_then(AggregateSpecialization::from_arguments);
+                }
                 Ok(layout)
             },
         ))
@@ -441,13 +477,12 @@ pub(in crate::semantic_contract) fn array_index_element_template_tracked(
             // index) goes through the source-identity query, which proves the array element
             // declaration, its substitutions and the integer subscript; an erased array pointer
             // is never sufficient to authorize an element load or store.
-            return Some(
-                generic_source_expression_identity(db, AstNodeKey { node: index_node, ..key })
-                    .map(|element| ArrayIndexElementTemplate::Concrete {
-                        abi: element.abi_type(),
-                        managed: element.managed_reference_kind(),
-                    }),
-            );
+            return Some(generic_source_expression_identity(db, AstNodeKey { node: index_node, ..key }).map(
+                |element| ArrayIndexElementTemplate::Concrete {
+                    abi: element.abi_type(),
+                    managed: element.managed_reference_kind(),
+                },
+            ));
         };
         let [segment] = target.path.node.segments.as_slice() else {
             return Some(Err(SemanticError::unavailable("array_index_element_abi_type")));
@@ -461,20 +496,21 @@ pub(in crate::semantic_contract) fn array_index_element_template_tracked(
             // A bare name that is no lexical local is a field of the implicit method receiver
             // (`entries[index]` inside a method of the declaring type); its array identity comes
             // from the field access fact, exactly like every other non-local target above.
-            return Some(
-                generic_source_expression_identity(db, AstNodeKey { node: index_node, ..key })
-                    .map(|element| ArrayIndexElementTemplate::Concrete { abi: element.abi_type(), managed: element.managed_reference_kind() }),
-            );
+            return Some(generic_source_expression_identity(db, AstNodeKey { node: index_node, ..key }).map(
+                |element| ArrayIndexElementTemplate::Concrete {
+                    abi: element.abi_type(),
+                    managed: element.managed_reference_kind(),
+                },
+            ));
         };
         let parent = parent_node(index, declaration)?;
         if index.kind(parent) == Some(beskid_analysis::syntax_query::NodeKind::Pattern) {
-            return Some(
-                generic_source_expression_identity(db, AstNodeKey { node: index_node, ..key })
-                    .map(|element| ArrayIndexElementTemplate::Concrete {
-                        abi: element.abi_type(),
-                        managed: element.managed_reference_kind(),
-                    }),
-            );
+            return Some(generic_source_expression_identity(db, AstNodeKey { node: index_node, ..key }).map(
+                |element| ArrayIndexElementTemplate::Concrete {
+                    abi: element.abi_type(),
+                    managed: element.managed_reference_kind(),
+                },
+            ));
         }
         let array_type = match index.kind(parent)? {
             beskid_analysis::syntax_query::NodeKind::Parameter => index

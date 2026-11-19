@@ -822,7 +822,14 @@ pub fn with_prepared_glue_input<T>(
 /// every production syntax module artifact carry the same interop surface as canonical runtime
 /// lowering from generation-scoped semantic facts.
 fn syntax_export_entries(db: &dyn beskid_queries::Db, items: &[SyntaxModuleItem]) -> Result<Vec<ExportEntry>> {
-    syntax_export_entries_matching(db, items, &HashSet::new())
+    let exports = syntax_export_entries_matching(db, items, &HashSet::new())?;
+    for export in &exports {
+        let item = items.iter().find(|item| item.symbol == export.function)
+            .ok_or_else(|| anyhow::anyhow!("raw C export source is unavailable for {}", export.exported_symbol))?;
+        beskid_queries::validate_raw_c_export_signature(db, item.key)
+            .map_err(|error| anyhow::anyhow!("{error}"))?;
+    }
+    Ok(exports)
 }
 
 fn syntax_export_entries_matching(

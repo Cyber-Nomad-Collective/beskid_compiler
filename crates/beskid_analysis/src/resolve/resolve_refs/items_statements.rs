@@ -366,6 +366,10 @@ impl Resolver {
             Statement::Expression(expr_stmt) => {
                 self.resolve_expression(&expr_stmt.node.expression);
             }
+            Statement::Observe(observe) => {
+                self.resolve_expression(&observe.node.target);
+                self.resolve_expression(&observe.node.callback);
+            }
             Statement::With(_) | Statement::Launch(_) => {}
         }
         if let Some(body) = scoped_body {

@@ -1,0 +1,72 @@
+use Core.Equatable;
+use Testing.Assert;
+
+type Label : Equatable<Label>
+{
+    i32 code;
+    i32 revision;
+    pub bool Equals(Label other)
+    {
+        Assert.CollectGarbage();
+        return code == other.code;
+    }
+}
+
+type Model
+{
+    Label Current { get; set; }
+    Label Display => Current;
+}
+
+type Tagged<T> : Equatable<Tagged<T>>
+{
+    i32 tag;
+    T payload;
+    pub bool Equals(Tagged<T> other) { return tag == other.tag; }
+}
+
+type Feed { Tagged<string> Item { get; set; } }
+
+type Log { i32 direct; i32 derived; }
+
+type ValueBox<T> { T Value { get; set; } }
+type Changes<T> { T previous; T current; i32 calls; }
+
+unit Attach<T>(ValueBox<T> box, Changes<T> changes) where T: Equatable<T>
+{
+    observe box.Value (old, new) => {
+        changes.previous = old;
+        changes.current = new;
+        changes.calls += 1;
+    };
+}
+
+i32 Main()
+{
+    Model model = Model { Current: Label { code: 1, revision: 0 } };
+    Log log = Log { direct: 0, derived: 0 };
+    observe model.Current (old, new) => { log.direct = old.code * 10 + new.code; };
+    observe model.Display (old, new) => { log.derived = old.code * 10 + new.code; };
+    model.Current = Label { code: 1, revision: 9 };
+    Label retained = model.Current;
+    if log.direct != 0 || log.derived != 0 || retained.revision != 0 { return 1; }
+    model.Current = Label { code: 2, revision: 1 };
+    if log.direct != 12 || log.derived != 12 { return 2; }
+    Feed feed = Feed { Item: Tagged<string> { tag: 1, payload: "start" } };
+    observe feed.Item (old, new) => { log.direct = old.tag * 10 + new.tag; };
+    feed.Item = Tagged<string> { tag: 1, payload: "same tag" };
+    Tagged<string> kept = feed.Item;
+    if kept.payload != "start" { return 3; }
+    feed.Item = Tagged<string> { tag: 3, payload: "changed tag" };
+    if log.direct != 13 { return 4; }
+
+    Label start = Label { code: 8, revision: 0 };
+    ValueBox<Label> box = ValueBox<Label> { Value: start };
+    Changes<Label> changes = Changes<Label> { previous: start, current: start, calls: 0 };
+    Attach(box, changes);
+    box.Value = Label { code: 8, revision: 9 };
+    if changes.calls != 0 { return 5; }
+    box.Value = Label { code: 13, revision: 1 };
+    if changes.calls != 1 || changes.previous.code != 8 || changes.current.code != 13 { return 6; }
+    return 42;
+}

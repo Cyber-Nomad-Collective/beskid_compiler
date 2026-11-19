@@ -86,6 +86,24 @@ pub trait NodeFacts {
     fn event_handler_local(&self, _key: AstNodeKey) -> Option<EventHandlerLocalPlan> {
         None
     }
+    /// Boxed receiver, callback, and the witness offset describing the concrete subscription.
+    fn contract_property_assignment(
+        &self,
+        _key: AstNodeKey,
+    ) -> Option<(beskid_queries::SemanticTypeId, Option<(beskid_queries::CompoundAssignmentOperator, u32)>)> {
+        None
+    }
+
+    fn contract_observation(&self, _key: AstNodeKey) -> Option<(AstNodeKey, AstNodeKey, u32)> {
+        None
+    }
+
+    fn observation(&self, _statement: AstNodeKey) -> Option<ObservationPlan> {
+        None
+    }
+    fn observed_store(&self, _assignment: AstNodeKey) -> Result<Option<ObservedStore>, ()> {
+        Ok(None)
+    }
     fn primitive_numeric_conversion(
         &self,
         _key: AstNodeKey,

@@ -837,6 +837,8 @@ int32_t beskid_rt_v5_network_set_options(size_t handle, int64_t bits);
 int32_t beskid_rt_v5_network_shutdown_write(size_t handle);
 int32_t beskid_rt_v5_network_udp_connect(size_t handle, void * address);
 int64_t beskid_rt_v5_network_write(size_t handle, void * buffer, int64_t offset, int64_t count);
+uint8_t observer_subscribe(void * owner, size_t slotOffset, size_t propertyId, void * closure, void * nodeDescriptor);
+void * observer_tail(void * head);
 void beskid_trap_code(int64_t code);
 void beskid_trap_message(void * message);
 void port_close(int64_t port);

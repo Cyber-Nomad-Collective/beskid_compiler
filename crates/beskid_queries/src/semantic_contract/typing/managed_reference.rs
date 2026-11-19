@@ -80,17 +80,21 @@ pub(in crate::semantic_contract) fn managed_reference_kind_tracked(
                 }
                 return Some(managed_reference_kind_for_syntax_type(&parameter.ty.node));
             }
-            // A typed lambda parameter is classified by its written type like a parameter
-            // (`(Core.Parallel.Scopes.Scope s) => ...`); an untyped one by the other authorities.
-            if let Some(written) = index
+            if let Some(parameter) = index
                 .node_at(program, parent)
                 .and_then(|parent| parent.of::<beskid_analysis::syntax::LambdaParameter>())
-                .and_then(|parameter| parameter.ty.as_ref())
             {
-                if type_syntax_is_enclosing_generic_parameter_reference(db, key, &written.node) {
-                    return Some(Err(SemanticError::unavailable("managed_reference_kind")));
+                if let Some(written) = parameter.ty.as_ref() {
+                    if type_syntax_is_enclosing_generic_parameter_reference(db, key, &written.node) {
+                        return Some(Err(SemanticError::unavailable("managed_reference_kind")));
+                    }
+                    return Some(managed_reference_kind_for_syntax_type(&written.node));
                 }
-                return Some(managed_reference_kind_for_syntax_type(&written.node));
+                // A contextual parameter keeps its source identity. Its pointer ABI alone
+                // cannot distinguish a managed nominal value from a native pointer.
+                if let Ok(identity) = untyped_lambda_parameter_identity(db, program, index, key, parent, None) {
+                    return Some(Ok(identity.managed_reference_kind()));
+                }
             }
             if index
                 .node_at(program, parent)

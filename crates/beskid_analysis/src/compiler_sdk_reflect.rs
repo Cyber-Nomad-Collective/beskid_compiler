@@ -105,6 +105,7 @@ pub enum ReflectSdkNodeKind {
     ScopeHook,
     WithStatement,
     LaunchStatement,
+    ObserveStatement,
 }
 
 /// Emit-plane contribution categories for the Mod SDK (host-owned payloads).

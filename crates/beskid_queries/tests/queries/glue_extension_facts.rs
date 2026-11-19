@@ -245,6 +245,71 @@ fn unadmitted_record_enum_and_callback_forms_are_rejected() {
 }
 
 #[test]
+fn stored_properties_cannot_cross_glue_record_bindings() {
+    for declaration in [
+        "prop i64 Count = 0;",
+        "always prop i64 Count = 0;",
+        "i64 Count { get { return field + 1; } set { field = value; } } = 0;",
+    ] {
+        let fixture = Fixture::new(&format!(
+            r#"
+[GlueRecord]
+pub type Counter {{ {declaration} }}
+
+[Extern(Abi:"C", Library:"glue_manual")]
+pub contract Foreign {{ Counter RoundTrip(Counter value); }}
+
+[Export(Abi:"C", Symbol:"counter_from_foreign")]
+pub Counter CounterFromForeign(Counter value) {{ return value; }}
+"#,
+        ));
+        for boundary in [fixture.method("RoundTrip"), fixture.named(NodeKind::FunctionDefinition, "CounterFromForeign")]
+        {
+            let error = fixture.binding_error(boundary);
+            assert!(error.contains("GlueRecord field `Count` is a property"), "{declaration}: {error}");
+        }
+    }
+}
+
+#[test]
+fn a_glue_handle_token_cannot_be_a_property() {
+    let fixture = Fixture::new(
+        r#"
+[GlueHandle(Library:"glue_manual")]
+pub type Handle { u64 Token { get { return field + 1_u64; } set { field = value; } } }
+[Extern(Abi:"C", Library:"glue_manual")]
+pub contract Foreign { Handle RoundTrip(Handle value); }
+"#,
+    );
+    let error = fixture.binding_error(fixture.method("RoundTrip"));
+    assert!(error.contains("GlueHandle token field `Token` is a property"), "{error}");
+}
+
+#[test]
+fn glue_reconstructed_objects_require_a_fixed_layout() {
+    for (brand, marker, field) in [
+        ("GlueRecord", "[GlueRecord]", "i64 count;"),
+        ("GlueHandle", r#"[GlueHandle(Library:"glue_manual")]"#, "u64 token;"),
+    ] {
+        let source = |member: &str| {
+            format!(
+                r#"
+{marker}
+pub type Value {{ {field} {member} }}
+[Extern(Abi:"C", Library:"glue_manual")]
+pub contract Foreign {{ Value RoundTrip(Value value); }}
+"#
+            )
+        };
+        let property = Fixture::new(&source("i64 Computed => 42;"));
+        let error = property.binding_error(property.method("RoundTrip"));
+        assert!(error.contains(&format!("{brand} type `Value` declares derived property `Computed`")), "{error}");
+        let method = Fixture::new(&source("i64 Compute() { return 42; }"));
+        assert!(glue_binding(&method.db, method.method("RoundTrip")).unwrap().is_some());
+    }
+}
+
+#[test]
 fn record_and_enum_owner_types_are_closed_placements() {
     let fixture = fixture();
     let declarations = rust_owner_declarations(&fixture.db, fixture.unit).unwrap();

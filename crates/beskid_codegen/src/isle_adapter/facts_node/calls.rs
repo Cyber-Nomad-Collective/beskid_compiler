@@ -4,6 +4,9 @@ use super::super::*;
 
 impl SyntaxNodeFacts<'_> {
     pub(super) fn call_kind_impl(&self, key: AstNodeKey) -> Option<CallKind> {
+        if self.query(beskid_queries::contract_property_access(self.db, key)).is_some() {
+            return Some(CallKind::ContractDispatch);
+        }
         if self.property_getter_in_context(key).is_some() {
             return Some(CallKind::Direct);
         }
@@ -228,6 +231,9 @@ impl SyntaxNodeFacts<'_> {
     }
 
     pub(super) fn call_arguments_impl(&self, key: AstNodeKey) -> Option<Vec<AstNodeKey>> {
+        if let Some(property) = self.query(beskid_queries::contract_property_access(self.db, key)) {
+            return Some(std::iter::once(property.receiver).chain(property.value).collect());
+        }
         if let Some(getter) = self.property_getter_in_context(key) {
             return Some(vec![getter.receiver]);
         }

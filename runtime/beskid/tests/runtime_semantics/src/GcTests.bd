@@ -878,3 +878,74 @@ test GcTracesEventHandlersThroughTheirOwner
     DropTestHeap(runtime, thread, heap, region, 2048);
     ResumeHostRuntime(hostRuntime);
 }
+
+// The only path from the rooted owner to either callback is through its shared observer head.
+// The first callback points back at the owner, so this also checks collection of a dead cycle.
+test GcTracesAndReclaimsObserverSubscriptions
+{
+    pointer hostRuntime = SuspendHostRuntime();
+    pointer runtime = SystemAllocate(64, 8);
+    memory_set(runtime, 0, 64);
+    Assert.True(ProcessInit(runtime) == runtime, "initialize isolated observer heap");
+    GcHeapSetStressInterval(0);
+
+    pointer ownerMap = SystemAllocate(8, 8);
+    raw_word_store(ownerMap, 16);
+    pointer ownerDescriptor = TestDescriptor(24, 8);
+    raw_word_store(pointer_add(ownerDescriptor, 16), NativeWord(ownerMap));
+    raw_word_store(pointer_add(ownerDescriptor, 24), 1);
+    pointer nodeMap = SystemAllocate(16, 8);
+    raw_word_store(nodeMap, 16);
+    raw_word_store(pointer_add(nodeMap, 8), 24);
+    pointer nodeDescriptor = TestDescriptor(40, 8);
+    raw_word_store(pointer_add(nodeDescriptor, 16), NativeWord(nodeMap));
+    raw_word_store(pointer_add(nodeDescriptor, 24), 2);
+
+    GcCollect();
+    pointer owner = Alloc(24, ownerDescriptor);
+    pointer ownerSlot = pointer_add(owner, 16);
+    bool initiallyEmpty = raw_word_load(ownerSlot) == 0;
+    pointer firstCallback = Alloc(24, ownerDescriptor);
+    raw_word_store(pointer_add(firstCallback, 16), NativeWord(owner));
+    word before = GcCollectionCount();
+    GcHeapSetStressInterval(1);
+    bool subscribedFirst = ObserverSubscribe(owner, 16, 1, firstCallback, nodeDescriptor);
+    GcHeapSetStressInterval(0);
+    bool collectedDuringSubscribe = GcCollectionCount() > before;
+    word ownerHandle = GcRootHandle(owner);
+    pointer firstNode = NativePointer(raw_word_load(ownerSlot));
+    pointer firstTail = ObserverTail(firstNode);
+
+    pointer secondCallback = Alloc(24, ownerDescriptor);
+    bool subscribedSecond = ObserverSubscribe(owner, 16, 2, secondCallback, nodeDescriptor);
+    pointer secondNode = NativePointer(raw_word_load(pointer_add(firstNode, 24)));
+    bool preservesOrder = firstTail == firstNode && ObserverTail(firstNode) == secondNode &&
+        raw_word_load(pointer_add(firstNode, 16)) == NativeWord(firstCallback) &&
+        raw_word_load(pointer_add(secondNode, 16)) == NativeWord(secondCallback) &&
+        raw_word_load(pointer_add(firstNode, 32)) == 1 && raw_word_load(pointer_add(secondNode, 32)) == 2;
+
+    GcCollect();
+    pointer heap = Heap();
+    bool traced = IsAllocatedObject(heap, firstNode) && IsAllocatedObject(heap, secondNode) &&
+        IsAllocatedObject(heap, firstCallback) && IsAllocatedObject(heap, secondCallback);
+    GcUnrootHandle(ownerHandle);
+    GcCollect();
+    bool released = !IsAllocatedObject(heap, owner) &&
+        !IsAllocatedObject(heap, firstNode) && !IsAllocatedObject(heap, secondNode) &&
+        !IsAllocatedObject(heap, firstCallback) && !IsAllocatedObject(heap, secondCallback);
+
+    ProcessShutdown(runtime);
+    SystemFree(nodeDescriptor, 40);
+    SystemFree(nodeMap, 16);
+    SystemFree(ownerDescriptor, 40);
+    SystemFree(ownerMap, 8);
+    SystemFree(runtime, 64);
+    ResumeHostRuntime(hostRuntime);
+
+    Assert.True(initiallyEmpty, "the shared observer slot starts empty");
+    Assert.True(subscribedFirst && subscribedSecond, "both callbacks subscribe");
+    Assert.True(collectedDuringSubscribe, "registration protects the owner and callback across allocation");
+    Assert.True(preservesOrder, "one list serves distinct property identifiers in registration order");
+    Assert.True(traced, "the live owner keeps both callbacks alive");
+    Assert.True(released, "an unreachable owner and its cyclic callback are reclaimed");
+}

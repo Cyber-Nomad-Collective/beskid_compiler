@@ -32,6 +32,7 @@ mod isle_trace;
 pub mod module_emission;
 pub mod native_mod;
 mod native_tls;
+mod observation;
 pub mod prepared_syntax;
 pub mod reserved_failure;
 pub mod services;

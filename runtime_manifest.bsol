@@ -1839,6 +1839,28 @@ corelib_service "__gc_unroot_handle" {
   ]
 }
 
+corelib_service "__observer_subscribe" {
+  adapter = "observer_subscribe"
+  params = [{ name = owner, type = pointer }, { name = slotOffset, type = usize }, { name = propertyId, type = usize }, { name = closure, type = pointer }, { name = nodeDescriptor, type = pointer }]
+  returns = u8
+  target_bindings = [
+    { target = "x86_64-unknown-linux-gnu", implementation = "observer_subscribe", os_imports = [] },
+    { target = "aarch64-apple-darwin", implementation = "observer_subscribe", os_imports = [] },
+    { target = "x86_64-pc-windows-msvc", implementation = "observer_subscribe", os_imports = [] }
+  ]
+}
+
+corelib_service "__observer_tail" {
+  adapter = "observer_tail"
+  params = [{ name = head, type = pointer }]
+  returns = pointer
+  target_bindings = [
+    { target = "x86_64-unknown-linux-gnu", implementation = "observer_tail", os_imports = [] },
+    { target = "aarch64-apple-darwin", implementation = "observer_tail", os_imports = [] },
+    { target = "x86_64-pc-windows-msvc", implementation = "observer_tail", os_imports = [] }
+  ]
+}
+
 corelib_service "__event_get_handler" {
   adapter = "event_get_handler"
   params = [{ name = event, type = pointer }, { name = index, type = u32 }]

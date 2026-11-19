@@ -45,6 +45,7 @@ mod gate;
 mod generics;
 mod imports;
 mod members;
+mod observation;
 mod ownership;
 mod parameters;
 mod returns;
@@ -495,6 +496,7 @@ fn collect_nodes_of_kind(
 pub fn check_items(db: &dyn Db, items: &[AstNodeKey]) -> Result<(), Vec<SemanticFinding>> {
     let mut findings = import_findings(db, items);
     for &item in items {
+        findings.extend(observation::observation_findings(db, item));
         findings.extend(transfer::immutable_field_findings(db, item));
         if let Ok(Some(missing)) = returns::missing_return(db, item) {
             let note = format!("`{}` returns `{}`", missing.callable, missing.result_name);
@@ -1463,6 +1465,93 @@ mod tests {
             let span = finding.site_span(&db).expect("authored property span");
             assert_eq!(&source[span.start..span.end], "Count");
         }
+    }
+
+    #[test]
+    fn observation_rejects_ineligible_targets_values_and_callbacks_before_lowering() {
+        for (number, declaration, callback, expected) in [
+            (0, "i64 Count;", "", "E1265"),
+            (1, "i64 Count => Hide(); i64 Hide() { return 1; }", "", "E1268"),
+            (2, "Entry Count { get; set; }", "", "E1266"),
+            (3, "prop i64 Count = 0_i64;", "return 1;", "E1267"),
+        ] {
+            let source = format!(
+                "type Entry {{}} type Counter {{ {declaration} }}\n\
+                 unit Main(Counter c) {{ observe c.Count (old, new) => {{ {callback} }}; }}"
+            );
+            let (db, root) = one_unit_assembly(&source, SyntaxGenerationId(1400 + number));
+            let item = function_definitions(&db, root)[0];
+            let findings = super::check_items(&db, &[item]).expect_err("invalid subscription");
+            assert!(findings.iter().any(|finding| finding.kind.code() == expected), "{source}: {findings:?}");
+        }
+    }
+
+    #[test]
+    fn observation_always_exempts_the_stored_type_from_equality() {
+        let source = "type Entry {} type Counter { always Entry Count { get; set; } }
+                      unit Main(Counter c) { observe c.Count (old, new) => {}; }";
+        let (db, root) = one_unit_assembly(source, SyntaxGenerationId(1404));
+        let item = function_definitions(&db, root)[0];
+        assert!(super::check_items(&db, &[item]).is_ok());
+    }
+
+    #[test]
+    fn observation_resolves_and_deduplicates_transitive_derived_dependencies() {
+        let source = "type Counter {
+                          prop i64 First = 0_i64;
+                          prop i64 Second = 0_i64;
+                          i64 Left => this.First + Second;
+                          i64 Right => First * 2_i64;
+                          i64 Total => Left + this.Right;
+                      }
+                      unit Main(Counter counter) { observe counter.Total (old, new) => {}; }";
+        let (db, root) = one_unit_assembly(source, SyntaxGenerationId(1407));
+        let item = function_definitions(&db, root)[0];
+        assert!(super::check_items(&db, &[item]).is_ok());
+        let mut statements = Vec::new();
+        nodes_of_kind(&db, item, IndexedNodeKind::ObserveStatement, &mut statements);
+        let property = crate::observation_target(&db, statements[0]).unwrap().unwrap();
+        let fields = crate::observation_stored_dependencies(&db, property.declaration).unwrap().unwrap();
+        let declarations = fields
+            .iter()
+            .map(|field| {
+                let span = crate::node_span(&db, *field).unwrap().unwrap();
+                source[span.start..span.end].trim()
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(declarations, ["prop i64 First = 0_i64", "prop i64 Second = 0_i64"]);
+    }
+
+    #[test]
+    fn observation_diagnoses_a_cycle_and_hidden_accessor_dependencies() {
+        let cases = [
+            ("i64 First => Second; i64 Second => First;", "E1269"),
+            ("i64 Backing { get { return field; } set; } = 0_i64; i64 First => Backing;", "E1268"),
+            ("i64 value; i64 First => value;", "E1268"),
+        ];
+        for (number, (members, expected)) in cases.into_iter().enumerate() {
+            let source = format!(
+                "type Counter {{ {members} }}\n\
+                 unit Main(Counter counter) {{ observe counter.First (old, new) => {{}}; }}"
+            );
+            let (db, root) = one_unit_assembly(&source, SyntaxGenerationId(1408 + number as u64));
+            let item = function_definitions(&db, root)[0];
+            let findings = super::check_items(&db, &[item]).expect_err("invalid derived dependencies");
+            assert!(findings.iter().any(|finding| finding.kind.code() == expected), "{source}: {findings:?}");
+        }
+    }
+
+    #[test]
+    fn observation_rejects_capture_of_mutable_local_storage() {
+        let source = "type Counter { prop i64 Count = 0_i64; }
+                      unit Main(Counter c) {
+                          mut i64 total = 0_i64;
+                          observe c.Count (old, new) => { total = new; };
+                      }";
+        let (db, root) = one_unit_assembly(source, SyntaxGenerationId(1405));
+        let item = function_definitions(&db, root)[0];
+        let findings = super::check_items(&db, &[item]).expect_err("observation retains its callback");
+        assert!(findings.iter().any(|finding| finding.kind.code() == "E1233"), "{findings:?}");
     }
 
     #[test]

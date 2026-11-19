@@ -194,6 +194,26 @@ fn lower_resolved_syntax_program(
     isa: &dyn TargetIsa,
     items: &[ResolvedSyntaxModuleItem],
 ) -> Result<CodegenArtifact, SyntaxModuleEmissionError> {
+    // Final specialization and witness discovery determines which subscriptions can execute.
+    // Allocation descriptors and writes must share this classification across emission workers.
+    let mut observed = crate::observation::ObservedProperties::default();
+    let mut trace = std::collections::BTreeSet::new();
+    for item in items {
+        observed
+            .classify_item(
+                input.database(),
+                item.key,
+                item.specialization.as_ref(),
+                crate::isle_trace::enabled().then_some(&mut trace),
+            )
+            .map_err(|error| emission_verification(error.to_string()))?;
+    }
+    for record in trace {
+        crate::isle_trace::event(|| record);
+    }
+    let mut classified = input.with_artifact_namespace(input.artifact_namespace().into());
+    classified.observed_properties = Arc::new(observed);
+    let input = &classified;
     let mut symbols = HashMap::with_capacity(items.len());
     for item in items {
         if symbols.insert(item.callee.clone(), item.symbol.clone()).is_some() {

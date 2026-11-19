@@ -26,6 +26,7 @@ impl Statement {
             | Statement::While(_)
             | Statement::For(_)
             | Statement::Launch(_)
+            | Statement::Observe(_)
             | Statement::Expression(_) => true,
         }
     }

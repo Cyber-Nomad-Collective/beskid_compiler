@@ -1,5 +1,6 @@
 use beskid_analysis::projects::{
-    ProjectWorkspacePlan, WorkspacePrepareOptions, prepare_project_workspace_plan_with_options,
+    ProjectWorkspacePlan, ResolvedDependencyProject, VerifiedPackageSource, WorkspacePrepareOptions,
+    prepare_project_workspace_plan_with_options,
 };
 use std::path::Path;
 
@@ -40,6 +41,74 @@ fn verified_package_identity_is_location_independent_and_preserves_declared_vers
     assert_eq!(a.identity().version(), "1.2.3");
     assert_eq!(a.identity().source_digest().len(), 64);
     assert!(left.package_identities().for_source(&root.path().join("outside.bd")).is_none());
+}
+
+#[test]
+fn configured_corelib_source_proof_excludes_an_identical_dependency_copy() {
+    let root = tempfile::tempdir().unwrap();
+    let corelib = root.path().join("corelib");
+    let aggregate = corelib.join("beskid_corelib");
+    std::fs::create_dir_all(&aggregate).unwrap();
+    std::fs::write(
+        aggregate.join("corelib.bproj"),
+        "beskid_corelib { name = \"beskid_corelib\" version = \"1.0.0\" }",
+    )
+    .unwrap();
+
+    for (case, package, genuine) in [
+        ("configured", corelib.join("packages/foundation"), true),
+        ("lookalike", root.path().join("copy/packages/foundation"), false),
+    ] {
+        let source_root = package.join("src");
+        std::fs::create_dir_all(source_root.join("Core")).unwrap();
+        std::fs::write(
+            source_root.join("Core/Equatable.bd"),
+            "pub contract Equatable<T> { bool Equals(T other); }",
+        )
+        .unwrap();
+        let dependency_manifest = package.join("corelib_foundation.bproj");
+        std::fs::write(
+            &dependency_manifest,
+            "corelib_foundation { name = \"corelib_foundation\" version = \"1.0.0\" }\ntarget \"Foundation\" { kind = \"Lib\" }",
+        )
+        .unwrap();
+        let project_root = root.path().join(case);
+        let host_source = project_root.join("src");
+        std::fs::create_dir_all(&host_source).unwrap();
+        std::fs::write(host_source.join("Main.bd"), "pub type Model {}").unwrap();
+        let manifest_path = project_root.join("Example.bproj");
+        std::fs::write(
+            &manifest_path,
+            "Example { name = \"Example\" version = \"1.0.0\" }\ntarget \"Example\" { kind = \"Lib\" }",
+        )
+        .unwrap();
+        let prepared = prepare_project_workspace_plan_with_options(
+            &ProjectWorkspacePlan {
+                project_root,
+                manifest_path,
+                project_name: "Example".into(),
+                source_root: Some(host_source),
+                dependency_projects: vec![ResolvedDependencyProject {
+                    dependency_name: "Foundation".into(),
+                    manifest_path: dependency_manifest,
+                    project_root: package,
+                    project_name: "corelib_foundation".into(),
+                    source_root,
+                }],
+                unresolved_dependencies: vec![],
+                corelib_root: Some(corelib.clone()),
+            },
+            WorkspacePrepareOptions::default(),
+            None,
+        )
+        .unwrap();
+        let dependency = &prepared.materialized_dependencies[0];
+        let path = dependency.materialized_source_root.join("Core/Equatable.bd");
+        let proof = prepared.package_identities();
+        let package = proof.for_source(&path).unwrap();
+        assert_eq!(package.identity().source(), &VerifiedPackageSource::Local);
+        assert_eq!(proof.for_configured_corelib_source(&path).is_some(), genuine, "{case}");
+    }
 }
 
 #[test]

@@ -141,6 +141,27 @@ impl Parsable for TypeDefinition {
                 _ => return Err(ParseError::unexpected_rule(item, None)),
             }
         }
+        // A separate impl block can declare a conformance in another source unit.
+        let receiver = receiver_type_for_definition(&name, &generics, span);
+        for field in &fields {
+            use crate::syntax::{PropertyAccessor, PropertyAccessorKind};
+            let shorthand = field.node.property_default.is_some() && field.node.property_accessors.is_none();
+            for kind in [PropertyAccessorKind::Get, PropertyAccessorKind::Set] {
+                let automatic = field
+                    .node
+                    .property_accessors
+                    .as_ref()
+                    .and_then(|a| match kind {
+                        PropertyAccessorKind::Get => a.get.as_ref(),
+                        PropertyAccessorKind::Set => a.set.as_ref(),
+                    })
+                    .is_some_and(|a| a.node == PropertyAccessor::Automatic);
+                if automatic || shorthand {
+                    methods.push(super::property_accessor::automatic_witness_accessor(kind, &receiver, field));
+                    method_docs.push(None);
+                }
+            }
+        }
         debug_assert_eq!(fields.len(), field_docs.len());
         debug_assert_eq!(methods.len(), method_docs.len());
 

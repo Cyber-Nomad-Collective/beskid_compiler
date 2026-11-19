@@ -257,6 +257,15 @@ pub(super) fn resolve_module_items(
             },
         )?;
     }
+    // A user-defined comparison can itself reach a subscription or another concrete instance.
+    // Close these implicit calls before selecting symbols and classifying object layouts.
+    loop {
+        let before = source_items.len() + specializations.values().map(Vec::len).sum::<usize>();
+        add_derived_observation_getters(input, &mut source_items, &mut present, &mut specializations)?;
+        if before == source_items.len() + specializations.values().map(Vec::len).sum::<usize>() {
+            break;
+        }
+    }
     let mut resolved = Vec::with_capacity(source_items.len());
     for item in &source_items {
         let kind = node_kind(db, item.key).map_err(|error| emission_verification(error.to_string()))?;
@@ -314,6 +323,92 @@ pub(super) fn resolve_module_items(
         }
     }
     Ok(resolved)
+}
+
+/// Derived notifications introduce getter calls at backing writes, where ordinary source
+/// calls name no getter. Resolve the concrete receiver instances before symbol emission.
+fn add_derived_observation_getters(
+    input: &CodegenInput<'_>,
+    source_items: &mut Vec<SyntaxModuleItem>,
+    present: &mut std::collections::HashSet<AstNodeKey>,
+    specializations: &mut HashMap<AstNodeKey, Vec<GenericSpecializationInstance>>,
+) -> Result<(), SyntaxModuleEmissionError> {
+    let db = input.database();
+    let mut observed = crate::observation::ObservedProperties::default();
+    let mut executable = Vec::new();
+    for item in source_items.iter() {
+        let environments = is_concrete_executable_item(db, item.key)?
+            .then_some(None)
+            .into_iter()
+            .chain(specializations.get(&item.key).into_iter().flatten()
+                .filter(|instance| !instance.substitutions.is_empty() || !instance.contract_witnesses.is_empty())
+                .map(Some))
+            .collect::<Vec<_>>();
+        for &enclosing in &environments {
+            observed.classify_item(db, item.key, enclosing, None)
+                .map_err(|error| emission_verification(error.to_string()))?;
+        }
+        if !environments.is_empty() {
+            executable.push((item.key, environments));
+        }
+    }
+    if observed.is_empty() {
+        return Ok(());
+    }
+
+    let mut calls = Vec::new();
+    for (item, environments) in executable {
+        let mut nodes = Vec::new();
+        super::data::collect_ast_nodes(db, item, &mut std::collections::HashSet::new(), &mut nodes);
+        for site in nodes {
+            if node_kind(db, site).map_err(|error| emission_verification(error.to_string()))?
+                != Some(beskid_queries::IndexedNodeKind::AssignExpression)
+            {
+                continue;
+            }
+            for &enclosing in &environments {
+                let Some((target, property)) = crate::observation::backing_property(db, site, enclosing)
+                    .map_err(|error| emission_verification(error.to_string()))?
+                else { continue };
+                if !observed.observes_backing(property.declaration) {
+                    continue;
+                }
+                let (owner, layout) = beskid_queries::observation_receiver_layout(db, target, property.receiver, enclosing)
+                    .map_err(|error| emission_verification(error.to_string()))?
+                    .ok_or_else(|| emission_verification("observed backing receiver has no concrete layout"))?;
+                let Some(properties) = observed.properties(owner, &layout.specialization) else { continue };
+                let getters = observed.dependent_getters(&properties, property.declaration);
+                for &declaration in getters.iter().chain(properties.get(&property.declaration)) {
+                    if beskid_queries::property_always(db, declaration).map_err(|error| emission_verification(error.to_string()))? == Some(true) {
+                        continue;
+                    }
+                    if let Some(instance) = beskid_queries::observation_property_equality_instance(
+                        db, target, declaration, property.receiver, enclosing,
+                    ).map_err(|error| emission_verification(error.to_string()))? {
+                        let declaration = instance.declaration;
+                        let specialized = !instance.substitutions.is_empty() || !instance.contract_witnesses.is_empty();
+                        calls.push((declaration, specialized.then_some(instance)));
+                    }
+                }
+                for getter in getters {
+                    let instance = beskid_queries::observation_getter_specialization(
+                        db, target, getter, property.receiver, enclosing,
+                    ).map_err(|error| emission_verification(error.to_string()))?;
+                    calls.push((getter, instance));
+                }
+            }
+        }
+    }
+    for (getter, instance) in calls {
+        let instances = specializations.entry(getter).or_default();
+        if let Some(instance) = instance
+            && !instances.contains(&instance)
+        {
+            instances.push(instance.clone());
+            collect_generic_call_specializations_in_environment(db, getter, Some(&instance), specializations)?;
+        }
+    }
+    close_source_items(input, source_items, present, specializations)
 }
 
 /// Add every specialization declaration not yet in `source_items`, its ordinary direct callees

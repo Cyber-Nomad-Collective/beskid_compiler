@@ -38,6 +38,7 @@ pub use mod_semantic_authority::{
     RetainedDeclaration, SerializationContributionKind, serialization_field_codec_admission,
     serialization_template_getter_shape, serialization_template_instance_rebind,
 };
+pub use semantic_contract::validate_raw_c_export_signature;
 pub use semantic_contract::{CompletionLexicalSnapshot, completion_lexical_snapshot};
 
 pub use semantic_contract::{
@@ -72,9 +73,13 @@ pub use semantic_contract::{
     reserved_failure_constructor, serialization_publication_methods,
 };
 pub use semantic_contract::{
-    PropertyGetter, PropertyReference, PropertySetter, property_accessor_specialization, property_getter,
-    property_getter_in_environment, property_reference, property_setter, property_setter_in_environment,
-    property_type_display,
+    ContractObservedProperty, ObservedPropertyInstance, PropertyGetter, PropertyReference, PropertySetter,
+    concrete_observation_property, contract_getter_property_name, contract_observation, contract_property_access,
+    expression_type_display, observation_getter_specialization, observation_property_equality_instance,
+    observation_property_name, observation_receiver_layout, observation_stored_dependencies, observation_target,
+    observation_target_in_environment, observed_property_instances, property_accessor_specialization, property_always,
+    property_getter, property_getter_in_environment, property_reference, property_reference_in_environment,
+    property_setter, property_setter_in_environment, property_type_display,
 };
 pub use semantic_contract::{
     ValueCopyPosition, array_share, capture_copy_specialization, for_element_copy_specialization,
@@ -112,18 +117,18 @@ pub use persistence::{
 };
 pub use semantic_contract::{
     AffineBinding, AffineFinding, AffineFindingKind, AffineOwnership, AggregateFieldAccess, AggregateFieldShape,
-    AggregateLayoutFact, AggregateLiteralFieldValues, ArrayIndexElementTemplate, AstNodeKey, BulkParameterFact,
-    CallLowering, CanonicalEmpty, CanonicalEmptyValue, CaptureStorageClass, CastIntent, ClifParameterShape,
-    ClosureAllocationStatus, ClosureCallTarget, ClosureCapture, ClosureEnvironment, ClosureEnvironmentField,
-    ClosureLoweringStatus, ClosurePointerMapRequirement, CollectionMutationOwner, CollectionOperation,
-    CompletionCandidate, CompletionContext, CompletionKind, CompletionMemberSurface, CompoundAssignment,
-    CompoundAssignmentOperator, ControlFlow, CorelibService, EntryItemResolutionError, EnumConstructorFact,
-    EnumConstructorSpecialization, EnumLayoutFact, EnumMatchArmFact, EnumMatchBindingFact, EnumMatchFact,
-    EnumMatchPatternFact, EnumMatchScalarLiteralFact, EnumMatchVariantPatternFact, EnumScalarPayloadObjectLayout,
-    EnumScalarPayloadVariantLayout, EnumVariantLayoutFact, EventFieldLayoutFact, EventHandlerLocalFact,
-    EventOperationFact, EventOperationKind, ExchangeCall, ExpectedType, ExpectedTypeContext, ExportSymbol,
-    ExternContractImport, FiberOwnership, ForIterableSource, ForIteratorFact, ForIteratorProtocol, FunctionItemValue,
-    FunctionValueCall, GenericCallInstantiation, GenericCallSpecialization, GenericCallTemplate,
+    AggregateLayoutFact, AggregateLiteralFieldValues, AggregateSpecialization, ArrayIndexElementTemplate, AstNodeKey,
+    BulkParameterFact, CallLowering, CanonicalEmpty, CanonicalEmptyValue, CaptureStorageClass, CastIntent,
+    ClifParameterShape, ClosureAllocationStatus, ClosureCallTarget, ClosureCapture, ClosureEnvironment,
+    ClosureEnvironmentField, ClosureLoweringStatus, ClosurePointerMapRequirement, CollectionMutationOwner,
+    CollectionOperation, CompletionCandidate, CompletionContext, CompletionKind, CompletionMemberSurface,
+    CompoundAssignment, CompoundAssignmentOperator, ControlFlow, CorelibService, EntryItemResolutionError,
+    EnumConstructorFact, EnumConstructorSpecialization, EnumLayoutFact, EnumMatchArmFact, EnumMatchBindingFact,
+    EnumMatchFact, EnumMatchPatternFact, EnumMatchScalarLiteralFact, EnumMatchVariantPatternFact,
+    EnumScalarPayloadObjectLayout, EnumScalarPayloadVariantLayout, EnumVariantLayoutFact, EventFieldLayoutFact,
+    EventHandlerLocalFact, EventOperationFact, EventOperationKind, ExchangeCall, ExpectedType, ExpectedTypeContext,
+    ExportSymbol, ExternContractImport, FiberOwnership, ForIterableSource, ForIteratorFact, ForIteratorProtocol,
+    FunctionItemValue, FunctionValueCall, GenericCallInstantiation, GenericCallSpecialization, GenericCallTemplate,
     GenericNominalMethodReceiver, GenericSpecializationInstance, GenericSubstitution, IndexedNodeKind, ItemSignature,
     LiteralFact, LocalSlot, ManagedReferenceKind, ManifestBuiltin, MoveExpressionForm, MutableLocalAssignment,
     NativeModCallback, NativeModCallbackOperation, NativeModContractDeclaration, NativeModContractFamily,
@@ -163,9 +168,10 @@ pub use semantic_contract::{
     resolved_item, resolved_local, runtime_intrinsic, runtime_intrinsic_name, scalar_match, scoped_cleanup,
     spawn_entry_validation, spawn_handle_type, spawn_legality, spawn_target, specialized_builtin_type_argument,
     specialized_call_result_managed_reference_kind, specialized_closure_signature,
-    specialized_corelib_value_service_result, specialized_nominal_field_managed_reference_kind, specialized_try_expression_fact, test_item, test_statement_nodes,
-    transfer_class_code, transfer_class_code_for_substitution, transfer_class_intrinsic, try_expression_fact,
-    try_expression_judgement, try_expression_legality, typed_array_allocation, value_abi_type,
+    specialized_corelib_value_service_result, specialized_nominal_field_managed_reference_kind,
+    specialized_try_expression_fact, test_item, test_statement_nodes, transfer_class_code,
+    transfer_class_code_for_substitution, transfer_class_intrinsic, try_expression_fact, try_expression_judgement,
+    try_expression_legality, typed_array_allocation, value_abi_type,
 };
 pub use semantic_contract::{
     AppliedContractIdentity, applied_contract_argument_is_type, contract_of_method_signature, method_receiver_abi_type,

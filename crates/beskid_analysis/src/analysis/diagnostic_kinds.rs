@@ -816,6 +816,19 @@ pub enum SemanticIssueKind {
     InvalidClifBlock {
         detail: String,
     },
+    TypeInvalidObservationTarget {
+        name: String,
+    },
+    TypeObservationEqualityUnavailable {
+        name: String,
+    },
+    TypeInvalidObservationCallback,
+    TypeOpaqueObservationDependency {
+        name: String,
+    },
+    TypeObservationDependencyCycle {
+        name: String,
+    },
 }
 
 /// The declaration of a binding an E1214 assignment writes, as the renderer needs it to tailor

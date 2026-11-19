@@ -89,3 +89,76 @@ pub word EventUnsubscribeFirst(pointer event, pointer handler)
     }
     return 0;
 }
+
+// Observed properties of one owner share a nullable head pointer. Every subscription is an
+// ordinary traced heap object: { header, closure pointer, next pointer, property id }.
+const OBSERVER_CLOSURE_OFFSET = 16;
+const OBSERVER_NEXT_OFFSET = 24;
+const OBSERVER_PROPERTY_OFFSET = 32;
+const OBSERVER_NODE_SIZE = 40;
+
+[Export(Abi: "C", Symbol: "observer_tail")]
+pub pointer ObserverTail(pointer head)
+{
+    mut pointer node = head;
+    mut pointer tail = NativePointer(0);
+    while (node != NativePointer(0))
+    {
+        tail = node;
+        node = NativePointer(raw_word_load(pointer_add(node, OBSERVER_NEXT_OFFSET)));
+    }
+    return tail;
+}
+
+[Export(Abi: "C", Symbol: "observer_subscribe")]
+pub bool ObserverSubscribe(pointer owner, word slotOffset, word propertyId, pointer closure, pointer nodeDescriptor)
+{
+    pointer heap = Heap();
+    if (heap == NativePointer(0) || owner == NativePointer(0) || closure == NativePointer(0))
+    {
+        return false;
+    }
+    // Only the owning isolate can attach a local callback to this object.
+    if (IsAllocatedObject(heap, owner) == false || IsAllocatedObject(heap, closure) == false)
+    {
+        return false;
+    }
+    pointer ownerDescriptor = NativePointer(raw_word_load(owner));
+    if (ownerDescriptor == NativePointer(0) || slotOffset < 16 || slotOffset % 8 != 0 || slotOffset >= TypeDescriptorSize(ownerDescriptor))
+    {
+        return false;
+    }
+    word ownerHandle = GcRootHandle(owner);
+    if (ownerHandle == 0)
+    {
+        return false;
+    }
+    word closureHandle = GcRootHandle(closure);
+    if (closureHandle == 0)
+    {
+        GcUnrootHandle(ownerHandle);
+        return false;
+    }
+    // The runtime allocator may collect before it returns. These temporary handles protect the
+    // owner, all previous registrations, and the new callback until we publish the node.
+    pointer node = Alloc(OBSERVER_NODE_SIZE, nodeDescriptor);
+    if (node != NativePointer(0))
+    {
+        pointer closureSlot = pointer_add(node, OBSERVER_CLOSURE_OFFSET);
+        GcHybridWriteBarrier(closureSlot, closure);
+        raw_word_store(closureSlot, NativeWord(closure));
+        raw_word_store(pointer_add(node, OBSERVER_PROPERTY_OFFSET), propertyId);
+        pointer ownerSlot = pointer_add(owner, slotOffset);
+        pointer tail = ObserverTail(NativePointer(raw_word_load(ownerSlot)));
+        mut pointer destination = ownerSlot;
+        if (tail != NativePointer(0))
+        {
+            destination = pointer_add(tail, OBSERVER_NEXT_OFFSET);
+        }
+        GcHybridWriteBarrier(destination, node);
+        raw_word_store(destination, NativeWord(node));
+    }
+    GcUnrootHandle(closureHandle);
+    GcUnrootHandle(ownerHandle);
+    return node != NativePointer(0);
+}

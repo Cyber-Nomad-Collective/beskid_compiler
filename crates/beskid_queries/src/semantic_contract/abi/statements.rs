@@ -110,6 +110,9 @@ pub(super) fn assignment_storage_abi_type(
     key: AstNodeKey,
     assignment: &beskid_analysis::syntax::AssignExpression,
 ) -> Result<SemanticTypeId, SemanticError> {
+    if let Some(access) = contract_property_access(db, key)? {
+        return Ok(access.abi);
+    }
     if let Some(write) = mutable_local_assignment(db, key)? {
         return abi_type(db, write.declaration)?.ok_or_else(|| SemanticError::unavailable("value_abi_type"));
     }

@@ -255,6 +255,15 @@ impl Emit for Statement {
             Statement::With(s) => s.emit(w, cx),
             Statement::Launch(s) => s.emit(w, cx),
             Statement::Expression(s) => s.emit(w, cx),
+            Statement::Observe(observe) => {
+                cx.token(w, "observe")?;
+                cx.space(w)?;
+                observe.node.target.emit(w, cx)?;
+                cx.space(w)?;
+                observe.node.callback.emit(w, cx)?;
+                w.write_char(';')?;
+                Ok(())
+            }
         }
     }
 }

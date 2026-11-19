@@ -5,7 +5,7 @@ use crate::parser::Rule;
 use crate::parsing::error::ParseError;
 use crate::parsing::parsable::Parsable;
 use crate::syntax::items::parse_helpers::{
-    parse_attributes, parse_doc_attached_with, parse_type_parameter_list, parse_visibility_or_default,
+    parse_attributes, parse_doc_attached_pair_raw, parse_type_parameter_list, parse_visibility_or_default,
 };
 use crate::syntax::{Attribute, ContractNode, Identifier, SpanInfo, Spanned, Visibility};
 
@@ -43,11 +43,18 @@ impl Parsable for ContractDefinition {
         let mut items = Vec::new();
         let mut item_docs = Vec::new();
         for pair in inner {
-            let (doc, item) = parse_doc_attached_with(pair, Rule::ContractItemWithDocs, |inner_pair| {
-                ContractNode::parse(inner_pair)
-            })?;
-            items.push(item);
-            item_docs.push(doc);
+            let (doc, member) = parse_doc_attached_pair_raw(pair, Rule::ContractItemWithDocs)?;
+            if member.as_rule() == Rule::ContractPropertyRequirement {
+                let signatures = super::contract_method_signature::property_signatures(member)?;
+                for (index, signature) in signatures.into_iter().enumerate() {
+                    let span = signature.span;
+                    items.push(Spanned::new(ContractNode::MethodSignature(signature), span));
+                    item_docs.push(if index == 0 { doc.clone() } else { None });
+                }
+            } else {
+                items.push(ContractNode::parse(member)?);
+                item_docs.push(doc);
+            }
         }
         debug_assert_eq!(items.len(), item_docs.len());
 

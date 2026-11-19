@@ -36,6 +36,8 @@ pub struct WitnessTablePlan {
     pub entries: Vec<String>,
     /// Symbols of the implementing type's tables for the embedded contracts, after the entries.
     pub embedded: Vec<String>,
+    /// One (owner slot byte offset, property key) per method when this witness carries subscriptions.
+    pub observations: Vec<(u32, u64)>,
 }
 
 /// An unboxing thunk: `(word receiver, params...) -> result` narrows the receiver word to the
@@ -119,7 +121,13 @@ pub fn emit_witness_tables<M: Module>(
         |symbol: &str| ModuleError::Backend(anyhow::anyhow!("witness table `{symbol}` exceeds the ABI word"));
     for plan in plans {
         let table = tables[plan.symbol.as_str()];
-        let mut bytes = vec![0u8; (header + plan.entries.len() + plan.embedded.len()) * 8];
+        let metadata = header + plan.entries.len() + plan.embedded.len();
+        let mut bytes = vec![0u8; (metadata + plan.observations.len() * 2) * 8];
+        for (i, (offset, property)) in plan.observations.iter().enumerate() {
+            let at = 8 * (metadata + i * 2);
+            write_word(&mut bytes, at, u64::from(*offset))?;
+            write_word(&mut bytes, at + 8, *property)?;
+        }
         write_word(&mut bytes, 0, plan.type_tag)?;
         write_word(&mut bytes, 8, plan.receiver_kind)?;
         let mut data = DataDescription::new();

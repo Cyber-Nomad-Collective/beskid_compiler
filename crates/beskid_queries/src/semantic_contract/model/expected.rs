@@ -52,6 +52,8 @@ pub enum ExpectedTypeContext {
     ConditionalBranch { expression: AstNodeKey },
     /// An expression statement discards its value: the expectation is `unit`.
     ExpressionStatement { statement: AstNodeKey },
+    /// Typed old and new values delivered to a property observer.
+    ObservationHandler { statement: AstNodeKey },
 }
 
 /// The source type one expression is checked against, with the context that supplies it.

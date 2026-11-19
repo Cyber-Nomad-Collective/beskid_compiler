@@ -83,6 +83,8 @@ impl ContractBoxReceiver {
 /// contract, in the contract's slot order, with the environment their bodies are specialized in.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct ContractWitnessTable {
+    /// The applied receiver type determines the layout for a generic conformer.
+    source: GenericSourceTypeIdentity,
     /// The implementing declaration: a `type`, an `enum`, or a primitive `impl` block.
     pub concrete: AstNodeKey,
     pub contract: AstNodeKey,
@@ -312,7 +314,9 @@ fn conversion_site(
                 return Ok(None);
             }
         }
-        ExpectedTypeContext::BinaryOperand { .. } | ExpectedTypeContext::ExpressionStatement { .. } => {
+        ExpectedTypeContext::ObservationHandler { .. }
+        | ExpectedTypeContext::BinaryOperand { .. }
+        | ExpectedTypeContext::ExpressionStatement { .. } => {
             return Ok(None);
         }
     }
@@ -503,6 +507,7 @@ pub(super) fn witness_table(
         embedded.push(witness_table(db, context, source, target, &[])?);
     }
     Ok(ContractWitnessTable {
+        source: source.clone(),
         concrete,
         contract,
         symbol,
@@ -721,7 +726,7 @@ fn receiver_identity(
 
 /// The identity of the field a path segment reads: a projected field, or an injected field of the
 /// implicit receiver (whose declared type is the contract or contract array it holds).
-fn segment_identity(
+pub(super) fn segment_identity(
     db: &dyn Db,
     segment: AstNodeKey,
     enclosing: Option<&GenericSpecializationInstance>,
@@ -903,4 +908,14 @@ pub fn array_literal_has_contract_elements(
         Err(error) => return Err(error),
     };
     Ok(Some(matches!(expected.array_element_identity(), Some(GenericSourceTypeIdentity::Contract { .. }))))
+}
+
+impl ContractWitnessTable {
+    pub fn receiver_layout(&self, db: &dyn Db) -> Result<AggregateLayoutFact, SemanticError> {
+        let (owner, layout) = super::layouts::nominal_identity_layout(db, self.concrete, &self.source)?;
+        if owner != self.concrete {
+            return Err(SemanticError::unavailable("contract.receiver_layout"));
+        }
+        Ok(layout)
+    }
 }

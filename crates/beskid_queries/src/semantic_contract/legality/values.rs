@@ -363,13 +363,12 @@ fn applied_contract_accepts(
                 && actual_arguments.as_ref() == arguments,
         ),
         Identity::Abi(_) | Identity::Array(_) => Some(false),
-        Identity::Nominal { .. } => {
+        Identity::Nominal { arguments: source_arguments, .. } => {
             let Some(concrete) = concrete_declaration(db, scope, actual) else {
                 return concrete_type_or_enum_declaration(db, scope, actual).map(|_| false);
             };
-            let definition = type_definition(db, concrete)?;
             Some(
-                type_declaration_conforms_to_applied_contract(db, concrete, &definition, contract, arguments)
+                type_declaration_conforms_to_applied_contract(db, concrete, source_arguments, contract, arguments)
                     && markers_accept(db, scope, contract, actual)?,
             )
         }

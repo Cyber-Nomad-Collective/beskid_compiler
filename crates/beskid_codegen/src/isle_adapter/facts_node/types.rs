@@ -74,6 +74,12 @@ impl SyntaxNodeFacts<'_> {
     }
 
     pub(super) fn managed_reference_impl(&self, key: AstNodeKey) -> Option<ManagedReferenceFact> {
+        if let Some(access) = self.query(beskid_queries::contract_property_access(self.db, key)) {
+            return Some(match access.managed {
+                ManagedReferenceKind::GcManaged => ManagedReferenceFact::GcManaged,
+                ManagedReferenceKind::NativeOrScalar => ManagedReferenceFact::NativeOrScalar,
+            });
+        }
         if self.composition_injected_access(key).is_some() {
             return Some(ManagedReferenceFact::GcManaged);
         }
@@ -113,6 +119,9 @@ impl SyntaxNodeFacts<'_> {
     }
 
     pub(super) fn scalar_type_impl(&self, key: AstNodeKey) -> Option<Type> {
+        if let Some(access) = self.query(beskid_queries::contract_property_access(self.db, key)) {
+            return map_signature_type(self.isa?, access.abi);
+        }
         if self.composition_injected_access(key).is_some() {
             return self.isa.map(|isa| isa.pointer_type());
         }

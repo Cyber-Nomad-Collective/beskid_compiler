@@ -9,6 +9,13 @@ mod fixtures;
 mod kits;
 mod sources;
 
+/// Descriptor symbol and field offsets of the compiler-owned observer-list node.
+pub const OBSERVER_NODE_DESCRIPTOR_SYMBOL: &str = "__beskid_observer_node_descriptor_v5";
+pub const OBSERVER_NODE_CLOSURE_OFFSET: i32 = 16;
+pub const OBSERVER_NODE_NEXT_OFFSET: i32 = 24;
+pub const OBSERVER_NODE_PROPERTY_OFFSET: i32 = 32;
+pub const OBSERVER_NODE_SIZE: u64 = 40;
+
 pub use beskid_manifest::{CHECKED_RUNTIME_CLONES, CheckedRuntimeClone, checked_runtime_clone};
 pub use capabilities::{
     CanonicalRuntimeProof, RuntimeCapabilityError, RuntimeIntrinsicCapability, canonical_runtime_intrinsic_capability,

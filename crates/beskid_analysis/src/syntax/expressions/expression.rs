@@ -162,7 +162,7 @@ fn parse_expression_pair(pair: Pair<Rule>) -> Result<Spanned<Expression>, ParseE
         Rule::SpawnUnary => parse_spawn_unary(pair),
         Rule::MoveExpression => parse_move_expression(pair),
         Rule::PrefixUnary => parse_prefix_unary_expression(pair),
-        Rule::PostfixExpression => parse_postfix_expression(pair),
+        Rule::PostfixExpression | Rule::ObserveTarget => parse_postfix_expression(pair),
         Rule::PrimaryExpression => parse_primary_expression(pair),
         Rule::GroupedExpression => parse_grouped_expression(pair),
         Rule::BlockExpression => parse_block_expression(pair),

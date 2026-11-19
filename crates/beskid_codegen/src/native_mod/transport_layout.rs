@@ -112,6 +112,7 @@ impl TransportLayouts {
                 match nominal.body() {
                     NativeModTransportBody::Record(fields) => {
                         let fact = AggregateLayoutFact {
+                            specialization: nominal.specialization().cloned(),
                             fields: fields
                                 .iter()
                                 .map(|field| (Arc::from(field.name()), shape(field.ty())))

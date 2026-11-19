@@ -15,6 +15,41 @@ struct SemanticCase {
 
 const CASES: &[SemanticCase] = &[
     SemanticCase {
+        fixture: "observe_equatable",
+        manifest: "ObserveEquatable.bproj",
+        expected: 42,
+        native_exec_expected: true,
+        expected_symbols: &[],
+    },
+    SemanticCase {
+        fixture: "observe_contract_property",
+        manifest: "ObserveContractProperty.bproj",
+        expected: 42,
+        native_exec_expected: true,
+        expected_symbols: &[],
+    },
+    SemanticCase {
+        fixture: "observe_derived_property",
+        manifest: "ObserveDerivedProperty.bproj",
+        expected: 42,
+        native_exec_expected: true,
+        expected_symbols: &[],
+    },
+    SemanticCase {
+        fixture: "observe_delivery",
+        manifest: "ObserveDelivery.bproj",
+        expected: 42,
+        native_exec_expected: true,
+        expected_symbols: &[],
+    },
+    SemanticCase {
+        fixture: "observe_stored_property",
+        manifest: "ObserveStoredProperty.bproj",
+        expected: 42,
+        native_exec_expected: true,
+        expected_symbols: &[],
+    },
+    SemanticCase {
         fixture: "contract_property_accessors",
         manifest: "ContractPropertyAccessors.bproj",
         expected: 42,

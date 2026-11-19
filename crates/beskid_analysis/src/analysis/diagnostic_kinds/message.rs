@@ -216,6 +216,19 @@ impl SemanticIssueKind {
             Self::TypeInvalidPropertyDefault { name, expected } => {
                 format!("property `{name}` requires a literal default of type `{expected}`")
             }
+            Self::TypeInvalidObservationTarget { name } => {
+                format!("`observe` requires an accessible property, but `{name}` is not one")
+            }
+            Self::TypeObservationEqualityUnavailable { name } => {
+                format!("observed property `{name}` requires equality or the `always` modifier")
+            }
+            Self::TypeInvalidObservationCallback => "an observation callback must return `unit`".to_string(),
+            Self::TypeOpaqueObservationDependency { name } => {
+                format!("cannot establish every dependency of observed derived property `{name}`")
+            }
+            Self::TypeObservationDependencyCycle { name } => {
+                format!("observed derived property `{name}` depends on a property cycle")
+            }
             Self::TypeMissingStructField { name } => {
                 format!("missing field `{name}` in the type literal")
             }

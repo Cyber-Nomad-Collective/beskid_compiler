@@ -235,10 +235,13 @@ impl Emitter<'_, '_> {
     /// Record layout from the canonical layout authority. A non-generic declaration is
     /// cross-checked against its own declaration layout.
     fn record_layout(&self, graph: &DynamicPackingShape, node: u32) -> Result<AggregateObjectLayout, String> {
-        let DynamicPackingNode::Record { declaration, arguments, fields, .. } = Self::node(graph, node)? else {
+        let DynamicPackingNode::Record { declaration, arguments, fields, specialization, .. } =
+            Self::node(graph, node)?
+        else {
             return Err("Dynamic mapping record layout requested for a non-record".into());
         };
         let fact = AggregateLayoutFact {
+            specialization: specialization.clone(),
             fields: fields
                 .iter()
                 .map(|field| Ok((Arc::<str>::from(field.name.as_str()), Self::field_shape(graph, field.ty)?)))

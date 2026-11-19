@@ -102,15 +102,40 @@ impl IsleContext<'_, '_, '_, '_> {
             roots.push(self.root_expression_value_if_needed(argument, value)?);
             arguments.push(value);
         }
+        let result = self.call_closure_record(
+            record,
+            (plan.code_offset, plan.environment_offset),
+            &plan.parameters,
+            &arguments,
+            plan.result,
+        );
+        for root in roots.into_iter().rev() {
+            self.release_expression_root(root)?;
+        }
+        self.release_expression_root(record_root)?;
+        Some(result)
+    }
+
+    /// Invoke a rooted closure record after coercing the arguments to the lifted signature.
+    pub(in crate::context) fn call_closure_record(
+        &mut self,
+        record: Value,
+        offsets: (i32, i32),
+        parameters: &[Type],
+        arguments: &[Value],
+        result: Option<Type>,
+    ) -> Option<Value> {
+        let (code_offset, environment_offset) = offsets;
+        let pointer = self.frontend_config.pointer_type();
         self.builder.ins().trapz(record, TrapCode::unwrap_user(5));
-        let code = self.builder.ins().load(pointer, MemFlagsData::new(), record, plan.code_offset);
-        let environment = self.builder.ins().load(pointer, MemFlagsData::new(), record, plan.environment_offset);
+        let code = self.builder.ins().load(pointer, MemFlagsData::new(), record, code_offset);
+        let environment = self.builder.ins().load(pointer, MemFlagsData::new(), record, environment_offset);
         self.builder.declare_value_needs_stack_map(environment);
 
         let capture_free = self.builder.create_block();
         let captured = self.builder.create_block();
         let merge = self.builder.create_block();
-        if let Some(result) = plan.result {
+        if let Some(result) = result {
             self.builder.append_block_param(merge, result);
         }
         let has_environment = self.builder.ins().icmp_imm_s(IntCC::NotEqual, environment, 0);
@@ -119,10 +144,10 @@ impl IsleContext<'_, '_, '_, '_> {
         self.builder.switch_to_block(capture_free);
         self.builder.seal_block(capture_free);
         let mut plain_signature = Signature::new(self.builder.func.signature.call_conv);
-        plain_signature.params.extend(plan.parameters.iter().copied().map(AbiParam::new));
-        plain_signature.returns.extend(plan.result.map(AbiParam::new));
+        plain_signature.params.extend(parameters.iter().copied().map(AbiParam::new));
+        plain_signature.returns.extend(result.map(AbiParam::new));
         let plain_signature = self.builder.func.import_signature(plain_signature);
-        let plain_call = self.builder.ins().call_indirect(plain_signature, code, &arguments);
+        let plain_call = self.builder.ins().call_indirect(plain_signature, code, arguments);
         let plain_results: Vec<BlockArg> =
             self.builder.inst_results(plain_call).iter().copied().map(BlockArg::Value).collect();
         self.builder.ins().jump(merge, &plain_results);
@@ -131,8 +156,8 @@ impl IsleContext<'_, '_, '_, '_> {
         self.builder.seal_block(captured);
         let mut closure_signature = Signature::new(self.builder.func.signature.call_conv);
         closure_signature.params.push(AbiParam::new(pointer));
-        closure_signature.params.extend(plan.parameters.iter().copied().map(AbiParam::new));
-        closure_signature.returns.extend(plan.result.map(AbiParam::new));
+        closure_signature.params.extend(parameters.iter().copied().map(AbiParam::new));
+        closure_signature.returns.extend(result.map(AbiParam::new));
         let closure_signature = self.builder.func.import_signature(closure_signature);
         let mut closure_arguments = Vec::with_capacity(arguments.len() + 1);
         closure_arguments.push(environment);
@@ -144,11 +169,6 @@ impl IsleContext<'_, '_, '_, '_> {
 
         self.builder.switch_to_block(merge);
         self.builder.seal_block(merge);
-        let result = self.builder.block_params(merge).first().copied();
-        for root in roots.into_iter().rev() {
-            self.release_expression_root(root)?;
-        }
-        self.release_expression_root(record_root)?;
-        Some(result)
+        self.builder.block_params(merge).first().copied()
     }
 }

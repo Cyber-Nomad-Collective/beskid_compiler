@@ -591,7 +591,7 @@ pub(in crate::semantic_contract) fn implicit_receiver_field_projection(
             .iter()
             .map(|binding| (binding.parameter.as_ref(), binding.source_identity()))
             .collect::<HashMap<_, _>>();
-        let layout = aggregate_layout_from_definition(
+        let mut layout = aggregate_layout_from_definition(
             db,
             program,
             index,
@@ -599,6 +599,9 @@ pub(in crate::semantic_contract) fn implicit_receiver_field_projection(
             definition,
             (!bindings.is_empty()).then_some(&shapes),
         )?;
+        layout.specialization = AggregateSpecialization::from_arguments(
+            bindings.iter().map(|binding| binding.source_identity().clone()).collect(),
+        );
         let identity = generic_source_type_identity_with_substitutions(db, declaration, &field_type, &environment)?;
         let access = AggregateFieldAccess {
             declaration,
@@ -881,7 +884,7 @@ fn canonical_private_field_admission(
 
 /// Instantiate the aggregate layout denoted by an exact source-proven nominal identity. Each
 /// applied argument keeps its own nominal declaration; only scalar arguments use their ABI.
-fn nominal_identity_layout(
+pub(in crate::semantic_contract) fn nominal_identity_layout(
     db: &dyn Db,
     key: AstNodeKey,
     identity: &GenericSourceTypeIdentity,
@@ -923,7 +926,7 @@ fn nominal_identity_layout(
             Ok((generic.node.name.clone(), shape))
         })
         .collect::<Result<HashMap<_, _>, SemanticError>>()?;
-    let layout = aggregate_layout_from_definition(
+    let mut layout = aggregate_layout_from_definition(
         db,
         target.expanded_program(db),
         target.syntax_index(db),
@@ -931,6 +934,7 @@ fn nominal_identity_layout(
         definition,
         (!definition.generics.is_empty()).then_some(&shapes),
     )?;
+    layout.specialization = AggregateSpecialization::from_identity(identity);
     Ok((declaration, layout))
 }
 

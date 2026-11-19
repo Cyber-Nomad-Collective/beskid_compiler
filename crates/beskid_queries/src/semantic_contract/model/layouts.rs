@@ -26,6 +26,28 @@ pub enum AggregateFieldShape {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct AggregateLayoutFact {
     pub fields: Arc<[(Arc<str>, AggregateFieldShape)]>,
+    pub specialization: Option<AggregateSpecialization>,
+}
+
+/// Source type arguments of an applied aggregate, independent of their ABI storage shapes.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct AggregateSpecialization(Arc<[GenericSourceTypeIdentity]>);
+
+impl AggregateSpecialization {
+    pub(in crate::semantic_contract) fn from_arguments(arguments: Arc<[GenericSourceTypeIdentity]>) -> Option<Self> {
+        (!arguments.is_empty()).then_some(Self(arguments))
+    }
+
+    pub(in crate::semantic_contract) fn from_identity(identity: &GenericSourceTypeIdentity) -> Option<Self> {
+        match identity {
+            GenericSourceTypeIdentity::Nominal { arguments, .. } => Self::from_arguments(arguments.clone()),
+            _ => None,
+        }
+    }
+
+    pub fn arguments_display(&self) -> String {
+        self.0.iter().map(GenericSourceTypeIdentity::display_name).collect::<Vec<_>>().join(", ")
+    }
 }
 
 /// Physical state of one event field inside its owner: at `slot_offset` the handler count word,

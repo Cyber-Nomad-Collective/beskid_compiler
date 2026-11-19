@@ -305,7 +305,7 @@ pub(super) fn corelib_service_symbols(
     // generated event rule, and CodegenInput has already validated this target's canonical
     // ABI-v5 manifest. Admit only the exact canonical event service shapes here; ordinary
     // source calls still require source-scoped Corelib service capability below.
-    use beskid_abi::runtime_source::CorelibServiceAbiType::{Pointer, Usize};
+    use beskid_abi::runtime_source::CorelibServiceAbiType::{Pointer, U8, Usize};
     for (symbol, parameters) in [
         ("event_subscribe", &[Pointer, Pointer, Usize][..]),
         ("event_unsubscribe_first", &[Pointer, Pointer][..]),
@@ -321,6 +321,20 @@ pub(super) fn corelib_service_symbols(
             return Err(format!("canonical event service `{symbol}` has an unexpected ABI-v5 signature"));
         }
         symbols.insert(DirectCallee::corelib_service(symbol), symbol.to_owned());
+    }
+    // A module with no reachable subscription needs no observer runtime imports.
+    if !input.observed_properties.is_empty() {
+        for (symbol, parameters, result) in [
+            ("observer_subscribe", &[Pointer, Usize, Usize, Pointer, Pointer][..], U8),
+            ("observer_tail", &[Pointer][..], Pointer),
+        ] {
+            let abi = beskid_abi::runtime_source::canonical_corelib_service_abi_for_adapter(symbol)
+                .ok_or_else(|| format!("canonical observer service `{symbol}` is unavailable in ABI-v5"))?;
+            if abi.parameters != parameters || abi.result != result {
+                return Err(format!("canonical observer service `{symbol}` has an unexpected ABI-v5 signature"));
+            }
+            symbols.insert(DirectCallee::corelib_service(symbol), symbol.to_owned());
+        }
     }
     for symbol in manifest_builtins {
         if !ALWAYS_AVAILABLE_STRING_SERVICES.contains(&symbol) {

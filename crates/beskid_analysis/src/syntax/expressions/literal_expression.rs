@@ -343,6 +343,11 @@ fn remap_statement_spans(statement: &mut Spanned<crate::syntax::Statement>, offs
             expr_stmt.span = remap_span(expr_stmt.span, offset, source);
             remap_expression_spans(&mut expr_stmt.node.expression, offset, source);
         }
+        Statement::Observe(observe) => {
+            observe.span = remap_span(observe.span, offset, source);
+            remap_expression_spans(&mut observe.node.target, offset, source);
+            remap_expression_spans(&mut observe.node.callback, offset, source);
+        }
         Statement::If(if_stmt) => {
             if_stmt.span = remap_span(if_stmt.span, offset, source);
             remap_expression_spans(&mut if_stmt.node.condition, offset, source);

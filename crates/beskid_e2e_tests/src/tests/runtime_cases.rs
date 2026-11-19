@@ -82,10 +82,13 @@ fn event_unsubscribe_fixture_aot_runs_and_object_contains_event_symbols() {
         "beskid_rt_v5_closure_environment_allocate",
         "beskid_rt_v5_closure_capture_store",
         "beskid_rt_v5_managed_object_allocate",
-        "gc_register_root",
-        "gc_unregister_root",
+        "beskid_rt_v5_stack_map_push",
+        "beskid_rt_v5_stack_map_pop",
     ] {
         assert!(nm_contains_symbol(&object_output, symbol), "expected event-unsubscribe object to reference {symbol}");
+    }
+    for legacy in ["gc_register_root", "gc_unregister_root"] {
+        assert!(!nm_contains_symbol(&object_output, legacy), "unexpected legacy root registration {legacy}");
     }
 }
 

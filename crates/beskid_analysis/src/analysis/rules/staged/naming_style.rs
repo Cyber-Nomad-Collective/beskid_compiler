@@ -124,6 +124,19 @@ i64 Main() { Counter counter = Counter { raw: 0, Count: 3 }; return counter.Doub
     }
 
     #[test]
+    fn contract_property_naming_warns_once_at_the_authored_property_name() {
+        let src = "contract Meter { i64 Count { get; set; } i64 lowerCase { set; get; } i64 Read(); }";
+        let program = parse_program(src).expect("parse").node;
+        let mut ctx = RuleContext::new("test.bd", src, AnalysisOptions::default());
+        walk_program(&program, |role, ident| check_naming_role(&mut ctx, role, ident));
+        assert_eq!(ctx.diagnostics.len(), 1, "{:?}", ctx.diagnostics);
+        let diagnostic = &ctx.diagnostics[0];
+        assert_eq!(diagnostic.code.as_deref(), Some("W1633"));
+        assert_eq!(diagnostic.help.as_deref(), Some("try `LowerCase`"));
+        assert_eq!(&src[diagnostic.span.offset()..diagnostic.span.offset() + diagnostic.span.len()], "lowerCase");
+    }
+
+    #[test]
     fn conforming_names_emit_nothing() {
         let src = r#"
 pub type Hub { bool isTty; }

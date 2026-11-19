@@ -10,6 +10,7 @@ mod destructive_read;
 mod enums;
 mod events;
 mod literals;
+mod observation;
 mod shape;
 mod structs;
 mod types;
@@ -108,6 +109,29 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
 
     fn assignment_kind(&self, key: AstNodeKey) -> Option<beskid_isle::AssignmentKind> {
         self.assignment_kind_impl(key)
+    }
+
+    fn observation(&self, key: AstNodeKey) -> Option<beskid_isle::ObservationPlan> {
+        self.observation_impl(key)
+    }
+
+    fn observed_store(&self, assignment: AstNodeKey) -> Result<Option<beskid_isle::ObservedStore>, ()> {
+        self.observed_store_impl(assignment)
+    }
+
+    fn contract_property_assignment(
+        &self,
+        key: AstNodeKey,
+    ) -> Option<(SemanticTypeId, Option<(beskid_queries::CompoundAssignmentOperator, u32)>)> {
+        let property = self.query(beskid_queries::contract_property_access(self.db, key))?;
+        property.value.map(|_| (property.abi, property.compound))
+    }
+
+    fn contract_observation(&self, key: AstNodeKey) -> Option<(AstNodeKey, AstNodeKey, u32)> {
+        let site = self.query(beskid_queries::contract_observation(self.db, key))?;
+        let children = self.query(child_nodes(self.db, key))?;
+        let [_, callback] = children.as_ref() else { return None };
+        Some((site.receiver, self.unwrap_transparent(*callback)?, site.metadata_offset))
     }
 
     fn event_operation(&self, key: AstNodeKey) -> Option<beskid_isle::EventOperationPlan> {

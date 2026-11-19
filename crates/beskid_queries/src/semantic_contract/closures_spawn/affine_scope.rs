@@ -316,7 +316,7 @@ impl ScopeCheck<'_> {
                     continue;
                 }
                 Some(NodeKind::SpawnExpression) => true,
-                Some(NodeKind::ReturnStatement | NodeKind::LambdaExpression) => true,
+                Some(NodeKind::ReturnStatement | NodeKind::LambdaExpression | NodeKind::ObserveStatement) => true,
                 Some(NodeKind::AssignExpression) => match self.assignment_parts(parent) {
                     Some((target, value)) if value == child => match self.local_target(target) {
                         Some(local) => self.local_escapes(local, depth),

@@ -60,6 +60,7 @@ pub(super) fn parse_block_property(
     let mut inner = pair.clone().into_inner().peekable();
     let attributes = parse_attributes(&mut inner)?;
     let visibility = parse_visibility_or_default(&pair, &mut inner)?;
+    let property_always = inner.next_if(|pair| pair.as_rule() == Rule::AlwaysPropertyModifier).is_some();
     let mut header = inner.next().ok_or(ParseError::missing(Rule::ValueField))?.into_inner();
     let ty = Type::parse(header.next().ok_or(ParseError::missing(Rule::BeskidType))?)?;
     let name = Identifier::parse(header.next().ok_or(ParseError::missing(Rule::Identifier))?)?;
@@ -76,14 +77,10 @@ pub(super) fn parse_block_property(
             _ => return Err(ParseError::unexpected_rule(accessor, None)),
         };
         let form = if let Some(body) = accessor.into_inner().next() {
-            methods.push(custom_accessor(
-                kind,
-                receiver_type,
-                &name.node.name,
-                &ty,
-                accessor_span,
-                Block::parse(body)?,
-            ));
+            let mut method =
+                custom_accessor(kind, receiver_type, &name.node.name, &ty, accessor_span, Block::parse(body)?);
+            method.node.visibility = visibility.clone();
+            methods.push(method);
             PropertyAccessor::Custom
         } else {
             PropertyAccessor::Automatic
@@ -101,6 +98,7 @@ pub(super) fn parse_block_property(
         ty,
         property_default,
         property_accessors: Some(accessors),
+        property_always,
     };
     Ok((Spanned::new(field, span), methods))
 }
@@ -152,4 +150,41 @@ fn custom_accessor(
         property_accessor: Some(kind),
     };
     Spanned::new(method, span)
+}
+
+/// Materialize an automatic accessor when a contract needs an addressable implementation.
+/// Ordinary property access continues to lower directly to its backing storage.
+pub(super) fn automatic_witness_accessor(
+    kind: PropertyAccessorKind,
+    receiver: &Spanned<Type>,
+    field: &Spanned<Field>,
+) -> Spanned<MethodDefinition> {
+    use crate::syntax::{
+        AssignExpression, AssignOp, ExpressionStatement, Path, PathExpression, PathSegment, ReturnStatement, Statement,
+    };
+    let span = field.node.name.span;
+    let local = |name: &str| {
+        let name = Spanned::new(Identifier { name: name.into() }, span);
+        let path = Path { segments: vec![Spanned::new(PathSegment { name, type_args: Vec::new() }, span)] };
+        Spanned::new(Expression::Path(Spanned::new(PathExpression { path: Spanned::new(path, span) }, span)), span)
+    };
+    let statement = match kind {
+        PropertyAccessorKind::Get => {
+            Statement::Return(Spanned::new(ReturnStatement { value: Some(local("field")) }, span))
+        }
+        PropertyAccessorKind::Set => {
+            let assign = AssignExpression {
+                target: Box::new(local("field")),
+                op: Spanned::new(AssignOp::Assign, span),
+                value: Box::new(local("value")),
+            };
+            let expression = Spanned::new(Expression::Assign(Spanned::new(assign, span)), span);
+            Statement::Expression(Spanned::new(ExpressionStatement { expression }, span))
+        }
+    };
+    let body = Spanned::new(Block { statements: vec![Spanned::new(statement, span)] }, span);
+    let mut method = custom_accessor(kind, receiver, &field.node.name.node.name, &field.node.ty, span, body);
+    method.node.visibility = field.node.visibility.clone();
+    method.node.name.span = span;
+    method
 }

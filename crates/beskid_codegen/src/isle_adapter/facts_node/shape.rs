@@ -34,6 +34,15 @@ impl SyntaxNodeFacts<'_> {
         if matches!(
             syntax,
             beskid_queries::IndexedNodeKind::PathExpression
+                | beskid_queries::IndexedNodeKind::MemberExpression
+                | beskid_queries::IndexedNodeKind::AssignExpression
+        ) && self.query(beskid_queries::contract_property_access(self.db, key)).is_some()
+        {
+            return Some(NodeKind::CallExpression);
+        }
+        if matches!(
+            syntax,
+            beskid_queries::IndexedNodeKind::PathExpression
                 | beskid_queries::IndexedNodeKind::PathSegment
                 | beskid_queries::IndexedNodeKind::MemberExpression
         ) && self.property_getter_in_context(key).is_some()

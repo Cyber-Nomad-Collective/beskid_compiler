@@ -13,6 +13,13 @@ use beskid_analysis::syntax::{
 };
 use beskid_analysis::syntax_query::{DynNodeRef, NodeKind, SyntaxIndex};
 
+mod derived_observation;
+mod equality;
+pub use derived_observation::observation_stored_dependencies;
+pub(super) use derived_observation::{ObservationDependencyKind, checked_observation_dependencies};
+pub use equality::observation_property_equality_instance;
+pub(super) use equality::{observation_equality_instance, observation_has_bounded_equality};
+
 /// A source reference to a property or its contextual backing storage.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct PropertyReference {
@@ -51,7 +58,124 @@ pub(super) struct PropertyAccess {
 }
 
 pub fn property_reference(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<PropertyReference> {
-    Ok(property_access(db, key)?.filter(|fact| fact.accessible).map(|fact| fact.reference))
+    property_reference_in_environment(db, key, None)
+}
+
+pub fn property_reference_in_environment(
+    db: &dyn Db,
+    key: AstNodeKey,
+    enclosing: Option<&GenericSpecializationInstance>,
+) -> SemanticQueryResult<PropertyReference> {
+    Ok(property_access_in_environment(db, key, enclosing)?.filter(|fact| fact.accessible).map(|fact| fact.reference))
+}
+
+pub fn property_always(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<bool> {
+    with_registered_syntax(db, key, |db, syntax, key| {
+        with_node(db, syntax, key, |_, _, node| node.of::<Field>().map(|field| field.property_always))
+    })
+}
+
+/// Resolve an observation site to the accessible property, retaining its concrete receiver.
+pub fn observation_target(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<PropertyReference> {
+    observation_target_in_environment(db, key, None)
+}
+
+pub fn observation_target_in_environment(
+    db: &dyn Db,
+    key: AstNodeKey,
+    enclosing: Option<&GenericSpecializationInstance>,
+) -> SemanticQueryResult<PropertyReference> {
+    with_registered_syntax(db, key, |db, syntax, key| {
+        if !syntax.accepts_key(db, key) { return Ok(None); }
+        let index = syntax.syntax_index(db);
+        let program = syntax.expanded_program(db);
+        let Some(statement) = index.node_at(program, key.node).and_then(|node| node.of::<beskid_analysis::syntax::ObserveStatement>()) else {
+            return Ok(None);
+        };
+        let target = index.direct_child_id(program, key.node, DynNodeRef::from(&statement.target))
+            .ok_or_else(|| SemanticError::unavailable("observe.target"))?;
+        let key = AstNodeKey { node: normalized_expression_node(index, target), ..key };
+        let reference = property_reference_in_environment(db, key, enclosing)?;
+        Ok(reference.filter(|reference| {
+            matches!(node_kind(db, reference.declaration), Ok(Some(NodeKind::Field | NodeKind::MethodDefinition)))
+        }))
+    })
+}
+
+/// The type observed by the callback, including a scalar declared on an open generic owner.
+pub(super) fn observation_value_identity(
+    db: &dyn Db,
+    target: AstNodeKey,
+    enclosing: Option<&GenericSpecializationInstance>,
+) -> Result<GenericSourceTypeIdentity, SemanticError> {
+    if let Some(reference) = property_reference_in_environment(db, target, enclosing)? {
+        if let Some(identity) = equality::observation_property_value_identity(
+            db, target, reference.declaration, reference.receiver, enclosing,
+        )? {
+            return Ok(identity);
+        }
+    }
+    specialized_source_expression_identity(db, target, enclosing)
+}
+
+pub struct ObservedPropertyInstance {
+    pub owner: AstNodeKey,
+    pub property: AstNodeKey,
+    /// Dynamic contract delivery conservatively includes every possible conformer application.
+    pub through_contract: bool,
+    pub specialization: Option<AggregateSpecialization>,
+}
+
+/// Resolve subscriptions inside one reachable specialization before allocating owner layouts.
+pub fn observed_property_instances(
+    db: &dyn Db,
+    root: AstNodeKey,
+    enclosing: Option<&GenericSpecializationInstance>,
+) -> SemanticQueryResult<Vec<ObservedPropertyInstance>> {
+    with_registered_syntax(db, root, |db, syntax, key| {
+        let mut observed = Vec::new();
+        if !syntax.accepts_key(db, key) { return Ok(None); }
+        let index = syntax.syntax_index(db);
+        for node in index.ids_of_kind(NodeKind::ObserveStatement) {
+            if !std::iter::successors(Some(node), |node| parent_node(index, *node)).any(|parent| parent == key.node) { continue; }
+            let site = AstNodeKey { node, ..key };
+            if let Some(property) = contract_observation(db, site)? {
+                observed.extend(super::contract_observation::conforming_properties(db, site, &property)?
+                    .into_iter().map(|(owner, property)| ObservedPropertyInstance {
+                        owner, property, through_contract: true, specialization: None,
+                    }));
+                continue;
+            }
+            let Some(reference) = observation_target_in_environment(db, site, enclosing)? else {
+                return Err(SemanticError::unavailable("observe.property"));
+            };
+            let property = reference.declaration;
+            let owner_syntax = db.syntax_unit(property.unit).ok_or_else(|| SemanticError::unavailable("observe.owner"))?;
+            let owner_node = nearest_ancestor(owner_syntax.syntax_index(db), property.node, |kind| kind == NodeKind::TypeDefinition)
+                .ok_or_else(|| SemanticError::unavailable("observe.owner"))?;
+            let (owner, layout) = observation_receiver_layout(db, site, reference.receiver, enclosing)?
+                .ok_or_else(|| SemanticError::unavailable_at("observe.receiver_layout", site))?;
+            if owner != (AstNodeKey { node: owner_node, ..property }) {
+                return Err(SemanticError::unavailable_at("observe.owner", site));
+            }
+            observed.push(ObservedPropertyInstance {
+                owner, property, through_contract: false, specialization: layout.specialization,
+            });
+        }
+        Ok(Some(observed))
+    })
+}
+
+pub fn observation_property_name(db: &dyn Db, property: AstNodeKey) -> SemanticQueryResult<Arc<str>> {
+    with_registered_syntax(db, property, |db, syntax, key| {
+        with_node(db, syntax, key, |_, _, node| {
+            if let Some(field) = node.of::<Field>() {
+                return Some(Arc::from(field.name.node.name.as_str()));
+            }
+            let method = node.of::<MethodDefinition>()?;
+            method.property_accessor?.property_name(&method.name.node.name).map(Arc::from)
+        })
+    })
 }
 
 /// Display an applied property type only when the expression's source identity is proven.
@@ -335,6 +459,17 @@ pub fn property_accessor_specialization(
         }
         _ => return Ok(None),
     };
+    observation_getter_specialization(db, site, declaration, receiver, enclosing)
+}
+
+/// Specialize a getter with the exact receiver at a backing-store write site.
+pub fn observation_getter_specialization(
+    db: &dyn Db,
+    site: AstNodeKey,
+    declaration: AstNodeKey,
+    receiver: AstNodeKey,
+    enclosing: Option<&GenericSpecializationInstance>,
+) -> SemanticQueryResult<GenericSpecializationInstance> {
     let Some(substitutions) = accessor_receiver_substitutions(db, site, declaration, receiver, enclosing)? else {
         return Ok(None);
     };
@@ -408,22 +543,7 @@ fn accessor_receiver_substitutions(
             .collect::<Result<Vec<_>, _>>()
             .map(|bindings| Some(bindings.into()));
     }
-    let source = if node_kind(db, receiver)? == Some(IndexedNodeKind::Identifier) {
-        let specialized =
-            enclosing.and_then(|enclosing| specialized_local_declaration_identity(db, receiver, enclosing));
-        match specialized {
-            Some(source) => source?,
-            None => with_registered_syntax(db, receiver, |db, syntax, key| {
-                with_node(db, syntax, key, |program, index, _| {
-                    Some(generic_source_local_identity(db, program, index, key, key.node))
-                })?
-                .transpose()
-            })?
-            .ok_or_else(unavailable)?,
-        }
-    } else {
-        specialized_source_expression_identity(db, receiver, enclosing)?
-    };
+    let source = explicit_receiver_identity(db, receiver, enclosing)?;
     if concrete_declaration(db, site, &source) != Some(owner) {
         return Err(unavailable());
     }
@@ -439,6 +559,69 @@ fn accessor_receiver_substitutions(
             .collect::<Vec<_>>()
             .into(),
     ))
+}
+
+fn explicit_receiver_identity(
+    db: &dyn Db,
+    receiver: AstNodeKey,
+    enclosing: Option<&GenericSpecializationInstance>,
+) -> Result<GenericSourceTypeIdentity, SemanticError> {
+    if node_kind(db, receiver)? == Some(IndexedNodeKind::Identifier) {
+        let specialized =
+            enclosing.and_then(|enclosing| specialized_local_declaration_identity(db, receiver, enclosing));
+        match specialized {
+            Some(source) => source,
+            None => with_registered_syntax(db, receiver, |db, syntax, key| {
+                with_node(db, syntax, key, |program, index, _| {
+                    Some(generic_source_local_identity(db, program, index, key, key.node))
+                })?
+                .transpose()
+            })?
+            .ok_or_else(|| SemanticError::unavailable_at("property_accessor_receiver", receiver)),
+        }
+    } else {
+        specialized_source_expression_identity(db, receiver, enclosing)
+    }
+}
+
+/// The applied layout of the concrete object that owns the subscription.
+pub fn observation_receiver_layout(
+    db: &dyn Db,
+    site: AstNodeKey,
+    receiver: AstNodeKey,
+    enclosing: Option<&GenericSpecializationInstance>,
+) -> SemanticQueryResult<(AstNodeKey, AggregateLayoutFact)> {
+    let Some(identity) = observation_receiver_identity(db, receiver, enclosing)? else { return Ok(None) };
+    super::layouts::nominal_identity_layout(db, site, &identity).map(Some)
+}
+
+fn observation_receiver_identity(
+    db: &dyn Db,
+    receiver: AstNodeKey,
+    enclosing: Option<&GenericSpecializationInstance>,
+) -> SemanticQueryResult<GenericSourceTypeIdentity> {
+    let implicit = if node_kind(db, receiver)? == Some(IndexedNodeKind::MethodDefinition) {
+        Some(receiver)
+    } else {
+        implicit_method_receiver(db, receiver).ok().flatten()
+    };
+    if let Some(method) = implicit {
+        let substitutions = enclosing
+            .filter(|instance| instance.declaration == method)
+            .into_iter()
+            .flat_map(|instance| instance.substitutions.iter())
+            .map(|binding| (binding.parameter.as_ref(), binding.source_identity()))
+            .collect();
+        with_registered_syntax(db, method, |db, syntax, key| {
+            with_node(db, syntax, key, |_, _, node| {
+                let method = node.of::<MethodDefinition>()?;
+                Some(generic_source_type_identity_with_substitutions(db, key, &method.receiver_type.node, &substitutions))
+            })?
+            .transpose()
+        })
+    } else {
+        explicit_receiver_identity(db, receiver, enclosing).map(Some)
+    }
 }
 
 fn accessor_signature(

@@ -864,6 +864,18 @@ define_builtins! {
         returns: Unit,
         injected: true,
     },
+    &["__observer_subscribe"] => {
+        symbol: "observer_subscribe",
+        params: [Ptr, Usize, Usize, Ptr, Ptr],
+        returns: U8,
+        injected: true,
+    },
+    &["__observer_tail"] => {
+        symbol: "observer_tail",
+        params: [Ptr],
+        returns: Ptr,
+        injected: true,
+    },
     &["__event_get_handler"] => {
         symbol: "event_get_handler",
         params: [Ptr, U32],

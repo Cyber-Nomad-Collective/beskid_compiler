@@ -228,7 +228,8 @@ pub(super) fn collect_member_obligations(
             continue;
         }
         let site = AstNodeKey { node, ..key };
-        if matches!(property_getter(db, site), Ok(Some(_))) {
+        if matches!(property_getter(db, site), Ok(Some(_))) || matches!(contract_property_access(db, site), Ok(Some(_)))
+        {
             continue;
         }
         // `pointer` is also the ABI of every nominal value: such a receiver is judged by its

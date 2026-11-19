@@ -35,6 +35,7 @@ pub use items::{
 };
 pub use statements::{
     Block, BreakStatement, ContinueStatement, ElseBranch, ExpressionStatement, ForStatement, IfStatement, LetStatement,
-    RangeExpression, ReturnStatement, ScopedUseStatement, Statement, WhileStatement, statements_may_fall_through,
+    ObserveStatement, RangeExpression, ReturnStatement, ScopedUseStatement, Statement, WhileStatement,
+    statements_may_fall_through,
 };
 pub use types::{EnumPath, Field, FieldKind, Parameter, Path, PathSegment, PrimitiveType, ReceiverParameter, Type};

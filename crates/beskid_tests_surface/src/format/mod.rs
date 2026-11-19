@@ -404,6 +404,9 @@ fn count_statement(stmt: &Statement) -> usize {
         }
         Statement::Return(r) => r.node.value.as_ref().map(|e| count_expr_blocks(&e.node)).unwrap_or(0),
         Statement::Expression(e) => count_expr_blocks(&e.node.expression.node),
+        Statement::Observe(observe) => {
+            count_expr_blocks(&observe.node.target.node) + count_expr_blocks(&observe.node.callback.node)
+        }
         Statement::Break(_) | Statement::Continue(_) => 0,
         Statement::With(w) => count_block_statements(&w.node.body.node),
         Statement::Launch(_) => 0,

@@ -4531,6 +4531,78 @@
       ]
     },
     {
+      "name": "__observer_subscribe",
+      "adapter": "observer_subscribe",
+      "params": [
+        {
+          "name": "owner",
+          "type": "pointer"
+        },
+        {
+          "name": "slotOffset",
+          "type": "usize"
+        },
+        {
+          "name": "propertyId",
+          "type": "usize"
+        },
+        {
+          "name": "closure",
+          "type": "pointer"
+        },
+        {
+          "name": "nodeDescriptor",
+          "type": "pointer"
+        }
+      ],
+      "result": "u8",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "observer_subscribe",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "observer_subscribe",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "observer_subscribe",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__observer_tail",
+      "adapter": "observer_tail",
+      "params": [
+        {
+          "name": "head",
+          "type": "pointer"
+        }
+      ],
+      "result": "pointer",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "observer_tail",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "observer_tail",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "observer_tail",
+          "osImports": []
+        }
+      ]
+    },
+    {
       "name": "__panic",
       "adapter": "beskid_trap_code",
       "params": [

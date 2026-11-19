@@ -200,6 +200,10 @@ impl Emit for Field {
         self.visibility.emit(w, cx)?;
         match self.kind {
             FieldKind::Value => {
+                if self.property_always {
+                    cx.token(w, "always")?;
+                    cx.space(w)?;
+                }
                 if self.property_default.is_some() {
                     cx.token(w, "prop")?;
                     cx.space(w)?;

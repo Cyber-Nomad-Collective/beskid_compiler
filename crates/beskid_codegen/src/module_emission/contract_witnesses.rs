@@ -103,7 +103,27 @@ pub(super) fn collect_contract_witnesses(
                 }
             }
         }
+        let mut observations = Vec::new();
+        if let Some(keys) = input.observed_properties.contract_properties(table.concrete) {
+            for (slot, (signature, _)) in table.methods.iter().enumerate() {
+                let Some(name) = beskid_queries::contract_getter_property_name(db, *signature) else { continue };
+                let Some(property) = beskid_queries::concrete_observation_property(db, table.concrete, &name) else {
+                    continue;
+                };
+                if keys.contains(&property) {
+                    let applied =
+                        table.receiver_layout(db).map_err(|error| emission_verification(error.to_string()))?;
+                    let layout = input
+                        .aggregate_object_layout_from_fact(table.concrete, &applied)
+                        .and_then(|layout| layout.observer_slot)
+                        .ok_or_else(|| emission_verification("contract observer owner has no traced slot"))?;
+                    observations.resize(entries.len(), (0, 0));
+                    observations[slot] = (layout, u64::from(property.node.0));
+                }
+            }
+        }
         witnesses.tables.push(WitnessTablePlan {
+            observations,
             symbol,
             type_tag: table.type_tag,
             receiver_kind: table.receiver.witness_kind(),

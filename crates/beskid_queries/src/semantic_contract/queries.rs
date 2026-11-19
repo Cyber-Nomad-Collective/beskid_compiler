@@ -136,6 +136,15 @@ pub fn node_type(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<SemanticTy
     with_registered_syntax(db, key, node_type_tracked)
 }
 
+/// Source-facing name of an expression's proven type, including nominal and generic identities.
+pub fn expression_type_display(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<String> {
+    match generic_source_expression_identity(db, key) {
+        Ok(identity) => Ok(Some(identity.display_name())),
+        Err(error) if error.is_unavailable() => Ok(None),
+        Err(error) => Err(error),
+    }
+}
+
 /// Classify whether the exact source value is traced by the Beskid garbage collector.
 /// Pointer ABI is never used as proof; unsupported or ambiguous source shapes fail closed.
 pub fn managed_reference_kind(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<ManagedReferenceKind> {

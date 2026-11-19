@@ -56,6 +56,7 @@ fn generic_record() -> Spanned<Node> {
             }))),
             property_default: None,
             property_accessors: None,
+            property_always: false,
         })],
         field_docs: vec![None],
         methods: vec![],

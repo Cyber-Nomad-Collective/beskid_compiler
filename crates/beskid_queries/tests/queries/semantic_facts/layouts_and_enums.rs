@@ -46,6 +46,7 @@ fn phantom_generic_aggregate_literal_materializes_its_source_independent_layout(
     assert_eq!(
         aggregate_literal_layout(&db, literal).expect("phantom generic literal layout query"),
         Some(beskid_queries::AggregateLayoutFact {
+            specialization: None,
             fields: Arc::from([
                 (Arc::from("index"), AggregateFieldShape::Scalar(SemanticTypeId::I64)),
                 (Arc::from("length"), AggregateFieldShape::Scalar(SemanticTypeId::I64)),

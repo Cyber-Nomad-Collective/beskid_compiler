@@ -39,6 +39,10 @@ pub struct Field {
     #[ast(skip)]
     #[serde(default)]
     pub property_accessors: Option<PropertyAccessors>,
+    /// Notify observers for each stored write, including equal assignments.
+    #[ast(skip)]
+    #[serde(default)]
+    pub property_always: bool,
 }
 
 impl Field {
@@ -68,6 +72,8 @@ impl crate::parsing::parsable::Parsable for Field {
         } else {
             Spanned::new(Visibility::Private, span)
         };
+        let property_always =
+            field_inner.next_if(|pair| pair.as_rule() == crate::parser::Rule::AlwaysPropertyModifier).is_some();
         let field_node =
             field_inner.next().ok_or(crate::parsing::error::ParseError::missing(crate::parser::Rule::ValueField))?;
         let property_default = if automatic {
@@ -204,6 +210,7 @@ impl crate::parsing::parsable::Parsable for Field {
                 ty,
                 property_default,
                 property_accessors: None,
+                property_always,
             },
             span,
         ))

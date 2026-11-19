@@ -149,6 +149,26 @@ fn expected_type_for(
     let is_child = |target: DynNodeRef<'_>| child_node.is_same_node(target);
     let environment = enclosing_environment(enclosing);
 
+    if let Some(observe) = node.of::<syntax::ObserveStatement>() {
+        if !is_child(DynNodeRef::from(&observe.callback)) {
+            return Err(unavailable());
+        }
+        let target =
+            index.direct_child_id(program, parent, DynNodeRef::from(&observe.target)).ok_or_else(unavailable)?;
+        let target = AstNodeKey { node: normalized_expression_node(index, target), ..key };
+        let ty = match contract_observation(db, parent_key)? {
+            Some(property) => property.identity,
+            None => super::properties::observation_value_identity(db, target, enclosing)?,
+        };
+        return Ok(ExpectedType::new(
+            ExpectedTypeContext::ObservationHandler { statement: parent_key },
+            GenericSourceTypeIdentity::Function {
+                parameters: Arc::from([ty.clone(), ty]),
+                result: Box::new(GenericSourceTypeIdentity::Abi(SemanticTypeId::UNIT)),
+            },
+        ));
+    }
+
     if let Some(statement) = node.of::<syntax::LetStatement>() {
         if !is_child(DynNodeRef::from(&statement.value)) {
             return Err(unavailable());

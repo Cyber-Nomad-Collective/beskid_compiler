@@ -36,6 +36,46 @@ pub struct EventHandlerLocalPlan {
     pub result: Option<Type>,
 }
 
+/// A subscription on a source-proven owner and one of its stored properties.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ObservationPlan {
+    pub receiver: AstNodeKey,
+    pub callback: AstNodeKey,
+    pub slot_offset: u32,
+    pub property_id: u64,
+}
+
+/// A backing store protected by the shared observer slot for its owner.
+#[derive(Clone, Debug)]
+pub struct ObservedStore {
+    pub slot_offset: u32,
+    pub property: Option<ObservedProperty>,
+    pub derived: Vec<ObservedDerived>,
+}
+
+#[derive(Clone, Debug)]
+pub struct ObservedProperty {
+    pub property_id: u64,
+    pub equality: ObservationEquality,
+}
+
+#[derive(Clone, Debug)]
+pub struct ObservedDerived {
+    pub property: ObservedProperty,
+    pub getter: DirectCallee,
+    pub signature: Signature,
+    pub managed: bool,
+}
+
+#[derive(Clone, Debug)]
+pub enum ObservationEquality {
+    Method(DirectCallee, Signature),
+    Always,
+    Integer,
+    Float,
+    String,
+}
+
 /// Scalar facts consumed by leaf ISLE rules.
 ///
 /// The frontend adapter implements this trait with generation-checked Salsa queries. It is a

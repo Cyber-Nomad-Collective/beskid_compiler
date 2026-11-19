@@ -168,6 +168,11 @@ pub fn map_statement(
             ExpressionStatement { expression: map_expression(es.node.expression.clone(), f) },
             es.span,
         )),
+        Statement::Observe(mut observe) => {
+            observe.node.target = map_expression(observe.node.target, f);
+            observe.node.callback = map_expression(observe.node.callback, f);
+            Statement::Observe(observe)
+        }
         Statement::Let(ls) => {
             let mut n = ls.clone();
             n.node.value = map_expression(ls.node.value.clone(), f);

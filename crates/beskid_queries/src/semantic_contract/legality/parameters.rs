@@ -201,7 +201,7 @@ impl Walker<'_> {
             Statement::Return(_) => self.reads(id),
             Statement::Break(_) => self.loops.last().is_none_or(|innermost| innermost.after),
             Statement::Continue(_) => self.loops.last().is_none_or(|innermost| innermost.head),
-            Statement::Let(_) | Statement::Launch(_) => after || self.reads(id),
+            Statement::Let(_) | Statement::Launch(_) | Statement::Observe(_) => after || self.reads(id),
             Statement::While(while_statement) => {
                 let while_id = self.child(id, DynNodeRef::from(while_statement));
                 let condition = self.reads(self.child(while_id, DynNodeRef::from(&while_statement.node.condition)));

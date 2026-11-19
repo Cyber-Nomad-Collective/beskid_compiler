@@ -35,6 +35,7 @@ mod destructive_read;
 mod enums;
 mod events;
 mod intrinsics;
+mod observation;
 mod operators;
 mod roots;
 mod spawn_arguments;
@@ -429,6 +430,10 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
         let immediate = i64::from(u32::from(self.facts.char_literal(key)?));
         let value_type = self.facts.scalar_type(key)?;
         Some(self.builder.ins().iconst(value_type, immediate))
+    }
+
+    fn emit_observe_statement(&mut self, key: AstNodeKey) -> Option<()> {
+        self.emit_observe(key)
     }
 
     strings::generated_string_methods!();

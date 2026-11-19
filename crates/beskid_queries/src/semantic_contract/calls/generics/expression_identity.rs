@@ -30,6 +30,9 @@ pub(in crate::semantic_contract) fn generic_source_expression_identity(
             .ok_or_else(|| source_expression_unavailable(db, normalized_key, "try expression has no payload fact"));
     }
 
+    if let Some(access) = contract_property_access(db, normalized_key)? {
+        return Ok(access.identity);
+    }
     if let Some(getter) = property_getter(db, normalized_key)? {
         return super::super::super::properties::property_result_identity(db, normalized_key, getter, None);
     }

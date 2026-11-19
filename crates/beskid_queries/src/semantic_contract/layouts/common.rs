@@ -184,12 +184,12 @@ pub(in crate::semantic_contract) fn abi_type_for_local_path(
     }
 }
 
-/// Resolve only the ABI of `local.field` when `local` has an explicit nominal annotation.
+/// Resolve the ABI of `local.field` for a declared nominal local or a contextual lambda parameter.
 ///
 /// This is deliberately narrower than general member typing: inferred locals, chained paths,
 /// generic receiver segments, ambiguous declarations, and field forms without an exact ABI stay
-/// unavailable. It supplies generic call specialization with the ABI fact it needs without
-/// reconstructing retired HIR receiver types.
+/// unavailable. Lambda parameters use the same aggregate access fact as member expressions,
+/// preserving the nominal identity supplied by the lambda's expected type.
 pub(in crate::semantic_contract) fn abi_type_for_direct_aggregate_field_projection(
     db: &dyn Db,
     program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
@@ -201,6 +201,14 @@ pub(in crate::semantic_contract) fn abi_type_for_direct_aggregate_field_projecti
     let local = resolve_lexical_declaration(program, index, key.node, receiver_name)
         .ok_or_else(|| SemanticError::unavailable("abi_type"))?;
     let parent = parent_node(index, local).ok_or_else(|| SemanticError::unavailable("abi_type"))?;
+    if index.kind(parent) == Some(beskid_analysis::syntax_query::NodeKind::LambdaParameter) {
+        let access = aggregate_field_access(db, key)?.ok_or_else(|| SemanticError::unavailable("abi_type"))?;
+        return match access.layout.fields.get(access.index as usize) {
+            Some((_, AggregateFieldShape::Scalar(ty) | AggregateFieldShape::ManagedReference(ty))) => Ok(*ty),
+            Some((_, AggregateFieldShape::Nominal(_))) => Ok(SemanticTypeId::POINTER),
+            None => Err(SemanticError::unavailable("abi_type")),
+        };
+    }
     let annotation = match index.kind(parent) {
         Some(beskid_analysis::syntax_query::NodeKind::Parameter) => index
             .node_at(program, parent)

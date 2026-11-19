@@ -3,7 +3,8 @@
 use super::*;
 use beskid_analysis::syntax::{
     ContractDefinition, ContractMethodSignature, ContractNode, EnumDefinition, Expression, FunctionDefinition,
-    ImplBlock, MethodDefinition, Parameter, Path, PathSegment, Spanned, Type, TypeDefinition, Visibility,
+    ImplBlock, MethodDefinition, Parameter, Path, PathSegment, PropertyAccessorKind, Spanned, Type, TypeDefinition,
+    Visibility,
 };
 use beskid_analysis::syntax_query::{DynNodeRef, NodeKind};
 
@@ -519,6 +520,14 @@ pub(super) fn contract_parameter_declarations(
                 return None;
             };
             let contract = resolve_contract(db, declaration, &path.node)?;
+            // Property access and subscription read the concrete witness metadata. Keep the
+            // declared box ABI at this boundary, including for nominal arguments.
+            if contract_method_slots(db, contract)?
+                .into_iter()
+                .any(|slot| super::contract_observation::contract_accessor_name(db, slot).is_some())
+            {
+                return None;
+            }
             Some((parameter_key, u32::try_from(position).ok()?, contract))
         })
         .collect()
@@ -1544,10 +1553,29 @@ pub(in crate::semantic_contract) fn type_declaration_conforms_to_contract(
     definition: &TypeDefinition,
     contract: AstNodeKey,
 ) -> bool {
+    conforms_using(db, concrete, definition, contract, resolve_contract)
+}
+
+pub(super) fn possible_property_conformer(
+    db: &dyn Db,
+    concrete: AstNodeKey,
+    definition: &TypeDefinition,
+    contract: AstNodeKey,
+) -> bool {
+    conforms_using(db, concrete, definition, contract, resolve_contract_head)
+}
+
+fn conforms_using(
+    db: &dyn Db,
+    concrete: AstNodeKey,
+    definition: &TypeDefinition,
+    contract: AstNodeKey,
+    resolve: fn(&dyn Db, AstNodeKey, &Path) -> Option<AstNodeKey>,
+) -> bool {
     let conforms_via_type_conformance = definition
         .conformances
         .iter()
-        .filter_map(|path| resolve_contract(db, concrete, &path.node))
+        .filter_map(|path| resolve(db, concrete, &path.node))
         .any(|candidate| contract_includes(db, candidate, contract, &mut HashSet::new()));
     if conforms_via_type_conformance {
         return true;
@@ -1566,7 +1594,7 @@ pub(in crate::semantic_contract) fn type_declaration_conforms_to_contract(
         impl_block
             .conformances
             .iter()
-            .filter_map(|path| resolve_contract(db, impl_key, &path.node))
+            .filter_map(|path| resolve(db, impl_key, &path.node))
             .any(|candidate| contract_includes(db, candidate, contract, &mut HashSet::new()))
     })
 }
@@ -1578,31 +1606,15 @@ pub(in crate::semantic_contract) fn type_declaration_conforms_to_contract(
 pub(in crate::semantic_contract) fn type_declaration_conforms_to_applied_contract(
     db: &dyn Db,
     concrete: AstNodeKey,
-    definition: &TypeDefinition,
+    source_arguments: &[GenericSourceTypeIdentity],
     contract: AstNodeKey,
     arguments: &[GenericSourceTypeIdentity],
 ) -> bool {
-    let applies = |scope: AstNodeKey, path: &Path| {
-        resolve_contract_head(db, scope, path) == Some(contract)
-            && path.segments.last().is_some_and(|terminal| {
-                terminal.node.type_args.len() == arguments.len()
-                    && terminal.node.type_args.iter().zip(arguments).all(|(argument, expected)| {
-                        generic_source_type_identity(db, scope, &argument.node).is_ok_and(|actual| actual == *expected)
-                    })
-            })
-    };
-    if definition.conformances.iter().any(|path| applies(concrete, &path.node)) {
-        return true;
-    }
-    impl_blocks_for_type(db, concrete).into_iter().any(|impl_key| {
-        let Some(impl_syntax) = db.syntax_unit(impl_key.unit) else {
-            return false;
-        };
-        impl_syntax
-            .syntax_index(db)
-            .node_at(impl_syntax.expanded_program(db), impl_key.node)
-            .and_then(|node| node.of::<ImplBlock>())
-            .is_some_and(|impl_block| impl_block.conformances.iter().any(|path| applies(impl_key, &path.node)))
+    nominal_head(db, concrete).is_some_and(|definition| {
+        applied_conformance_environment(db, concrete, &definition, source_arguments, contract, arguments, 0)
+            .ok()
+            .flatten()
+            .is_some()
     })
 }
 
@@ -1778,9 +1790,13 @@ pub(in crate::semantic_contract) fn contract_conformance_failure(
             .node_at(expected_syntax.expanded_program(db), method.node)
             .and_then(|node| node.of::<ContractMethodSignature>())
             .ok_or_else(|| SemanticError::unavailable("contract_method"))?;
-        let method_name = expected.name.node.name.clone();
+        let internal_name = &expected.name.node.name;
+        let method_name = [PropertyAccessorKind::Get, PropertyAccessorKind::Set]
+            .into_iter()
+            .find_map(|kind| kind.property_name(internal_name).map(|property| format!("{property}.{}", kind.keyword())))
+            .unwrap_or_else(|| internal_name.clone());
         let expected_rendered = render_signature_syntax(&expected.parameters, expected.return_type.as_ref());
-        let Some(implementation) = unique_nominal_method_declaration(db, concrete, &method_name) else {
+        let Some(implementation) = unique_nominal_method_declaration(db, concrete, internal_name) else {
             return Ok(Some(ContractConformanceFailure::MissingMethod { method_name, expected: expected_rendered }));
         };
         let actual = syntax

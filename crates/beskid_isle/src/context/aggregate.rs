@@ -369,8 +369,13 @@ macro_rules! generated_aggregate_methods {
             }
             let compound = self.facts.compound_assignment_operator(key);
             let setter = self.facts.property_setter(key);
+            let observation = self.facts.observed_store(key).ok()?;
             let getter = compound.is_some() && self.facts.node_kind(target) == Some(NodeKind::CallExpression);
-            let receiver_root = if getter || setter.is_some() { Some(self.root_expression_value(base)?) } else { None };
+            let receiver_root = if getter || setter.is_some() || observation.is_some() {
+                Some(self.root_expression_value(base)?)
+            } else {
+                None
+            };
             let value = match compound {
                 None => self.lower_coerced_expression(value_key)?,
                 // `p.x op= v`: the receiver is evaluated once; the field is read through it,
@@ -405,7 +410,12 @@ macro_rules! generated_aggregate_methods {
                 self.release_expression_root(value_root)?;
             } else {
                 let managed = self.store_overwrites_managed_reference(key, target)?;
-                self.emit_slot_store(base, i32::try_from(field.offset).ok()?, value, managed)?;
+                let offset = i32::try_from(field.offset).ok()?;
+                if let Some(observation) = observation {
+                    self.emit_observed_store(key, base, offset, value, managed, observation)?;
+                } else {
+                    self.emit_slot_store(base, offset, value, managed)?;
+                }
             }
             self.release_expression_root(receiver_root)?;
             Some(value)

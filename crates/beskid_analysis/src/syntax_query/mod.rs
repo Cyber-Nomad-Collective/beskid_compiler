@@ -121,6 +121,7 @@ node_kinds!(
     MacroDefinition,
     MacroInvocation,
     MacroMetavariable,
+    ObserveStatement,
 );
 
 mod ancestors;

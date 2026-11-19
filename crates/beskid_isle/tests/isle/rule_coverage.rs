@@ -129,6 +129,8 @@ fn every_isle_lowered_kind_has_verified_clif_evidence() {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("beskid_codegen").join("tests").join("codegen");
     let engine_tests =
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("beskid_engine").join("tests").join("engine");
+    let observation_fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../beskid_e2e_tests/fixtures/observe_stored_property/Src/Main.bd");
     let evidence: &[(NodeKind, PathBuf)] = &[
         (NodeKind::Program, isle_tests.join("rule_coverage.rs")),
         (NodeKind::FunctionDefinition, isle_tests.join("function_emitter.rs")),
@@ -141,6 +143,7 @@ fn every_isle_lowered_kind_has_verified_clif_evidence() {
         // scoped_cleanup_preserves_constructor_and_argument_roots compile source
         // through ISLE and verifier-enabled AOT, then execute JIT and native kits.
         (NodeKind::ScopedUseStatement, engine_tests.join("native_kit/scoped_cleanup_native.rs")),
+        (NodeKind::ObserveStatement, observation_fixture),
         (NodeKind::LaunchStatement, codegen_tests.join("isle_adapter/composition_conditions.rs")),
         (NodeKind::WithStatement, codegen_tests.join("isle_adapter/composition_conditions.rs")),
         (NodeKind::IfStatement, isle_tests.join("if_else.rs")),

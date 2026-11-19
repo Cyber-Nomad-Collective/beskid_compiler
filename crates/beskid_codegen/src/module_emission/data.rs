@@ -1,5 +1,8 @@
 use std::collections::{HashMap, HashSet};
 
+use beskid_abi::runtime_source::{
+    OBSERVER_NODE_CLOSURE_OFFSET, OBSERVER_NODE_DESCRIPTOR_SYMBOL, OBSERVER_NODE_NEXT_OFFSET, OBSERVER_NODE_SIZE,
+};
 use beskid_isle::AstNodeKey;
 use beskid_queries::{child_nodes, closure_call_target, event_handler_lambda_for_local, spawn_entry_validation};
 use cranelift_codegen::ir::Endianness;
@@ -207,19 +210,44 @@ pub(crate) fn declare_function_runtime_data_imports<M: Module>(
     module: &mut M,
     function: &cranelift_codegen::ir::Function,
 ) -> ModuleResult<()> {
-    let referenced = function.global_values.values().any(|global| {
-        matches!(
-            global,
-            cranelift_codegen::ir::GlobalValueData::Symbol {
-                name: cranelift_codegen::ir::ExternalName::TestCase(name),
-                ..
-            } if name.raw() == beskid_isle::GC_BARRIER_ACTIVE_SYMBOL.as_bytes()
-        )
-    });
-    if referenced {
-        module.declare_data(beskid_isle::GC_BARRIER_ACTIVE_SYMBOL, Linkage::Import, false, false)?;
+    for global in function.global_values.values() {
+        if let cranelift_codegen::ir::GlobalValueData::Symbol {
+            name: cranelift_codegen::ir::ExternalName::TestCase(name),
+            ..
+        } = global
+        {
+            let name = name.raw();
+            if name == beskid_isle::GC_BARRIER_ACTIVE_SYMBOL.as_bytes() {
+                module.declare_data(beskid_isle::GC_BARRIER_ACTIVE_SYMBOL, Linkage::Import, false, false)?;
+            } else if name == OBSERVER_NODE_DESCRIPTOR_SYMBOL.as_bytes()
+                && module.get_name(OBSERVER_NODE_DESCRIPTOR_SYMBOL).is_none()
+            {
+                emit_observer_node_descriptor(module)?;
+            }
+        }
     }
     Ok(())
+}
+
+fn emit_observer_node_descriptor<M: Module>(module: &mut M) -> ModuleResult<()> {
+    let pointer_map = module.declare_data("__beskid_observer_node_pointer_map_v5", Linkage::Local, false, false)?;
+    let descriptor = module.declare_data(OBSERVER_NODE_DESCRIPTOR_SYMBOL, Linkage::Local, false, false)?;
+    let mut pointer_map_data = DataDescription::new();
+    let pointer_offsets = [OBSERVER_NODE_CLOSURE_OFFSET as u64, OBSERVER_NODE_NEXT_OFFSET as u64];
+    let pointer_bytes = pointer_offsets.into_iter().flat_map(u64::to_le_bytes).collect::<Vec<_>>();
+    pointer_map_data.define(pointer_bytes.into_boxed_slice());
+    pointer_map_data.set_align(8);
+    module.define_data(pointer_map, &pointer_map_data)?;
+
+    // ABI-v5 BeskidTypeDescriptor has the GC pointer-map address at offset 16.
+    let descriptor_words = [OBSERVER_NODE_SIZE, 8, 0, pointer_offsets.len() as u64, 0];
+    let descriptor_bytes = descriptor_words.into_iter().flat_map(u64::to_le_bytes).collect::<Vec<_>>();
+    let mut descriptor_data = DataDescription::new();
+    descriptor_data.define(descriptor_bytes.into_boxed_slice());
+    descriptor_data.set_align(8);
+    let pointer_map_address = module.declare_data_in_data(pointer_map, &mut descriptor_data);
+    descriptor_data.write_data_addr(16, pointer_map_address, 0);
+    module.define_data(descriptor, &descriptor_data)
 }
 
 /// Emit artifact-owned closure descriptor/pointer-map/allocation-request data, after declaring the
