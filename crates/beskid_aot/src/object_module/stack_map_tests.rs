@@ -58,12 +58,54 @@ fn word(bytes: &[u8], offset: usize) -> u32 {
 }
 
 #[test]
+fn object_stack_maps_coalesce_large_macho_sets_without_losing_relocations() {
+    let directory = tempfile::tempdir().unwrap();
+    let call_conv = CallConv::AppleAarch64;
+    let mut artifact = artifact(call_conv);
+    artifact.functions.truncate(1);
+    let names = (0..300).map(|index| format!("ManagedCaller{index}")).collect::<Vec<_>>();
+    artifact.functions.extend(names.iter().map(|name| caller(name, call_conv, true)));
+
+    let mut module = BeskidObjectModule::new(Some("aarch64-apple-darwin"), BuildProfile::Release).unwrap();
+    module.compile_artifact(&artifact, None).unwrap();
+    let path = directory.path().join("many-stack-maps.o");
+    module.finalize_to_path(&path).unwrap();
+    let bytes = std::fs::read(path).unwrap();
+    let object = object::File::parse(bytes.as_slice()).unwrap();
+    let read_only_data = macho_relocatable_constants(&object);
+    let data = read_only_data.data().unwrap();
+    let mut relocations = read_only_data.relocations().collect::<std::collections::HashMap<_, _>>();
+    let mut offset = 0;
+    for name in names {
+        assert_eq!(offset % 8, 0);
+        assert_eq!(&data[offset..offset + 8], b"BSKGC\0\x01\0");
+        let table_len = word(data, offset + 8) as usize;
+        assert_eq!(word(data, offset + 24), 2);
+        let relocation = relocations.remove(&(offset as u64 + 16)).expect("code address needs a relocation");
+        let RelocationTarget::Symbol(target) = relocation.target() else {
+            panic!("expected a managed function symbol");
+        };
+        assert_eq!(object.symbol_by_index(target).unwrap().name(), Ok(format!("_{name}").as_str()));
+        offset += table_len;
+    }
+    assert_eq!(offset, data.len());
+    assert!(relocations.is_empty());
+}
+
+fn macho_relocatable_constants<'data, 'file>(object: &'file object::File<'data>) -> object::Section<'data, 'file> {
+    object
+        .sections()
+        .find(|section| section.segment_name() == Ok(Some("__DATA")) && section.name() == Ok("__const"))
+        .expect("Mach-O constant section with relocations")
+}
+
+#[test]
 fn object_stack_maps_preserve_code_relocations_and_pointer_slots() {
     let directory = tempfile::tempdir().unwrap();
     let targets = [
         ("x86_64-unknown-linux-gnu", ".data.rel.ro.beskid_gc", CallConv::SystemV),
         ("x86_64-pc-windows-msvc", ".rdata$GC", CallConv::WindowsFastcall),
-        ("aarch64-apple-darwin", "__beskid_gc", CallConv::AppleAarch64),
+        ("aarch64-apple-darwin", "__const", CallConv::AppleAarch64),
     ];
     for (triple, section_name, call_conv) in targets {
         for profile in [BuildProfile::Debug, BuildProfile::Release] {
@@ -73,9 +115,14 @@ fn object_stack_maps_preserve_code_relocations_and_pointer_slots() {
             module.finalize_to_path(&path).unwrap();
             let bytes = std::fs::read(path).unwrap();
             let object = object::File::parse(bytes.as_slice()).unwrap();
-            let mut sections = object.sections().filter(|section| section.name() == Ok(section_name));
-            let section = sections.next().unwrap_or_else(|| panic!("missing {section_name} for {triple}"));
-            assert!(sections.next().is_none(), "the raw integer caller must not get a stack map section");
+            let section = if object.format() == object::BinaryFormat::MachO {
+                macho_relocatable_constants(&object)
+            } else {
+                let mut sections = object.sections().filter(|section| section.name() == Ok(section_name));
+                let section = sections.next().unwrap_or_else(|| panic!("missing {section_name} for {triple}"));
+                assert!(sections.next().is_none(), "the raw integer caller must not get a stack map section");
+                section
+            };
             let map = section.data().unwrap();
             assert_eq!(&map[..8], b"BSKGC\0\x01\0");
             assert_eq!(word(map, 8) as usize, map.len());

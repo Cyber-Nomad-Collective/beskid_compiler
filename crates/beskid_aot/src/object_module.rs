@@ -348,7 +348,8 @@ impl BeskidObjectModule {
         let stack_map_section = match module.isa().triple().binary_format.to_string().as_str() {
             "elf" => Some(".data.rel.ro.beskid_gc"),
             "coff" => Some(".rdata$GC"),
-            "macho" => Some("__DATA_CONST,__beskid_gc"),
+            // Cranelift allocates one section per custom data object. Mach-O's
+            // section count is bounded to 255, so use its shared constant section.
             _ => None,
         };
         let checkpoints = artifact.runtime_checkpoint_definitions.Resolve(&self.func_ids);

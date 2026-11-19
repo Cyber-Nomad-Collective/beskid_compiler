@@ -314,7 +314,7 @@ fn emit_effect_closure<'db, M: cranelift_module::Module>(
         let section = match module.isa().triple().binary_format.to_string().as_str() {
             "elf" => Some(".data.rel.ro.beskid_gc"),
             "coff" => Some(".rdata$GC"),
-            "macho" => Some("__DATA_CONST,__beskid_gc"),
+            // Mach-O shares the standard constant section between stack maps.
             _ => None,
         };
         crate::stack_maps::DefineFunctionWithStackMaps(

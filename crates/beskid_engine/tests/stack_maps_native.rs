@@ -137,6 +137,36 @@ int main(void) {
 }
 "#;
 
+fn metadata_bytes(object: &object::File<'_>) -> u64 {
+    if object.format() != object::BinaryFormat::MachO {
+        return object
+            .sections()
+            .filter(|section| matches!(section.name(), Ok(".data.rel.ro.beskid_gc" | ".rdata$GC")))
+            .map(|section| section.size())
+            .sum();
+    }
+
+    // Each stack map in Mach-O shares the constant section with unrelated
+    // data. Count the encoded records whose code address has a relocation.
+    object
+        .sections()
+        .filter(|section| section.segment_name() == Ok(Some("__DATA")) && section.name() == Ok("__const"))
+        .map(|section| {
+            let data = section.data().unwrap();
+            section
+                .relocations()
+                .filter_map(|(offset, _)| {
+                    let start = usize::try_from(offset).ok()?.checked_sub(16)?;
+                    let record = data.get(start..)?.strip_prefix(b"BSKGC\0\x01\0")?;
+                    let size = u32::from_le_bytes(record[..4].try_into().unwrap());
+                    assert!(size >= 28 && size % 8 == 0 && start + size as usize <= data.len());
+                    Some(u64::from(size))
+                })
+                .sum::<u64>()
+        })
+        .sum()
+}
+
 #[test]
 fn managed_object_survives_nested_and_host_callback_collections_and_is_reclaimed() {
     let directory = tempfile::tempdir().expect("fixture directory");
@@ -213,11 +243,7 @@ fn managed_object_survives_nested_and_host_callback_collections_and_is_reclaimed
         object.finalize_to_path(&object_path).expect("write fixture object");
         let bytes = std::fs::read(&object_path).expect("read fixture object");
         let object = object::File::parse(bytes.as_slice()).expect("parse fixture object");
-        let metadata_bytes: u64 = object
-            .sections()
-            .filter(|section| matches!(section.name(), Ok(".data.rel.ro.beskid_gc" | "__beskid_gc" | ".rdata$GC")))
-            .map(|section| section.size())
-            .sum();
+        let metadata_bytes = metadata_bytes(&object);
         assert!(metadata_bytes > 0, "fixture must contain stack maps");
         eprintln!("{name} stack-map metadata: {metadata_bytes} bytes");
         for negative in [false, true] {

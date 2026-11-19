@@ -475,7 +475,7 @@ dependencies = [
 
 [[package]]
 name = "beskid_cli"
-version = "0.6.7"
+version = "0.7.0"
 dependencies = [
  "anyhow",
  "argfile",
@@ -627,7 +627,7 @@ dependencies = [
 
 [[package]]
 name = "beskid_lsp"
-version = "0.6.7"
+version = "0.7.0"
 dependencies = [
  "anyhow",
  "beskid_analysis",
@@ -990,7 +990,7 @@ dependencies = [
 
 [[package]]
 name = "beskid_up"
-version = "0.6.7"
+version = "0.7.0"
 dependencies = [
  "beskid_abi",
  "cargo-cross",
