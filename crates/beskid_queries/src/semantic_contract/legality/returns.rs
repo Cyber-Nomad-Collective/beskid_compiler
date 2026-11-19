@@ -51,10 +51,12 @@ pub fn missing_return(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<Missi
 #[salsa::tracked(persist)]
 fn missing_return_tracked(db: &dyn Db, syntax: SyntaxUnitInput, key: AstNodeKey) -> SemanticQueryResult<MissingReturn> {
     with_node(db, syntax, key, |program, index, node| {
-        let (name, result, body) = if let Some(function) = node.of::<FunctionDefinition>() {
-            (&function.name, function.return_type.as_ref()?, &function.body)
+        let (name, callable, result, body) = if let Some(function) = node.of::<FunctionDefinition>() {
+            (&function.name, function.name.node.name.as_str(), function.return_type.as_ref()?, &function.body)
         } else if let Some(method) = node.of::<MethodDefinition>() {
-            (&method.name, method.return_type.as_ref()?, &method.body)
+            let name = method.name.node.name.as_str();
+            let callable = method.property_accessor.and_then(|kind| kind.property_name(name)).unwrap_or(name);
+            (&method.name, callable, method.return_type.as_ref()?, &method.body)
         } else {
             return None;
         };
@@ -70,7 +72,7 @@ fn missing_return_tracked(db: &dyn Db, syntax: SyntaxUnitInput, key: AstNodeKey)
         Some(MissingReturn {
             body: AstNodeKey { node: body_id, ..key },
             name: AstNodeKey { node: name_id, ..key },
-            callable: name.node.name.clone(),
+            callable: callable.to_owned(),
             result_name: type_text(result),
         })
     })
@@ -316,6 +318,12 @@ mod tests {
             let names = missing(source, 9810 + index as u64);
             assert!(names.first().is_some(), "{case} must be rejected: {source}");
         }
+    }
+
+    #[test]
+    fn a_custom_getter_that_can_fall_through_names_the_property() {
+        let source = "type Counter { i64 Count { get { if field > 0 { return field; } } } = 0; }";
+        assert_eq!(missing(source, 9849), ["Count"]);
     }
 
     #[test]

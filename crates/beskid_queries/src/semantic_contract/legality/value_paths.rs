@@ -104,10 +104,13 @@ pub(super) fn collect_value_path_obligations(
         if method.is_some() && nearest_ancestor(index, node, |kind| kind == NodeKind::TypeDefinition).is_none() {
             continue;
         }
-        if enclosing_type_declares_field(program, index, node, base) {
+        let site = AstNodeKey { node, ..key };
+        if enclosing_type_declares_field(program, index, node, base)
+            || super::super::properties::contextual_backing_name(program, index, node, base).is_some()
+            || (segments.len() == 1 && matches!(property_reference(db, site), Ok(Some(_))))
+        {
             continue;
         }
-        let site = AstNodeKey { node, ..key };
         // A named function read as a value is a closure record with the item's entry
         // (`function_item_value`); it is a value, not an item named in value position. A generic
         // function whose type arguments cannot be determined is judged by the legality gate

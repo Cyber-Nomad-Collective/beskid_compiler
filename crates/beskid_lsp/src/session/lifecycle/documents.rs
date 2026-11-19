@@ -256,9 +256,11 @@ async fn build_syntax_facts_with_policy_after_startup(
         if repaired.superseded {
             return repaired;
         }
-        if let Some(completion) = repaired.completion
+        if let Some(mut completion) = repaired.completion
             && completion.entry_anchor.is_some()
         {
+            completion.lexical_snapshot =
+                facts.completion.as_mut().and_then(|original| original.lexical_snapshot.take());
             facts.completion = Some(completion);
         }
     }
@@ -433,6 +435,13 @@ async fn syntax_facts_for_text(
                     prepare_project_syntax_facts(db, &resolved_for_prepare, pass, &mod_host)?
                 };
                 let mut facts = syntax_facts_for_assembly(db, &resolved_for_prepare, Arc::new(prepared.assembly));
+                if interactive
+                    && member_offsets.is_empty()
+                    && let Some(completion) = facts.completion.as_mut()
+                    && let Some(anchor) = completion.entry_anchor
+                {
+                    completion.lexical_snapshot = beskid_queries::completion_lexical_snapshot(db, anchor, text);
+                }
                 // Capture the members of each repaired member access as owned data while this generation
                 // is the registered one.
                 if let Some(completion) = facts.completion.as_mut()
@@ -768,6 +777,7 @@ async fn store_document(state: &RwLock<State>, uri: Uri, version: i32, text: Str
             None => {
                 syntax_facts.completion = Some(SyntaxCompletion {
                     entry_anchor: None,
+                    lexical_snapshot: None,
                     dependency_surface,
                     attributes: std::sync::Arc::from([]),
                     member_access: std::sync::Arc::from([]),
@@ -782,6 +792,7 @@ async fn store_document(state: &RwLock<State>, uri: Uri, version: i32, text: Str
             None => {
                 syntax_facts.completion = Some(SyntaxCompletion {
                     entry_anchor: None,
+                    lexical_snapshot: None,
                     dependency_surface: std::sync::Arc::from([]),
                     attributes: prior_attributes,
                     member_access: std::sync::Arc::from([]),

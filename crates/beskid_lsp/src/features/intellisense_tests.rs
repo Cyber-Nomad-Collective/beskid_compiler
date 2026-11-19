@@ -117,6 +117,7 @@ mod tests {
             syntax_attribute_names: Vec::new(),
             syntax_completion: Some(SyntaxCompletion {
                 entry_anchor: Some(anchor),
+                lexical_snapshot: None,
                 dependency_surface: Arc::from([]),
                 attributes: Arc::from([]),
                 member_access: Arc::from([]),

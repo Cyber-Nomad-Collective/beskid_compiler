@@ -100,6 +100,7 @@ impl Resolver {
 
     fn take_resolution(&mut self) -> Resolution {
         let tables = std::mem::take(&mut self.tables);
+        self.derived_properties_by_type.clear();
         let span_index = span_index_from_tables(&tables);
         Resolution {
             items: std::mem::take(&mut self.items),

@@ -30,13 +30,32 @@ impl SyntaxNodeFacts<'_> {
     }
 
     pub(super) fn node_kind_impl(&self, key: AstNodeKey) -> Option<NodeKind> {
+        let syntax = self.query(node_kind(self.db, key))?;
+        if matches!(
+            syntax,
+            beskid_queries::IndexedNodeKind::PathExpression
+                | beskid_queries::IndexedNodeKind::PathSegment
+                | beskid_queries::IndexedNodeKind::MemberExpression
+        ) && self.property_getter_in_context(key).is_some()
+        {
+            return Some(NodeKind::CallExpression);
+        }
+        if matches!(
+            syntax,
+            beskid_queries::IndexedNodeKind::Identifier | beskid_queries::IndexedNodeKind::MethodDefinition
+        ) && self.local_slot_impl(key).is_some()
+        {
+            // A getter argument can use the nominal receiver's local directly, with no written
+            // receiver expression for a bare property access.
+            return Some(NodeKind::PathExpression);
+        }
         if self.aggregate_field_access_in_context(key).is_some() || self.composition_injected_access(key).is_some() {
             return Some(NodeKind::FieldExpression);
         }
         if self.query(range_for_fact(self.db, key)).is_some() {
             return Some(NodeKind::RangeExpression);
         }
-        self.query(node_kind(self.db, key)).and_then(map_node_kind)
+        map_node_kind(syntax)
     }
 
     pub(super) fn literal_kind_impl(&self, key: AstNodeKey) -> Option<LiteralKind> {
@@ -183,7 +202,7 @@ impl SyntaxNodeFacts<'_> {
             // A compound write needs its operand type too; without it the slot is withheld, so the
             // write can never lower as a plain `=`.
             .filter(|assignment| {
-                assignment.compound.is_none() || self.query(beskid_queries::compound_assignment(self.db, key)).is_some()
+                assignment.compound.is_none() || self.query(self.compound_assignment_in_context(key)).is_some()
             })
             .map(|assignment| LocalSlotId { owner_node: assignment.slot.owner.node.0, index: assignment.slot.index })
     }

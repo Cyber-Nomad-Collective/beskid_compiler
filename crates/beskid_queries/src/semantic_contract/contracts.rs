@@ -1230,46 +1230,76 @@ fn specialized_field_read_identity(
     enclosing: &GenericSpecializationInstance,
 ) -> Option<Result<GenericSourceTypeIdentity, SemanticError>> {
     let access = super::layouts::aggregate_field_access_specialization(db, key, enclosing).ok()??;
-    let environment: HashMap<&str, &GenericSourceTypeIdentity> =
-        enclosing.substitutions.iter().map(|binding| (binding.parameter.as_ref(), binding.source_identity())).collect();
-    // The receiver's applied identity: a declared local or parameter, the implicit method receiver
-    // (the method's owner applied to the enclosing environment), or a receiver expression.
+    applied_field_read_identity(db, program, index, &access, Some(enclosing))
+}
+
+/// Recover the declared source type from the receiver's actual type arguments.
+/// The storage shape alone cannot distinguish a contract box from another GC reference.
+pub(super) fn applied_field_read_identity(
+    db: &dyn Db,
+    program: &Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    access: &AggregateFieldAccess,
+    enclosing: Option<&GenericSpecializationInstance>,
+) -> Option<Result<GenericSourceTypeIdentity, SemanticError>> {
+    let owner = db.syntax_unit(access.declaration.unit).filter(|syntax| syntax.accepts_key(db, access.declaration))?;
+    let definition =
+        owner.syntax_index(db).node_at(owner.expanded_program(db), access.declaration.node)?.of::<TypeDefinition>()?;
+    let field = definition
+        .fields
+        .iter()
+        .filter(|field| field.node.kind == beskid_analysis::syntax::FieldKind::Value)
+        .nth(access.index as usize)?;
+    if !definition
+        .generics
+        .iter()
+        .any(|param| type_syntax_mentions_generic_parameter(&field.node.ty.node, &param.node.name))
+    {
+        return Some(generic_source_type_identity(db, access.declaration, &field.node.ty.node));
+    }
     let receiver = match index.kind(access.receiver.node)? {
-        NodeKind::Identifier => specialized_local_declaration_identity(db, access.receiver, enclosing)?,
+        NodeKind::Identifier => match enclosing {
+            Some(instance) => specialized_local_declaration_identity(db, access.receiver, instance)?,
+            None => {
+                super::calls::generic_source_local_identity(db, program, index, access.receiver, access.receiver.node)
+            }
+        },
         NodeKind::MethodDefinition => {
-            let owner = super::locals::method_owner_node(program, index, access.receiver.node)?;
-            let definition = index.node_at(program, owner)?.of::<TypeDefinition>()?;
-            let owner = AstNodeKey { node: owner, ..access.receiver };
+            let method_owner = super::locals::method_owner_node(program, index, access.receiver.node)?;
+            if method_owner != access.declaration.node || access.receiver.unit != access.declaration.unit {
+                return None;
+            }
+            let instance = enclosing?;
             let arguments = definition
                 .generics
                 .iter()
-                .map(|generic| environment.get(generic.node.name.as_str()).map(|identity| (*identity).clone()))
+                .map(|generic| {
+                    instance
+                        .substitutions
+                        .iter()
+                        .find(|binding| binding.parameter.as_ref() == generic.node.name)
+                        .map(|binding| binding.source_identity().clone())
+                })
                 .collect::<Option<Vec<_>>>()?;
-            stable_declaration_identity(db, owner)
+            stable_declaration_identity(db, access.declaration)
                 .map(|qualified_name| GenericSourceTypeIdentity::Nominal {
                     qualified_name,
                     arguments: arguments.into(),
                 })
-                .ok_or_else(|| source_expression_unavailable(db, key, "method receiver has no stable identity"))
+                .ok_or_else(|| {
+                    source_expression_unavailable(db, access.receiver, "method receiver has no stable identity")
+                })
         }
-        _ => specialized_source_expression_identity(db, access.receiver, Some(enclosing)),
+        _ => specialized_source_expression_identity(db, access.receiver, enclosing),
     };
     let receiver = match receiver {
         Ok(receiver) => receiver,
         Err(error) => return Some(Err(error)),
     };
     let GenericSourceTypeIdentity::Nominal { arguments, .. } = &receiver else { return None };
-    let owner = db.syntax_unit(access.declaration.unit).filter(|syntax| syntax.accepts_key(db, access.declaration))?;
-    let definition =
-        owner.syntax_index(db).node_at(owner.expanded_program(db), access.declaration.node)?.of::<TypeDefinition>()?;
     if definition.generics.len() != arguments.len() {
         return None;
     }
-    let field = definition
-        .fields
-        .iter()
-        .filter(|field| field.node.kind == beskid_analysis::syntax::FieldKind::Value)
-        .nth(access.index as usize)?;
     let applied = definition
         .generics
         .iter()
@@ -1329,6 +1359,18 @@ pub(super) fn specialized_source_expression_identity(
     }
     if node.of::<beskid_analysis::syntax::LambdaExpression>().is_some() {
         return lambda_identity(db, program, index, key, Some(enclosing));
+    }
+    if matches!(
+        index.kind(key.node),
+        Some(NodeKind::PathExpression | NodeKind::MemberExpression | NodeKind::PathSegment)
+    ) && let Some(getter) = property_getter_in_environment(db, key, Some(enclosing))?
+    {
+        return super::properties::property_result_identity(db, key, getter, Some(enclosing));
+    }
+    if index.kind(key.node) == Some(NodeKind::PathSegment)
+        && let Some(projection) = layouts::nominal_field_projection_in_environment(db, key, Some(enclosing))
+    {
+        return projection.map(|(_, identity)| identity);
     }
     // A field read (`value.history`, `this.reader`) has the declared field type applied to its
     // receiver's identity in this environment (`List<T>` of a `Boxed<i32>` value is `List<i32>`).

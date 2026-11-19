@@ -1,5 +1,6 @@
 //! Exact ABI facts for non-generic statement results and storage boundaries.
 
+use super::super::contracts::specialized_source_expression_identity;
 use super::super::*;
 
 pub(in crate::semantic_contract) fn statement_abi_type_for_node(
@@ -169,11 +170,29 @@ pub fn compound_assignment(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<
     with_registered_syntax(db, key, compound_assignment_tracked)
 }
 
+/// Compound writes use the target's applied storage type in a specialized body.
+pub fn compound_assignment_in_environment(
+    db: &dyn Db,
+    key: AstNodeKey,
+    enclosing: &GenericSpecializationInstance,
+) -> SemanticQueryResult<CompoundAssignment> {
+    with_registered_syntax(db, key, |db, syntax, key| compound_assignment_for_site(db, syntax, key, Some(enclosing)))
+}
+
 #[salsa::tracked(persist)]
 fn compound_assignment_tracked(
     db: &dyn Db,
     syntax: SyntaxUnitInput,
     key: AstNodeKey,
+) -> SemanticQueryResult<CompoundAssignment> {
+    compound_assignment_for_site(db, syntax, key, None)
+}
+
+fn compound_assignment_for_site(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+    enclosing: Option<&GenericSpecializationInstance>,
 ) -> SemanticQueryResult<CompoundAssignment> {
     if event_operation_tracked(db, syntax, key).ok().flatten().is_some() {
         return Ok(None);
@@ -181,10 +200,20 @@ fn compound_assignment_tracked(
     with_node(db, syntax, key, |program, index, node| {
         let assignment = node.of::<beskid_analysis::syntax::AssignExpression>()?;
         let operator = CompoundAssignmentOperator::of(assignment.op.node)?;
-        Some(
+        let storage = if let Some(enclosing) = enclosing {
+            direct_expression_key(program, index, key, assignment.target.as_ref())
+                .and_then(|target| specialized_source_expression_identity(db, target, Some(enclosing)))
+                .map(|identity| identity.abi_type())
+                .or_else(|error| {
+                    if !error.is_unavailable() {
+                        return Err(error);
+                    }
+                    assignment_storage_abi_type(db, program, index, key, assignment)
+                })
+        } else {
             assignment_storage_abi_type(db, program, index, key, assignment)
-                .map(|storage| CompoundAssignment { operator, storage }),
-        )
+        };
+        Some(storage.map(|storage| CompoundAssignment { operator, storage }))
     })?
     .transpose()
 }

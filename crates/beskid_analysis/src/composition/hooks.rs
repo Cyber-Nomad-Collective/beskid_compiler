@@ -303,6 +303,8 @@ fn record_type(record: &Record, span: SpanInfo) -> Spanned<Node> {
                     inject_qualifier: None,
                     name: parameter.node.name.clone(),
                     ty: parameter.node.ty.clone(),
+                    property_default: None,
+                    property_accessors: None,
                 },
                 parameter.span,
             )
@@ -434,6 +436,8 @@ fn lower_hook(
                     inject_qualifier: None,
                     name: parameter.node.name.clone(),
                     ty: parameter.node.ty.clone(),
+                    property_default: None,
+                    property_accessors: None,
                 },
                 parameter.span,
             )

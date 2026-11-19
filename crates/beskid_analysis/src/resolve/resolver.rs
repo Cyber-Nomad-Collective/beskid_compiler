@@ -53,6 +53,9 @@ pub struct Resolver {
     pub(crate) declaring_package: String,
     /// When resolving method bodies, the extended/receiver type for bare field access (`handle` → `this.handle`).
     pub(crate) current_receiver_item_id: Option<super::ids::ItemId>,
+    pub(crate) resolving_property_accessor: bool,
+    /// Authored expression-bodied properties, keyed by the exact collected nominal owner.
+    pub(crate) derived_properties_by_type: HashMap<ItemId, HashSet<String>>,
     /// When resolving a method body declared inside a `type X { }` body, how many sibling methods
     /// of that type carry each name. A bare `Name(...)` call binds to the sibling method when
     /// exactly one carries the name, mirroring `unqualified_enclosing_method_call` in

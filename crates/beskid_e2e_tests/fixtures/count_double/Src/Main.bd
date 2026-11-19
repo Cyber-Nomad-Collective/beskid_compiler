@@ -1,0 +1,26 @@
+type Counter
+{
+    i64 raw;
+    i64 Double => Count + Count;
+    i64 ReadRaw() { return this.raw; }
+    i64 Count
+    {
+        get;
+        set { field = value < 0 ? 0 : value; }
+    } = 0;
+}
+
+i32 Main()
+{
+    Counter counter = Counter { raw: 1 };
+    if counter.Count != 0 { return 1; }
+    if counter.ReadRaw() != 1 { return 2; }
+    counter.Count = 3;
+    if counter.Double != 6 { return 3; }
+    counter.Count = -4;
+    if counter.Count != 0 { return 4; }
+    if counter.Double != 0 { return 5; }
+    counter.Count = 3;
+    if counter.Double == 6 { return 6; }
+    return 3;
+}

@@ -6,9 +6,10 @@ use crate::parsing::error::ParseError;
 use crate::parsing::parsable::Parsable;
 use crate::syntax::items::method_definition::MethodDefinition;
 use crate::syntax::items::parse_helpers::{
-    parse_attributes, parse_doc_attached_list, parse_doc_attached_with, parse_type_parameter_list,
+    parse_attributes, parse_doc_attached_pair_raw, parse_doc_attached_with, parse_type_parameter_list,
     parse_visibility_or_default,
 };
+use crate::syntax::items::property_accessor::parse_block_property;
 use crate::syntax::{
     AssociatedTypeBinding, Attribute, Field, Identifier, Path, PathSegment, SpanInfo, Spanned, Type, Visibility,
 };
@@ -102,18 +103,28 @@ impl Parsable for TypeDefinition {
                     for member in item.into_inner() {
                         match member.as_rule() {
                             Rule::TypeFieldList => {
-                                let (parsed_fields, parsed_docs) =
-                                    parse_doc_attached_list(member, Rule::FieldWithDocs, Rule::Field)?;
-                                fields = parsed_fields;
-                                field_docs = parsed_docs;
+                                for field in member.into_inner().filter(|pair| pair.as_rule() != Rule::DocGap) {
+                                    let rule = field.as_rule();
+                                    let (doc_opt, field) = parse_doc_attached_with(field, rule, Field::parse)?;
+                                    fields.push(field);
+                                    field_docs.push(doc_opt);
+                                }
                             }
-                            Rule::ImplMethodWithDocs => {
-                                let (doc_opt, method) =
-                                    parse_doc_attached_with(member, Rule::ImplMethodWithDocs, |inner_pair| {
-                                        MethodDefinition::parse_with_receiver(inner_pair, receiver_type.clone())
-                                    })?;
+                            Rule::ImplMethodWithDocs | Rule::DerivedPropertyWithDocs => {
+                                let rule = member.as_rule();
+                                let (doc_opt, method) = parse_doc_attached_with(member, rule, |inner_pair| {
+                                    MethodDefinition::parse_with_receiver(inner_pair, receiver_type.clone())
+                                })?;
                                 methods.push(method);
                                 method_docs.push(doc_opt);
+                            }
+                            Rule::BlockPropertyWithDocs => {
+                                let (doc, property) = parse_doc_attached_pair_raw(member, Rule::BlockPropertyWithDocs)?;
+                                let (field, accessors) = parse_block_property(property, &receiver_type)?;
+                                fields.push(field);
+                                field_docs.push(doc);
+                                method_docs.extend(std::iter::repeat_n(None, accessors.len()));
+                                methods.extend(accessors);
                             }
                             Rule::AssociatedTypeBindingWithDocs => {
                                 let (_doc_opt, binding) = parse_doc_attached_with(

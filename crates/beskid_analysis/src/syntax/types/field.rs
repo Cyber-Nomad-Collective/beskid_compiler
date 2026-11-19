@@ -1,7 +1,11 @@
 use crate::syntax::items::parse_helpers::parse_attributes;
-use crate::syntax::{Attribute, Identifier, InjectQualifier, Parameter, PrimitiveType, Spanned, Type, Visibility};
+use crate::syntax::{
+    Attribute, Expression, Identifier, InjectQualifier, Parameter, PrimitiveType, PropertyAccessors, Spanned, Type,
+    Visibility,
+};
 
 use beskid_ast_derive::AstNode;
+use serde::ser::SerializeStruct;
 
 /// Distinguishes ordinary value fields from event/signal-style fields.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -12,7 +16,7 @@ pub enum FieldKind {
 }
 
 /// Struct or enum variant field with name and type (and optional event capacity).
-#[derive(AstNode, Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(AstNode, Debug, Clone, PartialEq, Eq, serde::Deserialize)]
 pub struct Field {
     #[ast(children)]
     pub attributes: Vec<Spanned<Attribute>>,
@@ -28,13 +32,53 @@ pub struct Field {
     pub name: Spanned<Identifier>,
     #[ast(child)]
     pub ty: Spanned<Type>,
+    /// An automatic property's default expression. Plain fields have no default.
+    #[ast(child)]
+    #[serde(default)]
+    pub property_default: Option<Spanned<Expression>>,
+    /// Accessors written in a property block. Custom bodies are indexed with the enclosing methods.
+    #[ast(skip)]
+    #[serde(default)]
+    pub property_accessors: Option<PropertyAccessors>,
+}
+
+impl Field {
+    pub fn is_property(&self) -> bool {
+        self.property_default.is_some() || self.property_accessors.is_some()
+    }
+}
+
+impl serde::Serialize for Field {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        // The Mod SDK JSON record has an exact shape for ordinary fields. Postcard syntax
+        // snapshots instead need all record members emitted in order.
+        let has_default = self.property_default.is_some() || !serializer.is_human_readable();
+        let has_accessors = self.property_accessors.is_some() || !serializer.is_human_readable();
+        let mut field =
+            serializer.serialize_struct("Field", 7 + usize::from(has_default) + usize::from(has_accessors))?;
+        field.serialize_field("attributes", &self.attributes)?;
+        field.serialize_field("visibility", &self.visibility)?;
+        field.serialize_field("kind", &self.kind)?;
+        field.serialize_field("event_capacity", &self.event_capacity)?;
+        field.serialize_field("inject_qualifier", &self.inject_qualifier)?;
+        field.serialize_field("name", &self.name)?;
+        field.serialize_field("ty", &self.ty)?;
+        if has_default {
+            field.serialize_field("property_default", &self.property_default)?;
+        }
+        if has_accessors {
+            field.serialize_field("property_accessors", &self.property_accessors)?;
+        }
+        field.end()
+    }
 }
 
 impl crate::parsing::parsable::Parsable for Field {
     fn parse(
         pair: pest::iterators::Pair<crate::parser::Rule>,
     ) -> Result<crate::syntax::Spanned<Self>, crate::parsing::error::ParseError> {
-        if pair.as_rule() != crate::parser::Rule::Field {
+        let automatic = pair.as_rule() == crate::parser::Rule::AutomaticProperty;
+        if !automatic && pair.as_rule() != crate::parser::Rule::Field {
             return Err(crate::parsing::error::ParseError::unexpected_rule(pair, Some(crate::parser::Rule::Field)));
         }
 
@@ -52,6 +96,14 @@ impl crate::parsing::parsable::Parsable for Field {
         };
         let field_node =
             field_inner.next().ok_or(crate::parsing::error::ParseError::missing(crate::parser::Rule::ValueField))?;
+        let property_default = if automatic {
+            let expression = field_inner
+                .next()
+                .ok_or(crate::parsing::error::ParseError::missing(crate::parser::Rule::Expression))?;
+            Some(Expression::parse(expression)?)
+        } else {
+            None
+        };
         let (kind, mut inner) = match field_node.as_rule() {
             crate::parser::Rule::ValueField => (FieldKind::Value, field_node.into_inner()),
             crate::parser::Rule::EventField => (FieldKind::Event, field_node.into_inner()),
@@ -168,7 +220,17 @@ impl crate::parsing::parsable::Parsable for Field {
         };
 
         Ok(crate::syntax::Spanned::new(
-            Self { attributes, visibility, kind, event_capacity, inject_qualifier, name, ty },
+            Self {
+                attributes,
+                visibility,
+                kind,
+                event_capacity,
+                inject_qualifier,
+                name,
+                ty,
+                property_default,
+                property_accessors: None,
+            },
             span,
         ))
     }

@@ -105,7 +105,7 @@ pub(in crate::semantic_contract) struct FieldAccessReceiver<'a> {
 /// `None` when `node` is not such a shape; `Some(Err)` when its receiver does not resolve.
 pub(in crate::semantic_contract) fn field_access_receiver<'a>(
     db: &dyn Db,
-    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    program: &'a beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
     index: &beskid_analysis::syntax_query::SyntaxIndex,
     key: AstNodeKey,
     node: beskid_analysis::syntax_query::DynNodeRef<'a>,
@@ -192,9 +192,11 @@ pub(in crate::semantic_contract) fn field_access_receiver<'a>(
                 && resolve_lexical_declaration(program, index, key.node, field.node.name.node.name.as_str())
                     .is_none() =>
         {
-            applied_method_receiver_layout(db, program, index, key, ambient).map(|(declaration, receiver, layout)| {
-                (declaration, receiver, layout, field.node.name.node.name.as_str())
-            })
+            let name = field.node.name.node.name.as_str();
+            let field_name =
+                super::super::properties::contextual_backing_name(program, index, key.node, name).unwrap_or(name);
+            applied_method_receiver_layout(db, program, index, key, ambient)
+                .map(|(declaration, receiver, layout)| (declaration, receiver, layout, field_name))
         }
         _ => return None,
     };
@@ -525,6 +527,19 @@ pub(in crate::semantic_contract) fn implicit_receiver_field_projection(
     let method = nearest_ancestor(index, reference.node, |kind| {
         kind == beskid_analysis::syntax_query::NodeKind::MethodDefinition
     })?;
+    // A path root `field` inside an accessor is its backing place. A later
+    // segment called field is an ordinary member.
+    let field_name = index
+        .node_at(program, reference.node)?
+        .of::<beskid_analysis::syntax::PathExpression>()
+        .filter(|path| {
+            path.path.node.segments.first().is_some_and(|segment| {
+                segment.node.name.node.name == field_name
+                    && !is_implicit_receiver_name(program, index, reference, field_name)
+            })
+        })
+        .and_then(|_| super::super::properties::contextual_backing_name(program, index, reference.node, field_name))
+        .unwrap_or(field_name);
     let declaration = method_owner_node(program, index, method)?;
     let definition = index.node_at(program, declaration)?.of::<beskid_analysis::syntax::TypeDefinition>()?;
     // A generic enclosing receiver is proven only inside the specialization of the enclosing

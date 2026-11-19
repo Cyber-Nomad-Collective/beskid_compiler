@@ -4,6 +4,9 @@ use super::super::*;
 
 impl SyntaxNodeFacts<'_> {
     pub(super) fn call_kind_impl(&self, key: AstNodeKey) -> Option<CallKind> {
+        if self.property_getter_in_context(key).is_some() {
+            return Some(CallKind::Direct);
+        }
         // The `exchange` builtin is a place read and store, never a call: it outranks every call
         // probe, which would otherwise look for a callee named `exchange`.
         if self.query(beskid_queries::exchange_call(self.db, key)).is_some() {
@@ -94,6 +97,9 @@ impl SyntaxNodeFacts<'_> {
     }
 
     pub(super) fn direct_callee_impl(&self, key: AstNodeKey) -> Option<DirectCallee> {
+        if let Some(getter) = self.property_getter_in_context(key) {
+            return self.property_accessor_call(key, getter.declaration).map(|(callee, _)| callee);
+        }
         if let Some((index, _)) = self.runtime_intrinsic(key) {
             return Some(DirectCallee::runtime_intrinsic(index));
         }
@@ -177,6 +183,10 @@ impl SyntaxNodeFacts<'_> {
     }
 
     pub(super) fn call_signature_impl(&self, key: AstNodeKey) -> Option<Signature> {
+        if let Some(getter) = self.property_getter_in_context(key) {
+            let (_, signature) = self.property_accessor_call(key, getter.declaration)?;
+            return signature_for_item(self.isa?, signature);
+        }
         if let Some((_, intrinsic)) = self.runtime_intrinsic(key) {
             return signature_for_runtime_intrinsic(self.isa?, intrinsic);
         }
@@ -218,6 +228,9 @@ impl SyntaxNodeFacts<'_> {
     }
 
     pub(super) fn call_arguments_impl(&self, key: AstNodeKey) -> Option<Vec<AstNodeKey>> {
+        if let Some(getter) = self.property_getter_in_context(key) {
+            return Some(vec![getter.receiver]);
+        }
         self.query(call_arguments(self.db, key))
             .and_then(|arguments| arguments.iter().copied().map(|argument| self.unwrap_transparent(argument)).collect())
     }

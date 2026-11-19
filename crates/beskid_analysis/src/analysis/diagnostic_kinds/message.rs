@@ -209,6 +209,13 @@ impl SemanticIssueKind {
             Self::TypeUnknownEnumVariant { name } => {
                 format!("unknown enum variant `{name}`")
             }
+            Self::TypeReadOnlyProperty { name } => format!("property `{name}` is read-only"),
+            Self::TypeDestructivePropertyAccess { name } => format!("cannot use property `{name}` as a destructive storage place"),
+            Self::TypeWriteOnlyProperty { name } => format!("property `{name}` is write-only"),
+            Self::TypePropertyNotCallable { name } => format!("read property `{name}` without parentheses"),
+            Self::TypeInvalidPropertyDefault { name, expected } => {
+                format!("property `{name}` requires a literal default of type `{expected}`")
+            }
             Self::TypeMissingStructField { name } => {
                 format!("missing field `{name}` in the type literal")
             }

@@ -10,7 +10,7 @@ pub use specialization::{
     generic_call_specialization_in_environment, generic_call_specialization_instance, generic_specialization_instance,
     specialized_builtin_type_argument, specialized_corelib_value_service_result,
 };
-pub use statements::{CompoundAssignment, compound_assignment};
+pub use statements::{CompoundAssignment, compound_assignment, compound_assignment_in_environment};
 
 pub(in crate::semantic_contract) use control_flow::{control_flow_for_node, control_flow_tracked};
 

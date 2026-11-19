@@ -87,14 +87,14 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
     }
 
     fn compound_assignment_unproven(&self, key: AstNodeKey) -> bool {
-        beskid_queries::compound_assignment(self.db, key).is_err()
+        self.compound_assignment_in_context(key).is_err()
     }
 
     fn compound_assignment_operator(
         &self,
         key: AstNodeKey,
     ) -> Option<(beskid_queries::CompoundAssignmentOperator, SemanticTypeId)> {
-        let compound = self.query(beskid_queries::compound_assignment(self.db, key))?;
+        let compound = self.query(self.compound_assignment_in_context(key))?;
         Some((compound.operator, compound.storage))
     }
 
@@ -164,6 +164,26 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
 
     fn collection_element_managed(&self, key: AstNodeKey) -> Option<ManagedReferenceFact> {
         self.collection_element_managed_impl(key)
+    }
+
+    fn property_setter(&self, assignment: AstNodeKey) -> Option<AstNodeKey> {
+        Some(
+            self.query(beskid_queries::property_setter_in_environment(
+                self.db,
+                assignment,
+                self.current_item_specialization(),
+            ))?
+            .declaration,
+        )
+    }
+
+    fn property_setter_call(
+        &self,
+        assignment: AstNodeKey,
+        declaration: AstNodeKey,
+    ) -> Option<(DirectCallee, Signature)> {
+        let (callee, signature) = self.property_accessor_call(assignment, declaration)?;
+        Some((callee, signature_for_item(self.isa?, signature)?))
     }
 
     fn direct_callee(&self, key: AstNodeKey) -> Option<DirectCallee> {

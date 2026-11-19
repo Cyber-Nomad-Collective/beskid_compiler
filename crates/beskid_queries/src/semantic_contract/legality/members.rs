@@ -23,6 +23,14 @@ pub enum MemberReferenceKind {
     InaccessibleStructField { name: Arc<str> },
     /// A struct literal omits a required, accessible field (E1212).
     MissingStructField { name: Arc<str> },
+    /// A write to an expression-bodied property, which has no setter (E1260).
+    ReadOnlyProperty { name: Arc<str> },
+    /// A property access that would bypass an accessor through a destructive operation (E1264).
+    DestructivePropertyAccess { name: Arc<str> },
+    /// A read of a stored property that has no getter (E1263).
+    WriteOnlyProperty { name: Arc<str> },
+    /// A property read spelled as a method call (E1262).
+    PropertyNotCallable { name: Arc<str> },
     /// An enum constructor or a match pattern that names a variant the enum does not declare
     /// (E1301).
     UnknownEnumVariant { enum_name: Arc<str>, variant: Arc<str> },
@@ -114,12 +122,20 @@ fn member_reference_legality_tracked(
         collect_nodes_of_kind(index, key.node, NodeKind::StructLiteralExpression, &mut nodes);
         collect_nodes_of_kind(index, key.node, NodeKind::MemberExpression, &mut nodes);
         collect_nodes_of_kind(index, key.node, NodeKind::PathExpression, &mut nodes);
+        collect_nodes_of_kind(index, key.node, NodeKind::PathSegment, &mut nodes);
         collect_nodes_of_kind(index, key.node, NodeKind::EnumConstructorExpression, &mut nodes);
         collect_nodes_of_kind(index, key.node, NodeKind::MatchExpression, &mut nodes);
         nodes.sort_unstable();
         nodes.into_iter().find_map(|node| {
             let site = AstNodeKey { node, ..key };
             let reference = index.node_at(program, node)?;
+            if reference.of::<beskid_analysis::syntax::PathSegment>().is_some() {
+                let path = parent_node(index, node)?;
+                if index.children(path)?.last() == Some(&node) {
+                    // The final segment is judged at its enclosing path expression.
+                    return None;
+                }
+            }
             if let Some(literal) = reference.of::<StructLiteralExpression>() {
                 return unknown_struct_literal_field(db, program, index, site, literal);
             }
@@ -129,10 +145,71 @@ fn member_reference_legality_tracked(
             if let Some(expression) = reference.of::<MatchExpression>() {
                 return match_pattern_legality(db, program, index, site, expression);
             }
+            if let Ok(Some(access)) = super::super::properties::property_access(db, site) {
+                return property_access_finding(program, index, site, access);
+            }
             unknown_field_read(db, program, index, site, reference)
         })
     })?;
     Ok(finding)
+}
+
+fn property_access_finding(
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &SyntaxIndex,
+    site: AstNodeKey,
+    access: super::super::properties::PropertyAccess,
+) -> Option<MemberReferenceFinding> {
+    use beskid_analysis::syntax::{AssignExpression, AssignOp};
+
+    let name = access.property_name;
+    let kind = if !access.accessible {
+        MemberReferenceKind::InaccessibleStructField { name }
+    } else if is_call_callee(program, index, site.node) {
+        MemberReferenceKind::PropertyNotCallable { name }
+    } else if !access.reference.is_backing_field && destructive_property_access(program, index, site) {
+        MemberReferenceKind::DestructivePropertyAccess { name }
+    } else {
+        let mut target = site.node;
+        let assignment = loop {
+            let Some(parent) = parent_node(index, target) else { break None };
+            match index.kind(parent) {
+                Some(NodeKind::Expression | NodeKind::GroupedExpression) => target = parent,
+                Some(NodeKind::AssignExpression) if index.children(parent)?.first() == Some(&target) => {
+                    break index.node_at(program, parent)?.of::<AssignExpression>();
+                }
+                _ => break None,
+            }
+        };
+        if assignment.is_some() && access.set.is_none() {
+            MemberReferenceKind::ReadOnlyProperty { name }
+        } else if access.get.is_none() && assignment.is_none_or(|assign| assign.op.node != AssignOp::Assign) {
+            MemberReferenceKind::WriteOnlyProperty { name }
+        } else {
+            return None;
+        }
+    };
+    Some(MemberReferenceFinding { site: access.reference.name, kind })
+}
+
+fn destructive_property_access(
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &SyntaxIndex,
+    site: AstNodeKey,
+) -> bool {
+    let mut target = site.node;
+    while let Some(parent) = parent_node(index, target) {
+        match index.kind(parent) {
+            Some(NodeKind::Expression | NodeKind::GroupedExpression) => target = parent,
+            Some(NodeKind::MoveExpression) => return true,
+            Some(NodeKind::CallExpression) => {
+                return exchange_call_for_node(program, index, AstNodeKey { node: parent, ..site })
+                    .is_some_and(|exchange| exchange.place.node == site.node);
+            }
+            _ => break,
+        }
+    }
+    false
 }
 
 fn unknown_struct_literal_field(
@@ -197,7 +274,9 @@ fn declared_value_field_names(db: &dyn Db, declaration: AstNodeKey) -> Option<Ve
         definition
             .fields
             .iter()
-            .filter(|field| field.node.kind == beskid_analysis::syntax::FieldKind::Value)
+            .filter(|field| {
+                field.node.kind == beskid_analysis::syntax::FieldKind::Value && field.node.property_default.is_none()
+            })
             .map(|field| field.node.name.node.name.clone())
             .collect(),
     )

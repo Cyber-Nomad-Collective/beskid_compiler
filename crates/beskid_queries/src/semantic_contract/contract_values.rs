@@ -300,6 +300,7 @@ fn conversion_site(
         | ExpectedTypeContext::Assignment { .. }
         | ExpectedTypeContext::EnumPayload { .. }
         | ExpectedTypeContext::StructField { .. }
+        | ExpectedTypeContext::PropertyDefault { .. }
         | ExpectedTypeContext::Return { .. }
         | ExpectedTypeContext::ArrayElement { .. }
         | ExpectedTypeContext::ConditionalBranch { .. }

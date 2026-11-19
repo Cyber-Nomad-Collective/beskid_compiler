@@ -25,7 +25,9 @@ pub fn issue_diagnostic(
         kind.severity(),
     );
     match kind {
-        SemanticIssueKind::ImmutableAssignment { name, binding } if binding.form != BindingForm::ForIterator => {
+        SemanticIssueKind::ImmutableAssignment { name, binding }
+            if !matches!(binding.form, BindingForm::ForIterator | BindingForm::SetterValue) =>
+        {
             let diagnostic = match mutable_declaration(source, binding) {
                 Some(rewritten) => diagnostic.with_help(format!("write `{rewritten}`")),
                 None => diagnostic,

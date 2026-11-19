@@ -23,6 +23,12 @@ pub(in crate::semantic_contract) fn managed_reference_kind_tracked(
                     .ok_or_else(|| SemanticError::unavailable("managed_reference_kind"))
             }));
         }
+        if let Ok(Some(getter)) = property_getter(db, key) {
+            return Some(
+                super::super::properties::property_result_identity(db, key, getter, None)
+                    .map(|identity| identity.managed_reference_kind()),
+            );
+        }
         if let Some(projection) = layouts::nominal_field_projection(db, key) {
             return Some(projection.map(|(_, identity)| identity.managed_reference_kind()));
         }

@@ -1,7 +1,7 @@
 use tower_lsp_server::ls_types::{Documentation, MarkupContent, MarkupKind, SignatureHelp, SignatureInformation, Uri};
 
 use crate::features::project_manifest::api as project_manifest;
-use crate::session::store::Document;
+use crate::session::store::{Document, PROPERTY_HOVER_LABEL};
 
 /// Signature help derived from hover/callee span heuristics before the active call paren.
 pub fn handle_signature_help(uri: &Uri, doc: &Document, offset: usize) -> Option<SignatureHelp> {
@@ -15,6 +15,9 @@ pub fn handle_signature_help(uri: &Uri, doc: &Document, offset: usize) -> Option
         .iter()
         .filter(|hover| hover.reference_start <= mid && mid <= hover.reference_end)
         .min_by_key(|hover| hover.reference_end.saturating_sub(hover.reference_start))?;
+    if hover.markdown.starts_with(PROPERTY_HOVER_LABEL) {
+        return None;
+    }
     let label = hover.markdown.lines().next().unwrap_or(&hover.markdown).to_string();
     Some(SignatureHelp {
         signatures: vec![SignatureInformation {

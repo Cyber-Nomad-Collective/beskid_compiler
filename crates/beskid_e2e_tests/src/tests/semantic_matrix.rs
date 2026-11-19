@@ -15,6 +15,34 @@ struct SemanticCase {
 
 const CASES: &[SemanticCase] = &[
     SemanticCase {
+        fixture: "contract_property_accessors",
+        manifest: "ContractPropertyAccessors.bproj",
+        expected: 42,
+        native_exec_expected: true,
+        expected_symbols: &[],
+    },
+    SemanticCase {
+        fixture: "generic_property_accessors",
+        manifest: "GenericPropertyAccessors.bproj",
+        expected: 42,
+        native_exec_expected: true,
+        expected_symbols: &[],
+    },
+    SemanticCase {
+        fixture: "property_accessors",
+        manifest: "PropertyAccessors.bproj",
+        expected: 42,
+        native_exec_expected: true,
+        expected_symbols: &[],
+    },
+    SemanticCase {
+        fixture: "count_double",
+        manifest: "CountDouble.bproj",
+        expected: 6,
+        native_exec_expected: true,
+        expected_symbols: &[],
+    },
+    SemanticCase {
         fixture: "contracts_dispatch",
         manifest: "ContractsDispatch.bproj",
         expected: 42,

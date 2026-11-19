@@ -563,7 +563,7 @@ pub fn aggregate_literal_layout(db: &dyn Db, key: AstNodeKey) -> SemanticQueryRe
     with_registered_syntax(db, key, aggregate_literal_layout_tracked)
 }
 
-/// Return source field names paired with their current-generation value expressions.
+/// Return supplied fields and automatic property defaults with their current-generation values.
 ///
 /// Consumers combine this syntax identity with [`aggregate_literal_layout`] (or its specialized
 /// counterpart) to place named values in canonical declaration-layout order without rebuilding
@@ -575,7 +575,7 @@ pub fn aggregate_literal_field_values(
     let Some(syntax) = db.syntax_unit(key.unit).filter(|syntax| syntax.accepts_key(db, key)) else {
         return Ok(None);
     };
-    with_node(db, syntax, key, |program, index, node| {
+    let fields = with_node(db, syntax, key, |program, index, node| {
         let literal = node.of::<beskid_analysis::syntax::StructLiteralExpression>()?;
         literal
             .fields
@@ -591,8 +591,18 @@ pub fn aggregate_literal_field_values(
                 Some((Arc::from(field.node.name.node.name.as_str()), AstNodeKey { node: value_node, ..key }))
             })
             .collect::<Option<Vec<_>>>()
-            .map(Arc::from)
-    })
+    })?;
+    let Some(mut fields) = fields else { return Ok(None) };
+    if let Ok(Some(declaration)) = aggregate_literal_declaration(db, key)
+        && let Some(defaults) = super::properties::automatic_property_defaults(db, declaration)?
+    {
+        for (name, default) in defaults {
+            if !fields.iter().any(|(existing, _)| *existing == name) {
+                fields.push((name, default));
+            }
+        }
+    }
+    Ok(Some(Arc::from(fields)))
 }
 
 /// Return the current nominal `type` declaration constructed by a struct literal.

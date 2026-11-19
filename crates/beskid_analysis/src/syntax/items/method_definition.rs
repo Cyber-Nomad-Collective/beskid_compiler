@@ -8,14 +8,15 @@ use crate::syntax::items::parse_helpers::{
     parse_attributes, parse_parameter_list_with_docs, parse_visibility_or_default,
 };
 use crate::syntax::{
-    Attribute, Block, Expression, Identifier, Parameter, Path, PrimitiveType, ReturnStatement, SpanInfo, Spanned,
-    Statement, Type, Visibility,
+    Attribute, Block, Expression, Identifier, Parameter, Path, PrimitiveType, PropertyAccessorKind, ReturnStatement,
+    SpanInfo, Spanned, Statement, Type, Visibility,
 };
 
 use beskid_ast_derive::AstNode;
+use serde::ser::SerializeStruct;
 
 /// Method inside an `impl` block: receiver type, parameters, return type, and body.
-#[derive(AstNode, Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(AstNode, Debug, Clone, PartialEq, Eq, serde::Deserialize)]
 pub struct MethodDefinition {
     #[ast(children)]
     pub attributes: Vec<Spanned<Attribute>>,
@@ -42,6 +43,45 @@ pub struct MethodDefinition {
     pub return_type: Option<Spanned<Type>>,
     #[ast(child)]
     pub body: Spanned<Block>,
+    /// Marks the body of a derived property's getter.
+    #[ast(skip)]
+    #[serde(default)]
+    pub is_property_getter: bool,
+    /// Identifies a method synthesized for a custom accessor block.
+    #[ast(skip)]
+    #[serde(default)]
+    pub property_accessor: Option<PropertyAccessorKind>,
+}
+
+impl serde::Serialize for MethodDefinition {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        // Keep ordinary methods compatible with the exact Mod SDK JSON record and retain
+        // the getter flag in positional Postcard syntax snapshots.
+        let include_getter_flag = self.is_property_getter || !serializer.is_human_readable();
+        let include_accessor = self.property_accessor.is_some() || !serializer.is_human_readable();
+        let mut method = serializer.serialize_struct(
+            "MethodDefinition",
+            11 + usize::from(include_getter_flag) + usize::from(include_accessor),
+        )?;
+        method.serialize_field("attributes", &self.attributes)?;
+        method.serialize_field("visibility", &self.visibility)?;
+        method.serialize_field("receiver_type", &self.receiver_type)?;
+        method.serialize_field("name", &self.name)?;
+        method.serialize_field("generics", &self.generics)?;
+        method.serialize_field("where_bounds", &self.where_bounds)?;
+        method.serialize_field("receiver", &self.receiver)?;
+        method.serialize_field("parameters", &self.parameters)?;
+        method.serialize_field("parameter_docs", &self.parameter_docs)?;
+        method.serialize_field("return_type", &self.return_type)?;
+        method.serialize_field("body", &self.body)?;
+        if include_getter_flag {
+            method.serialize_field("is_property_getter", &self.is_property_getter)?;
+        }
+        if include_accessor {
+            method.serialize_field("property_accessor", &self.property_accessor)?;
+        }
+        method.end()
+    }
 }
 
 fn parse_path_segment(pair: Pair<Rule>) -> Result<Spanned<crate::syntax::PathSegment>, ParseError> {
@@ -74,6 +114,7 @@ impl MethodDefinition {
         pair: Pair<Rule>,
         receiver_type: Spanned<Type>,
     ) -> Result<Spanned<Self>, ParseError> {
+        let is_property_getter = pair.as_rule() == Rule::DerivedProperty;
         let span = SpanInfo::from_span(&pair.as_span());
         // Every method in a `type X { }`/`impl X { }`/`extend type X { }` body is parsed with
         // the SAME `receiver_type` value (built once per block, then `.clone()`d per method by
@@ -146,6 +187,8 @@ impl MethodDefinition {
                 parameter_docs,
                 return_type,
                 body: body.ok_or(ParseError::missing(Rule::Block))?,
+                is_property_getter,
+                property_accessor: None,
             },
             span,
         ))

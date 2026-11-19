@@ -104,6 +104,12 @@ pub(in crate::semantic_contract) fn abi_type_tracked(
                 fact.map(|fact| fact.payload_type).ok_or_else(|| SemanticError::unavailable("abi_type"))
             }));
         }
+        if let Ok(Some(getter)) = property_getter(db, key) {
+            return Some(
+                super::super::properties::property_result_identity(db, key, getter, None)
+                    .map(|identity| identity.abi_type()),
+            );
+        }
         if let Some(projection) = super::super::layouts::nominal_field_projection(db, key) {
             return Some(projection.map(|(_, identity)| identity.abi_type()));
         }

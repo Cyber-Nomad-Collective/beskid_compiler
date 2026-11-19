@@ -97,6 +97,12 @@ const KNOWN_GAPS: &[&str] = &[
     "nominal_field_projection",
     "pattern_binding_specialization",
     "primitive_numeric_conversion",
+    // The selected accessor method is unavailable in its declaring syntax.
+    "property_accessor_signature",
+    // The generic owner's arguments cannot be recovered from the receiver in this environment.
+    "property_accessor_specialization",
+    // The selected getter's declared result is unavailable in its declaring syntax.
+    "property_result_identity",
     "publication",
     "range_for_fact",
     "reachable_items",

@@ -198,6 +198,14 @@ fn expected_type_for(
         return Ok(ExpectedType::new(ExpectedTypeContext::EnumPayload { constructor: parent_key, position }, identity));
     }
 
+    if let Some(field) = node.of::<syntax::Field>()
+        && let Some(default) = field.property_default.as_ref()
+        && is_child(DynNodeRef::from(default))
+    {
+        let identity = generic_source_type_identity_with_substitutions(db, parent_key, &field.ty.node, &environment)?;
+        return Ok(ExpectedType::new(ExpectedTypeContext::PropertyDefault { field: parent_key }, identity));
+    }
+
     if let Some(field) = node.of::<syntax::StructLiteralField>() {
         if !is_child(DynNodeRef::from(&field.value)) {
             return Err(unavailable());

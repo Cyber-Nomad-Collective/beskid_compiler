@@ -59,6 +59,7 @@ pub enum CompletionKind {
     Type,
     Method,
     Field,
+    Property,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]

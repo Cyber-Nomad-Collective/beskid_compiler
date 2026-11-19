@@ -1,6 +1,34 @@
 use super::*;
 
 impl IsleContext<'_, '_, '_, '_> {
+    pub(super) fn invoke_accessor(
+        &mut self,
+        key: AstNodeKey,
+        callee: DirectCallee,
+        signature: Signature,
+        arguments: &[Value],
+    ) -> Option<cranelift_codegen::ir::Inst> {
+        if !signature
+            .params
+            .iter()
+            .map(|p| p.value_type)
+            .eq(arguments.iter().map(|v| self.builder.func.dfg.value_type(*v)))
+        {
+            return None;
+        }
+        let function = self
+            .call_importer
+            .as_deref_mut()?
+            .import(self.builder, callee.clone(), &signature)
+            .map_err(|_| {
+                self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::UnknownCallee(callee) })
+            })
+            .ok()?;
+        let call = self.builder.ins().call(function, arguments);
+        self.guard_checked_allocation()?;
+        Some(call)
+    }
+
     /// Prefer a proven local receiver slot (nominal `local.field` paths). Fall back to
     /// lowering the expression child so temporary struct literals still work.
     pub(super) fn field_base_pointer(&mut self, field_key: AstNodeKey) -> Option<Value> {
@@ -350,13 +378,27 @@ macro_rules! generated_aggregate_methods {
             if self.facts.compound_assignment_unproven(key) {
                 return None;
             }
-            let value = match self.facts.compound_assignment_operator(key) {
+            let compound = self.facts.compound_assignment_operator(key);
+            let setter = self.facts.property_setter(key);
+            let getter = compound.is_some() && self.facts.node_kind(target) == Some(NodeKind::CallExpression);
+            let receiver_root = if getter || setter.is_some() { Some(self.root_expression_value(base)?) } else { None };
+            let value = match compound {
                 None => self.lower_coerced_expression(value_key)?,
                 // `p.x op= v`: the receiver is evaluated once; the field is read through it,
                 // combined with `v`, and stored back through the same base.
                 Some((operator, storage)) => {
                     let offset = i32::try_from(field.offset).ok()?;
-                    let current = self.builder.ins().load(field.value_type, MemFlagsData::new(), base, offset);
+                    let current = if getter {
+                        let call = self.invoke_accessor(
+                            key,
+                            self.facts.direct_callee(target)?,
+                            self.facts.call_signature(target)?,
+                            &[base],
+                        )?;
+                        *self.builder.inst_results(call).first()?
+                    } else {
+                        self.builder.ins().load(field.value_type, MemFlagsData::new(), base, offset)
+                    };
                     self.compound_assignment_value(key, operator, storage, current, value_key, field.value_type)?
                 }
             };
@@ -366,8 +408,17 @@ macro_rules! generated_aggregate_methods {
                 self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidStructLayout });
                 return None;
             }
-            let managed = self.store_overwrites_managed_reference(key, target)?;
-            self.emit_slot_store(base, i32::try_from(field.offset).ok()?, value, managed)?;
+            if let Some(setter) = setter {
+                let result_key = if compound.is_some() { key } else { value_key };
+                let value_root = self.root_expression_value_if_needed(result_key, value)?;
+                let (callee, signature) = self.facts.property_setter_call(key, setter)?;
+                self.invoke_accessor(key, callee, signature, &[base, value])?;
+                self.release_expression_root(value_root)?;
+            } else {
+                let managed = self.store_overwrites_managed_reference(key, target)?;
+                self.emit_slot_store(base, i32::try_from(field.offset).ok()?, value, managed)?;
+            }
+            self.release_expression_root(receiver_root)?;
             Some(value)
         }
     };

@@ -1,0 +1,49 @@
+use Testing.Assert;
+
+contract Runner { i32 Run(); }
+
+impl i32 : Runner { pub i32 Run() { return this; } }
+
+type Fixed : Runner { i32 result; }
+impl Fixed { pub i32 Run() { return this.result; } }
+
+type Doubled : Runner { i32 base; }
+impl Doubled { pub i32 Run() { return this.base + this.base; } }
+
+type Box<T>
+{
+    T item;
+    i32 reads;
+    i32 writes;
+    T Value
+    {
+        get { this.reads += 1; return field; }
+        set { this.writes += 1; field = value; }
+    }
+}
+
+T Put<T>(Box<T> box, T next)
+{
+    box.Value = next;
+    return box.Value;
+}
+
+i32 Main()
+{
+    Runner initial = Fixed { result: 3 };
+    Box<Runner> box = Box<Runner> { item: initial, reads: 0, writes: 0, Value: Doubled { base: 4 } };
+    Assert.CollectGarbage();
+    if box.item.Run() != 3 { return 1; }
+    if box.Value.Run() != 8 { return 2; }
+    box.item = Doubled { base: 5 };
+    box.Value = Fixed { result: 12 };
+    Assert.CollectGarbage();
+    if box.item.Run() != 10 { return 3; }
+    if box.Value.Run() != 12 { return 4; }
+    Runner chosen = Put<Runner>(box, initial);
+    if chosen.Run() != 3 { return 5; }
+    Runner primitive = Put<Runner>(box, 17_i32);
+    if primitive.Run() != 17 { return 7; }
+    if box.reads != 4 || box.writes != 3 { return 6; }
+    return 42;
+}

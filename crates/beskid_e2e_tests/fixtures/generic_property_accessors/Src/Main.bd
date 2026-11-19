@@ -1,0 +1,30 @@
+type Box<T>
+{
+    i32 reads;
+    i32 writes;
+    T Value
+    {
+        get { this.reads += 1; return field; }
+        set { this.writes += 1; field = value; }
+    }
+}
+
+T Put<T>(Box<T> box, T next)
+{
+    box.Value = next;
+    return box.Value;
+}
+
+i32 Main()
+{
+    Box<i32> number = Box<i32> { reads: 0, writes: 0, Value: 1 };
+    Box<string> text = Box<string> { reads: 0, writes: 0, Value: "before" };
+    if Put<i32>(number, 7) != 7 { return 1; }
+    if Put<string>(text, "after") != "after" { return 2; }
+    number.Value += 2;
+    if number.Value != 9 { return 3; }
+    if text.Value != "after" { return 4; }
+    if number.reads != 3 || number.writes != 2 { return 5; }
+    if text.reads != 2 || text.writes != 1 { return 6; }
+    return 42;
+}

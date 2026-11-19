@@ -131,3 +131,42 @@ fn a_test_sharing_its_name_with_a_function_builds_as_a_native_test_object() {
     let program = lower_prepared_syntax_entrypoint(&front, "Main", host_target()).expect("program lowering");
     assert!(program.functions.iter().any(|function| function.name.starts_with("SumOfSquares#syntax_")));
 }
+
+#[test]
+fn unobserved_automatic_property_has_the_field_layout_and_instructions() {
+    let compile = |member: &str| {
+        let directory = tempfile::tempdir().expect("project");
+        let path = directory.path().join("Main.bd");
+        let source = format!(
+            "type Counter {{ i32 raw; {member} }}
+i32 Main() {{
+    Counter c = Counter {{ raw: 1, Count: 2 }};
+    c.Count = c.raw + 3;
+    return c.Count;
+}}"
+        );
+        std::fs::write(&path, &source).expect("write source");
+        let plan = synthetic_compile_plan_for_source(&path);
+        let input = resolved_input_from_plan(path, source, plan, None, None);
+        let front = compile_mod_free_front_end(&input, FrontEndOptions::default(), None).expect("prepare frontend");
+        lower_prepared_syntax_entrypoint(&front, "Main", host_target()).expect("lower Main")
+    };
+    let field = compile("i32 Count;");
+    let [field_plan] = field.aggregate_static_plans.as_slice() else { panic!("expected one Counter layout") };
+    // Compare every instruction, including allocation and control flow. The CLIF header contains
+    // compilation-specific symbol identities, so compare only the function body.
+    let instructions = |artifact: &beskid_codegen::CodegenArtifact| {
+        let [main] = artifact.functions.as_slice() else { panic!("expected only Main") };
+        let clif = main.function.display().to_string();
+        clif[clif.find("block0").expect("entry block")..].to_owned()
+    };
+    for member in ["prop i32 Count = 0;", "i32 Count { get; set; } = 0;"] {
+        let property = compile(member);
+        let [property_plan] = property.aggregate_static_plans.as_slice() else { panic!("expected one Counter layout") };
+        assert_eq!(field_plan.object_size, property_plan.object_size);
+        assert_eq!(field_plan.object_alignment, property_plan.object_alignment);
+        assert_eq!(field_plan.pointer_map_offsets, property_plan.pointer_map_offsets);
+        assert_eq!(field_plan.fields, property_plan.fields);
+        assert_eq!(instructions(&field), instructions(&property));
+    }
+}

@@ -405,7 +405,15 @@ fn repeated_compiles_with_new_generations_keep_the_snapshot_bounded() {
 
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("Main.bd");
-    let source = "type Pair { i64 left; i64 right; } i64 Sum(Pair pair) { return pair.left + pair.right; } i64 Main() { Pair pair = Pair { left: 1_i64, right: 2_i64 }; return Sum(pair) * 3_i64; }";
+    // Salsa partitions reusable slots by CPU count. Exercise enough keys per shard that
+    // redistribution between generations is small compared to a whole generation of live keys.
+    let workers = std::thread::available_parallelism().map(usize::from).unwrap_or(1);
+    let statements = "Sum(pair); ".repeat(workers);
+    let source = format!(
+        "type Pair {{ i64 left; i64 right; }} i64 Sum(Pair pair) {{ return pair.left + pair.right; }}
+         i64 Main() {{ Pair pair = Pair {{ left: 1_i64, right: 2_i64 }}; {statements}return Sum(pair) * 3_i64; }}"
+    );
+    let source = source.as_str();
     std::fs::write(&path, source).unwrap();
     let plan = synthetic_compile_plan_for_source(&path);
     let program = beskid_analysis::services::parse_program(source).unwrap();

@@ -2,17 +2,19 @@ use std::sync::Arc;
 
 use beskid_analysis::projects::ProgramAssembly;
 use beskid_analysis::services::{ResolvedInput, parse_program_with_source_name};
+use beskid_analysis::syntax::{Field, Identifier, MethodDefinition, Spanned};
+use beskid_analysis::syntax_query::{NodeKind, SyntaxIndex};
 use beskid_queries::{
-    AstNodeKey, SemanticTypeId, SyntaxGenerationId, build_typed_program, node_span, node_type, resolved_item,
-    resolved_local,
+    AstNodeKey, SemanticTypeId, SyntaxGenerationId, build_typed_program, node_span, node_type, property_reference,
+    property_type_display, resolved_item, resolved_local,
 };
 use pest::Parser;
 
 use crate::session::{
     documentation_facts::SyntaxDocumentationFact,
     store::{
-        BsolSemanticTokenCandidate, BsolSemanticTokenKind, SyntaxCompletion, SyntaxDefinition, SyntaxDiagnostic,
-        SyntaxFix, SyntaxHover, SyntaxInlayHint, SyntaxSymbol,
+        BsolSemanticTokenCandidate, BsolSemanticTokenKind, PROPERTY_HOVER_LABEL, SyntaxCompletion, SyntaxDefinition,
+        SyntaxDiagnostic, SyntaxFix, SyntaxHover, SyntaxInlayHint, SyntaxSymbol,
     },
 };
 
@@ -103,6 +105,7 @@ pub(super) fn unit_syntax_facts(
             symbols: recoverable_symbols,
             completion: (!dependency_surface.is_empty()).then_some(SyntaxCompletion {
                 entry_anchor: None,
+                lexical_snapshot: None,
                 dependency_surface,
                 attributes: Arc::from([]),
                 member_access: Arc::from([]),
@@ -141,6 +144,14 @@ pub(super) fn unit_syntax_facts(
             inlay_hints.push(SyntaxInlayHint { start: span.start, end: span.end, type_label: type_label.to_string() });
         }
         let local = resolved_local(db, reference).ok().flatten();
+        if local.is_none()
+            && matches!(metadata.kind, NodeKind::MemberExpression | NodeKind::PathExpression)
+            && let Some((definition, hover)) = property_reference_facts(db, typed, reference, &mut target_indices)
+        {
+            definitions.push(definition);
+            hovers.push(hover);
+            continue;
+        }
         let declaration = local
             .map(|resolved| resolved.declaration)
             .or_else(|| resolved_item(db, reference).ok().flatten().map(|resolved| resolved.declaration));
@@ -218,6 +229,7 @@ pub(super) fn unit_syntax_facts(
         .map(|node| AstNodeKey { unit, generation, node })
         .map(|entry_anchor| SyntaxCompletion {
             entry_anchor: Some(entry_anchor),
+            lexical_snapshot: None,
             dependency_surface,
             attributes,
             member_access: Arc::from([]),
@@ -236,6 +248,57 @@ pub(super) fn unit_syntax_facts(
         superseded: false,
         prepared: false,
     }
+}
+
+fn property_reference_facts(
+    db: &beskid_queries::BeskidDatabase,
+    typed: &beskid_queries::TypedProgram,
+    reference: AstNodeKey,
+    target_indices: &mut std::collections::HashMap<std::path::PathBuf, SyntaxIndex>,
+) -> Option<(SyntaxDefinition, SyntaxHover)> {
+    let property = property_reference(db, reference).ok().flatten()?;
+    let name = node_span(db, property.name).ok().flatten()?;
+    let declaration = property.declaration;
+    let declaration_path = declaration.unit.path(db).clone();
+    let target_unit = typed.assembly.units.iter().find(|candidate| candidate.path == declaration_path)?;
+    let target_index = target_indices
+        .entry(declaration_path.clone())
+        .or_insert_with(|| SyntaxIndex::from_program(&target_unit.program, declaration.generation));
+    let target = target_index.node_at(&target_unit.program, declaration.node)?;
+    let (target_name, declared_type): (&Spanned<Identifier>, _) = if let Some(field) = target.of::<Field>() {
+        (&field.name, Some(&field.ty))
+    } else {
+        let method = target.of::<MethodDefinition>()?;
+        (&method.name, method.return_type.as_ref())
+    };
+    let mut markdown = format!("{PROPERTY_HOVER_LABEL} `{}`", target_name.node.name);
+    let displayed_type = property_type_display(db, reference)
+        .ok()
+        .flatten()
+        .or_else(|| declared_type.map(beskid_analysis::doc::format_type));
+    if let Some(ty) = displayed_type {
+        markdown.push_str(&format!("\n\nType `{ty}`"));
+    }
+    if property.is_backing_field {
+        markdown.push_str("\n\n`field` accesses this property's backing storage.");
+    }
+    Some((
+        SyntaxDefinition {
+            reference_start: name.start,
+            reference_end: name.end,
+            declaration_path: declaration_path.clone(),
+            declaration_start: target_name.span.start,
+            declaration_end: target_name.span.end,
+        },
+        SyntaxHover {
+            reference_start: name.start,
+            reference_end: name.end,
+            markdown,
+            location_path: reference.unit.path(db).clone(),
+            location_start: name.start,
+            location_end: name.end,
+        },
+    ))
 }
 
 pub(crate) fn bsol_semantic_token_candidates(text: &str) -> Vec<BsolSemanticTokenCandidate> {

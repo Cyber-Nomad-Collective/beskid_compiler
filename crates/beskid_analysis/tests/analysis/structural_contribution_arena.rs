@@ -54,6 +54,8 @@ fn generic_record() -> Spanned<Node> {
             ty: node(Type::Complex(node(Path {
                 segments: vec![node(PathSegment { name: name("T"), type_args: vec![] })],
             }))),
+            property_default: None,
+            property_accessors: None,
         })],
         field_docs: vec![None],
         methods: vec![],

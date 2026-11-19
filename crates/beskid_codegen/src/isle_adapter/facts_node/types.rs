@@ -3,6 +3,16 @@
 use super::super::*;
 
 impl SyntaxNodeFacts<'_> {
+    pub(super) fn compound_assignment_in_context(
+        &self,
+        key: AstNodeKey,
+    ) -> beskid_queries::SemanticQueryResult<beskid_queries::CompoundAssignment> {
+        match self.current_item_specialization() {
+            Some(enclosing) => beskid_queries::compound_assignment_in_environment(self.db, key, enclosing),
+            None => beskid_queries::compound_assignment(self.db, key),
+        }
+    }
+
     pub(super) fn operator_fact_impl(&self, key: AstNodeKey) -> Option<OperatorFact> {
         let operator = self.query(operator_fact(self.db, key))?;
         if matches!(operator, beskid_queries::OperatorFact::Eq | beskid_queries::OperatorFact::NotEq)

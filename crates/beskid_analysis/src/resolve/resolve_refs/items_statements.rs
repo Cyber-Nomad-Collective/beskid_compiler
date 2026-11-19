@@ -41,7 +41,10 @@ impl Resolver {
             self.resolve_type(return_type);
         }
         if include_bodies {
+            let previous_accessor =
+                std::mem::replace(&mut self.resolving_property_accessor, method.property_accessor.is_some());
             self.resolve_block(&method.body);
+            self.resolving_property_accessor = previous_accessor;
             self.current_receiver_item_id = previous_receiver;
             self.pop_scope();
         }

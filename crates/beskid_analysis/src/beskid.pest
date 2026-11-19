@@ -377,9 +377,25 @@ InjectField = { KwInject ~ InjectQualifier? ~ BeskidType ~ Identifier }
 Field = { AttributeList? ~ Visibility? ~ (InjectField | EventField | ValueField) }
 
 TypeConformanceList = { ":" ~ PathList }
-// Every field ends with `;` (value, `inject` and event fields alike); inline methods follow.
-TypeFieldList = { (FieldWithDocs ~ ";" ~ DocGap*)+ }
-TypeBody = { TypeFieldList? ~ (AssociatedTypeBindingWithDocs | ImplMethodWithDocs)* }
+// `prop` introduces a stored property only in a type body.
+KwPropWord = @{ "prop" ~ !IdentTail }
+KwProp = _{ !(!KwPropWord) ~ "prop" }
+AutomaticProperty = { AttributeList? ~ Visibility? ~ KwProp ~ ValueField ~ "=" ~ Expression }
+AutomaticPropertyWithDocs = { DocRun? ~ AutomaticProperty }
+DerivedProperty = { AttributeList? ~ Visibility? ~ BeskidType ~ Identifier ~ ExpressionBody ~ ";" }
+DerivedPropertyWithDocs = { DocRun? ~ DerivedProperty ~ DocGap* }
+KwGetWord = @{ "get" ~ !IdentTail }
+KwSetWord = @{ "set" ~ !IdentTail }
+KwGet = _{ !(!KwGetWord) ~ "get" }
+KwSet = _{ !(!KwSetWord) ~ "set" }
+PropertyGet = { KwGet ~ (";" | Block) }
+PropertySet = { KwSet ~ (";" | Block) }
+PropertyAccessorBlock = { "{" ~ DocGap* ~ (PropertyGet ~ DocGap* ~ PropertySet? | PropertySet ~ DocGap* ~ PropertyGet?) ~ DocGap* ~ "}" }
+BlockProperty = { AttributeList? ~ Visibility? ~ ValueField ~ PropertyAccessorBlock ~ ("=" ~ Expression ~ ";")? }
+BlockPropertyWithDocs = { DocRun? ~ BlockProperty ~ DocGap* }
+// Keep contiguous field runs grouped and allow each run anywhere in the body.
+TypeFieldList = { ((AutomaticPropertyWithDocs | FieldWithDocs) ~ ";" ~ DocGap*)+ }
+TypeBody = { TypeFieldList? ~ ((AssociatedTypeBindingWithDocs | ImplMethodWithDocs | DerivedPropertyWithDocs | BlockPropertyWithDocs) ~ TypeFieldList?)* }
 TypeDefinition = { AttributeList? ~ Visibility? ~ KwType ~ Identifier ~ GenericParameters? ~ TypeConformanceList? ~ "{" ~ TypeBody? ~ "}" }
 
 EnumDefinition = { AttributeList? ~ Visibility? ~ KwEnum ~ Identifier ~ GenericParameters? ~ "{" ~ EnumVariantList? ~ "}" }

@@ -116,6 +116,14 @@ contract Ordinary {
     }
 
     #[test]
+    fn property_names_take_the_pascal_case_profile() {
+        let source = "type Counter { i64 raw; prop i64 Count = 0; i64 Double => Count + Count; }
+i64 Main() { Counter counter = Counter { raw: 0, Count: 3 }; return counter.Double; }";
+        assert!(warning_codes(source).is_empty());
+        assert_eq!(warning_codes("type Counter { prop i64 count = 0; }"), ["W1633"]);
+    }
+
+    #[test]
     fn conforming_names_emit_nothing() {
         let src = r#"
 pub type Hub { bool isTty; }

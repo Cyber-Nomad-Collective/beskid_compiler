@@ -39,6 +39,9 @@ impl SemanticIssueKind {
             Self::UnresolvedAssociatedType { .. } => "unresolved associated type".to_string(),
             Self::GenericBoundNotSatisfied { .. } => "generic bound not satisfied".to_string(),
             Self::InvalidPrimitiveImplementation { .. } => "invalid primitive implementation".to_string(),
+            Self::ImmutableAssignment { binding, .. } if binding.form == super::BindingForm::SetterValue => {
+                "the setter input is immutable".to_string()
+            }
             Self::ImmutableAssignment { .. } => "declared without `mut`".to_string(),
             Self::MatchGuardMustBeBoolean => "guard type mismatch".to_string(),
             Self::MatchArmTypeMismatch { .. } => "match arm type mismatch".to_string(),
@@ -76,6 +79,11 @@ impl SemanticIssueKind {
             Self::TypeInaccessibleStructField { .. } => "private field".to_string(),
             Self::TypeUnknownEnumVariant { .. } => "unknown enum variant".to_string(),
             Self::TypeMissingStructField { .. } => "missing field".to_string(),
+            Self::TypeReadOnlyProperty { .. } => "read-only property".to_string(),
+            Self::TypeDestructivePropertyAccess { .. } => "property access requires an accessor".to_string(),
+            Self::TypeWriteOnlyProperty { .. } => "write-only property".to_string(),
+            Self::TypePropertyNotCallable { .. } => "property access with parentheses".to_string(),
+            Self::TypeInvalidPropertyDefault { .. } => "invalid property default".to_string(),
             Self::TypeMissingTypeAnnotation { .. } => "missing type annotation".to_string(),
             Self::TypeMissingTypeArguments { .. } => "missing type arguments".to_string(),
             Self::TypeGenericArgumentMismatch { .. } => "generic argument mismatch".to_string(),

@@ -276,6 +276,22 @@ pub enum SemanticIssueKind {
     TypeUnknownEnumVariant {
         name: String,
     },
+    TypeReadOnlyProperty {
+        name: String,
+    },
+    TypeDestructivePropertyAccess {
+        name: String,
+    },
+    TypeWriteOnlyProperty {
+        name: String,
+    },
+    TypePropertyNotCallable {
+        name: String,
+    },
+    TypeInvalidPropertyDefault {
+        name: String,
+        expected: String,
+    },
     TypeMissingStructField {
         name: String,
     },
@@ -835,6 +851,7 @@ pub enum BindingForm {
     InferredLocal,
     Parameter,
     ForIterator,
+    SetterValue,
 }
 
 impl ImmutableBinding {

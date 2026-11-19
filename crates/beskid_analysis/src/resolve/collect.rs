@@ -405,6 +405,16 @@ impl Resolver {
         self.collect_member_items(item, id);
 
         if let Node::TypeDefinition(def) = &item.node {
+            let derived_properties: HashSet<_> = def
+                .node
+                .methods
+                .iter()
+                .filter(|method| method.node.is_property_getter)
+                .map(|method| method.node.name.node.name.clone())
+                .collect();
+            if !derived_properties.is_empty() {
+                self.derived_properties_by_type.insert(id, derived_properties);
+            }
             let type_name = def.node.name.node.name.clone();
             let field_names: std::collections::HashSet<_> =
                 def.node.fields.iter().map(|field| field.node.name.node.name.as_str()).collect();
@@ -844,6 +854,30 @@ mod tests {
     use crate::services::parse_program;
 
     use super::super::resolver::Resolver;
+
+    #[test]
+    fn staged_name_resolution_accepts_bare_derived_properties() {
+        let source = "type Counter {
+            i64 Read() { return Double; }
+            i64 Double => Count + Count;
+            prop i64 Count = 0;
+        }
+        impl Counter { i64 ReadFromImpl() { return Double; } }
+        i32 Main() {
+            Counter counter = Counter {};
+            counter.Count = 3;
+            if counter.Read() == counter.ReadFromImpl() { return 0; }
+            return 1;
+        }";
+        let program = parse_program(source).expect("parse mixed property and method declarations");
+        let diagnostics = crate::services::semantic_rule_diagnostics_for_program(
+            &program.node,
+            "counter.bd",
+            source,
+            crate::AnalysisOptions::default(),
+        );
+        assert!(diagnostics.iter().all(|diagnostic| diagnostic.code.as_deref() != Some("E1101")), "{diagnostics:?}");
+    }
 
     #[test]
     fn resolves_the_core_namespace_without_an_explicit_use_declaration() {

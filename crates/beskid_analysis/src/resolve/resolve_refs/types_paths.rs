@@ -42,27 +42,34 @@ impl Resolver {
 
     pub(super) fn resolve_value_path(&mut self, path: &Spanned<Path>) {
         let segments = resolver::path_segments(path);
-        if segments.is_empty() {
+        let Some(name) = segments.first() else {
             self.errors.push(ResolveError::UnknownValue {
                 name: "<unnamed>".to_string(),
                 span: path.span,
                 suggestion: None,
             });
             return;
+        };
+        let mut local = self.resolve_local(name);
+        if local.is_none() && name == "field" && self.resolving_property_accessor {
+            local = self.resolve_local("this");
+        }
+        if let Some(local) = local {
+            self.tables.insert_value(path.span, ResolvedValue::Local(local));
+            return;
         }
         if segments.len() == 1 {
-            let name = &segments[0];
-            if let Some(local) = self.resolve_local(name) {
-                self.tables.insert_value(path.span, ResolvedValue::Local(local));
-                return;
-            }
             if let Some(value) =
                 self.constant_in_scope(name).or_else(|| self.shared_constants.get(name).and_then(Option::as_ref))
             {
                 self.tables.integer_constants.insert((self.current_source_path.clone(), path.span), value.clone());
                 return;
             }
-            if self.receiver_has_field(name)
+            let derived_property = self
+                .current_receiver_item_id
+                .and_then(|receiver| self.derived_properties_by_type.get(&receiver))
+                .is_some_and(|members| members.contains(name));
+            if (derived_property || self.receiver_has_field(name))
                 && let Some(this_local) = self.resolve_local("this")
             {
                 self.tables.insert_value(path.span, ResolvedValue::Local(this_local));
@@ -77,19 +84,13 @@ impl Resolver {
             self.errors.push(ResolveError::UnknownValue { name: (*name).clone(), span: path.span, suggestion });
             return;
         }
-        if segments.len() >= 2 {
-            if let Some(local) = self.resolve_local(&segments[0]) {
-                self.tables.insert_value(path.span, ResolvedValue::Local(local));
-                return;
-            }
-            if self.resolve_item_in_scope(&segments[0]).is_none()
-                && self.module_graph.module_id(std::slice::from_ref(&segments[0])).is_none()
-                && self.module_import(&segments[0]).is_none()
-            {
-                let suggestion = self.closest_value_name(&segments[0]);
-                self.errors.push(ResolveError::UnknownValue { name: segments[0].clone(), span: path.span, suggestion });
-                return;
-            }
+        if self.resolve_item_in_scope(name).is_none()
+            && self.module_graph.module_id(std::slice::from_ref(name)).is_none()
+            && self.module_import(name).is_none()
+        {
+            let suggestion = self.closest_value_name(name);
+            self.errors.push(ResolveError::UnknownValue { name: name.clone(), span: path.span, suggestion });
+            return;
         }
         let lookup_segments = self.expand_import_alias(&segments);
         let lookup = self.resolve_item_in_module_path(&segments, &lookup_segments);

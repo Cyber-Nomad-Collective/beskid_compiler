@@ -18,6 +18,24 @@ fn syntax_program_snapshot_roundtrips() {
 }
 
 #[test]
+fn mixed_type_members_round_trip_through_syntax_cache() {
+    let source = "type Counter { prop i64 Count = 0; i64 Read() => Count; i64 raw; i64 Double => Count + Count; }";
+    let program = parse_program_with_source_name("Counter.bd", source).expect("parse mixed members");
+    let wire = encode_syntax_program(&program).expect("encode mixed members");
+    let decoded = decode_syntax_program(&wire).expect("decode mixed members");
+    assert_eq!(decoded, program);
+}
+
+#[test]
+fn property_accessor_blocks_round_trip_through_syntax_cache() {
+    let source = "type Counter { i64 Count { get; set { field = value < 0 ? 0 : value; } } = 0; }";
+    let program = parse_program_with_source_name("Counter.bd", source).expect("parse accessor block");
+    let wire = encode_syntax_program(&program).expect("encode accessor block");
+    let decoded = decode_syntax_program(&wire).expect("decode accessor block");
+    assert_eq!(decoded, program);
+}
+
+#[test]
 fn expanded_syntax_unit_snapshot_roundtrips() {
     let source = "i32 Main() { return 0; }";
     let program = parse_program_with_source_name("Main.bd", source)

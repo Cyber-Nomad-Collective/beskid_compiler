@@ -127,6 +127,7 @@ impl Document {
             .collect();
         let syntax_completion = self.syntax_completion.as_ref().map(|completion| SyntaxCompletion {
             entry_anchor: None,
+            lexical_snapshot: (self.text == text).then(|| completion.lexical_snapshot.clone()).flatten(),
             dependency_surface: Arc::clone(&completion.dependency_surface),
             attributes: Arc::clone(&completion.attributes),
             member_access: completion
@@ -291,6 +292,8 @@ pub struct SyntaxDefinition {
 }
 
 /// Markdown hover content and the declaration span it describes.
+pub(crate) const PROPERTY_HOVER_LABEL: &str = "**property**";
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SyntaxHover {
     pub reference_start: usize,
@@ -322,6 +325,8 @@ pub struct SyntaxInlayHint {
 pub struct SyntaxCompletion {
     /// Current-buffer syntax authority when the fast prepare accepted the edit.
     pub entry_anchor: Option<AstNodeKey>,
+    /// Scope lookup on the exact prepared text when its project storage has rotated.
+    pub lexical_snapshot: Option<beskid_queries::CompletionLexicalSnapshot>,
     /// Owned imported-member surface captured from this document's prepared
     /// assembly. A newer partial snapshot may retain only bindings still present
     /// in its recoverable imports; the surface is never broader semantic authority.
@@ -509,6 +514,7 @@ mod carry_over_tests {
             syntax_attribute_names: Vec::new(),
             syntax_completion: Some(SyntaxCompletion {
                 entry_anchor: None,
+                lexical_snapshot: None,
                 dependency_surface: Arc::from([]),
                 attributes: Arc::from([]),
                 member_access: member_access

@@ -28,9 +28,10 @@ pub use items::{
     ConstantDefinition, ContractAssociatedType, ContractDefinition, ContractEmbedding, ContractMethodSignature,
     ContractNode, EnumDefinition, EnumVariant, ExtendTypeDefinition, FunctionDefinition, HostBodyItem, HostDefinition,
     ImplBlock, InjectQualifier, InlineModule, LaunchStatement, MacroDefinition, MacroFragmentKind, MacroParameter,
-    MethodDefinition, ModuleDeclaration, Node, Program, RegistrationLifetime, RegistryBlock, RegistryEntry,
-    ScopeDefinition, ScopeHook, ScopeHookKind, TestDefinition, TestMetaSection, TestMetadataEntry, TestSkipEntry,
-    TestSkipSection, TypeDefinition, UseDeclaration, WhereBound, WithStatement,
+    MethodDefinition, ModuleDeclaration, Node, Program, PropertyAccessor, PropertyAccessorKind, PropertyAccessors,
+    RegistrationLifetime, RegistryBlock, RegistryEntry, ScopeDefinition, ScopeHook, ScopeHookKind, TestDefinition,
+    TestMetaSection, TestMetadataEntry, TestSkipEntry, TestSkipSection, TypeDefinition, UseDeclaration, WhereBound,
+    WithStatement,
 };
 pub use statements::{
     Block, BreakStatement, ContinueStatement, ElseBranch, ExpressionStatement, ForStatement, IfStatement, LetStatement,

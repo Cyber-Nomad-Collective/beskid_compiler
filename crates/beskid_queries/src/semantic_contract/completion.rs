@@ -2,6 +2,29 @@
 
 use super::*;
 
+/// The authoritative lexical syntax of one document, detached from Salsa storage.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CompletionLexicalSnapshot {
+    program: Arc<beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>>,
+    index: Arc<beskid_analysis::syntax_query::SyntaxIndex>,
+}
+
+impl CompletionLexicalSnapshot {
+    pub fn candidates(&self, prefix: &str, context: CompletionContext) -> Vec<CompletionCandidate> {
+        lexical_candidates(&self.program, &self.index, prefix, context)
+    }
+}
+
+/// Retain only the source unit's prepared lexical syntax while project databases rotate.
+pub fn completion_lexical_snapshot(db: &dyn Db, key: AstNodeKey, source: &str) -> Option<CompletionLexicalSnapshot> {
+    let syntax = db.syntax_unit(key.unit).filter(|syntax| syntax.accepts_key(db, key))?;
+    let file = db.file_registry().lock().expect("file registry").get(key.unit.path(db)).copied()?;
+    (file.text(db) == source).then(|| CompletionLexicalSnapshot {
+        program: Arc::clone(syntax.expanded_program(db)),
+        index: Arc::clone(syntax.syntax_index(db)),
+    })
+}
+
 /// Enumerate exact syntax-backed callable completion candidates for one current generation.
 ///
 /// Generation-safe completion facts for lexical locals, types, imported members, and
@@ -59,29 +82,43 @@ pub fn completion_candidates(
             push_nominal_receiver_candidates(db, &mut candidates, declaration, prefix, &context);
         }
     } else {
-        let program = syntax.expanded_program(db);
-        let index = syntax.syntax_index(db);
-        let reference = deepest_node_containing_offset(index, context.cursor).unwrap_or(key.node);
-        push_lexical_local_candidates(&mut candidates, program, index, reference, prefix, &context);
-        push_unit_type_candidates(&mut candidates, program, index, prefix, &context, false);
-        for id in index.ids_of_kind(beskid_analysis::syntax_query::NodeKind::FunctionDefinition) {
-            if let Some(function) =
-                index.node_at(program, id).and_then(|node| node.of::<beskid_analysis::syntax::FunctionDefinition>())
-            {
-                push_completion_candidate(
-                    &mut candidates,
-                    function.name.node.name.as_str(),
-                    CompletionKind::Function,
-                    None,
-                    prefix,
-                    &context,
-                );
-            }
-        }
+        return Ok(Some(
+            lexical_candidates(syntax.expanded_program(db), syntax.syntax_index(db), prefix, context).into(),
+        ));
     }
     candidates.sort_by(|left, right| left.label.cmp(&right.label));
     candidates.dedup_by(|left, right| left.label == right.label && left.kind == right.kind);
     Ok(Some(candidates.into()))
+}
+
+fn lexical_candidates(
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    prefix: &str,
+    context: CompletionContext,
+) -> Vec<CompletionCandidate> {
+    let mut candidates = Vec::new();
+    let reference =
+        deepest_node_containing_offset(index, context.cursor).unwrap_or(beskid_analysis::syntax::AstNodeId(0));
+    push_lexical_local_candidates(&mut candidates, program, index, reference, prefix, &context);
+    push_unit_type_candidates(&mut candidates, program, index, prefix, &context, false);
+    for id in index.ids_of_kind(beskid_analysis::syntax_query::NodeKind::FunctionDefinition) {
+        if let Some(function) =
+            index.node_at(program, id).and_then(|node| node.of::<beskid_analysis::syntax::FunctionDefinition>())
+        {
+            push_completion_candidate(
+                &mut candidates,
+                function.name.node.name.as_str(),
+                CompletionKind::Function,
+                None,
+                prefix,
+                &context,
+            );
+        }
+    }
+    candidates.sort_by(|left, right| left.label.cmp(&right.label));
+    candidates.dedup_by(|left, right| left.label == right.label && left.kind == right.kind);
+    candidates
 }
 
 /// Capture imported-module member candidates as owned data.
@@ -272,6 +309,16 @@ pub(super) fn push_lexical_local_candidates(
             context,
         );
     }
+    if super::properties::contextual_backing_name(program, index, reference, "field").is_some() {
+        push_completion_candidate(
+            candidates,
+            "field",
+            CompletionKind::Variable,
+            Some("property backing storage"),
+            prefix,
+            context,
+        );
+    }
 }
 
 pub(super) fn push_unit_type_candidates(
@@ -400,39 +447,26 @@ pub(super) fn push_nominal_receiver_candidates(
         return;
     };
     for field in &definition.fields {
-        push_completion_candidate(
-            candidates,
-            field.node.name.node.name.as_str(),
-            CompletionKind::Field,
-            Some("field"),
-            prefix,
-            context,
-        );
+        let (kind, detail) = match &field.node.property_accessors {
+            Some(accessors) if accessors.get.is_none() => (CompletionKind::Property, "write-only property"),
+            Some(accessors) if accessors.set.is_none() => (CompletionKind::Property, "read-only property"),
+            _ if field.node.is_property() => (CompletionKind::Property, "property"),
+            _ => (CompletionKind::Field, "field"),
+        };
+        push_completion_candidate(candidates, field.node.name.node.name.as_str(), kind, Some(detail), prefix, context);
     }
-    for method in &definition.methods {
-        push_completion_candidate(
-            candidates,
-            method.node.name.node.name.as_str(),
-            CompletionKind::Method,
-            Some("method"),
-            prefix,
-            context,
-        );
-    }
-    if let Some(children) = index.children(declaration.node) {
-        for child in children.iter().copied() {
-            if let Some(method) =
-                index.node_at(program, child).and_then(|node| node.of::<beskid_analysis::syntax::MethodDefinition>())
-            {
-                push_completion_candidate(
-                    candidates,
-                    method.name.node.name.as_str(),
-                    CompletionKind::Method,
-                    Some("method"),
-                    prefix,
-                    context,
-                );
-            }
+    let indexed_methods = index.children(declaration.node).into_iter().flatten().filter_map(|&child| {
+        index.node_at(program, child).and_then(|node| node.of::<beskid_analysis::syntax::MethodDefinition>())
+    });
+    for method in definition.methods.iter().map(|method| &method.node).chain(indexed_methods) {
+        if method.property_accessor.is_some() {
+            continue;
         }
+        let (kind, detail) = if method.is_property_getter {
+            (CompletionKind::Property, "read-only property")
+        } else {
+            (CompletionKind::Method, "method")
+        };
+        push_completion_candidate(candidates, method.name.node.name.as_str(), kind, Some(detail), prefix, context);
     }
 }

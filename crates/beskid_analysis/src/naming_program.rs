@@ -136,7 +136,9 @@ fn walk_function_definition(def: &FunctionDefinition, visit: &mut impl FnMut(Nam
 }
 
 fn walk_method_definition(def: &MethodDefinition, visit: &mut impl FnMut(NamingRole, &Spanned<Identifier>)) {
-    visit(NamingRole::Callable, &def.name);
+    if def.property_accessor.is_none() {
+        visit(NamingRole::Callable, &def.name);
+    }
     for generic in &def.generics {
         visit(NamingRole::GenericParameter, &TypeParameter::identifier(generic));
     }
@@ -178,11 +180,9 @@ fn walk_module_path(path: &Spanned<crate::syntax::Path>, visit: &mut impl FnMut(
     }
 }
 
-/// An `event` member is a callable member (raised and subscribed like a method), so it carries the
-/// PascalCase callable profile (`event OnResize(ConsoleSize size)`); every other field is
-/// lowerCamelCase.
+/// An event or an automatic property shares the PascalCase profile of the callable member.
 fn field_role(field: &Field) -> NamingRole {
-    if field.kind == FieldKind::Event { NamingRole::Callable } else { NamingRole::Field }
+    if field.kind == FieldKind::Event || field.is_property() { NamingRole::Callable } else { NamingRole::Field }
 }
 
 fn walk_field(field: &Field, visit: &mut impl FnMut(NamingRole, &Spanned<Identifier>)) {
@@ -284,7 +284,7 @@ fn walk_expression(expr: &Expression, visit: &mut impl FnMut(NamingRole, &Spanne
         }
         Expression::StructLiteral(lit) => {
             for field in &lit.node.fields {
-                visit(NamingRole::Field, &field.node.name);
+                // A member label refers to a declaration that supplies its naming profile.
                 walk_expression(&field.node.value.node, visit);
             }
         }

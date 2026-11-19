@@ -6,7 +6,7 @@ use crate::syntax::items::impl_block::ImplBlock;
 use crate::syntax::{
     AssociatedTypeBinding, ContractAssociatedType, ContractDefinition, ContractEmbedding, ContractMethodSignature,
     ContractNode, EnumDefinition, EnumVariant, ExtendTypeDefinition, Field, MethodDefinition, ModuleDeclaration,
-    SpanInfo, Spanned, TypeDefinition, UseDeclaration,
+    PropertyAccessor, PropertyAccessorKind, PropertyAccessors, SpanInfo, Spanned, TypeDefinition, UseDeclaration,
 };
 use std::fmt::Write;
 
@@ -53,7 +53,7 @@ impl Emit for Spanned<ModuleDeclaration> {
 
 /// One member of a type or impl body, in source order.
 enum Member<'a> {
-    Field(&'a Spanned<Field>, Option<&'a LeadingDocComment>),
+    Field(&'a Spanned<Field>, Option<&'a LeadingDocComment>, &'a [Spanned<MethodDefinition>]),
     Binding(&'a Spanned<AssociatedTypeBinding>),
     Method(&'a Spanned<MethodDefinition>, Option<&'a LeadingDocComment>),
 }
@@ -61,7 +61,7 @@ enum Member<'a> {
 impl Member<'_> {
     fn span(&self) -> SpanInfo {
         match self {
-            Member::Field(f, _) => f.span,
+            Member::Field(f, ..) => f.span,
             Member::Binding(b) => b.span,
             Member::Method(m, _) => m.span,
         }
@@ -87,8 +87,13 @@ fn emit_members<W: Write>(mut members: Vec<Member<'_>>, w: &mut W, cx: &mut Emit
         let blank = previous.is_some_and(|p| p != kind || kind == 2);
         previous = Some(kind);
         match member {
-            Member::Field(field, doc) => {
-                emit_line(w, cx, Line::new(field.span).doc(*doc).blank(blank), ";", |w, cx| field.emit(w, cx))?
+            Member::Field(field, doc, methods) => {
+                let line = Line::new(field.span).doc(*doc).blank(blank);
+                if let Some(accessors) = &field.node.property_accessors {
+                    emit_line(w, cx, line, "", |w, cx| emit_property_block(&field.node, accessors, methods, w, cx))?;
+                } else {
+                    emit_line(w, cx, line, ";", |w, cx| field.emit(w, cx))?;
+                }
             }
             Member::Binding(binding) => emit_line(w, cx, Line::new(binding.span).blank(blank), ";", |w, cx| {
                 cx.token(w, "type ")?;
@@ -108,7 +113,53 @@ fn methods_of<'a>(
     methods: &'a [Spanned<MethodDefinition>],
     docs: &'a [Option<LeadingDocComment>],
 ) -> impl Iterator<Item = Member<'a>> {
-    methods.iter().enumerate().map(|(i, m)| Member::Method(m, docs.get(i).and_then(Option::as_ref)))
+    methods
+        .iter()
+        .enumerate()
+        .filter(|(_, method)| method.node.property_accessor.is_none())
+        .map(|(i, m)| Member::Method(m, docs.get(i).and_then(Option::as_ref)))
+}
+
+fn emit_property_block<W: Write>(
+    field: &Field,
+    accessors: &PropertyAccessors,
+    methods: &[Spanned<MethodDefinition>],
+    w: &mut W,
+    cx: &mut EmitCtx,
+) -> Result<(), EmitError> {
+    crate::format::attribute_lists::emit_attribute_block(&field.attributes, w, cx)?;
+    field.visibility.emit(w, cx)?;
+    field.ty.emit(w, cx)?;
+    cx.space(w)?;
+    field.name.emit(w, cx)?;
+    open_body(w, cx)?;
+    let mut entries =
+        [(PropertyAccessorKind::Get, accessors.get.as_ref()), (PropertyAccessorKind::Set, accessors.set.as_ref())];
+    entries.sort_by_key(|(_, accessor)| accessor.map(|a| a.span.start));
+    for (kind, accessor) in entries.into_iter().filter_map(|(kind, accessor)| accessor.map(|a| (kind, a))) {
+        emit_line(w, cx, Line::new(accessor.span), "", |w, cx| {
+            cx.token(w, kind.keyword())?;
+            if accessor.node == PropertyAccessor::Automatic {
+                return cx.token(w, ";");
+            }
+            let expected_name = kind.method_name(&field.name.node.name);
+            let method = methods
+                .iter()
+                .find(|method| {
+                    method.node.property_accessor == Some(kind) && method.node.name.node.name == expected_name
+                })
+                .ok_or(EmitError(std::fmt::Error))?;
+            cx.before_open_brace(w)?;
+            method.node.body.emit(w, cx)
+        })?;
+    }
+    cx.close_brace(w, accessors.span.end)?;
+    if let Some(default) = &field.property_default {
+        cx.token(w, " = ")?;
+        default.emit(w, cx)?;
+        cx.token(w, ";")?;
+    }
+    Ok(())
 }
 
 impl Emit for Spanned<TypeDefinition> {
@@ -142,7 +193,7 @@ impl Emit for Spanned<TypeDefinition> {
             .fields
             .iter()
             .enumerate()
-            .map(|(i, f)| Member::Field(f, this.field_docs.get(i).and_then(Option::as_ref)))
+            .map(|(i, f)| Member::Field(f, this.field_docs.get(i).and_then(Option::as_ref), &this.methods))
             .collect();
         members.extend(this.associated_type_bindings.iter().map(Member::Binding));
         members.extend(methods_of(&this.methods, &this.method_docs));

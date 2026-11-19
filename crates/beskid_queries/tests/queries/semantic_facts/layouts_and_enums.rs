@@ -59,6 +59,42 @@ fn phantom_generic_aggregate_literal_materializes_its_source_independent_layout(
 }
 
 #[test]
+fn generic_payloads_keep_contract_boxes_and_closures_managed() {
+    let source = r#"
+contract Runner { i32 Run(); }
+type Pair<A, B> { A runner; B callback; }
+enum Variant<A, B> { Runner(A runner), Callback(B callback) }
+Pair<Runner, (i32) => i32> Make(Runner runner, (i32) => i32 callback) {
+    return Pair<Runner, (i32) => i32> { runner: runner, callback: callback };
+}
+Pair<Runner, (T) => T> MakeGeneric<T>(Runner runner, (T) => T callback) {
+    return Pair<Runner, (T) => T> { runner: runner, callback: callback };
+}
+Variant<Runner, (i32) => i32> Wrap(Runner runner) {
+    return Variant<Runner, (i32) => i32>::Runner(runner);
+}
+"#;
+    let (db, _project, unit, generation, index) = setup(source);
+    let runner = (Arc::from("runner"), AggregateFieldShape::ManagedReference(SemanticTypeId::POINTER));
+    let callback = (Arc::from("callback"), AggregateFieldShape::ManagedReference(SemanticTypeId::POINTER));
+    for offset in 0..2 {
+        let literal = key(unit, generation, &index, NodeKind::StructLiteralExpression, offset);
+        let layout = aggregate_literal_layout(&db, literal).expect("layout query").expect("applied aggregate layout");
+        assert_eq!(layout.fields.as_ref(), &[runner.clone(), callback.clone()]);
+    }
+
+    let constructor = key(unit, generation, &index, NodeKind::EnumConstructorExpression, 0);
+    let layout = enum_layout(&db, constructor).expect("layout query").expect("applied enum layout");
+    assert_eq!(
+        layout.variants.as_ref(),
+        &[
+            EnumVariantLayoutFact { name: Arc::from("Runner"), fields: Arc::from([runner]) },
+            EnumVariantLayoutFact { name: Arc::from("Callback"), fields: Arc::from([callback]) },
+        ]
+    );
+}
+
+#[test]
 fn event_bearing_aggregate_keeps_value_field_layout_and_projection_for_cyb_162() {
     let source = r#"
 type ProgressBar {
@@ -442,7 +478,8 @@ fn enum_layout_rejects_inexact_generic_applications() {
     let cases = [
         "enum SyscallError { InvalidFd(i64 fd) } enum Result<TValue, TError> { Ok(TValue value), Error(TError error) } i64 Main() { Result<i64>::Ok(1); return 0; }",
         "enum SyscallError { InvalidFd(i64 fd) } enum Result<TValue, TError> { Ok(TValue value), Error(TError error) } i64 Main() { Result<Missing, SyscallError>::Ok(1); return 0; }",
-        "enum SyscallError { InvalidFd(i64 fd) } enum Result<TValue, TError> { Ok(TValue value), Error(TError error) } i64 Main() { Result<i64(i64), SyscallError>::Ok(1); return 0; }",
+        "enum SyscallError { InvalidFd(i64 fd) } enum Result<TValue, TError> { Ok(TValue value), Error(TError error) } i64 Main() { Result<(Missing[]) => i64, SyscallError>::Ok(1); return 0; }",
+        "enum SyscallError { InvalidFd(i64 fd) } enum Result<TValue, TError> { Ok(TValue value), Error(TError error) } i64 Main() { Result<(i64) => Missing, SyscallError>::Ok(1); return 0; }",
         "enum SyscallError { InvalidFd(i64 fd) } enum Result<TValue, TError> { Ok(TValue value), Error(TError error) } i64 Main() { Outer<i64>.Result<i64, SyscallError>::Ok(1); return 0; }",
     ];
     for source in cases {

@@ -228,6 +228,9 @@ pub(super) fn collect_member_obligations(
             continue;
         }
         let site = AstNodeKey { node, ..key };
+        if matches!(property_getter(db, site), Ok(Some(_))) {
+            continue;
+        }
         // `pointer` is also the ABI of every nominal value: such a receiver is judged by its
         // declaration below, never as a primitive.
         if let Some((_, _, target)) = proven_operand(db, program, index, key, node, member.target.as_ref()) {

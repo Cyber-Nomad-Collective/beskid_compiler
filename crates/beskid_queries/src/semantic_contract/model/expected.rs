@@ -27,6 +27,8 @@ pub enum ExpectedTypeContext {
     CallArgument { call: AstNodeKey, position: u32 },
     /// One payload argument of an enum constructor, by zero-based position.
     EnumPayload { constructor: AstNodeKey, position: u32 },
+    /// The initializer of an automatic property at its declaration.
+    PropertyDefault { field: AstNodeKey },
     /// The value of one named field in a struct literal.
     StructField { literal: AstNodeKey, field: Arc<str> },
     /// The value of a `return` in a function or method with a declared return type, or in a

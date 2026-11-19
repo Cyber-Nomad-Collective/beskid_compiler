@@ -279,7 +279,9 @@ pub(in crate::semantic_contract) fn unqualified_enclosing_method_call(
             index
                 .node_at(program, *candidate)
                 .and_then(|node| node.of::<beskid_analysis::syntax::MethodDefinition>())
-                .is_some_and(|method| method.name.node.name == segment.node.name.node.name)
+                .is_some_and(|method| {
+                    !method.is_property_getter && method.name.node.name == segment.node.name.node.name
+                })
         })
         .collect::<Vec<_>>();
     let [target] = matches.as_slice() else { return None };
@@ -786,7 +788,7 @@ pub(in crate::semantic_contract) fn unique_nominal_method_declaration(
             declaration_index
                 .node_at(declaration_program, *candidate)
                 .and_then(|node| node.of::<beskid_analysis::syntax::MethodDefinition>())
-                .is_some_and(|method| method.name.node.name == method_name)
+                .is_some_and(|method| !method.is_property_getter && method.name.node.name == method_name)
         })
         .map(|node| AstNodeKey { unit: declaration.unit, generation: declaration.generation, node })
         .collect::<Vec<_>>();

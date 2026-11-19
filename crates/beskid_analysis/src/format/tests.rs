@@ -254,6 +254,61 @@ fn fields_and_methods_are_separated_and_methods_stand_apart() {
 }
 
 #[test]
+fn properties_fields_and_methods_format_in_source_order() {
+    let source = "type Counter { prop i64 Count=0; i64 Read() => Count; i64 raw; i64 Double=>Count+Count; }\n";
+    let expected = concat!(
+        "type Counter\n",
+        "{\n",
+        "    prop i64 Count = 0;\n",
+        "\n",
+        "    i64 Read() => Count;\n",
+        "\n",
+        "    i64 raw;\n",
+        "\n",
+        "    i64 Double => Count + Count;\n",
+        "}\n",
+    );
+    assert_eq!(fmt(source), expected);
+    assert_eq!(fmt(expected), expected);
+}
+
+#[test]
+fn property_accessor_formatting_retains_order_and_bodies() {
+    let source = concat!(
+        "type Counter { i64 Count { set { field=value<0?0:value; } get; }=0;",
+        " i64 ReadOnly { get { return field; } }",
+        " i64 WriteOnly { set; } i64 raw; }",
+    );
+    let formatted = format_source("Counter.bd", source).expect("format accessor blocks");
+    assert!(
+        formatted.contains(concat!(
+            "    i64 Count\n",
+            "    {\n",
+            "        set\n",
+            "        {\n",
+            "            field = value < 0 ? 0 : value;\n",
+            "        }\n",
+            "        get;\n",
+            "    } = 0;",
+        )),
+        "{formatted}"
+    );
+    assert!(formatted.contains("return field;"), "{formatted}");
+    assert!(formatted.contains("        set;\n    }\n    i64 raw;"), "{formatted}");
+    assert_eq!(format_source("Counter.bd", &formatted).expect("reformat accessor blocks"), formatted);
+}
+
+#[test]
+fn property_accessor_blocks_reject_empty_and_duplicate_accessors() {
+    for accessors in ["", "get; get;", "set; set;", "get; set; get;"] {
+        let source = format!("type Counter {{ i64 Count {{ {accessors} }} }}");
+        assert!(crate::services::parse_program(&source).is_err(), "accepted {source}");
+    }
+    let contextual = "type Counter { i64 get; i64 set; i64 field; i64 value; }";
+    crate::services::parse_program(contextual).expect("accessor words remain available as identifiers");
+}
+
+#[test]
 fn statements_keep_the_author_grouping_in_functions_and_tests() {
     let source = "test checks_values {\n    Testing.Assert.Equal(1, 1);\n    Testing.Assert.Equal(2, 2);\n    Testing.Assert.Equal(3, 3);\n\n\n    Testing.Assert.Equal(4, 4);\n}\n";
     // The formatter never renames: the naming-style lint (W1637) reports the test name instead.

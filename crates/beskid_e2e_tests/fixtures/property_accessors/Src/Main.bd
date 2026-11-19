@@ -1,0 +1,39 @@
+type Counter
+{
+    i32 receivers;
+    i32 operands;
+    i32 reads;
+    i32 writes;
+    i32 Count
+    {
+        get { this.reads += 1; return field + 1; }
+        set { this.writes += 1; field = value < 0 ? 0 : value; }
+    } = 0;
+    i32 Positive { get; set { if value > 0 { field = value; } } } = 2;
+    i32 Discard { set { this.writes += 1; } } = 0;
+    Counter Receiver() { this.receivers += 1; return this; }
+    i32 Operand() { this.operands += 1; return 3; }
+}
+
+i32 Main()
+{
+    Counter c = Counter { receivers: 0, operands: 0, reads: 0, writes: 0, Count: -2 };
+    if c.Count != -1 { return 1; }
+    if c.writes != 0 { return 2; }
+    i32 supplied = c.Count = -5;
+    if supplied != -5 { return 3; }
+    if c.Count != 1 { return 4; }
+    c.Receiver().Count += c.Operand();
+    if c.receivers != 1 { return 5; }
+    if c.operands != 1 { return 6; }
+    if c.reads != 3 { return 7; }
+    if c.writes != 2 { return 8; }
+    if c.Count != 5 { return 9; }
+    c.Discard = 10;
+    if c.writes != 3 { return 10; }
+    c.Positive = -1;
+    if c.Positive != 2 { return 11; }
+    c.Positive = 5;
+    if c.Positive != 5 { return 12; }
+    return 42;
+}

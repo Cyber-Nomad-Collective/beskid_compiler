@@ -37,6 +37,12 @@ mod expected_type;
 pub(in crate::semantic_contract) use expected_type::expected_type_in;
 pub use expected_type::expected_type_in_environment;
 use expected_type::{expected_type_tracked, lambda_argument_parameter_identities};
+mod properties;
+pub use properties::{
+    PropertyGetter, PropertyReference, PropertySetter, property_accessor_specialization, property_getter,
+    property_getter_in_environment, property_reference, property_setter, property_setter_in_environment,
+    property_type_display,
+};
 mod portable_nominal;
 pub(crate) use portable_nominal::serialization_impl_receiver;
 pub use portable_nominal::{PortableNominalIdentity, portable_nominal_identity};
@@ -243,7 +249,7 @@ use typing::{
     semantic_type_for_local_path, semantic_type_for_node,
 };
 
-pub use abi::{CompoundAssignment, compound_assignment};
+pub use abi::{CompoundAssignment, compound_assignment, compound_assignment_in_environment};
 pub use abi::{
     generic_call_specialization_in_environment, generic_call_specialization_instance, generic_specialization_instance,
     specialized_builtin_type_argument, specialized_corelib_value_service_result,
@@ -257,8 +263,8 @@ pub use calls::{
     optional_extern_contract_members,
 };
 pub use completion::{
-    completion_candidates, completion_dependency_surface, completion_dependency_surface_for_assembly,
-    completion_dependency_surface_for_program,
+    CompletionLexicalSnapshot, completion_candidates, completion_dependency_surface,
+    completion_dependency_surface_for_assembly, completion_dependency_surface_for_program, completion_lexical_snapshot,
 };
 pub use layouts::{
     CanonicalEmptyValue, aggregate_field_access_specialization, aggregate_literal_specialization,

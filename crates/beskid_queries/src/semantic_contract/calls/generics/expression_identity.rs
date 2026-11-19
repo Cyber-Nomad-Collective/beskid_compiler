@@ -30,6 +30,9 @@ pub(in crate::semantic_contract) fn generic_source_expression_identity(
             .ok_or_else(|| source_expression_unavailable(db, normalized_key, "try expression has no payload fact"));
     }
 
+    if let Some(getter) = property_getter(db, normalized_key)? {
+        return super::super::super::properties::property_result_identity(db, normalized_key, getter, None);
+    }
     if let Some(projection) = super::super::super::layouts::nominal_field_projection(db, normalized_key) {
         return projection.map(|(_, identity)| identity);
     }
@@ -215,28 +218,18 @@ fn generic_source_aggregate_field_identity(
     db: &dyn Db,
     access: &AggregateFieldAccess,
 ) -> Result<GenericSourceTypeIdentity, SemanticError> {
-    let gap = |reason: &str| source_expression_unavailable(db, access.receiver, reason);
     let syntax = db
-        .syntax_unit(access.declaration.unit)
-        .filter(|syntax| syntax.accepts_key(db, access.declaration))
-        .ok_or_else(|| gap("field owner declaration is stale"))?;
-    let definition = syntax
-        .syntax_index(db)
-        .node_at(syntax.expanded_program(db), access.declaration.node)
-        .and_then(|node| node.of::<beskid_analysis::syntax::TypeDefinition>())
-        .ok_or_else(|| gap("field owner is not a type definition"))?;
-    let index = usize::try_from(access.index).map_err(|_| gap("field index exceeds the host range"))?;
-    let field = definition.fields.get(index).ok_or_else(|| gap("field index is outside the declaration"))?;
-    // Only a field typed by one of the declaration's own type parameters takes its identity from
-    // the applied layout; any other single-name type (a contract, `Greeter greeter;`) has its
-    // declared identity.
-    let names_type_parameter = generic_parameter_reference_name(&field.node.ty.node)
-        .is_some_and(|name| definition.generics.iter().any(|generic| generic.node.name == name));
-    if !names_type_parameter {
-        return generic_source_type_identity(db, access.declaration, &field.node.ty.node);
-    }
-    let (_, shape) = access.layout.fields.get(index).ok_or_else(|| gap("field index is outside the applied layout"))?;
-    generic_source_field_shape_identity(db, access.receiver, *shape)
+        .syntax_unit(access.receiver.unit)
+        .filter(|syntax| syntax.accepts_key(db, access.receiver))
+        .ok_or_else(|| source_expression_unavailable(db, access.receiver, "field receiver is stale"))?;
+    super::super::super::contracts::applied_field_read_identity(
+        db,
+        syntax.expanded_program(db),
+        syntax.syntax_index(db),
+        access,
+        None,
+    )
+    .unwrap_or_else(|| Err(source_expression_unavailable(db, access.receiver, "field receiver type is unproven")))
 }
 
 pub(in crate::semantic_contract) fn generic_source_field_shape_identity(

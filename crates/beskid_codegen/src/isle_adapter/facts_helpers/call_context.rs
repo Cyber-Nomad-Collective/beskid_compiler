@@ -3,6 +3,33 @@
 use super::super::*;
 
 impl SyntaxNodeFacts<'_> {
+    pub(in crate::isle_adapter) fn property_getter_in_context(
+        &self,
+        key: AstNodeKey,
+    ) -> Option<beskid_queries::PropertyGetter> {
+        self.query(beskid_queries::property_getter_in_environment(self.db, key, self.current_item_specialization()))
+    }
+
+    pub(in crate::isle_adapter) fn property_accessor_call(
+        &self,
+        key: AstNodeKey,
+        declaration: AstNodeKey,
+    ) -> Option<(DirectCallee, ItemSignature)> {
+        match beskid_queries::property_accessor_specialization(self.db, key, self.current_item_specialization()) {
+            Ok(Some(instance)) if instance.declaration == declaration => {
+                let callee = if instance.substitutions.is_empty() && instance.contract_witnesses.is_empty() {
+                    DirectCallee::item(declaration)
+                } else {
+                    DirectCallee::specialized_item(declaration, specialization_identity(&instance))
+                };
+                Some((callee, instance.signature))
+            }
+            Ok(Some(_)) => None,
+            Ok(None) => Some((DirectCallee::item(declaration), self.query(item_abi_signature(self.db, declaration))?)),
+            Err(error) => self.query(Err(error)),
+        }
+    }
+
     pub(crate) fn generic_call_specialization_in_context(
         &self,
         key: AstNodeKey,

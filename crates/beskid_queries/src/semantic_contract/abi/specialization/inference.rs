@@ -323,27 +323,31 @@ pub(super) fn specialization_for_call_in_environment(
             }
         }
         .ok_or_else(|| SemanticError::unavailable_at("call_abi_signature", key))?;
+        // A fixed contract binding is the destination of this argument, even when the caller
+        // wrote its type arguments explicitly and only the argument's ABI was needed above.
+        // Primitive conformers have a different ABI from the box created at the argument site.
+        if let Some(generic) = generic
+            && let Some(bound) = source_substitutions.get(generic)
+            && matches!(bound.source_identity(), GenericSourceTypeIdentity::Contract { .. })
+        {
+            let abi_identity = GenericSourceTypeIdentity::Abi(actual);
+            let source = proven_source_identity.as_ref().or((bound.argument != actual).then_some(&abi_identity));
+            if source.is_some_and(|source| {
+                source != bound.source_identity()
+                    && super::super::super::contract_values::converts_to_contract_value(
+                        db,
+                        key,
+                        source,
+                        bound.source_identity(),
+                    )
+            }) {
+                continue;
+            }
+        }
         if infer_from_actual {
             let source_identity = proven_source_identity
                 .as_ref()
                 .ok_or_else(|| SemanticError::unavailable_at("call_abi_signature", key))?;
-            // A `T` already bound to a contract (by the receiver's type arguments, explicit type
-            // arguments or an earlier argument) is the expected type of a later `T` argument: a
-            // conforming value converts to the contract there (it is boxed), it does not rebind
-            // `T` (`List<Greeter>.Push(Hello {})`, `Pick(greeter, Hello {})`).
-            if let Some(generic) = generic
-                && let Some(bound) = source_substitutions.get(generic)
-                && matches!(bound.source_identity(), GenericSourceTypeIdentity::Contract { .. })
-                && bound.source_identity() != source_identity
-                && super::super::super::contract_values::converts_to_contract_value(
-                    db,
-                    key,
-                    source_identity,
-                    bound.source_identity(),
-                )
-            {
-                continue;
-            }
             // The other order (`Pick(Hello {}, greeter)`): `T` bound by an earlier argument to a
             // value that converts to this argument's contract widens to the contract, and the
             // earlier argument is boxed at its conversion site. Whichever comes first, the

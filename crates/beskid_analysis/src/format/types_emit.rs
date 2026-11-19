@@ -200,9 +200,17 @@ impl Emit for Field {
         self.visibility.emit(w, cx)?;
         match self.kind {
             FieldKind::Value => {
+                if self.property_default.is_some() {
+                    cx.token(w, "prop")?;
+                    cx.space(w)?;
+                }
                 self.ty.emit(w, cx)?;
                 cx.space(w)?;
                 self.name.emit(w, cx)?;
+                if let Some(default) = &self.property_default {
+                    cx.token(w, " = ")?;
+                    default.emit(w, cx)?;
+                }
                 Ok(())
             }
             FieldKind::Event => {

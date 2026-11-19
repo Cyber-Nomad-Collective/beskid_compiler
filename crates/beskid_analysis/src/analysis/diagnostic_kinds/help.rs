@@ -126,6 +126,9 @@ impl SemanticIssueKind {
                 super::BindingForm::ForIterator => {
                     format!("a `for` iterator cannot be assigned; copy `{name}` into a `mut` local first")
                 }
+                super::BindingForm::SetterValue => {
+                    "assign to `field` to set the backing value, or copy `value` into a `mut` local".to_string()
+                }
                 _ => format!("declare `{name}` with `mut`"),
             }),
 
@@ -249,6 +252,11 @@ impl SemanticIssueKind {
             Self::TypeUnknownEnumVariant { name } => {
                 Some(format!("check that the enum has a variant named `{name}`"))
             }
+            Self::TypeReadOnlyProperty { .. }
+            | Self::TypeInvalidPropertyDefault { .. }
+            | Self::TypeDestructivePropertyAccess { .. }
+            | Self::TypeWriteOnlyProperty { .. }
+            | Self::TypePropertyNotCallable { .. } => None,
             Self::TypeMissingStructField { name } => {
                 Some(format!("add `{name}: <value>` to the type literal"))
             }

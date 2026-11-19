@@ -125,6 +125,7 @@ fn unit_obligations_tracked(
 pub fn check_unit_obligations(db: &dyn Db, roots: &[AstNodeKey]) -> Vec<SemanticFinding> {
     let mut findings = Vec::new();
     for &root in roots {
+        findings.extend(super::super::properties::property_declaration_findings(db, root));
         let Ok(Some(obligations)) = unit_obligations(db, root) else { continue };
         for obligation in obligations.iter() {
             let kind = match &obligation.kind {

@@ -51,14 +51,19 @@ impl Emit for Spanned<FunctionDefinition> {
 ///
 /// A written block starts with `{`; the lowered one carries the whole method's span instead.
 fn expression_body<'a>(method: &'a MethodDefinition, cx: &EmitCtx) -> Option<(&'a Spanned<Expression>, bool)> {
-    let text = cx.source_text(method.body.span.start, method.body.span.end)?;
-    if text.trim_start().starts_with('{') {
-        return None;
-    }
+    let semicolon = if method.is_property_getter {
+        true
+    } else {
+        let text = cx.source_text(method.body.span.start, method.body.span.end)?;
+        if text.trim_start().starts_with('{') {
+            return None;
+        }
+        text.trim_end().ends_with(';')
+    };
     let [statement] = method.body.node.statements.as_slice() else { return None };
     let Statement::Return(ret) = &statement.node else { return None };
     let value = ret.node.value.as_ref()?;
-    Some((value, text.trim_end().ends_with(';')))
+    Some((value, semicolon))
 }
 
 impl Emit for MethodDefinition {
@@ -70,9 +75,11 @@ impl Emit for MethodDefinition {
             cx.space(w)?;
         }
         self.name.emit(w, cx)?;
-        emit_generics_list(&self.generics, w, cx)?;
-        emit_method_parameter_list(self.receiver.as_ref(), &self.parameters, &self.parameter_docs, w, cx)?;
-        emit_where_bounds(&self.where_bounds, w, cx)?;
+        if !self.is_property_getter {
+            emit_generics_list(&self.generics, w, cx)?;
+            emit_method_parameter_list(self.receiver.as_ref(), &self.parameters, &self.parameter_docs, w, cx)?;
+            emit_where_bounds(&self.where_bounds, w, cx)?;
+        }
         if let Some((value, semicolon)) = expression_body(self, cx) {
             cx.token(w, " => ")?;
             value.emit(w, cx)?;

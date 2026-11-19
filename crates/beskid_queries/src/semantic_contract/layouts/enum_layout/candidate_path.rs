@@ -34,8 +34,8 @@ pub(in crate::semantic_contract) fn applied_enum_constructor_identity(
             })
             .unwrap_or_default();
         // An application is exact: no arguments on module segments, and every argument is a
-        // layout-able type (a primitive, a nominal, an array) or an enclosing parameter the
-        // specialization binds.
+        // layout-able type (a primitive, a nominal, or a managed reference) or an enclosing
+        // parameter the specialization binds.
         if module_path.iter().any(|segment| !segment.node.type_args.is_empty())
             || terminal.node.type_args.iter().any(|argument| {
                 aggregate_shape_from_applied_type(db, key, &argument.node).is_err()
@@ -182,11 +182,49 @@ pub(in crate::semantic_contract) fn aggregate_shape_from_applied_type(
         }
         beskid_analysis::syntax::Type::Complex(path) => resolve_type_declaration(db, use_key, &path.node)
             .map(AggregateFieldShape::Nominal)
+            .or_else(|| {
+                resolve_contract_head(db, use_key, &path.node)
+                    .map(|_| AggregateFieldShape::ManagedReference(SemanticTypeId::POINTER))
+            })
             .ok_or_else(|| SemanticError::unavailable("enum_layout")),
         beskid_analysis::syntax::Type::Associated { .. } => Err(SemanticError::unavailable("enum_layout")),
         beskid_analysis::syntax::Type::This => Err(SemanticError::unavailable("enum_layout")),
         beskid_analysis::syntax::Type::Array(_) => Ok(AggregateFieldShape::ManagedReference(SemanticTypeId::POINTER)),
-        beskid_analysis::syntax::Type::Function { .. } => Err(SemanticError::unavailable("enum_layout")),
+        beskid_analysis::syntax::Type::Function { .. } => closure_component_type_resolves(db, use_key, syntax_type)
+            .then_some(AggregateFieldShape::ManagedReference(SemanticTypeId::POINTER))
+            .ok_or_else(|| SemanticError::unavailable("enum_layout")),
+    }
+}
+
+/// A closure's field layout is independent of its signature, but every component still has
+/// to denote a type. An enclosing type parameter is enough to prove the shape before specialization.
+fn closure_component_type_resolves(
+    db: &dyn Db,
+    use_key: AstNodeKey,
+    syntax_type: &beskid_analysis::syntax::Type,
+) -> bool {
+    use beskid_analysis::syntax::Type;
+
+    match syntax_type {
+        Type::Primitive(_) => true,
+        Type::Complex(path) => {
+            (type_syntax_is_enclosing_generic_parameter_reference(db, use_key, syntax_type)
+                || resolve_type_declaration(db, use_key, &path.node).is_some()
+                || resolve_contract_head(db, use_key, &path.node).is_some())
+                && path
+                    .node
+                    .segments
+                    .iter()
+                    .flat_map(|segment| segment.node.type_args.iter())
+                    .all(|argument| closure_component_type_resolves(db, use_key, &argument.node))
+        }
+        Type::Array(element) => closure_component_type_resolves(db, use_key, &element.node),
+        Type::Function { parameters, return_type } => {
+            parameters.iter().all(|parameter| closure_component_type_resolves(db, use_key, &parameter.node))
+                && closure_component_type_resolves(db, use_key, &return_type.node)
+        }
+        Type::This => method_this_type(db, use_key).is_some(),
+        Type::Associated { .. } => false,
     }
 }
 

@@ -163,6 +163,16 @@ pub trait NodeFacts {
         None
     }
     fn scalar_type(&self, key: AstNodeKey) -> Option<Type>;
+    fn property_setter(&self, _assignment: AstNodeKey) -> Option<AstNodeKey> {
+        None
+    }
+    fn property_setter_call(
+        &self,
+        _assignment: AstNodeKey,
+        _declaration: AstNodeKey,
+    ) -> Option<(DirectCallee, Signature)> {
+        None
+    }
     fn direct_callee(&self, _key: AstNodeKey) -> Option<DirectCallee> {
         None
     }

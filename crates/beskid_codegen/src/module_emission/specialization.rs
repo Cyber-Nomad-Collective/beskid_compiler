@@ -4,7 +4,7 @@ use beskid_isle::{AstNodeKey, DirectCallee};
 use beskid_queries::{
     CallLowering, GenericSpecializationInstance, call_lowering, child_nodes, generic_call_specialization,
     generic_call_specialization_in_environment, generic_call_specialization_instance, generic_specialization_identity,
-    item_abi_signature, node_kind,
+    item_abi_signature, node_kind, property_accessor_specialization,
 };
 
 use super::contracts::{SyntaxModuleEmissionError, emission_verification, semantic_fact_error};
@@ -390,13 +390,11 @@ fn collect_generic_call_specializations_in_environment(
     environment: Option<&GenericSpecializationInstance>,
     specializations: &mut HashMap<AstNodeKey, Vec<GenericSpecializationInstance>>,
 ) -> Result<(), SyntaxModuleEmissionError> {
+    use beskid_queries::IndexedNodeKind;
+
+    let kind = node_kind(db, key).map_err(|error| emission_verification(error.to_string()))?;
     if environment.is_none()
-        && matches!(
-            node_kind(db, key).map_err(|error| emission_verification(error.to_string()))?,
-            Some(
-                beskid_queries::IndexedNodeKind::FunctionDefinition | beskid_queries::IndexedNodeKind::MethodDefinition
-            )
-        )
+        && matches!(kind, Some(IndexedNodeKind::FunctionDefinition | IndexedNodeKind::MethodDefinition))
     {
         match item_abi_signature(db, key) {
             Ok(Some(_)) => {}
@@ -420,26 +418,39 @@ fn collect_generic_call_specializations_in_environment(
             }
         }
     }
-    let environment_specialization = if node_kind(db, key).map_err(|error| emission_verification(error.to_string()))?
-        == Some(beskid_queries::IndexedNodeKind::CallExpression)
-        && matches!(call_lowering(db, key), Ok(Some(CallLowering::Direct(_))))
-    {
-        environment
-            .map(|enclosing| generic_call_specialization_in_environment(db, key, enclosing))
-            .transpose()
-            .map_err(|error| {
-                semantic_fact_error(
-                    db,
-                    key,
-                    format_args!("call specialization failed at {}", beskid_queries::format_ast_node_site(db, key)),
-                    error,
-                )
-            })?
-            .flatten()
-    } else {
-        None
+    let specialization_at_site = match kind {
+        Some(IndexedNodeKind::CallExpression)
+            if matches!(call_lowering(db, key), Ok(Some(CallLowering::Direct(_)))) =>
+        {
+            environment
+                .map(|enclosing| generic_call_specialization_in_environment(db, key, enclosing))
+                .transpose()
+                .map_err(|error| {
+                    semantic_fact_error(
+                        db,
+                        key,
+                        format_args!("call specialization failed at {}", beskid_queries::format_ast_node_site(db, key)),
+                        error,
+                    )
+                })?
+                .flatten()
+        }
+        Some(
+            IndexedNodeKind::PathExpression
+            | IndexedNodeKind::PathSegment
+            | IndexedNodeKind::MemberExpression
+            | IndexedNodeKind::AssignExpression,
+        ) => property_accessor_specialization(db, key, environment).map_err(|error| {
+            semantic_fact_error(
+                db,
+                key,
+                format_args!("accessor specialization failed at {}", beskid_queries::format_ast_node_site(db, key)),
+                error,
+            )
+        })?,
+        _ => None,
     };
-    if let Some(declaration) = environment_specialization.as_ref().map(|instance| instance.declaration).or(
+    if let Some(declaration) = specialization_at_site.as_ref().map(|instance| instance.declaration).or(
         direct_generic_call_declaration(db, key).map_err(|error| {
             emission_verification(format!(
                 "generic call analysis failed at {}: {error}",
@@ -447,7 +458,7 @@ fn collect_generic_call_specializations_in_environment(
             ))
         })?,
     ) {
-        let specialization = if let Some(specialization) = environment_specialization {
+        let specialization = if let Some(specialization) = specialization_at_site {
             specialization
         } else {
             let specialization = generic_call_specialization(db, key)
@@ -556,7 +567,6 @@ fn collect_generic_call_specializations_in_environment(
     // element, a closure capture) calls the type's `Copy` hook without a CallExpression node
     // (v0.6.7 copy on assignment). Its exact instance in this environment is the callee ISLE
     // imports there, so it joins this worklist like a direct call.
-    let kind = node_kind(db, key).map_err(|error| emission_verification(error.to_string()))?;
     let copies = match kind {
         Some(
             beskid_queries::IndexedNodeKind::PathExpression

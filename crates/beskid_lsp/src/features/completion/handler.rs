@@ -49,6 +49,13 @@ pub fn handle_completion(
     }
     let syntax_candidates = doc.syntax_completion.as_ref().and_then(|completion| {
         context.map(|context| {
+            let completion_prefix = &doc.text[context.replacement_start..context.replacement_end];
+            let before = &doc.text[..context.replacement_start];
+            if !before.ends_with('.')
+                && let Some(snapshot) = &completion.lexical_snapshot
+            {
+                return snapshot.candidates(completion_prefix, context);
+            }
             let current = completion
                 .entry_anchor
                 .zip(db)
@@ -58,7 +65,6 @@ pub fn handle_completion(
             if !current.is_empty() {
                 return current;
             }
-            let completion_prefix = &doc.text[context.replacement_start..context.replacement_end];
             // A member access that ends its line (`String.`, `point.`): members captured when the
             // buffer's facts were built.
             if let Some((_, candidates)) =
@@ -75,8 +81,7 @@ pub fn handle_completion(
                     })
                     .collect();
             }
-            let before = doc.text[..context.replacement_start].trim_end();
-            let Some(before_dot) = before.strip_suffix('.') else {
+            let Some(before_dot) = before.trim_end().strip_suffix('.') else {
                 return current;
             };
             let receiver =
@@ -187,6 +192,7 @@ fn syntax_completion_kind_to_lsp(
         beskid_queries::CompletionKind::Type => tower_lsp_server::ls_types::CompletionItemKind::STRUCT,
         beskid_queries::CompletionKind::Method => tower_lsp_server::ls_types::CompletionItemKind::METHOD,
         beskid_queries::CompletionKind::Field => tower_lsp_server::ls_types::CompletionItemKind::FIELD,
+        beskid_queries::CompletionKind::Property => tower_lsp_server::ls_types::CompletionItemKind::PROPERTY,
     }
 }
 
@@ -231,7 +237,8 @@ mod tests {
 
     #[test]
     fn syntax_completion_works_without_legacy_analysis() {
-        let source = "i32 Zebra() { return 0; } i32 Main() { return Zeb; }";
+        let source = "type Counter { i32 Value { set { field = value; } } }\n\
+            i32 Zebra() { return 0; } i32 Main() { i32 count = 1; if count == 0 { return Zeb; } return 0; }";
         let mut db = BeskidDatabase::default();
         let unit = SourceUnitId::new(&db, PathBuf::from("/tmp/completion/Main.bd"));
         let project = ProjectSession::new(
@@ -250,7 +257,7 @@ mod tests {
         );
         let anchor =
             AstNodeKey { unit, generation, node: index.ids_of_kind(NodeKind::Program).next().expect("program node") };
-        let doc = Document {
+        let mut doc = Document {
             version: 1,
             text: source.to_string(),
             syntax_definitions: Vec::new(),
@@ -260,6 +267,7 @@ mod tests {
             syntax_attribute_names: Vec::new(),
             syntax_completion: Some(SyntaxCompletion {
                 entry_anchor: Some(anchor),
+                lexical_snapshot: None,
                 dependency_surface: Arc::from([]),
                 attributes: Arc::from([]),
                 member_access: Arc::from([]),
@@ -276,6 +284,24 @@ mod tests {
             panic!("expected completion array");
         };
         assert!(items.iter().any(|item| item.label == "Zebra"));
+
+        let snapshot = beskid_queries::completion_lexical_snapshot(&db, anchor, source).expect("owned lexical syntax");
+        doc.syntax_completion.as_mut().expect("completion facts").lexical_snapshot = Some(snapshot);
+        beskid_queries::reset_compilation_database(&mut db);
+        let uri = Uri::from_str("file:///tmp/completion/Main.bd").expect("uri");
+        for (context, prefix, label) in
+            [("field =", "f", "field"), ("value;", "v", "value"), ("count ==", "c", "count")]
+        {
+            let offset = source.find(context).expect("completion context") + prefix.len();
+            let response = handle_completion(Some(&db), &uri, &doc, offset);
+            let tower_lsp_server::ls_types::CompletionResponse::Array(items) = response else {
+                panic!("expected completion array");
+            };
+            assert!(items.iter().any(|item| item.label == label), "missing {label} after project database rotation");
+        }
+
+        let edited = doc.carried_over(source.replace("field = value", "other = value"), None);
+        assert!(edited.syntax_completion.expect("completion facts").lexical_snapshot.is_none());
     }
 
     #[test]
@@ -389,6 +415,7 @@ mod tests {
             syntax_attribute_names: Vec::new(),
             syntax_completion: Some(SyntaxCompletion {
                 entry_anchor: Some(anchor),
+                lexical_snapshot: None,
                 dependency_surface: Arc::from([]),
                 attributes: Arc::from([]),
                 member_access: Arc::from([]),

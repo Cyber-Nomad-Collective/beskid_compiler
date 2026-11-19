@@ -576,6 +576,29 @@ pub(super) fn direct_callees_for_item(
             callees.push(declaration);
         }
     }
+    for kind in [
+        beskid_analysis::syntax_query::NodeKind::PathExpression,
+        beskid_analysis::syntax_query::NodeKind::MemberExpression,
+        beskid_analysis::syntax_query::NodeKind::PathSegment,
+    ] {
+        for node in index.ids_of_kind(kind) {
+            if is_ancestor(index, item.node, node)
+                && let Some(getter) = property_getter(db, AstNodeKey { node, ..item })?
+                && super::properties::simple_property_write_target(db, AstNodeKey { node, ..item })? != Some(true)
+                && !callees.contains(&getter.declaration)
+            {
+                callees.push(getter.declaration);
+            }
+        }
+    }
+    for node in index.ids_of_kind(beskid_analysis::syntax_query::NodeKind::AssignExpression) {
+        if is_ancestor(index, item.node, node)
+            && let Some(setter) = property_setter(db, AstNodeKey { node, ..item })?
+            && !callees.contains(&setter.declaration)
+        {
+            callees.push(setter.declaration);
+        }
+    }
     // A `for` over a nominal iterator calls the iterable's `Next()` every iteration, an implicit
     // direct call with no CallExpression node, exactly like scoped cleanup above.
     for for_id in index.ids_of_kind(beskid_analysis::syntax_query::NodeKind::ForStatement) {

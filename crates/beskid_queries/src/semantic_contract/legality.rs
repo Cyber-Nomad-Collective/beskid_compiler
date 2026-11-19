@@ -401,7 +401,8 @@ fn immutable_assignment_target<'p>(
     assignment: beskid_analysis::syntax::AstNodeId,
 ) -> Option<(beskid_analysis::syntax::AstNodeId, &'p str, beskid_analysis::analysis::diagnostic_kinds::ImmutableBinding)>
 {
-    use beskid_analysis::analysis::diagnostic_kinds::ImmutableBinding;
+    use beskid_analysis::analysis::diagnostic_kinds::{BindingForm, ImmutableBinding};
+    use beskid_analysis::syntax_query::DynNodeRef;
     let node = index.node_at(program, assignment)?;
     let assign = node.of::<beskid_analysis::syntax::AssignExpression>()?;
     let beskid_analysis::syntax::Expression::Path(path) = &assign.target.node else { return None };
@@ -420,12 +421,23 @@ fn immutable_assignment_target<'p>(
         ),
         NodeKind::Parameter => {
             let parameter = declaring_node.of::<beskid_analysis::syntax::Parameter>()?;
-            let span = declaring_node.span()?;
-            ImmutableBinding {
-                form: beskid_analysis::analysis::diagnostic_kinds::BindingForm::Parameter,
-                declaration: span,
-                mut_at: parameter.ty.span.start,
+            if let Some(owner) = parent_node(index, declaring)
+                && let Some(method) = index.node_at(program, owner)?.of::<beskid_analysis::syntax::MethodDefinition>()
+                && method.property_accessor == Some(beskid_analysis::syntax::PropertyAccessorKind::Set)
+            {
+                let keyword = index.direct_child_id(program, owner, DynNodeRef::from(&method.name))?;
+                return Some((
+                    keyword,
+                    name,
+                    ImmutableBinding {
+                        form: BindingForm::SetterValue,
+                        declaration: method.name.span,
+                        mut_at: method.name.span.start,
+                    },
+                ));
             }
+            let span = declaring_node.span()?;
+            ImmutableBinding { form: BindingForm::Parameter, declaration: span, mut_at: parameter.ty.span.start }
         }
         NodeKind::ForStatement => {
             let iterator = index.node_at(program, declaration)?.span()?;
@@ -434,6 +446,25 @@ fn immutable_assignment_target<'p>(
         _ => return None,
     };
     Some((declaration, name, binding))
+}
+
+fn immutable_assignment_finding(binding: ImmutableLocalAssignment) -> SemanticFinding {
+    use beskid_analysis::analysis::diagnostic_kinds::BindingForm;
+
+    let mut assignments = binding.assignments.into_iter();
+    let mut related = Vec::new();
+    let site = if binding.binding.form == BindingForm::SetterValue {
+        related.push((binding.declaration, "`value` is the implicit input to this setter".into()));
+        assignments.next().unwrap_or(binding.declaration)
+    } else {
+        binding.declaration
+    };
+    related.extend(assignments.map(|assignment| (assignment, "assigned again".into())));
+    SemanticFinding {
+        kind: SemanticIssueKind::ImmutableAssignment { name: binding.name.to_string(), binding: binding.binding },
+        site,
+        related,
+    }
 }
 
 fn collect_nodes_of_kind(
@@ -544,15 +575,7 @@ pub fn check_items(db: &dyn Db, items: &[AstNodeKey]) -> Result<(), Vec<Semantic
             findings.push(SemanticFinding { kind, site: finding.site, related: Vec::new() });
         }
         if let Ok(Some(bindings)) = immutable_local_assignment(db, item) {
-            findings.extend(bindings.into_iter().map(|binding| SemanticFinding {
-                kind: SemanticIssueKind::ImmutableAssignment {
-                    name: binding.name.to_string(),
-                    binding: binding.binding,
-                },
-                site: binding.declaration,
-                related:
-                    binding.assignments.into_iter().map(|assignment| (assignment, "assigned again".into())).collect(),
-            }));
+            findings.extend(bindings.into_iter().map(immutable_assignment_finding));
         }
         if let Ok(Some(finding)) = unresolved_call_target(db, item) {
             let kind = match finding.kind {
@@ -599,6 +622,18 @@ pub fn check_items(db: &dyn Db, items: &[AstNodeKey]) -> Result<(), Vec<Semantic
                 MemberReferenceKind::UnknownStructField(member) => member.issue(),
                 MemberReferenceKind::InaccessibleStructField { name } => {
                     SemanticIssueKind::TypeInaccessibleStructField { name: name.to_string() }
+                }
+                MemberReferenceKind::ReadOnlyProperty { name } => {
+                    SemanticIssueKind::TypeReadOnlyProperty { name: name.to_string() }
+                }
+                MemberReferenceKind::DestructivePropertyAccess { name } => {
+                    SemanticIssueKind::TypeDestructivePropertyAccess { name: name.to_string() }
+                }
+                MemberReferenceKind::WriteOnlyProperty { name } => {
+                    SemanticIssueKind::TypeWriteOnlyProperty { name: name.to_string() }
+                }
+                MemberReferenceKind::PropertyNotCallable { name } => {
+                    SemanticIssueKind::TypePropertyNotCallable { name: name.to_string() }
                 }
                 MemberReferenceKind::MissingStructField { name } => {
                     SemanticIssueKind::TypeMissingStructField { name: name.to_string() }
@@ -1300,6 +1335,23 @@ mod tests {
     }
 
     #[test]
+    fn setter_value_assignment_has_no_mut_fix() {
+        let source = "type Counter { i64 Count { get; set { value = 2; field = value; } } = 0; }";
+        let (db, root) = one_unit_assembly(source, SyntaxGenerationId(1266));
+        let syntax = db.syntax_unit(root.unit).expect("syntax");
+        let method = syntax.syntax_index(&db).ids_of_kind(NodeKind::MethodDefinition).next().expect("setter method");
+        let findings = super::check_items(&db, &[AstNodeKey { node: method, ..root }]).expect_err("illegal write");
+        let finding = findings.iter().find(|finding| finding.kind.code() == "E1214").expect("immutable input");
+        let span = finding.site_span(&db).expect("assignment span");
+        assert!(source[span.start..span.end].starts_with("value = 2"));
+        let keyword = crate::node_span(&db, finding.related[0].0).unwrap().expect("setter keyword span");
+        assert_eq!(&source[keyword.start..keyword.end], "set");
+        let diagnostic =
+            beskid_analysis::analysis::diagnostic_kinds::issue_diagnostic("Counter.bd", source, span, &finding.kind);
+        assert!(diagnostic.fixes.is_empty());
+    }
+
+    #[test]
     fn bulk_parameter_call_with_any_argument_count_is_not_reported() {
         // `scoped_cleanup_constructors.bd`'s `BulkSum(1_i64, { ... })` shape: lowering packs every
         // argument into the single `bulk i64[]` parameter, so N arguments against one declared
@@ -1388,6 +1440,107 @@ mod tests {
             let key = function_definitions(&db, root)[0];
             assert_eq!(super::match_exhaustiveness(&db, key).expect("match_exhaustiveness query"), None, "{source}");
         }
+    }
+
+    #[test]
+    fn accessor_blocks_diagnose_unavailable_or_bypassed_accessors() {
+        let cases = [
+            ("get;", "c.Count = 1; return 0;", "E1260"),
+            ("set;", "return c.Count;", "E1263"),
+            ("set;", "c.Count += 1; return 0;", "E1263"),
+            ("get; set { field = value; }", "return exchange(c.Count, move 1_i64);", "E1264"),
+        ];
+        for (offset, (accessors, body, code)) in cases.into_iter().enumerate() {
+            let source =
+                format!("type Counter {{ i64 Count {{ {accessors} }} = 0; }} i64 Main(Counter c) {{ {body} }}");
+            let (db, root) = one_unit_assembly(&source, SyntaxGenerationId(1300 + offset as u64));
+            let item = function_definitions(&db, root)[0];
+            let findings = super::check_items(&db, &[item]).expect_err("invalid accessor use");
+            let finding = findings
+                .iter()
+                .find(|finding| finding.kind.code() == code)
+                .unwrap_or_else(|| panic!("expected {code} for {source}: {findings:?}"));
+            let span = finding.site_span(&db).expect("authored property span");
+            assert_eq!(&source[span.start..span.end], "Count");
+        }
+    }
+
+    #[test]
+    fn generic_accessor_facts_apply_the_receiver_source_types() {
+        use crate::{
+            expected_type, managed_reference_kind, property_accessor_specialization, property_reference,
+            property_setter,
+        };
+        use beskid_analysis::syntax_query::NodeKind;
+
+        let source = "
+            type Box<T> { T Value { get { return field; } set { field = value; } } }
+            i64 Example(Box<i64> numbers, Box<string> words) {
+                numbers.Value = 9;
+                words.Value = \"updated\";
+                if words.Value == \"updated\" { return numbers.Value; }
+                return 0;
+            }";
+        let (db, root) = one_unit_assembly(source, SyntaxGenerationId(1320));
+        let syntax = crate::Db::syntax_unit(&db, root.unit).expect("registered syntax");
+        let nodes = |kind| syntax.syntax_index(&db).ids_of_kind(kind).map(|node| AstNodeKey { node, ..root });
+        let authored_site = |kind, spelling: &str| {
+            nodes(kind)
+                .find(|key| {
+                    crate::node_span(&db, *key).unwrap().is_some_and(|span| &source[span.start..span.end] == spelling)
+                })
+                .unwrap_or_else(|| panic!("missing `{spelling}`"))
+        };
+        let assignment = authored_site(NodeKind::AssignExpression, "numbers.Value = 9");
+        let setter = property_setter(&db, assignment).unwrap().expect("custom setter");
+        let instance = property_accessor_specialization(&db, assignment, None).unwrap().expect("specialized setter");
+        assert_eq!(instance.signature.parameters.as_ref(), &[SemanticTypeId::POINTER, SemanticTypeId::I64]);
+        assert_eq!(instance.signature.result, SemanticTypeId::UNIT);
+        assert_eq!(expected_type(&db, setter.value).unwrap().expect("assignment type").abi_type(), SemanticTypeId::I64);
+
+        let reads = nodes(NodeKind::PathExpression)
+            .filter_map(|key| property_accessor_specialization(&db, key, None).unwrap().map(|instance| (key, instance)))
+            .collect::<Vec<_>>();
+        let [(words, word_getter), (_, number_getter)] = reads.as_slice() else {
+            panic!("expected two reads: {reads:?}");
+        };
+        assert_eq!(word_getter.declaration, number_getter.declaration);
+        assert_eq!(word_getter.signature.result, SemanticTypeId::STRING);
+        assert_eq!(number_getter.signature.result, SemanticTypeId::I64);
+        assert_eq!(managed_reference_kind(&db, *words).unwrap(), Some(crate::ManagedReferenceKind::GcManaged));
+
+        let backing = authored_site(NodeKind::PathExpression, "field");
+        assert!(property_reference(&db, backing).unwrap().expect("generic backing field").is_backing_field);
+    }
+
+    #[test]
+    fn derived_property_cannot_be_called_as_a_method() {
+        let source = "type Counter { prop i64 Count = 0; i64 Double => Count + Count; }
+                      i64 Main(Counter counter) { return counter.Double(); }";
+        let (db, root) = one_unit_assembly(source, SyntaxGenerationId(1262));
+        let item = function_definitions(&db, root)[0];
+        let findings = super::check_items(&db, &[item]).expect_err("calling the property must fail");
+        let finding = findings.iter().find(|finding| finding.kind.code() == "E1262").expect("property diagnostic");
+        let span = finding.site_span(&db).expect("property access span");
+        assert_eq!(&source[span.start..span.end], "Double");
+    }
+
+    #[test]
+    fn bare_derived_property_in_an_inline_method_is_a_value() {
+        let source = "type Counter { i64 Read() { return Double; } i64 Double => 0; }";
+        let (db, root) = one_unit_assembly(source, SyntaxGenerationId(1263));
+        let findings = super::check_unit_obligations(&db, &[root]);
+        assert!(findings.is_empty(), "{findings:?}");
+    }
+
+    #[test]
+    fn automatic_property_default_is_checked_without_construction() {
+        let source = "type Counter { prop i64 Count = true; } i32 Main() { return 0; }";
+        let (db, root) = one_unit_assembly(source, SyntaxGenerationId(1261));
+        let findings = super::check_unit_obligations(&db, &[root]);
+        let finding = findings.iter().find(|finding| finding.kind.code() == "E1261").expect("invalid default");
+        let span = finding.site_span(&db).expect("authored default span");
+        assert_eq!(&source[span.start..span.end], "true");
     }
 
     #[test]

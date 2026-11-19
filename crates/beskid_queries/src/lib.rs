@@ -38,6 +38,8 @@ pub use mod_semantic_authority::{
     RetainedDeclaration, SerializationContributionKind, serialization_field_codec_admission,
     serialization_template_getter_shape, serialization_template_instance_rebind,
 };
+pub use semantic_contract::{CompletionLexicalSnapshot, completion_lexical_snapshot};
+
 pub use semantic_contract::{
     CanonicalContainerKind, DynamicPackingBridge, DynamicPackingField, DynamicPackingNode, DynamicPackingShape,
     DynamicPackingVariant, DynamicShapeBinding, DynamicUnpackingBridge, canonical_container_kind,
@@ -68,6 +70,11 @@ pub use semantic_contract::{
 pub use semantic_contract::{
     CheckedFailureDestination, ReservedFailureConstructor, canonical_serialization_encode, checked_failure_destination,
     reserved_failure_constructor, serialization_publication_methods,
+};
+pub use semantic_contract::{
+    PropertyGetter, PropertyReference, PropertySetter, property_accessor_specialization, property_getter,
+    property_getter_in_environment, property_reference, property_setter, property_setter_in_environment,
+    property_type_display,
 };
 pub use semantic_contract::{
     ValueCopyPosition, array_share, capture_copy_specialization, for_element_copy_specialization,
@@ -136,10 +143,11 @@ pub use semantic_contract::{
     clif_block_body, clif_block_parameters, closure_call_target, closure_environment, closure_signature,
     collection_operation, completion_candidates, completion_dependency_surface,
     completion_dependency_surface_for_assembly, completion_dependency_surface_for_program, compound_assignment,
-    conditional_result_branch, constant_integer, contextual_integer_literal_abi_type, control_flow, direct_callees,
-    empty_array_literal_element_abi_type, enum_constructor, enum_constructor_specialization, enum_layout, enum_match,
-    enum_match_specialization, event_field_layout, event_handler_lambda_for_local, event_operation, event_state_size,
-    exchange_call, expected_type, expected_type_in_environment, extern_contract_declarations_in_unit,
+    compound_assignment_in_environment, conditional_result_branch, constant_integer,
+    contextual_integer_literal_abi_type, control_flow, direct_callees, empty_array_literal_element_abi_type,
+    enum_constructor, enum_constructor_specialization, enum_layout, enum_match, enum_match_specialization,
+    event_field_layout, event_handler_lambda_for_local, event_operation, event_state_size, exchange_call,
+    expected_type, expected_type_in_environment, extern_contract_declarations_in_unit,
     extern_contract_import_for_declaration, for_iterator_fact, for_iterator_protocol, for_iterator_specialization,
     for_variable_specialization, format_ast_node_key, format_ast_node_site, format_ast_node_trace,
     format_source_span_range, function_item_value, function_value_call, function_value_call_specialization,
