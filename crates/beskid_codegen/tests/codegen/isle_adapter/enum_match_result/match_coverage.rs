@@ -484,12 +484,8 @@ fn match_scrutinee_is_rooted_while_its_tests_can_collect() {
     let guard_call = *calls_to(guarded, "Busy").first().unwrap_or_else(|| panic!("the guard calls Busy: {guarded}"));
     let make_call = *calls_to(guarded, "Make").first().unwrap_or_else(|| panic!("the scrutinee calls Make: {guarded}"));
     assert!(
-        calls_to(guarded, "gc_register_root").iter().any(|register| (make_call..guard_call).contains(register)),
-        "the scrutinee is rooted before the guard runs: {guarded}"
-    );
-    assert!(
-        calls_to(guarded, "gc_unregister_root").iter().any(|release| *release > guard_call),
-        "the scrutinee root is released after the guard: {guarded}"
+        make_call < guard_call && guarded.lines().nth(guard_call).is_some_and(|line| line.contains("stack_map=")),
+        "the scrutinee is mapped while the guard runs: {guarded}"
     );
 
     let long_pattern = clif_of(&functions, "LongPatternScrutinee");
@@ -498,12 +494,12 @@ fn match_scrutinee_is_rooted_while_its_tests_can_collect() {
         .unwrap_or_else(|| panic!("the long pattern is materialized: {long_pattern}"));
     let fresh_call = *calls_to(long_pattern, "Fresh").first().unwrap_or_else(|| panic!("{long_pattern}"));
     assert!(
-        calls_to(long_pattern, "gc_register_root").iter().any(|register| (fresh_call..literal).contains(register)),
+        fresh_call < literal && long_pattern.lines().nth(literal).is_some_and(|line| line.contains("stack_map=")),
         "the scrutinee is rooted before the pattern allocates: {long_pattern}"
     );
 
     for name in ["PlainScrutinee", "ShortPatternScrutinee"] {
         let clif = clif_of(&functions, name);
-        assert!(calls_to(clif, "gc_register_root").is_empty(), "{name}: no test can collect, no root: {clif}");
+        assert!(!clif.contains("stack_map="), "{name}: no test can collect, no root: {clif}");
     }
 }

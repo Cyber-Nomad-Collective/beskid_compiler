@@ -1,6 +1,6 @@
 //! Growth of an array without a proven owner (`move` only at isolate crossings).
 //!
-//! `Array.Append` lowers to the rooted in-place growth operation only when its first argument
+//! `Array.Append` lowers to the in-place growth operation only when its first argument
 //! owns the array: a `let` local (mutable or not), a `mut` parameter, or an aggregate field. Any
 //! other array (a parameter that is not `mut`, a loop or pattern variable, a call result) is an
 //! ordinary call of the Corelib `Append`, which copies into a fresh array. Neither shape is an
@@ -11,7 +11,7 @@ use super::support::{
     lower_syntax_program,
 };
 
-const GROW: &str = "beskid_rt_v5_array_grow_rooted";
+const GROW: &str = "beskid_rt_v5_array_grow";
 
 /// Lower every function of `source` against the canonical Corelib and return each emitted
 /// function's name with its CLIF text.
@@ -67,8 +67,6 @@ fn append_to_a_fresh_local_in_a_loop_grows_the_local_in_place() {
     }
 }
 
-const FINISH: &str = "beskid_rt_v5_array_construction_finish";
-
 /// Line index of every `call` in `clif` whose callee is declared with `symbol`.
 fn call_lines(clif: &str, symbol: &str) -> Vec<usize> {
     let references = clif
@@ -85,8 +83,7 @@ fn call_lines(clif: &str, symbol: &str) -> Vec<usize> {
         .collect()
 }
 
-/// An in-place append grows the rooted array, stores the element into the grown storage, and only
-/// then finishes construction, exactly once, with no array write barrier in the emitted code.
+/// An in-place append grows the array once and initializes its element without a write barrier.
 #[test]
 fn append_to_an_owned_local_grows_then_stores_then_finishes_once() {
     let functions = lower(
@@ -96,17 +93,25 @@ fn append_to_an_owned_local_grows_then_stores_then_finishes_once() {
     );
     let push = clif(&functions, "Push");
     let grow = call_lines(push, GROW);
-    let finish = call_lines(push, FINISH);
-    assert_eq!(grow.len(), 1, "one rooted growth: {push}");
-    assert_eq!(finish.len(), 1, "exactly one construction finish: {push}");
-    let element_store = push
+    assert_eq!(grow.len(), 1, "one growth: {push}");
+    let stores_after_growth = push
         .lines()
-        .enumerate()
         .skip(grow[0] + 1)
-        .take_while(|(index, _)| *index < finish[0])
-        .any(|(_, line)| line.trim_start().split(' ').any(|token| token.starts_with("store")));
-    assert!(element_store, "the element is stored between the growth and the finish: {push}");
+        .filter(|line| line.trim_start().starts_with("store v"))
+        .count();
+    assert_eq!(stores_after_growth, 2, "the element and length are stored after growth: {push}");
+    assert!(!push.contains("beskid_rt_v5_array_construction_finish"), "{push}");
     assert!(!push.contains("beskid_rt_v5_array_write_barrier"), "no array write barrier in an append: {push}");
+}
+
+// The sharing update ORs in bit zero. Stack-map keepalives also use bor but are idempotent.
+fn has_sharing_mark(clif: &str) -> bool {
+    clif.lines().any(|line| {
+        let Some((_, tail)) = line.split_once(" = bor ") else { return false };
+        let Some((operands, constants)) = tail.split_once(';') else { return false };
+        let Some((_, mask)) = operands.split_once(',') else { return false };
+        constants.trim() == format!("{} = 1", mask.trim())
+    })
 }
 
 /// Parameters pass by value: growth of a `mut T[]` parameter never writes the header the caller
@@ -123,9 +128,9 @@ fn growth_of_a_mut_parameter_detaches_from_the_callers_handle() {
          i64[] Local() { mut i64[] xs = Array.Empty<i64>(); Array.Append<i64>(xs, 9); return xs; }",
         6820,
     );
-    for name in ["Param", "Checked"] {
+    for (name, growth) in [("Param", GROW), ("Checked", "beskid_rt_v5_array_try_grow")] {
         let body = clif(&functions, name);
-        assert!(body.contains("grow_rooted"), "{name} grows the parameter through the runtime: {body}");
+        assert_eq!(call_lines(body, growth).len(), 1, "{name} grows the parameter through the runtime: {body}");
         assert!(
             body.lines().any(|line| line.contains("icmp") && line.contains(" eq ")),
             "{name} compares the slot with the incoming handle: {body}"
@@ -139,7 +144,7 @@ fn growth_of_a_mut_parameter_detaches_from_the_callers_handle() {
         "a local owner has no incoming handle to compare: {local}"
     );
     assert!(local.contains(" band "), "every growth reads the sharing mark: {local}");
-    assert!(!local.contains(" bor "), "returning an owned local makes no second handle: {local}");
+    assert!(!has_sharing_mark(local), "returning an owned local makes no second handle: {local}");
 }
 
 /// Growing one handle never changes what another handle sees. A read of an array place that makes
@@ -164,11 +169,11 @@ fn a_second_handle_marks_the_array_shared_and_an_unaliased_append_loop_does_not(
     );
     for name in ["Alias", "Store", "Field"] {
         let body = clif(&functions, name);
-        assert!(body.contains(" bor "), "{name} marks the array it hands to a second name: {body}");
+        assert!(has_sharing_mark(body), "{name} marks the array it hands to a second name: {body}");
     }
     let looped = clif(&functions, "Loop");
     assert!(looped.contains(GROW), "the loop grows the local through the runtime: {looped}");
-    assert!(!looped.contains(" bor "), "an unaliased append loop never marks its array: {looped}");
+    assert!(!has_sharing_mark(looped), "an unaliased append loop never marks its array: {looped}");
     // `Array.Len` runs its body (`__array_len(values)`): an intrinsic argument keeps no handle, so
     // reading the length between appends never forces a copy.
     let len = functions.iter().filter(|(name, _)| name.starts_with("Len#")).collect::<Vec<_>>();
@@ -178,7 +183,7 @@ fn a_second_handle_marks_the_array_shared_and_an_unaliased_append_loop_does_not(
         functions.iter().map(|f| &f.0).collect::<Vec<_>>()
     );
     for (name, body) in len {
-        assert!(!body.contains(" bor "), "{name} never marks the array it measures: {body}");
+        assert!(!has_sharing_mark(body), "{name} never marks the array it measures: {body}");
     }
 }
 
@@ -199,7 +204,7 @@ fn remove_last_copies_a_shared_array_and_shrinks_an_unaliased_one_in_place() {
         6840,
     );
     let looped = clif(&functions, "Loop");
-    assert!(!looped.contains(" bor "), "an unaliased shrink loop never marks its array: {looped}");
+    assert!(!has_sharing_mark(looped), "an unaliased shrink loop never marks its array: {looped}");
     assert!(looped.contains(" band "), "every shrink of an owned array reads the sharing mark: {looped}");
     assert!(looped.contains("brif"), "the shrink branches on the mark: {looped}");
     assert_eq!(call_lines(looped, GROW).len(), 2, "each shrink copies only on its shared branch: {looped}");
@@ -228,7 +233,7 @@ fn a_field_lent_beside_an_array_of_holders_is_marked() {
         6841,
     );
     let reach = clif(&functions, "Reach");
-    assert!(reach.contains(" bor "), "a holder reachable through an array element marks the lent field: {reach}");
+    assert!(has_sharing_mark(reach), "a holder reachable through an array element marks the lent field: {reach}");
     let no_reach = clif(&functions, "NoReach");
-    assert!(!no_reach.contains(" bor "), "arrays of values cannot reach the holder: {no_reach}");
+    assert!(!has_sharing_mark(no_reach), "arrays of values cannot reach the holder: {no_reach}");
 }

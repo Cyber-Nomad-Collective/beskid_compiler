@@ -3,10 +3,9 @@
 pub bool SchedStep()
 {
     pointer table = SchedTable();
-    if (table == NativePointer(0))
-    {
-        return false;
-    }
+    // One scheduler context owns a fiber transfer. A reentrant host call inside
+    // the running fiber must leave that context and its suspended roots intact.
+    if table == NativePointer(0) || SchedulerCurrentFiber() != FIBER_NONE { return false; }
     ApplyPendingSpawns();
     // Cancellation words set by other isolates (Runtime/Parallel/Registry.bd) become fiber
     // cancellations before the pending ones are applied.
@@ -70,6 +69,7 @@ pub bool SchedStep()
         rootScope = raw_word_load(pointer_add(tls, 32));
         rootDepth = raw_word_load(pointer_add(tls, 40));
         rootFrame = raw_word_load(pointer_add(tls, 8));
+        SetSchedulerRootFrame(tls, NativePointer(rootFrame));
     }
     RestoreFiberLocalState(next);
     ContextSwitch(SchedulerContext(), NativePointer(raw_word_load(pointer_add(FiberRecord(next), 104))));
@@ -78,6 +78,7 @@ pub bool SchedStep()
         raw_word_store(pointer_add(tls, 32), rootScope);
         raw_word_store(pointer_add(tls, 40), rootDepth);
         raw_word_store(pointer_add(tls, 8), rootFrame);
+        SetSchedulerRootFrame(tls, NativePointer(0));
     }
     SchedulerReleaseMutatorToken();
     SchedulerSetCurrentFiber(FIBER_NONE);

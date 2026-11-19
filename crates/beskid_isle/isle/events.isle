@@ -7,12 +7,12 @@
 (decl partial emit_event_raise_statement (AstNodeKey) Unit)
 (extern constructor emit_event_raise_statement emit_event_raise_statement)
 
-(rule (lower_expression key @ (and
+(rule (select_expression key @ (and
         (node_kind (NodeKind.AssignExpression))
         (assignment_kind (AssignmentKind.EventSubscribe))))
       (emit_event_subscribe key))
 
-(rule (lower_expression key @ (and
+(rule (select_expression key @ (and
         (node_kind (NodeKind.AssignExpression))
         (assignment_kind (AssignmentKind.EventUnsubscribeFirst))))
       (emit_event_unsubscribe_first key))

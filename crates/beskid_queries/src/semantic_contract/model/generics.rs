@@ -191,7 +191,7 @@ impl GenericSourceTypeIdentity {
 /// declaration has been specialized.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum ArrayIndexElementTemplate {
-    Concrete(SemanticTypeId),
+    Concrete { abi: SemanticTypeId, managed: ManagedReferenceKind },
     EnclosingParameter(Arc<str>),
 }
 

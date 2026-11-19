@@ -1,5 +1,8 @@
 //! Canonical semantic layout implementation.
 
+use beskid_abi::runtime_source::CANONICAL_FOUNDATION_DEADLINE_SOURCE_PATH;
+
+use super::super::typing::managed_reference_kind_for_syntax_type;
 use super::{super::*, explicit_local_declaration_type};
 
 #[salsa::tracked(persist)]
@@ -392,7 +395,7 @@ pub(in crate::semantic_contract) fn array_index_element_abi_type_tracked(
     key: AstNodeKey,
 ) -> SemanticQueryResult<SemanticTypeId> {
     Ok(match array_index_element_template_tracked(db, syntax, key)? {
-        Some(ArrayIndexElementTemplate::Concrete(element)) => Some(element),
+        Some(ArrayIndexElementTemplate::Concrete { abi, .. }) => Some(abi),
         Some(ArrayIndexElementTemplate::EnclosingParameter(_)) => {
             return Err(SemanticError::unavailable("array_index_element_abi_type"));
         }
@@ -440,7 +443,10 @@ pub(in crate::semantic_contract) fn array_index_element_template_tracked(
             // is never sufficient to authorize an element load or store.
             return Some(
                 generic_source_expression_identity(db, AstNodeKey { node: index_node, ..key })
-                    .map(|element| ArrayIndexElementTemplate::Concrete(element.abi_type())),
+                    .map(|element| ArrayIndexElementTemplate::Concrete {
+                        abi: element.abi_type(),
+                        managed: element.managed_reference_kind(),
+                    }),
             );
         };
         let [segment] = target.path.node.segments.as_slice() else {
@@ -457,14 +463,17 @@ pub(in crate::semantic_contract) fn array_index_element_template_tracked(
             // from the field access fact, exactly like every other non-local target above.
             return Some(
                 generic_source_expression_identity(db, AstNodeKey { node: index_node, ..key })
-                    .map(|element| ArrayIndexElementTemplate::Concrete(element.abi_type())),
+                    .map(|element| ArrayIndexElementTemplate::Concrete { abi: element.abi_type(), managed: element.managed_reference_kind() }),
             );
         };
         let parent = parent_node(index, declaration)?;
         if index.kind(parent) == Some(beskid_analysis::syntax_query::NodeKind::Pattern) {
             return Some(
                 generic_source_expression_identity(db, AstNodeKey { node: index_node, ..key })
-                    .map(|element| ArrayIndexElementTemplate::Concrete(element.abi_type())),
+                    .map(|element| ArrayIndexElementTemplate::Concrete {
+                        abi: element.abi_type(),
+                        managed: element.managed_reference_kind(),
+                    }),
             );
         }
         let array_type = match index.kind(parent)? {
@@ -493,8 +502,9 @@ pub(in crate::semantic_contract) fn array_index_element_template_tracked(
             {
                 return Ok(ArrayIndexElementTemplate::EnclosingParameter(Arc::from(parameter)));
             }
-            abi_type_from_syntax(db, AstNodeKey { node: declaration, ..key }, &element.node)
-                .map(ArrayIndexElementTemplate::Concrete)
+            let abi = abi_type_from_syntax(db, AstNodeKey { node: declaration, ..key }, &element.node)?;
+            let managed = managed_reference_kind_for_syntax_type(&element.node)?;
+            Ok(ArrayIndexElementTemplate::Concrete { abi, managed })
         }))
     })?
     .transpose()
@@ -520,7 +530,7 @@ pub fn array_index_element_specialization(
         }
     };
     match template {
-        ArrayIndexElementTemplate::Concrete(element) => Ok(Some(element)),
+        ArrayIndexElementTemplate::Concrete { abi, .. } => Ok(Some(abi)),
         ArrayIndexElementTemplate::EnclosingParameter(parameter) => Ok(enclosing
             .substitutions
             .iter()
@@ -600,7 +610,7 @@ pub fn array_index_element_managed_reference_specialization(
             .iter()
             .find(|binding| binding.parameter.as_ref() == parameter.as_ref())
             .map(|binding| binding.managed_reference_kind())),
-        Ok(Some(ArrayIndexElementTemplate::Concrete(_))) => Ok(None),
+        Ok(Some(ArrayIndexElementTemplate::Concrete { managed, .. })) => Ok(Some(managed)),
         // An element typed only in this specialization (`values[0]` with `values : T[]` bound by
         // a match over `Option<T[]>`) is classified by its applied identity.
         unproven => match specialized_index_element_identity(db, key, enclosing) {

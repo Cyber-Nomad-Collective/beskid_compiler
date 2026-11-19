@@ -2,6 +2,12 @@ use super::*;
 
 impl IsleContext<'_, '_, '_, '_> {
     pub(super) fn coerce_expression_to_string(&mut self, key: AstNodeKey) -> Option<Value> {
+        let string = self.materialize_string_operand(key)?;
+        self.builder.declare_value_needs_stack_map(string);
+        Some(string)
+    }
+
+    fn materialize_string_operand(&mut self, key: AstNodeKey) -> Option<Value> {
         use beskid_queries::SemanticTypeId;
 
         let value = generated::constructor_lower_expression(self, key)?;
@@ -135,7 +141,7 @@ impl IsleContext<'_, '_, '_, '_> {
         &mut self,
         left_key: AstNodeKey,
         right_key: AstNodeKey,
-    ) -> Option<(Value, Value, Option<ScopedTemporaryRoot>)> {
+    ) -> Option<(Value, Value, Option<TemporaryRoot>)> {
         let left = self.coerce_expression_to_string(left_key)?;
         let right_cannot_allocate = self.facts.semantic_type(right_key) == Some(beskid_queries::SemanticTypeId::STRING)
             && self.is_trivial_call_argument(right_key);

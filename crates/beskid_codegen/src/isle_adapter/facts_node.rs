@@ -22,6 +22,10 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
         self.checked_effect
     }
 
+    fn managed_safepoints(&self, key: AstNodeKey) -> bool {
+        !self.nonallocating_publication_body() && !self.input.is_runtime_bootstrap(key)
+    }
+
     fn composition_launch(&self, key: AstNodeKey) -> Option<CompositionLaunchPlan> {
         self.composition_launch_impl(key)
     }

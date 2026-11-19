@@ -3,7 +3,7 @@
 use std::{collections::HashSet, sync::Arc};
 
 use beskid_abi::abi_v5::{AbiManifestV5, TargetMetadata};
-use beskid_queries::{AstNodeKey, Db, IndexedNodeKind, SourceUnitId, TypedProgram, node_kind};
+use beskid_queries::{AstNodeKey, Db, IndexedNodeKind, SourceUnitId, TypedProgram, node_kind, node_span};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RuntimeCompilerOperation {
@@ -136,6 +136,7 @@ pub struct CodegenInput<'db> {
     target: TargetMetadata,
     abi_manifest: AbiManifestV5,
     artifact_namespace: Arc<str>,
+    runtime_bootstrap_units: HashSet<SourceUnitId>,
     composition_plan: Option<Arc<beskid_analysis::composition::BindingPlan>>,
     composition_snapshot: Option<Arc<beskid_analysis::composition::CompositionSnapshot>>,
     native_mod_callbacks: Option<crate::native_mod::callbacks::NativeModCallbackCapability>,
@@ -147,6 +148,7 @@ pub struct CodegenInput<'db> {
 pub(crate) struct DetachedCodegenInput {
     typed_program: TypedProgram,
     roots: Arc<[AstNodeKey]>,
+    runtime_bootstrap_units: HashSet<SourceUnitId>,
     target: TargetMetadata,
     abi_manifest: AbiManifestV5,
     artifact_namespace: Arc<str>,
@@ -164,6 +166,7 @@ impl DetachedCodegenInput {
             db,
             typed_program: self.typed_program,
             roots: self.roots,
+            runtime_bootstrap_units: self.runtime_bootstrap_units,
             target: self.target,
             abi_manifest: self.abi_manifest,
             artifact_namespace: self.artifact_namespace,
@@ -213,6 +216,21 @@ impl<'db> CodegenInput<'db> {
             }
         }
 
+        let mut runtime_bootstrap_units = HashSet::new();
+        if let Some(capability) = &typed_program.runtime_intrinsic_capability {
+            let fixture = typed_program.assembly.runtime_fixture.as_ref().map(|proof| proof.fixture());
+            runtime_bootstrap_units.extend(
+                typed_program
+                    .assembly
+                    .units
+                    .iter()
+                    .filter(|unit| {
+                        capability.authorizes_source(&unit.logical_name)
+                            && fixture.is_none_or(|fixture| fixture.logical_path != unit.logical_name)
+                    })
+                    .map(|unit| SourceUnitId::new(db, unit.path.clone())),
+            );
+        }
         Ok(Self {
             db,
             typed_program,
@@ -220,6 +238,7 @@ impl<'db> CodegenInput<'db> {
             target,
             abi_manifest,
             artifact_namespace: Arc::from("module"),
+            runtime_bootstrap_units,
             composition_plan: None,
             composition_snapshot: None,
             native_mod_callbacks: None,
@@ -300,6 +319,7 @@ impl<'db> CodegenInput<'db> {
             target: self.target.clone(),
             abi_manifest: self.abi_manifest.clone(),
             artifact_namespace,
+            runtime_bootstrap_units: self.runtime_bootstrap_units.clone(),
             composition_plan: self.composition_plan.clone(),
             composition_snapshot: self.composition_snapshot.clone(),
             native_mod_callbacks: self.native_mod_callbacks.clone(),
@@ -316,6 +336,7 @@ impl<'db> CodegenInput<'db> {
         DetachedCodegenInput {
             typed_program: self.typed_program.clone(),
             roots: self.roots.clone(),
+            runtime_bootstrap_units: self.runtime_bootstrap_units.clone(),
             target: self.target.clone(),
             abi_manifest: self.abi_manifest.clone(),
             artifact_namespace: self.artifact_namespace.clone(),
@@ -546,6 +567,12 @@ impl<'db> CodegenInput<'db> {
         &self,
     ) -> Option<&std::sync::Arc<beskid_abi::runtime_source::RuntimeIntrinsicCapability>> {
         self.typed_program.runtime_intrinsic_capability.as_ref()
+    }
+
+    /// Whether this node belongs to the proven runtime implementation. The
+    /// canonical fixture entry may use intrinsics and still have managed frames.
+    pub(crate) fn is_runtime_bootstrap(&self, key: AstNodeKey) -> bool {
+        key.generation == self.typed_program.generation && self.runtime_bootstrap_units.contains(&key.unit)
     }
 
     /// Compiler-minted authority for Corelib syscall service imports. This separate proof never

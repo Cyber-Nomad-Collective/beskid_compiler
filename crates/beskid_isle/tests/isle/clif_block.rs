@@ -391,3 +391,15 @@ fn clif_block_passes_payload_only_to_foreign_symbols() {
     );
     assert!(error.contains("may only call symbols of a C-ABI `[Extern]` contract"), "{error}");
 }
+
+#[test]
+fn callback_with_borrowed_payload_has_a_managed_owner_in_its_map() {
+    let body = "%p = payload %0\n%r = call @consume(%p) -> i64\nreturn %r";
+    let shapes = Some(vec![ClifParameterShape::PayloadArray { element_bytes: 1 }]);
+    let (function, _) = lower_with_foreign(body, &[types::I64], types::I64, shapes, &["consume"]).unwrap();
+    let call = function.layout.blocks().flat_map(|block| function.layout.block_insts(block))
+        .find(|&inst| function.dfg.insts[inst].opcode().is_call()).unwrap();
+    let roots = function.dfg.user_stack_map_entries(call).expect("borrowed array owner");
+    assert_eq!(roots.len(), 1);
+    assert_eq!(roots[0].ty, types::I64);
+}

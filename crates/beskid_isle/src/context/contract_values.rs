@@ -90,6 +90,8 @@ impl IsleContext<'_, '_, '_, '_> {
         self.builder.ins().store(MemFlagsData::new(), word, object, CONTRACT_BOX_RECEIVER_OFFSET);
         self.builder.ins().store(MemFlagsData::new(), table, object, CONTRACT_BOX_WITNESS_OFFSET);
         self.release_temporary_root(Some(root))?;
+        self.expression_references.insert(object, ManagedReferenceFact::GcManaged);
+        self.builder.declare_value_needs_stack_map(object);
         Some(object)
     }
 
@@ -161,6 +163,8 @@ impl IsleContext<'_, '_, '_, '_> {
         self.builder.ins().store(MemFlagsData::new(), word, object, CONTRACT_BOX_RECEIVER_OFFSET);
         let witness = self.symbol_global(plan.witness_symbol.as_ref(), pointer)?;
         self.builder.ins().store(MemFlagsData::new(), witness, object, CONTRACT_BOX_WITNESS_OFFSET);
+        self.expression_references.insert(object, ManagedReferenceFact::GcManaged);
+        self.builder.declare_value_needs_stack_map(object);
         Some(object)
     }
 

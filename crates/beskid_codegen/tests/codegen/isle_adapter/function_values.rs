@@ -93,15 +93,11 @@ fn capturing_lambda_argument_allocates_a_traced_closure_record() {
         "beskid_rt_v5_managed_object_allocate",
         "__beskid_event_handler_allocation_request_v5",
         "func_addr",
-        "gc_register_root",
     ] {
         assert!(clif.contains(needle), "missing `{needle}` in {clif}");
     }
-    // The environment allocation is rooted before the record allocation that can collect.
-    let environment = clif.find("beskid_rt_v5_closure_environment_allocate").expect("environment allocation");
-    let record = clif.rfind("beskid_rt_v5_managed_object_allocate").expect("record allocation");
-    let root = clif[environment..].find("gc_register_root").map(|offset| environment + offset).expect("env root");
-    assert!(environment < root && root < record, "{clif}");
+    let main = &artifact.functions.iter().find(|function| function.name == "Main").unwrap().function;
+    assert!(super::support::has_mapped_call(main, "beskid_rt_v5_managed_object_allocate"), "{clif}");
 }
 
 #[test]
@@ -138,7 +134,10 @@ fn returned_lambda_and_function_valued_result_lower() {
     assert!(lowered_clif(&artifact, "MakeAdder").contains("beskid_rt_v5_managed_object_allocate"));
     let main_clif = lowered_clif(&artifact, "Main");
     assert_eq!(main_clif.matches("call_indirect").count(), 2, "{main_clif}");
-    assert!(main_clif.contains("gc_register_root"), "the function-valued local is a GC root: {main_clif}");
+    assert!(
+        main_clif.lines().any(|line| line.contains("call_indirect") && line.contains("stack_map=")),
+        "the captured environment is a root through the indirect call: {main_clif}"
+    );
 }
 
 #[test]
@@ -442,29 +441,35 @@ fn function_typed_struct_field_is_called_through_its_record() {
 
 #[test]
 fn call_on_a_call_result_lowers_through_the_returned_record() {
-    let source = "(i64) => i64 Make() { return (i64 x) => x + 1; }\ni64 Main() { return Make()(1); }\n";
+    let source = "(i64) => i64 Make() { return (i64 x) => x + 1; }\ni64 Arg() { return 1_i64; }\ni64 Main() { return Make()(Arg()); }\n";
     let (input, isa, root) = item_fixture_with_root(source);
     let db = input.database();
     let functions = find_function_definitions(db, root);
     let (make, main) = (named(db, &functions, "Make"), named(db, &functions, "Main"));
+    let arg = named(db, &functions, "Arg");
     let outer = find_nodes_of_kind(db, root, beskid_queries::IndexedNodeKind::CallExpression)
         .into_iter()
         .find(|call| {
             matches!(beskid_queries::call_lowering(db, *call), Ok(Some(beskid_queries::CallLowering::FunctionValue(_))))
         })
-        .expect("`Make()(1)` is a call through a function value");
+        .expect("`Make()(Arg())` is a call through a function value");
     let fact = beskid_queries::function_value_call(db, outer).expect("function value query").expect("function value");
     assert_eq!(fact.signature.result, beskid_queries::SemanticTypeId::I64);
     assert_eq!(beskid_queries::abi_type(db, outer).expect("call ABI query"), Some(beskid_queries::SemanticTypeId::I64));
     let artifact = lower_syntax_program(
         &input,
         isa.as_ref(),
-        &[SyntaxModuleItem { key: make, symbol: "Make".into() }, SyntaxModuleItem { key: main, symbol: "Main".into() }],
+        &[
+            SyntaxModuleItem { key: make, symbol: "Make".into() },
+            SyntaxModuleItem { key: arg, symbol: "Arg".into() },
+            SyntaxModuleItem { key: main, symbol: "Main".into() },
+        ],
     )
     .expect("a call on a call result lowers");
     let clif = lowered_clif(&artifact, "Main");
+    let function = &artifact.functions.iter().find(|function| function.name == "Main").unwrap().function;
     assert_eq!(clif.matches("call_indirect").count(), 2, "{clif}");
-    assert!(clif.contains("gc_register_root"), "the returned record is rooted across the arguments: {clif}");
+    assert!(super::support::has_mapped_call(function, "Arg"), "the returned record survives argument evaluation: {clif}");
 }
 
 #[test]

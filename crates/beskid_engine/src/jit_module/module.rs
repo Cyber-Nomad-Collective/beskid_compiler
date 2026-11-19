@@ -7,6 +7,7 @@ use beskid_codegen::cranelift_host::{
     declare_user_functions, declare_validated_extern_imports, remap_testcase_externals,
 };
 use beskid_codegen::{CodegenArtifact, emit_string_literals};
+use beskid_codegen::stack_maps::DefineFunctionWithStackMaps;
 use beskid_pipeline::{
     PipelineObserver, emit_work_unit, observe_phase_result,
     phases::{JIT_EMIT, JIT_FINALIZE},
@@ -112,6 +113,7 @@ impl BeskidJitModule {
         })?;
 
         let mut ctx = self.module.make_context();
+        let checkpoints = artifact.runtime_checkpoint_definitions.Resolve(&self.func_ids);
         let total = artifact.functions.len() as u64;
         for (index, function) in artifact.functions.iter().enumerate() {
             let func_id = self
@@ -121,7 +123,7 @@ impl BeskidJitModule {
                 .ok_or_else(|| JitError::MissingFunction(function.name.clone()))?;
             ctx.func = function.function.clone();
             remap_testcase_externals(&self.module, &mut ctx, &self.func_ids)?;
-            self.module.define_function(func_id, &mut ctx)?;
+            DefineFunctionWithStackMaps(&mut self.module, func_id, &mut ctx, None, checkpoints)?;
             // Fail closed before finalization: no runtime kit defines a Cranelift helper (E4004).
             let compiled = ctx.compiled_code().expect("compiled code after a successful definition");
             let helper = beskid_codegen::target_isa::first_runtime_helper_call(

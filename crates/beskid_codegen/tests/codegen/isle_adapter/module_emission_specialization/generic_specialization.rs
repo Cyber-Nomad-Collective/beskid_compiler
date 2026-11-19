@@ -259,7 +259,17 @@ fn parsed_program_keeps_generic_nominal_pointer_equal_as_identity_comparison() {
         .expect("specialized Equal<Box<i64>> function");
     let clif = equal.function.display().to_string();
     assert!(!clif.contains("%str_eq"), "nominal POINTER specialization must not call str_eq: {clif}");
-    assert!(clif.contains("icmp eq v0, v1"), "nominal POINTER specialization must retain identity equality: {clif}");
+    use cranelift_codegen::ir::{InstructionData, condcodes::IntCC};
+    let function = &equal.function;
+    let entry = function.layout.entry_block().expect("entry");
+    let params = function.dfg.block_params(entry);
+    assert!(
+        function.layout.block_insts(entry).any(|inst| {
+            matches!(function.dfg.insts[inst], InstructionData::IntCompare { args, cond: IntCC::Equal, .. }
+                if args.map(|value| super::super::support::reload_origin(function, value)) == params)
+        }),
+        "nominal POINTER specialization must retain identity equality: {clif}"
+    );
 }
 
 #[test]
@@ -400,7 +410,11 @@ fn parsed_program_packs_generic_bulk_arguments_with_the_call_specialization() {
     assert!(artifact.functions.iter().any(|function| function.name.starts_with("First#generic_")));
     let main = artifact.functions.iter().find(|function| function.name == "Main").expect("Main lowers");
     let clif = main.function.display().to_string();
-    assert_eq!(clif.matches("store").count(), 4, "four i64 elements are stored: {clif}");
+    assert_eq!(
+        clif.lines().filter(|line| line.trim_start().starts_with("store v")).count(),
+        4,
+        "four i64 elements are stored: {clif}"
+    );
 }
 
 #[test]

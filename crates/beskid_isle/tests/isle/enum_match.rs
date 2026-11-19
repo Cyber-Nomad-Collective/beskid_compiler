@@ -242,8 +242,7 @@ fn emit(arms: Arms, function_index: u32) -> String {
 fn enum_literal_and_exhaustive_match_uses_managed_storage() {
     let clif = emit(Arms::Exact, 26);
     assert!(clif.contains("beskid_rt_v5_managed_object_allocate"), "{clif}");
-    // Stack slots may hold construction roots; the enum itself remains managed.
-    assert!(clif.contains("gc_register_root"), "{clif}");
+    assert!(!clif.contains("gc_register_root"), "{clif}");
     assert!(clif.contains("load.i32"), "{clif}");
     assert!(clif.contains("brif"), "{clif}");
 }
@@ -461,10 +460,7 @@ fn guarded_arm_falls_through_to_the_next_arm_in_source_order() {
     let fallback = clif.find("iconst.i32 200").expect("same-variant fallback arm body");
     assert!(guarded < fallback, "a guarded arm keeps its source position: {clif}");
     assert!(clif.matches("brif").count() >= 4, "the guard adds its own branch after the tag test: {clif}");
-    assert!(
-        clif.contains("%gc_register_root") && clif.contains("%gc_unregister_root"),
-        "the scrutinee stays rooted while the guard runs: {clif}"
-    );
+    assert!(!clif.contains("stack_map="), "a literal guard cannot collect: {clif}");
 }
 
 #[test]

@@ -33,7 +33,7 @@ impl IsleContext<'_, '_, '_, '_> {
     pub(in crate::context) fn emit_inline_closure_environment(
         &mut self,
         environment: &InlineClosureEnvironment,
-    ) -> Option<(Value, StackSlot)> {
+    ) -> Option<(Value, TemporaryRoot)> {
         let pointer = dispatch::pointer_type(self.frontend_config);
         let request = self.symbol_global(environment.allocation_request_symbol.as_ref(), pointer)?;
         let allocate =
@@ -105,6 +105,7 @@ impl IsleContext<'_, '_, '_, '_> {
         self.builder.ins().trapz(record, TrapCode::unwrap_user(5));
         let code = self.builder.ins().load(pointer, MemFlagsData::new(), record, plan.code_offset);
         let environment = self.builder.ins().load(pointer, MemFlagsData::new(), record, plan.environment_offset);
+        self.builder.declare_value_needs_stack_map(environment);
 
         let capture_free = self.builder.create_block();
         let captured = self.builder.create_block();

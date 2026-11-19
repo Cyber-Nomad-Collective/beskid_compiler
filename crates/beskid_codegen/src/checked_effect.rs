@@ -311,7 +311,19 @@ fn emit_effect_closure<'db, M: cranelift_module::Module>(
         crate::module_emission::data::declare_function_runtime_data_imports(module, &context.func)?;
         crate::cranelift_host::remap_testcase_externals(module, &mut context, &runtime_functions)
             .map_err(|failure| error(format!("checked provider remapping failed: {failure}")))?;
-        module.define_function(functions[callee], &mut context)?;
+        let section = match module.isa().triple().binary_format.to_string().as_str() {
+            "elf" => Some(".data.rel.ro.beskid_gc"),
+            "coff" => Some(".rdata$GC"),
+            "macho" => Some("__DATA_CONST,__beskid_gc"),
+            _ => None,
+        };
+        crate::stack_maps::DefineFunctionWithStackMaps(
+            module,
+            functions[callee],
+            &mut context,
+            section,
+            crate::stack_maps::RuntimeCheckpointFunctions::default(),
+        )?;
     }
     Ok(EmittedCheckedClosure { entry: functions[proof.entry()], members: functions, rollback: None })
 }

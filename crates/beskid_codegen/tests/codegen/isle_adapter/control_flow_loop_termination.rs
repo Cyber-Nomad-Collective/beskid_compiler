@@ -73,7 +73,10 @@ fn for_over_a_scalar_array_reads_the_header_length_and_indexes_by_stride() {
         "the index advances by one per iteration:\n{clif}"
     );
     assert!(clif.contains("trapz"), "a null array traps before the first element is read:\n{clif}");
-    assert!(clif.contains("explicit_slot"), "the array value is rooted for the loop:\n{clif}");
+    assert!(
+        super::support::has_mapped_call(&function, "gc_collect_if_needed"),
+        "the array remains live at the loop poll:\n{clif}"
+    );
 }
 
 #[test]
@@ -90,25 +93,23 @@ fn for_over_a_byte_array_addresses_elements_without_a_stride_multiply() {
 
 #[test]
 fn for_over_a_managed_array_roots_the_loop_variable() {
-    // The loop variable starts from a parameter: `emit_isle_item` is the syntax-only path without a
-    // string interner, so a string literal initializer is not part of what this test exercises.
-    let (input, isa, item) = item_fixture(
-        "string Last(string[] names, string fallback) { mut string last = fallback; for name in names { last = name; } return last; }",
+    use super::support::{SyntaxModuleItem, item_fixture_with_root, lower_syntax_program, named_function};
+
+    let (input, isa, root) = item_fixture_with_root(
+        "string Keep(string name) { return name; } string Last(string[] names, string fallback) { mut string last = fallback; for name in names { last = Keep(name); } return last; }",
     );
-    let function = emit_isle_item(&input, isa.as_ref(), item)
-        .unwrap_or_else(|error| panic!("a for over a string[] parameter lowers: {}", describe(&input, error)));
+    let items = ["Keep", "Last"].map(|symbol| SyntaxModuleItem {
+        key: named_function(&input, root, symbol),
+        symbol: symbol.into(),
+    });
+    let artifact = lower_syntax_program(&input, isa.as_ref(), &items).expect("a for over a managed array lowers");
+    let function = &artifact.functions.iter().find(|item| item.name == "Last").expect("Last").function;
     let clif = function.display().to_string();
     assert!(clif.contains("icmp ult"), "{clif}");
+    assert!(super::support::has_mapped_call(function, "gc_collect_if_needed"), "{clif}");
     assert!(
-        clif.matches("explicit_slot").count() >= 2,
-        "the array and the loop variable are rooted in stack slots for the loop:\n{clif}"
-    );
-    // The body block loads the element and stores it through `stack_addr` into the loop
-    // variable's root slot (roots are addressed, not `stack_store`d).
-    let body = clif.split("block2:").nth(1).and_then(|rest| rest.split("block3:").next()).unwrap_or_default();
-    assert!(
-        body.contains("stack_addr.i64") && body.contains("store notrap"),
-        "each iteration publishes the element into the loop variable's root:\n{clif}"
+        super::support::has_mapped_call(function, "Keep"),
+        "each iteration keeps the loaded element live through the call:\n{clif}"
     );
 }
 

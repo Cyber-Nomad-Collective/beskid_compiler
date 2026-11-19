@@ -218,7 +218,7 @@ unit Main() { Build(); return; }
     let build =
         artifact.functions.iter().find(|function| function.name.starts_with("Build")).expect("lowered Build function");
     let clif = build.function.display().to_string();
-    assert!(clif.contains("beskid_rt_v5_array_allocate_rooted"), "{clif}");
+    assert!(clif.contains(super::support::ARRAY_ALLOCATION_IMPORT), "{clif}");
     // Element stores initialize the array the literal allocated: no barrier of either kind.
     assert!(!clif.contains("beskid_rt_v5_array_write_barrier"), "{clif}");
     assert!(!clif.contains("beskid_rt_v5_gc_write_barrier"), "{clif}");
@@ -323,7 +323,7 @@ bool Main(Result<Request, HttpError> head) {
 
 /// C53-2: storing into a scalar array never publishes through the write barrier (an `i64`
 /// element has the pointer's CLIF type but is not traced), a kernel that makes no other call
-/// registers no GC roots, and a caller passing a rooted local array takes no snapshot root.
+/// needs no roots itself. A caller keeps the passed array live at the call.
 #[test]
 fn scalar_array_kernel_has_no_barrier_or_root_calls() {
     let (input, isa, root) = item_fixture_with_root(
@@ -370,15 +370,11 @@ unit Drive(i64[] state) {
     let step = clif_of("Step");
     assert_eq!(calls_to(&step, "beskid_rt_v5_array_write_barrier"), 0, "{step}");
     assert_eq!(calls_to(&step, "gc_register_root") + calls_to(&step, "gc_unregister_root"), 0, "{step}");
-    // Drive only calls Step, which cannot reach a collection, so module emission drops Drive's
-    // roots too: no parameter root and no snapshot root for the local it passes.
     let drive = clif_of("Drive");
     assert_eq!(calls_to(&drive, "Step"), 1, "{drive}");
-    assert_eq!(
-        calls_to(&drive, "gc_register_root") + calls_to(&drive, "gc_unregister_root"),
-        0,
-        "Drive calls only a non-collecting function:\n{drive}"
-    );
+    assert_eq!(calls_to(&drive, "gc_register_root") + calls_to(&drive, "gc_unregister_root"), 0, "{drive}");
+    let function = &artifact.functions.iter().find(|function| function.name == "Drive").unwrap().function;
+    assert!(super::support::has_mapped_call(function, "Step"), "Drive retains its array argument: {drive}");
 }
 
 #[test]

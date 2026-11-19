@@ -329,6 +329,32 @@ unit Main(mut u8[] values) { Fill(values, 2); return; }
 }
 
 #[test]
+fn growth_without_an_array_literal_declares_its_runtime_import() {
+    let source = r#"
+use Core.Collections.Array;
+unit Grow(u8[] values, u8 value) {
+    mut u8[] result = values;
+    Array.Append<u8>(result, value);
+    return;
+}
+"#;
+    let (input, isa, root) = canonical_corelib_project_fixture(&[("App/Grow.bd", source)], SyntaxGenerationId(6816));
+    let grow = find_function_definition(input.database(), root).expect("Grow function");
+    let artifact = lower_syntax_program(&input, isa.as_ref(), &[SyntaxModuleItem { key: grow, symbol: "Grow".into() }])
+        .expect("lower an append without an array literal in Grow");
+    let function = &artifact.functions.iter().find(|item| item.name == "Grow").expect("Grow").function;
+    let references = |symbol| {
+        let name = cranelift_codegen::ir::ExternalName::testcase(symbol);
+        function.dfg.ext_funcs.values().any(|callee| callee.name == name)
+    };
+    assert!(!references(super::support::ARRAY_ALLOCATION_IMPORT));
+    let expected = "beskid_rt_v5_array_grow";
+    assert!(references(expected));
+    assert!(artifact.extern_imports.iter().any(|import| import.symbol == expected));
+    beskid_codegen::validate_artifact(&artifact).expect("all emitted runtime imports must be declared");
+}
+
+#[test]
 fn specialized_generic_method_lowers_contextual_result_error_constructor() {
     let list_source = r#"
 use Core.Results;

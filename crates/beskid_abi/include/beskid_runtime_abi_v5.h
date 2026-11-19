@@ -318,11 +318,17 @@ static inline const char *BESKID_TRAP_NAME(unsigned char code) {
 #define BESKID_SCHEDULER_STATE_POLL_STATE_OFFSET 184
 #define BESKID_SCHEDULER_STATE_FIBER_TABLE_OFFSET 192
 #define BESKID_SCHEDULER_STATE_FIBER_STACK_MAX_OFFSET 200
+#define BESKID_STACK_MAP_FRAME_SIZE 32
+#define BESKID_STACK_MAP_FRAME_ALIGNMENT 8
+#define BESKID_STACK_MAP_FRAME_PREVIOUS_OFFSET 0
+#define BESKID_STACK_MAP_FRAME_STACK_POINTER_OFFSET 8
+#define BESKID_STACK_MAP_FRAME_RETURN_PC_OFFSET 16
+#define BESKID_STACK_MAP_FRAME_TABLE_OFFSET 24
 #define BESKID_TLS_STATE_SIZE 56
 #define BESKID_TLS_STATE_ALIGNMENT 8
 #define BESKID_TLS_STATE_RUNTIME_OFFSET 0
 #define BESKID_TLS_STATE_ROOT_FRAME_OFFSET 8
-#define BESKID_TLS_STATE_RESERVED_OFFSET 16
+#define BESKID_TLS_STATE_SCHEDULER_ROOT_FRAME_OFFSET 16
 #define BESKID_TLS_STATE_ATTACH_DEPTH_OFFSET 24
 #define BESKID_TLS_STATE_COMPOSITION_SCOPE_OFFSET 32
 #define BESKID_TLS_STATE_COMPOSITION_DEPTH_OFFSET 40
@@ -508,10 +514,13 @@ uint8_t beskid_rt_v5_abi_value_initialize(void * slot, size_t tag, void * payloa
 uint8_t beskid_rt_v5_abi_value_move_out(void * source, void * destination);
 uint8_t beskid_rt_v5_abi_value_replace_with_barrier(void * destination, void * source);
 uint32_t beskid_rt_v5_abi_version(void);
+void * beskid_rt_v5_array_allocate(void * request);
 void * beskid_rt_v5_array_allocate_rooted(void * request, void * root_handle_out);
 uint8_t beskid_rt_v5_array_construction_finish(void * root_handle);
+void * beskid_rt_v5_array_grow(void * array, size_t minimum_capacity);
 void * beskid_rt_v5_array_grow_rooted(void * array, size_t minimum_capacity, void * root_handle_out);
 void * beskid_rt_v5_array_try_allocate_rooted(void * request, void * root_handle_out);
+void * beskid_rt_v5_array_try_grow(void * array, size_t minimum_capacity);
 void * beskid_rt_v5_array_try_grow_rooted(void * array, size_t minimum_capacity, void * root_handle_out);
 void * beskid_rt_v5_checked_scope_current(void);
 uint8_t beskid_rt_v5_checked_scope_enter(void * scope, size_t failure_handle);
@@ -666,6 +675,8 @@ void beskid_rt_v5_process_shutdown(void * runtime);
 void * beskid_rt_v5_region_owner(void * address);
 uint8_t beskid_rt_v5_scheduler_stack_check(size_t required_usable_size);
 void beskid_rt_v5_scheduler_stack_overflow_observed(void);
+void beskid_rt_v5_stack_map_pop(void * frame);
+void beskid_rt_v5_stack_map_push(void * frame, void * stack_pointer, void * table);
 void * beskid_rt_v5_thread_attach(void * runtime);
 void beskid_rt_v5_thread_detach(void * thread);
 _Noreturn void beskid_rt_v5_trap(uint8_t code, void * message, size_t message_len);

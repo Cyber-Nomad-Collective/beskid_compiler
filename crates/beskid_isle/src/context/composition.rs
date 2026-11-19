@@ -85,7 +85,7 @@ impl IsleContext<'_, '_, '_, '_> {
         container: Option<Value>,
         registration: &crate::CompositionRegistrationPlan,
         installed: &[Value],
-    ) -> Option<(Value, Vec<ScopedTemporaryRoot>)> {
+    ) -> Option<(Value, Vec<TemporaryRoot>)> {
         let pointer = dispatch::pointer_type(self.frontend_config);
         let mut field_values = Vec::with_capacity(registration.injections.len());
         let mut array_roots = Vec::new();
@@ -93,21 +93,8 @@ impl IsleContext<'_, '_, '_, '_> {
         for injection in &registration.injections {
             let value = if let Some(symbol) = &injection.plural_allocation_request_symbol {
                 let request = self.symbol_global(symbol.as_ref(), pointer)?;
-                let root_slot = self.builder.create_sized_stack_slot(StackSlotData::new(
-                    StackSlotKind::ExplicitSlot,
-                    pointer.bytes(),
-                    pointer.bytes().ilog2() as u8,
-                ));
-                let root_address = self.builder.ins().stack_addr(pointer, root_slot, 0);
-                let allocate = self.import_runtime_helper(
-                    "beskid_rt_v5_array_allocate_rooted",
-                    &[pointer, pointer],
-                    Some(pointer),
-                )?;
-                let call = self.builder.ins().call(allocate, &[request, root_address]);
-                let array = self.builder.inst_results(call).first().copied()?;
+                let (array, root) = self.allocate_array(request)?;
                 self.composition_allocation_guard(site, container, array)?;
-                let root = ScopedTemporaryRoot::ArrayConstruction(root_slot);
                 self.track_expression_root(root)?;
                 array_roots.push(root);
                 let data = self.builder.ins().load(pointer, MemFlagsData::new(), array, 0);

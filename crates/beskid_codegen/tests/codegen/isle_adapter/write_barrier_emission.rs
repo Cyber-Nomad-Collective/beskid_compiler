@@ -72,13 +72,30 @@ pub(super) fn calls_to(clif: &str, symbol: &str) -> usize {
     clif.lines().filter(|line| line.contains(&format!("call {name}("))).count()
 }
 
-/// Every barrier call sits alone in a cold block that jumps to a block whose first instruction
-/// stores the barrier's `value` operand to its `slot` operand; the block that branches to the
+/// Recognize a Cranelift root-slot reload, so differently named reloads of a live root can
+/// still be compared across the barrier branch and the store block.
+fn reload_slot<'a>(clif: &'a str, value: &str) -> Option<&'a str> {
+    let definition = clif.lines().find_map(|line| {
+        line.trim().strip_prefix(&format!("{value} = load.i64 notrap aligned "))
+    })?;
+    clif.lines().find_map(|line| {
+        line.trim().strip_prefix(&format!("{definition} = stack_addr.i64 "))
+    })
+}
+
+/// Every barrier call is in a cold block that jumps to a block that stores the barrier's `value` operand to its `slot` operand; the block that branches to the
 /// cold block loads the barrier-active word. Returns the number of guarded stores.
 pub(super) fn assert_guarded_stores(clif: &str) -> usize {
     let barrier = function_ref(clif, BARRIER).unwrap_or_else(|| panic!("barrier import: {clif}"));
     assert!(clif.contains(&format!("%{ACTIVE}")), "the barrier-active word is a symbol global: {clif}");
     let blocks = blocks(clif);
+    let is_reload = |line: &str| {
+        line.contains(" = stack_addr.i64 ")
+            || line.split_once(" = ").is_some_and(|(value, _)| reload_slot(clif, value).is_some())
+    };
+    let same_operand = |left: &str, right: &str| {
+        left == right || reload_slot(clif, left).is_some_and(|slot| reload_slot(clif, right) == Some(slot))
+    };
     let mut guarded = 0;
     for (header, body) in &blocks {
         let Some(call) = body.iter().find(|line| line.starts_with(&format!("call {barrier}("))) else {
@@ -86,16 +103,14 @@ pub(super) fn assert_guarded_stores(clif: &str) -> usize {
             continue;
         };
         assert!(header.contains(" cold"), "the barrier call is in a cold block: {header}\n{clif}");
-        assert_eq!(body.len(), 2, "the cold block only calls the barrier and jumps: {body:?}");
+        let effects = body.iter().filter(|line| !is_reload(line)).collect::<Vec<_>>();
+        assert_eq!(effects.len(), 2, "the cold block only calls the barrier and jumps: {body:?}");
         let operands = call
-            .trim_start_matches(&format!("call {barrier}("))
-            .trim_end_matches(')')
-            .split(", ")
-            .map(str::to_owned)
-            .collect::<Vec<_>>();
-        let [slot, value] = operands.as_slice() else { panic!("barrier takes slot and value: {call}") };
-        assert!(!call.contains(" = call"), "the barrier returns no value: {call}");
-        let successor = body[1].strip_prefix("jump ").unwrap_or_else(|| panic!("cold block jumps: {body:?}"));
+            .strip_prefix(&format!("call {barrier}("))
+            .and_then(|tail| tail.split_once(')'))
+            .and_then(|(arguments, _)| arguments.split_once(", "));
+        let Some((slot, value)) = operands else { panic!("barrier takes slot and value: {call}") };
+        let successor = effects[1].strip_prefix("jump ").unwrap_or_else(|| panic!("cold block jumps: {body:?}"));
         let successor = successor.split('(').next().unwrap_or(successor);
         let (_, store_body) = blocks
             .iter()
@@ -103,10 +118,13 @@ pub(super) fn assert_guarded_stores(clif: &str) -> usize {
                 candidate.starts_with(&format!("{successor}:")) || candidate.starts_with(&format!("{successor}("))
             })
             .unwrap_or_else(|| panic!("successor {successor}: {clif}"));
-        let store = store_body.first().unwrap_or_else(|| panic!("the successor stores: {clif}"));
+        let store = store_body.iter().find(|line| !is_reload(line)).unwrap_or_else(|| panic!("the successor stores: {clif}"));
+        let store_operands = store.rsplit_once(", ").and_then(|(instruction, address)| {
+            instruction.split_whitespace().last().map(|stored| (stored, address))
+        });
         assert!(
             (store.starts_with("store ") || store.starts_with("store."))
-                && store.ends_with(&format!(" {value}, {slot}")),
+                && store_operands.is_some_and(|(stored, address)| same_operand(stored, value) && same_operand(address, slot)),
             "the store of the barrier's value to its slot follows the barrier: {store}\n{clif}"
         );
         let (_, guard_body) = blocks
@@ -128,7 +146,6 @@ pub(super) fn assert_guarded_stores(clif: &str) -> usize {
             !guard_body[load..].iter().any(|line| line.contains("call ")),
             "no call between the flag load and the branch: {guard_body:?}"
         );
-        assert!(!store_body.iter().take(1).any(|line| line.contains("call ")), "the idle path stores without a call");
         guarded += 1;
     }
     guarded

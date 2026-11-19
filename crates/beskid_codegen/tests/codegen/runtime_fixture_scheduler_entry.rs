@@ -54,6 +54,20 @@ fn x86_64_target_and_isa() -> (TargetMetadata, Arc<dyn cranelift_codegen::isa::T
     (target, isa)
 }
 
+fn assert_fixture_function_has_stack_map(artifact: &beskid_codegen::CodegenArtifact, name: &str) {
+    let item = artifact.functions.iter().find(|item| item.name.split('#').next() == Some(name)).expect(name);
+    let function = &item.function;
+    assert!(
+        function
+            .layout
+            .blocks()
+            .flat_map(|block| function.layout.block_insts(block))
+            .any(|inst| { function.dfg.user_stack_map_entries(inst).is_some_and(|roots| !roots.is_empty()) }),
+        "missing live fixture roots in {name}: {}",
+        function.display()
+    );
+}
+
 /// `ExternalWorkTests.bd`'s `CancelledWaitRetainsHostWorkUntilHostExit` reaches
 /// `Core.FiberAlloc`, which requires a spawn/context trampoline, which in turn requires the
 /// complete `SCHEDULER_ENTRY_HELPERS` set — the exact shape that used to fail closed.
@@ -69,12 +83,8 @@ fn external_work_tests_fixture_entrypoint_resolves_the_full_scheduler_entry_help
         target,
         isa.as_ref(),
     );
-    assert!(
-        lowered.is_ok(),
-        "a runtime-fixture entrypoint must resolve every SCHEDULER_ENTRY_HELPERS item once any one \
-         of them is needed, not only the ones its own call graph happens to reach directly: {:?}",
-        lowered.err()
-    );
+    let lowered = lowered.expect("runtime fixture resolves the complete scheduler-entry helper set");
+    assert_fixture_function_has_stack_map(lowered.artifact(), "CheckHostWorkSurvivesWait");
 }
 
 /// `LifecycleTests.bd`'s `LifecycleUsesManifestStateGenerationAnd48ByteTls` is a second,
@@ -92,10 +102,9 @@ fn lifecycle_tests_fixture_entrypoint_resolves_the_full_scheduler_entry_helper_s
         target,
         isa.as_ref(),
     );
-    assert!(
-        lowered.is_ok(),
-        "a runtime-fixture entrypoint must resolve every SCHEDULER_ENTRY_HELPERS item once any one \
-         of them is needed, not only the ones its own call graph happens to reach directly: {:?}",
-        lowered.err()
+    let lowered = lowered.expect("runtime fixture resolves the complete scheduler-entry helper set");
+    assert_fixture_function_has_stack_map(
+        lowered.artifact(),
+        "LifecycleUsesManifestStateGenerationAnd48ByteTls",
     );
 }

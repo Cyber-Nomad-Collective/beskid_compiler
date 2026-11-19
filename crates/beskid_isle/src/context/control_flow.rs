@@ -231,7 +231,7 @@ macro_rules! generated_control_flow_methods {
                     self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidBlockExpression });
                     return None;
                 };
-                let root = if converted || self.facts.managed_reference(result_key)? == ManagedReferenceFact::GcManaged {
+                let root = if converted || self.lowered_value_reference(result_key, value)? == ManagedReferenceFact::GcManaged {
                     Some(self.root_temporary(value)?)
                 } else {
                     None
@@ -343,10 +343,9 @@ macro_rules! generated_control_flow_methods {
             }
             let value_type = self.facts.scalar_type(key)?;
             let managed_reference = self.local_managed_reference(key, value_type)?;
-            let admitted = self.prepare_checked_destination(value_type, managed_reference)?;
             let value = self.lower_coerced_expression(initializer)?;
             let value = self.adapt_scalar_boundary(initializer, value, value_type)?;
-            self.bind_local_in_destination(slot, value, value_type, managed_reference, admitted)
+            self.bind_local(slot, value, value_type, managed_reference)
         }
 
         fn emit_scoped_use(&mut self, key: AstNodeKey) -> Option<()> {
@@ -421,6 +420,7 @@ macro_rules! generated_control_flow_methods {
             self.builder.ins().jump(header, &[]);
 
             self.builder.switch_to_block(header);
+            self.poll_loop_collection(key)?;
             let condition = generated::constructor_lower_expression(self, condition_key)?;
             self.builder.ins().brif(condition, body, &[], exit, &[]);
 
@@ -484,6 +484,7 @@ macro_rules! generated_control_flow_methods {
             self.builder.ins().jump(header, &[]);
 
             self.builder.switch_to_block(header);
+            self.poll_loop_collection(key)?;
             let current = self.builder.use_var(iterator);
             let condition = match (range.step.is_positive(), range.inclusive) {
                 (true, false) => self.builder.ins().icmp(IntCC::SignedLessThan, current, end),
@@ -580,6 +581,7 @@ macro_rules! generated_control_flow_methods {
             self.builder.ins().jump(header, &[]);
 
             self.builder.switch_to_block(header);
+            self.poll_loop_collection(key)?;
             let current = self.builder.use_var(index);
             let in_bounds = self.builder.ins().icmp(IntCC::UnsignedLessThan, current, length);
             self.builder.ins().brif(in_bounds, body, &[], exit, &[]);
@@ -703,6 +705,7 @@ macro_rules! generated_control_flow_methods {
             self.builder.ins().jump(header, &[]);
 
             self.builder.switch_to_block(header);
+            self.poll_loop_collection(key)?;
             let call = self.builder.ins().call(next, &[iterator]);
             self.guard_checked_allocation()?;
             let option = self.builder.inst_results(call).first().copied()?;
@@ -855,3 +858,14 @@ macro_rules! generated_control_flow_methods {
 }
 
 pub(super) use generated_control_flow_methods;
+
+impl IsleContext<'_, '_, '_, '_> {
+    pub(super) fn poll_loop_collection(&mut self, key: AstNodeKey) -> Option<()> {
+        if self.facts.managed_safepoints(key) {
+            let pointer = self.frontend_config.pointer_type();
+            let poll = self.import_runtime_helper("gc_collect_if_needed", &[], Some(pointer))?;
+            self.builder.ins().call(poll, &[]);
+        }
+        Some(())
+    }
+}

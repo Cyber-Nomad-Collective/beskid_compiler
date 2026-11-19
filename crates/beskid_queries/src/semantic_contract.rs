@@ -270,6 +270,7 @@ pub use layouts::{
     CanonicalEmptyValue, aggregate_field_access_specialization, aggregate_literal_specialization,
     array_index_element_managed_reference_specialization, array_index_element_specialization, canonical_empty_value,
     enum_constructor_specialization, enum_match_specialization, event_state_size,
+    specialized_nominal_field_managed_reference_kind,
 };
 pub use model::{
     AffineBinding, AffineFinding, AffineFindingKind, AffineOwnership, AggregateFieldAccess, AggregateFieldShape,

@@ -7,6 +7,7 @@ use beskid_codegen::cranelift_host::{
     declare_referenced_builtin_imports, declare_user_functions_with_link_symbols_and_linkage,
     declare_validated_extern_imports, remap_testcase_externals,
 };
+use beskid_codegen::stack_maps::{BuildStackMapTable, DefineStackMapTable, PrepareStackMapCheckpoint};
 #[cfg(debug_assertions)]
 use beskid_codegen::validate_artifact;
 use beskid_codegen::{CodegenArtifact, emit_string_literals};
@@ -20,6 +21,9 @@ use beskid_pipeline::{PipelineObserver, emit_work_unit, phases::AOT_EMIT_OBJECT}
 
 use crate::api::BuildProfile;
 use crate::error::{AotError, AotResult};
+
+#[cfg(test)]
+mod stack_map_tests;
 
 /// Fixed C boundary called by the portable executable bootstrap.
 pub(crate) const EXECUTABLE_PROGRAM_ENTRY: &str = "beskid_program_main";
@@ -341,6 +345,13 @@ impl BeskidObjectModule {
         // define them in artifact order so the object layout does not depend on scheduling.
         let mut bound = Vec::with_capacity(artifact.functions.len());
         let mut ctx = module.make_context();
+        let stack_map_section = match module.isa().triple().binary_format.to_string().as_str() {
+            "elf" => Some(".data.rel.ro.beskid_gc"),
+            "coff" => Some(".rdata$GC"),
+            "macho" => Some("__DATA_CONST,__beskid_gc"),
+            _ => None,
+        };
+        let checkpoints = artifact.runtime_checkpoint_definitions.Resolve(&self.func_ids);
         for function in &artifact.functions {
             let func_id = self
                 .func_ids
@@ -354,7 +365,8 @@ impl BeskidObjectModule {
                     AotError::InvalidRequest { message: "expected symbol global value".to_owned() }
                 }
             })?;
-            bound.push((func_id, std::mem::replace(&mut ctx.func, cranelift_codegen::ir::Function::new())));
+            let table = PrepareStackMapCheckpoint(module, &mut ctx.func, checkpoints)?;
+            bound.push((func_id, table, std::mem::replace(&mut ctx.func, cranelift_codegen::ir::Function::new())));
         }
         module.clear_context(&mut ctx);
         if let Some(control) = control {
@@ -374,6 +386,9 @@ impl BeskidObjectModule {
                 });
             }
             module.define_function_bytes(compiled.func_id, compiled.alignment, &compiled.bytes, &compiled.relocs)?;
+            if let Some((table, bytes)) = compiled.stack_map {
+                DefineStackMapTable(module, compiled.func_id, table, bytes, stack_map_section)?;
+            }
             emit_work_unit(pipeline, AOT_EMIT_OBJECT, (index as u64) + 1, total, function.name.clone());
         }
 
@@ -582,6 +597,7 @@ struct CompiledFunction {
     relocs: Vec<cranelift_module::ModuleReloc>,
     /// A Cranelift runtime helper that the code calls; no runtime kit defines one (E4004).
     runtime_helper: Option<&'static str>,
+    stack_map: Option<(cranelift_module::DataId, Box<[u8]>)>,
 }
 
 /// Fewer functions than this are compiled on the calling thread.
@@ -592,12 +608,12 @@ const PARALLEL_COMPILE_THRESHOLD: usize = 32;
 /// `BESKID_CODEGEN_THREADS` bounds the worker count (1 forces serial compilation).
 fn compile_functions(
     isa: &dyn TargetIsa,
-    functions: Vec<(FuncId, cranelift_codegen::ir::Function)>,
+    functions: Vec<(FuncId, Option<cranelift_module::DataId>, cranelift_codegen::ir::Function)>,
 ) -> AotResult<Vec<CompiledFunction>> {
     use std::sync::Mutex;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
-    let compile = |func_id: FuncId, function: cranelift_codegen::ir::Function| -> AotResult<CompiledFunction> {
+    let compile = |func_id: FuncId, table: Option<cranelift_module::DataId>, function: cranelift_codegen::ir::Function| -> AotResult<CompiledFunction> {
         let mut ctx = cranelift_codegen::Context::for_function(function);
         ctx.compile(isa, &mut cranelift_codegen::control::ControlPlane::default())
             .map_err(|error| AotError::from(cranelift_module::ModuleError::from(error)))?;
@@ -616,7 +632,10 @@ fn compile_functions(
                 cranelift_codegen::FinalizedRelocTarget::Func(_) => None,
             }),
         );
-        Ok(CompiledFunction { func_id, alignment, bytes, relocs, runtime_helper })
+        let stack_map = table
+            .map(|table| BuildStackMapTable(compiled, isa.endianness()).map(|bytes| (table, bytes)))
+            .transpose()?;
+        Ok(CompiledFunction { func_id, alignment, bytes, relocs, runtime_helper, stack_map })
     };
     let count = functions.len();
     let requested = std::env::var("BESKID_CODEGEN_THREADS").ok().and_then(|value| value.parse::<usize>().ok());
@@ -624,7 +643,7 @@ fn compile_functions(
     let workers =
         if count < PARALLEL_COMPILE_THRESHOLD { 1 } else { requested.unwrap_or(available).clamp(1, 16).min(count) };
     if workers <= 1 {
-        return functions.into_iter().map(|(func_id, function)| compile(func_id, function)).collect();
+        return functions.into_iter().map(|(func_id, table, function)| compile(func_id, table, function)).collect();
     }
     let queue = functions.into_iter().map(Some).map(Mutex::new).collect::<Vec<_>>();
     let next = AtomicUsize::new(0);
@@ -644,9 +663,9 @@ fn compile_functions(
                         if index >= count || index > first_error.load(Ordering::Relaxed) {
                             break;
                         }
-                        let (func_id, function) =
+                        let (func_id, table, function) =
                             queue[index].lock().expect("compile queue").take().expect("each function is taken once");
-                        let result = compile(func_id, function);
+                        let result = compile(func_id, table, function);
                         if result.is_err() {
                             first_error.fetch_min(index, Ordering::Relaxed);
                         }

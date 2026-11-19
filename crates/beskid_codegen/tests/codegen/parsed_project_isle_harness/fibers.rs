@@ -19,14 +19,14 @@ fn bound_spawn_returns_runtime_handle_without_invoking_child_in_parent() {
         .count();
     assert_eq!(
         calls,
-        4,
-        "register child, allocate nominal handle, register/unregister its GC root; only the scheduler invokes the child\n{}",
+        2,
+        "register child and allocate the nominal handle; only the scheduler invokes the child\n{}",
         main.function.display()
     );
     assert_eq!(
         main.function.sized_stack_slots.len(),
-        1,
-        "the only parent slot is the nominal handle GC root, never a cancellation slot"
+        0,
+        "the nominal handle needs no stack-map slot in the absence of a later safepoint"
     );
 }
 

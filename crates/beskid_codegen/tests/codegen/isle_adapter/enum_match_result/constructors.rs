@@ -60,7 +60,7 @@ fn parsed_enum_constructor_uses_source_layout() {
     let clif = function.display().to_string();
     assert!(input.enum_static_plan(constructor).is_some(), "enum static plan");
     assert!(clif.contains("beskid_rt_v5_managed_object_allocate"));
-    assert!(clif.contains("gc_register_root"));
+    assert!(!clif.contains("gc_register_root"), "{clif}");
     assert!(clif.contains("iconst.i32 1"));
 }
 
@@ -77,7 +77,7 @@ fn parsed_generic_enum_constructor_uses_concrete_source_layout() {
 
     let clif = function.display().to_string();
     assert!(clif.contains("beskid_rt_v5_managed_object_allocate"), "{clif}");
-    assert!(clif.contains("gc_register_root"), "{clif}");
+    assert!(!clif.contains("gc_register_root"), "{clif}");
     assert!(clif.contains("iconst.i32 0"), "{clif}");
     assert!(clif.contains("iconst.i64 7"), "{clif}");
 }
@@ -141,7 +141,8 @@ fn mixed_pointer_scalar_generic_enum_uses_variant_specific_payload_slots() {
         panic!("pointer payload store must have value and object operands: {clif}");
     };
     assert_eq!(
-        *stored_value, error_parameter,
+        super::super::support::reload_origin(&function, *stored_value),
+        error_parameter,
         "the nominal error parameter must be stored in the traced pointer slot: {clif}"
     );
 }
@@ -174,7 +175,7 @@ fn parsed_nullary_enum_constructor_uses_source_layout() {
 
     let clif = function.display().to_string();
     assert!(clif.contains("beskid_rt_v5_managed_object_allocate"));
-    assert!(clif.contains("gc_register_root"));
+    assert!(!clif.contains("gc_register_root"), "{clif}");
     assert!(clif.contains("iconst.i32 0"));
 }
 

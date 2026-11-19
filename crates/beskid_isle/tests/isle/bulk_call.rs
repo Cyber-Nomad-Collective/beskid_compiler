@@ -30,24 +30,13 @@ use cranelift_module::{Linkage, Module, default_libcall_names};
 const ELEMENT_COUNT: usize = 3;
 static BULK_REQUEST: [u8; 32] = [0; 32];
 
-unsafe extern "C" fn test_array_allocate_rooted(
-    _request: *const u8,
-    root_handle_out: *mut usize,
-) -> *mut beskid_abi::BeskidArray {
-    if !root_handle_out.is_null() {
-        // SAFETY: fixture allocates the same pointer-sized output slot as ISLE lowering.
-        unsafe { root_handle_out.write(0) };
-    }
+unsafe extern "C" fn test_array_allocate(_request: *const u8) -> *mut beskid_abi::BeskidArray {
     let backing = Box::leak(vec![0_u8; ELEMENT_COUNT * std::mem::size_of::<i32>()].into_boxed_slice());
     Box::into_raw(Box::new(beskid_abi::BeskidArray {
         ptr: backing.as_mut_ptr(),
         len: ELEMENT_COUNT,
         cap: ELEMENT_COUNT,
     }))
-}
-
-unsafe extern "C" fn test_array_construction_finish(_root_handle: *mut u8) -> u8 {
-    1
 }
 
 /// The bulk callee: receives the packed array pointer and sums its i32 elements. Proves the
@@ -90,17 +79,10 @@ fn bind_bulk_fixture_symbols(module: &mut JITModule, function: &mut Function) {
         .ext_funcs
         .iter()
         .filter_map(|(_, import)| match &import.name {
-            ExternalName::TestCase(name)
-                if matches!(
-                    name.raw(),
-                    b"beskid_rt_v5_array_allocate_rooted" | b"beskid_rt_v5_array_construction_finish"
-                ) =>
-            {
-                Some((
-                    String::from_utf8(name.raw().to_vec()).expect("ASCII fixture import"),
-                    function.dfg.signatures[import.signature].clone(),
-                ))
-            }
+            ExternalName::TestCase(name) if name.raw() == b"beskid_rt_v5_array_allocate" => Some((
+                String::from_utf8(name.raw().to_vec()).expect("ASCII fixture import"),
+                function.dfg.signatures[import.signature].clone(),
+            )),
             _ => None,
         })
         .collect::<Vec<_>>();
@@ -229,8 +211,7 @@ fn bulk_facts(isa: &dyn TargetIsa) -> BulkCallFacts {
 fn importer(isa: std::sync::Arc<dyn TargetIsa>, expected: DirectCallee) -> KnownCallImporter {
     let mut builder = JITBuilder::with_isa(isa, default_libcall_names());
     builder.symbol("__bulk_call_request", BULK_REQUEST.as_ptr());
-    builder.symbol("beskid_rt_v5_array_allocate_rooted", test_array_allocate_rooted as *const u8);
-    builder.symbol("beskid_rt_v5_array_construction_finish", test_array_construction_finish as *const u8);
+    builder.symbol("beskid_rt_v5_array_allocate", test_array_allocate as *const u8);
     builder.symbol("sum_bulk", sum_bulk as *const u8);
     KnownCallImporter { module: JITModule::new(builder), expected }
 }
@@ -272,11 +253,9 @@ fn bulk_call_packs_scalars_into_a_rooted_array_and_direct_calls_the_callee() {
         .expect("verified bulk call");
 
     let clif = function.display().to_string();
-    // The exact `emit_array_literal` allocation sequence is reused: rooted allocate, per-element
-    // store, and construction finish must all appear. The bulk callee is then direct-called with
-    // the packed array as its sole argument.
-    assert!(clif.contains("beskid_rt_v5_array_allocate_rooted"), "{clif}");
-    assert!(clif.contains("beskid_rt_v5_array_construction_finish"), "{clif}");
+    // Bulk calls allocate, fill, and pass the packed array directly to the callee.
+    assert!(clif.contains("beskid_rt_v5_array_allocate"), "{clif}");
+    assert!(!clif.contains("beskid_rt_v5_array_construction_finish"), "{clif}");
     assert!(clif.contains("store"), "{clif}");
     assert!(clif.contains("call"), "{clif}");
     // Element stores initialize the packed array allocated here, so no write barrier is emitted.

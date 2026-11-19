@@ -5,7 +5,7 @@ use cranelift_codegen::ir::condcodes::{FloatCC, IntCC};
 use cranelift_codegen::ir::immediates::{Ieee32, Ieee64};
 use cranelift_codegen::ir::types;
 use cranelift_codegen::ir::{
-    AbiParam, Block, ExtFuncData, FuncRef, MemFlagsData, Signature, StackSlot, StackSlotData, StackSlotKind, TrapCode,
+    AbiParam, Block, ExtFuncData, FuncRef, MemFlagsData, Signature, StackSlotData, StackSlotKind, TrapCode,
     Type, Value,
 };
 use cranelift_codegen::ir::{ExternalName, GlobalValueData};
@@ -69,10 +69,10 @@ struct LoopTargets {
 
 #[derive(Default)]
 struct LocalRootScope {
-    bindings: Vec<(LocalSlotId, Option<StackSlot>)>,
+    bindings: Vec<LocalSlotId>,
     cleanups: Vec<crate::ScopedCleanupPlan>,
     composition_cleanups: Vec<CompositionCleanup>,
-    temporaries: Vec<ScopedTemporaryRoot>,
+    temporaries: Vec<TemporaryRoot>,
 }
 
 #[derive(Clone)]
@@ -84,20 +84,15 @@ enum CompositionCleanup {
     Container { site: AstNodeKey, value: Value, slots: std::rc::Rc<[Value]> },
 }
 
-/// Roots owned by an expression until its value has been published or consumed. They
-/// belong to the lexical root scope so a nested cleanup-error return also releases them.
+/// An SSA variable whose value must stay live until its borrowed uses complete.
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum ScopedTemporaryRoot {
-    Managed(StackSlot),
-    ArrayConstruction(StackSlot),
-}
+struct TemporaryRoot(Variable);
 
 #[derive(Clone, Copy)]
 pub(crate) struct ManagedLocalBinding {
     pub(crate) variable: Variable,
     pub(crate) value_type: Type,
     pub(crate) managed_reference: ManagedReferenceFact,
-    pub(crate) root_slot: Option<StackSlot>,
 }
 
 #[allow(
@@ -149,6 +144,7 @@ pub struct IsleContext<'builder, 'function, 'facts, 'interner> {
     pub(crate) locals: HashMap<LocalSlotId, ManagedLocalBinding>,
     /// `unit` locals: they have no storage, and each read is a `unit` value.
     pub(crate) unit_locals: HashSet<LocalSlotId>,
+    expression_references: HashMap<Value, ManagedReferenceFact>,
     local_root_scopes: Vec<LocalRootScope>,
     pub function_param_values: Vec<Value>,
     /// The incoming handle of each managed item parameter, by slot. Growth of a `mut T[]`
@@ -173,6 +169,7 @@ impl<'builder, 'function, 'facts, 'interner> IsleContext<'builder, 'function, 'f
             loop_stack: Vec::new(),
             locals: HashMap::new(),
             unit_locals: HashSet::new(),
+            expression_references: HashMap::new(),
             local_root_scopes: vec![LocalRootScope::default()],
             function_param_values: Vec::new(),
             parameter_entries: HashMap::new(),
@@ -195,6 +192,7 @@ impl<'builder, 'function, 'facts, 'interner> IsleContext<'builder, 'function, 'f
             loop_stack: Vec::new(),
             locals: HashMap::new(),
             unit_locals: HashSet::new(),
+            expression_references: HashMap::new(),
             local_root_scopes: vec![LocalRootScope::default()],
             function_param_values: Vec::new(),
             parameter_entries: HashMap::new(),
@@ -217,6 +215,7 @@ impl<'builder, 'function, 'facts, 'interner> IsleContext<'builder, 'function, 'f
             loop_stack: Vec::new(),
             locals: HashMap::new(),
             unit_locals: HashSet::new(),
+            expression_references: HashMap::new(),
             local_root_scopes: vec![LocalRootScope::default()],
             function_param_values: Vec::new(),
             parameter_entries: HashMap::new(),
@@ -240,6 +239,7 @@ impl<'builder, 'function, 'facts, 'interner> IsleContext<'builder, 'function, 'f
             loop_stack: Vec::new(),
             locals: HashMap::new(),
             unit_locals: HashSet::new(),
+            expression_references: HashMap::new(),
             local_root_scopes: vec![LocalRootScope::default()],
             function_param_values: Vec::new(),
             parameter_entries: HashMap::new(),
@@ -312,6 +312,52 @@ pub(crate) fn jump_from_current_if_unterminated(builder: &mut FunctionBuilder<'_
 }
 
 impl generated::Context for IsleContext<'_, '_, '_, '_> {
+    fn record_expression_reference(&mut self, key: AstNodeKey, value: Value) -> Option<Value> {
+        if self.builder.func.dfg.value_type(value) != self.frontend_config.pointer_type() {
+            return Some(value);
+        }
+        // Assignments forward their lowered RHS. Event mutation returns a managed handler.
+        // Match results inherit the common category of their incoming SSA values at the join.
+        let inherited = self.expression_references.get(&value).copied();
+        let kind = self.facts.node_kind(key);
+        let category = match kind {
+            Some(NodeKind::AssignExpression)
+                if matches!(
+                    self.facts.assignment_kind(key),
+                    Some(AssignmentKind::EventSubscribe | AssignmentKind::EventUnsubscribeFirst)
+                ) =>
+            {
+                Some(ManagedReferenceFact::GcManaged)
+            }
+            Some(NodeKind::AssignExpression | NodeKind::MatchExpression | NodeKind::GroupedExpression) => inherited,
+            Some(NodeKind::BlockExpression) => inherited.or_else(|| {
+                // A scalar width adaptation creates a fresh SSA value at the block boundary.
+                self.facts.block_result(key).and_then(|result| self.facts.managed_reference(result))
+            }),
+            _ => None,
+        }
+        .or_else(|| self.facts.managed_reference(key))
+        .or_else(|| {
+            if self.facts.field_index(key).is_some() {
+                return None;
+            }
+            let slot = self.facts.local_slot(key)?;
+            self.locals.get(&slot).map(|binding| binding.managed_reference)
+        });
+        if let Some(category) = category {
+            self.expression_references.insert(value, category);
+        }
+        match category {
+            Some(ManagedReferenceFact::GcManaged) => self.builder.declare_value_needs_stack_map(value),
+            None if self.facts.managed_safepoints(key) => {
+                self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::UnclassifiedStackMapValue });
+                return None;
+            }
+            _ => {}
+        }
+        Some(value)
+    }
+
     fn node_kind(&mut self, key: AstNodeKey) -> Option<NodeKind> {
         self.facts.node_kind(key)
     }

@@ -90,14 +90,10 @@ pub i64 RunGrowthPastOneRegion()
 // ---- Deep recursion: thousands of concurrently rooted locals and temporaries. ----
 // This is the regex/pest shape that actually caused the SIGILL (see
 // docs/superpowers/specs/2026-09-22-gc-span-heap-design.md, section 0): every recursion level
-// roots a fresh managed local across the call into the next level, the same pattern
-// `bind_local`/`root_temporary` (crates/beskid_isle/src/context/roots.rs) emit for every
-// GC-managed local. 6000 levels comfortably exceeds both the original 63-root ceiling and the
-// 4095-root stopgap.
-i64 RecurseHoldingLocals(word depth, word remaining)
-{
-    if (remaining == 0)
-    {
+// keeps a fresh managed array live across the recursive call. At the deepest point,
+// stack maps must describe those live arrays across 6000 active frames.
+i64 RecurseHoldingLocals(word depth, word remaining) {
+    if remaining == 0 {
         return i64(depth);
     }
     u8[] level = NewFilledBytes(24, u8(remaining % 251));

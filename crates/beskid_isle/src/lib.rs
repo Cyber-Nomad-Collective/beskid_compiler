@@ -20,7 +20,6 @@ mod emitter;
 mod errors;
 mod facts;
 mod layout;
-mod root_elision;
 pub mod target_isa;
 mod write_barrier;
 
@@ -31,7 +30,6 @@ pub use emitter::{EmissionServices, FunctionEmitter, ItemStatementEmission};
 pub use errors::{FunctionEmissionError, LoweringError, LoweringErrorKind, StringMaterializationError};
 pub use facts::*;
 pub use layout::*;
-pub use root_elision::{NON_COLLECTING_IMPORTS, elide_non_collecting_function_roots, non_collecting_functions};
 pub use write_barrier::{GC_BARRIER_ACTIVE_SYMBOL, GC_WRITE_BARRIER_SYMBOL};
 
 include!(concat!(env!("OUT_DIR"), "/beskid_isle_metadata.rs"));

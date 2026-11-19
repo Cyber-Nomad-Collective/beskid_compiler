@@ -56,7 +56,14 @@ impl IsleContext<'_, '_, '_, '_> {
                 continue;
             }
             let parameter = parameters.next()?;
-            let value = self.lower_coerced_expression(argument)?;
+            let value = if position == 0 && self.facts.node_kind(argument) == Some(NodeKind::MethodDefinition) {
+                // A bare property access can pass the containing method's receiver, although
+                // its source contains no separate receiver expression.
+                let slot = self.facts.local_slot(argument)?;
+                self.builder.use_var(self.locals.get(&slot)?.variable)
+            } else {
+                self.lower_coerced_expression(argument)?
+            };
             // conf2's static selection on a contract value: the implementation is called directly
             // with the receiver word read out of the box.
             let value = if position == 0 && self.facts.contract_value_receiver(key) {
@@ -86,7 +93,8 @@ impl IsleContext<'_, '_, '_, '_> {
         if parameters.next().is_some() {
             return None;
         }
-        let (native_signature, arguments) = self.adapt_corelib_service_call(&callee, &source_signature, arguments)?;
+        let (native_signature, arguments, owner) =
+            self.adapt_corelib_service_call(&callee, &source_signature, arguments)?;
         let function = match self.call_importer.as_deref_mut()?.import(self.builder, callee.clone(), &native_signature)
         {
             Ok(function) => function,
@@ -96,6 +104,11 @@ impl IsleContext<'_, '_, '_, '_> {
             }
         };
         let call = self.builder.ins().call(function, &arguments);
+        if let Some(owner) = owner {
+            // The adapter passes raw array data to native code, which may park or collect.
+            self.builder.declare_value_needs_stack_map(owner);
+            self.builder.ins().bor(owner, owner);
+        }
         self.guard_checked_allocation()?;
         for root in roots.into_iter().rev() {
             self.release_expression_root(root)?;
@@ -103,7 +116,7 @@ impl IsleContext<'_, '_, '_, '_> {
         Some((call, source_signature))
     }
 
-    /// A local read whose binding owns a registered GC root slot.
+    /// A local read whose SSA binding describes a managed reference.
     pub(in crate::context) fn is_rooted_local_read(&self, key: AstNodeKey) -> bool {
         // A copied read yields a fresh object, not the value the local's root slot holds; so does
         // a read boxed into a contract-typed destination.
@@ -112,9 +125,11 @@ impl IsleContext<'_, '_, '_, '_> {
             && self.facts.node_kind(key) == Some(NodeKind::PathExpression)
             && self.facts.field_index(key).is_none()
             && self.facts.block_result(key).is_none()
-            && self.facts.local_slot(key).and_then(|slot| self.locals.get(&slot)).is_some_and(|binding| {
-                binding.managed_reference == ManagedReferenceFact::GcManaged && binding.root_slot.is_some()
-            })
+            && self
+                .facts
+                .local_slot(key)
+                .and_then(|slot| self.locals.get(&slot))
+                .is_some_and(|binding| binding.managed_reference == ManagedReferenceFact::GcManaged)
     }
 
     /// An argument whose lowering emits no call and assigns no local: a plain local read or a
@@ -152,9 +167,9 @@ impl IsleContext<'_, '_, '_, '_> {
         callee: &DirectCallee,
         source_signature: &Signature,
         arguments: Vec<Value>,
-    ) -> Option<(Signature, Vec<Value>)> {
+    ) -> Option<(Signature, Vec<Value>, Option<Value>)> {
         let DirectCallee::CorelibService(symbol) = callee else {
-            return Some((source_signature.clone(), arguments));
+            return Some((source_signature.clone(), arguments, None));
         };
         let native_signature =
             corelib_service_native_signature(self.frontend_config, self.builder.func.signature.call_conv, symbol)?;
@@ -165,23 +180,23 @@ impl IsleContext<'_, '_, '_, '_> {
             let len = builder.ins().load(word, MemFlagsData::new(), value, i32::try_from(pointer.bytes()).ok()?);
             Some((data, len))
         };
-        let adapted = match (*symbol, arguments.as_slice()) {
+        let (adapted, owner) = match (*symbol, arguments.as_slice()) {
             ("str_from_bytes_utf8", [header]) => {
                 let (data, len) = header_parts(self.builder, *header)?;
-                vec![data, len]
+                (vec![data, len], Some(*header))
             }
             ("syscall_write_bytes", [fd, header]) => {
                 let fd = self.builder.ins().ireduce(types::I32, *fd);
                 let (data, len) = header_parts(self.builder, *header)?;
-                vec![fd, data, len]
+                (vec![fd, data, len], Some(*header))
             }
             ("syscall_read" | "syscall_read_bytes", [fd, header, len]) => {
                 let (data, _) = header_parts(self.builder, *header)?;
-                vec![*fd, data, *len]
+                (vec![*fd, data, *len], Some(*header))
             }
-            _ => arguments,
+            _ => (arguments, None),
         };
-        (adapted.len() == native_signature.params.len()).then_some((native_signature, adapted))
+        (adapted.len() == native_signature.params.len()).then_some((native_signature, adapted, owner))
     }
 
     /// Re-materialize a compiler-owned runtime layout constant at the exact

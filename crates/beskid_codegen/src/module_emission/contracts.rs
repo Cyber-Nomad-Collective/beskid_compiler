@@ -191,6 +191,7 @@ pub(super) fn emission_error(input: &CodegenInput<'_>, error: FunctionEmissionEr
 fn lowering_reason(kind: &LoweringErrorKind) -> String {
     match kind {
         LoweringErrorKind::MissingRuleOrFact => "no lowering rule or fact matches this construct".to_owned(),
+        LoweringErrorKind::UnclassifiedStackMapValue => "a stack map value has no managed-reference fact".to_owned(),
         LoweringErrorKind::StringMaterialization(error) => {
             format!("a string value could not be materialized ({error})")
         }

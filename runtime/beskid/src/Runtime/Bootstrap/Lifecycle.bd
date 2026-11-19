@@ -18,7 +18,6 @@ const TLS_STATE_SIZE = 64;
 const TLS_CHECKED_ALLOCATION_SCOPE_OFFSET = 48;
 const TLS_RUNTIME_OFFSET = 0;
 const TLS_ROOT_FRAME_OFFSET = 8;
-const TLS_RESERVED_OFFSET = 16;
 const TLS_ATTACH_DEPTH_OFFSET = 24;
 const TLS_COMPOSITION_SCOPE_OFFSET = 32;
 const TLS_COMPOSITION_DEPTH_OFFSET = 40;
@@ -540,7 +539,7 @@ pub unit IsolateReleaseHeap(pointer runtime)
     pointer thread = CurrentThreadState();
     if (thread != NativePointer(0))
     {
-        if (NativePointer(raw_word_load(pointer_add(thread, TLS_RUNTIME_OFFSET))) != runtime || raw_word_load(pointer_add(thread, TLS_ROOT_FRAME_OFFSET)) != 0 || raw_word_load(pointer_add(thread, TLS_RESERVED_OFFSET)) != 0 || raw_word_load(pointer_add(thread, TLS_ATTACH_DEPTH_OFFSET)) != 1 || raw_word_load(pointer_add(thread, TLS_COMPOSITION_SCOPE_OFFSET)) != 0 || raw_word_load(pointer_add(thread, TLS_COMPOSITION_DEPTH_OFFSET)) != 0 || raw_word_load(pointer_add(thread, TLS_COMPOSITION_EXIT_OFFSET)) != 0 || raw_word_load(pointer_add(thread, TLS_CHECKED_ALLOCATION_SCOPE_OFFSET)) != 0)
+        if (NativePointer(raw_word_load(pointer_add(thread, TLS_RUNTIME_OFFSET))) != runtime || raw_word_load(pointer_add(thread, TLS_ROOT_FRAME_OFFSET)) != 0 || SchedulerRootFrame(thread) != NativePointer(0) || raw_word_load(pointer_add(thread, TLS_ATTACH_DEPTH_OFFSET)) != 1 || raw_word_load(pointer_add(thread, TLS_COMPOSITION_SCOPE_OFFSET)) != 0 || raw_word_load(pointer_add(thread, TLS_COMPOSITION_DEPTH_OFFSET)) != 0 || raw_word_load(pointer_add(thread, TLS_COMPOSITION_EXIT_OFFSET)) != 0 || raw_word_load(pointer_add(thread, TLS_CHECKED_ALLOCATION_SCOPE_OFFSET)) != 0)
         {
             Trap(10, NativePointer(0), 0);
         }
@@ -758,7 +757,7 @@ pub unit ThreadDetach(pointer thread)
         Trap(10, NativePointer(0), 0);
     }
     pointer runtime = NativePointer(raw_word_load(pointer_add(thread, TLS_RUNTIME_OFFSET)));
-    if (runtime == NativePointer(0) || raw_word_load(pointer_add(thread, TLS_ROOT_FRAME_OFFSET)) != 0 || raw_word_load(pointer_add(thread, TLS_RESERVED_OFFSET)) != 0 || raw_word_load(pointer_add(thread, TLS_ATTACH_DEPTH_OFFSET)) != 1 || raw_word_load(pointer_add(thread, TLS_COMPOSITION_SCOPE_OFFSET)) != 0 || raw_word_load(pointer_add(thread, TLS_COMPOSITION_DEPTH_OFFSET)) != 0 || raw_word_load(pointer_add(thread, TLS_COMPOSITION_EXIT_OFFSET)) != 0 || raw_word_load(pointer_add(thread, TLS_CHECKED_ALLOCATION_SCOPE_OFFSET)) != 0)
+    if (runtime == NativePointer(0) || raw_word_load(pointer_add(thread, TLS_ROOT_FRAME_OFFSET)) != 0 || SchedulerRootFrame(thread) != NativePointer(0) || raw_word_load(pointer_add(thread, TLS_ATTACH_DEPTH_OFFSET)) != 1 || raw_word_load(pointer_add(thread, TLS_COMPOSITION_SCOPE_OFFSET)) != 0 || raw_word_load(pointer_add(thread, TLS_COMPOSITION_DEPTH_OFFSET)) != 0 || raw_word_load(pointer_add(thread, TLS_COMPOSITION_EXIT_OFFSET)) != 0 || raw_word_load(pointer_add(thread, TLS_CHECKED_ALLOCATION_SCOPE_OFFSET)) != 0)
     {
         Trap(10, NativePointer(0), 0);
     }

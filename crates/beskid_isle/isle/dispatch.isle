@@ -18,36 +18,36 @@
 (extern extractor index_target index_target)
 
 
-(rule (lower_expression key @ (and
+(rule (select_expression key @ (and
         (node_kind (NodeKind.BinaryExpression))
         (operator_fact (OperatorFact.StringAdd))))
       (emit_string_concat key))
-(rule (lower_expression key @ (and
+(rule (select_expression key @ (and
         (node_kind (NodeKind.BinaryExpression))
         (operator_fact (OperatorFact.StringEq))))
       (emit_string_eq key))
-(rule (lower_expression key @ (and
+(rule (select_expression key @ (and
         (node_kind (NodeKind.BinaryExpression))
         (operator_fact (OperatorFact.StringNotEq))))
       (emit_string_ne key))
-(rule (lower_expression key @ (and
+(rule (select_expression key @ (and
         (node_kind (NodeKind.BinaryExpression))
         (operator_fact (OperatorFact.StringLt))))
       (emit_string_order key))
-(rule (lower_expression key @ (and
+(rule (select_expression key @ (and
         (node_kind (NodeKind.BinaryExpression))
         (operator_fact (OperatorFact.StringLte))))
       (emit_string_order key))
-(rule (lower_expression key @ (and
+(rule (select_expression key @ (and
         (node_kind (NodeKind.BinaryExpression))
         (operator_fact (OperatorFact.StringGt))))
       (emit_string_order key))
-(rule (lower_expression key @ (and
+(rule (select_expression key @ (and
         (node_kind (NodeKind.BinaryExpression))
         (operator_fact (OperatorFact.StringGte))))
       (emit_string_order key))
 
-(rule (lower_expression key @ (and
+(rule (select_expression key @ (and
         (node_kind (NodeKind.IndexExpression))
         (index_target (IndexTarget.String))))
       (emit_string_index_read key))

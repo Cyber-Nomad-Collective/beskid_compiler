@@ -163,7 +163,7 @@ pub use semantic_contract::{
     resolved_item, resolved_local, runtime_intrinsic, runtime_intrinsic_name, scalar_match, scoped_cleanup,
     spawn_entry_validation, spawn_handle_type, spawn_legality, spawn_target, specialized_builtin_type_argument,
     specialized_call_result_managed_reference_kind, specialized_closure_signature,
-    specialized_corelib_value_service_result, specialized_try_expression_fact, test_item, test_statement_nodes,
+    specialized_corelib_value_service_result, specialized_nominal_field_managed_reference_kind, specialized_try_expression_fact, test_item, test_statement_nodes,
     transfer_class_code, transfer_class_code_for_substitution, transfer_class_intrinsic, try_expression_fact,
     try_expression_judgement, try_expression_legality, typed_array_allocation, value_abi_type,
 };

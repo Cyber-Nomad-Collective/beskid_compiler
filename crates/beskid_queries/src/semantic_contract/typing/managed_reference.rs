@@ -150,10 +150,20 @@ pub(in crate::semantic_contract) fn managed_reference_kind_tracked(
             return Some(binding.map(|binding| binding.managed_reference));
         }
         if node.of::<beskid_analysis::syntax::CallExpression>().is_some()
-            && let Ok(Some(CallLowering::Direct(declaration))) = call_lowering(db, key)
-            && let Some(kind) = managed_reference_kind_for_callable_result(db, key, declaration, None)
+            && let Ok(Some(lowering)) = call_lowering(db, key)
         {
-            return Some(kind);
+            let declaration = match lowering {
+                CallLowering::Direct(declaration) => Some(declaration),
+                // A source-issued native Mod callback uses the exact SDK wrapper's type.
+                // Its host transport alone cannot distinguish a managed result from a pointer.
+                CallLowering::NativeModCallback(callback) => Some(callback.wrapper()),
+                _ => None,
+            };
+            if let Some(declaration) = declaration
+                && let Some(kind) = managed_reference_kind_for_callable_result(db, key, declaration, None)
+            {
+                return Some(kind);
+            }
         }
         if node.of::<beskid_analysis::syntax::CallExpression>().is_some()
             && let Ok(Some(CallLowering::FunctionValue(_))) = call_lowering(db, key)

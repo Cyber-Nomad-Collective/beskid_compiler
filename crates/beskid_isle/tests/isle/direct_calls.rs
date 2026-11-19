@@ -382,3 +382,46 @@ fn source_callees_with_the_same_node_id_in_different_units_are_distinct() {
     assert_eq!(symbols[&DirectCallee::item(left)], "Left");
     assert_eq!(symbols[&DirectCallee::item(right)], "Right");
 }
+
+#[test]
+fn native_byte_adapter_publishes_the_array_header_when_only_the_payload_is_passed() {
+    let isa = beskid_isle::target_isa::host_isa_builder()
+        .unwrap()
+        .finish(settings::Flags::new(settings::builder()))
+        .unwrap();
+    let word = isa.pointer_type();
+    let emitter = FunctionEmitter::new(isa.as_ref());
+    let mut facts = call_facts(isa.as_ref(), DirectCallee::corelib_service("str_from_bytes_utf8"));
+    facts.argument_type = word;
+    facts.call_type = word;
+    facts.signature = emitter.signature([word], [word]);
+    let mut importer = importer(isa.clone(), facts.callee.clone());
+    let function = emitter
+        .emit_expression_with_call_importer(
+            UserFuncName::user(0, 24),
+            emitter.signature([], [word]),
+            &facts,
+            facts.call,
+            &mut importer,
+        )
+        .expect("lower native byte adapter");
+    let mut header = None;
+    let mut protected = None;
+    for inst in function.layout.blocks().flat_map(|block| function.layout.block_insts(block)) {
+        match &function.dfg.insts[inst] {
+            _ if function.dfg.insts[inst].opcode() == cranelift_codegen::ir::Opcode::Iconst => {
+                header = function.dfg.inst_results(inst).first().copied();
+            }
+            cranelift_codegen::ir::InstructionData::Store { args, .. } => {
+                protected = Some(args[0]);
+            }
+            cranelift_codegen::ir::InstructionData::Call { .. } => {
+                assert!(function.dfg.user_stack_map_entries(inst).is_some_and(|entries| entries.len() == 1));
+                assert!(header.is_some() && protected == header, "{}", function.display());
+                return;
+            }
+            _ => {}
+        }
+    }
+    panic!("missing native byte adapter call");
+}

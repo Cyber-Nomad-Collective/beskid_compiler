@@ -6,6 +6,7 @@ use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
 use super::import_helpers::import_local;
 use super::types::SpawnTrampoline;
 use crate::module_emission::contracts::{SyntaxModuleEmissionError, emission_verification};
+use crate::stack_maps::{CHECKPOINT_ALIGNMENT, CHECKPOINT_BYTES, CHECKPOINT_VALUES_PER_CALL};
 
 const FIBER_ABI_CALL_RESERVE: u64 = 1 << 16;
 const MAX_CRANELIFT_SPILL_BYTES_PER_VALUE: u64 = 16;
@@ -30,11 +31,23 @@ pub(in crate::module_emission) fn conservative_fiber_stack_requirement(
     let value_count = u64::try_from(target.dfg.num_values()).map_err(|_| {
         emission_verification(format!("fiber target `{target_symbol}` value count is not representable"))
     })?;
-    let spill_reserve = value_count
-        .checked_mul(MAX_CRANELIFT_SPILL_BYTES_PER_VALUE)
+    // Native module emission adds a checkpoint address, a captured SP and a
+    // table pointer at each mapped call, and one fixed checkpoint per frame.
+    let mapped_calls = target
+        .layout
+        .blocks()
+        .flat_map(|block| target.layout.block_insts(block))
+        .filter(|inst| target.dfg.user_stack_map_entries(*inst).is_some_and(|roots| !roots.is_empty()))
+        .count() as u64;
+    let spill_reserve = mapped_calls
+        .checked_mul(u64::from(CHECKPOINT_VALUES_PER_CALL))
+        .and_then(|checkpoint_values| value_count.checked_add(checkpoint_values))
+        .and_then(|values| values.checked_mul(MAX_CRANELIFT_SPILL_BYTES_PER_VALUE))
         .ok_or_else(|| emission_verification(format!("fiber target `{target_symbol}` spill requirement overflowed")))?;
+    let checkpoint_reserve = if mapped_calls == 0 { 0 } else { u64::from(CHECKPOINT_BYTES + CHECKPOINT_ALIGNMENT - 1) };
     let mut required = FIBER_ABI_CALL_RESERVE
         .checked_add(spill_reserve)
+        .and_then(|size| size.checked_add(checkpoint_reserve))
         .ok_or_else(|| emission_verification(format!("fiber target `{target_symbol}` stack requirement overflowed")))?;
     for slot in target.sized_stack_slots.values() {
         let alignment = 1u64.checked_shl(u32::from(slot.align_shift)).ok_or_else(|| {
@@ -76,6 +89,9 @@ pub(in crate::module_emission) fn emit_spawn_trampoline(
         builder.switch_to_block(entry);
         builder.seal_block(entry);
         let environment = builder.block_params(entry)[0];
+        if trampoline.closure_captures.is_some() || trampoline.argument_plan.is_some() {
+            builder.declare_value_needs_stack_map(environment);
+        }
         emit_entry_stack_guard(
             &mut builder,
             pointer,
@@ -94,8 +110,8 @@ pub(in crate::module_emission) fn emit_spawn_trampoline(
         let call = match (&trampoline.closure_captures, &trampoline.argument_plan) {
             (Some(_), None) => builder.ins().call(target, &[environment]),
             (None, Some(plan)) => {
-                // The runtime roots the environment for the fiber's lifetime; no safepoint lies
-                // between these loads and the entry call, whose prologue roots managed params.
+                // The fiber's capture owner traces the environment through the entry call,
+                // including last-use arguments that are absent from caller liveness.
                 let parameters = trampoline.target_signature.params.clone();
                 if parameters.len() != plan.fields.len() {
                     return Err(emission_verification(format!(
@@ -111,12 +127,16 @@ pub(in crate::module_emission) fn emit_spawn_trampoline(
                             trampoline.symbol
                         ))
                     })?;
-                    arguments.push(builder.ins().load(
+                    let argument = builder.ins().load(
                         parameter.value_type,
                         cranelift_codegen::ir::MemFlagsData::new(),
                         environment,
                         offset,
-                    ));
+                    );
+                    if plan.pointer_map_offsets.contains(&field.field_offset) {
+                        builder.declare_value_needs_stack_map(argument);
+                    }
+                    arguments.push(argument);
                 }
                 builder.ins().call(target, &arguments)
             }
@@ -157,22 +177,9 @@ pub(super) fn emit_boxed_result(
     result: cranelift_codegen::ir::Value,
     plan: &crate::aggregate_static::AggregateStaticPlan,
 ) -> cranelift_codegen::ir::Value {
-    let root = if !plan.pointer_map_offsets.is_empty() {
-        let slot = builder.create_sized_stack_slot(cranelift_codegen::ir::StackSlotData::new(
-            cranelift_codegen::ir::StackSlotKind::ExplicitSlot,
-            pointer.bytes(),
-            3,
-        ));
-        builder.ins().stack_store(pointer, result, slot, 0);
-        let address = builder.ins().stack_addr(pointer, slot, 0);
-        let register = import_local(builder, "gc_register_root", &[pointer], Some(types::I8));
-        let call = builder.ins().call(register, &[address]);
-        let ok = builder.inst_results(call)[0];
-        builder.ins().trapz(ok, cranelift_codegen::ir::TrapCode::unwrap_user(5));
-        Some(address)
-    } else {
-        None
-    };
+    if !plan.pointer_map_offsets.is_empty() {
+        builder.declare_value_needs_stack_map(result);
+    }
     let request = builder.func.create_global_value(cranelift_codegen::ir::GlobalValueData::Symbol {
         name: ExternalName::testcase(&plan.allocation_request_symbol),
         offset: 0.into(),
@@ -185,10 +192,6 @@ pub(super) fn emit_boxed_result(
     let boxed = builder.inst_results(call)[0];
     builder.ins().trapz(boxed, cranelift_codegen::ir::TrapCode::unwrap_user(5));
     builder.ins().store(cranelift_codegen::ir::MemFlagsData::new(), result, boxed, plan.fields[0].field_offset as i32);
-    if let Some(root) = root {
-        let unregister = import_local(builder, "gc_unregister_root", &[pointer], None);
-        builder.ins().call(unregister, &[root]);
-    }
     boxed
 }
 

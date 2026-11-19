@@ -20,19 +20,8 @@ impl IsleContext<'_, '_, '_, '_> {
         }
         let pointer = dispatch::pointer_type(self.frontend_config);
         let request = self.symbol_global(allocation.allocation_request_symbol.as_ref(), pointer)?;
-        let root_slot = self.builder.create_sized_stack_slot(StackSlotData::new(
-            StackSlotKind::ExplicitSlot,
-            pointer.bytes(),
-            pointer.bytes().ilog2() as u8,
-        ));
-        let root_slot_address = self.builder.ins().stack_addr(pointer, root_slot, 0);
-        let allocate =
-            self.import_runtime_helper("beskid_rt_v5_array_allocate_rooted", &[pointer, pointer], Some(pointer))?;
-        let allocation_call = self.builder.ins().call(allocate, &[request, root_slot_address]);
-        let array = self.builder.inst_results(allocation_call).first().copied()?;
-        self.guard_checked_allocation()?;
+        let (array, root) = self.allocate_array(request)?;
         self.builder.ins().trapz(array, TrapCode::unwrap_user(5));
-        let root = ScopedTemporaryRoot::ArrayConstruction(root_slot);
         self.track_expression_root(root)?;
         // `BeskidArray.ptr` remains at offset zero.  The backing bytes are owned by the same
         // descriptor-backed GC allocation; they are never a stack temporary.
@@ -119,23 +108,9 @@ impl IsleContext<'_, '_, '_, '_> {
         }
         self.builder.ins().stack_store(pointer, length, request_slot, word_bytes);
         let request = self.builder.ins().stack_addr(pointer, request_slot, 0);
-        let root_slot = self.builder.create_sized_stack_slot(StackSlotData::new(
-            StackSlotKind::ExplicitSlot,
-            pointer.bytes(),
-            pointer.bytes().ilog2() as u8,
-        ));
-        let root_address = self.builder.ins().stack_addr(pointer, root_slot, 0);
-        let allocate =
-            self.import_runtime_helper("beskid_rt_v5_array_allocate_rooted", &[pointer, pointer], Some(pointer))?;
-        let call = self.builder.ins().call(allocate, &[request, root_address]);
-        let array = self.builder.inst_results(call).first().copied()?;
+        let (array, root) = self.allocate_array(request)?;
         self.builder.ins().trapz(array, TrapCode::unwrap_user(5));
-        let root_handle = self.builder.ins().stack_load(pointer, pointer, root_slot, 0);
-        let finish =
-            self.import_runtime_helper("beskid_rt_v5_array_construction_finish", &[pointer], Some(types::I8))?;
-        let finish_call = self.builder.ins().call(finish, &[root_handle]);
-        let released = self.builder.inst_results(finish_call).first().copied()?;
-        self.builder.ins().trapz(released, TrapCode::unwrap_user(10));
+        self.release_temporary_root(Some(root))?;
         Some(array)
     }
 
@@ -179,21 +154,8 @@ impl IsleContext<'_, '_, '_, '_> {
                 let next_length = self.builder.ins().iadd_imm_s(length, 1);
                 let overflow = self.builder.ins().icmp(IntCC::UnsignedLessThanOrEqual, next_length, length);
                 self.builder.ins().trapnz(overflow, TrapCode::unwrap_user(3));
-                let root_slot = self.builder.create_sized_stack_slot(StackSlotData::new(
-                    StackSlotKind::ExplicitSlot,
-                    pointer.bytes(),
-                    pointer.bytes().ilog2() as u8,
-                ));
-                let root_out = self.builder.ins().stack_addr(pointer, root_slot, 0);
-                let grow = self.import_runtime_helper(
-                    "beskid_rt_v5_array_grow_rooted",
-                    &[pointer, word, pointer],
-                    Some(pointer),
-                )?;
                 let minimum = self.growth_minimum_capacity(mutation_owner, owner, next_length)?;
-                let grow_call = self.builder.ins().call(grow, &[owner, minimum, root_out]);
-                let array = self.builder.inst_results(grow_call).first().copied()?;
-                self.guard_checked_allocation()?;
+                let (array, root) = self.grow_array(owner, minimum)?;
                 self.builder.ins().trapz(array, TrapCode::unwrap_user(5));
                 let data = self.builder.ins().load(pointer, MemFlagsData::new(), array, 0);
                 let offset =
@@ -204,12 +166,7 @@ impl IsleContext<'_, '_, '_, '_> {
                 self.builder.ins().store(MemFlagsData::new(), value, address, 0);
                 self.builder.ins().store(MemFlagsData::new(), next_length, array, length_offset);
                 self.publish_collection_owner(key, *array_key, mutation_owner, aggregate_base, array)?;
-                let root_handle = self.builder.ins().stack_load(pointer, pointer, root_slot, 0);
-                let finish =
-                    self.import_runtime_helper("beskid_rt_v5_array_construction_finish", &[pointer], Some(types::I8))?;
-                let finish_call = self.builder.ins().call(finish, &[root_handle]);
-                let released = self.builder.inst_results(finish_call).first().copied()?;
-                self.builder.ins().trapz(released, TrapCode::unwrap_user(10));
+                self.release_temporary_root(Some(root))?;
                 self.release_temporary_root(value_root)?;
                 self.release_temporary_root(aggregate_root)?;
                 self.release_temporary_root(Some(owner_root))?;
@@ -300,19 +257,18 @@ impl IsleContext<'_, '_, '_, '_> {
     /// Validate the owner of a canonical array mutation and, for an aggregate field, lower and root
     /// the object that holds the field (the publication target). A later call can change a
     /// containing field, so the terminal receiver is snapshotted, not only its lexical root.
-    fn collection_owner_base(
+    pub(super) fn collection_owner_base(
         &mut self,
         key: AstNodeKey,
         array_key: AstNodeKey,
         mutation_owner: CollectionMutationOwner,
-    ) -> Option<(Option<Value>, Option<StackSlot>)> {
+    ) -> Option<(Option<Value>, Option<TemporaryRoot>)> {
         let pointer = dispatch::pointer_type(self.frontend_config);
         match mutation_owner {
             CollectionMutationOwner::Local(slot) => {
                 let binding = self.locals.get(&slot).copied()?;
                 if binding.value_type != pointer
                     || binding.managed_reference != ManagedReferenceFact::GcManaged
-                    || binding.root_slot.is_none()
                     || self.facts.local_slot(array_key) != Some(slot)
                 {
                     self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::UnprovenCollectionOwner });
@@ -324,7 +280,6 @@ impl IsleContext<'_, '_, '_, '_> {
                 let binding = self.locals.get(&root).copied()?;
                 if binding.value_type != pointer
                     || binding.managed_reference != ManagedReferenceFact::GcManaged
-                    || binding.root_slot.is_none()
                 {
                     self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::UnprovenCollectionOwner });
                     return None;
@@ -345,7 +300,7 @@ impl IsleContext<'_, '_, '_, '_> {
     /// Write the array a canonical mutation produced back to its owner: the local slot, or the
     /// field of `base`. The owner field of an existing object is overwritten (the result may
     /// replace the old array), so that store is barriered while a heap marks.
-    fn publish_collection_owner(
+    pub(super) fn publish_collection_owner(
         &mut self,
         key: AstNodeKey,
         array_key: AstNodeKey,
@@ -396,6 +351,7 @@ impl IsleContext<'_, '_, '_, '_> {
         let array = generated::constructor_lower_expression(self, *array_key)?;
         (self.builder.func.dfg.value_type(array) == pointer).then_some(())?;
         self.builder.ins().trapz(array, TrapCode::unwrap_user(1));
+        let owner_root = self.root_temporary(array)?;
         let (aggregate_base, aggregate_root) = match mutation_owner {
             Some(owner) => self.collection_owner_base(key, *array_key, owner)?,
             None => (None, None),
@@ -405,14 +361,6 @@ impl IsleContext<'_, '_, '_, '_> {
         let empty = self.builder.ins().icmp_imm_s(IntCC::Equal, length, 0);
         self.builder.ins().trapnz(empty, TrapCode::HEAP_OUT_OF_BOUNDS);
         let next_length = self.builder.ins().iadd_imm_s(length, -1);
-        // The construction root of a copy; zero while the array is shortened in place.
-        let root_slot = self.builder.create_sized_stack_slot(StackSlotData::new(
-            StackSlotKind::ExplicitSlot,
-            pointer.bytes(),
-            pointer.bytes().ilog2() as u8,
-        ));
-        let zero = self.builder.ins().iconst(pointer, 0);
-        self.builder.ins().stack_store(pointer, zero, root_slot, 0);
         let shared = self.array_shared_flag(mutation_owner, array)?;
         let copy_block = self.builder.create_block();
         let shorten = self.builder.create_block();
@@ -423,17 +371,13 @@ impl IsleContext<'_, '_, '_, '_> {
         let capacity_offset = i32::try_from(pointer.bytes() * 2).ok()?;
         let capacity = self.builder.ins().load(pointer, MemFlagsData::new(), array, capacity_offset);
         let detach = self.builder.ins().iadd_imm_s(capacity, 1);
-        let root_out = self.builder.ins().stack_addr(pointer, root_slot, 0);
-        let grow =
-            self.import_runtime_helper("beskid_rt_v5_array_grow_rooted", &[pointer, pointer, pointer], Some(pointer))?;
-        let grow_call = self.builder.ins().call(grow, &[array, detach, root_out]);
-        let copy = self.builder.inst_results(grow_call).first().copied()?;
-        self.guard_checked_allocation()?;
+        let (copy, _) = self.grow_array(array, detach)?;
         self.builder.ins().trapz(copy, TrapCode::unwrap_user(5));
         self.builder.ins().jump(shorten, &[copy.into()]);
         self.builder.switch_to_block(shorten);
         self.builder.seal_block(shorten);
         let shortened = self.builder.block_params(shorten).first().copied()?;
+        let shortened_root = self.root_temporary(shortened)?;
         let data = self.builder.ins().load(pointer, MemFlagsData::new(), shortened, 0);
         let offset =
             if stride == 1 { next_length } else { self.builder.ins().imul_imm_s(next_length, i64::from(stride)) };
@@ -443,21 +387,8 @@ impl IsleContext<'_, '_, '_, '_> {
         if let Some(owner) = mutation_owner {
             self.publish_collection_owner(key, *array_key, owner, aggregate_base, shortened)?;
         }
-        // Release the construction root of a copy once its owner holds it.
-        let root_handle = self.builder.ins().stack_load(pointer, pointer, root_slot, 0);
-        let finish_block = self.builder.create_block();
-        let done = self.builder.create_block();
-        self.builder.ins().brif(root_handle, finish_block, &[], done, &[]);
-        self.builder.switch_to_block(finish_block);
-        self.builder.seal_block(finish_block);
-        let finish =
-            self.import_runtime_helper("beskid_rt_v5_array_construction_finish", &[pointer], Some(types::I8))?;
-        let finish_call = self.builder.ins().call(finish, &[root_handle]);
-        let released = self.builder.inst_results(finish_call).first().copied()?;
-        self.builder.ins().trapz(released, TrapCode::unwrap_user(10));
-        self.builder.ins().jump(done, &[]);
-        self.builder.switch_to_block(done);
-        self.builder.seal_block(done);
+        self.release_temporary_root(Some(shortened_root))?;
+        self.release_temporary_root(Some(owner_root))?;
         self.release_temporary_root(aggregate_root)?;
         Some(shortened)
     }

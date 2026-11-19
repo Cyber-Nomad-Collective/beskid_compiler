@@ -28,21 +28,6 @@ fn adapter_classifies_import_resolved_integer_constant_paths_as_scalar() {
 }
 
 #[test]
-fn managed_parameter_emits_a_root_for_its_full_function_lifetime() {
-    let (input, isa, item) = item_fixture("i64 Main(string value) { return 0_i64; }");
-    let function = emit_isle_item(&input, isa.as_ref(), item)
-        .unwrap_or_else(|error| panic!("rooted parameter lowering: {}", error.display_with_db(input.database())));
-    let clif = function.display().to_string();
-
-    let register = clif.find("gc_register_root").expect("local root registration");
-    let unregister = clif.find("gc_unregister_root").expect("local root cleanup");
-    let return_instruction = clif.rfind("return").expect("function return");
-    assert_eq!(clif.matches("gc_register_root").count(), 1, "{clif}");
-    assert_eq!(clif.matches("gc_unregister_root").count(), 1, "{clif}");
-    assert!(register < unregister && unregister < return_instruction, "{clif}");
-}
-
-#[test]
 fn explicitly_declared_native_pointer_assignment_remains_unrooted() {
     let (input, isa, item) =
         item_fixture("pointer Main(pointer value) { mut pointer cursor = value; cursor = value; return cursor; }");
@@ -83,65 +68,6 @@ fn scalar_binary_assignment_with_constant_path_remains_unrooted() {
 }
 
 #[test]
-fn managed_local_reassignment_updates_its_existing_root_slot() {
-    let (input, isa, item) = item_fixture(
-        "string Main(string first, string second) { mut string value = first; value = second; return value; }",
-    );
-    let function = emit_isle_item(&input, isa.as_ref(), item).unwrap_or_else(|error| {
-        panic!("managed local reassignment lowering: {}", error.display_with_db(input.database()))
-    });
-    let clif = function.display().to_string();
-
-    assert_eq!(clif.matches("gc_register_root").count(), 3, "{clif}");
-    assert_eq!(clif.matches("gc_unregister_root").count(), 3, "{clif}");
-    use cranelift_codegen::ir::{InstructionData, ValueDef};
-    let slots = function.sized_stack_slots.iter().map(|(slot, _)| slot).collect::<Vec<_>>();
-    assert_eq!(slots.len(), 3, "parameters and local each own a root slot:\n{clif}");
-    let params = function.dfg.block_params(function.layout.entry_block().expect("entry"));
-    let slot_for_address = |value| {
-        let ValueDef::Result(inst, _) = function.dfg.value_def(value) else { panic!("root address: {clif}") };
-        let InstructionData::StackAddr { stack_slot, offset, .. } = function.dfg.insts[inst] else {
-            panic!("root address must refer to a stack slot: {clif}")
-        };
-        assert_eq!(i32::from(offset), 0);
-        assert_eq!(function.dfg.value_type(value), isa.pointer_type());
-        stack_slot
-    };
-    let mut stores = Vec::new();
-    let mut registrations = Vec::new();
-    let mut cleanups = Vec::new();
-    for (position, inst) in function.layout.blocks().flat_map(|block| function.layout.block_insts(block)).enumerate() {
-        match function.dfg.insts[inst] {
-            InstructionData::Store { args, offset, .. } => {
-                assert_eq!(i32::from(offset), 0);
-                stores.push((position, slot_for_address(args[1]), args[0]));
-            }
-            InstructionData::Call { func_ref, .. } => {
-                let name = &function.dfg.ext_funcs[func_ref].name;
-                let slot = slot_for_address(function.dfg.inst_args(inst)[0]);
-                if *name == cranelift_codegen::ir::ExternalName::testcase("gc_register_root") {
-                    registrations.push((position, slot));
-                } else if *name == cranelift_codegen::ir::ExternalName::testcase("gc_unregister_root") {
-                    cleanups.push((position, slot));
-                }
-            }
-            _ => {}
-        }
-    }
-    assert_eq!(
-        stores.iter().map(|(_, slot, value)| (*slot, *value)).collect::<Vec<_>>(),
-        [(slots[0], params[0]), (slots[1], params[1]), (slots[2], params[0]), (slots[2], params[1])],
-        "reassignment must publish the second parameter into the existing local root: {clif}"
-    );
-    assert_eq!(registrations.iter().map(|(_, slot)| *slot).collect::<Vec<_>>(), slots);
-    assert_eq!(cleanups.iter().map(|(_, slot)| *slot).collect::<Vec<_>>(), [slots[2], slots[1], slots[0]]);
-    for index in 0..3 {
-        assert!(stores[index].0 < registrations[index].0, "initialize before registration: {clif}");
-    }
-    assert!(registrations[2].0 < stores[3].0 && stores[3].0 < cleanups[0].0, "refresh while rooted: {clif}");
-}
-
-#[test]
 fn adapter_classifies_declared_arrays_and_string_call_results_as_managed() {
     let (input, _isa, root) = item_fixture_with_root(
         r#"
@@ -168,80 +94,51 @@ i64 Main() {
 }
 
 #[test]
-fn conditional_branch_roots_end_in_the_branch_without_polluting_an_alternate_return() {
+fn loop_safepoint_keeps_only_the_reassigned_value() {
+    use cranelift_codegen::ir::{InstructionData, ValueDef};
+
     let (input, isa, item) = item_fixture(
-        "unit Main(bool condition, string value) { if condition { string branch = value; } else { return; } return; }",
+        "string Main(string first, string second, bool repeat) { mut string current = first; current = second; while repeat { break; } return current; }",
     );
-    let function = emit_isle_item(&input, isa.as_ref(), item)
-        .unwrap_or_else(|error| panic!("branch-local root lowering: {}", error.display_with_db(input.database())));
-    let clif = function.display().to_string();
-
-    assert_eq!(clif.matches("gc_register_root").count(), 2, "parameter plus branch local:\n{clif}");
-    assert_eq!(
-        clif.matches("gc_unregister_root").count(),
-        3,
-        "branch local exits on branch fallthrough; the two returns clean only the parameter:\n{clif}"
-    );
+    let function = emit_isle_item(&input, isa.as_ref(), item).expect("loop with reassigned root lowers");
+    let entry = function.layout.entry_block().expect("entry");
+    let [_, second, _] = function.dfg.block_params(entry) else { panic!("expected three parameters") };
+    let roots = function
+        .layout
+        .blocks()
+        .flat_map(|block| function.layout.block_insts(block))
+        .find_map(|inst| function.dfg.user_stack_map_entries(inst))
+        .expect("the polling call needs a map");
+    let [root] = roots else { panic!("only the current value is live: {}", function.display()) };
+    assert!(function.layout.block_insts(entry).any(|inst| {
+        if let InstructionData::Store { args: [value, address], .. } = function.dfg.insts[inst]
+            && let ValueDef::Result(address, _) = function.dfg.value_def(address)
+            && let InstructionData::StackAddr { stack_slot, .. } = function.dfg.insts[address]
+        {
+            value == *second && stack_slot == root.slot
+        } else {
+            false
+        }
+    }));
 }
 
 #[test]
-fn nested_block_root_ends_before_following_statements() {
-    let (input, isa, item) =
-        item_fixture("unit Main(string value) { { string scoped = value; } i64 marker = 1_i64; marker; return; }");
-    let function = emit_isle_item(&input, isa.as_ref(), item)
-        .unwrap_or_else(|error| panic!("nested-block root lowering: {}", error.display_with_db(input.database())));
-    let clif = function.display().to_string();
+fn branch_polls_map_only_values_live_on_that_path() {
+    use cranelift_codegen::ir::{ExternalName, InstructionData};
 
-    let scoped_cleanup = clif.find("gc_unregister_root").expect("nested block cleanup");
-    let marker_update = clif.rfind("iconst.i64 1").expect("statement following nested block");
-    assert!(scoped_cleanup < marker_update, "the nested root must end before the next statement:\n{clif}");
-}
-
-#[test]
-fn effect_position_block_root_ends_before_following_statements() {
-    let (input, isa, item) =
-        item_fixture("unit Main(string value) { { string scoped = value; }; i64 marker = 1_i64; marker; return; }");
-    let function = emit_isle_item(&input, isa.as_ref(), item).unwrap_or_else(|error| {
-        panic!("effect-position block root lowering: {}", error.display_with_db(input.database()))
-    });
-    let clif = function.display().to_string();
-
-    let scoped_cleanup = clif.find("gc_unregister_root").expect("effect-position block cleanup");
-    let marker = clif.rfind("iconst.i64 1").expect("statement following effect-position block");
-    assert!(scoped_cleanup < marker, "the effect-position block root must end at its own boundary:\n{clif}");
-}
-
-#[test]
-fn managed_match_binding_does_not_pollute_an_alternate_return() {
     let (input, isa, item) = item_fixture(
-        "enum Choice { Text(string text), Empty } unit Main(Choice choice) { match choice { Choice::Text(text) => { text; }, Choice::Empty => { return; }, }; return; }",
+        "type Node { i64 value } i64 Main(Node live, bool branch, bool repeat) { if branch { while repeat { break; } return live.value; } while repeat { break; } return 0_i64; }",
     );
-    let function = emit_isle_item(&input, isa.as_ref(), item)
-        .unwrap_or_else(|error| panic!("match-binding root lowering: {}", error.display_with_db(input.database())));
-    let clif = function.display().to_string();
-
-    assert_eq!(clif.matches("gc_register_root").count(), 2, "parameter plus Text binding:\n{clif}");
-    assert_eq!(
-        clif.matches("gc_unregister_root").count(),
-        3,
-        "Text binding exits in its arm; the alternate and final returns clean only the parameter:\n{clif}"
-    );
-}
-
-#[test]
-fn array_match_binding_is_rooted_for_its_lexical_arm() {
-    let (input, isa, item) = item_fixture(
-        "enum Choice { Values(i64[] values), Empty } unit Main(Choice choice) { match choice { Choice::Values(values) => { values; }, Choice::Empty => {}, }; return; }",
-    );
-    let function = emit_isle_item(&input, isa.as_ref(), item).unwrap_or_else(|error| {
-        panic!("array match-binding root lowering: {}", error.display_with_db(input.database()))
-    });
-    let clif = function.display().to_string();
-
-    assert_eq!(clif.matches("gc_register_root").count(), 2, "parameter plus array binding:\n{clif}");
-    assert_eq!(
-        clif.matches("gc_unregister_root").count(),
-        2,
-        "array binding exits in its arm and the parameter exits at return:\n{clif}"
-    );
+    let function = emit_isle_item(&input, isa.as_ref(), item).expect("lower branch-specific polls");
+    let poll = ExternalName::testcase("gc_collect_if_needed");
+    let mut counts = Vec::new();
+    for inst in function.layout.blocks().flat_map(|block| function.layout.block_insts(block)) {
+        if let InstructionData::Call { func_ref, .. } = function.dfg.insts[inst]
+            && function.dfg.ext_funcs[func_ref].name == poll
+        {
+            counts.push(function.dfg.user_stack_map_entries(inst).map_or(0, |entries| entries.len()));
+        }
+    }
+    counts.sort_unstable();
+    assert_eq!(counts, [0, 1], "{}", function.display());
 }

@@ -317,3 +317,38 @@ fn parsed_project_mutable_capture_keeps_generation_safe_facts_and_is_rejected() 
 
     assert_legality_failure(assembly, target, isa.as_ref(), &["Capture.bd", "E1233", "`outer`"]);
 }
+
+#[test]
+fn source_loops_publish_managed_roots_at_the_collection_poll() {
+    let project = tempfile::tempdir().expect("project directory");
+    let source = r#"
+        type Node { i32 value }
+        i32 Main() {
+            Node live = Node { value: 42 };
+            mut i32 i = 0;
+            while i < 3 {
+                i = i + 1;
+                continue;
+            }
+            for j in range(0, 3) { i = i + j; }
+            return live.value + i;
+        }
+    "#;
+    let assembly = parse_production_units(project.path(), &[("Main.bd", "Main", source)]);
+    let (target, isa) = x86_64_target_and_isa();
+    let lowered = lower_verified_entrypoint(assembly, target, isa.as_ref());
+    let function = &lowered.artifact().functions.iter().find(|f| f.name.starts_with("Main#syntax_")).unwrap().function;
+    let mut polls = 0;
+    for block in function.layout.blocks() {
+        for inst in function.layout.block_insts(block) {
+            if let cranelift_codegen::ir::InstructionData::Call { func_ref, .. } = function.dfg.insts[inst]
+                && function.dfg.ext_funcs[func_ref].name
+                    == cranelift_codegen::ir::ExternalName::testcase("gc_collect_if_needed")
+            {
+                polls += 1;
+                assert!(function.dfg.user_stack_map_entries(inst).is_some_and(|roots| !roots.is_empty()));
+            }
+        }
+    }
+    assert_eq!(polls, 2, "{}", function.display());
+}

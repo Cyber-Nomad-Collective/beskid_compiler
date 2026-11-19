@@ -132,7 +132,10 @@ export "beskid_rt_v5_thread_detach" { params = [{ name = thread, type = pointer 
 export "beskid_rt_v5_gc_resolve_handle" { params = [{ name = handle, type = usize }] returns = pointer }
 export "beskid_rt_v5_gc_root_slot_is_registered" { params = [{ name = ptrAddr, type = pointer }] returns = u8 }
 export "beskid_rt_v5_managed_object_allocate" { params = [{ name = request, type = pointer }] returns = pointer }
+export "beskid_rt_v5_array_allocate" { params = [{ name = request, type = pointer }] returns = pointer }
 export "beskid_rt_v5_array_allocate_rooted" { params = [{ name = request, type = pointer }, { name = root_handle_out, type = pointer }] returns = pointer }
+export "beskid_rt_v5_array_grow" { params = [{ name = array, type = pointer }, { name = minimum_capacity, type = usize }] returns = pointer }
+export "beskid_rt_v5_array_try_grow" { params = [{ name = array, type = pointer }, { name = minimum_capacity, type = usize }] returns = pointer }
 export "beskid_rt_v5_array_grow_rooted" { params = [{ name = array, type = pointer }, { name = minimum_capacity, type = usize }, { name = root_handle_out, type = pointer }] returns = pointer }
 export "beskid_rt_v5_array_construction_finish" { params = [{ name = root_handle, type = pointer }] returns = u8 }
 # Incremental marking (v0.6.2). The hybrid barrier of generated code and of runtime stores into
@@ -142,6 +145,8 @@ export "beskid_rt_v5_gc_write_barrier" { params = [{ name = slot, type = pointer
 # The number of heaps in the process that are marking; generated code tests it before calling the
 # barrier. Defined by the platform object (platform_tls.c).
 export_data "beskid_rt_v5_gc_barrier_active" { type = usize }
+export "beskid_rt_v5_stack_map_push" { params = [{ name = frame, type = pointer }, { name = stack_pointer, type = pointer }, { name = table, type = pointer }] returns = void }
+export "beskid_rt_v5_stack_map_pop" { params = [{ name = frame, type = pointer }] returns = void }
 export "beskid_rt_v5_closure_environment_allocate" { params = [{ name = request, type = pointer }] returns = pointer }
 export "beskid_rt_v5_closure_capture_store" { params = [{ name = environment, type = pointer }, { name = descriptor, type = pointer }, { name = map_index, type = usize }, { name = value, type = pointer }] returns = u8 }
 export "beskid_rt_v5_closure_environment_root" { params = [{ name = tls_state, type = pointer }, { name = slot_index, type = usize }, { name = environment, type = pointer }] returns = u8 }
@@ -185,6 +190,7 @@ intrinsic "guarded_stack_grow" { symbol = "beskid_rt_v5_intrinsic_guarded_stack_
 intrinsic "guarded_stack_free" { symbol = "beskid_rt_v5_intrinsic_guarded_stack_free" capability = "runtime.bootstrap.guarded_stack_free" params = [{ name = usable_base, type = pointer }, { name = maximum_size, type = usize }] returns = void }
 intrinsic "tls_get" { symbol = "beskid_rt_v5_intrinsic_tls_get" capability = "runtime.bootstrap.tls_get" params = [] returns = pointer }
 intrinsic "tls_set" { symbol = "beskid_rt_v5_intrinsic_tls_set" capability = "runtime.bootstrap.tls_set" params = [{ name = value, type = pointer }] returns = void }
+intrinsic "stack_map_caller_pc" { symbol = "beskid_rt_v5_intrinsic_stack_map_caller_pc" capability = "runtime.bootstrap.stack_map_caller_pc" params = [] returns = pointer }
 intrinsic "trap" { symbol = "beskid_rt_v5_intrinsic_trap" capability = "runtime.bootstrap.trap" params = [{ name = code, type = u8 }, { name = message, type = pointer }, { name = message_len, type = usize }] returns = never }
 intrinsic "fiber_yield" { symbol = "beskid_rt_v5_fiber_yield" capability = "runtime.bootstrap.fiber_yield" params = [] returns = void }
 intrinsic "thread_yield" {
@@ -2233,14 +2239,14 @@ layout "BeskidAllocationRequest" { size = 24 alignment = 8 fields = [{ name = si
 layout "BeskidHandle" { size = 16 alignment = 8 fields = [{ name = slot, offset = 0, type = u32 }, { name = generation, offset = 4, type = u32 }, { name = owner_cookie, offset = 8, type = u64 }] }
 layout "BeskidObjectHeader" { size = 16 alignment = 8 fields = [{ name = descriptor, offset = 0, type = pointer }, { name = gc_word, offset = 8, type = usize }] }
 layout "BeskidRootFrame" { size = 24 alignment = 8 fields = [{ name = previous, offset = 0, type = pointer }, { name = slots, offset = 8, type = pointer }, { name = slot_count, offset = 16, type = usize }] }
+layout "BeskidStackMapFrame" { size = 32 alignment = 8 fields = [{ name = previous, offset = 0, type = pointer }, { name = stack_pointer, offset = 8, type = pointer }, { name = return_pc, offset = 16, type = pointer }, { name = table, offset = 24, type = pointer }] }
 layout "BeskidRootSlot" { size = 8 alignment = 8 fields = [{ name = value, offset = 0, type = pointer }] }
 layout "BeskidRuntimeState" { size = 64 alignment = 8 project_to_runtime = accessors fields = [{ name = abi_version, offset = 0, type = u32 }, { name = flags, offset = 4, type = u32 }, { name = current_thread, offset = 8, type = pointer }, { name = heap, offset = 16, type = pointer }, { name = callback_registry, offset = 24, type = pointer }, { name = scheduler, offset = 32, type = pointer }, { name = root_frame, offset = 40, type = pointer }, { name = instance, offset = 48, type = pointer }, { name = lifecycle_state, offset = 56, type = u32 }, { name = lifecycle_generation, offset = 60, type = u32 }] }
 # Native-only worker request. `buffer` is never a managed address: submission owns
 # a copied system allocation until the canonical fiber resumes and releases it.
 layout "BeskidWorkerRequest" { size = 72 alignment = 8 project_to_runtime = constants fields = [{ name = next, offset = 0, type = pointer }, { name = tag, offset = 8, type = u64 }, { name = operation, offset = 16, type = u32 }, { name = state, offset = 20, type = u32 }, { name = native_handle, offset = 24, type = usize }, { name = buffer, offset = 32, type = pointer }, { name = length, offset = 40, type = usize }, { name = result, offset = 48, type = isize }, { name = error, offset = 56, type = i32 }, { name = abandoned, offset = 60, type = u32 }, { name = owner_scheduler_id, offset = 64, type = usize }] }
-# Scheduler state is the sole current-fiber authority. TLS offset 16 remains
-# explicitly reserved so attachment/composition offsets cannot drift.
-layout "BeskidTlsState" { size = 56 alignment = 8 project_to_runtime = accessors fields = [{ name = runtime, offset = 0, type = pointer }, { name = root_frame, offset = 8, type = pointer }, { name = reserved, offset = 16, type = usize }, { name = attach_depth, offset = 24, type = usize }, { name = composition_scope, offset = 32, type = pointer }, { name = composition_depth, offset = 40, type = usize }, { name = checked_allocation_scope, offset = 48, type = pointer }] }
+# The scheduler frame is suspended while a canonical fiber owns the mutator.
+layout "BeskidTlsState" { size = 56 alignment = 8 project_to_runtime = accessors fields = [{ name = runtime, offset = 0, type = pointer }, { name = root_frame, offset = 8, type = pointer }, { name = scheduler_root_frame, offset = 16, type = pointer }, { name = attach_depth, offset = 24, type = usize }, { name = composition_scope, offset = 32, type = pointer }, { name = composition_depth, offset = 40, type = usize }, { name = checked_allocation_scope, offset = 48, type = pointer }] }
 layout "BeskidTypeDescriptor" { size = 40 alignment = 8 fields = [{ name = size, offset = 0, type = usize }, { name = alignment, offset = 8, type = usize }, { name = pointer_map, offset = 16, type = pointer }, { name = pointer_count, offset = 24, type = usize }, { name = flags, offset = 32, type = u32 }, { name = reserved, offset = 36, type = u32 }] }
 # Immutable element metadata for an in-buffer typed array. This is intentionally
 # distinct from BeskidTypeDescriptor: element pointer offsets are relative to an

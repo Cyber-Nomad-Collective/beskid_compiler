@@ -198,7 +198,7 @@ fn string_concatenation_roots_the_left_operand_while_the_right_one_allocates() {
     // The `|Name` literal is materialized last; the formatted number is already rooted then.
     let literal = *calls_to("str_new").last().unwrap_or_else(|| panic!("a literal materialization: {clif}"));
     assert!(
-        calls_to("gc_register_root").iter().any(|register| *register < literal),
+        clif.lines().nth(literal).is_some_and(|line| line.contains("stack_map=")),
         "the left operand is rooted before the literal allocates: {clif}"
     );
     assert!(calls_to("str_concat").iter().any(|concat| *concat > literal), "{clif}");
@@ -228,7 +228,6 @@ fn every_intermediate_of_a_five_part_interpolation_is_rooted_while_later_parts_a
     let concats = calls_to("str_concat");
     assert_eq!(concats.len(), 7, "seven concatenations join eight parts: {clif}");
     let allocations = [calls_to("str_new"), calls_to("str_from_i64")].concat();
-    let registers = calls_to("gc_register_root");
     for pair in concats.windows(2) {
         let (previous, next) = (pair[0], pair[1]);
         let Some(first_allocation) = allocations.iter().copied().filter(|at| (previous..next).contains(at)).min()
@@ -237,7 +236,7 @@ fn every_intermediate_of_a_five_part_interpolation_is_rooted_while_later_parts_a
             continue;
         };
         assert!(
-            registers.iter().any(|register| (previous..first_allocation).contains(register)),
+            clif.lines().nth(first_allocation).is_some_and(|line| line.contains("stack_map=")),
             "the result of the concatenation at line {previous} is rooted before the allocation at line {first_allocation}: {clif}"
         );
     }
@@ -436,7 +435,10 @@ fn materialized_foundation_syscall_facade_preserves_managed_write_abi() {
         .expect("materialized Core.Syscall call lowers through the authorized external import");
     let clif = function.display().to_string();
     assert!(!clif.contains("ireduce.i32"), "the managed write ABI must preserve its i64 descriptor: {clif}");
-    assert!(!clif.contains("load.i64"), "the managed string pointer must cross the adapter boundary intact: {clif}");
+    assert!(
+        super::support::payload_loads(&function) == 0,
+        "the managed string pointer must cross the adapter boundary intact: {clif}"
+    );
     assert!(clif.contains("call"), "the trusted materialized facade must import syscall_write: {clif}");
 }
 
@@ -463,7 +465,11 @@ fn utf8_service_expands_the_typed_array_header_to_native_data_and_length() {
         )
         .expect("typed UTF-8 array facade lowers to the native data-plus-length ABI");
     let clif = function.display().to_string();
-    assert_eq!(clif.matches("load.i64").count(), 2, "the array header must yield exactly data and length: {clif}");
+    assert_eq!(
+        super::support::payload_loads(&function),
+        2,
+        "the array header must yield exactly data and length: {clif}"
+    );
     assert!(clif.contains("call"), "the adapted UTF-8 service must be called: {clif}");
 }
 
@@ -629,7 +635,10 @@ fn canonical_foundation_assert_trigger_failure_imports_only_baseline_strings_and
     let trigger =
         artifact.functions.iter().find(|function| function.name == "TriggerFailure").expect("trigger_failure artifact");
     let clif = trigger.function.display().to_string();
-    assert!(!clif.contains("load.i64"), "the managed panic string must cross the adapter boundary intact: {clif}");
+    assert!(
+        super::support::payload_loads(&trigger.function) == 0,
+        "the managed panic string must cross the adapter boundary intact: {clif}"
+    );
 }
 
 #[test]

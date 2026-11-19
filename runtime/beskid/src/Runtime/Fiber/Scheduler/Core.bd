@@ -541,23 +541,24 @@ pub unit RestoreFiberLocalState(word index)
     return;
 }
 
-pub bool MarkRootFrameChain(mut pointer frame)
-{
-    while (frame != NativePointer(0))
-    {
-        pointer slots = NativePointer(raw_word_load(pointer_add(frame, 8)));
-        word count = raw_word_load(pointer_add(frame, 16));
-        mut word index = 0;
-        while (slots != NativePointer(0) && index < count)
-        {
-            pointer value = NativePointer(raw_word_load(pointer_add(slots, index * 8)));
-            if (value != NativePointer(0))
-            {
-                GcMarkGray(value);
+pub bool MarkRootFrameChain(mut pointer frame) {
+    while frame != NativePointer(0) {
+        if IsStackMapFrame(frame) {
+            pointer storage = StackMapFrameStorage(frame);
+            if MarkPublishedStackMap(storage) == false { return false; }
+            frame = RootFramePrevious(storage);
+        } else {
+            if NativeWord(frame) % 8 != 0 { return false; }
+            pointer slots = RootFrameSlots(frame);
+            word count = RootFrameSlotCount(frame);
+            mut word index = 0;
+            while slots != NativePointer(0) && index < count {
+                pointer value = NativePointer(raw_word_load(pointer_add(slots, index * 8)));
+                if value != NativePointer(0) { GcMarkGray(value); }
+                index = index + 1;
             }
-            index = index + 1;
+            frame = RootFramePrevious(frame);
         }
-        frame = NativePointer(raw_word_load(frame));
     }
     return true;
 }

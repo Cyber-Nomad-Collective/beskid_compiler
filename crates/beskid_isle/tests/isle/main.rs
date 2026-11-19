@@ -7,6 +7,7 @@ mod bulk_call;
 mod clif_block;
 mod clif_opcode_lowering;
 mod clif_primitives;
+mod collection_publication;
 mod compile;
 mod direct_calls;
 mod enum_match;

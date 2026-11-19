@@ -3,8 +3,8 @@ use super::*;
 impl IsleContext<'_, '_, '_, '_> {
     /// Emit a slice of the one lexical scope stack without consuming compiler state: sibling
     /// control-flow paths must independently emit the same active regions. The rooted pending
-    /// slot is initially null; the first cleanup failure wins, but every destructor still runs.
-    fn emit_cleanup_sequence(&mut self, from: usize, to: usize, pending: StackSlot) -> Option<()> {
+    /// value is initially null; the first cleanup failure wins, but every destructor still runs.
+    fn emit_cleanup_sequence(&mut self, from: usize, to: usize, pending: TemporaryRoot) -> Option<()> {
         let plans = self
             .local_root_scopes
             .get(from..to)?
@@ -12,7 +12,6 @@ impl IsleContext<'_, '_, '_, '_> {
             .rev()
             .flat_map(|scope| scope.cleanups.iter().rev().cloned())
             .collect::<Vec<_>>();
-        let pointer = dispatch::pointer_type(self.frontend_config);
         for plan in plans {
             let slot = self.facts.local_slot(plan.binding)?;
             let receiver = self.builder.use_var(self.locals.get(&slot)?.variable);
@@ -29,7 +28,7 @@ impl IsleContext<'_, '_, '_, '_> {
             );
             let error_variant = plan.dispose_layout.variants.get(1)?;
             let failed = self.builder.ins().icmp_imm_s(IntCC::Equal, tag, error_variant.discriminant as i64);
-            let prior = self.builder.ins().stack_load(pointer, pointer, pending, 0);
+            let prior = self.builder.use_var(pending.0);
             let empty = self.builder.ins().icmp_imm_s(IntCC::Equal, prior, 0);
             let select = self.builder.ins().band(failed, empty);
             let error_block = self.builder.create_block();
@@ -64,7 +63,7 @@ impl IsleContext<'_, '_, '_, '_> {
                 ([None], None) => {}
                 _ => return None,
             }
-            self.builder.ins().stack_store(self.frontend_config.pointer_type(), object, pending, 0);
+            self.builder.def_var(pending.0, object);
             self.release_temporary_root(converted_root)?;
             self.builder.ins().jump(next, &[]);
             self.builder.switch_to_block(next);
@@ -86,7 +85,7 @@ impl IsleContext<'_, '_, '_, '_> {
         let null = self.builder.ins().iconst(pointer, 0);
         let pending = self.root_temporary(null)?;
         self.emit_cleanup_sequence(0, self.local_root_scopes.len(), pending)?;
-        let failure = self.builder.ins().stack_load(pointer, pointer, pending, 0);
+        let failure = self.builder.use_var(pending.0);
         let failed = self.builder.ins().icmp_imm_s(IntCC::NotEqual, failure, 0);
         let selected = self.builder.ins().select(failed, failure, value);
         self.release_temporary_root(Some(pending))?;
@@ -98,7 +97,7 @@ impl IsleContext<'_, '_, '_, '_> {
 
     /// Successful structured exits only clean their leaving scopes. A cleanup failure changes
     /// the exit into an error return, draining the remaining outer regions with the same slot.
-    pub(super) fn cleanup_scope_exit(&mut self, depth: usize, abandoned_root: Option<StackSlot>) -> Option<()> {
+    pub(super) fn cleanup_scope_exit(&mut self, depth: usize, abandoned_root: Option<TemporaryRoot>) -> Option<()> {
         self.emit_composition_cleanup_from(depth)?;
         if self.local_root_scopes.get(depth..)?.iter().all(|scope| scope.cleanups.is_empty()) {
             return Some(());
@@ -107,7 +106,7 @@ impl IsleContext<'_, '_, '_, '_> {
         let null = self.builder.ins().iconst(pointer, 0);
         let pending = self.root_temporary(null)?;
         self.emit_cleanup_sequence(depth, self.local_root_scopes.len(), pending)?;
-        let failure = self.builder.ins().stack_load(pointer, pointer, pending, 0);
+        let failure = self.builder.use_var(pending.0);
         let failed = self.builder.ins().icmp_imm_s(IntCC::NotEqual, failure, 0);
         let error_block = self.builder.create_block();
         let resume = self.builder.create_block();
@@ -115,7 +114,7 @@ impl IsleContext<'_, '_, '_, '_> {
         self.builder.switch_to_block(error_block);
         self.builder.seal_block(error_block);
         self.emit_cleanup_sequence(0, depth, pending)?;
-        let failure = self.builder.ins().stack_load(pointer, pointer, pending, 0);
+        let failure = self.builder.use_var(pending.0);
         self.release_temporary_root(abandoned_root)?;
         self.release_temporary_root(Some(pending))?;
         self.release_managed_local_roots()?;

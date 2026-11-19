@@ -40,10 +40,7 @@ impl SyntaxNodeFacts<'_> {
         {
             return Some(NodeKind::CallExpression);
         }
-        if matches!(
-            syntax,
-            beskid_queries::IndexedNodeKind::Identifier | beskid_queries::IndexedNodeKind::MethodDefinition
-        ) && self.local_slot_impl(key).is_some()
+        if syntax == beskid_queries::IndexedNodeKind::Identifier && self.local_slot_impl(key).is_some()
         {
             // A getter argument can use the nominal receiver's local directly, with no written
             // receiver expression for a bare property access.

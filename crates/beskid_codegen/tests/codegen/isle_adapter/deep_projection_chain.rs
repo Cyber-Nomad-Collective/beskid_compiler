@@ -7,7 +7,7 @@ const TYPES: &str = "type Node { u64 issuer; u64 gen; } type Compilation { strin
 
 fn offsets_in(clif: &str) -> Vec<String> {
     clif.lines()
-        .filter(|line| line.contains("load.i64"))
+        .filter(|line| line.contains("load.i64") && !line.contains("load.i64 notrap aligned"))
         .map(|line| line.split('=').nth(1).unwrap_or(line).trim().to_owned())
         .map(|instruction| instruction.rsplit(',').next().unwrap_or("").trim().to_owned())
         .map(|operand| match operand.split_once('+') {

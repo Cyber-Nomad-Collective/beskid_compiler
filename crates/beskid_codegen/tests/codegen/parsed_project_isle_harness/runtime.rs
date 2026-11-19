@@ -126,7 +126,7 @@ fn canonical_runtime_production_path_lowers_trusted_intrinsics_to_verified_clif(
         "generic runtime helper exports must not become ABI roots without a manifest declaration",
     );
     for function in &artifact.functions {
-        verify_function(&function.function, isa.flags())
+        verify_function(&function.function, isa.as_ref())
             .unwrap_or_else(|error| panic!("stock CLIF verifier rejected {}: {error}", function.name));
         Context::for_function(function.function.clone())
             .compile(isa.as_ref(), &mut ControlPlane::default())

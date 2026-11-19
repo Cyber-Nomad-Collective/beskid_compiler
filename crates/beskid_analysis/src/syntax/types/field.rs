@@ -5,7 +5,6 @@ use crate::syntax::{
 };
 
 use beskid_ast_derive::AstNode;
-use serde::ser::SerializeStruct;
 
 /// Distinguishes ordinary value fields from event/signal-style fields.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -16,7 +15,7 @@ pub enum FieldKind {
 }
 
 /// Struct or enum variant field with name and type (and optional event capacity).
-#[derive(AstNode, Debug, Clone, PartialEq, Eq, serde::Deserialize)]
+#[derive(AstNode, Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Field {
     #[ast(children)]
     pub attributes: Vec<Spanned<Attribute>>,
@@ -45,31 +44,6 @@ pub struct Field {
 impl Field {
     pub fn is_property(&self) -> bool {
         self.property_default.is_some() || self.property_accessors.is_some()
-    }
-}
-
-impl serde::Serialize for Field {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        // The Mod SDK JSON record has an exact shape for ordinary fields. Postcard syntax
-        // snapshots instead need all record members emitted in order.
-        let has_default = self.property_default.is_some() || !serializer.is_human_readable();
-        let has_accessors = self.property_accessors.is_some() || !serializer.is_human_readable();
-        let mut field =
-            serializer.serialize_struct("Field", 7 + usize::from(has_default) + usize::from(has_accessors))?;
-        field.serialize_field("attributes", &self.attributes)?;
-        field.serialize_field("visibility", &self.visibility)?;
-        field.serialize_field("kind", &self.kind)?;
-        field.serialize_field("event_capacity", &self.event_capacity)?;
-        field.serialize_field("inject_qualifier", &self.inject_qualifier)?;
-        field.serialize_field("name", &self.name)?;
-        field.serialize_field("ty", &self.ty)?;
-        if has_default {
-            field.serialize_field("property_default", &self.property_default)?;
-        }
-        if has_accessors {
-            field.serialize_field("property_accessors", &self.property_accessors)?;
-        }
-        field.end()
     }
 }
 

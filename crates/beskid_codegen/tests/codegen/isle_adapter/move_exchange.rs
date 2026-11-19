@@ -8,7 +8,7 @@
 
 use super::write_barrier_emission::{assert_guarded_stores, calls_to, lower_module};
 
-const ARRAY_ALLOCATE: &str = "beskid_rt_v5_array_allocate_rooted";
+const ARRAY_ALLOCATE: &str = "beskid_rt_v5_array_allocate";
 const OBJECT_ALLOCATE: &str = "beskid_rt_v5_managed_object_allocate";
 
 /// The value the function returns, and the instruction that defines it.
@@ -38,7 +38,7 @@ fn destructive_read_of_an_array_field_stores_the_empty_array_behind_the_barrier(
     let take = &lower_module("type Holder { u8[] buf; } u8[] Take(mut Holder h) { return move h.buf; }", &["Take"])[0];
     assert_eq!(assert_guarded_stores(take), 1, "{take}");
     assert_eq!(calls_to(take, ARRAY_ALLOCATE), 1, "the empty array is allocated: {take}");
-    assert!(take.contains("beskid_rt_v5_array_construction_finish"), "{take}");
+    assert!(!take.contains("beskid_rt_v5_array_construction_finish"), "{take}");
     assert_yields_loaded_value(take);
 }
 

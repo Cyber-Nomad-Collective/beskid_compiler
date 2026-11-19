@@ -1563,6 +1563,16 @@
       "result": "u32"
     },
     {
+      "symbol": "beskid_rt_v5_array_allocate",
+      "params": [
+        {
+          "name": "request",
+          "type": "pointer"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
       "symbol": "beskid_rt_v5_array_allocate_rooted",
       "params": [
         {
@@ -1585,6 +1595,20 @@
         }
       ],
       "result": "u8"
+    },
+    {
+      "symbol": "beskid_rt_v5_array_grow",
+      "params": [
+        {
+          "name": "array",
+          "type": "pointer"
+        },
+        {
+          "name": "minimum_capacity",
+          "type": "usize"
+        }
+      ],
+      "result": "pointer"
     },
     {
       "symbol": "beskid_rt_v5_array_grow_rooted",
@@ -1614,6 +1638,20 @@
         {
           "name": "root_handle_out",
           "type": "pointer"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_array_try_grow",
+      "params": [
+        {
+          "name": "array",
+          "type": "pointer"
+        },
+        {
+          "name": "minimum_capacity",
+          "type": "usize"
         }
       ],
       "result": "pointer"
@@ -3234,6 +3272,34 @@
     {
       "symbol": "beskid_rt_v5_scheduler_stack_overflow_observed",
       "params": [],
+      "result": "void"
+    },
+    {
+      "symbol": "beskid_rt_v5_stack_map_pop",
+      "params": [
+        {
+          "name": "frame",
+          "type": "pointer"
+        }
+      ],
+      "result": "void"
+    },
+    {
+      "symbol": "beskid_rt_v5_stack_map_push",
+      "params": [
+        {
+          "name": "frame",
+          "type": "pointer"
+        },
+        {
+          "name": "stack_pointer",
+          "type": "pointer"
+        },
+        {
+          "name": "table",
+          "type": "pointer"
+        }
+      ],
       "result": "void"
     },
     {
@@ -5116,6 +5182,15 @@
       "targetBindings": []
     },
     {
+      "name": "stack_map_caller_pc",
+      "symbol": "beskid_rt_v5_intrinsic_stack_map_caller_pc",
+      "capability": "runtime.bootstrap.stack_map_caller_pc",
+      "params": [],
+      "result": "pointer",
+      "resultStatus": null,
+      "targetBindings": []
+    },
+    {
       "name": "system_allocate",
       "symbol": "beskid_rt_v5_intrinsic_system_allocate",
       "capability": "runtime.bootstrap.system_allocate",
@@ -6874,6 +6949,34 @@
       ]
     },
     {
+      "name": "BeskidStackMapFrame",
+      "target": null,
+      "size": 32,
+      "alignment": 8,
+      "fields": [
+        {
+          "name": "previous",
+          "offset": 0,
+          "type": "pointer"
+        },
+        {
+          "name": "stack_pointer",
+          "offset": 8,
+          "type": "pointer"
+        },
+        {
+          "name": "return_pc",
+          "offset": 16,
+          "type": "pointer"
+        },
+        {
+          "name": "table",
+          "offset": 24,
+          "type": "pointer"
+        }
+      ]
+    },
+    {
       "name": "BeskidTlsState",
       "target": null,
       "size": 56,
@@ -6890,9 +6993,9 @@
           "type": "pointer"
         },
         {
-          "name": "reserved",
+          "name": "scheduler_root_frame",
           "offset": 16,
-          "type": "usize"
+          "type": "pointer"
         },
         {
           "name": "attach_depth",
