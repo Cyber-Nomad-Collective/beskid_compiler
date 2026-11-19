@@ -32,6 +32,7 @@ const LEGALITY_MAPPED: &[(&str, &str)] = &[
     ("for_iterator_protocol", "gate_obligations iterator obligations (E1215-E1218)"),
     ("generic_call_instantiation", "unresolved_call_target (E1203)"),
     ("mutable_local_assignment", "immutable_local_assignment (E1214)"),
+    ("observe", "observation_findings checks targets, equality, callbacks and derived dependencies (E1265-E1269)"),
     ("pattern_binding", "member_reference_legality (E1307)"),
     ("scoped_cleanup_layout", "scoped_cleanup (E1230)"),
     ("try_expression", "try_expression_fact through the prepare-spine fact authority (E1222)"),
@@ -81,6 +82,12 @@ const KNOWN_GAPS: &[&str] = &[
     "for_iterator_element_type",
     "function_item_value",
     "function_value_call",
+    // These require the instantiated receiver or a current-generation declaration identity.
+    "native_mod_transport",
+    "property_accessor_receiver",
+    // An absent or stale export declaration cannot establish its C signature. Property owners
+    // on a valid signature are rejected separately by validate_raw_c_export_signature.
+    "raw C export signature",
     "generic_nominal_method_receiver",
     "generic_receiver_instantiation",
     "generic_source_type_identity",
