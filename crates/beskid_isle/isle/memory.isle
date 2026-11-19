@@ -21,33 +21,33 @@
 (decl partial emit_match_statement (AstNodeKey) Unit)
 (extern constructor emit_match_statement emit_match_statement)
 
-(rule (lower_expression key @ (node_kind (NodeKind.PathExpression)))
+(rule (select_expression key @ (node_kind (NodeKind.PathExpression)))
       (emit_local_read key))
-(rule (lower_expression key @ (and
+(rule (select_expression key @ (and
         (node_kind (NodeKind.AssignExpression))
         (assignment_kind (AssignmentKind.Local))))
       (emit_local_assign key))
-(rule (lower_expression key @ (and
+(rule (select_expression key @ (and
         (node_kind (NodeKind.AssignExpression))
         (assignment_kind (AssignmentKind.Field))))
       (emit_field_assign key))
-(rule (lower_expression key @ (and
+(rule (select_expression key @ (and
         (node_kind (NodeKind.AssignExpression))
         (assignment_kind (AssignmentKind.Index))))
       (emit_index_assign key))
-(rule (lower_expression key @ (node_kind (NodeKind.ArrayLiteralExpression)))
+(rule (select_expression key @ (node_kind (NodeKind.ArrayLiteralExpression)))
       (emit_array_literal key))
-(rule (lower_expression key @ (and
+(rule (select_expression key @ (and
         (node_kind (NodeKind.IndexExpression))
         (index_target (IndexTarget.Array))))
       (emit_index_read key))
-(rule (lower_expression key @ (node_kind (NodeKind.StructLiteralExpression)))
+(rule (select_expression key @ (node_kind (NodeKind.StructLiteralExpression)))
       (emit_struct_literal key))
-(rule (lower_expression key @ (node_kind (NodeKind.FieldExpression)))
+(rule (select_expression key @ (node_kind (NodeKind.FieldExpression)))
       (emit_field_read key))
-(rule (lower_expression key @ (node_kind (NodeKind.EnumLiteralExpression)))
+(rule (select_expression key @ (node_kind (NodeKind.EnumLiteralExpression)))
       (emit_enum_literal key))
-(rule (lower_expression key @ (node_kind (NodeKind.MatchExpression)))
+(rule (select_expression key @ (node_kind (NodeKind.MatchExpression)))
       (emit_match key))
 (rule (lower_statement key @ (node_kind (NodeKind.MatchExpression)))
       (emit_match_statement key))

@@ -218,7 +218,7 @@ unit Main() { Build(); return; }
         .find(|function| function.name.starts_with("Build"))
         .expect("lowered Build function");
     let clif = build.function.display().to_string();
-    assert!(clif.contains("beskid_rt_v5_array_allocate_rooted"), "{clif}");
+    assert!(clif.contains(super::support::ARRAY_ALLOCATION_IMPORT), "{clif}");
     assert!(clif.contains("beskid_rt_v5_array_write_barrier"), "{clif}");
 }
 
@@ -370,10 +370,10 @@ unit Drive(i64[] state) {
     let step = clif_of("Step");
     assert_eq!(calls_to(&step, "beskid_rt_v5_array_write_barrier"), 0, "{step}");
     assert_eq!(calls_to(&step, "gc_register_root") + calls_to(&step, "gc_unregister_root"), 0, "{step}");
-    // Drive calls Step, so it keeps its own parameter root, but takes no snapshot root for the
-    // rooted local it passes.
     let drive = clif_of("Drive");
-    assert_eq!(calls_to(&drive, "gc_register_root"), 1, "Drive registers its parameter root only:\n{drive}");
+    assert_eq!(calls_to(&drive, "gc_register_root"), 0, "unexpected explicit registration:\n{drive}");
+    let function = &artifact.functions.iter().find(|function| function.name == "Drive").unwrap().function;
+    assert!(super::support::has_mapped_call(function, "Step"), "Drive retains its array argument: {drive}");
 }
 
 #[test]

@@ -25,13 +25,12 @@ use super::trampolines::{
     resolve_spawn_trampolines,
 };
 use crate::aggregate_static::{ABI_V5_MANAGED_OBJECT_ALLOCATE, emit_aggregate_static_data};
-use crate::array_static::{
-    ABI_V5_ARRAY_ALLOCATE_ROOTED, ABI_V5_ARRAY_CONSTRUCTION_FINISH, ABI_V5_ARRAY_GROW_ROOTED, emit_array_static_data,
-};
+use crate::array_static::emit_array_static_data;
 use crate::closure_static::{
     ABI_V5_CLOSURE_CAPTURE_STORE, ABI_V5_CLOSURE_ENVIRONMENT_ALLOCATE, emit_closure_static_data,
 };
 use crate::isle_adapter::emit_isle_lambda_entry;
+use crate::stack_maps::{DefineFunctionWithStackMaps, RuntimeCheckpointDefinitions, STACK_MAP_POP, STACK_MAP_PUSH};
 use crate::{
     CodegenArtifact, CodegenContext, CodegenInput, ExternImport, emit_isle_closure_lambda_entry,
     emit_isle_expression_with_call_importer, emit_isle_item_with_services, emit_isle_item_with_services_specialization,
@@ -39,6 +38,7 @@ use crate::{
 
 const ABI_V5_SCHEDULER_STACK_CHECK: &str = "beskid_rt_v5_scheduler_stack_check";
 const ABI_V5_SCHEDULER_STACK_OVERFLOW_OBSERVED: &str = "beskid_rt_v5_scheduler_stack_overflow_observed";
+const GC_COLLECT_IF_NEEDED: &str = "gc_collect_if_needed";
 
 /// State owned by a long-lived Cranelift module while it receives source artifacts.
 ///
@@ -261,6 +261,7 @@ fn lower_resolved_syntax_program(
                         .map_err(|error| emission_error(input, error))?
                 }
             };
+            verify_runtime_bootstrap_maps(input, body, &trampoline.target_symbol, &function)?;
             functions.push(crate::LoweredFunction { name: trampoline.target_symbol.clone(), function });
         }
     }
@@ -285,8 +286,10 @@ fn lower_resolved_syntax_program(
             )
             .map_err(|error| emission_error(input, error))?
         };
+        verify_runtime_bootstrap_maps(input, trampoline.lambda_body, &trampoline.symbol, &function)?;
         functions.push(crate::LoweredFunction { name: trampoline.symbol.clone(), function });
     }
+    let mut runtime_checkpoint_definitions = RuntimeCheckpointDefinitions::default();
     for item in items {
         trace_item_facts(input, item.key, &symbols);
         let started = Instant::now();
@@ -330,6 +333,16 @@ fn lower_resolved_syntax_program(
                 started.elapsed().as_millis(),
             )
         });
+        verify_runtime_bootstrap_maps(input, item.key, &item.symbol, &function)?;
+        if input.is_runtime_bootstrap(item.key) {
+            let export = beskid_queries::item_export_symbol(input.database(), item.key)
+                .map_err(|error| emission_verification(format!("runtime checkpoint export verification: {error}")))?;
+            match export.as_ref().map(|entry| entry.0.as_ref()) {
+                Some(STACK_MAP_PUSH) => runtime_checkpoint_definitions.push = Some(item.symbol.clone()),
+                Some(STACK_MAP_POP) => runtime_checkpoint_definitions.pop = Some(item.symbol.clone()),
+                _ => {}
+            }
+        }
         functions.push(crate::LoweredFunction { name: item.symbol.clone(), function });
     }
     let imports_scheduler_stack = !trampolines.is_empty() && scheduler_symbols.and_then(|(_, stack)| stack).is_none();
@@ -346,10 +359,9 @@ fn lower_resolved_syntax_program(
                     ))
                 })?;
             let required = conservative_fiber_stack_requirement(&target.function, &trampoline.target_symbol)?;
-            functions.push(crate::LoweredFunction {
-                name: trampoline.symbol.clone(),
-                function: emit_spawn_trampoline(trampoline, isa, required, stack_check, stack_overflow)?,
-            });
+            let function = emit_spawn_trampoline(trampoline, isa, required, stack_check, stack_overflow)?;
+            verify_runtime_bootstrap_maps(input, trampoline.spawn, &trampoline.symbol, &function)?;
+            functions.push(crate::LoweredFunction { name: trampoline.symbol.clone(), function });
         }
     }
     // `runtime_intrinsics` is non-empty only when `input.runtime_intrinsic_capability()` was
@@ -389,32 +401,11 @@ fn lower_resolved_syntax_program(
         &extern_contracts.availability,
         &mut context,
     )?;
-    // A function whose only calls are root registrations cannot reach a collection; drop them.
-    for function in &mut functions {
-        beskid_isle::elide_leaf_function_roots(&mut function.function);
-    }
 
     let closure_static_plans = collect_closure_static_plans(input, items, &trampolines, &lambda_trampolines);
     let event_handler_wrapper_required = event_handler_wrapper_required(input, items);
     if !closure_static_plans.is_empty() {
-        for symbol in [
-            ABI_V5_CLOSURE_ENVIRONMENT_ALLOCATE,
-            ABI_V5_CLOSURE_CAPTURE_STORE,
-            "gc_register_root",
-            "gc_unregister_root",
-        ] {
-            if !extern_imports.iter().any(|existing| existing.symbol == symbol) {
-                extern_imports.push(ExternImport {
-                    symbol: symbol.to_owned(),
-                    abi: Some("C".into()),
-                    library: None,
-                    optional: false,
-                });
-            }
-        }
-    }
-    if event_handler_wrapper_required {
-        for symbol in [ABI_V5_MANAGED_OBJECT_ALLOCATE, "gc_register_root", "gc_unregister_root"] {
+        for symbol in [ABI_V5_CLOSURE_ENVIRONMENT_ALLOCATE, ABI_V5_CLOSURE_CAPTURE_STORE] {
             if !extern_imports.iter().any(|existing| existing.symbol == symbol) {
                 extern_imports.push(ExternImport {
                     symbol: symbol.to_owned(),
@@ -458,23 +449,7 @@ fn lower_resolved_syntax_program(
                 .ok_or_else(|| emission_verification("source Fiber<T> handle layout unavailable"))?,
         );
     }
-    // Argument environments are rooted by the spawning function until the runtime owns them.
-    if trampolines
-        .iter()
-        .any(|trampoline| !trampoline.result_plan.pointer_map_offsets.is_empty() || trampoline.argument_plan.is_some())
-    {
-        for symbol in ["gc_register_root", "gc_unregister_root"] {
-            if !extern_imports.iter().any(|existing| existing.symbol == symbol) {
-                extern_imports.push(ExternImport {
-                    symbol: symbol.to_owned(),
-                    abi: Some("C".into()),
-                    library: None,
-                    optional: false,
-                });
-            }
-        }
-    }
-    if !aggregate_static_plans.is_empty()
+    if (!aggregate_static_plans.is_empty() || event_handler_wrapper_required)
         && !extern_imports.iter().any(|existing| existing.symbol == ABI_V5_MANAGED_OBJECT_ALLOCATE)
     {
         extern_imports.push(ExternImport {
@@ -485,21 +460,24 @@ fn lower_resolved_syntax_program(
         });
     }
     let array_static_plans = collect_array_static_plans(input, items);
-    if !array_static_plans.is_empty() {
-        for symbol in [
-            ABI_V5_ARRAY_ALLOCATE_ROOTED,
-            ABI_V5_ARRAY_GROW_ROOTED,
-            ABI_V5_ARRAY_CONSTRUCTION_FINISH,
-            "beskid_rt_v5_array_write_barrier",
-        ] {
-            if !extern_imports.iter().any(|existing| existing.symbol == symbol) {
-                extern_imports.push(ExternImport {
-                    symbol: symbol.to_owned(),
-                    abi: Some("C".into()),
-                    library: None,
-                    optional: false,
-                });
-            }
+    let array_helpers = ["beskid_rt_v5_array_allocate", "beskid_rt_v5_array_grow", "beskid_rt_v5_array_write_barrier"];
+    let references = |symbol: &str| {
+        let name = cranelift_codegen::ir::ExternalName::testcase(symbol);
+        functions.iter().any(|function| function.function.dfg.ext_funcs.values().any(|callee| callee.name == name))
+    };
+    let runtime_helpers = array_helpers
+        .iter()
+        .copied()
+        .filter(|symbol| !array_static_plans.is_empty() || references(symbol))
+        .chain(references(GC_COLLECT_IF_NEEDED).then_some(GC_COLLECT_IF_NEEDED));
+    for symbol in runtime_helpers {
+        if !extern_imports.iter().any(|existing| existing.symbol == symbol) {
+            extern_imports.push(ExternImport {
+                symbol: symbol.to_owned(),
+                abi: Some("C".into()),
+                library: None,
+                optional: false,
+            });
         }
     }
 
@@ -508,6 +486,7 @@ fn lower_resolved_syntax_program(
         string_literals: context.string_literals,
         extern_imports,
         trusted_extern_imports,
+        runtime_checkpoint_definitions,
         closure_static_plans,
         event_handler_wrapper_required,
         aggregate_static_plans,
@@ -516,9 +495,28 @@ fn lower_resolved_syntax_program(
     })
 }
 
+fn verify_runtime_bootstrap_maps(
+    input: &CodegenInput<'_>,
+    key: beskid_queries::AstNodeKey,
+    symbol: &str,
+    function: &cranelift_codegen::ir::Function,
+) -> Result<(), SyntaxModuleEmissionError> {
+    // Native runtime frames implement the checkpoint helpers and collector.
+    // They must never initiate a call to a checkpoint helper themselves.
+    if input.is_runtime_bootstrap(key)
+        && function.layout.blocks().flat_map(|block| function.layout.block_insts(block)).any(|inst| {
+            function.dfg.user_stack_map_entries(inst).is_some_and(|roots| !roots.is_empty())
+        })
+    {
+        return Err(emission_verification(format!("runtime bootstrap function `{symbol}` requires GC stack maps")));
+    }
+    Ok(())
+}
+
 /// Declare every syntax item before lowering any body, then import direct callees by exact
 /// generation-safe call identity. This is the production module boundary for syntax → ISLE
 /// lowering, including distinct generic instantiations of one source declaration.
+/// Modules with stack-map roots resolve the checkpoint imports through the ABI-v5 runtime.
 pub fn emit_syntax_program<M: Module>(
     module: &mut M,
     input: &CodegenInput<'_>,
@@ -559,13 +557,14 @@ pub fn emit_syntax_program<M: Module>(
     }
     crate::cranelift_host::declare_validated_extern_imports(module, &artifact, &mut by_symbol)
         .map_err(|error| SyntaxModuleEmissionError::Module(ModuleError::Backend(error.into())))?;
+    let checkpoints = artifact.runtime_checkpoint_definitions.Resolve(&by_symbol);
     for lowered in artifact.functions {
         let id = by_symbol[&lowered.name];
         let mut context = module.make_context();
         context.func = lowered.function;
         crate::cranelift_host::remap_testcase_externals(module, &mut context, &by_symbol)
             .map_err(|error| SyntaxModuleEmissionError::Module(ModuleError::Backend(error.into())))?;
-        module.define_function(id, &mut context)?;
+        DefineFunctionWithStackMaps(module, id, &mut context, None, checkpoints)?;
         module.clear_context(&mut context);
     }
     Ok(by_callee)

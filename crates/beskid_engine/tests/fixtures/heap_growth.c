@@ -27,7 +27,13 @@ int main(void) {
         }
     }
     if (getenv("BESKID_TEST_FORCE_ROOT_STACK_FAILURE") != NULL) {
+        void *host_roots[65] = {0};
         gc_heap_force_root_stack_failure(1);
+        for (size_t i = 0; i < 65; ++i) {
+            assert(gc_register_root(&host_roots[i]));
+        }
+        /* Registering the 65th slot must have trapped on root-block growth. */
+        abort();
     }
     const char *stress_text = getenv("BESKID_TEST_STRESS_INTERVAL");
     if (stress_text != NULL && stress_text[0] != '\0') {

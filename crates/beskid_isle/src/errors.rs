@@ -17,6 +17,7 @@ impl std::fmt::Display for StringMaterializationError {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum LoweringErrorKind {
     MissingRuleOrFact,
+    UnclassifiedStackMapValue,
     StringMaterialization(StringMaterializationError),
     UnknownCallee(DirectCallee),
     InvalidPrimitiveNumericConversion(&'static str),
@@ -64,6 +65,7 @@ impl LoweringError {
     fn kind_label(&self) -> String {
         match &self.kind {
             LoweringErrorKind::MissingRuleOrFact => "MissingRuleOrFact".to_owned(),
+            LoweringErrorKind::UnclassifiedStackMapValue => "missing GC-reference classification".to_owned(),
             LoweringErrorKind::StringMaterialization(error) => {
                 format!("StringMaterialization({error})")
             }

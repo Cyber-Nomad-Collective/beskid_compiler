@@ -162,8 +162,10 @@ fn canonical_contract_has_the_exact_lifecycle_closure_and_trap_exports() {
             ("beskid_rt_v5_abi_value_move_out", &[AbiType::Pointer, AbiType::Pointer][..], AbiType::U8),
             ("beskid_rt_v5_abi_value_replace_with_barrier", &[AbiType::Pointer, AbiType::Pointer][..], AbiType::U8),
             ("beskid_rt_v5_abi_version", &[][..], AbiType::U32),
+            ("beskid_rt_v5_array_allocate", &[AbiType::Pointer][..], AbiType::Pointer,),
             ("beskid_rt_v5_array_allocate_rooted", &[AbiType::Pointer, AbiType::Pointer][..], AbiType::Pointer,),
             ("beskid_rt_v5_array_construction_finish", &[AbiType::Pointer][..], AbiType::U8,),
+            ("beskid_rt_v5_array_grow", &[AbiType::Pointer, AbiType::USize][..], AbiType::Pointer,),
             (
                 "beskid_rt_v5_array_grow_rooted",
                 &[AbiType::Pointer, AbiType::USize, AbiType::Pointer][..],
@@ -219,6 +221,12 @@ fn canonical_contract_has_the_exact_lifecycle_closure_and_trap_exports() {
             ("beskid_rt_v5_process_shutdown", &[AbiType::Pointer][..], AbiType::Void,),
             ("beskid_rt_v5_scheduler_stack_check", &[AbiType::USize][..], AbiType::U8,),
             ("beskid_rt_v5_scheduler_stack_overflow_observed", &[][..], AbiType::Void,),
+            ("beskid_rt_v5_stack_map_pop", &[AbiType::Pointer][..], AbiType::Void,),
+            (
+                "beskid_rt_v5_stack_map_push",
+                &[AbiType::Pointer, AbiType::Pointer, AbiType::Pointer][..],
+                AbiType::Void,
+            ),
             ("beskid_rt_v5_thread_attach", &[AbiType::Pointer][..], AbiType::Pointer,),
             ("beskid_rt_v5_thread_detach", &[AbiType::Pointer][..], AbiType::Void,),
             ("beskid_rt_v5_trap", &[AbiType::U8, AbiType::Pointer, AbiType::USize][..], AbiType::Void,),
@@ -238,7 +246,7 @@ fn trusted_intrinsics_are_typed_and_owned_only_by_the_canonical_package() {
     assert_eq!(package.name(), CANONICAL_RUNTIME_PACKAGE_NAME);
     assert_eq!(package.abi_version(), ABI_V5);
     let names = manifest.trusted_runtime_intrinsics.iter().map(|intrinsic| intrinsic.name.as_str()).collect::<Vec<_>>();
-    assert_eq!(names.len(), 70);
+    assert_eq!(names.len(), 71);
     assert!(names.contains(&"pointer_add"));
     assert!(names.contains(&"raw_word_load"));
     assert!(names.contains(&"system_allocate"));
@@ -246,6 +254,7 @@ fn trusted_intrinsics_are_typed_and_owned_only_by_the_canonical_package() {
     assert!(names.contains(&"guarded_stack_grow"));
     assert!(names.contains(&"guarded_stack_free"));
     assert!(names.contains(&"tls_get"));
+    assert!(names.contains(&"stack_map_caller_pc"));
     assert!(names.contains(&"trap"));
     assert!(names.contains(&"clock_monotonic_nanos"));
     assert!(names.contains(&"thread_yield"));
@@ -396,6 +405,7 @@ fn canonical_layouts_freeze_common_and_target_context_offsets() {
                 "BeskidRootSlot",
                 "BeskidRuntimeState",
                 "BeskidSchedulerState",
+                "BeskidStackMapFrame",
                 "BeskidTlsState",
                 "BeskidTypeDescriptor",
                 "BeskidWorkerRequest",
@@ -423,7 +433,7 @@ fn canonical_layouts_freeze_common_and_target_context_offsets() {
             vec![
                 ("runtime", 0),
                 ("root_frame", 8),
-                ("reserved", 16),
+                ("scheduler_root_frame", 16),
                 ("attach_depth", 24),
                 ("composition_scope", 32),
                 ("composition_depth", 40),

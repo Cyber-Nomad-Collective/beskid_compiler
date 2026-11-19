@@ -1,9 +1,13 @@
 use Runtime.Bootstrap.Lifecycle;
 use Runtime.Bootstrap.Native;
 use Runtime.Bootstrap.Objects;
+use Runtime.Bootstrap.Roots;
 use Runtime.Mem.Gc.Allocation;
 use Runtime.Mem.Gc.Collection;
+use Runtime.Mem.Gc.Marking;
 use Runtime.Mem.Gc.RootsHandles;
+use Runtime.Mem.Gc.State;
+use Runtime.Mem.Gc.Verify;
 use Runtime.Data.Collections;
 use Testing.Assert;
 use HostRuntimeSupport;
@@ -43,6 +47,55 @@ test gc_fails_closed_before_runtime_initialization {
     Assert.True(allocationRejected, "allocation rejects a missing descriptor before initialization");
     Assert.Equal(bytesAllocated, 0, "statistics are zero before initialization");
     Assert.Equal(collected, 0, "collection fails closed before initialization");
+}
+
+test gc_marks_only_the_published_stack_map_slots {
+    pointer descriptor = TestDescriptor(24, 8);
+    pointer mapped = Alloc(24, descriptor);
+    word handle = GcRootHandle(mapped);
+    pointer unmapped = Alloc(24, descriptor);
+    pointer stack = SystemAllocate(48, 8);
+    pointer table = SystemAllocate(48, 8);
+    pointer tls = CurrentThreadState();
+    pointer previousFrame = RootFrame(tls);
+    word baseline = GcObjectCount();
+
+    // One safepoint with return offset 4 and a single root at SP + 40.
+    raw_word_store(table, 0x00010043474B5342);
+    raw_word_store(pointer_add(table, 8), (word(64) << 32) | 48);
+    raw_word_store(pointer_add(table, 16), 1024);
+    raw_word_store(pointer_add(table, 24), (word(4) << 32) | 1);
+    raw_word_store(pointer_add(table, 32), (word(1) << 32) | 48);
+    raw_word_store(pointer_add(table, 40), 40);
+    raw_word_store(stack, NativeWord(previousFrame));
+    raw_word_store(pointer_add(stack, 8), NativeWord(stack));
+    raw_word_store(pointer_add(stack, 16), 1028);
+    raw_word_store(pointer_add(stack, 24), NativeWord(table));
+    raw_word_store(pointer_add(stack, 32), NativeWord(unmapped));
+    raw_word_store(pointer_add(stack, 40), NativeWord(mapped));
+    SetRootFrame(tls, TagStackMapFrame(stack));
+    GcUnrootHandle(handle);
+
+    // An out-of-frame slot invalidates this map. The failed mark pass cannot sweep.
+    raw_word_store(pointer_add(table, 40), 48);
+    GcCollect();
+    word invalidPhase = GcPhase();
+    word afterInvalidMap = GcObjectCount();
+
+    raw_word_store(pointer_add(table, 40), 40);
+    GcCollect();
+    word remaining = GcObjectCount();
+    SetRootFrame(tls, previousFrame);
+    GcCollect();
+    word released = GcObjectCount();
+    SystemFree(table, 48);
+    SystemFree(stack, 48);
+    SystemFree(descriptor, 40);
+
+    Assert.Equal(invalidPhase, 3, "an invalid stack map fails the mark pass");
+    Assert.Equal(afterInvalidMap, baseline, "a failed stack map prevents sweeping objects");
+    Assert.True(remaining + 1 <= baseline, "a pointer in an unlisted word does not keep an object alive");
+    Assert.Equal(released + 1, remaining, "the mapped root survives only while its frame is published");
 }
 
 test gc_reclaims_reuses_and_invalidates_stale_handles {
@@ -128,6 +181,48 @@ test gc_array_uses_distinct_descriptors_and_traces_variable_pointer_elements {
     SystemFree(childDescriptor, 40);
     DropTestHeap(runtime, thread, heap, region, 512);
     ResumeHostRuntime(hostRuntime);
+}
+
+test map_managed_array_growth_roots_the_source_only_for_the_allocating_copy {
+    pointer hostRuntime = SuspendHostRuntime();
+    pointer runtime = SystemAllocate(64, 8);
+    memory_set(runtime, 0, 64);
+    Assert.True(ProcessInit(runtime) == runtime, "initialize isolated heap for array growth");
+    pointer element = SystemAllocate(32, 8);
+    memory_set(element, 0, 32);
+    raw_word_store(element, 8);
+    raw_word_store(pointer_add(element, 8), 8);
+    pointer descriptor = TestDescriptor(48, 8);
+    raw_word_store(pointer_add(descriptor, 32), TypeDescriptorArrayFlag());
+    pointer request = SystemAllocate(32, 8);
+    memory_set(request, 0, 32);
+    raw_word_store(request, NativeWord(element));
+    raw_word_store(pointer_add(request, 8), 1);
+    raw_word_store(pointer_add(request, 16), NativeWord(descriptor));
+
+    pointer source = AllocateArray(request);
+    Assert.True(source != NativePointer(0), "allocate an array without publishing a construction handle");
+    raw_word_store(NativePointer(raw_word_load(source)), 42);
+    word collections = GcCollectionCount();
+    GcHeapSetStressInterval(1);
+    pointer replacement = GrowArray(source, 4);
+    GcHeapSetStressInterval(0);
+    bool collected = GcCollectionCount() == collections + 1;
+    bool retainedForCopy = ManagedObjectForReference(Heap(), source) != NativePointer(0);
+    bool copied = replacement != NativePointer(0) && replacement != source &&
+        raw_word_load(NativePointer(raw_word_load(replacement))) == 42;
+    GcCollect();
+    bool released = ManagedObjectForReference(Heap(), source) == NativePointer(0) &&
+        ManagedObjectForReference(Heap(), replacement) == NativePointer(0);
+    ProcessShutdown(runtime);
+    SystemFree(request, 32);
+    SystemFree(descriptor, 40);
+    SystemFree(element, 32);
+    SystemFree(runtime, 64);
+    ResumeHostRuntime(hostRuntime);
+
+    Assert.True(collected && retainedForCopy && copied, "growth protects the source during forced collection and copies its element");
+    Assert.True(released, "the array APIs release internal roots when they return");
 }
 
 test gc_external_root_accepts_public_array_reference {

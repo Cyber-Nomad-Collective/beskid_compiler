@@ -95,21 +95,8 @@ macro_rules! generated_composition_methods {
                 for injection in &registration.injections {
                     let value = if let Some(symbol) = &injection.plural_allocation_request_symbol {
                         let request = self.symbol_global(symbol.as_ref(), pointer)?;
-                        let root_slot = self.builder.create_sized_stack_slot(StackSlotData::new(
-                            StackSlotKind::ExplicitSlot,
-                            pointer.bytes(),
-                            pointer.bytes().ilog2() as u8,
-                        ));
-                        let root_address = self.builder.ins().stack_addr(pointer, root_slot, 0);
-                        let allocate = self.import_runtime_helper(
-                            "beskid_rt_v5_array_allocate_rooted",
-                            &[pointer, pointer],
-                            Some(pointer),
-                        )?;
-                        let call = self.builder.ins().call(allocate, &[request, root_address]);
-                        let array = self.builder.inst_results(call).first().copied()?;
+                        let (array, root) = self.allocate_array(request)?;
                         self.composition_failure_guard(site, container, array, 5)?;
-                        let root = ScopedTemporaryRoot::ArrayConstruction(root_slot);
                         self.track_expression_root(root)?;
                         array_roots.push(root);
                         let data = self.builder.ins().load(pointer, MemFlagsData::new(), array, 0);
@@ -141,6 +128,7 @@ macro_rules! generated_composition_methods {
                     self.import_runtime_helper("beskid_rt_v5_managed_object_allocate", &[pointer], Some(pointer))?;
                 let call = self.builder.ins().call(allocate, &[request]);
                 let object = self.builder.inst_results(call).first().copied()?;
+                self.builder.declare_value_needs_stack_map(object);
                 self.composition_failure_guard(site, container, object, 5)?;
                 for (offset, value) in field_values {
                     let address = self.builder.ins().iadd_imm_s(object, i64::from(offset));

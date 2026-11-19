@@ -58,6 +58,24 @@ impl SyntaxNodeFacts<'_> {
         if self.composition_injected_access(key).is_some() {
             return Some(ManagedReferenceFact::GcManaged);
         }
+        let resolved = match self.node_kind(key) {
+            Some(NodeKind::IndexExpression) => {
+                let substitutions = self.current_item_specialization().map_or(&[][..], |item| &item.substitutions);
+                self.query(beskid_queries::array_index_element_managed_reference_kind(self.db, key, substitutions))
+            }
+            Some(NodeKind::CallExpression)
+                if matches!(self.query(call_lowering(self.db, key)), Some(CallLowering::FunctionValue(_))) =>
+            {
+                self.function_value_call_in_context(key).map(|call| call.result_managed_reference)
+            }
+            _ => None,
+        };
+        if let Some(kind) = resolved {
+            return Some(match kind {
+                ManagedReferenceKind::GcManaged => ManagedReferenceFact::GcManaged,
+                ManagedReferenceKind::NativeOrScalar => ManagedReferenceFact::NativeOrScalar,
+            });
+        }
         self.managed_reference_in_context(key)
     }
 

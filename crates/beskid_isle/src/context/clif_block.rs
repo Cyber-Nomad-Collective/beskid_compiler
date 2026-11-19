@@ -65,7 +65,7 @@ fn lower_in(
         let body = context.facts.clif_block_body(key).ok_or_else(|| "clif block body is unavailable".to_owned())?;
         let surface = parse_clif_surface_in(&body, mode).map_err(|error| error.to_string())?;
         let shapes = context.facts.clif_block_parameters(key);
-        ClifLowering {
+        let result = ClifLowering {
             context: &mut *context,
             shapes,
             result_type,
@@ -74,7 +74,18 @@ fn lower_in(
             addresses: HashSet::new(),
             remapped: HashMap::new(),
         }
-        .lower(&surface)
+        .lower(&surface)?;
+        // A payload borrow lasts through the CLIF block. A host callback can
+        // collect while C holds only the backing address. Keep the managed
+        // array header live for the frontend's safepoint pass.
+        for statement in &surface.statements {
+            if let ClifStatement::Payload { parameter, .. } = statement {
+                let owner = context.function_param_values[*parameter];
+                context.builder.declare_value_needs_stack_map(owner);
+                context.builder.ins().bor(owner, owner);
+            }
+        }
+        Ok(result)
     })();
     match result {
         Ok(value) => Some(value),

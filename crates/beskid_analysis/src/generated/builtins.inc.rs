@@ -512,6 +512,12 @@ define_builtins! {
         returns: Unit,
         injected: true,
     },
+    &["stack_map_caller_pc"] => {
+        symbol: "beskid_rt_v5_intrinsic_stack_map_caller_pc",
+        params: [],
+        returns: Ptr,
+        injected: true,
+    },
     &["trap"] => {
         symbol: "beskid_rt_v5_intrinsic_trap",
         params: [U64, Ptr, Usize],

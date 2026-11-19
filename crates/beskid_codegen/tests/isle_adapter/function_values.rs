@@ -91,15 +91,12 @@ fn capturing_lambda_argument_allocates_a_traced_closure_record() {
         "beskid_rt_v5_managed_object_allocate",
         "__beskid_event_handler_allocation_request_v5",
         "func_addr",
-        "gc_register_root",
     ] {
         assert!(clif.contains(needle), "missing `{needle}` in {clif}");
     }
-    // The environment allocation is rooted before the record allocation that can collect.
-    let environment = clif.find("beskid_rt_v5_closure_environment_allocate").expect("environment allocation");
-    let record = clif.rfind("beskid_rt_v5_managed_object_allocate").expect("record allocation");
-    let root = clif[environment..].find("gc_register_root").map(|offset| environment + offset).expect("env root");
-    assert!(environment < root && root < record, "{clif}");
+    // The environment must survive the record allocation.
+    let main = &artifact.functions.iter().find(|function| function.name == "Main").unwrap().function;
+    assert!(super::support::has_mapped_call(main, "beskid_rt_v5_managed_object_allocate"), "{clif}");
 }
 
 #[test]
@@ -136,7 +133,10 @@ fn returned_lambda_and_function_valued_result_lower() {
     assert!(lowered_clif(&artifact, "MakeAdder").contains("beskid_rt_v5_managed_object_allocate"));
     let main_clif = lowered_clif(&artifact, "Main");
     assert_eq!(main_clif.matches("call_indirect").count(), 2, "{main_clif}");
-    assert!(main_clif.contains("gc_register_root"), "the function-valued local is a GC root: {main_clif}");
+    assert!(
+        main_clif.lines().any(|line| line.contains("call_indirect") && line.contains("stack_map=")),
+        "the captured environment is a root through the indirect call: {main_clif}"
+    );
 }
 
 #[test]

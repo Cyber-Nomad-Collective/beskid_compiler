@@ -342,8 +342,8 @@ fn regex_span_list_constructor_stores_two_nominal_payload_fields_in_source_order
             })
             .expect("source-ordered payload store");
         assert_eq!(
-            function.dfg.inst_args(store).first(),
-            Some(parameter),
+            super::super::support::reload_origin(&function, function.dfg.inst_args(store)[0]),
+            *parameter,
             "payload store order must match source order"
         );
     }

@@ -242,7 +242,7 @@ impl SyntaxNodeFacts<'_> {
         let [_, value] = arguments.as_slice() else {
             return None;
         };
-        (self.managed_reference_in_context(*value)? == beskid_isle::ManagedReferenceFact::GcManaged).then_some(())?;
+        (self.managed_reference(*value)? == ManagedReferenceFact::GcManaged).then_some(())?;
         let slot = self.input.abi_manifest().layouts.iter().find(|layout| layout.name == "BeskidAbiValue")?;
         Some(beskid_isle::TracedFiberJoinLayout {
             symbol,
@@ -266,16 +266,7 @@ impl SyntaxNodeFacts<'_> {
     }
 
     pub(super) fn function_value_call_impl(&self, key: AstNodeKey) -> Option<beskid_isle::FunctionValueCall> {
-        // Inside a generic specialization the declared function type may name the enclosing
-        // declaration's parameters; its exact environment binds them.
-        let call = match self.current_item_specialization() {
-            Some(specialization) => self.query(beskid_queries::function_value_call_specialization(
-                self.db,
-                key,
-                &specialization.substitutions,
-            ))?,
-            None => self.query(beskid_queries::function_value_call(self.db, key))?,
-        };
+        let call = self.function_value_call_in_context(key)?;
         let (parameters, result) = self.callable_abi(&call.signature)?;
         Some(beskid_isle::FunctionValueCall {
             callee: call.callee,
@@ -284,6 +275,18 @@ impl SyntaxNodeFacts<'_> {
             code_offset: crate::EVENT_HANDLER_CODE_OFFSET,
             environment_offset: crate::EVENT_HANDLER_ENVIRONMENT_OFFSET,
         })
+    }
+
+    pub(super) fn function_value_call_in_context(&self, key: AstNodeKey) -> Option<beskid_queries::FunctionValueCall> {
+        // Generic function types may name parameters of the enclosing declaration.
+        match self.current_item_specialization() {
+            Some(specialization) => self.query(beskid_queries::function_value_call_specialization(
+                self.db,
+                key,
+                &specialization.substitutions,
+            )),
+            None => self.query(beskid_queries::function_value_call(self.db, key)),
+        }
     }
 
     /// Map a callable's semantic signature to entry parameter and result ABI types.

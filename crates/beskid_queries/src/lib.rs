@@ -94,7 +94,8 @@ pub use semantic_contract::{
     SpawnEntryValidation, SpawnTarget, TestItem, TryExpressionFact, TypedArrayAllocation, TypedProgram, abi_type,
     aggregate_field_access, aggregate_field_access_specialization, aggregate_layout, aggregate_literal_declaration,
     aggregate_literal_field_values, aggregate_literal_layout, aggregate_literal_specialization,
-    array_index_element_abi_type, array_index_element_specialization, binary_operand_abi_type, block_statement_nodes,
+    array_index_element_abi_type, array_index_element_managed_reference_kind, array_index_element_specialization,
+    binary_operand_abi_type, block_statement_nodes,
     bulk_call_element_abi_type, bulk_parameter, call_abi_signature, call_argument_abi_type, call_arguments, call_lowering,
     callable_fiber_ownership, callable_signature, capture_storage, cast_intents, child_nodes, clif_block_body,
     clif_block_parameters, closure_call_target, closure_environment, closure_signature, collection_operation, completion_candidates,
@@ -114,7 +115,8 @@ pub use semantic_contract::{
     parameter_generic_reference, pattern_binding_specialization, primitive_numeric_conversion, range_for_fact,
     reachable_items, resolved_item, resolved_local, runtime_intrinsic, runtime_intrinsic_name, scoped_cleanup,
     spawn_entry_validation, spawn_handle_type, spawn_legality, spawn_target,
-    specialized_call_result_managed_reference_kind, specialized_corelib_value_service_result, test_item,
+    specialized_call_result_managed_reference_kind, specialized_corelib_value_service_result,
+    specialized_nominal_field_managed_reference_kind, test_item,
     test_statement_nodes, try_expression_fact, typed_array_allocation, value_abi_type,
 };
 pub use semantic_contract::{

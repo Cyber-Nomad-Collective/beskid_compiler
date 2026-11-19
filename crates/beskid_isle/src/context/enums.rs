@@ -433,6 +433,7 @@ impl IsleContext<'_, '_, '_, '_> {
         self.builder.ins().jump(test_blocks[0], &[]);
 
         let mut merge_reachable = false;
+        let mut merge_reference = None;
         for (index, arm) in arms.into_iter().enumerate() {
             let next = test_blocks.get(index + 1).copied().unwrap_or(failure);
             let mut bindings = Vec::new();
@@ -471,6 +472,13 @@ impl IsleContext<'_, '_, '_, '_> {
                     self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidMatchArms });
                     return None;
                 }
+                if let Some(&category) = self.expression_references.get(&value) {
+                    if merge_reference.is_some_and(|prior| prior != category) {
+                        self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidMatchArms });
+                        return None;
+                    }
+                    merge_reference = Some(category);
+                }
                 self.end_local_root_scope(true, None)?;
                 self.builder.ins().jump(merge, &[value.into()]);
                 merge_reachable = true;
@@ -491,7 +499,11 @@ impl IsleContext<'_, '_, '_, '_> {
         if result_type.is_none() && !merge_reachable {
             self.builder.ins().trap(TrapCode::unwrap_user(1));
         }
-        Some(result_type.and_then(|_| self.builder.block_params(merge).first().copied()))
+        let value = result_type.and_then(|_| self.builder.block_params(merge).first().copied());
+        if let (Some(value), Some(category)) = (value, merge_reference) {
+            self.expression_references.insert(value, category);
+        }
+        Some(value)
     }
 
     pub(super) fn emit_enum_constructor_payloads(

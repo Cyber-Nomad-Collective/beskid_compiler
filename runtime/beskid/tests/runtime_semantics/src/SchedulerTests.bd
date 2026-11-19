@@ -1,6 +1,7 @@
 use Concurrency.Fiber;
 use Runtime.Bootstrap.Lifecycle;
 use Runtime.Bootstrap.Native;
+use Runtime.Bootstrap.Roots;
 use Runtime.Fiber.Scheduler.Context;
 use Runtime.Fiber.Scheduler.Core;
 use Runtime.Fiber.Scheduler.Loop;
@@ -13,6 +14,7 @@ use Runtime.Sync.Mutex;
 use Runtime.Sync.WaitGroup;
 use Runtime.Mem.AbiValue;
 use Runtime.Mem.Gc.Allocation;
+use Runtime.Mem.Gc.Collection;
 use Runtime.Mem.Gc.Marking;
 use Runtime.Mem.Gc.RootsHandles;
 use Runtime.Mem.Gc.State;
@@ -145,6 +147,91 @@ test scheduler_executes_argument_yield_resume_and_return_trampoline {
 
     SystemFree(argument, 8);
     ShutdownSchedulerRuntime(runtime);
+}
+
+pub unit PublishFixtureStackMap(pointer storage, pointer target) {
+    pointer table = pointer_add(storage, 40);
+    raw_word_store(table, 0x00010043474B5342);
+    raw_word_store(pointer_add(table, 8), (word(64) << 32) | 48);
+    raw_word_store(pointer_add(table, 16), 1024);
+    raw_word_store(pointer_add(table, 24), (word(4) << 32) | 1);
+    raw_word_store(pointer_add(table, 32), (word(1) << 32) | 40);
+    raw_word_store(pointer_add(table, 40), 32);
+    pointer tls = CurrentThreadState();
+    raw_word_store(storage, NativeWord(RootFrame(tls)));
+    raw_word_store(pointer_add(storage, 8), NativeWord(storage));
+    raw_word_store(pointer_add(storage, 16), 1028);
+    raw_word_store(pointer_add(storage, 24), NativeWord(table));
+    raw_word_store(pointer_add(storage, 32), NativeWord(target));
+    SetRootFrame(tls, TagStackMapFrame(storage));
+    return;
+}
+
+pub unit CollectAndParkWithStackMap(pointer control) {
+    pointer group = NativePointer(raw_word_load(control));
+    pointer descriptor = NativePointer(raw_word_load(pointer_add(control, 8)));
+    pointer schedulerValue = NativePointer(raw_word_load(pointer_add(control, 16)));
+    pointer fiberValue = Alloc(24, descriptor);
+    pointer fiberFrame = SystemAllocate(88, 8);
+    raw_word_store(pointer_add(control, 24), NativeWord(fiberValue));
+    PublishFixtureStackMap(fiberFrame, fiberValue);
+    GcCollect();
+    if ManagedObjectForReference(Heap(), schedulerValue) != NativePointer(0) {
+        raw_word_store(pointer_add(control, 32), 1);
+    }
+    if WaitGroupWait(group) == 0 && ManagedObjectForReference(Heap(), fiberValue) != NativePointer(0) {
+        raw_word_store(pointer_add(control, 40), 1);
+    }
+    SetRootFrame(CurrentThreadState(), RootFramePrevious(fiberFrame));
+    SystemFree(fiberFrame, 88);
+    return;
+}
+
+pub i64 SpawnCollectAndParkWithStackMap(pointer control) {
+    Fiber<unit> child = spawn CollectAndParkWithStackMap(control);
+    return child.handle;
+}
+
+test stack_maps_preserve_scheduler_and_parked_fiber_roots_across_context_switches {
+    pointer runtime = InstallSchedulerRuntime();
+    pointer descriptor = BoxedWordDescriptor();
+    pointer group = WaitGroupCreate();
+    WaitGroupAdd(group, 1);
+    pointer control = SystemAllocate(48, 8);
+    memory_set(control, 0, 48);
+    raw_word_store(control, NativeWord(group));
+    raw_word_store(pointer_add(control, 8), NativeWord(descriptor));
+
+    pointer schedulerFrame = SystemAllocate(88, 8);
+    pointer schedulerValue = Alloc(24, descriptor);
+    raw_word_store(pointer_add(control, 16), NativeWord(schedulerValue));
+    PublishFixtureStackMap(schedulerFrame, schedulerValue);
+    i64 handle = SpawnCollectAndParkWithStackMap(control);
+    bool switched = SchedStep();
+    bool parked = FiberParked(FiberHandleIndex(word(handle)));
+    bool restored = RootFrame(CurrentThreadState()) == TagStackMapFrame(schedulerFrame);
+    bool schedulerSurvived = raw_word_load(pointer_add(control, 32)) == 1;
+
+    pointer fiberValue = NativePointer(raw_word_load(pointer_add(control, 24)));
+    GcCollect();
+    bool parkedSurvived = ManagedObjectForReference(Heap(), fiberValue) != NativePointer(0);
+    WaitGroupDone(group);
+    bool resumed = SchedStep() && raw_word_load(pointer_add(control, 40)) == 1;
+    GcCollect();
+    bool fiberReleased = ManagedObjectForReference(Heap(), fiberValue) == NativePointer(0);
+
+    SetRootFrame(CurrentThreadState(), RootFramePrevious(schedulerFrame));
+    GcCollect();
+    bool schedulerReleased = ManagedObjectForReference(Heap(), schedulerValue) == NativePointer(0);
+    SystemFree(schedulerFrame, 88);
+    SystemFree(control, 48);
+    ShutdownSchedulerRuntime(runtime);
+    SystemFree(descriptor, 40);
+
+    Assert.True(switched && parked && restored, "parking restores the scheduler's published frame");
+    Assert.True(schedulerSurvived, "collection in the child traces the scheduler's suspended frame");
+    Assert.True(parkedSurvived && resumed, "collection traces and preserves a parked fiber's published frame");
+    Assert.True(fiberReleased && schedulerReleased, "returning from each frame releases its root");
 }
 
 test synchronization_bounds_handles_and_teardown_are_deterministic {

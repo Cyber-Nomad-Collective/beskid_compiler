@@ -36,6 +36,17 @@ pub fn aggregate_field_access_specialization(
     .transpose()
 }
 
+/// Classify a nominal projection from its specialized source identity.
+pub fn specialized_nominal_field_managed_reference_kind(
+    db: &dyn Db,
+    key: AstNodeKey,
+    enclosing: &GenericSpecializationInstance,
+) -> SemanticQueryResult<ManagedReferenceKind> {
+    nominal_field_projection_in(db, key, Some(enclosing))
+        .map(|projection| projection.map(|(_, identity)| identity.managed_reference_kind()))
+        .transpose()
+}
+
 fn aggregate_field_access_for_environment(
     db: &dyn Db,
     program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,

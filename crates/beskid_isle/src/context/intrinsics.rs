@@ -190,6 +190,10 @@ macro_rules! generated_intrinsic_methods {
             let arguments = self.runtime_intrinsic_arguments(key)?;
             let result = self.facts.scalar_type(key)?;
             match kind {
+                RuntimeIntrinsicKind::StackMapCallerPc => {
+                    (arguments.is_empty() && result == self.frontend_config.pointer_type())
+                        .then(|| self.builder.ins().get_return_address(result))
+                }
                 RuntimeIntrinsicKind::NativeWordFromPointer | RuntimeIntrinsicKind::PointerFromNativeWord => {
                     let [value] = arguments.as_slice() else {
                         return None;

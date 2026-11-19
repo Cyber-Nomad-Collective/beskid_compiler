@@ -12,7 +12,8 @@ pub(in crate::semantic_contract) use aggregate::{
     instantiated_aggregate_layout_for_path, private_deadline_literal_field,
 };
 pub use aggregate::{
-    aggregate_literal_specialization, array_index_element_specialization, empty_array_literal_element_specialization,
+    aggregate_literal_specialization, array_index_element_managed_reference_kind, array_index_element_specialization,
+    empty_array_literal_element_specialization,
 };
 
 pub(in crate::semantic_contract) use common::{
@@ -30,7 +31,7 @@ pub(in crate::semantic_contract) use enum_layout::{
 };
 pub use enum_layout::{enum_constructor_specialization, enum_match_specialization};
 
-pub use field_access::aggregate_field_access_specialization;
+pub use field_access::{aggregate_field_access_specialization, specialized_nominal_field_managed_reference_kind};
 pub(in crate::semantic_contract) use field_access::{
     FieldAccessReceiver, aggregate_field_access_tracked, field_access_receiver, nominal_field_projection,
     nominal_local_receiver_declaration, path_projection_segment,

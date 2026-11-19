@@ -23,6 +23,7 @@ pub enum RuntimeIntrinsicKind {
     RawWordStore,
     RawByteLoad,
     RawByteStore,
+    StackMapCallerPc,
     ArchContextSize(u64),
     ArchContextAlignment(u64),
     SchedulerFiberEntryAddress,

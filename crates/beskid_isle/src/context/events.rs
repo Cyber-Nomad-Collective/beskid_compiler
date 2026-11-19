@@ -33,9 +33,8 @@ impl IsleContext<'_, '_, '_, '_> {
         };
         (self.builder.func.dfg.value_type(receiver) == pointer).then_some(())?;
         let receiver_root = if self.facts.node_kind(plan.receiver) == Some(NodeKind::MethodDefinition) {
-            // The implicit receiver is a rooted incoming parameter for this whole method;
-            // its reserved slot already keeps it live across any runtime call below.
-            None
+            // The handler list belongs to the receiver through the last callback.
+            Some(self.root_expression_value(receiver)?)
         } else {
             self.root_expression_value_if_needed(plan.receiver, receiver)?
         };
@@ -85,6 +84,7 @@ impl IsleContext<'_, '_, '_, '_> {
         self.builder.ins().trapz(handler, TrapCode::unwrap_user(5));
         let code = self.builder.ins().load(pointer, MemFlagsData::new(), handler, 16);
         let environment = self.builder.ins().load(pointer, MemFlagsData::new(), handler, 24);
+        self.builder.declare_value_needs_stack_map(environment);
         let has_environment = self.builder.ins().icmp_imm_s(IntCC::NotEqual, environment, 0);
         self.builder.ins().brif(has_environment, captured, &[], capture_free, &[]);
 

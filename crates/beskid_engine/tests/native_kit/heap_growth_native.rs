@@ -336,12 +336,11 @@ fn no_cap_configured_runs_the_cap_probe_to_completion() {
 
 /// Fault-injection: `BESKID_TEST_FORCE_ROOT_STACK_FAILURE` makes the next root-block growth
 /// behave as if `SystemAllocate` refused it, without needing to actually exhaust address space.
-/// `RunDeepRecursion` roots far more than one 64-slot root-stack block can hold, so the forced
-/// failure fires almost immediately and must produce the diagnosable trap (reason 4), not a
-/// crash — this is the proof that a starved root stack fails exactly like a starved heap.
+/// The C host registers 65 explicit roots, forcing growth past the first 64-slot block.
+/// Managed program frames use stack maps and do not consume these external root slots.
 #[test]
 fn root_stack_growth_failure_is_a_diagnosable_trap_not_a_crash() {
-    let (_prefix, executable) = build_heap_executable("root-stack-fault", "RunDeepRecursion");
+    let (_prefix, executable) = build_heap_executable("root-stack-fault", "RunLargeObjectOnly");
     let mut command = Command::new(&executable);
     command.env("BESKID_TEST_FORCE_ROOT_STACK_FAILURE", "1");
     let output = run_bounded("root_stack_fault execution", &mut command, ROUTE_LIMIT);

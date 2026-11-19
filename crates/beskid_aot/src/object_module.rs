@@ -7,6 +7,7 @@ use beskid_codegen::cranelift_host::{
     declare_referenced_builtin_imports, declare_user_functions_with_link_symbols_and_linkage,
     declare_validated_extern_imports, remap_testcase_externals,
 };
+use beskid_codegen::stack_maps::DefineFunctionWithStackMaps;
 #[cfg(debug_assertions)]
 use beskid_codegen::validate_artifact;
 use beskid_codegen::{CodegenArtifact, emit_string_literals, emit_type_descriptors};
@@ -20,6 +21,9 @@ use beskid_pipeline::{PipelineObserver, emit_work_unit, phases::AOT_EMIT_OBJECT}
 
 use crate::api::BuildProfile;
 use crate::error::{AotError, AotResult};
+
+#[cfg(test)]
+mod stack_map_tests;
 
 /// Fixed C boundary called by the portable executable bootstrap.
 pub(crate) const EXECUTABLE_PROGRAM_ENTRY: &str = "beskid_program_main";
@@ -165,6 +169,13 @@ impl BeskidObjectModule {
         }
 
         let mut ctx = module.make_context();
+        let stack_map_section = match module.isa().triple().binary_format.to_string().as_str() {
+            "elf" => Some(".data.rel.ro.beskid_gc"),
+            "coff" => Some(".rdata$GC"),
+            "macho" => Some("__DATA_CONST,__beskid_gc"),
+            _ => None,
+        };
+        let checkpoints = artifact.runtime_checkpoint_definitions.Resolve(&self.func_ids);
         let total = artifact.functions.len() as u64;
         for (index, function) in artifact.functions.iter().enumerate() {
             let func_id = self
@@ -179,7 +190,7 @@ impl BeskidObjectModule {
                     AotError::InvalidRequest { message: "expected symbol global value".to_owned() }
                 }
             })?;
-            module.define_function(func_id, &mut ctx)?;
+            DefineFunctionWithStackMaps(module, func_id, &mut ctx, stack_map_section, checkpoints)?;
             module.clear_context(&mut ctx);
             emit_work_unit(pipeline, AOT_EMIT_OBJECT, (index as u64) + 1, total, function.name.clone());
         }

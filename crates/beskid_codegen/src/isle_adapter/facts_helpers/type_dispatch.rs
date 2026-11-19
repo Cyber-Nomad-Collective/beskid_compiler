@@ -28,10 +28,32 @@ impl SyntaxNodeFacts<'_> {
         key: AstNodeKey,
     ) -> Option<ManagedReferenceFact> {
         if let Some(receiver) = self.query(nominal_member_receiver(self.db, key)) {
-            return self.managed_reference_in_context(receiver);
+            return self.managed_reference(receiver);
         }
         if self.typed_array_plan(key).is_some() || self.query(implicit_method_receiver(self.db, key)).is_some() {
             return Some(ManagedReferenceFact::GcManaged);
+        }
+        if let Some(enclosing) = self.current_item_specialization()
+            && let Some(kind) =
+                self.query(beskid_queries::specialized_nominal_field_managed_reference_kind(self.db, key, enclosing))
+        {
+            return Some(match kind {
+                ManagedReferenceKind::GcManaged => ManagedReferenceFact::GcManaged,
+                ManagedReferenceKind::NativeOrScalar => ManagedReferenceFact::NativeOrScalar,
+            });
+        }
+        if let Some(CallLowering::CorelibService(service)) = self.query(call_lowering(self.db, key))
+            && beskid_abi::runtime_source::canonical_corelib_service_value_dispatch(service).is_some()
+        {
+            let binding = self.query(beskid_queries::specialized_corelib_value_service_result(
+                self.db,
+                key,
+                self.current_item_specialization()?,
+            ))?;
+            return Some(match binding.managed_reference_kind() {
+                ManagedReferenceKind::GcManaged => ManagedReferenceFact::GcManaged,
+                ManagedReferenceKind::NativeOrScalar => ManagedReferenceFact::NativeOrScalar,
+            });
         }
         if let Some(instance) = self.generic_call_specialization_in_context(key) {
             return self
@@ -47,6 +69,7 @@ impl SyntaxNodeFacts<'_> {
             self.runtime_intrinsic_kind(key),
             Some(
                 RuntimeIntrinsicKind::PointerFromNativeWord
+                    | RuntimeIntrinsicKind::StackMapCallerPc
                     | RuntimeIntrinsicKind::PointerAdd
                     | RuntimeIntrinsicKind::SchedulerFiberEntryAddress
                     | RuntimeIntrinsicKind::SchedulerReturnTrampolineAddress
@@ -95,7 +118,7 @@ impl SyntaxNodeFacts<'_> {
         }
         (self.query(node_kind(self.db, key)) == Some(beskid_queries::IndexedNodeKind::LetStatement))
             .then(|| self.let_initializer(key))?
-            .and_then(|initializer| self.managed_reference_in_context(initializer))
+            .and_then(|initializer| self.managed_reference(initializer))
     }
 
     fn specialized_local_managed_reference(&self, key: AstNodeKey) -> Option<ManagedReferenceFact> {

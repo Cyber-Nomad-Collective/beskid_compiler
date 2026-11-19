@@ -148,7 +148,7 @@ macro_rules! generated_control_flow_methods {
                     self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidBlockExpression });
                     return None;
                 };
-                let root = if self.facts.managed_reference(result_key)? == ManagedReferenceFact::GcManaged {
+                let root = if self.lowered_value_reference(result_key, value)? == ManagedReferenceFact::GcManaged {
                     Some(self.root_temporary(value)?)
                 } else {
                     None
@@ -277,6 +277,7 @@ macro_rules! generated_control_flow_methods {
             self.builder.ins().jump(header, &[]);
 
             self.builder.switch_to_block(header);
+            self.poll_loop_collection(key)?;
             let condition = generated::constructor_lower_expression(self, condition_key)?;
             self.builder.ins().brif(condition, body, &[], exit, &[]);
 
@@ -340,6 +341,7 @@ macro_rules! generated_control_flow_methods {
             self.builder.ins().jump(header, &[]);
 
             self.builder.switch_to_block(header);
+            self.poll_loop_collection(key)?;
             let current = self.builder.use_var(iterator);
             let condition = match (range.step.is_positive(), range.inclusive) {
                 (true, false) => self.builder.ins().icmp(IntCC::SignedLessThan, current, end),
@@ -480,3 +482,14 @@ macro_rules! generated_control_flow_methods {
 }
 
 pub(super) use generated_control_flow_methods;
+
+impl IsleContext<'_, '_, '_, '_> {
+    pub(super) fn poll_loop_collection(&mut self, key: AstNodeKey) -> Option<()> {
+        if self.facts.managed_safepoints(key) {
+            let pointer = self.frontend_config.pointer_type();
+            let poll = self.import_runtime_helper("gc_collect_if_needed", &[], Some(pointer))?;
+            self.builder.ins().call(poll, &[]);
+        }
+        Some(())
+    }
+}

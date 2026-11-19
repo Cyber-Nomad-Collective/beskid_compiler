@@ -185,8 +185,8 @@ fn canonical_generic_array_operations_preserve_concrete_types_through_nested_cal
         .find(|function| function.name.starts_with("Array_Empty#generic_"))
         .expect("specialized Array.Empty function");
     let clif = empty.function.display().to_string();
-    assert!(clif.contains("beskid_rt_v5_array_allocate_rooted"), "{clif}");
-    assert!(clif.contains("beskid_rt_v5_array_construction_finish"), "{clif}");
+    assert!(clif.contains(super::super::support::ARRAY_ALLOCATION_IMPORT), "{clif}");
+    assert!(!clif.contains("beskid_rt_v5_array_construction_finish"), "{clif}");
     assert!(artifact.extern_imports.iter().any(|import| import.symbol == "array_len"));
     assert_eq!(artifact.array_static_plans.len(), 1, "one descriptor request for Array.Empty<i64>");
     assert_eq!(artifact.array_static_plans[0].element_type, beskid_queries::SemanticTypeId::I64);

@@ -14,7 +14,7 @@ impl IsleContext<'_, '_, '_, '_> {
     pub(super) fn emit_spawn_argument_environment(
         &mut self,
         environment: &SpawnArgumentEnvironment,
-    ) -> Option<(Value, StackSlot)> {
+    ) -> Option<(Value, TemporaryRoot)> {
         let pointer = dispatch::pointer_type(self.frontend_config);
         let mut values = Vec::with_capacity(environment.fields.len());
         for field in &environment.fields {

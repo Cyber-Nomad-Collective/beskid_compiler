@@ -6,6 +6,13 @@ use cranelift_codegen::ir::{Signature, Type};
 use std::sync::Arc;
 
 pub trait NodeFacts {
+    /// Managed programs poll the collector at loop headers and require semantic
+    /// classification of pointer-width expressions. The runtime implements its
+    /// own collection policy and uses native pointers.
+    fn managed_safepoints(&self, _key: AstNodeKey) -> bool {
+        false
+    }
+
     fn composition_launch(&self, _key: AstNodeKey) -> Option<CompositionLaunchPlan> {
         None
     }

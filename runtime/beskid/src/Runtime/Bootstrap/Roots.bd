@@ -12,6 +12,16 @@ pub unit SetRootFrame(pointer tlsState, pointer rootFrame) {
     return;
 }
 
+// Root chain of the native scheduler activation, while a fiber owns TLS.root_frame.
+pub pointer SchedulerRootFrame(pointer tlsState) {
+    return NativePointer(raw_word_load(pointer_add(tlsState, 16)));
+}
+
+pub unit SetSchedulerRootFrame(pointer tlsState, pointer rootFrame) {
+    raw_word_store(pointer_add(tlsState, 16), NativeWord(rootFrame));
+    return;
+}
+
 // Reads the preceding frame from a caller-owned `BeskidRootFrame` record.
 //
 // A frame is stack storage owned by generated code.  The runtime may link the frame into TLS,
@@ -87,6 +97,49 @@ pub bool SetRootSlotValue(pointer rootFrame, word index, pointer value) {
     return true;
 }
 
+// TLS and the parked-fiber record carry the same chain head. A tagged link denotes an
+// aligned BeskidStackMapFrame, while an untagged link denotes a BeskidRootFrame.
+pub bool IsStackMapFrame(pointer link) {
+    return NativeWord(link) % 8 == 1;
+}
+
+pub pointer TagStackMapFrame(pointer frame) {
+    return NativePointer(NativeWord(frame) + 1);
+}
+
+pub pointer StackMapFrameStorage(pointer link) {
+    return NativePointer(NativeWord(link) - 1);
+}
+
+[Export(Abi:"C", Symbol:"beskid_rt_v5_stack_map_push")]
+pub unit PushStackMap(pointer frame, pointer stackPointer, pointer table) {
+    pointer tls = CurrentThreadState();
+    if tls == NativePointer(0) {
+        // Without an attached runtime there is no managed heap to trace. Leave an
+        // unpublished frame so the matching pop also works across runtime initialization.
+        raw_word_store(pointer_add(frame, 8), 0);
+        return;
+    }
+    pointer returnPc = stack_map_caller_pc();
+    raw_word_store(frame, NativeWord(RootFrame(tls)));
+    raw_word_store(pointer_add(frame, 8), NativeWord(stackPointer));
+    raw_word_store(pointer_add(frame, 16), NativeWord(returnPc));
+    raw_word_store(pointer_add(frame, 24), NativeWord(table));
+    SetRootFrame(tls, TagStackMapFrame(frame));
+    return;
+}
+
+[Export(Abi:"C", Symbol:"beskid_rt_v5_stack_map_pop")]
+pub unit PopStackMap(pointer frame) {
+    if raw_word_load(pointer_add(frame, 8)) == 0 { return; }
+    pointer tls = CurrentThreadState();
+    if tls == NativePointer(0) || RootFrame(tls) != TagStackMapFrame(frame) {
+        Trap(10, NativePointer(0), 0);
+    }
+    SetRootFrame(tls, RootFramePrevious(frame));
+    return;
+}
+
 // Registers a closure environment in the current TLS root frame.
 [Export(Abi:"C", Symbol:"beskid_rt_v5_closure_environment_root")]
 pub bool RootClosureEnvironment(pointer tlsState, word slotIndex, pointer environment) {
@@ -96,7 +149,10 @@ pub bool RootClosureEnvironment(pointer tlsState, word slotIndex, pointer enviro
     if environment == NativePointer(0) {
         return false;
     }
-    pointer rootFrame = RootFrame(tlsState);
+    mut pointer rootFrame = RootFrame(tlsState);
+    while IsStackMapFrame(rootFrame) {
+        rootFrame = RootFramePrevious(StackMapFrameStorage(rootFrame));
+    }
     if rootFrame == NativePointer(0) {
         return false;
     }

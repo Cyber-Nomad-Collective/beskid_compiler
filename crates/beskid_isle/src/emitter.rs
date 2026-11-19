@@ -195,9 +195,13 @@ impl<'isa> FunctionEmitter<'isa> {
             if !block_is_terminated(&builder, final_block) {
                 builder.ins().return_(value.as_slice());
             }
+            let uses = hold_call_arguments(builder.func, self.isa.pointer_type());
             builder.finalize(self.isa.frontend_config());
+            for inst in uses {
+                function.layout.remove_inst(inst);
+            }
         }
-        verify_function(&function, self.isa.flags())
+        verify_function(&function, self.isa)
             .map_err(|error| FunctionEmissionError::verification(body, format!("closure lambda entry: {error}")))?;
         Ok(function)
     }
@@ -276,9 +280,13 @@ impl<'isa> FunctionEmitter<'isa> {
                     ));
                 }
             }
+            let uses = hold_call_arguments(builder.func, self.isa.pointer_type());
             builder.finalize(self.isa.frontend_config());
+            for inst in uses {
+                function.layout.remove_inst(inst);
+            }
         }
-        verify_function(&function, self.isa.flags())
+        verify_function(&function, self.isa)
             .map_err(|error| FunctionEmissionError::verification(verification_site, error.to_string()))?;
         Ok(function)
     }
@@ -359,10 +367,43 @@ impl<'isa> FunctionEmitter<'isa> {
             )
             .map_err(FunctionEmissionError::Lowering)?;
             builder.ins().return_(&[value]);
+            let uses = hold_call_arguments(builder.func, self.isa.pointer_type());
             builder.finalize(self.isa.frontend_config());
+            for inst in uses {
+                function.layout.remove_inst(inst);
+            }
         }
-        verify_function(&function, self.isa.flags())
+        verify_function(&function, self.isa)
             .map_err(|error| FunctionEmissionError::verification(body, error.to_string()))?;
         Ok(function)
     }
+}
+
+/// A native callee may collect and then read a borrowed argument, including
+/// through a callback. Cranelift otherwise treats an argument's last use as
+/// occurring before the call. Keep the operands live through the call for the
+/// frontend liveness pass. Only values already classified as managed can enter
+/// a map. The temporary uses are removed before verification and machine code.
+fn hold_call_arguments(function: &mut Function, pointer: Type) -> Vec<cranelift_codegen::ir::Inst> {
+    use cranelift_codegen::cursor::{Cursor, FuncCursor};
+    use cranelift_codegen::ir::Opcode;
+
+    let calls: Vec<_> = function
+        .layout
+        .blocks()
+        .flat_map(|block| function.layout.block_insts(block))
+        .filter(|&inst| matches!(function.dfg.insts[inst].opcode(), Opcode::Call | Opcode::CallIndirect))
+        .collect();
+    let mut uses = Vec::new();
+    for call in calls {
+        let args = function.dfg.inst_args(call).to_vec();
+        let mut cursor = FuncCursor::new(function).after_inst(call);
+        for arg in args {
+            if cursor.func.dfg.value_type(arg) == pointer {
+                let used = cursor.ins().bor(arg, arg);
+                uses.push(cursor.func.dfg.value_def(used).unwrap_inst());
+            }
+        }
+    }
+    uses
 }

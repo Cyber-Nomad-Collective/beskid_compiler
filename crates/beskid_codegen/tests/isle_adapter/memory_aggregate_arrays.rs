@@ -30,7 +30,7 @@ fn primitive_conversion_array_literal_preserves_wrapper_type_and_lowers() {
     assert_eq!(plan.stride, u64::from(isa.pointer_type().bytes()));
     assert!(plan.pointer_map_offsets.is_empty(), "words are untraced integers, not pointers");
     let clif = function.display().to_string();
-    assert!(clif.contains("beskid_rt_v5_array_allocate_rooted"), "{clif}");
+    assert!(clif.contains(super::support::ARRAY_ALLOCATION_IMPORT), "{clif}");
     assert!(clif.contains("store"), "{clif}");
 }
 
@@ -237,8 +237,8 @@ fn parsed_empty_array_field_uses_declared_nominal_element_abi_without_hir() {
         .display()
         .to_string();
     assert!(
-        clif.contains("beskid_rt_v5_array_allocate_rooted"),
-        "empty array allocation must retain its descriptor-backed construction root: {clif}"
+        clif.contains(super::support::ARRAY_ALLOCATION_IMPORT),
+        "empty array must use its descriptor-backed allocator: {clif}"
     );
     assert!(
         clif.contains("beskid_rt_v5_managed_object_allocate"),
@@ -267,8 +267,8 @@ fn parsed_empty_array_local_uses_its_direct_declared_element_abi_without_hir() {
         .display()
         .to_string();
     assert!(
-        clif.contains("beskid_rt_v5_array_allocate_rooted"),
-        "empty array allocation must retain its descriptor-backed construction root: {clif}"
+        clif.contains(super::support::ARRAY_ALLOCATION_IMPORT),
+        "empty array must use its descriptor-backed allocator: {clif}"
     );
 }
 

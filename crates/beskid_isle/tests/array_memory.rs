@@ -19,27 +19,16 @@ use target_lexicon::Triple;
 // fake allocator below owns test backing storage; production requests are emitted by codegen.
 static ARRAY_REQUEST: [u8; 32] = [0; 32];
 
-unsafe extern "C" fn test_array_allocate_rooted(
-    _request: *const u8,
-    root_handle_out: *mut usize,
-) -> *mut beskid_abi::BeskidArray {
-    if !root_handle_out.is_null() {
-        // SAFETY: fixture allocates the same pointer-sized output slot as ISLE lowering.
-        unsafe { root_handle_out.write(0) };
-    }
+unsafe extern "C" fn test_array_allocate(_request: *const u8) -> *mut beskid_abi::BeskidArray {
     let backing = Box::leak(vec![0_u8; 3 * std::mem::size_of::<i32>()].into_boxed_slice());
     Box::into_raw(Box::new(beskid_abi::BeskidArray { ptr: backing.as_mut_ptr(), len: 3, cap: 3 }))
-}
-
-unsafe extern "C" fn test_array_construction_finish(_root_handle: *mut u8) -> u8 {
-    1
 }
 
 /// Rebind test-only symbolic references through the concrete JIT module.
 ///
 /// The emitter deliberately uses `ExternalName::TestCase` while constructing standalone CLIF,
 /// but `JITModule` only materializes relocations for module-owned `ExternalName::User` imports.
-/// Rewriting the fixture's two runtime imports and its request-data global through module
+/// Rewriting the fixture's runtime import and its request-data global through module
 /// declarations preserves an execution test on every host instead of treating the CLIF display
 /// check as execution evidence.
 fn bind_array_fixture_symbols(module: &mut JITModule, function: &mut Function) {
@@ -63,17 +52,10 @@ fn bind_array_fixture_symbols(module: &mut JITModule, function: &mut Function) {
         .ext_funcs
         .iter()
         .filter_map(|(_, import)| match &import.name {
-            ExternalName::TestCase(name)
-                if matches!(
-                    name.raw(),
-                    b"beskid_rt_v5_array_allocate_rooted" | b"beskid_rt_v5_array_construction_finish"
-                ) =>
-            {
-                Some((
-                    String::from_utf8(name.raw().to_vec()).expect("ASCII fixture import"),
-                    function.dfg.signatures[import.signature].clone(),
-                ))
-            }
+            ExternalName::TestCase(name) if name.raw() == b"beskid_rt_v5_array_allocate" => Some((
+                String::from_utf8(name.raw().to_vec()).expect("ASCII fixture import"),
+                function.dfg.signatures[import.signature].clone(),
+            )),
             _ => None,
         })
         .collect::<Vec<_>>();
@@ -96,8 +78,7 @@ fn bind_array_fixture_symbols(module: &mut JITModule, function: &mut Function) {
 fn execute_array_fixture(isa: Arc<dyn TargetIsa>, name: &str, mut function: Function) -> i32 {
     let mut builder = JITBuilder::with_isa(isa, default_libcall_names());
     builder.symbol("__array_memory_request", ARRAY_REQUEST.as_ptr());
-    builder.symbol("beskid_rt_v5_array_allocate_rooted", test_array_allocate_rooted as *const u8);
-    builder.symbol("beskid_rt_v5_array_construction_finish", test_array_construction_finish as *const u8);
+    builder.symbol("beskid_rt_v5_array_allocate", test_array_allocate as *const u8);
     let mut module = JITModule::new(builder);
     bind_array_fixture_symbols(&mut module, &mut function);
     let function_id = module.declare_function(name, Linkage::Local, &function.signature).expect("declare");
@@ -252,10 +233,14 @@ fn array_literal_and_index_emit_checked_stock_clif_and_execute() {
         .emit_expression(UserFuncName::user(0, 20), signature.clone(), &facts, facts.nodes[0])
         .expect("verified array index");
     let clif = function.display().to_string();
-    assert!(clif.contains("beskid_rt_v5_array_allocate_rooted"), "{clif}");
+    assert!(clif.contains("beskid_rt_v5_array_allocate"), "{clif}");
     let mut element_stores = 0;
     for inst in function.layout.blocks().flat_map(|block| function.layout.block_insts(block)) {
         if let cranelift_codegen::ir::InstructionData::Store { args, .. } = function.dfg.insts[inst] {
+            if function.dfg.value_type(args[0]) != types::I32 {
+                // This fixture has i32 elements. Pointer-sized stores spill GC references.
+                continue;
+            }
             element_stores += 1;
             let cranelift_codegen::ir::ValueDef::Result(address, _) = function.dfg.value_def(args[1]) else {
                 panic!("array element address must be computed: {clif}")

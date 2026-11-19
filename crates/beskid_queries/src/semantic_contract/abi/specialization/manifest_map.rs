@@ -70,7 +70,12 @@ pub(in crate::semantic_contract) fn corelib_service_abi_signature(service: Corel
     }
     let abi = beskid_abi::runtime_source::canonical_corelib_service_abi(service)?;
     let parameters = abi.parameters.into_iter().map(corelib_service_abi_type).collect::<Option<Vec<_>>>()?;
-    let result = corelib_service_abi_type(abi.result)?;
+    // The wire represents both string references and native scheduler handles as pointers.
+    let result = match service.name {
+        "__fiber_join_message" | "__str_slice" | "__env_get" | "__env_getcwd" => SemanticTypeId::STRING,
+        "__mutex_create" | "__wait_group_create" => SemanticTypeId::I64,
+        _ => corelib_service_abi_type(abi.result)?,
+    };
     Some(ItemSignature { parameters: parameters.into(), result })
 }
 

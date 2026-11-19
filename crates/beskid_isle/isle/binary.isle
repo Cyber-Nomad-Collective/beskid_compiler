@@ -41,24 +41,24 @@
 (decl partial clif_enum_ne (AstNodeKey) Value)
 (extern constructor clif_enum_ne clif_enum_ne)
 
-(rule (lower_expression key @ (and
+(rule (select_expression key @ (and
         (node_kind (NodeKind.BinaryExpression))
         (operator_fact (OperatorFact.EnumEq))))
       (clif_enum_eq key))
-(rule (lower_expression key @ (and
+(rule (select_expression key @ (and
         (node_kind (NodeKind.BinaryExpression))
         (operator_fact (OperatorFact.EnumNotEq))))
       (clif_enum_ne key))
 
-(rule (lower_expression key @ (and
+(rule (select_expression key @ (and
         (node_kind (NodeKind.BinaryExpression))
         (operator_fact (OperatorFact.IdentityEq))))
       (clif_eq (lower_expression (child_at key 0)) (lower_expression (child_at key 1))))
-(rule (lower_expression key @ (and
+(rule (select_expression key @ (and
         (node_kind (NodeKind.BinaryExpression))
         (operator_fact (OperatorFact.IdentityNotEq))))
       (clif_ne (lower_expression (child_at key 0)) (lower_expression (child_at key 1))))
-(rule (lower_expression key @ (and
+(rule (select_expression key @ (and
         (node_kind (NodeKind.BinaryExpression))
         (operator_fact (OperatorFact.Eq))))
       (clif_eq_discriminant
@@ -66,7 +66,7 @@
         (lower_expression (child_at key 1))
         (child_at key 0)
         (child_at key 1)))
-(rule (lower_expression key @ (and
+(rule (select_expression key @ (and
         (node_kind (NodeKind.BinaryExpression))
         (operator_fact (OperatorFact.NotEq))))
       (clif_ne_discriminant
@@ -74,58 +74,58 @@
         (lower_expression (child_at key 1))
         (child_at key 0)
         (child_at key 1)))
-(rule (lower_expression key @ (and
+(rule (select_expression key @ (and
         (node_kind (NodeKind.BinaryExpression))
         (operator_fact (OperatorFact.Lt))))
       (clif_slt key (lower_expression (child_at key 0)) (lower_expression (child_at key 1))))
-(rule (lower_expression key @ (and
+(rule (select_expression key @ (and
         (node_kind (NodeKind.BinaryExpression))
         (operator_fact (OperatorFact.Lte))))
       (clif_sle key (lower_expression (child_at key 0)) (lower_expression (child_at key 1))))
-(rule (lower_expression key @ (and
+(rule (select_expression key @ (and
         (node_kind (NodeKind.BinaryExpression))
         (operator_fact (OperatorFact.Gt))))
       (clif_sgt key (lower_expression (child_at key 0)) (lower_expression (child_at key 1))))
-(rule (lower_expression key @ (and
+(rule (select_expression key @ (and
         (node_kind (NodeKind.BinaryExpression))
         (operator_fact (OperatorFact.Gte))))
       (clif_sge key (lower_expression (child_at key 0)) (lower_expression (child_at key 1))))
 
-(rule (lower_expression key @ (and
+(rule (select_expression key @ (and
         (node_kind (NodeKind.BinaryExpression))
         (operator_fact (OperatorFact.Add))))
       (clif_iadd
         (lower_expression (child_at key 0))
         (lower_expression (child_at key 1))))
-(rule (lower_expression key @ (and
+(rule (select_expression key @ (and
         (node_kind (NodeKind.BinaryExpression))
         (operator_fact (OperatorFact.Sub))))
       (clif_isub (lower_expression (child_at key 0)) (lower_expression (child_at key 1))))
-(rule (lower_expression key @ (and
+(rule (select_expression key @ (and
         (node_kind (NodeKind.BinaryExpression))
         (operator_fact (OperatorFact.Mul))))
       (clif_imul (lower_expression (child_at key 0)) (lower_expression (child_at key 1))))
-(rule (lower_expression key @ (and
+(rule (select_expression key @ (and
         (node_kind (NodeKind.BinaryExpression))
         (operator_fact (OperatorFact.BitAnd))))
       (clif_band (lower_expression (child_at key 0)) (lower_expression (child_at key 1))))
-(rule (lower_expression key @ (and
+(rule (select_expression key @ (and
         (node_kind (NodeKind.BinaryExpression))
         (operator_fact (OperatorFact.BitOr))))
       (clif_bor (lower_expression (child_at key 0)) (lower_expression (child_at key 1))))
-(rule (lower_expression key @ (and
+(rule (select_expression key @ (and
         (node_kind (NodeKind.BinaryExpression))
         (operator_fact (OperatorFact.Shl))))
       (clif_ishl (lower_expression (child_at key 0)) (lower_expression (child_at key 1))))
-(rule (lower_expression key @ (and
+(rule (select_expression key @ (and
         (node_kind (NodeKind.BinaryExpression))
         (operator_fact (OperatorFact.Shr))))
       (clif_ushr (lower_expression (child_at key 0)) (lower_expression (child_at key 1))))
-(rule (lower_expression key @ (and
+(rule (select_expression key @ (and
         (node_kind (NodeKind.BinaryExpression))
         (operator_fact (OperatorFact.Div))))
       (clif_div_trapz key (lower_expression (child_at key 0)) (lower_expression (child_at key 1))))
-(rule (lower_expression key @ (and
+(rule (select_expression key @ (and
         (node_kind (NodeKind.BinaryExpression))
         (operator_fact (OperatorFact.Mod))))
       (clif_srem key (lower_expression (child_at key 0)) (lower_expression (child_at key 1))))

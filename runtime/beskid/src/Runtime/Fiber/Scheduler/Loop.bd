@@ -2,7 +2,9 @@
 // Drive one scheduling step. Returns true if work was done.
 pub bool SchedStep() {
     pointer table = SchedTable();
-    if table == NativePointer(0) { return false; }
+    // One scheduler context owns a fiber transfer. A reentrant host call inside
+    // the running fiber must leave that context and its suspended roots intact.
+    if table == NativePointer(0) || SchedulerCurrentFiber() != FIBER_NONE { return false; }
     ApplyPendingSpawns();
     ApplyPendingCancels();
     ExternalPump(clock_monotonic_nanos());
@@ -35,10 +37,15 @@ pub bool SchedStep() {
     if !FiberExists(next) || FiberParked(next) || FiberFinished(next) { return true; }
 
     if !SchedulerAcquireMutatorToken() { return false; }
+    pointer tls = CurrentThreadState();
+    pointer schedulerFrame = RootFrame(tls);
+    SetSchedulerRootFrame(tls, schedulerFrame);
     FiberSetState(next, FIBER_STATE_RUNNING);
     SchedulerSetCurrentFiber(next);
     RestoreFiberLocalState(next);
     ContextSwitch(SchedulerContext(), NativePointer(raw_word_load(pointer_add(FiberRecord(next), 104))));
+    SetRootFrame(tls, schedulerFrame);
+    SetSchedulerRootFrame(tls, NativePointer(0));
     SchedulerReleaseMutatorToken();
     SchedulerSetCurrentFiber(FIBER_NONE);
     if FiberFinished(next) && raw_byte_load(pointer_add(FiberRecord(next), 40)) != 0 {

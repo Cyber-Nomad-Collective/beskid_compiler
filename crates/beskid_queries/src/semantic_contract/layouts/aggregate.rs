@@ -2,6 +2,7 @@
 
 use beskid_abi::runtime_source::CANONICAL_FOUNDATION_DEADLINE_SOURCE_PATH;
 
+use super::super::typing::managed_reference_kind_for_syntax_type;
 use super::{super::*, explicit_local_declaration_type};
 
 #[salsa::tracked(persist)]
@@ -473,7 +474,7 @@ pub(in crate::semantic_contract) fn array_index_element_abi_type_tracked(
     key: AstNodeKey,
 ) -> SemanticQueryResult<SemanticTypeId> {
     Ok(match array_index_element_template_tracked(db, syntax, key)? {
-        Some(ArrayIndexElementTemplate::Concrete(element)) => Some(element),
+        Some(ArrayIndexElementTemplate::Concrete { abi, .. }) => Some(abi),
         Some(ArrayIndexElementTemplate::EnclosingParameter(_)) => {
             return Err(SemanticError::unavailable("array_index_element_abi_type"));
         }
@@ -521,7 +522,10 @@ pub(in crate::semantic_contract) fn array_index_element_template_tracked(
             // an erased array pointer is never sufficient to authorize element storage.
             return Some(
                 generic_source_expression_identity(db, AstNodeKey { node: index_node, ..key })
-                    .map(|element| ArrayIndexElementTemplate::Concrete(element.abi_type())),
+                    .map(|element| ArrayIndexElementTemplate::Concrete {
+                        abi: element.abi_type(),
+                        managed: element.managed_reference_kind(),
+                    }),
             );
         }
         let target = target_node.of::<beskid_analysis::syntax::PathExpression>()?;
@@ -537,7 +541,10 @@ pub(in crate::semantic_contract) fn array_index_element_template_tracked(
         if index.kind(parent) == Some(beskid_analysis::syntax_query::NodeKind::Pattern) {
             return Some(
                 generic_source_expression_identity(db, AstNodeKey { node: index_node, ..key })
-                    .map(|element| ArrayIndexElementTemplate::Concrete(element.abi_type())),
+                    .map(|element| ArrayIndexElementTemplate::Concrete {
+                        abi: element.abi_type(),
+                        managed: element.managed_reference_kind(),
+                    }),
             );
         }
         let array_type = match index.kind(parent)? {
@@ -566,8 +573,9 @@ pub(in crate::semantic_contract) fn array_index_element_template_tracked(
             {
                 return Ok(ArrayIndexElementTemplate::EnclosingParameter(Arc::from(parameter)));
             }
-            abi_type_from_syntax(db, AstNodeKey { node: declaration, ..key }, &element.node)
-                .map(ArrayIndexElementTemplate::Concrete)
+            let abi = abi_type_from_syntax(db, AstNodeKey { node: declaration, ..key }, &element.node)?;
+            let managed = managed_reference_kind_for_syntax_type(&element.node)?;
+            Ok(ArrayIndexElementTemplate::Concrete { abi, managed })
         }))
     })?
     .transpose()
@@ -585,10 +593,30 @@ pub fn array_index_element_specialization(
     }
     let Some(template) = array_index_element_template_tracked(db, syntax, key)? else { return Ok(None) };
     match template {
-        ArrayIndexElementTemplate::Concrete(element) => Ok(Some(element)),
+        ArrayIndexElementTemplate::Concrete { abi, .. } => Ok(Some(abi)),
         ArrayIndexElementTemplate::EnclosingParameter(parameter) => Ok(enclosing
             .iter()
             .find(|binding| binding.parameter.as_ref() == parameter.as_ref())
             .map(|binding| binding.argument)),
     }
+}
+
+/// Classify an indexed array element from its declared source type and enclosing specialization.
+pub fn array_index_element_managed_reference_kind(
+    db: &dyn Db,
+    key: AstNodeKey,
+    enclosing: &[GenericSubstitution],
+) -> SemanticQueryResult<ManagedReferenceKind> {
+    let Some(syntax) = db.syntax_unit(key.unit) else { return Ok(None) };
+    if !syntax.accepts_key(db, key) {
+        return Ok(None);
+    }
+    Ok(match array_index_element_template_tracked(db, syntax, key)? {
+        Some(ArrayIndexElementTemplate::Concrete { managed, .. }) => Some(managed),
+        Some(ArrayIndexElementTemplate::EnclosingParameter(parameter)) => enclosing
+            .iter()
+            .find(|binding| binding.parameter == parameter)
+            .map(GenericSubstitution::managed_reference_kind),
+        None => None,
+    })
 }

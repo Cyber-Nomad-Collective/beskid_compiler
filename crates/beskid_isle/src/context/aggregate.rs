@@ -43,18 +43,8 @@ macro_rules! generated_aggregate_methods {
             }
             let pointer = dispatch::pointer_type(self.frontend_config);
             let request = self.symbol_global(allocation.allocation_request_symbol.as_ref(), pointer)?;
-            let root_slot = self.builder.create_sized_stack_slot(StackSlotData::new(
-                StackSlotKind::ExplicitSlot,
-                pointer.bytes(),
-                pointer.bytes().ilog2() as u8,
-            ));
-            let root_slot_address = self.builder.ins().stack_addr(pointer, root_slot, 0);
-            let allocate =
-                self.import_runtime_helper("beskid_rt_v5_array_allocate_rooted", &[pointer, pointer], Some(pointer))?;
-            let allocation_call = self.builder.ins().call(allocate, &[request, root_slot_address]);
-            let array = self.builder.inst_results(allocation_call).first().copied()?;
+            let (array, root) = self.allocate_array(request)?;
             self.builder.ins().trapz(array, TrapCode::unwrap_user(5));
-            let root = ScopedTemporaryRoot::ArrayConstruction(root_slot);
             self.track_expression_root(root)?;
             // `BeskidArray.ptr` remains at offset zero.  The backing bytes are owned by the same
             // descriptor-backed GC allocation; they are never a stack temporary.

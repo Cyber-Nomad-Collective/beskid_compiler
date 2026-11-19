@@ -328,7 +328,10 @@ fn materialized_foundation_syscall_facade_preserves_managed_write_abi() {
         .expect("materialized Core.Syscall call lowers through the authorized external import");
     let clif = function.display().to_string();
     assert!(!clif.contains("ireduce.i32"), "the managed write ABI must preserve its i64 descriptor: {clif}");
-    assert!(!clif.contains("load.i64"), "the managed string pointer must cross the adapter boundary intact: {clif}");
+    assert!(
+        super::support::payload_loads(&function) == 0,
+        "the managed string pointer must cross the adapter boundary intact: {clif}"
+    );
     assert!(clif.contains("call"), "the trusted materialized facade must import syscall_write: {clif}");
 }
 
@@ -355,7 +358,11 @@ fn utf8_service_expands_the_typed_array_header_to_native_data_and_length() {
         )
         .expect("typed UTF-8 array facade lowers to the native data-plus-length ABI");
     let clif = function.display().to_string();
-    assert_eq!(clif.matches("load.i64").count(), 2, "the array header must yield exactly data and length: {clif}");
+    assert_eq!(
+        super::support::payload_loads(&function),
+        2,
+        "the array header must yield exactly data and length: {clif}"
+    );
     assert!(clif.contains("call"), "the adapted UTF-8 service must be called: {clif}");
 }
 
@@ -517,7 +524,10 @@ fn canonical_foundation_assert_trigger_failure_imports_only_baseline_strings_and
         .find(|function| function.name == "trigger_failure")
         .expect("trigger_failure artifact");
     let clif = trigger.function.display().to_string();
-    assert!(!clif.contains("load.i64"), "the managed panic string must cross the adapter boundary intact: {clif}");
+    assert!(
+        super::support::payload_loads(&trigger.function) == 0,
+        "the managed panic string must cross the adapter boundary intact: {clif}"
+    );
 }
 
 #[test]

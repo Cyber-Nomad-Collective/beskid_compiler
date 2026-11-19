@@ -365,13 +365,16 @@ fn parsed_event_subscribe_unsubscribe_and_raise_import_the_canonical_abi_at_thei
         "beskid_rt_v5_closure_environment_allocate",
         "beskid_rt_v5_closure_capture_store",
         "beskid_rt_v5_managed_object_allocate",
-        "gc_register_root",
-        "gc_unregister_root",
     ] {
         assert!(imports.contains(&symbol), "expected canonical event import {symbol}; imports: {imports:?}");
     }
+    for symbol in ["gc_register_root", "gc_unregister_root"] {
+        assert!(!imports.contains(&symbol), "{imports:?}");
+    }
     let main = artifact.functions.iter().find(|function| function.name == "Main").expect("lowered Main");
     let clif = main.function.display().to_string();
+    assert!(super::support::has_mapped_call(&main.function, "event_subscribe"), "{clif}");
+    assert!(super::support::has_mapped_call(&main.function, "event_unsubscribe_first"), "{clif}");
     assert!(clif.contains("call_indirect"), "raise dynamically invokes the wrapper's trampoline:\n{clif}");
     assert!(clif.contains("iconst.i64 4"), "event capacity comes from its declaration:\n{clif}");
 }
@@ -463,10 +466,11 @@ i32 Main() {
         "event_get_handler",
         "beskid_rt_v5_closure_environment_allocate",
         "beskid_rt_v5_managed_object_allocate",
-        "gc_register_root",
-        "gc_unregister_root",
     ] {
         assert!(imports.contains(&symbol), "missing event wrapper import `{symbol}` in {imports:?}");
+    }
+    for symbol in ["gc_register_root", "gc_unregister_root"] {
+        assert!(!imports.contains(&symbol), "{imports:?}");
     }
 }
 

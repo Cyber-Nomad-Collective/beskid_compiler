@@ -18,16 +18,12 @@ pub pointer ArrayNew(word elementSize, word count) {
     return buffer;
 }
 
-// Allocates one descriptor-backed array object and roots it before generated code can write
-// any element. `request` is the ABI-v5 BeskidArrayAllocationRequest layout and `rootHandleOut`
-// is a caller-owned native-word stack slot. The handle is released only by
-// ArrayConstructionFinish after every element store and pointer write barrier has completed.
-[Export(Abi:"C", Symbol:"beskid_rt_v5_array_allocate_rooted")]
-pub pointer AllocateArrayRooted(pointer request, pointer rootHandleOut) {
-    if request == NativePointer(0) || rootHandleOut == NativePointer(0) {
+// Allocates a descriptor-backed array. The caller controls the result's lifetime.
+[Export(Abi:"C", Symbol:"beskid_rt_v5_array_allocate")]
+pub pointer AllocateArray(pointer request) {
+    if request == NativePointer(0) {
         return NativePointer(0);
     }
-    raw_word_store(rootHandleOut, 0);
     pointer element = NativePointer(raw_word_load(request));
     pointer descriptor = NativePointer(raw_word_load(pointer_add(request, 16)));
     if ValidateArrayElementDescriptor(element) == false || ValidateTypeDescriptor(descriptor) == false ||
@@ -62,59 +58,62 @@ pub pointer AllocateArrayRooted(pointer request, pointer rootHandleOut) {
     raw_word_store(object, NativeWord(descriptor));
     raw_word_store(pointer_add(object, 16), NativeWord(element));
     pointer array = pointer_add(object, 24);
-    word handle = GcRootHandle(object);
-    if handle == 0 {
-        return NativePointer(0);
-    }
     raw_word_store(array, NativeWord(pointer_add(object, 48)));
     raw_word_store(pointer_add(array, 8), length);
     raw_word_store(pointer_add(array, 16), length);
+    return array;
+}
+
+pointer RootArrayConstruction(pointer array, pointer rootHandleOut) {
+    if array == NativePointer(0) { return NativePointer(0); }
+    // Rooted ABI callers receive a handle to the allocation header.
+    word handle = GcRootHandle(NativePointer(NativeWord(array) - 24));
+    if handle == 0 { return NativePointer(0); }
     raw_word_store(rootHandleOut, handle);
     return array;
+}
+
+// Gives the caller a construction handle that ArrayConstructionFinish releases.
+[Export(Abi:"C", Symbol:"beskid_rt_v5_array_allocate_rooted")]
+pub pointer AllocateArrayRooted(pointer request, pointer rootHandleOut) {
+    if request == NativePointer(0) || rootHandleOut == NativePointer(0) {
+        return NativePointer(0);
+    }
+    raw_word_store(rootHandleOut, 0);
+    return RootArrayConstruction(AllocateArray(request), rootHandleOut);
 }
 
 // Smallest capacity a grown array receives, so appends to an empty array do not reallocate for
 // each of the first few elements.
 const ARRAY_MINIMUM_GROWN_CAPACITY = 4;
 
-// Grows a descriptor-backed array into a distinct rooted object. The ABI-visible array starts
-// after the GC header and hidden element descriptor; the construction handle roots the object.
-// Failure never mutates the source array and leaves the output token at zero.
-[Export(Abi:"C", Symbol:"beskid_rt_v5_array_grow_rooted")]
-pub pointer GrowArrayRooted(pointer array, word minimumCapacity, pointer rootHandleOut) {
-    if array == NativePointer(0) || rootHandleOut == NativePointer(0) {
+// Returns either the existing array or a distinct replacement, with the source protected
+// through the allocating copy. The caller controls the result's lifetime.
+[Export(Abi:"C", Symbol:"beskid_rt_v5_array_grow")]
+pub pointer GrowArray(pointer array, word minimumCapacity) {
+    if NativeWord(array) <= 24 {
         return NativePointer(0);
     }
-    raw_word_store(rootHandleOut, 0);
 
     pointer object = NativePointer(NativeWord(array) - 24);
-    if NativeWord(object) >= NativeWord(array) {
+    if ManagedObjectForReference(Heap(), array) != object {
         return NativePointer(0);
     }
     pointer descriptor = NativePointer(raw_word_load(object));
-    if descriptor == NativePointer(0) || ValidateTypeDescriptor(descriptor) == false {
-        return NativePointer(0);
-    }
 
     pointer sourceData = NativePointer(raw_word_load(array));
     word length = raw_word_load(pointer_add(array, 8));
     word capacity = raw_word_load(pointer_add(array, 16));
-    if sourceData != pointer_add(object, 48) || length > capacity || minimumCapacity < length {
+    if length > capacity || minimumCapacity < length {
         return NativePointer(0);
     }
 
-    // A no-growth request still returns a rooted result and never reallocates the source.
     if minimumCapacity <= capacity {
-        word existingHandle = GcRootHandle(object);
-        if existingHandle == 0 {
-            return NativePointer(0);
-        }
-        raw_word_store(rootHandleOut, existingHandle);
         return array;
     }
 
     pointer element = NativePointer(raw_word_load(pointer_add(object, 16)));
-    if TypeDescriptorFlags(descriptor) != TYPE_DESCRIPTOR_ARRAY || ValidateArrayElementDescriptor(element) == false {
+    if ValidateArrayElementDescriptor(element) == false {
         return NativePointer(0);
     }
     word stride = raw_word_load(element);
@@ -178,18 +177,22 @@ pub pointer GrowArrayRooted(pointer array, word minimumCapacity, pointer rootHan
     raw_word_store(pointer_add(replacement, 8), length);
     raw_word_store(pointer_add(replacement, 16), targetCapacity);
 
-    word handle = GcRootHandle(replacementObject);
-    if handle == 0 {
-        GcUnrootHandle(sourceHandle);
-        return NativePointer(0);
-    }
     GcUnrootHandle(sourceHandle);
-    raw_word_store(rootHandleOut, handle);
     return replacement;
 }
 
+// Failure never mutates the source array and leaves an initialized output token at zero.
+[Export(Abi:"C", Symbol:"beskid_rt_v5_array_grow_rooted")]
+pub pointer GrowArrayRooted(pointer array, word minimumCapacity, pointer rootHandleOut) {
+    if array == NativePointer(0) || rootHandleOut == NativePointer(0) {
+        return NativePointer(0);
+    }
+    raw_word_store(rootHandleOut, 0);
+    return RootArrayConstruction(GrowArray(array, minimumCapacity), rootHandleOut);
+}
+
 // Releases the construction root established by AllocateArrayRooted or GrowArrayRooted. A zero
-// token is never a successful rooted result, so generated code fails closed if none was published.
+// token is never a successful rooted result.
 [Export(Abi:"C", Symbol:"beskid_rt_v5_array_construction_finish")]
 pub u8 ArrayConstructionFinish(pointer rootHandle) {
     word handle = NativeWord(rootHandle);
@@ -200,8 +203,7 @@ pub u8 ArrayConstructionFinish(pointer rootHandle) {
     return 1;
 }
 
-// Publishes a pointer element write to the GC's insertion barrier while the array remains under
-// its construction root. Scalar arrays do not call this entrypoint.
+// Publishes a pointer element write to the GC's insertion barrier.
 [Export(Abi:"C", Symbol:"beskid_rt_v5_array_write_barrier")]
 pub u8 ArrayWriteBarrier(pointer array, pointer value) {
     if array == NativePointer(0) {

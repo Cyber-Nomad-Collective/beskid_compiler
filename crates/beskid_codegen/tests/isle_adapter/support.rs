@@ -1,3 +1,5 @@
+use cranelift_codegen::ir::{ExternalName, Function, InstructionData, Value, ValueDef};
+
 #[path = "support/common.rs"]
 mod common;
 #[path = "support/corelib.rs"]
@@ -46,3 +48,50 @@ pub(super) use prelude::Ordering;
 #[cfg(any(all(target_os = "linux", target_arch = "x86_64"), all(target_os = "macos", target_arch = "aarch64"),))]
 pub(super) use prelude::CANONICAL_BOOTSTRAP_OBJECTS_SOURCE_PATH;
 pub(super) use service_import_facts::CorelibServiceImportFacts;
+
+pub(super) const ARRAY_ALLOCATION_IMPORT: &str = "beskid_rt_v5_array_allocate";
+
+pub(super) fn has_mapped_call(function: &Function, symbol: &str) -> bool {
+    let name = ExternalName::testcase(symbol);
+    function.layout.blocks().flat_map(|block| function.layout.block_insts(block)).any(|inst| {
+        matches!(function.dfg.insts[inst], InstructionData::Call { func_ref, .. }
+            if function.dfg.ext_funcs[func_ref].name == name)
+            && function.dfg.user_stack_map_entries(inst).is_some_and(|entries| !entries.is_empty())
+    })
+}
+
+pub(super) fn payload_loads(function: &Function) -> usize {
+    function
+        .layout
+        .blocks()
+        .flat_map(|block| function.layout.block_insts(block))
+        .filter(|&inst| {
+            matches!(function.dfg.insts[inst], InstructionData::Load { arg, .. }
+                if stack_slot(function, arg).is_none())
+        })
+        .count()
+}
+
+// Follow a frontend spill reload to the value last stored in that slot in the same block.
+pub(super) fn reload_origin(function: &Function, value: Value) -> Value {
+    let ValueDef::Result(load, _) = function.dfg.value_def(value) else { return value };
+    let InstructionData::Load { arg, offset, .. } = function.dfg.insts[load] else { return value };
+    let Some(slot) = stack_slot(function, arg) else { return value };
+    let mut previous = function.layout.prev_inst(load);
+    while let Some(inst) = previous {
+        if let InstructionData::Store { args, offset: store_offset, .. } = function.dfg.insts[inst]
+            && store_offset == offset
+            && stack_slot(function, args[1]) == Some(slot)
+        {
+            return function.dfg.resolve_aliases(args[0]);
+        }
+        previous = function.layout.prev_inst(inst);
+    }
+    value
+}
+
+fn stack_slot(function: &Function, value: Value) -> Option<(cranelift_codegen::ir::StackSlot, i32)> {
+    let ValueDef::Result(address, _) = function.dfg.value_def(value) else { return None };
+    let InstructionData::StackAddr { stack_slot, offset, .. } = function.dfg.insts[address] else { return None };
+    Some((stack_slot, offset.into()))
+}

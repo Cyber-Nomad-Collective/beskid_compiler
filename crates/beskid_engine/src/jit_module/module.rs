@@ -4,6 +4,7 @@ use crate::runtime_kit::JitRuntimeKit;
 use beskid_abi::abi_v5::TargetMetadata;
 use beskid_abi::runtime_kit::BuildProfile as RuntimeKitProfile;
 use beskid_codegen::cranelift_host::{declare_user_functions, declare_validated_extern_imports, remap_testcase_externals};
+use beskid_codegen::stack_maps::DefineFunctionWithStackMaps;
 use beskid_codegen::{CodegenArtifact, emit_string_literals, emit_type_descriptors};
 use beskid_pipeline::{
     PipelineObserver, emit_work_unit, observe_phase_result,
@@ -106,6 +107,7 @@ impl BeskidJitModule {
         beskid_codegen::emit_closure_static_plans(&mut self.module, artifact)?;
 
         let mut ctx = self.module.make_context();
+        let checkpoints = artifact.runtime_checkpoint_definitions.Resolve(&self.func_ids);
         let total = artifact.functions.len() as u64;
         for (index, function) in artifact.functions.iter().enumerate() {
             let func_id = self
@@ -115,7 +117,7 @@ impl BeskidJitModule {
                 .ok_or_else(|| JitError::MissingFunction(function.name.clone()))?;
             ctx.func = function.function.clone();
             remap_testcase_externals(&self.module, &mut ctx, &self.func_ids)?;
-            self.module.define_function(func_id, &mut ctx)?;
+            DefineFunctionWithStackMaps(&mut self.module, func_id, &mut ctx, None, checkpoints)?;
             self.module.clear_context(&mut ctx);
             emit_work_unit(pipeline, JIT_EMIT, (index as u64) + 1, total, function.name.clone());
         }

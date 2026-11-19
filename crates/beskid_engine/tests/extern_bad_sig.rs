@@ -43,6 +43,7 @@ fn extern_signature_validation_rejects_disallowed_types() -> Result<()> {
         }],
         trusted_extern_imports: vec![],
         exports: vec![],
+        ..CodegenArtifact::default()
     };
 
     let mut engine = Engine::new();

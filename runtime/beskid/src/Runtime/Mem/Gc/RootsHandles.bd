@@ -280,22 +280,79 @@ pub pointer GcResolveHandle(word handle) {
     return NativePointer(0);
 }
 
+// The compiler pads each 0.7 stack-map table to eight bytes. Its fields are
+// little-endian on all ABI-v5 platforms. Extract u32 fields using aligned loads.
+const STACK_MAP_MAGIC = 0x00010043474B5342;
+const STACK_MAP_HEADER_SIZE = 28;
+const STACK_MAP_SITE_HEADER_SIZE = 12;
+
+word StackMapU32(pointer field) {
+    word address = NativeWord(field);
+    word offset = address % 8;
+    return (raw_word_load(NativePointer(address - offset)) >> (offset * 8)) & 0xFFFFFFFF;
+}
+
+bool MarkPublishedStackMapSite(word stackPointer, pointer frame, pointer site, word count) {
+    word span = StackMapU32(pointer_add(site, 4));
+    if span % 8 != 0 || stackPointer + span < stackPointer || count > span / 8 ||
+       span < 32 || NativeWord(frame) < stackPointer || NativeWord(frame) - stackPointer > span - 32 {
+        return false;
+    }
+    mut word index = 0;
+    while index < count {
+        word offset = StackMapU32(pointer_add(site, STACK_MAP_SITE_HEADER_SIZE + index * 4));
+        if offset % 8 != 0 || offset + 8 > span { return false; }
+        pointer value = NativePointer(raw_word_load(NativePointer(stackPointer + offset)));
+        if value != NativePointer(0) { GcMarkGray(value); }
+        index = index + 1;
+    }
+    return true;
+}
+
+pub bool MarkPublishedStackMap(pointer frame) {
+    word stackPointer = raw_word_load(pointer_add(frame, 8));
+    word returnPc = raw_word_load(pointer_add(frame, 16));
+    pointer table = NativePointer(raw_word_load(pointer_add(frame, 24)));
+    if table == NativePointer(0) || NativeWord(table) % 8 != 0 ||
+       stackPointer == 0 || stackPointer % 8 != 0 || raw_word_load(table) != STACK_MAP_MAGIC {
+        return false;
+    }
+    word size = StackMapU32(pointer_add(table, 8));
+    word codeSize = StackMapU32(pointer_add(table, 12));
+    word functionStart = raw_word_load(pointer_add(table, 16));
+    if size < STACK_MAP_HEADER_SIZE || size % 8 != 0 || NativeWord(table) + size < NativeWord(table) ||
+       functionStart == 0 || returnPc <= functionStart || returnPc - functionStart >= codeSize {
+        return false;
+    }
+    word siteCount = StackMapU32(pointer_add(table, 24));
+    if siteCount > (size - STACK_MAP_HEADER_SIZE) / STACK_MAP_SITE_HEADER_SIZE { return false; }
+
+    word targetOffset = returnPc - functionStart;
+    mut word currentOffset = STACK_MAP_HEADER_SIZE;
+    mut word index = 0;
+    while index < siteCount {
+        if size - currentOffset < STACK_MAP_SITE_HEADER_SIZE { return false; }
+        pointer site = pointer_add(table, currentOffset);
+        word returnOffset = StackMapU32(site);
+        word count = StackMapU32(pointer_add(site, 8));
+        word slotsOffset = currentOffset + STACK_MAP_SITE_HEADER_SIZE;
+        if returnOffset > targetOffset || count > (size - slotsOffset) / 4 { return false; }
+        if returnOffset == targetOffset {
+            return MarkPublishedStackMapSite(stackPointer, frame, site, count);
+        }
+        currentOffset = slotsOffset + count * 4;
+        index = index + 1;
+    }
+    return false;
+}
+
 pub bool MarkRoots() {
     pointer heap = Heap();
     if heap == NativePointer(0) { return false; }
     pointer tls = CurrentThreadState();
     if tls != NativePointer(0) {
-        mut pointer frame = NativePointer(raw_word_load(pointer_add(tls, 8)));
-        while frame != NativePointer(0) {
-            pointer slots = NativePointer(raw_word_load(pointer_add(frame, 8)));
-            word count = raw_word_load(pointer_add(frame, 16));
-            mut word index = 0;
-            while slots != NativePointer(0) && index < count {
-                pointer value = NativePointer(raw_word_load(pointer_add(slots, index * 8)));
-                if value != NativePointer(0) { GcMarkGray(value); }
-                index = index + 1;
-            }
-            frame = NativePointer(raw_word_load(frame));
+        if MarkRootFrameChain(RootFrame(tls)) == false || MarkRootFrameChain(SchedulerRootFrame(tls)) == false {
+            return false;
         }
     }
     mut pointer rootBlock = NativePointer(raw_word_load(pointer_add(heap, HEAP_ROOT_STACK_HEAD)));

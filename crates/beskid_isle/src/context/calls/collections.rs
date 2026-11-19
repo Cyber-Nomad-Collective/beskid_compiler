@@ -20,18 +20,8 @@ impl IsleContext<'_, '_, '_, '_> {
         }
         let pointer = dispatch::pointer_type(self.frontend_config);
         let request = self.symbol_global(allocation.allocation_request_symbol.as_ref(), pointer)?;
-        let root_slot = self.builder.create_sized_stack_slot(StackSlotData::new(
-            StackSlotKind::ExplicitSlot,
-            pointer.bytes(),
-            pointer.bytes().ilog2() as u8,
-        ));
-        let root_slot_address = self.builder.ins().stack_addr(pointer, root_slot, 0);
-        let allocate =
-            self.import_runtime_helper("beskid_rt_v5_array_allocate_rooted", &[pointer, pointer], Some(pointer))?;
-        let allocation_call = self.builder.ins().call(allocate, &[request, root_slot_address]);
-        let array = self.builder.inst_results(allocation_call).first().copied()?;
+        let (array, root) = self.allocate_array(request)?;
         self.builder.ins().trapz(array, TrapCode::unwrap_user(5));
-        let root = ScopedTemporaryRoot::ArrayConstruction(root_slot);
         self.track_expression_root(root)?;
         // `BeskidArray.ptr` remains at offset zero.  The backing bytes are owned by the same
         // descriptor-backed GC allocation; they are never a stack temporary.
@@ -127,23 +117,9 @@ impl IsleContext<'_, '_, '_, '_> {
         }
         self.builder.ins().stack_store(pointer, length, request_slot, word_bytes);
         let request = self.builder.ins().stack_addr(pointer, request_slot, 0);
-        let root_slot = self.builder.create_sized_stack_slot(StackSlotData::new(
-            StackSlotKind::ExplicitSlot,
-            pointer.bytes(),
-            pointer.bytes().ilog2() as u8,
-        ));
-        let root_address = self.builder.ins().stack_addr(pointer, root_slot, 0);
-        let allocate =
-            self.import_runtime_helper("beskid_rt_v5_array_allocate_rooted", &[pointer, pointer], Some(pointer))?;
-        let call = self.builder.ins().call(allocate, &[request, root_address]);
-        let array = self.builder.inst_results(call).first().copied()?;
+        let (array, root) = self.allocate_array(request)?;
         self.builder.ins().trapz(array, TrapCode::unwrap_user(5));
-        let root_handle = self.builder.ins().stack_load(pointer, pointer, root_slot, 0);
-        let finish =
-            self.import_runtime_helper("beskid_rt_v5_array_construction_finish", &[pointer], Some(types::I8))?;
-        let finish_call = self.builder.ins().call(finish, &[root_handle]);
-        let released = self.builder.inst_results(finish_call).first().copied()?;
-        self.builder.ins().trapz(released, TrapCode::unwrap_user(10));
+        self.release_temporary_root(Some(root))?;
         Some(array)
     }
 
@@ -181,7 +157,6 @@ impl IsleContext<'_, '_, '_, '_> {
                         let binding = self.locals.get(&slot).copied()?;
                         if binding.value_type != pointer
                             || binding.managed_reference != ManagedReferenceFact::GcManaged
-                            || binding.root_slot.is_none()
                             || self.facts.local_slot(*array_key) != Some(slot)
                         {
                             self.pending_error =
@@ -194,7 +169,6 @@ impl IsleContext<'_, '_, '_, '_> {
                         let binding = self.locals.get(&receiver).copied()?;
                         if binding.value_type != pointer
                             || binding.managed_reference != ManagedReferenceFact::GcManaged
-                            || binding.root_slot.is_none()
                         {
                             self.pending_error =
                                 Some(LoweringError { key, kind: LoweringErrorKind::UnprovenCollectionOwner });
@@ -211,19 +185,7 @@ impl IsleContext<'_, '_, '_, '_> {
                 let next_length = self.builder.ins().iadd_imm_s(length, 1);
                 let overflow = self.builder.ins().icmp(IntCC::UnsignedLessThanOrEqual, next_length, length);
                 self.builder.ins().trapnz(overflow, TrapCode::unwrap_user(3));
-                let root_slot = self.builder.create_sized_stack_slot(StackSlotData::new(
-                    StackSlotKind::ExplicitSlot,
-                    pointer.bytes(),
-                    pointer.bytes().ilog2() as u8,
-                ));
-                let root_out = self.builder.ins().stack_addr(pointer, root_slot, 0);
-                let grow = self.import_runtime_helper(
-                    "beskid_rt_v5_array_grow_rooted",
-                    &[pointer, word, pointer],
-                    Some(pointer),
-                )?;
-                let grow_call = self.builder.ins().call(grow, &[owner, next_length, root_out]);
-                let array = self.builder.inst_results(grow_call).first().copied()?;
+                let (array, root) = self.grow_array(owner, next_length)?;
                 self.builder.ins().trapz(array, TrapCode::unwrap_user(5));
                 let data = self.builder.ins().load(pointer, MemFlagsData::new(), array, 0);
                 let offset =
@@ -267,12 +229,7 @@ impl IsleContext<'_, '_, '_, '_> {
                         // section 6.3), but generated code no longer calls it.
                     }
                 }
-                let root_handle = self.builder.ins().stack_load(pointer, pointer, root_slot, 0);
-                let finish =
-                    self.import_runtime_helper("beskid_rt_v5_array_construction_finish", &[pointer], Some(types::I8))?;
-                let finish_call = self.builder.ins().call(finish, &[root_handle]);
-                let released = self.builder.inst_results(finish_call).first().copied()?;
-                self.builder.ins().trapz(released, TrapCode::unwrap_user(10));
+                self.release_temporary_root(Some(root))?;
                 self.release_temporary_root(value_root)?;
                 Some(array)
             }

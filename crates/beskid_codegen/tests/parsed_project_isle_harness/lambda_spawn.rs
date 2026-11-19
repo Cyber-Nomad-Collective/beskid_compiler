@@ -2,6 +2,69 @@
 
 use super::*;
 
+fn assert_spawn_environment_root(function: &cranelift_codegen::ir::Function) {
+    let clif = function.display().to_string();
+    assert!(!clif.contains("gc_register_root"), "{clif}");
+    assert!(!clif.contains("gc_unregister_root"), "{clif}");
+    let spawn = ExternalName::testcase("fiber_spawn");
+    assert!(
+        function.layout.blocks().flat_map(|block| function.layout.block_insts(block)).any(|inst| {
+            let cranelift_codegen::ir::InstructionData::Call { func_ref, .. } = function.dfg.insts[inst] else {
+                return false;
+            };
+            function.dfg.ext_funcs[func_ref].name == spawn
+                && function.dfg.user_stack_map_entries(inst).is_some_and(|roots| !roots.is_empty())
+        }),
+        "the environment must survive the scheduler's ownership handoff: {clif}"
+    );
+}
+
+#[test]
+fn parsed_spawn_trampoline_maps_its_managed_start_environment_and_result() {
+    let project = tempfile::tempdir().expect("project directory");
+    let source = "
+        pub type Fiber<T> { i64 handle, }
+        type Counter { i64 value, }
+        Counter Entry(Counter counter) { return counter; }
+        i64 Main() {
+            Counter counter = Counter { value: 40_i64 };
+            let child = spawn Entry(counter);
+            return 0_i64;
+        }
+    ";
+    let assembly = parse_production_units(project.path(), &[("Main.bd", "Main", source)]);
+    let (target, isa) = x86_64_target_and_isa();
+    let lowered = lower_verified_entrypoint(assembly, target, isa.as_ref());
+    let trampoline = lowered
+        .artifact
+        .functions
+        .iter()
+        .find(|function| function.name.starts_with("__beskid_spawn_entry_syntax_"))
+        .expect("syntax-owned spawn trampoline");
+    let function = &trampoline.function;
+    let mapped_calls = function
+        .layout
+        .blocks()
+        .flat_map(|block| function.layout.block_insts(block))
+        .filter_map(|inst| {
+            let cranelift_codegen::ir::InstructionData::Call { func_ref, .. } = function.dfg.insts[inst] else {
+                return None;
+            };
+            let roots = function.dfg.user_stack_map_entries(inst)?;
+            Some((&function.dfg.ext_funcs[func_ref].name, roots))
+        })
+        .collect::<Vec<_>>();
+    for symbol in ["beskid_rt_v5_scheduler_stack_check", "beskid_rt_v5_managed_object_allocate"] {
+        assert!(
+            mapped_calls.iter().any(|(name, roots)| {
+                **name == ExternalName::testcase(symbol) && roots.len() == 1 && roots[0].ty == isa.pointer_type()
+            }),
+            "the trampoline must map one managed pointer across {symbol}: {}",
+            function.display()
+        );
+    }
+}
+
 #[test]
 fn parsed_direct_spawn_with_arguments_transfers_them_through_a_traced_start_environment() {
     let project = tempfile::tempdir().expect("project directory");
@@ -45,8 +108,7 @@ fn parsed_direct_spawn_with_arguments_transfers_them_through_a_traced_start_envi
     let trampoline_clif = trampoline.function.display().to_string();
     assert!(main_clif.contains(&plan.allocation_request_symbol), "{main_clif}");
     assert!(main_clif.contains("fiber_spawn"), "{main_clif}");
-    assert!(main_clif.contains("gc_register_root"), "{main_clif}");
-    assert!(main_clif.contains("gc_unregister_root"), "{main_clif}");
+    assert_spawn_environment_root(&main.function);
     assert!(
         !main_clif.contains("Entry#syntax_"),
         "the parent evaluates arguments but never invokes the entry: {main_clif}"
@@ -67,14 +129,22 @@ fn parsed_direct_spawn_with_arguments_transfers_them_through_a_traced_start_envi
         .map(|function| &trampoline.function.dfg.signatures[function.signature])
         .expect("trampoline invokes the source-owned entry");
     assert_eq!(target_signature.params.len(), 2, "the trampoline passes both loaded arguments");
-    let loads = trampoline
+    let field_offsets = plan.fields.iter().map(|field| field.field_offset).collect::<Vec<_>>();
+    let environment_loads = trampoline
         .function
         .layout
         .blocks()
         .flat_map(|block| trampoline.function.layout.block_insts(block))
-        .filter(|inst| trampoline.function.dfg.insts[*inst].opcode() == cranelift_codegen::ir::Opcode::Load)
-        .count();
-    assert_eq!(loads, 2, "the trampoline loads each argument from the environment\n{trampoline_clif}");
+        .filter_map(|inst| {
+            let cranelift_codegen::ir::InstructionData::Load { offset, .. } = trampoline.function.dfg.insts[inst]
+            else {
+                return None;
+            };
+            let offset = u64::try_from(i32::from(offset)).ok()?;
+            field_offsets.contains(&offset).then_some(offset)
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(environment_loads, field_offsets, "the trampoline loads each argument\n{trampoline_clif}");
 }
 
 #[test]
@@ -179,8 +249,7 @@ fn parsed_capturing_lambda_spawn_allocates_roots_and_dispatches_fiber_entry() {
     let lambda_clif = lambda.function.display().to_string();
     let trampoline_clif = trampoline.function.display().to_string();
     assert!(main_clif.contains("beskid_rt_v5_closure_environment_allocate"), "{main_clif}");
-    assert!(main_clif.contains("gc_register_root"), "{main_clif}");
-    assert!(main_clif.contains("gc_unregister_root"), "{main_clif}");
+    assert_spawn_environment_root(&main.function);
     assert!(!main_clif.contains("beskid_rt_v5_closure_environment_root_current"), "{main_clif}");
     assert!(main_clif.contains("fiber_spawn"), "{main_clif}");
     assert!(

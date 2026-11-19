@@ -22,14 +22,13 @@ mod isle_trace;
 pub mod module_emission;
 pub mod prepared_syntax;
 pub mod services;
+pub mod stack_maps;
 
 pub use aggregate_static::{
     ABI_V5_MANAGED_OBJECT_ALLOCATE, AggregateObjectLayout, AggregateStaticField, AggregateStaticPlan,
     emit_aggregate_static_data,
 };
-pub use array_static::{
-    ABI_V5_ARRAY_ALLOCATE_ROOTED, ABI_V5_ARRAY_CONSTRUCTION_FINISH, ArrayStaticPlan, emit_array_static_data,
-};
+pub use array_static::{ArrayStaticPlan, emit_array_static_data};
 pub use artifact::{
     CodegenArtifact, CodegenContext, ExportEntry, ExternImport, LoweredFunction, TypeDescriptorData,
     internal_link_symbol, object_link_symbol,

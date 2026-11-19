@@ -231,7 +231,10 @@ fn parsed_result_try_reconstructs_distinct_error_layouts_and_accepts_unit_succes
             lower_syntax_program(&input, isa.as_ref(), &items).expect("distinct Result layouts rewrap the exact error");
         let main = emitted.functions.iter().find(|function| function.name == "Main").unwrap();
         let clif = main.function.display().to_string();
-        assert!(clif.contains("gc_register_root"), "managed error survives allocation: {clif}");
+        assert!(
+            super::super::support::has_mapped_call(&main.function, "beskid_rt_v5_managed_object_allocate"),
+            "managed error survives allocation: {clif}"
+        );
         assert!(input.enum_static_plan(expression).is_some(), "propagated error owns the target allocation descriptor");
     }
 }

@@ -61,6 +61,8 @@ pub struct CodegenArtifact {
     /// name; that import stays in `extern_imports` and is subject to the ordinary user-FFI
     /// authorization path, which rejects a name collision with a runtime-owned symbol.
     pub trusted_extern_imports: Vec<ExternImport>,
+    /// Compiler-proven definitions of the stack-map checkpoint helpers present in this artifact.
+    pub runtime_checkpoint_definitions: crate::stack_maps::RuntimeCheckpointDefinitions,
     pub exports: Vec<ExportEntry>,
 }
 

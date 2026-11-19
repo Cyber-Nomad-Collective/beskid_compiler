@@ -17,10 +17,6 @@ use cranelift_module::{DataDescription, DataId, Linkage, Module, ModuleError, Mo
 
 use crate::{CodegenInput, aggregate_static::paths_match};
 
-pub const ABI_V5_ARRAY_ALLOCATE_ROOTED: &str = "beskid_rt_v5_array_allocate_rooted";
-pub const ABI_V5_ARRAY_GROW_ROOTED: &str = "beskid_rt_v5_array_grow_rooted";
-pub const ABI_V5_ARRAY_CONSTRUCTION_FINISH: &str = "beskid_rt_v5_array_construction_finish";
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ArrayStaticPlan {
     pub literal: AstNodeKey,

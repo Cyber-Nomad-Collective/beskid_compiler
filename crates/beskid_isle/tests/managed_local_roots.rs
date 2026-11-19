@@ -49,7 +49,7 @@ impl NodeFacts for ManagedParameterFacts {
 }
 
 #[test]
-fn managed_parameter_uses_one_root_slot_until_explicit_return() {
+fn managed_leaf_parameter_returns_without_registering_a_slot() {
     let isa = cranelift_codegen::isa::lookup(Triple::host())
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
@@ -74,11 +74,7 @@ fn managed_parameter_uses_one_root_slot_until_explicit_return() {
         )
         .expect("managed parameter lowering");
     let clif = function.display().to_string();
-
-    let register = clif.find("gc_register_root").expect("root registration call");
-    let unregister = clif.find("gc_unregister_root").expect("root cleanup call");
-    let return_instruction = clif.rfind("return").expect("return instruction");
-    assert_eq!(clif.matches("gc_register_root").count(), 1, "{clif}");
-    assert_eq!(clif.matches("gc_unregister_root").count(), 1, "{clif}");
-    assert!(register < unregister && unregister < return_instruction, "{clif}");
+    assert!(function.sized_stack_slots.is_empty(), "{clif}");
+    assert!(!clif.contains("gc_register_root"), "{clif}");
+    assert!(!clif.contains("gc_unregister_root"), "{clif}");
 }
