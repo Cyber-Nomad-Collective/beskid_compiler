@@ -269,7 +269,8 @@ impl ClifLowering<'_, '_, '_, '_, '_> {
         arguments: &[ClifOperand],
         returns: Option<Type>,
     ) -> Result<Option<Value>, String> {
-        let foreign = self.context.facts.clif_foreign_symbol(symbol);
+        let foreign = self.context.facts.clif_foreign_symbol(symbol)
+            .map_err(|reason| format!("clif block line {line}: {reason}"))?;
         let mut values = Vec::with_capacity(arguments.len());
         for argument in arguments {
             let value = self.operand(line, argument)?;

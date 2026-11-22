@@ -304,18 +304,27 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
         )
     }
 
-    fn clif_foreign_symbol(&self, symbol: &str) -> bool {
+    fn clif_foreign_symbol(&self, symbol: &str) -> Result<bool, String> {
         if beskid_abi::is_runtime_owned_ffi_symbol(symbol) {
-            return false;
+            return Ok(false);
         }
-        self.input.typed_program().assembly.units.iter().any(|unit| {
-            let unit = beskid_queries::SourceUnitId::new(self.db, unit.path.clone());
-            beskid_queries::extern_contract_declarations_in_unit(self.db, unit).into_iter().any(|declared| {
+        let mut bindings = self.input.typed_program().assembly.units.iter()
+            .flat_map(|unit| {
+                let unit = beskid_queries::SourceUnitId::new(self.db, unit.path.clone());
+                beskid_queries::extern_contract_declarations_in_unit(self.db, unit)
+            })
+            .filter(|declared| {
                 declared.symbol == symbol
                     && declared.abi.as_deref() == Some("C")
                     && declared.library.as_deref().is_some_and(|library| !library.is_empty())
-            })
-        })
+            });
+        let Some(binding) = bindings.next() else {
+            return Ok(false);
+        };
+        if self.input.browser_profile && bindings.any(|other| other != binding) {
+            return Err(format!("browser target has conflicting C extern bindings for `{symbol}`"));
+        }
+        Ok(true)
     }
 
     fn integer_literal(&self, key: AstNodeKey) -> Option<i64> {
